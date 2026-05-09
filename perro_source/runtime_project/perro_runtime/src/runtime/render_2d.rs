@@ -1,11 +1,23 @@
 use super::Runtime;
 use ahash::AHashSet;
-use perro_ids::{NodeID, TextureID};
-use perro_nodes::SceneNodeData;
+use perro_ids::{NodeID, TextureID, parse_hashed_source_uri, string_to_u64};
+use perro_nodes::{SceneNodeData, particle_emitter_2d::ParticleEmitterSimMode2D};
+use perro_particle_math::compile_expression;
 use perro_render_bridge::{
-    Camera2DState, Command2D, RenderCommand, RenderRequestID, ResourceCommand, Sprite2DCommand,
+    Camera2DState, Command2D, ParticlePath2D, ParticleProfile2D, ParticleSimulationMode2D,
+    PointParticles2DState, RenderCommand, RenderRequestID, ResourceCommand, Sprite2DCommand,
 };
+use std::borrow::Cow;
 use std::sync::Arc;
+
+const PARTICLE_PATH_CACHE_MAX: usize = 256;
+
+struct Sprite2DEmit {
+    texture: TextureID,
+    texture_region: Option<[f32; 4]>,
+    model: [[f32; 3]; 3],
+    z_index: i32,
+}
 
 impl Runtime {
     fn sprite_texture_request(node: NodeID) -> RenderRequestID {
@@ -68,18 +80,37 @@ impl Runtime {
                 SceneNodeData::Sprite2D(sprite) => Some((
                     effective_visible && sprite.visible,
                     sprite.texture,
+                    sprite.texture_region,
+                    sprite.transform,
+                    sprite.z_index,
+                )),
+                SceneNodeData::AnimatedSprite2D(sprite) => Some((
+                    effective_visible && sprite.visible,
+                    sprite.texture,
+                    sprite.current_texture_region(),
                     sprite.transform,
                     sprite.z_index,
                 )),
                 _ => None,
             });
-            if let Some((visible, texture, local_transform, z_index)) = sprite_data {
+            if let Some((visible, texture, texture_region, local_transform, z_index)) = sprite_data
+            {
                 let model = self
                     .get_global_transform_2d(node)
                     .unwrap_or(local_transform)
                     .to_mat3()
                     .to_cols_array_2d();
-                self.emit_sprite_2d(node, visible, texture, model, z_index, &mut visible_now);
+                self.emit_sprite_2d(
+                    node,
+                    visible,
+                    Sprite2DEmit {
+                        texture,
+                        texture_region,
+                        model,
+                        z_index,
+                    },
+                    &mut visible_now,
+                );
             }
 
             let camera_data = self.nodes.get(node).and_then(|node| match &node.data {
@@ -109,6 +140,96 @@ impl Runtime {
                 }));
                 self.render_2d.last_camera = Some(camera);
             }
+
+            let point_emitter_data = self.nodes.get(node).and_then(|node| match &node.data {
+                SceneNodeData::ParticleEmitter2D(emitter) => Some((
+                    effective_visible && emitter.visible,
+                    emitter.profile.clone(),
+                    emitter.sim_mode,
+                    emitter.transform,
+                    emitter.z_index,
+                    emitter.active,
+                    emitter.looping,
+                    emitter.prewarm,
+                    emitter.spawn_rate,
+                    emitter.seed,
+                    emitter.params.clone(),
+                    emitter.internal_simulation_time,
+                )),
+                _ => None,
+            });
+            if let Some((
+                visible,
+                emitter_profile,
+                emitter_sim_mode,
+                emitter_transform,
+                emitter_z_index,
+                emitter_active,
+                emitter_looping,
+                emitter_prewarm,
+                emitter_spawn_rate,
+                emitter_seed,
+                emitter_params,
+                emitter_simulation_time,
+            )) = point_emitter_data
+            {
+                if visible {
+                    let profile =
+                        resolve_particle_profile_2d(self, &emitter_profile).unwrap_or_default();
+                    let lifetime_min = profile.lifetime_min.max(0.001);
+                    let lifetime_max = profile.lifetime_max.max(lifetime_min);
+                    if let Some(node_mut) = self.nodes.get_mut(node)
+                        && let SceneNodeData::ParticleEmitter2D(emitter_mut) = &mut node_mut.data
+                    {
+                        emitter_mut.internal_lifetime_max = lifetime_max;
+                    }
+                    let model = self
+                        .get_global_transform_2d(node)
+                        .unwrap_or(emitter_transform)
+                        .to_mat3()
+                        .to_cols_array_2d();
+                    self.queue_render_command(RenderCommand::TwoD(
+                        Command2D::UpsertPointParticles {
+                            node,
+                            particles: Box::new(PointParticles2DState {
+                                model,
+                                z_index: emitter_z_index,
+                                active: emitter_active,
+                                looping: emitter_looping,
+                                prewarm: emitter_prewarm,
+                                alive_budget: derived_particle_budget(
+                                    emitter_spawn_rate.max(0.0),
+                                    lifetime_max,
+                                ),
+                                emission_rate: emitter_spawn_rate.max(0.0),
+                                lifetime_min,
+                                lifetime_max,
+                                speed_min: profile.speed_min.max(0.0),
+                                speed_max: profile.speed_max.max(profile.speed_min.max(0.0)),
+                                spread_radians: profile
+                                    .spread_radians
+                                    .clamp(0.0, std::f32::consts::TAU),
+                                size: profile.size.max(1.0),
+                                size_min: profile.size_min.max(0.01),
+                                size_max: profile.size_max.max(profile.size_min.max(0.01)),
+                                force: profile.force,
+                                color_start: profile.color_start,
+                                color_end: profile.color_end,
+                                seed: emitter_seed,
+                                params: emitter_params,
+                                simulation_time: emitter_simulation_time,
+                                simulation_delta: 0.0,
+                                profile,
+                                sim_mode: resolve_particle_sim_mode_2d(emitter_sim_mode),
+                            }),
+                        },
+                    ));
+                    visible_now.insert(node);
+                } else {
+                    self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
+                    self.render_2d.retained_sprites.remove(&node);
+                }
+            }
         }
         self.remove_no_longer_visible_render_2d_nodes(&visible_now);
 
@@ -124,24 +245,26 @@ impl Runtime {
         &mut self,
         node: NodeID,
         visible: bool,
-        texture: TextureID,
-        model: [[f32; 3]; 3],
-        z_index: i32,
+        emit: Sprite2DEmit,
         visible_now: &mut AHashSet<NodeID>,
     ) {
         if !visible {
             return;
         }
 
-        let Some(resolved_texture) = self.resolve_sprite_texture(node, texture) else {
+        let Some(resolved_texture) = self.resolve_sprite_texture(node, emit.texture) else {
             return;
         };
 
+        let (uv_min, uv_max, size) = sprite_region_uv(emit.texture_region);
         let sprite = Sprite2DCommand {
             texture: resolved_texture,
-            model,
+            model: emit.model,
             tint: [1.0, 1.0, 1.0, 1.0],
-            z_index,
+            uv_min,
+            uv_max,
+            size,
+            z_index: emit.z_index,
         };
         let needs_upsert = self
             .render_2d
@@ -169,10 +292,12 @@ impl Runtime {
                 match result {
                     crate::RuntimeRenderResult::Texture(id) => {
                         texture = id;
-                        if let Some(node) = self.nodes.get_mut(node)
-                            && let SceneNodeData::Sprite2D(sprite) = &mut node.data
-                        {
-                            sprite.texture = id;
+                        if let Some(node) = self.nodes.get_mut(node) {
+                            match &mut node.data {
+                                SceneNodeData::Sprite2D(sprite) => sprite.texture = id,
+                                SceneNodeData::AnimatedSprite2D(sprite) => sprite.texture = id,
+                                _ => {}
+                            }
                         }
                     }
                     crate::RuntimeRenderResult::Failed(_) => {}
@@ -218,6 +343,245 @@ impl Runtime {
             self.render_2d.retained_sprites.remove(&node);
         }
     }
+}
+
+fn derived_particle_budget(spawn_rate: f32, lifetime_max: f32) -> u32 {
+    if spawn_rate <= 0.0 || lifetime_max <= 0.0 {
+        return 1;
+    }
+    let budget = (spawn_rate * lifetime_max).ceil() as u32 + 2;
+    budget.clamp(1, 1_000_000)
+}
+
+fn resolve_particle_sim_mode_2d(mode: ParticleEmitterSimMode2D) -> ParticleSimulationMode2D {
+    match mode {
+        ParticleEmitterSimMode2D::Default | ParticleEmitterSimMode2D::Cpu => {
+            ParticleSimulationMode2D::Cpu
+        }
+    }
+}
+
+fn resolve_particle_profile_2d(runtime: &mut Runtime, source: &str) -> Option<ParticleProfile2D> {
+    let source = source.trim();
+    if source.is_empty() {
+        return None;
+    }
+    if let Some(path) = runtime.render_2d.particle_path_cache.get(source) {
+        return Some(path.clone());
+    }
+    let parsed = if runtime.provider_mode() == crate::runtime_project::ProviderMode::Static {
+        if let Some(inline) = source.strip_prefix("inline://") {
+            parse_pparticle_source_2d(inline)?
+        } else if let Some(lookup) = runtime
+            .project()
+            .and_then(|project| project.static_particle_lookup)
+        {
+            let source_hash =
+                parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
+            particle_profile_2d_from_3d(lookup(source_hash))
+        } else {
+            let bytes = perro_io::load_asset(source).ok()?;
+            let text = std::str::from_utf8(&bytes).ok()?;
+            parse_pparticle_source_2d(text)?
+        }
+    } else if let Some(inline) = source.strip_prefix("inline://") {
+        parse_pparticle_source_2d(inline)?
+    } else {
+        let bytes = perro_io::load_asset(source).ok()?;
+        let text = std::str::from_utf8(&bytes).ok()?;
+        parse_pparticle_source_2d(text)?
+    };
+    if !runtime.render_2d.particle_path_cache.contains_key(source) {
+        while runtime.render_2d.particle_path_cache.len() >= PARTICLE_PATH_CACHE_MAX {
+            let Some(evict_key) = runtime.render_2d.particle_path_cache_order.pop_front() else {
+                break;
+            };
+            runtime
+                .render_2d
+                .particle_path_cache
+                .remove(evict_key.as_str());
+        }
+        runtime
+            .render_2d
+            .particle_path_cache_order
+            .push_back(source.to_string());
+    }
+    runtime
+        .render_2d
+        .particle_path_cache
+        .insert(source.to_string(), parsed.clone());
+    Some(parsed)
+}
+
+fn particle_profile_2d_from_3d(
+    profile: &perro_render_bridge::ParticleProfile3D,
+) -> ParticleProfile2D {
+    let path = match profile.path {
+        perro_render_bridge::ParticlePath3D::None => ParticlePath2D::None,
+        perro_render_bridge::ParticlePath3D::Ballistic => ParticlePath2D::Ballistic,
+        perro_render_bridge::ParticlePath3D::Spiral {
+            angular_velocity,
+            radius,
+        } => ParticlePath2D::Spiral {
+            angular_velocity,
+            radius,
+        },
+        perro_render_bridge::ParticlePath3D::NoiseDrift {
+            amplitude,
+            frequency,
+        } => ParticlePath2D::NoiseDrift {
+            amplitude,
+            frequency,
+        },
+        perro_render_bridge::ParticlePath3D::FlatDisk { radius } => {
+            ParticlePath2D::FlatDisk { radius }
+        }
+        perro_render_bridge::ParticlePath3D::OrbitY { .. }
+        | perro_render_bridge::ParticlePath3D::Custom { .. }
+        | perro_render_bridge::ParticlePath3D::CustomCompiled { .. } => ParticlePath2D::None,
+    };
+    ParticleProfile2D {
+        path,
+        expr_x_ops: profile.expr_x_ops.clone(),
+        expr_y_ops: profile.expr_y_ops.clone(),
+        lifetime_min: profile.lifetime_min,
+        lifetime_max: profile.lifetime_max,
+        speed_min: profile.speed_min,
+        speed_max: profile.speed_max,
+        spread_radians: profile.spread_radians,
+        size: profile.size,
+        size_min: profile.size_min,
+        size_max: profile.size_max,
+        force: [profile.force[0], profile.force[1]],
+        color_start: profile.color_start,
+        color_end: profile.color_end,
+        spin_angular_velocity: profile.spin_angular_velocity,
+    }
+}
+
+fn parse_pparticle_source_2d(source: &str) -> Option<ParticleProfile2D> {
+    let mut profile = ParticleProfile2D::default();
+    let mut preset: Option<String> = None;
+    let mut preset_param_a = 1.0f32;
+    let mut preset_param_b = 1.0f32;
+    let mut expr_x = String::from("0.0");
+    let mut expr_y = String::from("0.0");
+    let mut has_expr_x = false;
+    let mut has_expr_y = false;
+    for line in source.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') || line.starts_with("//") {
+            continue;
+        }
+        let (key, value) = line.split_once('=')?;
+        let key = key.trim().to_ascii_lowercase();
+        let value = value.trim();
+        match key.as_str() {
+            "preset" => preset = Some(value.to_ascii_lowercase()),
+            "preset_param_a" => {
+                preset_param_a = value.parse::<f32>().ok().unwrap_or(preset_param_a);
+            }
+            "preset_param_b" => {
+                preset_param_b = value.parse::<f32>().ok().unwrap_or(preset_param_b);
+            }
+            "x" => {
+                expr_x = value.to_string();
+                has_expr_x = true;
+            }
+            "y" => {
+                expr_y = value.to_string();
+                has_expr_y = true;
+            }
+            "force" => {
+                if let Some(v) = parse_vec2_or_vec3_literal_2d(value) {
+                    profile.force = v;
+                }
+            }
+            "force_x" => profile.force[0] = value.parse::<f32>().ok()?,
+            "force_y" => profile.force[1] = value.parse::<f32>().ok()?,
+            "lifetime_min" => {
+                profile.lifetime_min = value.parse::<f32>().ok().unwrap_or(profile.lifetime_min);
+            }
+            "lifetime_max" => {
+                profile.lifetime_max = value.parse::<f32>().ok().unwrap_or(profile.lifetime_max);
+            }
+            "speed_min" => {
+                profile.speed_min = value.parse::<f32>().ok().unwrap_or(profile.speed_min)
+            }
+            "speed_max" => {
+                profile.speed_max = value.parse::<f32>().ok().unwrap_or(profile.speed_max)
+            }
+            "spread_radians" => {
+                profile.spread_radians =
+                    value.parse::<f32>().ok().unwrap_or(profile.spread_radians);
+            }
+            "size" => profile.size = value.parse::<f32>().ok().unwrap_or(profile.size),
+            "size_min" => profile.size_min = value.parse::<f32>().ok().unwrap_or(profile.size_min),
+            "size_max" => profile.size_max = value.parse::<f32>().ok().unwrap_or(profile.size_max),
+            "color_start" => {
+                if let Some(v) = parse_vec4_literal_2d(value) {
+                    profile.color_start = v;
+                }
+            }
+            "color_end" => {
+                if let Some(v) = parse_vec4_literal_2d(value) {
+                    profile.color_end = v;
+                }
+            }
+            "spin" => {
+                profile.spin_angular_velocity = value
+                    .parse::<f32>()
+                    .ok()
+                    .unwrap_or(profile.spin_angular_velocity);
+            }
+            _ => {}
+        }
+    }
+    profile.path = match preset.as_deref() {
+        None => ParticlePath2D::None,
+        Some("ballistic") => ParticlePath2D::Ballistic,
+        Some("spiral") => ParticlePath2D::Spiral {
+            angular_velocity: preset_param_a,
+            radius: preset_param_b.abs(),
+        },
+        Some("noise_drift") => ParticlePath2D::NoiseDrift {
+            amplitude: preset_param_a.abs(),
+            frequency: preset_param_b.abs(),
+        },
+        Some("flat_disk") => ParticlePath2D::FlatDisk {
+            radius: preset_param_a.abs(),
+        },
+        Some("orbit_y") | Some(_) => ParticlePath2D::None,
+    };
+    if has_expr_x || has_expr_y {
+        profile.expr_x_ops = Some(Cow::Owned(compile_expression(&expr_x).ok()?.ops().to_vec()));
+        profile.expr_y_ops = Some(Cow::Owned(compile_expression(&expr_y).ok()?.ops().to_vec()));
+    }
+    Some(profile)
+}
+
+fn parse_vec2_or_vec3_literal_2d(raw: &str) -> Option<[f32; 2]> {
+    let raw = raw.trim();
+    let inner = raw.strip_prefix('(')?.strip_suffix(')')?;
+    let mut it = inner.split(',').map(|v| v.trim().parse::<f32>().ok());
+    Some([it.next()??, it.next()??])
+}
+
+fn parse_vec4_literal_2d(raw: &str) -> Option<[f32; 4]> {
+    let raw = raw.trim();
+    let inner = raw.strip_prefix('(')?.strip_suffix(')')?;
+    let mut it = inner.split(',').map(|v| v.trim().parse::<f32>().ok());
+    Some([it.next()??, it.next()??, it.next()??, it.next()??])
+}
+
+fn sprite_region_uv(region: Option<[f32; 4]>) -> ([f32; 2], [f32; 2], [f32; 2]) {
+    let Some([x, y, w, h]) = region else {
+        return ([0.0, 0.0], [1.0, 1.0], [0.0, 0.0]);
+    };
+    if !(x.is_finite() && y.is_finite() && w.is_finite() && h.is_finite()) || w <= 0.0 || h <= 0.0 {
+        return ([0.0, 0.0], [1.0, 1.0], [0.0, 0.0]);
+    }
+    ([x, y], [x + w, y + h], [w, h])
 }
 
 #[cfg(test)]

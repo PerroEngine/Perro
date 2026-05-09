@@ -1,8 +1,9 @@
 # Particle System Guide
 
-Perro exposes a flexible 3D particle system centered around:
+Perro exposes a flexible particle system centered around:
 
-- `ParticleEmitter3D` for spawning/controlling particles
+- `ParticleEmitter3D` for spawning/controlling 3D particles
+- `ParticleEmitter2D` for spawning/controlling 2D particles
 - `.ppart` profiles for per-particle mathematical behavior
 
 `.ppart` authoring details are documented here:
@@ -12,6 +13,7 @@ Perro exposes a flexible 3D particle system centered around:
 ## Overview
 
 Perro particles are math-driven. You author equations per particle (`x`, `y`, `z`) and combine them with presets and built-in variables/functions.
+`ParticleEmitter2D` reads `x` and `y`; `z`, `force_z`, `dir_z`, `vel_z`, and `emitter_z` do not affect 2D output.
 
 The emitter handles spawn orchestration:
 
@@ -43,7 +45,7 @@ You can pair render mode with any simulation mode; choose based on visual style 
 
 ## How Emitter + Profile Fit Together
 
-`ParticleEmitter3D` defines when/how many particles spawn.  
+`ParticleEmitter3D` / `ParticleEmitter2D` define when/how many particles spawn.
 `.ppart` defines what each particle does over its lifetime.
 
 That split keeps effects composable:

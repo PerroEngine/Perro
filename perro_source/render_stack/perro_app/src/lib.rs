@@ -4,7 +4,7 @@ use perro_input::{
     JoyConRumbleRequest, KeyCode, MouseButton, MouseMode, PlayerBinding, PlayerState,
 };
 use perro_render_bridge::RenderEvent;
-use perro_runtime::Runtime;
+use perro_runtime::{Runtime, WindowRequest};
 use std::sync::Arc;
 use std::time::Duration;
 use winit::window::Window;
@@ -235,6 +235,11 @@ impl<B: GraphicsBackend> App<B> {
     #[inline]
     pub fn take_cursor_icon_request(&mut self) -> Option<perro_ui::CursorIcon> {
         self.runtime.take_cursor_icon_request()
+    }
+
+    #[inline]
+    pub fn drain_window_requests(&mut self, out: &mut Vec<WindowRequest>) {
+        self.runtime.drain_window_requests(out);
     }
 
     #[inline]

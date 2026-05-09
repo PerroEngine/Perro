@@ -6,7 +6,7 @@ use perro_io::{decompress_zlib, load_asset};
 use perro_nodes::{
     CollisionShape2D, CollisionShape3D, SceneNodeData, Shape2D, Shape3D, Triangle2DKind,
 };
-use perro_runtime_context::sub_apis::{NodeAPI, SignalAPI};
+use perro_runtime_context::sub_apis::{NodeAPI, PhysicsRayHit3D, SignalAPI};
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use perro_variant::Variant;
 use rapier2d::{na as na2, prelude as r2};
@@ -431,6 +431,58 @@ impl Runtime {
 
     pub(crate) fn clear_physics(&mut self) {
         self.physics.clear();
+    }
+
+    pub fn physics_raycast_3d(
+        &mut self,
+        origin: Vector3,
+        direction: Vector3,
+        max_distance: f32,
+        include_areas: bool,
+    ) -> Option<PhysicsRayHit3D> {
+        if max_distance <= 0.0 || !max_distance.is_finite() {
+            return None;
+        }
+
+        let dir = na3::Vector3::new(direction.x, direction.y, direction.z);
+        let dir_len = dir.norm();
+        if dir_len <= 0.000_001 || !dir_len.is_finite() {
+            return None;
+        }
+        let dir = dir / dir_len;
+
+        self.propagate_pending_transform_dirty();
+        self.refresh_dirty_global_transforms();
+        let bodies_3d = self.collect_body_descs_3d();
+        self.sync_world_3d(&bodies_3d);
+
+        let world = self.physics.world_3d.as_ref()?;
+        let mut query = r3::QueryPipeline::new();
+        query.update(&world.colliders);
+
+        let ray = r3::Ray::new(na3::Point3::new(origin.x, origin.y, origin.z), dir);
+        let filter = if include_areas {
+            r3::QueryFilter::new()
+        } else {
+            r3::QueryFilter::new().exclude_sensors()
+        };
+        let (collider, hit) = query.cast_ray_and_get_normal(
+            &world.bodies,
+            &world.colliders,
+            &ray,
+            max_distance,
+            true,
+            filter,
+        )?;
+        let node = *world.collider_owners.get(&collider)?;
+        let point = ray.point_at(hit.time_of_impact);
+
+        Some(PhysicsRayHit3D {
+            node,
+            point: Vector3::new(point.x, point.y, point.z),
+            normal: Vector3::new(hit.normal.x, hit.normal.y, hit.normal.z),
+            distance: hit.time_of_impact,
+        })
     }
 
     fn collect_body_descs_2d(&mut self) -> Vec<BodyDesc2D> {
@@ -1997,6 +2049,9 @@ fn decode_pmesh_trimesh(bytes: &[u8], sx: f32, sy: f32, sz: f32) -> Option<TriMe
         return None;
     }
     let version = u32::from_le_bytes(bytes[5..9].try_into().ok()?);
+    if version == 8 {
+        return decode_render_pmesh_v8_trimesh(bytes, sx, sy, sz);
+    }
     if version != 6 && version != 7 {
         return None;
     }
@@ -2060,6 +2115,89 @@ fn decode_pmesh_trimesh(bytes: &[u8], sx: f32, sy: f32, sz: f32) -> Option<TriMe
         triangles.push([ia, ib, ic]);
     }
 
+    if vertices.len() < 3 || triangles.is_empty() {
+        return None;
+    }
+    Some((vertices, triangles))
+}
+
+fn decode_render_pmesh_v8_trimesh(bytes: &[u8], sx: f32, sy: f32, sz: f32) -> Option<TriMeshData> {
+    if bytes.len() < 37 {
+        return None;
+    }
+    let flags = u32::from_le_bytes(bytes[9..13].try_into().ok()?);
+    let vertex_count = u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize;
+    let index_count = u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize;
+    let surface_count = u32::from_le_bytes(bytes[21..25].try_into().ok()?) as usize;
+    let meshlet_count = u32::from_le_bytes(bytes[25..29].try_into().ok()?) as usize;
+    let lod_count = u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize;
+    let raw_len = u32::from_le_bytes(bytes[33..37].try_into().ok()?) as usize;
+    let raw = decode_pmesh_payload(flags, &bytes[37..])?;
+    if raw.len() != raw_len {
+        return None;
+    }
+    let has_normal = (flags & (1 << 0)) != 0;
+    let has_uv0 = (flags & (1 << 1)) != 0;
+    let has_joints = (flags & (1 << 2)) != 0;
+    let has_weights = (flags & (1 << 3)) != 0;
+    let stride = 12
+        + if has_normal { 12 } else { 0 }
+        + if has_uv0 { 8 } else { 0 }
+        + if has_joints { 8 } else { 0 }
+        + if has_weights { 16 } else { 0 };
+    let vertex_bytes = vertex_count.checked_mul(stride)?;
+    let index_bytes = index_count.checked_mul(4)?;
+    let surface_bytes = surface_count.checked_mul(8)?;
+    let meshlet_bytes = meshlet_count.checked_mul(24)?;
+    let lod_start = vertex_bytes
+        .checked_add(index_bytes)?
+        .checked_add(surface_bytes)?
+        .checked_add(meshlet_bytes)?;
+    if raw.len() < lod_start {
+        return None;
+    }
+    let (lod_index_start, lod_index_count) = if lod_count > 0 && raw.len() >= lod_start + 24 {
+        (
+            u32::from_le_bytes(raw[lod_start..lod_start + 4].try_into().ok()?) as usize,
+            u32::from_le_bytes(raw[lod_start + 4..lod_start + 8].try_into().ok()?) as usize,
+        )
+    } else {
+        (0, index_count)
+    };
+    let mut vertices = Vec::with_capacity(vertex_count);
+    for i in 0..vertex_count {
+        let off = i * stride;
+        vertices.push(na3::Point3::new(
+            f32::from_le_bytes(raw[off..off + 4].try_into().ok()?) * sx,
+            f32::from_le_bytes(raw[off + 4..off + 8].try_into().ok()?) * sy,
+            f32::from_le_bytes(raw[off + 8..off + 12].try_into().ok()?) * sz,
+        ));
+    }
+    let index_start = vertex_bytes + lod_index_start.saturating_mul(4);
+    let index_end = index_start
+        .saturating_add(lod_index_count.saturating_mul(4))
+        .min(vertex_bytes + index_bytes);
+    let mut triangles = Vec::new();
+    for off in (index_start..index_end).step_by(12) {
+        if off + 12 > raw.len() {
+            break;
+        }
+        let ia = u32::from_le_bytes(raw[off..off + 4].try_into().ok()?);
+        let ib = u32::from_le_bytes(raw[off + 4..off + 8].try_into().ok()?);
+        let ic = u32::from_le_bytes(raw[off + 8..off + 12].try_into().ok()?);
+        let a = ia as usize;
+        let b = ib as usize;
+        let c = ic as usize;
+        if a < vertices.len()
+            && b < vertices.len()
+            && c < vertices.len()
+            && a != b
+            && b != c
+            && a != c
+        {
+            triangles.push([ia, ib, ic]);
+        }
+    }
     if vertices.len() < 3 || triangles.is_empty() {
         return None;
     }
@@ -2550,4 +2688,75 @@ fn transform_to_iso3(transform: Transform3D) -> na3::Isometry3<f32> {
         ),
         rotation,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use perro_nodes::{Area3D, CollisionShape3D, StaticBody3D};
+
+    #[test]
+    fn physics_raycast_3d_hits_static_body() {
+        let mut runtime = Runtime::new();
+        let body = NodeAPI::create::<StaticBody3D>(&mut runtime);
+        let shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+        assert!(NodeAPI::reparent(&mut runtime, body, shape));
+
+        let hit = runtime
+            .physics_raycast_3d(
+                Vector3::new(0.0, 0.0, -5.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                10.0,
+                false,
+            )
+            .expect("ray should hit cube");
+
+        assert_eq!(hit.node, body);
+        assert!((hit.distance - 4.5).abs() < 0.001);
+        assert!((hit.point.z + 0.5).abs() < 0.001);
+        assert!(hit.normal.z < -0.9);
+    }
+
+    #[test]
+    fn physics_raycast_3d_hits_area_with_collision_shape() {
+        let mut runtime = Runtime::new();
+
+        let static_body = NodeAPI::create::<StaticBody3D>(&mut runtime);
+        let static_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+        assert!(NodeAPI::reparent(&mut runtime, static_body, static_shape));
+
+        let area = NodeAPI::create::<Area3D>(&mut runtime);
+        let area_shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+        assert!(NodeAPI::reparent(&mut runtime, area, area_shape));
+        let _ = <Runtime as NodeAPI>::set_global_transform_3d(
+            &mut runtime,
+            area,
+            Transform3D::new(
+                Vector3::new(0.0, 0.0, -2.0),
+                Quaternion::IDENTITY,
+                Vector3::ONE,
+            ),
+        );
+
+        let area_hit = runtime
+            .physics_raycast_3d(
+                Vector3::new(0.0, 0.0, -5.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                10.0,
+                true,
+            )
+            .expect("ray should hit area first");
+        assert_eq!(area_hit.node, area);
+        assert!((area_hit.distance - 2.5).abs() < 0.001);
+
+        let no_area_hit = runtime
+            .physics_raycast_3d(
+                Vector3::new(0.0, 0.0, -5.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                10.0,
+                false,
+            )
+            .expect("ray should skip area and hit static body");
+        assert_eq!(no_area_hit.node, static_body);
+    }
 }

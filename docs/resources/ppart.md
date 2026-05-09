@@ -1,6 +1,6 @@
 # `.ppart` Format
 
-`*.ppart` is a **Perro Particle** resource and defines mathematical per-particle profile behavior used by `ParticleEmitter3D`.
+`*.ppart` is a **Perro Particle** resource and defines mathematical per-particle profile behavior used by `ParticleEmitter3D` and `ParticleEmitter2D`.
 
 For full emitter + runtime behavior, read [Particle System Guide](../particles.md).
 
@@ -11,7 +11,55 @@ For full emitter + runtime behavior, read [Particle System Guide](../particles.m
     profile = "res://particles/fire_spiral.ppart"
     params = (3.0, 2.0, 8.0, 0.0)
 [/ParticleEmitter3D]
+
+[ParticleEmitter2D]
+    profile = "res://particles/fire_2d.ppart"
+[/ParticleEmitter2D]
 ```
+
+## Example
+
+Create `res://particles/fire_spiral.ppart`:
+
+```txt
+preset = spiral
+preset_param_a = 10.0
+preset_param_b = 0.35
+lifetime_min = 0.45
+lifetime_max = 1.1
+speed_min = 1.0
+speed_max = 2.8
+spread_radians = 0.55
+size = 7.0
+size_min = 0.5
+size_max = 1.4
+force = (0.0, 2.5, 0.0)
+color_start = (1.0, 0.45, 0.08, 1.0)
+color_end = (0.25, 0.02, 0.0, 0.0)
+emissive = (1.0, 0.25, 0.05)
+spin = 8.0
+x = sin(life * 12.0 + rand * tau) * 0.08
+y = t * params[0]
+z = cos(life * 12.0 + rand * tau) * 0.08
+```
+
+Use it from a scene:
+
+```scn
+[ParticleEmitter3D]
+    active = true
+    looping = true
+    prewarm = true
+    spawn_rate = 180.0
+    seed = 41
+    sim_mode = "gpu"
+    render_mode = "billboard"
+    profile = "res://particles/fire_spiral.ppart"
+    params = (1.8, 0.0, 0.0, 0.0)
+[/ParticleEmitter3D]
+```
+
+This profile uses `params[0]` as extra upward drift, so each emitter can reuse the same `.ppart` with a different flame height.
 
 ## Keys
 
@@ -83,6 +131,9 @@ Preset mappings:
 
 ## Expressions
 
+For `ParticleEmitter2D`, only `x` and `y` are read from custom expressions.
+`z`, `force_z`, `dir_z`, `vel_z`, and `emitter_z` are ignored by 2D particle output.
+
 Operators:
 
 - `+`, `-`, `*`, `/`, `^`, unary `-`
@@ -109,5 +160,6 @@ Constants/inputs:
 - `vel_x`, `vel_y`, `vel_z`: initial velocity components (`dir * speed`).
 - `rand`, `rand2`, `rand3`: three stable random channels in `[0,1]` per particle.
 - `seed`: stable per-particle seed-derived value.
+
 - `ring_u`: stable low-discrepancy scalar in `[0,1)`, useful for ring/circle layouts.
 - `emitter_x`, `emitter_y`, `emitter_z`: emitter world position components.

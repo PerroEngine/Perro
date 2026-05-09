@@ -23,6 +23,20 @@ impl TimeAPI for DummyRuntime {
     }
 }
 
+impl WindowAPI for DummyRuntime {
+    fn set_window_title(&mut self, title: impl Into<String>) {
+        self.state = Box::new(title.into());
+    }
+
+    fn set_window_size(&mut self, width: u32, height: u32) {
+        self.state = Box::new((width, height));
+    }
+
+    fn set_window_mode(&mut self, mode: WindowMode) {
+        self.state = Box::new(mode);
+    }
+}
+
 impl NodeAPI for DummyRuntime {
     fn create<T>(&mut self) -> NodeID
     where
@@ -399,6 +413,16 @@ impl PhysicsAPI for DummyRuntime {
         true
     }
 
+    fn raycast_3d(
+        &mut self,
+        _origin: Vector3,
+        _direction: Vector3,
+        _max_distance: f32,
+        _include_areas: bool,
+    ) -> Option<crate::sub_apis::PhysicsRayHit3D> {
+        None
+    }
+
     fn physics_pause(&mut self, _paused: bool) {}
 
     fn physics_is_paused(&mut self) -> bool {
@@ -714,6 +738,33 @@ fn script_macros_typecheck_and_forward() {
     assert!(apply_force!(&mut ctx, id, Vector3::new(0.0, 3.5, 0.0)));
     assert!(apply_impulse!(&mut ctx, id, Vector2::new(0.0, 1.25)));
     assert!(apply_impulse!(&mut ctx, id, Vector3::new(2.75, 0.0, 0.0)));
+    assert_eq!(
+        physics_raycast_3d!(
+            &mut ctx,
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, -1.0, 0.0),
+            100.0
+        ),
+        None
+    );
+    assert_eq!(
+        physics_raycast_3d_with_areas!(
+            &mut ctx,
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, -1.0, 0.0),
+            100.0
+        ),
+        None
+    );
+    assert_eq!(
+        physics_raycast_3d_without_areas!(
+            &mut ctx,
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, -1.0, 0.0),
+            100.0
+        ),
+        None
+    );
     physics_pause!(&mut ctx, true);
     assert!(!physics_is_paused!(&mut ctx));
     assert!(!script_attach!(&mut ctx, id, "res://scripts/a.rs"));

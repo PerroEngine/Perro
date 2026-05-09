@@ -2,7 +2,11 @@ use crate::resources::ResourceStore;
 use ahash::AHashMap;
 use bytemuck::{Pod, Zeroable};
 use perro_ids::NodeID;
-use perro_render_bridge::{Camera2DState, DrawShape2DCommand, Rect2DCommand, Sprite2DCommand};
+use perro_particle_math::{ParticleEvalInput, eval_ops_particle};
+use perro_render_bridge::{
+    Camera2DState, DrawShape2DCommand, ParticlePath2D, PointParticles2DState, Rect2DCommand,
+    Sprite2DCommand,
+};
 use perro_structs::DrawShape2D;
 use std::ops::Range;
 
@@ -70,8 +74,10 @@ pub struct Renderer2D {
     rect_dirty_ranges: Vec<Range<usize>>,
     rect_structure_dirty: bool,
     retained_sprites: AHashMap<NodeID, Sprite2DCommand>,
+    retained_point_particles: AHashMap<NodeID, PointParticles2DState>,
     retained_sprites_revision: u64,
     frame_shapes: Vec<RectInstanceGpu>,
+    particle_eval_stack: Vec<f32>,
 }
 
 impl Renderer2D {
@@ -89,8 +95,10 @@ impl Renderer2D {
             rect_dirty_ranges: Vec::new(),
             rect_structure_dirty: false,
             retained_sprites: AHashMap::new(),
+            retained_point_particles: AHashMap::new(),
             retained_sprites_revision: 0,
             frame_shapes: Vec::new(),
+            particle_eval_stack: Vec::new(),
         }
     }
 
@@ -138,8 +146,13 @@ impl Renderer2D {
         self.queued_shapes.push(draw);
     }
 
+    pub fn queue_point_particles(&mut self, node: NodeID, particles: PointParticles2DState) {
+        self.retained_point_particles.insert(node, particles);
+    }
+
     pub fn remove_node(&mut self, node: NodeID) {
         self.remove_retained_rect(node);
+        self.retained_point_particles.remove(&node);
         if self.retained_sprites.remove(&node).is_some() {
             self.retained_sprites_revision = self.retained_sprites_revision.wrapping_add(1);
         }
@@ -236,6 +249,22 @@ impl Renderer2D {
                     });
                 }
             }
+        }
+        self.flush_point_particles();
+    }
+
+    fn flush_point_particles(&mut self) {
+        let particles = self
+            .retained_point_particles
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        for emitter in particles {
+            append_point_particles(
+                &mut self.frame_shapes,
+                &mut self.particle_eval_stack,
+                &emitter,
+            );
         }
     }
 
@@ -348,7 +377,16 @@ impl Renderer2D {
     }
 
     fn build_upload_plan(&mut self) -> RectUploadPlan {
-        let draw_count = self.retained_rects.len();
+        let draw_count = self.retained_rects.len() + self.frame_shapes.len();
+        if !self.frame_shapes.is_empty() {
+            self.rect_structure_dirty = false;
+            self.rect_dirty_ranges.clear();
+            return RectUploadPlan {
+                full_reupload: true,
+                dirty_ranges: Vec::new(),
+                draw_count,
+            };
+        }
         if self.rect_structure_dirty {
             self.rect_structure_dirty = false;
             self.rect_dirty_ranges.clear();
@@ -442,6 +480,179 @@ fn normalized_screen_to_virtual_centered(pos: [f32; 2], virtual_size: [f32; 2]) 
     // Position is normalized screen-space: (0.5, 0.5) is the center.
     // X grows right, Y grows upward.
     [(pos[0] - 0.5) * vx, (pos[1] - 0.5) * vy]
+}
+
+fn append_point_particles(
+    out: &mut Vec<RectInstanceGpu>,
+    stack: &mut Vec<f32>,
+    emitter: &PointParticles2DState,
+) {
+    if !emitter.active || emitter.alive_budget == 0 || emitter.emission_rate <= 0.0 {
+        return;
+    }
+    let lifetime_min = emitter.lifetime_min.max(0.001);
+    let lifetime_max = emitter.lifetime_max.max(lifetime_min);
+    let period = (emitter.alive_budget as f32 / emitter.emission_rate.max(0.001)).max(lifetime_max);
+    let sim_time = if emitter.prewarm {
+        emitter.simulation_time + lifetime_max
+    } else {
+        emitter.simulation_time
+    };
+
+    for i in 0..emitter.alive_budget {
+        let base_spawn = i as f32 / emitter.emission_rate.max(0.001);
+        let spawn_time = if emitter.looping && sim_time >= base_spawn {
+            let cycles = ((sim_time - base_spawn) / period).floor();
+            base_spawn + cycles * period
+        } else {
+            base_spawn
+        };
+        let life = sim_time - spawn_time;
+        if life < 0.0 || life > lifetime_max {
+            continue;
+        }
+
+        let h0 = hash01(emitter.seed ^ i);
+        let h1 = hash01(emitter.seed.wrapping_add(0x9E37_79B9) ^ i.wrapping_mul(3));
+        let h2 = hash01(emitter.seed.wrapping_add(0x7F4A_7C15) ^ i.wrapping_mul(7));
+        let h3 = hash01(emitter.seed.wrapping_add(0x94D0_49BB) ^ i.wrapping_mul(11));
+        let lifetime = lifetime_min + (lifetime_max - lifetime_min) * h0;
+        if life > lifetime {
+            continue;
+        }
+        let t = (life / lifetime).clamp(0.0, 1.0);
+        let speed = emitter.speed_min + (emitter.speed_max - emitter.speed_min) * h1;
+        let angle = (h2 - 0.5) * emitter.spread_radians;
+        let dir = [angle.sin(), angle.cos(), 0.0];
+        let vel = [dir[0] * speed, dir[1] * speed, 0.0];
+        let mut local = eval_particle_pos_2d(
+            emitter,
+            stack,
+            i,
+            t,
+            life,
+            lifetime,
+            spawn_time,
+            speed,
+            dir,
+            vel,
+            [h0, h1, h2],
+            h3,
+        );
+        local[0] += 0.5 * emitter.force[0] * life * life;
+        local[1] += 0.5 * emitter.force[1] * life * life;
+
+        let world = transform_point_2d(emitter.model, local);
+        let size = (emitter.size * (emitter.size_min + (emitter.size_max - emitter.size_min) * h3))
+            .max(1.0);
+        let color = lerp_color(emitter.color_start, emitter.color_end, t);
+        if !world[0].is_finite() || !world[1].is_finite() || !size.is_finite() {
+            continue;
+        }
+        out.push(RectInstanceGpu {
+            center: world,
+            size: [size, size],
+            color: color_to_unorm8(color),
+            z_index: emitter.z_index,
+            shape_kind: 1,
+            thickness: 1.0,
+            filled: 1,
+        });
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn eval_particle_pos_2d(
+    emitter: &PointParticles2DState,
+    stack: &mut Vec<f32>,
+    particle_key: u32,
+    t: f32,
+    life: f32,
+    lifetime: f32,
+    spawn_time: f32,
+    speed: f32,
+    dir: [f32; 3],
+    vel: [f32; 3],
+    rand: [f32; 3],
+    ring_u: f32,
+) -> [f32; 2] {
+    if let (Some(x_ops), Some(y_ops)) = (
+        emitter.profile.expr_x_ops.as_ref(),
+        emitter.profile.expr_y_ops.as_ref(),
+    ) {
+        let input = ParticleEvalInput {
+            t,
+            life,
+            lifetime,
+            spawn_time,
+            emitter_time: emitter.simulation_time,
+            speed,
+            particle_id: particle_key as f32,
+            dir,
+            vel,
+            rand,
+            seed: particle_key as f32,
+            ring_u,
+            index01: particle_key as f32 / emitter.alive_budget.max(1) as f32,
+            emitter_pos: [emitter.model[2][0], emitter.model[2][1], 0.0],
+            prev_pos: [0.0, 0.0, 0.0],
+            params: &emitter.params,
+        };
+        return [
+            eval_ops_particle(x_ops, &input, stack).unwrap_or(0.0),
+            eval_ops_particle(y_ops, &input, stack).unwrap_or(0.0),
+        ];
+    }
+
+    match emitter.profile.path {
+        ParticlePath2D::None => [0.0, 0.0],
+        ParticlePath2D::Ballistic => [vel[0] * life, vel[1] * life],
+        ParticlePath2D::Spiral {
+            angular_velocity,
+            radius,
+        } => {
+            let a = angular_velocity * life + ring_u * std::f32::consts::TAU;
+            [a.cos() * radius * t, a.sin() * radius * t]
+        }
+        ParticlePath2D::NoiseDrift {
+            amplitude,
+            frequency,
+        } => [
+            (life * frequency + rand[0] * 10.0).sin() * amplitude,
+            vel[1] * life + (life * frequency + rand[1] * 10.0).cos() * amplitude,
+        ],
+        ParticlePath2D::FlatDisk { radius } => {
+            let a = ring_u * std::f32::consts::TAU;
+            [a.cos() * radius * rand[0], a.sin() * radius * rand[0]]
+        }
+        ParticlePath2D::Custom { .. } | ParticlePath2D::CustomCompiled { .. } => [0.0, 0.0],
+    }
+}
+
+fn transform_point_2d(model: [[f32; 3]; 3], p: [f32; 2]) -> [f32; 2] {
+    [
+        model[0][0] * p[0] + model[1][0] * p[1] + model[2][0],
+        model[0][1] * p[0] + model[1][1] * p[1] + model[2][1],
+    ]
+}
+
+fn lerp_color(a: [f32; 4], b: [f32; 4], t: f32) -> [f32; 4] {
+    [
+        a[0] + (b[0] - a[0]) * t,
+        a[1] + (b[1] - a[1]) * t,
+        a[2] + (b[2] - a[2]) * t,
+        a[3] + (b[3] - a[3]) * t,
+    ]
+}
+
+fn hash01(seed: u32) -> f32 {
+    let mut x = seed.wrapping_add(0x9E37_79B9);
+    x ^= x >> 16;
+    x = x.wrapping_mul(0x7FEB_352D);
+    x ^= x >> 15;
+    x = x.wrapping_mul(0x846C_A68B);
+    x ^= x >> 16;
+    (x as f32) * (1.0 / u32::MAX as f32)
 }
 
 #[inline]

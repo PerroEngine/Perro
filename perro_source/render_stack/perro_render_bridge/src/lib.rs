@@ -1,5 +1,6 @@
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 pub use perro_particle_math::Op as ParticleExprOp3D;
+pub use perro_particle_math::Op as ParticleExprOp2D;
 use perro_structs::{ColorBlindFilter, DrawShape2D, PostProcessEffect, PostProcessSet};
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -108,6 +109,19 @@ pub enum UiCommand {
         h_align: UiTextAlignState,
         v_align: UiTextAlignState,
     },
+    UpsertImage {
+        node: NodeID,
+        rect: UiRectState,
+        clip_rect: [f32; 4],
+        texture: TextureID,
+        tint: [f32; 4],
+        uv_min: [f32; 2],
+        uv_max: [f32; 2],
+        scale_mode: UiImageScaleState,
+        h_align: UiTextAlignState,
+        v_align: UiTextAlignState,
+        aspect_ratio: f32,
+    },
     UpsertTextEdit {
         node: NodeID,
         rect: UiRectState,
@@ -144,6 +158,14 @@ pub enum UiTextAlignState {
     Start,
     Center,
     End,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum UiImageScaleState {
+    #[default]
+    Stretch,
+    Fit,
+    Cover,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -270,11 +292,41 @@ pub enum ParticlePath3D {
     },
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ParticlePath2D {
+    None,
+    Ballistic,
+    Spiral {
+        angular_velocity: f32,
+        radius: f32,
+    },
+    NoiseDrift {
+        amplitude: f32,
+        frequency: f32,
+    },
+    FlatDisk {
+        radius: f32,
+    },
+    Custom {
+        expr_x: Cow<'static, str>,
+        expr_y: Cow<'static, str>,
+    },
+    CustomCompiled {
+        expr_x_ops: Cow<'static, [ParticleExprOp2D]>,
+        expr_y_ops: Cow<'static, [ParticleExprOp2D]>,
+    },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParticleSimulationMode3D {
     Cpu,
     GpuVertex,
     GpuCompute,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParticleSimulationMode2D {
+    Cpu,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -329,6 +381,47 @@ impl Default for ParticleProfile3D {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct ParticleProfile2D {
+    pub path: ParticlePath2D,
+    pub expr_x_ops: Option<Cow<'static, [ParticleExprOp2D]>>,
+    pub expr_y_ops: Option<Cow<'static, [ParticleExprOp2D]>>,
+    pub lifetime_min: f32,
+    pub lifetime_max: f32,
+    pub speed_min: f32,
+    pub speed_max: f32,
+    pub spread_radians: f32,
+    pub size: f32,
+    pub size_min: f32,
+    pub size_max: f32,
+    pub force: [f32; 2],
+    pub color_start: [f32; 4],
+    pub color_end: [f32; 4],
+    pub spin_angular_velocity: f32,
+}
+
+impl Default for ParticleProfile2D {
+    fn default() -> Self {
+        Self {
+            path: ParticlePath2D::None,
+            expr_x_ops: None,
+            expr_y_ops: None,
+            lifetime_min: 0.6,
+            lifetime_max: 1.4,
+            speed_min: 1.0,
+            speed_max: 3.0,
+            spread_radians: std::f32::consts::FRAC_PI_3,
+            size: 6.0,
+            size_min: 0.65,
+            size_max: 1.35,
+            force: [0.0, 0.0],
+            color_start: [1.0, 1.0, 1.0, 1.0],
+            color_end: [1.0, 0.4, 0.1, 0.0],
+            spin_angular_velocity: 0.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct PointParticles3DState {
     pub model: [[f32; 4]; 4],
     pub active: bool,
@@ -355,6 +448,34 @@ pub struct PointParticles3DState {
     pub profile: ParticleProfile3D,
     pub sim_mode: ParticleSimulationMode3D,
     pub render_mode: ParticleRenderMode3D,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PointParticles2DState {
+    pub model: [[f32; 3]; 3],
+    pub z_index: i32,
+    pub active: bool,
+    pub looping: bool,
+    pub prewarm: bool,
+    pub alive_budget: u32,
+    pub emission_rate: f32,
+    pub lifetime_min: f32,
+    pub lifetime_max: f32,
+    pub speed_min: f32,
+    pub speed_max: f32,
+    pub spread_radians: f32,
+    pub size: f32,
+    pub size_min: f32,
+    pub size_max: f32,
+    pub force: [f32; 2],
+    pub color_start: [f32; 4],
+    pub color_end: [f32; 4],
+    pub seed: u32,
+    pub params: Vec<f32>,
+    pub simulation_time: f32,
+    pub simulation_delta: f32,
+    pub profile: ParticleProfile2D,
+    pub sim_mode: ParticleSimulationMode2D,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -641,7 +762,24 @@ pub struct Sprite2DCommand {
     pub texture: TextureID,
     pub model: [[f32; 3]; 3],
     pub tint: [f32; 4],
+    pub uv_min: [f32; 2],
+    pub uv_max: [f32; 2],
+    pub size: [f32; 2],
     pub z_index: i32,
+}
+
+impl Default for Sprite2DCommand {
+    fn default() -> Self {
+        Self {
+            texture: TextureID::nil(),
+            model: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            tint: [1.0, 1.0, 1.0, 1.0],
+            uv_min: [0.0, 0.0],
+            uv_max: [0.0, 0.0],
+            size: [0.0, 0.0],
+            z_index: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -757,6 +895,10 @@ pub enum Command2D {
     UpsertRect {
         node: NodeID,
         rect: Rect2DCommand,
+    },
+    UpsertPointParticles {
+        node: NodeID,
+        particles: Box<PointParticles2DState>,
     },
     RemoveNode {
         node: NodeID,

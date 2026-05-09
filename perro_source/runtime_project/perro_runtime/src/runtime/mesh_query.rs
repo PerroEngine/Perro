@@ -1554,7 +1554,7 @@ fn decode_pmesh_query(bytes: &[u8]) -> Option<QueryMeshData> {
         return None;
     }
     let version = u32::from_le_bytes(bytes[5..9].try_into().ok()?);
-    if version != 6 {
+    if !matches!(version, 6 | 8) {
         return None;
     }
 
@@ -1562,8 +1562,23 @@ fn decode_pmesh_query(bytes: &[u8]) -> Option<QueryMeshData> {
     let vertex_count = u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize;
     let index_count = u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize;
     let surface_count = u32::from_le_bytes(bytes[21..25].try_into().ok()?) as usize;
-    let raw_len = u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize;
-    let payload_start = 33usize;
+    let meshlet_count = u32::from_le_bytes(bytes[25..29].try_into().ok()?) as usize;
+    let (lod_count, raw_len, payload_start) = if version == 8 {
+        if bytes.len() < 37 {
+            return None;
+        }
+        (
+            u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize,
+            u32::from_le_bytes(bytes[33..37].try_into().ok()?) as usize,
+            37usize,
+        )
+    } else {
+        (
+            0,
+            u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize,
+            33usize,
+        )
+    };
 
     let raw = decode_pmesh_payload(flags, &bytes[payload_start..])?;
     if raw.len() != raw_len {
@@ -1583,6 +1598,8 @@ fn decode_pmesh_query(bytes: &[u8]) -> Option<QueryMeshData> {
     let vertex_bytes = vertex_count.checked_mul(vertex_stride)?;
     let index_bytes = index_count.checked_mul(4)?;
     let surface_bytes = surface_count.checked_mul(8)?;
+    let meshlet_bytes = meshlet_count.checked_mul(24)?;
+    let lod_bytes = lod_count.checked_mul(24)?;
     if raw.len() < vertex_bytes + index_bytes + surface_bytes {
         return None;
     }
@@ -1613,6 +1630,25 @@ fn decode_pmesh_query(bytes: &[u8]) -> Option<QueryMeshData> {
     }
     if surface_ranges.is_empty() {
         surface_ranges.push((0, indices.len()));
+    }
+    if version == 8 && lod_count > 0 {
+        let lod_start = vertex_bytes
+            .checked_add(index_bytes)?
+            .checked_add(surface_bytes)?
+            .checked_add(meshlet_bytes)?;
+        if raw.len() < lod_start.checked_add(lod_bytes)? || lod_start + 16 > raw.len() {
+            return None;
+        }
+        let lod_surface_start =
+            u32::from_le_bytes(raw[lod_start + 8..lod_start + 12].try_into().ok()?) as usize;
+        let lod_surface_count =
+            u32::from_le_bytes(raw[lod_start + 12..lod_start + 16].try_into().ok()?) as usize;
+        let lod_surface_end = lod_surface_start
+            .saturating_add(lod_surface_count)
+            .min(surface_ranges.len());
+        if lod_surface_start < lod_surface_end {
+            surface_ranges = surface_ranges[lod_surface_start..lod_surface_end].to_vec();
+        }
     }
 
     let mut triangles = Vec::new();

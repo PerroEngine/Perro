@@ -14,6 +14,8 @@ use perro_nodes::{
     multi_mesh_instance_3d::MultiMeshInstance3D,
     node_2d::Node2D,
     node_3d::Node3D,
+    particle_emitter_2d::ParticleEmitter2D,
+    particle_emitter_2d::ParticleEmitterSimMode2D,
     particle_emitter_3d::ParticleEmitter3D,
     particle_emitter_3d::{ParticleEmitterSimMode3D, ParticleType},
     physics_bone_chain_3d::PhysicsBoneChain3D,
@@ -22,19 +24,20 @@ use perro_nodes::{
     skeleton_3d::Skeleton3D,
     sky_3d::{Sky3D, SkyStyle},
     spot_light_3d::SpotLight3D,
-    sprite_2d::Sprite2D,
+    sprite_2d::{AnimatedSprite, AnimatedSprite2D, Sprite2D},
     Area2D, Area3D, CollisionShape2D, CollisionShape3D, RigidBody2D, RigidBody3D, SceneNode,
     SceneNodeData, Shape2D, Shape3D, StaticBody2D, StaticBody3D, Triangle2DKind,
 };
 use perro_render_bridge::Material3D;
 use perro_scene::{
-    AnimationPlayerField, AnimationTreeField, Area2DField, Area3DField, BoneAttachment3DField,
+    AnimatedSprite2DField, AnimationPlayerField, AnimationTreeField, Area2DField, Area3DField, BoneAttachment3DField,
     BoneCollider3DField, Camera2DField, Camera3DField, CollisionShape2DField, CollisionShape3DField, IKTarget3DField, Light3DField,
-    MeshInstance3DField, Node2DField, Node3DField, NodeField, Parser, ParticleEmitter3DField,
+    MeshInstance3DField, Node2DField, Node3DField, NodeField, Parser, ParticleEmitter2DField,
+    ParticleEmitter3DField,
     PhysicsBoneChain3DField, PointLight3DField, RayLight3DField, RigidBody2DField, RigidBody3DField, Scene,
     SceneFieldIterRef, SceneKey, SceneNodeData as SceneDefNodeData,
     SceneNodeEntry as SceneDefNodeEntry, SceneObjectField, SceneValue, Skeleton3DField,
-    Sky3DField, SpotLight3DField, Sprite2DField, StaticBody2DField, StaticBody3DField,
+    Sky3DField, SpotLight3DField, Sprite2DField, StaticBody2DField, StaticBody3DField, UiImageField,
     resolve_node_field,
 };
 use perro_structs::{
@@ -42,8 +45,9 @@ use perro_structs::{
     Vector2, Vector3,
 };
 use perro_ui::{
-    UiBox, UiButton, UiGrid, UiHLayout, UiLabel, UiLayout, UiMouseFilter, UiPanel, UiTextAlign,
-    UiTextBlock, UiTextBox, UiTreeList, UiVLayout,
+    UiBox, UiButton, UiGrid, UiHLayout, UiImage, UiImageScaleMode, UiLabel, UiLayout,
+    UiMouseFilter, UiPanel, UiScrollContainer, UiTextAlign, UiTextBlock, UiTextBox, UiTreeList,
+    UiVLayout,
 };
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -737,6 +741,10 @@ fn scene_node_data_from(data: &SceneDefNodeData) -> Result<SceneNodeData, String
         "Node" => Ok(SceneNodeData::Node),
         "Node2D" => Ok(SceneNodeData::Node2D(build_node_2d(data))),
         "Sprite2D" => Ok(SceneNodeData::Sprite2D(build_sprite_2d(data))),
+        "AnimatedSprite2D" => Ok(SceneNodeData::AnimatedSprite2D(build_animated_sprite_2d(data))),
+        "ParticleEmitter2D" => Ok(SceneNodeData::ParticleEmitter2D(build_particle_emitter_2d(
+            data,
+        ))),
         "Camera2D" => Ok(SceneNodeData::Camera2D(build_camera_2d(data))),
         "CollisionShape2D" => Ok(SceneNodeData::CollisionShape2D(build_collision_shape_2d(
             data,
@@ -778,9 +786,13 @@ fn scene_node_data_from(data: &SceneDefNodeData) -> Result<SceneNodeData, String
         "UiBox" => Ok(SceneNodeData::UiBox(build_ui_box(data))),
         "UiPanel" => Ok(SceneNodeData::UiPanel(build_ui_panel(data))),
         "UiButton" => Ok(SceneNodeData::UiButton(build_ui_button(data))),
+        "UiImage" => Ok(SceneNodeData::UiImage(build_ui_image(data))),
         "UiLabel" => Ok(SceneNodeData::UiLabel(build_ui_label(data))),
         "UiTextBox" => Ok(SceneNodeData::UiTextBox(build_ui_text_box(data))),
         "UiTextBlock" => Ok(SceneNodeData::UiTextBlock(build_ui_text_block(data))),
+        "UiScrollContainer" | "UiScroll" => {
+            Ok(SceneNodeData::UiScrollContainer(build_ui_scroll_container(data)))
+        }
         "UiLayout" => Ok(SceneNodeData::UiLayout(build_ui_layout(data))),
         "UiHLayout" | "UiHBox" => Ok(SceneNodeData::UiHLayout(build_ui_hlayout(data))),
         "UiVLayout" | "UiVBox" => Ok(SceneNodeData::UiVLayout(build_ui_vlayout(data))),

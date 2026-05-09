@@ -333,6 +333,7 @@ fn emit_static_node_type(ty: &str) -> Result<&'static str, StaticPipelineError> 
         "RayLight3D" => Ok("RayLight3D"),
         "PointLight3D" => Ok("PointLight3D"),
         "SpotLight3D" => Ok("SpotLight3D"),
+        "ParticleEmitter2D" => Ok("ParticleEmitter2D"),
         "ParticleEmitter3D" => Ok("ParticleEmitter3D"),
         "UiBox" => Ok("UiBox"),
         "UiPanel" => Ok("UiPanel"),
@@ -340,6 +341,7 @@ fn emit_static_node_type(ty: &str) -> Result<&'static str, StaticPipelineError> 
         "UiLabel" => Ok("UiLabel"),
         "UiTextBox" => Ok("UiTextBox"),
         "UiTextBlock" => Ok("UiTextBlock"),
+        "UiScrollContainer" | "UiScroll" => Ok("UiScrollContainer"),
         "UiLayout" => Ok("UiLayout"),
         "UiHLayout" => Ok("UiHLayout"),
         "UiHBox" => Ok("UiHBox"),
@@ -505,6 +507,7 @@ fn is_static_ui_node(node_type: &str) -> bool {
             | "UiLabel"
             | "UiTextBox"
             | "UiTextBlock"
+            | "UiScrollContainer"
             | "UiControl"
             | "UiLayout"
             | "UiHLayout"
@@ -635,6 +638,7 @@ mod tests {
             "Area3D",
             "RigidBody3D",
             "Skeleton3D",
+            "ParticleEmitter2D",
             "ParticleEmitter3D",
             "AmbientLight3D",
             "Sky3D",
@@ -647,6 +651,7 @@ mod tests {
             "UiLabel",
             "UiTextBox",
             "UiTextBlock",
+            "UiScrollContainer",
             "UiLayout",
             "UiHLayout",
             "UiHBox",

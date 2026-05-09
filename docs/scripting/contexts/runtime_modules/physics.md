@@ -17,11 +17,19 @@ Pause macros:
 - `physics_pause!(ctx, paused)`
 - `physics_is_paused!(ctx) -> bool`
 
+Raycast macros:
+
+- `physics_raycast_3d!(ctx, origin, direction, max_distance) -> Option<PhysicsRayHit3D>`
+- `physics_raycast_3d_with_areas!(ctx, origin, direction, max_distance) -> Option<PhysicsRayHit3D>`
+- `physics_raycast_3d_without_areas!(ctx, origin, direction, max_distance) -> Option<PhysicsRayHit3D>`
+
 Arguments:
 
 - `ctx`: `&mut RuntimeWindow<_>`
 - `body_id`: `NodeID` of a `RigidBody2D` or `RigidBody3D`
 - `force`/`impulse`: `Vector2` for 2D bodies, `Vector3` for 3D bodies
+- `origin`/`direction`: `Vector3` ray data in world space
+- `max_distance`: maximum 3D ray distance
 
 Behavior:
 
@@ -35,6 +43,17 @@ Behavior:
 - While paused, gravity/velocity integration + collision/area signal propagation do not advance.
 - `physics_pause!(ctx, false)` resumes from current physics world state.
 - Queued force/impulse calls made during pause stay queued and apply after resume.
+- `physics_raycast_3d!` hits `StaticBody3D`, `RigidBody3D`, and `Area3D` colliders.
+- `physics_raycast_3d_with_areas!` is an explicit alias for area-inclusive raycasts.
+- `physics_raycast_3d_without_areas!` skips `Area3D` sensor colliders.
+- Raycast returns `None` for invalid direction, non-positive distance, missing world, or no hit.
+
+`PhysicsRayHit3D` fields:
+
+- `node`: hit body `NodeID`
+- `point`: world-space hit point
+- `normal`: world-space hit normal
+- `distance`: distance from ray origin
 
 Example:
 
@@ -52,6 +71,15 @@ if menu_open {
 }
 if menu_closed {
     physics_pause!(ctx, false);
+}
+
+if let Some(hit) = physics_raycast_3d!(
+    ctx,
+    Vector3::new(0.0, 2.0, -5.0),
+    Vector3::new(0.0, -0.2, 1.0),
+    25.0
+) {
+    log::info!("hit {:?} at {:?}", hit.node, hit.point);
 }
 ```
 

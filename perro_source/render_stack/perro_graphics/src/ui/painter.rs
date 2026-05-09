@@ -1,12 +1,13 @@
-use super::renderer::{UiDraw, UiLabelDraw, UiPanelDraw, UiTextEditDraw};
+use super::renderer::{UiDraw, UiImageDraw, UiLabelDraw, UiPanelDraw, UiTextEditDraw};
 use ahash::AHashMap;
 use epaint::{
     AlphaFromCoverage, ClippedPrimitive, ClippedShape, Color32, CornerRadius, FontFamily, FontId,
-    Fonts, Galley, Primitive, Rect, RectShape, Shape, Stroke, StrokeKind, TessellationOptions,
-    Tessellator, emath::Rot2, pos2, text::FontDefinitions, textures::TexturesDelta, vec2,
+    Fonts, Galley, Mesh, Primitive, Rect, RectShape, Shape, Stroke, StrokeKind,
+    TessellationOptions, Tessellator, TextureId, emath::Rot2, pos2, text::FontDefinitions,
+    textures::TexturesDelta, vec2,
 };
 use perro_ids::NodeID;
-use perro_render_bridge::{UiDepthEffectState, UiRectState, UiTextAlignState};
+use perro_render_bridge::{UiDepthEffectState, UiImageScaleState, UiRectState, UiTextAlignState};
 
 const UI_RASTER_SCALE: f32 = 2.0;
 const UI_FONT_ATLAS_SIZE: usize = 4096;
@@ -91,6 +92,7 @@ impl EpaintUiPainter {
                 UiDraw::Button(button) => {
                     push_panel_shape(&button.panel, viewport, &mut self.shapes)
                 }
+                UiDraw::Image(image) => push_image_shape(image, viewport, &mut self.shapes),
                 UiDraw::Label(label) => {
                     push_label_shape(label, viewport, &mut self.fonts, &mut self.shapes)
                 }
@@ -162,9 +164,64 @@ fn ui_rect(draw: &UiDraw) -> UiRectState {
     match draw {
         UiDraw::Panel(panel) => panel.rect,
         UiDraw::Button(button) => button.panel.rect,
+        UiDraw::Image(image) => image.rect,
         UiDraw::Label(label) => label.rect,
         UiDraw::TextEdit(edit) => edit.panel.rect,
     }
+}
+
+fn push_image_shape(image: &UiImageDraw, viewport: [f32; 2], out: &mut Vec<ClippedShape>) {
+    if image.texture.is_nil() || !valid_rect(image.rect) || !valid_color(image.tint) {
+        return;
+    }
+    let (min, max) = image.rect.screen_min_max(viewport);
+    let outer = Rect::from_min_max(pos2(min[0], min[1]), pos2(max[0], max[1]));
+    let rect = resolve_image_rect(outer, image);
+    if rect.width() <= 0.0 || rect.height() <= 0.0 {
+        return;
+    }
+    let uv = Rect::from_min_max(
+        pos2(image.uv_min[0], image.uv_min[1]),
+        pos2(image.uv_max[0], image.uv_max[1]),
+    );
+    let mut mesh = Mesh::with_texture(TextureId::User(image.texture.as_u64()));
+    mesh.add_rect_with_uv(rect, uv, color32(image.tint));
+    out.push(ClippedShape {
+        clip_rect: clip_rect_from_state(image.clip_rect, viewport),
+        shape: Shape::Mesh(mesh.into()),
+    });
+}
+
+fn resolve_image_rect(outer: Rect, image: &UiImageDraw) -> Rect {
+    if image.scale_mode == UiImageScaleState::Stretch {
+        return outer;
+    }
+    let aspect = image.aspect_ratio;
+    if !aspect.is_finite() || aspect <= 0.0 || outer.width() <= 0.0 || outer.height() <= 0.0 {
+        return outer;
+    }
+    let outer_aspect = outer.width() / outer.height();
+    let scale_by_width = match image.scale_mode {
+        UiImageScaleState::Stretch => return outer,
+        UiImageScaleState::Fit => outer_aspect <= aspect,
+        UiImageScaleState::Cover => outer_aspect > aspect,
+    };
+    let size = if scale_by_width {
+        vec2(outer.width(), outer.width() / aspect)
+    } else {
+        vec2(outer.height() * aspect, outer.height())
+    };
+    let x = match image.h_align {
+        UiTextAlignState::Start => outer.left(),
+        UiTextAlignState::Center => outer.left() + (outer.width() - size.x) * 0.5,
+        UiTextAlignState::End => outer.right() - size.x,
+    };
+    let y = match image.v_align {
+        UiTextAlignState::Start => outer.top(),
+        UiTextAlignState::Center => outer.top() + (outer.height() - size.y) * 0.5,
+        UiTextAlignState::End => outer.bottom() - size.y,
+    };
+    Rect::from_min_size(pos2(x, y), size)
 }
 
 fn push_label_shape(

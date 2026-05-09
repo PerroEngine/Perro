@@ -1,7 +1,9 @@
 use super::painter::{EpaintUiPainter, UiPaintFrame, UiPainter};
 use ahash::AHashMap;
-use perro_ids::NodeID;
-use perro_render_bridge::{UiCommand, UiDepthEffectState, UiRectState, UiTextAlignState};
+use perro_ids::{NodeID, TextureID};
+use perro_render_bridge::{
+    UiCommand, UiDepthEffectState, UiImageScaleState, UiRectState, UiTextAlignState,
+};
 use std::borrow::Cow;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -34,6 +36,20 @@ pub(crate) struct UiButtonDraw {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub(crate) struct UiImageDraw {
+    pub(crate) rect: UiRectState,
+    pub(crate) clip_rect: [f32; 4],
+    pub(crate) texture: TextureID,
+    pub(crate) tint: [f32; 4],
+    pub(crate) uv_min: [f32; 2],
+    pub(crate) uv_max: [f32; 2],
+    pub(crate) scale_mode: UiImageScaleState,
+    pub(crate) h_align: UiTextAlignState,
+    pub(crate) v_align: UiTextAlignState,
+    pub(crate) aspect_ratio: f32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct UiTextEditDraw {
     pub(crate) panel: UiPanelDraw,
     pub(crate) text: Cow<'static, str>,
@@ -55,6 +71,7 @@ pub(crate) struct UiTextEditDraw {
 pub(crate) enum UiDraw {
     Panel(UiPanelDraw),
     Button(UiButtonDraw),
+    Image(UiImageDraw),
     Label(UiLabelDraw),
     TextEdit(UiTextEditDraw),
 }
@@ -153,6 +170,33 @@ impl UiRenderer {
                     v_align,
                 }),
             ),
+            UiCommand::UpsertImage {
+                node,
+                rect,
+                clip_rect,
+                texture,
+                tint,
+                uv_min,
+                uv_max,
+                scale_mode,
+                h_align,
+                v_align,
+                aspect_ratio,
+            } => self.upsert(
+                node,
+                UiDraw::Image(UiImageDraw {
+                    rect,
+                    clip_rect,
+                    texture,
+                    tint,
+                    uv_min,
+                    uv_max,
+                    scale_mode,
+                    h_align,
+                    v_align,
+                    aspect_ratio,
+                }),
+            ),
             UiCommand::UpsertTextEdit {
                 node,
                 rect,
@@ -224,6 +268,13 @@ impl UiRenderer {
 
     pub fn prepare_paint(&mut self, viewport: [f32; 2]) -> UiPaintFrame<'_> {
         self.painter.paint(&self.nodes, self.revision, viewport)
+    }
+
+    pub fn image_textures(&self) -> impl Iterator<Item = TextureID> + '_ {
+        self.nodes.values().filter_map(|draw| match draw {
+            UiDraw::Image(image) => Some(image.texture),
+            _ => None,
+        })
     }
 
     fn upsert(&mut self, node: NodeID, draw: UiDraw) {

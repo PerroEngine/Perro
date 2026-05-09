@@ -7,6 +7,7 @@ This document covers Perro CLI in command-first style. Commands are shown using 
 - `mem-profile`
 - `build`
 - `flamegraph`
+- `doctor`
 - `format`
 - `clippy`
 - `clean`
@@ -27,6 +28,7 @@ perro dev [--path <project_dir>]
 perro mem-profile [--path <project_dir>] [--release] [--csv [csv_name]]
 perro build [--path <project_dir>]
 perro flamegraph [--path <project_dir>] [--profile] [--root]
+perro doctor [--path <project_dir>]
 perro format [--path <project_dir>]
 perro clippy [--path <project_dir>]
 perro clean [--path <project_dir>]
@@ -245,6 +247,24 @@ Example:
 perro flamegraph --path D:\GameProjects\MyGame
 perro flamegraph --path D:\GameProjects\MyGame --profile
 ```
+
+## `doctor`
+
+Command:
+
+```powershell
+perro doctor [--path <project_dir>]
+```
+
+What it does:
+
+1. Loads `project.toml`.
+2. Checks `project.main_scene`, `project.icon`, and `project.startup_splash`.
+3. Scans text assets under `res/` and `dlcs/` for quoted `res://` and `dlc://` references.
+4. Scans user scripts for likely missing `res://` and `dlc://` load paths.
+5. Warns when `get_var!`, `set_var!`, or `call_method!` reference names not found in any script state or `methods!` block.
+6. Warns when those dynamic calls target `ctx.id` and a typed self access path is available.
+7. Reports missing scene/config references as errors and script findings as warnings.
 
 ## `format`
 

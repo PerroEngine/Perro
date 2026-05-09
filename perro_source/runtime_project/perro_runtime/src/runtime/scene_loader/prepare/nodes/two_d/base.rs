@@ -14,6 +14,26 @@ fn build_sprite_2d(data: &SceneDefNodeData) -> Sprite2D {
     node
 }
 
+fn build_animated_sprite_2d(data: &SceneDefNodeData) -> AnimatedSprite2D {
+    let mut node = AnimatedSprite2D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_2d_data(&mut node, base);
+    }
+    apply_node_2d_fields(&mut node, &data.fields);
+    apply_animated_sprite_2d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_particle_emitter_2d(data: &SceneDefNodeData) -> ParticleEmitter2D {
+    let mut node = ParticleEmitter2D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_2d_data(&mut node, base);
+    }
+    apply_node_2d_fields(&mut node, &data.fields);
+    apply_particle_emitter_2d_fields(&mut node, &data.fields);
+    node
+}
+
 fn apply_node_2d_data(target: &mut Node2D, data: &SceneDefNodeData) {
     if let Some(base) = data.base_ref() {
         apply_node_2d_data(target, base);
@@ -54,4 +74,191 @@ fn apply_node_2d_fields(node: &mut Node2D, fields: &[SceneObjectField]) {
     });
 }
 
-fn apply_sprite_2d_fields(_node: &mut Sprite2D, _fields: &[SceneObjectField]) {}
+fn apply_particle_emitter_2d_fields(node: &mut ParticleEmitter2D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        match resolve_node_field("ParticleEmitter2D", name) {
+            Some(NodeField::ParticleEmitter2D(ParticleEmitter2DField::Active)) => {
+                if let Some(v) = value.as_bool() {
+                    node.active = v;
+                }
+            }
+            Some(NodeField::ParticleEmitter2D(ParticleEmitter2DField::Looping)) => {
+                if let Some(v) = value.as_bool() {
+                    node.looping = v;
+                }
+            }
+            Some(NodeField::ParticleEmitter2D(ParticleEmitter2DField::Prewarm)) => {
+                if let Some(v) = value.as_bool() {
+                    node.prewarm = v;
+                }
+            }
+            Some(NodeField::ParticleEmitter2D(ParticleEmitter2DField::SpawnRate)) => {
+                if let Some(v) = value.as_f32() {
+                    node.spawn_rate = v.max(0.0);
+                }
+            }
+            Some(NodeField::ParticleEmitter2D(ParticleEmitter2DField::Seed)) => {
+                if let Some(v) = as_i32(value) {
+                    node.seed = v.max(0) as u32;
+                }
+            }
+            Some(NodeField::ParticleEmitter2D(ParticleEmitter2DField::Params)) => {
+                if let Some(v) = as_particle_params(value) {
+                    node.params = v;
+                }
+            }
+            Some(NodeField::ParticleEmitter2D(ParticleEmitter2DField::Profile)) => {
+                if let Some(path) = as_str(value) {
+                    node.profile = path.to_string();
+                } else if let SceneValue::Object(entries) = value {
+                    node.profile = inline_pparticle(entries);
+                }
+            }
+            Some(NodeField::ParticleEmitter2D(ParticleEmitter2DField::SimMode)) => {
+                if let Some(v) = as_particle_sim_mode_2d(value) {
+                    node.sim_mode = v;
+                }
+            }
+            _ => {}
+        }
+    });
+}
+
+fn as_particle_sim_mode_2d(value: &SceneValue) -> Option<ParticleEmitterSimMode2D> {
+    match as_str(value)?.trim().to_ascii_lowercase().as_str() {
+        "default" => Some(ParticleEmitterSimMode2D::Default),
+        "cpu" => Some(ParticleEmitterSimMode2D::Cpu),
+        _ => None,
+    }
+}
+
+fn apply_sprite_2d_fields(node: &mut Sprite2D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        if resolve_node_field("Sprite2D", name)
+            == Some(NodeField::Sprite2D(Sprite2DField::TextureRegion))
+            && let Some((x, y, w, h)) = value.as_vec4()
+            && w > 0.0
+            && h > 0.0
+        {
+            node.texture_region = Some([x, y, w, h]);
+        }
+    });
+}
+
+fn apply_animated_sprite_2d_fields(node: &mut AnimatedSprite2D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        match resolve_node_field("AnimatedSprite2D", name) {
+            Some(NodeField::AnimatedSprite2D(AnimatedSprite2DField::Animations)) => {
+                if let Some(animations) = parse_animated_sprite_list(value) {
+                    node.animations = animations;
+                }
+            }
+            Some(NodeField::AnimatedSprite2D(AnimatedSprite2DField::CurrentAnimation)) => {
+                if let Some(v) = as_str(value) {
+                    node.current_animation = std::borrow::Cow::Owned(v.to_string());
+                }
+            }
+            Some(NodeField::AnimatedSprite2D(AnimatedSprite2DField::CurrentFrame)) => {
+                if let Some(v) = as_i32(value) {
+                    node.current_frame = u32::try_from(v.max(0)).unwrap_or(0);
+                }
+            }
+            Some(NodeField::AnimatedSprite2D(AnimatedSprite2DField::FpsScale)) => {
+                if let Some(v) = value.as_f32() {
+                    node.fps_scale = v.max(0.0);
+                }
+            }
+            Some(NodeField::AnimatedSprite2D(AnimatedSprite2DField::Playing)) => {
+                if let Some(v) = value.as_bool() {
+                    node.playing = v;
+                }
+            }
+            Some(NodeField::AnimatedSprite2D(AnimatedSprite2DField::Looping)) => {
+                if let Some(v) = value.as_bool() {
+                    node.looping = v;
+                }
+            }
+            _ => {}
+        }
+    });
+    if node.current_animation_data().is_none() {
+        node.animations.push(AnimatedSprite::default());
+    }
+    let max_frame = node
+        .current_animation_data()
+        .map(|animation| animation.frame_count.max(1).saturating_sub(1))
+        .unwrap_or(0);
+    node.current_frame = node.current_frame.min(max_frame);
+}
+
+fn parse_animated_sprite_list(value: &SceneValue) -> Option<Vec<AnimatedSprite>> {
+    let SceneValue::Array(items) = value else {
+        return None;
+    };
+    let mut out = Vec::new();
+    for item in items.iter() {
+        if let Some(animation) = parse_animated_sprite(item) {
+            out.push(animation);
+        }
+    }
+    (!out.is_empty()).then_some(out)
+}
+
+fn parse_animated_sprite(value: &SceneValue) -> Option<AnimatedSprite> {
+    let SceneValue::Object(fields) = value else {
+        return None;
+    };
+
+    let mut animation = AnimatedSprite::default();
+    for (name, value) in fields.iter() {
+        let key = name
+            .as_ref()
+            .trim()
+            .trim_start_matches(',')
+            .trim_end_matches(',')
+            .trim();
+        match key {
+            "name" => {
+                if let Some(v) = as_str(value) {
+                    animation.name = std::borrow::Cow::Owned(v.to_string());
+                }
+            }
+            "start" | "offset" | "origin" => {
+                if let Some((x, y)) = value.as_vec2() {
+                    animation.start = [x, y];
+                }
+            }
+            "atlas_region" | "texture_region" | "region" => {
+                if let Some((x, y, _, _)) = value.as_vec4() {
+                    animation.start = [x, y];
+                }
+            }
+            "frame_size" | "cell_size" => {
+                if let Some((w, h)) = value.as_vec2()
+                    && w > 0.0
+                    && h > 0.0
+                {
+                    animation.frame_size = [w, h];
+                }
+            }
+            "frame_count" | "frames" => {
+                if let Some(v) = as_i32(value) {
+                    animation.frame_count = u32::try_from(v.max(1)).unwrap_or(1);
+                }
+            }
+            "columns" | "cols" => {
+                if let Some(v) = as_i32(value) {
+                    animation.columns = u32::try_from(v.max(1)).unwrap_or(1);
+                }
+            }
+            "fps" => {
+                if let Some(v) = value.as_f32() {
+                    animation.fps = v.max(0.0);
+                }
+            }
+            _ => {}
+        }
+    }
+    animation.frame_count = animation.frame_count.max(1);
+    Some(animation)
+}

@@ -1,6 +1,6 @@
 use perro_ids::NodeID;
 use perro_nodes::SceneNodeData;
-use perro_runtime_context::sub_apis::PhysicsAPI;
+use perro_runtime_context::sub_apis::{PhysicsAPI, PhysicsRayHit3D};
 use perro_structs::{Vector2, Vector3};
 
 use crate::Runtime;
@@ -48,6 +48,16 @@ impl PhysicsAPI for Runtime {
         }
         self.queue_impulse_3d(body_id, impulse);
         true
+    }
+
+    fn raycast_3d(
+        &mut self,
+        origin: Vector3,
+        direction: Vector3,
+        max_distance: f32,
+        include_areas: bool,
+    ) -> Option<PhysicsRayHit3D> {
+        self.physics_raycast_3d(origin, direction, max_distance, include_areas)
     }
 
     fn physics_pause(&mut self, paused: bool) {

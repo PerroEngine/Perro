@@ -20,6 +20,17 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 
 - Renders a textured quad.
 - Holds a `TextureID` (not raw pixels). Use `Texture` module to load.
+- `texture_region` selects an atlas rect.
+
+`AnimatedSprite2D`
+
+- Renders a sprite sheet.
+- Uses normal `texture = "res://..."` like `Sprite2D`.
+- `animations` lists named strip/grid layouts with `frame_size`, `frame_count`, `columns`, and `fps`.
+- Uses `current_animation`, `current_frame`, `fps_scale`, `playing`, and `looping`.
+- Advances during internal update and renders the current atlas frame.
+- Omit `columns` for a left-to-right strip.
+- Set `columns` when frames wrap to more than one row in a grid.
 
 `Camera2D`
 
@@ -60,6 +71,12 @@ Physics 2D:
 - Skinning only works if the mesh has proper vertex weights (`JOINTS_0/WEIGHTS_0`).
 - Shared-skeleton mesh reuse works when meshes follow the same rig contract: same joint order/indices and compatible weights.
 - Automatic retargeting between mismatched rigs is not implemented.
+- Mesh LOD is automatic for authored meshes.
+- Dynamic/dev load builds LODs on load; static build packs LODs into `.pmesh` v8.
+- Meshes with joints/weights skip LOD generation.
+- Surface/material slots stay stable across LODs.
+- Current switch distances are radius-scaled (`36x`, `72x`, `144x` mesh bounds radius).
+- `MeshInstance3D` does not expose per-node LOD controls yet.
 
 `MultiMeshInstance3D`
 
@@ -76,6 +93,11 @@ Physics 2D:
 `ParticleEmitter3D`
 
 - 3D particle emitter driven by a particle profile.
+
+`ParticleEmitter2D`
+
+- 2D particle emitter driven by a particle profile.
+- Reads `.ppart` `x` and `y`; ignores `z`.
 
 `AnimationPlayer`
 

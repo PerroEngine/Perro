@@ -181,6 +181,7 @@ parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [Sprite2D]
         texture = "res://path/to/texture.png"
+        texture_region = (0, 0, 32, 32)
         [Node2D]
             position = (0, 0)
             rotation = 0.0
@@ -190,6 +191,31 @@ script = "res://path/to/script.rs"
         [/Node2D]
     [/Sprite2D]
 [/sprite2d]
+
+[animated_sprite2d]
+parent = @PARENTKEY
+script = "res://path/to/script.rs"
+    [AnimatedSprite2D]
+        texture = "res://path/to/texture.png"
+        current_animation = "idle"
+        current_frame = 0
+        fps_scale = 1.0
+        playing = true
+        looping = true
+        animations = [
+            { name = "idle", start = (0, 0), frame_size = (32, 32), frame_count = 4, fps = 8 },
+            { name = "run", start = (0, 32), frame_size = (32, 32), frame_count = 6, fps = 12 },
+            { name = "hurt_grid", start = (0, 64), frame_size = (32, 32), frame_count = 8, columns = 4, fps = 10 }
+        ]
+        [Node2D]
+            position = (0, 0)
+            rotation = 0.0
+            scale = (1, 1)
+            z_index = 0
+            visible = true
+        [/Node2D]
+    [/AnimatedSprite2D]
+[/animated_sprite2d]
 
 [camera2d]
 parent = @PARENTKEY
@@ -563,6 +589,28 @@ script = "res://path/to/script.rs"
         [/Node3D]
     [/ParticleEmitter3D]
 [/particle_emitter_3d]
+
+[particle_emitter_2d]
+parent = @PARENTKEY
+script = "res://path/to/script.rs"
+    [ParticleEmitter2D]
+        active = true
+        looping = true
+        prewarm = false
+        spawn_rate = 256.0
+        seed = 1
+        params = []
+        profile = "res://path/to/profile.ppart"
+        sim_mode = default
+        [Node2D]
+            position = (0, 0)
+            rotation = 0
+            scale = (1, 1)
+            z_index = 0
+            visible = true
+        [/Node2D]
+    [/ParticleEmitter2D]
+[/particle_emitter_2d]
 ```
 
 ## UI Templates
@@ -571,6 +619,7 @@ script = "res://path/to/script.rs"
 `hover` and `pressed` on `UiButton` accept any `UiBox` field plus style fields.
 
 UI templates use ratio-only sizing.
+
 - `size_ratio` = size relative to parent.
 - `min_size_ratio` + `max_size_ratio` clamp relative to node base size at creation.
 - Example: `size_ratio = (0.5, 0.5)` => half parent size.
@@ -1154,5 +1203,3 @@ script = "res://path/to/script.rs"
     [/AnimationTree]
 [/animation_tree]
 ```
-
-

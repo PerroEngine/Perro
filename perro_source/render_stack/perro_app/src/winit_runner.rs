@@ -7,6 +7,7 @@ use perro_render_bridge::{
     Camera2DState, Command2D, Rect2DCommand, RenderCommand, RenderRequestID, ResourceCommand,
     Sprite2DCommand,
 };
+use perro_runtime::{WindowMode, WindowRequest};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -694,6 +695,7 @@ struct RunnerState<B: GraphicsBackend> {
     mouse_mode: MouseMode,
     mouse_uses_raw_motion: bool,
     cursor_icon: perro_ui::CursorIcon,
+    window_requests: Vec<WindowRequest>,
     cursor_inside_window: bool,
     startup_splash: StartupSplashState,
 }
@@ -893,6 +895,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             mouse_mode: MouseMode::Visible,
             mouse_uses_raw_motion: false,
             cursor_icon: perro_ui::CursorIcon::Default,
+            window_requests: Vec::new(),
             cursor_inside_window: false,
             startup_splash,
         }
@@ -986,6 +989,36 @@ impl<B: GraphicsBackend> RunnerState<B> {
     fn apply_cursor_icon_request(&mut self) {
         if let Some(icon) = self.app.take_cursor_icon_request() {
             self.set_cursor_icon(icon);
+        }
+    }
+
+    fn apply_window_requests(&mut self, event_loop: &ActiveEventLoop) {
+        self.app.drain_window_requests(&mut self.window_requests);
+        if self.window_requests.is_empty() {
+            return;
+        }
+
+        let Some(window) = self.window.as_ref().cloned() else {
+            self.window_requests.clear();
+            return;
+        };
+
+        for request in self.window_requests.drain(..) {
+            match request {
+                WindowRequest::SetTitle(title) => window.set_title(&title),
+                WindowRequest::SetSize { width, height } => {
+                    let _ = window.request_inner_size(PhysicalSize::new(width, height));
+                }
+                WindowRequest::SetMode(WindowMode::Windowed) => {
+                    window.set_fullscreen(None);
+                }
+                WindowRequest::SetMode(WindowMode::BorderlessFullscreen) => {
+                    let monitor = window
+                        .current_monitor()
+                        .or_else(|| pick_monitor(event_loop));
+                    window.set_fullscreen(Some(Fullscreen::Borderless(monitor)));
+                }
+            }
         }
     }
 
@@ -1088,6 +1121,9 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 model: [[sx, 0.0, 0.0], [0.0, sy, 0.0], [0.0, 0.0, 1.0]],
                 tint: [1.0, 1.0, 1.0, alpha],
                 z_index: STARTUP_SPLASH_IMAGE_Z,
+                uv_min: [0.0, 0.0],
+                uv_max: [0.0, 0.0],
+                size: [0.0, 0.0],
             },
         }));
         commands
@@ -1117,6 +1153,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
 
     fn step_startup_frame(
         &mut self,
+        event_loop: &ActiveEventLoop,
         frame_index: u64,
         frame_start: Instant,
         frame_delta: Duration,
@@ -1232,6 +1269,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
         runtime_update_duration += runtime_timing.total;
         self.apply_mouse_mode_request();
         self.apply_cursor_icon_request();
+        self.apply_window_requests(event_loop);
         #[cfg(feature = "profile_heavy")]
         let simulation_duration = simulation_start.elapsed();
         #[cfg(not(feature = "profile_heavy"))]
@@ -1431,7 +1469,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
         self.app.begin_input_frame();
     }
 
-    fn step_frame(&mut self, now: Instant) {
+    fn step_frame(&mut self, event_loop: &ActiveEventLoop, now: Instant) {
         self.frame_index = self.frame_index.saturating_add(1);
         let frame_index = self.frame_index;
         let frame_start = now;
@@ -1446,7 +1484,13 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let idle_duration = frame_start.saturating_duration_since(self.last_frame_end);
 
         if self.startup_splash.active {
-            self.step_startup_frame(frame_index, frame_start, frame_delta, idle_duration);
+            self.step_startup_frame(
+                event_loop,
+                frame_index,
+                frame_start,
+                frame_delta,
+                idle_duration,
+            );
             return;
         }
 
@@ -1560,6 +1604,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
         runtime_update_duration += runtime_timing.total;
         self.apply_mouse_mode_request();
         self.apply_cursor_icon_request();
+        self.apply_window_requests(event_loop);
         #[cfg(feature = "profile_heavy")]
         let simulation_duration = simulation_start.elapsed();
         #[cfg(not(feature = "profile_heavy"))]
@@ -2370,7 +2415,7 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             }
             WindowEvent::Moved(_) => {
                 // On Windows title-bar drag can suppress redraw cadence; tick on move events too.
-                self.step_frame(Instant::now());
+                self.step_frame(event_loop, Instant::now());
             }
             ref keyboard_event @ WindowEvent::KeyboardInput {
                 event: ref key_event,
@@ -2449,7 +2494,7 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 }
             }
             WindowEvent::RedrawRequested => {
-                self.step_frame(Instant::now());
+                self.step_frame(event_loop, Instant::now());
             }
             WindowEvent::CloseRequested => event_loop.exit(),
             _ => {}

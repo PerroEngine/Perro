@@ -6,7 +6,7 @@ use crate::{
 use ahash::AHashMap;
 use perro_ids::NodeID;
 use perro_input::InputSnapshot;
-use perro_runtime_context::sub_apis::PreloadedSceneID;
+use perro_runtime_context::sub_apis::{PreloadedSceneID, WindowRequest};
 use perro_scene::Scene;
 use perro_scripting::{ScriptAPI, ScriptBehavior, ScriptConstructor};
 use std::time::{Duration, Instant};
@@ -73,6 +73,7 @@ pub struct Runtime {
     pub(crate) resource_api: Arc<RuntimeResourceApi>,
     pub(crate) input: InputSnapshot,
     cursor_icon_request: Option<perro_ui::CursorIcon>,
+    pub(crate) window_requests: Vec<WindowRequest>,
     physics: physics::PhysicsState,
 }
 
@@ -179,6 +180,7 @@ impl Runtime {
             resource_api: RuntimeResourceApi::new(None, None, None, None, None, None, None),
             input: InputSnapshot::new(),
             cursor_icon_request: None,
+            window_requests: Vec::new(),
             physics: physics::PhysicsState::new(),
         }
     }

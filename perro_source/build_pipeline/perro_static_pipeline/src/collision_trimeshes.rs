@@ -14,6 +14,7 @@ use std::{
 const PMESH_MAGIC: &[u8; 5] = b"PMESH";
 const PMESH_VERSION_V6: u32 = 6;
 const PMESH_VERSION_V7: u32 = 7;
+const PMESH_VERSION_V8_RENDER_LOD: u32 = 8;
 const PMESH_FLAG_INDEX_U16: u32 = 1 << 4;
 const PMESH_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
 
@@ -233,6 +234,9 @@ fn decode_pmesh_trimesh(bytes: &[u8]) -> Option<TriMeshData> {
         return None;
     }
     let version = u32::from_le_bytes(bytes[5..9].try_into().ok()?);
+    if version == PMESH_VERSION_V8_RENDER_LOD {
+        return decode_render_pmesh_v8_trimesh(bytes);
+    }
     if version != PMESH_VERSION_V6 && version != PMESH_VERSION_V7 {
         return None;
     }
@@ -296,6 +300,89 @@ fn decode_pmesh_trimesh_v7(bytes: &[u8]) -> Option<TriMeshData> {
         index_bytes,
         index_u16,
     )
+}
+
+fn decode_render_pmesh_v8_trimesh(bytes: &[u8]) -> Option<TriMeshData> {
+    if bytes.len() < 37 {
+        return None;
+    }
+    let flags = u32::from_le_bytes(bytes[9..13].try_into().ok()?);
+    let vertex_count = u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize;
+    let index_count = u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize;
+    let surface_count = u32::from_le_bytes(bytes[21..25].try_into().ok()?) as usize;
+    let meshlet_count = u32::from_le_bytes(bytes[25..29].try_into().ok()?) as usize;
+    let lod_count = u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize;
+    let raw_len = u32::from_le_bytes(bytes[33..37].try_into().ok()?) as usize;
+    let raw = decode_pmesh_payload(flags, &bytes[37..])?;
+    if raw.len() != raw_len {
+        return None;
+    }
+    let has_normal = (flags & (1 << 0)) != 0;
+    let has_uv0 = (flags & (1 << 1)) != 0;
+    let has_joints = (flags & (1 << 2)) != 0;
+    let has_weights = (flags & (1 << 3)) != 0;
+    let stride = 12
+        + if has_normal { 12 } else { 0 }
+        + if has_uv0 { 8 } else { 0 }
+        + if has_joints { 8 } else { 0 }
+        + if has_weights { 16 } else { 0 };
+    let vertex_bytes = vertex_count.checked_mul(stride)?;
+    let index_bytes = index_count.checked_mul(4)?;
+    let surface_bytes = surface_count.checked_mul(8)?;
+    let meshlet_bytes = meshlet_count.checked_mul(24)?;
+    let lod_start = vertex_bytes
+        .checked_add(index_bytes)?
+        .checked_add(surface_bytes)?
+        .checked_add(meshlet_bytes)?;
+    if raw.len() < lod_start {
+        return None;
+    }
+    let (lod_index_start, lod_index_count) = if lod_count > 0 && raw.len() >= lod_start + 24 {
+        (
+            u32::from_le_bytes(raw[lod_start..lod_start + 4].try_into().ok()?) as usize,
+            u32::from_le_bytes(raw[lod_start + 4..lod_start + 8].try_into().ok()?) as usize,
+        )
+    } else {
+        (0, index_count)
+    };
+    let mut vertices = Vec::with_capacity(vertex_count);
+    for i in 0..vertex_count {
+        let off = i * stride;
+        vertices.push([
+            f32::from_le_bytes(raw[off..off + 4].try_into().ok()?),
+            f32::from_le_bytes(raw[off + 4..off + 8].try_into().ok()?),
+            f32::from_le_bytes(raw[off + 8..off + 12].try_into().ok()?),
+        ]);
+    }
+    let start = vertex_bytes + lod_index_start.saturating_mul(4);
+    let end = start
+        .saturating_add(lod_index_count.saturating_mul(4))
+        .min(vertex_bytes + index_bytes);
+    let mut triangles = Vec::new();
+    for off in (start..end).step_by(12) {
+        if off + 12 > raw.len() {
+            break;
+        }
+        let ia = u32::from_le_bytes(raw[off..off + 4].try_into().ok()?);
+        let ib = u32::from_le_bytes(raw[off + 4..off + 8].try_into().ok()?);
+        let ic = u32::from_le_bytes(raw[off + 8..off + 12].try_into().ok()?);
+        let a = ia as usize;
+        let b = ib as usize;
+        let c = ic as usize;
+        if a < vertices.len()
+            && b < vertices.len()
+            && c < vertices.len()
+            && a != b
+            && b != c
+            && a != c
+        {
+            triangles.push([ia, ib, ic]);
+        }
+    }
+    if vertices.len() < 3 || triangles.is_empty() {
+        return None;
+    }
+    Some((vertices, triangles))
 }
 
 fn decode_pmesh_trimesh_from_raw(

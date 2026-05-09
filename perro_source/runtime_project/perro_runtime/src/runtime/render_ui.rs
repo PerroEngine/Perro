@@ -1,23 +1,28 @@
 use super::state::{DirtyState, LocaleTextBinding, LocaleTextField, UiButtonVisualState};
 use super::{Runtime, RuntimeUiTiming};
 use ahash::AHashMap;
-use perro_ids::{NodeID, SignalID, string_to_u64};
+use perro_ids::{NodeID, SignalID, TextureID, string_to_u64};
 use perro_input::{KeyCode, MouseButton};
 use perro_nodes::SceneNodeData;
 use perro_render_bridge::{
-    RenderCommand, UiCommand, UiDepthEffectState, UiRectState, UiTextAlignState,
+    RenderCommand, RenderRequestID, ResourceCommand, UiCommand, UiDepthEffectState,
+    UiImageScaleState, UiRectState, UiTextAlignState,
 };
 use perro_runtime_context::sub_apis::SignalAPI;
 use perro_structs::Vector2;
 use perro_ui::{
-    ComputedUiRect, UiBox, UiFontSizing, UiHorizontalAlign, UiLayoutData, UiLayoutMode, UiSizeMode,
-    UiStyle, UiTextEdit, UiTransform, UiVerticalAlign,
+    ComputedUiRect, UiBox, UiFontSizing, UiHorizontalAlign, UiImageScaleMode, UiLayoutData,
+    UiLayoutMode, UiSizeMode, UiStyle, UiTextEdit, UiTransform, UiVerticalAlign,
 };
 use perro_variant::Variant;
 use std::borrow::Cow;
 
 const TEXT_EDIT_REPEAT_DELAY: f32 = 0.35;
 const TEXT_EDIT_REPEAT_RATE: f32 = 0.035;
+
+fn ui_image_texture_request(node: NodeID) -> RenderRequestID {
+    RenderRequestID::new((node.as_u64() << 8) | 0xE9)
+}
 
 impl Runtime {
     pub(crate) fn add_locale_text_binding(
@@ -184,6 +189,48 @@ impl Runtime {
                     | Runtime::UI_DIRTY_COMMANDS,
             );
         }
+    }
+
+    fn resolve_ui_image_texture(&mut self, node: NodeID) -> Option<TextureID> {
+        let mut texture = self.nodes.get(node).and_then(|scene_node| {
+            if let SceneNodeData::UiImage(image) = &scene_node.data {
+                Some(image.texture)
+            } else {
+                None
+            }
+        })?;
+
+        if texture.is_nil() {
+            let request = ui_image_texture_request(node);
+            if let Some(crate::RuntimeRenderResult::Texture(id)) = self.take_render_result(request)
+            {
+                texture = id;
+            }
+        }
+
+        if texture.is_nil() {
+            let request = ui_image_texture_request(node);
+            if !self.render.is_inflight(request) {
+                let source = self
+                    .render_2d
+                    .texture_sources
+                    .get(&node)
+                    .cloned()
+                    .unwrap_or_else(|| "__default__".to_string());
+                self.render.mark_inflight(request);
+                self.queue_render_command(RenderCommand::Resource(
+                    ResourceCommand::CreateTexture {
+                        request,
+                        id: TextureID::nil(),
+                        source,
+                        reserved: false,
+                    },
+                ));
+            }
+            return None;
+        }
+
+        Some(texture)
     }
 
     pub fn extract_render_ui_commands(&mut self) {
@@ -384,6 +431,12 @@ impl Runtime {
             }
             visible_now.remove(&node);
             let effective_visible = self.is_effectively_visible_for_ui(node);
+            if let Some(texture) = self.resolve_ui_image_texture(node)
+                && let Some(scene_node) = self.nodes.get_mut(node)
+                && let SceneNodeData::UiImage(image) = &mut scene_node.data
+            {
+                image.texture = texture;
+            }
             let Some(scene_node) = self.nodes.get(node) else {
                 self.remove_retained_ui_node(node);
                 if let Some(timing) = timing.as_deref_mut() {
@@ -693,7 +746,10 @@ impl Runtime {
         let parent_ui = ui_root_from_data(&parent_node.data)?;
         let auto_layout = ui_auto_layout_from_data(&parent_node.data)?;
         let layout_children = self.ui_layout_children(parent);
-        let content_rect = parent_layout_rect.inset(parent_ui.layout.padding);
+        let content_rect = ui_scroll_content_rect(
+            &parent_node.data,
+            parent_layout_rect.inset(parent_ui.layout.padding),
+        );
         let layout_ctx = UiChildrenLayoutCtx {
             parent_layout_rect,
             content: content_rect,
@@ -1198,7 +1254,10 @@ impl Runtime {
         let parent_node = self.nodes.get(parent)?;
         let parent_ui = ui_root_from_data(&parent_node.data)?;
         let layout_children = self.ui_layout_children(parent);
-        let content_rect = parent_rect.inset(parent_ui.layout.padding);
+        let content_rect = ui_scroll_content_rect(
+            &parent_node.data,
+            parent_rect.inset(parent_ui.layout.padding),
+        );
         let auto_rect = ui_auto_layout_from_data(&parent_node.data).and_then(|auto_layout| {
             match auto_layout.mode {
                 UiLayoutMode::H => self.compute_ui_h_child_rect(
@@ -2213,9 +2272,11 @@ fn ui_root_from_data(data: &SceneNodeData) -> Option<&UiBox> {
         SceneNodeData::UiBox(root) => Some(root),
         SceneNodeData::UiPanel(node) => Some(&node.base),
         SceneNodeData::UiButton(node) => Some(&node.base),
+        SceneNodeData::UiImage(node) => Some(&node.base),
         SceneNodeData::UiLabel(node) => Some(&node.base),
         SceneNodeData::UiTextBox(node) => Some(&node.inner.base),
         SceneNodeData::UiTextBlock(node) => Some(&node.inner.base),
+        SceneNodeData::UiScrollContainer(node) => Some(&node.base),
         SceneNodeData::UiLayout(node) => Some(&node.inner.base),
         SceneNodeData::UiHLayout(node) => Some(&node.inner.base),
         SceneNodeData::UiVLayout(node) => Some(&node.inner.base),
@@ -2223,6 +2284,16 @@ fn ui_root_from_data(data: &SceneNodeData) -> Option<&UiBox> {
         SceneNodeData::UiTreeList(node) => Some(&node.base),
         _ => None,
     }
+}
+
+fn ui_scroll_content_rect(data: &SceneNodeData, content: ComputedUiRect) -> ComputedUiRect {
+    let SceneNodeData::UiScrollContainer(node) = data else {
+        return content;
+    };
+    ComputedUiRect::new(
+        content.center + Vector2::new(-node.scroll.x, node.scroll.y),
+        content.size,
+    )
 }
 
 fn ui_auto_layout_from_data(data: &SceneNodeData) -> Option<UiAutoLayout> {
@@ -2517,6 +2588,26 @@ fn ui_command_from_node(
             h_align: text_align_state(label.h_align),
             v_align: text_align_state(label.v_align),
         }),
+        SceneNodeData::UiImage(image) => {
+            if image.texture.is_nil() {
+                return None;
+            }
+            let (uv_min, uv_max, aspect_ratio) =
+                ui_image_region_uv(image.texture_region, image.aspect_ratio);
+            Some(UiCommand::UpsertImage {
+                node,
+                rect,
+                clip_rect,
+                texture: image.texture,
+                tint: image.tint.to_rgba(),
+                uv_min,
+                uv_max,
+                scale_mode: ui_image_scale_state(image.scale_mode),
+                h_align: text_align_state(image.h_align),
+                v_align: text_align_state(image.v_align),
+                aspect_ratio,
+            })
+        }
         SceneNodeData::UiTextBox(text_box) => Some(text_edit_command(TextEditCommandCtx {
             command: command_ctx,
             edit: &text_box.inner,
@@ -2612,6 +2703,7 @@ fn ui_command_matches_node(
         UiCommand::UpsertPanel { node, .. }
         | UiCommand::UpsertButton { node, .. }
         | UiCommand::UpsertLabel { node, .. }
+        | UiCommand::UpsertImage { node, .. }
         | UiCommand::UpsertTextEdit { node, .. }
         | UiCommand::RemoveNode { node } => *node,
         UiCommand::Clear => NodeID::nil(),
@@ -2722,6 +2814,24 @@ fn text_align_state(align: perro_ui::UiTextAlign) -> UiTextAlignState {
         perro_ui::UiTextAlign::Center => UiTextAlignState::Center,
         perro_ui::UiTextAlign::End => UiTextAlignState::End,
     }
+}
+
+fn ui_image_scale_state(mode: UiImageScaleMode) -> UiImageScaleState {
+    match mode {
+        UiImageScaleMode::Stretch => UiImageScaleState::Stretch,
+        UiImageScaleMode::Fit => UiImageScaleState::Fit,
+        UiImageScaleMode::Cover => UiImageScaleState::Cover,
+    }
+}
+
+fn ui_image_region_uv(region: Option<[f32; 4]>, aspect_ratio: f32) -> ([f32; 2], [f32; 2], f32) {
+    let Some([x, y, w, h]) = region else {
+        return ([0.0, 0.0], [1.0, 1.0], aspect_ratio.max(0.0));
+    };
+    if !(x.is_finite() && y.is_finite() && w.is_finite() && h.is_finite()) || w <= 0.0 || h <= 0.0 {
+        return ([0.0, 0.0], [1.0, 1.0], aspect_ratio.max(0.0));
+    }
+    ([x, y], [x + w, y + h], aspect_ratio.max(w / h))
 }
 
 fn text_edit_command(ctx: TextEditCommandCtx<'_>) -> UiCommand {
@@ -2896,6 +3006,7 @@ fn ui_command_clip_rect(command: &UiCommand) -> [f32; 4] {
         UiCommand::UpsertPanel { clip_rect, .. }
         | UiCommand::UpsertButton { clip_rect, .. }
         | UiCommand::UpsertLabel { clip_rect, .. }
+        | UiCommand::UpsertImage { clip_rect, .. }
         | UiCommand::UpsertTextEdit { clip_rect, .. } => *clip_rect,
         UiCommand::RemoveNode { .. } | UiCommand::Clear => [0.0, 0.0, 1.0, 1.0],
     }
@@ -3275,7 +3386,9 @@ mod tests {
     use perro_nodes::{SceneNode, SceneNodeData};
     use perro_runtime_context::sub_apis::NodeAPI;
     use perro_structs::Color;
-    use perro_ui::{UiAnchor, UiGrid, UiHLayout, UiPanel, UiTreeList, UiVLayout, UiVector2};
+    use perro_ui::{
+        UiAnchor, UiGrid, UiHLayout, UiPanel, UiScrollContainer, UiTreeList, UiVLayout, UiVector2,
+    };
 
     #[test]
     fn unchanged_ui_skips_redundant_upsert() {
@@ -4838,6 +4951,45 @@ mod tests {
             RenderCommand::Ui(UiCommand::RemoveNode { node }) if *node == child
         )));
         assert!(!runtime.render_ui.prev_visible.contains(&child));
+    }
+
+    #[test]
+    fn scroll_container_offsets_children_and_clips_to_view() {
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        let mut scroller = UiScrollContainer::new();
+        scroller.layout.size = UiVector2::pixels(200.0, 100.0);
+        scroller.scroll = Vector2::new(30.0, 40.0);
+        let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+
+        let child = insert_panel(&mut runtime, [50.0, 30.0], Color::new(0.1, 0.2, 0.3, 1.0));
+        attach_child(&mut runtime, scroller_id, child);
+
+        runtime.extract_render_ui_commands();
+
+        let child_rect = runtime
+            .render_ui
+            .computed_rects
+            .get(&child)
+            .copied()
+            .expect("child rect");
+        assert_eq!(child_rect.center, Vector2::new(-30.0, 40.0));
+
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+        let clip = commands
+            .iter()
+            .find_map(|cmd| match cmd {
+                RenderCommand::Ui(UiCommand::UpsertPanel {
+                    node, clip_rect, ..
+                }) if *node == child => Some(*clip_rect),
+                _ => None,
+            })
+            .expect("child panel command");
+        for (actual, expected) in clip.iter().zip([300.0, 250.0, 500.0, 350.0]) {
+            assert!((actual - expected).abs() < 1.0e-5);
+        }
     }
 
     #[test]

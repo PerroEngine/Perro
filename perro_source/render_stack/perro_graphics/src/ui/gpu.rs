@@ -1,9 +1,19 @@
+use crate::{backend::StaticTextureLookup, resources::ResourceStore};
+use ahash::AHashMap;
 use bytemuck::{Pod, Zeroable};
 use epaint::{ClippedPrimitive, ImageData, Primitive, TextureId, textures::TexturesDelta};
+use perro_ids::TextureID;
+use perro_io::{decompress_zlib, load_asset};
 use std::borrow::Cow;
 
 const UI_SUPERSAMPLE_SCALE: u32 = 2;
 const UI_SUPERSAMPLE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+const PTEX_MAGIC: &[u8; 4] = b"PTEX";
+const PTEX_FLAG_FORMAT_MASK: u32 = 0b11;
+const PTEX_FLAG_FORMAT_RGBA8: u32 = 0;
+const PTEX_FLAG_FORMAT_RGB8: u32 = 1;
+const PTEX_FLAG_FORMAT_R8: u32 = 2;
+const PTEX_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Zeroable, Pod)]
@@ -37,6 +47,7 @@ struct UiMeshGpu {
     index_start: u32,
     index_count: u32,
     clip_rect: [u32; 4],
+    texture_id: TextureId,
 }
 
 pub struct GpuUi {
@@ -48,6 +59,7 @@ pub struct GpuUi {
     composite_bind_group_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
     font_texture: Option<UiTextureGpu>,
+    image_textures: AHashMap<TextureID, UiTextureGpu>,
     supersample_target: Option<UiSupersampleTarget>,
     meshes: Vec<UiMeshGpu>,
     vertex_buffer: Option<wgpu::Buffer>,
@@ -61,11 +73,13 @@ pub struct GpuUi {
 }
 
 pub struct UiPrepareInput<'a> {
+    pub resources: &'a ResourceStore,
     pub viewport: [u32; 2],
     pub primitives: &'a [ClippedPrimitive],
     pub textures_delta: &'a TexturesDelta,
     pub texture_size: [u32; 2],
     pub revision: u64,
+    pub static_texture_lookup: Option<StaticTextureLookup>,
 }
 
 impl GpuUi {
@@ -287,6 +301,7 @@ impl GpuUi {
             composite_bind_group_layout,
             sampler,
             font_texture: None,
+            image_textures: AHashMap::new(),
             supersample_target: None,
             meshes: Vec::new(),
             vertex_buffer: None,
@@ -307,11 +322,13 @@ impl GpuUi {
         input: UiPrepareInput<'_>,
     ) {
         let UiPrepareInput {
+            resources,
             viewport,
             primitives,
             textures_delta,
             texture_size,
             revision,
+            static_texture_lookup,
         } = input;
         let viewport = [viewport[0].max(1), viewport[1].max(1)];
         let render_viewport = supersampled_size(viewport);
@@ -342,9 +359,17 @@ impl GpuUi {
             let Primitive::Mesh(mesh) = &primitive.primitive else {
                 continue;
             };
+            if mesh.vertices.is_empty() || mesh.indices.is_empty() {
+                continue;
+            }
             if mesh.texture_id != TextureId::default()
-                || mesh.vertices.is_empty()
-                || mesh.indices.is_empty()
+                && !self.ensure_image_texture(
+                    device,
+                    queue,
+                    resources,
+                    mesh.texture_id,
+                    static_texture_lookup,
+                )
             {
                 continue;
             }
@@ -373,6 +398,7 @@ impl GpuUi {
             let index_count = mesh.indices.len().min(u32::MAX as usize) as u32;
             if let Some(last) = self.meshes.last_mut()
                 && last.clip_rect == clip_rect
+                && last.texture_id == mesh.texture_id
                 && last.index_start.saturating_add(last.index_count) == index_start
             {
                 last.index_count = last.index_count.saturating_add(index_count);
@@ -382,6 +408,7 @@ impl GpuUi {
                 index_start,
                 index_count,
                 clip_rect,
+                texture_id: mesh.texture_id,
             });
         }
         self.upload_mesh_buffers(device, queue);
@@ -401,11 +428,9 @@ impl GpuUi {
         }
         let render_viewport = supersampled_size(viewport);
         self.ensure_supersample_target(device, render_viewport);
-        let (Some(vertex_buffer), Some(index_buffer), Some(font_texture)) = (
-            self.vertex_buffer.as_ref(),
-            self.index_buffer.as_ref(),
-            self.font_texture.as_ref(),
-        ) else {
+        let (Some(vertex_buffer), Some(index_buffer)) =
+            (self.vertex_buffer.as_ref(), self.index_buffer.as_ref())
+        else {
             return;
         };
         let Some(target) = self.supersample_target.as_ref() else {
@@ -429,13 +454,16 @@ impl GpuUi {
         });
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-        pass.set_bind_group(1, &font_texture.bind_group, &[]);
         pass.set_vertex_buffer(0, vertex_buffer.slice(..));
         pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
         for mesh in &self.meshes {
             if mesh.clip_rect[2] == 0 || mesh.clip_rect[3] == 0 {
                 continue;
             }
+            let Some(bind_group) = self.ui_texture_bind_group(mesh.texture_id) else {
+                continue;
+            };
+            pass.set_bind_group(1, bind_group, &[]);
             pass.set_scissor_rect(
                 mesh.clip_rect[0],
                 mesh.clip_rect[1],
@@ -634,6 +662,130 @@ impl GpuUi {
             },
         );
     }
+
+    fn ui_texture_bind_group(&self, texture_id: TextureId) -> Option<&wgpu::BindGroup> {
+        if texture_id == TextureId::default() {
+            return self
+                .font_texture
+                .as_ref()
+                .map(|texture| &texture.bind_group);
+        }
+        let TextureId::User(raw) = texture_id else {
+            return None;
+        };
+        self.image_textures
+            .get(&TextureID::from_u64(raw))
+            .map(|texture| &texture.bind_group)
+    }
+
+    fn ensure_image_texture(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        resources: &ResourceStore,
+        texture_id: TextureId,
+        static_texture_lookup: Option<StaticTextureLookup>,
+    ) -> bool {
+        let TextureId::User(raw) = texture_id else {
+            return false;
+        };
+        let texture_key = TextureID::from_u64(raw);
+        if self.image_textures.contains_key(&texture_key) {
+            return true;
+        }
+        let Some(source) = resources.texture_source(texture_key) else {
+            return false;
+        };
+        let Some((rgba, width, height)) = load_ui_texture_rgba(source, static_texture_lookup)
+        else {
+            return false;
+        };
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("perro_ui_image_texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &rgba,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(width.max(1) * 4),
+                rows_per_image: Some(height.max(1)),
+            },
+            wgpu::Extent3d {
+                width: width.max(1),
+                height: height.max(1),
+                depth_or_array_layers: 1,
+            },
+        );
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_ui_image_bg"),
+            layout: &self.texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        });
+        self.image_textures.insert(
+            texture_key,
+            UiTextureGpu {
+                texture,
+                bind_group,
+                size: [width, height],
+            },
+        );
+        true
+    }
+}
+
+fn load_ui_texture_rgba(
+    source: &str,
+    static_texture_lookup: Option<StaticTextureLookup>,
+) -> Option<(Vec<u8>, u32, u32)> {
+    if source == "__default__" {
+        return Some((vec![255, 255, 255, 255], 1, 1));
+    }
+    if let Some(lookup) = static_texture_lookup {
+        let source_hash = perro_ids::parse_hashed_source_uri(source)
+            .unwrap_or_else(|| perro_ids::string_to_u64(source));
+        let bytes = lookup(source_hash);
+        if !bytes.is_empty() {
+            if let Some(decoded) = decode_ptex(bytes) {
+                return Some(decoded);
+            }
+            let image = image::load_from_memory(bytes).ok()?;
+            let rgba = image.to_rgba8();
+            let (width, height) = rgba.dimensions();
+            return Some((rgba.into_raw(), width.max(1), height.max(1)));
+        }
+    }
+    let bytes = load_asset(source).ok()?;
+    let image = image::load_from_memory(&bytes).ok()?;
+    let rgba = image.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    Some((rgba.into_raw(), width.max(1), height.max(1)))
 }
 
 fn font_delta_required_size(
@@ -671,6 +823,63 @@ fn supersampled_size(viewport: [u32; 2]) -> [u32; 2] {
         viewport[0].max(1).saturating_mul(UI_SUPERSAMPLE_SCALE),
         viewport[1].max(1).saturating_mul(UI_SUPERSAMPLE_SCALE),
     ]
+}
+
+fn decode_ptex(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
+    if bytes.len() < 24 || &bytes[0..4] != PTEX_MAGIC {
+        return None;
+    }
+    let version = u32::from_le_bytes(bytes[4..8].try_into().ok()?);
+    if version != 2 {
+        return None;
+    }
+    let width = u32::from_le_bytes(bytes[8..12].try_into().ok()?);
+    let height = u32::from_le_bytes(bytes[12..16].try_into().ok()?);
+    if width == 0 || height == 0 {
+        return None;
+    }
+    let flags = u32::from_le_bytes(bytes[16..20].try_into().ok()?);
+    let raw_len = u32::from_le_bytes(bytes[20..24].try_into().ok()?);
+    if flags & !(PTEX_FLAG_FORMAT_MASK | PTEX_FLAG_PAYLOAD_RAW) != 0 {
+        return None;
+    }
+    let pixel_count = width.checked_mul(height)? as usize;
+    let expected_raw_len = match flags & PTEX_FLAG_FORMAT_MASK {
+        PTEX_FLAG_FORMAT_RGBA8 => pixel_count.checked_mul(4)?,
+        PTEX_FLAG_FORMAT_RGB8 => pixel_count.checked_mul(3)?,
+        PTEX_FLAG_FORMAT_R8 => pixel_count,
+        _ => return None,
+    };
+    if raw_len as usize != expected_raw_len {
+        return None;
+    }
+    let raw = if (flags & PTEX_FLAG_PAYLOAD_RAW) != 0 {
+        bytes[24..].to_vec()
+    } else {
+        decompress_zlib(&bytes[24..]).ok()?
+    };
+    if raw.len() != expected_raw_len {
+        return None;
+    }
+    let rgba = match flags & PTEX_FLAG_FORMAT_MASK {
+        PTEX_FLAG_FORMAT_RGBA8 => raw,
+        PTEX_FLAG_FORMAT_RGB8 => {
+            let mut out = Vec::with_capacity(pixel_count * 4);
+            for px in raw.chunks_exact(3) {
+                out.extend_from_slice(&[px[0], px[1], px[2], 255]);
+            }
+            out
+        }
+        PTEX_FLAG_FORMAT_R8 => {
+            let mut out = Vec::with_capacity(pixel_count * 4);
+            for &v in &raw {
+                out.extend_from_slice(&[v, v, v, 255]);
+            }
+            out
+        }
+        _ => return None,
+    };
+    Some((rgba, width, height))
 }
 
 fn upload_or_grow_buffer(

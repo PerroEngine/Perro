@@ -33,6 +33,7 @@ use perro_render_bridge::{
 use std::{
     borrow::Cow,
     cmp::Ordering,
+    collections::BTreeMap,
     ops::Range,
     sync::{Arc, mpsc, mpsc::TryRecvError},
     time::Duration,
@@ -511,8 +512,22 @@ struct MeshAssetRange {
     full: MeshRange,
     surface_ranges: Arc<[MeshRange]>,
     meshlets: Arc<[MeshletRange]>,
+    lods: Arc<[MeshLodRange]>,
     bounds_center: [f32; 3],
     bounds_radius: f32,
+}
+
+#[derive(Clone)]
+struct MeshLodRange {
+    full: MeshRange,
+    surface_ranges: Arc<[MeshRange]>,
+    meshlets: Arc<[MeshletRange]>,
+}
+
+struct MeshLodView<'a> {
+    full: MeshRange,
+    surface_ranges: &'a [MeshRange],
+    meshlets: &'a [MeshletRange],
 }
 
 #[derive(Clone)]
@@ -582,6 +597,10 @@ const PMESH_V6_FLAG_HAS_UV0: u32 = 1 << 1;
 const PMESH_V6_FLAG_HAS_JOINTS: u32 = 1 << 2;
 const PMESH_V6_FLAG_HAS_WEIGHTS: u32 = 1 << 3;
 const CULL_FLAG_DISABLE_HIZ_OCCLUSION: u32 = 1u32;
+const LOD_TARGET_RATIOS: [f32; 4] = [1.0, 0.5, 0.25, 0.125];
+const LOD1_DISTANCE_RADIUS_SCALE: f32 = 36.0;
+const LOD2_DISTANCE_RADIUS_SCALE: f32 = 72.0;
+const LOD3_DISTANCE_RADIUS_SCALE: f32 = 144.0;
 const FRUSTUM_CULL_MIN_BATCHES: usize = 96;
 const FRUSTUM_CULL_MIN_INSTANCES: usize = 1024;
 const FRUSTUM_CULL_HIGH_VISIBLE_RATIO: f32 = 0.9;
@@ -602,6 +621,8 @@ struct DecodedMesh {
     indices: Vec<u32>,
     surface_ranges: Vec<MeshRange>,
     meshlets: Vec<DecodedMeshlet>,
+    lods: Vec<DecodedLod>,
+    has_skinning: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -610,6 +631,16 @@ struct DecodedMeshlet {
     index_count: u32,
     center: [f32; 3],
     radius: f32,
+}
+
+#[derive(Clone)]
+struct DecodedLod {
+    index_start: u32,
+    index_count: u32,
+    surface_start: u32,
+    surface_count: u32,
+    meshlet_start: u32,
+    meshlet_count: u32,
 }
 
 impl Gpu3D {
@@ -2589,7 +2620,7 @@ impl Gpu3D {
         self.last_aspect = (width.max(1) as f32) / (height.max(1) as f32);
         self.last_proj_y_scale = projection_y_scale_from_projection(camera.projection);
 
-        if draws_unchanged {
+        if draws_unchanged && !scene_changed {
             let frustum_cull_active = self.should_run_frustum_cull();
             let hiz_active = self.should_run_hiz_occlusion(frustum_cull_active);
             if frustum_cull_active {
@@ -2988,10 +3019,12 @@ impl Gpu3D {
                     .resolve_builtin_mesh_asset("__cylinder__")
                     .unwrap_or_else(|| default_mesh.clone()),
             };
+            let active_lod =
+                select_mesh_lod(&mesh_asset, draw.instance_mats.first(), camera.position);
             surface_entries.clear();
             match draw.kind {
                 Draw3DKind::DebugPointCube => surface_entries.push((
-                    mesh_asset.full,
+                    active_lod.full,
                     Material3D::Standard(StandardMaterial3D {
                         base_color_factor: [1.0, 0.92, 0.2, 1.0],
                         roughness_factor: 0.35,
@@ -3001,7 +3034,7 @@ impl Gpu3D {
                     }),
                 )),
                 Draw3DKind::DebugEdgeCylinder => surface_entries.push((
-                    mesh_asset.full,
+                    active_lod.full,
                     Material3D::Standard(StandardMaterial3D {
                         base_color_factor: [0.15, 0.95, 0.95, 1.0],
                         roughness_factor: 0.6,
@@ -3012,7 +3045,7 @@ impl Gpu3D {
                 )),
                 Draw3DKind::Mesh(_) => {
                     for (surface_index, surface) in draw.surfaces.iter().enumerate() {
-                        let Some(range) = mesh_asset.surface_ranges.get(surface_index).copied()
+                        let Some(range) = active_lod.surface_ranges.get(surface_index).copied()
                         else {
                             continue;
                         };
@@ -3024,7 +3057,7 @@ impl Gpu3D {
                             .push((range, apply_surface_binding(base_material, surface)));
                     }
                     if surface_entries.is_empty() {
-                        surface_entries.push((mesh_asset.full, Material3D::default()));
+                        surface_entries.push((active_lod.full, Material3D::default()));
                     }
                 }
             }
@@ -3108,11 +3141,11 @@ impl Gpu3D {
                 && !is_debug_edge
                 && self.meshlets_enabled
                 && allow_meshlets
-                && !mesh_asset.meshlets.is_empty()
+                && !active_lod.meshlets.is_empty()
                 && surface_entries.len() == 1
                 && !self.cpu_occlusion_enabled;
             total_meshlets = total_meshlets.saturating_add(if use_meshlets {
-                mesh_asset.meshlets.len()
+                active_lod.meshlets.len()
             } else {
                 1
             });
@@ -3332,7 +3365,7 @@ impl Gpu3D {
                     (0, 0)
                 };
                 let instance_mats = draw.instance_mats.as_ref();
-                for meshlet in mesh_asset.meshlets.iter().copied() {
+                for meshlet in active_lod.meshlets.iter().copied() {
                     // Keep meshlet casters for stable shadow fitting even when off-screen.
                     // CPU query occlusion at meshlet granularity self-occludes dynamic meshes.
                     // Keep meshlet occlusion GPU-driven only; CPU mode skips meshlet occlusion.
@@ -5115,6 +5148,7 @@ impl Gpu3D {
                     .get(source)
                     .cloned()
                     .unwrap_or_else(|| Arc::from([])),
+                lods: Arc::from([]),
                 bounds_center,
                 bounds_radius,
             });
@@ -5162,6 +5196,7 @@ impl Gpu3D {
             full,
             surface_ranges: Arc::from([full]),
             meshlets,
+            lods: Arc::from([]),
             bounds_center,
             bounds_radius,
         })
@@ -5182,15 +5217,17 @@ impl Gpu3D {
         let index_count = decoded.indices.len() as u32;
 
         let (bounds_center, bounds_radius) = mesh_bounds_from_vertices(&decoded.vertices)?;
-        let surface_ranges = if decoded.surface_ranges.is_empty() {
+        let decoded_surface_ranges = decoded.surface_ranges.clone();
+        let decoded_meshlets = decoded.meshlets.clone();
+        let decoded_lods = decoded.lods.clone();
+        let surface_ranges = if decoded_surface_ranges.is_empty() {
             vec![MeshRange {
                 index_start,
                 index_count,
                 base_vertex: 0,
             }]
         } else {
-            decoded
-                .surface_ranges
+            decoded_surface_ranges
                 .iter()
                 .copied()
                 .map(|range| MeshRange {
@@ -5251,9 +5288,9 @@ impl Gpu3D {
             base_vertex: 0,
         };
 
-        let meshlets: Vec<MeshletRange> = decoded
-            .meshlets
-            .into_iter()
+        let meshlets: Vec<MeshletRange> = decoded_meshlets
+            .iter()
+            .copied()
             .filter_map(|meshlet| {
                 if meshlet.index_count == 0 {
                     return None;
@@ -5266,11 +5303,23 @@ impl Gpu3D {
                 })
             })
             .collect();
+        let meshlets_arc: Arc<[MeshletRange]> = Arc::from(meshlets);
+        let surface_ranges_arc: Arc<[MeshRange]> = Arc::from(surface_ranges);
+        let lods = build_mesh_lod_ranges(
+            index_start,
+            index_count,
+            &decoded_surface_ranges,
+            &surface_ranges_arc,
+            &decoded_meshlets,
+            &meshlets_arc,
+            &decoded_lods,
+        );
 
         Some(MeshAssetRange {
             full,
-            surface_ranges: Arc::from(surface_ranges),
-            meshlets: Arc::from(meshlets),
+            surface_ranges: surface_ranges_arc,
+            meshlets: meshlets_arc,
+            lods: Arc::from(lods),
             bounds_center,
             bounds_radius,
         })
@@ -5374,6 +5423,104 @@ impl Gpu3D {
     }
 }
 
+fn build_mesh_lod_ranges(
+    index_start: u32,
+    index_count: u32,
+    decoded_surfaces: &[MeshRange],
+    uploaded_surfaces: &Arc<[MeshRange]>,
+    decoded_meshlets: &[DecodedMeshlet],
+    uploaded_meshlets: &Arc<[MeshletRange]>,
+    decoded_lods: &[DecodedLod],
+) -> Vec<MeshLodRange> {
+    if decoded_lods.is_empty() {
+        return Vec::new();
+    }
+
+    let mut out = Vec::new();
+    for lod in decoded_lods {
+        if lod.index_count == 0 {
+            continue;
+        }
+        let lod_full = MeshRange {
+            index_start: index_start + lod.index_start.min(index_count),
+            index_count: lod
+                .index_count
+                .min(index_count.saturating_sub(lod.index_start)),
+            base_vertex: 0,
+        };
+        let surface_start = lod.surface_start as usize;
+        let surface_end = surface_start
+            .saturating_add(lod.surface_count as usize)
+            .min(decoded_surfaces.len())
+            .min(uploaded_surfaces.len());
+        let surfaces = if surface_start < surface_end {
+            Arc::from(uploaded_surfaces[surface_start..surface_end].to_vec())
+        } else {
+            Arc::from([lod_full])
+        };
+        let meshlet_start = lod.meshlet_start as usize;
+        let meshlet_end = meshlet_start
+            .saturating_add(lod.meshlet_count as usize)
+            .min(decoded_meshlets.len())
+            .min(uploaded_meshlets.len());
+        let meshlets = if meshlet_start < meshlet_end {
+            Arc::from(uploaded_meshlets[meshlet_start..meshlet_end].to_vec())
+        } else {
+            Arc::from([])
+        };
+        out.push(MeshLodRange {
+            full: lod_full,
+            surface_ranges: surfaces,
+            meshlets,
+        });
+    }
+    out
+}
+
+fn select_mesh_lod<'a>(
+    mesh: &'a MeshAssetRange,
+    model: Option<&[[f32; 4]; 4]>,
+    camera_pos: [f32; 3],
+) -> MeshLodView<'a> {
+    if mesh.lods.len() <= 1 {
+        return MeshLodView {
+            full: mesh.full,
+            surface_ranges: &mesh.surface_ranges,
+            meshlets: &mesh.meshlets,
+        };
+    }
+    let Some(model) = model else {
+        return MeshLodView {
+            full: mesh.full,
+            surface_ranges: &mesh.surface_ranges,
+            meshlets: &mesh.meshlets,
+        };
+    };
+    let world_pos = [model[3][0], model[3][1], model[3][2]];
+    let dx = world_pos[0] - camera_pos[0];
+    let dy = world_pos[1] - camera_pos[1];
+    let dz = world_pos[2] - camera_pos[2];
+    let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+    let radius = mesh.bounds_radius.max(0.001);
+    let ratio = dist / radius;
+    let index = if ratio > LOD3_DISTANCE_RADIUS_SCALE {
+        3
+    } else if ratio > LOD2_DISTANCE_RADIUS_SCALE {
+        2
+    } else if ratio > LOD1_DISTANCE_RADIUS_SCALE {
+        1
+    } else {
+        0
+    }
+    .min(mesh.lods.len().saturating_sub(1));
+    let lod = &mesh.lods[index];
+    MeshLodView {
+        full: lod.full,
+        surface_ranges: &lod.surface_ranges,
+        meshlets: &lod.meshlets,
+    }
+}
+
 fn load_mesh_from_source(
     source: &str,
     static_mesh_lookup: Option<StaticMeshLookup>,
@@ -5449,10 +5596,22 @@ fn load_mesh_from_source(
         }
     };
 
-    if decoded.meshlets.is_empty() && dev_meshlets {
+    if decoded.has_skinning {
+        decoded.lods.clear();
+    } else if decoded.lods.is_empty() {
+        decoded = build_dynamic_lods(decoded, dev_meshlets);
+    } else if decoded.meshlets.is_empty() && dev_meshlets {
         let (packed_indices, meshlets) = build_meshlets(&decoded.vertices, &decoded.indices);
         decoded.indices = packed_indices;
         decoded.meshlets = meshlets;
+        decoded.lods = vec![DecodedLod {
+            index_start: 0,
+            index_count: decoded.indices.len() as u32,
+            surface_start: 0,
+            surface_count: decoded.surface_ranges.len() as u32,
+            meshlet_start: 0,
+            meshlet_count: decoded.meshlets.len() as u32,
+        }];
     }
 
     Some(decoded)
@@ -5588,7 +5747,288 @@ fn decode_runtime_mesh(mesh: &RuntimeMeshData) -> Option<DecodedMesh> {
         indices: mesh.indices.clone(),
         surface_ranges,
         meshlets: Vec::new(),
+        lods: Vec::new(),
+        has_skinning: mesh_vertices_have_skinning(&mesh.vertices),
     })
+}
+
+fn build_dynamic_lods(mut decoded: DecodedMesh, build_meshlets_for_lods: bool) -> DecodedMesh {
+    let (vertices, indices) = dedup_mesh_vertices(decoded.vertices, decoded.indices);
+    decoded.vertices = vertices;
+    let base_surfaces = if decoded.surface_ranges.is_empty() {
+        vec![MeshRange {
+            index_start: 0,
+            index_count: indices.len() as u32,
+            base_vertex: 0,
+        }]
+    } else {
+        decoded.surface_ranges
+    };
+    let lod_inputs = build_decoded_lod_sets(&decoded.vertices, &indices, &base_surfaces);
+    let mut all_indices = Vec::new();
+    let mut all_surfaces = Vec::new();
+    let mut all_meshlets = Vec::new();
+    let mut lods = Vec::new();
+    for input in lod_inputs {
+        let index_start = all_indices.len() as u32;
+        let surface_start = all_surfaces.len() as u32;
+        let meshlet_start = all_meshlets.len() as u32;
+        let (packed_indices, packed_surfaces, mut packed_meshlets) = if build_meshlets_for_lods {
+            pack_decoded_meshlets_with_surfaces(
+                &decoded.vertices,
+                &input.indices,
+                &input.surface_ranges,
+            )
+        } else {
+            (input.indices, input.surface_ranges, Vec::new())
+        };
+        let packed_index_start = all_indices.len() as u32;
+        all_indices.extend(packed_indices);
+        for mut surface in packed_surfaces {
+            surface.index_start += packed_index_start;
+            all_surfaces.push(surface);
+        }
+        for meshlet in &mut packed_meshlets {
+            meshlet.index_start += packed_index_start;
+        }
+        let meshlet_count = packed_meshlets.len() as u32;
+        all_meshlets.extend(packed_meshlets);
+        lods.push(DecodedLod {
+            index_start,
+            index_count: (all_indices.len() as u32).saturating_sub(index_start),
+            surface_start,
+            surface_count: (all_surfaces.len() as u32).saturating_sub(surface_start),
+            meshlet_start,
+            meshlet_count,
+        });
+    }
+    decoded.indices = all_indices;
+    decoded.surface_ranges = all_surfaces;
+    decoded.meshlets = all_meshlets;
+    decoded.lods = lods;
+    decoded
+}
+
+fn mesh_vertices_have_skinning(vertices: &[RuntimeMeshVertex]) -> bool {
+    vertices.iter().any(|vertex| {
+        vertex.joints.iter().any(|&joint| joint != 0)
+            || vertex.weights[1..].iter().any(|&weight| weight != 0.0)
+            || vertex.weights[0] != 1.0
+    })
+}
+
+#[derive(Clone)]
+struct DecodedLodInput {
+    indices: Vec<u32>,
+    surface_ranges: Vec<MeshRange>,
+}
+
+fn build_decoded_lod_sets(
+    vertices: &[MeshVertex],
+    indices: &[u32],
+    surface_ranges: &[MeshRange],
+) -> Vec<DecodedLodInput> {
+    let tri_count = indices.len() / 3;
+    if tri_count == 0 {
+        return vec![DecodedLodInput {
+            indices: indices.to_vec(),
+            surface_ranges: surface_ranges.to_vec(),
+        }];
+    }
+    let mut lods = Vec::new();
+    for ratio in LOD_TARGET_RATIOS {
+        let mut lod_indices = Vec::new();
+        let mut lod_surfaces = Vec::new();
+        for range in surface_ranges {
+            let start = range.index_start as usize;
+            let end = start
+                .saturating_add(range.index_count as usize)
+                .min(indices.len());
+            let surface = &indices[start..end];
+            let surface_tris = surface.len() / 3;
+            if surface_tris == 0 {
+                continue;
+            }
+            let keep = ((surface_tris as f32) * ratio).ceil() as usize;
+            let keep = keep.clamp(1, surface_tris);
+            let surface_start = lod_indices.len() as u32;
+            append_decoded_surface(vertices, surface, keep, &mut lod_indices);
+            let surface_count = (lod_indices.len() as u32).saturating_sub(surface_start);
+            if surface_count > 0 {
+                lod_surfaces.push(MeshRange {
+                    index_start: surface_start,
+                    index_count: surface_count,
+                    base_vertex: 0,
+                });
+            }
+        }
+        let duplicate = lods
+            .last()
+            .is_some_and(|prev: &DecodedLodInput| prev.indices == lod_indices);
+        if lod_indices.len() >= 3 && !duplicate {
+            lods.push(DecodedLodInput {
+                indices: lod_indices,
+                surface_ranges: lod_surfaces,
+            });
+        }
+    }
+    if lods.is_empty() {
+        lods.push(DecodedLodInput {
+            indices: indices.to_vec(),
+            surface_ranges: surface_ranges.to_vec(),
+        });
+    }
+    lods
+}
+
+fn append_decoded_surface(
+    vertices: &[MeshVertex],
+    surface_indices: &[u32],
+    keep_tris: usize,
+    out: &mut Vec<u32>,
+) {
+    let tri_count = surface_indices.len() / 3;
+    if keep_tris >= tri_count {
+        out.extend_from_slice(&surface_indices[..tri_count * 3]);
+        return;
+    }
+    let mut tris = (0..tri_count)
+        .map(|tri| {
+            let start = tri * 3;
+            let a = surface_indices[start];
+            let b = surface_indices[start + 1];
+            let c = surface_indices[start + 2];
+            (decoded_triangle_area_key(vertices, a, b, c), tri)
+        })
+        .collect::<Vec<_>>();
+    tris.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    tris.truncate(keep_tris);
+    tris.sort_by_key(|(_, tri)| *tri);
+    for (_, tri) in tris {
+        let start = tri * 3;
+        out.extend_from_slice(&surface_indices[start..start + 3]);
+    }
+}
+
+fn decoded_triangle_area_key(vertices: &[MeshVertex], a: u32, b: u32, c: u32) -> f32 {
+    let Some(pa) = vertices.get(a as usize).map(|v| v.pos) else {
+        return 0.0;
+    };
+    let Some(pb) = vertices.get(b as usize).map(|v| v.pos) else {
+        return 0.0;
+    };
+    let Some(pc) = vertices.get(c as usize).map(|v| v.pos) else {
+        return 0.0;
+    };
+    let ab = [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
+    let ac = [pc[0] - pa[0], pc[1] - pa[1], pc[2] - pa[2]];
+    let cross = [
+        ab[1] * ac[2] - ab[2] * ac[1],
+        ab[2] * ac[0] - ab[0] * ac[2],
+        ab[0] * ac[1] - ab[1] * ac[0],
+    ];
+    let area_sq = cross[0] * cross[0] + cross[1] * cross[1] + cross[2] * cross[2];
+    if area_sq.is_finite() { area_sq } else { 0.0 }
+}
+
+fn pack_decoded_meshlets_with_surfaces(
+    vertices: &[MeshVertex],
+    indices: &[u32],
+    surface_ranges: &[MeshRange],
+) -> (Vec<u32>, Vec<MeshRange>, Vec<DecodedMeshlet>) {
+    let mut packed_indices = Vec::with_capacity(indices.len());
+    let mut packed_ranges = Vec::new();
+    let mut meshlets = Vec::new();
+    for range in surface_ranges {
+        let start = range.index_start as usize;
+        let end = start
+            .saturating_add(range.index_count as usize)
+            .min(indices.len());
+        if start >= end {
+            continue;
+        }
+        let (surface_indices, mut surface_meshlets) =
+            build_meshlets(vertices, &indices[start..end]);
+        let packed_start = packed_indices.len() as u32;
+        let packed_count = surface_indices.len() as u32;
+        packed_indices.extend(surface_indices);
+        for meshlet in &mut surface_meshlets {
+            meshlet.index_start += packed_start;
+        }
+        meshlets.extend(surface_meshlets);
+        packed_ranges.push(MeshRange {
+            index_start: packed_start,
+            index_count: packed_count,
+            base_vertex: 0,
+        });
+    }
+    if packed_indices.is_empty() {
+        let (indices, meshlets) = build_meshlets(vertices, indices);
+        let index_count = indices.len() as u32;
+        return (
+            indices,
+            vec![MeshRange {
+                index_start: 0,
+                index_count,
+                base_vertex: 0,
+            }],
+            meshlets,
+        );
+    }
+    (packed_indices, packed_ranges, meshlets)
+}
+
+fn dedup_mesh_vertices(
+    vertices: Vec<MeshVertex>,
+    indices: Vec<u32>,
+) -> (Vec<MeshVertex>, Vec<u32>) {
+    if vertices.is_empty() || indices.is_empty() {
+        return (vertices, indices);
+    }
+    let mut map = BTreeMap::<MeshVertexKey, u32>::new();
+    let mut old_to_new = vec![u32::MAX; vertices.len()];
+    let mut deduped = Vec::with_capacity(vertices.len());
+    for (old_index, vertex) in vertices.iter().copied().enumerate() {
+        let key = MeshVertexKey::from(vertex);
+        let new_index = if let Some(&existing) = map.get(&key) {
+            existing
+        } else {
+            let next = deduped.len() as u32;
+            map.insert(key, next);
+            deduped.push(vertex);
+            next
+        };
+        old_to_new[old_index] = new_index;
+    }
+    let mut remapped = Vec::with_capacity(indices.len());
+    for index in indices {
+        let Some(&mapped) = old_to_new.get(index as usize) else {
+            return (vertices, remapped);
+        };
+        remapped.push(mapped);
+    }
+    (deduped, remapped)
+}
+
+#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+struct MeshVertexKey {
+    pos: [u32; 3],
+    normal: [u32; 3],
+    uv: [u32; 2],
+    joints: [u16; 4],
+    weights: [u32; 4],
+}
+
+impl From<MeshVertex> for MeshVertexKey {
+    fn from(vertex: MeshVertex) -> Self {
+        Self {
+            pos: vertex.pos.map(f32::to_bits),
+            normal: vertex.normal.map(f32::to_bits),
+            uv: vertex.uv.map(f32::to_bits),
+            joints: vertex.joints,
+            weights: vertex.weights.map(f32::to_bits),
+        }
+    }
 }
 
 fn split_source_fragment(source: &str) -> (&str, Option<&str>) {
@@ -5919,7 +6359,7 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
         return None;
     }
     let version = u32::from_le_bytes(bytes[5..9].try_into().ok()?);
-    if version != 6 {
+    if !matches!(version, 6 | 8) {
         return None;
     }
     let flags = u32::from_le_bytes(bytes[9..13].try_into().ok()?);
@@ -5927,8 +6367,23 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
     let index_count = u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize;
     let surface_count = u32::from_le_bytes(bytes[21..25].try_into().ok()?) as usize;
     let meshlet_count = u32::from_le_bytes(bytes[25..29].try_into().ok()?) as usize;
-    let raw_len = u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize;
-    let raw = decode_static_payload(flags, &bytes[33..])?;
+    let (lod_count, raw_len, payload_start) = if version == 8 {
+        if bytes.len() < 37 {
+            return None;
+        }
+        (
+            u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize,
+            u32::from_le_bytes(bytes[33..37].try_into().ok()?) as usize,
+            37,
+        )
+    } else {
+        (
+            0,
+            u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize,
+            33,
+        )
+    };
+    let raw = decode_static_payload(flags, &bytes[payload_start..])?;
     if raw.len() != raw_len {
         return None;
     }
@@ -5946,10 +6401,12 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
     let index_bytes = index_count.checked_mul(4)?;
     let surface_bytes = surface_count.checked_mul(8)?;
     let meshlet_bytes = meshlet_count.checked_mul(24)?;
+    let lod_bytes = lod_count.checked_mul(24)?;
     let required = vertex_bytes
         .checked_add(index_bytes)?
         .checked_add(surface_bytes)?
-        .checked_add(meshlet_bytes)?;
+        .checked_add(meshlet_bytes)?
+        .checked_add(lod_bytes)?;
     if raw.len() < required {
         return None;
     }
@@ -6047,12 +6504,45 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
             radius: f32::from_le_bytes(raw[off + 20..off + 24].try_into().ok()?),
         });
     }
+    let lod_start = vertex_bytes + index_bytes + surface_bytes + meshlet_bytes;
+    let mut lods = Vec::with_capacity(lod_count);
+    for i in 0..lod_count {
+        let off = lod_start + i * 24;
+        let lod = DecodedLod {
+            index_start: u32::from_le_bytes(raw[off..off + 4].try_into().ok()?),
+            index_count: u32::from_le_bytes(raw[off + 4..off + 8].try_into().ok()?),
+            surface_start: u32::from_le_bytes(raw[off + 8..off + 12].try_into().ok()?),
+            surface_count: u32::from_le_bytes(raw[off + 12..off + 16].try_into().ok()?),
+            meshlet_start: u32::from_le_bytes(raw[off + 16..off + 20].try_into().ok()?),
+            meshlet_count: u32::from_le_bytes(raw[off + 20..off + 24].try_into().ok()?),
+        };
+        if (lod.index_start as usize).saturating_add(lod.index_count as usize) <= index_count
+            && (lod.surface_start as usize).saturating_add(lod.surface_count as usize)
+                <= surface_count
+            && (lod.meshlet_start as usize).saturating_add(lod.meshlet_count as usize)
+                <= meshlet_count
+        {
+            lods.push(lod);
+        }
+    }
+    if lods.is_empty() {
+        lods.push(DecodedLod {
+            index_start: 0,
+            index_count: index_count as u32,
+            surface_start: 0,
+            surface_count: surface_count as u32,
+            meshlet_start: 0,
+            meshlet_count: meshlet_count as u32,
+        });
+    }
 
     Some(DecodedMesh {
         vertices,
         indices,
         surface_ranges,
         meshlets,
+        lods,
+        has_skinning: v6_has_joints || v6_has_weights,
     })
 }
 
@@ -6062,6 +6552,7 @@ fn decode_gltf_mesh(bytes: &[u8], mesh_index: usize) -> Option<DecodedMesh> {
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
     let mut surface_ranges = Vec::new();
+    let mut has_skinning = false;
 
     for primitive in mesh.primitives() {
         let reader = primitive.reader(|buffer| buffers.get(buffer.index()).map(|b| b.0.as_slice()));
@@ -6084,10 +6575,16 @@ fn decode_gltf_mesh(bytes: &[u8], mesh_index: usize) -> Option<DecodedMesh> {
             .read_joints(0)
             .map(|iter| iter.into_u16().collect())
             .unwrap_or_default();
+        if !joints.is_empty() {
+            has_skinning = true;
+        }
         let mut weights: Vec<[f32; 4]> = reader
             .read_weights(0)
             .map(|iter| iter.into_f32().collect())
             .unwrap_or_default();
+        if !weights.is_empty() {
+            has_skinning = true;
+        }
         if weights.is_empty() && !joints.is_empty() {
             weights = vec![[1.0, 0.0, 0.0, 0.0]; joints.len()];
         }
@@ -6133,6 +6630,8 @@ fn decode_gltf_mesh(bytes: &[u8], mesh_index: usize) -> Option<DecodedMesh> {
         indices,
         surface_ranges,
         meshlets: Vec::new(),
+        lods: Vec::new(),
+        has_skinning,
     })
 }
 

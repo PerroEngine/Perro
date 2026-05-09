@@ -34,6 +34,16 @@ fn build_ui_label(data: &SceneDefNodeData) -> UiLabel {
     node
 }
 
+fn build_ui_image(data: &SceneDefNodeData) -> UiImage {
+    let mut node = UiImage::new();
+    if let Some(base) = data.base_ref() {
+        apply_ui_root_data(&mut node.base, base);
+    }
+    apply_ui_root_fields(&mut node.base, &data.fields);
+    apply_ui_image_fields(&mut node, &data.fields);
+    node
+}
+
 fn build_ui_text_box(data: &SceneDefNodeData) -> UiTextBox {
     let mut node = UiTextBox::new();
     if let Some(base) = data.base_ref() {
@@ -53,6 +63,16 @@ fn build_ui_text_block(data: &SceneDefNodeData) -> UiTextBlock {
     }
     apply_ui_root_fields(&mut node.inner.base, &data.fields);
     apply_ui_text_edit_fields(&mut node.inner, &data.fields);
+    node
+}
+
+fn build_ui_scroll_container(data: &SceneDefNodeData) -> UiScrollContainer {
+    let mut node = UiScrollContainer::new();
+    if let Some(base) = data.base_ref() {
+        apply_ui_root_data(&mut node.base, base);
+    }
+    apply_ui_root_fields(&mut node.base, &data.fields);
+    apply_ui_scroll_container_fields(&mut node, &data.fields);
     node
 }
 
@@ -378,6 +398,42 @@ fn apply_ui_label_fields(node: &mut UiLabel, fields: &[SceneObjectField]) {
     });
 }
 
+fn apply_ui_image_fields(node: &mut UiImage, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "tint" | "color" | "modulate" => {
+            if let Some(v) = as_scene_color(value) {
+                node.tint = v;
+            }
+        }
+        "scale_mode" | "image_scale" | "fit" => {
+            if let Some(v) = as_ui_image_scale_mode(value) {
+                node.scale_mode = v;
+            }
+        }
+        "h_align" | "image_h_align" => {
+            if let Some(v) = as_ui_text_align(value) {
+                node.h_align = v;
+            }
+        }
+        "v_align" | "image_v_align" => {
+            if let Some(v) = as_ui_text_align(value) {
+                node.v_align = v;
+            }
+        }
+        "aspect_ratio" | "ratio" => {
+            if let Some(v) = as_f32(value) {
+                node.aspect_ratio = v.max(0.0);
+            }
+        }
+        "atlas_region" | "texture_region" | "region" => {
+            if let Some(v) = as_vec4_array(value) {
+                node.texture_region = Some(v);
+            }
+        }
+        _ => {}
+    });
+}
+
 fn apply_ui_text_edit_fields(node: &mut perro_ui::UiTextEdit, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {
         "text" => {
@@ -521,6 +577,27 @@ fn decode_text_escapes(text: &str) -> String {
         }
     }
     out
+}
+
+fn apply_ui_scroll_container_fields(node: &mut UiScrollContainer, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "scroll" | "scroll_offset" => {
+            if let Some(v) = as_vec2(value) {
+                node.scroll = v;
+            }
+        }
+        "h_scroll" | "horizontal_scroll" | "scroll_x" => {
+            if let Some(v) = as_f32(value) {
+                node.scroll.x = v;
+            }
+        }
+        "v_scroll" | "vertical_scroll" | "scroll_y" => {
+            if let Some(v) = as_f32(value) {
+                node.scroll.y = v;
+            }
+        }
+        _ => {}
+    });
 }
 
 fn apply_ui_container_fields(
@@ -976,6 +1053,32 @@ fn as_ui_text_align(value: &SceneValue) -> Option<UiTextAlign> {
         "start" | "left" | "top" => Some(UiTextAlign::Start),
         "center" | "middle" => Some(UiTextAlign::Center),
         "end" | "right" | "bottom" => Some(UiTextAlign::End),
+        _ => None,
+    }
+}
+
+fn as_ui_image_scale_mode(value: &SceneValue) -> Option<UiImageScaleMode> {
+    match as_str(value)?
+        .to_ascii_lowercase()
+        .replace([' ', '-', '_'], "")
+        .as_str()
+    {
+        "stretch" | "fill" => Some(UiImageScaleMode::Stretch),
+        "fit" | "contain" | "keepaspect" => Some(UiImageScaleMode::Fit),
+        "cover" | "crop" => Some(UiImageScaleMode::Cover),
+        _ => None,
+    }
+}
+
+fn as_vec4_array(value: &SceneValue) -> Option<[f32; 4]> {
+    match value {
+        SceneValue::Vec4 { x, y, z, w } => Some([*x, *y, *z, *w]),
+        SceneValue::Array(values) if values.len() == 4 => Some([
+            as_f32(&values[0])?,
+            as_f32(&values[1])?,
+            as_f32(&values[2])?,
+            as_f32(&values[3])?,
+        ]),
         _ => None,
     }
 }

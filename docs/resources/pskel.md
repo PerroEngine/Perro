@@ -10,7 +10,7 @@ compiled into a **binary** `.pskel` with the same extension.
   - `res://models/rig.gltf:skeleton[0]`
 - Static builds embed `.pskel` and keep the same lookup key:
   - `res://models/rig.gltf:skeleton[0]`
-- You can also reference `res://models/rig.pskel` directly.
+- You can also create and reference `res://models/rig.pskel` directly.
 
 ## Text Format (Dev)
 
@@ -69,5 +69,3 @@ with_node_mut!(ctx.run, Skeleton3D, node_id, |skel| {
     skel.bones = bones;
 });
 ```
-
-

@@ -10,6 +10,7 @@ use crate::mesh_instance_3d::MeshInstance3D;
 use crate::multi_mesh_instance_3d::MultiMeshInstance3D;
 use crate::node_2d::Node2D;
 use crate::node_3d::Node3D;
+use crate::particle_emitter_2d::ParticleEmitter2D;
 use crate::particle_emitter_3d::ParticleEmitter3D;
 use crate::physics_2d::{Area2D, CollisionShape2D, RigidBody2D, StaticBody2D};
 use crate::physics_3d::{Area3D, CollisionShape3D, RigidBody3D, StaticBody3D};
@@ -19,12 +20,12 @@ use crate::ray_light_3d::RayLight3D;
 use crate::skeleton_3d::Skeleton3D;
 use crate::sky_3d::Sky3D;
 use crate::spot_light_3d::SpotLight3D;
-use crate::sprite_2d::Sprite2D;
+use crate::sprite_2d::{AnimatedSprite2D, Sprite2D};
 use perro_ids::{NodeID, NodeTag, TagID};
 use perro_structs::{Transform2D, Transform3D};
 use perro_ui::{
-    UiBox, UiButton, UiGrid, UiHLayout, UiLabel, UiLayout, UiNodeBase, UiPanel, UiTextBlock,
-    UiTextBox, UiTreeList, UiVLayout,
+    UiBox, UiButton, UiGrid, UiHLayout, UiImage, UiLabel, UiLayout, UiNodeBase, UiPanel,
+    UiScrollContainer, UiTextBlock, UiTextBox, UiTreeList, UiVLayout,
 };
 use std::borrow::Cow;
 
@@ -815,6 +816,8 @@ define_scene_nodes! {
         Node2D => (None, Node2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         Camera2D => (Node2D, Camera2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         Sprite2D => (Node2D, Sprite2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        AnimatedSprite2D => (Node2D, AnimatedSprite2D, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
+        ParticleEmitter2D => (Node2D, ParticleEmitter2D, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         CollisionShape2D => (Node2D, CollisionShape2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         StaticBody2D => (Node2D, StaticBody2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         Area2D => (Node2D, Area2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
@@ -846,9 +849,11 @@ define_scene_nodes! {
         UiBox => (None, UiBox, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         UiPanel => (UiBox, UiPanel, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiButton => (UiBox, UiButton, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiImage => (UiBox, UiImage, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiLabel => (UiBox, UiLabel, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiTextBox => (UiBox, UiTextBox, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiTextBlock => (UiBox, UiTextBlock, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiScrollContainer => (UiBox, UiScrollContainer, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         UiLayout => (UiBox, UiLayout, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         UiHLayout => (UiBox, UiHLayout, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         UiVLayout => (UiBox, UiVLayout, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),

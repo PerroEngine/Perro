@@ -7,6 +7,8 @@ pub enum NodeField {
     Node3D(Node3DField),
     Camera2D(Camera2DField),
     Sprite2D(Sprite2DField),
+    AnimatedSprite2D(AnimatedSprite2DField),
+    ParticleEmitter2D(ParticleEmitter2DField),
     CollisionShape2D(CollisionShape2DField),
     StaticBody2D(StaticBody2DField),
     RigidBody2D(RigidBody2DField),
@@ -30,6 +32,7 @@ pub enum NodeField {
     StaticBody3D(StaticBody3DField),
     RigidBody3D(RigidBody3DField),
     Area3D(Area3DField),
+    UiImage(UiImageField),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -59,6 +62,30 @@ pub enum Camera2DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Sprite2DField {
     Texture,
+    TextureRegion,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AnimatedSprite2DField {
+    Texture,
+    Animations,
+    CurrentAnimation,
+    CurrentFrame,
+    FpsScale,
+    Playing,
+    Looping,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParticleEmitter2DField {
+    Active,
+    Looping,
+    Prewarm,
+    SpawnRate,
+    Seed,
+    Params,
+    Profile,
+    SimMode,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -282,6 +309,12 @@ pub enum Area3DField {
     Enabled,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UiImageField {
+    Texture,
+    TextureRegion,
+}
+
 pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField> {
     let node_type = NodeType::from_str(node_type_name).ok()?;
 
@@ -298,6 +331,48 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
         },
         NodeType::Sprite2D => match field {
             "texture" => Some(NodeField::Sprite2D(Sprite2DField::Texture)),
+            "texture_region" | "region" | "atlas_region" => {
+                Some(NodeField::Sprite2D(Sprite2DField::TextureRegion))
+            }
+            _ => None,
+        },
+        NodeType::AnimatedSprite2D => match field {
+            "texture" => Some(NodeField::AnimatedSprite2D(AnimatedSprite2DField::Texture)),
+            "animations" | "sprites" => Some(NodeField::AnimatedSprite2D(
+                AnimatedSprite2DField::Animations,
+            )),
+            "current_animation" | "animation" | "clip" => Some(NodeField::AnimatedSprite2D(
+                AnimatedSprite2DField::CurrentAnimation,
+            )),
+            "current_frame" | "frame" => Some(NodeField::AnimatedSprite2D(
+                AnimatedSprite2DField::CurrentFrame,
+            )),
+            "fps_scale" | "speed" => {
+                Some(NodeField::AnimatedSprite2D(AnimatedSprite2DField::FpsScale))
+            }
+            "playing" | "play" => Some(NodeField::AnimatedSprite2D(AnimatedSprite2DField::Playing)),
+            "looping" | "loop" => Some(NodeField::AnimatedSprite2D(AnimatedSprite2DField::Looping)),
+            _ => None,
+        },
+        NodeType::ParticleEmitter2D => match field {
+            "active" => Some(NodeField::ParticleEmitter2D(ParticleEmitter2DField::Active)),
+            "looping" => Some(NodeField::ParticleEmitter2D(
+                ParticleEmitter2DField::Looping,
+            )),
+            "prewarm" => Some(NodeField::ParticleEmitter2D(
+                ParticleEmitter2DField::Prewarm,
+            )),
+            "spawn_rate" => Some(NodeField::ParticleEmitter2D(
+                ParticleEmitter2DField::SpawnRate,
+            )),
+            "seed" => Some(NodeField::ParticleEmitter2D(ParticleEmitter2DField::Seed)),
+            "params" => Some(NodeField::ParticleEmitter2D(ParticleEmitter2DField::Params)),
+            "profile" => Some(NodeField::ParticleEmitter2D(
+                ParticleEmitter2DField::Profile,
+            )),
+            "sim_mode" => Some(NodeField::ParticleEmitter2D(
+                ParticleEmitter2DField::SimMode,
+            )),
             _ => None,
         },
         NodeType::CollisionShape2D => match field {
@@ -530,6 +605,15 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
         },
         NodeType::Area3D => match field {
             "enabled" => Some(NodeField::Area3D(Area3DField::Enabled)),
+            _ => None,
+        },
+        NodeType::UiImage => match field {
+            "texture" | "image" | "source" | "src" => {
+                Some(NodeField::UiImage(UiImageField::Texture))
+            }
+            "texture_region" | "region" | "atlas_region" => {
+                Some(NodeField::UiImage(UiImageField::TextureRegion))
+            }
             _ => None,
         },
         _ => None,

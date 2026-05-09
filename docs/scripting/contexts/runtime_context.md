@@ -10,6 +10,7 @@ Runtime macros take `ctx.run` as argument 1.
 ## Runtime Modules
 
 - [Time Module](runtime_modules/time.md)
+- [Window Module](runtime_modules/window.md)
 - [Nodes Module](runtime_modules/nodes.md)
 - [Animations Module](runtime_modules/animations.md)
 - [Scripts Module](runtime_modules/scripts.md)

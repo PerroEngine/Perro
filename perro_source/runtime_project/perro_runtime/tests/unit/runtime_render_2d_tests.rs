@@ -1,15 +1,58 @@
 use super::Runtime;
 use perro_ids::TextureID;
 use perro_nodes::{
-    SceneNode, SceneNodeData, camera_2d::Camera2D, node_2d::Node2D, sprite_2d::Sprite2D,
+    SceneNode, SceneNodeData,
+    camera_2d::Camera2D,
+    node_2d::Node2D,
+    particle_emitter_2d::ParticleEmitter2D,
+    sprite_2d::{AnimatedSprite, AnimatedSprite2D, Sprite2D},
 };
-use perro_render_bridge::{Command2D, RenderCommand, RenderEvent, ResourceCommand};
+use perro_render_bridge::{Command2D, ParticlePath2D, RenderCommand, RenderEvent, ResourceCommand};
 use perro_runtime_context::sub_apis::{NodeAPI, NodeCreationTemplate};
 
 fn collect_commands(runtime: &mut Runtime) -> Vec<RenderCommand> {
     let mut out = Vec::new();
     runtime.drain_render_commands(&mut out);
     out
+}
+
+#[test]
+fn particle_emitter_2d_queues_point_particles() {
+    let mut runtime = Runtime::new();
+    let mut emitter = ParticleEmitter2D::new();
+    emitter.profile = "inline://preset = ballistic\nz = 999\nforce_z = 777".to_string();
+    emitter.spawn_rate = 10.0;
+    emitter.internal_simulation_time = 0.25;
+    let expected_node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::ParticleEmitter2D(emitter)));
+
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    assert!(commands.iter().any(|command| {
+        matches!(
+            command,
+            RenderCommand::TwoD(Command2D::UpsertPointParticles { node, particles })
+                if *node == expected_node
+                    && matches!(particles.profile.path, ParticlePath2D::Ballistic)
+                    && particles.profile.force == [0.0, 0.0]
+                    && particles.profile.expr_x_ops.is_none()
+                    && particles.profile.expr_y_ops.is_none()
+        )
+    }));
+}
+
+#[test]
+fn ppart_2d_ignores_z_fields() {
+    let parsed = super::parse_pparticle_source_2d(
+        "x = t * 2\ny = life\nz = bad_symbol\nforce = (1, 2, 999)\nforce_z = bad",
+    )
+    .expect("2d ppart parses without reading z");
+
+    assert_eq!(parsed.force, [1.0, 2.0]);
+    assert!(parsed.expr_x_ops.is_some());
+    assert!(parsed.expr_y_ops.is_some());
 }
 
 #[test]
@@ -53,6 +96,38 @@ fn sprite_requests_texture_once_until_created() {
         RenderCommand::TwoD(Command2D::UpsertSprite { node, sprite })
         if node == expected_node && sprite.texture == texture
     ));
+}
+
+#[test]
+fn animated_sprite_advances_frame_and_emits_region() {
+    let mut runtime = Runtime::new();
+    let mut sprite = AnimatedSprite2D::new();
+    sprite.texture = TextureID::from_parts(22, 0);
+    let mut animation = AnimatedSprite::new("run");
+    animation.frame_size = [16.0, 16.0];
+    animation.frame_count = 4;
+    animation.columns = 2;
+    animation.fps = 10.0;
+    sprite.current_animation = "run".into();
+    sprite.animations.push(animation);
+    let expected_node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::AnimatedSprite2D(sprite)));
+    runtime
+        .register_internal_node_schedules(expected_node, perro_nodes::NodeType::AnimatedSprite2D);
+
+    runtime.update(0.1);
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::UpsertSprite { node, sprite })
+            if *node == expected_node
+                && sprite.uv_min == [16.0, 0.0]
+                && sprite.uv_max == [32.0, 16.0]
+                && sprite.size == [16.0, 16.0]
+    )));
 }
 
 #[test]

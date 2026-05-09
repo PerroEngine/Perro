@@ -2724,6 +2724,7 @@ dependencies = [
  "perro_io",
  "perro_render_bridge",
  "perro_runtime",
+ "perro_runtime_context",
  "perro_scripting",
  "perro_ui",
  "serde",

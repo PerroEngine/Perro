@@ -872,11 +872,13 @@ impl Gpu {
                     &self.device,
                     &self.queue,
                     UiPrepareInput {
+                        resources,
                         viewport,
                         primitives: ui_primitives,
                         textures_delta: ui_textures_delta,
                         texture_size: ui_texture_size,
                         revision: ui_revision,
+                        static_texture_lookup,
                     },
                 );
                 ui.render_pass(&self.device, &mut encoder, output_view, viewport);

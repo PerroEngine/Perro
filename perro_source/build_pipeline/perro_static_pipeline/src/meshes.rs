@@ -11,13 +11,14 @@ use std::{
 };
 
 const PMESH_MAGIC: &[u8; 5] = b"PMESH";
-const PMESH_VERSION: u32 = 6;
+const PMESH_VERSION: u32 = 8;
 const PMESH_FLAG_HAS_NORMAL: u32 = 1 << 0;
 const PMESH_FLAG_HAS_UV0: u32 = 1 << 1;
 const PMESH_FLAG_HAS_JOINTS: u32 = 1 << 2;
 const PMESH_FLAG_HAS_WEIGHTS: u32 = 1 << 3;
 const PMESH_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
 const MESHLET_TRIANGLES: usize = 64;
+const LOD_TARGET_RATIOS: [f32; 4] = [1.0, 0.5, 0.25, 0.125];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct PackedVertex {
@@ -40,6 +41,21 @@ struct PackedMeshlet {
 struct PackedSurfaceRange {
     index_start: u32,
     index_count: u32,
+}
+
+#[derive(Clone)]
+struct PackedLod {
+    index_start: u32,
+    index_count: u32,
+    surface_start: u32,
+    surface_count: u32,
+    meshlet_start: u32,
+    meshlet_count: u32,
+}
+
+struct LodInput {
+    indices: Vec<u32>,
+    surface_ranges: Vec<PackedSurfaceRange>,
 }
 
 #[derive(Clone)]
@@ -287,16 +303,25 @@ fn build_gltf_mesh_entries(
             continue;
         }
 
-        let (indices, surface_ranges, meshlets) = if bake_meshlets {
-            pack_meshlets_with_surfaces(&vertices, &indices, &surface_ranges)
+        let has_skinning = has_joints_any || has_weights_any;
+        let (vertices, indices) = dedup_vertices(vertices, indices);
+        let (indices, surface_ranges, meshlets, lods) = if has_skinning {
+            let (indices, surface_ranges, meshlets) = if bake_meshlets {
+                pack_meshlets_with_surfaces(&vertices, &indices, &surface_ranges)
+            } else {
+                (indices, surface_ranges, Vec::new())
+            };
+            (indices, surface_ranges, meshlets, Vec::new())
         } else {
-            (indices, surface_ranges, Vec::new())
+            let lod_inputs = build_lod_sets(&vertices, &indices, &surface_ranges);
+            pack_lod_sets(&vertices, &lod_inputs, bake_meshlets)
         };
         let pmesh = encode_pmesh_tightest_layout(
             &vertices,
             &indices,
             &surface_ranges,
             &meshlets,
+            &lods,
             PackedMeshLayoutFlags {
                 has_normals: has_normals_any,
                 has_uv0: has_uv_any,
@@ -332,18 +357,28 @@ fn encode_pmesh_tightest_layout(
     indices: &[u32],
     surface_ranges: &[PackedSurfaceRange],
     meshlets: &[PackedMeshlet],
+    lods: &[PackedLod],
     layout_flags: PackedMeshLayoutFlags,
 ) -> io::Result<Vec<u8>> {
-    let baseline = encode_pmesh(vertices, indices, surface_ranges, meshlets, layout_flags)?;
+    let baseline = encode_pmesh(
+        vertices,
+        indices,
+        surface_ranges,
+        meshlets,
+        lods,
+        layout_flags,
+    )?;
     let (reordered_vertices, reordered_indices) = reorder_vertices_by_first_use(vertices, indices);
     if reordered_vertices == vertices && reordered_indices == indices {
         return Ok(baseline);
     }
+    let remapped_lods = lods.to_vec();
     let reordered = encode_pmesh(
         &reordered_vertices,
         &reordered_indices,
         surface_ranges,
         meshlets,
+        &remapped_lods,
         layout_flags,
     )?;
     if reordered.len() < baseline.len() {
@@ -391,11 +426,64 @@ fn reorder_vertices_by_first_use(
     (reordered_vertices, reordered_indices)
 }
 
+fn dedup_vertices(vertices: Vec<PackedVertex>, indices: Vec<u32>) -> (Vec<PackedVertex>, Vec<u32>) {
+    if vertices.is_empty() || indices.is_empty() {
+        return (vertices, indices);
+    }
+
+    let mut map = BTreeMap::<PackedVertexKey, u32>::new();
+    let mut old_to_new = vec![u32::MAX; vertices.len()];
+    let mut deduped = Vec::with_capacity(vertices.len());
+    for (old_index, vertex) in vertices.iter().copied().enumerate() {
+        let key = PackedVertexKey::from(vertex);
+        let new_index = if let Some(&existing) = map.get(&key) {
+            existing
+        } else {
+            let next = deduped.len() as u32;
+            map.insert(key, next);
+            deduped.push(vertex);
+            next
+        };
+        old_to_new[old_index] = new_index;
+    }
+
+    let mut remapped = Vec::with_capacity(indices.len());
+    for index in indices {
+        let Some(&mapped) = old_to_new.get(index as usize) else {
+            return (vertices, remapped);
+        };
+        remapped.push(mapped);
+    }
+    (deduped, remapped)
+}
+
+#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+struct PackedVertexKey {
+    position: [u32; 3],
+    normal: [u32; 3],
+    uv: [u32; 2],
+    joints: [u16; 4],
+    weights: [u32; 4],
+}
+
+impl From<PackedVertex> for PackedVertexKey {
+    fn from(vertex: PackedVertex) -> Self {
+        Self {
+            position: vertex.position.map(f32::to_bits),
+            normal: vertex.normal.map(f32::to_bits),
+            uv: vertex.uv.map(f32::to_bits),
+            joints: vertex.joints,
+            weights: vertex.weights.map(f32::to_bits),
+        }
+    }
+}
+
 fn encode_pmesh(
     vertices: &[PackedVertex],
     indices: &[u32],
     surface_ranges: &[PackedSurfaceRange],
     meshlets: &[PackedMeshlet],
+    lods: &[PackedLod],
     layout_flags: PackedMeshLayoutFlags,
 ) -> io::Result<Vec<u8>> {
     let PackedMeshLayoutFlags {
@@ -429,7 +517,8 @@ fn encode_pmesh(
         vertices.len() * vertex_stride_bytes
             + std::mem::size_of_val(indices)
             + surface_ranges.len() * (2 * std::mem::size_of::<u32>())
-            + meshlets.len() * (2 * std::mem::size_of::<u32>() + 4 * std::mem::size_of::<f32>()),
+            + meshlets.len() * (2 * std::mem::size_of::<u32>() + 4 * std::mem::size_of::<f32>())
+            + lods.len() * (6 * std::mem::size_of::<u32>()),
     );
 
     for vertex in vertices {
@@ -473,6 +562,14 @@ fn encode_pmesh(
         write_f32(&mut raw, meshlet.center[2]);
         write_f32(&mut raw, meshlet.radius);
     }
+    for lod in lods {
+        raw.extend_from_slice(&lod.index_start.to_le_bytes());
+        raw.extend_from_slice(&lod.index_count.to_le_bytes());
+        raw.extend_from_slice(&lod.surface_start.to_le_bytes());
+        raw.extend_from_slice(&lod.surface_count.to_le_bytes());
+        raw.extend_from_slice(&lod.meshlet_start.to_le_bytes());
+        raw.extend_from_slice(&lod.meshlet_count.to_le_bytes());
+    }
 
     let mut flags = 0u32;
     if has_normals {
@@ -494,7 +591,7 @@ fn encode_pmesh(
         flags |= PMESH_FLAG_PAYLOAD_RAW;
         raw.clone()
     };
-    let mut out = Vec::with_capacity(5 + 7 * std::mem::size_of::<u32>() + payload.len());
+    let mut out = Vec::with_capacity(5 + 8 * std::mem::size_of::<u32>() + payload.len());
     out.extend_from_slice(PMESH_MAGIC);
     out.extend_from_slice(&PMESH_VERSION.to_le_bytes());
     out.extend_from_slice(&flags.to_le_bytes());
@@ -502,9 +599,185 @@ fn encode_pmesh(
     out.extend_from_slice(&(indices.len() as u32).to_le_bytes());
     out.extend_from_slice(&(surface_ranges.len() as u32).to_le_bytes());
     out.extend_from_slice(&(meshlets.len() as u32).to_le_bytes());
+    out.extend_from_slice(&(lods.len() as u32).to_le_bytes());
     out.extend_from_slice(&(raw.len() as u32).to_le_bytes());
     out.extend_from_slice(&payload);
     Ok(out)
+}
+
+fn build_lod_sets(
+    vertices: &[PackedVertex],
+    indices: &[u32],
+    surface_ranges: &[PackedSurfaceRange],
+) -> Vec<LodInput> {
+    let base_surfaces = if surface_ranges.is_empty() {
+        vec![PackedSurfaceRange {
+            index_start: 0,
+            index_count: indices.len() as u32,
+        }]
+    } else {
+        surface_ranges.to_vec()
+    };
+    let tri_count = indices.len() / 3;
+    if tri_count == 0 {
+        return vec![LodInput {
+            indices: indices.to_vec(),
+            surface_ranges: base_surfaces,
+        }];
+    }
+
+    let mut lods = Vec::new();
+    for ratio in LOD_TARGET_RATIOS {
+        let target_tris = ((tri_count as f32) * ratio).ceil() as usize;
+        let target_tris = target_tris.clamp(1, tri_count);
+        let mut lod_indices = Vec::new();
+        let mut lod_surfaces = Vec::new();
+        for range in &base_surfaces {
+            let start = range.index_start as usize;
+            let end = start
+                .saturating_add(range.index_count as usize)
+                .min(indices.len());
+            let surface = &indices[start..end];
+            let surface_tris = surface.len() / 3;
+            if surface_tris == 0 {
+                continue;
+            }
+            let keep = ((surface_tris as f32) * ratio).ceil() as usize;
+            let keep = keep.clamp(1, surface_tris);
+            let surface_start = lod_indices.len() as u32;
+            append_decimated_surface(vertices, surface, keep, &mut lod_indices);
+            let surface_count = (lod_indices.len() as u32).saturating_sub(surface_start);
+            if surface_count > 0 {
+                lod_surfaces.push(PackedSurfaceRange {
+                    index_start: surface_start,
+                    index_count: surface_count,
+                });
+            }
+        }
+        let duplicate = lods
+            .last()
+            .is_some_and(|prev: &LodInput| prev.indices == lod_indices);
+        if lod_indices.len() >= 3 && !duplicate {
+            lods.push(LodInput {
+                indices: lod_indices,
+                surface_ranges: lod_surfaces,
+            });
+        }
+        if target_tris == tri_count && lods.len() == 1 {
+            continue;
+        }
+    }
+    if lods.is_empty() {
+        lods.push(LodInput {
+            indices: indices.to_vec(),
+            surface_ranges: base_surfaces,
+        });
+    }
+    lods
+}
+
+fn append_decimated_surface(
+    vertices: &[PackedVertex],
+    surface_indices: &[u32],
+    keep_tris: usize,
+    out: &mut Vec<u32>,
+) {
+    let tri_count = surface_indices.len() / 3;
+    if keep_tris >= tri_count {
+        out.extend_from_slice(&surface_indices[..tri_count * 3]);
+        return;
+    }
+
+    let mut tris = (0..tri_count)
+        .map(|tri| {
+            let start = tri * 3;
+            let a = surface_indices[start];
+            let b = surface_indices[start + 1];
+            let c = surface_indices[start + 2];
+            (triangle_area_key(vertices, a, b, c), tri)
+        })
+        .collect::<Vec<_>>();
+    tris.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    tris.truncate(keep_tris);
+    tris.sort_by_key(|(_, tri)| *tri);
+    for (_, tri) in tris {
+        let start = tri * 3;
+        out.extend_from_slice(&surface_indices[start..start + 3]);
+    }
+}
+
+fn triangle_area_key(vertices: &[PackedVertex], a: u32, b: u32, c: u32) -> f32 {
+    let Some(pa) = vertices.get(a as usize).map(|v| v.position) else {
+        return 0.0;
+    };
+    let Some(pb) = vertices.get(b as usize).map(|v| v.position) else {
+        return 0.0;
+    };
+    let Some(pc) = vertices.get(c as usize).map(|v| v.position) else {
+        return 0.0;
+    };
+    let ab = [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
+    let ac = [pc[0] - pa[0], pc[1] - pa[1], pc[2] - pa[2]];
+    let cross = [
+        ab[1] * ac[2] - ab[2] * ac[1],
+        ab[2] * ac[0] - ab[0] * ac[2],
+        ab[0] * ac[1] - ab[1] * ac[0],
+    ];
+    let area_sq = cross[0] * cross[0] + cross[1] * cross[1] + cross[2] * cross[2];
+    if area_sq.is_finite() { area_sq } else { 0.0 }
+}
+
+fn pack_lod_sets(
+    vertices: &[PackedVertex],
+    lod_inputs: &[LodInput],
+    bake_meshlets: bool,
+) -> (
+    Vec<u32>,
+    Vec<PackedSurfaceRange>,
+    Vec<PackedMeshlet>,
+    Vec<PackedLod>,
+) {
+    let mut all_indices = Vec::new();
+    let mut all_surfaces = Vec::new();
+    let mut all_meshlets = Vec::new();
+    let mut lods = Vec::new();
+
+    for lod_input in lod_inputs {
+        let indices = &lod_input.indices;
+        let index_start = all_indices.len() as u32;
+        let surface_start = all_surfaces.len() as u32;
+        let meshlet_start = all_meshlets.len() as u32;
+        let (packed_indices, packed_surfaces, mut packed_meshlets) = if bake_meshlets {
+            pack_meshlets_with_surfaces(vertices, indices, &lod_input.surface_ranges)
+        } else {
+            (
+                indices.clone(),
+                lod_input.surface_ranges.clone(),
+                Vec::new(),
+            )
+        };
+        let packed_index_start = all_indices.len() as u32;
+        all_indices.extend(packed_indices);
+        for mut surface in packed_surfaces {
+            surface.index_start += packed_index_start;
+            all_surfaces.push(surface);
+        }
+        for meshlet in &mut packed_meshlets {
+            meshlet.index_start += packed_index_start;
+        }
+        let meshlet_count = packed_meshlets.len() as u32;
+        all_meshlets.extend(packed_meshlets);
+        lods.push(PackedLod {
+            index_start,
+            index_count: (all_indices.len() as u32).saturating_sub(index_start),
+            surface_start,
+            surface_count: (all_surfaces.len() as u32).saturating_sub(surface_start),
+            meshlet_start,
+            meshlet_count,
+        });
+    }
+
+    (all_indices, all_surfaces, all_meshlets, lods)
 }
 
 fn pack_meshlets_with_surfaces(
@@ -649,9 +922,9 @@ fn escape_str(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        PackedMeshLayoutFlags, PackedSurfaceRange, PackedVertex, encode_pmesh,
-        encode_pmesh_tightest_layout, pack_meshlets, pack_meshlets_with_surfaces,
-        reorder_vertices_by_first_use,
+        PackedLod, PackedMeshLayoutFlags, PackedSurfaceRange, PackedVertex, build_lod_sets,
+        dedup_vertices, encode_pmesh, encode_pmesh_tightest_layout, pack_meshlets,
+        pack_meshlets_with_surfaces, reorder_vertices_by_first_use,
     };
 
     fn test_vertices() -> Vec<PackedVertex> {
@@ -797,12 +1070,62 @@ mod tests {
             has_joints: true,
             has_weights: true,
         };
-        let baseline = encode_pmesh(&vertices, &indices, &surfaces, &meshlets, full_layout)
-            .expect("baseline encode");
-        let selected =
-            encode_pmesh_tightest_layout(&vertices, &indices, &surfaces, &meshlets, full_layout)
-                .expect("tightest encode");
+        let lods = vec![PackedLod {
+            index_start: 0,
+            index_count: indices.len() as u32,
+            surface_start: 0,
+            surface_count: surfaces.len() as u32,
+            meshlet_start: 0,
+            meshlet_count: 0,
+        }];
+        let baseline = encode_pmesh(
+            &vertices,
+            &indices,
+            &surfaces,
+            &meshlets,
+            &lods,
+            full_layout,
+        )
+        .expect("baseline encode");
+        let selected = encode_pmesh_tightest_layout(
+            &vertices,
+            &indices,
+            &surfaces,
+            &meshlets,
+            &lods,
+            full_layout,
+        )
+        .expect("tightest encode");
         assert!(selected.len() <= baseline.len());
         assert!(selected.len() < baseline.len());
+    }
+
+    #[test]
+    fn vertex_dedup_remaps_indices() {
+        let mut vertices = test_vertices();
+        vertices.push(vertices[0]);
+        let indices = vec![0, 1, 2, 4, 2, 3];
+        let (deduped, remapped) = dedup_vertices(vertices, indices);
+        assert_eq!(deduped.len(), 4);
+        assert_eq!(remapped, vec![0, 1, 2, 0, 2, 3]);
+    }
+
+    #[test]
+    fn lod_sets_keep_surface_slots() {
+        let vertices = test_vertices();
+        let indices = vec![0, 1, 2, 0, 2, 3, 1, 2, 3, 1, 3, 0];
+        let surfaces = vec![
+            PackedSurfaceRange {
+                index_start: 0,
+                index_count: 6,
+            },
+            PackedSurfaceRange {
+                index_start: 6,
+                index_count: 6,
+            },
+        ];
+        let lods = build_lod_sets(&vertices, &indices, &surfaces);
+        assert!(!lods.is_empty());
+        assert!(lods.iter().all(|lod| lod.surface_ranges.len() == 2));
     }
 }

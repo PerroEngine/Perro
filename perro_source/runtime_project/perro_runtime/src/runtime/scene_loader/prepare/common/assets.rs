@@ -8,11 +8,16 @@ fn as_asset_source(value: &SceneValue) -> Option<String> {
 }
 
 fn extract_texture_source(data: &SceneDefNodeData) -> Option<String> {
-    if data.ty != "Sprite2D" {
+    if data.ty != "Sprite2D" && data.ty != "AnimatedSprite2D" && data.ty != "UiImage" {
         return None;
     }
+    let texture_field = match data.ty.as_ref() {
+        "AnimatedSprite2D" => NodeField::AnimatedSprite2D(AnimatedSprite2DField::Texture),
+        "UiImage" => NodeField::UiImage(UiImageField::Texture),
+        _ => NodeField::Sprite2D(Sprite2DField::Texture),
+    };
     data.fields.iter().find_map(|(name, value)| {
-        (resolve_node_field("Sprite2D", name) == Some(NodeField::Sprite2D(Sprite2DField::Texture)))
+        (resolve_node_field(data.ty.as_ref(), name) == Some(texture_field))
             .then(|| as_asset_source(value))
             .flatten()
     })

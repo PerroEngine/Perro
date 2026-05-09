@@ -426,6 +426,9 @@ impl PerroGraphics {
                     Command2D::UpsertRect { node, rect } => {
                         self.renderer_2d.queue_rect(node, rect);
                     }
+                    Command2D::UpsertPointParticles { node, particles } => {
+                        self.renderer_2d.queue_point_particles(node, *particles);
+                    }
                     Command2D::RemoveNode { node } => {
                         self.renderer_2d.remove_node(node);
                     }
@@ -584,6 +587,9 @@ impl PerroGraphics {
                     }
                     Command2D::UpsertRect { node, rect } => {
                         self.late_overlay_2d.queue_rect(node, rect);
+                    }
+                    Command2D::UpsertPointParticles { node, particles } => {
+                        self.late_overlay_2d.queue_point_particles(node, *particles);
                     }
                     Command2D::RemoveNode { node } => {
                         self.late_overlay_2d.remove_node(node);
@@ -870,6 +876,7 @@ impl PerroGraphics {
         self.late_overlay_sprites_cache.clear();
         self.late_overlay_sprites_cache
             .extend(self.late_overlay_2d.retained_sprites());
+        let ui_image_textures: Vec<_> = self.renderer_ui.image_textures().collect();
         let ui_paint = self
             .renderer_ui
             .prepare_paint([self.viewport.0 as f32, self.viewport.1 as f32]);
@@ -906,6 +913,9 @@ impl PerroGraphics {
         if sprites_refs_changed || draws_refs_changed || (frame_dirty_bits & DIRTY_RESOURCES) != 0 {
             self.resources.reset_ref_counts();
             for texture in &self.used_texture_refs_cache {
+                self.resources.mark_texture_used(*texture);
+            }
+            for texture in &ui_image_textures {
                 self.resources.mark_texture_used(*texture);
             }
             for mesh in &self.used_mesh_refs_cache {

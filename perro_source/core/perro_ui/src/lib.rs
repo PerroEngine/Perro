@@ -1,4 +1,4 @@
-use perro_ids::{NodeID, SignalID};
+use perro_ids::{NodeID, SignalID, TextureID};
 use perro_structs::{Color, Vector2};
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
@@ -640,6 +640,71 @@ impl UiNodeBase for UiPanel {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum UiImageScaleMode {
+    #[default]
+    Stretch,
+    Fit,
+    Cover,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiImage {
+    pub base: UiBox,
+    pub texture: TextureID,
+    pub texture_region: Option<[f32; 4]>,
+    pub tint: Color,
+    pub scale_mode: UiImageScaleMode,
+    pub h_align: UiTextAlign,
+    pub v_align: UiTextAlign,
+    pub aspect_ratio: f32,
+}
+
+impl UiImage {
+    pub const fn new() -> Self {
+        Self {
+            base: UiBox::new(),
+            texture: TextureID::nil(),
+            texture_region: None,
+            tint: Color::WHITE,
+            scale_mode: UiImageScaleMode::Stretch,
+            h_align: UiTextAlign::Center,
+            v_align: UiTextAlign::Center,
+            aspect_ratio: 0.0,
+        }
+    }
+}
+
+impl Default for UiImage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Deref for UiImage {
+    type Target = UiBox;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DerefMut for UiImage {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
+}
+
+impl UiNodeBase for UiImage {
+    fn ui_base(&self) -> &UiBox {
+        &self.base
+    }
+
+    fn ui_base_mut(&mut self) -> &mut UiBox {
+        &mut self.base
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiLabel {
     pub base: UiBox,
@@ -1059,6 +1124,53 @@ impl UiLayoutContainer {
 impl Default for UiLayoutContainer {
     fn default() -> Self {
         Self::new(UiLayoutMode::H)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiScrollContainer {
+    pub base: UiBox,
+    pub scroll: Vector2,
+}
+
+impl UiScrollContainer {
+    pub const fn new() -> Self {
+        let mut base = UiBox::new();
+        base.clip_children = true;
+        Self {
+            base,
+            scroll: Vector2::ZERO,
+        }
+    }
+}
+
+impl Default for UiScrollContainer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Deref for UiScrollContainer {
+    type Target = UiBox;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DerefMut for UiScrollContainer {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
+}
+
+impl UiNodeBase for UiScrollContainer {
+    fn ui_base(&self) -> &UiBox {
+        &self.base
+    }
+
+    fn ui_base_mut(&mut self) -> &mut UiBox {
+        &mut self.base
     }
 }
 

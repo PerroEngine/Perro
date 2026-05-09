@@ -342,6 +342,13 @@ mod tests {
                 text_changed_signals = ["entry_text"]
             [/UiTextBox]
             [/entry]
+
+            [scroller]
+            parent = menu
+            [UiScrollContainer]
+                scroll = (12, 34)
+            [/UiScrollContainer]
+            [/scroller]
             "##,
         )
         .parse_scene();
@@ -518,6 +525,19 @@ mod tests {
             }
             other => panic!("expected UiTextBox entry node, got {other:?}"),
         }
+
+        let scroller = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "scroller")
+            .expect("scroller node");
+        match &scroller.node.data {
+            SceneNodeData::UiScrollContainer(scroller) => {
+                assert!(scroller.clip_children);
+                assert_eq!(scroller.scroll, Vector2::new(12.0, 34.0));
+            }
+            other => panic!("expected UiScrollContainer scroller node, got {other:?}"),
+        }
     }
 
     #[test]
@@ -666,4 +686,49 @@ mod tests {
         }
     }
 
+    #[test]
+    fn scene_loader_builds_animated_sprite_2d_animations() {
+        let scene = Parser::new(
+            r#"
+            @root = hero
+            [hero]
+            [AnimatedSprite2D]
+                texture = "res://hero.png"
+                current_animation = "run"
+                current_frame = 1
+                fps_scale = 1.5
+                animations = [
+                    { name = "idle", start = (0, 0), frame_size = (32, 32), frame_count = 4, fps = 8 },
+                    { name = "run", start = (0, 32), frame_size = (32, 32), frame_count = 6, fps = 12 }
+                ]
+            [/AnimatedSprite2D]
+            [/hero]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared = prepare_scene_with_loader(&scene, &|path| {
+            Err(format!("unknown scene path `{path}`"))
+        })
+        .expect("prepare scene");
+
+        let hero = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "hero")
+            .expect("hero node");
+        assert_eq!(hero.texture_source.as_deref(), Some("res://hero.png"));
+        match &hero.node.data {
+            SceneNodeData::AnimatedSprite2D(sprite) => {
+                assert_eq!(sprite.current_animation.as_ref(), "run");
+                assert_eq!(sprite.current_frame, 1);
+                assert_eq!(sprite.fps_scale, 1.5);
+                assert_eq!(sprite.animations.len(), 2);
+                assert_eq!(sprite.animations[1].name.as_ref(), "run");
+                assert_eq!(sprite.animations[1].frame_count, 6);
+                assert_eq!(sprite.current_texture_region(), Some([32.0, 32.0, 32.0, 32.0]));
+            }
+            other => panic!("expected AnimatedSprite2D node, got {other:?}"),
+        }
+    }
 }

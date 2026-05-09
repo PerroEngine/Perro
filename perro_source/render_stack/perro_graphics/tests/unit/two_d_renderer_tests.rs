@@ -17,6 +17,7 @@ fn texture_upsert_requires_existing_resource() {
             model: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
             tint: [1.0, 1.0, 1.0, 1.0],
             z_index: 0,
+            ..Sprite2DCommand::default()
         },
     );
     let (_, stats, _) = renderer.prepare_frame(&resources);
@@ -32,6 +33,7 @@ fn texture_upsert_requires_existing_resource() {
             model: [[1.0, 0.0, 2.0], [0.0, 1.0, 3.0], [0.0, 0.0, 1.0]],
             tint: [1.0, 1.0, 1.0, 1.0],
             z_index: 1,
+            ..Sprite2DCommand::default()
         },
     );
     let (_, stats, _) = renderer.prepare_frame(&resources);
@@ -44,6 +46,7 @@ fn texture_upsert_requires_existing_resource() {
             model: [[1.0, 0.0, 2.0], [0.0, 1.0, 3.0], [0.0, 0.0, 1.0]],
             tint: [1.0, 1.0, 1.0, 1.0],
             z_index: 1,
+            ..Sprite2DCommand::default()
         })
     );
     assert_eq!(renderer.retained_sprite_count(), 1);
