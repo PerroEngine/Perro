@@ -47,7 +47,7 @@ where
         .to_mat4();
     let rest_world = rest_globals
         .iter()
-        .map(|p| skeleton_global.transform_point3((*p).into()).into())
+        .map(|p| skeleton_global.transform_point3(*p).into())
         .collect::<Vec<Vector3>>();
     let lengths = rest_world
         .windows(2)
@@ -194,13 +194,18 @@ fn step_chain(
     node.internal_prev_positions[0] = rest_world[0];
     let damping = (1.0 - cfg.damping).powf(dt * 60.0);
     let stiffness = 1.0 - (1.0 - cfg.stiffness).powf(dt * 60.0);
-    for i in 1..node.internal_positions.len() {
+    for (i, rest) in rest_world
+        .iter()
+        .enumerate()
+        .take(node.internal_positions.len())
+        .skip(1)
+    {
         let pos = node.internal_positions[i];
         let prev = node.internal_prev_positions[i];
         let velocity = (pos - prev) * damping;
         node.internal_prev_positions[i] = pos;
         node.internal_positions[i] = pos + velocity + cfg.gravity * (dt * dt);
-        node.internal_positions[i] = node.internal_positions[i].lerped(rest_world[i], stiffness);
+        node.internal_positions[i] = node.internal_positions[i].lerped(*rest, stiffness);
     }
 
     for _ in 0..cfg.iterations {
