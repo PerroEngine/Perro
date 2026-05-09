@@ -47,6 +47,7 @@ pub(super) fn merge_prepared_scene(
     let mut mesh_skeleton_links: Vec<(NodeID, u32)> = Vec::new();
     let mut bone_attachment_skeleton_links: Vec<(NodeID, u32)> = Vec::new();
     let mut ik_target_skeleton_links: Vec<(NodeID, u32)> = Vec::new();
+    let mut physics_bone_chain_skeleton_links: Vec<(NodeID, u32)> = Vec::new();
     let resource_api = runtime.resource_api.clone();
 
     for pending in nodes {
@@ -65,6 +66,7 @@ pub(super) fn merge_prepared_scene(
             mesh_skeleton_target,
             bone_attachment_skeleton_target,
             ik_target_skeleton_target,
+            physics_bone_chain_skeleton_target,
             animation_bindings,
         } = pending;
 
@@ -169,6 +171,9 @@ pub(super) fn merge_prepared_scene(
         if let Some(target) = ik_target_skeleton_target {
             ik_target_skeleton_links.push((node, target));
         }
+        if let Some(target) = physics_bone_chain_skeleton_target {
+            physics_bone_chain_skeleton_links.push((node, target));
+        }
         if let Some(parent_key) = parent_key {
             parent_pairs.push((key, parent_key));
         }
@@ -234,6 +239,17 @@ pub(super) fn merge_prepared_scene(
             && let SceneNodeData::IKTarget3D(ik_target) = &mut node_data.data
         {
             ik_target.skeleton = target;
+        }
+    }
+
+    for (chain_node, target_key) in physics_bone_chain_skeleton_links {
+        let target = *key_to.get(&target_key).ok_or_else(|| {
+            format!("physics bone chain skeleton target `{target_key}` not found")
+        })?;
+        if let Some(node_data) = runtime.nodes.get_mut(chain_node)
+            && let SceneNodeData::PhysicsBoneChain3D(chain) = &mut node_data.data
+        {
+            chain.skeleton = target;
         }
     }
 

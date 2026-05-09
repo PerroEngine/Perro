@@ -2,6 +2,7 @@ use crate::ambient_light_3d::AmbientLight3D;
 use crate::animation_player::AnimationPlayer;
 use crate::animation_tree::AnimationTree;
 use crate::bone_attachment_3d::BoneAttachment3D;
+use crate::bone_collider_3d::BoneCollider3D;
 use crate::camera_2d::Camera2D;
 use crate::camera_3d::Camera3D;
 use crate::ik_target_3d::IKTarget3D;
@@ -12,6 +13,7 @@ use crate::node_3d::Node3D;
 use crate::particle_emitter_3d::ParticleEmitter3D;
 use crate::physics_2d::{Area2D, CollisionShape2D, RigidBody2D, StaticBody2D};
 use crate::physics_3d::{Area3D, CollisionShape3D, RigidBody3D, StaticBody3D};
+use crate::physics_bone_chain_3d::PhysicsBoneChain3D;
 use crate::point_light_3d::PointLight3D;
 use crate::ray_light_3d::RayLight3D;
 use crate::skeleton_3d::Skeleton3D;
@@ -830,6 +832,8 @@ define_scene_nodes! {
         Skeleton3D => (Node3D, Skeleton3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         BoneAttachment3D => (Node3D, BoneAttachment3D, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False),
         IKTarget3D => (Node3D, IKTarget3D, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False),
+        PhysicsBoneChain3D => (Node3D, PhysicsBoneChain3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
+        BoneCollider3D => (Node3D, BoneCollider3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         ParticleEmitter3D => (Node3D, ParticleEmitter3D, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         //Lights
         AmbientLight3D => (None, AmbientLight3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),

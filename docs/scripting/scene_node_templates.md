@@ -498,6 +498,29 @@ script = "res://path/to/script.rs"
     [/BoneAttachment3D]
 [/bone_attachment_3d]
 
+[physics_bone_chain_3d]
+    [PhysicsBoneChain3D]
+        skeleton = "SkeletonNodeName"
+        bone = 0
+        chain_length = 4
+        gravity = (0, -9.81, 0)
+        damping = 0.08
+        stiffness = 0.35
+        radius = 0.05
+        collisions = true
+        iterations = 4
+    [/PhysicsBoneChain3D]
+[/physics_bone_chain_3d]
+
+[bone_collider_3d]
+    [BoneCollider3D]
+        enabled = true
+        [CollisionShape3D]
+            shape = { type="sphere", radius=0.5 }
+        [/CollisionShape3D]
+    [/BoneCollider3D]
+[/bone_collider_3d]
+
 [ik_target_3d]
 parent = PARENTKEY
 script = "res://path/to/script.rs"

@@ -54,6 +54,26 @@ fn build_ik_target_3d(data: &SceneDefNodeData) -> IKTarget3D {
     node
 }
 
+fn build_physics_bone_chain_3d(data: &SceneDefNodeData) -> PhysicsBoneChain3D {
+    let mut node = PhysicsBoneChain3D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_3d_data(&mut node, base);
+    }
+    apply_node_3d_fields(&mut node, &data.fields);
+    apply_physics_bone_chain_3d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_bone_collider_3d(data: &SceneDefNodeData) -> BoneCollider3D {
+    let mut node = BoneCollider3D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_3d_data(&mut node, base);
+    }
+    apply_node_3d_fields(&mut node, &data.fields);
+    apply_bone_collider_3d_fields(&mut node, &data.fields);
+    node
+}
+
 fn apply_node_3d_data(target: &mut Node3D, data: &SceneDefNodeData) {
     if let Some(base) = data.base_ref() {
         apply_node_3d_data(target, base);
@@ -185,6 +205,70 @@ fn apply_ik_target_3d_fields(node: &mut IKTarget3D, fields: &[SceneObjectField])
                 }
             }
             _ => {}
+        }
+    });
+}
+
+fn apply_physics_bone_chain_3d_fields(node: &mut PhysicsBoneChain3D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        match resolve_node_field("PhysicsBoneChain3D", name) {
+            Some(NodeField::PhysicsBoneChain3D(PhysicsBoneChain3DField::BoneIndex)) => {
+                if let Some(v) = as_i32(value) {
+                    node.bone_index = v;
+                }
+            }
+            Some(NodeField::PhysicsBoneChain3D(PhysicsBoneChain3DField::ChainLength)) => {
+                if let Some(v) = as_i32(value) {
+                    node.chain_length = v.max(0) as u32;
+                }
+            }
+            Some(NodeField::PhysicsBoneChain3D(PhysicsBoneChain3DField::Enabled)) => {
+                if let Some(v) = as_bool(value) {
+                    node.enabled = v;
+                }
+            }
+            Some(NodeField::PhysicsBoneChain3D(PhysicsBoneChain3DField::Gravity)) => {
+                if let Some(v) = as_vec3(value) {
+                    node.gravity = v;
+                }
+            }
+            Some(NodeField::PhysicsBoneChain3D(PhysicsBoneChain3DField::Damping)) => {
+                if let Some(v) = as_f32(value) {
+                    node.damping = v.clamp(0.0, 1.0);
+                }
+            }
+            Some(NodeField::PhysicsBoneChain3D(PhysicsBoneChain3DField::Stiffness)) => {
+                if let Some(v) = as_f32(value) {
+                    node.stiffness = v.clamp(0.0, 1.0);
+                }
+            }
+            Some(NodeField::PhysicsBoneChain3D(PhysicsBoneChain3DField::Radius)) => {
+                if let Some(v) = as_f32(value) {
+                    node.radius = v.max(0.0);
+                }
+            }
+            Some(NodeField::PhysicsBoneChain3D(PhysicsBoneChain3DField::Collisions)) => {
+                if let Some(v) = as_bool(value) {
+                    node.collisions = v;
+                }
+            }
+            Some(NodeField::PhysicsBoneChain3D(PhysicsBoneChain3DField::Iterations)) => {
+                if let Some(v) = as_i32(value) {
+                    node.iterations = v.max(1) as u32;
+                }
+            }
+            _ => {}
+        }
+    });
+}
+
+fn apply_bone_collider_3d_fields(node: &mut BoneCollider3D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        if resolve_node_field("BoneCollider3D", name)
+            == Some(NodeField::BoneCollider3D(BoneCollider3DField::Enabled))
+            && let Some(v) = as_bool(value)
+        {
+            node.enabled = v;
         }
     });
 }
@@ -463,6 +547,20 @@ fn extract_ik_target_skeleton_target(data: &SceneDefNodeData) -> Option<String> 
     data.fields.iter().find_map(|(name, value)| {
         (resolve_node_field("IKTarget3D", name)
             == Some(NodeField::IKTarget3D(IKTarget3DField::Skeleton)))
+        .then(|| as_asset_source(value))
+        .flatten()
+    })
+}
+
+fn extract_physics_bone_chain_skeleton_target(data: &SceneDefNodeData) -> Option<String> {
+    if data.ty != "PhysicsBoneChain3D" {
+        return None;
+    }
+    data.fields.iter().find_map(|(name, value)| {
+        (resolve_node_field("PhysicsBoneChain3D", name)
+            == Some(NodeField::PhysicsBoneChain3D(
+                PhysicsBoneChain3DField::Skeleton,
+            )))
         .then(|| as_asset_source(value))
         .flatten()
     })

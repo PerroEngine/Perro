@@ -15,6 +15,8 @@ pub enum NodeField {
     Skeleton3D(Skeleton3DField),
     BoneAttachment3D(BoneAttachment3DField),
     IKTarget3D(IKTarget3DField),
+    PhysicsBoneChain3D(PhysicsBoneChain3DField),
+    BoneCollider3D(BoneCollider3DField),
     Camera3D(Camera3DField),
     ParticleEmitter3D(ParticleEmitter3DField),
     AnimationPlayer(AnimationPlayerField),
@@ -123,6 +125,25 @@ pub enum IKTarget3DField {
     Tolerance,
     Weight,
     MatchRotation,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PhysicsBoneChain3DField {
+    Skeleton,
+    BoneIndex,
+    ChainLength,
+    Enabled,
+    Gravity,
+    Damping,
+    Stiffness,
+    Radius,
+    Collisions,
+    Iterations,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BoneCollider3DField {
+    Enabled,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -353,6 +374,43 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             "tolerance" => Some(NodeField::IKTarget3D(IKTarget3DField::Tolerance)),
             "weight" => Some(NodeField::IKTarget3D(IKTarget3DField::Weight)),
             "match_rotation" => Some(NodeField::IKTarget3D(IKTarget3DField::MatchRotation)),
+            _ => None,
+        },
+        NodeType::PhysicsBoneChain3D => match field {
+            "skeleton" => Some(NodeField::PhysicsBoneChain3D(
+                PhysicsBoneChain3DField::Skeleton,
+            )),
+            "bone" | "bone_index" => Some(NodeField::PhysicsBoneChain3D(
+                PhysicsBoneChain3DField::BoneIndex,
+            )),
+            "chain_length" => Some(NodeField::PhysicsBoneChain3D(
+                PhysicsBoneChain3DField::ChainLength,
+            )),
+            "enabled" => Some(NodeField::PhysicsBoneChain3D(
+                PhysicsBoneChain3DField::Enabled,
+            )),
+            "gravity" => Some(NodeField::PhysicsBoneChain3D(
+                PhysicsBoneChain3DField::Gravity,
+            )),
+            "damping" => Some(NodeField::PhysicsBoneChain3D(
+                PhysicsBoneChain3DField::Damping,
+            )),
+            "stiffness" => Some(NodeField::PhysicsBoneChain3D(
+                PhysicsBoneChain3DField::Stiffness,
+            )),
+            "radius" => Some(NodeField::PhysicsBoneChain3D(
+                PhysicsBoneChain3DField::Radius,
+            )),
+            "collisions" | "collision" => Some(NodeField::PhysicsBoneChain3D(
+                PhysicsBoneChain3DField::Collisions,
+            )),
+            "iterations" => Some(NodeField::PhysicsBoneChain3D(
+                PhysicsBoneChain3DField::Iterations,
+            )),
+            _ => None,
+        },
+        NodeType::BoneCollider3D => match field {
+            "enabled" => Some(NodeField::BoneCollider3D(BoneCollider3DField::Enabled)),
             _ => None,
         },
         NodeType::Camera3D => match field {

@@ -6,6 +6,7 @@ use perro_nodes::{
     animation_player::AnimationPlayer,
     animation_tree::AnimationTree,
     bone_attachment_3d::BoneAttachment3D,
+    bone_collider_3d::BoneCollider3D,
     camera_2d::Camera2D,
     camera_3d::{Camera3D, CameraProjection},
     ik_target_3d::IKTarget3D,
@@ -15,6 +16,7 @@ use perro_nodes::{
     node_3d::Node3D,
     particle_emitter_3d::ParticleEmitter3D,
     particle_emitter_3d::{ParticleEmitterSimMode3D, ParticleType},
+    physics_bone_chain_3d::PhysicsBoneChain3D,
     point_light_3d::PointLight3D,
     ray_light_3d::RayLight3D,
     skeleton_3d::Skeleton3D,
@@ -27,9 +29,9 @@ use perro_nodes::{
 use perro_render_bridge::Material3D;
 use perro_scene::{
     AnimationPlayerField, AnimationTreeField, Area2DField, Area3DField, BoneAttachment3DField,
-    Camera2DField, Camera3DField, CollisionShape2DField, CollisionShape3DField, IKTarget3DField, Light3DField,
+    BoneCollider3DField, Camera2DField, Camera3DField, CollisionShape2DField, CollisionShape3DField, IKTarget3DField, Light3DField,
     MeshInstance3DField, Node2DField, Node3DField, NodeField, Parser, ParticleEmitter3DField,
-    PointLight3DField, RayLight3DField, RigidBody2DField, RigidBody3DField, Scene,
+    PhysicsBoneChain3DField, PointLight3DField, RayLight3DField, RigidBody2DField, RigidBody3DField, Scene,
     SceneFieldIterRef, SceneKey, SceneNodeData as SceneDefNodeData,
     SceneNodeEntry as SceneDefNodeEntry, SceneObjectField, SceneValue, Skeleton3DField,
     Sky3DField, SpotLight3DField, Sprite2DField, StaticBody2DField, StaticBody3DField,
@@ -90,6 +92,7 @@ pub(super) struct PendingNode {
     pub(super) mesh_skeleton_target: Option<u32>,
     pub(super) bone_attachment_skeleton_target: Option<u32>,
     pub(super) ik_target_skeleton_target: Option<u32>,
+    pub(super) physics_bone_chain_skeleton_target: Option<u32>,
     pub(super) animation_bindings: Vec<(String, u32)>,
 }
 
@@ -118,6 +121,7 @@ type SceneNodeExtraction = (
     Option<String>,
     Option<String>,
     Vec<PendingSurfaceMaterial>,
+    Option<String>,
     Option<String>,
     Option<String>,
     Option<String>,
@@ -328,6 +332,7 @@ fn push_entry_prepared(
         mesh_skeleton_target,
         bone_attachment_skeleton_target,
         ik_target_skeleton_target,
+        physics_bone_chain_skeleton_target,
         animation_bindings,
     ) = scene_node_from_entry(entry)?;
 
@@ -365,6 +370,9 @@ fn push_entry_prepared(
             .and_then(|v| scene_key_by_name(scene, v.as_str()))
             .map(|target| remap_key(target, key_map)),
         ik_target_skeleton_target: ik_target_skeleton_target
+            .and_then(|v| scene_key_by_name(scene, v.as_str()))
+            .map(|target| remap_key(target, key_map)),
+        physics_bone_chain_skeleton_target: physics_bone_chain_skeleton_target
             .and_then(|v| scene_key_by_name(scene, v.as_str()))
             .map(|target| remap_key(target, key_map)),
         animation_bindings: animation_bindings
@@ -617,6 +625,8 @@ fn scene_node_from_entry(entry: &SceneDefNodeEntry) -> Result<SceneNodeExtractio
     let mesh_skeleton_target = extract_mesh_skeleton_target(&entry.data);
     let bone_attachment_skeleton_target = extract_bone_attachment_skeleton_target(&entry.data);
     let ik_target_skeleton_target = extract_ik_target_skeleton_target(&entry.data);
+    let physics_bone_chain_skeleton_target =
+        extract_physics_bone_chain_skeleton_target(&entry.data);
     let animation_bindings = extract_animation_scene_bindings(&entry.data);
     let model_source = extract_model_source(&entry.data);
     let (mesh_source, material_surfaces) = if let Some(model) = model_source.as_ref() {
@@ -642,6 +652,7 @@ fn scene_node_from_entry(entry: &SceneDefNodeEntry) -> Result<SceneNodeExtractio
         mesh_skeleton_target,
         bone_attachment_skeleton_target,
         ik_target_skeleton_target,
+        physics_bone_chain_skeleton_target,
         animation_bindings,
     ))
 }
@@ -674,6 +685,10 @@ fn scene_node_data_from(data: &SceneDefNodeData) -> Result<SceneNodeData, String
             build_bone_attachment_3d(data),
         )),
         "IKTarget3D" => Ok(SceneNodeData::IKTarget3D(build_ik_target_3d(data))),
+        "PhysicsBoneChain3D" => Ok(SceneNodeData::PhysicsBoneChain3D(
+            build_physics_bone_chain_3d(data),
+        )),
+        "BoneCollider3D" => Ok(SceneNodeData::BoneCollider3D(build_bone_collider_3d(data))),
         "Camera3D" => Ok(SceneNodeData::Camera3D(build_camera_3d(data))),
         "ParticleEmitter3D" => Ok(SceneNodeData::ParticleEmitter3D(build_particle_emitter_3d(
             data,

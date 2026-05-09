@@ -118,6 +118,25 @@ Physics 3D:
 - Children of the attachment inherit that transform.
 - Use it for held gear, muzzle flashes, hit markers, socketed VFX, or any node that should follow a bone.
 
+`PhysicsBoneChain3D`
+
+- Simulates one bone chain on a `Skeleton3D` during fixed update.
+- Scene fields:
+  - `skeleton`: scene node name of the `Skeleton3D`.
+  - `bone` or `bone_index`: zero-based end bone index.
+  - `chain_length`: number of links back from end bone.
+  - `gravity`: world-space acceleration.
+  - `damping`, `stiffness`, `radius`, `collisions`, `iterations`.
+- Uses Verlet-style points, pins the root of the selected chain, writes solved positions back into bone `pose`.
+- Reacts to skeleton movement because simulation state is kept in world space.
+
+`BoneCollider3D`
+
+- Static collider source for `PhysicsBoneChain3D`.
+- Add `CollisionShape3D` children, like `StaticBody3D`.
+- Chain collisions support all `CollisionShape3D` child shapes.
+- Primitive shapes use local shape pushout; `TriMesh` uses a conservative node-space sphere fallback.
+
 `IKTarget3D`
 
 - Solves a CCD IK chain on one `Skeleton3D`.

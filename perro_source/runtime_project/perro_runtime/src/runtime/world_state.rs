@@ -30,6 +30,8 @@ impl Runtime {
             SceneNodeData::Skeleton3D(node) => node.visible,
             SceneNodeData::BoneAttachment3D(node) => node.visible,
             SceneNodeData::IKTarget3D(node) => node.visible,
+            SceneNodeData::PhysicsBoneChain3D(node) => node.visible,
+            SceneNodeData::BoneCollider3D(node) => node.visible,
             SceneNodeData::UiBox(node) => node.visible,
             SceneNodeData::UiPanel(node) => node.visible,
             SceneNodeData::UiButton(node) => node.visible,

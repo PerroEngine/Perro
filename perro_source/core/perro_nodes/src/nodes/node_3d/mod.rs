@@ -1,6 +1,7 @@
 #[path = "lights/ambient_light_3d.rs"]
 pub mod ambient_light_3d;
 pub mod bone_attachment_3d;
+pub mod bone_collider_3d;
 pub mod camera_3d;
 pub mod ik_target_3d;
 pub mod mesh_instance_3d;
@@ -9,6 +10,7 @@ pub mod node_3d_base;
 pub mod particle_emitter_3d;
 #[path = "physics/physics_3d.rs"]
 pub mod physics_3d;
+pub mod physics_bone_chain_3d;
 #[path = "lights/point_light_3d.rs"]
 pub mod point_light_3d;
 #[path = "lights/ray_light_3d.rs"]
@@ -20,6 +22,7 @@ pub mod spot_light_3d;
 
 pub use ambient_light_3d::*;
 pub use bone_attachment_3d::*;
+pub use bone_collider_3d::*;
 pub use camera_3d::*;
 pub use ik_target_3d::*;
 pub use mesh_instance_3d::*;
@@ -27,6 +30,7 @@ pub use multi_mesh_instance_3d::*;
 pub use node_3d_base::*;
 pub use particle_emitter_3d::*;
 pub use physics_3d::*;
+pub use physics_bone_chain_3d::*;
 pub use point_light_3d::*;
 pub use ray_light_3d::*;
 pub use skeleton_3d::*;
