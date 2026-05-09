@@ -849,26 +849,14 @@ fn default_panimtree(tree_name: &str) -> String {
 name = "__TREE_NAME__"
 [/AnimationTree]
 
-[Slots]
+[AnimationSlots]
 Idle
 Run
-[/Slots]
-
-[IdleSrc]
-    [Slot]
-        slot = Idle
-    [/Slot]
-[/IdleSrc]
-
-[RunSrc]
-    [Slot]
-        slot = Run
-    [/Slot]
-[/RunSrc]
+[/AnimationSlots]
 
 [MoveBlend]
     [Blend]
-        inputs = [@IdleSrc, @RunSrc]
+        inputs = [@Idle, @Run]
         weights = [1.0, 0.0]
     [/Blend]
 [/MoveBlend]

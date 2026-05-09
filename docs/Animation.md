@@ -7,7 +7,7 @@ Sigils:
 - `$` => value var define/use.
 - scenes: `@NodeKey` => scene node ref.
 - `.panim`: `[Objects]` declares bare names (`Hero = Node3D`), frame blocks ref them as `@Hero`.
-- `.panimtree`: graph blocks declare bare names (`[MoveBlend]`), graph inputs ref them as `@MoveBlend`.
+- `.panimtree`: graph blocks declare bare names (`[MoveBlend]`), graph inputs ref graph nodes or slots as `@MoveBlend`, `@Idle`.
 - scene `AnimationPlayer` / `AnimationTree` bindings map object names to scene node refs with `@NodeKey`.
 
 - `.panim`: one animation clip.
@@ -95,7 +95,7 @@ It owns:
 
 - slot names
 - graph node keys
-- `Slot`, `Blend`, `Add`, `Invert`
+- `Blend`, `Add`, `Invert`
 - default weights
 - masks
 - required `Output`
@@ -109,33 +109,15 @@ It does not own runtime playback state.
 name = "PlayerLocomotion"
 [/AnimationTree]
 
-[Slots]
+[AnimationSlots]
 Idle
 Run
 Aim
-[/Slots]
-
-[IdleSrc]
-    [Slot]
-        slot = Idle
-    [/Slot]
-[/IdleSrc]
-
-[RunSrc]
-    [Slot]
-        slot = Run
-    [/Slot]
-[/RunSrc]
-
-[AimSrc]
-    [Slot]
-        slot = Aim
-    [/Slot]
-[/AimSrc]
+[/AnimationSlots]
 
 [MoveBlend]
     [Blend]
-        inputs = [@IdleSrc, @RunSrc]
+        inputs = [@Idle, @Run]
         weights = [1.0, 0.0]
         mask = { objects=[Hero], fields=[position, rotation, scale] }
     [/Blend]
@@ -144,7 +126,7 @@ Aim
 [AimAdd]
     [Add]
         base = @MoveBlend
-        inputs = [@AimSrc]
+        inputs = [@Aim]
         weights = [0.75]
         mask = { objects=[Hero], bones=[Spine, Chest] }
     [/Add]
@@ -160,7 +142,7 @@ Aim
 ```ini
 [MoveBlend]
     [Blend]
-        inputs = [@IdleSrc, @WalkSrc, @RunSrc]
+        inputs = [@Idle, @Walk, @Run]
         weights = [0.0, 0.35, 0.65]
     [/Blend]
 [/MoveBlend]
@@ -172,7 +154,7 @@ Aim
 [UpperBodyAdd]
     [Add]
         base = @MoveBlend
-        inputs = [@AimSrc, @RecoilSrc, @BreathSrc]
+        inputs = [@Aim, @Recoil, @Breath]
         weights = [1.0, 0.45, 0.2]
     [/Add]
 [/UpperBodyAdd]
@@ -183,7 +165,7 @@ Aim
 ```ini
 [AimSubtract]
     [Invert]
-        input = @AimSrc
+        input = @Aim
     [/Invert]
 [/AimSubtract]
 ```
@@ -224,9 +206,9 @@ The scene node supplies:
 [/HeroAnimTree]
 ```
 
-Slot mapping comes from `.panimtree [Slots]`.
+Slot mapping comes from `.panimtree [AnimationSlots]`.
 
-If `[Slots]` is `Idle, Run, Aim`, then:
+If `[AnimationSlots]` is `Idle, Run, Aim`, then:
 
 - `animations[0]` feeds `Idle`
 - `animations[1]` feeds `Run`
@@ -249,7 +231,7 @@ let _ = anim_tree_play_slot!(ctx, tree, "Run");
 let _ = anim_tree_seek_slot_frame!(ctx, tree, "Run", 0);
 let _ = anim_tree_set_slot_speed!(ctx, tree, "Run", 1.25);
 let _ = anim_tree_set_slot_playback!(ctx, tree, "Run", AnimationPlaybackType::Loop);
-let _ = anim_tree_set_weight!(ctx, tree, "MoveBlend", "RunSrc", 1.0);
+let _ = anim_tree_set_weight!(ctx, tree, "MoveBlend", "Run", 1.0);
 let _ = anim_tree_pause!(ctx, tree, false);
 ```
 

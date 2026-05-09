@@ -165,9 +165,11 @@ where
     if !visiting.insert(key.to_string()) {
         return None;
     }
-    let node = *nodes.get(key)?;
+    let Some(node) = nodes.get(key).copied() else {
+        visiting.remove(key);
+        return Some(eval_slot_pose(tree, res, key));
+    };
     let pose = match &node.kind {
-        AnimationTreeNodeKind::Slot { slot } => eval_slot_pose(tree, res, slot.as_ref()),
         AnimationTreeNodeKind::Blend {
             inputs,
             weights,

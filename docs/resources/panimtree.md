@@ -9,7 +9,7 @@ Slot bindings connect `.panim` object names to scene node keys.
 
 Sigils:
 - graph blocks declare bare names: `[MoveBlend]`, `[AimAdd]`
-- graph refs use `@Name`: `input = @AimAdd`, `inputs = [@IdleSrc, @RunSrc]`
+- graph refs use `@Name`: `input = @AimAdd`, `inputs = [@Idle, @Run]`
 - scene-side binding values use `@SceneNodeKey` (or a var like `$root` that resolves to one)
 
 ## Example
@@ -19,33 +19,15 @@ Sigils:
 name = "PlayerLocomotion"
 [/AnimationTree]
 
-[Slots]
+[AnimationSlots]
 Idle
 Run
 Aim
-[/Slots]
-
-[IdleSrc]
-    [Slot]
-        slot = Idle
-    [/Slot]
-[/IdleSrc]
-
-[RunSrc]
-    [Slot]
-        slot = Run
-    [/Slot]
-[/RunSrc]
-
-[AimSrc]
-    [Slot]
-        slot = Aim
-    [/Slot]
-[/AimSrc]
+[/AnimationSlots]
 
 [MoveBlend]
     [Blend]
-        inputs = [@IdleSrc, @RunSrc]
+        inputs = [@Idle, @Run]
         weights = [1.0, 0.0]
         mask = { objects=[Hero], fields=[position, rotation, scale] }
     [/Blend]
@@ -54,7 +36,7 @@ Aim
 [AimAdd]
     [Add]
         base = @MoveBlend
-        inputs = [@AimSrc]
+        inputs = [@Aim]
         weights = [0.75]
         mask = { objects=[Hero], bones=[Spine, Chest] }
     [/Add]
@@ -68,14 +50,14 @@ Aim
 ## Blocks
 
 - `[AnimationTree]`: tree metadata.
-- `[Slots]`: slot names. Scene `animations` bind by slot order.
-- `[NodeKey] [Slot]`: reads one runtime slot.
+- `[AnimationSlots]`: slot names. Scene `animations` bind by slot order.
+- `@SlotName`: reads one runtime slot.
 - `[NodeKey] [Blend]`: blends any number of inputs. Weights normalize.
 - `[NodeKey] [Add]`: adds any number of inputs onto `base`.
 - `[NodeKey] [Invert]`: flips additive delta sign.
 - `[Output]`: final graph plug.
 
-Refs use `@NodeKey`.
+Refs use `@NodeKey` or `@SlotName`.
 
 Masks can include `objects`, `fields`, and `bones`.
 
@@ -86,7 +68,7 @@ Masks can include `objects`, `fields`, and `bones`.
 ```ini
 [MoveBlend]
     [Blend]
-        inputs = [@IdleSrc, @RunSrc]
+        inputs = [@Idle, @Run]
         weights = [1.0, 0.0]
     [/Blend]
 [/MoveBlend]
@@ -94,9 +76,9 @@ Masks can include `objects`, `fields`, and `bones`.
 
 Weights normalize.
 
-`[1.0, 0.0]` means full `IdleSrc`.
+`[1.0, 0.0]` means full `Idle`.
 
-`[0.0, 1.0]` means full `RunSrc`.
+`[0.0, 1.0]` means full `Run`.
 
 `[0.5, 0.5]` means half idle + half run.
 
@@ -105,7 +87,7 @@ Three or more inputs use same shape.
 ```ini
 [MoveBlend]
     [Blend]
-        inputs = [@IdleSrc, @WalkSrc, @RunSrc]
+        inputs = [@Idle, @Walk, @Run]
         weights = [0.0, 0.35, 0.65]
     [/Blend]
 [/MoveBlend]
@@ -113,11 +95,11 @@ Three or more inputs use same shape.
 
 Weights line up by index.
 
-`@IdleSrc` uses `0.0`.
+`@Idle` uses `0.0`.
 
-`@WalkSrc` uses `0.35`.
+`@Walk` uses `0.35`.
 
-`@RunSrc` uses `0.65`.
+`@Run` uses `0.65`.
 
 `Add` layers any number of deltas on top of a base pose.
 
@@ -125,15 +107,15 @@ Weights line up by index.
 [AimAdd]
     [Add]
         base = @MoveBlend
-        inputs = [@AimSrc]
+        inputs = [@Aim]
         weights = [1.0]
     [/Add]
 [/AimAdd]
 ```
 
-`AimSrc` frame 0 is rest pose.
+`Aim` frame 0 is rest pose.
 
-Current `AimSrc` pose minus frame 0 becomes delta.
+Current `Aim` pose minus frame 0 becomes delta.
 
 Delta adds onto `MoveBlend`.
 
@@ -145,17 +127,17 @@ Three or more additive layers use same shape.
 [UpperBodyAdd]
     [Add]
         base = @MoveBlend
-        inputs = [@AimSrc, @RecoilSrc, @BreathSrc]
+        inputs = [@Aim, @Recoil, @Breath]
         weights = [1.0, 0.45, 0.2]
     [/Add]
 [/UpperBodyAdd]
 ```
 
-`@AimSrc` delta uses `1.0`.
+`@Aim` delta uses `1.0`.
 
-`@RecoilSrc` delta uses `0.45`.
+`@Recoil` delta uses `0.45`.
 
-`@BreathSrc` delta uses `0.2`.
+`@Breath` delta uses `0.2`.
 
 `Invert` flips additive delta sign.
 
@@ -164,7 +146,7 @@ Use it for subtractive layers.
 ```ini
 [AimSubtract]
     [Invert]
-        input = @AimSrc
+        input = @Aim
     [/Invert]
 [/AimSubtract]
 
@@ -210,7 +192,7 @@ Scene node template:
 
 `tree` points at `.panimtree`.
 
-`animations` order maps to `[Slots]` order.
+`animations` order maps to `[AnimationSlots]` order.
 
 Each animation entry owns its own object bindings.
 
@@ -264,7 +246,7 @@ Bind it to a real scene node in `animations`:
 [/anim_tree]
 ```
 
-`animations[0]` feeds slot 0 from `[Slots]`, so this is `Idle`.
+`animations[0]` feeds slot 0 from `[AnimationSlots]`, so this is `Idle`.
 
 `animations[1]` feeds slot 1, so this is `Run`.
 
@@ -291,33 +273,15 @@ String entries only work for clips that do not need object bindings.
 name = "PlayerLocomotion"
 [/AnimationTree]
 
-[Slots]
+[AnimationSlots]
 Idle
 Run
 Aim
-[/Slots]
-
-[IdleSrc]
-    [Slot]
-        slot = Idle
-    [/Slot]
-[/IdleSrc]
-
-[RunSrc]
-    [Slot]
-        slot = Run
-    [/Slot]
-[/RunSrc]
-
-[AimSrc]
-    [Slot]
-        slot = Aim
-    [/Slot]
-[/AimSrc]
+[/AnimationSlots]
 
 [MoveBlend]
     [Blend]
-        inputs = [@IdleSrc, @RunSrc]
+        inputs = [@Idle, @Run]
         weights = [1.0, 0.0]
     [/Blend]
 [/MoveBlend]
@@ -325,7 +289,7 @@ Aim
 [UpperBodyAdd]
     [Add]
         base = @MoveBlend
-        inputs = [@AimSrc]
+        inputs = [@Aim]
         weights = [0.75]
         mask = { objects=[Hero], bones=[Spine, Chest] }
     [/Add]

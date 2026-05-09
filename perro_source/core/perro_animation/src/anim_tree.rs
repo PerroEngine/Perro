@@ -25,8 +25,10 @@ impl Default for AnimationTreeGraphNode {
     fn default() -> Self {
         Self {
             key: Cow::Borrowed(""),
-            kind: AnimationTreeNodeKind::Slot {
-                slot: Cow::Borrowed(""),
+            kind: AnimationTreeNodeKind::Blend {
+                inputs: Cow::Borrowed(&[]),
+                weights: Cow::Borrowed(&[]),
+                mask: AnimationTreeMask::default(),
             },
         }
     }
@@ -34,9 +36,6 @@ impl Default for AnimationTreeGraphNode {
 
 #[derive(Clone, Debug)]
 pub enum AnimationTreeNodeKind {
-    Slot {
-        slot: Cow<'static, str>,
-    },
     Blend {
         inputs: Cow<'static, [Cow<'static, str>]>,
         weights: Cow<'static, [f32]>,
@@ -106,8 +105,8 @@ impl<'a> AnimationTreeParser<'a> {
                 "AnimationTree" => {
                     name = self.parse_header_block()?;
                 }
-                "Slots" => {
-                    slots = self.parse_slots_block()?;
+                "AnimationSlots" => {
+                    slots = self.parse_slots_block(&block)?;
                 }
                 "Output" => {
                     output = self.parse_output_block()?;
@@ -126,15 +125,29 @@ impl<'a> AnimationTreeParser<'a> {
             return Err("animation tree missing [Output]".to_string());
         }
 
+        let slot_keys = slots
+            .iter()
+            .map(|s| s.name.as_ref().to_string())
+            .collect::<HashSet<_>>();
+        for node in &nodes {
+            if slot_keys.contains(node.key.as_ref()) {
+                return Err(format!(
+                    "animation tree node `{}` conflicts with slot name",
+                    node.key
+                ));
+            }
+        }
+
         let keys = nodes
             .iter()
             .map(|n| n.key.as_ref().to_string())
             .collect::<HashSet<_>>();
-        if !keys.contains(output.as_ref()) {
+        let refs = keys.union(&slot_keys).cloned().collect::<HashSet<String>>();
+        if !refs.contains(output.as_ref()) {
             return Err(format!("unknown animation tree output `@{}`", output));
         }
         for node in &nodes {
-            validate_node_refs(node, &keys)?;
+            validate_node_refs(node, &refs)?;
         }
 
         Ok(AnimationTreeAsset {
@@ -162,10 +175,10 @@ impl<'a> AnimationTreeParser<'a> {
         Ok(name)
     }
 
-    fn parse_slots_block(&mut self) -> Result<Vec<AnimationTreeSlot>, String> {
+    fn parse_slots_block(&mut self, close_block: &str) -> Result<Vec<AnimationTreeSlot>, String> {
         let mut slots = Vec::new();
         loop {
-            if self.consume_close("Slots")? {
+            if self.consume_close(close_block)? {
                 break;
             }
             match &self.current {
@@ -204,7 +217,6 @@ impl<'a> AnimationTreeParser<'a> {
         let kind = self.expect_ident()?;
         self.expect(Token::RBracket)?;
         let node_kind = match kind.as_str() {
-            "Slot" => self.parse_slot_kind()?,
             "Blend" | "BlendN" => self.parse_blend_kind(&kind)?,
             "Add" | "AddN" => self.parse_add_kind(&kind)?,
             "Invert" => self.parse_invert_kind()?,
@@ -221,23 +233,6 @@ impl<'a> AnimationTreeParser<'a> {
             key: Cow::Owned(key),
             kind: node_kind,
         })
-    }
-
-    fn parse_slot_kind(&mut self) -> Result<AnimationTreeNodeKind, String> {
-        let mut slot = Cow::Borrowed("");
-        loop {
-            if self.consume_close("Slot")? {
-                break;
-            }
-            let key = self.expect_ident()?;
-            self.expect(Token::Equals)?;
-            if key == "slot" {
-                slot = Cow::Owned(self.expect_text_like()?);
-            } else {
-                self.skip_value()?;
-            }
-        }
-        Ok(AnimationTreeNodeKind::Slot { slot })
     }
 
     fn parse_blend_kind(&mut self, close_block: &str) -> Result<AnimationTreeNodeKind, String> {
@@ -503,7 +498,6 @@ fn validate_node_refs(node: &AnimationTreeGraphNode, keys: &HashSet<String>) -> 
         }
     };
     match &node.kind {
-        AnimationTreeNodeKind::Slot { .. } => Ok(()),
         AnimationTreeNodeKind::Blend { inputs, .. } => {
             for input in inputs.iter() {
                 check(input.as_ref())?;
@@ -531,23 +525,13 @@ mod tests {
 [AnimationTree]
 name = "Player"
 [/AnimationTree]
-[Slots]
+[AnimationSlots]
 Idle
 Run
-[/Slots]
-[IdleSrc]
-[Slot]
-slot = Idle
-[/Slot]
-[/IdleSrc]
-[RunSrc]
-[Slot]
-slot = Run
-[/Slot]
-[/RunSrc]
+[/AnimationSlots]
 [MoveBlend]
 [Blend]
-inputs = [@IdleSrc, @RunSrc]
+inputs = [@Idle, @Run]
 weights = [1.0, 0.0]
 mask = { objects=[Hero], fields=[position, rotation] }
 [/Blend]
@@ -559,23 +543,31 @@ input = @MoveBlend
         let tree = parse_panimtree(src).expect("tree parse");
         assert_eq!(tree.name.as_ref(), "Player");
         assert_eq!(tree.slots.len(), 2);
-        assert_eq!(tree.nodes.len(), 3);
+        assert_eq!(tree.nodes.len(), 1);
         assert_eq!(tree.output.as_ref(), "MoveBlend");
     }
 
     #[test]
     fn reject_unknown_ref() {
         let src = r#"
+[AnimationSlots]
+Idle
+[/AnimationSlots]
+[Output]
+input = @Missing
+[/Output]
+"#;
+        assert!(parse_panimtree(src).is_err());
+    }
+
+    #[test]
+    fn reject_old_slot_blocks() {
+        let src = r#"
 [Slots]
 Idle
 [/Slots]
-[IdleSrc]
-[Slot]
-slot = Idle
-[/Slot]
-[/IdleSrc]
 [Output]
-input = @Missing
+input = @Idle
 [/Output]
 "#;
         assert!(parse_panimtree(src).is_err());

@@ -121,12 +121,6 @@ fn emit_kind(
     out: &mut String,
 ) -> String {
     match kind {
-        perro_animation::AnimationTreeNodeKind::Slot { slot } => {
-            format!(
-                "AnimationTreeNodeKind::Slot {{ slot: Cow::Borrowed(\"{}\") }}",
-                esc(slot.as_ref())
-            )
-        }
         perro_animation::AnimationTreeNodeKind::Blend {
             inputs,
             weights,
