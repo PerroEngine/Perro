@@ -4,11 +4,11 @@
   <img src="icon.png" alt="Perro Logo" width="200"/>
 </div>
 
-**Perro** is an experimental, open-source game engine written in **Rust**. Built with a focus on **simplicity** and **performance**, without sacrificing either.
+**Perro** is an experimental, open-source game engine written in **Rust**. Built with a focus on **simplicity** and **performance**, while the 2D, UI, and tooling layers keep growing toward full game-making coverage.
 
 ## Design Goals
 
-- **Powerful Rendering**: build 2D, 3D, and UI-heavy games in one engine.
+- **Rendering Stack**: build 3D scenes today, with practical 2D sprites/cameras/physics and UI nodes that are still growing toward larger 2D and UI-heavy games.
 - **Simple Start**: get first scene and script running quickly, with minimal setup and no script-registration boilerplate.
 - **Split Model**: scripts are just Rust files (lifecycle + methods); they store #[State] structs which each instance gets a copy of.
 - **Safe Mutation**: access through `NodeID` closures and engine-managed storage avoids borrow-contention edge cases in normal gameplay code (no "try_get_mut" fails).
@@ -20,6 +20,7 @@ For more details, see the full documentation: [perroengine.com/docs](https://www
 Local reference:
 
 - [Docs Index](docs/index.md)
+- [Feature Matrix](docs/feature_matrix.md)
 - [Perro CLI](docs/perro_cli.md)
 
 ## Dev Checks

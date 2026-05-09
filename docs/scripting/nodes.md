@@ -58,6 +58,8 @@ Physics 2D:
 - Runtime link: `skeleton: NodeID` points to the `Skeleton3D` node that supplies bone transforms.
 - Scene authoring: `skeleton = "NodeName"` uses the **scene node name** and is resolved to a `NodeID` at load time.
 - Skinning only works if the mesh has proper vertex weights (`JOINTS_0/WEIGHTS_0`).
+- Shared-skeleton mesh reuse works when meshes follow the same rig contract: same joint order/indices and compatible weights.
+- Automatic retargeting between mismatched rigs is not implemented.
 
 `MultiMeshInstance3D`
 
@@ -241,7 +243,7 @@ with_node_mut!(ctx.run, Skeleton3D, node_id, |skel| {
 });
 ```
 
-Swapping a mesh's skeleton at runtime (Mesh must have vertex weights):
+Swapping a mesh's skeleton at runtime (mesh must have vertex weights and match the skeleton rig contract):
 
 ```rust
 with_node_mut!(ctx.run, MeshInstance3D, mesh_id, |mesh| {
@@ -318,6 +320,8 @@ parent = @RightHandSocket
 Notes:
 
 - Bone index comes from imported skeleton order.
+- Meshes can share one skeleton when their `JOINTS_0/WEIGHTS_0` indices are authored for that same skeleton order.
+- This is shared-rig reuse, not automatic retargeting. Perro does not currently remap bone names or solve rest-pose differences for mismatched rigs.
 - `bone = -1` or missing `skeleton` disables attachment update.
 - If index is out of range, attachment keeps its current transform.
 - Child nodes render/use physics from attachment transform like any other parented node.

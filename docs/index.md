@@ -1,5 +1,8 @@
 # Docs Index
 
+## Project Status
+- [Feature Matrix](feature_matrix.md)
+
 ## Particles
 - [Particle System Guide](particles.md)
 
