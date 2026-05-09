@@ -1,7 +1,7 @@
 use crate::project::collect_rs_files_recursive;
 use crate::{log_done, parse_flag_value, resolve_local_path};
 use perro_project::{ProjectConfig, load_project_toml};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -75,9 +75,15 @@ fn validate_project(project_dir: &Path) -> Result<ValidationReport, String> {
         report.checked_files += 1;
         let text = fs::read_to_string(&file)
             .map_err(|err| format!("failed to read {}: {err}", file.display()))?;
-        for raw_ref in extract_virtual_refs(&text) {
+        for text_ref in extract_virtual_refs(&text) {
             report.checked_refs += 1;
-            validate_virtual_ref(project_dir, Some(&file), &raw_ref, &mut report);
+            validate_virtual_ref(
+                project_dir,
+                Some(&file),
+                Some(text_ref.line),
+                &text_ref.raw,
+                &mut report,
+            );
         }
     }
 
@@ -95,6 +101,7 @@ fn validate_project_config_refs(
     validate_named_virtual_ref(
         project_dir,
         None,
+        None,
         "project.main_scene",
         &config.main_scene,
         true,
@@ -104,6 +111,7 @@ fn validate_project_config_refs(
     validate_named_virtual_ref(
         project_dir,
         None,
+        None,
         "project.icon",
         &config.icon,
         false,
@@ -112,6 +120,7 @@ fn validate_project_config_refs(
     report.checked_refs += 1;
     validate_named_virtual_ref(
         project_dir,
+        None,
         None,
         "project.startup_splash",
         &config.startup_splash,
@@ -123,31 +132,41 @@ fn validate_project_config_refs(
 fn validate_virtual_ref(
     project_dir: &Path,
     source_file: Option<&Path>,
+    source_line: Option<usize>,
     raw_ref: &str,
     report: &mut ValidationReport,
 ) {
-    validate_named_virtual_ref(project_dir, source_file, raw_ref, raw_ref, true, report);
+    validate_named_virtual_ref(
+        project_dir,
+        source_file,
+        source_line,
+        raw_ref,
+        raw_ref,
+        true,
+        report,
+    );
 }
 
 fn validate_named_virtual_ref(
     project_dir: &Path,
     source_file: Option<&Path>,
+    source_line: Option<usize>,
     label: &str,
     raw_ref: &str,
     required: bool,
     report: &mut ValidationReport,
 ) {
     let Some(path) = resolve_virtual_ref_path(project_dir, source_file, raw_ref) else {
-        report.error(format!("{label}: unsupported path `{raw_ref}`"));
+        let source = format_source_location(project_dir, source_file, source_line);
+        report.error(format!("{source}{label}: unsupported path `{raw_ref}`"));
         return;
     };
     if path.exists() {
         return;
     }
-    let source = source_file
-        .map(|p| format!(" in {}", p.display()))
-        .unwrap_or_default();
-    let msg = format!("{label}: missing `{raw_ref}` -> {}{source}", path.display());
+    let source = format_source_location(project_dir, source_file, source_line);
+    let resolved = format_project_path(project_dir, &path);
+    let msg = format!("{source}{label}: missing `{raw_ref}` -> {resolved}");
     if required {
         report.error(msg);
     } else {
@@ -188,12 +207,157 @@ fn source_dlc_root(project_dir: &Path, source_file: &Path) -> Option<PathBuf> {
     Some(dlcs_root.join(dlc_name))
 }
 
-fn extract_virtual_refs(text: &str) -> Vec<String> {
+fn format_source_location(
+    project_dir: &Path,
+    source_file: Option<&Path>,
+    source_line: Option<usize>,
+) -> String {
+    let Some(source_file) = source_file else {
+        return String::new();
+    };
+    match source_line {
+        Some(line) => format!("{}:{line}: ", format_project_path(project_dir, source_file)),
+        None => format!("{}: ", format_project_path(project_dir, source_file)),
+    }
+}
+
+fn format_project_path(project_dir: &Path, path: &Path) -> String {
+    if let Ok(rel) = path.strip_prefix(project_dir.join("res")) {
+        return format!("res://{}", path_slash_for_doctor(rel));
+    }
+    let dlcs_root = project_dir.join("dlcs");
+    if let Ok(rel) = path.strip_prefix(&dlcs_root) {
+        let mut parts = rel.components();
+        if let Some(dlc_name) = parts.next() {
+            let dlc = dlc_name.as_os_str().to_string_lossy();
+            let rest = parts.as_path();
+            if rest.as_os_str().is_empty() {
+                return format!("dlc://{dlc}/");
+            }
+            return format!("dlc://{dlc}/{}", path_slash_for_doctor(rest));
+        }
+    }
+    path_slash_for_doctor(path)
+}
+
+fn path_slash_for_doctor(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+fn line_number_at(text: &str, byte_index: usize) -> usize {
+    text[..byte_index.min(text.len())]
+        .bytes()
+        .filter(|b| *b == b'\n')
+        .count()
+        + 1
+}
+
+fn strip_comments_for_doctor(text: &str, hash_line_comment: bool) -> String {
+    let mut out = Vec::with_capacity(text.len());
+    let bytes = text.as_bytes();
+    let mut mode = DoctorLexMode::Code;
+    let mut escaped = false;
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let b = bytes[i];
+        match mode {
+            DoctorLexMode::Code => {
+                if b == b'/' && bytes.get(i + 1) == Some(&b'/') {
+                    out.extend_from_slice(b"  ");
+                    i += 2;
+                    mode = DoctorLexMode::LineComment;
+                    continue;
+                }
+                if b == b'/' && bytes.get(i + 1) == Some(&b'*') {
+                    out.extend_from_slice(b"  ");
+                    i += 2;
+                    mode = DoctorLexMode::BlockComment;
+                    continue;
+                }
+                if hash_line_comment && b == b'#' {
+                    out.push(b' ');
+                    i += 1;
+                    mode = DoctorLexMode::LineComment;
+                    continue;
+                }
+                if let Some((prefix_len, hashes)) = raw_string_start_at_for_doctor(bytes, i) {
+                    out.extend_from_slice(&bytes[i..i + prefix_len]);
+                    i += prefix_len;
+                    mode = DoctorLexMode::RawString(hashes);
+                    continue;
+                }
+                if b == b'"' {
+                    mode = DoctorLexMode::String;
+                }
+                out.push(b);
+            }
+            DoctorLexMode::LineComment => {
+                if b == b'\n' {
+                    out.push(b'\n');
+                    mode = DoctorLexMode::Code;
+                } else {
+                    out.push(b' ');
+                }
+            }
+            DoctorLexMode::BlockComment => {
+                if b == b'*' && bytes.get(i + 1) == Some(&b'/') {
+                    out.extend_from_slice(b"  ");
+                    i += 2;
+                    mode = DoctorLexMode::Code;
+                    continue;
+                }
+                out.push(if b == b'\n' { b'\n' } else { b' ' });
+            }
+            DoctorLexMode::String => {
+                out.push(b);
+                if escaped {
+                    escaped = false;
+                } else if b == b'\\' {
+                    escaped = true;
+                } else if b == b'"' {
+                    mode = DoctorLexMode::Code;
+                }
+            }
+            DoctorLexMode::RawString(hashes) => {
+                out.push(b);
+                if raw_string_end_at_for_doctor(bytes, i, hashes) {
+                    for offset in 0..hashes {
+                        if let Some(hash) = bytes.get(i + 1 + offset) {
+                            out.push(*hash);
+                        }
+                    }
+                    i += hashes + 1;
+                    mode = DoctorLexMode::Code;
+                    continue;
+                }
+            }
+        }
+        i += 1;
+    }
+    String::from_utf8(out).unwrap_or_else(|_| text.to_string())
+}
+
+struct TextRef {
+    raw: String,
+    line: usize,
+}
+
+fn extract_virtual_refs(text: &str) -> Vec<TextRef> {
+    let text = strip_comments_for_doctor(text, true);
+    let text = text.as_str();
     let mut refs = Vec::new();
     for quote in ['"', '\''] {
+        let mut search_from = 0usize;
         for part in text.split(quote).skip(1).step_by(2) {
-            if part.starts_with("res://") || part.starts_with("dlc://") {
-                refs.push(part.to_string());
+            if (part.starts_with("res://") || part.starts_with("dlc://"))
+                && let Some(rel) = text[search_from..].find(part)
+            {
+                let start = search_from + rel;
+                refs.push(TextRef {
+                    raw: part.to_string(),
+                    line: line_number_at(text, start),
+                });
+                search_from = start + part.len();
             }
         }
     }
@@ -239,7 +403,16 @@ fn is_reference_text_extension(ext: &std::ffi::OsStr) -> bool {
 #[derive(Default)]
 struct ScriptDoctorIndex {
     state_fields: HashSet<String>,
+    state_field_types: HashMap<String, String>,
+    state_field_owners: HashMap<String, String>,
+    custom_type_fields: HashMap<String, Vec<DoctorField>>,
     methods: HashSet<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct DoctorField {
+    name: String,
+    ty: String,
 }
 
 fn validate_script_warnings(
@@ -257,6 +430,7 @@ fn validate_script_warnings(
         report.checked_files += 1;
         let text = fs::read_to_string(&file)
             .map_err(|err| format!("failed to read script {}: {err}", file.display()))?;
+        let text = strip_comments_for_doctor(&text, false);
         sources.push((file, text));
     }
 
@@ -267,14 +441,14 @@ fn validate_script_warnings(
 
     for (file, text) in &sources {
         let mut seen_refs = HashSet::new();
-        for raw_ref in extract_aggressive_virtual_refs(text) {
-            if !seen_refs.insert(raw_ref.clone()) {
+        for text_ref in extract_aggressive_virtual_refs(text) {
+            if !seen_refs.insert(text_ref.raw.clone()) {
                 continue;
             }
             report.checked_refs += 1;
-            validate_script_virtual_ref(project_dir, file, &raw_ref, report);
+            validate_script_virtual_ref(project_dir, file, text_ref.line, &text_ref.raw, report);
         }
-        validate_script_member_calls(file, text, &index, report);
+        validate_script_member_calls(project_dir, file, text, &index, report);
     }
 
     Ok(())
@@ -290,21 +464,20 @@ fn collect_project_script_files(project_dir: &Path, out: &mut Vec<PathBuf>) -> R
 fn validate_script_virtual_ref(
     project_dir: &Path,
     source_file: &Path,
+    source_line: usize,
     raw_ref: &str,
     report: &mut ValidationReport,
 ) {
     let Some(path) = resolve_script_virtual_ref_path(project_dir, source_file, raw_ref) else {
-        report.warn(format!(
-            "script ref unsupported: {}: `{raw_ref}`",
-            source_file.display()
-        ));
+        let source = format_source_location(project_dir, Some(source_file), Some(source_line));
+        report.warn(format!("script ref unsupported: {source}`{raw_ref}`"));
         return;
     };
     if !path.exists() {
+        let source = format_source_location(project_dir, Some(source_file), Some(source_line));
+        let resolved = format_project_path(project_dir, &path);
         report.warn(format!(
-            "script ref missing: {}: `{raw_ref}` -> {} (if used as load path)",
-            source_file.display(),
-            path.display()
+            "script ref missing: {source}`{raw_ref}` -> {resolved} (if used as load path)"
         ));
     }
 }
@@ -330,7 +503,7 @@ fn resolve_script_virtual_ref_path(
     None
 }
 
-fn extract_aggressive_virtual_refs(text: &str) -> Vec<String> {
+fn extract_aggressive_virtual_refs(text: &str) -> Vec<TextRef> {
     let mut refs = Vec::new();
     let mut i = 0usize;
     while i < text.len() {
@@ -352,7 +525,10 @@ fn extract_aggressive_virtual_refs(text: &str) -> Vec<String> {
         }
         let raw = trim_virtual_ref_tail(&text[start..end]);
         if !raw.is_empty() {
-            refs.push(raw.to_string());
+            refs.push(TextRef {
+                raw: raw.to_string(),
+                line: line_number_at(text, start),
+            });
         }
         i = end.max(start + 1);
     }
@@ -372,14 +548,44 @@ fn trim_virtual_ref_tail(raw: &str) -> &str {
 }
 
 fn index_script_source(text: &str, index: &mut ScriptDoctorIndex) {
+    for type_name in parse_struct_names(text) {
+        let fields = parse_struct_fields(text, &type_name);
+        if !fields.is_empty() {
+            index.custom_type_fields.insert(type_name, fields);
+        }
+    }
+    for type_name in parse_enum_names(text) {
+        let fields = parse_enum_fields(text, &type_name);
+        if !fields.is_empty() {
+            index.custom_type_fields.insert(type_name, fields);
+        }
+    }
     for state_name in parse_state_struct_names(text) {
-        for field in parse_struct_field_names(text, &state_name) {
-            index.state_fields.insert(field);
+        for field in parse_struct_fields(text, &state_name) {
+            index
+                .state_field_types
+                .insert(field.name.clone(), field.ty.clone());
+            index
+                .state_field_owners
+                .insert(field.name.clone(), state_name.clone());
+            index.state_fields.insert(field.name);
         }
     }
     for method in parse_script_method_names(text) {
         index.methods.insert(method);
     }
+}
+
+fn parse_struct_names(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| parse_struct_name_from_line(line.trim()))
+        .collect()
+}
+
+fn parse_enum_names(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| parse_enum_name_from_line(line.trim()))
+        .collect()
 }
 
 fn parse_state_struct_names(text: &str) -> Vec<String> {
@@ -421,7 +627,20 @@ fn parse_struct_name_from_line(line: &str) -> Option<String> {
     }
 }
 
-fn parse_struct_field_names(text: &str, struct_name: &str) -> Vec<String> {
+fn parse_enum_name_from_line(line: &str) -> Option<String> {
+    let line = line.trim_start_matches("pub ").trim_start();
+    let rest = line.strip_prefix("enum ")?;
+    let name = rest
+        .split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
+        .next()?;
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
+    }
+}
+
+fn parse_struct_fields(text: &str, struct_name: &str) -> Vec<DoctorField> {
     let lines: Vec<&str> = text.lines().collect();
     let Some(start) = lines
         .iter()
@@ -439,14 +658,14 @@ fn parse_struct_field_names(text: &str, struct_name: &str) -> Vec<String> {
             if let Some(pos) = line.find('{') {
                 opened = true;
                 depth = 1;
-                if let Some(field) = parse_field_name_for_doctor(&line[pos + 1..]) {
+                if let Some(field) = parse_field_for_doctor(&line[pos + 1..]) {
                     fields.push(field);
                 }
                 depth += brace_delta_for_doctor(&line[pos + 1..]);
             }
         } else {
             if depth == 1
-                && let Some(field) = parse_field_name_for_doctor(line)
+                && let Some(field) = parse_field_for_doctor(line)
             {
                 fields.push(field);
             }
@@ -459,7 +678,76 @@ fn parse_struct_field_names(text: &str, struct_name: &str) -> Vec<String> {
     fields
 }
 
-fn parse_field_name_for_doctor(line: &str) -> Option<String> {
+fn parse_enum_fields(text: &str, enum_name: &str) -> Vec<DoctorField> {
+    let lines: Vec<&str> = text.lines().collect();
+    let Some(start) = lines
+        .iter()
+        .position(|line| parse_enum_name_from_line(line.trim()).as_deref() == Some(enum_name))
+    else {
+        return Vec::new();
+    };
+
+    let mut fields = Vec::new();
+    let mut depth = 0_i32;
+    let mut variant_field_depth = 0_i32;
+    let mut opened = false;
+    for line in lines.iter().skip(start) {
+        let line = strip_line_comment_for_doctor(line);
+        if !opened {
+            if let Some(pos) = line.find('{') {
+                opened = true;
+                depth = 1;
+                fields.extend(parse_enum_line_fields(&line[pos + 1..]));
+                depth += brace_delta_for_doctor(&line[pos + 1..]);
+            }
+        } else {
+            if variant_field_depth > 0 {
+                if variant_field_depth == 1
+                    && let Some(field) = parse_field_for_doctor(line)
+                {
+                    fields.push(field);
+                }
+                variant_field_depth += brace_delta_for_doctor(line);
+                depth += brace_delta_for_doctor(line);
+                continue;
+            }
+            if depth == 1
+                && let Some(pos) = line.find('{')
+            {
+                if find_matching_delim_for_doctor(line, pos, '{', '}').is_some() {
+                    fields.extend(parse_enum_line_fields(line));
+                } else {
+                    variant_field_depth = 1;
+                    if let Some(field) = parse_field_for_doctor(&line[pos + 1..]) {
+                        fields.push(field);
+                    }
+                }
+            }
+            depth += brace_delta_for_doctor(line);
+        }
+        if opened && depth <= 0 {
+            break;
+        }
+    }
+    fields.sort_by(|a, b| a.name.cmp(&b.name));
+    fields.dedup_by(|a, b| a.name == b.name);
+    fields
+}
+
+fn parse_enum_line_fields(line: &str) -> Vec<DoctorField> {
+    let Some(open) = line.find('{') else {
+        return Vec::new();
+    };
+    let Some(close) = find_matching_delim_for_doctor(line, open, '{', '}') else {
+        return Vec::new();
+    };
+    split_top_level_args(&line[open + 1..close])
+        .into_iter()
+        .filter_map(parse_field_for_doctor)
+        .collect()
+}
+
+fn parse_field_for_doctor(line: &str) -> Option<DoctorField> {
     let trimmed = line.trim().trim_end_matches(',').trim();
     if trimmed.is_empty()
         || trimmed.starts_with("#[")
@@ -473,12 +761,32 @@ fn parse_field_name_for_doctor(line: &str) -> Option<String> {
     } else {
         trimmed.trim_start_matches("pub ").trim_start()
     };
-    let name = without_vis.split_once(':')?.0.trim();
+    let (name, ty) = without_vis.split_once(':')?;
+    let name = name.trim();
     if is_ident_for_doctor(name) {
-        Some(name.to_string())
+        Some(DoctorField {
+            name: name.to_string(),
+            ty: normalize_type_name_for_doctor(ty),
+        })
     } else {
         None
     }
+}
+
+fn normalize_type_name_for_doctor(input: &str) -> String {
+    let mut ty = input.trim().trim_end_matches(',').trim();
+    while let Some(rest) = ty.strip_prefix('&') {
+        ty = rest.trim_start();
+    }
+    if let Some(rest) = ty.strip_prefix("mut ") {
+        ty = rest.trim_start();
+    }
+    let without_path = ty.rsplit("::").next().unwrap_or(ty);
+    without_path
+        .split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
+        .next()
+        .unwrap_or("")
+        .to_string()
 }
 
 fn parse_script_method_names(text: &str) -> Vec<String> {
@@ -589,59 +897,110 @@ fn parse_method_names_from_block(body: &str) -> Vec<String> {
 }
 
 fn validate_script_member_calls(
+    project_dir: &Path,
     file: &Path,
     text: &str,
     index: &ScriptDoctorIndex,
     report: &mut ValidationReport,
 ) {
-    validate_var_member_calls(file, text, "get_var", &index.state_fields, report);
-    validate_var_member_calls(file, text, "set_var", &index.state_fields, report);
-    validate_method_member_calls(file, text, &index.methods, report);
+    validate_var_member_calls(project_dir, file, text, "get_var", index, report);
+    validate_var_member_calls(project_dir, file, text, "set_var", index, report);
+    validate_method_member_calls(project_dir, file, text, &index.methods, report);
 }
 
 fn validate_var_member_calls(
+    project_dir: &Path,
     file: &Path,
     text: &str,
     macro_name: &str,
-    known_fields: &HashSet<String>,
+    index: &ScriptDoctorIndex,
     report: &mut ValidationReport,
 ) {
-    for inner in find_macro_calls(text, macro_name) {
-        let args = split_top_level_args(&inner);
+    for call in find_macro_calls_with_lines(text, macro_name) {
+        let args = split_top_level_args(&call.inner);
         if args.len() < 3 {
             continue;
         }
         let target = normalize_arg_text(args[1]);
         if target == "ctx.id" {
-            let replacement = if macro_name == "get_var" {
-                "with_state!"
-            } else {
-                "with_state_mut!"
-            };
+            let member = extract_member_literal(args[2], &["var"]);
+            let replacement =
+                var_self_access_replacement(index, macro_name, member.as_deref(), &args);
+            let source = format_source_location(project_dir, Some(file), Some(call.line));
             report.warn(format!(
-                "script self access: {}: `{macro_name}!(..., ctx.id, ...)` can use `{replacement}`",
-                file.display()
+                "script self access: {source}`{macro_name}!` can use `{replacement}`"
             ));
         }
         if let Some(member) = extract_member_literal(args[2], &["var"])
-            && !known_fields.contains(&member)
+            && !known_var_member(index, &member)
         {
+            let source = format_source_location(project_dir, Some(file), Some(call.line));
             report.warn(format!(
-                "script member missing: {}: `{macro_name}!` references state field `{member}`, but no script defines it",
-                file.display()
+                "script member missing: {source}`{macro_name}!` references state field `{member}`, but no script defines it"
             ));
         }
     }
 }
 
+fn var_self_access_replacement(
+    index: &ScriptDoctorIndex,
+    macro_name: &str,
+    member: Option<&str>,
+    args: &[&str],
+) -> String {
+    let Some(member) = member else {
+        return if macro_name == "get_var" {
+            "with_state!(ctx.run, StateType, ctx.id, |state| state.field)".to_string()
+        } else {
+            "with_state_mut!(ctx.run, StateType, ctx.id, |state| state.field = value)".to_string()
+        };
+    };
+    let root = member.split('.').next().unwrap_or(member);
+    let state_type = index
+        .state_field_owners
+        .get(root)
+        .map(String::as_str)
+        .unwrap_or("StateType");
+    if macro_name == "get_var" {
+        format!("with_state!(ctx.run, {state_type}, ctx.id, |state| state.{member})")
+    } else {
+        let value = args.get(3).map(|arg| arg.trim()).unwrap_or("value");
+        format!("with_state_mut!(ctx.run, {state_type}, ctx.id, |state| state.{member} = {value})")
+    }
+}
+
+fn known_var_member(index: &ScriptDoctorIndex, member: &str) -> bool {
+    let mut parts = member.split('.');
+    let Some(root) = parts.next() else {
+        return false;
+    };
+    if !index.state_fields.contains(root) {
+        return false;
+    }
+    let Some(mut current_type) = index.state_field_types.get(root).cloned() else {
+        return parts.next().is_none();
+    };
+    for part in parts {
+        let Some(fields) = index.custom_type_fields.get(&current_type) else {
+            return false;
+        };
+        let Some(field) = fields.iter().find(|field| field.name == part) else {
+            return false;
+        };
+        current_type = field.ty.clone();
+    }
+    true
+}
+
 fn validate_method_member_calls(
+    project_dir: &Path,
     file: &Path,
     text: &str,
     known_methods: &HashSet<String>,
     report: &mut ValidationReport,
 ) {
-    for inner in find_macro_calls(text, "call_method") {
-        let args = split_top_level_args(&inner);
+    for call in find_macro_calls_with_lines(text, "call_method") {
+        let args = split_top_level_args(&call.inner);
         if args.len() < 3 {
             continue;
         }
@@ -650,19 +1009,19 @@ fn validate_method_member_calls(
         if target == "ctx.id" {
             let replacement = member
                 .as_ref()
-                .map(|name| format!("self.{name}(ctx, ...)"))
-                .unwrap_or_else(|| "self.method_name(ctx, ...)".to_string());
+                .map(|name| format!("self.{name}(ctx, params...)"))
+                .unwrap_or_else(|| "self.method_name(ctx, params...)".to_string());
+            let source = format_source_location(project_dir, Some(file), Some(call.line));
             report.warn(format!(
-                "script self access: {}: `call_method!(..., ctx.id, ...)` can use `{replacement}`",
-                file.display()
+                "script self access: {source}`call_method!` can use `{replacement}`"
             ));
         }
         if let Some(member) = member
             && !known_methods.contains(&member)
         {
+            let source = format_source_location(project_dir, Some(file), Some(call.line));
             report.warn(format!(
-                "script member missing: {}: `call_method!` references method `{member}`, but no script defines it",
-                file.display()
+                "script member missing: {source}`call_method!` references method `{member}`, but no script defines it"
             ));
         }
     }
@@ -713,7 +1072,19 @@ fn parse_string_literal_value(input: &str) -> Option<String> {
     None
 }
 
+struct MacroCall {
+    inner: String,
+    line: usize,
+}
+
 fn find_macro_calls(text: &str, macro_name: &str) -> Vec<String> {
+    find_macro_calls_with_lines(text, macro_name)
+        .into_iter()
+        .map(|call| call.inner)
+        .collect()
+}
+
+fn find_macro_calls_with_lines(text: &str, macro_name: &str) -> Vec<MacroCall> {
     let mut calls = Vec::new();
     let needle = format!("{macro_name}!");
     let mut search_from = 0usize;
@@ -732,7 +1103,10 @@ fn find_macro_calls(text: &str, macro_name: &str) -> Vec<String> {
         let Some(close) = find_matching_delim_for_doctor(text, open, '(', ')') else {
             break;
         };
-        calls.push(text[open + 1..close].to_string());
+        calls.push(MacroCall {
+            inner: text[open + 1..close].to_string(),
+            line: line_number_at(text, start),
+        });
         search_from = close + 1;
     }
     calls
@@ -996,7 +1370,74 @@ mod tests {
         assert_eq!(report.errors, 0);
         assert_eq!(report.warnings, 1);
         assert!(report.messages[0].contains("script ref missing"));
+        assert!(report.messages[0].contains("res://scripts/main.rs:3"));
         assert!(report.messages[0].contains("res://missing.png"));
+        assert!(!report.messages[0].contains(&project.to_string_lossy().to_string()));
+    }
+
+    #[test]
+    fn doctor_ignores_scene_refs_in_comments() {
+        let project = temp_project();
+        fs::create_dir_all(project.join("res")).unwrap();
+        fs::write(
+            project.join("res/main.scn"),
+            r##"
+            # texture = "res://missing_hash.png"
+            // texture = "res://missing_slash.png"
+            color = "#ffeeaa"
+            "##,
+        )
+        .unwrap();
+
+        let mut report = ValidationReport::default();
+        let mut files = Vec::new();
+        collect_reference_text_files(&project, &mut files).unwrap();
+        for file in files {
+            let text = fs::read_to_string(&file).unwrap();
+            for text_ref in extract_virtual_refs(&text) {
+                validate_virtual_ref(
+                    &project,
+                    Some(&file),
+                    Some(text_ref.line),
+                    &text_ref.raw,
+                    &mut report,
+                );
+            }
+        }
+
+        assert_eq!(report.errors, 0);
+        assert_eq!(report.warnings, 0);
+    }
+
+    #[test]
+    fn doctor_ignores_script_refs_and_macros_in_comments() {
+        let project = temp_project();
+        fs::create_dir_all(project.join("res/scripts")).unwrap();
+        fs::write(
+            project.join("res/scripts/main.rs"),
+            r#"
+            #[State]
+            struct PlayerState {
+                hp: i32,
+            }
+
+            fn run(ctx: &mut ScriptContext<'_, API>) {
+                // let _ = get_var!(ctx.run, ctx.id, var!("missing_hp"));
+                // let _ = "res://missing_script_ref.png";
+                /*
+                set_var!(ctx.run, ctx.id, var!("missing_flag"), variant!(true));
+                let _ = "res://missing_block_ref.png";
+                */
+            }
+            "#,
+        )
+        .unwrap();
+
+        let mut report = ValidationReport::default();
+        validate_script_warnings(&project, &mut report).unwrap();
+
+        assert_eq!(report.errors, 0);
+        assert_eq!(report.warnings, 0);
     }
 
     #[test]
@@ -1061,10 +1502,13 @@ mod tests {
         "#;
         let mut index = ScriptDoctorIndex::default();
         index.state_fields.insert("hp".to_string());
+        index
+            .state_field_owners
+            .insert("hp".to_string(), "PlayerState".to_string());
         index.methods.insert("heal".to_string());
         let mut report = ValidationReport::default();
 
-        validate_script_member_calls(&file, text, &index, &mut report);
+        validate_script_member_calls(Path::new(""), &file, text, &index, &mut report);
 
         assert_eq!(report.errors, 0);
         assert_eq!(report.warnings, 6);
@@ -1079,10 +1523,70 @@ mod tests {
             report
                 .messages
                 .iter()
-                .any(|m| m.contains("self.missing_method(ctx, ...)"))
+                .any(|m| m.contains("with_state_mut!(ctx.run, StateType, ctx.id, |state| state.missing_flag = variant!(true))"))
+        );
+        assert!(
+            report
+                .messages
+                .iter()
+                .any(|m| m.contains("self.missing_method(ctx, params...)"))
         );
         assert!(report.messages.iter().any(|m| m.contains("missing_hp")));
         assert!(report.messages.iter().any(|m| m.contains("missing_flag")));
         assert!(report.messages.iter().any(|m| m.contains("missing_method")));
+    }
+
+    #[test]
+    fn script_member_checks_walk_nested_custom_state_fields() {
+        let file = PathBuf::from("res/scripts/main.rs");
+        let source = r#"
+            pub struct Aim {
+                pub axis: Axis,
+            }
+
+            pub enum Axis {
+                Local { x: f32, y: f32 },
+                World {
+                    dir: Direction,
+                },
+            }
+
+            pub struct Direction {
+                pub yaw: f32,
+            }
+
+            #[State]
+            pub struct SpinnerState {
+                pub aim: Aim,
+                pub hp: i32,
+            }
+
+            fn run(ctx: &mut ScriptContext<'_, API>) {
+                let _ = get_var!(ctx.run, other, var!("aim.axis.dir.yaw"));
+                let _ = get_var!(ctx.run, other, var!("aim.axis.dir.pitch"));
+                let _ = get_var!(ctx.run, other, var!("hp.value"));
+            }
+        "#;
+        let mut index = ScriptDoctorIndex::default();
+        index_script_source(source, &mut index);
+        let mut report = ValidationReport::default();
+
+        validate_script_member_calls(Path::new(""), &file, source, &index, &mut report);
+
+        assert_eq!(report.errors, 0);
+        assert_eq!(report.warnings, 2);
+        assert!(
+            report
+                .messages
+                .iter()
+                .any(|m| m.contains("aim.axis.dir.pitch"))
+        );
+        assert!(report.messages.iter().any(|m| m.contains("hp.value")));
+        assert!(
+            report
+                .messages
+                .iter()
+                .all(|m| !m.contains("aim.axis.dir.yaw"))
+        );
     }
 }
