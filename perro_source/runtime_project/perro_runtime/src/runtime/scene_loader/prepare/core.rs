@@ -13,7 +13,6 @@ use perro_nodes::{
     mesh_instance_3d::{MaterialParamOverride, MaterialParamOverrideValue, MeshInstance3D, MeshSurfaceBinding},
     multi_mesh_instance_3d::MultiMeshInstance3D,
     node_2d::Node2D,
-    light_2d::{AmbientLight2D, PointLight2D, RayLight2D, SpotLight2D},
     node_3d::Node3D,
     particle_emitter_2d::ParticleEmitter2D,
     particle_emitter_2d::ParticleEmitterSimMode2D,
@@ -30,9 +29,10 @@ use perro_nodes::{
     sky_3d::{Sky3D, SkyStyle},
     spot_light_3d::SpotLight3D,
     sprite_2d::{AnimatedSprite, AnimatedSprite2D, Sprite2D},
-    Area2D, Area3D, BallJoint3D, CollisionShape2D, CollisionShape3D, DistanceJoint2D,
-    FixedJoint2D, FixedJoint3D, HingeJoint3D, PinJoint2D, RigidBody2D, RigidBody3D,
-    SceneNode, SceneNodeData, Shape2D, Shape3D, StaticBody2D, StaticBody3D, Triangle2DKind,
+    AmbientLight2D, Area2D, Area3D, BallJoint3D, CollisionShape2D, CollisionShape3D,
+    DistanceJoint2D, FixedJoint2D, FixedJoint3D, HingeJoint3D, PinJoint2D, PointLight2D,
+    RayLight2D, RigidBody2D, RigidBody3D, SceneNode, SceneNodeData, Shape2D, Shape3D,
+    SpotLight2D, StaticBody2D, StaticBody3D, Triangle2DKind,
 };
 use perro_render_bridge::Material3D;
 use perro_scene::{

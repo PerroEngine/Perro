@@ -1,35 +1,13 @@
-use crate::ambient_light_3d::AmbientLight3D;
-use crate::animation_player::AnimationPlayer;
-use crate::animation_tree::AnimationTree;
-use crate::bone_attachment_3d::BoneAttachment3D;
-use crate::bone_collider_3d::BoneCollider3D;
-use crate::camera_2d::Camera2D;
-use crate::camera_3d::Camera3D;
-use crate::ik_target_3d::IKTarget3D;
-use crate::light_2d::{AmbientLight2D, PointLight2D, RayLight2D, SpotLight2D};
-use crate::mesh_instance_3d::MeshInstance3D;
-use crate::multi_mesh_instance_3d::MultiMeshInstance3D;
-use crate::node_2d::Node2D;
-use crate::node_3d::Node3D;
-use crate::particle_emitter_2d::ParticleEmitter2D;
-use crate::particle_emitter_3d::ParticleEmitter3D;
-use crate::physics_2d::{
-    Area2D, CollisionShape2D, DistanceJoint2D, FixedJoint2D, PinJoint2D, RigidBody2D, StaticBody2D,
+use crate::{
+    AmbientLight2D, AmbientLight3D, AnimatedSprite2D, AnimationPlayer, AnimationTree, Area2D,
+    Area3D, BallJoint3D, BoneAttachment2D, BoneAttachment3D, BoneCollider2D, BoneCollider3D,
+    Camera2D, Camera3D, CollisionShape2D, CollisionShape3D, DistanceJoint2D, FixedJoint2D,
+    FixedJoint3D, HingeJoint3D, IKTarget2D, IKTarget3D, MeshInstance3D, MultiMeshInstance3D,
+    Node2D, Node3D, ParticleEmitter2D, ParticleEmitter3D, PhysicsBoneChain2D, PhysicsBoneChain3D,
+    PinJoint2D, PointLight2D, PointLight3D, RayLight2D, RayLight3D, RigidBody2D, RigidBody3D,
+    Skeleton2D, Skeleton3D, Sky3D, SpotLight2D, SpotLight3D, Sprite2D, StaticBody2D, StaticBody3D,
+    TileMap2D,
 };
-use crate::physics_3d::{
-    Area3D, BallJoint3D, CollisionShape3D, FixedJoint3D, HingeJoint3D, RigidBody3D, StaticBody3D,
-};
-use crate::physics_bone_chain_3d::PhysicsBoneChain3D;
-use crate::point_light_3d::PointLight3D;
-use crate::ray_light_3d::RayLight3D;
-use crate::skeleton_2d::{
-    BoneAttachment2D, BoneCollider2D, IKTarget2D, PhysicsBoneChain2D, Skeleton2D,
-};
-use crate::skeleton_3d::Skeleton3D;
-use crate::sky_3d::Sky3D;
-use crate::spot_light_3d::SpotLight3D;
-use crate::sprite_2d::{AnimatedSprite2D, Sprite2D};
-use crate::tilemap_2d::TileMap2D;
 use perro_ids::{NodeID, NodeTag, TagID};
 use perro_structs::{Transform2D, Transform3D};
 use perro_ui::{
@@ -40,6 +18,7 @@ use std::borrow::Cow;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
+/// Spatial family used by runtime transform + query paths.
 pub enum Spatial {
     None,
     TwoD,
@@ -48,6 +27,7 @@ pub enum Spatial {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
+/// Render eligibility flag generated for each node type.
 pub enum Renderable {
     False,
     True,
@@ -55,6 +35,7 @@ pub enum Renderable {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
+/// Per-frame internal update flag.
 pub enum InternalUpdate {
     False,
     True,
@@ -62,6 +43,7 @@ pub enum InternalUpdate {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
+/// Fixed-step internal update flag.
 pub enum InternalFixedUpdate {
     False,
     True,
@@ -215,6 +197,7 @@ macro_rules! __impl_exact_node_base_dispatch_ui {
 }
 
 #[macro_export]
+/// Build node enum, node type metadata, and typed dispatch impls.
 macro_rules! define_scene_nodes {
     (
         base: { $($base_variant:ident $(=> $base_ty:ty)?),* $(,)? }
@@ -814,7 +797,13 @@ pub trait NodeBaseDispatch: Sized {
 }
 
 // ======================================================================
-//                          DEFINE NODES
+// Node registry
+//
+// Order rule:
+// - core base first
+// - runtime families next: camera, visual, lights, skeletal, physics
+// - parents before children
+// - 2D and 3D mirror family order
 // ======================================================================
 
 define_scene_nodes! {
@@ -822,21 +811,32 @@ define_scene_nodes! {
         Node,
     }
     2d: {
+        // core
         Node2D => (None, Node2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+
+        // camera
         Camera2D => (Node2D, Camera2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+
+        // visual
         Sprite2D => (Node2D, Sprite2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         AnimatedSprite2D => (Node2D, AnimatedSprite2D, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
+        TileMap2D => (Node2D, TileMap2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::True),
         ParticleEmitter2D => (Node2D, ParticleEmitter2D, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
+
+        // lights
         AmbientLight2D => (None, AmbientLight2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         RayLight2D => (Node2D, RayLight2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         PointLight2D => (Node2D, PointLight2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         SpotLight2D => (Node2D, SpotLight2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        TileMap2D => (Node2D, TileMap2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::True),
+
+        // skeletal
         Skeleton2D => (Node2D, Skeleton2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         BoneAttachment2D => (Node2D, BoneAttachment2D, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False),
         IKTarget2D => (Node2D, IKTarget2D, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False),
         PhysicsBoneChain2D => (Node2D, PhysicsBoneChain2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         BoneCollider2D => (Node2D, BoneCollider2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+
+        // physics
         CollisionShape2D => (Node2D, CollisionShape2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         StaticBody2D => (Node2D, StaticBody2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         Area2D => (Node2D, Area2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
@@ -846,10 +846,32 @@ define_scene_nodes! {
         FixedJoint2D => (Node2D, FixedJoint2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
     }
     3d: {
+        // core
         Node3D => (None, Node3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+
+        // camera
         Camera3D => (Node3D, Camera3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+
+        // visual
         MeshInstance3D => (Node3D, MeshInstance3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         MultiMeshInstance3D => (Node3D, MultiMeshInstance3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        ParticleEmitter3D => (Node3D, ParticleEmitter3D, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
+        Sky3D => (None, Sky3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+
+        // lights
+        AmbientLight3D => (None, AmbientLight3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        RayLight3D => (Node3D, RayLight3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        PointLight3D => (Node3D, PointLight3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        SpotLight3D => (Node3D, SpotLight3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+
+        // skeletal
+        Skeleton3D => (Node3D, Skeleton3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        BoneAttachment3D => (Node3D, BoneAttachment3D, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False),
+        IKTarget3D => (Node3D, IKTarget3D, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False),
+        PhysicsBoneChain3D => (Node3D, PhysicsBoneChain3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
+        BoneCollider3D => (Node3D, BoneCollider3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+
+        // physics
         CollisionShape3D => (Node3D, CollisionShape3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         StaticBody3D => (Node3D, StaticBody3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         Area3D => (Node3D, Area3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
@@ -857,21 +879,12 @@ define_scene_nodes! {
         BallJoint3D => (Node3D, BallJoint3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         HingeJoint3D => (Node3D, HingeJoint3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         FixedJoint3D => (Node3D, FixedJoint3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
-        Skeleton3D => (Node3D, Skeleton3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        BoneAttachment3D => (Node3D, BoneAttachment3D, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False),
-        IKTarget3D => (Node3D, IKTarget3D, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False),
-        PhysicsBoneChain3D => (Node3D, PhysicsBoneChain3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
-        BoneCollider3D => (Node3D, BoneCollider3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        ParticleEmitter3D => (Node3D, ParticleEmitter3D, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
-        //Lights
-        AmbientLight3D => (None, AmbientLight3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        Sky3D => (None, Sky3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        RayLight3D => (Node3D, RayLight3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        PointLight3D => (Node3D, PointLight3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        SpotLight3D => (Node3D, SpotLight3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False)
     }
     ui: {
+        // core
         UiBox => (None, UiBox, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+
+        // visual
         UiPanel => (UiBox, UiPanel, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiButton => (UiBox, UiButton, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiImage => (UiBox, UiImage, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
@@ -879,6 +892,8 @@ define_scene_nodes! {
         UiLabel => (UiBox, UiLabel, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiTextBox => (UiBox, UiTextBox, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiTextBlock => (UiBox, UiTextBlock, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+
+        // layout
         UiScrollContainer => (UiBox, UiScrollContainer, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         UiLayout => (UiBox, UiLayout, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         UiHLayout => (UiBox, UiHLayout, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
@@ -887,6 +902,7 @@ define_scene_nodes! {
         UiTreeList => (UiBox, UiTreeList, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False)
     }
     resource: {
+        // animation
         AnimationPlayer => (None, AnimationPlayer, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False),
         AnimationTree => (None, AnimationTree, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False)
     }

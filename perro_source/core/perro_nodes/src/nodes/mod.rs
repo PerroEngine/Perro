@@ -1,12 +1,10 @@
-pub mod animation_player;
-pub mod animation_tree;
 pub mod node_2d;
 pub mod node_3d;
 pub mod node_registry;
+pub mod resources;
 
-pub use animation_player::*;
-pub use animation_tree::*;
 pub use node_2d::*;
 pub use node_3d::*;
 pub use node_registry::*;
 pub use perro_ui::*;
+pub use resources::*;

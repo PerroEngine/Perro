@@ -1,9 +1,8 @@
 use super::Runtime;
 use perro_ids::TextureID;
 use perro_nodes::{
-    SceneNode, SceneNodeData,
+    AmbientLight2D, PointLight2D, RayLight2D, SceneNode, SceneNodeData, SpotLight2D,
     camera_2d::Camera2D,
-    light_2d::{AmbientLight2D, PointLight2D, RayLight2D, SpotLight2D},
     node_2d::Node2D,
     particle_emitter_2d::ParticleEmitter2D,
     sprite_2d::{AnimatedSprite, AnimatedSprite2D, Sprite2D},
