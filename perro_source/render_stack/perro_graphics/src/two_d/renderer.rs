@@ -4,7 +4,8 @@ use bytemuck::{Pod, Zeroable};
 use perro_ids::NodeID;
 use perro_particle_math::{ParticleEvalInput, eval_ops_particle};
 use perro_render_bridge::{
-    Camera2DState, DrawShape2DCommand, ParticlePath2D, PointParticles2DState, Rect2DCommand,
+    AmbientLight2DState, Camera2DState, DrawShape2DCommand, Light2DState, ParticlePath2D,
+    PointLight2DState, PointParticles2DState, RayLight2DState, Rect2DCommand, SpotLight2DState,
     Sprite2DCommand, TileMap2DCommand,
 };
 use perro_structs::DrawShape2D;
@@ -77,6 +78,8 @@ pub struct Renderer2D {
     retained_sprites: AHashMap<NodeID, Sprite2DCommand>,
     retained_tilemaps: AHashMap<NodeID, Arc<[Sprite2DCommand]>>,
     retained_point_particles: AHashMap<NodeID, PointParticles2DState>,
+    retained_lights: AHashMap<NodeID, Light2DState>,
+    retained_point_lights_revision: u64,
     retained_sprites_revision: u64,
     frame_shapes: Vec<RectInstanceGpu>,
     frame_sprites: Vec<Sprite2DCommand>,
@@ -100,6 +103,8 @@ impl Renderer2D {
             retained_sprites: AHashMap::new(),
             retained_tilemaps: AHashMap::new(),
             retained_point_particles: AHashMap::new(),
+            retained_lights: AHashMap::new(),
+            retained_point_lights_revision: 0,
             retained_sprites_revision: 0,
             frame_shapes: Vec::new(),
             frame_sprites: Vec::new(),
@@ -155,6 +160,29 @@ impl Renderer2D {
         self.retained_point_particles.insert(node, particles);
     }
 
+    pub fn set_ambient_light(&mut self, node: NodeID, light: AmbientLight2DState) {
+        self.set_light(node, Light2DState::Ambient(light));
+    }
+
+    pub fn set_ray_light(&mut self, node: NodeID, light: RayLight2DState) {
+        self.set_light(node, Light2DState::Ray(light));
+    }
+
+    pub fn set_point_light(&mut self, node: NodeID, light: PointLight2DState) {
+        self.set_light(node, Light2DState::Point(light));
+    }
+
+    pub fn set_spot_light(&mut self, node: NodeID, light: SpotLight2DState) {
+        self.set_light(node, Light2DState::Spot(light));
+    }
+
+    fn set_light(&mut self, node: NodeID, light: Light2DState) {
+        if self.retained_lights.insert(node, light) != Some(light) {
+            self.retained_point_lights_revision =
+                self.retained_point_lights_revision.wrapping_add(1);
+        }
+    }
+
     pub fn upsert_tilemap(&mut self, node: NodeID, tilemap: TileMap2DCommand) {
         if self.retained_tilemaps.get(&node) != Some(&tilemap.sprites) {
             self.retained_tilemaps.insert(node, tilemap.sprites);
@@ -165,6 +193,10 @@ impl Renderer2D {
     pub fn remove_node(&mut self, node: NodeID) {
         self.remove_retained_rect(node);
         self.retained_point_particles.remove(&node);
+        if self.retained_lights.remove(&node).is_some() {
+            self.retained_point_lights_revision =
+                self.retained_point_lights_revision.wrapping_add(1);
+        }
         if self.retained_tilemaps.remove(&node).is_some() {
             self.retained_sprites_revision = self.retained_sprites_revision.wrapping_add(1);
         }
@@ -430,6 +462,20 @@ impl Renderer2D {
                     .flat_map(|sprites| sprites.iter().copied()),
             )
             .chain(self.frame_sprites.iter().copied())
+    }
+
+    pub fn lights(&self) -> impl Iterator<Item = Light2DState> + '_ {
+        self.retained_lights.values().copied()
+    }
+
+    #[inline]
+    pub fn light_count(&self) -> usize {
+        self.retained_lights.len()
+    }
+
+    #[inline]
+    pub fn retained_point_lights_revision(&self) -> u64 {
+        self.retained_point_lights_revision
     }
 
     pub fn camera(&self) -> Camera2DState {

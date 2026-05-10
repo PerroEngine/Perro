@@ -1,12 +1,14 @@
 use super::renderer::{Camera2DUniform, RectInstanceGpu, RectUploadPlan};
-use super::shaders::{create_rect_shader_module, create_sprite_shader_module};
+use super::shaders::{
+    create_point_light_2d_shader_module, create_rect_shader_module, create_sprite_shader_module,
+};
 use crate::backend::StaticTextureLookup;
 use crate::resources::ResourceStore;
 use ahash::AHashMap;
 use bytemuck::{Pod, Zeroable};
 use perro_ids::TextureID;
 use perro_io::{decompress_zlib, load_asset};
-use perro_render_bridge::Sprite2DCommand;
+use perro_render_bridge::{Light2DState, Sprite2DCommand};
 use wgpu::util::DeviceExt;
 
 const VIRTUAL_WIDTH: f32 = 1920.0;
@@ -42,6 +44,21 @@ struct SpriteInstanceGpu {
     tint: [u8; 4],
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct Light2DGpu {
+    position: [f32; 2],
+    range: f32,
+    z_index: i32,
+    color: [f32; 3],
+    intensity: f32,
+    direction: [f32; 2],
+    inner_cos: f32,
+    outer_cos: f32,
+    kind: u32,
+    pad: [u32; 3],
+}
+
 #[derive(Clone)]
 struct SpriteBatch {
     texture: TextureID,
@@ -64,15 +81,19 @@ pub struct Gpu2D {
     texture_bgl: wgpu::BindGroupLayout,
     rect_pipeline: wgpu::RenderPipeline,
     sprite_pipeline: wgpu::RenderPipeline,
+    point_light_pipeline: wgpu::RenderPipeline,
     rect_vertex_buffer: wgpu::Buffer,
     rect_instance_buffer: wgpu::Buffer,
     rect_instance_capacity: usize,
     sprite_vertex_buffer: wgpu::Buffer,
     sprite_instance_buffer: wgpu::Buffer,
     sprite_instance_capacity: usize,
+    point_light_instance_buffer: wgpu::Buffer,
+    point_light_instance_capacity: usize,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     sprite_instances: Vec<SpriteInstanceGpu>,
+    point_light_instances: Vec<Light2DGpu>,
     sprite_batches: Vec<SpriteBatch>,
     sprite_textures: AHashMap<TextureID, CachedSpriteTexture>,
     last_camera: Option<Camera2DUniform>,
@@ -84,6 +105,7 @@ pub struct Prepare2D<'a> {
     pub rects: &'a [RectInstanceGpu],
     pub upload: &'a RectUploadPlan,
     pub sprites: &'a [Sprite2DCommand],
+    pub point_lights: &'a [Light2DState],
     pub static_texture_lookup: Option<StaticTextureLookup>,
 }
 
@@ -95,6 +117,7 @@ impl Gpu2D {
     ) -> Self {
         let rect_shader = create_rect_shader_module(device);
         let sprite_shader = create_sprite_shader_module(device);
+        let point_light_shader = create_point_light_2d_shader_module(device);
         let camera_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_camera2d_bgl"),
             entries: &[wgpu::BindGroupLayoutEntry {
@@ -163,6 +186,13 @@ impl Gpu2D {
             color_format,
             sample_count,
         );
+        let point_light_pipeline = create_point_light_pipeline(
+            device,
+            &camera_bgl,
+            &point_light_shader,
+            color_format,
+            sample_count,
+        );
 
         let rect_quad = [
             QuadVertex { pos: [-0.5, -0.5] },
@@ -226,20 +256,32 @@ impl Gpu2D {
             mapped_at_creation: false,
         });
 
+        let point_light_instance_capacity = 64usize;
+        let point_light_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_point_light_2d_instances"),
+            size: (point_light_instance_capacity * std::mem::size_of::<Light2DGpu>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         Self {
             camera_bgl,
             texture_bgl,
             rect_pipeline,
             sprite_pipeline,
+            point_light_pipeline,
             rect_vertex_buffer,
             rect_instance_buffer,
             rect_instance_capacity,
             sprite_vertex_buffer,
             sprite_instance_buffer,
             sprite_instance_capacity,
+            point_light_instance_buffer,
+            point_light_instance_capacity,
             camera_buffer,
             camera_bind_group,
             sprite_instances: Vec::new(),
+            point_light_instances: Vec::new(),
             sprite_batches: Vec::new(),
             sprite_textures: AHashMap::new(),
             last_camera: None,
@@ -254,6 +296,7 @@ impl Gpu2D {
     ) {
         let rect_shader = create_rect_shader_module(device);
         let sprite_shader = create_sprite_shader_module(device);
+        let point_light_shader = create_point_light_2d_shader_module(device);
         self.rect_pipeline = create_rect_pipeline(
             device,
             &self.camera_bgl,
@@ -269,6 +312,13 @@ impl Gpu2D {
             color_format,
             sample_count,
         );
+        self.point_light_pipeline = create_point_light_pipeline(
+            device,
+            &self.camera_bgl,
+            &point_light_shader,
+            color_format,
+            sample_count,
+        );
     }
 
     pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, frame: Prepare2D<'_>) {
@@ -278,12 +328,14 @@ impl Gpu2D {
             rects,
             upload,
             sprites,
+            point_lights,
             static_texture_lookup,
         } = frame;
         self.sprite_textures
             .retain(|texture_id, _| resources.has_texture(*texture_id));
         self.ensure_rect_instance_capacity(device, upload.draw_count);
         self.ensure_sprite_instance_capacity(device, sprites.len());
+        self.ensure_point_light_instance_capacity(device, point_lights.len());
         if self.last_camera != Some(camera) {
             queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera));
             self.last_camera = Some(camera);
@@ -368,6 +420,21 @@ impl Gpu2D {
                 bytemuck::cast_slice(&self.sprite_instances),
             );
         }
+
+        self.point_light_instances.clear();
+        self.point_light_instances.reserve(point_lights.len());
+        for light in point_lights {
+            if let Some(light) = light_2d_gpu(*light) {
+                self.point_light_instances.push(light);
+            }
+        }
+        if !self.point_light_instances.is_empty() {
+            queue.write_buffer(
+                &self.point_light_instance_buffer,
+                0,
+                bytemuck::cast_slice(&self.point_light_instances),
+            );
+        }
     }
 
     pub fn render_pass(
@@ -415,11 +482,21 @@ impl Gpu2D {
                 );
             }
         }
+
+        if !self.point_light_instances.is_empty() {
+            pass.set_pipeline(&self.point_light_pipeline);
+            pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            pass.set_vertex_buffer(0, self.rect_vertex_buffer.slice(..));
+            pass.set_vertex_buffer(1, self.point_light_instance_buffer.slice(..));
+            pass.draw(0..6, 0..self.point_light_instances.len() as u32);
+        }
     }
 
     #[inline]
     pub fn draw_call_count(&self, rect_draw_count: u32) -> u32 {
-        u32::from(rect_draw_count > 0) + self.sprite_batches.len() as u32
+        u32::from(rect_draw_count > 0)
+            + self.sprite_batches.len() as u32
+            + u32::from(!self.point_light_instances.is_empty())
     }
 
     fn ensure_sprite_texture(
@@ -577,6 +654,23 @@ impl Gpu2D {
         self.sprite_instance_capacity = new_capacity;
     }
 
+    fn ensure_point_light_instance_capacity(&mut self, device: &wgpu::Device, needed: usize) {
+        if needed <= self.point_light_instance_capacity {
+            return;
+        }
+        let mut new_capacity = self.point_light_instance_capacity.max(1);
+        while new_capacity < needed {
+            new_capacity *= 2;
+        }
+        self.point_light_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_point_light_2d_instances"),
+            size: (new_capacity * std::mem::size_of::<Light2DGpu>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.point_light_instance_capacity = new_capacity;
+    }
+
     pub fn virtual_size() -> [f32; 2] {
         [VIRTUAL_WIDTH, VIRTUAL_HEIGHT]
     }
@@ -615,6 +709,85 @@ fn sprite_intersects_screen(
     }
 
     !(max_x < -1.0 || min_x > 1.0 || max_y < -1.0 || min_y > 1.0)
+}
+
+fn light_2d_gpu(light: Light2DState) -> Option<Light2DGpu> {
+    let (position, range, z_index, color, intensity, direction, inner_cos, outer_cos, kind) =
+        match light {
+            Light2DState::Ambient(light) => (
+                [0.0, 0.0],
+                1.0,
+                i32::MAX,
+                light.color,
+                light.intensity,
+                [0.0, -1.0],
+                1.0,
+                -1.0,
+                0,
+            ),
+            Light2DState::Ray(light) => (
+                [0.0, 0.0],
+                1.0,
+                light.z_index,
+                light.color,
+                light.intensity,
+                normalize2(light.direction).unwrap_or([0.0, -1.0]),
+                1.0,
+                -1.0,
+                1,
+            ),
+            Light2DState::Point(light) => (
+                light.position,
+                light.range,
+                light.z_index,
+                light.color,
+                light.intensity,
+                [0.0, -1.0],
+                1.0,
+                -1.0,
+                2,
+            ),
+            Light2DState::Spot(light) => (
+                light.position,
+                light.range,
+                light.z_index,
+                light.color,
+                light.intensity,
+                normalize2(light.direction).unwrap_or([0.0, -1.0]),
+                light.inner_angle_radians.cos(),
+                light.outer_angle_radians.cos(),
+                3,
+            ),
+        };
+    if !(range.is_finite()
+        && range > 0.0
+        && intensity.is_finite()
+        && intensity > 0.0
+        && position.iter().all(|v| v.is_finite())
+        && color.iter().all(|v| v.is_finite())
+        && direction.iter().all(|v| v.is_finite())
+        && inner_cos.is_finite()
+        && outer_cos.is_finite())
+    {
+        return None;
+    }
+    Some(Light2DGpu {
+        position,
+        range,
+        z_index,
+        color,
+        intensity,
+        direction,
+        inner_cos,
+        outer_cos,
+        kind,
+        pad: [0; 3],
+    })
+}
+
+fn normalize2(v: [f32; 2]) -> Option<[f32; 2]> {
+    let len = (v[0] * v[0] + v[1] * v[1]).sqrt();
+    (len.is_finite() && len > 0.0).then_some([v[0] / len, v[1] / len])
 }
 
 fn decode_ptex(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
@@ -853,6 +1026,124 @@ fn create_sprite_pipeline(
             targets: &[Some(wgpu::ColorTargetState {
                 format,
                 blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::RED
+                    | wgpu::ColorWrites::GREEN
+                    | wgpu::ColorWrites::BLUE,
+            })],
+            compilation_options: Default::default(),
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState {
+            count: sample_count.max(1),
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
+fn create_point_light_pipeline(
+    device: &wgpu::Device,
+    camera_bgl: &wgpu::BindGroupLayout,
+    shader: &wgpu::ShaderModule,
+    format: wgpu::TextureFormat,
+    sample_count: u32,
+) -> wgpu::RenderPipeline {
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("perro_point_light_2d_pipeline_layout"),
+        bind_group_layouts: &[Some(camera_bgl)],
+        immediate_size: 0,
+    });
+
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("perro_point_light_2d_pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs_main"),
+            buffers: &[
+                wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<QuadVertex>() as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &[wgpu::VertexAttribute {
+                        offset: 0,
+                        shader_location: 0,
+                        format: wgpu::VertexFormat::Float32x2,
+                    }],
+                },
+                wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<Light2DGpu>() as u64,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            offset: 0,
+                            shader_location: 1,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 8,
+                            shader_location: 2,
+                            format: wgpu::VertexFormat::Float32,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 12,
+                            shader_location: 3,
+                            format: wgpu::VertexFormat::Sint32,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 16,
+                            shader_location: 4,
+                            format: wgpu::VertexFormat::Float32x3,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 28,
+                            shader_location: 5,
+                            format: wgpu::VertexFormat::Float32,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 32,
+                            shader_location: 6,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 40,
+                            shader_location: 7,
+                            format: wgpu::VertexFormat::Float32,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 44,
+                            shader_location: 8,
+                            format: wgpu::VertexFormat::Float32,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 48,
+                            shader_location: 9,
+                            format: wgpu::VertexFormat::Uint32,
+                        },
+                    ],
+                },
+            ],
+            compilation_options: Default::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_main"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: Some(wgpu::BlendState {
+                    color: wgpu::BlendComponent {
+                        src_factor: wgpu::BlendFactor::One,
+                        dst_factor: wgpu::BlendFactor::One,
+                        operation: wgpu::BlendOperation::Add,
+                    },
+                    alpha: wgpu::BlendComponent {
+                        src_factor: wgpu::BlendFactor::Zero,
+                        dst_factor: wgpu::BlendFactor::One,
+                        operation: wgpu::BlendOperation::Add,
+                    },
+                }),
                 write_mask: wgpu::ColorWrites::RED
                     | wgpu::ColorWrites::GREEN
                     | wgpu::ColorWrites::BLUE,

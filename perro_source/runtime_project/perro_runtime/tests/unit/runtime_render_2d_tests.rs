@@ -3,6 +3,7 @@ use perro_ids::TextureID;
 use perro_nodes::{
     SceneNode, SceneNodeData,
     camera_2d::Camera2D,
+    light_2d::{AmbientLight2D, PointLight2D, RayLight2D, SpotLight2D},
     node_2d::Node2D,
     particle_emitter_2d::ParticleEmitter2D,
     sprite_2d::{AnimatedSprite, AnimatedSprite2D, Sprite2D},
@@ -42,6 +43,93 @@ fn particle_emitter_2d_queues_point_particles() {
                     && particles.profile.expr_y_ops.is_none()
         )
     }));
+}
+
+#[test]
+fn point_light_2d_emits_light_command() {
+    let mut runtime = Runtime::new();
+    let mut light = PointLight2D::new();
+    light.transform.position.x = 24.0;
+    light.transform.position.y = -6.0;
+    light.color = [1.0, 0.5, 0.25];
+    light.intensity = 3.0;
+    light.range = 300.0;
+    let expected_node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::PointLight2D(light)));
+
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::SetPointLight { node, light })
+            if *node == expected_node
+                && light.position == [24.0, -6.0]
+                && light.color == [1.0, 0.5, 0.25]
+                && light.intensity == 3.0
+                && light.range == 300.0
+    )));
+}
+
+#[test]
+fn ambient_ray_and_spot_light_2d_emit_light_commands() {
+    let mut runtime = Runtime::new();
+    let mut ambient = AmbientLight2D::new();
+    ambient.intensity = 0.25;
+    let ambient_node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::AmbientLight2D(ambient)));
+
+    let mut ray = RayLight2D::new();
+    ray.transform.rotation = std::f32::consts::FRAC_PI_2;
+    let ray_node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::RayLight2D(ray)));
+
+    let mut spot = SpotLight2D::new();
+    spot.transform.position.x = 8.0;
+    spot.range = 64.0;
+    let spot_node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::SpotLight2D(spot)));
+
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::SetAmbientLight { node, light })
+            if *node == ambient_node && light.intensity == 0.25
+    )));
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::SetRayLight { node, light })
+            if *node == ray_node && light.direction[0] > 0.99
+    )));
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::SetSpotLight { node, light })
+            if *node == spot_node && light.position == [8.0, 0.0] && light.range == 64.0
+    )));
+}
+
+#[test]
+fn inactive_point_light_2d_emits_remove_node() {
+    let mut runtime = Runtime::new();
+    let mut light = PointLight2D::new();
+    light.active = false;
+    let expected_node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::PointLight2D(light)));
+
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::RemoveNode { node }) if *node == expected_node
+    )));
 }
 
 #[test]

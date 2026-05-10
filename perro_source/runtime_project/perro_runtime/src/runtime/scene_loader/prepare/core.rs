@@ -13,6 +13,7 @@ use perro_nodes::{
     mesh_instance_3d::{MaterialParamOverride, MaterialParamOverrideValue, MeshInstance3D, MeshSurfaceBinding},
     multi_mesh_instance_3d::MultiMeshInstance3D,
     node_2d::Node2D,
+    light_2d::{AmbientLight2D, PointLight2D, RayLight2D, SpotLight2D},
     node_3d::Node3D,
     particle_emitter_2d::ParticleEmitter2D,
     particle_emitter_2d::ParticleEmitterSimMode2D,
@@ -37,7 +38,8 @@ use perro_render_bridge::Material3D;
 use perro_scene::{
     AnimatedSprite2DField, AnimationPlayerField, AnimationTreeField, Area2DField, Area3DField, BoneAttachment2DField, BoneAttachment3DField,
     BoneCollider2DField, BoneCollider3DField, Camera2DField, Camera3DField, CollisionShape2DField, CollisionShape3DField, DistanceJoint2DField, HingeJoint3DField, IKTarget2DField, IKTarget3DField, Joint2DField, Joint3DField, Light3DField,
-    MeshInstance3DField, Node2DField, Node3DField, NodeField, Parser, ParticleEmitter2DField,
+    Light2DField, MeshInstance3DField, Node2DField, Node3DField, NodeField, Parser,
+    ParticleEmitter2DField, PointLight2DField, RayLight2DField, SpotLight2DField,
     ParticleEmitter3DField, TileMap2DField,
     PhysicsBoneChain2DField, PhysicsBoneChain3DField, PointLight3DField, RayLight3DField, RigidBody2DField, RigidBody3DField, Scene,
     SceneFieldIterRef, SceneKey, SceneNodeData as SceneDefNodeData,
@@ -851,6 +853,10 @@ fn scene_node_data_from(
         "ParticleEmitter2D" => Ok(SceneNodeData::ParticleEmitter2D(build_particle_emitter_2d(
             data,
         ))),
+        "AmbientLight2D" => Ok(SceneNodeData::AmbientLight2D(build_ambient_light_2d(data))),
+        "RayLight2D" => Ok(SceneNodeData::RayLight2D(build_ray_light_2d(data))),
+        "PointLight2D" => Ok(SceneNodeData::PointLight2D(build_point_light_2d(data))),
+        "SpotLight2D" => Ok(SceneNodeData::SpotLight2D(build_spot_light_2d(data))),
         "TileMap2D" => Ok(SceneNodeData::TileMap2D(build_tilemap_2d(data))),
         "Skeleton2D" => Ok(SceneNodeData::Skeleton2D(build_skeleton_2d(data))),
         "Bone2D" => Err("unsupported scene node type `Bone2D`; use Skeleton2D.bones from .pskel2d".to_string()),

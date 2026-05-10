@@ -6,6 +6,7 @@ use crate::bone_collider_3d::BoneCollider3D;
 use crate::camera_2d::Camera2D;
 use crate::camera_3d::Camera3D;
 use crate::ik_target_3d::IKTarget3D;
+use crate::light_2d::{AmbientLight2D, PointLight2D, RayLight2D, SpotLight2D};
 use crate::mesh_instance_3d::MeshInstance3D;
 use crate::multi_mesh_instance_3d::MultiMeshInstance3D;
 use crate::node_2d::Node2D;
@@ -826,6 +827,10 @@ define_scene_nodes! {
         Sprite2D => (Node2D, Sprite2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         AnimatedSprite2D => (Node2D, AnimatedSprite2D, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         ParticleEmitter2D => (Node2D, ParticleEmitter2D, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
+        AmbientLight2D => (None, AmbientLight2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        RayLight2D => (Node2D, RayLight2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        PointLight2D => (Node2D, PointLight2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        SpotLight2D => (Node2D, SpotLight2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         TileMap2D => (Node2D, TileMap2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::True),
         Skeleton2D => (Node2D, Skeleton2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         BoneAttachment2D => (Node2D, BoneAttachment2D, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False),

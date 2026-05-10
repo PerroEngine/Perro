@@ -9,6 +9,10 @@ pub enum NodeField {
     Sprite2D(Sprite2DField),
     AnimatedSprite2D(AnimatedSprite2DField),
     ParticleEmitter2D(ParticleEmitter2DField),
+    Light2D(Light2DField),
+    RayLight2D(RayLight2DField),
+    PointLight2D(PointLight2DField),
+    SpotLight2D(SpotLight2DField),
     TileMap2D(TileMap2DField),
     Skeleton2D(Skeleton2DField),
     BoneAttachment2D(BoneAttachment2DField),
@@ -99,6 +103,31 @@ pub enum ParticleEmitter2DField {
     Params,
     Profile,
     SimMode,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Light2DField {
+    Color,
+    Intensity,
+    CastShadows,
+    Active,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RayLight2DField {
+    Visible,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PointLight2DField {
+    Range,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpotLight2DField {
+    Range,
+    InnerAngleRadians,
+    OuterAngleRadians,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -499,6 +528,25 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
                 ParticleEmitter2DField::SimMode,
             )),
             _ => None,
+        },
+        NodeType::AmbientLight2D => resolve_light2d_common(field).map(NodeField::Light2D),
+        NodeType::RayLight2D => match field {
+            "visible" => Some(NodeField::RayLight2D(RayLight2DField::Visible)),
+            _ => resolve_light2d_common(field).map(NodeField::Light2D),
+        },
+        NodeType::PointLight2D => match field {
+            "range" | "radius" => Some(NodeField::PointLight2D(PointLight2DField::Range)),
+            _ => resolve_light2d_common(field).map(NodeField::Light2D),
+        },
+        NodeType::SpotLight2D => match field {
+            "range" | "radius" => Some(NodeField::SpotLight2D(SpotLight2DField::Range)),
+            "inner_angle_radians" => {
+                Some(NodeField::SpotLight2D(SpotLight2DField::InnerAngleRadians))
+            }
+            "outer_angle_radians" => {
+                Some(NodeField::SpotLight2D(SpotLight2DField::OuterAngleRadians))
+            }
+            _ => resolve_light2d_common(field).map(NodeField::Light2D),
         },
         NodeType::TileMap2D => match field {
             "tileset" => Some(NodeField::TileMap2D(TileMap2DField::Tileset)),
@@ -922,6 +970,16 @@ fn resolve_light3d_common(field: &str) -> Option<Light3DField> {
         "intensity" => Some(Light3DField::Intensity),
         "cast_shadows" | "casts_shadows" => Some(Light3DField::CastShadows),
         "active" => Some(Light3DField::Active),
+        _ => None,
+    }
+}
+
+fn resolve_light2d_common(field: &str) -> Option<Light2DField> {
+    match field {
+        "color" => Some(Light2DField::Color),
+        "intensity" => Some(Light2DField::Intensity),
+        "cast_shadows" | "casts_shadows" => Some(Light2DField::CastShadows),
+        "active" => Some(Light2DField::Active),
         _ => None,
     }
 }

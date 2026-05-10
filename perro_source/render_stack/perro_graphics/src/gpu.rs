@@ -16,7 +16,7 @@ use crate::{
 };
 use epaint::{ClippedPrimitive, textures::TexturesDelta};
 use perro_ids::NodeID;
-use perro_render_bridge::{Camera3DState, PointParticles3DState, Sprite2DCommand};
+use perro_render_bridge::{Camera3DState, Light2DState, PointParticles3DState, Sprite2DCommand};
 use perro_structs::VisualAccessibilitySettings;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -97,10 +97,12 @@ pub struct RenderFrame<'a> {
     pub rects_2d: &'a [RectInstanceGpu],
     pub upload_2d: &'a RectUploadPlan,
     pub sprites_2d: &'a [Sprite2DCommand],
+    pub point_lights_2d: &'a [Light2DState],
     pub late_overlay_camera_2d: Camera2DUniform,
     pub late_overlay_rects_2d: &'a [RectInstanceGpu],
     pub late_overlay_upload_2d: &'a RectUploadPlan,
     pub late_overlay_sprites_2d: &'a [Sprite2DCommand],
+    pub late_overlay_point_lights_2d: &'a [Light2DState],
     pub ui_primitives: &'a [ClippedPrimitive],
     pub ui_textures_delta: &'a TexturesDelta,
     pub ui_texture_size: [u32; 2],
@@ -423,10 +425,12 @@ impl Gpu {
             rects_2d,
             upload_2d,
             sprites_2d,
+            point_lights_2d,
             late_overlay_camera_2d,
             late_overlay_rects_2d,
             late_overlay_upload_2d,
             late_overlay_sprites_2d,
+            late_overlay_point_lights_2d,
             redraw_requested,
             frame_dirty_bits,
             static_texture_lookup,
@@ -447,7 +451,8 @@ impl Gpu {
 
         let has = |bit: u32| (frame_dirty_bits & bit) != 0;
 
-        let has_2d_content = upload_2d.draw_count > 0 || !sprites_2d.is_empty();
+        let has_2d_content =
+            upload_2d.draw_count > 0 || !sprites_2d.is_empty() || !point_lights_2d.is_empty();
         let rect_upload_dirty = upload_2d.full_reupload || !upload_2d.dirty_ranges.is_empty();
         let needs_2d_prepare = has(DIRTY_2D)
             || has(DIRTY_CAMERA_2D)
@@ -505,6 +510,7 @@ impl Gpu {
                         rects: rects_2d,
                         upload: upload_2d,
                         sprites: sprites_2d,
+                        point_lights: point_lights_2d,
                         static_texture_lookup,
                     },
                 );
@@ -884,7 +890,10 @@ impl Gpu {
                 ui.render_pass(&self.device, &mut encoder, output_view, viewport);
             }
         }
-        if late_overlay_upload_2d.draw_count > 0 || !late_overlay_sprites_2d.is_empty() {
+        if late_overlay_upload_2d.draw_count > 0
+            || !late_overlay_sprites_2d.is_empty()
+            || !late_overlay_point_lights_2d.is_empty()
+        {
             if self.late_overlay_2d.is_none() {
                 self.late_overlay_2d = Some(Gpu2D::new(&self.device, self.config.format, 1));
             }
@@ -900,6 +909,7 @@ impl Gpu {
                         rects: late_overlay_rects_2d,
                         upload: late_overlay_upload_2d,
                         sprites: late_overlay_sprites_2d,
+                        point_lights: late_overlay_point_lights_2d,
                         static_texture_lookup,
                     },
                 );

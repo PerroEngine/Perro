@@ -768,6 +768,49 @@ pub struct Sprite2DCommand {
     pub z_index: i32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PointLight2DState {
+    pub position: [f32; 2],
+    pub color: [f32; 3],
+    pub intensity: f32,
+    pub range: f32,
+    pub z_index: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AmbientLight2DState {
+    pub color: [f32; 3],
+    pub intensity: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RayLight2DState {
+    pub direction: [f32; 2],
+    pub color: [f32; 3],
+    pub intensity: f32,
+    pub z_index: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SpotLight2DState {
+    pub position: [f32; 2],
+    pub direction: [f32; 2],
+    pub color: [f32; 3],
+    pub intensity: f32,
+    pub range: f32,
+    pub inner_angle_radians: f32,
+    pub outer_angle_radians: f32,
+    pub z_index: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Light2DState {
+    Ambient(AmbientLight2DState),
+    Ray(RayLight2DState),
+    Point(PointLight2DState),
+    Spot(SpotLight2DState),
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct TileMap2DCommand {
     pub texture: TextureID,
@@ -1361,6 +1404,22 @@ pub enum Command2D {
     UpsertPointParticles {
         node: NodeID,
         particles: Box<PointParticles2DState>,
+    },
+    SetAmbientLight {
+        node: NodeID,
+        light: AmbientLight2DState,
+    },
+    SetRayLight {
+        node: NodeID,
+        light: RayLight2DState,
+    },
+    SetPointLight {
+        node: NodeID,
+        light: PointLight2DState,
+    },
+    SetSpotLight {
+        node: NodeID,
+        light: SpotLight2DState,
     },
     RemoveNode {
         node: NodeID,

@@ -304,6 +304,75 @@ script = "res://path/to/script.rs"
     [/Camera2D]
 [/camera2d]
 
+[ambient_light_2d]
+parent = @PARENTKEY
+script = "res://path/to/script.rs"
+    [AmbientLight2D]
+        color = (1, 1, 1)
+        intensity = 0.0
+        cast_shadows = false
+        active = true
+    [/AmbientLight2D]
+[/ambient_light_2d]
+
+[ray_light_2d]
+parent = @PARENTKEY
+script = "res://path/to/script.rs"
+    [RayLight2D]
+        color = (1, 1, 1)
+        intensity = 1.0
+        cast_shadows = false
+        active = true
+        [Node2D]
+            position = (0, 0)
+            rotation = 0.0
+            scale = (1, 1)
+            z_index = 0
+            visible = true
+        [/Node2D]
+    [/RayLight2D]
+[/ray_light_2d]
+
+[point_light_2d]
+parent = @PARENTKEY
+script = "res://path/to/script.rs"
+    [PointLight2D]
+        color = (1, 1, 1)
+        intensity = 1.0
+        range = 256.0
+        cast_shadows = false
+        active = true
+        [Node2D]
+            position = (0, 0)
+            rotation = 0.0
+            scale = (1, 1)
+            z_index = 0
+            visible = true
+        [/Node2D]
+    [/PointLight2D]
+[/point_light_2d]
+
+[spot_light_2d]
+parent = @PARENTKEY
+script = "res://path/to/script.rs"
+    [SpotLight2D]
+        color = (1, 1, 1)
+        intensity = 1.0
+        range = 256.0
+        inner_angle_radians = 0.349066
+        outer_angle_radians = 0.523599
+        cast_shadows = false
+        active = true
+        [Node2D]
+            position = (0, 0)
+            rotation = 0.0
+            scale = (1, 1)
+            z_index = 0
+            visible = true
+        [/Node2D]
+    [/SpotLight2D]
+[/spot_light_2d]
+
 [collision_shape_2d]
 parent = @PARENTKEY
 script = "res://path/to/script.rs"

@@ -4,8 +4,9 @@ use perro_ids::{NodeID, TextureID, parse_hashed_source_uri, string_to_u64};
 use perro_nodes::{SceneNodeData, particle_emitter_2d::ParticleEmitterSimMode2D};
 use perro_particle_math::compile_expression;
 use perro_render_bridge::{
-    Camera2DState, Command2D, ParticlePath2D, ParticleProfile2D, ParticleSimulationMode2D,
-    PointParticles2DState, RenderCommand, RenderRequestID, ResourceCommand, Sprite2DCommand,
+    AmbientLight2DState, Camera2DState, Command2D, ParticlePath2D, ParticleProfile2D,
+    ParticleSimulationMode2D, PointLight2DState, PointParticles2DState, RayLight2DState,
+    RenderCommand, RenderRequestID, ResourceCommand, SpotLight2DState, Sprite2DCommand,
     TileMap2DCommand,
 };
 use std::borrow::Cow;
@@ -236,6 +237,140 @@ impl Runtime {
                 } else {
                     self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
                     self.render_2d.retained_sprites.remove(&node);
+                }
+            }
+
+            let ambient_light_data = self.nodes.get(node).and_then(|node| match &node.data {
+                SceneNodeData::AmbientLight2D(light)
+                    if light.visible && light.active && effective_visible =>
+                {
+                    Some((light.color, light.intensity))
+                }
+                _ => None,
+            });
+            if let Some((color, intensity)) = ambient_light_data {
+                if intensity > 0.0 {
+                    self.queue_render_command(RenderCommand::TwoD(Command2D::SetAmbientLight {
+                        node,
+                        light: AmbientLight2DState {
+                            color,
+                            intensity: intensity.max(0.0),
+                        },
+                    }));
+                    visible_now.insert(node);
+                } else {
+                    self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
+                }
+            }
+
+            let ray_light_data = self.nodes.get(node).and_then(|node| match &node.data {
+                SceneNodeData::RayLight2D(light)
+                    if effective_visible && light.visible && light.active =>
+                {
+                    Some((light.transform, light.z_index, light.color, light.intensity))
+                }
+                _ => None,
+            });
+            if let Some((local_transform, z_index, color, intensity)) = ray_light_data {
+                if intensity > 0.0 {
+                    let global = self
+                        .get_global_transform_2d(node)
+                        .unwrap_or(local_transform);
+                    self.queue_render_command(RenderCommand::TwoD(Command2D::SetRayLight {
+                        node,
+                        light: RayLight2DState {
+                            direction: direction_from_rotation_2d(global.rotation),
+                            color,
+                            intensity: intensity.max(0.0),
+                            z_index,
+                        },
+                    }));
+                    visible_now.insert(node);
+                } else {
+                    self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
+                }
+            }
+
+            let point_light_data = self.nodes.get(node).and_then(|node| match &node.data {
+                SceneNodeData::PointLight2D(light) => Some((
+                    effective_visible && light.visible && light.active,
+                    light.transform,
+                    light.z_index,
+                    light.color,
+                    light.intensity,
+                    light.range,
+                )),
+                _ => None,
+            });
+            if let Some((visible, local_transform, z_index, color, intensity, range)) =
+                point_light_data
+            {
+                if visible && intensity > 0.0 && range > 0.0 {
+                    let global = self
+                        .get_global_transform_2d(node)
+                        .unwrap_or(local_transform);
+                    self.queue_render_command(RenderCommand::TwoD(Command2D::SetPointLight {
+                        node,
+                        light: PointLight2DState {
+                            position: [global.position.x, global.position.y],
+                            color,
+                            intensity,
+                            range,
+                            z_index,
+                        },
+                    }));
+                    visible_now.insert(node);
+                } else {
+                    self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
+                }
+            }
+
+            let spot_light_data = self.nodes.get(node).and_then(|node| match &node.data {
+                SceneNodeData::SpotLight2D(light)
+                    if effective_visible && light.visible && light.active =>
+                {
+                    Some((
+                        light.transform,
+                        light.z_index,
+                        light.color,
+                        light.intensity,
+                        light.range,
+                        light.inner_angle_radians,
+                        light.outer_angle_radians,
+                    ))
+                }
+                _ => None,
+            });
+            if let Some((
+                local_transform,
+                z_index,
+                color,
+                intensity,
+                range,
+                inner_angle_radians,
+                outer_angle_radians,
+            )) = spot_light_data
+            {
+                if intensity > 0.0 && range > 0.0 {
+                    let global = self
+                        .get_global_transform_2d(node)
+                        .unwrap_or(local_transform);
+                    self.queue_render_command(RenderCommand::TwoD(Command2D::SetSpotLight {
+                        node,
+                        light: SpotLight2DState {
+                            position: [global.position.x, global.position.y],
+                            direction: direction_from_rotation_2d(global.rotation),
+                            color,
+                            intensity: intensity.max(0.0),
+                            range: range.max(0.001),
+                            inner_angle_radians: inner_angle_radians.max(0.0),
+                            outer_angle_radians: outer_angle_radians.max(inner_angle_radians),
+                            z_index,
+                        },
+                    }));
+                    visible_now.insert(node);
+                } else {
+                    self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
                 }
             }
 
@@ -518,6 +653,10 @@ fn mul_mat3(a: [[f32; 3]; 3], b: [[f32; 3]; 3]) -> [[f32; 3]; 3] {
         }
     }
     out
+}
+
+fn direction_from_rotation_2d(rotation: f32) -> [f32; 2] {
+    [rotation.sin(), -rotation.cos()]
 }
 
 fn derived_particle_budget(spawn_rate: f32, lifetime_max: f32) -> u32 {

@@ -17,7 +17,7 @@ use crate::{
 use ahash::AHashSet;
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
-    Command2D, Command3D, PointParticles3DState, PostProcessingCommand, RenderBridge,
+    Command2D, Command3D, Light2DState, PointParticles3DState, PostProcessingCommand, RenderBridge,
     RenderCommand, RenderEvent, ResourceCommand, Sprite2DCommand, VisualAccessibilityCommand,
 };
 use perro_structs::{PostProcessSet, VisualAccessibilitySettings};
@@ -187,8 +187,11 @@ pub struct PerroGraphics {
     retained_point_particles_cache_revision: u64,
     retained_sprites_cache: Vec<Sprite2DCommand>,
     retained_sprites_cache_revision: u64,
+    retained_point_lights_cache: Vec<Light2DState>,
+    retained_point_lights_cache_revision: u64,
     frame_rects_cache: Vec<RectInstanceGpu>,
     late_overlay_sprites_cache: Vec<Sprite2DCommand>,
+    late_overlay_point_lights_cache: Vec<Light2DState>,
     late_overlay_rects_cache: Vec<RectInstanceGpu>,
     used_texture_refs_cache: AHashSet<TextureID>,
     used_mesh_refs_cache: AHashSet<MeshID>,
@@ -231,8 +234,11 @@ impl PerroGraphics {
             retained_point_particles_cache_revision: u64::MAX,
             retained_sprites_cache: Vec::new(),
             retained_sprites_cache_revision: u64::MAX,
+            retained_point_lights_cache: Vec::new(),
+            retained_point_lights_cache_revision: u64::MAX,
             frame_rects_cache: Vec::new(),
             late_overlay_sprites_cache: Vec::new(),
+            late_overlay_point_lights_cache: Vec::new(),
             late_overlay_rects_cache: Vec::new(),
             used_texture_refs_cache: AHashSet::new(),
             used_mesh_refs_cache: AHashSet::new(),
@@ -432,6 +438,18 @@ impl PerroGraphics {
                     Command2D::UpsertPointParticles { node, particles } => {
                         self.renderer_2d.queue_point_particles(node, *particles);
                     }
+                    Command2D::SetAmbientLight { node, light } => {
+                        self.renderer_2d.set_ambient_light(node, light);
+                    }
+                    Command2D::SetRayLight { node, light } => {
+                        self.renderer_2d.set_ray_light(node, light);
+                    }
+                    Command2D::SetPointLight { node, light } => {
+                        self.renderer_2d.set_point_light(node, light);
+                    }
+                    Command2D::SetSpotLight { node, light } => {
+                        self.renderer_2d.set_spot_light(node, light);
+                    }
                     Command2D::RemoveNode { node } => {
                         self.renderer_2d.remove_node(node);
                     }
@@ -596,6 +614,18 @@ impl PerroGraphics {
                     }
                     Command2D::UpsertPointParticles { node, particles } => {
                         self.late_overlay_2d.queue_point_particles(node, *particles);
+                    }
+                    Command2D::SetAmbientLight { node, light } => {
+                        self.late_overlay_2d.set_ambient_light(node, light);
+                    }
+                    Command2D::SetRayLight { node, light } => {
+                        self.late_overlay_2d.set_ray_light(node, light);
+                    }
+                    Command2D::SetPointLight { node, light } => {
+                        self.late_overlay_2d.set_point_light(node, light);
+                    }
+                    Command2D::SetSpotLight { node, light } => {
+                        self.late_overlay_2d.set_spot_light(node, light);
                     }
                     Command2D::RemoveNode { node } => {
                         self.late_overlay_2d.remove_node(node);
@@ -862,6 +892,18 @@ impl PerroGraphics {
                 .extend(self.renderer_2d.retained_sprites());
             self.retained_sprites_cache_revision = sprites_revision;
         }
+        let point_lights_revision = self.renderer_2d.retained_point_lights_revision();
+        if point_lights_revision != self.retained_point_lights_cache_revision {
+            self.retained_point_lights_cache.clear();
+            let point_light_count = self.renderer_2d.light_count();
+            if self.retained_point_lights_cache.capacity() < point_light_count {
+                self.retained_point_lights_cache
+                    .reserve(point_light_count - self.retained_point_lights_cache.capacity());
+            }
+            self.retained_point_lights_cache
+                .extend(self.renderer_2d.lights());
+            self.retained_point_lights_cache_revision = point_lights_revision;
+        }
         self.frame_rects_cache.clear();
         let retained_rect_count = self.renderer_2d.retained_rects().len();
         let frame_shape_count = self.renderer_2d.frame_shapes().len();
@@ -882,6 +924,9 @@ impl PerroGraphics {
         self.late_overlay_sprites_cache.clear();
         self.late_overlay_sprites_cache
             .extend(self.late_overlay_2d.retained_sprites());
+        self.late_overlay_point_lights_cache.clear();
+        self.late_overlay_point_lights_cache
+            .extend(self.late_overlay_2d.lights());
         let ui_image_textures: Vec<_> = self.renderer_ui.image_textures().collect();
         let ui_paint = self
             .renderer_ui
@@ -955,10 +1000,12 @@ impl PerroGraphics {
                 rects_2d: &self.frame_rects_cache,
                 upload_2d: &upload,
                 sprites_2d: &self.retained_sprites_cache,
+                point_lights_2d: &self.retained_point_lights_cache,
                 late_overlay_camera_2d,
                 late_overlay_rects_2d: &self.late_overlay_rects_cache,
                 late_overlay_upload_2d: &late_overlay_upload,
                 late_overlay_sprites_2d: &self.late_overlay_sprites_cache,
+                late_overlay_point_lights_2d: &self.late_overlay_point_lights_cache,
                 ui_primitives: ui_paint.primitives,
                 ui_textures_delta: ui_paint.textures_delta,
                 ui_texture_size: ui_paint.texture_size,

@@ -37,6 +37,17 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 - Active 2D camera (position/rotation/zoom).
 - Supports camera post-processing via `post_processing` (see "Camera Post-Processing" below).
 
+2D lights:
+
+- `AmbientLight2D`
+- `RayLight2D`
+- `PointLight2D`
+- `SpotLight2D`
+- Uses `color`, `intensity`, `cast_shadows`, and `active`.
+- `PointLight2D` and `SpotLight2D` use `range`.
+- `SpotLight2D` uses `inner_angle_radians` and `outer_angle_radians`.
+- Shadows are not implemented.
+
 `Skeleton2D`
 
 - 2D rig root.

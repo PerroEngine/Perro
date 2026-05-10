@@ -1,7 +1,9 @@
 use super::{RectInstanceGpu, Renderer2D};
 use crate::resources::ResourceStore;
 use perro_ids::{NodeID, TextureID};
-use perro_render_bridge::{DrawShape2DCommand, Rect2DCommand, Sprite2DCommand};
+use perro_render_bridge::{
+    DrawShape2DCommand, Light2DState, PointLight2DState, Rect2DCommand, Sprite2DCommand,
+};
 use perro_structs::{DrawShape2D, Vector2};
 
 #[test]
@@ -156,4 +158,30 @@ fn draw_sprite_is_transient_sprite() {
             .retained_sprites()
             .any(|sprite| sprite.texture == texture)
     );
+}
+
+#[test]
+fn point_light_is_retained_and_removed_by_node() {
+    let mut renderer = Renderer2D::new();
+    let node = NodeID::from_parts(9, 0);
+    let light = PointLight2DState {
+        position: [12.0, -4.0],
+        color: [1.0, 0.8, 0.4],
+        intensity: 2.0,
+        range: 128.0,
+        z_index: 3,
+    };
+
+    renderer.set_point_light(node, light);
+
+    assert_eq!(renderer.light_count(), 1);
+    assert!(
+        renderer
+            .lights()
+            .any(|stored| stored == Light2DState::Point(light))
+    );
+
+    renderer.remove_node(node);
+
+    assert_eq!(renderer.light_count(), 0);
 }
