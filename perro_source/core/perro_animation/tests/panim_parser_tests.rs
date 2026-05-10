@@ -132,6 +132,80 @@ Hero = Node3D
 }
 
 #[test]
+fn parses_rotation_deg_for_node_and_bone_tracks() {
+    let src = r#"
+[Animation]
+name = "RotationDeg"
+fps = 30
+[/Animation]
+
+[Objects]
+Hero2D = Node2D
+Hero3D = Node3D
+Rig2D = Skeleton2D
+Rig3D = Skeleton3D
+[/Objects]
+
+[Frame0]
+@Hero2D {
+    rotation_deg = 90
+}
+@Hero3D {
+    rotation_deg = (0, 90, 0)
+}
+@Rig2D {
+    bone[0].rotation_deg = 180
+}
+@Rig3D {
+    bone["Spine"].rotation_deg = (0, 0, 90)
+}
+[/Frame0]
+"#;
+
+    let clip = parse_panim(src).expect("expected valid panim");
+
+    let hero_2d = clip
+        .object_tracks
+        .iter()
+        .find(|t| t.object.as_ref() == "Hero2D")
+        .expect("node2d track");
+    let AnimationTrackValue::Transform2D(hero_2d_key) = hero_2d.keys[0].value else {
+        panic!("expected transform2d");
+    };
+    assert!((hero_2d_key.rotation - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
+
+    let rig_2d = clip
+        .object_tracks
+        .iter()
+        .find(|t| t.object.as_ref() == "Rig2D")
+        .expect("skeleton2d track");
+    let AnimationTrackValue::Transform2D(rig_2d_key) = rig_2d.keys[0].value else {
+        panic!("expected transform2d");
+    };
+    assert!((rig_2d_key.rotation - std::f32::consts::PI).abs() < 1e-5);
+
+    let hero_3d = clip
+        .object_tracks
+        .iter()
+        .find(|t| t.object.as_ref() == "Hero3D")
+        .expect("node3d track");
+    let AnimationTrackValue::Transform3D(hero_3d_key) = hero_3d.keys[0].value else {
+        panic!("expected transform3d");
+    };
+    assert!((hero_3d_key.rotation.y.abs() - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-5);
+
+    let rig_3d = clip
+        .object_tracks
+        .iter()
+        .find(|t| t.object.as_ref() == "Rig3D")
+        .expect("skeleton3d track");
+    let AnimationTrackValue::Transform3D(rig_3d_key) = rig_3d.keys[0].value else {
+        panic!("expected transform3d");
+    };
+    assert!((rig_3d_key.rotation.z.abs() - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-5);
+}
+
+#[test]
 fn sparse_node3d_transform_key_interpolates_missing_rotation_component() {
     let src = r#"
 [Animation]
@@ -775,22 +849,22 @@ Player = Node2D
 }
 
 #[test]
-fn parses_bone2d_base_transform_tracks() {
+fn parses_skeleton2d_bone_tracks() {
     let src = r#"
 [Animation]
-name = "Bone2DPose"
+name = "Skeleton2DPose"
 fps = 30
 [/Animation]
 
 [Objects]
-UpperArm = Bone2D
+Rig = Skeleton2D
 [/Objects]
 
 [Frame0]
-@UpperArm {
-    position = (2, 3)
-    rotation = 0.25
-    scale = (1, 1)
+@Rig {
+    bone[0].position = (2, 3)
+    bone[0].rotation = 0.25
+    bone[0].scale = (1, 1)
 }
 [/Frame0]
 "#;
@@ -799,9 +873,10 @@ UpperArm = Bone2D
     let track = clip
         .object_tracks
         .iter()
-        .find(|t| matches!(t.field, NodeField::Node2D(Node2DField::Position)))
-        .expect("bone2d transform track");
-    assert_eq!(track.object.as_ref(), "UpperArm");
+        .find(|t| matches!(t.field, NodeField::Skeleton2D(_)))
+        .expect("skeleton2d bone track");
+    assert_eq!(track.object.as_ref(), "Rig");
+    assert!(track.bone_target.is_some());
     assert!(matches!(
         track.keys[0].value,
         AnimationTrackValue::Transform2D(_)

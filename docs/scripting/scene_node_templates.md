@@ -180,6 +180,7 @@ script = "res://path/to/script.rs"
 parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [Skeleton2D]
+        skeleton = "res://path/to/rig.pskel2d"
         [Node2D]
             position = (0, 0)
             rotation = 0.0
@@ -190,13 +191,12 @@ script = "res://path/to/script.rs"
     [/Skeleton2D]
 [/skeleton2d]
 
-[bone2d]
+[boneattachment2d]
 parent = @PARENTKEY
 script = "res://path/to/script.rs"
-    [Bone2D]
-        rest = { position = (0, 0), rotation = 0.0, scale = (1, 1) }
-        pose = { position = (0, 0), rotation = 0.0, scale = (1, 1) }
-        inv_bind = { position = (0, 0), rotation = 0.0, scale = (1, 1) }
+    [BoneAttachment2D]
+        skeleton = @SkeletonNodeName
+        bone = 0
         [Node2D]
             position = (0, 0)
             rotation = 0.0
@@ -204,8 +204,47 @@ script = "res://path/to/script.rs"
             z_index = 0
             visible = true
         [/Node2D]
-    [/Bone2D]
-[/bone2d]
+    [/BoneAttachment2D]
+[/boneattachment2d]
+
+[iktarget2d]
+parent = @PARENTKEY
+script = "res://path/to/script.rs"
+    [IKTarget2D]
+        skeleton = @SkeletonNodeName
+        bone = 0
+        chain_length = 2
+        iterations = 8
+        tolerance = 0.01
+        weight = 1.0
+        match_rotation = true
+    [/IKTarget2D]
+[/iktarget2d]
+
+[physicsbonechain2d]
+parent = @PARENTKEY
+script = "res://path/to/script.rs"
+    [PhysicsBoneChain2D]
+        skeleton = @SkeletonNodeName
+        bone = 0
+        chain_length = 4
+        enabled = true
+        gravity = (0, -9.81)
+        damping = 0.08
+        stiffness = 0.35
+        radius = 0.05
+        collisions = true
+        iterations = 4
+    [/PhysicsBoneChain2D]
+[/physicsbonechain2d]
+
+[bonecollider2d]
+parent = @PARENTKEY
+script = "res://path/to/script.rs"
+    [BoneCollider2D]
+        enabled = true
+    [/BoneCollider2D]
+[/bonecollider2d]
 
 [sprite2d]
 parent = @PARENTKEY
@@ -373,7 +412,7 @@ script = "res://path/to/script.rs"
             }
         ]
         model = "res://path/to/model.glb"
-        skeleton = "SkeletonNodeName"
+        skeleton = @SkeletonNodeName
         meshlets = true
         [Node3D]
             position = (0, 0, 0)
@@ -543,7 +582,7 @@ script = "res://path/to/script.rs"
 parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [BoneAttachment3D]
-        skeleton = "SkeletonNodeName"
+        skeleton = @SkeletonNodeName
         bone = 0
         # alt: bone_index = 0
         [Node3D]
@@ -557,7 +596,7 @@ script = "res://path/to/script.rs"
 
 [physics_bone_chain_3d]
     [PhysicsBoneChain3D]
-        skeleton = "SkeletonNodeName"
+        skeleton = @SkeletonNodeName
         bone = 0
         chain_length = 4
         gravity = (0, -9.81, 0)
@@ -582,7 +621,7 @@ script = "res://path/to/script.rs"
 parent = PARENTKEY
 script = "res://path/to/script.rs"
     [IKTarget3D]
-        skeleton = "SkeletonNodeName"
+        skeleton = @SkeletonNodeName
         bone = 0
         # alt: bone_index = 0
         chain_length = 2
@@ -1089,7 +1128,7 @@ parent = @Character
 [RightHandSocket]
 parent = @Character
     [BoneAttachment3D]
-        skeleton = "CharacterSkeleton"
+        skeleton = @CharacterSkeleton
         bone = 15
     [/BoneAttachment3D]
 [/RightHandSocket]

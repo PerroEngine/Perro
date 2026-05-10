@@ -1,71 +1,157 @@
-# `.pskel` Format
+# `.pskel2d` / `.pskel3d` Formats
 
-`.pskel` is a **Perro Skeleton** resource. It stores bone data used by `Skeleton3D`.
-In dev, `.pskel` is **text** (authored by hand if needed). During static builds it is
-compiled into a **binary** `.pskel` with the same extension.
+Perro skeleton resources store bone data for scene skeleton nodes.
 
-## Usage
+- `.pskel2d` loads into `Skeleton2D.bones`.
+- `.pskel3d` loads into `Skeleton3D.bones`.
+- glTF skeleton import still uses `res://model.gltf:skeleton[0]`.
 
-- Dev/runtime loads bones from glTF:
-  - `res://models/rig.gltf:skeleton[0]`
-- Static builds embed `.pskel` and keep the same lookup key:
-  - `res://models/rig.gltf:skeleton[0]`
-- You can also create and reference `res://models/rig.pskel` directly.
+## Scene Usage
 
-## Text Format (Dev)
+```text
+[Rig2D]
+    [Skeleton2D]
+        skeleton = "res://rigs/hero.pskel2d"
+    [/Skeleton2D]
+[/Rig2D]
 
-Author a `.pskel` as text in `res/`:
+[Rig3D]
+    [Skeleton3D]
+        skeleton = "res://models/hero.pskel3d"
+    [/Skeleton3D]
+[/Rig3D]
+```
+
+## `.pskel2d` Text
+
+```text
+[bone "Root"]
+    parent = -1
+    rest_pos = (0, 0)
+    rest_scale = (1, 1)
+    rest_rot = 0.0        // radians
+    rest_rot_deg = 0.0    // degrees alternative
+    inv_pos = (0, 0)
+    inv_scale = (1, 1)
+    inv_rot = 0.0         // radians
+    inv_rot_deg = 0.0     // degrees alternative
+[/bone]
+```
+
+## 2D Chain Example
+
+Bones are stored in file order.
+`parent` points to another bone index in that order.
+Use `-1` for root.
+
+```text
+[bone "Hip"]
+    parent = -1
+    rest_pos = (0, 0)
+[/bone]
+
+[bone "Spine"]
+    parent = 0
+    rest_pos = (0, 24)
+[/bone]
+
+[bone "UpperArm"]
+    parent = 1
+    rest_pos = (18, 8)
+[/bone]
+
+[bone "LowerArm"]
+    parent = 2
+    rest_pos = (24, 0)
+[/bone]
+
+[bone "Hand"]
+    parent = 3
+    rest_pos = (18, 0)
+[/bone]
+```
+
+Chain:
+
+- `Hip` index `0`, root
+- `Spine` index `1`, child of `Hip`
+- `UpperArm` index `2`, child of `Spine`
+- `LowerArm` index `3`, child of `UpperArm`
+- `Hand` index `4`, child of `LowerArm`
+
+`rest_pos` is local to parent bone.
+So `LowerArm.rest_pos = (24, 0)` means 24 units from `UpperArm`, not from skeleton root.
+
+Use in scene:
+
+```text
+[Rig2D]
+    [Skeleton2D]
+        skeleton = "res://rigs/arm.pskel2d"
+    [/Skeleton2D]
+[/Rig2D]
+
+[HandTarget]
+parent = @Rig2D
+    [IKTarget2D]
+        skeleton = @Rig2D
+        bone = 4
+        chain_length = 3
+    [/IKTarget2D]
+[/HandTarget]
+```
+
+`chain_length = 3` on `Hand` uses:
+
+- `UpperArm`
+- `LowerArm`
+- `Hand`
+
+## `.pskel3d` Text
 
 ```text
 [bone "Root"]
     parent = -1
     rest_pos = (0, 0, 0)
     rest_scale = (1, 1, 1)
-    rest_rot = (0, 0, 0, 1)
+    rest_rot = (0, 0, 0, 1)   // quaternion
+    rest_rot_deg = (0, 0, 0)  // Euler XYZ degrees alternative
     inv_pos = (0, 0, 0)
     inv_scale = (1, 1, 1)
-    inv_rot = (0, 0, 0, 1)
+    inv_rot = (0, 0, 0, 1)    // quaternion
+    inv_rot_deg = (0, 0, 0)   // Euler XYZ degrees alternative
 [/bone]
 ```
 
-Notes:
+## 3D Chain Example
 
-- `parent` is the parent bone index (`-1` for root).
-- `rest_*` are the local rest transform.
-- `inv_*` are the inverse bind transform.
-- Missing fields default to identity transforms.
+Same parent-index rule as 2D.
+Only transform fields differ.
 
-## Binary Layout (Static)
+```text
+[bone "Hip"]
+    parent = -1
+    rest_pos = (0, 0, 0)
+[/bone]
 
-Header:
+[bone "Spine"]
+    parent = 0
+    rest_pos = (0, 1, 0)
+[/bone]
 
-- Magic: `PSKEL` (5 bytes)
-- Version: `u32` (currently `1`)
-- Bone count: `u32`
-- Raw size (bytes): `u32`
-- Compressed payload: zlib
-
-Raw bone payload (repeated `bone_count` times):
-
-- `name_len: u32`
-- `name_bytes: [u8; name_len]` (UTF-8)
-- `parent: i32` (`-1` for root)
-- `rest`: Transform3D (pos xyz, scale xyz, rot xyzw)
-- `inv_bind`: Transform3D (pos xyz, scale xyz, rot xyzw)
-
-Transform3D layout (each `f32` LE):
-
-- position: `x, y, z`
-- scale: `x, y, z`
-- rotation (quat): `x, y, z, w`
-
-## Example References
-
-Script usage:
-
-```rust
-let bones = skeleton_load_bones!(res, "res://models/rig.pskel");
-with_node_mut!(ctx.run, Skeleton3D, node_id, |skel| {
-    skel.bones = bones;
-});
+[bone "Head"]
+    parent = 1
+    rest_pos = (0, 1, 0)
+[/bone]
 ```
+
+## Notes
+
+- `parent` is the parent bone index.
+- `-1` means root bone.
+- `rest_*` is local rest transform.
+- `inv_*` is inverse bind transform.
+- Missing fields default to identity.
+- Static builds compile text into binary `PSKEL`.
+- Put parent bones before children.
+- Bad parent index is ignored by most runtime paths, but rig tools should treat it as invalid.

@@ -3,9 +3,11 @@ use crate::{
     Lexer, Scene, SceneKey, SceneNodeData, SceneNodeDataBase, SceneNodeEntry, SceneObjectField,
     SceneValue, SceneValueKey, Token,
 };
+use perro_nodes::NodeType;
 use perro_structs::Quaternion;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
 
 pub struct Parser<'a> {
     src: &'a str,
@@ -631,31 +633,50 @@ impl<'a> Parser<'a> {
 }
 
 fn normalize_node_fields_for_type(ty: &str, fields: &mut Vec<SceneObjectField>) {
-    if ty != "Node3D" {
+    let Ok(node_type) = NodeType::from_str(ty) else {
+        return;
+    };
+    let is_2d = node_type.is_a(NodeType::Node2D) || node_type.is_a(NodeType::UiBox);
+    let is_3d = node_type.is_a(NodeType::Node3D);
+    if !is_2d && !is_3d {
         return;
     }
 
     let mut rotation_present = false;
-    let mut rotation_deg_xyz = None;
+    let mut rotation_deg_2d = None;
+    let mut rotation_deg_3d = None;
 
     for (name, value) in fields.iter_mut() {
         if name.as_ref() == "rotation" {
             rotation_present = true;
-            if let SceneValue::Vec3 { x, y, z } = value.clone() {
+            if is_3d && let SceneValue::Vec3 { x, y, z } = value.clone() {
                 *value = euler_xyz_radians_to_quat_value(x, y, z);
             }
             continue;
         }
 
         if name.as_ref() == "rotation_deg" {
-            if let SceneValue::Vec3 { x, y, z } = value.clone() {
-                rotation_deg_xyz = Some((x, y, z));
+            if is_2d && let Some(v) = value.as_f32() {
+                rotation_deg_2d = Some(v);
+            }
+            if is_3d && let SceneValue::Vec3 { x, y, z } = value.clone() {
+                rotation_deg_3d = Some((x, y, z));
             }
             continue;
         }
     }
 
-    if !rotation_present && let Some((x_deg, y_deg, z_deg)) = rotation_deg_xyz {
+    if !rotation_present
+        && is_2d
+        && let Some(deg) = rotation_deg_2d
+    {
+        fields.push((Cow::Borrowed("rotation"), SceneValue::F32(deg.to_radians())));
+    }
+
+    if !rotation_present
+        && is_3d
+        && let Some((x_deg, y_deg, z_deg)) = rotation_deg_3d
+    {
         fields.push((
             Cow::Borrowed("rotation"),
             euler_xyz_radians_to_quat_value(

@@ -50,26 +50,6 @@ fn as_vec2(value: &SceneValue) -> Option<Vector2> {
     }
 }
 
-fn as_transform_2d(value: &SceneValue) -> Option<(Vector2, f32, Vector2)> {
-    let mut position = Vector2::ZERO;
-    let mut rotation = 0.0;
-    let mut scale = Vector2::ONE;
-    match value {
-        SceneValue::Object(fields) => {
-            for (name, value) in fields.iter() {
-                match name.as_ref() {
-                    "position" | "pos" => position = as_vec2(value)?,
-                    "rotation" | "rot" => rotation = as_f32(value)?,
-                    "scale" => scale = as_vec2(value)?,
-                    _ => {}
-                }
-            }
-            Some((position, rotation, scale))
-        }
-        _ => None,
-    }
-}
-
 fn as_vec3(value: &SceneValue) -> Option<Vector3> {
     match value {
         SceneValue::Vec3 { x, y, z } => Some(Vector3::new(*x, *y, *z)),

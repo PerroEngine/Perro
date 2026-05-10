@@ -21,7 +21,9 @@ use crate::physics_3d::{
 use crate::physics_bone_chain_3d::PhysicsBoneChain3D;
 use crate::point_light_3d::PointLight3D;
 use crate::ray_light_3d::RayLight3D;
-use crate::skeleton_2d::{Bone2D, Skeleton2D};
+use crate::skeleton_2d::{
+    BoneAttachment2D, BoneCollider2D, IKTarget2D, PhysicsBoneChain2D, Skeleton2D,
+};
 use crate::skeleton_3d::Skeleton3D;
 use crate::sky_3d::Sky3D;
 use crate::spot_light_3d::SpotLight3D;
@@ -826,7 +828,10 @@ define_scene_nodes! {
         ParticleEmitter2D => (Node2D, ParticleEmitter2D, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         TileMap2D => (Node2D, TileMap2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::True),
         Skeleton2D => (Node2D, Skeleton2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        Bone2D => (Node2D, Bone2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        BoneAttachment2D => (Node2D, BoneAttachment2D, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False),
+        IKTarget2D => (Node2D, IKTarget2D, Renderable::False, InternalUpdate::True, InternalFixedUpdate::False),
+        PhysicsBoneChain2D => (Node2D, PhysicsBoneChain2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
+        BoneCollider2D => (Node2D, BoneCollider2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         CollisionShape2D => (Node2D, CollisionShape2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
         StaticBody2D => (Node2D, StaticBody2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         Area2D => (Node2D, Area2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),

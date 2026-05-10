@@ -1,9 +1,12 @@
 pub mod animated_sprite_2d;
 pub mod animation_player;
 pub mod animation_tree;
+pub mod bone_attachment_2d;
 pub mod bone_attachment_3d;
+pub mod ik_target_2d;
 pub mod ik_target_3d;
 pub mod particle_emitter_2d;
 pub mod particle_emitter_3d;
+pub mod physics_bone_chain_2d;
 pub mod physics_bone_chain_3d;
 pub mod ui_animated_image;

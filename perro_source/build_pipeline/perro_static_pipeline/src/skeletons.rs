@@ -2,7 +2,7 @@ use crate::{
     StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir,
 };
 use perro_io::{compress_zlib_best, walkdir::collect_file_paths};
-use perro_structs::{Quaternion, Transform3D, Vector3};
+use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use rayon::prelude::*;
 use std::{
     fmt::Write as _,
@@ -12,6 +12,7 @@ use std::{
 
 const PSKEL_MAGIC: &[u8; 5] = b"PSKEL";
 const PSKEL_VERSION: u32 = 3;
+const PSKEL_VERSION_2D: u32 = 4;
 const PSKEL_VERSION_ZLIB_ONLY: u32 = 2;
 const PSKEL_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
 const PSKEL_BONE_FLAG_HAS_PARENT: u32 = 1 << 0;
@@ -41,6 +42,14 @@ struct BoneLiteral {
     inv_bind: Transform3D,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+struct Bone2DLiteral {
+    name: String,
+    parent: i32,
+    rest: Transform2D,
+    inv_bind: Transform2D,
+}
+
 pub fn generate_static_skeletons(project_root: &Path) -> Result<(), StaticPipelineError> {
     let res_dir = res_dir(project_root);
     let static_dir = static_dir(project_root);
@@ -58,7 +67,10 @@ pub fn generate_static_skeletons(project_root: &Path) -> Result<(), StaticPipeli
                     .extension()
                     .and_then(|e| e.to_str())
                     .is_some_and(|ext| {
-                        matches!(ext.to_ascii_lowercase().as_str(), "pskel" | "glb" | "gltf")
+                        matches!(
+                            ext.to_ascii_lowercase().as_str(),
+                            "pskel" | "pskel2d" | "pskel3d" | "glb" | "gltf"
+                        )
                     })
             })
             .collect();
@@ -76,7 +88,7 @@ pub fn generate_static_skeletons(project_root: &Path) -> Result<(), StaticPipeli
                 .map(|s| s.to_ascii_lowercase())
                 .unwrap_or_default();
             match ext.as_str() {
-                "pskel" => {
+                "pskel" | "pskel3d" => {
                     let bytes = fs::read(&full_path)?;
                     let baked = if bytes.starts_with(PSKEL_MAGIC) {
                         bytes
@@ -88,6 +100,27 @@ pub fn generate_static_skeletons(project_root: &Path) -> Result<(), StaticPipeli
                         })?;
                         let bones = parse_pskel_text(text).map_err(io::Error::other)?;
                         encode_pskel_tightest(&bones)?
+                    };
+                    Ok(vec![SkeletonAsset {
+                        entry: SkeletonRef {
+                            lookup_key: res_path,
+                            embedded_rel_path: rel,
+                        },
+                        bytes: baked,
+                    }])
+                }
+                "pskel2d" => {
+                    let bytes = fs::read(&full_path)?;
+                    let baked = if bytes.starts_with(PSKEL_MAGIC) {
+                        bytes
+                    } else {
+                        let text = std::str::from_utf8(&bytes).map_err(|err| {
+                            io::Error::other(format!(
+                                "pskel2d `{res_path}` is not valid UTF-8: {err}"
+                            ))
+                        })?;
+                        let bones = parse_pskel2d_text(text).map_err(io::Error::other)?;
+                        encode_pskel2d(&bones)?
                     };
                     Ok(vec![SkeletonAsset {
                         entry: SkeletonRef {
@@ -228,7 +261,7 @@ fn build_gltf_skeleton_entries(
         }
 
         let pskel = encode_pskel_tightest(&bones)?;
-        let embedded_rel_path = format!("{rel_base}_skeleton{skin_index}.pskel");
+        let embedded_rel_path = format!("{rel_base}_skeleton{skin_index}.pskel3d");
         let key_bracket = format!("{res_path}:skeleton[{skin_index}]");
         entries.push((
             SkeletonRef {
@@ -409,6 +442,62 @@ fn encode_pskel_v3(bones: &[BoneLiteral]) -> io::Result<Vec<u8>> {
     encode_pskel_blob(PSKEL_VERSION, bones.len(), &raw)
 }
 
+fn encode_pskel2d(bones: &[Bone2DLiteral]) -> io::Result<Vec<u8>> {
+    let mut raw = Vec::<u8>::new();
+    for bone in bones {
+        let name_bytes = bone.name.as_bytes();
+        raw.extend_from_slice(&(name_bytes.len() as u32).to_le_bytes());
+        raw.extend_from_slice(name_bytes);
+
+        let mut flags = 0u32;
+        if bone.parent != -1 {
+            flags |= PSKEL_BONE_FLAG_HAS_PARENT;
+        }
+        if !is_vec2_default(bone.rest.position, Vector2::ZERO) {
+            flags |= PSKEL_BONE_FLAG_HAS_REST_POS;
+        }
+        if !is_vec2_default(bone.rest.scale, Vector2::ONE) {
+            flags |= PSKEL_BONE_FLAG_HAS_REST_SCALE;
+        }
+        if !is_f32_default(bone.rest.rotation, 0.0) {
+            flags |= PSKEL_BONE_FLAG_HAS_REST_ROT;
+        }
+        if !is_vec2_default(bone.inv_bind.position, Vector2::ZERO) {
+            flags |= PSKEL_BONE_FLAG_HAS_INV_POS;
+        }
+        if !is_vec2_default(bone.inv_bind.scale, Vector2::ONE) {
+            flags |= PSKEL_BONE_FLAG_HAS_INV_SCALE;
+        }
+        if !is_f32_default(bone.inv_bind.rotation, 0.0) {
+            flags |= PSKEL_BONE_FLAG_HAS_INV_ROT;
+        }
+        raw.extend_from_slice(&flags.to_le_bytes());
+
+        if (flags & PSKEL_BONE_FLAG_HAS_PARENT) != 0 {
+            raw.extend_from_slice(&bone.parent.to_le_bytes());
+        }
+        if (flags & PSKEL_BONE_FLAG_HAS_REST_POS) != 0 {
+            write_vec2(&mut raw, bone.rest.position);
+        }
+        if (flags & PSKEL_BONE_FLAG_HAS_REST_SCALE) != 0 {
+            write_vec2(&mut raw, bone.rest.scale);
+        }
+        if (flags & PSKEL_BONE_FLAG_HAS_REST_ROT) != 0 {
+            raw.extend_from_slice(&bone.rest.rotation.to_le_bytes());
+        }
+        if (flags & PSKEL_BONE_FLAG_HAS_INV_POS) != 0 {
+            write_vec2(&mut raw, bone.inv_bind.position);
+        }
+        if (flags & PSKEL_BONE_FLAG_HAS_INV_SCALE) != 0 {
+            write_vec2(&mut raw, bone.inv_bind.scale);
+        }
+        if (flags & PSKEL_BONE_FLAG_HAS_INV_ROT) != 0 {
+            raw.extend_from_slice(&bone.inv_bind.rotation.to_le_bytes());
+        }
+    }
+    encode_pskel_blob(PSKEL_VERSION_2D, bones.len(), &raw)
+}
+
 fn encode_pskel_blob(version: u32, bone_count: usize, raw: &[u8]) -> io::Result<Vec<u8>> {
     let compressed = compress_zlib_best(raw)?;
     let mut flags = 0u32;
@@ -528,9 +617,15 @@ fn parse_pskel_text(source: &str) -> Result<Vec<BoneLiteral>, String> {
             "rest_pos" => bone.rest.position = parse_vec3(value, line_no + 1)?,
             "rest_scale" => bone.rest.scale = parse_vec3(value, line_no + 1)?,
             "rest_rot" => bone.rest.rotation = parse_quat(value, line_no + 1)?,
+            "rest_rot_deg" | "rest_rotation_deg" => {
+                bone.rest.rotation = parse_euler_degrees_quat(value, line_no + 1)?
+            }
             "inv_pos" => bone.inv_bind.position = parse_vec3(value, line_no + 1)?,
             "inv_scale" => bone.inv_bind.scale = parse_vec3(value, line_no + 1)?,
             "inv_rot" => bone.inv_bind.rotation = parse_quat(value, line_no + 1)?,
+            "inv_rot_deg" | "inv_rotation_deg" => {
+                bone.inv_bind.rotation = parse_euler_degrees_quat(value, line_no + 1)?
+            }
             _ => {
                 return Err(format!(
                     "pskel: unknown field `{key}` at line {}",
@@ -542,6 +637,99 @@ fn parse_pskel_text(source: &str) -> Result<Vec<BoneLiteral>, String> {
 
     if current.is_some() {
         return Err("pskel: missing [/bone] at end".to_string());
+    }
+
+    Ok(bones)
+}
+
+fn parse_pskel2d_text(source: &str) -> Result<Vec<Bone2DLiteral>, String> {
+    let mut bones = Vec::<Bone2DLiteral>::new();
+    let mut current: Option<Bone2DLiteral> = None;
+
+    for (line_no, raw_line) in source.lines().enumerate() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') || line.starts_with("//") {
+            continue;
+        }
+        if let Some(name) = parse_bone_start(line) {
+            if current.is_some() {
+                return Err(format!("pskel2d: nested bone at line {}", line_no + 1));
+            }
+            current = Some(Bone2DLiteral {
+                name,
+                parent: -1,
+                rest: Transform2D::IDENTITY,
+                inv_bind: Transform2D::IDENTITY,
+            });
+            continue;
+        }
+        if line.eq_ignore_ascii_case("[/bone]") {
+            if let Some(bone) = current.take() {
+                bones.push(bone);
+                continue;
+            }
+            return Err(format!(
+                "pskel2d: closing [/bone] without open at line {}",
+                line_no + 1
+            ));
+        }
+
+        let Some((key, value)) = line.split_once('=') else {
+            return Err(format!("pskel2d: invalid line {}: {line}", line_no + 1));
+        };
+        let key = key.trim();
+        let value = value.trim();
+
+        let Some(bone) = current.as_mut() else {
+            return Err(format!(
+                "pskel2d: field outside bone at line {}",
+                line_no + 1
+            ));
+        };
+
+        match key {
+            "parent" => {
+                bone.parent = value
+                    .parse::<i32>()
+                    .map_err(|_| format!("pskel2d: invalid parent at line {}", line_no + 1))?;
+            }
+            "rest_pos" => bone.rest.position = parse_vec2(value, line_no + 1)?,
+            "rest_scale" => bone.rest.scale = parse_vec2(value, line_no + 1)?,
+            "rest_rot" => {
+                bone.rest.rotation = value
+                    .parse::<f32>()
+                    .map_err(|_| format!("pskel2d: invalid rotation at line {}", line_no + 1))?;
+            }
+            "rest_rot_deg" | "rest_rotation_deg" => {
+                bone.rest.rotation = value.parse::<f32>().map_err(|_| {
+                    format!("pskel2d: invalid rotation degrees at line {}", line_no + 1)
+                })? * std::f32::consts::PI
+                    / 180.0;
+            }
+            "inv_pos" => bone.inv_bind.position = parse_vec2(value, line_no + 1)?,
+            "inv_scale" => bone.inv_bind.scale = parse_vec2(value, line_no + 1)?,
+            "inv_rot" => {
+                bone.inv_bind.rotation = value
+                    .parse::<f32>()
+                    .map_err(|_| format!("pskel2d: invalid rotation at line {}", line_no + 1))?;
+            }
+            "inv_rot_deg" | "inv_rotation_deg" => {
+                bone.inv_bind.rotation = value.parse::<f32>().map_err(|_| {
+                    format!("pskel2d: invalid rotation degrees at line {}", line_no + 1)
+                })? * std::f32::consts::PI
+                    / 180.0;
+            }
+            _ => {
+                return Err(format!(
+                    "pskel2d: unknown field `{key}` at line {}",
+                    line_no + 1
+                ));
+            }
+        }
+    }
+
+    if current.is_some() {
+        return Err("pskel2d: missing [/bone] at end".to_string());
     }
 
     Ok(bones)
@@ -570,9 +758,26 @@ fn parse_vec3(value: &str, line_no: usize) -> Result<Vector3, String> {
     Ok(Vector3::new(nums[0], nums[1], nums[2]))
 }
 
+fn parse_vec2(value: &str, line_no: usize) -> Result<Vector2, String> {
+    let nums = parse_tuple(value, 2, line_no)?;
+    Ok(Vector2::new(nums[0], nums[1]))
+}
+
 fn parse_quat(value: &str, line_no: usize) -> Result<Quaternion, String> {
     let nums = parse_tuple(value, 4, line_no)?;
     Ok(Quaternion::new(nums[0], nums[1], nums[2], nums[3]))
+}
+
+fn parse_euler_degrees_quat(value: &str, line_no: usize) -> Result<Quaternion, String> {
+    let nums = parse_tuple(value, 3, line_no)?;
+    let mut out = Quaternion::IDENTITY;
+    out.rotate_xyz(
+        nums[0].to_radians(),
+        nums[1].to_radians(),
+        nums[2].to_radians(),
+    );
+    out.normalize();
+    Ok(out)
 }
 
 fn parse_tuple(value: &str, count: usize, line_no: usize) -> Result<Vec<f32>, String> {
@@ -601,6 +806,11 @@ fn write_vec3(out: &mut Vec<u8>, vec: Vector3) {
     write_f32(out, vec.z);
 }
 
+fn write_vec2(out: &mut Vec<u8>, vec: Vector2) {
+    write_f32(out, vec.x);
+    write_f32(out, vec.y);
+}
+
 fn write_quat(out: &mut Vec<u8>, quat: Quaternion) {
     write_f32(out, quat.x);
     write_f32(out, quat.y);
@@ -610,6 +820,14 @@ fn write_quat(out: &mut Vec<u8>, quat: Quaternion) {
 
 fn is_vec3_default(value: Vector3, default: Vector3) -> bool {
     nearly_eq(value.x, default.x) && nearly_eq(value.y, default.y) && nearly_eq(value.z, default.z)
+}
+
+fn is_vec2_default(value: Vector2, default: Vector2) -> bool {
+    nearly_eq(value.x, default.x) && nearly_eq(value.y, default.y)
+}
+
+fn is_f32_default(value: f32, default: f32) -> bool {
+    nearly_eq(value, default)
 }
 
 fn is_quat_default(value: Quaternion, default: Quaternion) -> bool {
@@ -644,7 +862,10 @@ fn escape_str(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{BoneLiteral, PSKEL_VERSION, encode_pskel_tightest, encode_pskel_v3};
+    use super::{
+        BoneLiteral, PSKEL_VERSION, PSKEL_VERSION_2D, encode_pskel_tightest, encode_pskel_v3,
+        encode_pskel2d, parse_pskel_text, parse_pskel2d_text,
+    };
     use perro_structs::{Quaternion, Transform3D, Vector3};
 
     fn dense_bone() -> BoneLiteral {
@@ -771,6 +992,63 @@ mod tests {
             u32::from_le_bytes(selected[5..9].try_into().expect("version")),
             PSKEL_VERSION
         );
+    }
+
+    #[test]
+    fn parse_and_encode_pskel2d_emits_version_4() {
+        let bones = parse_pskel2d_text(
+            r#"
+            [bone "Root"]
+                parent = -1
+                rest_pos = (2, 3)
+                rest_scale = (1, 1)
+                rest_rot = 0.5
+            [/bone]
+            "#,
+        )
+        .expect("parse pskel2d");
+        assert_eq!(bones.len(), 1);
+        assert_eq!(bones[0].name, "Root");
+        let bytes = encode_pskel2d(&bones).expect("encode pskel2d");
+        assert_eq!(&bytes[0..5], b"PSKEL");
+        let version = u32::from_le_bytes(bytes[5..9].try_into().expect("version"));
+        assert_eq!(version, PSKEL_VERSION_2D);
+    }
+
+    #[test]
+    fn parses_pskel_rotation_degrees() {
+        let bones = parse_pskel_text(
+            r#"
+            [bone "Root"]
+                parent = -1
+                rest_rot_deg = (0, 90, 0)
+                inv_rot_deg = (0, 0, 90)
+            [/bone]
+            "#,
+        )
+        .expect("parse pskel");
+
+        assert!((bones[0].rest.rotation.y.abs() - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-5);
+        assert!(
+            (bones[0].inv_bind.rotation.z.abs() - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-5
+        );
+    }
+
+    #[test]
+    fn parses_pskel2d_rotation_degrees() {
+        let bones = parse_pskel2d_text(
+            r#"
+            [bone "Root"]
+                parent = -1
+                rest_rot_deg = 90
+                inv_rot_deg = 180
+            [/bone]
+            "#,
+        )
+        .expect("parse pskel2d");
+
+        assert!((bones[0].rest.rotation - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
+        assert!((bones[0].inv_bind.rotation - std::f32::consts::PI).abs() < 1e-5);
     }
 
     #[test]

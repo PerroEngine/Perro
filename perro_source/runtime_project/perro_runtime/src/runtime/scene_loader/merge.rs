@@ -214,11 +214,16 @@ pub(super) fn merge_prepared_scene(
         }
         if let Some(source) = skeleton_source {
             let res = ResourceWindow::new(resource_api.as_ref());
-            let bones = res.Skeletons().load_bones(&source);
-            if let Some(node_data) = runtime.nodes.get_mut(node)
-                && let SceneNodeData::Skeleton3D(skeleton) = &mut node_data.data
-            {
-                skeleton.bones = bones;
+            if let Some(node_data) = runtime.nodes.get_mut(node) {
+                match &mut node_data.data {
+                    SceneNodeData::Skeleton2D(skeleton) => {
+                        skeleton.bones = res.Skeletons().load_bones_2d(&source);
+                    }
+                    SceneNodeData::Skeleton3D(skeleton) => {
+                        skeleton.bones = res.Skeletons().load_bones_3d(&source);
+                    }
+                    _ => {}
+                }
             }
         }
         if let Some(target) = mesh_skeleton_target {
@@ -286,10 +291,12 @@ pub(super) fn merge_prepared_scene(
         let target = *key_to
             .get(&target_key)
             .ok_or_else(|| format!("bone attachment skeleton target `{target_key}` not found"))?;
-        if let Some(node_data) = runtime.nodes.get_mut(attachment_node)
-            && let SceneNodeData::BoneAttachment3D(attachment) = &mut node_data.data
-        {
-            attachment.skeleton = target;
+        if let Some(node_data) = runtime.nodes.get_mut(attachment_node) {
+            match &mut node_data.data {
+                SceneNodeData::BoneAttachment2D(attachment) => attachment.skeleton = target,
+                SceneNodeData::BoneAttachment3D(attachment) => attachment.skeleton = target,
+                _ => {}
+            }
         }
     }
 
@@ -297,10 +304,12 @@ pub(super) fn merge_prepared_scene(
         let target = *key_to
             .get(&target_key)
             .ok_or_else(|| format!("ik target skeleton target `{target_key}` not found"))?;
-        if let Some(node_data) = runtime.nodes.get_mut(ik_target_node)
-            && let SceneNodeData::IKTarget3D(ik_target) = &mut node_data.data
-        {
-            ik_target.skeleton = target;
+        if let Some(node_data) = runtime.nodes.get_mut(ik_target_node) {
+            match &mut node_data.data {
+                SceneNodeData::IKTarget2D(ik_target) => ik_target.skeleton = target,
+                SceneNodeData::IKTarget3D(ik_target) => ik_target.skeleton = target,
+                _ => {}
+            }
         }
     }
 
@@ -308,10 +317,12 @@ pub(super) fn merge_prepared_scene(
         let target = *key_to.get(&target_key).ok_or_else(|| {
             format!("physics bone chain skeleton target `{target_key}` not found")
         })?;
-        if let Some(node_data) = runtime.nodes.get_mut(chain_node)
-            && let SceneNodeData::PhysicsBoneChain3D(chain) = &mut node_data.data
-        {
-            chain.skeleton = target;
+        if let Some(node_data) = runtime.nodes.get_mut(chain_node) {
+            match &mut node_data.data {
+                SceneNodeData::PhysicsBoneChain2D(chain) => chain.skeleton = target,
+                SceneNodeData::PhysicsBoneChain3D(chain) => chain.skeleton = target,
+                _ => {}
+            }
         }
     }
 

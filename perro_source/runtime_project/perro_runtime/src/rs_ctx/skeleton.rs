@@ -1,13 +1,14 @@
 use super::core::RuntimeResourceApi;
 use perro_ids::{parse_hashed_source_uri, string_to_u64};
 use perro_io::{decompress_zlib, load_asset};
-use perro_nodes::skeleton_3d::Bone3D;
+use perro_nodes::{skeleton_2d::Bone2D, skeleton_3d::Bone3D};
 use perro_resource_context::sub_apis::SkeletonAPI;
-use perro_structs::{Quaternion, Transform3D, Vector3};
+use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use std::collections::HashMap;
 
 const PSKEL_MAGIC: &[u8; 5] = b"PSKEL";
 const PSKEL_VERSION: u32 = 3;
+const PSKEL_VERSION_2D: u32 = 4;
 const PSKEL_VERSION_ZLIB_ONLY: u32 = 2;
 const PSKEL_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
 const PSKEL_BONE_FLAG_HAS_PARENT: u32 = 1 << 0;
@@ -19,33 +20,85 @@ const PSKEL_BONE_FLAG_HAS_INV_SCALE: u32 = 1 << 5;
 const PSKEL_BONE_FLAG_HAS_INV_ROT: u32 = 1 << 6;
 
 impl SkeletonAPI for RuntimeResourceApi {
-    fn load_bones(&self, source: &str) -> Vec<Bone3D> {
+    fn load_bones_2d(&self, source: &str) -> Vec<Bone2D> {
         if source.is_empty() {
             return Vec::new();
         }
 
         {
             let cache = self
-                .skeleton_bones_cache
+                .skeleton_bones_2d_cache
                 .lock()
-                .expect("skeleton cache mutex poisoned");
+                .expect("skeleton 2d cache mutex poisoned");
             if let Some(cached) = cache.get(source) {
                 return cached.clone();
             }
         }
 
-        let bones = load_bones_uncached(self, source).unwrap_or_default();
+        let bones = load_bones_2d_uncached(self, source).unwrap_or_default();
 
         let mut cache = self
-            .skeleton_bones_cache
+            .skeleton_bones_2d_cache
             .lock()
-            .expect("skeleton cache mutex poisoned");
+            .expect("skeleton 2d cache mutex poisoned");
         cache.insert(source.to_string(), bones.clone());
         bones
     }
+
+    fn load_bones_3d(&self, source: &str) -> Vec<Bone3D> {
+        if source.is_empty() {
+            return Vec::new();
+        }
+
+        {
+            let cache = self
+                .skeleton_bones_3d_cache
+                .lock()
+                .expect("skeleton 3d cache mutex poisoned");
+            if let Some(cached) = cache.get(source) {
+                return cached.clone();
+            }
+        }
+
+        let bones = load_bones_3d_uncached(self, source).unwrap_or_default();
+
+        let mut cache = self
+            .skeleton_bones_3d_cache
+            .lock()
+            .expect("skeleton 3d cache mutex poisoned");
+        cache.insert(source.to_string(), bones.clone());
+        bones
+    }
+
+    fn load_bones(&self, source: &str) -> Vec<Bone3D> {
+        self.load_bones_3d(source)
+    }
 }
 
-fn load_bones_uncached(api: &RuntimeResourceApi, source: &str) -> Option<Vec<Bone3D>> {
+fn load_bones_2d_uncached(api: &RuntimeResourceApi, source: &str) -> Option<Vec<Bone2D>> {
+    let path_hash = parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
+    if let Some(lookup) = api.static_skeleton_lookup {
+        let bytes = lookup(path_hash);
+        if bytes.is_empty() {
+            return Some(Vec::new());
+        }
+        return decode_pskel_2d(bytes).ok();
+    }
+
+    if source.ends_with(".pskel2d") {
+        let bytes = load_asset(source).ok()?;
+        if bytes.starts_with(PSKEL_MAGIC) {
+            return decode_pskel_2d(&bytes).ok();
+        }
+        if let Ok(text) = std::str::from_utf8(&bytes) {
+            return parse_pskel2d_text(text).ok();
+        }
+    }
+
+    None
+}
+
+fn load_bones_3d_uncached(api: &RuntimeResourceApi, source: &str) -> Option<Vec<Bone3D>> {
     let path_hash = parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
     if let Some(lookup) = api.static_skeleton_lookup {
         let bytes = lookup(path_hash);
@@ -55,7 +108,7 @@ fn load_bones_uncached(api: &RuntimeResourceApi, source: &str) -> Option<Vec<Bon
         return decode_pskel(bytes).ok();
     }
 
-    if source.ends_with(".pskel") {
+    if source.ends_with(".pskel") || source.ends_with(".pskel3d") {
         let bytes = load_asset(source).ok()?;
         if bytes.starts_with(PSKEL_MAGIC) {
             return decode_pskel(&bytes).ok();
@@ -328,6 +381,71 @@ fn decode_pskel(bytes: &[u8]) -> Result<Vec<Bone3D>, String> {
     Ok(bones)
 }
 
+fn decode_pskel_2d(bytes: &[u8]) -> Result<Vec<Bone2D>, String> {
+    if bytes.len() < 21 {
+        return Err("pskel2d too small".to_string());
+    }
+    if &bytes[..5] != PSKEL_MAGIC {
+        return Err("invalid pskel2d magic".to_string());
+    }
+    let version = u32::from_le_bytes(bytes[5..9].try_into().unwrap());
+    if version != PSKEL_VERSION_2D {
+        return Err(format!("unsupported pskel2d version {version}"));
+    }
+    let bone_count = u32::from_le_bytes(bytes[9..13].try_into().unwrap()) as usize;
+    let raw_size = u32::from_le_bytes(bytes[13..17].try_into().unwrap()) as usize;
+    let flags = u32::from_le_bytes(bytes[17..21].try_into().unwrap());
+    let raw = decode_pskel_payload(flags, &bytes[21..])?;
+    if raw.len() != raw_size {
+        return Err("pskel2d raw size mismatch".to_string());
+    }
+
+    let mut cursor = 0usize;
+    let mut bones = Vec::with_capacity(bone_count);
+    for _ in 0..bone_count {
+        let name_len = read_u32(&raw, &mut cursor)? as usize;
+        let name_bytes = read_bytes(&raw, &mut cursor, name_len)?;
+        let name = std::str::from_utf8(name_bytes)
+            .map_err(|_| "invalid bone name utf8".to_string())?
+            .to_string();
+        let flags = read_u32(&raw, &mut cursor)?;
+        let parent = if (flags & PSKEL_BONE_FLAG_HAS_PARENT) != 0 {
+            read_i32(&raw, &mut cursor)?
+        } else {
+            -1
+        };
+        let mut rest = Transform2D::IDENTITY;
+        let mut inv_bind = Transform2D::IDENTITY;
+        if (flags & PSKEL_BONE_FLAG_HAS_REST_POS) != 0 {
+            rest.position = read_vec2(&raw, &mut cursor)?;
+        }
+        if (flags & PSKEL_BONE_FLAG_HAS_REST_SCALE) != 0 {
+            rest.scale = read_vec2(&raw, &mut cursor)?;
+        }
+        if (flags & PSKEL_BONE_FLAG_HAS_REST_ROT) != 0 {
+            rest.rotation = read_f32(&raw, &mut cursor)?;
+        }
+        if (flags & PSKEL_BONE_FLAG_HAS_INV_POS) != 0 {
+            inv_bind.position = read_vec2(&raw, &mut cursor)?;
+        }
+        if (flags & PSKEL_BONE_FLAG_HAS_INV_SCALE) != 0 {
+            inv_bind.scale = read_vec2(&raw, &mut cursor)?;
+        }
+        if (flags & PSKEL_BONE_FLAG_HAS_INV_ROT) != 0 {
+            inv_bind.rotation = read_f32(&raw, &mut cursor)?;
+        }
+        bones.push(Bone2D {
+            name: name.into(),
+            parent,
+            rest,
+            pose: rest,
+            inv_bind,
+        });
+    }
+
+    Ok(bones)
+}
+
 fn decode_pskel_payload(flags: u32, payload: &[u8]) -> Result<Vec<u8>, String> {
     if (flags & PSKEL_FLAG_PAYLOAD_RAW) != 0 {
         Ok(payload.to_vec())
@@ -433,9 +551,15 @@ fn parse_pskel_text(source: &str) -> Result<Vec<Bone3D>, String> {
             "rest_pos" => bone.rest.position = parse_vec3(value, line_no + 1)?,
             "rest_scale" => bone.rest.scale = parse_vec3(value, line_no + 1)?,
             "rest_rot" => bone.rest.rotation = parse_quat(value, line_no + 1)?,
+            "rest_rot_deg" | "rest_rotation_deg" => {
+                bone.rest.rotation = parse_euler_degrees_quat(value, line_no + 1)?
+            }
             "inv_pos" => bone.inv_bind.position = parse_vec3(value, line_no + 1)?,
             "inv_scale" => bone.inv_bind.scale = parse_vec3(value, line_no + 1)?,
             "inv_rot" => bone.inv_bind.rotation = parse_quat(value, line_no + 1)?,
+            "inv_rot_deg" | "inv_rotation_deg" => {
+                bone.inv_bind.rotation = parse_euler_degrees_quat(value, line_no + 1)?
+            }
             _ => {
                 return Err(format!(
                     "pskel: unknown field `{key}` at line {}",
@@ -447,6 +571,101 @@ fn parse_pskel_text(source: &str) -> Result<Vec<Bone3D>, String> {
 
     if current.is_some() {
         return Err("pskel: missing [/bone] at end".to_string());
+    }
+
+    Ok(bones)
+}
+
+fn parse_pskel2d_text(source: &str) -> Result<Vec<Bone2D>, String> {
+    let mut bones = Vec::<Bone2D>::new();
+    let mut current: Option<Bone2D> = None;
+
+    for (line_no, raw_line) in source.lines().enumerate() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') || line.starts_with("//") {
+            continue;
+        }
+        if let Some(name) = parse_bone_start(line) {
+            if current.is_some() {
+                return Err(format!("pskel2d: nested bone at line {}", line_no + 1));
+            }
+            current = Some(Bone2D {
+                name: name.into(),
+                parent: -1,
+                rest: Transform2D::IDENTITY,
+                pose: Transform2D::IDENTITY,
+                inv_bind: Transform2D::IDENTITY,
+            });
+            continue;
+        }
+        if line.eq_ignore_ascii_case("[/bone]") {
+            if let Some(mut bone) = current.take() {
+                bone.pose = bone.rest;
+                bones.push(bone);
+                continue;
+            }
+            return Err(format!(
+                "pskel2d: closing [/bone] without open at line {}",
+                line_no + 1
+            ));
+        }
+
+        let Some((key, value)) = line.split_once('=') else {
+            return Err(format!("pskel2d: invalid line {}: {line}", line_no + 1));
+        };
+        let key = key.trim();
+        let value = value.trim();
+
+        let Some(bone) = current.as_mut() else {
+            return Err(format!(
+                "pskel2d: field outside bone at line {}",
+                line_no + 1
+            ));
+        };
+
+        match key {
+            "parent" => {
+                bone.parent = value
+                    .parse::<i32>()
+                    .map_err(|_| format!("pskel2d: invalid parent at line {}", line_no + 1))?;
+            }
+            "rest_pos" => bone.rest.position = parse_vec2(value, line_no + 1)?,
+            "rest_scale" => bone.rest.scale = parse_vec2(value, line_no + 1)?,
+            "rest_rot" => {
+                bone.rest.rotation = value
+                    .parse::<f32>()
+                    .map_err(|_| format!("pskel2d: invalid rotation at line {}", line_no + 1))?;
+            }
+            "rest_rot_deg" | "rest_rotation_deg" => {
+                bone.rest.rotation = value.parse::<f32>().map_err(|_| {
+                    format!("pskel2d: invalid rotation degrees at line {}", line_no + 1)
+                })? * std::f32::consts::PI
+                    / 180.0;
+            }
+            "inv_pos" => bone.inv_bind.position = parse_vec2(value, line_no + 1)?,
+            "inv_scale" => bone.inv_bind.scale = parse_vec2(value, line_no + 1)?,
+            "inv_rot" => {
+                bone.inv_bind.rotation = value
+                    .parse::<f32>()
+                    .map_err(|_| format!("pskel2d: invalid rotation at line {}", line_no + 1))?;
+            }
+            "inv_rot_deg" | "inv_rotation_deg" => {
+                bone.inv_bind.rotation = value.parse::<f32>().map_err(|_| {
+                    format!("pskel2d: invalid rotation degrees at line {}", line_no + 1)
+                })? * std::f32::consts::PI
+                    / 180.0;
+            }
+            _ => {
+                return Err(format!(
+                    "pskel2d: unknown field `{key}` at line {}",
+                    line_no + 1
+                ));
+            }
+        }
+    }
+
+    if current.is_some() {
+        return Err("pskel2d: missing [/bone] at end".to_string());
     }
 
     Ok(bones)
@@ -475,9 +694,26 @@ fn parse_vec3(value: &str, line_no: usize) -> Result<Vector3, String> {
     Ok(Vector3::new(nums[0], nums[1], nums[2]))
 }
 
+fn parse_vec2(value: &str, line_no: usize) -> Result<Vector2, String> {
+    let nums = parse_tuple(value, 2, line_no)?;
+    Ok(Vector2::new(nums[0], nums[1]))
+}
+
 fn parse_quat(value: &str, line_no: usize) -> Result<Quaternion, String> {
     let nums = parse_tuple(value, 4, line_no)?;
     Ok(Quaternion::new(nums[0], nums[1], nums[2], nums[3]))
+}
+
+fn parse_euler_degrees_quat(value: &str, line_no: usize) -> Result<Quaternion, String> {
+    let nums = parse_tuple(value, 3, line_no)?;
+    let mut out = Quaternion::IDENTITY;
+    out.rotate_xyz(
+        nums[0].to_radians(),
+        nums[1].to_radians(),
+        nums[2].to_radians(),
+    );
+    out.normalize();
+    Ok(out)
 }
 
 fn parse_tuple(value: &str, count: usize, line_no: usize) -> Result<Vec<f32>, String> {
@@ -548,6 +784,10 @@ fn read_vec3(raw: &[u8], cursor: &mut usize) -> Result<Vector3, String> {
     ))
 }
 
+fn read_vec2(raw: &[u8], cursor: &mut usize) -> Result<Vector2, String> {
+    Ok(Vector2::new(read_f32(raw, cursor)?, read_f32(raw, cursor)?))
+}
+
 fn read_quat(raw: &[u8], cursor: &mut usize) -> Result<Quaternion, String> {
     Ok(Quaternion::new(
         read_f32(raw, cursor)?,
@@ -559,8 +799,8 @@ fn read_quat(raw: &[u8], cursor: &mut usize) -> Result<Quaternion, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::decode_pskel;
-    use perro_structs::{Quaternion, Vector3};
+    use super::{decode_pskel, decode_pskel_2d, parse_pskel_text, parse_pskel2d_text};
+    use perro_structs::{Quaternion, Vector2, Vector3};
 
     #[test]
     fn decode_pskel_accepts_version_2_sparse_bone_payload() {
@@ -608,6 +848,67 @@ mod tests {
         assert_eq!(bones.len(), 1);
         assert_eq!(bones[0].name.as_ref(), "root");
         assert_eq!(bones[0].parent, -1);
+    }
+
+    #[test]
+    fn decode_pskel2d_accepts_version_4_raw_payload() {
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&4u32.to_le_bytes());
+        raw.extend_from_slice(b"root");
+        raw.extend_from_slice(&(1u32 << 1).to_le_bytes());
+        raw.extend_from_slice(&2.0f32.to_le_bytes());
+        raw.extend_from_slice(&3.0f32.to_le_bytes());
+
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"PSKEL");
+        bytes.extend_from_slice(&4u32.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&(raw.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&(1u32 << 31).to_le_bytes());
+        bytes.extend_from_slice(&raw);
+
+        let bones = decode_pskel_2d(&bytes).expect("decode pskel2d v4 raw");
+        assert_eq!(bones.len(), 1);
+        assert_eq!(bones[0].name.as_ref(), "root");
+        assert_eq!(bones[0].parent, -1);
+        assert_eq!(bones[0].rest.position, Vector2::new(2.0, 3.0));
+        assert_eq!(bones[0].rest.scale, Vector2::ONE);
+    }
+
+    #[test]
+    fn parse_text_pskel_rotation_degrees() {
+        let bones = parse_pskel_text(
+            r#"
+            [bone "Root"]
+                parent = -1
+                rest_rot_deg = (0, 90, 0)
+                inv_rot_deg = (0, 0, 90)
+            [/bone]
+            "#,
+        )
+        .expect("parse pskel");
+
+        assert!((bones[0].rest.rotation.y.abs() - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-5);
+        assert!(
+            (bones[0].inv_bind.rotation.z.abs() - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-5
+        );
+    }
+
+    #[test]
+    fn parse_text_pskel2d_rotation_degrees() {
+        let bones = parse_pskel2d_text(
+            r#"
+            [bone "Root"]
+                parent = -1
+                rest_rot_deg = 90
+                inv_rot_deg = 180
+            [/bone]
+            "#,
+        )
+        .expect("parse pskel2d");
+
+        assert!((bones[0].rest.rotation - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
+        assert!((bones[0].inv_bind.rotation - std::f32::consts::PI).abs() < 1e-5);
     }
 
     #[test]

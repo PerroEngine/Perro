@@ -83,6 +83,13 @@ fn apply_node_3d_data(target: &mut Node3D, data: &SceneDefNodeData) {
 
 fn apply_node_3d_fields(node: &mut Node3D, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| {
+        if name == "rotation_deg" {
+            if let Some(v) = as_vec3(value) {
+                node.transform.rotation = quat_from_deg_xyz(v);
+            }
+            return;
+        }
+
         match resolve_node_field("Node3D", name) {
             Some(NodeField::Node3D(Node3DField::Position)) => {
                 if let Some(v) = as_vec3(value) {
@@ -503,65 +510,99 @@ fn extract_model_source(data: &SceneDefNodeData) -> Option<String> {
 }
 
 fn extract_skeleton_source(data: &SceneDefNodeData) -> Option<String> {
-    if data.ty != "Skeleton3D" {
+    if data.ty != "Skeleton2D" && data.ty != "Skeleton3D" {
         return None;
     }
     data.fields.iter().find_map(|(name, value)| {
-        (resolve_node_field("Skeleton3D", name)
-            == Some(NodeField::Skeleton3D(Skeleton3DField::Skeleton)))
-            .then(|| as_asset_source(value))
-            .flatten()
+        let resolved = resolve_node_field(data.ty.as_ref(), name);
+        (resolved == Some(NodeField::Skeleton2D(perro_scene::Skeleton2DField::Skeleton))
+            || resolved == Some(NodeField::Skeleton3D(Skeleton3DField::Skeleton)))
+        .then(|| as_asset_source(value))
+        .flatten()
     })
 }
 
-fn extract_mesh_skeleton_target(data: &SceneDefNodeData) -> Option<String> {
+fn extract_mesh_skeleton_target(data: &SceneDefNodeData) -> Result<Option<String>, String> {
     if data.ty != "MeshInstance3D" {
-        return None;
+        return Ok(None);
     }
-    data.fields.iter().find_map(|(name, value)| {
-        (resolve_node_field("MeshInstance3D", name)
-            == Some(NodeField::MeshInstance3D(MeshInstance3DField::Skeleton)))
-            .then(|| as_asset_source(value))
-            .flatten()
-    })
+    for (name, value) in data.fields.iter() {
+        if resolve_node_field("MeshInstance3D", name)
+            == Some(NodeField::MeshInstance3D(MeshInstance3DField::Skeleton))
+        {
+            return as_node_ref_source(value, "MeshInstance3D.skeleton");
+        }
+    }
+    Ok(None)
 }
 
-fn extract_bone_attachment_skeleton_target(data: &SceneDefNodeData) -> Option<String> {
-    if data.ty != "BoneAttachment3D" {
-        return None;
+fn extract_bone_attachment_skeleton_target(
+    data: &SceneDefNodeData,
+) -> Result<Option<String>, String> {
+    if data.ty != "BoneAttachment2D" && data.ty != "BoneAttachment3D" {
+        return Ok(None);
     }
-    data.fields.iter().find_map(|(name, value)| {
-        (resolve_node_field("BoneAttachment3D", name)
-            == Some(NodeField::BoneAttachment3D(
-                BoneAttachment3DField::Skeleton,
-            )))
-        .then(|| as_asset_source(value))
-        .flatten()
-    })
+    for (name, value) in data.fields.iter() {
+        let resolved = resolve_node_field(data.ty.as_ref(), name);
+        if resolved
+            == Some(NodeField::BoneAttachment2D(
+                BoneAttachment2DField::Skeleton,
+            ))
+            || resolved
+                == Some(NodeField::BoneAttachment3D(
+                    BoneAttachment3DField::Skeleton,
+                ))
+        {
+            return as_node_ref_source(value, &format!("{}.skeleton", data.ty));
+        }
+    }
+    Ok(None)
 }
 
-fn extract_ik_target_skeleton_target(data: &SceneDefNodeData) -> Option<String> {
-    if data.ty != "IKTarget3D" {
-        return None;
+fn extract_ik_target_skeleton_target(data: &SceneDefNodeData) -> Result<Option<String>, String> {
+    if data.ty != "IKTarget2D" && data.ty != "IKTarget3D" {
+        return Ok(None);
     }
-    data.fields.iter().find_map(|(name, value)| {
-        (resolve_node_field("IKTarget3D", name)
-            == Some(NodeField::IKTarget3D(IKTarget3DField::Skeleton)))
-        .then(|| as_asset_source(value))
-        .flatten()
-    })
+    for (name, value) in data.fields.iter() {
+        let resolved = resolve_node_field(data.ty.as_ref(), name);
+        if resolved == Some(NodeField::IKTarget2D(IKTarget2DField::Skeleton))
+            || resolved == Some(NodeField::IKTarget3D(IKTarget3DField::Skeleton))
+        {
+            return as_node_ref_source(value, &format!("{}.skeleton", data.ty));
+        }
+    }
+    Ok(None)
 }
 
-fn extract_physics_bone_chain_skeleton_target(data: &SceneDefNodeData) -> Option<String> {
-    if data.ty != "PhysicsBoneChain3D" {
-        return None;
+fn extract_physics_bone_chain_skeleton_target(
+    data: &SceneDefNodeData,
+) -> Result<Option<String>, String> {
+    if data.ty != "PhysicsBoneChain2D" && data.ty != "PhysicsBoneChain3D" {
+        return Ok(None);
     }
-    data.fields.iter().find_map(|(name, value)| {
-        (resolve_node_field("PhysicsBoneChain3D", name)
-            == Some(NodeField::PhysicsBoneChain3D(
-                PhysicsBoneChain3DField::Skeleton,
-            )))
-        .then(|| as_asset_source(value))
-        .flatten()
-    })
+    for (name, value) in data.fields.iter() {
+        let resolved = resolve_node_field(data.ty.as_ref(), name);
+        if resolved
+            == Some(NodeField::PhysicsBoneChain2D(
+                PhysicsBoneChain2DField::Skeleton,
+            ))
+            || resolved
+                == Some(NodeField::PhysicsBoneChain3D(
+                    PhysicsBoneChain3DField::Skeleton,
+                ))
+        {
+            return as_node_ref_source(value, &format!("{}.skeleton", data.ty));
+        }
+    }
+    Ok(None)
+}
+
+fn as_node_ref_source(value: &SceneValue, field: &str) -> Result<Option<String>, String> {
+    match value {
+        SceneValue::Key(v) => Ok(Some(v.to_string())),
+        SceneValue::Str(_) => {
+            Err(format!("{field} must be a node ref like @SkeletonNode"))
+        }
+        _ => Ok(None),
+    }
 }

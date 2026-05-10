@@ -118,8 +118,25 @@ fn parse_param(value: &SceneValue, line_no: usize) -> Result<AnimationParam, Str
                         if let Some(r) = v.as_f32() {
                             rotation2 = Some(r);
                         }
+                        if let Some((x, y, z)) = v.as_vec3() {
+                            let mut q = Quaternion::IDENTITY;
+                            q.rotate_xyz(x, y, z);
+                            q.normalize();
+                            rotation3 = Some(q);
+                        }
                         if let Some((x, y, z, w)) = v.as_vec4() {
                             let mut q = Quaternion::new(x, y, z, w);
+                            q.normalize();
+                            rotation3 = Some(q);
+                        }
+                    }
+                    "rotation_deg" => {
+                        if let Some(r) = v.as_f32() {
+                            rotation2 = Some(r.to_radians());
+                        }
+                        if let Some((x, y, z)) = v.as_vec3() {
+                            let mut q = Quaternion::IDENTITY;
+                            q.rotate_xyz(x.to_radians(), y.to_radians(), z.to_radians());
                             q.normalize();
                             rotation3 = Some(q);
                         }

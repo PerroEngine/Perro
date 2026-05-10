@@ -54,14 +54,43 @@ fn build_skeleton_2d(data: &SceneDefNodeData) -> Skeleton2D {
     node
 }
 
-fn build_bone_2d(data: &SceneDefNodeData) -> Bone2D {
-    let mut node = Bone2D::new();
+fn build_bone_attachment_2d(data: &SceneDefNodeData) -> BoneAttachment2D {
+    let mut node = BoneAttachment2D::new();
     if let Some(base) = data.base_ref() {
         apply_node_2d_data(&mut node, base);
     }
     apply_node_2d_fields(&mut node, &data.fields);
-    node.rest = node.transform;
-    apply_bone_2d_fields(&mut node, &data.fields);
+    apply_bone_attachment_2d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_ik_target_2d(data: &SceneDefNodeData) -> IKTarget2D {
+    let mut node = IKTarget2D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_2d_data(&mut node, base);
+    }
+    apply_node_2d_fields(&mut node, &data.fields);
+    apply_ik_target_2d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_physics_bone_chain_2d(data: &SceneDefNodeData) -> PhysicsBoneChain2D {
+    let mut node = PhysicsBoneChain2D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_2d_data(&mut node, base);
+    }
+    apply_node_2d_fields(&mut node, &data.fields);
+    apply_physics_bone_chain_2d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_bone_collider_2d(data: &SceneDefNodeData) -> BoneCollider2D {
+    let mut node = BoneCollider2D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_2d_data(&mut node, base);
+    }
+    apply_node_2d_fields(&mut node, &data.fields);
+    apply_bone_collider_2d_fields(&mut node, &data.fields);
     node
 }
 
@@ -74,23 +103,130 @@ fn apply_node_2d_data(target: &mut Node2D, data: &SceneDefNodeData) {
 
 fn apply_skeleton_2d_fields(_node: &mut Skeleton2D, _fields: &[SceneObjectField]) {}
 
-fn apply_bone_2d_fields(node: &mut Bone2D, fields: &[SceneObjectField]) {
+fn apply_bone_attachment_2d_fields(node: &mut BoneAttachment2D, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| {
-        let Some((position, rotation, scale)) = as_transform_2d(value) else {
-            return;
-        };
-        let transform = perro_structs::Transform2D::new(position, rotation, scale);
-        match resolve_node_field("Bone2D", name) {
-            Some(NodeField::Bone2D(Bone2DField::Rest)) => node.rest = transform,
-            Some(NodeField::Bone2D(Bone2DField::Pose)) => node.pose = transform,
-            Some(NodeField::Bone2D(Bone2DField::InvBind)) => node.inv_bind = transform,
+        if resolve_node_field("BoneAttachment2D", name)
+            == Some(NodeField::BoneAttachment2D(
+                BoneAttachment2DField::BoneIndex,
+            ))
+            && let Some(v) = as_i32(value)
+        {
+            node.bone_index = v;
+        }
+    });
+}
+
+fn apply_ik_target_2d_fields(node: &mut IKTarget2D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        match resolve_node_field("IKTarget2D", name) {
+            Some(NodeField::IKTarget2D(IKTarget2DField::BoneIndex)) => {
+                if let Some(v) = as_i32(value) {
+                    node.bone_index = v;
+                }
+            }
+            Some(NodeField::IKTarget2D(IKTarget2DField::ChainLength)) => {
+                if let Some(v) = as_i32(value) {
+                    node.chain_length = v.max(0) as u32;
+                }
+            }
+            Some(NodeField::IKTarget2D(IKTarget2DField::Iterations)) => {
+                if let Some(v) = as_i32(value) {
+                    node.iterations = v.max(0) as u32;
+                }
+            }
+            Some(NodeField::IKTarget2D(IKTarget2DField::Tolerance)) => {
+                if let Some(v) = value.as_f32() {
+                    node.tolerance = v.max(0.0);
+                }
+            }
+            Some(NodeField::IKTarget2D(IKTarget2DField::Weight)) => {
+                if let Some(v) = value.as_f32() {
+                    node.weight = v.clamp(0.0, 1.0);
+                }
+            }
+            Some(NodeField::IKTarget2D(IKTarget2DField::MatchRotation)) => {
+                if let Some(v) = value.as_bool() {
+                    node.match_rotation = v;
+                }
+            }
             _ => {}
+        }
+    });
+}
+
+fn apply_physics_bone_chain_2d_fields(node: &mut PhysicsBoneChain2D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        match resolve_node_field("PhysicsBoneChain2D", name) {
+            Some(NodeField::PhysicsBoneChain2D(PhysicsBoneChain2DField::BoneIndex)) => {
+                if let Some(v) = as_i32(value) {
+                    node.bone_index = v;
+                }
+            }
+            Some(NodeField::PhysicsBoneChain2D(PhysicsBoneChain2DField::ChainLength)) => {
+                if let Some(v) = as_i32(value) {
+                    node.chain_length = v.max(0) as u32;
+                }
+            }
+            Some(NodeField::PhysicsBoneChain2D(PhysicsBoneChain2DField::Enabled)) => {
+                if let Some(v) = value.as_bool() {
+                    node.enabled = v;
+                }
+            }
+            Some(NodeField::PhysicsBoneChain2D(PhysicsBoneChain2DField::Gravity)) => {
+                if let Some((x, y)) = value.as_vec2() {
+                    node.gravity = Vector2::new(x, y);
+                }
+            }
+            Some(NodeField::PhysicsBoneChain2D(PhysicsBoneChain2DField::Damping)) => {
+                if let Some(v) = value.as_f32() {
+                    node.damping = v.clamp(0.0, 1.0);
+                }
+            }
+            Some(NodeField::PhysicsBoneChain2D(PhysicsBoneChain2DField::Stiffness)) => {
+                if let Some(v) = value.as_f32() {
+                    node.stiffness = v.clamp(0.0, 1.0);
+                }
+            }
+            Some(NodeField::PhysicsBoneChain2D(PhysicsBoneChain2DField::Radius)) => {
+                if let Some(v) = value.as_f32() {
+                    node.radius = v.max(0.0);
+                }
+            }
+            Some(NodeField::PhysicsBoneChain2D(PhysicsBoneChain2DField::Collisions)) => {
+                if let Some(v) = value.as_bool() {
+                    node.collisions = v;
+                }
+            }
+            Some(NodeField::PhysicsBoneChain2D(PhysicsBoneChain2DField::Iterations)) => {
+                if let Some(v) = as_i32(value) {
+                    node.iterations = v.max(1) as u32;
+                }
+            }
+            _ => {}
+        }
+    });
+}
+
+fn apply_bone_collider_2d_fields(node: &mut BoneCollider2D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        if resolve_node_field("BoneCollider2D", name)
+            == Some(NodeField::BoneCollider2D(BoneCollider2DField::Enabled))
+            && let Some(v) = value.as_bool()
+        {
+            node.enabled = v;
         }
     });
 }
 
 fn apply_node_2d_fields(node: &mut Node2D, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| {
+        if name == "rotation_deg" {
+            if let Some(v) = value.as_f32() {
+                node.transform.rotation = v.to_radians();
+            }
+            return;
+        }
+
         match resolve_node_field("Node2D", name) {
             Some(NodeField::Node2D(Node2DField::Position)) => {
                 if let Some((x, y)) = value.as_vec2() {

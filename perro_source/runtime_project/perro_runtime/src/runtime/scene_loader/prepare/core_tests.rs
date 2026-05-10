@@ -193,6 +193,59 @@ mod tests {
     }
 
     #[test]
+    fn scene_loader_accepts_rotation_deg_for_spatial_nodes() {
+        let scene = Parser::new(
+            r#"
+            @root = root
+            [root]
+            [Node2D]
+                rotation_deg = 90
+            [/Node2D]
+            [/root]
+
+            [camera]
+            [Camera3D]
+                rotation_deg = (0, 90, 0)
+            [/Camera3D]
+            [/camera]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared = prepare_scene_with_loader(&scene, &|path| {
+            Err(format!("unknown scene path `{path}`"))
+        })
+        .expect("prepare scene");
+
+        let root = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "root")
+            .expect("root node");
+        match &root.node.data {
+            SceneNodeData::Node2D(node) => {
+                assert!((node.rotation - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
+            }
+            other => panic!("expected Node2D root node, got {other:?}"),
+        }
+
+        let camera = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "camera")
+            .expect("camera node");
+        match &camera.node.data {
+            SceneNodeData::Camera3D(node) => {
+                assert!(
+                    (node.transform.rotation.y.abs() - std::f32::consts::FRAC_1_SQRT_2).abs()
+                        < 1e-5
+                );
+            }
+            other => panic!("expected Camera3D node, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn scene_loader_button_state_style_inherits_base_fields() {
         let scene = Parser::new(
             r##"
@@ -656,7 +709,7 @@ mod tests {
 
             [HandTarget]
             [IKTarget3D]
-                skeleton = "Rig"
+                skeleton = @Rig
                 bone = 5
                 chain_length = 3
                 iterations = 12
@@ -694,7 +747,7 @@ mod tests {
     }
 
     #[test]
-    fn scene_loader_builds_skeleton_2d_with_bone_2d_child() {
+    fn scene_loader_rejects_bone_2d_node() {
         let scene = Parser::new(
             r#"
             @root = Rig2D
@@ -718,6 +771,38 @@ mod tests {
         )
         .parse_scene();
 
+        let err = match prepare_scene_with_loader(&scene, &|path| {
+            Err(format!("unknown scene path `{path}`"))
+        }) {
+            Ok(_) => panic!("expected bone2d scene node rejection"),
+            Err(err) => err,
+        };
+        assert!(err.contains("unsupported scene node type `Bone2D`"));
+    }
+
+    #[test]
+    fn scene_loader_builds_skeleton_2d_mirror_nodes() {
+        let scene = Parser::new(
+            r#"
+            @root = Rig2D
+            [Rig2D]
+            [Skeleton2D]
+                position = (10, 20)
+                skeleton = "res://rig.pskel2d"
+            [/Skeleton2D]
+            [/Rig2D]
+
+            [Hand]
+            parent = @Rig2D
+            [BoneAttachment2D]
+                skeleton = @Rig2D
+                bone = 1
+            [/BoneAttachment2D]
+            [/Hand]
+            "#,
+        )
+        .parse_scene();
+
         let prepared = prepare_scene_with_loader(&scene, &|path| {
             Err(format!("unknown scene path `{path}`"))
         })
@@ -729,20 +814,49 @@ mod tests {
             .find(|pending| pending.key_name == "Rig2D")
             .expect("rig node");
         assert!(matches!(rig.node.data, SceneNodeData::Skeleton2D(_)));
+        assert_eq!(rig.skeleton_source.as_deref(), Some("res://rig.pskel2d"));
 
-        let bone = prepared
+        let hand = prepared
             .nodes
             .iter()
-            .find(|pending| pending.key_name == "UpperArm")
-            .expect("bone node");
-        match &bone.node.data {
-            SceneNodeData::Bone2D(bone) => {
-                assert_eq!(bone.transform.position, Vector2::new(4.0, 5.0));
-                assert_eq!(bone.rest.position, Vector2::new(4.0, 5.0));
-                assert_eq!(bone.pose.position, Vector2::new(6.0, 7.0));
+            .find(|pending| pending.key_name == "Hand")
+            .expect("hand node");
+        match &hand.node.data {
+            SceneNodeData::BoneAttachment2D(node) => {
+                assert_eq!(node.bone_index, 1);
+                assert!(hand.bone_attachment_skeleton_target.is_some());
             }
-            other => panic!("expected Bone2D node, got {other:?}"),
+            other => panic!("expected BoneAttachment2D node, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn scene_loader_rejects_quoted_skeleton_node_refs() {
+        let scene = Parser::new(
+            r#"
+            @root = Rig
+            [Rig]
+            [Skeleton3D]
+                skeleton = "res://rig.pskel"
+            [/Skeleton3D]
+            [/Rig]
+
+            [Mesh]
+            [MeshInstance3D]
+                skeleton = "Rig"
+            [/MeshInstance3D]
+            [/Mesh]
+            "#,
+        )
+        .parse_scene();
+
+        let err = match prepare_scene_with_loader(&scene, &|path| {
+            Err(format!("unknown scene path `{path}`"))
+        }) {
+            Ok(_) => panic!("expected quoted skeleton node ref rejection"),
+            Err(err) => err,
+        };
+        assert!(err.contains("MeshInstance3D.skeleton must be a node ref like @SkeletonNode"));
     }
 
     #[test]

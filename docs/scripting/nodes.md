@@ -40,15 +40,15 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 `Skeleton2D`
 
 - 2D rig root.
-- Author `Bone2D` nodes as children under it.
-- Inspired by Godot's `Skeleton2D` hierarchy model: bones are scene nodes, not entries in a `Vec`.
+- Owns `Vec<Bone2D>` data like `Skeleton3D`.
+- Load bones with `skeleton = "res://rig.pskel2d"`.
+- Use `BoneAttachment2D`, `IKTarget2D`, and `PhysicsBoneChain2D` nodes to target bones.
 
 `Bone2D`
 
-- Child `Node2D` used as a 2D bone.
-- Uses normal `Node2D` fields: `position`, `rotation`, `scale`, `z_index`, `visible`.
-- Adds `rest`, `pose`, and `inv_bind` transform data for rig tooling/runtime use.
-- `.panim` can animate `position`, `rotation`, and `scale` like any other `Node2D`.
+- Data-only bone inside `Skeleton2D.bones`.
+- Fields: `name`, `parent`, `rest`, `pose`, `inv_bind`.
+- `.panim` bone tracks animate `pose` with `Transform2D`.
 
 Physics 2D:
 
@@ -99,7 +99,7 @@ See [TileMap2D](tilemap.md).
 - Legacy `material = ...` is still accepted and maps to surface index `0`.
 - Skinning: if the mesh has vertex weights, it can be **deformed by a Skeleton3D**.
 - Runtime link: `skeleton: NodeID` points to the `Skeleton3D` node that supplies bone transforms.
-- Scene authoring: `skeleton = "NodeName"` uses the **scene node name** and is resolved to a `NodeID` at load time.
+- Scene authoring: `skeleton = @NodeName` uses the **scene node key** and is resolved to a `NodeID` at load time.
 - Skinning only works if the mesh has proper vertex weights (`JOINTS_0/WEIGHTS_0`).
 - Shared-skeleton mesh reuse works when meshes follow the same rig contract: same joint order/indices and compatible weights.
 - Automatic retargeting between mismatched rigs is not implemented.
@@ -181,9 +181,9 @@ Anchors are local to each connected body.
 
 - Follows one bone on a `Skeleton3D`.
 - Fields:
-  - `skeleton`: scene node name of the `Skeleton3D`.
+  - `skeleton`: `@SkeletonNodeKey` ref.
   - `bone` or `bone_index`: zero-based index into `Skeleton3D.bones`.
-- Runtime resolves `skeleton = "NodeName"` to a `NodeID` at load time.
+- Runtime resolves `skeleton = @NodeName` to a `NodeID` at load time.
 - Each internal update computes skeleton global transform + bone pose chain transform.
 - Attachment's global 3D transform is set to that bone transform.
 - Children of the attachment inherit that transform.
@@ -193,7 +193,7 @@ Anchors are local to each connected body.
 
 - Simulates one bone chain on a `Skeleton3D` during fixed update.
 - Scene fields:
-  - `skeleton`: scene node name of the `Skeleton3D`.
+  - `skeleton`: `@SkeletonNodeKey` ref.
   - `bone` or `bone_index`: zero-based end bone index.
   - `chain_length`: number of links back from end bone.
   - `gravity`: world-space acceleration.
@@ -212,7 +212,7 @@ Anchors are local to each connected body.
 
 - Solves a CCD IK chain on one `Skeleton3D`.
 - Fields:
-  - `skeleton`: scene node name of the `Skeleton3D`.
+  - `skeleton`: `@SkeletonNodeKey` ref.
   - `bone` or `bone_index`: zero-based end bone index.
   - `chain_length`: parent chain length to solve.
   - `iterations`: CCD pass count.
@@ -289,45 +289,44 @@ See [Visual Accessibility](../resources/visual_accessibility.md).
 
 ## Skeleton2D And Bone2D
 
-`Skeleton2D` is a `Node2D` container for `Bone2D` children.
-Unlike `Skeleton3D`, it does not store bones in `Skeleton2D.bones`.
-Each `Bone2D` is a real scene node, so normal parent/child transforms and `Node2D` animation tracks drive the rig.
+`Skeleton2D` is a `Node2D` container that owns `Vec<Bone2D>`.
+Bones are data, not scene nodes.
+This mirrors `Skeleton3D`.
 
 Scene:
 
 ```text
 [Rig2D]
     [Skeleton2D]
+        skeleton = "res://rigs/hero.pskel2d"
     [/Skeleton2D]
 [/Rig2D]
 
-[UpperArm]
+[HandMarker]
 parent = @Rig2D
-    [Bone2D]
-        position = (8, 0)
-        rotation = 0.0
-        scale = (1, 1)
-        rest = { position = (8, 0), rotation = 0.0, scale = (1, 1) }
-    [/Bone2D]
-[/UpperArm]
+    [BoneAttachment2D]
+        skeleton = @Rig2D
+        bone = 1
+    [/BoneAttachment2D]
+[/HandMarker]
 ```
 
 Animation:
 
 ```text
 [Objects]
-UpperArm = Bone2D
+Rig2D = Skeleton2D
 [/Objects]
 
 [Frame0]
-@UpperArm {
-    rotation = 0.0
+@Rig2D {
+    bone["UpperArm"].rotation = 0.0
 }
 [/Frame0]
 
 [Frame12]
-@UpperArm {
-    rotation = 0.7
+@Rig2D {
+    bone["UpperArm"].rotation = 0.7
 }
 [/Frame12]
 ```
@@ -352,7 +351,7 @@ From scene:
                 modulate = (1, 1, 1, 1)
             }
         ]
-        skeleton = "Rig"
+        skeleton = @Rig
     [/MeshInstance3D]
 [/SkinnedMesh]
 ```
@@ -382,7 +381,7 @@ A normal child follows a scene node.
 
 The binding is two-part:
 
-- `skeleton = "CharacterSkeleton"` binds to the skeleton scene node.
+- `skeleton = @CharacterSkeleton` binds to the skeleton scene node.
 - `bone = 15` binds to bone index `15` inside `Skeleton3D.bones`.
 
 Then parent child nodes under the attachment.
@@ -407,14 +406,14 @@ parent = @Character
 parent = @Character
     [MeshInstance3D]
         mesh = "res://characters/knight.glb:mesh[0]"
-        skeleton = "CharacterSkeleton"
+        skeleton = @CharacterSkeleton
     [/MeshInstance3D]
 [/CharacterMesh]
 
 [RightHandSocket]
 parent = @Character
     [BoneAttachment3D]
-        skeleton = "CharacterSkeleton"
+        skeleton = @CharacterSkeleton
         bone = 15
         [Node3D]
             position = (0, 0, 0)

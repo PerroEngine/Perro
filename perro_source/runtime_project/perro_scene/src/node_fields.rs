@@ -11,7 +11,10 @@ pub enum NodeField {
     ParticleEmitter2D(ParticleEmitter2DField),
     TileMap2D(TileMap2DField),
     Skeleton2D(Skeleton2DField),
-    Bone2D(Bone2DField),
+    BoneAttachment2D(BoneAttachment2DField),
+    IKTarget2D(IKTarget2DField),
+    PhysicsBoneChain2D(PhysicsBoneChain2DField),
+    BoneCollider2D(BoneCollider2DField),
     CollisionShape2D(CollisionShape2DField),
     StaticBody2D(StaticBody2DField),
     RigidBody2D(RigidBody2DField),
@@ -116,13 +119,6 @@ pub enum Skeleton2DField {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Bone2DField {
-    Rest,
-    Pose,
-    InvBind,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CollisionShape2DField {
     Shape,
 }
@@ -192,6 +188,42 @@ pub enum MeshInstance3DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Skeleton3DField {
     Skeleton,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BoneAttachment2DField {
+    Skeleton,
+    BoneIndex,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IKTarget2DField {
+    Skeleton,
+    BoneIndex,
+    ChainLength,
+    Iterations,
+    Tolerance,
+    Weight,
+    MatchRotation,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PhysicsBoneChain2DField {
+    Skeleton,
+    BoneIndex,
+    ChainLength,
+    Enabled,
+    Gravity,
+    Damping,
+    Stiffness,
+    Radius,
+    Collisions,
+    Iterations,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BoneCollider2DField {
+    Enabled,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -546,10 +578,58 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             "skeleton" => Some(NodeField::Skeleton2D(Skeleton2DField::Skeleton)),
             _ => None,
         },
-        NodeType::Bone2D => match field {
-            "rest" => Some(NodeField::Bone2D(Bone2DField::Rest)),
-            "pose" => Some(NodeField::Bone2D(Bone2DField::Pose)),
-            "inv_bind" | "inverse_bind" => Some(NodeField::Bone2D(Bone2DField::InvBind)),
+        NodeType::BoneAttachment2D => match field {
+            "skeleton" => Some(NodeField::BoneAttachment2D(BoneAttachment2DField::Skeleton)),
+            "bone" | "bone_index" => Some(NodeField::BoneAttachment2D(
+                BoneAttachment2DField::BoneIndex,
+            )),
+            _ => None,
+        },
+        NodeType::IKTarget2D => match field {
+            "skeleton" => Some(NodeField::IKTarget2D(IKTarget2DField::Skeleton)),
+            "bone" | "bone_index" => Some(NodeField::IKTarget2D(IKTarget2DField::BoneIndex)),
+            "chain_length" => Some(NodeField::IKTarget2D(IKTarget2DField::ChainLength)),
+            "iterations" => Some(NodeField::IKTarget2D(IKTarget2DField::Iterations)),
+            "tolerance" => Some(NodeField::IKTarget2D(IKTarget2DField::Tolerance)),
+            "weight" => Some(NodeField::IKTarget2D(IKTarget2DField::Weight)),
+            "match_rotation" => Some(NodeField::IKTarget2D(IKTarget2DField::MatchRotation)),
+            _ => None,
+        },
+        NodeType::PhysicsBoneChain2D => match field {
+            "skeleton" => Some(NodeField::PhysicsBoneChain2D(
+                PhysicsBoneChain2DField::Skeleton,
+            )),
+            "bone" | "bone_index" => Some(NodeField::PhysicsBoneChain2D(
+                PhysicsBoneChain2DField::BoneIndex,
+            )),
+            "chain_length" => Some(NodeField::PhysicsBoneChain2D(
+                PhysicsBoneChain2DField::ChainLength,
+            )),
+            "enabled" => Some(NodeField::PhysicsBoneChain2D(
+                PhysicsBoneChain2DField::Enabled,
+            )),
+            "gravity" => Some(NodeField::PhysicsBoneChain2D(
+                PhysicsBoneChain2DField::Gravity,
+            )),
+            "damping" => Some(NodeField::PhysicsBoneChain2D(
+                PhysicsBoneChain2DField::Damping,
+            )),
+            "stiffness" => Some(NodeField::PhysicsBoneChain2D(
+                PhysicsBoneChain2DField::Stiffness,
+            )),
+            "radius" => Some(NodeField::PhysicsBoneChain2D(
+                PhysicsBoneChain2DField::Radius,
+            )),
+            "collisions" | "collision" => Some(NodeField::PhysicsBoneChain2D(
+                PhysicsBoneChain2DField::Collisions,
+            )),
+            "iterations" => Some(NodeField::PhysicsBoneChain2D(
+                PhysicsBoneChain2DField::Iterations,
+            )),
+            _ => None,
+        },
+        NodeType::BoneCollider2D => match field {
+            "enabled" => Some(NodeField::BoneCollider2D(BoneCollider2DField::Enabled)),
             _ => None,
         },
         NodeType::MeshInstance3D => match field {
@@ -874,7 +954,7 @@ fn resolve_base_node_field(node_type: NodeType, field: &str) -> Option<NodeField
     if node_type.is_a(NodeType::Node2D) {
         return match field {
             "position" => Some(NodeField::Node2D(Node2DField::Position)),
-            "rotation" => Some(NodeField::Node2D(Node2DField::Rotation)),
+            "rotation" | "rotation_deg" => Some(NodeField::Node2D(Node2DField::Rotation)),
             "scale" => Some(NodeField::Node2D(Node2DField::Scale)),
             "visible" => Some(NodeField::Node2D(Node2DField::Visible)),
             "z_index" => Some(NodeField::Node2D(Node2DField::ZIndex)),
@@ -885,7 +965,7 @@ fn resolve_base_node_field(node_type: NodeType, field: &str) -> Option<NodeField
     if node_type.is_a(NodeType::Node3D) {
         return match field {
             "position" => Some(NodeField::Node3D(Node3DField::Position)),
-            "rotation" => Some(NodeField::Node3D(Node3DField::Rotation)),
+            "rotation" | "rotation_deg" => Some(NodeField::Node3D(Node3DField::Rotation)),
             "scale" => Some(NodeField::Node3D(Node3DField::Scale)),
             "visible" => Some(NodeField::Node3D(Node3DField::Visible)),
             _ => None,

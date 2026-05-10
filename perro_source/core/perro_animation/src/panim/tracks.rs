@@ -33,6 +33,12 @@ const MASK_POS_3D: u8 = 1 << 0;
 const MASK_ROT_3D: u8 = 1 << 1;
 const MASK_SCALE_3D: u8 = 1 << 2;
 
+#[derive(Clone, Copy)]
+struct KeyDefaults {
+    interpolation: AnimationInterpolation,
+    ease: AnimationEase,
+}
+
 fn build_tracks_and_events(
     mut actions: Vec<FrameAction>,
     _object_types: &HashMap<String, String>,
@@ -95,6 +101,7 @@ fn build_tracks_and_events(
 
     let mut state_2d = HashMap::<String, ObjectState2D>::new();
     let mut state_3d = HashMap::<String, ObjectState3D>::new();
+    let mut bone_state_2d = HashMap::<(String, String), ObjectState2D>::new();
     let mut bone_state_3d = HashMap::<(String, String), ObjectState3D>::new();
     let mut tracks_map = BTreeMap::<(String, String), TrackAccumulator>::new();
     let mut control_index = 0usize;
@@ -149,10 +156,13 @@ fn build_tracks_and_events(
                     frame,
                     object,
                     action,
+                    &mut bone_state_2d,
                     &mut bone_state_3d,
                     &mut tracks_map,
-                    default_interpolation,
-                    default_ease,
+                    KeyDefaults {
+                        interpolation: default_interpolation,
+                        ease: default_ease,
+                    },
                 );
             }
             ObjectFieldAction::Sprite2D(action) => {
@@ -448,13 +458,77 @@ fn apply_skeleton_bone_action(
     frame: u32,
     object: String,
     action: SkeletonBoneAction,
+    bone_state_2d: &mut HashMap<(String, String), ObjectState2D>,
     bone_state_3d: &mut HashMap<(String, String), ObjectState3D>,
     tracks_map: &mut BTreeMap<(String, String), TrackAccumulator>,
-    default_interpolation: AnimationInterpolation,
-    default_ease: AnimationEase,
+    defaults: KeyDefaults,
 ) {
+    let KeyDefaults {
+        interpolation: default_interpolation,
+        ease: default_ease,
+    } = defaults;
     match action {
-        SkeletonBoneAction::Position(selector, value) => {
+        SkeletonBoneAction::Position2D(selector, value) => {
+            let selector_key = bone_selector_key(&selector);
+            let state = bone_state_2d
+                .entry((object.clone(), selector_key.clone()))
+                .or_insert_with(default_object_state_2d);
+            state.transform.position = value;
+            insert_track_key_with_bone_target(
+                tracks_map,
+                object,
+                &format!("skeleton2d.bones[{selector_key}].transform"),
+                NodeField::Skeleton2D(Skeleton2DField::Skeleton),
+                Some(AnimationBoneTarget { selector }),
+                frame,
+                AnimationTrackValue::Transform2D(state.transform),
+                MASK_POS_2D,
+                0,
+                default_interpolation,
+                default_ease,
+            );
+        }
+        SkeletonBoneAction::Rotation2D(selector, value) => {
+            let selector_key = bone_selector_key(&selector);
+            let state = bone_state_2d
+                .entry((object.clone(), selector_key.clone()))
+                .or_insert_with(default_object_state_2d);
+            state.transform.rotation = value;
+            insert_track_key_with_bone_target(
+                tracks_map,
+                object,
+                &format!("skeleton2d.bones[{selector_key}].transform"),
+                NodeField::Skeleton2D(Skeleton2DField::Skeleton),
+                Some(AnimationBoneTarget { selector }),
+                frame,
+                AnimationTrackValue::Transform2D(state.transform),
+                MASK_ROT_2D,
+                0,
+                default_interpolation,
+                default_ease,
+            );
+        }
+        SkeletonBoneAction::Scale2D(selector, value) => {
+            let selector_key = bone_selector_key(&selector);
+            let state = bone_state_2d
+                .entry((object.clone(), selector_key.clone()))
+                .or_insert_with(default_object_state_2d);
+            state.transform.scale = value;
+            insert_track_key_with_bone_target(
+                tracks_map,
+                object,
+                &format!("skeleton2d.bones[{selector_key}].transform"),
+                NodeField::Skeleton2D(Skeleton2DField::Skeleton),
+                Some(AnimationBoneTarget { selector }),
+                frame,
+                AnimationTrackValue::Transform2D(state.transform),
+                MASK_SCALE_2D,
+                0,
+                default_interpolation,
+                default_ease,
+            );
+        }
+        SkeletonBoneAction::Position3D(selector, value) => {
             let selector_key = bone_selector_key(&selector);
             let state = bone_state_3d
                 .entry((object.clone(), selector_key.clone()))
@@ -474,7 +548,7 @@ fn apply_skeleton_bone_action(
                 default_ease,
             );
         }
-        SkeletonBoneAction::Rotation(selector, value) => {
+        SkeletonBoneAction::Rotation3D(selector, value) => {
             let selector_key = bone_selector_key(&selector);
             let state = bone_state_3d
                 .entry((object.clone(), selector_key.clone()))
@@ -494,7 +568,7 @@ fn apply_skeleton_bone_action(
                 default_ease,
             );
         }
-        SkeletonBoneAction::Scale(selector, value) => {
+        SkeletonBoneAction::Scale3D(selector, value) => {
             let selector_key = bone_selector_key(&selector);
             let state = bone_state_3d
                 .entry((object.clone(), selector_key.clone()))
@@ -1025,7 +1099,8 @@ fn apply_track_control(
 fn resolve_sparse_transform_components(tracks_map: &mut BTreeMap<(String, String), TrackAccumulator>) {
     for track in tracks_map.values_mut() {
         match track.field {
-            NodeField::Node2D(Node2DField::Position) => resolve_sparse_transform2d(track),
+            NodeField::Node2D(Node2DField::Position)
+            | NodeField::Skeleton2D(Skeleton2DField::Skeleton) => resolve_sparse_transform2d(track),
             NodeField::Node3D(Node3DField::Position) | NodeField::Skeleton3D(Skeleton3DField::Skeleton) => {
                 resolve_sparse_transform3d(track)
             }

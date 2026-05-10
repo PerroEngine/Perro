@@ -293,6 +293,11 @@ fn apply_ui_root_fields(node: &mut UiBox, fields: &[SceneObjectField]) {
                 node.transform.rotation = v;
             }
         }
+        "rotation_deg" => {
+            if let Some(v) = as_f32(value) {
+                node.transform.rotation = v.to_radians();
+            }
+        }
         "h_size" | "horizontal_size" | "width_mode" => {
             if let Some(v) = as_ui_size_mode(value) {
                 node.layout.h_size = v;

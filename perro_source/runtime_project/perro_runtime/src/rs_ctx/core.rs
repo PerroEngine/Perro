@@ -21,7 +21,10 @@ pub struct RuntimeResourceApi {
     pub(super) static_animation_lookup: Option<StaticAnimationLookup>,
     pub(super) static_animation_tree_lookup: Option<StaticAnimationTreeLookup>,
     pub(super) static_localization_lookup: Option<StaticLocalizationLookup>,
-    pub(super) skeleton_bones_cache: Mutex<HashMap<String, Vec<perro_nodes::skeleton_3d::Bone3D>>>,
+    pub(super) skeleton_bones_2d_cache:
+        Mutex<HashMap<String, Vec<perro_nodes::skeleton_2d::Bone2D>>>,
+    pub(super) skeleton_bones_3d_cache:
+        Mutex<HashMap<String, Vec<perro_nodes::skeleton_3d::Bone3D>>>,
     pub(super) viewport_size: Mutex<(u32, u32)>,
 }
 
@@ -46,7 +49,8 @@ impl RuntimeResourceApi {
             static_animation_lookup,
             static_animation_tree_lookup,
             static_localization_lookup,
-            skeleton_bones_cache: Mutex::new(HashMap::new()),
+            skeleton_bones_2d_cache: Mutex::new(HashMap::new()),
+            skeleton_bones_3d_cache: Mutex::new(HashMap::new()),
             viewport_size: Mutex::new((1, 1)),
         });
         api.initialize_localization();

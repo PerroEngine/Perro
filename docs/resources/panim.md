@@ -129,12 +129,12 @@ Example:
 
 [Frame20]
 @Hand {
-    rotation = 90
+    rotation_deg = 90
 }
 [/Frame20]
 ```
 
-If runtime rotation at frame 0 is `13`, playback interpolates `13 -> 90` over 20 frames.
+If runtime rotation at frame 0 is `13deg`, playback interpolates `13deg -> 90deg` over 20 frames.
 
 Authoring model:
 
@@ -192,10 +192,12 @@ Semantics:
 `Node2D`:
 
 - `position`, `rotation`, `scale`, `visible`, `z_index`
+- `rotation_deg` is accepted anywhere `rotation` is accepted.
 
 `Node3D`:
 
 - `position`, `rotation`, `scale`, `visible`
+- `rotation_deg` is accepted anywhere `rotation` is accepted.
 
 `Sprite2D`:
 
@@ -227,16 +229,19 @@ Semantics:
 
 - `range`, `inner_angle_radians`, `outer_angle_radians`
 
-`Skeleton3D`:
+`Skeleton2D` / `Skeleton3D`:
 
 - `bones[index].position`, `bones[index].rotation`, `bones[index].scale`
 - `bone[index].position`, `bone[index].rotation`, `bone[index].scale`
 - `bones["name"].position`, `bones["name"].rotation`, `bones["name"].scale`
 - `bone["name"].position`, `bone["name"].rotation`, `bone["name"].scale`
+- `rotation_deg` is accepted in the same bone paths, for example `bone[0].rotation_deg`.
 
 Notes:
 
-- Bone tracks target `rest` transforms on `Skeleton3D.bones`.
+- Bone tracks target `pose` transforms on `Skeleton2D.bones` and `Skeleton3D.bones`.
+- `Skeleton2D` uses `Transform2D`; `rotation` is radians.
+- `Skeleton3D` uses `Transform3D`; `rotation` is quaternion or Euler vec3.
 - `position/rotation/scale` share one transform track per targeted bone.
 - Track controls are supported on bone channels, for example:
   `bones[0].position.interp = "step"` and `bones[0].position.ease = "ease_in"`.

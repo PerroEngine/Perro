@@ -22,7 +22,7 @@ use perro_nodes::{
     physics_bone_chain_3d::PhysicsBoneChain3D,
     point_light_3d::PointLight3D,
     ray_light_3d::RayLight3D,
-    skeleton_2d::{Bone2D, Skeleton2D},
+    skeleton_2d::{BoneAttachment2D, BoneCollider2D, IKTarget2D, PhysicsBoneChain2D, Skeleton2D},
     skeleton_3d::Skeleton3D,
     sky_3d::{Sky3D, SkyStyle},
     spot_light_3d::SpotLight3D,
@@ -33,11 +33,11 @@ use perro_nodes::{
 };
 use perro_render_bridge::Material3D;
 use perro_scene::{
-    AnimatedSprite2DField, AnimationPlayerField, AnimationTreeField, Area2DField, Area3DField, Bone2DField, BoneAttachment3DField,
-    BoneCollider3DField, Camera2DField, Camera3DField, CollisionShape2DField, CollisionShape3DField, DistanceJoint2DField, HingeJoint3DField, IKTarget3DField, Joint2DField, Joint3DField, Light3DField,
+    AnimatedSprite2DField, AnimationPlayerField, AnimationTreeField, Area2DField, Area3DField, BoneAttachment2DField, BoneAttachment3DField,
+    BoneCollider2DField, BoneCollider3DField, Camera2DField, Camera3DField, CollisionShape2DField, CollisionShape3DField, DistanceJoint2DField, HingeJoint3DField, IKTarget2DField, IKTarget3DField, Joint2DField, Joint3DField, Light3DField,
     MeshInstance3DField, Node2DField, Node3DField, NodeField, Parser, ParticleEmitter2DField,
     ParticleEmitter3DField, TileMap2DField,
-    PhysicsBoneChain3DField, PointLight3DField, RayLight3DField, RigidBody2DField, RigidBody3DField, Scene,
+    PhysicsBoneChain2DField, PhysicsBoneChain3DField, PointLight3DField, RayLight3DField, RigidBody2DField, RigidBody3DField, Scene,
     SceneFieldIterRef, SceneKey, SceneNodeData as SceneDefNodeData,
     SceneNodeEntry as SceneDefNodeEntry, SceneObjectField, SceneValue, Skeleton3DField,
     Sky3DField, SpotLight3DField, Sprite2DField, StaticBody2DField, StaticBody3DField,
@@ -607,6 +607,10 @@ fn remap_key(key: SceneKey, key_map: &HashMap<SceneKey, u32>) -> u32 {
 }
 
 fn scene_key_by_name(scene: &Scene, name: &str) -> Option<SceneKey> {
+    if let Some(raw) = name.strip_prefix('#') {
+        return raw.parse::<u32>().ok().map(SceneKey::new);
+    }
+    let name = name.strip_prefix('@').unwrap_or(name);
     scene
         .key_names
         .iter()
@@ -678,11 +682,11 @@ fn scene_node_from_entry(
     let mesh_source_explicit = extract_mesh_source(&entry.data);
     let material_surfaces_explicit = extract_material_surfaces(&entry.data);
     let skeleton_source = extract_skeleton_source(&entry.data);
-    let mesh_skeleton_target = extract_mesh_skeleton_target(&entry.data);
-    let bone_attachment_skeleton_target = extract_bone_attachment_skeleton_target(&entry.data);
-    let ik_target_skeleton_target = extract_ik_target_skeleton_target(&entry.data);
+    let mesh_skeleton_target = extract_mesh_skeleton_target(&entry.data)?;
+    let bone_attachment_skeleton_target = extract_bone_attachment_skeleton_target(&entry.data)?;
+    let ik_target_skeleton_target = extract_ik_target_skeleton_target(&entry.data)?;
     let physics_bone_chain_skeleton_target =
-        extract_physics_bone_chain_skeleton_target(&entry.data);
+        extract_physics_bone_chain_skeleton_target(&entry.data)?;
     let joint_body_targets = extract_joint_body_targets(&entry.data);
     let animation_bindings = extract_animation_scene_bindings(&entry.data);
     let locale_text_bindings = extract_locale_text_bindings(&entry.data);
@@ -847,7 +851,15 @@ fn scene_node_data_from(
         ))),
         "TileMap2D" => Ok(SceneNodeData::TileMap2D(build_tilemap_2d(data))),
         "Skeleton2D" => Ok(SceneNodeData::Skeleton2D(build_skeleton_2d(data))),
-        "Bone2D" => Ok(SceneNodeData::Bone2D(build_bone_2d(data))),
+        "Bone2D" => Err("unsupported scene node type `Bone2D`; use Skeleton2D.bones from .pskel2d".to_string()),
+        "BoneAttachment2D" => Ok(SceneNodeData::BoneAttachment2D(
+            build_bone_attachment_2d(data),
+        )),
+        "IKTarget2D" => Ok(SceneNodeData::IKTarget2D(build_ik_target_2d(data))),
+        "PhysicsBoneChain2D" => Ok(SceneNodeData::PhysicsBoneChain2D(
+            build_physics_bone_chain_2d(data),
+        )),
+        "BoneCollider2D" => Ok(SceneNodeData::BoneCollider2D(build_bone_collider_2d(data))),
         "Camera2D" => Ok(SceneNodeData::Camera2D(build_camera_2d(data))),
         "CollisionShape2D" => Ok(SceneNodeData::CollisionShape2D(build_collision_shape_2d(
             data,

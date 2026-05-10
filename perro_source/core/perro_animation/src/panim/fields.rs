@@ -100,6 +100,9 @@ fn parse_node_2d_action(
 ) -> Result<Node2DAction, String> {
     Ok(match field {
         Node2DField::Position => Node2DAction::Position(expect_vec2(value, key, line_no)?),
+        Node2DField::Rotation if is_rotation_deg_key(key) => {
+            Node2DAction::Rotation(expect_f32(value, key, line_no)?.to_radians())
+        }
         Node2DField::Rotation => Node2DAction::Rotation(expect_f32(value, key, line_no)?),
         Node2DField::Scale => Node2DAction::Scale(expect_vec2(value, key, line_no)?),
         Node2DField::Visible => Node2DAction::Visible(expect_bool(value, key, line_no)?),
@@ -164,6 +167,9 @@ fn parse_node_3d_action(
 ) -> Result<Node3DAction, String> {
     Ok(match field {
         Node3DField::Position => Node3DAction::Position(expect_vec3(value, key, line_no)?),
+        Node3DField::Rotation if is_rotation_deg_key(key) => {
+            Node3DAction::Rotation(expect_quat_degrees(value, key, line_no)?)
+        }
         Node3DField::Rotation => Node3DAction::Rotation(expect_quat(value, key, line_no)?),
         Node3DField::Scale => Node3DAction::Scale(expect_vec3(value, key, line_no)?),
         Node3DField::Visible => Node3DAction::Visible(expect_bool(value, key, line_no)?),
@@ -270,15 +276,31 @@ fn parse_skeleton_bone_action(
         return Ok(None);
     };
 
-    let action = match property {
-        SkeletonBoneProperty::Position => {
-            SkeletonBoneAction::Position(selector, expect_vec3(value, key, line_no)?)
+    let is_2d = node_type.eq_ignore_ascii_case("Skeleton2D");
+    let action = match (is_2d, property) {
+        (true, SkeletonBoneProperty::Position) => {
+            SkeletonBoneAction::Position2D(selector, expect_vec2(value, key, line_no)?)
         }
-        SkeletonBoneProperty::Rotation => {
-            SkeletonBoneAction::Rotation(selector, expect_quat(value, key, line_no)?)
+        (true, SkeletonBoneProperty::Rotation) if is_rotation_deg_key(key) => {
+            SkeletonBoneAction::Rotation2D(selector, expect_f32(value, key, line_no)?.to_radians())
         }
-        SkeletonBoneProperty::Scale => {
-            SkeletonBoneAction::Scale(selector, expect_vec3(value, key, line_no)?)
+        (true, SkeletonBoneProperty::Rotation) => {
+            SkeletonBoneAction::Rotation2D(selector, expect_f32(value, key, line_no)?)
+        }
+        (true, SkeletonBoneProperty::Scale) => {
+            SkeletonBoneAction::Scale2D(selector, expect_vec2(value, key, line_no)?)
+        }
+        (false, SkeletonBoneProperty::Position) => {
+            SkeletonBoneAction::Position3D(selector, expect_vec3(value, key, line_no)?)
+        }
+        (false, SkeletonBoneProperty::Rotation) if is_rotation_deg_key(key) => {
+            SkeletonBoneAction::Rotation3D(selector, expect_quat_degrees(value, key, line_no)?)
+        }
+        (false, SkeletonBoneProperty::Rotation) => {
+            SkeletonBoneAction::Rotation3D(selector, expect_quat(value, key, line_no)?)
+        }
+        (false, SkeletonBoneProperty::Scale) => {
+            SkeletonBoneAction::Scale3D(selector, expect_vec3(value, key, line_no)?)
         }
     };
     Ok(Some(action))
@@ -289,7 +311,7 @@ fn parse_skeleton_bone_path(
     key: &str,
     line_no: usize,
 ) -> Result<Option<(AnimationBoneSelector, SkeletonBoneProperty)>, String> {
-    if !node_type.eq_ignore_ascii_case("Skeleton3D") {
+    if !node_type.eq_ignore_ascii_case("Skeleton2D") && !node_type.eq_ignore_ascii_case("Skeleton3D") {
         return Ok(None);
     }
 
@@ -298,7 +320,7 @@ fn parse_skeleton_bone_path(
     };
     let property = match property.trim() {
         "position" => SkeletonBoneProperty::Position,
-        "rotation" => SkeletonBoneProperty::Rotation,
+        "rotation" | "rotation_deg" => SkeletonBoneProperty::Rotation,
         "scale" => SkeletonBoneProperty::Scale,
         _ => return Ok(None),
     };
@@ -411,6 +433,24 @@ fn expect_quat(value: &SceneValue, key: &str, line_no: usize) -> Result<Quaterni
     Err(format!("line {}: `{}` expects vec4 or vec3 (Euler radians)", line_no, key))
 }
 
+fn expect_quat_degrees(value: &SceneValue, key: &str, line_no: usize) -> Result<Quaternion, String> {
+    let (x, y, z) = value
+        .as_vec3()
+        .ok_or_else(|| format!("line {}: `{}` expects vec3 (Euler degrees)", line_no, key))?;
+    let mut rotation = Quaternion::IDENTITY;
+    rotation.rotate_xyz(x.to_radians(), y.to_radians(), z.to_radians());
+    rotation.normalize();
+    Ok(rotation)
+}
+
+fn is_rotation_deg_key(key: &str) -> bool {
+    key.rsplit_once('.')
+        .map(|(_, tail)| tail)
+        .unwrap_or(key)
+        .trim()
+        .eq_ignore_ascii_case("rotation_deg")
+}
+
 fn expect_asset_path(value: &SceneValue, key: &str, line_no: usize) -> Result<String, String> {
     match value {
         SceneValue::Str(v) => Ok(v.to_string()),
@@ -464,12 +504,23 @@ fn resolve_animatable_channel(
 ) -> Result<(String, NodeField, Option<AnimationBoneTarget>), String> {
     if let Some((selector, _)) = parse_skeleton_bone_path(node_type, key, line_no)? {
         let channel = match &selector {
+            AnimationBoneSelector::Index(index) if node_type.eq_ignore_ascii_case("Skeleton2D") => {
+                format!("skeleton2d.bones[{index}].transform")
+            }
+            AnimationBoneSelector::Name(name) if node_type.eq_ignore_ascii_case("Skeleton2D") => {
+                format!("skeleton2d.bones[{name}].transform")
+            }
             AnimationBoneSelector::Index(index) => format!("skeleton3d.bones[{index}].transform"),
             AnimationBoneSelector::Name(name) => format!("skeleton3d.bones[{name}].transform"),
         };
+        let field = if node_type.eq_ignore_ascii_case("Skeleton2D") {
+            NodeField::Skeleton2D(Skeleton2DField::Skeleton)
+        } else {
+            NodeField::Skeleton3D(Skeleton3DField::Skeleton)
+        };
         return Ok((
             channel,
-            NodeField::Skeleton3D(Skeleton3DField::Skeleton),
+            field,
             Some(AnimationBoneTarget { selector }),
         ));
     }
@@ -703,9 +754,12 @@ enum SkeletonBoneProperty {
 }
 
 enum SkeletonBoneAction {
-    Position(AnimationBoneSelector, Vector3),
-    Rotation(AnimationBoneSelector, Quaternion),
-    Scale(AnimationBoneSelector, Vector3),
+    Position2D(AnimationBoneSelector, Vector2),
+    Rotation2D(AnimationBoneSelector, f32),
+    Scale2D(AnimationBoneSelector, Vector2),
+    Position3D(AnimationBoneSelector, Vector3),
+    Rotation3D(AnimationBoneSelector, Quaternion),
+    Scale3D(AnimationBoneSelector, Vector3),
 }
 
 enum Sprite2DAction {

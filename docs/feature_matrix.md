@@ -33,7 +33,7 @@ Status keys:
 | Draw2D transient shapes | done | Circle/ring/rect, lines, polylines, polygon outlines, paths, and transient sprites exist.                                    |
 | `AnimatedSprite2D`      | done    | Sprite-sheet playback from normal texture paths plus named strip/grid animation definitions.                                     |
 | Tile maps               | partial | `TileMap2D` plus `.ptileset` runtime/static path exists: one texture atlas, tile ids, empty tile `-1`, draw extraction, merged runtime 2D collision bake for `collision = true` auto tiles, and explicit rect/circle/triangle/polygon collision shapes. Pre-baked static collision chunks remain. See [TileMap2D](scripting/tilemap.md) and [`.ptileset`](resources/ptileset.md). |
-| 2D skeleton nodes       | done    | `Skeleton2D` is a 2D transform parent. `Bone2D` is a child `Node2D` with rest/pose/inv_bind data and normal `Node2D` animation tracks. |
+| 2D skeleton nodes       | done    | `Skeleton2D` owns `Vec<Bone2D>` data loaded from `.pskel2d`; attachment, IK target, physics chain, and bone collider nodes mirror the 3D rig workflow. |
 | 2D particles            | done    | `ParticleEmitter2D` uses `.ppart` profiles; `z` fields are ignored.                                                              |
 | 2D lights               | planned | First target: unshadowed point/additive light pass; shadows later.                                                               |
 
