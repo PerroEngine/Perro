@@ -46,7 +46,7 @@ where
         .to_quat();
     let target_local_rot = normalize_quat(target_local_rot);
 
-    let solved = with_base_node_mut!(ctx, Skeleton3D, skeleton_id, |skeleton| {
+    let changed = with_base_node_mut!(ctx, Skeleton3D, skeleton_id, |skeleton| {
         solve_ccd(
             skeleton,
             CcdSolve {
@@ -59,12 +59,14 @@ where
                 target_pos: target_local_pos,
                 target_rot: target_local_rot,
             },
-        );
+        )
     });
-    if solved.is_some() {
+    if changed.unwrap_or(false) {
         let _ = ctx.Nodes().force_rerender(skeleton_id);
     }
 }
+
+const MIN_ROT_DELTA: f32 = 1.0e-5;
 
 #[derive(Clone, Copy)]
 struct CcdSolve {
@@ -78,7 +80,7 @@ struct CcdSolve {
     target_rot: Quat,
 }
 
-fn solve_ccd(skeleton: &mut Skeleton3D, cfg: CcdSolve) {
+fn solve_ccd(skeleton: &mut Skeleton3D, cfg: CcdSolve) -> bool {
     let CcdSolve {
         end,
         chain_length,
@@ -90,31 +92,33 @@ fn solve_ccd(skeleton: &mut Skeleton3D, cfg: CcdSolve) {
         target_rot,
     } = cfg;
     if end >= skeleton.bones.len() {
-        return;
+        return false;
     }
     let mut chain = Vec::with_capacity(chain_length.saturating_add(1).min(skeleton.bones.len()));
     collect_root_to_end(skeleton, end, &mut chain);
     if chain.is_empty() {
-        return;
+        return false;
     }
+    let mut changed = false;
     let joint_count = chain.len().saturating_sub(1).min(chain_length);
     if joint_count == 0 {
         if match_rotation {
             let mut state = ChainState::default();
             compute_chain_state(skeleton, &chain, &mut state);
-            blend_end_rotation(skeleton, &chain, &state, end, target_rot, weight);
+            changed |= blend_end_rotation(skeleton, &chain, &state, end, target_rot, weight);
         }
-        return;
+        return changed;
     }
 
     let joint_start = chain.len().saturating_sub(1 + joint_count);
     let mut state = ChainState::with_capacity(chain.len());
+    let tolerance_sq = tolerance * tolerance;
     for _ in 0..iterations {
         compute_chain_state(skeleton, &chain, &mut state);
         let Some(end_pos) = chain_end_pos(&state) else {
             break;
         };
-        if end_pos.distance(target_pos) <= tolerance {
+        if end_pos.distance_squared(target_pos) <= tolerance_sq {
             break;
         }
 
@@ -132,18 +136,21 @@ fn solve_ccd(skeleton: &mut Skeleton3D, cfg: CcdSolve) {
             }
 
             let delta = Quat::from_rotation_arc(to_end, to_target);
-            if !delta.is_finite() {
+            if !delta.is_finite() || quat_near_identity(delta) {
                 continue;
             }
-            rotate_bone_world(skeleton, &state, chain_index, joint, delta, weight);
+            if rotate_bone_world(skeleton, &state, chain_index, joint, delta, weight) {
+                changed = true;
+            }
             compute_chain_state_from(skeleton, &chain, chain_index, &mut state);
         }
     }
 
     if match_rotation {
         compute_chain_state(skeleton, &chain, &mut state);
-        blend_end_rotation(skeleton, &chain, &state, end, target_rot, weight);
+        changed |= blend_end_rotation(skeleton, &chain, &state, end, target_rot, weight);
     }
+    changed
 }
 
 fn collect_root_to_end(skeleton: &Skeleton3D, end: usize, out: &mut Vec<usize>) {
@@ -252,7 +259,7 @@ fn rotate_bone_world(
     bone_index: usize,
     delta: Quat,
     weight: f32,
-) {
+) -> bool {
     let parent_rotation = if chain_index > 0 {
         state.rotations[chain_index - 1]
     } else {
@@ -260,8 +267,12 @@ fn rotate_bone_world(
     };
     let current = normalize_quat(skeleton.bones[bone_index].pose.rotation.to_quat());
     let solved = normalize_quat(parent_rotation.inverse() * delta * parent_rotation * current);
-    skeleton.bones[bone_index].pose.rotation =
-        Quaternion::from_quat(blend_quat(current, solved, weight));
+    let blended = blend_quat(current, solved, weight);
+    if quat_close(current, blended) {
+        return false;
+    }
+    skeleton.bones[bone_index].pose.rotation = Quaternion::from_quat(blended);
+    true
 }
 
 fn blend_end_rotation(
@@ -271,9 +282,9 @@ fn blend_end_rotation(
     end: usize,
     target_rot: Quat,
     weight: f32,
-) {
+) -> bool {
     let Some(end_chain_index) = chain.iter().position(|index| *index == end) else {
-        return;
+        return false;
     };
     let parent_rot = if end_chain_index > 0 {
         state.rotations[end_chain_index - 1]
@@ -282,8 +293,12 @@ fn blend_end_rotation(
     };
     let desired_local = parent_rot.inverse() * target_rot;
     let current = normalize_quat(skeleton.bones[end].pose.rotation.to_quat());
-    skeleton.bones[end].pose.rotation =
-        Quaternion::from_quat(blend_quat(current, desired_local, weight));
+    let blended = blend_quat(current, desired_local, weight);
+    if quat_close(current, blended) {
+        return false;
+    }
+    skeleton.bones[end].pose.rotation = Quaternion::from_quat(blended);
+    true
 }
 
 fn blend_quat(current: Quat, solved: Quat, weight: f32) -> Quat {
@@ -300,6 +315,14 @@ fn normalize_quat(q: Quat) -> Quat {
     } else {
         Quat::IDENTITY
     }
+}
+
+fn quat_near_identity(q: Quat) -> bool {
+    (1.0 - q.w.abs()) <= MIN_ROT_DELTA * MIN_ROT_DELTA
+}
+
+fn quat_close(a: Quat, b: Quat) -> bool {
+    (1.0 - a.dot(b).abs()) <= MIN_ROT_DELTA * MIN_ROT_DELTA
 }
 
 #[cfg(test)]
