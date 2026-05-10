@@ -1,10 +1,19 @@
+pub mod account;
 pub mod achievements;
 pub mod app;
 pub mod error;
+pub mod events;
 pub mod friends;
 pub mod lobbies;
+pub mod types;
 
 pub use error::SteamError;
+pub use types::{
+    FriendGame, FriendInfo, FriendListKind, FriendState, LobbyDataKey, LobbyDistance, LobbyId,
+    LobbyInfo, LobbyJoinability, LobbyNearValueFilter, LobbyNumberComparison, LobbyNumberFilter,
+    LobbySearch, LobbyStringFilter, LobbyStringFilterKind, LobbyType, OverlayDialog,
+    RichPresenceKey, SteamEvent, SteamID, UserOverlayDialog,
+};
 
 #[macro_export]
 macro_rules! steam_unlock {
@@ -37,11 +46,102 @@ macro_rules! steam_ach_clear {
     };
 }
 
+#[macro_export]
+macro_rules! steam_friend_list {
+    () => {
+        $crate::friends::list()
+    };
+}
+
+#[macro_export]
+macro_rules! steam_rich_presence_set {
+    ($key:expr, $value:expr) => {
+        $crate::friends::set_rich_presence($key, $value)
+    };
+}
+
+#[macro_export]
+macro_rules! steam_lobby_create {
+    ($kind:expr, $max_members:expr) => {
+        $crate::lobbies::create($kind, $max_members)
+    };
+}
+
+#[macro_export]
+macro_rules! steam_lobby_join {
+    ($id:expr) => {
+        $crate::lobbies::join($id)
+    };
+}
+
+#[macro_export]
+macro_rules! steam_lobby_leave {
+    ($id:expr) => {
+        $crate::lobbies::leave($id)
+    };
+}
+
+#[macro_export]
+macro_rules! steam_lobby_data_set {
+    ($id:expr, $key:expr, $value:expr) => {
+        $crate::lobbies::set_data($id, $key, $value)
+    };
+}
+
+#[macro_export]
+macro_rules! steam_lobby_chat {
+    ($id:expr, $message:expr) => {
+        $crate::lobbies::send_chat($id, $message)
+    };
+}
+
+#[macro_export]
+macro_rules! steam_events {
+    () => {
+        $crate::events::drain()
+    };
+}
+
+#[macro_export]
+macro_rules! steam_account_name {
+    ($id:expr) => {
+        $crate::account::get_name($id)
+    };
+}
+
+#[macro_export]
+macro_rules! steam_account_self_name {
+    () => {
+        $crate::account::get_self_name()
+    };
+}
+
+#[macro_export]
+macro_rules! steam_account_self_id {
+    () => {
+        $crate::account::get_self_id()
+    };
+}
+
 pub mod prelude {
-    pub use crate::SteamError;
+    pub use crate::account;
     pub use crate::achievements;
     pub use crate::app;
-    pub use crate::{steam_ach_clear, steam_ach_unlock, steam_clear, steam_unlock};
+    pub use crate::events;
+    pub use crate::friends;
+    pub use crate::lobbies;
+    pub use crate::{
+        FriendGame, FriendInfo, FriendListKind, FriendState, LobbyDataKey, LobbyDistance, LobbyId,
+        LobbyInfo, LobbyJoinability, LobbyNearValueFilter, LobbyNumberComparison,
+        LobbyNumberFilter, LobbySearch, LobbyStringFilter, LobbyStringFilterKind, LobbyType,
+        OverlayDialog, RichPresenceKey, SteamError, SteamEvent, SteamID, UserOverlayDialog,
+    };
+    pub use crate::{
+        steam_account_name, steam_account_self_id, steam_account_self_name, steam_ach_clear,
+        steam_ach_unlock, steam_clear, steam_events, steam_friend_list, steam_lobby_chat,
+        steam_lobby_create, steam_lobby_data_set, steam_lobby_join, steam_lobby_leave,
+        steam_rich_presence_set, steam_unlock,
+    };
 }
 
 #[cfg(test)]
@@ -59,17 +159,17 @@ mod tests {
         let _guard = test_lock();
         app::reset_for_tests();
         app::init_from_config(false, None).expect("disabled init");
-        app::run_callbacks();
-        assert!(!app::enabled());
-        assert!(!app::ready());
-        assert_eq!(app::app_id(), None);
+        app::run_callbacks().expect("callbacks");
+        assert_eq!(app::enabled(), Ok(false));
+        assert_eq!(app::ready(), Ok(false));
+        assert_eq!(app::app_id(), Ok(None));
     }
 
     #[test]
     fn callbacks_before_init_noop() {
         let _guard = test_lock();
         app::reset_for_tests();
-        app::run_callbacks();
+        app::run_callbacks().expect("callbacks");
     }
 
     #[test]
@@ -89,8 +189,8 @@ mod tests {
             app::init_from_config(true, None),
             Err(SteamError::MissingAppId)
         );
-        assert!(!app::enabled());
-        assert!(!app::ready());
+        assert_eq!(app::enabled(), Ok(false));
+        assert_eq!(app::ready(), Ok(false));
     }
 
     #[test]
@@ -98,9 +198,9 @@ mod tests {
         let _guard = test_lock();
         app::reset_for_tests();
         app::init_from_config(false, Some(480)).expect("disabled init");
-        assert!(!app::enabled());
-        assert!(!app::ready());
-        assert_eq!(app::app_id(), None);
+        assert_eq!(app::enabled(), Ok(false));
+        assert_eq!(app::ready(), Ok(false));
+        assert_eq!(app::app_id(), Ok(None));
     }
 
     #[test]
@@ -112,6 +212,38 @@ mod tests {
         assert_eq!(steam_clear!("ACH_TEST"), Err(SteamError::Disabled));
         assert_eq!(steam_ach_unlock!("ACH_TEST"), Err(SteamError::Disabled));
         assert_eq!(steam_ach_clear!("ACH_TEST"), Err(SteamError::Disabled));
+        assert_eq!(steam_account_self_name!(), Err(SteamError::Disabled));
+        assert_eq!(steam_account_self_id!(), Err(SteamError::Disabled));
+        assert_eq!(
+            steam_account_name!(SteamID::from_id(1)),
+            Err(SteamError::Disabled)
+        );
+        assert_eq!(steam_friend_list!(), Err(SteamError::Disabled));
+        assert_eq!(
+            steam_rich_presence_set!(RichPresenceKey::Status, "menu"),
+            Err(SteamError::Disabled)
+        );
+        assert_eq!(
+            steam_lobby_create!(LobbyType::FriendsOnly, 4),
+            Err(SteamError::Disabled)
+        );
+        assert_eq!(
+            steam_lobby_join!(LobbyId::from_id(1)),
+            Err(SteamError::Disabled)
+        );
+        assert_eq!(
+            steam_lobby_leave!(LobbyId::from_id(1)),
+            Err(SteamError::Disabled)
+        );
+        assert_eq!(
+            steam_lobby_data_set!(LobbyId::from_id(1), "mode", "coop"),
+            Err(SteamError::Disabled)
+        );
+        assert_eq!(
+            steam_lobby_chat!(LobbyId::from_id(1), "hi"),
+            Err(SteamError::Disabled)
+        );
+        assert_eq!(steam_events!(), Ok(Vec::new()));
     }
 
     #[test]
@@ -140,10 +272,10 @@ mod tests {
         let _guard = test_lock();
         app::reset_for_tests();
         app::init_from_config(true, Some(480)).expect("Steam AppId 480 init");
-        assert!(app::enabled());
-        assert!(app::ready());
-        assert_eq!(app::app_id(), Some(480));
+        assert_eq!(app::enabled(), Ok(true));
+        assert_eq!(app::ready(), Ok(true));
+        assert_eq!(app::app_id(), Ok(Some(480)));
         app::init_from_config(true, Some(480)).expect("same AppId re-init");
-        app::run_callbacks();
+        app::run_callbacks().expect("callbacks");
     }
 }

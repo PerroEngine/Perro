@@ -34,4 +34,33 @@ fn steam_achievement_macros_accept_single_multi_slice_and_vec() {
         steam::achievements::unlock_many(["ACH_ONE", "ACH_TWO"]),
         Err(steam::SteamError::Disabled)
     );
+
+    assert_eq!(steam_account_self_name!(), Err(steam::SteamError::Disabled));
+    assert_eq!(steam_account_self_id!(), Err(steam::SteamError::Disabled));
+    assert_eq!(
+        steam_account_name!(steam::SteamID::from_id(1)),
+        Err(steam::SteamError::Disabled)
+    );
+    assert_eq!(steam_friend_list!(), Err(steam::SteamError::Disabled));
+    assert_eq!(
+        steam_rich_presence_set!(steam::RichPresenceKey::Status, "menu"),
+        Err(steam::SteamError::Disabled)
+    );
+    assert_eq!(
+        steam_lobby_create!(steam::LobbyType::FriendsOnly, 4),
+        Err(steam::SteamError::Disabled)
+    );
+
+    let lobby = steam::LobbyId::from_id(1);
+    assert_eq!(steam_lobby_join!(lobby), Err(steam::SteamError::Disabled));
+    assert_eq!(steam_lobby_leave!(lobby), Err(steam::SteamError::Disabled));
+    assert_eq!(
+        steam_lobby_data_set!(lobby, "mode", "coop"),
+        Err(steam::SteamError::Disabled)
+    );
+    assert_eq!(
+        steam_lobby_chat!(lobby, "hi"),
+        Err(steam::SteamError::Disabled)
+    );
+    assert_eq!(steam_events!(), Ok(Vec::new()));
 }

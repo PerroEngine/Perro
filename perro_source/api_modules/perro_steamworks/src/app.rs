@@ -51,26 +51,37 @@ pub fn init_from_config(enabled: bool, app_id: Option<u32>) -> Result<(), SteamE
     Ok(())
 }
 
-pub fn run_callbacks() {
-    let client = state().lock().ok().and_then(|state| state.client.clone());
+pub fn run_callbacks() -> Result<(), SteamError> {
+    let client = state()
+        .lock()
+        .map_err(|_| SteamError::NotReady)?
+        .client
+        .clone();
     if let Some(client) = client {
-        client.run_callbacks();
+        client.process_callbacks(crate::events::enqueue_callback);
     }
+    Ok(())
 }
 
-pub fn enabled() -> bool {
-    state().lock().map(|state| state.enabled).unwrap_or(false)
+pub fn enabled() -> Result<bool, SteamError> {
+    state()
+        .lock()
+        .map(|state| state.enabled)
+        .map_err(|_| SteamError::NotReady)
 }
 
-pub fn ready() -> bool {
+pub fn ready() -> Result<bool, SteamError> {
     state()
         .lock()
         .map(|state| state.client.is_some())
-        .unwrap_or(false)
+        .map_err(|_| SteamError::NotReady)
 }
 
-pub fn app_id() -> Option<u32> {
-    state().lock().ok().and_then(|state| state.app_id)
+pub fn app_id() -> Result<Option<u32>, SteamError> {
+    state()
+        .lock()
+        .map(|state| state.app_id)
+        .map_err(|_| SteamError::NotReady)
 }
 
 pub(crate) fn with_client<T>(

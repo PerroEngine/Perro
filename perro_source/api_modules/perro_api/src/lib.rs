@@ -23,6 +23,10 @@ pub mod prelude {
     pub use perro_scene;
     pub use perro_scripting::prelude::*;
     pub use perro_steamworks as steam;
-    pub use perro_steamworks::{steam_ach_clear, steam_ach_unlock};
+    pub use perro_steamworks::{
+        steam_account_name, steam_account_self_id, steam_account_self_name, steam_ach_clear,
+        steam_ach_unlock, steam_events, steam_friend_list, steam_lobby_chat, steam_lobby_create,
+        steam_lobby_data_set, steam_lobby_join, steam_lobby_leave, steam_rich_presence_set,
+    };
     pub use perro_structs::prelude::*;
 }

@@ -244,7 +244,7 @@ impl Runtime {
     #[inline]
     pub fn update(&mut self, delta_time: f32) {
         self.time.delta = delta_time;
-        perro_steamworks::app::run_callbacks();
+        let _ = perro_steamworks::app::run_callbacks();
         self.run_start_schedule();
         self.schedules.snapshot_update(&self.scripts);
         self.run_update_schedule();
@@ -256,7 +256,7 @@ impl Runtime {
     pub fn update_timed(&mut self, delta_time: f32) -> RuntimeUpdateTiming {
         let total_start = std::time::Instant::now();
         self.time.delta = delta_time;
-        perro_steamworks::app::run_callbacks();
+        let _ = perro_steamworks::app::run_callbacks();
 
         let start_schedule_start = std::time::Instant::now();
         self.run_start_schedule();
