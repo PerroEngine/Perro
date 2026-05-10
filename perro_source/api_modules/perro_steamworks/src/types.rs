@@ -27,9 +27,59 @@ impl From<SteamID> for steamworks::SteamId {
 }
 
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
-pub struct LobbyId(u64);
+pub struct AppID(u32);
 
-impl LobbyId {
+impl AppID {
+    pub const fn from_id(id: u32) -> Self {
+        Self(id)
+    }
+
+    pub const fn get_id(self) -> u32 {
+        self.0
+    }
+}
+
+impl From<steamworks::AppId> for AppID {
+    fn from(id: steamworks::AppId) -> Self {
+        Self(id.0)
+    }
+}
+
+impl From<AppID> for steamworks::AppId {
+    fn from(id: AppID) -> Self {
+        steamworks::AppId(id.0)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
+pub struct DLCID(u32);
+
+impl DLCID {
+    pub const fn from_id(id: u32) -> Self {
+        Self(id)
+    }
+
+    pub const fn get_id(self) -> u32 {
+        self.0
+    }
+}
+
+impl From<DLCID> for AppID {
+    fn from(id: DLCID) -> Self {
+        Self(id.0)
+    }
+}
+
+impl From<DLCID> for steamworks::AppId {
+    fn from(id: DLCID) -> Self {
+        steamworks::AppId(id.0)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
+pub struct LobbyID(u64);
+
+impl LobbyID {
     pub const fn from_id(id: u64) -> Self {
         Self(id)
     }
@@ -39,17 +89,46 @@ impl LobbyId {
     }
 }
 
-impl From<steamworks::LobbyId> for LobbyId {
+impl From<steamworks::LobbyId> for LobbyID {
     fn from(id: steamworks::LobbyId) -> Self {
         Self(id.raw())
     }
 }
 
-impl From<LobbyId> for steamworks::LobbyId {
-    fn from(id: LobbyId) -> Self {
+impl From<LobbyID> for steamworks::LobbyId {
+    fn from(id: LobbyID) -> Self {
         steamworks::LobbyId::from_raw(id.0)
     }
 }
+
+#[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
+pub struct WorkshopFileID(u64);
+
+impl WorkshopFileID {
+    pub const fn from_id(id: u64) -> Self {
+        Self(id)
+    }
+
+    pub const fn get_id(self) -> u64 {
+        self.0
+    }
+}
+
+impl From<steamworks::PublishedFileId> for WorkshopFileID {
+    fn from(id: steamworks::PublishedFileId) -> Self {
+        Self(id.0)
+    }
+}
+
+impl From<WorkshopFileID> for steamworks::PublishedFileId {
+    fn from(id: WorkshopFileID) -> Self {
+        steamworks::PublishedFileId(id.0)
+    }
+}
+
+pub type LeaderboardID = steamworks::Leaderboard;
+pub type SocketID = steamworks::networking_sockets::ListenSocket;
+pub type ConnectionID = steamworks::networking_sockets::NetConnection;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FriendState {
@@ -84,7 +163,7 @@ pub struct FriendGame {
     pub game_address: Ipv4Addr,
     pub game_port: u16,
     pub query_port: u16,
-    pub lobby: LobbyId,
+    pub lobby: LobbyID,
 }
 
 impl From<steamworks::FriendGame> for FriendGame {
@@ -195,6 +274,25 @@ impl UserOverlayDialog {
             Self::FriendRequestAccept => "friendrequestaccept",
             Self::FriendRequestIgnore => "friendrequestignore",
             Self::Custom(dialog) => dialog,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum StoreOverlayAction {
+    Open,
+    AddToCart,
+    AddToCartAndShow,
+}
+
+impl From<StoreOverlayAction> for steamworks::OverlayToStoreFlag {
+    fn from(action: StoreOverlayAction) -> Self {
+        match action {
+            StoreOverlayAction::Open => steamworks::OverlayToStoreFlag::None,
+            StoreOverlayAction::AddToCart => steamworks::OverlayToStoreFlag::AddToCart,
+            StoreOverlayAction::AddToCartAndShow => {
+                steamworks::OverlayToStoreFlag::AddToCartAndShow
+            }
         }
     }
 }
@@ -447,7 +545,7 @@ pub struct LobbySearch<'a> {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LobbyInfo {
-    pub id: LobbyId,
+    pub id: LobbyID,
     pub owner: SteamID,
     pub members: Vec<SteamID>,
     pub member_limit: Option<usize>,
@@ -458,34 +556,34 @@ pub struct LobbyInfo {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SteamEvent {
     LobbyList {
-        lobbies: Vec<LobbyId>,
+        lobbies: Vec<LobbyID>,
     },
     LobbyListFailed,
     LobbyCreated {
-        lobby: LobbyId,
+        lobby: LobbyID,
     },
     LobbyCreateFailed,
     LobbyJoined {
-        lobby: LobbyId,
+        lobby: LobbyID,
     },
     LobbyJoinFailed {
-        lobby: LobbyId,
+        lobby: LobbyID,
     },
     LobbyDataUpdated {
-        lobby: LobbyId,
+        lobby: LobbyID,
         member: SteamID,
     },
     LobbyChat {
-        lobby: LobbyId,
+        lobby: LobbyID,
         user: SteamID,
         chat_id: i32,
     },
     LobbyMemberChanged {
-        lobby: LobbyId,
+        lobby: LobbyID,
         user: SteamID,
     },
     LobbyJoinRequested {
-        lobby: LobbyId,
+        lobby: LobbyID,
         friend: SteamID,
     },
     RichPresenceJoinRequested {
@@ -498,6 +596,9 @@ pub enum SteamEvent {
     OverlayChanged {
         active: bool,
     },
+    Callback {
+        name: &'static str,
+    },
 }
 
 #[cfg(test)]
@@ -507,7 +608,10 @@ mod tests {
     #[test]
     fn ids_roundtrip() {
         assert_eq!(SteamID::from_id(42).get_id(), 42);
-        assert_eq!(LobbyId::from_id(99).get_id(), 99);
+        assert_eq!(LobbyID::from_id(99).get_id(), 99);
+        assert_eq!(AppID::from_id(480).get_id(), 480);
+        assert_eq!(DLCID::from_id(12345).get_id(), 12345);
+        assert_eq!(WorkshopFileID::from_id(77).get_id(), 77);
     }
 
     #[test]

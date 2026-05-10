@@ -63,21 +63,21 @@ pub fn run_callbacks() -> Result<(), SteamError> {
     Ok(())
 }
 
-pub fn enabled() -> Result<bool, SteamError> {
+pub fn is_enabled() -> Result<bool, SteamError> {
     state()
         .lock()
         .map(|state| state.enabled)
         .map_err(|_| SteamError::NotReady)
 }
 
-pub fn ready() -> Result<bool, SteamError> {
+pub fn is_ready() -> Result<bool, SteamError> {
     state()
         .lock()
         .map(|state| state.client.is_some())
         .map_err(|_| SteamError::NotReady)
 }
 
-pub fn app_id() -> Result<Option<u32>, SteamError> {
+pub fn get_app_id() -> Result<Option<u32>, SteamError> {
     state()
         .lock()
         .map(|state| state.app_id)

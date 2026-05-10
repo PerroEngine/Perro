@@ -25,8 +25,12 @@ pub mod prelude {
     pub use perro_steamworks as steam;
     pub use perro_steamworks::{
         steam_account_name, steam_account_self_id, steam_account_self_name, steam_ach_clear,
-        steam_ach_unlock, steam_events, steam_friend_list, steam_lobby_chat, steam_lobby_create,
-        steam_lobby_data_set, steam_lobby_join, steam_lobby_leave, steam_rich_presence_set,
+        steam_ach_unlock, steam_app_dlc_installed, steam_app_subscribed, steam_cloud_read,
+        steam_cloud_write, steam_events, steam_friend_list, steam_leaderboard_entries,
+        steam_leaderboard_upload, steam_lobby_chat, steam_lobby_create, steam_lobby_data_set,
+        steam_lobby_join, steam_lobby_leave, steam_p2p_read, steam_p2p_send,
+        steam_rich_presence_set, steam_stat_get_i32, steam_stat_set_i32, steam_stat_store,
+        steam_workshop_download, steam_workshop_subscribe,
     };
     pub use perro_structs::prelude::*;
 }

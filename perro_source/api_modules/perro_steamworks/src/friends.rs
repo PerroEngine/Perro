@@ -1,13 +1,14 @@
 use crate::types::{
-    FriendInfo, FriendListKind, LobbyId, OverlayDialog, RichPresenceKey, SteamID, UserOverlayDialog,
+    AppID, FriendInfo, FriendListKind, LobbyID, OverlayDialog, RichPresenceKey, SteamID,
+    StoreOverlayAction, UserOverlayDialog,
 };
 use crate::{app, error::SteamError};
 
-pub fn list() -> Result<Vec<FriendInfo>, SteamError> {
-    list_by(FriendListKind::Friends)
+pub fn get_list() -> Result<Vec<FriendInfo>, SteamError> {
+    get_list_by(FriendListKind::Friends)
 }
 
-pub fn list_by(kind: FriendListKind) -> Result<Vec<FriendInfo>, SteamError> {
+pub fn get_list_by(kind: FriendListKind) -> Result<Vec<FriendInfo>, SteamError> {
     app::with_client(|client| {
         Ok(client
             .friends()
@@ -22,7 +23,7 @@ pub fn get(id: SteamID) -> Result<FriendInfo, SteamError> {
     app::with_client(|client| Ok(friend_info(client.friends().get_friend(id.into()))))
 }
 
-pub fn rich_presence<'a>(
+pub fn get_rich_presence<'a>(
     id: SteamID,
     key: impl Into<RichPresenceKey<'a>>,
 ) -> Result<Option<String>, SteamError> {
@@ -73,7 +74,23 @@ pub fn open_user_overlay(dialog: UserOverlayDialog, user: SteamID) -> Result<(),
     })
 }
 
-pub fn open_invite_dialog(lobby: LobbyId) -> Result<(), SteamError> {
+pub fn open_store(app_id: AppID, action: StoreOverlayAction) -> Result<(), SteamError> {
+    app::with_client(|client| {
+        client
+            .friends()
+            .activate_game_overlay_to_store(app_id.into(), action.into());
+        Ok(())
+    })
+}
+
+pub fn open_web_page(url: &str) -> Result<(), SteamError> {
+    app::with_client(|client| {
+        client.friends().activate_game_overlay_to_web_page(url);
+        Ok(())
+    })
+}
+
+pub fn open_invite_dialog(lobby: LobbyID) -> Result<(), SteamError> {
     app::with_client(|client| {
         client.friends().activate_invite_dialog(lobby.into());
         Ok(())

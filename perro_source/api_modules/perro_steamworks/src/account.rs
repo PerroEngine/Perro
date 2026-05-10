@@ -17,6 +17,6 @@ pub fn get_level() -> Result<u32, SteamError> {
     app::with_client(|client| Ok(client.user().level()))
 }
 
-pub fn logged_on() -> Result<bool, SteamError> {
+pub fn is_logged_on() -> Result<bool, SteamError> {
     app::with_client(|client| Ok(client.user().logged_on()))
 }

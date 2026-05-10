@@ -51,7 +51,7 @@ fn steam_achievement_macros_accept_single_multi_slice_and_vec() {
         Err(steam::SteamError::Disabled)
     );
 
-    let lobby = steam::LobbyId::from_id(1);
+    let lobby = steam::LobbyID::from_id(1);
     assert_eq!(steam_lobby_join!(lobby), Err(steam::SteamError::Disabled));
     assert_eq!(steam_lobby_leave!(lobby), Err(steam::SteamError::Disabled));
     assert_eq!(
@@ -62,5 +62,40 @@ fn steam_achievement_macros_accept_single_multi_slice_and_vec() {
         steam_lobby_chat!(lobby, "hi"),
         Err(steam::SteamError::Disabled)
     );
+    assert_eq!(
+        steam_app_dlc_installed!(steam::DLCID::from_id(1)),
+        Err(steam::SteamError::Disabled)
+    );
+    assert_eq!(steam_app_subscribed!(), Err(steam::SteamError::Disabled));
+    assert_eq!(
+        steam_stat_get_i32!("wins"),
+        Err(steam::SteamError::Disabled)
+    );
+    assert_eq!(
+        steam_stat_set_i32!("wins", 1),
+        Err(steam::SteamError::Disabled)
+    );
+    assert_eq!(steam_stat_store!(), Err(steam::SteamError::Disabled));
+    assert_eq!(
+        steam_cloud_read!("save.bin"),
+        Err(steam::SteamError::Disabled)
+    );
+    assert_eq!(
+        steam_cloud_write!("save.bin", &[1, 2, 3]),
+        Err(steam::SteamError::Disabled)
+    );
+    assert_eq!(
+        steam_workshop_download!(steam::WorkshopFileID::from_id(1), true),
+        Err(steam::SteamError::Disabled)
+    );
+    assert_eq!(
+        steam_p2p_send!(
+            steam::SteamID::from_id(1),
+            steam::networking::SendType::Reliable,
+            &[1, 2, 3]
+        ),
+        Err(steam::SteamError::Disabled)
+    );
+    assert_eq!(steam_p2p_read!(1024), Err(steam::SteamError::Disabled));
     assert_eq!(steam_events!(), Ok(Vec::new()));
 }

@@ -1,5 +1,5 @@
 use crate::types::{
-    LobbyDataKey, LobbyId, LobbyInfo, LobbyJoinability, LobbySearch, LobbyType, SteamID,
+    LobbyDataKey, LobbyID, LobbyInfo, LobbyJoinability, LobbySearch, LobbyType, SteamID,
 };
 use crate::{app, error::SteamError, events};
 
@@ -55,7 +55,7 @@ pub fn request_list(search: LobbySearch<'_>) -> Result<(), SteamError> {
     })
 }
 
-pub fn join(lobby: LobbyId) -> Result<(), SteamError> {
+pub fn join(lobby: LobbyID) -> Result<(), SteamError> {
     app::with_client(|client| {
         client
             .matchmaking()
@@ -66,7 +66,7 @@ pub fn join(lobby: LobbyId) -> Result<(), SteamError> {
     })
 }
 
-pub fn leave(lobby: LobbyId) -> Result<(), SteamError> {
+pub fn leave(lobby: LobbyID) -> Result<(), SteamError> {
     app::with_client(|client| {
         client.matchmaking().leave_lobby(lobby.into());
         Ok(())
@@ -74,7 +74,7 @@ pub fn leave(lobby: LobbyId) -> Result<(), SteamError> {
 }
 
 pub fn set_data<'a>(
-    lobby: LobbyId,
+    lobby: LobbyID,
     key: impl Into<LobbyDataKey<'a>>,
     value: &str,
 ) -> Result<(), SteamError> {
@@ -92,7 +92,7 @@ pub fn set_data<'a>(
 }
 
 pub fn get_data<'a>(
-    lobby: LobbyId,
+    lobby: LobbyID,
     key: impl Into<LobbyDataKey<'a>>,
 ) -> Result<Option<String>, SteamError> {
     app::with_client(|client| {
@@ -101,7 +101,7 @@ pub fn get_data<'a>(
     })
 }
 
-pub fn all_data(lobby: LobbyId) -> Result<Vec<(String, String)>, SteamError> {
+pub fn get_all_data(lobby: LobbyID) -> Result<Vec<(String, String)>, SteamError> {
     app::with_client(|client| {
         let matchmaking = client.matchmaking();
         let lobby = lobby.into();
@@ -116,7 +116,7 @@ pub fn all_data(lobby: LobbyId) -> Result<Vec<(String, String)>, SteamError> {
     })
 }
 
-pub fn members(lobby: LobbyId) -> Result<Vec<SteamID>, SteamError> {
+pub fn get_members(lobby: LobbyID) -> Result<Vec<SteamID>, SteamError> {
     app::with_client(|client| {
         Ok(client
             .matchmaking()
@@ -127,11 +127,11 @@ pub fn members(lobby: LobbyId) -> Result<Vec<SteamID>, SteamError> {
     })
 }
 
-pub fn owner(lobby: LobbyId) -> Result<SteamID, SteamError> {
+pub fn get_owner(lobby: LobbyID) -> Result<SteamID, SteamError> {
     app::with_client(|client| Ok(client.matchmaking().lobby_owner(lobby.into()).into()))
 }
 
-pub fn info(lobby: LobbyId) -> Result<LobbyInfo, SteamError> {
+pub fn get_info(lobby: LobbyID) -> Result<LobbyInfo, SteamError> {
     app::with_client(|client| {
         let matchmaking = client.matchmaking();
         let raw_lobby = lobby.into();
@@ -155,7 +155,7 @@ pub fn info(lobby: LobbyId) -> Result<LobbyInfo, SteamError> {
     })
 }
 
-pub fn set_joinable(lobby: LobbyId, joinable: bool) -> Result<(), SteamError> {
+pub fn set_joinable(lobby: LobbyID, joinable: bool) -> Result<(), SteamError> {
     set_joinability(
         lobby,
         if joinable {
@@ -166,7 +166,7 @@ pub fn set_joinable(lobby: LobbyId, joinable: bool) -> Result<(), SteamError> {
     )
 }
 
-pub fn set_joinability(lobby: LobbyId, joinability: LobbyJoinability) -> Result<(), SteamError> {
+pub fn set_joinability(lobby: LobbyID, joinability: LobbyJoinability) -> Result<(), SteamError> {
     app::with_client(|client| {
         if client
             .matchmaking()
@@ -179,7 +179,7 @@ pub fn set_joinability(lobby: LobbyId, joinability: LobbyJoinability) -> Result<
     })
 }
 
-pub fn send_chat(lobby: LobbyId, message: impl AsRef<[u8]>) -> Result<(), SteamError> {
+pub fn send_chat(lobby: LobbyID, message: impl AsRef<[u8]>) -> Result<(), SteamError> {
     app::with_client(|client| {
         client
             .matchmaking()
@@ -188,7 +188,7 @@ pub fn send_chat(lobby: LobbyId, message: impl AsRef<[u8]>) -> Result<(), SteamE
     })
 }
 
-pub fn read_chat(lobby: LobbyId, chat_id: i32) -> Result<Vec<u8>, SteamError> {
+pub fn get_chat(lobby: LobbyID, chat_id: i32) -> Result<Vec<u8>, SteamError> {
     app::with_client(|client| {
         let mut buffer = vec![0; 4096];
         let data = client

@@ -20,7 +20,7 @@ Status keys:
 | Resource load IDs            | done   | Texture/mesh/audio load calls return IDs immediately and queue backend work. A node can hold the ID before the backend resource is ready. |
 | Save data helpers            | done   | `perro_modules::file` can read assets and write to `user://` or absolute paths.                                                           |
 | Runtime window config API    | done   | `RuntimeWindow::Window()` queues runtime changes to window mode/title/size.                                                               |
-| Steamworks integration       | partial | Project `[steam]` config, runtime init/callback pump, achievements, friends, rich presence, overlay/invites, lobbies, lobby data/chat, and event polling exist through `perro_api::prelude::*`. Networking sockets/P2P, UGC, cloud saves, microtransactions, and workshop are not wrapped yet. See [Steamworks](steamworks.md). |
+| Steamworks integration       | partial | Project `[steam]` config, runtime init/callback pump, achievements, stats, leaderboards, apps/DLC entitlement, friends, rich presence, overlay/invites, lobbies, P2P/networking, server browser helpers, cloud saves, workshop/UGC, input, remote play, screenshots, timeline, utils, and event polling exist through `perro_api::prelude::*`. See [Steamworks](steamworks.md). |
 
 ## 2D
 
