@@ -453,7 +453,7 @@ serde = { version = "1", features = ["derive"] }
 }
 
 #[test]
-fn ensure_source_overrides_adds_steamworks_when_steam_enabled() {
+fn ensure_source_overrides_keeps_steamworks_behind_perro_api_when_steam_enabled() {
     let root = unique_temp_dir("perro_steam_enabled_deps");
     ensure_project_layout(&root).expect("layout");
     ensure_project_scaffold(&root, "Steam Enabled").expect("scaffold");
@@ -479,11 +479,8 @@ app_id = 480
     let scripts_manifest =
         fs::read_to_string(root.join(".perro").join("scripts").join("Cargo.toml"))
             .expect("read scripts manifest");
-    assert!(scripts_manifest.contains("perro_steamworks = \"0.1.0\""));
-    assert!(
-        scripts_manifest.contains("perro_steamworks = { path =")
-            || scripts_manifest.contains("perro_steamworks = {path =")
-    );
+    assert!(scripts_manifest.contains("perro_api = \"0.1.0\""));
+    assert!(!scripts_manifest.contains("\nperro_steamworks = \"0.1.0\""));
 
     fs::remove_dir_all(&root).expect("cleanup");
 }
@@ -532,7 +529,7 @@ app_id = 480
     let scripts_manifest =
         fs::read_to_string(root.join(".perro").join("scripts").join("Cargo.toml"))
             .expect("read scripts manifest");
-    assert!(!scripts_manifest.contains("perro_steamworks = \"0.1.0\""));
+    assert!(!scripts_manifest.contains("\nperro_steamworks = \"0.1.0\""));
 
     fs::remove_dir_all(&root).expect("cleanup");
 }

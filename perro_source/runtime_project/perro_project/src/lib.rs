@@ -2202,13 +2202,6 @@ fn ensure_scripts_manifest_user_deps(
             }
         }
     }
-    if project_steam_enabled(project_root)? {
-        desired.insert(
-            "perro_steamworks".to_string(),
-            Value::String("0.1.0".to_string()),
-        );
-    }
-
     let before_len = scripts_deps_table.len();
     let mut changed = false;
     scripts_deps_table.retain(|name, _| {
@@ -2231,18 +2224,6 @@ fn ensure_scripts_manifest_user_deps(
     let rendered = toml::to_string(&scripts_value)
         .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
     fs::write(scripts_manifest, rendered)
-}
-
-fn project_steam_enabled(project_root: &Path) -> std::io::Result<bool> {
-    let project_toml = project_root.join("project.toml");
-    if !project_toml.exists() {
-        return Ok(false);
-    }
-    let src = fs::read_to_string(&project_toml)?;
-    let config = parse_project_toml(&src).map_err(|err| {
-        std::io::Error::other(format!("failed to parse {}: {err}", project_toml.display()))
-    })?;
-    Ok(config.steam.enabled)
 }
 
 fn ensure_scripts_target_dir_config(path: &Path) -> std::io::Result<()> {

@@ -2,6 +2,7 @@
 
 ## Project Status
 - [Feature Matrix](feature_matrix.md)
+- [Steamworks](steamworks.md)
 
 ## Particles
 - [Particle System Guide](particles.md)

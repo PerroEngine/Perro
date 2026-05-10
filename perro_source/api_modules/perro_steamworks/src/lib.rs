@@ -14,6 +14,16 @@ macro_rules! steam_unlock {
 }
 
 #[macro_export]
+macro_rules! steam_ach_unlock {
+    ($first:expr, $($id:expr),+ $(,)?) => {
+        $crate::achievements::unlock_many([$first, $($id),+])
+    };
+    ($id:expr) => {
+        $crate::achievements::unlock_input($id)
+    };
+}
+
+#[macro_export]
 macro_rules! steam_clear {
     ($id:expr) => {
         $crate::achievements::clear($id)
@@ -21,9 +31,9 @@ macro_rules! steam_clear {
 }
 
 #[macro_export]
-macro_rules! steam_store_stats {
-    () => {
-        $crate::achievements::store()
+macro_rules! steam_ach_clear {
+    ($id:expr) => {
+        $crate::achievements::clear($id)
     };
 }
 
@@ -31,7 +41,7 @@ pub mod prelude {
     pub use crate::SteamError;
     pub use crate::achievements;
     pub use crate::app;
-    pub use crate::{steam_clear, steam_store_stats, steam_unlock};
+    pub use crate::{steam_ach_clear, steam_ach_unlock, steam_clear, steam_unlock};
 }
 
 #[cfg(test)]
@@ -69,7 +79,6 @@ mod tests {
         app::init_from_config(false, None).expect("disabled init");
         assert_eq!(achievements::unlock("ACH_TEST"), Err(SteamError::Disabled));
         assert_eq!(achievements::clear("ACH_TEST"), Err(SteamError::Disabled));
-        assert_eq!(achievements::store(), Err(SteamError::Disabled));
     }
 
     #[test]
@@ -101,7 +110,26 @@ mod tests {
         app::init_from_config(false, None).expect("disabled init");
         assert_eq!(steam_unlock!("ACH_TEST"), Err(SteamError::Disabled));
         assert_eq!(steam_clear!("ACH_TEST"), Err(SteamError::Disabled));
-        assert_eq!(steam_store_stats!(), Err(SteamError::Disabled));
+        assert_eq!(steam_ach_unlock!("ACH_TEST"), Err(SteamError::Disabled));
+        assert_eq!(steam_ach_clear!("ACH_TEST"), Err(SteamError::Disabled));
+    }
+
+    #[test]
+    fn achievement_macros_accept_expressions() {
+        let _guard = test_lock();
+        app::reset_for_tests();
+        app::init_from_config(false, None).expect("disabled init");
+        let id = "ACH_TEST";
+        assert_eq!(steam_ach_unlock!(id), Err(SteamError::Disabled));
+        assert_eq!(
+            steam_ach_clear!(format!("ACH_{suffix}", suffix = "TEST").as_str()),
+            Err(SteamError::Disabled)
+        );
+        assert_eq!(steam_ach_unlock!(&[id]), Err(SteamError::Disabled));
+        assert_eq!(
+            steam_ach_unlock!("ACH_TEST", "ACH_OTHER"),
+            Err(SteamError::Disabled)
+        );
     }
 
     #[test]

@@ -2704,6 +2704,7 @@ dependencies = [
  "perro_runtime_context",
  "perro_scene",
  "perro_scripting",
+ "perro_steamworks",
  "perro_structs",
  "perro_variant",
 ]

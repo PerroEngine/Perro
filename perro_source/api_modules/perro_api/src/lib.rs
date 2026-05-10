@@ -7,6 +7,7 @@ pub use perro_resource_context as resource_context;
 pub use perro_runtime_context as runtime_context;
 pub use perro_scene as scene;
 pub use perro_scripting as scripting;
+pub use perro_steamworks as steam;
 pub use perro_structs as structs;
 pub use perro_variant as variant;
 
@@ -21,5 +22,7 @@ pub mod prelude {
     pub use perro_resource_context::prelude::*;
     pub use perro_scene;
     pub use perro_scripting::prelude::*;
+    pub use perro_steamworks as steam;
+    pub use perro_steamworks::{steam_ach_clear, steam_ach_unlock};
     pub use perro_structs::prelude::*;
 }
