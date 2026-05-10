@@ -1,27 +1,58 @@
+#[cfg(feature = "steamworks-runtime")]
 pub mod account;
+#[cfg(feature = "steamworks-runtime")]
 pub mod achievements;
+#[cfg(feature = "steamworks-runtime")]
 pub mod app;
+#[cfg(feature = "steamworks-runtime")]
 pub mod apps;
+#[cfg(feature = "steamworks-runtime")]
 pub mod auth;
+#[cfg(feature = "steamworks-runtime")]
 pub mod cloud;
+#[cfg(not(feature = "steamworks-runtime"))]
+mod disabled;
 pub mod error;
+#[cfg(feature = "steamworks-runtime")]
 pub mod events;
+#[cfg(feature = "steamworks-runtime")]
 pub mod friends;
+#[cfg(feature = "steamworks-runtime")]
 pub mod input;
+#[cfg(feature = "steamworks-runtime")]
 pub mod leaderboards;
+#[cfg(feature = "steamworks-runtime")]
 pub mod lobbies;
+#[cfg(feature = "steamworks-runtime")]
 pub mod networking;
+#[cfg(feature = "steamworks-runtime")]
 pub mod networking_messages;
+#[cfg(feature = "steamworks-runtime")]
 pub mod networking_sockets;
+#[cfg(feature = "steamworks-runtime")]
 pub mod networking_utils;
+#[cfg(feature = "steamworks-runtime")]
 pub mod remote_play;
+#[cfg(feature = "steamworks-runtime")]
 pub mod screenshots;
+#[cfg(feature = "steamworks-runtime")]
 pub mod servers;
+#[cfg(feature = "steamworks-runtime")]
 pub mod stats;
+#[cfg(feature = "steamworks-runtime")]
 pub mod timeline;
 pub mod types;
+#[cfg(feature = "steamworks-runtime")]
 pub mod utils;
+#[cfg(feature = "steamworks-runtime")]
 pub mod workshop;
+
+#[cfg(not(feature = "steamworks-runtime"))]
+pub use disabled::{
+    account, achievements, app, apps, auth, cloud, events, friends, input, leaderboards, lobbies,
+    networking, networking_messages, networking_sockets, networking_utils, remote_play,
+    screenshots, servers, stats, timeline, utils, workshop,
+};
 
 pub use error::SteamError;
 pub use types::{

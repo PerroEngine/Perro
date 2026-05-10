@@ -9,6 +9,7 @@ pub use perro_scene as scene;
 pub use perro_scripting as scripting;
 pub use perro_steamworks as steam;
 pub use perro_structs as structs;
+pub use perro_ui as ui;
 pub use perro_variant as variant;
 
 #[allow(unused_imports)]
@@ -33,4 +34,5 @@ pub mod prelude {
         steam_workshop_download, steam_workshop_subscribe,
     };
     pub use perro_structs::prelude::*;
+    pub use perro_ui::*;
 }

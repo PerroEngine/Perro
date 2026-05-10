@@ -8,6 +8,7 @@ use crate::{
     workspace_root,
 };
 use perro_compiler::{ScriptsBuildProfile, compile_scripts_with_profile};
+use perro_project::load_project_toml;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -25,6 +26,8 @@ pub(crate) fn mem_profile_command(args: &[String], cwd: &Path) -> Result<(), Str
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
     let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
+    let project_cfg = load_project_toml(&project_dir)
+        .map_err(|err| format!("failed to load project.toml: {err}"))?;
     let profiling_dir = ensure_profiling_output_dir(&project_dir)?;
     let csv_path = profiling_dir.join(
         csv_name
@@ -64,7 +67,11 @@ pub(crate) fn mem_profile_command(args: &[String], cwd: &Path) -> Result<(), Str
         build_cmd.arg("--release");
     }
     build_cmd.current_dir(&dev_runner_dir);
-    build_cmd.arg("--features").arg("mem_profile");
+    let mut features = vec!["mem_profile"];
+    if project_cfg.steam.enabled {
+        features.push("steamworks");
+    }
+    build_cmd.arg("--features").arg(features.join(","));
     let build_status = build_cmd.status().map_err(|err| {
         format!(
             "failed to build project dev runner from {}: {err}",
@@ -127,6 +134,8 @@ pub(crate) fn flamegraph_command(args: &[String], cwd: &Path) -> Result<(), Stri
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
     let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
+    let project_cfg = load_project_toml(&project_dir)
+        .map_err(|err| format!("failed to load project.toml: {err}"))?;
     let profiling_dir = ensure_profiling_output_dir(&project_dir)?;
     let flamegraph_output_path = profiling_dir.join("flamegraph.svg");
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
@@ -157,8 +166,15 @@ pub(crate) fn flamegraph_command(args: &[String], cwd: &Path) -> Result<(), Stri
     if root {
         cmd.arg("--root");
     }
+    let mut features = Vec::new();
     if profile {
-        cmd.arg("--features").arg("profile");
+        features.push("profile");
+    }
+    if project_cfg.steam.enabled {
+        features.push("steamworks");
+    }
+    if !features.is_empty() {
+        cmd.arg("--features").arg(features.join(","));
     }
     cmd.arg("--")
         .arg("--path")

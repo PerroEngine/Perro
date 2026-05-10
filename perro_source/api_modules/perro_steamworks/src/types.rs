@@ -14,12 +14,14 @@ impl SteamID {
     }
 }
 
+#[cfg(feature = "steamworks-runtime")]
 impl From<steamworks::SteamId> for SteamID {
     fn from(id: steamworks::SteamId) -> Self {
         Self(id.raw())
     }
 }
 
+#[cfg(feature = "steamworks-runtime")]
 impl From<SteamID> for steamworks::SteamId {
     fn from(id: SteamID) -> Self {
         steamworks::SteamId::from_raw(id.0)
@@ -39,12 +41,14 @@ impl AppID {
     }
 }
 
+#[cfg(feature = "steamworks-runtime")]
 impl From<steamworks::AppId> for AppID {
     fn from(id: steamworks::AppId) -> Self {
         Self(id.0)
     }
 }
 
+#[cfg(feature = "steamworks-runtime")]
 impl From<AppID> for steamworks::AppId {
     fn from(id: AppID) -> Self {
         steamworks::AppId(id.0)
@@ -70,6 +74,7 @@ impl From<DLCID> for AppID {
     }
 }
 
+#[cfg(feature = "steamworks-runtime")]
 impl From<DLCID> for steamworks::AppId {
     fn from(id: DLCID) -> Self {
         steamworks::AppId(id.0)
@@ -89,12 +94,14 @@ impl LobbyID {
     }
 }
 
+#[cfg(feature = "steamworks-runtime")]
 impl From<steamworks::LobbyId> for LobbyID {
     fn from(id: steamworks::LobbyId) -> Self {
         Self(id.raw())
     }
 }
 
+#[cfg(feature = "steamworks-runtime")]
 impl From<LobbyID> for steamworks::LobbyId {
     fn from(id: LobbyID) -> Self {
         steamworks::LobbyId::from_raw(id.0)
@@ -114,21 +121,32 @@ impl WorkshopFileID {
     }
 }
 
+#[cfg(feature = "steamworks-runtime")]
 impl From<steamworks::PublishedFileId> for WorkshopFileID {
     fn from(id: steamworks::PublishedFileId) -> Self {
         Self(id.0)
     }
 }
 
+#[cfg(feature = "steamworks-runtime")]
 impl From<WorkshopFileID> for steamworks::PublishedFileId {
     fn from(id: WorkshopFileID) -> Self {
         steamworks::PublishedFileId(id.0)
     }
 }
 
+#[cfg(feature = "steamworks-runtime")]
 pub type LeaderboardID = steamworks::Leaderboard;
+#[cfg(not(feature = "steamworks-runtime"))]
+pub type LeaderboardID = u64;
+#[cfg(feature = "steamworks-runtime")]
 pub type SocketID = steamworks::networking_sockets::ListenSocket;
+#[cfg(not(feature = "steamworks-runtime"))]
+pub type SocketID = u64;
+#[cfg(feature = "steamworks-runtime")]
 pub type ConnectionID = steamworks::networking_sockets::NetConnection;
+#[cfg(not(feature = "steamworks-runtime"))]
+pub type ConnectionID = u64;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FriendState {
@@ -142,6 +160,7 @@ pub enum FriendState {
     LookingToTrade,
 }
 
+#[cfg(feature = "steamworks-runtime")]
 impl From<steamworks::FriendState> for FriendState {
     fn from(state: steamworks::FriendState) -> Self {
         match state {
@@ -166,6 +185,7 @@ pub struct FriendGame {
     pub lobby: LobbyID,
 }
 
+#[cfg(feature = "steamworks-runtime")]
 impl From<steamworks::FriendGame> for FriendGame {
     fn from(game: steamworks::FriendGame) -> Self {
         Self {
@@ -202,6 +222,7 @@ pub enum FriendListKind {
     ChatMembers,
 }
 
+#[cfg(feature = "steamworks-runtime")]
 impl From<FriendListKind> for steamworks::FriendFlags {
     fn from(kind: FriendListKind) -> Self {
         match kind {
@@ -285,6 +306,7 @@ pub enum StoreOverlayAction {
     AddToCartAndShow,
 }
 
+#[cfg(feature = "steamworks-runtime")]
 impl From<StoreOverlayAction> for steamworks::OverlayToStoreFlag {
     fn from(action: StoreOverlayAction) -> Self {
         match action {
@@ -394,6 +416,7 @@ impl LobbyJoinability {
     }
 }
 
+#[cfg(feature = "steamworks-runtime")]
 impl From<LobbyType> for steamworks::LobbyType {
     fn from(kind: LobbyType) -> Self {
         match kind {
@@ -413,6 +436,7 @@ pub enum LobbyDistance {
     Worldwide,
 }
 
+#[cfg(feature = "steamworks-runtime")]
 impl From<LobbyDistance> for steamworks::DistanceFilter {
     fn from(distance: LobbyDistance) -> Self {
         match distance {
@@ -434,6 +458,7 @@ pub enum LobbyStringFilterKind {
     NotEqual,
 }
 
+#[cfg(feature = "steamworks-runtime")]
 impl From<LobbyStringFilterKind> for steamworks::StringFilterKind {
     fn from(kind: LobbyStringFilterKind) -> Self {
         match kind {
@@ -461,6 +486,7 @@ pub enum LobbyNumberComparison {
     LessThanEqualTo,
 }
 
+#[cfg(feature = "steamworks-runtime")]
 impl From<LobbyNumberComparison> for steamworks::ComparisonFilter {
     fn from(comparison: LobbyNumberComparison) -> Self {
         match comparison {
@@ -601,7 +627,7 @@ pub enum SteamEvent {
     },
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "steamworks-runtime"))]
 mod tests {
     use super::*;
 

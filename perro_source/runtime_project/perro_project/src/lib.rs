@@ -493,6 +493,10 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
         &default_static_animations_rs(),
     )?;
     write_if_missing(
+        project_static_src.join("animation_trees.rs"),
+        &default_static_animation_trees_rs(),
+    )?;
+    write_if_missing(
         project_static_src.join("textures.rs"),
         &default_static_textures_rs(),
     )?;
@@ -515,6 +519,10 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
     write_if_missing(
         project_static_src.join("audios.rs"),
         &default_static_audios_rs(),
+    )?;
+    write_if_missing(
+        project_static_src.join("localizations.rs"),
+        &default_static_localizations_rs(),
     )?;
     write_if_missing(project_embedded.join("assets.perro"), "")?;
     write_if_missing(scripts_src.join("lib.rs"), &default_scripts_lib_rs())?;
@@ -1448,6 +1456,7 @@ scripts = {{ path = "../scripts" }}
 
 [features]
 profile = ["perro_app/profile"]
+steamworks = ["perro_app/steamworks", "perro_api/steamworks", "perro_runtime/steamworks"]
 
 [target.'cfg(target_os = "windows")'.build-dependencies]
 winresource = "0.1.20"
@@ -1650,6 +1659,9 @@ crate-type = ["cdylib", "rlib"]
 perro_api = "0.1.0"
 perro_runtime = "0.1.0"
 
+[features]
+steamworks = ["perro_api/steamworks", "perro_runtime/steamworks"]
+
 [profile.dev]
 opt-level = 0
 incremental = true
@@ -1704,6 +1716,7 @@ perro_project = "0.1.0"
 profile = ["perro_app/profile"]
 ui_profile = ["perro_app/ui_profile"]
 mem_profile = ["perro_app/mem_profile"]
+steamworks = ["perro_app/steamworks"]
 
 [profile.dev]
 opt-level = 1
@@ -1891,6 +1904,7 @@ fn project_root() -> std::path::PathBuf {
               tileset_lookup: static_assets::tilesets::lookup_tileset,
               particle_lookup: static_assets::particles::lookup_particle,
               animation_lookup: static_assets::animations::lookup_animation,
+              animation_tree_lookup: static_assets::animation_trees::lookup_animation_tree,
               mesh_lookup: static_assets::meshes::lookup_mesh,
               collision_trimesh_lookup: static_assets::collision_trimeshes::lookup_collision_trimesh,
               skeleton_lookup: static_assets::skeletons::lookup_skeleton,
@@ -1907,7 +1921,7 @@ fn project_root() -> std::path::PathBuf {
 }
 
 fn default_static_mod_rs() -> String {
-    "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod ui_styles;\npub mod tilesets;\npub mod particles;\npub mod animations;\npub mod meshes;\npub mod collision_trimeshes;\npub mod skeletons;\npub mod textures;\npub mod shaders;\npub mod audios;\npub mod localizations;\n".to_string()
+    "#![allow(unused_imports)]\n\npub mod scenes;\npub mod materials;\npub mod ui_styles;\npub mod tilesets;\npub mod particles;\npub mod animations;\npub mod animation_trees;\npub mod meshes;\npub mod collision_trimeshes;\npub mod skeletons;\npub mod textures;\npub mod shaders;\npub mod audios;\npub mod localizations;\n".to_string()
 }
 
 fn default_static_scenes_rs() -> String {
@@ -1947,12 +1961,47 @@ pub const fn lookup_material(_path_hash: u64) -> &'static Material3D {
 fn default_static_ui_styles_rs() -> String {
     r#"#![allow(unused_imports)]
 
-use perro_ui::UiStyle;
+use perro_api::ui::UiStyle;
 
 const EMPTY_UI_STYLE: UiStyle = UiStyle::panel();
 
 pub const fn lookup_ui_style(_path_hash: u64) -> &'static UiStyle {
     &EMPTY_UI_STYLE
+}
+"#
+    .to_string()
+}
+
+fn default_static_animation_trees_rs() -> String {
+    r#"#![allow(unused_imports)]
+
+use perro_animation::AnimationTreeAsset;
+use std::borrow::Cow;
+
+const EMPTY_SLOTS: &[perro_animation::AnimationTreeSlot] = &[];
+const EMPTY_NODES: &[perro_animation::AnimationTreeGraphNode] = &[];
+static EMPTY_ANIMATION_TREE: AnimationTreeAsset = AnimationTreeAsset {
+    name: Cow::Borrowed(""),
+    slots: Cow::Borrowed(EMPTY_SLOTS),
+    nodes: Cow::Borrowed(EMPTY_NODES),
+    output: Cow::Borrowed(""),
+};
+
+pub const fn lookup_animation_tree(_path_hash: u64) -> &'static AnimationTreeAsset {
+    &EMPTY_ANIMATION_TREE
+}
+"#
+    .to_string()
+}
+
+fn default_static_localizations_rs() -> String {
+    r#"#![allow(unused_imports)]
+
+pub const fn lookup_localized_string(
+    _locale: perro_api::resource_context::sub_apis::Locale,
+    _key_hash: u64,
+) -> &'static str {
+    ""
 }
 "#
     .to_string()
@@ -2130,6 +2179,7 @@ pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
     ensure_project_manifest_icon_build_support(&project_manifest)?;
     ensure_project_manifest_features(&project_manifest)?;
     ensure_scripts_manifest_deps(&scripts_manifest)?;
+    ensure_scripts_manifest_features(&scripts_manifest)?;
     ensure_scripts_manifest_user_deps(project_root, &scripts_manifest)?;
     ensure_dev_runner_source_sync(&dev_runner_manifest, &dev_runner_main)?;
     ensure_dev_runner_manifest_deps(&dev_runner_manifest)?;
@@ -2325,6 +2375,17 @@ fn ensure_project_manifest_features(path: &Path) -> std::io::Result<()> {
         );
         changed = true;
     }
+    if !features_table.contains_key("steamworks") {
+        features_table.insert(
+            "steamworks".to_string(),
+            Value::Array(vec![
+                Value::String("perro_app/steamworks".to_string()),
+                Value::String("perro_api/steamworks".to_string()),
+                Value::String("perro_runtime/steamworks".to_string()),
+            ]),
+        );
+        changed = true;
+    }
 
     if !changed {
         return Ok(());
@@ -2464,6 +2525,42 @@ fn ensure_scripts_manifest_deps(path: &Path) -> std::io::Result<()> {
     fs::write(path, rendered)
 }
 
+fn ensure_scripts_manifest_features(path: &Path) -> std::io::Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let src = fs::read_to_string(path)?;
+    let Ok(mut value) = src.parse::<Value>() else {
+        return Ok(());
+    };
+    let Some(root) = value.as_table_mut() else {
+        return Ok(());
+    };
+
+    let features = root
+        .entry("features")
+        .or_insert_with(|| Value::Table(Default::default()));
+    let Some(features_table) = features.as_table_mut() else {
+        return Ok(());
+    };
+
+    if features_table.contains_key("steamworks") {
+        return Ok(());
+    }
+    features_table.insert(
+        "steamworks".to_string(),
+        Value::Array(vec![
+            Value::String("perro_api/steamworks".to_string()),
+            Value::String("perro_runtime/steamworks".to_string()),
+        ]),
+    );
+
+    let rendered = toml::to_string(&value)
+        .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
+    fs::write(path, rendered)
+}
+
 fn ensure_dev_runner_manifest_deps(path: &Path) -> std::io::Result<()> {
     if !path.exists() {
         return Ok(());
@@ -2547,6 +2644,13 @@ fn ensure_dev_runner_manifest_features(path: &Path) -> std::io::Result<()> {
         features_table.insert(
             "mem_profile".to_string(),
             Value::Array(vec![Value::String("perro_app/mem_profile".to_string())]),
+        );
+        changed = true;
+    }
+    if !features_table.contains_key("steamworks") {
+        features_table.insert(
+            "steamworks".to_string(),
+            Value::Array(vec![Value::String("perro_app/steamworks".to_string())]),
         );
         changed = true;
     }

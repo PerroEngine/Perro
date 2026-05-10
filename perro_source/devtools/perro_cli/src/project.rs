@@ -12,7 +12,7 @@ use perro_compiler::{
     ProjectBuildOptions, ScriptsBuildProfile, compile_dlc_bundle, compile_project_bundle,
     compile_scripts_with_profile, sync_scripts,
 };
-use perro_project::ensure_source_overrides;
+use perro_project::{ensure_source_overrides, load_project_toml};
 use std::env;
 use std::fs;
 use std::io::{self, IsTerminal, Write};
@@ -193,6 +193,8 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
     let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
+    let project_cfg = load_project_toml(&project_dir)
+        .map_err(|err| format!("failed to load project.toml: {err}"))?;
     let profiling_dir = ensure_profiling_output_dir(&project_dir)?;
     let csv_profile_path = csv_profile_name.as_ref().map(|name| {
         profiling_dir.join(
@@ -240,6 +242,9 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     }
     if ui_profile {
         features.push("ui_profile");
+    }
+    if project_cfg.steam.enabled {
+        features.push("steamworks");
     }
     if !features.is_empty() {
         build_cmd.arg("--features").arg(features.join(","));

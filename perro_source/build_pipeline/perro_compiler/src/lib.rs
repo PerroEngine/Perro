@@ -121,6 +121,8 @@ pub fn compile_scripts_with_profile(
     profile: ScriptsBuildProfile,
 ) -> Result<Vec<String>, CompilerError> {
     ensure_source_overrides(project_root)?;
+    let cfg = load_project_toml(project_root)
+        .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
     let copied = sync_scripts(project_root)?;
     let scripts_crate = project_root.join(".perro").join("scripts");
     let target_dir = project_root.join("target");
@@ -133,12 +135,13 @@ pub fn compile_scripts_with_profile(
         cmd.arg("--release");
         apply_fast_release_dylib_profile(&mut cmd);
     }
+    add_steamworks_feature(&mut cmd, cfg.steam.enabled);
     let status = cmd.status()?;
 
     if !status.success() {
         return Err(CompilerError::CargoFailed(status.code().unwrap_or(-1)));
     }
-    compile_all_dlc_scripts_with_profile(project_root, profile)?;
+    compile_all_dlc_scripts_with_profile(project_root, profile, cfg.steam.enabled)?;
 
     Ok(copied)
 }
@@ -146,6 +149,7 @@ pub fn compile_scripts_with_profile(
 fn compile_all_dlc_scripts_with_profile(
     project_root: &Path,
     profile: ScriptsBuildProfile,
+    steam_enabled: bool,
 ) -> Result<(), CompilerError> {
     let dlcs_root = project_root.join("dlcs");
     if !dlcs_root.exists() {
@@ -173,7 +177,7 @@ fn compile_all_dlc_scripts_with_profile(
         write_dlc_scripts_manifest(project_root, &crate_name, &scripts_crate)?;
         write_string_if_changed(&scripts_src.join("lib.rs"), &default_scripts_lib_rs())?;
         let _ = sync_dlc_scripts(project_root, dlc_name)?;
-        compile_scripts_crate(project_root, &scripts_crate, profile)?;
+        compile_scripts_crate(project_root, &scripts_crate, profile, steam_enabled)?;
         let dylib = resolve_compiled_dylib(
             project_root,
             &dylib_name_for_crate(&crate_name),
@@ -188,6 +192,7 @@ fn compile_scripts_crate(
     project_root: &Path,
     scripts_crate: &Path,
     profile: ScriptsBuildProfile,
+    steam_enabled: bool,
 ) -> Result<(), CompilerError> {
     let target_dir = project_root.join("target");
     let mut cmd = Command::new("cargo");
@@ -198,6 +203,7 @@ fn compile_scripts_crate(
         cmd.arg("--release");
         apply_fast_release_dylib_profile(&mut cmd);
     }
+    add_steamworks_feature(&mut cmd, steam_enabled);
     let status = cmd.status()?;
     if !status.success() {
         return Err(CompilerError::CargoFailed(status.code().unwrap_or(-1)));
@@ -216,6 +222,9 @@ fn compile_dlc_package_crate(
         .env("CARGO_TARGET_DIR", target_dir)
         .current_dir(scripts_crate);
     apply_dlc_release_dylib_profile(&mut cmd);
+    let cfg = load_project_toml(project_root)
+        .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
+    add_steamworks_feature(&mut cmd, cfg.steam.enabled);
     let status = cmd.status()?;
     if !status.success() {
         return Err(CompilerError::CargoFailed(status.code().unwrap_or(-1)));
@@ -234,6 +243,12 @@ fn apply_dlc_release_dylib_profile(cmd: &mut Command) {
         .env("CARGO_PROFILE_RELEASE_CODEGEN_UNITS", "1")
         .env("CARGO_PROFILE_RELEASE_PANIC", "abort")
         .env("CARGO_PROFILE_RELEASE_INCREMENTAL", "false");
+}
+
+fn add_steamworks_feature(cmd: &mut Command, steam_enabled: bool) {
+    if steam_enabled {
+        cmd.arg("--features").arg("steamworks");
+    }
 }
 
 fn write_dlc_scripts_manifest(
@@ -256,7 +271,7 @@ fn write_dlc_scripts_manifest(
             .join("perro_runtime"),
     );
     let mut manifest = format!(
-        "[workspace]\n\n[package]\nname = \"{crate_name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\ncrate-type = [\"cdylib\", \"rlib\"]\n\n[dependencies]\nperro_api = {{ path = \"{perro_api_path}\" }}\nperro_runtime = {{ path = \"{perro_runtime_path}\" }}\n"
+        "[workspace]\n\n[package]\nname = \"{crate_name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\ncrate-type = [\"cdylib\", \"rlib\"]\n\n[dependencies]\nperro_api = {{ path = \"{perro_api_path}\" }}\nperro_runtime = {{ path = \"{perro_runtime_path}\" }}\n\n[features]\nsteamworks = [\"perro_api/steamworks\", \"perro_runtime/steamworks\"]\n"
     );
     let extra_deps = read_extra_script_deps(project_root)?;
     if !extra_deps.is_empty() {
@@ -1109,7 +1124,7 @@ pub fn compile_project_bundle(
         .map_err(|err| CompilerError::SceneParse(format!("static mod generation failed: {err}")))?;
     generate_embedded_main(project_root)?;
     generate_perro_assets(project_root)?;
-    build_project_crate(project_root, options)?;
+    build_project_crate(project_root, options, cfg.steam.enabled)?;
     Ok(())
 }
 
@@ -1134,6 +1149,7 @@ fn reset_embedded_dir(project_root: &Path) -> Result<(), CompilerError> {
 fn build_project_crate(
     project_root: &Path,
     options: ProjectBuildOptions,
+    steam_enabled: bool,
 ) -> Result<(), CompilerError> {
     let project_crate = project_root.join(".perro").join("project");
     let target_dir = project_root.join("target");
@@ -1148,8 +1164,15 @@ fn build_project_crate(
             append_rustflag(env::var_os("RUSTFLAGS"), "--cfg perro_no_console"),
         );
     }
+    let mut features = Vec::new();
     if options.profile {
-        cmd.arg("--features").arg("profile");
+        features.push("profile");
+    }
+    if steam_enabled {
+        features.push("steamworks");
+    }
+    if !features.is_empty() {
+        cmd.arg("--features").arg(features.join(","));
     }
     let status = cmd.status()?;
 
@@ -1371,6 +1394,7 @@ fn generate_embedded_main(project_root: &Path) -> Result<(), CompilerError> {
         "perro_animation = \"0.1.0\"",
     )?;
     ensure_project_dependency_line(project_root, "perro_structs", "perro_structs = \"0.1.0\"")?;
+    perro_project::ensure_source_overrides(project_root)?;
 
     let embedded_block = format!(
         "let root = project_root();\n\
@@ -1419,6 +1443,7 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         localization_lookup: static_assets::localizations::lookup_localized_string,\n\
         material_lookup: static_assets::materials::lookup_material,\n\
         ui_style_lookup: static_assets::ui_styles::lookup_ui_style,\n\
+        tileset_lookup: static_assets::tilesets::lookup_tileset,\n\
         particle_lookup: static_assets::particles::lookup_particle,\n\
         animation_lookup: static_assets::animations::lookup_animation,\n\
         animation_tree_lookup: static_assets::animation_trees::lookup_animation_tree,\n\

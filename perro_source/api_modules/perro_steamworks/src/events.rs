@@ -261,9 +261,16 @@ pub(crate) fn push_lobby_join(target: LobbyID, result: Result<steamworks::LobbyI
 mod tests {
     use super::*;
     use crate::types::SteamID;
+    use std::sync::{Mutex, OnceLock};
+
+    fn test_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
 
     #[test]
     fn queue_drains_in_order() {
+        let _guard = test_lock();
         clear().expect("clear");
         push(SteamEvent::OverlayChanged { active: true });
         push(SteamEvent::PersonaChanged {
@@ -285,6 +292,7 @@ mod tests {
 
     #[test]
     fn clear_removes_events() {
+        let _guard = test_lock();
         push(SteamEvent::OverlayChanged { active: false });
         clear().expect("clear");
         assert_eq!(drain(), Ok(Vec::new()));

@@ -4,4 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-steamworks = "0.13.1"
+steamworks = { version = "0.13.1", optional = true }
+
+[features]
+default = []
+steamworks-runtime = ["dep:steamworks"]
