@@ -734,12 +734,12 @@ mod tests {
             .expect("ik target node");
         match &target.node.data {
             SceneNodeData::IKTarget3D(ik) => {
-                assert_eq!(ik.bone_index, 5);
-                assert_eq!(ik.chain_length, 3);
-                assert_eq!(ik.iterations, 12);
-                assert_eq!(ik.tolerance, 0.05);
-                assert_eq!(ik.weight, 0.75);
-                assert!(!ik.match_rotation);
+                assert_eq!(ik.params.bone_index, 5);
+                assert_eq!(ik.params.chain_length, 3);
+                assert_eq!(ik.params.iterations, 12);
+                assert_eq!(ik.params.tolerance, 0.05);
+                assert_eq!(ik.params.weight, 0.75);
+                assert!(!ik.params.match_rotation);
             }
             other => panic!("expected IKTarget3D node, got {other:?}"),
         }

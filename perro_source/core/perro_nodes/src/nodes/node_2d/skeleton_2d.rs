@@ -1,6 +1,6 @@
 use crate::node_2d::Node2D;
 use perro_ids::NodeID;
-use perro_structs::{IKTargetSolver, Transform2D};
+use perro_structs::{IKTargetParams, Transform2D};
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
@@ -99,14 +99,7 @@ impl DerefMut for BoneAttachment2D {
 #[derive(Clone, Debug)]
 pub struct IKTarget2D {
     pub base: Node2D,
-    pub skeleton: NodeID,
-    pub bone_index: i32,
-    pub chain_length: u32,
-    pub iterations: u32,
-    pub tolerance: f32,
-    pub weight: f32,
-    pub match_rotation: bool,
-    pub solver: IKTargetSolver,
+    pub params: IKTargetParams,
 }
 
 impl Default for IKTarget2D {
@@ -119,14 +112,7 @@ impl IKTarget2D {
     pub const fn new() -> Self {
         Self {
             base: Node2D::new(),
-            skeleton: NodeID::nil(),
-            bone_index: -1,
-            chain_length: 2,
-            iterations: 8,
-            tolerance: 0.01,
-            weight: 1.0,
-            match_rotation: true,
-            solver: IKTargetSolver::FABRIK,
+            params: IKTargetParams::new(),
         }
     }
 }

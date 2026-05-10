@@ -14,14 +14,14 @@ where
 {
     let Some(target) = with_base_node!(ctx, IKTarget2D, id, |node| {
         (
-            node.skeleton,
-            node.bone_index,
-            node.chain_length,
-            node.iterations,
-            node.tolerance,
-            node.weight,
-            node.match_rotation,
-            node.solver,
+            node.params.skeleton,
+            node.params.bone_index,
+            node.params.chain_length,
+            node.params.iterations,
+            node.params.tolerance,
+            node.params.weight,
+            node.params.match_rotation,
+            node.params.solver,
         )
     }) else {
         return;

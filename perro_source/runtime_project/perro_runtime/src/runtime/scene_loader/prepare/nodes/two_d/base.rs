@@ -157,37 +157,37 @@ fn apply_ik_target_2d_fields(node: &mut IKTarget2D, fields: &[SceneObjectField])
         match resolve_node_field("IKTarget2D", name) {
             Some(NodeField::IKTarget2D(IKTarget2DField::BoneIndex)) => {
                 if let Some(v) = as_i32(value) {
-                    node.bone_index = v;
+                    node.params.bone_index = v;
                 }
             }
             Some(NodeField::IKTarget2D(IKTarget2DField::ChainLength)) => {
                 if let Some(v) = as_i32(value) {
-                    node.chain_length = v.max(0) as u32;
+                    node.params.chain_length = v.max(0) as u32;
                 }
             }
             Some(NodeField::IKTarget2D(IKTarget2DField::Iterations)) => {
                 if let Some(v) = as_i32(value) {
-                    node.iterations = v.max(0) as u32;
+                    node.params.iterations = v.max(0) as u32;
                 }
             }
             Some(NodeField::IKTarget2D(IKTarget2DField::Tolerance)) => {
                 if let Some(v) = value.as_f32() {
-                    node.tolerance = v.max(0.0);
+                    node.params.tolerance = v.max(0.0);
                 }
             }
             Some(NodeField::IKTarget2D(IKTarget2DField::Weight)) => {
                 if let Some(v) = value.as_f32() {
-                    node.weight = v.clamp(0.0, 1.0);
+                    node.params.weight = v.clamp(0.0, 1.0);
                 }
             }
             Some(NodeField::IKTarget2D(IKTarget2DField::MatchRotation)) => {
                 if let Some(v) = value.as_bool() {
-                    node.match_rotation = v;
+                    node.params.match_rotation = v;
                 }
             }
             Some(NodeField::IKTarget2D(IKTarget2DField::Solver)) => {
                 if let Some(v) = as_ik_target_2d_solver(value) {
-                    node.solver = v;
+                    node.params.solver = v;
                 }
             }
             _ => {}

@@ -32,7 +32,7 @@ Status keys:
 | 2D physics bodies       | done | Static, rigid, area, collision shapes, layers/masks, joints, raycast, shape cast, query filters, contact data, and area/body signals exist. See [Physics Module](scripting/contexts/runtime_modules/physics.md). |
 | Draw2D transient shapes | done | Circle/ring/rect, lines, polylines, polygon outlines, paths, and transient sprites exist.                                    |
 | `AnimatedSprite2D`      | done    | Sprite-sheet playback from normal texture paths plus named strip/grid animation definitions.                                     |
-| Tile maps               | partial | `TileMap2D` plus `.ptileset` runtime/static path exists: one texture atlas, tile ids, empty tile `-1`, draw extraction, merged runtime 2D collision bake for `collision = true` auto tiles, and explicit rect/circle/triangle/polygon collision shapes. Pre-baked static collision chunks remain. See [TileMap2D](scripting/tilemap.md) and [`.ptileset`](resources/ptileset.md). |
+| Tile maps               | done | `TileMap2D` plus `.ptileset` runtime/static path exists: one texture atlas, tile ids, empty tile `-1`, draw extraction, merged runtime 2D collision bake for `collision = true` auto tiles, and explicit rect/circle/triangle/polygon collision shapes. Static builds pack `.ptileset` into binary `PTSET` bytes and expose `lookup_tileset(hash) -> &'static [u8]`; runtime static mode decodes those bytes instead of parsing text. See [TileMap2D](scripting/tilemap.md) and [`.ptileset`](resources/ptileset.md). |
 | 2D skeleton nodes       | done    | `Skeleton2D` owns `Vec<Bone2D>` data loaded from `.pskel2d`; attachment, IK target, physics chain, and bone collider nodes mirror the 3D rig workflow. |
 | 2D particles            | done    | `ParticleEmitter2D` uses `.ppart` profiles; `z` fields are ignored.                                                              |
 | 2D lights               | done | `AmbientLight2D`, `RayLight2D`, `PointLight2D`, and `SpotLight2D` render unshadowed additive 2D lights. Shadows remain future work.   |
@@ -78,6 +78,5 @@ Status keys:
 
 ## Planned Work Packets
 
-1. Static tilemap collision chunks for fixed scene `TileMap2D` data.
-2. Demo hubs, 3D LOD controls, and material docs.
-3. Joint polish: optional limits/motors/springs if needed.
+1. Demo hubs, 3D LOD controls, and material docs.
+2. Joint polish: optional limits/motors/springs if needed.

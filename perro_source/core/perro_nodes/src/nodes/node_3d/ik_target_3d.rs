@@ -1,6 +1,5 @@
 use crate::node_3d::Node3D;
-use perro_ids::NodeID;
-use perro_structs::IKTargetSolver;
+use perro_structs::IKTargetParams;
 use std::ops::{Deref, DerefMut};
 
 impl Deref for IKTarget3D {
@@ -19,14 +18,7 @@ impl DerefMut for IKTarget3D {
 #[derive(Clone, Debug)]
 pub struct IKTarget3D {
     pub base: Node3D,
-    pub skeleton: NodeID,
-    pub bone_index: i32,
-    pub chain_length: u32,
-    pub iterations: u32,
-    pub tolerance: f32,
-    pub weight: f32,
-    pub match_rotation: bool,
-    pub solver: IKTargetSolver,
+    pub params: IKTargetParams,
 }
 
 impl Default for IKTarget3D {
@@ -39,14 +31,7 @@ impl IKTarget3D {
     pub const fn new() -> Self {
         Self {
             base: Node3D::new(),
-            skeleton: NodeID::nil(),
-            bone_index: -1,
-            chain_length: 2,
-            iterations: 8,
-            tolerance: 0.01,
-            weight: 1.0,
-            match_rotation: true,
-            solver: IKTargetSolver::FABRIK,
+            params: IKTargetParams::new(),
         }
     }
 }

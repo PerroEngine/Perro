@@ -183,37 +183,37 @@ fn apply_ik_target_3d_fields(node: &mut IKTarget3D, fields: &[SceneObjectField])
         match resolve_node_field("IKTarget3D", name) {
             Some(NodeField::IKTarget3D(IKTarget3DField::BoneIndex)) => {
                 if let Some(v) = as_i32(value) {
-                    node.bone_index = v;
+                    node.params.bone_index = v;
                 }
             }
             Some(NodeField::IKTarget3D(IKTarget3DField::ChainLength)) => {
                 if let Some(v) = as_i32(value) {
-                    node.chain_length = v.max(0) as u32;
+                    node.params.chain_length = v.max(0) as u32;
                 }
             }
             Some(NodeField::IKTarget3D(IKTarget3DField::Iterations)) => {
                 if let Some(v) = as_i32(value) {
-                    node.iterations = v.max(0) as u32;
+                    node.params.iterations = v.max(0) as u32;
                 }
             }
             Some(NodeField::IKTarget3D(IKTarget3DField::Tolerance)) => {
                 if let Some(v) = as_f32(value) {
-                    node.tolerance = v.max(0.0);
+                    node.params.tolerance = v.max(0.0);
                 }
             }
             Some(NodeField::IKTarget3D(IKTarget3DField::Weight)) => {
                 if let Some(v) = as_f32(value) {
-                    node.weight = v.clamp(0.0, 1.0);
+                    node.params.weight = v.clamp(0.0, 1.0);
                 }
             }
             Some(NodeField::IKTarget3D(IKTarget3DField::MatchRotation)) => {
                 if let Some(v) = as_bool(value) {
-                    node.match_rotation = v;
+                    node.params.match_rotation = v;
                 }
             }
             Some(NodeField::IKTarget3D(IKTarget3DField::Solver)) => {
                 if let Some(v) = as_ik_target_3d_solver(value) {
-                    node.solver = v;
+                    node.params.solver = v;
                 }
             }
             _ => {}

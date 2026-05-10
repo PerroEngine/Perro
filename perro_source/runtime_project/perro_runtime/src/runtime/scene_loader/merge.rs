@@ -306,8 +306,8 @@ pub(super) fn merge_prepared_scene(
             .ok_or_else(|| format!("ik target skeleton target `{target_key}` not found"))?;
         if let Some(node_data) = runtime.nodes.get_mut(ik_target_node) {
             match &mut node_data.data {
-                SceneNodeData::IKTarget2D(ik_target) => ik_target.skeleton = target,
-                SceneNodeData::IKTarget3D(ik_target) => ik_target.skeleton = target,
+                SceneNodeData::IKTarget2D(ik_target) => ik_target.params.skeleton = target,
+                SceneNodeData::IKTarget3D(ik_target) => ik_target.params.skeleton = target,
                 _ => {}
             }
         }
