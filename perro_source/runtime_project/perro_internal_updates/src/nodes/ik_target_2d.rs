@@ -2,6 +2,11 @@ use crate::prelude::*;
 use glam::{Mat3, Vec2};
 use perro_nodes::{IKTarget2D, Skeleton2D};
 use perro_runtime_context::perro_structs::{IKTargetSolver, Transform2D};
+use std::cell::RefCell;
+
+thread_local! {
+    static FABRIK_SCRATCH_2D: RefCell<FabrikScratch> = RefCell::new(FabrikScratch::default());
+}
 
 pub fn internal_update<RT>(ctx: &mut RuntimeWindow<'_, RT>, id: NodeID)
 where
@@ -160,6 +165,17 @@ fn solve_ccd(skeleton: &mut Skeleton2D, cfg: CcdSolve) -> bool {
 }
 
 fn solve_fabrik(skeleton: &mut Skeleton2D, cfg: CcdSolve) -> bool {
+    FABRIK_SCRATCH_2D.with(|scratch| {
+        let mut scratch = scratch.borrow_mut();
+        solve_fabrik_with_scratch(skeleton, cfg, &mut scratch)
+    })
+}
+
+fn solve_fabrik_with_scratch(
+    skeleton: &mut Skeleton2D,
+    cfg: CcdSolve,
+    scratch: &mut FabrikScratch,
+) -> bool {
     let CcdSolve {
         end,
         chain_length,
@@ -175,34 +191,54 @@ fn solve_fabrik(skeleton: &mut Skeleton2D, cfg: CcdSolve) -> bool {
         return false;
     }
 
-    let mut chain = Vec::with_capacity(chain_length.saturating_add(1).min(skeleton.bones.len()));
-    collect_root_to_end(skeleton, end, &mut chain);
+    let chain = &mut scratch.chain;
+    if chain.capacity() < chain_length.saturating_add(1).min(skeleton.bones.len()) {
+        chain.reserve(chain_length.saturating_add(1).min(skeleton.bones.len()) - chain.capacity());
+    }
+    collect_tail_to_end(skeleton, end, chain_length, chain);
     if chain.is_empty() {
         return false;
     }
 
-    let joint_count = chain.len().saturating_sub(1).min(chain_length);
+    let joint_count = chain.len().saturating_sub(1);
     if joint_count == 0 {
         return match_rotation && apply_angle_delta(skeleton, end, target_rot, weight);
     }
 
-    let joint_start = chain.len().saturating_sub(1 + joint_count);
-    let solve_chain = &chain[joint_start..];
-    let mut globals = vec![Mat3::IDENTITY; chain.len()];
-    compute_chain_globals(skeleton, &chain, &mut globals);
+    let globals = &mut scratch.globals;
+    if globals.len() < chain.len() {
+        globals.resize(chain.len(), Mat3::IDENTITY);
+    }
+    let parent_global = compute_parent_global_2d(skeleton, chain[0]);
+    compute_chain_globals_with_parent(skeleton, chain, parent_global, globals);
 
-    let mut points = Vec::with_capacity(solve_chain.len());
-    points.extend((joint_start..chain.len()).map(|i| globals[i].transform_point2(Vec2::ZERO)));
+    let points = &mut scratch.points;
+    points.clear();
+    if points.capacity() < chain.len() {
+        points.reserve(chain.len() - points.capacity());
+    }
+    points.extend(
+        globals
+            .iter()
+            .take(chain.len())
+            .map(|global| global.transform_point2(Vec2::ZERO)),
+    );
 
     let root = points[0];
-    let lengths = points
-        .windows(2)
-        .map(|pair| pair[0].distance(pair[1]).max(0.0001))
-        .collect::<Vec<_>>();
+    let lengths = &mut scratch.lengths;
+    lengths.clear();
+    if lengths.capacity() < points.len().saturating_sub(1) {
+        lengths.reserve(points.len().saturating_sub(1) - lengths.capacity());
+    }
+    lengths.extend(
+        points
+            .windows(2)
+            .map(|pair| pair[0].distance(pair[1]).max(0.0001)),
+    );
     let total_len = lengths.iter().sum::<f32>();
     let tolerance_sq = tolerance * tolerance;
 
-    if root.distance(target_pos) >= total_len {
+    if root.distance_squared(target_pos) >= total_len * total_len {
         let dir = (target_pos - root).normalize_or_zero();
         if dir.length_squared() > f32::EPSILON {
             for i in 1..points.len() {
@@ -229,14 +265,10 @@ fn solve_fabrik(skeleton: &mut Skeleton2D, cfg: CcdSolve) -> bool {
     }
 
     let mut changed = false;
-    let mut parent_global_rot = if joint_start > 0 {
-        global_rotation_2d(globals[joint_start - 1])
-    } else {
-        0.0
-    };
+    let mut parent_global_rot = global_rotation_2d(parent_global);
     for i in 0..points.len() - 1 {
-        let bone = solve_chain[i];
-        let child = solve_chain[i + 1];
+        let bone = chain[i];
+        let child = chain[i + 1];
         let target_dir = points[i + 1] - points[i];
         if target_dir.length_squared() <= f32::EPSILON {
             continue;
@@ -261,6 +293,30 @@ fn solve_fabrik(skeleton: &mut Skeleton2D, cfg: CcdSolve) -> bool {
         changed |= apply_angle_delta(skeleton, end, target_rot, weight);
     }
     changed
+}
+
+#[derive(Default)]
+struct FabrikScratch {
+    chain: Vec<usize>,
+    globals: Vec<Mat3>,
+    points: Vec<Vec2>,
+    lengths: Vec<f32>,
+}
+
+fn collect_tail_to_end(skeleton: &Skeleton2D, end: usize, max_len: usize, out: &mut Vec<usize>) {
+    out.clear();
+    let mut current = end as i32;
+    let mut hops = 0usize;
+    while current >= 0 && hops < skeleton.bones.len() && out.len() < max_len.saturating_add(1) {
+        let index = current as usize;
+        if index >= skeleton.bones.len() {
+            break;
+        }
+        out.push(index);
+        current = skeleton.bones[index].parent;
+        hops += 1;
+    }
+    out.reverse();
 }
 
 fn global_rotation_2d(global: Mat3) -> f32 {
@@ -293,12 +349,50 @@ fn collect_root_to_end(skeleton: &Skeleton2D, end: usize, out: &mut Vec<usize>) 
 }
 
 fn compute_chain_globals(skeleton: &Skeleton2D, chain: &[usize], out: &mut [Mat3]) {
-    let mut parent_global = Mat3::IDENTITY;
+    compute_chain_globals_with_parent(skeleton, chain, Mat3::IDENTITY, out);
+}
+
+fn compute_chain_globals_with_parent(
+    skeleton: &Skeleton2D,
+    chain: &[usize],
+    mut parent_global: Mat3,
+    out: &mut [Mat3],
+) {
     for (chain_index, bone_index) in chain.iter().copied().enumerate() {
         let global = parent_global * skeleton.bones[bone_index].pose.to_mat3();
         out[chain_index] = global;
         parent_global = global;
     }
+}
+
+fn compute_parent_global_2d(skeleton: &Skeleton2D, first: usize) -> Mat3 {
+    let parent = skeleton
+        .bones
+        .get(first)
+        .map(|bone| bone.parent)
+        .unwrap_or(-1);
+    if parent < 0 {
+        return Mat3::IDENTITY;
+    }
+
+    let mut ancestors = Vec::new();
+    let mut current = parent;
+    let mut hops = 0usize;
+    while current >= 0 && hops < skeleton.bones.len() {
+        let index = current as usize;
+        if index >= skeleton.bones.len() {
+            break;
+        }
+        ancestors.push(index);
+        current = skeleton.bones[index].parent;
+        hops += 1;
+    }
+
+    let mut global = Mat3::IDENTITY;
+    for bone in ancestors.iter().rev().copied() {
+        global *= skeleton.bones[bone].pose.to_mat3();
+    }
+    global
 }
 
 fn compute_chain_globals_from(
@@ -392,7 +486,14 @@ mod tests {
     #[test]
     #[ignore = "bench-style timing test; run with --ignored --nocapture"]
     fn bench_ik_2d_solvers_release_many_chain_sizes() {
-        let cases = [(8usize, 2usize), (32, 4), (128, 8), (512, 8), (512, 16)];
+        let cases = [
+            (8usize, 2usize),
+            (8, 8),
+            (32, 4),
+            (128, 8),
+            (512, 8),
+            (512, 16),
+        ];
         for (bones, chain_length) in cases {
             bench_solver_case("ccd", bones, chain_length, solve_ccd);
             bench_solver_case("fabrik", bones, chain_length, solve_fabrik);

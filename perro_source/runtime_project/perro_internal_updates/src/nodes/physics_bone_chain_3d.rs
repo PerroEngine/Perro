@@ -4,6 +4,11 @@ use perro_nodes::{
     BoneCollider3D, CollisionShape3D, NodeType, PhysicsBoneChain3D, Shape3D, Skeleton3D,
 };
 use perro_runtime_context::perro_structs::{Transform3D, Vector3};
+use std::cell::RefCell;
+
+thread_local! {
+    static COLLIDER_SCRATCH_3D: RefCell<Vec<Collider>> = const { RefCell::new(Vec::new()) };
+}
 
 pub fn internal_fixed_update<RT>(ctx: &mut RuntimeWindow<'_, RT>, id: NodeID)
 where
@@ -43,14 +48,50 @@ where
         .get_global_transform_3d(cfg.skeleton)
         .unwrap_or(Transform3D::IDENTITY)
         .to_mat4();
-    let colliders = if cfg.collisions {
-        collect_colliders(ctx)
-    } else {
-        Vec::new()
-    };
     let dt = fixed_delta_time!(ctx).clamp(0.0001, 0.05);
 
-    let Some(local_positions) = with_base_node_mut!(ctx, PhysicsBoneChain3D, id, |node| {
+    if cfg.collisions {
+        COLLIDER_SCRATCH_3D.with(|scratch| {
+            let mut colliders = scratch.borrow_mut();
+            collect_colliders(ctx, &mut colliders);
+            update_chain_with_colliders(
+                ctx,
+                id,
+                cfg,
+                skeleton_global,
+                &chain,
+                &rest_globals,
+                &colliders,
+                dt,
+            );
+        });
+    } else {
+        update_chain_with_colliders(
+            ctx,
+            id,
+            cfg,
+            skeleton_global,
+            &chain,
+            &rest_globals,
+            &[],
+            dt,
+        );
+    }
+}
+
+fn update_chain_with_colliders<RT>(
+    ctx: &mut RuntimeWindow<'_, RT>,
+    id: NodeID,
+    cfg: ChainCfg,
+    skeleton_global: Mat4,
+    chain: &[usize],
+    rest_globals: &[Vec3],
+    colliders: &[Collider],
+    dt: f32,
+) where
+    RT: RuntimeAPI + ?Sized,
+{
+    let Some(mut local_positions) = with_base_node_mut!(ctx, PhysicsBoneChain3D, id, |node| {
         let mut rest_world = std::mem::take(&mut node.internal_rest_world);
         rest_world.clear();
         rest_world.extend(
@@ -75,11 +116,9 @@ where
                 .iter()
                 .map(|p| Vector3::from(skeleton_from_world.transform_point3((*p).into()))),
         );
-        let out = local_positions.clone();
         node.internal_rest_world = rest_world;
         node.internal_lengths = lengths;
-        node.internal_local_positions = local_positions;
-        out
+        local_positions
     }) else {
         return;
     };
@@ -90,6 +129,9 @@ where
     if changed.is_some() {
         let _ = ctx.Nodes().force_rerender(cfg.skeleton);
     }
+    let _ = with_base_node_mut!(ctx, PhysicsBoneChain3D, id, |node| {
+        node.internal_local_positions = std::mem::take(&mut local_positions);
+    });
 }
 
 #[derive(Clone, Copy)]
@@ -167,14 +209,14 @@ fn chain_global_positions(skeleton: &Skeleton3D, chain: &[usize]) -> Vec<Vec3> {
     out
 }
 
-fn collect_colliders<RT>(ctx: &mut RuntimeWindow<'_, RT>) -> Vec<Collider>
+fn collect_colliders<RT>(ctx: &mut RuntimeWindow<'_, RT>, out: &mut Vec<Collider>)
 where
     RT: RuntimeAPI + ?Sized,
 {
+    out.clear();
     let ids = ctx
         .Nodes()
         .query(TagQuery::new().is_node_types([NodeType::BoneCollider3D]));
-    let mut out = Vec::new();
     for id in ids {
         let enabled =
             with_base_node!(ctx, BoneCollider3D, id, |node| node.enabled).unwrap_or(false);
@@ -203,7 +245,6 @@ where
             });
         }
     }
-    out
 }
 
 fn step_chain(
@@ -590,18 +631,17 @@ fn square_pyramid_faces(size: Vector3) -> [[Vector3; 3]; 6] {
 }
 
 fn write_chain_positions(skeleton: &mut Skeleton3D, chain: &[usize], local_positions: &[Vector3]) {
-    let mut parent_globals = vec![Mat4::IDENTITY; skeleton.bones.len()];
+    let mut parent_global = Mat4::IDENTITY;
     for (chain_pos, bone_index) in chain.iter().copied().enumerate() {
         if chain_pos == 0 {
-            parent_globals[bone_index] = skeleton.bones[bone_index].pose.to_mat4();
+            parent_global = skeleton.bones[bone_index].pose.to_mat4();
             continue;
         }
-        let parent_global = parent_globals[chain[chain_pos - 1]];
         let local = parent_global
             .inverse()
             .transform_point3(local_positions[chain_pos].into());
         skeleton.bones[bone_index].pose.position = local.into();
-        parent_globals[bone_index] = parent_global * skeleton.bones[bone_index].pose.to_mat4();
+        parent_global *= skeleton.bones[bone_index].pose.to_mat4();
     }
 }
 
