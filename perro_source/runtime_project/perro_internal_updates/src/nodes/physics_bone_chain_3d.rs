@@ -57,40 +57,56 @@ where
             update_chain_with_colliders(
                 ctx,
                 id,
-                cfg,
-                skeleton_global,
-                &chain,
-                &rest_globals,
-                &colliders,
-                dt,
+                ChainUpdate {
+                    cfg,
+                    skeleton_global,
+                    chain: &chain,
+                    rest_globals: &rest_globals,
+                    colliders: &colliders,
+                    dt,
+                },
             );
         });
     } else {
         update_chain_with_colliders(
             ctx,
             id,
-            cfg,
-            skeleton_global,
-            &chain,
-            &rest_globals,
-            &[],
-            dt,
+            ChainUpdate {
+                cfg,
+                skeleton_global,
+                chain: &chain,
+                rest_globals: &rest_globals,
+                colliders: &[],
+                dt,
+            },
         );
     }
+}
+
+struct ChainUpdate<'a> {
+    cfg: ChainCfg,
+    skeleton_global: Mat4,
+    chain: &'a [usize],
+    rest_globals: &'a [Vec3],
+    colliders: &'a [Collider],
+    dt: f32,
 }
 
 fn update_chain_with_colliders<RT>(
     ctx: &mut RuntimeWindow<'_, RT>,
     id: NodeID,
-    cfg: ChainCfg,
-    skeleton_global: Mat4,
-    chain: &[usize],
-    rest_globals: &[Vec3],
-    colliders: &[Collider],
-    dt: f32,
+    update: ChainUpdate<'_>,
 ) where
     RT: RuntimeAPI + ?Sized,
 {
+    let ChainUpdate {
+        cfg,
+        skeleton_global,
+        chain,
+        rest_globals,
+        colliders,
+        dt,
+    } = update;
     let Some(mut local_positions) = with_base_node_mut!(ctx, PhysicsBoneChain3D, id, |node| {
         let mut rest_world = std::mem::take(&mut node.internal_rest_world);
         rest_world.clear();
@@ -106,7 +122,7 @@ fn update_chain_with_colliders<RT>(
                 .windows(2)
                 .map(|pair| pair[0].distance_to(pair[1]).max(0.0001)),
         );
-        step_chain(node, &chain, &rest_world, &lengths, &colliders, cfg, dt);
+        step_chain(node, chain, &rest_world, &lengths, colliders, cfg, dt);
 
         let skeleton_from_world = skeleton_global.inverse();
         let mut local_positions = std::mem::take(&mut node.internal_local_positions);
@@ -124,7 +140,7 @@ fn update_chain_with_colliders<RT>(
     };
 
     let changed = with_base_node_mut!(ctx, Skeleton3D, cfg.skeleton, |skeleton| {
-        write_chain_positions(skeleton, &chain, &local_positions);
+        write_chain_positions(skeleton, chain, &local_positions);
     });
     if changed.is_some() {
         let _ = ctx.Nodes().force_rerender(cfg.skeleton);
@@ -247,6 +263,7 @@ where
     }
 }
 
+#[inline(always)]
 fn step_chain(
     node: &mut PhysicsBoneChain3D,
     chain: &[usize],
@@ -267,8 +284,15 @@ fn step_chain(
 
     node.internal_positions[0] = rest_world[0];
     node.internal_prev_positions[0] = rest_world[0];
-    let damping = (1.0 - cfg.damping).powf(dt * 60.0);
-    let stiffness = 1.0 - (1.0 - cfg.stiffness).powf(dt * 60.0);
+    let step_scale = dt * 60.0;
+    let (damping, stiffness) = if (step_scale - 1.0).abs() <= 1.0e-4 {
+        (1.0 - cfg.damping, cfg.stiffness)
+    } else {
+        (
+            (1.0 - cfg.damping).powf(step_scale),
+            1.0 - (1.0 - cfg.stiffness).powf(step_scale),
+        )
+    };
     for (i, rest) in rest_world
         .iter()
         .enumerate()
@@ -279,39 +303,51 @@ fn step_chain(
         let prev = node.internal_prev_positions[i];
         let velocity = (pos - prev) * damping;
         node.internal_prev_positions[i] = pos;
-        node.internal_positions[i] = pos + velocity + cfg.gravity * (dt * dt);
-        node.internal_positions[i] = node.internal_positions[i].lerped(*rest, stiffness);
+        let sim = pos + velocity + cfg.gravity * (dt * dt);
+        node.internal_positions[i] = sim + (*rest - sim) * stiffness;
     }
 
-    for _ in 0..cfg.iterations {
-        node.internal_positions[0] = rest_world[0];
-        solve_lengths_forward(&mut node.internal_positions, lengths);
-        collide_positions(&mut node.internal_positions, cfg.radius, colliders);
-        solve_lengths_backward(&mut node.internal_positions, lengths);
-        node.internal_positions[0] = rest_world[0];
-        solve_lengths_forward(&mut node.internal_positions, lengths);
-        collide_positions(&mut node.internal_positions, cfg.radius, colliders);
+    if colliders.is_empty() {
+        for _ in 0..cfg.iterations {
+            node.internal_positions[0] = rest_world[0];
+            solve_lengths_forward(&mut node.internal_positions, lengths);
+            solve_lengths_backward(&mut node.internal_positions, lengths);
+            node.internal_positions[0] = rest_world[0];
+            solve_lengths_forward(&mut node.internal_positions, lengths);
+        }
+    } else {
+        for _ in 0..cfg.iterations {
+            node.internal_positions[0] = rest_world[0];
+            solve_lengths_forward(&mut node.internal_positions, lengths);
+            collide_positions(&mut node.internal_positions, cfg.radius, colliders);
+            solve_lengths_backward(&mut node.internal_positions, lengths);
+            node.internal_positions[0] = rest_world[0];
+            solve_lengths_forward(&mut node.internal_positions, lengths);
+            collide_positions(&mut node.internal_positions, cfg.radius, colliders);
+        }
     }
 
     for i in 1..node.internal_positions.len() {
         let delta = node.internal_positions[i] - node.internal_prev_positions[i];
         let max_step = lengths.get(i - 1).copied().unwrap_or(1.0).max(0.0001) * 2.0;
-        if delta.length() > max_step {
+        let len_sq = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
+        if len_sq > max_step * max_step {
             node.internal_prev_positions[i] =
-                node.internal_positions[i] - delta.normalized() * max_step;
+                node.internal_positions[i] - delta * (max_step * len_sq.sqrt().recip());
         }
     }
 }
 
+#[inline(always)]
 fn solve_lengths_forward(positions: &mut [Vector3], lengths: &[f32]) {
     for i in 1..positions.len() {
         let parent = positions[i - 1];
         let current = positions[i];
-        let dir = parent.direction_to(current);
-        positions[i] = parent + dir * lengths[i - 1];
+        positions[i] = parent + normalized_delta_3d(current - parent) * lengths[i - 1];
     }
 }
 
+#[inline(always)]
 fn solve_lengths_backward(positions: &mut [Vector3], lengths: &[f32]) {
     if positions.len() < 2 {
         return;
@@ -319,11 +355,21 @@ fn solve_lengths_backward(positions: &mut [Vector3], lengths: &[f32]) {
     for i in (0..positions.len() - 1).rev() {
         let child = positions[i + 1];
         let current = positions[i];
-        let dir = child.direction_to(current);
-        positions[i] = child + dir * lengths[i];
+        positions[i] = child + normalized_delta_3d(current - child) * lengths[i];
     }
 }
 
+#[inline(always)]
+fn normalized_delta_3d(delta: Vector3) -> Vector3 {
+    let len_sq = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
+    if len_sq <= f32::EPSILON {
+        Vector3::ZERO
+    } else {
+        delta * len_sq.sqrt().recip()
+    }
+}
+
+#[inline(always)]
 fn collide_positions(positions: &mut [Vector3], radius: f32, colliders: &[Collider]) {
     for pos in positions.iter_mut().skip(1) {
         for collider in colliders {
@@ -687,6 +733,11 @@ mod tests {
     }
 
     #[test]
+    fn physics_bone_chain_3d_default_iterations_balanced() {
+        assert_eq!(PhysicsBoneChain3D::new().iterations, 3);
+    }
+
+    #[test]
     fn sphere_collision_pushes_point_out() {
         let collider = collider(Shape3D::Sphere { radius: 1.0 });
         let out = collide_point(Vector3::new(0.0, 0.5, 0.0), 0.1, &collider);
@@ -726,5 +777,40 @@ mod tests {
         });
         let out = collide_point(Vector3::new(0.2, 0.0, 0.0), 0.1, &collider);
         assert!(out.x.abs() >= 0.599);
+    }
+
+    #[test]
+    #[ignore = "bench-style timing test; run with --ignored --nocapture"]
+    fn bench_physics_bone_chain_3d_release() {
+        let chain: Vec<usize> = (0..8).collect();
+        let rest_world: Vec<Vector3> = (0..8).map(|i| Vector3::new(0.0, i as f32, 0.0)).collect();
+        let lengths = vec![1.0; 7];
+        for iterations in [2usize, 3, 4] {
+            let cfg = ChainCfg {
+                skeleton: NodeID::nil(),
+                bone_index: 7,
+                chain_length: 8,
+                enabled: true,
+                gravity: Vector3::new(0.0, -9.81, 0.0),
+                damping: 0.08,
+                stiffness: 0.35,
+                radius: 0.05,
+                collisions: false,
+                iterations,
+            };
+            let dt = 1.0 / 60.0;
+            let samples = 50_000usize;
+            let mut node = PhysicsBoneChain3D::new();
+            step_chain(&mut node, &chain, &rest_world, &lengths, &[], cfg, dt);
+            let start = std::time::Instant::now();
+            for _ in 0..samples {
+                step_chain(&mut node, &chain, &rest_world, &lengths, &[], cfg, dt);
+            }
+            let elapsed = start.elapsed();
+            let ns_each = elapsed.as_nanos() as f64 / samples as f64;
+            println!(
+                "bench_physics_bone_chain_3d_release chain=8 iterations={iterations} samples={samples} ns_each={ns_each:.1}"
+            );
+        }
     }
 }

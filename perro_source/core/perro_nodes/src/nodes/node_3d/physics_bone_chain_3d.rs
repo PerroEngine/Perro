@@ -43,7 +43,7 @@ impl PhysicsBoneChain3D {
             stiffness: 0.35,
             radius: 0.05,
             collisions: true,
-            iterations: 4,
+            iterations: 3,
             internal_bones: Vec::new(),
             internal_positions: Vec::new(),
             internal_prev_positions: Vec::new(),

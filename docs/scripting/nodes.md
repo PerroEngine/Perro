@@ -198,6 +198,7 @@ Anchors are local to each connected body.
   - `chain_length`: number of links back from end bone.
   - `gravity`: world-space acceleration.
   - `damping`, `stiffness`, `radius`, `collisions`, `iterations`.
+- `iterations` default is `3`; use `2` for fast chains or `4` for slower quality chains.
 - Uses Verlet-style points, pins the root of the selected chain, writes solved positions back into bone `pose`.
 - Reacts to skeleton movement because simulation state is kept in world space.
 

@@ -221,16 +221,15 @@ fn solve_fabrik_with_scratch(
         return blend_end_rotation_with_parent(skeleton, end, parent_rot, target_rot, weight);
     }
 
-    let state = &mut scratch.state;
-    let parent_basis = compute_parent_fabrik_basis(skeleton, chain[0]);
-    compute_fabrik_state(skeleton, chain, parent_basis, state);
+    let parent_basis =
+        compute_parent_fabrik_basis_with_scratch(skeleton, chain[0], &mut scratch.parents);
 
     let points = &mut scratch.points;
     points.clear();
     if points.capacity() < chain.len() {
         points.reserve(chain.len() - points.capacity());
     }
-    points.extend(state.positions.iter().copied().take(chain.len()));
+    compute_fabrik_points(skeleton, chain, parent_basis, points);
 
     let root = points[0];
     let lengths = &mut scratch.lengths;
@@ -277,18 +276,21 @@ fn solve_fabrik_with_scratch(
     for i in 0..points.len() - 1 {
         let bone = chain[i];
         let child = chain[i + 1];
-        let target_dir = (points[i + 1] - points[i]).normalize_or_zero();
-        if target_dir.length_squared() <= f32::EPSILON {
+        let target_delta = points[i + 1] - points[i];
+        let target_len_sq = target_delta.length_squared();
+        if target_len_sq <= f32::EPSILON {
             continue;
         }
+        let target_dir = target_delta * target_len_sq.sqrt().recip();
         let child_offset: Vec3 = skeleton.bones[child].pose.position.into();
-        let local_dir = child_offset.normalize_or_zero();
-        if local_dir.length_squared() <= f32::EPSILON {
+        let local_len_sq = child_offset.length_squared();
+        if local_len_sq <= f32::EPSILON {
             continue;
         }
+        let local_dir = child_offset * local_len_sq.sqrt().recip();
 
         let current = normalize_quat(skeleton.bones[bone].pose.rotation.to_quat());
-        let current_dir = (parent_rotation * current * local_dir).normalize_or_zero();
+        let current_dir = parent_rotation * current * local_dir;
         let delta = Quat::from_rotation_arc(current_dir, target_dir);
         if !delta.is_finite() || quat_near_identity(delta) {
             parent_rotation = normalize_quat(parent_rotation * current);
@@ -305,14 +307,10 @@ fn solve_fabrik_with_scratch(
 
     if match_rotation {
         if points.len() <= 3 {
-            compute_fabrik_state(skeleton, chain, parent_basis, state);
+            let rotations = &mut scratch.rotations;
+            compute_fabrik_rotations(skeleton, chain, parent_basis.1, rotations);
             changed |= blend_end_rotation_from_rotations(
-                skeleton,
-                chain,
-                &state.rotations,
-                end,
-                target_rot,
-                weight,
+                skeleton, chain, rotations, end, target_rot, weight,
             );
         } else {
             changed |=
@@ -370,21 +368,24 @@ impl ChainState {
 }
 
 #[derive(Default)]
-struct FabrikState {
-    positions: Vec<Vec3>,
-    rotations: Vec<Quat>,
-    scales: Vec<Vec3>,
-}
-
-#[derive(Default)]
 struct FabrikScratch {
     chain: Vec<usize>,
-    state: FabrikState,
+    parents: Vec<usize>,
     points: Vec<Vec3>,
+    rotations: Vec<Quat>,
     lengths: Vec<f32>,
 }
 
 fn compute_parent_fabrik_basis(skeleton: &Skeleton3D, first: usize) -> (Vec3, Quat, Vec3) {
+    let mut ancestors = Vec::new();
+    compute_parent_fabrik_basis_with_scratch(skeleton, first, &mut ancestors)
+}
+
+fn compute_parent_fabrik_basis_with_scratch(
+    skeleton: &Skeleton3D,
+    first: usize,
+    ancestors: &mut Vec<usize>,
+) -> (Vec3, Quat, Vec3) {
     let parent = skeleton
         .bones
         .get(first)
@@ -394,7 +395,7 @@ fn compute_parent_fabrik_basis(skeleton: &Skeleton3D, first: usize) -> (Vec3, Qu
         return (Vec3::ZERO, Quat::IDENTITY, Vec3::ONE);
     }
 
-    let mut ancestors = Vec::new();
+    ancestors.clear();
     let mut current = parent;
     let mut hops = 0usize;
     while current >= 0 && hops < skeleton.bones.len() {
@@ -422,52 +423,45 @@ fn compute_parent_fabrik_basis(skeleton: &Skeleton3D, first: usize) -> (Vec3, Qu
     (pos, rot, scale)
 }
 
-fn compute_fabrik_state(
+fn compute_fabrik_points(
     skeleton: &Skeleton3D,
     chain: &[usize],
     parent_basis: (Vec3, Quat, Vec3),
-    out: &mut FabrikState,
+    out: &mut Vec<Vec3>,
 ) {
-    out.positions.clear();
-    out.rotations.clear();
-    out.scales.clear();
-    reserve_fabrik_state(out, chain.len());
+    if out.capacity() < chain.len() {
+        out.reserve(chain.len() - out.capacity());
+    }
+    out.clear();
     let (mut parent_pos, mut parent_rot, mut parent_scale) = parent_basis;
-    for (chain_index, bone_index) in chain.iter().copied().enumerate() {
+    for bone_index in chain.iter().copied() {
         let bone = &skeleton.bones[bone_index];
         let local_pos: Vec3 = bone.pose.position.into();
         let local_scale: Vec3 = bone.pose.scale.into();
         let local_rot = normalize_quat(bone.pose.rotation.to_quat());
         let global_pos = parent_pos + parent_rot * (parent_scale * local_pos);
         let global_rot = normalize_quat(parent_rot * local_rot);
-        let global_scale = parent_scale * local_scale;
-        out.positions[chain_index] = global_pos;
-        out.rotations[chain_index] = global_rot;
-        out.scales[chain_index] = global_scale;
+        out.push(global_pos);
         parent_pos = global_pos;
         parent_rot = global_rot;
-        parent_scale = global_scale;
+        parent_scale *= local_scale;
     }
 }
 
-fn reserve_fabrik_state(out: &mut FabrikState, len: usize) {
-    if out.positions.capacity() < len {
-        out.positions.reserve(len - out.positions.capacity());
+fn compute_fabrik_rotations(
+    skeleton: &Skeleton3D,
+    chain: &[usize],
+    mut parent_rot: Quat,
+    out: &mut Vec<Quat>,
+) {
+    if out.capacity() < chain.len() {
+        out.reserve(chain.len() - out.capacity());
     }
-    if out.rotations.capacity() < len {
-        out.rotations.reserve(len - out.rotations.capacity());
-    }
-    if out.scales.capacity() < len {
-        out.scales.reserve(len - out.scales.capacity());
-    }
-    if out.positions.len() < len {
-        out.positions.resize(len, Vec3::ZERO);
-    }
-    if out.rotations.len() < len {
-        out.rotations.resize(len, Quat::IDENTITY);
-    }
-    if out.scales.len() < len {
-        out.scales.resize(len, Vec3::ONE);
+    out.clear();
+    for bone_index in chain.iter().copied() {
+        let local_rot = normalize_quat(skeleton.bones[bone_index].pose.rotation.to_quat());
+        parent_rot = normalize_quat(parent_rot * local_rot);
+        out.push(parent_rot);
     }
 }
 
@@ -633,10 +627,17 @@ fn blend_quat(current: Quat, solved: Quat, weight: f32) -> Quat {
 }
 
 fn normalize_quat(q: Quat) -> Quat {
-    if q.is_finite() && q.length_squared() > 1.0e-8 {
-        q.normalize()
+    if !q.is_finite() {
+        return Quat::IDENTITY;
+    }
+    let len_sq = q.length_squared();
+    if len_sq <= 1.0e-8 {
+        return Quat::IDENTITY;
+    }
+    if (len_sq - 1.0).abs() <= 1.0e-4 {
+        q
     } else {
-        Quat::IDENTITY
+        q * len_sq.sqrt().recip()
     }
 }
 

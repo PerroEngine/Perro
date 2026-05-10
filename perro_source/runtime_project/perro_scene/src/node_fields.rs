@@ -591,7 +591,7 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             "skeleton" => Some(NodeField::IKTarget2D(IKTarget2DField::Skeleton)),
             "bone" | "bone_index" => Some(NodeField::IKTarget2D(IKTarget2DField::BoneIndex)),
             "chain_length" => Some(NodeField::IKTarget2D(IKTarget2DField::ChainLength)),
-            "iterations" => Some(NodeField::IKTarget2D(IKTarget2DField::Iterations)),
+            "iterations" | "iters" => Some(NodeField::IKTarget2D(IKTarget2DField::Iterations)),
             "tolerance" => Some(NodeField::IKTarget2D(IKTarget2DField::Tolerance)),
             "weight" => Some(NodeField::IKTarget2D(IKTarget2DField::Weight)),
             "match_rotation" => Some(NodeField::IKTarget2D(IKTarget2DField::MatchRotation)),
@@ -626,7 +626,7 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             "collisions" | "collision" => Some(NodeField::PhysicsBoneChain2D(
                 PhysicsBoneChain2DField::Collisions,
             )),
-            "iterations" => Some(NodeField::PhysicsBoneChain2D(
+            "iterations" | "iters" => Some(NodeField::PhysicsBoneChain2D(
                 PhysicsBoneChain2DField::Iterations,
             )),
             _ => None,
@@ -671,7 +671,7 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             "skeleton" => Some(NodeField::IKTarget3D(IKTarget3DField::Skeleton)),
             "bone" | "bone_index" => Some(NodeField::IKTarget3D(IKTarget3DField::BoneIndex)),
             "chain_length" => Some(NodeField::IKTarget3D(IKTarget3DField::ChainLength)),
-            "iterations" => Some(NodeField::IKTarget3D(IKTarget3DField::Iterations)),
+            "iterations" | "iters" => Some(NodeField::IKTarget3D(IKTarget3DField::Iterations)),
             "tolerance" => Some(NodeField::IKTarget3D(IKTarget3DField::Tolerance)),
             "weight" => Some(NodeField::IKTarget3D(IKTarget3DField::Weight)),
             "match_rotation" => Some(NodeField::IKTarget3D(IKTarget3DField::MatchRotation)),
@@ -706,7 +706,7 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             "collisions" | "collision" => Some(NodeField::PhysicsBoneChain3D(
                 PhysicsBoneChain3DField::Collisions,
             )),
-            "iterations" => Some(NodeField::PhysicsBoneChain3D(
+            "iterations" | "iters" => Some(NodeField::PhysicsBoneChain3D(
                 PhysicsBoneChain3DField::Iterations,
             )),
             _ => None,

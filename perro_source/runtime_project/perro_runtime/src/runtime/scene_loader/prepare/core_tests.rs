@@ -747,6 +747,62 @@ mod tests {
     }
 
     #[test]
+    fn scene_loader_parses_physics_bone_chain_iters_alias() {
+        let scene = Parser::new(
+            r#"
+            @root = Rig
+            [Rig]
+            [Skeleton3D]
+                skeleton = "res://rig.pskel"
+            [/Skeleton3D]
+            [/Rig]
+
+            [Tail2D]
+            [PhysicsBoneChain2D]
+                skeleton = @Rig
+                bone = 4
+                iters = 2
+            [/PhysicsBoneChain2D]
+            [/Tail2D]
+
+            [Tail3D]
+            [PhysicsBoneChain3D]
+                skeleton = @Rig
+                bone = 5
+                iters = 4
+            [/PhysicsBoneChain3D]
+            [/Tail3D]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared = prepare_scene_with_loader(&scene, &|path| {
+            Err(format!("unknown scene path `{path}`"))
+        })
+        .expect("prepare scene");
+
+        let tail_2d = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "Tail2D")
+            .expect("2d physics chain");
+        match &tail_2d.node.data {
+            SceneNodeData::PhysicsBoneChain2D(chain) => assert_eq!(chain.iterations, 2),
+            other => panic!("expected PhysicsBoneChain2D node, got {other:?}"),
+        }
+
+        let tail_3d = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "Tail3D")
+            .expect("3d physics chain");
+        match &tail_3d.node.data {
+            SceneNodeData::PhysicsBoneChain3D(chain) => assert_eq!(chain.iterations, 4),
+            other => panic!("expected PhysicsBoneChain3D node, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn scene_loader_rejects_bone_2d_node() {
         let scene = Parser::new(
             r#"

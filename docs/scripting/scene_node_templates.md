@@ -234,7 +234,7 @@ script = "res://path/to/script.rs"
         stiffness = 0.35
         radius = 0.05
         collisions = true
-        iterations = 4
+        iterations = 3
     [/PhysicsBoneChain2D]
 [/physicsbonechain2d]
 
@@ -604,7 +604,7 @@ script = "res://path/to/script.rs"
         stiffness = 0.35
         radius = 0.05
         collisions = true
-        iterations = 4
+        iterations = 3
     [/PhysicsBoneChain3D]
 [/physics_bone_chain_3d]
 
