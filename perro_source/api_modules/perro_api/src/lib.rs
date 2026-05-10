@@ -7,6 +7,7 @@ pub use perro_resource_context as resource_context;
 pub use perro_runtime_context as runtime_context;
 pub use perro_scene as scene;
 pub use perro_scripting as scripting;
+#[cfg(feature = "steamworks")]
 pub use perro_steamworks as steam;
 pub use perro_structs as structs;
 pub use perro_ui as ui;
@@ -23,7 +24,9 @@ pub mod prelude {
     pub use perro_resource_context::prelude::*;
     pub use perro_scene;
     pub use perro_scripting::prelude::*;
+    #[cfg(feature = "steamworks")]
     pub use perro_steamworks as steam;
+    #[cfg(feature = "steamworks")]
     pub use perro_steamworks::{
         steam_account_name, steam_account_self_id, steam_account_self_name, steam_ach_clear,
         steam_ach_unlock, steam_app_dlc_installed, steam_app_subscribed, steam_cloud_read,

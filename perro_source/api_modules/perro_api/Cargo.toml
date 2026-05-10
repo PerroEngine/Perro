@@ -11,7 +11,7 @@ perro_resource_context = { path = "../perro_resource_context" }
 perro_runtime_context = { path = "../perro_runtime_context" }
 perro_scene = { path = "../../runtime_project/perro_scene" }
 perro_scripting = { path = "../../script_stack/perro_scripting" }
-perro_steamworks = { path = "../perro_steamworks", default-features = false }
+perro_steamworks = { path = "../perro_steamworks", default-features = false, optional = true }
 perro_nodes = { path = "../../core/perro_nodes" }
 perro_structs = { path = "../../core/perro_structs" }
 perro_ui = { path = "../../core/perro_ui" }
@@ -19,4 +19,4 @@ perro_modules = { path = "../perro_modules" }
 perro_variant = { path = "../../core/perro_variant" }
 
 [features]
-steamworks = ["perro_steamworks/steamworks-runtime"]
+steamworks = ["dep:perro_steamworks", "perro_steamworks/steamworks-runtime"]

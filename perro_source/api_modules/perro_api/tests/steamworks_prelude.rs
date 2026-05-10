@@ -1,3 +1,5 @@
+#![cfg(feature = "steamworks")]
+
 use perro_api::prelude::*;
 
 #[test]

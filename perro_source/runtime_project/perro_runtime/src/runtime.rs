@@ -202,6 +202,7 @@ impl Runtime {
         let static_animation_tree_lookup = project.static_animation_tree_lookup;
         let static_localization_lookup = project.static_localization_lookup;
         let localization_config = project.config.localization.clone();
+        #[cfg(feature = "steamworks")]
         let steam_config = project.config.steam.clone();
         runtime.project = Some(Arc::new(project));
         runtime.provider_mode = provider_mode;
@@ -222,6 +223,7 @@ impl Runtime {
                     .insert(*path_hash, *ctor);
             }
         }
+        #[cfg(feature = "steamworks")]
         if let Err(err) =
             perro_steamworks::app::init_from_config(steam_config.enabled, steam_config.app_id)
         {
@@ -244,6 +246,7 @@ impl Runtime {
     #[inline]
     pub fn update(&mut self, delta_time: f32) {
         self.time.delta = delta_time;
+        #[cfg(feature = "steamworks")]
         let _ = perro_steamworks::app::run_callbacks();
         self.run_start_schedule();
         self.schedules.snapshot_update(&self.scripts);
@@ -256,6 +259,7 @@ impl Runtime {
     pub fn update_timed(&mut self, delta_time: f32) -> RuntimeUpdateTiming {
         let total_start = std::time::Instant::now();
         self.time.delta = delta_time;
+        #[cfg(feature = "steamworks")]
         let _ = perro_steamworks::app::run_callbacks();
 
         let start_schedule_start = std::time::Instant::now();
