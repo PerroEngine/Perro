@@ -225,7 +225,7 @@ impl Runtime {
         }
         #[cfg(feature = "steamworks")]
         if let Err(err) =
-            perro_steamworks::app::init_from_config(steam_config.enabled, steam_config.app_id)
+            perro_steamworks::runtime::init_from_config(steam_config.enabled, steam_config.app_id)
         {
             panic!("failed to initialize Steam: {err}");
         }
@@ -247,7 +247,7 @@ impl Runtime {
     pub fn update(&mut self, delta_time: f32) {
         self.time.delta = delta_time;
         #[cfg(feature = "steamworks")]
-        let _ = perro_steamworks::app::run_callbacks();
+        let _ = perro_steamworks::runtime::run_callbacks();
         self.run_start_schedule();
         self.schedules.snapshot_update(&self.scripts);
         self.run_update_schedule();
@@ -260,7 +260,7 @@ impl Runtime {
         let total_start = std::time::Instant::now();
         self.time.delta = delta_time;
         #[cfg(feature = "steamworks")]
-        let _ = perro_steamworks::app::run_callbacks();
+        let _ = perro_steamworks::runtime::run_callbacks();
 
         let start_schedule_start = std::time::Instant::now();
         self.run_start_schedule();

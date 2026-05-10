@@ -6,6 +6,7 @@ struct SteamState {
     enabled: bool,
     app_id: Option<u32>,
     client: Option<steamworks::Client>,
+    stats_store_requested: bool,
 }
 
 fn state() -> &'static Mutex<SteamState> {
@@ -59,10 +60,40 @@ pub fn run_callbacks() -> Result<(), SteamError> {
         .clone();
     if let Some(client) = client {
         client.process_callbacks(crate::events::enqueue_callback);
+        flush_stats_store(&client)?;
     }
     Ok(())
 }
 
+pub(crate) fn request_stats_store() -> Result<(), SteamError> {
+    state()
+        .lock()
+        .map(|mut state| {
+            state.stats_store_requested = true;
+        })
+        .map_err(|_| SteamError::NotReady)
+}
+
+fn flush_stats_store(client: &steamworks::Client) -> Result<(), SteamError> {
+    let should_store = {
+        let mut state = state().lock().map_err(|_| SteamError::NotReady)?;
+        if !state.stats_store_requested {
+            false
+        } else {
+            state.stats_store_requested = false;
+            true
+        }
+    };
+    if should_store {
+        client
+            .user_stats()
+            .store_stats()
+            .map_err(|_| SteamError::CallFailed("user_stats.store_stats"))?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
 pub fn is_enabled() -> Result<bool, SteamError> {
     state()
         .lock()
@@ -70,6 +101,7 @@ pub fn is_enabled() -> Result<bool, SteamError> {
         .map_err(|_| SteamError::NotReady)
 }
 
+#[cfg(test)]
 pub fn is_ready() -> Result<bool, SteamError> {
     state()
         .lock()
@@ -77,6 +109,7 @@ pub fn is_ready() -> Result<bool, SteamError> {
         .map_err(|_| SteamError::NotReady)
 }
 
+#[cfg(test)]
 pub fn get_app_id() -> Result<Option<u32>, SteamError> {
     state()
         .lock()

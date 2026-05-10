@@ -4,8 +4,6 @@ use perro_api::prelude::*;
 
 #[test]
 fn steam_achievement_macros_accept_single_multi_slice_and_vec() {
-    perro_api::steam::app::init_from_config(false, None).expect("disabled Steam init");
-
     let one = "ACH_ONE";
     assert_eq!(steam_ach_unlock!(one), Err(steam::SteamError::Disabled));
 
@@ -77,7 +75,6 @@ fn steam_achievement_macros_accept_single_multi_slice_and_vec() {
         steam_stat_set_i32!("wins", 1),
         Err(steam::SteamError::Disabled)
     );
-    assert_eq!(steam_stat_store!(), Err(steam::SteamError::Disabled));
     assert_eq!(
         steam_cloud_read!("save.bin"),
         Err(steam::SteamError::Disabled)

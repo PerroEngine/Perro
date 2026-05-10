@@ -48,7 +48,8 @@ pub fn set_i32(name: &str, value: i32) -> Result<(), SteamError> {
         client
             .user_stats()
             .set_stat_i32(name, value)
-            .map_err(|_| SteamError::CallFailed("user_stats.set_i32"))
+            .map_err(|_| SteamError::CallFailed("user_stats.set_i32"))?;
+        app::request_stats_store()
     })
 }
 
@@ -66,7 +67,8 @@ pub fn set_f32(name: &str, value: f32) -> Result<(), SteamError> {
         client
             .user_stats()
             .set_stat_f32(name, value)
-            .map_err(|_| SteamError::CallFailed("user_stats.set_f32"))
+            .map_err(|_| SteamError::CallFailed("user_stats.set_f32"))?;
+        app::request_stats_store()
     })
 }
 
@@ -85,15 +87,6 @@ pub fn global_f64(name: &str) -> Result<f64, SteamError> {
             .user_stats()
             .get_global_stat_f64(name)
             .map_err(|_| SteamError::CallFailed("user_stats.global_f64"))
-    })
-}
-
-pub fn store() -> Result<(), SteamError> {
-    app::with_client(|client| {
-        client
-            .user_stats()
-            .store_stats()
-            .map_err(|_| SteamError::CallFailed("user_stats.store_stats"))
     })
 }
 

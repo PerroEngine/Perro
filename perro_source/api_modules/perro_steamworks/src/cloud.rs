@@ -1,8 +1,20 @@
 use crate::{app, error::SteamError};
 use std::io::{Read, Write};
 
-pub type FileInfo = steamworks::SteamFileInfo;
-pub type Platforms = steamworks::RemoteStoragePlatforms;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FileInfo {
+    pub name: String,
+    pub size: u64,
+}
+
+impl From<steamworks::SteamFileInfo> for FileInfo {
+    fn from(info: steamworks::SteamFileInfo) -> Self {
+        Self {
+            name: info.name,
+            size: info.size,
+        }
+    }
+}
 
 pub fn set_enabled_for_app(enabled: bool) -> Result<(), SteamError> {
     app::with_client(|client| {
@@ -20,7 +32,14 @@ pub fn is_enabled_for_account() -> Result<bool, SteamError> {
 }
 
 pub fn get_files() -> Result<Vec<FileInfo>, SteamError> {
-    app::with_client(|client| Ok(client.remote_storage().files()))
+    app::with_client(|client| {
+        Ok(client
+            .remote_storage()
+            .files()
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    })
 }
 
 pub fn is_file_present(name: &str) -> Result<bool, SteamError> {

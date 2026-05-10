@@ -136,10 +136,6 @@ impl From<WorkshopFileID> for steamworks::PublishedFileId {
 }
 
 #[cfg(feature = "steamworks-runtime")]
-pub type LeaderboardID = steamworks::Leaderboard;
-#[cfg(not(feature = "steamworks-runtime"))]
-pub type LeaderboardID = u64;
-#[cfg(feature = "steamworks-runtime")]
 pub type SocketID = steamworks::networking_sockets::ListenSocket;
 #[cfg(not(feature = "steamworks-runtime"))]
 pub type SocketID = u64;

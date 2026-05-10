@@ -12,15 +12,6 @@ pub enum DisabledEnum {
     Disabled,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum DisabledSendType {
-    Unreliable,
-    UnreliableNoDelay,
-    #[default]
-    Reliable,
-    ReliableWithBuffering,
-}
-
 fn disabled<T>() -> Result<T, SteamError> {
     Err(SteamError::Disabled)
 }
@@ -63,14 +54,17 @@ pub mod app {
         Ok(())
     }
 
+    #[cfg(test)]
     pub fn is_enabled() -> Result<bool, SteamError> {
         Ok(false)
     }
 
+    #[cfg(test)]
     pub fn is_ready() -> Result<bool, SteamError> {
         Ok(false)
     }
 
+    #[cfg(test)]
     pub fn get_app_id() -> Result<Option<u32>, SteamError> {
         Ok(None)
     }
@@ -259,10 +253,13 @@ pub mod apps {
 }
 
 pub mod cloud {
-    use super::{DisabledHandle, SteamError, disabled};
+    use super::{SteamError, disabled};
 
-    pub type FileInfo = DisabledHandle;
-    pub type Platforms = DisabledHandle;
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct FileInfo {
+        pub name: String,
+        pub size: u64,
+    }
 
     pub fn set_enabled_for_app(_enabled: bool) -> Result<(), SteamError> {
         disabled()
@@ -363,11 +360,26 @@ pub mod input {
 }
 
 pub mod auth {
-    use super::{AppID, DisabledEnum, DisabledHandle, SteamError, SteamID, disabled};
+    use super::{AppID, SteamError, SteamID, disabled};
 
-    pub type AuthTicket = DisabledHandle;
-    pub type AuthSessionError = DisabledEnum;
-    pub type UserHasLicense = DisabledEnum;
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+    pub struct AuthTicket(pub u64);
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub enum AuthSessionError {
+        InvalidTicket,
+        DuplicateRequest,
+        InvalidVersion,
+        GameMismatch,
+        ExpiredTicket,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub enum UserHasLicense {
+        HasLicense,
+        DoesNotHaveLicense,
+        NoAuth,
+    }
 
     pub fn authentication_session_ticket() -> Result<(AuthTicket, Vec<u8>), SteamError> {
         disabled()
@@ -460,10 +472,36 @@ pub mod lobbies {
 }
 
 pub mod networking {
-    use super::{DisabledEnum, DisabledSendType, SteamError, SteamID, disabled};
+    use super::{SteamError, SteamID, disabled};
+    use std::net::Ipv4Addr;
 
-    pub type SendType = DisabledSendType;
-    pub type P2PSessionState = DisabledEnum;
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum SendType {
+        Unreliable,
+        UnreliableNoDelay,
+        Reliable,
+        ReliableWithBuffering,
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    pub enum P2PSessionError {
+        None,
+        NoRightsToApp,
+        Timeout,
+        Unknown(u8),
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct P2PSessionState {
+        pub connection_active: bool,
+        pub connecting: bool,
+        pub error: P2PSessionError,
+        pub using_relay: bool,
+        pub bytes_queued_for_send: i32,
+        pub packets_queued_for_send: i32,
+        pub remote_ip: Option<Ipv4Addr>,
+        pub remote_port: Option<u16>,
+    }
 
     pub fn is_p2p_session_accepted(_user: SteamID) -> Result<bool, SteamError> {
         disabled()
@@ -507,15 +545,52 @@ pub mod networking {
 }
 
 pub mod leaderboards {
-    use super::{DisabledEnum, DisabledHandle, SteamError, disabled};
+    use super::{SteamError, SteamID, disabled};
 
-    pub type LeaderboardID = DisabledHandle;
-    pub type LeaderboardEntry = DisabledHandle;
-    pub type LeaderboardDataRequest = DisabledEnum;
-    pub type LeaderboardDisplayType = DisabledEnum;
-    pub type LeaderboardSortMethod = DisabledEnum;
-    pub type LeaderboardScoreUploaded = DisabledHandle;
-    pub type UploadScoreMethod = DisabledEnum;
+    #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+    pub struct LeaderboardID(pub u64);
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct LeaderboardEntry {
+        pub user: SteamID,
+        pub global_rank: i32,
+        pub score: i32,
+        pub details: Vec<i32>,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct LeaderboardScoreUpload {
+        pub score: i32,
+        pub changed: bool,
+        pub global_rank_new: i32,
+        pub global_rank_previous: i32,
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum LeaderboardSort {
+        Ascending,
+        Descending,
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum LeaderboardDisplay {
+        Numeric,
+        TimeSeconds,
+        TimeMilliseconds,
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum LeaderboardUploadMode {
+        KeepBest,
+        Force,
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum LeaderboardEntryScope {
+        Global,
+        AroundUser,
+        Friends,
+    }
 
     pub fn find(
         _name: &str,
@@ -526,29 +601,70 @@ pub mod leaderboards {
     }
     pub fn find_or_create(
         _name: &str,
-        _sort_method: LeaderboardSortMethod,
-        _display_type: LeaderboardDisplayType,
+        _sort: LeaderboardSort,
+        _display: LeaderboardDisplay,
         cb: impl FnOnce(Result<Option<LeaderboardID>, SteamError>) + Send + 'static,
     ) -> Result<(), SteamError> {
         cb(Err(SteamError::Disabled));
         disabled()
     }
-    pub fn upload(
-        _leaderboard: LeaderboardID,
-        _method: UploadScoreMethod,
+    pub fn upload_score(
+        _leaderboard: &LeaderboardID,
+        _score: i32,
+        cb: impl FnOnce(Result<Option<LeaderboardScoreUpload>, SteamError>) + Send + 'static,
+    ) -> Result<(), SteamError> {
+        cb(Err(SteamError::Disabled));
+        disabled()
+    }
+    pub fn force_upload_score(
+        _leaderboard: &LeaderboardID,
+        _score: i32,
+        cb: impl FnOnce(Result<Option<LeaderboardScoreUpload>, SteamError>) + Send + 'static,
+    ) -> Result<(), SteamError> {
+        cb(Err(SteamError::Disabled));
+        disabled()
+    }
+    pub fn upload_score_with_details(
+        _leaderboard: &LeaderboardID,
+        _mode: LeaderboardUploadMode,
         _score: i32,
         _details: &[i32],
-        cb: impl FnOnce(Result<Option<LeaderboardScoreUploaded>, SteamError>) + Send + 'static,
+        cb: impl FnOnce(Result<Option<LeaderboardScoreUpload>, SteamError>) + Send + 'static,
+    ) -> Result<(), SteamError> {
+        cb(Err(SteamError::Disabled));
+        disabled()
+    }
+    pub fn entries_global(
+        _leaderboard: &LeaderboardID,
+        _start: usize,
+        _end: usize,
+        cb: impl FnOnce(Result<Vec<LeaderboardEntry>, SteamError>) + Send + 'static,
+    ) -> Result<(), SteamError> {
+        cb(Err(SteamError::Disabled));
+        disabled()
+    }
+    pub fn entries_around_user(
+        _leaderboard: &LeaderboardID,
+        _start: usize,
+        _end: usize,
+        cb: impl FnOnce(Result<Vec<LeaderboardEntry>, SteamError>) + Send + 'static,
+    ) -> Result<(), SteamError> {
+        cb(Err(SteamError::Disabled));
+        disabled()
+    }
+    pub fn entries_friends(
+        _leaderboard: &LeaderboardID,
+        cb: impl FnOnce(Result<Vec<LeaderboardEntry>, SteamError>) + Send + 'static,
     ) -> Result<(), SteamError> {
         cb(Err(SteamError::Disabled));
         disabled()
     }
     pub fn entries(
-        _leaderboard: LeaderboardID,
-        _request: LeaderboardDataRequest,
-        _start: i32,
-        _end: i32,
-        _details_len: usize,
+        _leaderboard: &LeaderboardID,
+        _scope: LeaderboardEntryScope,
+        _start: usize,
+        _end: usize,
+        _max_details_len: usize,
         cb: impl FnOnce(Result<Vec<LeaderboardEntry>, SteamError>) + Send + 'static,
     ) -> Result<(), SteamError> {
         cb(Err(SteamError::Disabled));
@@ -822,14 +938,49 @@ pub mod utils {
 pub mod workshop {
     use super::*;
 
-    pub type FileType = DisabledEnum;
-    pub type ItemState = DisabledEnum;
-    pub type InstallInfo = DisabledHandle;
-    pub type QueryHandle = DisabledHandle;
-    pub type QueryResult = DisabledHandle;
-    pub type UGCQueryType = DisabledEnum;
-    pub type UGCType = DisabledEnum;
-    pub type AppIDs = DisabledHandle;
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum FileType {
+        Community,
+        Microtransaction,
+        Collection,
+        Art,
+        Video,
+        Screenshot,
+        Game,
+        Software,
+        Concept,
+        WebGuide,
+        IntegratedGuide,
+        Merch,
+        ControllerBinding,
+        SteamworksAccessInvite,
+        SteamVideo,
+        GameManagedItem,
+        Clip,
+    }
+
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub struct ItemState {
+        pub subscribed: bool,
+        pub legacy_item: bool,
+        pub installed: bool,
+        pub needs_update: bool,
+        pub downloading: bool,
+        pub download_pending: bool,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct InstallInfo {
+        pub folder: String,
+        pub size_on_disk: u64,
+        pub timestamp: u32,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct CreateItemResult {
+        pub file: WorkshopFileID,
+        pub accepted_legal_agreement: bool,
+    }
 
     pub fn suspend_downloads(_suspend: bool) -> Result<(), SteamError> {
         disabled()
@@ -871,12 +1022,9 @@ pub mod workshop {
     pub fn create(
         _app_id: AppID,
         _file_type: FileType,
-        cb: impl FnOnce(Result<(WorkshopFileID, bool), SteamError>) + Send + 'static,
+        cb: impl FnOnce(Result<CreateItemResult, SteamError>) + Send + 'static,
     ) -> Result<(), SteamError> {
         cb(Err(SteamError::Disabled));
-        disabled()
-    }
-    pub fn get_query_item(_file: WorkshopFileID) -> Result<QueryHandle, SteamError> {
         disabled()
     }
 }

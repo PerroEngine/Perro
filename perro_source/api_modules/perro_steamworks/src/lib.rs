@@ -3,7 +3,7 @@ pub mod account;
 #[cfg(feature = "steamworks-runtime")]
 pub mod achievements;
 #[cfg(feature = "steamworks-runtime")]
-pub mod app;
+mod app;
 #[cfg(feature = "steamworks-runtime")]
 pub mod apps;
 #[cfg(feature = "steamworks-runtime")]
@@ -48,16 +48,36 @@ pub mod utils;
 pub mod workshop;
 
 #[cfg(not(feature = "steamworks-runtime"))]
+use disabled::app;
+
+#[cfg(not(feature = "steamworks-runtime"))]
 pub use disabled::{
-    account, achievements, app, apps, auth, cloud, events, friends, input, leaderboards, lobbies,
+    account, achievements, apps, auth, cloud, events, friends, input, leaderboards, lobbies,
     networking, networking_messages, networking_sockets, networking_utils, remote_play,
     screenshots, servers, stats, timeline, utils, workshop,
 };
 
+#[doc(hidden)]
+pub mod runtime {
+    use crate::error::SteamError;
+
+    pub fn init_from_config(enabled: bool, app_id: Option<u32>) -> Result<(), SteamError> {
+        crate::app::init_from_config(enabled, app_id)
+    }
+
+    pub fn run_callbacks() -> Result<(), SteamError> {
+        crate::app::run_callbacks()
+    }
+}
+
 pub use error::SteamError;
+pub use leaderboards::{
+    LeaderboardDisplay, LeaderboardEntry, LeaderboardEntryScope, LeaderboardID,
+    LeaderboardScoreUpload, LeaderboardSort, LeaderboardUploadMode,
+};
 pub use types::{
-    AppID, ConnectionID, DLCID, FriendGame, FriendInfo, FriendListKind, FriendState, LeaderboardID,
-    LobbyDataKey, LobbyDistance, LobbyID, LobbyInfo, LobbyJoinability, LobbyNearValueFilter,
+    AppID, ConnectionID, DLCID, FriendGame, FriendInfo, FriendListKind, FriendState, LobbyDataKey,
+    LobbyDistance, LobbyID, LobbyInfo, LobbyJoinability, LobbyNearValueFilter,
     LobbyNumberComparison, LobbyNumberFilter, LobbySearch, LobbyStringFilter,
     LobbyStringFilterKind, LobbyType, OverlayDialog, RichPresenceKey, SocketID, SteamEvent,
     SteamID, StoreOverlayAction, UserOverlayDialog, WorkshopFileID,
@@ -203,27 +223,6 @@ macro_rules! steam_stat_set_i32 {
 }
 
 #[macro_export]
-macro_rules! steam_stat_store {
-    () => {
-        $crate::stats::store()
-    };
-}
-
-#[macro_export]
-macro_rules! steam_leaderboard_upload {
-    ($leaderboard:expr, $method:expr, $score:expr, $details:expr, $cb:expr) => {
-        $crate::leaderboards::upload($leaderboard, $method, $score, $details, $cb)
-    };
-}
-
-#[macro_export]
-macro_rules! steam_leaderboard_entries {
-    ($leaderboard:expr, $request:expr, $start:expr, $end:expr, $details_len:expr, $cb:expr) => {
-        $crate::leaderboards::entries($leaderboard, $request, $start, $end, $details_len, $cb)
-    };
-}
-
-#[macro_export]
 macro_rules! steam_cloud_read {
     ($name:expr) => {
         $crate::cloud::get_file_bytes($name)
@@ -234,6 +233,40 @@ macro_rules! steam_cloud_read {
 macro_rules! steam_cloud_write {
     ($name:expr, $bytes:expr) => {
         $crate::cloud::write($name, $bytes)
+    };
+}
+
+#[macro_export]
+macro_rules! steam_leaderboard_find {
+    ($name:expr, $cb:expr) => {
+        $crate::leaderboards::find($name, $cb)
+    };
+}
+
+#[macro_export]
+macro_rules! steam_leaderboard_create {
+    ($name:expr, $sort:expr, $display:expr, $cb:expr) => {
+        $crate::leaderboards::find_or_create($name, $sort, $display, $cb)
+    };
+}
+
+#[macro_export]
+macro_rules! steam_leaderboard_upload {
+    ($leaderboard:expr, $score:expr, $cb:expr) => {
+        $crate::leaderboards::upload_score($leaderboard, $score, $cb)
+    };
+    ($leaderboard:expr, $mode:expr, $score:expr, $details:expr, $cb:expr) => {
+        $crate::leaderboards::upload_score_with_details($leaderboard, $mode, $score, $details, $cb)
+    };
+}
+
+#[macro_export]
+macro_rules! steam_leaderboard_entries {
+    ($leaderboard:expr, $start:expr, $end:expr, $cb:expr) => {
+        $crate::leaderboards::entries_global($leaderboard, $start, $end, $cb)
+    };
+    ($leaderboard:expr, $scope:expr, $start:expr, $end:expr, $details_len:expr, $cb:expr) => {
+        $crate::leaderboards::entries($leaderboard, $scope, $start, $end, $details_len, $cb)
     };
 }
 
@@ -274,7 +307,6 @@ macro_rules! steam_p2p_read {
 pub mod prelude {
     pub use crate::account;
     pub use crate::achievements;
-    pub use crate::app;
     pub use crate::apps;
     pub use crate::auth;
     pub use crate::cloud;
@@ -296,20 +328,22 @@ pub mod prelude {
     pub use crate::workshop;
     pub use crate::{
         AppID, ConnectionID, DLCID, FriendGame, FriendInfo, FriendListKind, FriendState,
-        LeaderboardID, LobbyDataKey, LobbyDistance, LobbyID, LobbyInfo, LobbyJoinability,
-        LobbyNearValueFilter, LobbyNumberComparison, LobbyNumberFilter, LobbySearch,
-        LobbyStringFilter, LobbyStringFilterKind, LobbyType, OverlayDialog, RichPresenceKey,
-        SocketID, SteamError, SteamEvent, SteamID, StoreOverlayAction, UserOverlayDialog,
-        WorkshopFileID,
+        LeaderboardDisplay, LeaderboardEntry, LeaderboardEntryScope, LeaderboardID,
+        LeaderboardScoreUpload, LeaderboardSort, LeaderboardUploadMode, LobbyDataKey,
+        LobbyDistance, LobbyID, LobbyInfo, LobbyJoinability, LobbyNearValueFilter,
+        LobbyNumberComparison, LobbyNumberFilter, LobbySearch, LobbyStringFilter,
+        LobbyStringFilterKind, LobbyType, OverlayDialog, RichPresenceKey, SocketID, SteamError,
+        SteamEvent, SteamID, StoreOverlayAction, UserOverlayDialog, WorkshopFileID,
     };
     pub use crate::{
         steam_account_name, steam_account_self_id, steam_account_self_name, steam_ach_clear,
         steam_ach_unlock, steam_app_dlc_installed, steam_app_subscribed, steam_clear,
         steam_cloud_read, steam_cloud_write, steam_events, steam_friend_list,
-        steam_leaderboard_entries, steam_leaderboard_upload, steam_lobby_chat, steam_lobby_create,
-        steam_lobby_data_set, steam_lobby_join, steam_lobby_leave, steam_p2p_read, steam_p2p_send,
-        steam_rich_presence_set, steam_stat_get_i32, steam_stat_set_i32, steam_stat_store,
-        steam_unlock, steam_workshop_download, steam_workshop_subscribe,
+        steam_leaderboard_create, steam_leaderboard_entries, steam_leaderboard_find,
+        steam_leaderboard_upload, steam_lobby_chat, steam_lobby_create, steam_lobby_data_set,
+        steam_lobby_join, steam_lobby_leave, steam_p2p_read, steam_p2p_send,
+        steam_rich_presence_set, steam_stat_get_i32, steam_stat_set_i32, steam_unlock,
+        steam_workshop_download, steam_workshop_subscribe,
     };
 }
 

@@ -17,9 +17,7 @@ where
                 .set()
                 .map_err(|_| SteamError::CallFailed("achievement.set"))?;
         }
-        user_stats
-            .store_stats()
-            .map_err(|_| SteamError::CallFailed("user_stats.store_stats"))
+        app::request_stats_store()
     })
 }
 
@@ -30,9 +28,7 @@ pub fn clear(id: &str) -> Result<(), SteamError> {
             .achievement(id)
             .clear()
             .map_err(|_| SteamError::CallFailed("achievement.clear"))?;
-        user_stats
-            .store_stats()
-            .map_err(|_| SteamError::CallFailed("user_stats.store_stats"))
+        app::request_stats_store()
     })
 }
 
