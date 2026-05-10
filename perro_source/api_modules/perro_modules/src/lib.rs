@@ -1,4 +1,5 @@
 pub mod file;
+pub mod http;
 pub mod json;
 pub mod log;
 pub mod math;
@@ -7,6 +8,11 @@ pub mod random;
 
 pub mod prelude {
     pub use crate::file as FileMod;
+    pub use crate::http as HttpMod;
+    pub use crate::http::{
+        HttpBody, HttpClient, HttpConfig, HttpError, HttpErrorKind, HttpEvent, HttpHeaders, HttpID,
+        HttpMethod, HttpProxy, HttpRequest, HttpResponse, HttpTLSMode,
+    };
     pub use crate::json as JSONMod;
     pub use crate::log as LogMod;
     pub use crate::math as MathMod;
@@ -31,7 +37,7 @@ pub mod prelude {
         rand_range_u32, rand_u32, rand_u32_stream, rand_unit_vec2, rand_unit_vec3, rand01,
         rand01_stream, rand11, rand11_stream, shuffle,
     };
-    pub use crate::{emit_net_event, log_error, log_info, log_print, log_warn};
+    pub use crate::{emit_http_event, emit_net_event, log_error, log_info, log_print, log_warn};
 }
 
 #[cfg(test)]

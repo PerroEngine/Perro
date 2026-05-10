@@ -90,7 +90,7 @@ fn solve_ccd(skeleton: &mut Skeleton2D, cfg: CcdSolve) {
     if end >= skeleton.bones.len() {
         return;
     }
-    let mut chain = Vec::new();
+    let mut chain = Vec::with_capacity(chain_length.saturating_add(1).min(skeleton.bones.len()));
     collect_root_to_end(skeleton, end, &mut chain);
     if chain.is_empty() {
         return;
@@ -108,14 +108,13 @@ fn solve_ccd(skeleton: &mut Skeleton2D, cfg: CcdSolve) {
     let mut globals = vec![Mat3::IDENTITY; chain.len()];
     for _ in 0..iterations {
         compute_chain_globals(skeleton, &chain, &mut globals);
-        let end_pos = globals[chain.len() - 1].transform_point2(Vec2::ZERO);
+        let mut end_pos = globals[chain.len() - 1].transform_point2(Vec2::ZERO);
         if end_pos.distance(target_pos) <= tolerance {
             break;
         }
         for chain_index in (joint_start..chain.len() - 1).rev() {
             let joint = chain[chain_index];
             let joint_pos = globals[chain_index].transform_point2(Vec2::ZERO);
-            let end_pos = globals[chain.len() - 1].transform_point2(Vec2::ZERO);
             let to_end = end_pos - joint_pos;
             let to_target = target_pos - joint_pos;
             if to_end.length_squared() <= f32::EPSILON || to_target.length_squared() <= f32::EPSILON
@@ -124,7 +123,8 @@ fn solve_ccd(skeleton: &mut Skeleton2D, cfg: CcdSolve) {
             }
             let delta = to_end.angle_to(to_target) * weight;
             skeleton.bones[joint].pose.rotation += delta;
-            compute_chain_globals(skeleton, &chain, &mut globals);
+            compute_chain_globals_from(skeleton, &chain, chain_index, &mut globals);
+            end_pos = globals[chain.len() - 1].transform_point2(Vec2::ZERO);
         }
     }
 
@@ -153,6 +153,24 @@ fn collect_root_to_end(skeleton: &Skeleton2D, end: usize, out: &mut Vec<usize>) 
 fn compute_chain_globals(skeleton: &Skeleton2D, chain: &[usize], out: &mut [Mat3]) {
     let mut parent_global = Mat3::IDENTITY;
     for (chain_index, bone_index) in chain.iter().copied().enumerate() {
+        let global = parent_global * skeleton.bones[bone_index].pose.to_mat3();
+        out[chain_index] = global;
+        parent_global = global;
+    }
+}
+
+fn compute_chain_globals_from(
+    skeleton: &Skeleton2D,
+    chain: &[usize],
+    start: usize,
+    out: &mut [Mat3],
+) {
+    let mut parent_global = if start > 0 {
+        out[start - 1]
+    } else {
+        Mat3::IDENTITY
+    };
+    for (chain_index, bone_index) in chain.iter().copied().enumerate().skip(start) {
         let global = parent_global * skeleton.bones[bone_index].pose.to_mat3();
         out[chain_index] = global;
         parent_global = global;

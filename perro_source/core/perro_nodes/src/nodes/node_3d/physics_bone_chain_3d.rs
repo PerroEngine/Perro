@@ -19,6 +19,9 @@ pub struct PhysicsBoneChain3D {
     pub internal_bones: Vec<usize>,
     pub internal_positions: Vec<Vector3>,
     pub internal_prev_positions: Vec<Vector3>,
+    pub internal_rest_world: Vec<Vector3>,
+    pub internal_lengths: Vec<f32>,
+    pub internal_local_positions: Vec<Vector3>,
 }
 
 impl Default for PhysicsBoneChain3D {
@@ -44,6 +47,9 @@ impl PhysicsBoneChain3D {
             internal_bones: Vec::new(),
             internal_positions: Vec::new(),
             internal_prev_positions: Vec::new(),
+            internal_rest_world: Vec::new(),
+            internal_lengths: Vec::new(),
+            internal_local_positions: Vec::new(),
         }
     }
 }

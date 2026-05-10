@@ -27,16 +27,14 @@ where
         return;
     }
 
-    let Some((bones_len, chain, rest_globals)) =
-        with_base_node!(ctx, Skeleton2D, cfg.skeleton, |skeleton| {
-            let chain = collect_chain(skeleton, cfg.bone_index as usize, cfg.chain_length);
-            let rest_globals = chain_global_positions(skeleton, &chain);
-            (skeleton.bones.len(), chain, rest_globals)
-        })
-    else {
+    let Some((chain, rest_globals)) = with_base_node!(ctx, Skeleton2D, cfg.skeleton, |skeleton| {
+        let chain = collect_chain(skeleton, cfg.bone_index as usize, cfg.chain_length);
+        let rest_globals = chain_global_positions(skeleton, &chain);
+        (chain, rest_globals)
+    }) else {
         return;
     };
-    if chain.len() < 2 || rest_globals.len() != chain.len() || bones_len == 0 {
+    if chain.len() < 2 || rest_globals.len() != chain.len() {
         return;
     }
 
@@ -45,14 +43,6 @@ where
         .get_global_transform_2d(cfg.skeleton)
         .unwrap_or(Transform2D::IDENTITY)
         .to_mat3();
-    let rest_world = rest_globals
-        .iter()
-        .map(|p| skeleton_global.transform_point2(*p).into())
-        .collect::<Vec<Vector2>>();
-    let lengths = rest_world
-        .windows(2)
-        .map(|pair| pair[0].distance_to(pair[1]).max(0.0001))
-        .collect::<Vec<_>>();
     let colliders = if cfg.collisions {
         collect_colliders(ctx)
     } else {
@@ -60,17 +50,40 @@ where
     };
     let dt = fixed_delta_time!(ctx).clamp(0.0001, 0.05);
 
-    let Some(positions) = with_base_node_mut!(ctx, PhysicsBoneChain2D, id, |node| {
-        step_chain(node, &chain, &rest_world, &lengths, &colliders, cfg, dt)
+    let Some(local_positions) = with_base_node_mut!(ctx, PhysicsBoneChain2D, id, |node| {
+        let mut rest_world = std::mem::take(&mut node.internal_rest_world);
+        rest_world.clear();
+        rest_world.extend(
+            rest_globals
+                .iter()
+                .map(|p| Vector2::from(skeleton_global.transform_point2(*p))),
+        );
+        let mut lengths = std::mem::take(&mut node.internal_lengths);
+        lengths.clear();
+        lengths.extend(
+            rest_world
+                .windows(2)
+                .map(|pair| pair[0].distance_to(pair[1]).max(0.0001)),
+        );
+        step_chain(node, &chain, &rest_world, &lengths, &colliders, cfg, dt);
+
+        let skeleton_from_world = skeleton_global.inverse();
+        let mut local_positions = std::mem::take(&mut node.internal_local_positions);
+        local_positions.clear();
+        local_positions.extend(
+            node.internal_positions
+                .iter()
+                .map(|p| Vector2::from(skeleton_from_world.transform_point2((*p).into()))),
+        );
+        let out = local_positions.clone();
+        node.internal_rest_world = rest_world;
+        node.internal_lengths = lengths;
+        node.internal_local_positions = local_positions;
+        out
     }) else {
         return;
     };
 
-    let skeleton_from_world = skeleton_global.inverse();
-    let local_positions = positions
-        .iter()
-        .map(|p| skeleton_from_world.transform_point2((*p).into()))
-        .collect::<Vec<Vec2>>();
     let changed = with_base_node_mut!(ctx, Skeleton2D, cfg.skeleton, |skeleton| {
         write_chain_positions(skeleton, &chain, &local_positions);
     });
@@ -96,6 +109,8 @@ struct ChainCfg {
 #[derive(Clone)]
 struct Collider {
     world: Transform2D,
+    world_mat: Mat3,
+    inv_world_mat: Mat3,
     shape: Shape2D,
 }
 
@@ -120,23 +135,35 @@ fn collect_chain(skeleton: &Skeleton2D, end: usize, max_len: usize) -> Vec<usize
 }
 
 fn chain_global_positions(skeleton: &Skeleton2D, chain: &[usize]) -> Vec<Vec2> {
-    let mut globals = vec![Mat3::IDENTITY; skeleton.bones.len()];
-    for (index, bone) in skeleton.bones.iter().enumerate() {
-        let local = bone.pose.to_mat3();
-        globals[index] = if bone.parent >= 0 {
-            globals
-                .get(bone.parent as usize)
-                .copied()
-                .unwrap_or(Mat3::IDENTITY)
-                * local
-        } else {
-            local
-        };
+    let Some(first) = chain.first().copied() else {
+        return Vec::new();
+    };
+    let mut ancestors = Vec::new();
+    let mut current = first as i32;
+    let mut hops = 0usize;
+    while current >= 0 && hops < skeleton.bones.len() {
+        let index = current as usize;
+        if index >= skeleton.bones.len() {
+            break;
+        }
+        ancestors.push(index);
+        current = skeleton.bones[index].parent;
+        hops += 1;
     }
-    chain
-        .iter()
-        .map(|bone| globals[*bone].transform_point2(Vec2::ZERO))
-        .collect()
+    ancestors.reverse();
+
+    let mut global = Mat3::IDENTITY;
+    for bone in ancestors {
+        global *= skeleton.bones[bone].pose.to_mat3();
+    }
+
+    let mut out = Vec::with_capacity(chain.len());
+    out.push(global.transform_point2(Vec2::ZERO));
+    for bone in chain.iter().copied().skip(1) {
+        global *= skeleton.bones[bone].pose.to_mat3();
+        out.push(global.transform_point2(Vec2::ZERO));
+    }
+    out
 }
 
 fn collect_colliders<RT>(ctx: &mut RuntimeWindow<'_, RT>) -> Vec<Collider>
@@ -165,7 +192,13 @@ where
                 continue;
             };
             let world = Transform2D::from_mat3(collider_world.to_mat3() * shape_local.to_mat3());
-            out.push(Collider { world, shape });
+            let world_mat = world.to_mat3();
+            out.push(Collider {
+                world,
+                world_mat,
+                inv_world_mat: world_mat.inverse(),
+                shape,
+            });
         }
     }
     out
@@ -179,7 +212,7 @@ fn step_chain(
     colliders: &[Collider],
     cfg: ChainCfg,
     dt: f32,
-) -> Vec<Vector2> {
+) {
     let reset = node.internal_bones != chain
         || node.internal_positions.len() != chain.len()
         || node.internal_prev_positions.len() != chain.len();
@@ -216,8 +249,6 @@ fn step_chain(
         solve_lengths_forward(&mut node.internal_positions, lengths);
         collide_positions(&mut node.internal_positions, cfg.radius, colliders);
     }
-
-    node.internal_positions.clone()
 }
 
 fn solve_lengths_forward(positions: &mut [Vector2], lengths: &[f32]) {
@@ -254,11 +285,9 @@ fn collide_point(point: Vector2, radius: f32, collider: &Collider) -> Vector2 {
         Shape2D::Circle {
             radius: shape_radius,
         } => collide_circle(point, radius, collider.world, shape_radius),
-        Shape2D::Quad { width, height } => {
-            collide_quad(point, radius, collider.world, width, height)
-        }
+        Shape2D::Quad { width, height } => collide_quad(point, radius, collider, width, height),
         Shape2D::Triangle { width, height, .. } => {
-            collide_quad(point, radius, collider.world, width, height)
+            collide_quad(point, radius, collider, width, height)
         }
     }
 }
@@ -279,12 +308,11 @@ fn collide_circle(point: Vector2, radius: f32, world: Transform2D, shape_radius:
 fn collide_quad(
     point: Vector2,
     radius: f32,
-    world: Transform2D,
+    collider: &Collider,
     width: f32,
     height: f32,
 ) -> Vector2 {
-    let inv = world.to_mat3().inverse();
-    let local: Vector2 = inv.transform_point2(point.into()).into();
+    let local: Vector2 = collider.inv_world_mat.transform_point2(point.into()).into();
     let half = Vector2::new(width.abs() * 0.5 + radius, height.abs() * 0.5 + radius);
     if local.x.abs() > half.x || local.y.abs() > half.y {
         return point;
@@ -297,10 +325,10 @@ fn collide_quad(
     } else {
         pushed.y = half.y.copysign(local.y);
     }
-    world.to_mat3().transform_point2(pushed.into()).into()
+    collider.world_mat.transform_point2(pushed.into()).into()
 }
 
-fn write_chain_positions(skeleton: &mut Skeleton2D, chain: &[usize], local_positions: &[Vec2]) {
+fn write_chain_positions(skeleton: &mut Skeleton2D, chain: &[usize], local_positions: &[Vector2]) {
     let mut parent_globals = vec![Mat3::IDENTITY; skeleton.bones.len()];
     for (chain_pos, bone_index) in chain.iter().copied().enumerate() {
         if chain_pos == 0 {
@@ -310,7 +338,7 @@ fn write_chain_positions(skeleton: &mut Skeleton2D, chain: &[usize], local_posit
         let parent_global = parent_globals[chain[chain_pos - 1]];
         let local = parent_global
             .inverse()
-            .transform_point2(local_positions[chain_pos]);
+            .transform_point2(local_positions[chain_pos].into());
         skeleton.bones[bone_index].pose.position = local.into();
         parent_globals[bone_index] = parent_global * skeleton.bones[bone_index].pose.to_mat3();
     }

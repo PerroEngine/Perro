@@ -92,7 +92,7 @@ fn solve_ccd(skeleton: &mut Skeleton3D, cfg: CcdSolve) {
     if end >= skeleton.bones.len() {
         return;
     }
-    let mut chain = Vec::new();
+    let mut chain = Vec::with_capacity(chain_length.saturating_add(1).min(skeleton.bones.len()));
     collect_root_to_end(skeleton, end, &mut chain);
     if chain.is_empty() {
         return;

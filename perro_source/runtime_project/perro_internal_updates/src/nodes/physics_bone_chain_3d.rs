@@ -27,16 +27,14 @@ where
         return;
     }
 
-    let Some((bones_len, chain, rest_globals)) =
-        with_base_node!(ctx, Skeleton3D, cfg.skeleton, |skeleton| {
-            let chain = collect_chain(skeleton, cfg.bone_index as usize, cfg.chain_length);
-            let rest_globals = chain_global_positions(skeleton, &chain);
-            (skeleton.bones.len(), chain, rest_globals)
-        })
-    else {
+    let Some((chain, rest_globals)) = with_base_node!(ctx, Skeleton3D, cfg.skeleton, |skeleton| {
+        let chain = collect_chain(skeleton, cfg.bone_index as usize, cfg.chain_length);
+        let rest_globals = chain_global_positions(skeleton, &chain);
+        (chain, rest_globals)
+    }) else {
         return;
     };
-    if chain.len() < 2 || rest_globals.len() != chain.len() || bones_len == 0 {
+    if chain.len() < 2 || rest_globals.len() != chain.len() {
         return;
     }
 
@@ -45,14 +43,6 @@ where
         .get_global_transform_3d(cfg.skeleton)
         .unwrap_or(Transform3D::IDENTITY)
         .to_mat4();
-    let rest_world = rest_globals
-        .iter()
-        .map(|p| skeleton_global.transform_point3(*p).into())
-        .collect::<Vec<Vector3>>();
-    let lengths = rest_world
-        .windows(2)
-        .map(|pair| pair[0].distance_to(pair[1]).max(0.0001))
-        .collect::<Vec<_>>();
     let colliders = if cfg.collisions {
         collect_colliders(ctx)
     } else {
@@ -60,17 +50,40 @@ where
     };
     let dt = fixed_delta_time!(ctx).clamp(0.0001, 0.05);
 
-    let Some(positions) = with_base_node_mut!(ctx, PhysicsBoneChain3D, id, |node| {
-        step_chain(node, &chain, &rest_world, &lengths, &colliders, cfg, dt)
+    let Some(local_positions) = with_base_node_mut!(ctx, PhysicsBoneChain3D, id, |node| {
+        let mut rest_world = std::mem::take(&mut node.internal_rest_world);
+        rest_world.clear();
+        rest_world.extend(
+            rest_globals
+                .iter()
+                .map(|p| Vector3::from(skeleton_global.transform_point3(*p))),
+        );
+        let mut lengths = std::mem::take(&mut node.internal_lengths);
+        lengths.clear();
+        lengths.extend(
+            rest_world
+                .windows(2)
+                .map(|pair| pair[0].distance_to(pair[1]).max(0.0001)),
+        );
+        step_chain(node, &chain, &rest_world, &lengths, &colliders, cfg, dt);
+
+        let skeleton_from_world = skeleton_global.inverse();
+        let mut local_positions = std::mem::take(&mut node.internal_local_positions);
+        local_positions.clear();
+        local_positions.extend(
+            node.internal_positions
+                .iter()
+                .map(|p| Vector3::from(skeleton_from_world.transform_point3((*p).into()))),
+        );
+        let out = local_positions.clone();
+        node.internal_rest_world = rest_world;
+        node.internal_lengths = lengths;
+        node.internal_local_positions = local_positions;
+        out
     }) else {
         return;
     };
 
-    let skeleton_from_world = skeleton_global.inverse();
-    let local_positions = positions
-        .iter()
-        .map(|p| skeleton_from_world.transform_point3((*p).into()))
-        .collect::<Vec<Vec3>>();
     let changed = with_base_node_mut!(ctx, Skeleton3D, cfg.skeleton, |skeleton| {
         write_chain_positions(skeleton, &chain, &local_positions);
     });
@@ -96,6 +109,9 @@ struct ChainCfg {
 #[derive(Clone)]
 struct Collider {
     world: Transform3D,
+    world_mat: Mat4,
+    inv_world_mat: Mat4,
+    max_scale: f32,
     shape: Shape3D,
 }
 
@@ -120,22 +136,33 @@ fn collect_chain(skeleton: &Skeleton3D, end: usize, max_len: usize) -> Vec<usize
 }
 
 fn chain_global_positions(skeleton: &Skeleton3D, chain: &[usize]) -> Vec<Vec3> {
-    let mut out = Vec::with_capacity(chain.len());
-    let mut globals = vec![Mat4::IDENTITY; skeleton.bones.len()];
-    for (index, bone) in skeleton.bones.iter().enumerate() {
-        let local = bone.pose.to_mat4();
-        globals[index] = if bone.parent >= 0 {
-            globals
-                .get(bone.parent as usize)
-                .copied()
-                .unwrap_or(Mat4::IDENTITY)
-                * local
-        } else {
-            local
-        };
+    let Some(first) = chain.first().copied() else {
+        return Vec::new();
+    };
+    let mut ancestors = Vec::new();
+    let mut current = first as i32;
+    let mut hops = 0usize;
+    while current >= 0 && hops < skeleton.bones.len() {
+        let index = current as usize;
+        if index >= skeleton.bones.len() {
+            break;
+        }
+        ancestors.push(index);
+        current = skeleton.bones[index].parent;
+        hops += 1;
     }
-    for bone in chain {
-        out.push(globals[*bone].transform_point3(Vec3::ZERO));
+    ancestors.reverse();
+
+    let mut global = Mat4::IDENTITY;
+    for bone in ancestors {
+        global *= skeleton.bones[bone].pose.to_mat4();
+    }
+
+    let mut out = Vec::with_capacity(chain.len());
+    out.push(global.transform_point3(Vec3::ZERO));
+    for bone in chain.iter().copied().skip(1) {
+        global *= skeleton.bones[bone].pose.to_mat4();
+        out.push(global.transform_point3(Vec3::ZERO));
     }
     out
 }
@@ -166,7 +193,14 @@ where
                 continue;
             };
             let world = Transform3D::from_mat4(collider_world.to_mat4() * shape_local.to_mat4());
-            out.push(Collider { world, shape });
+            let world_mat = world.to_mat4();
+            out.push(Collider {
+                world,
+                world_mat,
+                inv_world_mat: world_mat.inverse(),
+                max_scale: max_abs_component(world.scale),
+                shape,
+            });
         }
     }
     out
@@ -180,7 +214,7 @@ fn step_chain(
     colliders: &[Collider],
     cfg: ChainCfg,
     dt: f32,
-) -> Vec<Vector3> {
+) {
     let reset = node.internal_bones != chain
         || node.internal_positions.len() != chain.len()
         || node.internal_prev_positions.len() != chain.len();
@@ -226,8 +260,6 @@ fn step_chain(
                 node.internal_positions[i] - delta.normalized() * max_step;
         }
     }
-
-    node.internal_positions.clone()
 }
 
 fn solve_lengths_forward(positions: &mut [Vector3], lengths: &[f32]) {
@@ -263,34 +295,32 @@ fn collide_point(point: Vector3, radius: f32, collider: &Collider) -> Vector3 {
     match &collider.shape {
         Shape3D::Sphere {
             radius: shape_radius,
-        } => collide_sphere(point, radius, collider.world, *shape_radius),
-        Shape3D::Cube { size } => collide_cube(point, radius, collider.world, *size),
+        } => collide_sphere(point, radius, collider, *shape_radius),
+        Shape3D::Cube { size } => collide_cube(point, radius, collider, *size),
         Shape3D::Capsule {
             radius: shape_radius,
             half_height,
-        } => collide_capsule(point, radius, collider.world, *shape_radius, *half_height),
+        } => collide_capsule(point, radius, collider, *shape_radius, *half_height),
         Shape3D::Cylinder {
             radius: shape_radius,
             half_height,
-        } => collide_cylinder(point, radius, collider.world, *shape_radius, *half_height),
+        } => collide_cylinder(point, radius, collider, *shape_radius, *half_height),
         Shape3D::Cone {
             radius: shape_radius,
             half_height,
-        } => collide_cone(point, radius, collider.world, *shape_radius, *half_height),
-        Shape3D::TriPrism { size } => collide_tri_prism(point, radius, collider.world, *size),
+        } => collide_cone(point, radius, collider, *shape_radius, *half_height),
+        Shape3D::TriPrism { size } => collide_tri_prism(point, radius, collider, *size),
         Shape3D::TriangularPyramid { size } => {
-            collide_triangular_pyramid(point, radius, collider.world, *size)
+            collide_triangular_pyramid(point, radius, collider, *size)
         }
-        Shape3D::SquarePyramid { size } => {
-            collide_square_pyramid(point, radius, collider.world, *size)
-        }
-        Shape3D::TriMesh { .. } => collide_sphere(point, radius, collider.world, 0.5),
+        Shape3D::SquarePyramid { size } => collide_square_pyramid(point, radius, collider, *size),
+        Shape3D::TriMesh { .. } => collide_sphere(point, radius, collider, 0.5),
     }
 }
 
-fn collide_sphere(point: Vector3, radius: f32, world: Transform3D, shape_radius: f32) -> Vector3 {
-    let center = world.position;
-    let scale = max_abs_component(world.scale);
+fn collide_sphere(point: Vector3, radius: f32, collider: &Collider, shape_radius: f32) -> Vector3 {
+    let center = collider.world.position;
+    let scale = collider.max_scale;
     let r = shape_radius.abs() * scale + radius;
     let delta = point - center;
     let len = delta.length();
@@ -301,9 +331,8 @@ fn collide_sphere(point: Vector3, radius: f32, world: Transform3D, shape_radius:
     }
 }
 
-fn collide_cube(point: Vector3, radius: f32, world: Transform3D, size: Vector3) -> Vector3 {
-    let inv = world.to_mat4().inverse();
-    let local: Vector3 = inv.transform_point3(point.into()).into();
+fn collide_cube(point: Vector3, radius: f32, collider: &Collider, size: Vector3) -> Vector3 {
+    let local: Vector3 = collider.inv_world_mat.transform_point3(point.into()).into();
     let half = Vector3::new(
         size.x.abs() * 0.5 + radius,
         size.y.abs() * 0.5 + radius,
@@ -323,19 +352,18 @@ fn collide_cube(point: Vector3, radius: f32, world: Transform3D, size: Vector3) 
     } else {
         pushed.z = half.z.copysign(local.z);
     }
-    world.to_mat4().transform_point3(pushed.into()).into()
+    collider.world_mat.transform_point3(pushed.into()).into()
 }
 
 fn collide_capsule(
     point: Vector3,
     radius: f32,
-    world: Transform3D,
+    collider: &Collider,
     shape_radius: f32,
     half_height: f32,
 ) -> Vector3 {
-    let inv = world.to_mat4().inverse();
-    let local: Vector3 = inv.transform_point3(point.into()).into();
-    let scale = max_abs_component(world.scale).max(0.0001);
+    let local: Vector3 = collider.inv_world_mat.transform_point3(point.into()).into();
+    let scale = collider.max_scale.max(0.0001);
     let local_probe_radius = radius / scale;
     let a = Vector3::new(0.0, -half_height.abs(), 0.0);
     let b = Vector3::new(0.0, half_height.abs(), 0.0);
@@ -345,20 +373,19 @@ fn collide_capsule(
         local,
         nearest,
         shape_radius.abs() + local_probe_radius,
-        world,
+        collider,
     )
 }
 
 fn collide_cylinder(
     point: Vector3,
     radius: f32,
-    world: Transform3D,
+    collider: &Collider,
     shape_radius: f32,
     half_height: f32,
 ) -> Vector3 {
-    let inv = world.to_mat4().inverse();
-    let local: Vector3 = inv.transform_point3(point.into()).into();
-    let scale = max_abs_component(world.scale).max(0.0001);
+    let local: Vector3 = collider.inv_world_mat.transform_point3(point.into()).into();
+    let scale = collider.max_scale.max(0.0001);
     let probe = radius / scale;
     let r = shape_radius.abs() + probe;
     let h = half_height.abs() + probe;
@@ -379,19 +406,18 @@ fn collide_cylinder(
     } else {
         pushed.y = h.copysign(local.y);
     }
-    world.to_mat4().transform_point3(pushed.into()).into()
+    collider.world_mat.transform_point3(pushed.into()).into()
 }
 
 fn collide_cone(
     point: Vector3,
     radius: f32,
-    world: Transform3D,
+    collider: &Collider,
     shape_radius: f32,
     half_height: f32,
 ) -> Vector3 {
-    let inv = world.to_mat4().inverse();
-    let local: Vector3 = inv.transform_point3(point.into()).into();
-    let scale = max_abs_component(world.scale).max(0.0001);
+    let local: Vector3 = collider.inv_world_mat.transform_point3(point.into()).into();
+    let scale = collider.max_scale.max(0.0001);
     let probe = radius / scale;
     let h = half_height.abs().max(0.0001);
     if local.y < -h - probe || local.y > h + probe {
@@ -411,40 +437,39 @@ fn collide_cone(
     } else {
         pushed.x = allowed;
     }
-    world.to_mat4().transform_point3(pushed.into()).into()
+    collider.world_mat.transform_point3(pushed.into()).into()
 }
 
-fn collide_tri_prism(point: Vector3, radius: f32, world: Transform3D, size: Vector3) -> Vector3 {
-    collide_poly_shape(point, radius, world, tri_prism_faces(size))
+fn collide_tri_prism(point: Vector3, radius: f32, collider: &Collider, size: Vector3) -> Vector3 {
+    collide_poly_shape(point, radius, collider, &tri_prism_faces(size))
 }
 
 fn collide_triangular_pyramid(
     point: Vector3,
     radius: f32,
-    world: Transform3D,
+    collider: &Collider,
     size: Vector3,
 ) -> Vector3 {
-    collide_poly_shape(point, radius, world, triangular_pyramid_faces(size))
+    collide_poly_shape(point, radius, collider, &triangular_pyramid_faces(size))
 }
 
 fn collide_square_pyramid(
     point: Vector3,
     radius: f32,
-    world: Transform3D,
+    collider: &Collider,
     size: Vector3,
 ) -> Vector3 {
-    collide_poly_shape(point, radius, world, square_pyramid_faces(size))
+    collide_poly_shape(point, radius, collider, &square_pyramid_faces(size))
 }
 
 fn collide_poly_shape(
     point: Vector3,
     radius: f32,
-    world: Transform3D,
-    faces: Vec<[Vector3; 3]>,
+    collider: &Collider,
+    faces: &[[Vector3; 3]],
 ) -> Vector3 {
-    let inv = world.to_mat4().inverse();
-    let local: Vector3 = inv.transform_point3(point.into()).into();
-    let scale = max_abs_component(world.scale).max(0.0001);
+    let local: Vector3 = collider.inv_world_mat.transform_point3(point.into()).into();
+    let scale = collider.max_scale.max(0.0001);
     let probe = radius / scale;
     let mut best_dist = f32::NEG_INFINITY;
     let mut best_normal = Vector3::ZERO;
@@ -464,7 +489,7 @@ fn collide_poly_shape(
     }
     if best_dist.is_finite() && best_normal.length_squared() > f32::EPSILON {
         let pushed = local + best_normal * (probe - best_dist);
-        world.to_mat4().transform_point3(pushed.into()).into()
+        collider.world_mat.transform_point3(pushed.into()).into()
     } else {
         point
     }
@@ -485,13 +510,13 @@ fn push_from_nearest(
     local: Vector3,
     nearest: Vector3,
     combined_radius: f32,
-    world: Transform3D,
+    collider: &Collider,
 ) -> Vector3 {
     let delta = local - nearest;
     let len = delta.length();
     if len > 0.0001 && len < combined_radius {
         let pushed = nearest + delta / len * combined_radius;
-        world.to_mat4().transform_point3(pushed.into()).into()
+        collider.world_mat.transform_point3(pushed.into()).into()
     } else {
         world_point
     }
@@ -501,7 +526,7 @@ fn max_abs_component(v: Vector3) -> f32 {
     v.x.abs().max(v.y.abs()).max(v.z.abs())
 }
 
-fn tri_prism_faces(size: Vector3) -> Vec<[Vector3; 3]> {
+fn tri_prism_faces(size: Vector3) -> [[Vector3; 3]; 8] {
     let hw = size.x.abs().max(0.0001) * 0.5;
     let hh = size.y.abs().max(0.0001) * 0.5;
     let hd = size.z.abs().max(0.0001) * 0.5;
@@ -513,7 +538,7 @@ fn tri_prism_faces(size: Vector3) -> Vec<[Vector3; 3]> {
         Vector3::new(hw, -hh, hd),
         Vector3::new(0.0, hh, hd),
     ];
-    vec![
+    [
         [p[0], p[2], p[1]],
         [p[3], p[4], p[5]],
         [p[0], p[1], p[4]],
@@ -525,7 +550,7 @@ fn tri_prism_faces(size: Vector3) -> Vec<[Vector3; 3]> {
     ]
 }
 
-fn triangular_pyramid_faces(size: Vector3) -> Vec<[Vector3; 3]> {
+fn triangular_pyramid_faces(size: Vector3) -> [[Vector3; 3]; 4] {
     let hw = size.x.abs().max(0.0001) * 0.5;
     let hh = size.y.abs().max(0.0001) * 0.5;
     let hd = size.z.abs().max(0.0001) * 0.5;
@@ -535,7 +560,7 @@ fn triangular_pyramid_faces(size: Vector3) -> Vec<[Vector3; 3]> {
         Vector3::new(0.0, -hh, hd),
         Vector3::new(0.0, hh, 0.0),
     ];
-    vec![
+    [
         [p[0], p[2], p[1]],
         [p[0], p[1], p[3]],
         [p[1], p[2], p[3]],
@@ -543,7 +568,7 @@ fn triangular_pyramid_faces(size: Vector3) -> Vec<[Vector3; 3]> {
     ]
 }
 
-fn square_pyramid_faces(size: Vector3) -> Vec<[Vector3; 3]> {
+fn square_pyramid_faces(size: Vector3) -> [[Vector3; 3]; 6] {
     let hw = size.x.abs().max(0.0001) * 0.5;
     let hh = size.y.abs().max(0.0001) * 0.5;
     let hd = size.z.abs().max(0.0001) * 0.5;
@@ -554,7 +579,7 @@ fn square_pyramid_faces(size: Vector3) -> Vec<[Vector3; 3]> {
         Vector3::new(-hw, -hh, hd),
         Vector3::new(0.0, hh, 0.0),
     ];
-    vec![
+    [
         [p[0], p[3], p[2]],
         [p[0], p[2], p[1]],
         [p[0], p[1], p[4]],
@@ -564,7 +589,7 @@ fn square_pyramid_faces(size: Vector3) -> Vec<[Vector3; 3]> {
     ]
 }
 
-fn write_chain_positions(skeleton: &mut Skeleton3D, chain: &[usize], local_positions: &[Vec3]) {
+fn write_chain_positions(skeleton: &mut Skeleton3D, chain: &[usize], local_positions: &[Vector3]) {
     let mut parent_globals = vec![Mat4::IDENTITY; skeleton.bones.len()];
     for (chain_pos, bone_index) in chain.iter().copied().enumerate() {
         if chain_pos == 0 {
@@ -574,7 +599,7 @@ fn write_chain_positions(skeleton: &mut Skeleton3D, chain: &[usize], local_posit
         let parent_global = parent_globals[chain[chain_pos - 1]];
         let local = parent_global
             .inverse()
-            .transform_point3(local_positions[chain_pos]);
+            .transform_point3(local_positions[chain_pos].into());
         skeleton.bones[bone_index].pose.position = local.into();
         parent_globals[bone_index] = parent_global * skeleton.bones[bone_index].pose.to_mat4();
     }
@@ -602,6 +627,18 @@ mod tests {
         }
     }
 
+    fn collider(shape: Shape3D) -> Collider {
+        let world = Transform3D::IDENTITY;
+        let world_mat = world.to_mat4();
+        Collider {
+            world,
+            world_mat,
+            inv_world_mat: world_mat.inverse(),
+            max_scale: max_abs_component(world.scale),
+            shape,
+        }
+    }
+
     #[test]
     fn collect_chain_caps_length() {
         let mut skeleton = Skeleton3D::new();
@@ -611,10 +648,7 @@ mod tests {
 
     #[test]
     fn sphere_collision_pushes_point_out() {
-        let collider = Collider {
-            world: Transform3D::IDENTITY,
-            shape: Shape3D::Sphere { radius: 1.0 },
-        };
+        let collider = collider(Shape3D::Sphere { radius: 1.0 });
         let out = collide_point(Vector3::new(0.0, 0.5, 0.0), 0.1, &collider);
         assert!(out.length() >= 1.099);
     }
@@ -636,26 +670,20 @@ mod tests {
 
     #[test]
     fn capsule_collision_pushes_point_out() {
-        let collider = Collider {
-            world: Transform3D::IDENTITY,
-            shape: Shape3D::Capsule {
-                radius: 0.5,
-                half_height: 1.0,
-            },
-        };
+        let collider = collider(Shape3D::Capsule {
+            radius: 0.5,
+            half_height: 1.0,
+        });
         let out = collide_point(Vector3::new(0.2, 0.0, 0.0), 0.1, &collider);
         assert!(out.x.abs() >= 0.599);
     }
 
     #[test]
     fn cylinder_collision_pushes_point_out() {
-        let collider = Collider {
-            world: Transform3D::IDENTITY,
-            shape: Shape3D::Cylinder {
-                radius: 0.5,
-                half_height: 1.0,
-            },
-        };
+        let collider = collider(Shape3D::Cylinder {
+            radius: 0.5,
+            half_height: 1.0,
+        });
         let out = collide_point(Vector3::new(0.2, 0.0, 0.0), 0.1, &collider);
         assert!(out.x.abs() >= 0.599);
     }

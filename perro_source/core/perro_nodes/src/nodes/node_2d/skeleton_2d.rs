@@ -159,6 +159,9 @@ pub struct PhysicsBoneChain2D {
     pub internal_bones: Vec<usize>,
     pub internal_positions: Vec<perro_structs::Vector2>,
     pub internal_prev_positions: Vec<perro_structs::Vector2>,
+    pub internal_rest_world: Vec<perro_structs::Vector2>,
+    pub internal_lengths: Vec<f32>,
+    pub internal_local_positions: Vec<perro_structs::Vector2>,
 }
 
 impl Default for PhysicsBoneChain2D {
@@ -184,6 +187,9 @@ impl PhysicsBoneChain2D {
             internal_bones: Vec::new(),
             internal_positions: Vec::new(),
             internal_prev_positions: Vec::new(),
+            internal_rest_world: Vec::new(),
+            internal_lengths: Vec::new(),
+            internal_local_positions: Vec::new(),
         }
     }
 }

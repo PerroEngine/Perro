@@ -87,3 +87,29 @@ fn net_api_typecheck_and_forward() {
     let _ = crate::net::encode_frame(b"abc").unwrap();
     let _ = crate::net::heartbeat_ping();
 }
+
+#[test]
+fn http_api_typecheck_and_forward() {
+    let mut client = crate::http::HttpClient::with_config(
+        crate::http::HttpConfig::default()
+            .cookies_enabled(true)
+            .tls_mode(crate::http::HttpTLSMode::DefaultRustls),
+    );
+    let request = crate::http::HttpRequest::post_variant(
+        "http://127.0.0.1:9",
+        perro_variant::Variant::from(true),
+    )
+    .header("X-Test", "1")
+    .timeout_ms(100)
+    .max_response_bytes(1024);
+    let _id: crate::http::HttpID = client.request(request);
+    let event = crate::http::HttpEvent::Failed(crate::http::HttpError::new(
+        crate::http::HttpID(0),
+        "http://127.0.0.1",
+        crate::http::HttpErrorKind::Send,
+        "fail",
+    ));
+    let _ = event.signal_name();
+    let _ = event.signal_id();
+    let _ = event.signal_params();
+}
