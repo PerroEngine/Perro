@@ -1,12 +1,13 @@
 use ahash::AHashMap;
 use perro_ids::{NodeID, ScriptMemberID, SignalID};
 use perro_variant::Variant;
+use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct SignalConnection {
     pub(crate) script_id: NodeID,
     pub(crate) method: ScriptMemberID,
-    pub(crate) params: Vec<Variant>,
+    pub(crate) params: Arc<[Variant]>,
 }
 
 pub(crate) struct SignalRegistry {
@@ -40,7 +41,7 @@ impl SignalRegistry {
         connections.push(SignalConnection {
             script_id,
             method,
-            params: params.to_vec(),
+            params: Arc::from(params),
         });
         true
     }

@@ -1115,32 +1115,103 @@ impl Runtime {
 
     fn emit_button_events(&mut self, events: &[(NodeID, &'static str)]) {
         for &(node, event) in events {
-            let signals = self.button_event_signals(node, event);
+            self.collect_button_event_signals(node, event);
+            if self.render_ui.event_signal_scratch.is_empty() {
+                continue;
+            }
+            let mut signals = std::mem::take(&mut self.render_ui.event_signal_scratch);
             let params = [Variant::from(node)];
-            for signal in signals {
+            for signal in signals.iter().copied() {
                 let _ = SignalAPI::signal_emit(self, signal, &params);
             }
+            signals.clear();
+            self.render_ui.event_signal_scratch = signals;
         }
     }
 
     fn emit_text_edit_event(&mut self, node: NodeID, event: &str, text: Option<&str>) {
-        let signals = self.text_edit_event_signals(node, event);
-        if signals.is_empty() {
+        self.collect_text_edit_event_signals(node, event);
+        if self.render_ui.event_signal_scratch.is_empty() {
             return;
         }
+        let mut signals = std::mem::take(&mut self.render_ui.event_signal_scratch);
         if let Some(text) = text {
             let params = [Variant::from(node), Variant::from(text)];
-            for signal in signals {
+            for signal in signals.iter().copied() {
                 let _ = SignalAPI::signal_emit(self, signal, &params);
             }
         } else {
             let params = [Variant::from(node)];
-            for signal in signals {
+            for signal in signals.iter().copied() {
                 let _ = SignalAPI::signal_emit(self, signal, &params);
             }
         }
+        signals.clear();
+        self.render_ui.event_signal_scratch = signals;
     }
 
+    fn collect_button_event_signals(&mut self, node: NodeID, event: &str) {
+        self.render_ui.event_signal_scratch.clear();
+        let Some(scene_node) = self.nodes.get(node) else {
+            return;
+        };
+        let SceneNodeData::UiButton(button) = &scene_node.data else {
+            return;
+        };
+        if button_inactive(button) {
+            return;
+        }
+        let custom = button_custom_event_signals(button, event);
+        self.render_ui
+            .event_signal_scratch
+            .reserve(1 + custom.len());
+        let name = scene_node.name.as_ref();
+        if !name.is_empty() {
+            self.render_ui.event_signal_name_scratch.clear();
+            self.render_ui.event_signal_name_scratch.push_str(name);
+            self.render_ui.event_signal_name_scratch.push('_');
+            self.render_ui.event_signal_name_scratch.push_str(event);
+            self.render_ui
+                .event_signal_scratch
+                .push(SignalID::from_string(
+                    &self.render_ui.event_signal_name_scratch,
+                ));
+        }
+        self.render_ui
+            .event_signal_scratch
+            .extend(custom.iter().copied());
+    }
+
+    fn collect_text_edit_event_signals(&mut self, node: NodeID, event: &str) {
+        self.render_ui.event_signal_scratch.clear();
+        let Some(scene_node) = self.nodes.get(node) else {
+            return;
+        };
+        let Some(edit) = text_edit_ref(&scene_node.data) else {
+            return;
+        };
+        let custom = text_edit_custom_event_signals(edit, event);
+        self.render_ui
+            .event_signal_scratch
+            .reserve(1 + custom.len());
+        let name = scene_node.name.as_ref();
+        if !name.is_empty() {
+            self.render_ui.event_signal_name_scratch.clear();
+            self.render_ui.event_signal_name_scratch.push_str(name);
+            self.render_ui.event_signal_name_scratch.push('_');
+            self.render_ui.event_signal_name_scratch.push_str(event);
+            self.render_ui
+                .event_signal_scratch
+                .push(SignalID::from_string(
+                    &self.render_ui.event_signal_name_scratch,
+                ));
+        }
+        self.render_ui
+            .event_signal_scratch
+            .extend(custom.iter().copied());
+    }
+
+    #[cfg(test)]
     fn button_event_signals(&self, node: NodeID, event: &str) -> Vec<SignalID> {
         let Some(scene_node) = self.nodes.get(node) else {
             return Vec::new();
@@ -1160,6 +1231,7 @@ impl Runtime {
         out
     }
 
+    #[cfg(test)]
     fn text_edit_event_signals(&self, node: NodeID, event: &str) -> Vec<SignalID> {
         let Some(scene_node) = self.nodes.get(node) else {
             return Vec::new();

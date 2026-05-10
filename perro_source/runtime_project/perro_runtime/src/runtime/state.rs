@@ -110,6 +110,7 @@ impl InternalUpdateState {
 pub(crate) struct SignalRuntimeState {
     pub(crate) registry: SignalRegistry,
     pub(crate) emit_scratch: Vec<SignalConnection>,
+    pub(crate) param_scratch: Vec<perro_variant::Variant>,
 }
 
 impl SignalRuntimeState {
@@ -117,6 +118,7 @@ impl SignalRuntimeState {
         Self {
             registry: SignalRegistry::new(),
             emit_scratch: Vec::new(),
+            param_scratch: Vec::new(),
         }
     }
 }
@@ -341,6 +343,8 @@ pub(crate) struct RenderUiState {
     pub(crate) last_ui_pointer: Option<(Vector2, bool)>,
     pub(crate) cursor_icon: perro_ui::CursorIcon,
     pub(crate) removed_nodes: Vec<NodeID>,
+    pub(crate) event_signal_scratch: Vec<perro_ids::SignalID>,
+    pub(crate) event_signal_name_scratch: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -412,6 +416,8 @@ impl RenderUiState {
             last_ui_pointer: None,
             cursor_icon: perro_ui::CursorIcon::Default,
             removed_nodes: Vec::new(),
+            event_signal_scratch: Vec::new(),
+            event_signal_name_scratch: String::new(),
         }
     }
 }

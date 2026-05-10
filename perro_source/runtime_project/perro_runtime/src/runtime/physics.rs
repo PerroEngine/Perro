@@ -250,6 +250,7 @@ pub(crate) struct PhysicsState {
     stale_ids_3d: Vec<NodeID>,
     trimesh_cache: AHashMap<u64, TriMeshData>,
     next_opaque_handle: u64,
+    signal_name_scratch: String,
 }
 
 struct PhysicsWorld2D {
@@ -304,6 +305,7 @@ impl PhysicsState {
             stale_ids_3d: Vec::new(),
             trimesh_cache: AHashMap::default(),
             next_opaque_handle: 1,
+            signal_name_scratch: String::new(),
         }
     }
 
@@ -2023,8 +2025,12 @@ impl Runtime {
             if node.name.is_empty() {
                 return;
             }
-            let signal_name = format!("{}_Collided", node.name);
-            SignalID::from_string(&signal_name)
+            self.physics.signal_name_scratch.clear();
+            self.physics
+                .signal_name_scratch
+                .push_str(node.name.as_ref());
+            self.physics.signal_name_scratch.push_str("_Collided");
+            SignalID::from_string(&self.physics.signal_name_scratch)
         };
 
         let params = [Variant::from(source), Variant::from(other)];
@@ -2136,8 +2142,13 @@ impl Runtime {
             if node.name.is_empty() {
                 return;
             }
-            let signal_name = format!("{}_{}", node.name, action);
-            SignalID::from_string(&signal_name)
+            self.physics.signal_name_scratch.clear();
+            self.physics
+                .signal_name_scratch
+                .push_str(node.name.as_ref());
+            self.physics.signal_name_scratch.push('_');
+            self.physics.signal_name_scratch.push_str(action);
+            SignalID::from_string(&self.physics.signal_name_scratch)
         };
 
         let params = [Variant::from(area), Variant::from(other)];

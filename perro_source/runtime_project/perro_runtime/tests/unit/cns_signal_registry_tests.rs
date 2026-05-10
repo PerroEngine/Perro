@@ -18,7 +18,10 @@ fn connect_dedup_disconnect_emit_snapshot() {
     let mut out = Vec::new();
     reg.copy_signal_connections(signal, &mut out);
     assert_eq!(out.len(), 3);
-    assert_eq!(out[1].params, vec![perro_variant::Variant::from("right")]);
+    assert_eq!(
+        out[1].params.as_ref(),
+        &[perro_variant::Variant::from("right")]
+    );
 
     assert!(reg.disconnect(signal, id1, f2));
     assert!(!reg.disconnect(signal, id1, f2));
