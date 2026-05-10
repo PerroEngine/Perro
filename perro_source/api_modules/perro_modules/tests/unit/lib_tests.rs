@@ -71,3 +71,19 @@ fn random_api_typecheck_and_forward() {
     let _ = rng.next_index(4);
     let _ = rng.next_u32();
 }
+
+#[test]
+fn net_api_typecheck_and_forward() {
+    let event = crate::net::NetEvent::UdpPacket {
+        peer: "127.0.0.1:1".to_string(),
+        bytes: vec![1, 2, 3],
+    };
+
+    let _ = event.signal_name();
+    let _ = event.signal_id();
+    let _ = event.signal_params();
+    let _ = crate::net::NetworkWorld::new();
+    let _ = crate::net::NetHandshake::new("app", "proto", 1);
+    let _ = crate::net::encode_frame(b"abc").unwrap();
+    let _ = crate::net::heartbeat_ping();
+}

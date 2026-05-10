@@ -56,6 +56,129 @@ Macros:
 - `log_warn!(...)`
 - `log_error!(...)`
 
+## `modules::net`
+
+Thin TCP/UDP helpers over `std::net`.
+
+This is not a node API.
+Keep sockets in script state, poll them during update, then emit signals if desired.
+
+Types:
+
+- `NetworkWorld`
+- `NetworkEvent`
+- `NetSource`
+- `TcpHost`
+- `TcpConnection`
+- `TcpHostId`
+- `TcpConnectionId`
+- `UdpEndpoint`
+- `UdpEndpointId`
+- `UdpPacket`
+- `NetEvent`
+- `NetHandshake`
+- `NetError`
+- `NetErrorKind`
+
+Network world:
+
+- `NetworkWorld::new() -> NetworkWorld`
+- `bind_tcp_host(addr) -> NetResult<TcpHostId>`
+- `connect_tcp(addr) -> NetResult<TcpConnectionId>`
+- `bind_udp(addr) -> NetResult<UdpEndpointId>`
+- `tcp_host_addr(id) -> NetResult<SocketAddr>`
+- `tcp_peer_addr(id) -> NetResult<SocketAddr>`
+- `udp_addr(id) -> NetResult<SocketAddr>`
+- `tcp_send(id, bytes) -> NetResult<usize>`
+- `tcp_send_frame(id, bytes) -> NetResult<()>`
+- `tcp_send_handshake(id, handshake) -> NetResult<()>`
+- `tcp_send_heartbeat_ping(id) -> NetResult<()>`
+- `tcp_send_heartbeat_pong(id) -> NetResult<()>`
+- `udp_send_to(id, bytes, addr) -> NetResult<usize>`
+- `poll_events(max_per_socket, max_bytes) -> Vec<NetworkEvent>`
+- `poll_frame_events(max_per_socket, max_frame_bytes) -> Vec<NetworkEvent>`
+- remove: `remove_tcp_host`, `remove_tcp_connection`, `remove_udp`
+
+TCP host:
+
+- `TcpHost::bind(addr) -> NetResult<TcpHost>`
+- `local_addr() -> SocketAddr`
+- `accept() -> NetResult<Option<TcpConnection>>`
+- `accept_event() -> NetResult<Option<(TcpConnection, NetEvent)>>`
+
+TCP connection:
+
+- `TcpConnection::connect(addr) -> NetResult<TcpConnection>`
+- `TcpConnection::from_stream(stream) -> NetResult<TcpConnection>`
+- `peer_addr() -> SocketAddr`
+- `peer_string() -> String`
+- `connected_event() -> NetEvent`
+- `read_available(max_bytes) -> NetResult<Option<Vec<u8>>>`
+- `poll_event(max_bytes) -> NetResult<Option<NetEvent>>`
+- `write(bytes) -> NetResult<usize>`
+- `write_all(bytes) -> NetResult<()>`
+- `write_frame(bytes) -> NetResult<()>`
+- `write_handshake(handshake) -> NetResult<()>`
+- `poll_frame(max_frame_bytes) -> NetResult<Option<Vec<u8>>>`
+- `poll_frame_event(max_frame_bytes) -> NetResult<Option<NetEvent>>`
+- `poll_handshake(max_frame_bytes) -> NetResult<Option<NetHandshake>>`
+
+UDP endpoint:
+
+- `UdpEndpoint::bind(addr) -> NetResult<UdpEndpoint>`
+- `local_addr() -> SocketAddr`
+- `send_to(bytes, addr) -> NetResult<usize>`
+- `recv_from(max_bytes) -> NetResult<Option<UdpPacket>>`
+- `poll_event(max_bytes) -> NetResult<Option<NetEvent>>`
+
+`NetEvent` signal bridge:
+
+- `signal_name() -> &'static str`
+- `signal_id() -> SignalID`
+- `signal_params() -> Vec<Variant>`
+
+Macro:
+
+- `emit_net_event!(ctx, event) -> usize`
+
+Frame helpers:
+
+- `encode_frame(bytes) -> NetResult<Vec<u8>>`
+- `decode_next_frame(buffer, max_frame_bytes) -> NetResult<Option<Vec<u8>>>`
+
+Handshake:
+
+- `NetHandshake::new(app, protocol, version)`
+- `encode() -> NetResult<Vec<u8>>`
+- `decode(bytes) -> NetResult<NetHandshake>`
+- `validate(expected) -> NetResult<()>`
+
+Heartbeat:
+
+- `heartbeat_ping() -> &'static [u8]`
+- `heartbeat_pong() -> &'static [u8]`
+- `is_heartbeat_ping(bytes) -> bool`
+- `is_heartbeat_pong(bytes) -> bool`
+
+Signal names:
+
+- `TCP_Connected`
+- `TCP_ClientConnected`
+- `TCP_Data`
+- `TCP_Disconnected`
+- `UDP_Packet`
+- `TCP_Frame`
+- `Net_HeartbeatPing`
+- `Net_HeartbeatPong`
+- `Net_Error`
+
+Notes:
+
+- accept/read/recv use non-blocking sockets
+- `TcpConnection::connect` is sync std connect, so avoid calling it on hot frame path
+- `poll_event` returns `None` when no data is ready
+- use raw poll or frame poll, not both on same TCP connection
+
 ## `modules::math`
 
 Math helpers:
