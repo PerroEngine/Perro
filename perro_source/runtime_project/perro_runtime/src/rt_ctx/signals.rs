@@ -354,6 +354,16 @@ mod tests {
             assert!(batch_runtime.signal_connect(NodeID::new(1), signal, method, &[]));
         }
         bench_batch("batch_1024_distinct_signals", batch_runtime, &batch_signals);
+
+        let mut frame_runtime = Runtime::new();
+        insert_noop_script(&mut frame_runtime, NodeID::new(1));
+        let mut frame_signals = Vec::with_capacity(1000);
+        for i in 0..1000 {
+            let signal = SignalID::from_u64(0xF000_0000_0000_0000_u64 | i as u64);
+            frame_signals.push(signal);
+            assert!(frame_runtime.signal_connect(NodeID::new(1), signal, method, &[]));
+        }
+        bench_frame_batch("frame_1000_distinct_signals", frame_runtime, &frame_signals);
     }
 
     fn insert_noop_script(runtime: &mut Runtime, id: NodeID) {
@@ -431,6 +441,45 @@ mod tests {
 
         eprintln!(
             "signal_matrix {name}: emits={total_emits} calls={calls} ns_emit={ns_per_emit:.2} ns_call={ns_per_emit:.2} allocs={allocations}"
+        );
+
+        assert_eq!(calls, total_emits);
+        assert_eq!(allocations, 0);
+    }
+
+    fn bench_frame_batch(name: &str, mut runtime: Runtime, signals: &[SignalID]) {
+        const FRAMES: usize = 10_000;
+        let total_emits = FRAMES * signals.len();
+
+        for _ in 0..1024 {
+            for &signal in signals {
+                black_box(runtime.signal_emit(signal, &[]));
+            }
+        }
+
+        crate::test_alloc::reset_allocations();
+        for _ in 0..FRAMES {
+            for &signal in signals {
+                black_box(runtime.signal_emit(signal, &[]));
+            }
+        }
+
+        crate::test_alloc::reset_allocations();
+        let start = Instant::now();
+        let mut calls = 0usize;
+        for _ in 0..FRAMES {
+            for &signal in signals {
+                calls += black_box(runtime.signal_emit(signal, &[]));
+            }
+        }
+        let elapsed = start.elapsed();
+        let allocations = crate::test_alloc::allocations();
+        let ns_per_emit = elapsed.as_nanos() as f64 / total_emits as f64;
+        let us_per_frame = elapsed.as_micros() as f64 / FRAMES as f64;
+
+        eprintln!(
+            "signal_matrix {name}: frames={FRAMES} emits_per_frame={} emits={total_emits} calls={calls} ns_emit={ns_per_emit:.2} us_frame={us_per_frame:.2} allocs={allocations}",
+            signals.len()
         );
 
         assert_eq!(calls, total_emits);
