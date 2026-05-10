@@ -22,7 +22,9 @@ use perro_nodes::{
     physics_bone_chain_3d::PhysicsBoneChain3D,
     point_light_3d::PointLight3D,
     ray_light_3d::RayLight3D,
-    skeleton_2d::{BoneAttachment2D, BoneCollider2D, IKTarget2D, PhysicsBoneChain2D, Skeleton2D},
+    skeleton_2d::{
+        BoneAttachment2D, BoneCollider2D, IKTarget2D, PhysicsBoneChain2D, Skeleton2D,
+    },
     skeleton_3d::Skeleton3D,
     sky_3d::{Sky3D, SkyStyle},
     spot_light_3d::SpotLight3D,
@@ -44,8 +46,8 @@ use perro_scene::{
     UiAnimatedImageField, UiImageField, resolve_node_field,
 };
 use perro_structs::{
-    Color, CustomPostParam, CustomPostParamValue, PostProcessEffect, PostProcessSet, Quaternion,
-    Vector2, Vector3,
+    Color, CustomPostParam, CustomPostParamValue, IKTargetSolver, PostProcessEffect,
+    PostProcessSet, Quaternion, Vector2, Vector3,
 };
 use perro_ui::{
     UiAnimatedImage, UiAnimatedImageFrameSet, UiBox, UiButton, UiGrid, UiHLayout, UiImage,

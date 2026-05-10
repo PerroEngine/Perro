@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use glam::{Mat3, Vec2};
 use perro_nodes::{IKTarget2D, Skeleton2D};
-use perro_runtime_context::perro_structs::Transform2D;
+use perro_runtime_context::perro_structs::{IKTargetSolver, Transform2D};
 
 pub fn internal_update<RT>(ctx: &mut RuntimeWindow<'_, RT>, id: NodeID)
 where
@@ -16,12 +16,21 @@ where
             node.tolerance,
             node.weight,
             node.match_rotation,
+            node.solver,
         )
     }) else {
         return;
     };
-    let (skeleton_id, bone_index, chain_length, iterations, tolerance, weight, match_rotation) =
-        target;
+    let (
+        skeleton_id,
+        bone_index,
+        chain_length,
+        iterations,
+        tolerance,
+        weight,
+        match_rotation,
+        solver,
+    ) = target;
     if skeleton_id.is_nil()
         || bone_index < 0
         || chain_length == 0
@@ -45,7 +54,7 @@ where
         Transform2D::from_mat3(skeleton_from_global * target_global.to_mat3()).rotation;
 
     let changed = with_base_node_mut!(ctx, Skeleton2D, skeleton_id, |skeleton| {
-        solve_ccd(
+        solve_auto(
             skeleton,
             CcdSolve {
                 end: bone_index as usize,
@@ -56,6 +65,7 @@ where
                 match_rotation,
                 target_pos: target_local_pos,
                 target_rot: target_local_rot,
+                solver,
             },
         )
     });
@@ -65,7 +75,6 @@ where
 }
 
 const MIN_ROT_DELTA: f32 = 1.0e-5;
-
 #[derive(Clone, Copy)]
 struct CcdSolve {
     end: usize,
@@ -76,6 +85,14 @@ struct CcdSolve {
     match_rotation: bool,
     target_pos: Vec2,
     target_rot: f32,
+    solver: IKTargetSolver,
+}
+
+fn solve_auto(skeleton: &mut Skeleton2D, cfg: CcdSolve) -> bool {
+    match cfg.solver {
+        IKTargetSolver::CCD => solve_ccd(skeleton, cfg),
+        IKTargetSolver::FABRIK => solve_fabrik(skeleton, cfg),
+    }
 }
 
 fn solve_ccd(skeleton: &mut Skeleton2D, cfg: CcdSolve) -> bool {
@@ -88,6 +105,7 @@ fn solve_ccd(skeleton: &mut Skeleton2D, cfg: CcdSolve) -> bool {
         match_rotation,
         target_pos,
         target_rot,
+        ..
     } = cfg;
     if end >= skeleton.bones.len() {
         return false;
@@ -139,6 +157,114 @@ fn solve_ccd(skeleton: &mut Skeleton2D, cfg: CcdSolve) -> bool {
         changed |= apply_angle_delta(skeleton, end, target_rot, weight);
     }
     changed
+}
+
+fn solve_fabrik(skeleton: &mut Skeleton2D, cfg: CcdSolve) -> bool {
+    let CcdSolve {
+        end,
+        chain_length,
+        iterations,
+        tolerance,
+        weight,
+        match_rotation,
+        target_pos,
+        target_rot,
+        ..
+    } = cfg;
+    if end >= skeleton.bones.len() {
+        return false;
+    }
+
+    let mut chain = Vec::with_capacity(chain_length.saturating_add(1).min(skeleton.bones.len()));
+    collect_root_to_end(skeleton, end, &mut chain);
+    if chain.is_empty() {
+        return false;
+    }
+
+    let joint_count = chain.len().saturating_sub(1).min(chain_length);
+    if joint_count == 0 {
+        return match_rotation && apply_angle_delta(skeleton, end, target_rot, weight);
+    }
+
+    let joint_start = chain.len().saturating_sub(1 + joint_count);
+    let solve_chain = &chain[joint_start..];
+    let mut globals = vec![Mat3::IDENTITY; chain.len()];
+    compute_chain_globals(skeleton, &chain, &mut globals);
+
+    let mut points = Vec::with_capacity(solve_chain.len());
+    points.extend((joint_start..chain.len()).map(|i| globals[i].transform_point2(Vec2::ZERO)));
+
+    let root = points[0];
+    let lengths = points
+        .windows(2)
+        .map(|pair| pair[0].distance(pair[1]).max(0.0001))
+        .collect::<Vec<_>>();
+    let total_len = lengths.iter().sum::<f32>();
+    let tolerance_sq = tolerance * tolerance;
+
+    if root.distance(target_pos) >= total_len {
+        let dir = (target_pos - root).normalize_or_zero();
+        if dir.length_squared() > f32::EPSILON {
+            for i in 1..points.len() {
+                points[i] = points[i - 1] + dir * lengths[i - 1];
+            }
+        }
+    } else {
+        for _ in 0..iterations {
+            let last = points.len() - 1;
+            points[last] = target_pos;
+            for i in (0..last).rev() {
+                points[i] =
+                    points[i + 1] + (points[i] - points[i + 1]).normalize_or_zero() * lengths[i];
+            }
+            points[0] = root;
+            for i in 1..points.len() {
+                points[i] = points[i - 1]
+                    + (points[i] - points[i - 1]).normalize_or_zero() * lengths[i - 1];
+            }
+            if points[last].distance_squared(target_pos) <= tolerance_sq {
+                break;
+            }
+        }
+    }
+
+    let mut changed = false;
+    let mut parent_global_rot = if joint_start > 0 {
+        global_rotation_2d(globals[joint_start - 1])
+    } else {
+        0.0
+    };
+    for i in 0..points.len() - 1 {
+        let bone = solve_chain[i];
+        let child = solve_chain[i + 1];
+        let target_dir = points[i + 1] - points[i];
+        if target_dir.length_squared() <= f32::EPSILON {
+            continue;
+        }
+        let child_offset: Vec2 = skeleton.bones[child].pose.position.into();
+        if child_offset.length_squared() <= f32::EPSILON {
+            continue;
+        }
+        let desired_global =
+            target_dir.y.atan2(target_dir.x) - child_offset.y.atan2(child_offset.x);
+        let current = skeleton.bones[bone].pose.rotation;
+        let solved = current + angle_delta(parent_global_rot + current, desired_global);
+        let delta = angle_delta(current, solved) * weight;
+        if delta.abs() > MIN_ROT_DELTA {
+            skeleton.bones[bone].pose.rotation += delta;
+            changed = true;
+        }
+        parent_global_rot += skeleton.bones[bone].pose.rotation;
+    }
+
+    if match_rotation {
+        changed |= apply_angle_delta(skeleton, end, target_rot, weight);
+    }
+    changed
+}
+
+fn global_rotation_2d(global: Mat3) -> f32 {
+    global.x_axis.y.atan2(global.x_axis.x)
 }
 
 fn apply_angle_delta(skeleton: &mut Skeleton2D, bone: usize, target_rot: f32, weight: f32) -> bool {
@@ -202,4 +328,112 @@ fn angle_delta(from: f32, to: f32) -> f32 {
         delta += std::f32::consts::TAU;
     }
     delta
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use perro_nodes::skeleton_2d::Bone2D;
+    use perro_runtime_context::perro_structs::Vector2;
+    use std::borrow::Cow;
+
+    fn chain_skeleton(count: usize) -> Skeleton2D {
+        let mut skeleton = Skeleton2D::new();
+        skeleton.bones.reserve(count);
+        for i in 0..count {
+            let pose = Transform2D {
+                position: if i == 0 {
+                    Vector2::ZERO
+                } else {
+                    Vector2::new(0.0, 1.0)
+                },
+                ..Transform2D::IDENTITY
+            };
+            skeleton.bones.push(Bone2D {
+                name: Cow::Owned(format!("b{i}")),
+                parent: if i == 0 { -1 } else { (i - 1) as i32 },
+                rest: pose,
+                pose,
+                inv_bind: Transform2D::IDENTITY,
+            });
+        }
+        skeleton
+    }
+
+    #[test]
+    fn fabrik_moves_two_bone_end_closer_to_target() {
+        let mut skeleton = chain_skeleton(2);
+        let before = Vec2::new(0.0, 1.0).distance(Vec2::new(1.0, 0.0));
+        let _ = solve_fabrik(
+            &mut skeleton,
+            CcdSolve {
+                end: 1,
+                chain_length: 2,
+                iterations: 8,
+                tolerance: 0.001,
+                weight: 1.0,
+                match_rotation: false,
+                target_pos: Vec2::new(1.0, 0.0),
+                target_rot: 0.0,
+                solver: IKTargetSolver::FABRIK,
+            },
+        );
+        let mut chain = Vec::new();
+        let mut globals = Vec::new();
+        collect_root_to_end(&skeleton, 1, &mut chain);
+        globals.resize(chain.len(), Mat3::IDENTITY);
+        compute_chain_globals(&skeleton, &chain, &mut globals);
+        let after = globals[chain.len() - 1]
+            .transform_point2(Vec2::ZERO)
+            .distance(Vec2::new(1.0, 0.0));
+        assert!(after < before);
+    }
+
+    #[test]
+    #[ignore = "bench-style timing test; run with --ignored --nocapture"]
+    fn bench_ik_2d_solvers_release_many_chain_sizes() {
+        let cases = [(8usize, 2usize), (32, 4), (128, 8), (512, 8), (512, 16)];
+        for (bones, chain_length) in cases {
+            bench_solver_case("ccd", bones, chain_length, solve_ccd);
+            bench_solver_case("fabrik", bones, chain_length, solve_fabrik);
+            bench_solver_case("auto", bones, chain_length, solve_auto);
+        }
+    }
+
+    fn bench_solver_case(
+        name: &str,
+        bones: usize,
+        chain_length: usize,
+        solver: fn(&mut Skeleton2D, CcdSolve) -> bool,
+    ) {
+        let mut skeleton = chain_skeleton(bones);
+        let end = chain_length.min(bones - 1);
+        let samples = 20_000usize;
+        let start = std::time::Instant::now();
+        for i in 0..samples {
+            let t = i as f32 * 0.001;
+            let _ = solver(
+                &mut skeleton,
+                CcdSolve {
+                    end,
+                    chain_length,
+                    iterations: 8,
+                    tolerance: 0.001,
+                    weight: 1.0,
+                    match_rotation: true,
+                    target_pos: Vec2::new(t.sin() * 2.0, chain_length as f32),
+                    target_rot: t,
+                    solver: match name {
+                        "ccd" => IKTargetSolver::CCD,
+                        _ => IKTargetSolver::FABRIK,
+                    },
+                },
+            );
+        }
+        let elapsed = start.elapsed();
+        let ns_each = elapsed.as_nanos() as f64 / samples as f64;
+        println!(
+            "bench_ik_2d_solvers_release_many_chain_sizes solver={name} bones={bones} chain={chain_length} samples={samples} ns_each={ns_each:.1}"
+        );
+    }
 }

@@ -211,9 +211,22 @@ fn apply_ik_target_3d_fields(node: &mut IKTarget3D, fields: &[SceneObjectField])
                     node.match_rotation = v;
                 }
             }
+            Some(NodeField::IKTarget3D(IKTarget3DField::Solver)) => {
+                if let Some(v) = as_ik_target_3d_solver(value) {
+                    node.solver = v;
+                }
+            }
             _ => {}
         }
     });
+}
+
+fn as_ik_target_3d_solver(value: &SceneValue) -> Option<IKTargetSolver> {
+    match as_str(value)?.trim().to_ascii_lowercase().as_str() {
+        "ccd" => Some(IKTargetSolver::CCD),
+        "fabrik" => Some(IKTargetSolver::FABRIK),
+        _ => None,
+    }
 }
 
 fn apply_physics_bone_chain_3d_fields(node: &mut PhysicsBoneChain3D, fields: &[SceneObjectField]) {

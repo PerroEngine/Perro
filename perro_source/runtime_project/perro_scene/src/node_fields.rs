@@ -205,6 +205,7 @@ pub enum IKTarget2DField {
     Tolerance,
     Weight,
     MatchRotation,
+    Solver,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -241,6 +242,7 @@ pub enum IKTarget3DField {
     Tolerance,
     Weight,
     MatchRotation,
+    Solver,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -593,6 +595,7 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             "tolerance" => Some(NodeField::IKTarget2D(IKTarget2DField::Tolerance)),
             "weight" => Some(NodeField::IKTarget2D(IKTarget2DField::Weight)),
             "match_rotation" => Some(NodeField::IKTarget2D(IKTarget2DField::MatchRotation)),
+            "solver" => Some(NodeField::IKTarget2D(IKTarget2DField::Solver)),
             _ => None,
         },
         NodeType::PhysicsBoneChain2D => match field {
@@ -672,6 +675,7 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             "tolerance" => Some(NodeField::IKTarget3D(IKTarget3DField::Tolerance)),
             "weight" => Some(NodeField::IKTarget3D(IKTarget3DField::Weight)),
             "match_rotation" => Some(NodeField::IKTarget3D(IKTarget3DField::MatchRotation)),
+            "solver" => Some(NodeField::IKTarget3D(IKTarget3DField::Solver)),
             _ => None,
         },
         NodeType::PhysicsBoneChain3D => match field {

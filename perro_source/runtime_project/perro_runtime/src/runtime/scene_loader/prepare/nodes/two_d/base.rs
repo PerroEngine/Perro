@@ -149,9 +149,22 @@ fn apply_ik_target_2d_fields(node: &mut IKTarget2D, fields: &[SceneObjectField])
                     node.match_rotation = v;
                 }
             }
+            Some(NodeField::IKTarget2D(IKTarget2DField::Solver)) => {
+                if let Some(v) = as_ik_target_2d_solver(value) {
+                    node.solver = v;
+                }
+            }
             _ => {}
         }
     });
+}
+
+fn as_ik_target_2d_solver(value: &SceneValue) -> Option<IKTargetSolver> {
+    match as_str(value)?.trim().to_ascii_lowercase().as_str() {
+        "ccd" => Some(IKTargetSolver::CCD),
+        "fabrik" => Some(IKTargetSolver::FABRIK),
+        _ => None,
+    }
 }
 
 fn apply_physics_bone_chain_2d_fields(node: &mut PhysicsBoneChain2D, fields: &[SceneObjectField]) {

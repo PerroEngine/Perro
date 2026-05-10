@@ -1,6 +1,6 @@
 use crate::node_2d::Node2D;
 use perro_ids::NodeID;
-use perro_structs::Transform2D;
+use perro_structs::{IKTargetSolver, Transform2D};
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
@@ -106,6 +106,7 @@ pub struct IKTarget2D {
     pub tolerance: f32,
     pub weight: f32,
     pub match_rotation: bool,
+    pub solver: IKTargetSolver,
 }
 
 impl Default for IKTarget2D {
@@ -125,6 +126,7 @@ impl IKTarget2D {
             tolerance: 0.01,
             weight: 1.0,
             match_rotation: true,
+            solver: IKTargetSolver::FABRIK,
         }
     }
 }

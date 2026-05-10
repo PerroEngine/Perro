@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use glam::{Mat4, Quat, Vec3};
 use perro_nodes::{IKTarget3D, Skeleton3D};
-use perro_runtime_context::perro_structs::{Quaternion, Transform3D};
+use perro_runtime_context::perro_structs::{IKTargetSolver, Quaternion, Transform3D};
 
 pub fn internal_update<RT>(ctx: &mut RuntimeWindow<'_, RT>, id: NodeID)
 where
@@ -16,12 +16,21 @@ where
             node.tolerance,
             node.weight,
             node.match_rotation,
+            node.solver,
         )
     }) else {
         return;
     };
-    let (skeleton_id, bone_index, chain_length, iterations, tolerance, weight, match_rotation) =
-        target;
+    let (
+        skeleton_id,
+        bone_index,
+        chain_length,
+        iterations,
+        tolerance,
+        weight,
+        match_rotation,
+        solver,
+    ) = target;
     if skeleton_id.is_nil()
         || bone_index < 0
         || chain_length == 0
@@ -47,7 +56,7 @@ where
     let target_local_rot = normalize_quat(target_local_rot);
 
     let changed = with_base_node_mut!(ctx, Skeleton3D, skeleton_id, |skeleton| {
-        solve_ccd(
+        solve_auto(
             skeleton,
             CcdSolve {
                 end: bone_index as usize,
@@ -58,6 +67,7 @@ where
                 match_rotation,
                 target_pos: target_local_pos,
                 target_rot: target_local_rot,
+                solver,
             },
         )
     });
@@ -67,7 +77,6 @@ where
 }
 
 const MIN_ROT_DELTA: f32 = 1.0e-5;
-
 #[derive(Clone, Copy)]
 struct CcdSolve {
     end: usize,
@@ -78,6 +87,14 @@ struct CcdSolve {
     match_rotation: bool,
     target_pos: Vec3,
     target_rot: Quat,
+    solver: IKTargetSolver,
+}
+
+fn solve_auto(skeleton: &mut Skeleton3D, cfg: CcdSolve) -> bool {
+    match cfg.solver {
+        IKTargetSolver::CCD => solve_ccd(skeleton, cfg),
+        IKTargetSolver::FABRIK => solve_fabrik(skeleton, cfg),
+    }
 }
 
 fn solve_ccd(skeleton: &mut Skeleton3D, cfg: CcdSolve) -> bool {
@@ -90,6 +107,7 @@ fn solve_ccd(skeleton: &mut Skeleton3D, cfg: CcdSolve) -> bool {
         match_rotation,
         target_pos,
         target_rot,
+        ..
     } = cfg;
     if end >= skeleton.bones.len() {
         return false;
@@ -144,6 +162,123 @@ fn solve_ccd(skeleton: &mut Skeleton3D, cfg: CcdSolve) -> bool {
             }
             compute_chain_state_from(skeleton, &chain, chain_index, &mut state);
         }
+    }
+
+    if match_rotation {
+        compute_chain_state(skeleton, &chain, &mut state);
+        changed |= blend_end_rotation(skeleton, &chain, &state, end, target_rot, weight);
+    }
+    changed
+}
+
+fn solve_fabrik(skeleton: &mut Skeleton3D, cfg: CcdSolve) -> bool {
+    let CcdSolve {
+        end,
+        chain_length,
+        iterations,
+        tolerance,
+        weight,
+        match_rotation,
+        target_pos,
+        target_rot,
+        ..
+    } = cfg;
+    if end >= skeleton.bones.len() {
+        return false;
+    }
+
+    let mut chain = Vec::with_capacity(chain_length.saturating_add(1).min(skeleton.bones.len()));
+    collect_root_to_end(skeleton, end, &mut chain);
+    if chain.is_empty() {
+        return false;
+    }
+
+    let joint_count = chain.len().saturating_sub(1).min(chain_length);
+    if joint_count == 0 {
+        if !match_rotation {
+            return false;
+        }
+        let mut state = ChainState::default();
+        compute_chain_state(skeleton, &chain, &mut state);
+        return blend_end_rotation(skeleton, &chain, &state, end, target_rot, weight);
+    }
+
+    let joint_start = chain.len().saturating_sub(1 + joint_count);
+    let solve_chain = &chain[joint_start..];
+    let mut state = ChainState::with_capacity(chain.len());
+    compute_chain_state(skeleton, &chain, &mut state);
+
+    let mut points = Vec::with_capacity(solve_chain.len());
+    points
+        .extend((joint_start..chain.len()).map(|i| state.globals[i].transform_point3(Vec3::ZERO)));
+
+    let root = points[0];
+    let lengths = points
+        .windows(2)
+        .map(|pair| pair[0].distance(pair[1]).max(0.0001))
+        .collect::<Vec<_>>();
+    let total_len = lengths.iter().sum::<f32>();
+    let tolerance_sq = tolerance * tolerance;
+
+    if root.distance(target_pos) >= total_len {
+        let dir = (target_pos - root).normalize_or_zero();
+        if dir.length_squared() > f32::EPSILON {
+            for i in 1..points.len() {
+                points[i] = points[i - 1] + dir * lengths[i - 1];
+            }
+        }
+    } else {
+        for _ in 0..iterations {
+            let last = points.len() - 1;
+            points[last] = target_pos;
+            for i in (0..last).rev() {
+                points[i] =
+                    points[i + 1] + (points[i] - points[i + 1]).normalize_or_zero() * lengths[i];
+            }
+            points[0] = root;
+            for i in 1..points.len() {
+                points[i] = points[i - 1]
+                    + (points[i] - points[i - 1]).normalize_or_zero() * lengths[i - 1];
+            }
+            if points[last].distance_squared(target_pos) <= tolerance_sq {
+                break;
+            }
+        }
+    }
+
+    let mut changed = false;
+    let mut parent_rotation = if joint_start > 0 {
+        state.rotations[joint_start - 1]
+    } else {
+        Quat::IDENTITY
+    };
+    for i in 0..points.len() - 1 {
+        let bone = solve_chain[i];
+        let child = solve_chain[i + 1];
+        let target_dir = (points[i + 1] - points[i]).normalize_or_zero();
+        if target_dir.length_squared() <= f32::EPSILON {
+            continue;
+        }
+        let child_offset: Vec3 = skeleton.bones[child].pose.position.into();
+        let local_dir = child_offset.normalize_or_zero();
+        if local_dir.length_squared() <= f32::EPSILON {
+            continue;
+        }
+
+        let current = normalize_quat(skeleton.bones[bone].pose.rotation.to_quat());
+        let current_dir = (parent_rotation * current * local_dir).normalize_or_zero();
+        let delta = Quat::from_rotation_arc(current_dir, target_dir);
+        if !delta.is_finite() || quat_near_identity(delta) {
+            parent_rotation = normalize_quat(parent_rotation * current);
+            continue;
+        }
+        let solved = normalize_quat(parent_rotation.inverse() * delta * parent_rotation * current);
+        let blended = blend_quat(current, solved, weight);
+        if !quat_close(current, blended) {
+            skeleton.bones[bone].pose.rotation = Quaternion::from_quat(blended);
+            changed = true;
+        }
+        parent_rotation = normalize_quat(parent_rotation * blended);
     }
 
     if match_rotation {
@@ -373,6 +508,7 @@ mod tests {
                 match_rotation: false,
                 target_pos: Vec3::new(1.0, 0.0, 0.0),
                 target_rot: Quat::IDENTITY,
+                solver: IKTargetSolver::CCD,
             },
         );
         let mut chain = Vec::new();
@@ -400,6 +536,7 @@ mod tests {
                 match_rotation: false,
                 target_pos: Vec3::new(1.0, 0.0, 0.0),
                 target_rot: Quat::IDENTITY,
+                solver: IKTargetSolver::CCD,
             },
         );
         assert_eq!(skeleton.bones[0].pose.rotation, before);
@@ -420,6 +557,7 @@ mod tests {
                 match_rotation: true,
                 target_pos: Vec3::new(0.0, 1.0, 0.0),
                 target_rot: target,
+                solver: IKTargetSolver::CCD,
             },
         );
         assert_ne!(skeleton.bones[1].pose.rotation, Quaternion::IDENTITY);
@@ -463,6 +601,7 @@ mod tests {
                 match_rotation: false,
                 target_pos: Vec3::new(2.0, 10.0, 0.0),
                 target_rot: Quat::IDENTITY,
+                solver: IKTargetSolver::CCD,
             },
         );
         assert_eq!(skeleton.bones[90].pose.rotation, unrelated_before);
@@ -490,6 +629,7 @@ mod tests {
                         match_rotation: true,
                         target_pos: Vec3::new(t.sin() * 2.0, chain_length as f32, t.cos()),
                         target_rot: Quat::from_rotation_y(t),
+                        solver: IKTargetSolver::CCD,
                     },
                 );
             }
@@ -499,5 +639,53 @@ mod tests {
                 "bench_ccd_solver_release_many_chain_sizes bones={bones} chain={chain_length} samples={samples} ns_each={ns_each:.1}"
             );
         }
+    }
+
+    #[test]
+    #[ignore = "bench-style timing test; run with --ignored --nocapture"]
+    fn bench_ik_solvers_release_many_chain_sizes() {
+        let cases = [(8usize, 2usize), (32, 4), (128, 8), (512, 8), (512, 16)];
+        for (bones, chain_length) in cases {
+            bench_solver_case("ccd", bones, chain_length, solve_ccd);
+            bench_solver_case("fabrik", bones, chain_length, solve_fabrik);
+            bench_solver_case("auto", bones, chain_length, solve_auto);
+        }
+    }
+
+    fn bench_solver_case(
+        name: &str,
+        bones: usize,
+        chain_length: usize,
+        solver: fn(&mut Skeleton3D, CcdSolve) -> bool,
+    ) {
+        let mut skeleton = chain_skeleton(bones);
+        let end = chain_length.min(bones - 1);
+        let samples = 20_000usize;
+        let start = std::time::Instant::now();
+        for i in 0..samples {
+            let t = i as f32 * 0.001;
+            let _ = solver(
+                &mut skeleton,
+                CcdSolve {
+                    end,
+                    chain_length,
+                    iterations: 8,
+                    tolerance: 0.001,
+                    weight: 1.0,
+                    match_rotation: true,
+                    target_pos: Vec3::new(t.sin() * 2.0, chain_length as f32, t.cos()),
+                    target_rot: Quat::from_rotation_y(t),
+                    solver: match name {
+                        "ccd" => IKTargetSolver::CCD,
+                        _ => IKTargetSolver::FABRIK,
+                    },
+                },
+            );
+        }
+        let elapsed = start.elapsed();
+        let ns_each = elapsed.as_nanos() as f64 / samples as f64;
+        println!(
+            "bench_ik_solvers_release_many_chain_sizes solver={name} bones={bones} chain={chain_length} samples={samples} ns_each={ns_each:.1}"
+        );
     }
 }
