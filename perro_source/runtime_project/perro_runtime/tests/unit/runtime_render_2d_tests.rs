@@ -58,7 +58,7 @@ fn ppart_2d_ignores_z_fields() {
 
 #[test]
 fn ptileset_parses_polygon_collision_shape() {
-    let parsed = super::parse_ptileset_source(
+    let parsed = perro_render_bridge::parse_ptileset_source(
         r#"
         texture = "res://tiles/world.png"
         tile_size = (16, 16)
@@ -71,7 +71,7 @@ fn ptileset_parses_polygon_collision_shape() {
     )
     .expect("tileset parses");
 
-    let tile = parsed.tiles.get(&1).expect("tile exists");
+    let tile = parsed.tile(1).expect("tile exists");
     match &tile.collision_shape {
         super::ParsedTileCollisionShape2D::Polygon { points, offset } => {
             assert_eq!(

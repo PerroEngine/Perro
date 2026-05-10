@@ -41,7 +41,7 @@ Tile fields:
 
 `auto` builds a full tile bounds collider.
 Adjacent auto full-tile colliders are merge candidates.
-Runtime and static pipeline bake should merge them into maximal rect chunks.
+Runtime tilemap bake merges them into maximal rect chunks.
 
 Explicit shapes are kept per tile in 1.0.
 They are not merged.
@@ -59,11 +59,7 @@ Runtime builds a convex collider from the points.
 
 ## Static Bake
 
-Static pipeline emits `.ptileset` source into `static_assets::tilesets`.
-Static runtime parses that source from lookup before disk.
-
-Static collision chunk bake remains planned.
-Target:
-
-- emit baked collision chunks for static `TileMap2D` scene data
-- prefer static chunks and fall back to runtime bake for dynamic or dev-loaded maps
+Static pipeline parses `.ptileset` into packed `PTSET` bytes.
+It bakes atlas layout and per-tile collision data into those bytes.
+It emits those bytes into `static_assets::tilesets`.
+Static runtime reads binary tileset bytes by path hash before disk.

@@ -59,11 +59,9 @@ collision_shape = { polygon = { points = [(0, 0), (16, 0), (8, 16)] offset = (0,
 Runtime bake hashes tile grid plus tileset collision data.
 It rebuilds only when tile content or collision metadata changes.
 
-Runtime bake hashes tile grid plus tileset collision data.
-It rebuilds only when tile content or collision metadata changes.
+Static pipeline parses `.ptileset` into packed `PTSET` bytes.
+Those bytes include per-tile collision metadata.
+Static runtime loads binary tilesets by path hash before disk.
 
-Static pipeline now emits `.ptileset` source into static assets.
-Static runtime loads tilesets from that lookup before disk.
-
-Static release builds load `.ptileset` data from the static asset lookup.
+Static release builds load binary `.ptileset` data from the static asset lookup.
 Dynamic or edited tilemaps still use runtime collision bake.

@@ -53,9 +53,6 @@ focused_style = "res://ui/input_focus.uistyle"
 
 ## Fields
 
-`.uistyle` mirrors `UiStyle` only.
-It does not contain layout fields or theme selectors.
-
 Supported keys:
 
 - `fill` or `color`

@@ -1961,8 +1961,8 @@ pub const fn lookup_ui_style(_path_hash: u64) -> &'static UiStyle {
 fn default_static_tilesets_rs() -> String {
     r#"#![allow(unused_imports)]
 
-pub const fn lookup_tileset(_path_hash: u64) -> &'static str {
-    ""
+pub const fn lookup_tileset(_path_hash: u64) -> &'static [u8] {
+    b""
 }
 "#
     .to_string()

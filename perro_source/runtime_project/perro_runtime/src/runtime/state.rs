@@ -313,7 +313,7 @@ pub(crate) struct Render2DState {
     pub(crate) retained_sprites: AHashMap<NodeID, Sprite2DCommand>,
     pub(crate) particle_path_cache: AHashMap<String, perro_render_bridge::ParticleProfile2D>,
     pub(crate) particle_path_cache_order: VecDeque<String>,
-    pub(crate) tileset_cache: AHashMap<String, crate::runtime::render_2d::ParsedTileset2D>,
+    pub(crate) tileset_cache: AHashMap<u64, crate::runtime::render_2d::ParsedTileset2D>,
     pub(crate) texture_sources: AHashMap<NodeID, String>,
     pub(crate) last_camera: Option<perro_render_bridge::Camera2DState>,
     pub(crate) removed_nodes: Vec<NodeID>,

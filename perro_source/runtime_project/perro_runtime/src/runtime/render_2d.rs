@@ -1,9 +1,7 @@
 use super::Runtime;
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashSet;
 use perro_ids::{NodeID, TextureID, parse_hashed_source_uri, string_to_u64};
-use perro_nodes::{
-    SceneNodeData, Shape2D, Triangle2DKind, particle_emitter_2d::ParticleEmitterSimMode2D,
-};
+use perro_nodes::{SceneNodeData, particle_emitter_2d::ParticleEmitterSimMode2D};
 use perro_particle_math::compile_expression;
 use perro_render_bridge::{
     Camera2DState, Command2D, ParticlePath2D, ParticleProfile2D, ParticleSimulationMode2D,
@@ -22,34 +20,12 @@ struct Sprite2DEmit {
     z_index: i32,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct ParsedTileset2D {
-    pub texture: String,
-    pub tile_size: [f32; 2],
-    pub columns: u32,
-    pub rows: u32,
-    pub tiles: AHashMap<i32, ParsedTile2D>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct ParsedTile2D {
-    pub atlas: [u32; 2],
-    pub collision: bool,
-    pub collision_shape: ParsedTileCollisionShape2D,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) enum ParsedTileCollisionShape2D {
-    Auto,
-    Shape {
-        shape: Shape2D,
-        offset: [f32; 2],
-    },
-    Polygon {
-        points: std::sync::Arc<[perro_structs::Vector2]>,
-        offset: [f32; 2],
-    },
-}
+#[cfg(test)]
+pub(crate) use perro_render_bridge::TileSetTile2D as ParsedTile2D;
+pub(crate) use perro_render_bridge::{
+    TileSet2D as ParsedTileset2D, TileSetCollisionShape2D as ParsedTileCollisionShape2D,
+    TileSetShape2D,
+};
 
 impl Runtime {
     fn sprite_texture_request(node: NodeID) -> RenderRequestID {
@@ -290,7 +266,7 @@ impl Runtime {
                 if visible {
                     if let Some(tileset) = resolve_tileset_2d(self, &tileset_source)
                         && let Some(texture) =
-                            self.resolve_tilemap_texture(node, tileset.texture.as_str())
+                            self.resolve_tilemap_texture(node, tileset.texture.as_ref())
                     {
                         let global = self
                             .get_global_transform_2d(node)
@@ -460,30 +436,31 @@ impl Runtime {
 }
 
 pub(crate) fn resolve_tileset_2d(runtime: &mut Runtime, source: &str) -> Option<ParsedTileset2D> {
-    if let Some(tileset) = runtime.render_2d.tileset_cache.get(source) {
+    let source_hash = parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
+    if let Some(tileset) = runtime.render_2d.tileset_cache.get(&source_hash) {
         return Some(tileset.clone());
     }
-    let static_text = if runtime.provider_mode() == crate::runtime_project::ProviderMode::Static {
+    let static_tileset = if runtime.provider_mode() == crate::runtime_project::ProviderMode::Static
+    {
         runtime
             .project()
             .and_then(|project| project.static_tileset_lookup)
-            .map(|lookup| lookup(string_to_u64(source)))
-            .filter(|text| !text.is_empty())
+            .map(|lookup| lookup(source_hash))
+            .filter(|bytes| !bytes.is_empty())
     } else {
         None
     };
-    let bytes;
-    let text = if let Some(text) = static_text {
-        text
+    let tileset = if let Some(bytes) = static_tileset {
+        perro_render_bridge::decode_tileset_2d_binary(bytes)?
     } else {
-        bytes = perro_io::load_asset(source).ok()?;
-        std::str::from_utf8(&bytes).ok()?
+        let bytes = perro_io::load_asset(source).ok()?;
+        let text = std::str::from_utf8(&bytes).ok()?;
+        perro_render_bridge::parse_ptileset_source(text)?
     };
-    let tileset = parse_ptileset_source(text)?;
     runtime
         .render_2d
         .tileset_cache
-        .insert(source.to_string(), tileset.clone());
+        .insert(source_hash, tileset.clone());
     Some(tileset)
 }
 
@@ -508,7 +485,7 @@ fn build_tilemap_sprites(build: TilemapSpriteBuild<'_>) -> Vec<Sprite2DCommand> 
         if tile_id == build.empty_tile {
             continue;
         }
-        let Some(tile) = build.tileset.tiles.get(&tile_id) else {
+        let Some(tile) = build.tileset.tile(tile_id) else {
             continue;
         };
         let x = (idx as u32 % build.width) as f32 * tw;
@@ -527,213 +504,6 @@ fn build_tilemap_sprites(build: TilemapSpriteBuild<'_>) -> Vec<Sprite2DCommand> 
         });
     }
     out
-}
-
-fn parse_ptileset_source(source: &str) -> Option<ParsedTileset2D> {
-    let mut texture = String::new();
-    let mut tile_size = [0.0, 0.0];
-    let mut columns = 0u32;
-    let mut rows = 0u32;
-    let mut tiles = AHashMap::new();
-    let compact = source.replace('\n', " ");
-    for raw in source.lines() {
-        let line = raw.trim();
-        if line.starts_with("texture") {
-            texture = parse_quoted_value(line)?;
-        } else if line.starts_with("tile_size") {
-            tile_size = parse_vec2_u32(line).map(|v| [v[0] as f32, v[1] as f32])?;
-        } else if line.starts_with("columns") {
-            columns = parse_u32_after_eq(line)?;
-        } else if line.starts_with("rows") {
-            rows = parse_u32_after_eq(line)?;
-        }
-    }
-    for object in extract_braced_objects(&compact) {
-        let id = find_i32_field(object, "id")?;
-        let atlas = find_vec2_field(object, "atlas")?;
-        let collision = find_bool_field(object, "collision").unwrap_or(false);
-        let collision_shape =
-            find_collision_shape_field(object).unwrap_or(ParsedTileCollisionShape2D::Auto);
-        tiles.insert(
-            id,
-            ParsedTile2D {
-                atlas,
-                collision,
-                collision_shape,
-            },
-        );
-    }
-    if texture.is_empty() || tile_size[0] <= 0.0 || tile_size[1] <= 0.0 {
-        return None;
-    }
-    Some(ParsedTileset2D {
-        texture,
-        tile_size,
-        columns,
-        rows,
-        tiles,
-    })
-}
-
-fn extract_braced_objects(text: &str) -> Vec<&str> {
-    let mut out = Vec::new();
-    let mut depth = 0usize;
-    let mut start = None;
-    for (idx, ch) in text.char_indices() {
-        match ch {
-            '{' => {
-                if depth == 0 {
-                    start = Some(idx + ch.len_utf8());
-                }
-                depth += 1;
-            }
-            '}' => {
-                depth = depth.saturating_sub(1);
-                if depth == 0
-                    && let Some(start_idx) = start.take()
-                {
-                    out.push(&text[start_idx..idx]);
-                }
-            }
-            _ => {}
-        }
-    }
-    out
-}
-
-fn parse_quoted_value(line: &str) -> Option<String> {
-    let (_, rest) = line.split_once('=')?;
-    let rest = rest.trim();
-    Some(rest.strip_prefix('"')?.split('"').next()?.to_string())
-}
-
-fn parse_u32_after_eq(line: &str) -> Option<u32> {
-    line.split_once('=')?.1.trim().parse().ok()
-}
-
-fn parse_vec2_u32(line: &str) -> Option<[u32; 2]> {
-    let (_, rest) = line.split_once('=')?;
-    parse_vec2_inner(rest)
-}
-
-fn find_i32_field(text: &str, key: &str) -> Option<i32> {
-    let rest = text.split(key).nth(1)?.split_once('=')?.1.trim();
-    rest.split(|c: char| c == ',' || c.is_whitespace())
-        .find(|v| !v.is_empty())?
-        .parse()
-        .ok()
-}
-
-fn find_bool_field(text: &str, key: &str) -> Option<bool> {
-    let rest = text.split(key).nth(1)?.split_once('=')?.1.trim();
-    if rest.starts_with("true") {
-        Some(true)
-    } else if rest.starts_with("false") {
-        Some(false)
-    } else {
-        None
-    }
-}
-
-fn find_vec2_field(text: &str, key: &str) -> Option<[u32; 2]> {
-    parse_vec2_inner(text.split(key).nth(1)?.split_once('=')?.1)
-}
-
-fn find_collision_shape_field(text: &str) -> Option<ParsedTileCollisionShape2D> {
-    let rest = text
-        .split("collision_shape")
-        .nth(1)?
-        .split_once('=')?
-        .1
-        .trim();
-    if rest.starts_with("\"auto\"") || rest.starts_with("auto") {
-        return Some(ParsedTileCollisionShape2D::Auto);
-    }
-    if let Some(rect) = rest.split("rect").nth(1) {
-        let body = rect.split_once('{')?.1.rsplit_once('}')?.0;
-        let size = find_vec2_f32_field(body, "size")?;
-        let offset = find_vec2_f32_field(body, "offset").unwrap_or([0.0, 0.0]);
-        return Some(ParsedTileCollisionShape2D::Shape {
-            shape: Shape2D::Quad {
-                width: size[0],
-                height: size[1],
-            },
-            offset,
-        });
-    }
-    if let Some(circle) = rest.split("circle").nth(1) {
-        let body = circle.split_once('{')?.1.rsplit_once('}')?.0;
-        let radius = find_f32_field(body, "radius")?;
-        let offset = find_vec2_f32_field(body, "offset").unwrap_or([0.0, 0.0]);
-        return Some(ParsedTileCollisionShape2D::Shape {
-            shape: Shape2D::Circle { radius },
-            offset,
-        });
-    }
-    if let Some(triangle) = rest.split("triangle").nth(1) {
-        let body = triangle.split_once('{')?.1.rsplit_once('}')?.0;
-        let size = find_vec2_f32_field(body, "size").or_else(|| {
-            Some([
-                find_f32_field(body, "width")?,
-                find_f32_field(body, "height")?,
-            ])
-        })?;
-        let offset = find_vec2_f32_field(body, "offset").unwrap_or([0.0, 0.0]);
-        return Some(ParsedTileCollisionShape2D::Shape {
-            shape: Shape2D::Triangle {
-                kind: Triangle2DKind::Isosceles,
-                width: size[0],
-                height: size[1],
-            },
-            offset,
-        });
-    }
-    if let Some(polygon) = rest.split("polygon").nth(1) {
-        let body = polygon.split_once('{')?.1.rsplit_once('}')?.0;
-        let points = find_vec2_f32_array_field(body, "points")?;
-        let offset = find_vec2_f32_field(body, "offset").unwrap_or([0.0, 0.0]);
-        return Some(ParsedTileCollisionShape2D::Polygon {
-            points: std::sync::Arc::from(points.into_boxed_slice()),
-            offset,
-        });
-    }
-    None
-}
-
-fn find_f32_field(text: &str, key: &str) -> Option<f32> {
-    let rest = text.split(key).nth(1)?.split_once('=')?.1.trim();
-    rest.split(|c: char| c == ',' || c.is_whitespace() || c == '}')
-        .find(|v| !v.is_empty())?
-        .parse()
-        .ok()
-}
-
-fn find_vec2_f32_field(text: &str, key: &str) -> Option<[f32; 2]> {
-    parse_vec2_f32_inner(text.split(key).nth(1)?.split_once('=')?.1)
-}
-
-fn find_vec2_f32_array_field(text: &str, key: &str) -> Option<Vec<perro_structs::Vector2>> {
-    let rest = text.split(key).nth(1)?.split_once('=')?.1.trim();
-    let inner = rest.strip_prefix('[')?.split_once(']')?.0;
-    let mut points = Vec::new();
-    for raw in inner.split(')').filter(|part| part.contains('(')) {
-        let pair = raw.rsplit_once('(')?.1;
-        let mut it = pair.split(',').map(|v| v.trim().parse::<f32>().ok());
-        points.push(perro_structs::Vector2::new(it.next()??, it.next()??));
-    }
-    (points.len() >= 3).then_some(points)
-}
-
-fn parse_vec2_f32_inner(text: &str) -> Option<[f32; 2]> {
-    let inner = text.trim().strip_prefix('(')?.split_once(')')?.0;
-    let mut parts = inner.split(',').map(|v| v.trim().parse::<f32>().ok());
-    Some([parts.next()??, parts.next()??])
-}
-
-fn parse_vec2_inner(text: &str) -> Option<[u32; 2]> {
-    let inner = text.trim().strip_prefix('(')?.split_once(')')?.0;
-    let mut parts = inner.split(',').map(|v| v.trim().parse::<u32>().ok());
-    Some([parts.next()??, parts.next()??])
 }
 
 fn translation_mat3(x: f32, y: f32) -> [[f32; 3]; 3] {

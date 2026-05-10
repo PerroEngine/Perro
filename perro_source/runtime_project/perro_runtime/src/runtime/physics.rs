@@ -892,9 +892,9 @@ impl Runtime {
                 if let Some(tileset) =
                     crate::runtime::render_2d::resolve_tileset_2d(self, &tilemap.tileset)
                 {
-                    for (tile_id, tile) in &tileset.tiles {
+                    for tile in tileset.tiles.iter() {
                         if tile.collision {
-                            shape_signature = hash_u64(shape_signature, *tile_id as u64);
+                            shape_signature = hash_u64(shape_signature, tile.id as u64);
                             shape_signature = hash_tile_collision_shape_2d(
                                 shape_signature,
                                 tile.collision_shape.clone(),
@@ -2309,7 +2309,7 @@ fn hash_tile_collision_shape_2d(
         ParsedTileCollisionShape2D::Auto => hash_u32(state, 1),
         ParsedTileCollisionShape2D::Shape { shape, offset } => {
             state = hash_u32(state, 2);
-            state = hash_shape_2d(state, shape);
+            state = hash_shape_2d(state, tile_set_shape_to_shape_2d(shape));
             state = hash_f32(state, offset[0].to_bits());
             hash_f32(state, offset[1].to_bits())
         }
@@ -2323,6 +2323,20 @@ fn hash_tile_collision_shape_2d(
             }
             state
         }
+    }
+}
+
+fn tile_set_shape_to_shape_2d(shape: crate::runtime::render_2d::TileSetShape2D) -> Shape2D {
+    use crate::runtime::render_2d::TileSetShape2D;
+
+    match shape {
+        TileSetShape2D::Rect { width, height } => Shape2D::Quad { width, height },
+        TileSetShape2D::Circle { radius } => Shape2D::Circle { radius },
+        TileSetShape2D::Triangle { width, height } => Shape2D::Triangle {
+            kind: Triangle2DKind::Isosceles,
+            width,
+            height,
+        },
     }
 }
 
@@ -2352,7 +2366,7 @@ fn tilemap_shape_descs_2d(
         if tile_id == tilemap.empty_tile {
             continue;
         }
-        let Some(tile) = tileset.tiles.get(&tile_id) else {
+        let Some(tile) = tileset.tile(tile_id) else {
             continue;
         };
         if !tile.collision {
@@ -2361,7 +2375,11 @@ fn tilemap_shape_descs_2d(
         match tile.collision_shape.clone() {
             ParsedTileCollisionShape2D::Auto => solid[idx] = true,
             ParsedTileCollisionShape2D::Shape { shape, offset } => {
-                explicit.push((idx, ShapeKind2D::Primitive(shape), offset));
+                explicit.push((
+                    idx,
+                    ShapeKind2D::Primitive(tile_set_shape_to_shape_2d(shape)),
+                    offset,
+                ));
             }
             ParsedTileCollisionShape2D::Polygon { points, offset } => {
                 explicit.push((idx, ShapeKind2D::Polygon(points.to_vec()), offset));
@@ -3722,7 +3740,9 @@ fn remove_joint_3d(world: &mut PhysicsWorld3D, id: NodeID) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::render_2d::{ParsedTile2D, ParsedTileCollisionShape2D, ParsedTileset2D};
+    use crate::runtime::render_2d::{
+        ParsedTile2D, ParsedTileCollisionShape2D, ParsedTileset2D, TileSetShape2D,
+    };
     use perro_nodes::{
         Area2D, Area3D, CollisionShape2D, CollisionShape3D, FixedJoint2D, FixedJoint3D,
         RigidBody2D, RigidBody3D, StaticBody2D, StaticBody3D,
@@ -3939,32 +3959,29 @@ mod tests {
             collision_enabled: true,
             ..TileMap2D::new()
         };
-        let mut tiles = AHashMap::new();
-        tiles.insert(
-            1,
+        let tiles = vec![
             ParsedTile2D {
+                id: 1,
                 atlas: [0, 0],
                 collision: true,
                 collision_shape: ParsedTileCollisionShape2D::Auto,
             },
-        );
-        tiles.insert(
-            2,
             ParsedTile2D {
+                id: 2,
                 atlas: [1, 0],
                 collision: true,
                 collision_shape: ParsedTileCollisionShape2D::Shape {
-                    shape: Shape2D::Circle { radius: 3.0 },
+                    shape: TileSetShape2D::Circle { radius: 3.0 },
                     offset: [1.0, -1.0],
                 },
             },
-        );
+        ];
         let tileset = ParsedTileset2D {
-            texture: "res://tiles.png".to_string(),
+            texture: "res://tiles.png".into(),
             tile_size: [16.0, 16.0],
             columns: 2,
             rows: 1,
-            tiles,
+            tiles: tiles.into(),
         };
 
         let shapes = tilemap_shape_descs_2d(&tilemap, 1, u32::MAX, 0.7, 0.0, Some(&tileset));
@@ -3991,21 +4008,18 @@ mod tests {
             collision_enabled: true,
             ..TileMap2D::new()
         };
-        let mut tiles = AHashMap::new();
-        tiles.insert(
-            1,
-            ParsedTile2D {
-                atlas: [0, 0],
-                collision: true,
-                collision_shape: ParsedTileCollisionShape2D::Auto,
-            },
-        );
+        let tiles = vec![ParsedTile2D {
+            id: 1,
+            atlas: [0, 0],
+            collision: true,
+            collision_shape: ParsedTileCollisionShape2D::Auto,
+        }];
         let tileset = ParsedTileset2D {
-            texture: "res://tiles.png".to_string(),
+            texture: "res://tiles.png".into(),
             tile_size: [16.0, 16.0],
             columns: 1,
             rows: 1,
-            tiles,
+            tiles: tiles.into(),
         };
 
         let start = std::time::Instant::now();

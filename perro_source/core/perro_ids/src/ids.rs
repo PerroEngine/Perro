@@ -172,6 +172,10 @@ define_generational!(
     "Animation ID - allocated by animation system. Index + generation."
 );
 define_generational!(
+    TileSetID,
+    "Tile set ID - stable hashed tile set resource key. Index + generation."
+);
+define_generational!(
     AnimationTreeID,
     "Animation tree ID - allocated by animation tree system. Index + generation."
 );
