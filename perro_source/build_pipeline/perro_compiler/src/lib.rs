@@ -1,3 +1,5 @@
+//! Project build pipeline, script crate generation, and bundle export helpers.
+
 use perro_assets::{build_compressed_perro_archive_from_entries, build_perro_assets_archive};
 use perro_io::walkdir::walk_dir;
 use perro_project::{ensure_source_overrides, load_project_toml};

@@ -150,7 +150,7 @@ fn decode_archive_container(data: Vec<u8>) -> io::Result<Vec<u8>> {
     }
 
     let version = u32::from_le_bytes(data[4..8].try_into().unwrap());
-    if version != 1 {
+    if version != perro_asset_formats::archive::VERSION {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!("Unsupported compressed PerroAssets version {version}"),

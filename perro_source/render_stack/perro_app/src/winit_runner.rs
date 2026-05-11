@@ -1,15 +1,16 @@
+//! Winit app runner, frame loop, input bridge, profiling, and window setup.
+
 use crate::App;
+use image_helpers::{load_image_size, load_project_window_icon};
 use perro_graphics::GraphicsBackend;
 use perro_ids::{NodeID, TextureID, string_to_u64};
 use perro_input::MouseMode;
-use perro_io::decompress_zlib;
 use perro_render_bridge::{
     Camera2DState, Command2D, Rect2DCommand, RenderCommand, RenderRequestID, ResourceCommand,
     Sprite2DCommand,
 };
 use perro_runtime::{WindowMode, WindowRequest};
 use std::io::Write;
-use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use std::{fs, sync::Arc};
 use winit::{
@@ -18,10 +19,10 @@ use winit::{
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
     monitor::MonitorHandle,
-    window::{
-        CursorGrabMode, CursorIcon as WinitCursorIcon, Fullscreen, Icon, Window, WindowAttributes,
-    },
+    window::{CursorGrabMode, CursorIcon as WinitCursorIcon, Fullscreen, Window, WindowAttributes},
 };
+
+mod image_helpers;
 
 const DEFAULT_FIXED_TIMESTEP: Option<f32> = None;
 const MAX_FIXED_STEPS_PER_FRAME: u32 = 2;
@@ -43,12 +44,6 @@ const STARTUP_SPLASH_IMAGE_NODE: NodeID =
     NodeID::from_u64(string_to_u64("__startup_splash_image__"));
 const STARTUP_SPLASH_BG_Z: i32 = 950;
 const STARTUP_SPLASH_IMAGE_Z: i32 = 951;
-const PTEX_MAGIC: &[u8; 4] = b"PTEX";
-const PTEX_FLAG_FORMAT_MASK: u32 = 0b11;
-const PTEX_FLAG_FORMAT_RGBA8: u32 = 0;
-const PTEX_FLAG_FORMAT_RGB8: u32 = 1;
-const PTEX_FLAG_FORMAT_R8: u32 = 2;
-const PTEX_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
 
 fn map_cursor_icon(icon: perro_ui::CursorIcon) -> WinitCursorIcon {
     match icon {
@@ -2529,6 +2524,90 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
     }
 }
 
+fn window_attributes(
+    event_loop: &ActiveEventLoop,
+    project: Option<&perro_runtime::RuntimeProject>,
+    fallback_title: &str,
+) -> WindowAttributes {
+    let title = project
+        .map(|project| project.config.name.as_str())
+        .unwrap_or(fallback_title)
+        .to_string();
+
+    let mut attrs = WindowAttributes::default()
+        .with_title(title)
+        .with_visible(false);
+    let Some(project) = project else {
+        return attrs;
+    };
+
+    if let Some(icon) = load_project_window_icon(project) {
+        attrs = attrs.with_window_icon(Some(icon));
+    }
+
+    let desired = PhysicalSize::new(project.config.virtual_width, project.config.virtual_height);
+    if desired.width == 0 || desired.height == 0 {
+        return attrs;
+    }
+
+    let Some(monitor) = pick_monitor(event_loop) else {
+        return attrs.with_inner_size(Size::Physical(desired));
+    };
+    if let Some(mode) = parse_window_mode_override()
+        && (mode == "borderless" || mode == "borderless_fullscreen")
+    {
+        return attrs.with_fullscreen(Some(Fullscreen::Borderless(Some(monitor))));
+    }
+
+    let max_width =
+        ((monitor.size().width as f32) * INITIAL_WINDOW_MONITOR_FRACTION).floor() as u32;
+    let max_height =
+        ((monitor.size().height as f32) * INITIAL_WINDOW_MONITOR_FRACTION).floor() as u32;
+    let fitted = fit_aspect(desired, max_width.max(1), max_height.max(1));
+    let centered = center_position(&monitor, fitted);
+
+    attrs = attrs.with_inner_size(Size::Physical(fitted));
+    attrs.with_position(Position::Physical(centered))
+}
+
+fn parse_window_mode_override() -> Option<String> {
+    std::env::var("PERRO_WINDOW_MODE")
+        .ok()
+        .map(|raw| raw.trim().to_ascii_lowercase())
+}
+
+fn pick_monitor(event_loop: &ActiveEventLoop) -> Option<MonitorHandle> {
+    event_loop
+        .primary_monitor()
+        .or_else(|| event_loop.available_monitors().next())
+}
+
+fn fit_aspect(desired: PhysicalSize<u32>, max_width: u32, max_height: u32) -> PhysicalSize<u32> {
+    if desired.width <= max_width && desired.height <= max_height {
+        return desired;
+    }
+
+    let scale = f32::min(
+        max_width as f32 / desired.width as f32,
+        max_height as f32 / desired.height as f32,
+    );
+    let width = ((desired.width as f32) * scale).floor().max(1.0) as u32;
+    let height = ((desired.height as f32) * scale).floor().max(1.0) as u32;
+    PhysicalSize::new(width, height)
+}
+
+fn center_position(
+    monitor: &MonitorHandle,
+    window_size: PhysicalSize<u32>,
+) -> PhysicalPosition<i32> {
+    let monitor_pos = monitor.position();
+    let monitor_size = monitor.size();
+
+    let x = monitor_pos.x + ((monitor_size.width as i32 - window_size.width as i32) / 2);
+    let y = monitor_pos.y + ((monitor_size.height as i32 - window_size.height as i32) / 2);
+    PhysicalPosition::new(x, y)
+}
+
 #[cfg(test)]
 mod fixed_step_tests {
     use super::{MAX_FIXED_STEPS_PER_FRAME, StartupSplashState, plan_fixed_steps};
@@ -2584,296 +2663,4 @@ mod fixed_step_tests {
 
         assert!(!splash.blocks_input());
     }
-}
-
-fn window_attributes(
-    event_loop: &ActiveEventLoop,
-    project: Option<&perro_runtime::RuntimeProject>,
-    fallback_title: &str,
-) -> WindowAttributes {
-    let title = project
-        .map(|project| project.config.name.as_str())
-        .unwrap_or(fallback_title)
-        .to_string();
-
-    let mut attrs = WindowAttributes::default()
-        .with_title(title)
-        .with_visible(false);
-    let Some(project) = project else {
-        return attrs;
-    };
-
-    if let Some(icon) = load_project_window_icon(project) {
-        attrs = attrs.with_window_icon(Some(icon));
-    }
-
-    let desired = PhysicalSize::new(project.config.virtual_width, project.config.virtual_height);
-    if desired.width == 0 || desired.height == 0 {
-        return attrs;
-    }
-
-    let Some(monitor) = pick_monitor(event_loop) else {
-        return attrs.with_inner_size(Size::Physical(desired));
-    };
-    if let Some(mode) = parse_window_mode_override()
-        && (mode == "borderless" || mode == "borderless_fullscreen")
-    {
-        return attrs.with_fullscreen(Some(Fullscreen::Borderless(Some(monitor))));
-    }
-
-    let max_width =
-        ((monitor.size().width as f32) * INITIAL_WINDOW_MONITOR_FRACTION).floor() as u32;
-    let max_height =
-        ((monitor.size().height as f32) * INITIAL_WINDOW_MONITOR_FRACTION).floor() as u32;
-    let fitted = fit_aspect(desired, max_width.max(1), max_height.max(1));
-    let centered = center_position(&monitor, fitted);
-
-    attrs = attrs.with_inner_size(Size::Physical(fitted));
-    attrs.with_position(Position::Physical(centered))
-}
-
-fn parse_window_mode_override() -> Option<String> {
-    std::env::var("PERRO_WINDOW_MODE")
-        .ok()
-        .map(|raw| raw.trim().to_ascii_lowercase())
-}
-
-fn load_project_window_icon(project: &perro_runtime::RuntimeProject) -> Option<Icon> {
-    let bytes = load_project_icon_bytes(project)?;
-    let (rgba, width, height) = decode_image_rgba(&bytes)?;
-    Icon::from_rgba(rgba, width, height).ok()
-}
-
-fn load_project_icon_bytes(project: &perro_runtime::RuntimeProject) -> Option<Vec<u8>> {
-    load_project_image_bytes(
-        project,
-        project.config.icon.trim(),
-        project.config.icon_hash,
-    )
-}
-
-fn load_project_image_bytes(
-    project: &perro_runtime::RuntimeProject,
-    source: &str,
-    source_hash: Option<u64>,
-) -> Option<Vec<u8>> {
-    if let Some(path) = resolve_project_asset_path(project, source)
-        && let Ok(bytes) = fs::read(path)
-    {
-        return Some(bytes);
-    }
-    if let Some(lookup) = project.static_icon_lookup {
-        let hash = source_hash
-            .or_else(|| perro_ids::parse_hashed_source_uri(source))
-            .or_else(|| {
-                source
-                    .starts_with("res://")
-                    .then(|| perro_ids::string_to_u64(source))
-            });
-        if let Some(hash) = hash {
-            let bytes = lookup(hash);
-            if !bytes.is_empty() {
-                return Some(bytes.to_vec());
-            }
-        }
-    }
-    None
-}
-
-fn load_image_size(
-    project: &perro_runtime::RuntimeProject,
-    source: &str,
-    source_hash: Option<u64>,
-) -> Option<(u32, u32)> {
-    let bytes = load_project_image_bytes(project, source, source_hash)?;
-    decode_image_size(&bytes)
-}
-
-fn decode_image_size(bytes: &[u8]) -> Option<(u32, u32)> {
-    if let Some((width, height)) = decode_ptex_dimensions(bytes) {
-        return Some((width.max(1), height.max(1)));
-    }
-    let decoded = image::load_from_memory(bytes).ok()?;
-    Some((decoded.width().max(1), decoded.height().max(1)))
-}
-
-fn decode_image_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
-    if let Some(decoded) = decode_ptex_rgba(bytes) {
-        return Some(decoded);
-    }
-    let img = image::load_from_memory(bytes).ok()?;
-    let rgba = img.into_rgba8();
-    let (width, height) = rgba.dimensions();
-    Some((rgba.into_raw(), width, height))
-}
-
-fn decode_ptex_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
-    if bytes.len() < 16 || &bytes[0..4] != PTEX_MAGIC {
-        return None;
-    }
-    let version = u32::from_le_bytes(bytes[4..8].try_into().ok()?);
-    if version != 2 {
-        return None;
-    }
-    let width = u32::from_le_bytes(bytes[8..12].try_into().ok()?);
-    let height = u32::from_le_bytes(bytes[12..16].try_into().ok()?);
-    if width == 0 || height == 0 {
-        return None;
-    }
-    Some((width, height))
-}
-
-fn decode_ptex_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
-    if bytes.len() < 24 || &bytes[0..4] != PTEX_MAGIC {
-        return None;
-    }
-    let version = u32::from_le_bytes(bytes[4..8].try_into().ok()?);
-    if version != 2 {
-        return None;
-    }
-    let width = u32::from_le_bytes(bytes[8..12].try_into().ok()?);
-    let height = u32::from_le_bytes(bytes[12..16].try_into().ok()?);
-    if width == 0 || height == 0 {
-        return None;
-    }
-    let flags = u32::from_le_bytes(bytes[16..20].try_into().ok()?);
-    if flags & !(PTEX_FLAG_FORMAT_MASK | PTEX_FLAG_PAYLOAD_RAW) != 0 {
-        return None;
-    }
-    let raw_len = u32::from_le_bytes(bytes[20..24].try_into().ok()?);
-    let pixel_count = width.checked_mul(height)? as usize;
-    let expected_raw_len = match flags & PTEX_FLAG_FORMAT_MASK {
-        PTEX_FLAG_FORMAT_RGBA8 => pixel_count.checked_mul(4)?,
-        PTEX_FLAG_FORMAT_RGB8 => pixel_count.checked_mul(3)?,
-        PTEX_FLAG_FORMAT_R8 => pixel_count,
-        _ => return None,
-    };
-    if raw_len as usize != expected_raw_len {
-        return None;
-    }
-    let raw = decode_ptex_payload(flags, &bytes[24..])?;
-    if raw.len() != expected_raw_len {
-        return None;
-    }
-
-    let rgba = match flags & PTEX_FLAG_FORMAT_MASK {
-        PTEX_FLAG_FORMAT_RGBA8 => raw,
-        PTEX_FLAG_FORMAT_RGB8 => {
-            let mut out = Vec::with_capacity(pixel_count * 4);
-            for px in raw.chunks_exact(3) {
-                out.extend_from_slice(&[px[0], px[1], px[2], 255]);
-            }
-            out
-        }
-        PTEX_FLAG_FORMAT_R8 => {
-            let mut out = Vec::with_capacity(pixel_count * 4);
-            for &v in &raw {
-                out.extend_from_slice(&[v, v, v, 255]);
-            }
-            out
-        }
-        _ => return None,
-    };
-    Some((rgba, width, height))
-}
-
-fn decode_ptex_payload(flags: u32, payload: &[u8]) -> Option<Vec<u8>> {
-    if (flags & PTEX_FLAG_PAYLOAD_RAW) != 0 {
-        Some(payload.to_vec())
-    } else {
-        decompress_zlib(payload).ok()
-    }
-}
-
-fn resolve_project_asset_path(
-    project: &perro_runtime::RuntimeProject,
-    source: &str,
-) -> Option<PathBuf> {
-    let source = source.trim();
-    if source.is_empty() {
-        return None;
-    }
-
-    if let Some(rel) = source.strip_prefix("res://") {
-        let rel = rel.trim_start_matches('/');
-        return Some(project.root.join("res").join(rel));
-    }
-
-    let path = Path::new(source);
-    if path.is_absolute() {
-        return Some(path.to_path_buf());
-    }
-
-    Some(project.root.join(path))
-}
-
-fn pick_monitor(event_loop: &ActiveEventLoop) -> Option<MonitorHandle> {
-    event_loop
-        .primary_monitor()
-        .or_else(|| event_loop.available_monitors().next())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{decode_image_rgba, decode_image_size};
-
-    #[test]
-    fn decode_image_rgba_supports_ptex_v2_rgb() {
-        let raw_rgb = vec![10u8, 20, 30, 40, 50, 60];
-        let compressed = perro_io::compress_zlib_best(&raw_rgb).expect("compress");
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(b"PTEX");
-        bytes.extend_from_slice(&2u32.to_le_bytes());
-        bytes.extend_from_slice(&2u32.to_le_bytes());
-        bytes.extend_from_slice(&1u32.to_le_bytes());
-        bytes.extend_from_slice(&1u32.to_le_bytes()); // rgb8
-        bytes.extend_from_slice(&(raw_rgb.len() as u32).to_le_bytes());
-        bytes.extend_from_slice(&compressed);
-
-        let (rgba, width, height) = decode_image_rgba(&bytes).expect("decode rgba");
-        assert_eq!((width, height), (2, 1));
-        assert_eq!(rgba, vec![10u8, 20, 30, 255, 40, 50, 60, 255]);
-    }
-
-    #[test]
-    fn decode_image_size_supports_ptex() {
-        let raw = vec![1u8, 2, 3, 4];
-        let compressed = perro_io::compress_zlib_best(&raw).expect("compress");
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(b"PTEX");
-        bytes.extend_from_slice(&2u32.to_le_bytes());
-        bytes.extend_from_slice(&1u32.to_le_bytes());
-        bytes.extend_from_slice(&1u32.to_le_bytes());
-        bytes.extend_from_slice(&0u32.to_le_bytes()); // rgba8
-        bytes.extend_from_slice(&4u32.to_le_bytes());
-        bytes.extend_from_slice(&compressed);
-
-        assert_eq!(decode_image_size(&bytes), Some((1, 1)));
-    }
-}
-
-fn fit_aspect(desired: PhysicalSize<u32>, max_width: u32, max_height: u32) -> PhysicalSize<u32> {
-    if desired.width <= max_width && desired.height <= max_height {
-        return desired;
-    }
-
-    let scale = f32::min(
-        max_width as f32 / desired.width as f32,
-        max_height as f32 / desired.height as f32,
-    );
-    let width = ((desired.width as f32) * scale).floor().max(1.0) as u32;
-    let height = ((desired.height as f32) * scale).floor().max(1.0) as u32;
-    PhysicalSize::new(width, height)
-}
-
-fn center_position(
-    monitor: &MonitorHandle,
-    window_size: PhysicalSize<u32>,
-) -> PhysicalPosition<i32> {
-    let monitor_pos = monitor.position();
-    let monitor_size = monitor.size();
-
-    let x = monitor_pos.x + ((monitor_size.width as i32 - window_size.width as i32) / 2);
-    let y = monitor_pos.y + ((monitor_size.height as i32 - window_size.height as i32) / 2);
-    PhysicalPosition::new(x, y)
 }

@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 perro_structs = { path = "../../core/perro_structs" }
+perro_asset_formats = { path = "../../core/perro_asset_formats" }
 perro_io = { path = "../../io_stack/perro_io" }
 perro_meshlets = { path = "../../render_stack/perro_meshlets" }
 perro_scene = { path = "../../runtime_project/perro_scene" }

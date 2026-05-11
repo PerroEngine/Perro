@@ -1,10 +1,9 @@
 use crate::{
     StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir,
 };
+use perro_asset_formats::source_ext;
 use perro_io::walkdir::collect_file_paths;
 use std::{fmt::Write as _, fs, path::Path};
-
-const SHADER_EXTENSIONS: &[&str] = &["wgsl"];
 
 pub fn generate_static_shaders(project_root: &Path) -> Result<(), StaticPipelineError> {
     let res_dir = res_dir(project_root);
@@ -22,8 +21,7 @@ pub fn generate_static_shaders(project_root: &Path) -> Result<(), StaticPipeline
                 Path::new(rel)
                     .extension()
                     .and_then(|e| e.to_str())
-                    .map(|ext| ext.to_ascii_lowercase())
-                    .is_some_and(|ext| SHADER_EXTENSIONS.contains(&ext.as_str()))
+                    .is_some_and(|ext| source_ext::contains(source_ext::SHADER, ext))
             })
             .collect();
     }

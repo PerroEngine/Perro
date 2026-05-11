@@ -1,6 +1,9 @@
 use crate::{
     StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir,
 };
+use perro_asset_formats::ptset::{
+    EXTENSION as PTSET_EXTENSION, SOURCE_EXTENSION as PTSET_SOURCE_EXTENSION,
+};
 use perro_io::walkdir::collect_file_paths;
 use perro_render_bridge::{encode_tileset_2d_binary, parse_ptileset_source};
 use rayon::prelude::*;
@@ -22,7 +25,7 @@ pub fn generate_static_tilesets(project_root: &Path) -> Result<(), StaticPipelin
                 Path::new(rel)
                     .extension()
                     .and_then(|e| e.to_str())
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case("ptileset"))
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case(PTSET_SOURCE_EXTENSION))
             })
             .collect();
     }
@@ -34,7 +37,9 @@ pub fn generate_static_tilesets(project_root: &Path) -> Result<(), StaticPipelin
             let res_path = asset_uri(&rel);
             let src = fs::read_to_string(res_dir.join(&rel))?;
             let tileset = parse_ptileset_source(&src).ok_or_else(|| {
-                io::Error::other(format!("tileset `{res_path}` must be valid .ptileset"))
+                io::Error::other(format!(
+                    "tileset `{res_path}` must be valid .{PTSET_SOURCE_EXTENSION}"
+                ))
             })?;
             Ok((res_path, rel, encode_tileset_2d_binary(&tileset)))
         })
@@ -83,7 +88,7 @@ pub fn generate_static_tilesets(project_root: &Path) -> Result<(), StaticPipelin
 }
 
 fn encoded_tileset_rel_path(rel: &str) -> String {
-    format!("{rel}.ptset")
+    format!("{rel}.{PTSET_EXTENSION}")
 }
 
 fn escape_str(input: &str) -> String {
@@ -143,5 +148,14 @@ mod tests {
                 .join("embedded/tilesets/tiles/world.ptileset.ptset")
                 .exists()
         );
+        let bytes = fs::read(
+            static_dir
+                .parent()
+                .unwrap()
+                .join("embedded/tilesets/tiles/world.ptileset.ptset"),
+        )
+        .unwrap();
+        assert_eq!(&bytes[0..5], b"PTSET");
+        assert_eq!(u32::from_le_bytes(bytes[5..9].try_into().unwrap()), 1);
     }
 }

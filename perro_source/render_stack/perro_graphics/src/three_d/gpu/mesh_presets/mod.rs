@@ -1,16 +1,7 @@
 use super::{MeshRange, MeshVertex, MeshletRange};
 use ahash::AHashMap;
+use perro_builtin_meshes::{BUILTIN_MESH_SOURCES, BuiltinMesh, BuiltinMeshVertex};
 use std::sync::Arc;
-
-mod capsule;
-mod common;
-mod cone;
-mod cube;
-mod cylinder;
-mod sphere;
-mod square_pyramid;
-mod tri_prism;
-mod triangular_pyramid;
 
 type BuiltinMeshBuffer = (
     Vec<MeshVertex>,
@@ -37,40 +28,16 @@ impl From<MeshVertex> for MeshVertexKey {
 }
 
 pub(super) fn build_builtin_mesh_buffer() -> BuiltinMeshBuffer {
-    const ROUND_SEGMENTS: u32 = 36;
-    const CYLINDER_SEGMENTS: u32 = ROUND_SEGMENTS * 3;
-    const SPHERE_LATITUDE_BANDS: u32 = 24;
-    const CAPSULE_HEMISPHERE_BANDS: u32 = 14;
-
-    let presets = [
-        ("__cube__", deduplicate_mesh(cube::geometry())),
-        (
-            "__tri_pyr__",
-            deduplicate_mesh(triangular_pyramid::geometry()),
-        ),
-        ("__sq_pyr__", deduplicate_mesh(square_pyramid::geometry())),
-        (
-            "__sphere__",
-            deduplicate_mesh(sphere::geometry(ROUND_SEGMENTS, SPHERE_LATITUDE_BANDS)),
-        ),
-        ("__tri_prism__", deduplicate_mesh(tri_prism::geometry())),
-        (
-            "__cylinder__",
-            deduplicate_mesh(cylinder::geometry(CYLINDER_SEGMENTS)),
-        ),
-        ("__cone__", deduplicate_mesh(cone::geometry(ROUND_SEGMENTS))),
-        (
-            "__capsule__",
-            deduplicate_mesh(capsule::geometry(ROUND_SEGMENTS, CAPSULE_HEMISPHERE_BANDS)),
-        ),
-    ];
-
     let mut all_vertices = Vec::new();
     let mut all_indices = Vec::new();
     let mut ranges = AHashMap::new();
     let mut meshlets = AHashMap::new();
 
-    for (name, (vertices, indices)) in presets {
+    for &name in BUILTIN_MESH_SOURCES {
+        let Some(mesh) = perro_builtin_meshes::build_builtin_mesh(name) else {
+            continue;
+        };
+        let (vertices, indices) = deduplicate_mesh(mesh);
         let base_vertex = all_vertices.len() as i32;
         let index_start = all_indices.len() as u32;
         let packed_indices = pack_indices_spatial(&vertices, &indices);
@@ -92,14 +59,12 @@ pub(super) fn build_builtin_mesh_buffer() -> BuiltinMeshBuffer {
     (all_vertices, all_indices, ranges, meshlets)
 }
 
-fn deduplicate_mesh(
-    (vertices, indices): (Vec<MeshVertex>, Vec<u16>),
-) -> (Vec<MeshVertex>, Vec<u32>) {
-    let mut unique_vertices = Vec::with_capacity(vertices.len());
-    let mut remap = vec![0u16; vertices.len()];
-    let mut vertex_to_index = AHashMap::with_capacity(vertices.len());
+fn deduplicate_mesh(mesh: BuiltinMesh) -> (Vec<MeshVertex>, Vec<u32>) {
+    let mut unique_vertices = Vec::with_capacity(mesh.vertices.len());
+    let mut remap = vec![0u16; mesh.vertices.len()];
+    let mut vertex_to_index = AHashMap::with_capacity(mesh.vertices.len());
 
-    for (old_index, vertex) in vertices.into_iter().enumerate() {
+    for (old_index, vertex) in mesh.vertices.into_iter().map(to_mesh_vertex).enumerate() {
         let key = MeshVertexKey::from(vertex);
         let new_index = match vertex_to_index.get(&key) {
             Some(index) => *index,
@@ -114,11 +79,22 @@ fn deduplicate_mesh(
         remap[old_index] = new_index;
     }
 
-    let remapped_indices = indices
+    let remapped_indices = mesh
+        .indices
         .into_iter()
         .map(|index| remap[index as usize] as u32)
         .collect();
     (unique_vertices, remapped_indices)
+}
+
+fn to_mesh_vertex(vertex: BuiltinMeshVertex) -> MeshVertex {
+    MeshVertex {
+        pos: vertex.pos,
+        normal: vertex.normal,
+        uv: vertex.uv,
+        joints: [0, 0, 0, 0],
+        weights: [1.0, 0.0, 0.0, 0.0],
+    }
 }
 
 const MESHLET_TRIANGLES: usize = 64;

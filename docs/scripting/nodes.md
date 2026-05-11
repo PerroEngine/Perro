@@ -125,7 +125,7 @@ See [TileMap2D](tilemap.md).
 - Shared-skeleton mesh reuse works when meshes follow the same rig contract: same joint order/indices and compatible weights.
 - Automatic retargeting between mismatched rigs is not implemented.
 - Mesh LOD is automatic for authored meshes.
-- Dynamic/dev load builds LODs on load; static build packs LODs into `.pmesh` v8.
+- Dynamic/dev load builds LODs on load; static build packs LODs into `.pmesh` v1.
 - Meshes with joints/weights skip LOD generation.
 - Surface/material slots stay stable across LODs.
 - Current switch distances are radius-scaled (`36x`, `72x`, `144x` mesh bounds radius).

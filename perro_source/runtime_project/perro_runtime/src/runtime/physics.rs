@@ -1,6 +1,10 @@
 use super::RuntimePhysicsStepTiming;
 use crate::Runtime;
 use ahash::{AHashMap, AHashSet};
+use perro_asset_formats::pmesh::{
+    FLAG_INDEX_U16 as PMESH_FLAG_INDEX_U16, FLAG_PAYLOAD_RAW as PMESH_FLAG_PAYLOAD_RAW,
+    VERSION as PMESH_VERSION,
+};
 use perro_ids::{NodeID, SignalID, parse_hashed_source_uri, string_to_u64};
 use perro_io::{decompress_zlib, load_asset};
 use perro_nodes::{
@@ -17,7 +21,6 @@ use rapier3d::{na as na3, prelude as r3};
 use rayon::prelude::*;
 
 const MAX_CCD_SUBSTEPS: usize = 1;
-const PMESH_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
 const MAX_RIGID_SPEED_2D: f32 = 80.0;
 const MAX_RIGID_SPEED_3D: f32 = 80.0;
 const CCD_MIN_SPEED_RATIO_OF_MAX: f32 = 0.5;
@@ -3163,11 +3166,11 @@ fn decode_pmesh_trimesh(bytes: &[u8], sx: f32, sy: f32, sz: f32) -> Option<TriMe
         return None;
     }
     let version = u32::from_le_bytes(bytes[5..9].try_into().ok()?);
-    if version == 8 {
-        return decode_render_pmesh_v8_trimesh(bytes, sx, sy, sz);
-    }
-    if version != 6 && version != 7 {
+    if version != PMESH_VERSION {
         return None;
+    }
+    if let Some(render_trimesh) = decode_render_pmesh_trimesh(bytes, sx, sy, sz) {
+        return Some(render_trimesh);
     }
     let flags = u32::from_le_bytes(bytes[9..13].try_into().ok()?);
     let vertex_count = u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize;
@@ -3180,19 +3183,8 @@ fn decode_pmesh_trimesh(bytes: &[u8], sx: f32, sy: f32, sz: f32) -> Option<TriMe
         return None;
     }
 
-    let index_u16 = version == 7 && (flags & (1 << 4)) != 0;
-    let vertex_stride = if version == 7 {
-        12
-    } else {
-        let has_normal = (flags & (1 << 0)) != 0;
-        let has_uv0 = (flags & (1 << 1)) != 0;
-        let has_joints = (flags & (1 << 2)) != 0;
-        let has_weights = (flags & (1 << 3)) != 0;
-        12 + if has_normal { 12 } else { 0 }
-            + if has_uv0 { 8 } else { 0 }
-            + if has_joints { 8 } else { 0 }
-            + if has_weights { 16 } else { 0 }
-    };
+    let index_u16 = (flags & PMESH_FLAG_INDEX_U16) != 0;
+    let vertex_stride = 12usize;
     let vertex_bytes = vertex_count.checked_mul(vertex_stride)?;
     let index_bytes = index_count.checked_mul(if index_u16 { 2 } else { 4 })?;
     if raw.len() < vertex_bytes + index_bytes {
@@ -3235,7 +3227,7 @@ fn decode_pmesh_trimesh(bytes: &[u8], sx: f32, sy: f32, sz: f32) -> Option<TriMe
     Some((vertices, triangles))
 }
 
-fn decode_render_pmesh_v8_trimesh(bytes: &[u8], sx: f32, sy: f32, sz: f32) -> Option<TriMeshData> {
+fn decode_render_pmesh_trimesh(bytes: &[u8], sx: f32, sy: f32, sz: f32) -> Option<TriMeshData> {
     if bytes.len() < 37 {
         return None;
     }

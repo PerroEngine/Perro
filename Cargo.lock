@@ -3039,6 +3039,7 @@ dependencies = [
  "hidapi",
  "image",
  "memory-stats",
+ "perro_asset_formats",
  "perro_graphics",
  "perro_ids",
  "perro_input",
@@ -3056,12 +3057,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "perro_asset_formats"
+version = "0.1.0"
+
+[[package]]
 name = "perro_assets"
 version = "0.1.0"
 dependencies = [
  "flate2",
+ "perro_asset_formats",
  "rayon",
 ]
+
+[[package]]
+name = "perro_builtin_meshes"
+version = "0.1.0"
 
 [[package]]
 name = "perro_cli"
@@ -3103,6 +3113,8 @@ dependencies = [
  "glam",
  "gltf",
  "image",
+ "perro_asset_formats",
+ "perro_builtin_meshes",
  "perro_ids",
  "perro_io",
  "perro_macros",
@@ -3186,6 +3198,7 @@ version = "0.1.0"
 name = "perro_pawdio"
 version = "0.1.0"
 dependencies = [
+ "perro_asset_formats",
  "perro_ids",
  "perro_io",
  "rodio",
@@ -3202,6 +3215,7 @@ dependencies = [
 name = "perro_render_bridge"
 version = "0.1.0"
 dependencies = [
+ "perro_asset_formats",
  "perro_ids",
  "perro_particle_math",
  "perro_structs",
@@ -3232,6 +3246,8 @@ dependencies = [
  "image",
  "libloading",
  "perro_animation",
+ "perro_asset_formats",
+ "perro_builtin_meshes",
  "perro_ids",
  "perro_input",
  "perro_internal_updates",
@@ -3305,6 +3321,7 @@ dependencies = [
  "gltf",
  "image",
  "perro_animation",
+ "perro_asset_formats",
  "perro_ids",
  "perro_io",
  "perro_meshlets",

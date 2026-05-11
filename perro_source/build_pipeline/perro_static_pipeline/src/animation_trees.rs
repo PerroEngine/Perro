@@ -1,4 +1,5 @@
 use crate::{StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir};
+use perro_asset_formats::source_ext;
 use perro_io::walkdir::collect_file_paths;
 use std::{borrow::Cow, fmt::Write as _, fs, io, path::Path};
 
@@ -21,7 +22,7 @@ pub fn generate_static_animation_trees(project_root: &Path) -> Result<(), Static
                 Path::new(rel)
                     .extension()
                     .and_then(|e| e.to_str())
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case("panimtree"))
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case(source_ext::ANIMATION_TREE))
             })
             .collect();
     }

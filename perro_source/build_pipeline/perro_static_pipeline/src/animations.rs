@@ -4,6 +4,7 @@ use perro_animation::{
     AnimationInterpolation, AnimationKeyMode, AnimationObjectKey, AnimationObjectTrack,
     AnimationParam, AnimationTrackValue,
 };
+use perro_asset_formats::source_ext;
 use perro_io::walkdir::collect_file_paths;
 use perro_scene::NodeField;
 use rayon::prelude::*;
@@ -29,7 +30,7 @@ pub fn generate_static_animations(project_root: &Path) -> Result<(), StaticPipel
                 Path::new(rel)
                     .extension()
                     .and_then(|e| e.to_str())
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case("panim"))
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case(source_ext::ANIMATION))
             })
             .collect();
     }

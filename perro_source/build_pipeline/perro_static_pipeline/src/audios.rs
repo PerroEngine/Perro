@@ -1,6 +1,12 @@
 use crate::{
     StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir,
 };
+use perro_asset_formats::{
+    pawdio::{
+        EXTENSION as PAWDIO_EXTENSION, FLAG_ZLIB, MAGIC as PAWDIO_MAGIC, VERSION as PAWDIO_VERSION,
+    },
+    source_ext,
+};
 use perro_io::{compress_zlib_best, walkdir::collect_file_paths};
 use rayon::prelude::*;
 use std::{
@@ -8,11 +14,6 @@ use std::{
     fs, io,
     path::{Path, PathBuf},
 };
-
-const AUDIO_EXTENSIONS: &[&str] = &["mp3", "wav", "ogg", "flac", "aac", "m4a"];
-const PAWDIO_MAGIC: &[u8; 6] = b"PAWDIO";
-const PAWDIO_VERSION: u32 = 2;
-const FLAG_ZLIB: u32 = 1;
 
 pub fn generate_static_audios(project_root: &Path) -> Result<(), StaticPipelineError> {
     let res_dir = res_dir(project_root);
@@ -30,8 +31,7 @@ pub fn generate_static_audios(project_root: &Path) -> Result<(), StaticPipelineE
                 Path::new(rel)
                     .extension()
                     .and_then(|e| e.to_str())
-                    .map(|ext| ext.to_ascii_lowercase())
-                    .is_some_and(|ext| AUDIO_EXTENSIONS.contains(&ext.as_str()))
+                    .is_some_and(|ext| source_ext::contains(source_ext::AUDIO, ext))
             })
             .collect();
     }
@@ -53,7 +53,7 @@ pub fn generate_static_audios(project_root: &Path) -> Result<(), StaticPipelineE
             pawdio.extend_from_slice(&payload);
 
             let mut rel_pawdio = PathBuf::from(&rel);
-            rel_pawdio.set_extension("pawdio");
+            rel_pawdio.set_extension(PAWDIO_EXTENSION);
             let rel_pawdio = rel_pawdio.to_string_lossy().replace('\\', "/");
             Ok((res_path, rel_pawdio, pawdio))
         })
@@ -126,7 +126,12 @@ fn select_pawdio_payload(raw: &[u8]) -> io::Result<(u32, Vec<u8>)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{FLAG_ZLIB, select_pawdio_payload};
+    use super::{FLAG_ZLIB, PAWDIO_VERSION, select_pawdio_payload};
+
+    #[test]
+    fn pawdio_current_version_is_v1() {
+        assert_eq!(PAWDIO_VERSION, 1);
+    }
 
     #[test]
     fn select_payload_prefers_compressed_when_smaller() {

@@ -18,19 +18,29 @@ mod tests {
     use crate::{Audio2D, Audio3D, AudioListener2D, AudioListener3D};
 
     #[test]
-    fn decode_static_pawdio_rejects_legacy_versions() {
-        for version in [1u32, 3, 4, 5] {
-            let mut blob = Vec::new();
-            blob.extend_from_slice(b"PAWDIO");
-            blob.extend_from_slice(&version.to_le_bytes());
-            blob.extend_from_slice(&0u32.to_le_bytes());
-            blob.extend_from_slice(&0u32.to_le_bytes());
-            let err = decode_static_pawdio(&blob).expect_err("legacy version must fail");
-            assert!(
-                err.contains("unsupported .pawdio version"),
-                "unexpected err for version {version}: {err}"
-            );
-        }
+    fn decode_static_pawdio_accepts_v1_raw_payload() {
+        let raw = [1u8, 2, 3, 4];
+        let mut blob = Vec::new();
+        blob.extend_from_slice(b"PAWDIO");
+        blob.extend_from_slice(&1u32.to_le_bytes());
+        blob.extend_from_slice(&0u32.to_le_bytes());
+        blob.extend_from_slice(&(raw.len() as u32).to_le_bytes());
+        blob.extend_from_slice(&raw);
+
+        let (decoded, _) = decode_static_pawdio(&blob).expect("decode pawdio v1");
+        assert_eq!(decoded, raw);
+    }
+
+    #[test]
+    fn decode_static_pawdio_rejects_non_v1() {
+        let mut blob = Vec::new();
+        blob.extend_from_slice(b"PAWDIO");
+        blob.extend_from_slice(&2u32.to_le_bytes());
+        blob.extend_from_slice(&0u32.to_le_bytes());
+        blob.extend_from_slice(&0u32.to_le_bytes());
+
+        let err = decode_static_pawdio(&blob).expect_err("non-v1 version must fail");
+        assert!(err.contains("unsupported .pawdio version"));
     }
 
     #[test]

@@ -1,9 +1,9 @@
 use std::io::{self, Read, Write};
 
-pub const PERRO_ASSETS_MAGIC: [u8; 4] = *b"PRA1";
-pub const PERRO_ASSETS_COMPRESSED_MAGIC: [u8; 4] = *b"PRC1";
+pub const PERRO_ASSETS_MAGIC: [u8; 4] = perro_asset_formats::archive::MAGIC;
+pub const PERRO_ASSETS_COMPRESSED_MAGIC: [u8; 4] = perro_asset_formats::archive::COMPRESSED_MAGIC;
 
-pub const FLAG_COMPRESSED: u32 = 1; // Bit 0: Data is DEFLATE compressed
+pub const FLAG_COMPRESSED: u32 = perro_asset_formats::archive::FLAG_COMPRESSED;
 
 /// Archive header
 #[derive(Debug, Clone, Copy)]

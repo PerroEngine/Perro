@@ -13,26 +13,7 @@ use super::common::{
 };
 use crate::compression::compress_deflate_best;
 use crate::walkdir::collect_file_paths;
-
-// Scripts (compiled into binary)
-const SKIP_SCRIPT_EXT: &[&str] = &["rs"];
-
-// Scene and UI data (compiled into scenes.rs and fur.rs)
-const SKIP_SCENE_FUR_EXT: &[&str] = &["scn", "fur"];
-
-// Images are pre-decoded + compressed into .ptex static assets
-const SKIP_IMAGES: &[&str] = &[
-    "png", "jpg", "jpeg", "bmp", "gif", "ico", "tga", "webp", "rgba",
-];
-
-// Models are converted to pmesh (static assets) in release
-const SKIP_MODELS: &[&str] = &["glb", "gltf"];
-
-// Resources compiled into static runtime tables
-const SKIP_RESOURCES: &[&str] = &["pmat", "ppart", "pmesh", "panim"];
-// Shaders are compiled into static shader tables
-const SKIP_SHADERS: &[&str] = &["wgsl"];
-const SKIP_AUDIO: &[&str] = &["mp3", "wav", "ogg", "flac", "aac", "m4a"];
+use perro_asset_formats::{archive, source_ext};
 
 fn should_skip(path: &str, extra_skip_rel_paths: &HashSet<&str>) -> bool {
     let ext = Path::new(path)
@@ -40,21 +21,15 @@ fn should_skip(path: &str, extra_skip_rel_paths: &HashSet<&str>) -> bool {
         .and_then(|e| e.to_str())
         .map(|e| e.to_ascii_lowercase());
     extra_skip_rel_paths.contains(path)
-        || ext
-            .as_deref()
-            .is_some_and(|ext| SKIP_SCRIPT_EXT.contains(&ext))
-        || ext
-            .as_deref()
-            .is_some_and(|ext| SKIP_SCENE_FUR_EXT.contains(&ext))
-        || ext.as_deref().is_some_and(|ext| SKIP_IMAGES.contains(&ext))
-        || ext.as_deref().is_some_and(|ext| SKIP_MODELS.contains(&ext))
-        || ext
-            .as_deref()
-            .is_some_and(|ext| SKIP_RESOURCES.contains(&ext))
-        || ext
-            .as_deref()
-            .is_some_and(|ext| SKIP_SHADERS.contains(&ext))
-        || ext.as_deref().is_some_and(|ext| SKIP_AUDIO.contains(&ext))
+        || ext.as_deref().is_some_and(|ext| {
+            ext.eq_ignore_ascii_case(source_ext::RUST_SCRIPT)
+                || source_ext::contains(source_ext::SCENE_FUR, ext)
+                || source_ext::contains(source_ext::IMAGE, ext)
+                || source_ext::contains(source_ext::MODEL, ext)
+                || source_ext::contains(source_ext::STATIC_RESOURCE, ext)
+                || source_ext::contains(source_ext::SHADER, ext)
+                || source_ext::contains(source_ext::AUDIO, ext)
+        })
 }
 
 #[derive(Debug, Clone)]
@@ -83,7 +58,7 @@ pub fn build_perro_assets_archive(
     // Write placeholder header
     let header = PerroAssetsHeader {
         magic: PERRO_ASSETS_MAGIC,
-        version: 1,
+        version: archive::VERSION,
         file_count: 0,
         index_offset: 0,
     };
@@ -166,7 +141,7 @@ pub fn build_perro_assets_archive(
     file.seek(SeekFrom::Start(0))?;
     let header = PerroAssetsHeader {
         magic: PERRO_ASSETS_MAGIC,
-        version: 1,
+        version: archive::VERSION,
         file_count: entries.len() as u32,
         index_offset,
     };
@@ -211,7 +186,7 @@ fn wrap_compressed_archive(raw: &[u8]) -> io::Result<Vec<u8>> {
     let compressed = compress_deflate_best(raw)?;
     let mut out = Vec::with_capacity(16 + compressed.len());
     out.extend_from_slice(&PERRO_ASSETS_COMPRESSED_MAGIC);
-    out.extend_from_slice(&1u32.to_le_bytes());
+    out.extend_from_slice(&archive::VERSION.to_le_bytes());
     out.extend_from_slice(&(raw.len() as u64).to_le_bytes());
     out.extend_from_slice(&compressed);
     Ok(out)
@@ -224,7 +199,7 @@ fn write_perro_archive_from_entries<W: Write + Seek>(
 ) -> io::Result<()> {
     let header = PerroAssetsHeader {
         magic: PERRO_ASSETS_MAGIC,
-        version: 1,
+        version: archive::VERSION,
         file_count: 0,
         index_offset: 0,
     };
@@ -276,7 +251,7 @@ fn write_perro_archive_from_entries<W: Write + Seek>(
     writer.seek(SeekFrom::Start(0))?;
     let header = PerroAssetsHeader {
         magic: PERRO_ASSETS_MAGIC,
-        version: 1,
+        version: archive::VERSION,
         file_count: index_entries.len() as u32,
         index_offset,
     };

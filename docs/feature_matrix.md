@@ -52,7 +52,7 @@ Status keys:
 | Skeleton skinning          | done     | A `MeshInstance3D` can bind to a `Skeleton3D` and use mesh weights.                                                                                                 |
 | Shared-skeleton mesh reuse | done     | Works when the mesh uses the same rig contract: matching joint order/indices and compatible weights.                                                                |
 | Automatic retargeting      | research | Bone-name remap, rest-pose solve, and mismatched rig conversion are not implemented.                                                                                |
-| LOD                        | done     | Automatic mesh LOD works for dynamic/dev loads and static `.pmesh` v8 builds. Skinned mesh LOD, per-node controls, and smarter simplify remain future improvements. |
+| LOD                        | done     | Automatic mesh LOD works for dynamic/dev loads and static `.pmesh` v1 builds. Skinned mesh LOD, per-node controls, and smarter simplify remain future improvements. |
 | Decals                     | research | Interesting, but needs render design before roadmap inclusion.                                                                                                      |
 | Navmesh                    | research | Needs design and use-case clarity.                                                                                                                                  |
 

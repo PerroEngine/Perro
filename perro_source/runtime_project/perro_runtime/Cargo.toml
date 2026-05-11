@@ -16,6 +16,8 @@ rayon = "1.10"
 arboard = "3.6"
 
 perro_ids = { path = "../../core/perro_ids" }
+perro_asset_formats = { path = "../../core/perro_asset_formats" }
+perro_builtin_meshes = { path = "../../core/perro_builtin_meshes" }
 perro_animation = { path = "../../core/perro_animation" }
 perro_nodes = { path = "../../core/perro_nodes" }
 perro_ui = { path = "../../core/perro_ui" }

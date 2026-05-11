@@ -1,3 +1,5 @@
+//! 3D GPU renderer state, asset decode, batching, culling, and draw submission.
+
 use super::{
     renderer::{
         Draw3DInstance, Draw3DKind, Lighting3DState, MAX_POINT_LIGHTS, MAX_RAY_LIGHTS,
@@ -22,6 +24,11 @@ use ahash::AHashMap;
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Quat, Vec3, Vec4};
 use mesh_presets::build_builtin_mesh_buffer;
+use perro_asset_formats::pmesh::{
+    FLAG_HAS_JOINTS as PMESH_FLAG_HAS_JOINTS, FLAG_HAS_NORMAL as PMESH_FLAG_HAS_NORMAL,
+    FLAG_HAS_UV0 as PMESH_FLAG_HAS_UV0, FLAG_HAS_WEIGHTS as PMESH_FLAG_HAS_WEIGHTS,
+    FLAG_PAYLOAD_RAW as PMESH_FLAG_PAYLOAD_RAW, MAGIC as PMESH_MAGIC, VERSION as PMESH_VERSION,
+};
 use perro_ids::MeshID;
 use perro_io::{decompress_zlib, load_asset};
 use perro_meshlets::pack_meshlets_from_positions;
@@ -47,6 +54,8 @@ mod multimesh_path;
 mod rigid_path;
 #[path = "gpu/paths/skinned.rs"]
 mod skinned_path;
+#[path = "gpu/texture_cache.rs"]
+mod texture_cache;
 
 use multimesh_path::{create_multimesh_pipeline, pack_unorm4x8};
 use rigid_path::{
@@ -57,6 +66,10 @@ use skinned_path::{
     create_depth_prepass_pipeline_skinned, create_pipeline_overlay_skinned,
     create_pipeline_skinned, create_shadow_depth_pipeline_skinned,
 };
+use texture_cache::{
+    CachedMaterialTexture, create_cached_material_texture, decode_ptex,
+    gltf_texture_source_from_mesh_source, load_texture_rgba,
+};
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
 const DEPTH_PREPASS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -65,17 +78,9 @@ const HIZ_WORKGROUP_SIZE_X: u32 = 8;
 const HIZ_WORKGROUP_SIZE_Y: u32 = 8;
 const HIZ_OCCLUSION_BIAS: f32 = 0.002;
 const MATERIAL_TEXTURE_NONE: u32 = u32::MAX;
-const MATERIAL_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 const PACKED_STANDARD_NORMAL_SCALE_MAX: f32 = 4.0;
 const PACKED_TOON_RIM_STRENGTH_MAX: f32 = 4.0;
 const PACKED_TOON_OUTLINE_WIDTH_MAX: f32 = 4.0;
-const PTEX_MAGIC: &[u8; 4] = b"PTEX";
-const PTEX_FLAG_FORMAT_MASK: u32 = 0b11;
-const PTEX_FLAG_FORMAT_RGBA8: u32 = 0;
-const PTEX_FLAG_FORMAT_RGB8: u32 = 1;
-const PTEX_FLAG_FORMAT_R8: u32 = 2;
-const PTEX_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
-const PMESH_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
 const SHADOW_MAP_SIZE: u32 = 4096;
 const SHADOW_DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const SHADOW_MAP_DEPTH_BIAS_CONST: i32 = 2;
@@ -577,25 +582,12 @@ struct CustomPipeline {
     pipeline_double_sided: wgpu::RenderPipeline,
 }
 
-struct CachedMaterialTexture {
-    source: String,
-    _texture: wgpu::Texture,
-    _view: wgpu::TextureView,
-    _sampler: wgpu::Sampler,
-    bind_group: wgpu::BindGroup,
-}
-
 #[derive(Clone, Copy)]
 struct OcclusionState {
     visible_last_frame: bool,
     last_test_frame: u64,
 }
 
-const PMESH_MAGIC: &[u8; 5] = b"PMESH";
-const PMESH_V6_FLAG_HAS_NORMAL: u32 = 1 << 0;
-const PMESH_V6_FLAG_HAS_UV0: u32 = 1 << 1;
-const PMESH_V6_FLAG_HAS_JOINTS: u32 = 1 << 2;
-const PMESH_V6_FLAG_HAS_WEIGHTS: u32 = 1 << 3;
 const CULL_FLAG_DISABLE_HIZ_OCCLUSION: u32 = 1u32;
 const LOD_TARGET_RATIOS: [f32; 4] = [1.0, 0.5, 0.25, 0.125];
 const LOD1_DISTANCE_RADIUS_SCALE: f32 = 36.0;
@@ -6047,7 +6039,7 @@ fn split_source_fragment(source: &str) -> (&str, Option<&str>) {
 #[inline]
 fn is_builtin_primitive_mesh_source(source: &str) -> bool {
     let (base, _) = split_source_fragment(source);
-    base.starts_with("__") && base.ends_with("__")
+    perro_builtin_meshes::is_builtin_mesh_source(base)
 }
 
 fn parse_fragment_index(fragment: Option<&str>, key: &str) -> Option<u32> {
@@ -6064,8 +6056,8 @@ fn parse_fragment_index(fragment: Option<&str>, key: &str) -> Option<u32> {
 mod tests {
     use super::{
         DrawBatchPush, MATERIAL_TEXTURE_NONE, MaterialPipelineKind, MeshRange,
-        PMESH_V6_FLAG_HAS_JOINTS, PMESH_V6_FLAG_HAS_NORMAL, PMESH_V6_FLAG_HAS_UV0,
-        PMESH_V6_FLAG_HAS_WEIGHTS, RenderPath3D, decode_pmesh, decode_ptex, draw_batch_state_key,
+        PMESH_FLAG_HAS_JOINTS, PMESH_FLAG_HAS_NORMAL, PMESH_FLAG_HAS_UV0, PMESH_FLAG_HAS_WEIGHTS,
+        PMESH_VERSION, RenderPath3D, decode_pmesh, decode_ptex, draw_batch_state_key,
         normalized_static_mesh_lookup_alias, push_draw_batch,
     };
 
@@ -6094,7 +6086,7 @@ mod tests {
     }
 
     #[test]
-    fn decode_pmesh_accepts_version_6_payload_with_all_attributes() {
+    fn decode_pmesh_accepts_v1_render_payload_with_all_attributes() {
         let mut raw = Vec::new();
         raw.extend_from_slice(&1.0f32.to_le_bytes());
         raw.extend_from_slice(&2.0f32.to_le_bytes());
@@ -6127,20 +6119,21 @@ mod tests {
         let compressed = perro_io::compress_zlib_best(&raw).expect("compress pmesh payload");
         let mut bytes = Vec::new();
         bytes.extend_from_slice(b"PMESH");
-        bytes.extend_from_slice(&6u32.to_le_bytes());
-        let flags = PMESH_V6_FLAG_HAS_NORMAL
-            | PMESH_V6_FLAG_HAS_UV0
-            | PMESH_V6_FLAG_HAS_JOINTS
-            | PMESH_V6_FLAG_HAS_WEIGHTS;
+        bytes.extend_from_slice(&PMESH_VERSION.to_le_bytes());
+        let flags = PMESH_FLAG_HAS_NORMAL
+            | PMESH_FLAG_HAS_UV0
+            | PMESH_FLAG_HAS_JOINTS
+            | PMESH_FLAG_HAS_WEIGHTS;
         bytes.extend_from_slice(&flags.to_le_bytes());
         bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
         bytes.extend_from_slice(&(raw.len() as u32).to_le_bytes());
         bytes.extend_from_slice(&compressed);
 
-        let decoded = decode_pmesh(&bytes).expect("decode v6 pmesh");
+        let decoded = decode_pmesh(&bytes).expect("decode v1 pmesh");
         assert_eq!(decoded.vertices.len(), 1);
         assert_eq!(decoded.indices, vec![0, 0, 0]);
         assert_eq!(decoded.vertices[0].pos, [1.0, 2.0, 3.0]);
@@ -6159,41 +6152,41 @@ mod tests {
     }
 
     #[test]
-    fn decode_pmesh_rejects_legacy_versions_v1_through_v5() {
-        for version in 1u32..=5 {
+    fn decode_pmesh_rejects_non_v1() {
+        for version in [2u32, 3, 4, 5, 6, 7, 8] {
             let mut bytes = Vec::new();
             bytes.extend_from_slice(b"PMESH");
             bytes.extend_from_slice(&version.to_le_bytes());
             bytes.resize(33, 0);
             assert!(
                 decode_pmesh(&bytes).is_none(),
-                "legacy pmesh version {version} must reject"
+                "non-v1 pmesh version {version} must reject"
             );
         }
     }
 
     #[test]
-    fn decode_ptex_accepts_version_2_rgb_payload() {
+    fn decode_ptex_accepts_v1_rgb_payload() {
         let raw_rgb = vec![10u8, 20, 30, 40, 50, 60];
         let compressed = perro_io::compress_zlib_best(&raw_rgb).expect("compress ptex payload");
         let mut bytes = Vec::new();
         bytes.extend_from_slice(b"PTEX");
-        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.extend_from_slice(&2u32.to_le_bytes());
         bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.extend_from_slice(&1u32.to_le_bytes()); // rgb8
         bytes.extend_from_slice(&(raw_rgb.len() as u32).to_le_bytes());
         bytes.extend_from_slice(&compressed);
 
-        let decoded = decode_ptex(&bytes).expect("decode v2 ptex");
+        let decoded = decode_ptex(&bytes).expect("decode v1 ptex");
         assert_eq!(decoded.1, 2);
         assert_eq!(decoded.2, 1);
         assert_eq!(decoded.0, vec![10u8, 20, 30, 255, 40, 50, 60, 255]);
     }
 
     #[test]
-    fn decode_ptex_rejects_legacy_versions() {
-        for version in [1u32, 3, 4, 5] {
+    fn decode_ptex_rejects_non_v1() {
+        for version in [2u32, 3, 4, 5] {
             let mut bytes = Vec::new();
             bytes.extend_from_slice(b"PTEX");
             bytes.extend_from_slice(&version.to_le_bytes());
@@ -6203,7 +6196,7 @@ mod tests {
             bytes.extend_from_slice(&0u32.to_le_bytes());
             assert!(
                 decode_ptex(&bytes).is_none(),
-                "legacy ptex version {version} must reject"
+                "non-v1 ptex version {version} must reject"
             );
         }
     }
@@ -6355,11 +6348,11 @@ fn build_meshlets(vertices: &[MeshVertex], indices: &[u32]) -> (Vec<u32>, Vec<De
 }
 
 fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
-    if bytes.len() < 33 || &bytes[0..5] != PMESH_MAGIC {
+    if bytes.len() < 37 || &bytes[0..5] != PMESH_MAGIC {
         return None;
     }
     let version = u32::from_le_bytes(bytes[5..9].try_into().ok()?);
-    if !matches!(version, 6 | 8) {
+    if version != PMESH_VERSION {
         return None;
     }
     let flags = u32::from_le_bytes(bytes[9..13].try_into().ok()?);
@@ -6367,36 +6360,23 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
     let index_count = u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize;
     let surface_count = u32::from_le_bytes(bytes[21..25].try_into().ok()?) as usize;
     let meshlet_count = u32::from_le_bytes(bytes[25..29].try_into().ok()?) as usize;
-    let (lod_count, raw_len, payload_start) = if version == 8 {
-        if bytes.len() < 37 {
-            return None;
-        }
-        (
-            u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize,
-            u32::from_le_bytes(bytes[33..37].try_into().ok()?) as usize,
-            37,
-        )
-    } else {
-        (
-            0,
-            u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize,
-            33,
-        )
-    };
+    let lod_count = u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize;
+    let raw_len = u32::from_le_bytes(bytes[33..37].try_into().ok()?) as usize;
+    let payload_start = 37usize;
     let raw = decode_static_payload(flags, &bytes[payload_start..])?;
     if raw.len() != raw_len {
         return None;
     }
 
-    let v6_has_normal = (flags & PMESH_V6_FLAG_HAS_NORMAL) != 0;
-    let v6_has_uv0 = (flags & PMESH_V6_FLAG_HAS_UV0) != 0;
-    let v6_has_joints = (flags & PMESH_V6_FLAG_HAS_JOINTS) != 0;
-    let v6_has_weights = (flags & PMESH_V6_FLAG_HAS_WEIGHTS) != 0;
+    let has_normal = (flags & PMESH_FLAG_HAS_NORMAL) != 0;
+    let has_uv0 = (flags & PMESH_FLAG_HAS_UV0) != 0;
+    let has_joints = (flags & PMESH_FLAG_HAS_JOINTS) != 0;
+    let has_weights = (flags & PMESH_FLAG_HAS_WEIGHTS) != 0;
     let vertex_stride = 12
-        + if v6_has_normal { 12 } else { 0 }
-        + if v6_has_uv0 { 8 } else { 0 }
-        + if v6_has_joints { 8 } else { 0 }
-        + if v6_has_weights { 16 } else { 0 };
+        + if has_normal { 12 } else { 0 }
+        + if has_uv0 { 8 } else { 0 }
+        + if has_joints { 8 } else { 0 }
+        + if has_weights { 16 } else { 0 };
     let vertex_bytes = vertex_count.checked_mul(vertex_stride)?;
     let index_bytes = index_count.checked_mul(4)?;
     let surface_bytes = surface_count.checked_mul(8)?;
@@ -6421,7 +6401,7 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
             f32::from_le_bytes(raw[cursor + 8..cursor + 12].try_into().ok()?),
         ];
         cursor += 12;
-        let normal = if v6_has_normal {
+        let normal = if has_normal {
             let out = [
                 f32::from_le_bytes(raw[cursor..cursor + 4].try_into().ok()?),
                 f32::from_le_bytes(raw[cursor + 4..cursor + 8].try_into().ok()?),
@@ -6432,7 +6412,7 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
         } else {
             [0.0, 1.0, 0.0]
         };
-        let uv = if v6_has_uv0 {
+        let uv = if has_uv0 {
             let out = [
                 f32::from_le_bytes(raw[cursor..cursor + 4].try_into().ok()?),
                 f32::from_le_bytes(raw[cursor + 4..cursor + 8].try_into().ok()?),
@@ -6442,7 +6422,7 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
         } else {
             [0.0, 0.0]
         };
-        let joints = if v6_has_joints {
+        let joints = if has_joints {
             let out = [
                 u16::from_le_bytes(raw[cursor..cursor + 2].try_into().ok()?),
                 u16::from_le_bytes(raw[cursor + 2..cursor + 4].try_into().ok()?),
@@ -6454,7 +6434,7 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
         } else {
             [0, 0, 0, 0]
         };
-        let weights = if v6_has_weights {
+        let weights = if has_weights {
             [
                 f32::from_le_bytes(raw[cursor..cursor + 4].try_into().ok()?),
                 f32::from_le_bytes(raw[cursor + 4..cursor + 8].try_into().ok()?),
@@ -6542,7 +6522,7 @@ fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
         surface_ranges,
         meshlets,
         lods,
-        has_skinning: v6_has_joints || v6_has_weights,
+        has_skinning: has_joints || has_weights,
     })
 }
 
@@ -6816,204 +6796,6 @@ fn create_shadow_map_texture(
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
     (texture, view)
-}
-
-fn create_cached_material_texture(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    layout: &wgpu::BindGroupLayout,
-    rgba: Vec<u8>,
-    width: u32,
-    height: u32,
-    source: String,
-) -> CachedMaterialTexture {
-    let width = width.max(1);
-    let height = height.max(1);
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("perro_material_texture"),
-        size: wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: MATERIAL_TEXTURE_FORMAT,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING
-            | wgpu::TextureUsages::COPY_DST
-            | wgpu::TextureUsages::RENDER_ATTACHMENT,
-        view_formats: &[],
-    });
-    queue.write_texture(
-        wgpu::TexelCopyTextureInfo {
-            texture: &texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        &rgba,
-        wgpu::TexelCopyBufferLayout {
-            offset: 0,
-            bytes_per_row: Some(4 * width),
-            rows_per_image: Some(height),
-        },
-        wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-    );
-    let view = texture.create_view(&wgpu::TextureViewDescriptor {
-        label: Some("perro_material_texture_view"),
-        ..Default::default()
-    });
-    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-        label: Some("perro_material_texture_sampler"),
-        address_mode_u: wgpu::AddressMode::Repeat,
-        address_mode_v: wgpu::AddressMode::Repeat,
-        address_mode_w: wgpu::AddressMode::Repeat,
-        mag_filter: wgpu::FilterMode::Linear,
-        min_filter: wgpu::FilterMode::Linear,
-        mipmap_filter: wgpu::MipmapFilterMode::Linear,
-        anisotropy_clamp: 16,
-        ..Default::default()
-    });
-    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("perro_material_texture_bg"),
-        layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::Sampler(&sampler),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::TextureView(&view),
-            },
-        ],
-    });
-    CachedMaterialTexture {
-        source,
-        _texture: texture,
-        _view: view,
-        _sampler: sampler,
-        bind_group,
-    }
-}
-
-fn load_texture_rgba(source: &str) -> Option<(Vec<u8>, u32, u32)> {
-    let (path, fragment) = split_source_fragment(source);
-    if (path.ends_with(".glb") || path.ends_with(".gltf"))
-        && let Some(texture_index) = parse_fragment_index(fragment, "tex")
-            .or_else(|| parse_fragment_index(fragment, "texture"))
-            .or_else(|| parse_fragment_index(fragment, "img"))
-    {
-        return decode_gltf_texture(path, texture_index as usize);
-    }
-
-    let bytes = load_asset(source).ok()?;
-    let image = image::load_from_memory(&bytes).ok()?;
-    let rgba = image.to_rgba8();
-    let (w, h) = rgba.dimensions();
-    Some((rgba.into_raw(), w.max(1), h.max(1)))
-}
-
-fn gltf_texture_source_from_mesh_source(mesh_source: &str, slot: u32) -> Option<String> {
-    let (path, _) = split_source_fragment(mesh_source);
-    if !(path.ends_with(".glb") || path.ends_with(".gltf")) {
-        return None;
-    }
-    Some(format!("{path}:tex[{slot}]"))
-}
-
-fn decode_gltf_texture(source_path: &str, texture_index: usize) -> Option<(Vec<u8>, u32, u32)> {
-    let bytes = load_asset(source_path).ok()?;
-    let (doc, _buffers, images) = gltf::import_slice(&bytes).ok()?;
-    let texture = doc.textures().nth(texture_index)?;
-    let image_index = texture.source().index();
-    let image = images.get(image_index)?;
-    let (width, height) = (image.width.max(1), image.height.max(1));
-    let rgba = match image.format {
-        gltf::image::Format::R8G8B8A8 => image.pixels.clone(),
-        gltf::image::Format::R8G8B8 => {
-            let mut out = Vec::with_capacity((width * height * 4) as usize);
-            for px in image.pixels.chunks_exact(3) {
-                out.extend_from_slice(&[px[0], px[1], px[2], 255]);
-            }
-            out
-        }
-        gltf::image::Format::R8G8 => {
-            let mut out = Vec::with_capacity((width * height * 4) as usize);
-            for px in image.pixels.chunks_exact(2) {
-                out.extend_from_slice(&[px[0], px[1], 0, 255]);
-            }
-            out
-        }
-        gltf::image::Format::R8 => {
-            let mut out = Vec::with_capacity((width * height * 4) as usize);
-            for &v in &image.pixels {
-                out.extend_from_slice(&[v, v, v, 255]);
-            }
-            out
-        }
-        _ => return None,
-    };
-    Some((rgba, width, height))
-}
-
-fn decode_ptex(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
-    if bytes.len() < 24 || &bytes[0..4] != PTEX_MAGIC {
-        return None;
-    }
-    let version = u32::from_le_bytes(bytes[4..8].try_into().ok()?);
-    if version != 2 {
-        return None;
-    }
-    let width = u32::from_le_bytes(bytes[8..12].try_into().ok()?);
-    let height = u32::from_le_bytes(bytes[12..16].try_into().ok()?);
-    if width == 0 || height == 0 {
-        return None;
-    }
-    let flags = u32::from_le_bytes(bytes[16..20].try_into().ok()?);
-    let raw_len = u32::from_le_bytes(bytes[20..24].try_into().ok()?);
-    if flags & !(PTEX_FLAG_FORMAT_MASK | PTEX_FLAG_PAYLOAD_RAW) != 0 {
-        return None;
-    }
-    let pixel_count = width.checked_mul(height)? as usize;
-    let expected_raw_len = match flags & PTEX_FLAG_FORMAT_MASK {
-        PTEX_FLAG_FORMAT_RGBA8 => pixel_count.checked_mul(4)?,
-        PTEX_FLAG_FORMAT_RGB8 => pixel_count.checked_mul(3)?,
-        PTEX_FLAG_FORMAT_R8 => pixel_count,
-        _ => return None,
-    };
-    if raw_len as usize != expected_raw_len {
-        return None;
-    }
-    let raw = decode_static_payload(flags, &bytes[24..])?;
-    if raw.len() != expected_raw_len {
-        return None;
-    }
-
-    let rgba = match flags & PTEX_FLAG_FORMAT_MASK {
-        PTEX_FLAG_FORMAT_RGBA8 => raw,
-        PTEX_FLAG_FORMAT_RGB8 => {
-            let mut out = Vec::with_capacity(pixel_count * 4);
-            for px in raw.chunks_exact(3) {
-                out.extend_from_slice(&[px[0], px[1], px[2], 255]);
-            }
-            out
-        }
-        PTEX_FLAG_FORMAT_R8 => {
-            let mut out = Vec::with_capacity(pixel_count * 4);
-            for &v in &raw {
-                out.extend_from_slice(&[v, v, v, 255]);
-            }
-            out
-        }
-        _ => return None,
-    };
-    Some((rgba, width, height))
 }
 
 fn decode_static_payload(flags: u32, payload: &[u8]) -> Option<Vec<u8>> {

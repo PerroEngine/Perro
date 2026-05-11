@@ -1,6 +1,15 @@
+//! Static collision trimesh discovery and PMESH v1 collision packing.
+
 use crate::{
     StaticPipelineError, asset_prefix, ensure_unique_hashes, is_asset_uri, res_dir, static_dir,
     strip_asset_prefix,
+};
+use perro_asset_formats::{
+    pmesh::{
+        EXTENSION as PMESH_EXTENSION, FLAG_INDEX_U16 as PMESH_FLAG_INDEX_U16,
+        FLAG_PAYLOAD_RAW as PMESH_FLAG_PAYLOAD_RAW, MAGIC as PMESH_MAGIC, VERSION as PMESH_VERSION,
+    },
+    source_ext,
 };
 use perro_io::{compress_zlib_best, decompress_zlib, walkdir::collect_file_paths};
 use perro_scene::{Parser, SceneNodeData, SceneValue};
@@ -10,13 +19,6 @@ use std::{
     fs,
     path::Path,
 };
-
-const PMESH_MAGIC: &[u8; 5] = b"PMESH";
-const PMESH_VERSION_V6: u32 = 6;
-const PMESH_VERSION_V7: u32 = 7;
-const PMESH_VERSION_V8_RENDER_LOD: u32 = 8;
-const PMESH_FLAG_INDEX_U16: u32 = 1 << 4;
-const PMESH_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
 
 pub fn generate_static_collision_trimeshes(project_root: &Path) -> Result<(), StaticPipelineError> {
     let res_root = res_dir(project_root);
@@ -47,7 +49,7 @@ pub fn generate_static_collision_trimeshes(project_root: &Path) -> Result<(), St
     let mut file_by_source = BTreeMap::<String, String>::new();
     for (source, bytes) in &packed {
         let hash = perro_ids::string_to_u64(source);
-        let rel = format!("{hash}.pmesh");
+        let rel = format!("{hash}.{PMESH_EXTENSION}");
         fs::write(embedded_dir.join(&rel), bytes)?;
         file_by_source.insert(source.clone(), rel);
     }
@@ -110,7 +112,7 @@ fn collect_collision_trimesh_sources(res_root: &Path) -> Result<Vec<String>, Sta
         if !Path::new(&rel)
             .extension()
             .and_then(|e| e.to_str())
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("scn"))
+            .is_some_and(|ext| ext.eq_ignore_ascii_case(source_ext::SCENE))
         {
             continue;
         }
@@ -205,7 +207,7 @@ fn as_asset_source(value: &SceneValue) -> Option<String> {
         .extension()
         .and_then(|e| e.to_str())
         .map(|v| v.to_ascii_lowercase())?;
-    matches!(ext.as_str(), "pmesh" | "glb" | "gltf").then(|| raw.to_string())
+    source_ext::contains(source_ext::MESH_INPUT, &ext).then(|| raw.to_string())
 }
 
 type TriMeshData = (Vec<[f32; 3]>, Vec<[u32; 3]>);
@@ -220,10 +222,13 @@ fn load_trimesh_from_source(res_root: &Path, source: &str) -> Option<TriMeshData
     let rel = strip_asset_prefix(path)?;
     let full = res_root.join(rel);
     let bytes = fs::read(full).ok()?;
-    if path.ends_with(".pmesh") {
+    if path.ends_with(&format!(".{PMESH_EXTENSION}")) {
         return decode_pmesh_trimesh(&bytes);
     }
-    if path.ends_with(".glb") || path.ends_with(".gltf") {
+    if source_ext::MODEL
+        .iter()
+        .any(|ext| path.ends_with(&format!(".{ext}")))
+    {
         return load_trimesh_from_gltf_bytes(&bytes, mesh_index);
     }
     None
@@ -234,51 +239,16 @@ fn decode_pmesh_trimesh(bytes: &[u8]) -> Option<TriMeshData> {
         return None;
     }
     let version = u32::from_le_bytes(bytes[5..9].try_into().ok()?);
-    if version == PMESH_VERSION_V8_RENDER_LOD {
-        return decode_render_pmesh_v8_trimesh(bytes);
-    }
-    if version != PMESH_VERSION_V6 && version != PMESH_VERSION_V7 {
+    if version != PMESH_VERSION {
         return None;
     }
-    if version == PMESH_VERSION_V7 {
-        decode_pmesh_trimesh_v7(bytes)
-    } else {
-        decode_pmesh_trimesh_v6(bytes)
+    if let Some(render_trimesh) = decode_render_pmesh_trimesh(bytes) {
+        return Some(render_trimesh);
     }
+    decode_collision_pmesh_trimesh(bytes)
 }
 
-fn decode_pmesh_trimesh_v6(bytes: &[u8]) -> Option<TriMeshData> {
-    let flags = u32::from_le_bytes(bytes[9..13].try_into().ok()?);
-    let vertex_count = u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize;
-    let index_count = u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize;
-    let raw_len = u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize;
-    let raw = decode_pmesh_payload(flags, &bytes[33..])?;
-    if raw.len() != raw_len {
-        return None;
-    }
-    let has_normal = (flags & (1 << 0)) != 0;
-    let has_uv0 = (flags & (1 << 1)) != 0;
-    let has_joints = (flags & (1 << 2)) != 0;
-    let has_weights = (flags & (1 << 3)) != 0;
-    let stride = 12
-        + if has_normal { 12 } else { 0 }
-        + if has_uv0 { 8 } else { 0 }
-        + if has_joints { 8 } else { 0 }
-        + if has_weights { 16 } else { 0 };
-    let vertex_bytes = vertex_count.checked_mul(stride)?;
-    let index_bytes = index_count.checked_mul(4)?;
-    decode_pmesh_trimesh_from_raw(
-        raw,
-        vertex_count,
-        index_count,
-        stride,
-        vertex_bytes,
-        index_bytes,
-        false,
-    )
-}
-
-fn decode_pmesh_trimesh_v7(bytes: &[u8]) -> Option<TriMeshData> {
+fn decode_collision_pmesh_trimesh(bytes: &[u8]) -> Option<TriMeshData> {
     let flags = u32::from_le_bytes(bytes[9..13].try_into().ok()?);
     let vertex_count = u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize;
     let index_count = u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize;
@@ -302,7 +272,7 @@ fn decode_pmesh_trimesh_v7(bytes: &[u8]) -> Option<TriMeshData> {
     )
 }
 
-fn decode_render_pmesh_v8_trimesh(bytes: &[u8]) -> Option<TriMeshData> {
+fn decode_render_pmesh_trimesh(bytes: &[u8]) -> Option<TriMeshData> {
     if bytes.len() < 37 {
         return None;
     }
@@ -528,7 +498,7 @@ fn encode_collision_pmesh(
     };
     let mut out = Vec::<u8>::with_capacity(33 + payload.len());
     out.extend_from_slice(PMESH_MAGIC);
-    out.extend_from_slice(&PMESH_VERSION_V7.to_le_bytes());
+    out.extend_from_slice(&PMESH_VERSION.to_le_bytes());
     out.extend_from_slice(&flags.to_le_bytes());
     out.extend_from_slice(&(vertices.len() as u32).to_le_bytes());
     out.extend_from_slice(&((triangles.len() * 3) as u32).to_le_bytes());
@@ -848,4 +818,22 @@ fn escape_str(input: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{decode_pmesh_trimesh, encode_collision_pmesh};
+
+    #[test]
+    fn collision_pmesh_emits_and_decodes_v1() {
+        let vertices = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+        let triangles = vec![[0u32, 1, 2]];
+        let bytes = encode_collision_pmesh(&vertices, &triangles).expect("encode collision pmesh");
+
+        assert_eq!(&bytes[0..5], b"PMESH");
+        assert_eq!(u32::from_le_bytes(bytes[5..9].try_into().unwrap()), 1);
+        let decoded = decode_pmesh_trimesh(&bytes).expect("decode collision pmesh");
+        assert_eq!(decoded.0.len(), 3);
+        assert_eq!(decoded.1, triangles);
+    }
 }

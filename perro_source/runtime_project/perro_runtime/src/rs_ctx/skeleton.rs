@@ -1,23 +1,21 @@
 use super::core::RuntimeResourceApi;
+use perro_asset_formats::pskel::{
+    BONE_FLAG_HAS_INV_POS as PSKEL_BONE_FLAG_HAS_INV_POS,
+    BONE_FLAG_HAS_INV_ROT as PSKEL_BONE_FLAG_HAS_INV_ROT,
+    BONE_FLAG_HAS_INV_SCALE as PSKEL_BONE_FLAG_HAS_INV_SCALE,
+    BONE_FLAG_HAS_PARENT as PSKEL_BONE_FLAG_HAS_PARENT,
+    BONE_FLAG_HAS_REST_POS as PSKEL_BONE_FLAG_HAS_REST_POS,
+    BONE_FLAG_HAS_REST_ROT as PSKEL_BONE_FLAG_HAS_REST_ROT,
+    BONE_FLAG_HAS_REST_SCALE as PSKEL_BONE_FLAG_HAS_REST_SCALE,
+    FLAG_PAYLOAD_RAW as PSKEL_FLAG_PAYLOAD_RAW, MAGIC as PSKEL_MAGIC, VERSION as PSKEL_VERSION,
+    VERSION_2D as PSKEL_VERSION_2D,
+};
 use perro_ids::{parse_hashed_source_uri, string_to_u64};
 use perro_io::{decompress_zlib, load_asset};
 use perro_nodes::{skeleton_2d::Bone2D, skeleton_3d::Bone3D};
 use perro_resource_context::sub_apis::SkeletonAPI;
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use std::collections::HashMap;
-
-const PSKEL_MAGIC: &[u8; 5] = b"PSKEL";
-const PSKEL_VERSION: u32 = 3;
-const PSKEL_VERSION_2D: u32 = 4;
-const PSKEL_VERSION_ZLIB_ONLY: u32 = 2;
-const PSKEL_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
-const PSKEL_BONE_FLAG_HAS_PARENT: u32 = 1 << 0;
-const PSKEL_BONE_FLAG_HAS_REST_POS: u32 = 1 << 1;
-const PSKEL_BONE_FLAG_HAS_REST_SCALE: u32 = 1 << 2;
-const PSKEL_BONE_FLAG_HAS_REST_ROT: u32 = 1 << 3;
-const PSKEL_BONE_FLAG_HAS_INV_POS: u32 = 1 << 4;
-const PSKEL_BONE_FLAG_HAS_INV_SCALE: u32 = 1 << 5;
-const PSKEL_BONE_FLAG_HAS_INV_ROT: u32 = 1 << 6;
 
 impl SkeletonAPI for RuntimeResourceApi {
     fn load_bones_2d(&self, source: &str) -> Vec<Bone2D> {
@@ -314,22 +312,16 @@ fn decode_pskel(bytes: &[u8]) -> Result<Vec<Bone3D>, String> {
         return Err("invalid pskel magic".to_string());
     }
     let version = u32::from_le_bytes(bytes[5..9].try_into().unwrap());
-    if version != PSKEL_VERSION && version != PSKEL_VERSION_ZLIB_ONLY {
+    if version != PSKEL_VERSION {
         return Err(format!("unsupported pskel version {version}"));
     }
     let bone_count = u32::from_le_bytes(bytes[9..13].try_into().unwrap()) as usize;
     let raw_size = u32::from_le_bytes(bytes[13..17].try_into().unwrap()) as usize;
-    let (flags, payload_start) = if version == PSKEL_VERSION_ZLIB_ONLY {
-        (0u32, 17usize)
-    } else {
-        if bytes.len() < 21 {
-            return Err("pskel too small".to_string());
-        }
-        (
-            u32::from_le_bytes(bytes[17..21].try_into().unwrap()),
-            21usize,
-        )
-    };
+    if bytes.len() < 21 {
+        return Err("pskel too small".to_string());
+    }
+    let flags = u32::from_le_bytes(bytes[17..21].try_into().unwrap());
+    let payload_start = 21usize;
     let raw = decode_pskel_payload(flags, &bytes[payload_start..])?;
     if raw.len() != raw_size {
         return Err("pskel raw size mismatch".to_string());
@@ -803,7 +795,7 @@ mod tests {
     use perro_structs::{Quaternion, Vector2, Vector3};
 
     #[test]
-    fn decode_pskel_accepts_version_2_sparse_bone_payload() {
+    fn decode_pskel_accepts_v1_compressed_payload() {
         let mut raw = Vec::new();
         raw.extend_from_slice(&4u32.to_le_bytes());
         raw.extend_from_slice(b"root");
@@ -812,12 +804,13 @@ mod tests {
 
         let mut bytes = Vec::new();
         bytes.extend_from_slice(b"PSKEL");
-        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.extend_from_slice(&(raw.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
         bytes.extend_from_slice(&compressed);
 
-        let bones = decode_pskel(&bytes).expect("decode pskel v2");
+        let bones = decode_pskel(&bytes).expect("decode pskel v1");
         assert_eq!(bones.len(), 1);
         assert_eq!(bones[0].name.as_ref(), "root");
         assert_eq!(bones[0].parent, -1);
@@ -830,7 +823,7 @@ mod tests {
     }
 
     #[test]
-    fn decode_pskel_accepts_version_3_raw_payload() {
+    fn decode_pskel_accepts_v1_raw_payload() {
         let mut raw = Vec::new();
         raw.extend_from_slice(&4u32.to_le_bytes());
         raw.extend_from_slice(b"root");
@@ -838,20 +831,20 @@ mod tests {
 
         let mut bytes = Vec::new();
         bytes.extend_from_slice(b"PSKEL");
-        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.extend_from_slice(&(raw.len() as u32).to_le_bytes());
         bytes.extend_from_slice(&(1u32 << 31).to_le_bytes());
         bytes.extend_from_slice(&raw);
 
-        let bones = decode_pskel(&bytes).expect("decode pskel v3 raw");
+        let bones = decode_pskel(&bytes).expect("decode pskel v1 raw");
         assert_eq!(bones.len(), 1);
         assert_eq!(bones[0].name.as_ref(), "root");
         assert_eq!(bones[0].parent, -1);
     }
 
     #[test]
-    fn decode_pskel2d_accepts_version_4_raw_payload() {
+    fn decode_pskel2d_accepts_v1_raw_payload() {
         let mut raw = Vec::new();
         raw.extend_from_slice(&4u32.to_le_bytes());
         raw.extend_from_slice(b"root");
@@ -861,13 +854,13 @@ mod tests {
 
         let mut bytes = Vec::new();
         bytes.extend_from_slice(b"PSKEL");
-        bytes.extend_from_slice(&4u32.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.extend_from_slice(&(raw.len() as u32).to_le_bytes());
         bytes.extend_from_slice(&(1u32 << 31).to_le_bytes());
         bytes.extend_from_slice(&raw);
 
-        let bones = decode_pskel_2d(&bytes).expect("decode pskel2d v4 raw");
+        let bones = decode_pskel_2d(&bytes).expect("decode pskel2d v1 raw");
         assert_eq!(bones.len(), 1);
         assert_eq!(bones[0].name.as_ref(), "root");
         assert_eq!(bones[0].parent, -1);
@@ -912,8 +905,8 @@ mod tests {
     }
 
     #[test]
-    fn decode_pskel_rejects_legacy_versions() {
-        for version in [1u32, 4, 5] {
+    fn decode_pskel_rejects_non_v1() {
+        for version in [2u32, 3, 4, 5] {
             let mut bytes = Vec::new();
             bytes.extend_from_slice(b"PSKEL");
             bytes.extend_from_slice(&version.to_le_bytes());
@@ -921,7 +914,7 @@ mod tests {
             bytes.extend_from_slice(&0u32.to_le_bytes());
             assert!(
                 decode_pskel(&bytes).is_err(),
-                "legacy pskel version {version} must reject"
+                "non-v1 pskel version {version} must reject"
             );
         }
     }

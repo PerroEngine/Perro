@@ -10,6 +10,11 @@ fn pmat_is_skipped_as_compiled_resource() {
     assert!(should_skip("materials/mat.pmat", &extra));
     assert!(should_skip("particles/fire.ppart", &extra));
     assert!(should_skip("animations/run.panim", &extra));
+    assert!(should_skip("animations/tree.panimtree", &extra));
+    assert!(should_skip("rigs/hero.pskel", &extra));
+    assert!(should_skip("rigs/ui.pskel2d", &extra));
+    assert!(should_skip("tiles/world.ptileset", &extra));
+    assert!(should_skip("ui/default.uistyle", &extra));
     assert!(!should_skip("chunks/0_0.pdata", &extra));
     assert!(!should_skip("data/settings.txt", &extra));
     assert!(should_skip("scene/main.scn", &extra));
@@ -38,6 +43,7 @@ fn compressed_archive_roundtrips() {
 
     let bytes = fs::read(&output).unwrap();
     assert_eq!(&bytes[..4], &PERRO_ASSETS_COMPRESSED_MAGIC);
+    assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), 1);
     let archive = PerroAssetsArchive::open_from_file(&output).unwrap();
     assert_eq!(
         archive.read_file("res/payload.bin").unwrap(),

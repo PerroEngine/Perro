@@ -2,6 +2,7 @@ use crate::{
     StaticPipelineError, asset_prefix, asset_uri, ensure_unique_hashes, res_dir, static_dir,
     strip_asset_prefix,
 };
+use perro_asset_formats::source_ext;
 use perro_io::walkdir::collect_file_paths;
 use perro_scene::{Parser, SceneNodeData, SceneNodeDataBase, SceneValue};
 use perro_structs::Color;
@@ -23,7 +24,7 @@ pub fn generate_static_scenes(project_root: &Path) -> Result<(), StaticPipelineE
                 Path::new(rel)
                     .extension()
                     .and_then(|e| e.to_str())
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case("scn"))
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case(source_ext::SCENE))
             })
             .map(|rel| asset_uri(&rel))
             .collect();

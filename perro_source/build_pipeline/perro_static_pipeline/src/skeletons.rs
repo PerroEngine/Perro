@@ -1,6 +1,21 @@
 use crate::{
     StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir,
 };
+use perro_asset_formats::{
+    pskel::{
+        BONE_FLAG_HAS_INV_POS as PSKEL_BONE_FLAG_HAS_INV_POS,
+        BONE_FLAG_HAS_INV_ROT as PSKEL_BONE_FLAG_HAS_INV_ROT,
+        BONE_FLAG_HAS_INV_SCALE as PSKEL_BONE_FLAG_HAS_INV_SCALE,
+        BONE_FLAG_HAS_PARENT as PSKEL_BONE_FLAG_HAS_PARENT,
+        BONE_FLAG_HAS_REST_POS as PSKEL_BONE_FLAG_HAS_REST_POS,
+        BONE_FLAG_HAS_REST_ROT as PSKEL_BONE_FLAG_HAS_REST_ROT,
+        BONE_FLAG_HAS_REST_SCALE as PSKEL_BONE_FLAG_HAS_REST_SCALE, EXTENSION as PSKEL_EXTENSION,
+        EXTENSION_2D as PSKEL_EXTENSION_2D, EXTENSION_3D as PSKEL_EXTENSION_3D,
+        FLAG_PAYLOAD_RAW as PSKEL_FLAG_PAYLOAD_RAW, MAGIC as PSKEL_MAGIC, VERSION as PSKEL_VERSION,
+        VERSION_2D as PSKEL_VERSION_2D,
+    },
+    source_ext,
+};
 use perro_io::{compress_zlib_best, walkdir::collect_file_paths};
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use rayon::prelude::*;
@@ -9,19 +24,6 @@ use std::{
     fs, io,
     path::{Path, PathBuf},
 };
-
-const PSKEL_MAGIC: &[u8; 5] = b"PSKEL";
-const PSKEL_VERSION: u32 = 3;
-const PSKEL_VERSION_2D: u32 = 4;
-const PSKEL_VERSION_ZLIB_ONLY: u32 = 2;
-const PSKEL_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
-const PSKEL_BONE_FLAG_HAS_PARENT: u32 = 1 << 0;
-const PSKEL_BONE_FLAG_HAS_REST_POS: u32 = 1 << 1;
-const PSKEL_BONE_FLAG_HAS_REST_SCALE: u32 = 1 << 2;
-const PSKEL_BONE_FLAG_HAS_REST_ROT: u32 = 1 << 3;
-const PSKEL_BONE_FLAG_HAS_INV_POS: u32 = 1 << 4;
-const PSKEL_BONE_FLAG_HAS_INV_SCALE: u32 = 1 << 5;
-const PSKEL_BONE_FLAG_HAS_INV_ROT: u32 = 1 << 6;
 
 #[derive(Clone)]
 struct SkeletonRef {
@@ -66,12 +68,7 @@ pub fn generate_static_skeletons(project_root: &Path) -> Result<(), StaticPipeli
                 Path::new(rel)
                     .extension()
                     .and_then(|e| e.to_str())
-                    .is_some_and(|ext| {
-                        matches!(
-                            ext.to_ascii_lowercase().as_str(),
-                            "pskel" | "pskel2d" | "pskel3d" | "glb" | "gltf"
-                        )
-                    })
+                    .is_some_and(|ext| source_ext::contains(source_ext::SKELETON_INPUT, ext))
             })
             .collect();
     }
@@ -88,7 +85,7 @@ pub fn generate_static_skeletons(project_root: &Path) -> Result<(), StaticPipeli
                 .map(|s| s.to_ascii_lowercase())
                 .unwrap_or_default();
             match ext.as_str() {
-                "pskel" | "pskel3d" => {
+                PSKEL_EXTENSION | PSKEL_EXTENSION_3D => {
                     let bytes = fs::read(&full_path)?;
                     let baked = if bytes.starts_with(PSKEL_MAGIC) {
                         bytes
@@ -109,7 +106,7 @@ pub fn generate_static_skeletons(project_root: &Path) -> Result<(), StaticPipeli
                         bytes: baked,
                     }])
                 }
-                "pskel2d" => {
+                PSKEL_EXTENSION_2D => {
                     let bytes = fs::read(&full_path)?;
                     let baked = if bytes.starts_with(PSKEL_MAGIC) {
                         bytes
@@ -130,7 +127,7 @@ pub fn generate_static_skeletons(project_root: &Path) -> Result<(), StaticPipeli
                         bytes: baked,
                     }])
                 }
-                "glb" | "gltf" => {
+                source_ext::GLB | source_ext::GLTF => {
                     build_gltf_skeleton_entries(&full_path, &res_path, &rel).map(|entries| {
                         entries
                             .into_iter()
@@ -261,7 +258,7 @@ fn build_gltf_skeleton_entries(
         }
 
         let pskel = encode_pskel_tightest(&bones)?;
-        let embedded_rel_path = format!("{rel_base}_skeleton{skin_index}.pskel3d");
+        let embedded_rel_path = format!("{rel_base}_skeleton{skin_index}.{PSKEL_EXTENSION_3D}");
         let key_bracket = format!("{res_path}:skeleton[{skin_index}]");
         entries.push((
             SkeletonRef {
@@ -383,10 +380,10 @@ fn quat_from_basis(x: Vector3, y: Vector3, z: Vector3) -> Quaternion {
 }
 
 fn encode_pskel_tightest(bones: &[BoneLiteral]) -> io::Result<Vec<u8>> {
-    encode_pskel_v3(bones)
+    encode_pskel_v1(bones)
 }
 
-fn encode_pskel_v3(bones: &[BoneLiteral]) -> io::Result<Vec<u8>> {
+fn encode_pskel_v1(bones: &[BoneLiteral]) -> io::Result<Vec<u8>> {
     let mut raw = Vec::<u8>::new();
     for bone in bones {
         let name_bytes = bone.name.as_bytes();
@@ -512,9 +509,7 @@ fn encode_pskel_blob(version: u32, bone_count: usize, raw: &[u8]) -> io::Result<
     out.extend_from_slice(&version.to_le_bytes());
     out.extend_from_slice(&(bone_count as u32).to_le_bytes());
     out.extend_from_slice(&(raw.len() as u32).to_le_bytes());
-    if version != PSKEL_VERSION_ZLIB_ONLY {
-        out.extend_from_slice(&flags.to_le_bytes());
-    }
+    out.extend_from_slice(&flags.to_le_bytes());
     out.extend_from_slice(&payload);
     Ok(out)
 }
@@ -863,7 +858,7 @@ fn escape_str(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        BoneLiteral, PSKEL_VERSION, PSKEL_VERSION_2D, encode_pskel_tightest, encode_pskel_v3,
+        BoneLiteral, PSKEL_VERSION, PSKEL_VERSION_2D, encode_pskel_tightest, encode_pskel_v1,
         encode_pskel2d, parse_pskel_text, parse_pskel2d_text,
     };
     use perro_structs::{Quaternion, Transform3D, Vector3};
@@ -985,9 +980,9 @@ mod tests {
     #[test]
     fn encode_pskel_tightest_emits_current_version() {
         let bones = vec![sparse_bone(); 64];
-        let v3 = encode_pskel_v3(&bones).expect("encode v3");
+        let v1 = encode_pskel_v1(&bones).expect("encode v1");
         let selected = encode_pskel_tightest(&bones).expect("encode tightest");
-        assert_eq!(selected, v3);
+        assert_eq!(selected, v1);
         assert_eq!(
             u32::from_le_bytes(selected[5..9].try_into().expect("version")),
             PSKEL_VERSION
@@ -995,7 +990,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_and_encode_pskel2d_emits_version_4() {
+    fn parse_and_encode_pskel2d_emits_v1() {
         let bones = parse_pskel2d_text(
             r#"
             [bone "Root"]
@@ -1052,7 +1047,7 @@ mod tests {
     }
 
     #[test]
-    fn encode_pskel_versions_decode_to_same_bones() {
+    fn encode_pskel_v1_decodes_to_same_bones() {
         let bones = vec![dense_bone(), sparse_bone()];
         let selected = encode_pskel_tightest(&bones).expect("encode tightest");
         let decoded = decode_pskel_for_test(&selected);

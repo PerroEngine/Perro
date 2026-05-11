@@ -1,3 +1,4 @@
+use perro_asset_formats::ptset::{MAGIC as TILESET2D_MAGIC, VERSION as TILESET2D_VERSION};
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 pub use perro_particle_math::Op as ParticleExprOp3D;
 pub use perro_particle_math::Op as ParticleExprOp2D;
@@ -874,9 +875,6 @@ pub enum TileSetShape2D {
     Triangle { width: f32, height: f32 },
 }
 
-const TILESET2D_MAGIC: &[u8; 5] = b"PTSET";
-const TILESET2D_VERSION: u32 = 1;
-
 pub fn encode_tileset_2d_binary(tileset: &TileSet2D) -> Vec<u8> {
     let texture = tileset.texture.as_ref().as_bytes();
     let mut out = Vec::with_capacity(32 + texture.len() + tileset.tiles.len() * 32);
@@ -1614,6 +1612,8 @@ mod tests {
         .expect("tileset parses");
 
         let bytes = encode_tileset_2d_binary(&tileset);
+        assert_eq!(&bytes[0..5], b"PTSET");
+        assert_eq!(u32::from_le_bytes(bytes[5..9].try_into().unwrap()), 1);
         let decoded = decode_tileset_2d_binary(&bytes).expect("tileset decodes");
 
         assert_eq!(decoded, tileset);

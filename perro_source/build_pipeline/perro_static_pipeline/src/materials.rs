@@ -1,4 +1,5 @@
 use crate::{StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir};
+use perro_asset_formats::source_ext;
 use perro_io::walkdir::collect_file_paths;
 use perro_render_bridge::{
     CustomMaterialParamValue3D, StandardMaterial3D, ToonMaterial3D, UnlitMaterial3D,
@@ -21,8 +22,7 @@ pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipeli
                 Path::new(rel)
                     .extension()
                     .and_then(|e| e.to_str())
-                    .map(|ext| ext.to_ascii_lowercase())
-                    .is_some_and(|ext| matches!(ext.as_str(), "pmat" | "glb" | "gltf"))
+                    .is_some_and(|ext| source_ext::contains(source_ext::MATERIAL_INPUT, ext))
             })
             .collect();
     }
@@ -39,7 +39,7 @@ pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipeli
                 .map(|ext| ext.to_ascii_lowercase())
                 .unwrap_or_default();
             match ext.as_str() {
-                "pmat" => {
+                source_ext::MATERIAL => {
                     let src = fs::read_to_string(&full_path)?;
                     let material = load_pmat_literal(&src).ok_or_else(|| {
                         io::Error::other(format!(
@@ -48,7 +48,9 @@ pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipeli
                     })?;
                     Ok(vec![(res_path, material)])
                 }
-                "glb" | "gltf" => materials_from_gltf_file(&full_path, &res_path),
+                source_ext::GLB | source_ext::GLTF => {
+                    materials_from_gltf_file(&full_path, &res_path)
+                }
                 _ => Ok(Vec::new()),
             }
         })

@@ -9,6 +9,7 @@ perro_runtime = { path = "../../runtime_project/perro_runtime" }
 perro_graphics = { path = "../perro_graphics" }
 perro_render_bridge = { path = "../perro_render_bridge" }
 perro_ids = { path = "../../core/perro_ids" }
+perro_asset_formats = { path = "../../core/perro_asset_formats" }
 perro_scripting = { path = "../../script_stack/perro_scripting" }
 perro_input = { path = "../../api_modules/perro_input" }
 perro_runtime_context = { path = "../../api_modules/perro_runtime_context" }

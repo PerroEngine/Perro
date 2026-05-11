@@ -74,7 +74,7 @@ LOD behavior:
 
 - Authored meshes get automatic render LODs.
 - Dynamic/dev load builds LODs when the mesh loads.
-- Static build preparses LODs and packs them into `.pmesh`.
+- Static build preparses LODs and packs them into `.pmesh` v1.
 - Up to 4 LODs are stored: `100%`, `50%`, `25%`, `12.5%` triangle targets.
 - Tiny meshes may store fewer LODs when decimation would duplicate an existing level.
 - LOD switch uses `distance / mesh_bounds_radius`.

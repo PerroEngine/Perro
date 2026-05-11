@@ -1,5 +1,16 @@
+//! Static render mesh import, LOD build, meshlet packing, and PMESH v1 encode.
+
 use crate::{
     StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir,
+};
+use perro_asset_formats::{
+    pmesh::{
+        EXTENSION as PMESH_EXTENSION, FLAG_HAS_JOINTS as PMESH_FLAG_HAS_JOINTS,
+        FLAG_HAS_NORMAL as PMESH_FLAG_HAS_NORMAL, FLAG_HAS_UV0 as PMESH_FLAG_HAS_UV0,
+        FLAG_HAS_WEIGHTS as PMESH_FLAG_HAS_WEIGHTS, FLAG_PAYLOAD_RAW as PMESH_FLAG_PAYLOAD_RAW,
+        MAGIC as PMESH_MAGIC, VERSION as PMESH_VERSION,
+    },
+    source_ext,
 };
 use perro_io::{compress_zlib_best, walkdir::collect_file_paths};
 use rayon::prelude::*;
@@ -10,13 +21,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const PMESH_MAGIC: &[u8; 5] = b"PMESH";
-const PMESH_VERSION: u32 = 8;
-const PMESH_FLAG_HAS_NORMAL: u32 = 1 << 0;
-const PMESH_FLAG_HAS_UV0: u32 = 1 << 1;
-const PMESH_FLAG_HAS_JOINTS: u32 = 1 << 2;
-const PMESH_FLAG_HAS_WEIGHTS: u32 = 1 << 3;
-const PMESH_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
 const MESHLET_TRIANGLES: usize = 64;
 const LOD_TARGET_RATIOS: [f32; 4] = [1.0, 0.5, 0.25, 0.125];
 
@@ -88,9 +92,7 @@ pub fn generate_static_meshes(
                 Path::new(rel)
                     .extension()
                     .and_then(|e| e.to_str())
-                    .is_some_and(|ext| {
-                        matches!(ext.to_ascii_lowercase().as_str(), "pmesh" | "glb" | "gltf")
-                    })
+                    .is_some_and(|ext| source_ext::contains(source_ext::MESH_INPUT, ext))
             })
             .collect();
     }
@@ -107,7 +109,7 @@ pub fn generate_static_meshes(
                 .map(|s| s.to_ascii_lowercase())
                 .unwrap_or_default();
             match ext.as_str() {
-                "pmesh" => {
+                PMESH_EXTENSION => {
                     let bytes = fs::read(&full_path)?;
                     Ok(vec![MeshAsset {
                         entry: MeshRef {
@@ -117,7 +119,7 @@ pub fn generate_static_meshes(
                         bytes,
                     }])
                 }
-                "glb" | "gltf" => {
+                source_ext::GLB | source_ext::GLTF => {
                     build_gltf_mesh_entries(&full_path, &res_path, &rel, bake_meshlets).map(
                         |entries| {
                             entries
@@ -330,7 +332,7 @@ fn build_gltf_mesh_entries(
             },
         )?;
 
-        let embedded_rel_path = format!("{rel_base}_mesh{mesh_index}.pmesh");
+        let embedded_rel_path = format!("{rel_base}_mesh{mesh_index}.{PMESH_EXTENSION}");
         let key_bracket = format!("{res_path}:mesh[{mesh_index}]");
         entries.push((
             MeshRef {
@@ -922,8 +924,8 @@ fn escape_str(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        PackedLod, PackedMeshLayoutFlags, PackedSurfaceRange, PackedVertex, build_lod_sets,
-        dedup_vertices, encode_pmesh, encode_pmesh_tightest_layout, pack_meshlets,
+        PMESH_VERSION, PackedLod, PackedMeshLayoutFlags, PackedSurfaceRange, PackedVertex,
+        build_lod_sets, dedup_vertices, encode_pmesh, encode_pmesh_tightest_layout, pack_meshlets,
         pack_meshlets_with_surfaces, reorder_vertices_by_first_use,
     };
 
@@ -958,6 +960,11 @@ mod tests {
                 weights: [1.0, 0.0, 0.0, 0.0],
             },
         ]
+    }
+
+    #[test]
+    fn pmesh_current_version_is_v1() {
+        assert_eq!(PMESH_VERSION, 1);
     }
 
     #[test]

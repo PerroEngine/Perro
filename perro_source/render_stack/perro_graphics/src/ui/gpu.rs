@@ -2,18 +2,17 @@ use crate::{backend::StaticTextureLookup, resources::ResourceStore};
 use ahash::AHashMap;
 use bytemuck::{Pod, Zeroable};
 use epaint::{ClippedPrimitive, ImageData, Primitive, TextureId, textures::TexturesDelta};
+use perro_asset_formats::ptex::{
+    FLAG_FORMAT_MASK as PTEX_FLAG_FORMAT_MASK, FLAG_FORMAT_R8 as PTEX_FLAG_FORMAT_R8,
+    FLAG_FORMAT_RGB8 as PTEX_FLAG_FORMAT_RGB8, FLAG_FORMAT_RGBA8 as PTEX_FLAG_FORMAT_RGBA8,
+    FLAG_PAYLOAD_RAW as PTEX_FLAG_PAYLOAD_RAW, MAGIC as PTEX_MAGIC, VERSION as PTEX_VERSION,
+};
 use perro_ids::TextureID;
 use perro_io::{decompress_zlib, load_asset};
 use std::borrow::Cow;
 
 const UI_SUPERSAMPLE_SCALE: u32 = 2;
 const UI_SUPERSAMPLE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
-const PTEX_MAGIC: &[u8; 4] = b"PTEX";
-const PTEX_FLAG_FORMAT_MASK: u32 = 0b11;
-const PTEX_FLAG_FORMAT_RGBA8: u32 = 0;
-const PTEX_FLAG_FORMAT_RGB8: u32 = 1;
-const PTEX_FLAG_FORMAT_R8: u32 = 2;
-const PTEX_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Zeroable, Pod)]
@@ -830,7 +829,7 @@ fn decode_ptex(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
         return None;
     }
     let version = u32::from_le_bytes(bytes[4..8].try_into().ok()?);
-    if version != 2 {
+    if version != PTEX_VERSION {
         return None;
     }
     let width = u32::from_le_bytes(bytes[8..12].try_into().ok()?);

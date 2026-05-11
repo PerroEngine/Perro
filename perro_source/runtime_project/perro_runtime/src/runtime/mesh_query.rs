@@ -1,6 +1,11 @@
+//! Runtime mesh query cache, BVH build, and ray/region intersection paths.
+
 use super::Runtime;
 use ahash::AHashMap;
 use glam::{Mat3, Mat4, Vec3};
+use perro_asset_formats::pmesh::{
+    FLAG_PAYLOAD_RAW as PMESH_FLAG_PAYLOAD_RAW, VERSION as PMESH_VERSION,
+};
 use perro_ids::{MaterialID, MeshID, NodeID, parse_hashed_source_uri, string_to_u64};
 use perro_io::decompress_zlib;
 use perro_nodes::{MeshSurfaceBinding, SceneNodeData};
@@ -13,7 +18,9 @@ use rayon::prelude::*;
 use std::cell::RefCell;
 use std::sync::{Arc, OnceLock, RwLock};
 
-const PMESH_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
+mod builtins;
+
+use builtins::decode_builtin_query_mesh;
 
 #[derive(Clone, Copy)]
 struct QueryTri {
@@ -1238,198 +1245,6 @@ fn build_query_mesh_from_runtime_mesh(mesh: &Mesh3D) -> Option<QueryMeshData> {
     build_query_mesh_data(vertices, triangles)
 }
 
-fn decode_builtin_query_mesh(source: &str) -> Option<QueryMeshData> {
-    let (verts, tris) = match source {
-        "__cube__" => builtin_cube_mesh(),
-        "__tri_pyr__" => builtin_tri_pyramid_mesh(),
-        "__sq_pyr__" => builtin_square_pyramid_mesh(),
-        "__sphere__" => builtin_octa_sphere_mesh(),
-        "__tri_prism__" => builtin_tri_prism_mesh(),
-        "__cylinder__" => builtin_cylinder_mesh(12),
-        "__cone__" => builtin_cone_mesh(12),
-        "__capsule__" => builtin_capsule_mesh(12),
-        _ => return None,
-    };
-    let triangles = tris
-        .into_iter()
-        .map(|[a, b, c]| QueryTri {
-            a,
-            b,
-            c,
-            surface_index: 0,
-        })
-        .collect();
-    build_query_mesh_data(verts, triangles)
-}
-
-fn builtin_cube_mesh() -> (Vec<Vec3>, Vec<[u32; 3]>) {
-    let h = 0.5_f32;
-    let v = vec![
-        Vec3::new(-h, -h, -h),
-        Vec3::new(h, -h, -h),
-        Vec3::new(h, h, -h),
-        Vec3::new(-h, h, -h),
-        Vec3::new(-h, -h, h),
-        Vec3::new(h, -h, h),
-        Vec3::new(h, h, h),
-        Vec3::new(-h, h, h),
-    ];
-    let t = vec![
-        [0, 1, 2],
-        [0, 2, 3],
-        [4, 6, 5],
-        [4, 7, 6],
-        [0, 4, 5],
-        [0, 5, 1],
-        [1, 5, 6],
-        [1, 6, 2],
-        [2, 6, 7],
-        [2, 7, 3],
-        [3, 7, 4],
-        [3, 4, 0],
-    ];
-    (v, t)
-}
-
-fn builtin_tri_pyramid_mesh() -> (Vec<Vec3>, Vec<[u32; 3]>) {
-    let h = 0.5_f32;
-    let v = vec![
-        Vec3::new(-h, -h, -h),
-        Vec3::new(h, -h, -h),
-        Vec3::new(0.0, -h, h),
-        Vec3::new(0.0, h, 0.0),
-    ];
-    let t = vec![[0, 1, 2], [0, 2, 3], [2, 1, 3], [1, 0, 3]];
-    (v, t)
-}
-
-fn builtin_square_pyramid_mesh() -> (Vec<Vec3>, Vec<[u32; 3]>) {
-    let h = 0.5_f32;
-    let v = vec![
-        Vec3::new(-h, -h, -h),
-        Vec3::new(h, -h, -h),
-        Vec3::new(h, -h, h),
-        Vec3::new(-h, -h, h),
-        Vec3::new(0.0, h, 0.0),
-    ];
-    let t = vec![
-        [0, 1, 2],
-        [0, 2, 3],
-        [0, 4, 1],
-        [1, 4, 2],
-        [2, 4, 3],
-        [3, 4, 0],
-    ];
-    (v, t)
-}
-
-fn builtin_octa_sphere_mesh() -> (Vec<Vec3>, Vec<[u32; 3]>) {
-    let h = 0.5_f32;
-    let v = vec![
-        Vec3::new(0.0, h, 0.0),
-        Vec3::new(0.0, -h, 0.0),
-        Vec3::new(h, 0.0, 0.0),
-        Vec3::new(-h, 0.0, 0.0),
-        Vec3::new(0.0, 0.0, h),
-        Vec3::new(0.0, 0.0, -h),
-    ];
-    let t = vec![
-        [0, 2, 4],
-        [0, 4, 3],
-        [0, 3, 5],
-        [0, 5, 2],
-        [1, 4, 2],
-        [1, 3, 4],
-        [1, 5, 3],
-        [1, 2, 5],
-    ];
-    (v, t)
-}
-
-fn builtin_tri_prism_mesh() -> (Vec<Vec3>, Vec<[u32; 3]>) {
-    let h = 0.5_f32;
-    let v = vec![
-        Vec3::new(-h, -h, -h),
-        Vec3::new(h, -h, -h),
-        Vec3::new(0.0, h, -h),
-        Vec3::new(-h, -h, h),
-        Vec3::new(h, -h, h),
-        Vec3::new(0.0, h, h),
-    ];
-    let t = vec![
-        [0, 1, 2],
-        [3, 5, 4],
-        [0, 3, 4],
-        [0, 4, 1],
-        [1, 4, 5],
-        [1, 5, 2],
-        [2, 5, 3],
-        [2, 3, 0],
-    ];
-    (v, t)
-}
-
-fn builtin_cylinder_mesh(segments: u32) -> (Vec<Vec3>, Vec<[u32; 3]>) {
-    let seg = segments.max(3);
-    let r = 0.5_f32;
-    let h = 0.5_f32;
-    let mut v = Vec::with_capacity((seg * 2 + 2) as usize);
-    for i in 0..seg {
-        let a = (i as f32 / seg as f32) * std::f32::consts::TAU;
-        v.push(Vec3::new(a.cos() * r, h, a.sin() * r));
-    }
-    for i in 0..seg {
-        let a = (i as f32 / seg as f32) * std::f32::consts::TAU;
-        v.push(Vec3::new(a.cos() * r, -h, a.sin() * r));
-    }
-    let top_center = v.len() as u32;
-    v.push(Vec3::new(0.0, h, 0.0));
-    let bot_center = v.len() as u32;
-    v.push(Vec3::new(0.0, -h, 0.0));
-
-    let mut t = Vec::new();
-    for i in 0..seg {
-        let n = (i + 1) % seg;
-        let a = i;
-        let b = n;
-        let c = i + seg;
-        let d = n + seg;
-        t.push([a, c, b]);
-        t.push([b, c, d]);
-        t.push([top_center, b, a]);
-        t.push([bot_center, c, d]);
-    }
-    (v, t)
-}
-
-fn builtin_cone_mesh(segments: u32) -> (Vec<Vec3>, Vec<[u32; 3]>) {
-    let seg = segments.max(3);
-    let r = 0.5_f32;
-    let h = 0.5_f32;
-    let mut v = Vec::with_capacity((seg + 2) as usize);
-    for i in 0..seg {
-        let a = (i as f32 / seg as f32) * std::f32::consts::TAU;
-        v.push(Vec3::new(a.cos() * r, -h, a.sin() * r));
-    }
-    let apex = v.len() as u32;
-    v.push(Vec3::new(0.0, h, 0.0));
-    let base_center = v.len() as u32;
-    v.push(Vec3::new(0.0, -h, 0.0));
-
-    let mut t = Vec::new();
-    for i in 0..seg {
-        let n = (i + 1) % seg;
-        t.push([i, n, apex]);
-        t.push([base_center, n, i]);
-    }
-    (v, t)
-}
-
-fn builtin_capsule_mesh(segments: u32) -> (Vec<Vec3>, Vec<[u32; 3]>) {
-    // Cheap query proxy: use cylinder hull footprint for location/material lookup.
-    builtin_cylinder_mesh(segments)
-}
-
 fn decode_gltf_query_mesh(bytes: &[u8], mesh_index: usize) -> Option<QueryMeshData> {
     let (doc, buffers, _images) = gltf::import_slice(bytes).ok()?;
     let mesh = doc.meshes().nth(mesh_index)?;
@@ -1550,11 +1365,11 @@ fn normalized_static_mesh_lookup_alias(source: &str) -> Option<String> {
 }
 
 fn decode_pmesh_query(bytes: &[u8]) -> Option<QueryMeshData> {
-    if bytes.len() < 33 || &bytes[0..5] != b"PMESH" {
+    if bytes.len() < 37 || &bytes[0..5] != b"PMESH" {
         return None;
     }
     let version = u32::from_le_bytes(bytes[5..9].try_into().ok()?);
-    if !matches!(version, 6 | 8) {
+    if version != PMESH_VERSION {
         return None;
     }
 
@@ -1563,22 +1378,9 @@ fn decode_pmesh_query(bytes: &[u8]) -> Option<QueryMeshData> {
     let index_count = u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize;
     let surface_count = u32::from_le_bytes(bytes[21..25].try_into().ok()?) as usize;
     let meshlet_count = u32::from_le_bytes(bytes[25..29].try_into().ok()?) as usize;
-    let (lod_count, raw_len, payload_start) = if version == 8 {
-        if bytes.len() < 37 {
-            return None;
-        }
-        (
-            u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize,
-            u32::from_le_bytes(bytes[33..37].try_into().ok()?) as usize,
-            37usize,
-        )
-    } else {
-        (
-            0,
-            u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize,
-            33usize,
-        )
-    };
+    let lod_count = u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize;
+    let raw_len = u32::from_le_bytes(bytes[33..37].try_into().ok()?) as usize;
+    let payload_start = 37usize;
 
     let raw = decode_pmesh_payload(flags, &bytes[payload_start..])?;
     if raw.len() != raw_len {
@@ -1631,7 +1433,7 @@ fn decode_pmesh_query(bytes: &[u8]) -> Option<QueryMeshData> {
     if surface_ranges.is_empty() {
         surface_ranges.push((0, indices.len()));
     }
-    if version == 8 && lod_count > 0 {
+    if lod_count > 0 {
         let lod_start = vertex_bytes
             .checked_add(index_bytes)?
             .checked_add(surface_bytes)?

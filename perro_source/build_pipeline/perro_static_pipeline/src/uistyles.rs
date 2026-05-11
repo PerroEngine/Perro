@@ -1,4 +1,5 @@
 use crate::{StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir};
+use perro_asset_formats::source_ext;
 use perro_io::walkdir::collect_file_paths;
 use perro_scene::{Parser, SceneFieldIterRef, SceneObjectField, SceneValue};
 use perro_structs::{Color, Vector2};
@@ -20,7 +21,7 @@ pub fn generate_static_ui_styles(project_root: &Path) -> Result<(), StaticPipeli
                 Path::new(rel)
                     .extension()
                     .and_then(|e| e.to_str())
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case("uistyle"))
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case(source_ext::UI_STYLE))
             })
             .collect();
     }

@@ -1,3 +1,5 @@
+//! Project config parsing, scaffold templates, and source override maintenance.
+
 use std::{
     collections::BTreeSet,
     fmt::{Display, Formatter},

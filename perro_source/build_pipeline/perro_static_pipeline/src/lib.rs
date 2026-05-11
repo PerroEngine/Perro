@@ -543,14 +543,19 @@ mod tests {
             raw.extend_from_slice(&3u32.to_le_bytes());
 
             let mut bytes = Vec::new();
-            bytes.extend_from_slice(b"PMESH");
-            bytes.extend_from_slice(&8u32.to_le_bytes());
-            bytes.extend_from_slice(&(0b11u32 | (1 << 31)).to_le_bytes());
+            bytes.extend_from_slice(perro_asset_formats::pmesh::MAGIC);
+            bytes.extend_from_slice(&perro_asset_formats::pmesh::VERSION.to_le_bytes());
+            bytes.extend_from_slice(
+                &(perro_asset_formats::pmesh::FLAG_HAS_NORMAL
+                    | perro_asset_formats::pmesh::FLAG_HAS_UV0
+                    | perro_asset_formats::pmesh::FLAG_PAYLOAD_RAW)
+                    .to_le_bytes(),
+            );
             bytes.extend_from_slice(&3u32.to_le_bytes());
             bytes.extend_from_slice(&3u32.to_le_bytes());
             bytes.extend_from_slice(&1u32.to_le_bytes());
             bytes.extend_from_slice(&0u32.to_le_bytes());
-            bytes.extend_from_slice(&1u32.to_le_bytes());
+            bytes.extend_from_slice(&0u32.to_le_bytes());
             bytes.extend_from_slice(&(raw.len() as u32).to_le_bytes());
             bytes.extend_from_slice(&raw);
             bytes
@@ -558,17 +563,17 @@ mod tests {
     }
 
     fn decode_raw_ptex(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
-        if bytes.len() < 24 || &bytes[0..4] != b"PTEX" {
+        if bytes.len() < 24 || &bytes[0..4] != perro_asset_formats::ptex::MAGIC {
             return None;
         }
         let version = u32::from_le_bytes(bytes[4..8].try_into().ok()?);
-        if version != 2 {
+        if version != perro_asset_formats::ptex::VERSION {
             return None;
         }
         let width = u32::from_le_bytes(bytes[8..12].try_into().ok()?);
         let height = u32::from_le_bytes(bytes[12..16].try_into().ok()?);
         let flags = u32::from_le_bytes(bytes[16..20].try_into().ok()?);
-        if flags & (1 << 31) == 0 {
+        if flags & perro_asset_formats::ptex::FLAG_PAYLOAD_RAW == 0 {
             return None;
         }
         let raw_len = u32::from_le_bytes(bytes[20..24].try_into().ok()?) as usize;
@@ -577,15 +582,15 @@ mod tests {
     }
 
     fn decode_raw_pmesh_mesh(bytes: &[u8]) -> Option<Mesh3D> {
-        if bytes.len() < 37 || &bytes[0..5] != b"PMESH" {
+        if bytes.len() < 37 || &bytes[0..5] != perro_asset_formats::pmesh::MAGIC {
             return None;
         }
         let version = u32::from_le_bytes(bytes[5..9].try_into().ok()?);
-        if version != 8 {
+        if version != perro_asset_formats::pmesh::VERSION {
             return None;
         }
         let flags = u32::from_le_bytes(bytes[9..13].try_into().ok()?);
-        if flags & (1 << 31) == 0 {
+        if flags & perro_asset_formats::pmesh::FLAG_PAYLOAD_RAW == 0 {
             return None;
         }
         let vertex_count = u32::from_le_bytes(bytes[13..17].try_into().ok()?) as usize;

@@ -1,6 +1,15 @@
 use crate::{
     StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir,
 };
+use perro_asset_formats::{
+    ptex::{
+        EXTENSION as PTEX_EXTENSION, FLAG_FORMAT_MASK as PTEX_FLAG_FORMAT_MASK,
+        FLAG_FORMAT_R8 as PTEX_FLAG_FORMAT_R8, FLAG_FORMAT_RGB8 as PTEX_FLAG_FORMAT_RGB8,
+        FLAG_FORMAT_RGBA8 as PTEX_FLAG_FORMAT_RGBA8, FLAG_PAYLOAD_RAW as PTEX_FLAG_PAYLOAD_RAW,
+        MAGIC as PTEX_MAGIC, VERSION as PTEX_VERSION,
+    },
+    source_ext,
+};
 use perro_io::{compress_zlib_best, walkdir::collect_file_paths};
 use rayon::prelude::*;
 use std::{
@@ -8,16 +17,6 @@ use std::{
     fs, io,
     path::{Path, PathBuf},
 };
-
-const IMAGE_EXTENSIONS: &[&str] = &[
-    "png", "jpg", "jpeg", "bmp", "gif", "ico", "tga", "webp", "rgba",
-];
-const PTEX_VERSION: u32 = 2;
-const PTEX_FLAG_FORMAT_MASK: u32 = 0b11;
-const PTEX_FLAG_FORMAT_RGBA8: u32 = 0;
-const PTEX_FLAG_FORMAT_RGB8: u32 = 1;
-const PTEX_FLAG_FORMAT_R8: u32 = 2;
-const PTEX_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
 
 pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelineError> {
     let res_dir = res_dir(project_root);
@@ -35,8 +34,7 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
                 Path::new(rel)
                     .extension()
                     .and_then(|e| e.to_str())
-                    .map(|ext| ext.to_ascii_lowercase())
-                    .is_some_and(|ext| IMAGE_EXTENSIONS.contains(&ext.as_str()))
+                    .is_some_and(|ext| source_ext::contains(source_ext::IMAGE, ext))
             })
             .map(|rel| (asset_uri(&rel), res_dir.join(rel)))
             .collect();
@@ -61,7 +59,7 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
             };
 
             let mut ptex = Vec::with_capacity(24 + payload.len());
-            ptex.extend_from_slice(b"PTEX");
+            ptex.extend_from_slice(PTEX_MAGIC);
             ptex.extend_from_slice(&PTEX_VERSION.to_le_bytes());
             ptex.extend_from_slice(&width.to_le_bytes());
             ptex.extend_from_slice(&height.to_le_bytes());
@@ -78,7 +76,7 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
 
     let mut textures = Vec::<(String, String)>::with_capacity(encoded.len());
     for (index, (res_path, ptex)) in encoded.into_iter().enumerate() {
-        let rel_ptex = format!("texture_{index}.ptex");
+        let rel_ptex = format!("texture_{index}.{PTEX_EXTENSION}");
         let output_path = embedded_textures_dir.join(&rel_ptex);
         if let Some(parent) = output_path.parent() {
             fs::create_dir_all(parent)?;
@@ -154,5 +152,15 @@ fn pack_texture_payload(raw_rgba: &[u8]) -> (u32, Vec<u8>) {
         (PTEX_FLAG_FORMAT_RGB8, packed)
     } else {
         (PTEX_FLAG_FORMAT_RGBA8, raw_rgba.to_vec())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PTEX_VERSION;
+
+    #[test]
+    fn ptex_current_version_is_v1() {
+        assert_eq!(PTEX_VERSION, 1);
     }
 }

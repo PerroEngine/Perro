@@ -152,6 +152,8 @@ Only transform fields differ.
 - `rest_*` is local rest transform.
 - `inv_*` is inverse bind transform.
 - Missing fields default to identity.
-- Static builds compile text into binary `PSKEL`.
+- Static builds compile text into binary `PSKEL` v1.
+- Old binary version numbers are unsupported before public asset compatibility starts.
+- Rerun the static compiler to regenerate packed bytes.
 - Put parent bones before children.
 - Bad parent index is ignored by most runtime paths, but rig tools should treat it as invalid.

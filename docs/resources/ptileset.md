@@ -59,7 +59,9 @@ Runtime builds a convex collider from the points.
 
 ## Static Bake
 
-Static pipeline parses `.ptileset` into packed `PTSET` bytes.
+Static pipeline parses `.ptileset` into packed `PTSET` v1 bytes.
 It bakes atlas layout and per-tile collision data into those bytes.
 It emits those bytes into `static_assets::tilesets`.
 Static runtime reads binary tileset bytes by path hash before disk.
+Old binary version numbers are unsupported before public asset compatibility starts.
+Rerun the static compiler to regenerate packed bytes.
