@@ -1,5 +1,77 @@
 use super::*;
 
+pub(super) fn rotate_vec2(v: Vector2, radians: f32) -> Vector2 {
+    let (sin, cos) = radians.sin_cos();
+    Vector2::new(v.x * cos - v.y * sin, v.x * sin + v.y * cos)
+}
+
+pub(super) fn inverse_transform_point_2d(transform: Transform2D, point: Vector2) -> Vector2 {
+    let local = rotate_vec2(point - transform.position, -transform.rotation);
+    Vector2::new(
+        local.x / transform.scale.x.abs().max(0.0001),
+        local.y / transform.scale.y.abs().max(0.0001),
+    )
+}
+
+pub(super) fn transform_point_2d(transform: Transform2D, point: Vector2) -> Vector2 {
+    let scaled = Vector2::new(point.x * transform.scale.x, point.y * transform.scale.y);
+    transform.position + rotate_vec2(scaled, transform.rotation)
+}
+
+pub(super) fn inverse_transform_dir_2d(transform: Transform2D, dir: Vector2) -> Vector2 {
+    let local = rotate_vec2(dir, -transform.rotation);
+    Vector2::new(
+        local.x / transform.scale.x.abs().max(0.0001),
+        local.y / transform.scale.y.abs().max(0.0001),
+    )
+    .normalized()
+}
+
+pub(super) fn transform_dir_2d(transform: Transform2D, dir: Vector2) -> Vector2 {
+    let scaled = Vector2::new(dir.x * transform.scale.x, dir.y * transform.scale.y);
+    rotate_vec2(scaled, transform.rotation).normalized()
+}
+
+pub(super) fn inverse_transform_point_3d(transform: Transform3D, point: Vector3) -> Vector3 {
+    let local = transform
+        .rotation
+        .inverse()
+        .rotate_vector3(point - transform.position);
+    Vector3::new(
+        local.x / transform.scale.x.abs().max(0.0001),
+        local.y / transform.scale.y.abs().max(0.0001),
+        local.z / transform.scale.z.abs().max(0.0001),
+    )
+}
+
+pub(super) fn transform_point_3d(transform: Transform3D, point: Vector3) -> Vector3 {
+    let scaled = Vector3::new(
+        point.x * transform.scale.x,
+        point.y * transform.scale.y,
+        point.z * transform.scale.z,
+    );
+    transform.position + transform.rotation.rotate_vector3(scaled)
+}
+
+pub(super) fn inverse_transform_dir_3d(transform: Transform3D, dir: Vector3) -> Vector3 {
+    let local = transform.rotation.inverse().rotate_vector3(dir);
+    Vector3::new(
+        local.x / transform.scale.x.abs().max(0.0001),
+        local.y / transform.scale.y.abs().max(0.0001),
+        local.z / transform.scale.z.abs().max(0.0001),
+    )
+    .normalized()
+}
+
+pub(super) fn transform_dir_3d(transform: Transform3D, dir: Vector3) -> Vector3 {
+    let scaled = Vector3::new(
+        dir.x * transform.scale.x,
+        dir.y * transform.scale.y,
+        dir.z * transform.scale.z,
+    );
+    transform.rotation.rotate_vector3(scaled).normalized()
+}
+
 pub(super) fn segment_aabb(
     from: Vector2,
     delta: Vector2,
@@ -45,6 +117,15 @@ pub(super) fn segment_aabb(
         }
     }
     (0.0..=1.0).contains(&t_min).then_some((t_min, normal))
+}
+
+pub(super) fn reflect_2d(direction: Vector2, normal: Vector2) -> Option<Vector2> {
+    let n = normal.normalized();
+    if n.length_squared() <= 0.0001 {
+        return None;
+    }
+    let reflected = direction - n * (2.0 * direction.dot(n));
+    (reflected.length_squared() > 0.0001).then_some(reflected.normalized())
 }
 
 pub(super) fn segment_aabb_3d(
@@ -97,6 +178,15 @@ pub(super) fn segment_aabb_3d(
         }
     }
     (0.0..=1.0).contains(&t_min).then_some(t_min)
+}
+
+pub(super) fn reflect_3d(direction: Vector3, normal: Vector3) -> Option<Vector3> {
+    let n = normal.normalized();
+    if n.length_squared() <= 0.0001 {
+        return None;
+    }
+    let reflected = direction - n * (2.0 * direction.dot(n));
+    (reflected.length_squared() > 0.0001).then_some(reflected.normalized())
 }
 
 pub(super) fn inverse_rotate_vec3(rotation: [f32; 4], v: Vector3) -> Vector3 {

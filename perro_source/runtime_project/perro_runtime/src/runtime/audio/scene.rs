@@ -19,6 +19,7 @@ impl Runtime {
         self.audio.audio_scene_flags_node_count = node_count;
         self.audio.has_audio_mask_2d = false;
         self.audio.has_audio_portal_2d = false;
+        self.audio.has_audio_portal_3d = false;
         self.audio.has_audio_zone_2d = false;
         self.audio.has_audio_zone_3d = false;
         for (_, node) in self.nodes.iter() {
@@ -28,6 +29,9 @@ impl Runtime {
                 }
                 SceneNodeData::AudioPortal2D(_) => {
                     self.audio.has_audio_portal_2d = true;
+                }
+                SceneNodeData::AudioPortal3D(_) => {
+                    self.audio.has_audio_portal_3d = true;
                 }
                 SceneNodeData::AudioZone2D(_) => {
                     self.audio.has_audio_zone_2d = true;
@@ -39,6 +43,7 @@ impl Runtime {
             }
             if self.audio.has_audio_mask_2d
                 && self.audio.has_audio_portal_2d
+                && self.audio.has_audio_portal_3d
                 && self.audio.has_audio_zone_2d
                 && self.audio.has_audio_zone_3d
             {

@@ -7,6 +7,10 @@ Access:
 Runtime audio is for node-bound sounds.
 Point 2D/3D sounds live on `ctx.res.Audio()` because they are resource playback requests.
 
+Shared backend, cache, bus, `.pawdio`, and propagation concepts:
+
+- [Audio](../../../audio.md)
+
 ## Attached Audio
 
 Use attached audio when a sound should follow a scene node without adding an audio emitter node.

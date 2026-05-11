@@ -1,7 +1,7 @@
 use super::*;
 use perro_nodes::{
-    AudioMask2D, AudioPortal2D, AudioZone2D, AudioZone3D, CollisionShape2D, CollisionShape3D,
-    SceneNode, SceneNodeData, StaticBody2D,
+    AudioMask2D, AudioPortal2D, AudioPortal3D, AudioZone2D, AudioZone3D, CollisionShape2D,
+    CollisionShape3D, SceneNode, SceneNodeData, StaticBody2D, StaticBody3D,
 };
 use perro_resource_context::sub_apis::{Audio, Audio2D, Audio3D};
 use perro_runtime_context::sub_apis::NodeAPI;
@@ -248,12 +248,38 @@ fn audio_portal_improves_corner_opening_path() {
         .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
             AudioPortal2D::new(),
         )));
+    let portal_exit = with_portal
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
+            AudioPortal2D::new(),
+        )));
+    if let Some(node) = with_portal.nodes.get_mut(portal)
+        && let SceneNodeData::AudioPortal2D(portal) = &mut node.data
+    {
+        portal.targets.push(portal_exit);
+    }
+    if let Some(node) = with_portal.nodes.get_mut(portal_exit)
+        && let SceneNodeData::AudioPortal2D(exit) = &mut node.data
+    {
+        exit.targets.push(portal);
+    }
     let portal_shape = NodeAPI::create::<CollisionShape2D>(&mut with_portal);
+    let portal_exit_shape = NodeAPI::create::<CollisionShape2D>(&mut with_portal);
     assert!(NodeAPI::reparent(&mut with_portal, portal, portal_shape));
+    assert!(NodeAPI::reparent(
+        &mut with_portal,
+        portal_exit,
+        portal_exit_shape
+    ));
     assert!(NodeAPI::set_global_transform_2d(
         &mut with_portal,
         portal,
         Transform2D::new(Vector2::new(2.5, 0.0), 0.0, Vector2::ONE),
+    ));
+    assert!(NodeAPI::set_global_transform_2d(
+        &mut with_portal,
+        portal_exit,
+        Transform2D::new(Vector2::new(0.5, 0.0), 0.0, Vector2::ONE),
     ));
     assert!(with_portal.play_runtime_audio_2d(
         looped_audio(),
@@ -264,7 +290,274 @@ fn audio_portal_improves_corner_opening_path() {
     let opened = with_portal.audio.sounds[0].last_result.expect("result");
     assert!(opened.volume > blocked.volume);
     assert!(opened.low_pass < blocked.low_pass);
-    assert_eq!(opened.perceived_2d, Some(Vector2::new(2.0, 0.0)));
+    assert_eq!(opened.perceived_2d, Some(Vector2::new(1.0, 0.0)));
+}
+
+#[test]
+fn audio_portal_2d_transforms_exit_direction_with_rotation() {
+    let mut runtime = Runtime::new();
+    let portal = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
+            AudioPortal2D::new(),
+        )));
+    let portal_exit = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
+            AudioPortal2D::new(),
+        )));
+    if let Some(node) = runtime.nodes.get_mut(portal)
+        && let SceneNodeData::AudioPortal2D(portal) = &mut node.data
+    {
+        portal.targets.push(portal_exit);
+    }
+    let portal_shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, portal, portal_shape));
+    assert!(NodeAPI::set_global_transform_2d(
+        &mut runtime,
+        portal,
+        Transform2D::new(Vector2::new(4.0, 0.0), 0.0, Vector2::ONE),
+    ));
+    assert!(NodeAPI::set_global_transform_2d(
+        &mut runtime,
+        portal_exit,
+        Transform2D::new(
+            Vector2::new(0.0, -0.5),
+            -std::f32::consts::FRAC_PI_2,
+            Vector2::ONE
+        ),
+    ));
+    assert!(runtime.play_runtime_audio_2d(
+        looped_audio(),
+        Vector2::new(5.0, 0.0),
+        SpatialAudioOptions::new(10.0),
+    ));
+    runtime.update_audio_propagation(1.0);
+    let opened = runtime.audio.sounds[0].last_result.expect("result");
+    let perceived = opened.perceived_2d.expect("perceived");
+    assert!(perceived.distance_to(Vector2::new(0.0, -1.0)) < 0.0001);
+}
+
+#[test]
+fn audio_portal_2d_chains_multiple_hops() {
+    let mut runtime = Runtime::new();
+    let portal_a = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
+            AudioPortal2D::new(),
+        )));
+    let portal_b = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
+            AudioPortal2D::new(),
+        )));
+    let portal_c = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
+            AudioPortal2D::new(),
+        )));
+    let portal_d = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
+            AudioPortal2D::new(),
+        )));
+    if let Some(node) = runtime.nodes.get_mut(portal_a)
+        && let SceneNodeData::AudioPortal2D(portal) = &mut node.data
+    {
+        portal.targets.push(portal_b);
+    }
+    if let Some(node) = runtime.nodes.get_mut(portal_c)
+        && let SceneNodeData::AudioPortal2D(portal) = &mut node.data
+    {
+        portal.targets.push(portal_d);
+    }
+    let shape_a = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+    let shape_c = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, portal_a, shape_a));
+    assert!(NodeAPI::reparent(&mut runtime, portal_c, shape_c));
+    assert!(NodeAPI::set_global_transform_2d(
+        &mut runtime,
+        portal_a,
+        Transform2D::new(Vector2::new(4.0, 0.0), 0.0, Vector2::ONE),
+    ));
+    assert!(NodeAPI::set_global_transform_2d(
+        &mut runtime,
+        portal_b,
+        Transform2D::new(Vector2::new(2.5, 0.0), 0.0, Vector2::ONE),
+    ));
+    assert!(NodeAPI::set_global_transform_2d(
+        &mut runtime,
+        portal_c,
+        Transform2D::new(Vector2::new(2.0, 0.0), 0.0, Vector2::ONE),
+    ));
+    assert!(NodeAPI::set_global_transform_2d(
+        &mut runtime,
+        portal_d,
+        Transform2D::new(Vector2::new(0.5, 0.0), 0.0, Vector2::ONE),
+    ));
+    assert!(runtime.play_runtime_audio_2d(
+        looped_audio(),
+        Vector2::new(5.0, 0.0),
+        SpatialAudioOptions::new(10.0),
+    ));
+    runtime.update_audio_propagation(1.0);
+    let result = runtime.audio.sounds[0].last_result.expect("result");
+    assert_eq!(result.perceived_2d, Some(Vector2::new(1.0, 0.0)));
+}
+
+#[test]
+fn audio_portal_skip_is_per_ray_branch() {
+    let mut runtime = Runtime::new();
+    let portal_a = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
+            AudioPortal2D::new(),
+        )));
+    let portal_b = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
+            AudioPortal2D::new(),
+        )));
+    let portal_c = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::AudioPortal2D(
+            AudioPortal2D::new(),
+        )));
+    if let Some(node) = runtime.nodes.get_mut(portal_a)
+        && let SceneNodeData::AudioPortal2D(portal) = &mut node.data
+    {
+        portal.targets.push(portal_b);
+    }
+    if let Some(node) = runtime.nodes.get_mut(portal_b)
+        && let SceneNodeData::AudioPortal2D(portal) = &mut node.data
+    {
+        portal.targets.push(portal_c);
+    }
+    let shape_a = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+    let shape_b = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, portal_a, shape_a));
+    assert!(NodeAPI::reparent(&mut runtime, portal_b, shape_b));
+    assert!(NodeAPI::set_global_transform_2d(
+        &mut runtime,
+        portal_a,
+        Transform2D::new(Vector2::new(4.0, 0.0), 0.0, Vector2::ONE),
+    ));
+    assert!(NodeAPI::set_global_transform_2d(
+        &mut runtime,
+        portal_b,
+        Transform2D::new(Vector2::new(2.5, 0.0), 0.0, Vector2::ONE),
+    ));
+    assert!(NodeAPI::set_global_transform_2d(
+        &mut runtime,
+        portal_c,
+        Transform2D::new(Vector2::new(0.5, 0.0), 0.0, Vector2::ONE),
+    ));
+    assert!(runtime.play_runtime_audio_2d(
+        looped_audio(),
+        Vector2::new(5.0, 0.0),
+        SpatialAudioOptions::new(10.0),
+    ));
+    assert!(runtime.play_runtime_audio_2d(
+        looped_audio(),
+        Vector2::new(3.5, 0.0),
+        SpatialAudioOptions::new(10.0),
+    ));
+    runtime.update_audio_propagation(1.0);
+
+    let mut perceived: Vec<Vector2> = runtime
+        .audio
+        .sounds
+        .iter()
+        .filter_map(|sound| sound.last_result.and_then(|result| result.perceived_2d))
+        .collect();
+    perceived.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap());
+    assert_eq!(
+        perceived,
+        vec![Vector2::new(1.0, 0.0), Vector2::new(3.0, 0.0)]
+    );
+}
+
+#[test]
+fn audio_portal_3d_transports_through_connected_exit() {
+    let mut without_portal = Runtime::new();
+    let wall = NodeAPI::create::<StaticBody3D>(&mut without_portal);
+    let shape = NodeAPI::create::<CollisionShape3D>(&mut without_portal);
+    assert!(NodeAPI::reparent(&mut without_portal, wall, shape));
+    assert!(NodeAPI::set_global_transform_3d(
+        &mut without_portal,
+        wall,
+        Transform3D::new(
+            Vector3::new(0.0, 0.0, -2.5),
+            Quaternion::IDENTITY,
+            Vector3::ONE
+        ),
+    ));
+    assert!(without_portal.play_runtime_audio_3d(
+        looped_audio(),
+        Vector3::new(0.0, 0.0, -5.0),
+        SpatialAudioOptions::new(10.0),
+    ));
+    without_portal.update_audio_propagation(1.0);
+    let blocked = without_portal.audio.sounds[0].last_result.expect("result");
+
+    let mut with_portal = Runtime::new();
+    let wall = NodeAPI::create::<StaticBody3D>(&mut with_portal);
+    let shape = NodeAPI::create::<CollisionShape3D>(&mut with_portal);
+    assert!(NodeAPI::reparent(&mut with_portal, wall, shape));
+    assert!(NodeAPI::set_global_transform_3d(
+        &mut with_portal,
+        wall,
+        Transform3D::new(
+            Vector3::new(0.0, 0.0, -2.5),
+            Quaternion::IDENTITY,
+            Vector3::ONE
+        ),
+    ));
+    let portal = with_portal
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::AudioPortal3D(
+            AudioPortal3D::new(),
+        )));
+    let portal_exit = with_portal
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::AudioPortal3D(
+            AudioPortal3D::new(),
+        )));
+    if let Some(node) = with_portal.nodes.get_mut(portal)
+        && let SceneNodeData::AudioPortal3D(portal) = &mut node.data
+    {
+        portal.targets.push(portal_exit);
+    }
+    let portal_shape = NodeAPI::create::<CollisionShape3D>(&mut with_portal);
+    assert!(NodeAPI::reparent(&mut with_portal, portal, portal_shape));
+    assert!(NodeAPI::set_global_transform_3d(
+        &mut with_portal,
+        portal,
+        Transform3D::new(
+            Vector3::new(0.0, 0.0, -2.5),
+            Quaternion::IDENTITY,
+            Vector3::ONE
+        ),
+    ));
+    assert!(NodeAPI::set_global_transform_3d(
+        &mut with_portal,
+        portal_exit,
+        Transform3D::new(
+            Vector3::new(0.0, 0.0, -0.5),
+            Quaternion::IDENTITY,
+            Vector3::ONE
+        ),
+    ));
+    assert!(with_portal.play_runtime_audio_3d(
+        looped_audio(),
+        Vector3::new(0.0, 0.0, -5.0),
+        SpatialAudioOptions::new(10.0),
+    ));
+    with_portal.update_audio_propagation(1.0);
+    let opened = with_portal.audio.sounds[0].last_result.expect("result");
+    assert!(opened.volume > blocked.volume);
+    assert!(opened.low_pass < blocked.low_pass);
+    assert_eq!(opened.perceived_3d, Some(Vector3::new(0.0, 0.0, -1.0)));
 }
 
 #[test]

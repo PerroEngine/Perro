@@ -185,12 +185,12 @@ define_audio_node_3d!(AudioZone3D {
 
 define_audio_node_2d!(AudioPortal2D {
     enabled: bool = true,
-    target: NodeID = NodeID::nil(),
+    targets: Vec<NodeID> = Vec::new(),
     strength: f32 = 1.0,
 });
 
 define_audio_node_3d!(AudioPortal3D {
     enabled: bool = true,
-    target: NodeID = NodeID::nil(),
+    targets: Vec<NodeID> = Vec::new(),
     strength: f32 = 1.0,
 });

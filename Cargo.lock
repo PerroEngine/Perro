@@ -3213,6 +3213,7 @@ version = "0.1.0"
 name = "perro_pawdio"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "perro_asset_formats",
  "perro_ids",
  "perro_io",

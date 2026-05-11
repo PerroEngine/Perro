@@ -73,17 +73,18 @@ impl Runtime {
                 (material.reflection * (0.75 + hardness * 0.5)).clamp(0.0, 1.0),
                 self.audio.config.max_bounces_2d,
             );
-            if self.audio.has_audio_portal_2d
-                && let Some((portal_point, portal_strength)) =
-                    self.best_audio_portal_2d(listener_pos, source_pos)
-            {
-                let portal_strength = portal_strength.clamp(0.0, 1.0);
-                attenuation = attenuation.max(direct_attenuation * (0.65 + portal_strength * 0.35));
-                low_pass *= 1.0 - portal_strength * 0.75;
-                occlusion *= 1.0 - portal_strength * 0.75;
-                perceived = portal_point;
-                reflection = (reflection + portal_strength * 0.1).clamp(0.0, 1.0);
-            }
+        }
+        if self.audio.has_audio_portal_2d
+            && let Some(path) =
+                self.best_audio_portal_2d(source_pos, listener_pos, sound.options.occlusion_mask)
+        {
+            let portal_strength = path.strength.clamp(0.0, 1.0);
+            let portal_attenuation = 1.0 - (path.distance / range).clamp(0.0, 1.0);
+            attenuation = attenuation.max(portal_attenuation * (0.65 + portal_strength * 0.35));
+            low_pass *= 1.0 - portal_strength * 0.75;
+            occlusion *= 1.0 - portal_strength * 0.75;
+            perceived = path.exit;
+            reflection = (reflection + portal_strength * 0.1).clamp(0.0, 1.0);
         }
         let (sin, cos) = (-listener.rotation_radians).sin_cos();
         let local = perceived - listener_pos;
@@ -165,7 +166,18 @@ impl Runtime {
                 self.audio.config.max_bounces_3d,
             );
         }
-        let local = inverse_rotate_vec3(listener.rotation, source_pos - listener_pos);
+        if self.audio.has_audio_portal_3d
+            && let Some(path) = self.best_audio_portal_3d(source_pos, listener_pos)
+        {
+            let portal_strength = path.strength.clamp(0.0, 1.0);
+            let portal_attenuation = 1.0 - (path.distance / range).clamp(0.0, 1.0);
+            attenuation = attenuation.max(portal_attenuation * (0.65 + portal_strength * 0.35));
+            low_pass *= 1.0 - portal_strength * 0.75;
+            occlusion *= 1.0 - portal_strength * 0.75;
+            perceived = path.exit;
+            reflection = (reflection + portal_strength * 0.1).clamp(0.0, 1.0);
+        }
+        let local = inverse_rotate_vec3(listener.rotation, perceived - listener_pos);
         let zone = if self.audio.has_audio_zone_3d {
             self.audio_zone_mix_3d(listener_pos, source_pos)
         } else {
@@ -333,13 +345,158 @@ impl Runtime {
         &mut self,
         from: Vector2,
         to: Vector2,
-    ) -> Option<(Vector2, f32)> {
-        let dir = to - from;
-        let len = dir.length();
-        if len <= 0.0001 {
+        mask: u32,
+    ) -> Option<AudioPortalPath2D> {
+        let initial_dir = from.direction_to(to);
+        if initial_dir.length_squared() <= 0.0001 {
             return None;
         }
-        let mut best: Option<(Vector2, f32, f32)> = None;
+        let mut best: Option<AudioPortalPath2D> = None;
+        let mut stack = vec![(from, initial_dir, 0.0f32, from, 1.0f32, 0usize, 0u32, None)];
+        while let Some((
+            origin,
+            direction,
+            traveled,
+            perceived,
+            strength,
+            hops,
+            bounces,
+            skip_portal,
+        )) = stack.pop()
+        {
+            let to_listener = to - origin;
+            let listener_distance = to_listener.dot(direction);
+            let listener_reachable = listener_distance > 0.0001
+                && (to_listener - direction * listener_distance).length()
+                    <= AUDIO_PORTAL_MISS_TOLERANCE;
+            let hit = self.nearest_audio_portal_hit_2d(origin, direction, skip_portal);
+            if hops > 0
+                && listener_reachable
+                && hit
+                    .as_ref()
+                    .is_none_or(|hit| listener_distance < hit.distance - AUDIO_PORTAL_EPSILON)
+            {
+                self.audio.counters.raycasts = self.audio.counters.raycasts.saturating_add(1);
+                let block_hit = self.prepared_audio_raycast_2d(
+                    origin,
+                    direction,
+                    listener_distance,
+                    &PhysicsQueryFilter {
+                        mask,
+                        include_areas: false,
+                        exclude_nodes: Vec::new(),
+                    },
+                );
+                let blocked = block_hit.is_some_and(|hit| hit.distance <= listener_distance + 0.25);
+                if blocked {
+                    if bounces < self.audio.config.max_bounces_2d
+                        && let Some(hit) = block_hit
+                        && let Some(reflected) = reflect_2d(direction, hit.normal)
+                    {
+                        stack.push((
+                            hit.point + reflected * AUDIO_PORTAL_EPSILON,
+                            reflected,
+                            traveled + hit.distance,
+                            perceived,
+                            strength,
+                            hops,
+                            bounces + 1,
+                            None,
+                        ));
+                    }
+                } else {
+                    let distance = traveled + listener_distance;
+                    if best.as_ref().is_none_or(|path| distance < path.distance) {
+                        best = Some(AudioPortalPath2D {
+                            exit: perceived,
+                            strength,
+                            distance,
+                        });
+                    }
+                }
+            }
+            let Some(hit) = hit else {
+                continue;
+            };
+            if hops >= MAX_AUDIO_PORTAL_HOPS {
+                continue;
+            }
+            self.audio.counters.raycasts = self.audio.counters.raycasts.saturating_add(1);
+            let block_hit = self.prepared_audio_raycast_2d(
+                origin,
+                direction,
+                hit.distance,
+                &PhysicsQueryFilter {
+                    mask,
+                    include_areas: false,
+                    exclude_nodes: Vec::new(),
+                },
+            );
+            let blocked = block_hit.is_some_and(|ray_hit| {
+                ray_hit.distance < hit.distance - AUDIO_PORTAL_MISS_TOLERANCE
+            });
+            if blocked {
+                if bounces < self.audio.config.max_bounces_2d
+                    && let Some(ray_hit) = block_hit
+                    && let Some(reflected) = reflect_2d(direction, ray_hit.normal)
+                {
+                    stack.push((
+                        ray_hit.point + reflected * AUDIO_PORTAL_EPSILON,
+                        reflected,
+                        traveled + ray_hit.distance,
+                        perceived,
+                        strength,
+                        hops,
+                        bounces + 1,
+                        None,
+                    ));
+                }
+                continue;
+            }
+            for target in hit.targets.iter().copied() {
+                let Some(exit_transform) = self.get_global_transform_2d(target) else {
+                    continue;
+                };
+                let Some(SceneNodeData::AudioPortal2D(exit)) =
+                    self.nodes.get(target).map(|n| &n.data)
+                else {
+                    continue;
+                };
+                if !exit.enabled || target == hit.portal_id {
+                    continue;
+                }
+                let exit_point = transform_point_2d(exit_transform, hit.local_entry);
+                let exit_dir = transform_dir_2d(exit_transform, hit.local_dir);
+                if exit_dir.length_squared() <= 0.0001 {
+                    continue;
+                }
+                stack.push((
+                    exit_point + exit_dir * AUDIO_PORTAL_EPSILON,
+                    exit_dir,
+                    traveled + hit.distance,
+                    exit_point,
+                    strength.min(hit.strength).min(exit.strength),
+                    hops + 1,
+                    bounces,
+                    Some(target),
+                ));
+            }
+        }
+        best
+    }
+
+    pub(super) fn nearest_audio_portal_hit_2d(
+        &mut self,
+        from: Vector2,
+        direction: Vector2,
+        skip_portal: Option<NodeID>,
+    ) -> Option<AudioPortalHit2D> {
+        if direction.length_squared() <= 0.0001 {
+            return None;
+        }
+        let dir = direction.normalized();
+        let sweep = dir * self.audio.config.max_ray_distance_2d;
+        let mut best: Option<AudioPortalHit2D> = None;
         self.audio.scratch_ids.clear();
         for (id, node) in self.nodes.iter() {
             if matches!(node.data, SceneNodeData::AudioPortal2D(_)) {
@@ -348,6 +505,9 @@ impl Runtime {
         }
         for index in 0..self.audio.scratch_ids.len() {
             let portal_id = self.audio.scratch_ids[index];
+            if skip_portal == Some(portal_id) {
+                continue;
+            }
             let Some(SceneNodeData::AudioPortal2D(portal)) =
                 self.nodes.get(portal_id).map(|n| &n.data)
             else {
@@ -357,6 +517,13 @@ impl Runtime {
                 continue;
             }
             let strength = portal.strength;
+            let targets = portal.targets.clone();
+            if targets.is_empty() {
+                continue;
+            }
+            let Some(entry_transform) = self.get_global_transform_2d(portal_id) else {
+                continue;
+            };
             self.audio.scratch_child_ids.clear();
             if let Some(node) = self.nodes.get(portal_id) {
                 self.audio
@@ -365,40 +532,230 @@ impl Runtime {
             }
             for child_index in 0..self.audio.scratch_child_ids.len() {
                 let child = self.audio.scratch_child_ids[child_index];
-                let Some(shape_kind) =
-                    self.nodes
-                        .get(child)
-                        .and_then(|shape_node| match &shape_node.data {
-                            SceneNodeData::CollisionShape2D(shape) => Some(shape.shape),
-                            _ => None,
-                        })
-                else {
+                let Some((center, half_w, half_h)) = self.audio_zone_shape_2d(child) else {
                     continue;
                 };
-                let Some(global) = self.get_global_transform_2d(child) else {
-                    continue;
-                };
-                let (half_w, half_h) = match shape_kind {
-                    perro_nodes::Shape2D::Quad { width, height } => {
-                        (width.abs() * 0.5, height.abs() * 0.5)
+                if let Some((t, _normal)) = segment_aabb(from, sweep, center, half_w, half_h) {
+                    let distance = t * self.audio.config.max_ray_distance_2d;
+                    if distance <= AUDIO_PORTAL_EPSILON {
+                        continue;
                     }
-                    perro_nodes::Shape2D::Circle { radius } => (radius.abs(), radius.abs()),
-                    perro_nodes::Shape2D::Triangle { width, height, .. } => {
-                        (width.abs() * 0.5, height.abs() * 0.5)
+                    if best.as_ref().is_some_and(|hit| distance >= hit.distance) {
+                        continue;
                     }
-                };
-                if let Some((t, _normal)) = segment_aabb(from, dir, global.position, half_w, half_h)
-                {
-                    let distance = t * len;
-                    if best
-                        .as_ref()
-                        .is_none_or(|(_, _, best_distance)| distance < *best_distance)
-                    {
-                        best = Some((from + dir * t, strength, distance));
-                    }
+                    let entry = from + sweep * t;
+                    let local_entry = inverse_transform_point_2d(entry_transform, entry);
+                    best = Some(AudioPortalHit2D {
+                        portal_id,
+                        local_entry,
+                        local_dir: inverse_transform_dir_2d(entry_transform, dir),
+                        targets: targets.clone(),
+                        strength,
+                        distance,
+                    });
                 }
             }
         }
-        best.map(|(point, strength, _)| (point, strength))
+        best
+    }
+
+    pub(super) fn best_audio_portal_3d(
+        &mut self,
+        from: Vector3,
+        to: Vector3,
+    ) -> Option<AudioPortalPath3D> {
+        let initial_dir = from.direction_to(to);
+        if initial_dir.length_squared() <= 0.0001 {
+            return None;
+        }
+        let mut best: Option<AudioPortalPath3D> = None;
+        let mut stack = vec![(from, initial_dir, 0.0f32, from, 1.0f32, 0usize, 0u32, None)];
+        while let Some((
+            origin,
+            direction,
+            traveled,
+            perceived,
+            strength,
+            hops,
+            bounces,
+            skip_portal,
+        )) = stack.pop()
+        {
+            let to_listener = to - origin;
+            let listener_distance = to_listener.dot(direction);
+            let listener_reachable = listener_distance > 0.0001
+                && (to_listener - direction * listener_distance).length()
+                    <= AUDIO_PORTAL_MISS_TOLERANCE;
+            let hit = self.nearest_audio_portal_hit_3d(origin, direction, skip_portal);
+            if hops > 0
+                && listener_reachable
+                && hit
+                    .as_ref()
+                    .is_none_or(|hit| listener_distance < hit.distance - AUDIO_PORTAL_EPSILON)
+            {
+                self.audio.counters.raycasts = self.audio.counters.raycasts.saturating_add(1);
+                let block_hit =
+                    self.prepared_audio_raycast_3d(origin, direction, listener_distance, false);
+                let blocked = block_hit.is_some_and(|hit| hit.distance <= listener_distance + 0.25);
+                if blocked {
+                    if bounces < self.audio.config.max_bounces_3d
+                        && let Some(hit) = block_hit
+                        && let Some(reflected) = reflect_3d(direction, hit.normal)
+                    {
+                        stack.push((
+                            hit.point + reflected * AUDIO_PORTAL_EPSILON,
+                            reflected,
+                            traveled + hit.distance,
+                            perceived,
+                            strength,
+                            hops,
+                            bounces + 1,
+                            None,
+                        ));
+                    }
+                } else {
+                    let distance = traveled + listener_distance;
+                    if best.as_ref().is_none_or(|path| distance < path.distance) {
+                        best = Some(AudioPortalPath3D {
+                            exit: perceived,
+                            strength,
+                            distance,
+                        });
+                    }
+                }
+            }
+            let Some(hit) = hit else {
+                continue;
+            };
+            if hops >= MAX_AUDIO_PORTAL_HOPS {
+                continue;
+            }
+            self.audio.counters.raycasts = self.audio.counters.raycasts.saturating_add(1);
+            let block_hit = self.prepared_audio_raycast_3d(origin, direction, hit.distance, false);
+            let blocked = block_hit.is_some_and(|ray_hit| {
+                ray_hit.distance < hit.distance - AUDIO_PORTAL_MISS_TOLERANCE
+            });
+            if blocked {
+                if bounces < self.audio.config.max_bounces_3d
+                    && let Some(ray_hit) = block_hit
+                    && let Some(reflected) = reflect_3d(direction, ray_hit.normal)
+                {
+                    stack.push((
+                        ray_hit.point + reflected * AUDIO_PORTAL_EPSILON,
+                        reflected,
+                        traveled + ray_hit.distance,
+                        perceived,
+                        strength,
+                        hops,
+                        bounces + 1,
+                        None,
+                    ));
+                }
+                continue;
+            }
+            for target in hit.targets.iter().copied() {
+                let Some(exit_transform) = self.get_global_transform_3d(target) else {
+                    continue;
+                };
+                let Some(SceneNodeData::AudioPortal3D(exit)) =
+                    self.nodes.get(target).map(|n| &n.data)
+                else {
+                    continue;
+                };
+                if !exit.enabled || target == hit.portal_id {
+                    continue;
+                }
+                let exit_point = transform_point_3d(exit_transform, hit.local_entry);
+                let exit_dir = transform_dir_3d(exit_transform, hit.local_dir);
+                if exit_dir.length_squared() <= 0.0001 {
+                    continue;
+                }
+                stack.push((
+                    exit_point + exit_dir * AUDIO_PORTAL_EPSILON,
+                    exit_dir,
+                    traveled + hit.distance,
+                    exit_point,
+                    strength.min(hit.strength).min(exit.strength),
+                    hops + 1,
+                    bounces,
+                    Some(target),
+                ));
+            }
+        }
+        best
+    }
+
+    pub(super) fn nearest_audio_portal_hit_3d(
+        &mut self,
+        from: Vector3,
+        direction: Vector3,
+        skip_portal: Option<NodeID>,
+    ) -> Option<AudioPortalHit3D> {
+        if direction.length_squared() <= 0.0001 {
+            return None;
+        }
+        let dir = direction.normalized();
+        let sweep = dir * self.audio.config.max_ray_distance_3d;
+        let mut best: Option<AudioPortalHit3D> = None;
+        self.audio.scratch_ids.clear();
+        for (id, node) in self.nodes.iter() {
+            if matches!(node.data, SceneNodeData::AudioPortal3D(_)) {
+                self.audio.scratch_ids.push(id);
+            }
+        }
+        for index in 0..self.audio.scratch_ids.len() {
+            let portal_id = self.audio.scratch_ids[index];
+            if skip_portal == Some(portal_id) {
+                continue;
+            }
+            let Some(SceneNodeData::AudioPortal3D(portal)) =
+                self.nodes.get(portal_id).map(|n| &n.data)
+            else {
+                continue;
+            };
+            if !portal.enabled {
+                continue;
+            }
+            let strength = portal.strength;
+            let targets = portal.targets.clone();
+            if targets.is_empty() {
+                continue;
+            }
+            let Some(entry_transform) = self.get_global_transform_3d(portal_id) else {
+                continue;
+            };
+            self.audio.scratch_child_ids.clear();
+            if let Some(node) = self.nodes.get(portal_id) {
+                self.audio
+                    .scratch_child_ids
+                    .extend_from_slice(node.children_slice());
+            }
+            for child_index in 0..self.audio.scratch_child_ids.len() {
+                let child = self.audio.scratch_child_ids[child_index];
+                let Some((center, half)) = self.audio_zone_shape_3d(child) else {
+                    continue;
+                };
+                if let Some(t) = segment_aabb_3d(from, sweep, center, half) {
+                    let distance = t * self.audio.config.max_ray_distance_3d;
+                    if distance <= AUDIO_PORTAL_EPSILON {
+                        continue;
+                    }
+                    if best.as_ref().is_some_and(|hit| distance >= hit.distance) {
+                        continue;
+                    }
+                    let entry = from + sweep * t;
+                    let local_entry = inverse_transform_point_3d(entry_transform, entry);
+                    best = Some(AudioPortalHit3D {
+                        portal_id,
+                        local_entry,
+                        local_dir: inverse_transform_dir_3d(entry_transform, dir),
+                        targets: targets.clone(),
+                        strength,
+                        distance,
+                    });
+                }
+            }
+        }
+        best
     }
 }

@@ -92,7 +92,7 @@ Audio 2D:
 - `AudioPortal2D`
 - `AudioMask2D` is invisible audio-only geometry with `CollisionShape2D` children.
 - `AudioZone2D` stores reverb/echo/dampening intent for listener, emitter, or path zones.
-- `AudioPortal2D` marks doors, windows, vents, or openings for cheaper diffraction/path search.
+- `AudioPortal2D` marks one-way inputs with `CollisionShape2D` children and linked portal exits. Hit point and ray direction transform through target portal global transforms, then continue through portal hits or physics bounces. Immediate re-entry into the portal just exited is blocked until another portal hit or physics bounce.
 
 `TileMap2D` is the tile map node.
 It uses `.ptileset` data and can emit static 2D colliders from `collision_shape = "auto"`.
@@ -198,9 +198,9 @@ Audio 3D:
 - `AudioMask3D`
 - `AudioZone3D`
 - `AudioPortal3D`
-- `AudioMask3D` is invisible audio-only geometry with `CollisionShape3D` children.
+- `AudioMask3D` is planned invisible audio-only geometry with `CollisionShape3D` children.
 - `AudioZone3D` stores reverb/echo/dampening intent for listener, emitter, or path zones.
-- `AudioPortal3D` marks doors, windows, vents, or openings for cheaper diffraction/path search.
+- `AudioPortal3D` marks one-way inputs with `CollisionShape3D` children and linked portal exits. Hit point and ray direction transform through target portal global transforms, then continue through portal hits or physics bounces. Immediate re-entry into the portal just exited is blocked until another portal hit or physics bounce.
 
 `Skeleton3D`
 

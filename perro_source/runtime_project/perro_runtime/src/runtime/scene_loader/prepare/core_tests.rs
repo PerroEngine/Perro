@@ -1163,4 +1163,60 @@ mod tests {
         assert_eq!(zone3d.effect.dampening, 0.5);
         assert!(!zone3d.affect_emitters);
     }
+
+    #[test]
+    fn scene_loader_builds_audio_portal_link_fields() {
+        let scene = Parser::new(
+            r#"
+            [portal2d]
+            [AudioPortal2D]
+                enabled = false
+                strength = 0.55
+                targets = [8, 9, 10]
+            [/AudioPortal2D]
+            [/portal2d]
+
+            [portal3d]
+            [AudioPortal3D]
+                strength = 0.75
+                connections = [11, 12]
+            [/AudioPortal3D]
+            [/portal3d]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|_| Err("unexpected root_of".to_string()))
+                .expect("prepare scene");
+        let portal2d = prepared
+            .nodes
+            .iter()
+            .find(|node| node.key_name == "portal2d")
+            .expect("portal2d");
+        let SceneNodeData::AudioPortal2D(portal2d) = &portal2d.node.data else {
+            panic!("expected AudioPortal2D");
+        };
+        assert!(!portal2d.enabled);
+        assert_eq!(portal2d.strength, 0.55);
+        assert_eq!(
+            portal2d.targets,
+            vec![
+                NodeID::from_u32(8),
+                NodeID::from_u32(9),
+                NodeID::from_u32(10)
+            ]
+        );
+
+        let portal3d = prepared
+            .nodes
+            .iter()
+            .find(|node| node.key_name == "portal3d")
+            .expect("portal3d");
+        let SceneNodeData::AudioPortal3D(portal3d) = &portal3d.node.data else {
+            panic!("expected AudioPortal3D");
+        };
+        assert_eq!(portal3d.strength, 0.75);
+        assert_eq!(portal3d.targets, vec![NodeID::from_u32(11), NodeID::from_u32(12)]);
+    }
 }

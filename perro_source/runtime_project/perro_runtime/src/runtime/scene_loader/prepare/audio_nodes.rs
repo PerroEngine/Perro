@@ -16,6 +16,7 @@ pub(super) fn build_audio_zone_2d(data: &SceneDefNodeData) -> AudioZone2D {
 pub(super) fn build_audio_portal_2d(data: &SceneDefNodeData) -> AudioPortal2D {
     let mut node = AudioPortal2D::new();
     apply_node_2d_data(&mut node.base, data);
+    apply_audio_portal_2d_data(&mut node, data);
     node
 }
 
@@ -35,7 +36,50 @@ pub(super) fn build_audio_zone_3d(data: &SceneDefNodeData) -> AudioZone3D {
 pub(super) fn build_audio_portal_3d(data: &SceneDefNodeData) -> AudioPortal3D {
     let mut node = AudioPortal3D::new();
     apply_node_3d_data(&mut node.base, data);
+    apply_audio_portal_3d_data(&mut node, data);
     node
+}
+
+pub(super) fn apply_audio_portal_2d_data(node: &mut AudioPortal2D, data: &SceneDefNodeData) {
+    for (name, value) in flatten_scene_node_fields(data) {
+        match name.as_ref() {
+            "enabled" => {
+                if let Some(v) = as_bool(&value) {
+                    node.enabled = v;
+                }
+            }
+            "strength" => {
+                if let Some(v) = as_f32(&value) {
+                    node.strength = v;
+                }
+            }
+            "targets" | "connections" | "connected" => {
+                node.targets = as_node_ids(&value);
+            }
+            _ => {}
+        }
+    }
+}
+
+pub(super) fn apply_audio_portal_3d_data(node: &mut AudioPortal3D, data: &SceneDefNodeData) {
+    for (name, value) in flatten_scene_node_fields(data) {
+        match name.as_ref() {
+            "enabled" => {
+                if let Some(v) = as_bool(&value) {
+                    node.enabled = v;
+                }
+            }
+            "strength" => {
+                if let Some(v) = as_f32(&value) {
+                    node.strength = v;
+                }
+            }
+            "targets" | "connections" | "connected" => {
+                node.targets = as_node_ids(&value);
+            }
+            _ => {}
+        }
+    }
 }
 
 pub(super) fn apply_audio_zone_2d_data(node: &mut AudioZone2D, data: &SceneDefNodeData) {
@@ -149,5 +193,12 @@ pub(super) fn apply_audio_zone_effect(effect: &mut perro_nodes::AudioZoneEffect,
             }
             _ => {}
         }
+    }
+}
+
+fn as_node_ids(value: &SceneValue) -> Vec<NodeID> {
+    match value {
+        SceneValue::Array(items) => items.iter().filter_map(as_node_id).collect(),
+        _ => as_node_id(value).into_iter().collect(),
     }
 }

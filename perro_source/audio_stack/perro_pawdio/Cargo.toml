@@ -9,5 +9,12 @@ perro_io = { path = "../../io_stack/perro_io" }
 perro_ids = { path = "../../core/perro_ids" }
 rodio = { version = "0.17", default-features = true }
 
+[dev-dependencies]
+criterion = "0.5"
+
 [features]
 profile = []
+
+[[bench]]
+name = "play_source"
+harness = false

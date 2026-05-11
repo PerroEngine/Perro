@@ -10,9 +10,9 @@ use perro_nodes::{
 };
 use perro_resource_context::sub_apis::AudioAPI;
 use perro_runtime_context::sub_apis::{
-    AudioEffects, RuntimeAudio, RuntimeAudioAPI, SpatialAudioOptions,
+    AudioEffects, PhysicsQueryFilter, RuntimeAudio, RuntimeAudioAPI, SpatialAudioOptions,
 };
-use perro_structs::{Vector2, Vector3};
+use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
 use std::f32::consts::TAU;
 use std::time::{Duration, Instant};
 
@@ -21,6 +21,9 @@ const LISTENER_FIELD_SOUND_THRESHOLD_2D: usize = 64;
 const LISTENER_FIELD_SOUND_THRESHOLD_3D: usize = 128;
 const LISTENER_FIELD_RAYS_2D: usize = 64;
 const LISTENER_FIELD_RAYS_3D: usize = 96;
+const MAX_AUDIO_PORTAL_HOPS: usize = 32;
+const AUDIO_PORTAL_EPSILON: f32 = 0.01;
+const AUDIO_PORTAL_MISS_TOLERANCE: f32 = 0.25;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct AudioPropagationConfigRt {
@@ -108,6 +111,40 @@ struct AudioHit2D {
     thickness: f32,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct AudioPortalPath2D {
+    exit: Vector2,
+    strength: f32,
+    distance: f32,
+}
+
+#[derive(Clone, Debug)]
+struct AudioPortalHit2D {
+    portal_id: NodeID,
+    local_entry: Vector2,
+    local_dir: Vector2,
+    targets: Vec<NodeID>,
+    strength: f32,
+    distance: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct AudioPortalPath3D {
+    exit: Vector3,
+    strength: f32,
+    distance: f32,
+}
+
+#[derive(Clone, Debug)]
+struct AudioPortalHit3D {
+    portal_id: NodeID,
+    local_entry: Vector3,
+    local_dir: Vector3,
+    targets: Vec<NodeID>,
+    strength: f32,
+    distance: f32,
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 struct AudioZoneMix {
     reverb_send: f32,
@@ -135,6 +172,7 @@ pub(crate) struct AudioPropagationState {
     scratch_field_dirs_3d: Vec<Vector3>,
     has_audio_mask_2d: bool,
     has_audio_portal_2d: bool,
+    has_audio_portal_3d: bool,
     has_audio_zone_2d: bool,
     has_audio_zone_3d: bool,
     audio_scene_flags_node_count: usize,
@@ -155,6 +193,7 @@ impl AudioPropagationState {
             scratch_field_dirs_3d: Vec::new(),
             has_audio_mask_2d: false,
             has_audio_portal_2d: false,
+            has_audio_portal_3d: false,
             has_audio_zone_2d: false,
             has_audio_zone_3d: false,
             audio_scene_flags_node_count: usize::MAX,

@@ -4,6 +4,10 @@ Access:
 
 - `res.Audio()`
 
+Shared backend, cache, bus, `.pawdio`, and propagation concepts:
+
+- [Audio](../../../audio.md)
+
 ## Shared Macros
 
 - `audio_bus!("name") -> AudioBusID`
@@ -113,7 +117,7 @@ Rules:
 - Audio2D has no manual pan; pan comes from the propagated perceived direction.
 - Audio outside `range` or `[audio].listener_max_distance` is skipped.
 - Direct volume fades linearly from full at camera to silent at `range`.
-- Physics bodies and `AudioMask2D` can add occlusion, transmission loss, low-pass muffling, reflection, and corner/portal diffraction.
+- Propagation uses listener, physics audio materials, masks, zones, and portals.
 - Use Runtime Audio when the sound should be bound to a moving node.
 
 ## Audio3D
@@ -149,59 +153,8 @@ Rules:
 - Audio3D has no manual pan; pan comes from the propagated perceived direction.
 - Audio outside `range` or `[audio].listener_max_distance` is skipped.
 - Direct volume fades linearly from full at camera to silent at `range`.
-- Physics bodies can add occlusion, transmission loss, low-pass muffling, reflection, and diffraction approximation.
+- Propagation uses listener, physics audio materials, zones, and portals.
 - Use Runtime Audio when the sound should follow a moving node.
-
-## Propagation
-
-Positional `Audio2D` and `Audio3D` do not play through the simple Bark pan path directly.
-They enqueue a spatial request.
-The runtime drains that queue during the audio propagation tick and creates a Bark playback with live spatial params.
-
-Propagation runs only while active positional sounds exist.
-If no active positional sounds exist, no ray work is done that frame.
-
-Solver inputs:
-
-- active `Camera2D` or `Camera3D` as listener
-- source position and range
-- `StaticBody2D/3D`, `RigidBody2D/3D`, and `CollisionShape2D/3D` audio material fields
-- `AudioMask2D/3D`
-- `AudioPortal2D/3D`
-
-Default physics bodies participate in audio occlusion/reflection when `audio_interaction = true`.
-Use audio masks, zones, and portals only for invisible or non-physical audio geometry.
-
-Audio material fields:
-
-- `audio_interaction`
-- `absorption`
-- `reflection`
-- `transmission`
-- `diffusion`
-- `low_pass_strength`
-- `thickness_multiplier`
-- `occlusion_mask`
-
-Project config:
-
-```toml
-[audio]
-listener_max_distance = 500.0
-propagation_tick_hz = 20
-energy_cutoff = 0.02
-debug_rays = false
-
-[audio.propagation_2d]
-max_bounces = 4
-rays_per_tick = 64
-max_ray_distance = 500.0
-
-[audio.propagation_3d]
-max_bounces = 4
-rays_per_tick = 128
-max_ray_distance = 500.0
-```
 
 ## Shared Methods
 
@@ -230,28 +183,6 @@ max_ray_distance = 500.0
 - `audio_stop!(res, bus_id, cfg)` is equivalent to `res.Audio().stop_audio(bus_id, cfg)`.
 - `audio_stop!(res, cfg)` is equivalent to `res.Audio().stop_master_audio(cfg)`.
 - Other audio macros map directly to same-named `res.Audio()` methods.
-
-## Runtime Behavior
-
-- Script call enqueues an audio command via `RuntimeResourceApi`.
-- `perro_pawdio` handles commands on its own audio thread.
-- Positional `Audio2D` and `Audio3D` are queued for runtime propagation before Bark playback starts.
-- Audio bytes/duration are cached by source path for reuse.
-- `audio_load!` caches as unreserved (`reserved: false`).
-- `audio_reserve!` caches as reserved (`reserved: true`), preventing automatic eviction.
-- Unreserved cached audio is evicted after idle time with `ttl = max(2.0 * audio_length, 250ms)`, and idle timer starts when playback ends/stops.
-- Playback uses one sink per source path; replaying same source replaces previous playback.
-- Final loudness is multiplicative:
-  - `final_volume = master_volume * bus_volume * audio.volume` when bus is provided
-  - `final_volume = master_volume * audio.volume` when no bus is provided
-- Final playback rate is multiplicative:
-  - `final_speed = bus_speed * audio.effects.speed` when bus is provided
-  - `final_speed = audio.effects.speed` when no bus is provided
-- `effects.speed` controls playback speed multiplier and also affects pitch.
-- Effective playback segment:
-  - starts at `from_start`
-  - ends `from_end` seconds before the source end (when duration is known)
-  - if `from_start + from_end` removes the full clip, playback is rejected
 
 ## Example
 
