@@ -1,0 +1,1868 @@
+use super::*;
+use perro_nodes::{SceneNode, SceneNodeData};
+use perro_runtime_context::sub_apis::NodeAPI;
+use perro_structs::Color;
+use perro_ui::{
+    UiAnchor, UiAnimatedImage, UiAnimatedImageFrameSet, UiGrid, UiHLayout, UiPanel,
+    UiScrollContainer, UiTreeList, UiVLayout, UiVector2,
+};
+
+#[test]
+fn unchanged_ui_skips_redundant_upsert() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let node = insert_panel(&mut runtime, [120.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    assert_eq!(commands.iter().filter(|cmd| matches!(cmd, RenderCommand::Ui(UiCommand::UpsertPanel { node: n, .. }) if *n == node)).count(), 1);
+
+    runtime.clear_dirty_flags();
+    runtime.extract_render_ui_commands();
+    commands.clear();
+    runtime.drain_render_commands(&mut commands);
+    assert!(commands.is_empty());
+}
+
+#[test]
+fn ui_animated_image_emits_current_frame_region() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut image = UiAnimatedImage::new();
+    image.texture = TextureID::from_parts(42, 0);
+    image.layout.size = UiVector2::pixels(64.0, 64.0);
+    image.current_frame = 1;
+    image.animations.push(UiAnimatedImageFrameSet {
+        name: Cow::Borrowed("default"),
+        start: [0.0, 0.0],
+        frame_size: [16.0, 16.0],
+        frame_count: 4,
+        columns: 2,
+        fps: 12.0,
+    });
+    let node = insert_ui_node(&mut runtime, SceneNodeData::UiAnimatedImage(image));
+
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertImage { node: n, uv_min, uv_max, .. })
+            if *n == node && *uv_min == [16.0, 0.0] && *uv_max == [32.0, 16.0]
+    )));
+}
+
+#[test]
+fn viewport_resize_recomputes_percent_ui_rects() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut panel = UiPanel::new();
+    panel.layout.anchor = UiAnchor::TopRight;
+    panel.layout.size = UiVector2::ratio(0.5, 0.25);
+    panel.style.fill = Color::new(0.1, 0.2, 0.3, 1.0);
+    let node = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(panel));
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    runtime.set_viewport_size(1200, 900);
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertPanel { node: n, rect, .. })
+            if *n == node
+                && rect.size == [600.0, 225.0]
+                && rect.center == [300.0, 337.5]
+    )));
+}
+
+#[test]
+fn ui_parent_scale_preserves_child_virtual_layout_size() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut parent = UiPanel::new();
+    parent.layout.size = UiVector2::pixels(200.0, 100.0);
+    parent.transform.scale = Vector2::new(0.5, 0.5);
+    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent));
+
+    let mut child = UiPanel::new();
+    child.layout.size = UiVector2::ratio(1.0, 1.0);
+    let child = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(child));
+    attach_child(&mut runtime, parent, child);
+
+    runtime.extract_render_ui_commands();
+
+    let parent_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&parent)
+        .expect("parent rect exists");
+    let child_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&child)
+        .expect("child rect exists");
+
+    assert_eq!(parent_rect.size, Vector2::new(100.0, 50.0));
+    assert_eq!(child_rect.center, parent_rect.center);
+    assert_eq!(child_rect.size, parent_rect.size);
+}
+
+#[test]
+fn dirty_ui_node_emits_changed_upsert_only() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let node = insert_panel(&mut runtime, [120.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    runtime.clear_dirty_flags();
+
+    if let Some(scene_node) = runtime.nodes.get_mut(node)
+        && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
+    {
+        panel.style.fill = Color::new(0.8, 0.1, 0.1, 1.0);
+    }
+    runtime.mark_needs_rerender(node);
+    runtime.extract_render_ui_commands();
+    commands.clear();
+    runtime.drain_render_commands(&mut commands);
+
+    assert_eq!(commands.len(), 1);
+    assert!(
+        matches!(&commands[0], RenderCommand::Ui(UiCommand::UpsertPanel { node: n, fill, .. }) if *n == node && *fill == [0.8, 0.1, 0.1, 1.0])
+    );
+}
+
+#[test]
+fn ui_reparent_marks_layout_dirty_without_resize() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut parent_a = UiPanel::new();
+    parent_a.layout.size = UiVector2::pixels(200.0, 200.0);
+    parent_a.transform.translation.x = -0.5;
+    let parent_a = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent_a));
+
+    let mut parent_b = UiPanel::new();
+    parent_b.layout.size = UiVector2::pixels(200.0, 200.0);
+    parent_b.transform.translation.x = 0.5;
+    let parent_b = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent_b));
+
+    let child = insert_panel(&mut runtime, [40.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    attach_child(&mut runtime, parent_a, child);
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    assert!(runtime.reparent(parent_b, child));
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertPanel { node, rect, .. })
+            if *node == child && rect.center == [100.0, 0.0]
+    )));
+}
+
+#[test]
+fn ui_descendant_reparented_via_non_ui_wrapper_recomputes_parent_space() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut preview = UiPanel::new();
+    preview.layout.size = UiVector2::ratio(1.0, 1.0);
+    preview.transform.scale = Vector2::new(0.5, 0.5);
+    let preview = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(preview));
+
+    let wrapper = runtime.create::<perro_nodes::Node2D>();
+    let mut ui_root = UiPanel::new();
+    ui_root.layout.size = UiVector2::ratio(1.0, 1.0);
+    let ui_root = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(ui_root));
+    attach_child(&mut runtime, wrapper, ui_root);
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    assert!(runtime.reparent(preview, wrapper));
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertPanel { node, rect, .. })
+            if *node == ui_root && rect.size == [400.0, 300.0]
+    )));
+}
+
+#[test]
+fn ui_descendant_under_node3d_wrapper_resolves_against_closest_ui_parent() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut root = UiPanel::new();
+    root.layout.size = UiVector2::ratio(0.5, 0.5);
+    let root = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(root));
+
+    let wrapper = runtime.create::<perro_nodes::Node3D>();
+    let mut child = UiPanel::new();
+    child.layout.size = UiVector2::ratio(1.0, 1.0);
+    let child = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(child));
+    attach_child(&mut runtime, wrapper, child);
+    attach_child(&mut runtime, root, wrapper);
+
+    runtime.extract_render_ui_commands();
+
+    let root_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&root)
+        .copied()
+        .expect("root rect exists");
+    let child_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&child)
+        .copied()
+        .expect("child rect exists");
+    assert_eq!(child_rect.size, root_rect.size);
+    assert_eq!(child_rect.center, root_rect.center);
+}
+
+#[test]
+fn ui_descendant_under_animation_player_wrapper_resolves_against_closest_ui_parent() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut root = UiPanel::new();
+    root.layout.size = UiVector2::ratio(0.5, 0.5);
+    let root = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(root));
+
+    let wrapper = runtime.create::<perro_nodes::AnimationPlayer>();
+    let mut child = UiPanel::new();
+    child.layout.size = UiVector2::ratio(1.0, 1.0);
+    let child = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(child));
+    attach_child(&mut runtime, wrapper, child);
+    attach_child(&mut runtime, root, wrapper);
+
+    runtime.extract_render_ui_commands();
+
+    let root_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&root)
+        .copied()
+        .expect("root rect exists");
+    let child_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&child)
+        .copied()
+        .expect("child rect exists");
+    assert_eq!(child_rect.size, root_rect.size);
+    assert_eq!(child_rect.center, root_rect.center);
+}
+
+#[test]
+fn ui_auto_layout_includes_ui_descendants_through_non_ui_wrappers() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut layout = UiHLayout::new();
+    layout.layout.size = UiVector2::pixels(300.0, 120.0);
+    layout.inner.h_spacing = 20.0 / 300.0;
+    let layout = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(layout));
+
+    let left = insert_panel(&mut runtime, [80.0, 80.0], Color::new(1.0, 0.0, 0.0, 1.0));
+    attach_child(&mut runtime, layout, left);
+
+    let wrapper = runtime.create::<perro_nodes::Node3D>();
+    let right = insert_panel(&mut runtime, [80.0, 80.0], Color::new(0.0, 1.0, 0.0, 1.0));
+    attach_child(&mut runtime, wrapper, right);
+    attach_child(&mut runtime, layout, wrapper);
+
+    runtime.extract_render_ui_commands();
+
+    let left_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&left)
+        .copied()
+        .expect("left rect exists");
+    let right_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&right)
+        .copied()
+        .expect("right rect exists");
+    let delta = right_rect.center.x - left_rect.center.x;
+    assert!((delta.abs() - 100.0).abs() < 0.001);
+}
+
+#[test]
+fn ui_child_added_to_retained_layout_renders_without_resize() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut layout = UiVLayout::new();
+    layout.layout.size = UiVector2::pixels(300.0, 200.0);
+    let layout = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(layout));
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    let child = runtime.create::<UiPanel>();
+    assert!(runtime.reparent(layout, child));
+    let _ = runtime.with_node_mut::<UiPanel, _, _>(child, |panel| {
+        panel.layout.size = UiVector2::pixels(80.0, 40.0);
+        panel.style.fill = Color::new(0.7, 0.2, 0.1, 1.0);
+    });
+
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertPanel { node, rect, fill, .. })
+            if *node == child && rect.size == [80.0, 40.0] && *fill == [0.7, 0.2, 0.1, 1.0]
+    )));
+}
+
+#[test]
+fn button_uses_hover_and_pressed_styles_from_mouse_state() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let node = insert_button(&mut runtime, [120.0, 40.0]);
+
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
+            if *n == node && *fill == [0.1, 0.2, 0.3, 1.0]
+    )));
+    runtime.clear_dirty_flags();
+
+    runtime.set_mouse_position(400.0, 300.0);
+    runtime.extract_render_ui_commands();
+    commands.clear();
+    runtime.drain_render_commands(&mut commands);
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
+            if *n == node && *fill == [0.2, 0.3, 0.4, 1.0]
+    )));
+
+    runtime.clear_dirty_flags();
+    runtime.set_mouse_button_state(MouseButton::Left, true);
+    runtime.extract_render_ui_commands();
+    commands.clear();
+    runtime.drain_render_commands(&mut commands);
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
+            if *n == node && *fill == [0.3, 0.4, 0.5, 1.0]
+    )));
+}
+
+#[test]
+fn disabled_button_ignores_hover_and_pressed_mouse_state() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let node = insert_button(&mut runtime, [120.0, 40.0]);
+    if let Some(scene_node) = runtime.nodes.get_mut(node)
+        && let SceneNodeData::UiButton(button) = &mut scene_node.data
+    {
+        button.disabled = true;
+    }
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    runtime.set_mouse_position(400.0, 300.0);
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    assert!(!commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
+            if *n == node && *fill == [0.2, 0.3, 0.4, 1.0]
+    )));
+    assert_eq!(runtime.take_cursor_icon_request(), None);
+
+    runtime.clear_dirty_flags();
+    runtime.set_mouse_button_state(MouseButton::Left, true);
+    runtime.extract_render_ui_commands();
+    commands.clear();
+    runtime.drain_render_commands(&mut commands);
+    assert!(!commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
+            if *n == node && *fill == [0.3, 0.4, 0.5, 1.0]
+    )));
+    assert_eq!(runtime.take_cursor_icon_request(), None);
+}
+
+#[test]
+fn input_disabled_button_ignores_hover_and_pressed_mouse_state() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let node = insert_button(&mut runtime, [120.0, 40.0]);
+    if let Some(scene_node) = runtime.nodes.get_mut(node)
+        && let SceneNodeData::UiButton(button) = &mut scene_node.data
+    {
+        button.input_enabled = false;
+    }
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    runtime.set_mouse_position(400.0, 300.0);
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    assert!(!commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
+            if *n == node && *fill == [0.2, 0.3, 0.4, 1.0]
+    )));
+    assert_eq!(runtime.take_cursor_icon_request(), None);
+
+    runtime.clear_dirty_flags();
+    runtime.set_mouse_button_state(MouseButton::Left, true);
+    runtime.extract_render_ui_commands();
+    commands.clear();
+    runtime.drain_render_commands(&mut commands);
+    assert!(!commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
+            if *n == node && *fill == [0.3, 0.4, 0.5, 1.0]
+    )));
+    assert_eq!(runtime.take_cursor_icon_request(), None);
+}
+
+#[test]
+fn disabling_hovered_button_restores_neutral_visual_state() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let node = insert_button(&mut runtime, [120.0, 40.0]);
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    runtime.set_mouse_position(400.0, 300.0);
+    runtime.set_mouse_button_state(MouseButton::Left, true);
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    if let Some(scene_node) = runtime.nodes.get_mut(node)
+        && let SceneNodeData::UiButton(button) = &mut scene_node.data
+    {
+        button.disabled = true;
+    }
+    runtime.mark_ui_dirty(node, Runtime::UI_DIRTY_COMMANDS);
+    runtime.extract_render_ui_commands();
+
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertButton {
+            node: n,
+            fill,
+            disabled,
+            ..
+        }) if *n == node && *fill == [0.1, 0.2, 0.3, 1.0] && *disabled
+    )));
+    assert_eq!(
+        runtime.render_ui.button_states.get(&node).copied(),
+        Some(UiButtonVisualState::Neutral)
+    );
+}
+
+#[test]
+fn input_disabling_hovered_button_restores_neutral_visual_state() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let node = insert_button(&mut runtime, [120.0, 40.0]);
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    runtime.set_mouse_position(400.0, 300.0);
+    runtime.set_mouse_button_state(MouseButton::Left, true);
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    if let Some(scene_node) = runtime.nodes.get_mut(node)
+        && let SceneNodeData::UiButton(button) = &mut scene_node.data
+    {
+        button.input_enabled = false;
+    }
+    runtime.mark_ui_dirty(node, Runtime::UI_DIRTY_COMMANDS);
+    runtime.extract_render_ui_commands();
+
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertButton {
+            node: n,
+            fill,
+            disabled,
+            ..
+        }) if *n == node && *fill == [0.1, 0.2, 0.3, 1.0] && !*disabled
+    )));
+    assert_eq!(
+        runtime.render_ui.button_states.get(&node).copied(),
+        Some(UiButtonVisualState::Neutral)
+    );
+}
+
+#[test]
+fn button_hover_requests_cursor_icon_and_unhover_restores_default() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let node = insert_button(&mut runtime, [120.0, 40.0]);
+    if let Some(scene_node) = runtime.nodes.get_mut(node)
+        && let SceneNodeData::UiButton(button) = &mut scene_node.data
+    {
+        button.cursor_icon = perro_ui::CursorIcon::Grab;
+    }
+
+    runtime.extract_render_ui_commands();
+    let _ = runtime.take_cursor_icon_request();
+    runtime.clear_dirty_flags();
+
+    runtime.set_mouse_position(400.0, 300.0);
+    runtime.extract_render_ui_commands();
+    assert_eq!(
+        runtime.take_cursor_icon_request(),
+        Some(perro_ui::CursorIcon::Grab)
+    );
+    runtime.clear_dirty_flags();
+
+    runtime.set_mouse_position(0.0, 0.0);
+    runtime.extract_render_ui_commands();
+    assert_eq!(
+        runtime.take_cursor_icon_request(),
+        Some(perro_ui::CursorIcon::Default)
+    );
+}
+
+#[test]
+fn button_hover_respects_rounded_visible_shape() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let node = insert_button(&mut runtime, [120.0, 40.0]);
+    if let Some(scene_node) = runtime.nodes.get_mut(node)
+        && let SceneNodeData::UiButton(button) = &mut scene_node.data
+    {
+        button.style.corner_radius = 1.0;
+        button.hover_style.corner_radius = 1.0;
+    }
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    runtime.set_mouse_position(341.0, 281.0);
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    assert!(!commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
+            if *n == node && *fill == [0.2, 0.3, 0.4, 1.0]
+    )));
+    assert_eq!(runtime.take_cursor_icon_request(), None);
+
+    runtime.clear_dirty_flags();
+    runtime.set_mouse_position(400.0, 300.0);
+    runtime.extract_render_ui_commands();
+    commands.clear();
+    runtime.drain_render_commands(&mut commands);
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
+            if *n == node && *fill == [0.2, 0.3, 0.4, 1.0]
+    )));
+}
+
+#[test]
+fn text_box_focus_accepts_committed_text_and_backspace() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let mut text_box = perro_ui::UiTextBox::new();
+    text_box.inner.base.layout.size = UiVector2::pixels(200.0, 40.0);
+    let node = insert_ui_node(&mut runtime, SceneNodeData::UiTextBox(text_box));
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    runtime.set_mouse_position(400.0, 300.0);
+    runtime.set_mouse_button_state(MouseButton::Left, true);
+    runtime.extract_render_ui_commands();
+    runtime.clear_dirty_flags();
+    runtime.set_mouse_button_state(MouseButton::Left, false);
+    runtime.begin_input_frame();
+
+    runtime.push_text_input("abc");
+    runtime.extract_render_ui_commands();
+    let text = runtime.nodes.get(node).and_then(|scene_node| {
+        if let SceneNodeData::UiTextBox(text_box) = &scene_node.data {
+            Some(text_box.inner.text.as_ref())
+        } else {
+            None
+        }
+    });
+    assert_eq!(text, Some("abc"));
+
+    runtime.clear_dirty_flags();
+    runtime.begin_input_frame();
+    runtime.set_key_state(KeyCode::Backspace, true);
+    runtime.extract_render_ui_commands();
+    let text = runtime.nodes.get(node).and_then(|scene_node| {
+        if let SceneNodeData::UiTextBox(text_box) = &scene_node.data {
+            Some(text_box.inner.text.as_ref())
+        } else {
+            None
+        }
+    });
+    assert_eq!(text, Some("ab"));
+}
+
+#[test]
+fn text_box_ctrl_shortcut_does_not_insert_key_text() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let mut text_box = perro_ui::UiTextBox::new();
+    text_box.inner.base.layout.size = UiVector2::pixels(200.0, 40.0);
+    let node = insert_ui_node(&mut runtime, SceneNodeData::UiTextBox(text_box));
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    runtime.set_mouse_position(400.0, 300.0);
+    runtime.set_mouse_button_state(MouseButton::Left, true);
+    runtime.extract_render_ui_commands();
+    runtime.clear_dirty_flags();
+    runtime.set_mouse_button_state(MouseButton::Left, false);
+    runtime.begin_input_frame();
+
+    runtime.set_key_state(KeyCode::ControlLeft, true);
+    runtime.set_key_state(KeyCode::KeyA, true);
+    runtime.push_text_input("a");
+    runtime.extract_render_ui_commands();
+
+    let text = runtime.nodes.get(node).and_then(|scene_node| {
+        if let SceneNodeData::UiTextBox(text_box) = &scene_node.data {
+            Some(text_box.inner.text.as_ref())
+        } else {
+            None
+        }
+    });
+    assert_eq!(text, Some(""));
+}
+
+#[test]
+fn held_backspace_repeats_in_text_box() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let mut text_box = perro_ui::UiTextBox::new();
+    text_box.inner.base.layout.size = UiVector2::pixels(200.0, 40.0);
+    text_box.inner.text = Cow::Borrowed("abcd");
+    text_box.inner.caret = 4;
+    text_box.inner.anchor = 4;
+    let node = insert_ui_node(&mut runtime, SceneNodeData::UiTextBox(text_box));
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    runtime.set_mouse_position(400.0, 300.0);
+    runtime.set_mouse_button_state(MouseButton::Left, true);
+    runtime.extract_render_ui_commands();
+    runtime.clear_dirty_flags();
+    runtime.set_mouse_button_state(MouseButton::Left, false);
+    runtime.begin_input_frame();
+
+    runtime.set_key_state(KeyCode::Backspace, true);
+    runtime.extract_render_ui_commands();
+    runtime.clear_dirty_flags();
+    runtime.begin_input_frame();
+    runtime.update(0.36);
+    runtime.extract_render_ui_commands();
+
+    let text = runtime.nodes.get(node).and_then(|scene_node| {
+        if let SceneNodeData::UiTextBox(text_box) = &scene_node.data {
+            Some(text_box.inner.text.as_ref())
+        } else {
+            None
+        }
+    });
+    assert_eq!(text, Some("ab"));
+}
+
+#[test]
+fn button_state_base_overrides_rect_transform() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut button = perro_ui::UiButton::new();
+    button.layout.size = UiVector2::pixels(120.0, 40.0);
+    let mut hover_base = button.base.clone();
+    hover_base.layout.size = UiVector2::pixels(150.0, 48.0);
+    hover_base.transform.translation = Vector2::new(6.0, -3.0);
+    hover_base.transform.rotation = 0.25;
+    button.hover_base = Some(hover_base);
+    button.hover_size_override = true;
+    let node = insert_ui_node(&mut runtime, SceneNodeData::UiButton(button));
+
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    runtime.clear_dirty_flags();
+
+    runtime.set_mouse_position(400.0, 300.0);
+    runtime.extract_render_ui_commands();
+    commands.clear();
+    runtime.drain_render_commands(&mut commands);
+
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertButton { node: n, rect, .. })
+            if *n == node
+                && rect.center == [6.0, -3.0]
+                && rect.size == [150.0, 48.0]
+                && rect.rotation_radians == 0.25
+    )));
+}
+
+#[test]
+fn button_hover_style_without_size_override_keeps_base_size() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let mut button = perro_ui::UiButton::new();
+    button.layout.size = UiVector2::pixels(120.0, 40.0);
+    button.hover_style.fill = Color::new(0.3, 0.4, 0.5, 1.0);
+    let mut hover_base = button.base.clone();
+    hover_base.transform.translation = Vector2::new(8.0, 0.0);
+    button.hover_base = Some(hover_base);
+    let node = insert_ui_node(&mut runtime, SceneNodeData::UiButton(button));
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+    runtime.set_mouse_position(400.0, 300.0);
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertButton { node: id, rect, fill, .. })
+            if *id == node
+                && rect.size == [120.0, 40.0]
+                && *fill == [0.3, 0.4, 0.5, 1.0]
+    )));
+}
+
+#[test]
+fn button_event_signals_include_named_and_custom_signals() {
+    let mut runtime = Runtime::new();
+    let named = insert_button(&mut runtime, [120.0, 40.0]);
+    runtime.nodes.get_mut(named).expect("named button").name = Cow::Borrowed("play");
+    assert_eq!(
+        runtime.button_event_signals(named, "click"),
+        vec![SignalID::from_string("play_click")]
+    );
+
+    let mut button = perro_ui::UiButton::new();
+    button
+        .pressed_signals
+        .push(SignalID::from_string("custom_a"));
+    button
+        .pressed_signals
+        .push(SignalID::from_string("custom_b"));
+    let custom = insert_ui_node(&mut runtime, SceneNodeData::UiButton(button));
+    runtime.nodes.get_mut(custom).expect("custom button").name = Cow::Borrowed("fire");
+    assert_eq!(
+        runtime.button_event_signals(custom, "pressed"),
+        vec![
+            SignalID::from_string("fire_pressed"),
+            SignalID::from_string("custom_a"),
+            SignalID::from_string("custom_b"),
+        ]
+    );
+}
+
+#[test]
+fn disabled_button_event_signals_empty() {
+    let mut runtime = Runtime::new();
+    let node = insert_button(&mut runtime, [120.0, 40.0]);
+    if let Some(scene_node) = runtime.nodes.get_mut(node)
+        && let SceneNodeData::UiButton(button) = &mut scene_node.data
+    {
+        button.disabled = true;
+        button
+            .hover_signals
+            .push(SignalID::from_string("custom_hover"));
+        button
+            .pressed_signals
+            .push(SignalID::from_string("custom_press"));
+        button
+            .click_signals
+            .push(SignalID::from_string("custom_click"));
+    }
+    runtime.nodes.get_mut(node).expect("named button").name = Cow::Borrowed("play");
+
+    assert!(runtime.button_event_signals(node, "hover_enter").is_empty());
+    assert!(runtime.button_event_signals(node, "pressed").is_empty());
+    assert!(runtime.button_event_signals(node, "click").is_empty());
+}
+
+#[test]
+fn input_disabled_button_event_signals_empty() {
+    let mut runtime = Runtime::new();
+    let node = insert_button(&mut runtime, [120.0, 40.0]);
+    if let Some(scene_node) = runtime.nodes.get_mut(node)
+        && let SceneNodeData::UiButton(button) = &mut scene_node.data
+    {
+        button.input_enabled = false;
+        button
+            .hover_signals
+            .push(SignalID::from_string("custom_hover"));
+        button
+            .pressed_signals
+            .push(SignalID::from_string("custom_press"));
+        button
+            .click_signals
+            .push(SignalID::from_string("custom_click"));
+    }
+    runtime.nodes.get_mut(node).expect("named button").name = Cow::Borrowed("play");
+
+    assert!(runtime.button_event_signals(node, "hover_enter").is_empty());
+    assert!(runtime.button_event_signals(node, "pressed").is_empty());
+    assert!(runtime.button_event_signals(node, "click").is_empty());
+}
+
+#[test]
+fn text_edit_event_signals_include_named_and_custom_signals() {
+    let mut runtime = Runtime::new();
+    let named = insert_ui_node(
+        &mut runtime,
+        SceneNodeData::UiTextBox(perro_ui::UiTextBox::new()),
+    );
+    runtime.nodes.get_mut(named).expect("named text box").name = Cow::Borrowed("name");
+    assert_eq!(
+        runtime.text_edit_event_signals(named, "focused"),
+        vec![SignalID::from_string("name_focused")]
+    );
+    assert_eq!(
+        runtime.text_edit_event_signals(named, "text_changed"),
+        vec![SignalID::from_string("name_text_changed")]
+    );
+
+    let mut text_block = perro_ui::UiTextBlock::new();
+    text_block
+        .inner
+        .hover_signals
+        .push(SignalID::from_string("custom_hover"));
+    text_block
+        .inner
+        .text_changed_signals
+        .push(SignalID::from_string("custom_text"));
+    let custom = insert_ui_node(&mut runtime, SceneNodeData::UiTextBlock(text_block));
+    runtime
+        .nodes
+        .get_mut(custom)
+        .expect("custom text block")
+        .name = Cow::Borrowed("bio");
+    assert_eq!(
+        runtime.text_edit_event_signals(custom, "hovered"),
+        vec![
+            SignalID::from_string("bio_hovered"),
+            SignalID::from_string("custom_hover"),
+        ]
+    );
+    assert_eq!(
+        runtime.text_edit_event_signals(custom, "text_changed"),
+        vec![
+            SignalID::from_string("bio_text_changed"),
+            SignalID::from_string("custom_text"),
+        ]
+    );
+}
+
+#[test]
+fn default_hlayout_centers_child_group() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut layout = UiHLayout::new();
+    layout.layout.size = UiVector2::pixels(300.0, 100.0);
+    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(layout));
+    let child = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    attach_child(&mut runtime, parent, child);
+
+    runtime.extract_render_ui_commands();
+
+    let child_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&child)
+        .expect("child rect exists");
+    assert_eq!(child_rect.center, Vector2::ZERO);
+}
+
+#[test]
+fn hlayout_ignores_invisible_child_space() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut layout = UiHLayout::new();
+    layout.layout.size = UiVector2::pixels(300.0, 100.0);
+    layout.inner.spacing = 10.0 / 300.0;
+    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(layout));
+    let first = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    let middle = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.2, 0.3, 0.4, 1.0));
+    let last = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.3, 0.4, 0.5, 1.0));
+    attach_child(&mut runtime, parent, first);
+    attach_child(&mut runtime, parent, middle);
+    attach_child(&mut runtime, parent, last);
+
+    set_panel_visible(&mut runtime, middle, false);
+    runtime.mark_ui_dirty(
+        middle,
+        Runtime::UI_DIRTY_LAYOUT_SELF
+            | Runtime::UI_DIRTY_LAYOUT_PARENT
+            | Runtime::UI_DIRTY_COMMANDS,
+    );
+    runtime.extract_render_ui_commands();
+
+    let first_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&first)
+        .expect("first rect exists");
+    let last_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&last)
+        .expect("last rect exists");
+    assert_eq!(first_rect.center.x, 35.0);
+    assert_eq!(last_rect.center.x, -35.0);
+}
+
+#[test]
+fn default_grid_centers_rows_in_parent() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut grid = UiGrid::new();
+    grid.layout.size = UiVector2::pixels(300.0, 200.0);
+    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiGrid(grid));
+    let child = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    attach_child(&mut runtime, parent, child);
+
+    runtime.extract_render_ui_commands();
+
+    let child_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&child)
+        .expect("child rect exists");
+    assert_eq!(child_rect.center, Vector2::ZERO);
+}
+
+#[test]
+fn grid_columns_auto_wrap_into_centered_rows() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut grid = UiGrid::new();
+    grid.layout.size = UiVector2::pixels(300.0, 200.0);
+    grid.columns = 3;
+    grid.h_spacing = 10.0 / 300.0;
+    grid.v_spacing = 10.0 / 200.0;
+    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiGrid(grid));
+
+    let mut children = Vec::new();
+    for _ in 0..6 {
+        let child = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+        attach_child(&mut runtime, parent, child);
+        children.push(child);
+    }
+
+    runtime.extract_render_ui_commands();
+
+    let first = runtime
+        .render_ui
+        .computed_rects
+        .get(&children[0])
+        .expect("first rect exists");
+    let fourth = runtime
+        .render_ui
+        .computed_rects
+        .get(&children[3])
+        .expect("fourth rect exists");
+    assert_eq!(first.center, Vector2::new(70.0, -25.0));
+    assert_eq!(fourth.center, Vector2::new(70.0, 25.0));
+}
+
+#[test]
+fn grid_uses_uniform_cells_for_even_column_spacing() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut grid = UiGrid::new();
+    grid.layout.size = UiVector2::pixels(400.0, 200.0);
+    grid.columns = 3;
+    grid.h_spacing = 10.0 / 400.0;
+    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiGrid(grid));
+
+    let first = insert_panel(&mut runtime, [80.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    let middle = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    let last = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    attach_child(&mut runtime, parent, first);
+    attach_child(&mut runtime, parent, middle);
+    attach_child(&mut runtime, parent, last);
+
+    runtime.extract_render_ui_commands();
+
+    let first = runtime
+        .render_ui
+        .computed_rects
+        .get(&first)
+        .expect("first rect exists");
+    let middle = runtime
+        .render_ui
+        .computed_rects
+        .get(&middle)
+        .expect("middle rect exists");
+    let last = runtime
+        .render_ui
+        .computed_rects
+        .get(&last)
+        .expect("last rect exists");
+    assert_eq!(
+        middle.center.x - first.center.x,
+        last.center.x - middle.center.x
+    );
+}
+
+#[test]
+fn grid_ignores_invisible_child_index() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut grid = UiGrid::new();
+    grid.layout.size = UiVector2::pixels(300.0, 200.0);
+    grid.columns = 3;
+    grid.h_spacing = 10.0 / 300.0;
+    grid.v_spacing = 10.0 / 200.0;
+    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiGrid(grid));
+
+    let first = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    let hidden = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.2, 0.3, 0.4, 1.0));
+    let third = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.3, 0.4, 0.5, 1.0));
+    let fourth = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.4, 0.5, 0.6, 1.0));
+    attach_child(&mut runtime, parent, first);
+    attach_child(&mut runtime, parent, hidden);
+    attach_child(&mut runtime, parent, third);
+    attach_child(&mut runtime, parent, fourth);
+
+    set_panel_visible(&mut runtime, hidden, false);
+    runtime.mark_ui_dirty(
+        hidden,
+        Runtime::UI_DIRTY_LAYOUT_SELF
+            | Runtime::UI_DIRTY_LAYOUT_PARENT
+            | Runtime::UI_DIRTY_COMMANDS,
+    );
+    runtime.extract_render_ui_commands();
+
+    let first_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&first)
+        .expect("first rect exists");
+    let third_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&third)
+        .expect("third rect exists");
+    let fourth_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&fourth)
+        .expect("fourth rect exists");
+    assert_eq!(first_rect.center, Vector2::new(70.0, 0.0));
+    assert_eq!(third_rect.center, Vector2::ZERO);
+    assert_eq!(fourth_rect.center, Vector2::new(-70.0, 0.0));
+}
+
+#[test]
+fn parent_ui_scale_scales_child_label_font() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut parent_panel = UiPanel::new();
+    parent_panel.layout.size = UiVector2::pixels(400.0, 200.0);
+    parent_panel.transform.scale = Vector2::new(0.5, 0.5);
+    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent_panel));
+
+    let mut label = perro_ui::UiLabel::new().with_text("Scaled");
+    label.layout.size = UiVector2::pixels(200.0, 40.0);
+    label.font_size = 20.0;
+    let child = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
+    attach_child(&mut runtime, parent, child);
+
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertLabel { node, rect, font_size, .. })
+            if *node == child && rect.size == [100.0, 20.0] && *font_size == 10.0
+    )));
+}
+
+#[test]
+fn label_relative_font_size_scales_with_virtual_resolution() {
+    let mut runtime = Runtime::new();
+    runtime.project = Some(std::sync::Arc::new(
+        crate::runtime_project::RuntimeProject::new("Test", "."),
+    ));
+    runtime.set_viewport_size(960, 540);
+
+    let mut label = perro_ui::UiLabel::new().with_text("Scaled");
+    label.layout.size = perro_ui::UiVector2::pixels(200.0, 40.0);
+    label.font_size = 20.0;
+    label.font_sizing.relative_to_virtual = true;
+    let node = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
+
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertLabel { node: id, font_size, .. })
+            if *id == node && (*font_size - 10.0).abs() < 1.0e-3
+    )));
+}
+
+#[test]
+fn text_box_relative_font_size_uses_min_and_max_scale_clamp() {
+    let mut runtime = Runtime::new();
+    runtime.project = Some(std::sync::Arc::new(
+        crate::runtime_project::RuntimeProject::new("Test", "."),
+    ));
+    runtime.set_viewport_size(3840, 2160);
+
+    let mut text_box = perro_ui::UiTextBox::new();
+    text_box.inner.font_size = 20.0;
+    text_box.inner.text_size_ratio = 0.0;
+    text_box.inner.font_sizing.relative_to_virtual = true;
+    text_box.inner.font_sizing.min_scale = 0.5;
+    text_box.inner.font_sizing.max_scale = 1.5;
+    let node = insert_ui_node(&mut runtime, SceneNodeData::UiTextBox(text_box));
+
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertTextEdit { node: id, font_size, .. })
+            if *id == node && (*font_size - 30.0).abs() < 1.0e-3
+    )));
+}
+
+#[test]
+fn parent_ui_scale_keeps_child_panel_radius_ratio() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut parent_panel = UiPanel::new();
+    parent_panel.layout.size = UiVector2::pixels(400.0, 200.0);
+    parent_panel.transform.scale = Vector2::new(0.5, 0.5);
+    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent_panel));
+
+    let mut child_panel = UiPanel::new();
+    child_panel.layout.size = UiVector2::pixels(200.0, 40.0);
+    child_panel.style.corner_radius = 0.4;
+    child_panel.style.stroke_width = 2.0;
+    let child = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(child_panel));
+    attach_child(&mut runtime, parent, child);
+
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertPanel {
+            node,
+            rect,
+            corner_radius,
+            stroke_width,
+            ..
+        }) if *node == child
+            && rect.size == [100.0, 20.0]
+            && *corner_radius == 0.4
+            && *stroke_width == 1.0
+    )));
+}
+
+#[test]
+fn ui_transform_dirty_updates_only_changed_branch() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut layout = UiHLayout::new();
+    layout.layout.size = UiVector2::pixels(300.0, 100.0);
+    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(layout));
+    let child = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    let sibling = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.2, 0.3, 0.4, 1.0));
+    attach_child(&mut runtime, parent, child);
+    attach_child(&mut runtime, parent, sibling);
+
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    runtime.clear_dirty_flags();
+
+    if let Some(scene_node) = runtime.nodes.get_mut(child)
+        && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
+    {
+        panel.transform.translation.x = 24.0;
+    }
+    runtime.mark_ui_dirty(
+        child,
+        Runtime::UI_DIRTY_TRANSFORM | Runtime::UI_DIRTY_COMMANDS,
+    );
+    let timing = runtime.extract_render_ui_commands_timed();
+    commands.clear();
+    runtime.drain_render_commands(&mut commands);
+
+    assert_eq!(timing.affected_nodes, 1);
+    assert_eq!(timing.command_nodes, 1);
+    assert_eq!(
+            commands
+                .iter()
+                .filter(|cmd| matches!(cmd, RenderCommand::Ui(UiCommand::UpsertPanel { node, .. }) if *node == child))
+                .count(),
+            1
+        );
+    assert!(
+            !commands
+                .iter()
+                .any(|cmd| matches!(cmd, RenderCommand::Ui(UiCommand::UpsertPanel { node, .. }) if *node == sibling))
+        );
+}
+
+#[test]
+fn ui_layout_parent_dirty_updates_auto_layout_siblings() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut layout = UiHLayout::new();
+    layout.layout.size = UiVector2::pixels(300.0, 100.0);
+    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(layout));
+    let child = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    let sibling = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.2, 0.3, 0.4, 1.0));
+    attach_child(&mut runtime, parent, child);
+    attach_child(&mut runtime, parent, sibling);
+
+    runtime.extract_render_ui_commands();
+    runtime.clear_dirty_flags();
+
+    if let Some(scene_node) = runtime.nodes.get_mut(child)
+        && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
+    {
+        panel.layout.size = UiVector2::pixels(90.0, 40.0);
+    }
+    runtime.mark_ui_dirty(
+        child,
+        Runtime::UI_DIRTY_LAYOUT_SELF
+            | Runtime::UI_DIRTY_LAYOUT_PARENT
+            | Runtime::UI_DIRTY_COMMANDS,
+    );
+    let timing = runtime.extract_render_ui_commands_timed();
+
+    assert_eq!(timing.affected_nodes, 2);
+    assert_eq!(timing.command_nodes, 2);
+}
+
+#[test]
+fn child_fit_size_uses_spawn_baseline_for_relative_max_scale() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(1920, 1080);
+
+    let mut parent = UiPanel::new();
+    parent.layout.size = UiVector2::ratio(0.5, 0.5);
+    let parent_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent));
+
+    let mut child = UiPanel::new();
+    child.layout.size = UiVector2::ratio(0.5, 0.5);
+    child.layout.h_size = UiSizeMode::FitChildren;
+    child.layout.v_size = UiSizeMode::FitChildren;
+    child.layout.max_size_scale = Vector2::new(2.0, 2.0);
+    let child_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(child));
+    attach_child(&mut runtime, parent_id, child_id);
+
+    let oversized = insert_panel(
+        &mut runtime,
+        [1400.0, 900.0],
+        Color::new(0.2, 0.3, 0.4, 1.0),
+    );
+    attach_child(&mut runtime, child_id, oversized);
+
+    runtime.extract_render_ui_commands();
+    let rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&child_id)
+        .copied()
+        .expect("child rect");
+
+    assert_eq!(rect.size, Vector2::new(1400.0, 900.0));
+}
+
+#[test]
+fn relative_min_max_scale_rebases_when_size_definition_changes() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(1920, 1080);
+
+    let mut parent = UiPanel::new();
+    parent.layout.size = UiVector2::ratio(0.5, 0.5);
+    let parent_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent));
+
+    let mut child = UiPanel::new();
+    child.layout.size = UiVector2::ratio(0.5, 0.5);
+    child.layout.h_size = UiSizeMode::FitChildren;
+    child.layout.v_size = UiSizeMode::FitChildren;
+    child.layout.max_size_scale = Vector2::new(2.0, 2.0);
+    let child_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(child));
+    attach_child(&mut runtime, parent_id, child_id);
+    let oversized = insert_panel(
+        &mut runtime,
+        [1400.0, 900.0],
+        Color::new(0.2, 0.3, 0.4, 1.0),
+    );
+    attach_child(&mut runtime, child_id, oversized);
+
+    runtime.extract_render_ui_commands();
+    let before = runtime
+        .render_ui
+        .computed_rects
+        .get(&child_id)
+        .copied()
+        .expect("before rect");
+    assert_eq!(before.size, Vector2::new(1400.0, 900.0));
+
+    if let Some(scene_node) = runtime.nodes.get_mut(child_id)
+        && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
+    {
+        panel.layout.size = UiVector2::ratio(0.75, 0.75);
+    }
+    runtime.mark_ui_dirty(
+        child_id,
+        Runtime::UI_DIRTY_LAYOUT_SELF
+            | Runtime::UI_DIRTY_LAYOUT_PARENT
+            | Runtime::UI_DIRTY_COMMANDS,
+    );
+    runtime.extract_render_ui_commands();
+    let after = runtime
+        .render_ui
+        .computed_rects
+        .get(&child_id)
+        .copied()
+        .expect("after rect");
+
+    assert_eq!(after.size, Vector2::new(1400.0, 900.0));
+}
+
+#[test]
+fn min_size_ratio_one_locks_spawn_floor() {
+    let mut runtime = Runtime::new();
+    runtime.project = Some(std::sync::Arc::new(
+        crate::runtime_project::RuntimeProject::new("Test", "."),
+    ));
+    runtime.set_viewport_size(1280, 720);
+
+    let mut top = UiPanel::new();
+    top.layout.anchor = perro_ui::UiAnchor::Top;
+    top.layout.size = UiVector2::ratio(0.96, 0.09);
+    top.layout.min_size_scale = Vector2::new(1.0, 1.0);
+    let top_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(top));
+
+    runtime.extract_render_ui_commands();
+    let rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&top_id)
+        .copied()
+        .expect("top rect");
+
+    assert!((rect.size.x - 1228.8).abs() < 1.0e-3);
+    assert!((rect.size.y - 64.8).abs() < 1.0e-3);
+}
+
+#[test]
+fn min_size_ratio_rebases_when_size_ratio_changes() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(1000, 1000);
+
+    let mut panel = UiPanel::new();
+    panel.layout.size = UiVector2::ratio(1.0, 1.0);
+    panel.layout.min_size_scale = Vector2::new(0.5, 0.5);
+    let panel_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(panel));
+
+    runtime.extract_render_ui_commands();
+    runtime.set_viewport_size(400, 400);
+    runtime.extract_render_ui_commands();
+    let clamped_before = runtime
+        .render_ui
+        .computed_rects
+        .get(&panel_id)
+        .copied()
+        .expect("panel rect before ratio change");
+    assert_eq!(clamped_before.size, Vector2::new(500.0, 500.0));
+
+    if let Some(scene_node) = runtime.nodes.get_mut(panel_id)
+        && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
+    {
+        panel.layout.size = UiVector2::ratio(0.5, 0.5);
+    }
+    runtime.mark_ui_dirty(
+        panel_id,
+        Runtime::UI_DIRTY_LAYOUT_SELF
+            | Runtime::UI_DIRTY_LAYOUT_PARENT
+            | Runtime::UI_DIRTY_COMMANDS,
+    );
+    runtime.extract_render_ui_commands();
+    let after_ratio_change = runtime
+        .render_ui
+        .computed_rects
+        .get(&panel_id)
+        .copied()
+        .expect("panel rect after ratio change");
+    assert_eq!(after_ratio_change.size, Vector2::new(200.0, 200.0));
+}
+
+#[test]
+fn label_fill_mode_uses_parent_space_without_auto_layout_parent() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut parent = UiPanel::new();
+    parent.layout.size = UiVector2::ratio(1.0, 1.0);
+    let parent_id = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent));
+
+    let mut label = perro_ui::UiLabel::new().with_text("HP");
+    label.layout.h_size = UiSizeMode::Fill;
+    label.layout.v_size = UiSizeMode::Fill;
+    label.text_size_ratio = 1.0;
+    let label_id = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
+    attach_child(&mut runtime, parent_id, label_id);
+
+    runtime.extract_render_ui_commands();
+
+    let parent_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&parent_id)
+        .copied()
+        .expect("parent rect");
+    let label_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&label_id)
+        .copied()
+        .expect("label rect");
+
+    assert_eq!(label_rect.center, parent_rect.center);
+    assert_eq!(label_rect.size, parent_rect.size);
+}
+
+#[test]
+fn tree_list_places_referenced_nodes_without_reparenting() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut tree = UiTreeList::new();
+    tree.layout.size = UiVector2::pixels(300.0, 200.0);
+    tree.indent = 20.0;
+    tree.v_spacing = 4.0 / 200.0;
+    let tree_id = insert_ui_node(&mut runtime, SceneNodeData::UiTreeList(tree));
+
+    let root = insert_panel(&mut runtime, [100.0, 20.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    let child = insert_panel(&mut runtime, [80.0, 20.0], Color::new(0.2, 0.3, 0.4, 1.0));
+
+    let _ = runtime.with_node_mut::<UiTreeList, _, _>(tree_id, |tree| {
+        tree.set_roots(vec![root]);
+        tree.set_branch(root, vec![child]);
+    });
+    runtime.extract_render_ui_commands();
+
+    let root_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&root)
+        .expect("root rect exists");
+    let child_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&child)
+        .expect("child rect exists");
+
+    assert_eq!(root_rect.center, Vector2::new(-100.0, 90.0));
+    assert_eq!(child_rect.center, Vector2::new(-90.0, 66.0));
+    assert!(
+        runtime
+            .nodes
+            .get(root)
+            .expect("root exists")
+            .parent
+            .is_nil()
+    );
+    assert!(
+        runtime
+            .nodes
+            .get(child)
+            .expect("child exists")
+            .parent
+            .is_nil()
+    );
+}
+
+#[test]
+fn tree_list_collapse_removes_hidden_branch_commands() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut tree = UiTreeList::new();
+    tree.layout.size = UiVector2::pixels(300.0, 200.0);
+    let tree_id = insert_ui_node(&mut runtime, SceneNodeData::UiTreeList(tree));
+
+    let root = insert_panel(&mut runtime, [100.0, 20.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    let child = insert_panel(&mut runtime, [80.0, 20.0], Color::new(0.2, 0.3, 0.4, 1.0));
+    let _ = runtime.with_node_mut::<UiTreeList, _, _>(tree_id, |tree| {
+        tree.set_roots(vec![root]);
+        tree.set_branch(root, vec![child]);
+    });
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    let _ = runtime.with_node_mut::<UiTreeList, _, _>(tree_id, |tree| {
+        tree.collapsed.push(root);
+    });
+    runtime.extract_render_ui_commands();
+
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::RemoveNode { node }) if *node == child
+    )));
+    assert!(!runtime.render_ui.prev_visible.contains(&child));
+}
+
+#[test]
+fn scroll_container_offsets_children_and_clips_to_view() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut scroller = UiScrollContainer::new();
+    scroller.layout.size = UiVector2::pixels(200.0, 100.0);
+    scroller.scroll = Vector2::new(30.0, 40.0);
+    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+
+    let child = insert_panel(&mut runtime, [50.0, 30.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    attach_child(&mut runtime, scroller_id, child);
+
+    runtime.extract_render_ui_commands();
+
+    let child_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&child)
+        .copied()
+        .expect("child rect");
+    assert_eq!(child_rect.center, Vector2::new(-30.0, 40.0));
+
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    let clip = commands
+        .iter()
+        .find_map(|cmd| match cmd {
+            RenderCommand::Ui(UiCommand::UpsertPanel {
+                node, clip_rect, ..
+            }) if *node == child => Some(*clip_rect),
+            _ => None,
+        })
+        .expect("child panel command");
+    for (actual, expected) in clip.iter().zip([300.0, 250.0, 500.0, 350.0]) {
+        assert!((actual - expected).abs() < 1.0e-5);
+    }
+}
+
+#[test]
+fn parent_visibility_toggle_restores_button_hover_without_resize() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let parent = insert_panel(&mut runtime, [220.0, 120.0], Color::new(0.2, 0.2, 0.2, 1.0));
+    let button = insert_button(&mut runtime, [120.0, 40.0]);
+    attach_child(&mut runtime, parent, button);
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    let _ = runtime.with_node_mut::<UiPanel, _, _>(parent, |panel| {
+        panel.visible = false;
+    });
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    let _ = runtime.with_node_mut::<UiPanel, _, _>(parent, |panel| {
+        panel.visible = true;
+    });
+    runtime.set_mouse_position(400.0, 300.0);
+    runtime.extract_render_ui_commands();
+
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
+            if *n == button && *fill == [0.2, 0.3, 0.4, 1.0]
+    )));
+}
+
+#[test]
+fn input_change_rechecks_retained_label_visibility() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let parent = insert_panel(&mut runtime, [260.0, 120.0], Color::new(0.2, 0.2, 0.2, 1.0));
+    let button = insert_button(&mut runtime, [120.0, 40.0]);
+    let mut label = perro_ui::UiLabel::new();
+    label.layout.size = UiVector2::pixels(120.0, 30.0);
+    label.text = "Play".into();
+    let label = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
+    attach_child(&mut runtime, parent, button);
+    attach_child(&mut runtime, parent, label);
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    set_panel_visible(&mut runtime, parent, false);
+    runtime.set_mouse_position(400.0, 300.0);
+    runtime.extract_render_ui_commands();
+
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::RemoveNode { node }) if *node == label
+    )));
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::RemoveNode { node }) if *node == button
+    )));
+}
+
+#[test]
+fn parent_visibility_toggle_restores_all_ui_descendants_without_resize() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let parent = insert_panel(&mut runtime, [260.0, 120.0], Color::new(0.2, 0.2, 0.2, 1.0));
+    let button = insert_button(&mut runtime, [120.0, 40.0]);
+    let mut label = perro_ui::UiLabel::new();
+    label.layout.size = UiVector2::pixels(120.0, 30.0);
+    label.text = "Play".into();
+    let label = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
+    attach_child(&mut runtime, parent, button);
+    attach_child(&mut runtime, parent, label);
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    let _ = runtime.with_node_mut::<UiPanel, _, _>(parent, |panel| {
+        panel.visible = false;
+    });
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    let _ = runtime.with_node_mut::<UiPanel, _, _>(parent, |panel| {
+        panel.visible = true;
+    });
+    runtime.extract_render_ui_commands();
+
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertButton { node: n, .. }) if *n == button
+    )));
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertLabel { node: n, .. }) if *n == label
+    )));
+}
+
+#[test]
+fn menu_like_nested_layout_restores_all_buttons_and_labels_after_show() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut root = perro_ui::UiBox::new();
+    root.layout.size = UiVector2::ratio(1.0, 1.0);
+    let root = insert_ui_node(&mut runtime, SceneNodeData::UiBox(root));
+
+    let mut content = UiVLayout::new();
+    content.layout.size = UiVector2::ratio(0.92, 0.92);
+    let content = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(content));
+    attach_child(&mut runtime, root, content);
+
+    let mut grid = UiVLayout::new();
+    grid.layout.size = UiVector2::ratio(1.0, 0.72);
+    let grid = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(grid));
+    attach_child(&mut runtime, content, grid);
+
+    let row_top = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(UiHLayout::new()));
+    let row_bottom = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(UiHLayout::new()));
+    attach_child(&mut runtime, grid, row_top);
+    attach_child(&mut runtime, grid, row_bottom);
+
+    let mut buttons = Vec::new();
+    let mut labels = Vec::new();
+    for row in [row_top, row_top, row_bottom, row_bottom] {
+        let button = insert_button(&mut runtime, [120.0, 40.0]);
+        attach_child(&mut runtime, row, button);
+        buttons.push(button);
+
+        let mut label = perro_ui::UiLabel::new();
+        label.layout.size = UiVector2::ratio(1.0, 1.0);
+        label.text = "Sport".into();
+        let label = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
+        attach_child(&mut runtime, button, label);
+        labels.push(label);
+    }
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    let _ = runtime.with_node_mut::<perro_ui::UiBox, _, _>(root, |ui| {
+        ui.visible = false;
+    });
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    let _ = runtime.with_node_mut::<perro_ui::UiBox, _, _>(root, |ui| {
+        ui.visible = true;
+    });
+    runtime.extract_render_ui_commands();
+
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    for button in buttons {
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::UpsertButton { node: n, .. }) if *n == button
+        )));
+    }
+    for label in labels {
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::UpsertLabel { node: n, .. }) if *n == label
+        )));
+    }
+}
+
+fn insert_panel(runtime: &mut Runtime, size: [f32; 2], fill: Color) -> NodeID {
+    let mut panel = UiPanel::new();
+    panel.layout.size = UiVector2::pixels(size[0], size[1]);
+    panel.style.fill = fill;
+    insert_ui_node(runtime, SceneNodeData::UiPanel(panel))
+}
+
+fn insert_button(runtime: &mut Runtime, size: [f32; 2]) -> NodeID {
+    let mut button = perro_ui::UiButton::new();
+    button.layout.size = UiVector2::pixels(size[0], size[1]);
+    button.style.fill = Color::new(0.1, 0.2, 0.3, 1.0);
+    button.hover_style.fill = Color::new(0.2, 0.3, 0.4, 1.0);
+    button.pressed_style.fill = Color::new(0.3, 0.4, 0.5, 1.0);
+    insert_ui_node(runtime, SceneNodeData::UiButton(button))
+}
+
+fn set_panel_visible(runtime: &mut Runtime, node: NodeID, visible: bool) {
+    if let Some(scene_node) = runtime.nodes.get_mut(node)
+        && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
+    {
+        panel.visible = visible;
+    }
+}
+
+fn insert_ui_node(runtime: &mut Runtime, data: SceneNodeData) -> NodeID {
+    let node = runtime.nodes.insert(SceneNode::new(data));
+    runtime
+        .nodes
+        .get_mut(node)
+        .expect("inserted node exists")
+        .id = node;
+    runtime.mark_needs_rerender(node);
+    node
+}
+
+fn attach_child(runtime: &mut Runtime, parent: NodeID, child: NodeID) {
+    runtime
+        .nodes
+        .get_mut(parent)
+        .expect("parent exists")
+        .add_child(child);
+    runtime.nodes.get_mut(child).expect("child exists").parent = parent;
+    runtime.mark_needs_rerender(parent);
+    runtime.mark_needs_rerender(child);
+}
