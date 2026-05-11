@@ -74,6 +74,141 @@ impl Default for AudioPan {
 }
 
 #[derive(Clone, Copy)]
+pub struct AudioListener2D {
+    pub position: [f32; 2],
+    pub rotation_radians: f32,
+}
+
+impl Default for AudioListener2D {
+    fn default() -> Self {
+        Self {
+            position: [0.0, 0.0],
+            rotation_radians: 0.0,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct AudioListener3D {
+    pub position: [f32; 3],
+    pub rotation: [f32; 4],
+}
+
+impl Default for AudioListener3D {
+    fn default() -> Self {
+        Self {
+            position: [0.0, 0.0, 0.0],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct Audio2D<'a> {
+    pub source: &'a str,
+    pub bus_id: Option<AudioBusID>,
+    pub looped: bool,
+    pub volume: f32,
+    pub speed: f32,
+    pub position: [f32; 2],
+    pub range: f32,
+    pub from_start: f32,
+    pub from_end: f32,
+}
+
+impl<'a> Audio2D<'a> {
+    pub const fn new(source: &'a str, position: [f32; 2], range: f32) -> Self {
+        Self {
+            source,
+            bus_id: None,
+            looped: false,
+            volume: 1.0,
+            speed: 1.0,
+            position,
+            range,
+            from_start: 0.0,
+            from_end: 0.0,
+        }
+    }
+
+    pub fn to_playback(self, listener: AudioListener2D) -> Option<AudioPlaybackRequest<'a>> {
+        let range = self.range.max(0.0001);
+        let dx = self.position[0] - listener.position[0];
+        let dy = self.position[1] - listener.position[1];
+        let distance = (dx * dx + dy * dy).sqrt();
+        if distance > range {
+            return None;
+        }
+        let (sin, cos) = (-listener.rotation_radians).sin_cos();
+        let local_x = dx * cos - dy * sin;
+        let local_y = dx * sin + dy * cos;
+        let attenuation = 1.0 - (distance / range).clamp(0.0, 1.0);
+        Some(AudioPlaybackRequest {
+            source: self.source,
+            bus_id: self.bus_id,
+            looped: self.looped,
+            volume: self.volume * attenuation,
+            speed: self.speed,
+            pan: AudioPan::new(local_x / range, local_y / range, 0.0),
+            from_start: self.from_start,
+            from_end: self.from_end,
+        })
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct Audio3D<'a> {
+    pub source: &'a str,
+    pub bus_id: Option<AudioBusID>,
+    pub looped: bool,
+    pub volume: f32,
+    pub speed: f32,
+    pub position: [f32; 3],
+    pub range: f32,
+    pub from_start: f32,
+    pub from_end: f32,
+}
+
+impl<'a> Audio3D<'a> {
+    pub const fn new(source: &'a str, position: [f32; 3], range: f32) -> Self {
+        Self {
+            source,
+            bus_id: None,
+            looped: false,
+            volume: 1.0,
+            speed: 1.0,
+            position,
+            range,
+            from_start: 0.0,
+            from_end: 0.0,
+        }
+    }
+
+    pub fn to_playback(self, listener: AudioListener3D) -> Option<AudioPlaybackRequest<'a>> {
+        let range = self.range.max(0.0001);
+        let dx = self.position[0] - listener.position[0];
+        let dy = self.position[1] - listener.position[1];
+        let dz = self.position[2] - listener.position[2];
+        let distance = (dx * dx + dy * dy + dz * dz).sqrt();
+        if distance > range {
+            return None;
+        }
+        let local = inverse_rotate_vec3(listener.rotation, [dx, dy, dz]);
+        let attenuation = 1.0 - (distance / range).clamp(0.0, 1.0);
+        Some(AudioPlaybackRequest {
+            source: self.source,
+            bus_id: self.bus_id,
+            looped: self.looped,
+            volume: self.volume * attenuation,
+            speed: self.speed,
+            pan: AudioPan::new(local[0] / range, local[1] / range, -local[2] / range),
+            from_start: self.from_start,
+            from_end: self.from_end,
+        })
+    }
+}
+
+#[derive(Clone, Copy)]
 pub struct AudioPlaybackRequest<'a> {
     pub source: &'a str,
     pub bus_id: Option<AudioBusID>,
@@ -915,6 +1050,34 @@ fn decode_static_pawdio(blob: &[u8]) -> Result<(Vec<u8>, Duration), String> {
     Ok((payload.to_vec(), Duration::ZERO))
 }
 
+fn inverse_rotate_vec3(rotation: [f32; 4], v: [f32; 3]) -> [f32; 3] {
+    let [x, y, z, w] = normalized_quat(rotation);
+    rotate_vec3([-x, -y, -z, w], v)
+}
+
+fn normalized_quat(rotation: [f32; 4]) -> [f32; 4] {
+    let [x, y, z, w] = rotation;
+    let len_sq = x * x + y * y + z * z + w * w;
+    if !len_sq.is_finite() || len_sq <= 1.0e-6 {
+        return [0.0, 0.0, 0.0, 1.0];
+    }
+    let inv = len_sq.sqrt().recip();
+    [x * inv, y * inv, z * inv, w * inv]
+}
+
+fn rotate_vec3(q: [f32; 4], v: [f32; 3]) -> [f32; 3] {
+    let [qx, qy, qz, qw] = q;
+    let [vx, vy, vz] = v;
+    let tx = 2.0 * (qy * vz - qz * vy);
+    let ty = 2.0 * (qz * vx - qx * vz);
+    let tz = 2.0 * (qx * vy - qy * vx);
+    [
+        vx + qw * tx + (qy * tz - qz * ty),
+        vy + qw * ty + (qz * tx - qx * tz),
+        vz + qw * tz + (qx * ty - qy * tx),
+    ]
+}
+
 impl AudioController {
     pub fn new(static_audio_lookup: Option<fn(u64) -> &'static [u8]>) -> Result<Self, String> {
         let (tx, rx) = mpsc::channel::<AudioCommand>();
@@ -1087,7 +1250,7 @@ impl AudioController {
 
 #[cfg(test)]
 mod tests {
-    use super::decode_static_pawdio;
+    use super::{Audio2D, Audio3D, AudioListener2D, AudioListener3D, decode_static_pawdio};
 
     #[test]
     fn decode_static_pawdio_rejects_legacy_versions() {
@@ -1103,5 +1266,33 @@ mod tests {
                 "unexpected err for version {version}: {err}"
             );
         }
+    }
+
+    #[test]
+    fn audio_2d_maps_world_pos_to_listener_pan_and_volume() {
+        let req = Audio2D::new("res://hit.wav", [5.0, 0.0], 10.0)
+            .to_playback(AudioListener2D::default())
+            .expect("in range");
+        assert!((req.pan.x - 0.5).abs() < 1.0e-6);
+        assert!((req.pan.y - 0.0).abs() < 1.0e-6);
+        assert!((req.volume - 0.5).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn audio_2d_culls_out_of_range() {
+        let req = Audio2D::new("res://hit.wav", [11.0, 0.0], 10.0)
+            .to_playback(AudioListener2D::default());
+        assert!(req.is_none());
+    }
+
+    #[test]
+    fn audio_3d_maps_world_pos_to_listener_pan_and_volume() {
+        let req = Audio3D::new("res://hit.wav", [0.0, 0.0, -5.0], 10.0)
+            .to_playback(AudioListener3D::default())
+            .expect("in range");
+        assert!((req.pan.x - 0.0).abs() < 1.0e-6);
+        assert!((req.pan.y - 0.0).abs() < 1.0e-6);
+        assert!((req.pan.z - 0.5).abs() < 1.0e-6);
+        assert!((req.volume - 0.5).abs() < 1.0e-6);
     }
 }

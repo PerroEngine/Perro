@@ -1,6 +1,6 @@
 use super::core::RuntimeResourceApi;
 use perro_ids::AudioBusID;
-use perro_resource_context::sub_apis::{Audio, AudioAPI};
+use perro_resource_context::sub_apis::{Audio, Audio2D, Audio3D, AudioAPI};
 
 impl AudioAPI for RuntimeResourceApi {
     fn load_audio_source(&self, source: &str) -> bool {
@@ -33,7 +33,12 @@ impl AudioAPI for RuntimeResourceApi {
         player.drop_source(source)
     }
 
-    fn play_audio(&self, bus_id: Option<AudioBusID>, audio: Audio<'_>) -> bool {
+    fn play_audio(
+        &self,
+        bus_id: Option<AudioBusID>,
+        audio: Audio<'_>,
+        pan: perro_resource_context::sub_apis::AudioPan,
+    ) -> bool {
         let Ok(guard) = self.bark.lock() else {
             return false;
         };
@@ -47,16 +52,81 @@ impl AudioAPI for RuntimeResourceApi {
             volume: audio.volume,
             speed: audio.speed,
             pan: perro_bark::AudioPan {
-                x: audio.pan.x,
-                y: audio.pan.y,
-                z: audio.pan.z,
+                x: pan.x,
+                y: pan.y,
+                z: pan.z,
             },
             from_start: audio.from_start,
             from_end: audio.from_end,
         })
     }
 
-    fn stop_audio(&self, bus_id: Option<AudioBusID>, audio: Audio<'_>) -> bool {
+    fn play_audio_2d(&self, bus_id: Option<AudioBusID>, audio: Audio2D<'_>) -> bool {
+        let listener = self
+            .audio_listener_2d
+            .lock()
+            .ok()
+            .and_then(|guard| *guard)
+            .unwrap_or_default();
+        let request = perro_bark::Audio2D {
+            source: audio.audio.source,
+            bus_id,
+            looped: audio.audio.looped,
+            volume: audio.audio.volume,
+            speed: audio.audio.speed,
+            position: [audio.position.x, audio.position.y],
+            range: audio.range,
+            from_start: audio.audio.from_start,
+            from_end: audio.audio.from_end,
+        };
+        let Some(playback) = request.to_playback(listener) else {
+            return true;
+        };
+        let Ok(guard) = self.bark.lock() else {
+            return false;
+        };
+        let Some(player) = guard.as_ref() else {
+            return false;
+        };
+        player.play_source(playback)
+    }
+
+    fn play_audio_3d(&self, bus_id: Option<AudioBusID>, audio: Audio3D<'_>) -> bool {
+        let listener = self
+            .audio_listener_3d
+            .lock()
+            .ok()
+            .and_then(|guard| *guard)
+            .unwrap_or_default();
+        let request = perro_bark::Audio3D {
+            source: audio.audio.source,
+            bus_id,
+            looped: audio.audio.looped,
+            volume: audio.audio.volume,
+            speed: audio.audio.speed,
+            position: [audio.position.x, audio.position.y, audio.position.z],
+            range: audio.range,
+            from_start: audio.audio.from_start,
+            from_end: audio.audio.from_end,
+        };
+        let Some(playback) = request.to_playback(listener) else {
+            return true;
+        };
+        let Ok(guard) = self.bark.lock() else {
+            return false;
+        };
+        let Some(player) = guard.as_ref() else {
+            return false;
+        };
+        player.play_source(playback)
+    }
+
+    fn stop_audio(
+        &self,
+        bus_id: Option<AudioBusID>,
+        audio: Audio<'_>,
+        pan: perro_resource_context::sub_apis::AudioPan,
+    ) -> bool {
         let Ok(guard) = self.bark.lock() else {
             return false;
         };
@@ -70,9 +140,9 @@ impl AudioAPI for RuntimeResourceApi {
             volume: audio.volume,
             speed: audio.speed,
             pan: perro_bark::AudioPan {
-                x: audio.pan.x,
-                y: audio.pan.y,
-                z: audio.pan.z,
+                x: pan.x,
+                y: pan.y,
+                z: pan.z,
             },
             from_start: audio.from_start,
             from_end: audio.from_end,

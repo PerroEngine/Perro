@@ -141,13 +141,15 @@ impl Runtime {
                     post_processing: Arc::from(post_processing.to_effects_vec()),
                 }
             });
-            if let Some(camera) = camera_data
-                && self.render_2d.last_camera.as_ref() != Some(&camera)
-            {
-                self.queue_render_command(RenderCommand::TwoD(Command2D::SetCamera {
-                    camera: camera.clone(),
-                }));
-                self.render_2d.last_camera = Some(camera);
+            if let Some(camera) = camera_data {
+                self.resource_api
+                    .set_audio_listener_2d(camera.position, camera.rotation_radians);
+                if self.render_2d.last_camera.as_ref() != Some(&camera) {
+                    self.queue_render_command(RenderCommand::TwoD(Command2D::SetCamera {
+                        camera: camera.clone(),
+                    }));
+                    self.render_2d.last_camera = Some(camera);
+                }
             }
 
             let point_emitter_data = self.nodes.get(node).and_then(|node| match &node.data {

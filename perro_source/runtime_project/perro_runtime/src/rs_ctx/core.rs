@@ -16,6 +16,8 @@ pub struct RuntimeResourceApi {
     pub(super) state: Mutex<RuntimeResourceState>,
     pub(super) localization: std::sync::RwLock<RuntimeLocalizationState>,
     pub(super) bark: Mutex<Option<AudioController>>,
+    pub(super) audio_listener_2d: Mutex<Option<perro_bark::AudioListener2D>>,
+    pub(super) audio_listener_3d: Mutex<Option<perro_bark::AudioListener3D>>,
     pub(super) static_material_lookup: Option<StaticMaterialLookup>,
     pub(super) static_skeleton_lookup: Option<StaticSkeletonLookup>,
     pub(super) static_animation_lookup: Option<StaticAnimationLookup>,
@@ -44,6 +46,8 @@ impl RuntimeResourceApi {
                 localization_config.as_ref(),
             )),
             bark: Mutex::new(AudioController::new(static_audio_lookup).ok()),
+            audio_listener_2d: Mutex::new(None),
+            audio_listener_3d: Mutex::new(None),
             static_material_lookup,
             static_skeleton_lookup,
             static_animation_lookup,
@@ -63,6 +67,25 @@ impl RuntimeResourceApi {
             .lock()
             .expect("resource api viewport mutex poisoned");
         *viewport = (width.max(1), height.max(1));
+    }
+
+    pub(crate) fn set_audio_listener_2d(&self, position: [f32; 2], rotation_radians: f32) {
+        let mut listener = self
+            .audio_listener_2d
+            .lock()
+            .expect("resource api audio 2d listener mutex poisoned");
+        *listener = Some(perro_bark::AudioListener2D {
+            position,
+            rotation_radians,
+        });
+    }
+
+    pub(crate) fn set_audio_listener_3d(&self, position: [f32; 3], rotation: [f32; 4]) {
+        let mut listener = self
+            .audio_listener_3d
+            .lock()
+            .expect("resource api audio 3d listener mutex poisoned");
+        *listener = Some(perro_bark::AudioListener3D { position, rotation });
     }
 
     pub(crate) fn drain_commands(&self, out: &mut Vec<RenderCommand>) {

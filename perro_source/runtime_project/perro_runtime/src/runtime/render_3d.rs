@@ -176,6 +176,8 @@ impl Runtime {
                     projection,
                     post_processing,
                 };
+                self.resource_api
+                    .set_audio_listener_3d(camera.position, camera.rotation);
                 if self.render_3d.last_camera.as_ref() != Some(&camera) {
                     self.queue_render_command(RenderCommand::ThreeD(Box::new(
                         Command3D::SetCamera {
