@@ -7,10 +7,11 @@ use perro_ids::{NodeID, SignalID, TextureID};
 use perro_input::{KeyCode, MouseButton};
 use perro_nodes::SceneNodeData;
 use perro_render_bridge::{
-    RenderCommand, RenderRequestID, ResourceCommand, UiCommand, UiDepthEffectState,
-    UiImageScaleState, UiRectState, UiTextAlignState,
+    RenderCommand, ResourceCommand, UiCommand, UiDepthEffectState, UiImageScaleState, UiRectState,
+    UiTextAlignState,
 };
 use perro_runtime_context::sub_apis::SignalAPI;
+use perro_runtime_render::{UiDirtyMask, UiExtractionOptions, ui_image_texture_request};
 use perro_structs::Vector2;
 use perro_ui::{
     ComputedUiRect, UiBox, UiFontSizing, UiHorizontalAlign, UiImageScaleMode, UiLayoutData,
@@ -23,10 +24,6 @@ mod locale;
 
 const TEXT_EDIT_REPEAT_DELAY: f32 = 0.35;
 const TEXT_EDIT_REPEAT_RATE: f32 = 0.035;
-
-fn ui_image_texture_request(node: NodeID) -> RenderRequestID {
-    RenderRequestID::new((node.as_u64() << 8) | 0xE9)
-}
 
 impl Runtime {
     pub(crate) fn mark_ui_viewport_dirty(&mut self) {
@@ -120,7 +117,6 @@ impl Runtime {
             return;
         }
         let mut timing = timing;
-        let dirty_node_count = self.dirty.dirty_indices().len();
 
         self.propagate_pending_transform_dirty();
         self.refresh_dirty_global_transforms();
@@ -128,31 +124,30 @@ impl Runtime {
         let viewport = self.input.viewport_size();
         let virtual_font_scale = self.ui_virtual_font_scale(viewport);
         let root_rect = ComputedUiRect::new(Vector2::ZERO, viewport);
-        let mut traversal_ids = std::mem::take(&mut self.render_ui.traversal_ids);
-        let mut traversal_seen = std::mem::take(&mut self.render_ui.traversal_seen);
-        let mut command_ids = std::mem::take(&mut self.render_ui.command_ids);
-        let mut command_seen = std::mem::take(&mut self.render_ui.command_seen);
-        traversal_ids.clear();
-        traversal_seen.clear();
-        command_ids.clear();
-        command_seen.clear();
-        for &raw_index in self.dirty.dirty_indices() {
-            let index = raw_index as usize;
-            let Some((node, _)) = self.nodes.slot_get(index) else {
-                continue;
+        let dirty_entries = self
+            .dirty
+            .dirty_indices()
+            .iter()
+            .filter_map(|&raw_index| {
+                let index = raw_index as usize;
+                self.nodes
+                    .slot_get(index)
+                    .map(|(node, _)| (node, self.dirty.ui_flags_at(index)))
+            })
+            .collect::<Vec<_>>();
+        let dirty_node_count = dirty_entries.len();
+        let all_ids = self.nodes.iter().map(|(id, _)| id).collect::<Vec<_>>();
+        let mut parent_siblings = AHashMap::<NodeID, Vec<NodeID>>::default();
+        for &(node, flags) in &dirty_entries {
+            let flags = if flags == 0 {
+                DirtyState::UI_LAYOUT_MASK | DirtyState::DIRTY_COMMANDS
+            } else {
+                flags
             };
-            let mut flags = self.dirty.ui_flags_at(index);
-            if flags == 0 {
-                flags = DirtyState::UI_LAYOUT_MASK | DirtyState::DIRTY_COMMANDS;
+            if (flags & DirtyState::DIRTY_LAYOUT_PARENT) == 0 {
+                continue;
             }
-            if (flags & DirtyState::UI_LAYOUT_MASK) != 0 && traversal_seen.insert(node) {
-                traversal_ids.push(node);
-            }
-            if (flags & DirtyState::DIRTY_COMMANDS) != 0 && command_seen.insert(node) {
-                command_ids.push(node);
-            }
-            if (flags & DirtyState::DIRTY_LAYOUT_PARENT) != 0
-                && let Some(parent) = self.nodes.get(node).map(|node| node.parent)
+            if let Some(parent) = self.nodes.get(node).map(|node| node.parent)
                 && let Some(ui_parent) = self.closest_ui_parent(parent)
                 && self
                     .nodes
@@ -160,55 +155,40 @@ impl Runtime {
                     .and_then(|parent_node| ui_auto_layout_from_data(&parent_node.data))
                     .is_some()
             {
-                let siblings = self.ui_layout_children(ui_parent);
-                for &sibling in &siblings {
-                    if traversal_seen.insert(sibling) {
-                        traversal_ids.push(sibling);
-                    }
-                    if command_seen.insert(sibling) {
-                        command_ids.push(sibling);
-                    }
-                }
+                parent_siblings.insert(node, self.ui_layout_children(ui_parent));
             }
         }
-        if traversal_ids.is_empty() && bootstrap_scan {
-            traversal_ids.extend(self.nodes.iter().map(|(id, _)| id));
-        }
-        traversal_seen.extend(traversal_ids.iter().copied());
-        let mut traversal_cursor = 0usize;
-        while traversal_cursor < traversal_ids.len() {
-            let node = traversal_ids[traversal_cursor];
-            traversal_cursor += 1;
-            if let Some(node_ref) = self.nodes.get(node) {
-                for &child in node_ref.get_children_ids() {
-                    if traversal_seen.insert(child) {
-                        traversal_ids.push(child);
+        let nodes = &self.nodes;
+        let plan = self.render_ui.collect_extraction_plan(
+            dirty_entries,
+            all_ids,
+            UiExtractionOptions {
+                mask: UiDirtyMask {
+                    layout_mask: DirtyState::UI_LAYOUT_MASK,
+                    layout_parent: DirtyState::DIRTY_LAYOUT_PARENT,
+                    commands: DirtyState::DIRTY_COMMANDS,
+                    default_flags: DirtyState::UI_LAYOUT_MASK | DirtyState::DIRTY_COMMANDS,
+                },
+                bootstrap_scan,
+                input_changed,
+            },
+            |node| parent_siblings.get(&node).cloned().unwrap_or_default(),
+            |node, out| {
+                if let Some(node_ref) = nodes.get(node) {
+                    out.extend(node_ref.get_children_ids().iter().copied());
+                    if let SceneNodeData::UiTreeList(tree) = &node_ref.data {
+                        out.extend(ui_tree_all_nodes(tree));
                     }
                 }
-                if let SceneNodeData::UiTreeList(tree) = &node_ref.data {
-                    for child in ui_tree_all_nodes(tree) {
-                        if traversal_seen.insert(child) {
-                            traversal_ids.push(child);
-                        }
-                    }
-                }
-            }
-        }
-        for &node in &traversal_ids {
-            if command_seen.insert(node) {
-                command_ids.push(node);
-            }
-        }
-        if input_changed || bootstrap_scan {
-            self.collect_retained_command_ids(&mut command_ids, &mut command_seen);
-        }
-        traversal_seen.clear();
-        self.render_ui.traversal_seen = traversal_seen;
+            },
+        );
+        let traversal_ids = plan.traversal_ids;
+        let mut command_ids = plan.command_ids;
+        let mut command_seen = plan.command_seen;
         if let Some(timing) = timing.as_deref_mut() {
             timing.dirty_nodes = dirty_node_count.min(u32::MAX as usize) as u32;
-            timing.affected_nodes = traversal_ids.len().min(u32::MAX as usize) as u32;
+            timing.affected_nodes = plan.affected_nodes;
         }
-
         let mut visible_now = std::mem::take(&mut self.render_ui.visible_now);
         visible_now.clear();
         visible_now.extend(self.render_ui.prev_visible.iter().copied());
@@ -402,12 +382,8 @@ impl Runtime {
         visible_now.clear();
         self.render_ui.visible_now = visible_now;
 
-        traversal_ids.clear();
-        self.render_ui.traversal_ids = traversal_ids;
-        command_ids.clear();
-        command_seen.clear();
-        self.render_ui.command_ids = command_ids;
-        self.render_ui.command_seen = command_seen;
+        self.render_ui
+            .restore_extraction_plan(traversal_ids, command_ids, command_seen);
 
         if let Some(timing) = timing {
             timing.total = total_start.expect("ui timing total start exists").elapsed();
@@ -677,18 +653,6 @@ impl Runtime {
             self.input.is_mouse_down(MouseButton::Left),
         );
         self.render_ui.last_ui_pointer != Some(pointer)
-    }
-
-    fn collect_retained_command_ids(
-        &self,
-        command_ids: &mut Vec<NodeID>,
-        command_seen: &mut ahash::AHashSet<NodeID>,
-    ) {
-        for node in self.render_ui.retained_commands.keys().copied() {
-            if command_seen.insert(node) {
-                command_ids.push(node);
-            }
-        }
     }
 
     fn ui_text_input_changed(&self) -> bool {

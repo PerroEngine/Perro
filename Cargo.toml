@@ -11,6 +11,8 @@ members = [
     "perro_source/core/perro_asset_formats",
 
     "perro_source/runtime_project/perro_runtime",
+    "perro_source/runtime_project/perro_physics",
+    "perro_source/runtime_project/perro_runtime_render",
     "perro_source/runtime_project/perro_internal_updates",
     "perro_source/runtime_project/perro_scene",
     "perro_source/runtime_project/perro_project",

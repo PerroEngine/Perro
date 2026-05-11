@@ -2,6 +2,7 @@ use super::Runtime;
 use crate::render_result::RuntimeRenderResult;
 use perro_ids::NodeID;
 use perro_render_bridge::{RenderCommand, RenderEvent, RenderRequestID};
+use perro_runtime_render::{decode_3d_mesh_request_node, decode_render_request_node_from_event};
 
 impl Runtime {
     pub(crate) const UI_DIRTY_TRANSFORM: u16 = crate::runtime::state::DirtyState::DIRTY_TRANSFORM;
@@ -76,7 +77,7 @@ impl Runtime {
     }
 
     pub(crate) fn request_full_3d_scan_once(&mut self) {
-        self.render_3d.force_full_scan_once = true;
+        self.render_3d.request_full_scan_once();
     }
 
     pub fn force_rerender(&mut self, root_id: NodeID) {
@@ -115,53 +116,9 @@ impl Runtime {
     }
 
     pub(crate) fn note_removed_render_node(&mut self, node: NodeID) {
-        self.render_2d.removed_nodes.push(node);
-        self.render_3d.removed_nodes.push(node);
-        self.render_ui.removed_nodes.push(node);
-        self.locale_text
-            .bindings
-            .retain(|binding| binding.node != node);
+        self.render_2d.note_removed_node(node);
+        self.render_3d.note_removed_node(node);
+        self.render_ui.note_removed_node(node);
+        self.locale_text.remove_node_bindings(node);
     }
-}
-
-#[inline]
-fn decode_3d_mesh_request_node(request: RenderRequestID) -> Option<NodeID> {
-    if (request.0 & 0xFF) != 0x3E {
-        return None;
-    }
-    Some(NodeID::from_u64(request.0 >> 8))
-}
-
-#[inline]
-fn decode_2d_texture_request_node(request: RenderRequestID) -> Option<NodeID> {
-    if (request.0 & 0xFF) != 0x2D {
-        return None;
-    }
-    Some(NodeID::from_u64(request.0 >> 8))
-}
-
-#[inline]
-fn decode_3d_material_request_node(request: RenderRequestID) -> Option<NodeID> {
-    if (request.0 & 0xFF) != 0x3F {
-        return None;
-    }
-    Some(NodeID::from_u64(request.0 >> 16))
-}
-
-#[inline]
-fn decode_render_request_node(request: RenderRequestID) -> Option<NodeID> {
-    decode_2d_texture_request_node(request)
-        .or_else(|| decode_3d_mesh_request_node(request))
-        .or_else(|| decode_3d_material_request_node(request))
-}
-
-#[inline]
-fn decode_render_request_node_from_event(event: &RenderEvent) -> Option<NodeID> {
-    let request = match event {
-        RenderEvent::MeshCreated { request, .. }
-        | RenderEvent::TextureCreated { request, .. }
-        | RenderEvent::MaterialCreated { request, .. }
-        | RenderEvent::Failed { request, .. } => *request,
-    };
-    decode_render_request_node(request)
 }

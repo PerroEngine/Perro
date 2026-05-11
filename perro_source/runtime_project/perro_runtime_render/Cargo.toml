@@ -1,0 +1,14 @@
+[package]
+name = "perro_runtime_render"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ahash = "0.8"
+glam = "0.31.0"
+
+perro_ids = { path = "../../core/perro_ids" }
+perro_input = { path = "../../api_modules/perro_input" }
+perro_render_bridge = { path = "../../render_stack/perro_render_bridge" }
+perro_structs = { path = "../../core/perro_structs" }
+perro_ui = { path = "../../core/perro_ui" }

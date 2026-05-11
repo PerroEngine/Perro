@@ -11,22 +11,16 @@ use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, Command3D, DenseInstancePose3D,
     Material3D, MaterialParamOverride3D, MeshSurfaceBinding3D, ParticlePath3D, ParticleProfile3D,
     ParticleRenderMode3D, ParticleSimulationMode3D, PointLight3DState, PointParticles3DState,
-    RayLight3DState, RenderCommand, RenderRequestID, ResourceCommand, SkeletonPalette, Sky3DState,
-    SkyTime3DState, SpotLight3DState,
+    RayLight3DState, RenderCommand, ResourceCommand, SkeletonPalette, Sky3DState, SkyTime3DState,
+    SpotLight3DState,
 };
+use perro_runtime_render::{material_3d_request, mesh_3d_request};
 use std::borrow::Cow;
 use std::sync::Arc;
 
 const PARTICLE_PATH_CACHE_MAX: usize = 256;
 
 impl Runtime {
-    fn mesh_request(node: NodeID) -> RenderRequestID {
-        RenderRequestID::new((node.as_u64() << 8) | 0x3E)
-    }
-
-    fn material_request(node: NodeID, surface_index: u32) -> RenderRequestID {
-        RenderRequestID::new((node.as_u64() << 16) | ((surface_index as u64) << 8) | 0x3F)
-    }
     pub fn extract_render_3d_commands(&mut self) {
         let bootstrap_scan = self.render_3d.prev_visible.is_empty()
             && self.render_3d.retained_ambient_lights.is_empty()
@@ -49,36 +43,25 @@ impl Runtime {
         self.propagate_pending_transform_dirty();
         self.refresh_dirty_global_transforms();
 
-        let mut traversal_ids = std::mem::take(&mut self.render_3d.traversal_ids);
-        traversal_ids.clear();
-        traversal_ids.extend(
-            self.dirty
-                .dirty_indices()
-                .iter()
-                .filter_map(|&raw_index| self.nodes.slot_get(raw_index as usize).map(|(id, _)| id)),
-        );
-        if self.render_3d.force_full_scan_once {
-            traversal_ids.extend(self.nodes.iter().map(|(id, _)| id));
-            self.render_3d.force_full_scan_once = false;
-        }
-        if traversal_ids.is_empty() && bootstrap_scan {
-            traversal_ids.extend(self.nodes.iter().map(|(id, _)| id));
-        }
-        let mut traversal_seen = std::mem::take(&mut self.render_3d.traversal_seen);
-        traversal_seen.clear();
-        traversal_ids.retain(|id| traversal_seen.insert(*id));
-        let mut traversal_cursor = 0usize;
-        while traversal_cursor < traversal_ids.len() {
-            let node = traversal_ids[traversal_cursor];
-            traversal_cursor += 1;
-            if let Some(node_ref) = self.nodes.get(node) {
-                for &child in node_ref.get_children_ids() {
-                    if traversal_seen.insert(child) {
-                        traversal_ids.push(child);
+        let dirty_ids = self
+            .dirty
+            .dirty_indices()
+            .iter()
+            .filter_map(|&raw_index| self.nodes.slot_get(raw_index as usize).map(|(id, _)| id))
+            .collect::<Vec<_>>();
+        let all_ids = self.nodes.iter().map(|(id, _)| id).collect::<Vec<_>>();
+        let nodes = &self.nodes;
+        let mut traversal_ids =
+            self.render_3d
+                .collect_traversal(dirty_ids, all_ids, bootstrap_scan, |node, out| {
+                    if let Some(node_ref) = nodes.get(node) {
+                        out.extend(node_ref.get_children_ids().iter().copied());
                     }
-                }
-            }
-        }
+                });
+        let mut traversal_seen = traversal_ids
+            .iter()
+            .copied()
+            .collect::<ahash::AHashSet<_>>();
         let dirty_skeletons = traversal_ids
             .iter()
             .copied()
@@ -98,14 +81,7 @@ impl Runtime {
                 }
             }
         }
-        let mut visible_now = std::mem::take(&mut self.render_3d.visible_now);
-        visible_now.clear();
-        visible_now.extend(self.render_3d.prev_visible.iter().copied());
-        let mut removed_nodes = std::mem::take(&mut self.render_3d.removed_nodes);
-        for node in removed_nodes.drain(..) {
-            visible_now.remove(&node);
-        }
-        self.render_3d.removed_nodes = removed_nodes;
+        let mut visible_now = self.render_3d.begin_visible_pass();
         let mut skeleton_cache = std::mem::take(&mut self.render_3d.skeleton_cache_scratch);
         skeleton_cache.clear();
         let mut skeleton_global_scratch =
@@ -727,15 +703,13 @@ impl Runtime {
                 visible_now.insert(node);
             }
         }
-        self.remove_no_longer_visible_render_3d_nodes(&visible_now);
-        std::mem::swap(&mut self.render_3d.prev_visible, &mut visible_now);
-        visible_now.clear();
-        self.render_3d.visible_now = visible_now;
-
+        for node in self.render_3d.collect_removed_visible_nodes(&visible_now) {
+            self.remove_retained_render_3d_node(node);
+        }
         traversal_seen.clear();
         self.render_3d.traversal_seen = traversal_seen;
-        traversal_ids.clear();
-        self.render_3d.traversal_ids = traversal_ids;
+        self.render_3d
+            .finish_visible_pass(traversal_ids, visible_now);
         skeleton_cache.clear();
         self.render_3d.skeleton_cache_scratch = skeleton_cache;
         skeleton_global_scratch.clear();
@@ -746,27 +720,20 @@ impl Runtime {
         self.render_3d.dense_instance_pose_scratch = dense_instance_pose_scratch;
     }
 
-    fn remove_no_longer_visible_render_3d_nodes(&mut self, visible_now: &ahash::AHashSet<NodeID>) {
-        for node in self.render_3d.prev_visible.iter().copied() {
-            if !visible_now.contains(&node) {
-                self.render_3d.removed_nodes.push(node);
-            }
+    fn remove_retained_render_3d_node(&mut self, node: NodeID) {
+        self.render_3d.dense_instance_pose_cache.remove(&node);
+        if let Some(prev) = self.render_3d.collision_debug_state.remove(&node) {
+            Self::queue_remove_collision_debug_nodes(self, node, 0, prev.edge_count);
         }
-        while let Some(node) = self.render_3d.removed_nodes.pop() {
-            self.render_3d.dense_instance_pose_cache.remove(&node);
-            if let Some(prev) = self.render_3d.collision_debug_state.remove(&node) {
-                Self::queue_remove_collision_debug_nodes(self, node, 0, prev.edge_count);
-            }
-            self.render_3d.retained_ambient_lights.remove(&node);
-            self.render_3d.retained_skies.remove(&node);
-            self.render_3d.retained_ray_lights.remove(&node);
-            self.render_3d.retained_point_lights.remove(&node);
-            self.render_3d.retained_spot_lights.remove(&node);
-            self.render_3d.retained_mesh_draws.remove(&node);
-            self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::RemoveNode {
-                node,
-            })));
-        }
+        self.render_3d.retained_ambient_lights.remove(&node);
+        self.render_3d.retained_skies.remove(&node);
+        self.render_3d.retained_ray_lights.remove(&node);
+        self.render_3d.retained_point_lights.remove(&node);
+        self.render_3d.retained_spot_lights.remove(&node);
+        self.render_3d.retained_mesh_draws.remove(&node);
+        self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::RemoveNode {
+            node,
+        })));
     }
 
     fn queue_collision_shape_debug_draws(
@@ -825,7 +792,7 @@ impl Runtime {
                 continue;
             }
 
-            let request = Self::material_request(node, surface_index as u32);
+            let request = material_3d_request(node, surface_index as u32);
             if let Some(result) = self.take_render_result(request) {
                 match result {
                     crate::RuntimeRenderResult::Material(id) => {
@@ -928,7 +895,7 @@ impl Runtime {
         }
 
         if mesh.is_nil() {
-            let request = Self::mesh_request(node);
+            let request = mesh_3d_request(node);
             if let Some(result) = self.take_render_result(request) {
                 match result {
                     crate::RuntimeRenderResult::Mesh(id) => {

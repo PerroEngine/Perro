@@ -3220,6 +3220,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "perro_physics"
+version = "0.1.0"
+dependencies = [
+ "ahash",
+ "gltf",
+ "perro_asset_formats",
+ "perro_ids",
+ "perro_io",
+ "perro_nodes",
+ "perro_render_bridge",
+ "perro_runtime_context",
+ "perro_structs",
+ "rapier2d",
+ "rapier3d",
+ "rayon",
+]
+
+[[package]]
 name = "perro_project"
 version = "0.1.0"
 dependencies = [
@@ -3270,10 +3288,12 @@ dependencies = [
  "perro_nodes",
  "perro_particle_math",
  "perro_pawdio",
+ "perro_physics",
  "perro_project",
  "perro_render_bridge",
  "perro_resource_context",
  "perro_runtime_context",
+ "perro_runtime_render",
  "perro_scene",
  "perro_scripting",
  "perro_steamworks",
@@ -3293,6 +3313,19 @@ dependencies = [
  "perro_nodes",
  "perro_structs",
  "perro_variant",
+]
+
+[[package]]
+name = "perro_runtime_render"
+version = "0.1.0"
+dependencies = [
+ "ahash",
+ "glam",
+ "perro_ids",
+ "perro_input",
+ "perro_render_bridge",
+ "perro_structs",
+ "perro_ui",
 ]
 
 [[package]]

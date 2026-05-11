@@ -6,9 +6,9 @@ use perro_particle_math::compile_expression;
 use perro_render_bridge::{
     AmbientLight2DState, Camera2DState, Command2D, ParticlePath2D, ParticleProfile2D,
     ParticleSimulationMode2D, PointLight2DState, PointParticles2DState, RayLight2DState,
-    RenderCommand, RenderRequestID, ResourceCommand, SpotLight2DState, Sprite2DCommand,
-    TileMap2DCommand,
+    RenderCommand, ResourceCommand, SpotLight2DState, Sprite2DCommand, TileMap2DCommand,
 };
+use perro_runtime_render::{sprite_2d_texture_request, tilemap_2d_texture_request};
 use std::borrow::Cow;
 use std::sync::Arc;
 
@@ -21,18 +21,15 @@ struct Sprite2DEmit {
     z_index: i32,
 }
 
+pub(crate) use perro_render_bridge::TileSet2D as ParsedTileset2D;
 #[cfg(test)]
 pub(crate) use perro_render_bridge::TileSetTile2D as ParsedTile2D;
+#[cfg(test)]
 pub(crate) use perro_render_bridge::{
-    TileSet2D as ParsedTileset2D, TileSetCollisionShape2D as ParsedTileCollisionShape2D,
-    TileSetShape2D,
+    TileSetCollisionShape2D as ParsedTileCollisionShape2D, TileSetShape2D,
 };
 
 impl Runtime {
-    fn sprite_texture_request(node: NodeID) -> RenderRequestID {
-        RenderRequestID::new((node.as_u64() << 8) | 0x2D)
-    }
-
     pub fn extract_render_2d_commands(&mut self) {
         let bootstrap_scan = self.render_2d.prev_visible.is_empty()
             && self.render_2d.retained_sprites.is_empty()
@@ -48,39 +45,23 @@ impl Runtime {
         self.propagate_pending_transform_dirty();
         self.refresh_dirty_global_transforms();
 
-        let mut traversal_ids = std::mem::take(&mut self.render_2d.traversal_ids);
-        traversal_ids.clear();
-        traversal_ids.extend(
-            self.dirty
-                .dirty_indices()
-                .iter()
-                .filter_map(|&raw_index| self.nodes.slot_get(raw_index as usize).map(|(id, _)| id)),
-        );
-        if traversal_ids.is_empty() && bootstrap_scan {
-            traversal_ids.extend(self.nodes.iter().map(|(id, _)| id));
-        }
-        let mut traversal_seen: AHashSet<NodeID> = traversal_ids.iter().copied().collect();
-        let mut traversal_cursor = 0usize;
-        while traversal_cursor < traversal_ids.len() {
-            let node = traversal_ids[traversal_cursor];
-            traversal_cursor += 1;
-            if let Some(node_ref) = self.nodes.get(node) {
-                for &child in node_ref.get_children_ids() {
-                    if traversal_seen.insert(child) {
-                        traversal_ids.push(child);
+        let dirty_ids = self
+            .dirty
+            .dirty_indices()
+            .iter()
+            .filter_map(|&raw_index| self.nodes.slot_get(raw_index as usize).map(|(id, _)| id))
+            .collect::<Vec<_>>();
+        let all_ids = self.nodes.iter().map(|(id, _)| id).collect::<Vec<_>>();
+        let nodes = &self.nodes;
+        let traversal_ids =
+            self.render_2d
+                .collect_traversal(dirty_ids, all_ids, bootstrap_scan, |node, out| {
+                    if let Some(node_ref) = nodes.get(node) {
+                        out.extend(node_ref.get_children_ids().iter().copied());
                     }
-                }
-            }
-        }
+                });
 
-        let mut visible_now = std::mem::take(&mut self.render_2d.visible_now);
-        visible_now.clear();
-        visible_now.extend(self.render_2d.prev_visible.iter().copied());
-        let mut removed_nodes = std::mem::take(&mut self.render_2d.removed_nodes);
-        for node in removed_nodes.drain(..) {
-            visible_now.remove(&node);
-        }
-        self.render_2d.removed_nodes = removed_nodes;
+        let mut visible_now = self.render_2d.begin_visible_pass();
 
         for node in traversal_ids.iter().copied() {
             visible_now.remove(&node);
@@ -435,14 +416,12 @@ impl Runtime {
                 }
             }
         }
-        self.remove_no_longer_visible_render_2d_nodes(&visible_now);
-
-        std::mem::swap(&mut self.render_2d.prev_visible, &mut visible_now);
-        visible_now.clear();
-        self.render_2d.visible_now = visible_now;
-
-        traversal_ids.clear();
-        self.render_2d.traversal_ids = traversal_ids;
+        for node in self.render_2d.collect_removed_visible_nodes(&visible_now) {
+            self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
+            self.render_2d.retained_sprites.remove(&node);
+        }
+        self.render_2d
+            .finish_visible_pass(traversal_ids, visible_now);
     }
 
     fn emit_sprite_2d(
@@ -491,7 +470,7 @@ impl Runtime {
         mut texture: TextureID,
     ) -> Option<TextureID> {
         if texture.is_nil() {
-            let request = Self::sprite_texture_request(node);
+            let request = sprite_2d_texture_request(node);
             if let Some(result) = self.take_render_result(request) {
                 match result {
                     crate::RuntimeRenderResult::Texture(id) => {
@@ -512,7 +491,7 @@ impl Runtime {
         }
 
         if texture.is_nil() {
-            let request = Self::sprite_texture_request(node);
+            let request = sprite_2d_texture_request(node);
             if !self.render.is_inflight(request) {
                 let source = self
                     .render_2d
@@ -537,7 +516,7 @@ impl Runtime {
     }
 
     fn resolve_tilemap_texture(&mut self, node: NodeID, source: &str) -> Option<TextureID> {
-        let request = RenderRequestID::new((node.as_u64() << 8) | 0x71);
+        let request = tilemap_2d_texture_request(node);
         if let Some(result) = self.take_render_result(request) {
             return match result {
                 crate::RuntimeRenderResult::Texture(id) => Some(id),
@@ -557,18 +536,6 @@ impl Runtime {
             }));
         }
         None
-    }
-
-    fn remove_no_longer_visible_render_2d_nodes(&mut self, visible_now: &AHashSet<NodeID>) {
-        for node in self.render_2d.prev_visible.iter().copied() {
-            if !visible_now.contains(&node) {
-                self.render_2d.removed_nodes.push(node);
-            }
-        }
-        while let Some(node) = self.render_2d.removed_nodes.pop() {
-            self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
-            self.render_2d.retained_sprites.remove(&node);
-        }
     }
 }
 

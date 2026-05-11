@@ -1,6 +1,43 @@
-use super::*;
+use ahash::{AHashMap, AHashSet};
+use perro_asset_formats::pmesh::{
+    FLAG_INDEX_U16 as PMESH_FLAG_INDEX_U16, FLAG_PAYLOAD_RAW as PMESH_FLAG_PAYLOAD_RAW,
+    VERSION as PMESH_VERSION,
+};
+use perro_ids::{NodeID, parse_hashed_source_uri, string_to_u64};
+use perro_io::{decompress_zlib, load_asset};
+use perro_nodes::{
+    CollisionShape2D, CollisionShape3D, Shape2D, Shape3D, TileMap2D, Triangle2DKind,
+};
+use perro_render_bridge::{
+    TileSet2D as ParsedTileset2D, TileSetCollisionShape2D as ParsedTileCollisionShape2D,
+    TileSetShape2D,
+};
+use perro_runtime_context::sub_apis::{PhysicsQueryFilter, PhysicsRayHit2D, PhysicsRayHit3D};
+use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
 
-pub(super) fn body_signature_seed(kind: BodyKind) -> u64 {
+use crate::{
+    BodyDesc2D, BodyDesc3D, BodyKind, JointDesc2D, JointDesc3D, JointKind2D, JointKind3D,
+    PhysicsWorld2D, PhysicsWorld3D, ShapeDesc2D, ShapeDesc3D, ShapeKind2D, ShapeKind3D,
+    TriMeshData, na2, na3, r2, r3,
+};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum PhysicsProviderMode {
+    Dynamic,
+    Static,
+}
+
+pub type StaticBytesLookup = fn(u64) -> &'static [u8];
+
+#[derive(Clone, Copy, Debug)]
+pub struct PhysicsAssetContext {
+    pub provider_mode: PhysicsProviderMode,
+    pub static_mesh_lookup: Option<StaticBytesLookup>,
+    pub static_collision_trimesh_lookup: Option<StaticBytesLookup>,
+}
+
+pub fn body_signature_seed(kind: BodyKind) -> u64 {
     match kind {
         BodyKind::Static => 0xA91B_D58C_24F1_7E31,
         BodyKind::Area => 0xCC42_83B7_9E20_11DD,
@@ -8,20 +45,20 @@ pub(super) fn body_signature_seed(kind: BodyKind) -> u64 {
     }
 }
 
-pub(super) fn hash_u64(mut state: u64, value: u64) -> u64 {
+pub fn hash_u64(mut state: u64, value: u64) -> u64 {
     state ^= value.wrapping_mul(0x9E37_79B1_85EB_CA87);
     state.rotate_left(17)
 }
 
-pub(super) fn hash_f32(state: u64, bits: u32) -> u64 {
+pub fn hash_f32(state: u64, bits: u32) -> u64 {
     hash_u64(state, bits as u64)
 }
 
-pub(super) fn hash_u32(state: u64, value: u32) -> u64 {
+pub fn hash_u32(state: u64, value: u32) -> u64 {
     hash_u64(state, value as u64)
 }
 
-pub(super) fn hash_transform_2d(mut state: u64, transform: Transform2D) -> u64 {
+pub fn hash_transform_2d(mut state: u64, transform: Transform2D) -> u64 {
     state = hash_f32(state, transform.position.x.to_bits());
     state = hash_f32(state, transform.position.y.to_bits());
     state = hash_f32(state, transform.rotation.to_bits());
@@ -29,7 +66,7 @@ pub(super) fn hash_transform_2d(mut state: u64, transform: Transform2D) -> u64 {
     hash_f32(state, transform.scale.y.to_bits())
 }
 
-pub(super) fn hash_transform_3d(mut state: u64, transform: Transform3D) -> u64 {
+pub fn hash_transform_3d(mut state: u64, transform: Transform3D) -> u64 {
     state = hash_f32(state, transform.position.x.to_bits());
     state = hash_f32(state, transform.position.y.to_bits());
     state = hash_f32(state, transform.position.z.to_bits());
@@ -42,7 +79,7 @@ pub(super) fn hash_transform_3d(mut state: u64, transform: Transform3D) -> u64 {
     hash_f32(state, transform.scale.z.to_bits())
 }
 
-pub(super) fn hash_shape_2d(state: u64, shape: Shape2D) -> u64 {
+pub fn hash_shape_2d(state: u64, shape: Shape2D) -> u64 {
     match shape {
         Shape2D::Quad { width, height } => {
             let state = hash_u64(state, 1);
@@ -71,7 +108,7 @@ pub(super) fn hash_shape_2d(state: u64, shape: Shape2D) -> u64 {
     }
 }
 
-pub(super) fn hash_shape_3d(state: u64, shape: &Shape3D) -> u64 {
+pub fn hash_shape_3d(state: u64, shape: &Shape3D) -> u64 {
     match shape {
         Shape3D::Cube { size } => {
             let state = hash_u64(state, 1);
@@ -135,13 +172,13 @@ pub(super) fn hash_shape_3d(state: u64, shape: &Shape3D) -> u64 {
     }
 }
 
-pub(super) fn hash_collision_shape_2d(state: u64, shape: &CollisionShape2D, kind: BodyKind) -> u64 {
+pub fn hash_collision_shape_2d(state: u64, shape: &CollisionShape2D, kind: BodyKind) -> u64 {
     let mut state = hash_u64(state, (kind == BodyKind::Area) as u64);
     state = hash_transform_2d(state, shape.base.transform);
     hash_shape_2d(state, shape.shape)
 }
 
-pub(super) fn hash_tilemap_2d(mut state: u64, tilemap: &TileMap2D) -> u64 {
+pub fn hash_tilemap_2d(mut state: u64, tilemap: &TileMap2D) -> u64 {
     state = hash_u32(state, tilemap.width);
     state = hash_u32(state, tilemap.height);
     state = hash_u64(state, tilemap.empty_tile as u64);
@@ -154,12 +191,7 @@ pub(super) fn hash_tilemap_2d(mut state: u64, tilemap: &TileMap2D) -> u64 {
     state
 }
 
-pub(super) fn hash_tile_collision_shape_2d(
-    mut state: u64,
-    shape: crate::runtime::render_2d::ParsedTileCollisionShape2D,
-) -> u64 {
-    use crate::runtime::render_2d::ParsedTileCollisionShape2D;
-
+pub fn hash_tile_collision_shape_2d(mut state: u64, shape: ParsedTileCollisionShape2D) -> u64 {
     match shape {
         ParsedTileCollisionShape2D::Auto => hash_u32(state, 1),
         ParsedTileCollisionShape2D::Shape { shape, offset } => {
@@ -181,11 +213,7 @@ pub(super) fn hash_tile_collision_shape_2d(
     }
 }
 
-pub(super) fn tile_set_shape_to_shape_2d(
-    shape: crate::runtime::render_2d::TileSetShape2D,
-) -> Shape2D {
-    use crate::runtime::render_2d::TileSetShape2D;
-
+pub fn tile_set_shape_to_shape_2d(shape: TileSetShape2D) -> Shape2D {
     match shape {
         TileSetShape2D::Rect { width, height } => Shape2D::Quad { width, height },
         TileSetShape2D::Circle { radius } => Shape2D::Circle { radius },
@@ -197,13 +225,13 @@ pub(super) fn tile_set_shape_to_shape_2d(
     }
 }
 
-pub(super) fn tilemap_shape_descs_2d(
+pub fn tilemap_shape_descs_2d(
     tilemap: &TileMap2D,
     layer: u32,
     mask: u32,
     friction: f32,
     restitution: f32,
-    tileset: Option<&crate::runtime::render_2d::ParsedTileset2D>,
+    tileset: Option<&ParsedTileset2D>,
 ) -> Vec<ShapeDesc2D> {
     let Some(tileset) = tileset else {
         return Vec::new();
@@ -215,7 +243,6 @@ pub(super) fn tilemap_shape_descs_2d(
     }
     let tw = tileset.tile_size[0];
     let th = tileset.tile_size[1];
-    use crate::runtime::render_2d::ParsedTileCollisionShape2D;
 
     let mut solid = vec![false; width.saturating_mul(height)];
     let mut explicit = Vec::new();
@@ -314,7 +341,7 @@ pub(super) fn tilemap_shape_descs_2d(
     out
 }
 
-pub(super) fn hash_collision_shape_3d(
+pub fn hash_collision_shape_3d(
     state: u64,
     shape: &CollisionShape3D,
     kind: BodyKind,
@@ -331,11 +358,7 @@ pub(super) fn hash_collision_shape_3d(
     hash_shape_3d(state, &shape.shape)
 }
 
-pub(super) fn shape_desc_2d(
-    shape: &CollisionShape2D,
-    friction: f32,
-    restitution: f32,
-) -> ShapeDesc2D {
+pub fn shape_desc_2d(shape: &CollisionShape2D, friction: f32, restitution: f32) -> ShapeDesc2D {
     ShapeDesc2D {
         local: shape.base.transform,
         shape: ShapeKind2D::Primitive(shape.shape),
@@ -347,11 +370,7 @@ pub(super) fn shape_desc_2d(
     }
 }
 
-pub(super) fn shape_desc_3d(
-    shape: &CollisionShape3D,
-    friction: f32,
-    restitution: f32,
-) -> ShapeDesc3D {
+pub fn shape_desc_3d(shape: &CollisionShape3D, friction: f32, restitution: f32) -> ShapeDesc3D {
     ShapeDesc3D {
         local: shape.base.transform,
         shape: match &shape.shape {
@@ -368,11 +387,11 @@ pub(super) fn shape_desc_3d(
     }
 }
 
-pub(super) fn approx_eq_f32(a: f32, b: f32) -> bool {
+pub fn approx_eq_f32(a: f32, b: f32) -> bool {
     (a - b).abs() <= 0.000_01
 }
 
-pub(super) fn clamp_rb_speed_2d(rb: &mut r2::RigidBody, max_speed: f32) {
+pub fn clamp_rb_speed_2d(rb: &mut r2::RigidBody, max_speed: f32) {
     if max_speed <= 0.0 {
         return;
     }
@@ -386,7 +405,7 @@ pub(super) fn clamp_rb_speed_2d(rb: &mut r2::RigidBody, max_speed: f32) {
     rb.set_linvel(current * scale, true);
 }
 
-pub(super) fn clamp_rb_speed_3d(rb: &mut r3::RigidBody, max_speed: f32) {
+pub fn clamp_rb_speed_3d(rb: &mut r3::RigidBody, max_speed: f32) {
     if max_speed <= 0.0 {
         return;
     }
@@ -400,7 +419,7 @@ pub(super) fn clamp_rb_speed_3d(rb: &mut r3::RigidBody, max_speed: f32) {
     rb.set_linvel(current * scale, true);
 }
 
-pub(super) fn build_rigid_body_2d(desc: &BodyDesc2D) -> r2::RigidBody {
+pub fn build_rigid_body_2d(desc: &BodyDesc2D) -> r2::RigidBody {
     let mut builder = match desc.kind {
         BodyKind::Static => r2::RigidBodyBuilder::fixed(),
         BodyKind::Area => r2::RigidBodyBuilder::fixed(),
@@ -430,7 +449,7 @@ pub(super) fn build_rigid_body_2d(desc: &BodyDesc2D) -> r2::RigidBody {
     builder.build()
 }
 
-pub(super) fn build_rigid_body_3d(desc: &BodyDesc3D) -> r3::RigidBody {
+pub fn build_rigid_body_3d(desc: &BodyDesc3D) -> r3::RigidBody {
     let mut builder = match desc.kind {
         BodyKind::Static => r3::RigidBodyBuilder::fixed(),
         BodyKind::Area => r3::RigidBodyBuilder::fixed(),
@@ -463,7 +482,7 @@ pub(super) fn build_rigid_body_3d(desc: &BodyDesc3D) -> r3::RigidBody {
     builder.build()
 }
 
-pub(super) fn collider_builder_2d(desc: &ShapeDesc2D) -> Option<r2::Collider> {
+pub fn collider_builder_2d(desc: &ShapeDesc2D) -> Option<r2::Collider> {
     let sx = desc.local.scale.x.abs().max(0.0001);
     let sy = desc.local.scale.y.abs().max(0.0001);
     let shape = match &desc.shape {
@@ -510,7 +529,7 @@ pub(super) fn collider_builder_2d(desc: &ShapeDesc2D) -> Option<r2::Collider> {
     )
 }
 
-pub(super) fn shared_shape_2d(shape: Shape2D) -> Option<r2::SharedShape> {
+pub fn shared_shape_2d(shape: Shape2D) -> Option<r2::SharedShape> {
     match shape {
         Shape2D::Quad { width, height } => Some(r2::SharedShape::cuboid(
             width.abs().max(0.0001) * 0.5,
@@ -528,7 +547,7 @@ pub(super) fn shared_shape_2d(shape: Shape2D) -> Option<r2::SharedShape> {
     }
 }
 
-pub(super) fn shared_shape_3d(shape: Shape3D) -> Option<r3::SharedShape> {
+pub fn shared_shape_3d(shape: Shape3D) -> Option<r3::SharedShape> {
     match shape {
         Shape3D::Cube { size } => Some(r3::SharedShape::cuboid(
             size.x.abs().max(0.0001) * 0.5,
@@ -573,11 +592,11 @@ pub(super) fn shared_shape_3d(shape: Shape3D) -> Option<r3::SharedShape> {
     }
 }
 
-pub(super) fn collider_builder_3d(
+pub fn collider_builder_3d(
     desc: &ShapeDesc3D,
-    provider_mode: crate::runtime_project::ProviderMode,
-    static_mesh_lookup: Option<crate::runtime_project::StaticBytesLookup>,
-    static_collision_trimesh_lookup: Option<crate::runtime_project::StaticBytesLookup>,
+    provider_mode: PhysicsProviderMode,
+    static_mesh_lookup: Option<StaticBytesLookup>,
+    static_collision_trimesh_lookup: Option<StaticBytesLookup>,
     trimesh_cache: &mut AHashMap<u64, TriMeshData>,
 ) -> Option<r3::Collider> {
     let sx = desc.local.scale.x.abs().max(0.0001);
@@ -670,21 +689,21 @@ pub(super) fn collider_builder_3d(
     )
 }
 
-pub(super) fn interaction_groups_2d(layer: u32, mask: u32) -> r2::InteractionGroups {
+pub fn interaction_groups_2d(layer: u32, mask: u32) -> r2::InteractionGroups {
     r2::InteractionGroups::new(
         r2::Group::from_bits_truncate(layer),
         r2::Group::from_bits_truncate(mask),
     )
 }
 
-pub(super) fn interaction_groups_3d(layer: u32, mask: u32) -> r3::InteractionGroups {
+pub fn interaction_groups_3d(layer: u32, mask: u32) -> r3::InteractionGroups {
     r3::InteractionGroups::new(
         r3::Group::from_bits_truncate(layer),
         r3::Group::from_bits_truncate(mask),
     )
 }
 
-pub(super) fn query_filter_2d(filter: &PhysicsQueryFilter) -> r2::QueryFilter<'_> {
+pub fn query_filter_2d(filter: &PhysicsQueryFilter) -> r2::QueryFilter<'_> {
     let mut query_filter = r2::QueryFilter::new();
     if !filter.include_areas {
         query_filter = query_filter.exclude_sensors();
@@ -692,7 +711,7 @@ pub(super) fn query_filter_2d(filter: &PhysicsQueryFilter) -> r2::QueryFilter<'_
     query_filter
 }
 
-pub(super) fn query_filter_3d(filter: &PhysicsQueryFilter) -> r3::QueryFilter<'_> {
+pub fn query_filter_3d(filter: &PhysicsQueryFilter) -> r3::QueryFilter<'_> {
     let mut query_filter = r3::QueryFilter::new();
     if !filter.include_areas {
         query_filter = query_filter.exclude_sensors();
@@ -700,16 +719,14 @@ pub(super) fn query_filter_3d(filter: &PhysicsQueryFilter) -> r3::QueryFilter<'_
     query_filter
 }
 
-pub(super) type TriMeshData = (Vec<na3::Point3<f32>>, Vec<[u32; 3]>);
-
-pub(super) struct TrimeshLoadCtx<'a> {
-    provider_mode: crate::runtime_project::ProviderMode,
-    static_mesh_lookup: Option<crate::runtime_project::StaticBytesLookup>,
-    static_collision_trimesh_lookup: Option<crate::runtime_project::StaticBytesLookup>,
+pub struct TrimeshLoadCtx<'a> {
+    provider_mode: PhysicsProviderMode,
+    static_mesh_lookup: Option<StaticBytesLookup>,
+    static_collision_trimesh_lookup: Option<StaticBytesLookup>,
     trimesh_cache: &'a mut AHashMap<u64, TriMeshData>,
 }
 
-pub(super) fn load_trimesh_from_source(
+pub fn load_trimesh_from_source(
     source: &str,
     scale: [f32; 3],
     ctx: &mut TrimeshLoadCtx<'_>,
@@ -725,7 +742,7 @@ pub(super) fn load_trimesh_from_source(
         return Some(cached.clone());
     }
 
-    if ctx.provider_mode == crate::runtime_project::ProviderMode::Static
+    if ctx.provider_mode == PhysicsProviderMode::Static
         && let Some(lookup) = ctx.static_collision_trimesh_lookup
     {
         let source_hash = parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
@@ -773,7 +790,7 @@ pub(super) fn load_trimesh_from_source(
         }
     }
 
-    if ctx.provider_mode == crate::runtime_project::ProviderMode::Static
+    if ctx.provider_mode == PhysicsProviderMode::Static
         && let Some(lookup) = ctx.static_mesh_lookup
     {
         let source_hash = parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
@@ -810,7 +827,7 @@ pub(super) fn load_trimesh_from_source(
     None
 }
 
-pub(super) fn normalize_source_slashes(source: &str) -> std::borrow::Cow<'_, str> {
+pub fn normalize_source_slashes(source: &str) -> std::borrow::Cow<'_, str> {
     if source.contains('\\') {
         std::borrow::Cow::Owned(source.replace('\\', "/"))
     } else {
@@ -818,7 +835,7 @@ pub(super) fn normalize_source_slashes(source: &str) -> std::borrow::Cow<'_, str
     }
 }
 
-pub(super) fn normalized_static_mesh_lookup_alias(source: &str) -> Option<String> {
+pub fn normalized_static_mesh_lookup_alias(source: &str) -> Option<String> {
     let (path, fragment) = split_source_fragment(source);
     if !(path.ends_with(".glb") || path.ends_with(".gltf")) {
         return None;
@@ -830,7 +847,7 @@ pub(super) fn normalized_static_mesh_lookup_alias(source: &str) -> Option<String
     }
 }
 
-pub(super) fn decode_pmesh_trimesh(bytes: &[u8], sx: f32, sy: f32, sz: f32) -> Option<TriMeshData> {
+pub fn decode_pmesh_trimesh(bytes: &[u8], sx: f32, sy: f32, sz: f32) -> Option<TriMeshData> {
     if bytes.len() < 33 || &bytes[0..5] != b"PMESH" {
         return None;
     }
@@ -896,12 +913,7 @@ pub(super) fn decode_pmesh_trimesh(bytes: &[u8], sx: f32, sy: f32, sz: f32) -> O
     Some((vertices, triangles))
 }
 
-pub(super) fn decode_render_pmesh_trimesh(
-    bytes: &[u8],
-    sx: f32,
-    sy: f32,
-    sz: f32,
-) -> Option<TriMeshData> {
+pub fn decode_render_pmesh_trimesh(bytes: &[u8], sx: f32, sy: f32, sz: f32) -> Option<TriMeshData> {
     if bytes.len() < 37 {
         return None;
     }
@@ -984,7 +996,7 @@ pub(super) fn decode_render_pmesh_trimesh(
     Some((vertices, triangles))
 }
 
-pub(super) fn decode_pmesh_payload(flags: u32, payload: &[u8]) -> Option<Vec<u8>> {
+pub fn decode_pmesh_payload(flags: u32, payload: &[u8]) -> Option<Vec<u8>> {
     if (flags & PMESH_FLAG_PAYLOAD_RAW) != 0 {
         Some(payload.to_vec())
     } else {
@@ -992,7 +1004,7 @@ pub(super) fn decode_pmesh_payload(flags: u32, payload: &[u8]) -> Option<Vec<u8>
     }
 }
 
-pub(super) fn read_trimesh_index(
+pub fn read_trimesh_index(
     raw: &[u8],
     index_start: usize,
     index: usize,
@@ -1007,7 +1019,7 @@ pub(super) fn read_trimesh_index(
     }
 }
 
-pub(super) fn load_trimesh_from_gltf_bytes(
+pub fn load_trimesh_from_gltf_bytes(
     bytes: &[u8],
     mesh_index: usize,
     sx: f32,
@@ -1075,12 +1087,12 @@ pub(super) fn load_trimesh_from_gltf_bytes(
     Some((vertices, triangles))
 }
 
-pub(super) fn trimesh_cache_key(
+pub fn trimesh_cache_key(
     source: &str,
     sx: f32,
     sy: f32,
     sz: f32,
-    provider_mode: crate::runtime_project::ProviderMode,
+    provider_mode: PhysicsProviderMode,
 ) -> u64 {
     string_to_u64(&format!(
         "{source}|{:08x}|{:08x}|{:08x}|{}",
@@ -1091,7 +1103,7 @@ pub(super) fn trimesh_cache_key(
     ))
 }
 
-pub(super) fn simplify_trimesh_data(
+pub fn simplify_trimesh_data(
     vertices: Vec<na3::Point3<f32>>,
     triangles: Vec<[u32; 3]>,
 ) -> Option<TriMeshData> {
@@ -1104,7 +1116,7 @@ pub(super) fn simplify_trimesh_data(
     Some((vertices, triangles))
 }
 
-pub(super) fn weld_and_filter_mesh(
+pub fn weld_and_filter_mesh(
     vertices: Vec<na3::Point3<f32>>,
     triangles: Vec<[u32; 3]>,
 ) -> Option<TriMeshData> {
@@ -1158,7 +1170,7 @@ pub(super) fn weld_and_filter_mesh(
     Some((out_vertices, out_triangles))
 }
 
-pub(super) fn simplify_coplanar_mesh(
+pub fn simplify_coplanar_mesh(
     vertices: &[na3::Point3<f32>],
     triangles: &[[u32; 3]],
 ) -> Option<TriMeshData> {
@@ -1235,7 +1247,7 @@ pub(super) fn simplify_coplanar_mesh(
     Some((new_vertices, new_triangles))
 }
 
-pub(super) fn dominant_axis_3d(x: f32, y: f32, z: f32) -> usize {
+pub fn dominant_axis_3d(x: f32, y: f32, z: f32) -> usize {
     let ax = x.abs();
     let ay = y.abs();
     let az = z.abs();
@@ -1248,7 +1260,7 @@ pub(super) fn dominant_axis_3d(x: f32, y: f32, z: f32) -> usize {
     }
 }
 
-pub(super) fn project_axis_3d(p: na3::Point3<f32>, axis: usize) -> [f32; 2] {
+pub fn project_axis_3d(p: na3::Point3<f32>, axis: usize) -> [f32; 2] {
     match axis {
         0 => [p.y, p.z],
         1 => [p.x, p.z],
@@ -1256,7 +1268,7 @@ pub(super) fn project_axis_3d(p: na3::Point3<f32>, axis: usize) -> [f32; 2] {
     }
 }
 
-pub(super) fn unproject_axis_on_plane(
+pub fn unproject_axis_on_plane(
     p: [f32; 2],
     axis: usize,
     n: na3::Vector3<f32>,
@@ -1284,7 +1296,7 @@ pub(super) fn unproject_axis_on_plane(
     }
 }
 
-pub(super) fn convex_hull_2d(points: &[[f32; 2]]) -> Vec<[f32; 2]> {
+pub fn convex_hull_2d(points: &[[f32; 2]]) -> Vec<[f32; 2]> {
     let mut pts = points.to_vec();
     pts.sort_by(|a, b| {
         a[0].partial_cmp(&b[0])
@@ -1324,7 +1336,7 @@ pub(super) fn convex_hull_2d(points: &[[f32; 2]]) -> Vec<[f32; 2]> {
     lower
 }
 
-pub(super) fn polygon_area_abs(poly: &[[f32; 2]]) -> f32 {
+pub fn polygon_area_abs(poly: &[[f32; 2]]) -> f32 {
     if poly.len() < 3 {
         return 0.0;
     }
@@ -1337,25 +1349,21 @@ pub(super) fn polygon_area_abs(poly: &[[f32; 2]]) -> f32 {
     area.abs() * 0.5
 }
 
-pub(super) fn sub2(a: [f32; 2], b: [f32; 2]) -> [f32; 2] {
+pub fn sub2(a: [f32; 2], b: [f32; 2]) -> [f32; 2] {
     [a[0] - b[0], a[1] - b[1]]
 }
 
-pub(super) fn cross2(a: [f32; 2], b: [f32; 2]) -> f32 {
+pub fn cross2(a: [f32; 2], b: [f32; 2]) -> f32 {
     a[0] * b[1] - a[1] * b[0]
 }
 
-pub(super) fn triangle_area_sq(
-    a: na3::Point3<f32>,
-    b: na3::Point3<f32>,
-    c: na3::Point3<f32>,
-) -> f32 {
+pub fn triangle_area_sq(a: na3::Point3<f32>, b: na3::Point3<f32>, c: na3::Point3<f32>) -> f32 {
     let ab = b - a;
     let ac = c - a;
     ab.cross(&ac).norm_squared() * 0.25
 }
 
-pub(super) fn split_source_fragment(source: &str) -> (&str, Option<&str>) {
+pub fn split_source_fragment(source: &str) -> (&str, Option<&str>) {
     let Some((path, selector)) = source.rsplit_once(':') else {
         return (source, None);
     };
@@ -1371,7 +1379,7 @@ pub(super) fn split_source_fragment(source: &str) -> (&str, Option<&str>) {
     (source, None)
 }
 
-pub(super) fn parse_fragment_index(fragment: Option<&str>, key: &str) -> Option<usize> {
+pub fn parse_fragment_index(fragment: Option<&str>, key: &str) -> Option<usize> {
     let fragment = fragment?;
     let (name, rest) = fragment.split_once('[')?;
     if name.trim() != key {
@@ -1381,7 +1389,7 @@ pub(super) fn parse_fragment_index(fragment: Option<&str>, key: &str) -> Option<
     value.parse::<usize>().ok()
 }
 
-pub(super) fn triangle_points_2d(
+pub fn triangle_points_2d(
     kind: Triangle2DKind,
     width: f32,
     height: f32,
@@ -1411,7 +1419,7 @@ pub(super) fn triangle_points_2d(
     Some(points)
 }
 
-pub(super) fn tri_prism_points(width: f32, height: f32, depth: f32) -> Vec<na3::Point3<f32>> {
+pub fn tri_prism_points(width: f32, height: f32, depth: f32) -> Vec<na3::Point3<f32>> {
     let hw = width.abs().max(0.0001) * 0.5;
     let hh = height.abs().max(0.0001) * 0.5;
     let hd = depth.abs().max(0.0001) * 0.5;
@@ -1425,11 +1433,7 @@ pub(super) fn tri_prism_points(width: f32, height: f32, depth: f32) -> Vec<na3::
     ]
 }
 
-pub(super) fn triangular_pyramid_points(
-    width: f32,
-    height: f32,
-    depth: f32,
-) -> Vec<na3::Point3<f32>> {
+pub fn triangular_pyramid_points(width: f32, height: f32, depth: f32) -> Vec<na3::Point3<f32>> {
     let hw = width.abs().max(0.0001) * 0.5;
     let hh = height.abs().max(0.0001) * 0.5;
     let hd = depth.abs().max(0.0001) * 0.5;
@@ -1441,7 +1445,7 @@ pub(super) fn triangular_pyramid_points(
     ]
 }
 
-pub(super) fn square_pyramid_points(width: f32, height: f32, depth: f32) -> Vec<na3::Point3<f32>> {
+pub fn square_pyramid_points(width: f32, height: f32, depth: f32) -> Vec<na3::Point3<f32>> {
     let hw = width.abs().max(0.0001) * 0.5;
     let hh = height.abs().max(0.0001) * 0.5;
     let hd = depth.abs().max(0.0001) * 0.5;
@@ -1454,14 +1458,14 @@ pub(super) fn square_pyramid_points(width: f32, height: f32, depth: f32) -> Vec<
     ]
 }
 
-pub(super) fn transform_to_iso2(transform: Transform2D) -> na2::Isometry2<f32> {
+pub fn transform_to_iso2(transform: Transform2D) -> na2::Isometry2<f32> {
     na2::Isometry2::new(
         na2::Vector2::new(transform.position.x, transform.position.y),
         transform.rotation,
     )
 }
 
-pub(super) fn transform_to_iso3(transform: Transform3D) -> na3::Isometry3<f32> {
+pub fn transform_to_iso3(transform: Transform3D) -> na3::Isometry3<f32> {
     let rotation = na3::UnitQuaternion::from_quaternion(na3::Quaternion::new(
         transform.rotation.w,
         transform.rotation.x,
@@ -1478,7 +1482,7 @@ pub(super) fn transform_to_iso3(transform: Transform3D) -> na3::Isometry3<f32> {
     )
 }
 
-pub(super) fn joint_signature_2d(
+pub fn joint_signature_2d(
     body_a: NodeID,
     body_b: NodeID,
     anchor_a: Vector2,
@@ -1505,7 +1509,7 @@ pub(super) fn joint_signature_2d(
     }
 }
 
-pub(super) fn joint_signature_3d(
+pub fn joint_signature_3d(
     body_a: NodeID,
     body_b: NodeID,
     anchor_a: Vector3,
@@ -1535,7 +1539,7 @@ pub(super) fn joint_signature_3d(
     }
 }
 
-pub(super) fn build_joint_2d(desc: &JointDesc2D) -> r2::GenericJoint {
+pub fn build_joint_2d(desc: &JointDesc2D) -> r2::GenericJoint {
     let anchor_a = na2::Point2::new(desc.anchor_a.x, desc.anchor_a.y);
     let anchor_b = na2::Point2::new(desc.anchor_b.x, desc.anchor_b.y);
     match desc.kind {
@@ -1563,7 +1567,7 @@ pub(super) fn build_joint_2d(desc: &JointDesc2D) -> r2::GenericJoint {
     }
 }
 
-pub(super) fn build_joint_3d(desc: &JointDesc3D) -> r3::GenericJoint {
+pub fn build_joint_3d(desc: &JointDesc3D) -> r3::GenericJoint {
     let anchor_a = na3::Point3::new(desc.anchor_a.x, desc.anchor_a.y, desc.anchor_a.z);
     let anchor_b = na3::Point3::new(desc.anchor_b.x, desc.anchor_b.y, desc.anchor_b.z);
     match desc.kind {
@@ -1592,19 +1596,19 @@ pub(super) fn build_joint_3d(desc: &JointDesc3D) -> r3::GenericJoint {
     }
 }
 
-pub(super) fn remove_joint_2d(world: &mut PhysicsWorld2D, id: NodeID) {
+pub fn remove_joint_2d(world: &mut PhysicsWorld2D, id: NodeID) {
     if let Some(state) = world.joint_map.remove(&id) {
         let _ = world.impulse_joints.remove(state.handle, true);
     }
 }
 
-pub(super) fn remove_joint_3d(world: &mut PhysicsWorld3D, id: NodeID) {
+pub fn remove_joint_3d(world: &mut PhysicsWorld3D, id: NodeID) {
     if let Some(state) = world.joint_map.remove(&id) {
         let _ = world.impulse_joints.remove(state.handle, true);
     }
 }
 
-pub(super) fn prepared_audio_raycast_2d_in_world(
+pub fn prepared_audio_raycast_2d_in_world(
     world: &PhysicsWorld2D,
     origin: Vector2,
     direction: Vector2,
@@ -1646,7 +1650,7 @@ pub(super) fn prepared_audio_raycast_2d_in_world(
     })
 }
 
-pub(super) fn prepared_audio_raycast_3d_in_world(
+pub fn prepared_audio_raycast_3d_in_world(
     world: &PhysicsWorld3D,
     origin: Vector3,
     direction: Vector3,
