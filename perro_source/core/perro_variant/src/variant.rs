@@ -184,7 +184,13 @@ pub enum EngineStruct {
 /// Implement this trait for custom structs/enums (typically via `#[derive(Variant)]`).
 pub trait DeriveVariant: Sized {
     fn from_variant(value: &Variant) -> Option<Self>;
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        Self::from_variant(&value)
+    }
     fn to_variant(&self) -> Variant;
+    fn into_variant(self) -> Variant {
+        self.to_variant()
+    }
 }
 
 /// Optional compile-time introspection metadata for Variant-derived types.
@@ -301,6 +307,22 @@ impl Variant {
             actual: self.kind_name(),
         })
     }
+
+    /// Decode this [`Variant`] into typed value while consuming the variant.
+    ///
+    /// This avoids clone work for container-heavy values when the caller no
+    /// longer needs the intermediate variant.
+    #[inline]
+    pub fn into_parse<T>(self) -> Result<T, VariantParseError>
+    where
+        T: DeriveVariant,
+    {
+        let actual = self.kind_name();
+        T::from_owned_variant(self).ok_or(VariantParseError {
+            target: std::any::type_name::<T>(),
+            actual,
+        })
+    }
 }
 
 impl DeriveVariant for Variant {
@@ -310,8 +332,18 @@ impl DeriveVariant for Variant {
     }
 
     #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        Some(value)
+    }
+
+    #[inline]
     fn to_variant(&self) -> Variant {
         self.clone()
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        self
     }
 }
 
@@ -442,8 +474,18 @@ impl DeriveVariant for String {
     }
 
     #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        value.as_str().map(ToString::to_string)
+    }
+
+    #[inline]
     fn to_variant(&self) -> Variant {
         Variant::from(self.clone())
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        Variant::from(self)
     }
 }
 
@@ -454,8 +496,21 @@ impl DeriveVariant for Arc<str> {
     }
 
     #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        match value {
+            Variant::String(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    #[inline]
     fn to_variant(&self) -> Variant {
         Variant::from(Arc::clone(self))
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        Variant::from(self)
     }
 }
 
@@ -640,8 +695,21 @@ impl DeriveVariant for PostProcessSet {
     }
 
     #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        match value {
+            Variant::EngineStruct(EngineStruct::PostProcessSet(v)) => Some(v),
+            _ => None,
+        }
+    }
+
+    #[inline]
     fn to_variant(&self) -> Variant {
         Variant::from(self.clone())
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        Variant::from(self)
     }
 }
 
@@ -671,9 +739,26 @@ where
     }
 
     #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        if matches!(value, Variant::Null) {
+            Some(None)
+        } else {
+            T::from_owned_variant(value).map(Some)
+        }
+    }
+
+    #[inline]
     fn to_variant(&self) -> Variant {
         match self {
             Some(v) => v.to_variant(),
+            None => Variant::Null,
+        }
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        match self {
+            Some(v) => v.into_variant(),
             None => Variant::Null,
         }
     }
@@ -694,8 +779,26 @@ where
     }
 
     #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        let items = match value {
+            Variant::Array(items) => items,
+            _ => return None,
+        };
+        let mut out = Vec::with_capacity(items.len());
+        for item in items {
+            out.push(T::from_owned_variant(item)?);
+        }
+        Some(out)
+    }
+
+    #[inline]
     fn to_variant(&self) -> Variant {
         Variant::Array(self.iter().map(DeriveVariant::to_variant).collect())
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        Variant::Array(self.into_iter().map(DeriveVariant::into_variant).collect())
     }
 }
 
@@ -714,10 +817,32 @@ where
     }
 
     #[inline]
+    fn from_owned_variant(value: Variant) -> Option<Self> {
+        let object = match value {
+            Variant::Object(object) => object,
+            _ => return None,
+        };
+        let mut out = BTreeMap::new();
+        for (k, v) in object {
+            out.insert(k, T::from_owned_variant(v)?);
+        }
+        Some(out)
+    }
+
+    #[inline]
     fn to_variant(&self) -> Variant {
         let mut out = BTreeMap::new();
         for (k, v) in self {
             out.insert(Arc::clone(k), v.to_variant());
+        }
+        Variant::Object(out)
+    }
+
+    #[inline]
+    fn into_variant(self) -> Variant {
+        let mut out = BTreeMap::new();
+        for (k, v) in self {
+            out.insert(k, v.into_variant());
         }
         Variant::Object(out)
     }

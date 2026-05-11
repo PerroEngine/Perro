@@ -245,7 +245,7 @@ impl ScriptAPI for Runtime {
             return false;
         }
 
-        self.attach_script_instance(node_id, string_to_u64(script_path), None, &[])
+        self.attach_script_instance(node_id, string_to_u64(script_path), None, Vec::new())
             .is_ok()
     }
 
@@ -263,7 +263,7 @@ impl ScriptAPI for Runtime {
             return false;
         }
 
-        self.attach_script_instance(node_id, script_path_hash, None, &[])
+        self.attach_script_instance(node_id, script_path_hash, None, Vec::new())
             .is_ok()
     }
 
@@ -295,7 +295,7 @@ impl ScriptAPI for Runtime {
         let _ = self.scripts.with_instance_mut(script_id, |instance| {
             instance
                 .behavior
-                .set_var(instance.state.as_mut(), member, &value);
+                .set_var(instance.state.as_mut(), member, value);
         });
     }
 

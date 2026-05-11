@@ -6,7 +6,7 @@ pub mod variant {
 
 use perro_ids::ScriptMemberID;
 use perro_scripting::Variant;
-use perro_variant::{DeriveVariant, VariantSchema};
+use perro_variant::{DeriveVariant, Variant as VariantValue, VariantSchema};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -112,6 +112,48 @@ fn custom_struct_roundtrip_variant_codec() {
     let encoded = <BotProfile as DeriveVariant>::to_variant(&value);
     let decoded = <BotProfile as DeriveVariant>::from_variant(&encoded).expect("decode BotProfile");
     assert_eq!(value, decoded);
+}
+
+#[test]
+fn variant_from_and_parse_decodes_custom_struct_and_enum() {
+    let profile = sample_profile();
+    let encoded = VariantValue::from(profile.clone());
+    let decoded = encoded.parse::<BotProfile>().expect("parse BotProfile");
+    assert_eq!(decoded, profile);
+
+    let state = BotState::Fired {
+        power: 0.91,
+        direction: Vec3Like {
+            x: 0.05,
+            y: 0.15,
+            z: -0.98,
+        },
+    };
+    let encoded = VariantValue::from(state.clone());
+    let decoded = encoded.parse::<BotState>().expect("parse BotState");
+    assert_eq!(decoded, state);
+}
+
+#[test]
+fn variant_from_and_into_parse_decodes_custom_struct_and_enum() {
+    let profile = sample_profile();
+    let decoded = VariantValue::from(profile.clone())
+        .into_parse::<BotProfile>()
+        .expect("into_parse BotProfile");
+    assert_eq!(decoded, profile);
+
+    let state = BotState::Charging(
+        0.75,
+        Vec3Like {
+            x: 0.0,
+            y: 0.2,
+            z: -1.0,
+        },
+    );
+    let decoded = VariantValue::from(state.clone())
+        .into_parse::<BotState>()
+        .expect("into_parse BotState");
+    assert_eq!(decoded, state);
 }
 
 #[test]

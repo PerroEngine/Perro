@@ -159,6 +159,14 @@ fn parse_variant_derive_options(input: &DeriveInput) -> Result<VariantDeriveOpti
     Ok(options)
 }
 
+fn shared_arc_str(value: &str) -> proc_macro2::TokenStream {
+    quote! {{
+        static __PERRO_VARIANT_KEY: ::std::sync::LazyLock<::std::sync::Arc<str>> =
+            ::std::sync::LazyLock::new(|| ::std::sync::Arc::<str>::from(#value));
+        ::std::sync::Arc::clone(&__PERRO_VARIANT_KEY)
+    }}
+}
+
 fn derive_state_field_struct(
     ident: syn::Ident,
     impl_generics: syn::ImplGenerics<'_>,
@@ -177,7 +185,10 @@ fn derive_state_field_struct(
     };
 
     let mut from_fields = Vec::new();
+    let mut from_owned_fields = Vec::new();
     let mut to_fields = Vec::new();
+    let mut into_fields = Vec::new();
+    let mut field_idents = Vec::new();
     let mut schema_fields = Vec::new();
     let mut codec_hints = Vec::new();
 
@@ -187,6 +198,8 @@ fn derive_state_field_struct(
         };
         let field_ty = field.ty;
         let field_key = field_ident.to_string();
+        let field_key_arc = shared_arc_str(&field_key);
+        field_idents.push(field_ident.clone());
         schema_fields.push(field_key.clone());
         codec_hints.push(quote! {
             __perro_hint_use_derive_variant::<#field_ty>();
@@ -197,8 +210,14 @@ fn derive_state_field_struct(
                 from_fields.push(quote! {
                     #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_variant(obj.get(#field_key)?)?
                 });
+                from_owned_fields.push(quote! {
+                    #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_owned_variant(obj.remove(#field_key)?)?
+                });
                 to_fields.push(quote! {
-                    out.insert(::std::sync::Arc::<str>::from(#field_key), ::perro_api::variant::DeriveVariant::to_variant(&self.#field_ident));
+                    out.insert(#field_key_arc, ::perro_api::variant::DeriveVariant::to_variant(&self.#field_ident));
+                });
+                into_fields.push(quote! {
+                    out.insert(#field_key_arc, ::perro_api::variant::DeriveVariant::into_variant(#field_ident));
                 });
             }
             StructMode::Array => {
@@ -206,8 +225,14 @@ fn derive_state_field_struct(
                 from_fields.push(quote! {
                     #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_variant(data.get(#idx)?)?
                 });
+                from_owned_fields.push(quote! {
+                    #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_owned_variant(data.next()?)?
+                });
                 to_fields.push(quote! {
                     out.push(::perro_api::variant::DeriveVariant::to_variant(&self.#field_ident));
+                });
+                into_fields.push(quote! {
+                    out.push(::perro_api::variant::DeriveVariant::into_variant(#field_ident));
                 });
             }
         }
@@ -233,6 +258,33 @@ fn derive_state_field_struct(
             }
         }
     };
+    let from_owned_body = match options.struct_mode {
+        StructMode::Object => quote! {
+            let mut obj = match value {
+                ::perro_api::variant::Variant::Object(obj) => obj,
+                _ => return None,
+            };
+            Some(Self {
+                #(#from_owned_fields,)*
+            })
+        },
+        StructMode::Array => {
+            let expected_len = from_fields.len();
+            quote! {
+                let data = match value {
+                    ::perro_api::variant::Variant::Array(data) => data,
+                    _ => return None,
+                };
+                if data.len() != #expected_len {
+                    return None;
+                }
+                let mut data = data.into_iter();
+                Some(Self {
+                    #(#from_owned_fields,)*
+                })
+            }
+        }
+    };
 
     let field_count = schema_fields.len();
     let to_body = match options.struct_mode {
@@ -247,6 +299,20 @@ fn derive_state_field_struct(
             ::perro_api::variant::Variant::Array(out)
         },
     };
+    let into_body = match options.struct_mode {
+        StructMode::Object => quote! {
+            let Self { #(#field_idents),* } = self;
+            let mut out = ::std::collections::BTreeMap::<::std::sync::Arc<str>, ::perro_api::variant::Variant>::new();
+            #(#into_fields)*
+            ::perro_api::variant::Variant::Object(out)
+        },
+        StructMode::Array => quote! {
+            let Self { #(#field_idents),* } = self;
+            let mut out = ::std::vec::Vec::<::perro_api::variant::Variant>::with_capacity(#field_count);
+            #(#into_fields)*
+            ::perro_api::variant::Variant::Array(out)
+        },
+    };
 
     let expanded = quote! {
         impl #impl_generics ::perro_api::variant::DeriveVariant for #ident #ty_generics #where_clause {
@@ -256,8 +322,18 @@ fn derive_state_field_struct(
                 #from_body
             }
 
+            fn from_owned_variant(value: ::perro_api::variant::Variant) -> ::core::option::Option<Self> {
+                fn __perro_hint_use_derive_variant<T: ::perro_api::variant::DeriveVariant>() {}
+                #(#codec_hints)*
+                #from_owned_body
+            }
+
             fn to_variant(&self) -> ::perro_api::variant::Variant {
                 #to_body
+            }
+
+            fn into_variant(self) -> ::perro_api::variant::Variant {
+                #into_body
             }
         }
 
@@ -269,7 +345,7 @@ fn derive_state_field_struct(
 
         impl #impl_generics ::core::convert::From<#ident #ty_generics> for ::perro_api::variant::Variant #where_clause {
             fn from(value: #ident #ty_generics) -> Self {
-                ::perro_api::variant::DeriveVariant::to_variant(&value)
+                ::perro_api::variant::DeriveVariant::into_variant(value)
             }
         }
     };
@@ -289,13 +365,18 @@ fn derive_state_field_enum(
         // Struct-only option. Keep permissive to avoid errors on shared attrs.
     }
     let mut from_arms = Vec::new();
+    let mut from_owned_arms = Vec::new();
     let mut to_arms = Vec::new();
+    let mut into_arms = Vec::new();
     let mut codec_hints = Vec::new();
     let mut unit_tag = 0u16;
+    let variant_key = shared_arc_str("__variant");
+    let data_key = shared_arc_str("__data");
 
     for variant in variants {
         let variant_ident = variant.ident;
         let variant_name = variant_ident.to_string();
+        let variant_name_arc = shared_arc_str(&variant_name);
         match variant.fields {
             Fields::Unit => {
                 let numeric_tag = unit_tag;
@@ -305,11 +386,22 @@ fn derive_state_field_enum(
                         from_arms.push(quote! {
                             #variant_name => Some(Self::#variant_ident),
                         });
+                        from_owned_arms.push(quote! {
+                            #variant_name => Some(Self::#variant_ident),
+                        });
                         to_arms.push(quote! {
                             Self::#variant_ident => {
                                 out.insert(
-                                    ::std::sync::Arc::<str>::from("__variant"),
-                                    ::perro_api::variant::Variant::String(::std::sync::Arc::<str>::from(#variant_name)),
+                                    #variant_key,
+                                    ::perro_api::variant::Variant::String(#variant_name_arc),
+                                );
+                            }
+                        });
+                        into_arms.push(quote! {
+                            Self::#variant_ident => {
+                                out.insert(
+                                    #variant_key,
+                                    ::perro_api::variant::Variant::String(#variant_name_arc),
                                 );
                             }
                         });
@@ -318,10 +410,21 @@ fn derive_state_field_enum(
                         from_arms.push(quote! {
                             #numeric_tag => Some(Self::#variant_ident),
                         });
+                        from_owned_arms.push(quote! {
+                            #numeric_tag => Some(Self::#variant_ident),
+                        });
                         to_arms.push(quote! {
                             Self::#variant_ident => {
                                 out.insert(
-                                    ::std::sync::Arc::<str>::from("__variant"),
+                                    #variant_key,
+                                    ::perro_api::variant::Variant::from(#numeric_tag),
+                                );
+                            }
+                        });
+                        into_arms.push(quote! {
+                            Self::#variant_ident => {
+                                out.insert(
+                                    #variant_key,
                                     ::perro_api::variant::Variant::from(#numeric_tag),
                                 );
                             }
@@ -331,7 +434,9 @@ fn derive_state_field_enum(
             }
             Fields::Unnamed(fields) => {
                 let mut from_values = Vec::new();
+                let mut from_owned_values = Vec::new();
                 let mut to_values = Vec::new();
+                let mut into_values = Vec::new();
                 let mut bindings = Vec::new();
                 let expected_len = fields.unnamed.len();
 
@@ -348,8 +453,14 @@ fn derive_state_field_enum(
                     from_values.push(quote! {
                         <#field_ty as ::perro_api::variant::DeriveVariant>::from_variant(data.get(#index)?)?
                     });
+                    from_owned_values.push(quote! {
+                        <#field_ty as ::perro_api::variant::DeriveVariant>::from_owned_variant(data.next()?)?
+                    });
                     to_values.push(quote! {
                         ::perro_api::variant::DeriveVariant::to_variant(#binding)
+                    });
+                    into_values.push(quote! {
+                        ::perro_api::variant::DeriveVariant::into_variant(#binding)
                     });
                     bindings.push(binding);
                 }
@@ -361,12 +472,25 @@ fn derive_state_field_enum(
                         to_arms.push(quote! {
                             Self::#variant_ident( #( #bindings ),* ) => {
                                 out.insert(
-                                    ::std::sync::Arc::<str>::from("__variant"),
-                                    ::perro_api::variant::Variant::String(::std::sync::Arc::<str>::from(#variant_name)),
+                                    #variant_key,
+                                    ::perro_api::variant::Variant::String(#variant_name_arc),
                                 );
                                 let data = vec![#(#to_values),*];
                                 out.insert(
-                                    ::std::sync::Arc::<str>::from("__data"),
+                                    #data_key,
+                                    ::perro_api::variant::Variant::Array(data),
+                                );
+                            }
+                        });
+                        into_arms.push(quote! {
+                            Self::#variant_ident( #( #bindings ),* ) => {
+                                out.insert(
+                                    #variant_key,
+                                    ::perro_api::variant::Variant::String(#variant_name_arc),
+                                );
+                                let data = vec![#(#into_values),*];
+                                out.insert(
+                                    #data_key,
                                     ::perro_api::variant::Variant::Array(data),
                                 );
                             }
@@ -380,17 +504,43 @@ fn derive_state_field_enum(
                                 Some(Self::#variant_ident( #(#from_values),* ))
                             }
                         });
+                        from_owned_arms.push(quote! {
+                            #variant_name => {
+                                let data = match obj.remove("__data")? {
+                                    ::perro_api::variant::Variant::Array(data) => data,
+                                    _ => return None,
+                                };
+                                if data.len() != #expected_len {
+                                    return None;
+                                }
+                                let mut data = data.into_iter();
+                                Some(Self::#variant_ident( #(#from_owned_values),* ))
+                            }
+                        });
                     }
                     EnumTagMode::U16 => {
                         to_arms.push(quote! {
                             Self::#variant_ident( #( #bindings ),* ) => {
                                 out.insert(
-                                    ::std::sync::Arc::<str>::from("__variant"),
+                                    #variant_key,
                                     ::perro_api::variant::Variant::from(#numeric_tag),
                                 );
                                 let data = vec![#(#to_values),*];
                                 out.insert(
-                                    ::std::sync::Arc::<str>::from("__data"),
+                                    #data_key,
+                                    ::perro_api::variant::Variant::Array(data),
+                                );
+                            }
+                        });
+                        into_arms.push(quote! {
+                            Self::#variant_ident( #( #bindings ),* ) => {
+                                out.insert(
+                                    #variant_key,
+                                    ::perro_api::variant::Variant::from(#numeric_tag),
+                                );
+                                let data = vec![#(#into_values),*];
+                                out.insert(
+                                    #data_key,
                                     ::perro_api::variant::Variant::Array(data),
                                 );
                             }
@@ -404,12 +554,27 @@ fn derive_state_field_enum(
                                 Some(Self::#variant_ident( #(#from_values),* ))
                             }
                         });
+                        from_owned_arms.push(quote! {
+                            #numeric_tag => {
+                                let data = match obj.remove("__data")? {
+                                    ::perro_api::variant::Variant::Array(data) => data,
+                                    _ => return None,
+                                };
+                                if data.len() != #expected_len {
+                                    return None;
+                                }
+                                let mut data = data.into_iter();
+                                Some(Self::#variant_ident( #(#from_owned_values),* ))
+                            }
+                        });
                     }
                 }
             }
             Fields::Named(fields) => {
                 let mut from_fields = Vec::new();
+                let mut from_owned_fields = Vec::new();
                 let mut to_fields = Vec::new();
+                let mut into_fields = Vec::new();
                 let mut bindings = Vec::new();
 
                 for field in fields.named {
@@ -421,13 +586,23 @@ fn derive_state_field_enum(
                         __perro_hint_use_derive_variant::<#field_ty>();
                     });
                     let key = field_ident.to_string();
+                    let key_arc = shared_arc_str(&key);
                     from_fields.push(quote! {
                         #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_variant(data.get(#key)?)?
                     });
+                    from_owned_fields.push(quote! {
+                        #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_owned_variant(data.remove(#key)?)?
+                    });
                     to_fields.push(quote! {
                         data.insert(
-                            ::std::sync::Arc::<str>::from(#key),
+                            #key_arc,
                             ::perro_api::variant::DeriveVariant::to_variant(#field_ident),
+                        );
+                    });
+                    into_fields.push(quote! {
+                        data.insert(
+                            #key_arc,
+                            ::perro_api::variant::DeriveVariant::into_variant(#field_ident),
                         );
                     });
                     bindings.push(field_ident);
@@ -440,13 +615,27 @@ fn derive_state_field_enum(
                         to_arms.push(quote! {
                             Self::#variant_ident { #( #bindings ),* } => {
                                 out.insert(
-                                    ::std::sync::Arc::<str>::from("__variant"),
-                                    ::perro_api::variant::Variant::String(::std::sync::Arc::<str>::from(#variant_name)),
+                                    #variant_key,
+                                    ::perro_api::variant::Variant::String(#variant_name_arc),
                                 );
                                 let mut data = ::std::collections::BTreeMap::<::std::sync::Arc<str>, ::perro_api::variant::Variant>::new();
                                 #(#to_fields)*
                                 out.insert(
-                                    ::std::sync::Arc::<str>::from("__data"),
+                                    #data_key,
+                                    ::perro_api::variant::Variant::Object(data),
+                                );
+                            }
+                        });
+                        into_arms.push(quote! {
+                            Self::#variant_ident { #( #bindings ),* } => {
+                                out.insert(
+                                    #variant_key,
+                                    ::perro_api::variant::Variant::String(#variant_name_arc),
+                                );
+                                let mut data = ::std::collections::BTreeMap::<::std::sync::Arc<str>, ::perro_api::variant::Variant>::new();
+                                #(#into_fields)*
+                                out.insert(
+                                    #data_key,
                                     ::perro_api::variant::Variant::Object(data),
                                 );
                             }
@@ -459,18 +648,43 @@ fn derive_state_field_enum(
                                 })
                             }
                         });
+                        from_owned_arms.push(quote! {
+                            #variant_name => {
+                                let mut data = match obj.remove("__data")? {
+                                    ::perro_api::variant::Variant::Object(data) => data,
+                                    _ => return None,
+                                };
+                                Some(Self::#variant_ident {
+                                    #(#from_owned_fields),*
+                                })
+                            }
+                        });
                     }
                     EnumTagMode::U16 => {
                         to_arms.push(quote! {
                             Self::#variant_ident { #( #bindings ),* } => {
                                 out.insert(
-                                    ::std::sync::Arc::<str>::from("__variant"),
+                                    #variant_key,
                                     ::perro_api::variant::Variant::from(#numeric_tag),
                                 );
                                 let mut data = ::std::collections::BTreeMap::<::std::sync::Arc<str>, ::perro_api::variant::Variant>::new();
                                 #(#to_fields)*
                                 out.insert(
-                                    ::std::sync::Arc::<str>::from("__data"),
+                                    #data_key,
+                                    ::perro_api::variant::Variant::Object(data),
+                                );
+                            }
+                        });
+                        into_arms.push(quote! {
+                            Self::#variant_ident { #( #bindings ),* } => {
+                                out.insert(
+                                    #variant_key,
+                                    ::perro_api::variant::Variant::from(#numeric_tag),
+                                );
+                                let mut data = ::std::collections::BTreeMap::<::std::sync::Arc<str>, ::perro_api::variant::Variant>::new();
+                                #(#into_fields)*
+                                out.insert(
+                                    #data_key,
                                     ::perro_api::variant::Variant::Object(data),
                                 );
                             }
@@ -480,6 +694,17 @@ fn derive_state_field_enum(
                                 let data = obj.get("__data")?.as_object()?;
                                 Some(Self::#variant_ident {
                                     #(#from_fields),*
+                                })
+                            }
+                        });
+                        from_owned_arms.push(quote! {
+                            #numeric_tag => {
+                                let mut data = match obj.remove("__data")? {
+                                    ::perro_api::variant::Variant::Object(data) => data,
+                                    _ => return None,
+                                };
+                                Some(Self::#variant_ident {
+                                    #(#from_owned_fields),*
                                 })
                             }
                         });
@@ -497,6 +722,19 @@ fn derive_state_field_enum(
             let tag = obj.get("__variant")?.as_u16()?;
         },
     };
+    let tag_owned_read = match options.enum_tag_mode {
+        EnumTagMode::String => quote! {
+            let tag = match obj.remove("__variant")? {
+                ::perro_api::variant::Variant::String(tag) => tag,
+                _ => return None,
+            };
+            let tag = tag.as_ref();
+        },
+        EnumTagMode::U16 => quote! {
+            let tag_value = obj.remove("__variant")?;
+            let tag = tag_value.as_u16()?;
+        },
+    };
 
     let expanded = quote! {
         impl #impl_generics ::perro_api::variant::DeriveVariant for #ident #ty_generics #where_clause {
@@ -511,10 +749,32 @@ fn derive_state_field_enum(
                 }
             }
 
+            fn from_owned_variant(value: ::perro_api::variant::Variant) -> ::core::option::Option<Self> {
+                fn __perro_hint_use_derive_variant<T: ::perro_api::variant::DeriveVariant>() {}
+                #(#codec_hints)*
+                let mut obj = match value {
+                    ::perro_api::variant::Variant::Object(obj) => obj,
+                    _ => return None,
+                };
+                #tag_owned_read
+                match tag {
+                    #(#from_owned_arms)*
+                    _ => None,
+                }
+            }
+
             fn to_variant(&self) -> ::perro_api::variant::Variant {
                 let mut out = ::std::collections::BTreeMap::<::std::sync::Arc<str>, ::perro_api::variant::Variant>::new();
                 match self {
                     #(#to_arms),*
+                }
+                ::perro_api::variant::Variant::Object(out)
+            }
+
+            fn into_variant(self) -> ::perro_api::variant::Variant {
+                let mut out = ::std::collections::BTreeMap::<::std::sync::Arc<str>, ::perro_api::variant::Variant>::new();
+                match self {
+                    #(#into_arms),*
                 }
                 ::perro_api::variant::Variant::Object(out)
             }
@@ -524,7 +784,7 @@ fn derive_state_field_enum(
 
         impl #impl_generics ::core::convert::From<#ident #ty_generics> for ::perro_api::variant::Variant #where_clause {
             fn from(value: #ident #ty_generics) -> Self {
-                ::perro_api::variant::DeriveVariant::to_variant(&value)
+                ::perro_api::variant::DeriveVariant::into_variant(value)
             }
         }
     };

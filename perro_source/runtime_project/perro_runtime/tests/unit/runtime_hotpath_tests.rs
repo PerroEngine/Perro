@@ -41,7 +41,7 @@ impl ScriptBehavior<RuntimeScriptApi> for CountScript {
         Variant::Null
     }
 
-    fn set_var(&self, _state: &mut dyn Any, _var: perro_ids::ScriptMemberID, _value: &Variant) {}
+    fn set_var(&self, _state: &mut dyn Any, _var: perro_ids::ScriptMemberID, _value: Variant) {}
 
     fn call_method(
         &self,

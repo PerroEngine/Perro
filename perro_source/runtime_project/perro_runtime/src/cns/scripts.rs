@@ -36,11 +36,17 @@ impl Runtime {
         }
 
         for pending in script_nodes {
+            let crate::runtime::PendingScriptAttach {
+                node_id,
+                script_path_hash,
+                script_mount,
+                scene_injected_vars,
+            } = pending;
             self.attach_script_instance(
-                pending.node_id,
-                pending.script_path_hash,
-                pending.script_mount.as_deref(),
-                &pending.scene_injected_vars,
+                node_id,
+                script_path_hash,
+                script_mount.as_deref(),
+                scene_injected_vars,
             )?;
         }
 
@@ -52,7 +58,7 @@ impl Runtime {
         node: perro_ids::NodeID,
         script_path_hash: u64,
         script_mount: Option<&str>,
-        scene_injected_vars: &[(ScriptMemberID, Variant)],
+        scene_injected_vars: Vec<(ScriptMemberID, Variant)>,
     ) -> Result<(), String> {
         if node.is_nil() || self.nodes.get(node).is_none() {
             return Err(format!(

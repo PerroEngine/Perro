@@ -1961,11 +1961,11 @@ impl<API: ScriptAPI + ?Sized> ScriptBehavior<API> for {script_ty} {{
 {get_var_body}
     }}
 
-    fn set_var(&self, state: &mut dyn std::any::Any, var: ScriptMemberID, value: &Variant) {{
+    fn set_var(&self, state: &mut dyn std::any::Any, var: ScriptMemberID, value: Variant) {{
 {set_var_body}
     }}
 
-    fn apply_scene_injected_vars(&self, state: &mut dyn std::any::Any, vars: &[(ScriptMemberID, Variant)]) {{
+    fn apply_scene_injected_vars(&self, state: &mut dyn std::any::Any, vars: Vec<(ScriptMemberID, Variant)>) {{
 {apply_scene_injected_vars_body}
     }}
 
@@ -3213,7 +3213,7 @@ fn generate_apply_scene_injected_vars_body(state_ty: &str, fields: &[ScriptField
         "        let state = unsafe {{ &mut *(state as *mut dyn std::any::Any as *mut {state_ty}) }};\n"
     ));
     out.push_str("        for (var, value) in vars {\n");
-    out.push_str("            __perro_set_var_match(state, *var, value);\n");
+    out.push_str("            __perro_set_var_match(state, var, value);\n");
     out.push_str("        }\n");
     out
 }
@@ -3221,20 +3221,20 @@ fn generate_apply_scene_injected_vars_body(state_ty: &str, fields: &[ScriptField
 fn generate_set_var_match_fn(state_ty: &str, fields: &[ScriptField]) -> String {
     if fields.is_empty() {
         return String::from(
-            "fn __perro_set_var_match(_state: &mut (), _var: ScriptMemberID, _value: &Variant) {}",
+            "fn __perro_set_var_match(_state: &mut (), _var: ScriptMemberID, _value: Variant) {}",
         );
     }
 
     let mut out = String::new();
     out.push_str(&format!(
-        "fn __perro_set_var_match(state: &mut {state_ty}, var: ScriptMemberID, value: &Variant) {{\n"
+        "fn __perro_set_var_match(state: &mut {state_ty}, var: ScriptMemberID, value: Variant) {{\n"
     ));
     out.push_str("        match var {\n");
     for field in fields {
         let const_name = member_const_name(&field.name);
         let ty = normalize_type(&field.ty);
         let assign_block = format!(
-            "if let Ok(v) = value.parse::<{ty}>() {{\n                    state.{} = v;\n                }}",
+            "if let Ok(v) = value.into_parse::<{ty}>() {{\n                    state.{} = v;\n                }}",
             field.name
         );
         out.push_str(&format!(
@@ -3248,9 +3248,12 @@ fn generate_set_var_match_fn(state_ty: &str, fields: &[ScriptField]) -> String {
     out.push_str("}\n\n");
 
     out.push_str(
-        "fn __perro_get_nested_by_hash(prefix: &str, value: &Variant, var: ScriptMemberID) -> Option<Variant> {\n",
+        "fn __perro_get_nested_by_hash(prefix: &str, value: Variant, var: ScriptMemberID) -> Option<Variant> {\n",
     );
-    out.push_str("    let obj = value.as_object()?;\n");
+    out.push_str("    let obj = match value {\n");
+    out.push_str("        Variant::Object(obj) => obj,\n");
+    out.push_str("        _ => return None,\n");
+    out.push_str("    };\n");
     out.push_str("    for (key, child) in obj {\n");
     out.push_str("        let full = if prefix.is_empty() {\n");
     out.push_str("            key.to_string()\n");
@@ -3258,7 +3261,7 @@ fn generate_set_var_match_fn(state_ty: &str, fields: &[ScriptField]) -> String {
     out.push_str("            format!(\"{prefix}.{}\", key.as_ref())\n");
     out.push_str("        };\n");
     out.push_str("        if ScriptMemberID::from_string(full.as_str()) == var {\n");
-    out.push_str("            return Some(child.clone());\n");
+    out.push_str("            return Some(child);\n");
     out.push_str("        }\n");
     out.push_str(
         "        if let Some(found) = __perro_get_nested_by_hash(full.as_str(), child, var) {\n",
@@ -3270,7 +3273,7 @@ fn generate_set_var_match_fn(state_ty: &str, fields: &[ScriptField]) -> String {
     out.push_str("}\n\n");
 
     out.push_str(
-        "fn __perro_set_nested_by_hash(prefix: &str, value: &mut Variant, var: ScriptMemberID, new_value: &Variant) -> bool {\n",
+        "fn __perro_set_nested_by_hash(prefix: &str, value: &mut Variant, var: ScriptMemberID, new_value: &mut Option<Variant>) -> bool {\n",
     );
     out.push_str("    let Some(obj) = value.as_object_mut() else {\n");
     out.push_str("        return false;\n");
@@ -3282,8 +3285,11 @@ fn generate_set_var_match_fn(state_ty: &str, fields: &[ScriptField]) -> String {
     out.push_str("            format!(\"{prefix}.{}\", key.as_ref())\n");
     out.push_str("        };\n");
     out.push_str("        if ScriptMemberID::from_string(full.as_str()) == var {\n");
-    out.push_str("            *child = new_value.clone();\n");
-    out.push_str("            return true;\n");
+    out.push_str("            if let Some(new_value) = new_value.take() {\n");
+    out.push_str("                *child = new_value;\n");
+    out.push_str("                return true;\n");
+    out.push_str("            }\n");
+    out.push_str("            return false;\n");
     out.push_str("        }\n");
     out.push_str("        if __perro_set_nested_by_hash(full.as_str(), child, var, new_value) {\n");
     out.push_str("            return true;\n");
@@ -3297,7 +3303,7 @@ fn generate_set_var_match_fn(state_ty: &str, fields: &[ScriptField]) -> String {
     ));
     for field in fields {
         out.push_str(&format!(
-            "    {{\n        let nested_root = perro_api::variant::DeriveVariant::to_variant(&state.{});\n        if let Some(value) = __perro_get_nested_by_hash(\"{}\", &nested_root, var) {{\n            return Some(value);\n        }}\n    }}\n",
+            "    {{\n        let nested_root = perro_api::variant::DeriveVariant::to_variant(&state.{});\n        if let Some(value) = __perro_get_nested_by_hash(\"{}\", nested_root, var) {{\n            return Some(value);\n        }}\n    }}\n",
             field.name, field.name
         ));
     }
@@ -3305,12 +3311,13 @@ fn generate_set_var_match_fn(state_ty: &str, fields: &[ScriptField]) -> String {
     out.push_str("}\n\n");
 
     out.push_str(&format!(
-        "fn __perro_set_nested_var(state: &mut {state_ty}, var: ScriptMemberID, value: &Variant) -> bool {{\n"
+        "fn __perro_set_nested_var(state: &mut {state_ty}, var: ScriptMemberID, value: Variant) -> bool {{\n"
     ));
+    out.push_str("    let mut value = Some(value);\n");
     for field in fields {
         let ty = normalize_type(&field.ty);
         out.push_str(&format!(
-            "    {{\n        let mut nested_root = perro_api::variant::DeriveVariant::to_variant(&state.{});\n        if __perro_set_nested_by_hash(\"{}\", &mut nested_root, var, value) {{\n            if let Ok(decoded) = nested_root.parse::<{ty}>() {{\n                state.{} = decoded;\n            }}\n            return true;\n        }}\n    }}\n",
+            "    {{\n        let mut nested_root = perro_api::variant::DeriveVariant::to_variant(&state.{});\n        if __perro_set_nested_by_hash(\"{}\", &mut nested_root, var, &mut value) {{\n            if let Ok(decoded) = nested_root.into_parse::<{ty}>() {{\n                state.{} = decoded;\n            }}\n            return true;\n        }}\n    }}\n",
             field.name, field.name, field.name
         ));
     }
@@ -3695,6 +3702,189 @@ pub struct NestedState {
     }
 
     #[test]
+    fn generated_state_all_variant_types_compiles() {
+        let source = r#"
+use perro_api::prelude::*;
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
+#[derive(Clone, PartialEq, Variant)]
+#[variant(mode = "array")]
+pub struct CustomLeaf {
+    pub count: i32,
+    pub label: String,
+    pub pos: Vector3,
+}
+
+impl Default for CustomLeaf {
+    fn default() -> Self {
+        Self {
+            count: 1,
+            label: String::from("leaf"),
+            pos: Vector3::new(1.0, 2.0, 3.0),
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Variant)]
+#[variant(tag = "u16")]
+pub enum CustomMode {
+    Idle,
+    Tuple(CustomLeaf, f32),
+    Named { leaf: CustomLeaf, active: bool },
+}
+
+impl Default for CustomMode {
+    fn default() -> Self {
+        Self::Named {
+            leaf: CustomLeaf::default(),
+            active: true,
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Variant)]
+#[variant(mode = "array")]
+pub struct NestedCombo {
+    pub optional_leaf: Option<CustomLeaf>,
+    pub leaves: Vec<CustomLeaf>,
+    pub scores: BTreeMap<Arc<str>, i32>,
+    pub modes: Vec<CustomMode>,
+}
+
+impl Default for NestedCombo {
+    fn default() -> Self {
+        let mut scores = BTreeMap::<Arc<str>, i32>::new();
+        scores.insert(Arc::<str>::from("focus"), 7);
+        Self {
+            optional_leaf: Some(CustomLeaf::default()),
+            leaves: vec![CustomLeaf::default()],
+            scores,
+            modes: vec![CustomMode::Idle],
+        }
+    }
+}
+
+#[State]
+pub struct AllVariantState {
+    #[default = true]
+    pub bool_value: bool,
+    #[default = -1_i8]
+    pub i8_value: i8,
+    #[default = -2_i16]
+    pub i16_value: i16,
+    #[default = -3_i32]
+    pub i32_value: i32,
+    #[default = -4_i64]
+    pub i64_value: i64,
+    #[default = -5_i128]
+    pub i128_value: i128,
+    #[default = -6_isize]
+    pub isize_value: isize,
+    #[default = 1_u8]
+    pub u8_value: u8,
+    #[default = 2_u16]
+    pub u16_value: u16,
+    #[default = 3_u32]
+    pub u32_value: u32,
+    #[default = 4_u64]
+    pub u64_value: u64,
+    #[default = 5_u128]
+    pub u128_value: u128,
+    #[default = 6_usize]
+    pub usize_value: usize,
+    #[default = 1.25_f32]
+    pub f32_value: f32,
+    #[default = 2.5_f64]
+    pub f64_value: f64,
+    #[default = String::from("owned")]
+    pub string_value: String,
+    #[default = Arc::<str>::from("shared")]
+    pub arc_str_value: Arc<str>,
+    #[default = Variant::from(vec![1_u8, 2_u8, 3_u8])]
+    pub raw_variant_value: Variant,
+    #[default = NodeID::nil()]
+    pub node_id: NodeID,
+    #[default = TextureID::nil()]
+    pub texture_id: TextureID,
+    #[default = MaterialID::nil()]
+    pub material_id: MaterialID,
+    #[default = MeshID::nil()]
+    pub mesh_id: MeshID,
+    #[default = AnimationID::nil()]
+    pub animation_id: AnimationID,
+    #[default = LightID::nil()]
+    pub light_id: LightID,
+    #[default = UIElementID::nil()]
+    pub ui_element_id: UIElementID,
+    #[default = SignalID::nil()]
+    pub signal_id: SignalID,
+    #[default = AudioBusID::nil()]
+    pub audio_bus_id: AudioBusID,
+    #[default = TagID::nil()]
+    pub tag_id: TagID,
+    #[default = PreloadedSceneID::nil()]
+    pub preloaded_scene_id: PreloadedSceneID,
+    #[default = Vector2::new(1.0, 2.0)]
+    pub vec2_value: Vector2,
+    #[default = Vector3::new(1.0, 2.0, 3.0)]
+    pub vec3_value: Vector3,
+    #[default = Quaternion::default()]
+    pub quat_value: Quaternion,
+    #[default = Transform2D::default()]
+    pub transform_2d_value: Transform2D,
+    #[default = Transform3D::default()]
+    pub transform_3d_value: Transform3D,
+    #[default = PostProcessSet::default()]
+    pub post_process_value: PostProcessSet,
+    #[default = VisualAccessibilitySettings::new()]
+    pub visual_accessibility_value: VisualAccessibilitySettings,
+    #[default = Some(CustomLeaf::default())]
+    pub option_custom: Option<CustomLeaf>,
+    #[default = Vec::new()]
+    pub vec_i32: Vec<i32>,
+    #[default = vec![CustomLeaf::default()]]
+    pub vec_custom: Vec<CustomLeaf>,
+    #[default = BTreeMap::new()]
+    pub map_i32: BTreeMap<Arc<str>, i32>,
+    #[default = BTreeMap::new()]
+    pub map_custom: BTreeMap<Arc<str>, CustomLeaf>,
+    #[default = CustomLeaf::default()]
+    pub custom_leaf: CustomLeaf,
+    #[default = CustomMode::default()]
+    pub custom_mode: CustomMode,
+    #[default = NestedCombo::default()]
+    pub nested_combo: NestedCombo,
+}
+
+methods!({
+    fn accept_combo(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+        combo: NestedCombo,
+        mode: CustomMode,
+        node: NodeID,
+        raw: Variant,
+    ) -> Variant {
+        let _ = (ctx.id, combo, mode, node);
+        raw
+    }
+});
+
+lifecycle!({});
+"#;
+
+        let transpiled = transpile_frontend_script(source, "all_variant_types.rs");
+        assert!(transpiled.contains(
+            "fn set_var(&self, state: &mut dyn std::any::Any, var: ScriptMemberID, value: Variant)"
+        ));
+        assert!(!transpiled.contains("fn set_var_owned"));
+        assert!(transpiled.contains("value.into_parse::<NestedCombo>()"));
+        assert!(transpiled.contains("fn __perro_set_nested_var"));
+        assert_generated_script_compiles(source, &transpiled);
+    }
+
+    #[test]
     fn module_short_name_drops_rs_suffix() {
         assert_eq!(
             module_name_from_rel("scripts/personality_module.rs"),
@@ -3704,5 +3894,74 @@ pub struct NestedState {
             module_short_name_from_rel("scripts/personality_module.rs"),
             "scripts_personality_module"
         );
+    }
+
+    fn assert_generated_script_compiles(source: &str, transpiled: &str) {
+        let workspace_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .expect("workspace root")
+            .to_path_buf();
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        let tmp = std::env::temp_dir().join(format!(
+            "perro_compiler_all_variant_types_{}_{}",
+            std::process::id(),
+            stamp
+        ));
+        let src_dir = tmp.join("src");
+        std::fs::create_dir_all(&src_dir).expect("create temp src dir");
+
+        std::fs::write(src_dir.join("all_variant_types.rs"), source).expect("write source script");
+        std::fs::write(
+            src_dir.join("lib.rs"),
+            format!("pub type RuntimeScriptApi = perro_runtime::RuntimeScriptApi;\n{transpiled}"),
+        )
+        .expect("write generated lib");
+
+        let perro_api = toml_path(&workspace_root.join("perro_source/api_modules/perro_api"));
+        let perro_runtime =
+            toml_path(&workspace_root.join("perro_source/runtime_project/perro_runtime"));
+        std::fs::write(
+            tmp.join("Cargo.toml"),
+            format!(
+                r#"[package]
+name = "perro_compiler_generated_check"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+perro_api = {{ path = "{perro_api}" }}
+perro_runtime = {{ path = "{perro_runtime}" }}
+"#
+            ),
+        )
+        .expect("write temp Cargo.toml");
+
+        let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+        let output = std::process::Command::new(cargo)
+            .arg("check")
+            .arg("--quiet")
+            .current_dir(&tmp)
+            .output()
+            .expect("run cargo check");
+
+        if output.status.success() {
+            let _ = std::fs::remove_dir_all(&tmp);
+            return;
+        }
+
+        panic!(
+            "generated script failed cargo check in {}\nstdout:\n{}\nstderr:\n{}",
+            tmp.display(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn toml_path(path: &std::path::Path) -> String {
+        path.to_string_lossy().replace('\\', "/")
     }
 }

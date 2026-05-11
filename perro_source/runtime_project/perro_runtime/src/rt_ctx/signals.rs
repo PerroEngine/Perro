@@ -191,7 +191,7 @@ mod tests {
             Variant::Null
         }
 
-        fn set_var(&self, _state: &mut dyn Any, _var: ScriptMemberID, _value: &Variant) {}
+        fn set_var(&self, _state: &mut dyn Any, _var: ScriptMemberID, _value: Variant) {}
 
         fn call_method(
             &self,
