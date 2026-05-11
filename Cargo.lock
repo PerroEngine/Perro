@@ -3115,6 +3115,7 @@ dependencies = [
  "image",
  "perro_asset_formats",
  "perro_builtin_meshes",
+ "perro_graphics_assets",
  "perro_ids",
  "perro_io",
  "perro_macros",
@@ -3125,6 +3126,20 @@ dependencies = [
  "pollster",
  "wgpu",
  "winit",
+]
+
+[[package]]
+name = "perro_graphics_assets"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "gltf",
+ "image",
+ "perro_asset_formats",
+ "perro_ids",
+ "perro_io",
+ "perro_meshlets",
+ "perro_render_bridge",
 ]
 
 [[package]]

@@ -24,6 +24,7 @@ members = [
 
     "perro_source/render_stack/perro_app",
     "perro_source/render_stack/perro_graphics",
+    "perro_source/render_stack/perro_graphics_assets",
     "perro_source/render_stack/perro_meshlets",
     "perro_source/render_stack/perro_render_bridge",
 

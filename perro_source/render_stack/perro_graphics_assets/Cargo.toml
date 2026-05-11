@@ -1,0 +1,15 @@
+[package]
+name = "perro_graphics_assets"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bytemuck = { version = "1.24.0", features = ["derive"] }
+gltf = "1.4.1"
+image = { version = "0.25.8", default-features = true }
+
+perro_asset_formats = { path = "../../core/perro_asset_formats" }
+perro_ids = { path = "../../core/perro_ids" }
+perro_io = { path = "../../io_stack/perro_io" }
+perro_meshlets = { path = "../perro_meshlets" }
+perro_render_bridge = { path = "../perro_render_bridge" }

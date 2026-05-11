@@ -13,6 +13,7 @@ epaint = "0.33.0"
 perro_ids = { path = "../../core/perro_ids" }
 perro_asset_formats = { path = "../../core/perro_asset_formats" }
 perro_builtin_meshes = { path = "../../core/perro_builtin_meshes" }
+perro_graphics_assets = { path = "../perro_graphics_assets" }
 perro_meshlets = { path = "../perro_meshlets" }
 perro_render_bridge = { path = "../perro_render_bridge" }
 perro_particle_math = { path = "../../core/perro_particle_math" }

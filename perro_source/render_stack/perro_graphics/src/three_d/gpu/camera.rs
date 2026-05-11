@@ -1,0 +1,456 @@
+use super::*;
+
+pub(super) fn compute_view_proj(camera: &Camera3DState, width: u32, height: u32) -> [[f32; 4]; 4] {
+    compute_view_proj_mat(camera, width, height).to_cols_array_2d()
+}
+
+pub(super) fn compute_view_proj_mat(camera: &Camera3DState, width: u32, height: u32) -> Mat4 {
+    let w = width.max(1) as f32;
+    let h = height.max(1) as f32;
+    let aspect = w / h;
+
+    let proj = projection_matrix(camera.projection, aspect);
+
+    let pos = Vec3::from(camera.position);
+    let rot_raw = Quat::from_xyzw(
+        camera.rotation[0],
+        camera.rotation[1],
+        camera.rotation[2],
+        camera.rotation[3],
+    );
+    let rot = if rot_raw.is_finite() && rot_raw.length_squared() > 1.0e-6 {
+        rot_raw.normalize()
+    } else {
+        Quat::IDENTITY
+    };
+    let world = Mat4::from_rotation_translation(rot, pos);
+    let view = world.inverse();
+    proj * view
+}
+
+pub(super) fn projection_matrix(projection: CameraProjectionState, aspect: f32) -> Mat4 {
+    match projection {
+        CameraProjectionState::Perspective {
+            fov_y_degrees,
+            near,
+            far,
+        } => {
+            let fov_y_radians = adjusted_perspective_fov_y_radians(fov_y_degrees, aspect);
+            let near = sanitize_near(near);
+            let far = sanitize_far(far, near);
+            Mat4::perspective_rh_gl(fov_y_radians, aspect.max(1.0e-6), near, far)
+        }
+        CameraProjectionState::Orthographic { size, near, far } => {
+            let half_h = if size.is_finite() {
+                (size.abs() * 0.5).max(1.0e-3)
+            } else {
+                5.0
+            };
+            let half_w = half_h * aspect.max(1.0e-6);
+            let near = sanitize_near(near);
+            let far = sanitize_far(far, near);
+            Mat4::orthographic_rh(-half_w, half_w, -half_h, half_h, near, far)
+        }
+        CameraProjectionState::Frustum {
+            left,
+            right,
+            bottom,
+            top,
+            near,
+            far,
+        } => {
+            let near = sanitize_near(near);
+            let far = sanitize_far(far, near);
+            let (left, right) = sanitize_range(left, right, -1.0, 1.0);
+            let (bottom, top) = sanitize_range(bottom, top, -1.0, 1.0);
+            Mat4::frustum_rh_gl(left, right, bottom, top, near, far)
+        }
+    }
+}
+
+pub(super) fn projection_y_scale_from_projection(projection: CameraProjectionState) -> f32 {
+    match projection {
+        CameraProjectionState::Perspective { fov_y_degrees, .. } => {
+            let fov_y_radians =
+                adjusted_perspective_fov_y_radians(fov_y_degrees, CAMERA_FOV_REFERENCE_ASPECT);
+            1.0 / (fov_y_radians * 0.5).tan().max(1.0e-6)
+        }
+        CameraProjectionState::Orthographic { size, .. } => {
+            let half_h = if size.is_finite() {
+                (size.abs() * 0.5).max(1.0e-3)
+            } else {
+                5.0
+            };
+            1.0 / half_h
+        }
+        CameraProjectionState::Frustum {
+            bottom, top, near, ..
+        } => {
+            let near = sanitize_near(near);
+            let (bottom, top) = sanitize_range(bottom, top, -1.0, 1.0);
+            (2.0 * near / (top - bottom).abs().max(1.0e-6)).max(1.0e-6)
+        }
+    }
+}
+
+pub(super) const CAMERA_FOV_REFERENCE_ASPECT: f32 = 16.0 / 9.0;
+
+pub(super) fn adjusted_perspective_fov_y_radians(fov_y_degrees: f32, aspect: f32) -> f32 {
+    let base_fov_y_radians = if fov_y_degrees.is_finite() {
+        fov_y_degrees
+            .to_radians()
+            .clamp(10.0f32.to_radians(), 120.0f32.to_radians())
+    } else {
+        60.0f32.to_radians()
+    };
+    let safe_aspect = aspect.max(1.0e-6);
+    let base_aspect = CAMERA_FOV_REFERENCE_ASPECT.max(1.0e-6);
+    let base_tan_y = (base_fov_y_radians * 0.5).tan().max(1.0e-6);
+
+    // Keep diagonal/corner FOV stable across aspect ratios so ultrawide views
+    // do not over-expand horizontal perspective.
+    let diagonal_tan = base_tan_y * (1.0 + base_aspect * base_aspect).sqrt();
+    let adjusted_tan_y = diagonal_tan / (1.0 + safe_aspect * safe_aspect).sqrt();
+    (2.0 * adjusted_tan_y.atan()).clamp(10.0f32.to_radians(), 120.0f32.to_radians())
+}
+
+pub(super) fn sanitize_near(near: f32) -> f32 {
+    if near.is_finite() {
+        near.max(1.0e-3)
+    } else {
+        0.1
+    }
+}
+
+pub(super) fn sanitize_far(far: f32, near: f32) -> f32 {
+    if far.is_finite() {
+        far.max(near + 1.0e-3)
+    } else {
+        (near + 1000.0).max(near + 1.0e-3)
+    }
+}
+
+pub(super) fn sanitize_range(
+    min: f32,
+    max: f32,
+    fallback_min: f32,
+    fallback_max: f32,
+) -> (f32, f32) {
+    let mut a = if min.is_finite() { min } else { fallback_min };
+    let mut b = if max.is_finite() { max } else { fallback_max };
+    if (b - a).abs() < 1.0e-6 {
+        a = fallback_min;
+        b = fallback_max;
+    }
+    if b < a {
+        std::mem::swap(&mut a, &mut b);
+    }
+    (a, b)
+}
+
+// Returns (gpu_occlusion_enabled, cpu_occlusion_enabled).
+pub(super) fn occlusion_flags(mode: OcclusionCullingMode) -> (bool, bool) {
+    match mode {
+        OcclusionCullingMode::Cpu => (false, true),
+        OcclusionCullingMode::Gpu => (true, false),
+        OcclusionCullingMode::Off => (false, false),
+    }
+}
+
+pub(super) fn extract_frustum_planes(view_proj: Mat4) -> [Vec4; 6] {
+    let r0 = Vec4::new(
+        view_proj.x_axis.x,
+        view_proj.y_axis.x,
+        view_proj.z_axis.x,
+        view_proj.w_axis.x,
+    );
+    let r1 = Vec4::new(
+        view_proj.x_axis.y,
+        view_proj.y_axis.y,
+        view_proj.z_axis.y,
+        view_proj.w_axis.y,
+    );
+    let r2 = Vec4::new(
+        view_proj.x_axis.z,
+        view_proj.y_axis.z,
+        view_proj.z_axis.z,
+        view_proj.w_axis.z,
+    );
+    let r3 = Vec4::new(
+        view_proj.x_axis.w,
+        view_proj.y_axis.w,
+        view_proj.z_axis.w,
+        view_proj.w_axis.w,
+    );
+    [
+        normalize_plane(r3 + r0),
+        normalize_plane(r3 - r0),
+        normalize_plane(r3 + r1),
+        normalize_plane(r3 - r1),
+        normalize_plane(r3 + r2),
+        normalize_plane(r3 - r2),
+    ]
+}
+
+#[inline]
+pub(super) fn normalize_plane(plane: Vec4) -> Vec4 {
+    let n = plane.truncate();
+    let len = n.length();
+    if len > 1.0e-6 && len.is_finite() {
+        plane / len
+    } else {
+        plane
+    }
+}
+
+pub(super) fn bounds_in_frustum(
+    model: [[f32; 4]; 4],
+    local_center: [f32; 3],
+    local_radius: f32,
+    planes: &[Vec4; 6],
+) -> bool {
+    let model = Mat4::from_cols_array_2d(&model);
+    if !model.is_finite() {
+        return false;
+    }
+    let center_local = Vec4::new(local_center[0], local_center[1], local_center[2], 1.0);
+    let center_world = model * center_local;
+    if !center_world.is_finite() {
+        return false;
+    }
+    let sx = Vec3::new(model.x_axis.x, model.x_axis.y, model.x_axis.z).length();
+    let sy = Vec3::new(model.y_axis.x, model.y_axis.y, model.y_axis.z).length();
+    let sz = Vec3::new(model.z_axis.x, model.z_axis.y, model.z_axis.z).length();
+    let scale = sx.max(sy).max(sz).max(1.0e-6);
+    let radius_world = local_radius.max(0.0) * scale;
+    let center = center_world.truncate();
+
+    for plane in planes {
+        let d = plane.truncate().dot(center) + plane.w;
+        if d < -radius_world {
+            return false;
+        }
+    }
+    true
+}
+
+pub(super) fn build_scene_uniform(
+    camera: &Camera3DState,
+    lighting: &Lighting3DState,
+    width: u32,
+    height: u32,
+) -> Scene3DUniform {
+    let mut scene = Scene3DUniform {
+        view_proj: compute_view_proj(camera, width, height),
+        ambient_and_counts: [0.0, 0.0, 0.0, 0.0],
+        camera_pos: [
+            camera.position[0],
+            camera.position[1],
+            camera.position[2],
+            0.0,
+        ],
+        ambient_color: [1.0, 1.0, 1.0, 0.0],
+        ray_light: RayLightGpu {
+            direction: [0.0, 0.0, -1.0, 0.0],
+            color_intensity: [1.0, 1.0, 1.0, 0.0],
+        },
+        ray_lights: [RayLightGpu {
+            direction: [0.0, 0.0, -1.0, 0.0],
+            color_intensity: [1.0, 1.0, 1.0, 0.0],
+        }; MAX_RAY_LIGHTS],
+        point_lights: [PointLightGpu {
+            position_range: [0.0, 0.0, 0.0, 1.0],
+            color_intensity: [0.0, 0.0, 0.0, 0.0],
+        }; MAX_POINT_LIGHTS],
+        spot_lights: [SpotLightGpu {
+            position_range: [0.0, 0.0, 0.0, 1.0],
+            direction_outer_cos: [0.0, 0.0, -1.0, -1.0],
+            color_intensity: [0.0, 0.0, 0.0, 0.0],
+            inner_cos_pad: [1.0, 0.0, 0.0, 0.0],
+        }; MAX_SPOT_LIGHTS],
+    };
+
+    if let Some(sky) = lighting.sky.as_ref() {
+        let day_color = sample_gradient(sky.day_colors.as_ref(), 0.55);
+        let evening_color = sample_gradient(sky.evening_colors.as_ref(), 0.55);
+        let night_color = sample_gradient(sky.night_colors.as_ref(), 0.55);
+        let t_day = day_weight_from_time(sky.time.time_of_day);
+        let t_evening = evening_weight_from_time(sky.time.time_of_day);
+        let ambient_rgb = lerp3(
+            lerp3(night_color, day_color, t_day),
+            evening_color,
+            t_evening,
+        );
+        let ambient_strength = (0.08 + 0.32 * t_day).max(0.0);
+        scene.ambient_color = [
+            ambient_rgb[0].max(0.0),
+            ambient_rgb[1].max(0.0),
+            ambient_rgb[2].max(0.0),
+            ambient_strength,
+        ];
+    }
+
+    if let Some(ambient) = lighting.ambient_light {
+        scene.ambient_color = [
+            ambient.color[0].max(0.0),
+            ambient.color[1].max(0.0),
+            ambient.color[2].max(0.0),
+            ambient.intensity.max(0.0),
+        ];
+    }
+
+    let mut ray_count = 0usize;
+    let mut push_ray = |dir: Vec3, color: [f32; 3], intensity: f32| {
+        if ray_count >= MAX_RAY_LIGHTS {
+            return;
+        }
+        if intensity <= 1.0e-4 {
+            return;
+        }
+        let d = dir.normalize_or_zero();
+        if d.length_squared() <= 1.0e-6 || !d.is_finite() {
+            return;
+        }
+        scene.ray_lights[ray_count] = RayLightGpu {
+            direction: [d.x, d.y, d.z, 0.0],
+            color_intensity: [
+                color[0].max(0.0),
+                color[1].max(0.0),
+                color[2].max(0.0),
+                intensity.max(0.0),
+            ],
+        };
+        ray_count += 1;
+    };
+
+    if DEBUG_FORCE_WORLD_SUN_DIR {
+        let d = Vec3::new(
+            DEBUG_WORLD_SUN_DIR[0],
+            DEBUG_WORLD_SUN_DIR[1],
+            DEBUG_WORLD_SUN_DIR[2],
+        )
+        .normalize_or_zero();
+        push_ray(d, [1.0, 0.98, 0.92], 1.0);
+    }
+
+    let has_explicit_rays = lighting
+        .ray_lights
+        .iter()
+        .flatten()
+        .any(|ray| ray.intensity > 1.0e-4);
+
+    // Prefer authored directional lights when present.
+    if !DEBUG_FORCE_WORLD_SUN_DIR {
+        for ray in lighting.ray_lights.iter().flatten() {
+            if !ray.cast_shadows {
+                continue;
+            }
+            push_ray(Vec3::from(ray.direction), ray.color, ray.intensity);
+        }
+        for ray in lighting.ray_lights.iter().flatten() {
+            if ray.cast_shadows {
+                continue;
+            }
+            push_ray(Vec3::from(ray.direction), ray.color, ray.intensity);
+        }
+    }
+
+    // Only synthesize sky sun/moon directional lights when no explicit rays exist.
+    if !DEBUG_FORCE_WORLD_SUN_DIR
+        && !has_explicit_rays
+        && let Some(sky) = lighting.sky.as_ref()
+    {
+        let (sun_body_dir, moon_body_dir) =
+            sun_moon_dirs_from_time(sky.time.time_of_day, sky.sky_angle);
+        // Sky returns body position directions (origin -> sun/moon).
+        // Ray-light direction stores light travel direction (light -> world), so invert.
+        let sun_dir = -sun_body_dir;
+        let moon_dir = -moon_body_dir;
+        let day_amt = day_weight_from_time(sky.time.time_of_day).powf(1.20);
+        let dusk_amt = evening_weight_from_time(sky.time.time_of_day) * (1.0 - day_amt * 0.55);
+        let night_amt = (1.0 - day_amt).clamp(0.0, 1.0);
+
+        let day_col = sample_gradient(sky.day_colors.as_ref(), 0.58);
+        let eve_col = sample_gradient(sky.evening_colors.as_ref(), 0.52);
+        let night_col = sample_gradient(sky.night_colors.as_ref(), 0.62);
+
+        let sun_color = [
+            day_col[0] + (eve_col[0] - day_col[0]) * (dusk_amt * 0.90),
+            day_col[1] + (eve_col[1] - day_col[1]) * (dusk_amt * 0.90),
+            day_col[2] + (eve_col[2] - day_col[2]) * (dusk_amt * 0.90),
+        ];
+        let sun_visibility = horizon_visibility(sun_body_dir.y);
+        let sun_intensity =
+            (((day_amt * 1.35) + (dusk_amt * 0.22)) * sky.sun_size.max(0.1) * sun_visibility)
+                .max(0.0);
+
+        let moon_color = [
+            night_col[0] * 0.80,
+            night_col[1] * 0.88,
+            (night_col[2] * 1.05).max(0.0),
+        ];
+        let moon_visibility = horizon_visibility(moon_body_dir.y);
+        let moon_intensity =
+            ((night_amt * 0.18) * sky.moon_size.max(0.05) * moon_visibility).max(0.0);
+
+        push_ray(sun_dir, sun_color, sun_intensity);
+        push_ray(moon_dir, moon_color, moon_intensity);
+    }
+
+    scene.ambient_and_counts[0] = ray_count as f32;
+    scene.ambient_and_counts[3] = if ray_count > 0 { 1.0 } else { 0.0 };
+    if ray_count > 0 {
+        scene.ray_light = scene.ray_lights[0];
+    }
+
+    let mut point_count = 0.0f32;
+    for (dst, src) in scene
+        .point_lights
+        .iter_mut()
+        .zip(lighting.point_lights.iter().flatten())
+    {
+        dst.position_range = [
+            src.position[0],
+            src.position[1],
+            src.position[2],
+            src.range.max(0.001),
+        ];
+        dst.color_intensity = [
+            src.color[0].max(0.0),
+            src.color[1].max(0.0),
+            src.color[2].max(0.0),
+            src.intensity.max(0.0),
+        ];
+        point_count += 1.0;
+    }
+    scene.ambient_and_counts[1] = point_count;
+
+    let mut spot_count = 0.0f32;
+    for (dst, src) in scene
+        .spot_lights
+        .iter_mut()
+        .zip(lighting.spot_lights.iter().flatten())
+    {
+        let dir = Vec3::from(src.direction).normalize_or_zero();
+        let inner = src.inner_angle_radians.max(0.0);
+        let outer = src.outer_angle_radians.max(inner + 1.0e-4);
+        dst.position_range = [
+            src.position[0],
+            src.position[1],
+            src.position[2],
+            src.range.max(0.001),
+        ];
+        dst.direction_outer_cos = [dir.x, dir.y, dir.z, outer.cos()];
+        dst.color_intensity = [
+            src.color[0].max(0.0),
+            src.color[1].max(0.0),
+            src.color[2].max(0.0),
+            src.intensity.max(0.0),
+        ];
+        dst.inner_cos_pad = [inner.cos(), 0.0, 0.0, 0.0];
+        spot_count += 1.0;
+    }
+    scene.ambient_and_counts[2] = spot_count;
+
+    scene
+}
