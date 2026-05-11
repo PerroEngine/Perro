@@ -20,6 +20,7 @@ pub struct BarkPlayer {
 
 impl BarkPlayer {
     const CACHE_SOFT_LIMIT_BYTES: usize = 128 * 1024 * 1024;
+    const CACHE_EVICT_SWEEP_INTERVAL: Duration = Duration::from_millis(100);
     const UNRESERVED_TTL_FACTOR: f32 = 2.0;
     const UNRESERVED_TTL_FALLBACK: Duration = Duration::from_secs(1);
     const UNRESERVED_TTL_MIN: Duration = Duration::from_millis(250);
@@ -37,6 +38,8 @@ impl BarkPlayer {
                 playbacks: Vec::new(),
                 cache: HashMap::new(),
                 cache_bytes: 0,
+                next_cache_epoch: 1,
+                last_evict_sweep: Instant::now(),
             }),
         })
     }
@@ -82,17 +85,24 @@ impl BarkPlayer {
         } = request;
         #[cfg(feature = "profile")]
         let play_begin = Instant::now();
-        let (bytes, cache_hit, load_stats) = {
+        let (bytes, source_key, source_hash, asset_epoch, cache_hit, load_stats) = {
             let mut state = self
                 .state
                 .lock()
                 .map_err(|_| "audio mutex poisoned".to_string())?;
             let now = Instant::now();
             Self::prune_finished_playbacks_locked(&mut state, now);
-            let (bytes, cache_hit, load_stats) =
+            let (bytes, source_key, source_hash, asset_epoch, cache_hit, load_stats) =
                 Self::get_or_load_asset_locked(&mut state, source, false, self.static_audio_lookup)
                     .map_err(|err| format!("failed to load audio asset `{source}`: {err}"))?;
-            (bytes, cache_hit, load_stats)
+            (
+                bytes,
+                source_key,
+                source_hash,
+                asset_epoch,
+                cache_hit,
+                load_stats,
+            )
         };
 
         #[cfg(feature = "profile")]
@@ -113,10 +123,10 @@ impl BarkPlayer {
                 .map_err(|_| "audio mutex poisoned".to_string())?;
             let known = state
                 .cache
-                .get(source)
+                .get(&source_hash)
                 .and_then(|entry| entry.duration)
                 .or_else(|| decoder.total_duration());
-            if let Some(entry) = state.cache.get_mut(source) {
+            if let Some(entry) = state.cache.get_mut(&source_hash) {
                 entry.duration = known;
                 entry.duration_known = true;
             }
@@ -137,7 +147,6 @@ impl BarkPlayer {
             [1.0, 0.0, 0.0],
         )
         .map_err(|err| format!("failed to create sink: {err}"))?;
-        sink.set_speed(speed.max(0.01));
         #[cfg(feature = "profile")]
         let sink_setup_elapsed = sink_setup_begin.elapsed();
 
@@ -183,19 +192,12 @@ impl BarkPlayer {
             .map_err(|_| "audio mutex poisoned".to_string())?;
         let requested_volume = volume.max(0.0);
         let master_volume = state.master_volume.max(0.0);
-        let (bus_volume, bus_speed, bus_paused) = match bus_id {
-            Some(bus_id) => {
-                let bus_state = state.buses.entry(bus_id).or_insert(BusState {
-                    volume: 1.0,
-                    speed: 1.0,
-                    paused: false,
-                });
-                (
-                    bus_state.volume.max(0.0),
-                    bus_state.speed.max(0.01),
-                    bus_state.paused,
-                )
-            }
+        let (bus_volume, bus_speed, bus_paused) = match bus_id.and_then(|id| state.buses.get(&id)) {
+            Some(bus_state) => (
+                bus_state.volume.max(0.0),
+                bus_state.speed.max(0.01),
+                bus_state.paused,
+            ),
             None => (1.0, 1.0, false),
         };
         sink.set_speed(speed.max(0.01) * bus_speed);
@@ -208,15 +210,25 @@ impl BarkPlayer {
 
         let mut i = 0usize;
         while i < state.playbacks.len() {
-            if state.playbacks[i].source == source {
-                state.playbacks.remove(i).sink.stop();
+            if state.playbacks[i].source_hash == source_hash
+                && state.playbacks[i].source.as_ref() == source
+            {
+                Self::remove_playback_locked(&mut state, i, Instant::now())
+                    .sink
+                    .stop();
             } else {
                 i += 1;
             }
         }
+        if let Some(entry) = state.cache.get_mut(&source_hash) {
+            entry.active_uses = entry.active_uses.saturating_add(1);
+            entry.last_touched = Instant::now();
+        }
         state.playbacks.push(Playback {
             id,
-            source: source.to_string(),
+            source: source_key,
+            source_hash,
+            asset_epoch,
             bus_id,
             looped,
             base_volume: requested_volume,
@@ -272,7 +284,7 @@ impl BarkPlayer {
         };
         let now = Instant::now();
         Self::prune_finished_playbacks_locked(&mut state, now);
-        let (bytes, _, _) =
+        let (bytes, _, _, _, _, _) =
             Self::get_or_load_asset_locked(&mut state, source, false, self.static_audio_lookup)
                 .ok()?;
         Self::duration_for_source_locked(&mut state, source, bytes).map(|d| d.as_secs_f32())
@@ -287,7 +299,7 @@ impl BarkPlayer {
             .map_err(|_| "audio mutex poisoned".to_string())?;
         let now = Instant::now();
         Self::prune_finished_playbacks_locked(&mut state, now);
-        let (_, cache_hit, load_stats) =
+        let (_, _, _, _, cache_hit, load_stats) =
             Self::get_or_load_asset_locked(&mut state, source, reserved, self.static_audio_lookup)
                 .map_err(|err| format!("failed to load audio asset `{source}`: {err}"))?;
         Self::evict_unreserved_unused_locked(&mut state, now);
@@ -322,7 +334,15 @@ impl BarkPlayer {
         let Ok(mut state) = self.state.lock() else {
             return false;
         };
-        let had_asset = if let Some(entry) = state.cache.remove(source) {
+        let source_hash = perro_ids::string_to_u64(source);
+        if state
+            .cache
+            .get(&source_hash)
+            .is_some_and(|entry| entry.source.as_ref() != source)
+        {
+            return false;
+        }
+        let had_asset = if let Some(entry) = state.cache.remove(&source_hash) {
             state.cache_bytes = state.cache_bytes.saturating_sub(entry.bytes.len());
             true
         } else {
@@ -338,13 +358,15 @@ impl BarkPlayer {
         };
         let now = Instant::now();
         Self::prune_finished_playbacks_locked(&mut state, now);
+        let source_hash = perro_ids::string_to_u64(source);
         let mut removed_any = false;
         let mut i = 0usize;
         while i < state.playbacks.len() {
-            if state.playbacks[i].source == source {
-                let removed = state.playbacks.remove(i);
+            if state.playbacks[i].source_hash == source_hash
+                && state.playbacks[i].source.as_ref() == source
+            {
+                let removed = Self::remove_playback_locked(&mut state, i, now);
                 removed.sink.stop();
-                Self::mark_source_touched_now(&mut state, &removed.source, now);
                 removed_any = true;
             } else {
                 i += 1;
@@ -383,10 +405,12 @@ impl BarkPlayer {
         let target_pan = pan.clamped();
         let target_from_start = from_start.max(0.0);
         let target_from_end = from_end.max(0.0);
+        let source_hash = perro_ids::string_to_u64(source);
         let mut i = 0usize;
         while i < state.playbacks.len() {
             let p = &state.playbacks[i];
-            if p.source == source
+            if p.source_hash == source_hash
+                && p.source.as_ref() == source
                 && p.bus_id == bus_id
                 && p.looped == looped
                 && (p.base_volume - target_volume).abs() < f32::EPSILON
@@ -397,9 +421,8 @@ impl BarkPlayer {
                 && (p.from_start - target_from_start).abs() < f32::EPSILON
                 && (p.from_end - target_from_end).abs() < f32::EPSILON
             {
-                let removed = state.playbacks.remove(i);
+                let removed = Self::remove_playback_locked(&mut state, i, now);
                 removed.sink.stop();
-                Self::mark_source_touched_now(&mut state, &removed.source, now);
                 Self::evict_unreserved_unused_locked(&mut state, now);
                 return true;
             }
@@ -418,9 +441,8 @@ impl BarkPlayer {
         let mut i = 0usize;
         while i < state.playbacks.len() {
             if state.playbacks[i].id == id {
-                let removed = state.playbacks.remove(i);
+                let removed = Self::remove_playback_locked(&mut state, i, now);
                 removed.sink.stop();
-                Self::mark_source_touched_now(&mut state, &removed.source, now);
                 Self::evict_unreserved_unused_locked(&mut state, now);
                 return true;
             }
@@ -464,9 +486,8 @@ impl BarkPlayer {
     pub fn stop_all(&self) {
         if let Ok(mut state) = self.state.lock() {
             let now = Instant::now();
-            let drained: Vec<_> = state.playbacks.drain(..).collect();
-            for playback in drained {
-                Self::mark_source_touched_now(&mut state, &playback.source, now);
+            while !state.playbacks.is_empty() {
+                let playback = Self::remove_playback_locked(&mut state, 0, now);
                 playback.sink.stop();
             }
             Self::evict_unreserved_unused_locked(&mut state, now);
@@ -549,9 +570,8 @@ impl BarkPlayer {
         let mut i = 0usize;
         while i < state.playbacks.len() {
             if state.playbacks[i].bus_id == Some(bus_id) {
-                let removed = state.playbacks.remove(i);
+                let removed = Self::remove_playback_locked(&mut state, i, Instant::now());
                 removed.sink.stop();
-                Self::mark_source_touched_now(&mut state, &removed.source, Instant::now());
                 removed_any = true;
             } else {
                 i += 1;
@@ -566,19 +586,32 @@ impl BarkPlayer {
         source: &str,
         reserved: bool,
         static_audio_lookup: Option<fn(u64) -> &'static [u8]>,
-    ) -> Result<(Arc<[u8]>, bool, SourceLoadStats), String> {
-        if let Some(existing) = state.cache.get_mut(source) {
+    ) -> Result<(Arc<[u8]>, Arc<str>, u64, u64, bool, SourceLoadStats), String> {
+        let source_hash = perro_ids::string_to_u64(source);
+        if let Some(existing) = state.cache.get_mut(&source_hash) {
+            if existing.source.as_ref() != source {
+                return Err(format!(
+                    "audio source hash collision: `{}` conflicts with `{source}`",
+                    existing.source
+                ));
+            }
             if reserved {
                 existing.reserved = true;
             }
             existing.last_touched = Instant::now();
-            return Ok((existing.bytes.clone(), true, SourceLoadStats::cache_hit()));
+            return Ok((
+                existing.bytes.clone(),
+                existing.source.clone(),
+                existing.source_hash,
+                existing.asset_epoch,
+                true,
+                SourceLoadStats::cache_hit(),
+            ));
         }
-
         let (bytes, load_stats) = if let Some(lookup) = static_audio_lookup {
             #[cfg(feature = "profile")]
             let lookup_begin = Instant::now();
-            let looked_up = lookup(perro_ids::string_to_u64(source));
+            let looked_up = lookup(source_hash);
             #[cfg(feature = "profile")]
             let lookup_elapsed = lookup_begin.elapsed();
             let (decoded, decompress_elapsed) = decode_static_pawdio(looked_up)?;
@@ -610,18 +643,32 @@ impl BarkPlayer {
             (disk, stats)
         };
         let shared: Arc<[u8]> = Arc::from(bytes.into_boxed_slice());
+        let source_key: Arc<str> = Arc::from(source);
+        let asset_epoch = state.next_cache_epoch.max(1);
+        state.next_cache_epoch = state.next_cache_epoch.wrapping_add(1).max(1);
         state.cache_bytes = state.cache_bytes.saturating_add(shared.len());
         state.cache.insert(
-            source.to_string(),
+            source_hash,
             CachedAudioAsset {
+                source: source_key.clone(),
+                source_hash,
+                asset_epoch,
                 bytes: shared.clone(),
                 duration: None,
                 duration_known: false,
                 reserved,
+                active_uses: 0,
                 last_touched: Instant::now(),
             },
         );
-        Ok((shared, false, load_stats))
+        Ok((
+            shared,
+            source_key,
+            source_hash,
+            asset_epoch,
+            false,
+            load_stats,
+        ))
     }
 
     fn duration_for_source_locked(
@@ -629,40 +676,47 @@ impl BarkPlayer {
         source: &str,
         bytes: Arc<[u8]>,
     ) -> Option<Duration> {
+        let source_hash = perro_ids::string_to_u64(source);
         let needs_decode = state
             .cache
-            .get(source)
+            .get(&source_hash)
             .map(|entry| !entry.duration_known)
             .unwrap_or(true);
 
         if needs_decode {
             let decoded = Self::decode_duration_from_cached_bytes(bytes);
-            if let Some(entry) = state.cache.get_mut(source) {
+            if let Some(entry) = state.cache.get_mut(&source_hash) {
                 entry.duration = decoded;
                 entry.duration_known = true;
             }
         }
 
-        state.cache.get(source).and_then(|entry| entry.duration)
+        state
+            .cache
+            .get(&source_hash)
+            .and_then(|entry| entry.duration)
     }
 
-    fn mark_source_touched_now(state: &mut AudioState, source: &str, now: Instant) {
-        if let Some(entry) = state.cache.get_mut(source) {
-            entry.last_touched = now;
+    fn remove_playback_locked(state: &mut AudioState, index: usize, now: Instant) -> Playback {
+        let removed = state.playbacks.swap_remove(index);
+        if let Some(entry) = state.cache.get_mut(&removed.source_hash) {
+            if entry.asset_epoch == removed.asset_epoch {
+                entry.active_uses = entry.active_uses.saturating_sub(1);
+                entry.last_touched = now;
+            }
         }
+        removed
     }
 
     fn prune_finished_playbacks_locked(state: &mut AudioState, now: Instant) {
         let mut i = 0usize;
         while i < state.playbacks.len() {
             if state.playbacks[i].sink.empty() {
-                let source = state.playbacks.remove(i).source;
-                Self::mark_source_touched_now(state, &source, now);
+                let _ = Self::remove_playback_locked(state, i, now);
             } else {
                 i += 1;
             }
         }
-        Self::evict_unreserved_unused_locked(state, now);
     }
 
     fn unreserved_ttl(entry: &CachedAudioAsset) -> Duration {
@@ -675,51 +729,40 @@ impl BarkPlayer {
     }
 
     fn evict_unreserved_unused_locked(state: &mut AudioState, now: Instant) {
-        let mut in_use = HashMap::<&str, usize>::new();
-        for playback in &state.playbacks {
-            in_use
-                .entry(playback.source.as_str())
-                .and_modify(|v| *v += 1)
-                .or_insert(1);
+        if now.duration_since(state.last_evict_sweep) < Self::CACHE_EVICT_SWEEP_INTERVAL {
+            return;
         }
-        let mut to_remove = Vec::new();
-        for (source, entry) in &state.cache {
-            if entry.reserved || in_use.contains_key(source.as_str()) {
-                continue;
+        state.last_evict_sweep = now;
+        let mut removed_bytes = 0usize;
+        state.cache.retain(|_, entry| {
+            if entry.reserved || entry.active_uses > 0 {
+                return true;
             }
             if now.duration_since(entry.last_touched) >= Self::unreserved_ttl(entry) {
-                to_remove.push(source.clone());
+                removed_bytes = removed_bytes.saturating_add(entry.bytes.len());
+                return false;
             }
-        }
-        for source in to_remove {
-            if let Some(entry) = state.cache.remove(&source) {
-                state.cache_bytes = state.cache_bytes.saturating_sub(entry.bytes.len());
-            }
-        }
+            true
+        });
+        state.cache_bytes = state.cache_bytes.saturating_sub(removed_bytes);
     }
 
     fn enforce_cache_soft_limit_locked(state: &mut AudioState) {
         if state.cache_bytes <= Self::CACHE_SOFT_LIMIT_BYTES {
             return;
         }
-        let mut to_remove = Vec::new();
-        for (source, entry) in &state.cache {
-            if entry.reserved {
-                continue;
+        let mut cache_bytes = state.cache_bytes;
+        state.cache.retain(|_, entry| {
+            if cache_bytes <= Self::CACHE_SOFT_LIMIT_BYTES
+                || entry.reserved
+                || entry.active_uses > 0
+            {
+                return true;
             }
-            let in_use = state.playbacks.iter().any(|p| p.source == *source);
-            if !in_use {
-                to_remove.push(source.clone());
-            }
-        }
-        for source in to_remove {
-            if state.cache_bytes <= Self::CACHE_SOFT_LIMIT_BYTES {
-                break;
-            }
-            if let Some(entry) = state.cache.remove(&source) {
-                state.cache_bytes = state.cache_bytes.saturating_sub(entry.bytes.len());
-            }
-        }
+            cache_bytes = cache_bytes.saturating_sub(entry.bytes.len());
+            false
+        });
+        state.cache_bytes = cache_bytes;
     }
 
     fn refresh_volumes(state: &mut AudioState) {

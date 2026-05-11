@@ -48,3 +48,7 @@ steamworks = ["dep:perro_steamworks", "perro_steamworks/steamworks-runtime"]
 [[bench]]
 name = "audio_propagation"
 harness = false
+
+[[bench]]
+name = "unsafe_hotpaths"
+harness = false

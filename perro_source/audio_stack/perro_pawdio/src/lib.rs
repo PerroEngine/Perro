@@ -5,7 +5,7 @@ mod math;
 mod player;
 mod types;
 
-pub use controller::AudioController;
+pub use controller::{AudioController, AudioSourceHandle};
 pub use player::BarkPlayer;
 pub use types::{
     Audio2D, Audio3D, AudioCompression, AudioEq, AudioListener2D, AudioListener3D, AudioPan,

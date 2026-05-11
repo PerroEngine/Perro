@@ -3214,6 +3214,7 @@ name = "perro_pawdio"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "crossbeam-channel",
  "perro_asset_formats",
  "perro_ids",
  "perro_io",

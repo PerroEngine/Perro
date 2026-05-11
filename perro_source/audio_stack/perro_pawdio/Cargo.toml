@@ -7,6 +7,7 @@ edition = "2024"
 perro_asset_formats = { path = "../../core/perro_asset_formats" }
 perro_io = { path = "../../io_stack/perro_io" }
 perro_ids = { path = "../../core/perro_ids" }
+crossbeam-channel = "0.5"
 rodio = { version = "0.17", default-features = true }
 
 [dev-dependencies]

@@ -1,15 +1,17 @@
+use crossbeam_channel::Sender;
 use perro_ids::AudioBusID;
 use rodio::SpatialSink;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
 
 use crate::types::{AudioCompression, AudioEq, AudioPan, AudioPlaybackRequest, SpatialAudioParams};
 
 pub(crate) struct Playback {
     pub(crate) id: u64,
-    pub(crate) source: String,
+    pub(crate) source: Arc<str>,
+    pub(crate) source_hash: u64,
+    pub(crate) asset_epoch: u64,
     pub(crate) bus_id: Option<AudioBusID>,
     pub(crate) looped: bool,
     pub(crate) base_volume: f32,
@@ -38,13 +40,15 @@ pub(crate) struct AudioState {
     pub(crate) master_volume: f32,
     pub(crate) buses: HashMap<AudioBusID, BusState>,
     pub(crate) playbacks: Vec<Playback>,
-    pub(crate) cache: HashMap<String, CachedAudioAsset>,
+    pub(crate) cache: HashMap<u64, CachedAudioAsset>,
     pub(crate) cache_bytes: usize,
+    pub(crate) next_cache_epoch: u64,
+    pub(crate) last_evict_sweep: Instant,
 }
 #[derive(Clone)]
 pub(crate) struct OwnedAudioPlaybackRequest {
     pub(crate) id: u64,
-    pub(crate) source: String,
+    pub(crate) source: Arc<str>,
     pub(crate) bus_id: Option<AudioBusID>,
     pub(crate) looped: bool,
     pub(crate) volume: f32,
@@ -63,8 +67,17 @@ pub(crate) struct OwnedAudioPlaybackRequest {
 
 impl From<AudioPlaybackRequest<'_>> for OwnedAudioPlaybackRequest {
     fn from(value: AudioPlaybackRequest<'_>) -> Self {
+        Self::from_request_with_source(value, Arc::from(value.source))
+    }
+}
+
+impl OwnedAudioPlaybackRequest {
+    pub(crate) fn from_request_with_source(
+        value: AudioPlaybackRequest<'_>,
+        source: Arc<str>,
+    ) -> Self {
         Self {
-            source: value.source.to_string(),
+            source,
             id: value.id,
             bus_id: value.bus_id,
             looped: value.looped,
@@ -125,17 +138,17 @@ impl SourceLoadStats {
 
 pub(crate) enum AudioCommand {
     Load {
-        source: String,
+        source: Arc<str>,
         reserved: bool,
     },
     DropAsset {
-        source: String,
+        source: Arc<str>,
     },
     Play {
         request: OwnedAudioPlaybackRequest,
     },
     Stop {
-        source: String,
+        source: Arc<str>,
     },
     StopMatch {
         request: OwnedAudioPlaybackRequest,
@@ -169,16 +182,20 @@ pub(crate) enum AudioCommand {
         bus_id: AudioBusID,
     },
     SourceLength {
-        source: String,
+        source: Arc<str>,
         reply: Sender<Option<f32>>,
     },
 }
 
 #[derive(Clone)]
 pub(crate) struct CachedAudioAsset {
+    pub(crate) source: Arc<str>,
+    pub(crate) source_hash: u64,
+    pub(crate) asset_epoch: u64,
     pub(crate) bytes: Arc<[u8]>,
     pub(crate) duration: Option<Duration>,
     pub(crate) duration_known: bool,
     pub(crate) reserved: bool,
+    pub(crate) active_uses: usize,
     pub(crate) last_touched: Instant,
 }

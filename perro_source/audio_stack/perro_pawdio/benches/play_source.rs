@@ -1,5 +1,9 @@
-use criterion::{Criterion, criterion_group, criterion_main};
-use perro_pawdio::{AudioPan, AudioPlaybackRequest, BarkPlayer};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use perro_ids::AudioBusID;
+use perro_pawdio::{
+    Audio2D, Audio3D, AudioController, AudioListener2D, AudioListener3D, AudioPan,
+    AudioPlaybackRequest, BarkPlayer,
+};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -8,9 +12,10 @@ const SAMPLE_RATE: u32 = 48_000;
 const CHANNELS: u16 = 1;
 const BITS_PER_SAMPLE: u16 = 16;
 const SAMPLE_COUNT: usize = 2_400;
-const SOURCE_HASH: u64 = perro_ids::string_to_u64(SOURCE);
+const SOURCE_POOL: usize = 256;
 
 static WAV_BYTES: OnceLock<Vec<u8>> = OnceLock::new();
+static BENCH_SOURCES: OnceLock<Vec<&'static str>> = OnceLock::new();
 
 fn bench_wav() -> &'static [u8] {
     WAV_BYTES.get_or_init(|| {
@@ -43,18 +48,32 @@ fn bench_wav() -> &'static [u8] {
     })
 }
 
-fn lookup_audio(path_hash: u64) -> &'static [u8] {
-    match path_hash {
-        SOURCE_HASH => bench_wav(),
-        _ => b"",
-    }
+fn bench_sources() -> &'static [&'static str] {
+    BENCH_SOURCES.get_or_init(|| {
+        (0..SOURCE_POOL)
+            .map(|i| format!("res://audio/bench_{i}.wav").leak() as &'static str)
+            .collect()
+    })
+}
+
+fn lookup_audio(_path_hash: u64) -> &'static [u8] {
+    bench_wav()
 }
 
 fn request(id: u64, from_end: f32) -> AudioPlaybackRequest<'static> {
+    request_for(id, SOURCE, None, from_end)
+}
+
+fn request_for(
+    id: u64,
+    source: &'static str,
+    bus_id: Option<AudioBusID>,
+    from_end: f32,
+) -> AudioPlaybackRequest<'static> {
     AudioPlaybackRequest {
         id,
-        source: SOURCE,
-        bus_id: None,
+        source,
+        bus_id,
         looped: false,
         volume: 0.0,
         speed: 1.0,
@@ -118,6 +137,179 @@ fn bench_play(c: &mut Criterion) {
                 elapsed += start.elapsed();
                 player.stop_source(SOURCE);
             }
+            elapsed
+        });
+    });
+
+    for source in bench_sources() {
+        player
+            .load_source(source, true)
+            .expect("preload pooled bench audio source");
+    }
+
+    let mut many_active = c.benchmark_group("pawdio_play_cached_many_active");
+    for active in [16usize, 64, 256] {
+        many_active.bench_with_input(
+            BenchmarkId::new("multi_bus_sources", active),
+            &active,
+            |b, &active| {
+                b.iter_custom(|iters| {
+                    let sources = bench_sources();
+                    let mut elapsed = Duration::ZERO;
+                    for id in 0..iters {
+                        let idx = id as usize % active;
+                        let bus = AudioBusID::from_u64((idx % 64) as u64 + 1);
+                        let start = Instant::now();
+                        player
+                            .play_source(request_for(id, sources[idx], Some(bus), 0.0))
+                            .unwrap();
+                        elapsed += start.elapsed();
+                    }
+                    elapsed
+                });
+            },
+        );
+    }
+    many_active.finish();
+
+    let listener_2d = AudioListener2D::default();
+    c.bench_function("pawdio_request_2d_to_playback", |b| {
+        b.iter(|| {
+            black_box(
+                Audio2D::new(black_box(SOURCE), black_box([5.0, 2.0]), black_box(32.0))
+                    .to_playback(black_box(listener_2d)),
+            )
+        });
+    });
+
+    let listener_3d = AudioListener3D::default();
+    c.bench_function("pawdio_request_3d_to_playback", |b| {
+        b.iter(|| {
+            black_box(
+                Audio3D::new(
+                    black_box(SOURCE),
+                    black_box([5.0, 2.0, -8.0]),
+                    black_box(32.0),
+                )
+                .to_playback(black_box(listener_3d)),
+            )
+        });
+    });
+
+    c.bench_function("pawdio_play_cached_2d_64_active", |b| {
+        b.iter_custom(|iters| {
+            let sources = bench_sources();
+            let mut elapsed = Duration::ZERO;
+            for id in 0..iters {
+                let idx = id as usize % 64;
+                let audio = Audio2D::new(sources[idx], [idx as f32 * 0.1, 2.0], 32.0);
+                let mut req = audio.to_playback(listener_2d).unwrap();
+                req.id = id;
+                req.bus_id = Some(AudioBusID::from_u64((idx % 16) as u64 + 1));
+                let start = Instant::now();
+                player.play_source(req).unwrap();
+                elapsed += start.elapsed();
+            }
+            elapsed
+        });
+    });
+
+    c.bench_function("pawdio_play_cached_3d_64_active", |b| {
+        b.iter_custom(|iters| {
+            let sources = bench_sources();
+            let mut elapsed = Duration::ZERO;
+            for id in 0..iters {
+                let idx = id as usize % 64;
+                let audio = Audio3D::new(sources[idx], [idx as f32 * 0.1, 2.0, -8.0], 32.0);
+                let mut req = audio.to_playback(listener_3d).unwrap();
+                req.id = id;
+                req.bus_id = Some(AudioBusID::from_u64((idx % 16) as u64 + 1));
+                let start = Instant::now();
+                player.play_source(req).unwrap();
+                elapsed += start.elapsed();
+            }
+            elapsed
+        });
+    });
+
+    let Ok(controller) = AudioController::new(Some(lookup_audio)) else {
+        eprintln!("skip perro_pawdio controller enqueue bench: no audio output device");
+        return;
+    };
+    controller.reserve_source(SOURCE);
+    let _ = controller.source_length_seconds(SOURCE);
+    let source_handle = controller.source_handle(SOURCE);
+
+    c.bench_function("pawdio_controller_enqueue_play_cached_wav", |b| {
+        b.iter_custom(|iters| {
+            let mut elapsed = Duration::ZERO;
+            for id in 0..iters {
+                let start = Instant::now();
+                assert!(controller.play_source(request(id, 0.0)));
+                elapsed += start.elapsed();
+                if id % 1024 == 1023 {
+                    let _ = controller.source_length_seconds(SOURCE);
+                }
+            }
+            let _ = controller.source_length_seconds(SOURCE);
+            elapsed
+        });
+    });
+
+    c.bench_function("pawdio_controller_enqueue_play_handle_cached_wav", |b| {
+        b.iter_custom(|iters| {
+            let mut elapsed = Duration::ZERO;
+            for id in 0..iters {
+                let start = Instant::now();
+                assert!(controller.play_source_handle(&source_handle, request(id, 0.0)));
+                elapsed += start.elapsed();
+                if id % 1024 == 1023 {
+                    let _ = controller.source_length_seconds(SOURCE);
+                }
+            }
+            let _ = controller.source_length_seconds(SOURCE);
+            elapsed
+        });
+    });
+
+    c.bench_function("pawdio_controller_enqueue_spatial_cached_wav", |b| {
+        b.iter_custom(|iters| {
+            let mut elapsed = Duration::ZERO;
+            for id in 0..iters {
+                let idx = id as usize % 64;
+                let audio = Audio3D::new(SOURCE, [idx as f32 * 0.1, 2.0, -8.0], 32.0);
+                let req = audio.to_playback(listener_3d).unwrap();
+                let start = Instant::now();
+                assert!(controller.play_spatial_source(req).is_some());
+                elapsed += start.elapsed();
+                if id % 1024 == 1023 {
+                    let _ = controller.source_length_seconds(SOURCE);
+                }
+            }
+            let _ = controller.source_length_seconds(SOURCE);
+            elapsed
+        });
+    });
+
+    c.bench_function("pawdio_controller_enqueue_spatial_handle_cached_wav", |b| {
+        b.iter_custom(|iters| {
+            let mut elapsed = Duration::ZERO;
+            for id in 0..iters {
+                let idx = id as usize % 64;
+                let audio = Audio3D::new(SOURCE, [idx as f32 * 0.1, 2.0, -8.0], 32.0);
+                let req = audio.to_playback(listener_3d).unwrap();
+                let start = Instant::now();
+                assert!(
+                    controller
+                        .play_spatial_source_handle(&source_handle, req)
+                        .is_some()
+                );
+                elapsed += start.elapsed();
+                if id % 1024 == 1023 {
+                    let _ = controller.source_length_seconds(SOURCE);
+                }
+            }
+            let _ = controller.source_length_seconds(SOURCE);
             elapsed
         });
     });

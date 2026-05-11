@@ -1,20 +1,35 @@
+use crossbeam_channel::{self, Sender};
 use perro_ids::AudioBusID;
-use std::sync::Arc;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{self, Sender};
+use std::sync::{Arc, Mutex};
 
-use crate::internal::AudioCommand;
+use crate::internal::{AudioCommand, OwnedAudioPlaybackRequest};
 use crate::player::BarkPlayer;
 use crate::types::{AudioPlaybackRequest, SpatialAudioParams};
 
 pub struct AudioController {
     tx: Sender<AudioCommand>,
     next_playback_id: Arc<AtomicU64>,
+    source_pool: Mutex<HashMap<u64, Arc<str>>>,
+}
+
+#[derive(Clone)]
+pub struct AudioSourceHandle {
+    source: Arc<str>,
+}
+
+impl AudioSourceHandle {
+    pub fn as_str(&self) -> &str {
+        &self.source
+    }
 }
 
 impl AudioController {
+    const COMMAND_QUEUE_CAPACITY: usize = 4096;
+
     pub fn new(static_audio_lookup: Option<fn(u64) -> &'static [u8]>) -> Result<Self, String> {
-        let (tx, rx) = mpsc::channel::<AudioCommand>();
+        let (tx, rx) = crossbeam_channel::bounded::<AudioCommand>(Self::COMMAND_QUEUE_CAPACITY);
         let next_playback_id = Arc::new(AtomicU64::new(1));
         std::thread::Builder::new()
             .name("perro_pawdio_audio".to_string())
@@ -34,7 +49,7 @@ impl AudioController {
                         AudioCommand::Play { request } => {
                             let _ = player.play_source(AudioPlaybackRequest {
                                 id: request.id,
-                                source: request.source.as_str(),
+                                source: request.source.as_ref(),
                                 bus_id: request.bus_id,
                                 looped: request.looped,
                                 volume: request.volume,
@@ -57,7 +72,7 @@ impl AudioController {
                         AudioCommand::StopMatch { request } => {
                             let _ = player.stop_match(AudioPlaybackRequest {
                                 id: request.id,
-                                source: request.source.as_str(),
+                                source: request.source.as_ref(),
                                 bus_id: request.bus_id,
                                 looped: request.looped,
                                 volume: request.volume,
@@ -105,13 +120,48 @@ impl AudioController {
         Ok(Self {
             tx,
             next_playback_id,
+            source_pool: Mutex::new(HashMap::new()),
         })
     }
 
+    fn intern_source(&self, source: &str) -> Arc<str> {
+        let hash = perro_ids::string_to_u64(source);
+        let Ok(mut pool) = self.source_pool.lock() else {
+            return Arc::from(source);
+        };
+        if let Some(existing) = pool.get(&hash) {
+            if existing.as_ref() == source {
+                return existing.clone();
+            }
+        }
+        let interned: Arc<str> = Arc::from(source);
+        pool.insert(hash, interned.clone());
+        interned
+    }
+
+    pub fn source_handle(&self, source: &str) -> AudioSourceHandle {
+        AudioSourceHandle {
+            source: self.intern_source(source),
+        }
+    }
+
     pub fn play_source(&self, request: AudioPlaybackRequest<'_>) -> bool {
+        let source = self.intern_source(request.source);
+        self.play_source_arc(request, source)
+    }
+
+    pub fn play_source_handle(
+        &self,
+        handle: &AudioSourceHandle,
+        request: AudioPlaybackRequest<'_>,
+    ) -> bool {
+        self.play_source_arc(request, handle.source.clone())
+    }
+
+    fn play_source_arc(&self, request: AudioPlaybackRequest<'_>, source: Arc<str>) -> bool {
         self.tx
             .send(AudioCommand::Play {
-                request: request.into(),
+                request: OwnedAudioPlaybackRequest::from_request_with_source(request, source),
             })
             .is_ok()
     }
@@ -119,9 +169,29 @@ impl AudioController {
     pub fn play_spatial_source(&self, mut request: AudioPlaybackRequest<'_>) -> Option<u64> {
         let id = self.next_playback_id.fetch_add(1, Ordering::Relaxed).max(1);
         request.id = id;
+        let source = self.intern_source(request.source);
+        self.play_spatial_source_arc(request, source, id)
+    }
+
+    pub fn play_spatial_source_handle(
+        &self,
+        handle: &AudioSourceHandle,
+        mut request: AudioPlaybackRequest<'_>,
+    ) -> Option<u64> {
+        let id = self.next_playback_id.fetch_add(1, Ordering::Relaxed).max(1);
+        request.id = id;
+        self.play_spatial_source_arc(request, handle.source.clone(), id)
+    }
+
+    fn play_spatial_source_arc(
+        &self,
+        request: AudioPlaybackRequest<'_>,
+        source: Arc<str>,
+        id: u64,
+    ) -> Option<u64> {
         self.tx
             .send(AudioCommand::Play {
-                request: request.into(),
+                request: OwnedAudioPlaybackRequest::from_request_with_source(request, source),
             })
             .is_ok()
             .then_some(id)
@@ -138,37 +208,37 @@ impl AudioController {
     }
 
     pub fn load_source(&self, source: &str) -> bool {
+        let source = self.intern_source(source);
         self.tx
             .send(AudioCommand::Load {
-                source: source.to_string(),
+                source,
                 reserved: false,
             })
             .is_ok()
     }
 
     pub fn reserve_source(&self, source: &str) -> bool {
+        let source = self.intern_source(source);
         self.tx
             .send(AudioCommand::Load {
-                source: source.to_string(),
+                source,
                 reserved: true,
             })
             .is_ok()
     }
 
     pub fn drop_source(&self, source: &str) -> bool {
-        self.tx
-            .send(AudioCommand::DropAsset {
-                source: source.to_string(),
-            })
-            .is_ok()
+        let source = self.intern_source(source);
+        self.tx.send(AudioCommand::DropAsset { source }).is_ok()
     }
 
     pub fn source_length_seconds(&self, source: &str) -> Option<f32> {
-        let (reply_tx, reply_rx) = mpsc::channel::<Option<f32>>();
+        let source = self.intern_source(source);
+        let (reply_tx, reply_rx) = crossbeam_channel::bounded::<Option<f32>>(1);
         if self
             .tx
             .send(AudioCommand::SourceLength {
-                source: source.to_string(),
+                source,
                 reply: reply_tx,
             })
             .is_err()
@@ -179,17 +249,15 @@ impl AudioController {
     }
 
     pub fn stop_source(&self, source: &str) -> bool {
-        self.tx
-            .send(AudioCommand::Stop {
-                source: source.to_string(),
-            })
-            .is_ok()
+        let source = self.intern_source(source);
+        self.tx.send(AudioCommand::Stop { source }).is_ok()
     }
 
     pub fn stop_match(&self, request: AudioPlaybackRequest<'_>) -> bool {
+        let source = self.intern_source(request.source);
         self.tx
             .send(AudioCommand::StopMatch {
-                request: request.into(),
+                request: OwnedAudioPlaybackRequest::from_request_with_source(request, source),
             })
             .is_ok()
     }
