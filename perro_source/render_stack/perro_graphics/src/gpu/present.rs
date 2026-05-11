@@ -150,7 +150,7 @@ struct VsOut {
 };
 
 @vertex
-pub(super) fn vs_main(@builtin(vertex_index) vid: u32) -> VsOut {
+fn vs_main(@builtin(vertex_index) vid: u32) -> VsOut {
     var pos = array<vec2<f32>, 3>(
         vec2<f32>(-1.0, -3.0),
         vec2<f32>(3.0, 1.0),
@@ -163,7 +163,7 @@ pub(super) fn vs_main(@builtin(vertex_index) vid: u32) -> VsOut {
 }
 
 @fragment
-pub(super) fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let c = textureSample(input_tex, input_sampler, in.uv);
     return vec4<f32>(c.rgb, 1.0);
 }

@@ -12,14 +12,19 @@ use perro_scripting::{ScriptAPI, ScriptBehavior, ScriptConstructor};
 use std::time::{Duration, Instant};
 use std::{cell::RefCell, sync::Arc};
 
+// Runtime subsystem leaves. Public API glue stays here; heavy behavior lives in folders.
 mod audio;
 mod input_bridge;
 mod internal_updates;
 mod mesh_query;
 mod physics;
+#[path = "runtime/render/two_d.rs"]
 mod render_2d;
+#[path = "runtime/render/three_d.rs"]
 mod render_3d;
+#[path = "runtime/render/bridge.rs"]
 mod render_bridge;
+#[path = "runtime/render/ui.rs"]
 mod render_ui;
 mod scene_loader;
 mod scheduling;
@@ -46,6 +51,10 @@ type RuntimeScriptCtor = ScriptConstructor<RuntimeScriptApi>;
 type RuntimeScriptBehavior = dyn ScriptBehavior<RuntimeScriptApi>;
 type StaticScriptRegistry = &'static [(u64, RuntimeScriptCtor)];
 
+/// Live game runtime state.
+///
+/// Keeps scene nodes, script schedules, resource APIs, input snapshots,
+/// physics state, audio propagation, and retained render state in one owner.
 pub struct Runtime {
     pub time: Timing,
     provider_mode: ProviderMode,
@@ -81,11 +90,15 @@ pub struct Runtime {
 }
 
 pub struct Timing {
+    /// Fixed-step delta passed to physics and fixed scripts.
     pub fixed_delta: f32,
+    /// Variable-step delta passed to frame scripts.
     pub delta: f32,
+    /// Accumulated runtime time in seconds.
     pub elapsed: f32,
 }
 
+/// Timing breakdown for variable-step script schedules.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct UpdateScheduleTiming {
     pub total: Duration,
@@ -95,6 +108,7 @@ pub struct UpdateScheduleTiming {
     pub slowest_script: Duration,
 }
 
+/// Timing breakdown for one variable runtime update.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RuntimeUpdateTiming {
     pub start_schedule: Duration,
@@ -104,6 +118,7 @@ pub struct RuntimeUpdateTiming {
     pub total: Duration,
 }
 
+/// Timing breakdown for one fixed runtime update.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RuntimeFixedUpdateTiming {
     pub snapshot_update: Duration,
@@ -121,6 +136,7 @@ pub struct RuntimeFixedUpdateTiming {
     pub total: Duration,
 }
 
+/// Timing breakdown for retained UI extraction.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RuntimeUiTiming {
     pub layout: Duration,

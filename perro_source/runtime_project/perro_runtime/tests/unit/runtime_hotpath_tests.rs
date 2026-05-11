@@ -1,17 +1,18 @@
 use super::*;
 use ahash::AHashMap;
 use perro_ids::{NodeID, TextureID};
+use perro_io::{ResolvedPath, clear_dlc_mounts, mount_dlc_disk, resolve_path};
 use perro_nodes::{Node2D, Node3D, SceneNode, SceneNodeData, Sprite2D};
 use perro_render_bridge::{Command2D, RenderCommand};
 use perro_runtime_context::sub_apis::{NodeAPI, NodeCreationTemplate};
 use perro_scripting::{ScriptBehavior, ScriptContext, ScriptFlags, ScriptLifecycle};
 use perro_variant::Variant;
-use std::any::Any;
 use std::hint::black_box;
 use std::sync::{
-    Arc,
+    Arc, LazyLock, Mutex,
     atomic::{AtomicUsize, Ordering},
 };
+use std::{any::Any, path::PathBuf};
 
 struct CountScript {
     update_count: Arc<AtomicUsize>,
@@ -51,6 +52,84 @@ impl ScriptBehavior<RuntimeScriptApi> for CountScript {
     ) -> Variant {
         Variant::Null
     }
+}
+
+static DLC_SELF_TEST_PATHS: LazyLock<Mutex<Vec<PathBuf>>> =
+    LazyLock::new(|| Mutex::new(Vec::new()));
+
+struct DlcSelfResolveScript;
+
+impl ScriptLifecycle<RuntimeScriptApi> for DlcSelfResolveScript {
+    fn on_init(&self, _ctx: &mut ScriptContext<'_, RuntimeScriptApi>) {
+        let ResolvedPath::Disk(path) = resolve_path("dlc://self/probe.txt") else {
+            panic!("expected dlc self to resolve to disk path");
+        };
+        DLC_SELF_TEST_PATHS.lock().unwrap().push(path);
+    }
+}
+
+impl ScriptBehavior<RuntimeScriptApi> for DlcSelfResolveScript {
+    fn script_flags(&self) -> ScriptFlags {
+        ScriptFlags::new(ScriptFlags::HAS_INIT)
+    }
+
+    fn get_var(&self, _state: &dyn Any, _var: perro_ids::ScriptMemberID) -> Variant {
+        Variant::Null
+    }
+
+    fn set_var(&self, _state: &mut dyn Any, _var: perro_ids::ScriptMemberID, _value: Variant) {}
+
+    fn call_method(
+        &self,
+        _method: perro_ids::ScriptMemberID,
+        _ctx: &mut ScriptContext<'_, RuntimeScriptApi>,
+        _params: &[Variant],
+    ) -> Variant {
+        Variant::Null
+    }
+}
+
+#[allow(improper_ctypes_definitions)]
+extern "C" fn dlc_self_resolve_script_ctor() -> *mut dyn ScriptBehavior<RuntimeScriptApi> {
+    Box::into_raw(Box::new(DlcSelfResolveScript))
+}
+
+#[test]
+fn dlc_self_context_applies_only_during_script_callback() {
+    clear_dlc_mounts();
+    DLC_SELF_TEST_PATHS.lock().unwrap().clear();
+
+    let root = std::env::temp_dir().join(format!("perro_runtime_dlc_self_{}", std::process::id()));
+    let dlc_root = root.join("expansion");
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&dlc_root).unwrap();
+    mount_dlc_disk("Expansion", &dlc_root).unwrap();
+
+    let mut runtime = Runtime::new();
+    let node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    let script_hash = 0xD1C5_E1F0_u64;
+    runtime
+        .script_runtime
+        .dynamic_script_registry
+        .insert(script_hash, dlc_self_resolve_script_ctor);
+
+    runtime
+        .attach_script_instance(node, script_hash, Some("Expansion"), Vec::new())
+        .unwrap();
+
+    assert_eq!(
+        DLC_SELF_TEST_PATHS.lock().unwrap().as_slice(),
+        &[dlc_root.join("probe.txt")]
+    );
+    match resolve_path("dlc://self/probe.txt") {
+        ResolvedPath::Disk(path) => assert_eq!(path, PathBuf::from("dlc://self/probe.txt")),
+        other => panic!("expected cleared dlc self context, got {other:?}"),
+    }
+
+    clear_dlc_mounts();
+    let _ = std::fs::remove_dir_all(&root);
 }
 
 #[test]

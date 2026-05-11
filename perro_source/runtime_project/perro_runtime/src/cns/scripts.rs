@@ -1,7 +1,7 @@
 use crate::{Runtime, runtime_project::ProviderMode};
 use perro_ids::ScriptMemberID;
 use perro_input::InputWindow;
-use perro_io::set_dlc_self_context;
+use perro_io::push_dlc_self_context;
 use perro_resource_context::ResourceWindow;
 use perro_runtime_context::RuntimeWindow;
 use perro_scripting::{ScriptBehavior, ScriptConstructor, ScriptContext};
@@ -132,7 +132,7 @@ impl Runtime {
                 .script_instance_dlc_mounts
                 .get(&node)
                 .cloned();
-            set_dlc_self_context(mount.as_deref());
+            let _dlc_self_context = push_dlc_self_context(mount.as_deref());
             let mut run = RuntimeWindow::new(self);
             let mut sctx = ScriptContext {
                 run: &mut run,
@@ -141,7 +141,6 @@ impl Runtime {
                 id: node,
             };
             behavior.on_init(&mut sctx);
-            set_dlc_self_context(None);
         }
         if flags.has_all_init() {
             self.queue_start_script(node);

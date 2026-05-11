@@ -54,6 +54,11 @@ thread_local! {
     static DLC_SELF_CONTEXT: RefCell<Option<String>> = const { RefCell::new(None) };
 }
 
+#[derive(Debug)]
+pub struct DlcSelfContextGuard {
+    previous: Option<String>,
+}
+
 #[derive(Clone, Debug)]
 pub enum DlcMountSource {
     Disk(PathBuf),
@@ -173,6 +178,23 @@ pub fn set_dlc_self_context(name: Option<&str>) {
     DLC_SELF_CONTEXT.with(|ctx| {
         *ctx.borrow_mut() = name.map(|v| v.to_ascii_lowercase());
     });
+}
+
+pub fn push_dlc_self_context(name: Option<&str>) -> DlcSelfContextGuard {
+    let next = name.map(|v| v.to_ascii_lowercase());
+    let previous = DLC_SELF_CONTEXT.with(|ctx| {
+        let mut ctx = ctx.borrow_mut();
+        std::mem::replace(&mut *ctx, next)
+    });
+    DlcSelfContextGuard { previous }
+}
+
+impl Drop for DlcSelfContextGuard {
+    fn drop(&mut self) {
+        DLC_SELF_CONTEXT.with(|ctx| {
+            *ctx.borrow_mut() = self.previous.take();
+        });
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -588,6 +610,66 @@ mod tests {
             load_asset("dlc://Expansion/textures/player.png").unwrap(),
             b"dlc-static-ptex"
         );
+
+        clear_dlc_mounts();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn dlc_self_context_restores_nested_and_after_panic() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let root =
+            std::env::temp_dir().join(format!("perro_io_dlc_self_context_{}", std::process::id()));
+        let base = root.join("base");
+        let nested = root.join("nested");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&base).unwrap();
+        fs::create_dir_all(&nested).unwrap();
+
+        clear_dlc_mounts();
+        mount_dlc_disk("Base", &base).unwrap();
+        mount_dlc_disk("Nested", &nested).unwrap();
+
+        {
+            let _base_ctx = push_dlc_self_context(Some("Base"));
+            match resolve_path("dlc://self/file.txt") {
+                ResolvedPath::Disk(path) => assert_eq!(path, base.join("file.txt")),
+                other => panic!("expected base disk path, got {other:?}"),
+            }
+
+            {
+                let _nested_ctx = push_dlc_self_context(Some("Nested"));
+                match resolve_path("dlc://self/file.txt") {
+                    ResolvedPath::Disk(path) => assert_eq!(path, nested.join("file.txt")),
+                    other => panic!("expected nested disk path, got {other:?}"),
+                }
+            }
+
+            match resolve_path("dlc://self/file.txt") {
+                ResolvedPath::Disk(path) => assert_eq!(path, base.join("file.txt")),
+                other => panic!("expected restored base disk path, got {other:?}"),
+            }
+
+            let panic_result = std::panic::catch_unwind(|| {
+                let _panic_ctx = push_dlc_self_context(Some("Nested"));
+                match resolve_path("dlc://self/file.txt") {
+                    ResolvedPath::Disk(path) => assert_eq!(path, nested.join("file.txt")),
+                    other => panic!("expected nested disk path, got {other:?}"),
+                }
+                panic!("force unwind");
+            });
+            assert!(panic_result.is_err());
+
+            match resolve_path("dlc://self/file.txt") {
+                ResolvedPath::Disk(path) => assert_eq!(path, base.join("file.txt")),
+                other => panic!("expected restored base disk path, got {other:?}"),
+            }
+        }
+
+        match resolve_path("dlc://self/file.txt") {
+            ResolvedPath::Disk(path) => assert_eq!(path, PathBuf::from("dlc://self/file.txt")),
+            other => panic!("expected unresolved self path, got {other:?}"),
+        }
 
         clear_dlc_mounts();
         let _ = fs::remove_dir_all(&root);

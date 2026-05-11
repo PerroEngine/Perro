@@ -1,7 +1,7 @@
 use perro_ids::string_to_u64;
 use perro_ids::{NodeID, ScriptMemberID};
 use perro_input::InputWindow;
-use perro_io::set_dlc_self_context;
+use perro_io::push_dlc_self_context;
 use perro_resource_context::ResourceWindow;
 use perro_runtime_context::{RuntimeWindow, sub_apis::ScriptAPI};
 use perro_scripting::ScriptContext;
@@ -61,7 +61,7 @@ impl Runtime {
             .script_instance_dlc_mounts
             .get(&id)
             .cloned();
-        set_dlc_self_context(mount.as_deref());
+        let _dlc_self_context = push_dlc_self_context(mount.as_deref());
         let mut run = RuntimeWindow::new(self);
         let mut sctx = ScriptContext {
             run: &mut run,
@@ -70,7 +70,6 @@ impl Runtime {
             id,
         };
         behavior.on_all_init(&mut sctx);
-        set_dlc_self_context(None);
     }
 
     #[inline(always)]
@@ -98,7 +97,7 @@ impl Runtime {
             .script_instance_dlc_mounts
             .get(&id)
             .cloned();
-        set_dlc_self_context(mount.as_deref());
+        let _dlc_self_context = push_dlc_self_context(mount.as_deref());
         let mut run = RuntimeWindow::new(self);
         let mut sctx = ScriptContext {
             run: &mut run,
@@ -107,7 +106,6 @@ impl Runtime {
             id,
         };
         behavior.on_removal(&mut sctx);
-        set_dlc_self_context(None);
     }
 
     #[inline(always)]
@@ -145,7 +143,7 @@ impl Runtime {
         self.script_runtime
             .active_script_stack
             .push((instance_index, id));
-        set_dlc_self_context(mount.as_deref());
+        let _dlc_self_context = push_dlc_self_context(mount.as_deref());
         let mut run = RuntimeWindow::new(self);
         let mut sctx = ScriptContext {
             run: &mut run,
@@ -154,7 +152,6 @@ impl Runtime {
             id,
         };
         behavior.on_update(&mut sctx);
-        set_dlc_self_context(None);
         let _ = self.script_runtime.active_script_stack.pop();
     }
 
@@ -187,7 +184,7 @@ impl Runtime {
         self.script_runtime
             .active_script_stack
             .push((instance_index, id));
-        set_dlc_self_context(mount.as_deref());
+        let _dlc_self_context = push_dlc_self_context(mount.as_deref());
         let mut run = RuntimeWindow::new(self);
         let mut sctx = ScriptContext {
             run: &mut run,
@@ -196,7 +193,6 @@ impl Runtime {
             id,
         };
         behavior.on_fixed_update(&mut sctx);
-        set_dlc_self_context(None);
         let _ = self.script_runtime.active_script_stack.pop();
     }
 }
@@ -331,7 +327,7 @@ impl ScriptAPI for Runtime {
             .script_instance_dlc_mounts
             .get(&script_id)
             .cloned();
-        set_dlc_self_context(mount.as_deref());
+        let _dlc_self_context = push_dlc_self_context(mount.as_deref());
         let mut run = RuntimeWindow::new(self);
         let mut sctx = ScriptContext {
             run: &mut run,
@@ -340,7 +336,6 @@ impl ScriptAPI for Runtime {
             id: script_id,
         };
         let out = behavior.call_method(method, &mut sctx, params);
-        set_dlc_self_context(None);
         let _ = self.script_runtime.active_script_stack.pop();
         out
     }

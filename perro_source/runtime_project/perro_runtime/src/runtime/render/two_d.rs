@@ -1,3 +1,5 @@
+//! 2D scene extraction into render bridge commands.
+
 use super::Runtime;
 use ahash::AHashSet;
 use perro_ids::{NodeID, TextureID, parse_hashed_source_uri, string_to_u64};
@@ -868,5 +870,5 @@ fn sprite_region_uv(region: Option<[f32; 4]>) -> ([f32; 2], [f32; 2], [f32; 2]) 
 }
 
 #[cfg(test)]
-#[path = "../../tests/unit/runtime_render_2d_tests.rs"]
+#[path = "../../../tests/unit/runtime_render_2d_tests.rs"]
 mod tests;

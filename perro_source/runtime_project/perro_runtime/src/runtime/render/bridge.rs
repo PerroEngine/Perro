@@ -1,3 +1,5 @@
+//! Render bridge result intake and retained command output.
+
 use super::Runtime;
 use crate::render_result::RuntimeRenderResult;
 use perro_ids::NodeID;

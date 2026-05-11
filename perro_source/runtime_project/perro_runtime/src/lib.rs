@@ -1,3 +1,9 @@
+//! Perro runtime crate.
+//!
+//! Owns scene execution, script schedules, runtime APIs, physics sync,
+//! audio propagation, and render command extraction. Leaf modules keep
+//! subsystem behavior split by domain so this crate stays navigable.
+
 mod cns;
 mod material_schema;
 mod render_result;
