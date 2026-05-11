@@ -23,9 +23,20 @@ RuntimeAudio {
     source: &str,
     looped: bool,
     volume: f32,
-    speed: f32,
+    effects: AudioEffects,
     from_start: f32,
     from_end: f32,
+}
+
+AudioEffects {
+    speed: f32,
+    low_pass: f32,
+    reverb_send: f32,
+    echo: f32,
+    reflection: f32,
+    occlusion: f32,
+    eq: AudioEq,
+    compression: AudioCompression,
 }
 
 SpatialAudioOptions {
@@ -50,7 +61,7 @@ let sound = RuntimeAudio {
     source: "res://audio/car_loop.wav",
     looped: true,
     volume: 1.0,
-    speed: 1.0,
+    effects: AudioEffects::new(),
     from_start: 0.0,
     from_end: 0.0,
 };

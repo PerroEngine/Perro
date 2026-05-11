@@ -46,11 +46,97 @@ impl Default for AudioPan {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub struct AudioEq {
+    pub low_gain: f32,
+    pub mid_gain: f32,
+    pub high_gain: f32,
+}
+
+impl AudioEq {
+    pub const fn new() -> Self {
+        Self {
+            low_gain: 1.0,
+            mid_gain: 1.0,
+            high_gain: 1.0,
+        }
+    }
+}
+
+impl Default for AudioEq {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct AudioCompression {
+    pub threshold: f32,
+    pub ratio: f32,
+    pub attack: f32,
+    pub release: f32,
+}
+
+impl AudioCompression {
+    pub const fn new() -> Self {
+        Self {
+            threshold: 1.0,
+            ratio: 1.0,
+            attack: 0.01,
+            release: 0.1,
+        }
+    }
+}
+
+impl Default for AudioCompression {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct AudioEffects {
+    pub speed: f32,
+    pub low_pass: f32,
+    pub reverb_send: f32,
+    pub echo: f32,
+    pub reflection: f32,
+    pub occlusion: f32,
+    pub eq: AudioEq,
+    pub compression: AudioCompression,
+}
+
+impl AudioEffects {
+    pub const fn new() -> Self {
+        Self {
+            speed: 1.0,
+            low_pass: 0.0,
+            reverb_send: 0.0,
+            echo: 0.0,
+            reflection: 0.0,
+            occlusion: 0.0,
+            eq: AudioEq::new(),
+            compression: AudioCompression::new(),
+        }
+    }
+
+    pub const fn with_speed(mut self, speed: f32) -> Self {
+        self.speed = speed;
+        self
+    }
+}
+
+impl Default for AudioEffects {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct Audio<'a> {
     pub source: &'a str,
     pub looped: bool,
     pub volume: f32,
-    pub speed: f32,
+    pub effects: AudioEffects,
     pub from_start: f32,
     pub from_end: f32,
 }
@@ -61,10 +147,20 @@ impl<'a> Audio<'a> {
             source,
             looped: false,
             volume: 1.0,
-            speed: 1.0,
+            effects: AudioEffects::new(),
             from_start: 0.0,
             from_end: 0.0,
         }
+    }
+
+    pub const fn with_effects(mut self, effects: AudioEffects) -> Self {
+        self.effects = effects;
+        self
+    }
+
+    pub const fn with_speed(mut self, speed: f32) -> Self {
+        self.effects.speed = speed;
+        self
     }
 }
 

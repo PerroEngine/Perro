@@ -3226,7 +3226,7 @@ fn crate_workspace_rel_path(crate_name: &str) -> Option<&'static str> {
         "perro_static_pipeline" => Some("perro_source/build_pipeline/perro_static_pipeline"),
         "perro_io" => Some("perro_source/io_stack/perro_io"),
         "perro_assets" => Some("perro_source/io_stack/perro_assets"),
-        "perro_bark" => Some("perro_source/audio_stack/perro_bark"),
+        "perro_pawdio" => Some("perro_source/audio_stack/perro_pawdio"),
         "perro_project" => Some("perro_source/runtime_project/perro_project"),
         "perro_cli" => Some("perro_source/devtools/perro_cli"),
         "perro_dev_runner" => Some("perro_source/devtools/perro_dev_runner"),

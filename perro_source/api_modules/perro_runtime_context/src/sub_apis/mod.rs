@@ -11,7 +11,10 @@ mod window;
 
 pub use animation::{AnimPlayerAPI, AnimPlayerModule};
 pub use animation_tree::{AnimTreeAPI, AnimTreeModule, AnimTreeSlotArg, IntoAnimTreeSlotArg};
-pub use audio::{RuntimeAudio, RuntimeAudioAPI, RuntimeAudioModule, SpatialAudioOptions};
+pub use audio::{
+    AudioCompression, AudioEffects, AudioEq, RuntimeAudio, RuntimeAudioAPI, RuntimeAudioModule,
+    SpatialAudioOptions,
+};
 pub use node::{
     IntoNodeTag, IntoNodeTags, MeshDataSurfaceHit3D, MeshDataSurfaceRegion3D, MeshMaterialRegion3D,
     MeshSurfaceHit3D, NodeAPI, NodeCreationTemplate, NodeModule, QueryExpr, QueryScope, TagQuery,

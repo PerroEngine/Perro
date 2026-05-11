@@ -3,8 +3,8 @@ use crate::runtime_project::{
     StaticAnimationLookup, StaticAnimationTreeLookup, StaticAudioLookup, StaticLocalizationLookup,
     StaticMaterialLookup, StaticSkeletonLookup,
 };
-use perro_bark::AudioController;
 use perro_ids::string_to_u64;
+use perro_pawdio::AudioController;
 use perro_project::LocalizationConfig;
 use perro_render_bridge::{RenderCommand, RenderEvent};
 use std::{
@@ -24,7 +24,7 @@ pub(crate) struct QueuedSpatialAudio {
     pub bus_id: Option<perro_ids::AudioBusID>,
     pub looped: bool,
     pub volume: f32,
-    pub speed: f32,
+    pub effects: perro_resource_context::sub_apis::AudioEffects,
     pub from_start: f32,
     pub from_end: f32,
     pub range: f32,
@@ -36,8 +36,8 @@ pub struct RuntimeResourceApi {
     pub(super) localization: std::sync::RwLock<RuntimeLocalizationState>,
     pub(crate) bark: Mutex<Option<AudioController>>,
     pub(crate) spatial_audio_queue: Mutex<Vec<QueuedSpatialAudio>>,
-    pub(crate) audio_listener_2d: Mutex<Option<perro_bark::AudioListener2D>>,
-    pub(crate) audio_listener_3d: Mutex<Option<perro_bark::AudioListener3D>>,
+    pub(crate) audio_listener_2d: Mutex<Option<perro_pawdio::AudioListener2D>>,
+    pub(crate) audio_listener_3d: Mutex<Option<perro_pawdio::AudioListener3D>>,
     pub(super) static_material_lookup: Option<StaticMaterialLookup>,
     pub(super) static_skeleton_lookup: Option<StaticSkeletonLookup>,
     pub(super) static_animation_lookup: Option<StaticAnimationLookup>,
@@ -95,7 +95,7 @@ impl RuntimeResourceApi {
             .audio_listener_2d
             .lock()
             .expect("resource api audio 2d listener mutex poisoned");
-        *listener = Some(perro_bark::AudioListener2D {
+        *listener = Some(perro_pawdio::AudioListener2D {
             position,
             rotation_radians,
         });
@@ -106,7 +106,7 @@ impl RuntimeResourceApi {
             .audio_listener_3d
             .lock()
             .expect("resource api audio 3d listener mutex poisoned");
-        *listener = Some(perro_bark::AudioListener3D { position, rotation });
+        *listener = Some(perro_pawdio::AudioListener3D { position, rotation });
     }
 
     pub(crate) fn drain_commands(&self, out: &mut Vec<RenderCommand>) {

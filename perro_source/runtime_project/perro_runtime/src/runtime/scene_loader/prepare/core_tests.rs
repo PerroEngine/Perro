@@ -1100,4 +1100,67 @@ mod tests {
                 && scene.key_name(SceneKey::new(body.target_key)) == Some("SwingBody")
         }));
     }
+
+    #[test]
+    fn scene_loader_builds_audio_zone_effect_fields() {
+        let scene = Parser::new(
+            r#"
+            [zone2d]
+            [AudioZone2D]
+                enabled = false
+                effect = {
+                    reverb_send: 0.8,
+                    echo: 0.4,
+                    dampening: 0.2
+                }
+                affect_listener = false
+                affect_emitters = true
+                affect_path = false
+            [/AudioZone2D]
+            [/zone2d]
+
+            [zone3d]
+            [AudioZone3D]
+                reverb = 0.6
+                echo = 0.3
+                low_pass = 0.5
+                affectSources = false
+            [/AudioZone3D]
+            [/zone3d]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|_| Err("unexpected root_of".to_string()))
+                .expect("prepare scene");
+        let zone2d = prepared
+            .nodes
+            .iter()
+            .find(|node| node.key_name == "zone2d")
+            .expect("zone2d");
+        let SceneNodeData::AudioZone2D(zone2d) = &zone2d.node.data else {
+            panic!("expected AudioZone2D");
+        };
+        assert!(!zone2d.enabled);
+        assert_eq!(zone2d.effect.reverb_send, 0.8);
+        assert_eq!(zone2d.effect.echo, 0.4);
+        assert_eq!(zone2d.effect.dampening, 0.2);
+        assert!(!zone2d.affect_listener);
+        assert!(zone2d.affect_emitters);
+        assert!(!zone2d.affect_path);
+
+        let zone3d = prepared
+            .nodes
+            .iter()
+            .find(|node| node.key_name == "zone3d")
+            .expect("zone3d");
+        let SceneNodeData::AudioZone3D(zone3d) = &zone3d.node.data else {
+            panic!("expected AudioZone3D");
+        };
+        assert_eq!(zone3d.effect.reverb_send, 0.6);
+        assert_eq!(zone3d.effect.echo, 0.3);
+        assert_eq!(zone3d.effect.dampening, 0.5);
+        assert!(!zone3d.affect_emitters);
+    }
 }

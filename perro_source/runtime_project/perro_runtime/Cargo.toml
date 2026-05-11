@@ -31,14 +31,14 @@ perro_variant = { path = "../../core/perro_variant" }
 perro_render_bridge = { path = "../../render_stack/perro_render_bridge" }
 perro_project = { path = "../perro_project" }
 perro_particle_math = { path = "../../core/perro_particle_math" }
-perro_bark = { path = "../../audio_stack/perro_bark" }
+perro_pawdio = { path = "../../audio_stack/perro_pawdio" }
 perro_steamworks = { path = "../../api_modules/perro_steamworks", default-features = false, optional = true }
 
 [dev-dependencies]
 criterion = "0.5"
 
 [features]
-profile = ["perro_bark/profile"]
+profile = ["perro_pawdio/profile"]
 steamworks = ["dep:perro_steamworks", "perro_steamworks/steamworks-runtime"]
 
 [[bench]]

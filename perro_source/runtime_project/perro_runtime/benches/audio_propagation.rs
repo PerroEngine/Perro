@@ -4,7 +4,7 @@ use perro_nodes::{
 };
 use perro_runtime::Runtime;
 use perro_runtime_context::sub_apis::{
-    NodeAPI, RuntimeAudio, RuntimeAudioAPI, SpatialAudioOptions,
+    AudioEffects, NodeAPI, RuntimeAudio, RuntimeAudioAPI, SpatialAudioOptions,
 };
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 
@@ -13,7 +13,7 @@ fn looped_audio() -> RuntimeAudio<'static> {
         source: "res://bench.wav",
         looped: true,
         volume: 1.0,
-        speed: 1.0,
+        effects: AudioEffects::new(),
         from_start: 0.0,
         from_end: 0.0,
     }

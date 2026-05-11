@@ -3,10 +3,13 @@ use super::physics::{AudioRaycastInput, AudioRaycastResult};
 use crate::rs_ctx::QueuedSpatialAudioPos;
 use perro_ids::NodeID;
 use perro_nodes::{
-    AudioDiffusion, AudioMaterial, CollisionShape2D, CollisionShape3D, SceneNodeData,
+    AudioDiffusion, AudioMaterial, AudioZoneEffect, CollisionShape2D, CollisionShape3D,
+    SceneNodeData,
 };
 use perro_resource_context::sub_apis::AudioAPI;
-use perro_runtime_context::sub_apis::{RuntimeAudio, RuntimeAudioAPI, SpatialAudioOptions};
+use perro_runtime_context::sub_apis::{
+    AudioEffects, RuntimeAudio, RuntimeAudioAPI, SpatialAudioOptions,
+};
 use perro_structs::{Vector2, Vector3};
 use std::f32::consts::TAU;
 use std::time::{Duration, Instant};
@@ -69,6 +72,7 @@ struct ActiveSpatialSound {
     source: String,
     looped: bool,
     volume: f32,
+    effects: AudioEffects,
     options: SpatialAudioOptions,
     pos: SpatialSoundPos,
     last_2d: Option<Vector2>,
@@ -86,6 +90,7 @@ pub(crate) struct PropagationResult {
     pub low_pass: f32,
     pub reflection: f32,
     pub reverb_send: f32,
+    pub echo: f32,
     pub occlusion: f32,
     pub perceived_2d: Option<Vector2>,
     pub perceived_3d: Option<Vector3>,
@@ -101,6 +106,21 @@ struct AudioHit2D {
     thickness: f32,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+struct AudioZoneMix {
+    reverb_send: f32,
+    echo: f32,
+    dampening: f32,
+}
+
+impl AudioZoneMix {
+    fn add(&mut self, effect: AudioZoneEffect) {
+        self.reverb_send = self.reverb_send.max(effect.reverb_send.clamp(0.0, 1.0));
+        self.echo = self.echo.max(effect.echo.clamp(0.0, 1.0));
+        self.dampening = self.dampening.max(effect.dampening.clamp(0.0, 1.0));
+    }
+}
+
 pub(crate) struct AudioPropagationState {
     pub config: AudioPropagationConfigRt,
     sounds: Vec<ActiveSpatialSound>,
@@ -113,6 +133,8 @@ pub(crate) struct AudioPropagationState {
     scratch_field_dirs_3d: Vec<Vector3>,
     has_audio_mask_2d: bool,
     has_audio_portal_2d: bool,
+    has_audio_zone_2d: bool,
+    has_audio_zone_3d: bool,
     audio_scene_flags_node_count: usize,
     pub counters: AudioPropagationCounters,
 }
@@ -131,6 +153,8 @@ impl AudioPropagationState {
             scratch_field_dirs_3d: Vec::new(),
             has_audio_mask_2d: false,
             has_audio_portal_2d: false,
+            has_audio_zone_2d: false,
+            has_audio_zone_3d: false,
             audio_scene_flags_node_count: usize::MAX,
             counters: AudioPropagationCounters::default(),
         }
@@ -345,8 +369,8 @@ impl Runtime {
                 {
                     let _ = player.update_spatial(
                         id,
-                        perro_bark::SpatialAudioParams {
-                            pan: perro_bark::AudioPan::new(
+                        perro_pawdio::SpatialAudioParams {
+                            pan: perro_pawdio::AudioPan::new(
                                 result.pan[0],
                                 result.pan[1],
                                 result.pan[2],
@@ -354,8 +378,20 @@ impl Runtime {
                             volume: result.volume,
                             low_pass: result.low_pass,
                             reverb_send: result.reverb_send,
+                            echo: result.echo,
                             reflection: result.reflection,
                             occlusion: result.occlusion,
+                            eq: perro_pawdio::AudioEq {
+                                low_gain: sound.effects.eq.low_gain,
+                                mid_gain: sound.effects.eq.mid_gain,
+                                high_gain: sound.effects.eq.high_gain,
+                            },
+                            compression: perro_pawdio::AudioCompression {
+                                threshold: sound.effects.compression.threshold,
+                                ratio: sound.effects.compression.ratio,
+                                attack: sound.effects.compression.attack,
+                                release: sound.effects.compression.release,
+                            },
                         },
                     );
                 }
@@ -381,6 +417,8 @@ impl Runtime {
         self.audio.audio_scene_flags_node_count = node_count;
         self.audio.has_audio_mask_2d = false;
         self.audio.has_audio_portal_2d = false;
+        self.audio.has_audio_zone_2d = false;
+        self.audio.has_audio_zone_3d = false;
         for (_, node) in self.nodes.iter() {
             match &node.data {
                 SceneNodeData::AudioMask2D(_) => {
@@ -389,9 +427,19 @@ impl Runtime {
                 SceneNodeData::AudioPortal2D(_) => {
                     self.audio.has_audio_portal_2d = true;
                 }
+                SceneNodeData::AudioZone2D(_) => {
+                    self.audio.has_audio_zone_2d = true;
+                }
+                SceneNodeData::AudioZone3D(_) => {
+                    self.audio.has_audio_zone_3d = true;
+                }
                 _ => {}
             }
-            if self.audio.has_audio_mask_2d && self.audio.has_audio_portal_2d {
+            if self.audio.has_audio_mask_2d
+                && self.audio.has_audio_portal_2d
+                && self.audio.has_audio_zone_2d
+                && self.audio.has_audio_zone_3d
+            {
                 break;
             }
         }
@@ -561,13 +609,25 @@ impl Runtime {
         {
             let _ = player.update_spatial(
                 id,
-                perro_bark::SpatialAudioParams {
-                    pan: perro_bark::AudioPan::new(result.pan[0], result.pan[1], result.pan[2]),
+                perro_pawdio::SpatialAudioParams {
+                    pan: perro_pawdio::AudioPan::new(result.pan[0], result.pan[1], result.pan[2]),
                     volume: result.volume,
                     low_pass: result.low_pass,
                     reverb_send: result.reverb_send,
+                    echo: result.echo,
                     reflection: result.reflection,
                     occlusion: result.occlusion,
+                    eq: perro_pawdio::AudioEq {
+                        low_gain: sound.effects.eq.low_gain,
+                        mid_gain: sound.effects.eq.mid_gain,
+                        high_gain: sound.effects.eq.high_gain,
+                    },
+                    compression: perro_pawdio::AudioCompression {
+                        threshold: sound.effects.compression.threshold,
+                        ratio: sound.effects.compression.ratio,
+                        attack: sound.effects.compression.attack,
+                        release: sound.effects.compression.release,
+                    },
                 },
             );
         }
@@ -587,7 +647,25 @@ impl Runtime {
                 source: request.source.as_str(),
                 looped: request.looped,
                 volume: request.volume,
-                speed: request.speed,
+                effects: AudioEffects {
+                    speed: request.effects.speed,
+                    low_pass: request.effects.low_pass,
+                    reverb_send: request.effects.reverb_send,
+                    echo: request.effects.echo,
+                    reflection: request.effects.reflection,
+                    occlusion: request.effects.occlusion,
+                    eq: perro_runtime_context::sub_apis::AudioEq {
+                        low_gain: request.effects.eq.low_gain,
+                        mid_gain: request.effects.eq.mid_gain,
+                        high_gain: request.effects.eq.high_gain,
+                    },
+                    compression: perro_runtime_context::sub_apis::AudioCompression {
+                        threshold: request.effects.compression.threshold,
+                        ratio: request.effects.compression.ratio,
+                        attack: request.effects.compression.attack,
+                        release: request.effects.compression.release,
+                    },
+                },
                 from_start: request.from_start,
                 from_end: request.from_end,
             };
@@ -729,12 +807,27 @@ impl Runtime {
         let local = perceived - listener_pos;
         let local_x = local.x * cos - local.y * sin;
         let local_y = local.x * sin + local.y * cos;
+        let zone = if self.audio.has_audio_zone_2d {
+            self.audio_zone_mix_2d(listener_pos, source_pos)
+        } else {
+            AudioZoneMix::default()
+        };
+        low_pass = low_pass.max(zone.dampening).max(sound.effects.low_pass);
+        reflection = reflection.max(zone.echo).max(sound.effects.reflection);
+        let reverb_send = (reflection * 0.25)
+            .max(zone.reverb_send)
+            .max(zone.echo * 0.2)
+            .max(sound.effects.reverb_send);
+        let echo = zone.echo.max(sound.effects.echo).clamp(0.0, 1.0);
+        occlusion = occlusion.max(sound.effects.occlusion);
+        attenuation *= 1.0 - zone.dampening.clamp(0.0, 1.0) * 0.35;
         Some(PropagationResult {
             pan: [local_x / range, local_y / range, 0.0],
             volume: sound.volume * attenuation,
             low_pass,
             reflection,
-            reverb_send: reflection * 0.25,
+            reverb_send,
+            echo,
             occlusion,
             perceived_2d: Some(perceived),
             perceived_3d: None,
@@ -791,12 +884,27 @@ impl Runtime {
             );
         }
         let local = inverse_rotate_vec3(listener.rotation, source_pos - listener_pos);
+        let zone = if self.audio.has_audio_zone_3d {
+            self.audio_zone_mix_3d(listener_pos, source_pos)
+        } else {
+            AudioZoneMix::default()
+        };
+        low_pass = low_pass.max(zone.dampening).max(sound.effects.low_pass);
+        reflection = reflection.max(zone.echo).max(sound.effects.reflection);
+        let reverb_send = (reflection * 0.25)
+            .max(zone.reverb_send)
+            .max(zone.echo * 0.2)
+            .max(sound.effects.reverb_send);
+        let echo = zone.echo.max(sound.effects.echo).clamp(0.0, 1.0);
+        occlusion = occlusion.max(sound.effects.occlusion);
+        attenuation *= 1.0 - zone.dampening.clamp(0.0, 1.0) * 0.35;
         Some(PropagationResult {
             pan: [local.x / range, local.y / range, -local.z / range],
             volume: sound.volume * attenuation,
             low_pass,
             reflection,
-            reverb_send: reflection * 0.25,
+            reverb_send,
+            echo,
             occlusion,
             perceived_2d: None,
             perceived_3d: Some(perceived),
@@ -1008,6 +1116,229 @@ impl Runtime {
         best.map(|(point, strength, _)| (point, strength))
     }
 
+    fn audio_zone_mix_2d(&mut self, listener_pos: Vector2, source_pos: Vector2) -> AudioZoneMix {
+        let mut mix = AudioZoneMix::default();
+        self.audio.scratch_ids.clear();
+        for (id, node) in self.nodes.iter() {
+            if matches!(node.data, SceneNodeData::AudioZone2D(_)) {
+                self.audio.scratch_ids.push(id);
+            }
+        }
+        for index in 0..self.audio.scratch_ids.len() {
+            let zone_id = self.audio.scratch_ids[index];
+            let Some(SceneNodeData::AudioZone2D(zone)) = self.nodes.get(zone_id).map(|n| &n.data)
+            else {
+                continue;
+            };
+            if !zone.enabled {
+                continue;
+            }
+            let effect = zone.effect;
+            let affect_listener = zone.affect_listener;
+            let affect_emitters = zone.affect_emitters;
+            let affect_path = zone.affect_path;
+            let listener_inside =
+                affect_listener && self.point_in_audio_zone_2d(zone_id, listener_pos);
+            let source_inside = affect_emitters && self.point_in_audio_zone_2d(zone_id, source_pos);
+            let path_inside =
+                affect_path && self.segment_hits_audio_zone_2d(zone_id, listener_pos, source_pos);
+            if listener_inside || source_inside || path_inside {
+                mix.add(effect);
+            }
+        }
+        mix
+    }
+
+    fn point_in_audio_zone_2d(&mut self, zone: NodeID, point: Vector2) -> bool {
+        self.audio.scratch_child_ids.clear();
+        if let Some(node) = self.nodes.get(zone) {
+            self.audio
+                .scratch_child_ids
+                .extend_from_slice(node.children_slice());
+        }
+        for index in 0..self.audio.scratch_child_ids.len() {
+            let child = self.audio.scratch_child_ids[index];
+            let Some((center, half_w, half_h)) = self.audio_zone_shape_2d(child) else {
+                continue;
+            };
+            if point.x >= center.x - half_w
+                && point.x <= center.x + half_w
+                && point.y >= center.y - half_h
+                && point.y <= center.y + half_h
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn segment_hits_audio_zone_2d(&mut self, zone: NodeID, from: Vector2, to: Vector2) -> bool {
+        let dir = to - from;
+        if dir.length() <= 0.0001 {
+            return false;
+        }
+        self.audio.scratch_child_ids.clear();
+        if let Some(node) = self.nodes.get(zone) {
+            self.audio
+                .scratch_child_ids
+                .extend_from_slice(node.children_slice());
+        }
+        for index in 0..self.audio.scratch_child_ids.len() {
+            let child = self.audio.scratch_child_ids[index];
+            let Some((center, half_w, half_h)) = self.audio_zone_shape_2d(child) else {
+                continue;
+            };
+            if segment_aabb(from, dir, center, half_w, half_h).is_some() {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn audio_zone_shape_2d(&mut self, node: NodeID) -> Option<(Vector2, f32, f32)> {
+        let shape_kind = self
+            .nodes
+            .get(node)
+            .and_then(|shape_node| match &shape_node.data {
+                SceneNodeData::CollisionShape2D(shape) => Some(shape.shape),
+                _ => None,
+            })?;
+        let global = self.get_global_transform_2d(node)?;
+        let sx = global.scale.x.abs().max(0.0001);
+        let sy = global.scale.y.abs().max(0.0001);
+        let (half_w, half_h) = match shape_kind {
+            perro_nodes::Shape2D::Quad { width, height } => {
+                (width.abs() * sx * 0.5, height.abs() * sy * 0.5)
+            }
+            perro_nodes::Shape2D::Circle { radius } => (radius.abs() * sx, radius.abs() * sy),
+            perro_nodes::Shape2D::Triangle { width, height, .. } => {
+                (width.abs() * sx * 0.5, height.abs() * sy * 0.5)
+            }
+        };
+        Some((global.position, half_w, half_h))
+    }
+
+    fn audio_zone_mix_3d(&mut self, listener_pos: Vector3, source_pos: Vector3) -> AudioZoneMix {
+        let mut mix = AudioZoneMix::default();
+        self.audio.scratch_ids.clear();
+        for (id, node) in self.nodes.iter() {
+            if matches!(node.data, SceneNodeData::AudioZone3D(_)) {
+                self.audio.scratch_ids.push(id);
+            }
+        }
+        for index in 0..self.audio.scratch_ids.len() {
+            let zone_id = self.audio.scratch_ids[index];
+            let Some(SceneNodeData::AudioZone3D(zone)) = self.nodes.get(zone_id).map(|n| &n.data)
+            else {
+                continue;
+            };
+            if !zone.enabled {
+                continue;
+            }
+            let effect = zone.effect;
+            let affect_listener = zone.affect_listener;
+            let affect_emitters = zone.affect_emitters;
+            let affect_path = zone.affect_path;
+            let listener_inside =
+                affect_listener && self.point_in_audio_zone_3d(zone_id, listener_pos);
+            let source_inside = affect_emitters && self.point_in_audio_zone_3d(zone_id, source_pos);
+            let path_inside =
+                affect_path && self.segment_hits_audio_zone_3d(zone_id, listener_pos, source_pos);
+            if listener_inside || source_inside || path_inside {
+                mix.add(effect);
+            }
+        }
+        mix
+    }
+
+    fn point_in_audio_zone_3d(&mut self, zone: NodeID, point: Vector3) -> bool {
+        self.audio.scratch_child_ids.clear();
+        if let Some(node) = self.nodes.get(zone) {
+            self.audio
+                .scratch_child_ids
+                .extend_from_slice(node.children_slice());
+        }
+        for index in 0..self.audio.scratch_child_ids.len() {
+            let child = self.audio.scratch_child_ids[index];
+            let Some((center, half)) = self.audio_zone_shape_3d(child) else {
+                continue;
+            };
+            if point.x >= center.x - half.x
+                && point.x <= center.x + half.x
+                && point.y >= center.y - half.y
+                && point.y <= center.y + half.y
+                && point.z >= center.z - half.z
+                && point.z <= center.z + half.z
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn segment_hits_audio_zone_3d(&mut self, zone: NodeID, from: Vector3, to: Vector3) -> bool {
+        let dir = to - from;
+        if dir.length() <= 0.0001 {
+            return false;
+        }
+        self.audio.scratch_child_ids.clear();
+        if let Some(node) = self.nodes.get(zone) {
+            self.audio
+                .scratch_child_ids
+                .extend_from_slice(node.children_slice());
+        }
+        for index in 0..self.audio.scratch_child_ids.len() {
+            let child = self.audio.scratch_child_ids[index];
+            let Some((center, half)) = self.audio_zone_shape_3d(child) else {
+                continue;
+            };
+            if segment_aabb_3d(from, dir, center, half).is_some() {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn audio_zone_shape_3d(&mut self, node: NodeID) -> Option<(Vector3, Vector3)> {
+        let shape_kind = self
+            .nodes
+            .get(node)
+            .and_then(|shape_node| match &shape_node.data {
+                SceneNodeData::CollisionShape3D(shape) => Some(shape.shape.clone()),
+                _ => None,
+            })?;
+        let global = self.get_global_transform_3d(node)?;
+        let scale = Vector3::new(
+            global.scale.x.abs().max(0.0001),
+            global.scale.y.abs().max(0.0001),
+            global.scale.z.abs().max(0.0001),
+        );
+        let half = match shape_kind {
+            perro_nodes::Shape3D::Cube { size }
+            | perro_nodes::Shape3D::TriPrism { size }
+            | perro_nodes::Shape3D::TriangularPyramid { size }
+            | perro_nodes::Shape3D::SquarePyramid { size } => Vector3::new(
+                size.x.abs() * scale.x * 0.5,
+                size.y.abs() * scale.y * 0.5,
+                size.z.abs() * scale.z * 0.5,
+            ),
+            perro_nodes::Shape3D::Sphere { radius } => Vector3::new(
+                radius.abs() * scale.x,
+                radius.abs() * scale.y,
+                radius.abs() * scale.z,
+            ),
+            perro_nodes::Shape3D::Capsule { radius, .. }
+            | perro_nodes::Shape3D::Cylinder { radius, .. }
+            | perro_nodes::Shape3D::Cone { radius, .. } => Vector3::new(
+                radius.abs() * scale.x,
+                radius.abs() * scale.y,
+                radius.abs() * scale.z,
+            ),
+            perro_nodes::Shape3D::TriMesh { .. } => scale,
+        };
+        Some((global.position, half))
+    }
+
     fn audio_thickness_3d(&self, node: NodeID) -> f32 {
         self.nodes
             .get(node)
@@ -1045,21 +1376,33 @@ impl Runtime {
     ) -> bool {
         let range = options.range.max(0.0001);
         let bus_id = options.bus_id;
-        let pan = perro_bark::AudioPan::CENTER;
+        let pan = perro_pawdio::AudioPan::CENTER;
         let playback_id = self.resource_api.bark.lock().ok().and_then(|guard| {
             guard.as_ref().and_then(|player| {
-                player.play_spatial_source(perro_bark::AudioPlaybackRequest {
+                player.play_spatial_source(perro_pawdio::AudioPlaybackRequest {
                     id: 0,
                     source: audio.source,
                     bus_id,
                     looped: audio.looped,
                     volume: audio.volume,
-                    speed: audio.speed,
+                    speed: audio.effects.speed,
                     pan,
-                    low_pass: 0.0,
-                    reverb_send: 0.0,
-                    reflection: 0.0,
-                    occlusion: 0.0,
+                    low_pass: audio.effects.low_pass,
+                    reverb_send: audio.effects.reverb_send,
+                    echo: audio.effects.echo,
+                    reflection: audio.effects.reflection,
+                    occlusion: audio.effects.occlusion,
+                    eq: perro_pawdio::AudioEq {
+                        low_gain: audio.effects.eq.low_gain,
+                        mid_gain: audio.effects.eq.mid_gain,
+                        high_gain: audio.effects.eq.high_gain,
+                    },
+                    compression: perro_pawdio::AudioCompression {
+                        threshold: audio.effects.compression.threshold,
+                        ratio: audio.effects.compression.ratio,
+                        attack: audio.effects.compression.attack,
+                        release: audio.effects.compression.release,
+                    },
                     from_start: audio.from_start,
                     from_end: audio.from_end,
                 })
@@ -1074,6 +1417,7 @@ impl Runtime {
             source: audio.source.to_string(),
             looped: audio.looped,
             volume: audio.volume,
+            effects: audio.effects,
             options: SpatialAudioOptions { range, ..options },
             pos,
             last_2d,
@@ -1226,6 +1570,53 @@ fn segment_aabb(
     (0.0..=1.0).contains(&t_min).then_some((t_min, normal))
 }
 
+fn segment_aabb_3d(from: Vector3, delta: Vector3, center: Vector3, half: Vector3) -> Option<f32> {
+    let min = center - half;
+    let max = center + half;
+    let mut t_min = 0.0f32;
+    let mut t_max = 1.0f32;
+    for axis in 0..3 {
+        let origin = match axis {
+            0 => from.x,
+            1 => from.y,
+            _ => from.z,
+        };
+        let dir = match axis {
+            0 => delta.x,
+            1 => delta.y,
+            _ => delta.z,
+        };
+        let lo = match axis {
+            0 => min.x,
+            1 => min.y,
+            _ => min.z,
+        };
+        let hi = match axis {
+            0 => max.x,
+            1 => max.y,
+            _ => max.z,
+        };
+        if dir.abs() <= 0.000001 {
+            if origin < lo || origin > hi {
+                return None;
+            }
+            continue;
+        }
+        let inv = 1.0 / dir;
+        let mut t1 = (lo - origin) * inv;
+        let mut t2 = (hi - origin) * inv;
+        if t1 > t2 {
+            std::mem::swap(&mut t1, &mut t2);
+        }
+        t_min = t_min.max(t1);
+        t_max = t_max.min(t2);
+        if t_min > t_max {
+            return None;
+        }
+    }
+    (0.0..=1.0).contains(&t_min).then_some(t_min)
+}
+
 fn inverse_rotate_vec3(rotation: [f32; 4], v: Vector3) -> Vector3 {
     let [x, y, z, w] = normalized_quat(rotation);
     rotate_vec3([-x, -y, -z, w], v)
@@ -1252,18 +1643,19 @@ fn rotate_vec3(rotation: [f32; 4], v: Vector3) -> Vector3 {
 mod tests {
     use super::*;
     use perro_nodes::{
-        AudioMask2D, AudioPortal2D, CollisionShape2D, SceneNode, SceneNodeData, StaticBody2D,
+        AudioMask2D, AudioPortal2D, AudioZone2D, AudioZone3D, CollisionShape2D, CollisionShape3D,
+        SceneNode, SceneNodeData, StaticBody2D,
     };
     use perro_resource_context::sub_apis::{Audio, Audio2D, Audio3D};
     use perro_runtime_context::sub_apis::NodeAPI;
-    use perro_structs::Transform2D;
+    use perro_structs::{Quaternion, Transform2D, Transform3D};
 
     fn looped_audio() -> RuntimeAudio<'static> {
         RuntimeAudio {
             source: "res://missing.wav",
             looped: true,
             volume: 1.0,
-            speed: 1.0,
+            effects: AudioEffects::new(),
             from_start: 0.0,
             from_end: 0.0,
         }
@@ -1516,6 +1908,99 @@ mod tests {
         assert!(opened.volume > blocked.volume);
         assert!(opened.low_pass < blocked.low_pass);
         assert_eq!(opened.perceived_2d, Some(Vector2::new(2.0, 0.0)));
+    }
+
+    #[test]
+    fn audio_zone_2d_mixes_effect_when_source_enters() {
+        let mut runtime = Runtime::new();
+        let zone = runtime
+            .nodes
+            .insert(SceneNode::new(SceneNodeData::AudioZone2D(
+                AudioZone2D::new(),
+            )));
+        if let Some(node) = runtime.nodes.get_mut(zone)
+            && let SceneNodeData::AudioZone2D(zone) = &mut node.data
+        {
+            zone.effect.reverb_send = 0.7;
+            zone.effect.echo = 0.4;
+            zone.effect.dampening = 0.5;
+            zone.affect_listener = false;
+            zone.affect_path = false;
+        }
+        let shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+        assert!(NodeAPI::reparent(&mut runtime, zone, shape));
+        if let Some(node) = runtime.nodes.get_mut(shape)
+            && let SceneNodeData::CollisionShape2D(shape) = &mut node.data
+        {
+            shape.shape = perro_nodes::Shape2D::Quad {
+                width: 4.0,
+                height: 4.0,
+            };
+        }
+        assert!(NodeAPI::set_global_transform_2d(
+            &mut runtime,
+            shape,
+            Transform2D::new(Vector2::new(5.0, 0.0), 0.0, Vector2::ONE),
+        ));
+        assert!(runtime.play_runtime_audio_2d(
+            looped_audio(),
+            Vector2::new(5.0, 0.0),
+            SpatialAudioOptions::new(10.0),
+        ));
+        runtime.update_audio_propagation(1.0);
+        let result = runtime.audio.sounds[0].last_result.expect("result");
+        assert!(result.reverb_send >= 0.7);
+        assert!(result.reflection >= 0.4);
+        assert!(result.low_pass >= 0.5);
+        assert!(result.volume < 0.5);
+    }
+
+    #[test]
+    fn audio_zone_3d_mixes_effect_when_path_crosses() {
+        let mut runtime = Runtime::new();
+        let zone = runtime
+            .nodes
+            .insert(SceneNode::new(SceneNodeData::AudioZone3D(
+                AudioZone3D::new(),
+            )));
+        if let Some(node) = runtime.nodes.get_mut(zone)
+            && let SceneNodeData::AudioZone3D(zone) = &mut node.data
+        {
+            zone.effect.reverb_send = 0.6;
+            zone.effect.echo = 0.3;
+            zone.effect.dampening = 0.4;
+            zone.affect_listener = false;
+            zone.affect_emitters = false;
+        }
+        let shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+        assert!(NodeAPI::reparent(&mut runtime, zone, shape));
+        if let Some(node) = runtime.nodes.get_mut(shape)
+            && let SceneNodeData::CollisionShape3D(shape) = &mut node.data
+        {
+            shape.shape = perro_nodes::Shape3D::Cube {
+                size: Vector3::new(2.0, 2.0, 2.0),
+            };
+        }
+        assert!(NodeAPI::set_global_transform_3d(
+            &mut runtime,
+            shape,
+            Transform3D::new(
+                Vector3::new(0.0, 0.0, -2.5),
+                Quaternion::IDENTITY,
+                Vector3::ONE
+            ),
+        ));
+        assert!(runtime.play_runtime_audio_3d(
+            looped_audio(),
+            Vector3::new(0.0, 0.0, -5.0),
+            SpatialAudioOptions::new(10.0),
+        ));
+        runtime.update_audio_propagation(1.0);
+        let result = runtime.audio.sounds[0].last_result.expect("result");
+        assert!(result.reverb_send >= 0.6);
+        assert!(result.reflection >= 0.3);
+        assert!(result.low_pass >= 0.4);
+        assert!(result.volume < 0.5);
     }
 
     #[test]

@@ -45,22 +45,34 @@ impl AudioAPI for RuntimeResourceApi {
         let Some(player) = guard.as_ref() else {
             return false;
         };
-        player.play_source(perro_bark::AudioPlaybackRequest {
+        player.play_source(perro_pawdio::AudioPlaybackRequest {
             id: 0,
             source: audio.source,
             bus_id,
             looped: audio.looped,
             volume: audio.volume,
-            speed: audio.speed,
-            pan: perro_bark::AudioPan {
+            speed: audio.effects.speed,
+            pan: perro_pawdio::AudioPan {
                 x: pan.x,
                 y: pan.y,
                 z: pan.z,
             },
-            low_pass: 0.0,
-            reverb_send: 0.0,
-            reflection: 0.0,
-            occlusion: 0.0,
+            low_pass: audio.effects.low_pass,
+            reverb_send: audio.effects.reverb_send,
+            echo: audio.effects.echo,
+            reflection: audio.effects.reflection,
+            occlusion: audio.effects.occlusion,
+            eq: perro_pawdio::AudioEq {
+                low_gain: audio.effects.eq.low_gain,
+                mid_gain: audio.effects.eq.mid_gain,
+                high_gain: audio.effects.eq.high_gain,
+            },
+            compression: perro_pawdio::AudioCompression {
+                threshold: audio.effects.compression.threshold,
+                ratio: audio.effects.compression.ratio,
+                attack: audio.effects.compression.attack,
+                release: audio.effects.compression.release,
+            },
             from_start: audio.from_start,
             from_end: audio.from_end,
         })
@@ -75,7 +87,7 @@ impl AudioAPI for RuntimeResourceApi {
             bus_id,
             looped: audio.audio.looped,
             volume: audio.audio.volume,
-            speed: audio.audio.speed,
+            effects: audio.audio.effects,
             from_start: audio.audio.from_start,
             from_end: audio.audio.from_end,
             range: audio.range,
@@ -93,7 +105,7 @@ impl AudioAPI for RuntimeResourceApi {
             bus_id,
             looped: audio.audio.looped,
             volume: audio.audio.volume,
-            speed: audio.audio.speed,
+            effects: audio.audio.effects,
             from_start: audio.audio.from_start,
             from_end: audio.audio.from_end,
             range: audio.range,
@@ -114,22 +126,34 @@ impl AudioAPI for RuntimeResourceApi {
         let Some(player) = guard.as_ref() else {
             return false;
         };
-        player.stop_match(perro_bark::AudioPlaybackRequest {
+        player.stop_match(perro_pawdio::AudioPlaybackRequest {
             id: 0,
             source: audio.source,
             bus_id,
             looped: audio.looped,
             volume: audio.volume,
-            speed: audio.speed,
-            pan: perro_bark::AudioPan {
+            speed: audio.effects.speed,
+            pan: perro_pawdio::AudioPan {
                 x: pan.x,
                 y: pan.y,
                 z: pan.z,
             },
-            low_pass: 0.0,
-            reverb_send: 0.0,
-            reflection: 0.0,
-            occlusion: 0.0,
+            low_pass: audio.effects.low_pass,
+            reverb_send: audio.effects.reverb_send,
+            echo: audio.effects.echo,
+            reflection: audio.effects.reflection,
+            occlusion: audio.effects.occlusion,
+            eq: perro_pawdio::AudioEq {
+                low_gain: audio.effects.eq.low_gain,
+                mid_gain: audio.effects.eq.mid_gain,
+                high_gain: audio.effects.eq.high_gain,
+            },
+            compression: perro_pawdio::AudioCompression {
+                threshold: audio.effects.compression.threshold,
+                ratio: audio.effects.compression.ratio,
+                attack: audio.effects.compression.attack,
+                release: audio.effects.compression.release,
+            },
             from_start: audio.from_start,
             from_end: audio.from_end,
         })

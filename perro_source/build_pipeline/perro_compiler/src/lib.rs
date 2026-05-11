@@ -357,7 +357,7 @@ fn build_patch_crates_io_block(engine_root: &Path) -> String {
         ),
         ("perro_io", "perro_source/io_stack/perro_io"),
         ("perro_assets", "perro_source/io_stack/perro_assets"),
-        ("perro_bark", "perro_source/audio_stack/perro_bark"),
+        ("perro_pawdio", "perro_source/audio_stack/perro_pawdio"),
         (
             "perro_project",
             "perro_source/runtime_project/perro_project",

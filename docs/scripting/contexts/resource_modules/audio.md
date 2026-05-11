@@ -27,12 +27,12 @@ Base audio uses explicit pan values.
 
 Macros:
 
-- `audio_play!(res, bus_id, Audio { source, looped, volume, speed, from_start, from_end }) -> bool`
-- `audio_play!(res, Audio { source, looped, volume, speed, from_start, from_end }) -> bool`
+- `audio_play!(res, bus_id, Audio { source, looped, volume, effects, from_start, from_end }) -> bool`
+- `audio_play!(res, Audio { source, looped, volume, effects, from_start, from_end }) -> bool`
 - `audio_play!(res, bus_id, PannedAudio { audio, pan }) -> bool`
 - `audio_play!(res, (audio, pan)) -> bool`
-- `audio_stop!(res, bus_id, Audio { source, looped, volume, speed, from_start, from_end }) -> bool`
-- `audio_stop!(res, Audio { source, looped, volume, speed, from_start, from_end }) -> bool`
+- `audio_stop!(res, bus_id, Audio { source, looped, volume, effects, from_start, from_end }) -> bool`
+- `audio_stop!(res, Audio { source, looped, volume, effects, from_start, from_end }) -> bool`
 
 Type:
 
@@ -41,9 +41,20 @@ Audio {
     source: &str,      // res://...
     looped: bool,
     volume: f32,      // 1.0 normal, 0.0 silent, >1 amplified
-    speed: f32,       // 1.0 normal playback speed (also changes pitch)
+    effects: AudioEffects,
     from_start: f32,  // seconds trimmed from the start (>= 0.0)
     from_end: f32,    // seconds trimmed from the end (>= 0.0)
+}
+
+AudioEffects {
+    speed: f32,        // 1.0 normal playback speed (also changes pitch)
+    low_pass: f32,
+    reverb_send: f32,
+    echo: f32,
+    reflection: f32,
+    occlusion: f32,
+    eq: AudioEq,                  // low_gain, mid_gain, high_gain
+    compression: AudioCompression // threshold, ratio, attack, release
 }
 
 PannedAudio {
@@ -54,13 +65,13 @@ PannedAudio {
 
 Methods:
 
-- `res.Audio().play_bus(bus_id, Audio { source, looped, volume, speed, from_start, from_end }) -> bool`
-- `res.Audio().play_master(Audio { source, looped, volume, speed, from_start, from_end }) -> bool`
+- `res.Audio().play_bus(bus_id, Audio { source, looped, volume, effects, from_start, from_end }) -> bool`
+- `res.Audio().play_master(Audio { source, looped, volume, effects, from_start, from_end }) -> bool`
 - `res.Audio().play_bus(bus_id, PannedAudio { audio, pan }) -> bool`
 - `res.Audio().play_panned(bus_id, audio, pan) -> bool`
 - `res.Audio().play_master_panned(audio, pan) -> bool`
-- `res.Audio().stop_audio(bus_id, Audio { source, looped, volume, speed, from_start, from_end }) -> bool`
-- `res.Audio().stop_master_audio(Audio { source, looped, volume, speed, from_start, from_end }) -> bool`
+- `res.Audio().stop_audio(bus_id, Audio { source, looped, volume, effects, from_start, from_end }) -> bool`
+- `res.Audio().stop_master_audio(Audio { source, looped, volume, effects, from_start, from_end }) -> bool`
 
 Rules:
 
@@ -223,7 +234,7 @@ max_ray_distance = 500.0
 ## Runtime Behavior
 
 - Script call enqueues an audio command via `RuntimeResourceApi`.
-- `perro_bark` handles commands on its own audio thread.
+- `perro_pawdio` handles commands on its own audio thread.
 - Positional `Audio2D` and `Audio3D` are queued for runtime propagation before Bark playback starts.
 - Audio bytes/duration are cached by source path for reuse.
 - `audio_load!` caches as unreserved (`reserved: false`).
@@ -234,9 +245,9 @@ max_ray_distance = 500.0
   - `final_volume = master_volume * bus_volume * audio.volume` when bus is provided
   - `final_volume = master_volume * audio.volume` when no bus is provided
 - Final playback rate is multiplicative:
-  - `final_speed = bus_speed * audio.speed` when bus is provided
-  - `final_speed = audio.speed` when no bus is provided
-- `speed` controls playback speed multiplier and also affects pitch.
+  - `final_speed = bus_speed * audio.effects.speed` when bus is provided
+  - `final_speed = audio.effects.speed` when no bus is provided
+- `effects.speed` controls playback speed multiplier and also affects pitch.
 - Effective playback segment:
   - starts at `from_start`
   - ends `from_end` seconds before the source end (when duration is known)
@@ -254,7 +265,7 @@ let base = Audio {
     source: "res://groantube.mp3",
     looped: true,
     volume: 1.0,
-    speed: 1.0,
+    effects: AudioEffects::new(),
     from_start: 0.0,
     from_end: 0.0,
 };
@@ -284,7 +295,7 @@ if let Some(length) = audio_length_seconds!(res, "res://groantube.mp3") {
         source: "res://groantube.mp3",
         looped: false,
         volume: 1.0,
-        speed: 1.0,
+        effects: AudioEffects::new(),
         from_start: 0.0,
         from_end: length * 0.5,
     };

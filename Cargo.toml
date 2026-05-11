@@ -34,7 +34,7 @@ members = [
 
     "perro_source/io_stack/perro_assets",
     "perro_source/io_stack/perro_io",
-    "perro_source/audio_stack/perro_bark",
+    "perro_source/audio_stack/perro_pawdio",
 
     "perro_source/devtools/perro_cli",
     "perro_source/devtools/perro_dev_runner",
