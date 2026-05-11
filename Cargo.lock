@@ -3225,6 +3225,7 @@ version = "0.1.0"
 dependencies = [
  "ahash",
  "arboard",
+ "criterion",
  "csv",
  "glam",
  "gltf",

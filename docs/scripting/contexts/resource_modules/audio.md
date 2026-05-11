@@ -103,7 +103,7 @@ Rules:
 - Audio outside `range` or `[audio].listener_max_distance` is skipped.
 - Direct volume fades linearly from full at camera to silent at `range`.
 - Physics bodies and `AudioMask2D` can add occlusion, transmission loss, low-pass muffling, reflection, and corner/portal diffraction.
-- Use Runtime Audio when the sound should follow a moving node.
+- Use Runtime Audio when the sound should be bound to a moving node.
 
 ## Audio3D
 

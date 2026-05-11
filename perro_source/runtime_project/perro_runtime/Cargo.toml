@@ -34,6 +34,13 @@ perro_particle_math = { path = "../../core/perro_particle_math" }
 perro_bark = { path = "../../audio_stack/perro_bark" }
 perro_steamworks = { path = "../../api_modules/perro_steamworks", default-features = false, optional = true }
 
+[dev-dependencies]
+criterion = "0.5"
+
 [features]
 profile = ["perro_bark/profile"]
 steamworks = ["dep:perro_steamworks", "perro_steamworks/steamworks-runtime"]
+
+[[bench]]
+name = "audio_propagation"
+harness = false

@@ -42,7 +42,6 @@ Rules:
 - `Node3D`-derived nodes use the 3D propagation solver.
 - Missing node after playback starts freezes the last valid position.
 - `stop_attached(node_id, source)` stops only sounds matching both node and source.
-- No `Audio2D` or `Audio3D` scene node is required.
 
 Example:
 

@@ -14,6 +14,7 @@ use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use perro_variant::Variant;
 use rapier2d::{na as na2, prelude as r2};
 use rapier3d::{na as na3, prelude as r3};
+use rayon::prelude::*;
 
 const MAX_CCD_SUBSTEPS: usize = 1;
 const PMESH_FLAG_PAYLOAD_RAW: u32 = 1 << 31;
@@ -28,6 +29,30 @@ const CCD_MIN_SPEED_SQ_3D: f32 = MAX_RIGID_SPEED_3D
     * CCD_MIN_SPEED_RATIO_OF_MAX
     * MAX_RIGID_SPEED_3D
     * CCD_MIN_SPEED_RATIO_OF_MAX;
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum AudioRaycastInput {
+    TwoD {
+        origin: Vector2,
+        direction: Vector2,
+        max_distance: f32,
+        mask: u32,
+    },
+    ThreeD {
+        origin: Vector3,
+        direction: Vector3,
+        max_distance: f32,
+        include_areas: bool,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) enum AudioRaycastResult {
+    #[default]
+    None,
+    TwoD(Option<PhysicsRayHit2D>),
+    ThreeD(Option<PhysicsRayHit3D>),
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BodyKind {
@@ -262,6 +287,7 @@ struct PhysicsWorld2D {
     narrow_phase: r2::NarrowPhase,
     bodies: r2::RigidBodySet,
     colliders: r2::ColliderSet,
+    query_pipeline: r2::QueryPipeline,
     impulse_joints: r2::ImpulseJointSet,
     multibody_joints: r2::MultibodyJointSet,
     ccd_solver: r2::CCDSolver,
@@ -279,6 +305,7 @@ struct PhysicsWorld3D {
     narrow_phase: r3::NarrowPhase,
     bodies: r3::RigidBodySet,
     colliders: r3::ColliderSet,
+    query_pipeline: r3::QueryPipeline,
     impulse_joints: r3::ImpulseJointSet,
     multibody_joints: r3::MultibodyJointSet,
     ccd_solver: r3::CCDSolver,
@@ -354,6 +381,7 @@ impl PhysicsWorld2D {
             narrow_phase: r2::NarrowPhase::new(),
             bodies: r2::RigidBodySet::new(),
             colliders: r2::ColliderSet::new(),
+            query_pipeline: r2::QueryPipeline::new(),
             impulse_joints: r2::ImpulseJointSet::new(),
             multibody_joints: r2::MultibodyJointSet::new(),
             ccd_solver: r2::CCDSolver::new(),
@@ -379,6 +407,7 @@ impl PhysicsWorld3D {
             narrow_phase: r3::NarrowPhase::new(),
             bodies: r3::RigidBodySet::new(),
             colliders: r3::ColliderSet::new(),
+            query_pipeline: r3::QueryPipeline::new(),
             impulse_joints: r3::ImpulseJointSet::new(),
             multibody_joints: r3::MultibodyJointSet::new(),
             ccd_solver: r3::CCDSolver::new(),
@@ -531,9 +560,8 @@ impl Runtime {
         let bodies_3d = self.collect_body_descs_3d();
         self.sync_world_3d(&bodies_3d);
 
-        let world = self.physics.world_3d.as_ref()?;
-        let mut query = r3::QueryPipeline::new();
-        query.update(&world.colliders);
+        let world = self.physics.world_3d.as_mut()?;
+        world.query_pipeline.update(&world.colliders);
 
         let ray = r3::Ray::new(na3::Point3::new(origin.x, origin.y, origin.z), dir);
         let filter = if include_areas {
@@ -541,7 +569,7 @@ impl Runtime {
         } else {
             r3::QueryFilter::new().exclude_sensors()
         };
-        let (collider, hit) = query.cast_ray_and_get_normal(
+        let (collider, hit) = world.query_pipeline.cast_ray_and_get_normal(
             &world.bodies,
             &world.colliders,
             &ray,
@@ -583,9 +611,8 @@ impl Runtime {
         let bodies_2d = self.collect_body_descs_2d();
         self.sync_world_2d(&bodies_2d);
 
-        let world = self.physics.world_2d.as_ref()?;
-        let mut query = r2::QueryPipeline::new();
-        query.update(&world.colliders);
+        let world = self.physics.world_2d.as_mut()?;
+        world.query_pipeline.update(&world.colliders);
 
         let ray = r2::Ray::new(na2::Point2::new(origin.x, origin.y), dir);
         let excluded = filter.exclude_nodes.as_slice();
@@ -599,7 +626,7 @@ impl Runtime {
                     .unwrap_or(true)
         };
         let query_filter = query_filter_2d(filter).predicate(&predicate);
-        let (collider, hit) = query.cast_ray_and_get_normal(
+        let (collider, hit) = world.query_pipeline.cast_ray_and_get_normal(
             &world.bodies,
             &world.colliders,
             &ray,
@@ -616,6 +643,163 @@ impl Runtime {
             normal: Vector2::new(hit.normal.x, hit.normal.y),
             distance: hit.time_of_impact,
         })
+    }
+
+    pub(crate) fn prepare_audio_raycast_2d(&mut self) {
+        let bodies_2d = self.collect_body_descs_2d();
+        self.sync_world_2d(&bodies_2d);
+        if let Some(world) = self.physics.world_2d.as_mut() {
+            world.query_pipeline.update(&world.colliders);
+        }
+    }
+
+    pub(crate) fn prepare_audio_raycast_3d(&mut self) {
+        let bodies_3d = self.collect_body_descs_3d();
+        self.sync_world_3d(&bodies_3d);
+        if let Some(world) = self.physics.world_3d.as_mut() {
+            world.query_pipeline.update(&world.colliders);
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn prepared_audio_raycast_2d(
+        &self,
+        origin: Vector2,
+        direction: Vector2,
+        max_distance: f32,
+        filter: &PhysicsQueryFilter,
+    ) -> Option<PhysicsRayHit2D> {
+        if max_distance <= 0.0 || !max_distance.is_finite() {
+            return None;
+        }
+
+        let dir = na2::Vector2::new(direction.x, direction.y);
+        let dir_len = dir.norm();
+        if dir_len <= 0.000_001 || !dir_len.is_finite() {
+            return None;
+        }
+        let dir = dir / dir_len;
+
+        let world = self.physics.world_2d.as_ref()?;
+        let ray = r2::Ray::new(na2::Point2::new(origin.x, origin.y), dir);
+        let excluded = filter.exclude_nodes.as_slice();
+        let mask = filter.mask;
+        let predicate = |handle, collider: &r2::Collider| {
+            (collider.collision_groups().memberships.bits() & mask) != 0
+                && world
+                    .collider_owners
+                    .get(&handle)
+                    .map(|node| !excluded.contains(node))
+                    .unwrap_or(true)
+        };
+        let query_filter = query_filter_2d(filter).predicate(&predicate);
+        let (collider, hit) = world.query_pipeline.cast_ray_and_get_normal(
+            &world.bodies,
+            &world.colliders,
+            &ray,
+            max_distance,
+            true,
+            query_filter,
+        )?;
+        let node = *world.collider_owners.get(&collider)?;
+        let point = ray.point_at(hit.time_of_impact);
+
+        Some(PhysicsRayHit2D {
+            node,
+            point: Vector2::new(point.x, point.y),
+            normal: Vector2::new(hit.normal.x, hit.normal.y),
+            distance: hit.time_of_impact,
+        })
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn prepared_audio_raycast_3d(
+        &self,
+        origin: Vector3,
+        direction: Vector3,
+        max_distance: f32,
+        include_areas: bool,
+    ) -> Option<PhysicsRayHit3D> {
+        if max_distance <= 0.0 || !max_distance.is_finite() {
+            return None;
+        }
+
+        let dir = na3::Vector3::new(direction.x, direction.y, direction.z);
+        let dir_len = dir.norm();
+        if dir_len <= 0.000_001 || !dir_len.is_finite() {
+            return None;
+        }
+        let dir = dir / dir_len;
+
+        let world = self.physics.world_3d.as_ref()?;
+        let ray = r3::Ray::new(na3::Point3::new(origin.x, origin.y, origin.z), dir);
+        let filter = if include_areas {
+            r3::QueryFilter::new()
+        } else {
+            r3::QueryFilter::new().exclude_sensors()
+        };
+        let (collider, hit) = world.query_pipeline.cast_ray_and_get_normal(
+            &world.bodies,
+            &world.colliders,
+            &ray,
+            max_distance,
+            true,
+            filter,
+        )?;
+        let node = *world.collider_owners.get(&collider)?;
+        let point = ray.point_at(hit.time_of_impact);
+
+        Some(PhysicsRayHit3D {
+            node,
+            point: Vector3::new(point.x, point.y, point.z),
+            normal: Vector3::new(hit.normal.x, hit.normal.y, hit.normal.z),
+            distance: hit.time_of_impact,
+        })
+    }
+
+    pub(crate) fn cast_prepared_audio_rays(
+        &self,
+        inputs: &[AudioRaycastInput],
+        outputs: &mut [AudioRaycastResult],
+        parallel: bool,
+    ) {
+        let world_2d = self.physics.world_2d.as_ref();
+        let world_3d = self.physics.world_3d.as_ref();
+        let cast = |input: &AudioRaycastInput| match *input {
+            AudioRaycastInput::TwoD {
+                origin,
+                direction,
+                max_distance,
+                mask,
+            } => AudioRaycastResult::TwoD(world_2d.and_then(|world| {
+                prepared_audio_raycast_2d_in_world(world, origin, direction, max_distance, mask)
+            })),
+            AudioRaycastInput::ThreeD {
+                origin,
+                direction,
+                max_distance,
+                include_areas,
+            } => AudioRaycastResult::ThreeD(world_3d.and_then(|world| {
+                prepared_audio_raycast_3d_in_world(
+                    world,
+                    origin,
+                    direction,
+                    max_distance,
+                    include_areas,
+                )
+            })),
+        };
+
+        if parallel {
+            outputs
+                .par_iter_mut()
+                .zip(inputs.par_iter())
+                .for_each(|(out, input)| *out = cast(input));
+        } else {
+            for (out, input) in outputs.iter_mut().zip(inputs.iter()) {
+                *out = cast(input);
+            }
+        }
     }
 
     pub fn physics_shape_cast_2d(
@@ -640,10 +824,9 @@ impl Runtime {
         let bodies_2d = self.collect_body_descs_2d();
         self.sync_world_2d(&bodies_2d);
 
-        let world = self.physics.world_2d.as_ref()?;
+        let world = self.physics.world_2d.as_mut()?;
         let shape = shared_shape_2d(shape)?;
-        let mut query = r2::QueryPipeline::new();
-        query.update(&world.colliders);
+        world.query_pipeline.update(&world.colliders);
 
         let shape_pos = na2::Isometry2::new(na2::Vector2::new(origin.x, origin.y), 0.0);
         let shape_vel = dir / dir_len * max_distance;
@@ -658,7 +841,7 @@ impl Runtime {
                     .unwrap_or(true)
         };
         let query_filter = query_filter_2d(filter).predicate(&predicate);
-        let (collider, hit) = query.cast_shape(
+        let (collider, hit) = world.query_pipeline.cast_shape(
             &world.bodies,
             &world.colliders,
             &shape_pos,
@@ -700,10 +883,9 @@ impl Runtime {
         let bodies_3d = self.collect_body_descs_3d();
         self.sync_world_3d(&bodies_3d);
 
-        let world = self.physics.world_3d.as_ref()?;
+        let world = self.physics.world_3d.as_mut()?;
         let shape = shared_shape_3d(shape)?;
-        let mut query = r3::QueryPipeline::new();
-        query.update(&world.colliders);
+        world.query_pipeline.update(&world.colliders);
 
         let shape_pos = na3::Isometry3::translation(origin.x, origin.y, origin.z);
         let shape_vel = dir / dir_len * max_distance;
@@ -718,7 +900,7 @@ impl Runtime {
                     .unwrap_or(true)
         };
         let query_filter = query_filter_3d(filter).predicate(&predicate);
-        let (collider, hit) = query.cast_shape(
+        let (collider, hit) = world.query_pipeline.cast_shape(
             &world.bodies,
             &world.colliders,
             &shape_pos,
@@ -3746,6 +3928,88 @@ fn remove_joint_3d(world: &mut PhysicsWorld3D, id: NodeID) {
     if let Some(state) = world.joint_map.remove(&id) {
         let _ = world.impulse_joints.remove(state.handle, true);
     }
+}
+
+fn prepared_audio_raycast_2d_in_world(
+    world: &PhysicsWorld2D,
+    origin: Vector2,
+    direction: Vector2,
+    max_distance: f32,
+    mask: u32,
+) -> Option<PhysicsRayHit2D> {
+    if max_distance <= 0.0 || !max_distance.is_finite() {
+        return None;
+    }
+    let dir = na2::Vector2::new(direction.x, direction.y);
+    let dir_len = dir.norm();
+    if dir_len <= 0.000_001 || !dir_len.is_finite() {
+        return None;
+    }
+    let dir = dir / dir_len;
+    let ray = r2::Ray::new(na2::Point2::new(origin.x, origin.y), dir);
+    let predicate = |handle, collider: &r2::Collider| {
+        (collider.collision_groups().memberships.bits() & mask) != 0
+            && world.collider_owners.contains_key(&handle)
+    };
+    let query_filter = r2::QueryFilter::new()
+        .exclude_sensors()
+        .predicate(&predicate);
+    let (collider, hit) = world.query_pipeline.cast_ray_and_get_normal(
+        &world.bodies,
+        &world.colliders,
+        &ray,
+        max_distance,
+        true,
+        query_filter,
+    )?;
+    let node = *world.collider_owners.get(&collider)?;
+    let point = ray.point_at(hit.time_of_impact);
+    Some(PhysicsRayHit2D {
+        node,
+        point: Vector2::new(point.x, point.y),
+        normal: Vector2::new(hit.normal.x, hit.normal.y),
+        distance: hit.time_of_impact,
+    })
+}
+
+fn prepared_audio_raycast_3d_in_world(
+    world: &PhysicsWorld3D,
+    origin: Vector3,
+    direction: Vector3,
+    max_distance: f32,
+    include_areas: bool,
+) -> Option<PhysicsRayHit3D> {
+    if max_distance <= 0.0 || !max_distance.is_finite() {
+        return None;
+    }
+    let dir = na3::Vector3::new(direction.x, direction.y, direction.z);
+    let dir_len = dir.norm();
+    if dir_len <= 0.000_001 || !dir_len.is_finite() {
+        return None;
+    }
+    let dir = dir / dir_len;
+    let ray = r3::Ray::new(na3::Point3::new(origin.x, origin.y, origin.z), dir);
+    let filter = if include_areas {
+        r3::QueryFilter::new()
+    } else {
+        r3::QueryFilter::new().exclude_sensors()
+    };
+    let (collider, hit) = world.query_pipeline.cast_ray_and_get_normal(
+        &world.bodies,
+        &world.colliders,
+        &ray,
+        max_distance,
+        true,
+        filter,
+    )?;
+    let node = *world.collider_owners.get(&collider)?;
+    let point = ray.point_at(hit.time_of_impact);
+    Some(PhysicsRayHit3D {
+        node,
+        point: Vector3::new(point.x, point.y, point.z),
+        normal: Vector3::new(hit.normal.x, hit.normal.y, hit.normal.z),
+        distance: hit.time_of_impact,
+    })
 }
 
 #[cfg(test)]

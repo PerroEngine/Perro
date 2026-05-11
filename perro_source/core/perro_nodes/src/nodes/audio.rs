@@ -34,6 +34,29 @@ impl Default for AudioMaterial {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AudioDiffusion {
+    pub damping: f32,
+    pub compression: f32,
+    pub hardness: f32,
+}
+
+impl AudioDiffusion {
+    pub const fn new() -> Self {
+        Self {
+            damping: 0.35,
+            compression: 0.15,
+            hardness: 0.5,
+        }
+    }
+}
+
+impl Default for AudioDiffusion {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AudioZoneEffect {
     pub reverb_send: f32,
     pub echo: f32,

@@ -1,11 +1,21 @@
 use super::Runtime;
+use super::physics::{AudioRaycastInput, AudioRaycastResult};
 use crate::rs_ctx::QueuedSpatialAudioPos;
 use perro_ids::NodeID;
-use perro_nodes::{AudioMaterial, CollisionShape2D, CollisionShape3D, SceneNodeData};
+use perro_nodes::{
+    AudioDiffusion, AudioMaterial, CollisionShape2D, CollisionShape3D, SceneNodeData,
+};
 use perro_resource_context::sub_apis::AudioAPI;
 use perro_runtime_context::sub_apis::{RuntimeAudio, RuntimeAudioAPI, SpatialAudioOptions};
 use perro_structs::{Vector2, Vector3};
+use std::f32::consts::TAU;
 use std::time::{Duration, Instant};
+
+const PARALLEL_AUDIO_RAY_THRESHOLD: usize = 128;
+const LISTENER_FIELD_SOUND_THRESHOLD_2D: usize = 64;
+const LISTENER_FIELD_SOUND_THRESHOLD_3D: usize = 128;
+const LISTENER_FIELD_RAYS_2D: usize = 64;
+const LISTENER_FIELD_RAYS_3D: usize = 96;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct AudioPropagationConfigRt {
@@ -94,6 +104,16 @@ struct AudioHit2D {
 pub(crate) struct AudioPropagationState {
     pub config: AudioPropagationConfigRt,
     sounds: Vec<ActiveSpatialSound>,
+    scratch_ids: Vec<NodeID>,
+    scratch_child_ids: Vec<NodeID>,
+    scratch_ray_inputs: Vec<AudioRaycastInput>,
+    scratch_ray_indices: Vec<usize>,
+    scratch_ray_outputs: Vec<AudioRaycastResult>,
+    scratch_sound_ray_results: Vec<AudioRaycastResult>,
+    scratch_field_dirs_3d: Vec<Vector3>,
+    has_audio_mask_2d: bool,
+    has_audio_portal_2d: bool,
+    audio_scene_flags_node_count: usize,
     pub counters: AudioPropagationCounters,
 }
 
@@ -102,6 +122,16 @@ impl AudioPropagationState {
         Self {
             config: AudioPropagationConfigRt::default(),
             sounds: Vec::new(),
+            scratch_ids: Vec::new(),
+            scratch_child_ids: Vec::new(),
+            scratch_ray_inputs: Vec::new(),
+            scratch_ray_indices: Vec::new(),
+            scratch_ray_outputs: Vec::new(),
+            scratch_sound_ray_results: Vec::new(),
+            scratch_field_dirs_3d: Vec::new(),
+            has_audio_mask_2d: false,
+            has_audio_portal_2d: false,
+            audio_scene_flags_node_count: usize::MAX,
             counters: AudioPropagationCounters::default(),
         }
     }
@@ -142,6 +172,7 @@ impl Runtime {
         }
         self.propagate_pending_transform_dirty();
         self.refresh_dirty_global_transforms();
+        self.refresh_audio_scene_flags();
         let tick = if self.audio.config.propagation_tick_hz <= 0.0 {
             0.0
         } else {
@@ -154,29 +185,152 @@ impl Runtime {
             }
         }
         sounds.retain(|sound| sound.looped || sound.remaining.is_none_or(|v| v > 0.0));
-        for sound in &mut sounds {
-            sound.elapsed_since_prop += dt.max(0.0);
+        let dt = dt.max(0.0);
+        self.audio.scratch_ray_inputs.clear();
+        self.audio.scratch_ray_indices.clear();
+        self.audio.scratch_sound_ray_results.clear();
+        self.audio
+            .scratch_sound_ray_results
+            .resize(sounds.len(), AudioRaycastResult::None);
+        let due_2d_count = sounds
+            .iter()
+            .filter(|sound| sound.elapsed_since_prop + dt >= tick && sound.last_2d.is_some())
+            .count();
+        let due_3d_count = sounds
+            .iter()
+            .filter(|sound| sound.elapsed_since_prop + dt >= tick && sound.last_3d.is_some())
+            .count();
+        let use_field_2d = due_2d_count >= LISTENER_FIELD_SOUND_THRESHOLD_2D && due_3d_count == 0;
+        let use_field_3d = due_3d_count >= LISTENER_FIELD_SOUND_THRESHOLD_3D && due_2d_count == 0;
+        if use_field_2d {
+            self.solve_listener_field_2d(&mut sounds, dt, tick);
+        } else if use_field_3d {
+            self.solve_listener_field_3d(&mut sounds, dt, tick);
+        }
+        if use_field_2d || use_field_3d {
+            self.finish_audio_sound_updates(sounds, start);
+            return;
+        }
+        for (index, sound) in sounds.iter_mut().enumerate() {
+            sound.elapsed_since_prop += dt;
+            if sound.elapsed_since_prop < tick {
+                continue;
+            }
+            self.refresh_spatial_position(sound);
+            if let Some(pos) = sound.last_2d {
+                if self.audio.counters.raycasts >= self.audio.config.rays_per_tick_2d {
+                    continue;
+                }
+                let listener = self
+                    .resource_api
+                    .audio_listener_2d
+                    .lock()
+                    .ok()
+                    .and_then(|guard| *guard)
+                    .unwrap_or_default();
+                let listener_pos = Vector2::new(listener.position[0], listener.position[1]);
+                let distance = listener_pos.distance_to(pos);
+                let direction = listener_pos.direction_to(pos);
+                self.audio.counters.raycasts = self.audio.counters.raycasts.saturating_add(1);
+                if sound.options.enable_propagation {
+                    self.audio.scratch_ray_indices.push(index);
+                    self.audio.scratch_ray_inputs.push(AudioRaycastInput::TwoD {
+                        origin: listener_pos,
+                        direction,
+                        max_distance: distance.min(self.audio.config.max_ray_distance_2d),
+                        mask: sound.options.occlusion_mask,
+                    });
+                } else {
+                    self.audio.scratch_sound_ray_results[index] = AudioRaycastResult::TwoD(None);
+                }
+            } else if let Some(pos) = sound.last_3d {
+                if self.audio.counters.raycasts >= self.audio.config.rays_per_tick_3d {
+                    continue;
+                }
+                let listener = self
+                    .resource_api
+                    .audio_listener_3d
+                    .lock()
+                    .ok()
+                    .and_then(|guard| *guard)
+                    .unwrap_or_default();
+                let listener_pos = Vector3::new(
+                    listener.position[0],
+                    listener.position[1],
+                    listener.position[2],
+                );
+                let distance = listener_pos.distance_to(pos);
+                let direction = listener_pos.direction_to(pos);
+                self.audio.counters.raycasts = self.audio.counters.raycasts.saturating_add(1);
+                if sound.options.enable_propagation {
+                    self.audio.scratch_ray_indices.push(index);
+                    self.audio
+                        .scratch_ray_inputs
+                        .push(AudioRaycastInput::ThreeD {
+                            origin: listener_pos,
+                            direction,
+                            max_distance: distance.min(self.audio.config.max_ray_distance_3d),
+                            include_areas: false,
+                        });
+                } else {
+                    self.audio.scratch_sound_ray_results[index] = AudioRaycastResult::ThreeD(None);
+                }
+            }
+        }
+        let due_2d = self
+            .audio
+            .scratch_ray_inputs
+            .iter()
+            .any(|input| matches!(input, AudioRaycastInput::TwoD { .. }));
+        let due_3d = self
+            .audio
+            .scratch_ray_inputs
+            .iter()
+            .any(|input| matches!(input, AudioRaycastInput::ThreeD { .. }));
+        if due_2d {
+            self.prepare_audio_raycast_2d();
+        }
+        if due_3d {
+            self.prepare_audio_raycast_3d();
+        }
+        let mut ray_inputs = std::mem::take(&mut self.audio.scratch_ray_inputs);
+        let mut ray_indices = std::mem::take(&mut self.audio.scratch_ray_indices);
+        let mut ray_outputs = std::mem::take(&mut self.audio.scratch_ray_outputs);
+        ray_outputs.resize(ray_inputs.len(), AudioRaycastResult::None);
+        self.cast_prepared_audio_rays(
+            &ray_inputs,
+            &mut ray_outputs,
+            ray_inputs.len() >= PARALLEL_AUDIO_RAY_THRESHOLD,
+        );
+        for (sound_index, output) in ray_indices.iter().zip(ray_outputs.iter()) {
+            self.audio.scratch_sound_ray_results[*sound_index] = *output;
+        }
+        ray_inputs.clear();
+        ray_indices.clear();
+        ray_outputs.clear();
+        self.audio.scratch_ray_inputs = ray_inputs;
+        self.audio.scratch_ray_indices = ray_indices;
+        self.audio.scratch_ray_outputs = ray_outputs;
+        for (index, sound) in sounds.iter_mut().enumerate() {
             if sound.elapsed_since_prop < tick {
                 self.audio.counters.cache_hits = self.audio.counters.cache_hits.saturating_add(1);
                 continue;
             }
             sound.elapsed_since_prop = 0.0;
-            self.refresh_spatial_position(sound);
-            if sound.last_2d.is_some()
-                && self.audio.counters.raycasts >= self.audio.config.rays_per_tick_2d
-            {
+            if matches!(
+                self.audio.scratch_sound_ray_results[index],
+                AudioRaycastResult::None
+            ) {
                 self.audio.counters.cache_hits = self.audio.counters.cache_hits.saturating_add(1);
                 continue;
             }
-            if sound.last_3d.is_some()
-                && self.audio.counters.raycasts >= self.audio.config.rays_per_tick_3d
-            {
-                self.audio.counters.cache_hits = self.audio.counters.cache_hits.saturating_add(1);
-                continue;
-            }
-            let result = match (sound.last_2d, sound.last_3d) {
-                (Some(pos), _) => self.solve_2d(pos, sound),
-                (_, Some(pos)) => self.solve_3d(pos, sound),
+            let result = match (
+                sound.last_2d,
+                sound.last_3d,
+                self.audio.scratch_sound_ray_results[index],
+            ) {
+                (Some(pos), _, AudioRaycastResult::TwoD(hit)) => self.solve_2d(pos, sound, hit),
+                (_, Some(pos), AudioRaycastResult::ThreeD(hit)) => self.solve_3d(pos, sound, hit),
                 _ => None,
             };
             if let Some(result) = result {
@@ -213,13 +367,220 @@ impl Runtime {
         self.audio.sounds = sounds;
     }
 
+    fn finish_audio_sound_updates(&mut self, sounds: Vec<ActiveSpatialSound>, start: Instant) {
+        self.audio.counters.active_positional = sounds.len() as u32;
+        self.audio.counters.propagation_time = start.elapsed();
+        self.audio.sounds = sounds;
+    }
+
+    fn refresh_audio_scene_flags(&mut self) {
+        let node_count = self.nodes.len();
+        if self.audio.audio_scene_flags_node_count == node_count {
+            return;
+        }
+        self.audio.audio_scene_flags_node_count = node_count;
+        self.audio.has_audio_mask_2d = false;
+        self.audio.has_audio_portal_2d = false;
+        for (_, node) in self.nodes.iter() {
+            match &node.data {
+                SceneNodeData::AudioMask2D(_) => {
+                    self.audio.has_audio_mask_2d = true;
+                }
+                SceneNodeData::AudioPortal2D(_) => {
+                    self.audio.has_audio_portal_2d = true;
+                }
+                _ => {}
+            }
+            if self.audio.has_audio_mask_2d && self.audio.has_audio_portal_2d {
+                break;
+            }
+        }
+    }
+
+    fn solve_listener_field_2d(&mut self, sounds: &mut [ActiveSpatialSound], dt: f32, tick: f32) {
+        let listener = self
+            .resource_api
+            .audio_listener_2d
+            .lock()
+            .ok()
+            .and_then(|guard| *guard)
+            .unwrap_or_default();
+        let listener_pos = Vector2::new(listener.position[0], listener.position[1]);
+        self.audio.scratch_ray_inputs.clear();
+        self.audio.scratch_ray_outputs.clear();
+        for i in 0..LISTENER_FIELD_RAYS_2D {
+            let angle = i as f32 * TAU / LISTENER_FIELD_RAYS_2D as f32;
+            self.audio.scratch_ray_inputs.push(AudioRaycastInput::TwoD {
+                origin: listener_pos,
+                direction: Vector2::new(angle.cos(), angle.sin()),
+                max_distance: self.audio.config.max_ray_distance_2d,
+                mask: u32::MAX,
+            });
+        }
+        self.prepare_audio_raycast_2d();
+        let mut ray_inputs = std::mem::take(&mut self.audio.scratch_ray_inputs);
+        let mut ray_outputs = std::mem::take(&mut self.audio.scratch_ray_outputs);
+        ray_outputs.resize(ray_inputs.len(), AudioRaycastResult::None);
+        self.cast_prepared_audio_rays(&ray_inputs, &mut ray_outputs, false);
+        self.audio.counters.raycasts = self
+            .audio
+            .counters
+            .raycasts
+            .saturating_add(ray_inputs.len() as u32);
+
+        for sound in sounds {
+            sound.elapsed_since_prop += dt;
+            if sound.elapsed_since_prop < tick {
+                self.audio.counters.cache_hits = self.audio.counters.cache_hits.saturating_add(1);
+                continue;
+            }
+            sound.elapsed_since_prop = 0.0;
+            self.refresh_spatial_position(sound);
+            let Some(pos) = sound.last_2d else {
+                continue;
+            };
+            let direction = listener_pos.direction_to(pos);
+            let angle = direction.y.atan2(direction.x).rem_euclid(TAU);
+            let ray_index = ((angle / TAU * LISTENER_FIELD_RAYS_2D as f32).round() as usize)
+                % LISTENER_FIELD_RAYS_2D;
+            let distance = listener_pos.distance_to(pos);
+            let hit = match ray_outputs.get(ray_index).copied().unwrap_or_default() {
+                AudioRaycastResult::TwoD(Some(hit)) if hit.distance <= distance + 0.25 => Some(hit),
+                _ => None,
+            };
+            if let Some(result) = self.solve_2d(pos, sound, hit) {
+                self.apply_spatial_result(sound, result);
+            }
+        }
+
+        ray_inputs.clear();
+        ray_outputs.clear();
+        self.audio.scratch_ray_inputs = ray_inputs;
+        self.audio.scratch_ray_outputs = ray_outputs;
+    }
+
+    fn solve_listener_field_3d(&mut self, sounds: &mut [ActiveSpatialSound], dt: f32, tick: f32) {
+        let listener = self
+            .resource_api
+            .audio_listener_3d
+            .lock()
+            .ok()
+            .and_then(|guard| *guard)
+            .unwrap_or_default();
+        let listener_pos = Vector3::new(
+            listener.position[0],
+            listener.position[1],
+            listener.position[2],
+        );
+        self.audio.scratch_ray_inputs.clear();
+        self.audio.scratch_ray_outputs.clear();
+        self.audio.scratch_field_dirs_3d.clear();
+        for i in 0..LISTENER_FIELD_RAYS_3D {
+            let n = LISTENER_FIELD_RAYS_3D as f32;
+            let y = 1.0 - (i as f32 + 0.5) * 2.0 / n;
+            let radius = (1.0 - y * y).max(0.0).sqrt();
+            let theta = i as f32 * 2.399_963_1;
+            let dir = Vector3::new(theta.cos() * radius, y, theta.sin() * radius);
+            self.audio.scratch_field_dirs_3d.push(dir);
+            self.audio
+                .scratch_ray_inputs
+                .push(AudioRaycastInput::ThreeD {
+                    origin: listener_pos,
+                    direction: dir,
+                    max_distance: self.audio.config.max_ray_distance_3d,
+                    include_areas: false,
+                });
+        }
+        self.prepare_audio_raycast_3d();
+        let mut ray_inputs = std::mem::take(&mut self.audio.scratch_ray_inputs);
+        let mut ray_outputs = std::mem::take(&mut self.audio.scratch_ray_outputs);
+        let mut ray_dirs = std::mem::take(&mut self.audio.scratch_field_dirs_3d);
+        ray_outputs.resize(ray_inputs.len(), AudioRaycastResult::None);
+        self.cast_prepared_audio_rays(&ray_inputs, &mut ray_outputs, false);
+        self.audio.counters.raycasts = self
+            .audio
+            .counters
+            .raycasts
+            .saturating_add(ray_inputs.len() as u32);
+
+        for sound in sounds {
+            sound.elapsed_since_prop += dt;
+            if sound.elapsed_since_prop < tick {
+                self.audio.counters.cache_hits = self.audio.counters.cache_hits.saturating_add(1);
+                continue;
+            }
+            sound.elapsed_since_prop = 0.0;
+            self.refresh_spatial_position(sound);
+            let Some(pos) = sound.last_3d else {
+                continue;
+            };
+            let to_sound = pos - listener_pos;
+            let distance = to_sound.length();
+            if distance <= 0.0001 {
+                continue;
+            }
+            let direction = to_sound * distance.recip();
+            let mut best_index = 0usize;
+            let mut best_dot = f32::NEG_INFINITY;
+            for (index, ray_dir) in ray_dirs.iter().enumerate() {
+                let dot =
+                    direction.x * ray_dir.x + direction.y * ray_dir.y + direction.z * ray_dir.z;
+                if dot > best_dot {
+                    best_dot = dot;
+                    best_index = index;
+                }
+            }
+            let hit = match ray_outputs.get(best_index).copied().unwrap_or_default() {
+                AudioRaycastResult::ThreeD(Some(hit)) if hit.distance <= distance + 0.25 => {
+                    Some(hit)
+                }
+                _ => None,
+            };
+            if let Some(result) = self.solve_3d(pos, sound, hit) {
+                self.apply_spatial_result(sound, result);
+            }
+        }
+
+        ray_inputs.clear();
+        ray_outputs.clear();
+        ray_dirs.clear();
+        self.audio.scratch_ray_inputs = ray_inputs;
+        self.audio.scratch_ray_outputs = ray_outputs;
+        self.audio.scratch_field_dirs_3d = ray_dirs;
+    }
+
+    fn apply_spatial_result(&mut self, sound: &mut ActiveSpatialSound, result: PropagationResult) {
+        if self.audio.config.debug_rays {
+            let _ = (result.perceived_2d, result.perceived_3d);
+        }
+        sound.last_result = Some(result);
+        let bark_start = Instant::now();
+        if let Some(id) = sound.playback_id
+            && let Ok(guard) = self.resource_api.bark.lock()
+            && let Some(player) = guard.as_ref()
+        {
+            let _ = player.update_spatial(
+                id,
+                perro_bark::SpatialAudioParams {
+                    pan: perro_bark::AudioPan::new(result.pan[0], result.pan[1], result.pan[2]),
+                    volume: result.volume,
+                    low_pass: result.low_pass,
+                    reverb_send: result.reverb_send,
+                    reflection: result.reflection,
+                    occlusion: result.occlusion,
+                },
+            );
+        }
+        self.audio.counters.bark_update_time += bark_start.elapsed();
+    }
+
     fn drain_resource_spatial_audio(&mut self) {
         let queued = self
             .resource_api
             .spatial_audio_queue
             .lock()
             .ok()
-            .map(|mut queue| queue.drain(..).collect::<Vec<_>>())
+            .map(|mut queue| std::mem::take(&mut *queue))
             .unwrap_or_default();
         for request in queued {
             let audio = RuntimeAudio {
@@ -284,6 +645,7 @@ impl Runtime {
         &mut self,
         source_pos: Vector2,
         sound: &ActiveSpatialSound,
+        physics_hit: Option<perro_runtime_context::sub_apis::PhysicsRayHit2D>,
     ) -> Option<PropagationResult> {
         let listener = self
             .resource_api
@@ -298,27 +660,11 @@ impl Runtime {
         if distance > range.min(self.audio.config.listener_max_distance) {
             return None;
         }
-        let dir = listener_pos.direction_to(source_pos);
-        let physics_hit = if sound.options.enable_propagation {
-            self.physics_raycast_2d(
-                listener_pos,
-                dir,
-                distance.min(self.audio.config.max_ray_distance_2d),
-                &perro_runtime_context::sub_apis::PhysicsQueryFilter {
-                    include_areas: false,
-                    mask: sound.options.occlusion_mask,
-                    exclude_nodes: Vec::new(),
-                },
-            )
-        } else {
-            None
-        };
-        let mask_hit = if sound.options.enable_propagation {
+        let mask_hit = if sound.options.enable_propagation && self.audio.has_audio_mask_2d {
             self.first_audio_mask_2d(listener_pos, source_pos)
         } else {
             None
         };
-        self.audio.counters.raycasts = self.audio.counters.raycasts.saturating_add(1);
         let direct_attenuation = 1.0 - (distance / range).clamp(0.0, 1.0);
         let mut attenuation = direct_attenuation;
         let mut low_pass = 0.0;
@@ -350,16 +696,26 @@ impl Runtime {
         };
         if let Some(hit) = hit {
             let material = hit.material;
+            let diffusion = self.audio_diffusion_for_node(hit.node);
             let thickness = hit.thickness.max(0.05) * material.thickness_multiplier;
             let transmission = material.transmission.clamp(0.0, 1.0);
+            let damping = diffusion.damping.clamp(0.0, 1.0);
+            let compression = diffusion.compression.clamp(0.0, 1.0);
+            let hardness = diffusion.hardness.clamp(0.0, 1.0);
             occlusion = (1.0 - transmission).clamp(0.0, 1.0);
-            attenuation *= (transmission + 0.2 / (1.0 + thickness)).clamp(0.0, 1.0);
-            low_pass = (material.low_pass_strength * (1.0 + thickness * 0.15)).clamp(0.0, 1.0);
+            attenuation *=
+                (transmission + (0.2 + compression * 0.1) / (1.0 + thickness)).clamp(0.0, 1.0);
+            low_pass = (material.low_pass_strength * (1.0 + thickness * 0.15 + damping * 0.35))
+                .clamp(0.0, 1.0);
             let tangent = Vector2::new(-hit.normal.y, hit.normal.x);
             perceived = hit.point + tangent * 0.5;
-            reflection = self.bounce_energy(material.reflection, self.audio.config.max_bounces_2d);
-            if let Some((portal_point, portal_strength)) =
-                self.best_audio_portal_2d(listener_pos, source_pos)
+            reflection = self.bounce_energy(
+                (material.reflection * (0.75 + hardness * 0.5)).clamp(0.0, 1.0),
+                self.audio.config.max_bounces_2d,
+            );
+            if self.audio.has_audio_portal_2d
+                && let Some((portal_point, portal_strength)) =
+                    self.best_audio_portal_2d(listener_pos, source_pos)
             {
                 let portal_strength = portal_strength.clamp(0.0, 1.0);
                 attenuation = attenuation.max(direct_attenuation * (0.65 + portal_strength * 0.35));
@@ -389,6 +745,7 @@ impl Runtime {
         &mut self,
         source_pos: Vector3,
         sound: &ActiveSpatialSound,
+        hit: Option<perro_runtime_context::sub_apis::PhysicsRayHit3D>,
     ) -> Option<PropagationResult> {
         let listener = self
             .resource_api
@@ -408,17 +765,6 @@ impl Runtime {
             return None;
         }
         let dir = listener_pos.direction_to(source_pos);
-        let hit = if sound.options.enable_propagation {
-            self.physics_raycast_3d(
-                listener_pos,
-                dir,
-                distance.min(self.audio.config.max_ray_distance_3d),
-                false,
-            )
-        } else {
-            None
-        };
-        self.audio.counters.raycasts = self.audio.counters.raycasts.saturating_add(1);
         let mut attenuation = 1.0 - (distance / range).clamp(0.0, 1.0);
         let mut low_pass = 0.0;
         let mut occlusion = 0.0;
@@ -426,14 +772,23 @@ impl Runtime {
         let mut reflection = 0.0;
         if let Some(hit) = hit {
             let material = self.audio_material_for_node(hit.node).unwrap_or_default();
+            let diffusion = self.audio_diffusion_for_node(hit.node);
             let thickness =
                 self.audio_thickness_3d(hit.node).max(0.05) * material.thickness_multiplier;
             let transmission = material.transmission.clamp(0.0, 1.0);
+            let damping = diffusion.damping.clamp(0.0, 1.0);
+            let compression = diffusion.compression.clamp(0.0, 1.0);
+            let hardness = diffusion.hardness.clamp(0.0, 1.0);
             occlusion = (1.0 - transmission).clamp(0.0, 1.0);
-            attenuation *= (transmission + 0.2 / (1.0 + thickness)).clamp(0.0, 1.0);
-            low_pass = (material.low_pass_strength * (1.0 + thickness * 0.1)).clamp(0.0, 1.0);
+            attenuation *=
+                (transmission + (0.2 + compression * 0.1) / (1.0 + thickness)).clamp(0.0, 1.0);
+            low_pass = (material.low_pass_strength * (1.0 + thickness * 0.1 + damping * 0.35))
+                .clamp(0.0, 1.0);
             perceived = hit.point + hit.normal.cross(dir).normalized() * 0.5;
-            reflection = self.bounce_energy(material.reflection, self.audio.config.max_bounces_3d);
+            reflection = self.bounce_energy(
+                (material.reflection * (0.75 + hardness * 0.5)).clamp(0.0, 1.0),
+                self.audio.config.max_bounces_3d,
+            );
         }
         let local = inverse_rotate_vec3(listener.rotation, source_pos - listener_pos);
         Some(PropagationResult {
@@ -476,6 +831,21 @@ impl Runtime {
         }
     }
 
+    fn audio_diffusion_for_node(&self, node: NodeID) -> AudioDiffusion {
+        let Some(data) = self.nodes.get(node).map(|n| &n.data) else {
+            return AudioDiffusion::default();
+        };
+        match data {
+            SceneNodeData::CollisionShape2D(v) if v.audio_interaction => v.audio_diffusion,
+            SceneNodeData::CollisionShape3D(v) if v.audio_interaction => v.audio_diffusion,
+            SceneNodeData::StaticBody2D(v) if v.audio_interaction => v.audio_diffusion,
+            SceneNodeData::StaticBody3D(v) if v.audio_interaction => v.audio_diffusion,
+            SceneNodeData::RigidBody2D(v) if v.audio_interaction => v.audio_diffusion,
+            SceneNodeData::RigidBody3D(v) if v.audio_interaction => v.audio_diffusion,
+            _ => AudioDiffusion::default(),
+        }
+    }
+
     fn audio_thickness_2d(&self, node: NodeID) -> f32 {
         self.nodes
             .get(node)
@@ -504,14 +874,14 @@ impl Runtime {
             return None;
         }
         let mut best: Option<AudioHit2D> = None;
-        let mask_ids: Vec<NodeID> = self
-            .nodes
-            .iter()
-            .filter_map(|(id, node)| {
-                matches!(node.data, SceneNodeData::AudioMask2D(_)).then_some(id)
-            })
-            .collect();
-        for mask_id in mask_ids {
+        self.audio.scratch_ids.clear();
+        for (id, node) in self.nodes.iter() {
+            if matches!(node.data, SceneNodeData::AudioMask2D(_)) {
+                self.audio.scratch_ids.push(id);
+            }
+        }
+        for index in 0..self.audio.scratch_ids.len() {
+            let mask_id = self.audio.scratch_ids[index];
             let Some(SceneNodeData::AudioMask2D(mask)) = self.nodes.get(mask_id).map(|n| &n.data)
             else {
                 continue;
@@ -520,12 +890,14 @@ impl Runtime {
                 continue;
             }
             let material = mask.material;
-            let child_ids: Vec<NodeID> = self
-                .nodes
-                .get(mask_id)
-                .map(|n| n.children_slice().to_vec())
-                .unwrap_or_default();
-            for child in child_ids {
+            self.audio.scratch_child_ids.clear();
+            if let Some(node) = self.nodes.get(mask_id) {
+                self.audio
+                    .scratch_child_ids
+                    .extend_from_slice(node.children_slice());
+            }
+            for child_index in 0..self.audio.scratch_child_ids.len() {
+                let child = self.audio.scratch_child_ids[child_index];
                 let Some(shape_kind) =
                     self.nodes
                         .get(child)
@@ -574,14 +946,14 @@ impl Runtime {
             return None;
         }
         let mut best: Option<(Vector2, f32, f32)> = None;
-        let portal_ids: Vec<NodeID> = self
-            .nodes
-            .iter()
-            .filter_map(|(id, node)| {
-                matches!(node.data, SceneNodeData::AudioPortal2D(_)).then_some(id)
-            })
-            .collect();
-        for portal_id in portal_ids {
+        self.audio.scratch_ids.clear();
+        for (id, node) in self.nodes.iter() {
+            if matches!(node.data, SceneNodeData::AudioPortal2D(_)) {
+                self.audio.scratch_ids.push(id);
+            }
+        }
+        for index in 0..self.audio.scratch_ids.len() {
+            let portal_id = self.audio.scratch_ids[index];
             let Some(SceneNodeData::AudioPortal2D(portal)) =
                 self.nodes.get(portal_id).map(|n| &n.data)
             else {
@@ -591,12 +963,14 @@ impl Runtime {
                 continue;
             }
             let strength = portal.strength;
-            let child_ids: Vec<NodeID> = self
-                .nodes
-                .get(portal_id)
-                .map(|n| n.children_slice().to_vec())
-                .unwrap_or_default();
-            for child in child_ids {
+            self.audio.scratch_child_ids.clear();
+            if let Some(node) = self.nodes.get(portal_id) {
+                self.audio
+                    .scratch_child_ids
+                    .extend_from_slice(node.children_slice());
+            }
+            for child_index in 0..self.audio.scratch_child_ids.len() {
+                let child = self.audio.scratch_child_ids[child_index];
                 let Some(shape_kind) =
                     self.nodes
                         .get(child)

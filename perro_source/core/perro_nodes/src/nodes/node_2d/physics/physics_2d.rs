@@ -1,4 +1,7 @@
-use crate::{audio::AudioMaterial, node_2d::Node2D};
+use crate::{
+    audio::{AudioDiffusion, AudioMaterial},
+    node_2d::Node2D,
+};
 use perro_ids::NodeID;
 use perro_structs::Vector2;
 use std::ops::{Deref, DerefMut};
@@ -42,6 +45,7 @@ pub struct CollisionShape2D {
     pub shape: Shape2D,
     pub audio_interaction: bool,
     pub audio_material: AudioMaterial,
+    pub audio_diffusion: AudioDiffusion,
 }
 
 impl Default for CollisionShape2D {
@@ -60,6 +64,7 @@ impl CollisionShape2D {
             },
             audio_interaction: true,
             audio_material: AudioMaterial::new(),
+            audio_diffusion: AudioDiffusion::new(),
         }
     }
 }
@@ -90,6 +95,7 @@ pub struct StaticBody2D {
     pub density: f32,
     pub audio_interaction: bool,
     pub audio_material: AudioMaterial,
+    pub audio_diffusion: AudioDiffusion,
 }
 
 impl Default for StaticBody2D {
@@ -111,6 +117,7 @@ impl StaticBody2D {
             density: 1.0,
             audio_interaction: true,
             audio_material: AudioMaterial::new(),
+            audio_diffusion: AudioDiffusion::new(),
         }
     }
 }
@@ -190,6 +197,7 @@ pub struct RigidBody2D {
     pub density: f32,
     pub audio_interaction: bool,
     pub audio_material: AudioMaterial,
+    pub audio_diffusion: AudioDiffusion,
 }
 
 impl Default for RigidBody2D {
@@ -219,6 +227,7 @@ impl RigidBody2D {
             density: 1.0,
             audio_interaction: true,
             audio_material: AudioMaterial::new(),
+            audio_diffusion: AudioDiffusion::new(),
         }
     }
 }
