@@ -154,7 +154,7 @@ fn post_effect_from(
                     shader_path = Some(s.to_string());
                 }
             }
-            "texture" | "texture_path" | "lut" | "lut_path" => {
+            "texture" | "texture_path" => {
                 if let Some(s) = as_str(v) {
                     texture_path = Some(s.to_string());
                 }
@@ -254,7 +254,7 @@ fn post_effect_from(
                 offset: offset.unwrap_or([0.0, 0.0, 0.0]),
             },
         )),
-        "lut" | "lut2d" | "lut_2d" => {
+        "lut2d" | "lut_2d" => {
             let texture_path = texture_path?;
             Some((
                 name,

@@ -38,7 +38,7 @@ camera + global post-processing. See [Visual Accessibility](visual_accessibility
 - `color_grade`  
   Manual grade controls: `exposure`, `contrast`, `brightness`, `saturation`, `gamma`,
   `temperature`, `tint`, `hue_shift`, `vibrance`, `lift`, `gain`, and `offset`.
-- `lut2d` / `lut` (`texture`, optional `lut_size`, `strength`)  
+- `lut2d` (`texture`, optional `lut_size`, `strength`)  
   Uses a flattened 2D LUT texture, usually `N*N` wide by `N` high.
 - `lut3d` (`texture`, optional `lut_size`, `strength`)  
   Uploads a flattened LUT texture as a GPU 3D texture before sampling.
