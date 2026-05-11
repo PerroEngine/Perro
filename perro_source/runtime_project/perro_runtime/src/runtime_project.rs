@@ -6,7 +6,7 @@ use perro_ui::UiStyle;
 use std::{collections::BTreeMap, path::PathBuf};
 
 pub use perro_project::{
-    LocalizationConfig, OcclusionCulling, ParticleSimDefault,
+    AudioConfig, AudioPropagationConfig, LocalizationConfig, OcclusionCulling, ParticleSimDefault,
     ProjectConfig as RuntimeProjectConfig, ProjectError as ProjectLoadError, ProjectMetadata,
     StaticProjectConfig, default_project_toml, ensure_project_layout, ensure_project_toml,
     load_project_toml, parse_project_toml,

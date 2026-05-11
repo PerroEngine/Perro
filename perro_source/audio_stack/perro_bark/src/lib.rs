@@ -2,6 +2,7 @@ use perro_ids::AudioBusID;
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Source, SpatialSink};
 use std::collections::HashMap;
 use std::io::{BufReader, Cursor};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -14,12 +15,17 @@ pub struct BarkPlayer {
 }
 
 struct Playback {
+    id: u64,
     source: String,
     bus_id: Option<AudioBusID>,
     looped: bool,
     base_volume: f32,
     speed: f32,
     pan: AudioPan,
+    low_pass: f32,
+    reverb_send: f32,
+    reflection: f32,
+    occlusion: f32,
     from_start: f32,
     from_end: f32,
     sink: SpatialSink,
@@ -40,7 +46,17 @@ struct AudioState {
     cache_bytes: usize,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SpatialAudioParams {
+    pub pan: AudioPan,
+    pub volume: f32,
+    pub low_pass: f32,
+    pub reverb_send: f32,
+    pub reflection: f32,
+    pub occlusion: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct AudioPan {
     pub x: f32,
     pub y: f32,
@@ -144,12 +160,17 @@ impl<'a> Audio2D<'a> {
         let local_y = dx * sin + dy * cos;
         let attenuation = 1.0 - (distance / range).clamp(0.0, 1.0);
         Some(AudioPlaybackRequest {
+            id: 0,
             source: self.source,
             bus_id: self.bus_id,
             looped: self.looped,
             volume: self.volume * attenuation,
             speed: self.speed,
             pan: AudioPan::new(local_x / range, local_y / range, 0.0),
+            low_pass: 0.0,
+            reverb_send: 0.0,
+            reflection: 0.0,
+            occlusion: 0.0,
             from_start: self.from_start,
             from_end: self.from_end,
         })
@@ -196,12 +217,17 @@ impl<'a> Audio3D<'a> {
         let local = inverse_rotate_vec3(listener.rotation, [dx, dy, dz]);
         let attenuation = 1.0 - (distance / range).clamp(0.0, 1.0);
         Some(AudioPlaybackRequest {
+            id: 0,
             source: self.source,
             bus_id: self.bus_id,
             looped: self.looped,
             volume: self.volume * attenuation,
             speed: self.speed,
             pan: AudioPan::new(local[0] / range, local[1] / range, -local[2] / range),
+            low_pass: 0.0,
+            reverb_send: 0.0,
+            reflection: 0.0,
+            occlusion: 0.0,
             from_start: self.from_start,
             from_end: self.from_end,
         })
@@ -210,24 +236,34 @@ impl<'a> Audio3D<'a> {
 
 #[derive(Clone, Copy)]
 pub struct AudioPlaybackRequest<'a> {
+    pub id: u64,
     pub source: &'a str,
     pub bus_id: Option<AudioBusID>,
     pub looped: bool,
     pub volume: f32,
     pub speed: f32,
     pub pan: AudioPan,
+    pub low_pass: f32,
+    pub reverb_send: f32,
+    pub reflection: f32,
+    pub occlusion: f32,
     pub from_start: f32,
     pub from_end: f32,
 }
 
 #[derive(Clone)]
 struct OwnedAudioPlaybackRequest {
+    id: u64,
     source: String,
     bus_id: Option<AudioBusID>,
     looped: bool,
     volume: f32,
     speed: f32,
     pan: AudioPan,
+    low_pass: f32,
+    reverb_send: f32,
+    reflection: f32,
+    occlusion: f32,
     from_start: f32,
     from_end: f32,
 }
@@ -236,11 +272,16 @@ impl From<AudioPlaybackRequest<'_>> for OwnedAudioPlaybackRequest {
     fn from(value: AudioPlaybackRequest<'_>) -> Self {
         Self {
             source: value.source.to_string(),
+            id: value.id,
             bus_id: value.bus_id,
             looped: value.looped,
             volume: value.volume,
             speed: value.speed,
             pan: value.pan,
+            low_pass: value.low_pass,
+            reverb_send: value.reverb_send,
+            reflection: value.reflection,
+            occlusion: value.occlusion,
             from_start: value.from_start,
             from_end: value.from_end,
         }
@@ -303,6 +344,13 @@ enum AudioCommand {
     StopMatch {
         request: OwnedAudioPlaybackRequest,
     },
+    StopPlayback {
+        id: u64,
+    },
+    UpdateSpatial {
+        id: u64,
+        params: SpatialAudioParams,
+    },
     StopAll,
     SetMasterVolume {
         volume: f32,
@@ -342,6 +390,7 @@ struct CachedAudioAsset {
 #[derive(Clone)]
 pub struct AudioController {
     tx: Sender<AudioCommand>,
+    next_playback_id: Arc<AtomicU64>,
 }
 
 impl BarkPlayer {
@@ -389,12 +438,17 @@ impl BarkPlayer {
 
     pub fn play_source(&self, request: AudioPlaybackRequest<'_>) -> Result<(), String> {
         let AudioPlaybackRequest {
+            id,
             source,
             bus_id,
             looped,
             volume,
             speed,
             pan,
+            low_pass,
+            reverb_send,
+            reflection,
+            occlusion,
             from_start,
             from_end,
         } = request;
@@ -533,12 +587,17 @@ impl BarkPlayer {
             }
         }
         state.playbacks.push(Playback {
+            id,
             source: source.to_string(),
             bus_id,
             looped,
             base_volume: requested_volume,
             speed: speed.max(0.01),
             pan,
+            low_pass: low_pass.clamp(0.0, 1.0),
+            reverb_send: reverb_send.clamp(0.0, 1.0),
+            reflection: reflection.clamp(0.0, 1.0),
+            occlusion: occlusion.clamp(0.0, 1.0),
             from_start: from_start.max(0.0),
             from_end: from_end.max(0.0),
             sink,
@@ -666,12 +725,17 @@ impl BarkPlayer {
 
     pub fn stop_match(&self, request: AudioPlaybackRequest<'_>) -> bool {
         let AudioPlaybackRequest {
+            id: _,
             source,
             bus_id,
             looped,
             volume,
             speed,
             pan,
+            low_pass: _,
+            reverb_send: _,
+            reflection: _,
+            occlusion: _,
             from_start,
             from_end,
         } = request;
@@ -709,6 +773,55 @@ impl BarkPlayer {
         }
         Self::evict_unreserved_unused_locked(&mut state, now);
         false
+    }
+
+    pub fn stop_playback(&self, id: u64) -> bool {
+        let Ok(mut state) = self.state.lock() else {
+            return false;
+        };
+        let now = Instant::now();
+        Self::prune_finished_playbacks_locked(&mut state, now);
+        let mut i = 0usize;
+        while i < state.playbacks.len() {
+            if state.playbacks[i].id == id {
+                let removed = state.playbacks.remove(i);
+                removed.sink.stop();
+                Self::mark_source_touched_now(&mut state, &removed.source, now);
+                Self::evict_unreserved_unused_locked(&mut state, now);
+                return true;
+            }
+            i += 1;
+        }
+        false
+    }
+
+    pub fn update_spatial(&self, id: u64, params: SpatialAudioParams) -> bool {
+        let Ok(mut state) = self.state.lock() else {
+            return false;
+        };
+        let master_volume = state.master_volume.max(0.0);
+        let Some(index) = state.playbacks.iter().position(|p| p.id == id) else {
+            return false;
+        };
+        let playback_bus_id = state.playbacks[index].bus_id;
+        let bus_volume = playback_bus_id
+            .and_then(|bus_id| state.buses.get(&bus_id))
+            .map(|bus| bus.volume.max(0.0))
+            .unwrap_or(1.0);
+        let playback = &mut state.playbacks[index];
+        playback.base_volume = params.volume.max(0.0);
+        playback.pan = params.pan.clamped();
+        playback.low_pass = params.low_pass.clamp(0.0, 1.0);
+        playback.reverb_send = params.reverb_send.clamp(0.0, 1.0);
+        playback.reflection = params.reflection.clamp(0.0, 1.0);
+        playback.occlusion = params.occlusion.clamp(0.0, 1.0);
+        playback
+            .sink
+            .set_emitter_position(Self::pan_emitter_position(playback.pan));
+        playback
+            .sink
+            .set_volume(playback.base_volume * master_volume * bus_volume);
+        true
     }
 
     pub fn stop_all(&self) {
@@ -1081,6 +1194,7 @@ fn rotate_vec3(q: [f32; 4], v: [f32; 3]) -> [f32; 3] {
 impl AudioController {
     pub fn new(static_audio_lookup: Option<fn(u64) -> &'static [u8]>) -> Result<Self, String> {
         let (tx, rx) = mpsc::channel::<AudioCommand>();
+        let next_playback_id = Arc::new(AtomicU64::new(1));
         std::thread::Builder::new()
             .name("perro_bark_audio".to_string())
             .spawn(move || {
@@ -1098,12 +1212,17 @@ impl AudioController {
                         }
                         AudioCommand::Play { request } => {
                             let _ = player.play_source(AudioPlaybackRequest {
+                                id: request.id,
                                 source: request.source.as_str(),
                                 bus_id: request.bus_id,
                                 looped: request.looped,
                                 volume: request.volume,
                                 speed: request.speed,
                                 pan: request.pan,
+                                low_pass: request.low_pass,
+                                reverb_send: request.reverb_send,
+                                reflection: request.reflection,
+                                occlusion: request.occlusion,
                                 from_start: request.from_start,
                                 from_end: request.from_end,
                             });
@@ -1113,15 +1232,26 @@ impl AudioController {
                         }
                         AudioCommand::StopMatch { request } => {
                             let _ = player.stop_match(AudioPlaybackRequest {
+                                id: request.id,
                                 source: request.source.as_str(),
                                 bus_id: request.bus_id,
                                 looped: request.looped,
                                 volume: request.volume,
                                 speed: request.speed,
                                 pan: request.pan,
+                                low_pass: request.low_pass,
+                                reverb_send: request.reverb_send,
+                                reflection: request.reflection,
+                                occlusion: request.occlusion,
                                 from_start: request.from_start,
                                 from_end: request.from_end,
                             });
+                        }
+                        AudioCommand::StopPlayback { id } => {
+                            let _ = player.stop_playback(id);
+                        }
+                        AudioCommand::UpdateSpatial { id, params } => {
+                            let _ = player.update_spatial(id, params);
                         }
                         AudioCommand::StopAll => player.stop_all(),
                         AudioCommand::SetMasterVolume { volume } => {
@@ -1145,7 +1275,10 @@ impl AudioController {
                 }
             })
             .map_err(|err| format!("failed to spawn audio thread: {err}"))?;
-        Ok(Self { tx })
+        Ok(Self {
+            tx,
+            next_playback_id,
+        })
     }
 
     pub fn play_source(&self, request: AudioPlaybackRequest<'_>) -> bool {
@@ -1154,6 +1287,27 @@ impl AudioController {
                 request: request.into(),
             })
             .is_ok()
+    }
+
+    pub fn play_spatial_source(&self, mut request: AudioPlaybackRequest<'_>) -> Option<u64> {
+        let id = self.next_playback_id.fetch_add(1, Ordering::Relaxed).max(1);
+        request.id = id;
+        self.tx
+            .send(AudioCommand::Play {
+                request: request.into(),
+            })
+            .is_ok()
+            .then_some(id)
+    }
+
+    pub fn update_spatial(&self, id: u64, params: SpatialAudioParams) -> bool {
+        self.tx
+            .send(AudioCommand::UpdateSpatial { id, params })
+            .is_ok()
+    }
+
+    pub fn stop_playback(&self, id: u64) -> bool {
+        self.tx.send(AudioCommand::StopPlayback { id }).is_ok()
     }
 
     pub fn load_source(&self, source: &str) -> bool {

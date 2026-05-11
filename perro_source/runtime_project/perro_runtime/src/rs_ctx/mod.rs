@@ -14,4 +14,5 @@ mod texture;
 mod viewport;
 mod visual_accessibility;
 
+pub(crate) use core::QueuedSpatialAudioPos;
 pub use core::RuntimeResourceApi;

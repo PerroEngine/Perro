@@ -12,6 +12,7 @@ use perro_scripting::{ScriptAPI, ScriptBehavior, ScriptConstructor};
 use std::time::{Duration, Instant};
 use std::{cell::RefCell, sync::Arc};
 
+mod audio;
 mod input_bridge;
 mod internal_updates;
 mod mesh_query;
@@ -26,6 +27,7 @@ mod state;
 mod transforms;
 mod world_state;
 
+use audio::AudioPropagationState;
 pub(crate) use scene_loader::PendingScriptAttach;
 pub(crate) use state::CollisionDebugState;
 use state::{
@@ -75,6 +77,7 @@ pub struct Runtime {
     cursor_icon_request: Option<perro_ui::CursorIcon>,
     pub(crate) window_requests: Vec<WindowRequest>,
     physics: physics::PhysicsState,
+    pub(crate) audio: AudioPropagationState,
 }
 
 pub struct Timing {
@@ -182,6 +185,7 @@ impl Runtime {
             cursor_icon_request: None,
             window_requests: Vec::new(),
             physics: physics::PhysicsState::new(),
+            audio: AudioPropagationState::new(),
         }
     }
 
@@ -215,6 +219,7 @@ impl Runtime {
             static_localization_lookup,
             localization_config,
         );
+        runtime.configure_audio_from_project();
         if let Some(entries) = script_registry {
             for (path_hash, ctor) in entries {
                 runtime
@@ -253,6 +258,7 @@ impl Runtime {
         self.run_update_schedule();
         self.run_internal_update_schedule();
         self.propagate_pending_transform_dirty();
+        self.update_audio_propagation(delta_time);
     }
 
     #[inline]
@@ -276,6 +282,7 @@ impl Runtime {
         self.run_internal_update_schedule();
         let internal_update = internal_start.elapsed();
         self.propagate_pending_transform_dirty();
+        self.update_audio_propagation(delta_time);
 
         RuntimeUpdateTiming {
             start_schedule,

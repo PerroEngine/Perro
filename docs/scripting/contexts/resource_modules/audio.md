@@ -71,7 +71,8 @@ Rules:
 
 ## Audio2D
 
-Audio2D uses `Vector2` position and resolves pan/volume against the active `Camera2D`.
+Audio2D uses `Vector2` position and enters the runtime audio propagation solver.
+The active `Camera2D` is the listener.
 
 Macros:
 
@@ -97,15 +98,17 @@ Methods:
 
 Rules:
 
-- `Audio2D.position` is resolved against active `Camera2D`.
-- Audio2D has no manual pan; pan is derived from camera-relative position.
-- Audio outside `range` is skipped.
-- Volume fades linearly from full at camera to silent at `range`.
-- Pan uses camera rotation before clamping to `-1.0..1.0`.
+- `Audio2D.position` is a one-shot point emitter.
+- Audio2D has no manual pan; pan comes from the propagated perceived direction.
+- Audio outside `range` or `[audio].listener_max_distance` is skipped.
+- Direct volume fades linearly from full at camera to silent at `range`.
+- Physics bodies and `AudioMask2D` can add occlusion, transmission loss, low-pass muffling, reflection, and corner/portal diffraction.
+- Use Runtime Audio when the sound should follow a moving node.
 
 ## Audio3D
 
-Audio3D uses `Vector3` position and resolves pan/volume against the active `Camera3D`.
+Audio3D uses `Vector3` position and enters the runtime audio propagation solver.
+The active `Camera3D` is the listener.
 
 Macros:
 
@@ -131,11 +134,63 @@ Methods:
 
 Rules:
 
-- `Audio3D.position` is resolved against active `Camera3D`.
-- Audio3D has no manual pan; pan is derived from camera-relative position.
-- Audio outside `range` is skipped.
-- Volume fades linearly from full at camera to silent at `range`.
-- Pan uses camera orientation before clamping to `-1.0..1.0`.
+- `Audio3D.position` is a one-shot point emitter.
+- Audio3D has no manual pan; pan comes from the propagated perceived direction.
+- Audio outside `range` or `[audio].listener_max_distance` is skipped.
+- Direct volume fades linearly from full at camera to silent at `range`.
+- Physics bodies can add occlusion, transmission loss, low-pass muffling, reflection, and diffraction approximation.
+- Use Runtime Audio when the sound should follow a moving node.
+
+## Propagation
+
+Positional `Audio2D` and `Audio3D` do not play through the simple Bark pan path directly.
+They enqueue a spatial request.
+The runtime drains that queue during the audio propagation tick and creates a Bark playback with live spatial params.
+
+Propagation runs only while active positional sounds exist.
+If no active positional sounds exist, no ray work is done that frame.
+
+Solver inputs:
+
+- active `Camera2D` or `Camera3D` as listener
+- source position and range
+- `StaticBody2D/3D`, `RigidBody2D/3D`, and `CollisionShape2D/3D` audio material fields
+- `AudioMask2D/3D`
+- `AudioPortal2D/3D`
+
+Default physics bodies participate in audio occlusion/reflection when `audio_interaction = true`.
+Use audio masks, zones, and portals only for invisible or non-physical audio geometry.
+
+Audio material fields:
+
+- `audio_interaction`
+- `absorption`
+- `reflection`
+- `transmission`
+- `diffusion`
+- `low_pass_strength`
+- `thickness_multiplier`
+- `occlusion_mask`
+
+Project config:
+
+```toml
+[audio]
+listener_max_distance = 500.0
+propagation_tick_hz = 20
+energy_cutoff = 0.02
+debug_rays = false
+
+[audio.propagation_2d]
+max_bounces = 4
+rays_per_tick = 64
+max_ray_distance = 500.0
+
+[audio.propagation_3d]
+max_bounces = 4
+rays_per_tick = 128
+max_ray_distance = 500.0
+```
 
 ## Shared Methods
 
@@ -169,6 +224,7 @@ Rules:
 
 - Script call enqueues an audio command via `RuntimeResourceApi`.
 - `perro_bark` handles commands on its own audio thread.
+- Positional `Audio2D` and `Audio3D` are queued for runtime propagation before Bark playback starts.
 - Audio bytes/duration are cached by source path for reuse.
 - `audio_load!` caches as unreserved (`reserved: false`).
 - `audio_reserve!` caches as reserved (`reserved: true`), preventing automatic eviction.

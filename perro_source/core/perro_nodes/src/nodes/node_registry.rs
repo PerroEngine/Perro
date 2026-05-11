@@ -1,12 +1,12 @@
 use crate::{
     AmbientLight2D, AmbientLight3D, AnimatedSprite2D, AnimationPlayer, AnimationTree, Area2D,
-    Area3D, BallJoint3D, BoneAttachment2D, BoneAttachment3D, BoneCollider2D, BoneCollider3D,
-    Camera2D, Camera3D, CollisionShape2D, CollisionShape3D, DistanceJoint2D, FixedJoint2D,
-    FixedJoint3D, HingeJoint3D, IKTarget2D, IKTarget3D, MeshInstance3D, MultiMeshInstance3D,
-    Node2D, Node3D, ParticleEmitter2D, ParticleEmitter3D, PhysicsBoneChain2D, PhysicsBoneChain3D,
-    PinJoint2D, PointLight2D, PointLight3D, RayLight2D, RayLight3D, RigidBody2D, RigidBody3D,
-    Skeleton2D, Skeleton3D, Sky3D, SpotLight2D, SpotLight3D, Sprite2D, StaticBody2D, StaticBody3D,
-    TileMap2D,
+    Area3D, AudioMask2D, AudioMask3D, AudioPortal2D, AudioPortal3D, AudioZone2D, AudioZone3D,
+    BallJoint3D, BoneAttachment2D, BoneAttachment3D, BoneCollider2D, BoneCollider3D, Camera2D,
+    Camera3D, CollisionShape2D, CollisionShape3D, DistanceJoint2D, FixedJoint2D, FixedJoint3D,
+    HingeJoint3D, IKTarget2D, IKTarget3D, MeshInstance3D, MultiMeshInstance3D, Node2D, Node3D,
+    ParticleEmitter2D, ParticleEmitter3D, PhysicsBoneChain2D, PhysicsBoneChain3D, PinJoint2D,
+    PointLight2D, PointLight3D, RayLight2D, RayLight3D, RigidBody2D, RigidBody3D, Skeleton2D,
+    Skeleton3D, Sky3D, SpotLight2D, SpotLight3D, Sprite2D, StaticBody2D, StaticBody3D, TileMap2D,
 };
 use perro_ids::{NodeID, NodeTag, TagID};
 use perro_structs::{Transform2D, Transform3D};
@@ -844,6 +844,11 @@ define_scene_nodes! {
         PinJoint2D => (Node2D, PinJoint2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         DistanceJoint2D => (Node2D, DistanceJoint2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         FixedJoint2D => (Node2D, FixedJoint2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
+
+        // audio
+        AudioMask2D => (Node2D, AudioMask2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        AudioZone2D => (Node2D, AudioZone2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        AudioPortal2D => (Node2D, AudioPortal2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
     }
     3d: {
         // core
@@ -879,6 +884,11 @@ define_scene_nodes! {
         BallJoint3D => (Node3D, BallJoint3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         HingeJoint3D => (Node3D, HingeJoint3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         FixedJoint3D => (Node3D, FixedJoint3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
+
+        // audio
+        AudioMask3D => (Node3D, AudioMask3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        AudioZone3D => (Node3D, AudioZone3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        AudioPortal3D => (Node3D, AudioPortal3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
     }
     ui: {
         // core

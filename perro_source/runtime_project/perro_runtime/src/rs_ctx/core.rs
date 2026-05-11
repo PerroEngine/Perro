@@ -12,12 +12,32 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+#[derive(Clone, Debug)]
+pub(crate) enum QueuedSpatialAudioPos {
+    TwoD(perro_structs::Vector2),
+    ThreeD(perro_structs::Vector3),
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct QueuedSpatialAudio {
+    pub source: String,
+    pub bus_id: Option<perro_ids::AudioBusID>,
+    pub looped: bool,
+    pub volume: f32,
+    pub speed: f32,
+    pub from_start: f32,
+    pub from_end: f32,
+    pub range: f32,
+    pub pos: QueuedSpatialAudioPos,
+}
+
 pub struct RuntimeResourceApi {
     pub(super) state: Mutex<RuntimeResourceState>,
     pub(super) localization: std::sync::RwLock<RuntimeLocalizationState>,
-    pub(super) bark: Mutex<Option<AudioController>>,
-    pub(super) audio_listener_2d: Mutex<Option<perro_bark::AudioListener2D>>,
-    pub(super) audio_listener_3d: Mutex<Option<perro_bark::AudioListener3D>>,
+    pub(crate) bark: Mutex<Option<AudioController>>,
+    pub(crate) spatial_audio_queue: Mutex<Vec<QueuedSpatialAudio>>,
+    pub(crate) audio_listener_2d: Mutex<Option<perro_bark::AudioListener2D>>,
+    pub(crate) audio_listener_3d: Mutex<Option<perro_bark::AudioListener3D>>,
     pub(super) static_material_lookup: Option<StaticMaterialLookup>,
     pub(super) static_skeleton_lookup: Option<StaticSkeletonLookup>,
     pub(super) static_animation_lookup: Option<StaticAnimationLookup>,
@@ -46,6 +66,7 @@ impl RuntimeResourceApi {
                 localization_config.as_ref(),
             )),
             bark: Mutex::new(AudioController::new(static_audio_lookup).ok()),
+            spatial_audio_queue: Mutex::new(Vec::new()),
             audio_listener_2d: Mutex::new(None),
             audio_listener_3d: Mutex::new(None),
             static_material_lookup,

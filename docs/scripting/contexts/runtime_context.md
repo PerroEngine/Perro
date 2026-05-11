@@ -16,6 +16,7 @@ Runtime macros take `ctx.run` as argument 1.
 - [Scripts Module](runtime_modules/scripts.md)
 - [Signals Module](runtime_modules/signals.md)
 - [Physics Module](runtime_modules/physics.md)
+- [Audio Module](runtime_modules/audio.md)
 - [Helpers](runtime_modules/helpers.md)
 
 Each module page contains:

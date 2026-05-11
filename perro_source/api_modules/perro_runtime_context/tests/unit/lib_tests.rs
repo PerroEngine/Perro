@@ -1,6 +1,8 @@
 use crate::{
     prelude::*,
-    sub_apis::{AnimPlayerAPI, AnimTreeAPI, SceneAPI},
+    sub_apis::{
+        AnimPlayerAPI, AnimTreeAPI, RuntimeAudio, RuntimeAudioAPI, SceneAPI, SpatialAudioOptions,
+    },
 };
 use perro_ids::{AnimationID, IntoTagID, MeshID, NodeID};
 use perro_nodes::prelude::Node2D;
@@ -477,6 +479,21 @@ impl PhysicsAPI for DummyRuntime {
 
     fn physics_is_paused(&mut self) -> bool {
         false
+    }
+}
+
+impl RuntimeAudioAPI for DummyRuntime {
+    fn play_runtime_audio_attached(
+        &mut self,
+        _audio: RuntimeAudio<'_>,
+        _node_id: NodeID,
+        _options: SpatialAudioOptions,
+    ) -> bool {
+        true
+    }
+
+    fn stop_runtime_audio_attached(&mut self, _node_id: NodeID, _source: &str) -> bool {
+        true
     }
 }
 

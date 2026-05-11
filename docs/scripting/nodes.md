@@ -68,6 +68,7 @@ Physics 2D:
 - `RigidBody2D`
 - `Area2D`
 - `CollisionShape2D` should be authored as a child of `StaticBody2D` or `RigidBody2D`.
+- Static/rigid bodies and collision shapes participate in audio propagation by default through `audio_interaction` and audio material fields.
 
 2D physics layer/mask fields:
 
@@ -83,6 +84,15 @@ Physics 2D:
 Joint common fields are `body_a`, `body_b`, `anchor_a`, `anchor_b`, `enabled`, and `collide_connected`.
 `DistanceJoint2D` also uses `min_distance` and `max_distance`.
 Anchors are local to each connected body.
+
+Audio 2D:
+
+- `AudioMask2D`
+- `AudioZone2D`
+- `AudioPortal2D`
+- `AudioMask2D` is invisible audio-only geometry with `CollisionShape2D` children.
+- `AudioZone2D` stores reverb/echo/dampening intent for listener, emitter, or path zones.
+- `AudioPortal2D` marks doors, windows, vents, or openings for cheaper diffraction/path search.
 
 `TileMap2D` is the tile map node.
 It uses `.ptileset` data and can emit static 2D colliders from `collision_shape = "auto"`.
@@ -166,6 +176,7 @@ Physics 3D:
 - `CollisionShape3D` should be authored as a child of `StaticBody3D` or `RigidBody3D`.
 - `CollisionShape3D` supports primitive `shape` and mesh-backed `trimesh` source.
 - Trimesh source format: `res://path/to/model.glb:mesh[0]` (mesh index optional, default `0`).
+- Static/rigid bodies and collision shapes participate in audio propagation by default through `audio_interaction` and audio material fields.
 
 3D physics layer/mask fields:
 
@@ -181,6 +192,15 @@ Physics 3D:
 Joint common fields are `body_a`, `body_b`, `anchor_a`, `anchor_b`, `enabled`, and `collide_connected`.
 `HingeJoint3D` also uses `axis`.
 Anchors are local to each connected body.
+
+Audio 3D:
+
+- `AudioMask3D`
+- `AudioZone3D`
+- `AudioPortal3D`
+- `AudioMask3D` is invisible audio-only geometry with `CollisionShape3D` children.
+- `AudioZone3D` stores reverb/echo/dampening intent for listener, emitter, or path zones.
+- `AudioPortal3D` marks doors, windows, vents, or openings for cheaper diffraction/path search.
 
 `Skeleton3D`
 

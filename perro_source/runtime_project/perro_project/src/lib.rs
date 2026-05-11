@@ -56,6 +56,50 @@ pub struct SteamConfig {
     pub app_id: Option<u32>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AudioPropagationConfig {
+    pub max_bounces: u32,
+    pub rays_per_tick: u32,
+    pub max_ray_distance: f32,
+}
+
+impl Default for AudioPropagationConfig {
+    fn default() -> Self {
+        Self {
+            max_bounces: 4,
+            rays_per_tick: 64,
+            max_ray_distance: 500.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AudioConfig {
+    pub listener_max_distance: f32,
+    pub propagation_tick_hz: f32,
+    pub energy_cutoff: f32,
+    pub debug_rays: bool,
+    pub propagation_2d: AudioPropagationConfig,
+    pub propagation_3d: AudioPropagationConfig,
+}
+
+impl Default for AudioConfig {
+    fn default() -> Self {
+        Self {
+            listener_max_distance: 500.0,
+            propagation_tick_hz: 20.0,
+            energy_cutoff: 0.02,
+            debug_rays: false,
+            propagation_2d: AudioPropagationConfig::default(),
+            propagation_3d: AudioPropagationConfig {
+                max_bounces: 4,
+                rays_per_tick: 128,
+                max_ray_distance: 500.0,
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ProjectMetadata {
     pub description: Option<String>,
@@ -89,6 +133,16 @@ pub struct StaticProjectConfig {
     pub meshlet_debug_view: bool,
     pub occlusion_culling: OcclusionCulling,
     pub particle_sim_default: ParticleSimDefault,
+    pub audio_listener_max_distance: f32,
+    pub audio_propagation_tick_hz: f32,
+    pub audio_energy_cutoff: f32,
+    pub audio_debug_rays: bool,
+    pub audio_2d_max_bounces: u32,
+    pub audio_2d_rays_per_tick: u32,
+    pub audio_2d_max_ray_distance: f32,
+    pub audio_3d_max_bounces: u32,
+    pub audio_3d_rays_per_tick: u32,
+    pub audio_3d_max_ray_distance: f32,
     pub localization_default_locale: &'static str,
     pub steam_enabled: bool,
     pub steam_app_id: Option<u32>,
@@ -126,6 +180,16 @@ impl StaticProjectConfig {
             meshlet_debug_view: false,
             occlusion_culling: OcclusionCulling::Gpu,
             particle_sim_default: ParticleSimDefault::Cpu,
+            audio_listener_max_distance: 500.0,
+            audio_propagation_tick_hz: 20.0,
+            audio_energy_cutoff: 0.02,
+            audio_debug_rays: false,
+            audio_2d_max_bounces: 4,
+            audio_2d_rays_per_tick: 64,
+            audio_2d_max_ray_distance: 500.0,
+            audio_3d_max_bounces: 4,
+            audio_3d_rays_per_tick: 128,
+            audio_3d_max_ray_distance: 500.0,
             localization_default_locale: "en",
             steam_enabled: false,
             steam_app_id: None,
@@ -187,6 +251,20 @@ impl StaticProjectConfig {
         self
     }
 
+    pub const fn with_audio_config(mut self, config: AudioConfig) -> Self {
+        self.audio_listener_max_distance = config.listener_max_distance;
+        self.audio_propagation_tick_hz = config.propagation_tick_hz;
+        self.audio_energy_cutoff = config.energy_cutoff;
+        self.audio_debug_rays = config.debug_rays;
+        self.audio_2d_max_bounces = config.propagation_2d.max_bounces;
+        self.audio_2d_rays_per_tick = config.propagation_2d.rays_per_tick;
+        self.audio_2d_max_ray_distance = config.propagation_2d.max_ray_distance;
+        self.audio_3d_max_bounces = config.propagation_3d.max_bounces;
+        self.audio_3d_rays_per_tick = config.propagation_3d.rays_per_tick;
+        self.audio_3d_max_ray_distance = config.propagation_3d.max_ray_distance;
+        self
+    }
+
     pub const fn with_metadata(
         mut self,
         description: Option<&'static str>,
@@ -243,6 +321,22 @@ impl StaticProjectConfig {
             meshlet_debug_view: self.meshlet_debug_view,
             occlusion_culling: self.occlusion_culling,
             particle_sim_default: self.particle_sim_default,
+            audio: AudioConfig {
+                listener_max_distance: self.audio_listener_max_distance,
+                propagation_tick_hz: self.audio_propagation_tick_hz,
+                energy_cutoff: self.audio_energy_cutoff,
+                debug_rays: self.audio_debug_rays,
+                propagation_2d: AudioPropagationConfig {
+                    max_bounces: self.audio_2d_max_bounces,
+                    rays_per_tick: self.audio_2d_rays_per_tick,
+                    max_ray_distance: self.audio_2d_max_ray_distance,
+                },
+                propagation_3d: AudioPropagationConfig {
+                    max_bounces: self.audio_3d_max_bounces,
+                    rays_per_tick: self.audio_3d_rays_per_tick,
+                    max_ray_distance: self.audio_3d_max_ray_distance,
+                },
+            },
             localization: Some(LocalizationConfig {
                 source_csv: String::new(),
                 key_column: "key".to_string(),
@@ -279,6 +373,7 @@ pub struct ProjectConfig {
     pub meshlet_debug_view: bool,
     pub occlusion_culling: OcclusionCulling,
     pub particle_sim_default: ParticleSimDefault,
+    pub audio: AudioConfig,
     pub localization: Option<LocalizationConfig>,
     pub steam: SteamConfig,
 }
@@ -307,6 +402,7 @@ impl ProjectConfig {
             meshlet_debug_view: false,
             occlusion_culling: OcclusionCulling::Gpu,
             particle_sim_default: ParticleSimDefault::Cpu,
+            audio: AudioConfig::default(),
             localization: None,
             steam: SteamConfig::default(),
         }
@@ -581,6 +677,22 @@ target_fixed_update = 60
 gravity = -9.81
 coef = 1.0
 
+[audio]
+listener_max_distance = 500.0
+propagation_tick_hz = 20
+energy_cutoff = 0.02
+debug_rays = false
+
+[audio.propagation_2d]
+max_bounces = 4
+rays_per_tick = 64
+max_ray_distance = 500.0
+
+[audio.propagation_3d]
+max_bounces = 4
+rays_per_tick = 128
+max_ray_distance = 500.0
+
 # Optional localization table.
 # Put localization.csv, locale.csv, or translations.csv next to project.toml.
 # First column must be key. Other columns use language codes.
@@ -619,6 +731,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
     let localization_table = value.get("localization").and_then(Value::as_table);
     let metadata_table = value.get("metadata").and_then(Value::as_table);
     let steam_table = value.get("steam").and_then(Value::as_table);
+    let audio_table = value.get("audio").and_then(Value::as_table);
 
     let name = project_table
         .get("name")
@@ -707,6 +820,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
     let localization = parse_localization(localization_table)?;
     let metadata = parse_metadata(metadata_table)?;
     let steam = parse_steam(steam_table)?;
+    let audio = parse_audio(audio_table)?;
 
     Ok(ProjectConfig {
         name,
@@ -730,6 +844,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         meshlet_debug_view,
         occlusion_culling,
         particle_sim_default,
+        audio,
         localization,
         steam,
     })
@@ -760,6 +875,107 @@ fn parse_steam(table: Option<&toml::map::Map<String, Value>>) -> Result<SteamCon
         return Err(ProjectError::MissingField("steam.app_id"));
     }
     Ok(SteamConfig { enabled, app_id })
+}
+
+fn parse_audio(table: Option<&toml::map::Map<String, Value>>) -> Result<AudioConfig, ProjectError> {
+    let Some(table) = table else {
+        return Ok(AudioConfig::default());
+    };
+    let mut cfg = AudioConfig::default();
+    cfg.listener_max_distance = parse_f32_table_field(
+        table,
+        "listener_max_distance",
+        cfg.listener_max_distance,
+        "audio.listener_max_distance",
+    )?;
+    cfg.propagation_tick_hz = parse_f32_table_field(
+        table,
+        "propagation_tick_hz",
+        cfg.propagation_tick_hz,
+        "audio.propagation_tick_hz",
+    )?;
+    cfg.energy_cutoff = parse_f32_table_field(
+        table,
+        "energy_cutoff",
+        cfg.energy_cutoff,
+        "audio.energy_cutoff",
+    )?;
+    cfg.debug_rays = table
+        .get("debug_rays")
+        .map(|value| {
+            value.as_bool().ok_or_else(|| {
+                ProjectError::InvalidField("audio.debug_rays", "must be a boolean".to_string())
+            })
+        })
+        .transpose()?
+        .unwrap_or(cfg.debug_rays);
+    if let Some(two_d) = table.get("propagation_2d").and_then(Value::as_table) {
+        cfg.propagation_2d =
+            parse_audio_propagation(two_d, cfg.propagation_2d, "audio.propagation_2d")?;
+    }
+    if let Some(three_d) = table.get("propagation_3d").and_then(Value::as_table) {
+        cfg.propagation_3d =
+            parse_audio_propagation(three_d, cfg.propagation_3d, "audio.propagation_3d")?;
+    }
+    Ok(cfg)
+}
+
+fn parse_audio_propagation(
+    table: &toml::map::Map<String, Value>,
+    mut cfg: AudioPropagationConfig,
+    path: &'static str,
+) -> Result<AudioPropagationConfig, ProjectError> {
+    cfg.max_bounces = parse_u32_table_field(table, "max_bounces", cfg.max_bounces, path)?;
+    cfg.rays_per_tick = parse_u32_table_field(table, "rays_per_tick", cfg.rays_per_tick, path)?;
+    cfg.max_ray_distance =
+        parse_f32_table_field(table, "max_ray_distance", cfg.max_ray_distance, path)?;
+    Ok(cfg)
+}
+
+fn parse_u32_table_field(
+    table: &toml::map::Map<String, Value>,
+    key: &str,
+    default: u32,
+    path: &'static str,
+) -> Result<u32, ProjectError> {
+    let Some(value) = table.get(key) else {
+        return Ok(default);
+    };
+    let Some(raw) = value.as_integer() else {
+        return Err(ProjectError::InvalidField(
+            path,
+            format!("{key} must be integer"),
+        ));
+    };
+    u32::try_from(raw).map_err(|_| ProjectError::InvalidField(path, format!("{key} must fit u32")))
+}
+
+fn parse_f32_table_field(
+    table: &toml::map::Map<String, Value>,
+    key: &str,
+    default: f32,
+    path: &'static str,
+) -> Result<f32, ProjectError> {
+    let Some(value) = table.get(key) else {
+        return Ok(default);
+    };
+    let Some(raw) = value
+        .as_float()
+        .or_else(|| value.as_integer().map(|v| v as f64))
+    else {
+        return Err(ProjectError::InvalidField(
+            path,
+            format!("{key} must be finite number"),
+        ));
+    };
+    if raw.is_finite() && raw >= 0.0 {
+        Ok(raw as f32)
+    } else {
+        Err(ProjectError::InvalidField(
+            path,
+            format!("{key} must be >= 0"),
+        ))
+    }
 }
 
 fn parse_bool_with_default(

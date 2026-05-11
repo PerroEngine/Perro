@@ -29,10 +29,11 @@ use perro_nodes::{
     sky_3d::{Sky3D, SkyStyle},
     spot_light_3d::SpotLight3D,
     sprite_2d::{AnimatedSprite, AnimatedSprite2D, Sprite2D},
-    AmbientLight2D, Area2D, Area3D, BallJoint3D, CollisionShape2D, CollisionShape3D,
-    DistanceJoint2D, FixedJoint2D, FixedJoint3D, HingeJoint3D, PinJoint2D, PointLight2D,
-    RayLight2D, RigidBody2D, RigidBody3D, SceneNode, SceneNodeData, Shape2D, Shape3D,
-    SpotLight2D, StaticBody2D, StaticBody3D, Triangle2DKind,
+    AmbientLight2D, Area2D, Area3D, AudioMask2D, AudioMask3D, AudioPortal2D, AudioPortal3D,
+    AudioZone2D, AudioZone3D, BallJoint3D, CollisionShape2D, CollisionShape3D, DistanceJoint2D,
+    FixedJoint2D, FixedJoint3D, HingeJoint3D, PinJoint2D, PointLight2D, RayLight2D, RigidBody2D,
+    RigidBody3D, SceneNode, SceneNodeData, Shape2D, Shape3D, SpotLight2D, StaticBody2D,
+    StaticBody3D, Triangle2DKind,
 };
 use perro_render_bridge::Material3D;
 use perro_scene::{
@@ -878,6 +879,9 @@ fn scene_node_data_from(
         "PinJoint2D" => Ok(SceneNodeData::PinJoint2D(build_pin_joint_2d(data))),
         "DistanceJoint2D" => Ok(SceneNodeData::DistanceJoint2D(build_distance_joint_2d(data))),
         "FixedJoint2D" => Ok(SceneNodeData::FixedJoint2D(build_fixed_joint_2d(data))),
+        "AudioMask2D" => Ok(SceneNodeData::AudioMask2D(build_audio_mask_2d(data))),
+        "AudioZone2D" => Ok(SceneNodeData::AudioZone2D(build_audio_zone_2d(data))),
+        "AudioPortal2D" => Ok(SceneNodeData::AudioPortal2D(build_audio_portal_2d(data))),
         "Node3D" => Ok(SceneNodeData::Node3D(build_node_3d(data))),
         "MeshInstance3D" => Ok(SceneNodeData::MeshInstance3D(build_mesh_instance_3d(data))),
         "MultiMeshInstance3D" => Ok(SceneNodeData::MultiMeshInstance3D(
@@ -892,6 +896,9 @@ fn scene_node_data_from(
         "BallJoint3D" => Ok(SceneNodeData::BallJoint3D(build_ball_joint_3d(data))),
         "HingeJoint3D" => Ok(SceneNodeData::HingeJoint3D(build_hinge_joint_3d(data))),
         "FixedJoint3D" => Ok(SceneNodeData::FixedJoint3D(build_fixed_joint_3d(data))),
+        "AudioMask3D" => Ok(SceneNodeData::AudioMask3D(build_audio_mask_3d(data))),
+        "AudioZone3D" => Ok(SceneNodeData::AudioZone3D(build_audio_zone_3d(data))),
+        "AudioPortal3D" => Ok(SceneNodeData::AudioPortal3D(build_audio_portal_3d(data))),
         "Skeleton3D" => Ok(SceneNodeData::Skeleton3D(build_skeleton_3d(data))),
         "BoneAttachment3D" => Ok(SceneNodeData::BoneAttachment3D(
             build_bone_attachment_3d(data),
@@ -936,4 +943,40 @@ fn scene_node_data_from(
         "UiTreeList" => Ok(SceneNodeData::UiTreeList(build_ui_tree_list(data))),
         other => Err(format!("unsupported scene node type `{other}`")),
     }
+}
+
+fn build_audio_mask_2d(data: &SceneDefNodeData) -> AudioMask2D {
+    let mut node = AudioMask2D::new();
+    apply_node_2d_data(&mut node.base, data);
+    node
+}
+
+fn build_audio_zone_2d(data: &SceneDefNodeData) -> AudioZone2D {
+    let mut node = AudioZone2D::new();
+    apply_node_2d_data(&mut node.base, data);
+    node
+}
+
+fn build_audio_portal_2d(data: &SceneDefNodeData) -> AudioPortal2D {
+    let mut node = AudioPortal2D::new();
+    apply_node_2d_data(&mut node.base, data);
+    node
+}
+
+fn build_audio_mask_3d(data: &SceneDefNodeData) -> AudioMask3D {
+    let mut node = AudioMask3D::new();
+    apply_node_3d_data(&mut node.base, data);
+    node
+}
+
+fn build_audio_zone_3d(data: &SceneDefNodeData) -> AudioZone3D {
+    let mut node = AudioZone3D::new();
+    apply_node_3d_data(&mut node.base, data);
+    node
+}
+
+fn build_audio_portal_3d(data: &SceneDefNodeData) -> AudioPortal3D {
+    let mut node = AudioPortal3D::new();
+    apply_node_3d_data(&mut node.base, data);
+    node
 }

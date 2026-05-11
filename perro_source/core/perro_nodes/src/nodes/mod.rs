@@ -1,8 +1,10 @@
+pub mod audio;
 pub mod node_2d;
 pub mod node_3d;
 pub mod node_registry;
 pub mod resources;
 
+pub use audio::*;
 pub use node_2d::*;
 pub use node_3d::*;
 pub use node_registry::*;

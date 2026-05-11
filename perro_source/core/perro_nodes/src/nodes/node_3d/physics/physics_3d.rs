@@ -1,4 +1,4 @@
-use crate::node_3d::Node3D;
+use crate::{audio::AudioMaterial, node_3d::Node3D};
 use perro_ids::NodeID;
 use perro_structs::Vector3;
 use std::ops::{Deref, DerefMut};
@@ -27,6 +27,8 @@ pub struct CollisionShape3D {
     pub base: Node3D,
     pub shape: Shape3D,
     pub debug: bool,
+    pub audio_interaction: bool,
+    pub audio_material: AudioMaterial,
 }
 
 impl Default for CollisionShape3D {
@@ -41,6 +43,8 @@ impl CollisionShape3D {
             base: Node3D::new(),
             shape: Shape3D::Cube { size: Vector3::ONE },
             debug: false,
+            audio_interaction: true,
+            audio_material: AudioMaterial::new(),
         }
     }
 }
@@ -69,6 +73,8 @@ pub struct StaticBody3D {
     pub friction: f32,
     pub restitution: f32,
     pub density: f32,
+    pub audio_interaction: bool,
+    pub audio_material: AudioMaterial,
 }
 
 impl Default for StaticBody3D {
@@ -88,6 +94,8 @@ impl StaticBody3D {
             friction: 0.7,
             restitution: 0.0,
             density: 1.0,
+            audio_interaction: true,
+            audio_material: AudioMaterial::new(),
         }
     }
 }
@@ -165,6 +173,8 @@ pub struct RigidBody3D {
     pub friction: f32,
     pub restitution: f32,
     pub density: f32,
+    pub audio_interaction: bool,
+    pub audio_material: AudioMaterial,
 }
 
 impl Default for RigidBody3D {
@@ -192,6 +202,8 @@ impl RigidBody3D {
             friction: 0.7,
             restitution: 0.0,
             density: 1.0,
+            audio_interaction: true,
+            audio_material: AudioMaterial::new(),
         }
     }
 }
