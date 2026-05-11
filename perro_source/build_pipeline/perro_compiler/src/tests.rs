@@ -331,6 +331,17 @@ pub struct NestedState {
 "#;
 
         let transpiled = transpile_frontend_script(source, "res://scripts/nested_state.rs");
+        assert!(transpiled.contains("fn __perro_state_ref"));
+        assert!(transpiled.contains("fn __perro_state_mut"));
+        assert!(!transpiled.contains("unsafe fn __perro_state_ref"));
+        assert!(!transpiled.contains("unsafe fn __perro_state_mut"));
+        assert!(!transpiled.contains("__perro_checked_state_ref"));
+        assert!(!transpiled.contains("__perro_checked_state_mut"));
+        assert!(!transpiled.contains("std::any::TypeId::of"));
+        assert!(transpiled.contains("let state = __perro_state_ref(state)"));
+        assert!(transpiled.contains("let state = __perro_state_mut(state)"));
+        assert!(transpiled.contains("perro_api::scripting::state_ref_unchecked::<NestedState>"));
+        assert!(transpiled.contains("perro_api::scripting::state_mut_unchecked::<NestedState>"));
         assert!(transpiled.contains("__perro_get_nested_var"));
         assert!(transpiled.contains("__perro_set_nested_var"));
         assert!(transpiled.contains("ScriptMemberID::from_string(full.as_str())"));
@@ -514,6 +525,17 @@ lifecycle!({});
             "fn set_var(&self, state: &mut dyn std::any::Any, var: ScriptMemberID, value: Variant)"
         ));
         assert!(!transpiled.contains("fn set_var_owned"));
+        assert!(transpiled.contains("fn __perro_state_ref"));
+        assert!(transpiled.contains("fn __perro_state_mut"));
+        assert!(!transpiled.contains("unsafe fn __perro_state_ref"));
+        assert!(!transpiled.contains("unsafe fn __perro_state_mut"));
+        assert!(!transpiled.contains("std::any::TypeId::of"));
+        assert!(
+            transpiled.contains("perro_api::scripting::state_ref_unchecked::<AllVariantState>")
+        );
+        assert!(
+            transpiled.contains("perro_api::scripting::state_mut_unchecked::<AllVariantState>")
+        );
         assert!(transpiled.contains("value.into_parse::<NestedCombo>()"));
         assert!(transpiled.contains("fn __perro_set_nested_var"));
         assert_generated_script_compiles(source, &transpiled);

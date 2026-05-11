@@ -1,8 +1,9 @@
 // File: perro_source\render_stack\perro_graphics\src\postprocess\mod.rs
 
-use crate::backend::StaticShaderLookup;
+use crate::backend::{StaticShaderLookup, StaticTextureLookup};
 use crate::postprocess::shaders::{build_post_shader, create_builtin_shader_module};
 use bytemuck::{Pod, Zeroable};
+use perro_graphics_assets::decode_ptex;
 use perro_io::load_asset;
 use perro_render_bridge::{Camera3DState, CameraProjectionState};
 use perro_structs::{CustomPostParam, CustomPostParamValue, PostProcessEffect};
@@ -21,6 +22,9 @@ const EFFECT_REVERSE_FILTER: u32 = 7;
 const EFFECT_BLOOM: u32 = 8;
 const EFFECT_SATURATE: u32 = 9;
 const EFFECT_BLACK_WHITE: u32 = 10;
+const EFFECT_COLOR_GRADE: u32 = 11;
+const EFFECT_LUT_2D: u32 = 12;
+const EFFECT_LUT_3D: u32 = 13;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -33,6 +37,8 @@ struct PostUniform {
     params1: [f32; 4],
     params2: [f32; 4],
     params3: [f32; 4],
+    params4: [f32; 4],
+    params5: [f32; 4],
     resolution: [f32; 2],
     inv_resolution: [f32; 2],
     near: f32,
@@ -46,6 +52,8 @@ struct EncodedEffectParams {
     params1: [f32; 4],
     params2: [f32; 4],
     params3: [f32; 4],
+    params4: [f32; 4],
+    params5: [f32; 4],
     custom_params: Vec<[f32; 4]>,
 }
 
@@ -55,6 +63,7 @@ pub struct PostProcessContext<'a> {
     pub(crate) output_view: &'a wgpu::TextureView,
     pub(crate) camera: &'a Camera3DState,
     pub(crate) static_shader_lookup: Option<StaticShaderLookup>,
+    pub(crate) static_texture_lookup: Option<StaticTextureLookup>,
 }
 
 pub struct PostProcessChainData<'a> {
@@ -74,6 +83,12 @@ pub struct PostProcessor {
     ping_b: wgpu::Texture,
     ping_b_view: wgpu::TextureView,
     sampler: wgpu::Sampler,
+    _default_lut_2d_texture: wgpu::Texture,
+    default_lut_2d_view: wgpu::TextureView,
+    _default_lut_3d_texture: wgpu::Texture,
+    default_lut_3d_view: wgpu::TextureView,
+    lut_2d_textures: HashMap<String, CachedPostTexture>,
+    lut_3d_textures: HashMap<String, CachedPostTexture>,
     bgl: wgpu::BindGroupLayout,
     builtin_pipeline: wgpu::RenderPipeline,
     custom_pipelines: HashMap<String, wgpu::RenderPipeline>,
@@ -93,6 +108,13 @@ struct PostBindGroupDesc<'a> {
     uniform_buffer: &'a wgpu::Buffer,
     uniform_size_bytes: u64,
     params_buffer: &'a wgpu::Buffer,
+    lut_2d_view: &'a wgpu::TextureView,
+    lut_3d_view: &'a wgpu::TextureView,
+}
+
+struct CachedPostTexture {
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
 }
 
 #[inline]
@@ -128,6 +150,14 @@ fn create_post_bind_group(device: &wgpu::Device, desc: PostBindGroupDesc<'_>) ->
                 binding: 4,
                 resource: desc.params_buffer.as_entire_binding(),
             },
+            wgpu::BindGroupEntry {
+                binding: 5,
+                resource: wgpu::BindingResource::TextureView(desc.lut_2d_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 6,
+                resource: wgpu::BindingResource::TextureView(desc.lut_3d_view),
+            },
         ],
     })
 }
@@ -135,6 +165,7 @@ fn create_post_bind_group(device: &wgpu::Device, desc: PostBindGroupDesc<'_>) ->
 impl PostProcessor {
     pub fn new(
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         format: wgpu::TextureFormat,
         width: u32,
         height: u32,
@@ -155,6 +186,8 @@ impl PostProcessor {
             mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
+        let (default_lut_2d_texture, default_lut_2d_view) = create_default_lut_2d(device, queue);
+        let (default_lut_3d_texture, default_lut_3d_view) = create_default_lut_3d(device, queue);
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_post_bgl"),
             entries: &[
@@ -207,6 +240,26 @@ impl PostProcessor {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D3,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
         let uniform_size_bytes = std::mem::size_of::<PostUniform>() as u64;
@@ -247,6 +300,12 @@ impl PostProcessor {
             ping_b,
             ping_b_view,
             sampler,
+            _default_lut_2d_texture: default_lut_2d_texture,
+            default_lut_2d_view,
+            _default_lut_3d_texture: default_lut_3d_texture,
+            default_lut_3d_view,
+            lut_2d_textures: HashMap::new(),
+            lut_3d_textures: HashMap::new(),
             bgl,
             builtin_pipeline,
             custom_pipelines: HashMap::new(),
@@ -307,6 +366,7 @@ impl PostProcessor {
             output_view,
             camera,
             static_shader_lookup,
+            static_texture_lookup,
         } = ctx;
 
         let PostProcessChainData {
@@ -341,14 +401,16 @@ impl PostProcessor {
         self.ensure_params_capacity(device, max_params);
         self.ensure_uniform_capacity(device, effects.len().max(1));
 
-        let mut current_input = *input_view;
         let mut input_kind = 0u8; // 0=external input_view, 1=ping_a, 2=ping_b
-        let mut bind_group_input: Option<wgpu::BindGroup> = None;
-        let mut bind_group_ping_a: Option<wgpu::BindGroup> = None;
-        let mut bind_group_ping_b: Option<wgpu::BindGroup> = None;
         let mut use_ping_a = true;
         for (index, effect) in effects.iter().enumerate() {
             let last = index + 1 == effects.len();
+            self.ensure_lut_texture(device, queue, effect, *static_texture_lookup);
+            let current_input = match input_kind {
+                0 => *input_view,
+                1 => &self.ping_a_view,
+                _ => &self.ping_b_view,
+            };
 
             // Use the new struct for encoded params
             let encoded_params = encode_effect_params(effect);
@@ -369,6 +431,8 @@ impl PostProcessor {
                 params1: encoded_params.params1,
                 params2: encoded_params.params2,
                 params3: encoded_params.params3,
+                params4: encoded_params.params4,
+                params5: encoded_params.params5,
                 resolution: [width, height],
                 inv_resolution: [inv_width, inv_height],
                 near,
@@ -399,50 +463,21 @@ impl PostProcessor {
                 _ => &self.builtin_pipeline,
             };
 
-            let bind_group = match input_kind {
-                0 => bind_group_input.get_or_insert_with(|| {
-                    create_post_bind_group(
-                        device,
-                        PostBindGroupDesc {
-                            bgl: &self.bgl,
-                            input_view: current_input,
-                            sampler: &self.sampler,
-                            depth_view,
-                            uniform_buffer: &self.uniform_buffer,
-                            uniform_size_bytes: std::mem::size_of::<PostUniform>() as u64,
-                            params_buffer: &self.params_buffer,
-                        },
-                    )
-                }),
-                1 => bind_group_ping_a.get_or_insert_with(|| {
-                    create_post_bind_group(
-                        device,
-                        PostBindGroupDesc {
-                            bgl: &self.bgl,
-                            input_view: &self.ping_a_view,
-                            sampler: &self.sampler,
-                            depth_view,
-                            uniform_buffer: &self.uniform_buffer,
-                            uniform_size_bytes: std::mem::size_of::<PostUniform>() as u64,
-                            params_buffer: &self.params_buffer,
-                        },
-                    )
-                }),
-                _ => bind_group_ping_b.get_or_insert_with(|| {
-                    create_post_bind_group(
-                        device,
-                        PostBindGroupDesc {
-                            bgl: &self.bgl,
-                            input_view: &self.ping_b_view,
-                            sampler: &self.sampler,
-                            depth_view,
-                            uniform_buffer: &self.uniform_buffer,
-                            uniform_size_bytes: std::mem::size_of::<PostUniform>() as u64,
-                            params_buffer: &self.params_buffer,
-                        },
-                    )
-                }),
-            };
+            let (lut_2d_view, lut_3d_view) = self.lut_views(effect);
+            let bind_group = create_post_bind_group(
+                device,
+                PostBindGroupDesc {
+                    bgl: &self.bgl,
+                    input_view: current_input,
+                    sampler: &self.sampler,
+                    depth_view,
+                    uniform_buffer: &self.uniform_buffer,
+                    uniform_size_bytes: std::mem::size_of::<PostUniform>() as u64,
+                    params_buffer: &self.params_buffer,
+                    lut_2d_view,
+                    lut_3d_view,
+                },
+            );
 
             {
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -462,12 +497,17 @@ impl PostProcessor {
                     multiview_mask: None,
                 });
                 pass.set_pipeline(pipeline);
-                pass.set_bind_group(0, &*bind_group, &[uniform_dynamic_offset]);
+                pass.set_bind_group(0, &bind_group, &[uniform_dynamic_offset]);
                 pass.draw(0..3, 0..1);
             }
 
-            current_input = target_view;
-            input_kind = if use_ping_a { 1 } else { 2 };
+            input_kind = if last {
+                input_kind
+            } else if use_ping_a {
+                1
+            } else {
+                2
+            };
             use_ping_a = !use_ping_a;
         }
     }
@@ -508,6 +548,79 @@ impl PostProcessor {
         self.custom_pipelines
             .insert(shader_path.to_string(), pipeline);
         self.custom_pipelines.get(shader_path)
+    }
+
+    fn ensure_lut_texture(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        effect: &PostProcessEffect,
+        static_texture_lookup: Option<StaticTextureLookup>,
+    ) {
+        match effect {
+            PostProcessEffect::Lut2D {
+                texture_path, size, ..
+            } => {
+                let key = lut_key(texture_path.as_ref(), *size);
+                if self.lut_2d_textures.contains_key(&key) {
+                    return;
+                }
+                let Some((rgba, width, height)) =
+                    load_post_texture_rgba(texture_path.as_ref(), static_texture_lookup)
+                else {
+                    return;
+                };
+                let texture = create_post_lut_2d(device, queue, rgba, width, height);
+                self.lut_2d_textures.insert(key, texture);
+            }
+            PostProcessEffect::Lut3D {
+                texture_path, size, ..
+            } => {
+                let key = lut_key(texture_path.as_ref(), *size);
+                if self.lut_3d_textures.contains_key(&key) {
+                    return;
+                }
+                let Some((rgba, width, height)) =
+                    load_post_texture_rgba(texture_path.as_ref(), static_texture_lookup)
+                else {
+                    return;
+                };
+                let Some((rgba_3d, size)) = flattened_lut_to_3d(rgba, width, height, *size) else {
+                    return;
+                };
+                let texture = create_post_lut_3d(device, queue, rgba_3d, size);
+                self.lut_3d_textures.insert(key, texture);
+            }
+            _ => {}
+        }
+    }
+
+    fn lut_views(&self, effect: &PostProcessEffect) -> (&wgpu::TextureView, &wgpu::TextureView) {
+        match effect {
+            PostProcessEffect::Lut2D {
+                texture_path, size, ..
+            } => {
+                let key = lut_key(texture_path.as_ref(), *size);
+                let view = self
+                    .lut_2d_textures
+                    .get(&key)
+                    .map(|texture| &texture.view)
+                    .unwrap_or(&self.default_lut_2d_view);
+                (view, &self.default_lut_3d_view)
+            }
+            PostProcessEffect::Lut3D {
+                texture_path, size, ..
+            } => {
+                let key = lut_key(texture_path.as_ref(), *size);
+                let view = self
+                    .lut_3d_textures
+                    .get(&key)
+                    .map(|texture| &texture.view)
+                    .unwrap_or(&self.default_lut_3d_view);
+                (&self.default_lut_2d_view, view)
+            }
+            _ => (&self.default_lut_2d_view, &self.default_lut_3d_view),
+        }
     }
 
     fn ensure_params_capacity(&mut self, device: &wgpu::Device, needed: usize) {
@@ -617,6 +730,230 @@ fn create_color_target(
     (texture, view)
 }
 
+fn create_default_lut_2d(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) -> (wgpu::Texture, wgpu::TextureView) {
+    let mut rgba = Vec::with_capacity(2 * 2 * 2 * 4);
+    for g in 0..2u8 {
+        for b in 0..2u8 {
+            for r in 0..2u8 {
+                rgba.extend_from_slice(&[r * 255, g * 255, b * 255, 255]);
+            }
+        }
+    }
+    let cached = create_post_lut_2d(device, queue, rgba, 4, 2);
+    (cached.texture, cached.view)
+}
+
+fn create_default_lut_3d(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) -> (wgpu::Texture, wgpu::TextureView) {
+    let mut rgba = Vec::with_capacity(2 * 2 * 2 * 4);
+    for b in 0..2u8 {
+        for g in 0..2u8 {
+            for r in 0..2u8 {
+                rgba.extend_from_slice(&[r * 255, g * 255, b * 255, 255]);
+            }
+        }
+    }
+    let cached = create_post_lut_3d(device, queue, rgba, 2);
+    (cached.texture, cached.view)
+}
+
+fn create_post_lut_2d(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    rgba: Vec<u8>,
+    width: u32,
+    height: u32,
+) -> CachedPostTexture {
+    let width = width.max(1);
+    let height = height.max(1);
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("perro_post_lut_2d"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        &rgba,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(4 * width),
+            rows_per_image: Some(height),
+        },
+        wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+    );
+    let view = texture.create_view(&wgpu::TextureViewDescriptor {
+        dimension: Some(wgpu::TextureViewDimension::D2),
+        ..Default::default()
+    });
+    CachedPostTexture { texture, view }
+}
+
+fn create_post_lut_3d(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    rgba: Vec<u8>,
+    size: u32,
+) -> CachedPostTexture {
+    let size = size.max(1);
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("perro_post_lut_3d"),
+        size: wgpu::Extent3d {
+            width: size,
+            height: size,
+            depth_or_array_layers: size,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D3,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        &rgba,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(4 * size),
+            rows_per_image: Some(size),
+        },
+        wgpu::Extent3d {
+            width: size,
+            height: size,
+            depth_or_array_layers: size,
+        },
+    );
+    let view = texture.create_view(&wgpu::TextureViewDescriptor {
+        dimension: Some(wgpu::TextureViewDimension::D3),
+        ..Default::default()
+    });
+    CachedPostTexture { texture, view }
+}
+
+fn load_post_texture_rgba(
+    source: &str,
+    static_texture_lookup: Option<StaticTextureLookup>,
+) -> Option<(Vec<u8>, u32, u32)> {
+    if let Some(lookup) = static_texture_lookup {
+        let source_hash = perro_ids::parse_hashed_source_uri(source)
+            .unwrap_or_else(|| perro_ids::string_to_u64(source));
+        let bytes = lookup(source_hash);
+        if !bytes.is_empty() {
+            if let Some(decoded) = decode_ptex(bytes) {
+                return Some(decoded);
+            }
+            let image = image::load_from_memory(bytes).ok()?;
+            let rgba = image.to_rgba8();
+            let (width, height) = rgba.dimensions();
+            return Some((rgba.into_raw(), width.max(1), height.max(1)));
+        }
+    }
+    let bytes = load_asset(source).ok()?;
+    let image = image::load_from_memory(&bytes).ok()?;
+    let rgba = image.to_rgba8();
+    let (width, height) = rgba.dimensions();
+    Some((rgba.into_raw(), width.max(1), height.max(1)))
+}
+
+fn flattened_lut_to_3d(
+    rgba: Vec<u8>,
+    width: u32,
+    height: u32,
+    requested_size: u32,
+) -> Option<(Vec<u8>, u32)> {
+    let size = if requested_size > 0 {
+        requested_size
+    } else if width == height.saturating_mul(height) {
+        height
+    } else if height == width.saturating_mul(width) {
+        width
+    } else {
+        return None;
+    };
+    if size == 0 {
+        return None;
+    }
+    let expected = (width as usize)
+        .checked_mul(height as usize)?
+        .checked_mul(4)?;
+    if rgba.len() < expected {
+        return None;
+    }
+    let voxel_count = (size as usize)
+        .checked_mul(size as usize)?
+        .checked_mul(size as usize)?;
+    let mut out = vec![0u8; voxel_count.checked_mul(4)?];
+    if width == size.saturating_mul(size) && height == size {
+        for z in 0..size {
+            for y in 0..size {
+                for x in 0..size {
+                    copy_lut_texel(&rgba, &mut out, width, x + z * size, y, x, y, z, size);
+                }
+            }
+        }
+        Some((out, size))
+    } else if width == size && height == size.saturating_mul(size) {
+        for z in 0..size {
+            for y in 0..size {
+                for x in 0..size {
+                    copy_lut_texel(&rgba, &mut out, width, x, y + z * size, x, y, z, size);
+                }
+            }
+        }
+        Some((out, size))
+    } else {
+        None
+    }
+}
+
+fn copy_lut_texel(
+    src: &[u8],
+    dst: &mut [u8],
+    src_width: u32,
+    src_x: u32,
+    src_y: u32,
+    dst_x: u32,
+    dst_y: u32,
+    dst_z: u32,
+    size: u32,
+) {
+    let src_index = ((src_y * src_width + src_x) * 4) as usize;
+    let dst_index = (((dst_z * size + dst_y) * size + dst_x) * 4) as usize;
+    dst[dst_index..dst_index + 4].copy_from_slice(&src[src_index..src_index + 4]);
+}
+
+fn lut_key(path: &str, size: u32) -> String {
+    format!("{path}#{size}")
+}
+
 fn projection_uniform_params(camera: &Camera3DState) -> (u32, f32, f32) {
     match camera.projection {
         CameraProjectionState::Perspective { near, far, .. } => (0, near, far),
@@ -634,6 +971,8 @@ fn encode_effect_params(effect: &PostProcessEffect) -> EncodedEffectParams {
             params1: [0.0; 4],
             params2: [0.0; 4],
             params3: [0.0; 4],
+            params4: [0.0; 4],
+            params5: [0.0; 4],
             custom_params: Vec::new(),
         },
         PostProcessEffect::Pixelate { size } => EncodedEffectParams {
@@ -642,6 +981,8 @@ fn encode_effect_params(effect: &PostProcessEffect) -> EncodedEffectParams {
             params1: [0.0; 4],
             params2: [0.0; 4],
             params3: [0.0; 4],
+            params4: [0.0; 4],
+            params5: [0.0; 4],
             custom_params: Vec::new(),
         },
         PostProcessEffect::Warp { waves, strength } => EncodedEffectParams {
@@ -650,6 +991,8 @@ fn encode_effect_params(effect: &PostProcessEffect) -> EncodedEffectParams {
             params1: [0.0; 4],
             params2: [0.0; 4],
             params3: [0.0; 4],
+            params4: [0.0; 4],
+            params5: [0.0; 4],
             custom_params: Vec::new(),
         },
         PostProcessEffect::Vignette {
@@ -662,6 +1005,8 @@ fn encode_effect_params(effect: &PostProcessEffect) -> EncodedEffectParams {
             params1: [0.0; 4],
             params2: [0.0; 4],
             params3: [0.0; 4],
+            params4: [0.0; 4],
+            params5: [0.0; 4],
             custom_params: Vec::new(),
         },
         PostProcessEffect::Crt {
@@ -675,6 +1020,8 @@ fn encode_effect_params(effect: &PostProcessEffect) -> EncodedEffectParams {
             params1: [0.0; 4],
             params2: [0.0; 4],
             params3: [0.0; 4],
+            params4: [0.0; 4],
+            params5: [0.0; 4],
             custom_params: Vec::new(),
         },
         PostProcessEffect::ColorFilter { color, strength } => EncodedEffectParams {
@@ -683,6 +1030,8 @@ fn encode_effect_params(effect: &PostProcessEffect) -> EncodedEffectParams {
             params1: [0.0; 4],
             params2: [0.0; 4],
             params3: [0.0; 4],
+            params4: [0.0; 4],
+            params5: [0.0; 4],
             custom_params: Vec::new(),
         },
         PostProcessEffect::ReverseFilter {
@@ -695,6 +1044,8 @@ fn encode_effect_params(effect: &PostProcessEffect) -> EncodedEffectParams {
             params1: [*softness, 0.0, 0.0, 0.0],
             params2: [0.0; 4],
             params3: [0.0; 4],
+            params4: [0.0; 4],
+            params5: [0.0; 4],
             custom_params: Vec::new(),
         },
         PostProcessEffect::Bloom {
@@ -707,6 +1058,8 @@ fn encode_effect_params(effect: &PostProcessEffect) -> EncodedEffectParams {
             params1: [0.0; 4],
             params2: [0.0; 4],
             params3: [0.0; 4],
+            params4: [0.0; 4],
+            params5: [0.0; 4],
             custom_params: Vec::new(),
         },
         PostProcessEffect::Saturate { amount } => EncodedEffectParams {
@@ -715,6 +1068,8 @@ fn encode_effect_params(effect: &PostProcessEffect) -> EncodedEffectParams {
             params1: [0.0; 4],
             params2: [0.0; 4],
             params3: [0.0; 4],
+            params4: [0.0; 4],
+            params5: [0.0; 4],
             custom_params: Vec::new(),
         },
         PostProcessEffect::BlackWhite { amount } => EncodedEffectParams {
@@ -723,6 +1078,51 @@ fn encode_effect_params(effect: &PostProcessEffect) -> EncodedEffectParams {
             params1: [0.0; 4],
             params2: [0.0; 4],
             params3: [0.0; 4],
+            params4: [0.0; 4],
+            params5: [0.0; 4],
+            custom_params: Vec::new(),
+        },
+        PostProcessEffect::ColorGrade {
+            exposure,
+            contrast,
+            brightness,
+            saturation,
+            gamma,
+            temperature,
+            tint,
+            hue_shift,
+            vibrance,
+            lift,
+            gain,
+            offset,
+        } => EncodedEffectParams {
+            effect_type: EFFECT_COLOR_GRADE,
+            params0: [*exposure, *contrast, *brightness, *saturation],
+            params1: [*gamma, *temperature, *tint, *hue_shift],
+            params2: [lift[0], lift[1], lift[2], *vibrance],
+            params3: [gain[0], gain[1], gain[2], 0.0],
+            params4: [offset[0], offset[1], offset[2], 0.0],
+            params5: [0.0; 4],
+            custom_params: Vec::new(),
+        },
+        PostProcessEffect::Lut2D { size, strength, .. } => EncodedEffectParams {
+            effect_type: EFFECT_LUT_2D,
+            params0: [*strength, *size as f32, 0.0, 0.0],
+            params1: [0.0; 4],
+            params2: [0.0; 4],
+            params3: [0.0; 4],
+            params4: [0.0; 4],
+            params5: [0.0; 4],
+            custom_params: Vec::new(),
+        },
+        PostProcessEffect::Lut3D { size, strength, .. } => EncodedEffectParams {
+            effect_type: EFFECT_LUT_3D,
+            params0: [*strength, *size as f32, 0.0, 0.0],
+            params1: [0.0; 4],
+            params2: [0.0; 4],
+            params3: [0.0; 4],
+            params4: [0.0; 4],
+            params5: [0.0; 4],
             custom_params: Vec::new(),
         },
         PostProcessEffect::Custom { params, .. } => EncodedEffectParams {
@@ -731,6 +1131,8 @@ fn encode_effect_params(effect: &PostProcessEffect) -> EncodedEffectParams {
             params1: [0.0; 4],
             params2: [0.0; 4],
             params3: [0.0; 4],
+            params4: [0.0; 4],
+            params5: [0.0; 4],
             custom_params: params.iter().map(encode_custom_param_value).collect(),
         },
     }
@@ -744,5 +1146,127 @@ fn encode_custom_param_value(value: &CustomPostParam) -> [f32; 4] {
         CustomPostParamValue::Vec2(v) => [v[0], v[1], 0.0, 0.0],
         CustomPostParamValue::Vec3(v) => [v[0], v[1], v[2], 0.0],
         CustomPostParamValue::Vec4(v) => *v,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn flattened_lut_to_3d_reads_horizontal_tiles() {
+        let size = 2;
+        let width = size * size;
+        let height = size;
+        let rgba = lut_fixture_horizontal(size);
+
+        let (converted, converted_size) =
+            flattened_lut_to_3d(rgba, width, height, size).expect("convert LUT");
+
+        assert_eq!(converted_size, size);
+        for z in 0..size {
+            for y in 0..size {
+                for x in 0..size {
+                    assert_eq!(
+                        lut_texel(&converted, size, x, y, z),
+                        [x as u8, y as u8, z as u8, 255]
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn flattened_lut_to_3d_reads_vertical_tiles_and_infers_size() {
+        let size = 3;
+        let width = size;
+        let height = size * size;
+        let rgba = lut_fixture_vertical(size);
+
+        let (converted, converted_size) =
+            flattened_lut_to_3d(rgba, width, height, 0).expect("convert LUT");
+
+        assert_eq!(converted_size, size);
+        assert_eq!(lut_texel(&converted, size, 0, 0, 0), [0, 0, 0, 255]);
+        assert_eq!(lut_texel(&converted, size, 2, 1, 2), [2, 1, 2, 255]);
+    }
+
+    #[test]
+    fn flattened_lut_to_3d_rejects_bad_layout() {
+        let rgba = vec![0u8; 5 * 5 * 4];
+        assert!(flattened_lut_to_3d(rgba, 5, 5, 0).is_none());
+    }
+
+    #[test]
+    fn lut_effect_params_keep_size_and_strength() {
+        let encoded = encode_effect_params(&PostProcessEffect::Lut2D {
+            texture_path: "res://luts/test.png".into(),
+            size: 32,
+            strength: 0.75,
+        });
+
+        assert_eq!(encoded.effect_type, EFFECT_LUT_2D);
+        assert_eq!(encoded.params0, [0.75, 32.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn color_grade_params_pack_all_controls() {
+        let encoded = encode_effect_params(&PostProcessEffect::ColorGrade {
+            exposure: 0.1,
+            contrast: 1.2,
+            brightness: -0.1,
+            saturation: 1.3,
+            gamma: 0.9,
+            temperature: 0.2,
+            tint: -0.2,
+            hue_shift: 0.5,
+            vibrance: 0.4,
+            lift: [0.01, 0.02, 0.03],
+            gain: [1.1, 1.2, 1.3],
+            offset: [-0.01, -0.02, -0.03],
+        });
+
+        assert_eq!(encoded.effect_type, EFFECT_COLOR_GRADE);
+        assert_eq!(encoded.params0, [0.1, 1.2, -0.1, 1.3]);
+        assert_eq!(encoded.params1, [0.9, 0.2, -0.2, 0.5]);
+        assert_eq!(encoded.params2, [0.01, 0.02, 0.03, 0.4]);
+        assert_eq!(encoded.params3, [1.1, 1.2, 1.3, 0.0]);
+        assert_eq!(encoded.params4, [-0.01, -0.02, -0.03, 0.0]);
+    }
+
+    fn lut_fixture_horizontal(size: u32) -> Vec<u8> {
+        let mut rgba = vec![0u8; (size * size * size * 4) as usize];
+        for z in 0..size {
+            for y in 0..size {
+                for x in 0..size {
+                    let index = ((y * size * size + z * size + x) * 4) as usize;
+                    rgba[index..index + 4].copy_from_slice(&[x as u8, y as u8, z as u8, 255]);
+                }
+            }
+        }
+        rgba
+    }
+
+    fn lut_fixture_vertical(size: u32) -> Vec<u8> {
+        let mut rgba = vec![0u8; (size * size * size * 4) as usize];
+        for z in 0..size {
+            for y in 0..size {
+                for x in 0..size {
+                    let index = (((z * size + y) * size + x) * 4) as usize;
+                    rgba[index..index + 4].copy_from_slice(&[x as u8, y as u8, z as u8, 255]);
+                }
+            }
+        }
+        rgba
+    }
+
+    fn lut_texel(rgba: &[u8], size: u32, x: u32, y: u32, z: u32) -> [u8; 4] {
+        let index = (((z * size + y) * size + x) * 4) as usize;
+        [
+            rgba[index],
+            rgba[index + 1],
+            rgba[index + 2],
+            rgba[index + 3],
+        ]
     }
 }

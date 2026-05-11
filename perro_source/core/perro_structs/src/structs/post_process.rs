@@ -44,6 +44,30 @@ pub enum PostProcessEffect {
     BlackWhite {
         amount: f32,
     },
+    ColorGrade {
+        exposure: f32,
+        contrast: f32,
+        brightness: f32,
+        saturation: f32,
+        gamma: f32,
+        temperature: f32,
+        tint: f32,
+        hue_shift: f32,
+        vibrance: f32,
+        lift: [f32; 3],
+        gain: [f32; 3],
+        offset: [f32; 3],
+    },
+    Lut2D {
+        texture_path: Cow<'static, str>,
+        size: u32,
+        strength: f32,
+    },
+    Lut3D {
+        texture_path: Cow<'static, str>,
+        size: u32,
+        strength: f32,
+    },
     Custom {
         shader_path: Cow<'static, str>,
         params: Vec<CustomPostParam>,

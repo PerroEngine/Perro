@@ -1,5 +1,5 @@
 use perro_ids::NodeID;
-use perro_scripting::ScriptBehavior;
+use perro_scripting::{ScriptBehavior, state_mut_unchecked, state_ref_unchecked};
 use std::any::{Any, TypeId};
 use std::sync::Arc;
 
@@ -247,20 +247,18 @@ impl ScriptCollection {
         self.schedule_epoch
     }
 
+    #[inline(always)]
     pub(crate) fn with_state<T: 'static, V, F>(&self, id: NodeID, f: F) -> Option<V>
     where
         F: FnOnce(&T) -> V,
     {
         let i = self.instance_index_for(id)?;
         let instance = self.instances.get(i)?;
-        if instance.state_type != TypeId::of::<T>() {
-            return None;
-        }
-
-        let state = unsafe { &*(instance.state.as_ref() as *const dyn Any as *const T) };
+        let state = checked_state_ref::<T>(instance.state_type, instance.state.as_ref())?;
         Some(f(state))
     }
 
+    #[inline(always)]
     pub(crate) fn with_state_scheduled<T: 'static, V, F>(
         &self,
         instance_index: usize,
@@ -274,28 +272,22 @@ impl ScriptCollection {
             return None;
         }
         let instance = self.instances.get(instance_index)?;
-        if instance.state_type != TypeId::of::<T>() {
-            return None;
-        }
-
-        let state = unsafe { &*(instance.state.as_ref() as *const dyn Any as *const T) };
+        let state = checked_state_ref::<T>(instance.state_type, instance.state.as_ref())?;
         Some(f(state))
     }
 
+    #[inline(always)]
     pub(crate) fn with_state_mut<T: 'static, V, F>(&mut self, id: NodeID, f: F) -> Option<V>
     where
         F: FnOnce(&mut T) -> V,
     {
         let i = self.instance_index_for(id)?;
         let instance = self.instances.get_mut(i)?;
-        if instance.state_type != TypeId::of::<T>() {
-            return None;
-        }
-
-        let state = unsafe { &mut *(instance.state.as_mut() as *mut dyn Any as *mut T) };
+        let state = checked_state_mut::<T>(instance.state_type, instance.state.as_mut())?;
         Some(f(state))
     }
 
+    #[inline(always)]
     pub(crate) fn with_state_mut_scheduled<T: 'static, V, F>(
         &mut self,
         instance_index: usize,
@@ -309,11 +301,7 @@ impl ScriptCollection {
             return None;
         }
         let instance = self.instances.get_mut(instance_index)?;
-        if instance.state_type != TypeId::of::<T>() {
-            return None;
-        }
-
-        let state = unsafe { &mut *(instance.state.as_mut() as *mut dyn Any as *mut T) };
+        let state = checked_state_mut::<T>(instance.state_type, instance.state.as_mut())?;
         Some(f(state))
     }
 
@@ -437,6 +425,109 @@ impl ScriptCollection {
     #[inline]
     fn bump_schedule_epoch(&mut self) {
         self.schedule_epoch = self.schedule_epoch.wrapping_add(1);
+    }
+}
+
+#[inline(always)]
+fn checked_state_ref<T: 'static>(state_type: TypeId, state: &dyn Any) -> Option<&T> {
+    if state_type != TypeId::of::<T>() {
+        return None;
+    }
+    // SAFETY: state_type comes from this ScriptInstance state at insert time and matches T here.
+    Some(unsafe { state_ref_unchecked::<T>(state) })
+}
+
+#[inline(always)]
+fn checked_state_mut<T: 'static>(state_type: TypeId, state: &mut dyn Any) -> Option<&mut T> {
+    if state_type != TypeId::of::<T>() {
+        return None;
+    }
+    // SAFETY: state_type comes from this ScriptInstance state at insert time and matches T here.
+    Some(unsafe { state_mut_unchecked::<T>(state) })
+}
+
+#[cfg(test)]
+mod unsafe_state_cast_tests {
+    use super::*;
+
+    #[derive(Debug, PartialEq)]
+    struct TestState {
+        value: u64,
+        text: &'static str,
+    }
+
+    #[derive(Debug, PartialEq)]
+    struct OtherState {
+        value: u64,
+    }
+
+    #[test]
+    fn checked_state_ref_matches_safe_downcast_ref() {
+        let state: Box<dyn Any> = Box::new(TestState {
+            value: 42,
+            text: "perro",
+        });
+        let state_type = state.as_ref().type_id();
+
+        let safe = state.as_ref().downcast_ref::<TestState>();
+        let fast = checked_state_ref::<TestState>(state_type, state.as_ref());
+
+        assert_eq!(fast, safe);
+        assert_eq!(
+            fast.map(|state| state as *const TestState),
+            safe.map(|state| state as *const TestState)
+        );
+    }
+
+    #[test]
+    fn checked_state_ref_miss_matches_safe_downcast_ref() {
+        let state: Box<dyn Any> = Box::new(OtherState { value: 7 });
+        let state_type = state.as_ref().type_id();
+
+        let safe = state.as_ref().downcast_ref::<TestState>();
+        let fast = checked_state_ref::<TestState>(state_type, state.as_ref());
+
+        assert_eq!(fast, safe);
+    }
+
+    #[test]
+    fn checked_state_mut_matches_safe_downcast_mut() {
+        let mut safe_state: Box<dyn Any> = Box::new(TestState {
+            value: 42,
+            text: "perro",
+        });
+        let mut fast_state: Box<dyn Any> = Box::new(TestState {
+            value: 42,
+            text: "perro",
+        });
+        let safe_type = safe_state.as_ref().type_id();
+        let fast_type = fast_state.as_ref().type_id();
+
+        let safe = safe_state.as_mut().downcast_mut::<TestState>();
+        let fast = checked_state_mut::<TestState>(fast_type, fast_state.as_mut());
+
+        assert_eq!(fast.as_deref(), safe.as_deref());
+        assert_eq!(safe_type, fast_type);
+
+        safe.unwrap().value += 1;
+        fast.unwrap().value += 1;
+
+        assert_eq!(
+            fast_state.as_ref().downcast_ref::<TestState>(),
+            safe_state.as_ref().downcast_ref::<TestState>()
+        );
+    }
+
+    #[test]
+    fn checked_state_mut_miss_matches_safe_downcast_mut() {
+        let mut safe_state: Box<dyn Any> = Box::new(OtherState { value: 7 });
+        let mut fast_state: Box<dyn Any> = Box::new(OtherState { value: 7 });
+        let state_type = fast_state.as_ref().type_id();
+
+        let safe = safe_state.as_mut().downcast_mut::<TestState>().is_none();
+        let fast = checked_state_mut::<TestState>(state_type, fast_state.as_mut()).is_none();
+
+        assert_eq!(fast, safe);
     }
 }
 

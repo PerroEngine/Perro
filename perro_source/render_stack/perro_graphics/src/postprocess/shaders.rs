@@ -16,6 +16,9 @@ const EFFECT_SATURATE_WGSL: &str =
     perro_macros::include_str_stripped!("shaders/effects/saturate.wgsl");
 const EFFECT_BLACK_WHITE_WGSL: &str =
     perro_macros::include_str_stripped!("shaders/effects/black_white.wgsl");
+const EFFECT_COLOR_GRADE_WGSL: &str =
+    perro_macros::include_str_stripped!("shaders/effects/color_grade.wgsl");
+const EFFECT_LUT_WGSL: &str = perro_macros::include_str_stripped!("shaders/effects/lut.wgsl");
 
 pub fn create_builtin_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
     let mut wgsl = String::new();
@@ -30,6 +33,8 @@ pub fn create_builtin_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule
     wgsl.push_str(EFFECT_BLOOM_WGSL);
     wgsl.push_str(EFFECT_SATURATE_WGSL);
     wgsl.push_str(EFFECT_BLACK_WHITE_WGSL);
+    wgsl.push_str(EFFECT_COLOR_GRADE_WGSL);
+    wgsl.push_str(EFFECT_LUT_WGSL);
     wgsl.push_str(BUILTIN_POST_BODY_WGSL);
     device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("perro_post_builtin"),
@@ -54,6 +59,8 @@ struct PostUniform {
     params1: vec4<f32>,
     params2: vec4<f32>,
     params3: vec4<f32>,
+    params4: vec4<f32>,
+    params5: vec4<f32>,
     resolution: vec2<f32>,
     inv_resolution: vec2<f32>,
     near: f32,
@@ -66,6 +73,8 @@ struct PostUniform {
 @group(0) @binding(2) var depth_tex: texture_depth_2d;
 @group(0) @binding(3) var<uniform> post: PostUniform;
 @group(0) @binding(4) var<storage, read> custom_params: array<vec4<f32>>;
+@group(0) @binding(5) var lut_2d_tex: texture_2d<f32>;
+@group(0) @binding(6) var lut_3d_tex: texture_3d<f32>;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,

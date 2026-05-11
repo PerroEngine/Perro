@@ -304,7 +304,7 @@ impl Gpu {
         let point_particles_3d = GpuPointParticles3D::new(&device, render_format, sample_count);
         let msaa_color =
             create_msaa_color_target(&device, render_format, width, height, sample_count);
-        let post = PostProcessor::new(&device, render_format, width, height);
+        let post = PostProcessor::new(&device, &queue, render_format, width, height);
         let accessibility =
             VisualAccessibilityProcessor::new(&device, render_format, width, height);
         let present = PresentProcessor::new(&device, surface_format);
@@ -791,6 +791,7 @@ impl Gpu {
                 output_view,
                 camera: &camera_3d,
                 static_shader_lookup,
+                static_texture_lookup,
             };
             let post_chain_data = PostProcessChainData {
                 input_view,

@@ -72,6 +72,20 @@ fn post_effect_from(
     let mut threshold: Option<f32> = None;
     let mut amount: Option<f32> = None;
     let mut shader_path: Option<String> = None;
+    let mut texture_path: Option<String> = None;
+    let mut lut_size: Option<u32> = None;
+    let mut exposure: Option<f32> = None;
+    let mut contrast: Option<f32> = None;
+    let mut brightness: Option<f32> = None;
+    let mut saturation: Option<f32> = None;
+    let mut gamma: Option<f32> = None;
+    let mut temperature: Option<f32> = None;
+    let mut tint: Option<f32> = None;
+    let mut hue_shift: Option<f32> = None;
+    let mut vibrance: Option<f32> = None;
+    let mut lift: Option<[f32; 3]> = None;
+    let mut gain: Option<[f32; 3]> = None;
+    let mut offset: Option<[f32; 3]> = None;
     let mut params: Option<Vec<CustomPostParam>> = None;
 
     for (k, v) in entries.as_ref() {
@@ -98,18 +112,54 @@ fn post_effect_from(
             "curvature" => curvature = as_f32(v),
             "chromatic" | "chromatic_aberration" => chromatic = as_f32(v),
             "vignette" => vignette = as_f32(v),
-            "color" | "tint" => {
+            "color" | "tint_color" => {
                 if let Some(c) = as_vec3(v) {
                     color = Some([c.x, c.y, c.z]);
                 }
             }
             "threshold" => threshold = as_f32(v),
             "amount" => amount = as_f32(v),
+            "exposure" => exposure = as_f32(v),
+            "contrast" => contrast = as_f32(v),
+            "brightness" => brightness = as_f32(v),
+            "saturation" => saturation = as_f32(v),
+            "gamma" => gamma = as_f32(v),
+            "temperature" | "temp" => temperature = as_f32(v),
+            "tint" => {
+                if let Some(c) = as_vec3(v) {
+                    color = Some([c.x, c.y, c.z]);
+                } else {
+                    tint = as_f32(v);
+                }
+            }
+            "hue" | "hue_shift" => hue_shift = as_f32(v),
+            "vibrance" => vibrance = as_f32(v),
+            "lift" => {
+                if let Some(v) = as_vec3(v) {
+                    lift = Some([v.x, v.y, v.z]);
+                }
+            }
+            "gain" => {
+                if let Some(v) = as_vec3(v) {
+                    gain = Some([v.x, v.y, v.z]);
+                }
+            }
+            "offset" => {
+                if let Some(v) = as_vec3(v) {
+                    offset = Some([v.x, v.y, v.z]);
+                }
+            }
             "shader" | "shader_path" => {
                 if let Some(s) = as_str(v) {
                     shader_path = Some(s.to_string());
                 }
             }
+            "texture" | "texture_path" | "lut" | "lut_path" => {
+                if let Some(s) = as_str(v) {
+                    texture_path = Some(s.to_string());
+                }
+            }
+            "lut_size" | "cube_size" => lut_size = as_u32(v),
             "params" => params = as_post_params(v),
             _ => {}
         }
@@ -187,6 +237,45 @@ fn post_effect_from(
                 amount: amount.or(strength).unwrap_or(1.0),
             },
         )),
+        "color_grade" | "colorgrade" | "grade" | "grading" => Some((
+            name,
+            PostProcessEffect::ColorGrade {
+                exposure: exposure.unwrap_or(0.0),
+                contrast: contrast.unwrap_or(1.0),
+                brightness: brightness.unwrap_or(0.0),
+                saturation: saturation.or(amount).unwrap_or(1.0),
+                gamma: gamma.unwrap_or(1.0),
+                temperature: temperature.unwrap_or(0.0),
+                tint: tint.unwrap_or(0.0),
+                hue_shift: hue_shift.unwrap_or(0.0),
+                vibrance: vibrance.unwrap_or(0.0),
+                lift: lift.unwrap_or([0.0, 0.0, 0.0]),
+                gain: gain.unwrap_or([1.0, 1.0, 1.0]),
+                offset: offset.unwrap_or([0.0, 0.0, 0.0]),
+            },
+        )),
+        "lut" | "lut2d" | "lut_2d" => {
+            let texture_path = texture_path?;
+            Some((
+                name,
+                PostProcessEffect::Lut2D {
+                    texture_path: Cow::Owned(texture_path),
+                    size: lut_size.unwrap_or(0),
+                    strength: strength.unwrap_or(1.0),
+                },
+            ))
+        }
+        "lut3d" | "lut_3d" => {
+            let texture_path = texture_path?;
+            Some((
+                name,
+                PostProcessEffect::Lut3D {
+                    texture_path: Cow::Owned(texture_path),
+                    size: lut_size.unwrap_or(0),
+                    strength: strength.unwrap_or(1.0),
+                },
+            ))
+        }
         "custom" => {
             let shader_path = shader_path?;
             let params = params.unwrap_or_default();

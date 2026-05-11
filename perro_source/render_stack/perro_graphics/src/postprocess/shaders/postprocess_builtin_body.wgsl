@@ -50,5 +50,18 @@ fn post_process(uv: vec2<f32>, color: vec4<f32>, depth: f32) -> vec4<f32> {
         let amount = post.params0.x;
         return black_white_apply(color, amount);
     }
+    if post.effect_type == 11u {
+        return color_grade_apply(color);
+    }
+    if post.effect_type == 12u {
+        let strength = post.params0.x;
+        let lut_size = post.params0.y;
+        return lut_2d_apply(color, strength, lut_size);
+    }
+    if post.effect_type == 13u {
+        let strength = post.params0.x;
+        let lut_size = post.params0.y;
+        return lut_3d_apply(color, strength, lut_size);
+    }
     return color;
 }

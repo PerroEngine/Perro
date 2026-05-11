@@ -1685,6 +1685,81 @@ fn post_process_effect_to_json(effect: &PostProcessEffect) -> JsonValue {
             );
             map.insert("amount".to_string(), float_to_json(*amount as f64));
         }
+        PostProcessEffect::ColorGrade {
+            exposure,
+            contrast,
+            brightness,
+            saturation,
+            gamma,
+            temperature,
+            tint,
+            hue_shift,
+            vibrance,
+            lift,
+            gain,
+            offset,
+        } => {
+            map.insert(
+                "type".to_string(),
+                JsonValue::String("color_grade".to_string()),
+            );
+            map.insert("exposure".to_string(), float_to_json(*exposure as f64));
+            map.insert("contrast".to_string(), float_to_json(*contrast as f64));
+            map.insert("brightness".to_string(), float_to_json(*brightness as f64));
+            map.insert("saturation".to_string(), float_to_json(*saturation as f64));
+            map.insert("gamma".to_string(), float_to_json(*gamma as f64));
+            map.insert(
+                "temperature".to_string(),
+                float_to_json(*temperature as f64),
+            );
+            map.insert("tint".to_string(), float_to_json(*tint as f64));
+            map.insert("hue_shift".to_string(), float_to_json(*hue_shift as f64));
+            map.insert("vibrance".to_string(), float_to_json(*vibrance as f64));
+            map.insert(
+                "lift".to_string(),
+                JsonValue::Array(lift.iter().map(|v| float_to_json(*v as f64)).collect()),
+            );
+            map.insert(
+                "gain".to_string(),
+                JsonValue::Array(gain.iter().map(|v| float_to_json(*v as f64)).collect()),
+            );
+            map.insert(
+                "offset".to_string(),
+                JsonValue::Array(offset.iter().map(|v| float_to_json(*v as f64)).collect()),
+            );
+        }
+        PostProcessEffect::Lut2D {
+            texture_path,
+            size,
+            strength,
+        } => {
+            map.insert("type".to_string(), JsonValue::String("lut2d".to_string()));
+            map.insert(
+                "texture_path".to_string(),
+                JsonValue::String(texture_path.to_string()),
+            );
+            map.insert(
+                "size".to_string(),
+                JsonValue::Number(JsonNumber::from(*size)),
+            );
+            map.insert("strength".to_string(), float_to_json(*strength as f64));
+        }
+        PostProcessEffect::Lut3D {
+            texture_path,
+            size,
+            strength,
+        } => {
+            map.insert("type".to_string(), JsonValue::String("lut3d".to_string()));
+            map.insert(
+                "texture_path".to_string(),
+                JsonValue::String(texture_path.to_string()),
+            );
+            map.insert(
+                "size".to_string(),
+                JsonValue::Number(JsonNumber::from(*size)),
+            );
+            map.insert("strength".to_string(), float_to_json(*strength as f64));
+        }
         PostProcessEffect::Custom {
             shader_path,
             params,

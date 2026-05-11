@@ -51,6 +51,70 @@ pub trait ScriptBehavior<API: ScriptAPI + ?Sized>: ScriptLifecycle<API> {
     ) -> Variant;
 }
 
+/// Cast script state to a concrete type without a runtime type check.
+///
+/// # Safety
+/// Caller must guarantee `state` points to a value of type `T`.
+#[inline(always)]
+pub unsafe fn state_ref_unchecked<T: 'static>(state: &dyn Any) -> &T {
+    unsafe { &*(state as *const dyn Any as *const T) }
+}
+
+/// Mutably cast script state to a concrete type without a runtime type check.
+///
+/// # Safety
+/// Caller must guarantee `state` points to a value of type `T`, and no other
+/// references alias the returned mutable reference.
+#[inline(always)]
+pub unsafe fn state_mut_unchecked<T: 'static>(state: &mut dyn Any) -> &mut T {
+    unsafe { &mut *(state as *mut dyn Any as *mut T) }
+}
+
+#[cfg(test)]
+mod state_cast_tests {
+    use super::*;
+
+    #[derive(Debug, PartialEq)]
+    struct TestState {
+        value: u64,
+    }
+
+    #[test]
+    fn state_ref_unchecked_matches_safe_downcast_ref() {
+        let state: Box<dyn Any> = Box::new(TestState { value: 42 });
+
+        let safe = state.as_ref().downcast_ref::<TestState>();
+        // SAFETY: state is constructed as TestState above.
+        let fast = Some(unsafe { state_ref_unchecked::<TestState>(state.as_ref()) });
+
+        assert_eq!(fast, safe);
+        assert_eq!(
+            fast.map(|state| state as *const TestState),
+            safe.map(|state| state as *const TestState)
+        );
+    }
+
+    #[test]
+    fn state_mut_unchecked_matches_safe_downcast_mut() {
+        let mut safe_state: Box<dyn Any> = Box::new(TestState { value: 42 });
+        let mut fast_state: Box<dyn Any> = Box::new(TestState { value: 42 });
+
+        let safe = safe_state.as_mut().downcast_mut::<TestState>();
+        // SAFETY: fast_state is constructed as TestState above.
+        let fast = Some(unsafe { state_mut_unchecked::<TestState>(fast_state.as_mut()) });
+
+        assert_eq!(fast.as_deref(), safe.as_deref());
+
+        safe.unwrap().value += 1;
+        fast.unwrap().value += 1;
+
+        assert_eq!(
+            fast_state.as_ref().downcast_ref::<TestState>(),
+            safe_state.as_ref().downcast_ref::<TestState>()
+        );
+    }
+}
+
 /// Bitflags to track which lifecycle methods are implemented by a script.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScriptFlags(u8);

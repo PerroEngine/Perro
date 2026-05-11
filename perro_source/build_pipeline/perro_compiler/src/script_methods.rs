@@ -764,15 +764,13 @@ fn generate_call_param_binding(index: usize, param: &ScriptMethodParam) -> Optio
     Some(line)
 }
 
-fn generate_get_var_body(state_ty: &str, fields: &[ScriptField]) -> String {
+fn generate_get_var_body(fields: &[ScriptField]) -> String {
     if fields.is_empty() {
         return String::from("           Variant::Null");
     }
 
     let mut out = String::new();
-    out.push_str(&format!(
-        "        let state = unsafe {{ &*(state as *const dyn std::any::Any as *const {state_ty}) }};\n"
-    ));
+    out.push_str("        let state = __perro_state_ref(state);\n");
     out.push_str("        match var {\n");
     for field in fields {
         let const_name = member_const_name(&field.name);
@@ -786,32 +784,49 @@ fn generate_get_var_body(state_ty: &str, fields: &[ScriptField]) -> String {
     out
 }
 
-fn generate_set_var_body(state_ty: &str, fields: &[ScriptField]) -> String {
+fn generate_set_var_body(fields: &[ScriptField]) -> String {
     if fields.is_empty() {
         return String::from("");
     }
 
     let mut out = String::new();
-    out.push_str(&format!(
-        "        let state = unsafe {{ &mut *(state as *mut dyn std::any::Any as *mut {state_ty}) }};\n"
-    ));
+    out.push_str("        let state = __perro_state_mut(state);\n");
     out.push_str("        __perro_set_var_match(state, var, value);\n");
     out
 }
 
-fn generate_apply_scene_injected_vars_body(state_ty: &str, fields: &[ScriptField]) -> String {
+fn generate_apply_scene_injected_vars_body(fields: &[ScriptField]) -> String {
     if fields.is_empty() {
         return String::from("");
     }
 
     let mut out = String::new();
-    out.push_str(&format!(
-        "        let state = unsafe {{ &mut *(state as *mut dyn std::any::Any as *mut {state_ty}) }};\n"
-    ));
+    out.push_str("        let state = __perro_state_mut(state);\n");
     out.push_str("        for (var, value) in vars {\n");
     out.push_str("            __perro_set_var_match(state, var, value);\n");
     out.push_str("        }\n");
     out
+}
+
+fn generate_state_cast_helpers(state_ty: &str, fields: &[ScriptField]) -> String {
+    if fields.is_empty() {
+        return String::new();
+    }
+
+    format!(
+        r#"#[inline(always)]
+fn __perro_state_ref(state: &dyn std::any::Any) -> &{state_ty} {{
+    // SAFETY: Perro runtime calls generated script methods only with this script's state type.
+    unsafe {{ perro_api::scripting::state_ref_unchecked::<{state_ty}>(state) }}
+}}
+
+#[inline(always)]
+fn __perro_state_mut(state: &mut dyn std::any::Any) -> &mut {state_ty} {{
+    // SAFETY: Perro runtime calls generated script methods only with this script's state type.
+    unsafe {{ perro_api::scripting::state_mut_unchecked::<{state_ty}>(state) }}
+}}
+"#
+    )
 }
 
 fn generate_set_var_match_fn(state_ty: &str, fields: &[ScriptField]) -> String {

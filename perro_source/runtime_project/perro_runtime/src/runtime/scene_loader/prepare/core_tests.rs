@@ -1219,4 +1219,88 @@ mod tests {
         assert_eq!(portal3d.strength, 0.75);
         assert_eq!(portal3d.targets, vec![NodeID::from_u32(11), NodeID::from_u32(12)]);
     }
+
+    #[test]
+    fn scene_loader_builds_color_grade_and_luts() {
+        let scene = Parser::new(
+            r#"
+            [cam]
+            [Camera3D]
+                active = true
+                post_processing = [
+                    {
+                        type = "color_grade",
+                        exposure = 0.25,
+                        contrast = 1.1,
+                        brightness = 0.02,
+                        saturation = 1.2,
+                        gamma = 0.95,
+                        temperature = 0.1,
+                        tint = -0.05,
+                        hue_shift = 0.2,
+                        vibrance = 0.3,
+                        lift = (0.01, 0.02, 0.03),
+                        gain = (1.1, 1.0, 0.9),
+                        offset = (-0.01, 0.0, 0.01)
+                    },
+                    { type = "lut2d", texture = "res://luts/film_32.png", lut_size = 32, strength = 0.75 },
+                    { type = "lut3d", texture = "res://luts/print_32.png", lut_size = 16, strength = 1.0 }
+                ]
+            [/Camera3D]
+            [/cam]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|_| Err("unexpected root_of".to_string()))
+                .expect("prepare scene");
+        let cam = prepared
+            .nodes
+            .iter()
+            .find(|node| node.key_name == "cam")
+            .expect("cam");
+        let SceneNodeData::Camera3D(cam) = &cam.node.data else {
+            panic!("expected Camera3D");
+        };
+        let effects = cam.post_processing.to_effects_vec();
+        assert_eq!(effects.len(), 3);
+        match &effects[0] {
+            PostProcessEffect::ColorGrade {
+                exposure,
+                gain,
+                offset,
+                ..
+            } => {
+                assert_eq!(*exposure, 0.25);
+                assert_eq!(*gain, [1.1, 1.0, 0.9]);
+                assert_eq!(*offset, [-0.01, 0.0, 0.01]);
+            }
+            other => panic!("expected color grade, got {other:?}"),
+        }
+        match &effects[1] {
+            PostProcessEffect::Lut2D {
+                texture_path,
+                size,
+                strength,
+            } => {
+                assert_eq!(texture_path.as_ref(), "res://luts/film_32.png");
+                assert_eq!(*size, 32);
+                assert_eq!(*strength, 0.75);
+            }
+            other => panic!("expected lut2d, got {other:?}"),
+        }
+        match &effects[2] {
+            PostProcessEffect::Lut3D {
+                texture_path,
+                size,
+                strength,
+            } => {
+                assert_eq!(texture_path.as_ref(), "res://luts/print_32.png");
+                assert_eq!(*size, 16);
+                assert_eq!(*strength, 1.0);
+            }
+            other => panic!("expected lut3d, got {other:?}"),
+        }
+    }
 }
