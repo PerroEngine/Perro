@@ -349,9 +349,9 @@ pub const fn validate_const(path: &str) {
     } else if starts_with(bytes, b"dlc://") {
         validate_dlc_const(bytes);
     } else if contains_scheme(bytes) {
-        panic!("ResPath scheme must be res, dlc, or user");
+        panic!("ResPath has unsupported scheme; use res://, dlc://, or user://");
     } else {
-        panic!("ResPath must start with res://, dlc://, or user://");
+        panic!("ResPath missing scheme; start path with res://, dlc://, or user://");
     }
 }
 
