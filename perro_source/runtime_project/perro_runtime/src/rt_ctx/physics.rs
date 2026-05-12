@@ -63,6 +63,16 @@ impl PhysicsAPI for Runtime {
         self.physics_raycast_3d(origin, direction, max_distance, include_areas)
     }
 
+    fn raycast_3d_filtered(
+        &mut self,
+        origin: Vector3,
+        direction: Vector3,
+        max_distance: f32,
+        filter: PhysicsQueryFilter,
+    ) -> Option<PhysicsRayHit3D> {
+        self.physics_raycast_3d_filtered(origin, direction, max_distance, &filter)
+    }
+
     fn raycast_2d(
         &mut self,
         origin: Vector2,

@@ -21,6 +21,20 @@ fn as_u32(value: &SceneValue) -> Option<u32> {
     }
 }
 
+fn as_bitmask(value: &SceneValue) -> Option<BitMask> {
+    match value {
+        SceneValue::Array(items) => {
+            let mut mask = BitMask::NONE;
+            for item in items.iter() {
+                let layer = u8::try_from(as_u32(item)?).ok()?;
+                mask = mask.union(BitMask::try_layer(layer)?);
+            }
+            Some(mask)
+        }
+        _ => as_u32(value).map(BitMask::from_bits),
+    }
+}
+
 fn as_node_id(value: &SceneValue) -> Option<NodeID> {
     match value {
         SceneValue::I32(v) if *v >= 0 => Some(NodeID::from_u32(*v as u32)),

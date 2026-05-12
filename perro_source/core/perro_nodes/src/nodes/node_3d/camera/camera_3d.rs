@@ -1,7 +1,7 @@
 use std::ops::{Deref, DerefMut};
 
 use crate::node_3d::Node3D;
-use perro_structs::PostProcessSet;
+use perro_structs::{AudioListenerOptions, BitMask, PostProcessSet};
 
 impl Deref for Camera3D {
     type Target = Node3D;
@@ -20,8 +20,10 @@ impl DerefMut for Camera3D {
 pub struct Camera3D {
     pub base: Node3D,
     pub active: bool,
+    pub render_mask: BitMask,
     pub projection: CameraProjection,
     pub post_processing: PostProcessSet,
+    pub audio_options: AudioListenerOptions,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -95,12 +97,14 @@ impl Camera3D {
         Self {
             base: Node3D::new(),
             active: false,
+            render_mask: BitMask::ALL,
             projection: CameraProjection::Perspective {
                 fov_y_degrees: 60.0,
                 near: 0.1,
                 far: 1_000_000.0,
             },
             post_processing: PostProcessSet::new(),
+            audio_options: AudioListenerOptions::new(),
         }
     }
 

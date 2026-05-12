@@ -9,7 +9,7 @@ use perro_nodes::{
 };
 use perro_render_bridge::{Command2D, ParticlePath2D, RenderCommand, RenderEvent, ResourceCommand};
 use perro_runtime_context::sub_apis::{NodeAPI, NodeCreationTemplate};
-use perro_structs::Vector2;
+use perro_structs::{BitMask, Vector2};
 
 fn collect_commands(runtime: &mut Runtime) -> Vec<RenderCommand> {
     let mut out = Vec::new();
@@ -383,6 +383,83 @@ fn active_camera_2d_emits_set_camera_command() {
         if camera.position == [128.0, -32.0]
             && camera.rotation_radians == 0.5
             && camera.zoom == 2.0
+    )));
+}
+
+#[test]
+fn camera_2d_render_mask_filters_sprites() {
+    let mut runtime = Runtime::new();
+    let mut camera = Camera2D::new();
+    camera.active = true;
+    camera.render_mask = BitMask::with([2]);
+    runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Camera2D(camera)));
+
+    let mut sprite = Sprite2D::new();
+    sprite.texture = TextureID::from_parts(91, 0);
+    sprite.render_layers = BitMask::with([3]);
+    let sprite_node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Sprite2D(sprite)));
+
+    runtime.extract_render_2d_commands();
+    let first = collect_commands(&mut runtime);
+    assert!(!first.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::UpsertSprite { node, .. }) if *node == sprite_node
+    )));
+
+    if let Some(node) = runtime.nodes.get_mut(sprite_node)
+        && let SceneNodeData::Sprite2D(sprite) = &mut node.data
+    {
+        sprite.render_layers = BitMask::with([2]);
+    }
+    runtime.mark_needs_rerender(sprite_node);
+
+    runtime.extract_render_2d_commands();
+    let second = collect_commands(&mut runtime);
+    assert!(second.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::UpsertSprite { node, .. }) if *node == sprite_node
+    )));
+}
+
+#[test]
+fn camera_2d_move_does_not_rewalk_sprite_render_layers() {
+    let mut runtime = Runtime::new();
+    let mut camera = Camera2D::new();
+    camera.active = true;
+    let camera_node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Camera2D(camera)));
+
+    let mut sprite = Sprite2D::new();
+    sprite.texture = TextureID::from_parts(94, 0);
+    let sprite_node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Sprite2D(sprite)));
+
+    runtime.extract_render_2d_commands();
+    let _ = collect_commands(&mut runtime);
+
+    if let Some(node) = runtime.nodes.get_mut(camera_node)
+        && let SceneNodeData::Camera2D(camera) = &mut node.data
+    {
+        camera.transform.position.x = 10.0;
+    }
+    runtime.mark_transform_dirty_recursive(camera_node);
+
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+    assert!(
+        commands
+            .iter()
+            .any(|command| matches!(command, RenderCommand::TwoD(Command2D::SetCamera { .. })))
+    );
+    assert!(!commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::UpsertSprite { node, .. }) if *node == sprite_node
     )));
 }
 

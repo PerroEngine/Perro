@@ -1,4 +1,5 @@
 use crate::node_2d::Node2D;
+use perro_structs::BitMask;
 use std::ops::{Deref, DerefMut};
 
 #[derive(Clone, Debug)]
@@ -10,8 +11,8 @@ pub struct TileMap2D {
     pub empty_tile: i32,
     pub tiles: Vec<i32>,
     pub collision_enabled: bool,
-    pub collision_layer: u32,
-    pub collision_mask: u32,
+    pub collision_layers: BitMask,
+    pub collision_mask: BitMask,
 }
 
 impl Default for TileMap2D {
@@ -30,8 +31,8 @@ impl TileMap2D {
             empty_tile: -1,
             tiles: Vec::new(),
             collision_enabled: false,
-            collision_layer: 1,
-            collision_mask: u32::MAX,
+            collision_layers: BitMask::with([1]),
+            collision_mask: BitMask::ALL,
         }
     }
 }

@@ -14,8 +14,8 @@ pub fn tile_set_shape_to_shape_2d(shape: TileSetShape2D) -> Shape2D {
 
 pub fn tilemap_shape_descs_2d(
     tilemap: &TileMap2D,
-    layer: u32,
-    mask: u32,
+    layer: BitMask,
+    mask: BitMask,
     friction: f32,
     restitution: f32,
     tileset: Option<&ParsedTileset2D>,
@@ -98,7 +98,7 @@ pub fn tilemap_shape_descs_2d(
                     height: h,
                 }),
                 sensor: false,
-                collision_layer: layer,
+                collision_layers: layer,
                 collision_mask: mask,
                 friction,
                 restitution,
@@ -119,7 +119,7 @@ pub fn tilemap_shape_descs_2d(
             ),
             shape,
             sensor: false,
-            collision_layer: layer,
+            collision_layers: layer,
             collision_mask: mask,
             friction,
             restitution,
@@ -150,8 +150,8 @@ pub fn shape_desc_2d(shape: &CollisionShape2D, friction: f32, restitution: f32) 
         local: shape.base.transform,
         shape: ShapeKind2D::Primitive(shape.shape),
         sensor: false,
-        collision_layer: 1,
-        collision_mask: u32::MAX,
+        collision_layers: BitMask::with([1]),
+        collision_mask: BitMask::ALL,
         friction,
         restitution,
     }
@@ -167,8 +167,8 @@ pub fn shape_desc_3d(shape: &CollisionShape3D, friction: f32, restitution: f32) 
             _ => ShapeKind3D::Primitive(shape.shape.clone()),
         },
         sensor: false,
-        collision_layer: 1,
-        collision_mask: u32::MAX,
+        collision_layers: BitMask::with([1]),
+        collision_mask: BitMask::ALL,
         friction,
         restitution,
     }
@@ -307,7 +307,7 @@ pub fn collider_builder_2d(desc: &ShapeDesc2D) -> Option<r2::Collider> {
             ))
             .sensor(desc.sensor)
             .collision_groups(interaction_groups_2d(
-                desc.collision_layer,
+                desc.collision_layers,
                 desc.collision_mask,
             ))
             .friction(desc.friction)
@@ -467,7 +467,7 @@ pub fn collider_builder_3d(
             .position(transform_to_iso3(desc.local))
             .sensor(desc.sensor)
             .collision_groups(interaction_groups_3d(
-                desc.collision_layer,
+                desc.collision_layers,
                 desc.collision_mask,
             ))
             .friction(desc.friction)
@@ -476,17 +476,17 @@ pub fn collider_builder_3d(
     )
 }
 
-pub fn interaction_groups_2d(layer: u32, mask: u32) -> r2::InteractionGroups {
+pub fn interaction_groups_2d(layer: BitMask, mask: BitMask) -> r2::InteractionGroups {
     r2::InteractionGroups::new(
-        r2::Group::from_bits_truncate(layer),
-        r2::Group::from_bits_truncate(mask),
+        r2::Group::from_bits_truncate(layer.bits()),
+        r2::Group::from_bits_truncate(mask.bits()),
     )
 }
 
-pub fn interaction_groups_3d(layer: u32, mask: u32) -> r3::InteractionGroups {
+pub fn interaction_groups_3d(layer: BitMask, mask: BitMask) -> r3::InteractionGroups {
     r3::InteractionGroups::new(
-        r3::Group::from_bits_truncate(layer),
-        r3::Group::from_bits_truncate(mask),
+        r3::Group::from_bits_truncate(layer.bits()),
+        r3::Group::from_bits_truncate(mask.bits()),
     )
 }
 

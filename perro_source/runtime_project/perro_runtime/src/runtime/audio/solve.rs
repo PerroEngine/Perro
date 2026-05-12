@@ -21,7 +21,7 @@ impl Runtime {
             return None;
         }
         let mask_hit = if sound.options.enable_propagation && self.audio.has_audio_mask_2d {
-            self.first_audio_mask_2d(listener_pos, source_pos)
+            self.first_audio_mask_2d(listener_pos, source_pos, sound.options.audio_layer)
         } else {
             None
         };
@@ -32,6 +32,17 @@ impl Runtime {
         let mut occlusion = 0.0;
         let mut perceived = source_pos;
         let mut reflection = 0.0;
+        let physics_hit = physics_hit.and_then(|a| {
+            let material = self.audio_material_for_node(a.node)?;
+            Some(AudioHit2D {
+                node: a.node,
+                point: a.point,
+                normal: a.normal,
+                distance: a.distance,
+                material,
+                thickness: self.audio_thickness_2d(a.node),
+            })
+        });
         let hit = match (physics_hit, mask_hit) {
             (Some(a), Some(b)) if b.distance < a.distance => Some(AudioHit2D {
                 node: b.node,
@@ -41,17 +52,7 @@ impl Runtime {
                 material: b.material,
                 thickness: b.thickness,
             }),
-            (Some(a), _) => {
-                let material = self.audio_material_for_node(a.node).unwrap_or_default();
-                Some(AudioHit2D {
-                    node: a.node,
-                    point: a.point,
-                    normal: a.normal,
-                    distance: a.distance,
-                    material,
-                    thickness: self.audio_thickness_2d(a.node),
-                })
-            }
+            (Some(a), _) => Some(a),
             (None, Some(b)) => Some(b),
             (None, None) => None,
         };
@@ -77,7 +78,7 @@ impl Runtime {
         }
         if self.audio.has_audio_portal_2d
             && let Some(path) =
-                self.best_audio_portal_2d(source_pos, listener_pos, sound.options.occlusion_mask)
+                self.best_audio_portal_2d(source_pos, listener_pos, sound.options.audio_layer)
         {
             let portal_strength = path.strength.clamp(0.0, 1.0);
             let portal_attenuation = 1.0 - (path.distance / range).clamp(0.0, 1.0);
@@ -91,20 +92,36 @@ impl Runtime {
         let local = perceived - listener_pos;
         let local_x = local.x * cos - local.y * sin;
         let local_y = local.x * sin + local.y * cos;
-        let zone = if self.audio.has_audio_zone_2d {
-            self.audio_zone_mix_2d(listener_pos, source_pos)
+        let zone = if self.audio.has_audio_effect_zone_2d {
+            self.audio_effect_zone_mix_2d(listener_pos, source_pos, sound.options.audio_layer)
         } else {
-            AudioZoneMix::default()
+            AudioEffectZoneMix::default()
         };
+        let listener_effects = self.listener_effect_mix_2d(sound.options.audio_layer);
         low_pass = low_pass.max(zone.dampening).max(sound.effects.low_pass);
-        reflection = reflection.max(zone.echo).max(sound.effects.reflection);
+        low_pass = low_pass.max(listener_effects.dampening);
+        reflection = reflection
+            .max(zone.echo)
+            .max(listener_effects.echo)
+            .max(sound.effects.reflection);
         let reverb_send = (reflection * 0.25)
             .max(zone.reverb_send)
             .max(zone.echo * 0.2)
+            .max(listener_effects.reverb_send)
+            .max(listener_effects.echo * 0.2)
             .max(sound.effects.reverb_send);
-        let echo = zone.echo.max(sound.effects.echo).clamp(0.0, 1.0);
+        let echo = zone
+            .echo
+            .max(listener_effects.echo)
+            .max(sound.effects.echo)
+            .clamp(0.0, 1.0);
         occlusion = occlusion.max(sound.effects.occlusion);
-        attenuation *= 1.0 - zone.dampening.clamp(0.0, 1.0) * 0.35;
+        attenuation *= 1.0
+            - zone
+                .dampening
+                .max(listener_effects.dampening)
+                .clamp(0.0, 1.0)
+                * 0.35;
         let result = PropagationResult {
             pan: [local_x / range, local_y / range, 0.0],
             volume: sound.volume * attenuation,
@@ -151,23 +168,24 @@ impl Runtime {
         let mut perceived = source_pos;
         let mut reflection = 0.0;
         let mask_hit = if sound.options.enable_propagation && self.audio.has_audio_mask_3d {
-            self.first_audio_mask_3d(listener_pos, source_pos, sound.options.occlusion_mask)
+            self.first_audio_mask_3d(listener_pos, source_pos, sound.options.audio_layer)
         } else {
             None
         };
-        let hit = match (hit, mask_hit) {
+        let physics_hit = hit.and_then(|a| {
+            let material = self.audio_material_for_node(a.node)?;
+            Some(AudioHit3D {
+                node: a.node,
+                point: a.point,
+                normal: a.normal,
+                distance: a.distance,
+                material,
+                thickness: self.audio_thickness_3d(a.node),
+            })
+        });
+        let hit = match (physics_hit, mask_hit) {
             (Some(a), Some(b)) if b.distance < a.distance => Some(b),
-            (Some(a), _) => {
-                let material = self.audio_material_for_node(a.node).unwrap_or_default();
-                Some(AudioHit3D {
-                    node: a.node,
-                    point: a.point,
-                    normal: a.normal,
-                    distance: a.distance,
-                    material,
-                    thickness: self.audio_thickness_3d(a.node),
-                })
-            }
+            (Some(a), _) => Some(a),
             (None, Some(b)) => Some(b),
             (None, None) => None,
         };
@@ -202,20 +220,36 @@ impl Runtime {
             reflection = (reflection + portal_strength * 0.1).clamp(0.0, 1.0);
         }
         let local = inverse_rotate_vec3(listener.rotation, perceived - listener_pos);
-        let zone = if self.audio.has_audio_zone_3d {
-            self.audio_zone_mix_3d(listener_pos, source_pos)
+        let zone = if self.audio.has_audio_effect_zone_3d {
+            self.audio_effect_zone_mix_3d(listener_pos, source_pos, sound.options.audio_layer)
         } else {
-            AudioZoneMix::default()
+            AudioEffectZoneMix::default()
         };
+        let listener_effects = self.listener_effect_mix_3d(sound.options.audio_layer);
         low_pass = low_pass.max(zone.dampening).max(sound.effects.low_pass);
-        reflection = reflection.max(zone.echo).max(sound.effects.reflection);
+        low_pass = low_pass.max(listener_effects.dampening);
+        reflection = reflection
+            .max(zone.echo)
+            .max(listener_effects.echo)
+            .max(sound.effects.reflection);
         let reverb_send = (reflection * 0.25)
             .max(zone.reverb_send)
             .max(zone.echo * 0.2)
+            .max(listener_effects.reverb_send)
+            .max(listener_effects.echo * 0.2)
             .max(sound.effects.reverb_send);
-        let echo = zone.echo.max(sound.effects.echo).clamp(0.0, 1.0);
+        let echo = zone
+            .echo
+            .max(listener_effects.echo)
+            .max(sound.effects.echo)
+            .clamp(0.0, 1.0);
         occlusion = occlusion.max(sound.effects.occlusion);
-        attenuation *= 1.0 - zone.dampening.clamp(0.0, 1.0) * 0.35;
+        attenuation *= 1.0
+            - zone
+                .dampening
+                .max(listener_effects.dampening)
+                .clamp(0.0, 1.0)
+                * 0.35;
         let result = PropagationResult {
             pan: [local.x / range, local.y / range, -local.z / range],
             volume: sound.volume * attenuation,
@@ -329,12 +363,12 @@ impl Runtime {
     pub(super) fn audio_material_for_node(&self, node: NodeID) -> Option<AudioMaterial> {
         let data = &self.nodes.get(node)?.data;
         match data {
-            SceneNodeData::CollisionShape2D(v) if v.audio_interaction => Some(v.audio_material),
-            SceneNodeData::CollisionShape3D(v) if v.audio_interaction => Some(v.audio_material),
-            SceneNodeData::StaticBody2D(v) if v.audio_interaction => Some(v.audio_material),
-            SceneNodeData::StaticBody3D(v) if v.audio_interaction => Some(v.audio_material),
-            SceneNodeData::RigidBody2D(v) if v.audio_interaction => Some(v.audio_material),
-            SceneNodeData::RigidBody3D(v) if v.audio_interaction => Some(v.audio_material),
+            SceneNodeData::StaticBody2D(v) => v.audio_interaction.map(|audio| audio.material),
+            SceneNodeData::StaticBody3D(v) => v.audio_interaction.map(|audio| audio.material),
+            SceneNodeData::RigidBody2D(v) => v.audio_interaction.map(|audio| audio.material),
+            SceneNodeData::RigidBody3D(v) => v.audio_interaction.map(|audio| audio.material),
+            SceneNodeData::Area2D(v) => v.audio_interaction.map(|audio| audio.material),
+            SceneNodeData::Area3D(v) => v.audio_interaction.map(|audio| audio.material),
             SceneNodeData::AudioMask2D(v) if v.enabled => Some(v.material),
             SceneNodeData::AudioMask3D(v) if v.enabled => Some(v.material),
             _ => Some(AudioMaterial::default()),
@@ -346,14 +380,54 @@ impl Runtime {
             return AudioDiffusion::default();
         };
         match data {
-            SceneNodeData::CollisionShape2D(v) if v.audio_interaction => v.audio_diffusion,
-            SceneNodeData::CollisionShape3D(v) if v.audio_interaction => v.audio_diffusion,
-            SceneNodeData::StaticBody2D(v) if v.audio_interaction => v.audio_diffusion,
-            SceneNodeData::StaticBody3D(v) if v.audio_interaction => v.audio_diffusion,
-            SceneNodeData::RigidBody2D(v) if v.audio_interaction => v.audio_diffusion,
-            SceneNodeData::RigidBody3D(v) if v.audio_interaction => v.audio_diffusion,
+            SceneNodeData::StaticBody2D(v) => v
+                .audio_interaction
+                .map(|audio| audio.diffusion)
+                .unwrap_or_default(),
+            SceneNodeData::StaticBody3D(v) => v
+                .audio_interaction
+                .map(|audio| audio.diffusion)
+                .unwrap_or_default(),
+            SceneNodeData::RigidBody2D(v) => v
+                .audio_interaction
+                .map(|audio| audio.diffusion)
+                .unwrap_or_default(),
+            SceneNodeData::RigidBody3D(v) => v
+                .audio_interaction
+                .map(|audio| audio.diffusion)
+                .unwrap_or_default(),
+            SceneNodeData::Area2D(v) => v
+                .audio_interaction
+                .map(|audio| audio.diffusion)
+                .unwrap_or_default(),
+            SceneNodeData::Area3D(v) => v
+                .audio_interaction
+                .map(|audio| audio.diffusion)
+                .unwrap_or_default(),
             _ => AudioDiffusion::default(),
         }
+    }
+
+    pub(super) fn listener_effect_mix_2d(&self, audio_layer: BitMask) -> AudioEffectZoneMix {
+        let options = self
+            .resource_api
+            .audio_listener_options_2d
+            .lock()
+            .ok()
+            .map(|guard| guard.clone())
+            .unwrap_or_default();
+        listener_effect_mix(options, audio_layer)
+    }
+
+    pub(super) fn listener_effect_mix_3d(&self, audio_layer: BitMask) -> AudioEffectZoneMix {
+        let options = self
+            .resource_api
+            .audio_listener_options_3d
+            .lock()
+            .ok()
+            .map(|guard| guard.clone())
+            .unwrap_or_default();
+        listener_effect_mix(options, audio_layer)
     }
 
     pub(super) fn audio_thickness_2d(&self, node: NodeID) -> f32 {
@@ -377,7 +451,12 @@ impl Runtime {
             .unwrap_or(1.0)
     }
 
-    pub(super) fn first_audio_mask_2d(&mut self, from: Vector2, to: Vector2) -> Option<AudioHit2D> {
+    pub(super) fn first_audio_mask_2d(
+        &mut self,
+        from: Vector2,
+        to: Vector2,
+        audio_layer: BitMask,
+    ) -> Option<AudioHit2D> {
         let dir = to - from;
         let len = dir.length();
         if len <= 0.0001 {
@@ -396,7 +475,7 @@ impl Runtime {
             else {
                 continue;
             };
-            if !mask.enabled {
+            if !mask.enabled || !mask.material.audio_mask.intersects(audio_layer) {
                 continue;
             }
             let material = mask.material;
@@ -453,7 +532,7 @@ impl Runtime {
         &mut self,
         from: Vector3,
         to: Vector3,
-        occlusion_mask: u32,
+        audio_layer: BitMask,
     ) -> Option<AudioHit3D> {
         let dir = to - from;
         let len = dir.length();
@@ -473,7 +552,7 @@ impl Runtime {
             else {
                 continue;
             };
-            if !mask.enabled || (mask.material.occlusion_mask & occlusion_mask) == 0 {
+            if !mask.enabled || !mask.material.audio_mask.intersects(audio_layer) {
                 continue;
             }
             let material = mask.material;
@@ -485,7 +564,7 @@ impl Runtime {
             }
             for child_index in 0..self.audio.scratch_child_ids.len() {
                 let child = self.audio.scratch_child_ids[child_index];
-                let Some((center, half)) = self.audio_zone_shape_3d(child) else {
+                let Some((center, half)) = self.audio_effect_zone_shape_3d(child) else {
                     continue;
                 };
                 let Some((t, normal)) = segment_aabb_3d_with_normal(from, dir, center, half) else {
@@ -511,7 +590,7 @@ impl Runtime {
         &mut self,
         from: Vector2,
         to: Vector2,
-        mask: u32,
+        mask: BitMask,
     ) -> Option<AudioPortalPath2D> {
         let initial_dir = from.direction_to(to);
         if initial_dir.length_squared() <= 0.0001 {
@@ -698,7 +777,7 @@ impl Runtime {
             }
             for child_index in 0..self.audio.scratch_child_ids.len() {
                 let child = self.audio.scratch_child_ids[child_index];
-                let Some((center, half_w, half_h)) = self.audio_zone_shape_2d(child) else {
+                let Some((center, half_w, half_h)) = self.audio_effect_zone_shape_2d(child) else {
                     continue;
                 };
                 if let Some((t, _normal)) = segment_aabb(from, sweep, center, half_w, half_h) {
@@ -898,7 +977,7 @@ impl Runtime {
             }
             for child_index in 0..self.audio.scratch_child_ids.len() {
                 let child = self.audio.scratch_child_ids[child_index];
-                let Some((center, half)) = self.audio_zone_shape_3d(child) else {
+                let Some((center, half)) = self.audio_effect_zone_shape_3d(child) else {
                     continue;
                 };
                 if let Some(t) = segment_aabb_3d(from, sweep, center, half) {
@@ -943,4 +1022,18 @@ fn emitter_lobe(mode: EmitterMode, dot: f32) -> f32 {
 
 fn directional_lobe(dot: f32) -> f32 {
     0.15 + 0.85 * dot.max(0.0).powf(1.5)
+}
+
+fn listener_effect_mix(
+    options: perro_structs::AudioListenerOptions,
+    audio_layer: BitMask,
+) -> AudioEffectZoneMix {
+    if !options.audio_mask.intersects(audio_layer) {
+        return AudioEffectZoneMix::default();
+    }
+    let mut mix = AudioEffectZoneMix::default();
+    for effect in options.effects {
+        mix.apply(effect);
+    }
+    mix
 }

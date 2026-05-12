@@ -61,7 +61,7 @@ AudioEffects {
 
 SpatialAudioOptions {
     range: f32,
-    occlusion_mask: u32,
+    audio_layer: BitMask,
     enable_propagation: bool,
     direction_2d: AudioDirection<Vector2>,
     direction_3d: AudioDirection<Vector3>,
@@ -99,7 +99,7 @@ let sound = RuntimeAudio {
 
 let options = SpatialAudioOptions {
     range: 80.0,
-    occlusion_mask: u32::MAX,
+    audio_layer: BitMask::ALL,
     enable_propagation: true,
     direction_2d: AudioDirection::Omni,
     direction_3d: AudioDirection::Omni,
@@ -114,7 +114,7 @@ Directional attached audio:
 ```rust
 let cone = SpatialAudioOptions {
     range: 60.0,
-    occlusion_mask: u32::MAX,
+    audio_layer: BitMask::ALL,
     enable_propagation: true,
     direction_2d: AudioDirection::Omni,
     direction_3d: AudioDirection::Directional(Vector3::new(0.0, 0.0, -1.0)),
@@ -123,7 +123,7 @@ let _ = ctx.run.Audio().play_attached(sound, speaker_node, cone);
 
 let two_way = SpatialAudioOptions {
     range: 30.0,
-    occlusion_mask: u32::MAX,
+    audio_layer: BitMask::ALL,
     enable_propagation: true,
     direction_2d: AudioDirection::Bidirectional(Vector2::new(0.0, -1.0)),
     direction_3d: AudioDirection::Omni,
@@ -149,7 +149,7 @@ let machine = RuntimeAudio {
 
 let spatial = SpatialAudioOptions {
     range: 48.0,
-    occlusion_mask: u32::MAX,
+    audio_layer: BitMask::ALL,
     enable_propagation: true,
     direction_2d: AudioDirection::Omni,
     direction_3d: AudioDirection::Omni,
@@ -164,7 +164,7 @@ Rotating siren:
 let siren = RuntimeAudio::new("res://audio/siren_loop.wav");
 let spatial = SpatialAudioOptions {
     range: 96.0,
-    occlusion_mask: u32::MAX,
+    audio_layer: BitMask::ALL,
     enable_propagation: true,
     direction_2d: AudioDirection::Bidirectional(Vector2::new(0.0, -1.0)),
     direction_3d: AudioDirection::Omni,
@@ -181,7 +181,7 @@ The note or MIDI file follows node transforms and uses propagation raycasts.
 ```rust
 let spatial = SpatialAudioOptions {
     range: 40.0,
-    occlusion_mask: u32::MAX,
+    audio_layer: BitMask::ALL,
     enable_propagation: true,
     direction_2d: AudioDirection::Omni,
     direction_3d: AudioDirection::Omni,
@@ -209,7 +209,7 @@ Attached held note:
 ```rust
 let spatial = SpatialAudioOptions {
     range: 24.0,
-    occlusion_mask: u32::MAX,
+    audio_layer: BitMask::ALL,
     enable_propagation: true,
     direction_2d: AudioDirection::Omni,
     direction_3d: AudioDirection::Omni,

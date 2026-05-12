@@ -5,7 +5,7 @@ pub fn prepared_audio_raycast_2d_in_world(
     origin: Vector2,
     direction: Vector2,
     max_distance: f32,
-    mask: u32,
+    mask: BitMask,
 ) -> Option<PhysicsRayHit2D> {
     if max_distance <= 0.0 || !max_distance.is_finite() {
         return None;
@@ -18,7 +18,7 @@ pub fn prepared_audio_raycast_2d_in_world(
     let dir = dir / dir_len;
     let ray = r2::Ray::new(na2::Point2::new(origin.x, origin.y), dir);
     let predicate = |handle, collider: &r2::Collider| {
-        (collider.collision_groups().memberships.bits() & mask) != 0
+        (collider.collision_groups().memberships.bits() & mask.bits()) != 0
             && world.collider_owners.contains_key(&handle)
     };
     let query_filter = r2::QueryFilter::new()

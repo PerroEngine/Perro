@@ -11,6 +11,7 @@ use perro_render_bridge::{
     RenderCommand, ResourceCommand, SpotLight2DState, Sprite2DCommand, TileMap2DCommand,
 };
 use perro_runtime_render::{sprite_2d_texture_request, tilemap_2d_texture_request};
+use perro_structs::BitMask;
 use std::borrow::Cow;
 use std::sync::Arc;
 
@@ -47,6 +48,34 @@ impl Runtime {
         self.propagate_pending_transform_dirty();
         self.refresh_dirty_global_transforms();
 
+        let active_camera = self.active_render_camera_2d();
+        let camera_changed = self.render_2d.last_camera.as_ref() != active_camera.as_ref();
+        let previous_camera_render_mask = self
+            .render_2d
+            .last_camera
+            .as_ref()
+            .map(|camera| camera.render_mask)
+            .unwrap_or(BitMask::ALL);
+        let camera_render_mask = active_camera
+            .as_ref()
+            .map(|camera| camera.render_mask)
+            .unwrap_or(BitMask::ALL);
+        let camera_render_mask_changed = previous_camera_render_mask != camera_render_mask;
+
+        if camera_changed {
+            if let Some(camera) = &active_camera {
+                self.resource_api.set_audio_listener_2d(
+                    camera.position,
+                    camera.rotation_radians,
+                    camera.audio_options.clone(),
+                );
+                self.queue_render_command(RenderCommand::TwoD(Command2D::SetCamera {
+                    camera: camera.clone(),
+                }));
+            }
+            self.render_2d.last_camera = active_camera;
+        }
+
         let dirty_ids = self
             .dirty
             .dirty_indices()
@@ -55,13 +84,16 @@ impl Runtime {
             .collect::<Vec<_>>();
         let all_ids = self.nodes.iter().map(|(id, _)| id).collect::<Vec<_>>();
         let nodes = &self.nodes;
-        let traversal_ids =
-            self.render_2d
-                .collect_traversal(dirty_ids, all_ids, bootstrap_scan, |node, out| {
-                    if let Some(node_ref) = nodes.get(node) {
-                        out.extend(node_ref.get_children_ids().iter().copied());
-                    }
-                });
+        let traversal_ids = self.render_2d.collect_traversal(
+            dirty_ids,
+            all_ids,
+            bootstrap_scan || camera_render_mask_changed,
+            |node, out| {
+                if let Some(node_ref) = nodes.get(node) {
+                    out.extend(node_ref.get_children_ids().iter().copied());
+                }
+            },
+        );
 
         let mut visible_now = self.render_2d.begin_visible_pass();
 
@@ -70,14 +102,18 @@ impl Runtime {
             let effective_visible = self.is_effectively_visible(node);
             let sprite_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::Sprite2D(sprite) => Some((
-                    effective_visible && sprite.visible,
+                    effective_visible
+                        && sprite.visible
+                        && render_mask_matches(camera_render_mask, sprite.render_layers),
                     sprite.texture,
                     sprite.texture_region,
                     sprite.transform,
                     sprite.z_index,
                 )),
                 SceneNodeData::AnimatedSprite2D(sprite) => Some((
-                    effective_visible && sprite.visible,
+                    effective_visible
+                        && sprite.visible
+                        && render_mask_matches(camera_render_mask, sprite.render_layers),
                     sprite.texture,
                     sprite.current_texture_region(),
                     sprite.transform,
@@ -105,39 +141,11 @@ impl Runtime {
                 );
             }
 
-            let camera_data = self.nodes.get(node).and_then(|node| match &node.data {
-                SceneNodeData::Camera2D(camera) if camera.active && effective_visible => Some((
-                    camera.transform,
-                    camera.zoom,
-                    camera.post_processing.clone(),
-                )),
-                _ => None,
-            });
-            let camera_data = camera_data.map(|(local_transform, zoom, post_processing)| {
-                let global = self
-                    .get_global_transform_2d(node)
-                    .unwrap_or(local_transform);
-                Camera2DState {
-                    position: [global.position.x, global.position.y],
-                    rotation_radians: global.rotation,
-                    zoom,
-                    post_processing: Arc::from(post_processing.to_effects_vec()),
-                }
-            });
-            if let Some(camera) = camera_data {
-                self.resource_api
-                    .set_audio_listener_2d(camera.position, camera.rotation_radians);
-                if self.render_2d.last_camera.as_ref() != Some(&camera) {
-                    self.queue_render_command(RenderCommand::TwoD(Command2D::SetCamera {
-                        camera: camera.clone(),
-                    }));
-                    self.render_2d.last_camera = Some(camera);
-                }
-            }
-
             let point_emitter_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::ParticleEmitter2D(emitter) => Some((
-                    effective_visible && emitter.visible,
+                    effective_visible
+                        && emitter.visible
+                        && render_mask_matches(camera_render_mask, emitter.render_layers),
                     emitter.profile.clone(),
                     emitter.sim_mode,
                     emitter.transform,
@@ -227,7 +235,10 @@ impl Runtime {
 
             let ambient_light_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::AmbientLight2D(light)
-                    if light.visible && light.active && effective_visible =>
+                    if light.visible
+                        && light.active
+                        && effective_visible
+                        && render_mask_matches(camera_render_mask, light.render_layers) =>
                 {
                     Some((light.color, light.intensity))
                 }
@@ -250,7 +261,10 @@ impl Runtime {
 
             let ray_light_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::RayLight2D(light)
-                    if effective_visible && light.visible && light.active =>
+                    if effective_visible
+                        && light.visible
+                        && light.active
+                        && render_mask_matches(camera_render_mask, light.render_layers) =>
                 {
                     Some((light.transform, light.z_index, light.color, light.intensity))
                 }
@@ -278,7 +292,10 @@ impl Runtime {
 
             let point_light_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::PointLight2D(light) => Some((
-                    effective_visible && light.visible && light.active,
+                    effective_visible
+                        && light.visible
+                        && light.active
+                        && render_mask_matches(camera_render_mask, light.render_layers),
                     light.transform,
                     light.z_index,
                     light.color,
@@ -312,7 +329,10 @@ impl Runtime {
 
             let spot_light_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::SpotLight2D(light)
-                    if effective_visible && light.visible && light.active =>
+                    if effective_visible
+                        && light.visible
+                        && light.active
+                        && render_mask_matches(camera_render_mask, light.render_layers) =>
                 {
                     Some((
                         light.transform,
@@ -361,7 +381,9 @@ impl Runtime {
 
             let tilemap_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::TileMap2D(tilemap) => Some((
-                    effective_visible && tilemap.visible,
+                    effective_visible
+                        && tilemap.visible
+                        && render_mask_matches(camera_render_mask, tilemap.render_layers),
                     tilemap.tileset.clone(),
                     tilemap.width,
                     tilemap.height,
@@ -424,6 +446,38 @@ impl Runtime {
         }
         self.render_2d
             .finish_visible_pass(traversal_ids, visible_now);
+    }
+
+    fn active_render_camera_2d(&mut self) -> Option<Camera2DState> {
+        let mut found = None;
+        for (node, scene_node) in self.nodes.iter() {
+            let SceneNodeData::Camera2D(camera) = &scene_node.data else {
+                continue;
+            };
+            if !camera.active || !self.is_effectively_visible(node) {
+                continue;
+            }
+            found = Some((
+                node,
+                camera.transform,
+                camera.zoom,
+                camera.render_mask,
+                camera.post_processing.clone(),
+                camera.audio_options.clone(),
+            ));
+        }
+        let (node, local_transform, zoom, render_mask, post_processing, audio_options) = found?;
+        let global = self
+            .get_global_transform_2d(node)
+            .unwrap_or(local_transform);
+        Some(Camera2DState {
+            position: [global.position.x, global.position.y],
+            rotation_radians: global.rotation,
+            zoom,
+            render_mask,
+            post_processing: Arc::from(post_processing.to_effects_vec()),
+            audio_options,
+        })
     }
 
     fn emit_sprite_2d(
@@ -539,6 +593,11 @@ impl Runtime {
         }
         None
     }
+}
+
+#[inline]
+fn render_mask_matches(camera_mask: BitMask, render_layers: BitMask) -> bool {
+    camera_mask.intersects(render_layers)
 }
 
 pub(crate) fn resolve_tileset_2d(runtime: &mut Runtime, source: &str) -> Option<ParsedTileset2D> {

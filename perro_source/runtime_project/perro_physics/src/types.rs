@@ -1,7 +1,7 @@
 use perro_ids::NodeID;
 use perro_nodes::{Shape2D, Shape3D};
 use perro_runtime_context::sub_apis::{PhysicsRayHit2D, PhysicsRayHit3D};
-use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
+use perro_structs::{BitMask, Transform2D, Transform3D, Vector2, Vector3};
 
 use crate::na3;
 
@@ -13,7 +13,7 @@ pub enum AudioRaycastInput {
         origin: Vector2,
         direction: Vector2,
         max_distance: f32,
-        mask: u32,
+        mask: BitMask,
     },
     ThreeD {
         origin: Vector3,
@@ -43,8 +43,8 @@ pub struct ShapeDesc2D {
     pub local: Transform2D,
     pub shape: ShapeKind2D,
     pub sensor: bool,
-    pub collision_layer: u32,
-    pub collision_mask: u32,
+    pub collision_layers: BitMask,
+    pub collision_mask: BitMask,
     pub friction: f32,
     pub restitution: f32,
 }
@@ -60,8 +60,8 @@ pub struct ShapeDesc3D {
     pub local: Transform3D,
     pub shape: ShapeKind3D,
     pub sensor: bool,
-    pub collision_layer: u32,
-    pub collision_mask: u32,
+    pub collision_layers: BitMask,
+    pub collision_mask: BitMask,
     pub friction: f32,
     pub restitution: f32,
 }

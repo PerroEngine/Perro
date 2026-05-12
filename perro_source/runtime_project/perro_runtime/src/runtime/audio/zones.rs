@@ -1,44 +1,43 @@
 use super::*;
 
 impl Runtime {
-    pub(super) fn audio_zone_mix_2d(
+    pub(super) fn audio_effect_zone_mix_2d(
         &mut self,
         listener_pos: Vector2,
         source_pos: Vector2,
-    ) -> AudioZoneMix {
-        let mut mix = AudioZoneMix::default();
+        audio_layer: BitMask,
+    ) -> AudioEffectZoneMix {
+        let mut mix = AudioEffectZoneMix::default();
         self.audio.scratch_ids.clear();
         for (id, node) in self.nodes.iter() {
-            if matches!(node.data, SceneNodeData::AudioZone2D(_)) {
+            if matches!(node.data, SceneNodeData::AudioEffectZone2D(_)) {
                 self.audio.scratch_ids.push(id);
             }
         }
         for index in 0..self.audio.scratch_ids.len() {
             let zone_id = self.audio.scratch_ids[index];
-            let Some(SceneNodeData::AudioZone2D(zone)) = self.nodes.get(zone_id).map(|n| &n.data)
+            let Some(SceneNodeData::AudioEffectZone2D(zone)) =
+                self.nodes.get(zone_id).map(|n| &n.data)
             else {
                 continue;
             };
-            if !zone.enabled {
+            if !zone.enabled || !zone.audio_mask.intersects(audio_layer) {
                 continue;
             }
-            let effect = zone.effect;
-            let affect_listener = zone.affect_listener;
-            let affect_emitters = zone.affect_emitters;
-            let affect_path = zone.affect_path;
-            let listener_inside =
-                affect_listener && self.point_in_audio_zone_2d(zone_id, listener_pos);
-            let source_inside = affect_emitters && self.point_in_audio_zone_2d(zone_id, source_pos);
-            let path_inside =
-                affect_path && self.segment_hits_audio_zone_2d(zone_id, listener_pos, source_pos);
-            if listener_inside || source_inside || path_inside {
-                mix.add(effect);
+            let effects = zone.effects.clone();
+            let touches_zone = self.point_in_audio_effect_zone_2d(zone_id, listener_pos)
+                || self.point_in_audio_effect_zone_2d(zone_id, source_pos)
+                || self.segment_hits_audio_effect_zone_2d(zone_id, listener_pos, source_pos);
+            if touches_zone {
+                for effect in effects {
+                    mix.apply(effect);
+                }
             }
         }
         mix
     }
 
-    pub(super) fn point_in_audio_zone_2d(&mut self, zone: NodeID, point: Vector2) -> bool {
+    pub(super) fn point_in_audio_effect_zone_2d(&mut self, zone: NodeID, point: Vector2) -> bool {
         self.audio.scratch_child_ids.clear();
         if let Some(node) = self.nodes.get(zone) {
             self.audio
@@ -47,7 +46,7 @@ impl Runtime {
         }
         for index in 0..self.audio.scratch_child_ids.len() {
             let child = self.audio.scratch_child_ids[index];
-            let Some((center, half_w, half_h)) = self.audio_zone_shape_2d(child) else {
+            let Some((center, half_w, half_h)) = self.audio_effect_zone_shape_2d(child) else {
                 continue;
             };
             if point.x >= center.x - half_w
@@ -61,7 +60,7 @@ impl Runtime {
         false
     }
 
-    pub(super) fn segment_hits_audio_zone_2d(
+    pub(super) fn segment_hits_audio_effect_zone_2d(
         &mut self,
         zone: NodeID,
         from: Vector2,
@@ -79,7 +78,7 @@ impl Runtime {
         }
         for index in 0..self.audio.scratch_child_ids.len() {
             let child = self.audio.scratch_child_ids[index];
-            let Some((center, half_w, half_h)) = self.audio_zone_shape_2d(child) else {
+            let Some((center, half_w, half_h)) = self.audio_effect_zone_shape_2d(child) else {
                 continue;
             };
             if segment_aabb(from, dir, center, half_w, half_h).is_some() {
@@ -89,7 +88,10 @@ impl Runtime {
         false
     }
 
-    pub(super) fn audio_zone_shape_2d(&mut self, node: NodeID) -> Option<(Vector2, f32, f32)> {
+    pub(super) fn audio_effect_zone_shape_2d(
+        &mut self,
+        node: NodeID,
+    ) -> Option<(Vector2, f32, f32)> {
         let shape_kind = self
             .nodes
             .get(node)
@@ -112,44 +114,43 @@ impl Runtime {
         Some((global.position, half_w, half_h))
     }
 
-    pub(super) fn audio_zone_mix_3d(
+    pub(super) fn audio_effect_zone_mix_3d(
         &mut self,
         listener_pos: Vector3,
         source_pos: Vector3,
-    ) -> AudioZoneMix {
-        let mut mix = AudioZoneMix::default();
+        audio_layer: BitMask,
+    ) -> AudioEffectZoneMix {
+        let mut mix = AudioEffectZoneMix::default();
         self.audio.scratch_ids.clear();
         for (id, node) in self.nodes.iter() {
-            if matches!(node.data, SceneNodeData::AudioZone3D(_)) {
+            if matches!(node.data, SceneNodeData::AudioEffectZone3D(_)) {
                 self.audio.scratch_ids.push(id);
             }
         }
         for index in 0..self.audio.scratch_ids.len() {
             let zone_id = self.audio.scratch_ids[index];
-            let Some(SceneNodeData::AudioZone3D(zone)) = self.nodes.get(zone_id).map(|n| &n.data)
+            let Some(SceneNodeData::AudioEffectZone3D(zone)) =
+                self.nodes.get(zone_id).map(|n| &n.data)
             else {
                 continue;
             };
-            if !zone.enabled {
+            if !zone.enabled || !zone.audio_mask.intersects(audio_layer) {
                 continue;
             }
-            let effect = zone.effect;
-            let affect_listener = zone.affect_listener;
-            let affect_emitters = zone.affect_emitters;
-            let affect_path = zone.affect_path;
-            let listener_inside =
-                affect_listener && self.point_in_audio_zone_3d(zone_id, listener_pos);
-            let source_inside = affect_emitters && self.point_in_audio_zone_3d(zone_id, source_pos);
-            let path_inside =
-                affect_path && self.segment_hits_audio_zone_3d(zone_id, listener_pos, source_pos);
-            if listener_inside || source_inside || path_inside {
-                mix.add(effect);
+            let effects = zone.effects.clone();
+            let touches_zone = self.point_in_audio_effect_zone_3d(zone_id, listener_pos)
+                || self.point_in_audio_effect_zone_3d(zone_id, source_pos)
+                || self.segment_hits_audio_effect_zone_3d(zone_id, listener_pos, source_pos);
+            if touches_zone {
+                for effect in effects {
+                    mix.apply(effect);
+                }
             }
         }
         mix
     }
 
-    pub(super) fn point_in_audio_zone_3d(&mut self, zone: NodeID, point: Vector3) -> bool {
+    pub(super) fn point_in_audio_effect_zone_3d(&mut self, zone: NodeID, point: Vector3) -> bool {
         self.audio.scratch_child_ids.clear();
         if let Some(node) = self.nodes.get(zone) {
             self.audio
@@ -158,7 +159,7 @@ impl Runtime {
         }
         for index in 0..self.audio.scratch_child_ids.len() {
             let child = self.audio.scratch_child_ids[index];
-            let Some((center, half)) = self.audio_zone_shape_3d(child) else {
+            let Some((center, half)) = self.audio_effect_zone_shape_3d(child) else {
                 continue;
             };
             if point.x >= center.x - half.x
@@ -174,7 +175,7 @@ impl Runtime {
         false
     }
 
-    pub(super) fn segment_hits_audio_zone_3d(
+    pub(super) fn segment_hits_audio_effect_zone_3d(
         &mut self,
         zone: NodeID,
         from: Vector3,
@@ -192,7 +193,7 @@ impl Runtime {
         }
         for index in 0..self.audio.scratch_child_ids.len() {
             let child = self.audio.scratch_child_ids[index];
-            let Some((center, half)) = self.audio_zone_shape_3d(child) else {
+            let Some((center, half)) = self.audio_effect_zone_shape_3d(child) else {
                 continue;
             };
             if segment_aabb_3d(from, dir, center, half).is_some() {
@@ -202,7 +203,10 @@ impl Runtime {
         false
     }
 
-    pub(super) fn audio_zone_shape_3d(&mut self, node: NodeID) -> Option<(Vector3, Vector3)> {
+    pub(super) fn audio_effect_zone_shape_3d(
+        &mut self,
+        node: NodeID,
+    ) -> Option<(Vector3, Vector3)> {
         let shape_kind = self
             .nodes
             .get(node)

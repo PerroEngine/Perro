@@ -67,17 +67,17 @@ Behavior:
 
 2D and 3D body/area nodes expose:
 
-- `collision_layer: u32`
-- `collision_mask: u32`
+- `collision_layers: BitMask`
+- `collision_mask: BitMask`
 
 Default values:
 
-- `collision_layer = 1`
-- `collision_mask = 4294967295`
+- `collision_layers = [1]`
+- `collision_mask_layers = [1, 2, 3, ...]`
 
 Layer/mask behavior:
 
-- A collider belongs to `collision_layer`.
+- A collider belongs to `collision_layers`.
 - A collider checks against other layers through `collision_mask`.
 - Contacts and area overlaps use layer/mask rules.
 
@@ -85,11 +85,15 @@ Queries use `PhysicsQueryFilter`:
 
 ```rust
 PhysicsQueryFilter {
-    mask: u32::MAX,
+    mask: BitMask::ALL,
     include_areas: true,
     exclude_nodes: Vec::new(),
 }
 ```
+
+Use `BitMask::with([1, 2])` in Rust code.
+Use `collision_layers = [1, 2]` and `collision_mask_layers = [1, 2]` in scene files.
+See [BitMask](../../bitmask.md).
 
 Contact hit data:
 

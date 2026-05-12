@@ -59,6 +59,7 @@ pub enum Node2DField {
     Scale,
     Visible,
     ZIndex,
+    RenderLayers,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -67,12 +68,16 @@ pub enum Node3DField {
     Rotation,
     Scale,
     Visible,
+    RenderLayers,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Camera2DField {
     Zoom,
+    RenderMask,
     PostProcessing,
+    AudioOptions,
+    AudioMask,
     Active,
 }
 
@@ -111,6 +116,7 @@ pub enum Light2DField {
     Intensity,
     CastShadows,
     Active,
+    RenderLayers,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -138,7 +144,7 @@ pub enum TileMap2DField {
     EmptyTile,
     Tiles,
     CollisionEnabled,
-    CollisionLayer,
+    CollisionLayers,
     CollisionMask,
 }
 
@@ -155,7 +161,7 @@ pub enum CollisionShape2DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StaticBody2DField {
     Enabled,
-    CollisionLayer,
+    CollisionLayers,
     CollisionMask,
     Friction,
     Restitution,
@@ -165,7 +171,7 @@ pub enum StaticBody2DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RigidBody2DField {
     Enabled,
-    CollisionLayer,
+    CollisionLayers,
     CollisionMask,
     ContinuousCollisionDetection,
     LinearVelocity,
@@ -183,7 +189,7 @@ pub enum RigidBody2DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Area2DField {
     Enabled,
-    CollisionLayer,
+    CollisionLayers,
     CollisionMask,
 }
 
@@ -298,6 +304,7 @@ pub enum BoneCollider3DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Camera3DField {
     Zoom,
+    RenderMask,
     Projection,
     PerspectiveFovYDegrees,
     PerspectiveNear,
@@ -312,6 +319,8 @@ pub enum Camera3DField {
     FrustumNear,
     FrustumFar,
     PostProcessing,
+    AudioOptions,
+    AudioMask,
     Active,
 }
 
@@ -352,6 +361,7 @@ pub enum Light3DField {
     Intensity,
     CastShadows,
     Active,
+    RenderLayers,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -381,6 +391,7 @@ pub enum Sky3DField {
     Style,
     SkyShader,
     Active,
+    RenderLayers,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -405,7 +416,7 @@ pub enum CollisionShape3DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StaticBody3DField {
     Enabled,
-    CollisionLayer,
+    CollisionLayers,
     CollisionMask,
     Friction,
     Restitution,
@@ -415,7 +426,7 @@ pub enum StaticBody3DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RigidBody3DField {
     Enabled,
-    CollisionLayer,
+    CollisionLayers,
     CollisionMask,
     ContinuousCollisionDetection,
     Mass,
@@ -433,7 +444,7 @@ pub enum RigidBody3DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Area3DField {
     Enabled,
-    CollisionLayer,
+    CollisionLayers,
     CollisionMask,
 }
 
@@ -474,6 +485,19 @@ pub enum UiAnimatedImageField {
 pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField> {
     let node_type = NodeType::from_str(node_type_name).ok()?;
 
+    match (node_type, field) {
+        (NodeType::Camera2D, "render_mask") => {
+            return Some(NodeField::Camera2D(Camera2DField::RenderMask));
+        }
+        (NodeType::Camera3D, "render_mask") => {
+            return Some(NodeField::Camera3D(Camera3DField::RenderMask));
+        }
+        (NodeType::Camera2D | NodeType::Camera3D, "render_layers") => {
+            return None;
+        }
+        _ => {}
+    }
+
     if let Some(base) = resolve_base_node_field(node_type, field) {
         return Some(base);
     }
@@ -481,7 +505,12 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
     match node_type {
         NodeType::Camera2D => match field {
             "zoom" => Some(NodeField::Camera2D(Camera2DField::Zoom)),
+            "render_mask" => Some(NodeField::Camera2D(Camera2DField::RenderMask)),
             "post_processing" => Some(NodeField::Camera2D(Camera2DField::PostProcessing)),
+            "audio_options" => Some(NodeField::Camera2D(Camera2DField::AudioOptions)),
+            "audio_mask" | "audio_mask_layers" => {
+                Some(NodeField::Camera2D(Camera2DField::AudioMask))
+            }
             "active" => Some(NodeField::Camera2D(Camera2DField::Active)),
             _ => None,
         },
@@ -559,10 +588,8 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             "collision_enabled" | "collision" => {
                 Some(NodeField::TileMap2D(TileMap2DField::CollisionEnabled))
             }
-            "collision_layer" | "layer" => {
-                Some(NodeField::TileMap2D(TileMap2DField::CollisionLayer))
-            }
-            "collision_mask" | "mask" => Some(NodeField::TileMap2D(TileMap2DField::CollisionMask)),
+            "collision_layers" => Some(NodeField::TileMap2D(TileMap2DField::CollisionLayers)),
+            "collision_mask_layers" => Some(NodeField::TileMap2D(TileMap2DField::CollisionMask)),
             _ => None,
         },
         NodeType::CollisionShape2D => match field {
@@ -571,10 +598,8 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
         },
         NodeType::StaticBody2D => match field {
             "enabled" => Some(NodeField::StaticBody2D(StaticBody2DField::Enabled)),
-            "collision_layer" | "layer" => {
-                Some(NodeField::StaticBody2D(StaticBody2DField::CollisionLayer))
-            }
-            "collision_mask" | "mask" => {
+            "collision_layers" => Some(NodeField::StaticBody2D(StaticBody2DField::CollisionLayers)),
+            "collision_mask_layers" => {
                 Some(NodeField::StaticBody2D(StaticBody2DField::CollisionMask))
             }
             "friction" => Some(NodeField::StaticBody2D(StaticBody2DField::Friction)),
@@ -584,10 +609,8 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
         },
         NodeType::RigidBody2D => match field {
             "enabled" => Some(NodeField::RigidBody2D(RigidBody2DField::Enabled)),
-            "collision_layer" | "layer" => {
-                Some(NodeField::RigidBody2D(RigidBody2DField::CollisionLayer))
-            }
-            "collision_mask" | "mask" => {
+            "collision_layers" => Some(NodeField::RigidBody2D(RigidBody2DField::CollisionLayers)),
+            "collision_mask_layers" => {
                 Some(NodeField::RigidBody2D(RigidBody2DField::CollisionMask))
             }
             "continuous_collision_detection" | "ccd" => Some(NodeField::RigidBody2D(
@@ -609,8 +632,8 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
         },
         NodeType::Area2D => match field {
             "enabled" => Some(NodeField::Area2D(Area2DField::Enabled)),
-            "collision_layer" | "layer" => Some(NodeField::Area2D(Area2DField::CollisionLayer)),
-            "collision_mask" | "mask" => Some(NodeField::Area2D(Area2DField::CollisionMask)),
+            "collision_layers" => Some(NodeField::Area2D(Area2DField::CollisionLayers)),
+            "collision_mask_layers" => Some(NodeField::Area2D(Area2DField::CollisionMask)),
             _ => None,
         },
         NodeType::PinJoint2D => resolve_joint2d_common(field).map(NodeField::PinJoint2D),
@@ -771,6 +794,7 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
         },
         NodeType::Camera3D => match field {
             "zoom" => Some(NodeField::Camera3D(Camera3DField::Zoom)),
+            "render_mask" => Some(NodeField::Camera3D(Camera3DField::RenderMask)),
             "projection" => Some(NodeField::Camera3D(Camera3DField::Projection)),
             "perspective_fov_y_degrees" => {
                 Some(NodeField::Camera3D(Camera3DField::PerspectiveFovYDegrees))
@@ -787,6 +811,10 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             "frustum_near" => Some(NodeField::Camera3D(Camera3DField::FrustumNear)),
             "frustum_far" => Some(NodeField::Camera3D(Camera3DField::FrustumFar)),
             "post_processing" => Some(NodeField::Camera3D(Camera3DField::PostProcessing)),
+            "audio_options" => Some(NodeField::Camera3D(Camera3DField::AudioOptions)),
+            "audio_mask" | "audio_mask_layers" => {
+                Some(NodeField::Camera3D(Camera3DField::AudioMask))
+            }
             "active" => Some(NodeField::Camera3D(Camera3DField::Active)),
             _ => None,
         },
@@ -860,10 +888,8 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
         },
         NodeType::StaticBody3D => match field {
             "enabled" => Some(NodeField::StaticBody3D(StaticBody3DField::Enabled)),
-            "collision_layer" | "layer" => {
-                Some(NodeField::StaticBody3D(StaticBody3DField::CollisionLayer))
-            }
-            "collision_mask" | "mask" => {
+            "collision_layers" => Some(NodeField::StaticBody3D(StaticBody3DField::CollisionLayers)),
+            "collision_mask_layers" => {
                 Some(NodeField::StaticBody3D(StaticBody3DField::CollisionMask))
             }
             "friction" => Some(NodeField::StaticBody3D(StaticBody3DField::Friction)),
@@ -873,10 +899,8 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
         },
         NodeType::RigidBody3D => match field {
             "enabled" => Some(NodeField::RigidBody3D(RigidBody3DField::Enabled)),
-            "collision_layer" | "layer" => {
-                Some(NodeField::RigidBody3D(RigidBody3DField::CollisionLayer))
-            }
-            "collision_mask" | "mask" => {
+            "collision_layers" => Some(NodeField::RigidBody3D(RigidBody3DField::CollisionLayers)),
+            "collision_mask_layers" => {
                 Some(NodeField::RigidBody3D(RigidBody3DField::CollisionMask))
             }
             "continuous_collision_detection" | "ccd" => Some(NodeField::RigidBody3D(
@@ -898,8 +922,8 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
         },
         NodeType::Area3D => match field {
             "enabled" => Some(NodeField::Area3D(Area3DField::Enabled)),
-            "collision_layer" | "layer" => Some(NodeField::Area3D(Area3DField::CollisionLayer)),
-            "collision_mask" | "mask" => Some(NodeField::Area3D(Area3DField::CollisionMask)),
+            "collision_layers" => Some(NodeField::Area3D(Area3DField::CollisionLayers)),
+            "collision_mask_layers" => Some(NodeField::Area3D(Area3DField::CollisionMask)),
             _ => None,
         },
         NodeType::BallJoint3D => resolve_joint3d_common(field).map(NodeField::BallJoint3D),
@@ -976,6 +1000,7 @@ fn resolve_light3d_common(field: &str) -> Option<Light3DField> {
         "intensity" => Some(Light3DField::Intensity),
         "cast_shadows" | "casts_shadows" => Some(Light3DField::CastShadows),
         "active" => Some(Light3DField::Active),
+        "render_layers" => Some(Light3DField::RenderLayers),
         _ => None,
     }
 }
@@ -986,6 +1011,7 @@ fn resolve_light2d_common(field: &str) -> Option<Light2DField> {
         "intensity" => Some(Light2DField::Intensity),
         "cast_shadows" | "casts_shadows" => Some(Light2DField::CastShadows),
         "active" => Some(Light2DField::Active),
+        "render_layers" => Some(Light2DField::RenderLayers),
         _ => None,
     }
 }
@@ -1014,6 +1040,7 @@ fn resolve_sky3d_field(field: &str) -> Option<Sky3DField> {
         "style" | "sky_style" | "sampler" => Some(Sky3DField::Style),
         "sky_shader" | "shader" => Some(Sky3DField::SkyShader),
         "active" => Some(Sky3DField::Active),
+        "render_layers" => Some(Sky3DField::RenderLayers),
         _ => None,
     }
 }
@@ -1026,6 +1053,7 @@ fn resolve_base_node_field(node_type: NodeType, field: &str) -> Option<NodeField
             "scale" => Some(NodeField::Node2D(Node2DField::Scale)),
             "visible" => Some(NodeField::Node2D(Node2DField::Visible)),
             "z_index" => Some(NodeField::Node2D(Node2DField::ZIndex)),
+            "render_layers" => Some(NodeField::Node2D(Node2DField::RenderLayers)),
             _ => None,
         };
     }
@@ -1036,9 +1064,58 @@ fn resolve_base_node_field(node_type: NodeType, field: &str) -> Option<NodeField
             "rotation" | "rotation_deg" => Some(NodeField::Node3D(Node3DField::Rotation)),
             "scale" => Some(NodeField::Node3D(Node3DField::Scale)),
             "visible" => Some(NodeField::Node3D(Node3DField::Visible)),
+            "render_layers" => Some(NodeField::Node3D(Node3DField::RenderLayers)),
             _ => None,
         };
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn collision_layer_fields_use_canonical_layer_arrays_only() {
+        assert_eq!(
+            resolve_node_field("StaticBody2D", "collision_layers"),
+            Some(NodeField::StaticBody2D(StaticBody2DField::CollisionLayers))
+        );
+        assert_eq!(
+            resolve_node_field("StaticBody2D", "collision_mask_layers"),
+            Some(NodeField::StaticBody2D(StaticBody2DField::CollisionMask))
+        );
+
+        for field in [
+            "collision_layer",
+            "layer",
+            "layers",
+            "collision_mask",
+            "collision_masks",
+            "mask",
+            "masks",
+        ] {
+            assert_eq!(resolve_node_field("StaticBody2D", field), None);
+        }
+    }
+
+    #[test]
+    fn render_fields_use_camera_mask_and_node_layers_only() {
+        assert_eq!(
+            resolve_node_field("Camera2D", "render_mask"),
+            Some(NodeField::Camera2D(Camera2DField::RenderMask))
+        );
+        assert_eq!(resolve_node_field("Camera2D", "render_layers"), None);
+        assert_eq!(
+            resolve_node_field("Sprite2D", "render_layers"),
+            Some(NodeField::Node2D(Node2DField::RenderLayers))
+        );
+        assert_eq!(resolve_node_field("Sprite2D", "render_mask"), None);
+        assert_eq!(
+            resolve_node_field("MeshInstance3D", "render_layers"),
+            Some(NodeField::Node3D(Node3DField::RenderLayers))
+        );
+        assert_eq!(resolve_node_field("MeshInstance3D", "render_mask"), None);
+    }
 }

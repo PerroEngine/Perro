@@ -4,17 +4,17 @@ use super::Runtime;
 use super::physics::{AudioRaycastInput, AudioRaycastResult};
 use crate::rs_ctx::QueuedSpatialAudioPos;
 use perro_ids::NodeID;
-use perro_nodes::{
-    AudioDiffusion, AudioMaterial, AudioZoneEffect, CollisionShape2D, CollisionShape3D,
-    SceneNodeData,
-};
+use perro_nodes::{CollisionShape2D, CollisionShape3D, SceneNodeData};
 use perro_render_bridge::{Command2D, Command3D, DrawShape2DCommand, RenderCommand};
 use perro_resource_context::sub_apis::AudioAPI;
 use perro_runtime_context::sub_apis::{
     AttachedMidiTarget, AudioDirection, AudioEffects, PhysicsQueryFilter, RuntimeAudio,
     RuntimeAudioAPI, SpatialAudioOptions,
 };
-use perro_structs::{DrawShape2D, Transform2D, Transform3D, Vector2, Vector3};
+use perro_structs::{
+    AudioDiffusion, AudioEffect, AudioMaterial, BitMask, DrawShape2D, Transform2D, Transform3D,
+    Vector2, Vector3,
+};
 use std::f32::consts::TAU;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
@@ -179,14 +179,14 @@ struct AudioPortalHit3D {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-struct AudioZoneMix {
+struct AudioEffectZoneMix {
     reverb_send: f32,
     echo: f32,
     dampening: f32,
 }
 
-impl AudioZoneMix {
-    fn add(&mut self, effect: AudioZoneEffect) {
+impl AudioEffectZoneMix {
+    fn apply(&mut self, effect: AudioEffect) {
         self.reverb_send = self.reverb_send.max(effect.reverb_send.clamp(0.0, 1.0));
         self.echo = self.echo.max(effect.echo.clamp(0.0, 1.0));
         self.dampening = self.dampening.max(effect.dampening.clamp(0.0, 1.0));
@@ -207,8 +207,8 @@ pub(crate) struct AudioPropagationState {
     has_audio_mask_3d: bool,
     has_audio_portal_2d: bool,
     has_audio_portal_3d: bool,
-    has_audio_zone_2d: bool,
-    has_audio_zone_3d: bool,
+    has_audio_effect_zone_2d: bool,
+    has_audio_effect_zone_3d: bool,
     audio_scene_flags_node_count: usize,
     debug_ray_count_3d: u32,
     prev_debug_ray_count_3d: u32,
@@ -231,8 +231,8 @@ impl AudioPropagationState {
             has_audio_mask_3d: false,
             has_audio_portal_2d: false,
             has_audio_portal_3d: false,
-            has_audio_zone_2d: false,
-            has_audio_zone_3d: false,
+            has_audio_effect_zone_2d: false,
+            has_audio_effect_zone_3d: false,
             audio_scene_flags_node_count: usize::MAX,
             debug_ray_count_3d: 0,
             prev_debug_ray_count_3d: 0,
@@ -344,7 +344,7 @@ impl Runtime {
                         origin: listener_pos,
                         direction,
                         max_distance: distance.min(self.audio.config.max_ray_distance_2d),
-                        mask: sound.options.occlusion_mask,
+                        mask: sound.options.audio_layer,
                     });
                 } else {
                     self.audio.scratch_sound_ray_results[index] = AudioRaycastResult::TwoD(None);

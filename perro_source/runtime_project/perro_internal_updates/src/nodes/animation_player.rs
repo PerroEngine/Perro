@@ -667,8 +667,11 @@ pub(super) fn apply_track<RT>(
                         }
                     }
                     Camera3DField::Active
+                    | Camera3DField::RenderMask
                     | Camera3DField::Projection
-                    | Camera3DField::PostProcessing => {}
+                    | Camera3DField::PostProcessing
+                    | Camera3DField::AudioOptions
+                    | Camera3DField::AudioMask => {}
                 });
             }
             if matches!(channel, Camera3DField::Active)
@@ -727,6 +730,7 @@ pub(super) fn apply_track<RT>(
                     });
                 }
             }
+            Light3DField::RenderLayers => {}
         },
         NodeField::PointLight3D(PointLight3DField::Range) => {
             if let Some(v) = as_f32_track(&value) {

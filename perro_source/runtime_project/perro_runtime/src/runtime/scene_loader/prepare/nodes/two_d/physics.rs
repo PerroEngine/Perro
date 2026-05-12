@@ -87,13 +87,13 @@ fn apply_static_body_2d_fields(node: &mut StaticBody2D, fields: &[SceneObjectFie
             {
                 node.enabled = enabled;
             }
-            Some(NodeField::StaticBody2D(StaticBody2DField::CollisionLayer))
-                if let Some(v) = as_u32(value) =>
+            Some(NodeField::StaticBody2D(StaticBody2DField::CollisionLayers))
+                if let Some(v) = as_bitmask(value) =>
             {
-                node.collision_layer = v;
+                node.collision_layers = v;
             }
             Some(NodeField::StaticBody2D(StaticBody2DField::CollisionMask))
-                if let Some(v) = as_u32(value) =>
+                if let Some(v) = as_bitmask(value) =>
             {
                 node.collision_mask = v;
             }
@@ -125,13 +125,13 @@ fn apply_rigid_body_2d_fields(node: &mut RigidBody2D, fields: &[SceneObjectField
                     node.enabled = enabled;
                 }
             }
-            Some(NodeField::RigidBody2D(RigidBody2DField::CollisionLayer)) => {
-                if let Some(v) = as_u32(value) {
-                    node.collision_layer = v;
+            Some(NodeField::RigidBody2D(RigidBody2DField::CollisionLayers)) => {
+                if let Some(v) = as_bitmask(value) {
+                    node.collision_layers = v;
                 }
             }
             Some(NodeField::RigidBody2D(RigidBody2DField::CollisionMask)) => {
-                if let Some(v) = as_u32(value) {
+                if let Some(v) = as_bitmask(value) {
                     node.collision_mask = v;
                 }
             }
@@ -205,13 +205,13 @@ fn apply_area_2d_fields(node: &mut Area2D, fields: &[SceneObjectField]) {
                     node.enabled = enabled;
                 }
             }
-            Some(NodeField::Area2D(Area2DField::CollisionLayer)) => {
-                if let Some(v) = as_u32(value) {
-                    node.collision_layer = v;
+            Some(NodeField::Area2D(Area2DField::CollisionLayers)) => {
+                if let Some(v) = as_bitmask(value) {
+                    node.collision_layers = v;
                 }
             }
             Some(NodeField::Area2D(Area2DField::CollisionMask)) => {
-                if let Some(v) = as_u32(value) {
+                if let Some(v) = as_bitmask(value) {
                     node.collision_mask = v;
                 }
             }

@@ -1,9 +1,6 @@
-use crate::{
-    audio::{AudioDiffusion, AudioMaterial},
-    node_2d::Node2D,
-};
+use crate::node_2d::Node2D;
 use perro_ids::NodeID;
-use perro_structs::Vector2;
+use perro_structs::{AudioInteraction, BitMask, CollisionMasks, Vector2};
 use std::ops::{Deref, DerefMut};
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -43,9 +40,6 @@ impl Default for Shape2D {
 pub struct CollisionShape2D {
     pub base: Node2D,
     pub shape: Shape2D,
-    pub audio_interaction: bool,
-    pub audio_material: AudioMaterial,
-    pub audio_diffusion: AudioDiffusion,
 }
 
 impl Default for CollisionShape2D {
@@ -62,9 +56,6 @@ impl CollisionShape2D {
                 width: 1.0,
                 height: 1.0,
             },
-            audio_interaction: true,
-            audio_material: AudioMaterial::new(),
-            audio_diffusion: AudioDiffusion::new(),
         }
     }
 }
@@ -88,14 +79,12 @@ pub struct StaticBody2D {
     pub base: Node2D,
     pub enabled: bool,
     pub physics_handle: Option<u64>,
-    pub collision_layer: u32,
-    pub collision_mask: u32,
+    pub collision_layers: BitMask,
+    pub collision_mask: BitMask,
     pub friction: f32,
     pub restitution: f32,
     pub density: f32,
-    pub audio_interaction: bool,
-    pub audio_material: AudioMaterial,
-    pub audio_diffusion: AudioDiffusion,
+    pub audio_interaction: Option<AudioInteraction>,
 }
 
 impl Default for StaticBody2D {
@@ -110,15 +99,22 @@ impl StaticBody2D {
             base: Node2D::new(),
             enabled: true,
             physics_handle: None,
-            collision_layer: 1,
-            collision_mask: u32::MAX,
+            collision_layers: BitMask::with([1]),
+            collision_mask: BitMask::ALL,
             friction: 0.7,
             restitution: 0.0,
             density: 1.0,
-            audio_interaction: true,
-            audio_material: AudioMaterial::new(),
-            audio_diffusion: AudioDiffusion::new(),
+            audio_interaction: Some(AudioInteraction::new()),
         }
+    }
+
+    pub const fn collision_masks(&self) -> CollisionMasks {
+        CollisionMasks::new(self.collision_layers, self.collision_mask)
+    }
+
+    pub fn set_collision_masks(&mut self, masks: CollisionMasks) {
+        self.collision_layers = masks.layers;
+        self.collision_mask = masks.mask;
     }
 }
 
@@ -141,8 +137,9 @@ pub struct Area2D {
     pub base: Node2D,
     pub enabled: bool,
     pub physics_handle: Option<u64>,
-    pub collision_layer: u32,
-    pub collision_mask: u32,
+    pub collision_layers: BitMask,
+    pub collision_mask: BitMask,
+    pub audio_interaction: Option<AudioInteraction>,
 }
 
 impl Default for Area2D {
@@ -157,9 +154,19 @@ impl Area2D {
             base: Node2D::new(),
             enabled: true,
             physics_handle: None,
-            collision_layer: 1,
-            collision_mask: u32::MAX,
+            collision_layers: BitMask::with([1]),
+            collision_mask: BitMask::ALL,
+            audio_interaction: Some(AudioInteraction::new()),
         }
+    }
+
+    pub const fn collision_masks(&self) -> CollisionMasks {
+        CollisionMasks::new(self.collision_layers, self.collision_mask)
+    }
+
+    pub fn set_collision_masks(&mut self, masks: CollisionMasks) {
+        self.collision_layers = masks.layers;
+        self.collision_mask = masks.mask;
     }
 }
 
@@ -182,8 +189,8 @@ pub struct RigidBody2D {
     pub base: Node2D,
     pub enabled: bool,
     pub physics_handle: Option<u64>,
-    pub collision_layer: u32,
-    pub collision_mask: u32,
+    pub collision_layers: BitMask,
+    pub collision_mask: BitMask,
     pub continuous_collision_detection: bool,
     pub linear_velocity: Vector2,
     pub angular_velocity: f32,
@@ -195,9 +202,7 @@ pub struct RigidBody2D {
     pub friction: f32,
     pub restitution: f32,
     pub density: f32,
-    pub audio_interaction: bool,
-    pub audio_material: AudioMaterial,
-    pub audio_diffusion: AudioDiffusion,
+    pub audio_interaction: Option<AudioInteraction>,
 }
 
 impl Default for RigidBody2D {
@@ -212,8 +217,8 @@ impl RigidBody2D {
             base: Node2D::new(),
             enabled: true,
             physics_handle: None,
-            collision_layer: 1,
-            collision_mask: u32::MAX,
+            collision_layers: BitMask::with([1]),
+            collision_mask: BitMask::ALL,
             continuous_collision_detection: true,
             linear_velocity: Vector2::ZERO,
             angular_velocity: 0.0,
@@ -225,10 +230,17 @@ impl RigidBody2D {
             friction: 0.7,
             restitution: 0.0,
             density: 1.0,
-            audio_interaction: true,
-            audio_material: AudioMaterial::new(),
-            audio_diffusion: AudioDiffusion::new(),
+            audio_interaction: Some(AudioInteraction::new()),
         }
+    }
+
+    pub const fn collision_masks(&self) -> CollisionMasks {
+        CollisionMasks::new(self.collision_layers, self.collision_mask)
+    }
+
+    pub fn set_collision_masks(&mut self, masks: CollisionMasks) {
+        self.collision_layers = masks.layers;
+        self.collision_mask = masks.mask;
     }
 }
 

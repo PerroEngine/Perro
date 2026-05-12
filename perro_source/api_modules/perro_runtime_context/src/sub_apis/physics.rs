@@ -1,10 +1,10 @@
 use perro_ids::NodeID;
 use perro_nodes::{Shape2D, Shape3D};
-use perro_structs::{Vector2, Vector3};
+use perro_structs::{BitMask, Vector2, Vector3};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PhysicsQueryFilter {
-    pub mask: u32,
+    pub mask: BitMask,
     pub include_areas: bool,
     pub exclude_nodes: Vec<NodeID>,
 }
@@ -12,7 +12,7 @@ pub struct PhysicsQueryFilter {
 impl Default for PhysicsQueryFilter {
     fn default() -> Self {
         Self {
-            mask: u32::MAX,
+            mask: BitMask::ALL,
             include_areas: true,
             exclude_nodes: Vec::new(),
         }
@@ -79,6 +79,15 @@ pub trait PhysicsAPI {
         max_distance: f32,
         include_areas: bool,
     ) -> Option<PhysicsRayHit3D>;
+    fn raycast_3d_filtered(
+        &mut self,
+        origin: Vector3,
+        direction: Vector3,
+        max_distance: f32,
+        filter: PhysicsQueryFilter,
+    ) -> Option<PhysicsRayHit3D> {
+        self.raycast_3d(origin, direction, max_distance, filter.include_areas)
+    }
     fn raycast_2d(
         &mut self,
         origin: Vector2,
@@ -224,6 +233,17 @@ impl<'rt, R: PhysicsAPI + ?Sized> PhysicsModule<'rt, R> {
         self.rt.raycast_3d(origin, direction, max_distance, false)
     }
 
+    pub fn raycast_3d_filtered(
+        &mut self,
+        origin: Vector3,
+        direction: Vector3,
+        max_distance: f32,
+        filter: PhysicsQueryFilter,
+    ) -> Option<PhysicsRayHit3D> {
+        self.rt
+            .raycast_3d_filtered(origin, direction, max_distance, filter)
+    }
+
     pub fn raycast_2d(
         &mut self,
         origin: Vector2,
@@ -318,6 +338,10 @@ macro_rules! physics_raycast_3d {
     ($ctx:expr, $origin:expr, $direction:expr, $max_distance:expr) => {
         $ctx.Physics()
             .raycast_3d($origin, $direction, $max_distance)
+    };
+    ($ctx:expr, $origin:expr, $direction:expr, $max_distance:expr, $filter:expr) => {
+        $ctx.Physics()
+            .raycast_3d_filtered($origin, $direction, $max_distance, $filter)
     };
 }
 

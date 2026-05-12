@@ -11,12 +11,37 @@ pub struct Color {
 impl Color {
     pub const WHITE: Self = Self::new(1.0, 1.0, 1.0, 1.0);
     pub const BLACK: Self = Self::new(0.0, 0.0, 0.0, 1.0);
+    pub const GRAY: Self = Self::new(0.5, 0.5, 0.5, 1.0);
+    pub const GREY: Self = Self::GRAY;
+    pub const LIGHT_GRAY: Self = Self::new(0.75, 0.75, 0.75, 1.0);
+    pub const LIGHT_GREY: Self = Self::LIGHT_GRAY;
+    pub const DARK_GRAY: Self = Self::new(0.25, 0.25, 0.25, 1.0);
+    pub const DARK_GREY: Self = Self::DARK_GRAY;
     pub const RED: Self = Self::new(1.0, 0.0, 0.0, 1.0);
+    pub const MAROON: Self = Self::new(0.5, 0.0, 0.0, 1.0);
+    pub const CRIMSON: Self = Self::new(0.86, 0.08, 0.24, 1.0);
     pub const GREEN: Self = Self::new(0.0, 1.0, 0.0, 1.0);
+    pub const LIME: Self = Self::GREEN;
+    pub const FOREST_GREEN: Self = Self::new(0.13, 0.55, 0.13, 1.0);
+    pub const OLIVE: Self = Self::new(0.5, 0.5, 0.0, 1.0);
+    pub const MINT: Self = Self::new(0.6, 1.0, 0.6, 1.0);
     pub const BLUE: Self = Self::new(0.0, 0.0, 1.0, 1.0);
+    pub const NAVY: Self = Self::new(0.0, 0.0, 0.5, 1.0);
+    pub const ROYAL_BLUE: Self = Self::new(0.25, 0.41, 0.88, 1.0);
+    pub const SKY_BLUE: Self = Self::new(0.53, 0.81, 0.92, 1.0);
+    pub const CORNFLOWER_BLUE: Self = Self::new(0.39, 0.58, 0.93, 1.0);
+    pub const ORANGE: Self = Self::new(1.0, 0.5, 0.0, 1.0);
     pub const YELLOW: Self = Self::new(1.0, 1.0, 0.0, 1.0);
+    pub const INDIGO: Self = Self::new(0.29, 0.0, 0.51, 1.0);
+    pub const VIOLET: Self = Self::new(0.56, 0.0, 1.0, 1.0);
     pub const CYAN: Self = Self::new(0.0, 1.0, 1.0, 1.0);
+    pub const TEAL: Self = Self::new(0.0, 0.5, 0.5, 1.0);
+    pub const TURQUOISE: Self = Self::new(0.25, 0.88, 0.82, 1.0);
     pub const MAGENTA: Self = Self::new(1.0, 0.0, 1.0, 1.0);
+    pub const PINK: Self = Self::new(1.0, 0.75, 0.8, 1.0);
+    pub const PURPLE: Self = Self::new(0.5, 0.0, 0.5, 1.0);
+    pub const BROWN: Self = Self::new(0.59, 0.29, 0.0, 1.0);
+    pub const GOLD: Self = Self::new(1.0, 0.84, 0.0, 1.0);
     pub const TRANSPARENT: Self = Self::new(0.0, 0.0, 0.0, 0.0);
 
     #[inline]

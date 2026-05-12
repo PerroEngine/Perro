@@ -111,6 +111,11 @@ fn apply_node_3d_fields(node: &mut Node3D, fields: &[SceneObjectField]) {
                     node.visible = v;
                 }
             }
+            Some(NodeField::Node3D(Node3DField::RenderLayers)) => {
+                if let Some(v) = as_bitmask(value) {
+                    node.render_layers = v;
+                }
+            }
             _ => {}
         }
     });

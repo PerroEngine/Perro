@@ -20,7 +20,7 @@ See:
 - [Script Utility Modules](modules.md)
 - [Math Types](math_types.md)
 - [Node Types](nodes.md)
-- [Scene Node Templates](scene_node_templates.md)
+- [Scene Node Templates](scene_node_templates/index.md)
   - Includes `root_of` scene composition (scenes inside scenes), merge rules, and examples.
 - [Script State](state.md)
 - [Script Lifecycle](lifecycle.md)

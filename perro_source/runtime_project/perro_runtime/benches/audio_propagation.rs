@@ -6,7 +6,7 @@ use perro_runtime::Runtime;
 use perro_runtime_context::sub_apis::{
     AudioDirection, AudioEffects, NodeAPI, RuntimeAudio, RuntimeAudioAPI, SpatialAudioOptions,
 };
-use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
+use perro_structs::{BitMask, Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 
 fn looped_audio() -> RuntimeAudio<'static> {
     RuntimeAudio {
@@ -22,7 +22,7 @@ fn looped_audio() -> RuntimeAudio<'static> {
 fn spatial_options(range: f32) -> SpatialAudioOptions {
     SpatialAudioOptions {
         range,
-        occlusion_mask: u32::MAX,
+        audio_layer: BitMask::ALL,
         enable_propagation: true,
         direction_2d: AudioDirection::Omni,
         direction_3d: AudioDirection::Omni,
@@ -37,10 +37,11 @@ fn runtime_2d(walls: usize, sounds: usize) -> Runtime {
         assert!(NodeAPI::reparent(&mut runtime, body, shape));
         if let Some(node) = runtime.nodes.get_mut(body)
             && let SceneNodeData::StaticBody2D(body) = &mut node.data
+            && let Some(audio) = &mut body.audio_interaction
         {
-            body.audio_diffusion.damping = 0.45;
-            body.audio_diffusion.compression = 0.2;
-            body.audio_diffusion.hardness = 0.65;
+            audio.diffusion.damping = 0.45;
+            audio.diffusion.compression = 0.2;
+            audio.diffusion.hardness = 0.65;
         }
         let x = 4.0 + (i % 16) as f32 * 2.0;
         let y = (i / 16) as f32 * 1.5 - 6.0;
@@ -78,10 +79,11 @@ fn runtime_3d(walls: usize, sounds: usize) -> Runtime {
         assert!(NodeAPI::reparent(&mut runtime, body, shape));
         if let Some(node) = runtime.nodes.get_mut(body)
             && let SceneNodeData::StaticBody3D(body) = &mut node.data
+            && let Some(audio) = &mut body.audio_interaction
         {
-            body.audio_diffusion.damping = 0.45;
-            body.audio_diffusion.compression = 0.2;
-            body.audio_diffusion.hardness = 0.65;
+            audio.diffusion.damping = 0.45;
+            audio.diffusion.compression = 0.2;
+            audio.diffusion.hardness = 0.65;
         }
         let x = 4.0 + (i % 8) as f32 * 2.5;
         let y = ((i / 8) % 4) as f32 * 2.0 - 4.0;

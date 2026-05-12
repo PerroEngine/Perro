@@ -112,8 +112,7 @@ Example scene-key binding:
 
 ```scn
 [bob]
-    [Node3D]
-    [/Node3D]
+    [Node3D/]
 [/bob]
 
 [anim_player]

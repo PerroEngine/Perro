@@ -1,11 +1,11 @@
 use super::*;
 use perro_nodes::{
-    AudioMask2D, AudioMask3D, AudioPortal2D, AudioPortal3D, AudioZone2D, AudioZone3D,
+    AudioEffectZone2D, AudioEffectZone3D, AudioMask2D, AudioMask3D, AudioPortal2D, AudioPortal3D,
     CollisionShape2D, CollisionShape3D, SceneNode, SceneNodeData, StaticBody2D, StaticBody3D,
 };
 use perro_resource_context::sub_apis::{Audio, Audio2D, Audio3D};
 use perro_runtime_context::sub_apis::NodeAPI;
-use perro_structs::{Quaternion, Transform2D, Transform3D};
+use perro_structs::{BitMask, Quaternion, Transform2D, Transform3D};
 
 fn looped_audio() -> RuntimeAudio<'static> {
     RuntimeAudio {
@@ -21,7 +21,7 @@ fn looped_audio() -> RuntimeAudio<'static> {
 fn spatial_options(range: f32) -> SpatialAudioOptions {
     SpatialAudioOptions {
         range,
-        occlusion_mask: u32::MAX,
+        audio_layer: BitMask::ALL,
         enable_propagation: true,
         direction_2d: AudioDirection::Omni,
         direction_3d: AudioDirection::Omni,
@@ -49,6 +49,63 @@ fn unobstructed_sound_stays_direct() {
     assert_eq!(result.occlusion, 0.0);
     assert!(result.volume > 0.4);
     assert_eq!(result.perceived_2d, Some(Vector2::new(5.0, 0.0)));
+}
+
+#[test]
+fn listener_audio_options_apply_by_audio_mask() {
+    let mut runtime = Runtime::new();
+    runtime.resource_api.set_audio_listener_2d(
+        [0.0, 0.0],
+        0.0,
+        perro_structs::AudioListenerOptions {
+            audio_mask: BitMask::with([1]),
+            effects: vec![perro_structs::AudioEffect {
+                reverb_send: 0.7,
+                echo: 0.4,
+                dampening: 0.3,
+            }],
+        },
+    );
+    assert!(runtime.play_runtime_audio_2d(
+        looped_audio(),
+        Vector2::new(5.0, 0.0),
+        SpatialAudioOptions {
+            audio_layer: BitMask::with([1]),
+            ..spatial_options(10.0)
+        },
+    ));
+    runtime.update_audio_propagation(1.0);
+    let result = runtime.audio.sounds[0].last_result.expect("result");
+    assert_eq!(result.low_pass, 0.3);
+    assert_eq!(result.echo, 0.4);
+    assert_eq!(result.reverb_send, 0.7);
+
+    let mut masked = Runtime::new();
+    masked.resource_api.set_audio_listener_2d(
+        [0.0, 0.0],
+        0.0,
+        perro_structs::AudioListenerOptions {
+            audio_mask: BitMask::with([1]),
+            effects: vec![perro_structs::AudioEffect {
+                reverb_send: 0.7,
+                echo: 0.4,
+                dampening: 0.3,
+            }],
+        },
+    );
+    assert!(masked.play_runtime_audio_2d(
+        looped_audio(),
+        Vector2::new(5.0, 0.0),
+        SpatialAudioOptions {
+            audio_layer: BitMask::with([2]),
+            ..spatial_options(10.0)
+        },
+    ));
+    masked.update_audio_propagation(1.0);
+    let result = masked.audio.sounds[0].last_result.expect("masked result");
+    assert_eq!(result.low_pass, 0.0);
+    assert_eq!(result.echo, 0.0);
+    assert_eq!(result.reverb_send, 0.0);
 }
 
 #[test]
@@ -83,9 +140,11 @@ fn directional_audio_3d_front_is_louder_than_back() {
 #[test]
 fn attached_directional_audio_uses_node_forward() {
     let mut runtime = Runtime::new();
-    runtime
-        .resource_api
-        .set_audio_listener_3d([0.0, 0.0, -5.0], [0.0, 0.0, 0.0, 1.0]);
+    runtime.resource_api.set_audio_listener_3d(
+        [0.0, 0.0, -5.0],
+        [0.0, 0.0, 0.0, 1.0],
+        perro_structs::AudioListenerOptions::new(),
+    );
     let node = NodeAPI::create::<perro_nodes::Node3D>(&mut runtime);
     assert!(NodeAPI::set_global_transform_3d(
         &mut runtime,
@@ -153,7 +212,7 @@ fn resource_point_audio_preserves_spatial_options() {
             audio: Audio::new("res://point2d.wav"),
             position: Vector2::new(5.0, 0.0),
             range: 24.0,
-            occlusion_mask: 0x10,
+            audio_layer: BitMask::from_bits(0x10),
             enable_propagation: false,
             direction: Some(AudioDirection::Directional(Vector2::new(2.0, 0.0))),
         },
@@ -161,7 +220,7 @@ fn resource_point_audio_preserves_spatial_options() {
     runtime.update_audio_propagation(1.0);
     let sound = &runtime.audio.sounds[0];
     assert_eq!(sound.options.range, 24.0);
-    assert_eq!(sound.options.occlusion_mask, 0x10);
+    assert_eq!(sound.options.audio_layer, BitMask::from_bits(0x10));
     assert!(!sound.options.enable_propagation);
     assert_eq!(
         sound.options.direction_2d,
@@ -290,6 +349,40 @@ fn audio_mask_blocks_without_physical_collision() {
     runtime.update_audio_propagation(1.0);
     let result = runtime.audio.sounds[0].last_result.expect("result");
     assert!(result.occlusion > 0.0);
+}
+
+#[test]
+fn audio_mask_ignores_unmatched_audio_layer() {
+    let mut runtime = Runtime::new();
+    let mask = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::AudioMask2D(
+            AudioMask2D::new(),
+        )));
+    if let Some(node) = runtime.nodes.get_mut(mask)
+        && let SceneNodeData::AudioMask2D(mask) = &mut node.data
+    {
+        mask.material.audio_mask = BitMask::with([2]);
+    }
+    let shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, mask, shape));
+    assert!(NodeAPI::set_global_transform_2d(
+        &mut runtime,
+        mask,
+        Transform2D::new(Vector2::new(2.5, 0.0), 0.0, Vector2::ONE),
+    ));
+    assert!(runtime.play_runtime_audio_2d(
+        looped_audio(),
+        Vector2::new(5.0, 0.0),
+        SpatialAudioOptions {
+            audio_layer: BitMask::with([3]),
+            ..spatial_options(10.0)
+        },
+    ));
+    runtime.update_audio_propagation(1.0);
+    let result = runtime.audio.sounds[0].last_result.expect("result");
+    assert_eq!(result.occlusion, 0.0);
+    assert_eq!(result.perceived_2d, Some(Vector2::new(5.0, 0.0)));
 }
 
 #[test]
@@ -688,21 +781,19 @@ fn audio_portal_3d_transports_through_connected_exit() {
 }
 
 #[test]
-fn audio_zone_2d_mixes_effect_when_source_enters() {
+fn audio_effect_zone_2d_mixes_effect_when_source_enters() {
     let mut runtime = Runtime::new();
     let zone = runtime
         .nodes
-        .insert(SceneNode::new(SceneNodeData::AudioZone2D(
-            AudioZone2D::new(),
+        .insert(SceneNode::new(SceneNodeData::AudioEffectZone2D(
+            AudioEffectZone2D::new(),
         )));
     if let Some(node) = runtime.nodes.get_mut(zone)
-        && let SceneNodeData::AudioZone2D(zone) = &mut node.data
+        && let SceneNodeData::AudioEffectZone2D(zone) = &mut node.data
     {
-        zone.effect.reverb_send = 0.7;
-        zone.effect.echo = 0.4;
-        zone.effect.dampening = 0.5;
-        zone.affect_listener = false;
-        zone.affect_path = false;
+        zone.effects[0].reverb_send = 0.7;
+        zone.effects[0].echo = 0.4;
+        zone.effects[0].dampening = 0.5;
     }
     let shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, zone, shape));
@@ -733,21 +824,65 @@ fn audio_zone_2d_mixes_effect_when_source_enters() {
 }
 
 #[test]
-fn audio_zone_3d_mixes_effect_when_path_crosses() {
+fn audio_effect_zone_ignores_unmatched_audio_layer() {
     let mut runtime = Runtime::new();
     let zone = runtime
         .nodes
-        .insert(SceneNode::new(SceneNodeData::AudioZone3D(
-            AudioZone3D::new(),
+        .insert(SceneNode::new(SceneNodeData::AudioEffectZone2D(
+            AudioEffectZone2D::new(),
         )));
     if let Some(node) = runtime.nodes.get_mut(zone)
-        && let SceneNodeData::AudioZone3D(zone) = &mut node.data
+        && let SceneNodeData::AudioEffectZone2D(zone) = &mut node.data
     {
-        zone.effect.reverb_send = 0.6;
-        zone.effect.echo = 0.3;
-        zone.effect.dampening = 0.4;
-        zone.affect_listener = false;
-        zone.affect_emitters = false;
+        zone.audio_mask = BitMask::with([2]);
+        zone.effects[0].reverb_send = 0.7;
+        zone.effects[0].echo = 0.4;
+        zone.effects[0].dampening = 0.5;
+    }
+    let shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, zone, shape));
+    if let Some(node) = runtime.nodes.get_mut(shape)
+        && let SceneNodeData::CollisionShape2D(shape) = &mut node.data
+    {
+        shape.shape = perro_nodes::Shape2D::Quad {
+            width: 4.0,
+            height: 4.0,
+        };
+    }
+    assert!(NodeAPI::set_global_transform_2d(
+        &mut runtime,
+        shape,
+        Transform2D::new(Vector2::new(5.0, 0.0), 0.0, Vector2::ONE),
+    ));
+    assert!(runtime.play_runtime_audio_2d(
+        looped_audio(),
+        Vector2::new(5.0, 0.0),
+        SpatialAudioOptions {
+            audio_layer: BitMask::with([3]),
+            ..spatial_options(10.0)
+        },
+    ));
+    runtime.update_audio_propagation(1.0);
+    let result = runtime.audio.sounds[0].last_result.expect("result");
+    assert_eq!(result.reverb_send, 0.0);
+    assert_eq!(result.reflection, 0.0);
+    assert_eq!(result.low_pass, 0.0);
+}
+
+#[test]
+fn audio_effect_zone_3d_mixes_effect_when_path_crosses() {
+    let mut runtime = Runtime::new();
+    let zone = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::AudioEffectZone3D(
+            AudioEffectZone3D::new(),
+        )));
+    if let Some(node) = runtime.nodes.get_mut(zone)
+        && let SceneNodeData::AudioEffectZone3D(zone) = &mut node.data
+    {
+        zone.effects[0].reverb_send = 0.6;
+        zone.effects[0].echo = 0.3;
+        zone.effects[0].dampening = 0.4;
     }
     let shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
     assert!(NodeAPI::reparent(&mut runtime, zone, shape));

@@ -1,4 +1,4 @@
-use perro_structs::Transform3D;
+use perro_structs::{BitMask, Transform3D};
 use std::borrow::Cow;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -138,6 +138,7 @@ pub struct Sky3D {
     pub moon: SkyMoon,
     pub style: SkyStyle,
     pub sky_shader: Option<Cow<'static, str>>,
+    pub render_layers: BitMask,
 }
 
 impl Sky3D {
@@ -157,6 +158,7 @@ impl Sky3D {
             moon: SkyMoon::new(),
             style: SkyStyle::Toon,
             sky_shader: None,
+            render_layers: BitMask::ALL,
         }
     }
 }

@@ -5,6 +5,7 @@ fn build_camera_3d(data: &SceneDefNodeData) -> Camera3D {
     }
     apply_node_3d_fields(&mut node, &data.fields);
     apply_camera_3d_fields(&mut node, &data.fields);
+    apply_audio_listener_options_data(&mut node.audio_options, &data.fields);
     node
 }
 
@@ -14,6 +15,11 @@ fn apply_camera_3d_fields(node: &mut Camera3D, fields: &[SceneObjectField]) {
             Some(NodeField::Camera3D(Camera3DField::Zoom)) => {
                 if let Some(v) = as_f32(value) {
                     apply_zoom_compat_projection(node, v);
+                }
+            }
+            Some(NodeField::Camera3D(Camera3DField::RenderMask)) => {
+                if let Some(v) = as_bitmask(value) {
+                    node.render_mask = v;
                 }
             }
             Some(NodeField::Camera3D(Camera3DField::Projection)) => {

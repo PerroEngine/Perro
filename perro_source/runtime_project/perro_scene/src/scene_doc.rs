@@ -205,6 +205,10 @@ impl<'a> SceneDocWriter<'a> {
         indent(out, depth);
         out.push('[');
         out.push_str(data.ty.as_ref());
+        if data.base_ref().is_none() && data.fields.is_empty() {
+            out.push_str("/]\n");
+            return;
+        }
         out.push_str("]\n");
         if let Some(base) = data.base_ref() {
             self.write_data(base, out, depth + 1);

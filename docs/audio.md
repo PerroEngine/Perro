@@ -3,7 +3,7 @@
 Perro audio has three layers:
 
 - script API: `ctx.res.Audio()` and `ctx.run.Audio()`
-- runtime propagation: listener, occlusion, reflection, portals, zones
+- runtime propagation: listener, occlusion, reflection, portals, effect zones
 - playback backend: `perro_pawdio`
 
 Use API docs for script calls:
@@ -301,7 +301,7 @@ Attached MIDI:
 ```rust
 let spatial = SpatialAudioOptions {
     range: 40.0,
-    occlusion_mask: u32::MAX,
+    audio_layer: BitMask::ALL,
     enable_propagation: true,
     direction_2d: AudioDirection::Omni,
     direction_3d: AudioDirection::Omni,
@@ -499,11 +499,12 @@ Runtime propagation inputs:
 - source position and range
 - audio direction mode
 - listener transform
+- listener `audio_options` on active camera
 - audio material fields on physics nodes
 - `AudioMask2D`
 - `AudioMask3D`
 - `AudioPortal2D` and `AudioPortal3D`
-- audio zones
+- audio effect zones
 
 Propagation output becomes `SpatialAudioParams`.
 The runtime sends those params to `perro_pawdio`.
@@ -512,6 +513,36 @@ It also applies low-pass, EQ, compression, echo, reverb send, reflection, and oc
 
 Propagation runs only while active positional or attached spatial sounds exist.
 If no active spatial sounds exist, no audio ray work runs that frame.
+
+## Listener Options
+
+Active `Camera2D` and `Camera3D` can set `audio_options`.
+Listener options apply after audio zones and before explicit sound effects.
+`audio_mask` filters emitted `audio_layer`.
+
+Scene example:
+
+```text
+[Camera3D]
+    audio_options = {
+        audio_mask = [1, 3],
+        effects = [
+            { reverb_send: 0.4, echo: 0.1, dampening: 0.2 }
+        ]
+    }
+[/Camera3D]
+```
+
+Shorthand fields also work on cameras:
+
+```text
+[Camera2D]
+    audio_mask = [2]
+    reverb_send = 0.6
+    echo = 0.2
+    dampening = 0.3
+[/Camera2D]
+```
 
 ## Audio Direction
 
@@ -534,7 +565,7 @@ Point audio:
 
 Attached audio:
 
-- `SpatialAudioOptions` sets node-attached range, mask, propagation, and direction.
+- `SpatialAudioOptions` sets node-attached range, audio layer, propagation, and direction.
 - `direction_2d` takes `AudioDirection<Vector2>`.
 - `direction_3d` takes `AudioDirection<Vector3>`.
 - struct fields set attached/node direction.
@@ -550,7 +581,7 @@ let hit = Audio2D {
     audio: Audio::new("res://audio/hit.wav"),
     position: Vector2::new(128.0, 64.0),
     range: 512.0,
-    occlusion_mask: u32::MAX,
+    audio_layer: BitMask::ALL,
     enable_propagation: true,
     direction: None,
 };
@@ -593,7 +624,7 @@ let audio = RuntimeAudio {
 
 let spatial = SpatialAudioOptions {
     range: 80.0,
-    occlusion_mask: u32::MAX,
+    audio_layer: BitMask::ALL,
     enable_propagation: true,
     direction_2d: AudioDirection::Omni,
     direction_3d: AudioDirection::Omni,
@@ -604,9 +635,10 @@ let _ = ctx.run.Audio().play_attached_bus(audio_bus!("ambience"), audio, vehicle
 
 ## Audio Materials
 
-Physics bodies participate in audio propagation when `audio_interaction = true`.
+Physics bodies and areas participate in audio propagation when `audio_interaction` is set.
+Use `audio_interaction = none` to turn it off.
 
-Material fields:
+`AudioInteraction` fields:
 
 - `audio_interaction`
 - `absorption`
@@ -615,9 +647,11 @@ Material fields:
 - `diffusion`
 - `low_pass_strength`
 - `thickness_multiplier`
-- `occlusion_mask`
+- `audio_mask`
+  - Uses `BitMask`; see `docs/scripting/bitmask.md`.
 
-Use audio masks, zones, and portals for invisible or non-physical audio geometry.
+Use audio masks, effect zones, and portals for invisible or non-physical audio geometry.
+Emitted sounds use `audio_layer`; audio geometry uses `audio_mask` to decide which layers affect it.
 
 ## Portals
 

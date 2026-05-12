@@ -1,7 +1,5 @@
 # Math Types
 
-Perro scripting uses `Vector2`, `Vector3`, and `Quaternion` from `perro_structs` for common math operations.
-
 ## Vector2
 
 ```rust
@@ -15,6 +13,7 @@ let ang = Vector2::new(1.0, 0.0)
 ```
 
 Methods:
+
 - `distance_to(other)`
 - `direction_to(other)`
 - `angle_to(other)`
@@ -38,6 +37,7 @@ let on_x = v.project_on(x_axis);   // (2, 0, 0)
 ```
 
 Methods:
+
 - `distance_to(other)`
 - `direction_to(other)`
 - `angle_to(other)`
@@ -63,6 +63,7 @@ let blended = Quaternion::IDENTITY.slerped(q, 0.5);
 ```
 
 Methods:
+
 - `looking_at(direction, up)`
 - `look_at(direction, up)`
 - `rotate_vector3(v)`
@@ -77,8 +78,6 @@ Methods:
 Use `Color` for RGBA color values and color utilities.
 
 ```rust
-use perro_structs::Color;
-
 let white = Color::WHITE;
 let accent = Color::from_hex("#3A86FF").unwrap_or(Color::WHITE);
 let tint = Color::new(1.0, 0.9, 0.9, 1.0);
@@ -88,6 +87,7 @@ let rgba_hex = tint.to_hex_rgba();   // "#FFE6E6FF"
 ```
 
 Methods:
+
 - `new(r, g, b, a)`
 - `rgb(r, g, b)`
 - `from_hex("#RRGGBB" / "#RRGGBBAA" / short forms)`
@@ -97,19 +97,46 @@ Methods:
 - `to_rgb()`
 
 Presets:
+
 - `Color::WHITE`
 - `Color::BLACK`
+- `Color::GRAY`
+- `Color::GREY`
+- `Color::LIGHT_GRAY`
+- `Color::LIGHT_GREY`
+- `Color::DARK_GRAY`
+- `Color::DARK_GREY`
 - `Color::RED`
-- `Color::GREEN`
-- `Color::BLUE`
+- `Color::MAROON`
+- `Color::CRIMSON`
+- `Color::ORANGE`
 - `Color::YELLOW`
+- `Color::GREEN`
+- `Color::LIME`
+- `Color::FOREST_GREEN`
+- `Color::OLIVE`
+- `Color::MINT`
+- `Color::BLUE`
+- `Color::NAVY`
+- `Color::ROYAL_BLUE`
+- `Color::SKY_BLUE`
+- `Color::CORNFLOWER_BLUE`
+- `Color::INDIGO`
+- `Color::VIOLET`
 - `Color::CYAN`
+- `Color::TEAL`
+- `Color::TURQUOISE`
 - `Color::MAGENTA`
+- `Color::PINK`
+- `Color::PURPLE`
+- `Color::BROWN`
+- `Color::GOLD`
 - `Color::TRANSPARENT`
 
 ## Structs
 
 Primary math structs in scripting:
+
 - `Vector2`
 - `Vector3`
 - `Quaternion`

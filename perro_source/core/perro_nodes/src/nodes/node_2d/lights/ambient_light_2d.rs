@@ -1,4 +1,4 @@
-use perro_structs::Transform2D;
+use perro_structs::{BitMask, Transform2D};
 
 #[derive(Clone, Debug)]
 pub struct AmbientLight2D {
@@ -8,6 +8,7 @@ pub struct AmbientLight2D {
     pub intensity: f32,
     pub cast_shadows: bool,
     pub active: bool,
+    pub render_layers: BitMask,
 }
 
 impl AmbientLight2D {
@@ -19,6 +20,7 @@ impl AmbientLight2D {
             intensity: 0.0,
             cast_shadows: false,
             active: true,
+            render_layers: BitMask::ALL,
         }
     }
 }

@@ -22,7 +22,7 @@ impl PhysicsSystem {
         let world = self.world_2d.as_ref()?;
         let ray = r2::Ray::new(na2::Point2::new(origin.x, origin.y), dir);
         let excluded = filter.exclude_nodes.as_slice();
-        let mask = filter.mask;
+        let mask = filter.mask.bits();
         let predicate = |handle, collider: &r2::Collider| {
             (collider.collision_groups().memberships.bits() & mask) != 0
                 && world

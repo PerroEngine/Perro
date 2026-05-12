@@ -10,6 +10,8 @@ use perro_runtime_context::sub_apis::{
     NodeAPI, PhysicsContact2D, PhysicsContact3D, PhysicsQueryFilter, PhysicsRayHit2D,
     PhysicsRayHit3D, PhysicsShapeHit2D, PhysicsShapeHit3D, SignalAPI,
 };
+#[cfg(test)]
+use perro_structs::BitMask;
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use perro_variant::Variant;
 
@@ -133,12 +135,30 @@ impl Runtime {
         max_distance: f32,
         include_areas: bool,
     ) -> Option<PhysicsRayHit3D> {
+        self.physics_raycast_3d_filtered(
+            origin,
+            direction,
+            max_distance,
+            &PhysicsQueryFilter {
+                include_areas,
+                ..PhysicsQueryFilter::default()
+            },
+        )
+    }
+
+    pub fn physics_raycast_3d_filtered(
+        &mut self,
+        origin: Vector3,
+        direction: Vector3,
+        max_distance: f32,
+        filter: &PhysicsQueryFilter,
+    ) -> Option<PhysicsRayHit3D> {
         self.propagate_pending_transform_dirty();
         self.refresh_dirty_global_transforms();
         let bodies_3d = self.collect_body_descs_3d();
         self.sync_world_3d(&bodies_3d);
         self.physics
-            .raycast_3d(origin, direction, max_distance, include_areas)
+            .raycast_3d_filtered(origin, direction, max_distance, filter)
     }
 
     pub fn physics_raycast_2d(
@@ -265,14 +285,14 @@ impl Runtime {
                         body.enabled,
                         None,
                         (body.friction, body.restitution),
-                        (body.collision_layer, body.collision_mask),
+                        (body.collision_layers, body.collision_mask),
                     ),
                     SceneNodeData::Area2D(body) => (
                         BodyKind::Area,
                         body.enabled,
                         None,
                         (0.7, 0.0),
-                        (body.collision_layer, body.collision_mask),
+                        (body.collision_layers, body.collision_mask),
                     ),
                     SceneNodeData::RigidBody2D(body) => (
                         BodyKind::Rigid,
@@ -289,14 +309,14 @@ impl Runtime {
                             angular_damping: body.angular_damping,
                         }),
                         (body.friction, body.restitution),
-                        (body.collision_layer, body.collision_mask),
+                        (body.collision_layers, body.collision_mask),
                     ),
                     SceneNodeData::TileMap2D(tilemap) => (
                         BodyKind::Static,
                         tilemap.collision_enabled,
                         None,
                         (0.7, 0.0),
-                        (tilemap.collision_layer, tilemap.collision_mask),
+                        (tilemap.collision_layers, tilemap.collision_mask),
                     ),
                     _ => continue,
                 }
@@ -334,8 +354,8 @@ impl Runtime {
                     }
                 }
             }
-            shape_signature = hash_u32(shape_signature, groups.0);
-            shape_signature = hash_u32(shape_signature, groups.1);
+            shape_signature = hash_u32(shape_signature, groups.0.bits());
+            shape_signature = hash_u32(shape_signature, groups.1.bits());
 
             let needs_shape_rebuild = self
                 .physics
@@ -370,7 +390,7 @@ impl Runtime {
                         if let SceneNodeData::CollisionShape2D(shape) = &child.data {
                             let mut desc = shape_desc_2d(shape, material.0, material.1);
                             desc.sensor = kind == BodyKind::Area;
-                            desc.collision_layer = groups.0;
+                            desc.collision_layers = groups.0;
                             desc.collision_mask = groups.1;
                             shapes.push(desc);
                         }
@@ -406,14 +426,14 @@ impl Runtime {
                         body.enabled,
                         None,
                         (body.friction, body.restitution),
-                        (body.collision_layer, body.collision_mask),
+                        (body.collision_layers, body.collision_mask),
                     ),
                     SceneNodeData::Area3D(body) => (
                         BodyKind::Area,
                         body.enabled,
                         None,
                         (0.7, 0.0),
-                        (body.collision_layer, body.collision_mask),
+                        (body.collision_layers, body.collision_mask),
                     ),
                     SceneNodeData::RigidBody3D(body) => (
                         BodyKind::Rigid,
@@ -430,7 +450,7 @@ impl Runtime {
                             angular_damping: body.angular_damping,
                         }),
                         (body.friction, body.restitution),
-                        (body.collision_layer, body.collision_mask),
+                        (body.collision_layers, body.collision_mask),
                     ),
                     _ => continue,
                 }
@@ -443,8 +463,8 @@ impl Runtime {
             shape_signature = hash_f32(shape_signature, global.scale.x.to_bits());
             shape_signature = hash_f32(shape_signature, global.scale.y.to_bits());
             shape_signature = hash_f32(shape_signature, global.scale.z.to_bits());
-            shape_signature = hash_u32(shape_signature, groups.0);
-            shape_signature = hash_u32(shape_signature, groups.1);
+            shape_signature = hash_u32(shape_signature, groups.0.bits());
+            shape_signature = hash_u32(shape_signature, groups.1.bits());
 
             if let Some(node) = self.nodes.get(id) {
                 for &child_id in node.children_slice() {
@@ -485,7 +505,7 @@ impl Runtime {
                             desc.local.scale.z * global.scale.z,
                         );
                         desc.sensor = kind == BodyKind::Area;
-                        desc.collision_layer = groups.0;
+                        desc.collision_layers = groups.0;
                         desc.collision_mask = groups.1;
                         shapes.push(desc);
                     }

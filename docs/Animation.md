@@ -54,8 +54,7 @@ Use `AnimationPlayer` when one clip drives one set of bindings.
 
 ```ini
 [PlayerRoot]
-    [Node3D]
-    [/Node3D]
+    [Node3D/]
 [/PlayerRoot]
 
 [IdlePlayer]
@@ -188,8 +187,7 @@ The scene node supplies:
 
 ```ini
 [Hero]
-    [Node3D]
-    [/Node3D]
+    [Node3D/]
 [/Hero]
 
 [HeroAnimTree]
@@ -241,4 +239,4 @@ Node and input names omit `@` in Rust API, that's just for .panim and .panimtree
 
 Bad refs return `false`.
 
-Scene templates: [Scene Node Templates](scripting/scene_node_templates.md).
+Scene templates: [Scene Node Templates](scripting/scene_node_templates/index.md).

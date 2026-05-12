@@ -15,6 +15,7 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 `Node2D`
 
 - Base transform for 2D nodes (position, rotation, scale, z_index, visible).
+- `render_layers` uses [`BitMask`](bitmask.md). A renderable node draws only when it intersects the active `Camera2D.render_mask`.
 
 `Sprite2D`
 
@@ -35,7 +36,9 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 `Camera2D`
 
 - Active 2D camera (position/rotation/zoom).
+- `render_mask` filters `render_layers` on 2D renderable nodes.
 - Supports camera post-processing via `post_processing` (see "Camera Post-Processing" below).
+- Supports listener audio effects via `audio_options`; `audio_mask` filters emitted `audio_layer`.
 
 2D lights:
 
@@ -68,12 +71,14 @@ Physics 2D:
 - `RigidBody2D`
 - `Area2D`
 - `CollisionShape2D` should be authored as a child of `StaticBody2D` or `RigidBody2D`.
-- Static/rigid bodies and collision shapes participate in audio propagation by default through `audio_interaction` and audio material fields.
+- Static/rigid bodies and areas participate in audio propagation by default through `audio_interaction`.
+- Collision shapes only provide geometry.
 
 2D physics layer/mask fields:
 
-- `collision_layer`
-- `collision_mask`
+- `collision_layers: BitMask`
+- `collision_mask: BitMask`
+- Scene files use `collision_layers = [1, 2]` and `collision_mask_layers = [1, 2]`; Rust code should use `BitMask::with([1, 2])`.
 
 2D joint nodes:
 
@@ -88,10 +93,10 @@ Anchors are local to each connected body.
 Audio 2D:
 
 - `AudioMask2D`
-- `AudioZone2D`
+- `AudioEffectZone2D`
 - `AudioPortal2D`
 - `AudioMask2D` is invisible audio-only geometry with `CollisionShape2D` children.
-- `AudioZone2D` stores reverb/echo/dampening intent for listener, emitter, or path zones.
+- `AudioEffectZone2D` stores ordered reverb/echo/dampening effects. `audio_mask` filters emitted `audio_layer`; shape overlap with source/listener/path applies the chain.
 - `AudioPortal2D` marks one-way inputs with `CollisionShape2D` children and linked portal exits. Hit point and ray direction transform through target portal global transforms, then continue through portal hits or physics bounces. Immediate re-entry into the portal just exited is blocked until another portal hit or physics bounce.
 
 `TileMap2D` is the tile map node.
@@ -103,6 +108,7 @@ See [TileMap2D](tilemap.md).
 `Node3D`
 
 - Base transform for 3D nodes (position, rotation, scale, visible).
+- `render_layers` uses [`BitMask`](bitmask.md). A renderable node draws only when it intersects the active `Camera3D.render_mask`.
 
 `MeshInstance3D`
 
@@ -148,7 +154,9 @@ See [TileMap2D](tilemap.md).
 `Camera3D`
 
 - Active 3D camera with projection settings.
+- `render_mask` filters `render_layers` on 3D renderable nodes.
 - Supports camera post-processing via `post_processing` (see "Camera Post-Processing" below).
+- Supports listener audio effects via `audio_options`; `audio_mask` filters emitted `audio_layer`.
 
 `ParticleEmitter3D`
 
@@ -183,12 +191,14 @@ Physics 3D:
 - `CollisionShape3D` should be authored as a child of `StaticBody3D` or `RigidBody3D`.
 - `CollisionShape3D` supports primitive `shape` and mesh-backed `trimesh` source.
 - Trimesh source format: `res://path/to/model.glb:mesh[0]` (mesh index optional, default `0`).
-- Static/rigid bodies and collision shapes participate in audio propagation by default through `audio_interaction` and audio material fields.
+- Static/rigid bodies and areas participate in audio propagation by default through `audio_interaction`.
+- Collision shapes only provide geometry.
 
 3D physics layer/mask fields:
 
-- `collision_layer`
-- `collision_mask`
+- `collision_layers: BitMask`
+- `collision_mask: BitMask`
+- Scene files use `collision_layers = [1, 2]` and `collision_mask_layers = [1, 2]`; Rust code should use `BitMask::with([1, 2])`.
 
 3D joint nodes:
 
@@ -203,10 +213,10 @@ Anchors are local to each connected body.
 Audio 3D:
 
 - `AudioMask3D`
-- `AudioZone3D`
+- `AudioEffectZone3D`
 - `AudioPortal3D`
 - `AudioMask3D` is invisible audio-only geometry with `CollisionShape3D` children.
-- `AudioZone3D` stores reverb/echo/dampening intent for listener, emitter, or path zones.
+- `AudioEffectZone3D` stores ordered reverb/echo/dampening effects. `audio_mask` filters emitted `audio_layer`; shape overlap with source/listener/path applies the chain.
 - `AudioPortal3D` marks one-way inputs with `CollisionShape3D` children and linked portal exits. Hit point and ray direction transform through target portal global transforms, then continue through portal hits or physics bounces. Immediate re-entry into the portal just exited is blocked until another portal hit or physics bounce.
 
 `Skeleton3D`
@@ -304,7 +314,7 @@ UI style resources:
 
 For copy/paste scene node authoring templates (with all exposed fields, including nil/empty-default fields), see:
 
-- [Scene Node Templates](scene_node_templates.md)
+- [Scene Node Templates](scene_node_templates/index.md)
 
 ## Camera Post-Processing
 

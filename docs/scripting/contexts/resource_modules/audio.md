@@ -101,7 +101,7 @@ Audio2D {
     audio: Audio,
     position: Vector2,
     range: f32,
-    occlusion_mask: u32,
+    audio_layer: BitMask,
     enable_propagation: bool,
     direction: Option<AudioDirection<Vector2>>,
 }
@@ -146,7 +146,7 @@ Audio3D {
     audio: Audio,
     position: Vector3,
     range: f32,
-    occlusion_mask: u32,
+    audio_layer: BitMask,
     enable_propagation: bool,
     direction: Option<AudioDirection<Vector3>>,
 }
@@ -398,7 +398,7 @@ let hit = Audio2D {
     audio: Audio::new("res://audio/hit.wav"),
     position: enemy_pos,
     range: 256.0,
-    occlusion_mask: u32::MAX,
+    audio_layer: BitMask::ALL,
     enable_propagation: true,
     direction: None,
 };
@@ -413,7 +413,7 @@ let speaker = Audio3D {
     audio: Audio::new("res://audio/alert.wav"),
     position: speaker_pos,
     range: 35.0,
-    occlusion_mask: u32::MAX,
+    audio_layer: BitMask::ALL,
     enable_propagation: true,
     direction: Some(AudioDirection::Directional(Vector3::new(0.0, 0.0, -1.0))),
 };
@@ -428,7 +428,7 @@ let ui_world_ping = Audio2D {
     audio: Audio::new("res://audio/ping.wav"),
     position: marker_pos,
     range: 128.0,
-    occlusion_mask: u32::MAX,
+    audio_layer: BitMask::ALL,
     enable_propagation: false,
     direction: None,
 };
@@ -466,7 +466,7 @@ let step = Audio3D {
     audio: Audio::new("res://step.wav"),
     position: Vector3::new(0.0, 0.0, -5.0),
     range: 20.0,
-    occlusion_mask: u32::MAX,
+    audio_layer: BitMask::ALL,
     enable_propagation: true,
     direction: Some(AudioDirection::Directional(Vector3::new(0.0, 0.0, 1.0))),
 };

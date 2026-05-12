@@ -28,7 +28,7 @@ pub(crate) struct QueuedSpatialAudio {
     pub from_start: f32,
     pub from_end: f32,
     pub range: f32,
-    pub occlusion_mask: u32,
+    pub audio_layer: perro_structs::BitMask,
     pub enable_propagation: bool,
     pub pos: QueuedSpatialAudioPos,
     pub direction_2d: perro_resource_context::sub_apis::AudioDirection<perro_structs::Vector2>,
@@ -158,6 +158,8 @@ pub struct RuntimeResourceApi {
     pub(crate) next_spatial_midi_id: std::sync::atomic::AtomicU64,
     pub(crate) audio_listener_2d: Mutex<Option<perro_pawdio::AudioListener2D>>,
     pub(crate) audio_listener_3d: Mutex<Option<perro_pawdio::AudioListener3D>>,
+    pub(crate) audio_listener_options_2d: Mutex<perro_structs::AudioListenerOptions>,
+    pub(crate) audio_listener_options_3d: Mutex<perro_structs::AudioListenerOptions>,
     pub(super) static_material_lookup: Option<StaticMaterialLookup>,
     pub(super) static_skeleton_lookup: Option<StaticSkeletonLookup>,
     pub(super) static_animation_lookup: Option<StaticAnimationLookup>,
@@ -191,6 +193,8 @@ impl RuntimeResourceApi {
             next_spatial_midi_id: std::sync::atomic::AtomicU64::new(1),
             audio_listener_2d: Mutex::new(None),
             audio_listener_3d: Mutex::new(None),
+            audio_listener_options_2d: Mutex::new(perro_structs::AudioListenerOptions::new()),
+            audio_listener_options_3d: Mutex::new(perro_structs::AudioListenerOptions::new()),
             static_material_lookup,
             static_skeleton_lookup,
             static_animation_lookup,
@@ -212,7 +216,12 @@ impl RuntimeResourceApi {
         *viewport = (width.max(1), height.max(1));
     }
 
-    pub(crate) fn set_audio_listener_2d(&self, position: [f32; 2], rotation_radians: f32) {
+    pub(crate) fn set_audio_listener_2d(
+        &self,
+        position: [f32; 2],
+        rotation_radians: f32,
+        options: perro_structs::AudioListenerOptions,
+    ) {
         let mut listener = self
             .audio_listener_2d
             .lock()
@@ -221,14 +230,29 @@ impl RuntimeResourceApi {
             position,
             rotation_radians,
         });
+        let mut listener_options = self
+            .audio_listener_options_2d
+            .lock()
+            .expect("resource api audio 2d listener options mutex poisoned");
+        *listener_options = options;
     }
 
-    pub(crate) fn set_audio_listener_3d(&self, position: [f32; 3], rotation: [f32; 4]) {
+    pub(crate) fn set_audio_listener_3d(
+        &self,
+        position: [f32; 3],
+        rotation: [f32; 4],
+        options: perro_structs::AudioListenerOptions,
+    ) {
         let mut listener = self
             .audio_listener_3d
             .lock()
             .expect("resource api audio 3d listener mutex poisoned");
         *listener = Some(perro_pawdio::AudioListener3D { position, rotation });
+        let mut listener_options = self
+            .audio_listener_options_3d
+            .lock()
+            .expect("resource api audio 3d listener options mutex poisoned");
+        *listener_options = options;
     }
 
     pub(crate) fn drain_commands(&self, out: &mut Vec<RenderCommand>) {

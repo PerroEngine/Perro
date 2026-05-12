@@ -458,7 +458,9 @@ fn set_camera_3d_updates_retained_camera_state() {
                 near: 0.2,
                 far: 900.0,
             },
+            render_mask: perro_structs::BitMask::ALL,
             post_processing: Arc::from([]),
+            audio_options: perro_structs::AudioListenerOptions::new(),
         },
     })));
     graphics.draw_frame();
@@ -473,7 +475,9 @@ fn set_camera_3d_updates_retained_camera_state() {
                 near: 0.2,
                 far: 900.0,
             },
+            render_mask: perro_structs::BitMask::ALL,
             post_processing: Arc::from([]),
+            audio_options: perro_structs::AudioListenerOptions::new(),
         }
     );
 }

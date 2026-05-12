@@ -1,11 +1,14 @@
 use super::*;
+use perro_structs::{AudioListenerOptions, BitMask};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Camera2DState {
     pub position: [f32; 2],
     pub rotation_radians: f32,
     pub zoom: f32,
+    pub render_mask: BitMask,
     pub post_processing: Arc<[PostProcessEffect]>,
+    pub audio_options: AudioListenerOptions,
 }
 
 impl Default for Camera2DState {
@@ -14,7 +17,9 @@ impl Default for Camera2DState {
             position: [0.0, 0.0],
             rotation_radians: 0.0,
             zoom: 1.0,
+            render_mask: BitMask::ALL,
             post_processing: Arc::from([]),
+            audio_options: AudioListenerOptions::new(),
         }
     }
 }

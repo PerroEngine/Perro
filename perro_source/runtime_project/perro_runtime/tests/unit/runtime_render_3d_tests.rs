@@ -17,7 +17,7 @@ use perro_render_bridge::{
     CameraProjectionState, Command3D, RenderCommand, RenderEvent, ResourceCommand,
 };
 use perro_structs::Transform3D;
-use perro_structs::{Quaternion, Vector3};
+use perro_structs::{BitMask, Quaternion, Vector3};
 
 fn collect_commands(runtime: &mut Runtime) -> Vec<RenderCommand> {
     let mut out = Vec::new();
@@ -440,6 +440,88 @@ fn active_camera_3d_emits_set_camera_command() {
                                 if size == 24.0 && near == 0.2 && far == 600.0
                         )
             )
+    )));
+}
+
+#[test]
+fn camera_3d_render_mask_filters_meshes() {
+    let mut runtime = Runtime::new();
+    let mut camera = Camera3D::new();
+    camera.active = true;
+    camera.render_mask = BitMask::with([1]);
+    let camera_node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Camera3D(camera)));
+
+    let mut mesh = MeshInstance3D::new();
+    mesh.mesh = MeshID::from_parts(92, 0);
+    mesh.render_layers = BitMask::with([2]);
+    set_primary_material(&mut mesh, MaterialID::from_parts(93, 0));
+    let mesh_node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+
+    runtime.extract_render_3d_commands();
+    let first = collect_commands(&mut runtime);
+    assert!(!first.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command_3d)
+            if matches!(command_3d.as_ref(), Command3D::Draw { node, .. } if *node == mesh_node)
+    )));
+
+    if let Some(node) = runtime.nodes.get_mut(camera_node)
+        && let SceneNodeData::Camera3D(camera) = &mut node.data
+    {
+        camera.render_mask = BitMask::with([2]);
+    }
+    runtime.mark_needs_rerender(camera_node);
+
+    runtime.extract_render_3d_commands();
+    let second = collect_commands(&mut runtime);
+    assert!(second.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command_3d)
+            if matches!(command_3d.as_ref(), Command3D::Draw { node, .. } if *node == mesh_node)
+    )));
+}
+
+#[test]
+fn camera_3d_move_does_not_rewalk_mesh_render_layers() {
+    let mut runtime = Runtime::new();
+    let mut camera = Camera3D::new();
+    camera.active = true;
+    let camera_node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Camera3D(camera)));
+
+    let mut mesh = MeshInstance3D::new();
+    mesh.mesh = MeshID::from_parts(95, 0);
+    set_primary_material(&mut mesh, MaterialID::from_parts(96, 0));
+    let mesh_node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+
+    runtime.extract_render_3d_commands();
+    let _ = collect_commands(&mut runtime);
+
+    if let Some(node) = runtime.nodes.get_mut(camera_node)
+        && let SceneNodeData::Camera3D(camera) = &mut node.data
+    {
+        camera.transform.position.x = 10.0;
+    }
+    runtime.mark_transform_dirty_recursive(camera_node);
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command_3d)
+            if matches!(command_3d.as_ref(), Command3D::SetCamera { .. })
+    )));
+    assert!(!commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command_3d)
+            if matches!(command_3d.as_ref(), Command3D::Draw { node, .. } if *node == mesh_node)
     )));
 }
 

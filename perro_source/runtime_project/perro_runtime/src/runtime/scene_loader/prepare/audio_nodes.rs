@@ -6,10 +6,10 @@ pub(super) fn build_audio_mask_2d(data: &SceneDefNodeData) -> AudioMask2D {
     node
 }
 
-pub(super) fn build_audio_zone_2d(data: &SceneDefNodeData) -> AudioZone2D {
-    let mut node = AudioZone2D::new();
+pub(super) fn build_audio_effect_zone_2d(data: &SceneDefNodeData) -> AudioEffectZone2D {
+    let mut node = AudioEffectZone2D::new();
     apply_node_2d_data(&mut node.base, data);
-    apply_audio_zone_2d_data(&mut node, data);
+    apply_audio_effect_zone_2d_data(&mut node, data);
     node
 }
 
@@ -26,10 +26,10 @@ pub(super) fn build_audio_mask_3d(data: &SceneDefNodeData) -> AudioMask3D {
     node
 }
 
-pub(super) fn build_audio_zone_3d(data: &SceneDefNodeData) -> AudioZone3D {
-    let mut node = AudioZone3D::new();
+pub(super) fn build_audio_effect_zone_3d(data: &SceneDefNodeData) -> AudioEffectZone3D {
+    let mut node = AudioEffectZone3D::new();
     apply_node_3d_data(&mut node.base, data);
-    apply_audio_zone_3d_data(&mut node, data);
+    apply_audio_effect_zone_3d_data(&mut node, data);
     node
 }
 
@@ -82,7 +82,7 @@ pub(super) fn apply_audio_portal_3d_data(node: &mut AudioPortal3D, data: &SceneD
     }
 }
 
-pub(super) fn apply_audio_zone_2d_data(node: &mut AudioZone2D, data: &SceneDefNodeData) {
+pub(super) fn apply_audio_effect_zone_2d_data(node: &mut AudioEffectZone2D, data: &SceneDefNodeData) {
     for (name, value) in flatten_scene_node_fields(data) {
         match name.as_ref() {
             "enabled" => {
@@ -90,43 +90,36 @@ pub(super) fn apply_audio_zone_2d_data(node: &mut AudioZone2D, data: &SceneDefNo
                     node.enabled = v;
                 }
             }
+            "audio_mask" | "audio_masks" | "audio_mask_layers" | "mask" | "masks" => {
+                if let Some(v) = as_bitmask(&value) {
+                    node.audio_mask = v;
+                }
+            }
             "reverb" | "reverb_send" | "reverbSend" => {
                 if let Some(v) = as_f32(&value) {
-                    node.effect.reverb_send = v;
+                    first_audio_effect_zone_effect_mut(&mut node.effects).reverb_send = v;
                 }
             }
             "echo" => {
                 if let Some(v) = as_f32(&value) {
-                    node.effect.echo = v;
+                    first_audio_effect_zone_effect_mut(&mut node.effects).echo = v;
                 }
             }
             "dampening" | "damping" | "low_pass" | "lowPass" => {
                 if let Some(v) = as_f32(&value) {
-                    node.effect.dampening = v;
+                    first_audio_effect_zone_effect_mut(&mut node.effects).dampening = v;
                 }
             }
-            "effect" => apply_audio_zone_effect(&mut node.effect, &value),
-            "affect_listener" | "affectListener" => {
-                if let Some(v) = as_bool(&value) {
-                    node.affect_listener = v;
-                }
-            }
-            "affect_emitters" | "affectEmitters" | "affect_sources" | "affectSources" => {
-                if let Some(v) = as_bool(&value) {
-                    node.affect_emitters = v;
-                }
-            }
-            "affect_path" | "affectPath" => {
-                if let Some(v) = as_bool(&value) {
-                    node.affect_path = v;
-                }
+            "effect" => node.effects = vec![audio_effect_zone_effect_from_value(&value)],
+            "effects" | "effect_chain" | "effectChain" => {
+                node.effects = audio_effect_zone_effects_from_value(&value);
             }
             _ => {}
         }
     }
 }
 
-pub(super) fn apply_audio_zone_3d_data(node: &mut AudioZone3D, data: &SceneDefNodeData) {
+pub(super) fn apply_audio_effect_zone_3d_data(node: &mut AudioEffectZone3D, data: &SceneDefNodeData) {
     for (name, value) in flatten_scene_node_fields(data) {
         match name.as_ref() {
             "enabled" => {
@@ -134,43 +127,124 @@ pub(super) fn apply_audio_zone_3d_data(node: &mut AudioZone3D, data: &SceneDefNo
                     node.enabled = v;
                 }
             }
+            "audio_mask" | "audio_masks" | "audio_mask_layers" | "mask" | "masks" => {
+                if let Some(v) = as_bitmask(&value) {
+                    node.audio_mask = v;
+                }
+            }
             "reverb" | "reverb_send" | "reverbSend" => {
                 if let Some(v) = as_f32(&value) {
-                    node.effect.reverb_send = v;
+                    first_audio_effect_zone_effect_mut(&mut node.effects).reverb_send = v;
                 }
             }
             "echo" => {
                 if let Some(v) = as_f32(&value) {
-                    node.effect.echo = v;
+                    first_audio_effect_zone_effect_mut(&mut node.effects).echo = v;
                 }
             }
             "dampening" | "damping" | "low_pass" | "lowPass" => {
                 if let Some(v) = as_f32(&value) {
-                    node.effect.dampening = v;
+                    first_audio_effect_zone_effect_mut(&mut node.effects).dampening = v;
                 }
             }
-            "effect" => apply_audio_zone_effect(&mut node.effect, &value),
-            "affect_listener" | "affectListener" => {
-                if let Some(v) = as_bool(&value) {
-                    node.affect_listener = v;
-                }
-            }
-            "affect_emitters" | "affectEmitters" | "affect_sources" | "affectSources" => {
-                if let Some(v) = as_bool(&value) {
-                    node.affect_emitters = v;
-                }
-            }
-            "affect_path" | "affectPath" => {
-                if let Some(v) = as_bool(&value) {
-                    node.affect_path = v;
-                }
+            "effect" => node.effects = vec![audio_effect_zone_effect_from_value(&value)],
+            "effects" | "effect_chain" | "effectChain" => {
+                node.effects = audio_effect_zone_effects_from_value(&value);
             }
             _ => {}
         }
     }
 }
 
-pub(super) fn apply_audio_zone_effect(effect: &mut perro_nodes::AudioZoneEffect, value: &SceneValue) {
+pub(super) fn apply_audio_listener_options_data(
+    options: &mut perro_structs::AudioListenerOptions,
+    fields: &[SceneObjectField],
+) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        apply_audio_listener_options_field(options, name, value);
+    });
+}
+
+fn apply_audio_listener_options_field(
+    options: &mut perro_structs::AudioListenerOptions,
+    name: &str,
+    value: &SceneValue,
+) {
+    match name {
+        "audio_options" => apply_audio_listener_options_value(options, value),
+        "audio_mask" | "audio_masks" | "audio_mask_layers" => {
+            if let Some(v) = as_bitmask(value) {
+                options.audio_mask = v;
+            }
+        }
+        "reverb" | "reverb_send" | "reverbSend" => {
+            if let Some(v) = as_f32(value) {
+                first_audio_effect_zone_effect_mut(&mut options.effects).reverb_send = v;
+            }
+        }
+        "echo" => {
+            if let Some(v) = as_f32(value) {
+                first_audio_effect_zone_effect_mut(&mut options.effects).echo = v;
+            }
+        }
+        "dampening" | "damping" | "low_pass" | "lowPass" => {
+            if let Some(v) = as_f32(value) {
+                first_audio_effect_zone_effect_mut(&mut options.effects).dampening = v;
+            }
+        }
+        "effect" => options.effects = vec![audio_effect_zone_effect_from_value(value)],
+        "effects" | "effect_chain" | "effectChain" => {
+            options.effects = audio_effect_zone_effects_from_value(value);
+        }
+        _ => {}
+    }
+}
+
+fn apply_audio_listener_options_value(
+    options: &mut perro_structs::AudioListenerOptions,
+    value: &SceneValue,
+) {
+    let SceneValue::Object(fields) = value else {
+        return;
+    };
+    for (name, value) in fields.iter() {
+        apply_audio_listener_options_field(options, name, value);
+    }
+}
+
+fn first_audio_effect_zone_effect_mut(
+    effects: &mut Vec<perro_structs::AudioEffect>,
+) -> &mut perro_structs::AudioEffect {
+    if effects.is_empty() {
+        effects.push(perro_structs::AudioEffect::new());
+    }
+    &mut effects[0]
+}
+
+fn audio_effect_zone_effects_from_value(
+    value: &SceneValue,
+) -> Vec<perro_structs::AudioEffect> {
+    let effects: Vec<_> = match value {
+        SceneValue::Array(items) => items
+            .iter()
+            .map(audio_effect_zone_effect_from_value)
+            .collect(),
+        _ => vec![audio_effect_zone_effect_from_value(value)],
+    };
+    if effects.is_empty() {
+        vec![perro_structs::AudioEffect::new()]
+    } else {
+        effects
+    }
+}
+
+fn audio_effect_zone_effect_from_value(value: &SceneValue) -> perro_structs::AudioEffect {
+    let mut effect = perro_structs::AudioEffect::new();
+    apply_audio_effect_zone_effect(&mut effect, value);
+    effect
+}
+
+fn apply_audio_effect_zone_effect(effect: &mut perro_structs::AudioEffect, value: &SceneValue) {
     let SceneValue::Object(fields) = value else {
         return;
     };

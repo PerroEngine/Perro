@@ -63,6 +63,11 @@ fn apply_ray_light_3d_fields(node: &mut RayLight3D, fields: &[SceneObjectField])
                     node.active = v;
                 }
             }
+            Some(NodeField::Light3D(Light3DField::RenderLayers)) => {
+                if let Some(v) = as_bitmask(value) {
+                    node.render_layers = v;
+                }
+            }
             Some(NodeField::RayLight3D(RayLight3DField::Visible)) => {
                 if let Some(v) = as_bool(value) {
                     node.visible = v;
@@ -96,6 +101,11 @@ fn apply_ambient_light_3d_fields(node: &mut AmbientLight3D, fields: &[SceneObjec
                     node.active = v;
                 }
             }
+            Some(NodeField::Light3D(Light3DField::RenderLayers)) => {
+                if let Some(v) = as_bitmask(value) {
+                    node.render_layers = v;
+                }
+            }
             _ => {}
         }
     });
@@ -127,6 +137,11 @@ fn apply_point_light_3d_fields(node: &mut PointLight3D, fields: &[SceneObjectFie
             Some(NodeField::Light3D(Light3DField::Active)) => {
                 if let Some(v) = as_bool(value) {
                     node.active = v;
+                }
+            }
+            Some(NodeField::Light3D(Light3DField::RenderLayers)) => {
+                if let Some(v) = as_bitmask(value) {
+                    node.render_layers = v;
                 }
             }
             _ => {}
@@ -262,6 +277,11 @@ fn apply_sky_3d_fields(node: &mut Sky3D, fields: &[SceneObjectField]) {
                     node.active = v;
                 }
             }
+            Some(NodeField::Sky3D(Sky3DField::RenderLayers)) => {
+                if let Some(v) = as_bitmask(value) {
+                    node.render_layers = v;
+                }
+            }
             _ => {}
         }
     });
@@ -303,6 +323,11 @@ fn apply_spot_light_3d_fields(node: &mut SpotLight3D, fields: &[SceneObjectField
             Some(NodeField::Light3D(Light3DField::Active)) => {
                 if let Some(v) = as_bool(value) {
                     node.active = v;
+                }
+            }
+            Some(NodeField::Light3D(Light3DField::RenderLayers)) => {
+                if let Some(v) = as_bitmask(value) {
+                    node.render_layers = v;
                 }
             }
             _ => {}

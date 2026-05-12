@@ -6,6 +6,7 @@ use perro_nodes::{
     Area2D, Area3D, CollisionShape2D, CollisionShape3D, FixedJoint2D, FixedJoint3D, RigidBody2D,
     RigidBody3D, StaticBody2D, StaticBody3D,
 };
+use perro_structs::CollisionMasks;
 
 #[test]
 fn physics_raycast_3d_hits_static_body() {
@@ -73,6 +74,57 @@ fn physics_raycast_3d_hits_area_with_collision_shape() {
 }
 
 #[test]
+fn physics_raycast_3d_filter_uses_collision_masks() {
+    let mut runtime = Runtime::new();
+
+    let body_a = NodeAPI::create::<StaticBody3D>(&mut runtime);
+    let shape_a = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, body_a, shape_a));
+    let _ = <Runtime as NodeAPI>::set_global_transform_3d(
+        &mut runtime,
+        body_a,
+        Transform3D::new(
+            Vector3::new(0.0, 0.0, -2.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE,
+        ),
+    );
+
+    let body_b = NodeAPI::create::<StaticBody3D>(&mut runtime);
+    let shape_b = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, body_b, shape_b));
+
+    let mask_a = CollisionMasks::new(CollisionMasks::layer(3), CollisionMasks::layer(3));
+    let mask_b = CollisionMasks::new(CollisionMasks::layer(4), CollisionMasks::layer(4));
+    assert!(!mask_a.can_collide(mask_b));
+
+    if let Some(node) = runtime.nodes.get_mut(body_a)
+        && let SceneNodeData::StaticBody3D(body) = &mut node.data
+    {
+        body.set_collision_masks(mask_a);
+    }
+    if let Some(node) = runtime.nodes.get_mut(body_b)
+        && let SceneNodeData::StaticBody3D(body) = &mut node.data
+    {
+        body.set_collision_masks(mask_b);
+    }
+
+    let hit = runtime
+        .physics_raycast_3d_filtered(
+            Vector3::new(0.0, 0.0, -5.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            10.0,
+            &PhysicsQueryFilter {
+                mask: CollisionMasks::layer(4),
+                ..PhysicsQueryFilter::default()
+            },
+        )
+        .expect("ray should skip layer 3 and hit layer 4");
+
+    assert_eq!(hit.node, body_b);
+}
+
+#[test]
 fn physics_raycast_2d_filters_areas_and_nodes() {
     let mut runtime = Runtime::new();
 
@@ -127,8 +179,8 @@ fn physics_raycast_2d_filters_areas_and_nodes() {
     if let Some(node) = runtime.nodes.get_mut(static_body)
         && let SceneNodeData::StaticBody2D(body) = &mut node.data
     {
-        body.collision_layer = 4;
-        body.collision_mask = 0;
+        body.collision_layers = BitMask::from_bits(4);
+        body.collision_mask = BitMask::NONE;
     }
     let hit = runtime
         .physics_raycast_2d(
@@ -136,7 +188,7 @@ fn physics_raycast_2d_filters_areas_and_nodes() {
             Vector2::new(1.0, 0.0),
             10.0,
             &PhysicsQueryFilter {
-                mask: 4,
+                mask: BitMask::from_bits(4),
                 include_areas: false,
                 exclude_nodes: Vec::new(),
             },
@@ -243,7 +295,14 @@ fn tilemap_explicit_collision_shapes_do_not_merge_with_auto() {
         tiles: tiles.into(),
     };
 
-    let shapes = tilemap_shape_descs_2d(&tilemap, 1, u32::MAX, 0.7, 0.0, Some(&tileset));
+    let shapes = tilemap_shape_descs_2d(
+        &tilemap,
+        BitMask::with([1]),
+        BitMask::ALL,
+        0.7,
+        0.0,
+        Some(&tileset),
+    );
     assert_eq!(shapes.len(), 2);
     assert!(matches!(
         shapes[0].shape,
@@ -284,7 +343,15 @@ fn bench_tilemap_collision_bake_128x128_auto_merge() {
     let start = std::time::Instant::now();
     let mut total = 0usize;
     for _ in 0..250 {
-        total += tilemap_shape_descs_2d(&tilemap, 1, u32::MAX, 0.7, 0.0, Some(&tileset)).len();
+        total += tilemap_shape_descs_2d(
+            &tilemap,
+            BitMask::with([1]),
+            BitMask::ALL,
+            0.7,
+            0.0,
+            Some(&tileset),
+        )
+        .len();
     }
     let elapsed = start.elapsed();
     assert_eq!(total, 250);
@@ -342,15 +409,15 @@ fn physics_2d_layers_and_masks_filter_area_overlaps() {
     if let Some(node) = runtime.nodes.get_mut(static_body)
         && let SceneNodeData::RigidBody2D(body) = &mut node.data
     {
-        body.collision_layer = 1;
-        body.collision_mask = 1;
+        body.collision_layers = BitMask::from_bits(1);
+        body.collision_mask = BitMask::from_bits(1);
         body.gravity_scale = 0.0;
     }
     if let Some(node) = runtime.nodes.get_mut(area)
         && let SceneNodeData::Area2D(body) = &mut node.data
     {
-        body.collision_layer = 2;
-        body.collision_mask = 2;
+        body.collision_layers = BitMask::from_bits(2);
+        body.collision_mask = BitMask::from_bits(2);
     }
 
     runtime.physics_fixed_step();
@@ -359,12 +426,12 @@ fn physics_2d_layers_and_masks_filter_area_overlaps() {
     if let Some(node) = runtime.nodes.get_mut(area)
         && let SceneNodeData::Area2D(body) = &mut node.data
     {
-        body.collision_mask = 1;
+        body.collision_mask = BitMask::from_bits(1);
     }
     if let Some(node) = runtime.nodes.get_mut(static_body)
         && let SceneNodeData::RigidBody2D(body) = &mut node.data
     {
-        body.collision_mask = 2;
+        body.collision_mask = BitMask::from_bits(2);
     }
 
     runtime.physics_fixed_step();
@@ -394,15 +461,15 @@ fn physics_3d_layers_and_masks_filter_area_overlaps() {
     if let Some(node) = runtime.nodes.get_mut(static_body)
         && let SceneNodeData::RigidBody3D(body) = &mut node.data
     {
-        body.collision_layer = 1;
-        body.collision_mask = 1;
+        body.collision_layers = BitMask::from_bits(1);
+        body.collision_mask = BitMask::from_bits(1);
         body.gravity_scale = 0.0;
     }
     if let Some(node) = runtime.nodes.get_mut(area)
         && let SceneNodeData::Area3D(body) = &mut node.data
     {
-        body.collision_layer = 4;
-        body.collision_mask = 4;
+        body.collision_layers = BitMask::from_bits(4);
+        body.collision_mask = BitMask::from_bits(4);
     }
 
     runtime.physics_fixed_step();
@@ -411,12 +478,12 @@ fn physics_3d_layers_and_masks_filter_area_overlaps() {
     if let Some(node) = runtime.nodes.get_mut(area)
         && let SceneNodeData::Area3D(body) = &mut node.data
     {
-        body.collision_mask = 1;
+        body.collision_mask = BitMask::from_bits(1);
     }
     if let Some(node) = runtime.nodes.get_mut(static_body)
         && let SceneNodeData::RigidBody3D(body) = &mut node.data
     {
-        body.collision_mask = 4;
+        body.collision_mask = BitMask::from_bits(4);
     }
 
     runtime.physics_fixed_step();

@@ -17,6 +17,7 @@ use perro_render_bridge::{
     Sky3DState, SkyTime3DState, SpotLight3DState,
 };
 use perro_runtime_render::{material_3d_request, mesh_3d_request};
+use perro_structs::BitMask;
 use std::borrow::Cow;
 use std::sync::Arc;
 
@@ -49,6 +50,34 @@ impl Runtime {
         self.propagate_pending_transform_dirty();
         self.refresh_dirty_global_transforms();
 
+        let active_camera = self.active_render_camera_3d();
+        let camera_changed = self.render_3d.last_camera.as_ref() != active_camera.as_ref();
+        let previous_camera_render_mask = self
+            .render_3d
+            .last_camera
+            .as_ref()
+            .map(|camera| camera.render_mask)
+            .unwrap_or(BitMask::ALL);
+        let camera_render_mask = active_camera
+            .as_ref()
+            .map(|camera| camera.render_mask)
+            .unwrap_or(BitMask::ALL);
+        let camera_render_mask_changed = previous_camera_render_mask != camera_render_mask;
+
+        if camera_changed {
+            if let Some(camera) = &active_camera {
+                self.resource_api.set_audio_listener_3d(
+                    camera.position,
+                    camera.rotation,
+                    camera.audio_options.clone(),
+                );
+                self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::SetCamera {
+                    camera: camera.clone(),
+                })));
+            }
+            self.render_3d.last_camera = active_camera;
+        }
+
         let dirty_ids = self
             .dirty
             .dirty_indices()
@@ -57,13 +86,16 @@ impl Runtime {
             .collect::<Vec<_>>();
         let all_ids = self.nodes.iter().map(|(id, _)| id).collect::<Vec<_>>();
         let nodes = &self.nodes;
-        let mut traversal_ids =
-            self.render_3d
-                .collect_traversal(dirty_ids, all_ids, bootstrap_scan, |node, out| {
-                    if let Some(node_ref) = nodes.get(node) {
-                        out.extend(node_ref.get_children_ids().iter().copied());
-                    }
-                });
+        let mut traversal_ids = self.render_3d.collect_traversal(
+            dirty_ids,
+            all_ids,
+            bootstrap_scan || camera_render_mask_changed,
+            |node, out| {
+                if let Some(node_ref) = nodes.get(node) {
+                    out.extend(node_ref.get_children_ids().iter().copied());
+                }
+            },
+        );
         let mut traversal_seen = traversal_ids
             .iter()
             .copied()
@@ -103,76 +135,12 @@ impl Runtime {
         for node in traversal_ids.iter().copied() {
             visible_now.remove(&node);
             let effective_visible = self.is_effectively_visible(node);
-            let camera_data = self.nodes.get(node).and_then(|node| match &node.data {
-                SceneNodeData::Camera3D(camera) if camera.active && effective_visible => Some((
-                    camera.transform,
-                    match &camera.projection {
-                        CameraProjection::Perspective {
-                            fov_y_degrees,
-                            near,
-                            far,
-                        } => CameraProjectionState::Perspective {
-                            fov_y_degrees: *fov_y_degrees,
-                            near: *near,
-                            far: *far,
-                        },
-                        CameraProjection::Orthographic { size, near, far } => {
-                            CameraProjectionState::Orthographic {
-                                size: *size,
-                                near: *near,
-                                far: *far,
-                            }
-                        }
-                        CameraProjection::Frustum {
-                            left,
-                            right,
-                            bottom,
-                            top,
-                            near,
-                            far,
-                        } => CameraProjectionState::Frustum {
-                            left: *left,
-                            right: *right,
-                            bottom: *bottom,
-                            top: *top,
-                            near: *near,
-                            far: *far,
-                        },
-                    },
-                    Arc::from(camera.post_processing.to_effects_vec()),
-                )),
-                _ => None,
-            });
-            if let Some((local_transform, projection, post_processing)) = camera_data {
-                let global = self
-                    .get_global_transform_3d(node)
-                    .unwrap_or(local_transform);
-                let camera = Camera3DState {
-                    position: [global.position.x, global.position.y, global.position.z],
-                    rotation: [
-                        global.rotation.x,
-                        global.rotation.y,
-                        global.rotation.z,
-                        global.rotation.w,
-                    ],
-                    projection,
-                    post_processing,
-                };
-                self.resource_api
-                    .set_audio_listener_3d(camera.position, camera.rotation);
-                if self.render_3d.last_camera.as_ref() != Some(&camera) {
-                    self.queue_render_command(RenderCommand::ThreeD(Box::new(
-                        Command3D::SetCamera {
-                            camera: camera.clone(),
-                        },
-                    )));
-                    self.render_3d.last_camera = Some(camera);
-                }
-            }
-
             let ambient_light_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::AmbientLight3D(light)
-                    if light.active && light.visible && effective_visible =>
+                    if light.active
+                        && light.visible
+                        && effective_visible
+                        && render_mask_matches(camera_render_mask, light.render_layers) =>
                 {
                     Some(AmbientLight3DState {
                         color: light.color,
@@ -193,7 +161,12 @@ impl Runtime {
             }
 
             let sky_data = self.nodes.get(node).and_then(|node| match &node.data {
-                SceneNodeData::Sky3D(sky) if sky.active && sky.visible && effective_visible => {
+                SceneNodeData::Sky3D(sky)
+                    if sky.active
+                        && sky.visible
+                        && effective_visible
+                        && render_mask_matches(camera_render_mask, sky.render_layers) =>
+                {
                     Some(Sky3DState {
                         day_colors: Arc::from(sky.day_colors.as_ref()),
                         evening_colors: Arc::from(sky.evening_colors.as_ref()),
@@ -232,7 +205,10 @@ impl Runtime {
 
             let ray_light_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::RayLight3D(light)
-                    if light.active && light.visible && effective_visible =>
+                    if light.active
+                        && light.visible
+                        && effective_visible
+                        && render_mask_matches(camera_render_mask, light.render_layers) =>
                 {
                     Some((
                         light.transform,
@@ -264,7 +240,10 @@ impl Runtime {
 
             let point_light_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::PointLight3D(light)
-                    if light.active && light.visible && effective_visible =>
+                    if light.active
+                        && light.visible
+                        && effective_visible
+                        && render_mask_matches(camera_render_mask, light.render_layers) =>
                 {
                     Some((
                         light.transform,
@@ -299,7 +278,10 @@ impl Runtime {
 
             let spot_light_data = self.nodes.get(node).and_then(|node| match &node.data {
                 SceneNodeData::SpotLight3D(light)
-                    if light.active && light.visible && effective_visible =>
+                    if light.active
+                        && light.visible
+                        && effective_visible
+                        && render_mask_matches(camera_render_mask, light.render_layers) =>
                 {
                     Some((
                         light.transform,
@@ -364,24 +346,32 @@ impl Runtime {
                 self.nodes
                     .get(node)
                     .and_then(|scene_node| match &scene_node.data {
-                        SceneNodeData::MeshInstance3D(mesh) => Some((
-                            mesh.mesh,
-                            Some(mesh.skeleton),
-                            mesh.meshlet_override,
-                            LODOptions3D {
-                                min_lod: mesh.lod.min_lod,
-                                max_lod: mesh.lod.max_lod,
-                            },
-                        )),
-                        SceneNodeData::MultiMeshInstance3D(mesh) => Some((
-                            mesh.mesh,
-                            None,
-                            mesh.meshlet_override,
-                            LODOptions3D {
-                                min_lod: mesh.lod.min_lod,
-                                max_lod: mesh.lod.max_lod,
-                            },
-                        )),
+                        SceneNodeData::MeshInstance3D(mesh)
+                            if render_mask_matches(camera_render_mask, mesh.render_layers) =>
+                        {
+                            Some((
+                                mesh.mesh,
+                                Some(mesh.skeleton),
+                                mesh.meshlet_override,
+                                LODOptions3D {
+                                    min_lod: mesh.lod.min_lod,
+                                    max_lod: mesh.lod.max_lod,
+                                },
+                            ))
+                        }
+                        SceneNodeData::MultiMeshInstance3D(mesh)
+                            if render_mask_matches(camera_render_mask, mesh.render_layers) =>
+                        {
+                            Some((
+                                mesh.mesh,
+                                None,
+                                mesh.meshlet_override,
+                                LODOptions3D {
+                                    min_lod: mesh.lod.min_lod,
+                                    max_lod: mesh.lod.max_lod,
+                                },
+                            ))
+                        }
                         _ => None,
                     })
             } else {
@@ -584,7 +574,9 @@ impl Runtime {
                     .get(node)
                     .and_then(|scene_node| match &scene_node.data {
                         SceneNodeData::CollisionShape3D(shape)
-                            if shape.debug && effective_visible =>
+                            if shape.debug
+                                && effective_visible
+                                && render_mask_matches(camera_render_mask, shape.render_layers) =>
                         {
                             Some((shape.shape.clone(), shape.transform, scene_node.parent))
                         }
@@ -671,6 +663,13 @@ impl Runtime {
                     emitter_params,
                     emitter_simulation_time,
                 )) = point_emitter_data
+                && self.nodes.get(node).is_some_and(|scene_node| {
+                    matches!(
+                        &scene_node.data,
+                        SceneNodeData::ParticleEmitter3D(emitter)
+                            if render_mask_matches(camera_render_mask, emitter.render_layers)
+                    )
+                })
             {
                 let profile = resolve_particle_profile(self, &emitter_profile).unwrap_or_default();
                 let lifetime_min = profile.lifetime_min.max(0.001);
@@ -760,6 +759,44 @@ impl Runtime {
         self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::RemoveNode {
             node,
         })));
+    }
+
+    fn active_render_camera_3d(&mut self) -> Option<Camera3DState> {
+        let mut found = None;
+        for (node, scene_node) in self.nodes.iter() {
+            let SceneNodeData::Camera3D(camera) = &scene_node.data else {
+                continue;
+            };
+            if !camera.active || !self.is_effectively_visible(node) {
+                continue;
+            }
+            found = Some((
+                node,
+                camera.transform,
+                camera.projection.clone(),
+                camera.render_mask,
+                camera.post_processing.clone(),
+                camera.audio_options.clone(),
+            ));
+        }
+        let (node, local_transform, projection, render_mask, post_processing, audio_options) =
+            found?;
+        let global = self
+            .get_global_transform_3d(node)
+            .unwrap_or(local_transform);
+        Some(Camera3DState {
+            position: [global.position.x, global.position.y, global.position.z],
+            rotation: [
+                global.rotation.x,
+                global.rotation.y,
+                global.rotation.z,
+                global.rotation.w,
+            ],
+            projection: camera_projection_state(&projection),
+            render_mask,
+            post_processing: Arc::from(post_processing.to_effects_vec()),
+            audio_options,
+        })
     }
 
     fn queue_collision_shape_debug_draws(
@@ -969,6 +1006,45 @@ impl Runtime {
         }
         Some(mesh)
     }
+}
+
+fn camera_projection_state(projection: &CameraProjection) -> CameraProjectionState {
+    match projection {
+        CameraProjection::Perspective {
+            fov_y_degrees,
+            near,
+            far,
+        } => CameraProjectionState::Perspective {
+            fov_y_degrees: *fov_y_degrees,
+            near: *near,
+            far: *far,
+        },
+        CameraProjection::Orthographic { size, near, far } => CameraProjectionState::Orthographic {
+            size: *size,
+            near: *near,
+            far: *far,
+        },
+        CameraProjection::Frustum {
+            left,
+            right,
+            bottom,
+            top,
+            near,
+            far,
+        } => CameraProjectionState::Frustum {
+            left: *left,
+            right: *right,
+            bottom: *bottom,
+            top: *top,
+            near: *near,
+            far: *far,
+        },
+    }
+}
+
+#[inline]
+fn render_mask_matches(camera_mask: BitMask, render_layers: BitMask) -> bool {
+    camera_mask.intersects(render_layers)
 }
 
 #[cfg(test)]

@@ -1,4 +1,4 @@
-use perro_structs::Transform3D;
+use perro_structs::{BitMask, Transform3D};
 
 #[derive(Clone, Debug)]
 pub struct AmbientLight3D {
@@ -8,6 +8,7 @@ pub struct AmbientLight3D {
     pub intensity: f32,
     pub cast_shadows: bool,
     pub active: bool,
+    pub render_layers: BitMask,
 }
 
 impl AmbientLight3D {
@@ -19,6 +20,7 @@ impl AmbientLight3D {
             intensity: 0.0,
             cast_shadows: true,
             active: true,
+            render_layers: BitMask::ALL,
         }
     }
 }

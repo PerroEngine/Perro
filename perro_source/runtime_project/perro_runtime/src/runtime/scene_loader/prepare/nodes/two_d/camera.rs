@@ -5,6 +5,7 @@ fn build_camera_2d(data: &SceneDefNodeData) -> Camera2D {
     }
     apply_node_2d_fields(&mut node, &data.fields);
     apply_camera_2d_fields(&mut node, &data.fields);
+    apply_audio_listener_options_data(&mut node.audio_options, &data.fields);
     node
 }
 
@@ -14,6 +15,11 @@ fn apply_camera_2d_fields(node: &mut Camera2D, fields: &[SceneObjectField]) {
             Some(NodeField::Camera2D(Camera2DField::Zoom)) => {
                 if let Some(v) = value.as_f32() {
                     node.zoom = v;
+                }
+            }
+            Some(NodeField::Camera2D(Camera2DField::RenderMask)) => {
+                if let Some(v) = as_bitmask(value) {
+                    node.render_mask = v;
                 }
             }
             Some(NodeField::Camera2D(Camera2DField::PostProcessing)) => {

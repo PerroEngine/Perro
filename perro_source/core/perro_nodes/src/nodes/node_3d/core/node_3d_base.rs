@@ -1,10 +1,11 @@
-use perro_structs::Transform3D;
+use perro_structs::{BitMask, Transform3D};
 use std::ops::{Deref, DerefMut};
 
 #[derive(Clone, Debug)]
 pub struct Node3D {
     pub transform: Transform3D,
     pub visible: bool,
+    pub render_layers: BitMask,
 }
 
 impl Node3D {
@@ -12,6 +13,7 @@ impl Node3D {
         Self {
             transform: Transform3D::IDENTITY,
             visible: true,
+            render_layers: BitMask::ALL,
         }
     }
 }

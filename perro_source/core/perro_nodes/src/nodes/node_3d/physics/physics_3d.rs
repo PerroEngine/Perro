@@ -1,9 +1,6 @@
-use crate::{
-    audio::{AudioDiffusion, AudioMaterial},
-    node_3d::Node3D,
-};
+use crate::node_3d::Node3D;
 use perro_ids::NodeID;
-use perro_structs::Vector3;
+use perro_structs::{AudioInteraction, BitMask, CollisionMasks, Vector3};
 use std::ops::{Deref, DerefMut};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -30,9 +27,6 @@ pub struct CollisionShape3D {
     pub base: Node3D,
     pub shape: Shape3D,
     pub debug: bool,
-    pub audio_interaction: bool,
-    pub audio_material: AudioMaterial,
-    pub audio_diffusion: AudioDiffusion,
 }
 
 impl Default for CollisionShape3D {
@@ -47,9 +41,6 @@ impl CollisionShape3D {
             base: Node3D::new(),
             shape: Shape3D::Cube { size: Vector3::ONE },
             debug: false,
-            audio_interaction: true,
-            audio_material: AudioMaterial::new(),
-            audio_diffusion: AudioDiffusion::new(),
         }
     }
 }
@@ -73,14 +64,12 @@ pub struct StaticBody3D {
     pub base: Node3D,
     pub enabled: bool,
     pub physics_handle: Option<u64>,
-    pub collision_layer: u32,
-    pub collision_mask: u32,
+    pub collision_layers: BitMask,
+    pub collision_mask: BitMask,
     pub friction: f32,
     pub restitution: f32,
     pub density: f32,
-    pub audio_interaction: bool,
-    pub audio_material: AudioMaterial,
-    pub audio_diffusion: AudioDiffusion,
+    pub audio_interaction: Option<AudioInteraction>,
 }
 
 impl Default for StaticBody3D {
@@ -95,15 +84,22 @@ impl StaticBody3D {
             base: Node3D::new(),
             enabled: true,
             physics_handle: None,
-            collision_layer: 1,
-            collision_mask: u32::MAX,
+            collision_layers: BitMask::with([1]),
+            collision_mask: BitMask::ALL,
             friction: 0.7,
             restitution: 0.0,
             density: 1.0,
-            audio_interaction: true,
-            audio_material: AudioMaterial::new(),
-            audio_diffusion: AudioDiffusion::new(),
+            audio_interaction: Some(AudioInteraction::new()),
         }
+    }
+
+    pub const fn collision_masks(&self) -> CollisionMasks {
+        CollisionMasks::new(self.collision_layers, self.collision_mask)
+    }
+
+    pub fn set_collision_masks(&mut self, masks: CollisionMasks) {
+        self.collision_layers = masks.layers;
+        self.collision_mask = masks.mask;
     }
 }
 
@@ -126,8 +122,9 @@ pub struct Area3D {
     pub base: Node3D,
     pub enabled: bool,
     pub physics_handle: Option<u64>,
-    pub collision_layer: u32,
-    pub collision_mask: u32,
+    pub collision_layers: BitMask,
+    pub collision_mask: BitMask,
+    pub audio_interaction: Option<AudioInteraction>,
 }
 
 impl Default for Area3D {
@@ -142,9 +139,19 @@ impl Area3D {
             base: Node3D::new(),
             enabled: true,
             physics_handle: None,
-            collision_layer: 1,
-            collision_mask: u32::MAX,
+            collision_layers: BitMask::with([1]),
+            collision_mask: BitMask::ALL,
+            audio_interaction: Some(AudioInteraction::new()),
         }
+    }
+
+    pub const fn collision_masks(&self) -> CollisionMasks {
+        CollisionMasks::new(self.collision_layers, self.collision_mask)
+    }
+
+    pub fn set_collision_masks(&mut self, masks: CollisionMasks) {
+        self.collision_layers = masks.layers;
+        self.collision_mask = masks.mask;
     }
 }
 
@@ -167,8 +174,8 @@ pub struct RigidBody3D {
     pub base: Node3D,
     pub enabled: bool,
     pub physics_handle: Option<u64>,
-    pub collision_layer: u32,
-    pub collision_mask: u32,
+    pub collision_layers: BitMask,
+    pub collision_mask: BitMask,
     pub continuous_collision_detection: bool,
     pub mass: f32,
     pub linear_velocity: Vector3,
@@ -180,9 +187,7 @@ pub struct RigidBody3D {
     pub friction: f32,
     pub restitution: f32,
     pub density: f32,
-    pub audio_interaction: bool,
-    pub audio_material: AudioMaterial,
-    pub audio_diffusion: AudioDiffusion,
+    pub audio_interaction: Option<AudioInteraction>,
 }
 
 impl Default for RigidBody3D {
@@ -197,8 +202,8 @@ impl RigidBody3D {
             base: Node3D::new(),
             enabled: true,
             physics_handle: None,
-            collision_layer: 1,
-            collision_mask: u32::MAX,
+            collision_layers: BitMask::with([1]),
+            collision_mask: BitMask::ALL,
             continuous_collision_detection: true,
             mass: 1.0,
             linear_velocity: Vector3::ZERO,
@@ -210,10 +215,17 @@ impl RigidBody3D {
             friction: 0.7,
             restitution: 0.0,
             density: 1.0,
-            audio_interaction: true,
-            audio_material: AudioMaterial::new(),
-            audio_diffusion: AudioDiffusion::new(),
+            audio_interaction: Some(AudioInteraction::new()),
         }
+    }
+
+    pub const fn collision_masks(&self) -> CollisionMasks {
+        CollisionMasks::new(self.collision_layers, self.collision_mask)
+    }
+
+    pub fn set_collision_masks(&mut self, masks: CollisionMasks) {
+        self.collision_layers = masks.layers;
+        self.collision_mask = masks.mask;
     }
 }
 

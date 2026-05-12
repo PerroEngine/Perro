@@ -307,6 +307,15 @@ impl<'a> Parser<'a> {
 
     fn parse_type_block_after_lbracket(&mut self) -> SceneNodeData {
         let ty = self.expect_ident();
+        if self.current == Token::Slash {
+            self.advance();
+            self.expect(Token::RBracket);
+            return SceneNodeData {
+                ty: Cow::Owned(ty),
+                fields: Cow::Owned(Vec::new()),
+                base: None,
+            };
+        }
         self.expect(Token::RBracket);
 
         let mut fields = Vec::new();

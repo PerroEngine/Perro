@@ -24,7 +24,7 @@ impl PhysicsSystem {
 
         let ray = r2::Ray::new(na2::Point2::new(origin.x, origin.y), dir);
         let excluded = filter.exclude_nodes.as_slice();
-        let mask = filter.mask;
+        let mask = filter.mask.bits();
         let predicate = |handle, collider: &r2::Collider| {
             (collider.collision_groups().memberships.bits() & mask) != 0
                 && world
@@ -60,6 +60,24 @@ impl PhysicsSystem {
         max_distance: f32,
         include_areas: bool,
     ) -> Option<PhysicsRayHit3D> {
+        self.raycast_3d_filtered(
+            origin,
+            direction,
+            max_distance,
+            &PhysicsQueryFilter {
+                include_areas,
+                ..PhysicsQueryFilter::default()
+            },
+        )
+    }
+
+    pub fn raycast_3d_filtered(
+        &mut self,
+        origin: Vector3,
+        direction: Vector3,
+        max_distance: f32,
+        filter: &PhysicsQueryFilter,
+    ) -> Option<PhysicsRayHit3D> {
         if max_distance <= 0.0 || !max_distance.is_finite() {
             return None;
         }
@@ -75,18 +93,24 @@ impl PhysicsSystem {
         world.query_pipeline.update(&world.colliders);
 
         let ray = r3::Ray::new(na3::Point3::new(origin.x, origin.y, origin.z), dir);
-        let filter = if include_areas {
-            r3::QueryFilter::new()
-        } else {
-            r3::QueryFilter::new().exclude_sensors()
+        let excluded = filter.exclude_nodes.as_slice();
+        let mask = filter.mask.bits();
+        let predicate = |handle, collider: &r3::Collider| {
+            (collider.collision_groups().memberships.bits() & mask) != 0
+                && world
+                    .collider_owners
+                    .get(&handle)
+                    .map(|node| !excluded.contains(node))
+                    .unwrap_or(true)
         };
+        let query_filter = query_filter_3d(filter).predicate(&predicate);
         let (collider, hit) = world.query_pipeline.cast_ray_and_get_normal(
             &world.bodies,
             &world.colliders,
             &ray,
             max_distance,
             true,
-            filter,
+            query_filter,
         )?;
         let node = *world.collider_owners.get(&collider)?;
         let point = ray.point_at(hit.time_of_impact);
@@ -123,7 +147,7 @@ impl PhysicsSystem {
         let shape_pos = na2::Isometry2::new(na2::Vector2::new(origin.x, origin.y), 0.0);
         let shape_vel = dir / dir_len * max_distance;
         let excluded = filter.exclude_nodes.as_slice();
-        let mask = filter.mask;
+        let mask = filter.mask.bits();
         let predicate = |handle, collider: &r2::Collider| {
             (collider.collision_groups().memberships.bits() & mask) != 0
                 && world
@@ -177,7 +201,7 @@ impl PhysicsSystem {
         let shape_pos = na3::Isometry3::translation(origin.x, origin.y, origin.z);
         let shape_vel = dir / dir_len * max_distance;
         let excluded = filter.exclude_nodes.as_slice();
-        let mask = filter.mask;
+        let mask = filter.mask.bits();
         let predicate = |handle, collider: &r3::Collider| {
             (collider.collision_groups().memberships.bits() & mask) != 0
                 && world

@@ -230,8 +230,7 @@ Bind it to a real scene node in `animations`:
 
 ```ini
 [PlayerRoot]
-    [Node3D]
-    [/Node3D]
+    [Node3D/]
 [/PlayerRoot]
 
 [anim_tree]
@@ -323,8 +322,7 @@ Scene:
 
 ```ini
 [PlayerRoot]
-    [Node3D]
-    [/Node3D]
+    [Node3D/]
 [/PlayerRoot]
 
 [AnimTree]

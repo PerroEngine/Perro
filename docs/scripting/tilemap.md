@@ -19,8 +19,8 @@ It draws atlas tiles from a `.ptileset` and can emit static 2D colliders.
             1, 1, 1, 1, 1, 1, 1, 1,
         ]
         collision_enabled = true
-        collision_layer = 1
-        collision_mask = 4294967295
+        collision_layers = [1]
+        collision_mask_layers = [1]
     [/TileMap2D]
 [/level]
 ```
@@ -34,7 +34,7 @@ It draws atlas tiles from a `.ptileset` and can emit static 2D colliders.
 - `visible`: draw toggle.
 - `z_index`: 2D draw order.
 - `collision_enabled`: enables generated static colliders.
-- `collision_layer` / `collision_mask`: physics groups for generated colliders.
+- `collision_layers` / `collision_mask_layers`: physics groups for generated colliders.
 
 ## Collision Bake
 

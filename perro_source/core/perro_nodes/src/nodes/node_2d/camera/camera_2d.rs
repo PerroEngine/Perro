@@ -1,7 +1,7 @@
 use std::ops::{Deref, DerefMut};
 
 use crate::Node2D;
-use perro_structs::PostProcessSet;
+use perro_structs::{AudioListenerOptions, BitMask, PostProcessSet};
 
 impl Deref for Camera2D {
     type Target = Node2D;
@@ -21,7 +21,9 @@ pub struct Camera2D {
     pub base: Node2D,
     pub zoom: f32,
     pub active: bool,
+    pub render_mask: BitMask,
     pub post_processing: PostProcessSet,
+    pub audio_options: AudioListenerOptions,
 }
 
 impl Camera2D {
@@ -30,7 +32,9 @@ impl Camera2D {
             base: Node2D::new(),
             zoom: 0f32,
             active: false,
+            render_mask: BitMask::ALL,
             post_processing: PostProcessSet::new(),
+            audio_options: AudioListenerOptions::new(),
         }
     }
 }

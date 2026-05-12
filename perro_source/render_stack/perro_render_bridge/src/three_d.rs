@@ -1,11 +1,14 @@
 use super::*;
+use perro_structs::{AudioListenerOptions, BitMask};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Camera3DState {
     pub position: [f32; 3],
     pub rotation: [f32; 4],
     pub projection: CameraProjectionState,
+    pub render_mask: BitMask,
     pub post_processing: Arc<[PostProcessEffect]>,
+    pub audio_options: AudioListenerOptions,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -549,7 +552,9 @@ impl Default for Camera3DState {
             position: [0.0, 0.0, 0.0],
             rotation: [0.0, 0.0, 0.0, 1.0],
             projection: CameraProjectionState::default(),
+            render_mask: BitMask::ALL,
             post_processing: Arc::from([]),
+            audio_options: AudioListenerOptions::new(),
         }
     }
 }

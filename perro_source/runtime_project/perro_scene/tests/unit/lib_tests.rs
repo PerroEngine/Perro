@@ -86,13 +86,11 @@ fn parse_script_vars_object() {
     [main]
     script = "res://main.rs"
     script_vars = { "cam": Camera, speed: 2.5, enabled: true }
-    [Node]
-    [/Node]
+    [Node/]
     [/main]
 
     [Camera]
-    [Node]
-    [/Node]
+    [Node/]
     [/Camera]
     "#;
 
@@ -123,15 +121,13 @@ fn node_refs_use_at_before_bare_scene_key() {
     $root = @Root
 
     [Root]
-    [Node]
-    [/Node]
+    [Node/]
     [/Root]
 
     [Child]
     parent = @Root
     script_vars = { target = @Root }
-    [Node]
-    [/Node]
+    [Node/]
     [/Child]
     "#;
 
@@ -154,15 +150,13 @@ fn scene_keys_can_start_with_at_and_refs_escape_at() {
     $root = @@@Root
 
     [@@Root]
-    [Node]
-    [/Node]
+    [Node/]
     [/@@Root]
 
     [Child]
     parent = @@@Root
     script_vars = { target = @@@Root }
-    [Node]
-    [/Node]
+    [Node/]
     [/Child]
     "#;
 
@@ -201,8 +195,7 @@ fn parse_root_of_header() {
     let src = r#"
     [main]
     root_of = "res://child.scn"
-    [Node]
-    [/Node]
+    [Node/]
     [/main]
     "#;
 
@@ -216,14 +209,12 @@ fn parse_script_clear_options() {
     let src = r#"
     [main]
     script = null
-    [Node]
-    [/Node]
+    [Node/]
     [/main]
 
     [child]
     clear_script = true
-    [Node]
-    [/Node]
+    [Node/]
     [/child]
     "#;
 
@@ -283,14 +274,48 @@ fn parse_header_only_node_without_type_block_defaults_to_node() {
 }
 
 #[test]
+fn parse_self_closing_type_block() {
+    let src = r#"
+    $root = @root
+    [root]
+    [Node2D/]
+    [/root]
+    "#;
+
+    let scene = Parser::new(src).parse_scene();
+    let node = find_node(&scene, "root");
+
+    assert!(node.has_data_override);
+    assert_eq!(node.data.ty.as_ref(), "Node2D");
+    assert!(node.data.fields.is_empty());
+    assert!(node.data.base_ref().is_none());
+}
+
+#[test]
+fn scene_doc_writes_empty_type_block_self_closing() {
+    let src = r#"
+    $root = @root
+    [root]
+    [Node2D/]
+    [/root]
+    "#;
+
+    let doc = Parser::new(src).parse_scene_doc();
+    let text = doc.to_text();
+
+    assert!(text.contains("[Node2D/]"));
+    assert!(!text.contains("[/Node2D]"));
+    assert_eq!(Parser::new(&text).parse_scene().nodes.len(), 1);
+}
+
+#[test]
 fn scene_doc_writes_valid_scene_and_syncs_children() {
     let src = r#"
     $root = @root
     $shared = { color: (1, 0, 0, 1), roughness: 0.5 }
 
     [root]
-    [Node]
-    [/Node]
+    [Node/]
     [/root]
 
     [child]

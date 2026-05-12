@@ -107,6 +107,12 @@ fn parse_node_2d_action(
         Node2DField::Scale => Node2DAction::Scale(expect_vec2(value, key, line_no)?),
         Node2DField::Visible => Node2DAction::Visible(expect_bool(value, key, line_no)?),
         Node2DField::ZIndex => Node2DAction::ZIndex(expect_i32(value, key, line_no)?),
+        Node2DField::RenderLayers => {
+            return Err(format!(
+                "line {}: `{}` is valid but not animatable in `.panim`",
+                line_no, key
+            ));
+        }
     })
 }
 
@@ -173,6 +179,12 @@ fn parse_node_3d_action(
         Node3DField::Rotation => Node3DAction::Rotation(expect_quat(value, key, line_no)?),
         Node3DField::Scale => Node3DAction::Scale(expect_vec3(value, key, line_no)?),
         Node3DField::Visible => Node3DAction::Visible(expect_bool(value, key, line_no)?),
+        Node3DField::RenderLayers => {
+            return Err(format!(
+                "line {}: `{}` is valid but not animatable in `.panim`",
+                line_no, key
+            ));
+        }
     })
 }
 
@@ -213,7 +225,11 @@ fn parse_camera_3d_action(
         Camera3DField::FrustumNear => Camera3DAction::FrustumNear(expect_f32(value, key, line_no)?),
         Camera3DField::FrustumFar => Camera3DAction::FrustumFar(expect_f32(value, key, line_no)?),
         Camera3DField::Active => Camera3DAction::Active(expect_bool(value, key, line_no)?),
-        Camera3DField::Projection | Camera3DField::PostProcessing => {
+        Camera3DField::RenderMask
+        | Camera3DField::Projection
+        | Camera3DField::PostProcessing
+        | Camera3DField::AudioOptions
+        | Camera3DField::AudioMask => {
             return Err(format!(
                 "line {}: `{}` is valid but not animatable in `.panim`",
                 line_no, key
@@ -235,6 +251,12 @@ fn parse_light_3d_action(
             Light3DAction::CastShadows(expect_bool(value, key, line_no)?)
         }
         Light3DField::Active => Light3DAction::Active(expect_bool(value, key, line_no)?),
+        Light3DField::RenderLayers => {
+            return Err(format!(
+                "line {}: `{}` is valid but not animatable in `.panim`",
+                line_no, key
+            ));
+        }
     })
 }
 
@@ -556,6 +578,10 @@ fn resolve_animatable_channel(
                 None,
             ))
         }
+        NodeField::Node2D(Node2DField::RenderLayers) => Err(format!(
+            "line {}: `{}` is valid but not animatable in `.panim`",
+            line_no, key
+        )),
         NodeField::Node3D(Node3DField::Position)
         | NodeField::Node3D(Node3DField::Rotation)
         | NodeField::Node3D(Node3DField::Scale) => {
@@ -572,6 +598,10 @@ fn resolve_animatable_channel(
                 None,
             ))
         }
+        NodeField::Node3D(Node3DField::RenderLayers) => Err(format!(
+            "line {}: `{}` is valid but not animatable in `.panim`",
+            line_no, key
+        )),
         NodeField::Sprite2D(Sprite2DField::Texture) => {
             Ok((
                 "sprite2d.texture".to_string(),
@@ -664,7 +694,11 @@ fn resolve_animatable_channel(
                 NodeField::Camera3D(Camera3DField::Active),
                 None,
             )),
-            Camera3DField::Projection | Camera3DField::PostProcessing => Err(format!(
+            Camera3DField::RenderMask
+            | Camera3DField::Projection
+            | Camera3DField::PostProcessing
+            | Camera3DField::AudioOptions
+            | Camera3DField::AudioMask => Err(format!(
                 "line {}: `{}` is valid but not animatable in `.panim`",
                 line_no, key
             )),
@@ -692,6 +726,10 @@ fn resolve_animatable_channel(
             "light3d.cast_shadows".to_string(),
             NodeField::Light3D(Light3DField::CastShadows),
             None,
+        )),
+        NodeField::Light3D(Light3DField::RenderLayers) => Err(format!(
+            "line {}: `{}` is valid but not animatable in `.panim`",
+            line_no, key
         )),
         NodeField::PointLight3D(PointLight3DField::Range) => Ok((
             "point_light3d.range".to_string(),

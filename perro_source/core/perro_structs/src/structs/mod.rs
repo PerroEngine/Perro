@@ -1,3 +1,6 @@
+pub mod audio;
+pub mod bit_mask;
+pub mod collision_masks;
 pub mod color;
 pub mod const_param;
 pub mod ik;
@@ -6,6 +9,9 @@ pub mod structs_2d;
 pub mod structs_3d;
 pub mod visual_accessibility;
 
+pub use audio::*;
+pub use bit_mask::*;
+pub use collision_masks::*;
 pub use color::*;
 pub use const_param::*;
 pub use ik::*;

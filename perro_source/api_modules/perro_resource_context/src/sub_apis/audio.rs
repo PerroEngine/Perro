@@ -3,7 +3,7 @@ use perro_ids::{AudioBusID, SoundFontID};
 pub use perro_pawdio::{
     MidiChannel, MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong, MidiSound, Note, program,
 };
-use perro_structs::{Vector2, Vector3};
+use perro_structs::{BitMask, Vector2, Vector3};
 
 pub trait AudioAPI {
     fn load_audio_source(&self, source: &str) -> bool;
@@ -65,7 +65,7 @@ pub enum AudioDirection<T> {
 #[derive(Clone, Copy, Debug)]
 pub struct SpatialAudioOptions {
     pub range: f32,
-    pub occlusion_mask: u32,
+    pub audio_layer: BitMask,
     pub enable_propagation: bool,
     pub direction_2d: AudioDirection<Vector2>,
     pub direction_3d: AudioDirection<Vector3>,
@@ -248,7 +248,7 @@ pub struct Audio2D<'a> {
     pub audio: Audio<'a>,
     pub position: Vector2,
     pub range: f32,
-    pub occlusion_mask: u32,
+    pub audio_layer: BitMask,
     pub enable_propagation: bool,
     pub direction: Option<AudioDirection<Vector2>>,
 }
@@ -259,7 +259,7 @@ impl<'a> Audio2D<'a> {
             audio: Audio::new(source),
             position,
             range,
-            occlusion_mask: u32::MAX,
+            audio_layer: BitMask::ALL,
             enable_propagation: true,
             direction: None,
         }
@@ -270,7 +270,7 @@ impl<'a> Audio2D<'a> {
             audio,
             position,
             range,
-            occlusion_mask: u32::MAX,
+            audio_layer: BitMask::ALL,
             enable_propagation: true,
             direction: None,
         }
@@ -282,7 +282,7 @@ pub struct Audio3D<'a> {
     pub audio: Audio<'a>,
     pub position: Vector3,
     pub range: f32,
-    pub occlusion_mask: u32,
+    pub audio_layer: BitMask,
     pub enable_propagation: bool,
     pub direction: Option<AudioDirection<Vector3>>,
 }
@@ -293,7 +293,7 @@ impl<'a> Audio3D<'a> {
             audio: Audio::new(source),
             position,
             range,
-            occlusion_mask: u32::MAX,
+            audio_layer: BitMask::ALL,
             enable_propagation: true,
             direction: None,
         }
@@ -304,7 +304,7 @@ impl<'a> Audio3D<'a> {
             audio,
             position,
             range,
-            occlusion_mask: u32::MAX,
+            audio_layer: BitMask::ALL,
             enable_propagation: true,
             direction: None,
         }

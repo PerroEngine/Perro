@@ -764,8 +764,7 @@ mod tests {
             [main]
             script = "dlc://self/scripts/script.rs"
             script_vars = { mesh = "dlc://self/models/hero.glb" }
-            [Node]
-            [/Node]
+            [Node/]
             [/main]
             "#,
         )

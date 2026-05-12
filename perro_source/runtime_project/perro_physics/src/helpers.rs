@@ -13,7 +13,7 @@ use perro_render_bridge::{
     TileSetShape2D,
 };
 use perro_runtime_context::sub_apis::{PhysicsQueryFilter, PhysicsRayHit2D, PhysicsRayHit3D};
-use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
+use perro_structs::{BitMask, Transform2D, Transform3D, Vector2, Vector3};
 
 use crate::{
     BodyDesc2D, BodyDesc3D, BodyKind, JointDesc2D, JointDesc3D, JointKind2D, JointKind3D,

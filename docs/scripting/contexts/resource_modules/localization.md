@@ -103,7 +103,6 @@ Scene example:
 Ownership:
 
 - `locale!` returns `&str`.
-- If you need ownership, call `.to_string()`.
 
 Example:
 

@@ -302,6 +302,11 @@ fn apply_node_2d_fields(node: &mut Node2D, fields: &[SceneObjectField]) {
                     node.visible = v;
                 }
             }
+            Some(NodeField::Node2D(Node2DField::RenderLayers)) => {
+                if let Some(v) = as_bitmask(value) {
+                    node.render_layers = v;
+                }
+            }
             _ => {}
         }
     });
@@ -390,13 +395,13 @@ fn apply_tilemap_2d_fields(node: &mut TileMap2D, fields: &[SceneObjectField]) {
                     node.collision_enabled = v;
                 }
             }
-            Some(NodeField::TileMap2D(TileMap2DField::CollisionLayer)) => {
-                if let Some(v) = as_u32(value) {
-                    node.collision_layer = v;
+            Some(NodeField::TileMap2D(TileMap2DField::CollisionLayers)) => {
+                if let Some(v) = as_bitmask(value) {
+                    node.collision_layers = v;
                 }
             }
             Some(NodeField::TileMap2D(TileMap2DField::CollisionMask)) => {
-                if let Some(v) = as_u32(value) {
+                if let Some(v) = as_bitmask(value) {
                     node.collision_mask = v;
                 }
             }
@@ -430,6 +435,11 @@ fn apply_ambient_light_2d_fields(node: &mut AmbientLight2D, fields: &[SceneObjec
                     node.active = v;
                 }
             }
+            Light2DField::RenderLayers => {
+                if let Some(v) = as_bitmask(value) {
+                    node.render_layers = v;
+                }
+            }
         });
     });
 }
@@ -457,6 +467,11 @@ fn apply_ray_light_2d_fields(node: &mut RayLight2D, fields: &[SceneObjectField])
             Light2DField::Active => {
                 if let Some(v) = value.as_bool() {
                     node.active = v;
+                }
+            }
+            Light2DField::RenderLayers => {
+                if let Some(v) = as_bitmask(value) {
+                    node.render_layers = v;
                 }
             }
         });
@@ -497,6 +512,11 @@ fn apply_point_light_2d_fields(node: &mut PointLight2D, fields: &[SceneObjectFie
             Some(NodeField::Light2D(Light2DField::Active)) => {
                 if let Some(v) = value.as_bool() {
                     node.active = v;
+                }
+            }
+            Some(NodeField::Light2D(Light2DField::RenderLayers)) => {
+                if let Some(v) = as_bitmask(value) {
+                    node.render_layers = v;
                 }
             }
             _ => {}
@@ -542,6 +562,11 @@ fn apply_spot_light_2d_fields(node: &mut SpotLight2D, fields: &[SceneObjectField
             Some(NodeField::Light2D(Light2DField::Active)) => {
                 if let Some(v) = value.as_bool() {
                     node.active = v;
+                }
+            }
+            Some(NodeField::Light2D(Light2DField::RenderLayers)) => {
+                if let Some(v) = as_bitmask(value) {
+                    node.render_layers = v;
                 }
             }
             _ => {}

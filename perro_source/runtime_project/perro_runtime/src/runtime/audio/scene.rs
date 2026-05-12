@@ -61,8 +61,8 @@ impl Runtime {
         self.audio.has_audio_mask_3d = false;
         self.audio.has_audio_portal_2d = false;
         self.audio.has_audio_portal_3d = false;
-        self.audio.has_audio_zone_2d = false;
-        self.audio.has_audio_zone_3d = false;
+        self.audio.has_audio_effect_zone_2d = false;
+        self.audio.has_audio_effect_zone_3d = false;
         for (_, node) in self.nodes.iter() {
             match &node.data {
                 SceneNodeData::AudioMask2D(_) => {
@@ -77,11 +77,11 @@ impl Runtime {
                 SceneNodeData::AudioPortal3D(_) => {
                     self.audio.has_audio_portal_3d = true;
                 }
-                SceneNodeData::AudioZone2D(_) => {
-                    self.audio.has_audio_zone_2d = true;
+                SceneNodeData::AudioEffectZone2D(_) => {
+                    self.audio.has_audio_effect_zone_2d = true;
                 }
-                SceneNodeData::AudioZone3D(_) => {
-                    self.audio.has_audio_zone_3d = true;
+                SceneNodeData::AudioEffectZone3D(_) => {
+                    self.audio.has_audio_effect_zone_3d = true;
                 }
                 _ => {}
             }
@@ -89,8 +89,8 @@ impl Runtime {
                 && self.audio.has_audio_mask_3d
                 && self.audio.has_audio_portal_2d
                 && self.audio.has_audio_portal_3d
-                && self.audio.has_audio_zone_2d
-                && self.audio.has_audio_zone_3d
+                && self.audio.has_audio_effect_zone_2d
+                && self.audio.has_audio_effect_zone_3d
             {
                 break;
             }
@@ -119,7 +119,7 @@ impl Runtime {
                 origin: listener_pos,
                 direction: Vector2::new(angle.cos(), angle.sin()),
                 max_distance: self.audio.config.max_ray_distance_2d,
-                mask: u32::MAX,
+                mask: BitMask::ALL,
             });
         }
         self.prepare_audio_raycast_2d();
@@ -337,7 +337,7 @@ impl Runtime {
             };
             let options = SpatialAudioOptions {
                 range: request.range,
-                occlusion_mask: request.occlusion_mask,
+                audio_layer: request.audio_layer,
                 enable_propagation: request.enable_propagation,
                 direction_2d: match request.direction_2d {
                     perro_resource_context::sub_apis::AudioDirection::Omni => AudioDirection::Omni,
@@ -397,7 +397,7 @@ impl Runtime {
         for request in queued_midi {
             let options = SpatialAudioOptions {
                 range: request.range,
-                occlusion_mask: u32::MAX,
+                audio_layer: BitMask::ALL,
                 enable_propagation: true,
                 direction_2d: AudioDirection::Omni,
                 direction_3d: AudioDirection::Omni,

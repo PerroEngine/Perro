@@ -99,13 +99,13 @@ fn apply_static_body_3d_fields(node: &mut StaticBody3D, fields: &[SceneObjectFie
                     node.enabled = enabled;
                 }
             }
-            Some(NodeField::StaticBody3D(StaticBody3DField::CollisionLayer)) => {
-                if let Some(v) = as_u32(value) {
-                    node.collision_layer = v;
+            Some(NodeField::StaticBody3D(StaticBody3DField::CollisionLayers)) => {
+                if let Some(v) = as_bitmask(value) {
+                    node.collision_layers = v;
                 }
             }
             Some(NodeField::StaticBody3D(StaticBody3DField::CollisionMask)) => {
-                if let Some(v) = as_u32(value) {
+                if let Some(v) = as_bitmask(value) {
                     node.collision_mask = v;
                 }
             }
@@ -137,13 +137,13 @@ fn apply_rigid_body_3d_fields(node: &mut RigidBody3D, fields: &[SceneObjectField
                     node.enabled = enabled;
                 }
             }
-            Some(NodeField::RigidBody3D(RigidBody3DField::CollisionLayer)) => {
-                if let Some(v) = as_u32(value) {
-                    node.collision_layer = v;
+            Some(NodeField::RigidBody3D(RigidBody3DField::CollisionLayers)) => {
+                if let Some(v) = as_bitmask(value) {
+                    node.collision_layers = v;
                 }
             }
             Some(NodeField::RigidBody3D(RigidBody3DField::CollisionMask)) => {
-                if let Some(v) = as_u32(value) {
+                if let Some(v) = as_bitmask(value) {
                     node.collision_mask = v;
                 }
             }
@@ -217,13 +217,13 @@ fn apply_area_3d_fields(node: &mut Area3D, fields: &[SceneObjectField]) {
                     node.enabled = enabled;
                 }
             }
-            Some(NodeField::Area3D(Area3DField::CollisionLayer)) => {
-                if let Some(v) = as_u32(value) {
-                    node.collision_layer = v;
+            Some(NodeField::Area3D(Area3DField::CollisionLayers)) => {
+                if let Some(v) = as_bitmask(value) {
+                    node.collision_layers = v;
                 }
             }
             Some(NodeField::Area3D(Area3DField::CollisionMask)) => {
-                if let Some(v) = as_u32(value) {
+                if let Some(v) = as_bitmask(value) {
                     node.collision_mask = v;
                 }
             }

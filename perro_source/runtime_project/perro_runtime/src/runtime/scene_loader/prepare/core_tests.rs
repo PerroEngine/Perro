@@ -24,8 +24,7 @@ mod tests {
 
             [local_child]
             parent = host
-            [Node]
-            [/Node]
+            [Node/]
             [/local_child]
             "#,
         )
@@ -50,8 +49,7 @@ mod tests {
 
             [base_child]
             parent = base_root
-            [Node]
-            [/Node]
+            [Node/]
             [/base_child]
             "#,
         )
@@ -128,8 +126,7 @@ mod tests {
             [host]
             root_of = "res://base.scn"
             script = null
-            [Node]
-            [/Node]
+            [Node/]
             [/host]
             "#,
         )
@@ -140,8 +137,7 @@ mod tests {
             @root = base_root
             [base_root]
             script = "res://base_script.rs"
-            [Node]
-            [/Node]
+            [Node/]
             [/base_root]
             "#,
         )
@@ -563,8 +559,7 @@ mod tests {
 
             [defaults]
             parent = menu
-            [UiPanel]
-            [/UiPanel]
+            [UiPanel/]
             [/defaults]
 
             [entry]
@@ -1202,13 +1197,11 @@ mod tests {
         let scene = Parser::new(
             r#"
             [AnchorBody]
-                [RigidBody2D]
-                [/RigidBody2D]
+                [RigidBody2D/]
             [/AnchorBody]
 
             [SwingBody]
-                [RigidBody2D]
-                [/RigidBody2D]
+                [RigidBody2D/]
             [/SwingBody]
 
             [Link]
@@ -1242,30 +1235,34 @@ mod tests {
     }
 
     #[test]
-    fn scene_loader_builds_audio_zone_effect_fields() {
+    fn scene_loader_builds_audio_effect_zone_effect_fields() {
         let scene = Parser::new(
             r#"
             [zone2d]
-            [AudioZone2D]
+            [AudioEffectZone2D]
                 enabled = false
-                effect = {
-                    reverb_send: 0.8,
-                    echo: 0.4,
-                    dampening: 0.2
-                }
-                affect_listener = false
-                affect_emitters = true
-                affect_path = false
-            [/AudioZone2D]
+                audio_mask = [2, 4]
+                effects = [
+                    {
+                        reverb_send: 0.8,
+                        echo: 0.4,
+                        dampening: 0.2
+                    },
+                    {
+                        reverb_send: 0.3,
+                        echo: 0.1,
+                        dampening: 0.7
+                    }
+                ]
+            [/AudioEffectZone2D]
             [/zone2d]
 
             [zone3d]
-            [AudioZone3D]
+            [AudioEffectZone3D]
                 reverb = 0.6
                 echo = 0.3
                 low_pass = 0.5
-                affectSources = false
-            [/AudioZone3D]
+            [/AudioEffectZone3D]
             [/zone3d]
             "#,
         )
@@ -1279,29 +1276,30 @@ mod tests {
             .iter()
             .find(|node| node.key_name == "zone2d")
             .expect("zone2d");
-        let SceneNodeData::AudioZone2D(zone2d) = &zone2d.node.data else {
-            panic!("expected AudioZone2D");
+        let SceneNodeData::AudioEffectZone2D(zone2d) = &zone2d.node.data else {
+            panic!("expected AudioEffectZone2D");
         };
         assert!(!zone2d.enabled);
-        assert_eq!(zone2d.effect.reverb_send, 0.8);
-        assert_eq!(zone2d.effect.echo, 0.4);
-        assert_eq!(zone2d.effect.dampening, 0.2);
-        assert!(!zone2d.affect_listener);
-        assert!(zone2d.affect_emitters);
-        assert!(!zone2d.affect_path);
+        assert_eq!(zone2d.audio_mask.bits(), 0b1010);
+        assert_eq!(zone2d.effects.len(), 2);
+        assert_eq!(zone2d.effects[0].reverb_send, 0.8);
+        assert_eq!(zone2d.effects[0].echo, 0.4);
+        assert_eq!(zone2d.effects[0].dampening, 0.2);
+        assert_eq!(zone2d.effects[1].reverb_send, 0.3);
+        assert_eq!(zone2d.effects[1].echo, 0.1);
+        assert_eq!(zone2d.effects[1].dampening, 0.7);
 
         let zone3d = prepared
             .nodes
             .iter()
             .find(|node| node.key_name == "zone3d")
             .expect("zone3d");
-        let SceneNodeData::AudioZone3D(zone3d) = &zone3d.node.data else {
-            panic!("expected AudioZone3D");
+        let SceneNodeData::AudioEffectZone3D(zone3d) = &zone3d.node.data else {
+            panic!("expected AudioEffectZone3D");
         };
-        assert_eq!(zone3d.effect.reverb_send, 0.6);
-        assert_eq!(zone3d.effect.echo, 0.3);
-        assert_eq!(zone3d.effect.dampening, 0.5);
-        assert!(!zone3d.affect_emitters);
+        assert_eq!(zone3d.effects[0].reverb_send, 0.6);
+        assert_eq!(zone3d.effects[0].echo, 0.3);
+        assert_eq!(zone3d.effects[0].dampening, 0.5);
     }
 
     #[test]
@@ -1444,6 +1442,150 @@ mod tests {
                 assert_eq!(*strength, 1.0);
             }
             other => panic!("expected lut3d, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn scene_loader_builds_camera_audio_options() {
+        let scene = Parser::new(
+            r#"
+            [cam2d]
+            [Camera2D]
+                audio_options = {
+                    audio_mask = [1, 3],
+                    effects = [
+                        { reverb_send: 0.6, echo: 0.2, dampening: 0.4 }
+                    ]
+                }
+            [/Camera2D]
+            [/cam2d]
+
+            [cam3d]
+            [Camera3D]
+                audio_mask = [2]
+                reverb_send = 0.7
+                echo = 0.1
+                dampening = 0.5
+            [/Camera3D]
+            [/cam3d]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|_| Err("unexpected root_of".to_string()))
+                .expect("prepare scene");
+        let cam2d = prepared
+            .nodes
+            .iter()
+            .find(|node| node.key_name == "cam2d")
+            .expect("cam2d");
+        let SceneNodeData::Camera2D(cam2d) = &cam2d.node.data else {
+            panic!("expected Camera2D");
+        };
+        assert_eq!(cam2d.audio_options.audio_mask.bits(), 0b101);
+        assert_eq!(cam2d.audio_options.effects.len(), 1);
+        assert_eq!(cam2d.audio_options.effects[0].reverb_send, 0.6);
+        assert_eq!(cam2d.audio_options.effects[0].echo, 0.2);
+        assert_eq!(cam2d.audio_options.effects[0].dampening, 0.4);
+
+        let cam3d = prepared
+            .nodes
+            .iter()
+            .find(|node| node.key_name == "cam3d")
+            .expect("cam3d");
+        let SceneNodeData::Camera3D(cam3d) = &cam3d.node.data else {
+            panic!("expected Camera3D");
+        };
+        assert_eq!(cam3d.audio_options.audio_mask.bits(), 0b10);
+        assert_eq!(cam3d.audio_options.effects.len(), 1);
+        assert_eq!(cam3d.audio_options.effects[0].reverb_send, 0.7);
+        assert_eq!(cam3d.audio_options.effects[0].echo, 0.1);
+        assert_eq!(cam3d.audio_options.effects[0].dampening, 0.5);
+    }
+
+    #[test]
+    fn scene_loader_accepts_layer_arrays_for_bitmasks() {
+        let scene = Parser::new(
+            r#"
+            @root = sprite
+            [sprite]
+            [Sprite2D]
+                render_layers = [1, 3]
+            [/Sprite2D]
+            [/sprite]
+
+            [body]
+            [StaticBody2D]
+                collision_layers = [2, 4]
+                collision_mask_layers = [1, 3]
+            [/StaticBody2D]
+            [/body]
+
+            [camera]
+            [Camera3D]
+                render_mask = [2, 5]
+            [/Camera3D]
+            [/camera]
+
+            [area]
+            [Area3D]
+                collision_layers = [5]
+                collision_mask_layers = [1, 2]
+            [/Area3D]
+            [/area]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+
+        let sprite = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "sprite")
+            .expect("sprite node");
+        match &sprite.node.data {
+            SceneNodeData::Sprite2D(node) => assert_eq!(node.render_layers.bits(), 0b101),
+            other => panic!("expected Sprite2D node, got {other:?}"),
+        }
+
+        let body = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "body")
+            .expect("body node");
+        match &body.node.data {
+            SceneNodeData::StaticBody2D(node) => {
+                assert_eq!(node.collision_layers.bits(), 0b1010);
+                assert_eq!(node.collision_mask.bits(), 0b101);
+            }
+            other => panic!("expected StaticBody2D node, got {other:?}"),
+        }
+
+        let camera = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "camera")
+            .expect("camera node");
+        match &camera.node.data {
+            SceneNodeData::Camera3D(node) => assert_eq!(node.render_mask.bits(), 0b10010),
+            other => panic!("expected Camera3D node, got {other:?}"),
+        }
+
+        let area = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "area")
+            .expect("area node");
+        match &area.node.data {
+            SceneNodeData::Area3D(node) => {
+                assert_eq!(node.collision_layers.bits(), 0b10000);
+                assert_eq!(node.collision_mask.bits(), 0b11);
+            }
+            other => panic!("expected Area3D node, got {other:?}"),
         }
     }
 }
