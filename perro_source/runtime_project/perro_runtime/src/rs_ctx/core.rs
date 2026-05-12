@@ -24,15 +24,15 @@ pub(crate) struct QueuedSpatialAudio {
     pub bus_id: Option<perro_ids::AudioBusID>,
     pub looped: bool,
     pub volume: f32,
-    pub effects: perro_resource_context::sub_apis::AudioEffects,
+    pub effects: perro_resource_api::sub_apis::AudioEffects,
     pub from_start: f32,
     pub from_end: f32,
     pub range: f32,
     pub audio_layer: perro_structs::BitMask,
     pub enable_propagation: bool,
     pub pos: QueuedSpatialAudioPos,
-    pub direction_2d: perro_resource_context::sub_apis::AudioDirection<perro_structs::Vector2>,
-    pub direction_3d: perro_resource_context::sub_apis::AudioDirection<perro_structs::Vector3>,
+    pub direction_2d: perro_resource_api::sub_apis::AudioDirection<perro_structs::Vector2>,
+    pub direction_3d: perro_resource_api::sub_apis::AudioDirection<perro_structs::Vector3>,
 }
 
 #[derive(Clone, Debug)]

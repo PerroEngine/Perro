@@ -4,7 +4,7 @@ use std::{
 };
 
 use perro_io::{ProjectRoot, load_asset, save_asset, set_project_root};
-use perro_resource_context::ResPathSource;
+use perro_resource_api::ResPathSource;
 
 pub fn set_project_root_disk(root: &str, name: &str) {
     set_project_root(ProjectRoot::Disk {

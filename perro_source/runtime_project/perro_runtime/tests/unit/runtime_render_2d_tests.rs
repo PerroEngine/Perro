@@ -8,7 +8,7 @@ use perro_nodes::{
     sprite_2d::{AnimatedSprite, AnimatedSprite2D, Sprite2D},
 };
 use perro_render_bridge::{Command2D, ParticlePath2D, RenderCommand, RenderEvent, ResourceCommand};
-use perro_runtime_context::sub_apis::{NodeAPI, NodeCreationTemplate};
+use perro_runtime_api::sub_apis::{NodeAPI, NodeCreationTemplate};
 use perro_structs::{BitMask, Vector2};
 
 fn collect_commands(runtime: &mut Runtime) -> Vec<RenderCommand> {

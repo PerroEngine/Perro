@@ -1,7 +1,7 @@
 use super::core::RuntimeResourceApi;
 use perro_animation::AnimationTreeAsset;
 use perro_ids::AnimationTreeID;
-use perro_resource_context::sub_apis::AnimationTreeAPI;
+use perro_resource_api::sub_apis::AnimationTreeAPI;
 use std::borrow::Cow;
 use std::sync::Arc;
 

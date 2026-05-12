@@ -1,5 +1,5 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use perro_input::{InputSnapshot, InputWindow, MouseMode};
+use perro_input_api::{InputSnapshot, InputWindow, MouseMode};
 use std::any::{Any, TypeId};
 
 #[derive(Clone)]

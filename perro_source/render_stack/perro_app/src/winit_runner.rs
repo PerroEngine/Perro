@@ -4,7 +4,7 @@ use crate::App;
 use image_helpers::{load_image_size, load_project_window_icon};
 use perro_graphics::GraphicsBackend;
 use perro_ids::{NodeID, TextureID, string_to_u64};
-use perro_input::MouseMode;
+use perro_input_api::MouseMode;
 use perro_render_bridge::{
     Camera2DState, Command2D, Rect2DCommand, RenderCommand, RenderRequestID, ResourceCommand,
     Sprite2DCommand,

@@ -50,4 +50,4 @@ Bindings:
 
 Source of truth:
 
-- `perro_source/api_modules/perro_input/src/gamepad.rs`
+- `perro_source/api_modules/perro_input_api/src/gamepad.rs`

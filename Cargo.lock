@@ -3024,12 +3024,12 @@ name = "perro_api"
 version = "0.1.0"
 dependencies = [
  "perro_ids",
- "perro_input",
+ "perro_input_api",
  "perro_modules",
  "perro_nodes",
  "perro_project",
- "perro_resource_context",
- "perro_runtime_context",
+ "perro_resource_api",
+ "perro_runtime_api",
  "perro_scene",
  "perro_scripting",
  "perro_steamworks",
@@ -3051,11 +3051,11 @@ dependencies = [
  "perro_asset_formats",
  "perro_graphics",
  "perro_ids",
- "perro_input",
+ "perro_input_api",
  "perro_io",
  "perro_render_bridge",
  "perro_runtime",
- "perro_runtime_context",
+ "perro_runtime_api",
  "perro_scripting",
  "perro_ui",
  "serde",
@@ -3156,7 +3156,7 @@ name = "perro_ids"
 version = "0.1.0"
 
 [[package]]
-name = "perro_input"
+name = "perro_input_api"
 version = "0.1.0"
 dependencies = [
  "perro_structs",
@@ -3169,10 +3169,10 @@ dependencies = [
  "glam",
  "perro_animation",
  "perro_ids",
- "perro_input",
+ "perro_input_api",
  "perro_nodes",
- "perro_resource_context",
- "perro_runtime_context",
+ "perro_resource_api",
+ "perro_runtime_api",
  "perro_scene",
 ]
 
@@ -3204,7 +3204,7 @@ version = "0.1.0"
 dependencies = [
  "perro_ids",
  "perro_io",
- "perro_resource_context",
+ "perro_resource_api",
  "perro_variant",
  "serde_json",
  "ureq",
@@ -3242,13 +3242,14 @@ name = "perro_physics"
 version = "0.1.0"
 dependencies = [
  "ahash",
+ "criterion",
  "gltf",
  "perro_asset_formats",
  "perro_ids",
  "perro_io",
  "perro_nodes",
  "perro_render_bridge",
- "perro_runtime_context",
+ "perro_runtime_api",
  "perro_structs",
  "rapier2d",
  "rapier3d",
@@ -3273,7 +3274,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "perro_resource_context"
+name = "perro_resource_api"
 version = "0.1.0"
 dependencies = [
  "perro_animation",
@@ -3302,7 +3303,7 @@ dependencies = [
  "perro_asset_formats",
  "perro_builtin_meshes",
  "perro_ids",
- "perro_input",
+ "perro_input_api",
  "perro_internal_updates",
  "perro_io",
  "perro_nodes",
@@ -3311,8 +3312,8 @@ dependencies = [
  "perro_physics",
  "perro_project",
  "perro_render_bridge",
- "perro_resource_context",
- "perro_runtime_context",
+ "perro_resource_api",
+ "perro_runtime_api",
  "perro_runtime_render",
  "perro_scene",
  "perro_scripting",
@@ -3326,13 +3327,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "perro_runtime_context"
+name = "perro_runtime_api"
 version = "0.1.0"
 dependencies = [
  "perro_ids",
  "perro_nodes",
  "perro_pawdio",
- "perro_resource_context",
+ "perro_resource_api",
  "perro_structs",
  "perro_variant",
 ]
@@ -3344,7 +3345,7 @@ dependencies = [
  "ahash",
  "glam",
  "perro_ids",
- "perro_input",
+ "perro_input_api",
  "perro_render_bridge",
  "perro_structs",
  "perro_ui",
@@ -3365,9 +3366,9 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "perro_ids",
- "perro_input",
- "perro_resource_context",
- "perro_runtime_context",
+ "perro_input_api",
+ "perro_resource_api",
+ "perro_runtime_api",
  "perro_scripting_macros",
  "perro_variant",
  "trybuild",

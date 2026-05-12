@@ -1,7 +1,7 @@
 use perro_ids::{NodeID, ScriptMemberID};
-use perro_input::{InputAPI, InputWindow};
-use perro_resource_context::{ResourceWindow, api::ResourceAPI};
-use perro_runtime_context::{RuntimeWindow, api::RuntimeAPI};
+use perro_input_api::{InputAPI, InputWindow};
+use perro_resource_api::{ResourceWindow, api::ResourceAPI};
+use perro_runtime_api::{RuntimeWindow, api::RuntimeAPI};
 use perro_variant::Variant;
 use std::any::Any;
 

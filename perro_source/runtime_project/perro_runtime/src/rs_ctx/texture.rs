@@ -1,7 +1,7 @@
 use super::core::RuntimeResourceApi;
 use perro_ids::TextureID;
 use perro_render_bridge::{RenderCommand, ResourceCommand};
-use perro_resource_context::sub_apis::TextureAPI;
+use perro_resource_api::sub_apis::TextureAPI;
 
 impl TextureAPI for RuntimeResourceApi {
     fn load_texture(&self, source: &str) -> TextureID {

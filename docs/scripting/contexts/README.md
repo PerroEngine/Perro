@@ -14,17 +14,17 @@ Perro script callbacks receive one script context:
 - `API::IP` => input API
 
 Details:
-- [Runtime Context](runtime_context.md)
-- [Resource Context](resource_context.md)
-- [Input Context](input_context.md)
+- [Runtime API](runtime_api.md)
+- [Resource API](resource_api.md)
+- [Input API](input_api.md)
 - [Query System](../query_system.md)
 
 Reference layout:
-- `runtime_context.md` contains all runtime scripting macros, signatures, accepted types, and return types.
-- `runtime_context.md` contains quick query references and links.
+- `runtime_api.md` contains all runtime scripting macros, signatures, accepted types, and return types.
+- `runtime_api.md` contains quick query references and links.
 - `query_system.md` contains deeper query concepts, patterns, and performance notes.
-- `runtime_context.md` is the RuntimeWindow overview and links to module-specific pages in `runtime_modules/`.
-- `resource_context.md` is the ResourceWindow overview and links to module-specific pages in `resource_modules/`.
-- `input_context.md` is the InputWindow overview and links to module-specific pages in `input_modules/`.
+- `runtime_api.md` is the RuntimeWindow overview and links to module-specific pages in `runtime_modules/`.
+- `resource_api.md` is the ResourceWindow overview and links to module-specific pages in `resource_modules/`.
+- `input_api.md` is the InputWindow overview and links to module-specific pages in `input_modules/`.
 
 

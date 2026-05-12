@@ -3,7 +3,7 @@ use super::core::{
     QueuedSpatialMidi, QueuedSpatialMidiKind, RuntimeResourceApi,
 };
 use perro_ids::{AudioBusID, SoundFontID};
-use perro_resource_context::sub_apis::{
+use perro_resource_api::sub_apis::{
     Audio, Audio2D, Audio3D, AudioAPI, AudioDirection, MidiNoteHandle, MidiNoteOptions, MidiSong,
     MidiSpatialPosition, Note,
 };
@@ -44,7 +44,7 @@ impl AudioAPI for RuntimeResourceApi {
         &self,
         bus_id: Option<AudioBusID>,
         audio: Audio<'_>,
-        pan: perro_resource_context::sub_apis::AudioPan,
+        pan: perro_resource_api::sub_apis::AudioPan,
     ) -> bool {
         let Ok(guard) = self.bark.lock() else {
             return false;
@@ -133,7 +133,7 @@ impl AudioAPI for RuntimeResourceApi {
         &self,
         bus_id: Option<AudioBusID>,
         audio: Audio<'_>,
-        pan: perro_resource_context::sub_apis::AudioPan,
+        pan: perro_resource_api::sub_apis::AudioPan,
     ) -> bool {
         let Ok(guard) = self.bark.lock() else {
             return false;

@@ -45,4 +45,4 @@ Notes:
 
 Source of truth:
 
-- `perro_source/api_modules/perro_input/src/player.rs`
+- `perro_source/api_modules/perro_input_api/src/player.rs`

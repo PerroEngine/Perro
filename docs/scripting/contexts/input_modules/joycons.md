@@ -76,4 +76,4 @@ When to use each calibration macro:
 - `Meta`: Left Joy-Con Capture / Right Joy-Con Home
 
 Source of truth:
-- `perro_source/api_modules/perro_input/src/joycon.rs`
+- `perro_source/api_modules/perro_input_api/src/joycon.rs`

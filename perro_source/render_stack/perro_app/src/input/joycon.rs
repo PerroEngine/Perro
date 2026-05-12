@@ -14,7 +14,7 @@ mod backend {
     use btleplug::platform::Manager;
     use futures_util::stream::StreamExt;
     use hidapi::HidApi;
-    use perro_input::{JoyConButton, JoyConSide, PlayerBinding, PlayerIndicatorSlot};
+    use perro_input_api::{JoyConButton, JoyConSide, PlayerBinding, PlayerIndicatorSlot};
     use perro_io::{load_asset, save_asset};
     use serde::{Deserialize, Serialize};
     use std::sync::OnceLock;
@@ -1332,7 +1332,7 @@ mod backend {
         Ok(())
     }
 
-    fn is_joycon_bound(players: &[perro_input::PlayerState], joycon_index: usize) -> bool {
+    fn is_joycon_bound(players: &[perro_input_api::PlayerState], joycon_index: usize) -> bool {
         for player in players {
             match player.get_binding() {
                 PlayerBinding::JoyConSingle { index } if index == joycon_index => return true,
@@ -1347,7 +1347,7 @@ mod backend {
         false
     }
 
-    fn first_unbound_player_slot(players: &[perro_input::PlayerState]) -> Option<usize> {
+    fn first_unbound_player_slot(players: &[perro_input_api::PlayerState]) -> Option<usize> {
         for (idx, player) in players.iter().enumerate() {
             if matches!(player.get_binding(), PlayerBinding::None) {
                 return Some(idx);

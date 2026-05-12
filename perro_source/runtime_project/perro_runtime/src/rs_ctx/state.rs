@@ -3,7 +3,7 @@ use perro_ids::{AnimationID, AnimationTreeID, MaterialID, MeshID, TextureID};
 use perro_project::LocalizationConfig;
 use perro_render_bridge::{Material3D, Mesh3D};
 use perro_render_bridge::{RenderCommand, RenderRequestID};
-use perro_resource_context::sub_apis::Locale;
+use perro_resource_api::sub_apis::Locale;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 

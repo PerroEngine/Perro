@@ -7,7 +7,7 @@ use perro_io::{
     ProjectRoot, clear_dlc_mounts, data_local_dir, is_reserved_dlc_name, mount_dlc_archive,
     mount_dlc_disk, read_mounted_dlc_file, register_dlc_static_binary_lookup, set_project_root,
 };
-use perro_runtime_context::sub_apis::PreloadedSceneID;
+use perro_runtime_api::sub_apis::PreloadedSceneID;
 use perro_scene::Scene;
 use perro_variant::Variant;
 use std::fs;
@@ -726,7 +726,7 @@ mod tests {
     use crate::rs_ctx::RuntimeResourceApi;
     use crate::runtime_project::RuntimeProject;
     use perro_project::LocalizationConfig;
-    use perro_resource_context::sub_apis::{Locale, LocalizationAPI};
+    use perro_resource_api::sub_apis::{Locale, LocalizationAPI};
     use perro_scene::{Parser, Scene, SceneKey, SceneNodeData, SceneNodeEntry};
     use std::{borrow::Cow, fs};
 

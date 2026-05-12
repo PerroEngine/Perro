@@ -1,5 +1,5 @@
 use perro_ids::NodeID;
-use perro_resource_context::{ResPath, ResPathBuf};
+use perro_resource_api::{ResPath, ResPathBuf};
 use std::borrow::Cow;
 
 pub type PreloadedSceneID = perro_ids::PreloadedSceneID;

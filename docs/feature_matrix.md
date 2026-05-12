@@ -47,6 +47,7 @@ Status keys:
 | Area                       | Status   | Notes                                                                                                                                                                                                                                                                                       |
 | -------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Mesh rendering             | done     | Mesh instances, surfaces, material bindings, and meshlet path exist.                                                                                                                                                                                                                        |
+| 3D materials               | done     | `.pmat`, glTF `:mat[index]` refs, inline scene materials, runtime load/reserve/create/write APIs, per-surface material bindings, and custom WGSL materials exist. See [Materials Guide](materials.md).                                                                                         |
 | Multi-mesh rendering       | done     | Repeated static mesh instances.                                                                                                                                                                                                                                                             |
 | 3D cameras                 | done     | Perspective, orthographic, frustum settings, and `render_mask` filtering against node `render_layers` through `BitMask`.                                                                                                                                                                                                                               |
 | 3D lights                  | done     | Ambient, sky, ray, point, and spot lights.                                                                                                                                                                                                                                                  |
@@ -83,5 +84,5 @@ Status keys:
 
 ## Planned Work Packets
 
-1. Demo hubs and material docs.
+1. Demo hubs.
 2. Joint polish: optional limits/motors/springs if needed.

@@ -62,5 +62,5 @@ Available `MouseButton` values:
 - `MouseButton::Forward`
 
 Source of truth:
-- `perro_source/api_modules/perro_input/src/mouse_button.rs`
-- `perro_source/api_modules/perro_input/src/lib.rs`
+- `perro_source/api_modules/perro_input_api/src/mouse_button.rs`
+- `perro_source/api_modules/perro_input_api/src/lib.rs`

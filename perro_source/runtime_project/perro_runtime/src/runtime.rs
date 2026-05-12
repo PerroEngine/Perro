@@ -5,8 +5,8 @@ use crate::{
 };
 use ahash::AHashMap;
 use perro_ids::NodeID;
-use perro_input::InputSnapshot;
-use perro_runtime_context::sub_apis::{PreloadedSceneID, WindowRequest};
+use perro_input_api::InputSnapshot;
+use perro_runtime_api::sub_apis::{PreloadedSceneID, WindowRequest};
 use perro_scene::Scene;
 use perro_scripting::{ScriptAPI, ScriptBehavior, ScriptConstructor};
 use std::time::{Duration, Instant};

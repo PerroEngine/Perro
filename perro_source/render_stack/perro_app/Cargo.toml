@@ -11,8 +11,8 @@ perro_render_bridge = { path = "../perro_render_bridge" }
 perro_ids = { path = "../../core/perro_ids" }
 perro_asset_formats = { path = "../../core/perro_asset_formats" }
 perro_scripting = { path = "../../script_stack/perro_scripting" }
-perro_input = { path = "../../api_modules/perro_input" }
-perro_runtime_context = { path = "../../api_modules/perro_runtime_context" }
+perro_input_api = { path = "../../api_modules/perro_input_api" }
+perro_runtime_api = { path = "../../api_modules/perro_runtime_api" }
 perro_ui = { path = "../../core/perro_ui" }
 image = { version = "0.25.9", default-features = false, features = ["png", "jpeg", "gif", "bmp", "tga", "webp", "ico"] }
 hidapi = "2.6.3"

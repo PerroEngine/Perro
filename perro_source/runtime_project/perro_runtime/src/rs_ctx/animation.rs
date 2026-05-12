@@ -1,7 +1,7 @@
 use super::core::RuntimeResourceApi;
 use perro_animation::AnimationClip;
 use perro_ids::AnimationID;
-use perro_resource_context::sub_apis::AnimationAPI;
+use perro_resource_api::sub_apis::AnimationAPI;
 use std::borrow::Cow;
 use std::sync::Arc;
 

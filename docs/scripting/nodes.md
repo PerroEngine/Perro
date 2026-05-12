@@ -172,7 +172,7 @@ See [TileMap2D](tilemap.md).
 - Plays an `AnimationClip` resource and applies tracks to bound scene nodes.
 - `animation` points to clip source/ID; tracks are mapped by object name via `bindings`.
 - `playback` supports `once`, `loop`, `boomerang`.
-- Runtime control is exposed through Animation macros in Runtime Context.
+- Runtime control is exposed through Animation macros in Runtime API.
 
 Lights:
 

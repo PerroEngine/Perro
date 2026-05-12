@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use glam::{Mat4, Quat, Vec3};
 use perro_nodes::{IKTarget3D, Skeleton3D};
-use perro_runtime_context::perro_structs::{IKTargetSolver, Quaternion, Transform3D};
+use perro_runtime_api::perro_structs::{IKTargetSolver, Quaternion, Transform3D};
 use std::cell::RefCell;
 
 thread_local! {
@@ -653,7 +653,7 @@ fn quat_close(a: Quat, b: Quat) -> bool {
 mod tests {
     use super::*;
     use perro_nodes::skeleton_3d::Bone3D;
-    use perro_runtime_context::perro_structs::Vector3;
+    use perro_runtime_api::perro_structs::Vector3;
     use std::borrow::Cow;
 
     fn two_bone_skeleton() -> Skeleton3D {

@@ -2,7 +2,7 @@ use perro_ids::{AudioBusID, NodeID};
 pub use perro_pawdio::{
     MidiChannel, MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong, MidiSound, Note, program,
 };
-pub use perro_resource_context::sub_apis::{AudioDirection, SpatialAudioOptions};
+pub use perro_resource_api::sub_apis::{AudioDirection, SpatialAudioOptions};
 
 #[derive(Clone, Copy, Debug)]
 pub struct AudioEq {

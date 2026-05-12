@@ -284,16 +284,16 @@ fn build_patch_crates_io_block(engine_root: &Path) -> String {
         ),
         ("perro_scene", "perro_source/runtime_project/perro_scene"),
         (
-            "perro_runtime_context",
-            "perro_source/api_modules/perro_runtime_context",
+            "perro_runtime_api",
+            "perro_source/api_modules/perro_runtime_api",
         ),
         (
-            "perro_resource_context",
-            "perro_source/api_modules/perro_resource_context",
+            "perro_resource_api",
+            "perro_source/api_modules/perro_resource_api",
         ),
         ("perro_api", "perro_source/api_modules/perro_api"),
         ("perro_modules", "perro_source/api_modules/perro_modules"),
-        ("perro_input", "perro_source/api_modules/perro_input"),
+        ("perro_input_api", "perro_source/api_modules/perro_input_api"),
         (
             "perro_render_bridge",
             "perro_source/render_stack/perro_render_bridge",

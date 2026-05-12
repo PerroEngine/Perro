@@ -1,6 +1,6 @@
 use super::RuntimeResourceApi;
 use perro_render_bridge::{Command2D, DrawShape2DCommand, RenderCommand};
-use perro_resource_context::sub_apis::Draw2DAPI;
+use perro_resource_api::sub_apis::Draw2DAPI;
 use perro_structs::{DrawShape2D, Vector2};
 
 impl Draw2DAPI for RuntimeResourceApi {

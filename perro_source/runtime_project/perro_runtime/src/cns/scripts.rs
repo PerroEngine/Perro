@@ -1,9 +1,9 @@
 use crate::{Runtime, runtime_project::ProviderMode};
 use perro_ids::ScriptMemberID;
-use perro_input::InputWindow;
+use perro_input_api::InputWindow;
 use perro_io::push_dlc_self_context;
-use perro_resource_context::ResourceWindow;
-use perro_runtime_context::RuntimeWindow;
+use perro_resource_api::ResourceWindow;
+use perro_runtime_api::RuntimeWindow;
 use perro_scripting::{ScriptBehavior, ScriptConstructor, ScriptContext};
 use perro_variant::Variant;
 use std::{
@@ -125,7 +125,7 @@ impl Runtime {
             let input_ptr = std::ptr::addr_of!(self.input);
             // SAFETY: During callback dispatch, input is treated as immutable runtime state.
             // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
-            let ipt: InputWindow<'_, perro_input::InputSnapshot> =
+            let ipt: InputWindow<'_, perro_input_api::InputSnapshot> =
                 unsafe { InputWindow::new(&*input_ptr) };
             let mount = self
                 .script_runtime

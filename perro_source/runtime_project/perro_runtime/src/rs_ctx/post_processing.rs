@@ -1,6 +1,6 @@
 use super::core::RuntimeResourceApi;
 use perro_render_bridge::{PostProcessingCommand, RenderCommand};
-use perro_resource_context::sub_apis::PostProcessingAPI;
+use perro_resource_api::sub_apis::PostProcessingAPI;
 use perro_structs::{PostProcessEffect, PostProcessSet};
 use std::borrow::Cow;
 

@@ -47,9 +47,9 @@ pub mod rt_ctx;
 pub use rt_ctx as api;
 
 pub use cns::node_arena::NodeArena;
-pub use perro_input::InputSnapshot as RuntimeInputApi;
+pub use perro_input_api::InputSnapshot as RuntimeInputApi;
 pub use perro_project::{bootstrap_project, create_new_project};
-pub use perro_runtime_context::sub_apis::{WindowMode, WindowRequest};
+pub use perro_runtime_api::sub_apis::{WindowMode, WindowRequest};
 pub use render_result::RuntimeRenderResult;
 pub use rs_ctx::RuntimeResourceApi;
 pub use runtime::{Runtime, RuntimeFixedUpdateTiming, RuntimeScriptApi, RuntimeUpdateTiming};

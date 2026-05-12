@@ -1,9 +1,9 @@
 use super::Runtime;
 use perro_ids::NodeID;
-use perro_input::InputWindow;
+use perro_input_api::InputWindow;
 use perro_nodes::{InternalFixedUpdate, InternalUpdate, NodeType};
-use perro_resource_context::ResourceWindow;
-use perro_runtime_context::RuntimeWindow;
+use perro_resource_api::ResourceWindow;
+use perro_runtime_api::RuntimeWindow;
 
 const NONE_POS: u32 = u32::MAX;
 
@@ -272,7 +272,7 @@ impl Runtime {
         &mut self,
         id: NodeID,
         res: &ResourceWindow<'_, crate::RuntimeResourceApi>,
-        ipt: &InputWindow<'_, perro_input::InputSnapshot>,
+        ipt: &InputWindow<'_, perro_input_api::InputSnapshot>,
     ) {
         if self.nodes.get(id).is_none() {
             return;
@@ -285,7 +285,7 @@ impl Runtime {
         &mut self,
         id: NodeID,
         res: &ResourceWindow<'_, crate::RuntimeResourceApi>,
-        ipt: &InputWindow<'_, perro_input::InputSnapshot>,
+        ipt: &InputWindow<'_, perro_input_api::InputSnapshot>,
     ) {
         if self.nodes.get(id).is_none() {
             return;

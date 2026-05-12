@@ -1,6 +1,6 @@
 use super::RuntimeResourceApi;
 use perro_io::{load_asset, save_asset};
-use perro_resource_context::sub_apis::SceneDocAPI;
+use perro_resource_api::sub_apis::SceneDocAPI;
 use perro_scene::SceneDoc;
 
 impl SceneDocAPI for RuntimeResourceApi {

@@ -47,3 +47,12 @@ let _ = texture_reserve!(res, "res://textures/smoke.png");
 let _ = texture_drop!(res, "res://textures/smoke.png");
 ```
 
+glTF sub-asset access:
+
+- `res://path/to/model.glb:tex[0]`
+- `res://path/to/model.glb:texture[1]`
+- `res://path/to/model.glb:img[2]`
+
+Use these suffixes to target texture/image data inside a glTF/glb.
+Prefer `.glb` or embedded glTF image data for this path.
+

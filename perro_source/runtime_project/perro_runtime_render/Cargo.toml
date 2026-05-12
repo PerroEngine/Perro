@@ -8,7 +8,7 @@ ahash = "0.8"
 glam = "0.31.0"
 
 perro_ids = { path = "../../core/perro_ids" }
-perro_input = { path = "../../api_modules/perro_input" }
+perro_input_api = { path = "../../api_modules/perro_input_api" }
 perro_render_bridge = { path = "../../render_stack/perro_render_bridge" }
 perro_structs = { path = "../../core/perro_structs" }
 perro_ui = { path = "../../core/perro_ui" }

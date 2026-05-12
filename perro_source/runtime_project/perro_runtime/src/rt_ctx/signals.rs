@@ -1,7 +1,7 @@
 use perro_ids::{NodeID, ScriptMemberID, SignalID};
-use perro_input::InputWindow;
-use perro_resource_context::ResourceWindow;
-use perro_runtime_context::{RuntimeWindow, sub_apis::SignalAPI};
+use perro_input_api::InputWindow;
+use perro_resource_api::ResourceWindow;
+use perro_runtime_api::{RuntimeWindow, sub_apis::SignalAPI};
 use perro_scripting::ScriptContext;
 use perro_variant::Variant;
 use std::sync::Arc;
@@ -57,7 +57,7 @@ impl SignalAPI for Runtime {
             let input_ptr = std::ptr::addr_of!(self.input);
             // SAFETY: During callback dispatch, input is treated as immutable runtime state.
             // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
-            let ipt: InputWindow<'_, perro_input::InputSnapshot> =
+            let ipt: InputWindow<'_, perro_input_api::InputSnapshot> =
                 unsafe { InputWindow::new(&*input_ptr) };
             self.script_runtime
                 .active_script_stack
@@ -93,7 +93,7 @@ impl SignalAPI for Runtime {
         let input_ptr = std::ptr::addr_of!(self.input);
         // SAFETY: During callback dispatch, input is treated as immutable runtime state.
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
-        let ipt: InputWindow<'_, perro_input::InputSnapshot> =
+        let ipt: InputWindow<'_, perro_input_api::InputSnapshot> =
             unsafe { InputWindow::new(&*input_ptr) };
         let mut param_scratch = std::mem::take(&mut self.signal_runtime.param_scratch);
 

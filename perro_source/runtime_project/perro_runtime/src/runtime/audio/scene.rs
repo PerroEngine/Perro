@@ -320,12 +320,12 @@ impl Runtime {
                     echo: request.effects.echo,
                     reflection: request.effects.reflection,
                     occlusion: request.effects.occlusion,
-                    eq: perro_runtime_context::sub_apis::AudioEq {
+                    eq: perro_runtime_api::sub_apis::AudioEq {
                         low_gain: request.effects.eq.low_gain,
                         mid_gain: request.effects.eq.mid_gain,
                         high_gain: request.effects.eq.high_gain,
                     },
-                    compression: perro_runtime_context::sub_apis::AudioCompression {
+                    compression: perro_runtime_api::sub_apis::AudioCompression {
                         threshold: request.effects.compression.threshold,
                         ratio: request.effects.compression.ratio,
                         attack: request.effects.compression.attack,
@@ -340,26 +340,26 @@ impl Runtime {
                 audio_layer: request.audio_layer,
                 enable_propagation: request.enable_propagation,
                 direction_2d: match request.direction_2d {
-                    perro_resource_context::sub_apis::AudioDirection::Omni => AudioDirection::Omni,
-                    perro_resource_context::sub_apis::AudioDirection::Directional(v) => {
+                    perro_resource_api::sub_apis::AudioDirection::Omni => AudioDirection::Omni,
+                    perro_resource_api::sub_apis::AudioDirection::Directional(v) => {
                         AudioDirection::Directional(v)
                     }
-                    perro_resource_context::sub_apis::AudioDirection::InverseDirectional(v) => {
+                    perro_resource_api::sub_apis::AudioDirection::InverseDirectional(v) => {
                         AudioDirection::InverseDirectional(v)
                     }
-                    perro_resource_context::sub_apis::AudioDirection::Bidirectional(v) => {
+                    perro_resource_api::sub_apis::AudioDirection::Bidirectional(v) => {
                         AudioDirection::Bidirectional(v)
                     }
                 },
                 direction_3d: match request.direction_3d {
-                    perro_resource_context::sub_apis::AudioDirection::Omni => AudioDirection::Omni,
-                    perro_resource_context::sub_apis::AudioDirection::Directional(v) => {
+                    perro_resource_api::sub_apis::AudioDirection::Omni => AudioDirection::Omni,
+                    perro_resource_api::sub_apis::AudioDirection::Directional(v) => {
                         AudioDirection::Directional(v)
                     }
-                    perro_resource_context::sub_apis::AudioDirection::InverseDirectional(v) => {
+                    perro_resource_api::sub_apis::AudioDirection::InverseDirectional(v) => {
                         AudioDirection::InverseDirectional(v)
                     }
-                    perro_resource_context::sub_apis::AudioDirection::Bidirectional(v) => {
+                    perro_resource_api::sub_apis::AudioDirection::Bidirectional(v) => {
                         AudioDirection::Bidirectional(v)
                     }
                 },

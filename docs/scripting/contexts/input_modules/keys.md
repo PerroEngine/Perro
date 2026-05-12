@@ -40,4 +40,4 @@ Available `KeyCode` values are defined by the engine enum and include:
   - `F1`..`F35`
 
 Source of truth:
-- `perro_source/api_modules/perro_input/src/keycode.rs`
+- `perro_source/api_modules/perro_input_api/src/keycode.rs`

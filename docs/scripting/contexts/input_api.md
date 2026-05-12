@@ -1,4 +1,4 @@
-# Input Context
+# Input API
 
 Type:
 - `ctx: &mut ScriptContext<'_, API>`

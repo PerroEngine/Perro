@@ -1,4 +1,4 @@
-# Resource Context
+# Resource API
 
 Type:
 

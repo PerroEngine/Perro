@@ -27,12 +27,14 @@ pub struct BodyState3D {
 pub struct JointState2D {
     pub handle: r2::ImpulseJointHandle,
     pub signature: u64,
+    pub sync_epoch: u64,
 }
 
 #[derive(Clone, Debug)]
 pub struct JointState3D {
     pub handle: r3::ImpulseJointHandle,
     pub signature: u64,
+    pub sync_epoch: u64,
 }
 
 pub struct PhysicsWorld2D {

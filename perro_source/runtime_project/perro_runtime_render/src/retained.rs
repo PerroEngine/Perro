@@ -224,7 +224,7 @@ pub struct RenderUiState {
     pub ui_nav_repeat_timer: f32,
     pub focused_text_edit: Option<NodeID>,
     pub pressed_text_edit: Option<NodeID>,
-    pub text_edit_repeat_key: Option<perro_input::KeyCode>,
+    pub text_edit_repeat_key: Option<perro_input_api::KeyCode>,
     pub text_edit_repeat_timer: f32,
     pub last_ui_pointer: Option<(Vector2, bool)>,
     pub cursor_icon: perro_ui::CursorIcon,

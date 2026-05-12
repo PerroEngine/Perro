@@ -5,7 +5,7 @@ mod backend {
     use super::*;
     use gilrs::ff::{BaseEffect, BaseEffectType, Effect, EffectBuilder, Repeat, Replay, Ticks};
     use gilrs::{Axis, Button, EventType, GamepadId, Gilrs};
-    use perro_input::{GamepadAxis, GamepadButton, GamepadIndex};
+    use perro_input_api::{GamepadAxis, GamepadButton, GamepadIndex};
     use std::collections::{HashMap, HashSet};
     use std::sync::OnceLock;
 

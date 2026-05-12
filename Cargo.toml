@@ -18,10 +18,10 @@ members = [
     "perro_source/runtime_project/perro_project",
 
     "perro_source/api_modules/perro_modules",
-    "perro_source/api_modules/perro_input",
+    "perro_source/api_modules/perro_input_api",
     "perro_source/api_modules/perro_api",
-    "perro_source/api_modules/perro_resource_context",
-    "perro_source/api_modules/perro_runtime_context",
+    "perro_source/api_modules/perro_resource_api",
+    "perro_source/api_modules/perro_runtime_api",
     "perro_source/api_modules/perro_steamworks",
 
     "perro_source/render_stack/perro_app",

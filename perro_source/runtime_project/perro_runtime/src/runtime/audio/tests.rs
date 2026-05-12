@@ -4,8 +4,8 @@ use perro_nodes::{
     CollisionShape2D, CollisionShape3D, SceneNode, SceneNodeData, StaticBody2D, StaticBody3D,
     camera_2d::Camera2D, node_2d::Node2D,
 };
-use perro_resource_context::sub_apis::{Audio, Audio2D, Audio3D};
-use perro_runtime_context::sub_apis::NodeAPI;
+use perro_resource_api::sub_apis::{Audio, Audio2D, Audio3D};
+use perro_runtime_api::sub_apis::NodeAPI;
 use perro_structs::{AudioInteraction, BitMask, Quaternion, Transform2D, Transform3D};
 
 fn looped_audio() -> RuntimeAudio<'static> {

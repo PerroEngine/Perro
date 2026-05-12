@@ -1,6 +1,6 @@
 use super::core::RuntimeResourceApi;
 use perro_render_bridge::{RenderCommand, VisualAccessibilityCommand};
-use perro_resource_context::sub_apis::VisualAccessibilityAPI;
+use perro_resource_api::sub_apis::VisualAccessibilityAPI;
 use perro_structs::ColorBlindFilter;
 
 impl VisualAccessibilityAPI for RuntimeResourceApi {

@@ -13,7 +13,7 @@ use perro_asset_formats::pskel::{
 use perro_ids::{parse_hashed_source_uri, string_to_u64};
 use perro_io::{decompress_zlib, load_asset};
 use perro_nodes::{skeleton_2d::Bone2D, skeleton_3d::Bone3D};
-use perro_resource_context::sub_apis::SkeletonAPI;
+use perro_resource_api::sub_apis::SkeletonAPI;
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use std::collections::HashMap;
 

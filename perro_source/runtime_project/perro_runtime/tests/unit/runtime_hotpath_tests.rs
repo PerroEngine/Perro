@@ -4,7 +4,7 @@ use perro_ids::{NodeID, TextureID};
 use perro_io::{ResolvedPath, clear_dlc_mounts, mount_dlc_disk, resolve_path};
 use perro_nodes::{Node2D, Node3D, SceneNode, SceneNodeData, Sprite2D};
 use perro_render_bridge::{Command2D, RenderCommand};
-use perro_runtime_context::sub_apis::{NodeAPI, NodeCreationTemplate};
+use perro_runtime_api::sub_apis::{NodeAPI, NodeCreationTemplate};
 use perro_scripting::{ScriptBehavior, ScriptContext, ScriptFlags, ScriptLifecycle};
 use perro_variant::Variant;
 use std::hint::black_box;

@@ -1,6 +1,6 @@
 use perro_animation::{AnimationClip, AnimationTreeAsset};
 use perro_render_bridge::{Material3D, ParticleProfile3D};
-use perro_resource_context::sub_apis::Locale;
+use perro_resource_api::sub_apis::Locale;
 use perro_scene::Scene;
 use perro_ui::UiStyle;
 use std::{collections::BTreeMap, path::PathBuf};

@@ -2,7 +2,7 @@ use super::RuntimeResourceApi;
 use super::state::RuntimeLocalizationState;
 use csv::StringRecord;
 use perro_ids::string_to_u64;
-use perro_resource_context::sub_apis::{Locale, LocalizationAPI};
+use perro_resource_api::sub_apis::{Locale, LocalizationAPI};
 use std::{
     collections::HashMap,
     sync::{OnceLock, RwLock},

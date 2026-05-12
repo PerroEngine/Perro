@@ -15,5 +15,12 @@ perro_ids = { path = "../../core/perro_ids" }
 perro_io = { path = "../../io_stack/perro_io" }
 perro_nodes = { path = "../../core/perro_nodes" }
 perro_render_bridge = { path = "../../render_stack/perro_render_bridge" }
-perro_runtime_context = { path = "../../api_modules/perro_runtime_context" }
+perro_runtime_api = { path = "../../api_modules/perro_runtime_api" }
 perro_structs = { path = "../../core/perro_structs" }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "joint_sync"
+harness = false

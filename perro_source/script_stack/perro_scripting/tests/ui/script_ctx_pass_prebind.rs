@@ -1,6 +1,6 @@
-use perro_input::InputAPI;
-use perro_resource_context::api::ResourceAPI;
-use perro_runtime_context::{RuntimeWindow, api::RuntimeAPI};
+use perro_input_api::InputAPI;
+use perro_resource_api::api::ResourceAPI;
+use perro_runtime_api::{RuntimeWindow, api::RuntimeAPI};
 use perro_scripting::{ScriptAPI, ScriptContext};
 
 struct Api<RT: ?Sized, RS: ?Sized, IP: ?Sized>(std::marker::PhantomData<(*const RT, *const RS, *const IP)>);

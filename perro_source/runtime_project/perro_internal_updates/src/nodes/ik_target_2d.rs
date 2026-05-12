@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use glam::{Mat3, Vec2};
 use perro_nodes::{IKTarget2D, Skeleton2D};
-use perro_runtime_context::perro_structs::{IKTargetSolver, Transform2D};
+use perro_runtime_api::perro_structs::{IKTargetSolver, Transform2D};
 use std::cell::RefCell;
 
 thread_local! {
@@ -428,7 +428,7 @@ fn angle_delta(from: f32, to: f32) -> f32 {
 mod tests {
     use super::*;
     use perro_nodes::skeleton_2d::Bone2D;
-    use perro_runtime_context::perro_structs::Vector2;
+    use perro_runtime_api::perro_structs::Vector2;
     use std::borrow::Cow;
 
     fn chain_skeleton(count: usize) -> Skeleton2D {

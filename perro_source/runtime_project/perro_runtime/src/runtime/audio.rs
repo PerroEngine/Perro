@@ -6,8 +6,8 @@ use crate::rs_ctx::QueuedSpatialAudioPos;
 use perro_ids::NodeID;
 use perro_nodes::{CollisionShape2D, CollisionShape3D, SceneNodeData};
 use perro_render_bridge::{Command2D, Command3D, DrawShape2DCommand, RenderCommand};
-use perro_resource_context::sub_apis::AudioAPI;
-use perro_runtime_context::sub_apis::{
+use perro_resource_api::sub_apis::AudioAPI;
+use perro_runtime_api::sub_apis::{
     AttachedMidiTarget, AudioDirection, AudioEffects, PhysicsQueryFilter, RuntimeAudio,
     RuntimeAudioAPI, SpatialAudioOptions,
 };

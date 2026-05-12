@@ -1,9 +1,9 @@
 use perro_ids::string_to_u64;
 use perro_ids::{NodeID, ScriptMemberID};
-use perro_input::InputWindow;
+use perro_input_api::InputWindow;
 use perro_io::push_dlc_self_context;
-use perro_resource_context::ResourceWindow;
-use perro_runtime_context::{RuntimeWindow, sub_apis::ScriptAPI};
+use perro_resource_api::ResourceWindow;
+use perro_runtime_api::{RuntimeWindow, sub_apis::ScriptAPI};
 use perro_scripting::ScriptContext;
 use perro_variant::Variant;
 use std::sync::Arc;
@@ -54,7 +54,7 @@ impl Runtime {
         let input_ptr = std::ptr::addr_of!(self.input);
         // SAFETY: During callback dispatch, input is treated as immutable runtime state.
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
-        let ipt: InputWindow<'_, perro_input::InputSnapshot> =
+        let ipt: InputWindow<'_, perro_input_api::InputSnapshot> =
             unsafe { InputWindow::new(&*input_ptr) };
         let mount = self
             .script_runtime
@@ -90,7 +90,7 @@ impl Runtime {
         let input_ptr = std::ptr::addr_of!(self.input);
         // SAFETY: During callback dispatch, input is treated as immutable runtime state.
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
-        let ipt: InputWindow<'_, perro_input::InputSnapshot> =
+        let ipt: InputWindow<'_, perro_input_api::InputSnapshot> =
             unsafe { InputWindow::new(&*input_ptr) };
         let mount = self
             .script_runtime
@@ -123,7 +123,7 @@ impl Runtime {
         instance_index: usize,
         id: NodeID,
         res: &ResourceWindow<'_, crate::RuntimeResourceApi>,
-        ipt: &InputWindow<'_, perro_input::InputSnapshot>,
+        ipt: &InputWindow<'_, perro_input_api::InputSnapshot>,
     ) {
         if !self.scripts.is_update_scheduled_indexed(instance_index, id) {
             return;
@@ -161,7 +161,7 @@ impl Runtime {
         instance_index: usize,
         id: NodeID,
         res: &ResourceWindow<'_, crate::RuntimeResourceApi>,
-        ipt: &InputWindow<'_, perro_input::InputSnapshot>,
+        ipt: &InputWindow<'_, perro_input_api::InputSnapshot>,
     ) {
         if !self
             .scripts
@@ -317,7 +317,7 @@ impl ScriptAPI for Runtime {
         let input_ptr = std::ptr::addr_of!(self.input);
         // SAFETY: During callback dispatch, input is treated as immutable runtime state.
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
-        let ipt: InputWindow<'_, perro_input::InputSnapshot> =
+        let ipt: InputWindow<'_, perro_input_api::InputSnapshot> =
             unsafe { InputWindow::new(&*input_ptr) };
         self.script_runtime
             .active_script_stack

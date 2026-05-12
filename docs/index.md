@@ -39,6 +39,7 @@
 ## Resources
 
 - [ResPath](respath.md)
+- [Materials Guide](materials.md)
 - [`.panim` Format](resources/panim.md)
 - [`.panimtree` Format](resources/panimtree.md)
 - [`.pmat` Format](resources/pmat.md)
@@ -46,10 +47,9 @@
 - [`.uistyle` Format](resources/uistyle.md)
 - [`.ppart` Format](resources/ppart.md)
 - [`.pskel` Format](resources/pskel.md)
-- [Binary Asset Versions](resources/binary_assets.md)
 
 - [Post Processing](resources/postprocess.md)
-- [Visual Accessibility](resources/visual_accessibility.md)
+- [Visual Accessibility](scripting/contexts/resource_modules/visual_accessibility.md)
 
 ## DLC
 

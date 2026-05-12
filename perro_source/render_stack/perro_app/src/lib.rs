@@ -1,5 +1,5 @@
 use perro_graphics::GraphicsBackend;
-use perro_input::{
+use perro_input_api::{
     GamepadAxis, GamepadButton, GamepadRumbleRequest, JoyConButton, JoyConIndicatorRequest,
     JoyConRumbleRequest, KeyCode, MouseButton, MouseMode, PlayerBinding, PlayerState,
 };
@@ -279,7 +279,7 @@ impl<B: GraphicsBackend> App<B> {
     }
 
     #[inline]
-    pub fn set_joycon_side(&mut self, index: usize, side: perro_input::JoyConSide) {
+    pub fn set_joycon_side(&mut self, index: usize, side: perro_input_api::JoyConSide) {
         self.runtime.set_joycon_side(index, side);
     }
 

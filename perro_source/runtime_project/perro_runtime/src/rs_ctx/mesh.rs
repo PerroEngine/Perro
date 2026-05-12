@@ -1,7 +1,7 @@
 use super::core::RuntimeResourceApi;
 use perro_ids::{MeshID, string_to_u64};
 use perro_render_bridge::{Mesh3D, RenderCommand, ResourceCommand};
-use perro_resource_context::sub_apis::MeshAPI;
+use perro_resource_api::sub_apis::MeshAPI;
 
 impl MeshAPI for RuntimeResourceApi {
     fn load_mesh(&self, source: &str) -> MeshID {

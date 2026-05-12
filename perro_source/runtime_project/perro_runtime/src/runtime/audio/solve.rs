@@ -5,7 +5,7 @@ impl Runtime {
         &mut self,
         source_pos: Vector2,
         sound: &ActiveSpatialSound,
-        physics_hit: Option<perro_runtime_context::sub_apis::PhysicsRayHit2D>,
+        physics_hit: Option<perro_runtime_api::sub_apis::PhysicsRayHit2D>,
     ) -> Option<PropagationResult> {
         let listener = self
             .resource_api
@@ -164,7 +164,7 @@ impl Runtime {
         &mut self,
         source_pos: Vector3,
         sound: &ActiveSpatialSound,
-        hit: Option<perro_runtime_context::sub_apis::PhysicsRayHit3D>,
+        hit: Option<perro_runtime_api::sub_apis::PhysicsRayHit3D>,
     ) -> Option<PropagationResult> {
         let listener = self
             .resource_api
@@ -634,7 +634,7 @@ impl Runtime {
 
     fn physics_bounce_hit_2d(
         &self,
-        hit: perro_runtime_context::sub_apis::PhysicsRayHit2D,
+        hit: perro_runtime_api::sub_apis::PhysicsRayHit2D,
     ) -> Option<AudioBounceHit2D> {
         let material = self.audio_material_for_node(hit.node)?;
         let thickness = self.audio_thickness_2d(hit.node);
@@ -650,7 +650,7 @@ impl Runtime {
 
     fn physics_bounce_hit_3d(
         &self,
-        hit: perro_runtime_context::sub_apis::PhysicsRayHit3D,
+        hit: perro_runtime_api::sub_apis::PhysicsRayHit3D,
     ) -> Option<AudioBounceHit3D> {
         let material = self.audio_material_for_node(hit.node)?;
         let thickness = self.audio_thickness_3d(hit.node);

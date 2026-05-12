@@ -1,12 +1,12 @@
 pub use perro_ids as ids;
-pub use perro_input as input;
+pub use perro_input_api as input;
 pub use perro_modules as modules;
 pub use perro_nodes as nodes;
 pub use perro_project as project;
-pub use perro_resource_context as resource_context;
-pub use perro_resource_context::res_path;
-pub use perro_resource_context::{ResPath, ResPathBuf, ResPathError, ResPathKind, ResPathSource};
-pub use perro_runtime_context as runtime_context;
+pub use perro_resource_api as resource_api;
+pub use perro_resource_api::res_path;
+pub use perro_resource_api::{ResPath, ResPathBuf, ResPathError, ResPathKind, ResPathSource};
+pub use perro_runtime_api as runtime_api;
 pub use perro_scene as scene;
 pub use perro_scripting as scripting;
 #[cfg(feature = "steamworks")]
@@ -41,13 +41,13 @@ pub mod prelude {
     #[cfg(feature = "steamworks")]
     pub use crate::steam;
     pub use perro_ids::prelude::*;
-    pub use perro_input::prelude::*;
+    pub use perro_input_api::prelude::*;
     pub use perro_modules::log::*;
     pub use perro_modules::prelude::*;
     pub use perro_nodes::prelude::*;
     pub use perro_project::create_new_project;
-    pub use perro_resource_context::prelude::*;
-    pub use perro_resource_context::res_path::{
+    pub use perro_resource_api::prelude::*;
+    pub use perro_resource_api::res_path::{
         ResPath, ResPathBuf, ResPathError, ResPathKind, ResPathSource,
     };
     pub use perro_scene;

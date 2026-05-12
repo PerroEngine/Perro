@@ -933,7 +933,7 @@ fn default_static_localizations_rs() -> String {
     r#"#![allow(unused_imports)]
 
 pub const fn lookup_localized_string(
-    _locale: perro_api::resource_context::sub_apis::Locale,
+    _locale: perro_api::resource_api::sub_apis::Locale,
     _key_hash: u64,
 ) -> &'static str {
     ""

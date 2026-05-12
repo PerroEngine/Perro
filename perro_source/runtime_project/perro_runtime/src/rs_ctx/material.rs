@@ -2,7 +2,7 @@ use super::core::RuntimeResourceApi;
 use crate::material_schema;
 use perro_ids::MaterialID;
 use perro_render_bridge::{Material3D, RenderCommand, ResourceCommand};
-use perro_resource_context::sub_apis::MaterialAPI;
+use perro_resource_api::sub_apis::MaterialAPI;
 
 impl MaterialAPI for RuntimeResourceApi {
     fn load_material_source(&self, source: &str) -> MaterialID {

@@ -1,5 +1,5 @@
 use super::Runtime;
-use perro_input::{
+use perro_input_api::{
     GamepadAxis, GamepadButton, GamepadRumbleRequest, JoyConIndicatorRequest, JoyConRumbleRequest,
     KeyCode, MouseButton, MouseMode, PlayerBinding, PlayerState,
 };
@@ -105,7 +105,7 @@ impl Runtime {
     pub fn set_joycon_button_state(
         &mut self,
         index: usize,
-        button: perro_input::JoyConButton,
+        button: perro_input_api::JoyConButton,
         is_down: bool,
     ) {
         self.input.set_joycon_button_state(index, button, is_down);
@@ -117,7 +117,7 @@ impl Runtime {
     }
 
     #[inline]
-    pub fn set_joycon_side(&mut self, index: usize, side: perro_input::JoyConSide) {
+    pub fn set_joycon_side(&mut self, index: usize, side: perro_input_api::JoyConSide) {
         self.input.set_joycon_side(index, side);
     }
 

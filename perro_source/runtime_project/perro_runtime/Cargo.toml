@@ -22,9 +22,9 @@ perro_animation = { path = "../../core/perro_animation" }
 perro_nodes = { path = "../../core/perro_nodes" }
 perro_ui = { path = "../../core/perro_ui" }
 perro_structs = { path = "../../core/perro_structs" }
-perro_runtime_context = { path = "../../api_modules/perro_runtime_context" }
-perro_resource_context = { path = "../../api_modules/perro_resource_context" }
-perro_input = { path = "../../api_modules/perro_input" }
+perro_runtime_api = { path = "../../api_modules/perro_runtime_api" }
+perro_resource_api = { path = "../../api_modules/perro_resource_api" }
+perro_input_api = { path = "../../api_modules/perro_input_api" }
 perro_internal_updates = { path = "../perro_internal_updates" }
 perro_scripting = { path = "../../script_stack/perro_scripting" }
 perro_io = { path = "../../io_stack/perro_io" }

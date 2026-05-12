@@ -1,5 +1,5 @@
 use perro_ids::{NodeID, ScriptMemberID};
-use perro_resource_context::ResPathSource;
+use perro_resource_api::ResPathSource;
 use perro_variant::Variant;
 use std::borrow::Cow;
 

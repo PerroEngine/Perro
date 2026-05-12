@@ -4,7 +4,7 @@ use perro_ids::{NodeID, ScriptMemberID};
 use perro_nodes::animation_player::AnimationObjectBinding;
 use perro_nodes::animation_tree::AnimationTreeAnimation;
 use perro_nodes::{SceneNode, SceneNodeData};
-use perro_resource_context::ResourceWindow;
+use perro_resource_api::ResourceWindow;
 use perro_scene::SceneValue;
 use perro_structs::{Vector2, Vector3};
 use perro_variant::Variant;

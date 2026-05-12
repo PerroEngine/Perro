@@ -12,8 +12,8 @@ pub mod prelude {
     };
     pub use crate::{State, Variant};
     pub use perro_ids::prelude::*;
-    pub use perro_input::prelude::*;
-    pub use perro_resource_context::prelude::*;
-    pub use perro_runtime_context::prelude::*;
+    pub use perro_input_api::prelude::*;
+    pub use perro_resource_api::prelude::*;
+    pub use perro_runtime_api::prelude::*;
     pub use perro_variant::{DeriveVariant, Variant, VariantSchema};
 }

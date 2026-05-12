@@ -255,7 +255,7 @@ pub(in crate::runtime::render_ui) fn apply_text_edit_key_input(
     shift: bool,
     ctrl: bool,
     repeat_key: Option<KeyCode>,
-    input: &perro_input::InputSnapshot,
+    input: &perro_input_api::InputSnapshot,
 ) -> bool {
     let mut changed = false;
     if ctrl && input.is_key_pressed(KeyCode::KeyA) {

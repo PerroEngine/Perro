@@ -1,5 +1,5 @@
 use super::RuntimeResourceApi;
-use perro_resource_context::api::ViewportAPI;
+use perro_resource_api::api::ViewportAPI;
 use perro_structs::Vector2;
 
 impl ViewportAPI for RuntimeResourceApi {
