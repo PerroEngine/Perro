@@ -1,6 +1,6 @@
-use perro_app::entry;
+use perro_app::{entry, winit_runner::AppExitKind};
 use perro_project::resolve_local_path;
-use std::{env, path::PathBuf};
+use std::{env, path::PathBuf, process};
 
 fn parse_flag_value(args: &[String], flag: &str) -> Option<String> {
     let idx = args.iter().position(|a| a == flag)?;
@@ -22,10 +22,14 @@ fn main() {
     let fallback_name =
         parse_flag_value(&args, "--name").unwrap_or_else(|| "Perro Project".to_string());
 
-    entry::run_dev_project_from_path(&root, &fallback_name).unwrap_or_else(|err| {
-        panic!(
-            "failed to load project at `{}`: {err}",
-            root.to_string_lossy()
-        )
-    });
+    match entry::run_dev_project_from_path(&root, &fallback_name) {
+        Ok(result) => match result.kind {
+            AppExitKind::WindowClose => println!("perro exit: window close"),
+            AppExitKind::EventLoopExit => println!("perro exit: event loop exit"),
+        },
+        Err(err) => {
+            eprintln!("perro exit error at `{}`: {err}", root.to_string_lossy());
+            process::exit(1);
+        }
+    }
 }

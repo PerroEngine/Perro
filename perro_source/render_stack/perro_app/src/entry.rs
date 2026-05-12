@@ -1,5 +1,5 @@
 use crate::App;
-use crate::winit_runner::WinitRunner;
+use crate::winit_runner::{AppExitError, AppExitResult, WinitRunner};
 use perro_graphics::{GraphicsBackend, OcclusionCullingMode, PerroGraphics};
 pub use perro_runtime::{OcclusionCulling, ParticleSimDefault};
 use perro_runtime::{ProjectLoadError, ProviderMode, Runtime, RuntimeProject};
@@ -7,6 +7,35 @@ use perro_scripting::ScriptConstructor;
 use std::path::Path;
 
 type StaticScriptRegistry = &'static [(u64, ScriptConstructor<perro_runtime::RuntimeScriptApi>)];
+
+#[derive(Debug)]
+pub enum RunProjectError {
+    Load(ProjectLoadError),
+    Exit(AppExitError),
+}
+
+impl std::fmt::Display for RunProjectError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Load(err) => write!(f, "{err}"),
+            Self::Exit(err) => write!(f, "{err}"),
+        }
+    }
+}
+
+impl std::error::Error for RunProjectError {}
+
+impl From<ProjectLoadError> for RunProjectError {
+    fn from(value: ProjectLoadError) -> Self {
+        Self::Load(value)
+    }
+}
+
+impl From<AppExitError> for RunProjectError {
+    fn from(value: AppExitError) -> Self {
+        Self::Exit(value)
+    }
+}
 
 pub fn create_runtime_from_project(
     project: RuntimeProject,
@@ -62,7 +91,7 @@ fn graphics_from_project_config(
 pub fn run_dev_project_from_path(
     project_root: &Path,
     default_name: &str,
-) -> Result<(), ProjectLoadError> {
+) -> Result<AppExitResult, RunProjectError> {
     let project = RuntimeProject::from_project_dir_with_default_name(project_root, default_name)?;
     let window_title = project.config.name.clone();
     let graphics = graphics_from_project_config(&project.config, false);
@@ -71,14 +100,15 @@ pub fn run_dev_project_from_path(
         .runtime
         .project()
         .and_then(|p| p.config.target_fixed_update);
-    WinitRunner::new().run_with_timestep(app, &window_title, fixed);
-    Ok(())
+    WinitRunner::new()
+        .run_with_timestep(app, &window_title, fixed)
+        .map_err(RunProjectError::from)
 }
 
 pub fn run_static_project_from_path(
     project_root: &Path,
     default_name: &str,
-) -> Result<(), ProjectLoadError> {
+) -> Result<AppExitResult, RunProjectError> {
     let project = RuntimeProject::from_project_dir_with_default_name(project_root, default_name)?;
     let window_title = project.config.name.clone();
     let graphics = graphics_from_project_config(&project.config, true);
@@ -87,8 +117,9 @@ pub fn run_static_project_from_path(
         .runtime
         .project()
         .and_then(|p| p.config.target_fixed_update);
-    WinitRunner::new().run_with_timestep(app, &window_title, fixed);
-    Ok(())
+    WinitRunner::new()
+        .run_with_timestep(app, &window_title, fixed)
+        .map_err(RunProjectError::from)
 }
 
 pub struct StaticEmbeddedProject<'a> {
@@ -166,7 +197,7 @@ pub struct StaticEmbeddedAssetsConfig {
 
 pub fn run_static_embedded_project(
     input: StaticEmbeddedProject<'_>,
-) -> Result<(), ProjectLoadError> {
+) -> Result<AppExitResult, RunProjectError> {
     let mut static_config = perro_runtime::StaticProjectConfig::new(
         input.project.project_name,
         input.project.main_scene_hash,
@@ -231,6 +262,7 @@ pub fn run_static_embedded_project(
         .runtime
         .project()
         .and_then(|p| p.config.target_fixed_update);
-    WinitRunner::new().run_with_timestep(app, &window_title, fixed);
-    Ok(())
+    WinitRunner::new()
+        .run_with_timestep(app, &window_title, fixed)
+        .map_err(RunProjectError::from)
 }

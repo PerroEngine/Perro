@@ -470,13 +470,59 @@ fn log_avg_sampled(
 
 pub struct WinitRunner;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AppExitKind {
+    WindowClose,
+    EventLoopExit,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AppExitResult {
+    pub kind: AppExitKind,
+}
+
+impl AppExitResult {
+    pub fn window_close() -> Self {
+        Self {
+            kind: AppExitKind::WindowClose,
+        }
+    }
+
+    pub fn event_loop_exit() -> Self {
+        Self {
+            kind: AppExitKind::EventLoopExit,
+        }
+    }
+
+    pub fn is_success(&self) -> bool {
+        true
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AppExitError {
+    pub message: String,
+}
+
+impl std::fmt::Display for AppExitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for AppExitError {}
+
 impl WinitRunner {
     pub fn new() -> Self {
         Self
     }
 
-    pub fn run<B: GraphicsBackend>(self, app: App<B>, title: &str) {
-        self.run_with_timestep(app, title, DEFAULT_FIXED_TIMESTEP);
+    pub fn run<B: GraphicsBackend>(
+        self,
+        app: App<B>,
+        title: &str,
+    ) -> Result<AppExitResult, AppExitError> {
+        self.run_with_timestep(app, title, DEFAULT_FIXED_TIMESTEP)
     }
 
     pub fn run_with_timestep<B: GraphicsBackend>(
@@ -484,12 +530,18 @@ impl WinitRunner {
         app: App<B>,
         title: &str,
         fixed_timestep: Option<f32>,
-    ) {
-        let event_loop = EventLoop::new().expect("failed to create winit event loop");
+    ) -> Result<AppExitResult, AppExitError> {
+        let event_loop = EventLoop::new().map_err(|err| AppExitError {
+            message: format!("failed to create winit event loop: {err}"),
+        })?;
         let mut state = RunnerState::new(app, title, fixed_timestep);
-        event_loop
-            .run_app(&mut state)
-            .expect("winit event loop failed");
+        event_loop.run_app(&mut state).map_err(|err| AppExitError {
+            message: format!("winit event loop failed: {err}"),
+        })?;
+        Ok(state
+            .exit_result
+            .take()
+            .unwrap_or_else(AppExitResult::event_loop_exit))
     }
 
     pub fn event_loop_type_name() -> &'static str {
@@ -693,6 +745,7 @@ struct RunnerState<B: GraphicsBackend> {
     window_requests: Vec<WindowRequest>,
     cursor_inside_window: bool,
     startup_splash: StartupSplashState,
+    exit_result: Option<AppExitResult>,
 }
 
 impl<B: GraphicsBackend> RunnerState<B> {
@@ -893,6 +946,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             window_requests: Vec::new(),
             cursor_inside_window: false,
             startup_splash,
+            exit_result: None,
         }
     }
 
@@ -1465,6 +1519,9 @@ impl<B: GraphicsBackend> RunnerState<B> {
     }
 
     fn step_frame(&mut self, event_loop: &ActiveEventLoop, now: Instant) {
+        if event_loop.exiting() || self.exit_result.is_some() {
+            return;
+        }
         self.frame_index = self.frame_index.saturating_add(1);
         let frame_index = self.frame_index;
         let frame_start = now;
@@ -2491,7 +2548,13 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             WindowEvent::RedrawRequested => {
                 self.step_frame(event_loop, Instant::now());
             }
-            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::CloseRequested => {
+                self.exit_result = Some(AppExitResult::window_close());
+                if let Some(window) = self.window.take() {
+                    window.set_visible(false);
+                }
+                event_loop.exit();
+            }
             _ => {}
         }
     }
@@ -2515,7 +2578,7 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        if event_loop.exiting() {
+        if event_loop.exiting() || self.exit_result.is_some() {
             return;
         }
         if let Some(window) = &self.window {

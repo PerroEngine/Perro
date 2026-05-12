@@ -66,7 +66,7 @@ let value = ResPathBuf::new("res://textures/player.png").into_variant();
 let path = value.parse::<ResPathBuf>()?;
 ```
 
-State can store a static resource path:
+State can store resource paths:
 
 ```rust
 use perro_api::prelude::*;
@@ -74,7 +74,10 @@ use perro_api::prelude::*;
 #[State]
 pub struct PlayerState {
     #[default = res_path!("res://textures/player.png")]
-    texture: &'static ResPath,
+    texture_path: &'static ResPath,
+
+    #[default = res_path_buf!("res://meshes/player.glb")]
+    mesh_path: ResPathBuf,
 }
 ```
 
