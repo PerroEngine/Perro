@@ -8,6 +8,48 @@ use std::sync::Arc;
 
 use crate::Runtime;
 
+#[cfg(feature = "bench")]
+pub fn bench_insert_noop_signal_script(runtime: &mut Runtime, id: NodeID) {
+    use crate::RuntimeScriptApi;
+    use perro_scripting::{ScriptBehavior, ScriptFlags, ScriptLifecycle};
+    use std::any::Any;
+    use std::hint::black_box;
+
+    struct BenchNoopSignalScript;
+
+    impl ScriptLifecycle<RuntimeScriptApi> for BenchNoopSignalScript {}
+
+    impl ScriptBehavior<RuntimeScriptApi> for BenchNoopSignalScript {
+        fn script_flags(&self) -> ScriptFlags {
+            ScriptFlags::new(ScriptFlags::NONE)
+        }
+
+        fn create_state(&self) -> Box<dyn Any> {
+            Box::new(())
+        }
+
+        fn get_var(&self, _state: &dyn Any, _var: ScriptMemberID) -> Variant {
+            Variant::Null
+        }
+
+        fn set_var(&self, _state: &mut dyn Any, _var: ScriptMemberID, _value: Variant) {}
+
+        fn call_method(
+            &self,
+            _method: ScriptMemberID,
+            _ctx: &mut ScriptContext<'_, RuntimeScriptApi>,
+            params: &[Variant],
+        ) -> Variant {
+            black_box(params.len());
+            Variant::Null
+        }
+    }
+
+    runtime
+        .scripts
+        .insert(id, Arc::new(BenchNoopSignalScript), Box::new(()));
+}
+
 impl SignalAPI for Runtime {
     fn signal_connect(
         &mut self,
@@ -169,10 +211,6 @@ mod tests {
     use perro_scripting::{ScriptBehavior, ScriptFlags, ScriptLifecycle};
     use std::any::Any;
     use std::hint::black_box;
-    use std::time::Instant;
-
-    const BENCH_ITERS: usize = 1_000_000;
-    const MANY_SIGNALS: usize = 8_192;
 
     struct NoopSignalScript;
 
@@ -219,8 +257,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "release signal emission benchmark"]
-    fn bench_signal_emit_release_allocs() {
+    fn signal_emit_connected_scripts_returns_call_count() {
         let signal = SignalID::from_string("bench_signal_emit");
         let method = ScriptMemberID::from_string("on_signal");
         let emit_params = [Variant::from(7_i32), Variant::from(11_i32)];
@@ -234,255 +271,11 @@ mod tests {
             assert!(runtime.signal_connect(id, signal, method, &connect_params));
         }
 
-        for _ in 0..1024 {
-            black_box(runtime.signal_emit(signal, &emit_params));
-        }
-
-        crate::test_alloc::reset_allocations();
-        for _ in 0..BENCH_ITERS {
-            black_box(runtime.signal_emit(signal, &emit_params));
-        }
-
-        crate::test_alloc::reset_allocations();
-        let start = Instant::now();
         let mut calls = 0usize;
-        for _ in 0..BENCH_ITERS {
+        for _ in 0..1024 {
             calls += black_box(runtime.signal_emit(signal, &emit_params));
         }
-        let elapsed = start.elapsed();
-        let allocations = crate::test_alloc::allocations();
-        let ns_per_emit = elapsed.as_nanos() as f64 / BENCH_ITERS as f64;
-        let ns_per_call = elapsed.as_nanos() as f64 / calls as f64;
 
-        eprintln!(
-            "signal_emit bench: emits={BENCH_ITERS} calls={calls} ns_emit={ns_per_emit:.2} ns_call={ns_per_call:.2} allocs={allocations}"
-        );
-
-        assert_eq!(calls, BENCH_ITERS * 4);
-        assert_eq!(allocations, 0);
-    }
-
-    #[test]
-    #[ignore = "release signal emission benchmark matrix"]
-    fn bench_signal_emit_release_matrix() {
-        let method = ScriptMemberID::from_string("on_signal");
-        let emit_params = [Variant::from(7_i32), Variant::from(11_i32)];
-        let connect_params = [Variant::from(13_i32), Variant::from(17_i32)];
-
-        bench_case(
-            "miss_empty_registry",
-            Runtime::new(),
-            SignalID::from_string("missing"),
-            &[],
-            0,
-        );
-
-        let mut single_no_params = Runtime::new();
-        insert_noop_script(&mut single_no_params, NodeID::new(1));
-        let single_signal = SignalID::from_string("single_no_params");
-        assert!(single_no_params.signal_connect(NodeID::new(1), single_signal, method, &[]));
-        bench_case("hit_1_no_params", single_no_params, single_signal, &[], 1);
-
-        let mut single_full_params = Runtime::new();
-        insert_noop_script(&mut single_full_params, NodeID::new(1));
-        let full_signal = SignalID::from_string("single_emit_connect_params");
-        assert!(single_full_params.signal_connect(
-            NodeID::new(1),
-            full_signal,
-            method,
-            &connect_params
-        ));
-        bench_case(
-            "hit_1_emit_plus_connect_params",
-            single_full_params,
-            full_signal,
-            &emit_params,
-            1,
-        );
-
-        let mut four_full_params = Runtime::new();
-        let four_signal = SignalID::from_string("four_emit_connect_params");
-        for i in 0..4 {
-            let id = NodeID::new(i + 1);
-            insert_noop_script(&mut four_full_params, id);
-            assert!(four_full_params.signal_connect(id, four_signal, method, &connect_params));
-        }
-        bench_case(
-            "hit_4_emit_plus_connect_params",
-            four_full_params,
-            four_signal,
-            &emit_params,
-            4,
-        );
-
-        let mut many_keys = Runtime::new();
-        insert_noop_script(&mut many_keys, NodeID::new(1));
-        let mut signals = Vec::with_capacity(MANY_SIGNALS);
-        for i in 0..MANY_SIGNALS {
-            let signal = SignalID::from_u64(0xCAFE_0000_0000_0000_u64 | i as u64);
-            signals.push(signal);
-            assert!(many_keys.signal_connect(NodeID::new(1), signal, method, &[]));
-        }
-        bench_case(
-            "hit_1_among_8192_signals",
-            many_keys,
-            signals[MANY_SIGNALS - 1],
-            &[],
-            1,
-        );
-
-        let mut many_keys_miss = Runtime::new();
-        insert_noop_script(&mut many_keys_miss, NodeID::new(1));
-        for i in 0..MANY_SIGNALS {
-            let signal = SignalID::from_u64(0xBEEF_0000_0000_0000_u64 | i as u64);
-            assert!(many_keys_miss.signal_connect(NodeID::new(1), signal, method, &[]));
-        }
-        bench_case(
-            "miss_among_8192_signals",
-            many_keys_miss,
-            SignalID::from_u64(0xDEAD_F00D),
-            &[],
-            0,
-        );
-
-        let mut batch_runtime = Runtime::new();
-        insert_noop_script(&mut batch_runtime, NodeID::new(1));
-        let mut batch_signals = Vec::with_capacity(1024);
-        for i in 0..1024 {
-            let signal = SignalID::from_u64(0xFA57_0000_0000_0000_u64 | i as u64);
-            batch_signals.push(signal);
-            assert!(batch_runtime.signal_connect(NodeID::new(1), signal, method, &[]));
-        }
-        bench_batch("batch_1024_distinct_signals", batch_runtime, &batch_signals);
-
-        let mut frame_runtime = Runtime::new();
-        insert_noop_script(&mut frame_runtime, NodeID::new(1));
-        let mut frame_signals = Vec::with_capacity(1000);
-        for i in 0..1000 {
-            let signal = SignalID::from_u64(0xF000_0000_0000_0000_u64 | i as u64);
-            frame_signals.push(signal);
-            assert!(frame_runtime.signal_connect(NodeID::new(1), signal, method, &[]));
-        }
-        bench_frame_batch("frame_1000_distinct_signals", frame_runtime, &frame_signals);
-    }
-
-    fn insert_noop_script(runtime: &mut Runtime, id: NodeID) {
-        let behavior: Arc<dyn ScriptBehavior<RuntimeScriptApi>> = Arc::new(NoopSignalScript);
-        runtime.scripts.insert(id, behavior, Box::new(()));
-    }
-
-    fn bench_case(
-        name: &str,
-        mut runtime: Runtime,
-        signal: SignalID,
-        params: &[Variant],
-        expected_calls_per_emit: usize,
-    ) {
-        for _ in 0..1024 {
-            black_box(runtime.signal_emit(signal, params));
-        }
-
-        crate::test_alloc::reset_allocations();
-        for _ in 0..BENCH_ITERS {
-            black_box(runtime.signal_emit(signal, params));
-        }
-
-        crate::test_alloc::reset_allocations();
-        let start = Instant::now();
-        let mut calls = 0usize;
-        for _ in 0..BENCH_ITERS {
-            calls += black_box(runtime.signal_emit(signal, params));
-        }
-        let elapsed = start.elapsed();
-        let allocations = crate::test_alloc::allocations();
-        let ns_per_emit = elapsed.as_nanos() as f64 / BENCH_ITERS as f64;
-        let ns_per_call = if calls == 0 {
-            0.0
-        } else {
-            elapsed.as_nanos() as f64 / calls as f64
-        };
-
-        eprintln!(
-            "signal_matrix {name}: emits={BENCH_ITERS} calls={calls} ns_emit={ns_per_emit:.2} ns_call={ns_per_call:.2} allocs={allocations}"
-        );
-
-        assert_eq!(calls, BENCH_ITERS * expected_calls_per_emit);
-        assert_eq!(allocations, 0);
-    }
-
-    fn bench_batch(name: &str, mut runtime: Runtime, signals: &[SignalID]) {
-        const BATCH_ROUNDS: usize = 10_000;
-        let total_emits = BATCH_ROUNDS * 1024;
-
-        for _ in 0..1024 {
-            for &signal in signals {
-                black_box(runtime.signal_emit(signal, &[]));
-            }
-        }
-
-        crate::test_alloc::reset_allocations();
-        for _ in 0..BATCH_ROUNDS {
-            for &signal in signals {
-                black_box(runtime.signal_emit(signal, &[]));
-            }
-        }
-
-        crate::test_alloc::reset_allocations();
-        let start = Instant::now();
-        let mut calls = 0usize;
-        for _ in 0..BATCH_ROUNDS {
-            for &signal in signals {
-                calls += black_box(runtime.signal_emit(signal, &[]));
-            }
-        }
-        let elapsed = start.elapsed();
-        let allocations = crate::test_alloc::allocations();
-        let ns_per_emit = elapsed.as_nanos() as f64 / total_emits as f64;
-
-        eprintln!(
-            "signal_matrix {name}: emits={total_emits} calls={calls} ns_emit={ns_per_emit:.2} ns_call={ns_per_emit:.2} allocs={allocations}"
-        );
-
-        assert_eq!(calls, total_emits);
-        assert_eq!(allocations, 0);
-    }
-
-    fn bench_frame_batch(name: &str, mut runtime: Runtime, signals: &[SignalID]) {
-        const FRAMES: usize = 10_000;
-        let total_emits = FRAMES * signals.len();
-
-        for _ in 0..1024 {
-            for &signal in signals {
-                black_box(runtime.signal_emit(signal, &[]));
-            }
-        }
-
-        crate::test_alloc::reset_allocations();
-        for _ in 0..FRAMES {
-            for &signal in signals {
-                black_box(runtime.signal_emit(signal, &[]));
-            }
-        }
-
-        crate::test_alloc::reset_allocations();
-        let start = Instant::now();
-        let mut calls = 0usize;
-        for _ in 0..FRAMES {
-            for &signal in signals {
-                calls += black_box(runtime.signal_emit(signal, &[]));
-            }
-        }
-        let elapsed = start.elapsed();
-        let allocations = crate::test_alloc::allocations();
-        let ns_per_emit = elapsed.as_nanos() as f64 / total_emits as f64;
-        let us_per_frame = elapsed.as_micros() as f64 / FRAMES as f64;
-
-        eprintln!(
-            "signal_matrix {name}: frames={FRAMES} emits_per_frame={} emits={total_emits} calls={calls} ns_emit={ns_per_emit:.2} us_frame={us_per_frame:.2} allocs={allocations}",
-            signals.len()
-        );
-
-        assert_eq!(calls, total_emits);
-        assert_eq!(allocations, 0);
+        assert_eq!(calls, 1024 * 4);
     }
 }

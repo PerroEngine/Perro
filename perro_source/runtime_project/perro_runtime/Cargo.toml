@@ -58,3 +58,28 @@ harness = false
 name = "scene_loading"
 harness = false
 required-features = ["bench"]
+
+[[bench]]
+name = "runtime_core_hotpaths"
+harness = false
+required-features = ["bench"]
+
+[[bench]]
+name = "physics_hotpaths"
+harness = false
+required-features = ["bench"]
+
+[[bench]]
+name = "query_hotpaths"
+harness = false
+required-features = ["bench"]
+
+[[bench]]
+name = "mesh_query_hotpaths"
+harness = false
+required-features = ["bench"]
+
+[[bench]]
+name = "signal_hotpaths"
+harness = false
+required-features = ["bench"]

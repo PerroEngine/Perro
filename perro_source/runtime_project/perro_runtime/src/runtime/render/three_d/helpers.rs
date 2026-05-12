@@ -549,36 +549,6 @@ pub(super) fn quaternion_forward(rotation: perro_structs::Quaternion) -> [f32; 3
     [forward.x, forward.y, forward.z]
 }
 
-#[cfg(test)]
-pub(super) fn quaternion_forward_scalar_legacy(rotation: perro_structs::Quaternion) -> [f32; 3] {
-    let len_sq = rotation.x * rotation.x
-        + rotation.y * rotation.y
-        + rotation.z * rotation.z
-        + rotation.w * rotation.w;
-    let (x, y, z, w) = if len_sq.is_finite() && len_sq > 1.0e-6 {
-        let inv_len = len_sq.sqrt().recip();
-        (
-            rotation.x * inv_len,
-            rotation.y * inv_len,
-            rotation.z * inv_len,
-            rotation.w * inv_len,
-        )
-    } else {
-        (0.0, 0.0, 0.0, 1.0)
-    };
-
-    let fx = -(2.0 * (x * z + w * y));
-    let fy = -(2.0 * (y * z - w * x));
-    let fz = -(1.0 - 2.0 * (x * x + y * y));
-    let forward_len_sq = fx * fx + fy * fy + fz * fz;
-    if forward_len_sq.is_finite() && forward_len_sq > 1.0e-6 {
-        let inv_len = forward_len_sq.sqrt().recip();
-        [fx * inv_len, fy * inv_len, fz * inv_len]
-    } else {
-        [0.0, 0.0, -1.0]
-    }
-}
-
 pub(super) fn load_material_from_source(runtime: &Runtime, source: &str) -> Option<Material3D> {
     let source = source.trim();
     if source.is_empty() {

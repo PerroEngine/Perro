@@ -11,38 +11,6 @@ mod rs_ctx;
 mod runtime;
 mod runtime_project;
 
-#[cfg(test)]
-mod test_alloc {
-    use std::alloc::{GlobalAlloc, Layout, System};
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    pub(crate) struct CountingAllocator;
-
-    static ALLOCATIONS: AtomicUsize = AtomicUsize::new(0);
-
-    unsafe impl GlobalAlloc for CountingAllocator {
-        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-            ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
-            unsafe { System.alloc(layout) }
-        }
-
-        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-            unsafe { System.dealloc(ptr, layout) }
-        }
-    }
-
-    #[global_allocator]
-    static GLOBAL: CountingAllocator = CountingAllocator;
-
-    pub(crate) fn reset_allocations() {
-        ALLOCATIONS.store(0, Ordering::Relaxed);
-    }
-
-    pub(crate) fn allocations() -> usize {
-        ALLOCATIONS.load(Ordering::Relaxed)
-    }
-}
-
 pub mod rt_ctx;
 pub use rt_ctx as api;
 
