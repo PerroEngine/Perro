@@ -1,4 +1,6 @@
-use crate::{StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir};
+use crate::{
+    StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir, write_hash_const,
+};
 use perro_asset_formats::source_ext;
 use perro_io::walkdir::collect_file_paths;
 use perro_scene::{Parser, SceneFieldIterRef, SceneObjectField, SceneValue};
@@ -73,11 +75,19 @@ pub fn generate_static_ui_styles(project_root: &Path) -> Result<(), StaticPipeli
         );
     }
     out.push_str("\nstatic EMPTY_UI_STYLE: UiStyle = UiStyle::panel();\n\n");
+    for (index, (path, _)) in style_refs.iter().enumerate() {
+        write_hash_const(&mut out, &format!("UI_STYLE_HASH_{index}"), path);
+    }
+    if !style_refs.is_empty() {
+        out.push('\n');
+    }
     out.push_str("pub const fn lookup_ui_style(path_hash: u64) -> &'static UiStyle {\n");
     out.push_str("    match path_hash {\n");
-    for (path, index) in &style_refs {
-        let path_hash = perro_ids::string_to_u64(path);
-        let _ = writeln!(out, "        {path_hash}u64 => &UI_STYLE_{index},");
+    for (hash_index, (_, index)) in style_refs.iter().enumerate() {
+        let _ = writeln!(
+            out,
+            "        UI_STYLE_HASH_{hash_index} => &UI_STYLE_{index},"
+        );
     }
     out.push_str("        _ => &EMPTY_UI_STYLE,\n");
     out.push_str("    }\n");

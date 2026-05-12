@@ -1,4 +1,6 @@
-use crate::{StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir};
+use crate::{
+    StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir, write_hash_const,
+};
 use perro_asset_formats::source_ext;
 use perro_io::walkdir::collect_file_paths;
 use std::{borrow::Cow, fmt::Write as _, fs, io, path::Path};
@@ -53,15 +55,21 @@ pub fn generate_static_animation_trees(project_root: &Path) -> Result<(), Static
     src.push_str("pub static EMPTY_ANIMATION_TREE: AnimationTreeAsset = AnimationTreeAsset { name: Cow::Borrowed(\"\"), slots: Cow::Borrowed(EMPTY_SLOTS), nodes: Cow::Borrowed(EMPTY_NODES), output: Cow::Borrowed(\"\") };\n\n");
 
     let mut lookup = String::new();
+    for (index, item) in parsed.iter().enumerate() {
+        write_hash_const(
+            &mut lookup,
+            &format!("ANIMATION_TREE_HASH_{index}"),
+            &item.lookup_key,
+        );
+    }
+    if !parsed.is_empty() {
+        lookup.push('\n');
+    }
     lookup.push_str("pub const fn lookup_animation_tree(path_hash: u64) -> &'static AnimationTreeAsset {\n    match path_hash {\n");
-    for item in &parsed {
+    for (index, item) in parsed.iter().enumerate() {
         src.push_str(&emit_tree(&item.lookup_key, &item.tree));
         let id = sanitize_ident(&item.lookup_key);
-        let _ = writeln!(
-            lookup,
-            "        {}u64 => &TREE_{id},",
-            perro_ids::string_to_u64(&item.lookup_key)
-        );
+        let _ = writeln!(lookup, "        ANIMATION_TREE_HASH_{index} => &TREE_{id},");
     }
     lookup.push_str("        _ => &EMPTY_ANIMATION_TREE,\n    }\n}\n");
     src.push_str(&lookup);

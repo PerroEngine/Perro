@@ -1,4 +1,11 @@
 #[macro_export]
+macro_rules! hash_str {
+    ($value:expr) => {
+        const { $crate::string_to_u64($value) }
+    };
+}
+
+#[macro_export]
 macro_rules! smid {
     ($name:expr) => {
         $crate::ScriptMemberID::from_string($name)

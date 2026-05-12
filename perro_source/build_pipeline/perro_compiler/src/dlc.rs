@@ -42,6 +42,12 @@ fn write_dlc_pack_manifest(
             .join("core")
             .join("perro_animation"),
     );
+    let perro_ids_path = normalize_toml_path(
+        &engine_root
+            .join("perro_source")
+            .join("core")
+            .join("perro_ids"),
+    );
     let perro_structs_path = normalize_toml_path(
         &engine_root
             .join("perro_source")
@@ -49,7 +55,7 @@ fn write_dlc_pack_manifest(
             .join("perro_structs"),
     );
     let manifest = format!(
-        "[workspace]\n\n[package]\nname = \"{crate_name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\ncrate-type = [\"cdylib\", \"rlib\"]\n\n[dependencies]\nperro_api = {{ path = \"{perro_api_path}\" }}\nperro_scene = {{ path = \"{perro_scene_path}\" }}\nperro_render_bridge = {{ path = \"{perro_render_bridge_path}\" }}\nperro_animation = {{ path = \"{perro_animation_path}\" }}\nperro_structs = {{ path = \"{perro_structs_path}\" }}\n"
+        "[workspace]\n\n[package]\nname = \"{crate_name}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[lib]\ncrate-type = [\"cdylib\", \"rlib\"]\n\n[dependencies]\nperro_api = {{ path = \"{perro_api_path}\" }}\nperro_scene = {{ path = \"{perro_scene_path}\" }}\nperro_render_bridge = {{ path = \"{perro_render_bridge_path}\" }}\nperro_animation = {{ path = \"{perro_animation_path}\" }}\nperro_ids = {{ path = \"{perro_ids_path}\" }}\nperro_structs = {{ path = \"{perro_structs_path}\" }}\n"
     );
     let mut manifest = manifest;
     manifest.push_str(&build_patch_crates_io_block(&engine_root));

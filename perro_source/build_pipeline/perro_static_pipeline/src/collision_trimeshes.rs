@@ -2,7 +2,7 @@
 
 use crate::{
     StaticPipelineError, asset_prefix, ensure_unique_hashes, is_asset_uri, res_dir, static_dir,
-    strip_asset_prefix,
+    strip_asset_prefix, write_hash_const,
 };
 use perro_asset_formats::{
     pmesh::{
@@ -81,17 +81,25 @@ pub fn generate_static_collision_trimeshes(project_root: &Path) -> Result<(), St
         out.push('\n');
     }
     out.push_str("static EMPTY_COLLISION_TRIMESH: &[u8] = b\"\";\n\n");
+    for (index, source) in sources.iter().enumerate() {
+        write_hash_const(&mut out, &format!("COLLISION_TRIMESH_HASH_{index}"), source);
+    }
+    if !sources.is_empty() {
+        out.push('\n');
+    }
     out.push_str("pub const fn lookup_collision_trimesh(path_hash: u64) -> &'static [u8] {\n");
     out.push_str("    match path_hash {\n");
-    for source in &sources {
+    for (hash_index, source) in sources.iter().enumerate() {
         let rel = file_by_source
             .get(source)
             .expect("collision trimesh rel path missing for source");
         let idx = *rel_to_index
             .get(rel)
             .expect("collision trimesh index missing for rel path");
-        let hash = perro_ids::string_to_u64(source);
-        let _ = writeln!(out, "        {hash}u64 => COLLISION_TRIMESH_{idx},");
+        let _ = writeln!(
+            out,
+            "        COLLISION_TRIMESH_HASH_{hash_index} => COLLISION_TRIMESH_{idx},"
+        );
     }
     out.push_str("        _ => EMPTY_COLLISION_TRIMESH,\n");
     out.push_str("    }\n");

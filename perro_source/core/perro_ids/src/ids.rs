@@ -440,6 +440,12 @@ mod tests {
     }
 
     #[test]
+    fn hash_str_macro_matches_string_to_u64() {
+        const HASH: u64 = crate::hash_str!("res://textures/player.png");
+        assert_eq!(HASH, string_to_u64("res://textures/player.png"));
+    }
+
+    #[test]
     #[ignore = "bench-style timing test; run with --ignored --nocapture"]
     fn bench_string_to_u64_by_length() {
         const LENGTHS: &[usize] = &[

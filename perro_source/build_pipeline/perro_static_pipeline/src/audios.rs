@@ -1,5 +1,6 @@
 use crate::{
     StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir,
+    write_hash_const,
 };
 use perro_asset_formats::{
     pawdio::{
@@ -98,11 +99,16 @@ pub fn generate_static_audios(project_root: &Path) -> Result<(), StaticPipelineE
         out.push('\n');
     }
     out.push_str("static EMPTY_AUDIO: &[u8] = b\"\";\n\n");
+    for (index, (res_path, _)) in audios.iter().enumerate() {
+        write_hash_const(&mut out, &format!("AUDIO_HASH_{index}"), res_path);
+    }
+    if !audios.is_empty() {
+        out.push('\n');
+    }
     out.push_str("pub const fn lookup_audio(path_hash: u64) -> &'static [u8] {\n");
     out.push_str("    match path_hash {\n");
-    for (index, (res_path, _)) in audios.iter().enumerate() {
-        let path_hash = perro_ids::string_to_u64(res_path);
-        let _ = writeln!(out, "        {path_hash}u64 => AUDIO_{index},");
+    for (index, _) in audios.iter().enumerate() {
+        let _ = writeln!(out, "        AUDIO_HASH_{index} => AUDIO_{index},");
     }
     out.push_str("        _ => EMPTY_AUDIO,\n");
     out.push_str("    }\n");

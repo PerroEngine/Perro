@@ -1,5 +1,6 @@
 use crate::{
     StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir,
+    write_hash_const,
 };
 use perro_asset_formats::ptset::{
     EXTENSION as PTSET_EXTENSION, SOURCE_EXTENSION as PTSET_SOURCE_EXTENSION,
@@ -73,11 +74,16 @@ pub fn generate_static_tilesets(project_root: &Path) -> Result<(), StaticPipelin
     if !tilesets.is_empty() {
         out.push('\n');
     }
+    for (index, (path, _, _)) in tilesets.iter().enumerate() {
+        write_hash_const(&mut out, &format!("TILESET_HASH_{index}"), path);
+    }
+    if !tilesets.is_empty() {
+        out.push('\n');
+    }
     out.push_str("pub const fn lookup_tileset(path_hash: u64) -> &'static [u8] {\n");
     out.push_str("    match path_hash {\n");
-    for (index, (path, _, _)) in tilesets.iter().enumerate() {
-        let path_hash = perro_ids::string_to_u64(path);
-        let _ = writeln!(out, "        {path_hash}u64 => TILESET_{index},");
+    for (index, _) in tilesets.iter().enumerate() {
+        let _ = writeln!(out, "        TILESET_HASH_{index} => TILESET_{index},");
     }
     out.push_str("        _ => EMPTY_TILESET,\n");
     out.push_str("    }\n");

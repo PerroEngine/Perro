@@ -5,7 +5,7 @@ pub use ids::*;
 
 pub mod prelude {
     pub use crate::ids::*;
-    pub use crate::{func, method, sid, signal, smid, tag, tags, var};
+    pub use crate::{func, hash_str, method, sid, signal, smid, tag, tags, var};
 }
 
 #[cfg(test)]

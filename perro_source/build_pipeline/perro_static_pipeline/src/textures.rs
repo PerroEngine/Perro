@@ -1,5 +1,6 @@
 use crate::{
     StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir,
+    write_hash_const,
 };
 use perro_asset_formats::{
     ptex::{
@@ -102,11 +103,16 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
         out.push('\n');
     }
     out.push_str("static EMPTY_TEXTURE: &[u8] = b\"\";\n\n");
+    for (index, (res_path, _)) in textures.iter().enumerate() {
+        write_hash_const(&mut out, &format!("TEXTURE_HASH_{index}"), res_path);
+    }
+    if !textures.is_empty() {
+        out.push('\n');
+    }
     out.push_str("pub const fn lookup_texture(path_hash: u64) -> &'static [u8] {\n");
     out.push_str("    match path_hash {\n");
-    for (index, (res_path, _)) in textures.iter().enumerate() {
-        let path_hash = perro_ids::string_to_u64(res_path);
-        let _ = writeln!(out, "        {path_hash}u64 => TEXTURE_{index},");
+    for (index, _) in textures.iter().enumerate() {
+        let _ = writeln!(out, "        TEXTURE_HASH_{index} => TEXTURE_{index},");
     }
     out.push_str("        _ => EMPTY_TEXTURE,\n");
     out.push_str("    }\n");

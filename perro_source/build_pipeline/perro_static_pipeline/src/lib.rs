@@ -33,6 +33,7 @@ pub use uistyles::generate_static_ui_styles;
 
 use std::{
     collections::HashMap,
+    fmt::Write as _,
     fs,
     path::{Path, PathBuf},
     sync::{OnceLock, RwLock},
@@ -128,6 +129,29 @@ where
         }
     }
     Ok(())
+}
+
+pub(crate) fn write_hash_const(out: &mut String, name: &str, value: &str) {
+    let _ = writeln!(
+        out,
+        "const {name}: u64 = perro_ids::hash_str!(\"{}\");",
+        escape_rust_str(value)
+    );
+}
+
+pub(crate) fn escape_rust_str(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for ch in input.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            _ => out.push(ch),
+        }
+    }
+    out
 }
 
 pub fn write_static_mod_rs(project_root: &Path) -> Result<(), StaticPipelineError> {

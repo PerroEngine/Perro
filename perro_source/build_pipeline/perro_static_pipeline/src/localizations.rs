@@ -1,4 +1,4 @@
-use crate::{StaticPipelineError, static_dir};
+use crate::{StaticPipelineError, escape_rust_str, static_dir};
 use csv::StringRecord;
 use perro_ids::string_to_u64;
 use perro_project::ProjectConfig;
@@ -209,7 +209,10 @@ pub fn generate_static_localizations(
     for chunk in hash_rows.chunks(ARRAY_ITEMS_PER_LINE) {
         out.push_str("    ");
         for (hash, _key_index) in chunk {
-            let _ = write!(out, "0x{hash:016X}u64, ");
+            let key = key_hashes
+                .get(hash)
+                .expect("localization key missing for hash");
+            let _ = write!(out, "perro_ids::hash_str!(\"{}\"), ", escape_rust_str(key));
         }
         out.push('\n');
     }

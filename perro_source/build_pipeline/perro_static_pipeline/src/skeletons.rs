@@ -1,5 +1,6 @@
 use crate::{
     StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir,
+    write_hash_const,
 };
 use perro_asset_formats::{
     pskel::{
@@ -180,11 +181,20 @@ pub fn generate_static_skeletons(project_root: &Path) -> Result<(), StaticPipeli
         out.push('\n');
     }
     out.push_str("static EMPTY_SKELETON: &[u8] = b\"\";\n\n");
+    for (index, skel_ref) in skeleton_refs.iter().enumerate() {
+        write_hash_const(
+            &mut out,
+            &format!("SKELETON_HASH_{index}"),
+            &skel_ref.lookup_key,
+        );
+    }
+    if !skeleton_refs.is_empty() {
+        out.push('\n');
+    }
     out.push_str("pub const fn lookup_skeleton(path_hash: u64) -> &'static [u8] {\n");
     out.push_str("    match path_hash {\n");
-    for (index, skel_ref) in skeleton_refs.iter().enumerate() {
-        let path_hash = perro_ids::string_to_u64(&skel_ref.lookup_key);
-        let _ = writeln!(out, "        {path_hash}u64 => SKELETON_{index},");
+    for (index, _) in skeleton_refs.iter().enumerate() {
+        let _ = writeln!(out, "        SKELETON_HASH_{index} => SKELETON_{index},");
     }
     out.push_str("        _ => EMPTY_SKELETON,\n");
     out.push_str("    }\n");
