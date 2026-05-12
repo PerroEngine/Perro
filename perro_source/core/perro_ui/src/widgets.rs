@@ -310,11 +310,52 @@ impl UiNodeBase for UiLabel {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UiInputMask {
+    pub allow_players: Vec<usize>,
+    pub deny_players: Vec<usize>,
+    pub allow_gamepads: Vec<usize>,
+    pub deny_gamepads: Vec<usize>,
+    pub allow_joycons: Vec<usize>,
+    pub deny_joycons: Vec<usize>,
+    pub allow_kbm: bool,
+    pub deny_kbm: bool,
+}
+
+impl UiInputMask {
+    pub const fn new() -> Self {
+        Self {
+            allow_players: Vec::new(),
+            deny_players: Vec::new(),
+            allow_gamepads: Vec::new(),
+            deny_gamepads: Vec::new(),
+            allow_joycons: Vec::new(),
+            deny_joycons: Vec::new(),
+            allow_kbm: false,
+            deny_kbm: false,
+        }
+    }
+
+    pub fn has_allow_filter(&self) -> bool {
+        self.allow_kbm
+            || !self.allow_players.is_empty()
+            || !self.allow_gamepads.is_empty()
+            || !self.allow_joycons.is_empty()
+    }
+}
+
+impl Default for UiInputMask {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiTextEdit {
     pub base: UiBox,
     pub style: UiStyle,
     pub focused_style: UiStyle,
+    pub input_mask: UiInputMask,
     pub hover_signals: Vec<SignalID>,
     pub hover_exit_signals: Vec<SignalID>,
     pub focused_signals: Vec<SignalID>,
@@ -351,6 +392,7 @@ impl UiTextEdit {
                 shadow: UiDepthEffect::none(),
                 highlight: UiDepthEffect::none(),
             },
+            input_mask: UiInputMask::new(),
             hover_signals: Vec::new(),
             hover_exit_signals: Vec::new(),
             focused_signals: Vec::new(),
@@ -536,6 +578,7 @@ pub struct UiButton {
     pub style: UiStyle,
     pub hover_style: UiStyle,
     pub pressed_style: UiStyle,
+    pub input_mask: UiInputMask,
     pub cursor_icon: CursorIcon,
     pub hover_base: Option<UiBox>,
     pub pressed_base: Option<UiBox>,
@@ -570,6 +613,7 @@ impl UiButton {
                 shadow: UiDepthEffect::none(),
                 highlight: UiDepthEffect::none(),
             },
+            input_mask: UiInputMask::new(),
             cursor_icon: CursorIcon::Pointer,
             hover_base: None,
             pressed_base: None,

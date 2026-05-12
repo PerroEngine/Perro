@@ -99,14 +99,14 @@ mod state_cast_tests {
         let mut safe_state: Box<dyn Any> = Box::new(TestState { value: 42 });
         let mut fast_state: Box<dyn Any> = Box::new(TestState { value: 42 });
 
-        let safe = safe_state.as_mut().downcast_mut::<TestState>();
+        let safe = safe_state.as_mut().downcast_mut::<TestState>().unwrap();
         // SAFETY: fast_state is constructed as TestState above.
-        let fast = Some(unsafe { state_mut_unchecked::<TestState>(fast_state.as_mut()) });
+        let fast = unsafe { state_mut_unchecked::<TestState>(fast_state.as_mut()) };
 
-        assert_eq!(fast.as_deref(), safe.as_deref());
+        assert_eq!(fast, safe);
 
-        safe.unwrap().value += 1;
-        fast.unwrap().value += 1;
+        safe.value += 1;
+        fast.value += 1;
 
         assert_eq!(
             fast_state.as_ref().downcast_ref::<TestState>(),

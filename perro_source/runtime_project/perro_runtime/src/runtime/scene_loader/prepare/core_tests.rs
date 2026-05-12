@@ -106,8 +106,18 @@ mod tests {
             other => panic!("expected Node2D host node, got {other:?}"),
         }
 
-        assert!(prepared.nodes.iter().any(|pending| pending.key_name == "base_child"));
-        assert!(prepared.nodes.iter().any(|pending| pending.key_name == "local_child"));
+        assert!(
+            prepared
+                .nodes
+                .iter()
+                .any(|pending| pending.key_name == "base_child")
+        );
+        assert!(
+            prepared
+                .nodes
+                .iter()
+                .any(|pending| pending.key_name == "local_child")
+        );
     }
 
     #[test]
@@ -143,7 +153,12 @@ mod tests {
         })
         .expect("prepare scene");
 
-        assert!(!prepared.scripts.iter().any(|pending| pending.node_key_name == "host"));
+        assert!(
+            !prepared
+                .scripts
+                .iter()
+                .any(|pending| pending.node_key_name == "host")
+        );
     }
 
     #[test]
@@ -212,10 +227,9 @@ mod tests {
         )
         .parse_scene();
 
-        let prepared = prepare_scene_with_loader(&scene, &|path| {
-            Err(format!("unknown scene path `{path}`"))
-        })
-        .expect("prepare scene");
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
 
         let root = prepared
             .nodes
@@ -269,10 +283,9 @@ mod tests {
         )
         .parse_scene();
 
-        let prepared = prepare_scene_with_loader(&scene, &|path| {
-            Err(format!("unknown scene path `{path}`"))
-        })
-        .expect("prepare scene");
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
 
         let node = prepared
             .nodes
@@ -282,12 +295,18 @@ mod tests {
         match &node.node.data {
             SceneNodeData::UiButton(button) => {
                 assert_eq!(button.style.corner_radius, 1.0);
-                assert_eq!(button.style.shadow.color, Color::from_hex("#00000066").unwrap());
+                assert_eq!(
+                    button.style.shadow.color,
+                    Color::from_hex("#00000066").unwrap()
+                );
                 assert_eq!(button.style.shadow.distance, 8.0);
                 assert_eq!(button.style.shadow.falloff, 12.0);
                 assert_eq!(button.style.shadow.vector, Vector2::new(1.0, -1.0));
                 assert_eq!(button.style.shadow.size, 1.5);
-                assert_eq!(button.style.highlight.color, Color::from_hex("#FFFFFF55").unwrap());
+                assert_eq!(
+                    button.style.highlight.color,
+                    Color::from_hex("#FFFFFF55").unwrap()
+                );
                 assert_eq!(button.style.highlight.distance, 2.0);
                 assert_eq!(button.style.highlight.falloff, 4.0);
                 assert_eq!(button.style.highlight.vector, Vector2::new(-1.0, 1.0));
@@ -295,11 +314,71 @@ mod tests {
                 assert_eq!(button.hover_style.fill, Color::from_hex("#202830").unwrap());
                 assert_eq!(button.hover_style.stroke, button.style.stroke);
                 assert_eq!(button.hover_style.corner_radius, 1.0);
-                assert_eq!(button.pressed_style.fill, Color::from_hex("#303840").unwrap());
+                assert_eq!(
+                    button.pressed_style.fill,
+                    Color::from_hex("#303840").unwrap()
+                );
                 assert_eq!(button.pressed_style.stroke, button.style.stroke);
                 assert_eq!(button.pressed_style.corner_radius, 1.0);
             }
             other => panic!("expected UiButton node, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn scene_loader_ui_input_masks_apply_to_button_and_text_edit() {
+        let scene = Parser::new(
+            r#"
+            @root = button
+            [button]
+            [UiButton]
+                input_only_players = [0, 2]
+                input_block_gamepads = [1]
+                input_allow_kbm = true
+            [/UiButton]
+            [/button]
+
+            [field]
+            [UiTextBox]
+                input_only_joycons = [3]
+                input_block_players = [4]
+                input_deny_kbm = true
+            [/UiTextBox]
+            [/field]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+
+        let button = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "button")
+            .expect("button node");
+        match &button.node.data {
+            SceneNodeData::UiButton(button) => {
+                assert_eq!(button.input_mask.allow_players, vec![0, 2]);
+                assert_eq!(button.input_mask.deny_gamepads, vec![1]);
+                assert!(button.input_mask.allow_kbm);
+            }
+            other => panic!("expected UiButton node, got {other:?}"),
+        }
+
+        let field = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "field")
+            .expect("field node");
+        match &field.node.data {
+            SceneNodeData::UiTextBox(text_box) => {
+                assert_eq!(text_box.inner.input_mask.allow_joycons, vec![3]);
+                assert_eq!(text_box.inner.input_mask.deny_players, vec![4]);
+                assert!(text_box.inner.input_mask.deny_kbm);
+            }
+            other => panic!("expected UiTextBox node, got {other:?}"),
         }
     }
 
@@ -509,10 +588,9 @@ mod tests {
         )
         .parse_scene();
 
-        let prepared = prepare_scene_with_loader(&scene, &|path| {
-            Err(format!("unknown scene path `{path}`"))
-        })
-        .expect("prepare scene");
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
 
         let menu = prepared
             .nodes
@@ -541,7 +619,10 @@ mod tests {
                     button.pressed_style.fill,
                     Color::from_hex("#182028").unwrap()
                 );
-                assert_eq!(button.hover_signals, vec![perro_ids::SignalID::from_string("ui_hover")]);
+                assert_eq!(
+                    button.hover_signals,
+                    vec![perro_ids::SignalID::from_string("ui_hover")]
+                );
                 assert_eq!(
                     button.pressed_signals,
                     vec![
@@ -549,9 +630,15 @@ mod tests {
                         perro_ids::SignalID::from_string("ui_press_any"),
                     ]
                 );
-                assert_eq!(button.click_signals, vec![perro_ids::SignalID::from_string("ui_click")]);
+                assert_eq!(
+                    button.click_signals,
+                    vec![perro_ids::SignalID::from_string("ui_click")]
+                );
                 let hover = button.hover_base.as_ref().expect("hover base");
-                assert_eq!(hover.layout.size, perro_ui::UiVector2::ratio(0.65, 0.08666667));
+                assert_eq!(
+                    hover.layout.size,
+                    perro_ui::UiVector2::ratio(0.65, 0.08666667)
+                );
                 assert_eq!(hover.transform.scale, Vector2::new(1.1, 1.2));
                 assert_eq!(hover.transform.rotation, 0.5);
                 assert!(button.hover_size_override);
@@ -644,7 +731,10 @@ mod tests {
         match &defaults.node.data {
             SceneNodeData::UiPanel(panel) => {
                 assert_eq!(panel.layout.anchor, perro_ui::UiAnchor::Center);
-                assert_eq!(panel.transform.position, perro_ui::UiVector2::ratio(0.5, 0.5));
+                assert_eq!(
+                    panel.transform.position,
+                    perro_ui::UiVector2::ratio(0.5, 0.5)
+                );
                 assert_eq!(panel.layout.h_align, perro_ui::UiHorizontalAlign::Center);
                 assert_eq!(panel.layout.v_align, perro_ui::UiVerticalAlign::Center);
             }
@@ -722,10 +812,9 @@ mod tests {
         )
         .parse_scene();
 
-        let prepared = prepare_scene_with_loader(&scene, &|path| {
-            Err(format!("unknown scene path `{path}`"))
-        })
-        .expect("prepare scene");
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
 
         let target = prepared
             .nodes
@@ -776,10 +865,9 @@ mod tests {
         )
         .parse_scene();
 
-        let prepared = prepare_scene_with_loader(&scene, &|path| {
-            Err(format!("unknown scene path `{path}`"))
-        })
-        .expect("prepare scene");
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
 
         let tail_2d = prepared
             .nodes
@@ -859,10 +947,9 @@ mod tests {
         )
         .parse_scene();
 
-        let prepared = prepare_scene_with_loader(&scene, &|path| {
-            Err(format!("unknown scene path `{path}`"))
-        })
-        .expect("prepare scene");
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
 
         let rig = prepared
             .nodes
@@ -936,10 +1023,9 @@ mod tests {
         )
         .parse_scene();
 
-        let prepared = prepare_scene_with_loader(&scene, &|path| {
-            Err(format!("unknown scene path `{path}`"))
-        })
-        .expect("prepare scene");
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
 
         let label = prepared
             .nodes
@@ -994,10 +1080,9 @@ mod tests {
         )
         .parse_scene();
 
-        let prepared = prepare_scene_with_loader(&scene, &|path| {
-            Err(format!("unknown scene path `{path}`"))
-        })
-        .expect("prepare scene");
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
 
         let label = prepared
             .nodes
@@ -1032,10 +1117,9 @@ mod tests {
         )
         .parse_scene();
 
-        let prepared = prepare_scene_with_loader(&scene, &|path| {
-            Err(format!("unknown scene path `{path}`"))
-        })
-        .expect("prepare scene");
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
 
         let hero = prepared
             .nodes
@@ -1051,7 +1135,10 @@ mod tests {
                 assert_eq!(sprite.animations.len(), 2);
                 assert_eq!(sprite.animations[1].name.as_ref(), "run");
                 assert_eq!(sprite.animations[1].frame_count, 6);
-                assert_eq!(sprite.current_texture_region(), Some([32.0, 32.0, 32.0, 32.0]));
+                assert_eq!(
+                    sprite.current_texture_region(),
+                    Some([32.0, 32.0, 32.0, 32.0])
+                );
             }
             other => panic!("expected AnimatedSprite2D node, got {other:?}"),
         }
@@ -1217,7 +1304,10 @@ mod tests {
             panic!("expected AudioPortal3D");
         };
         assert_eq!(portal3d.strength, 0.75);
-        assert_eq!(portal3d.targets, vec![NodeID::from_u32(11), NodeID::from_u32(12)]);
+        assert_eq!(
+            portal3d.targets,
+            vec![NodeID::from_u32(11), NodeID::from_u32(12)]
+        );
     }
 
     #[test]

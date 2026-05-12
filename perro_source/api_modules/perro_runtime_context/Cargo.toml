@@ -8,3 +8,4 @@ perro_ids = { path = "../../core/perro_ids" }
 perro_variant = { path = "../../core/perro_variant" }
 perro_nodes = { path = "../../core/perro_nodes" }
 perro_structs = { path = "../../core/perro_structs" }
+perro_pawdio = { path = "../../audio_stack/perro_pawdio" }

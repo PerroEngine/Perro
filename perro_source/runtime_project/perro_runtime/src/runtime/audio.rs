@@ -10,10 +10,12 @@ use perro_nodes::{
 };
 use perro_resource_context::sub_apis::AudioAPI;
 use perro_runtime_context::sub_apis::{
-    AudioEffects, PhysicsQueryFilter, RuntimeAudio, RuntimeAudioAPI, SpatialAudioOptions,
+    AttachedMidiTarget, AudioEffects, PhysicsQueryFilter, RuntimeAudio, RuntimeAudioAPI,
+    SpatialAudioOptions,
 };
 use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
 use std::f32::consts::TAU;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 const PARALLEL_AUDIO_RAY_THRESHOLD: usize = 128;
@@ -72,9 +74,22 @@ enum SpatialSoundPos {
     Attached(NodeID),
 }
 
+#[derive(Clone, Copy)]
+struct SpatialMidiNoteStart<'a> {
+    id: u64,
+    note: perro_pawdio::Note,
+    options: perro_pawdio::MidiNoteOptions<'a>,
+    held: bool,
+    pos: SpatialSoundPos,
+    spatial: SpatialAudioOptions,
+    last_2d: Option<Vector2>,
+    last_3d: Option<Vector3>,
+}
+
 #[derive(Clone, Debug)]
 struct ActiveSpatialSound {
     source: String,
+    kind: ActiveSpatialSoundKind,
     looped: bool,
     volume: f32,
     effects: AudioEffects,
@@ -86,6 +101,13 @@ struct ActiveSpatialSound {
     elapsed_since_prop: f32,
     remaining: Option<f32>,
     last_result: Option<PropagationResult>,
+}
+
+#[derive(Clone, Debug)]
+enum ActiveSpatialSoundKind {
+    Audio,
+    MidiNote,
+    MidiFile,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -510,6 +532,172 @@ impl RuntimeAudioAPI for Runtime {
             }
         }
         stopped
+    }
+
+    fn play_midi_note_attached(
+        &mut self,
+        note: perro_pawdio::Note,
+        node: NodeID,
+        options: perro_pawdio::MidiNoteOptions<'_>,
+        spatial: SpatialAudioOptions,
+    ) -> bool {
+        let id = self
+            .resource_api
+            .next_spatial_midi_id
+            .fetch_add(1, Ordering::Relaxed)
+            .max(1);
+        self.start_midi_note_attached_inner(id, note, node, options, spatial, false)
+    }
+
+    fn start_midi_note_attached(
+        &mut self,
+        note: perro_pawdio::Note,
+        node: NodeID,
+        options: perro_pawdio::MidiNoteOptions<'_>,
+        spatial: SpatialAudioOptions,
+    ) -> Option<perro_pawdio::MidiNoteHandle> {
+        let id = self
+            .resource_api
+            .next_spatial_midi_id
+            .fetch_add(1, Ordering::Relaxed)
+            .max(1);
+        self.start_midi_note_attached_inner(id, note, node, options, spatial, true)
+            .then_some(perro_pawdio::MidiNoteHandle(id))
+    }
+
+    fn play_midi_file_attached(
+        &mut self,
+        song: perro_pawdio::MidiSong<'_>,
+        node: NodeID,
+        spatial: SpatialAudioOptions,
+    ) -> bool {
+        let id = self
+            .resource_api
+            .next_spatial_midi_id
+            .fetch_add(1, Ordering::Relaxed)
+            .max(1);
+        let Some(node_spatial) = self.nodes.get(node).map(|n| n.spatial()) else {
+            return false;
+        };
+        match node_spatial {
+            perro_nodes::Spatial::TwoD => {
+                let Some(global) = self.get_global_transform_2d(node) else {
+                    return false;
+                };
+                self.start_spatial_midi_file(
+                    id,
+                    song,
+                    SpatialSoundPos::Attached(node),
+                    spatial,
+                    Some(global.position),
+                    None,
+                )
+            }
+            perro_nodes::Spatial::ThreeD => {
+                let Some(global) = self.get_global_transform_3d(node) else {
+                    return false;
+                };
+                self.start_spatial_midi_file(
+                    id,
+                    song,
+                    SpatialSoundPos::Attached(node),
+                    spatial,
+                    None,
+                    Some(global.position),
+                )
+            }
+            perro_nodes::Spatial::None => false,
+        }
+    }
+
+    fn release_midi_note(&mut self, handle: perro_pawdio::MidiNoteHandle) -> bool {
+        let Ok(guard) = self.resource_api.bark.lock() else {
+            return false;
+        };
+        let Some(player) = guard.as_ref() else {
+            return false;
+        };
+        player.release_midi_note(handle)
+    }
+
+    fn stop_midi_attached(&mut self, node: NodeID, target: AttachedMidiTarget<'_>) -> bool {
+        let mut stopped = false;
+        let mut i = 0usize;
+        while i < self.audio.sounds.len() {
+            let attached =
+                matches!(self.audio.sounds[i].pos, SpatialSoundPos::Attached(id) if id == node);
+            let matches_target = match (&self.audio.sounds[i].kind, target) {
+                (_, AttachedMidiTarget::Handle(handle)) => {
+                    self.audio.sounds[i].playback_id == Some(handle.0)
+                }
+                (ActiveSpatialSoundKind::MidiFile, AttachedMidiTarget::Source(source)) => {
+                    self.audio.sounds[i].source == source
+                }
+                _ => false,
+            };
+            if attached && matches_target {
+                if let Some(id) = self.audio.sounds[i].playback_id
+                    && let Ok(guard) = self.resource_api.bark.lock()
+                    && let Some(player) = guard.as_ref()
+                {
+                    let _ = player.stop_playback(id);
+                }
+                self.audio.sounds.remove(i);
+                stopped = true;
+            } else {
+                i += 1;
+            }
+        }
+        stopped
+    }
+}
+
+impl Runtime {
+    fn start_midi_note_attached_inner(
+        &mut self,
+        id: u64,
+        note: perro_pawdio::Note,
+        node: NodeID,
+        options: perro_pawdio::MidiNoteOptions<'_>,
+        spatial: SpatialAudioOptions,
+        held: bool,
+    ) -> bool {
+        let Some(node_spatial) = self.nodes.get(node).map(|n| n.spatial()) else {
+            return false;
+        };
+        match node_spatial {
+            perro_nodes::Spatial::TwoD => {
+                let Some(global) = self.get_global_transform_2d(node) else {
+                    return false;
+                };
+                self.start_spatial_midi_note(SpatialMidiNoteStart {
+                    id,
+                    note,
+                    options,
+                    held,
+                    pos: SpatialSoundPos::Attached(node),
+                    spatial,
+                    last_2d: Some(global.position),
+                    last_3d: None,
+                })
+            }
+            perro_nodes::Spatial::ThreeD => {
+                let Some(global) = self.get_global_transform_3d(node) else {
+                    return false;
+                };
+                self.start_spatial_midi_note(SpatialMidiNoteStart {
+                    id,
+                    note,
+                    options,
+                    held,
+                    pos: SpatialSoundPos::Attached(node),
+                    spatial,
+                    last_2d: None,
+                    last_3d: Some(global.position),
+                })
+            }
+            perro_nodes::Spatial::None => false,
+        }
     }
 }
 

@@ -13,13 +13,15 @@ pub use api::RuntimeWindow;
 pub mod prelude {
     pub use crate::api::{RuntimeAPI, RuntimeWindow};
     pub use crate::sub_apis::{
-        AnimPlayerAPI, AnimPlayerModule, IntoImpulseDirection, IntoNodeTag, IntoNodeTags,
-        IntoPreloadedSceneID, IntoPreloadedSceneTarget, IntoSceneLoadSource, IntoScenePath,
-        IntoScriptMemberID, MeshDataSurfaceHit3D, MeshDataSurfaceRegion3D, MeshMaterialRegion3D,
-        MeshSurfaceHit3D, NodeAPI, NodeCreationTemplate, NodeModule, PhysicsAPI, PhysicsModule,
-        PhysicsRayHit3D, PreloadedSceneTarget, QueryExpr, QueryScope, SceneAPI, SceneLoadSource,
-        SceneModule, ScriptAPI, ScriptModule, SignalAPI, SignalModule, TagQuery, TimeAPI,
-        TimeModule, WindowAPI, WindowMode, WindowModule, WindowRequest,
+        AnimPlayerAPI, AnimPlayerModule, AttachedMidiTarget, IntoImpulseDirection, IntoNodeTag,
+        IntoNodeTags, IntoPreloadedSceneID, IntoPreloadedSceneTarget, IntoSceneLoadSource,
+        IntoScenePath, IntoScriptMemberID, MeshDataSurfaceHit3D, MeshDataSurfaceRegion3D,
+        MeshMaterialRegion3D, MeshSurfaceHit3D, MidiChannel, MidiNoteHandle, MidiNoteOptions,
+        MidiProgram, MidiSong, MidiSound, NodeAPI, NodeCreationTemplate, NodeModule, Note,
+        PhysicsAPI, PhysicsModule, PhysicsRayHit3D, PreloadedSceneTarget, QueryExpr, QueryScope,
+        RuntimeMidiModule, SceneAPI, SceneLoadSource, SceneModule, ScriptAPI, ScriptModule,
+        SignalAPI, SignalModule, TagQuery, TimeAPI, TimeModule, WindowAPI, WindowMode,
+        WindowModule, WindowRequest, program,
     };
     pub use crate::{
         anim_player_bind, anim_player_clear_bindings, anim_player_pause, anim_player_play,
@@ -35,6 +37,7 @@ pub mod prelude {
         mesh_data_surface_at_local_point_3d, mesh_data_surface_on_local_ray_3d,
         mesh_data_surface_regions_3d, mesh_instance_material_regions_3d,
         mesh_instance_surface_at_global_point_3d, mesh_instance_surface_on_global_ray_3d,
+        midi_play_attached, midi_release_attached, midi_start_attached, midi_stop_attached,
         node_template, physics_is_paused, physics_pause, physics_raycast_3d,
         physics_raycast_3d_with_areas, physics_raycast_3d_without_areas, query, query_first,
         remove_node, reparent, reparent_multi, scene_drop_preloaded, scene_free_preloaded,

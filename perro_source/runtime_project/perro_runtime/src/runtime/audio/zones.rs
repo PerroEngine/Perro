@@ -318,6 +318,7 @@ impl Runtime {
         };
         self.audio.sounds.push(ActiveSpatialSound {
             source: audio.source.to_string(),
+            kind: ActiveSpatialSoundKind::Audio,
             looped: audio.looped,
             volume: audio.volume,
             effects: audio.effects,
@@ -328,6 +329,95 @@ impl Runtime {
             playback_id,
             elapsed_since_prop: f32::MAX,
             remaining,
+            last_result: None,
+        });
+        true
+    }
+
+    pub(super) fn start_spatial_midi_note(&mut self, start: SpatialMidiNoteStart<'_>) -> bool {
+        let SpatialMidiNoteStart {
+            id,
+            note,
+            options,
+            held,
+            pos,
+            spatial,
+            last_2d,
+            last_3d,
+        } = start;
+        let range = spatial.range.max(0.0001);
+        let pan = perro_pawdio::AudioPan::CENTER;
+        let mut play_options = options;
+        play_options.pan = pan;
+        let playback_id = self.resource_api.bark.lock().ok().and_then(|guard| {
+            guard.as_ref().and_then(|player| {
+                player
+                    .play_midi_note(perro_pawdio::midi::MidiNoteRequest {
+                        id,
+                        note,
+                        options: play_options,
+                        held,
+                    })
+                    .then_some(id)
+            })
+        });
+        let remaining = if held {
+            None
+        } else {
+            Some(options.sustain.as_secs_f32().max(0.01))
+        };
+        self.audio.sounds.push(ActiveSpatialSound {
+            source: format!("midi:note:{id}"),
+            kind: ActiveSpatialSoundKind::MidiNote,
+            looped: held,
+            volume: options.volume,
+            effects: AudioEffects::default(),
+            options: SpatialAudioOptions { range, ..spatial },
+            pos,
+            last_2d,
+            last_3d,
+            playback_id,
+            elapsed_since_prop: f32::MAX,
+            remaining,
+            last_result: None,
+        });
+        true
+    }
+
+    pub(super) fn start_spatial_midi_file(
+        &mut self,
+        id: u64,
+        song: perro_pawdio::MidiSong<'_>,
+        pos: SpatialSoundPos,
+        spatial: SpatialAudioOptions,
+        last_2d: Option<Vector2>,
+        last_3d: Option<Vector3>,
+    ) -> bool {
+        let range = spatial.range.max(0.0001);
+        let playback_id = self.resource_api.bark.lock().ok().and_then(|guard| {
+            guard.as_ref().and_then(|player| {
+                player
+                    .play_midi_file(perro_pawdio::midi::MidiFileRequest {
+                        id,
+                        song,
+                        pan: perro_pawdio::AudioPan::CENTER,
+                    })
+                    .then_some(id)
+            })
+        });
+        self.audio.sounds.push(ActiveSpatialSound {
+            source: song.source.to_string(),
+            kind: ActiveSpatialSoundKind::MidiFile,
+            looped: song.looped,
+            volume: song.volume,
+            effects: AudioEffects::default(),
+            options: SpatialAudioOptions { range, ..spatial },
+            pos,
+            last_2d,
+            last_3d,
+            playback_id,
+            elapsed_since_prop: f32::MAX,
+            remaining: None,
             last_result: None,
         });
         true

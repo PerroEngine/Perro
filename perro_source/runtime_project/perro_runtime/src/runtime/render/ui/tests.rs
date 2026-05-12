@@ -731,6 +731,341 @@ fn held_backspace_repeats_in_text_box() {
 }
 
 #[test]
+fn tab_cycles_focus_by_visual_order() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let top = insert_button_at(&mut runtime, [120.0, 40.0], 0.0, 120.0);
+    let middle = insert_text_box_at(&mut runtime, 0.0, 0.0);
+    let bottom = insert_text_block_at(&mut runtime, 0.0, -120.0);
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    tap_key_and_extract(&mut runtime, KeyCode::Tab);
+    assert_eq!(runtime.render_ui.focused_ui_node, Some(top));
+
+    tap_key_and_extract(&mut runtime, KeyCode::Tab);
+    assert_eq!(runtime.render_ui.focused_ui_node, Some(middle));
+
+    tap_key_and_extract(&mut runtime, KeyCode::Tab);
+    assert_eq!(runtime.render_ui.focused_ui_node, Some(bottom));
+
+    tap_key_and_extract(&mut runtime, KeyCode::Tab);
+    assert_eq!(runtime.render_ui.focused_ui_node, Some(top));
+}
+
+#[test]
+fn shift_tab_cycles_focus_reverse() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let top = insert_button_at(&mut runtime, [120.0, 40.0], 0.0, 120.0);
+    let middle = insert_text_box_at(&mut runtime, 0.0, 0.0);
+    let bottom = insert_text_block_at(&mut runtime, 0.0, -120.0);
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    runtime.set_key_state(KeyCode::ShiftLeft, true);
+    tap_key_and_extract(&mut runtime, KeyCode::Tab);
+    assert_eq!(runtime.render_ui.focused_ui_node, Some(bottom));
+
+    tap_key_and_extract(&mut runtime, KeyCode::Tab);
+    assert_eq!(runtime.render_ui.focused_ui_node, Some(middle));
+
+    tap_key_and_extract(&mut runtime, KeyCode::Tab);
+    assert_eq!(runtime.render_ui.focused_ui_node, Some(top));
+}
+
+#[test]
+fn focus_nav_skips_hidden_disabled_and_input_disabled_controls() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let hidden = insert_button_at(&mut runtime, [120.0, 40.0], 0.0, 180.0);
+    let disabled = insert_button_at(&mut runtime, [120.0, 40.0], 0.0, 60.0);
+    let input_disabled = insert_text_box_at(&mut runtime, 0.0, -60.0);
+    let active = insert_button_at(&mut runtime, [120.0, 40.0], 0.0, -180.0);
+
+    if let Some(scene_node) = runtime.nodes.get_mut(hidden)
+        && let SceneNodeData::UiButton(button) = &mut scene_node.data
+    {
+        button.visible = false;
+    }
+    if let Some(scene_node) = runtime.nodes.get_mut(disabled)
+        && let SceneNodeData::UiButton(button) = &mut scene_node.data
+    {
+        button.disabled = true;
+    }
+    if let Some(scene_node) = runtime.nodes.get_mut(input_disabled)
+        && let SceneNodeData::UiTextBox(text_box) = &mut scene_node.data
+    {
+        text_box.inner.base.input_enabled = false;
+    }
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    tap_key_and_extract(&mut runtime, KeyCode::Tab);
+    assert_eq!(runtime.render_ui.focused_ui_node, Some(active));
+}
+
+#[test]
+fn mouse_click_moves_focus_between_text_button_and_empty_space() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let text = insert_text_box_at(&mut runtime, -160.0, 0.0);
+    let button = insert_button_at(&mut runtime, [120.0, 40.0], 160.0, 0.0);
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    click_mouse_and_extract(&mut runtime, 240.0, 300.0);
+    assert_eq!(runtime.render_ui.focused_ui_node, Some(text));
+    assert_eq!(runtime.render_ui.focused_text_edit, Some(text));
+
+    click_mouse_and_extract(&mut runtime, 560.0, 300.0);
+    assert_eq!(runtime.render_ui.focused_ui_node, Some(button));
+    assert_eq!(runtime.render_ui.focused_text_edit, None);
+
+    click_mouse_and_extract(&mut runtime, 20.0, 20.0);
+    assert_eq!(runtime.render_ui.focused_ui_node, None);
+}
+
+#[test]
+fn gamepad_dpad_picks_nearest_directional_focus() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let current = insert_button_at(&mut runtime, [120.0, 40.0], 0.0, 0.0);
+    let right = insert_button_at(&mut runtime, [120.0, 40.0], 160.0, 0.0);
+    let up = insert_button_at(&mut runtime, [120.0, 40.0], 0.0, 160.0);
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    click_mouse_and_extract(&mut runtime, 400.0, 300.0);
+    assert_eq!(runtime.render_ui.focused_ui_node, Some(current));
+
+    runtime.set_gamepad_button_state(0, GamepadButton::DpadRight, true);
+    runtime.extract_render_ui_commands();
+    assert_eq!(runtime.render_ui.focused_ui_node, Some(right));
+
+    runtime.set_gamepad_button_state(0, GamepadButton::DpadRight, false);
+    runtime.begin_input_frame();
+    runtime.set_gamepad_button_state(0, GamepadButton::DpadUp, true);
+    runtime.extract_render_ui_commands();
+    assert_eq!(runtime.render_ui.focused_ui_node, Some(up));
+}
+
+#[test]
+fn gamepad_stick_nav_repeats_after_delay() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let current = insert_button_at(&mut runtime, [120.0, 40.0], -160.0, 0.0);
+    let mid = insert_button_at(&mut runtime, [120.0, 40.0], 0.0, 0.0);
+    let right = insert_button_at(&mut runtime, [120.0, 40.0], 160.0, 0.0);
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    click_mouse_and_extract(&mut runtime, 240.0, 300.0);
+    assert_eq!(runtime.render_ui.focused_ui_node, Some(current));
+
+    runtime.set_gamepad_axis(0, GamepadAxis::LeftStickX, 1.0);
+    runtime.extract_render_ui_commands();
+    assert_eq!(runtime.render_ui.focused_ui_node, Some(mid));
+
+    runtime.begin_input_frame();
+    runtime.update(0.36);
+    runtime.extract_render_ui_commands();
+    assert_eq!(runtime.render_ui.focused_ui_node, Some(right));
+}
+
+#[test]
+fn joycon_stick_drives_directional_focus() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let current = insert_button_at(&mut runtime, [120.0, 40.0], 0.0, 0.0);
+    let up = insert_button_at(&mut runtime, [120.0, 40.0], 0.0, 160.0);
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    click_mouse_and_extract(&mut runtime, 400.0, 300.0);
+    assert_eq!(runtime.render_ui.focused_ui_node, Some(current));
+
+    runtime.set_joycon_stick(0, 0.0, 1.0);
+    runtime.extract_render_ui_commands();
+    assert_eq!(runtime.render_ui.focused_ui_node, Some(up));
+}
+
+#[test]
+fn ui_input_mask_filters_player_nav_sources() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    runtime.bind_player(0, PlayerBinding::Gamepad { index: 0 });
+    runtime.bind_player(1, PlayerBinding::Gamepad { index: 1 });
+    let button = insert_button_at(&mut runtime, [120.0, 40.0], 0.0, 0.0);
+    if let Some(scene_node) = runtime.nodes.get_mut(button)
+        && let SceneNodeData::UiButton(button) = &mut scene_node.data
+    {
+        button.input_mask.allow_players.push(0);
+    }
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    runtime.set_gamepad_button_state(1, GamepadButton::DpadRight, true);
+    runtime.extract_render_ui_commands();
+    assert_eq!(runtime.render_ui.focused_ui_node, None);
+
+    runtime.set_gamepad_button_state(1, GamepadButton::DpadRight, false);
+    runtime.begin_input_frame();
+    runtime.set_gamepad_button_state(0, GamepadButton::DpadRight, true);
+    runtime.extract_render_ui_commands();
+    assert_eq!(runtime.render_ui.focused_ui_node, Some(button));
+}
+
+#[test]
+fn ui_input_mask_filters_device_directional_targets() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let left = insert_button_at(&mut runtime, [120.0, 40.0], -160.0, 0.0);
+    let right = insert_button_at(&mut runtime, [120.0, 40.0], 160.0, 0.0);
+    if let Some(scene_node) = runtime.nodes.get_mut(right)
+        && let SceneNodeData::UiButton(button) = &mut scene_node.data
+    {
+        button.input_mask.deny_gamepads.push(1);
+    }
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    click_mouse_and_extract(&mut runtime, 240.0, 300.0);
+    assert_eq!(runtime.render_ui.focused_ui_node, Some(left));
+
+    runtime.set_gamepad_button_state(1, GamepadButton::DpadRight, true);
+    runtime.extract_render_ui_commands();
+    assert_eq!(runtime.render_ui.focused_ui_node, Some(left));
+
+    runtime.set_gamepad_button_state(1, GamepadButton::DpadRight, false);
+    runtime.begin_input_frame();
+    runtime.set_gamepad_button_state(0, GamepadButton::DpadRight, true);
+    runtime.extract_render_ui_commands();
+    assert_eq!(runtime.render_ui.focused_ui_node, Some(right));
+}
+
+#[test]
+fn ui_input_mask_filters_mouse_joycon_and_button_activation_sources() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let button = insert_button_at(&mut runtime, [120.0, 40.0], 0.0, 0.0);
+    if let Some(scene_node) = runtime.nodes.get_mut(button)
+        && let SceneNodeData::UiButton(button) = &mut scene_node.data
+    {
+        button.input_mask.allow_joycons.push(1);
+    }
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    click_mouse_and_extract(&mut runtime, 400.0, 300.0);
+    assert_eq!(runtime.render_ui.focused_ui_node, None);
+
+    runtime.set_joycon_stick(0, 1.0, 0.0);
+    runtime.extract_render_ui_commands();
+    assert_eq!(runtime.render_ui.focused_ui_node, None);
+
+    runtime.set_joycon_stick(0, 0.0, 0.0);
+    runtime.begin_input_frame();
+    runtime.extract_render_ui_commands();
+    runtime.begin_input_frame();
+    runtime.set_joycon_stick(1, 1.0, 0.0);
+    runtime.extract_render_ui_commands();
+    assert_eq!(runtime.render_ui.focused_ui_node, Some(button));
+
+    runtime.begin_input_frame();
+    runtime.set_joycon_button_state(0, JoyConButton::Right, true);
+    runtime.extract_render_ui_commands();
+    assert_ne!(
+        runtime.render_ui.button_states.get(&button).copied(),
+        Some(UiButtonVisualState::Pressed)
+    );
+
+    runtime.set_joycon_button_state(0, JoyConButton::Right, false);
+    runtime.begin_input_frame();
+    runtime.set_joycon_button_state(1, JoyConButton::Right, true);
+    runtime.extract_render_ui_commands();
+    assert_eq!(
+        runtime.render_ui.button_states.get(&button).copied(),
+        Some(UiButtonVisualState::Pressed)
+    );
+}
+
+#[test]
+fn focused_button_activates_from_keyboard_gamepad_and_joycon() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let button = insert_button_at(&mut runtime, [120.0, 40.0], 0.0, 0.0);
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    tap_key_and_extract(&mut runtime, KeyCode::Tab);
+    assert_eq!(runtime.render_ui.focused_ui_node, Some(button));
+
+    runtime.set_key_state(KeyCode::Space, true);
+    runtime.extract_render_ui_commands();
+    assert_eq!(
+        runtime.render_ui.button_states.get(&button).copied(),
+        Some(UiButtonVisualState::Pressed)
+    );
+    runtime.set_key_state(KeyCode::Space, false);
+    runtime.extract_render_ui_commands();
+    assert_eq!(
+        runtime.render_ui.button_states.get(&button).copied(),
+        Some(UiButtonVisualState::Hover)
+    );
+
+    runtime.begin_input_frame();
+    runtime.set_gamepad_button_state(0, GamepadButton::Bottom, true);
+    runtime.extract_render_ui_commands();
+    assert_eq!(
+        runtime.render_ui.button_states.get(&button).copied(),
+        Some(UiButtonVisualState::Pressed)
+    );
+    runtime.set_gamepad_button_state(0, GamepadButton::Bottom, false);
+    runtime.extract_render_ui_commands();
+    assert_eq!(
+        runtime.render_ui.button_states.get(&button).copied(),
+        Some(UiButtonVisualState::Hover)
+    );
+
+    runtime.begin_input_frame();
+    runtime.set_joycon_button_state(0, JoyConButton::Right, true);
+    runtime.extract_render_ui_commands();
+    assert_eq!(
+        runtime.render_ui.button_states.get(&button).copied(),
+        Some(UiButtonVisualState::Pressed)
+    );
+    runtime.set_joycon_button_state(0, JoyConButton::Right, false);
+    runtime.extract_render_ui_commands();
+    assert_eq!(
+        runtime.render_ui.button_states.get(&button).copied(),
+        Some(UiButtonVisualState::Hover)
+    );
+}
+
+#[test]
 fn button_state_base_overrides_rect_transform() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);
@@ -1835,6 +2170,45 @@ fn insert_button(runtime: &mut Runtime, size: [f32; 2]) -> NodeID {
     button.hover_style.fill = Color::new(0.2, 0.3, 0.4, 1.0);
     button.pressed_style.fill = Color::new(0.3, 0.4, 0.5, 1.0);
     insert_ui_node(runtime, SceneNodeData::UiButton(button))
+}
+
+fn insert_button_at(runtime: &mut Runtime, size: [f32; 2], x: f32, y: f32) -> NodeID {
+    let mut button = perro_ui::UiButton::new();
+    button.layout.size = UiVector2::pixels(size[0], size[1]);
+    button.transform.position = UiVector2::pixels(x, y);
+    button.style.fill = Color::new(0.1, 0.2, 0.3, 1.0);
+    button.hover_style.fill = Color::new(0.2, 0.3, 0.4, 1.0);
+    button.pressed_style.fill = Color::new(0.3, 0.4, 0.5, 1.0);
+    insert_ui_node(runtime, SceneNodeData::UiButton(button))
+}
+
+fn insert_text_box_at(runtime: &mut Runtime, x: f32, y: f32) -> NodeID {
+    let mut text_box = perro_ui::UiTextBox::new();
+    text_box.inner.base.layout.size = UiVector2::pixels(140.0, 40.0);
+    text_box.inner.base.transform.position = UiVector2::pixels(x, y);
+    insert_ui_node(runtime, SceneNodeData::UiTextBox(text_box))
+}
+
+fn insert_text_block_at(runtime: &mut Runtime, x: f32, y: f32) -> NodeID {
+    let mut text_block = perro_ui::UiTextBlock::new();
+    text_block.inner.base.layout.size = UiVector2::pixels(140.0, 80.0);
+    text_block.inner.base.transform.position = UiVector2::pixels(x, y);
+    insert_ui_node(runtime, SceneNodeData::UiTextBlock(text_block))
+}
+
+fn tap_key_and_extract(runtime: &mut Runtime, key: KeyCode) {
+    runtime.begin_input_frame();
+    runtime.set_key_state(key, true);
+    runtime.extract_render_ui_commands();
+    runtime.set_key_state(key, false);
+}
+
+fn click_mouse_and_extract(runtime: &mut Runtime, x: f32, y: f32) {
+    runtime.begin_input_frame();
+    runtime.set_mouse_position(x, y);
+    runtime.set_mouse_button_state(MouseButton::Left, true);
+    runtime.extract_render_ui_commands();
+    runtime.set_mouse_button_state(MouseButton::Left, false);
 }
 
 fn set_panel_visible(runtime: &mut Runtime, node: NodeID, visible: bool) {

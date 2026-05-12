@@ -31,7 +31,11 @@ pub fn generate_static_audios(project_root: &Path) -> Result<(), StaticPipelineE
                 Path::new(rel)
                     .extension()
                     .and_then(|e| e.to_str())
-                    .is_some_and(|ext| source_ext::contains(source_ext::AUDIO, ext))
+                    .is_some_and(|ext| {
+                        source_ext::contains(source_ext::AUDIO, ext)
+                            || source_ext::contains(source_ext::MIDI, ext)
+                            || source_ext::contains(source_ext::SOUNDFONT, ext)
+                    })
             })
             .collect();
     }
@@ -43,19 +47,27 @@ pub fn generate_static_audios(project_root: &Path) -> Result<(), StaticPipelineE
             let res_path = asset_uri(&rel);
             let full_path = res_dir.join(&rel);
             let raw = fs::read(&full_path)?;
-            let (flags, payload) = select_pawdio_payload(&raw)?;
+            let ext = Path::new(&rel)
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or_default();
+            if source_ext::contains(source_ext::AUDIO, ext) {
+                let (flags, payload) = select_pawdio_payload(&raw)?;
 
-            let mut pawdio = Vec::with_capacity(18 + payload.len());
-            pawdio.extend_from_slice(PAWDIO_MAGIC);
-            pawdio.extend_from_slice(&PAWDIO_VERSION.to_le_bytes());
-            pawdio.extend_from_slice(&flags.to_le_bytes());
-            pawdio.extend_from_slice(&(raw.len() as u32).to_le_bytes());
-            pawdio.extend_from_slice(&payload);
+                let mut pawdio = Vec::with_capacity(18 + payload.len());
+                pawdio.extend_from_slice(PAWDIO_MAGIC);
+                pawdio.extend_from_slice(&PAWDIO_VERSION.to_le_bytes());
+                pawdio.extend_from_slice(&flags.to_le_bytes());
+                pawdio.extend_from_slice(&(raw.len() as u32).to_le_bytes());
+                pawdio.extend_from_slice(&payload);
 
-            let mut rel_pawdio = PathBuf::from(&rel);
-            rel_pawdio.set_extension(PAWDIO_EXTENSION);
-            let rel_pawdio = rel_pawdio.to_string_lossy().replace('\\', "/");
-            Ok((res_path, rel_pawdio, pawdio))
+                let mut rel_pawdio = PathBuf::from(&rel);
+                rel_pawdio.set_extension(PAWDIO_EXTENSION);
+                let rel_pawdio = rel_pawdio.to_string_lossy().replace('\\', "/");
+                Ok((res_path, rel_pawdio, pawdio))
+            } else {
+                Ok((res_path, rel, raw))
+            }
         })
         .collect::<io::Result<Vec<_>>>()?;
     encoded.sort_by(|a, b| a.0.cmp(&b.0));

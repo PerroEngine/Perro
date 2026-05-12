@@ -495,6 +495,43 @@ impl RuntimeAudioAPI for DummyRuntime {
     fn stop_runtime_audio_attached(&mut self, _node_id: NodeID, _source: &str) -> bool {
         true
     }
+
+    fn play_midi_note_attached(
+        &mut self,
+        _note: Note,
+        _node: NodeID,
+        _options: MidiNoteOptions<'_>,
+        _spatial: SpatialAudioOptions,
+    ) -> bool {
+        true
+    }
+
+    fn start_midi_note_attached(
+        &mut self,
+        _note: Note,
+        _node: NodeID,
+        _options: MidiNoteOptions<'_>,
+        _spatial: SpatialAudioOptions,
+    ) -> Option<MidiNoteHandle> {
+        Some(MidiNoteHandle(1))
+    }
+
+    fn play_midi_file_attached(
+        &mut self,
+        _song: MidiSong<'_>,
+        _node: NodeID,
+        _spatial: SpatialAudioOptions,
+    ) -> bool {
+        true
+    }
+
+    fn release_midi_note(&mut self, _handle: MidiNoteHandle) -> bool {
+        true
+    }
+
+    fn stop_midi_attached(&mut self, _node: NodeID, _target: AttachedMidiTarget<'_>) -> bool {
+        true
+    }
 }
 
 impl AnimPlayerAPI for DummyRuntime {

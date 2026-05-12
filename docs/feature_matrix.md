@@ -18,6 +18,7 @@ Status keys:
 | Query layer                  | done   | Query by type, base type, tag, name, and subtree.                                                                                         |
 | Scene preload                | done   | `scene_preload!` parses and stores a scene as `PreloadedSceneID`; loading copies nodes from the cached scene instead of reparsing.        |
 | Resource load IDs            | done   | Texture/mesh/audio load calls return IDs immediately and queue backend work. A node can hold the ID before the backend resource is ready. |
+| MIDI and soundfonts          | done   | `ctx.res.Audio().midi()` supports live one-shot notes, held notes with `MidiNoteHandle`, `.mid`/`.midi` file playback, built-in procedural GM-style programs, `.sf2` soundfonts through `MidiSound::SoundFont`, buses, point 2D/3D propagation, and node-attached playback through `ctx.run.Audio().midi()`. Static builds embed audio, MIDI, and soundfont assets under `embedded/audios/`. See [Audio](audio.md). |
 | Spatial audio propagation    | partial | Point `Audio2D/Audio3D` playback enters the propagation solver through `ctx.res.Audio()`. Attached node audio is exposed through `ctx.run.Audio()`. Solver handles direct occlusion, material transmission/thickness, low-pass muffling, reflection energy loss, corner shift, 2D audio masks, zone effect mixing, and one-way linked 2D/3D portals. Portal rays hit collision-shape children, transform hit point and ray direction through target portal global transforms, then keep tracing through portals/physics bounces up to the cycle guard. A ray cannot immediately re-enter the portal it just exited; another portal hit or physics bounce clears that block. Debug ray drawing, 3D audio masks, and full zone DSP remain follow-up work. |
 | Save data helpers            | done   | `perro_modules::file` can read assets and write to `user://` or absolute paths.                                                           |
 | Runtime window config API    | done   | `RuntimeWindow::Window()` queues runtime changes to window mode/title/size.                                                               |
@@ -65,7 +66,7 @@ Status keys:
 | Text input            | done    | One-line and multi-line text edit nodes.                          |
 | Layout nodes          | done    | H/V/grid/tree list layout nodes exist with retained invalidation. |
 | Scroll containers     | done    | `UiScrollContainer` offsets child content and clips to its rect.  |
-| Focus navigation      | partial | Text focus exists. Keyboard/controller traversal remains.         |
+| Focus navigation      | done | Text focus plus Tab, Shift+Tab, gamepad D-pad/left stick, Joy-Con stick, focused button activation, and player/device input masks exist. |
 | UI image node         | done    | `UiImage` renders texture IDs with tint, region, scale mode, alignment, and aspect ratio. |
 | UI animated image node | done | `UiAnimatedImage` renders sprite-sheet animations in UI space with `UiImage` scale/alignment behavior. |
 | UI style resources    | done | Inline `style = { ... }` blocks and `res://path/to/style.uistyle` load for normal/hover/pressed/focused state styles, mirroring material resource flow. See [`.uistyle`](resources/uistyle.md). |

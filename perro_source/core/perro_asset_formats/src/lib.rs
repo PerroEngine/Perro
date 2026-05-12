@@ -81,6 +81,8 @@ pub mod source_ext {
         "png", "jpg", "jpeg", "bmp", "gif", "ico", "tga", "webp", "rgba",
     ];
     pub const AUDIO: &[&str] = &["mp3", "wav", "ogg", "flac", "aac", "m4a"];
+    pub const MIDI: &[&str] = &["mid", "midi"];
+    pub const SOUNDFONT: &[&str] = &["sf2"];
     pub const MODEL: &[&str] = &[GLB, GLTF];
     pub const MESH_INPUT: &[&str] = &[crate::pmesh::EXTENSION, GLB, GLTF];
     pub const SKELETON_INPUT: &[&str] = &[
@@ -137,5 +139,10 @@ mod tests {
         ));
         assert!(super::source_ext::contains(super::source_ext::IMAGE, "PNG",));
         assert!(super::source_ext::contains(super::source_ext::AUDIO, "WAV",));
+        assert!(super::source_ext::contains(super::source_ext::MIDI, "MID",));
+        assert!(super::source_ext::contains(
+            super::source_ext::SOUNDFONT,
+            "SF2",
+        ));
     }
 }

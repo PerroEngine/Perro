@@ -446,6 +446,12 @@ fn checked_state_mut<T: 'static>(state_type: TypeId, state: &mut dyn Any) -> Opt
     Some(unsafe { state_mut_unchecked::<T>(state) })
 }
 
+impl Default for ScriptCollection {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod unsafe_state_cast_tests {
     use super::*;
@@ -528,11 +534,5 @@ mod unsafe_state_cast_tests {
         let fast = checked_state_mut::<TestState>(state_type, fast_state.as_mut()).is_none();
 
         assert_eq!(fast, safe);
-    }
-}
-
-impl Default for ScriptCollection {
-    fn default() -> Self {
-        Self::new()
     }
 }

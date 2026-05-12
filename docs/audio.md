@@ -44,8 +44,12 @@ Runtime audio source paths use normal project asset paths:
 - `res://...flac`
 - `res://...aac`
 - `res://...m4a`
+- `res://...mid`
+- `res://...midi`
+- `res://...sf2`
 
-Dynamic runtime loads read those files and let `rodio` decode them.
+Dynamic runtime loads read audio files and let `rodio` decode them.
+MIDI files and soundfonts are read through the same asset path system.
 
 Static builds pack audio into `.pawdio` blobs.
 `.pawdio` is not an authored source format.
@@ -53,7 +57,7 @@ It is a static pipeline container for embedded audio bytes.
 
 Static pipeline behavior:
 
-- scan audio files in `res/`
+- scan audio, MIDI, and soundfont files in `res/`
 - preserve original `res://...` lookup path
 - write embedded files under `embedded/audios/`
 - emit `static/audios.rs` lookup code
@@ -69,6 +73,7 @@ Static pipeline behavior:
 
 At runtime, `perro_pawdio` unwraps `.pawdio` back into original audio bytes.
 Then `rodio` decodes those bytes like a normal source.
+MIDI files and `.sf2` soundfonts are embedded as raw bytes and keep their original extension.
 
 ## Playback Model
 
@@ -136,6 +141,330 @@ Unreserved eviction:
 - when duration unknown: `1s`
 - never evict while source has active playback
 - cache soft limit: `128 MiB`
+
+## MIDI
+
+MIDI lives under `ctx.res.Audio().midi()`.
+It supports:
+
+- live one-shot notes
+- held notes with explicit release
+- `.mid` and `.midi` file playback
+- built-in procedural instruments
+- `.sf2` soundfont instruments
+- bus volume, bus speed, pause, resume, and stop
+- point 2D/3D propagation
+- node-attached propagation through `ctx.run.Audio().midi()`
+
+Main types:
+
+- `Note`: MIDI key wrapper with constants from `Note::C0` through `Note::C8`
+- `MidiChannel`: `0..15`,
+- `MidiProgram`: GM patch `0..127`
+- `MidiSound`: `BuiltIn` or `SoundFont("res://...sf2")`
+- `MidiNoteOptions`: velocity, sustain, channel, program, sound, bus, volume, pan
+- `MidiSong`: source path, sound, bus, volume, loop flag
+- `MidiNoteHandle`: handle returned by held notes
+
+Notes:
+
+- `Note::from_midi(key)` accepts raw MIDI keys.
+- `play_note` uses `MidiNoteOptions.sustain` for automatic note-off.
+- `start_note` ignores sustain and keeps the note alive until release.
+- `release_note(handle)` stops held notes.
+- channel + program pick the instrument lane.
+- channel 9 is the standard drum lane.
+- bus speed changes MIDI playback rate.
+
+## Built-In Vs Soundfont MIDI
+
+`MidiSound` chooses the synthesizer.
+`program` chooses the instrument slot inside that synthesizer.
+
+`MidiSound::BuiltIn`:
+
+- uses Perro's procedural synth
+- needs no asset file
+- uses `program` as a GM-style category hint
+- maps program ranges to simple wave types
+- does not use sampled instruments
+- good for quick tones, prototyping, and light effects
+
+Built-in program wave map:
+
+- piano/chromatic/default: sine
+- organ + synth lead: square
+- guitar + bass + brass + reed + pipe: saw
+- strings + ensemble: triangle
+- synth pad + synth fx: sine
+- percussive + sound fx: noise
+
+`MidiSound::SoundFont("res://...sf2")`:
+
+- loads an `.sf2` bank
+- uses `program` to pick a patch inside that bank
+- uses `channel` to hold current program state
+- uses channel 9 for drums by MIDI convention
+- sound quality depends on the `.sf2`
+
+So the soundfont is not one instrument.
+It is a bank of many instruments.
+`program::Piano::AcousticGrand` means patch 0 in that bank.
+`program::Brass::Trumpet` means patch 56 in that bank.
+If the `.sf2` has weak or missing patches, output follows that file.
+
+Built-in MIDI:
+
+```rust
+let music = audio_bus!("music");
+
+let lead = MidiNoteOptions {
+    velocity: 112,
+    sustain: std::time::Duration::from_millis(180),
+    program: program::SynthLead::Square,
+    volume: 0.8,
+    ..MidiNoteOptions::default()
+};
+
+let _ = midi_play!(ctx.res, music, Note::C4, lead);
+let _ = ctx.res.Audio().midi().play_note(Note::E4, lead);
+
+if let Some(handle) = midi_start!(ctx.res, Note::G4, lead) {
+    let _ = midi_release!(ctx.res, handle);
+}
+
+let song = MidiSong::new("res://music/theme.mid").looped();
+let _ = midi_play!(ctx.res, song);
+```
+
+Soundfont MIDI:
+
+```rust
+let font = "res://soundfonts/game.sf2";
+let _ = midi_load_soundfont!(ctx.res, font);
+
+let piano = MidiNoteOptions {
+    sound: MidiSound::SoundFont(font),
+    program: program::Piano::AcousticGrand,
+    sustain: std::time::Duration::from_millis(350),
+    ..MidiNoteOptions::default()
+};
+
+let _ = midi_play!(ctx.res, Note::C4, piano);
+let _ = midi_play!(ctx.res, Note::E4, piano);
+let _ = midi_play!(ctx.res, Note::G4, piano);
+
+let sf2_song = MidiSong::new("res://music/theme.mid")
+    .with_sound(MidiSound::SoundFont(font))
+    .looped();
+let _ = ctx.res.Audio().midi().play_file(sf2_song);
+```
+
+Soundfont rules:
+
+- source must be a project asset path, usually `res://soundfonts/name.sf2`
+- `midi_load_soundfont!` warms the cache before first use
+- first note or file can also load the soundfont lazily
+- one live-note soundfont mixer is shared per soundfont, bus, and pan
+- `MidiSound::BuiltIn` does not require `.sf2`
+
+Positional MIDI:
+
+```rust
+let opts = MidiNoteOptions {
+    sound: MidiSound::SoundFont("res://soundfonts/game.sf2"),
+    program: program::Brass::Trumpet,
+    ..MidiNoteOptions::default()
+};
+
+let _ = midi_play_at!(
+    ctx.res,
+    Note::C5,
+    Vector2::new(128.0, 64.0),
+    512.0,
+    opts
+);
+
+let _ = midi_play_at!(
+    ctx.res,
+    MidiSong::new("res://music/sting.mid"),
+    Vector3::new(0.0, 2.0, -6.0),
+    40.0
+);
+```
+
+Attached MIDI:
+
+```rust
+let spatial = SpatialAudioOptions::new(40.0);
+let opts = MidiNoteOptions {
+    program: program::Guitar::Clean,
+    ..MidiNoteOptions::default()
+};
+
+let _ = ctx.run.Audio().midi().play_note_attached(Note::A3, node, opts, spatial);
+
+let held = ctx.run.Audio().midi().start_note_attached(Note::E3, node, opts, spatial);
+if let Some(handle) = held {
+    let _ = ctx.run.Audio().midi().release_note(handle);
+}
+
+let song = MidiSong::new("res://music/loop.mid").looped();
+let _ = ctx.run.Audio().midi().play_file_attached(song, node, spatial);
+let _ = ctx.run.Audio().midi().stop_attached(node, "res://music/loop.mid");
+```
+
+## MIDI Program Table
+
+Programs follow General MIDI patch numbers.
+Use `MidiProgram::new(n)` for a raw value.
+Use `program::Group::Name` for named values.
+
+| Num | Helper                               | GM name                 |
+| --- | ------------------------------------ | ----------------------- |
+| 0   | `program::Piano::AcousticGrand`      | Acoustic Grand Piano    |
+| 1   | `program::Piano::BrightAcoustic`     | Bright Acoustic Piano   |
+| 2   | `program::Piano::ElectricGrand`      | Electric Grand Piano    |
+| 3   | `program::Piano::HonkyTonk`          | Honky-tonk Piano        |
+| 4   | `program::Piano::Electric1`          | Electric Piano 1        |
+| 5   | `program::Piano::Electric2`          | Electric Piano 2        |
+| 6   | `program::Piano::Harpsichord`        | Harpsichord             |
+| 7   | `program::Piano::Clavinet`           | Clavinet                |
+| 8   | `program::Chromatic::Celesta`        | Celesta                 |
+| 9   | `program::Chromatic::Glockenspiel`   | Glockenspiel            |
+| 10  | `program::Chromatic::MusicBox`       | Music Box               |
+| 11  | `program::Chromatic::Vibraphone`     | Vibraphone              |
+| 12  | `program::Chromatic::Marimba`        | Marimba                 |
+| 13  | `program::Chromatic::Xylophone`      | Xylophone               |
+| 14  | `program::Chromatic::TubularBells`   | Tubular Bells           |
+| 15  | `program::Chromatic::Dulcimer`       | Dulcimer                |
+| 16  | `program::Organ::Drawbar`            | Drawbar Organ           |
+| 17  | `program::Organ::Percussive`         | Percussive Organ        |
+| 18  | `program::Organ::Rock`               | Rock Organ              |
+| 19  | `program::Organ::Church`             | Church Organ            |
+| 20  | `program::Organ::Reed`               | Reed Organ              |
+| 21  | `program::Organ::Accordion`          | Accordion               |
+| 22  | `program::Organ::Harmonica`          | Harmonica               |
+| 23  | `program::Organ::TangoAccordion`     | Tango Accordion         |
+| 24  | `program::Guitar::Nylon`             | Acoustic Guitar (nylon) |
+| 25  | `program::Guitar::Steel`             | Acoustic Guitar (steel) |
+| 26  | `program::Guitar::Jazz`              | Electric Guitar (jazz)  |
+| 27  | `program::Guitar::Clean`             | Electric Guitar (clean) |
+| 28  | `program::Guitar::Muted`             | Electric Guitar (muted) |
+| 29  | `program::Guitar::Overdriven`        | Overdriven Guitar       |
+| 30  | `program::Guitar::Distortion`        | Distortion Guitar       |
+| 31  | `program::Guitar::Harmonics`         | Guitar Harmonics        |
+| 32  | `program::Bass::Acoustic`            | Acoustic Bass           |
+| 33  | `program::Bass::Finger`              | Electric Bass (finger)  |
+| 34  | `program::Bass::Pick`                | Electric Bass (pick)    |
+| 35  | `program::Bass::Fretless`            | Fretless Bass           |
+| 36  | `program::Bass::Slap1`               | Slap Bass 1             |
+| 37  | `program::Bass::Slap2`               | Slap Bass 2             |
+| 38  | `program::Bass::Synth1`              | Synth Bass 1            |
+| 39  | `program::Bass::Synth2`              | Synth Bass 2            |
+| 40  | `program::Strings::Violin`           | Violin                  |
+| 41  | `program::Strings::Viola`            | Viola                   |
+| 42  | `program::Strings::Cello`            | Cello                   |
+| 43  | `program::Strings::Contrabass`       | Contrabass              |
+| 44  | `program::Strings::Tremolo`          | Tremolo Strings         |
+| 45  | `program::Strings::Pizzicato`        | Pizzicato Strings       |
+| 46  | `program::Strings::Harp`             | Orchestral Harp         |
+| 47  | `program::Strings::Timpani`          | Timpani                 |
+| 48  | `program::Ensemble::String1`         | String Ensemble 1       |
+| 49  | `program::Ensemble::String2`         | String Ensemble 2       |
+| 50  | `program::Ensemble::SynthStrings1`   | Synth Strings 1         |
+| 51  | `program::Ensemble::SynthStrings2`   | Synth Strings 2         |
+| 52  | `program::Ensemble::ChoirAahs`       | Choir Aahs              |
+| 53  | `program::Ensemble::VoiceOohs`       | Voice Oohs              |
+| 54  | `program::Ensemble::SynthVoice`      | Synth Voice             |
+| 55  | `program::Ensemble::OrchestraHit`    | Orchestra Hit           |
+| 56  | `program::Brass::Trumpet`            | Trumpet                 |
+| 57  | `program::Brass::Trombone`           | Trombone                |
+| 58  | `program::Brass::Tuba`               | Tuba                    |
+| 59  | `program::Brass::MutedTrumpet`       | Muted Trumpet           |
+| 60  | `program::Brass::FrenchHorn`         | French Horn             |
+| 61  | `program::Brass::BrassSection`       | Brass Section           |
+| 62  | `program::Brass::SynthBrass1`        | Synth Brass 1           |
+| 63  | `program::Brass::SynthBrass2`        | Synth Brass 2           |
+| 64  | `program::Reed::SopranoSax`          | Soprano Sax             |
+| 65  | `program::Reed::AltoSax`             | Alto Sax                |
+| 66  | `program::Reed::TenorSax`            | Tenor Sax               |
+| 67  | `program::Reed::BaritoneSax`         | Baritone Sax            |
+| 68  | `program::Reed::Oboe`                | Oboe                    |
+| 69  | `program::Reed::EnglishHorn`         | English Horn            |
+| 70  | `program::Reed::Bassoon`             | Bassoon                 |
+| 71  | `program::Reed::Clarinet`            | Clarinet                |
+| 72  | `program::Pipe::Piccolo`             | Piccolo                 |
+| 73  | `program::Pipe::Flute`               | Flute                   |
+| 74  | `program::Pipe::Recorder`            | Recorder                |
+| 75  | `program::Pipe::PanFlute`            | Pan Flute               |
+| 76  | `program::Pipe::BlownBottle`         | Blown Bottle            |
+| 77  | `program::Pipe::Shakuhachi`          | Shakuhachi              |
+| 78  | `program::Pipe::Whistle`             | Whistle                 |
+| 79  | `program::Pipe::Ocarina`             | Ocarina                 |
+| 80  | `program::SynthLead::Square`         | Lead 1 (square)         |
+| 81  | `program::SynthLead::Saw`            | Lead 2 (sawtooth)       |
+| 82  | `program::SynthLead::Calliope`       | Lead 3 (calliope)       |
+| 83  | `program::SynthLead::Chiff`          | Lead 4 (chiff)          |
+| 84  | `program::SynthLead::Charang`        | Lead 5 (charang)        |
+| 85  | `program::SynthLead::Voice`          | Lead 6 (voice)          |
+| 86  | `program::SynthLead::Fifths`         | Lead 7 (fifths)         |
+| 87  | `program::SynthLead::BassLead`       | Lead 8 (bass + lead)    |
+| 88  | `program::SynthPad::NewAge`          | Pad 1 (new age)         |
+| 89  | `program::SynthPad::Warm`            | Pad 2 (warm)            |
+| 90  | `program::SynthPad::Polysynth`       | Pad 3 (polysynth)       |
+| 91  | `program::SynthPad::Choir`           | Pad 4 (choir)           |
+| 92  | `program::SynthPad::Bowed`           | Pad 5 (bowed)           |
+| 93  | `program::SynthPad::Metallic`        | Pad 6 (metallic)        |
+| 94  | `program::SynthPad::Halo`            | Pad 7 (halo)            |
+| 95  | `program::SynthPad::Sweep`           | Pad 8 (sweep)           |
+| 96  | `program::SynthFx::Rain`             | FX 1 (rain)             |
+| 97  | `program::SynthFx::Soundtrack`       | FX 2 (soundtrack)       |
+| 98  | `program::SynthFx::Crystal`          | FX 3 (crystal)          |
+| 99  | `program::SynthFx::Atmosphere`       | FX 4 (atmosphere)       |
+| 100 | `program::SynthFx::Brightness`       | FX 5 (brightness)       |
+| 101 | `program::SynthFx::Goblins`          | FX 6 (goblins)          |
+| 102 | `program::SynthFx::Echoes`           | FX 7 (echoes)           |
+| 103 | `program::SynthFx::SciFi`            | FX 8 (sci-fi)           |
+| 104 | `program::World::Sitar`              | Sitar                   |
+| 105 | `program::World::Banjo`              | Banjo                   |
+| 106 | `program::World::Shamisen`           | Shamisen                |
+| 107 | `program::World::Koto`               | Koto                    |
+| 108 | `program::World::Kalimba`            | Kalimba                 |
+| 109 | `program::World::Bagpipe`            | Bagpipe                 |
+| 110 | `program::World::Fiddle`             | Fiddle                  |
+| 111 | `program::World::Shanai`             | Shanai                  |
+| 112 | `program::Percussive::TinkleBell`    | Tinkle Bell             |
+| 113 | `program::Percussive::Agogo`         | Agogo                   |
+| 114 | `program::Percussive::SteelDrums`    | Steel Drums             |
+| 115 | `program::Percussive::Woodblock`     | Woodblock               |
+| 116 | `program::Percussive::TaikoDrum`     | Taiko Drum              |
+| 117 | `program::Percussive::MelodicTom`    | Melodic Tom             |
+| 118 | `program::Percussive::SynthDrum`     | Synth Drum              |
+| 119 | `program::Percussive::ReverseCymbal` | Reverse Cymbal          |
+| 120 | `program::SoundFx::GuitarFretNoise`  | Guitar Fret Noise       |
+| 121 | `program::SoundFx::BreathNoise`      | Breath Noise            |
+| 122 | `program::SoundFx::Seashore`         | Seashore                |
+| 123 | `program::SoundFx::BirdTweet`        | Bird Tweet              |
+| 124 | `program::SoundFx::TelephoneRing`    | Telephone Ring          |
+| 125 | `program::SoundFx::Helicopter`       | Helicopter              |
+| 126 | `program::SoundFx::Applause`         | Applause                |
+| 127 | `program::SoundFx::Gunshot`          | Gunshot                 |
+
+Drum kit helpers use normal GM drum-kit program values.
+Use them with `MidiChannel::DRUMS` when target synth or soundfont supports drum kits.
+
+| Num | Helper                         | Kit        |
+| --- | ------------------------------ | ---------- |
+| 0   | `program::DrumKit::Standard`   | Standard   |
+| 8   | `program::DrumKit::Room`       | Room       |
+| 16  | `program::DrumKit::Power`      | Power      |
+| 24  | `program::DrumKit::Electronic` | Electronic |
+| 25  | `program::DrumKit::Analog`     | Analog     |
+| 32  | `program::DrumKit::Jazz`       | Jazz       |
+| 40  | `program::DrumKit::Brush`      | Brush      |
+| 48  | `program::DrumKit::Orchestra`  | Orchestra  |
+| 56  | `program::DrumKit::Sfx`        | SFX        |
 
 ## Spatial Audio
 

@@ -1,6 +1,13 @@
-use super::core::{QueuedSpatialAudio, QueuedSpatialAudioPos, RuntimeResourceApi};
+use super::core::{
+    QueuedMidiNoteOptions, QueuedMidiSong, QueuedSpatialAudio, QueuedSpatialAudioPos,
+    QueuedSpatialMidi, QueuedSpatialMidiKind, RuntimeResourceApi,
+};
 use perro_ids::AudioBusID;
-use perro_resource_context::sub_apis::{Audio, Audio2D, Audio3D, AudioAPI};
+use perro_resource_context::sub_apis::{
+    Audio, Audio2D, Audio3D, AudioAPI, MidiNoteHandle, MidiNoteOptions, MidiSong,
+    MidiSpatialPosition, Note,
+};
+use std::sync::atomic::Ordering;
 
 impl AudioAPI for RuntimeResourceApi {
     fn load_audio_source(&self, source: &str) -> bool {
@@ -244,5 +251,157 @@ impl AudioAPI for RuntimeResourceApi {
             return false;
         };
         player.stop_bus(bus_id)
+    }
+
+    fn load_midi_soundfont(&self, source: &str) -> bool {
+        let Ok(guard) = self.bark.lock() else {
+            return false;
+        };
+        let Some(player) = guard.as_ref() else {
+            return false;
+        };
+        player.load_soundfont(source)
+    }
+
+    fn play_midi_note(&self, note: Note, options: MidiNoteOptions<'_>) -> bool {
+        let Ok(guard) = self.bark.lock() else {
+            return false;
+        };
+        let Some(player) = guard.as_ref() else {
+            return false;
+        };
+        player.play_midi_note(perro_pawdio::midi::MidiNoteRequest {
+            id: 0,
+            note,
+            options,
+            held: false,
+        })
+    }
+
+    fn start_midi_note(&self, note: Note, options: MidiNoteOptions<'_>) -> Option<MidiNoteHandle> {
+        let Ok(guard) = self.bark.lock() else {
+            return None;
+        };
+        let player = guard.as_ref()?;
+        player.start_midi_note(perro_pawdio::midi::MidiNoteRequest {
+            id: 0,
+            note,
+            options,
+            held: true,
+        })
+    }
+
+    fn release_midi_note(&self, handle: MidiNoteHandle) -> bool {
+        let Ok(guard) = self.bark.lock() else {
+            return false;
+        };
+        let Some(player) = guard.as_ref() else {
+            return false;
+        };
+        player.release_midi_note(handle)
+    }
+
+    fn play_midi_file(&self, song: MidiSong<'_>) -> bool {
+        let Ok(guard) = self.bark.lock() else {
+            return false;
+        };
+        let Some(player) = guard.as_ref() else {
+            return false;
+        };
+        player.play_midi_file(perro_pawdio::midi::MidiFileRequest {
+            id: 0,
+            song,
+            pan: perro_pawdio::AudioPan::CENTER,
+        })
+    }
+
+    fn play_midi_note_at(
+        &self,
+        note: Note,
+        position: MidiSpatialPosition,
+        range: f32,
+        options: MidiNoteOptions<'_>,
+    ) -> bool {
+        let id = self
+            .next_spatial_midi_id
+            .fetch_add(1, Ordering::Relaxed)
+            .max(1);
+        let pos = match position {
+            MidiSpatialPosition::TwoD(pos) => QueuedSpatialAudioPos::TwoD(pos),
+            MidiSpatialPosition::ThreeD(pos) => QueuedSpatialAudioPos::ThreeD(pos),
+        };
+        let Ok(mut queue) = self.spatial_midi_queue.lock() else {
+            return false;
+        };
+        queue.push(QueuedSpatialMidi {
+            kind: QueuedSpatialMidiKind::Note {
+                id,
+                note,
+                options: QueuedMidiNoteOptions::from_options(options),
+                held: false,
+            },
+            range,
+            pos,
+        });
+        true
+    }
+
+    fn start_midi_note_at(
+        &self,
+        note: Note,
+        position: MidiSpatialPosition,
+        range: f32,
+        options: MidiNoteOptions<'_>,
+    ) -> Option<MidiNoteHandle> {
+        let id = self
+            .next_spatial_midi_id
+            .fetch_add(1, Ordering::Relaxed)
+            .max(1);
+        let pos = match position {
+            MidiSpatialPosition::TwoD(pos) => QueuedSpatialAudioPos::TwoD(pos),
+            MidiSpatialPosition::ThreeD(pos) => QueuedSpatialAudioPos::ThreeD(pos),
+        };
+        let Ok(mut queue) = self.spatial_midi_queue.lock() else {
+            return None;
+        };
+        queue.push(QueuedSpatialMidi {
+            kind: QueuedSpatialMidiKind::Note {
+                id,
+                note,
+                options: QueuedMidiNoteOptions::from_options(options),
+                held: true,
+            },
+            range,
+            pos,
+        });
+        Some(MidiNoteHandle(id))
+    }
+
+    fn play_midi_file_at(
+        &self,
+        song: MidiSong<'_>,
+        position: MidiSpatialPosition,
+        range: f32,
+    ) -> bool {
+        let id = self
+            .next_spatial_midi_id
+            .fetch_add(1, Ordering::Relaxed)
+            .max(1);
+        let pos = match position {
+            MidiSpatialPosition::TwoD(pos) => QueuedSpatialAudioPos::TwoD(pos),
+            MidiSpatialPosition::ThreeD(pos) => QueuedSpatialAudioPos::ThreeD(pos),
+        };
+        let Ok(mut queue) = self.spatial_midi_queue.lock() else {
+            return false;
+        };
+        queue.push(QueuedSpatialMidi {
+            kind: QueuedSpatialMidiKind::File {
+                id,
+                song: QueuedMidiSong::from_song(song),
+            },
+            range,
+            pos,
+        });
+        true
     }
 }

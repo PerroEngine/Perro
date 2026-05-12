@@ -29,6 +29,8 @@ fn should_skip(path: &str, extra_skip_rel_paths: &HashSet<&str>) -> bool {
                 || source_ext::contains(source_ext::STATIC_RESOURCE, ext)
                 || source_ext::contains(source_ext::SHADER, ext)
                 || source_ext::contains(source_ext::AUDIO, ext)
+                || source_ext::contains(source_ext::MIDI, ext)
+                || source_ext::contains(source_ext::SOUNDFONT, ext)
         })
 }
 

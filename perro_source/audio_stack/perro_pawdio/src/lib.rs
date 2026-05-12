@@ -2,10 +2,14 @@ mod codec;
 mod controller;
 mod internal;
 mod math;
+pub mod midi;
 mod player;
 mod types;
 
 pub use controller::{AudioController, AudioSourceHandle};
+pub use midi::{
+    MidiChannel, MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong, MidiSound, Note, program,
+};
 pub use player::BarkPlayer;
 pub use types::{
     Audio2D, Audio3D, AudioCompression, AudioEq, AudioListener2D, AudioListener3D, AudioPan,

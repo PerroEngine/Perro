@@ -323,8 +323,8 @@ fn apply_ui_root_fields(node: &mut UiBox, fields: &[SceneObjectField]) {
         }
         // Absolute min/max size unsupported.
         // Use `min_size_ratio` / `max_size_ratio`.
-        "min_size" | "max_size" | "min_w" | "min_width" | "min_h" | "min_height"
-        | "max_w" | "max_width" | "max_h" | "max_height" => {}
+        "min_size" | "max_size" | "min_w" | "min_width" | "min_h" | "min_height" | "max_w"
+        | "max_width" | "max_h" | "max_height" => {}
         "min_size_scale" | "min_scale" | "min_size_ratio" => {
             if let Some(v) = as_vec2(value) {
                 node.layout.min_size_scale = v;
@@ -368,6 +368,7 @@ fn apply_ui_button_fields(
     fields: &[SceneObjectField],
     static_ui_style_lookup: Option<StaticUiStyleLookup>,
 ) {
+    apply_ui_input_mask_fields(&mut node.input_mask, fields);
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {
         "disabled" => {
             if let Some(v) = as_bool(value) {
@@ -404,6 +405,67 @@ fn apply_ui_button_fields(
     apply_ui_style_fields(&mut node.pressed_style, fields, "pressed_");
     apply_ui_button_state_fields(node, fields, "hover", static_ui_style_lookup);
     apply_ui_button_state_fields(node, fields, "pressed", static_ui_style_lookup);
+}
+
+fn apply_ui_input_mask_fields(mask: &mut perro_ui::UiInputMask, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "input_allow_players" | "input_only_players" | "allow_players" | "only_players" => {
+            if let Some(v) = as_usize_list(value) {
+                mask.allow_players = v;
+            }
+        }
+        "input_deny_players" | "input_block_players" | "deny_players" | "block_players" => {
+            if let Some(v) = as_usize_list(value) {
+                mask.deny_players = v;
+            }
+        }
+        "input_allow_gamepads" | "input_only_gamepads" | "allow_gamepads" | "only_gamepads" => {
+            if let Some(v) = as_usize_list(value) {
+                mask.allow_gamepads = v;
+            }
+        }
+        "input_deny_gamepads" | "input_block_gamepads" | "deny_gamepads" | "block_gamepads" => {
+            if let Some(v) = as_usize_list(value) {
+                mask.deny_gamepads = v;
+            }
+        }
+        "input_allow_joycons" | "input_only_joycons" | "allow_joycons" | "only_joycons" => {
+            if let Some(v) = as_usize_list(value) {
+                mask.allow_joycons = v;
+            }
+        }
+        "input_deny_joycons" | "input_block_joycons" | "deny_joycons" | "block_joycons" => {
+            if let Some(v) = as_usize_list(value) {
+                mask.deny_joycons = v;
+            }
+        }
+        "input_allow_kbm" | "input_only_kbm" | "allow_kbm" | "only_kbm" => {
+            if let Some(v) = as_bool(value) {
+                mask.allow_kbm = v;
+            }
+        }
+        "input_deny_kbm" | "input_block_kbm" | "deny_kbm" | "block_kbm" => {
+            if let Some(v) = as_bool(value) {
+                mask.deny_kbm = v;
+            }
+        }
+        _ => {}
+    });
+}
+
+fn as_usize_list(value: &SceneValue) -> Option<Vec<usize>> {
+    match value {
+        SceneValue::Array(items) => Some(
+            items
+                .iter()
+                .filter_map(as_i32)
+                .filter_map(|v| usize::try_from(v).ok())
+                .collect(),
+        ),
+        _ => as_i32(value)
+            .and_then(|v| usize::try_from(v).ok())
+            .map(|v| vec![v]),
+    }
 }
 
 fn apply_ui_label_fields(node: &mut UiLabel, fields: &[SceneObjectField]) {
@@ -653,6 +715,7 @@ fn apply_ui_text_edit_fields(
     fields: &[SceneObjectField],
     static_ui_style_lookup: Option<StaticUiStyleLookup>,
 ) {
+    apply_ui_input_mask_fields(&mut node.input_mask, fields);
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {
         "text" => {
             if let Some(v) = as_str(value) {
@@ -830,9 +893,7 @@ fn apply_ui_container_fields(
 ) {
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {
         "mode" | "layout" | "kind" => {
-            if allow_mode
-                && let Some(v) = as_ui_layout_mode(value)
-            {
+            if allow_mode && let Some(v) = as_ui_layout_mode(value) {
                 node.mode = v;
             }
         }
@@ -892,4 +953,3 @@ fn apply_ui_fixed_container_fields(
         _ => {}
     });
 }
-

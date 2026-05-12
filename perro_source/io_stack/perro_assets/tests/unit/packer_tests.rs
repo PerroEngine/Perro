@@ -20,6 +20,9 @@ fn pmat_is_skipped_as_compiled_resource() {
     assert!(should_skip("scene/main.scn", &extra));
     assert!(should_skip("mesh/robot.glb", &extra));
     assert!(should_skip("audio/music.ogg", &extra));
+    assert!(should_skip("music/theme.mid", &extra));
+    assert!(should_skip("music/theme.midi", &extra));
+    assert!(should_skip("soundfonts/game.sf2", &extra));
     assert!(should_skip("shaders/custom.wgsl", &extra));
 }
 

@@ -4,7 +4,7 @@ use crate::runtime_project::{
     StaticMaterialLookup, StaticSkeletonLookup,
 };
 use perro_ids::string_to_u64;
-use perro_pawdio::AudioController;
+use perro_pawdio::{AudioController, MidiChannel, MidiProgram, MidiSound, Note};
 use perro_project::LocalizationConfig;
 use perro_render_bridge::{RenderCommand, RenderEvent};
 use std::{
@@ -31,11 +31,127 @@ pub(crate) struct QueuedSpatialAudio {
     pub pos: QueuedSpatialAudioPos,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) enum QueuedMidiSound {
+    BuiltIn,
+    SoundFont(String),
+}
+
+impl QueuedMidiSound {
+    pub(crate) fn from_sound(sound: MidiSound<'_>) -> Self {
+        match sound {
+            MidiSound::BuiltIn => Self::BuiltIn,
+            MidiSound::SoundFont(source) => Self::SoundFont(source.to_string()),
+        }
+    }
+
+    pub(crate) fn as_sound(&self) -> MidiSound<'_> {
+        match self {
+            Self::BuiltIn => MidiSound::BuiltIn,
+            Self::SoundFont(source) => MidiSound::SoundFont(source.as_str()),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct QueuedMidiNoteOptions {
+    pub velocity: u8,
+    pub sustain: std::time::Duration,
+    pub channel: MidiChannel,
+    pub program: MidiProgram,
+    pub sound: QueuedMidiSound,
+    pub bus_id: Option<perro_ids::AudioBusID>,
+    pub volume: f32,
+    pub pan: perro_pawdio::AudioPan,
+}
+
+impl QueuedMidiNoteOptions {
+    pub(crate) fn from_options(options: perro_pawdio::MidiNoteOptions<'_>) -> Self {
+        Self {
+            velocity: options.velocity,
+            sustain: options.sustain,
+            channel: options.channel,
+            program: options.program,
+            sound: QueuedMidiSound::from_sound(options.sound),
+            bus_id: options.bus_id,
+            volume: options.volume,
+            pan: options.pan,
+        }
+    }
+
+    pub(crate) fn as_options(&self) -> perro_pawdio::MidiNoteOptions<'_> {
+        perro_pawdio::MidiNoteOptions {
+            velocity: self.velocity,
+            sustain: self.sustain,
+            channel: self.channel,
+            program: self.program,
+            sound: self.sound.as_sound(),
+            bus_id: self.bus_id,
+            volume: self.volume,
+            pan: self.pan,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct QueuedMidiSong {
+    pub source: String,
+    pub sound: QueuedMidiSound,
+    pub bus_id: Option<perro_ids::AudioBusID>,
+    pub volume: f32,
+    pub looped: bool,
+}
+
+impl QueuedMidiSong {
+    pub(crate) fn from_song(song: perro_pawdio::MidiSong<'_>) -> Self {
+        Self {
+            source: song.source.to_string(),
+            sound: QueuedMidiSound::from_sound(song.sound),
+            bus_id: song.bus_id,
+            volume: song.volume,
+            looped: song.looped,
+        }
+    }
+
+    pub(crate) fn as_song(&self) -> perro_pawdio::MidiSong<'_> {
+        perro_pawdio::MidiSong {
+            source: self.source.as_str(),
+            sound: self.sound.as_sound(),
+            bus_id: self.bus_id,
+            volume: self.volume,
+            looped: self.looped,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum QueuedSpatialMidiKind {
+    Note {
+        id: u64,
+        note: Note,
+        options: QueuedMidiNoteOptions,
+        held: bool,
+    },
+    File {
+        id: u64,
+        song: QueuedMidiSong,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct QueuedSpatialMidi {
+    pub kind: QueuedSpatialMidiKind,
+    pub range: f32,
+    pub pos: QueuedSpatialAudioPos,
+}
+
 pub struct RuntimeResourceApi {
     pub(super) state: Mutex<RuntimeResourceState>,
     pub(super) localization: std::sync::RwLock<RuntimeLocalizationState>,
     pub(crate) bark: Mutex<Option<AudioController>>,
     pub(crate) spatial_audio_queue: Mutex<Vec<QueuedSpatialAudio>>,
+    pub(crate) spatial_midi_queue: Mutex<Vec<QueuedSpatialMidi>>,
+    pub(crate) next_spatial_midi_id: std::sync::atomic::AtomicU64,
     pub(crate) audio_listener_2d: Mutex<Option<perro_pawdio::AudioListener2D>>,
     pub(crate) audio_listener_3d: Mutex<Option<perro_pawdio::AudioListener3D>>,
     pub(super) static_material_lookup: Option<StaticMaterialLookup>,
@@ -67,6 +183,8 @@ impl RuntimeResourceApi {
             )),
             bark: Mutex::new(AudioController::new(static_audio_lookup).ok()),
             spatial_audio_queue: Mutex::new(Vec::new()),
+            spatial_midi_queue: Mutex::new(Vec::new()),
+            next_spatial_midi_id: std::sync::atomic::AtomicU64::new(1),
             audio_listener_2d: Mutex::new(None),
             audio_listener_3d: Mutex::new(None),
             static_material_lookup,

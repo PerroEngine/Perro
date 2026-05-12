@@ -314,6 +314,70 @@ click_signals = ["play_clicked", "any_button_clicked"]
 ```
 
 All handlers receive `(button: NodeID)`.
+Keyboard/controller focus uses the same button hover/press visual states and events.
+`Tab` moves focus forward.
+`Shift+Tab` moves focus backward.
+Gamepad D-pad and left stick move focus toward the nearest control in that direction.
+Joy-Con stick uses the same directional focus path.
+`Enter`, `Space`, gamepad bottom face button, and Joy-Con right face button activate the focused button.
+Buttons and text edits can filter focus/activation input by player or device id.
+Use `input_only_*`/`input_allow_*` fields for allow lists.
+Use `input_block_*`/`input_deny_*` fields for deny lists.
+Deny wins if the same source matches both.
+If any allow list is set, unmatched sources are ignored.
+
+```text
+input_only_players = [0]
+input_block_gamepads = [1]
+input_only_joycons = [0, 1]
+input_allow_kbm = true
+input_deny_kbm = true
+```
+
+Full scene mask examples:
+
+```text
+[p1_start]
+[UiButton]
+    text = "Start"
+    input_only_players = [0]
+    input_block_gamepads = [1]
+[/UiButton]
+[/p1_start]
+
+[joycon_name]
+[UiTextBox]
+    input_only_joycons = [0, 1]
+    input_block_players = [2]
+[/UiTextBox]
+[/joycon_name]
+
+[keyboard_help]
+[UiTextBlock]
+    text = "Press Space"
+    input_allow_kbm = true
+    input_deny_gamepads = [0, 1, 2, 3]
+[/UiTextBlock]
+[/keyboard_help]
+```
+
+Runtime script mask example:
+
+```rust
+let _ = with_node_mut!(ctx.run, UiButton, play_button, |button| {
+    button.input_mask.allow_players = vec![0];
+    button.input_mask.deny_gamepads = vec![1];
+});
+
+let _ = with_node_mut!(ctx.run, UiTextBox, name_field, |field| {
+    field.inner.input_mask.allow_joycons = vec![0, 1];
+    field.inner.input_mask.deny_players = vec![2];
+});
+
+let _ = with_node_mut!(ctx.run, UiTextBlock, help_text, |text| {
+    text.inner.input_mask.allow_kbm = true;
+});
+```
 
 Scene example:
 

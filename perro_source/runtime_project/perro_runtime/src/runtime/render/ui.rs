@@ -4,7 +4,9 @@ use super::state::{DirtyState, UiButtonVisualState};
 use super::{Runtime, RuntimeUiTiming};
 use ahash::AHashMap;
 use perro_ids::{NodeID, SignalID, TextureID};
-use perro_input::{KeyCode, MouseButton};
+#[cfg(test)]
+use perro_input::GamepadAxis;
+use perro_input::{GamepadButton, JoyConButton, KeyCode, MouseButton, PlayerBinding};
 use perro_nodes::SceneNodeData;
 use perro_render_bridge::{
     RenderCommand, ResourceCommand, UiCommand, UiDepthEffectState, UiImageScaleState, UiRectState,
@@ -25,6 +27,10 @@ mod locale;
 
 const TEXT_EDIT_REPEAT_DELAY: f32 = 0.35;
 const TEXT_EDIT_REPEAT_RATE: f32 = 0.035;
+const UI_NAV_REPEAT_DELAY: f32 = 0.35;
+const UI_NAV_REPEAT_RATE: f32 = 0.15;
+const UI_NAV_STICK_ON: f32 = 0.55;
+const UI_NAV_STICK_OFF: f32 = 0.35;
 
 impl Runtime {
     pub(crate) fn mark_ui_viewport_dirty(&mut self) {
@@ -102,7 +108,7 @@ impl Runtime {
         let bootstrap_scan = self.render_ui.prev_visible.is_empty()
             && self.render_ui.retained_commands.is_empty()
             && self.render_ui.computed_rects.is_empty();
-        let input_changed = self.ui_pointer_changed();
+        let input_changed = self.ui_pointer_changed() || self.ui_nav_input_changed();
         let text_input_changed =
             self.render_ui.focused_text_edit.is_some() && self.ui_text_input_changed();
         let has_extraction_work = self.dirty.has_any_dirty()
@@ -198,6 +204,12 @@ impl Runtime {
             if self.render_ui.focused_text_edit == Some(node) {
                 self.render_ui.focused_text_edit = None;
             }
+            if self.render_ui.focused_ui_node == Some(node) {
+                self.render_ui.focused_ui_node = None;
+            }
+            if self.render_ui.nav_pressed_button == Some(node) {
+                self.render_ui.nav_pressed_button = None;
+            }
             if self.render_ui.hovered_text_edit == Some(node) {
                 self.render_ui.hovered_text_edit = None;
             }
@@ -257,6 +269,7 @@ impl Runtime {
                 .elapsed();
         }
 
+        self.process_ui_focus_input(&computed, &mut command_ids, &mut command_seen);
         self.process_text_edit_input(&computed, &mut command_ids, &mut command_seen);
         self.refresh_button_visual_states(&computed, &mut command_ids, &mut command_seen);
 

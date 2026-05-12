@@ -1,4 +1,7 @@
 use perro_ids::AudioBusID;
+pub use perro_pawdio::{
+    MidiChannel, MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong, MidiSound, Note, program,
+};
 use perro_structs::{Vector2, Vector3};
 
 pub trait AudioAPI {
@@ -18,6 +21,53 @@ pub trait AudioAPI {
     fn pause_bus(&self, bus_id: AudioBusID) -> bool;
     fn resume_bus(&self, bus_id: AudioBusID) -> bool;
     fn stop_bus(&self, bus_id: AudioBusID) -> bool;
+    fn load_midi_soundfont(&self, source: &str) -> bool;
+    fn play_midi_note(&self, note: Note, options: MidiNoteOptions<'_>) -> bool;
+    fn start_midi_note(&self, note: Note, options: MidiNoteOptions<'_>) -> Option<MidiNoteHandle>;
+    fn release_midi_note(&self, handle: MidiNoteHandle) -> bool;
+    fn play_midi_file(&self, song: MidiSong<'_>) -> bool;
+    fn play_midi_note_at(
+        &self,
+        note: Note,
+        position: MidiSpatialPosition,
+        range: f32,
+        options: MidiNoteOptions<'_>,
+    ) -> bool;
+    fn start_midi_note_at(
+        &self,
+        note: Note,
+        position: MidiSpatialPosition,
+        range: f32,
+        options: MidiNoteOptions<'_>,
+    ) -> Option<MidiNoteHandle>;
+    fn play_midi_file_at(
+        &self,
+        song: MidiSong<'_>,
+        position: MidiSpatialPosition,
+        range: f32,
+    ) -> bool;
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum MidiSpatialPosition {
+    TwoD(Vector2),
+    ThreeD(Vector3),
+}
+
+pub trait MidiSpatialPos {
+    fn into_midi_spatial_position(self) -> MidiSpatialPosition;
+}
+
+impl MidiSpatialPos for Vector2 {
+    fn into_midi_spatial_position(self) -> MidiSpatialPosition {
+        MidiSpatialPosition::TwoD(self)
+    }
+}
+
+impl MidiSpatialPos for Vector3 {
+    fn into_midi_spatial_position(self) -> MidiSpatialPosition {
+        MidiSpatialPosition::ThreeD(self)
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -336,6 +386,11 @@ impl<'res, R: AudioAPI + ?Sized> AudioModule<'res, R> {
     }
 
     #[inline]
+    pub fn midi(&self) -> MidiModule<'res, R> {
+        MidiModule { api: self.api }
+    }
+
+    #[inline]
     pub fn stop_audio(&self, bus_id: AudioBusID, audio: Audio<'_>) -> bool {
         self.api.stop_audio(Some(bus_id), audio, AudioPan::CENTER)
     }
@@ -415,6 +470,94 @@ impl<'res, R: AudioAPI + ?Sized> Audio2DModule<'res, R> {
 
 pub struct Audio3DModule<'res, R: AudioAPI + ?Sized> {
     api: &'res R,
+}
+
+pub struct MidiModule<'res, R: AudioAPI + ?Sized> {
+    api: &'res R,
+}
+
+impl<'res, R: AudioAPI + ?Sized> MidiModule<'res, R> {
+    #[inline]
+    pub fn load_soundfont<S: AsRef<str>>(&self, source: S) -> bool {
+        self.api.load_midi_soundfont(source.as_ref())
+    }
+
+    #[inline]
+    pub fn play_note(&self, note: Note, options: MidiNoteOptions<'_>) -> bool {
+        self.api.play_midi_note(note, options)
+    }
+
+    #[inline]
+    pub fn play_note_bus(
+        &self,
+        bus_id: AudioBusID,
+        note: Note,
+        mut options: MidiNoteOptions<'_>,
+    ) -> bool {
+        options.bus_id = Some(bus_id);
+        self.api.play_midi_note(note, options)
+    }
+
+    #[inline]
+    pub fn start_note(&self, note: Note, options: MidiNoteOptions<'_>) -> Option<MidiNoteHandle> {
+        self.api.start_midi_note(note, options)
+    }
+
+    #[inline]
+    pub fn start_note_bus(
+        &self,
+        bus_id: AudioBusID,
+        note: Note,
+        mut options: MidiNoteOptions<'_>,
+    ) -> Option<MidiNoteHandle> {
+        options.bus_id = Some(bus_id);
+        self.api.start_midi_note(note, options)
+    }
+
+    #[inline]
+    pub fn release_note(&self, handle: MidiNoteHandle) -> bool {
+        self.api.release_midi_note(handle)
+    }
+
+    #[inline]
+    pub fn play_file(&self, song: MidiSong<'_>) -> bool {
+        self.api.play_midi_file(song)
+    }
+
+    #[inline]
+    pub fn play_note_at<P: MidiSpatialPos>(
+        &self,
+        note: Note,
+        position: P,
+        range: f32,
+        options: MidiNoteOptions<'_>,
+    ) -> bool {
+        self.api
+            .play_midi_note_at(note, position.into_midi_spatial_position(), range, options)
+    }
+
+    #[inline]
+    pub fn start_note_at<P: MidiSpatialPos>(
+        &self,
+        note: Note,
+        position: P,
+        range: f32,
+        options: MidiNoteOptions<'_>,
+    ) -> Option<MidiNoteHandle> {
+        self.api
+            .start_midi_note_at(note, position.into_midi_spatial_position(), range, options)
+    }
+
+    #[inline]
+    pub fn play_file_at<P: MidiSpatialPos>(
+        &self,
+        song: MidiSong<'_>,
+        position: P,
+        range: f32,
+    ) -> bool {
+        self.api
+            .play_midi_file_at(song, position.into_midi_spatial_position(), range)
+    }
 }
 
 impl<'res, R: AudioAPI + ?Sized> Audio3DModule<'res, R> {
@@ -549,6 +692,64 @@ macro_rules! audio_bus {
     }};
 }
 
+#[macro_export]
+macro_rules! midi_load_soundfont {
+    ($res:expr, $source:expr) => {
+        $res.Audio().midi().load_soundfont($source)
+    };
+}
+
+#[macro_export]
+macro_rules! midi_play {
+    ($res:expr, $bus_id:expr, $note:expr, $options:expr) => {
+        $res.Audio().midi().play_note_bus($bus_id, $note, $options)
+    };
+    ($res:expr, $note:expr, $options:expr) => {
+        $res.Audio().midi().play_note($note, $options)
+    };
+    ($res:expr, $song:expr) => {
+        $res.Audio().midi().play_file($song)
+    };
+}
+
+#[macro_export]
+macro_rules! midi_start {
+    ($res:expr, $bus_id:expr, $note:expr, $options:expr) => {
+        $res.Audio().midi().start_note_bus($bus_id, $note, $options)
+    };
+    ($res:expr, $note:expr, $options:expr) => {
+        $res.Audio().midi().start_note($note, $options)
+    };
+}
+
+#[macro_export]
+macro_rules! midi_release {
+    ($res:expr, $handle:expr) => {
+        $res.Audio().midi().release_note($handle)
+    };
+}
+
+#[macro_export]
+macro_rules! midi_play_at {
+    ($res:expr, $note:expr, $pos:expr, $range:expr, $options:expr) => {
+        $res.Audio()
+            .midi()
+            .play_note_at($note, $pos, $range, $options)
+    };
+    ($res:expr, $song:expr, $pos:expr, $range:expr) => {
+        $res.Audio().midi().play_file_at($song, $pos, $range)
+    };
+}
+
+#[macro_export]
+macro_rules! midi_start_at {
+    ($res:expr, $note:expr, $pos:expr, $range:expr, $options:expr) => {
+        $res.Audio()
+            .midi()
+            .start_note_at($note, $pos, $range, $options)
+    };
+}
+
 pub const fn bus_id(name: &str) -> AudioBusID {
     AudioBusID::from_string(name)
 }
@@ -631,6 +832,59 @@ mod tests {
         fn stop_bus(&self, _bus_id: AudioBusID) -> bool {
             true
         }
+
+        fn load_midi_soundfont(&self, _source: &str) -> bool {
+            true
+        }
+
+        fn play_midi_note(&self, _note: Note, _options: MidiNoteOptions<'_>) -> bool {
+            true
+        }
+
+        fn start_midi_note(
+            &self,
+            _note: Note,
+            _options: MidiNoteOptions<'_>,
+        ) -> Option<MidiNoteHandle> {
+            Some(MidiNoteHandle(1))
+        }
+
+        fn release_midi_note(&self, _handle: MidiNoteHandle) -> bool {
+            true
+        }
+
+        fn play_midi_file(&self, _song: MidiSong<'_>) -> bool {
+            true
+        }
+
+        fn play_midi_note_at(
+            &self,
+            _note: Note,
+            _position: MidiSpatialPosition,
+            _range: f32,
+            _options: MidiNoteOptions<'_>,
+        ) -> bool {
+            true
+        }
+
+        fn start_midi_note_at(
+            &self,
+            _note: Note,
+            _position: MidiSpatialPosition,
+            _range: f32,
+            _options: MidiNoteOptions<'_>,
+        ) -> Option<MidiNoteHandle> {
+            Some(MidiNoteHandle(2))
+        }
+
+        fn play_midi_file_at(
+            &self,
+            _song: MidiSong<'_>,
+            _position: MidiSpatialPosition,
+            _range: f32,
+        ) -> bool {
+            true
+        }
     }
 
     struct DummyResource<'a>(&'a DummyAudioApi);
@@ -658,5 +912,21 @@ mod tests {
             res,
             Audio3D::new("res://step.wav", Vector3::new(1.0, 2.0, 3.0), 10.0)
         ));
+    }
+
+    #[test]
+    fn midi_macros_dispatch() {
+        let api = DummyAudioApi;
+        let res = DummyResource(&api);
+        assert!(crate::midi_play!(res, Note::C4, MidiNoteOptions::default()));
+        assert!(crate::midi_play!(res, MidiSong::new("res://song.mid")));
+        assert!(crate::midi_play_at!(
+            res,
+            Note::C4,
+            Vector2::new(1.0, 2.0),
+            10.0,
+            MidiNoteOptions::default()
+        ));
+        assert!(crate::midi_start!(res, Note::C4, MidiNoteOptions::default()).is_some());
     }
 }

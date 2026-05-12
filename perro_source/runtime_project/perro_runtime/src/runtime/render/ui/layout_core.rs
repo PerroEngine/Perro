@@ -238,6 +238,12 @@ impl Runtime {
         if self.render_ui.focused_text_edit == Some(node) {
             self.render_ui.focused_text_edit = None;
         }
+        if self.render_ui.focused_ui_node == Some(node) {
+            self.render_ui.focused_ui_node = None;
+        }
+        if self.render_ui.nav_pressed_button == Some(node) {
+            self.render_ui.nav_pressed_button = None;
+        }
         if self.render_ui.pressed_text_edit == Some(node) {
             self.render_ui.pressed_text_edit = None;
         }

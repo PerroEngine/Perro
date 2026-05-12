@@ -156,6 +156,185 @@ Rules:
 - Propagation uses listener, physics audio materials, zones, and portals.
 - Use Runtime Audio when the sound should follow a moving node.
 
+## MIDI
+
+MIDI lives under `res.Audio().midi()`.
+It can play live notes, held notes, and `.mid` / `.midi` files.
+
+Macros:
+
+- `midi_load_soundfont!(res, "res://soundfonts/game.sf2") -> bool`
+- `midi_play!(res, Note::C4, MidiNoteOptions::default()) -> bool`
+- `midi_play!(res, bus_id, Note::C4, options) -> bool`
+- `midi_play!(res, MidiSong::new("res://music/theme.mid")) -> bool`
+- `midi_start!(res, Note::C4, options) -> Option<MidiNoteHandle>`
+- `midi_release!(res, handle) -> bool`
+- `midi_play_at!(res, Note::C4, Vector2::new(4.0, 2.0), 20.0, options) -> bool`
+- `midi_play_at!(res, Note::C4, Vector3::new(4.0, 2.0, 0.0), 20.0, options) -> bool`
+- `midi_start_at!(res, Note::C4, position, range, options) -> Option<MidiNoteHandle>`
+- `midi_play_at!(res, MidiSong::new("res://music/theme.mid"), position, range) -> bool`
+
+Methods:
+
+- `res.Audio().midi().play_note(Note::C4, options) -> bool`
+- `res.Audio().midi().start_note(Note::C4, options) -> Option<MidiNoteHandle>`
+- `res.Audio().midi().release_note(handle) -> bool`
+- `res.Audio().midi().play_file(MidiSong::new("res://music/theme.mid")) -> bool`
+- `res.Audio().midi().play_note_at(Note::C4, position, range, options) -> bool`
+- `res.Audio().midi().start_note_at(Note::C4, position, range, options) -> Option<MidiNoteHandle>`
+- `res.Audio().midi().play_file_at(song, position, range) -> bool`
+
+Types:
+
+```rust
+MidiNoteOptions {
+    velocity: u8,          // 0..127
+    sustain: Duration,     // auto note-off for play_note
+    channel: MidiChannel,  // 0..15, channel 9 for drums
+    program: MidiProgram,  // GM patch number
+    sound: MidiSound,      // BuiltIn or SoundFont("res://...")
+    bus_id: Option<AudioBusID>,
+    volume: f32,
+    pan: AudioPan,
+}
+
+MidiSong {
+    source: &str,          // res://music/song.mid
+    sound: MidiSound,
+    bus_id: Option<AudioBusID>,
+    volume: f32,
+    looped: bool,
+}
+```
+
+Sound choices:
+
+```rust
+MidiSound::BuiltIn
+MidiSound::SoundFont("res://soundfonts/game.sf2")
+```
+
+Note helpers:
+
+```rust
+Note::C4              // middle C, MIDI key 60
+Note::A4              // 440 Hz
+Note::from_midi(36)   // raw MIDI key
+Note::C4.midi_key()
+Note::A4.frequency_hz()
+```
+
+Program groups:
+
+```rust
+program::Piano::AcousticGrand
+program::Organ::Drawbar
+program::Guitar::Nylon
+program::Brass::Trumpet
+program::SynthLead::Square
+program::DrumKit::Standard
+```
+
+Rules:
+
+- `Note` is pitch, for example `Note::C4`.
+- `velocity` is hit strength.
+- `sustain` is note length for `play_note`; held notes use `start_note` + `release_note`.
+- `channel` is shared MIDI lane state.
+- `program` is instrument patch.
+- `MidiSound::BuiltIn` uses procedural GM-ish patches.
+- `MidiSound::SoundFont("res://soundfonts/game.sf2")` uses a project soundfont.
+- `Vector2` position routes to 2D propagation.
+- `Vector3` position routes to 3D propagation.
+- positional live notes, held notes, and MIDI files use the same raycast propagation path as audio.
+- `midi_load_soundfont!` preloads `.sf2`; first use also loads it lazily.
+- static builds embed `.mid`, `.midi`, and `.sf2` files under `embedded/audios/`.
+
+Built-in vs soundfont:
+
+- `MidiSound` chooses the synth.
+- `program` chooses the patch inside that synth.
+- built-in synth uses simple generated waveforms.
+- soundfont uses samples/patches from the `.sf2` bank.
+- same `program` value can sound very different per `.sf2`.
+- full program table lives in [Audio](../../../audio.md#midi-program-table).
+
+## MIDI Examples
+
+Built-in note:
+
+```rust
+let opts = MidiNoteOptions {
+    program: program::SynthLead::Square,
+    velocity: 110,
+    sustain: std::time::Duration::from_millis(120),
+    ..MidiNoteOptions::default()
+};
+
+let _ = midi_play!(res, Note::C4, opts);
+```
+
+Held note:
+
+```rust
+let opts = MidiNoteOptions {
+    program: program::Bass::Finger,
+    ..MidiNoteOptions::default()
+};
+
+let held = midi_start!(res, Note::C2, opts);
+
+if let Some(handle) = held {
+    let _ = midi_release!(res, handle);
+}
+```
+
+Soundfont notes:
+
+```rust
+let font = "res://soundfonts/game.sf2";
+let _ = midi_load_soundfont!(res, font);
+
+let opts = MidiNoteOptions {
+    sound: MidiSound::SoundFont(font),
+    program: program::Piano::AcousticGrand,
+    sustain: std::time::Duration::from_millis(400),
+    ..MidiNoteOptions::default()
+};
+
+let _ = midi_play!(res, Note::C4, opts);
+let _ = midi_play!(res, Note::E4, opts);
+let _ = midi_play!(res, Note::G4, opts);
+```
+
+Soundfont MIDI file:
+
+```rust
+let font = "res://soundfonts/game.sf2";
+let song = MidiSong::new("res://music/theme.mid")
+    .with_sound(MidiSound::SoundFont(font))
+    .looped();
+
+let _ = res.Audio().midi().play_file(song);
+```
+
+Positional note:
+
+```rust
+let opts = MidiNoteOptions {
+    program: program::Brass::Trumpet,
+    ..MidiNoteOptions::default()
+};
+
+let _ = midi_play_at!(
+    res,
+    Note::C5,
+    Vector3::new(0.0, 2.0, -6.0),
+    40.0,
+    opts
+);
+```
+
 ## Shared Methods
 
 - `res.Audio().load_source(source) -> bool`

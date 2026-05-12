@@ -325,6 +325,13 @@ impl Runtime {
         self.render_ui.retained_commands.clear();
         self.render_ui.retained_rects.clear();
         self.render_ui.button_states.clear();
+        self.render_ui.focused_ui_node = None;
+        self.render_ui.nav_pressed_button = None;
+        self.render_ui.ui_nav_repeat_dir = None;
+        self.render_ui.ui_nav_repeat_timer = 0.0;
+        self.render_ui.focused_text_edit = None;
+        self.render_ui.hovered_text_edit = None;
+        self.render_ui.pressed_text_edit = None;
         self.render_ui.last_ui_pointer = None;
         self.render_ui.removed_nodes.clear();
         self.locale_text.bindings.clear();

@@ -57,7 +57,11 @@ pub(super) fn strip_ui_style_line_comment(line: &str) -> &str {
     line
 }
 
-pub(super) fn apply_ui_style_fields(style: &mut perro_ui::UiStyle, fields: &[SceneObjectField], prefix: &str) {
+pub(super) fn apply_ui_style_fields(
+    style: &mut perro_ui::UiStyle,
+    fields: &[SceneObjectField],
+    prefix: &str,
+) {
     SceneFieldIterRef::new(fields).for_each(|name, value| {
         let Some(field) = name.strip_prefix(prefix) else {
             return;
@@ -196,7 +200,12 @@ pub(super) fn apply_ui_button_state_fields(
         let size_override = ui_state_has_explicit_size_override(entries.as_ref());
         apply_ui_root_fields(&mut base, entries.as_ref());
         apply_ui_style_fields(&mut style, entries.as_ref(), "");
-        apply_ui_style_object_fields(&mut style, entries.as_ref(), "style", static_ui_style_lookup);
+        apply_ui_style_object_fields(
+            &mut style,
+            entries.as_ref(),
+            "style",
+            static_ui_style_lookup,
+        );
 
         match state_name {
             "hover" => {
@@ -397,9 +406,7 @@ pub(super) fn as_ui_layout_mode(value: &SceneValue) -> Option<perro_ui::UiLayout
         .as_str()
     {
         "h" | "horizontal" | "hlayout" | "hbox" | "row" => Some(perro_ui::UiLayoutMode::H),
-        "v" | "vertical" | "vlayout" | "vbox" | "column" | "col" => {
-            Some(perro_ui::UiLayoutMode::V)
-        }
+        "v" | "vertical" | "vlayout" | "vbox" | "column" | "col" => Some(perro_ui::UiLayoutMode::V),
         "g" | "grid" => Some(perro_ui::UiLayoutMode::Grid),
         _ => None,
     }

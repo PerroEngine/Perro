@@ -432,7 +432,9 @@ fn load_static_resource_binary(lookups: StaticResourceLookups, path: &str) -> io
         }
         "pskel" => lookups.skeleton_lookup.map(|lookup| lookup(hash)),
         "wgsl" => lookups.shader_lookup.map(|lookup| lookup(hash).as_bytes()),
-        "mp3" | "wav" | "ogg" | "flac" => lookups.audio_lookup.map(|lookup| lookup(hash)),
+        "mp3" | "wav" | "ogg" | "flac" | "mid" | "midi" | "sf2" => {
+            lookups.audio_lookup.map(|lookup| lookup(hash))
+        }
         _ => None,
     }
     .unwrap_or(b"");
@@ -472,6 +474,9 @@ fn is_static_binary_path(path: &str) -> bool {
             | "flac"
             | "aac"
             | "m4a"
+            | "mid"
+            | "midi"
+            | "sf2"
     )
 }
 
@@ -504,6 +509,10 @@ mod tests {
     fn static_lookup(path_hash: u64) -> &'static [u8] {
         if path_hash == perro_ids::string_to_u64("res://textures/player.png") {
             b"static-ptex"
+        } else if path_hash == perro_ids::string_to_u64("res://music/theme.mid") {
+            b"MThd"
+        } else if path_hash == perro_ids::string_to_u64("res://soundfonts/game.sf2") {
+            b"RIFF"
         } else {
             b""
         }
@@ -535,6 +544,7 @@ mod tests {
             name: "Static Test".to_string(),
             static_resource_lookups: StaticResourceLookups {
                 texture_lookup: Some(static_lookup),
+                audio_lookup: Some(static_lookup),
                 ..StaticResourceLookups::default()
             },
         });
@@ -553,6 +563,7 @@ mod tests {
             name: "Static Test".to_string(),
             static_resource_lookups: StaticResourceLookups {
                 texture_lookup: Some(static_lookup),
+                audio_lookup: Some(static_lookup),
                 ..StaticResourceLookups::default()
             },
         });
@@ -561,6 +572,8 @@ mod tests {
             load_asset("res://textures/player.png").unwrap(),
             b"static-ptex"
         );
+        assert_eq!(load_asset("res://music/theme.mid").unwrap(), b"MThd");
+        assert_eq!(load_asset("res://soundfonts/game.sf2").unwrap(), b"RIFF");
         assert!(load_asset("res://textures/missing.png").is_err());
     }
 

@@ -5,6 +5,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::internal::{AudioCommand, OwnedAudioPlaybackRequest};
+use crate::internal::{OwnedMidiFileRequest, OwnedMidiNoteRequest};
+use crate::midi::{MidiFileRequest, MidiNoteHandle, MidiNoteRequest};
 use crate::player::BarkPlayer;
 use crate::types::{AudioPlaybackRequest, SpatialAudioParams};
 
@@ -113,6 +115,26 @@ impl AudioController {
                         AudioCommand::SourceLength { source, reply } => {
                             let _ = reply.send(player.source_length_seconds(&source));
                         }
+                        AudioCommand::LoadSoundFont { source } => {
+                            let _ = player.load_soundfont(&source);
+                        }
+                        AudioCommand::LoadMidiFile { source } => {
+                            let _ = player.load_midi_file(&source);
+                        }
+                        AudioCommand::MidiNote { request } => {
+                            let _ = player.play_midi_note(request.as_request());
+                        }
+                        AudioCommand::MidiNotes { requests } => {
+                            for request in requests {
+                                let _ = player.play_midi_note(request.as_request());
+                            }
+                        }
+                        AudioCommand::MidiFile { request } => {
+                            let _ = player.play_midi_file(request.as_request());
+                        }
+                        AudioCommand::MidiRelease { id } => {
+                            let _ = player.release_midi(id);
+                        }
                     }
                 }
             })
@@ -129,10 +151,10 @@ impl AudioController {
         let Ok(mut pool) = self.source_pool.lock() else {
             return Arc::from(source);
         };
-        if let Some(existing) = pool.get(&hash) {
-            if existing.as_ref() == source {
-                return existing.clone();
-            }
+        if let Some(existing) = pool.get(&hash)
+            && existing.as_ref() == source
+        {
+            return existing.clone();
         }
         let interned: Arc<str> = Arc::from(source);
         pool.insert(hash, interned.clone());
@@ -160,7 +182,7 @@ impl AudioController {
 
     fn play_source_arc(&self, request: AudioPlaybackRequest<'_>, source: Arc<str>) -> bool {
         self.tx
-            .send(AudioCommand::Play {
+            .try_send(AudioCommand::Play {
                 request: OwnedAudioPlaybackRequest::from_request_with_source(request, source),
             })
             .is_ok()
@@ -190,7 +212,7 @@ impl AudioController {
         id: u64,
     ) -> Option<u64> {
         self.tx
-            .send(AudioCommand::Play {
+            .try_send(AudioCommand::Play {
                 request: OwnedAudioPlaybackRequest::from_request_with_source(request, source),
             })
             .is_ok()
@@ -199,18 +221,18 @@ impl AudioController {
 
     pub fn update_spatial(&self, id: u64, params: SpatialAudioParams) -> bool {
         self.tx
-            .send(AudioCommand::UpdateSpatial { id, params })
+            .try_send(AudioCommand::UpdateSpatial { id, params })
             .is_ok()
     }
 
     pub fn stop_playback(&self, id: u64) -> bool {
-        self.tx.send(AudioCommand::StopPlayback { id }).is_ok()
+        self.tx.try_send(AudioCommand::StopPlayback { id }).is_ok()
     }
 
     pub fn load_source(&self, source: &str) -> bool {
         let source = self.intern_source(source);
         self.tx
-            .send(AudioCommand::Load {
+            .try_send(AudioCommand::Load {
                 source,
                 reserved: false,
             })
@@ -220,7 +242,7 @@ impl AudioController {
     pub fn reserve_source(&self, source: &str) -> bool {
         let source = self.intern_source(source);
         self.tx
-            .send(AudioCommand::Load {
+            .try_send(AudioCommand::Load {
                 source,
                 reserved: true,
             })
@@ -229,7 +251,7 @@ impl AudioController {
 
     pub fn drop_source(&self, source: &str) -> bool {
         let source = self.intern_source(source);
-        self.tx.send(AudioCommand::DropAsset { source }).is_ok()
+        self.tx.try_send(AudioCommand::DropAsset { source }).is_ok()
     }
 
     pub fn source_length_seconds(&self, source: &str) -> Option<f32> {
@@ -237,7 +259,7 @@ impl AudioController {
         let (reply_tx, reply_rx) = crossbeam_channel::bounded::<Option<f32>>(1);
         if self
             .tx
-            .send(AudioCommand::SourceLength {
+            .try_send(AudioCommand::SourceLength {
                 source,
                 reply: reply_tx,
             })
@@ -250,49 +272,146 @@ impl AudioController {
 
     pub fn stop_source(&self, source: &str) -> bool {
         let source = self.intern_source(source);
-        self.tx.send(AudioCommand::Stop { source }).is_ok()
+        self.tx.try_send(AudioCommand::Stop { source }).is_ok()
     }
 
     pub fn stop_match(&self, request: AudioPlaybackRequest<'_>) -> bool {
         let source = self.intern_source(request.source);
         self.tx
-            .send(AudioCommand::StopMatch {
+            .try_send(AudioCommand::StopMatch {
                 request: OwnedAudioPlaybackRequest::from_request_with_source(request, source),
             })
             .is_ok()
     }
 
     pub fn stop_all(&self) -> bool {
-        self.tx.send(AudioCommand::StopAll).is_ok()
+        self.tx.try_send(AudioCommand::StopAll).is_ok()
     }
 
     pub fn set_master_volume(&self, volume: f32) -> bool {
         self.tx
-            .send(AudioCommand::SetMasterVolume { volume })
+            .try_send(AudioCommand::SetMasterVolume { volume })
             .is_ok()
     }
 
     pub fn set_bus_volume(&self, bus_id: AudioBusID, volume: f32) -> bool {
         self.tx
-            .send(AudioCommand::SetBusVolume { bus_id, volume })
+            .try_send(AudioCommand::SetBusVolume { bus_id, volume })
             .is_ok()
     }
 
     pub fn set_bus_speed(&self, bus_id: AudioBusID, speed: f32) -> bool {
         self.tx
-            .send(AudioCommand::SetBusSpeed { bus_id, speed })
+            .try_send(AudioCommand::SetBusSpeed { bus_id, speed })
             .is_ok()
     }
 
     pub fn pause_bus(&self, bus_id: AudioBusID) -> bool {
-        self.tx.send(AudioCommand::PauseBus { bus_id }).is_ok()
+        self.tx.try_send(AudioCommand::PauseBus { bus_id }).is_ok()
     }
 
     pub fn resume_bus(&self, bus_id: AudioBusID) -> bool {
-        self.tx.send(AudioCommand::ResumeBus { bus_id }).is_ok()
+        self.tx.try_send(AudioCommand::ResumeBus { bus_id }).is_ok()
     }
 
     pub fn stop_bus(&self, bus_id: AudioBusID) -> bool {
-        self.tx.send(AudioCommand::StopBus { bus_id }).is_ok()
+        self.tx.try_send(AudioCommand::StopBus { bus_id }).is_ok()
+    }
+
+    pub fn load_soundfont(&self, source: &str) -> bool {
+        let source = self.intern_source(source);
+        self.tx
+            .try_send(AudioCommand::LoadSoundFont { source })
+            .is_ok()
+    }
+
+    pub fn load_midi_file(&self, source: &str) -> bool {
+        let source = self.intern_source(source);
+        self.tx
+            .try_send(AudioCommand::LoadMidiFile { source })
+            .is_ok()
+    }
+
+    pub fn play_midi_note(&self, request: MidiNoteRequest<'_>) -> bool {
+        self.tx
+            .try_send(AudioCommand::MidiNote {
+                request: OwnedMidiNoteRequest::from_request(request),
+            })
+            .is_ok()
+    }
+
+    pub fn start_midi_note(&self, mut request: MidiNoteRequest<'_>) -> Option<MidiNoteHandle> {
+        let id = self.next_playback_id.fetch_add(1, Ordering::Relaxed).max(1);
+        request.id = id;
+        request.held = true;
+        self.tx
+            .try_send(AudioCommand::MidiNote {
+                request: OwnedMidiNoteRequest::from_request(request),
+            })
+            .is_ok()
+            .then_some(MidiNoteHandle(id))
+    }
+
+    pub fn play_spatial_midi_note(&self, mut request: MidiNoteRequest<'_>) -> Option<u64> {
+        let id = self.next_playback_id.fetch_add(1, Ordering::Relaxed).max(1);
+        request.id = id;
+        self.tx
+            .try_send(AudioCommand::MidiNote {
+                request: OwnedMidiNoteRequest::from_request(request),
+            })
+            .is_ok()
+            .then_some(id)
+    }
+
+    pub fn play_midi_file(&self, request: MidiFileRequest<'_>) -> bool {
+        self.tx
+            .try_send(AudioCommand::MidiFile {
+                request: OwnedMidiFileRequest::from_request(request),
+            })
+            .is_ok()
+    }
+
+    pub fn play_spatial_midi_file(&self, mut request: MidiFileRequest<'_>) -> Option<u64> {
+        let id = self.next_playback_id.fetch_add(1, Ordering::Relaxed).max(1);
+        request.id = id;
+        self.tx
+            .try_send(AudioCommand::MidiFile {
+                request: OwnedMidiFileRequest::from_request(request),
+            })
+            .is_ok()
+            .then_some(id)
+    }
+
+    pub fn release_midi_note(&self, handle: MidiNoteHandle) -> bool {
+        self.tx
+            .try_send(AudioCommand::MidiRelease { id: handle.0 })
+            .is_ok()
+    }
+
+    pub fn play_midi_notes<'a, I>(&self, requests: I) -> bool
+    where
+        I: IntoIterator<Item = MidiNoteRequest<'a>>,
+    {
+        let requests = requests
+            .into_iter()
+            .map(OwnedMidiNoteRequest::from_request)
+            .collect::<Vec<_>>();
+        self.tx
+            .try_send(AudioCommand::MidiNotes { requests })
+            .is_ok()
+    }
+
+    pub fn play_midi_note_slice(&self, requests: &[MidiNoteRequest<'_>]) -> bool {
+        if requests.len() == 1 {
+            return self.play_midi_note(requests[0]);
+        }
+        let requests = requests
+            .iter()
+            .copied()
+            .map(OwnedMidiNoteRequest::from_request)
+            .collect::<Vec<_>>();
+        self.tx
+            .try_send(AudioCommand::MidiNotes { requests })
+            .is_ok()
     }
 }

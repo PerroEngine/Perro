@@ -13,8 +13,10 @@ pub mod prelude {
         AnimationAPI, AnimationModule, Audio, Audio2D, Audio2DModule, Audio3D, Audio3DModule,
         AudioAPI, AudioBusID, AudioModule, AudioPan, AudioPlayConfig, Draw2DAPI, Draw2DModule,
         Locale, LocalizationAPI, LocalizationModule, MaterialAPI, MaterialModule, MeshAPI,
-        MeshModule, PannedAudio, PostProcessingAPI, SceneDocAPI, SceneDocModule, SkeletonAPI,
-        SkeletonModule, TextureAPI, TextureModule, VisualAccessibilityAPI,
+        MeshModule, MidiChannel, MidiModule, MidiNoteHandle, MidiNoteOptions, MidiProgram,
+        MidiSong, MidiSound, MidiSpatialPos, MidiSpatialPosition, Note, PannedAudio,
+        PostProcessingAPI, SceneDocAPI, SceneDocModule, SkeletonAPI, SkeletonModule, TextureAPI,
+        TextureModule, VisualAccessibilityAPI, program,
     };
     pub use crate::{
         animation_drop, animation_load, animation_reserve, audio_bus, audio_bus_pause,
@@ -24,7 +26,8 @@ pub mod prelude {
         disable_colorblind_filter, draw, enable_colorblind_filter, get_viewport_size, locale,
         locale_get_current, locale_in, locale_set, material_create, material_drop,
         material_get_data, material_load, material_reserve, material_write, mesh_create, mesh_drop,
-        mesh_get_data, mesh_load, mesh_reserve, mesh_write, post_processing_add,
+        mesh_get_data, mesh_load, mesh_reserve, mesh_write, midi_load_soundfont, midi_play,
+        midi_play_at, midi_release, midi_start, midi_start_at, post_processing_add,
         post_processing_clear, post_processing_remove, post_processing_set, scene_load_doc,
         scene_save_doc, skeleton_load_bones, texture_drop, texture_load, texture_reserve,
     };

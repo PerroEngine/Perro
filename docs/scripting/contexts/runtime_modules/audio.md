@@ -19,6 +19,19 @@ Methods:
 
 - `ctx.run.Audio().play_attached(audio, node_id, options) -> bool`
 - `ctx.run.Audio().stop_attached(node_id, source) -> bool`
+- `ctx.run.Audio().midi().play_note_attached(note, node_id, options, spatial) -> bool`
+- `ctx.run.Audio().midi().start_note_attached(note, node_id, options, spatial) -> Option<MidiNoteHandle>`
+- `ctx.run.Audio().midi().play_file_attached(song, node_id, spatial) -> bool`
+- `ctx.run.Audio().midi().release_note(handle) -> bool`
+- `ctx.run.Audio().midi().stop_attached(node_id, handle_or_source) -> bool`
+
+MIDI macros:
+
+- `midi_play_attached!(ctx.run, Note::C4, node_id, options, spatial) -> bool`
+- `midi_play_attached!(ctx.run, MidiSong::new("res://music/theme.mid"), node_id, spatial) -> bool`
+- `midi_start_attached!(ctx.run, Note::C4, node_id, options, spatial) -> Option<MidiNoteHandle>`
+- `midi_release_attached!(ctx.run, handle) -> bool`
+- `midi_stop_attached!(ctx.run, node_id, handle_or_source) -> bool`
 
 Types:
 
@@ -79,6 +92,31 @@ let options = SpatialAudioOptions {
 
 let _ = ctx.run.Audio().play_attached(sound, car_node, options);
 let _ = ctx.run.Audio().stop_attached(car_node, "res://audio/car_loop.wav");
+```
+
+## Attached MIDI
+
+Attached MIDI derives 2D or 3D from the node spatial type.
+The note or MIDI file follows node transforms and uses propagation raycasts.
+
+```rust
+let spatial = SpatialAudioOptions::new(40.0);
+let opts = MidiNoteOptions {
+    program: program::Brass::Trumpet,
+    sustain: std::time::Duration::from_millis(350),
+    ..MidiNoteOptions::default()
+};
+
+let _ = ctx.run.Audio().midi().play_note_attached(Note::C4, node, opts, spatial);
+
+let held = ctx.run.Audio().midi().start_note_attached(Note::G3, node, opts, spatial);
+if let Some(handle) = held {
+    let _ = ctx.run.Audio().midi().release_note(handle);
+}
+
+let song = MidiSong::new("res://music/theme.mid").looped();
+let _ = ctx.run.Audio().midi().play_file_attached(song, node, spatial);
+let _ = ctx.run.Audio().midi().stop_attached(node, "res://music/theme.mid");
 ```
 
 ## Point Audio

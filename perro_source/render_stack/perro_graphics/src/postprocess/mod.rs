@@ -915,7 +915,7 @@ fn flattened_lut_to_3d(
         for z in 0..size {
             for y in 0..size {
                 for x in 0..size {
-                    copy_lut_texel(&rgba, &mut out, width, x + z * size, y, x, y, z, size);
+                    copy_lut_texel(&rgba, &mut out, width, (x + z * size, y), (x, y, z), size);
                 }
             }
         }
@@ -924,7 +924,7 @@ fn flattened_lut_to_3d(
         for z in 0..size {
             for y in 0..size {
                 for x in 0..size {
-                    copy_lut_texel(&rgba, &mut out, width, x, y + z * size, x, y, z, size);
+                    copy_lut_texel(&rgba, &mut out, width, (x, y + z * size), (x, y, z), size);
                 }
             }
         }
@@ -938,13 +938,12 @@ fn copy_lut_texel(
     src: &[u8],
     dst: &mut [u8],
     src_width: u32,
-    src_x: u32,
-    src_y: u32,
-    dst_x: u32,
-    dst_y: u32,
-    dst_z: u32,
+    src_pos: (u32, u32),
+    dst_pos: (u32, u32, u32),
     size: u32,
 ) {
+    let (src_x, src_y) = src_pos;
+    let (dst_x, dst_y, dst_z) = dst_pos;
     let src_index = ((src_y * src_width + src_x) * 4) as usize;
     let dst_index = (((dst_z * size + dst_y) * size + dst_x) * 4) as usize;
     dst[dst_index..dst_index + 4].copy_from_slice(&src[src_index..src_index + 4]);

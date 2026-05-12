@@ -1,4 +1,7 @@
 use perro_ids::{AudioBusID, NodeID};
+pub use perro_pawdio::{
+    MidiChannel, MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong, MidiSound, Note, program,
+};
 
 #[derive(Clone, Copy, Debug)]
 pub struct AudioEq {
@@ -152,6 +155,46 @@ pub trait RuntimeAudioAPI {
         options: SpatialAudioOptions,
     ) -> bool;
     fn stop_runtime_audio_attached(&mut self, node: NodeID, source: &str) -> bool;
+    fn play_midi_note_attached(
+        &mut self,
+        note: Note,
+        node: NodeID,
+        options: MidiNoteOptions<'_>,
+        spatial: SpatialAudioOptions,
+    ) -> bool;
+    fn start_midi_note_attached(
+        &mut self,
+        note: Note,
+        node: NodeID,
+        options: MidiNoteOptions<'_>,
+        spatial: SpatialAudioOptions,
+    ) -> Option<MidiNoteHandle>;
+    fn play_midi_file_attached(
+        &mut self,
+        song: MidiSong<'_>,
+        node: NodeID,
+        spatial: SpatialAudioOptions,
+    ) -> bool;
+    fn release_midi_note(&mut self, handle: MidiNoteHandle) -> bool;
+    fn stop_midi_attached(&mut self, node: NodeID, target: AttachedMidiTarget<'_>) -> bool;
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum AttachedMidiTarget<'a> {
+    Handle(MidiNoteHandle),
+    Source(&'a str),
+}
+
+impl From<MidiNoteHandle> for AttachedMidiTarget<'_> {
+    fn from(value: MidiNoteHandle) -> Self {
+        Self::Handle(value)
+    }
+}
+
+impl<'a> From<&'a str> for AttachedMidiTarget<'a> {
+    fn from(value: &'a str) -> Self {
+        Self::Source(value)
+    }
 }
 
 pub struct RuntimeAudioModule<'rt, RT: RuntimeAudioAPI + ?Sized> {
@@ -177,4 +220,100 @@ impl<'rt, RT: RuntimeAudioAPI + ?Sized> RuntimeAudioModule<'rt, RT> {
     pub fn stop_attached(&mut self, node: NodeID, source: &str) -> bool {
         self.rt.stop_runtime_audio_attached(node, source)
     }
+
+    #[inline]
+    pub fn midi(&mut self) -> RuntimeMidiModule<'_, RT> {
+        RuntimeMidiModule { rt: self.rt }
+    }
+}
+
+pub struct RuntimeMidiModule<'rt, RT: RuntimeAudioAPI + ?Sized> {
+    rt: &'rt mut RT,
+}
+
+impl<'rt, RT: RuntimeAudioAPI + ?Sized> RuntimeMidiModule<'rt, RT> {
+    #[inline]
+    pub fn play_note_attached(
+        &mut self,
+        note: Note,
+        node: NodeID,
+        options: MidiNoteOptions<'_>,
+        spatial: SpatialAudioOptions,
+    ) -> bool {
+        self.rt
+            .play_midi_note_attached(note, node, options, spatial)
+    }
+
+    #[inline]
+    pub fn start_note_attached(
+        &mut self,
+        note: Note,
+        node: NodeID,
+        options: MidiNoteOptions<'_>,
+        spatial: SpatialAudioOptions,
+    ) -> Option<MidiNoteHandle> {
+        self.rt
+            .start_midi_note_attached(note, node, options, spatial)
+    }
+
+    #[inline]
+    pub fn play_file_attached(
+        &mut self,
+        song: MidiSong<'_>,
+        node: NodeID,
+        spatial: SpatialAudioOptions,
+    ) -> bool {
+        self.rt.play_midi_file_attached(song, node, spatial)
+    }
+
+    #[inline]
+    pub fn release_note(&mut self, handle: MidiNoteHandle) -> bool {
+        self.rt.release_midi_note(handle)
+    }
+
+    #[inline]
+    pub fn stop_attached<T: Into<AttachedMidiTarget<'rt>>>(
+        &mut self,
+        node: NodeID,
+        target: T,
+    ) -> bool {
+        self.rt.stop_midi_attached(node, target.into())
+    }
+}
+
+#[macro_export]
+macro_rules! midi_play_attached {
+    ($rt:expr, $note:expr, $node:expr, $options:expr, $spatial:expr) => {
+        $rt.Audio()
+            .midi()
+            .play_note_attached($note, $node, $options, $spatial)
+    };
+    ($rt:expr, $song:expr, $node:expr, $spatial:expr) => {
+        $rt.Audio()
+            .midi()
+            .play_file_attached($song, $node, $spatial)
+    };
+}
+
+#[macro_export]
+macro_rules! midi_start_attached {
+    ($rt:expr, $note:expr, $node:expr, $options:expr, $spatial:expr) => {
+        $rt.Audio()
+            .midi()
+            .start_note_attached($note, $node, $options, $spatial)
+    };
+}
+
+#[macro_export]
+macro_rules! midi_release_attached {
+    ($rt:expr, $handle:expr) => {
+        $rt.Audio().midi().release_note($handle)
+    };
+}
+
+#[macro_export]
+macro_rules! midi_stop_attached {
+    ($rt:expr, $node:expr, $target:expr) => {
+        $rt.Audio().midi().stop_attached($node, $target)
+    };
 }

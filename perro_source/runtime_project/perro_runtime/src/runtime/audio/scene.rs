@@ -305,6 +305,92 @@ impl Runtime {
                 }
             }
         }
+        let queued_midi = self
+            .resource_api
+            .spatial_midi_queue
+            .lock()
+            .ok()
+            .map(|mut queue| std::mem::take(&mut *queue))
+            .unwrap_or_default();
+        for request in queued_midi {
+            let options = SpatialAudioOptions {
+                range: request.range,
+                bus_id: match &request.kind {
+                    crate::rs_ctx::QueuedSpatialMidiKind::Note { options, .. } => options.bus_id,
+                    crate::rs_ctx::QueuedSpatialMidiKind::File { song, .. } => song.bus_id,
+                },
+                occlusion_mask: u32::MAX,
+                enable_propagation: true,
+            };
+            match (request.kind, request.pos) {
+                (
+                    crate::rs_ctx::QueuedSpatialMidiKind::Note {
+                        id,
+                        note,
+                        options: note_options,
+                        held,
+                    },
+                    QueuedSpatialAudioPos::TwoD(position),
+                ) => {
+                    self.start_spatial_midi_note(SpatialMidiNoteStart {
+                        id,
+                        note,
+                        options: note_options.as_options(),
+                        held,
+                        pos: SpatialSoundPos::TwoD(position),
+                        spatial: options,
+                        last_2d: Some(position),
+                        last_3d: None,
+                    });
+                }
+                (
+                    crate::rs_ctx::QueuedSpatialMidiKind::Note {
+                        id,
+                        note,
+                        options: note_options,
+                        held,
+                    },
+                    QueuedSpatialAudioPos::ThreeD(position),
+                ) => {
+                    self.start_spatial_midi_note(SpatialMidiNoteStart {
+                        id,
+                        note,
+                        options: note_options.as_options(),
+                        held,
+                        pos: SpatialSoundPos::ThreeD(position),
+                        spatial: options,
+                        last_2d: None,
+                        last_3d: Some(position),
+                    });
+                }
+                (
+                    crate::rs_ctx::QueuedSpatialMidiKind::File { id, song },
+                    QueuedSpatialAudioPos::TwoD(position),
+                ) => {
+                    self.start_spatial_midi_file(
+                        id,
+                        song.as_song(),
+                        SpatialSoundPos::TwoD(position),
+                        options,
+                        Some(position),
+                        None,
+                    );
+                }
+                (
+                    crate::rs_ctx::QueuedSpatialMidiKind::File { id, song },
+                    QueuedSpatialAudioPos::ThreeD(position),
+                ) => {
+                    self.start_spatial_midi_file(
+                        id,
+                        song.as_song(),
+                        SpatialSoundPos::ThreeD(position),
+                        options,
+                        None,
+                        Some(position),
+                    );
+                }
+            }
+        }
     }
 
     pub(super) fn refresh_spatial_position(&mut self, sound: &mut ActiveSpatialSound) {
