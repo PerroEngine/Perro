@@ -32,6 +32,8 @@ impl Runtime {
         let mut occlusion = 0.0;
         let mut perceived = source_pos;
         let mut reflection = 0.0;
+        let mut bounce_reverb_send = 0.0;
+        let mut bounce_echo = 0.0;
         let physics_hit = physics_hit.and_then(|a| {
             let material = self.audio_material_for_node(a.node)?;
             Some(AudioHit2D {
@@ -88,6 +90,24 @@ impl Runtime {
             perceived = path.exit;
             reflection = (reflection + portal_strength * 0.1).clamp(0.0, 1.0);
         }
+        if sound.options.enable_propagation
+            && let Some(path) = self.trace_audio_bounce_path_2d(
+                source_pos,
+                listener_pos,
+                sound.options.audio_layer,
+                range,
+            )
+        {
+            let bounce_attenuation = (1.0 - (path.distance / range).clamp(0.0, 1.0)) * path.volume;
+            if bounce_attenuation > attenuation {
+                attenuation = bounce_attenuation;
+                perceived = path.perceived;
+            }
+            low_pass = low_pass.max(path.low_pass);
+            reflection = reflection.max(path.reflection);
+            bounce_reverb_send = path.reverb_send;
+            bounce_echo = path.echo;
+        }
         let (sin, cos) = (-listener.rotation_radians).sin_cos();
         let local = perceived - listener_pos;
         let local_x = local.x * cos - local.y * sin;
@@ -102,16 +122,19 @@ impl Runtime {
         low_pass = low_pass.max(listener_effects.dampening);
         reflection = reflection
             .max(zone.echo)
+            .max(bounce_echo)
             .max(listener_effects.echo)
             .max(sound.effects.reflection);
         let reverb_send = (reflection * 0.25)
             .max(zone.reverb_send)
             .max(zone.echo * 0.2)
+            .max(bounce_reverb_send)
             .max(listener_effects.reverb_send)
             .max(listener_effects.echo * 0.2)
             .max(sound.effects.reverb_send);
         let echo = zone
             .echo
+            .max(bounce_echo)
             .max(listener_effects.echo)
             .max(sound.effects.echo)
             .clamp(0.0, 1.0);
@@ -167,6 +190,8 @@ impl Runtime {
         let mut occlusion = 0.0;
         let mut perceived = source_pos;
         let mut reflection = 0.0;
+        let mut bounce_reverb_send = 0.0;
+        let mut bounce_echo = 0.0;
         let mask_hit = if sound.options.enable_propagation && self.audio.has_audio_mask_3d {
             self.first_audio_mask_3d(listener_pos, source_pos, sound.options.audio_layer)
         } else {
@@ -219,6 +244,24 @@ impl Runtime {
             perceived = path.exit;
             reflection = (reflection + portal_strength * 0.1).clamp(0.0, 1.0);
         }
+        if sound.options.enable_propagation
+            && let Some(path) = self.trace_audio_bounce_path_3d(
+                source_pos,
+                listener_pos,
+                sound.options.audio_layer,
+                range,
+            )
+        {
+            let bounce_attenuation = (1.0 - (path.distance / range).clamp(0.0, 1.0)) * path.volume;
+            if bounce_attenuation > attenuation {
+                attenuation = bounce_attenuation;
+                perceived = path.perceived;
+            }
+            low_pass = low_pass.max(path.low_pass);
+            reflection = reflection.max(path.reflection);
+            bounce_reverb_send = path.reverb_send;
+            bounce_echo = path.echo;
+        }
         let local = inverse_rotate_vec3(listener.rotation, perceived - listener_pos);
         let zone = if self.audio.has_audio_effect_zone_3d {
             self.audio_effect_zone_mix_3d(listener_pos, source_pos, sound.options.audio_layer)
@@ -230,16 +273,19 @@ impl Runtime {
         low_pass = low_pass.max(listener_effects.dampening);
         reflection = reflection
             .max(zone.echo)
+            .max(bounce_echo)
             .max(listener_effects.echo)
             .max(sound.effects.reflection);
         let reverb_send = (reflection * 0.25)
             .max(zone.reverb_send)
             .max(zone.echo * 0.2)
+            .max(bounce_reverb_send)
             .max(listener_effects.reverb_send)
             .max(listener_effects.echo * 0.2)
             .max(sound.effects.reverb_send);
         let echo = zone
             .echo
+            .max(bounce_echo)
             .max(listener_effects.echo)
             .max(sound.effects.echo)
             .clamp(0.0, 1.0);
@@ -276,6 +322,386 @@ impl Runtime {
             energy *= reflection.clamp(0.0, 1.0);
         }
         total.clamp(0.0, 1.0)
+    }
+
+    pub(super) fn trace_audio_bounce_path_2d(
+        &mut self,
+        source: Vector2,
+        listener: Vector2,
+        audio_layer: BitMask,
+        range: f32,
+    ) -> Option<AudioBouncePath2D> {
+        let mut best = self.trace_audio_bounce_ray_2d(
+            source,
+            listener,
+            source.direction_to(listener),
+            audio_layer,
+            range,
+        );
+        for i in 0..AUDIO_BOUNCE_RAYS_2D {
+            let angle = i as f32 * TAU / AUDIO_BOUNCE_RAYS_2D as f32;
+            let direction = Vector2::new(angle.cos(), angle.sin());
+            if let Some(path) =
+                self.trace_audio_bounce_ray_2d(source, listener, direction, audio_layer, range)
+                && best
+                    .as_ref()
+                    .is_none_or(|best| path.volume > best.volume || path.distance < best.distance)
+            {
+                best = Some(path);
+            }
+        }
+        best
+    }
+
+    fn trace_audio_bounce_ray_2d(
+        &mut self,
+        source: Vector2,
+        listener: Vector2,
+        initial_direction: Vector2,
+        audio_layer: BitMask,
+        range: f32,
+    ) -> Option<AudioBouncePath2D> {
+        let mut origin = source;
+        let mut direction = initial_direction;
+        if direction.length_squared() <= 0.0001 {
+            return None;
+        }
+        direction = direction.normalized();
+        let mut traveled = 0.0;
+        let mut volume = 1.0;
+        let mut reflection: f32 = 0.0;
+        let mut reverb_send: f32 = 0.0;
+        let mut echo: f32 = 0.0;
+        let mut low_pass: f32 = 0.0;
+        let mut perceived = source;
+        let mut bounced = false;
+        for _ in 0..self.audio.config.max_bounces_2d {
+            let remaining = (range - traveled)
+                .min(self.audio.config.max_ray_distance_2d)
+                .max(0.0);
+            if remaining <= AUDIO_PORTAL_EPSILON {
+                break;
+            }
+            if self.audio.counters.raycasts >= self.audio.config.rays_per_tick_2d {
+                break;
+            }
+            let to_listener = listener - origin;
+            let listener_distance = to_listener.dot(direction);
+            let listener_reachable = listener_distance > AUDIO_PORTAL_EPSILON
+                && listener_distance <= remaining
+                && (to_listener - direction * listener_distance).length()
+                    <= AUDIO_PORTAL_MISS_TOLERANCE;
+            let hit = self.nearest_audio_bounce_hit_2d(origin, direction, remaining, audio_layer);
+            if listener_reachable
+                && hit
+                    .as_ref()
+                    .is_none_or(|hit| listener_distance < hit.distance - AUDIO_PORTAL_EPSILON)
+            {
+                if !bounced {
+                    return None;
+                }
+                return Some(AudioBouncePath2D {
+                    perceived,
+                    distance: traveled + listener_distance,
+                    reflection,
+                    reverb_send,
+                    echo,
+                    low_pass,
+                    volume,
+                });
+            }
+            let Some(hit) = hit else {
+                break;
+            };
+            let Some(reflected) = reflect_2d(direction, hit.normal) else {
+                break;
+            };
+            let reflect_energy = hit.reflection.clamp(0.0, 1.0);
+            if reflect_energy < self.audio.config.energy_cutoff {
+                break;
+            }
+            bounced = true;
+            traveled += hit.distance;
+            volume *= (hit.volume_loss * reflect_energy).clamp(0.0, 1.0);
+            if volume < self.audio.config.energy_cutoff {
+                break;
+            }
+            reflection = reflection.max(reflect_energy);
+            reverb_send = reverb_send.max(hit.reverb_send);
+            echo = echo.max(hit.echo);
+            low_pass = low_pass.max(hit.low_pass);
+            perceived = hit.point;
+            origin = hit.point + reflected * AUDIO_PORTAL_EPSILON;
+            direction = reflected;
+            self.queue_audio_debug_ray_2d(origin, hit.point);
+        }
+        None
+    }
+
+    pub(super) fn trace_audio_bounce_path_3d(
+        &mut self,
+        source: Vector3,
+        listener: Vector3,
+        audio_layer: BitMask,
+        range: f32,
+    ) -> Option<AudioBouncePath3D> {
+        let mut best = self.trace_audio_bounce_ray_3d(
+            source,
+            listener,
+            source.direction_to(listener),
+            audio_layer,
+            range,
+        );
+        for i in 0..AUDIO_BOUNCE_RAYS_3D {
+            let n = AUDIO_BOUNCE_RAYS_3D as f32;
+            let y = 1.0 - (i as f32 + 0.5) * 2.0 / n;
+            let radius = (1.0 - y * y).max(0.0).sqrt();
+            let theta = i as f32 * 2.399_963_1;
+            let direction = Vector3::new(theta.cos() * radius, y, theta.sin() * radius);
+            if let Some(path) =
+                self.trace_audio_bounce_ray_3d(source, listener, direction, audio_layer, range)
+                && best
+                    .as_ref()
+                    .is_none_or(|best| path.volume > best.volume || path.distance < best.distance)
+            {
+                best = Some(path);
+            }
+        }
+        best
+    }
+
+    fn trace_audio_bounce_ray_3d(
+        &mut self,
+        source: Vector3,
+        listener: Vector3,
+        initial_direction: Vector3,
+        audio_layer: BitMask,
+        range: f32,
+    ) -> Option<AudioBouncePath3D> {
+        let mut origin = source;
+        let mut direction = initial_direction;
+        if direction.length_squared() <= 0.0001 {
+            return None;
+        }
+        direction = direction.normalized();
+        let mut traveled = 0.0;
+        let mut volume = 1.0;
+        let mut reflection: f32 = 0.0;
+        let mut reverb_send: f32 = 0.0;
+        let mut echo: f32 = 0.0;
+        let mut low_pass: f32 = 0.0;
+        let mut perceived = source;
+        let mut bounced = false;
+        for _ in 0..self.audio.config.max_bounces_3d {
+            let remaining = (range - traveled)
+                .min(self.audio.config.max_ray_distance_3d)
+                .max(0.0);
+            if remaining <= AUDIO_PORTAL_EPSILON {
+                break;
+            }
+            if self.audio.counters.raycasts >= self.audio.config.rays_per_tick_3d {
+                break;
+            }
+            let to_listener = listener - origin;
+            let listener_distance = to_listener.dot(direction);
+            let listener_reachable = listener_distance > AUDIO_PORTAL_EPSILON
+                && listener_distance <= remaining
+                && (to_listener - direction * listener_distance).length()
+                    <= AUDIO_PORTAL_MISS_TOLERANCE;
+            let hit = self.nearest_audio_bounce_hit_3d(origin, direction, remaining, audio_layer);
+            if listener_reachable
+                && hit
+                    .as_ref()
+                    .is_none_or(|hit| listener_distance < hit.distance - AUDIO_PORTAL_EPSILON)
+            {
+                if !bounced {
+                    return None;
+                }
+                return Some(AudioBouncePath3D {
+                    perceived,
+                    distance: traveled + listener_distance,
+                    reflection,
+                    reverb_send,
+                    echo,
+                    low_pass,
+                    volume,
+                });
+            }
+            let Some(hit) = hit else {
+                break;
+            };
+            let Some(reflected) = reflect_3d(direction, hit.normal) else {
+                break;
+            };
+            let reflect_energy = hit.reflection.clamp(0.0, 1.0);
+            if reflect_energy < self.audio.config.energy_cutoff {
+                break;
+            }
+            bounced = true;
+            traveled += hit.distance;
+            volume *= (hit.volume_loss * reflect_energy).clamp(0.0, 1.0);
+            if volume < self.audio.config.energy_cutoff {
+                break;
+            }
+            reflection = reflection.max(reflect_energy);
+            reverb_send = reverb_send.max(hit.reverb_send);
+            echo = echo.max(hit.echo);
+            low_pass = low_pass.max(hit.low_pass);
+            perceived = hit.point;
+            origin = hit.point + reflected * AUDIO_PORTAL_EPSILON;
+            direction = reflected;
+            self.queue_audio_debug_ray_3d(origin, hit.point);
+        }
+        None
+    }
+
+    fn nearest_audio_bounce_hit_2d(
+        &mut self,
+        origin: Vector2,
+        direction: Vector2,
+        max_distance: f32,
+        audio_layer: BitMask,
+    ) -> Option<AudioBounceHit2D> {
+        self.audio.counters.raycasts = self.audio.counters.raycasts.saturating_add(1);
+        let mut best = self
+            .prepared_audio_raycast_2d(
+                origin,
+                direction,
+                max_distance,
+                &PhysicsQueryFilter {
+                    mask: audio_layer,
+                    include_areas: false,
+                    exclude_nodes: Vec::new(),
+                },
+            )
+            .and_then(|hit| self.physics_bounce_hit_2d(hit));
+        if let Some(hit) =
+            self.first_audio_mask_2d(origin, origin + direction * max_distance, audio_layer)
+        {
+            let mask_hit = self.material_bounce_hit_2d(hit);
+            if best
+                .as_ref()
+                .is_none_or(|best| mask_hit.distance < best.distance)
+            {
+                best = Some(mask_hit);
+            }
+        }
+        if self.audio.has_audio_effect_zone_2d
+            && let Some(zone_hit) =
+                self.first_audio_bounce_zone_2d(origin, direction, max_distance, audio_layer)
+            && best
+                .as_ref()
+                .is_none_or(|best| zone_hit.distance < best.distance)
+        {
+            best = Some(zone_hit);
+        }
+        best
+    }
+
+    fn nearest_audio_bounce_hit_3d(
+        &mut self,
+        origin: Vector3,
+        direction: Vector3,
+        max_distance: f32,
+        audio_layer: BitMask,
+    ) -> Option<AudioBounceHit3D> {
+        self.audio.counters.raycasts = self.audio.counters.raycasts.saturating_add(1);
+        let mut best = self
+            .prepared_audio_raycast_3d(origin, direction, max_distance, false)
+            .and_then(|hit| self.physics_bounce_hit_3d(hit));
+        if let Some(hit) =
+            self.first_audio_mask_3d(origin, origin + direction * max_distance, audio_layer)
+        {
+            let mask_hit = self.material_bounce_hit_3d(hit);
+            if best
+                .as_ref()
+                .is_none_or(|best| mask_hit.distance < best.distance)
+            {
+                best = Some(mask_hit);
+            }
+        }
+        if self.audio.has_audio_effect_zone_3d
+            && let Some(zone_hit) =
+                self.first_audio_bounce_zone_3d(origin, direction, max_distance, audio_layer)
+            && best
+                .as_ref()
+                .is_none_or(|best| zone_hit.distance < best.distance)
+        {
+            best = Some(zone_hit);
+        }
+        best
+    }
+
+    fn physics_bounce_hit_2d(
+        &self,
+        hit: perro_runtime_context::sub_apis::PhysicsRayHit2D,
+    ) -> Option<AudioBounceHit2D> {
+        let material = self.audio_material_for_node(hit.node)?;
+        let thickness = self.audio_thickness_2d(hit.node);
+        Some(self.material_bounce_hit_2d(AudioHit2D {
+            node: hit.node,
+            point: hit.point,
+            normal: hit.normal,
+            distance: hit.distance,
+            material,
+            thickness,
+        }))
+    }
+
+    fn physics_bounce_hit_3d(
+        &self,
+        hit: perro_runtime_context::sub_apis::PhysicsRayHit3D,
+    ) -> Option<AudioBounceHit3D> {
+        let material = self.audio_material_for_node(hit.node)?;
+        let thickness = self.audio_thickness_3d(hit.node);
+        Some(self.material_bounce_hit_3d(AudioHit3D {
+            node: hit.node,
+            point: hit.point,
+            normal: hit.normal,
+            distance: hit.distance,
+            material,
+            thickness,
+        }))
+    }
+
+    fn material_bounce_hit_2d(&self, hit: AudioHit2D) -> AudioBounceHit2D {
+        let diffusion = self.audio_diffusion_for_node(hit.node);
+        let thickness = hit.thickness.max(0.05) * hit.material.thickness_multiplier;
+        let damping = diffusion.damping.clamp(0.0, 1.0);
+        let hardness = diffusion.hardness.clamp(0.0, 1.0);
+        let absorption = hit.material.absorption.clamp(0.0, 1.0);
+        let reflection = (hit.material.reflection * (1.0 - absorption) * (0.75 + hardness * 0.5))
+            .clamp(0.0, 1.0);
+        AudioBounceHit2D {
+            point: hit.point,
+            normal: hit.normal,
+            distance: hit.distance,
+            reflection,
+            reverb_send: reflection * 0.25,
+            echo: reflection * 0.35,
+            low_pass: (hit.material.low_pass_strength * (0.5 + damping * 0.35)).clamp(0.0, 1.0),
+            volume_loss: ((1.0 - absorption * 0.5) / (1.0 + thickness * 0.05)).clamp(0.0, 1.0),
+        }
+    }
+
+    fn material_bounce_hit_3d(&self, hit: AudioHit3D) -> AudioBounceHit3D {
+        let diffusion = self.audio_diffusion_for_node(hit.node);
+        let thickness = hit.thickness.max(0.05) * hit.material.thickness_multiplier;
+        let damping = diffusion.damping.clamp(0.0, 1.0);
+        let hardness = diffusion.hardness.clamp(0.0, 1.0);
+        let absorption = hit.material.absorption.clamp(0.0, 1.0);
+        let reflection = (hit.material.reflection * (1.0 - absorption) * (0.75 + hardness * 0.5))
+            .clamp(0.0, 1.0);
+        AudioBounceHit3D {
+            point: hit.point,
+            normal: hit.normal,
+            distance: hit.distance,
+            reflection,
+            reverb_send: reflection * 0.25,
+            echo: reflection * 0.35,
+            low_pass: (hit.material.low_pass_strength * (0.5 + damping * 0.35)).clamp(0.0, 1.0),
+            volume_loss: ((1.0 - absorption * 0.5) / (1.0 + thickness * 0.05)).clamp(0.0, 1.0),
+        }
     }
 
     pub(super) fn emitter_attenuation_2d(

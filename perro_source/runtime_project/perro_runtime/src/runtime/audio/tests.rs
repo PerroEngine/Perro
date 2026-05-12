@@ -2,10 +2,11 @@ use super::*;
 use perro_nodes::{
     AudioEffectZone2D, AudioEffectZone3D, AudioMask2D, AudioMask3D, AudioPortal2D, AudioPortal3D,
     CollisionShape2D, CollisionShape3D, SceneNode, SceneNodeData, StaticBody2D, StaticBody3D,
+    camera_2d::Camera2D, node_2d::Node2D,
 };
 use perro_resource_context::sub_apis::{Audio, Audio2D, Audio3D};
 use perro_runtime_context::sub_apis::NodeAPI;
-use perro_structs::{BitMask, Quaternion, Transform2D, Transform3D};
+use perro_structs::{AudioInteraction, BitMask, Quaternion, Transform2D, Transform3D};
 
 fn looped_audio() -> RuntimeAudio<'static> {
     RuntimeAudio {
@@ -229,6 +230,88 @@ fn resource_point_audio_preserves_spatial_options() {
 }
 
 #[test]
+fn active_camera_2d_drives_spatial_audio_listener() {
+    let mut runtime = Runtime::new();
+    let mut camera = Camera2D::new();
+    camera.active = true;
+    camera.transform.position = Vector2::new(0.0, 0.0);
+    let camera_id = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Camera2D(camera)));
+    runtime.extract_render_2d_commands();
+
+    assert!(runtime.play_runtime_audio_2d(
+        looped_audio(),
+        Vector2::new(5.0, 0.0),
+        spatial_options(10.0),
+    ));
+    runtime.update_audio_propagation(1.0);
+    let first = runtime.audio.sounds[0].last_result.expect("first result");
+
+    assert!(NodeAPI::set_global_transform_2d(
+        &mut runtime,
+        camera_id,
+        Transform2D::new(Vector2::new(2.0, 0.0), 0.0, Vector2::ONE),
+    ));
+    runtime.extract_render_2d_commands();
+    runtime.update_audio_propagation(1.0);
+    let moved = runtime.audio.sounds[0].last_result.expect("moved result");
+
+    assert!(moved.volume > first.volume);
+    assert!(moved.pan[0] < first.pan[0]);
+}
+
+#[test]
+fn attached_moving_emitter_recasts_audio_rays_from_new_position() {
+    let mut runtime = Runtime::new();
+    let wall = NodeAPI::create::<StaticBody2D>(&mut runtime);
+    let shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, wall, shape));
+    if let Some(node) = runtime.nodes.get_mut(shape)
+        && let SceneNodeData::CollisionShape2D(shape) = &mut node.data
+    {
+        shape.shape = perro_nodes::Shape2D::Quad {
+            width: 0.25,
+            height: 4.0,
+        };
+    }
+    assert!(NodeAPI::set_global_transform_2d(
+        &mut runtime,
+        wall,
+        Transform2D::new(Vector2::new(2.5, 0.0), 0.0, Vector2::ONE),
+    ));
+    let emitter = NodeAPI::create::<Node2D>(&mut runtime);
+    assert!(NodeAPI::set_global_transform_2d(
+        &mut runtime,
+        emitter,
+        Transform2D::new(Vector2::new(1.0, 0.0), 0.0, Vector2::ONE),
+    ));
+    assert!(runtime.play_runtime_audio_attached(
+        None,
+        looped_audio(),
+        emitter,
+        spatial_options(10.0),
+    ));
+    runtime.update_audio_propagation(1.0);
+    let near = runtime.audio.sounds[0].last_result.expect("near result");
+
+    assert!(NodeAPI::set_global_transform_2d(
+        &mut runtime,
+        emitter,
+        Transform2D::new(Vector2::new(5.0, 0.0), 0.0, Vector2::ONE),
+    ));
+    runtime.update_audio_propagation(1.0);
+    let behind_wall = runtime.audio.sounds[0]
+        .last_result
+        .expect("behind wall result");
+
+    assert_eq!(near.occlusion, 0.0);
+    assert!(behind_wall.occlusion > near.occlusion);
+    assert!(behind_wall.low_pass > near.low_pass);
+    assert!(behind_wall.volume < near.volume);
+}
+
+#[test]
 fn wall_between_listener_and_source_muffles() {
     let mut runtime = Runtime::new();
     let wall = NodeAPI::create::<StaticBody2D>(&mut runtime);
@@ -433,6 +516,98 @@ fn reflection_loses_strength_per_bounce_and_stops_at_cutoff() {
     assert!(four_bounces > one_bounce);
     runtime.audio.config.energy_cutoff = 0.6;
     assert_eq!(runtime.bounce_energy(0.5, 4), 0.0);
+}
+
+#[test]
+fn physics_body_reflects_spatial_audio_from_geometry() {
+    let mut runtime = Runtime::new();
+    let floor = NodeAPI::create::<StaticBody2D>(&mut runtime);
+    if let Some(node) = runtime.nodes.get_mut(floor)
+        && let SceneNodeData::StaticBody2D(body) = &mut node.data
+    {
+        let mut audio = AudioInteraction::new();
+        audio.material.absorption = 0.0;
+        audio.material.reflection = 1.0;
+        audio.material.low_pass_strength = 0.1;
+        body.audio_interaction = Some(audio);
+    }
+    let shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, floor, shape));
+    if let Some(node) = runtime.nodes.get_mut(shape)
+        && let SceneNodeData::CollisionShape2D(shape) = &mut node.data
+    {
+        shape.shape = perro_nodes::Shape2D::Quad {
+            width: 4.0,
+            height: 0.1,
+        };
+    }
+    assert!(NodeAPI::set_global_transform_2d(
+        &mut runtime,
+        floor,
+        Transform2D::new(Vector2::new(2.0, -2.0), 0.0, Vector2::ONE),
+    ));
+    assert!(runtime.play_runtime_audio_2d(
+        looped_audio(),
+        Vector2::new(0.0, 0.0),
+        spatial_options(8.0),
+    ));
+    runtime.resource_api.set_audio_listener_2d(
+        [4.0, 0.0],
+        0.0,
+        perro_structs::AudioListenerOptions::new(),
+    );
+    runtime.update_audio_propagation(1.0);
+    let result = runtime.audio.sounds[0].last_result.expect("result");
+    assert!(result.reflection > 0.5);
+    assert!(result.echo > 0.15);
+}
+
+#[test]
+fn bounce_audio_effect_zone_reflects_instead_of_pass_through() {
+    let mut runtime = Runtime::new();
+    let zone = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::AudioEffectZone2D(
+            AudioEffectZone2D::new(),
+        )));
+    if let Some(node) = runtime.nodes.get_mut(zone)
+        && let SceneNodeData::AudioEffectZone2D(zone) = &mut node.data
+    {
+        zone.bounce = true;
+        zone.effects[0].reverb_send = 0.6;
+        zone.effects[0].echo = 0.8;
+        zone.effects[0].dampening = 0.2;
+    }
+    let shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, zone, shape));
+    if let Some(node) = runtime.nodes.get_mut(shape)
+        && let SceneNodeData::CollisionShape2D(shape) = &mut node.data
+    {
+        shape.shape = perro_nodes::Shape2D::Quad {
+            width: 4.0,
+            height: 0.1,
+        };
+    }
+    assert!(NodeAPI::set_global_transform_2d(
+        &mut runtime,
+        zone,
+        Transform2D::new(Vector2::new(2.0, -2.0), 0.0, Vector2::ONE),
+    ));
+    assert!(runtime.play_runtime_audio_2d(
+        looped_audio(),
+        Vector2::new(0.0, 0.0),
+        spatial_options(8.0),
+    ));
+    runtime.resource_api.set_audio_listener_2d(
+        [4.0, 0.0],
+        0.0,
+        perro_structs::AudioListenerOptions::new(),
+    );
+    runtime.update_audio_propagation(1.0);
+    let result = runtime.audio.sounds[0].last_result.expect("result");
+    assert!(result.reflection >= 0.8);
+    assert!(result.echo >= 0.8);
+    assert!(result.reverb_send >= 0.6);
 }
 
 #[test]

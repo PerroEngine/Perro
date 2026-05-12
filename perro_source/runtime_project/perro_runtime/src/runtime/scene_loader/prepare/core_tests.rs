@@ -1242,6 +1242,7 @@ mod tests {
             [AudioEffectZone2D]
                 enabled = false
                 audio_mask = [2, 4]
+                bounce = true
                 effects = [
                     {
                         reverb_send: 0.8,
@@ -1262,6 +1263,7 @@ mod tests {
                 reverb = 0.6
                 echo = 0.3
                 low_pass = 0.5
+                bounce = true
             [/AudioEffectZone3D]
             [/zone3d]
             "#,
@@ -1281,6 +1283,7 @@ mod tests {
         };
         assert!(!zone2d.enabled);
         assert_eq!(zone2d.audio_mask.bits(), 0b1010);
+        assert!(zone2d.bounce);
         assert_eq!(zone2d.effects.len(), 2);
         assert_eq!(zone2d.effects[0].reverb_send, 0.8);
         assert_eq!(zone2d.effects[0].echo, 0.4);
@@ -1297,6 +1300,7 @@ mod tests {
         let SceneNodeData::AudioEffectZone3D(zone3d) = &zone3d.node.data else {
             panic!("expected AudioEffectZone3D");
         };
+        assert!(zone3d.bounce);
         assert_eq!(zone3d.effects[0].reverb_send, 0.6);
         assert_eq!(zone3d.effects[0].echo, 0.3);
         assert_eq!(zone3d.effects[0].dampening, 0.5);

@@ -21,7 +21,7 @@ impl Runtime {
             else {
                 continue;
             };
-            if !zone.enabled || !zone.audio_mask.intersects(audio_layer) {
+            if !zone.enabled || zone.bounce || !zone.audio_mask.intersects(audio_layer) {
                 continue;
             }
             let effects = zone.effects.clone();
@@ -134,7 +134,7 @@ impl Runtime {
             else {
                 continue;
             };
-            if !zone.enabled || !zone.audio_mask.intersects(audio_layer) {
+            if !zone.enabled || zone.bounce || !zone.audio_mask.intersects(audio_layer) {
                 continue;
             }
             let effects = zone.effects.clone();
@@ -271,6 +271,153 @@ impl Runtime {
                 _ => None,
             })
             .unwrap_or(1.0)
+    }
+
+    pub(super) fn first_audio_bounce_zone_2d(
+        &mut self,
+        origin: Vector2,
+        direction: Vector2,
+        max_distance: f32,
+        audio_layer: BitMask,
+    ) -> Option<AudioBounceHit2D> {
+        if direction.length_squared() <= 0.0001 || max_distance <= 0.0001 {
+            return None;
+        }
+        let sweep = direction.normalized() * max_distance;
+        let mut best: Option<AudioBounceHit2D> = None;
+        self.audio.scratch_ids.clear();
+        for (id, node) in self.nodes.iter() {
+            if matches!(node.data, SceneNodeData::AudioEffectZone2D(_)) {
+                self.audio.scratch_ids.push(id);
+            }
+        }
+        for index in 0..self.audio.scratch_ids.len() {
+            let zone_id = self.audio.scratch_ids[index];
+            let Some(SceneNodeData::AudioEffectZone2D(zone)) =
+                self.nodes.get(zone_id).map(|n| &n.data)
+            else {
+                continue;
+            };
+            if !zone.enabled || !zone.bounce || !zone.audio_mask.intersects(audio_layer) {
+                continue;
+            }
+            let effects = zone.effects.clone();
+            self.audio.scratch_child_ids.clear();
+            if let Some(node) = self.nodes.get(zone_id) {
+                self.audio
+                    .scratch_child_ids
+                    .extend_from_slice(node.children_slice());
+            }
+            for child_index in 0..self.audio.scratch_child_ids.len() {
+                let child = self.audio.scratch_child_ids[child_index];
+                let Some((center, half_w, half_h)) = self.audio_effect_zone_shape_2d(child) else {
+                    continue;
+                };
+                let Some((t, normal)) = segment_aabb(origin, sweep, center, half_w, half_h) else {
+                    continue;
+                };
+                let distance = t * max_distance;
+                if distance <= AUDIO_PORTAL_EPSILON {
+                    continue;
+                }
+                let mut mix = AudioEffectZoneMix::default();
+                for effect in effects.iter().copied() {
+                    mix.apply(effect);
+                }
+                let reflection = mix.echo.max(mix.reverb_send * 0.5).clamp(0.0, 1.0);
+                let hit = AudioBounceHit2D {
+                    point: origin + sweep * t,
+                    normal,
+                    distance,
+                    reflection,
+                    reverb_send: mix.reverb_send,
+                    echo: mix.echo,
+                    low_pass: mix.dampening,
+                    volume_loss: (1.0 - mix.dampening.clamp(0.0, 1.0) * 0.35).clamp(0.0, 1.0),
+                };
+                if best
+                    .as_ref()
+                    .is_none_or(|best| hit.distance < best.distance)
+                {
+                    best = Some(hit);
+                }
+            }
+        }
+        best
+    }
+
+    pub(super) fn first_audio_bounce_zone_3d(
+        &mut self,
+        origin: Vector3,
+        direction: Vector3,
+        max_distance: f32,
+        audio_layer: BitMask,
+    ) -> Option<AudioBounceHit3D> {
+        if direction.length_squared() <= 0.0001 || max_distance <= 0.0001 {
+            return None;
+        }
+        let sweep = direction.normalized() * max_distance;
+        let mut best: Option<AudioBounceHit3D> = None;
+        self.audio.scratch_ids.clear();
+        for (id, node) in self.nodes.iter() {
+            if matches!(node.data, SceneNodeData::AudioEffectZone3D(_)) {
+                self.audio.scratch_ids.push(id);
+            }
+        }
+        for index in 0..self.audio.scratch_ids.len() {
+            let zone_id = self.audio.scratch_ids[index];
+            let Some(SceneNodeData::AudioEffectZone3D(zone)) =
+                self.nodes.get(zone_id).map(|n| &n.data)
+            else {
+                continue;
+            };
+            if !zone.enabled || !zone.bounce || !zone.audio_mask.intersects(audio_layer) {
+                continue;
+            }
+            let effects = zone.effects.clone();
+            self.audio.scratch_child_ids.clear();
+            if let Some(node) = self.nodes.get(zone_id) {
+                self.audio
+                    .scratch_child_ids
+                    .extend_from_slice(node.children_slice());
+            }
+            for child_index in 0..self.audio.scratch_child_ids.len() {
+                let child = self.audio.scratch_child_ids[child_index];
+                let Some((center, half)) = self.audio_effect_zone_shape_3d(child) else {
+                    continue;
+                };
+                let Some((t, normal)) = segment_aabb_3d_with_normal(origin, sweep, center, half)
+                else {
+                    continue;
+                };
+                let distance = t * max_distance;
+                if distance <= AUDIO_PORTAL_EPSILON {
+                    continue;
+                }
+                let mut mix = AudioEffectZoneMix::default();
+                for effect in effects.iter().copied() {
+                    mix.apply(effect);
+                }
+                let reflection = mix.echo.max(mix.reverb_send * 0.5).clamp(0.0, 1.0);
+                let hit = AudioBounceHit3D {
+                    point: origin + sweep * t,
+                    normal,
+                    distance,
+                    reflection,
+                    reverb_send: mix.reverb_send,
+                    echo: mix.echo,
+                    low_pass: mix.dampening,
+                    volume_loss: (1.0 - mix.dampening.clamp(0.0, 1.0) * 0.35).clamp(0.0, 1.0),
+                };
+                if best
+                    .as_ref()
+                    .is_none_or(|best| hit.distance < best.distance)
+                {
+                    best = Some(hit);
+                }
+            }
+        }
+        best
     }
 
     pub(super) fn start_spatial_sound(

@@ -45,6 +45,7 @@ pub struct AudioEffectZone3D {
     pub base: Node3D,
     pub enabled: bool,
     pub audio_mask: perro_structs::BitMask,
+    pub bounce: bool,
     pub effects: Vec<AudioEffect>,
 }
 
@@ -54,6 +55,7 @@ impl AudioEffectZone3D {
             base: Node3D::new(),
             enabled: true,
             audio_mask: perro_structs::BitMask::ALL,
+            bounce: false,
             effects: vec![AudioEffect::new()],
         }
     }

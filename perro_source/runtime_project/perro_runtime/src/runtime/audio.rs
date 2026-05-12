@@ -24,6 +24,8 @@ const LISTENER_FIELD_SOUND_THRESHOLD_2D: usize = 64;
 const LISTENER_FIELD_SOUND_THRESHOLD_3D: usize = 128;
 const LISTENER_FIELD_RAYS_2D: usize = 64;
 const LISTENER_FIELD_RAYS_3D: usize = 96;
+const AUDIO_BOUNCE_RAYS_2D: usize = 8;
+const AUDIO_BOUNCE_RAYS_3D: usize = 6;
 const MAX_AUDIO_PORTAL_HOPS: usize = 32;
 const AUDIO_PORTAL_EPSILON: f32 = 0.01;
 const AUDIO_PORTAL_MISS_TOLERANCE: f32 = 0.25;
@@ -142,6 +144,52 @@ struct AudioHit3D {
     distance: f32,
     material: AudioMaterial,
     thickness: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct AudioBounceHit2D {
+    point: Vector2,
+    normal: Vector2,
+    distance: f32,
+    reflection: f32,
+    reverb_send: f32,
+    echo: f32,
+    low_pass: f32,
+    volume_loss: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct AudioBounceHit3D {
+    point: Vector3,
+    normal: Vector3,
+    distance: f32,
+    reflection: f32,
+    reverb_send: f32,
+    echo: f32,
+    low_pass: f32,
+    volume_loss: f32,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct AudioBouncePath2D {
+    perceived: Vector2,
+    distance: f32,
+    reflection: f32,
+    reverb_send: f32,
+    echo: f32,
+    low_pass: f32,
+    volume: f32,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct AudioBouncePath3D {
+    perceived: Vector3,
+    distance: f32,
+    reflection: f32,
+    reverb_send: f32,
+    echo: f32,
+    low_pass: f32,
+    volume: f32,
 }
 
 #[derive(Clone, Copy, Debug)]

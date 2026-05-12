@@ -95,6 +95,11 @@ pub(super) fn apply_audio_effect_zone_2d_data(node: &mut AudioEffectZone2D, data
                     node.audio_mask = v;
                 }
             }
+            "bounce" => {
+                if let Some(v) = as_bool(&value) {
+                    node.bounce = v;
+                }
+            }
             "reverb" | "reverb_send" | "reverbSend" => {
                 if let Some(v) = as_f32(&value) {
                     first_audio_effect_zone_effect_mut(&mut node.effects).reverb_send = v;
@@ -130,6 +135,11 @@ pub(super) fn apply_audio_effect_zone_3d_data(node: &mut AudioEffectZone3D, data
             "audio_mask" | "audio_masks" | "audio_mask_layers" | "mask" | "masks" => {
                 if let Some(v) = as_bitmask(&value) {
                     node.audio_mask = v;
+                }
+            }
+            "bounce" => {
+                if let Some(v) = as_bool(&value) {
+                    node.bounce = v;
                 }
             }
             "reverb" | "reverb_send" | "reverbSend" => {
