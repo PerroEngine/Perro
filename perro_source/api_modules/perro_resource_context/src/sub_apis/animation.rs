@@ -1,3 +1,4 @@
+use crate::ResPathSource;
 use perro_animation::AnimationClip;
 use perro_ids::AnimationID;
 use std::sync::Arc;
@@ -29,8 +30,8 @@ impl<'res, R: AnimationAPI + ?Sized> AnimationModule<'res, R> {
     }
 
     #[inline]
-    pub fn load<S: AsRef<str>>(&self, source: S) -> AnimationID {
-        self.api.load_animation_source(source.as_ref())
+    pub fn load<S: ResPathSource>(&self, source: S) -> AnimationID {
+        self.api.load_animation_source(source.as_res_path_str())
     }
 
     #[inline]
@@ -39,14 +40,18 @@ impl<'res, R: AnimationAPI + ?Sized> AnimationModule<'res, R> {
     }
 
     #[inline]
-    pub fn load_hashed_with_source(&self, source_hash: u64, source: &str) -> AnimationID {
+    pub fn load_hashed_with_source<S: ResPathSource>(
+        &self,
+        source_hash: u64,
+        source: S,
+    ) -> AnimationID {
         self.api
-            .load_animation_source_hashed(source_hash, Some(source))
+            .load_animation_source_hashed(source_hash, Some(source.as_res_path_str()))
     }
 
     #[inline]
-    pub fn reserve<S: AsRef<str>>(&self, source: S) -> AnimationID {
-        self.api.reserve_animation_source(source.as_ref())
+    pub fn reserve<S: ResPathSource>(&self, source: S) -> AnimationID {
+        self.api.reserve_animation_source(source.as_res_path_str())
     }
 
     #[inline]
@@ -55,9 +60,13 @@ impl<'res, R: AnimationAPI + ?Sized> AnimationModule<'res, R> {
     }
 
     #[inline]
-    pub fn reserve_hashed_with_source(&self, source_hash: u64, source: &str) -> AnimationID {
+    pub fn reserve_hashed_with_source<S: ResPathSource>(
+        &self,
+        source_hash: u64,
+        source: S,
+    ) -> AnimationID {
         self.api
-            .reserve_animation_source_hashed(source_hash, Some(source))
+            .reserve_animation_source_hashed(source_hash, Some(source.as_res_path_str()))
     }
 
     #[inline]

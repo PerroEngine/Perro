@@ -2,7 +2,7 @@ use super::core::{
     QueuedMidiNoteOptions, QueuedMidiSong, QueuedSpatialAudio, QueuedSpatialAudioPos,
     QueuedSpatialMidi, QueuedSpatialMidiKind, RuntimeResourceApi,
 };
-use perro_ids::AudioBusID;
+use perro_ids::{AudioBusID, SoundFontID};
 use perro_resource_context::sub_apis::{
     Audio, Audio2D, Audio3D, AudioAPI, MidiNoteHandle, MidiNoteOptions, MidiSong,
     MidiSpatialPosition, Note,
@@ -253,17 +253,21 @@ impl AudioAPI for RuntimeResourceApi {
         player.stop_bus(bus_id)
     }
 
-    fn load_midi_soundfont(&self, source: &str) -> bool {
+    fn load_midi_soundfont_hashed(&self, source_hash: u64, source: Option<&str>) -> SoundFontID {
         let Ok(guard) = self.bark.lock() else {
-            return false;
+            return SoundFontID::nil();
         };
         let Some(player) = guard.as_ref() else {
-            return false;
+            return SoundFontID::nil();
         };
-        player.load_soundfont(source)
+        let id = SoundFontID::from_u64(source_hash);
+        let Some(source) = source else {
+            return id;
+        };
+        player.load_soundfont_with_id(id, source)
     }
 
-    fn play_midi_note(&self, note: Note, options: MidiNoteOptions<'_>) -> bool {
+    fn play_midi_note(&self, note: Note, options: MidiNoteOptions) -> bool {
         let Ok(guard) = self.bark.lock() else {
             return false;
         };
@@ -278,7 +282,7 @@ impl AudioAPI for RuntimeResourceApi {
         })
     }
 
-    fn start_midi_note(&self, note: Note, options: MidiNoteOptions<'_>) -> Option<MidiNoteHandle> {
+    fn start_midi_note(&self, note: Note, options: MidiNoteOptions) -> Option<MidiNoteHandle> {
         let Ok(guard) = self.bark.lock() else {
             return None;
         };
@@ -301,7 +305,7 @@ impl AudioAPI for RuntimeResourceApi {
         player.release_midi_note(handle)
     }
 
-    fn play_midi_file(&self, song: MidiSong<'_>) -> bool {
+    fn play_midi_file(&self, song: MidiSong) -> bool {
         let Ok(guard) = self.bark.lock() else {
             return false;
         };
@@ -320,7 +324,7 @@ impl AudioAPI for RuntimeResourceApi {
         note: Note,
         position: MidiSpatialPosition,
         range: f32,
-        options: MidiNoteOptions<'_>,
+        options: MidiNoteOptions,
     ) -> bool {
         let id = self
             .next_spatial_midi_id
@@ -351,7 +355,7 @@ impl AudioAPI for RuntimeResourceApi {
         note: Note,
         position: MidiSpatialPosition,
         range: f32,
-        options: MidiNoteOptions<'_>,
+        options: MidiNoteOptions,
     ) -> Option<MidiNoteHandle> {
         let id = self
             .next_spatial_midi_id
@@ -377,12 +381,7 @@ impl AudioAPI for RuntimeResourceApi {
         Some(MidiNoteHandle(id))
     }
 
-    fn play_midi_file_at(
-        &self,
-        song: MidiSong<'_>,
-        position: MidiSpatialPosition,
-        range: f32,
-    ) -> bool {
+    fn play_midi_file_at(&self, song: MidiSong, position: MidiSpatialPosition, range: f32) -> bool {
         let id = self
             .next_spatial_midi_id
             .fetch_add(1, Ordering::Relaxed)

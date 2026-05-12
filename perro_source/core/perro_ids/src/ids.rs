@@ -196,6 +196,10 @@ define_generational!(
     "Bus ID - deterministic ID from bus name. Used for audio routing."
 );
 define_generational!(
+    SoundFontID,
+    "Sound font ID - deterministic ID from soundfont asset path."
+);
+define_generational!(
     TagID,
     "Tag ID - deterministic ID from tag name. Used for scene node tags and queries."
 );
@@ -271,6 +275,13 @@ impl SignalID {
 
 impl AudioBusID {
     /// Deterministic ID from bus name. Uses hash; generation 0.
+    pub const fn from_string(s: &str) -> Self {
+        Self::from_u64(string_to_u64(s))
+    }
+}
+
+impl SoundFontID {
+    /// Deterministic ID from soundfont asset path. Uses hash; generation 0.
     pub const fn from_string(s: &str) -> Self {
         Self::from_u64(string_to_u64(s))
     }

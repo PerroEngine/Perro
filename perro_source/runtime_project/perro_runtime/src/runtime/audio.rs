@@ -75,10 +75,10 @@ enum SpatialSoundPos {
 }
 
 #[derive(Clone, Copy)]
-struct SpatialMidiNoteStart<'a> {
+struct SpatialMidiNoteStart {
     id: u64,
     note: perro_pawdio::Note,
-    options: perro_pawdio::MidiNoteOptions<'a>,
+    options: perro_pawdio::MidiNoteOptions,
     held: bool,
     pos: SpatialSoundPos,
     spatial: SpatialAudioOptions,
@@ -538,7 +538,7 @@ impl RuntimeAudioAPI for Runtime {
         &mut self,
         note: perro_pawdio::Note,
         node: NodeID,
-        options: perro_pawdio::MidiNoteOptions<'_>,
+        options: perro_pawdio::MidiNoteOptions,
         spatial: SpatialAudioOptions,
     ) -> bool {
         let id = self
@@ -553,7 +553,7 @@ impl RuntimeAudioAPI for Runtime {
         &mut self,
         note: perro_pawdio::Note,
         node: NodeID,
-        options: perro_pawdio::MidiNoteOptions<'_>,
+        options: perro_pawdio::MidiNoteOptions,
         spatial: SpatialAudioOptions,
     ) -> Option<perro_pawdio::MidiNoteHandle> {
         let id = self
@@ -567,7 +567,7 @@ impl RuntimeAudioAPI for Runtime {
 
     fn play_midi_file_attached(
         &mut self,
-        song: perro_pawdio::MidiSong<'_>,
+        song: perro_pawdio::MidiSong,
         node: NodeID,
         spatial: SpatialAudioOptions,
     ) -> bool {
@@ -658,7 +658,7 @@ impl Runtime {
         id: u64,
         note: perro_pawdio::Note,
         node: NodeID,
-        options: perro_pawdio::MidiNoteOptions<'_>,
+        options: perro_pawdio::MidiNoteOptions,
         spatial: SpatialAudioOptions,
         held: bool,
     ) -> bool {

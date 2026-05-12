@@ -1,3 +1,4 @@
+use crate::ResPathSource;
 use perro_ids::MaterialID;
 use perro_render_bridge::Material3D;
 
@@ -26,8 +27,8 @@ impl<'res, R: MaterialAPI + ?Sized> MaterialModule<'res, R> {
     }
 
     #[inline]
-    pub fn load<S: AsRef<str>>(&self, source: S) -> MaterialID {
-        self.api.load_material_source(source.as_ref())
+    pub fn load<S: ResPathSource>(&self, source: S) -> MaterialID {
+        self.api.load_material_source(source.as_res_path_str())
     }
 
     #[inline]
@@ -36,9 +37,13 @@ impl<'res, R: MaterialAPI + ?Sized> MaterialModule<'res, R> {
     }
 
     #[inline]
-    pub fn load_hashed_with_source(&self, source_hash: u64, source: &str) -> MaterialID {
+    pub fn load_hashed_with_source<S: ResPathSource>(
+        &self,
+        source_hash: u64,
+        source: S,
+    ) -> MaterialID {
         self.api
-            .load_material_source_hashed(source_hash, Some(source))
+            .load_material_source_hashed(source_hash, Some(source.as_res_path_str()))
     }
 
     #[inline]
@@ -57,8 +62,8 @@ impl<'res, R: MaterialAPI + ?Sized> MaterialModule<'res, R> {
     }
 
     #[inline]
-    pub fn reserve<S: AsRef<str>>(&self, source: S) -> MaterialID {
-        self.api.reserve_material_source(source.as_ref())
+    pub fn reserve<S: ResPathSource>(&self, source: S) -> MaterialID {
+        self.api.reserve_material_source(source.as_res_path_str())
     }
 
     #[inline]
@@ -67,9 +72,13 @@ impl<'res, R: MaterialAPI + ?Sized> MaterialModule<'res, R> {
     }
 
     #[inline]
-    pub fn reserve_hashed_with_source(&self, source_hash: u64, source: &str) -> MaterialID {
+    pub fn reserve_hashed_with_source<S: ResPathSource>(
+        &self,
+        source_hash: u64,
+        source: S,
+    ) -> MaterialID {
         self.api
-            .reserve_material_source_hashed(source_hash, Some(source))
+            .reserve_material_source_hashed(source_hash, Some(source.as_res_path_str()))
     }
 
     #[inline]

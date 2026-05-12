@@ -115,8 +115,8 @@ impl AudioController {
                         AudioCommand::SourceLength { source, reply } => {
                             let _ = reply.send(player.source_length_seconds(&source));
                         }
-                        AudioCommand::LoadSoundFont { source } => {
-                            let _ = player.load_soundfont(&source);
+                        AudioCommand::LoadSoundFont { id, source } => {
+                            let _ = player.load_soundfont(id, &source);
                         }
                         AudioCommand::LoadMidiFile { source } => {
                             let _ = player.load_midi_file(&source);
@@ -318,11 +318,19 @@ impl AudioController {
         self.tx.try_send(AudioCommand::StopBus { bus_id }).is_ok()
     }
 
-    pub fn load_soundfont(&self, source: &str) -> bool {
+    pub fn load_soundfont(&self, source: &str) -> perro_ids::SoundFontID {
+        let id = perro_ids::SoundFontID::from_string(source);
+        self.load_soundfont_with_id(id, source)
+    }
+
+    pub fn load_soundfont_with_id(
+        &self,
+        id: perro_ids::SoundFontID,
+        source: &str,
+    ) -> perro_ids::SoundFontID {
         let source = self.intern_source(source);
-        self.tx
-            .try_send(AudioCommand::LoadSoundFont { source })
-            .is_ok()
+        let _ = self.tx.try_send(AudioCommand::LoadSoundFont { id, source });
+        id
     }
 
     pub fn load_midi_file(&self, source: &str) -> bool {
@@ -332,7 +340,7 @@ impl AudioController {
             .is_ok()
     }
 
-    pub fn play_midi_note(&self, request: MidiNoteRequest<'_>) -> bool {
+    pub fn play_midi_note(&self, request: MidiNoteRequest) -> bool {
         self.tx
             .try_send(AudioCommand::MidiNote {
                 request: OwnedMidiNoteRequest::from_request(request),
@@ -340,7 +348,7 @@ impl AudioController {
             .is_ok()
     }
 
-    pub fn start_midi_note(&self, mut request: MidiNoteRequest<'_>) -> Option<MidiNoteHandle> {
+    pub fn start_midi_note(&self, mut request: MidiNoteRequest) -> Option<MidiNoteHandle> {
         let id = self.next_playback_id.fetch_add(1, Ordering::Relaxed).max(1);
         request.id = id;
         request.held = true;
@@ -352,7 +360,7 @@ impl AudioController {
             .then_some(MidiNoteHandle(id))
     }
 
-    pub fn play_spatial_midi_note(&self, mut request: MidiNoteRequest<'_>) -> Option<u64> {
+    pub fn play_spatial_midi_note(&self, mut request: MidiNoteRequest) -> Option<u64> {
         let id = self.next_playback_id.fetch_add(1, Ordering::Relaxed).max(1);
         request.id = id;
         self.tx
@@ -388,9 +396,9 @@ impl AudioController {
             .is_ok()
     }
 
-    pub fn play_midi_notes<'a, I>(&self, requests: I) -> bool
+    pub fn play_midi_notes<I>(&self, requests: I) -> bool
     where
-        I: IntoIterator<Item = MidiNoteRequest<'a>>,
+        I: IntoIterator<Item = MidiNoteRequest>,
     {
         let requests = requests
             .into_iter()
@@ -401,7 +409,7 @@ impl AudioController {
             .is_ok()
     }
 
-    pub fn play_midi_note_slice(&self, requests: &[MidiNoteRequest<'_>]) -> bool {
+    pub fn play_midi_note_slice(&self, requests: &[MidiNoteRequest]) -> bool {
         if requests.len() == 1 {
             return self.play_midi_note(requests[0]);
         }

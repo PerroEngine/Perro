@@ -500,7 +500,7 @@ impl RuntimeAudioAPI for DummyRuntime {
         &mut self,
         _note: Note,
         _node: NodeID,
-        _options: MidiNoteOptions<'_>,
+        _options: MidiNoteOptions,
         _spatial: SpatialAudioOptions,
     ) -> bool {
         true
@@ -510,7 +510,7 @@ impl RuntimeAudioAPI for DummyRuntime {
         &mut self,
         _note: Note,
         _node: NodeID,
-        _options: MidiNoteOptions<'_>,
+        _options: MidiNoteOptions,
         _spatial: SpatialAudioOptions,
     ) -> Option<MidiNoteHandle> {
         Some(MidiNoteHandle(1))
@@ -518,7 +518,7 @@ impl RuntimeAudioAPI for DummyRuntime {
 
     fn play_midi_file_attached(
         &mut self,
-        _song: MidiSong<'_>,
+        _song: MidiSong,
         _node: NodeID,
         _spatial: SpatialAudioOptions,
     ) -> bool {

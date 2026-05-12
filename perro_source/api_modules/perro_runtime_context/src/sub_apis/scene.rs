@@ -1,4 +1,5 @@
 use perro_ids::NodeID;
+use perro_resource_context::{ResPath, ResPathBuf};
 use std::borrow::Cow;
 
 pub type PreloadedSceneID = perro_ids::PreloadedSceneID;
@@ -10,6 +11,24 @@ pub trait IntoScenePath {
 impl IntoScenePath for &'static str {
     fn into_scene_path(self) -> Cow<'static, str> {
         Cow::Borrowed(self)
+    }
+}
+
+impl IntoScenePath for &'static ResPath {
+    fn into_scene_path(self) -> Cow<'static, str> {
+        Cow::Borrowed(self.as_str())
+    }
+}
+
+impl IntoScenePath for ResPathBuf {
+    fn into_scene_path(self) -> Cow<'static, str> {
+        Cow::Owned(self.into_string())
+    }
+}
+
+impl IntoScenePath for &ResPathBuf {
+    fn into_scene_path(self) -> Cow<'static, str> {
+        Cow::Owned(self.as_str().to_string())
     }
 }
 
@@ -65,6 +84,24 @@ pub trait IntoSceneLoadSource {
 impl IntoSceneLoadSource for &'static str {
     fn into_scene_load_source(self) -> SceneLoadSource {
         SceneLoadSource::Path(Cow::Borrowed(self))
+    }
+}
+
+impl IntoSceneLoadSource for &'static ResPath {
+    fn into_scene_load_source(self) -> SceneLoadSource {
+        SceneLoadSource::Path(Cow::Borrowed(self.as_str()))
+    }
+}
+
+impl IntoSceneLoadSource for ResPathBuf {
+    fn into_scene_load_source(self) -> SceneLoadSource {
+        SceneLoadSource::Path(Cow::Owned(self.into_string()))
+    }
+}
+
+impl IntoSceneLoadSource for &ResPathBuf {
+    fn into_scene_load_source(self) -> SceneLoadSource {
+        SceneLoadSource::Path(Cow::Owned(self.as_str().to_string()))
     }
 }
 
@@ -128,6 +165,24 @@ impl IntoPreloadedSceneTarget for &PreloadedSceneID {
 impl IntoPreloadedSceneTarget for &'static str {
     fn into_preloaded_scene_target(self) -> PreloadedSceneTarget {
         PreloadedSceneTarget::Path(Cow::Borrowed(self))
+    }
+}
+
+impl IntoPreloadedSceneTarget for &'static ResPath {
+    fn into_preloaded_scene_target(self) -> PreloadedSceneTarget {
+        PreloadedSceneTarget::Path(Cow::Borrowed(self.as_str()))
+    }
+}
+
+impl IntoPreloadedSceneTarget for ResPathBuf {
+    fn into_preloaded_scene_target(self) -> PreloadedSceneTarget {
+        PreloadedSceneTarget::Path(Cow::Owned(self.into_string()))
+    }
+}
+
+impl IntoPreloadedSceneTarget for &ResPathBuf {
+    fn into_preloaded_scene_target(self) -> PreloadedSceneTarget {
+        PreloadedSceneTarget::Path(Cow::Owned(self.as_str().to_string()))
     }
 }
 

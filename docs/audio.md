@@ -161,7 +161,7 @@ Main types:
 - `Note`: MIDI key wrapper with constants from `Note::C0` through `Note::C8`
 - `MidiChannel`: `0..15`,
 - `MidiProgram`: GM patch `0..127`
-- `MidiSound`: `BuiltIn` or `SoundFont("res://...sf2")`
+- `MidiSound`: `BuiltIn` or `SoundFont(soundfont_id)`
 - `MidiNoteOptions`: velocity, sustain, channel, program, sound, bus, volume, pan
 - `MidiSong`: source path, sound, bus, volume, loop flag
 - `MidiNoteHandle`: handle returned by held notes
@@ -199,7 +199,7 @@ Built-in program wave map:
 - synth pad + synth fx: sine
 - percussive + sound fx: noise
 
-`MidiSound::SoundFont("res://...sf2")`:
+`MidiSound::SoundFont(soundfont_id)`:
 
 - loads an `.sf2` bank
 - uses `program` to pick a patch inside that bank
@@ -241,10 +241,10 @@ Soundfont MIDI:
 
 ```rust
 let font = "res://soundfonts/game.sf2";
-let _ = midi_load_soundfont!(ctx.res, font);
+let font_id = midi_load_soundfont!(ctx.res, font);
 
 let piano = MidiNoteOptions {
-    sound: MidiSound::SoundFont(font),
+    sound: MidiSound::SoundFont(font_id),
     program: program::Piano::AcousticGrand,
     sustain: std::time::Duration::from_millis(350),
     ..MidiNoteOptions::default()
@@ -255,7 +255,7 @@ let _ = midi_play!(ctx.res, Note::E4, piano);
 let _ = midi_play!(ctx.res, Note::G4, piano);
 
 let sf2_song = MidiSong::new("res://music/theme.mid")
-    .with_sound(MidiSound::SoundFont(font))
+    .with_sound(MidiSound::SoundFont(font_id))
     .looped();
 let _ = ctx.res.Audio().midi().play_file(sf2_song);
 ```
@@ -263,16 +263,19 @@ let _ = ctx.res.Audio().midi().play_file(sf2_song);
 Soundfont rules:
 
 - source must be a project asset path, usually `res://soundfonts/name.sf2`
-- `midi_load_soundfont!` warms the cache before first use
-- first note or file can also load the soundfont lazily
+- `midi_load_soundfont!` loads the bank and returns `SoundFontID`
+- same source returns same `SoundFontID`
+- notes and files require a loaded soundfont id
 - one live-note soundfont mixer is shared per soundfont, bus, and pan
 - `MidiSound::BuiltIn` does not require `.sf2`
 
 Positional MIDI:
 
 ```rust
+let font_id = midi_load_soundfont!(ctx.res, "res://soundfonts/game.sf2");
+
 let opts = MidiNoteOptions {
-    sound: MidiSound::SoundFont("res://soundfonts/game.sf2"),
+    sound: MidiSound::SoundFont(font_id),
     program: program::Brass::Trumpet,
     ..MidiNoteOptions::default()
 };

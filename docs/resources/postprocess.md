@@ -289,10 +289,13 @@ post_processing = [
 Script examples:
 
 ```rust
+let film_lut = ResPath::new("res://luts/film_32.png");
+let print_lut = ResPath::new("res://luts/print_32.png");
+
 cam.post_processing.add(
     "film_lut",
     PostProcessEffect::Lut2D {
-        texture_path: "res://luts/film_32.png".into(),
+        texture_path: film_lut.as_str().into(),
         size: 32,
         strength: 0.75,
     },
@@ -301,7 +304,7 @@ cam.post_processing.add(
 cam.post_processing.add(
     "print_lut",
     PostProcessEffect::Lut3D {
-        texture_path: "res://luts/print_32.png".into(),
+        texture_path: print_lut.as_str().into(),
         size: 32,
         strength: 1.0,
     },

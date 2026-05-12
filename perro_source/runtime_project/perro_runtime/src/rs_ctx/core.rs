@@ -3,7 +3,7 @@ use crate::runtime_project::{
     StaticAnimationLookup, StaticAnimationTreeLookup, StaticAudioLookup, StaticLocalizationLookup,
     StaticMaterialLookup, StaticSkeletonLookup,
 };
-use perro_ids::string_to_u64;
+use perro_ids::{SoundFontID, string_to_u64};
 use perro_pawdio::{AudioController, MidiChannel, MidiProgram, MidiSound, Note};
 use perro_project::LocalizationConfig;
 use perro_render_bridge::{RenderCommand, RenderEvent};
@@ -34,21 +34,21 @@ pub(crate) struct QueuedSpatialAudio {
 #[derive(Clone, Debug)]
 pub(crate) enum QueuedMidiSound {
     BuiltIn,
-    SoundFont(String),
+    SoundFont(SoundFontID),
 }
 
 impl QueuedMidiSound {
-    pub(crate) fn from_sound(sound: MidiSound<'_>) -> Self {
+    pub(crate) fn from_sound(sound: MidiSound) -> Self {
         match sound {
             MidiSound::BuiltIn => Self::BuiltIn,
-            MidiSound::SoundFont(source) => Self::SoundFont(source.to_string()),
+            MidiSound::SoundFont(id) => Self::SoundFont(id),
         }
     }
 
-    pub(crate) fn as_sound(&self) -> MidiSound<'_> {
+    pub(crate) fn as_sound(&self) -> MidiSound {
         match self {
             Self::BuiltIn => MidiSound::BuiltIn,
-            Self::SoundFont(source) => MidiSound::SoundFont(source.as_str()),
+            Self::SoundFont(id) => MidiSound::SoundFont(*id),
         }
     }
 }
@@ -66,7 +66,7 @@ pub(crate) struct QueuedMidiNoteOptions {
 }
 
 impl QueuedMidiNoteOptions {
-    pub(crate) fn from_options(options: perro_pawdio::MidiNoteOptions<'_>) -> Self {
+    pub(crate) fn from_options(options: perro_pawdio::MidiNoteOptions) -> Self {
         Self {
             velocity: options.velocity,
             sustain: options.sustain,
@@ -79,7 +79,7 @@ impl QueuedMidiNoteOptions {
         }
     }
 
-    pub(crate) fn as_options(&self) -> perro_pawdio::MidiNoteOptions<'_> {
+    pub(crate) fn as_options(&self) -> perro_pawdio::MidiNoteOptions {
         perro_pawdio::MidiNoteOptions {
             velocity: self.velocity,
             sustain: self.sustain,
@@ -103,7 +103,7 @@ pub(crate) struct QueuedMidiSong {
 }
 
 impl QueuedMidiSong {
-    pub(crate) fn from_song(song: perro_pawdio::MidiSong<'_>) -> Self {
+    pub(crate) fn from_song(song: perro_pawdio::MidiSong) -> Self {
         Self {
             source: song.source.to_string(),
             sound: QueuedMidiSound::from_sound(song.sound),

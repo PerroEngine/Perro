@@ -3200,6 +3200,7 @@ version = "0.1.0"
 dependencies = [
  "perro_ids",
  "perro_io",
+ "perro_resource_context",
  "perro_variant",
  "serde_json",
  "ureq",
@@ -3278,6 +3279,7 @@ dependencies = [
  "perro_render_bridge",
  "perro_scene",
  "perro_structs",
+ "perro_variant",
 ]
 
 [[package]]
@@ -3326,6 +3328,7 @@ dependencies = [
  "perro_ids",
  "perro_nodes",
  "perro_pawdio",
+ "perro_resource_context",
  "perro_structs",
  "perro_variant",
 ]

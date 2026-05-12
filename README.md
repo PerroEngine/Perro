@@ -20,6 +20,7 @@ For more details, see the full documentation: [perroengine.com/docs](https://www
 Local reference:
 
 - [Docs Index](docs/index.md)
+- [ResPath](docs/respath.md)
 - [Feature Matrix](docs/feature_matrix.md)
 - [Perro CLI](docs/perro_cli.md)
 

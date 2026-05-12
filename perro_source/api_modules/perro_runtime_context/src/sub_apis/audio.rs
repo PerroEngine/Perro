@@ -159,19 +159,19 @@ pub trait RuntimeAudioAPI {
         &mut self,
         note: Note,
         node: NodeID,
-        options: MidiNoteOptions<'_>,
+        options: MidiNoteOptions,
         spatial: SpatialAudioOptions,
     ) -> bool;
     fn start_midi_note_attached(
         &mut self,
         note: Note,
         node: NodeID,
-        options: MidiNoteOptions<'_>,
+        options: MidiNoteOptions,
         spatial: SpatialAudioOptions,
     ) -> Option<MidiNoteHandle>;
     fn play_midi_file_attached(
         &mut self,
-        song: MidiSong<'_>,
+        song: MidiSong,
         node: NodeID,
         spatial: SpatialAudioOptions,
     ) -> bool;
@@ -237,7 +237,7 @@ impl<'rt, RT: RuntimeAudioAPI + ?Sized> RuntimeMidiModule<'rt, RT> {
         &mut self,
         note: Note,
         node: NodeID,
-        options: MidiNoteOptions<'_>,
+        options: MidiNoteOptions,
         spatial: SpatialAudioOptions,
     ) -> bool {
         self.rt
@@ -249,7 +249,7 @@ impl<'rt, RT: RuntimeAudioAPI + ?Sized> RuntimeMidiModule<'rt, RT> {
         &mut self,
         note: Note,
         node: NodeID,
-        options: MidiNoteOptions<'_>,
+        options: MidiNoteOptions,
         spatial: SpatialAudioOptions,
     ) -> Option<MidiNoteHandle> {
         self.rt
@@ -259,7 +259,7 @@ impl<'rt, RT: RuntimeAudioAPI + ?Sized> RuntimeMidiModule<'rt, RT> {
     #[inline]
     pub fn play_file_attached(
         &mut self,
-        song: MidiSong<'_>,
+        song: MidiSong,
         node: NodeID,
         spatial: SpatialAudioOptions,
     ) -> bool {

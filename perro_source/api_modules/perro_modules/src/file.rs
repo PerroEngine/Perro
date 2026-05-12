@@ -4,6 +4,7 @@ use std::{
 };
 
 use perro_io::{ProjectRoot, load_asset, save_asset, set_project_root};
+use perro_resource_context::ResPathSource;
 
 pub fn set_project_root_disk(root: &str, name: &str) {
     set_project_root(ProjectRoot::Disk {
@@ -12,25 +13,27 @@ pub fn set_project_root_disk(root: &str, name: &str) {
     });
 }
 
-pub fn load_bytes(path: &str) -> io::Result<Vec<u8>> {
-    load_asset(path)
+pub fn load_bytes<P: ResPathSource>(path: P) -> io::Result<Vec<u8>> {
+    load_asset(path.as_res_path_str())
 }
 
-pub fn load_string(path: &str) -> io::Result<String> {
+pub fn load_string<P: ResPathSource>(path: P) -> io::Result<String> {
     let bytes = load_bytes(path)?;
     String::from_utf8(bytes).map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
 }
 
-pub fn save_bytes(path: &str, data: &[u8]) -> io::Result<()> {
+pub fn save_bytes<P: ResPathSource>(path: P, data: &[u8]) -> io::Result<()> {
+    let path = path.as_res_path_str();
     validate_write_path(path)?;
     save_asset(path, data)
 }
 
-pub fn save_string(path: &str, data: &str) -> io::Result<()> {
+pub fn save_string<P: ResPathSource>(path: P, data: &str) -> io::Result<()> {
     save_bytes(path, data.as_bytes())
 }
 
-pub fn exists(path: &str) -> bool {
+pub fn exists<P: ResPathSource>(path: P) -> bool {
+    let path = path.as_res_path_str();
     match perro_io::resolve_path(path) {
         perro_io::ResolvedPath::Disk(pb) => pb.exists(),
         perro_io::ResolvedPath::PerroAssets(_)
@@ -40,7 +43,8 @@ pub fn exists(path: &str) -> bool {
     }
 }
 
-pub fn resolve_path_string(path: &str) -> String {
+pub fn resolve_path_string<P: ResPathSource>(path: P) -> String {
+    let path = path.as_res_path_str();
     match perro_io::resolve_path(path) {
         perro_io::ResolvedPath::Disk(pb) => pb.to_string_lossy().to_string(),
         perro_io::ResolvedPath::PerroAssets(vpath) => format!("perroassets://{vpath}"),

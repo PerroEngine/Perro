@@ -42,7 +42,7 @@ Type:
 
 ```rust
 Audio {
-    source: &str,      // res://...
+    source: &str,      // literal or ResPath::as_str()
     looped: bool,
     volume: f32,      // 1.0 normal, 0.0 silent, >1 amplified
     effects: AudioEffects,
@@ -192,14 +192,14 @@ MidiNoteOptions {
     sustain: Duration,     // auto note-off for play_note
     channel: MidiChannel,  // 0..15, channel 9 for drums
     program: MidiProgram,  // GM patch number
-    sound: MidiSound,      // BuiltIn or SoundFont("res://...")
+    sound: MidiSound,      // BuiltIn or SoundFont(soundfont_id)
     bus_id: Option<AudioBusID>,
     volume: f32,
     pan: AudioPan,
 }
 
 MidiSong {
-    source: &str,          // res://music/song.mid
+    source: &str,          // literal or ResPath::as_str()
     sound: MidiSound,
     bus_id: Option<AudioBusID>,
     volume: f32,
@@ -211,7 +211,7 @@ Sound choices:
 
 ```rust
 MidiSound::BuiltIn
-MidiSound::SoundFont("res://soundfonts/game.sf2")
+MidiSound::SoundFont(soundfont_id)
 ```
 
 Note helpers:
@@ -243,11 +243,11 @@ Rules:
 - `channel` is shared MIDI lane state.
 - `program` is instrument patch.
 - `MidiSound::BuiltIn` uses procedural GM-ish patches.
-- `MidiSound::SoundFont("res://soundfonts/game.sf2")` uses a project soundfont.
+- `MidiSound::SoundFont(soundfont_id)` uses a loaded project soundfont.
 - `Vector2` position routes to 2D propagation.
 - `Vector3` position routes to 3D propagation.
 - positional live notes, held notes, and MIDI files use the same raycast propagation path as audio.
-- `midi_load_soundfont!` preloads `.sf2`; first use also loads it lazily.
+- `midi_load_soundfont!` loads `.sf2` and returns `SoundFontID`.
 - static builds embed `.mid`, `.midi`, and `.sf2` files under `embedded/audios/`.
 
 Built-in vs soundfont:
@@ -293,10 +293,10 @@ Soundfont notes:
 
 ```rust
 let font = "res://soundfonts/game.sf2";
-let _ = midi_load_soundfont!(res, font);
+let font_id = midi_load_soundfont!(res, font);
 
 let opts = MidiNoteOptions {
-    sound: MidiSound::SoundFont(font),
+    sound: MidiSound::SoundFont(font_id),
     program: program::Piano::AcousticGrand,
     sustain: std::time::Duration::from_millis(400),
     ..MidiNoteOptions::default()
@@ -311,8 +311,9 @@ Soundfont MIDI file:
 
 ```rust
 let font = "res://soundfonts/game.sf2";
+let font_id = midi_load_soundfont!(res, font);
 let song = MidiSong::new("res://music/theme.mid")
-    .with_sound(MidiSound::SoundFont(font))
+    .with_sound(MidiSound::SoundFont(font_id))
     .looped();
 
 let _ = res.Audio().midi().play_file(song);

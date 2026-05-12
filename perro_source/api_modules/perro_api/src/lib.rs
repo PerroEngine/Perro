@@ -4,6 +4,8 @@ pub use perro_modules as modules;
 pub use perro_nodes as nodes;
 pub use perro_project as project;
 pub use perro_resource_context as resource_context;
+pub use perro_resource_context::res_path;
+pub use perro_resource_context::{ResPath, ResPathBuf, ResPathError, ResPathKind, ResPathSource};
 pub use perro_runtime_context as runtime_context;
 pub use perro_scene as scene;
 pub use perro_scripting as scripting;
@@ -45,6 +47,9 @@ pub mod prelude {
     pub use perro_nodes::prelude::*;
     pub use perro_project::create_new_project;
     pub use perro_resource_context::prelude::*;
+    pub use perro_resource_context::res_path::{
+        ResPath, ResPathBuf, ResPathError, ResPathKind, ResPathSource,
+    };
     pub use perro_scene;
     pub use perro_scripting::prelude::*;
     #[cfg(feature = "steamworks")]

@@ -10,3 +10,4 @@ ureq = { version = "3.3.0", features = ["cookies", "platform-verifier", "native-
 perro_ids = { path = "../../core/perro_ids" }
 perro_variant = { path = "../../core/perro_variant" }
 perro_io = { path = "../../io_stack/perro_io" }
+perro_resource_context = { path = "../perro_resource_context" }

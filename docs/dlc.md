@@ -53,9 +53,12 @@ perro new_animation --name Idle --dlc NAME --res /animations
 
 ## Path Rules
 
-- Base content: `res://...`
-- DLC content: `dlc://NAME/...`
-- Inside DLC-authored content, `dlc://self/...` resolves to current DLC mount.
+- Base content: `ResPath::new("res://...")`
+- DLC content: `ResPath::new("dlc://NAME/...")`
+- User data: `ResPath::new("user://...")`
+- Inside DLC-authored content, `ResPath::new("dlc://self/...")` resolves to current DLC mount.
+
+See [ResPath](respath.md).
 
 Reference behavior:
 

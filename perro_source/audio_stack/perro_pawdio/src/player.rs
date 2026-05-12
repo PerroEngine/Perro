@@ -776,12 +776,12 @@ impl BarkPlayer {
         removed_any
     }
 
-    pub fn load_soundfont(&self, source: &str) -> Result<(), String> {
+    pub fn load_soundfont(&self, id: perro_ids::SoundFontID, source: &str) -> Result<(), String> {
         let mut state = self
             .state
             .lock()
             .map_err(|_| "audio mutex poisoned".to_string())?;
-        let _ = Self::get_or_load_soundfont_locked(&mut state, source)?;
+        let _ = Self::get_or_load_soundfont_locked(&mut state, id, source)?;
         Ok(())
     }
 
@@ -795,14 +795,14 @@ impl BarkPlayer {
         Ok(())
     }
 
-    pub fn play_midi_note(&self, request: MidiNoteRequest<'_>) -> Result<(), String> {
+    pub fn play_midi_note(&self, request: MidiNoteRequest) -> Result<(), String> {
         if matches!(request.options.sound, MidiSound::BuiltIn) {
             return self.play_built_in_midi_note(request);
         }
         self.play_soundfont_midi_note(request)
     }
 
-    fn play_built_in_midi_note(&self, request: MidiNoteRequest<'_>) -> Result<(), String> {
+    fn play_built_in_midi_note(&self, request: MidiNoteRequest) -> Result<(), String> {
         let pan = request.options.pan.clamped();
         let key = MidiMixerKey::new(request.options.bus_id, pan);
         let mut state = self
@@ -873,28 +873,21 @@ impl BarkPlayer {
         Ok(())
     }
 
-    fn play_soundfont_midi_note(&self, request: MidiNoteRequest<'_>) -> Result<(), String> {
-        let MidiSound::SoundFont(source) = request.options.sound else {
+    fn play_soundfont_midi_note(&self, request: MidiNoteRequest) -> Result<(), String> {
+        let MidiSound::SoundFont(id) = request.options.sound else {
             return Ok(());
         };
         let pan = request.options.pan.clamped();
-        let source_hash = perro_ids::string_to_u64(source);
-        let key = SoundFontMidiMixerKey::new(source_hash, request.options.bus_id, pan);
+        let key = SoundFontMidiMixerKey::new(id, request.options.bus_id, pan);
         let mut state = self
             .state
             .lock()
             .map_err(|_| "audio mutex poisoned".to_string())?;
         Self::prune_finished_playbacks_locked(&mut state, Instant::now());
         Self::prune_finished_midi_locked(&mut state);
-        let font = Self::get_or_load_soundfont_locked(&mut state, source)?;
+        let (_, font) = Self::get_soundfont_locked(&state, id)?;
 
         let mixer_index = if let Some(index) = state.soundfont_midi_mixer_index.get(&key).copied() {
-            if state.soundfont_midi_mixers[index].source.as_ref() != source {
-                return Err(format!(
-                    "soundfont source hash collision: `{}` conflicts with `{source}`",
-                    state.soundfont_midi_mixers[index].source
-                ));
-            }
             index
         } else {
             let (control, rx) = crossbeam_channel::unbounded();
@@ -928,7 +921,6 @@ impl BarkPlayer {
                 .soundfont_midi_mixers
                 .push(SoundFontMidiMixerPlayback {
                     key,
-                    source: Arc::from(source),
                     bus_id: request.options.bus_id,
                     base_volume: 1.0,
                     control,
@@ -974,9 +966,7 @@ impl BarkPlayer {
             };
             let soundfont = match request.song.sound {
                 MidiSound::BuiltIn => None,
-                MidiSound::SoundFont(source) => {
-                    Some(Self::get_or_load_soundfont_locked(&mut state, source)?)
-                }
+                MidiSound::SoundFont(id) => Some(Self::get_soundfont_locked(&state, id)?.1),
             };
             (bytes, built_in_data, soundfont)
         };
@@ -1252,10 +1242,10 @@ impl BarkPlayer {
 
     fn get_or_load_soundfont_locked(
         state: &mut AudioState,
+        id: perro_ids::SoundFontID,
         source: &str,
     ) -> Result<Arc<rustysynth::SoundFont>, String> {
-        let source_hash = perro_ids::string_to_u64(source);
-        if let Some(existing) = state.soundfonts.get(&source_hash) {
+        if let Some(existing) = state.soundfonts.get(&id) {
             if existing.source.as_ref() != source {
                 return Err(format!(
                     "soundfont source hash collision: `{}` conflicts with `{source}`",
@@ -1269,13 +1259,24 @@ impl BarkPlayer {
         let font =
             Arc::new(rustysynth::SoundFont::new(&mut cursor).map_err(|err| err.to_string())?);
         state.soundfonts.insert(
-            source_hash,
+            id,
             CachedSoundFont {
                 source: Arc::from(source),
                 font: font.clone(),
             },
         );
         Ok(font)
+    }
+
+    fn get_soundfont_locked(
+        state: &AudioState,
+        id: perro_ids::SoundFontID,
+    ) -> Result<(Arc<str>, Arc<rustysynth::SoundFont>), String> {
+        state
+            .soundfonts
+            .get(&id)
+            .map(|font| (font.source.clone(), font.font.clone()))
+            .ok_or_else(|| format!("soundfont not loaded: {id}"))
     }
 
     fn get_or_load_midi_file_bytes_locked(

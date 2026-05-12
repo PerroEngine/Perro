@@ -1,4 +1,5 @@
 use perro_ids::{NodeID, ScriptMemberID};
+use perro_resource_context::ResPathSource;
 use perro_variant::Variant;
 use std::borrow::Cow;
 
@@ -89,8 +90,9 @@ impl<'rt, R: ScriptAPI + ?Sized> ScriptModule<'rt, R> {
         self.rt.with_state_mut(script_id, f)
     }
 
-    pub fn script_attach(&mut self, node_id: NodeID, script_path: &str) -> bool {
-        self.rt.script_attach(node_id, script_path)
+    pub fn script_attach<P: ResPathSource>(&mut self, node_id: NodeID, script_path: P) -> bool {
+        self.rt
+            .script_attach(node_id, script_path.as_res_path_str())
     }
 
     pub fn script_attach_hashed(&mut self, node_id: NodeID, script_path_hash: u64) -> bool {

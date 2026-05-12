@@ -19,12 +19,12 @@ use perro_api::modules::random;
 File IO helpers backed by project path resolver.
 
 - `set_project_root_disk(root: &str, name: &str)`
-- `load_bytes(path: &str) -> io::Result<Vec<u8>>`
-- `load_string(path: &str) -> io::Result<String>`
-- `save_bytes(path: &str, data: &[u8]) -> io::Result<()>`
-- `save_string(path: &str, data: &str) -> io::Result<()>`
-- `exists(path: &str) -> bool`
-- `resolve_path_string(path: &str) -> String`
+- `load_bytes(path: impl ResPathSource) -> io::Result<Vec<u8>>`
+- `load_string(path: impl ResPathSource) -> io::Result<String>`
+- `save_bytes(path: impl ResPathSource, data: &[u8]) -> io::Result<()>`
+- `save_string(path: impl ResPathSource, data: &str) -> io::Result<()>`
+- `exists(path: impl ResPathSource) -> bool`
+- `resolve_path_string(path: impl ResPathSource) -> String`
 
 Write restriction:
 

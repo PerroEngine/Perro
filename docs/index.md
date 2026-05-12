@@ -36,6 +36,7 @@
 
 ## Resources
 
+- [ResPath](respath.md)
 - [`.panim` Format](resources/panim.md)
 - [`.panimtree` Format](resources/panimtree.md)
 - [`.pmat` Format](resources/pmat.md)

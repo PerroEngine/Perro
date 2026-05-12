@@ -26,7 +26,7 @@ fn mixer_note(id: u64) -> MidiMixerNote {
     }
 }
 
-fn note_request(id: u64) -> MidiNoteRequest<'static> {
+fn note_request(id: u64) -> MidiNoteRequest {
     MidiNoteRequest {
         id,
         note: Note::from_midi(48 + (id % 36) as u8),

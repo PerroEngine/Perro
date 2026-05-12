@@ -1,3 +1,4 @@
+use crate::ResPathSource;
 use perro_ids::MeshID;
 use perro_render_bridge::Mesh3D;
 
@@ -26,8 +27,8 @@ impl<'res, R: MeshAPI + ?Sized> MeshModule<'res, R> {
     }
 
     #[inline]
-    pub fn load<S: AsRef<str>>(&self, source: S) -> MeshID {
-        self.api.load_mesh(source.as_ref())
+    pub fn load<S: ResPathSource>(&self, source: S) -> MeshID {
+        self.api.load_mesh(source.as_res_path_str())
     }
 
     #[inline]
@@ -36,13 +37,14 @@ impl<'res, R: MeshAPI + ?Sized> MeshModule<'res, R> {
     }
 
     #[inline]
-    pub fn load_hashed_with_source(&self, source_hash: u64, source: &str) -> MeshID {
-        self.api.load_mesh_hashed(source_hash, Some(source))
+    pub fn load_hashed_with_source<S: ResPathSource>(&self, source_hash: u64, source: S) -> MeshID {
+        self.api
+            .load_mesh_hashed(source_hash, Some(source.as_res_path_str()))
     }
 
     #[inline]
-    pub fn reserve<S: AsRef<str>>(&self, source: S) -> MeshID {
-        self.api.reserve_mesh(source.as_ref())
+    pub fn reserve<S: ResPathSource>(&self, source: S) -> MeshID {
+        self.api.reserve_mesh(source.as_res_path_str())
     }
 
     #[inline]
@@ -51,8 +53,13 @@ impl<'res, R: MeshAPI + ?Sized> MeshModule<'res, R> {
     }
 
     #[inline]
-    pub fn reserve_hashed_with_source(&self, source_hash: u64, source: &str) -> MeshID {
-        self.api.reserve_mesh_hashed(source_hash, Some(source))
+    pub fn reserve_hashed_with_source<S: ResPathSource>(
+        &self,
+        source_hash: u64,
+        source: S,
+    ) -> MeshID {
+        self.api
+            .reserve_mesh_hashed(source_hash, Some(source.as_res_path_str()))
     }
 
     #[inline]

@@ -1,3 +1,4 @@
+use crate::ResPathSource;
 use perro_animation::AnimationTreeAsset;
 use perro_ids::AnimationTreeID;
 use std::sync::Arc;
@@ -23,13 +24,18 @@ impl<'res, R: AnimationTreeAPI + ?Sized> AnimationTreeModule<'res, R> {
         Self { api }
     }
 
-    pub fn load<S: AsRef<str>>(&self, source: S) -> AnimationTreeID {
-        self.api.load_animation_tree_source(source.as_ref())
+    pub fn load<S: ResPathSource>(&self, source: S) -> AnimationTreeID {
+        self.api
+            .load_animation_tree_source(source.as_res_path_str())
     }
 
-    pub fn load_hashed_with_source(&self, source_hash: u64, source: &str) -> AnimationTreeID {
+    pub fn load_hashed_with_source<S: ResPathSource>(
+        &self,
+        source_hash: u64,
+        source: S,
+    ) -> AnimationTreeID {
         self.api
-            .load_animation_tree_source_hashed(source_hash, Some(source))
+            .load_animation_tree_source_hashed(source_hash, Some(source.as_res_path_str()))
     }
 
     pub fn get(&self, id: AnimationTreeID) -> Option<Arc<AnimationTreeAsset>> {

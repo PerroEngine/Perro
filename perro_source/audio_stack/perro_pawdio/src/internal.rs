@@ -88,7 +88,7 @@ pub(crate) struct BuiltInMidiMixerPlayback {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct SoundFontMidiMixerKey {
-    pub(crate) source_hash: u64,
+    pub(crate) id: perro_ids::SoundFontID,
     pub(crate) bus_id: Option<AudioBusID>,
     pub(crate) pan_x: u32,
     pub(crate) pan_y: u32,
@@ -96,10 +96,14 @@ pub(crate) struct SoundFontMidiMixerKey {
 }
 
 impl SoundFontMidiMixerKey {
-    pub(crate) fn new(source_hash: u64, bus_id: Option<AudioBusID>, pan: AudioPan) -> Self {
+    pub(crate) fn new(
+        id: perro_ids::SoundFontID,
+        bus_id: Option<AudioBusID>,
+        pan: AudioPan,
+    ) -> Self {
         let pan = pan.clamped();
         Self {
-            source_hash,
+            id,
             bus_id,
             pan_x: pan.x.to_bits(),
             pan_y: pan.y.to_bits(),
@@ -118,7 +122,6 @@ impl SoundFontMidiMixerKey {
 
 pub(crate) struct SoundFontMidiMixerPlayback {
     pub(crate) key: SoundFontMidiMixerKey,
-    pub(crate) source: Arc<str>,
     pub(crate) bus_id: Option<AudioBusID>,
     pub(crate) base_volume: f32,
     pub(crate) control: Sender<SoundFontMixerControl>,
@@ -144,7 +147,7 @@ pub(crate) struct AudioState {
     pub(crate) soundfont_midi_mixer_index: HashMap<SoundFontMidiMixerKey, usize>,
     pub(crate) soundfont_midi_notes: HashMap<u64, SoundFontMidiMixerKey>,
     pub(crate) cache: HashMap<u64, CachedAudioAsset>,
-    pub(crate) soundfonts: HashMap<u64, CachedSoundFont>,
+    pub(crate) soundfonts: HashMap<perro_ids::SoundFontID, CachedSoundFont>,
     pub(crate) midi_files: HashMap<u64, CachedMidiFile>,
     pub(crate) cache_bytes: usize,
     pub(crate) next_cache_epoch: u64,
@@ -216,7 +219,7 @@ impl OwnedAudioPlaybackRequest {
 #[derive(Clone)]
 pub(crate) enum OwnedMidiSound {
     BuiltIn,
-    SoundFont(Arc<str>),
+    SoundFont(perro_ids::SoundFontID),
 }
 
 #[derive(Clone)]
@@ -251,23 +254,23 @@ pub(crate) struct OwnedMidiFileRequest {
 }
 
 impl OwnedMidiSound {
-    pub(crate) fn from_sound(sound: crate::midi::MidiSound<'_>) -> Self {
+    pub(crate) fn from_sound(sound: crate::midi::MidiSound) -> Self {
         match sound {
             crate::midi::MidiSound::BuiltIn => Self::BuiltIn,
-            crate::midi::MidiSound::SoundFont(source) => Self::SoundFont(Arc::from(source)),
+            crate::midi::MidiSound::SoundFont(id) => Self::SoundFont(id),
         }
     }
 
-    pub(crate) fn as_sound(&self) -> crate::midi::MidiSound<'_> {
+    pub(crate) fn as_sound(&self) -> crate::midi::MidiSound {
         match self {
             Self::BuiltIn => crate::midi::MidiSound::BuiltIn,
-            Self::SoundFont(source) => crate::midi::MidiSound::SoundFont(source.as_ref()),
+            Self::SoundFont(id) => crate::midi::MidiSound::SoundFont(*id),
         }
     }
 }
 
 impl OwnedMidiNoteOptions {
-    pub(crate) fn from_options(value: MidiNoteOptions<'_>) -> Self {
+    pub(crate) fn from_options(value: MidiNoteOptions) -> Self {
         Self {
             velocity: value.velocity,
             sustain: value.sustain,
@@ -280,7 +283,7 @@ impl OwnedMidiNoteOptions {
         }
     }
 
-    pub(crate) fn as_options(&self) -> MidiNoteOptions<'_> {
+    pub(crate) fn as_options(&self) -> MidiNoteOptions {
         MidiNoteOptions {
             velocity: self.velocity,
             sustain: self.sustain,
@@ -295,7 +298,7 @@ impl OwnedMidiNoteOptions {
 }
 
 impl OwnedMidiNoteRequest {
-    pub(crate) fn from_request(value: MidiNoteRequest<'_>) -> Self {
+    pub(crate) fn from_request(value: MidiNoteRequest) -> Self {
         Self {
             id: value.id,
             note: value.note,
@@ -304,7 +307,7 @@ impl OwnedMidiNoteRequest {
         }
     }
 
-    pub(crate) fn as_request(&self) -> MidiNoteRequest<'_> {
+    pub(crate) fn as_request(&self) -> MidiNoteRequest {
         MidiNoteRequest {
             id: self.id,
             note: self.note,
@@ -431,6 +434,7 @@ pub(crate) enum AudioCommand {
         reply: Sender<Option<f32>>,
     },
     LoadSoundFont {
+        id: perro_ids::SoundFontID,
         source: Arc<str>,
     },
     LoadMidiFile {

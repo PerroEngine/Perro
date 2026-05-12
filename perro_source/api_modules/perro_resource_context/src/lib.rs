@@ -1,4 +1,5 @@
 pub mod api;
+pub mod res_path;
 pub mod sub_apis;
 
 pub use api::ResourceWindow;
@@ -6,9 +7,11 @@ pub use api::ResourceWindow;
 pub use perro_ids::string_to_u64 as __perro_string_to_u64;
 pub use perro_render_bridge::{Material3D, Mesh3D, MeshSurfaceRange, RuntimeMeshVertex};
 pub use perro_scene::{Scene, SceneDoc, SceneWrite};
+pub use res_path::{ResPath, ResPathBuf, ResPathError, ResPathKind, ResPathSource};
 
 pub mod prelude {
     pub use crate::api::{ResourceAPI, ResourceWindow, ViewportAPI};
+    pub use crate::res_path::{ResPath, ResPathBuf, ResPathError, ResPathKind, ResPathSource};
     pub use crate::sub_apis::{
         AnimationAPI, AnimationModule, Audio, Audio2D, Audio2DModule, Audio3D, Audio3DModule,
         AudioAPI, AudioBusID, AudioModule, AudioPan, AudioPlayConfig, Draw2DAPI, Draw2DModule,
@@ -28,8 +31,9 @@ pub mod prelude {
         material_get_data, material_load, material_reserve, material_write, mesh_create, mesh_drop,
         mesh_get_data, mesh_load, mesh_reserve, mesh_write, midi_load_soundfont, midi_play,
         midi_play_at, midi_release, midi_start, midi_start_at, post_processing_add,
-        post_processing_clear, post_processing_remove, post_processing_set, scene_load_doc,
-        scene_save_doc, skeleton_load_bones, texture_drop, texture_load, texture_reserve,
+        post_processing_clear, post_processing_remove, post_processing_set, res_path, res_path_buf,
+        scene_load_doc, scene_save_doc, skeleton_load_bones, texture_drop, texture_load,
+        texture_reserve,
     };
     pub use perro_ids::prelude::{
         AnimationID, LightID, MaterialID, MeshID, NodeID, ScriptMemberID, SignalID, TagID,

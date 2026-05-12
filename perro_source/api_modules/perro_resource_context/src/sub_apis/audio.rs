@@ -1,4 +1,5 @@
-use perro_ids::AudioBusID;
+use crate::ResPathSource;
+use perro_ids::{AudioBusID, SoundFontID};
 pub use perro_pawdio::{
     MidiChannel, MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong, MidiSound, Note, program,
 };
@@ -21,31 +22,29 @@ pub trait AudioAPI {
     fn pause_bus(&self, bus_id: AudioBusID) -> bool;
     fn resume_bus(&self, bus_id: AudioBusID) -> bool;
     fn stop_bus(&self, bus_id: AudioBusID) -> bool;
-    fn load_midi_soundfont(&self, source: &str) -> bool;
-    fn play_midi_note(&self, note: Note, options: MidiNoteOptions<'_>) -> bool;
-    fn start_midi_note(&self, note: Note, options: MidiNoteOptions<'_>) -> Option<MidiNoteHandle>;
+    fn load_midi_soundfont_hashed(&self, source_hash: u64, source: Option<&str>) -> SoundFontID;
+    fn load_midi_soundfont(&self, source: &str) -> SoundFontID {
+        self.load_midi_soundfont_hashed(perro_ids::string_to_u64(source), Some(source))
+    }
+    fn play_midi_note(&self, note: Note, options: MidiNoteOptions) -> bool;
+    fn start_midi_note(&self, note: Note, options: MidiNoteOptions) -> Option<MidiNoteHandle>;
     fn release_midi_note(&self, handle: MidiNoteHandle) -> bool;
-    fn play_midi_file(&self, song: MidiSong<'_>) -> bool;
+    fn play_midi_file(&self, song: MidiSong) -> bool;
     fn play_midi_note_at(
         &self,
         note: Note,
         position: MidiSpatialPosition,
         range: f32,
-        options: MidiNoteOptions<'_>,
+        options: MidiNoteOptions,
     ) -> bool;
     fn start_midi_note_at(
         &self,
         note: Note,
         position: MidiSpatialPosition,
         range: f32,
-        options: MidiNoteOptions<'_>,
+        options: MidiNoteOptions,
     ) -> Option<MidiNoteHandle>;
-    fn play_midi_file_at(
-        &self,
-        song: MidiSong<'_>,
-        position: MidiSpatialPosition,
-        range: f32,
-    ) -> bool;
+    fn play_midi_file_at(&self, song: MidiSong, position: MidiSpatialPosition, range: f32) -> bool;
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -325,18 +324,18 @@ impl<'res, R: AudioAPI + ?Sized> AudioModule<'res, R> {
     }
 
     #[inline]
-    pub fn load_source<S: AsRef<str>>(&self, source: S) -> bool {
-        self.api.load_audio_source(source.as_ref())
+    pub fn load_source<S: ResPathSource>(&self, source: S) -> bool {
+        self.api.load_audio_source(source.as_res_path_str())
     }
 
     #[inline]
-    pub fn reserve_source<S: AsRef<str>>(&self, source: S) -> bool {
-        self.api.reserve_audio_source(source.as_ref())
+    pub fn reserve_source<S: ResPathSource>(&self, source: S) -> bool {
+        self.api.reserve_audio_source(source.as_res_path_str())
     }
 
     #[inline]
-    pub fn drop_source<S: AsRef<str>>(&self, source: S) -> bool {
-        self.api.drop_audio_source(source.as_ref())
+    pub fn drop_source<S: ResPathSource>(&self, source: S) -> bool {
+        self.api.drop_audio_source(source.as_res_path_str())
     }
 
     #[inline]
@@ -401,17 +400,17 @@ impl<'res, R: AudioAPI + ?Sized> AudioModule<'res, R> {
     }
 
     #[inline]
-    pub fn stop_source<S: AsRef<str>>(&self, source: S) -> bool {
-        self.api.stop_audio_source(source.as_ref())
+    pub fn stop_source<S: ResPathSource>(&self, source: S) -> bool {
+        self.api.stop_audio_source(source.as_res_path_str())
     }
 
     #[inline]
-    pub fn source_length_seconds<S: AsRef<str>>(&self, source: S) -> Option<f32> {
-        self.api.audio_length_seconds(source.as_ref())
+    pub fn source_length_seconds<S: ResPathSource>(&self, source: S) -> Option<f32> {
+        self.api.audio_length_seconds(source.as_res_path_str())
     }
 
     #[inline]
-    pub fn source_length_millis<S: AsRef<str>>(&self, source: S) -> Option<u64> {
+    pub fn source_length_millis<S: ResPathSource>(&self, source: S) -> Option<u64> {
         self.source_length_seconds(source)
             .map(|seconds| (seconds * 1000.0).max(0.0) as u64)
     }
@@ -478,12 +477,27 @@ pub struct MidiModule<'res, R: AudioAPI + ?Sized> {
 
 impl<'res, R: AudioAPI + ?Sized> MidiModule<'res, R> {
     #[inline]
-    pub fn load_soundfont<S: AsRef<str>>(&self, source: S) -> bool {
-        self.api.load_midi_soundfont(source.as_ref())
+    pub fn load_soundfont<S: ResPathSource>(&self, source: S) -> SoundFontID {
+        self.api.load_midi_soundfont(source.as_res_path_str())
     }
 
     #[inline]
-    pub fn play_note(&self, note: Note, options: MidiNoteOptions<'_>) -> bool {
+    pub fn load_soundfont_hashed(&self, source_hash: u64) -> SoundFontID {
+        self.api.load_midi_soundfont_hashed(source_hash, None)
+    }
+
+    #[inline]
+    pub fn load_soundfont_hashed_with_source<S: ResPathSource>(
+        &self,
+        source_hash: u64,
+        source: S,
+    ) -> SoundFontID {
+        self.api
+            .load_midi_soundfont_hashed(source_hash, Some(source.as_res_path_str()))
+    }
+
+    #[inline]
+    pub fn play_note(&self, note: Note, options: MidiNoteOptions) -> bool {
         self.api.play_midi_note(note, options)
     }
 
@@ -492,14 +506,14 @@ impl<'res, R: AudioAPI + ?Sized> MidiModule<'res, R> {
         &self,
         bus_id: AudioBusID,
         note: Note,
-        mut options: MidiNoteOptions<'_>,
+        mut options: MidiNoteOptions,
     ) -> bool {
         options.bus_id = Some(bus_id);
         self.api.play_midi_note(note, options)
     }
 
     #[inline]
-    pub fn start_note(&self, note: Note, options: MidiNoteOptions<'_>) -> Option<MidiNoteHandle> {
+    pub fn start_note(&self, note: Note, options: MidiNoteOptions) -> Option<MidiNoteHandle> {
         self.api.start_midi_note(note, options)
     }
 
@@ -508,7 +522,7 @@ impl<'res, R: AudioAPI + ?Sized> MidiModule<'res, R> {
         &self,
         bus_id: AudioBusID,
         note: Note,
-        mut options: MidiNoteOptions<'_>,
+        mut options: MidiNoteOptions,
     ) -> Option<MidiNoteHandle> {
         options.bus_id = Some(bus_id);
         self.api.start_midi_note(note, options)
@@ -520,7 +534,7 @@ impl<'res, R: AudioAPI + ?Sized> MidiModule<'res, R> {
     }
 
     #[inline]
-    pub fn play_file(&self, song: MidiSong<'_>) -> bool {
+    pub fn play_file(&self, song: MidiSong) -> bool {
         self.api.play_midi_file(song)
     }
 
@@ -530,7 +544,7 @@ impl<'res, R: AudioAPI + ?Sized> MidiModule<'res, R> {
         note: Note,
         position: P,
         range: f32,
-        options: MidiNoteOptions<'_>,
+        options: MidiNoteOptions,
     ) -> bool {
         self.api
             .play_midi_note_at(note, position.into_midi_spatial_position(), range, options)
@@ -542,19 +556,14 @@ impl<'res, R: AudioAPI + ?Sized> MidiModule<'res, R> {
         note: Note,
         position: P,
         range: f32,
-        options: MidiNoteOptions<'_>,
+        options: MidiNoteOptions,
     ) -> Option<MidiNoteHandle> {
         self.api
             .start_midi_note_at(note, position.into_midi_spatial_position(), range, options)
     }
 
     #[inline]
-    pub fn play_file_at<P: MidiSpatialPos>(
-        &self,
-        song: MidiSong<'_>,
-        position: P,
-        range: f32,
-    ) -> bool {
+    pub fn play_file_at<P: MidiSpatialPos>(&self, song: MidiSong, position: P, range: f32) -> bool {
         self.api
             .play_midi_file_at(song, position.into_midi_spatial_position(), range)
     }
@@ -694,6 +703,12 @@ macro_rules! audio_bus {
 
 #[macro_export]
 macro_rules! midi_load_soundfont {
+    ($res:expr, $source:literal) => {{
+        const __HASH: u64 = $crate::__perro_string_to_u64($source);
+        $res.Audio()
+            .midi()
+            .load_soundfont_hashed_with_source(__HASH, $source)
+    }};
     ($res:expr, $source:expr) => {
         $res.Audio().midi().load_soundfont($source)
     };
@@ -833,18 +848,22 @@ mod tests {
             true
         }
 
-        fn load_midi_soundfont(&self, _source: &str) -> bool {
-            true
+        fn load_midi_soundfont_hashed(
+            &self,
+            source_hash: u64,
+            _source: Option<&str>,
+        ) -> SoundFontID {
+            SoundFontID::from_u64(source_hash)
         }
 
-        fn play_midi_note(&self, _note: Note, _options: MidiNoteOptions<'_>) -> bool {
+        fn play_midi_note(&self, _note: Note, _options: MidiNoteOptions) -> bool {
             true
         }
 
         fn start_midi_note(
             &self,
             _note: Note,
-            _options: MidiNoteOptions<'_>,
+            _options: MidiNoteOptions,
         ) -> Option<MidiNoteHandle> {
             Some(MidiNoteHandle(1))
         }
@@ -853,7 +872,7 @@ mod tests {
             true
         }
 
-        fn play_midi_file(&self, _song: MidiSong<'_>) -> bool {
+        fn play_midi_file(&self, _song: MidiSong) -> bool {
             true
         }
 
@@ -862,7 +881,7 @@ mod tests {
             _note: Note,
             _position: MidiSpatialPosition,
             _range: f32,
-            _options: MidiNoteOptions<'_>,
+            _options: MidiNoteOptions,
         ) -> bool {
             true
         }
@@ -872,14 +891,14 @@ mod tests {
             _note: Note,
             _position: MidiSpatialPosition,
             _range: f32,
-            _options: MidiNoteOptions<'_>,
+            _options: MidiNoteOptions,
         ) -> Option<MidiNoteHandle> {
             Some(MidiNoteHandle(2))
         }
 
         fn play_midi_file_at(
             &self,
-            _song: MidiSong<'_>,
+            _song: MidiSong,
             _position: MidiSpatialPosition,
             _range: f32,
         ) -> bool {

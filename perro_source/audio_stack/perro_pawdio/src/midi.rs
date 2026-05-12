@@ -1,6 +1,7 @@
 use crossbeam_channel::Receiver;
 use midly::{MetaMessage, MidiMessage, Smf, Timing, TrackEventKind};
 use perro_ids::AudioBusID;
+use perro_ids::SoundFontID;
 use rodio::Source;
 use rustysynth::{
     MidiFile as RustyMidiFile, MidiFileSequencer, SoundFont, Synthesizer, SynthesizerSettings,
@@ -257,25 +258,25 @@ pub mod program {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-pub enum MidiSound<'a> {
+pub enum MidiSound {
     #[default]
     BuiltIn,
-    SoundFont(&'a str),
+    SoundFont(SoundFontID),
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct MidiNoteOptions<'a> {
+pub struct MidiNoteOptions {
     pub velocity: u8,
     pub sustain: Duration,
     pub channel: MidiChannel,
     pub program: MidiProgram,
-    pub sound: MidiSound<'a>,
+    pub sound: MidiSound,
     pub bus_id: Option<AudioBusID>,
     pub volume: f32,
     pub pan: AudioPan,
 }
 
-impl<'a> MidiNoteOptions<'a> {
+impl MidiNoteOptions {
     pub const fn new() -> Self {
         Self {
             velocity: 100,
@@ -299,13 +300,13 @@ impl<'a> MidiNoteOptions<'a> {
         self
     }
 
-    pub const fn with_sound(mut self, sound: MidiSound<'a>) -> Self {
+    pub const fn with_sound(mut self, sound: MidiSound) -> Self {
         self.sound = sound;
         self
     }
 }
 
-impl Default for MidiNoteOptions<'_> {
+impl Default for MidiNoteOptions {
     fn default() -> Self {
         Self::new()
     }
@@ -314,7 +315,7 @@ impl Default for MidiNoteOptions<'_> {
 #[derive(Clone, Copy, Debug)]
 pub struct MidiSong<'a> {
     pub source: &'a str,
-    pub sound: MidiSound<'a>,
+    pub sound: MidiSound,
     pub bus_id: Option<AudioBusID>,
     pub volume: f32,
     pub looped: bool,
@@ -331,7 +332,7 @@ impl<'a> MidiSong<'a> {
         }
     }
 
-    pub const fn with_sound(mut self, sound: MidiSound<'a>) -> Self {
+    pub const fn with_sound(mut self, sound: MidiSound) -> Self {
         self.sound = sound;
         self
     }
@@ -346,10 +347,10 @@ impl<'a> MidiSong<'a> {
 pub struct MidiNoteHandle(pub u64);
 
 #[derive(Clone, Copy, Debug)]
-pub struct MidiNoteRequest<'a> {
+pub struct MidiNoteRequest {
     pub id: u64,
     pub note: Note,
-    pub options: MidiNoteOptions<'a>,
+    pub options: MidiNoteOptions,
     pub held: bool,
 }
 
@@ -689,7 +690,7 @@ pub struct BuiltInMidiSource {
 }
 
 impl BuiltInMidiSource {
-    pub fn note(request: MidiNoteRequest<'_>, rx: Receiver<MidiControl>) -> Self {
+    pub fn note(request: MidiNoteRequest, rx: Receiver<MidiControl>) -> Self {
         let mut source = Self {
             voices: Vec::new(),
             events: Arc::from(Vec::<MidiEvent>::new().into_boxed_slice()),
@@ -720,11 +721,7 @@ impl BuiltInMidiSource {
         source
     }
 
-    pub fn file(
-        bytes: &[u8],
-        song: MidiSong<'_>,
-        rx: Receiver<MidiControl>,
-    ) -> Result<Self, String> {
+    pub fn file(bytes: &[u8], song: MidiSong, rx: Receiver<MidiControl>) -> Result<Self, String> {
         let data = parse_built_in_midi_file(bytes)?;
         Ok(Self::file_data(data, song, rx))
     }
@@ -732,7 +729,7 @@ impl BuiltInMidiSource {
     #[doc(hidden)]
     pub fn file_data(
         data: Arc<BuiltInMidiFileData>,
-        song: MidiSong<'_>,
+        song: MidiSong,
         rx: Receiver<MidiControl>,
     ) -> Self {
         let loop_samples = song

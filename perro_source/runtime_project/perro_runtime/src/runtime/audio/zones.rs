@@ -334,7 +334,7 @@ impl Runtime {
         true
     }
 
-    pub(super) fn start_spatial_midi_note(&mut self, start: SpatialMidiNoteStart<'_>) -> bool {
+    pub(super) fn start_spatial_midi_note(&mut self, start: SpatialMidiNoteStart) -> bool {
         let SpatialMidiNoteStart {
             id,
             note,
@@ -387,7 +387,7 @@ impl Runtime {
     pub(super) fn start_spatial_midi_file(
         &mut self,
         id: u64,
-        song: perro_pawdio::MidiSong<'_>,
+        song: perro_pawdio::MidiSong,
         pos: SpatialSoundPos,
         spatial: SpatialAudioOptions,
         last_2d: Option<Vector2>,

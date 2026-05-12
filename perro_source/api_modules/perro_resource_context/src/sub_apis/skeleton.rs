@@ -1,3 +1,4 @@
+use crate::ResPathSource;
 use perro_nodes::{skeleton_2d::Bone2D, skeleton_3d::Bone3D};
 
 pub trait SkeletonAPI {
@@ -17,18 +18,18 @@ impl<'res, R: SkeletonAPI + ?Sized> SkeletonModule<'res, R> {
     }
 
     #[inline]
-    pub fn load_bones_2d<S: AsRef<str>>(&self, source: S) -> Vec<Bone2D> {
-        self.api.load_bones_2d(source.as_ref())
+    pub fn load_bones_2d<S: ResPathSource>(&self, source: S) -> Vec<Bone2D> {
+        self.api.load_bones_2d(source.as_res_path_str())
     }
 
     #[inline]
-    pub fn load_bones_3d<S: AsRef<str>>(&self, source: S) -> Vec<Bone3D> {
-        self.api.load_bones_3d(source.as_ref())
+    pub fn load_bones_3d<S: ResPathSource>(&self, source: S) -> Vec<Bone3D> {
+        self.api.load_bones_3d(source.as_res_path_str())
     }
 
     #[inline]
-    pub fn load_bones<S: AsRef<str>>(&self, source: S) -> Vec<Bone3D> {
-        self.api.load_bones(source.as_ref())
+    pub fn load_bones<S: ResPathSource>(&self, source: S) -> Vec<Bone3D> {
+        self.api.load_bones(source.as_res_path_str())
     }
 }
 

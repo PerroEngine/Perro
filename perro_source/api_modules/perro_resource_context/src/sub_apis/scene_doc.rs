@@ -1,39 +1,5 @@
+use crate::ResPathSource;
 use perro_scene::{Scene, SceneDoc, SceneWrite};
-use std::borrow::Cow;
-
-pub trait IntoSceneDocPath {
-    fn into_scene_doc_path(self) -> Cow<'static, str>;
-}
-
-impl IntoSceneDocPath for &'static str {
-    fn into_scene_doc_path(self) -> Cow<'static, str> {
-        Cow::Borrowed(self)
-    }
-}
-
-impl IntoSceneDocPath for String {
-    fn into_scene_doc_path(self) -> Cow<'static, str> {
-        Cow::Owned(self)
-    }
-}
-
-impl IntoSceneDocPath for &String {
-    fn into_scene_doc_path(self) -> Cow<'static, str> {
-        Cow::Owned(self.clone())
-    }
-}
-
-impl IntoSceneDocPath for Cow<'static, str> {
-    fn into_scene_doc_path(self) -> Cow<'static, str> {
-        self
-    }
-}
-
-impl IntoSceneDocPath for &Cow<'static, str> {
-    fn into_scene_doc_path(self) -> Cow<'static, str> {
-        self.clone()
-    }
-}
 
 pub trait IntoSceneDoc {
     fn into_scene_doc(self) -> SceneDoc;
@@ -90,35 +56,35 @@ impl<'res, R: SceneDocAPI + ?Sized> SceneDocModule<'res, R> {
         Self { api }
     }
 
-    pub fn load<P: IntoSceneDocPath>(&self, path: P) -> Result<SceneDoc, String> {
-        let path = path.into_scene_doc_path();
-        self.api.scene_load_doc(path.as_ref())
+    pub fn load<P: ResPathSource>(&self, path: P) -> Result<SceneDoc, String> {
+        self.api.scene_load_doc(path.as_res_path_str())
     }
 
-    pub fn load_hashed(&self, path_hash: u64, path: &str) -> Result<SceneDoc, String> {
-        self.api.scene_load_doc_hashed(path_hash, path)
-    }
-
-    pub fn save<P: IntoSceneDocPath, D: IntoSceneDoc>(
+    pub fn load_hashed<P: ResPathSource>(
         &self,
+        path_hash: u64,
+        path: P,
+    ) -> Result<SceneDoc, String> {
+        self.api
+            .scene_load_doc_hashed(path_hash, path.as_res_path_str())
+    }
+
+    pub fn save<P: ResPathSource, D: IntoSceneDoc>(&self, path: P, doc: D) -> Result<(), String> {
+        let mut doc = doc.into_scene_doc();
+        doc.normalize_links();
+        self.api.scene_save_doc(path.as_res_path_str(), &doc)
+    }
+
+    pub fn save_hashed<P: ResPathSource, D: IntoSceneDoc>(
+        &self,
+        path_hash: u64,
         path: P,
         doc: D,
     ) -> Result<(), String> {
-        let path = path.into_scene_doc_path();
         let mut doc = doc.into_scene_doc();
         doc.normalize_links();
-        self.api.scene_save_doc(path.as_ref(), &doc)
-    }
-
-    pub fn save_hashed<D: IntoSceneDoc>(
-        &self,
-        path_hash: u64,
-        path: &str,
-        doc: D,
-    ) -> Result<(), String> {
-        let mut doc = doc.into_scene_doc();
-        doc.normalize_links();
-        self.api.scene_save_doc_hashed(path_hash, path, &doc)
+        self.api
+            .scene_save_doc_hashed(path_hash, path.as_res_path_str(), &doc)
     }
 
     pub fn write<'a>(&self, doc: &'a SceneDoc) -> SceneWrite<'a> {

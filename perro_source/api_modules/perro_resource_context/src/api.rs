@@ -1,3 +1,4 @@
+use crate::ResPathSource;
 use crate::sub_apis::{
     AnimationAPI, AnimationModule, AnimationTreeAPI, AnimationTreeModule, AudioAPI, AudioModule,
     Draw2DAPI, Draw2DModule, Locale, LocalizationAPI, LocalizationModule, MaterialAPI,
@@ -110,13 +111,13 @@ impl<'res, R: ResourceAPI + ?Sized> ResourceWindow<'res, R> {
     }
 
     #[inline]
-    pub fn scene_load_doc(&self, path: &str) -> Result<SceneDoc, String> {
-        self.api.scene_load_doc(path)
+    pub fn scene_load_doc<P: ResPathSource>(&self, path: P) -> Result<SceneDoc, String> {
+        self.api.scene_load_doc(path.as_res_path_str())
     }
 
     #[inline]
-    pub fn scene_save_doc(&self, path: &str, doc: &SceneDoc) -> Result<(), String> {
-        self.api.scene_save_doc(path, doc)
+    pub fn scene_save_doc<P: ResPathSource>(&self, path: P, doc: &SceneDoc) -> Result<(), String> {
+        self.api.scene_save_doc(path.as_res_path_str(), doc)
     }
 
     #[inline]
