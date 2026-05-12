@@ -13,6 +13,7 @@ use perro_asset_formats::{
     source_ext,
 };
 use perro_io::{compress_zlib_best, walkdir::collect_file_paths};
+use perro_meshlets::{DEFAULT_LOD_TARGET_RATIOS, LodSurfaceRange, LodVertex};
 use rayon::prelude::*;
 use std::{
     collections::BTreeMap,
@@ -22,8 +23,6 @@ use std::{
 };
 
 const MESHLET_TRIANGLES: usize = 64;
-const LOD_TARGET_RATIOS: [f32; 6] = [1.0, 0.8, 0.6, 0.4, 0.25, 0.125];
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct PackedVertex {
     position: [f32; 3],
@@ -612,121 +611,40 @@ fn build_lod_sets(
     indices: &[u32],
     surface_ranges: &[PackedSurfaceRange],
 ) -> Vec<LodInput> {
-    let base_surfaces = if surface_ranges.is_empty() {
-        vec![PackedSurfaceRange {
-            index_start: 0,
-            index_count: indices.len() as u32,
-        }]
-    } else {
-        surface_ranges.to_vec()
-    };
-    let tri_count = indices.len() / 3;
-    if tri_count == 0 {
-        return vec![LodInput {
-            indices: indices.to_vec(),
-            surface_ranges: base_surfaces,
-        }];
-    }
-
-    let mut lods = Vec::new();
-    for ratio in LOD_TARGET_RATIOS {
-        let target_tris = ((tri_count as f32) * ratio).ceil() as usize;
-        let target_tris = target_tris.clamp(1, tri_count);
-        let mut lod_indices = Vec::new();
-        let mut lod_surfaces = Vec::new();
-        for range in &base_surfaces {
-            let start = range.index_start as usize;
-            let end = start
-                .saturating_add(range.index_count as usize)
-                .min(indices.len());
-            let surface = &indices[start..end];
-            let surface_tris = surface.len() / 3;
-            if surface_tris == 0 {
-                continue;
-            }
-            let keep = ((surface_tris as f32) * ratio).ceil() as usize;
-            let keep = keep.clamp(1, surface_tris);
-            let surface_start = lod_indices.len() as u32;
-            append_decimated_surface(vertices, surface, keep, &mut lod_indices);
-            let surface_count = (lod_indices.len() as u32).saturating_sub(surface_start);
-            if surface_count > 0 {
-                lod_surfaces.push(PackedSurfaceRange {
-                    index_start: surface_start,
-                    index_count: surface_count,
-                });
-            }
-        }
-        let duplicate = lods
-            .last()
-            .is_some_and(|prev: &LodInput| prev.indices == lod_indices);
-        if lod_indices.len() >= 3 && !duplicate {
-            lods.push(LodInput {
-                indices: lod_indices,
-                surface_ranges: lod_surfaces,
-            });
-        }
-        if target_tris == tri_count && lods.len() == 1 {
-            continue;
-        }
-    }
-    if lods.is_empty() {
-        lods.push(LodInput {
-            indices: indices.to_vec(),
-            surface_ranges: base_surfaces,
-        });
-    }
-    lods
-}
-
-fn append_decimated_surface(
-    vertices: &[PackedVertex],
-    surface_indices: &[u32],
-    keep_tris: usize,
-    out: &mut Vec<u32>,
-) {
-    let tri_count = surface_indices.len() / 3;
-    if keep_tris >= tri_count {
-        out.extend_from_slice(&surface_indices[..tri_count * 3]);
-        return;
-    }
-
-    let mut tris = (0..tri_count)
-        .map(|tri| {
-            let start = tri * 3;
-            let a = surface_indices[start];
-            let b = surface_indices[start + 1];
-            let c = surface_indices[start + 2];
-            (triangle_area_key(vertices, a, b, c), tri)
+    let lod_vertices = vertices
+        .iter()
+        .map(|vertex| LodVertex {
+            position: vertex.position,
+            normal: vertex.normal,
+            uv: vertex.uv,
         })
         .collect::<Vec<_>>();
-    tris.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
-    tris.truncate(keep_tris);
-    tris.sort_by_key(|(_, tri)| *tri);
-    for (_, tri) in tris {
-        let start = tri * 3;
-        out.extend_from_slice(&surface_indices[start..start + 3]);
-    }
-}
-
-fn triangle_area_key(vertices: &[PackedVertex], a: u32, b: u32, c: u32) -> f32 {
-    let Some(pa) = vertices.get(a as usize).map(|v| v.position) else {
-        return 0.0;
-    };
-    let Some(pb) = vertices.get(b as usize).map(|v| v.position) else {
-        return 0.0;
-    };
-    let Some(pc) = vertices.get(c as usize).map(|v| v.position) else {
-        return 0.0;
-    };
-    let ab = [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
-    let ac = [pc[0] - pa[0], pc[1] - pa[1], pc[2] - pa[2]];
-    let cross = [
-        ab[1] * ac[2] - ab[2] * ac[1],
-        ab[2] * ac[0] - ab[0] * ac[2],
-        ab[0] * ac[1] - ab[1] * ac[0],
-    ];
-    let area_sq = cross[0] * cross[0] + cross[1] * cross[1] + cross[2] * cross[2];
-    if area_sq.is_finite() { area_sq } else { 0.0 }
+    let lod_surfaces = surface_ranges
+        .iter()
+        .map(|range| LodSurfaceRange {
+            index_start: range.index_start,
+            index_count: range.index_count,
+        })
+        .collect::<Vec<_>>();
+    perro_meshlets::build_lod_sets(
+        &lod_vertices,
+        indices,
+        &lod_surfaces,
+        &DEFAULT_LOD_TARGET_RATIOS,
+    )
+    .into_iter()
+    .map(|lod| LodInput {
+        indices: lod.indices,
+        surface_ranges: lod
+            .surface_ranges
+            .into_iter()
+            .map(|range| PackedSurfaceRange {
+                index_start: range.index_start,
+                index_count: range.index_count,
+            })
+            .collect(),
+    })
+    .collect()
 }
 
 fn pack_lod_sets(

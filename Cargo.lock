@@ -3193,6 +3193,10 @@ version = "0.1.0"
 [[package]]
 name = "perro_meshlets"
 version = "0.1.0"
+dependencies = [
+ "criterion",
+ "rayon",
+]
 
 [[package]]
 name = "perro_modules"

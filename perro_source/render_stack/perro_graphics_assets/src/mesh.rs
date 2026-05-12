@@ -5,7 +5,9 @@ use perro_asset_formats::pmesh::{
     FLAG_PAYLOAD_RAW as PMESH_FLAG_PAYLOAD_RAW, MAGIC as PMESH_MAGIC, VERSION as PMESH_VERSION,
 };
 use perro_io::{decompress_zlib, load_asset};
-use perro_meshlets::pack_meshlets_from_positions;
+use perro_meshlets::{
+    DEFAULT_LOD_TARGET_RATIOS, LodSurfaceRange, LodVertex, pack_meshlets_from_positions,
+};
 use perro_render_bridge::{Mesh3D, MeshSurfaceRange, RuntimeMeshData, RuntimeMeshVertex};
 use std::{borrow::Cow, collections::BTreeMap};
 
@@ -358,87 +360,41 @@ fn build_decoded_lod_sets(
     indices: &[u32],
     surface_ranges: &[MeshRange],
 ) -> Vec<DecodedLodInput> {
-    let tri_count = indices.len() / 3;
-    if tri_count == 0 {
-        return vec![DecodedLodInput {
-            indices: indices.to_vec(),
-            surface_ranges: surface_ranges.to_vec(),
-        }];
-    }
-    let mut lods = Vec::new();
-    let levels = [1usize, 2, 4, 8];
-    for &step in &levels {
-        if step > 1 && tri_count / step < 12 {
-            continue;
-        }
-        let mut lod_indices = Vec::new();
-        let mut lod_surfaces = Vec::new();
-        for surface in surface_ranges {
-            let start = surface.index_start as usize;
-            let end = start
-                .saturating_add(surface.index_count as usize)
-                .min(indices.len());
-            if start >= end {
-                continue;
-            }
-            let surface_start = lod_indices.len() as u32;
-            let mut tris: Vec<[u32; 3]> = indices[start..end]
-                .chunks_exact(3)
-                .map(|tri| [tri[0], tri[1], tri[2]])
-                .collect();
-            tris.sort_by(|a, b| {
-                let aa = decoded_triangle_area_key(vertices, a[0], a[1], a[2]);
-                let bb = decoded_triangle_area_key(vertices, b[0], b[1], b[2]);
-                bb.partial_cmp(&aa).unwrap_or(std::cmp::Ordering::Equal)
-            });
-            for (i, tri) in tris.into_iter().enumerate() {
-                if i % step == 0 {
-                    lod_indices.extend_from_slice(&tri);
-                }
-            }
-            let surface_count = (lod_indices.len() as u32).saturating_sub(surface_start);
-            if surface_count > 0 {
-                lod_surfaces.push(MeshRange {
-                    index_start: surface_start,
-                    index_count: surface_count,
-                    base_vertex: 0,
-                });
-            }
-        }
-        if !lod_indices.is_empty() {
-            lods.push(DecodedLodInput {
-                indices: lod_indices,
-                surface_ranges: lod_surfaces,
-            });
-        }
-    }
-    if lods.is_empty() {
-        lods.push(DecodedLodInput {
-            indices: indices.to_vec(),
-            surface_ranges: surface_ranges.to_vec(),
-        });
-    }
-    lods
-}
-
-fn decoded_triangle_area_key(vertices: &[MeshVertex], a: u32, b: u32, c: u32) -> f32 {
-    let Some(a) = vertices.get(a as usize).map(|v| v.pos) else {
-        return 0.0;
-    };
-    let Some(b) = vertices.get(b as usize).map(|v| v.pos) else {
-        return 0.0;
-    };
-    let Some(c) = vertices.get(c as usize).map(|v| v.pos) else {
-        return 0.0;
-    };
-    let ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-    let ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
-    let cross = [
-        ab[1] * ac[2] - ab[2] * ac[1],
-        ab[2] * ac[0] - ab[0] * ac[2],
-        ab[0] * ac[1] - ab[1] * ac[0],
-    ];
-    cross[0] * cross[0] + cross[1] * cross[1] + cross[2] * cross[2]
+    let lod_vertices = vertices
+        .iter()
+        .map(|vertex| LodVertex {
+            position: vertex.pos,
+            normal: vertex.normal,
+            uv: vertex.uv,
+        })
+        .collect::<Vec<_>>();
+    let lod_surfaces = surface_ranges
+        .iter()
+        .map(|range| LodSurfaceRange {
+            index_start: range.index_start,
+            index_count: range.index_count,
+        })
+        .collect::<Vec<_>>();
+    perro_meshlets::build_lod_sets(
+        &lod_vertices,
+        indices,
+        &lod_surfaces,
+        &DEFAULT_LOD_TARGET_RATIOS,
+    )
+    .into_iter()
+    .map(|lod| DecodedLodInput {
+        indices: lod.indices,
+        surface_ranges: lod
+            .surface_ranges
+            .into_iter()
+            .map(|range| MeshRange {
+                index_start: range.index_start,
+                index_count: range.index_count,
+                base_vertex: 0,
+            })
+            .collect(),
+    })
+    .collect()
 }
 
 fn pack_decoded_meshlets_with_surfaces(
