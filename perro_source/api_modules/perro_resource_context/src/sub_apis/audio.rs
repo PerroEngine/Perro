@@ -53,6 +53,24 @@ pub enum MidiSpatialPosition {
     ThreeD(Vector3),
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum AudioDirection<T> {
+    #[default]
+    Omni,
+    Directional(T),
+    InverseDirectional(T),
+    Bidirectional(T),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct SpatialAudioOptions {
+    pub range: f32,
+    pub occlusion_mask: u32,
+    pub enable_propagation: bool,
+    pub direction_2d: AudioDirection<Vector2>,
+    pub direction_3d: AudioDirection<Vector3>,
+}
+
 pub trait MidiSpatialPos {
     fn into_midi_spatial_position(self) -> MidiSpatialPosition;
 }
@@ -230,6 +248,9 @@ pub struct Audio2D<'a> {
     pub audio: Audio<'a>,
     pub position: Vector2,
     pub range: f32,
+    pub occlusion_mask: u32,
+    pub enable_propagation: bool,
+    pub direction: Option<AudioDirection<Vector2>>,
 }
 
 impl<'a> Audio2D<'a> {
@@ -238,6 +259,9 @@ impl<'a> Audio2D<'a> {
             audio: Audio::new(source),
             position,
             range,
+            occlusion_mask: u32::MAX,
+            enable_propagation: true,
+            direction: None,
         }
     }
 
@@ -246,6 +270,9 @@ impl<'a> Audio2D<'a> {
             audio,
             position,
             range,
+            occlusion_mask: u32::MAX,
+            enable_propagation: true,
+            direction: None,
         }
     }
 }
@@ -255,6 +282,9 @@ pub struct Audio3D<'a> {
     pub audio: Audio<'a>,
     pub position: Vector3,
     pub range: f32,
+    pub occlusion_mask: u32,
+    pub enable_propagation: bool,
+    pub direction: Option<AudioDirection<Vector3>>,
 }
 
 impl<'a> Audio3D<'a> {
@@ -263,6 +293,9 @@ impl<'a> Audio3D<'a> {
             audio: Audio::new(source),
             position,
             range,
+            occlusion_mask: u32::MAX,
+            enable_propagation: true,
+            direction: None,
         }
     }
 
@@ -271,6 +304,9 @@ impl<'a> Audio3D<'a> {
             audio,
             position,
             range,
+            occlusion_mask: u32::MAX,
+            enable_propagation: true,
+            direction: None,
         }
     }
 }
@@ -929,6 +965,11 @@ mod tests {
         ));
         assert!(crate::audio_play!(
             res,
+            Audio3D::new("res://step.wav", Vector3::new(1.0, 2.0, 3.0), 10.0)
+        ));
+        assert!(crate::audio_play!(
+            res,
+            bus,
             Audio3D::new("res://step.wav", Vector3::new(1.0, 2.0, 3.0), 10.0)
         ));
     }

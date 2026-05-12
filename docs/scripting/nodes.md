@@ -198,7 +198,7 @@ Audio 3D:
 - `AudioMask3D`
 - `AudioZone3D`
 - `AudioPortal3D`
-- `AudioMask3D` is planned invisible audio-only geometry with `CollisionShape3D` children.
+- `AudioMask3D` is invisible audio-only geometry with `CollisionShape3D` children.
 - `AudioZone3D` stores reverb/echo/dampening intent for listener, emitter, or path zones.
 - `AudioPortal3D` marks one-way inputs with `CollisionShape3D` children and linked portal exits. Hit point and ray direction transform through target portal global transforms, then continue through portal hits or physics bounces. Immediate re-entry into the portal just exited is blocked until another portal hit or physics bounce.
 

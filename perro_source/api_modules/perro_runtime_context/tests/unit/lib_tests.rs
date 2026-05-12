@@ -4,7 +4,7 @@ use crate::{
         AnimPlayerAPI, AnimTreeAPI, RuntimeAudio, RuntimeAudioAPI, SceneAPI, SpatialAudioOptions,
     },
 };
-use perro_ids::{AnimationID, IntoTagID, MeshID, NodeID};
+use perro_ids::{AnimationID, AudioBusID, IntoTagID, MeshID, NodeID};
 use perro_nodes::prelude::Node2D;
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use std::{any::Any, borrow::Cow};
@@ -485,6 +485,7 @@ impl PhysicsAPI for DummyRuntime {
 impl RuntimeAudioAPI for DummyRuntime {
     fn play_runtime_audio_attached(
         &mut self,
+        _bus_id: Option<AudioBusID>,
         _audio: RuntimeAudio<'_>,
         _node_id: NodeID,
         _options: SpatialAudioOptions,

@@ -5,6 +5,51 @@ pub(super) fn rotate_vec2(v: Vector2, radians: f32) -> Vector2 {
     Vector2::new(v.x * cos - v.y * sin, v.x * sin + v.y * cos)
 }
 
+pub(super) fn normalize_spatial_options(mut options: SpatialAudioOptions) -> SpatialAudioOptions {
+    options.range = options.range.max(0.0001);
+    options.direction_2d = normalize_direction_2d(options.direction_2d);
+    options.direction_3d = normalize_direction_3d(options.direction_3d);
+    options
+}
+
+fn normalize_direction_2d(direction: AudioDirection<Vector2>) -> AudioDirection<Vector2> {
+    match direction {
+        AudioDirection::Omni => AudioDirection::Omni,
+        AudioDirection::Directional(v) => AudioDirection::Directional(normalized_or_zero_2d(v)),
+        AudioDirection::InverseDirectional(v) => {
+            AudioDirection::InverseDirectional(normalized_or_zero_2d(v))
+        }
+        AudioDirection::Bidirectional(v) => AudioDirection::Bidirectional(normalized_or_zero_2d(v)),
+    }
+}
+
+fn normalize_direction_3d(direction: AudioDirection<Vector3>) -> AudioDirection<Vector3> {
+    match direction {
+        AudioDirection::Omni => AudioDirection::Omni,
+        AudioDirection::Directional(v) => AudioDirection::Directional(normalized_or_zero_3d(v)),
+        AudioDirection::InverseDirectional(v) => {
+            AudioDirection::InverseDirectional(normalized_or_zero_3d(v))
+        }
+        AudioDirection::Bidirectional(v) => AudioDirection::Bidirectional(normalized_or_zero_3d(v)),
+    }
+}
+
+fn normalized_or_zero_2d(v: Vector2) -> Vector2 {
+    if v.length_squared() > 0.0001 {
+        v.normalized()
+    } else {
+        Vector2::ZERO
+    }
+}
+
+fn normalized_or_zero_3d(v: Vector3) -> Vector3 {
+    if v.length_squared() > 0.0001 {
+        v.normalized()
+    } else {
+        Vector3::ZERO
+    }
+}
+
 pub(super) fn inverse_transform_point_2d(transform: Transform2D, point: Vector2) -> Vector2 {
     let local = rotate_vec2(point - transform.position, -transform.rotation);
     Vector2::new(
@@ -178,6 +223,68 @@ pub(super) fn segment_aabb_3d(
         }
     }
     (0.0..=1.0).contains(&t_min).then_some(t_min)
+}
+
+pub(super) fn segment_aabb_3d_with_normal(
+    from: Vector3,
+    delta: Vector3,
+    center: Vector3,
+    half: Vector3,
+) -> Option<(f32, Vector3)> {
+    let min = center - half;
+    let max = center + half;
+    let mut t_min = 0.0f32;
+    let mut t_max = 1.0f32;
+    let mut normal = Vector3::new(0.0, 0.0, 0.0);
+    for axis in 0..3 {
+        let origin = match axis {
+            0 => from.x,
+            1 => from.y,
+            _ => from.z,
+        };
+        let dir = match axis {
+            0 => delta.x,
+            1 => delta.y,
+            _ => delta.z,
+        };
+        let lo = match axis {
+            0 => min.x,
+            1 => min.y,
+            _ => min.z,
+        };
+        let hi = match axis {
+            0 => max.x,
+            1 => max.y,
+            _ => max.z,
+        };
+        if dir.abs() <= 0.000001 {
+            if origin < lo || origin > hi {
+                return None;
+            }
+            continue;
+        }
+        let inv = 1.0 / dir;
+        let mut t1 = (lo - origin) * inv;
+        let mut t2 = (hi - origin) * inv;
+        let mut axis_normal = match axis {
+            0 => Vector3::new(if dir > 0.0 { -1.0 } else { 1.0 }, 0.0, 0.0),
+            1 => Vector3::new(0.0, if dir > 0.0 { -1.0 } else { 1.0 }, 0.0),
+            _ => Vector3::new(0.0, 0.0, if dir > 0.0 { -1.0 } else { 1.0 }),
+        };
+        if t1 > t2 {
+            std::mem::swap(&mut t1, &mut t2);
+            axis_normal *= -1.0;
+        }
+        if t1 > t_min {
+            t_min = t1;
+            normal = axis_normal;
+        }
+        t_max = t_max.min(t2);
+        if t_min > t_max {
+            return None;
+        }
+    }
+    (0.0..=1.0).contains(&t_min).then_some((t_min, normal))
 }
 
 pub(super) fn reflect_3d(direction: Vector3, normal: Vector3) -> Option<Vector3> {

@@ -28,7 +28,11 @@ pub(crate) struct QueuedSpatialAudio {
     pub from_start: f32,
     pub from_end: f32,
     pub range: f32,
+    pub occlusion_mask: u32,
+    pub enable_propagation: bool,
     pub pos: QueuedSpatialAudioPos,
+    pub direction_2d: perro_resource_context::sub_apis::AudioDirection<perro_structs::Vector2>,
+    pub direction_3d: perro_resource_context::sub_apis::AudioDirection<perro_structs::Vector3>,
 }
 
 #[derive(Clone, Debug)]

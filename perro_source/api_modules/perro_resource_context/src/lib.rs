@@ -14,12 +14,12 @@ pub mod prelude {
     pub use crate::res_path::{ResPath, ResPathBuf, ResPathError, ResPathKind, ResPathSource};
     pub use crate::sub_apis::{
         AnimationAPI, AnimationModule, Audio, Audio2D, Audio2DModule, Audio3D, Audio3DModule,
-        AudioAPI, AudioBusID, AudioModule, AudioPan, AudioPlayConfig, Draw2DAPI, Draw2DModule,
-        Locale, LocalizationAPI, LocalizationModule, MaterialAPI, MaterialModule, MeshAPI,
-        MeshModule, MidiChannel, MidiModule, MidiNoteHandle, MidiNoteOptions, MidiProgram,
+        AudioAPI, AudioBusID, AudioDirection, AudioModule, AudioPan, AudioPlayConfig, Draw2DAPI,
+        Draw2DModule, Locale, LocalizationAPI, LocalizationModule, MaterialAPI, MaterialModule,
+        MeshAPI, MeshModule, MidiChannel, MidiModule, MidiNoteHandle, MidiNoteOptions, MidiProgram,
         MidiSong, MidiSound, MidiSpatialPos, MidiSpatialPosition, Note, PannedAudio,
-        PostProcessingAPI, SceneDocAPI, SceneDocModule, SkeletonAPI, SkeletonModule, TextureAPI,
-        TextureModule, VisualAccessibilityAPI, program,
+        PostProcessingAPI, SceneDocAPI, SceneDocModule, SkeletonAPI, SkeletonModule,
+        SpatialAudioOptions, TextureAPI, TextureModule, VisualAccessibilityAPI, program,
     };
     pub use crate::{
         animation_drop, animation_load, animation_reserve, audio_bus, audio_bus_pause,

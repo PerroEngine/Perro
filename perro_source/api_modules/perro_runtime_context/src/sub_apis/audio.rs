@@ -2,6 +2,7 @@ use perro_ids::{AudioBusID, NodeID};
 pub use perro_pawdio::{
     MidiChannel, MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong, MidiSound, Note, program,
 };
+pub use perro_resource_context::sub_apis::{AudioDirection, SpatialAudioOptions};
 
 #[derive(Clone, Copy, Debug)]
 pub struct AudioEq {
@@ -122,34 +123,10 @@ impl<'a> RuntimeAudio<'a> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct SpatialAudioOptions {
-    pub range: f32,
-    pub bus_id: Option<AudioBusID>,
-    pub occlusion_mask: u32,
-    pub enable_propagation: bool,
-}
-
-impl SpatialAudioOptions {
-    pub const fn new(range: f32) -> Self {
-        Self {
-            range,
-            bus_id: None,
-            occlusion_mask: u32::MAX,
-            enable_propagation: true,
-        }
-    }
-}
-
-impl Default for SpatialAudioOptions {
-    fn default() -> Self {
-        Self::new(50.0)
-    }
-}
-
 pub trait RuntimeAudioAPI {
     fn play_runtime_audio_attached(
         &mut self,
+        bus_id: Option<AudioBusID>,
         audio: RuntimeAudio<'_>,
         node: NodeID,
         options: SpatialAudioOptions,
@@ -213,7 +190,20 @@ impl<'rt, RT: RuntimeAudioAPI + ?Sized> RuntimeAudioModule<'rt, RT> {
         node: NodeID,
         options: SpatialAudioOptions,
     ) -> bool {
-        self.rt.play_runtime_audio_attached(audio, node, options)
+        self.rt
+            .play_runtime_audio_attached(None, audio, node, options)
+    }
+
+    #[inline]
+    pub fn play_attached_bus(
+        &mut self,
+        bus_id: AudioBusID,
+        audio: RuntimeAudio<'_>,
+        node: NodeID,
+        options: SpatialAudioOptions,
+    ) -> bool {
+        self.rt
+            .play_runtime_audio_attached(Some(bus_id), audio, node, options)
     }
 
     #[inline]
@@ -279,6 +269,17 @@ impl<'rt, RT: RuntimeAudioAPI + ?Sized> RuntimeMidiModule<'rt, RT> {
     ) -> bool {
         self.rt.stop_midi_attached(node, target.into())
     }
+}
+
+#[macro_export]
+macro_rules! audio_play_attached {
+    ($rt:expr, $bus_id:expr, $audio:expr, $node:expr, $options:expr) => {
+        $rt.Audio()
+            .play_attached_bus($bus_id, $audio, $node, $options)
+    };
+    ($rt:expr, $audio:expr, $node:expr, $options:expr) => {
+        $rt.Audio().play_attached($audio, $node, $options)
+    };
 }
 
 #[macro_export]

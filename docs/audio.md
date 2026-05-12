@@ -299,7 +299,13 @@ let _ = midi_play_at!(
 Attached MIDI:
 
 ```rust
-let spatial = SpatialAudioOptions::new(40.0);
+let spatial = SpatialAudioOptions {
+    range: 40.0,
+    occlusion_mask: u32::MAX,
+    enable_propagation: true,
+    direction_2d: AudioDirection::Omni,
+    direction_3d: AudioDirection::Omni,
+};
 let opts = MidiNoteOptions {
     program: program::Guitar::Clean,
     ..MidiNoteOptions::default()
@@ -478,6 +484,11 @@ Entrypoints:
 - `ctx.res.Audio()` for point `Audio2D` and `Audio3D`
 - `ctx.run.Audio()` for node-attached runtime audio
 
+Use point audio for impacts, pickups, doors, switches, and other one-shot sounds at a fixed position.
+Use attached audio for loops or held notes that follow a scene node.
+Use `audio_play!(res, audio_2d_or_3d)` for master point playback.
+Use `audio_play!(res, bus, audio_2d_or_3d)` for bus point playback.
+
 Listener source:
 
 - active `Camera2D` for 2D
@@ -486,19 +497,110 @@ Listener source:
 Runtime propagation inputs:
 
 - source position and range
+- audio direction mode
 - listener transform
 - audio material fields on physics nodes
 - `AudioMask2D`
+- `AudioMask3D`
 - `AudioPortal2D` and `AudioPortal3D`
 - audio zones
 
 Propagation output becomes `SpatialAudioParams`.
 The runtime sends those params to `perro_pawdio`.
 `perro_pawdio` applies pan and volume to the sink.
-It also tracks low-pass, reflection, occlusion, EQ, and compression values on playback state.
+It also applies low-pass, EQ, compression, echo, reverb send, reflection, and occlusion in DSP.
 
 Propagation runs only while active positional or attached spatial sounds exist.
 If no active spatial sounds exist, no audio ray work runs that frame.
+
+## Audio Direction
+
+Spatial audio direction lives in `SpatialAudioOptions`.
+Point audio direction lives on `Audio2D` and `Audio3D`.
+Default-style setup uses `AudioDirection::Omni`.
+Omni ignores direction and radiates the same in every direction.
+
+Direction modes:
+
+- `AudioDirection::Omni` - emits outward in all directions
+- `AudioDirection::Directional(forward)`: strongest toward `forward`.
+- `AudioDirection::InverseDirectional(forward)`: strongest opposite `forward`.
+- `AudioDirection::Bidirectional(forward)`: strongest toward `forward` and `-forward`.
+
+Point audio:
+
+- `Audio2D::new(source, position, range)`
+- `Audio3D::new(source, position, range)`
+
+Attached audio:
+
+- `SpatialAudioOptions` sets node-attached range, mask, propagation, and direction.
+- `direction_2d` takes `AudioDirection<Vector2>`.
+- `direction_3d` takes `AudioDirection<Vector3>`.
+- struct fields set attached/node direction.
+- direction vectors are normalized by the runtime.
+- attached 2D directional audio uses node forward from node rotation.
+- attached 3D directional audio uses node forward from node rotation.
+- explicit direction is fallback for point use and non-attached use.
+
+Point 2D example:
+
+```rust
+let hit = Audio2D {
+    audio: Audio::new("res://audio/hit.wav"),
+    position: Vector2::new(128.0, 64.0),
+    range: 512.0,
+    occlusion_mask: u32::MAX,
+    enable_propagation: true,
+    direction: None,
+};
+
+let _ = audio_play!(ctx.res, audio_bus!("sfx"), hit);
+```
+
+Point 3D directional example:
+
+```rust
+let horn = Audio3D::new(
+    "res://audio/horn.wav",
+    Vector3::new(0.0, 1.0, -4.0),
+    80.0,
+);
+
+let horn = Audio3D {
+    direction: Some(AudioDirection::Bidirectional(Vector3::new(0.0, 0.0, -1.0))),
+    ..horn
+};
+
+let _ = audio_play!(ctx.res, audio_bus!("sfx"), horn);
+```
+
+Attached loop example:
+
+```rust
+let audio = RuntimeAudio {
+    source: "res://audio/engine_loop.ogg",
+    looped: true,
+    volume: 0.8,
+    effects: AudioEffects {
+        low_pass: 0.05,
+        reverb_send: 0.1,
+        ..AudioEffects::new()
+    },
+    from_start: 0.0,
+    from_end: 0.0,
+};
+
+let spatial = SpatialAudioOptions {
+    range: 80.0,
+    occlusion_mask: u32::MAX,
+    enable_propagation: true,
+    direction_2d: AudioDirection::Omni,
+    direction_3d: AudioDirection::Omni,
+};
+
+let _ = ctx.run.Audio().play_attached_bus(audio_bus!("ambience"), audio, vehicle_node, spatial);
+```
 
 ## Audio Materials
 

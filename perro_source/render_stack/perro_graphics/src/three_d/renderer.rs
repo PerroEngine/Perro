@@ -1,5 +1,6 @@
 use crate::resources::ResourceStore;
 use ahash::AHashMap;
+use glam::{Mat4, Quat, Vec3};
 use perro_ids::{MeshID, NodeID};
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, DenseInstancePose3D,
@@ -148,6 +149,57 @@ impl Renderer3D {
             skeleton: None,
             dense_multimesh: Some(dense_draw),
             meshlet_override,
+        });
+    }
+
+    pub fn queue_debug_point(&mut self, node: NodeID, position: [f32; 3], size: f32) {
+        let model = Mat4::from_scale_rotation_translation(
+            Vec3::splat(size.max(0.001)),
+            Quat::IDENTITY,
+            Vec3::from(position),
+        )
+        .to_cols_array_2d();
+        self.queued_draws.push(Draw3DInstance {
+            node,
+            kind: Draw3DKind::DebugPointCube,
+            surfaces: Arc::from([]),
+            instance_mats: Arc::from([model]),
+            skeleton: None,
+            dense_multimesh: None,
+            meshlet_override: Some(false),
+        });
+    }
+
+    pub fn queue_debug_line(
+        &mut self,
+        node: NodeID,
+        start: [f32; 3],
+        end: [f32; 3],
+        thickness: f32,
+    ) {
+        let start = Vec3::from(start);
+        let end = Vec3::from(end);
+        let delta = end - start;
+        let length = delta.length();
+        if length <= 0.0001 {
+            return;
+        }
+        let dir = delta / length;
+        let rotation = Quat::from_rotation_arc(Vec3::Y, dir);
+        let model = Mat4::from_scale_rotation_translation(
+            Vec3::new(thickness.max(0.001), length, thickness.max(0.001)),
+            rotation,
+            (start + end) * 0.5,
+        )
+        .to_cols_array_2d();
+        self.queued_draws.push(Draw3DInstance {
+            node,
+            kind: Draw3DKind::DebugEdgeCylinder,
+            surfaces: Arc::from([]),
+            instance_mats: Arc::from([model]),
+            skeleton: None,
+            dense_multimesh: None,
+            meshlet_override: Some(false),
         });
     }
 

@@ -91,8 +91,8 @@ The active `Camera2D` is the listener.
 
 Macros:
 
-- `audio_play!(res, bus_id, Audio2D { audio, position, range }) -> bool`
-- `audio_play!(res, Audio2D { audio, position, range }) -> bool`
+- `audio_play!(res, bus_id, Audio2D::new(source, position, range)) -> bool`
+- `audio_play!(res, Audio2D::new(source, position, range)) -> bool`
 
 Type:
 
@@ -101,19 +101,28 @@ Audio2D {
     audio: Audio,
     position: Vector2,
     range: f32,
+    occlusion_mask: u32,
+    enable_propagation: bool,
+    direction: Option<AudioDirection<Vector2>>,
 }
 ```
 
 Methods:
 
-- `res.Audio().two_d().play(bus_id, Audio2D { audio, position, range }) -> bool`
-- `res.Audio().two_d().play_master(Audio2D { audio, position, range }) -> bool`
-- `res.Audio().play_bus(bus_id, Audio2D { audio, position, range }) -> bool`
-- `res.Audio().play_master(Audio2D { audio, position, range }) -> bool`
+- `res.Audio().two_d().play(bus_id, audio_2d) -> bool`
+- `res.Audio().two_d().play_master(audio_2d) -> bool`
+- `res.Audio().play_bus(bus_id, audio_2d) -> bool`
+- `res.Audio().play_master(audio_2d) -> bool`
 
 Rules:
 
 - `Audio2D.position` is a one-shot point emitter.
+- `direction: None` means omni playback.
+- `direction: Some(AudioDirection::Directional(forward))` sets direction.
+- omni ignores direction.
+- `AudioDirection::Directional(forward)` is loudest toward `forward`.
+- `AudioDirection::InverseDirectional(forward)` is loudest opposite `forward`.
+- `AudioDirection::Bidirectional(forward)` is loudest toward both `forward` and `-forward`.
 - Audio2D has no manual pan; pan comes from the propagated perceived direction.
 - Audio outside `range` or `[audio].listener_max_distance` is skipped.
 - Direct volume fades linearly from full at camera to silent at `range`.
@@ -127,8 +136,8 @@ The active `Camera3D` is the listener.
 
 Macros:
 
-- `audio_play!(res, bus_id, Audio3D { audio, position, range }) -> bool`
-- `audio_play!(res, Audio3D { audio, position, range }) -> bool`
+- `audio_play!(res, bus_id, Audio3D::new(source, position, range)) -> bool`
+- `audio_play!(res, Audio3D::new(source, position, range)) -> bool`
 
 Type:
 
@@ -137,19 +146,28 @@ Audio3D {
     audio: Audio,
     position: Vector3,
     range: f32,
+    occlusion_mask: u32,
+    enable_propagation: bool,
+    direction: Option<AudioDirection<Vector3>>,
 }
 ```
 
 Methods:
 
-- `res.Audio().three_d().play(bus_id, Audio3D { audio, position, range }) -> bool`
-- `res.Audio().three_d().play_master(Audio3D { audio, position, range }) -> bool`
-- `res.Audio().play_bus(bus_id, Audio3D { audio, position, range }) -> bool`
-- `res.Audio().play_master(Audio3D { audio, position, range }) -> bool`
+- `res.Audio().three_d().play(bus_id, audio_3d) -> bool`
+- `res.Audio().three_d().play_master(audio_3d) -> bool`
+- `res.Audio().play_bus(bus_id, audio_3d) -> bool`
+- `res.Audio().play_master(audio_3d) -> bool`
 
 Rules:
 
 - `Audio3D.position` is a one-shot point emitter.
+- `direction: None` means omni playback.
+- `direction: Some(AudioDirection::Directional(forward))` sets direction.
+- omni ignores direction.
+- `AudioDirection::Directional(forward)` is loudest toward `forward`.
+- `AudioDirection::InverseDirectional(forward)` is loudest opposite `forward`.
+- `AudioDirection::Bidirectional(forward)` is loudest toward both `forward` and `-forward`.
 - Audio3D has no manual pan; pan comes from the propagated perceived direction.
 - Audio outside `range` or `[audio].listener_max_distance` is skipped.
 - Direct volume fades linearly from full at camera to silent at `range`.
@@ -359,10 +377,64 @@ let _ = midi_play_at!(
 - `audio_drop!(res, source)` is equivalent to `res.Audio().drop_source(source)`.
 - `audio_play!(res, bus_id, cfg)` is equivalent to `res.Audio().play_bus(bus_id, cfg)`.
 - `audio_play!(res, cfg)` is equivalent to `res.Audio().play_master(cfg)`.
-- `audio_play!(...)` accepts `Audio`, `Audio2D`, or `Audio3D`.
+- `audio_play!(...)` accepts `Audio`, panned `Audio`, `Audio2D`, or `Audio3D`.
 - `audio_stop!(res, bus_id, cfg)` is equivalent to `res.Audio().stop_audio(bus_id, cfg)`.
 - `audio_stop!(res, cfg)` is equivalent to `res.Audio().stop_master_audio(cfg)`.
 - Other audio macros map directly to same-named `res.Audio()` methods.
+
+## Spatial Examples
+
+Use point audio for short sounds with fixed world positions.
+Use runtime attached audio when the sound must follow a node.
+Bus ids live in the play call.
+Point spatial data lives on `Audio2D` or `Audio3D`.
+
+One-shot 2D hit:
+
+```rust
+let sfx = audio_bus!("sfx");
+
+let hit = Audio2D {
+    audio: Audio::new("res://audio/hit.wav"),
+    position: enemy_pos,
+    range: 256.0,
+    occlusion_mask: u32::MAX,
+    enable_propagation: true,
+    direction: None,
+};
+
+let _ = audio_play!(res, sfx, hit);
+```
+
+3D speaker cone:
+
+```rust
+let speaker = Audio3D {
+    audio: Audio::new("res://audio/alert.wav"),
+    position: speaker_pos,
+    range: 35.0,
+    occlusion_mask: u32::MAX,
+    enable_propagation: true,
+    direction: Some(AudioDirection::Directional(Vector3::new(0.0, 0.0, -1.0))),
+};
+
+let _ = audio_play!(res, audio_bus!("sfx"), speaker);
+```
+
+No ray propagation:
+
+```rust
+let ui_world_ping = Audio2D {
+    audio: Audio::new("res://audio/ping.wav"),
+    position: marker_pos,
+    range: 128.0,
+    occlusion_mask: u32::MAX,
+    enable_propagation: false,
+    direction: None,
+};
+
+let _ = audio_play!(res, ui_world_ping);
+```
 
 ## Example
 
@@ -387,17 +459,16 @@ let _ = audio_stop!(res, music, base);
 let _ = audio_play!(res, base);
 let _ = audio_play!(res, music, (base, AudioPan::new(-0.5, 0.0, 0.25)));
 
-let hit = Audio2D {
-    audio: Audio::new("res://hit.wav"),
-    position: Vector2::new(128.0, 64.0),
-    range: 512.0,
-};
+let hit = Audio2D::new("res://hit.wav", Vector2::new(128.0, 64.0), 512.0);
 let _ = audio_play!(res, hit);
 
 let step = Audio3D {
     audio: Audio::new("res://step.wav"),
     position: Vector3::new(0.0, 0.0, -5.0),
     range: 20.0,
+    occlusion_mask: u32::MAX,
+    enable_propagation: true,
+    direction: Some(AudioDirection::Directional(Vector3::new(0.0, 0.0, 1.0))),
 };
 let _ = audio_play!(res, music, step);
 

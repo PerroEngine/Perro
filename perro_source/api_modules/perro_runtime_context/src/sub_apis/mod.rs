@@ -12,9 +12,9 @@ mod window;
 pub use animation::{AnimPlayerAPI, AnimPlayerModule};
 pub use animation_tree::{AnimTreeAPI, AnimTreeModule, AnimTreeSlotArg, IntoAnimTreeSlotArg};
 pub use audio::{
-    AttachedMidiTarget, AudioCompression, AudioEffects, AudioEq, MidiChannel, MidiNoteHandle,
-    MidiNoteOptions, MidiProgram, MidiSong, MidiSound, Note, RuntimeAudio, RuntimeAudioAPI,
-    RuntimeAudioModule, RuntimeMidiModule, SpatialAudioOptions, program,
+    AttachedMidiTarget, AudioCompression, AudioDirection, AudioEffects, AudioEq, MidiChannel,
+    MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong, MidiSound, Note, RuntimeAudio,
+    RuntimeAudioAPI, RuntimeAudioModule, RuntimeMidiModule, SpatialAudioOptions, program,
 };
 pub use node::{
     IntoNodeTag, IntoNodeTags, MeshDataSurfaceHit3D, MeshDataSurfaceRegion3D, MeshMaterialRegion3D,

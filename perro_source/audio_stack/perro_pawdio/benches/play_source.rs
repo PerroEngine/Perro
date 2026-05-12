@@ -1,8 +1,8 @@
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use perro_ids::AudioBusID;
 use perro_pawdio::{
-    Audio2D, Audio3D, AudioController, AudioListener2D, AudioListener3D, AudioPan,
-    AudioPlaybackRequest, BarkPlayer,
+    Audio2D, Audio3D, AudioCompression, AudioController, AudioEq, AudioListener2D, AudioListener3D,
+    AudioPan, AudioPlaybackRequest, BarkPlayer, SpatialAudioParams,
 };
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
@@ -62,6 +62,30 @@ fn lookup_audio(_path_hash: u64) -> &'static [u8] {
 
 fn request(id: u64, from_end: f32) -> AudioPlaybackRequest<'static> {
     request_for(id, SOURCE, None, from_end)
+}
+
+fn spatial_params(id: u64) -> SpatialAudioParams {
+    let t = (id % 1024) as f32 / 1024.0;
+    SpatialAudioParams {
+        pan: AudioPan::new(t.mul_add(2.0, -1.0), 0.25 - t * 0.5, t * 0.75),
+        volume: t,
+        low_pass: t,
+        reverb_send: 1.0 - t,
+        echo: (t * 1.7).fract(),
+        reflection: (t * 2.3).fract(),
+        occlusion: (t * 3.1).fract(),
+        eq: AudioEq {
+            low_gain: 0.75 + t * 0.5,
+            mid_gain: 1.0 - t * 0.25,
+            high_gain: 0.5 + t,
+        },
+        compression: AudioCompression {
+            threshold: 0.2 + t * 0.7,
+            ratio: 1.0 + t * 7.0,
+            attack: 0.005 + t * 0.04,
+            release: 0.05 + t * 0.3,
+        },
+    }
 }
 
 fn request_for(
@@ -232,6 +256,24 @@ fn bench_play(c: &mut Criterion) {
         });
     });
 
+    const UPDATE_BENCH_ID: u64 = 900_000_000;
+    let mut update_req = request(UPDATE_BENCH_ID, 0.0);
+    update_req.looped = true;
+    update_req.volume = 0.0;
+    player.play_source(update_req).unwrap();
+
+    c.bench_function("pawdio_update_spatial_direct_full_dsp", |b| {
+        b.iter_custom(|iters| {
+            let mut elapsed = Duration::ZERO;
+            for id in 0..iters {
+                let start = Instant::now();
+                assert!(player.update_spatial(UPDATE_BENCH_ID, black_box(spatial_params(id))));
+                elapsed += start.elapsed();
+            }
+            elapsed
+        });
+    });
+
     let Ok(controller) = AudioController::new(Some(lookup_audio)) else {
         eprintln!("skip perro_pawdio controller enqueue bench: no audio output device");
         return;
@@ -304,6 +346,26 @@ fn bench_play(c: &mut Criterion) {
                         .play_spatial_source_handle(&source_handle, req)
                         .is_some()
                 );
+                elapsed += start.elapsed();
+                if id % 1024 == 1023 {
+                    let _ = controller.source_length_seconds(SOURCE);
+                }
+            }
+            let _ = controller.source_length_seconds(SOURCE);
+            elapsed
+        });
+    });
+
+    let update_id = controller
+        .play_spatial_source(request(0, 0.0))
+        .expect("start controller update bench playback");
+    let _ = controller.source_length_seconds(SOURCE);
+    c.bench_function("pawdio_controller_enqueue_update_spatial_full_dsp", |b| {
+        b.iter_custom(|iters| {
+            let mut elapsed = Duration::ZERO;
+            for id in 0..iters {
+                let start = Instant::now();
+                assert!(controller.update_spatial(update_id, black_box(spatial_params(id))));
                 elapsed += start.elapsed();
                 if id % 1024 == 1023 {
                     let _ = controller.source_length_seconds(SOURCE);

@@ -1,3 +1,4 @@
+use crate::dsp::DspControl;
 use crossbeam_channel::Sender;
 use perro_ids::AudioBusID;
 use rodio::SpatialSink;
@@ -21,13 +22,7 @@ pub(crate) struct Playback {
     pub(crate) base_volume: f32,
     pub(crate) speed: f32,
     pub(crate) pan: AudioPan,
-    pub(crate) low_pass: f32,
-    pub(crate) reverb_send: f32,
-    pub(crate) echo: f32,
-    pub(crate) reflection: f32,
-    pub(crate) occlusion: f32,
-    pub(crate) eq: AudioEq,
-    pub(crate) compression: AudioCompression,
+    pub(crate) dsp: std::sync::Arc<DspControl>,
     pub(crate) from_start: f32,
     pub(crate) from_end: f32,
     pub(crate) sink: SpatialSink,
@@ -38,13 +33,7 @@ pub(crate) struct MidiPlayback {
     pub(crate) bus_id: Option<AudioBusID>,
     pub(crate) base_volume: f32,
     pub(crate) pan: AudioPan,
-    pub(crate) low_pass: f32,
-    pub(crate) reverb_send: f32,
-    pub(crate) echo: f32,
-    pub(crate) reflection: f32,
-    pub(crate) occlusion: f32,
-    pub(crate) eq: AudioEq,
-    pub(crate) compression: AudioCompression,
+    pub(crate) dsp: std::sync::Arc<DspControl>,
     pub(crate) source: Option<Arc<str>>,
     pub(crate) control: crossbeam_channel::Sender<MidiControl>,
     pub(crate) sink: SpatialSink,
@@ -82,6 +71,7 @@ pub(crate) struct BuiltInMidiMixerPlayback {
     pub(crate) key: MidiMixerKey,
     pub(crate) bus_id: Option<AudioBusID>,
     pub(crate) base_volume: f32,
+    pub(crate) dsp: std::sync::Arc<DspControl>,
     pub(crate) control: Sender<MidiMixerControl>,
     pub(crate) sink: SpatialSink,
 }
@@ -124,6 +114,7 @@ pub(crate) struct SoundFontMidiMixerPlayback {
     pub(crate) key: SoundFontMidiMixerKey,
     pub(crate) bus_id: Option<AudioBusID>,
     pub(crate) base_volume: f32,
+    pub(crate) dsp: std::sync::Arc<DspControl>,
     pub(crate) control: Sender<SoundFontMixerControl>,
     pub(crate) sink: SpatialSink,
 }

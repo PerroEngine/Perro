@@ -4,7 +4,7 @@ use super::core::{
 };
 use perro_ids::{AudioBusID, SoundFontID};
 use perro_resource_context::sub_apis::{
-    Audio, Audio2D, Audio3D, AudioAPI, MidiNoteHandle, MidiNoteOptions, MidiSong,
+    Audio, Audio2D, Audio3D, AudioAPI, AudioDirection, MidiNoteHandle, MidiNoteOptions, MidiSong,
     MidiSpatialPosition, Note,
 };
 use std::sync::atomic::Ordering;
@@ -98,7 +98,11 @@ impl AudioAPI for RuntimeResourceApi {
             from_start: audio.audio.from_start,
             from_end: audio.audio.from_end,
             range: audio.range,
+            occlusion_mask: audio.occlusion_mask,
+            enable_propagation: audio.enable_propagation,
             pos: QueuedSpatialAudioPos::TwoD(audio.position),
+            direction_2d: audio.direction.unwrap_or(AudioDirection::Omni),
+            direction_3d: AudioDirection::Omni,
         });
         true
     }
@@ -116,7 +120,11 @@ impl AudioAPI for RuntimeResourceApi {
             from_start: audio.audio.from_start,
             from_end: audio.audio.from_end,
             range: audio.range,
+            occlusion_mask: audio.occlusion_mask,
+            enable_propagation: audio.enable_propagation,
             pos: QueuedSpatialAudioPos::ThreeD(audio.position),
+            direction_2d: AudioDirection::Omni,
+            direction_3d: audio.direction.unwrap_or(AudioDirection::Omni),
         });
         true
     }

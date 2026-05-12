@@ -8,12 +8,13 @@ use perro_nodes::{
     AudioDiffusion, AudioMaterial, AudioZoneEffect, CollisionShape2D, CollisionShape3D,
     SceneNodeData,
 };
+use perro_render_bridge::{Command2D, Command3D, DrawShape2DCommand, RenderCommand};
 use perro_resource_context::sub_apis::AudioAPI;
 use perro_runtime_context::sub_apis::{
-    AttachedMidiTarget, AudioEffects, PhysicsQueryFilter, RuntimeAudio, RuntimeAudioAPI,
-    SpatialAudioOptions,
+    AttachedMidiTarget, AudioDirection, AudioEffects, PhysicsQueryFilter, RuntimeAudio,
+    RuntimeAudioAPI, SpatialAudioOptions,
 };
-use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
+use perro_structs::{DrawShape2D, Transform2D, Transform3D, Vector2, Vector3};
 use std::f32::consts::TAU;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
@@ -134,6 +135,16 @@ struct AudioHit2D {
 }
 
 #[derive(Clone, Copy, Debug)]
+struct AudioHit3D {
+    node: NodeID,
+    point: Vector3,
+    normal: Vector3,
+    distance: f32,
+    material: AudioMaterial,
+    thickness: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
 struct AudioPortalPath2D {
     exit: Vector2,
     strength: f32,
@@ -193,11 +204,14 @@ pub(crate) struct AudioPropagationState {
     scratch_sound_ray_results: Vec<AudioRaycastResult>,
     scratch_field_dirs_3d: Vec<Vector3>,
     has_audio_mask_2d: bool,
+    has_audio_mask_3d: bool,
     has_audio_portal_2d: bool,
     has_audio_portal_3d: bool,
     has_audio_zone_2d: bool,
     has_audio_zone_3d: bool,
     audio_scene_flags_node_count: usize,
+    debug_ray_count_3d: u32,
+    prev_debug_ray_count_3d: u32,
     pub counters: AudioPropagationCounters,
 }
 
@@ -214,11 +228,14 @@ impl AudioPropagationState {
             scratch_sound_ray_results: Vec::new(),
             scratch_field_dirs_3d: Vec::new(),
             has_audio_mask_2d: false,
+            has_audio_mask_3d: false,
             has_audio_portal_2d: false,
             has_audio_portal_3d: false,
             has_audio_zone_2d: false,
             has_audio_zone_3d: false,
             audio_scene_flags_node_count: usize::MAX,
+            debug_ray_count_3d: 0,
+            prev_debug_ray_count_3d: 0,
             counters: AudioPropagationCounters::default(),
         }
     }
@@ -253,8 +270,10 @@ impl Runtime {
     pub(crate) fn update_audio_propagation(&mut self, dt: f32) {
         let start = Instant::now();
         self.audio.counters = AudioPropagationCounters::default();
+        self.audio.debug_ray_count_3d = 0;
         self.drain_resource_spatial_audio();
         if self.audio.sounds.is_empty() {
+            self.clear_stale_audio_debug_rays();
             return;
         }
         self.propagate_pending_transform_dirty();
@@ -476,6 +495,7 @@ use helpers::*;
 impl RuntimeAudioAPI for Runtime {
     fn play_runtime_audio_attached(
         &mut self,
+        bus_id: Option<perro_ids::AudioBusID>,
         audio: RuntimeAudio<'_>,
         node: NodeID,
         options: SpatialAudioOptions,
@@ -491,6 +511,7 @@ impl RuntimeAudioAPI for Runtime {
                 self.start_spatial_sound(
                     audio,
                     SpatialSoundPos::Attached(node),
+                    bus_id,
                     options,
                     Some(global.position),
                     None,
@@ -503,6 +524,7 @@ impl RuntimeAudioAPI for Runtime {
                 self.start_spatial_sound(
                     audio,
                     SpatialSoundPos::Attached(node),
+                    bus_id,
                     options,
                     None,
                     Some(global.position),

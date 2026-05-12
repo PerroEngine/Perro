@@ -1,5 +1,6 @@
 mod codec;
 mod controller;
+mod dsp;
 mod internal;
 mod math;
 pub mod midi;

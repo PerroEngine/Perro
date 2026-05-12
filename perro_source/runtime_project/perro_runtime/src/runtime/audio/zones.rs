@@ -273,12 +273,12 @@ impl Runtime {
         &mut self,
         audio: RuntimeAudio<'_>,
         pos: SpatialSoundPos,
+        bus_id: Option<perro_ids::AudioBusID>,
         options: SpatialAudioOptions,
         last_2d: Option<Vector2>,
         last_3d: Option<Vector3>,
     ) -> bool {
-        let range = options.range.max(0.0001);
-        let bus_id = options.bus_id;
+        let options = normalize_spatial_options(options);
         let pan = perro_pawdio::AudioPan::CENTER;
         let playback_id = self.resource_api.bark.lock().ok().and_then(|guard| {
             guard.as_ref().and_then(|player| {
@@ -322,7 +322,7 @@ impl Runtime {
             looped: audio.looped,
             volume: audio.volume,
             effects: audio.effects,
-            options: SpatialAudioOptions { range, ..options },
+            options,
             pos,
             last_2d,
             last_3d,
@@ -345,7 +345,7 @@ impl Runtime {
             last_2d,
             last_3d,
         } = start;
-        let range = spatial.range.max(0.0001);
+        let spatial = normalize_spatial_options(spatial);
         let pan = perro_pawdio::AudioPan::CENTER;
         let mut play_options = options;
         play_options.pan = pan;
@@ -372,7 +372,7 @@ impl Runtime {
             looped: held,
             volume: options.volume,
             effects: AudioEffects::default(),
-            options: SpatialAudioOptions { range, ..spatial },
+            options: spatial,
             pos,
             last_2d,
             last_3d,
@@ -393,7 +393,7 @@ impl Runtime {
         last_2d: Option<Vector2>,
         last_3d: Option<Vector3>,
     ) -> bool {
-        let range = spatial.range.max(0.0001);
+        let spatial = normalize_spatial_options(spatial);
         let playback_id = self.resource_api.bark.lock().ok().and_then(|guard| {
             guard.as_ref().and_then(|player| {
                 player
@@ -411,7 +411,7 @@ impl Runtime {
             looped: song.looped,
             volume: song.volume,
             effects: AudioEffects::default(),
-            options: SpatialAudioOptions { range, ..spatial },
+            options: spatial,
             pos,
             last_2d,
             last_3d,
@@ -423,6 +423,7 @@ impl Runtime {
         true
     }
 
+    #[allow(dead_code)]
     pub(super) fn play_runtime_audio_2d(
         &mut self,
         audio: RuntimeAudio<'_>,
@@ -432,12 +433,14 @@ impl Runtime {
         self.start_spatial_sound(
             audio,
             SpatialSoundPos::TwoD(position),
+            None,
             options,
             Some(position),
             None,
         )
     }
 
+    #[allow(dead_code)]
     pub(super) fn play_runtime_audio_3d(
         &mut self,
         audio: RuntimeAudio<'_>,
@@ -447,6 +450,7 @@ impl Runtime {
         self.start_spatial_sound(
             audio,
             SpatialSoundPos::ThreeD(position),
+            None,
             options,
             None,
             Some(position),

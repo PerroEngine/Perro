@@ -517,19 +517,20 @@ impl PerroGraphics {
                         );
                     }
                     Command3D::DrawDebugPoint3D {
-                        node: _,
-                        position: _,
-                        size: _,
+                        node,
+                        position,
+                        size,
                     } => {
-                        // Debug draw path removed from renderer hot path.
+                        self.renderer_3d.queue_debug_point(node, position, size);
                     }
                     Command3D::DrawDebugLine3D {
-                        node: _,
-                        start: _,
-                        end: _,
-                        thickness: _,
+                        node,
+                        start,
+                        end,
+                        thickness,
                     } => {
-                        // Debug draw path removed from renderer hot path.
+                        self.renderer_3d
+                            .queue_debug_line(node, start, end, thickness);
                     }
                     Command3D::SetCamera { camera } => {
                         self.renderer_3d.set_camera(camera);

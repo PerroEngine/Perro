@@ -1,7 +1,7 @@
 use super::*;
 use perro_nodes::{
-    AudioMask2D, AudioPortal2D, AudioPortal3D, AudioZone2D, AudioZone3D, CollisionShape2D,
-    CollisionShape3D, SceneNode, SceneNodeData, StaticBody2D, StaticBody3D,
+    AudioMask2D, AudioMask3D, AudioPortal2D, AudioPortal3D, AudioZone2D, AudioZone3D,
+    CollisionShape2D, CollisionShape3D, SceneNode, SceneNodeData, StaticBody2D, StaticBody3D,
 };
 use perro_resource_context::sub_apis::{Audio, Audio2D, Audio3D};
 use perro_runtime_context::sub_apis::NodeAPI;
@@ -15,6 +15,16 @@ fn looped_audio() -> RuntimeAudio<'static> {
         effects: AudioEffects::new(),
         from_start: 0.0,
         from_end: 0.0,
+    }
+}
+
+fn spatial_options(range: f32) -> SpatialAudioOptions {
+    SpatialAudioOptions {
+        range,
+        occlusion_mask: u32::MAX,
+        enable_propagation: true,
+        direction_2d: AudioDirection::Omni,
+        direction_3d: AudioDirection::Omni,
     }
 }
 
@@ -32,13 +42,68 @@ fn unobstructed_sound_stays_direct() {
     assert!(runtime.play_runtime_audio_2d(
         looped_audio(),
         Vector2::new(5.0, 0.0),
-        SpatialAudioOptions::new(10.0),
+        spatial_options(10.0),
     ));
     runtime.update_audio_propagation(1.0);
     let result = runtime.audio.sounds[0].last_result.expect("result");
     assert_eq!(result.occlusion, 0.0);
     assert!(result.volume > 0.4);
     assert_eq!(result.perceived_2d, Some(Vector2::new(5.0, 0.0)));
+}
+
+#[test]
+fn directional_audio_3d_front_is_louder_than_back() {
+    let mut front = Runtime::new();
+    assert!(front.play_runtime_audio_3d(
+        looped_audio(),
+        Vector3::new(0.0, 0.0, -5.0),
+        SpatialAudioOptions {
+            direction_3d: AudioDirection::Directional(Vector3::new(0.0, 0.0, 1.0)),
+            ..spatial_options(10.0)
+        },
+    ));
+    front.update_audio_propagation(1.0);
+    let front_volume = front.audio.sounds[0].last_result.expect("front").volume;
+
+    let mut back = Runtime::new();
+    assert!(back.play_runtime_audio_3d(
+        looped_audio(),
+        Vector3::new(0.0, 0.0, -5.0),
+        SpatialAudioOptions {
+            direction_3d: AudioDirection::Directional(Vector3::new(0.0, 0.0, -1.0)),
+            ..spatial_options(10.0)
+        },
+    ));
+    back.update_audio_propagation(1.0);
+    let back_volume = back.audio.sounds[0].last_result.expect("back").volume;
+
+    assert!(front_volume > back_volume * 4.0);
+}
+
+#[test]
+fn attached_directional_audio_uses_node_forward() {
+    let mut runtime = Runtime::new();
+    runtime
+        .resource_api
+        .set_audio_listener_3d([0.0, 0.0, -5.0], [0.0, 0.0, 0.0, 1.0]);
+    let node = NodeAPI::create::<perro_nodes::Node3D>(&mut runtime);
+    assert!(NodeAPI::set_global_transform_3d(
+        &mut runtime,
+        node,
+        Transform3D::new(Vector3::ZERO, Quaternion::IDENTITY, Vector3::ONE),
+    ));
+    assert!(runtime.play_runtime_audio_attached(
+        None,
+        looped_audio(),
+        node,
+        SpatialAudioOptions {
+            direction_3d: AudioDirection::Directional(Vector3::new(0.0, 0.0, 1.0)),
+            ..spatial_options(10.0)
+        },
+    ));
+    runtime.update_audio_propagation(1.0);
+    let result = runtime.audio.sounds[0].last_result.expect("result");
+    assert!(result.volume > 0.4);
 }
 
 #[test]
@@ -80,6 +145,31 @@ fn resource_2d_and_3d_audio_enter_propagation_queue() {
 }
 
 #[test]
+fn resource_point_audio_preserves_spatial_options() {
+    let mut runtime = Runtime::new();
+    assert!(runtime.resource_api.play_audio_2d(
+        None,
+        Audio2D {
+            audio: Audio::new("res://point2d.wav"),
+            position: Vector2::new(5.0, 0.0),
+            range: 24.0,
+            occlusion_mask: 0x10,
+            enable_propagation: false,
+            direction: Some(AudioDirection::Directional(Vector2::new(2.0, 0.0))),
+        },
+    ));
+    runtime.update_audio_propagation(1.0);
+    let sound = &runtime.audio.sounds[0];
+    assert_eq!(sound.options.range, 24.0);
+    assert_eq!(sound.options.occlusion_mask, 0x10);
+    assert!(!sound.options.enable_propagation);
+    assert_eq!(
+        sound.options.direction_2d,
+        AudioDirection::Directional(Vector2::new(1.0, 0.0))
+    );
+}
+
+#[test]
 fn wall_between_listener_and_source_muffles() {
     let mut runtime = Runtime::new();
     let wall = NodeAPI::create::<StaticBody2D>(&mut runtime);
@@ -93,7 +183,7 @@ fn wall_between_listener_and_source_muffles() {
     assert!(runtime.play_runtime_audio_2d(
         looped_audio(),
         Vector2::new(5.0, 0.0),
-        SpatialAudioOptions::new(10.0),
+        spatial_options(10.0),
     ));
     runtime.update_audio_propagation(1.0);
     let result = runtime.audio.sounds[0].last_result.expect("result");
@@ -124,7 +214,7 @@ fn thin_collider_transmits_more_than_thick_collider() {
     assert!(thin.play_runtime_audio_2d(
         looped_audio(),
         Vector2::new(5.0, 0.0),
-        SpatialAudioOptions::new(10.0),
+        spatial_options(10.0),
     ));
     thin.update_audio_propagation(1.0);
     let thin_volume = thin.audio.sounds[0].last_result.expect("result").volume;
@@ -149,7 +239,7 @@ fn thin_collider_transmits_more_than_thick_collider() {
     assert!(thick.play_runtime_audio_2d(
         looped_audio(),
         Vector2::new(5.0, 0.0),
-        SpatialAudioOptions::new(10.0),
+        spatial_options(10.0),
     ));
     thick.update_audio_propagation(1.0);
     let thick_volume = thick.audio.sounds[0].last_result.expect("result").volume;
@@ -170,7 +260,7 @@ fn corner_path_changes_perceived_direction() {
     assert!(runtime.play_runtime_audio_2d(
         looped_audio(),
         Vector2::new(5.0, 0.0),
-        SpatialAudioOptions::new(10.0),
+        spatial_options(10.0),
     ));
     runtime.update_audio_propagation(1.0);
     let result = runtime.audio.sounds[0].last_result.expect("result");
@@ -195,11 +285,48 @@ fn audio_mask_blocks_without_physical_collision() {
     assert!(runtime.play_runtime_audio_2d(
         looped_audio(),
         Vector2::new(5.0, 0.0),
-        SpatialAudioOptions::new(10.0),
+        spatial_options(10.0),
     ));
     runtime.update_audio_propagation(1.0);
     let result = runtime.audio.sounds[0].last_result.expect("result");
     assert!(result.occlusion > 0.0);
+}
+
+#[test]
+fn audio_mask_3d_blocks_without_physical_collision() {
+    let mut runtime = Runtime::new();
+    let mask = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::AudioMask3D(
+            AudioMask3D::new(),
+        )));
+    let shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, mask, shape));
+    if let Some(node) = runtime.nodes.get_mut(shape)
+        && let SceneNodeData::CollisionShape3D(shape) = &mut node.data
+    {
+        shape.shape = perro_nodes::Shape3D::Cube {
+            size: Vector3::new(1.0, 2.0, 2.0),
+        };
+    }
+    assert!(NodeAPI::set_global_transform_3d(
+        &mut runtime,
+        mask,
+        Transform3D::new(
+            Vector3::new(2.5, 0.0, 0.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE
+        ),
+    ));
+    assert!(runtime.play_runtime_audio_3d(
+        looped_audio(),
+        Vector3::new(5.0, 0.0, 0.0),
+        spatial_options(10.0),
+    ));
+    runtime.update_audio_propagation(1.0);
+    let result = runtime.audio.sounds[0].last_result.expect("result");
+    assert!(result.occlusion > 0.0);
+    assert!(result.low_pass > 0.0);
 }
 
 #[test]
@@ -229,7 +356,7 @@ fn audio_portal_improves_corner_opening_path() {
     assert!(without_portal.play_runtime_audio_2d(
         looped_audio(),
         Vector2::new(5.0, 0.0),
-        SpatialAudioOptions::new(10.0),
+        spatial_options(10.0),
     ));
     without_portal.update_audio_propagation(1.0);
     let blocked = without_portal.audio.sounds[0].last_result.expect("result");
@@ -284,7 +411,7 @@ fn audio_portal_improves_corner_opening_path() {
     assert!(with_portal.play_runtime_audio_2d(
         looped_audio(),
         Vector2::new(5.0, 0.0),
-        SpatialAudioOptions::new(10.0),
+        spatial_options(10.0),
     ));
     with_portal.update_audio_propagation(1.0);
     let opened = with_portal.audio.sounds[0].last_result.expect("result");
@@ -330,7 +457,7 @@ fn audio_portal_2d_transforms_exit_direction_with_rotation() {
     assert!(runtime.play_runtime_audio_2d(
         looped_audio(),
         Vector2::new(5.0, 0.0),
-        SpatialAudioOptions::new(10.0),
+        spatial_options(10.0),
     ));
     runtime.update_audio_propagation(1.0);
     let opened = runtime.audio.sounds[0].last_result.expect("result");
@@ -398,7 +525,7 @@ fn audio_portal_2d_chains_multiple_hops() {
     assert!(runtime.play_runtime_audio_2d(
         looped_audio(),
         Vector2::new(5.0, 0.0),
-        SpatialAudioOptions::new(10.0),
+        spatial_options(10.0),
     ));
     runtime.update_audio_propagation(1.0);
     let result = runtime.audio.sounds[0].last_result.expect("result");
@@ -455,12 +582,12 @@ fn audio_portal_skip_is_per_ray_branch() {
     assert!(runtime.play_runtime_audio_2d(
         looped_audio(),
         Vector2::new(5.0, 0.0),
-        SpatialAudioOptions::new(10.0),
+        spatial_options(10.0),
     ));
     assert!(runtime.play_runtime_audio_2d(
         looped_audio(),
         Vector2::new(3.5, 0.0),
-        SpatialAudioOptions::new(10.0),
+        spatial_options(10.0),
     ));
     runtime.update_audio_propagation(1.0);
 
@@ -495,7 +622,7 @@ fn audio_portal_3d_transports_through_connected_exit() {
     assert!(without_portal.play_runtime_audio_3d(
         looped_audio(),
         Vector3::new(0.0, 0.0, -5.0),
-        SpatialAudioOptions::new(10.0),
+        spatial_options(10.0),
     ));
     without_portal.update_audio_propagation(1.0);
     let blocked = without_portal.audio.sounds[0].last_result.expect("result");
@@ -551,7 +678,7 @@ fn audio_portal_3d_transports_through_connected_exit() {
     assert!(with_portal.play_runtime_audio_3d(
         looped_audio(),
         Vector3::new(0.0, 0.0, -5.0),
-        SpatialAudioOptions::new(10.0),
+        spatial_options(10.0),
     ));
     with_portal.update_audio_propagation(1.0);
     let opened = with_portal.audio.sounds[0].last_result.expect("result");
@@ -595,7 +722,7 @@ fn audio_zone_2d_mixes_effect_when_source_enters() {
     assert!(runtime.play_runtime_audio_2d(
         looped_audio(),
         Vector2::new(5.0, 0.0),
-        SpatialAudioOptions::new(10.0),
+        spatial_options(10.0),
     ));
     runtime.update_audio_propagation(1.0);
     let result = runtime.audio.sounds[0].last_result.expect("result");
@@ -643,7 +770,7 @@ fn audio_zone_3d_mixes_effect_when_path_crosses() {
     assert!(runtime.play_runtime_audio_3d(
         looped_audio(),
         Vector3::new(0.0, 0.0, -5.0),
-        SpatialAudioOptions::new(10.0),
+        spatial_options(10.0),
     ));
     runtime.update_audio_propagation(1.0);
     let result = runtime.audio.sounds[0].last_result.expect("result");
@@ -657,11 +784,9 @@ fn audio_zone_3d_mixes_effect_when_path_crosses() {
 fn attached_sound_follows_and_freezes_after_remove() {
     let mut runtime = Runtime::new();
     let node = NodeAPI::create::<perro_nodes::Node2D>(&mut runtime);
-    assert!(runtime.play_runtime_audio_attached(
-        looped_audio(),
-        node,
-        SpatialAudioOptions::new(10.0),
-    ));
+    assert!(
+        runtime.play_runtime_audio_attached(None, looped_audio(), node, spatial_options(10.0),)
+    );
     assert!(NodeAPI::set_global_transform_2d(
         &mut runtime,
         node,
@@ -685,8 +810,8 @@ fn stop_attached_matches_node_and_source() {
     let mut runtime = Runtime::new();
     let a = NodeAPI::create::<perro_nodes::Node2D>(&mut runtime);
     let b = NodeAPI::create::<perro_nodes::Node2D>(&mut runtime);
-    assert!(runtime.play_runtime_audio_attached(looped_audio(), a, SpatialAudioOptions::new(10.0)));
-    assert!(runtime.play_runtime_audio_attached(looped_audio(), b, SpatialAudioOptions::new(10.0)));
+    assert!(runtime.play_runtime_audio_attached(None, looped_audio(), a, spatial_options(10.0)));
+    assert!(runtime.play_runtime_audio_attached(None, looped_audio(), b, spatial_options(10.0)));
     assert!(runtime.stop_runtime_audio_attached(a, "res://missing.wav"));
     assert_eq!(runtime.audio.sounds.len(), 1);
     assert!(matches!(runtime.audio.sounds[0].pos, SpatialSoundPos::Attached(id) if id == b));

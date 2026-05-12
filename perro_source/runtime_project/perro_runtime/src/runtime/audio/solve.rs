@@ -26,7 +26,8 @@ impl Runtime {
             None
         };
         let direct_attenuation = 1.0 - (distance / range).clamp(0.0, 1.0);
-        let mut attenuation = direct_attenuation;
+        let mut attenuation =
+            direct_attenuation * self.emitter_attenuation_2d(sound, source_pos, listener_pos);
         let mut low_pass = 0.0;
         let mut occlusion = 0.0;
         let mut perceived = source_pos;
@@ -104,7 +105,7 @@ impl Runtime {
         let echo = zone.echo.max(sound.effects.echo).clamp(0.0, 1.0);
         occlusion = occlusion.max(sound.effects.occlusion);
         attenuation *= 1.0 - zone.dampening.clamp(0.0, 1.0) * 0.35;
-        Some(PropagationResult {
+        let result = PropagationResult {
             pan: [local_x / range, local_y / range, 0.0],
             volume: sound.volume * attenuation,
             low_pass,
@@ -114,7 +115,9 @@ impl Runtime {
             occlusion,
             perceived_2d: Some(perceived),
             perceived_3d: None,
-        })
+        };
+        self.queue_audio_debug_ray_2d(listener_pos, perceived);
+        Some(result)
     }
 
     pub(super) fn solve_3d(
@@ -141,16 +144,37 @@ impl Runtime {
             return None;
         }
         let dir = listener_pos.direction_to(source_pos);
-        let mut attenuation = 1.0 - (distance / range).clamp(0.0, 1.0);
+        let mut attenuation = (1.0 - (distance / range).clamp(0.0, 1.0))
+            * self.emitter_attenuation_3d(sound, source_pos, listener_pos);
         let mut low_pass = 0.0;
         let mut occlusion = 0.0;
         let mut perceived = source_pos;
         let mut reflection = 0.0;
+        let mask_hit = if sound.options.enable_propagation && self.audio.has_audio_mask_3d {
+            self.first_audio_mask_3d(listener_pos, source_pos, sound.options.occlusion_mask)
+        } else {
+            None
+        };
+        let hit = match (hit, mask_hit) {
+            (Some(a), Some(b)) if b.distance < a.distance => Some(b),
+            (Some(a), _) => {
+                let material = self.audio_material_for_node(a.node).unwrap_or_default();
+                Some(AudioHit3D {
+                    node: a.node,
+                    point: a.point,
+                    normal: a.normal,
+                    distance: a.distance,
+                    material,
+                    thickness: self.audio_thickness_3d(a.node),
+                })
+            }
+            (None, Some(b)) => Some(b),
+            (None, None) => None,
+        };
         if let Some(hit) = hit {
-            let material = self.audio_material_for_node(hit.node).unwrap_or_default();
             let diffusion = self.audio_diffusion_for_node(hit.node);
-            let thickness =
-                self.audio_thickness_3d(hit.node).max(0.05) * material.thickness_multiplier;
+            let material = hit.material;
+            let thickness = hit.thickness.max(0.05) * material.thickness_multiplier;
             let transmission = material.transmission.clamp(0.0, 1.0);
             let damping = diffusion.damping.clamp(0.0, 1.0);
             let compression = diffusion.compression.clamp(0.0, 1.0);
@@ -192,7 +216,7 @@ impl Runtime {
         let echo = zone.echo.max(sound.effects.echo).clamp(0.0, 1.0);
         occlusion = occlusion.max(sound.effects.occlusion);
         attenuation *= 1.0 - zone.dampening.clamp(0.0, 1.0) * 0.35;
-        Some(PropagationResult {
+        let result = PropagationResult {
             pan: [local.x / range, local.y / range, -local.z / range],
             volume: sound.volume * attenuation,
             low_pass,
@@ -202,7 +226,9 @@ impl Runtime {
             occlusion,
             perceived_2d: None,
             perceived_3d: Some(perceived),
-        })
+        };
+        self.queue_audio_debug_ray_3d(listener_pos, perceived);
+        Some(result)
     }
 
     pub(super) fn bounce_energy(&self, reflection: f32, max_bounces: u32) -> f32 {
@@ -216,6 +242,88 @@ impl Runtime {
             energy *= reflection.clamp(0.0, 1.0);
         }
         total.clamp(0.0, 1.0)
+    }
+
+    pub(super) fn emitter_attenuation_2d(
+        &mut self,
+        sound: &ActiveSpatialSound,
+        source_pos: Vector2,
+        listener_pos: Vector2,
+    ) -> f32 {
+        if matches!(sound.options.direction_2d, AudioDirection::Omni) {
+            return 1.0;
+        }
+        let Some((mode, direction)) = self.emitter_direction_2d(sound) else {
+            return 1.0;
+        };
+        let to_listener = source_pos.direction_to(listener_pos);
+        let dot = direction.dot(to_listener).clamp(-1.0, 1.0);
+        emitter_lobe(mode, dot)
+    }
+
+    pub(super) fn emitter_attenuation_3d(
+        &mut self,
+        sound: &ActiveSpatialSound,
+        source_pos: Vector3,
+        listener_pos: Vector3,
+    ) -> f32 {
+        if matches!(sound.options.direction_3d, AudioDirection::Omni) {
+            return 1.0;
+        }
+        let Some((mode, direction)) = self.emitter_direction_3d(sound) else {
+            return 1.0;
+        };
+        let to_listener = source_pos.direction_to(listener_pos);
+        let dot = direction.dot(to_listener).clamp(-1.0, 1.0);
+        emitter_lobe(mode, dot)
+    }
+
+    fn emitter_direction_2d(
+        &mut self,
+        sound: &ActiveSpatialSound,
+    ) -> Option<(EmitterMode, Vector2)> {
+        let (mode, fallback) = match sound.options.direction_2d {
+            AudioDirection::Omni => return None,
+            AudioDirection::Directional(v) => (EmitterMode::Directional, v),
+            AudioDirection::InverseDirectional(v) => (EmitterMode::InverseDirectional, v),
+            AudioDirection::Bidirectional(v) => (EmitterMode::Bidirectional, v),
+        };
+        let direction = match sound.pos {
+            SpatialSoundPos::Attached(node) => {
+                let transform = self.get_global_transform_2d(node)?;
+                Vector2::new(transform.rotation.sin(), -transform.rotation.cos())
+            }
+            _ => fallback,
+        };
+        (direction.length_squared() > 0.0001).then_some((mode, direction.normalized()))
+    }
+
+    fn emitter_direction_3d(
+        &mut self,
+        sound: &ActiveSpatialSound,
+    ) -> Option<(EmitterMode, Vector3)> {
+        let (mode, fallback) = match sound.options.direction_3d {
+            AudioDirection::Omni => return None,
+            AudioDirection::Directional(v) => (EmitterMode::Directional, v),
+            AudioDirection::InverseDirectional(v) => (EmitterMode::InverseDirectional, v),
+            AudioDirection::Bidirectional(v) => (EmitterMode::Bidirectional, v),
+        };
+        let direction = match sound.pos {
+            SpatialSoundPos::Attached(node) => {
+                let transform = self.get_global_transform_3d(node)?;
+                rotate_vec3(
+                    [
+                        transform.rotation.x,
+                        transform.rotation.y,
+                        transform.rotation.z,
+                        transform.rotation.w,
+                    ],
+                    Vector3::new(0.0, 0.0, -1.0),
+                )
+            }
+            _ => fallback,
+        };
+        (direction.length_squared() > 0.0001).then_some((mode, direction.normalized()))
     }
 
     pub(super) fn audio_material_for_node(&self, node: NodeID) -> Option<AudioMaterial> {
@@ -335,6 +443,64 @@ impl Runtime {
                             thickness: (half_w.min(half_h) * 2.0).max(0.05),
                         });
                     }
+                }
+            }
+        }
+        best
+    }
+
+    pub(super) fn first_audio_mask_3d(
+        &mut self,
+        from: Vector3,
+        to: Vector3,
+        occlusion_mask: u32,
+    ) -> Option<AudioHit3D> {
+        let dir = to - from;
+        let len = dir.length();
+        if len <= 0.0001 {
+            return None;
+        }
+        let mut best: Option<AudioHit3D> = None;
+        self.audio.scratch_ids.clear();
+        for (id, node) in self.nodes.iter() {
+            if matches!(node.data, SceneNodeData::AudioMask3D(_)) {
+                self.audio.scratch_ids.push(id);
+            }
+        }
+        for index in 0..self.audio.scratch_ids.len() {
+            let mask_id = self.audio.scratch_ids[index];
+            let Some(SceneNodeData::AudioMask3D(mask)) = self.nodes.get(mask_id).map(|n| &n.data)
+            else {
+                continue;
+            };
+            if !mask.enabled || (mask.material.occlusion_mask & occlusion_mask) == 0 {
+                continue;
+            }
+            let material = mask.material;
+            self.audio.scratch_child_ids.clear();
+            if let Some(node) = self.nodes.get(mask_id) {
+                self.audio
+                    .scratch_child_ids
+                    .extend_from_slice(node.children_slice());
+            }
+            for child_index in 0..self.audio.scratch_child_ids.len() {
+                let child = self.audio.scratch_child_ids[child_index];
+                let Some((center, half)) = self.audio_zone_shape_3d(child) else {
+                    continue;
+                };
+                let Some((t, normal)) = segment_aabb_3d_with_normal(from, dir, center, half) else {
+                    continue;
+                };
+                let distance = t * len;
+                if best.as_ref().is_none_or(|hit| distance < hit.distance) {
+                    best = Some(AudioHit3D {
+                        node: mask_id,
+                        point: from + dir * t,
+                        normal,
+                        distance,
+                        material,
+                        thickness: (half.x.min(half.y).min(half.z) * 2.0).max(0.05),
+                    });
                 }
             }
         }
@@ -758,4 +924,23 @@ impl Runtime {
         }
         best
     }
+}
+
+#[derive(Clone, Copy)]
+enum EmitterMode {
+    Directional,
+    InverseDirectional,
+    Bidirectional,
+}
+
+fn emitter_lobe(mode: EmitterMode, dot: f32) -> f32 {
+    match mode {
+        EmitterMode::Directional => directional_lobe(dot),
+        EmitterMode::InverseDirectional => directional_lobe(-dot),
+        EmitterMode::Bidirectional => 0.15 + 0.85 * dot.abs().powf(1.5),
+    }
+}
+
+fn directional_lobe(dot: f32) -> f32 {
+    0.15 + 0.85 * dot.max(0.0).powf(1.5)
 }

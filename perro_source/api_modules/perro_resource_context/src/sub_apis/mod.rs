@@ -15,9 +15,9 @@ pub use animation::{AnimationAPI, AnimationModule};
 pub use animation_tree::{AnimationTreeAPI, AnimationTreeModule};
 pub use audio::{
     Audio, Audio2D, Audio2DModule, Audio3D, Audio3DModule, AudioAPI, AudioCompression,
-    AudioEffects, AudioEq, AudioModule, AudioPan, AudioPlayConfig, MidiChannel, MidiModule,
-    MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong, MidiSound, MidiSpatialPos,
-    MidiSpatialPosition, Note, PannedAudio, bus_id, program,
+    AudioDirection, AudioEffects, AudioEq, AudioModule, AudioPan, AudioPlayConfig, MidiChannel,
+    MidiModule, MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong, MidiSound, MidiSpatialPos,
+    MidiSpatialPosition, Note, PannedAudio, SpatialAudioOptions, bus_id, program,
 };
 pub use draw_2d::{Draw2DAPI, Draw2DModule};
 pub use localization::{Locale, LocalizationAPI, LocalizationModule};

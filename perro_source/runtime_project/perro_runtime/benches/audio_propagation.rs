@@ -4,7 +4,7 @@ use perro_nodes::{
 };
 use perro_runtime::Runtime;
 use perro_runtime_context::sub_apis::{
-    AudioEffects, NodeAPI, RuntimeAudio, RuntimeAudioAPI, SpatialAudioOptions,
+    AudioDirection, AudioEffects, NodeAPI, RuntimeAudio, RuntimeAudioAPI, SpatialAudioOptions,
 };
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 
@@ -16,6 +16,16 @@ fn looped_audio() -> RuntimeAudio<'static> {
         effects: AudioEffects::new(),
         from_start: 0.0,
         from_end: 0.0,
+    }
+}
+
+fn spatial_options(range: f32) -> SpatialAudioOptions {
+    SpatialAudioOptions {
+        range,
+        occlusion_mask: u32::MAX,
+        enable_propagation: true,
+        direction_2d: AudioDirection::Omni,
+        direction_3d: AudioDirection::Omni,
     }
 }
 
@@ -50,9 +60,10 @@ fn runtime_2d(walls: usize, sounds: usize) -> Runtime {
             Transform2D::new(Vector2::new(x, y), 0.0, Vector2::ONE),
         ));
         assert!(runtime.play_runtime_audio_attached(
+            None,
             looped_audio(),
             node,
-            SpatialAudioOptions::new(80.0),
+            spatial_options(80.0),
         ));
     }
     runtime.update(1.0);
@@ -92,9 +103,10 @@ fn runtime_3d(walls: usize, sounds: usize) -> Runtime {
             Transform3D::new(Vector3::new(x, y, z), Quaternion::IDENTITY, Vector3::ONE),
         ));
         assert!(runtime.play_runtime_audio_attached(
+            None,
             looped_audio(),
             node,
-            SpatialAudioOptions::new(90.0),
+            spatial_options(90.0),
         ));
     }
     runtime.update(1.0);

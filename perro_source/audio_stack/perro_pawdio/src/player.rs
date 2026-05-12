@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::codec::decode_static_pawdio;
+use crate::dsp::{DspControl, DspParams, DspSource};
 #[cfg(feature = "profile")]
 use crate::internal::SourceLoadKind;
 use crate::internal::{
@@ -29,6 +30,7 @@ struct MidiSinkActivation {
     volume: f32,
     pan: AudioPan,
     control: crossbeam_channel::Sender<MidiControl>,
+    dsp: Arc<DspControl>,
     sink: SpatialSink,
 }
 
@@ -170,6 +172,15 @@ impl BarkPlayer {
         #[cfg(feature = "profile")]
         let sink_setup_begin = Instant::now();
         let pan = pan.clamped();
+        let dsp = DspControl::new(DspParams {
+            low_pass,
+            reverb_send,
+            echo,
+            reflection,
+            occlusion,
+            eq,
+            compression,
+        });
         let sink = SpatialSink::try_new(
             &self.handle,
             Self::pan_emitter_position(pan),
@@ -193,23 +204,36 @@ impl BarkPlayer {
                 ));
             }
             if looped {
-                sink.append(
+                sink.append(DspSource::new(
                     decoder
                         .skip_duration(trim_start)
                         .take_duration(play_duration)
-                        .repeat_infinite(),
-                );
+                        .repeat_infinite()
+                        .convert_samples::<f32>(),
+                    dsp.clone(),
+                ));
             } else {
-                sink.append(
+                sink.append(DspSource::new(
                     decoder
                         .skip_duration(trim_start)
-                        .take_duration(play_duration),
-                );
+                        .take_duration(play_duration)
+                        .convert_samples::<f32>(),
+                    dsp.clone(),
+                ));
             }
         } else if looped {
-            sink.append(decoder.skip_duration(trim_start).repeat_infinite());
+            sink.append(DspSource::new(
+                decoder
+                    .skip_duration(trim_start)
+                    .repeat_infinite()
+                    .convert_samples::<f32>(),
+                dsp.clone(),
+            ));
         } else {
-            sink.append(decoder.skip_duration(trim_start));
+            sink.append(DspSource::new(
+                decoder.skip_duration(trim_start).convert_samples::<f32>(),
+                dsp.clone(),
+            ));
         }
         #[cfg(feature = "profile")]
         let append_elapsed = append_begin.elapsed();
@@ -264,13 +288,7 @@ impl BarkPlayer {
             base_volume: requested_volume,
             speed: speed.max(0.01),
             pan,
-            low_pass: low_pass.clamp(0.0, 1.0),
-            reverb_send: reverb_send.clamp(0.0, 1.0),
-            echo: echo.clamp(0.0, 1.0),
-            reflection: reflection.clamp(0.0, 1.0),
-            occlusion: occlusion.clamp(0.0, 1.0),
-            eq,
-            compression,
+            dsp,
             from_start: from_start.max(0.0),
             from_end: from_end.max(0.0),
             sink,
@@ -541,13 +559,7 @@ impl BarkPlayer {
         let playback = &mut state.playbacks[index];
         playback.base_volume = params.volume.max(0.0);
         playback.pan = params.pan.clamped();
-        playback.low_pass = params.low_pass.clamp(0.0, 1.0);
-        playback.reverb_send = params.reverb_send.clamp(0.0, 1.0);
-        playback.echo = params.echo.clamp(0.0, 1.0);
-        playback.reflection = params.reflection.clamp(0.0, 1.0);
-        playback.occlusion = params.occlusion.clamp(0.0, 1.0);
-        playback.eq = params.eq;
-        playback.compression = params.compression;
+        playback.dsp.update_spatial(params);
         playback
             .sink
             .set_emitter_position(Self::pan_emitter_position(playback.pan));
@@ -564,7 +576,7 @@ impl BarkPlayer {
     ) -> bool {
         let master_volume = state.master_volume.max(0.0);
         let Some(index) = state.midi_playbacks.iter().position(|p| p.id == id) else {
-            return false;
+            return Self::update_midi_note_mixer_spatial_locked(state, id, params, master_volume);
         };
         let playback_bus_id = state.midi_playbacks[index].bus_id;
         let bus_volume = playback_bus_id
@@ -574,13 +586,7 @@ impl BarkPlayer {
         let playback = &mut state.midi_playbacks[index];
         playback.base_volume = params.volume.max(0.0);
         playback.pan = params.pan.clamped();
-        playback.low_pass = params.low_pass.clamp(0.0, 1.0);
-        playback.reverb_send = params.reverb_send.clamp(0.0, 1.0);
-        playback.echo = params.echo.clamp(0.0, 1.0);
-        playback.reflection = params.reflection.clamp(0.0, 1.0);
-        playback.occlusion = params.occlusion.clamp(0.0, 1.0);
-        playback.eq = params.eq;
-        playback.compression = params.compression;
+        playback.dsp.update_spatial(params);
         playback
             .sink
             .set_emitter_position(Self::pan_emitter_position(playback.pan));
@@ -588,6 +594,59 @@ impl BarkPlayer {
             .sink
             .set_volume(playback.base_volume * master_volume * bus_volume);
         true
+    }
+
+    fn update_midi_note_mixer_spatial_locked(
+        state: &mut AudioState,
+        id: u64,
+        params: SpatialAudioParams,
+        master_volume: f32,
+    ) -> bool {
+        if let Some(key) = state.built_in_midi_notes.get(&id).copied()
+            && let Some(index) = state
+                .built_in_midi_mixers
+                .iter()
+                .position(|mixer| mixer.key == key)
+        {
+            let bus_volume = state.built_in_midi_mixers[index]
+                .bus_id
+                .and_then(|bus_id| state.buses.get(&bus_id))
+                .map(|bus| bus.volume.max(0.0))
+                .unwrap_or(1.0);
+            let mixer = &mut state.built_in_midi_mixers[index];
+            mixer.base_volume = params.volume.max(0.0);
+            mixer.dsp.update_spatial(params);
+            mixer
+                .sink
+                .set_emitter_position(Self::pan_emitter_position(params.pan.clamped()));
+            mixer
+                .sink
+                .set_volume(mixer.base_volume * master_volume * bus_volume);
+            return true;
+        }
+        if let Some(key) = state.soundfont_midi_notes.get(&id).copied()
+            && let Some(index) = state
+                .soundfont_midi_mixers
+                .iter()
+                .position(|mixer| mixer.key == key)
+        {
+            let bus_volume = state.soundfont_midi_mixers[index]
+                .bus_id
+                .and_then(|bus_id| state.buses.get(&bus_id))
+                .map(|bus| bus.volume.max(0.0))
+                .unwrap_or(1.0);
+            let mixer = &mut state.soundfont_midi_mixers[index];
+            mixer.base_volume = params.volume.max(0.0);
+            mixer.dsp.update_spatial(params);
+            mixer
+                .sink
+                .set_emitter_position(Self::pan_emitter_position(params.pan.clamped()));
+            mixer
+                .sink
+                .set_volume(mixer.base_volume * master_volume * bus_volume);
+            return true;
+        }
+        false
     }
 
     pub fn stop_all(&self) {
@@ -823,7 +882,11 @@ impl BarkPlayer {
                 [1.0, 0.0, 0.0],
             )
             .map_err(|err| format!("failed to create sink: {err}"))?;
-            sink.append(BuiltInMidiMixerSource::new(rx));
+            let dsp = DspControl::new(DspParams::dry());
+            sink.append(DspSource::new(
+                BuiltInMidiMixerSource::new(rx).convert_samples::<f32>(),
+                dsp.clone(),
+            ));
 
             let master_volume = state.master_volume.max(0.0);
             let (bus_volume, bus_speed, bus_paused) =
@@ -846,6 +909,7 @@ impl BarkPlayer {
                 key,
                 bus_id: request.options.bus_id,
                 base_volume: 1.0,
+                dsp,
                 control,
                 sink,
             });
@@ -898,7 +962,11 @@ impl BarkPlayer {
                 [1.0, 0.0, 0.0],
             )
             .map_err(|err| format!("failed to create sink: {err}"))?;
-            sink.append(RustyNoteMixerSource::new(font, rx)?);
+            let dsp = DspControl::new(DspParams::dry());
+            sink.append(DspSource::new(
+                RustyNoteMixerSource::new(font, rx)?.convert_samples::<f32>(),
+                dsp.clone(),
+            ));
 
             let master_volume = state.master_volume.max(0.0);
             let (bus_volume, bus_speed, bus_paused) =
@@ -923,6 +991,7 @@ impl BarkPlayer {
                     key,
                     bus_id: request.options.bus_id,
                     base_volume: 1.0,
+                    dsp,
                     control,
                     sink,
                 });
@@ -979,12 +1048,23 @@ impl BarkPlayer {
             [1.0, 0.0, 0.0],
         )
         .map_err(|err| format!("failed to create sink: {err}"))?;
+        let dsp = DspControl::new(DspParams::dry());
         if let Some(font) = soundfont {
-            sink.append(RustyFileSource::new(font, &bytes, request.song.looped, rx)?);
+            sink.append(DspSource::new(
+                RustyFileSource::new(font, &bytes, request.song.looped, rx)?
+                    .convert_samples::<f32>(),
+                dsp.clone(),
+            ));
         } else if let Some(data) = built_in_data {
-            sink.append(BuiltInMidiSource::file_data(data, request.song, rx));
+            sink.append(DspSource::new(
+                BuiltInMidiSource::file_data(data, request.song, rx).convert_samples::<f32>(),
+                dsp.clone(),
+            ));
         } else {
-            sink.append(BuiltInMidiSource::file(&bytes, request.song, rx)?);
+            sink.append(DspSource::new(
+                BuiltInMidiSource::file(&bytes, request.song, rx)?.convert_samples::<f32>(),
+                dsp.clone(),
+            ));
         }
         self.activate_midi_sink(MidiSinkActivation {
             id: request.id,
@@ -993,6 +1073,7 @@ impl BarkPlayer {
             volume: request.song.volume,
             pan,
             control,
+            dsp,
             sink,
         })
     }
@@ -1024,6 +1105,7 @@ impl BarkPlayer {
             volume,
             pan,
             control,
+            dsp,
             sink,
         } = activation;
         let mut state = self
@@ -1051,13 +1133,7 @@ impl BarkPlayer {
             bus_id,
             base_volume: volume.max(0.0),
             pan,
-            low_pass: 0.0,
-            reverb_send: 0.0,
-            echo: 0.0,
-            reflection: 0.0,
-            occlusion: 0.0,
-            eq: crate::types::AudioEq::default(),
-            compression: crate::types::AudioCompression::default(),
+            dsp,
             source,
             control,
             sink,

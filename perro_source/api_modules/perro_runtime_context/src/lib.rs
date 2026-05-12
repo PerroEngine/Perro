@@ -20,14 +20,14 @@ pub mod prelude {
         MidiProgram, MidiSong, MidiSound, NodeAPI, NodeCreationTemplate, NodeModule, Note,
         PhysicsAPI, PhysicsModule, PhysicsRayHit3D, PreloadedSceneTarget, QueryExpr, QueryScope,
         RuntimeMidiModule, SceneAPI, SceneLoadSource, SceneModule, ScriptAPI, ScriptModule,
-        SignalAPI, SignalModule, TagQuery, TimeAPI, TimeModule, WindowAPI, WindowMode,
-        WindowModule, WindowRequest, program,
+        SignalAPI, SignalModule, SpatialAudioOptions, TagQuery, TimeAPI, TimeModule, WindowAPI,
+        WindowMode, WindowModule, WindowRequest, program,
     };
     pub use crate::{
         anim_player_bind, anim_player_clear_bindings, anim_player_pause, anim_player_play,
         anim_player_seek_frame, anim_player_set_clip, anim_player_set_speed, apply_force,
-        apply_impulse, bind_locale_placeholder, bind_locale_text, call_method, create_node,
-        create_nodes, delta_time, delta_time_capped, delta_time_clamped, elapsed_time,
+        apply_impulse, audio_play_attached, bind_locale_placeholder, bind_locale_text, call_method,
+        create_node, create_nodes, delta_time, delta_time_capped, delta_time_clamped, elapsed_time,
         fixed_delta_time, force_rerender, get_child, get_children, get_global_pos_2d,
         get_global_pos_3d, get_global_rot_2d, get_global_rot_3d, get_global_scale_2d,
         get_global_scale_3d, get_global_transform_2d, get_global_transform_3d, get_local_pos_2d,

@@ -9,6 +9,46 @@ impl Runtime {
         self.audio.counters.active_positional = sounds.len() as u32;
         self.audio.counters.propagation_time = start.elapsed();
         self.audio.sounds = sounds;
+        self.clear_stale_audio_debug_rays();
+    }
+
+    pub(super) fn queue_audio_debug_ray_2d(&mut self, from: Vector2, to: Vector2) {
+        if !self.audio.config.debug_rays {
+            return;
+        }
+        self.queue_render_command(RenderCommand::TwoD(Command2D::DrawShape {
+            draw: DrawShape2DCommand {
+                shape: DrawShape2D::line(to - from, [0.15, 0.95, 0.95, 0.85], 2.0),
+                position: [from.x, from.y],
+            },
+        }));
+    }
+
+    pub(super) fn queue_audio_debug_ray_3d(&mut self, from: Vector3, to: Vector3) {
+        if !self.audio.config.debug_rays {
+            return;
+        }
+        let index = self.audio.debug_ray_count_3d;
+        self.audio.debug_ray_count_3d = self.audio.debug_ray_count_3d.saturating_add(1);
+        self.queue_render_command(RenderCommand::ThreeD(Box::new(
+            Command3D::DrawDebugLine3D {
+                node: audio_debug_ray_node(index),
+                start: [from.x, from.y, from.z],
+                end: [to.x, to.y, to.z],
+                thickness: 0.025,
+            },
+        )));
+    }
+
+    pub(super) fn clear_stale_audio_debug_rays(&mut self) {
+        let start = self.audio.debug_ray_count_3d;
+        let end = self.audio.prev_debug_ray_count_3d;
+        for index in start..end {
+            self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::RemoveNode {
+                node: audio_debug_ray_node(index),
+            })));
+        }
+        self.audio.prev_debug_ray_count_3d = self.audio.debug_ray_count_3d;
     }
 
     pub(super) fn refresh_audio_scene_flags(&mut self) {
@@ -18,6 +58,7 @@ impl Runtime {
         }
         self.audio.audio_scene_flags_node_count = node_count;
         self.audio.has_audio_mask_2d = false;
+        self.audio.has_audio_mask_3d = false;
         self.audio.has_audio_portal_2d = false;
         self.audio.has_audio_portal_3d = false;
         self.audio.has_audio_zone_2d = false;
@@ -26,6 +67,9 @@ impl Runtime {
             match &node.data {
                 SceneNodeData::AudioMask2D(_) => {
                     self.audio.has_audio_mask_2d = true;
+                }
+                SceneNodeData::AudioMask3D(_) => {
+                    self.audio.has_audio_mask_3d = true;
                 }
                 SceneNodeData::AudioPortal2D(_) => {
                     self.audio.has_audio_portal_2d = true;
@@ -42,6 +86,7 @@ impl Runtime {
                 _ => {}
             }
             if self.audio.has_audio_mask_2d
+                && self.audio.has_audio_mask_3d
                 && self.audio.has_audio_portal_2d
                 && self.audio.has_audio_portal_3d
                 && self.audio.has_audio_zone_2d
@@ -292,16 +337,53 @@ impl Runtime {
             };
             let options = SpatialAudioOptions {
                 range: request.range,
-                bus_id: request.bus_id,
-                occlusion_mask: u32::MAX,
-                enable_propagation: true,
+                occlusion_mask: request.occlusion_mask,
+                enable_propagation: request.enable_propagation,
+                direction_2d: match request.direction_2d {
+                    perro_resource_context::sub_apis::AudioDirection::Omni => AudioDirection::Omni,
+                    perro_resource_context::sub_apis::AudioDirection::Directional(v) => {
+                        AudioDirection::Directional(v)
+                    }
+                    perro_resource_context::sub_apis::AudioDirection::InverseDirectional(v) => {
+                        AudioDirection::InverseDirectional(v)
+                    }
+                    perro_resource_context::sub_apis::AudioDirection::Bidirectional(v) => {
+                        AudioDirection::Bidirectional(v)
+                    }
+                },
+                direction_3d: match request.direction_3d {
+                    perro_resource_context::sub_apis::AudioDirection::Omni => AudioDirection::Omni,
+                    perro_resource_context::sub_apis::AudioDirection::Directional(v) => {
+                        AudioDirection::Directional(v)
+                    }
+                    perro_resource_context::sub_apis::AudioDirection::InverseDirectional(v) => {
+                        AudioDirection::InverseDirectional(v)
+                    }
+                    perro_resource_context::sub_apis::AudioDirection::Bidirectional(v) => {
+                        AudioDirection::Bidirectional(v)
+                    }
+                },
             };
             match request.pos {
                 QueuedSpatialAudioPos::TwoD(position) => {
-                    self.play_runtime_audio_2d(audio, position, options);
+                    self.start_spatial_sound(
+                        audio,
+                        SpatialSoundPos::TwoD(position),
+                        request.bus_id,
+                        normalize_spatial_options(options),
+                        Some(position),
+                        None,
+                    );
                 }
                 QueuedSpatialAudioPos::ThreeD(position) => {
-                    self.play_runtime_audio_3d(audio, position, options);
+                    self.start_spatial_sound(
+                        audio,
+                        SpatialSoundPos::ThreeD(position),
+                        request.bus_id,
+                        normalize_spatial_options(options),
+                        None,
+                        Some(position),
+                    );
                 }
             }
         }
@@ -315,12 +397,10 @@ impl Runtime {
         for request in queued_midi {
             let options = SpatialAudioOptions {
                 range: request.range,
-                bus_id: match &request.kind {
-                    crate::rs_ctx::QueuedSpatialMidiKind::Note { options, .. } => options.bus_id,
-                    crate::rs_ctx::QueuedSpatialMidiKind::File { song, .. } => song.bus_id,
-                },
                 occlusion_mask: u32::MAX,
                 enable_propagation: true,
+                direction_2d: AudioDirection::Omni,
+                direction_3d: AudioDirection::Omni,
             };
             match (request.kind, request.pos) {
                 (
@@ -425,4 +505,8 @@ impl Runtime {
             }
         }
     }
+}
+
+fn audio_debug_ray_node(index: u32) -> NodeID {
+    NodeID::from_u64(0xAD00_0000_0000_0000u64 | index as u64)
 }
