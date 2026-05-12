@@ -53,6 +53,8 @@ pub use perro_runtime_context::sub_apis::{WindowMode, WindowRequest};
 pub use render_result::RuntimeRenderResult;
 pub use rs_ctx::RuntimeResourceApi;
 pub use runtime::{Runtime, RuntimeFixedUpdateTiming, RuntimeScriptApi, RuntimeUpdateTiming};
+#[cfg(feature = "bench")]
+pub use runtime::{bench_prepare_and_merge_scene, bench_prepare_scene};
 pub use runtime_project::{
     AudioConfig, AudioPropagationConfig, LocalizationConfig, OcclusionCulling, ParticleSimDefault,
     ProjectLoadError, ProjectMetadata, ProviderMode, RuntimeProject, RuntimeProjectConfig,

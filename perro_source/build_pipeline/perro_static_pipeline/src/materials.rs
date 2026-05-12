@@ -4,7 +4,7 @@ use perro_io::walkdir::collect_file_paths;
 use perro_render_bridge::{
     CustomMaterialParamValue3D, StandardMaterial3D, ToonMaterial3D, UnlitMaterial3D,
 };
-use perro_scene::{Parser, SceneObjectField, SceneValue};
+use perro_scene::{Parser, SceneFieldName, SceneObjectField, SceneValue};
 use rayon::prelude::*;
 use std::{borrow::Cow, collections::HashMap, fmt::Write as _, fs, io, path::Path};
 
@@ -372,7 +372,7 @@ fn parse_pmat_key_values(text: &str) -> Option<Vec<SceneObjectField>> {
             continue;
         }
         let (raw_key, raw_value) = line.split_once('=')?;
-        let key: Cow<'static, str> = Cow::Owned(raw_key.trim().to_string());
+        let key = SceneFieldName::from(raw_key.trim().to_string());
         if key.is_empty() {
             continue;
         }

@@ -147,8 +147,7 @@ fn parse_pmat_key_values(text: &str) -> Option<Vec<SceneObjectField>> {
             continue;
         }
         let (raw_key, raw_value) = line.split_once('=')?;
-        let key: std::borrow::Cow<'static, str> =
-            std::borrow::Cow::Owned(raw_key.trim().to_string());
+        let key = perro_scene::SceneFieldName::from(raw_key.trim().to_string());
         if key.is_empty() {
             continue;
         }
@@ -599,7 +598,7 @@ fn as_custom_params(value: &SceneValue) -> Option<Vec<CustomMaterialParam3D>> {
             for (name, inner) in entries.as_ref() {
                 if let Some(val) = as_custom_param_value(inner) {
                     out.push(CustomMaterialParam3D {
-                        name: Some(name.clone()),
+                        name: Some(std::borrow::Cow::Owned(name.to_string())),
                         value: val,
                     });
                 }

@@ -22,6 +22,28 @@ mod prepare;
 use merge::merge_prepared_scene;
 use prepare::{load_runtime_scene_from_disk, prepare_scene_with_loader_and_styles};
 
+#[cfg(feature = "bench")]
+pub fn bench_prepare_scene(scene: &Scene) -> Result<(usize, usize), String> {
+    let prepared = prepare_scene_with_loader_and_styles(
+        scene,
+        &|path| Err(format!("bench scene import unsupported: {path}")),
+        None,
+    )?;
+    Ok((prepared.nodes.len(), prepared.scripts.len()))
+}
+
+#[cfg(feature = "bench")]
+pub fn bench_prepare_and_merge_scene(scene: &Scene) -> Result<usize, String> {
+    let prepared = prepare_scene_with_loader_and_styles(
+        scene,
+        &|path| Err(format!("bench scene import unsupported: {path}")),
+        None,
+    )?;
+    let mut runtime = Runtime::new();
+    let _ = merge_prepared_scene(&mut runtime, prepared)?;
+    Ok(runtime.nodes.len())
+}
+
 pub(crate) struct PendingScriptAttach {
     pub(crate) node_id: NodeID,
     pub(crate) script_path_hash: u64,

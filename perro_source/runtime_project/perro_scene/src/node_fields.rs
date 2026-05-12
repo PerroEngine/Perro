@@ -1,6 +1,8 @@
 use perro_nodes::NodeType;
 use std::str::FromStr;
 
+use crate::SceneFieldName;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NodeField {
     Node2D(Node2DField),
@@ -484,7 +486,396 @@ pub enum UiAnimatedImageField {
 
 pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField> {
     let node_type = NodeType::from_str(node_type_name).ok()?;
+    resolve_node_field_for_type(node_type, field)
+}
 
+pub fn resolve_scene_node_field(node_type_name: &str, field: &SceneFieldName) -> Option<NodeField> {
+    let node_type = NodeType::from_str(node_type_name).ok()?;
+    resolve_scene_node_field_for_type(node_type, field)
+        .or_else(|| resolve_node_field_for_type(node_type, field.as_ref()))
+}
+
+fn resolve_scene_node_field_for_type(
+    node_type: NodeType,
+    field: &SceneFieldName,
+) -> Option<NodeField> {
+    if matches!(node_type, NodeType::Camera2D | NodeType::Camera3D)
+        && matches!(field, SceneFieldName::RenderLayers)
+    {
+        return None;
+    }
+
+    if let Some(base) = resolve_base_scene_node_field(node_type, field) {
+        return Some(base);
+    }
+
+    match node_type {
+        NodeType::Camera2D => match field {
+            SceneFieldName::Zoom => Some(NodeField::Camera2D(Camera2DField::Zoom)),
+            SceneFieldName::RenderMask => Some(NodeField::Camera2D(Camera2DField::RenderMask)),
+            SceneFieldName::PostProcessing => {
+                Some(NodeField::Camera2D(Camera2DField::PostProcessing))
+            }
+            SceneFieldName::AudioOptions => Some(NodeField::Camera2D(Camera2DField::AudioOptions)),
+            SceneFieldName::AudioMask => Some(NodeField::Camera2D(Camera2DField::AudioMask)),
+            SceneFieldName::Active => Some(NodeField::Camera2D(Camera2DField::Active)),
+            _ => None,
+        },
+        NodeType::Camera3D => match field {
+            SceneFieldName::Zoom => Some(NodeField::Camera3D(Camera3DField::Zoom)),
+            SceneFieldName::RenderMask => Some(NodeField::Camera3D(Camera3DField::RenderMask)),
+            SceneFieldName::Projection => Some(NodeField::Camera3D(Camera3DField::Projection)),
+            SceneFieldName::PerspectiveFovYDegrees => {
+                Some(NodeField::Camera3D(Camera3DField::PerspectiveFovYDegrees))
+            }
+            SceneFieldName::PerspectiveNear => {
+                Some(NodeField::Camera3D(Camera3DField::PerspectiveNear))
+            }
+            SceneFieldName::PerspectiveFar => {
+                Some(NodeField::Camera3D(Camera3DField::PerspectiveFar))
+            }
+            SceneFieldName::OrthographicSize => {
+                Some(NodeField::Camera3D(Camera3DField::OrthographicSize))
+            }
+            SceneFieldName::OrthographicNear => {
+                Some(NodeField::Camera3D(Camera3DField::OrthographicNear))
+            }
+            SceneFieldName::OrthographicFar => {
+                Some(NodeField::Camera3D(Camera3DField::OrthographicFar))
+            }
+            SceneFieldName::FrustumLeft => Some(NodeField::Camera3D(Camera3DField::FrustumLeft)),
+            SceneFieldName::FrustumRight => Some(NodeField::Camera3D(Camera3DField::FrustumRight)),
+            SceneFieldName::FrustumBottom => {
+                Some(NodeField::Camera3D(Camera3DField::FrustumBottom))
+            }
+            SceneFieldName::FrustumTop => Some(NodeField::Camera3D(Camera3DField::FrustumTop)),
+            SceneFieldName::FrustumNear => Some(NodeField::Camera3D(Camera3DField::FrustumNear)),
+            SceneFieldName::FrustumFar => Some(NodeField::Camera3D(Camera3DField::FrustumFar)),
+            SceneFieldName::PostProcessing => {
+                Some(NodeField::Camera3D(Camera3DField::PostProcessing))
+            }
+            SceneFieldName::AudioOptions => Some(NodeField::Camera3D(Camera3DField::AudioOptions)),
+            SceneFieldName::AudioMask => Some(NodeField::Camera3D(Camera3DField::AudioMask)),
+            SceneFieldName::Active => Some(NodeField::Camera3D(Camera3DField::Active)),
+            _ => None,
+        },
+        NodeType::Sprite2D => match field {
+            SceneFieldName::Texture => Some(NodeField::Sprite2D(Sprite2DField::Texture)),
+            SceneFieldName::TextureRegion => {
+                Some(NodeField::Sprite2D(Sprite2DField::TextureRegion))
+            }
+            _ => None,
+        },
+        NodeType::AnimatedSprite2D => match field {
+            SceneFieldName::Texture => {
+                Some(NodeField::AnimatedSprite2D(AnimatedSprite2DField::Texture))
+            }
+            SceneFieldName::Animations => Some(NodeField::AnimatedSprite2D(
+                AnimatedSprite2DField::Animations,
+            )),
+            SceneFieldName::CurrentAnimation | SceneFieldName::Animation => Some(
+                NodeField::AnimatedSprite2D(AnimatedSprite2DField::CurrentAnimation),
+            ),
+            SceneFieldName::CurrentFrame => Some(NodeField::AnimatedSprite2D(
+                AnimatedSprite2DField::CurrentFrame,
+            )),
+            SceneFieldName::FpsScale => {
+                Some(NodeField::AnimatedSprite2D(AnimatedSprite2DField::FpsScale))
+            }
+            SceneFieldName::Playing => {
+                Some(NodeField::AnimatedSprite2D(AnimatedSprite2DField::Playing))
+            }
+            SceneFieldName::Looping => {
+                Some(NodeField::AnimatedSprite2D(AnimatedSprite2DField::Looping))
+            }
+            _ => None,
+        },
+        NodeType::ParticleEmitter2D => match field {
+            SceneFieldName::Active => {
+                Some(NodeField::ParticleEmitter2D(ParticleEmitter2DField::Active))
+            }
+            SceneFieldName::Looping => Some(NodeField::ParticleEmitter2D(
+                ParticleEmitter2DField::Looping,
+            )),
+            SceneFieldName::Prewarm => Some(NodeField::ParticleEmitter2D(
+                ParticleEmitter2DField::Prewarm,
+            )),
+            SceneFieldName::SpawnRate => Some(NodeField::ParticleEmitter2D(
+                ParticleEmitter2DField::SpawnRate,
+            )),
+            SceneFieldName::Seed => {
+                Some(NodeField::ParticleEmitter2D(ParticleEmitter2DField::Seed))
+            }
+            SceneFieldName::Params => {
+                Some(NodeField::ParticleEmitter2D(ParticleEmitter2DField::Params))
+            }
+            SceneFieldName::Profile => Some(NodeField::ParticleEmitter2D(
+                ParticleEmitter2DField::Profile,
+            )),
+            SceneFieldName::SimMode => Some(NodeField::ParticleEmitter2D(
+                ParticleEmitter2DField::SimMode,
+            )),
+            _ => None,
+        },
+        NodeType::AmbientLight2D => resolve_scene_light2d_common(field).map(NodeField::Light2D),
+        NodeType::RayLight2D => match field {
+            SceneFieldName::Visible => Some(NodeField::RayLight2D(RayLight2DField::Visible)),
+            _ => resolve_scene_light2d_common(field).map(NodeField::Light2D),
+        },
+        NodeType::PointLight2D => match field {
+            SceneFieldName::Range | SceneFieldName::Radius => {
+                Some(NodeField::PointLight2D(PointLight2DField::Range))
+            }
+            _ => resolve_scene_light2d_common(field).map(NodeField::Light2D),
+        },
+        NodeType::SpotLight2D => match field {
+            SceneFieldName::Range | SceneFieldName::Radius => {
+                Some(NodeField::SpotLight2D(SpotLight2DField::Range))
+            }
+            SceneFieldName::InnerAngleRadians => {
+                Some(NodeField::SpotLight2D(SpotLight2DField::InnerAngleRadians))
+            }
+            SceneFieldName::OuterAngleRadians => {
+                Some(NodeField::SpotLight2D(SpotLight2DField::OuterAngleRadians))
+            }
+            _ => resolve_scene_light2d_common(field).map(NodeField::Light2D),
+        },
+        NodeType::TileMap2D => match field {
+            SceneFieldName::Tileset => Some(NodeField::TileMap2D(TileMap2DField::Tileset)),
+            SceneFieldName::Width => Some(NodeField::TileMap2D(TileMap2DField::Width)),
+            SceneFieldName::Height => Some(NodeField::TileMap2D(TileMap2DField::Height)),
+            SceneFieldName::EmptyTile => Some(NodeField::TileMap2D(TileMap2DField::EmptyTile)),
+            SceneFieldName::Tiles => Some(NodeField::TileMap2D(TileMap2DField::Tiles)),
+            SceneFieldName::CollisionEnabled => {
+                Some(NodeField::TileMap2D(TileMap2DField::CollisionEnabled))
+            }
+            SceneFieldName::CollisionLayers => {
+                Some(NodeField::TileMap2D(TileMap2DField::CollisionLayers))
+            }
+            SceneFieldName::CollisionMaskLayers => {
+                Some(NodeField::TileMap2D(TileMap2DField::CollisionMask))
+            }
+            _ => None,
+        },
+        NodeType::CollisionShape2D => match field {
+            SceneFieldName::Shape => {
+                Some(NodeField::CollisionShape2D(CollisionShape2DField::Shape))
+            }
+            _ => None,
+        },
+        NodeType::StaticBody2D => resolve_scene_static_body_2d(field).map(NodeField::StaticBody2D),
+        NodeType::RigidBody2D => resolve_scene_rigid_body_2d(field).map(NodeField::RigidBody2D),
+        NodeType::Area2D => resolve_scene_area_2d(field).map(NodeField::Area2D),
+        NodeType::PinJoint2D => resolve_scene_joint2d_common(field).map(NodeField::PinJoint2D),
+        NodeType::FixedJoint2D => resolve_scene_joint2d_common(field).map(NodeField::FixedJoint2D),
+        NodeType::DistanceJoint2D => match field {
+            SceneFieldName::MinDistance => Some(NodeField::DistanceJoint2D(
+                DistanceJoint2DField::MinDistance,
+            )),
+            SceneFieldName::MaxDistance => Some(NodeField::DistanceJoint2D(
+                DistanceJoint2DField::MaxDistance,
+            )),
+            _ => resolve_scene_joint2d_common(field)
+                .map(DistanceJoint2DField::Common)
+                .map(NodeField::DistanceJoint2D),
+        },
+        NodeType::MeshInstance3D | NodeType::MultiMeshInstance3D => match field {
+            SceneFieldName::Mesh => Some(NodeField::MeshInstance3D(MeshInstance3DField::Mesh)),
+            SceneFieldName::Material => {
+                Some(NodeField::MeshInstance3D(MeshInstance3DField::Material))
+            }
+            SceneFieldName::Surfaces => {
+                Some(NodeField::MeshInstance3D(MeshInstance3DField::Surfaces))
+            }
+            SceneFieldName::Model => Some(NodeField::MeshInstance3D(MeshInstance3DField::Model)),
+            SceneFieldName::Skeleton => {
+                Some(NodeField::MeshInstance3D(MeshInstance3DField::Skeleton))
+            }
+            SceneFieldName::Meshlets => {
+                Some(NodeField::MeshInstance3D(MeshInstance3DField::Meshlets))
+            }
+            SceneFieldName::MinLod => Some(NodeField::MeshInstance3D(MeshInstance3DField::MinLod)),
+            SceneFieldName::MaxLod => Some(NodeField::MeshInstance3D(MeshInstance3DField::MaxLod)),
+            _ => None,
+        },
+        NodeType::Skeleton2D => match field {
+            SceneFieldName::Skeleton => Some(NodeField::Skeleton2D(Skeleton2DField::Skeleton)),
+            _ => None,
+        },
+        NodeType::Skeleton3D => match field {
+            SceneFieldName::Skeleton => Some(NodeField::Skeleton3D(Skeleton3DField::Skeleton)),
+            _ => None,
+        },
+        NodeType::BoneAttachment2D => {
+            resolve_scene_bone_attachment_2d(field).map(NodeField::BoneAttachment2D)
+        }
+        NodeType::BoneAttachment3D => {
+            resolve_scene_bone_attachment_3d(field).map(NodeField::BoneAttachment3D)
+        }
+        NodeType::IKTarget2D => resolve_scene_ik_target_2d(field).map(NodeField::IKTarget2D),
+        NodeType::IKTarget3D => resolve_scene_ik_target_3d(field).map(NodeField::IKTarget3D),
+        NodeType::PhysicsBoneChain2D => {
+            resolve_scene_physics_bone_chain_2d(field).map(NodeField::PhysicsBoneChain2D)
+        }
+        NodeType::PhysicsBoneChain3D => {
+            resolve_scene_physics_bone_chain_3d(field).map(NodeField::PhysicsBoneChain3D)
+        }
+        NodeType::BoneCollider2D => match field {
+            SceneFieldName::Enabled => {
+                Some(NodeField::BoneCollider2D(BoneCollider2DField::Enabled))
+            }
+            _ => None,
+        },
+        NodeType::BoneCollider3D => match field {
+            SceneFieldName::Enabled => {
+                Some(NodeField::BoneCollider3D(BoneCollider3DField::Enabled))
+            }
+            _ => None,
+        },
+        NodeType::ParticleEmitter3D => match field {
+            SceneFieldName::Active => {
+                Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::Active))
+            }
+            SceneFieldName::Looping => Some(NodeField::ParticleEmitter3D(
+                ParticleEmitter3DField::Looping,
+            )),
+            SceneFieldName::Prewarm => Some(NodeField::ParticleEmitter3D(
+                ParticleEmitter3DField::Prewarm,
+            )),
+            SceneFieldName::SpawnRate => Some(NodeField::ParticleEmitter3D(
+                ParticleEmitter3DField::SpawnRate,
+            )),
+            SceneFieldName::Seed => {
+                Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::Seed))
+            }
+            SceneFieldName::Params => {
+                Some(NodeField::ParticleEmitter3D(ParticleEmitter3DField::Params))
+            }
+            SceneFieldName::Profile => Some(NodeField::ParticleEmitter3D(
+                ParticleEmitter3DField::Profile,
+            )),
+            SceneFieldName::SimMode => Some(NodeField::ParticleEmitter3D(
+                ParticleEmitter3DField::SimMode,
+            )),
+            SceneFieldName::RenderMode => Some(NodeField::ParticleEmitter3D(
+                ParticleEmitter3DField::RenderMode,
+            )),
+            _ => None,
+        },
+        NodeType::AnimationPlayer => match field {
+            SceneFieldName::Animation => {
+                Some(NodeField::AnimationPlayer(AnimationPlayerField::Animation))
+            }
+            SceneFieldName::Bindings => {
+                Some(NodeField::AnimationPlayer(AnimationPlayerField::Bindings))
+            }
+            SceneFieldName::Speed => Some(NodeField::AnimationPlayer(AnimationPlayerField::Speed)),
+            SceneFieldName::Paused => {
+                Some(NodeField::AnimationPlayer(AnimationPlayerField::Paused))
+            }
+            SceneFieldName::Playback => {
+                Some(NodeField::AnimationPlayer(AnimationPlayerField::Playback))
+            }
+            _ => None,
+        },
+        NodeType::AnimationTree => match field {
+            SceneFieldName::Tree => Some(NodeField::AnimationTree(AnimationTreeField::Tree)),
+            SceneFieldName::Animations => {
+                Some(NodeField::AnimationTree(AnimationTreeField::Animations))
+            }
+            SceneFieldName::Bindings => {
+                Some(NodeField::AnimationTree(AnimationTreeField::Bindings))
+            }
+            SceneFieldName::Speed => Some(NodeField::AnimationTree(AnimationTreeField::Speed)),
+            SceneFieldName::Paused => Some(NodeField::AnimationTree(AnimationTreeField::Paused)),
+            _ => None,
+        },
+        NodeType::AmbientLight3D => resolve_scene_light3d_common(field).map(NodeField::Light3D),
+        NodeType::Sky3D => resolve_scene_sky3d_field(field).map(NodeField::Sky3D),
+        NodeType::RayLight3D => match field {
+            SceneFieldName::Visible => Some(NodeField::RayLight3D(RayLight3DField::Visible)),
+            _ => resolve_scene_light3d_common(field).map(NodeField::Light3D),
+        },
+        NodeType::PointLight3D => match field {
+            SceneFieldName::Range => Some(NodeField::PointLight3D(PointLight3DField::Range)),
+            _ => resolve_scene_light3d_common(field).map(NodeField::Light3D),
+        },
+        NodeType::SpotLight3D => match field {
+            SceneFieldName::Range => Some(NodeField::SpotLight3D(SpotLight3DField::Range)),
+            SceneFieldName::InnerAngleRadians => {
+                Some(NodeField::SpotLight3D(SpotLight3DField::InnerAngleRadians))
+            }
+            SceneFieldName::OuterAngleRadians => {
+                Some(NodeField::SpotLight3D(SpotLight3DField::OuterAngleRadians))
+            }
+            _ => resolve_scene_light3d_common(field).map(NodeField::Light3D),
+        },
+        NodeType::CollisionShape3D => match field {
+            SceneFieldName::Shape => {
+                Some(NodeField::CollisionShape3D(CollisionShape3DField::Shape))
+            }
+            SceneFieldName::Trimesh => {
+                Some(NodeField::CollisionShape3D(CollisionShape3DField::Trimesh))
+            }
+            SceneFieldName::Debug => {
+                Some(NodeField::CollisionShape3D(CollisionShape3DField::Debug))
+            }
+            _ => None,
+        },
+        NodeType::StaticBody3D => resolve_scene_static_body_3d(field).map(NodeField::StaticBody3D),
+        NodeType::RigidBody3D => resolve_scene_rigid_body_3d(field).map(NodeField::RigidBody3D),
+        NodeType::Area3D => resolve_scene_area_3d(field).map(NodeField::Area3D),
+        NodeType::BallJoint3D => resolve_scene_joint3d_common(field).map(NodeField::BallJoint3D),
+        NodeType::FixedJoint3D => resolve_scene_joint3d_common(field).map(NodeField::FixedJoint3D),
+        NodeType::HingeJoint3D => match field {
+            SceneFieldName::Axis => Some(NodeField::HingeJoint3D(HingeJoint3DField::Axis)),
+            _ => resolve_scene_joint3d_common(field)
+                .map(HingeJoint3DField::Common)
+                .map(NodeField::HingeJoint3D),
+        },
+        NodeType::UiImage => match field {
+            SceneFieldName::Texture
+            | SceneFieldName::Image
+            | SceneFieldName::Source
+            | SceneFieldName::Src => Some(NodeField::UiImage(UiImageField::Texture)),
+            SceneFieldName::TextureRegion => Some(NodeField::UiImage(UiImageField::TextureRegion)),
+            _ => None,
+        },
+        NodeType::UiAnimatedImage => match field {
+            SceneFieldName::Texture
+            | SceneFieldName::Image
+            | SceneFieldName::Source
+            | SceneFieldName::Src => {
+                Some(NodeField::UiAnimatedImage(UiAnimatedImageField::Texture))
+            }
+            SceneFieldName::Animations => {
+                Some(NodeField::UiAnimatedImage(UiAnimatedImageField::Animations))
+            }
+            SceneFieldName::CurrentAnimation | SceneFieldName::Animation => Some(
+                NodeField::UiAnimatedImage(UiAnimatedImageField::CurrentAnimation),
+            ),
+            SceneFieldName::CurrentFrame => Some(NodeField::UiAnimatedImage(
+                UiAnimatedImageField::CurrentFrame,
+            )),
+            SceneFieldName::FpsScale => {
+                Some(NodeField::UiAnimatedImage(UiAnimatedImageField::FpsScale))
+            }
+            SceneFieldName::Playing => {
+                Some(NodeField::UiAnimatedImage(UiAnimatedImageField::Playing))
+            }
+            SceneFieldName::Looping => {
+                Some(NodeField::UiAnimatedImage(UiAnimatedImageField::Looping))
+            }
+            SceneFieldName::TextureRegion => Some(NodeField::UiAnimatedImage(
+                UiAnimatedImageField::TextureRegion,
+            )),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeField> {
     match (node_type, field) {
         (NodeType::Camera2D, "render_mask") => {
             return Some(NodeField::Camera2D(Camera2DField::RenderMask));
@@ -970,6 +1361,241 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
     }
 }
 
+fn resolve_scene_joint2d_common(field: &SceneFieldName) -> Option<Joint2DField> {
+    match field {
+        SceneFieldName::BodyA => Some(Joint2DField::BodyA),
+        SceneFieldName::BodyB => Some(Joint2DField::BodyB),
+        SceneFieldName::AnchorA => Some(Joint2DField::AnchorA),
+        SceneFieldName::AnchorB => Some(Joint2DField::AnchorB),
+        SceneFieldName::Enabled => Some(Joint2DField::Enabled),
+        SceneFieldName::CollideConnected => Some(Joint2DField::CollideConnected),
+        _ => None,
+    }
+}
+
+fn resolve_scene_joint3d_common(field: &SceneFieldName) -> Option<Joint3DField> {
+    match field {
+        SceneFieldName::BodyA => Some(Joint3DField::BodyA),
+        SceneFieldName::BodyB => Some(Joint3DField::BodyB),
+        SceneFieldName::AnchorA => Some(Joint3DField::AnchorA),
+        SceneFieldName::AnchorB => Some(Joint3DField::AnchorB),
+        SceneFieldName::Enabled => Some(Joint3DField::Enabled),
+        SceneFieldName::CollideConnected => Some(Joint3DField::CollideConnected),
+        _ => None,
+    }
+}
+
+fn resolve_scene_light2d_common(field: &SceneFieldName) -> Option<Light2DField> {
+    match field {
+        SceneFieldName::Color => Some(Light2DField::Color),
+        SceneFieldName::Intensity => Some(Light2DField::Intensity),
+        SceneFieldName::CastShadows => Some(Light2DField::CastShadows),
+        SceneFieldName::Active => Some(Light2DField::Active),
+        SceneFieldName::RenderLayers => Some(Light2DField::RenderLayers),
+        _ => None,
+    }
+}
+
+fn resolve_scene_light3d_common(field: &SceneFieldName) -> Option<Light3DField> {
+    match field {
+        SceneFieldName::Color => Some(Light3DField::Color),
+        SceneFieldName::Intensity => Some(Light3DField::Intensity),
+        SceneFieldName::CastShadows => Some(Light3DField::CastShadows),
+        SceneFieldName::Active => Some(Light3DField::Active),
+        SceneFieldName::RenderLayers => Some(Light3DField::RenderLayers),
+        _ => None,
+    }
+}
+
+fn resolve_scene_static_body_2d(field: &SceneFieldName) -> Option<StaticBody2DField> {
+    match field {
+        SceneFieldName::Enabled => Some(StaticBody2DField::Enabled),
+        SceneFieldName::CollisionLayers => Some(StaticBody2DField::CollisionLayers),
+        SceneFieldName::CollisionMaskLayers => Some(StaticBody2DField::CollisionMask),
+        SceneFieldName::Friction => Some(StaticBody2DField::Friction),
+        SceneFieldName::Restitution => Some(StaticBody2DField::Restitution),
+        SceneFieldName::Density => Some(StaticBody2DField::Density),
+        _ => None,
+    }
+}
+
+fn resolve_scene_static_body_3d(field: &SceneFieldName) -> Option<StaticBody3DField> {
+    match field {
+        SceneFieldName::Enabled => Some(StaticBody3DField::Enabled),
+        SceneFieldName::CollisionLayers => Some(StaticBody3DField::CollisionLayers),
+        SceneFieldName::CollisionMaskLayers => Some(StaticBody3DField::CollisionMask),
+        SceneFieldName::Friction => Some(StaticBody3DField::Friction),
+        SceneFieldName::Restitution => Some(StaticBody3DField::Restitution),
+        SceneFieldName::Density => Some(StaticBody3DField::Density),
+        _ => None,
+    }
+}
+
+fn resolve_scene_rigid_body_2d(field: &SceneFieldName) -> Option<RigidBody2DField> {
+    match field {
+        SceneFieldName::Enabled => Some(RigidBody2DField::Enabled),
+        SceneFieldName::CollisionLayers => Some(RigidBody2DField::CollisionLayers),
+        SceneFieldName::CollisionMaskLayers => Some(RigidBody2DField::CollisionMask),
+        SceneFieldName::ContinuousCollisionDetection => {
+            Some(RigidBody2DField::ContinuousCollisionDetection)
+        }
+        SceneFieldName::LinearVelocity => Some(RigidBody2DField::LinearVelocity),
+        SceneFieldName::AngularVelocity => Some(RigidBody2DField::AngularVelocity),
+        SceneFieldName::GravityScale => Some(RigidBody2DField::GravityScale),
+        SceneFieldName::LinearDamping => Some(RigidBody2DField::LinearDamping),
+        SceneFieldName::AngularDamping => Some(RigidBody2DField::AngularDamping),
+        SceneFieldName::CanSleep => Some(RigidBody2DField::CanSleep),
+        SceneFieldName::LockRotation => Some(RigidBody2DField::LockRotation),
+        SceneFieldName::Friction => Some(RigidBody2DField::Friction),
+        SceneFieldName::Restitution => Some(RigidBody2DField::Restitution),
+        SceneFieldName::Density => Some(RigidBody2DField::Density),
+        _ => None,
+    }
+}
+
+fn resolve_scene_rigid_body_3d(field: &SceneFieldName) -> Option<RigidBody3DField> {
+    match field {
+        SceneFieldName::Enabled => Some(RigidBody3DField::Enabled),
+        SceneFieldName::CollisionLayers => Some(RigidBody3DField::CollisionLayers),
+        SceneFieldName::CollisionMaskLayers => Some(RigidBody3DField::CollisionMask),
+        SceneFieldName::ContinuousCollisionDetection => {
+            Some(RigidBody3DField::ContinuousCollisionDetection)
+        }
+        SceneFieldName::Mass => Some(RigidBody3DField::Mass),
+        SceneFieldName::LinearVelocity => Some(RigidBody3DField::LinearVelocity),
+        SceneFieldName::AngularVelocity => Some(RigidBody3DField::AngularVelocity),
+        SceneFieldName::GravityScale => Some(RigidBody3DField::GravityScale),
+        SceneFieldName::LinearDamping => Some(RigidBody3DField::LinearDamping),
+        SceneFieldName::AngularDamping => Some(RigidBody3DField::AngularDamping),
+        SceneFieldName::CanSleep => Some(RigidBody3DField::CanSleep),
+        SceneFieldName::Friction => Some(RigidBody3DField::Friction),
+        SceneFieldName::Restitution => Some(RigidBody3DField::Restitution),
+        SceneFieldName::Density => Some(RigidBody3DField::Density),
+        _ => None,
+    }
+}
+
+fn resolve_scene_area_2d(field: &SceneFieldName) -> Option<Area2DField> {
+    match field {
+        SceneFieldName::Enabled => Some(Area2DField::Enabled),
+        SceneFieldName::CollisionLayers => Some(Area2DField::CollisionLayers),
+        SceneFieldName::CollisionMaskLayers => Some(Area2DField::CollisionMask),
+        _ => None,
+    }
+}
+
+fn resolve_scene_area_3d(field: &SceneFieldName) -> Option<Area3DField> {
+    match field {
+        SceneFieldName::Enabled => Some(Area3DField::Enabled),
+        SceneFieldName::CollisionLayers => Some(Area3DField::CollisionLayers),
+        SceneFieldName::CollisionMaskLayers => Some(Area3DField::CollisionMask),
+        _ => None,
+    }
+}
+
+fn resolve_scene_bone_attachment_2d(field: &SceneFieldName) -> Option<BoneAttachment2DField> {
+    match field {
+        SceneFieldName::Skeleton => Some(BoneAttachment2DField::Skeleton),
+        SceneFieldName::BoneIndex => Some(BoneAttachment2DField::BoneIndex),
+        _ => None,
+    }
+}
+
+fn resolve_scene_bone_attachment_3d(field: &SceneFieldName) -> Option<BoneAttachment3DField> {
+    match field {
+        SceneFieldName::Skeleton => Some(BoneAttachment3DField::Skeleton),
+        SceneFieldName::BoneIndex => Some(BoneAttachment3DField::BoneIndex),
+        _ => None,
+    }
+}
+
+fn resolve_scene_ik_target_2d(field: &SceneFieldName) -> Option<IKTarget2DField> {
+    match field {
+        SceneFieldName::Skeleton => Some(IKTarget2DField::Skeleton),
+        SceneFieldName::BoneIndex => Some(IKTarget2DField::BoneIndex),
+        SceneFieldName::ChainLength => Some(IKTarget2DField::ChainLength),
+        SceneFieldName::Iterations => Some(IKTarget2DField::Iterations),
+        SceneFieldName::Tolerance => Some(IKTarget2DField::Tolerance),
+        SceneFieldName::Weight => Some(IKTarget2DField::Weight),
+        SceneFieldName::MatchRotation => Some(IKTarget2DField::MatchRotation),
+        SceneFieldName::Solver => Some(IKTarget2DField::Solver),
+        _ => None,
+    }
+}
+
+fn resolve_scene_ik_target_3d(field: &SceneFieldName) -> Option<IKTarget3DField> {
+    match field {
+        SceneFieldName::Skeleton => Some(IKTarget3DField::Skeleton),
+        SceneFieldName::BoneIndex => Some(IKTarget3DField::BoneIndex),
+        SceneFieldName::ChainLength => Some(IKTarget3DField::ChainLength),
+        SceneFieldName::Iterations => Some(IKTarget3DField::Iterations),
+        SceneFieldName::Tolerance => Some(IKTarget3DField::Tolerance),
+        SceneFieldName::Weight => Some(IKTarget3DField::Weight),
+        SceneFieldName::MatchRotation => Some(IKTarget3DField::MatchRotation),
+        SceneFieldName::Solver => Some(IKTarget3DField::Solver),
+        _ => None,
+    }
+}
+
+fn resolve_scene_physics_bone_chain_2d(field: &SceneFieldName) -> Option<PhysicsBoneChain2DField> {
+    match field {
+        SceneFieldName::Skeleton => Some(PhysicsBoneChain2DField::Skeleton),
+        SceneFieldName::BoneIndex => Some(PhysicsBoneChain2DField::BoneIndex),
+        SceneFieldName::ChainLength => Some(PhysicsBoneChain2DField::ChainLength),
+        SceneFieldName::Enabled => Some(PhysicsBoneChain2DField::Enabled),
+        SceneFieldName::Gravity => Some(PhysicsBoneChain2DField::Gravity),
+        SceneFieldName::Damping => Some(PhysicsBoneChain2DField::Damping),
+        SceneFieldName::Stiffness => Some(PhysicsBoneChain2DField::Stiffness),
+        SceneFieldName::Radius => Some(PhysicsBoneChain2DField::Radius),
+        SceneFieldName::Collisions => Some(PhysicsBoneChain2DField::Collisions),
+        SceneFieldName::Iterations => Some(PhysicsBoneChain2DField::Iterations),
+        _ => None,
+    }
+}
+
+fn resolve_scene_physics_bone_chain_3d(field: &SceneFieldName) -> Option<PhysicsBoneChain3DField> {
+    match field {
+        SceneFieldName::Skeleton => Some(PhysicsBoneChain3DField::Skeleton),
+        SceneFieldName::BoneIndex => Some(PhysicsBoneChain3DField::BoneIndex),
+        SceneFieldName::ChainLength => Some(PhysicsBoneChain3DField::ChainLength),
+        SceneFieldName::Enabled => Some(PhysicsBoneChain3DField::Enabled),
+        SceneFieldName::Gravity => Some(PhysicsBoneChain3DField::Gravity),
+        SceneFieldName::Damping => Some(PhysicsBoneChain3DField::Damping),
+        SceneFieldName::Stiffness => Some(PhysicsBoneChain3DField::Stiffness),
+        SceneFieldName::Radius => Some(PhysicsBoneChain3DField::Radius),
+        SceneFieldName::Collisions => Some(PhysicsBoneChain3DField::Collisions),
+        SceneFieldName::Iterations => Some(PhysicsBoneChain3DField::Iterations),
+        _ => None,
+    }
+}
+
+fn resolve_scene_sky3d_field(field: &SceneFieldName) -> Option<Sky3DField> {
+    match field {
+        SceneFieldName::DayColors => Some(Sky3DField::DayColors),
+        SceneFieldName::EveningColors => Some(Sky3DField::EveningColors),
+        SceneFieldName::NightColors => Some(Sky3DField::NightColors),
+        SceneFieldName::SkyAngle => Some(Sky3DField::SkyAngle),
+        SceneFieldName::Time => Some(Sky3DField::Time),
+        SceneFieldName::TimeOfDay => Some(Sky3DField::TimeOfDay),
+        SceneFieldName::TimePaused => Some(Sky3DField::TimePaused),
+        SceneFieldName::TimeScale => Some(Sky3DField::TimeScale),
+        SceneFieldName::CloudSize => Some(Sky3DField::CloudSize),
+        SceneFieldName::CloudDensity => Some(Sky3DField::CloudDensity),
+        SceneFieldName::CloudVariance => Some(Sky3DField::CloudVariance),
+        SceneFieldName::WindVector => Some(Sky3DField::CloudWindVector),
+        SceneFieldName::StarSize => Some(Sky3DField::StarSize),
+        SceneFieldName::StarScatter => Some(Sky3DField::StarScatter),
+        SceneFieldName::StarGleam => Some(Sky3DField::StarGleam),
+        SceneFieldName::MoonSize => Some(Sky3DField::MoonSize),
+        SceneFieldName::SunSize => Some(Sky3DField::SunSize),
+        SceneFieldName::Style => Some(Sky3DField::Style),
+        SceneFieldName::SkyShader => Some(Sky3DField::SkyShader),
+        SceneFieldName::Active => Some(Sky3DField::Active),
+        SceneFieldName::RenderLayers => Some(Sky3DField::RenderLayers),
+        _ => None,
+    }
+}
+
 fn resolve_joint2d_common(field: &str) -> Option<Joint2DField> {
     match field {
         "body_a" | "a" => Some(Joint2DField::BodyA),
@@ -1072,6 +1698,33 @@ fn resolve_base_node_field(node_type: NodeType, field: &str) -> Option<NodeField
     None
 }
 
+fn resolve_base_scene_node_field(node_type: NodeType, field: &SceneFieldName) -> Option<NodeField> {
+    if node_type.is_a(NodeType::Node2D) {
+        return match field {
+            SceneFieldName::Position => Some(NodeField::Node2D(Node2DField::Position)),
+            SceneFieldName::Rotation => Some(NodeField::Node2D(Node2DField::Rotation)),
+            SceneFieldName::Scale => Some(NodeField::Node2D(Node2DField::Scale)),
+            SceneFieldName::Visible => Some(NodeField::Node2D(Node2DField::Visible)),
+            SceneFieldName::ZIndex => Some(NodeField::Node2D(Node2DField::ZIndex)),
+            SceneFieldName::RenderLayers => Some(NodeField::Node2D(Node2DField::RenderLayers)),
+            _ => None,
+        };
+    }
+
+    if node_type.is_a(NodeType::Node3D) {
+        return match field {
+            SceneFieldName::Position => Some(NodeField::Node3D(Node3DField::Position)),
+            SceneFieldName::Rotation => Some(NodeField::Node3D(Node3DField::Rotation)),
+            SceneFieldName::Scale => Some(NodeField::Node3D(Node3DField::Scale)),
+            SceneFieldName::Visible => Some(NodeField::Node3D(Node3DField::Visible)),
+            SceneFieldName::RenderLayers => Some(NodeField::Node3D(Node3DField::RenderLayers)),
+            _ => None,
+        };
+    }
+
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1117,5 +1770,39 @@ mod tests {
             Some(NodeField::Node3D(Node3DField::RenderLayers))
         );
         assert_eq!(resolve_node_field("MeshInstance3D", "render_mask"), None);
+    }
+
+    #[test]
+    fn scene_field_enum_resolver_matches_string_resolver_for_canonical_fields() {
+        for (node_type, field) in [
+            ("Node2D", "position"),
+            ("Node2D", "rotation"),
+            ("Node2D", "render_layers"),
+            ("Camera2D", "render_mask"),
+            ("Camera2D", "audio_options"),
+            ("Sprite2D", "texture_region"),
+            ("StaticBody2D", "collision_layers"),
+            ("StaticBody2D", "collision_mask_layers"),
+            ("RigidBody2D", "continuous_collision_detection"),
+            ("RigidBody3D", "mass"),
+            ("DistanceJoint2D", "body_a"),
+            ("MeshInstance3D", "mesh"),
+            ("MeshInstance3D", "min_lod"),
+            ("Camera3D", "perspective_fov_y_degrees"),
+            ("SpotLight2D", "inner_angle_radians"),
+            ("SpotLight3D", "outer_angle_radians"),
+            ("AnimationTree", "bindings"),
+            ("Sky3D", "cloud_density"),
+            ("CollisionShape3D", "trimesh"),
+            ("UiImage", "image"),
+            ("UiAnimatedImage", "current_frame"),
+        ] {
+            let scene_field = SceneFieldName::from_name(field.to_string());
+            assert_eq!(
+                resolve_scene_node_field(node_type, &scene_field),
+                resolve_node_field(node_type, field),
+                "{node_type}.{field}"
+            );
+        }
     }
 }

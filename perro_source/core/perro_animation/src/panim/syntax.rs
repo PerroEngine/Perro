@@ -11,7 +11,7 @@ fn as_text(value: &SceneValue) -> Option<&str> {
     }
 }
 
-fn as_object(value: &SceneValue) -> Option<&[(Cow<'static, str>, SceneValue)]> {
+fn as_object(value: &SceneValue) -> Option<&[SceneObjectField]> {
     match value {
         SceneValue::Object(fields) => Some(fields.as_ref()),
         _ => None,

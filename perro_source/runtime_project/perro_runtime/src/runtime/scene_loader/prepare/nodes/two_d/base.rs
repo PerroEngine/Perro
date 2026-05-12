@@ -268,41 +268,41 @@ fn apply_bone_collider_2d_fields(node: &mut BoneCollider2D, fields: &[SceneObjec
 }
 
 fn apply_node_2d_fields(node: &mut Node2D, fields: &[SceneObjectField]) {
-    SceneFieldIterRef::new(fields).for_each(|name, value| {
-        if name == "rotation_deg" {
+    SceneFieldIterRef::new(fields).for_each_field(|field, value| {
+        if matches!(field, SceneFieldName::RotationDeg) {
             if let Some(v) = value.as_f32() {
                 node.transform.rotation = v.to_radians();
             }
             return;
         }
 
-        match resolve_node_field("Node2D", name) {
-            Some(NodeField::Node2D(Node2DField::Position)) => {
+        match field {
+            SceneFieldName::Position => {
                 if let Some((x, y)) = value.as_vec2() {
                     node.transform.position = Vector2 { x, y };
                 }
             }
-            Some(NodeField::Node2D(Node2DField::Scale)) => {
+            SceneFieldName::Scale => {
                 if let Some((x, y)) = value.as_vec2() {
                     node.transform.scale = Vector2 { x, y };
                 }
             }
-            Some(NodeField::Node2D(Node2DField::Rotation)) => {
+            SceneFieldName::Rotation => {
                 if let Some(v) = value.as_f32() {
                     node.transform.rotation = v;
                 }
             }
-            Some(NodeField::Node2D(Node2DField::ZIndex)) => {
+            SceneFieldName::ZIndex => {
                 if let Some(v) = value.as_i32() {
                     node.z_index = v;
                 }
             }
-            Some(NodeField::Node2D(Node2DField::Visible)) => {
+            SceneFieldName::Visible => {
                 if let Some(v) = value.as_bool() {
                     node.visible = v;
                 }
             }
-            Some(NodeField::Node2D(Node2DField::RenderLayers)) => {
+            SceneFieldName::RenderLayers => {
                 if let Some(v) = as_bitmask(value) {
                     node.render_layers = v;
                 }
@@ -595,9 +595,8 @@ fn as_particle_sim_mode_2d(value: &SceneValue) -> Option<ParticleEmitterSimMode2
 }
 
 fn apply_sprite_2d_fields(node: &mut Sprite2D, fields: &[SceneObjectField]) {
-    SceneFieldIterRef::new(fields).for_each(|name, value| {
-        if resolve_node_field("Sprite2D", name)
-            == Some(NodeField::Sprite2D(Sprite2DField::TextureRegion))
+    SceneFieldIterRef::new(fields).for_each_field(|field, value| {
+        if matches!(field, SceneFieldName::TextureRegion)
             && let Some((x, y, w, h)) = value.as_vec4()
             && w > 0.0
             && h > 0.0

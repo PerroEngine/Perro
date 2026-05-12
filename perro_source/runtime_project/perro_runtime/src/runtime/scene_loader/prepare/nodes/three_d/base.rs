@@ -82,36 +82,36 @@ fn apply_node_3d_data(target: &mut Node3D, data: &SceneDefNodeData) {
 }
 
 fn apply_node_3d_fields(node: &mut Node3D, fields: &[SceneObjectField]) {
-    SceneFieldIterRef::new(fields).for_each(|name, value| {
-        if name == "rotation_deg" {
+    SceneFieldIterRef::new(fields).for_each_field(|field, value| {
+        if matches!(field, SceneFieldName::RotationDeg) {
             if let Some(v) = as_vec3(value) {
                 node.transform.rotation = quat_from_deg_xyz(v);
             }
             return;
         }
 
-        match resolve_node_field("Node3D", name) {
-            Some(NodeField::Node3D(Node3DField::Position)) => {
+        match field {
+            SceneFieldName::Position => {
                 if let Some(v) = as_vec3(value) {
                     node.transform.position = v;
                 }
             }
-            Some(NodeField::Node3D(Node3DField::Scale)) => {
+            SceneFieldName::Scale => {
                 if let Some(v) = as_vec3(value) {
                     node.transform.scale = v;
                 }
             }
-            Some(NodeField::Node3D(Node3DField::Rotation)) => {
+            SceneFieldName::Rotation => {
                 if let Some(v) = as_quat(value) {
                     node.transform.rotation = v;
                 }
             }
-            Some(NodeField::Node3D(Node3DField::Visible)) => {
+            SceneFieldName::Visible => {
                 if let Some(v) = as_bool(value) {
                     node.visible = v;
                 }
             }
-            Some(NodeField::Node3D(Node3DField::RenderLayers)) => {
+            SceneFieldName::RenderLayers => {
                 if let Some(v) = as_bitmask(value) {
                     node.render_layers = v;
                 }

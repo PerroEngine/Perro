@@ -42,6 +42,7 @@ perro_steamworks = { path = "../../api_modules/perro_steamworks", default-featur
 criterion = "0.5"
 
 [features]
+bench = []
 profile = ["perro_pawdio/profile"]
 steamworks = ["dep:perro_steamworks", "perro_steamworks/steamworks-runtime"]
 
@@ -52,3 +53,8 @@ harness = false
 [[bench]]
 name = "unsafe_hotpaths"
 harness = false
+
+[[bench]]
+name = "scene_loading"
+harness = false
+required-features = ["bench"]

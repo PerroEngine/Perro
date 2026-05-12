@@ -1,4 +1,3 @@
-use flate2::read::DeflateDecoder;
 use std::collections::HashMap;
 use std::io::{self, Cursor, Read, Seek, SeekFrom};
 use std::path::Path;
@@ -8,7 +7,7 @@ use super::common::{
     FLAG_COMPRESSED, PERRO_ASSETS_COMPRESSED_MAGIC, PERRO_ASSETS_MAGIC, PerroAssetsEntryMeta,
     read_header, read_index_entry,
 };
-use super::compression::decompress_deflate;
+use super::compression::decompress_zlib;
 
 pub type PerroAssetsEntry = PerroAssetsEntryMeta;
 
@@ -69,9 +68,7 @@ impl PerroAssetsArchive {
 
         // Decompress if needed
         if entry.flags & FLAG_COMPRESSED != 0 {
-            let mut decoder = DeflateDecoder::new(&data_buf[..]);
-            let mut decompressed = Vec::with_capacity(entry.original_size as usize);
-            decoder.read_to_end(&mut decompressed)?;
+            let decompressed = decompress_zlib(&data_buf)?;
 
             if decompressed.len() as u64 != entry.original_size {
                 return Err(io::Error::new(
@@ -158,7 +155,7 @@ fn decode_archive_container(data: Vec<u8>) -> io::Result<Vec<u8>> {
     }
 
     let original_size = u64::from_le_bytes(data[8..16].try_into().unwrap()) as usize;
-    let mut out = decompress_deflate(&data[16..])?;
+    let mut out = decompress_zlib(&data[16..])?;
     if out.len() != original_size {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,

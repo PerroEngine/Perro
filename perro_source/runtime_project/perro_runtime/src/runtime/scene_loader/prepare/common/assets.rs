@@ -22,7 +22,7 @@ fn extract_texture_source(data: &SceneDefNodeData) -> Option<String> {
         _ => NodeField::Sprite2D(Sprite2DField::Texture),
     };
     data.fields.iter().find_map(|(name, value)| {
-        (resolve_node_field(data.ty.as_ref(), name) == Some(texture_field))
+        (resolve_scene_node_field(data.ty.as_ref(), name) == Some(texture_field))
             .then(|| as_asset_source(value))
             .flatten()
     })

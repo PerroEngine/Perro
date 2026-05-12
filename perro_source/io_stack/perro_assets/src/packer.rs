@@ -11,7 +11,7 @@ use super::common::{
     FLAG_COMPRESSED, PERRO_ASSETS_COMPRESSED_MAGIC, PERRO_ASSETS_MAGIC, PerroAssetsEntryMeta,
     PerroAssetsHeader, write_header, write_index_entry,
 };
-use crate::compression::compress_deflate_best;
+use crate::compression::compress_zlib_best;
 use crate::walkdir::collect_file_paths;
 use perro_asset_formats::{archive, source_ext};
 
@@ -75,7 +75,7 @@ pub fn build_perro_assets_archive(
             let mut flags = 0;
 
             if should_compress && original_data_len > 0 {
-                let compressed = compress_deflate_best(&data)?;
+                let compressed = compress_zlib_best(&data)?;
 
                 // Only use compressed data if it's actually smaller
                 if compressed.len() < data.len() {
@@ -161,7 +161,7 @@ pub fn build_perro_archive_from_entries(
     write_perro_archive_from_entries(&mut file, entries, true)
 }
 
-/// Build a generic `.perro` archive, then wrap the full archive in DEFLATE when smaller.
+/// Build a generic `.perro` archive, then wrap the full archive in zlib when smaller.
 pub fn build_compressed_perro_archive_from_entries(
     output: &Path,
     entries: &[(String, std::path::PathBuf)],
@@ -185,7 +185,7 @@ pub fn build_compressed_perro_archive_from_entries(
 }
 
 fn wrap_compressed_archive(raw: &[u8]) -> io::Result<Vec<u8>> {
-    let compressed = compress_deflate_best(raw)?;
+    let compressed = compress_zlib_best(raw)?;
     let mut out = Vec::with_capacity(16 + compressed.len());
     out.extend_from_slice(&PERRO_ASSETS_COMPRESSED_MAGIC);
     out.extend_from_slice(&archive::VERSION.to_le_bytes());
@@ -217,7 +217,7 @@ fn write_perro_archive_from_entries<W: Write + Seek>(
                 let data = fs::read(&source_path)?;
                 let original_size = data.len() as u64;
                 let compressed = if compress_entries {
-                    compress_deflate_best(&data)?
+                    compress_zlib_best(&data)?
                 } else {
                     Vec::new()
                 };

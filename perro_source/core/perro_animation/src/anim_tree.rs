@@ -73,7 +73,7 @@ pub fn parse_panimtree(src: &str) -> Result<AnimationTreeAsset, String> {
 
 struct AnimationTreeParser<'a> {
     lexer: Lexer<'a>,
-    current: Token,
+    current: Token<'a>,
 }
 
 impl<'a> AnimationTreeParser<'a> {
@@ -182,7 +182,13 @@ impl<'a> AnimationTreeParser<'a> {
                 break;
             }
             match &self.current {
-                Token::Ident(v) | Token::String(v) => {
+                Token::Ident(v) => {
+                    slots.push(AnimationTreeSlot {
+                        name: Cow::Owned(v.to_string()),
+                    });
+                    self.advance();
+                }
+                Token::String(v) => {
                     slots.push(AnimationTreeSlot {
                         name: Cow::Owned(v.clone()),
                     });
@@ -396,7 +402,11 @@ impl<'a> AnimationTreeParser<'a> {
 
     fn expect_text_like(&mut self) -> Result<String, String> {
         match std::mem::replace(&mut self.current, Token::Eof) {
-            Token::Ident(v) | Token::String(v) => {
+            Token::Ident(v) => {
+                self.advance();
+                Ok(v.to_string())
+            }
+            Token::String(v) => {
                 self.advance();
                 Ok(v)
             }
@@ -466,7 +476,7 @@ impl<'a> AnimationTreeParser<'a> {
         Ok(true)
     }
 
-    fn expect(&mut self, token: Token) -> Result<(), String> {
+    fn expect(&mut self, token: Token<'a>) -> Result<(), String> {
         if self.current != token {
             return Err(format!("expected {token:?}, got {:?}", self.current));
         }
@@ -478,7 +488,7 @@ impl<'a> AnimationTreeParser<'a> {
         match std::mem::replace(&mut self.current, Token::Eof) {
             Token::Ident(v) => {
                 self.advance();
-                Ok(v)
+                Ok(v.to_string())
             }
             other => Err(format!("expected identifier, got {other:?}")),
         }

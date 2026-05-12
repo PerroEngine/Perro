@@ -3,6 +3,7 @@
 ## Project Status
 
 - [Feature Matrix](feature_matrix.md)
+- [Performance + Flexibility Philosophy](performance_philosophy.md)
 - [Steamworks](steamworks.md)
 
 ## Particles

@@ -50,15 +50,16 @@ use perro_render_bridge::Material3D;
 use perro_scene::{
     AnimatedSprite2DField, AnimationPlayerField, AnimationTreeField, Area2DField, Area3DField, BoneAttachment2DField, BoneAttachment3DField,
     BoneCollider2DField, BoneCollider3DField, Camera2DField, Camera3DField, CollisionShape2DField, CollisionShape3DField, DistanceJoint2DField, HingeJoint3DField, IKTarget2DField, IKTarget3DField, Joint2DField, Joint3DField, Light3DField,
-    Light2DField, MeshInstance3DField, Node2DField, Node3DField, NodeField, Parser,
+    Light2DField, MeshInstance3DField, NodeField, Parser,
     ParticleEmitter2DField, PointLight2DField, RayLight2DField, SpotLight2DField,
     ParticleEmitter3DField, TileMap2DField,
     PhysicsBoneChain2DField, PhysicsBoneChain3DField, PointLight3DField, RayLight3DField, RigidBody2DField, RigidBody3DField, Scene,
-    SceneFieldIterRef, SceneKey, SceneNodeData as SceneDefNodeData,
+    SceneFieldIterRef, SceneFieldName, SceneKey, SceneNodeData as SceneDefNodeData,
     SceneNodeEntry as SceneDefNodeEntry, SceneObjectField, SceneValue, Skeleton3DField,
     Sky3DField, SpotLight3DField, Sprite2DField, StaticBody2DField, StaticBody3DField,
-    UiAnimatedImageField, UiImageField, resolve_node_field,
+    UiAnimatedImageField, UiImageField, resolve_node_field, resolve_scene_node_field,
 };
+use rayon::prelude::*;
 use perro_structs::{
     BitMask, Color, CustomPostParam, CustomPostParamValue, IKTargetSolver, PostProcessEffect,
     PostProcessSet, Quaternion, Vector2, Vector3,
@@ -292,6 +293,10 @@ fn prepare_scene_with_stack(
     load_scene: &dyn Fn(&str) -> Result<Arc<Scene>, String>,
     static_ui_style_lookup: Option<StaticUiStyleLookup>,
 ) -> Result<PreparedScene, String> {
+    if scene.nodes.iter().all(|entry| entry.root_of.is_none()) {
+        return prepare_scene_parallel(scene, static_ui_style_lookup);
+    }
+
     let mut prepared_nodes = Vec::with_capacity(scene.nodes.len());
     let mut scripts = Vec::new();
     let mut next_key = scene
@@ -310,6 +315,7 @@ fn prepare_scene_with_stack(
         include_stack,
         load_scene,
         static_ui_style_lookup,
+        scratch: ScenePrepareScratch::default(),
     };
 
     for entry in scene.nodes.as_ref() {
@@ -320,6 +326,173 @@ fn prepare_scene_with_stack(
         root_key: scene.root.map(|key| key.as_u32()),
         nodes: prepared_nodes,
         scripts,
+    })
+}
+
+struct PreparedEntry {
+    node: PendingNode,
+    script: Option<PendingScript>,
+}
+
+fn prepare_scene_parallel(
+    scene: &Scene,
+    static_ui_style_lookup: Option<StaticUiStyleLookup>,
+) -> Result<PreparedScene, String> {
+    if scene.nodes.iter().all(|entry| entry.script.is_none()) {
+        let nodes = scene
+            .nodes
+            .as_ref()
+            .par_iter()
+            .with_min_len(256)
+            .map_init(ScenePrepareScratch::default, |scratch, entry| {
+                prepare_node_no_root(scene, entry, static_ui_style_lookup, scratch)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        return Ok(PreparedScene {
+            root_key: scene.root.map(|key| key.as_u32()),
+            nodes,
+            scripts: Vec::new(),
+        });
+    }
+
+    let entries = scene
+        .nodes
+        .as_ref()
+        .par_iter()
+        .with_min_len(256)
+        .map_init(ScenePrepareScratch::default, |scratch, entry| {
+            prepare_entry_no_root(scene, entry, static_ui_style_lookup, scratch)
+        })
+        .collect::<Vec<_>>();
+
+    let mut prepared_nodes = Vec::with_capacity(entries.len());
+    let mut scripts = Vec::new();
+    for entry in entries {
+        let entry = entry?;
+        if let Some(script) = entry.script {
+            scripts.push(script);
+        }
+        prepared_nodes.push(entry.node);
+    }
+
+    Ok(PreparedScene {
+        root_key: scene.root.map(|key| key.as_u32()),
+        nodes: prepared_nodes,
+        scripts,
+    })
+}
+
+fn prepare_entry_no_root(
+    scene: &Scene,
+    entry: &SceneDefNodeEntry,
+    static_ui_style_lookup: Option<StaticUiStyleLookup>,
+    scratch: &mut ScenePrepareScratch,
+) -> Result<PreparedEntry, String> {
+    let node = prepare_node_no_root(scene, entry, static_ui_style_lookup, scratch)?;
+    let key_map = HashMap::new();
+    let script = entry.script.as_ref().map(|script| {
+        let script_path_hash = string_to_u64(script.as_ref());
+        let script_mount = parse_dlc_mount_name(script.as_ref());
+        PendingScript {
+            node_key: node.key,
+            #[cfg(test)]
+            node_key_name: node.key_name.clone(),
+            script_path_hash,
+            script_mount,
+            scene_injected_vars: entry
+                .script_vars
+                .iter()
+                .map(|(k, v)| (k.to_string(), remap_scene_value_keys(v, scene, &key_map)))
+                .collect(),
+        }
+    });
+
+    Ok(PreparedEntry { node, script })
+}
+
+fn prepare_node_no_root(
+    scene: &Scene,
+    entry: &SceneDefNodeEntry,
+    static_ui_style_lookup: Option<StaticUiStyleLookup>,
+    scratch: &mut ScenePrepareScratch,
+) -> Result<PendingNode, String> {
+    let key = entry.key.as_u32();
+    let key_name = scene.key_name_or_id(entry.key).into_owned();
+    let parent_key = entry.parent.map(|p| p.as_u32());
+
+    let (
+        node,
+        animation_source,
+        animation_tree_source,
+        animation_tree_animations,
+        texture_source,
+        mesh_source,
+        material_surfaces,
+        skeleton_source,
+        mesh_skeleton_target,
+        bone_attachment_skeleton_target,
+        ik_target_skeleton_target,
+        physics_bone_chain_skeleton_target,
+        joint_body_targets,
+        animation_bindings,
+        locale_text_bindings,
+    ) = scene_node_from_entry(entry, static_ui_style_lookup, scratch)?;
+
+    Ok(PendingNode {
+        key,
+        key_name,
+        parent_key,
+        node,
+        animation_source,
+        animation_tree_source,
+        animation_tree_animations: animation_tree_animations
+            .into_iter()
+            .map(|(source, bindings, speed, paused, playback_type)| PendingAnimationTreeAnimation {
+                source,
+                bindings: bindings
+                    .into_iter()
+                    .filter_map(|(object, target)| {
+                        scene_key_by_name(scene, target.as_str()).map(|target| (object, target.as_u32()))
+                    })
+                    .collect(),
+                speed,
+                paused,
+                playback_type,
+            })
+            .collect(),
+        texture_source,
+        mesh_source,
+        material_surfaces,
+        skeleton_source,
+        mesh_skeleton_target: mesh_skeleton_target
+            .and_then(|v| scene_key_by_name(scene, v.as_str()))
+            .map(|target| target.as_u32()),
+        bone_attachment_skeleton_target: bone_attachment_skeleton_target
+            .and_then(|v| scene_key_by_name(scene, v.as_str()))
+            .map(|target| target.as_u32()),
+        ik_target_skeleton_target: ik_target_skeleton_target
+            .and_then(|v| scene_key_by_name(scene, v.as_str()))
+            .map(|target| target.as_u32()),
+        physics_bone_chain_skeleton_target: physics_bone_chain_skeleton_target
+            .and_then(|v| scene_key_by_name(scene, v.as_str()))
+            .map(|target| target.as_u32()),
+        joint_body_links: joint_body_targets
+            .into_iter()
+            .filter_map(|(field, target)| {
+                scene_key_by_name(scene, target.as_str()).map(|target| PendingJointBodyLink {
+                    field,
+                    target_key: target.as_u32(),
+                })
+            })
+            .collect(),
+        animation_bindings: animation_bindings
+            .into_iter()
+            .filter_map(|(object, target)| {
+                scene_key_by_name(scene, target.as_str()).map(|target| (object, target.as_u32()))
+            })
+            .collect(),
+        locale_text_bindings,
     })
 }
 
@@ -392,11 +565,14 @@ fn push_entry_prepared(
         joint_body_targets,
         animation_bindings,
         locale_text_bindings,
-    ) = scene_node_from_entry(entry, ctx.static_ui_style_lookup)?;
+    ) = scene_node_from_entry(entry, ctx.static_ui_style_lookup, &mut ctx.scratch)?;
+
+    #[cfg(test)]
+    let test_node_key_name = key_name.clone();
 
     ctx.prepared_nodes.push(PendingNode {
         key,
-        key_name: key_name.clone(),
+        key_name,
         parent_key,
         node,
         animation_source,
@@ -461,7 +637,7 @@ fn push_entry_prepared(
         ctx.scripts.push(PendingScript {
             node_key: key,
             #[cfg(test)]
-            node_key_name: key_name.clone(),
+            node_key_name: test_node_key_name,
             script_path_hash,
             script_mount,
             scene_injected_vars: entry
@@ -482,6 +658,12 @@ struct PrepareSceneCtx<'a> {
     include_stack: &'a mut HashSet<String>,
     load_scene: &'a dyn Fn(&str) -> Result<Arc<Scene>, String>,
     static_ui_style_lookup: Option<StaticUiStyleLookup>,
+    scratch: ScenePrepareScratch,
+}
+
+#[derive(Default)]
+struct ScenePrepareScratch {
+    fields: Vec<SceneObjectField>,
 }
 
 fn expand_import_children_into_host(
@@ -566,28 +748,41 @@ fn merge_scene_node_data(base: &SceneDefNodeData, local: &SceneDefNodeData) -> S
 
 fn flatten_scene_node_fields(data: &SceneDefNodeData) -> Vec<SceneObjectField> {
     let mut out = Vec::new();
+    flatten_scene_node_fields_into(data, &mut out);
+    out
+}
+
+fn flatten_scene_node_fields_into(data: &SceneDefNodeData, out: &mut Vec<SceneObjectField>) {
     if let Some(base) = data.base_ref() {
-        out.extend(flatten_scene_node_fields(base));
+        flatten_scene_node_fields_into(base, out);
     }
     out.extend(data.fields.iter().cloned());
-    out
+}
+
+fn scratch_flatten_scene_node_fields<'a>(
+    data: &SceneDefNodeData,
+    scratch: &'a mut ScenePrepareScratch,
+) -> &'a [SceneObjectField] {
+    scratch.fields.clear();
+    flatten_scene_node_fields_into(data, &mut scratch.fields);
+    scratch.fields.as_slice()
 }
 
 fn merge_scene_object_fields(
     base: &[SceneObjectField],
     local: &[SceneObjectField],
 ) -> Cow<'static, [SceneObjectField]> {
-    let mut merged: BTreeMap<String, SceneValue> = BTreeMap::new();
+    let mut merged: BTreeMap<SceneFieldName, SceneValue> = BTreeMap::new();
     for (name, value) in base {
-        merged.insert(name.to_string(), value.clone());
+        merged.insert(name.clone(), value.clone());
     }
     for (name, value) in local {
         if is_unset_marker(value) {
-            merged.remove(name.as_ref());
+            merged.remove(name);
             continue;
         }
 
-        let key = name.to_string();
+        let key = name.clone();
         let next_value = if let Some(prev) = merged.get(&key) {
             merge_scene_values(prev, value)
         } else {
@@ -596,12 +791,7 @@ fn merge_scene_object_fields(
         merged.insert(key, next_value);
     }
 
-    Cow::Owned(
-        merged
-            .into_iter()
-            .map(|(name, value)| (Cow::Owned(name), value))
-            .collect(),
-    )
+    Cow::Owned(merged.into_iter().collect())
 }
 
 fn merge_scene_values(base: &SceneValue, local: &SceneValue) -> SceneValue {
@@ -678,6 +868,7 @@ fn remap_scene_value_keys(
 fn scene_node_from_entry(
     entry: &SceneDefNodeEntry,
     static_ui_style_lookup: Option<StaticUiStyleLookup>,
+    scratch: &mut ScenePrepareScratch,
 ) -> Result<SceneNodeExtraction, String> {
     let mut node = SceneNode::new(scene_node_data_from(&entry.data, static_ui_style_lookup)?);
     if let Some(name) = &entry.name {
@@ -703,9 +894,9 @@ fn scene_node_from_entry(
     let ik_target_skeleton_target = extract_ik_target_skeleton_target(&entry.data)?;
     let physics_bone_chain_skeleton_target =
         extract_physics_bone_chain_skeleton_target(&entry.data)?;
-    let joint_body_targets = extract_joint_body_targets(&entry.data);
+    let joint_body_targets = extract_joint_body_targets(&entry.data, scratch);
     let animation_bindings = extract_animation_scene_bindings(&entry.data);
-    let locale_text_bindings = extract_locale_text_bindings(&entry.data);
+    let locale_text_bindings = extract_locale_text_bindings(&entry.data, scratch);
     let model_source = extract_model_source(&entry.data);
     let (mesh_source, material_surfaces) = if let Some(model) = model_source.as_ref() {
         (
@@ -737,34 +928,38 @@ fn scene_node_from_entry(
     ))
 }
 
-fn extract_locale_text_bindings(data: &SceneDefNodeData) -> Vec<PendingLocaleTextBinding> {
+fn extract_locale_text_bindings(
+    data: &SceneDefNodeData,
+    scratch: &mut ScenePrepareScratch,
+) -> Vec<PendingLocaleTextBinding> {
     let mut out = Vec::new();
-    let fields = flatten_scene_node_fields(data);
     match data.ty.as_ref() {
         "UiLabel" => {
+            let fields = scratch_flatten_scene_node_fields(data, scratch);
             push_locale_text_binding(
                 &mut out,
-                &fields,
+                fields,
                 "text",
                 crate::runtime::state::LocaleTextField::LabelText,
             );
         }
         "UiTextBox" | "UiTextBlock" => {
+            let fields = scratch_flatten_scene_node_fields(data, scratch);
             push_locale_text_binding(
                 &mut out,
-                &fields,
+                fields,
                 "text",
                 crate::runtime::state::LocaleTextField::TextEditText,
             );
             push_locale_text_binding(
                 &mut out,
-                &fields,
+                fields,
                 "placeholder",
                 crate::runtime::state::LocaleTextField::TextEditPlaceholder,
             );
             push_locale_text_binding(
                 &mut out,
-                &fields,
+                fields,
                 "hint",
                 crate::runtime::state::LocaleTextField::TextEditPlaceholder,
             );
@@ -799,14 +994,17 @@ fn push_locale_text_binding(
     }
 }
 
-fn extract_joint_body_targets(data: &SceneDefNodeData) -> Vec<(PendingJointBodyField, String)> {
-    let fields = flatten_scene_node_fields(data);
+fn extract_joint_body_targets(
+    data: &SceneDefNodeData,
+    scratch: &mut ScenePrepareScratch,
+) -> Vec<(PendingJointBodyField, String)> {
     let mut out = Vec::new();
     let Some((body_a_field, body_b_field)) = joint_body_fields_for(data.ty.as_ref()) else {
         return out;
     };
+    let fields = scratch_flatten_scene_node_fields(data, scratch);
     for (name, value) in fields {
-        let resolved = resolve_node_field(data.ty.as_ref(), name.as_ref());
+        let resolved = resolve_scene_node_field(data.ty.as_ref(), name);
         let field = if resolved == Some(body_a_field) {
             Some(PendingJointBodyField::BodyA)
         } else if resolved == Some(body_b_field) {
@@ -815,7 +1013,7 @@ fn extract_joint_body_targets(data: &SceneDefNodeData) -> Vec<(PendingJointBodyF
             None
         };
         if let Some(field) = field
-            && let Some(target) = as_str(&value)
+            && let Some(target) = as_str(value)
         {
             out.push((field, target.to_string()));
         }

@@ -22,6 +22,7 @@ Local reference:
 - [Docs Index](docs/index.md)
 - [ResPath](docs/respath.md)
 - [Feature Matrix](docs/feature_matrix.md)
+- [Performance + Flexibility Philosophy](docs/performance_philosophy.md)
 - [Perro CLI](docs/perro_cli.md)
 
 ## Dev Checks

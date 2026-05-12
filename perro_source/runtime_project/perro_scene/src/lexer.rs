@@ -1,6 +1,6 @@
 #[derive(Debug, Clone, PartialEq)]
-pub enum Token {
-    Ident(String), // name, position, Sprite2D
+pub enum Token<'a> {
+    Ident(&'a str), // name, position, Sprite2D
     Number(f32),
     String(String),
 
@@ -27,31 +27,33 @@ pub enum Token {
 }
 
 pub struct Lexer<'a> {
-    chars: std::str::Chars<'a>,
-    peek: Option<char>,
+    src: &'a str,
+    pos: usize,
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(src: &'a str) -> Self {
-        let mut chars = src.chars();
-        let peek = chars.next();
-        Self { chars, peek }
+        Self { src, pos: 0 }
+    }
+
+    fn peek(&self) -> Option<char> {
+        self.src[self.pos..].chars().next()
     }
 
     fn bump(&mut self) -> Option<char> {
-        let cur = self.peek;
-        self.peek = self.chars.next();
-        cur
+        let c = self.peek()?;
+        self.pos += c.len_utf8();
+        Some(c)
     }
 
     fn skip_ws(&mut self) {
-        while matches!(self.peek, Some(c) if c.is_whitespace()) {
+        while matches!(self.peek(), Some(c) if c.is_whitespace()) {
             self.bump();
         }
     }
 
     fn skip_until_newline(&mut self) {
-        while let Some(c) = self.peek {
+        while let Some(c) = self.peek() {
             if c == '\n' || c == '\r' {
                 break;
             }
@@ -59,9 +61,10 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    pub fn next_token(&mut self) -> Token {
+    pub fn next_token(&mut self) -> Token<'a> {
         self.skip_ws();
 
+        let start = self.pos;
         let c = match self.bump() {
             Some(c) => c,
             None => return Token::Eof,
@@ -82,7 +85,7 @@ impl<'a> Lexer<'a> {
             ']' => Token::RBracket,
             '/' => {
                 // Support // line comments while preserving '/' token for closing tags.
-                if self.peek == Some('/') {
+                if self.peek() == Some('/') {
                     self.bump();
                     self.skip_until_newline();
                     return self.next_token();
@@ -98,7 +101,7 @@ impl<'a> Lexer<'a> {
             '"' => {
                 let mut s = String::new();
                 while let Some(c) = self.bump() {
-                    if c == '\\' && self.peek == Some('"') {
+                    if c == '\\' && self.peek() == Some('"') {
                         self.bump();
                         s.push('"');
                         continue;
@@ -112,30 +115,27 @@ impl<'a> Lexer<'a> {
             }
 
             c if c.is_ascii_digit()
-                || (c == '-' && matches!(self.peek, Some(p) if p.is_ascii_digit() || p == '.')) =>
+                || (c == '-'
+                    && matches!(self.peek(), Some(p) if p.is_ascii_digit() || p == '.')) =>
             {
-                let mut s = String::new();
-                s.push(c);
-                while matches!(self.peek, Some(p) if p.is_ascii_digit() || p == '.' || p == 'e' || p == 'E' || p == '+' || p == '-')
+                while matches!(self.peek(), Some(p) if p.is_ascii_digit() || p == '.' || p == 'e' || p == 'E' || p == '+' || p == '-')
                 {
-                    s.push(self.bump().unwrap());
+                    self.bump();
                 }
-                match s.parse::<f32>() {
+                match self.src[start..self.pos].parse::<f32>() {
                     Ok(v) => Token::Number(v),
                     Err(_) => self.next_token(),
                 }
             }
 
             c if c.is_alphanumeric() || c == '_' => {
-                let mut s = String::new();
-                s.push(c);
-                while matches!(self.peek, Some(p) if p.is_alphanumeric() || p == '_') {
-                    s.push(self.bump().unwrap());
+                while matches!(self.peek(), Some(p) if p.is_alphanumeric() || p == '_') {
+                    self.bump();
                 }
-                match s.as_str() {
+                match &self.src[start..self.pos] {
                     "true" => Token::True,
                     "false" => Token::False,
-                    _ => Token::Ident(s),
+                    ident => Token::Ident(ident),
                 }
             }
 

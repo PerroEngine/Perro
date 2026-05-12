@@ -1,7 +1,7 @@
 // parser.rs - Parse into scene types
 use crate::{
-    Lexer, Scene, SceneKey, SceneNodeData, SceneNodeDataBase, SceneNodeEntry, SceneObjectField,
-    SceneValue, SceneValueKey, Token,
+    Lexer, Scene, SceneFieldName, SceneKey, SceneNodeData, SceneNodeDataBase, SceneNodeEntry,
+    SceneObjectField, SceneValue, SceneValueKey, Token,
 };
 use perro_nodes::NodeType;
 use perro_structs::Quaternion;
@@ -12,7 +12,7 @@ use std::str::FromStr;
 pub struct Parser<'a> {
     src: &'a str,
     lexer: Lexer<'a>,
-    current: Token,
+    current: Token<'a>,
     vars: HashMap<String, SceneValue>,
 }
 
@@ -32,14 +32,14 @@ impl<'a> Parser<'a> {
         self.current = self.lexer.next_token();
     }
 
-    fn expect(&mut self, t: Token) {
+    fn expect(&mut self, t: Token<'a>) {
         if self.current != t {
             panic!("Expected {:?}, got {:?}", t, self.current);
         }
         self.advance();
     }
 
-    fn expect_ident(&mut self) -> String {
+    fn expect_ident(&mut self) -> &'a str {
         match std::mem::replace(&mut self.current, Token::Eof) {
             Token::Ident(s) => {
                 self.advance();
@@ -49,23 +49,35 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn expect_scene_key(&mut self) -> String {
-        let mut key = String::new();
+    fn expect_scene_key(&mut self) -> Cow<'a, str> {
+        let mut at_count = 0;
         while self.current == Token::At {
             self.advance();
-            key.push('@');
+            at_count += 1;
         }
-        key.push_str(&self.expect_ident());
-        key
+        let ident = self.expect_ident();
+        if at_count == 0 {
+            return Cow::Borrowed(ident);
+        }
+        let mut key = String::with_capacity(at_count + ident.len());
+        key.extend(std::iter::repeat_n('@', at_count));
+        key.push_str(ident);
+        Cow::Owned(key)
     }
 
     fn expect_node_ref_key(&mut self) -> String {
-        let mut key = String::new();
+        let mut at_count = 0;
         while self.current == Token::At {
             self.advance();
-            key.push('@');
+            at_count += 1;
         }
-        key.push_str(&self.expect_ident());
+        let ident = self.expect_ident();
+        if at_count == 0 {
+            return ident.to_string();
+        }
+        let mut key = String::with_capacity(at_count + ident.len());
+        key.extend(std::iter::repeat_n('@', at_count));
+        key.push_str(ident);
         key
     }
 
@@ -78,7 +90,7 @@ impl<'a> Parser<'a> {
         while self.current != Token::Eof {
             if self.current == Token::Dollar {
                 self.advance();
-                let name = self.expect_ident();
+                let name = self.expect_ident().to_string();
                 if self.current == Token::Equals {
                     self.advance();
                     let value = self.parse_value();
@@ -124,7 +136,7 @@ impl<'a> Parser<'a> {
                 self.advance();
                 let name = self.expect_ident();
                 self.vars
-                    .get(&name)
+                    .get(name)
                     .cloned()
                     .unwrap_or_else(|| panic!("Unknown variable ${name}"))
             }
@@ -137,9 +149,13 @@ impl<'a> Parser<'a> {
                     panic!("Unknown percent marker %{marker}:");
                 }
                 let key = match std::mem::replace(&mut self.current, Token::Eof) {
-                    Token::String(s) | Token::Ident(s) => {
+                    Token::String(s) => {
                         self.advance();
                         s
+                    }
+                    Token::Ident(s) => {
+                        self.advance();
+                        s.to_string()
                     }
                     other => panic!("Expected locale key after %loc:, got {:?}", other),
                 };
@@ -153,17 +169,22 @@ impl<'a> Parser<'a> {
             }
 
             Token::Ident(name) => {
-                let key = name.clone();
+                let key = (*name).to_string();
                 self.advance();
                 SceneValue::Key(SceneValueKey::from(key))
             }
 
             Token::LParen => {
                 self.advance();
-                let mut nums = Vec::new();
+                let mut nums = [0.0; 4];
+                let mut len = 0;
                 loop {
                     if let Token::Number(n) = self.current {
-                        nums.push(n);
+                        if len >= nums.len() {
+                            panic!("Invalid vector length");
+                        }
+                        nums[len] = n;
+                        len += 1;
                         self.advance();
                     }
                     if self.current == Token::Comma {
@@ -174,7 +195,7 @@ impl<'a> Parser<'a> {
                 }
                 self.expect(Token::RParen);
 
-                match nums.len() {
+                match len {
                     2 => SceneValue::Vec2 {
                         x: nums[0],
                         y: nums[1],
@@ -216,7 +237,7 @@ impl<'a> Parser<'a> {
 
                     let key = match &self.current {
                         Token::Ident(name) => {
-                            let out = name.clone();
+                            let out = name.to_string();
                             self.advance();
                             out
                         }
@@ -270,7 +291,7 @@ impl<'a> Parser<'a> {
                 SceneValue::Object(Cow::Owned(
                     entries
                         .into_iter()
-                        .map(|(k, v)| (Cow::Owned(k), v))
+                        .map(|(k, v)| (SceneFieldName::from(k), v))
                         .collect(),
                 ))
             }
@@ -306,12 +327,12 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_type_block_after_lbracket(&mut self) -> SceneNodeData {
-        let ty = self.expect_ident();
+        let ty = self.expect_ident().to_string();
         if self.current == Token::Slash {
             self.advance();
             self.expect(Token::RBracket);
             return SceneNodeData {
-                ty: Cow::Owned(ty),
+                ty: canonical_node_type_name(&ty),
                 fields: Cow::Owned(Vec::new()),
                 base: None,
             };
@@ -341,7 +362,7 @@ impl<'a> Parser<'a> {
                     let key = self.expect_ident();
                     self.expect(Token::Equals);
                     let val = self.parse_value();
-                    fields.push((Cow::Owned(key), val));
+                    fields.push((canonical_scene_field_name(key), val));
                 }
 
                 _ => self.advance(),
@@ -350,7 +371,7 @@ impl<'a> Parser<'a> {
 
         normalize_node_fields_for_type(&ty, &mut fields);
         SceneNodeData {
-            ty: Cow::Owned(ty.clone()),
+            ty: canonical_node_type_name(&ty),
             fields: Cow::Owned(fields),
             base,
         }
@@ -366,13 +387,17 @@ impl<'a> Parser<'a> {
                     self.advance();
                     break;
                 }
-                Token::String(s) | Token::Ident(s) => {
+                Token::String(s) => {
                     tags.push(s.clone());
+                    self.advance();
+                }
+                Token::Ident(s) => {
+                    tags.push(s.to_string());
                     self.advance();
                 }
                 Token::Dollar => {
                     self.advance();
-                    let name = self.expect_ident();
+                    let name = self.expect_ident().to_string();
                     let resolved = self
                         .vars
                         .get(&name)
@@ -407,8 +432,8 @@ impl<'a> Parser<'a> {
         let mut nodes = Vec::new();
         let mut root_name = None::<String>;
         let mut key_names = Vec::<Cow<'static, str>>::new();
-        let mut key_ids = HashMap::<String, SceneKey>::new();
-        let mut defined_keys = HashSet::<String>::new();
+        let mut key_ids = HashMap::<Cow<'a, str>, SceneKey>::new();
+        let mut defined_keys = HashSet::<SceneKey>::new();
         let mut pending_parents = Vec::<(usize, String)>::new();
 
         while self.current != Token::Eof {
@@ -429,7 +454,7 @@ impl<'a> Parser<'a> {
                         }
                     } else {
                         let value = self.parse_value();
-                        self.vars.insert(name, value);
+                        self.vars.insert(name.to_string(), value);
                     }
                 }
 
@@ -456,17 +481,18 @@ impl<'a> Parser<'a> {
                     self.advance();
                     let key = self.expect_scene_key();
                     self.expect(Token::RBracket);
-                    if !defined_keys.insert(key.clone()) {
-                        panic!("duplicate scene key `{key}`");
-                    }
-                    let key_id = if let Some(key_id) = key_ids.get(key.as_str()) {
+                    let key_ref = key.as_ref();
+                    let key_id = if let Some(key_id) = key_ids.get(key_ref) {
                         *key_id
                     } else {
                         let key_id = SceneKey::new(key_names.len() as u32);
                         key_ids.insert(key.clone(), key_id);
-                        key_names.push(Cow::Owned(key.clone()));
+                        key_names.push(Cow::Owned(key_ref.to_string()));
                         key_id
                     };
+                    if !defined_keys.insert(key_id) {
+                        panic!("duplicate scene key `{key_ref}`");
+                    }
 
                     let mut name = None;
                     let mut tags = Vec::new();
@@ -484,22 +510,22 @@ impl<'a> Parser<'a> {
                             continue;
                         }
                         let v = self.parse_value();
-                        match k.as_ref() {
+                        match k {
                             "name" => {
                                 name = Some(match v {
-                                    SceneValue::Str(s) => s.to_string(),
+                                    SceneValue::Str(s) => s.into_owned(),
                                     _ => panic!("name must be a string"),
                                 })
                             }
                             "parent" => {
                                 parent = Some(match v {
-                                    SceneValue::Key(k) => k.to_string(),
+                                    SceneValue::Key(k) => k.0.into_owned(),
                                     _ => panic!("parent must be a node ref like @Parent"),
                                 })
                             }
                             "script" => match v {
                                 SceneValue::Str(s) => {
-                                    script = Some(s.to_string());
+                                    script = Some(s.into_owned());
                                     clear_script = false;
                                 }
                                 SceneValue::Key(k) if k.as_ref() == "null" => {
@@ -516,16 +542,13 @@ impl<'a> Parser<'a> {
                             }
                             "root_of" => {
                                 root_of = Some(match v {
-                                    SceneValue::Str(s) => s.to_string(),
+                                    SceneValue::Str(s) => s.into_owned(),
                                     _ => panic!("root_of must be a string"),
                                 })
                             }
                             "script_vars" => match v {
                                 SceneValue::Object(entries) => {
-                                    script_vars = entries
-                                        .iter()
-                                        .map(|(k, v)| (Cow::Owned(k.to_string()), v.clone()))
-                                        .collect();
+                                    script_vars = entries.into_owned().into_iter().collect();
                                 }
                                 _ => panic!("script_vars must be an object"),
                             },
@@ -567,7 +590,7 @@ impl<'a> Parser<'a> {
                         assert_eq!(end, key);
                     }
 
-                    let name = name.or_else(|| Some(key.clone()));
+                    let name = name.or_else(|| Some(key_ref.to_string()));
                     let parent_name = parent;
 
                     nodes.push(SceneNodeEntry {
@@ -597,7 +620,7 @@ impl<'a> Parser<'a> {
                 *parent
             } else {
                 let parent = SceneKey::new(key_names.len() as u32);
-                key_ids.insert(parent_name.clone(), parent);
+                key_ids.insert(Cow::Owned(parent_name.clone()), parent);
                 key_names.push(Cow::Owned(parent_name));
                 parent
             };
@@ -608,7 +631,7 @@ impl<'a> Parser<'a> {
                 *root
             } else {
                 let root = SceneKey::new(key_names.len() as u32);
-                key_ids.insert(name.clone(), root);
+                key_ids.insert(Cow::Owned(name.clone()), root);
                 key_names.push(Cow::Owned(name));
                 root
             }
@@ -622,9 +645,10 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_scene(self) -> Scene {
-        let vars = Parser::new(self.src).collect_vars();
         let mut parser = Parser::new(self.src);
-        parser.vars = vars;
+        if needs_var_prefetch(self.src) {
+            parser.vars = Parser::new(self.src).collect_vars();
+        }
         parser.parse_scene_inner()
     }
 
@@ -639,6 +663,106 @@ impl<'a> Parser<'a> {
         }
         value
     }
+}
+
+fn needs_var_prefetch(src: &str) -> bool {
+    let bytes = src.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != b'$' {
+            i += 1;
+            continue;
+        }
+        i += 1;
+        let start = i;
+        while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+            i += 1;
+        }
+        if start != i && &src[start..i] != "root" {
+            return true;
+        }
+    }
+    false
+}
+
+fn canonical_node_type_name(name: &str) -> Cow<'static, str> {
+    match name {
+        "Node" => Cow::Borrowed("Node"),
+        "Node2D" => Cow::Borrowed("Node2D"),
+        "Sprite2D" => Cow::Borrowed("Sprite2D"),
+        "AnimatedSprite2D" => Cow::Borrowed("AnimatedSprite2D"),
+        "ParticleEmitter2D" => Cow::Borrowed("ParticleEmitter2D"),
+        "AmbientLight2D" => Cow::Borrowed("AmbientLight2D"),
+        "RayLight2D" => Cow::Borrowed("RayLight2D"),
+        "PointLight2D" => Cow::Borrowed("PointLight2D"),
+        "SpotLight2D" => Cow::Borrowed("SpotLight2D"),
+        "TileMap2D" => Cow::Borrowed("TileMap2D"),
+        "Skeleton2D" => Cow::Borrowed("Skeleton2D"),
+        "BoneAttachment2D" => Cow::Borrowed("BoneAttachment2D"),
+        "IKTarget2D" => Cow::Borrowed("IKTarget2D"),
+        "PhysicsBoneChain2D" => Cow::Borrowed("PhysicsBoneChain2D"),
+        "BoneCollider2D" => Cow::Borrowed("BoneCollider2D"),
+        "Camera2D" => Cow::Borrowed("Camera2D"),
+        "CollisionShape2D" => Cow::Borrowed("CollisionShape2D"),
+        "StaticBody2D" => Cow::Borrowed("StaticBody2D"),
+        "Area2D" => Cow::Borrowed("Area2D"),
+        "RigidBody2D" => Cow::Borrowed("RigidBody2D"),
+        "PinJoint2D" => Cow::Borrowed("PinJoint2D"),
+        "DistanceJoint2D" => Cow::Borrowed("DistanceJoint2D"),
+        "FixedJoint2D" => Cow::Borrowed("FixedJoint2D"),
+        "AudioMask2D" => Cow::Borrowed("AudioMask2D"),
+        "AudioEffectZone2D" => Cow::Borrowed("AudioEffectZone2D"),
+        "AudioPortal2D" => Cow::Borrowed("AudioPortal2D"),
+        "Node3D" => Cow::Borrowed("Node3D"),
+        "MeshInstance3D" => Cow::Borrowed("MeshInstance3D"),
+        "MultiMeshInstance3D" => Cow::Borrowed("MultiMeshInstance3D"),
+        "CollisionShape3D" => Cow::Borrowed("CollisionShape3D"),
+        "StaticBody3D" => Cow::Borrowed("StaticBody3D"),
+        "Area3D" => Cow::Borrowed("Area3D"),
+        "RigidBody3D" => Cow::Borrowed("RigidBody3D"),
+        "BallJoint3D" => Cow::Borrowed("BallJoint3D"),
+        "HingeJoint3D" => Cow::Borrowed("HingeJoint3D"),
+        "FixedJoint3D" => Cow::Borrowed("FixedJoint3D"),
+        "AudioMask3D" => Cow::Borrowed("AudioMask3D"),
+        "AudioEffectZone3D" => Cow::Borrowed("AudioEffectZone3D"),
+        "AudioPortal3D" => Cow::Borrowed("AudioPortal3D"),
+        "Skeleton3D" => Cow::Borrowed("Skeleton3D"),
+        "BoneAttachment3D" => Cow::Borrowed("BoneAttachment3D"),
+        "IKTarget3D" => Cow::Borrowed("IKTarget3D"),
+        "PhysicsBoneChain3D" => Cow::Borrowed("PhysicsBoneChain3D"),
+        "BoneCollider3D" => Cow::Borrowed("BoneCollider3D"),
+        "Camera3D" => Cow::Borrowed("Camera3D"),
+        "ParticleEmitter3D" => Cow::Borrowed("ParticleEmitter3D"),
+        "AnimationPlayer" => Cow::Borrowed("AnimationPlayer"),
+        "AnimationTree" => Cow::Borrowed("AnimationTree"),
+        "AmbientLight3D" => Cow::Borrowed("AmbientLight3D"),
+        "Sky3D" => Cow::Borrowed("Sky3D"),
+        "RayLight3D" => Cow::Borrowed("RayLight3D"),
+        "PointLight3D" => Cow::Borrowed("PointLight3D"),
+        "SpotLight3D" => Cow::Borrowed("SpotLight3D"),
+        "UiBox" => Cow::Borrowed("UiBox"),
+        "UiPanel" => Cow::Borrowed("UiPanel"),
+        "UiButton" => Cow::Borrowed("UiButton"),
+        "UiImage" => Cow::Borrowed("UiImage"),
+        "UiAnimatedImage" => Cow::Borrowed("UiAnimatedImage"),
+        "UiLabel" => Cow::Borrowed("UiLabel"),
+        "UiTextBox" => Cow::Borrowed("UiTextBox"),
+        "UiTextBlock" => Cow::Borrowed("UiTextBlock"),
+        "UiScrollContainer" => Cow::Borrowed("UiScrollContainer"),
+        "UiScroll" => Cow::Borrowed("UiScroll"),
+        "UiLayout" => Cow::Borrowed("UiLayout"),
+        "UiHLayout" => Cow::Borrowed("UiHLayout"),
+        "UiHBox" => Cow::Borrowed("UiHBox"),
+        "UiVLayout" => Cow::Borrowed("UiVLayout"),
+        "UiVBox" => Cow::Borrowed("UiVBox"),
+        "UiGrid" => Cow::Borrowed("UiGrid"),
+        "UiTreeList" => Cow::Borrowed("UiTreeList"),
+        other => Cow::Owned(other.to_string()),
+    }
+}
+
+fn canonical_scene_field_name(name: &str) -> SceneFieldName {
+    SceneFieldName::from_borrowed(name).unwrap_or_else(|| SceneFieldName::from(name.to_string()))
 }
 
 fn normalize_node_fields_for_type(ty: &str, fields: &mut Vec<SceneObjectField>) {
@@ -679,7 +803,7 @@ fn normalize_node_fields_for_type(ty: &str, fields: &mut Vec<SceneObjectField>) 
         && is_2d
         && let Some(deg) = rotation_deg_2d
     {
-        fields.push((Cow::Borrowed("rotation"), SceneValue::F32(deg.to_radians())));
+        fields.push((SceneFieldName::Rotation, SceneValue::F32(deg.to_radians())));
     }
 
     if !rotation_present
@@ -687,7 +811,7 @@ fn normalize_node_fields_for_type(ty: &str, fields: &mut Vec<SceneObjectField>) 
         && let Some((x_deg, y_deg, z_deg)) = rotation_deg_3d
     {
         fields.push((
-            Cow::Borrowed("rotation"),
+            SceneFieldName::Rotation,
             euler_xyz_radians_to_quat_value(
                 x_deg.to_radians(),
                 y_deg.to_radians(),

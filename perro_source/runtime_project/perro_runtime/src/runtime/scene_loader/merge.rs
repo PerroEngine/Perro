@@ -84,13 +84,18 @@ pub(super) fn merge_prepared_scene(
 
     let mut engine_root = SceneNode::new(SceneNodeData::Node);
     engine_root.name = Cow::Borrowed("Game Root");
+    runtime.nodes.reserve(nodes.len().saturating_add(1));
     let engine_root = runtime.nodes.insert(engine_root);
     if let Some(node) = runtime.nodes.get(engine_root) {
         runtime.register_internal_node_schedules(engine_root, node.node_type());
     }
 
     let mut key_to: HashMap<u32, NodeID> = HashMap::with_capacity(nodes.len());
-    let mut key_name_to: HashMap<String, NodeID> = HashMap::with_capacity(nodes.len());
+    let mut key_name_to = if scripts.is_empty() {
+        None
+    } else {
+        Some(HashMap::with_capacity(nodes.len()))
+    };
     let mut key_order: Vec<u32> = Vec::with_capacity(nodes.len());
     let mut parent_pairs = Vec::with_capacity(nodes.len());
     let mut animation_player_bindings: Vec<(NodeID, AnimationPlayerSceneBindings)> = Vec::new();
@@ -246,7 +251,9 @@ pub(super) fn merge_prepared_scene(
         }
         key_order.push(key);
         key_to.insert(key, node);
-        key_name_to.insert(key_name, node);
+        if let Some(key_name_to) = key_name_to.as_mut() {
+            key_name_to.insert(key_name, node);
+        }
     }
 
     if let Some(root_key) = root_key
@@ -433,7 +440,7 @@ pub(super) fn merge_prepared_scene(
             .map(|(name, value)| {
                 Ok((
                     ScriptMemberID::from_string(name.as_str()),
-                    scene_value_to_variant(value, &key_to, &key_name_to),
+                    scene_value_to_variant(value, &key_to, key_name_to.as_ref()),
                 ))
             })
             .collect::<Result<Vec<_>, String>>()?;
@@ -454,7 +461,7 @@ pub(super) fn merge_prepared_scene(
 fn scene_value_to_variant(
     value: &SceneValue,
     key_to: &HashMap<u32, NodeID>,
-    key_name_to: &HashMap<String, NodeID>,
+    key_name_to: Option<&HashMap<String, NodeID>>,
 ) -> Variant {
     match value {
         SceneValue::Bool(v) => Variant::from(*v),
@@ -476,7 +483,8 @@ fn scene_value_to_variant(
                 && let Some(id) = key_to.get(&key)
             {
                 Variant::from(*id)
-            } else if let Some(id) = key_name_to.get(v.as_ref()) {
+            } else if let Some(id) = key_name_to.and_then(|key_name_to| key_name_to.get(v.as_ref()))
+            {
                 Variant::from(*id)
             } else {
                 Variant::from(v.to_string())
