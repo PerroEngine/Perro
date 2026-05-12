@@ -18,7 +18,10 @@ use perro_nodes::{
     camera_2d::Camera2D,
     camera_3d::{Camera3D, CameraProjection},
     ik_target_3d::IKTarget3D,
-    mesh_instance_3d::{MaterialParamOverride, MaterialParamOverrideValue, MeshInstance3D, MeshSurfaceBinding},
+    mesh_instance_3d::{
+        LODOptions, MaterialParamOverride, MaterialParamOverrideValue, MeshInstance3D,
+        MeshSurfaceBinding,
+    },
     multi_mesh_instance_3d::MultiMeshInstance3D,
     node_2d::Node2D,
     node_3d::Node3D,

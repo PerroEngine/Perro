@@ -129,6 +129,16 @@ fn apply_mesh_instance_3d_fields(node: &mut MeshInstance3D, fields: &[SceneObjec
                     node.meshlet_override = Some(v);
                 }
             }
+            "min_lod" | "lod_min" => {
+                if let Some(v) = as_i32(value) {
+                    node.lod.min_lod = v.clamp(0, LODOptions::MAX as i32) as u8;
+                }
+            }
+            "max_lod" | "lod_max" => {
+                if let Some(v) = as_i32(value) {
+                    node.lod.max_lod = v.clamp(0, LODOptions::MAX as i32) as u8;
+                }
+            }
             _ => {}
         }
     });
@@ -158,6 +168,16 @@ fn apply_multi_mesh_instance_3d_fields(
             "meshlets" | "use_meshlets" => {
                 if let Some(v) = as_bool(value) {
                     node.meshlet_override = Some(v);
+                }
+            }
+            "min_lod" | "lod_min" => {
+                if let Some(v) = as_i32(value) {
+                    node.lod.min_lod = v.clamp(0, LODOptions::MAX as i32) as u8;
+                }
+            }
+            "max_lod" | "lod_max" => {
+                if let Some(v) = as_i32(value) {
+                    node.lod.max_lod = v.clamp(0, LODOptions::MAX as i32) as u8;
                 }
             }
             _ => {}

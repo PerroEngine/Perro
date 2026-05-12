@@ -494,7 +494,12 @@ pub(super) fn draw_batch_state_key(
 
 #[inline]
 pub(super) fn same_draw_except_model(a: &Draw3DInstance, b: &Draw3DInstance) -> bool {
-    a.node == b.node && a.kind == b.kind && a.surfaces == b.surfaces && a.skeleton == b.skeleton
+    a.node == b.node
+        && a.kind == b.kind
+        && a.surfaces == b.surfaces
+        && a.skeleton == b.skeleton
+        && a.meshlet_override == b.meshlet_override
+        && a.lod == b.lod
 }
 
 #[inline]

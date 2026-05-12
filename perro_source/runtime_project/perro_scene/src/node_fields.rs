@@ -212,6 +212,8 @@ pub enum MeshInstance3DField {
     Model,
     Skeleton,
     Meshlets,
+    MinLod,
+    MaxLod,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -692,6 +694,8 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             "meshlets" | "use_meshlets" => {
                 Some(NodeField::MeshInstance3D(MeshInstance3DField::Meshlets))
             }
+            "min_lod" | "lod_min" => Some(NodeField::MeshInstance3D(MeshInstance3DField::MinLod)),
+            "max_lod" | "lod_max" => Some(NodeField::MeshInstance3D(MeshInstance3DField::MaxLod)),
             _ => None,
         },
         NodeType::MultiMeshInstance3D => match field {
@@ -702,6 +706,8 @@ pub fn resolve_node_field(node_type_name: &str, field: &str) -> Option<NodeField
             "meshlets" | "use_meshlets" => {
                 Some(NodeField::MeshInstance3D(MeshInstance3DField::Meshlets))
             }
+            "min_lod" | "lod_min" => Some(NodeField::MeshInstance3D(MeshInstance3DField::MinLod)),
+            "max_lod" | "lod_max" => Some(NodeField::MeshInstance3D(MeshInstance3DField::MaxLod)),
             _ => None,
         },
         NodeType::Skeleton3D => match field {

@@ -1,9 +1,10 @@
 use ahash::{AHashMap, AHashSet};
 use perro_ids::{MeshID, NodeID, SignalID};
 use perro_render_bridge::{
-    AmbientLight3DState, Camera2DState, Camera3DState, DenseInstancePose3D, Material3D,
-    MeshSurfaceBinding3D, PointLight3DState, RayLight3DState, RenderEvent, RenderRequestID,
-    SkeletonPalette, Sky3DState, SpotLight3DState, Sprite2DCommand, UiCommand, UiRectState,
+    AmbientLight3DState, Camera2DState, Camera3DState, DenseInstancePose3D, LODOptions3D,
+    Material3D, MeshSurfaceBinding3D, PointLight3DState, RayLight3DState, RenderEvent,
+    RenderRequestID, SkeletonPalette, Sky3DState, SpotLight3DState, Sprite2DCommand, UiCommand,
+    UiRectState,
 };
 use perro_structs::Vector2;
 use perro_ui::{ComputedUiRect, UiSizeMode, UiVector2};
@@ -607,6 +608,7 @@ pub struct RetainedMeshDrawState {
     pub instances: RetainedMeshInstanceState,
     pub skeleton: Option<SkeletonPalette>,
     pub meshlet_override: Option<bool>,
+    pub lod: LODOptions3D,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -75,15 +75,16 @@ LOD behavior:
 - Authored meshes get automatic render LODs.
 - Dynamic/dev load builds LODs when the mesh loads.
 - Static build preparses LODs and packs them into `.pmesh` v1.
-- Up to 4 LODs are stored: `100%`, `50%`, `25%`, `12.5%` triangle targets.
+- Up to 6 LODs are stored: `100%`, `80%`, `60%`, `40%`, `25%`, `12.5%` triangle targets.
 - Tiny meshes may store fewer LODs when decimation would duplicate an existing level.
 - LOD switch uses `distance / mesh_bounds_radius`.
-- Current thresholds are `36x`, `72x`, and `144x` mesh radius.
+- Current thresholds are `36x`, `54x`, `72x`, `108x`, and `144x` mesh radius.
 - Surface slots are preserved per LOD, so `MeshInstance3D.surfaces` material bindings keep the same indices.
 - Meshes with joints/weights do not generate LODs.
 - Skinning data is detected from mesh data and from `.pmesh` attribute flags.
 - Mesh surface queries use LOD0/full detail.
-- LOD thresholds are not configurable from `MeshInstance3D` yet.
+- `MeshInstance3D` and `MultiMeshInstance3D` can clamp automatic selection with `min_lod`/`max_lod`.
+- Clamp values are quality levels: `0` least detail through `5` most detail.
 
 Practical tip:
 

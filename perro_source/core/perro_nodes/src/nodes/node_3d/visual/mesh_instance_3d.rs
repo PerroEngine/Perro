@@ -24,6 +24,34 @@ pub struct MaterialParamOverride {
     pub value: MaterialParamOverrideValue,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LODOptions {
+    pub min_lod: u8,
+    pub max_lod: u8,
+}
+
+impl LODOptions {
+    pub const MIN: u8 = 0;
+    pub const LOW: u8 = 1;
+    pub const MEDIUM_LOW: u8 = 2;
+    pub const MEDIUM: u8 = 3;
+    pub const HIGH: u8 = 4;
+    pub const MAX: u8 = 5;
+
+    pub const fn new() -> Self {
+        Self {
+            min_lod: Self::MIN,
+            max_lod: Self::MAX,
+        }
+    }
+}
+
+impl Default for LODOptions {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct MeshSurfaceBinding {
     pub material: Option<MaterialID>,
@@ -51,6 +79,7 @@ pub struct MeshInstance3D {
     // Some(true) => force meshlet draw.
     // Some(false) => force classic indexed draw.
     pub meshlet_override: Option<bool>,
+    pub lod: LODOptions,
 }
 
 impl MeshInstance3D {
@@ -61,6 +90,7 @@ impl MeshInstance3D {
             surfaces: Vec::new(),
             skeleton: NodeID::nil(),
             meshlet_override: None,
+            lod: LODOptions::new(),
         }
     }
 
@@ -94,5 +124,13 @@ impl MeshInstance3D {
     #[inline]
     pub fn set_meshlet_override(&mut self, override_enabled: Option<bool>) {
         self.meshlet_override = override_enabled;
+    }
+
+    #[inline]
+    pub fn set_lod_clamp(&mut self, min_lod: u8, max_lod: u8) {
+        self.lod = LODOptions {
+            min_lod: min_lod.min(LODOptions::MAX),
+            max_lod: max_lod.min(LODOptions::MAX),
+        };
     }
 }

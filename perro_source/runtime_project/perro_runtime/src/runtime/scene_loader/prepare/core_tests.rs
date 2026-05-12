@@ -1003,6 +1003,59 @@ mod tests {
     }
 
     #[test]
+    fn scene_loader_parses_mesh_lod_options() {
+        let scene = Parser::new(
+            r#"
+            @root = Mesh
+            [Mesh]
+            [MeshInstance3D]
+                min_lod = 1
+                max_lod = 3
+            [/MeshInstance3D]
+            [/Mesh]
+
+            [Batch]
+            [MultiMeshInstance3D]
+                lod_min = 2
+                lod_max = 4
+            [/MultiMeshInstance3D]
+            [/Batch]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+
+        let mesh = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "Mesh")
+            .expect("mesh node");
+        match &mesh.node.data {
+            SceneNodeData::MeshInstance3D(mesh) => {
+                assert_eq!(mesh.lod.min_lod, 1);
+                assert_eq!(mesh.lod.max_lod, 3);
+            }
+            other => panic!("expected MeshInstance3D node, got {other:?}"),
+        }
+
+        let batch = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "Batch")
+            .expect("batch node");
+        match &batch.node.data {
+            SceneNodeData::MultiMeshInstance3D(mesh) => {
+                assert_eq!(mesh.lod.min_lod, 2);
+                assert_eq!(mesh.lod.max_lod, 4);
+            }
+            other => panic!("expected MultiMeshInstance3D node, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn scene_loader_parses_locale_text_markers() {
         let scene = Parser::new(
             r#"

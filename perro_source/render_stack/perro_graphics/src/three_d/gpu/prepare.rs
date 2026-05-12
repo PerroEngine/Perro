@@ -515,8 +515,11 @@ impl Gpu3D {
                     .resolve_builtin_mesh_asset("__cylinder__")
                     .unwrap_or_else(|| default_mesh.clone()),
             };
-            let active_lod =
-                select_mesh_lod(&mesh_asset, draw.instance_mats.first(), camera.position);
+            let lod_model = draw
+                .instance_mats
+                .first()
+                .or_else(|| draw.dense_multimesh.as_ref().map(|dense| &dense.node_model));
+            let active_lod = select_mesh_lod(&mesh_asset, lod_model, camera.position, draw.lod);
             surface_entries.clear();
             match draw.kind {
                 Draw3DKind::DebugPointCube => surface_entries.push((

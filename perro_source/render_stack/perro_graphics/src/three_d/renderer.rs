@@ -3,7 +3,7 @@ use ahash::AHashMap;
 use glam::{Mat4, Quat, Vec3};
 use perro_ids::{MeshID, NodeID};
 use perro_render_bridge::{
-    AmbientLight3DState, Camera3DState, CameraProjectionState, DenseInstancePose3D,
+    AmbientLight3DState, Camera3DState, CameraProjectionState, DenseInstancePose3D, LODOptions3D,
     MeshSurfaceBinding3D, PointLight3DState, RayLight3DState, SkeletonPalette, Sky3DState,
     SpotLight3DState,
 };
@@ -37,6 +37,7 @@ pub struct Draw3DInstance {
     pub skeleton: Option<SkeletonPalette>,
     pub dense_multimesh: Option<DenseMultiMeshDraw3D>,
     pub meshlet_override: Option<bool>,
+    pub lod: LODOptions3D,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -91,6 +92,7 @@ impl Renderer3D {
         self.camera = camera;
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn queue_draw(
         &mut self,
         node: NodeID,
@@ -99,6 +101,7 @@ impl Renderer3D {
         model: [[f32; 4]; 4],
         skeleton: Option<SkeletonPalette>,
         meshlet_override: Option<bool>,
+        lod: LODOptions3D,
     ) {
         self.queued_draws.push(Draw3DInstance {
             node,
@@ -108,9 +111,11 @@ impl Renderer3D {
             skeleton,
             dense_multimesh: None,
             meshlet_override,
+            lod,
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn queue_draw_multi(
         &mut self,
         node: NodeID,
@@ -119,6 +124,7 @@ impl Renderer3D {
         instance_mats: Arc<[[[f32; 4]; 4]]>,
         skeleton: Option<SkeletonPalette>,
         meshlet_override: Option<bool>,
+        lod: LODOptions3D,
     ) {
         self.queued_draws.push(Draw3DInstance {
             node,
@@ -128,6 +134,7 @@ impl Renderer3D {
             skeleton,
             dense_multimesh: None,
             meshlet_override,
+            lod,
         });
     }
 
@@ -138,6 +145,7 @@ impl Renderer3D {
         surfaces: Arc<[MeshSurfaceBinding3D]>,
         dense_draw: DenseMultiMeshDraw3D,
         meshlet_override: Option<bool>,
+        lod: LODOptions3D,
     ) {
         self.queued_draws.push(Draw3DInstance {
             node,
@@ -149,6 +157,7 @@ impl Renderer3D {
             skeleton: None,
             dense_multimesh: Some(dense_draw),
             meshlet_override,
+            lod,
         });
     }
 
@@ -167,6 +176,7 @@ impl Renderer3D {
             skeleton: None,
             dense_multimesh: None,
             meshlet_override: Some(false),
+            lod: LODOptions3D::default(),
         });
     }
 
@@ -200,6 +210,7 @@ impl Renderer3D {
             skeleton: None,
             dense_multimesh: None,
             meshlet_override: Some(false),
+            lod: LODOptions3D::default(),
         });
     }
 
@@ -319,6 +330,10 @@ impl Renderer3D {
                     }
                     if retained.meshlet_override != draw.meshlet_override {
                         retained.meshlet_override = draw.meshlet_override;
+                        draws_changed = true;
+                    }
+                    if retained.lod != draw.lod {
+                        retained.lod = draw.lod;
                         draws_changed = true;
                     }
                 }

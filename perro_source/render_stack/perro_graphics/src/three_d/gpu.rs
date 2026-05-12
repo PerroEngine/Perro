@@ -31,7 +31,7 @@ use perro_graphics_assets::{
 use perro_ids::MeshID;
 use perro_io::load_asset;
 use perro_render_bridge::{
-    Camera3DState, CameraProjectionState, Material3D, MaterialParamOverride3D,
+    Camera3DState, CameraProjectionState, LODOptions3D, Material3D, MaterialParamOverride3D,
     MaterialParamOverrideValue3D, MeshSurfaceBinding3D, StandardMaterial3D,
 };
 use std::{
@@ -599,9 +599,7 @@ struct OcclusionState {
 }
 
 const CULL_FLAG_DISABLE_HIZ_OCCLUSION: u32 = 1u32;
-const LOD1_DISTANCE_RADIUS_SCALE: f32 = 36.0;
-const LOD2_DISTANCE_RADIUS_SCALE: f32 = 72.0;
-const LOD3_DISTANCE_RADIUS_SCALE: f32 = 144.0;
+const LOD_DISTANCE_RADIUS_SCALES: [f32; 5] = [36.0, 54.0, 72.0, 108.0, 144.0];
 const FRUSTUM_CULL_MIN_BATCHES: usize = 96;
 const FRUSTUM_CULL_MIN_INSTANCES: usize = 1024;
 const FRUSTUM_CULL_HIGH_VISIBLE_RATIO: f32 = 0.9;

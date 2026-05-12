@@ -608,3 +608,31 @@ pub struct MeshSurfaceBinding3D {
     pub overrides: Arc<[MaterialParamOverride3D]>,
     pub modulate: [f32; 4],
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LODOptions3D {
+    pub min_lod: u8,
+    pub max_lod: u8,
+}
+
+impl LODOptions3D {
+    pub const MIN: u8 = 0;
+    pub const LOW: u8 = 1;
+    pub const MEDIUM_LOW: u8 = 2;
+    pub const MEDIUM: u8 = 3;
+    pub const HIGH: u8 = 4;
+    pub const MAX: u8 = 5;
+
+    pub const fn new() -> Self {
+        Self {
+            min_lod: Self::MIN,
+            max_lod: Self::MAX,
+        }
+    }
+}
+
+impl Default for LODOptions3D {
+    fn default() -> Self {
+        Self::new()
+    }
+}

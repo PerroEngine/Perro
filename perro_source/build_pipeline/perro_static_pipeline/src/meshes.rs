@@ -22,7 +22,7 @@ use std::{
 };
 
 const MESHLET_TRIANGLES: usize = 64;
-const LOD_TARGET_RATIOS: [f32; 4] = [1.0, 0.5, 0.25, 0.125];
+const LOD_TARGET_RATIOS: [f32; 6] = [1.0, 0.8, 0.6, 0.4, 0.25, 0.125];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct PackedVertex {

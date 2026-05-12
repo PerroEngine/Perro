@@ -468,6 +468,7 @@ impl PerroGraphics {
                         model,
                         skeleton,
                         meshlet_override,
+                        lod,
                     } => {
                         self.renderer_3d.queue_draw(
                             node,
@@ -476,6 +477,7 @@ impl PerroGraphics {
                             model,
                             skeleton,
                             meshlet_override,
+                            lod,
                         );
                     }
                     Command3D::DrawMulti {
@@ -485,6 +487,7 @@ impl PerroGraphics {
                         instance_mats,
                         skeleton,
                         meshlet_override,
+                        lod,
                     } => {
                         self.renderer_3d.queue_draw_multi(
                             node,
@@ -493,6 +496,7 @@ impl PerroGraphics {
                             instance_mats,
                             skeleton,
                             meshlet_override,
+                            lod,
                         );
                     }
                     Command3D::DrawMultiDense {
@@ -503,6 +507,7 @@ impl PerroGraphics {
                         instance_scale,
                         instances,
                         meshlet_override,
+                        lod,
                     } => {
                         self.renderer_3d.queue_draw_multi_dense(
                             node,
@@ -514,6 +519,7 @@ impl PerroGraphics {
                                 instances,
                             },
                             meshlet_override,
+                            lod,
                         );
                     }
                     Command3D::DrawDebugPoint3D {

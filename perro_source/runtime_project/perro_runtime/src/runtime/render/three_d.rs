@@ -11,10 +11,10 @@ use perro_nodes::{
 use perro_particle_math::compile_expression;
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, Command3D, DenseInstancePose3D,
-    Material3D, MaterialParamOverride3D, MeshSurfaceBinding3D, ParticlePath3D, ParticleProfile3D,
-    ParticleRenderMode3D, ParticleSimulationMode3D, PointLight3DState, PointParticles3DState,
-    RayLight3DState, RenderCommand, ResourceCommand, SkeletonPalette, Sky3DState, SkyTime3DState,
-    SpotLight3DState,
+    LODOptions3D, Material3D, MaterialParamOverride3D, MeshSurfaceBinding3D, ParticlePath3D,
+    ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D, PointLight3DState,
+    PointParticles3DState, RayLight3DState, RenderCommand, ResourceCommand, SkeletonPalette,
+    Sky3DState, SkyTime3DState, SpotLight3DState,
 };
 use perro_runtime_render::{material_3d_request, mesh_3d_request};
 use std::borrow::Cow;
@@ -357,29 +357,42 @@ impl Runtime {
                 Vec<MeshSurfaceBinding>,
                 Option<NodeID>,
                 Option<bool>,
+                LODOptions3D,
                 LocalMeshInstanceData,
             );
             let mesh_header = if effective_visible {
                 self.nodes
                     .get(node)
                     .and_then(|scene_node| match &scene_node.data {
-                        SceneNodeData::MeshInstance3D(mesh) => {
-                            Some((mesh.mesh, Some(mesh.skeleton), mesh.meshlet_override))
-                        }
-                        SceneNodeData::MultiMeshInstance3D(mesh) => {
-                            Some((mesh.mesh, None, mesh.meshlet_override))
-                        }
+                        SceneNodeData::MeshInstance3D(mesh) => Some((
+                            mesh.mesh,
+                            Some(mesh.skeleton),
+                            mesh.meshlet_override,
+                            LODOptions3D {
+                                min_lod: mesh.lod.min_lod,
+                                max_lod: mesh.lod.max_lod,
+                            },
+                        )),
+                        SceneNodeData::MultiMeshInstance3D(mesh) => Some((
+                            mesh.mesh,
+                            None,
+                            mesh.meshlet_override,
+                            LODOptions3D {
+                                min_lod: mesh.lod.min_lod,
+                                max_lod: mesh.lod.max_lod,
+                            },
+                        )),
                         _ => None,
                     })
             } else {
                 None
             };
-            let mesh_header = mesh_header.and_then(|(mesh, skeleton, meshlet_override)| {
+            let mesh_header = mesh_header.and_then(|(mesh, skeleton, meshlet_override, lod)| {
                 self.resolve_render_mesh_id(node, mesh)
-                    .map(|mesh| (mesh, skeleton, meshlet_override))
+                    .map(|mesh| (mesh, skeleton, meshlet_override, lod))
             });
             let mesh_data: Option<LocalMeshData> =
-                mesh_header.and_then(|(resolved_mesh, skeleton, meshlet_override)| {
+                mesh_header.and_then(|(resolved_mesh, skeleton, meshlet_override, lod)| {
                     self.nodes
                         .get(node)
                         .and_then(|scene_node| match &scene_node.data {
@@ -388,6 +401,7 @@ impl Runtime {
                                 mesh.surfaces.clone(),
                                 skeleton,
                                 meshlet_override,
+                                lod,
                                 LocalMeshInstanceData::Single,
                             )),
                             SceneNodeData::MultiMeshInstance3D(mesh) => Some((
@@ -395,6 +409,7 @@ impl Runtime {
                                 mesh.surfaces.clone(),
                                 skeleton,
                                 meshlet_override,
+                                lod,
                                 LocalMeshInstanceData::Dense {
                                     instance_scale: mesh.instance_scale.max(0.0001),
                                     poses: {
@@ -448,7 +463,8 @@ impl Runtime {
                             _ => None,
                         })
                 });
-            if let Some((mesh, surfaces, skeleton, meshlet_override, local_instances)) = mesh_data
+            if let Some((mesh, surfaces, skeleton, meshlet_override, lod, local_instances)) =
+                mesh_data
                 && effective_visible
                 && let Some((mesh, resolved_surfaces)) =
                     self.resolve_render_mesh_assets(node, mesh, surfaces)
@@ -514,6 +530,7 @@ impl Runtime {
                     instances: retained_instances.clone(),
                     skeleton: skeleton_palette.clone(),
                     meshlet_override,
+                    lod,
                 };
                 if self.render_3d.retained_mesh_draws.get(&node) != Some(&draw_state) {
                     let draw_command = match retained_instances {
@@ -529,6 +546,7 @@ impl Runtime {
                             instance_scale,
                             instances: poses,
                             meshlet_override,
+                            lod,
                         },
                         crate::runtime::state::RetainedMeshInstanceState::Matrices(
                             instance_mats,
@@ -542,6 +560,7 @@ impl Runtime {
                                 .unwrap_or(Mat4::IDENTITY.to_cols_array_2d()),
                             skeleton: skeleton_palette,
                             meshlet_override,
+                            lod,
                         },
                         crate::runtime::state::RetainedMeshInstanceState::Matrices(
                             instance_mats,
@@ -552,6 +571,7 @@ impl Runtime {
                             instance_mats,
                             skeleton: skeleton_palette,
                             meshlet_override,
+                            lod,
                         },
                     };
                     self.queue_render_command(RenderCommand::ThreeD(Box::new(draw_command)));

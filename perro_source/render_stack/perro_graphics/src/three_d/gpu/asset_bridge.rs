@@ -58,6 +58,7 @@ pub(super) fn select_mesh_lod<'a>(
     mesh: &'a MeshAssetRange,
     model: Option<&[[f32; 4]; 4]>,
     camera_pos: [f32; 3],
+    control: LODOptions3D,
 ) -> MeshLodView<'a> {
     if mesh.lods.len() <= 1 {
         return MeshLodView {
@@ -80,17 +81,21 @@ pub(super) fn select_mesh_lod<'a>(
     let dist = (dx * dx + dy * dy + dz * dz).sqrt();
     let radius = mesh.bounds_radius.max(0.001);
     let ratio = dist / radius;
-    let index = if ratio > LOD3_DISTANCE_RADIUS_SCALE {
-        3
-    } else if ratio > LOD2_DISTANCE_RADIUS_SCALE {
-        2
-    } else if ratio > LOD1_DISTANCE_RADIUS_SCALE {
-        1
-    } else {
-        0
-    }
-    .min(mesh.lods.len().saturating_sub(1));
-    let lod = &mesh.lods[index];
+    let mut baked_index = LOD_DISTANCE_RADIUS_SCALES
+        .iter()
+        .take(mesh.lods.len().saturating_sub(1))
+        .filter(|&&threshold| ratio > threshold)
+        .count();
+    let last = mesh.lods.len().saturating_sub(1);
+    baked_index = baked_index.min(last);
+    let auto_quality = usize::from(LODOptions3D::MAX).saturating_sub(baked_index);
+    let min_quality = usize::from(control.min_lod.min(LODOptions3D::MAX));
+    let max_quality = usize::from(control.max_lod.min(LODOptions3D::MAX)).max(min_quality);
+    let quality = auto_quality.clamp(min_quality, max_quality);
+    let baked_index = usize::from(LODOptions3D::MAX)
+        .saturating_sub(quality)
+        .min(last);
+    let lod = &mesh.lods[baked_index];
     MeshLodView {
         full: lod.full,
         surface_ranges: &lod.surface_ranges,
@@ -123,4 +128,71 @@ pub(super) fn is_builtin_primitive_mesh_source(source: &str) -> bool {
         return perro_builtin_meshes::is_builtin_mesh_source(base);
     }
     perro_builtin_meshes::is_builtin_mesh_source(source)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn range(index_start: u32) -> MeshLodRange {
+        let full = MeshRange {
+            index_start,
+            index_count: 3,
+            base_vertex: 0,
+        };
+        MeshLodRange {
+            full,
+            surface_ranges: Arc::from([full]),
+            meshlets: Arc::from([]),
+        }
+    }
+
+    fn mesh() -> MeshAssetRange {
+        let full = MeshRange {
+            index_start: 0,
+            index_count: 3,
+            base_vertex: 0,
+        };
+        MeshAssetRange {
+            full,
+            surface_ranges: Arc::from([full]),
+            meshlets: Arc::from([]),
+            lods: Arc::from([
+                range(0),
+                range(10),
+                range(20),
+                range(30),
+                range(40),
+                range(50),
+            ]),
+            bounds_center: [0.0, 0.0, 0.0],
+            bounds_radius: 1.0,
+        }
+    }
+
+    #[test]
+    fn select_mesh_lod_uses_clamp() {
+        let mesh = mesh();
+        let model =
+            glam::Mat4::from_translation(glam::Vec3::new(200.0, 0.0, 0.0)).to_cols_array_2d();
+
+        let default = select_mesh_lod(
+            &mesh,
+            Some(&model),
+            [0.0, 0.0, 0.0],
+            LODOptions3D::default(),
+        );
+        assert_eq!(default.full.index_start, 50);
+
+        let clamped = select_mesh_lod(
+            &mesh,
+            Some(&model),
+            [0.0, 0.0, 0.0],
+            LODOptions3D {
+                min_lod: LODOptions3D::MEDIUM_LOW,
+                max_lod: LODOptions3D::MAX,
+            },
+        );
+        assert_eq!(clamped.full.index_start, 30);
+    }
 }

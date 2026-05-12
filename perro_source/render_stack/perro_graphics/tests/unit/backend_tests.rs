@@ -3,9 +3,9 @@ use crate::backend::GraphicsBackend;
 use crate::three_d::renderer::Draw3DKind;
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
-    Camera3DState, CameraProjectionState, Command2D, Command3D, Material3D, MeshSurfaceBinding3D,
-    PostProcessingCommand, RenderBridge, RenderCommand, ResourceCommand, Sprite2DCommand,
-    VisualAccessibilityCommand,
+    Camera3DState, CameraProjectionState, Command2D, Command3D, LODOptions3D, Material3D,
+    MeshSurfaceBinding3D, PostProcessingCommand, RenderBridge, RenderCommand, ResourceCommand,
+    Sprite2DCommand, VisualAccessibilityCommand,
 };
 use perro_structs::{ColorBlindFilter, PostProcessEffect, PostProcessSet};
 use std::sync::Arc;
@@ -140,6 +140,7 @@ fn draw_3d_updates_retained_state_per_node() {
         model: model_a,
         skeleton: None,
         meshlet_override: None,
+        lod: LODOptions3D::default(),
     })));
     graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::Draw {
         mesh: created_meshes[1],
@@ -148,6 +149,7 @@ fn draw_3d_updates_retained_state_per_node() {
         model: model_b,
         skeleton: None,
         meshlet_override: None,
+        lod: LODOptions3D::default(),
     })));
     graphics.draw_frame();
 
@@ -162,6 +164,7 @@ fn draw_3d_updates_retained_state_per_node() {
             skeleton: None,
             dense_multimesh: None,
             meshlet_override: None,
+            lod: LODOptions3D::default(),
         })
     );
     assert_eq!(
@@ -174,6 +177,7 @@ fn draw_3d_updates_retained_state_per_node() {
             skeleton: None,
             dense_multimesh: None,
             meshlet_override: None,
+            lod: LODOptions3D::default(),
         })
     );
 }
@@ -242,6 +246,7 @@ fn draw_multi_3d_retains_all_instance_mats() {
         instance_mats: instance_mats.clone(),
         skeleton: None,
         meshlet_override: None,
+        lod: LODOptions3D::default(),
     })));
     graphics.draw_frame();
 
@@ -255,6 +260,7 @@ fn draw_multi_3d_retains_all_instance_mats() {
             skeleton: None,
             dense_multimesh: None,
             meshlet_override: None,
+            lod: LODOptions3D::default(),
         })
     );
 }
@@ -306,6 +312,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
         model: first_model,
         skeleton: None,
         meshlet_override: None,
+        lod: LODOptions3D::default(),
     })));
     graphics.draw_frame();
     assert_eq!(
@@ -318,6 +325,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
             skeleton: None,
             dense_multimesh: None,
             meshlet_override: None,
+            lod: LODOptions3D::default(),
         })
     );
 
@@ -335,6 +343,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
         model: second_model,
         skeleton: None,
         meshlet_override: None,
+        lod: LODOptions3D::default(),
     })));
     graphics.draw_frame();
 
@@ -348,6 +357,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
             skeleton: None,
             dense_multimesh: None,
             meshlet_override: None,
+            lod: LODOptions3D::default(),
         })
     );
 }
@@ -399,6 +409,7 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
         model: first_model,
         skeleton: None,
         meshlet_override: None,
+        lod: LODOptions3D::default(),
     })));
     graphics.draw_frame();
 
@@ -416,6 +427,7 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
         model: second_model,
         skeleton: None,
         meshlet_override: None,
+        lod: LODOptions3D::default(),
     })));
     graphics.draw_frame();
 
@@ -429,6 +441,7 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
             skeleton: None,
             dense_multimesh: None,
             meshlet_override: None,
+            lod: LODOptions3D::default(),
         })
     );
 }

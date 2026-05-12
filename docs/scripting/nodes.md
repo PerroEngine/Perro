@@ -128,8 +128,14 @@ See [TileMap2D](tilemap.md).
 - Dynamic/dev load builds LODs on load; static build packs LODs into `.pmesh` v1.
 - Meshes with joints/weights skip LOD generation.
 - Surface/material slots stay stable across LODs.
-- Current switch distances are radius-scaled (`36x`, `72x`, `144x` mesh bounds radius).
-- `MeshInstance3D` does not expose per-node LOD controls yet.
+- Current switch distances are radius-scaled (`36x`, `54x`, `72x`, `108x`, `144x` mesh bounds radius).
+- `lod` stores `LODOptions` with `min_lod`/`max_lod`.
+- LOD values are quality levels, not baked index numbers.
+- `LODOptions::MAX = 5` is most detail (`100%`, baked LOD0).
+- `LODOptions::MIN = 0` is least detail (`12.5%`, last baked LOD when present).
+- Middle names: `LOW = 1`, `MEDIUM_LOW = 2`, `MEDIUM = 3`, `HIGH = 4`.
+- Scene authoring supports `min_lod`/`max_lod` plus `lod_min`/`lod_max` aliases.
+- Defaults keep full auto range: `min_lod = LODOptions::MIN`, `max_lod = LODOptions::MAX`.
 
 `MultiMeshInstance3D`
 
@@ -137,6 +143,7 @@ See [TileMap2D](tilemap.md).
 - Uses shared mesh/material surface bindings.
 - `instances` stores per-instance position and rotation.
 - Use it for repeated static props, foliage, debris, or crowd-like non-skinned copies.
+- Supports same LOD clamp fields as `MeshInstance3D`.
 
 `Camera3D`
 
