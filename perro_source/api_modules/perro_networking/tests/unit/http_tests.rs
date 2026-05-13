@@ -38,6 +38,10 @@ fn http_event_maps_to_signal_name_id_and_params() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "network-tests"),
+    ignore = "requires local socket access"
+)]
 fn http_get_loopback_completes() {
     let server = TestServer::start(|_| response(200, &[], b"hello"));
     let mut client = HttpClient::new();
@@ -58,6 +62,10 @@ fn http_get_loopback_completes() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "network-tests"),
+    ignore = "requires local socket access"
+)]
 fn http_post_variant_sends_json_and_response_variant_reads_object() {
     let seen_body = Arc::new(Mutex::new(Vec::new()));
     let seen_body_for_server = Arc::clone(&seen_body);
@@ -94,6 +102,10 @@ fn http_post_variant_sends_json_and_response_variant_reads_object() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "network-tests"),
+    ignore = "requires local socket access"
+)]
 fn http_too_large_response_fails() {
     let server = TestServer::start(|_| response(200, &[], b"too big"));
     let mut client = HttpClient::with_config(HttpConfig::default().max_response_bytes(3));
@@ -109,6 +121,10 @@ fn http_too_large_response_fails() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "network-tests"),
+    ignore = "requires local socket access"
+)]
 fn http_bad_endpoint_fails() {
     let mut client = HttpClient::with_config(HttpConfig::default().timeout_ms(100));
     client.get("http://127.0.0.1:9/nope");
@@ -122,6 +138,10 @@ fn http_bad_endpoint_fails() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "network-tests"),
+    ignore = "requires local socket access"
+)]
 fn cookie_enabled_client_keeps_cookie_between_requests() {
     let count = Arc::new(Mutex::new(0usize));
     let count_for_server = Arc::clone(&count);

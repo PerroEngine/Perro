@@ -293,6 +293,10 @@ fn build_patch_crates_io_block(engine_root: &Path) -> String {
         ),
         ("perro_api", "perro_source/api_modules/perro_api"),
         ("perro_modules", "perro_source/api_modules/perro_modules"),
+        (
+            "perro_networking",
+            "perro_source/api_modules/perro_networking",
+        ),
         ("perro_input_api", "perro_source/api_modules/perro_input_api"),
         (
             "perro_render_bridge",

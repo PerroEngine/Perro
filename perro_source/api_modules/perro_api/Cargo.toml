@@ -16,6 +16,7 @@ perro_nodes = { path = "../../core/perro_nodes" }
 perro_structs = { path = "../../core/perro_structs" }
 perro_ui = { path = "../../core/perro_ui" }
 perro_modules = { path = "../perro_modules" }
+perro_networking = { path = "../perro_networking" }
 perro_variant = { path = "../../core/perro_variant" }
 perro_csv = { path = "../../core/perro_csv" }
 

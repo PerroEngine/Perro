@@ -2,6 +2,7 @@ pub use perro_csv as csv;
 pub use perro_ids as ids;
 pub use perro_input_api as input;
 pub use perro_modules as modules;
+pub use perro_networking as networking;
 pub use perro_nodes as nodes;
 pub use perro_project as project;
 pub use perro_resource_api as resource_api;
@@ -49,6 +50,7 @@ pub mod prelude {
     pub use perro_input_api::prelude::*;
     pub use perro_modules::log::*;
     pub use perro_modules::prelude::*;
+    pub use perro_networking::*;
     pub use perro_nodes::prelude::*;
     pub use perro_project::create_new_project;
     pub use perro_resource_api::prelude::*;

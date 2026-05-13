@@ -38,100 +38,6 @@ JSON <-> `Variant` conversion helpers.
 - `parse(json_str: &str) -> Result<Variant, serde_json::Error>`
 - `stringify(value: &Variant) -> Result<String, serde_json::Error>`
 
-## `modules::http`
-
-Non-blocking HTTP/HTTPS helpers.
-Requests run on a worker thread.
-Scripts enqueue requests, then poll events later.
-
-Types:
-
-- `HttpID`
-- `HttpClient`
-- `HttpConfig`
-- `HttpHeaders`
-- `HttpTLSMode`
-- `HttpProxy`
-- `HttpRequest`
-- `HttpResponse`
-- `HttpEvent`
-- `HttpMethod`
-- `HttpBody`
-- `HttpError`
-- `HttpErrorKind`
-
-Client:
-
-- `HttpClient::new()`
-- `HttpClient::with_config(config)`
-- `request(HttpRequest) -> HttpID`
-- `get(url) -> HttpID`
-- `post_variant(url, Variant) -> HttpID`
-- `put_variant(url, Variant) -> HttpID`
-- `patch_variant(url, Variant) -> HttpID`
-- `post_bytes(url, Vec<u8>) -> HttpID`
-- `poll() -> Option<HttpEvent>`
-- `poll_all(max_events) -> Vec<HttpEvent>`
-
-Config:
-
-- `HttpConfig::default()`
-- `timeout_ms(ms)`
-- `max_response_bytes(bytes)`
-- `cookies_enabled(bool)`
-- `proxy(HttpProxy)`
-- `tls_mode(HttpTLSMode)`
-
-TLS:
-
-- `HttpTLSMode::DefaultRustls`
-- `HttpTLSMode::PlatformVerifier`
-- `HttpTLSMode::NativeTls`
-
-Proxy:
-
-- `HttpProxy::http("http://user:pass@host:port")`
-- `HttpProxy::socks("socks5://user:pass@host:port")`
-
-Variant JSON:
-
-- `post_variant` sends `Variant` as JSON
-- response `.variant()` parses JSON into `Variant`
-- response `.text()` reads UTF-8 text
-- response `.bytes()` reads raw bytes
-
-Signal bridge:
-
-- `HttpEvent::signal_name()`
-- `HttpEvent::signal_id()`
-- `HttpEvent::signal_params()`
-- `emit_http_event!(ctx, event)`
-
-`emit_http_event!` only wraps `signal_emit!`.
-It does not send network data.
-
-Signal names:
-
-- `HTTP_Completed`
-- `HTTP_Failed`
-
-Example:
-
-```rust
-let id = state.http.post_variant("https://api.example.com/login", body);
-
-for event in state.http.poll_all(8) {
-    emit_http_event!(ctx, event);
-}
-```
-
-Notes:
-
-- no blocking HTTP call is exposed
-- store `HttpClient` in script state
-- default timeout is `10_000 ms`
-- default response cap is `1 MiB`
-
 ## `modules::log`
 
 Log helpers + macros.
@@ -150,15 +56,34 @@ Macros:
 - `log_warn!(...)`
 - `log_error!(...)`
 
-## `modules::net`
+## `perro_api::networking`
 
-Thin TCP/UDP helpers over `std::net`.
+Networking API.
+
+Lives in `perro_networking`.
+
+Re-exported by `perro_api::networking` and `perro_api::prelude::*`.
+
+Includes thin TCP/UDP helpers over `std::net`.
 
 This is not a node API.
 Keep sockets in script state, poll them during update, then emit signals if desired.
 
 Types:
 
+- `HttpID`
+- `HttpClient`
+- `HttpConfig`
+- `HttpHeaders`
+- `HttpTLSMode`
+- `HttpProxy`
+- `HttpRequest`
+- `HttpResponse`
+- `HttpEvent`
+- `HttpMethod`
+- `HttpBody`
+- `HttpError`
+- `HttpErrorKind`
 - `NetworkWorld`
 - `NetworkEvent`
 - `NetSource`
@@ -173,6 +98,24 @@ Types:
 - `NetHandshake`
 - `NetError`
 - `NetErrorKind`
+- `WebRtcPeer`
+- `WebRtcPeerConfig`
+- `WebRtcIceServer`
+- `WebRtcSignal`
+- `WebRtcIceCandidate`
+- `WebRtcDataChannelId`
+
+HTTP:
+
+- full guide: [`../networking/http.md`](../networking/http.md)
+- `HttpClient::new()`
+- `HttpClient::with_config(config)`
+- `request(HttpRequest) -> HttpID`
+- `get(url) -> HttpID`
+- `post_variant(url, Variant) -> HttpID`
+- `poll() -> Option<HttpEvent>`
+- `poll_all(max_events) -> Vec<HttpEvent>`
+- `emit_http_event!(ctx, event) -> usize`
 
 Network world:
 
@@ -234,6 +177,22 @@ UDP endpoint:
 Macro:
 
 - `emit_net_event!(ctx, event) -> usize`
+
+WebRTC:
+
+- full guide: [`../networking/webrtc.md`](../networking/webrtc.md)
+- `WebRtcPeer::new(config) -> NetResult<WebRtcPeer>`
+- `create_data_channel(label) -> NetResult<WebRtcDataChannelId>`
+- `create_offer() -> NetResult<WebRtcSignal>`
+- `create_answer() -> NetResult<WebRtcSignal>`
+- `accept_signal(signal) -> NetResult<()>`
+- `add_ice_candidate(candidate) -> NetResult<()>`
+- `send_data_channel_text(id, text) -> NetResult<usize>`
+- `send_data_channel_binary(id, bytes) -> NetResult<usize>`
+- `poll_events(max_events) -> Vec<NetEvent>`
+- `WebSocketConnection::send_webrtc_signal(signal) -> NetResult<()>`
+- `WebSocketConnection::poll_webrtc_signal_event(max_bytes) -> NetResult<Option<NetEvent>>`
+- `NetworkWorld::poll_webrtc_signal_events(max_per_socket, max_bytes) -> Vec<NetworkEvent>`
 
 Frame helpers:
 

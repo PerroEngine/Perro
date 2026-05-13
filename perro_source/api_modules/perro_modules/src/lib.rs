@@ -1,18 +1,11 @@
 pub mod file;
-pub mod http;
 pub mod json;
 pub mod log;
 pub mod math;
-pub mod net;
 pub mod random;
 
 pub mod prelude {
     pub use crate::file as FileMod;
-    pub use crate::http as HttpMod;
-    pub use crate::http::{
-        HttpBody, HttpClient, HttpConfig, HttpError, HttpErrorKind, HttpEvent, HttpHeaders, HttpID,
-        HttpMethod, HttpProxy, HttpRequest, HttpResponse, HttpTLSMode,
-    };
     pub use crate::json as JSONMod;
     pub use crate::log as LogMod;
     pub use crate::math as MathMod;
@@ -20,14 +13,6 @@ pub mod prelude {
         angle_diff_deg, angle_diff_rad, approach, clamp01, damp, deg_to_rad, ilerp, islerp,
         ismoothstep, lerp, lerp_angle_deg, lerp_angle_rad, nearly_eq, ping_pong, rad_to_deg, remap,
         repeat, slerp, smooth_damp, smoothstep, wrap_angle_deg, wrap_angle_rad,
-    };
-    pub use crate::net as NetMod;
-    pub use crate::net::{
-        NetError, NetErrorKind, NetEvent, NetHandshake, NetSource, NetworkEvent, NetworkWorld,
-        TcpConnection, TcpConnectionId, TcpHost, TcpHostId, UdpEndpoint, UdpEndpointId, UdpPacket,
-        WebSocketConnection, WebSocketConnectionId, WebSocketHost, WebSocketHostId,
-        WebSocketMessage, decode_next_frame, encode_frame, heartbeat_ping, heartbeat_pong,
-        is_heartbeat_ping, is_heartbeat_pong,
     };
     pub use crate::random as RandomMod;
     pub use crate::random::{
@@ -38,7 +23,7 @@ pub mod prelude {
         rand_range_u32, rand_u32, rand_u32_stream, rand_unit_vec2, rand_unit_vec3, rand01,
         rand01_stream, rand11, rand11_stream, shuffle,
     };
-    pub use crate::{emit_http_event, emit_net_event, log_error, log_info, log_print, log_warn};
+    pub use crate::{log_error, log_info, log_print, log_warn};
 }
 
 #[cfg(test)]
