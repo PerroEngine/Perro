@@ -2,7 +2,6 @@
 
 `WaterBody2D` and `WaterBody3D` define simulated water surfaces.
 
-They are scene nodes, not physics bodies.
 They render water, run a GPU height/foam simulation, and feed buoyancy forces into rigid bodies during fixed physics.
 
 Use water bodies for pools, rivers, lakes, ocean patches, or gameplay zones where bodies should float and slow down.
@@ -78,7 +77,7 @@ Height is world `y`.
 ## Fields
 
 - `size`: surface width/depth in world units.
-- `resolution` or `sim_resolution`: simulation grid size. Accepts one number or `(x, y)`. Values clamp to `1..4096`.
+- `resolution` or `sim_resolution`: authored simulation grid size. Accepts one number or `(x, y)`. Scene load clamps to `1..4096`; GPU simulation clamps the effective grid to `8..256` per axis.
 - `depth`: visual/physics water depth hint.
 - `flow`: water current in surface-local axes.
 - `wind`: wave direction for idle modes.
@@ -90,9 +89,9 @@ Height is world `y`.
 - `drag`: vertical velocity damping applied while submerged.
 - `wake_strength`: wake impulse scale used by the water simulation.
 - `foam_strength`: foam response scale.
-- `sample_readback_rate` or `readback_rate`: target GPU sample readback rate.
-- `lod_near_distance`/`lod_near`, `lod_mid_distance`/`lod_mid`, `lod_far_distance`/`lod_far`: camera distance thresholds for lower simulation resolution.
-- `lod_min_resolution` or `min_resolution`: lowest simulation resolution.
+- `sample_readback_rate` or `readback_rate`: target GPU sample readback rate. Renderer uses the max requested rate across visible water bodies.
+- `lod_near_distance`/`lod_near`, `lod_mid_distance`/`lod_mid`, `lod_far_distance`/`lod_far`: camera distance thresholds for lower simulation resolution and lower physics force detail.
+- `lod_min_resolution` or `min_resolution`: lowest effective simulation resolution. GPU clamps it to `8..256`.
 - `shoreline_mask` or `coastline`: enable shoreline/coast masking path.
 - `static_body_wakes`: allow static bodies to shape wakes.
 - `debug`: enable debug water view.
@@ -109,6 +108,8 @@ Rendering extracts visible water nodes each frame.
 Camera `render_mask` filters water through node `render_layers`, like sprites and meshes.
 
 The GPU path simulates water cells for all visible water bodies.
+Effective grid resolution drops with camera distance: full near, half mid, quarter far, and eighth beyond far.
+Ripples also fade with distance.
 2D water also draws as a retained 2D water pass.
 3D water is retained in the 3D renderer for the frame.
 
@@ -126,8 +127,16 @@ During fixed physics:
 1. Runtime finds all `WaterBody2D` and `WaterBody3D` nodes.
 2. Runtime tests rigid body centers against each water rectangle.
 3. Runtime samples surface height at the body local point.
-4. If the body center is below the sampled surface, runtime queues an upward force plus vertical drag.
-5. Normal physics force/impulse application and world stepping run after that.
+4. Runtime scales the force by water LOD distance from the active camera.
+5. If the body center is below the sampled surface, runtime queues an upward force plus vertical drag when force is above the LOD deadzone.
+6. Normal physics force/impulse application and world stepping run after that.
+
+Physics LOD:
+
+- Near: full force, no deadzone.
+- Mid: force fades to `0.75x`, small deadzone.
+- Far: force fades to `0.4x`, larger deadzone.
+- Beyond far: `0.25x` force, `0.5` deadzone.
 
 2D water affects `RigidBody2D`.
 It uses body `density` in the buoyancy calculation.

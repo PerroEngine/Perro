@@ -90,6 +90,7 @@ fn water_command_with_idle(
             damping: 0.985,
             wake_strength: 1.0,
             foam_strength: 0.65,
+            sample_readback_rate: 30.0,
             lod_near_distance: 128.0,
             lod_mid_distance: 384.0,
             lod_far_distance: 896.0,

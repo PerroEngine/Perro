@@ -67,10 +67,11 @@ struct GpuTimestampTimer {
     timestamp_period_ns: f32,
     pending_rx: Option<mpsc::Receiver<Result<(), wgpu::BufferAsyncError>>>,
     last_main: Duration,
+    last_water: Duration,
 }
 
 impl GpuTimestampTimer {
-    const QUERY_COUNT: u32 = 2;
+    const QUERY_COUNT: u32 = 4;
     const BUFFER_SIZE: u64 = Self::QUERY_COUNT as u64 * std::mem::size_of::<u64>() as u64;
 
     fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
@@ -98,6 +99,7 @@ impl GpuTimestampTimer {
             timestamp_period_ns: queue.get_timestamp_period(),
             pending_rx: None,
             last_main: Duration::ZERO,
+            last_water: Duration::ZERO,
         }
     }
 
@@ -115,6 +117,11 @@ impl GpuTimestampTimer {
                     let nanos = (timestamps[1] - timestamps[0]) as f64
                         * f64::from(self.timestamp_period_ns);
                     self.last_main = Duration::from_nanos(nanos.max(0.0) as u64);
+                }
+                if timestamps.len() >= 4 && timestamps[3] >= timestamps[2] {
+                    let nanos = (timestamps[3] - timestamps[2]) as f64
+                        * f64::from(self.timestamp_period_ns);
+                    self.last_water = Duration::from_nanos(nanos.max(0.0) as u64);
                 }
                 drop(data);
                 self.readback_buffer.unmap();
@@ -138,6 +145,14 @@ impl GpuTimestampTimer {
 
     fn write_start(&self, encoder: &mut wgpu::CommandEncoder) {
         encoder.write_timestamp(&self.query_set, 0);
+    }
+
+    fn write_water_start(&self, encoder: &mut wgpu::CommandEncoder) {
+        encoder.write_timestamp(&self.query_set, 2);
+    }
+
+    fn write_water_end(&self, encoder: &mut wgpu::CommandEncoder) {
+        encoder.write_timestamp(&self.query_set, 3);
     }
 
     fn write_end_and_resolve(&self, encoder: &mut wgpu::CommandEncoder) {
@@ -262,6 +277,7 @@ pub struct RenderGpuTiming {
     pub accessibility: Duration,
     pub present: Duration,
     pub gpu_timestamp_main: Duration,
+    pub gpu_timestamp_water: Duration,
     pub draw_calls_2d: u32,
     pub draw_calls_3d: u32,
     pub skip_prepare_2d: u32,
@@ -564,6 +580,7 @@ impl Gpu {
         if let Some(timer) = self.gpu_timer.as_mut() {
             timer.poll(&self.device);
             timing.gpu_timestamp_main = timer.last_main;
+            timing.gpu_timestamp_water = timer.last_water;
         }
         let RenderFrame {
             resources,
@@ -920,7 +937,16 @@ impl Gpu {
             timer.write_start(&mut encoder);
         }
         if let Some(water) = self.water.as_ref() {
+            if gpu_timer_active && let Some(timer) = self.gpu_timer.as_ref() {
+                timer.write_water_start(&mut encoder);
+            }
             water.encode(&mut encoder);
+            if gpu_timer_active && let Some(timer) = self.gpu_timer.as_ref() {
+                timer.write_water_end(&mut encoder);
+            }
+        } else if gpu_timer_active && let Some(timer) = self.gpu_timer.as_ref() {
+            timer.write_water_start(&mut encoder);
+            timer.write_water_end(&mut encoder);
         }
 
         let clear_color = sky_clear_color(lighting_3d).unwrap_or(wgpu::Color {
@@ -929,12 +955,14 @@ impl Gpu {
             b: CLEAR_B,
             a: 1.0,
         });
+        let clear_in_water_pass =
+            self.three_d.is_none() && self.two_d.is_some() && !waters_2d.is_empty();
         if let Some(three_d) = self.three_d.as_mut() {
             three_d.render_pass(&mut encoder, color_view, clear_color, depth_prepass_needed);
             if let Some(point_particles_3d_gpu) = self.point_particles_3d.as_mut() {
                 point_particles_3d_gpu.render_pass(&mut encoder, color_view, three_d.depth_view());
             }
-        } else {
+        } else if !clear_in_water_pass {
             let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("perro_clear_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -953,10 +981,19 @@ impl Gpu {
             });
         }
         if let Some(two_d) = self.two_d.as_ref() {
+            let two_d_draws = two_d.draw_call_count(rect_draw_count) > 0;
             if let Some(water) = self.water.as_ref() {
-                water.render_2d(&mut encoder, color_view, None, two_d.camera_bind_group());
+                water.render_2d(
+                    &mut encoder,
+                    color_view,
+                    (!two_d_draws).then_some(resolve_view).flatten(),
+                    two_d.camera_bind_group(),
+                    clear_in_water_pass.then_some(clear_color),
+                );
             }
-            two_d.render_pass(&mut encoder, color_view, resolve_view, rect_draw_count);
+            if two_d_draws {
+                two_d.render_pass(&mut encoder, color_view, resolve_view, rect_draw_count);
+            }
         } else if let Some(resolve_target) = resolve_view {
             // No 2D pass still needs one resolve pass on MSAA paths.
             let _resolve_only_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

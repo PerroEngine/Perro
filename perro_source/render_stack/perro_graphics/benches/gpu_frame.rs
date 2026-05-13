@@ -5,7 +5,7 @@ use perro_render_bridge::{
     Material3D, Mesh3D, MeshSurfaceBinding3D, PointLight3DState, PostProcessingCommand,
     RayLight3DState, Rect2DCommand, RenderBridge, RenderCommand, RenderEvent, RenderRequestID,
     ResourceCommand, RuntimeMeshVertex, Sky3DState, SkyTime3DState, SpotLight3DState,
-    Sprite2DCommand, Water2DState, WaterIdleModeState,
+    Sprite2DCommand, Water2DState, Water3DState, WaterIdleModeState,
 };
 use perro_structs::{PostProcessEffect, PostProcessSet};
 use std::sync::Arc;
@@ -43,6 +43,7 @@ struct TimingSum {
     post: Duration,
     present: Duration,
     gpu_main: Duration,
+    gpu_water: Duration,
     wait_idle: Duration,
     draw_calls_2d: u64,
     draw_calls_3d: u64,
@@ -64,6 +65,7 @@ impl TimingSum {
         self.post += timing.gpu_post_process;
         self.present += timing.gpu_present;
         self.gpu_main += timing.gpu_timestamp_main;
+        self.gpu_water += timing.gpu_timestamp_water;
         self.draw_calls_2d += u64::from(timing.draw_calls_2d);
         self.draw_calls_3d += u64::from(timing.draw_calls_3d);
         self.draw_instances_3d += u64::from(timing.draw_instances_3d);
@@ -85,10 +87,11 @@ impl TimingSum {
     fn print(&self, name: &str) {
         let frames = self.frames.max(1);
         println!(
-            "{name:32} total={:>6}us wait={:>6}us gpuq={:>6}us cpu_prep={:>5}us gpu2d={:>5}us gpu3d={:>5}us acquire={:>5}us encode={:>5}us submit={:>5}us post={:>5}us present={:>5}us dc2d={:>3} dc3d={:>3} inst3d={:>7}",
+            "{name:32} total={:>6}us wait={:>6}us gpuq={:>6}us water={:>5}us cpu_prep={:>5}us gpu2d={:>5}us gpu3d={:>5}us acquire={:>5}us encode={:>5}us submit={:>5}us post={:>5}us present={:>5}us dc2d={:>3} dc3d={:>3} inst3d={:>7}",
             Self::avg_us(self.total, frames),
             Self::avg_us(self.wait_idle, frames),
             Self::avg_us(self.gpu_main, frames),
+            Self::avg_us(self.gpu_water, frames),
             Self::avg_us(self.prepare_cpu, frames),
             Self::avg_us(self.gpu_prepare_2d, frames),
             Self::avg_us(self.gpu_prepare_3d, frames),
@@ -209,6 +212,21 @@ fn main() {
                 name: "water_128_256_i32",
                 setup: |w| setup_water(w, 128, 256, 32),
                 redraw: redraw_2d,
+            },
+            BenchCase {
+                name: "water_sim_1_64",
+                setup: |w| setup_water_sim(w, 1, 64, 0),
+                redraw: redraw_3d,
+            },
+            BenchCase {
+                name: "water_sim_16_64_i2",
+                setup: |w| setup_water_sim(w, 16, 64, 2),
+                redraw: redraw_3d,
+            },
+            BenchCase {
+                name: "water_sim_64_128_i2",
+                setup: |w| setup_water_sim(w, 64, 128, 2),
+                redraw: redraw_3d,
             },
             BenchCase {
                 name: "water_idle_calm_i2",
@@ -367,6 +385,18 @@ fn setup_water_idle(window: &Arc<Window>, idle_mode: WaterIdleModeState) -> Perr
     graphics
 }
 
+fn setup_water_sim(
+    window: &Arc<Window>,
+    count: u32,
+    resolution: u32,
+    impacts: u32,
+) -> PerroGraphics {
+    let mut graphics = base_graphics(window);
+    graphics.submit_many((0..count).map(|i| water_sim_command(i, resolution, impacts)));
+    let _ = graphics.draw_frame_timed();
+    graphics
+}
+
 fn setup_meshes(window: &Arc<Window>, count: u32) -> PerroGraphics {
     let mut graphics = base_graphics(window);
     let (mesh, material) = create_mesh_material(&mut graphics);
@@ -503,6 +533,7 @@ fn water_command_with_idle(
             damping: 0.985,
             wake_strength: 1.0,
             foam_strength: 0.7,
+            sample_readback_rate: 30.0,
             lod_near_distance: 128.0,
             lod_mid_distance: 384.0,
             lod_far_distance: 896.0,
@@ -521,6 +552,49 @@ fn water_command_with_idle(
                 .into(),
         }),
     })
+}
+
+fn water_sim_command(i: u32, resolution: u32, impacts: u32) -> RenderCommand {
+    let [x, y] = grid2(i, 48.0);
+    RenderCommand::ThreeD(Box::new(Command3D::UpsertWater {
+        node: NodeID::from_parts(600_000 + i, 0),
+        water: Box::new(Water3DState {
+            model: [
+                [1.0, 0.0, 0.0, x],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, y],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            size: [44.0, 44.0],
+            resolution: [resolution, resolution],
+            depth: 4.0,
+            flow: [0.12, 0.03],
+            wind: [1.0, 0.2],
+            idle_mode: WaterIdleModeState::Chop,
+            wave_speed: 1.4,
+            wave_scale: 1.2,
+            damping: 0.985,
+            wake_strength: 1.0,
+            foam_strength: 0.7,
+            sample_readback_rate: 0.0,
+            lod_near_distance: 128.0,
+            lod_mid_distance: 384.0,
+            lod_far_distance: 896.0,
+            lod_min_resolution: [32, 32],
+            shoreline_mask: impacts > 0,
+            static_body_wakes: true,
+            debug: false,
+            impacts: (0..impacts)
+                .map(|j| perro_render_bridge::WaterImpact3D {
+                    position: [(j % 16) as f32 * 2.0, 0.0, (j / 16) as f32 * 2.0],
+                    velocity: [0.5, -2.5, 0.0],
+                    strength: 1.0 + j as f32 * 0.02,
+                    radius: 2.0,
+                })
+                .collect::<Vec<_>>()
+                .into(),
+        }),
+    }))
 }
 
 fn draw_command(i: u32, mesh: MeshID, material: MaterialID) -> RenderCommand {

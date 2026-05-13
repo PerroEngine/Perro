@@ -55,6 +55,9 @@ pub struct GpuWater {
     readback_nodes: Vec<NodeID>,
     readback_offsets: Vec<usize>,
     readback_samples: Vec<WaterSampleState>,
+    readback_frame: u32,
+    readback_period_frames: u32,
+    readback_copy_encoded: bool,
 }
 
 impl GpuWater {
@@ -247,6 +250,9 @@ impl GpuWater {
             readback_nodes: Vec::new(),
             readback_offsets: Vec::new(),
             readback_samples: Vec::new(),
+            readback_frame: 0,
+            readback_period_frames: 2,
+            readback_copy_encoded: false,
         }
     }
 
@@ -271,7 +277,9 @@ impl GpuWater {
         }
         let mut staged = Vec::with_capacity(needed);
         let mut cell_needed = 0usize;
+        let mut readback_rate = 0.0f32;
         for (node, water) in waters_2d {
+            readback_rate = readback_rate.max(water.sample_readback_rate);
             let lod = water_lod_2d(water, camera_2d_position);
             let cells = water_cell_count(lod.resolution);
             staged.push(water_gpu_2d(
@@ -285,6 +293,7 @@ impl GpuWater {
             cell_needed = cell_needed.saturating_add(cells);
         }
         for (node, water) in waters_3d {
+            readback_rate = readback_rate.max(water.sample_readback_rate);
             let lod = water_lod_3d(water, camera_3d_position);
             let cells = water_cell_count(lod.resolution);
             staged.push(water_gpu_3d(
@@ -304,6 +313,7 @@ impl GpuWater {
             .map(|water| water.sim[1] as usize)
             .max()
             .unwrap_or(WATER_WORKGROUP_SIZE as usize);
+        self.readback_period_frames = readback_period_frames(readback_rate);
         let rebuilt = self.ensure_capacity(device, needed, cell_needed);
         if rebuilt {
             self.compute_bind_group = make_bind_group(
@@ -374,6 +384,7 @@ impl GpuWater {
         target: &wgpu::TextureView,
         resolve_target: Option<&wgpu::TextureView>,
         camera_bind_group: &wgpu::BindGroup,
+        clear: Option<wgpu::Color>,
     ) {
         if self.water_2d_count == 0 {
             return;
@@ -384,7 +395,7 @@ impl GpuWater {
                 view: target,
                 resolve_target,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
+                    load: clear.map_or(wgpu::LoadOp::Load, wgpu::LoadOp::Clear),
                     store: wgpu::StoreOp::Store,
                 },
                 depth_slice: None,
@@ -401,13 +412,22 @@ impl GpuWater {
     }
 
     pub fn encode_readback(&mut self, encoder: &mut wgpu::CommandEncoder) {
+        self.readback_copy_encoded = false;
         if self.water_count == 0 || self.readback_pending_rx.is_some() {
+            return;
+        }
+        self.readback_frame = self.readback_frame.wrapping_add(1);
+        if self.readback_period_frames == 0
+            || !self
+                .readback_frame
+                .is_multiple_of(self.readback_period_frames)
+        {
             return;
         }
         if self.readback_offsets.is_empty() {
             return;
         }
-        let needed_samples = self.water_count as usize;
+        let needed_samples = self.readback_offsets.len();
         if needed_samples > self.readback_capacity {
             return;
         }
@@ -421,16 +441,20 @@ impl GpuWater {
                 elem,
             );
         }
+        self.readback_copy_encoded = true;
     }
 
     pub fn request_readback(&mut self) {
-        if self.water_count == 0 || self.readback_pending_rx.is_some() {
+        if self.water_count == 0
+            || self.readback_pending_rx.is_some()
+            || !self.readback_copy_encoded
+        {
             return;
         }
         if self.readback_offsets.is_empty() {
             return;
         }
-        let needed_samples = self.water_count as usize;
+        let needed_samples = self.readback_offsets.len();
         if needed_samples > self.readback_capacity {
             return;
         }
@@ -442,6 +466,7 @@ impl GpuWater {
         });
         self.readback_pending_rx = Some(rx);
         self.readback_mapped_bytes = byte_count;
+        self.readback_copy_encoded = false;
     }
 
     pub fn drain_samples(&mut self, out: &mut Vec<WaterSampleState>) {
@@ -541,6 +566,13 @@ fn readback_buffer(device: &wgpu::Device, cell_count: usize) -> wgpu::Buffer {
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     })
+}
+
+fn readback_period_frames(rate_hz: f32) -> u32 {
+    if !rate_hz.is_finite() || rate_hz <= 0.0 {
+        return 0;
+    }
+    (60.0 / rate_hz.clamp(1.0, 240.0)).ceil().max(1.0) as u32
 }
 
 fn make_bind_group(
@@ -829,7 +861,8 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let fx = f32(x_cell) / max(f32(width - 1u), 1.0);
     let fy = f32(y_cell) / max(f32(max(w.sim.w, 1u) - 1u), 1.0);
     let t = f32(params.frame_index) * 0.016;
-    let idle = sin((fx + fy + w.flow_wind.z * 0.05) * 6.2831853 + t * w.wave.x) * w.wave.y;
+    let phase = fract(fx + fy + w.flow_wind.z * 0.01 + t * w.wave.x * 0.15915494);
+    let idle = (1.0 - abs(phase * 2.0 - 1.0) * 2.0) * w.wave.y;
     let prev = cells[cell_idx].x * w.wave.z;
     cells[cell_idx] = vec4<f32>(prev + idle * 0.015, idle, bitcast<f32>(w.flags.w), 1.0);
 }
@@ -950,5 +983,13 @@ mod tests {
                 ripple_blend: 0.15,
             }
         );
+    }
+
+    #[test]
+    fn water_readback_period_uses_rate() {
+        assert_eq!(readback_period_frames(0.0), 0);
+        assert_eq!(readback_period_frames(60.0), 1);
+        assert_eq!(readback_period_frames(30.0), 2);
+        assert_eq!(readback_period_frames(15.0), 4);
     }
 }

@@ -235,6 +235,7 @@ impl Runtime {
                             damping: water.wave.damping,
                             wake_strength: water.physics.wake_strength,
                             foam_strength: water.physics.foam_strength,
+                            sample_readback_rate: water.physics.sample_readback_rate,
                             lod_near_distance: water.lod.near_distance,
                             lod_mid_distance: water.lod.mid_distance,
                             lod_far_distance: water.lod.far_distance,

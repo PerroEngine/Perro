@@ -99,6 +99,7 @@ pub struct Water2DState {
     pub damping: f32,
     pub wake_strength: f32,
     pub foam_strength: f32,
+    pub sample_readback_rate: f32,
     pub lod_near_distance: f32,
     pub lod_mid_distance: f32,
     pub lod_far_distance: f32,
