@@ -67,8 +67,7 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
         if dist_sq <= range_sq {
             let inv_dist = inverseSqrt(max(dist_sq, 1.0e-8));
             let l = to_light * inv_dist;
-            let spot_dir = light.direction_outer_cos.xyz
-                * inverseSqrt(max(dot(light.direction_outer_cos.xyz, light.direction_outer_cos.xyz), 1.0e-8));
+            let spot_dir = light.direction_outer_cos.xyz;
             let cos_theta = dot(spot_dir, -l);
             let outer_cos = light.direction_outer_cos.w;
             let inner_cos = light.inner_cos_pad.x;

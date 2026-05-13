@@ -3792,6 +3792,7 @@ dependencies = [
  "perro_render_bridge",
  "perro_structs",
  "pollster",
+ "rayon",
  "wgpu",
  "winit",
 ]

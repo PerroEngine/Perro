@@ -7,12 +7,14 @@ use perro_render_bridge::{
     MeshSurfaceBinding3D, PointLight3DState, RayLight3DState, SkeletonPalette, Sky3DState,
     SpotLight3DState,
 };
+use rayon::slice::ParallelSliceMut;
 use std::sync::Arc;
 use std::time::Instant;
 
 const SKY_DAY_SECONDS: f32 = 1580.0;
 const SKY_CLOUD_TIME_SPEED_SCALE: f32 = 0.2;
 const SKY_CLOUD_TIME_UPDATE_EVERY_FRAMES: u32 = 3;
+const PARALLEL_PREP_SORT_MIN: usize = 10_000;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Draw3DKind {
@@ -90,6 +92,10 @@ impl Renderer3D {
 
     pub fn set_camera(&mut self, camera: Camera3DState) {
         self.camera = camera;
+    }
+
+    pub fn reserve_queued_draws(&mut self, additional: usize) {
+        self.queued_draws.reserve(additional);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -463,8 +469,13 @@ impl Renderer3D {
         }
         self.retained_draws_sorted_cache
             .extend(self.retained_draws.values().cloned());
-        self.retained_draws_sorted_cache
-            .sort_unstable_by_key(|draw| draw.node.as_u64());
+        if self.retained_draws_sorted_cache.len() >= PARALLEL_PREP_SORT_MIN {
+            self.retained_draws_sorted_cache
+                .par_sort_unstable_by_key(|draw| draw.node.as_u64());
+        } else {
+            self.retained_draws_sorted_cache
+                .sort_unstable_by_key(|draw| draw.node.as_u64());
+        }
     }
 }
 

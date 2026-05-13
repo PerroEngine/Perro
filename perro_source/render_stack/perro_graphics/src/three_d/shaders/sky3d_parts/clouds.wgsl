@@ -1,6 +1,6 @@
     var cloud_mask = 0.0;
 
-    if (ray.y > CLOUD_BASE_HEIGHT) {
+    if (cloud_density > 0.001 && ray.y > CLOUD_BASE_HEIGHT) {
         let cloud_size     = clamp(sky.params0.x, 0.0, 1.0);
         let cloud_variance = clamp(sky.params0.z, 0.0, 1.0);
         let wind           = vec2<f32>(sky.wind.x, sky.wind.y);
@@ -114,8 +114,8 @@
             + vec2<f32>(-27.0, 14.0)) * (clouds_scale * 0.78);
         let high_layer_uv = (sky_uv + rotate2(wind_dir, shear_high) * cloud_clock * 0.68
             + vec2<f32>(33.0, -21.0)) * (clouds_scale * 1.34);
-        let low_layer_raw  = perlin_fbm(low_layer_uv,  3);
-        let high_layer_raw = perlin_fbm(high_layer_uv, 3);
+        let low_layer_raw  = perlin_fbm(low_layer_uv,  2);
+        let high_layer_raw = perlin_fbm(high_layer_uv, 2);
 
         let low_layer = smoothstep(
             clouds_cutoff - 0.06,
@@ -153,7 +153,8 @@
         var clouds_amount_real = clouds_base * mix(0.82, 0.96, realistic_puffs);
         clouds_amount_real *= mix(1.02, 0.70, realistic_erosion);
         clouds_amount_real *= mix(1.0,  0.84, realistic_fine_breakup);
-        clouds_amount_real  = pow(clamp(clouds_amount_real, 0.0, 1.0), 1.5);
+        clouds_amount_real  = clamp(clouds_amount_real, 0.0, 1.0);
+        clouds_amount_real *= sqrt(clouds_amount_real);
 
         // ── Wisp masks ────────────────────────────────────────
         let wisp_mask   = smoothstep(0.34, 0.84,
@@ -251,11 +252,11 @@
             0.0, 1.0
         );
         let top_face_light = clamp(view_up_dot * cloud_layer_height, 0.0, 1.0);
-        let top_roundness  = pow(top_face_light, 1.6);
+        let top_roundness  = top_face_light * sqrt(top_face_light);
         let top_col_boost  = mix(vec3<f32>(1.0), vec3<f32>(1.22, 1.18, 1.14), top_roundness);
         let bottom_shadow_view = clamp(
             (1.0 - view_up_dot) * (1.0 - cloud_layer_height), 0.0, 1.0);
-        let bottom_shadow_str = pow(bottom_shadow_view, 1.4)
+        let bottom_shadow_str = bottom_shadow_view * sqrt(bottom_shadow_view)
                               * smoothstep(0.30, 0.85, clouds_amount_real);
         let bottom_col_damp   = mix(
             vec3<f32>(1.0), vec3<f32>(0.52, 0.54, 0.60),
@@ -316,8 +317,10 @@
             (noise_top_s - noise_middle * 0.45) + (1.0 - noise_bottom) * 0.12,
             0.0, 1.0
         ));
-        let silver_lining = pow(
-            clamp(1.0 - abs(dot(ray, sun_dir)), 0.0, 1.0), 7.0) * edge_hint;
+        let silver_lining_base = clamp(1.0 - abs(dot(ray, sun_dir)), 0.0, 1.0);
+        let silver_lining2 = silver_lining_base * silver_lining_base;
+        let silver_lining4 = silver_lining2 * silver_lining2;
+        let silver_lining = silver_lining4 * silver_lining2 * silver_lining_base * edge_hint;
         clouds_color_real += vec3<f32>(0.94, 0.92, 0.88) * silver_lining * 0.08;
 
         // ── Sun punch (daytime) ───────────────────────────────

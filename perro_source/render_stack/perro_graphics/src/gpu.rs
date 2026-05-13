@@ -18,7 +18,7 @@ use epaint::{ClippedPrimitive, textures::TexturesDelta};
 use perro_ids::NodeID;
 use perro_render_bridge::{Camera3DState, Light2DState, PointParticles3DState, Sprite2DCommand};
 use perro_structs::VisualAccessibilitySettings;
-use std::sync::Arc;
+use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 use winit::window::Window;
 
@@ -54,6 +54,113 @@ struct PresentProcessor {
     pipeline: wgpu::RenderPipeline,
 }
 
+struct GpuTimestampTimer {
+    query_set: wgpu::QuerySet,
+    resolve_buffer: wgpu::Buffer,
+    readback_buffer: wgpu::Buffer,
+    timestamp_period_ns: f32,
+    pending_rx: Option<mpsc::Receiver<Result<(), wgpu::BufferAsyncError>>>,
+    last_main: Duration,
+}
+
+impl GpuTimestampTimer {
+    const QUERY_COUNT: u32 = 2;
+    const BUFFER_SIZE: u64 = Self::QUERY_COUNT as u64 * std::mem::size_of::<u64>() as u64;
+
+    fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+        let query_set = device.create_query_set(&wgpu::QuerySetDescriptor {
+            label: Some("perro_gpu_timestamp_query"),
+            ty: wgpu::QueryType::Timestamp,
+            count: Self::QUERY_COUNT,
+        });
+        let resolve_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_gpu_timestamp_resolve"),
+            size: Self::BUFFER_SIZE,
+            usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let readback_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_gpu_timestamp_readback"),
+            size: Self::BUFFER_SIZE,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        Self {
+            query_set,
+            resolve_buffer,
+            readback_buffer,
+            timestamp_period_ns: queue.get_timestamp_period(),
+            pending_rx: None,
+            last_main: Duration::ZERO,
+        }
+    }
+
+    fn poll(&mut self, device: &wgpu::Device) {
+        let Some(rx) = self.pending_rx.as_ref() else {
+            return;
+        };
+        let _ = device.poll(wgpu::PollType::Poll);
+        match rx.try_recv() {
+            Ok(Ok(())) => {
+                let slice = self.readback_buffer.slice(..);
+                let data = slice.get_mapped_range();
+                let timestamps: &[u64] = bytemuck::cast_slice(&data);
+                if timestamps.len() >= 2 && timestamps[1] >= timestamps[0] {
+                    let nanos = (timestamps[1] - timestamps[0]) as f64
+                        * f64::from(self.timestamp_period_ns);
+                    self.last_main = Duration::from_nanos(nanos.max(0.0) as u64);
+                }
+                drop(data);
+                self.readback_buffer.unmap();
+                self.pending_rx = None;
+            }
+            Ok(Err(_)) => {
+                self.readback_buffer.unmap();
+                self.pending_rx = None;
+            }
+            Err(mpsc::TryRecvError::Empty) => {}
+            Err(mpsc::TryRecvError::Disconnected) => {
+                self.readback_buffer.unmap();
+                self.pending_rx = None;
+            }
+        }
+    }
+
+    fn can_write(&self) -> bool {
+        self.pending_rx.is_none()
+    }
+
+    fn write_start(&self, encoder: &mut wgpu::CommandEncoder) {
+        encoder.write_timestamp(&self.query_set, 0);
+    }
+
+    fn write_end_and_resolve(&self, encoder: &mut wgpu::CommandEncoder) {
+        encoder.write_timestamp(&self.query_set, 1);
+        encoder.resolve_query_set(
+            &self.query_set,
+            0..Self::QUERY_COUNT,
+            &self.resolve_buffer,
+            0,
+        );
+        encoder.copy_buffer_to_buffer(
+            &self.resolve_buffer,
+            0,
+            &self.readback_buffer,
+            0,
+            Self::BUFFER_SIZE,
+        );
+    }
+
+    fn request_readback(&mut self) {
+        let slice = self.readback_buffer.slice(..);
+        let (tx, rx) = mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+        self.pending_rx = Some(rx);
+    }
+}
+
 pub struct Gpu {
     window_handle: Arc<Window>,
     surface: wgpu::Surface<'static>,
@@ -85,6 +192,7 @@ pub struct Gpu {
     meshlet_debug_view: bool,
     occlusion_culling: OcclusionCullingMode,
     indirect_first_instance_enabled: bool,
+    gpu_timer: Option<GpuTimestampTimer>,
 }
 
 pub struct RenderFrame<'a> {
@@ -139,6 +247,7 @@ pub struct RenderGpuTiming {
     pub post_process: Duration,
     pub accessibility: Duration,
     pub present: Duration,
+    pub gpu_timestamp_main: Duration,
     pub draw_calls_2d: u32,
     pub draw_calls_3d: u32,
     pub skip_prepare_2d: u32,
@@ -232,6 +341,11 @@ impl Gpu {
         if adapter_features.contains(wgpu::Features::INDIRECT_FIRST_INSTANCE) {
             required_features |= wgpu::Features::INDIRECT_FIRST_INSTANCE;
         }
+        let timestamp_features =
+            wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS;
+        if adapter_features.contains(timestamp_features) {
+            required_features |= timestamp_features;
+        }
 
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("perro_device"),
@@ -244,6 +358,7 @@ impl Gpu {
         .ok()?;
         let indirect_first_instance_enabled =
             required_features.contains(wgpu::Features::INDIRECT_FIRST_INSTANCE);
+        let timestamp_query_enabled = required_features.contains(timestamp_features);
         if !indirect_first_instance_enabled {
             eprintln!(
                 "[perro][3d] INDIRECT_FIRST_INSTANCE not supported by adapter; falling back to CPU frustum path"
@@ -316,6 +431,7 @@ impl Gpu {
         let present_scene_bind_group = present.create_bind_group(&device, post.scene_view());
         let present_intermediate_bind_group =
             present.create_bind_group(&device, accessibility.intermediate_view());
+        let gpu_timer = timestamp_query_enabled.then(|| GpuTimestampTimer::new(&device, &queue));
 
         Some(Self {
             window_handle: window,
@@ -348,6 +464,7 @@ impl Gpu {
             meshlet_debug_view,
             occlusion_culling,
             indirect_first_instance_enabled,
+            gpu_timer,
         })
     }
 
@@ -420,6 +537,10 @@ impl Gpu {
     pub fn render(&mut self, frame: RenderFrame<'_>) -> RenderGpuTiming {
         let total_start = Instant::now();
         let mut timing = RenderGpuTiming::default();
+        if let Some(timer) = self.gpu_timer.as_mut() {
+            timer.poll(&self.device);
+            timing.gpu_timestamp_main = timer.last_main;
+        }
         let RenderFrame {
             resources,
             camera_3d,
@@ -724,6 +845,13 @@ impl Gpu {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("perro_main_encoder"),
             });
+        let gpu_timer_active = self
+            .gpu_timer
+            .as_ref()
+            .is_some_and(GpuTimestampTimer::can_write);
+        if gpu_timer_active && let Some(timer) = self.gpu_timer.as_ref() {
+            timer.write_start(&mut encoder);
+        }
 
         let clear_color = sky_clear_color(lighting_3d).unwrap_or(wgpu::Color {
             r: CLEAR_R,
@@ -937,12 +1065,18 @@ impl Gpu {
                 );
             }
         }
+        if gpu_timer_active && let Some(timer) = self.gpu_timer.as_ref() {
+            timer.write_end_and_resolve(&mut encoder);
+        }
         let submit_start = Instant::now();
         let submit_finish_start = Instant::now();
         let command_buffer = encoder.finish();
         timing.submit_finish_main = submit_finish_start.elapsed();
         let submit_queue_start = Instant::now();
         self.queue.submit(Some(command_buffer));
+        if gpu_timer_active && let Some(timer) = self.gpu_timer.as_mut() {
+            timer.request_readback();
+        }
         timing.submit_queue_main = submit_queue_start.elapsed();
         timing.submit_main = submit_start.elapsed();
         timing.draw_calls_2d = self

@@ -22,9 +22,22 @@ const HIZ_OCCLUSION_CULL_WGSL: &str =
 const POST_PRELUDE_WGSL: &str = include_str!("../src/postprocess/shaders.rs");
 const POST_BUILTIN_BODY_WGSL: &str =
     include_str!("../src/postprocess/shaders/postprocess_builtin_body.wgsl");
+const POST_BLACK_WHITE_WGSL: &str =
+    include_str!("../src/postprocess/shaders/effects/black_white.wgsl");
 const POST_BLUR_WGSL: &str = include_str!("../src/postprocess/shaders/effects/blur.wgsl");
 const POST_BLOOM_WGSL: &str = include_str!("../src/postprocess/shaders/effects/bloom.wgsl");
+const POST_COLOR_FILTER_WGSL: &str =
+    include_str!("../src/postprocess/shaders/effects/color_filter.wgsl");
+const POST_COLOR_GRADE_WGSL: &str =
+    include_str!("../src/postprocess/shaders/effects/color_grade.wgsl");
 const POST_CRT_WGSL: &str = include_str!("../src/postprocess/shaders/effects/crt.wgsl");
+const POST_LUT_WGSL: &str = include_str!("../src/postprocess/shaders/effects/lut.wgsl");
+const POST_PIXELATE_WGSL: &str = include_str!("../src/postprocess/shaders/effects/pixelate.wgsl");
+const POST_REVERSE_FILTER_WGSL: &str =
+    include_str!("../src/postprocess/shaders/effects/reverse_filter.wgsl");
+const POST_SATURATE_WGSL: &str = include_str!("../src/postprocess/shaders/effects/saturate.wgsl");
+const POST_VIGNETTE_WGSL: &str = include_str!("../src/postprocess/shaders/effects/vignette.wgsl");
+const POST_WARP_WGSL: &str = include_str!("../src/postprocess/shaders/effects/warp.wgsl");
 const PARTICLES_CPU_WGSL: &str = perro_graphics::three_d::particles::shaders::POINT_PARTICLES_WGSL;
 const PARTICLES_GPU_WGSL: &str =
     perro_graphics::three_d::particles::shaders::POINT_PARTICLES_GPU_WGSL;
@@ -64,9 +77,18 @@ fn post_prelude_literal() -> &'static str {
 fn build_post_subset_shader() -> String {
     let mut out = String::new();
     out.push_str(post_prelude_literal());
+    out.push_str(POST_BLACK_WHITE_WGSL);
     out.push_str(POST_BLUR_WGSL);
     out.push_str(POST_BLOOM_WGSL);
+    out.push_str(POST_COLOR_FILTER_WGSL);
+    out.push_str(POST_COLOR_GRADE_WGSL);
     out.push_str(POST_CRT_WGSL);
+    out.push_str(POST_LUT_WGSL);
+    out.push_str(POST_PIXELATE_WGSL);
+    out.push_str(POST_REVERSE_FILTER_WGSL);
+    out.push_str(POST_SATURATE_WGSL);
+    out.push_str(POST_VIGNETTE_WGSL);
+    out.push_str(POST_WARP_WGSL);
     out.push_str(POST_BUILTIN_BODY_WGSL);
     out
 }

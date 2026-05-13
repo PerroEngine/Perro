@@ -144,8 +144,16 @@ impl Renderer2D {
         self.queued_sprites.push(SpritePacket { node, sprite });
     }
 
+    pub fn reserve_queued_sprites(&mut self, additional: usize) {
+        self.queued_sprites.reserve(additional);
+    }
+
     pub fn queue_rect(&mut self, node: NodeID, rect: Rect2DCommand) {
         self.queued_rects.push(RectPacket { node, rect });
+    }
+
+    pub fn reserve_queued_rects(&mut self, additional: usize) {
+        self.queued_rects.reserve(additional);
     }
 
     pub fn upsert_rect(&mut self, node: NodeID, rect: Rect2DCommand) {

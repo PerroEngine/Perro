@@ -118,6 +118,7 @@ pub struct DrawFrameTiming {
     pub gpu_post_process: Duration,
     pub gpu_accessibility: Duration,
     pub gpu_present: Duration,
+    pub gpu_timestamp_main: Duration,
     pub draw_calls_2d: u32,
     pub draw_calls_3d: u32,
     pub draw_instances_3d: u32,
@@ -185,6 +186,7 @@ pub struct PerroGraphics {
     occlusion_culling: OcclusionCullingMode,
     retained_draws_cache: Vec<Draw3DInstance>,
     retained_draws_cache_revision: u64,
+    retained_draw_instances_cache: u32,
     retained_point_particles_cache: Vec<(NodeID, PointParticles3DState)>,
     retained_point_particles_cache_revision: u64,
     retained_sprites_cache: Vec<Sprite2DCommand>,
@@ -232,6 +234,7 @@ impl PerroGraphics {
             occlusion_culling: OcclusionCullingMode::Gpu,
             retained_draws_cache: Vec::new(),
             retained_draws_cache_revision: u64::MAX,
+            retained_draw_instances_cache: 0,
             retained_point_particles_cache: Vec::new(),
             retained_point_particles_cache_revision: u64::MAX,
             retained_sprites_cache: Vec::new(),
@@ -308,6 +311,14 @@ impl PerroGraphics {
     where
         I: IntoIterator<Item = RenderCommand>,
     {
+        let commands = commands.into_iter();
+        let (lower, upper) = commands.size_hint();
+        let reserve_count = upper.unwrap_or(lower);
+        if reserve_count >= 10_000 {
+            self.renderer_2d.reserve_queued_rects(reserve_count);
+            self.renderer_2d.reserve_queued_sprites(reserve_count);
+            self.renderer_3d.reserve_queued_draws(reserve_count);
+        }
         for command in commands {
             match command {
                 RenderCommand::Resource(resource_cmd) => match resource_cmd {
@@ -878,6 +889,10 @@ impl PerroGraphics {
             }
             self.retained_draws_cache
                 .extend_from_slice(self.renderer_3d.retained_draws_sorted());
+            self.retained_draw_instances_cache =
+                self.retained_draws_cache.iter().fold(0u32, |acc, draw| {
+                    acc.saturating_add(draw_instance_count(draw))
+                });
             self.retained_draws_cache_revision = draws_revision;
         }
         let point_particles_revision = self.particles_3d.retained_point_particles_revision();
@@ -919,18 +934,26 @@ impl PerroGraphics {
                 .extend(self.renderer_2d.lights());
             self.retained_point_lights_cache_revision = point_lights_revision;
         }
-        self.frame_rects_cache.clear();
         let retained_rect_count = self.renderer_2d.retained_rects().len();
         let frame_shape_count = self.renderer_2d.frame_shapes().len();
         let total_rect_count = retained_rect_count + frame_shape_count;
-        if self.frame_rects_cache.capacity() < total_rect_count {
+        if frame_shape_count == 0
+            && !upload.full_reupload
+            && upload.dirty_ranges.is_empty()
+            && self.frame_rects_cache.len() == retained_rect_count
+        {
+            // Retained rect buffer already mirrors renderer state.
+        } else {
+            self.frame_rects_cache.clear();
+            if self.frame_rects_cache.capacity() < total_rect_count {
+                self.frame_rects_cache
+                    .reserve(total_rect_count - self.frame_rects_cache.capacity());
+            }
             self.frame_rects_cache
-                .reserve(total_rect_count - self.frame_rects_cache.capacity());
+                .extend_from_slice(self.renderer_2d.retained_rects());
+            self.frame_rects_cache
+                .extend_from_slice(self.renderer_2d.frame_shapes());
         }
-        self.frame_rects_cache
-            .extend_from_slice(self.renderer_2d.retained_rects());
-        self.frame_rects_cache
-            .extend_from_slice(self.renderer_2d.frame_shapes());
         self.late_overlay_rects_cache.clear();
         self.late_overlay_rects_cache
             .extend_from_slice(self.late_overlay_2d.retained_rects());
@@ -1054,11 +1077,10 @@ impl PerroGraphics {
             gpu_post_process: gpu_timing.post_process,
             gpu_accessibility: gpu_timing.accessibility,
             gpu_present: gpu_timing.present,
+            gpu_timestamp_main: gpu_timing.gpu_timestamp_main,
             draw_calls_2d: gpu_timing.draw_calls_2d,
             draw_calls_3d: gpu_timing.draw_calls_3d,
-            draw_instances_3d: self.retained_draws_cache.iter().fold(0u32, |acc, draw| {
-                acc.saturating_add(draw_instance_count(draw))
-            }),
+            draw_instances_3d: self.retained_draw_instances_cache,
             draw_material_refs_3d: self.used_material_refs_cache.len().min(u32::MAX as usize)
                 as u32,
             skip_prepare_2d: gpu_timing.skip_prepare_2d,

@@ -2,8 +2,9 @@ use perro_graphics::{DrawFrameTiming, GraphicsBackend, PerroGraphics};
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
     Camera2DState, Camera3DState, Command2D, Command3D, DenseInstancePose3D, LODOptions3D,
-    Material3D, Mesh3D, MeshSurfaceBinding3D, PostProcessingCommand, Rect2DCommand, RenderBridge,
-    RenderCommand, RenderEvent, RenderRequestID, ResourceCommand, RuntimeMeshVertex,
+    Material3D, Mesh3D, MeshSurfaceBinding3D, PointLight3DState, PostProcessingCommand,
+    RayLight3DState, Rect2DCommand, RenderBridge, RenderCommand, RenderEvent, RenderRequestID,
+    ResourceCommand, RuntimeMeshVertex, Sky3DState, SkyTime3DState, SpotLight3DState,
     Sprite2DCommand,
 };
 use perro_structs::{PostProcessEffect, PostProcessSet};
@@ -20,6 +21,14 @@ const HEIGHT: u32 = 720;
 const WARMUP_FRAMES: usize = 8;
 const SAMPLE_FRAMES: usize = 60;
 
+// Bench intent:
+// - empty shows fixed acquire/submit/present cost.
+// - retained rect/sprite/dense multimesh cases should stay close to empty.
+// - post chain measures real full-frame pass cost, not CPU command cost.
+// - sky_clouds cost is the sky_clear delta; keep it stable while tuning FBM count.
+// Past regressions: sprites 100k hit ~9ms GPU prep; rects 100k hit ~112us CPU prep.
+// Tried: branch-skipping night cloud FBM and hash-vector grad noise; both failed GPU timing here.
+
 #[derive(Default)]
 struct TimingSum {
     total: Duration,
@@ -32,6 +41,7 @@ struct TimingSum {
     submit: Duration,
     post: Duration,
     present: Duration,
+    gpu_main: Duration,
     wait_idle: Duration,
     draw_calls_2d: u64,
     draw_calls_3d: u64,
@@ -52,6 +62,7 @@ impl TimingSum {
         self.submit += timing.gpu_submit_main;
         self.post += timing.gpu_post_process;
         self.present += timing.gpu_present;
+        self.gpu_main += timing.gpu_timestamp_main;
         self.draw_calls_2d += u64::from(timing.draw_calls_2d);
         self.draw_calls_3d += u64::from(timing.draw_calls_3d);
         self.draw_instances_3d += u64::from(timing.draw_instances_3d);
@@ -73,9 +84,10 @@ impl TimingSum {
     fn print(&self, name: &str) {
         let frames = self.frames.max(1);
         println!(
-            "{name:32} total={:>6}us wait={:>6}us cpu_prep={:>5}us gpu2d={:>5}us gpu3d={:>5}us acquire={:>5}us encode={:>5}us submit={:>5}us post={:>5}us present={:>5}us dc2d={:>3} dc3d={:>3} inst3d={:>7}",
+            "{name:32} total={:>6}us wait={:>6}us gpuq={:>6}us cpu_prep={:>5}us gpu2d={:>5}us gpu3d={:>5}us acquire={:>5}us encode={:>5}us submit={:>5}us post={:>5}us present={:>5}us dc2d={:>3} dc3d={:>3} inst3d={:>7}",
             Self::avg_us(self.total, frames),
             Self::avg_us(self.wait_idle, frames),
+            Self::avg_us(self.gpu_main, frames),
             Self::avg_us(self.prepare_cpu, frames),
             Self::avg_us(self.gpu_prepare_2d, frames),
             Self::avg_us(self.gpu_prepare_3d, frames),
@@ -199,6 +211,65 @@ fn main() {
                 },
                 redraw: redraw_2d,
             },
+            BenchCase {
+                name: "post_bloom",
+                setup: |w| {
+                    setup_post(
+                        w,
+                        PostProcessEffect::Bloom {
+                            strength: 0.7,
+                            threshold: 0.8,
+                            radius: 1.2,
+                        },
+                    )
+                },
+                redraw: redraw_2d,
+            },
+            BenchCase {
+                name: "post_blur",
+                setup: |w| setup_post(w, PostProcessEffect::Blur { strength: 2.0 }),
+                redraw: redraw_2d,
+            },
+            BenchCase {
+                name: "post_crt",
+                setup: |w| {
+                    setup_post(
+                        w,
+                        PostProcessEffect::Crt {
+                            scanline_strength: 0.25,
+                            curvature: 0.1,
+                            chromatic: 0.5,
+                            vignette: 0.2,
+                        },
+                    )
+                },
+                redraw: redraw_2d,
+            },
+            BenchCase {
+                name: "sky_clear",
+                setup: |w| setup_sky(w, 0.0),
+                redraw: redraw_3d,
+            },
+            BenchCase {
+                name: "sky_clouds",
+                setup: |w| setup_sky(w, 0.6),
+                redraw: redraw_3d,
+            },
+            BenchCase {
+                name: "lights_point_8",
+                setup: |w| setup_lit_meshes(w, 10_000, 8, 0),
+                redraw: redraw_3d,
+            },
+            BenchCase {
+                name: "lights_spot_8",
+                setup: |w| setup_lit_meshes(w, 10_000, 0, 8),
+                redraw: redraw_3d,
+            },
+            BenchCase {
+                name: "overdraw_mesh_stack_2k",
+                setup: |w| setup_overdraw_meshes(w, 2_000),
+                redraw: redraw_3d,
+            },
         ],
     };
     event_loop.run_app(&mut app).expect("run app");
@@ -245,6 +316,63 @@ fn setup_multimesh_dense(window: &Arc<Window>, count: u32) -> PerroGraphics {
     let mut graphics = base_graphics(window);
     let (mesh, material) = create_mesh_material(&mut graphics);
     graphics.submit(draw_multi_dense_command(count, mesh, material));
+    let _ = graphics.draw_frame_timed();
+    graphics
+}
+
+fn setup_post(window: &Arc<Window>, effect: PostProcessEffect) -> PerroGraphics {
+    let mut graphics = setup_rects(window, 10_000);
+    graphics.submit(RenderCommand::PostProcessing(
+        PostProcessingCommand::SetGlobal(PostProcessSet::from_effects(vec![effect])),
+    ));
+    let _ = graphics.draw_frame_timed();
+    graphics
+}
+
+fn setup_sky(window: &Arc<Window>, cloud_density: f32) -> PerroGraphics {
+    let mut graphics = base_graphics(window);
+    graphics.submit(sky_command(cloud_density));
+    let _ = graphics.draw_frame_timed();
+    graphics
+}
+
+fn setup_lit_meshes(
+    window: &Arc<Window>,
+    mesh_count: u32,
+    point_count: u32,
+    spot_count: u32,
+) -> PerroGraphics {
+    let mut graphics = base_graphics(window);
+    let (mesh, material) = create_mesh_material(&mut graphics);
+    graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::SetRayLight {
+        node: NodeID::from_parts(50_000, 0),
+        light: RayLight3DState {
+            direction: [-0.45, -0.85, -0.28],
+            color: [1.0, 0.95, 0.9],
+            intensity: 0.6,
+            cast_shadows: false,
+        },
+    })));
+    graphics.submit_many((0..point_count).map(point_light_3d_command));
+    graphics.submit_many((0..spot_count).map(spot_light_3d_command));
+    graphics.submit_many((0..mesh_count).map(|i| draw_command(i, mesh, material)));
+    let _ = graphics.draw_frame_timed();
+    graphics
+}
+
+fn setup_overdraw_meshes(window: &Arc<Window>, count: u32) -> PerroGraphics {
+    let mut graphics = base_graphics(window);
+    let (mesh, material) = create_mesh_material(&mut graphics);
+    graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::SetRayLight {
+        node: NodeID::from_parts(60_000, 0),
+        light: RayLight3DState {
+            direction: [-0.4, -0.8, -0.2],
+            color: [1.0, 1.0, 1.0],
+            intensity: 0.7,
+            cast_shadows: false,
+        },
+    })));
+    graphics.submit_many((0..count).map(|i| draw_overdraw_command(i, mesh, material)));
     let _ = graphics.draw_frame_timed();
     graphics
 }
@@ -298,6 +426,80 @@ fn draw_command(i: u32, mesh: MeshID, material: MaterialID) -> RenderCommand {
         skeleton: None,
         meshlet_override: None,
         lod: LODOptions3D::default(),
+    }))
+}
+
+fn draw_overdraw_command(i: u32, mesh: MeshID, material: MaterialID) -> RenderCommand {
+    RenderCommand::ThreeD(Box::new(Command3D::Draw {
+        mesh,
+        surfaces: surface(material),
+        node: NodeID::from_parts(i + 1, 1),
+        model: [
+            [16.0, 0.0, 0.0, 0.0],
+            [0.0, 16.0, 0.0, 0.0],
+            [0.0, 0.0, 16.0, 0.02 * i as f32],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+        skeleton: None,
+        meshlet_override: None,
+        lod: LODOptions3D::default(),
+    }))
+}
+
+fn point_light_3d_command(i: u32) -> RenderCommand {
+    RenderCommand::ThreeD(Box::new(Command3D::SetPointLight {
+        node: NodeID::from_parts(70_000 + i, 0),
+        light: PointLight3DState {
+            position: [(i % 4) as f32 * 2.0 - 4.0, 3.0, (i / 4) as f32 * 2.0 - 4.0],
+            color: [1.0, 0.8, 0.55],
+            intensity: 12.0,
+            range: 8.0,
+            cast_shadows: false,
+        },
+    }))
+}
+
+fn spot_light_3d_command(i: u32) -> RenderCommand {
+    RenderCommand::ThreeD(Box::new(Command3D::SetSpotLight {
+        node: NodeID::from_parts(80_000 + i, 0),
+        light: SpotLight3DState {
+            position: [(i % 4) as f32 * 2.0 - 4.0, 6.0, (i / 4) as f32 * 2.0 - 4.0],
+            direction: [0.0, -1.0, 0.0],
+            color: [0.7, 0.85, 1.0],
+            intensity: 18.0,
+            range: 10.0,
+            inner_angle_radians: 0.45,
+            outer_angle_radians: 0.9,
+            cast_shadows: false,
+        },
+    }))
+}
+
+fn sky_command(cloud_density: f32) -> RenderCommand {
+    RenderCommand::ThreeD(Box::new(Command3D::SetSky {
+        node: NodeID::from_parts(90_000, 0),
+        sky: Box::new(Sky3DState {
+            day_colors: Arc::from([[0.42, 0.7, 1.0], [0.1, 0.35, 0.8]]),
+            evening_colors: Arc::from([[1.0, 0.45, 0.2], [0.25, 0.08, 0.3]]),
+            night_colors: Arc::from([[0.02, 0.03, 0.08], [0.0, 0.0, 0.02]]),
+            sky_angle: 0.0,
+            time: SkyTime3DState {
+                time_of_day: 0.5,
+                paused: true,
+                scale: 1.0,
+            },
+            cloud_size: 0.7,
+            cloud_density,
+            cloud_variance: 0.4,
+            cloud_wind_vector: [0.2, 0.05],
+            star_size: 0.7,
+            star_scatter: 0.5,
+            star_gleam: 0.4,
+            moon_size: 0.12,
+            sun_size: 0.08,
+            style_blend: 1.0,
+            sky_shader: None,
+        }),
     }))
 }
 

@@ -357,6 +357,11 @@ fn bench_upsert_frames(c: &mut Criterion) {
 
 fn bench_retained_frames(c: &mut Criterion) {
     let mut group = c.benchmark_group("graphics_frame_retained_redraw");
+    // Regression notes:
+    // - sprites 100k once spent ~9ms/frame in retained redraw; keep near fixed cost.
+    // - rects 100k once rebuilt the retained rect cache every redraw (~112us); keep sub-us.
+    // - meshes 100k once recounted retained instances every redraw; keep count cached.
+    // - a 3d sorted-cache fast path regressed mesh upsert; bench before trying again.
     for count in [1_000u32, 10_000, 100_000] {
         group.bench_with_input(BenchmarkId::new("rects", count), &count, |b, &count| {
             let mut graphics = PerroGraphics::new();
@@ -393,6 +398,8 @@ fn bench_retained_frames(c: &mut Criterion) {
 
 fn bench_multimesh_frames(c: &mut Criterion) {
     let mut group = c.benchmark_group("graphics_frame_multimesh");
+    // Dense multimesh is the preferred bulk instance path:
+    // 100k dense should stay much faster than 100k full matrices.
     for count in [10_000u32, 100_000] {
         group.bench_with_input(
             BenchmarkId::new("draw_multi_mats", count),

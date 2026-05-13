@@ -608,8 +608,8 @@ const FRUSTUM_CULL_HIGH_VISIBLE_MIN_BATCHES: usize = 160;
 const FRUSTUM_CULL_HIGH_VISIBLE_MIN_INSTANCES: usize = 2048;
 const HIZ_OCCLUSION_MIN_BATCHES: usize = 80;
 const HIZ_OCCLUSION_MIN_INSTANCES: usize = 1024;
-const DEPTH_PREPASS_MIN_BATCHES: usize = 96;
-const DEPTH_PREPASS_MIN_INSTANCES: usize = 1400;
+const DEPTH_PREPASS_MIN_BATCHES: usize = 32;
+const DEPTH_PREPASS_MIN_INSTANCES: usize = 512;
 const HIZ_DEBUG_READBACK_ENABLED: bool = false;
 // Re-test occluded batches every frame so visibility recovers immediately when camera/object moves.
 const OCCLUSION_PROBE_INTERVAL: u64 = 1;

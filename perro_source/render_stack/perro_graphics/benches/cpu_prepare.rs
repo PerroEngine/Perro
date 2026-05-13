@@ -155,7 +155,7 @@ fn create_mesh_material(graphics: &mut PerroGraphics) -> (MeshID, MaterialID) {
 
 fn bench_2d_rect_prepare(c: &mut Criterion) {
     let mut group = c.benchmark_group("graphics_2d_rect_prepare");
-    for count in [1_000u32, 10_000] {
+    for count in [1_000u32, 10_000, 100_000] {
         group.bench_with_input(BenchmarkId::from_parameter(count), &count, |b, &count| {
             let mut graphics = PerroGraphics::new();
             b.iter_batched(
@@ -174,7 +174,7 @@ fn bench_2d_rect_prepare(c: &mut Criterion) {
 
 fn bench_2d_sprite_prepare(c: &mut Criterion) {
     let mut group = c.benchmark_group("graphics_2d_sprite_prepare");
-    for count in [1_000u32, 10_000] {
+    for count in [1_000u32, 10_000, 100_000] {
         group.bench_with_input(BenchmarkId::from_parameter(count), &count, |b, &count| {
             let mut graphics = PerroGraphics::new();
             let texture = create_texture(&mut graphics);
@@ -198,7 +198,7 @@ fn bench_2d_sprite_prepare(c: &mut Criterion) {
 
 fn bench_3d_draw_prepare(c: &mut Criterion) {
     let mut group = c.benchmark_group("graphics_3d_draw_prepare");
-    for count in [1_000u32, 10_000] {
+    for count in [1_000u32, 10_000, 100_000] {
         group.bench_with_input(BenchmarkId::from_parameter(count), &count, |b, &count| {
             let mut graphics = PerroGraphics::new();
             let (mesh, material) = create_mesh_material(&mut graphics);

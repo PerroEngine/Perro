@@ -1,4 +1,7 @@
 use super::*;
+use rayon::slice::ParallelSliceMut;
+
+const PARALLEL_BATCH_SORT_MIN: usize = 10_000;
 
 impl Gpu3D {
     pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, frame: Prepare3D<'_>) {
@@ -1017,10 +1020,21 @@ impl Gpu3D {
                 casts_shadows: false,
             });
         }
-        self.draw_batches.sort_unstable_by(compare_draw_batch_keys);
+        if self.draw_batches.len() >= PARALLEL_BATCH_SORT_MIN {
+            self.draw_batches
+                .par_sort_unstable_by(compare_draw_batch_keys);
+        } else {
+            self.draw_batches.sort_unstable_by(compare_draw_batch_keys);
+        }
         self.compact_sorted_draw_batches(draws.len());
-        self.multimesh_batches
-            .sort_unstable_by_key(|b| (b.double_sided, b.mesh.index_start, b.draw_param_index));
+        if self.multimesh_batches.len() >= PARALLEL_BATCH_SORT_MIN {
+            self.multimesh_batches.par_sort_unstable_by_key(|b| {
+                (b.double_sided, b.mesh.index_start, b.draw_param_index)
+            });
+        } else {
+            self.multimesh_batches
+                .sort_unstable_by_key(|b| (b.double_sided, b.mesh.index_start, b.draw_param_index));
+        }
         if HIZ_DEBUG_READBACK_ENABLED {
             self.debug_frustum_visible_est = 0;
             for batch in &self.draw_batches {
