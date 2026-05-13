@@ -30,6 +30,12 @@ impl WaterBody2D {
                     foam_strength: 0.65,
                     sample_readback_rate: 30.0,
                 },
+                lod: crate::WaterLodParams {
+                    near_distance: 128.0,
+                    mid_distance: 384.0,
+                    far_distance: 896.0,
+                    min_resolution: [32, 32],
+                },
                 shoreline_mask: false,
                 static_body_wakes: true,
                 debug: false,

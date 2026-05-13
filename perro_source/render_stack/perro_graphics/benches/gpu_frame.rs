@@ -211,6 +211,31 @@ fn main() {
                 redraw: redraw_2d,
             },
             BenchCase {
+                name: "water_idle_calm_i2",
+                setup: |w| setup_water_idle(w, WaterIdleModeState::Calm),
+                redraw: redraw_2d,
+            },
+            BenchCase {
+                name: "water_idle_sine_i2",
+                setup: |w| setup_water_idle(w, WaterIdleModeState::Sine),
+                redraw: redraw_2d,
+            },
+            BenchCase {
+                name: "water_idle_chop_i2",
+                setup: |w| setup_water_idle(w, WaterIdleModeState::Chop),
+                redraw: redraw_2d,
+            },
+            BenchCase {
+                name: "water_idle_storm_i2",
+                setup: |w| setup_water_idle(w, WaterIdleModeState::Storm),
+                redraw: redraw_2d,
+            },
+            BenchCase {
+                name: "water_idle_river_i2",
+                setup: |w| setup_water_idle(w, WaterIdleModeState::River),
+                redraw: redraw_2d,
+            },
+            BenchCase {
                 name: "meshes_10k",
                 setup: |w| setup_meshes(w, 10_000),
                 redraw: redraw_3d,
@@ -327,7 +352,17 @@ fn setup_sprites(window: &Arc<Window>, count: u32) -> PerroGraphics {
 
 fn setup_water(window: &Arc<Window>, count: u32, resolution: u32, impacts: u32) -> PerroGraphics {
     let mut graphics = base_graphics(window);
-    graphics.submit_many((0..count).map(|i| water_command(i, resolution, impacts)));
+    graphics.submit_many(
+        (0..count)
+            .map(|i| water_command_with_idle(i, resolution, impacts, WaterIdleModeState::Chop)),
+    );
+    let _ = graphics.draw_frame_timed();
+    graphics
+}
+
+fn setup_water_idle(window: &Arc<Window>, idle_mode: WaterIdleModeState) -> PerroGraphics {
+    let mut graphics = base_graphics(window);
+    graphics.submit(water_command_with_idle(0, 128, 2, idle_mode));
     let _ = graphics.draw_frame_timed();
     graphics
 }
@@ -445,7 +480,12 @@ fn sprite_command(i: u32, texture: TextureID) -> RenderCommand {
     })
 }
 
-fn water_command(i: u32, resolution: u32, impacts: u32) -> RenderCommand {
+fn water_command_with_idle(
+    i: u32,
+    resolution: u32,
+    impacts: u32,
+    idle_mode: WaterIdleModeState,
+) -> RenderCommand {
     let [x, y] = grid2(i, 48.0);
     RenderCommand::TwoD(Command2D::UpsertWater {
         node: NodeID::from_parts(500_000 + i, 0),
@@ -457,12 +497,16 @@ fn water_command(i: u32, resolution: u32, impacts: u32) -> RenderCommand {
             depth: 4.0,
             flow: [0.12, 0.03],
             wind: [1.0, 0.2],
-            idle_mode: WaterIdleModeState::Chop,
+            idle_mode,
             wave_speed: 1.4,
             wave_scale: 1.2,
             damping: 0.985,
             wake_strength: 1.0,
             foam_strength: 0.7,
+            lod_near_distance: 128.0,
+            lod_mid_distance: 384.0,
+            lod_far_distance: 896.0,
+            lod_min_resolution: [32, 32],
             shoreline_mask: impacts > 0,
             static_body_wakes: true,
             debug: false,

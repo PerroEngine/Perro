@@ -37,6 +37,7 @@
 - [Mesh Query Perf Snapshot](scripting/mesh_query_perf.md)
 - [UI Nodes](scripting/ui.md)
 - [TileMap2D](scripting/tilemap.md)
+- [Water Bodies](scripting/water.md)
 - [Scene Node Templates](scripting/scene_node_templates/index.md)
 - [Script State](scripting/state.md)
 - [Script Lifecycle](scripting/lifecycle.md)

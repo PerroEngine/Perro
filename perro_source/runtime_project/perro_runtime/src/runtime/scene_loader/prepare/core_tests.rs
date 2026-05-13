@@ -25,6 +25,10 @@ mod tests {
                 buoyancy = 4.0
                 drag = 0.25
                 sample_readback_rate = 20
+                lod_near_distance = 80
+                lod_mid_distance = 240
+                lod_far_distance = 720
+                lod_min_resolution = 16
                 shoreline_mask = true
                 static_body_wakes = false
                 debug = true
@@ -60,6 +64,10 @@ mod tests {
                 assert_eq!(node.water.physics.buoyancy, 4.0);
                 assert_eq!(node.water.physics.drag, 0.25);
                 assert_eq!(node.water.physics.sample_readback_rate, 20.0);
+                assert_eq!(node.water.lod.near_distance, 80.0);
+                assert_eq!(node.water.lod.mid_distance, 240.0);
+                assert_eq!(node.water.lod.far_distance, 720.0);
+                assert_eq!(node.water.lod.min_resolution, [16, 16]);
                 assert!(node.water.shoreline_mask);
                 assert!(!node.water.static_body_wakes);
                 assert!(node.water.debug);

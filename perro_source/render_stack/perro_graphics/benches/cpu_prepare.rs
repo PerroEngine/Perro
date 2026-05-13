@@ -63,6 +63,15 @@ fn draw_3d_command(i: u32, mesh: MeshID, material: MaterialID) -> RenderCommand 
 }
 
 fn water_command(i: u32, resolution: u32, impacts: u32) -> RenderCommand {
+    water_command_with_idle(i, resolution, impacts, WaterIdleModeState::Sine)
+}
+
+fn water_command_with_idle(
+    i: u32,
+    resolution: u32,
+    impacts: u32,
+    idle_mode: WaterIdleModeState,
+) -> RenderCommand {
     let x = (i % 64) as f32 * 36.0;
     let y = (i / 64) as f32 * 36.0;
     RenderCommand::TwoD(Command2D::UpsertWater {
@@ -75,12 +84,16 @@ fn water_command(i: u32, resolution: u32, impacts: u32) -> RenderCommand {
             depth: 4.0,
             flow: [0.1, 0.0],
             wind: [1.0, 0.2],
-            idle_mode: WaterIdleModeState::Sine,
+            idle_mode,
             wave_speed: 1.0,
             wave_scale: 1.0,
             damping: 0.985,
             wake_strength: 1.0,
             foam_strength: 0.65,
+            lod_near_distance: 128.0,
+            lod_mid_distance: 384.0,
+            lod_far_distance: 896.0,
+            lod_min_resolution: [32, 32],
             shoreline_mask: impacts > 0,
             static_body_wakes: true,
             debug: false,
@@ -327,12 +340,42 @@ fn bench_water_prepare(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_water_idle_prepare(c: &mut Criterion) {
+    let mut group = c.benchmark_group("graphics_water_idle_prepare");
+    for (name, idle_mode) in [
+        ("calm", WaterIdleModeState::Calm),
+        ("sine", WaterIdleModeState::Sine),
+        ("chop", WaterIdleModeState::Chop),
+        ("storm", WaterIdleModeState::Storm),
+        ("river", WaterIdleModeState::River),
+    ] {
+        group.bench_with_input(
+            BenchmarkId::from_parameter(name),
+            &idle_mode,
+            |b, idle_mode| {
+                let mut graphics = PerroGraphics::new();
+                b.iter_batched(
+                    || vec![water_command_with_idle(0, 128, 2, *idle_mode)],
+                    |commands| {
+                        graphics.submit_many(commands);
+                        let timing = graphics.draw_frame_timed().expect("timing");
+                        black_box(timing.prepare_cpu);
+                    },
+                    BatchSize::LargeInput,
+                );
+            },
+        );
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_2d_rect_prepare,
     bench_2d_sprite_prepare,
     bench_3d_draw_prepare,
     bench_water_prepare,
+    bench_water_idle_prepare,
     bench_resource_churn
 );
 criterion_main!(benches);

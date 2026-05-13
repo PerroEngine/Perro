@@ -272,26 +272,28 @@ impl GpuWater {
         let mut staged = Vec::with_capacity(needed);
         let mut cell_needed = 0usize;
         for (node, water) in waters_2d {
-            let resolution = water_lod_resolution_2d(water, camera_2d_position);
-            let cells = water_cell_count(resolution);
+            let lod = water_lod_2d(water, camera_2d_position);
+            let cells = water_cell_count(lod.resolution);
             staged.push(water_gpu_2d(
                 *node,
                 water,
-                resolution,
+                lod.resolution,
                 cell_needed as u32,
                 cells as u32,
+                lod.ripple_blend,
             ));
             cell_needed = cell_needed.saturating_add(cells);
         }
         for (node, water) in waters_3d {
-            let resolution = water_lod_resolution_3d(water, camera_3d_position);
-            let cells = water_cell_count(resolution);
+            let lod = water_lod_3d(water, camera_3d_position);
+            let cells = water_cell_count(lod.resolution);
             staged.push(water_gpu_3d(
                 *node,
                 water,
-                resolution,
+                lod.resolution,
                 cell_needed as u32,
                 cells as u32,
+                lod.ripple_blend,
             ));
             cell_needed = cell_needed.saturating_add(cells);
         }
@@ -331,16 +333,25 @@ impl GpuWater {
         queue.write_buffer(&self.params_buffer, 0, bytemuck::bytes_of(&params));
         self.readback_nodes.clear();
         self.readback_offsets.clear();
-        self.readback_nodes
-            .extend(waters_2d.iter().map(|(node, _)| *node));
-        self.readback_nodes
-            .extend(waters_3d.iter().map(|(node, _)| *node));
-        self.readback_offsets
-            .extend(staged.iter().map(|water| water.sim[0] as usize));
+        for ((node, _), water) in waters_2d.iter().zip(staged.iter()) {
+            if water.sim[1] > 0 {
+                self.readback_nodes.push(*node);
+                self.readback_offsets.push(water.sim[0] as usize);
+            }
+        }
+        for ((node, _), water) in waters_3d.iter().zip(staged.iter().skip(waters_2d.len())) {
+            if water.sim[1] > 0 {
+                self.readback_nodes.push(*node);
+                self.readback_offsets.push(water.sim[0] as usize);
+            }
+        }
     }
 
     pub fn encode(&self, encoder: &mut wgpu::CommandEncoder) {
         if self.water_count == 0 {
+            return;
+        }
+        if self.max_cells_per_water == 0 {
             return;
         }
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -393,6 +404,9 @@ impl GpuWater {
         if self.water_count == 0 || self.readback_pending_rx.is_some() {
             return;
         }
+        if self.readback_offsets.is_empty() {
+            return;
+        }
         let needed_samples = self.water_count as usize;
         if needed_samples > self.readback_capacity {
             return;
@@ -411,6 +425,9 @@ impl GpuWater {
 
     pub fn request_readback(&mut self) {
         if self.water_count == 0 || self.readback_pending_rx.is_some() {
+            return;
+        }
+        if self.readback_offsets.is_empty() {
             return;
         }
         let needed_samples = self.water_count as usize;
@@ -560,39 +577,79 @@ fn water_cell_count(resolution: [u32; 2]) -> usize {
     x.saturating_mul(y).max(WATER_WORKGROUP_SIZE as usize)
 }
 
-fn water_lod_resolution_2d(water: &Water2DState, camera: [f32; 2]) -> [u32; 2] {
+fn water_lod_2d(water: &Water2DState, camera: [f32; 2]) -> WaterLodDecision {
     let pos = [water.model[2][0], water.model[2][1]];
-    water_lod_resolution(water.resolution, water.size, pos, camera)
+    water_lod(
+        water.resolution,
+        water.size,
+        [
+            water.lod_near_distance,
+            water.lod_mid_distance,
+            water.lod_far_distance,
+        ],
+        water.lod_min_resolution,
+        pos,
+        camera,
+    )
 }
 
-fn water_lod_resolution_3d(water: &Water3DState, camera: [f32; 3]) -> [u32; 2] {
+fn water_lod_3d(water: &Water3DState, camera: [f32; 3]) -> WaterLodDecision {
     let pos = [water.model[3][0], water.model[3][2]];
-    water_lod_resolution(water.resolution, water.size, pos, [camera[0], camera[2]])
+    water_lod(
+        water.resolution,
+        water.size,
+        [
+            water.lod_near_distance,
+            water.lod_mid_distance,
+            water.lod_far_distance,
+        ],
+        water.lod_min_resolution,
+        pos,
+        [camera[0], camera[2]],
+    )
 }
 
-fn water_lod_resolution(
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct WaterLodDecision {
+    resolution: [u32; 2],
+    ripple_blend: f32,
+}
+
+fn water_lod(
     resolution: [u32; 2],
     size: [f32; 2],
+    distances: [f32; 3],
+    min_resolution: [u32; 2],
     water_pos: [f32; 2],
     camera_pos: [f32; 2],
-) -> [u32; 2] {
+) -> WaterLodDecision {
     let dx = water_pos[0] - camera_pos[0];
     let dy = water_pos[1] - camera_pos[1];
     let distance = (dx * dx + dy * dy).sqrt();
     let radius = size[0].max(size[1]).max(1.0);
-    let div = if distance <= radius * 2.0 {
-        1
-    } else if distance <= radius * 6.0 {
-        2
-    } else if distance <= radius * 14.0 {
-        4
+    let near = distances[0].max(radius * 2.0);
+    let mid = distances[1].max(near);
+    let far = distances[2].max(mid);
+    let (div, ripple_blend) = if distance <= near {
+        (1, 1.0)
+    } else if distance <= mid {
+        let span = (mid - near).max(0.001);
+        let t = ((distance - near) / span).clamp(0.0, 1.0);
+        (2, 1.0 - t * 0.35)
+    } else if distance <= far {
+        let span = (far - mid).max(0.001);
+        let t = ((distance - mid) / span).clamp(0.0, 1.0);
+        (4, 0.65 - t * 0.45)
     } else {
-        8
+        (8, 0.15)
     };
-    [
-        (resolution[0] / div).clamp(32, 256),
-        (resolution[1] / div).clamp(32, 256),
-    ]
+    WaterLodDecision {
+        resolution: [
+            (resolution[0] / div).clamp(min_resolution[0].clamp(8, 256), 256),
+            (resolution[1] / div).clamp(min_resolution[1].clamp(8, 256), 256),
+        ],
+        ripple_blend,
+    }
 }
 
 fn water_gpu_2d(
@@ -601,6 +658,7 @@ fn water_gpu_2d(
     resolution: [u32; 2],
     cell_offset: u32,
     cell_count: u32,
+    ripple_blend: f32,
 ) -> WaterGpu {
     water_gpu_common(
         node,
@@ -623,6 +681,7 @@ fn water_gpu_2d(
         water.z_index,
         cell_offset,
         cell_count,
+        ripple_blend,
     )
 }
 
@@ -632,6 +691,7 @@ fn water_gpu_3d(
     resolution: [u32; 2],
     cell_offset: u32,
     cell_count: u32,
+    ripple_blend: f32,
 ) -> WaterGpu {
     water_gpu_common(
         node,
@@ -654,6 +714,7 @@ fn water_gpu_3d(
         0,
         cell_offset,
         cell_count,
+        ripple_blend,
     )
 }
 
@@ -679,6 +740,7 @@ fn water_gpu_common(
     z_index: i32,
     cell_offset: u32,
     cell_count: u32,
+    ripple_blend: f32,
 ) -> WaterGpu {
     WaterGpu {
         node: node.index(),
@@ -700,7 +762,12 @@ fn water_gpu_common(
             resolution[0].clamp(8, 256),
             resolution[1].clamp(8, 256),
         ],
-        model_x: [model[0][0], model[0][1], model[0][2], 0.0],
+        model_x: [
+            model[0][0],
+            model[0][1],
+            model[0][2],
+            ripple_blend.clamp(0.0, 1.0),
+        ],
         model_y: [model[1][0], model[1][1], model[1][2], 0.0],
         model_z: [model[2][0], model[2][1], model[2][2], 0.0],
     }
@@ -752,7 +819,7 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     let w = waters[water_idx];
     let local_idx = gid.x;
-    if local_idx >= w.sim.y {
+    if w.sim.y == 0u || local_idx >= w.sim.y {
         return;
     }
     let cell_idx = w.sim.x + local_idx;
@@ -808,10 +875,13 @@ fn vs_water_2d(
 @fragment
 fn fs_water_2d(in: Water2DVertexOut) -> @location(0) vec4<f32> {
     let w = waters[in.water_idx];
-    let cell_idx = w.sim.x + u32(clamp(in.uv.x, 0.0, 1.0) * f32(max(w.sim.y - 1u, 1u)));
-    let ripple = cells[cell_idx];
     let t = f32(params.frame_index) * 0.016;
     let idle = sin((in.uv.x + in.uv.y + t * w.wave.x) * 6.2831853) * 0.5 + 0.5;
+    var ripple = vec4<f32>(0.0);
+    if w.sim.y > 0u {
+        let cell_idx = w.sim.x + u32(clamp(in.uv.x, 0.0, 1.0) * f32(max(w.sim.y - 1u, 1u)));
+        ripple = cells[cell_idx] * w.model_x.w;
+    }
     let foam = clamp(ripple.z + abs(ripple.x) * 0.35, 0.0, 1.0);
     let deep = vec3<f32>(0.02, 0.18, 0.30);
     let shallow = vec3<f32>(0.08, 0.46, 0.62);
@@ -843,16 +913,42 @@ mod tests {
     #[test]
     fn water_lod_resolution_clamps_with_distance() {
         assert_eq!(
-            water_lod_resolution([256, 256], [64.0, 64.0], [0.0, 0.0], [0.0, 0.0]),
-            [256, 256]
+            water_lod(
+                [256, 256],
+                [64.0, 64.0],
+                [128.0, 384.0, 896.0],
+                [32, 32],
+                [0.0, 0.0],
+                [0.0, 0.0]
+            ),
+            WaterLodDecision {
+                resolution: [256, 256],
+                ripple_blend: 1.0,
+            }
         );
-        assert_eq!(
-            water_lod_resolution([256, 256], [64.0, 64.0], [512.0, 0.0], [0.0, 0.0]),
-            [64, 64]
+        let mid = water_lod(
+            [256, 256],
+            [64.0, 64.0],
+            [128.0, 384.0, 896.0],
+            [32, 32],
+            [512.0, 0.0],
+            [0.0, 0.0],
         );
+        assert_eq!(mid.resolution, [64, 64]);
+        assert!(mid.ripple_blend > 0.5 && mid.ripple_blend < 0.6);
         assert_eq!(
-            water_lod_resolution([256, 256], [64.0, 64.0], [2048.0, 0.0], [0.0, 0.0]),
-            [32, 32]
+            water_lod(
+                [256, 256],
+                [64.0, 64.0],
+                [128.0, 384.0, 896.0],
+                [32, 32],
+                [2048.0, 0.0],
+                [0.0, 0.0]
+            ),
+            WaterLodDecision {
+                resolution: [32, 32],
+                ripple_blend: 0.15,
+            }
         );
     }
 }

@@ -170,6 +170,32 @@ fn apply_water_body_fields(node: &mut WaterSurfaceParams, ty: &str, fields: &[Sc
                     node.physics.sample_readback_rate = v.max(0.0);
                 }
             }
+            WaterBodyField::LodNearDistance => {
+                if let Some(v) = as_f32(value) {
+                    node.lod.near_distance = v.max(0.0);
+                }
+            }
+            WaterBodyField::LodMidDistance => {
+                if let Some(v) = as_f32(value) {
+                    node.lod.mid_distance = v.max(node.lod.near_distance);
+                }
+            }
+            WaterBodyField::LodFarDistance => {
+                if let Some(v) = as_f32(value) {
+                    node.lod.far_distance = v.max(node.lod.mid_distance);
+                }
+            }
+            WaterBodyField::LodMinResolution => {
+                if let Some((x, y)) = value.as_vec2() {
+                    node.lod.min_resolution = [
+                        (x.max(1.0).round() as u32).clamp(1, 4096),
+                        (y.max(1.0).round() as u32).clamp(1, 4096),
+                    ];
+                } else if let Some(v) = as_i32(value) {
+                    let v = v.clamp(1, 4096) as u32;
+                    node.lod.min_resolution = [v, v];
+                }
+            }
             WaterBodyField::ShorelineMask => {
                 if let Some(v) = as_bool(value) {
                     node.shoreline_mask = v;

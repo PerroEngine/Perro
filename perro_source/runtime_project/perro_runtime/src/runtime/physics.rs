@@ -17,6 +17,32 @@ use perro_variant::Variant;
 
 pub(crate) type PhysicsState = PhysicsSystem;
 pub(crate) use perro_physics::{AudioRaycastInput, AudioRaycastResult};
+
+fn water_force_lod(
+    near_distance: f32,
+    mid_distance: f32,
+    far_distance: f32,
+    water_pos: Vector2,
+    camera_pos: Vector2,
+) -> (f32, f32) {
+    let distance = Vector2::distance(water_pos, camera_pos);
+    let near = near_distance.max(0.0);
+    let mid = mid_distance.max(near);
+    let far = far_distance.max(mid);
+    if distance <= near {
+        return (1.0, 0.0);
+    }
+    if distance <= mid {
+        let t = ((distance - near) / (mid - near).max(0.001)).clamp(0.0, 1.0);
+        return (1.0 - t * 0.25, 0.02 * t);
+    }
+    if distance <= far {
+        let t = ((distance - mid) / (far - mid).max(0.001)).clamp(0.0, 1.0);
+        return (0.75 - t * 0.35, 0.02 + 0.18 * t);
+    }
+    (0.25, 0.5)
+}
+
 impl Runtime {
     pub fn set_physics_paused(&mut self, paused: bool) {
         self.physics.set_paused(paused);
@@ -746,6 +772,12 @@ impl Runtime {
         if waters.is_empty() {
             return;
         }
+        let camera_pos = self
+            .render_2d
+            .last_camera
+            .as_ref()
+            .map(|camera| Vector2::new(camera.position[0], camera.position[1]))
+            .unwrap_or(Vector2::ZERO);
 
         let body_ids: Vec<_> = self
             .nodes
@@ -784,7 +816,17 @@ impl Runtime {
                 }
                 let buoyancy = submerged * surface.physics.buoyancy * body.density.max(0.0);
                 let drag = -body.linear_velocity.y * surface.physics.drag;
-                forces.push((body_id, Vector2::new(0.0, buoyancy + drag)));
+                let (scale, deadzone) = water_force_lod(
+                    surface.lod.near_distance,
+                    surface.lod.mid_distance,
+                    surface.lod.far_distance,
+                    *water_pos,
+                    camera_pos,
+                );
+                let force_y = (buoyancy + drag) * scale;
+                if force_y.abs() >= deadzone {
+                    forces.push((body_id, Vector2::new(0.0, force_y)));
+                }
             }
         }
         for (body, force) in forces {
@@ -816,6 +858,12 @@ impl Runtime {
         if waters.is_empty() {
             return;
         }
+        let camera_pos = self
+            .render_3d
+            .last_camera
+            .as_ref()
+            .map(|camera| Vector2::new(camera.position[0], camera.position[2]))
+            .unwrap_or(Vector2::ZERO);
 
         let body_ids: Vec<_> = self
             .nodes
@@ -857,7 +905,18 @@ impl Runtime {
                 }
                 let buoyancy = submerged * surface.physics.buoyancy * body.mass.max(0.0);
                 let drag = -body.linear_velocity.y * surface.physics.drag;
-                forces.push((body_id, Vector3::new(0.0, buoyancy + drag, 0.0)));
+                let water_pos_2d = Vector2::new(water_pos.x, water_pos.z);
+                let (scale, deadzone) = water_force_lod(
+                    surface.lod.near_distance,
+                    surface.lod.mid_distance,
+                    surface.lod.far_distance,
+                    water_pos_2d,
+                    camera_pos,
+                );
+                let force_y = (buoyancy + drag) * scale;
+                if force_y.abs() >= deadzone {
+                    forces.push((body_id, Vector3::new(0.0, force_y, 0.0)));
+                }
             }
         }
         for (body, force) in forces {

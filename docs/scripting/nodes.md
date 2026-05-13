@@ -33,6 +33,17 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 - Omit `columns` for a left-to-right strip.
 - Set `columns` when frames wrap to more than one row in a grid.
 
+`WaterBody2D`
+
+- Rectangular water surface centered on its `Node2D` position.
+- Renders through the retained 2D water path when visible and matched by camera `render_mask`.
+- Runs GPU height/foam simulation with idle modes, wind, flow, damping, wake, foam, and LOD controls.
+- Applies fixed-step buoyancy and vertical drag to `RigidBody2D` when body centers are inside the water rect and below sampled surface height.
+- Uses `RigidBody2D.density` for buoyancy scale.
+- Does not create collision shapes, raycast hits, contacts, or area signals by itself.
+- Add `StaticBody2D`, `Area2D`, or `CollisionShape2D` nodes separately for solid banks, floors, triggers, or queries.
+- See [Water Bodies](water.md).
+
 `Camera2D`
 
 - Active 2D camera (position/rotation/zoom).
@@ -161,6 +172,18 @@ See [TileMap2D](tilemap.md).
 `ParticleEmitter3D`
 
 - 3D particle emitter driven by a particle profile.
+
+`WaterBody3D`
+
+- Rectangular water surface centered on its `Node3D` position.
+- Uses local X/Z as surface axes and world Y as height.
+- Renders through the 3D water path when visible and matched by camera `render_mask`.
+- Runs GPU height/foam simulation with idle modes, wind, flow, damping, wake, foam, and LOD controls.
+- Applies fixed-step buoyancy and vertical drag to `RigidBody3D` when body centers are inside the water rect and below sampled surface height.
+- Uses `RigidBody3D.mass` for buoyancy scale.
+- Does not create collision shapes, raycast hits, contacts, or area signals by itself.
+- Add `StaticBody3D`, `Area3D`, or `CollisionShape3D` nodes separately for lake beds, shores, triggers, or queries.
+- See [Water Bodies](water.md).
 
 `ParticleEmitter2D`
 

@@ -49,6 +49,25 @@ impl Default for WaterPhysicsParams {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WaterLodParams {
+    pub near_distance: f32,
+    pub mid_distance: f32,
+    pub far_distance: f32,
+    pub min_resolution: [u32; 2],
+}
+
+impl Default for WaterLodParams {
+    fn default() -> Self {
+        Self {
+            near_distance: 128.0,
+            mid_distance: 384.0,
+            far_distance: 896.0,
+            min_resolution: [32, 32],
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WaterSurfaceParams {
     pub size: Vector2,
     pub resolution: [u32; 2],
@@ -58,6 +77,7 @@ pub struct WaterSurfaceParams {
     pub idle_mode: WaterIdleMode,
     pub wave: WaterWaveProfile,
     pub physics: WaterPhysicsParams,
+    pub lod: WaterLodParams,
     pub shoreline_mask: bool,
     pub static_body_wakes: bool,
     pub debug: bool,
@@ -74,6 +94,7 @@ impl Default for WaterSurfaceParams {
             idle_mode: WaterIdleMode::Calm,
             wave: WaterWaveProfile::default(),
             physics: WaterPhysicsParams::default(),
+            lod: WaterLodParams::default(),
             shoreline_mask: false,
             static_body_wakes: true,
             debug: false,
