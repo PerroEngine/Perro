@@ -3,6 +3,67 @@ use perro_ids::NodeID;
 use perro_structs::{AudioInteraction, BitMask, CollisionPolicy, Vector3};
 use std::ops::{Deref, DerefMut};
 
+use crate::PhysicsForceProfile;
+
+#[derive(Clone, Debug)]
+pub struct PhysicsForceEmitter3D {
+    pub base: Node3D,
+    pub enabled: bool,
+    pub profile: PhysicsForceProfile,
+    pub radius: f32,
+    pub strength: f32,
+    pub duration: f32,
+    pub pulse: bool,
+    pub falloff: f32,
+    pub affect_bodies: bool,
+    pub affect_water: bool,
+    pub collision_layers: BitMask,
+    pub collision_mask: BitMask,
+    pub vectors: Vec<Vector3>,
+    pub age: f32,
+}
+
+impl Default for PhysicsForceEmitter3D {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PhysicsForceEmitter3D {
+    pub fn new() -> Self {
+        Self {
+            base: Node3D::new(),
+            enabled: true,
+            profile: PhysicsForceProfile::Explosion,
+            radius: 8.0,
+            strength: 1.0,
+            duration: 0.0,
+            pulse: true,
+            falloff: 1.0,
+            affect_bodies: true,
+            affect_water: true,
+            collision_layers: BitMask::ALL,
+            collision_mask: BitMask::NONE,
+            vectors: Vec::new(),
+            age: 0.0,
+        }
+    }
+}
+
+impl Deref for PhysicsForceEmitter3D {
+    type Target = Node3D;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DerefMut for PhysicsForceEmitter3D {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Shape3D {
     Cube { size: Vector3 },

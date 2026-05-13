@@ -313,6 +313,10 @@ impl Runtime {
 
         self.nodes.clear();
         self.clear_physics();
+        self.force_water_impacts_2d.clear();
+        self.force_water_impacts_3d.clear();
+        self.pending_force_emitters_2d.clear();
+        self.pending_force_emitters_3d.clear();
         self.scripts = Default::default();
         self.script_runtime.pending_start_scripts.clear();
         self.script_runtime.pending_start_flags.clear();

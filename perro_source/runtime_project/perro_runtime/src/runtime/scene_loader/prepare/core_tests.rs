@@ -31,6 +31,10 @@ mod tests {
                 lod_min_resolution = 16
                 collision_layers = [2, 4]
                 collision_mask = [1, 3]
+                deep_color = (0.0, 0.1, 0.2, 0.9)
+                shallow_color = (0.1, 0.5, 0.7, 0.35)
+                shallow_depth = 10
+                sky_bias = { ratio=0.4 }
                 coastline = { foam_color=(0.8, 0.9, 1.0, 1.0) foam_strength=0.9 foam_width=2.0 cutoff_softness=0.4 wave_reflection=0.5 wave_damping=0.25 edge_noise=0.1 }
                 debug = true
             [/WaterBody2D]
@@ -71,6 +75,16 @@ mod tests {
                 assert_eq!(node.water.lod.min_resolution, [16, 16]);
                 assert_eq!(node.water.collision_layers.bits(), 0b1010);
                 assert_eq!(node.water.collision_mask.bits(), 0b101);
+                assert_eq!(
+                    node.water.optics.deep_color.to_rgba(),
+                    [0.0, 0.1, 0.2, 0.9]
+                );
+                assert_eq!(
+                    node.water.optics.shallow_color.to_rgba(),
+                    [0.1, 0.5, 0.7, 0.35]
+                );
+                assert_eq!(node.water.optics.shallow_depth, 10.0);
+                assert_eq!(node.water.optics.sky_bias.ratio(), 0.4);
                 assert_eq!(node.water.coastline.foam_color.to_rgba(), [0.8, 0.9, 1.0, 1.0]);
                 assert_eq!(node.water.coastline.foam_strength, 0.9);
                 assert_eq!(node.water.coastline.foam_width, 2.0);
@@ -81,6 +95,65 @@ mod tests {
                 assert!(node.water.debug);
             }
             other => panic!("expected WaterBody2D node, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn water_body_shape_fields_parse() {
+        let scene = Parser::new(
+            r#"
+            @root = lake2d
+            [lake2d]
+            [WaterBody2D]
+                shape = { type="circle" radius=24 }
+            [/WaterBody2D]
+            [/lake2d]
+            [tank3d]
+            [WaterBody3D]
+                shape = { type="cylinder" radius=16 half_height=5 }
+            [/WaterBody3D]
+            [/tank3d]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+        let lake = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "lake2d")
+            .expect("lake node");
+        let tank = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "tank3d")
+            .expect("tank node");
+
+        match &lake.node.data {
+            SceneNodeData::WaterBody2D(node) => {
+                assert_eq!(node.water.size, Vector2::new(48.0, 48.0));
+                assert_eq!(
+                    node.water.shape,
+                    perro_nodes::WaterShape::Circle { radius: 24.0 }
+                );
+            }
+            other => panic!("expected WaterBody2D node, got {other:?}"),
+        }
+        match &tank.node.data {
+            SceneNodeData::WaterBody3D(node) => {
+                assert_eq!(node.water.size, Vector2::new(32.0, 32.0));
+                assert_eq!(node.water.depth, 10.0);
+                assert_eq!(
+                    node.water.shape,
+                    perro_nodes::WaterShape::Cylinder {
+                        radius: 16.0,
+                        half_height: 5.0,
+                    }
+                );
+            }
+            other => panic!("expected WaterBody3D node, got {other:?}"),
         }
     }
 
@@ -1721,7 +1794,7 @@ mod tests {
             .expect("camera node");
         match &camera.node.data {
             SceneNodeData::Camera3D(node) => {
-                assert_eq!(node.render_mask.bits(), u32::MAX & !0b1);
+                assert_eq!(node.render_mask.bits(), !0b1);
             }
             other => panic!("expected Camera3D node, got {other:?}"),
         }
@@ -1733,7 +1806,7 @@ mod tests {
             .expect("body node");
         match &body.node.data {
             SceneNodeData::StaticBody2D(node) => {
-                assert_eq!(node.collision_layers.bits(), u32::MAX & !0b1 & !(1u32 << 31));
+                assert_eq!(node.collision_layers.bits(), !0b1 & !(1u32 << 31));
                 assert_eq!(node.collision_mask.bits(), 0b1010);
             }
             other => panic!("expected StaticBody2D node, got {other:?}"),

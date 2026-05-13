@@ -53,6 +53,24 @@ type RuntimeScriptCtor = ScriptConstructor<RuntimeScriptApi>;
 type RuntimeScriptBehavior = dyn ScriptBehavior<RuntimeScriptApi>;
 type StaticScriptRegistry = &'static [(u64, RuntimeScriptCtor)];
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ForceWaterImpact2D {
+    pub(crate) position: perro_structs::Vector2,
+    pub(crate) force: perro_structs::Vector2,
+    pub(crate) strength: f32,
+    pub(crate) radius: f32,
+    pub(crate) cavitation: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ForceWaterImpact3D {
+    pub(crate) position: perro_structs::Vector3,
+    pub(crate) force: perro_structs::Vector3,
+    pub(crate) strength: f32,
+    pub(crate) radius: f32,
+    pub(crate) cavitation: f32,
+}
+
 /// Live game runtime state.
 ///
 /// Keeps scene nodes, script schedules, resource APIs, input snapshots,
@@ -89,6 +107,10 @@ pub struct Runtime {
     pub(crate) window_requests: Vec<WindowRequest>,
     physics: physics::PhysicsState,
     water_samples: AHashMap<NodeID, perro_nodes::WaterPhysicsSample>,
+    pub(crate) force_water_impacts_2d: Vec<ForceWaterImpact2D>,
+    pub(crate) force_water_impacts_3d: Vec<ForceWaterImpact3D>,
+    pub(crate) pending_force_emitters_2d: Vec<perro_nodes::PhysicsForceEmitter2D>,
+    pub(crate) pending_force_emitters_3d: Vec<perro_nodes::PhysicsForceEmitter3D>,
     pub(crate) audio: AudioPropagationState,
 }
 
@@ -205,6 +227,10 @@ impl Runtime {
             window_requests: Vec::new(),
             physics: physics::PhysicsState::new(),
             water_samples: AHashMap::new(),
+            force_water_impacts_2d: Vec::new(),
+            force_water_impacts_3d: Vec::new(),
+            pending_force_emitters_2d: Vec::new(),
+            pending_force_emitters_3d: Vec::new(),
             audio: AudioPropagationState::new(),
         }
     }

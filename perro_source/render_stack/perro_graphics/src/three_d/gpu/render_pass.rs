@@ -393,4 +393,12 @@ impl Gpu3D {
     pub fn depth_prepass_view(&self) -> &wgpu::TextureView {
         &self.depth_prepass_view
     }
+
+    pub fn camera_bind_group(&self) -> &wgpu::BindGroup {
+        &self.camera_bind_group
+    }
+
+    pub fn camera_bind_group_layout(&self) -> &wgpu::BindGroupLayout {
+        &self.camera_bgl
+    }
 }

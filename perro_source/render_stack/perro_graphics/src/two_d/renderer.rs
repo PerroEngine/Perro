@@ -173,8 +173,16 @@ impl Renderer2D {
     }
 
     pub fn upsert_water(&mut self, node: NodeID, water: Water2DState) {
-        if self.retained_waters.insert(node, water.clone()) != Some(water) {
-            self.retained_waters_revision = self.retained_waters_revision.wrapping_add(1);
+        match self.retained_waters.get_mut(&node) {
+            Some(existing) if *existing == water => {}
+            Some(existing) => {
+                *existing = water;
+                self.retained_waters_revision = self.retained_waters_revision.wrapping_add(1);
+            }
+            None => {
+                self.retained_waters.insert(node, water);
+                self.retained_waters_revision = self.retained_waters_revision.wrapping_add(1);
+            }
         }
     }
 

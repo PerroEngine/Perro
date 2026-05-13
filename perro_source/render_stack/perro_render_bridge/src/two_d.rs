@@ -68,12 +68,26 @@ pub enum WaterIdleModeState {
     River,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum WaterShapeState {
+    #[default]
+    Rect,
+    Circle {
+        radius: f32,
+    },
+    Cylinder {
+        radius: f32,
+        half_height: f32,
+    },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WaterImpact2D {
     pub position: [f32; 2],
     pub velocity: [f32; 2],
     pub strength: f32,
     pub radius: f32,
+    pub cavitation: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -105,6 +119,7 @@ pub struct Water2DState {
     pub model: [[f32; 3]; 3],
     pub z_index: i32,
     pub size: [f32; 2],
+    pub shape: WaterShapeState,
     pub resolution: [u32; 2],
     pub depth: f32,
     pub flow: [f32; 2],
@@ -122,6 +137,10 @@ pub struct Water2DState {
     pub lod_min_resolution: [u32; 2],
     pub collision_layers: BitMask,
     pub collision_mask: BitMask,
+    pub deep_color: [f32; 4],
+    pub shallow_color: [f32; 4],
+    pub shallow_depth: f32,
+    pub sky_bias_ratio: f32,
     pub coastline_foam_color: [f32; 4],
     pub coastline_foam_strength: f32,
     pub coastline_foam_width: f32,

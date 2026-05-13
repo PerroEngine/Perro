@@ -63,6 +63,59 @@ Behavior:
 - 3D `Shape3D::TriMesh` cannot be used as the moving cast shape.
 - Contact queries return current active contact points for one body.
 
+## Physics Force Emitters
+
+`PhysicsForceEmitter2D` and `PhysicsForceEmitter3D` apply radius-based force fields during fixed physics.
+
+Fields:
+
+- `enabled`
+- `profile`: `"lift"`, `"explosion"`, `"current"`, `"vortex"`, or `"custom"`
+- `radius`
+- `strength`
+- `duration`
+- `pulse`
+- `falloff`
+- `affect_bodies`
+- `affect_water`
+- `collision_layers`
+- `collision_mask`
+- `vectors`
+
+Custom profile:
+
+```text
+[LiftPad]
+    [PhysicsForceEmitter2D]
+        profile = "custom"
+        radius = 8
+        strength = 1
+        vectors = [(0, 20), (4, 15), (8, 0)]
+        [Node2D]
+            position = (0, 0)
+        [/Node2D]
+    [/PhysicsForceEmitter2D]
+[/LiftPad]
+```
+
+`vectors` stores force vectors.
+Runtime samples the array by normalized distance across `radius` and interpolates between entries.
+`strength` multiplies the sampled vector.
+
+Presets:
+
+- `lift`: world-up force.
+- `explosion`: outward impulse.
+- `current`: first vector as steady directional force.
+- `vortex`: tangent force plus small inward pull.
+- `custom`: sampled vector array.
+
+Water:
+
+- Any emitter with `affect_water = true` sends its force event to nearby water.
+- Water converts force strength into wake/foam and cavitation.
+- There is no separate underwater explosion preset.
+
 ## Collision Layers And Masks
 
 2D and 3D body/area nodes expose:

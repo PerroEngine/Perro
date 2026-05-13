@@ -11,7 +11,7 @@ use perro_render_bridge::{
     AmbientLight2DState, Camera2DState, Command2D, ParticlePath2D, ParticleProfile2D,
     ParticleSimulationMode2D, PointLight2DState, PointParticles2DState, RayLight2DState,
     RenderCommand, ResourceCommand, SpotLight2DState, Sprite2DCommand, TileMap2DCommand,
-    Water2DState, WaterCoastlineShape2D, WaterIdleModeState, WaterImpact2D,
+    Water2DState, WaterCoastlineShape2D, WaterIdleModeState, WaterImpact2D, WaterShapeState,
 };
 use perro_runtime_render::{sprite_2d_texture_request, tilemap_2d_texture_request};
 use perro_structs::BitMask;
@@ -261,7 +261,8 @@ impl Runtime {
                         water: Box::new(Water2DState {
                             model,
                             z_index,
-                            size: [water.size.x, water.size.y],
+                            size: water_render_size(water),
+                            shape: water_shape_state(water.shape),
                             resolution: water.resolution,
                             depth: water.depth,
                             flow: [water.flow.x, water.flow.y],
@@ -279,6 +280,10 @@ impl Runtime {
                             lod_min_resolution: water.lod.min_resolution,
                             collision_layers: water.collision_layers,
                             collision_mask: water.collision_mask,
+                            deep_color: water.optics.deep_color.to_rgba(),
+                            shallow_color: water.optics.shallow_color.to_rgba(),
+                            shallow_depth: water.optics.shallow_depth,
+                            sky_bias_ratio: water.optics.sky_bias.ratio(),
                             coastline_foam_color: water.coastline.foam_color.to_rgba(),
                             coastline_foam_strength: water.coastline.foam_strength,
                             coastline_foam_width: water.coastline.foam_width,
@@ -666,7 +671,7 @@ impl Runtime {
         let Some(water_global) = self.get_global_transform_2d(water_id) else {
             return Arc::from([]);
         };
-        let water_half = water.size * 0.5;
+        let water_half = water.shape.surface_size() * 0.5;
         let mut shapes = Vec::new();
         let body_ids: Vec<_> = self
             .nodes
@@ -759,7 +764,7 @@ impl Runtime {
         let Some(water_global) = self.get_global_transform_2d(water_id) else {
             return Arc::from([]);
         };
-        let half = water.size * 0.5;
+        let half = water.shape.surface_size() * 0.5;
         let body_ids: Vec<_> = self
             .nodes
             .iter()
@@ -792,7 +797,7 @@ impl Runtime {
                 continue;
             };
             let local = body_global.position - water_global.position;
-            if local.x.abs() > half.x || local.y.abs() > half.y {
+            if !water.shape.contains_surface(local) {
                 continue;
             }
             let strength =
@@ -805,6 +810,20 @@ impl Runtime {
                 velocity: [velocity.x, velocity.y],
                 strength,
                 radius: mass.max(density).sqrt().max(1.0),
+                cavitation: 0.0,
+            });
+        }
+        for impact in self.force_water_impacts_2d.iter() {
+            let local = impact.position - water_global.position;
+            if local.x.abs() > half.x + impact.radius || local.y.abs() > half.y + impact.radius {
+                continue;
+            }
+            impacts.push(WaterImpact2D {
+                position: [local.x, local.y],
+                velocity: [impact.force.x, impact.force.y],
+                strength: impact.strength,
+                radius: impact.radius,
+                cavitation: impact.cavitation,
             });
         }
         Arc::from(impacts)
@@ -824,6 +843,25 @@ fn water_idle_mode_state(mode: perro_nodes::WaterIdleMode) -> WaterIdleModeState
         perro_nodes::WaterIdleMode::Storm => WaterIdleModeState::Storm,
         perro_nodes::WaterIdleMode::River => WaterIdleModeState::River,
     }
+}
+
+fn water_shape_state(shape: perro_nodes::WaterShape) -> WaterShapeState {
+    match shape {
+        perro_nodes::WaterShape::Circle { radius } => WaterShapeState::Circle { radius },
+        perro_nodes::WaterShape::Cylinder {
+            radius,
+            half_height,
+        } => WaterShapeState::Cylinder {
+            radius,
+            half_height,
+        },
+        _ => WaterShapeState::Rect,
+    }
+}
+
+fn water_render_size(water: perro_nodes::WaterSurfaceParams) -> [f32; 2] {
+    let size = water.shape.surface_size();
+    [size.x, size.y]
 }
 
 pub(crate) fn resolve_tileset_2d(runtime: &mut Runtime, source: &str) -> Option<ParsedTileset2D> {

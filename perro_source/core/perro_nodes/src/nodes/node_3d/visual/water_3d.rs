@@ -13,6 +13,9 @@ impl WaterBody3D {
             base: Node3D::new(),
             water: WaterSurfaceParams {
                 size: perro_structs::Vector2::new(128.0, 128.0),
+                shape: crate::WaterShape::box_volume(perro_structs::Vector3::new(
+                    128.0, 12.0, 128.0,
+                )),
                 resolution: [128, 128],
                 depth: 12.0,
                 flow: perro_structs::Vector2::ZERO,
@@ -38,6 +41,7 @@ impl WaterBody3D {
                 },
                 collision_layers: crate::BitMask::ALL,
                 collision_mask: crate::BitMask::NONE,
+                optics: crate::WaterOpticsSettings::new(),
                 coastline: crate::CoastlineSettings::new(),
                 debug: false,
             },

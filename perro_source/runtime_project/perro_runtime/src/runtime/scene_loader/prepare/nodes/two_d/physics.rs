@@ -28,6 +28,16 @@ fn build_rigid_body_2d(data: &SceneDefNodeData) -> RigidBody2D {
     node
 }
 
+fn build_physics_force_emitter_2d(data: &SceneDefNodeData) -> PhysicsForceEmitter2D {
+    let mut node = PhysicsForceEmitter2D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_2d_data(&mut node, base);
+    }
+    apply_node_2d_fields(&mut node, &data.fields);
+    apply_physics_force_emitter_2d_fields(&mut node, &data.fields);
+    node
+}
+
 fn build_area_2d(data: &SceneDefNodeData) -> Area2D {
     let mut node = Area2D::new();
     if let Some(base) = data.base_ref() {
@@ -36,6 +46,77 @@ fn build_area_2d(data: &SceneDefNodeData) -> Area2D {
     apply_node_2d_fields(&mut node, &data.fields);
     apply_area_2d_fields(&mut node, &data.fields);
     node
+}
+
+fn apply_physics_force_emitter_2d_fields(
+    node: &mut PhysicsForceEmitter2D,
+    fields: &[SceneObjectField],
+) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        match resolve_node_field("PhysicsForceEmitter2D", name) {
+            Some(NodeField::PhysicsForceEmitter2D(PhysicsForceEmitterField::Enabled)) => {
+                if let Some(v) = as_bool(value) {
+                    node.enabled = v;
+                }
+            }
+            Some(NodeField::PhysicsForceEmitter2D(PhysicsForceEmitterField::Profile)) => {
+                if let Some(v) = as_force_profile(value) {
+                    node.profile = v;
+                }
+            }
+            Some(NodeField::PhysicsForceEmitter2D(PhysicsForceEmitterField::Radius)) => {
+                if let Some(v) = as_f32(value) {
+                    node.radius = v.max(0.0);
+                }
+            }
+            Some(NodeField::PhysicsForceEmitter2D(PhysicsForceEmitterField::Strength)) => {
+                if let Some(v) = as_f32(value) {
+                    node.strength = v;
+                }
+            }
+            Some(NodeField::PhysicsForceEmitter2D(PhysicsForceEmitterField::Duration)) => {
+                if let Some(v) = as_f32(value) {
+                    node.duration = v.max(0.0);
+                }
+            }
+            Some(NodeField::PhysicsForceEmitter2D(PhysicsForceEmitterField::Pulse)) => {
+                if let Some(v) = as_bool(value) {
+                    node.pulse = v;
+                }
+            }
+            Some(NodeField::PhysicsForceEmitter2D(PhysicsForceEmitterField::Falloff)) => {
+                if let Some(v) = as_f32(value) {
+                    node.falloff = v.max(0.0);
+                }
+            }
+            Some(NodeField::PhysicsForceEmitter2D(PhysicsForceEmitterField::AffectBodies)) => {
+                if let Some(v) = as_bool(value) {
+                    node.affect_bodies = v;
+                }
+            }
+            Some(NodeField::PhysicsForceEmitter2D(PhysicsForceEmitterField::AffectWater)) => {
+                if let Some(v) = as_bool(value) {
+                    node.affect_water = v;
+                }
+            }
+            Some(NodeField::PhysicsForceEmitter2D(PhysicsForceEmitterField::CollisionLayers)) => {
+                if let Some(v) = as_bitmask(value) {
+                    node.collision_layers = v;
+                }
+            }
+            Some(NodeField::PhysicsForceEmitter2D(PhysicsForceEmitterField::CollisionMask)) => {
+                if let Some(v) = as_bitmask(value) {
+                    node.collision_mask = v;
+                }
+            }
+            Some(NodeField::PhysicsForceEmitter2D(PhysicsForceEmitterField::Vectors)) => {
+                if let Some(v) = as_vec2_array(value) {
+                    node.vectors = v;
+                }
+            }
+            _ => {}
+        }
+    });
 }
 
 fn build_pin_joint_2d(data: &SceneDefNodeData) -> PinJoint2D {

@@ -2,7 +2,7 @@ use bytemuck::{Pod, Zeroable};
 use perro_ids::NodeID;
 use perro_render_bridge::{
     Water2DState, Water3DState, WaterCoastlineShape2D, WaterCoastlineShape3D, WaterIdleModeState,
-    WaterSampleState,
+    WaterSampleState, WaterShapeState,
 };
 use std::sync::mpsc;
 
@@ -19,12 +19,17 @@ struct WaterGpu {
     flow_wind: [f32; 4],
     wave: [f32; 4],
     flags: [u32; 4],
+    deep_color: [f32; 4],
+    shallow_color: [f32; 4],
+    sky_color_bias: [f32; 4],
     coastline_foam_color: [f32; 4],
     coastline: [f32; 4],
+    shape: [f32; 4],
     sim: [u32; 4],
     model_x: [f32; 4],
     model_y: [f32; 4],
     model_z: [f32; 4],
+    model_w: [f32; 4],
 }
 
 #[repr(C)]
@@ -39,6 +44,7 @@ struct WaterParamsGpu {
 pub struct GpuWater {
     compute_pipeline: wgpu::ComputePipeline,
     render_pipeline_2d: wgpu::RenderPipeline,
+    render_pipeline_3d: wgpu::RenderPipeline,
     compute_bgl: wgpu::BindGroupLayout,
     render_bgl: wgpu::BindGroupLayout,
     compute_bind_group: wgpu::BindGroup,
@@ -66,12 +72,20 @@ pub struct GpuWater {
     readback_copy_encoded: bool,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct WaterPrepareContext {
+    pub camera_2d_position: [f32; 2],
+    pub camera_3d_position: [f32; 3],
+    pub sky_color: [f32; 3],
+}
+
 impl GpuWater {
     pub fn new(
         device: &wgpu::Device,
         color_format: wgpu::TextureFormat,
         sample_count: u32,
         camera_bgl: &wgpu::BindGroupLayout,
+        camera_3d_bgl: &wgpu::BindGroupLayout,
     ) -> Self {
         let compute_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_water_gpu_bgl"),
@@ -172,6 +186,10 @@ impl GpuWater {
             label: Some("perro_water_render_shader"),
             source: wgpu::ShaderSource::Wgsl(render_wgsl.into()),
         });
+        let render_shader_3d = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("perro_water_3d_render_shader"),
+            source: wgpu::ShaderSource::Wgsl(WATER_3D_RENDER_WGSL.into()),
+        });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_water_gpu_pipeline_layout"),
             bind_group_layouts: &[Some(&compute_bgl)],
@@ -185,14 +203,19 @@ impl GpuWater {
             compilation_options: wgpu::PipelineCompilationOptions::default(),
             cache: None,
         });
-        let render_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        let render_layout_2d = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_water_2d_render_layout"),
             bind_group_layouts: &[Some(&render_bgl), Some(camera_bgl)],
             immediate_size: 0,
         });
+        let render_layout_3d = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("perro_water_3d_render_layout"),
+            bind_group_layouts: &[Some(&render_bgl), Some(camera_3d_bgl)],
+            immediate_size: 0,
+        });
         let render_pipeline_2d = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("perro_water_2d_pipeline"),
-            layout: Some(&render_layout),
+            layout: Some(&render_layout_2d),
             vertex: wgpu::VertexState {
                 module: &render_shader,
                 entry_point: Some("vs_water_2d"),
@@ -219,6 +242,49 @@ impl GpuWater {
                 conservative: false,
             },
             depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: sample_count.max(1),
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview_mask: None,
+            cache: None,
+        });
+        let render_pipeline_3d = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("perro_water_3d_pipeline"),
+            layout: Some(&render_layout_3d),
+            vertex: wgpu::VertexState {
+                module: &render_shader_3d,
+                entry_point: Some("vs_water_3d"),
+                buffers: &[],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &render_shader_3d,
+                entry_point: Some("fs_water_3d"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: color_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth24Plus,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState {
                 count: sample_count.max(1),
                 mask: !0,
@@ -258,6 +324,7 @@ impl GpuWater {
         Self {
             compute_pipeline,
             render_pipeline_2d,
+            render_pipeline_3d,
             compute_bgl,
             render_bgl,
             compute_bind_group,
@@ -292,8 +359,7 @@ impl GpuWater {
         queue: &wgpu::Queue,
         waters_2d: &[(NodeID, Water2DState)],
         waters_3d: &[(NodeID, Water3DState)],
-        camera_2d_position: [f32; 2],
-        camera_3d_position: [f32; 3],
+        ctx: WaterPrepareContext,
     ) {
         self.poll_readback(device);
         self.frame_index = self.frame_index.wrapping_add(1);
@@ -311,15 +377,17 @@ impl GpuWater {
         let mut readback_rate = 0.0f32;
         for (node, water) in waters_2d {
             readback_rate = readback_rate.max(water.sample_readback_rate);
-            let lod = water_lod_2d(water, camera_2d_position);
+            let lod = water_lod_2d(water, ctx.camera_2d_position);
             let cells = water_cell_count(lod.resolution);
             let offset = cell_needed;
-            coastline_cells.resize(offset.saturating_add(cells), [0.0; 4]);
-            raster_coastline_2d(
-                &mut coastline_cells[offset..offset + cells],
-                lod.resolution,
-                water,
-            );
+            if cells > 0 {
+                coastline_cells.resize(offset.saturating_add(cells), [0.0; 4]);
+                raster_coastline_2d(
+                    &mut coastline_cells[offset..offset + cells],
+                    lod.resolution,
+                    water,
+                );
+            }
             staged.push(water_gpu_2d(
                 *node,
                 water,
@@ -332,15 +400,17 @@ impl GpuWater {
         }
         for (node, water) in waters_3d {
             readback_rate = readback_rate.max(water.sample_readback_rate);
-            let lod = water_lod_3d(water, camera_3d_position);
+            let lod = water_lod_3d(water, ctx.camera_3d_position);
             let cells = water_cell_count(lod.resolution);
             let offset = cell_needed;
-            coastline_cells.resize(offset.saturating_add(cells), [0.0; 4]);
-            raster_coastline_3d(
-                &mut coastline_cells[offset..offset + cells],
-                lod.resolution,
-                water,
-            );
+            if cells > 0 {
+                coastline_cells.resize(offset.saturating_add(cells), [0.0; 4]);
+                raster_coastline_3d(
+                    &mut coastline_cells[offset..offset + cells],
+                    lod.resolution,
+                    water,
+                );
+            }
             staged.push(water_gpu_3d(
                 *node,
                 water,
@@ -348,6 +418,7 @@ impl GpuWater {
                 offset as u32,
                 cells as u32,
                 lod.ripple_blend,
+                ctx.sky_color,
             ));
             cell_needed = cell_needed.saturating_add(cells);
         }
@@ -463,6 +534,51 @@ impl GpuWater {
         pass.set_bind_group(0, &self.render_bind_group, &[]);
         pass.set_bind_group(1, camera_bind_group, &[]);
         pass.draw(0..6, 0..self.water_2d_count);
+    }
+
+    pub fn render_3d(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        target: &wgpu::TextureView,
+        depth: &wgpu::TextureView,
+        camera_bind_group: &wgpu::BindGroup,
+        clear_depth: bool,
+    ) {
+        let water_3d_count = self.water_count.saturating_sub(self.water_2d_count);
+        if water_3d_count == 0 {
+            return;
+        }
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("perro_water_3d_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: target,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: depth,
+                depth_ops: Some(wgpu::Operations {
+                    load: if clear_depth {
+                        wgpu::LoadOp::Clear(1.0)
+                    } else {
+                        wgpu::LoadOp::Load
+                    },
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.render_pipeline_3d);
+        pass.set_bind_group(0, &self.render_bind_group, &[]);
+        pass.set_bind_group(1, camera_bind_group, &[]);
+        pass.draw(0..6, self.water_2d_count..self.water_count);
     }
 
     pub fn encode_readback(&mut self, encoder: &mut wgpu::CommandEncoder) {
@@ -664,8 +780,12 @@ fn make_bind_group(
 }
 
 fn raster_coastline_2d(out: &mut [[f32; 4]], resolution: [u32; 2], water: &Water2DState) {
-    let width = resolution[0].clamp(8, 256) as usize;
-    let height = resolution[1].clamp(8, 256) as usize;
+    let width = resolution[0].clamp(1, 256) as usize;
+    let height = resolution[1].clamp(1, 256) as usize;
+    if water.coastline_shapes.is_empty() {
+        raster_impacts_2d(out, width, height, water);
+        return;
+    }
     let foam_width = water.coastline_foam_width.max(0.001);
     for y in 0..height {
         for x in 0..width {
@@ -690,8 +810,48 @@ fn raster_coastline_2d(out: &mut [[f32; 4]], resolution: [u32; 2], water: &Water
                 let dist = (dx * dx + dy * dy).sqrt();
                 let radius = impact.radius.max(0.001);
                 wake += (1.0 - (dist / radius).clamp(0.0, 1.0)) * impact.strength / 256.0;
+                wake += (1.0 - (dist / radius).clamp(0.0, 1.0)) * impact.cavitation;
             }
-            out[y * width + x] = [solid, edge, wake.clamp(0.0, 1.0), 0.0];
+            out[y * width + x] = [solid, edge, wake.clamp(0.0, 1.0), wake.clamp(0.0, 1.0)];
+        }
+    }
+}
+
+fn raster_impacts_2d(out: &mut [[f32; 4]], width: usize, height: usize, water: &Water2DState) {
+    out.fill([0.0; 4]);
+    if water.impacts.is_empty() {
+        return;
+    }
+    let max_x = width.saturating_sub(1).max(1) as f32;
+    let max_y = height.saturating_sub(1).max(1) as f32;
+    let inv_x = max_x / water.size[0].abs().max(0.001);
+    let inv_y = max_y / water.size[1].abs().max(0.001);
+    for impact in water.impacts.iter() {
+        let radius = impact.radius.max(0.001);
+        let min_x = (((impact.position[0] - radius) / water.size[0]) + 0.5) * max_x;
+        let max_xf = (((impact.position[0] + radius) / water.size[0]) + 0.5) * max_x;
+        let min_y = (((impact.position[1] - radius) / water.size[1]) + 0.5) * max_y;
+        let max_yf = (((impact.position[1] + radius) / water.size[1]) + 0.5) * max_y;
+        let x0 = min_x.floor().clamp(0.0, max_x) as usize;
+        let x1 = max_xf.ceil().clamp(0.0, max_x) as usize;
+        let y0 = min_y.floor().clamp(0.0, max_y) as usize;
+        let y1 = max_yf.ceil().clamp(0.0, max_y) as usize;
+        for y in y0..=y1 {
+            let py = (y as f32 / inv_y) - water.size[1] * 0.5;
+            for x in x0..=x1 {
+                let px = (x as f32 / inv_x) - water.size[0] * 0.5;
+                let dx = px - impact.position[0];
+                let dy = py - impact.position[1];
+                let dist = (dx * dx + dy * dy).sqrt();
+                let amount = 1.0 - (dist / radius).clamp(0.0, 1.0);
+                if amount <= 0.0 {
+                    continue;
+                }
+                let wake = amount * (impact.strength / 256.0 + impact.cavitation);
+                let cell = &mut out[y * width + x];
+                cell[2] = (cell[2] + wake).clamp(0.0, 1.0);
+                cell[3] = cell[2];
+            }
         }
     }
 }
@@ -752,8 +912,12 @@ fn distance_segment(p: [f32; 2], a: [f32; 2], b: [f32; 2]) -> f32 {
 }
 
 fn raster_coastline_3d(out: &mut [[f32; 4]], resolution: [u32; 2], water: &Water3DState) {
-    let width = resolution[0].clamp(8, 256) as usize;
-    let height = resolution[1].clamp(8, 256) as usize;
+    let width = resolution[0].clamp(1, 256) as usize;
+    let height = resolution[1].clamp(1, 256) as usize;
+    if water.coastline_shapes.is_empty() {
+        raster_impacts_3d(out, width, height, water);
+        return;
+    }
     let foam_width = water.coastline_foam_width.max(0.001);
     for y in 0..height {
         for x in 0..width {
@@ -778,8 +942,48 @@ fn raster_coastline_3d(out: &mut [[f32; 4]], resolution: [u32; 2], water: &Water
                 let dist = (dx * dx + dz * dz).sqrt();
                 let radius = impact.radius.max(0.001);
                 wake += (1.0 - (dist / radius).clamp(0.0, 1.0)) * impact.strength / 256.0;
+                wake += (1.0 - (dist / radius).clamp(0.0, 1.0)) * impact.cavitation;
             }
-            out[y * width + x] = [solid, edge, wake.clamp(0.0, 1.0), 0.0];
+            out[y * width + x] = [solid, edge, wake.clamp(0.0, 1.0), wake.clamp(0.0, 1.0)];
+        }
+    }
+}
+
+fn raster_impacts_3d(out: &mut [[f32; 4]], width: usize, height: usize, water: &Water3DState) {
+    out.fill([0.0; 4]);
+    if water.impacts.is_empty() {
+        return;
+    }
+    let max_x = width.saturating_sub(1).max(1) as f32;
+    let max_y = height.saturating_sub(1).max(1) as f32;
+    let inv_x = max_x / water.size[0].abs().max(0.001);
+    let inv_y = max_y / water.size[1].abs().max(0.001);
+    for impact in water.impacts.iter() {
+        let radius = impact.radius.max(0.001);
+        let min_x = (((impact.position[0] - radius) / water.size[0]) + 0.5) * max_x;
+        let max_xf = (((impact.position[0] + radius) / water.size[0]) + 0.5) * max_x;
+        let min_y = (((impact.position[2] - radius) / water.size[1]) + 0.5) * max_y;
+        let max_yf = (((impact.position[2] + radius) / water.size[1]) + 0.5) * max_y;
+        let x0 = min_x.floor().clamp(0.0, max_x) as usize;
+        let x1 = max_xf.ceil().clamp(0.0, max_x) as usize;
+        let y0 = min_y.floor().clamp(0.0, max_y) as usize;
+        let y1 = max_yf.ceil().clamp(0.0, max_y) as usize;
+        for y in y0..=y1 {
+            let pz = (y as f32 / inv_y) - water.size[1] * 0.5;
+            for x in x0..=x1 {
+                let px = (x as f32 / inv_x) - water.size[0] * 0.5;
+                let dx = px - impact.position[0];
+                let dz = pz - impact.position[2];
+                let dist = (dx * dx + dz * dz).sqrt();
+                let amount = 1.0 - (dist / radius).clamp(0.0, 1.0);
+                if amount <= 0.0 {
+                    continue;
+                }
+                let wake = amount * (impact.strength / 256.0 + impact.cavitation);
+                let cell = &mut out[y * width + x];
+                cell[2] = (cell[2] + wake).clamp(0.0, 1.0);
+                cell[3] = cell[2];
+            }
         }
     }
 }
@@ -818,9 +1022,12 @@ fn signed_distance_3d_xz(p: [f32; 2], shape: WaterCoastlineShape3D) -> f32 {
 }
 
 fn water_cell_count(resolution: [u32; 2]) -> usize {
-    let x = resolution[0].clamp(8, 256) as usize;
-    let y = resolution[1].clamp(8, 256) as usize;
-    x.saturating_mul(y).max(WATER_WORKGROUP_SIZE as usize)
+    if resolution[0] == 0 || resolution[1] == 0 {
+        return 0;
+    }
+    let x = resolution[0].clamp(1, 256) as usize;
+    let y = resolution[1].clamp(1, 256) as usize;
+    x.saturating_mul(y)
 }
 
 fn water_lod_2d(water: &Water2DState, camera: [f32; 2]) -> WaterLodDecision {
@@ -887,12 +1094,15 @@ fn water_lod(
         let t = ((distance - mid) / span).clamp(0.0, 1.0);
         (4, 0.65 - t * 0.45)
     } else {
-        (8, 0.15)
+        return WaterLodDecision {
+            resolution: [0, 0],
+            ripple_blend: 0.0,
+        };
     };
     WaterLodDecision {
         resolution: [
-            (resolution[0] / div).clamp(min_resolution[0].clamp(8, 256), 256),
-            (resolution[1] / div).clamp(min_resolution[1].clamp(8, 256), 256),
+            (resolution[0] / div).clamp(min_resolution[0].clamp(1, 256), 256),
+            (resolution[1] / div).clamp(min_resolution[1].clamp(1, 256), 256),
         ],
         ripple_blend,
     }
@@ -914,6 +1124,7 @@ fn water_gpu_2d(
         water.depth,
         water.flow,
         water.wind,
+        water.shape,
         resolution,
         water.wave_speed,
         water.wave_scale,
@@ -923,6 +1134,10 @@ fn water_gpu_2d(
         water.collision_layers.bits(),
         water.collision_mask.bits(),
         water.coastline_foam_color,
+        water.deep_color,
+        water.shallow_color,
+        water.shallow_depth,
+        [0.0, 0.0, 0.0, 0.0],
         [
             water.coastline_foam_strength,
             water.coastline_foam_width,
@@ -931,6 +1146,7 @@ fn water_gpu_2d(
         ],
         water.debug,
         water.model,
+        [0.0, 0.0, 0.0, 1.0],
         water.z_index,
         cell_offset,
         cell_count,
@@ -945,6 +1161,7 @@ fn water_gpu_3d(
     cell_offset: u32,
     cell_count: u32,
     ripple_blend: f32,
+    sky_color: [f32; 3],
 ) -> WaterGpu {
     water_gpu_common(
         node,
@@ -954,6 +1171,7 @@ fn water_gpu_3d(
         water.depth,
         water.flow,
         water.wind,
+        water.shape,
         resolution,
         water.wave_speed,
         water.wave_scale,
@@ -963,6 +1181,15 @@ fn water_gpu_3d(
         water.collision_layers.bits(),
         water.collision_mask.bits(),
         water.coastline_foam_color,
+        water.deep_color,
+        water.shallow_color,
+        water.shallow_depth,
+        [
+            sky_color[0],
+            sky_color[1],
+            sky_color[2],
+            water.sky_bias_ratio.clamp(0.0, 1.0),
+        ],
         [
             water.coastline_foam_strength,
             water.coastline_foam_width,
@@ -970,7 +1197,12 @@ fn water_gpu_3d(
             water.coastline_wave_damping,
         ],
         water.debug,
-        [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        [
+            [water.model[0][0], water.model[0][1], water.model[0][2]],
+            [water.model[1][0], water.model[1][1], water.model[1][2]],
+            [water.model[2][0], water.model[2][1], water.model[2][2]],
+        ],
+        water.model[3],
         0,
         cell_offset,
         cell_count,
@@ -987,6 +1219,7 @@ fn water_gpu_common(
     depth: f32,
     flow: [f32; 2],
     wind: [f32; 2],
+    shape: WaterShapeState,
     resolution: [u32; 2],
     wave_speed: f32,
     wave_scale: f32,
@@ -996,9 +1229,14 @@ fn water_gpu_common(
     collision_layers: u32,
     collision_mask: u32,
     coastline_foam_color: [f32; 4],
+    deep_color: [f32; 4],
+    shallow_color: [f32; 4],
+    shallow_depth: f32,
+    sky_color_bias: [f32; 4],
     coastline: [f32; 4],
     debug: bool,
     model: [[f32; 3]; 3],
+    model_w: [f32; 4],
     z_index: i32,
     cell_offset: u32,
     cell_count: u32,
@@ -1009,7 +1247,7 @@ fn water_gpu_common(
         kind,
         idle_mode: idle_mode as u32,
         z_index,
-        size_depth_time: [size[0], size[1], depth, 0.0],
+        size_depth_time: [size[0], size[1], depth, shallow_depth.max(-1.0)],
         flow_wind: [flow[0], flow[1], wind[0], wind[1]],
         wave: [wave_speed, wave_scale, damping, wake_strength],
         flags: [
@@ -1018,13 +1256,17 @@ fn water_gpu_common(
             u32::from(debug),
             foam_strength.to_bits(),
         ],
+        deep_color,
+        shallow_color,
+        sky_color_bias,
         coastline_foam_color,
         coastline,
+        shape: water_shape_gpu(shape, size, depth),
         sim: [
             cell_offset,
             cell_count,
-            resolution[0].clamp(8, 256),
-            resolution[1].clamp(8, 256),
+            resolution[0].clamp(1, 256),
+            resolution[1].clamp(1, 256),
         ],
         model_x: [
             model[0][0],
@@ -1034,6 +1276,18 @@ fn water_gpu_common(
         ],
         model_y: [model[1][0], model[1][1], model[1][2], 0.0],
         model_z: [model[2][0], model[2][1], model[2][2], 0.0],
+        model_w,
+    }
+}
+
+fn water_shape_gpu(shape: WaterShapeState, size: [f32; 2], depth: f32) -> [f32; 4] {
+    match shape {
+        WaterShapeState::Rect => [0.0, size[0], size[1], depth],
+        WaterShapeState::Circle { radius } => [1.0, radius, depth, 0.0],
+        WaterShapeState::Cylinder {
+            radius,
+            half_height,
+        } => [2.0, radius, half_height, 0.0],
     }
 }
 
@@ -1047,12 +1301,17 @@ struct Water {
     flow_wind: vec4<f32>,
     wave: vec4<f32>,
     flags: vec4<u32>,
+    deep_color: vec4<f32>,
+    shallow_color: vec4<f32>,
+    sky_color_bias: vec4<f32>,
     coastline_foam_color: vec4<f32>,
     coastline: vec4<f32>,
+    shape: vec4<f32>,
     sim: vec4<u32>,
     model_x: vec4<f32>,
     model_y: vec4<f32>,
     model_z: vec4<f32>,
+    model_w: vec4<f32>,
 }
 
 struct Params {
@@ -1079,6 +1338,18 @@ var<storage, read> coastline_cells: array<vec4<f32>>;
 @group(1) @binding(0)
 var<uniform> camera: Camera2D;
 
+fn water_shape_alpha(w: Water, uv: vec2<f32>) -> f32 {
+    if w.shape.x < 0.5 {
+        return 1.0;
+    }
+    let local = (uv - vec2<f32>(0.5, 0.5)) * w.size_depth_time.xy;
+    let r = w.shape.y;
+    if dot(local, local) <= r * r {
+        return 1.0;
+    }
+    return 0.0;
+}
+
 @compute @workgroup_size(64)
 fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let water_idx = gid.y;
@@ -1091,11 +1362,15 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
         return;
     }
     let cell_idx = w.sim.x + local_idx;
-    let width = max(w.sim.z, 8u);
+    let width = max(w.sim.z, 1u);
     let x_cell = local_idx % width;
     let y_cell = local_idx / width;
     let fx = f32(x_cell) / max(f32(width - 1u), 1.0);
     let fy = f32(y_cell) / max(f32(max(w.sim.w, 1u) - 1u), 1.0);
+    if water_shape_alpha(w, vec2<f32>(fx, fy)) <= 0.0 {
+        cells[cell_idx] = vec4<f32>(0.0);
+        return;
+    }
     let t = f32(params.frame_index) * 0.016;
     let phase = fract(fx + fy + w.flow_wind.z * 0.01 + t * w.wave.x * 0.15915494);
     let idle = (1.0 - abs(phase * 2.0 - 1.0) * 2.0) * w.wave.y;
@@ -1104,11 +1379,15 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
         cells[cell_idx] = vec4<f32>(0.0, 0.0, 1.0, 1.0);
         return;
     }
-    let prev = cells[cell_idx].x * w.wave.z * (1.0 - w.coastline.w * 0.08);
     let edge = max(0.0, 1.0 - min(min(fx, 1.0 - fx), min(fy, 1.0 - fy)) * max(w.coastline.y, 0.001) * 8.0);
     let shore = max(edge, coast.y);
     let wake = coast.z * w.wave.w;
-    let foam = clamp((shore + wake) * abs(prev + idle + wake) * w.coastline.x + bitcast<f32>(w.flags.w) * 0.05, 0.0, 1.0);
+    if shore <= 0.0 && wake <= 0.0 && coast.w <= 0.0 {
+        cells[cell_idx] = vec4<f32>(0.0);
+        return;
+    }
+    let prev = cells[cell_idx].x * w.wave.z * (1.0 - w.coastline.w * 0.08);
+    let foam = clamp((shore + wake + coast.w) * abs(prev + idle + wake) * w.coastline.x + bitcast<f32>(w.flags.w) * 0.05, 0.0, 1.0);
     cells[cell_idx] = vec4<f32>(prev + idle * 0.015 * (1.0 - shore * w.coastline.w) + wake * 0.08, idle, foam, shore);
 }
 
@@ -1153,6 +1432,9 @@ fn vs_water_2d(
 @fragment
 fn fs_water_2d(in: Water2DVertexOut) -> @location(0) vec4<f32> {
     let w = waters[in.water_idx];
+    if water_shape_alpha(w, in.uv) <= 0.0 {
+        return vec4<f32>(0.0);
+    }
     let t = f32(params.frame_index) * 0.016;
     let idle = sin((in.uv.x + in.uv.y + t * w.wave.x) * 6.2831853) * 0.5 + 0.5;
     var ripple = vec4<f32>(0.0);
@@ -1170,10 +1452,172 @@ fn fs_water_2d(in: Water2DVertexOut) -> @location(0) vec4<f32> {
     }
     let edge = max(0.0, 1.0 - min(min(in.uv.x, 1.0 - in.uv.x), min(in.uv.y, 1.0 - in.uv.y)) * max(w.coastline.y, 0.001) * 8.0);
     let foam = clamp(ripple.z + max(edge, ripple.w) * w.coastline.x + abs(ripple.x) * 0.35, 0.0, 1.0);
-    let deep = vec3<f32>(0.02, 0.18, 0.30);
-    let shallow = vec3<f32>(0.08, 0.46, 0.62);
-    let color = mix(deep, shallow, idle * 0.35 + foam * 0.25);
-    return vec4<f32>(mix(color, w.coastline_foam_color.rgb, foam * 0.65), 0.72);
+    let auto_shallow_depth = max(max(w.size_depth_time.x, w.size_depth_time.y) * 0.25, 0.001);
+    let shallow_depth = select(auto_shallow_depth, max(w.size_depth_time.w, 0.001), w.size_depth_time.w >= 0.0);
+    let depth_t = clamp(w.size_depth_time.z / shallow_depth, 0.0, 1.0);
+    let shallow_t = clamp(1.0 - depth_t + idle * 0.18 + foam * 0.25, 0.0, 1.0);
+    let surface_t = clamp(shallow_t + abs(ripple.x) * 0.22 + foam * 0.18, 0.0, 1.0);
+    let water_rgb = mix(w.deep_color.rgb, w.shallow_color.rgb, surface_t);
+    let sky_rgb = mix(water_rgb, w.sky_color_bias.rgb, w.sky_color_bias.w);
+    let color = mix(sky_rgb, w.coastline_foam_color.rgb, foam * 0.65);
+    let alpha = mix(w.deep_color.a, w.shallow_color.a, shallow_t);
+    return vec4<f32>(color, clamp(alpha + foam * 0.12, 0.0, 1.0));
+}
+"#;
+
+const WATER_3D_RENDER_WGSL: &str = r#"
+struct Water {
+    node: u32,
+    kind: u32,
+    idle_mode: u32,
+    z_index: i32,
+    size_depth_time: vec4<f32>,
+    flow_wind: vec4<f32>,
+    wave: vec4<f32>,
+    flags: vec4<u32>,
+    deep_color: vec4<f32>,
+    shallow_color: vec4<f32>,
+    sky_color_bias: vec4<f32>,
+    coastline_foam_color: vec4<f32>,
+    coastline: vec4<f32>,
+    shape: vec4<f32>,
+    sim: vec4<u32>,
+    model_x: vec4<f32>,
+    model_y: vec4<f32>,
+    model_z: vec4<f32>,
+    model_w: vec4<f32>,
+}
+
+struct Params {
+    water_count: u32,
+    water_2d_count: u32,
+    cell_count: u32,
+    frame_index: u32,
+}
+
+struct RayLightGpu {
+    direction: vec4<f32>,
+    color_intensity: vec4<f32>,
+}
+
+struct PointLightGpu {
+    position_range: vec4<f32>,
+    color_intensity: vec4<f32>,
+}
+
+struct SpotLightGpu {
+    position_range: vec4<f32>,
+    direction_outer_cos: vec4<f32>,
+    color_intensity: vec4<f32>,
+    inner_cos_pad: vec4<f32>,
+}
+
+struct Scene3D {
+    view_proj: mat4x4<f32>,
+    ambient_and_counts: vec4<f32>,
+    camera_pos: vec4<f32>,
+    ambient_color: vec4<f32>,
+    ray_light: RayLightGpu,
+    ray_lights: array<RayLightGpu, 3>,
+    point_lights: array<PointLightGpu, 8>,
+    spot_lights: array<SpotLightGpu, 8>,
+}
+
+@group(0) @binding(0)
+var<storage, read> waters: array<Water>;
+@group(0) @binding(1)
+var<storage, read> cells: array<vec4<f32>>;
+@group(0) @binding(2)
+var<uniform> params: Params;
+@group(0) @binding(3)
+var<storage, read> coastline_cells: array<vec4<f32>>;
+@group(1) @binding(0)
+var<uniform> scene: Scene3D;
+
+struct Water3DVertexOut {
+    @builtin(position) clip_pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) water_idx: u32,
+    @location(2) world_pos: vec3<f32>,
+}
+
+fn quad_pos(vertex_idx: u32) -> vec2<f32> {
+    var p = array<vec2<f32>, 6>(
+        vec2<f32>(-0.5, -0.5),
+        vec2<f32>( 0.5, -0.5),
+        vec2<f32>( 0.5,  0.5),
+        vec2<f32>(-0.5, -0.5),
+        vec2<f32>( 0.5,  0.5),
+        vec2<f32>(-0.5,  0.5),
+    );
+    return p[vertex_idx];
+}
+
+fn water_shape_alpha(w: Water, uv: vec2<f32>) -> f32 {
+    let local = (uv - vec2<f32>(0.5, 0.5)) * w.size_depth_time.xy;
+    if w.shape.x < 0.5 {
+        return 1.0;
+    }
+    let r = w.shape.y;
+    if dot(local, local) <= r * r {
+        return 1.0;
+    }
+    return 0.0;
+}
+
+@vertex
+fn vs_water_3d(
+    @builtin(vertex_index) vertex_idx: u32,
+    @builtin(instance_index) water_idx: u32,
+) -> Water3DVertexOut {
+    let w = waters[water_idx];
+    let local = quad_pos(vertex_idx);
+    let scaled = vec4<f32>(local.x * w.size_depth_time.x, 0.0, local.y * w.size_depth_time.y, 1.0);
+    let model = mat4x4<f32>(w.model_x, w.model_y, w.model_z, w.model_w);
+    let world = model * scaled;
+
+    var out: Water3DVertexOut;
+    out.clip_pos = scene.view_proj * world;
+    out.uv = local + vec2<f32>(0.5, 0.5);
+    out.water_idx = water_idx;
+    out.world_pos = world.xyz;
+    return out;
+}
+
+@fragment
+fn fs_water_3d(in: Water3DVertexOut) -> @location(0) vec4<f32> {
+    let w = waters[in.water_idx];
+    if water_shape_alpha(w, in.uv) <= 0.0 {
+        return vec4<f32>(0.0);
+    }
+    let t = f32(params.frame_index) * 0.016;
+    let idle = sin((in.uv.x + in.uv.y + t * w.wave.x) * 6.2831853) * 0.5 + 0.5;
+    var ripple = vec4<f32>(0.0);
+    if w.sim.y > 0u {
+        let width = max(w.sim.z, 1u);
+        let height = max(w.sim.w, 1u);
+        let x = u32(clamp(in.uv.x, 0.0, 1.0) * f32(max(width - 1u, 1u)));
+        let y = u32(clamp(in.uv.y, 0.0, 1.0) * f32(max(height - 1u, 1u)));
+        let local_idx = min(y * width + x, w.sim.y - 1u);
+        let cell_idx = w.sim.x + local_idx;
+        ripple = cells[cell_idx] * w.model_x.w;
+        if coastline_cells[cell_idx].x > 0.5 {
+            return vec4<f32>(0.0);
+        }
+    }
+    let edge = max(0.0, 1.0 - min(min(in.uv.x, 1.0 - in.uv.x), min(in.uv.y, 1.0 - in.uv.y)) * max(w.coastline.y, 0.001) * 8.0);
+    let foam = clamp(ripple.z + max(edge, ripple.w) * w.coastline.x + abs(ripple.x) * 0.35, 0.0, 1.0);
+    let auto_shallow_depth = max(max(w.size_depth_time.x, w.size_depth_time.y) * 0.25, 0.001);
+    let shallow_depth = select(auto_shallow_depth, max(w.size_depth_time.w, 0.001), w.size_depth_time.w >= 0.0);
+    let depth_t = clamp(w.size_depth_time.z / shallow_depth, 0.0, 1.0);
+    let view_dist = distance(scene.camera_pos.xyz, in.world_pos);
+    let shallow_t = clamp(1.0 - depth_t + idle * 0.18 + foam * 0.25, 0.0, 1.0);
+    let surface_t = clamp(shallow_t + abs(ripple.x) * 0.22 + foam * 0.18 + clamp(view_dist / 256.0, 0.0, 1.0) * 0.08, 0.0, 1.0);
+    let water_rgb = mix(w.deep_color.rgb, w.shallow_color.rgb, surface_t);
+    let sky_rgb = mix(water_rgb, w.sky_color_bias.rgb, w.sky_color_bias.w);
+    let color = mix(sky_rgb, w.coastline_foam_color.rgb, foam * 0.65);
+    let alpha = mix(w.deep_color.a, w.shallow_color.a, shallow_t);
+    return vec4<f32>(color, clamp(alpha + foam * 0.12, 0.0, 1.0));
 }
 "#;
 
@@ -1181,8 +1625,20 @@ fn water_render_wgsl() -> String {
     WATER_WGSL
         .replace("var<storage, read_write> cells", "var<storage, read> cells")
         .replace(
-            "cells[cell_idx] = vec4<f32>(prev + idle * 0.015 * (1.0 - edge * w.coastline.w), idle, foam, edge);",
-            "let render_only_unused = prev + idle + foam + edge;",
+            "cells[cell_idx] = vec4<f32>(0.0);",
+            "let render_only_shape_skip = cell_idx;",
+        )
+        .replace(
+            "cells[cell_idx] = vec4<f32>(0.0, 0.0, 1.0, 1.0);",
+            "let render_only_coast_skip = cell_idx;",
+        )
+        .replace(
+            "cells[cell_idx] = vec4<f32>(0.0);",
+            "let render_only_empty_skip = cell_idx;",
+        )
+        .replace(
+            "cells[cell_idx] = vec4<f32>(prev + idle * 0.015 * (1.0 - shore * w.coastline.w) + wake * 0.08, idle, foam, shore);",
+            "let render_only_unused = prev + idle + foam + shore + wake;",
         )
 }
 
@@ -1195,6 +1651,8 @@ mod tests {
         naga::front::wgsl::parse_str(WATER_WGSL).expect("water wgsl should parse");
         let render_wgsl = water_render_wgsl();
         naga::front::wgsl::parse_str(&render_wgsl).expect("water render wgsl should parse");
+        naga::front::wgsl::parse_str(WATER_3D_RENDER_WGSL)
+            .expect("water 3d render wgsl should parse");
     }
 
     #[test]
@@ -1233,10 +1691,12 @@ mod tests {
                 [0.0, 0.0]
             ),
             WaterLodDecision {
-                resolution: [32, 32],
-                ripple_blend: 0.15,
+                resolution: [0, 0],
+                ripple_blend: 0.0,
             }
         );
+        assert_eq!(water_cell_count([0, 0]), 0);
+        assert_eq!(water_cell_count([1, 1]), 1);
     }
 
     #[test]

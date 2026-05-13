@@ -5,9 +5,9 @@ use crate::{
     Camera2D, Camera3D, CollisionShape2D, CollisionShape3D, DistanceJoint2D, FixedJoint2D,
     FixedJoint3D, HingeJoint3D, IKTarget2D, IKTarget3D, MeshInstance3D, MultiMeshInstance3D,
     Node2D, Node3D, ParticleEmitter2D, ParticleEmitter3D, PhysicsBoneChain2D, PhysicsBoneChain3D,
-    PinJoint2D, PointLight2D, PointLight3D, RayLight2D, RayLight3D, RigidBody2D, RigidBody3D,
-    Skeleton2D, Skeleton3D, Sky3D, SpotLight2D, SpotLight3D, Sprite2D, StaticBody2D, StaticBody3D,
-    TileMap2D, WaterBody2D, WaterBody3D,
+    PhysicsForceEmitter2D, PhysicsForceEmitter3D, PinJoint2D, PointLight2D, PointLight3D,
+    RayLight2D, RayLight3D, RigidBody2D, RigidBody3D, Skeleton2D, Skeleton3D, Sky3D, SpotLight2D,
+    SpotLight3D, Sprite2D, StaticBody2D, StaticBody3D, TileMap2D, WaterBody2D, WaterBody3D,
 };
 use perro_ids::{NodeID, NodeTag, TagID};
 use perro_structs::{Transform2D, Transform3D};
@@ -843,6 +843,7 @@ define_scene_nodes! {
         StaticBody2D => (Node2D, StaticBody2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         Area2D => (Node2D, Area2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         RigidBody2D => (Node2D, RigidBody2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
+        PhysicsForceEmitter2D => (Node2D, PhysicsForceEmitter2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         PinJoint2D => (Node2D, PinJoint2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         DistanceJoint2D => (Node2D, DistanceJoint2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         FixedJoint2D => (Node2D, FixedJoint2D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
@@ -884,6 +885,7 @@ define_scene_nodes! {
         StaticBody3D => (Node3D, StaticBody3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         Area3D => (Node3D, Area3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         RigidBody3D => (Node3D, RigidBody3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
+        PhysicsForceEmitter3D => (Node3D, PhysicsForceEmitter3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         BallJoint3D => (Node3D, BallJoint3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         HingeJoint3D => (Node3D, HingeJoint3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),
         FixedJoint3D => (Node3D, FixedJoint3D, Renderable::False, InternalUpdate::False, InternalFixedUpdate::True),

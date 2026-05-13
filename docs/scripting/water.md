@@ -28,6 +28,9 @@ Height is along world `y`.
         drag = 0.45
         wake_strength = 1.4
         foam_strength = 0.7
+        deep_color = (0.02, 0.16, 0.28, 0.86)
+        shallow_color = (0.08, 0.46, 0.62, 0.48)
+        shallow_depth = 8.0
         sample_readback_rate = 30
         collision_layers = all
         collision_mask = none
@@ -63,6 +66,7 @@ Height is world `y`.
         drag = 0.35
         wake_strength = 1.0
         foam_strength = 0.65
+        optics = { deep_color=(0.02, 0.16, 0.28, 0.86) shallow_color=(0.08, 0.46, 0.62, 0.48) sky_bias={ ratio=0.35 } }
         lod_near = 128
         lod_mid = 384
         lod_far = 896
@@ -78,7 +82,8 @@ Height is world `y`.
 ## Fields
 
 - `size`: surface width/depth in world units.
-- `resolution` or `sim_resolution`: authored simulation grid size. Accepts one number or `(x, y)`. Scene load clamps to `1..4096`; GPU simulation clamps the effective grid to `8..256` per axis.
+- `shape`: optional water shape. 2D accepts `rect`/`quad` and `circle`. 3D accepts `cube`/`box`, `cylinder`, or `sphere` as a cylinder shortcut. `size` remains a shorthand for rectangular water.
+- `resolution` or `sim_resolution`: authored simulation grid size. Accepts one number or `(x, y)`. Scene load clamps to `1..4096`; GPU simulation clamps the effective grid to `1..256` per axis.
 - `depth`: visual/physics water depth hint.
 - `flow`: water current in surface-local axes.
 - `wind`: wave direction for idle modes.
@@ -91,8 +96,11 @@ Height is world `y`.
 - `wake_strength`: wake impulse scale used by the water simulation.
 - `foam_strength`: foam response scale.
 - `sample_readback_rate` or `readback_rate`: target GPU sample readback rate. Renderer uses the max requested rate across visible water bodies.
+- `deep_color` and `shallow_color`: water color/opacity endpoints. Surface color derives between them from depth, waves, and foam. Shallow alpha should usually be lower than deep alpha.
+- `shallow_depth`: visual depth cutoff where water finishes fading from shallow color/alpha toward deep color/alpha. `-1` uses the automatic old scale. Use larger values for fish tanks or clear pools that should stay see-through.
+- `sky_bias`: optional active `Sky3D` color pull. Use `sky_bias = "none"`, `sky_bias = 0.0`, or `sky_bias = { ratio=0.35 }`. `optics = { ... }` accepts the same color, `shallow_depth`, and sky fields.
 - `lod_near_distance`/`lod_near`, `lod_mid_distance`/`lod_mid`, `lod_far_distance`/`lod_far`: camera distance thresholds for lower simulation resolution and lower physics force detail.
-- `lod_min_resolution` or `min_resolution`: lowest effective simulation resolution. GPU clamps it to `8..256`.
+- `lod_min_resolution` or `min_resolution`: lowest effective simulation resolution inside `lod_far`. GPU clamps it to `1..256`.
 - `collision_layers`: water sensor tagged layers. Defaults to all layers.
 - `collision_mask`: tagged layers water ignores for buoyancy, wakes, and coastline. Defaults to no layers.
 - `coastline`: foam color, foam strength/width, cutoff softness, wave reflection/damping, and edge noise for static-body shorelines.
@@ -102,12 +110,14 @@ Defaults:
 
 - `WaterBody2D`: `size = (32, 32)`, `resolution = (128, 128)`, `depth = 4`.
 - `WaterBody3D`: `size = (128, 128)`, `resolution = (128, 128)`, `depth = 12`.
-- Shared defaults: `idle_mode = "calm"`, `wave_speed = 1`, `wave_scale = 1`, `damping = 0.985`, `buoyancy = 1`, `drag = 0.35`, `wake_strength = 1`, `foam_strength = 0.65`, `sample_readback_rate = 30`, `lod_near = 128`, `lod_mid = 384`, `lod_far = 896`, `min_resolution = (32, 32)`, `collision_layers = all`, `collision_mask = []`.
+- Shared defaults: `idle_mode = "calm"`, `wave_speed = 1`, `wave_scale = 1`, `damping = 0.985`, `deep_color = (0.02, 0.16, 0.28, 0.86)`, `shallow_color = (0.08, 0.46, 0.62, 0.48)`, `shallow_depth = -1`, `sky_bias = "none"`, `buoyancy = 1`, `drag = 0.35`, `wake_strength = 1`, `foam_strength = 0.65`, `sample_readback_rate = 30`, `lod_near = 128`, `lod_mid = 384`, `lod_far = 896`, `min_resolution = (32, 32)`, `collision_layers = all`, `collision_mask = []`.
 
 ## Runtime Work
 
-The GPU simulates water cells for all visible water bodies.
-Effective grid resolution drops with camera distance: full near, half mid, quarter far, and eighth beyond far.
+The GPU simulates water cells inside the water shape bounds for all visible water bodies inside `lod_far`.
+Water past `lod_far` keeps the analytic visual surface but skips ripple/coastline simulation and readback.
+Each water body simulates separately; adjacent bodies do not merge or bake waves into each other.
+Effective grid resolution drops with camera distance: full near, half mid, quarter far, and off beyond far.
 Ripples also fade with distance.
 
 Water samples are read back from the GPU for physics.
@@ -129,7 +139,7 @@ They emit `WaterNodeName_Entered`, `WaterNodeName_Occupied`, and `WaterNodeName_
 
 Physics LOD:
 
-- Near: full force, no deadzone.
+- Near: full force, no deadzoneb.
 - Mid: force fades to `0.75x`, small deadzone.
 - Far: force fades to `0.4x`, larger deadzone.
 - Beyond far: `0.25x` force, `0.5` deadzone.
@@ -142,6 +152,11 @@ It uses body `density` in the buoyancy calculation.
 
 Static bodies are not moved by buoyancy.
 Static collision shapes that pass the water/body mask test cut coastline holes, add edge foam, and damp waves.
+
+Physics force emitters also affect water.
+`PhysicsForceEmitter2D` and `PhysicsForceEmitter3D` send nearby force events into water when `affect_water = true`.
+Water converts those events into wakes, foam, and a cavitation scalar.
+Explosion, lift, current, vortex, and custom force profiles all use the same water interaction path.
 
 ## Design Idea
 

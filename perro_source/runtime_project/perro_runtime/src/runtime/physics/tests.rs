@@ -4,8 +4,9 @@ use crate::runtime::render_2d::{
 };
 use perro_nodes::{
     Area2D, Area3D, CollisionShape2D, CollisionShape3D, FixedJoint2D, FixedJoint3D, RigidBody2D,
-    RigidBody3D, StaticBody2D, StaticBody3D, WaterBody3D,
+    RigidBody3D, StaticBody2D, StaticBody3D, WaterBody2D, WaterBody3D,
 };
+use perro_runtime_api::sub_apis::PhysicsAPI;
 use perro_structs::CollisionPolicy;
 
 #[test]
@@ -89,6 +90,237 @@ fn water_3d_buoyancy_uses_density() {
         .expect("water force should be queued")
         .force;
     assert!((force.y - 0.75).abs() < 0.001);
+}
+
+#[test]
+fn apply_force_2d_uses_world_space_vector() {
+    let mut runtime = Runtime::new();
+    let body_id = NodeAPI::create::<RigidBody2D>(&mut runtime);
+    let shape_id = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, body_id, shape_id));
+
+    if let Some(node) = runtime.nodes.get_mut(body_id)
+        && let SceneNodeData::RigidBody2D(body) = &mut node.data
+    {
+        body.gravity_scale = 0.0;
+        body.transform.rotation = std::f32::consts::FRAC_PI_2;
+    }
+
+    assert!(PhysicsAPI::apply_force_2d(
+        &mut runtime,
+        body_id,
+        Vector2::new(60.0, 0.0)
+    ));
+    runtime.physics_fixed_step();
+
+    let velocity = runtime
+        .nodes
+        .get(body_id)
+        .and_then(|node| {
+            let SceneNodeData::RigidBody2D(body) = &node.data else {
+                return None;
+            };
+            Some(body.linear_velocity)
+        })
+        .expect("body should exist");
+    assert!(velocity.x > 0.0);
+    assert!(velocity.y.abs() < 0.001);
+}
+
+#[test]
+fn apply_force_3d_uses_world_space_vector() {
+    let mut runtime = Runtime::new();
+    let body_id = NodeAPI::create::<RigidBody3D>(&mut runtime);
+    let shape_id = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, body_id, shape_id));
+
+    if let Some(node) = runtime.nodes.get_mut(body_id)
+        && let SceneNodeData::RigidBody3D(body) = &mut node.data
+    {
+        body.gravity_scale = 0.0;
+        body.transform.rotation = Quaternion::from_euler_xyz(0.0, 0.0, std::f32::consts::FRAC_PI_2);
+    }
+
+    assert!(PhysicsAPI::apply_force_3d(
+        &mut runtime,
+        body_id,
+        Vector3::new(60.0, 0.0, 0.0)
+    ));
+    runtime.physics_fixed_step();
+
+    let velocity = runtime
+        .nodes
+        .get(body_id)
+        .and_then(|node| {
+            let SceneNodeData::RigidBody3D(body) = &node.data else {
+                return None;
+            };
+            Some(body.linear_velocity)
+        })
+        .expect("body should exist");
+    assert!(velocity.x > 0.0);
+    assert!(velocity.y.abs() < 0.001);
+    assert!(velocity.z.abs() < 0.001);
+}
+
+#[test]
+fn custom_force_vectors_interpolate_by_radius() {
+    let mut emitter = perro_nodes::PhysicsForceEmitter2D::new();
+    emitter.profile = perro_nodes::PhysicsForceProfile::Custom;
+    emitter.radius = 10.0;
+    emitter.strength = 2.0;
+    emitter.vectors = vec![
+        Vector2::new(0.0, 20.0),
+        Vector2::new(4.0, 15.0),
+        Vector2::new(8.0, 0.0),
+    ];
+
+    let force = force_emitter_force_2d(&emitter, Vector2::new(5.0, 0.0), 5.0);
+    assert_eq!(force, Vector2::new(8.0, 30.0));
+}
+
+#[test]
+fn force_emitter_2d_lift_queues_upward_force() {
+    let mut runtime = Runtime::new();
+    let emitter_id = NodeAPI::create::<perro_nodes::PhysicsForceEmitter2D>(&mut runtime);
+    let body_id = NodeAPI::create::<RigidBody2D>(&mut runtime);
+
+    if let Some(node) = runtime.nodes.get_mut(emitter_id)
+        && let SceneNodeData::PhysicsForceEmitter2D(emitter) = &mut node.data
+    {
+        emitter.profile = perro_nodes::PhysicsForceProfile::Lift;
+        emitter.radius = 10.0;
+        emitter.strength = 12.0;
+    }
+    if let Some(node) = runtime.nodes.get_mut(body_id)
+        && let SceneNodeData::RigidBody2D(body) = &mut node.data
+    {
+        body.transform.position = Vector2::new(0.0, 2.0);
+    }
+
+    runtime.queue_physics_force_emitters_2d();
+
+    let force = runtime
+        .physics
+        .pending_forces_2d
+        .iter()
+        .find(|pending| pending.id == body_id)
+        .expect("lift force should queue")
+        .force;
+    assert!(force.y > 0.0);
+    assert_eq!(force.x, 0.0);
+}
+
+#[test]
+fn force_emitter_near_water_creates_cavitation_impact() {
+    let mut runtime = Runtime::new();
+    let water_id = NodeAPI::create::<WaterBody2D>(&mut runtime);
+    let emitter_id = NodeAPI::create::<perro_nodes::PhysicsForceEmitter2D>(&mut runtime);
+
+    if let Some(node) = runtime.nodes.get_mut(water_id)
+        && let SceneNodeData::WaterBody2D(water) = &mut node.data
+    {
+        water.water.size = Vector2::new(16.0, 16.0);
+    }
+    if let Some(node) = runtime.nodes.get_mut(emitter_id)
+        && let SceneNodeData::PhysicsForceEmitter2D(emitter) = &mut node.data
+    {
+        emitter.profile = perro_nodes::PhysicsForceProfile::Explosion;
+        emitter.radius = 6.0;
+        emitter.strength = 32.0;
+        emitter.affect_bodies = false;
+    }
+
+    runtime.queue_physics_force_emitters_2d();
+
+    assert!(
+        runtime
+            .force_water_impacts_2d
+            .iter()
+            .any(|impact| impact.cavitation > 0.0)
+    );
+}
+
+#[test]
+fn emitted_force_2d_affects_nearby_body_and_water() {
+    let mut runtime = Runtime::new();
+    let water_id = NodeAPI::create::<WaterBody2D>(&mut runtime);
+    let body_id = NodeAPI::create::<RigidBody2D>(&mut runtime);
+
+    if let Some(node) = runtime.nodes.get_mut(water_id)
+        && let SceneNodeData::WaterBody2D(water) = &mut node.data
+    {
+        water.water.size = Vector2::new(16.0, 16.0);
+    }
+    if let Some(node) = runtime.nodes.get_mut(body_id)
+        && let SceneNodeData::RigidBody2D(body) = &mut node.data
+    {
+        body.transform.position = Vector2::new(2.0, 0.0);
+        body.gravity_scale = 0.0;
+    }
+
+    let mut emitter = perro_nodes::PhysicsForceEmitter2D::new();
+    emitter.profile = perro_nodes::PhysicsForceProfile::Current;
+    emitter.transform.position = Vector2::new(0.0, 0.0);
+    emitter.radius = 6.0;
+    emitter.strength = 20.0;
+    emitter.vectors = vec![Vector2::new(1.0, 0.0)];
+
+    assert!(PhysicsAPI::emit_force_2d(&mut runtime, emitter));
+    runtime.queue_physics_force_emitters_2d();
+
+    assert!(
+        runtime
+            .physics
+            .pending_forces_2d
+            .iter()
+            .any(|pending| pending.id == body_id && pending.force.x > 0.0)
+    );
+    assert!(
+        runtime
+            .force_water_impacts_2d
+            .iter()
+            .any(|impact| impact.strength > 0.0 && impact.cavitation > 0.0)
+    );
+}
+
+#[test]
+fn emitted_force_3d_affects_nearby_body_and_water() {
+    let mut runtime = Runtime::new();
+    let _water_id = NodeAPI::create::<WaterBody3D>(&mut runtime);
+    let body_id = NodeAPI::create::<RigidBody3D>(&mut runtime);
+
+    if let Some(node) = runtime.nodes.get_mut(body_id)
+        && let SceneNodeData::RigidBody3D(body) = &mut node.data
+    {
+        body.transform.position = Vector3::new(2.0, -1.0, 0.0);
+        body.gravity_scale = 0.0;
+    }
+
+    let mut emitter = perro_nodes::PhysicsForceEmitter3D::new();
+    emitter.profile = perro_nodes::PhysicsForceProfile::Current;
+    emitter.transform.position = Vector3::new(0.0, -1.0, 0.0);
+    emitter.radius = 6.0;
+    emitter.strength = 20.0;
+    emitter.pulse = false;
+    emitter.vectors = vec![Vector3::new(1.0, 0.0, 0.0)];
+
+    assert!(PhysicsAPI::emit_force_3d(&mut runtime, emitter));
+    runtime.queue_physics_force_emitters_3d();
+
+    assert!(
+        runtime
+            .physics
+            .pending_forces_3d
+            .iter()
+            .any(|pending| pending.id == body_id && pending.force.x > 0.0)
+    );
+    assert!(
+        runtime
+            .force_water_impacts_3d
+            .iter()
+            .any(|impact| impact.strength > 0.0 && impact.cavitation > 0.0)
+    );
 }
 
 #[test]

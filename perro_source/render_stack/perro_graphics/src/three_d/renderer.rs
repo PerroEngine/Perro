@@ -273,9 +273,18 @@ impl Renderer3D {
     }
 
     pub fn upsert_water(&mut self, node: NodeID, water: Water3DState) {
-        if self.waters.insert(node, water.clone()) != Some(water) {
-            self.waters_dirty = true;
-            self.waters_revision = self.waters_revision.wrapping_add(1);
+        match self.waters.get_mut(&node) {
+            Some(existing) if *existing == water => {}
+            Some(existing) => {
+                *existing = water;
+                self.waters_dirty = true;
+                self.waters_revision = self.waters_revision.wrapping_add(1);
+            }
+            None => {
+                self.waters.insert(node, water);
+                self.waters_dirty = true;
+                self.waters_revision = self.waters_revision.wrapping_add(1);
+            }
         }
     }
 

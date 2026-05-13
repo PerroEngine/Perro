@@ -40,12 +40,13 @@ use perro_nodes::{
     sky_3d::{Sky3D, SkyStyle},
     spot_light_3d::SpotLight3D,
     sprite_2d::{AnimatedSprite, AnimatedSprite2D, Sprite2D},
-    WaterBody2D, WaterBody3D, WaterIdleMode, WaterSurfaceParams,
+    WaterBody2D, WaterBody3D, WaterIdleMode, WaterShape, WaterSkyBias, WaterSurfaceParams,
     AmbientLight2D, Area2D, Area3D, AudioMask2D, AudioMask3D, AudioPortal2D, AudioPortal3D,
     AudioEffectZone2D, AudioEffectZone3D, BallJoint3D, CollisionShape2D, CollisionShape3D, DistanceJoint2D,
-    FixedJoint2D, FixedJoint3D, HingeJoint3D, PinJoint2D, PointLight2D, RayLight2D, RigidBody2D,
-    RigidBody3D, SceneNode, SceneNodeData, Shape2D, Shape3D, SpotLight2D, StaticBody2D,
-    StaticBody3D, Triangle2DKind,
+    FixedJoint2D, FixedJoint3D, HingeJoint3D, PinJoint2D, PointLight2D, RayLight2D,
+    PhysicsForceEmitter2D, PhysicsForceEmitter3D, PhysicsForceProfile, RigidBody2D, RigidBody3D,
+    SceneNode, SceneNodeData, Shape2D, Shape3D, SpotLight2D, StaticBody2D, StaticBody3D,
+    Triangle2DKind,
 };
 use perro_render_bridge::Material3D;
 use perro_scene::{
@@ -53,7 +54,7 @@ use perro_scene::{
     BoneCollider2DField, BoneCollider3DField, Camera2DField, Camera3DField, CollisionShape2DField, CollisionShape3DField, DistanceJoint2DField, HingeJoint3DField, IKTarget2DField, IKTarget3DField, Joint2DField, Joint3DField, Light3DField,
     Light2DField, MeshInstance3DField, NodeField, Parser,
     ParticleEmitter2DField, PointLight2DField, RayLight2DField, SpotLight2DField,
-    ParticleEmitter3DField, TileMap2DField,
+    ParticleEmitter3DField, PhysicsForceEmitterField, TileMap2DField,
     PhysicsBoneChain2DField, PhysicsBoneChain3DField, PointLight3DField, RayLight3DField, RigidBody2DField, RigidBody3DField, Scene,
     SceneFieldIterRef, SceneFieldName, SceneKey, SceneNodeData as SceneDefNodeData,
     SceneNodeEntry as SceneDefNodeEntry, SceneObjectField, SceneValue, Skeleton3DField,
@@ -97,8 +98,29 @@ fn apply_water_body_fields(node: &mut WaterSurfaceParams, ty: &str, fields: &[Sc
             WaterBodyField::Size => {
                 if let Some(v) = as_vec2(value) {
                     node.size = v;
+                    node.shape = match ty {
+                        "WaterBody3D" => {
+                            WaterShape::box_volume(Vector3::new(v.x, node.depth.max(0.001), v.y))
+                        }
+                        _ => WaterShape::rect(v),
+                    };
                 }
             }
+            WaterBodyField::Shape => match ty {
+                "WaterBody3D" => {
+                    if let Some(shape) = as_shape_3d(value).and_then(water_shape_from_shape_3d) {
+                        node.shape = shape;
+                        node.size = shape.surface_size();
+                        node.depth = shape.depth(node.depth);
+                    }
+                }
+                _ => {
+                    if let Some(shape) = as_shape_2d(value).and_then(water_shape_from_shape_2d) {
+                        node.shape = shape;
+                        node.size = shape.surface_size();
+                    }
+                }
+            },
             WaterBodyField::Resolution => {
                 if let Some((x, y)) = value.as_vec2() {
                     node.resolution = [
@@ -113,6 +135,13 @@ fn apply_water_body_fields(node: &mut WaterSurfaceParams, ty: &str, fields: &[Sc
             WaterBodyField::Depth => {
                 if let Some(v) = as_f32(value) {
                     node.depth = v.max(0.0);
+                    if let WaterShape::Box { size } = node.shape {
+                        node.shape = WaterShape::box_volume(Vector3::new(
+                            size.x,
+                            node.depth.max(0.001),
+                            size.z,
+                        ));
+                    }
                 }
             }
             WaterBodyField::Flow => {
@@ -206,6 +235,29 @@ fn apply_water_body_fields(node: &mut WaterSurfaceParams, ty: &str, fields: &[Sc
                     node.collision_mask = v;
                 }
             }
+            WaterBodyField::DeepColor => {
+                if let Some(v) = as_color(value) {
+                    node.optics.deep_color = v;
+                }
+            }
+            WaterBodyField::ShallowColor => {
+                if let Some(v) = as_color(value) {
+                    node.optics.shallow_color = v;
+                }
+            }
+            WaterBodyField::ShallowDepth => {
+                if let Some(v) = as_f32(value) {
+                    node.optics.shallow_depth = v.max(-1.0);
+                }
+            }
+            WaterBodyField::SkyBias => {
+                if let Some(v) = as_water_sky_bias(value) {
+                    node.optics.sky_bias = v;
+                }
+            }
+            WaterBodyField::Optics => {
+                apply_water_optics_settings(&mut node.optics, value);
+            }
             WaterBodyField::Coastline => {
                 apply_coastline_settings(&mut node.coastline, value);
             }
@@ -216,6 +268,71 @@ fn apply_water_body_fields(node: &mut WaterSurfaceParams, ty: &str, fields: &[Sc
             }
         }
     });
+}
+
+fn water_shape_from_shape_2d(shape: Shape2D) -> Option<WaterShape> {
+    match shape {
+        Shape2D::Quad { width, height } => {
+            Some(WaterShape::rect(Vector2::new(width.max(0.001), height.max(0.001))))
+        }
+        Shape2D::Circle { radius } => Some(WaterShape::Circle {
+            radius: radius.max(0.001),
+        }),
+        Shape2D::Triangle { .. } => None,
+    }
+}
+
+fn water_shape_from_shape_3d(shape: Shape3D) -> Option<WaterShape> {
+    match shape {
+        Shape3D::Cube { size } => Some(WaterShape::box_volume(Vector3::new(
+            size.x.max(0.001),
+            size.y.max(0.001),
+            size.z.max(0.001),
+        ))),
+        Shape3D::Cylinder {
+            radius,
+            half_height,
+        } => Some(WaterShape::Cylinder {
+            radius: radius.max(0.001),
+            half_height: half_height.max(0.001),
+        }),
+        Shape3D::Sphere { radius } => Some(WaterShape::Cylinder {
+            radius: radius.max(0.001),
+            half_height: radius.max(0.001),
+        }),
+        _ => None,
+    }
+}
+
+fn apply_water_optics_settings(node: &mut perro_nodes::WaterOpticsSettings, value: &SceneValue) {
+    let SceneValue::Object(fields) = value else {
+        return;
+    };
+    for (name, value) in fields.iter() {
+        match name.as_ref() {
+            "deep_color" | "deep" => {
+                if let Some(v) = as_color(value) {
+                    node.deep_color = v;
+                }
+            }
+            "shallow_color" | "shallow" => {
+                if let Some(v) = as_color(value) {
+                    node.shallow_color = v;
+                }
+            }
+            "shallow_depth" | "shallow_cutoff" | "shallowness" | "shallowness_depth" => {
+                if let Some(v) = as_f32(value) {
+                    node.shallow_depth = v.max(-1.0);
+                }
+            }
+            "sky_bias" | "sky_reflect" | "sky_reflection" => {
+                if let Some(v) = as_water_sky_bias(value) {
+                    node.sky_bias = v;
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 fn apply_coastline_settings(node: &mut perro_nodes::CoastlineSettings, value: &SceneValue) {
@@ -264,6 +381,57 @@ fn apply_coastline_settings(node: &mut perro_nodes::CoastlineSettings, value: &S
     }
 }
 
+fn as_water_sky_bias(value: &SceneValue) -> Option<WaterSkyBias> {
+    if let Some(v) = as_f32(value) {
+        return if v <= 0.0 {
+            Some(WaterSkyBias::None)
+        } else {
+            Some(WaterSkyBias::Active {
+                ratio: v.clamp(0.0, 1.0),
+            })
+        };
+    }
+    if let Some(v) = as_str(value) {
+        return match v.trim().to_ascii_lowercase().as_str() {
+            "none" | "off" | "false" => Some(WaterSkyBias::None),
+            "active" | "sky" | "on" | "true" => Some(WaterSkyBias::Active { ratio: 0.35 }),
+            _ => None,
+        };
+    }
+    let SceneValue::Object(fields) = value else {
+        return None;
+    };
+    let mut ratio = 0.35;
+    let mut active = true;
+    for (name, value) in fields.iter() {
+        match name.as_ref() {
+            "ratio" | "strength" | "amount" => {
+                if let Some(v) = as_f32(value) {
+                    ratio = v.clamp(0.0, 1.0);
+                }
+            }
+            "active" => {
+                if let Some(v) = as_bool(value) {
+                    active = v;
+                }
+            }
+            "mode" | "type" => {
+                if let Some(v) = as_str(value)
+                    && matches!(v.trim().to_ascii_lowercase().as_str(), "none" | "off")
+                {
+                    active = false;
+                }
+            }
+            _ => {}
+        }
+    }
+    if active && ratio > 0.0 {
+        Some(WaterSkyBias::Active { ratio })
+    } else {
+        Some(WaterSkyBias::None)
+    }
+}
+
 fn as_color(value: &SceneValue) -> Option<Color> {
     match value {
         SceneValue::Vec4 { x, y, z, w } => Some(Color::new(*x, *y, *z, *w)),
@@ -283,6 +451,39 @@ fn as_water_idle_mode(value: &SceneValue) -> Option<WaterIdleMode> {
         "river" => Some(WaterIdleMode::River),
         _ => None,
     }
+}
+
+fn as_force_profile(value: &SceneValue) -> Option<PhysicsForceProfile> {
+    match as_str(value)?.trim().to_ascii_lowercase().as_str() {
+        "lift" => Some(PhysicsForceProfile::Lift),
+        "explosion" => Some(PhysicsForceProfile::Explosion),
+        "current" => Some(PhysicsForceProfile::Current),
+        "vortex" => Some(PhysicsForceProfile::Vortex),
+        "custom" => Some(PhysicsForceProfile::Custom),
+        _ => None,
+    }
+}
+
+fn as_vec2_array(value: &SceneValue) -> Option<Vec<Vector2>> {
+    let SceneValue::Array(items) = value else {
+        return None;
+    };
+    let mut out = Vec::with_capacity(items.len());
+    for item in items.iter() {
+        out.push(as_vec2(item)?);
+    }
+    Some(out)
+}
+
+fn as_vec3_array(value: &SceneValue) -> Option<Vec<Vector3>> {
+    let SceneValue::Array(items) = value else {
+        return None;
+    };
+    let mut out = Vec::with_capacity(items.len());
+    for item in items.iter() {
+        out.push(as_vec3(item)?);
+    }
+    Some(out)
 }
 
 pub(super) struct PreparedScene {
@@ -1285,6 +1486,9 @@ fn scene_node_data_from(
         "StaticBody2D" => Ok(SceneNodeData::StaticBody2D(build_static_body_2d(data))),
         "Area2D" => Ok(SceneNodeData::Area2D(build_area_2d(data))),
         "RigidBody2D" => Ok(SceneNodeData::RigidBody2D(build_rigid_body_2d(data))),
+        "PhysicsForceEmitter2D" => Ok(SceneNodeData::PhysicsForceEmitter2D(
+            build_physics_force_emitter_2d(data),
+        )),
         "PinJoint2D" => Ok(SceneNodeData::PinJoint2D(build_pin_joint_2d(data))),
         "DistanceJoint2D" => Ok(SceneNodeData::DistanceJoint2D(build_distance_joint_2d(data))),
         "FixedJoint2D" => Ok(SceneNodeData::FixedJoint2D(build_fixed_joint_2d(data))),
@@ -1304,6 +1508,9 @@ fn scene_node_data_from(
         "StaticBody3D" => Ok(SceneNodeData::StaticBody3D(build_static_body_3d(data))),
         "Area3D" => Ok(SceneNodeData::Area3D(build_area_3d(data))),
         "RigidBody3D" => Ok(SceneNodeData::RigidBody3D(build_rigid_body_3d(data))),
+        "PhysicsForceEmitter3D" => Ok(SceneNodeData::PhysicsForceEmitter3D(
+            build_physics_force_emitter_3d(data),
+        )),
         "BallJoint3D" => Ok(SceneNodeData::BallJoint3D(build_ball_joint_3d(data))),
         "HingeJoint3D" => Ok(SceneNodeData::HingeJoint3D(build_hinge_joint_3d(data))),
         "FixedJoint3D" => Ok(SceneNodeData::FixedJoint3D(build_fixed_joint_3d(data))),

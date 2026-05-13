@@ -23,10 +23,12 @@ fn bodies(count: usize) -> Vec<Body2> {
 }
 
 fn water_surface(resolution: u32) -> WaterSurfaceParams {
-    let mut surface = WaterSurfaceParams::default();
-    surface.size = Vector2::new(128.0, 128.0);
-    surface.resolution = [resolution, resolution];
-    surface.idle_mode = WaterIdleMode::Chop;
+    let mut surface = WaterSurfaceParams {
+        size: Vector2::new(128.0, 128.0),
+        resolution: [resolution, resolution],
+        idle_mode: WaterIdleMode::Chop,
+        ..Default::default()
+    };
     surface.wave.speed = 1.35;
     surface.wave.scale = 1.2;
     surface.physics.buoyancy = 2.5;

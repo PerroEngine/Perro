@@ -16,7 +16,7 @@ use perro_render_bridge::{
     ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D, PointLight3DState,
     PointParticles3DState, RayLight3DState, RenderCommand, ResourceCommand, SkeletonPalette,
     Sky3DState, SkyTime3DState, SpotLight3DState, Water3DState, WaterCoastlineShape3D,
-    WaterIdleModeState, WaterImpact3D,
+    WaterIdleModeState, WaterImpact3D, WaterShapeState,
 };
 use perro_runtime_render::{material_3d_request, mesh_3d_request};
 use perro_structs::BitMask;
@@ -228,7 +228,8 @@ impl Runtime {
                         node,
                         water: Box::new(Water3DState {
                             model,
-                            size: [water.size.x, water.size.y],
+                            size: water_render_size(water),
+                            shape: water_shape_state(water.shape),
                             resolution: water.resolution,
                             depth: water.depth,
                             flow: [water.flow.x, water.flow.y],
@@ -246,6 +247,10 @@ impl Runtime {
                             lod_min_resolution: water.lod.min_resolution,
                             collision_layers: water.collision_layers,
                             collision_mask: water.collision_mask,
+                            deep_color: water.optics.deep_color.to_rgba(),
+                            shallow_color: water.optics.shallow_color.to_rgba(),
+                            shallow_depth: water.optics.shallow_depth,
+                            sky_bias_ratio: water.optics.sky_bias.ratio(),
                             coastline_foam_color: water.coastline.foam_color.to_rgba(),
                             coastline_foam_strength: water.coastline.foam_strength,
                             coastline_foam_width: water.coastline.foam_width,
@@ -1074,9 +1079,9 @@ impl Runtime {
         let Some(water_global) = self.get_global_transform_3d(water_id) else {
             return Arc::from([]);
         };
-        let water_half = water.size * 0.5;
+        let water_half = water.shape.surface_size() * 0.5;
         let water_top = water_global.position.y;
-        let water_bottom = water_top - water.depth;
+        let water_bottom = water_top - water.shape.depth(water.depth);
         let mut shapes = Vec::new();
         let body_ids: Vec<_> = self
             .nodes
@@ -1245,7 +1250,7 @@ impl Runtime {
         let Some(water_global) = self.get_global_transform_3d(water_id) else {
             return Arc::from([]);
         };
-        let half = water.size * 0.5;
+        let half = water.shape.surface_size() * 0.5;
         let body_ids: Vec<_> = self
             .nodes
             .iter()
@@ -1275,10 +1280,11 @@ impl Runtime {
                 continue;
             };
             let local = body_global.position - water_global.position;
-            if local.x.abs() > half.x
-                || local.z.abs() > half.y
+            if !water
+                .shape
+                .contains_surface(perro_structs::Vector2::new(local.x, local.z))
                 || body_global.position.y > water_global.position.y
-                || body_global.position.y < water_global.position.y - water.depth
+                || body_global.position.y < water_global.position.y - water.shape.depth(water.depth)
             {
                 continue;
             }
@@ -1292,6 +1298,24 @@ impl Runtime {
                 velocity: [velocity.x, velocity.y, velocity.z],
                 strength,
                 radius: mass.sqrt().max(1.0),
+                cavitation: 0.0,
+            });
+        }
+        for impact in self.force_water_impacts_3d.iter() {
+            let local = impact.position - water_global.position;
+            if local.x.abs() > half.x + impact.radius
+                || local.z.abs() > half.y + impact.radius
+                || impact.position.y > water_global.position.y + impact.radius
+                || impact.position.y < water_global.position.y - water.depth - impact.radius
+            {
+                continue;
+            }
+            impacts.push(WaterImpact3D {
+                position: [local.x, local.y, local.z],
+                velocity: [impact.force.x, impact.force.y, impact.force.z],
+                strength: impact.strength,
+                radius: impact.radius,
+                cavitation: impact.cavitation,
             });
         }
         Arc::from(impacts)
@@ -1345,6 +1369,25 @@ fn water_idle_mode_state(mode: perro_nodes::WaterIdleMode) -> WaterIdleModeState
         perro_nodes::WaterIdleMode::Storm => WaterIdleModeState::Storm,
         perro_nodes::WaterIdleMode::River => WaterIdleModeState::River,
     }
+}
+
+fn water_shape_state(shape: perro_nodes::WaterShape) -> WaterShapeState {
+    match shape {
+        perro_nodes::WaterShape::Circle { radius } => WaterShapeState::Circle { radius },
+        perro_nodes::WaterShape::Cylinder {
+            radius,
+            half_height,
+        } => WaterShapeState::Cylinder {
+            radius,
+            half_height,
+        },
+        _ => WaterShapeState::Rect,
+    }
+}
+
+fn water_render_size(water: perro_nodes::WaterSurfaceParams) -> [f32; 2] {
+    let size = water.shape.surface_size();
+    [size.x, size.y]
 }
 
 #[cfg(test)]

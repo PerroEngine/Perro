@@ -4,7 +4,7 @@ use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
     Command2D, Command3D, LODOptions3D, Material3D, Mesh3D, MeshSurfaceBinding3D, RenderBridge,
     RenderCommand, RenderEvent, RenderRequestID, ResourceCommand, RuntimeMeshVertex,
-    Sprite2DCommand, Water2DState, WaterIdleModeState,
+    Sprite2DCommand, Water2DState, WaterIdleModeState, WaterShapeState,
 };
 use perro_structs::BitMask;
 use std::sync::Arc;
@@ -81,6 +81,7 @@ fn water_command_with_idle(
             model: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [x, y, 1.0]],
             z_index: i as i32,
             size: [32.0, 32.0],
+            shape: WaterShapeState::Rect,
             resolution: [resolution, resolution],
             depth: 4.0,
             flow: [0.1, 0.0],
@@ -98,6 +99,10 @@ fn water_command_with_idle(
             lod_min_resolution: [32, 32],
             collision_layers: BitMask::with([1]),
             collision_mask: BitMask::NONE,
+            deep_color: [0.02, 0.16, 0.28, 0.86],
+            shallow_color: [0.08, 0.46, 0.62, 0.48],
+            shallow_depth: -1.0,
+            sky_bias_ratio: 0.0,
             coastline_foam_color: [0.9, 0.97, 1.0, 1.0],
             coastline_foam_strength: if impacts > 0 { 0.75 } else { 0.0 },
             coastline_foam_width: 1.5,
@@ -112,6 +117,7 @@ fn water_command_with_idle(
                     velocity: [1.0, -2.0],
                     strength: 1.0 + j as f32 * 0.01,
                     radius: 2.0,
+                    cavitation: 0.0,
                 })
                 .collect::<Vec<_>>()
                 .into(),

@@ -4,7 +4,7 @@ use ahash::AHashSet;
 use perro_ids::{NodeID, SignalID};
 #[cfg(test)]
 use perro_nodes::TileMap2D;
-use perro_nodes::{SceneNodeData, Shape2D, Shape3D, water_physics_sample_or_idle};
+use perro_nodes::{SceneNodeData, Shape2D, Shape3D, WaterShape, water_physics_sample_or_idle};
 use perro_physics::*;
 use perro_runtime_api::sub_apis::{
     NodeAPI, PhysicsContact2D, PhysicsContact3D, PhysicsQueryFilter, PhysicsRayHit2D,
@@ -89,6 +89,8 @@ impl Runtime {
         }
 
         let apply_forces_impulses_start = std::time::Instant::now();
+        self.queue_physics_force_emitters_2d();
+        self.queue_physics_force_emitters_3d();
         self.queue_water_forces_2d();
         self.queue_water_forces_3d();
         self.apply_pending_forces_2d();
@@ -150,6 +152,16 @@ impl Runtime {
 
     pub(crate) fn queue_force_3d(&mut self, id: NodeID, force: Vector3) {
         self.physics.queue_force_3d(id, force);
+    }
+
+    pub(crate) fn emit_force_2d(&mut self, emitter: perro_nodes::PhysicsForceEmitter2D) -> bool {
+        self.pending_force_emitters_2d.push(emitter);
+        true
+    }
+
+    pub(crate) fn emit_force_3d(&mut self, emitter: perro_nodes::PhysicsForceEmitter3D) -> bool {
+        self.pending_force_emitters_3d.push(emitter);
+        true
     }
 
     pub(crate) fn clear_physics(&mut self) {
@@ -383,8 +395,7 @@ impl Runtime {
                 }
             } else if let Some(node) = self.nodes.get(id) {
                 if let SceneNodeData::WaterBody2D(water) = &node.data {
-                    shape_signature = hash_f32(shape_signature, water.water.size.x.to_bits());
-                    shape_signature = hash_f32(shape_signature, water.water.size.y.to_bits());
+                    shape_signature = hash_water_shape(shape_signature, water.water.shape);
                 }
                 for &child_id in node.children_slice() {
                     let Some(child) = self.nodes.get(child_id) else {
@@ -423,12 +434,10 @@ impl Runtime {
                     ));
                 } else if let Some(node) = self.nodes.get(id) {
                     if let SceneNodeData::WaterBody2D(water) = &node.data {
+                        let shape = water_shape_2d(water.water.shape);
                         shapes.push(ShapeDesc2D {
                             local: Transform2D::IDENTITY,
-                            shape: ShapeKind2D::Primitive(Shape2D::Quad {
-                                width: water.water.size.x,
-                                height: water.water.size.y,
-                            }),
+                            shape: ShapeKind2D::Primitive(shape),
                             sensor: true,
                             collision_layers: groups.0,
                             collision_mask: groups.1,
@@ -536,8 +545,7 @@ impl Runtime {
 
             if let Some(node) = self.nodes.get(id) {
                 if let SceneNodeData::WaterBody3D(water) = &node.data {
-                    shape_signature = hash_f32(shape_signature, water.water.size.x.to_bits());
-                    shape_signature = hash_f32(shape_signature, water.water.size.y.to_bits());
+                    shape_signature = hash_water_shape(shape_signature, water.water.shape);
                     shape_signature = hash_f32(shape_signature, water.water.depth.to_bits());
                 }
                 for &child_id in node.children_slice() {
@@ -562,19 +570,14 @@ impl Runtime {
             let mut shapes = Vec::new();
             if needs_shape_rebuild && let Some(node) = self.nodes.get(id) {
                 if let SceneNodeData::WaterBody3D(water) = &node.data {
+                    let (shape, center_y) = water_shape_3d(water.water.shape, water.water.depth);
                     shapes.push(ShapeDesc3D {
                         local: Transform3D::new(
-                            Vector3::new(0.0, -water.water.depth * 0.5, 0.0),
+                            Vector3::new(0.0, center_y, 0.0),
                             Quaternion::IDENTITY,
                             Vector3::ONE,
                         ),
-                        shape: ShapeKind3D::Primitive(Shape3D::Cube {
-                            size: Vector3::new(
-                                water.water.size.x,
-                                water.water.depth.max(0.001),
-                                water.water.size.y,
-                            ),
-                        }),
+                        shape: ShapeKind3D::Primitive(shape),
                         sensor: true,
                         collision_layers: groups.0,
                         collision_mask: groups.1,
@@ -816,6 +819,312 @@ impl Runtime {
             .apply_pending_forces_3d(self.physics_coef(), self.time.fixed_delta);
     }
 
+    fn queue_physics_force_emitters_2d(&mut self) {
+        self.force_water_impacts_2d.clear();
+        let ids = self
+            .nodes
+            .iter()
+            .filter_map(|(id, node)| {
+                matches!(node.data, SceneNodeData::PhysicsForceEmitter2D(_)).then_some(id)
+            })
+            .collect::<Vec<_>>();
+        let mut emitters = Vec::new();
+        for id in ids {
+            let Some(global) = self.get_global_transform_2d(id) else {
+                continue;
+            };
+            let Some(node) = self.nodes.get_mut(id) else {
+                continue;
+            };
+            let SceneNodeData::PhysicsForceEmitter2D(emitter) = &mut node.data else {
+                continue;
+            };
+            if force_emitter_active(
+                emitter.enabled,
+                emitter.pulse,
+                emitter.duration,
+                emitter.age,
+            ) {
+                emitters.push((global.position, emitter.clone()));
+            }
+            emitter.age += self.time.fixed_delta.max(0.0);
+        }
+        emitters.extend(
+            self.pending_force_emitters_2d
+                .drain(..)
+                .map(|emitter| (emitter.transform.position, emitter)),
+        );
+        for (position, emitter) in emitters {
+            self.apply_force_emitter_2d(position, &emitter);
+        }
+    }
+
+    fn queue_physics_force_emitters_3d(&mut self) {
+        self.force_water_impacts_3d.clear();
+        let ids = self
+            .nodes
+            .iter()
+            .filter_map(|(id, node)| {
+                matches!(node.data, SceneNodeData::PhysicsForceEmitter3D(_)).then_some(id)
+            })
+            .collect::<Vec<_>>();
+        let mut emitters = Vec::new();
+        for id in ids {
+            let Some(global) = self.get_global_transform_3d(id) else {
+                continue;
+            };
+            let Some(node) = self.nodes.get_mut(id) else {
+                continue;
+            };
+            let SceneNodeData::PhysicsForceEmitter3D(emitter) = &mut node.data else {
+                continue;
+            };
+            if force_emitter_active(
+                emitter.enabled,
+                emitter.pulse,
+                emitter.duration,
+                emitter.age,
+            ) {
+                emitters.push((global.position, emitter.clone()));
+            }
+            emitter.age += self.time.fixed_delta.max(0.0);
+        }
+        emitters.extend(
+            self.pending_force_emitters_3d
+                .drain(..)
+                .map(|emitter| (emitter.transform.position, emitter)),
+        );
+        for (position, emitter) in emitters {
+            self.apply_force_emitter_3d(position, &emitter);
+        }
+    }
+
+    fn apply_force_emitter_2d(
+        &mut self,
+        emitter_pos: Vector2,
+        emitter: &perro_nodes::PhysicsForceEmitter2D,
+    ) {
+        if emitter.radius <= 0.0 {
+            return;
+        }
+        let ids = self
+            .nodes
+            .iter()
+            .filter_map(|(id, node)| {
+                matches!(node.data, SceneNodeData::RigidBody2D(_)).then_some(id)
+            })
+            .collect::<Vec<_>>();
+        for id in ids {
+            let Some(global) = self.get_global_transform_2d(id) else {
+                continue;
+            };
+            let Some((layers, mask)) = self.nodes.get(id).and_then(|node| {
+                let SceneNodeData::RigidBody2D(body) = &node.data else {
+                    return None;
+                };
+                Some((body.collision_layers, body.collision_mask))
+            }) else {
+                continue;
+            };
+            if !emitter.affect_bodies
+                || emitter.collision_mask.intersects(layers)
+                || mask.intersects(emitter.collision_layers)
+            {
+                continue;
+            }
+            let offset = global.position - emitter_pos;
+            let dist = offset.length();
+            if dist > emitter.radius {
+                continue;
+            }
+            let force = force_emitter_force_2d(emitter, offset, dist);
+            if force.length_squared() <= 0.000_001 {
+                continue;
+            }
+            if emitter.pulse || emitter.profile == perro_nodes::PhysicsForceProfile::Explosion {
+                self.physics.queue_impulse_2d(id, force);
+            } else {
+                self.physics.queue_force_2d(id, force);
+            }
+        }
+        if emitter.affect_water {
+            self.queue_force_water_impacts_2d(emitter_pos, emitter);
+        }
+    }
+
+    fn apply_force_emitter_3d(
+        &mut self,
+        emitter_pos: Vector3,
+        emitter: &perro_nodes::PhysicsForceEmitter3D,
+    ) {
+        if emitter.radius <= 0.0 {
+            return;
+        }
+        let ids = self
+            .nodes
+            .iter()
+            .filter_map(|(id, node)| {
+                matches!(node.data, SceneNodeData::RigidBody3D(_)).then_some(id)
+            })
+            .collect::<Vec<_>>();
+        for id in ids {
+            let Some(global) = self.get_global_transform_3d(id) else {
+                continue;
+            };
+            let Some((layers, mask)) = self.nodes.get(id).and_then(|node| {
+                let SceneNodeData::RigidBody3D(body) = &node.data else {
+                    return None;
+                };
+                Some((body.collision_layers, body.collision_mask))
+            }) else {
+                continue;
+            };
+            if !emitter.affect_bodies
+                || emitter.collision_mask.intersects(layers)
+                || mask.intersects(emitter.collision_layers)
+            {
+                continue;
+            }
+            let offset = global.position - emitter_pos;
+            let dist = offset.length();
+            if dist > emitter.radius {
+                continue;
+            }
+            let force = force_emitter_force_3d(emitter, offset, dist);
+            if force.length_squared() <= 0.000_001 {
+                continue;
+            }
+            if emitter.pulse || emitter.profile == perro_nodes::PhysicsForceProfile::Explosion {
+                self.physics.queue_impulse_3d(id, force);
+            } else {
+                self.physics.queue_force_3d(id, force);
+            }
+        }
+        if emitter.affect_water {
+            self.queue_force_water_impacts_3d(emitter_pos, emitter);
+        }
+    }
+
+    fn queue_force_water_impacts_2d(
+        &mut self,
+        emitter_pos: Vector2,
+        emitter: &perro_nodes::PhysicsForceEmitter2D,
+    ) {
+        let ids = self
+            .nodes
+            .iter()
+            .filter_map(|(id, node)| {
+                matches!(node.data, SceneNodeData::WaterBody2D(_)).then_some(id)
+            })
+            .collect::<Vec<_>>();
+        for id in ids {
+            let Some(global) = self.get_global_transform_2d(id) else {
+                continue;
+            };
+            let Some(water) = self.nodes.get(id).and_then(|node| {
+                let SceneNodeData::WaterBody2D(water) = &node.data else {
+                    return None;
+                };
+                Some(water.water)
+            }) else {
+                continue;
+            };
+            if emitter.collision_mask.intersects(water.collision_layers)
+                || water.collision_mask.intersects(emitter.collision_layers)
+            {
+                continue;
+            }
+            let local = emitter_pos - global.position;
+            let half = water.shape.surface_size() * 0.5;
+            if local.x.abs() > half.x + emitter.radius || local.y.abs() > half.y + emitter.radius {
+                continue;
+            }
+            let dist = local.length().min(emitter.radius);
+            let force = force_emitter_force_2d(emitter, local, dist);
+            let strength = force.length().min(512.0);
+            if strength <= 0.0 {
+                continue;
+            }
+            self.force_water_impacts_2d
+                .push(crate::runtime::ForceWaterImpact2D {
+                    position: emitter_pos,
+                    force,
+                    strength,
+                    radius: emitter.radius.max(0.001),
+                    cavitation: if water.shape.contains_surface(local) {
+                        (strength / 256.0).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    },
+                });
+            self.mark_needs_rerender(id);
+        }
+    }
+
+    fn queue_force_water_impacts_3d(
+        &mut self,
+        emitter_pos: Vector3,
+        emitter: &perro_nodes::PhysicsForceEmitter3D,
+    ) {
+        let ids = self
+            .nodes
+            .iter()
+            .filter_map(|(id, node)| {
+                matches!(node.data, SceneNodeData::WaterBody3D(_)).then_some(id)
+            })
+            .collect::<Vec<_>>();
+        for id in ids {
+            let Some(global) = self.get_global_transform_3d(id) else {
+                continue;
+            };
+            let Some(water) = self.nodes.get(id).and_then(|node| {
+                let SceneNodeData::WaterBody3D(water) = &node.data else {
+                    return None;
+                };
+                Some(water.water)
+            }) else {
+                continue;
+            };
+            if emitter.collision_mask.intersects(water.collision_layers)
+                || water.collision_mask.intersects(emitter.collision_layers)
+            {
+                continue;
+            }
+            let local = emitter_pos - global.position;
+            let half = water.shape.surface_size() * 0.5;
+            if local.x.abs() > half.x + emitter.radius
+                || local.z.abs() > half.y + emitter.radius
+                || emitter_pos.y > global.position.y + emitter.radius
+                || emitter_pos.y
+                    < global.position.y - water.shape.depth(water.depth) - emitter.radius
+            {
+                continue;
+            }
+            let dist = Vector2::new(local.x, local.z).length().min(emitter.radius);
+            let force = force_emitter_force_3d(emitter, local, dist);
+            let strength = force.length().min(512.0);
+            if strength <= 0.0 {
+                continue;
+            }
+            self.force_water_impacts_3d
+                .push(crate::runtime::ForceWaterImpact3D {
+                    position: emitter_pos,
+                    force,
+                    strength,
+                    radius: emitter.radius.max(0.001),
+                    cavitation: if water.shape.contains_surface(Vector2::new(local.x, local.z))
+                        && emitter_pos.y <= global.position.y
+                        && emitter_pos.y >= global.position.y - water.shape.depth(water.depth)
+                    {
+                        (strength / 256.0).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    },
+                });
+            self.mark_needs_rerender(id);
+        }
+    }
+
     fn queue_water_forces_2d(&mut self) {
         let water_ids: Vec<_> = self
             .nodes
@@ -871,9 +1180,8 @@ impl Runtime {
                 {
                     continue;
                 }
-                let half = surface.size * 0.5;
                 let local = body_transform.position - *water_pos;
-                if local.x.abs() > half.x || local.y.abs() > half.y {
+                if !surface.shape.contains_surface(local) {
                     continue;
                 }
                 let sample = water_physics_sample_or_idle(
@@ -962,12 +1270,13 @@ impl Runtime {
                 {
                     continue;
                 }
-                let half = surface.size * 0.5;
                 let local = Vector2::new(
                     body_transform.position.x - water_pos.x,
                     body_transform.position.z - water_pos.z,
                 );
-                if local.x.abs() > half.x || local.y.abs() > half.y {
+                if !surface.shape.contains_surface(local)
+                    || body_transform.position.y < water_pos.y - surface.shape.depth(surface.depth)
+                {
                     continue;
                 }
                 let sample = water_physics_sample_or_idle(
@@ -1326,6 +1635,204 @@ impl Runtime {
         let params = [Variant::from(area), Variant::from(other)];
         let _ = SignalAPI::signal_emit(self, signal_id, &params);
     }
+}
+
+fn water_shape_2d(shape: WaterShape) -> Shape2D {
+    match shape {
+        WaterShape::Circle { radius } | WaterShape::Cylinder { radius, .. } => {
+            Shape2D::Circle { radius }
+        }
+        WaterShape::Rect { size } => Shape2D::Quad {
+            width: size.x,
+            height: size.y,
+        },
+        WaterShape::Box { size } => Shape2D::Quad {
+            width: size.x,
+            height: size.z,
+        },
+    }
+}
+
+fn water_shape_3d(shape: WaterShape, fallback_depth: f32) -> (Shape3D, f32) {
+    match shape {
+        WaterShape::Cylinder {
+            radius,
+            half_height,
+        } => (
+            Shape3D::Cylinder {
+                radius,
+                half_height,
+            },
+            -half_height,
+        ),
+        WaterShape::Circle { radius } => {
+            let half_height = fallback_depth.max(0.001) * 0.5;
+            (
+                Shape3D::Cylinder {
+                    radius,
+                    half_height,
+                },
+                -half_height,
+            )
+        }
+        WaterShape::Box { size } => (
+            Shape3D::Cube {
+                size: Vector3::new(size.x, size.y.max(0.001), size.z),
+            },
+            -size.y.max(0.001) * 0.5,
+        ),
+        WaterShape::Rect { size } => {
+            let depth = fallback_depth.max(0.001);
+            (
+                Shape3D::Cube {
+                    size: Vector3::new(size.x, depth, size.y),
+                },
+                -depth * 0.5,
+            )
+        }
+    }
+}
+
+fn hash_water_shape(state: u64, shape: WaterShape) -> u64 {
+    match shape {
+        WaterShape::Rect { .. } | WaterShape::Circle { .. } => {
+            hash_shape_2d(state, water_shape_2d(shape))
+        }
+        WaterShape::Box { .. } | WaterShape::Cylinder { .. } => {
+            let (shape, _) = water_shape_3d(shape, 0.001);
+            hash_shape_3d(state, &shape)
+        }
+    }
+}
+
+fn force_emitter_active(enabled: bool, pulse: bool, duration: f32, age: f32) -> bool {
+    enabled && !(pulse && age > 0.0) && (duration <= 0.0 || age <= duration)
+}
+
+fn falloff_scale(dist: f32, radius: f32, falloff: f32) -> f32 {
+    if radius <= 0.0 {
+        return 0.0;
+    }
+    let t = (1.0 - dist / radius).clamp(0.0, 1.0);
+    if falloff <= 0.0 { 1.0 } else { t.powf(falloff) }
+}
+
+fn force_emitter_force_2d(
+    emitter: &perro_nodes::PhysicsForceEmitter2D,
+    offset: Vector2,
+    dist: f32,
+) -> Vector2 {
+    let scale = emitter.strength * falloff_scale(dist, emitter.radius, emitter.falloff);
+    match emitter.profile {
+        perro_nodes::PhysicsForceProfile::Lift => Vector2::new(0.0, 1.0) * scale,
+        perro_nodes::PhysicsForceProfile::Explosion => {
+            if dist <= 0.000_1 {
+                Vector2::new(0.0, 1.0) * scale
+            } else {
+                offset.normalized() * scale
+            }
+        }
+        perro_nodes::PhysicsForceProfile::Current => {
+            emitter
+                .vectors
+                .first()
+                .copied()
+                .unwrap_or(Vector2::new(1.0, 0.0))
+                * scale
+        }
+        perro_nodes::PhysicsForceProfile::Vortex => {
+            let dir = if dist <= 0.000_1 {
+                Vector2::new(1.0, 0.0)
+            } else {
+                offset.normalized()
+            };
+            Vector2::new(-dir.y, dir.x) * scale + dir * (-0.35 * scale)
+        }
+        perro_nodes::PhysicsForceProfile::Custom => {
+            sample_force_vectors_2d(
+                &emitter.vectors,
+                if emitter.radius > 0.0 {
+                    dist / emitter.radius
+                } else {
+                    0.0
+                },
+            ) * emitter.strength
+        }
+    }
+}
+
+fn force_emitter_force_3d(
+    emitter: &perro_nodes::PhysicsForceEmitter3D,
+    offset: Vector3,
+    dist: f32,
+) -> Vector3 {
+    let scale = emitter.strength * falloff_scale(dist, emitter.radius, emitter.falloff);
+    match emitter.profile {
+        perro_nodes::PhysicsForceProfile::Lift => Vector3::new(0.0, 1.0, 0.0) * scale,
+        perro_nodes::PhysicsForceProfile::Explosion => {
+            if offset.length_squared() <= 0.000_1 {
+                Vector3::new(0.0, 1.0, 0.0) * scale
+            } else {
+                offset.normalized() * scale
+            }
+        }
+        perro_nodes::PhysicsForceProfile::Current => {
+            emitter
+                .vectors
+                .first()
+                .copied()
+                .unwrap_or(Vector3::new(1.0, 0.0, 0.0))
+                * scale
+        }
+        perro_nodes::PhysicsForceProfile::Vortex => {
+            let flat = Vector2::new(offset.x, offset.z);
+            let dir = if flat.length_squared() <= 0.000_1 {
+                Vector2::new(1.0, 0.0)
+            } else {
+                flat.normalized()
+            };
+            Vector3::new(-dir.y * scale, 0.0, dir.x * scale)
+                + Vector3::new(dir.x, 0.0, dir.y) * (-0.35 * scale)
+        }
+        perro_nodes::PhysicsForceProfile::Custom => {
+            sample_force_vectors_3d(
+                &emitter.vectors,
+                if emitter.radius > 0.0 {
+                    dist / emitter.radius
+                } else {
+                    0.0
+                },
+            ) * emitter.strength
+        }
+    }
+}
+
+fn sample_force_vectors_2d(vectors: &[Vector2], t: f32) -> Vector2 {
+    if vectors.is_empty() {
+        return Vector2::ZERO;
+    }
+    if vectors.len() == 1 {
+        return vectors[0];
+    }
+    let scaled = t.clamp(0.0, 1.0) * (vectors.len() - 1) as f32;
+    let idx = scaled.floor() as usize;
+    let next = (idx + 1).min(vectors.len() - 1);
+    let frac = scaled - idx as f32;
+    vectors[idx] * (1.0 - frac) + vectors[next] * frac
+}
+
+fn sample_force_vectors_3d(vectors: &[Vector3], t: f32) -> Vector3 {
+    if vectors.is_empty() {
+        return Vector3::ZERO;
+    }
+    if vectors.len() == 1 {
+        return vectors[0];
+    }
+    let scaled = t.clamp(0.0, 1.0) * (vectors.len() - 1) as f32;
+    let idx = scaled.floor() as usize;
+    let next = (idx + 1).min(vectors.len() - 1);
+    let frac = scaled - idx as f32;
+    vectors[idx] * (1.0 - frac) + vectors[next] * frac
 }
 
 #[cfg(test)]

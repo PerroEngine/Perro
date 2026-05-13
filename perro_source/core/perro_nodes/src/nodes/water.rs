@@ -1,4 +1,4 @@
-use perro_structs::{BitMask, Color, Vector2};
+use perro_structs::{BitMask, Color, Vector2, Vector3};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum WaterIdleMode {
@@ -78,6 +78,49 @@ pub struct CoastlineSettings {
     pub edge_noise: f32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub enum WaterSkyBias {
+    #[default]
+    None,
+    Active {
+        ratio: f32,
+    },
+}
+
+impl WaterSkyBias {
+    pub const fn ratio(self) -> f32 {
+        match self {
+            Self::None => 0.0,
+            Self::Active { ratio } => ratio,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WaterOpticsSettings {
+    pub deep_color: Color,
+    pub shallow_color: Color,
+    pub shallow_depth: f32,
+    pub sky_bias: WaterSkyBias,
+}
+
+impl WaterOpticsSettings {
+    pub const fn new() -> Self {
+        Self {
+            deep_color: Color::new(0.02, 0.16, 0.28, 0.86),
+            shallow_color: Color::new(0.08, 0.46, 0.62, 0.48),
+            shallow_depth: -1.0,
+            sky_bias: WaterSkyBias::None,
+        }
+    }
+}
+
+impl Default for WaterOpticsSettings {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CoastlineSettings {
     pub const fn new() -> Self {
         Self {
@@ -99,8 +142,68 @@ impl Default for CoastlineSettings {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub enum WaterShape {
+    Rect { size: Vector2 },
+    Circle { radius: f32 },
+    Box { size: Vector3 },
+    Cylinder { radius: f32, half_height: f32 },
+}
+
+impl WaterShape {
+    pub const fn rect(size: Vector2) -> Self {
+        Self::Rect { size }
+    }
+
+    pub const fn box_volume(size: Vector3) -> Self {
+        Self::Box { size }
+    }
+
+    pub fn surface_size(self) -> Vector2 {
+        match self {
+            Self::Rect { size } => size,
+            Self::Circle { radius } => Vector2::new(radius * 2.0, radius * 2.0),
+            Self::Box { size } => Vector2::new(size.x, size.z),
+            Self::Cylinder { radius, .. } => Vector2::new(radius * 2.0, radius * 2.0),
+        }
+    }
+
+    pub fn depth(self, fallback: f32) -> f32 {
+        match self {
+            Self::Box { size } => size.y.max(0.0),
+            Self::Cylinder { half_height, .. } => (half_height * 2.0).max(0.0),
+            _ => fallback,
+        }
+    }
+
+    pub fn contains_surface(self, local: Vector2) -> bool {
+        match self {
+            Self::Rect { size } => {
+                let half = size * 0.5;
+                local.x.abs() <= half.x && local.y.abs() <= half.y
+            }
+            Self::Box { size } => {
+                let half = Vector2::new(size.x, size.z) * 0.5;
+                local.x.abs() <= half.x && local.y.abs() <= half.y
+            }
+            Self::Circle { radius } | Self::Cylinder { radius, .. } => {
+                local.x * local.x + local.y * local.y <= radius * radius
+            }
+        }
+    }
+}
+
+impl Default for WaterShape {
+    fn default() -> Self {
+        Self::Rect {
+            size: Vector2::new(32.0, 32.0),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WaterSurfaceParams {
     pub size: Vector2,
+    pub shape: WaterShape,
     pub resolution: [u32; 2],
     pub depth: f32,
     pub flow: Vector2,
@@ -111,6 +214,7 @@ pub struct WaterSurfaceParams {
     pub lod: WaterLodParams,
     pub collision_layers: BitMask,
     pub collision_mask: BitMask,
+    pub optics: WaterOpticsSettings,
     pub coastline: CoastlineSettings,
     pub debug: bool,
 }
@@ -119,6 +223,7 @@ impl Default for WaterSurfaceParams {
     fn default() -> Self {
         Self {
             size: Vector2::new(32.0, 32.0),
+            shape: WaterShape::rect(Vector2::new(32.0, 32.0)),
             resolution: [128, 128],
             depth: 4.0,
             flow: Vector2::ZERO,
@@ -129,6 +234,7 @@ impl Default for WaterSurfaceParams {
             lod: WaterLodParams::default(),
             collision_layers: BitMask::ALL,
             collision_mask: BitMask::NONE,
+            optics: WaterOpticsSettings::default(),
             coastline: CoastlineSettings::default(),
             debug: false,
         }
@@ -223,10 +329,12 @@ mod tests {
 
     #[test]
     fn sample_prefers_gpu_cache_and_falls_back_to_idle() {
-        let mut surface = WaterSurfaceParams::default();
-        surface.idle_mode = WaterIdleMode::Sine;
+        let mut surface = WaterSurfaceParams {
+            idle_mode: WaterIdleMode::Sine,
+            flow: Vector2::new(1.0, 0.0),
+            ..Default::default()
+        };
         surface.wave.scale = 2.0;
-        surface.flow = Vector2::new(1.0, 0.0);
 
         let cached = WaterPhysicsSample {
             height: 4.0,

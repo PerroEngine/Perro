@@ -25,6 +25,7 @@ pub enum NodeField {
     CollisionShape2D(CollisionShape2DField),
     StaticBody2D(StaticBody2DField),
     RigidBody2D(RigidBody2DField),
+    PhysicsForceEmitter2D(PhysicsForceEmitterField),
     Area2D(Area2DField),
     PinJoint2D(Joint2DField),
     DistanceJoint2D(DistanceJoint2DField),
@@ -48,6 +49,7 @@ pub enum NodeField {
     CollisionShape3D(CollisionShape3DField),
     StaticBody3D(StaticBody3DField),
     RigidBody3D(RigidBody3DField),
+    PhysicsForceEmitter3D(PhysicsForceEmitterField),
     Area3D(Area3DField),
     BallJoint3D(Joint3DField),
     HingeJoint3D(HingeJoint3DField),
@@ -117,6 +119,7 @@ pub enum ParticleEmitter2DField {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WaterBodyField {
     Size,
+    Shape,
     Resolution,
     Depth,
     Flow,
@@ -136,6 +139,11 @@ pub enum WaterBodyField {
     LodMinResolution,
     CollisionLayers,
     CollisionMask,
+    DeepColor,
+    ShallowColor,
+    ShallowDepth,
+    SkyBias,
+    Optics,
     Coastline,
     Debug,
 }
@@ -222,6 +230,22 @@ pub enum Area2DField {
     Enabled,
     CollisionLayers,
     CollisionMask,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PhysicsForceEmitterField {
+    Enabled,
+    Profile,
+    Radius,
+    Strength,
+    Duration,
+    Pulse,
+    Falloff,
+    AffectBodies,
+    AffectWater,
+    CollisionLayers,
+    CollisionMask,
+    Vectors,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -695,6 +719,9 @@ fn resolve_scene_node_field_for_type(
         },
         NodeType::StaticBody2D => resolve_scene_static_body_2d(field).map(NodeField::StaticBody2D),
         NodeType::RigidBody2D => resolve_scene_rigid_body_2d(field).map(NodeField::RigidBody2D),
+        NodeType::PhysicsForceEmitter2D => {
+            resolve_scene_physics_force_emitter(field).map(NodeField::PhysicsForceEmitter2D)
+        }
         NodeType::Area2D => resolve_scene_area_2d(field).map(NodeField::Area2D),
         NodeType::PinJoint2D => resolve_scene_joint2d_common(field).map(NodeField::PinJoint2D),
         NodeType::FixedJoint2D => resolve_scene_joint2d_common(field).map(NodeField::FixedJoint2D),
@@ -855,6 +882,9 @@ fn resolve_scene_node_field_for_type(
         },
         NodeType::StaticBody3D => resolve_scene_static_body_3d(field).map(NodeField::StaticBody3D),
         NodeType::RigidBody3D => resolve_scene_rigid_body_3d(field).map(NodeField::RigidBody3D),
+        NodeType::PhysicsForceEmitter3D => {
+            resolve_scene_physics_force_emitter(field).map(NodeField::PhysicsForceEmitter3D)
+        }
         NodeType::Area3D => resolve_scene_area_3d(field).map(NodeField::Area3D),
         NodeType::BallJoint3D => resolve_scene_joint3d_common(field).map(NodeField::BallJoint3D),
         NodeType::FixedJoint3D => resolve_scene_joint3d_common(field).map(NodeField::FixedJoint3D),
@@ -1048,6 +1078,9 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
             "density" => Some(NodeField::RigidBody2D(RigidBody2DField::Density)),
             _ => None,
         },
+        NodeType::PhysicsForceEmitter2D => {
+            resolve_physics_force_emitter(field).map(NodeField::PhysicsForceEmitter2D)
+        }
         NodeType::Area2D => match field {
             "enabled" => Some(NodeField::Area2D(Area2DField::Enabled)),
             "collision_layers" => Some(NodeField::Area2D(Area2DField::CollisionLayers)),
@@ -1333,6 +1366,9 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
             "density" => Some(NodeField::RigidBody3D(RigidBody3DField::Density)),
             _ => None,
         },
+        NodeType::PhysicsForceEmitter3D => {
+            resolve_physics_force_emitter(field).map(NodeField::PhysicsForceEmitter3D)
+        }
         NodeType::Area3D => match field {
             "enabled" => Some(NodeField::Area3D(Area3DField::Enabled)),
             "collision_layers" => Some(NodeField::Area3D(Area3DField::CollisionLayers)),
@@ -1425,6 +1461,7 @@ fn resolve_scene_water_body(field: &SceneFieldName) -> Option<WaterBodyField> {
 fn resolve_water_body(field: &str) -> Option<WaterBodyField> {
     match field {
         "size" => Some(WaterBodyField::Size),
+        "shape" => Some(WaterBodyField::Shape),
         "resolution" | "sim_resolution" => Some(WaterBodyField::Resolution),
         "depth" => Some(WaterBodyField::Depth),
         "flow" => Some(WaterBodyField::Flow),
@@ -1444,6 +1481,13 @@ fn resolve_water_body(field: &str) -> Option<WaterBodyField> {
         "lod_min_resolution" | "min_resolution" => Some(WaterBodyField::LodMinResolution),
         "collision_layers" => Some(WaterBodyField::CollisionLayers),
         "collision_mask" => Some(WaterBodyField::CollisionMask),
+        "deep_color" | "deep_water_color" => Some(WaterBodyField::DeepColor),
+        "shallow_color" | "shallow_water_color" => Some(WaterBodyField::ShallowColor),
+        "shallow_depth" | "shallow_cutoff" | "shallowness" | "shallowness_depth" => {
+            Some(WaterBodyField::ShallowDepth)
+        }
+        "sky_bias" | "sky_reflect" | "sky_reflection" => Some(WaterBodyField::SkyBias),
+        "optics" | "water_colors" | "colors" => Some(WaterBodyField::Optics),
         "coastline" => Some(WaterBodyField::Coastline),
         "debug" => Some(WaterBodyField::Debug),
         _ => None,
@@ -1544,6 +1588,28 @@ fn resolve_scene_area_3d(field: &SceneFieldName) -> Option<Area3DField> {
         SceneFieldName::Enabled => Some(Area3DField::Enabled),
         SceneFieldName::CollisionLayers => Some(Area3DField::CollisionLayers),
         SceneFieldName::CollisionMask => Some(Area3DField::CollisionMask),
+        _ => None,
+    }
+}
+
+fn resolve_scene_physics_force_emitter(field: &SceneFieldName) -> Option<PhysicsForceEmitterField> {
+    resolve_physics_force_emitter(field.as_ref())
+}
+
+fn resolve_physics_force_emitter(field: &str) -> Option<PhysicsForceEmitterField> {
+    match field {
+        "enabled" => Some(PhysicsForceEmitterField::Enabled),
+        "profile" => Some(PhysicsForceEmitterField::Profile),
+        "radius" | "range" => Some(PhysicsForceEmitterField::Radius),
+        "strength" | "intensity" => Some(PhysicsForceEmitterField::Strength),
+        "duration" => Some(PhysicsForceEmitterField::Duration),
+        "pulse" => Some(PhysicsForceEmitterField::Pulse),
+        "falloff" => Some(PhysicsForceEmitterField::Falloff),
+        "affect_bodies" | "bodies" => Some(PhysicsForceEmitterField::AffectBodies),
+        "affect_water" | "water" => Some(PhysicsForceEmitterField::AffectWater),
+        "collision_layers" => Some(PhysicsForceEmitterField::CollisionLayers),
+        "collision_mask" => Some(PhysicsForceEmitterField::CollisionMask),
+        "vectors" | "forces" => Some(PhysicsForceEmitterField::Vectors),
         _ => None,
     }
 }

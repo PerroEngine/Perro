@@ -3,6 +3,75 @@ use perro_ids::NodeID;
 use perro_structs::{AudioInteraction, BitMask, CollisionPolicy, Vector2};
 use std::ops::{Deref, DerefMut};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum PhysicsForceProfile {
+    #[default]
+    Lift,
+    Explosion,
+    Current,
+    Vortex,
+    Custom,
+}
+
+#[derive(Clone, Debug)]
+pub struct PhysicsForceEmitter2D {
+    pub base: Node2D,
+    pub enabled: bool,
+    pub profile: PhysicsForceProfile,
+    pub radius: f32,
+    pub strength: f32,
+    pub duration: f32,
+    pub pulse: bool,
+    pub falloff: f32,
+    pub affect_bodies: bool,
+    pub affect_water: bool,
+    pub collision_layers: BitMask,
+    pub collision_mask: BitMask,
+    pub vectors: Vec<Vector2>,
+    pub age: f32,
+}
+
+impl Default for PhysicsForceEmitter2D {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PhysicsForceEmitter2D {
+    pub fn new() -> Self {
+        Self {
+            base: Node2D::new(),
+            enabled: true,
+            profile: PhysicsForceProfile::Lift,
+            radius: 8.0,
+            strength: 1.0,
+            duration: 0.0,
+            pulse: false,
+            falloff: 1.0,
+            affect_bodies: true,
+            affect_water: true,
+            collision_layers: BitMask::ALL,
+            collision_mask: BitMask::NONE,
+            vectors: Vec::new(),
+            age: 0.0,
+        }
+    }
+}
+
+impl Deref for PhysicsForceEmitter2D {
+    type Target = Node2D;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DerefMut for PhysicsForceEmitter2D {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum Triangle2DKind {
     #[default]

@@ -1,5 +1,5 @@
 use perro_ids::NodeID;
-use perro_nodes::SceneNodeData;
+use perro_nodes::{PhysicsForceEmitter2D, PhysicsForceEmitter3D, SceneNodeData};
 use perro_runtime_api::sub_apis::{
     PhysicsAPI, PhysicsContact2D, PhysicsContact3D, PhysicsQueryFilter, PhysicsRayHit2D,
     PhysicsRayHit3D, PhysicsShapeHit2D, PhysicsShapeHit3D,
@@ -51,6 +51,14 @@ impl PhysicsAPI for Runtime {
         }
         self.queue_impulse_3d(body_id, impulse);
         true
+    }
+
+    fn emit_force_2d(&mut self, emitter: PhysicsForceEmitter2D) -> bool {
+        Runtime::emit_force_2d(self, emitter)
+    }
+
+    fn emit_force_3d(&mut self, emitter: PhysicsForceEmitter3D) -> bool {
+        Runtime::emit_force_3d(self, emitter)
     }
 
     fn raycast_3d(

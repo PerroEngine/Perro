@@ -31,7 +31,7 @@ mod present;
 mod water_gpu;
 
 use present::*;
-use water_gpu::GpuWater;
+use water_gpu::{GpuWater, WaterPrepareContext};
 
 // Linear-space clear color for sRGB hex #1C1817.
 const CLEAR_R: f64 = 0.011612245179743885;
@@ -458,6 +458,7 @@ impl Gpu {
             render_format,
             sample_count,
             two_d.camera_bind_group_layout(),
+            three_d.camera_bind_group_layout(),
         ));
         let msaa_color =
             create_msaa_color_target(&device, render_format, width, height, sample_count);
@@ -674,6 +675,7 @@ impl Gpu {
         let needs_water_prepare = needs_water
             && (self.last_prepare_water_2d_revision != waters_2d_revision
                 || self.last_prepare_water_3d_revision != waters_3d_revision
+                || three_d_content_changed
                 || redraw_requested);
 
         let prepare_2d_start = Instant::now();
@@ -711,8 +713,28 @@ impl Gpu {
         timing.prepare_2d = prepare_2d_start.elapsed();
 
         if needs_water_prepare {
+            if self.three_d.is_none() {
+                self.three_d = Some(Gpu3D::new(
+                    &self.device,
+                    &self.queue,
+                    self.render_format,
+                    Gpu3DConfig {
+                        sample_count: self.sample_count,
+                        width: self.config.width,
+                        height: self.config.height,
+                        meshlets_enabled: self.meshlets_enabled,
+                        dev_meshlets: self.dev_meshlets,
+                        meshlet_debug_view: self.meshlet_debug_view,
+                        occlusion_culling: self.occlusion_culling,
+                        indirect_first_instance_enabled: self.indirect_first_instance_enabled,
+                    },
+                ));
+            }
             if self.water.is_none() {
                 let Some(two_d) = self.two_d.as_ref() else {
+                    return timing;
+                };
+                let Some(three_d) = self.three_d.as_ref() else {
                     return timing;
                 };
                 self.water = Some(GpuWater::new(
@@ -720,16 +742,23 @@ impl Gpu {
                     self.render_format,
                     self.sample_count,
                     two_d.camera_bind_group_layout(),
+                    three_d.camera_bind_group_layout(),
                 ));
             }
             if let Some(water) = self.water.as_mut() {
+                let sky_color = sky_clear_color(lighting_3d)
+                    .map(|color| [color.r as f32, color.g as f32, color.b as f32])
+                    .unwrap_or([0.0, 0.0, 0.0]);
                 water.prepare(
                     &self.device,
                     &self.queue,
                     waters_2d,
                     waters_3d,
-                    camera_2d_position,
-                    camera_3d.position,
+                    WaterPrepareContext {
+                        camera_2d_position,
+                        camera_3d_position: camera_3d.position,
+                        sky_color,
+                    },
                 );
                 self.last_prepare_water_2d_revision = waters_2d_revision;
                 self.last_prepare_water_3d_revision = waters_3d_revision;
@@ -962,6 +991,18 @@ impl Gpu {
             if let Some(point_particles_3d_gpu) = self.point_particles_3d.as_mut() {
                 point_particles_3d_gpu.render_pass(&mut encoder, color_view, three_d.depth_view());
             }
+            if let Some(water) = self.water.as_ref() {
+                let clear_water_depth = draws_3d.is_empty()
+                    && point_particles_3d.is_empty()
+                    && lighting_3d.sky.is_none();
+                water.render_3d(
+                    &mut encoder,
+                    color_view,
+                    three_d.depth_view(),
+                    three_d.camera_bind_group(),
+                    clear_water_depth,
+                );
+            }
         } else if !clear_in_water_pass {
             let _clear_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("perro_clear_pass"),
@@ -993,6 +1034,25 @@ impl Gpu {
             }
             if two_d_draws {
                 two_d.render_pass(&mut encoder, color_view, resolve_view, rect_draw_count);
+            } else if waters_2d.is_empty()
+                && let Some(resolve_target) = resolve_view
+            {
+                let _resolve_only_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("perro_msaa_resolve_only_pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: color_view,
+                        resolve_target: Some(resolve_target),
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                        depth_slice: None,
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
             }
         } else if let Some(resolve_target) = resolve_view {
             // No 2D pass still needs one resolve pass on MSAA paths.

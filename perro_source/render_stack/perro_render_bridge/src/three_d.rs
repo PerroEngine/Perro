@@ -1,5 +1,5 @@
 use super::*;
-use crate::two_d::WaterIdleModeState;
+use crate::two_d::{WaterIdleModeState, WaterShapeState};
 use perro_structs::{AudioListenerOptions, BitMask};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -76,6 +76,7 @@ pub struct WaterImpact3D {
     pub velocity: [f32; 3],
     pub strength: f32,
     pub radius: f32,
+    pub cavitation: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -102,6 +103,7 @@ pub enum WaterCoastlineShape3D {
 pub struct Water3DState {
     pub model: [[f32; 4]; 4],
     pub size: [f32; 2],
+    pub shape: WaterShapeState,
     pub resolution: [u32; 2],
     pub depth: f32,
     pub flow: [f32; 2],
@@ -119,6 +121,10 @@ pub struct Water3DState {
     pub lod_min_resolution: [u32; 2],
     pub collision_layers: BitMask,
     pub collision_mask: BitMask,
+    pub deep_color: [f32; 4],
+    pub shallow_color: [f32; 4],
+    pub shallow_depth: f32,
+    pub sky_bias_ratio: f32,
     pub coastline_foam_color: [f32; 4],
     pub coastline_foam_strength: f32,
     pub coastline_foam_width: f32,

@@ -1,5 +1,5 @@
 use perro_ids::NodeID;
-use perro_nodes::{Shape2D, Shape3D};
+use perro_nodes::{PhysicsForceEmitter2D, PhysicsForceEmitter3D, Shape2D, Shape3D};
 use perro_structs::{BitMask, Vector2, Vector3};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -72,6 +72,12 @@ pub trait PhysicsAPI {
     fn apply_force_3d(&mut self, body_id: NodeID, force: Vector3) -> bool;
     fn apply_impulse_2d(&mut self, body_id: NodeID, impulse: Vector2) -> bool;
     fn apply_impulse_3d(&mut self, body_id: NodeID, impulse: Vector3) -> bool;
+    fn emit_force_2d(&mut self, _emitter: PhysicsForceEmitter2D) -> bool {
+        false
+    }
+    fn emit_force_3d(&mut self, _emitter: PhysicsForceEmitter3D) -> bool {
+        false
+    }
     fn raycast_3d(
         &mut self,
         origin: Vector3,
@@ -190,6 +196,14 @@ impl<'rt, R: PhysicsAPI + ?Sized> PhysicsModule<'rt, R> {
 
     pub fn apply_impulse_3d(&mut self, body_id: NodeID, impulse: Vector3) -> bool {
         self.rt.apply_impulse_3d(body_id, impulse)
+    }
+
+    pub fn emit_force_2d(&mut self, emitter: PhysicsForceEmitter2D) -> bool {
+        self.rt.emit_force_2d(emitter)
+    }
+
+    pub fn emit_force_3d(&mut self, emitter: PhysicsForceEmitter3D) -> bool {
+        self.rt.emit_force_3d(emitter)
     }
 
     pub fn apply_force<D>(&mut self, body_id: NodeID, force: D) -> bool
