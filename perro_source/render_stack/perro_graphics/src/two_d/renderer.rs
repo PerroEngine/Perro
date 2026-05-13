@@ -6,7 +6,7 @@ use perro_particle_math::{ParticleEvalInput, eval_ops_particle};
 use perro_render_bridge::{
     AmbientLight2DState, Camera2DState, DrawShape2DCommand, Light2DState, ParticlePath2D,
     PointLight2DState, PointParticles2DState, RayLight2DState, Rect2DCommand, SpotLight2DState,
-    Sprite2DCommand, TileMap2DCommand,
+    Sprite2DCommand, TileMap2DCommand, Water2DState,
 };
 use perro_structs::DrawShape2D;
 use std::ops::Range;
@@ -78,6 +78,8 @@ pub struct Renderer2D {
     retained_sprites: AHashMap<NodeID, Sprite2DCommand>,
     retained_tilemaps: AHashMap<NodeID, Arc<[Sprite2DCommand]>>,
     retained_point_particles: AHashMap<NodeID, PointParticles2DState>,
+    retained_waters: AHashMap<NodeID, Water2DState>,
+    retained_waters_revision: u64,
     retained_lights: AHashMap<NodeID, Light2DState>,
     retained_point_lights_revision: u64,
     retained_sprites_revision: u64,
@@ -103,6 +105,8 @@ impl Renderer2D {
             retained_sprites: AHashMap::new(),
             retained_tilemaps: AHashMap::new(),
             retained_point_particles: AHashMap::new(),
+            retained_waters: AHashMap::new(),
+            retained_waters_revision: 0,
             retained_lights: AHashMap::new(),
             retained_point_lights_revision: 0,
             retained_sprites_revision: 0,
@@ -168,6 +172,12 @@ impl Renderer2D {
         self.retained_point_particles.insert(node, particles);
     }
 
+    pub fn upsert_water(&mut self, node: NodeID, water: Water2DState) {
+        if self.retained_waters.insert(node, water.clone()) != Some(water) {
+            self.retained_waters_revision = self.retained_waters_revision.wrapping_add(1);
+        }
+    }
+
     pub fn set_ambient_light(&mut self, node: NodeID, light: AmbientLight2DState) {
         self.set_light(node, Light2DState::Ambient(light));
     }
@@ -201,6 +211,9 @@ impl Renderer2D {
     pub fn remove_node(&mut self, node: NodeID) {
         self.remove_retained_rect(node);
         self.retained_point_particles.remove(&node);
+        if self.retained_waters.remove(&node).is_some() {
+            self.retained_waters_revision = self.retained_waters_revision.wrapping_add(1);
+        }
         if self.retained_lights.remove(&node).is_some() {
             self.retained_point_lights_revision =
                 self.retained_point_lights_revision.wrapping_add(1);
@@ -474,6 +487,22 @@ impl Renderer2D {
 
     pub fn lights(&self) -> impl Iterator<Item = Light2DState> + '_ {
         self.retained_lights.values().copied()
+    }
+
+    pub fn retained_waters(&self) -> impl Iterator<Item = (NodeID, Water2DState)> + '_ {
+        self.retained_waters
+            .iter()
+            .map(|(node, water)| (*node, water.clone()))
+    }
+
+    #[inline]
+    pub fn retained_water_count(&self) -> usize {
+        self.retained_waters.len()
+    }
+
+    #[inline]
+    pub fn retained_waters_revision(&self) -> u64 {
+        self.retained_waters_revision
     }
 
     #[inline]

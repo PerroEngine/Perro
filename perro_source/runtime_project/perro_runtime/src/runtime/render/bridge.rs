@@ -32,6 +32,21 @@ impl Runtime {
     }
 
     pub fn apply_render_event(&mut self, event: RenderEvent) {
+        if let RenderEvent::WaterSamples { samples } = &event {
+            for sample in samples.iter() {
+                self.water_samples.insert(
+                    sample.node,
+                    perro_nodes::WaterPhysicsSample {
+                        height: sample.height,
+                        velocity: perro_structs::Vector2::new(
+                            sample.velocity[0],
+                            sample.velocity[1],
+                        ),
+                        foam: sample.foam,
+                    },
+                );
+            }
+        }
         if let RenderEvent::MeshCreated { request, id, .. } = &event
             && let Some(node) = decode_3d_mesh_request_node(*request)
             && let Some(source) = self.render_3d.mesh_sources.get(&node).cloned()

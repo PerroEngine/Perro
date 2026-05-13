@@ -19,6 +19,7 @@ use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
     Command2D, Command3D, Light2DState, PointParticles3DState, PostProcessingCommand, RenderBridge,
     RenderCommand, RenderEvent, ResourceCommand, Sprite2DCommand, VisualAccessibilityCommand,
+    Water2DState, Water3DState,
 };
 use perro_structs::{PostProcessSet, VisualAccessibilitySettings};
 use std::sync::Arc;
@@ -236,6 +237,10 @@ pub struct PerroGraphics {
     retained_draw_instances_cache: u32,
     retained_point_particles_cache: Vec<(NodeID, PointParticles3DState)>,
     retained_point_particles_cache_revision: u64,
+    retained_waters_2d_cache: Vec<(NodeID, Water2DState)>,
+    retained_waters_2d_cache_revision: u64,
+    retained_waters_3d_cache: Vec<(NodeID, Water3DState)>,
+    retained_waters_3d_cache_revision: u64,
     retained_sprites_cache: Vec<Sprite2DCommand>,
     retained_sprites_cache_revision: u64,
     retained_point_lights_cache: Vec<Light2DState>,
@@ -284,6 +289,10 @@ impl PerroGraphics {
             retained_draw_instances_cache: 0,
             retained_point_particles_cache: Vec::new(),
             retained_point_particles_cache_revision: u64::MAX,
+            retained_waters_2d_cache: Vec::new(),
+            retained_waters_2d_cache_revision: u64::MAX,
+            retained_waters_3d_cache: Vec::new(),
+            retained_waters_3d_cache_revision: u64::MAX,
             retained_sprites_cache: Vec::new(),
             retained_sprites_cache_revision: u64::MAX,
             retained_point_lights_cache: Vec::new(),
@@ -490,6 +499,9 @@ impl PerroGraphics {
                     Command2D::UpsertPointParticles { node, particles } => {
                         self.renderer_2d.queue_point_particles(node, *particles);
                     }
+                    Command2D::UpsertWater { node, water } => {
+                        self.renderer_2d.upsert_water(node, *water);
+                    }
                     Command2D::SetAmbientLight { node, light } => {
                         self.renderer_2d.set_ambient_light(node, light);
                     }
@@ -611,6 +623,9 @@ impl PerroGraphics {
                     Command3D::UpsertPointParticles { node, particles } => {
                         self.particles_3d.queue_point_particles(node, *particles);
                     }
+                    Command3D::UpsertWater { node, water } => {
+                        self.renderer_3d.upsert_water(node, *water);
+                    }
                     Command3D::RemoveNode { node } => {
                         self.renderer_3d.remove_node(node);
                         self.particles_3d.remove_node(node);
@@ -673,6 +688,9 @@ impl PerroGraphics {
                     }
                     Command2D::UpsertPointParticles { node, particles } => {
                         self.late_overlay_2d.queue_point_particles(node, *particles);
+                    }
+                    Command2D::UpsertWater { node, water } => {
+                        self.late_overlay_2d.upsert_water(node, *water);
                     }
                     Command2D::SetAmbientLight { node, light } => {
                         self.late_overlay_2d.set_ambient_light(node, light);
@@ -877,6 +895,7 @@ impl PerroGraphics {
         let has_retained_scene = self.renderer_2d.retained_sprite_count() > 0
             || !self.renderer_2d.retained_rects().is_empty()
             || has_late_overlay
+            || self.renderer_2d.retained_water_count() > 0
             || self.renderer_ui.retained_count() > 0
             || self.renderer_3d.retained_draw_count() > 0
             || self.renderer_3d.has_retained_non_draw_state()
@@ -913,6 +932,9 @@ impl PerroGraphics {
                     if matches!(cmd_2d, Command2D::SetCamera { .. }) {
                         frame_dirty_bits |= DIRTY_CAMERA_2D;
                     }
+                    if matches!(cmd_2d, Command2D::UpsertWater { .. }) {
+                        frame_dirty_bits |= DIRTY_2D;
+                    }
                 }
                 RenderCommand::ThreeD(cmd_3d) => match &**cmd_3d {
                     Command3D::Draw { .. }
@@ -930,6 +952,7 @@ impl PerroGraphics {
                     Command3D::UpsertPointParticles { .. } => {
                         frame_dirty_bits |= DIRTY_PARTICLES_3D
                     }
+                    Command3D::UpsertWater { .. } => frame_dirty_bits |= DIRTY_3D,
                 },
                 RenderCommand::Resource(_) => frame_dirty_bits |= DIRTY_RESOURCES,
                 RenderCommand::Ui(_) => frame_dirty_bits |= DIRTY_2D,
@@ -980,6 +1003,27 @@ impl PerroGraphics {
             self.retained_point_particles_cache
                 .sort_unstable_by_key(|(node, _)| node.as_u64());
             self.retained_point_particles_cache_revision = point_particles_revision;
+        }
+        let waters_3d_revision = self.renderer_3d.retained_waters_revision();
+        if waters_3d_revision != self.retained_waters_3d_cache_revision {
+            self.retained_waters_3d_cache.clear();
+            self.retained_waters_3d_cache
+                .extend_from_slice(self.renderer_3d.retained_waters_sorted());
+            self.retained_waters_3d_cache_revision = waters_3d_revision;
+        }
+        let waters_2d_revision = self.renderer_2d.retained_waters_revision();
+        if waters_2d_revision != self.retained_waters_2d_cache_revision {
+            self.retained_waters_2d_cache.clear();
+            let water_count = self.renderer_2d.retained_water_count();
+            if self.retained_waters_2d_cache.capacity() < water_count {
+                self.retained_waters_2d_cache
+                    .reserve(water_count - self.retained_waters_2d_cache.capacity());
+            }
+            self.retained_waters_2d_cache
+                .extend(self.renderer_2d.retained_waters());
+            self.retained_waters_2d_cache
+                .sort_unstable_by_key(|(node, _)| node.as_u64());
+            self.retained_waters_2d_cache_revision = waters_2d_revision;
         }
         let sprites_revision = self.renderer_2d.retained_sprites_revision();
         if sprites_revision != self.retained_sprites_cache_revision {
@@ -1102,6 +1146,8 @@ impl PerroGraphics {
                 draws_3d_revision: self.retained_draws_cache_revision,
                 point_particles_3d: &self.retained_point_particles_cache,
                 point_particles_3d_revision: self.retained_point_particles_cache_revision,
+                waters_3d: &self.retained_waters_3d_cache,
+                waters_3d_revision: self.retained_waters_3d_cache_revision,
                 camera_2d,
                 post_processing_2d: camera_2d_state.post_processing.clone(),
                 post_processing_global: Arc::from(self.global_post_processing.to_effects_vec()),
@@ -1111,6 +1157,8 @@ impl PerroGraphics {
                 sprites_2d: &self.retained_sprites_cache,
                 sprites_2d_revision: self.retained_sprites_cache_revision,
                 point_lights_2d: &self.retained_point_lights_cache,
+                waters_2d: &self.retained_waters_2d_cache,
+                waters_2d_revision: self.retained_waters_2d_cache_revision,
                 late_overlay_camera_2d,
                 late_overlay_rects_2d: &self.late_overlay_rects_cache,
                 late_overlay_upload_2d: &late_overlay_upload,
@@ -1126,6 +1174,13 @@ impl PerroGraphics {
                 static_mesh_lookup: self.static_mesh_lookup,
                 static_shader_lookup: self.static_shader_lookup,
             });
+            let mut water_samples = Vec::new();
+            gpu.drain_water_samples(&mut water_samples);
+            if !water_samples.is_empty() {
+                self.events.push(RenderEvent::WaterSamples {
+                    samples: Arc::from(water_samples.into_boxed_slice()),
+                });
+            }
             self.redraw_requested = !gpu_timing.presented;
         }
         let timing = DrawFrameTiming {

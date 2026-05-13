@@ -14,7 +14,7 @@ use perro_render_bridge::{
     LODOptions3D, Material3D, MaterialParamOverride3D, MeshSurfaceBinding3D, ParticlePath3D,
     ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D, PointLight3DState,
     PointParticles3DState, RayLight3DState, RenderCommand, ResourceCommand, SkeletonPalette,
-    Sky3DState, SkyTime3DState, SpotLight3DState,
+    Sky3DState, SkyTime3DState, SpotLight3DState, Water3DState, WaterIdleModeState,
 };
 use perro_runtime_render::{material_3d_request, mesh_3d_request};
 use perro_structs::BitMask;
@@ -200,6 +200,48 @@ impl Runtime {
                     })));
                     self.render_3d.retained_skies.insert(node, sky);
                 }
+                visible_now.insert(node);
+            }
+
+            let water_data = self.nodes.get(node).and_then(|node| match &node.data {
+                SceneNodeData::WaterBody3D(water)
+                    if water.visible
+                        && effective_visible
+                        && render_mask_matches(camera_render_mask, water.render_layers) =>
+                {
+                    Some((water.transform, water.water))
+                }
+                _ => None,
+            });
+            if let Some((local_transform, water)) = water_data {
+                let model = self
+                    .get_global_transform_3d(node)
+                    .unwrap_or(local_transform)
+                    .to_mat4()
+                    .to_cols_array_2d();
+                self.queue_render_command(RenderCommand::ThreeD(Box::new(
+                    Command3D::UpsertWater {
+                        node,
+                        water: Box::new(Water3DState {
+                            model,
+                            size: [water.size.x, water.size.y],
+                            resolution: water.resolution,
+                            depth: water.depth,
+                            flow: [water.flow.x, water.flow.y],
+                            wind: [water.wind.x, water.wind.y],
+                            idle_mode: water_idle_mode_state(water.idle_mode),
+                            wave_speed: water.wave.speed,
+                            wave_scale: water.wave.scale,
+                            damping: water.wave.damping,
+                            wake_strength: water.physics.wake_strength,
+                            foam_strength: water.physics.foam_strength,
+                            shoreline_mask: water.shoreline_mask,
+                            static_body_wakes: water.static_body_wakes,
+                            debug: water.debug,
+                            impacts: std::sync::Arc::from([]),
+                        }),
+                    },
+                )));
                 visible_now.insert(node);
             }
 
@@ -1045,6 +1087,16 @@ fn camera_projection_state(projection: &CameraProjection) -> CameraProjectionSta
 #[inline]
 fn render_mask_matches(camera_mask: BitMask, render_layers: BitMask) -> bool {
     camera_mask.intersects(render_layers)
+}
+
+fn water_idle_mode_state(mode: perro_nodes::WaterIdleMode) -> WaterIdleModeState {
+    match mode {
+        perro_nodes::WaterIdleMode::Calm => WaterIdleModeState::Calm,
+        perro_nodes::WaterIdleMode::Sine => WaterIdleModeState::Sine,
+        perro_nodes::WaterIdleMode::Chop => WaterIdleModeState::Chop,
+        perro_nodes::WaterIdleMode::Storm => WaterIdleModeState::Storm,
+        perro_nodes::WaterIdleMode::River => WaterIdleModeState::River,
+    }
 }
 
 #[cfg(test)]

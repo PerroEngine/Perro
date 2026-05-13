@@ -11,6 +11,7 @@ pub enum NodeField {
     Sprite2D(Sprite2DField),
     AnimatedSprite2D(AnimatedSprite2DField),
     ParticleEmitter2D(ParticleEmitter2DField),
+    WaterBody2D(WaterBodyField),
     Light2D(Light2DField),
     RayLight2D(RayLight2DField),
     PointLight2D(PointLight2DField),
@@ -36,6 +37,7 @@ pub enum NodeField {
     BoneCollider3D(BoneCollider3DField),
     Camera3D(Camera3DField),
     ParticleEmitter3D(ParticleEmitter3DField),
+    WaterBody3D(WaterBodyField),
     AnimationPlayer(AnimationPlayerField),
     AnimationTree(AnimationTreeField),
     Light3D(Light3DField),
@@ -110,6 +112,27 @@ pub enum ParticleEmitter2DField {
     Params,
     Profile,
     SimMode,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WaterBodyField {
+    Size,
+    Resolution,
+    Depth,
+    Flow,
+    Wind,
+    IdleMode,
+    WaveSpeed,
+    WaveScale,
+    WakeStrength,
+    FoamStrength,
+    Damping,
+    Buoyancy,
+    Drag,
+    SampleReadbackRate,
+    ShorelineMask,
+    StaticBodyWakes,
+    Debug,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -657,6 +680,7 @@ fn resolve_scene_node_field_for_type(
             }
             _ => None,
         },
+        NodeType::WaterBody2D => resolve_scene_water_body(field).map(NodeField::WaterBody2D),
         NodeType::CollisionShape2D => match field {
             SceneFieldName::Shape => {
                 Some(NodeField::CollisionShape2D(CollisionShape2DField::Shape))
@@ -762,6 +786,7 @@ fn resolve_scene_node_field_for_type(
             )),
             _ => None,
         },
+        NodeType::WaterBody3D => resolve_scene_water_body(field).map(NodeField::WaterBody3D),
         NodeType::AnimationPlayer => match field {
             SceneFieldName::Animation => {
                 Some(NodeField::AnimationPlayer(AnimationPlayerField::Animation))
@@ -983,6 +1008,7 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
             "collision_mask_layers" => Some(NodeField::TileMap2D(TileMap2DField::CollisionMask)),
             _ => None,
         },
+        NodeType::WaterBody2D => resolve_water_body(field).map(NodeField::WaterBody2D),
         NodeType::CollisionShape2D => match field {
             "shape" => Some(NodeField::CollisionShape2D(CollisionShape2DField::Shape)),
             _ => None,
@@ -1233,6 +1259,7 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
             )),
             _ => None,
         },
+        NodeType::WaterBody3D => resolve_water_body(field).map(NodeField::WaterBody3D),
         NodeType::AnimationPlayer => match field {
             "animation" => Some(NodeField::AnimationPlayer(AnimationPlayerField::Animation)),
             "bindings" => Some(NodeField::AnimationPlayer(AnimationPlayerField::Bindings)),
@@ -1392,6 +1419,33 @@ fn resolve_scene_light2d_common(field: &SceneFieldName) -> Option<Light2DField> 
         SceneFieldName::CastShadows => Some(Light2DField::CastShadows),
         SceneFieldName::Active => Some(Light2DField::Active),
         SceneFieldName::RenderLayers => Some(Light2DField::RenderLayers),
+        _ => None,
+    }
+}
+
+fn resolve_scene_water_body(field: &SceneFieldName) -> Option<WaterBodyField> {
+    resolve_water_body(field.as_ref())
+}
+
+fn resolve_water_body(field: &str) -> Option<WaterBodyField> {
+    match field {
+        "size" => Some(WaterBodyField::Size),
+        "resolution" | "sim_resolution" => Some(WaterBodyField::Resolution),
+        "depth" => Some(WaterBodyField::Depth),
+        "flow" => Some(WaterBodyField::Flow),
+        "wind" => Some(WaterBodyField::Wind),
+        "idle_mode" | "idle" => Some(WaterBodyField::IdleMode),
+        "wave_speed" => Some(WaterBodyField::WaveSpeed),
+        "wave_scale" => Some(WaterBodyField::WaveScale),
+        "wake_strength" => Some(WaterBodyField::WakeStrength),
+        "foam_strength" => Some(WaterBodyField::FoamStrength),
+        "damping" => Some(WaterBodyField::Damping),
+        "buoyancy" => Some(WaterBodyField::Buoyancy),
+        "drag" => Some(WaterBodyField::Drag),
+        "sample_readback_rate" | "readback_rate" => Some(WaterBodyField::SampleReadbackRate),
+        "shoreline_mask" | "coastline" => Some(WaterBodyField::ShorelineMask),
+        "static_body_wakes" => Some(WaterBodyField::StaticBodyWakes),
+        "debug" => Some(WaterBodyField::Debug),
         _ => None,
     }
 }

@@ -70,6 +70,11 @@ harness = false
 required-features = ["bench"]
 
 [[bench]]
+name = "water_physics"
+harness = false
+required-features = ["bench"]
+
+[[bench]]
 name = "query_hotpaths"
 harness = false
 required-features = ["bench"]

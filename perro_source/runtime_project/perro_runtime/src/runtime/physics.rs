@@ -4,7 +4,7 @@ use ahash::AHashSet;
 use perro_ids::{NodeID, SignalID};
 #[cfg(test)]
 use perro_nodes::TileMap2D;
-use perro_nodes::{SceneNodeData, Shape2D, Shape3D};
+use perro_nodes::{SceneNodeData, Shape2D, Shape3D, water_physics_sample_or_idle};
 use perro_physics::*;
 use perro_runtime_api::sub_apis::{
     NodeAPI, PhysicsContact2D, PhysicsContact3D, PhysicsQueryFilter, PhysicsRayHit2D,
@@ -63,6 +63,8 @@ impl Runtime {
         }
 
         let apply_forces_impulses_start = std::time::Instant::now();
+        self.queue_water_forces_2d();
+        self.queue_water_forces_3d();
         self.apply_pending_forces_2d();
         self.apply_pending_forces_3d();
         self.apply_pending_impulses_2d();
@@ -718,6 +720,149 @@ impl Runtime {
     fn apply_pending_forces_3d(&mut self) {
         self.physics
             .apply_pending_forces_3d(self.physics_coef(), self.time.fixed_delta);
+    }
+
+    fn queue_water_forces_2d(&mut self) {
+        let water_ids: Vec<_> = self
+            .nodes
+            .iter()
+            .filter_map(|(id, scene_node)| {
+                matches!(scene_node.data, SceneNodeData::WaterBody2D(_)).then_some(id)
+            })
+            .collect();
+        let mut waters = Vec::new();
+        for id in water_ids {
+            let Some(transform) = self.get_global_transform_2d(id) else {
+                continue;
+            };
+            let Some(scene_node) = self.nodes.get(id) else {
+                continue;
+            };
+            let SceneNodeData::WaterBody2D(water) = &scene_node.data else {
+                continue;
+            };
+            waters.push((id, transform.position, water.water));
+        }
+        if waters.is_empty() {
+            return;
+        }
+
+        let body_ids: Vec<_> = self
+            .nodes
+            .iter()
+            .filter_map(|(id, scene_node)| {
+                matches!(scene_node.data, SceneNodeData::RigidBody2D(_)).then_some(id)
+            })
+            .collect();
+        let mut forces = Vec::new();
+        for body_id in body_ids {
+            let Some(body_transform) = self.get_global_transform_2d(body_id) else {
+                continue;
+            };
+            let Some(scene_node) = self.nodes.get(body_id) else {
+                continue;
+            };
+            let SceneNodeData::RigidBody2D(body) = &scene_node.data else {
+                continue;
+            };
+            for (water_id, water_pos, surface) in &waters {
+                let half = surface.size * 0.5;
+                let local = body_transform.position - *water_pos;
+                if local.x.abs() > half.x || local.y.abs() > half.y {
+                    continue;
+                }
+                let sample = water_physics_sample_or_idle(
+                    surface,
+                    local,
+                    self.time.elapsed,
+                    self.water_samples.get(water_id).copied(),
+                );
+                let surface_y = water_pos.y + sample.height;
+                let submerged = (surface_y - body_transform.position.y).max(0.0);
+                if submerged <= 0.0 {
+                    continue;
+                }
+                let buoyancy = submerged * surface.physics.buoyancy * body.density.max(0.0);
+                let drag = -body.linear_velocity.y * surface.physics.drag;
+                forces.push((body_id, Vector2::new(0.0, buoyancy + drag)));
+            }
+        }
+        for (body, force) in forces {
+            self.physics.queue_force_2d(body, force);
+        }
+    }
+
+    fn queue_water_forces_3d(&mut self) {
+        let water_ids: Vec<_> = self
+            .nodes
+            .iter()
+            .filter_map(|(id, scene_node)| {
+                matches!(scene_node.data, SceneNodeData::WaterBody3D(_)).then_some(id)
+            })
+            .collect();
+        let mut waters = Vec::new();
+        for id in water_ids {
+            let Some(transform) = self.get_global_transform_3d(id) else {
+                continue;
+            };
+            let Some(scene_node) = self.nodes.get(id) else {
+                continue;
+            };
+            let SceneNodeData::WaterBody3D(water) = &scene_node.data else {
+                continue;
+            };
+            waters.push((id, transform.position, water.water));
+        }
+        if waters.is_empty() {
+            return;
+        }
+
+        let body_ids: Vec<_> = self
+            .nodes
+            .iter()
+            .filter_map(|(id, scene_node)| {
+                matches!(scene_node.data, SceneNodeData::RigidBody3D(_)).then_some(id)
+            })
+            .collect();
+        let mut forces = Vec::new();
+        for body_id in body_ids {
+            let Some(body_transform) = self.get_global_transform_3d(body_id) else {
+                continue;
+            };
+            let Some(scene_node) = self.nodes.get(body_id) else {
+                continue;
+            };
+            let SceneNodeData::RigidBody3D(body) = &scene_node.data else {
+                continue;
+            };
+            for (water_id, water_pos, surface) in &waters {
+                let half = surface.size * 0.5;
+                let local = Vector2::new(
+                    body_transform.position.x - water_pos.x,
+                    body_transform.position.z - water_pos.z,
+                );
+                if local.x.abs() > half.x || local.y.abs() > half.y {
+                    continue;
+                }
+                let sample = water_physics_sample_or_idle(
+                    surface,
+                    local,
+                    self.time.elapsed,
+                    self.water_samples.get(water_id).copied(),
+                );
+                let surface_y = water_pos.y + sample.height;
+                let submerged = (surface_y - body_transform.position.y).max(0.0);
+                if submerged <= 0.0 {
+                    continue;
+                }
+                let buoyancy = submerged * surface.physics.buoyancy * body.mass.max(0.0);
+                let drag = -body.linear_velocity.y * surface.physics.drag;
+                forces.push((body_id, Vector3::new(0.0, buoyancy + drag, 0.0)));
+            }
+        }
+        for (body, force) in forces {
+            self.physics.queue_force_3d(body, force);
+        }
     }
 
     fn sync_world_to_nodes_2d(&mut self) {

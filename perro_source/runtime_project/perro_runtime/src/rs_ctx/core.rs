@@ -425,6 +425,7 @@ impl RuntimeResourceApi {
                     state.material_data_by_id.remove(&pending_id);
                 }
             }
+            RenderEvent::WaterSamples { .. } => {}
         }
     }
 }

@@ -16,7 +16,10 @@ use crate::{
 };
 use epaint::{ClippedPrimitive, textures::TexturesDelta};
 use perro_ids::NodeID;
-use perro_render_bridge::{Camera3DState, Light2DState, PointParticles3DState, Sprite2DCommand};
+use perro_render_bridge::{
+    Camera3DState, Light2DState, PointParticles3DState, Sprite2DCommand, Water2DState,
+    Water3DState, WaterSampleState,
+};
 use perro_structs::VisualAccessibilitySettings;
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
@@ -24,8 +27,11 @@ use winit::window::Window;
 
 #[path = "gpu/present.rs"]
 mod present;
+#[path = "water_gpu.rs"]
+mod water_gpu;
 
 use present::*;
+use water_gpu::GpuWater;
 
 // Linear-space clear color for sRGB hex #1C1817.
 const CLEAR_R: f64 = 0.011612245179743885;
@@ -181,7 +187,10 @@ pub struct Gpu {
     ui: Option<GpuUi>,
     three_d: Option<Gpu3D>,
     point_particles_3d: Option<GpuPointParticles3D>,
+    water: Option<GpuWater>,
     last_prepare_particles_revision: u64,
+    last_prepare_water_2d_revision: u64,
+    last_prepare_water_3d_revision: u64,
     last_prepare_3d_camera: Option<Camera3DState>,
     last_prepare_3d_lighting: Option<Lighting3DState>,
     last_prepare_3d_draws_revision: u64,
@@ -203,6 +212,8 @@ pub struct RenderFrame<'a> {
     pub draws_3d_revision: u64,
     pub point_particles_3d: &'a [(NodeID, PointParticles3DState)],
     pub point_particles_3d_revision: u64,
+    pub waters_3d: &'a [(NodeID, Water3DState)],
+    pub waters_3d_revision: u64,
     pub camera_2d: Camera2DUniform,
     pub post_processing_2d: Arc<[perro_structs::PostProcessEffect]>,
     pub post_processing_global: Arc<[perro_structs::PostProcessEffect]>,
@@ -212,6 +223,8 @@ pub struct RenderFrame<'a> {
     pub sprites_2d: &'a [Sprite2DCommand],
     pub sprites_2d_revision: u64,
     pub point_lights_2d: &'a [Light2DState],
+    pub waters_2d: &'a [(NodeID, Water2DState)],
+    pub waters_2d_revision: u64,
     pub late_overlay_camera_2d: Camera2DUniform,
     pub late_overlay_rects_2d: &'a [RectInstanceGpu],
     pub late_overlay_upload_2d: &'a RectUploadPlan,
@@ -423,6 +436,12 @@ impl Gpu {
             },
         );
         let point_particles_3d = GpuPointParticles3D::new(&device, render_format, sample_count);
+        let water = Some(GpuWater::new(
+            &device,
+            render_format,
+            sample_count,
+            two_d.camera_bind_group_layout(),
+        ));
         let msaa_color =
             create_msaa_color_target(&device, render_format, width, height, sample_count);
         let post = PostProcessor::new(&device, &queue, render_format, width, height);
@@ -454,7 +473,10 @@ impl Gpu {
             ui,
             three_d: Some(three_d),
             point_particles_3d: Some(point_particles_3d),
+            water,
             last_prepare_particles_revision: u64::MAX,
+            last_prepare_water_2d_revision: u64::MAX,
+            last_prepare_water_3d_revision: u64::MAX,
             last_prepare_3d_camera: None,
             last_prepare_3d_lighting: None,
             last_prepare_3d_draws_revision: u64::MAX,
@@ -550,6 +572,8 @@ impl Gpu {
             draws_3d_revision,
             point_particles_3d,
             point_particles_3d_revision,
+            waters_3d,
+            waters_3d_revision,
             camera_2d,
             post_processing_2d,
             post_processing_global,
@@ -559,6 +583,8 @@ impl Gpu {
             sprites_2d,
             sprites_2d_revision,
             point_lights_2d,
+            waters_2d,
+            waters_2d_revision,
             late_overlay_camera_2d,
             late_overlay_rects_2d,
             late_overlay_upload_2d,
@@ -584,8 +610,10 @@ impl Gpu {
 
         let has = |bit: u32| (frame_dirty_bits & bit) != 0;
 
-        let has_2d_content =
-            upload_2d.draw_count > 0 || !sprites_2d.is_empty() || !point_lights_2d.is_empty();
+        let has_2d_content = upload_2d.draw_count > 0
+            || !sprites_2d.is_empty()
+            || !point_lights_2d.is_empty()
+            || !waters_2d.is_empty();
         let rect_upload_dirty = upload_2d.full_reupload || !upload_2d.dirty_ranges.is_empty();
         let needs_2d_prepare = has(DIRTY_2D)
             || has(DIRTY_CAMERA_2D)
@@ -601,6 +629,7 @@ impl Gpu {
 
         let needs_3d = !draws_3d.is_empty();
         let needs_particles_3d = !point_particles_3d.is_empty();
+        let needs_water = !waters_2d.is_empty() || !waters_3d.is_empty();
 
         let needs_3d_pipeline = has(DIRTY_3D)
             || has(DIRTY_CAMERA_3D)
@@ -608,6 +637,7 @@ impl Gpu {
             || has(DIRTY_RESOURCES)
             || needs_3d
             || needs_particles_3d
+            || needs_water
             || post_requested
             || three_d_content_changed;
 
@@ -622,6 +652,10 @@ impl Gpu {
             && (has(DIRTY_PARTICLES_3D)
                 || self.last_prepare_particles_revision != point_particles_3d_revision
                 || three_d_content_changed);
+        let needs_water_prepare = needs_water
+            && (self.last_prepare_water_2d_revision != waters_2d_revision
+                || self.last_prepare_water_3d_revision != waters_3d_revision
+                || redraw_requested);
 
         let prepare_2d_start = Instant::now();
         let mut did_prepare_2d = false;
@@ -656,6 +690,28 @@ impl Gpu {
             timing.skip_prepare_2d = 1;
         }
         timing.prepare_2d = prepare_2d_start.elapsed();
+
+        if needs_water_prepare {
+            if self.water.is_none() {
+                let Some(two_d) = self.two_d.as_ref() else {
+                    return timing;
+                };
+                self.water = Some(GpuWater::new(
+                    &self.device,
+                    self.render_format,
+                    self.sample_count,
+                    two_d.camera_bind_group_layout(),
+                ));
+            }
+            if let Some(water) = self.water.as_mut() {
+                water.prepare(&self.device, &self.queue, waters_2d, waters_3d);
+                self.last_prepare_water_2d_revision = waters_2d_revision;
+                self.last_prepare_water_3d_revision = waters_3d_revision;
+            }
+        } else if !needs_water {
+            self.last_prepare_water_2d_revision = u64::MAX;
+            self.last_prepare_water_3d_revision = u64::MAX;
+        }
 
         let prepare_3d_start = Instant::now();
         let mut did_prepare_3d = false;
@@ -854,6 +910,9 @@ impl Gpu {
         if gpu_timer_active && let Some(timer) = self.gpu_timer.as_ref() {
             timer.write_start(&mut encoder);
         }
+        if let Some(water) = self.water.as_ref() {
+            water.encode(&mut encoder);
+        }
 
         let clear_color = sky_clear_color(lighting_3d).unwrap_or(wgpu::Color {
             r: CLEAR_R,
@@ -885,6 +944,9 @@ impl Gpu {
             });
         }
         if let Some(two_d) = self.two_d.as_ref() {
+            if let Some(water) = self.water.as_ref() {
+                water.render_2d(&mut encoder, color_view, None, two_d.camera_bind_group());
+            }
             two_d.render_pass(&mut encoder, color_view, resolve_view, rect_draw_count);
         } else if let Some(resolve_target) = resolve_view {
             // No 2D pass still needs one resolve pass on MSAA paths.
@@ -1070,6 +1132,9 @@ impl Gpu {
         if gpu_timer_active && let Some(timer) = self.gpu_timer.as_ref() {
             timer.write_end_and_resolve(&mut encoder);
         }
+        if let Some(water) = self.water.as_mut() {
+            water.encode_readback(&mut encoder);
+        }
         let submit_start = Instant::now();
         let submit_finish_start = Instant::now();
         let command_buffer = encoder.finish();
@@ -1078,6 +1143,9 @@ impl Gpu {
         self.queue.submit(Some(command_buffer));
         if gpu_timer_active && let Some(timer) = self.gpu_timer.as_mut() {
             timer.request_readback();
+        }
+        if let Some(water) = self.water.as_mut() {
+            water.request_readback();
         }
         timing.submit_queue_main = submit_queue_start.elapsed();
         timing.submit_main = submit_start.elapsed();
@@ -1100,6 +1168,12 @@ impl Gpu {
         }
         timing.total = total_start.elapsed();
         timing
+    }
+
+    pub fn drain_water_samples(&mut self, out: &mut Vec<WaterSampleState>) {
+        if let Some(water) = self.water.as_mut() {
+            water.drain_samples(out);
+        }
     }
 
     pub fn virtual_size() -> [f32; 2] {

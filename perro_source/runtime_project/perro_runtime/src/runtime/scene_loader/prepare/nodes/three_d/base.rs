@@ -24,6 +24,16 @@ fn build_multi_mesh_instance_3d(data: &SceneDefNodeData) -> MultiMeshInstance3D 
     node
 }
 
+fn build_water_body_3d(data: &SceneDefNodeData) -> WaterBody3D {
+    let mut node = WaterBody3D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_3d_data(&mut node, base);
+    }
+    apply_node_3d_fields(&mut node, &data.fields);
+    apply_water_body_fields(&mut node.water, "WaterBody3D", &data.fields);
+    node
+}
+
 fn build_skeleton_3d(data: &SceneDefNodeData) -> Skeleton3D {
     let mut node = Skeleton3D::new();
     if let Some(base) = data.base_ref() {

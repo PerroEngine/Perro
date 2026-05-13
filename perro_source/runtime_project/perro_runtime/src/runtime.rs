@@ -88,6 +88,7 @@ pub struct Runtime {
     cursor_icon_request: Option<perro_ui::CursorIcon>,
     pub(crate) window_requests: Vec<WindowRequest>,
     physics: physics::PhysicsState,
+    water_samples: AHashMap<NodeID, perro_nodes::WaterPhysicsSample>,
     pub(crate) audio: AudioPropagationState,
 }
 
@@ -203,6 +204,7 @@ impl Runtime {
             cursor_icon_request: None,
             window_requests: Vec::new(),
             physics: physics::PhysicsState::new(),
+            water_samples: AHashMap::new(),
             audio: AudioPropagationState::new(),
         }
     }

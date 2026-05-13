@@ -5,7 +5,7 @@ use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
     Camera3DState, CameraProjectionState, Command2D, Command3D, LODOptions3D, Material3D,
     MeshSurfaceBinding3D, PostProcessingCommand, RenderBridge, RenderCommand, ResourceCommand,
-    Sprite2DCommand, VisualAccessibilityCommand,
+    Sprite2DCommand, VisualAccessibilityCommand, Water2DState, Water3DState, WaterIdleModeState,
 };
 use perro_structs::{ColorBlindFilter, PostProcessEffect, PostProcessSet};
 use std::sync::Arc;
@@ -16,6 +16,85 @@ fn surfaces_for(material: MaterialID) -> Arc<[MeshSurfaceBinding3D]> {
         overrides: Arc::from([]),
         modulate: [1.0, 1.0, 1.0, 1.0],
     }])
+}
+
+fn water_2d_state() -> Water2DState {
+    Water2DState {
+        model: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        z_index: 0,
+        size: [32.0, 32.0],
+        resolution: [64, 64],
+        depth: 4.0,
+        flow: [0.0, 0.0],
+        wind: [1.0, 0.0],
+        idle_mode: WaterIdleModeState::Calm,
+        wave_speed: 1.0,
+        wave_scale: 1.0,
+        damping: 0.985,
+        wake_strength: 1.0,
+        foam_strength: 0.65,
+        shoreline_mask: false,
+        static_body_wakes: true,
+        debug: false,
+        impacts: Arc::from([]),
+    }
+}
+
+fn water_3d_state() -> Water3DState {
+    Water3DState {
+        model: [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+        size: [32.0, 32.0],
+        resolution: [64, 64],
+        depth: 4.0,
+        flow: [0.0, 0.0],
+        wind: [1.0, 0.0],
+        idle_mode: WaterIdleModeState::Calm,
+        wave_speed: 1.0,
+        wave_scale: 1.0,
+        damping: 0.985,
+        wake_strength: 1.0,
+        foam_strength: 0.65,
+        shoreline_mask: false,
+        static_body_wakes: true,
+        debug: false,
+        impacts: Arc::from([]),
+    }
+}
+
+#[test]
+fn water_upsert_retains_and_remove_clears_state() {
+    let mut graphics = PerroGraphics::new();
+    let water_2d = NodeID::from_parts(21, 0);
+    let water_3d = NodeID::from_parts(22, 0);
+
+    graphics.submit(RenderCommand::TwoD(Command2D::UpsertWater {
+        node: water_2d,
+        water: Box::new(water_2d_state()),
+    }));
+    graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::UpsertWater {
+        node: water_3d,
+        water: Box::new(water_3d_state()),
+    })));
+    graphics.draw_frame();
+
+    assert_eq!(graphics.renderer_2d.retained_water_count(), 1);
+    assert_eq!(graphics.renderer_3d.retained_waters_sorted().len(), 1);
+
+    graphics.submit(RenderCommand::TwoD(Command2D::RemoveNode {
+        node: water_2d,
+    }));
+    graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::RemoveNode {
+        node: water_3d,
+    })));
+    graphics.draw_frame();
+
+    assert_eq!(graphics.renderer_2d.retained_water_count(), 0);
+    assert_eq!(graphics.renderer_3d.retained_waters_sorted().len(), 0);
 }
 
 #[test]

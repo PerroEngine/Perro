@@ -9,6 +9,7 @@ use perro_render_bridge::{
     AmbientLight2DState, Camera2DState, Command2D, ParticlePath2D, ParticleProfile2D,
     ParticleSimulationMode2D, PointLight2DState, PointParticles2DState, RayLight2DState,
     RenderCommand, ResourceCommand, SpotLight2DState, Sprite2DCommand, TileMap2DCommand,
+    Water2DState, WaterIdleModeState,
 };
 use perro_runtime_render::{sprite_2d_texture_request, tilemap_2d_texture_request};
 use perro_structs::BitMask;
@@ -230,6 +231,52 @@ impl Runtime {
                 } else {
                     self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
                     self.render_2d.retained_sprites.remove(&node);
+                }
+            }
+
+            let water_data = self.nodes.get(node).and_then(|node| match &node.data {
+                SceneNodeData::WaterBody2D(water) => Some((
+                    effective_visible
+                        && water.visible
+                        && render_mask_matches(camera_render_mask, water.render_layers),
+                    water.transform,
+                    water.z_index,
+                    water.water,
+                )),
+                _ => None,
+            });
+            if let Some((visible, local_transform, z_index, water)) = water_data {
+                if visible {
+                    let model = self
+                        .get_global_transform_2d(node)
+                        .unwrap_or(local_transform)
+                        .to_mat3()
+                        .to_cols_array_2d();
+                    self.queue_render_command(RenderCommand::TwoD(Command2D::UpsertWater {
+                        node,
+                        water: Box::new(Water2DState {
+                            model,
+                            z_index,
+                            size: [water.size.x, water.size.y],
+                            resolution: water.resolution,
+                            depth: water.depth,
+                            flow: [water.flow.x, water.flow.y],
+                            wind: [water.wind.x, water.wind.y],
+                            idle_mode: water_idle_mode_state(water.idle_mode),
+                            wave_speed: water.wave.speed,
+                            wave_scale: water.wave.scale,
+                            damping: water.wave.damping,
+                            wake_strength: water.physics.wake_strength,
+                            foam_strength: water.physics.foam_strength,
+                            shoreline_mask: water.shoreline_mask,
+                            static_body_wakes: water.static_body_wakes,
+                            debug: water.debug,
+                            impacts: std::sync::Arc::from([]),
+                        }),
+                    }));
+                    visible_now.insert(node);
+                } else {
+                    self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
                 }
             }
 
@@ -598,6 +645,16 @@ impl Runtime {
 #[inline]
 fn render_mask_matches(camera_mask: BitMask, render_layers: BitMask) -> bool {
     camera_mask.intersects(render_layers)
+}
+
+fn water_idle_mode_state(mode: perro_nodes::WaterIdleMode) -> WaterIdleModeState {
+    match mode {
+        perro_nodes::WaterIdleMode::Calm => WaterIdleModeState::Calm,
+        perro_nodes::WaterIdleMode::Sine => WaterIdleModeState::Sine,
+        perro_nodes::WaterIdleMode::Chop => WaterIdleModeState::Chop,
+        perro_nodes::WaterIdleMode::Storm => WaterIdleModeState::Storm,
+        perro_nodes::WaterIdleMode::River => WaterIdleModeState::River,
+    }
 }
 
 pub(crate) fn resolve_tileset_2d(runtime: &mut Runtime, source: &str) -> Option<ParsedTileset2D> {

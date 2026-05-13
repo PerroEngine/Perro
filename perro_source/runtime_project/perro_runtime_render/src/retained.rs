@@ -63,6 +63,7 @@ pub fn decode_render_request_node_from_event(event: &RenderEvent) -> Option<Node
         | RenderEvent::TextureCreated { request, .. }
         | RenderEvent::MaterialCreated { request, .. }
         | RenderEvent::Failed { request, .. } => *request,
+        RenderEvent::WaterSamples { .. } => return None,
     };
     decode_render_request_node(request)
 }

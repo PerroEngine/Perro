@@ -5,6 +5,70 @@ mod tests {
     use perro_scene::Parser;
 
     #[test]
+    fn water_body_scene_fields_parse() {
+        let scene = Parser::new(
+            r#"
+            @root = water
+            [water]
+            [WaterBody2D]
+                size = (64, 32)
+                resolution = (256, 128)
+                depth = 7.5
+                flow = (2, 0)
+                wind = (0, 1)
+                idle_mode = "storm"
+                wave_speed = 3.0
+                wave_scale = 1.5
+                wake_strength = 2.0
+                foam_strength = 0.8
+                damping = 0.96
+                buoyancy = 4.0
+                drag = 0.25
+                sample_readback_rate = 20
+                shoreline_mask = true
+                static_body_wakes = false
+                debug = true
+            [/WaterBody2D]
+            [/water]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+        let water = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "water")
+            .expect("water node");
+
+        match &water.node.data {
+            SceneNodeData::WaterBody2D(node) => {
+                assert_eq!(node.water.size.x, 64.0);
+                assert_eq!(node.water.size.y, 32.0);
+                assert_eq!(node.water.resolution, [256, 128]);
+                assert_eq!(node.water.depth, 7.5);
+                assert_eq!(node.water.flow.x, 2.0);
+                assert_eq!(node.water.wind.y, 1.0);
+                assert_eq!(node.water.idle_mode, perro_nodes::WaterIdleMode::Storm);
+                assert_eq!(node.water.wave.speed, 3.0);
+                assert_eq!(node.water.wave.scale, 1.5);
+                assert_eq!(node.water.wave.damping, 0.96);
+                assert_eq!(node.water.physics.wake_strength, 2.0);
+                assert_eq!(node.water.physics.foam_strength, 0.8);
+                assert_eq!(node.water.physics.buoyancy, 4.0);
+                assert_eq!(node.water.physics.drag, 0.25);
+                assert_eq!(node.water.physics.sample_readback_rate, 20.0);
+                assert!(node.water.shoreline_mask);
+                assert!(!node.water.static_body_wakes);
+                assert!(node.water.debug);
+            }
+            other => panic!("expected WaterBody2D node, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn root_of_merges_root_defaults_overrides_and_children() {
         let host = Parser::new(
             r#"

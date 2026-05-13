@@ -34,6 +34,16 @@ fn build_particle_emitter_2d(data: &SceneDefNodeData) -> ParticleEmitter2D {
     node
 }
 
+fn build_water_body_2d(data: &SceneDefNodeData) -> WaterBody2D {
+    let mut node = WaterBody2D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_2d_data(&mut node, base);
+    }
+    apply_node_2d_fields(&mut node, &data.fields);
+    apply_water_body_fields(&mut node.water, "WaterBody2D", &data.fields);
+    node
+}
+
 fn build_ambient_light_2d(data: &SceneDefNodeData) -> AmbientLight2D {
     let mut node = AmbientLight2D::new();
     apply_ambient_light_2d_fields(&mut node, &data.fields);

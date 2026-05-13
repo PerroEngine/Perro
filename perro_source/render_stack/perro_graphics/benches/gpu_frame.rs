@@ -5,7 +5,7 @@ use perro_render_bridge::{
     Material3D, Mesh3D, MeshSurfaceBinding3D, PointLight3DState, PostProcessingCommand,
     RayLight3DState, Rect2DCommand, RenderBridge, RenderCommand, RenderEvent, RenderRequestID,
     ResourceCommand, RuntimeMeshVertex, Sky3DState, SkyTime3DState, SpotLight3DState,
-    Sprite2DCommand,
+    Sprite2DCommand, Water2DState, WaterIdleModeState,
 };
 use perro_structs::{PostProcessEffect, PostProcessSet};
 use std::sync::Arc;
@@ -191,6 +191,26 @@ fn main() {
                 redraw: redraw_2d,
             },
             BenchCase {
+                name: "water_1_64",
+                setup: |w| setup_water(w, 1, 64, 0),
+                redraw: redraw_2d,
+            },
+            BenchCase {
+                name: "water_16_64_i8",
+                setup: |w| setup_water(w, 16, 64, 8),
+                redraw: redraw_2d,
+            },
+            BenchCase {
+                name: "water_64_128_i16",
+                setup: |w| setup_water(w, 64, 128, 16),
+                redraw: redraw_2d,
+            },
+            BenchCase {
+                name: "water_128_256_i32",
+                setup: |w| setup_water(w, 128, 256, 32),
+                redraw: redraw_2d,
+            },
+            BenchCase {
                 name: "meshes_10k",
                 setup: |w| setup_meshes(w, 10_000),
                 redraw: redraw_3d,
@@ -305,6 +325,13 @@ fn setup_sprites(window: &Arc<Window>, count: u32) -> PerroGraphics {
     graphics
 }
 
+fn setup_water(window: &Arc<Window>, count: u32, resolution: u32, impacts: u32) -> PerroGraphics {
+    let mut graphics = base_graphics(window);
+    graphics.submit_many((0..count).map(|i| water_command(i, resolution, impacts)));
+    let _ = graphics.draw_frame_timed();
+    graphics
+}
+
 fn setup_meshes(window: &Arc<Window>, count: u32) -> PerroGraphics {
     let mut graphics = base_graphics(window);
     let (mesh, material) = create_mesh_material(&mut graphics);
@@ -415,6 +442,40 @@ fn sprite_command(i: u32, texture: TextureID) -> RenderCommand {
             size: [10.0, 10.0],
             z_index: i as i32,
         },
+    })
+}
+
+fn water_command(i: u32, resolution: u32, impacts: u32) -> RenderCommand {
+    let [x, y] = grid2(i, 48.0);
+    RenderCommand::TwoD(Command2D::UpsertWater {
+        node: NodeID::from_parts(500_000 + i, 0),
+        water: Box::new(Water2DState {
+            model: [[1.0, 0.0, x], [0.0, 1.0, y], [0.0, 0.0, 1.0]],
+            z_index: i as i32,
+            size: [44.0, 44.0],
+            resolution: [resolution, resolution],
+            depth: 4.0,
+            flow: [0.12, 0.03],
+            wind: [1.0, 0.2],
+            idle_mode: WaterIdleModeState::Chop,
+            wave_speed: 1.4,
+            wave_scale: 1.2,
+            damping: 0.985,
+            wake_strength: 1.0,
+            foam_strength: 0.7,
+            shoreline_mask: impacts > 0,
+            static_body_wakes: true,
+            debug: false,
+            impacts: (0..impacts)
+                .map(|j| perro_render_bridge::WaterImpact2D {
+                    position: [(j % 16) as f32 * 2.0, (j / 16) as f32 * 2.0],
+                    velocity: [0.5, -2.5],
+                    strength: 1.0 + j as f32 * 0.02,
+                    radius: 2.0,
+                })
+                .collect::<Vec<_>>()
+                .into(),
+        }),
     })
 }
 

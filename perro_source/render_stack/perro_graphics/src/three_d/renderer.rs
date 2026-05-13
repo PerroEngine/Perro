@@ -5,7 +5,7 @@ use perro_ids::{MeshID, NodeID};
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, DenseInstancePose3D, LODOptions3D,
     MeshSurfaceBinding3D, PointLight3DState, RayLight3DState, SkeletonPalette, Sky3DState,
-    SpotLight3DState,
+    SpotLight3DState, Water3DState,
 };
 use rayon::slice::ParallelSliceMut;
 use std::sync::Arc;
@@ -70,13 +70,17 @@ pub struct Renderer3D {
     ray_lights: AHashMap<NodeID, RayLight3DState>,
     point_lights: AHashMap<NodeID, PointLight3DState>,
     spot_lights: AHashMap<NodeID, SpotLight3DState>,
+    waters: AHashMap<NodeID, Water3DState>,
     ray_lights_sorted_cache: Vec<(NodeID, RayLight3DState)>,
     point_lights_sorted_cache: Vec<(NodeID, PointLight3DState)>,
     spot_lights_sorted_cache: Vec<(NodeID, SpotLight3DState)>,
+    waters_sorted_cache: Vec<(NodeID, Water3DState)>,
     retained_draws_sorted_cache: Vec<Draw3DInstance>,
     ray_lights_dirty: bool,
     point_lights_dirty: bool,
     spot_lights_dirty: bool,
+    waters_dirty: bool,
+    waters_revision: u64,
     camera: Camera3DState,
     draw_revision: u64,
     last_frame_time: Option<Instant>,
@@ -236,6 +240,10 @@ impl Renderer3D {
         if self.spot_lights.remove(&node).is_some() {
             self.spot_lights_dirty = true;
         }
+        if self.waters.remove(&node).is_some() {
+            self.waters_dirty = true;
+            self.waters_revision = self.waters_revision.wrapping_add(1);
+        }
     }
 
     pub fn set_ambient_light(&mut self, node: NodeID, light: AmbientLight3DState) {
@@ -261,6 +269,13 @@ impl Renderer3D {
     pub fn set_spot_light(&mut self, node: NodeID, light: SpotLight3DState) {
         if self.spot_lights.insert(node, light) != Some(light) {
             self.spot_lights_dirty = true;
+        }
+    }
+
+    pub fn upsert_water(&mut self, node: NodeID, water: Water3DState) {
+        if self.waters.insert(node, water.clone()) != Some(water) {
+            self.waters_dirty = true;
+            self.waters_revision = self.waters_revision.wrapping_add(1);
         }
     }
 
@@ -407,6 +422,7 @@ impl Renderer3D {
             || !self.ray_lights.is_empty()
             || !self.point_lights.is_empty()
             || !self.spot_lights.is_empty()
+            || !self.waters.is_empty()
     }
 
     pub fn retained_draws(&self) -> impl Iterator<Item = Draw3DInstance> + '_ {
@@ -423,6 +439,23 @@ impl Renderer3D {
 
     pub fn draw_revision(&self) -> u64 {
         self.draw_revision
+    }
+
+    pub fn retained_waters_sorted(&mut self) -> &[(NodeID, Water3DState)] {
+        if self.waters_dirty {
+            self.waters_sorted_cache.clear();
+            self.waters_sorted_cache
+                .extend(self.waters.iter().map(|(n, w)| (*n, w.clone())));
+            self.waters_sorted_cache
+                .sort_unstable_by_key(|(node, _)| node.as_u64());
+            self.waters_dirty = false;
+        }
+        &self.waters_sorted_cache
+    }
+
+    #[inline]
+    pub fn retained_waters_revision(&self) -> u64 {
+        self.waters_revision
     }
 
     pub fn camera(&self) -> Camera3DState {
@@ -489,13 +522,17 @@ impl Default for Renderer3D {
             ray_lights: AHashMap::new(),
             point_lights: AHashMap::new(),
             spot_lights: AHashMap::new(),
+            waters: AHashMap::new(),
             ray_lights_sorted_cache: Vec::new(),
             point_lights_sorted_cache: Vec::new(),
             spot_lights_sorted_cache: Vec::new(),
+            waters_sorted_cache: Vec::new(),
             retained_draws_sorted_cache: Vec::new(),
             ray_lights_dirty: false,
             point_lights_dirty: false,
             spot_lights_dirty: false,
+            waters_dirty: false,
+            waters_revision: 0,
             // Keep a usable fallback view if no Camera3D node is active.
             camera: Camera3DState {
                 position: [0.0, 0.0, 6.0],

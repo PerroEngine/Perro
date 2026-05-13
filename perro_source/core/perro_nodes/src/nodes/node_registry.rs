@@ -7,7 +7,7 @@ use crate::{
     Node2D, Node3D, ParticleEmitter2D, ParticleEmitter3D, PhysicsBoneChain2D, PhysicsBoneChain3D,
     PinJoint2D, PointLight2D, PointLight3D, RayLight2D, RayLight3D, RigidBody2D, RigidBody3D,
     Skeleton2D, Skeleton3D, Sky3D, SpotLight2D, SpotLight3D, Sprite2D, StaticBody2D, StaticBody3D,
-    TileMap2D,
+    TileMap2D, WaterBody2D, WaterBody3D,
 };
 use perro_ids::{NodeID, NodeTag, TagID};
 use perro_structs::{Transform2D, Transform3D};
@@ -823,6 +823,7 @@ define_scene_nodes! {
         AnimatedSprite2D => (Node2D, AnimatedSprite2D, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         TileMap2D => (Node2D, TileMap2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::True),
         ParticleEmitter2D => (Node2D, ParticleEmitter2D, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
+        WaterBody2D => (Node2D, WaterBody2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::True),
 
         // lights
         AmbientLight2D => (None, AmbientLight2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
@@ -862,6 +863,7 @@ define_scene_nodes! {
         MeshInstance3D => (Node3D, MeshInstance3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         MultiMeshInstance3D => (Node3D, MultiMeshInstance3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         ParticleEmitter3D => (Node3D, ParticleEmitter3D, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
+        WaterBody3D => (Node3D, WaterBody3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::True),
         Sky3D => (None, Sky3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
 
         // lights

@@ -514,6 +514,14 @@ impl Gpu2D {
         }
     }
 
+    pub(crate) fn camera_bind_group(&self) -> &wgpu::BindGroup {
+        &self.camera_bind_group
+    }
+
+    pub(crate) fn camera_bind_group_layout(&self) -> &wgpu::BindGroupLayout {
+        &self.camera_bgl
+    }
+
     #[inline]
     pub fn draw_call_count(&self, rect_draw_count: u32) -> u32 {
         u32::from(rect_draw_count > 0)

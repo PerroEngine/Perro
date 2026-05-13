@@ -77,6 +77,10 @@ pub enum Command2D {
         node: NodeID,
         particles: Box<PointParticles2DState>,
     },
+    UpsertWater {
+        node: NodeID,
+        water: Box<Water2DState>,
+    },
     SetAmbientLight {
         node: NodeID,
         light: AmbientLight2DState,
@@ -172,6 +176,10 @@ pub enum Command3D {
         node: NodeID,
         particles: Box<PointParticles3DState>,
     },
+    UpsertWater {
+        node: NodeID,
+        water: Box<Water3DState>,
+    },
     RemoveNode {
         node: NodeID,
     },
@@ -230,6 +238,9 @@ pub enum RenderEvent {
     MaterialCreated {
         request: RenderRequestID,
         id: MaterialID,
+    },
+    WaterSamples {
+        samples: Arc<[WaterSampleState]>,
     },
     Failed {
         request: RenderRequestID,

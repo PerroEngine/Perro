@@ -4,7 +4,7 @@ use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
     Command2D, Command3D, LODOptions3D, Material3D, Mesh3D, MeshSurfaceBinding3D, RenderBridge,
     RenderCommand, RenderEvent, RenderRequestID, ResourceCommand, RuntimeMeshVertex,
-    Sprite2DCommand,
+    Sprite2DCommand, Water2DState, WaterIdleModeState,
 };
 use std::sync::Arc;
 
@@ -60,6 +60,41 @@ fn draw_3d_command(i: u32, mesh: MeshID, material: MaterialID) -> RenderCommand 
         meshlet_override: None,
         lod: LODOptions3D::default(),
     }))
+}
+
+fn water_command(i: u32, resolution: u32, impacts: u32) -> RenderCommand {
+    let x = (i % 64) as f32 * 36.0;
+    let y = (i / 64) as f32 * 36.0;
+    RenderCommand::TwoD(Command2D::UpsertWater {
+        node: NodeID::from_parts(500_000 + i, 0),
+        water: Box::new(Water2DState {
+            model: [[1.0, 0.0, x], [0.0, 1.0, y], [0.0, 0.0, 1.0]],
+            z_index: i as i32,
+            size: [32.0, 32.0],
+            resolution: [resolution, resolution],
+            depth: 4.0,
+            flow: [0.1, 0.0],
+            wind: [1.0, 0.2],
+            idle_mode: WaterIdleModeState::Sine,
+            wave_speed: 1.0,
+            wave_scale: 1.0,
+            damping: 0.985,
+            wake_strength: 1.0,
+            foam_strength: 0.65,
+            shoreline_mask: impacts > 0,
+            static_body_wakes: true,
+            debug: false,
+            impacts: (0..impacts)
+                .map(|j| perro_render_bridge::WaterImpact2D {
+                    position: [(j % 32) as f32, (j / 32) as f32],
+                    velocity: [1.0, -2.0],
+                    strength: 1.0 + j as f32 * 0.01,
+                    radius: 2.0,
+                })
+                .collect::<Vec<_>>()
+                .into(),
+        }),
+    })
 }
 
 fn tiny_mesh() -> Mesh3D {
@@ -257,11 +292,47 @@ fn bench_resource_churn(c: &mut Criterion) {
     });
 }
 
+fn bench_water_prepare(c: &mut Criterion) {
+    let mut group = c.benchmark_group("graphics_water_prepare");
+    for (count, resolution, impacts) in [
+        (1u32, 64u32, 0u32),
+        (16, 64, 8),
+        (64, 128, 16),
+        (128, 256, 32),
+    ] {
+        group.bench_with_input(
+            BenchmarkId::new(
+                format!("{count}_water"),
+                format!("{resolution}r_{impacts}i"),
+            ),
+            &(count, resolution, impacts),
+            |b, &(count, resolution, impacts)| {
+                let mut graphics = PerroGraphics::new();
+                b.iter_batched(
+                    || {
+                        (0..count)
+                            .map(|i| water_command(i, resolution, impacts))
+                            .collect::<Vec<_>>()
+                    },
+                    |commands| {
+                        graphics.submit_many(commands);
+                        let timing = graphics.draw_frame_timed().expect("timing");
+                        black_box(timing.prepare_cpu);
+                    },
+                    BatchSize::LargeInput,
+                );
+            },
+        );
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_2d_rect_prepare,
     bench_2d_sprite_prepare,
     bench_3d_draw_prepare,
+    bench_water_prepare,
     bench_resource_churn
 );
 criterion_main!(benches);

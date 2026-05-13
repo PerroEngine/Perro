@@ -58,6 +58,53 @@ pub struct PointLight2DState {
     pub z_index: i32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WaterIdleModeState {
+    #[default]
+    Calm,
+    Sine,
+    Chop,
+    Storm,
+    River,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WaterImpact2D {
+    pub position: [f32; 2],
+    pub velocity: [f32; 2],
+    pub strength: f32,
+    pub radius: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WaterSampleState {
+    pub node: NodeID,
+    pub height: f32,
+    pub velocity: [f32; 2],
+    pub foam: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Water2DState {
+    pub model: [[f32; 3]; 3],
+    pub z_index: i32,
+    pub size: [f32; 2],
+    pub resolution: [u32; 2],
+    pub depth: f32,
+    pub flow: [f32; 2],
+    pub wind: [f32; 2],
+    pub idle_mode: WaterIdleModeState,
+    pub wave_speed: f32,
+    pub wave_scale: f32,
+    pub damping: f32,
+    pub wake_strength: f32,
+    pub foam_strength: f32,
+    pub shoreline_mask: bool,
+    pub static_body_wakes: bool,
+    pub debug: bool,
+    pub impacts: Arc<[WaterImpact2D]>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AmbientLight2DState {
     pub color: [f32; 3],

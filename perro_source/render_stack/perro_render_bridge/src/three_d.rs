@@ -1,4 +1,5 @@
 use super::*;
+use crate::two_d::WaterIdleModeState;
 use perro_structs::{AudioListenerOptions, BitMask};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -67,6 +68,34 @@ pub struct SpotLight3DState {
     pub inner_angle_radians: f32,
     pub outer_angle_radians: f32,
     pub cast_shadows: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WaterImpact3D {
+    pub position: [f32; 3],
+    pub velocity: [f32; 3],
+    pub strength: f32,
+    pub radius: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Water3DState {
+    pub model: [[f32; 4]; 4],
+    pub size: [f32; 2],
+    pub resolution: [u32; 2],
+    pub depth: f32,
+    pub flow: [f32; 2],
+    pub wind: [f32; 2],
+    pub idle_mode: WaterIdleModeState,
+    pub wave_speed: f32,
+    pub wave_scale: f32,
+    pub damping: f32,
+    pub wake_strength: f32,
+    pub foam_strength: f32,
+    pub shoreline_mask: bool,
+    pub static_body_wakes: bool,
+    pub debug: bool,
+    pub impacts: Arc<[WaterImpact3D]>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

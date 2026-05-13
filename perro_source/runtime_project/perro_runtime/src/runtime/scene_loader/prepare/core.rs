@@ -40,6 +40,7 @@ use perro_nodes::{
     sky_3d::{Sky3D, SkyStyle},
     spot_light_3d::SpotLight3D,
     sprite_2d::{AnimatedSprite, AnimatedSprite2D, Sprite2D},
+    WaterBody2D, WaterBody3D, WaterIdleMode, WaterSurfaceParams,
     AmbientLight2D, Area2D, Area3D, AudioMask2D, AudioMask3D, AudioPortal2D, AudioPortal3D,
     AudioEffectZone2D, AudioEffectZone3D, BallJoint3D, CollisionShape2D, CollisionShape3D, DistanceJoint2D,
     FixedJoint2D, FixedJoint3D, HingeJoint3D, PinJoint2D, PointLight2D, RayLight2D, RigidBody2D,
@@ -57,7 +58,7 @@ use perro_scene::{
     SceneFieldIterRef, SceneFieldName, SceneKey, SceneNodeData as SceneDefNodeData,
     SceneNodeEntry as SceneDefNodeEntry, SceneObjectField, SceneValue, Skeleton3DField,
     Sky3DField, SpotLight3DField, Sprite2DField, StaticBody2DField, StaticBody3DField,
-    UiAnimatedImageField, UiImageField, resolve_node_field, resolve_scene_node_field,
+    UiAnimatedImageField, UiImageField, WaterBodyField, resolve_node_field, resolve_scene_node_field,
 };
 use rayon::prelude::*;
 use perro_structs::{
@@ -85,6 +86,119 @@ pub(super) struct RuntimeSceneLoadStats {
 
 #[cfg(not(feature = "profile"))]
 pub(super) struct RuntimeSceneLoadStats;
+
+fn apply_water_body_fields(node: &mut WaterSurfaceParams, ty: &str, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        let field = match resolve_node_field(ty, name) {
+            Some(NodeField::WaterBody2D(field)) | Some(NodeField::WaterBody3D(field)) => field,
+            _ => return,
+        };
+        match field {
+            WaterBodyField::Size => {
+                if let Some(v) = as_vec2(value) {
+                    node.size = v;
+                }
+            }
+            WaterBodyField::Resolution => {
+                if let Some((x, y)) = value.as_vec2() {
+                    node.resolution = [
+                        (x.max(1.0).round() as u32).clamp(1, 4096),
+                        (y.max(1.0).round() as u32).clamp(1, 4096),
+                    ];
+                } else if let Some(v) = as_i32(value) {
+                    let v = v.clamp(1, 4096) as u32;
+                    node.resolution = [v, v];
+                }
+            }
+            WaterBodyField::Depth => {
+                if let Some(v) = as_f32(value) {
+                    node.depth = v.max(0.0);
+                }
+            }
+            WaterBodyField::Flow => {
+                if let Some(v) = as_vec2(value) {
+                    node.flow = v;
+                }
+            }
+            WaterBodyField::Wind => {
+                if let Some(v) = as_vec2(value) {
+                    node.wind = v;
+                }
+            }
+            WaterBodyField::IdleMode => {
+                if let Some(v) = as_water_idle_mode(value) {
+                    node.idle_mode = v;
+                }
+            }
+            WaterBodyField::WaveSpeed => {
+                if let Some(v) = as_f32(value) {
+                    node.wave.speed = v.max(0.0);
+                }
+            }
+            WaterBodyField::WaveScale => {
+                if let Some(v) = as_f32(value) {
+                    node.wave.scale = v.max(0.0);
+                }
+            }
+            WaterBodyField::WakeStrength => {
+                if let Some(v) = as_f32(value) {
+                    node.physics.wake_strength = v.max(0.0);
+                }
+            }
+            WaterBodyField::FoamStrength => {
+                if let Some(v) = as_f32(value) {
+                    node.physics.foam_strength = v.max(0.0);
+                }
+            }
+            WaterBodyField::Damping => {
+                if let Some(v) = as_f32(value) {
+                    node.wave.damping = v.clamp(0.0, 1.0);
+                }
+            }
+            WaterBodyField::Buoyancy => {
+                if let Some(v) = as_f32(value) {
+                    node.physics.buoyancy = v.max(0.0);
+                }
+            }
+            WaterBodyField::Drag => {
+                if let Some(v) = as_f32(value) {
+                    node.physics.drag = v.max(0.0);
+                }
+            }
+            WaterBodyField::SampleReadbackRate => {
+                if let Some(v) = as_f32(value) {
+                    node.physics.sample_readback_rate = v.max(0.0);
+                }
+            }
+            WaterBodyField::ShorelineMask => {
+                if let Some(v) = as_bool(value) {
+                    node.shoreline_mask = v;
+                }
+            }
+            WaterBodyField::StaticBodyWakes => {
+                if let Some(v) = as_bool(value) {
+                    node.static_body_wakes = v;
+                }
+            }
+            WaterBodyField::Debug => {
+                if let Some(v) = as_bool(value) {
+                    node.debug = v;
+                }
+            }
+        }
+    });
+}
+
+fn as_water_idle_mode(value: &SceneValue) -> Option<WaterIdleMode> {
+    match as_str(value)?.trim().to_ascii_lowercase().as_str() {
+        "calm" => Some(WaterIdleMode::Calm),
+        "sine" => Some(WaterIdleMode::Sine),
+        "chop" | "choppy" => Some(WaterIdleMode::Chop),
+        "storm" => Some(WaterIdleMode::Storm),
+        "river" => Some(WaterIdleMode::River),
+        _ => None,
+    }
+}
 
 pub(super) struct PreparedScene {
     pub(super) root_key: Option<u32>,
@@ -1068,6 +1182,7 @@ fn scene_node_data_from(
         "PointLight2D" => Ok(SceneNodeData::PointLight2D(build_point_light_2d(data))),
         "SpotLight2D" => Ok(SceneNodeData::SpotLight2D(build_spot_light_2d(data))),
         "TileMap2D" => Ok(SceneNodeData::TileMap2D(build_tilemap_2d(data))),
+        "WaterBody2D" => Ok(SceneNodeData::WaterBody2D(build_water_body_2d(data))),
         "Skeleton2D" => Ok(SceneNodeData::Skeleton2D(build_skeleton_2d(data))),
         "Bone2D" => Err("unsupported scene node type `Bone2D`; use Skeleton2D.bones from .pskel2d".to_string()),
         "BoneAttachment2D" => Ok(SceneNodeData::BoneAttachment2D(
@@ -1125,6 +1240,7 @@ fn scene_node_data_from(
         "ParticleEmitter3D" => Ok(SceneNodeData::ParticleEmitter3D(build_particle_emitter_3d(
             data,
         ))),
+        "WaterBody3D" => Ok(SceneNodeData::WaterBody3D(build_water_body_3d(data))),
         "AnimationPlayer" => Ok(SceneNodeData::AnimationPlayer(build_animation_player(data))),
         "AnimationTree" => Ok(SceneNodeData::AnimationTree(build_animation_tree(data))),
         "AmbientLight3D" => Ok(SceneNodeData::AmbientLight3D(build_ambient_light_3d(data))),
