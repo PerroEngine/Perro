@@ -196,15 +196,18 @@ fn apply_water_body_fields(node: &mut WaterSurfaceParams, ty: &str, fields: &[Sc
                     node.lod.min_resolution = [v, v];
                 }
             }
-            WaterBodyField::ShorelineMask => {
-                if let Some(v) = as_bool(value) {
-                    node.shoreline_mask = v;
+            WaterBodyField::CollisionLayers => {
+                if let Some(v) = as_bitmask(value) {
+                    node.collision_layers = v;
                 }
             }
-            WaterBodyField::StaticBodyWakes => {
-                if let Some(v) = as_bool(value) {
-                    node.static_body_wakes = v;
+            WaterBodyField::CollisionMask => {
+                if let Some(v) = as_bitmask(value) {
+                    node.collision_mask = v;
                 }
+            }
+            WaterBodyField::Coastline => {
+                apply_coastline_settings(&mut node.coastline, value);
             }
             WaterBodyField::Debug => {
                 if let Some(v) = as_bool(value) {
@@ -213,6 +216,62 @@ fn apply_water_body_fields(node: &mut WaterSurfaceParams, ty: &str, fields: &[Sc
             }
         }
     });
+}
+
+fn apply_coastline_settings(node: &mut perro_nodes::CoastlineSettings, value: &SceneValue) {
+    let SceneValue::Object(fields) = value else {
+        return;
+    };
+    for (name, value) in fields.iter() {
+        match name.as_ref() {
+            "foam_color" => {
+                if let Some(v) = as_color(value) {
+                    node.foam_color = v;
+                }
+            }
+            "foam_strength" => {
+                if let Some(v) = as_f32(value) {
+                    node.foam_strength = v.max(0.0);
+                }
+            }
+            "foam_width" => {
+                if let Some(v) = as_f32(value) {
+                    node.foam_width = v.max(0.0);
+                }
+            }
+            "cutoff_softness" => {
+                if let Some(v) = as_f32(value) {
+                    node.cutoff_softness = v.max(0.0);
+                }
+            }
+            "wave_reflection" => {
+                if let Some(v) = as_f32(value) {
+                    node.wave_reflection = v.clamp(0.0, 1.0);
+                }
+            }
+            "wave_damping" => {
+                if let Some(v) = as_f32(value) {
+                    node.wave_damping = v.clamp(0.0, 1.0);
+                }
+            }
+            "edge_noise" => {
+                if let Some(v) = as_f32(value) {
+                    node.edge_noise = v.max(0.0);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn as_color(value: &SceneValue) -> Option<Color> {
+    match value {
+        SceneValue::Vec4 { x, y, z, w } => Some(Color::new(*x, *y, *z, *w)),
+        SceneValue::Vec3 { x, y, z } => Some(Color::rgb(*x, *y, *z)),
+        SceneValue::Str(v) => Color::from_hex(v.as_ref()),
+        SceneValue::Key(v) => Color::from_hex(v.as_ref()),
+        _ => None,
+    }
 }
 
 fn as_water_idle_mode(value: &SceneValue) -> Option<WaterIdleMode> {

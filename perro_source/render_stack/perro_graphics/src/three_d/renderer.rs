@@ -542,7 +542,7 @@ impl Default for Renderer3D {
                     near: 0.1,
                     far: 1000.0,
                 },
-                render_mask: perro_structs::BitMask::ALL,
+                render_mask: perro_structs::BitMask::NONE,
                 post_processing: Arc::from([]),
                 audio_options: perro_structs::AudioListenerOptions::new(),
             },

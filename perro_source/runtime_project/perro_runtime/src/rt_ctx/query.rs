@@ -2,8 +2,9 @@ use crate::cns::NodeArena;
 use ahash::{AHashMap, AHashSet};
 use perro_ids::NodeID;
 use perro_ids::TagID;
-use perro_nodes::{NodeType, SceneNode};
+use perro_nodes::{Node2D, Node3D, NodeType, SceneNode};
 use perro_runtime_api::sub_apis::{QueryExpr, QueryScope, QueryTypeMask, TagQuery};
+use perro_structs::BitMask;
 use rayon::prelude::*;
 #[cfg(feature = "profile")]
 use std::time::Instant;
@@ -317,7 +318,18 @@ fn eval_expr(expr: &QueryExpr, node: &SceneNode) -> bool {
         QueryExpr::IsTypeMask(mask) | QueryExpr::BaseTypeMask(mask) => {
             type_in_mask(node.node_type(), *mask)
         }
+        QueryExpr::Layers(mask) => {
+            node_render_layers(node).is_some_and(|layers| layers.intersects(*mask))
+        }
+        QueryExpr::Mask(mask) => {
+            node_render_layers(node).is_none_or(|layers| !layers.intersects(*mask))
+        }
     }
+}
+
+fn node_render_layers(node: &SceneNode) -> Option<BitMask> {
+    node.with_base_ref::<Node2D, _>(|node| node.render_layers)
+        .or_else(|| node.with_base_ref::<Node3D, _>(|node| node.render_layers))
 }
 
 #[derive(Clone, Copy)]
@@ -400,6 +412,8 @@ fn optimize_expr(expr: &QueryExpr) -> QueryExpr {
         QueryExpr::BaseType(types) => QueryExpr::BaseType(types.clone()),
         QueryExpr::IsTypeMask(mask) => QueryExpr::IsTypeMask(*mask),
         QueryExpr::BaseTypeMask(mask) => QueryExpr::BaseTypeMask(*mask),
+        QueryExpr::Layers(mask) => QueryExpr::Layers(*mask),
+        QueryExpr::Mask(mask) => QueryExpr::Mask(*mask),
     }
 }
 
@@ -409,6 +423,7 @@ fn expr_cost(expr: &QueryExpr) -> u32 {
         QueryExpr::IsType(_) => 1,
         QueryExpr::BaseTypeMask(_) => 1,
         QueryExpr::BaseType(_) => 2,
+        QueryExpr::Layers(_) | QueryExpr::Mask(_) => 3,
         QueryExpr::Name(names) => 4 + names.len() as u32,
         QueryExpr::Tags(tags) => 8 + (tags.len() as u32 * 2),
         QueryExpr::Not(inner) => 1 + expr_cost(inner),
@@ -465,7 +480,9 @@ fn allowed_type_mask_inner(expr: &QueryExpr, kind: TypeFilterKind) -> QueryTypeM
             Some(mask) => mask.complement(),
             None => all_types_mask(),
         },
-        QueryExpr::Name(_) | QueryExpr::Tags(_) => all_types_mask(),
+        QueryExpr::Name(_) | QueryExpr::Tags(_) | QueryExpr::Layers(_) | QueryExpr::Mask(_) => {
+            all_types_mask()
+        }
         QueryExpr::IsType(types) => match kind {
             TypeFilterKind::Exact => mask_from_types(TypeFilterKind::Exact, types),
             TypeFilterKind::Base => all_types_mask(),
@@ -502,7 +519,7 @@ fn type_mask_only(expr: &QueryExpr, kind: TypeFilterKind) -> Option<QueryTypeMas
             Some(mask)
         }
         QueryExpr::Not(inner) => type_mask_only(inner, kind).map(QueryTypeMask::complement),
-        QueryExpr::Name(_) | QueryExpr::Tags(_) => None,
+        QueryExpr::Name(_) | QueryExpr::Tags(_) | QueryExpr::Layers(_) | QueryExpr::Mask(_) => None,
         QueryExpr::IsType(types) => match kind {
             TypeFilterKind::Exact => Some(mask_from_types(TypeFilterKind::Exact, types)),
             TypeFilterKind::Base => None,

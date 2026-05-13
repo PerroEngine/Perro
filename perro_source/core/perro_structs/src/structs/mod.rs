@@ -1,6 +1,6 @@
 pub mod audio;
 pub mod bit_mask;
-pub mod collision_masks;
+pub mod collision_policy;
 pub mod color;
 pub mod const_param;
 pub mod ik;
@@ -11,7 +11,7 @@ pub mod visual_accessibility;
 
 pub use audio::*;
 pub use bit_mask::*;
-pub use collision_masks::*;
+pub use collision_policy::*;
 pub use color::*;
 pub use const_param::*;
 pub use ik::*;

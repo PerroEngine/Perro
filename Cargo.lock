@@ -4093,6 +4093,7 @@ dependencies = [
 name = "perro_structs"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "glam",
  "perro_ids",
 ]

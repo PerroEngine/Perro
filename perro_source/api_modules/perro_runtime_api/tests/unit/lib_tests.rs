@@ -701,6 +701,9 @@ fn script_macros_typecheck_and_forward() {
     let player_tag = "player".to_string();
     assert!(query!(&mut ctx, all(tags[player_tag.as_str()])).is_empty());
     assert!(query!(&mut ctx, all(node_type[Node2D], base_type[Node3D])).is_empty());
+    assert!(query!(&mut ctx, all(layers[1], mask[2, 3])).is_empty());
+    let layer = 4usize;
+    assert!(query!(&mut ctx, all(layers[layer], mask[layer])).is_empty());
     assert!(!reparent!(&mut ctx, NodeID::new(1), id));
     assert_eq!(reparent_multi!(&mut ctx, NodeID::new(1), [id]), 0);
     assert!(!remove_node!(&mut ctx, id));

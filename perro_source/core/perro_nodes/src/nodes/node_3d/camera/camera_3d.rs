@@ -97,7 +97,7 @@ impl Camera3D {
         Self {
             base: Node3D::new(),
             active: false,
-            render_mask: BitMask::ALL,
+            render_mask: BitMask::NONE,
             projection: CameraProjection::Perspective {
                 fov_y_degrees: 60.0,
                 near: 0.1,

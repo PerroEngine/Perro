@@ -7,6 +7,7 @@ use perro_ids::{MaterialID, MeshID, NodeID, parse_hashed_source_uri, string_to_u
 use perro_nodes::{
     CameraProjection, MeshSurfaceBinding, SceneNodeData, Shape3D,
     particle_emitter_3d::{ParticleEmitterSimMode3D, ParticleType},
+    water_impact_strength,
 };
 use perro_particle_math::compile_expression;
 use perro_render_bridge::{
@@ -14,7 +15,8 @@ use perro_render_bridge::{
     LODOptions3D, Material3D, MaterialParamOverride3D, MeshSurfaceBinding3D, ParticlePath3D,
     ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D, PointLight3DState,
     PointParticles3DState, RayLight3DState, RenderCommand, ResourceCommand, SkeletonPalette,
-    Sky3DState, SkyTime3DState, SpotLight3DState, Water3DState, WaterIdleModeState,
+    Sky3DState, SkyTime3DState, SpotLight3DState, Water3DState, WaterCoastlineShape3D,
+    WaterIdleModeState, WaterImpact3D,
 };
 use perro_runtime_render::{material_3d_request, mesh_3d_request};
 use perro_structs::BitMask;
@@ -57,11 +59,11 @@ impl Runtime {
             .last_camera
             .as_ref()
             .map(|camera| camera.render_mask)
-            .unwrap_or(BitMask::ALL);
+            .unwrap_or(BitMask::NONE);
         let camera_render_mask = active_camera
             .as_ref()
             .map(|camera| camera.render_mask)
-            .unwrap_or(BitMask::ALL);
+            .unwrap_or(BitMask::NONE);
         let camera_render_mask_changed = previous_camera_render_mask != camera_render_mask;
 
         if camera_changed {
@@ -219,6 +221,8 @@ impl Runtime {
                     .unwrap_or(local_transform)
                     .to_mat4()
                     .to_cols_array_2d();
+                let coastline_shapes = self.collect_water_coastline_shapes_3d(node, &water);
+                let impacts = self.collect_water_impacts_3d(node, &water);
                 self.queue_render_command(RenderCommand::ThreeD(Box::new(
                     Command3D::UpsertWater {
                         node,
@@ -240,10 +244,18 @@ impl Runtime {
                             lod_mid_distance: water.lod.mid_distance,
                             lod_far_distance: water.lod.far_distance,
                             lod_min_resolution: water.lod.min_resolution,
-                            shoreline_mask: water.shoreline_mask,
-                            static_body_wakes: water.static_body_wakes,
+                            collision_layers: water.collision_layers,
+                            collision_mask: water.collision_mask,
+                            coastline_foam_color: water.coastline.foam_color.to_rgba(),
+                            coastline_foam_strength: water.coastline.foam_strength,
+                            coastline_foam_width: water.coastline.foam_width,
+                            coastline_cutoff_softness: water.coastline.cutoff_softness,
+                            coastline_wave_reflection: water.coastline.wave_reflection,
+                            coastline_wave_damping: water.coastline.wave_damping,
+                            coastline_edge_noise: water.coastline.edge_noise,
                             debug: water.debug,
-                            impacts: std::sync::Arc::from([]),
+                            impacts,
+                            coastline_shapes,
                         }),
                     },
                 )));
@@ -1053,6 +1065,237 @@ impl Runtime {
         }
         Some(mesh)
     }
+
+    fn collect_water_coastline_shapes_3d(
+        &mut self,
+        water_id: NodeID,
+        water: &perro_nodes::WaterSurfaceParams,
+    ) -> Arc<[WaterCoastlineShape3D]> {
+        let Some(water_global) = self.get_global_transform_3d(water_id) else {
+            return Arc::from([]);
+        };
+        let water_half = water.size * 0.5;
+        let water_top = water_global.position.y;
+        let water_bottom = water_top - water.depth;
+        let mut shapes = Vec::new();
+        let body_ids: Vec<_> = self
+            .nodes
+            .iter()
+            .filter_map(|(id, node)| {
+                matches!(node.data, SceneNodeData::StaticBody3D(_)).then_some(id)
+            })
+            .collect();
+        for body_id in body_ids {
+            let Some((enabled, layers, mask, children)) =
+                self.nodes.get(body_id).and_then(|node| {
+                    let SceneNodeData::StaticBody3D(body) = &node.data else {
+                        return None;
+                    };
+                    Some((
+                        body.enabled,
+                        body.collision_layers,
+                        body.collision_mask,
+                        node.children_slice().to_vec(),
+                    ))
+                })
+            else {
+                continue;
+            };
+            if !enabled
+                || water.collision_mask.intersects(layers)
+                || mask.intersects(water.collision_layers)
+            {
+                continue;
+            }
+            let Some(_body_global) = self.get_global_transform_3d(body_id) else {
+                continue;
+            };
+            for child_id in children {
+                let Some(shape_kind) = self.nodes.get(child_id).and_then(|child| {
+                    let SceneNodeData::CollisionShape3D(shape) = &child.data else {
+                        return None;
+                    };
+                    Some(shape.shape.clone())
+                }) else {
+                    continue;
+                };
+                let Some(shape_global) = self.get_global_transform_3d(child_id) else {
+                    continue;
+                };
+                let local = shape_global.position - water_global.position;
+                if local.x.abs() > water_half.x + 512.0 || local.z.abs() > water_half.y + 512.0 {
+                    continue;
+                }
+                let scale = shape_global.scale;
+                match &shape_kind {
+                    Shape3D::Cube { size }
+                    | Shape3D::TriPrism { size }
+                    | Shape3D::TriangularPyramid { size }
+                    | Shape3D::SquarePyramid { size } => {
+                        let half = perro_structs::Vector3::new(
+                            size.x.abs() * scale.x.abs() * 0.5,
+                            size.y.abs() * scale.y.abs() * 0.5,
+                            size.z.abs() * scale.z.abs() * 0.5,
+                        );
+                        if shape_global.position.y + half.y < water_bottom
+                            || shape_global.position.y - half.y > water_top
+                        {
+                            continue;
+                        }
+                        shapes.push(WaterCoastlineShape3D::Box {
+                            center: [local.x, local.y, local.z],
+                            half_extents: [half.x, half.y, half.z],
+                        });
+                    }
+                    Shape3D::Sphere { radius } => {
+                        let radius =
+                            radius.abs() * scale.x.abs().max(scale.y.abs()).max(scale.z.abs());
+                        if shape_global.position.y + radius < water_bottom
+                            || shape_global.position.y - radius > water_top
+                        {
+                            continue;
+                        }
+                        shapes.push(WaterCoastlineShape3D::Sphere {
+                            center: [local.x, local.y, local.z],
+                            radius,
+                        });
+                    }
+                    Shape3D::Capsule {
+                        radius,
+                        half_height,
+                    }
+                    | Shape3D::Cylinder {
+                        radius,
+                        half_height,
+                    }
+                    | Shape3D::Cone {
+                        radius,
+                        half_height,
+                    } => {
+                        let radius = radius.abs() * scale.x.abs().max(scale.z.abs());
+                        let half_height = half_height.abs() * scale.y.abs();
+                        if shape_global.position.y + half_height < water_bottom
+                            || shape_global.position.y - half_height > water_top
+                        {
+                            continue;
+                        }
+                        shapes.push(WaterCoastlineShape3D::Cylinder {
+                            center: [local.x, local.y, local.z],
+                            radius,
+                            half_height,
+                        });
+                    }
+                    Shape3D::TriMesh { source } => {
+                        let source_hash = parse_hashed_source_uri(source)
+                            .unwrap_or_else(|| string_to_u64(source));
+                        let Some(bytes) = self
+                            .project()
+                            .and_then(|project| project.static_collision_trimesh_lookup)
+                            .map(|lookup| lookup(source_hash))
+                            .filter(|bytes| !bytes.is_empty())
+                        else {
+                            continue;
+                        };
+                        let Some((vertices, triangles)) = perro_physics::decode_pmesh_trimesh(
+                            bytes,
+                            scale.x.abs(),
+                            scale.y.abs(),
+                            scale.z.abs(),
+                        ) else {
+                            continue;
+                        };
+                        for tri in triangles {
+                            let Some(a) = vertices.get(tri[0] as usize) else {
+                                continue;
+                            };
+                            let Some(b) = vertices.get(tri[1] as usize) else {
+                                continue;
+                            };
+                            let Some(c) = vertices.get(tri[2] as usize) else {
+                                continue;
+                            };
+                            let ay = shape_global.position.y + a.y;
+                            let by = shape_global.position.y + b.y;
+                            let cy = shape_global.position.y + c.y;
+                            let min_y = ay.min(by).min(cy);
+                            let max_y = ay.max(by).max(cy);
+                            if max_y < water_bottom || min_y > water_top {
+                                continue;
+                            }
+                            shapes.push(WaterCoastlineShape3D::Triangle {
+                                points: [
+                                    [local.x + a.x, local.y + a.y, local.z + a.z],
+                                    [local.x + b.x, local.y + b.y, local.z + b.z],
+                                    [local.x + c.x, local.y + c.y, local.z + c.z],
+                                ],
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        Arc::from(shapes)
+    }
+
+    fn collect_water_impacts_3d(
+        &mut self,
+        water_id: NodeID,
+        water: &perro_nodes::WaterSurfaceParams,
+    ) -> Arc<[WaterImpact3D]> {
+        let Some(water_global) = self.get_global_transform_3d(water_id) else {
+            return Arc::from([]);
+        };
+        let half = water.size * 0.5;
+        let body_ids: Vec<_> = self
+            .nodes
+            .iter()
+            .filter_map(|(id, node)| {
+                matches!(node.data, SceneNodeData::RigidBody3D(_)).then_some(id)
+            })
+            .collect();
+        let mut impacts = Vec::new();
+        for body_id in body_ids {
+            let Some((layers, mask, mass, velocity)) = self.nodes.get(body_id).and_then(|node| {
+                let SceneNodeData::RigidBody3D(body) = &node.data else {
+                    return None;
+                };
+                Some((
+                    body.collision_layers,
+                    body.collision_mask,
+                    body.mass,
+                    body.linear_velocity,
+                ))
+            }) else {
+                continue;
+            };
+            if water.collision_mask.intersects(layers) || mask.intersects(water.collision_layers) {
+                continue;
+            }
+            let Some(body_global) = self.get_global_transform_3d(body_id) else {
+                continue;
+            };
+            let local = body_global.position - water_global.position;
+            if local.x.abs() > half.x
+                || local.z.abs() > half.y
+                || body_global.position.y > water_global.position.y
+                || body_global.position.y < water_global.position.y - water.depth
+            {
+                continue;
+            }
+            let velocity_2d = perro_structs::Vector2::new(velocity.x, velocity.z);
+            let strength = water_impact_strength(mass, velocity_2d, water.physics.wake_strength);
+            if strength <= 0.0 {
+                continue;
+            }
+            impacts.push(WaterImpact3D {
+                position: [local.x, local.y, local.z],
+                velocity: [velocity.x, velocity.y, velocity.z],
+                strength,
+                radius: mass.sqrt().max(1.0),
+            });
+        }
+        Arc::from(impacts)
+    }
 }
 
 fn camera_projection_state(projection: &CameraProjection) -> CameraProjectionState {
@@ -1091,7 +1334,7 @@ fn camera_projection_state(projection: &CameraProjection) -> CameraProjectionSta
 
 #[inline]
 fn render_mask_matches(camera_mask: BitMask, render_layers: BitMask) -> bool {
-    camera_mask.intersects(render_layers)
+    !camera_mask.intersects(render_layers)
 }
 
 fn water_idle_mode_state(mode: perro_nodes::WaterIdleMode) -> WaterIdleModeState {

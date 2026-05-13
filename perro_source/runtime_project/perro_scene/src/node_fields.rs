@@ -134,8 +134,9 @@ pub enum WaterBodyField {
     LodMidDistance,
     LodFarDistance,
     LodMinResolution,
-    ShorelineMask,
-    StaticBodyWakes,
+    CollisionLayers,
+    CollisionMask,
+    Coastline,
     Debug,
 }
 
@@ -680,7 +681,7 @@ fn resolve_scene_node_field_for_type(
             SceneFieldName::CollisionLayers => {
                 Some(NodeField::TileMap2D(TileMap2DField::CollisionLayers))
             }
-            SceneFieldName::CollisionMaskLayers => {
+            SceneFieldName::CollisionMask => {
                 Some(NodeField::TileMap2D(TileMap2DField::CollisionMask))
             }
             _ => None,
@@ -929,9 +930,7 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
             "render_mask" => Some(NodeField::Camera2D(Camera2DField::RenderMask)),
             "post_processing" => Some(NodeField::Camera2D(Camera2DField::PostProcessing)),
             "audio_options" => Some(NodeField::Camera2D(Camera2DField::AudioOptions)),
-            "audio_mask" | "audio_mask_layers" => {
-                Some(NodeField::Camera2D(Camera2DField::AudioMask))
-            }
+            "audio_mask" => Some(NodeField::Camera2D(Camera2DField::AudioMask)),
             "active" => Some(NodeField::Camera2D(Camera2DField::Active)),
             _ => None,
         },
@@ -1010,7 +1009,7 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
                 Some(NodeField::TileMap2D(TileMap2DField::CollisionEnabled))
             }
             "collision_layers" => Some(NodeField::TileMap2D(TileMap2DField::CollisionLayers)),
-            "collision_mask_layers" => Some(NodeField::TileMap2D(TileMap2DField::CollisionMask)),
+            "collision_mask" => Some(NodeField::TileMap2D(TileMap2DField::CollisionMask)),
             _ => None,
         },
         NodeType::WaterBody2D => resolve_water_body(field).map(NodeField::WaterBody2D),
@@ -1021,9 +1020,7 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
         NodeType::StaticBody2D => match field {
             "enabled" => Some(NodeField::StaticBody2D(StaticBody2DField::Enabled)),
             "collision_layers" => Some(NodeField::StaticBody2D(StaticBody2DField::CollisionLayers)),
-            "collision_mask_layers" => {
-                Some(NodeField::StaticBody2D(StaticBody2DField::CollisionMask))
-            }
+            "collision_mask" => Some(NodeField::StaticBody2D(StaticBody2DField::CollisionMask)),
             "friction" => Some(NodeField::StaticBody2D(StaticBody2DField::Friction)),
             "restitution" => Some(NodeField::StaticBody2D(StaticBody2DField::Restitution)),
             "density" => Some(NodeField::StaticBody2D(StaticBody2DField::Density)),
@@ -1032,9 +1029,7 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
         NodeType::RigidBody2D => match field {
             "enabled" => Some(NodeField::RigidBody2D(RigidBody2DField::Enabled)),
             "collision_layers" => Some(NodeField::RigidBody2D(RigidBody2DField::CollisionLayers)),
-            "collision_mask_layers" => {
-                Some(NodeField::RigidBody2D(RigidBody2DField::CollisionMask))
-            }
+            "collision_mask" => Some(NodeField::RigidBody2D(RigidBody2DField::CollisionMask)),
             "continuous_collision_detection" | "ccd" => Some(NodeField::RigidBody2D(
                 RigidBody2DField::ContinuousCollisionDetection,
             )),
@@ -1056,7 +1051,7 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
         NodeType::Area2D => match field {
             "enabled" => Some(NodeField::Area2D(Area2DField::Enabled)),
             "collision_layers" => Some(NodeField::Area2D(Area2DField::CollisionLayers)),
-            "collision_mask_layers" => Some(NodeField::Area2D(Area2DField::CollisionMask)),
+            "collision_mask" => Some(NodeField::Area2D(Area2DField::CollisionMask)),
             _ => None,
         },
         NodeType::PinJoint2D => resolve_joint2d_common(field).map(NodeField::PinJoint2D),
@@ -1235,9 +1230,7 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
             "frustum_far" => Some(NodeField::Camera3D(Camera3DField::FrustumFar)),
             "post_processing" => Some(NodeField::Camera3D(Camera3DField::PostProcessing)),
             "audio_options" => Some(NodeField::Camera3D(Camera3DField::AudioOptions)),
-            "audio_mask" | "audio_mask_layers" => {
-                Some(NodeField::Camera3D(Camera3DField::AudioMask))
-            }
+            "audio_mask" => Some(NodeField::Camera3D(Camera3DField::AudioMask)),
             "active" => Some(NodeField::Camera3D(Camera3DField::Active)),
             _ => None,
         },
@@ -1313,9 +1306,7 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
         NodeType::StaticBody3D => match field {
             "enabled" => Some(NodeField::StaticBody3D(StaticBody3DField::Enabled)),
             "collision_layers" => Some(NodeField::StaticBody3D(StaticBody3DField::CollisionLayers)),
-            "collision_mask_layers" => {
-                Some(NodeField::StaticBody3D(StaticBody3DField::CollisionMask))
-            }
+            "collision_mask" => Some(NodeField::StaticBody3D(StaticBody3DField::CollisionMask)),
             "friction" => Some(NodeField::StaticBody3D(StaticBody3DField::Friction)),
             "restitution" => Some(NodeField::StaticBody3D(StaticBody3DField::Restitution)),
             "density" => Some(NodeField::StaticBody3D(StaticBody3DField::Density)),
@@ -1324,9 +1315,7 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
         NodeType::RigidBody3D => match field {
             "enabled" => Some(NodeField::RigidBody3D(RigidBody3DField::Enabled)),
             "collision_layers" => Some(NodeField::RigidBody3D(RigidBody3DField::CollisionLayers)),
-            "collision_mask_layers" => {
-                Some(NodeField::RigidBody3D(RigidBody3DField::CollisionMask))
-            }
+            "collision_mask" => Some(NodeField::RigidBody3D(RigidBody3DField::CollisionMask)),
             "continuous_collision_detection" | "ccd" => Some(NodeField::RigidBody3D(
                 RigidBody3DField::ContinuousCollisionDetection,
             )),
@@ -1347,7 +1336,7 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
         NodeType::Area3D => match field {
             "enabled" => Some(NodeField::Area3D(Area3DField::Enabled)),
             "collision_layers" => Some(NodeField::Area3D(Area3DField::CollisionLayers)),
-            "collision_mask_layers" => Some(NodeField::Area3D(Area3DField::CollisionMask)),
+            "collision_mask" => Some(NodeField::Area3D(Area3DField::CollisionMask)),
             _ => None,
         },
         NodeType::BallJoint3D => resolve_joint3d_common(field).map(NodeField::BallJoint3D),
@@ -1453,8 +1442,9 @@ fn resolve_water_body(field: &str) -> Option<WaterBodyField> {
         "lod_mid_distance" | "lod_mid" => Some(WaterBodyField::LodMidDistance),
         "lod_far_distance" | "lod_far" => Some(WaterBodyField::LodFarDistance),
         "lod_min_resolution" | "min_resolution" => Some(WaterBodyField::LodMinResolution),
-        "shoreline_mask" | "coastline" => Some(WaterBodyField::ShorelineMask),
-        "static_body_wakes" => Some(WaterBodyField::StaticBodyWakes),
+        "collision_layers" => Some(WaterBodyField::CollisionLayers),
+        "collision_mask" => Some(WaterBodyField::CollisionMask),
+        "coastline" => Some(WaterBodyField::Coastline),
         "debug" => Some(WaterBodyField::Debug),
         _ => None,
     }
@@ -1475,7 +1465,7 @@ fn resolve_scene_static_body_2d(field: &SceneFieldName) -> Option<StaticBody2DFi
     match field {
         SceneFieldName::Enabled => Some(StaticBody2DField::Enabled),
         SceneFieldName::CollisionLayers => Some(StaticBody2DField::CollisionLayers),
-        SceneFieldName::CollisionMaskLayers => Some(StaticBody2DField::CollisionMask),
+        SceneFieldName::CollisionMask => Some(StaticBody2DField::CollisionMask),
         SceneFieldName::Friction => Some(StaticBody2DField::Friction),
         SceneFieldName::Restitution => Some(StaticBody2DField::Restitution),
         SceneFieldName::Density => Some(StaticBody2DField::Density),
@@ -1487,7 +1477,7 @@ fn resolve_scene_static_body_3d(field: &SceneFieldName) -> Option<StaticBody3DFi
     match field {
         SceneFieldName::Enabled => Some(StaticBody3DField::Enabled),
         SceneFieldName::CollisionLayers => Some(StaticBody3DField::CollisionLayers),
-        SceneFieldName::CollisionMaskLayers => Some(StaticBody3DField::CollisionMask),
+        SceneFieldName::CollisionMask => Some(StaticBody3DField::CollisionMask),
         SceneFieldName::Friction => Some(StaticBody3DField::Friction),
         SceneFieldName::Restitution => Some(StaticBody3DField::Restitution),
         SceneFieldName::Density => Some(StaticBody3DField::Density),
@@ -1499,7 +1489,7 @@ fn resolve_scene_rigid_body_2d(field: &SceneFieldName) -> Option<RigidBody2DFiel
     match field {
         SceneFieldName::Enabled => Some(RigidBody2DField::Enabled),
         SceneFieldName::CollisionLayers => Some(RigidBody2DField::CollisionLayers),
-        SceneFieldName::CollisionMaskLayers => Some(RigidBody2DField::CollisionMask),
+        SceneFieldName::CollisionMask => Some(RigidBody2DField::CollisionMask),
         SceneFieldName::ContinuousCollisionDetection => {
             Some(RigidBody2DField::ContinuousCollisionDetection)
         }
@@ -1522,7 +1512,7 @@ fn resolve_scene_rigid_body_3d(field: &SceneFieldName) -> Option<RigidBody3DFiel
     match field {
         SceneFieldName::Enabled => Some(RigidBody3DField::Enabled),
         SceneFieldName::CollisionLayers => Some(RigidBody3DField::CollisionLayers),
-        SceneFieldName::CollisionMaskLayers => Some(RigidBody3DField::CollisionMask),
+        SceneFieldName::CollisionMask => Some(RigidBody3DField::CollisionMask),
         SceneFieldName::ContinuousCollisionDetection => {
             Some(RigidBody3DField::ContinuousCollisionDetection)
         }
@@ -1544,7 +1534,7 @@ fn resolve_scene_area_2d(field: &SceneFieldName) -> Option<Area2DField> {
     match field {
         SceneFieldName::Enabled => Some(Area2DField::Enabled),
         SceneFieldName::CollisionLayers => Some(Area2DField::CollisionLayers),
-        SceneFieldName::CollisionMaskLayers => Some(Area2DField::CollisionMask),
+        SceneFieldName::CollisionMask => Some(Area2DField::CollisionMask),
         _ => None,
     }
 }
@@ -1553,7 +1543,7 @@ fn resolve_scene_area_3d(field: &SceneFieldName) -> Option<Area3DField> {
     match field {
         SceneFieldName::Enabled => Some(Area3DField::Enabled),
         SceneFieldName::CollisionLayers => Some(Area3DField::CollisionLayers),
-        SceneFieldName::CollisionMaskLayers => Some(Area3DField::CollisionMask),
+        SceneFieldName::CollisionMask => Some(Area3DField::CollisionMask),
         _ => None,
     }
 }
@@ -1795,22 +1785,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn collision_layer_fields_use_canonical_layer_arrays_only() {
+    fn collision_layer_fields_use_layers_and_mask_names() {
         assert_eq!(
             resolve_node_field("StaticBody2D", "collision_layers"),
             Some(NodeField::StaticBody2D(StaticBody2DField::CollisionLayers))
         );
         assert_eq!(
-            resolve_node_field("StaticBody2D", "collision_mask_layers"),
+            resolve_node_field("StaticBody2D", "collision_mask"),
             Some(NodeField::StaticBody2D(StaticBody2DField::CollisionMask))
         );
-
         for field in [
             "collision_layer",
+            "collision_mask_layers",
             "layer",
             "layers",
-            "collision_mask",
-            "collision_masks",
             "mask",
             "masks",
         ] {
@@ -1847,7 +1835,7 @@ mod tests {
             ("Camera2D", "audio_options"),
             ("Sprite2D", "texture_region"),
             ("StaticBody2D", "collision_layers"),
-            ("StaticBody2D", "collision_mask_layers"),
+            ("StaticBody2D", "collision_mask"),
             ("RigidBody2D", "continuous_collision_detection"),
             ("RigidBody3D", "mass"),
             ("DistanceJoint2D", "body_a"),

@@ -31,8 +31,8 @@ impl TileMap2D {
             empty_tile: -1,
             tiles: Vec::new(),
             collision_enabled: false,
-            collision_layers: BitMask::with([1]),
-            collision_mask: BitMask::ALL,
+            collision_layers: BitMask::ALL,
+            collision_mask: BitMask::NONE,
         }
     }
 }

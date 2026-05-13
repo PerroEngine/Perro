@@ -54,7 +54,7 @@ impl AudioEffectZone2D {
         Self {
             base: Node2D::new(),
             enabled: true,
-            audio_mask: perro_structs::BitMask::ALL,
+            audio_mask: perro_structs::BitMask::NONE,
             bounce: false,
             effects: vec![AudioEffect::new()],
         }

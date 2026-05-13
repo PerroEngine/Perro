@@ -3,13 +3,15 @@
 use super::Runtime;
 use ahash::AHashSet;
 use perro_ids::{NodeID, TextureID, parse_hashed_source_uri, string_to_u64};
-use perro_nodes::{SceneNodeData, particle_emitter_2d::ParticleEmitterSimMode2D};
+use perro_nodes::{
+    SceneNodeData, Shape2D, particle_emitter_2d::ParticleEmitterSimMode2D, water_impact_strength,
+};
 use perro_particle_math::compile_expression;
 use perro_render_bridge::{
     AmbientLight2DState, Camera2DState, Command2D, ParticlePath2D, ParticleProfile2D,
     ParticleSimulationMode2D, PointLight2DState, PointParticles2DState, RayLight2DState,
     RenderCommand, ResourceCommand, SpotLight2DState, Sprite2DCommand, TileMap2DCommand,
-    Water2DState, WaterIdleModeState,
+    Water2DState, WaterCoastlineShape2D, WaterIdleModeState, WaterImpact2D,
 };
 use perro_runtime_render::{sprite_2d_texture_request, tilemap_2d_texture_request};
 use perro_structs::BitMask;
@@ -56,11 +58,11 @@ impl Runtime {
             .last_camera
             .as_ref()
             .map(|camera| camera.render_mask)
-            .unwrap_or(BitMask::ALL);
+            .unwrap_or(BitMask::NONE);
         let camera_render_mask = active_camera
             .as_ref()
             .map(|camera| camera.render_mask)
-            .unwrap_or(BitMask::ALL);
+            .unwrap_or(BitMask::NONE);
         let camera_render_mask_changed = previous_camera_render_mask != camera_render_mask;
 
         if camera_changed {
@@ -252,6 +254,8 @@ impl Runtime {
                         .unwrap_or(local_transform)
                         .to_mat3()
                         .to_cols_array_2d();
+                    let coastline_shapes = self.collect_water_coastline_shapes_2d(node, &water);
+                    let impacts = self.collect_water_impacts_2d(node, &water);
                     self.queue_render_command(RenderCommand::TwoD(Command2D::UpsertWater {
                         node,
                         water: Box::new(Water2DState {
@@ -273,10 +277,18 @@ impl Runtime {
                             lod_mid_distance: water.lod.mid_distance,
                             lod_far_distance: water.lod.far_distance,
                             lod_min_resolution: water.lod.min_resolution,
-                            shoreline_mask: water.shoreline_mask,
-                            static_body_wakes: water.static_body_wakes,
+                            collision_layers: water.collision_layers,
+                            collision_mask: water.collision_mask,
+                            coastline_foam_color: water.coastline.foam_color.to_rgba(),
+                            coastline_foam_strength: water.coastline.foam_strength,
+                            coastline_foam_width: water.coastline.foam_width,
+                            coastline_cutoff_softness: water.coastline.cutoff_softness,
+                            coastline_wave_reflection: water.coastline.wave_reflection,
+                            coastline_wave_damping: water.coastline.wave_damping,
+                            coastline_edge_noise: water.coastline.edge_noise,
                             debug: water.debug,
-                            impacts: std::sync::Arc::from([]),
+                            impacts,
+                            coastline_shapes,
                         }),
                     }));
                     visible_now.insert(node);
@@ -645,11 +657,163 @@ impl Runtime {
         }
         None
     }
+
+    fn collect_water_coastline_shapes_2d(
+        &mut self,
+        water_id: NodeID,
+        water: &perro_nodes::WaterSurfaceParams,
+    ) -> Arc<[WaterCoastlineShape2D]> {
+        let Some(water_global) = self.get_global_transform_2d(water_id) else {
+            return Arc::from([]);
+        };
+        let water_half = water.size * 0.5;
+        let mut shapes = Vec::new();
+        let body_ids: Vec<_> = self
+            .nodes
+            .iter()
+            .filter_map(|(id, node)| {
+                matches!(node.data, SceneNodeData::StaticBody2D(_)).then_some(id)
+            })
+            .collect();
+        for body_id in body_ids {
+            let Some((enabled, layers, mask, children)) =
+                self.nodes.get(body_id).and_then(|node| {
+                    let SceneNodeData::StaticBody2D(body) = &node.data else {
+                        return None;
+                    };
+                    Some((
+                        body.enabled,
+                        body.collision_layers,
+                        body.collision_mask,
+                        node.children_slice().to_vec(),
+                    ))
+                })
+            else {
+                continue;
+            };
+            if !enabled
+                || water.collision_mask.intersects(layers)
+                || mask.intersects(water.collision_layers)
+            {
+                continue;
+            }
+            let Some(_body_global) = self.get_global_transform_2d(body_id) else {
+                continue;
+            };
+            for child_id in children {
+                let Some(shape_kind) = self.nodes.get(child_id).and_then(|child| {
+                    let SceneNodeData::CollisionShape2D(shape) = &child.data else {
+                        return None;
+                    };
+                    Some(shape.shape)
+                }) else {
+                    continue;
+                };
+                let Some(shape_global) = self.get_global_transform_2d(child_id) else {
+                    continue;
+                };
+                let local = shape_global.position - water_global.position;
+                if local.x.abs() > water_half.x + 512.0 || local.y.abs() > water_half.y + 512.0 {
+                    continue;
+                }
+                match shape_kind {
+                    Shape2D::Quad { width, height } => {
+                        shapes.push(WaterCoastlineShape2D::Quad {
+                            center: [local.x, local.y],
+                            half_extents: [
+                                width.abs() * shape_global.scale.x.abs() * 0.5,
+                                height.abs() * shape_global.scale.y.abs() * 0.5,
+                            ],
+                            rotation: shape_global.rotation - water_global.rotation,
+                        });
+                    }
+                    Shape2D::Circle { radius } => {
+                        shapes.push(WaterCoastlineShape2D::Circle {
+                            center: [local.x, local.y],
+                            radius: radius.abs()
+                                * shape_global.scale.x.abs().max(shape_global.scale.y.abs()),
+                        });
+                    }
+                    Shape2D::Triangle { width, height, .. } => {
+                        let hw = width.abs() * shape_global.scale.x.abs() * 0.5;
+                        let hh = height.abs() * shape_global.scale.y.abs() * 0.5;
+                        shapes.push(WaterCoastlineShape2D::Triangle {
+                            points: [
+                                [local.x, local.y + hh],
+                                [local.x - hw, local.y - hh],
+                                [local.x + hw, local.y - hh],
+                            ],
+                        });
+                    }
+                }
+            }
+        }
+        Arc::from(shapes)
+    }
+
+    fn collect_water_impacts_2d(
+        &mut self,
+        water_id: NodeID,
+        water: &perro_nodes::WaterSurfaceParams,
+    ) -> Arc<[WaterImpact2D]> {
+        let Some(water_global) = self.get_global_transform_2d(water_id) else {
+            return Arc::from([]);
+        };
+        let half = water.size * 0.5;
+        let body_ids: Vec<_> = self
+            .nodes
+            .iter()
+            .filter_map(|(id, node)| {
+                matches!(node.data, SceneNodeData::RigidBody2D(_)).then_some(id)
+            })
+            .collect();
+        let mut impacts = Vec::new();
+        for body_id in body_ids {
+            let Some((layers, mask, mass, density, velocity)) =
+                self.nodes.get(body_id).and_then(|node| {
+                    let SceneNodeData::RigidBody2D(body) = &node.data else {
+                        return None;
+                    };
+                    Some((
+                        body.collision_layers,
+                        body.collision_mask,
+                        body.mass,
+                        body.density,
+                        body.linear_velocity,
+                    ))
+                })
+            else {
+                continue;
+            };
+            if water.collision_mask.intersects(layers) || mask.intersects(water.collision_layers) {
+                continue;
+            }
+            let Some(body_global) = self.get_global_transform_2d(body_id) else {
+                continue;
+            };
+            let local = body_global.position - water_global.position;
+            if local.x.abs() > half.x || local.y.abs() > half.y {
+                continue;
+            }
+            let strength =
+                water_impact_strength(mass.max(density), velocity, water.physics.wake_strength);
+            if strength <= 0.0 {
+                continue;
+            }
+            impacts.push(WaterImpact2D {
+                position: [local.x, local.y],
+                velocity: [velocity.x, velocity.y],
+                strength,
+                radius: mass.max(density).sqrt().max(1.0),
+            });
+        }
+        Arc::from(impacts)
+    }
 }
 
 #[inline]
 fn render_mask_matches(camera_mask: BitMask, render_layers: BitMask) -> bool {
-    camera_mask.intersects(render_layers)
+    !camera_mask.intersects(render_layers)
 }
 
 fn water_idle_mode_state(mode: perro_nodes::WaterIdleMode) -> WaterIdleModeState {

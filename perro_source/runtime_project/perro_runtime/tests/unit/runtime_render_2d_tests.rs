@@ -391,7 +391,7 @@ fn camera_2d_render_mask_filters_sprites() {
     let mut runtime = Runtime::new();
     let mut camera = Camera2D::new();
     camera.active = true;
-    camera.render_mask = BitMask::with([2]);
+    camera.render_mask = BitMask::with([3]);
     runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::Camera2D(camera)));

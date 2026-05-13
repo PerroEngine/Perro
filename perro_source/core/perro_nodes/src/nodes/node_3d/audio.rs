@@ -54,7 +54,7 @@ impl AudioEffectZone3D {
         Self {
             base: Node3D::new(),
             enabled: true,
-            audio_mask: perro_structs::BitMask::ALL,
+            audio_mask: perro_structs::BitMask::NONE,
             bounce: false,
             effects: vec![AudioEffect::new()],
         }

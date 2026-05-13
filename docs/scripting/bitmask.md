@@ -11,7 +11,16 @@ Use layer helpers when authoring Rust code:
 ```rust
 const PLAYER: BitMask = BitMask::with([1]);
 const WORLD_AND_PROPS: BitMask = BitMask::with([2, 3]);
-const ALL_BUT_DEBUG: BitMask = BitMask::ALL.without([32]);
+const ALL_BUT_DEBUG: BitMask = BitMask::ALL.without_layers([32]);
+
+let all_but_player = BitMask::without(1);
+let all_but_ui = BitMask::without([4, 5]);
+
+let mut layers = BitMask::ALL;
+layers.pop(5);
+layers.push(8);
+
+let new_layers = layers.popped(5).pushed([1, 2]);
 ```
 
 Or use the macro:
@@ -22,7 +31,8 @@ const PLAYER: BitMask = bitmask!([1]);
 const WORLD_AND_PROPS: BitMask = bitmask!([2, 3]);
 ```
 
-Invalid layer numbers in `BitMask::layer`, `BitMask::with`, or `BitMask::without` fail at const eval.
+Invalid layer numbers in `BitMask::layer`, `BitMask::with`, or `BitMask::without_layers` fail at const eval.
+Invalid layer numbers in `BitMask::without`, `BitMask::push`, `BitMask::pushed`, `BitMask::pop`, or `BitMask::popped` panic.
 Use `BitMask::try_layer(layer)` for runtime-checked input.
 
 Raw bit values are still available:
@@ -44,26 +54,73 @@ let maybe_mask = BitMask::try_from_layers(&layers);
 Mask match:
 
 ```rust
-if camera.render_mask.intersects(sprite.render_layers) {
+if !camera.render_mask.intersects(sprite.render_layers) {
     // render
 }
 ```
 
+## Layers Versus Masks
+
+Layers tag where an object lives.
+Masks list layers an object ignores.
+
+Render:
+
+- `render_layers`: renderable node layer membership.
+- `render_mask`: camera ignored-layer filter.
+- Node draws when `camera.render_mask` does not intersect `node.render_layers`.
+- Default `Node2D` / `Node3D` `render_layers` is `BitMask::ALL`.
+- Default `Camera2D` / `Camera3D` `render_mask` is `BitMask::NONE`.
+- Add layers to a camera mask to hide those layers.
+- `BitMask::NONE` on a camera mask hides nothing.
+
+Physics:
+
+- `collision_layers`: body/area tagged-layer membership.
+- `collision_mask`: body/area ignored-layer mask.
+- Two colliders interact only when neither side masks the other:
+  - `a.collision_mask` does not intersect `b.collision_layers`
+  - `b.collision_mask` does not intersect `a.collision_layers`
+- Default body/area `collision_layers` is `BitMask::ALL`.
+- Default body/area `collision_mask` is `BitMask::NONE`.
+- `BitMask::NONE` on a collision mask ignores nothing.
+- `BitMask::ALL` on a collision mask ignores all collision partners.
+- `BitMask::NONE` on collision layers means the collider belongs to no layers.
+
+Audio:
+
+- `audio_layer`: emitted spatial audio tagged-layer membership.
+- `audio_mask`: listener/audio geometry ignored-layer mask.
+- Listener options, audio masks, and effect zones apply when `audio_mask` does not intersect emitted `audio_layer`.
+- Default emitted `audio_layer` is `BitMask::ALL`.
+- Default listener/audio geometry `audio_mask` is `BitMask::NONE`.
+- `BitMask::NONE` on an audio mask ignores nothing.
+- `BitMask::ALL` on an audio mask ignores all emitted spatial audio.
+
 Common fields:
 
-- `render_mask`: camera visibility filter.
+- `render_mask`: camera ignored-layer filter.
 - `render_layers`: renderable node membership.
-- `collision_layers`: physics body/area membership.
-- `collision_mask`: physics body/area collide-with mask.
+- `collision_layers`: physics body/area tagged-layer membership.
+- `collision_mask`: physics body/area ignored-layer mask.
 - `PhysicsQueryFilter.mask`: physics query hit mask.
-- `audio_layer`: emitted spatial audio layer bits.
-- `audio_mask`: audio geometry layer filter.
+- `audio_layer`: emitted spatial audio tagged layers.
+- `audio_mask`: audio ignored-layer mask.
 
 Scene files use layer arrays:
 
 ```text
-render_mask = [1]
-render_layers = [1]
-collision_layers = [1]
-collision_mask_layers = [1, 2, 3]
+render_mask = [2]
+render_layers = [2]
+collision_layers = [1, 2, 3]
+collision_mask = []
+```
+
+Scene files can also use `only(...)` and `without(...)`:
+
+```text
+render_layers = only(1, 2)
+render_mask = without(1)
+collision_layers = without([1, 32])
+collision_mask = only([2, 4])
 ```

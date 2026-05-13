@@ -72,14 +72,21 @@ Behavior:
 
 Default values:
 
-- `collision_layers = [1]`
-- `collision_mask_layers = [1, 2, 3, ...]`
+- `collision_layers = [1, 2, 3, ...]`
+- `collision_mask = []`
 
 Layer/mask behavior:
 
-- A collider belongs to `collision_layers`.
-- A collider checks against other layers through `collision_mask`.
+- A collider is tagged with `collision_layers`.
+- A collider ignores other tagged layers through `collision_mask`.
+- Collision requires neither side to mask the other:
+  - A mask does not intersect B layers.
+  - B mask does not intersect A layers.
 - Contacts and area overlaps use layer/mask rules.
+- `collision_mask = []` means ignore nothing.
+- `collision_layers = []` means belong to no layer.
+- Put all colliders on default layers and leave masks default for normal everything-collides behavior.
+- Use a narrow mask to ignore same-team bodies, sensors, editor-only physics, or query-only layers.
 
 Queries use `PhysicsQueryFilter`:
 
@@ -92,7 +99,7 @@ PhysicsQueryFilter {
 ```
 
 Use `BitMask::with([1, 2])` in Rust code.
-Use `collision_layers = [1, 2]` and `collision_mask_layers = [1, 2]` in scene files.
+Use `collision_layers = [1, 2]` and `collision_mask = [3]` in scene files.
 See [BitMask](../../bitmask.md).
 
 Contact hit data:

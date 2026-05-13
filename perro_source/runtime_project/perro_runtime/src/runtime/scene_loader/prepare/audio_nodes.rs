@@ -90,7 +90,7 @@ pub(super) fn apply_audio_effect_zone_2d_data(node: &mut AudioEffectZone2D, data
                     node.enabled = v;
                 }
             }
-            "audio_mask" | "audio_masks" | "audio_mask_layers" | "mask" | "masks" => {
+            "audio_mask" | "audio_masks" | "mask" | "masks" => {
                 if let Some(v) = as_bitmask(&value) {
                     node.audio_mask = v;
                 }
@@ -132,7 +132,7 @@ pub(super) fn apply_audio_effect_zone_3d_data(node: &mut AudioEffectZone3D, data
                     node.enabled = v;
                 }
             }
-            "audio_mask" | "audio_masks" | "audio_mask_layers" | "mask" | "masks" => {
+            "audio_mask" | "audio_masks" | "mask" | "masks" => {
                 if let Some(v) = as_bitmask(&value) {
                     node.audio_mask = v;
                 }
@@ -182,7 +182,7 @@ fn apply_audio_listener_options_field(
 ) {
     match name {
         "audio_options" => apply_audio_listener_options_value(options, value),
-        "audio_mask" | "audio_masks" | "audio_mask_layers" => {
+        "audio_mask" | "audio_masks" => {
             if let Some(v) = as_bitmask(value) {
                 options.audio_mask = v;
             }

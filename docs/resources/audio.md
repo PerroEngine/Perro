@@ -518,7 +518,8 @@ If no active spatial sounds exist, no audio ray work runs that frame.
 
 Active `Camera2D` and `Camera3D` can set `audio_options`.
 Listener options apply after audio zones and before explicit sound effects.
-`audio_mask` filters emitted `audio_layer`.
+`audio_mask` ignores matching emitted `audio_layer`.
+Default `audio_mask = []` ignores nothing, so listener effects apply to all emitted audio layers.
 
 Scene example:
 
@@ -651,7 +652,8 @@ Use `audio_interaction = none` to turn it off.
   - Uses `BitMask`; see `docs/scripting/bitmask.md`.
 
 Use audio masks, effect zones, and portals for invisible or non-physical audio geometry.
-Emitted sounds use `audio_layer`; audio geometry uses `audio_mask` to decide which layers affect it.
+Emitted sounds use `audio_layer`; audio geometry uses `audio_mask` to decide which layers to ignore.
+Default `audio_mask = []` means audio geometry affects all emitted audio layers.
 
 ## Portals
 

@@ -6,3 +6,14 @@ edition = "2024"
 [dependencies]
 glam = "0.31.0"
 perro_ids = { path = "../perro_ids" }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "math_hotpaths"
+harness = false
+
+[[bench]]
+name = "bitmask_hotpaths"
+harness = false

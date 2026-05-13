@@ -322,6 +322,13 @@ impl Runtime {
                         (0.7, 0.0, 1.0),
                         (body.collision_layers, body.collision_mask),
                     ),
+                    SceneNodeData::WaterBody2D(water) => (
+                        BodyKind::Area,
+                        water.visible,
+                        None,
+                        (0.7, 0.0, 1.0),
+                        (water.water.collision_layers, water.water.collision_mask),
+                    ),
                     SceneNodeData::RigidBody2D(body) => (
                         BodyKind::Rigid,
                         body.enabled,
@@ -375,6 +382,10 @@ impl Runtime {
                     }
                 }
             } else if let Some(node) = self.nodes.get(id) {
+                if let SceneNodeData::WaterBody2D(water) = &node.data {
+                    shape_signature = hash_f32(shape_signature, water.water.size.x.to_bits());
+                    shape_signature = hash_f32(shape_signature, water.water.size.y.to_bits());
+                }
                 for &child_id in node.children_slice() {
                     let Some(child) = self.nodes.get(child_id) else {
                         continue;
@@ -411,6 +422,21 @@ impl Runtime {
                         tileset.as_ref(),
                     ));
                 } else if let Some(node) = self.nodes.get(id) {
+                    if let SceneNodeData::WaterBody2D(water) = &node.data {
+                        shapes.push(ShapeDesc2D {
+                            local: Transform2D::IDENTITY,
+                            shape: ShapeKind2D::Primitive(Shape2D::Quad {
+                                width: water.water.size.x,
+                                height: water.water.size.y,
+                            }),
+                            sensor: true,
+                            collision_layers: groups.0,
+                            collision_mask: groups.1,
+                            friction: material.0,
+                            restitution: material.1,
+                            density: material.2,
+                        });
+                    }
                     let child_count = node.children_slice().len();
                     if shapes.capacity() < child_count {
                         shapes.reserve(child_count - shapes.capacity());
@@ -468,6 +494,13 @@ impl Runtime {
                         (0.7, 0.0, 1.0),
                         (body.collision_layers, body.collision_mask),
                     ),
+                    SceneNodeData::WaterBody3D(water) => (
+                        BodyKind::Area,
+                        water.visible,
+                        None,
+                        (0.7, 0.0, 1.0),
+                        (water.water.collision_layers, water.water.collision_mask),
+                    ),
                     SceneNodeData::RigidBody3D(body) => (
                         BodyKind::Rigid,
                         body.enabled,
@@ -502,6 +535,11 @@ impl Runtime {
             shape_signature = hash_f32(shape_signature, material.2.to_bits());
 
             if let Some(node) = self.nodes.get(id) {
+                if let SceneNodeData::WaterBody3D(water) = &node.data {
+                    shape_signature = hash_f32(shape_signature, water.water.size.x.to_bits());
+                    shape_signature = hash_f32(shape_signature, water.water.size.y.to_bits());
+                    shape_signature = hash_f32(shape_signature, water.water.depth.to_bits());
+                }
                 for &child_id in node.children_slice() {
                     let Some(child) = self.nodes.get(child_id) else {
                         continue;
@@ -523,6 +561,28 @@ impl Runtime {
 
             let mut shapes = Vec::new();
             if needs_shape_rebuild && let Some(node) = self.nodes.get(id) {
+                if let SceneNodeData::WaterBody3D(water) = &node.data {
+                    shapes.push(ShapeDesc3D {
+                        local: Transform3D::new(
+                            Vector3::new(0.0, -water.water.depth * 0.5, 0.0),
+                            Quaternion::IDENTITY,
+                            Vector3::ONE,
+                        ),
+                        shape: ShapeKind3D::Primitive(Shape3D::Cube {
+                            size: Vector3::new(
+                                water.water.size.x,
+                                water.water.depth.max(0.001),
+                                water.water.size.y,
+                            ),
+                        }),
+                        sensor: true,
+                        collision_layers: groups.0,
+                        collision_mask: groups.1,
+                        friction: material.0,
+                        restitution: material.1,
+                        density: material.2,
+                    });
+                }
                 let child_count = node.children_slice().len();
                 if shapes.capacity() < child_count {
                     shapes.reserve(child_count - shapes.capacity());
@@ -806,6 +866,11 @@ impl Runtime {
                 continue;
             };
             for (water_id, water_pos, surface) in &waters {
+                if surface.collision_mask.intersects(body.collision_layers)
+                    || body.collision_mask.intersects(surface.collision_layers)
+                {
+                    continue;
+                }
                 let half = surface.size * 0.5;
                 let local = body_transform.position - *water_pos;
                 if local.x.abs() > half.x || local.y.abs() > half.y {
@@ -892,6 +957,11 @@ impl Runtime {
                 continue;
             };
             for (water_id, water_pos, surface) in &waters {
+                if surface.collision_mask.intersects(body.collision_layers)
+                    || body.collision_mask.intersects(surface.collision_layers)
+                {
+                    continue;
+                }
                 let half = surface.size * 0.5;
                 let local = Vector2::new(
                     body_transform.position.x - water_pos.x,
@@ -911,7 +981,7 @@ impl Runtime {
                 if submerged <= 0.0 {
                     continue;
                 }
-                let buoyancy = submerged * surface.physics.buoyancy * body.mass.max(0.0);
+                let buoyancy = submerged * surface.physics.buoyancy * body.density.max(0.0);
                 let drag = -body.linear_velocity.y * surface.physics.drag;
                 let water_pos_2d = Vector2::new(water_pos.x, water_pos.z);
                 let (scale, deadzone) = water_force_lod(

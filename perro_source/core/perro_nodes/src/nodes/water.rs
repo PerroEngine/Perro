@@ -1,4 +1,4 @@
-use perro_structs::Vector2;
+use perro_structs::{BitMask, Color, Vector2};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum WaterIdleMode {
@@ -68,6 +68,37 @@ impl Default for WaterLodParams {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CoastlineSettings {
+    pub foam_color: Color,
+    pub foam_strength: f32,
+    pub foam_width: f32,
+    pub cutoff_softness: f32,
+    pub wave_reflection: f32,
+    pub wave_damping: f32,
+    pub edge_noise: f32,
+}
+
+impl CoastlineSettings {
+    pub const fn new() -> Self {
+        Self {
+            foam_color: Color::new(0.9, 0.97, 1.0, 1.0),
+            foam_strength: 0.75,
+            foam_width: 1.5,
+            cutoff_softness: 0.25,
+            wave_reflection: 0.45,
+            wave_damping: 0.35,
+            edge_noise: 0.2,
+        }
+    }
+}
+
+impl Default for CoastlineSettings {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WaterSurfaceParams {
     pub size: Vector2,
     pub resolution: [u32; 2],
@@ -78,8 +109,9 @@ pub struct WaterSurfaceParams {
     pub wave: WaterWaveProfile,
     pub physics: WaterPhysicsParams,
     pub lod: WaterLodParams,
-    pub shoreline_mask: bool,
-    pub static_body_wakes: bool,
+    pub collision_layers: BitMask,
+    pub collision_mask: BitMask,
+    pub coastline: CoastlineSettings,
     pub debug: bool,
 }
 
@@ -95,8 +127,9 @@ impl Default for WaterSurfaceParams {
             wave: WaterWaveProfile::default(),
             physics: WaterPhysicsParams::default(),
             lod: WaterLodParams::default(),
-            shoreline_mask: false,
-            static_body_wakes: true,
+            collision_layers: BitMask::ALL,
+            collision_mask: BitMask::NONE,
+            coastline: CoastlineSettings::default(),
             debug: false,
         }
     }

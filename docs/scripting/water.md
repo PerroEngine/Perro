@@ -29,8 +29,9 @@ Height is along world `y`.
         wake_strength = 1.4
         foam_strength = 0.7
         sample_readback_rate = 30
-        shoreline_mask = false
-        static_body_wakes = true
+        collision_layers = all
+        collision_mask = none
+        coastline = { foam_color=(0.9, 0.97, 1.0, 1.0) foam_strength=0.75 foam_width=1.5 cutoff_softness=0.25 wave_reflection=0.45 wave_damping=0.35 edge_noise=0.2 }
         debug = false
         [Node2D]
             position = (0, 0)
@@ -92,15 +93,16 @@ Height is world `y`.
 - `sample_readback_rate` or `readback_rate`: target GPU sample readback rate. Renderer uses the max requested rate across visible water bodies.
 - `lod_near_distance`/`lod_near`, `lod_mid_distance`/`lod_mid`, `lod_far_distance`/`lod_far`: camera distance thresholds for lower simulation resolution and lower physics force detail.
 - `lod_min_resolution` or `min_resolution`: lowest effective simulation resolution. GPU clamps it to `8..256`.
-- `shoreline_mask` or `coastline`: enable shoreline/coast masking path.
-- `static_body_wakes`: allow static bodies to shape wakes.
+- `collision_layers`: water sensor tagged layers. Defaults to all layers.
+- `collision_mask`: tagged layers water ignores for buoyancy, wakes, and coastline. Defaults to no layers.
+- `coastline`: foam color, foam strength/width, cutoff softness, wave reflection/damping, and edge noise for static-body shorelines.
 - `debug`: enable debug water view.
 
 Defaults:
 
 - `WaterBody2D`: `size = (32, 32)`, `resolution = (128, 128)`, `depth = 4`.
 - `WaterBody3D`: `size = (128, 128)`, `resolution = (128, 128)`, `depth = 12`.
-- Shared defaults: `idle_mode = "calm"`, `wave_speed = 1`, `wave_scale = 1`, `damping = 0.985`, `buoyancy = 1`, `drag = 0.35`, `wake_strength = 1`, `foam_strength = 0.65`, `sample_readback_rate = 30`, `lod_near = 128`, `lod_mid = 384`, `lod_far = 896`, `min_resolution = (32, 32)`.
+- Shared defaults: `idle_mode = "calm"`, `wave_speed = 1`, `wave_scale = 1`, `damping = 0.985`, `buoyancy = 1`, `drag = 0.35`, `wake_strength = 1`, `foam_strength = 0.65`, `sample_readback_rate = 30`, `lod_near = 128`, `lod_mid = 384`, `lod_far = 896`, `min_resolution = (32, 32)`, `collision_layers = all`, `collision_mask = []`.
 
 ## Runtime Work
 
@@ -114,8 +116,9 @@ This keeps physics deterministic enough to run even when GPU readback lags.
 
 ## Physics Interaction
 
-Water bodies do not create colliders.
-They do not block raycasts, shape casts, contact pairs, or area signals by themselves.
+Water bodies create sensor colliders.
+They do not block motion, raycasts, or contact pairs.
+They emit `WaterNodeName_Entered`, `WaterNodeName_Occupied`, and `WaterNodeName_Exited` like `Area2D`/`Area3D`.
 
 1. Runtime finds all `WaterBody2D` and `WaterBody3D` nodes.
 2. Runtime tests rigid body centers against each water rectangle.
@@ -135,19 +138,18 @@ Physics LOD:
 It uses body `density` in the buoyancy calculation.
 
 3D water affects `RigidBody3D`.
-It uses body `mass` in the buoyancy calculation.
+It uses body `density` in the buoyancy calculation.
 
-Static bodies and areas are not moved by buoyancy.
-Use separate `StaticBody2D`/`StaticBody3D` or `Area2D`/`Area3D` nodes if water needs collision walls, sensor triggers, audio occlusion, or gameplay volumes.
+Static bodies are not moved by buoyancy.
+Static collision shapes that pass the water/body mask test cut coastline holes, add edge foam, and damp waves.
 
 ## Design Idea
 
-Water is split from collision on purpose.
-The water node owns surface simulation, visual state, wake/foam parameters, LOD, and buoyancy sampling.
-Physics bodies keep owning collision, contact, and query behavior.
+Water owns surface simulation, visual state, sensor overlap, wake/foam parameters, LOD, coastline masking, and buoyancy sampling.
+Static/rigid bodies keep owning solid collision and contact behavior.
 
 This keeps common authoring simple:
 
-- Add water node for visual water and float force.
-- Add collider nodes only where solid banks, floor, rocks, or triggers are needed.
+- Add water node for visual water, sensor overlap, and float force.
+- Add static collider nodes for solid banks, floor, rocks, docks, and islands.
 - Tune `buoyancy`, `drag`, and `flow` for feel without editing body shapes.

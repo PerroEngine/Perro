@@ -171,6 +171,9 @@ impl<'a> Parser<'a> {
             Token::Ident(name) => {
                 let key = (*name).to_string();
                 self.advance();
+                if matches!(key.as_str(), "only" | "without") && self.current == Token::LParen {
+                    return self.parse_bitmask_call_key(key);
+                }
                 SceneValue::Key(SceneValueKey::from(key))
             }
 
@@ -324,6 +327,61 @@ impl<'a> Parser<'a> {
 
             _ => panic!("Invalid value token {:?}", self.current),
         }
+    }
+
+    fn parse_bitmask_call_key(&mut self, name: String) -> SceneValue {
+        self.expect(Token::LParen);
+        let mut layers = Vec::new();
+        let mut bracketed = false;
+
+        if self.current == Token::LBracket {
+            bracketed = true;
+            self.advance();
+        }
+
+        loop {
+            match self.current {
+                Token::Number(n) => {
+                    if n.fract() != 0.0 || !(1.0..=32.0).contains(&n) {
+                        panic!("BitMask layer must be 1..=32");
+                    }
+                    layers.push(n as u8);
+                    self.advance();
+                }
+                Token::RBracket if bracketed => {
+                    self.advance();
+                    break;
+                }
+                Token::RParen if !bracketed => break,
+                ref other => panic!("Expected BitMask layer, got {:?}", other),
+            }
+
+            match self.current {
+                Token::Comma => {
+                    self.advance();
+                }
+                Token::RBracket if bracketed => {
+                    self.advance();
+                    break;
+                }
+                Token::RParen if !bracketed => break,
+                ref other => panic!("Expected ',' or ')' in BitMask call, got {:?}", other),
+            }
+        }
+
+        self.expect(Token::RParen);
+
+        let mut out = String::new();
+        out.push_str(&name);
+        out.push('(');
+        for (idx, layer) in layers.iter().enumerate() {
+            if idx > 0 {
+                out.push_str(", ");
+            }
+            out.push_str(&layer.to_string());
+        }
+        out.push(')');
+        SceneValue::Key(SceneValueKey::from(out))
     }
 
     fn parse_type_block_after_lbracket(&mut self) -> SceneNodeData {

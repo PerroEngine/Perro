@@ -17,7 +17,7 @@ impl Default for Camera2DState {
             position: [0.0, 0.0],
             rotation_radians: 0.0,
             zoom: 1.0,
-            render_mask: BitMask::ALL,
+            render_mask: BitMask::NONE,
             post_processing: Arc::from([]),
             audio_options: AudioListenerOptions::new(),
         }
@@ -77,6 +77,22 @@ pub struct WaterImpact2D {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub enum WaterCoastlineShape2D {
+    Quad {
+        center: [f32; 2],
+        half_extents: [f32; 2],
+        rotation: f32,
+    },
+    Circle {
+        center: [f32; 2],
+        radius: f32,
+    },
+    Triangle {
+        points: [[f32; 2]; 3],
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WaterSampleState {
     pub node: NodeID,
     pub height: f32,
@@ -104,10 +120,18 @@ pub struct Water2DState {
     pub lod_mid_distance: f32,
     pub lod_far_distance: f32,
     pub lod_min_resolution: [u32; 2],
-    pub shoreline_mask: bool,
-    pub static_body_wakes: bool,
+    pub collision_layers: BitMask,
+    pub collision_mask: BitMask,
+    pub coastline_foam_color: [f32; 4],
+    pub coastline_foam_strength: f32,
+    pub coastline_foam_width: f32,
+    pub coastline_cutoff_softness: f32,
+    pub coastline_wave_reflection: f32,
+    pub coastline_wave_damping: f32,
+    pub coastline_edge_noise: f32,
     pub debug: bool,
     pub impacts: Arc<[WaterImpact2D]>,
+    pub coastline_shapes: Arc<[WaterCoastlineShape2D]>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

@@ -36,8 +36,9 @@ impl WaterBody2D {
                     far_distance: 896.0,
                     min_resolution: [32, 32],
                 },
-                shoreline_mask: false,
-                static_body_wakes: true,
+                collision_layers: crate::BitMask::ALL,
+                collision_mask: crate::BitMask::NONE,
+                coastline: crate::CoastlineSettings::new(),
                 debug: false,
             },
         }

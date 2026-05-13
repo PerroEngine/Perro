@@ -901,7 +901,7 @@ impl Runtime {
             else {
                 continue;
             };
-            if !mask.enabled || !mask.material.audio_mask.intersects(audio_layer) {
+            if !mask.enabled || mask.material.audio_mask.intersects(audio_layer) {
                 continue;
             }
             let material = mask.material;
@@ -978,7 +978,7 @@ impl Runtime {
             else {
                 continue;
             };
-            if !mask.enabled || !mask.material.audio_mask.intersects(audio_layer) {
+            if !mask.enabled || mask.material.audio_mask.intersects(audio_layer) {
                 continue;
             }
             let material = mask.material;
@@ -1454,7 +1454,7 @@ fn listener_effect_mix(
     options: perro_structs::AudioListenerOptions,
     audio_layer: BitMask,
 ) -> AudioEffectZoneMix {
-    if !options.audio_mask.intersects(audio_layer) {
+    if options.audio_mask.intersects(audio_layer) {
         return AudioEffectZoneMix::default();
     }
     let mut mix = AudioEffectZoneMix::default();

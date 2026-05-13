@@ -32,7 +32,7 @@ impl Camera2D {
             base: Node2D::new(),
             zoom: 0f32,
             active: false,
-            render_mask: BitMask::ALL,
+            render_mask: BitMask::NONE,
             post_processing: PostProcessSet::new(),
             audio_options: AudioListenerOptions::new(),
         }

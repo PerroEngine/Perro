@@ -448,7 +448,7 @@ fn camera_3d_render_mask_filters_meshes() {
     let mut runtime = Runtime::new();
     let mut camera = Camera3D::new();
     camera.active = true;
-    camera.render_mask = BitMask::with([1]);
+    camera.render_mask = BitMask::with([2]);
     let camera_node = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::Camera3D(camera)));
@@ -472,7 +472,7 @@ fn camera_3d_render_mask_filters_meshes() {
     if let Some(node) = runtime.nodes.get_mut(camera_node)
         && let SceneNodeData::Camera3D(camera) = &mut node.data
     {
-        camera.render_mask = BitMask::with([2]);
+        camera.render_mask = BitMask::with([1]);
     }
     runtime.mark_needs_rerender(camera_node);
 

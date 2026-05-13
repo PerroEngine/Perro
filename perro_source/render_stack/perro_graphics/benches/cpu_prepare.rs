@@ -6,6 +6,7 @@ use perro_render_bridge::{
     RenderCommand, RenderEvent, RenderRequestID, ResourceCommand, RuntimeMeshVertex,
     Sprite2DCommand, Water2DState, WaterIdleModeState,
 };
+use perro_structs::BitMask;
 use std::sync::Arc;
 
 fn rect_command(i: u32) -> RenderCommand {
@@ -95,8 +96,15 @@ fn water_command_with_idle(
             lod_mid_distance: 384.0,
             lod_far_distance: 896.0,
             lod_min_resolution: [32, 32],
-            shoreline_mask: impacts > 0,
-            static_body_wakes: true,
+            collision_layers: BitMask::with([1]),
+            collision_mask: BitMask::NONE,
+            coastline_foam_color: [0.9, 0.97, 1.0, 1.0],
+            coastline_foam_strength: if impacts > 0 { 0.75 } else { 0.0 },
+            coastline_foam_width: 1.5,
+            coastline_cutoff_softness: 0.25,
+            coastline_wave_reflection: 0.45,
+            coastline_wave_damping: 0.35,
+            coastline_edge_noise: 0.2,
             debug: false,
             impacts: (0..impacts)
                 .map(|j| perro_render_bridge::WaterImpact2D {
@@ -107,6 +115,7 @@ fn water_command_with_idle(
                 })
                 .collect::<Vec<_>>()
                 .into(),
+            coastline_shapes: Arc::from([]),
         }),
     })
 }

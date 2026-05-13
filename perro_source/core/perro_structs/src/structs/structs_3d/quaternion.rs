@@ -177,10 +177,41 @@ impl Quaternion {
         Self::from_quat(self.to_quat().slerp(to.to_quat(), t))
     }
 
+    /// Returns a normalized linear interpolation between this quaternion and `to`.
+    ///
+    /// This is cheaper than [`Quaternion::slerped`], but does not preserve constant angular speed.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use perro_structs::Quaternion;
+    ///
+    /// let a = Quaternion::IDENTITY;
+    /// let b = Quaternion::new(0.0, 1.0, 0.0, 0.0);
+    /// let mid = a.nlerped(b, 0.5);
+    /// let len2 = mid.x * mid.x + mid.y * mid.y + mid.z * mid.z + mid.w * mid.w;
+    /// assert!((len2 - 1.0).abs() < 1e-5);
+    /// ```
+    #[inline]
+    pub fn nlerped(self, to: Self, t: f32) -> Self {
+        let mut to = to;
+        if self.dot(to) < 0.0 {
+            to = -to;
+        }
+        (self + (to - self) * t).normalized()
+    }
+
     /// Spherically interpolates this quaternion toward `to` in place.
     #[inline]
     pub fn slerp(&mut self, to: Self, t: f32) -> &mut Self {
         *self = self.slerped(to, t);
+        self
+    }
+
+    /// Normalized-linearly interpolates this quaternion toward `to` in place.
+    #[inline]
+    pub fn nlerp(&mut self, to: Self, t: f32) -> &mut Self {
+        *self = self.nlerped(to, t);
         self
     }
 

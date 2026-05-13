@@ -53,7 +53,7 @@ fn unobstructed_sound_stays_direct() {
 }
 
 #[test]
-fn listener_audio_options_apply_by_audio_mask() {
+fn listener_audio_options_ignore_masked_audio_layer() {
     let mut runtime = Runtime::new();
     runtime.resource_api.set_audio_listener_2d(
         [0.0, 0.0],
@@ -71,7 +71,7 @@ fn listener_audio_options_apply_by_audio_mask() {
         looped_audio(),
         Vector2::new(5.0, 0.0),
         SpatialAudioOptions {
-            audio_layer: BitMask::with([1]),
+            audio_layer: BitMask::with([2]),
             ..spatial_options(10.0)
         },
     ));
@@ -98,7 +98,7 @@ fn listener_audio_options_apply_by_audio_mask() {
         looped_audio(),
         Vector2::new(5.0, 0.0),
         SpatialAudioOptions {
-            audio_layer: BitMask::with([2]),
+            audio_layer: BitMask::with([1]),
             ..spatial_options(10.0)
         },
     ));
@@ -435,7 +435,7 @@ fn audio_mask_blocks_without_physical_collision() {
 }
 
 #[test]
-fn audio_mask_ignores_unmatched_audio_layer() {
+fn audio_mask_ignores_masked_audio_layer() {
     let mut runtime = Runtime::new();
     let mask = runtime
         .nodes
@@ -458,7 +458,7 @@ fn audio_mask_ignores_unmatched_audio_layer() {
         looped_audio(),
         Vector2::new(5.0, 0.0),
         SpatialAudioOptions {
-            audio_layer: BitMask::with([3]),
+            audio_layer: BitMask::with([2]),
             ..spatial_options(10.0)
         },
     ));
@@ -999,7 +999,7 @@ fn audio_effect_zone_2d_mixes_effect_when_source_enters() {
 }
 
 #[test]
-fn audio_effect_zone_ignores_unmatched_audio_layer() {
+fn audio_effect_zone_ignores_masked_audio_layer() {
     let mut runtime = Runtime::new();
     let zone = runtime
         .nodes
@@ -1033,7 +1033,7 @@ fn audio_effect_zone_ignores_unmatched_audio_layer() {
         looped_audio(),
         Vector2::new(5.0, 0.0),
         SpatialAudioOptions {
-            audio_layer: BitMask::with([3]),
+            audio_layer: BitMask::with([2]),
             ..spatial_options(10.0)
         },
     ));

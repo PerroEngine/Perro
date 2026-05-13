@@ -1,61 +1,79 @@
 # Perro CLI
 
-This document covers Perro CLI in command-first style. Commands are shown using `perro`, assuming you ran `perro_cli install` and reloaded your shell profile, or installed from crates.io when available.
+This document covers Perro CLI in command-first style. Commands use `perro`, assuming you ran `perro_cli install` and reloaded your shell profile, or installed from crates.io when available.
 
-- `check`
-- `dev`
-- `mem-profile`
-- `build`
-- `flamegraph`
-- `doctor`
-- `format`
-- `clippy`
-- `clean`
-- `new`
-- `new_dlc`
-- `new_script`
-- `new_scene`
-- `new_animation`
-- `install`
+`--path` defaults to the current working directory when omitted.
 
 ## Quick Map
 
-Preferred usage:
+Build and run:
 
 ```powershell
 perro check [--path <project_dir>]
-perro dev [--path <project_dir>]
-perro mem-profile [--path <project_dir>] [--release] [--csv [csv_name]]
-perro build [--path <project_dir>]
-perro flamegraph [--path <project_dir>] [--profile] [--root]
-perro doctor [--path <project_dir>]
-perro format [--path <project_dir>]
-perro clippy [--path <project_dir>]
-perro clean [--path <project_dir>]
+perro dev [--path <project_dir>] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]]
+perro build [--path <project_dir>] [--profile] [--console]
+perro dlc --name <dlc_name> [--path <project_dir>]
+```
+
+New projects and templates:
+
+```powershell
 perro new [--path <parent_dir>] [--name <project_name>]
 perro new_dlc --name <dlc_name> [--path <project_dir>] [--no-open]
 perro new_script --name <script_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>] [--no-open]
 perro new_scene --name <scene_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>] [--template 2D|3D] [--no-open]
 perro new_animation --name <animation_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>] [--no-open]
-perro install
+perro new_panimtree --name <tree_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>] [--no-open]
 ```
 
-`--path` defaults to the current working directory when omitted.
+Health and maintenance:
+
+```powershell
+perro doctor [--path <project_dir>]
+perro format [--path <project_dir>]
+perro clippy [--path <project_dir>]
+perro clean [--path <project_dir>]
+```
+
+Profiling:
+
+```powershell
+perro mem-profile [--path <project_dir>] [--release] [--csv [csv_name]]
+perro flamegraph [--path <project_dir>] [--profile] [--root]
+```
+
+Install:
+
+```powershell
+perro install
+```
 
 ## Project Placement
 
 Recommended workflow:
 
 1. Put temporary test/sandbox projects under `playground/` in this repo to be shared.
-2. Put real game/application projects outside this monorepo (for example `D:\GameProjects\MyGame`) and open those project folders directly in VS Code.
+2. Put real game/application projects outside this monorepo, for example `D:\GameProjects\MyGame`.
+3. Open external project folders directly in VS Code.
 
 Why:
 
-1. External projects are cleaner to work with because project-local `.vscode/settings.json` is the active workspace config when you open that folder directly.
-2. Internal `playground/*` projects can still be edited from the monorepo root, but they depend on repo-root `.vscode/settings.json` rust-analyzer wiring.
-3. Running `perro_cli check/dev/build --path <internal_project>` now refreshes root workspace wiring for all detected `playground/*` projects (including existing ones), so linked-project drift is reduced.
+1. External projects keep project-local `.vscode/settings.json` active.
+2. Internal `playground/*` projects still work from the monorepo root.
+3. `perro check`, `perro dev`, and `perro build` refresh root workspace wiring for detected `playground/*` projects.
 
-## `check`
+## Build And Run
+
+Use these commands for normal compile, run, export, and DLC package workflows.
+
+| Command | Main job | Output |
+| --- | --- | --- |
+| `check` | Compile project scripts only. | `.perro/scripts` build output |
+| `dev` | Compile scripts, build dev runner, run project. | running dev app |
+| `build` | Compile scripts, bake static assets, build release project. | `.output/` executable + packed assets |
+| `dlc` | Build one runtime-loadable DLC package. | `.output/dlc/<name>.dlc` |
+
+### `check`
 
 Command:
 
@@ -67,71 +85,68 @@ What it does:
 
 1. Syncs every `*.rs` file from `<project_dir>/res/**` into `<project_dir>/.perro/scripts/src` as generated `*.gen.rs`.
 2. Regenerates module exports in `.perro/scripts/src/lib.rs` for all synced Rust files.
-3. Regenerates runtime scripts registry in `.perro/scripts/src/lib.rs` for behavior scripts (files that export script constructor).
-4. Builds the scripts crate in release mode (`cargo build --release`) at `<project_dir>/.perro/scripts`.
+3. Regenerates runtime scripts registry in `.perro/scripts/src/lib.rs` for behavior scripts.
+4. Builds the scripts crate at `<project_dir>/.perro/scripts`.
 
 Use this when you only need script compilation/update.
 
-## `new`
+### `dev`
 
 Command:
 
 ```powershell
-perro new [--path <parent_dir>] [--name <project_name>]
+perro dev --path <project_dir> [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]]
 ```
 
 What it does:
 
-1. Creates a new project directory under `<parent_dir>` (defaults to current working directory).
-2. Writes default project files (`project.toml`, `deps.toml`, `res/main.scn`, scripts scaffold, and `.perro` crates).
-3. Prompts to open the project in VS Code.
+1. Runs the same scripts build pipeline as `check`.
+2. Builds the project-local dev runner at `<project_dir>/.perro/dev_runner`.
+3. Launches the generated dev runner binary with your `--path`.
 
-Notes:
+Flags:
 
-- If you run this inside a directory you want to contain projects, you can omit `--path`.
-- Add extra script Rust crates in `deps.toml` under `[dependencies]`; Perro merges them into `.perro/scripts/Cargo.toml` on `check`, `dev`, and `build`.
+- `--profile`: enables dev runner `profile` feature.
+- `--ui-profile`: enables dev runner `ui_profile` feature.
+- `--release`: builds and runs release dev runner binary.
+- `--csv-profile [csv_name]`: writes profile metrics CSV under `.output/profiling/`.
 
-Examples:
+Use this for local development runs and testing.
+The dev runner keeps assets dynamic and reads from normal project files.
+Dynamic scene/resource loading is optimized for development.
+For release-like asset loading numbers, run `perro build`.
+See [Performance + Flexibility Philosophy](../project/performance_philosophy.md).
 
-```powershell
-perro new --path D:\GameProjects --name MyGame
-perro new --name MyGame
-```
-
-## `new_dlc`
+### `build`
 
 Command:
 
 ```powershell
-perro new_dlc --name <dlc_name> [--path <project_dir>] [--no-open]
+perro build --path <project_dir> [--profile] [--console]
 ```
 
 What it does:
 
-1. Resolves `<project_dir>` (defaults to current working directory, walking up to find `project.toml`).
-2. Creates `<project_dir>/dlcs/<dlc_name>/`.
-3. Creates starter directories:
-   - `scenes/`
-   - `scripts/`
-   - `materials/`
-   - `meshes/`
-4. Creates starter files:
-   - `scenes/main.scn`
-   - `scripts/script.rs`
-5. Starter scene uses `dlc://<dlc_name>/scripts/script.rs`.
+1. Runs script compilation, like `check`.
+2. Packs `res` assets through the static pipeline.
+3. Generates embedded project entry files under `.perro/project`.
+4. Optimizes supported assets into match tables and preparsed compile-time statics.
+5. Packs unsupported/generic assets into `.perro/project/embedded/assets.perro`.
+6. Builds the generated project crate in release mode from `.perro/project`.
+7. Copies the built executable to `<project>/.output/`.
 
-Name rules:
+Flags:
 
-- `self` is reserved for `dlc://self/...` and is rejected as a DLC name (case-insensitive).
+- `--profile`: enables profile build options for generated project bundle.
+- `--console`: enables console build options for generated project bundle.
 
-Examples:
+Use this to build the final executable into `<project>/.output/`.
+The static pipeline packs all `res` assets.
+Supported assets, such as scenes, animations, materials, particles, meshes, textures, and CSV tables, are optimized into match tables and preparsed formats as compile-time statics for efficient runtime performance.
+Other `res` files are packed generically into `assets.perro`.
+See [Performance + Flexibility Philosophy](../project/performance_philosophy.md).
 
-```powershell
-perro new_dlc --name CosmeticsPack
-perro new_dlc --name CosmeticsPack --path D:\GameProjects\MyGame
-```
-
-## `dlc`
+### `dlc`
 
 Command:
 
@@ -145,120 +160,218 @@ What it does:
 2. Generates DLC scripts crate under `.perro/dlc/<dlc_name>/scripts/`.
 3. Generates DLC pack crate under `.perro/dlc/<dlc_name>/pack/`.
 4. Builds both runtime-loadable modules.
-5. Packs manifest + scripts module + pack module + DLC resources into:
-   - `<project_dir>/.output/dlc/<dlc_name>.dlc`
-6. Compresses the final `.dlc` when it reduces file size.
-7. Removes the temporary `.dlc.staging` folder after a successful pack.
+5. Packs manifest, scripts module, pack module, and DLC resources into `<project_dir>/.output/dlc/<dlc_name>.dlc`.
+6. Compresses final `.dlc` when it reduces file size.
+7. Removes temporary `.dlc.staging` folder after successful pack.
 
 Name rules:
 
-- `self` is reserved for `dlc://self/...` and is rejected as a DLC name (case-insensitive).
+- `self` is reserved for `dlc://self/...` and is rejected as a DLC name.
 
-## `dev`
+## New Projects And Templates
 
-Command:
+Use these commands to create projects, DLC folders, scripts, scenes, animation clips, and animation trees.
 
-```powershell
-perro dev --path <project_dir>
-```
+Shared rules:
 
-What it does:
+- `--path` resolves to a project root for every command except `new`.
+- `new --path` resolves to the parent directory that receives the new project.
+- Commands with `--dlc <name>` target `dlcs/<name>/` instead of project `res/`.
+- `--res` accepts `res://...` or `/...` for base game content.
+- `--res` accepts `dlc://<name>/...` or `/...` for DLC content.
+- `--no-open` disables VS Code open for generated files.
 
-1. Runs the same scripts build pipeline as `check`.
-2. Builds the project-local dev runner at `<project_dir>/.perro/dev_runner` in release mode.
-3. Launches the generated dev runner binary with your `--path`.
-
-Use this for local development runs and testing.
-The dev runner keeps assets dynamic and reads from normal project files, so iteration does not require a static bake or manual reimport step.
-Dynamic scene/resource loading is optimized for development and is usually fast enough; any extra parse/load cost is a developer-loop cost.
-For release-like asset loading numbers, run `perro build`.
-See [Performance + Flexibility Philosophy](../project/performance_philosophy.md).
-
-## `build`
+### `new`
 
 Command:
 
 ```powershell
-perro build --path <project_dir>
+perro new [--path <parent_dir>] [--name <project_name>]
 ```
 
 What it does:
 
-1. Runs script compilation (same core script pipeline as `check`).
-2. Generates static scene/material/particle/mesh/texture/CSV outputs.
-3. Generates embedded project entry files under `.perro/project`.
-4. Packs `res` assets into `.perro/project/embedded/assets.perro`.
-5. Builds the generated project crate in release mode from `.perro/project`.
-6. Copies the built executable to `<project>/.output/` for clean, predictable exports.
-
-Use this to build the final executable into `<project>/.output/`.
-It runs full static project bundle generation and then builds the release executable.
-The static pipeline bakes supported asset types ahead of runtime, including scenes, materials, particles, meshes, textures, CSV tables, and other core resources.
-Scenes become static Rust data, and generated `u64` path-hash lookup functions avoid archive search for supported static assets.
-Exported builds also include `assets.perro`, a binary pack for generic `res/` files that do not have static bake support.
-The static pipeline cost is paid during export; the runtime benchmark target is loading from already-baked data.
-See [Performance + Flexibility Philosophy](../project/performance_philosophy.md).
-
-## `mem-profile`
-
-Command:
-
-```powershell
-perro mem-profile --path <project_dir> [--release] [--csv [csv_name]]
-```
-
-What it does:
-
-1. Runs the same scripts build pipeline as `check`.
-2. Builds the project-local dev runner with `profile` feature enabled.
-3. Launches dev runner with memory profiling enabled (`PERRO_MEM_PROFILE=1`).
-4. Writes batch memory samples CSV in `<project_dir>/.output/profiling/` (default file: `memory_profile.csv`).
-
-Flags:
-
-- `--release`: builds and runs release dev runner binary.
-- `--csv [csv_name]`: custom output file name under `.output/profiling/`.
-
-## `flamegraph`
-
-Command:
-
-```powershell
-perro flamegraph --path <project_dir> [--profile] [--root]
-```
-
-What it does:
-
-1. Runs the same scripts build pipeline as `check`.
-2. Checks `cargo flamegraph` availability; auto-runs `cargo install flamegraph` when missing.
-3. Runs `cargo flamegraph --release` from `<project_dir>/.perro/dev_runner`.
-4. Sets `CARGO_TARGET_DIR=<project_dir>/target` so profiler build output stays project-local.
-5. Forces debug symbols for release profiling (`CARGO_PROFILE_RELEASE_DEBUG=true`).
-6. Passes project path through to dev runner (`-- --path <project_dir>`).
-
-Flags:
-
-- `--profile`: enables dev runner `profile` feature when building/profiling.
-- `--root`: forwards `--root` to `cargo flamegraph` (useful on Linux when elevated perf access is required).
+1. Creates a new project directory under `<parent_dir>`.
+2. Writes default project files: `project.toml`, `deps.toml`, `res/main.scn`, scripts scaffold, and `.perro` crates.
+3. Prompts to open the project in VS Code.
 
 Notes:
 
-- `perro flamegraph` auto-installs `cargo-flamegraph` when missing.
-- Linux: install `perf` (`linux-tools` package family).
-- macOS: install `dtrace`/Xcode command line tools.
-- Windows: CLI asks to relaunch elevated (UAC) before flamegraph when shell lacks admin rights.
-- Windows: `cargo-flamegraph` uses `blondie` and often needs elevated PowerShell/Terminal.
-- Windows: if error includes `NotAnAdmin`, rerun as Administrator.
-- Windows fallback: prefer WSL/Linux profiling for full flamegraph support.
+- If you run this inside a directory you want to contain projects, omit `--path`.
+- Add extra script Rust crates in `deps.toml` under `[dependencies]`.
+- Perro merges `deps.toml` into `.perro/scripts/Cargo.toml` on `check`, `dev`, and `build`.
 
-Example:
+Examples:
 
 ```powershell
-perro flamegraph --path D:\GameProjects\MyGame
-perro flamegraph --path D:\GameProjects\MyGame --profile
+perro new --path D:\GameProjects --name MyGame
+perro new --name MyGame
 ```
 
-## `doctor`
+### `new_dlc`
+
+Command:
+
+```powershell
+perro new_dlc --name <dlc_name> [--path <project_dir>] [--no-open]
+```
+
+What it does:
+
+1. Resolves `<project_dir>`.
+2. Creates `<project_dir>/dlcs/<dlc_name>/`.
+3. Creates starter directories: `scenes/`, `scripts/`, `materials/`, and `meshes/`.
+4. Creates starter files: `scenes/main.scn` and `scripts/script.rs`.
+5. Uses `dlc://<dlc_name>/scripts/script.rs` in starter scene.
+
+Name rules:
+
+- `self` is reserved for `dlc://self/...` and is rejected as a DLC name.
+
+Examples:
+
+```powershell
+perro new_dlc --name CosmeticsPack
+perro new_dlc --name CosmeticsPack --path D:\GameProjects\MyGame
+```
+
+### `new_script`
+
+Command:
+
+```powershell
+perro new_script --name <script_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>] [--no-open]
+```
+
+What it does:
+
+1. Resolves `<project_dir>`.
+2. Resolves target root: project `res/`, or project `dlcs/<name>/` with `--dlc`.
+3. Resolves `<res_subdir>` relative to target root.
+4. Creates a new `*.rs` script from the empty script template.
+5. Opens the new file in VS Code unless `--no-open` is passed.
+6. Rebuilds scripts after file creation.
+
+Notes:
+
+- `--name` can omit `.rs`; extension is added automatically.
+- `--name` must be a file name only.
+
+Examples:
+
+```powershell
+perro new_script --name PlayerController
+perro new_script --name PlayerController --res /scripts
+perro new_script --name PlayerController --path D:\GameProjects\MyGame --res res://scripts
+perro new_script --name DlcController --path D:\GameProjects\MyGame --dlc ExpansionOne --res /scripts
+perro new_script --name DlcController --path D:\GameProjects\MyGame --dlc ExpansionOne --res dlc://ExpansionOne/scripts
+perro new_script --name PlayerController --no-open
+```
+
+### `new_scene`
+
+Command:
+
+```powershell
+perro new_scene --name <scene_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>] [--template 2D|3D] [--no-open]
+```
+
+What it does:
+
+1. Resolves `<project_dir>`.
+2. Resolves target root: project `res/`, or project `dlcs/<name>/` with `--dlc`.
+3. Resolves `<res_subdir>` relative to target root.
+4. Creates a new `*.scn` scene from the selected template.
+5. Opens the new file in VS Code unless `--no-open` is passed.
+
+Notes:
+
+- `--template` defaults to `2D`.
+- Generated scenes use `$root = @main`.
+- `$root` marks the scene root and can be reused as a node ref.
+- `--name` can omit `.scn`; extension is added automatically.
+- `--name` must be a file name only.
+
+Examples:
+
+```powershell
+perro new_scene --name Main
+perro new_scene --name Main3D --template 3D
+perro new_scene --name Main --res /scenes
+perro new_scene --name Main --path D:\GameProjects\MyGame --res res://scenes --template 2D
+perro new_scene --name DlcIntro --path D:\GameProjects\MyGame --dlc ExpansionOne --res /scenes
+perro new_scene --name Main --no-open
+```
+
+### `new_animation`
+
+Command:
+
+```powershell
+perro new_animation --name <animation_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>] [--no-open]
+```
+
+What it does:
+
+1. Resolves `<project_dir>`.
+2. Resolves target root: project `res/`, or project `dlcs/<name>/` with `--dlc`.
+3. Resolves `<res_subdir>` relative to target root.
+4. Creates a new `*.panim` animation clip from the default animation template.
+5. Opens the new file in VS Code unless `--no-open` is passed.
+
+Notes:
+
+- Defaults to `res/animations` when `--res` is omitted.
+- `--name` can omit `.panim`; extension is added automatically.
+- `--name` must be a file name only.
+
+Examples:
+
+```powershell
+perro new_animation --name CubeMove
+perro new_animation --name HeroRun --res /animations
+perro new_animation --name HeroRun --path D:\GameProjects\MyGame --res res://animations
+perro new_animation --name DlcIdle --path D:\GameProjects\MyGame --dlc ExpansionOne --res /animations
+perro new_animation --name HeroRun --no-open
+```
+
+### `new_panimtree`
+
+Command:
+
+```powershell
+perro new_panimtree --name <tree_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>] [--no-open]
+```
+
+What it does:
+
+1. Resolves `<project_dir>`.
+2. Resolves target root: project `res/`, or project `dlcs/<name>/` with `--dlc`.
+3. Resolves `<res_subdir>` relative to target root.
+4. Creates a new `*.panimtree` animation tree from the default animation tree template.
+5. Opens the new file in VS Code unless `--no-open` is passed.
+
+Notes:
+
+- Defaults to `res/animations` when `--res` is omitted.
+- `--name` can omit `.panimtree`; extension is added automatically.
+- `--name` must be a file name only.
+
+Examples:
+
+```powershell
+perro new_panimtree --name HeroMove
+perro new_panimtree --name HeroMove --res /animations
+perro new_panimtree --name HeroMove --path D:\GameProjects\MyGame --res res://animations
+perro new_panimtree --name DlcMove --path D:\GameProjects\MyGame --dlc ExpansionOne --res /animations
+perro new_panimtree --name HeroMove --no-open
+```
+
+## Health And Maintenance
+
+Use these commands to check references, format user scripts, lint user scripts, and remove build output.
+
+### `doctor`
 
 Command:
 
@@ -276,7 +389,7 @@ What it does:
 6. Warns when those dynamic calls target `ctx.id` and a typed self access path is available.
 7. Reports missing scene/config references as errors and script findings as warnings.
 
-## `format`
+### `format`
 
 Command:
 
@@ -290,7 +403,7 @@ What it does:
 2. Recursively finds all `*.rs` files under `res/**`.
 3. Runs `rustfmt` on those files.
 
-## `clippy`
+### `clippy`
 
 Command:
 
@@ -303,9 +416,9 @@ What it does:
 1. Resolves your path to that project's `res` root.
 2. Recursively finds all `*.rs` files under `res/**`.
 3. Syncs those files into `.perro/scripts`.
-4. Runs `cargo clippy --all-targets` for the generated scripts crate.
+4. Runs `cargo clippy --all-targets -- -D warnings` for the generated scripts crate.
 
-## `clean`
+### `clean`
 
 Command:
 
@@ -315,9 +428,74 @@ perro clean [--path <project_dir>]
 
 What it does:
 
-1. Removes the project's `target/` directory (defaults to current project).
+1. Removes the project's `target/` directory.
 
-## `install`
+## Profiling
+
+Use these commands to record memory samples or produce flamegraphs from the dev runner.
+
+### `mem-profile`
+
+Command:
+
+```powershell
+perro mem-profile --path <project_dir> [--release] [--csv [csv_name]]
+```
+
+What it does:
+
+1. Runs the same scripts build pipeline as `check`.
+2. Builds the project-local dev runner with `profile` feature enabled.
+3. Launches dev runner with memory profiling enabled: `PERRO_MEM_PROFILE=1`.
+4. Writes batch memory samples CSV in `<project_dir>/.output/profiling/`.
+
+Flags:
+
+- `--release`: builds and runs release dev runner binary.
+- `--csv [csv_name]`: custom output file name under `.output/profiling/`.
+
+### `flamegraph`
+
+Command:
+
+```powershell
+perro flamegraph --path <project_dir> [--profile] [--root]
+```
+
+What it does:
+
+1. Runs the same scripts build pipeline as `check`.
+2. Checks `cargo flamegraph` availability.
+3. Auto-runs `cargo install flamegraph` when missing.
+4. Runs `cargo flamegraph --release` from `<project_dir>/.perro/dev_runner`.
+5. Sets `CARGO_TARGET_DIR=<project_dir>/target`.
+6. Forces debug symbols for release profiling with `CARGO_PROFILE_RELEASE_DEBUG=true`.
+7. Passes project path through to dev runner with `-- --path <project_dir>`.
+
+Flags:
+
+- `--profile`: enables dev runner `profile` feature when building/profiling.
+- `--root`: forwards `--root` to `cargo flamegraph`.
+
+Notes:
+
+- Linux: install `perf` (`linux-tools` package family).
+- macOS: install `dtrace`/Xcode command line tools.
+- Windows: CLI asks to relaunch elevated before flamegraph when shell lacks admin rights.
+- Windows: `cargo-flamegraph` uses `blondie` and often needs elevated PowerShell/Terminal.
+- Windows: if error includes `NotAnAdmin`, rerun as Administrator.
+- Windows fallback: prefer WSL/Linux profiling for full flamegraph support.
+
+Examples:
+
+```powershell
+perro flamegraph --path D:\GameProjects\MyGame
+perro flamegraph --path D:\GameProjects\MyGame --profile
+```
+
+## Install
+
+### `install`
 
 Command:
 
@@ -329,128 +507,14 @@ What it does:
 
 1. Adds/updates a `perro` shell function in your profile.
 2. On Windows, updates PowerShell profiles.
-3. On Linux, updates POSIX shell profiles (`~/.profile`, `~/.bashrc`, `~/.zshrc`).
+3. On Linux, updates POSIX shell profiles: `~/.profile`, `~/.bashrc`, `~/.zshrc`.
 4. Function runs source-mode CLI from your local repo via `cargo run -p perro_cli -- ...`.
 
-After running install, open a new shell (or source your updated profile) and use:
+After running install, open a new shell or source your updated profile.
+
+Examples:
 
 ```powershell
 perro new --path D:\GameProjects --name MyGame
 perro check --path D:\GameProjects\MyGame
-```
-
-## `new_script`
-
-Command:
-
-```powershell
-perro new_script --name <script_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>] [--no-open]
-```
-
-What it does:
-
-1. Resolves `<project_dir>` (defaults to current working directory, walking up to find `project.toml`).
-2. Resolves target root:
-   - default: project `res/`
-   - with `--dlc <name>`: project `dlcs/<name>/`
-3. Resolves `<res_subdir>` relative to that selected root.
-3. Creates a new `*.rs` script using the empty script template.
-4. Opens the new file in VS Code (disable with `--no-open`).
-
-Notes:
-
-- Base game mode:
-  - `--res` accepts `res://` or `/`-style paths, for example `res://scripts` or `/scripts`.
-- DLC mode (`--dlc <name>`):
-  - `--res` accepts `dlc://<name>/...` or `/`-style paths.
-  - Example: `--res dlc://ExpansionOne/scripts` or `--res /scripts`.
-- `--name` can be passed without `.rs`; the extension is added automatically.
-
-Examples:
-
-```powershell
-perro new_script --name PlayerController
-perro new_script --name PlayerController --res /scripts
-perro new_script --name PlayerController --path D:\GameProjects\MyGame --res res://scripts
-perro new_script --name DlcController --path D:\GameProjects\MyGame --dlc ExpansionOne --res /scripts
-perro new_script --name DlcController --path D:\GameProjects\MyGame --dlc ExpansionOne --res dlc://ExpansionOne/scripts
-perro new_script --name PlayerController --no-open
-```
-
-## `new_scene`
-
-Command:
-
-```powershell
-perro new_scene --name <scene_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>] [--template 2D|3D] [--no-open]
-```
-
-What it does:
-
-1. Resolves `<project_dir>` (defaults to current working directory, walking up to find `project.toml`).
-2. Resolves target root:
-   - default: project `res/`
-   - with `--dlc <name>`: project `dlcs/<name>/`
-3. Resolves `<res_subdir>` relative to that selected root.
-3. Creates a new `*.scn` scene using the selected template.
-4. Opens the new file in VS Code (disable with `--no-open`).
-
-Notes:
-
-- `--template` defaults to `2D`.
-- Generated scenes use `$root = @main`. `$root` marks the scene root and can be reused as a node ref, for example `parent = $root`.
-- Base game mode:
-  - `--res` accepts `res://` or `/`-style paths, for example `res://scenes` or `/scenes`.
-- DLC mode (`--dlc <name>`):
-  - `--res` accepts `dlc://<name>/...` or `/`-style paths.
-- `--name` can be passed without `.scn`; the extension is added automatically.
-- `--name` must be a file name only (no path separators).
-
-Examples:
-
-```powershell
-perro new_scene --name Main
-perro new_scene --name Main3D --template 3D
-perro new_scene --name Main --res /scenes
-perro new_scene --name Main --path D:\GameProjects\MyGame --res res://scenes --template 2D
-perro new_scene --name DlcIntro --path D:\GameProjects\MyGame --dlc ExpansionOne --res /scenes
-perro new_scene --name Main --no-open
-```
-
-## `new_animation`
-
-Command:
-
-```powershell
-perro new_animation --name <animation_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>] [--no-open]
-```
-
-What it does:
-
-1. Resolves `<project_dir>` (defaults to current working directory, walking up to find `project.toml`).
-2. Resolves target root:
-   - default: project `res/`
-   - with `--dlc <name>`: project `dlcs/<name>/`
-3. Resolves `<res_subdir>` relative to that selected root.
-3. Creates a new `*.panim` animation clip using the default animation template.
-4. Opens the new file in VS Code (disable with `--no-open`).
-
-Notes:
-
-- Defaults to `res/animations` when `--res` is omitted.
-- Base game mode:
-  - `--res` accepts `res://` or `/`-style paths, for example `res://animations` or `/animations`.
-- DLC mode (`--dlc <name>`):
-  - `--res` accepts `dlc://<name>/...` or `/`-style paths.
-- `--name` can be passed without `.panim`; the extension is added automatically.
-- `--name` must be a file name only (no path separators).
-
-Examples:
-
-```powershell
-perro new_animation --name CubeMove
-perro new_animation --name HeroRun --res /animations
-perro new_animation --name HeroRun --path D:\GameProjects\MyGame --res res://animations
-perro new_animation --name DlcIdle --path D:\GameProjects\MyGame --dlc ExpansionOne --res /animations
-perro new_animation --name HeroRun --no-open
 ```

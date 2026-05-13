@@ -2,7 +2,9 @@ use perro_ids::{IntoTagID, MaterialID, MeshID, NodeID, NodeTag, TagID};
 use perro_nodes::{
     Node2D, Node3D, NodeBaseDispatch, NodeType, NodeTypeDispatch, SceneNodeData, Skeleton3D, UiBox,
 };
-use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
+use perro_structs::{
+    BitMask, IntoBitMaskLayer, Quaternion, Transform2D, Transform3D, Vector2, Vector3,
+};
 use std::borrow::Cow;
 
 fn default_node_data<T>() -> SceneNodeData
@@ -30,6 +32,8 @@ pub enum QueryExpr {
     BaseType(Vec<NodeType>),
     IsTypeMask(QueryTypeMask),
     BaseTypeMask(QueryTypeMask),
+    Layers(BitMask),
+    Mask(BitMask),
 }
 
 pub const QUERY_TYPE_MASK_WORDS: usize = NodeType::ALL.len().div_ceil(64);
@@ -532,6 +536,28 @@ impl TagQuery {
         I: IntoIterator<Item = NodeType>,
     {
         self.and_expr(QueryExpr::BaseType(types.into_iter().collect()))
+    }
+
+    /// Adds render layer filters for 2D/3D nodes.
+    ///
+    /// Match succeeds when node render layers intersect any requested layer.
+    pub fn layers<I, L>(self, layers: I) -> Self
+    where
+        I: IntoIterator<Item = L>,
+        L: IntoBitMaskLayer,
+    {
+        self.and_expr(QueryExpr::Layers(BitMask::from_layers(layers)))
+    }
+
+    /// Adds render layer mask filters for 2D/3D nodes.
+    ///
+    /// Match succeeds when node render layers do not intersect any masked layer.
+    pub fn mask<I, L>(self, layers: I) -> Self
+    where
+        I: IntoIterator<Item = L>,
+        L: IntoBitMaskLayer,
+    {
+        self.and_expr(QueryExpr::Mask(BitMask::from_layers(layers)))
     }
 
     /// Adds an explicit expression tree.
@@ -2258,6 +2284,8 @@ macro_rules! tag_remove {
 ///   `all(tags[...])`, `any(tags[...])`, or `not(tags[...])`
 /// - `node_type[...]`
 /// - `base_type[...]`
+/// - `layers[...]` render layer allow-list for 2D/3D nodes
+/// - `mask[...]` render layer deny-list for 2D/3D nodes
 ///
 /// Boolean combinators:
 /// - `all(expr, expr, ...)`
@@ -2329,6 +2357,33 @@ macro_rules! query {
         $crate::sub_apis::QueryExpr::BaseTypeMask(const {
             $crate::sub_apis::__query_base_type_mask(&[$($ty),*])
         })
+    };
+
+    (@expr layers[] ) => {
+        $crate::sub_apis::QueryExpr::Layers($crate::perro_structs::BitMask::NONE)
+    };
+    (@expr layers[$($layer:literal),* $(,)?]) => {
+        $crate::sub_apis::QueryExpr::Layers(const {
+            $crate::perro_structs::BitMask::with([$($layer),*])
+        })
+    };
+    (@expr layers[$($layer:expr),* $(,)?]) => {
+        $crate::sub_apis::QueryExpr::Layers(
+            $crate::perro_structs::BitMask::from_layers([$($layer),*])
+        )
+    };
+    (@expr mask[] ) => {
+        $crate::sub_apis::QueryExpr::Mask($crate::perro_structs::BitMask::NONE)
+    };
+    (@expr mask[$($layer:literal),* $(,)?]) => {
+        $crate::sub_apis::QueryExpr::Mask(const {
+            $crate::perro_structs::BitMask::with([$($layer),*])
+        })
+    };
+    (@expr mask[$($layer:expr),* $(,)?]) => {
+        $crate::sub_apis::QueryExpr::Mask(
+            $crate::perro_structs::BitMask::from_layers([$($layer),*])
+        )
     };
 }
 

@@ -15,7 +15,8 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 `Node2D`
 
 - Base transform for 2D nodes (position, rotation, scale, z_index, visible).
-- `render_layers` uses [`BitMask`](bitmask.md). A renderable node draws only when it intersects the active `Camera2D.render_mask`.
+- `render_layers` uses [`BitMask`](bitmask.md). A renderable node draws when it does not intersect the active `Camera2D.render_mask`.
+- Default `render_layers` is all layers.
 
 `Sprite2D`
 
@@ -36,7 +37,7 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 `WaterBody2D`
 
 - Rectangular water surface centered on its `Node2D` position.
-- Renders through the retained 2D water path when visible and matched by camera `render_mask`.
+- Renders through the retained 2D water path when visible and not hidden by camera `render_mask`.
 - Runs GPU height/foam simulation with idle modes, wind, flow, damping, wake, foam, camera-distance LOD, and sample readback controls.
 - Applies camera-distance-LOD fixed-step buoyancy and vertical drag to `RigidBody2D` when body centers are inside the water rect and below sampled surface height.
 - Uses `RigidBody2D.density` for buoyancy scale.
@@ -47,9 +48,10 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 `Camera2D`
 
 - Active 2D camera (position/rotation/zoom).
-- `render_mask` filters `render_layers` on 2D renderable nodes.
+- `render_mask` hides matching `render_layers` on 2D renderable nodes.
+- Default `render_mask` is no layers.
 - Supports camera post-processing via `post_processing` (see "Camera Post-Processing" below).
-- Supports listener audio effects via `audio_options`; `audio_mask` filters emitted `audio_layer`.
+- Supports listener audio effects via `audio_options`; `audio_mask` ignores matching emitted `audio_layer`.
 
 2D lights:
 
@@ -89,7 +91,11 @@ Physics 2D:
 
 - `collision_layers: BitMask`
 - `collision_mask: BitMask`
-- Scene files use `collision_layers = [1, 2]` and `collision_mask_layers = [1, 2]`; Rust code should use `BitMask::with([1, 2])`.
+- Default `collision_layers` is all layers.
+- Default `collision_mask` is no layers.
+- `collision_layers` tags the collider; `collision_mask` lists tags to ignore.
+- Colliders interact only when neither collider's mask ignores the other collider's layers.
+- Scene files use `collision_layers = [1, 2]` and `collision_mask = [3]`; Rust code should use `BitMask::with([1, 2])`.
 
 2D joint nodes:
 
@@ -107,7 +113,7 @@ Audio 2D:
 - `AudioEffectZone2D`
 - `AudioPortal2D`
 - `AudioMask2D` is invisible audio-only geometry with `CollisionShape2D` children.
-- `AudioEffectZone2D` stores ordered reverb/echo/dampening effects. `audio_mask` filters emitted `audio_layer`; shape overlap with source/listener/path applies the chain.
+- `AudioEffectZone2D` stores ordered reverb/echo/dampening effects. `audio_mask` ignores matching emitted `audio_layer`; shape overlap with source/listener/path applies the chain.
 - `AudioPortal2D` marks one-way inputs with `CollisionShape2D` children and linked portal exits. Hit point and ray direction transform through target portal global transforms, then continue through portal hits or physics bounces. Immediate re-entry into the portal just exited is blocked until another portal hit or physics bounce.
 
 `TileMap2D` is the tile map node.
@@ -119,7 +125,8 @@ See [TileMap2D](tilemap.md).
 `Node3D`
 
 - Base transform for 3D nodes (position, rotation, scale, visible).
-- `render_layers` uses [`BitMask`](bitmask.md). A renderable node draws only when it intersects the active `Camera3D.render_mask`.
+- `render_layers` uses [`BitMask`](bitmask.md). A renderable node draws when it does not intersect the active `Camera3D.render_mask`.
+- Default `render_layers` is all layers.
 
 `MeshInstance3D`
 
@@ -165,9 +172,10 @@ See [TileMap2D](tilemap.md).
 `Camera3D`
 
 - Active 3D camera with projection settings.
-- `render_mask` filters `render_layers` on 3D renderable nodes.
+- `render_mask` hides matching `render_layers` on 3D renderable nodes.
+- Default `render_mask` is no layers.
 - Supports camera post-processing via `post_processing` (see "Camera Post-Processing" below).
-- Supports listener audio effects via `audio_options`; `audio_mask` filters emitted `audio_layer`.
+- Supports listener audio effects via `audio_options`; `audio_mask` ignores matching emitted `audio_layer`.
 
 `ParticleEmitter3D`
 
@@ -177,10 +185,10 @@ See [TileMap2D](tilemap.md).
 
 - Rectangular water surface centered on its `Node3D` position.
 - Uses local X/Z as surface axes and world Y as height.
-- Renders through the 3D water path when visible and matched by camera `render_mask`.
+- Renders through the 3D water path when visible and not hidden by camera `render_mask`.
 - Runs GPU height/foam simulation with idle modes, wind, flow, damping, wake, foam, camera-distance LOD, and sample readback controls.
 - Applies camera-distance-LOD fixed-step buoyancy and vertical drag to `RigidBody3D` when body centers are inside the water rect and below sampled surface height.
-- Uses `RigidBody3D.mass` for buoyancy scale.
+- Uses `RigidBody3D.density` for buoyancy scale.
 - Does not create collision shapes, raycast hits, contacts, or area signals by itself.
 - Add `StaticBody3D`, `Area3D`, or `CollisionShape3D` nodes separately for lake beds, shores, triggers, or queries.
 - See [Water Bodies](water.md).
@@ -221,7 +229,11 @@ Physics 3D:
 
 - `collision_layers: BitMask`
 - `collision_mask: BitMask`
-- Scene files use `collision_layers = [1, 2]` and `collision_mask_layers = [1, 2]`; Rust code should use `BitMask::with([1, 2])`.
+- Default `collision_layers` is all layers.
+- Default `collision_mask` is no layers.
+- `collision_layers` tags the collider; `collision_mask` lists tags to ignore.
+- Colliders interact only when neither collider's mask ignores the other collider's layers.
+- Scene files use `collision_layers = [1, 2]` and `collision_mask = [3]`; Rust code should use `BitMask::with([1, 2])`.
 
 3D joint nodes:
 
@@ -239,7 +251,7 @@ Audio 3D:
 - `AudioEffectZone3D`
 - `AudioPortal3D`
 - `AudioMask3D` is invisible audio-only geometry with `CollisionShape3D` children.
-- `AudioEffectZone3D` stores ordered reverb/echo/dampening effects. `audio_mask` filters emitted `audio_layer`; shape overlap with source/listener/path applies the chain.
+- `AudioEffectZone3D` stores ordered reverb/echo/dampening effects. `audio_mask` ignores matching emitted `audio_layer`; shape overlap with source/listener/path applies the chain.
 - `AudioPortal3D` marks one-way inputs with `CollisionShape3D` children and linked portal exits. Hit point and ray direction transform through target portal global transforms, then continue through portal hits or physics bounces. Immediate re-entry into the portal just exited is blocked until another portal hit or physics bounce.
 
 `Skeleton3D`

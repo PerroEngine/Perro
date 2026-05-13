@@ -23,6 +23,16 @@ fn as_u32(value: &SceneValue) -> Option<u32> {
 
 fn as_bitmask(value: &SceneValue) -> Option<BitMask> {
     match value {
+        SceneValue::Key(value) => match value.as_ref() {
+            "all" | "ALL" => Some(BitMask::ALL),
+            "none" | "NONE" => Some(BitMask::NONE),
+            raw => parse_bitmask_call(raw),
+        },
+        SceneValue::Str(value) => match value.as_ref() {
+            "all" | "ALL" => Some(BitMask::ALL),
+            "none" | "NONE" => Some(BitMask::NONE),
+            raw => parse_bitmask_call(raw),
+        },
         SceneValue::Array(items) => {
             let mut mask = BitMask::NONE;
             for item in items.iter() {
@@ -32,6 +42,32 @@ fn as_bitmask(value: &SceneValue) -> Option<BitMask> {
             Some(mask)
         }
         _ => as_u32(value).map(BitMask::from_bits),
+    }
+}
+
+fn parse_bitmask_call(raw: &str) -> Option<BitMask> {
+    let (op, rest) = raw.split_once('(')?;
+    let args = rest.strip_suffix(')')?.trim();
+    let args = args
+        .strip_prefix('[')
+        .and_then(|v| v.strip_suffix(']'))
+        .unwrap_or(args);
+
+    let mut layers = Vec::new();
+    if !args.trim().is_empty() {
+        for arg in args.split(',') {
+            let layer = arg.trim().parse::<u8>().ok()?;
+            if !(1..=32).contains(&layer) {
+                return None;
+            }
+            layers.push(layer);
+        }
+    }
+
+    match op {
+        "only" | "ONLY" => BitMask::try_from_layers(layers),
+        "without" | "WITHOUT" => Some(BitMask::without(&layers)),
+        _ => None,
     }
 }
 

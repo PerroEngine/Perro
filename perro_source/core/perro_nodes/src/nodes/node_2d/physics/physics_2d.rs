@@ -1,6 +1,6 @@
 use crate::node_2d::Node2D;
 use perro_ids::NodeID;
-use perro_structs::{AudioInteraction, BitMask, CollisionMasks, Vector2};
+use perro_structs::{AudioInteraction, BitMask, CollisionPolicy, Vector2};
 use std::ops::{Deref, DerefMut};
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -99,8 +99,8 @@ impl StaticBody2D {
             base: Node2D::new(),
             enabled: true,
             physics_handle: None,
-            collision_layers: BitMask::with([1]),
-            collision_mask: BitMask::ALL,
+            collision_layers: BitMask::ALL,
+            collision_mask: BitMask::NONE,
             friction: 0.7,
             restitution: 0.0,
             density: 1.0,
@@ -108,13 +108,13 @@ impl StaticBody2D {
         }
     }
 
-    pub const fn collision_masks(&self) -> CollisionMasks {
-        CollisionMasks::new(self.collision_layers, self.collision_mask)
+    pub const fn collision_policy(&self) -> CollisionPolicy {
+        CollisionPolicy::new(self.collision_layers, self.collision_mask)
     }
 
-    pub fn set_collision_masks(&mut self, masks: CollisionMasks) {
-        self.collision_layers = masks.layers;
-        self.collision_mask = masks.mask;
+    pub fn set_collision_policy(&mut self, policy: CollisionPolicy) {
+        self.collision_layers = policy.layers;
+        self.collision_mask = policy.mask;
     }
 }
 
@@ -154,19 +154,19 @@ impl Area2D {
             base: Node2D::new(),
             enabled: true,
             physics_handle: None,
-            collision_layers: BitMask::with([1]),
-            collision_mask: BitMask::ALL,
+            collision_layers: BitMask::ALL,
+            collision_mask: BitMask::NONE,
             audio_interaction: Some(AudioInteraction::new()),
         }
     }
 
-    pub const fn collision_masks(&self) -> CollisionMasks {
-        CollisionMasks::new(self.collision_layers, self.collision_mask)
+    pub const fn collision_policy(&self) -> CollisionPolicy {
+        CollisionPolicy::new(self.collision_layers, self.collision_mask)
     }
 
-    pub fn set_collision_masks(&mut self, masks: CollisionMasks) {
-        self.collision_layers = masks.layers;
-        self.collision_mask = masks.mask;
+    pub fn set_collision_policy(&mut self, policy: CollisionPolicy) {
+        self.collision_layers = policy.layers;
+        self.collision_mask = policy.mask;
     }
 }
 
@@ -218,8 +218,8 @@ impl RigidBody2D {
             base: Node2D::new(),
             enabled: true,
             physics_handle: None,
-            collision_layers: BitMask::with([1]),
-            collision_mask: BitMask::ALL,
+            collision_layers: BitMask::ALL,
+            collision_mask: BitMask::NONE,
             continuous_collision_detection: true,
             mass: 1.0,
             linear_velocity: Vector2::ZERO,
@@ -236,13 +236,13 @@ impl RigidBody2D {
         }
     }
 
-    pub const fn collision_masks(&self) -> CollisionMasks {
-        CollisionMasks::new(self.collision_layers, self.collision_mask)
+    pub const fn collision_policy(&self) -> CollisionPolicy {
+        CollisionPolicy::new(self.collision_layers, self.collision_mask)
     }
 
-    pub fn set_collision_masks(&mut self, masks: CollisionMasks) {
-        self.collision_layers = masks.layers;
-        self.collision_mask = masks.mask;
+    pub fn set_collision_policy(&mut self, policy: CollisionPolicy) {
+        self.collision_layers = policy.layers;
+        self.collision_mask = policy.mask;
     }
 }
 

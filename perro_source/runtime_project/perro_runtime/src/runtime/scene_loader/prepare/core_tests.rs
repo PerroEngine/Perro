@@ -29,8 +29,9 @@ mod tests {
                 lod_mid_distance = 240
                 lod_far_distance = 720
                 lod_min_resolution = 16
-                shoreline_mask = true
-                static_body_wakes = false
+                collision_layers = [2, 4]
+                collision_mask = [1, 3]
+                coastline = { foam_color=(0.8, 0.9, 1.0, 1.0) foam_strength=0.9 foam_width=2.0 cutoff_softness=0.4 wave_reflection=0.5 wave_damping=0.25 edge_noise=0.1 }
                 debug = true
             [/WaterBody2D]
             [/water]
@@ -68,8 +69,15 @@ mod tests {
                 assert_eq!(node.water.lod.mid_distance, 240.0);
                 assert_eq!(node.water.lod.far_distance, 720.0);
                 assert_eq!(node.water.lod.min_resolution, [16, 16]);
-                assert!(node.water.shoreline_mask);
-                assert!(!node.water.static_body_wakes);
+                assert_eq!(node.water.collision_layers.bits(), 0b1010);
+                assert_eq!(node.water.collision_mask.bits(), 0b101);
+                assert_eq!(node.water.coastline.foam_color.to_rgba(), [0.8, 0.9, 1.0, 1.0]);
+                assert_eq!(node.water.coastline.foam_strength, 0.9);
+                assert_eq!(node.water.coastline.foam_width, 2.0);
+                assert_eq!(node.water.coastline.cutoff_softness, 0.4);
+                assert_eq!(node.water.coastline.wave_reflection, 0.5);
+                assert_eq!(node.water.coastline.wave_damping, 0.25);
+                assert_eq!(node.water.coastline.edge_noise, 0.1);
                 assert!(node.water.debug);
             }
             other => panic!("expected WaterBody2D node, got {other:?}"),
@@ -1594,7 +1602,7 @@ mod tests {
             [body]
             [StaticBody2D]
                 collision_layers = [2, 4]
-                collision_mask_layers = [1, 3]
+                collision_mask = [1, 3]
             [/StaticBody2D]
             [/body]
 
@@ -1607,7 +1615,7 @@ mod tests {
             [area]
             [Area3D]
                 collision_layers = [5]
-                collision_mask_layers = [1, 2]
+                collision_mask = [1, 2]
             [/Area3D]
             [/area]
             "#,
@@ -1662,6 +1670,73 @@ mod tests {
                 assert_eq!(node.collision_mask.bits(), 0b11);
             }
             other => panic!("expected Area3D node, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn scene_loader_accepts_bitmask_only_and_without_calls() {
+        let scene = Parser::new(
+            r#"
+            @root = sprite
+            [sprite]
+            [Sprite2D]
+                render_layers = only(1, 3)
+            [/Sprite2D]
+            [/sprite]
+
+            [camera]
+            [Camera3D]
+                render_mask = without(1)
+            [/Camera3D]
+            [/camera]
+
+            [body]
+            [StaticBody2D]
+                collision_layers = without([1, 32])
+                collision_mask = only([2, 4])
+            [/StaticBody2D]
+            [/body]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+
+        let sprite = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "sprite")
+            .expect("sprite node");
+        match &sprite.node.data {
+            SceneNodeData::Sprite2D(node) => assert_eq!(node.render_layers.bits(), 0b101),
+            other => panic!("expected Sprite2D node, got {other:?}"),
+        }
+
+        let camera = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "camera")
+            .expect("camera node");
+        match &camera.node.data {
+            SceneNodeData::Camera3D(node) => {
+                assert_eq!(node.render_mask.bits(), u32::MAX & !0b1);
+            }
+            other => panic!("expected Camera3D node, got {other:?}"),
+        }
+
+        let body = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "body")
+            .expect("body node");
+        match &body.node.data {
+            SceneNodeData::StaticBody2D(node) => {
+                assert_eq!(node.collision_layers.bits(), u32::MAX & !0b1 & !(1u32 << 31));
+                assert_eq!(node.collision_mask.bits(), 0b1010);
+            }
+            other => panic!("expected StaticBody2D node, got {other:?}"),
         }
     }
 }

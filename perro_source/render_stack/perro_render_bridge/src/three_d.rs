@@ -78,6 +78,26 @@ pub struct WaterImpact3D {
     pub radius: f32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum WaterCoastlineShape3D {
+    Box {
+        center: [f32; 3],
+        half_extents: [f32; 3],
+    },
+    Sphere {
+        center: [f32; 3],
+        radius: f32,
+    },
+    Cylinder {
+        center: [f32; 3],
+        radius: f32,
+        half_height: f32,
+    },
+    Triangle {
+        points: [[f32; 3]; 3],
+    },
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Water3DState {
     pub model: [[f32; 4]; 4],
@@ -97,10 +117,18 @@ pub struct Water3DState {
     pub lod_mid_distance: f32,
     pub lod_far_distance: f32,
     pub lod_min_resolution: [u32; 2],
-    pub shoreline_mask: bool,
-    pub static_body_wakes: bool,
+    pub collision_layers: BitMask,
+    pub collision_mask: BitMask,
+    pub coastline_foam_color: [f32; 4],
+    pub coastline_foam_strength: f32,
+    pub coastline_foam_width: f32,
+    pub coastline_cutoff_softness: f32,
+    pub coastline_wave_reflection: f32,
+    pub coastline_wave_damping: f32,
+    pub coastline_edge_noise: f32,
     pub debug: bool,
     pub impacts: Arc<[WaterImpact3D]>,
+    pub coastline_shapes: Arc<[WaterCoastlineShape3D]>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -586,7 +614,7 @@ impl Default for Camera3DState {
             position: [0.0, 0.0, 0.0],
             rotation: [0.0, 0.0, 0.0, 1.0],
             projection: CameraProjectionState::default(),
-            render_mask: BitMask::ALL,
+            render_mask: BitMask::NONE,
             post_processing: Arc::from([]),
             audio_options: AudioListenerOptions::new(),
         }

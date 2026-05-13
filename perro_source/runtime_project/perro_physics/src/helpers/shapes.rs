@@ -153,8 +153,8 @@ pub fn shape_desc_2d(shape: &CollisionShape2D, friction: f32, restitution: f32) 
         local: shape.base.transform,
         shape: ShapeKind2D::Primitive(shape.shape),
         sensor: false,
-        collision_layers: BitMask::with([1]),
-        collision_mask: BitMask::ALL,
+        collision_layers: BitMask::ALL,
+        collision_mask: BitMask::NONE,
         friction,
         restitution,
         density: 1.0,
@@ -171,8 +171,8 @@ pub fn shape_desc_3d(shape: &CollisionShape3D, friction: f32, restitution: f32) 
             _ => ShapeKind3D::Primitive(shape.shape.clone()),
         },
         sensor: false,
-        collision_layers: BitMask::with([1]),
-        collision_mask: BitMask::ALL,
+        collision_layers: BitMask::ALL,
+        collision_mask: BitMask::NONE,
         friction,
         restitution,
         density: 1.0,
@@ -487,14 +487,14 @@ pub fn collider_builder_3d(
 pub fn interaction_groups_2d(layer: BitMask, mask: BitMask) -> r2::InteractionGroups {
     r2::InteractionGroups::new(
         r2::Group::from_bits_truncate(layer.bits()),
-        r2::Group::from_bits_truncate(mask.bits()),
+        r2::Group::from_bits_truncate(!mask.bits()),
     )
 }
 
 pub fn interaction_groups_3d(layer: BitMask, mask: BitMask) -> r3::InteractionGroups {
     r3::InteractionGroups::new(
         r3::Group::from_bits_truncate(layer.bits()),
-        r3::Group::from_bits_truncate(mask.bits()),
+        r3::Group::from_bits_truncate(!mask.bits()),
     )
 }
 

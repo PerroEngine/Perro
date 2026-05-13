@@ -7,7 +7,7 @@ use perro_render_bridge::{
     MeshSurfaceBinding3D, PostProcessingCommand, RenderBridge, RenderCommand, ResourceCommand,
     Sprite2DCommand, VisualAccessibilityCommand, Water2DState, Water3DState, WaterIdleModeState,
 };
-use perro_structs::{ColorBlindFilter, PostProcessEffect, PostProcessSet};
+use perro_structs::{BitMask, ColorBlindFilter, PostProcessEffect, PostProcessSet};
 use std::sync::Arc;
 
 fn surfaces_for(material: MaterialID) -> Arc<[MeshSurfaceBinding3D]> {
@@ -38,10 +38,18 @@ fn water_2d_state() -> Water2DState {
         lod_mid_distance: 384.0,
         lod_far_distance: 896.0,
         lod_min_resolution: [32, 32],
-        shoreline_mask: false,
-        static_body_wakes: true,
+        collision_layers: BitMask::with([1]),
+        collision_mask: BitMask::NONE,
+        coastline_foam_color: [0.9, 0.97, 1.0, 1.0],
+        coastline_foam_strength: 0.75,
+        coastline_foam_width: 1.5,
+        coastline_cutoff_softness: 0.25,
+        coastline_wave_reflection: 0.45,
+        coastline_wave_damping: 0.35,
+        coastline_edge_noise: 0.2,
         debug: false,
         impacts: Arc::from([]),
+        coastline_shapes: Arc::from([]),
     }
 }
 
@@ -69,10 +77,18 @@ fn water_3d_state() -> Water3DState {
         lod_mid_distance: 384.0,
         lod_far_distance: 896.0,
         lod_min_resolution: [32, 32],
-        shoreline_mask: false,
-        static_body_wakes: true,
+        collision_layers: BitMask::with([1]),
+        collision_mask: BitMask::NONE,
+        coastline_foam_color: [0.9, 0.97, 1.0, 1.0],
+        coastline_foam_strength: 0.75,
+        coastline_foam_width: 1.5,
+        coastline_cutoff_softness: 0.25,
+        coastline_wave_reflection: 0.45,
+        coastline_wave_damping: 0.35,
+        coastline_edge_noise: 0.2,
         debug: false,
         impacts: Arc::from([]),
+        coastline_shapes: Arc::from([]),
     }
 }
 
@@ -547,7 +563,7 @@ fn set_camera_3d_updates_retained_camera_state() {
                 near: 0.2,
                 far: 900.0,
             },
-            render_mask: perro_structs::BitMask::ALL,
+            render_mask: perro_structs::BitMask::NONE,
             post_processing: Arc::from([]),
             audio_options: perro_structs::AudioListenerOptions::new(),
         },
@@ -564,7 +580,7 @@ fn set_camera_3d_updates_retained_camera_state() {
                 near: 0.2,
                 far: 900.0,
             },
-            render_mask: perro_structs::BitMask::ALL,
+            render_mask: perro_structs::BitMask::NONE,
             post_processing: Arc::from([]),
             audio_options: perro_structs::AudioListenerOptions::new(),
         }

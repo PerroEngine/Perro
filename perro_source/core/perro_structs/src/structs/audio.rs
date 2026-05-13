@@ -20,7 +20,7 @@ impl AudioMaterial {
             diffusion: 0.15,
             low_pass_strength: 0.5,
             thickness_multiplier: 1.0,
-            audio_mask: BitMask::ALL,
+            audio_mask: BitMask::NONE,
         }
     }
 }
@@ -107,7 +107,7 @@ pub struct AudioListenerOptions {
 impl AudioListenerOptions {
     pub const fn new() -> Self {
         Self {
-            audio_mask: BitMask::ALL,
+            audio_mask: BitMask::NONE,
             effects: Vec::new(),
         }
     }

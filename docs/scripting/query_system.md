@@ -39,6 +39,8 @@ Predicate forms:
 - `tags["enemy", "alive"]`
 - `node_type[Camera3D, MeshInstance3D]`
 - `base_type[Node3D]`
+- `layers[1, 2, 3]`
+- `mask[1]`
 
 ## Mental Model
 
@@ -90,12 +92,28 @@ for id in allies {
 }
 ```
 
+### 5) Render Layer Filters
+
+```rust
+let layer_one = query!(ctx.run, all(base_type[Node2D], layers[1]));
+let gameplay = query!(ctx.run, all(base_type[Node3D], layers[1, 2, 3]));
+let not_layer_one = query!(ctx.run, all(base_type[Node2D], mask[1]));
+```
+
+- `layers[...]` matches 2D/3D nodes whose `render_layers` intersects any listed layer.
+- `mask[...]` rejects 2D/3D nodes whose `render_layers` intersects any listed layer.
+- `layers[1]` means only nodes on render layer 1.
+- `layers[1, 2, 3]` means nodes on any of layers 1, 2, or 3.
+- `mask[1]` means all nodes except ones on layer 1.
+- Combine with `base_type[Node2D]` or `base_type[Node3D]` to avoid non-spatial nodes.
+
 ## Performance Notes
 
 - Core node/script storage is flat and ID-indexed, so post-query operations stay cheap.
 - Query cost depends on match set size and predicate complexity.
 - Literal `tags["enemy"]` values hash at compile time; dynamic tag expressions hash at runtime.
 - Literal `node_type[...]` and `base_type[...]` predicates compile into growable type bitmasks.
+- Literal `layers[...]` and `mask[...]` predicates compile into `BitMask` layer masks.
 - Type-only boolean groups use mask algebra: `all` intersects, `any` unions, and `not` complements.
 - Runtime query planning reorders predicates by estimated cost and uses tag indexes and type masks when possible.
 - For hot loops:

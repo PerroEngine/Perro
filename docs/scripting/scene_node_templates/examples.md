@@ -141,7 +141,10 @@ right side = scene node ref
 
 `render_mask` belongs to cameras.
 `render_layers` belongs to renderable nodes.
-Camera mask and node layers must intersect.
+Camera mask hides node layers when they intersect.
+Default camera mask is no layers.
+Default node render layers is all layers.
+Add layers to a camera mask to hide them.
 
 2D example:
 
@@ -156,7 +159,7 @@ $root = @Scene2D
 parent = $root
     [Camera2D]
         active = true
-        render_mask = [1]
+        render_mask = [2]
     [/Camera2D]
 [/GameplayCamera]
 
@@ -197,7 +200,7 @@ $root = @Scene3D
 parent = $root
     [Camera3D]
         active = true
-        render_mask = [1, 3]
+        render_mask = [2]
     [/Camera3D]
 [/MainCamera]
 
@@ -231,6 +234,13 @@ It skips layer 2.
 
 Current body layer/mask fields:
 
+`collision_layers` tags a body/area.
+`collision_mask` says which tagged layers it ignores.
+Default body/area layers is all layers.
+Default body/area mask is no layers.
+Collision requires neither side to ignore the other.
+Empty mask (`[]`) means ignore nothing.
+
 ```text
 $root = @Physics2D
 
@@ -242,7 +252,7 @@ $root = @Physics2D
 parent = $root
     [RigidBody2D]
         collision_layers = [1]
-        collision_mask_layers = [1]
+        collision_mask = []
         [CollisionShape2D]
             shape = { type = "quad" width = 1 height = 1 }
         [/CollisionShape2D]
@@ -257,7 +267,7 @@ parent = $root
 parent = $root
     [StaticBody2D]
         collision_layers = [1]
-        collision_mask_layers = [1]
+        collision_mask = []
         [CollisionShape2D]
             shape = { type = "quad" width = 1 height = 1 }
         [/CollisionShape2D]
@@ -268,7 +278,7 @@ parent = $root
 parent = $root
     [RigidBody2D]
         collision_layers = [1]
-        collision_mask_layers = [1]
+        collision_mask = []
         [CollisionShape2D]
             shape = { type = "quad" width = 1 height = 1 }
         [/CollisionShape2D]
@@ -327,7 +337,7 @@ $root = @Physics3D
 parent = $root
     [StaticBody3D]
         collision_layers = [1]
-        collision_mask_layers = [1]
+        collision_mask = []
         [CollisionShape3D]
             shape = { type = cube, size = (1, 1, 1) }
         [/CollisionShape3D]
@@ -338,7 +348,7 @@ parent = $root
 parent = $root
     [RigidBody3D]
         collision_layers = [1]
-        collision_mask_layers = [1]
+        collision_mask = []
         [CollisionShape3D]
             shape = { type = cube, size = (1, 2, 0.2) }
         [/CollisionShape3D]
