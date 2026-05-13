@@ -15,6 +15,7 @@ Accessors:
 - `ctx.res.Animations()`
 - `ctx.res.Textures()`
 - `ctx.res.Audio()`
+- `ctx.res.Csv()`
 - `ctx.res.Meshes()`
 - `ctx.res.Materials()`
 - `ctx.res.Skeletons()`
@@ -29,6 +30,7 @@ Accessors:
 - [Animations Module](resource_modules/animations.md)
 - [Textures Module](resource_modules/textures.md)
 - [Audio Module](resource_modules/audio.md)
+- [CSV Module](resource_modules/csv.md)
 - [Meshes Module](resource_modules/meshes.md)
 - [Materials Module](resource_modules/materials.md)
 - [Skeletons Module](resource_modules/skeletons.md)
@@ -114,6 +116,8 @@ let _ = audio_set_master_volume!(ctx.res, 1.0);
 let _ = audio_bus_set_volume!(ctx.res, music, 0.7);
 let _ = audio_bus_set_speed!(ctx.res, music, 1.0);
 let viewport = get_viewport_size!(ctx.res);
+let items = csv_load!(ctx.res, "res://data/items.csv");
+let sword = items.find_primary("sword").and_then(|row| row.get(1));
 
 let _ = audio_play!(
     ctx.res,

@@ -12,3 +12,4 @@ perro_scene = { path = "../../runtime_project/perro_scene" }
 perro_structs = { path = "../../core/perro_structs" }
 perro_pawdio = { path = "../../audio_stack/perro_pawdio" }
 perro_variant = { path = "../../core/perro_variant" }
+perro_csv = { path = "../../core/perro_csv" }

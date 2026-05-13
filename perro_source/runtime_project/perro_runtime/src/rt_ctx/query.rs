@@ -3,13 +3,13 @@ use ahash::{AHashMap, AHashSet};
 use perro_ids::NodeID;
 use perro_ids::TagID;
 use perro_nodes::{NodeType, SceneNode};
-use perro_runtime_api::sub_apis::{QueryExpr, QueryScope, TagQuery};
+use perro_runtime_api::sub_apis::{QueryExpr, QueryScope, QueryTypeMask, TagQuery};
 use rayon::prelude::*;
 #[cfg(feature = "profile")]
 use std::time::Instant;
 
 const PARALLEL_MIN_NODES: usize = 10_000;
-const PARALLEL_MIN_WORK_UNITS: u64 = 250_000;
+const PARALLEL_MIN_WORK_UNITS: u64 = 30_000;
 
 pub(super) fn query_node_ids(
     arena: &NodeArena,
@@ -42,7 +42,7 @@ fn query_node_ids_with_worker_override(
     }
 
     let plan = QueryPlan::from_query(&query.expr);
-    if plan.exact_type_mask == 0 || plan.base_type_mask == 0 {
+    if plan.exact_type_mask.is_empty() || plan.base_type_mask.is_empty() {
         #[cfg(feature = "profile")]
         {
             print_query_timing(
@@ -59,7 +59,11 @@ fn query_node_ids_with_worker_override(
             if let Some(candidates) =
                 candidate_ids_from_tag_index(&query.expr, tag_index, slot_count)
             {
-                scan_candidates(arena, candidates, &plan)
+                if query.expr.as_ref().is_some_and(expr_is_tag_only) {
+                    candidates
+                } else {
+                    scan_candidates(arena, candidates, &plan)
+                }
             } else {
                 let worker_count = worker_override.unwrap_or_else(|| {
                     recommended_workers(slot_count, plan.estimated_cost_per_node)
@@ -210,6 +214,20 @@ fn candidate_tag_mode(expr: &QueryExpr) -> Option<CandidateTagMode> {
     }
 }
 
+fn expr_is_tag_only(expr: &QueryExpr) -> bool {
+    match expr {
+        QueryExpr::Tags(tags) => !tags.is_empty(),
+        QueryExpr::All(children) | QueryExpr::Any(children) => {
+            !children.is_empty()
+                && children.iter().all(|child| match child {
+                    QueryExpr::Tags(tags) => !tags.is_empty(),
+                    _ => false,
+                })
+        }
+        _ => false,
+    }
+}
+
 fn recommended_workers(total_nodes: usize, estimated_cost_per_node: u32) -> usize {
     if total_nodes < PARALLEL_MIN_NODES {
         return 1;
@@ -296,6 +314,9 @@ fn eval_expr(expr: &QueryExpr, node: &SceneNode) -> bool {
         QueryExpr::BaseType(base_types) => base_types
             .iter()
             .any(|base_type| node.node_type().is_a(*base_type)),
+        QueryExpr::IsTypeMask(mask) | QueryExpr::BaseTypeMask(mask) => {
+            type_in_mask(node.node_type(), *mask)
+        }
     }
 }
 
@@ -325,8 +346,8 @@ fn eval_not_expr(expr: &QueryExpr, node: &SceneNode) -> bool {
 struct QueryPlan {
     optimized_expr: Option<QueryExpr>,
     estimated_cost_per_node: u32,
-    exact_type_mask: u64,
-    base_type_mask: u64,
+    exact_type_mask: QueryTypeMask,
+    base_type_mask: QueryTypeMask,
 }
 
 impl QueryPlan {
@@ -344,10 +365,14 @@ impl QueryPlan {
     }
 
     #[inline]
-    fn type_in_mask(&self, node_type: NodeType, mask: u64) -> bool {
-        let bit = 1_u64 << (node_type as u8);
-        (mask & bit) != 0
+    fn type_in_mask(&self, node_type: NodeType, mask: QueryTypeMask) -> bool {
+        type_in_mask(node_type, mask)
     }
+}
+
+#[inline]
+fn type_in_mask(node_type: NodeType, mask: QueryTypeMask) -> bool {
+    mask.contains_type(node_type)
 }
 
 #[derive(Clone, Copy)]
@@ -373,12 +398,16 @@ fn optimize_expr(expr: &QueryExpr) -> QueryExpr {
         QueryExpr::Tags(tags) => QueryExpr::Tags(tags.clone()),
         QueryExpr::IsType(types) => QueryExpr::IsType(types.clone()),
         QueryExpr::BaseType(types) => QueryExpr::BaseType(types.clone()),
+        QueryExpr::IsTypeMask(mask) => QueryExpr::IsTypeMask(*mask),
+        QueryExpr::BaseTypeMask(mask) => QueryExpr::BaseTypeMask(*mask),
     }
 }
 
 fn expr_cost(expr: &QueryExpr) -> u32 {
     match expr {
+        QueryExpr::IsTypeMask(_) => 0,
         QueryExpr::IsType(_) => 1,
+        QueryExpr::BaseTypeMask(_) => 1,
         QueryExpr::BaseType(_) => 2,
         QueryExpr::Name(names) => 4 + names.len() as u32,
         QueryExpr::Tags(tags) => 8 + (tags.len() as u32 * 2),
@@ -389,20 +418,16 @@ fn expr_cost(expr: &QueryExpr) -> u32 {
     }
 }
 
-fn all_types_mask() -> u64 {
-    let mut mask = 0_u64;
-    for &ty in NodeType::ALL {
-        mask |= 1_u64 << (ty as u8);
-    }
-    mask
+fn all_types_mask() -> QueryTypeMask {
+    QueryTypeMask::all()
 }
 
-fn mask_from_types(kind: TypeFilterKind, types: &[NodeType]) -> u64 {
+fn mask_from_types(kind: TypeFilterKind, types: &[NodeType]) -> QueryTypeMask {
     match kind {
         TypeFilterKind::Exact => {
-            let mut mask = 0_u64;
+            let mut mask = QueryTypeMask::NONE;
             for &ty in types {
-                mask |= 1_u64 << (ty as u8);
+                mask = mask.with_type(ty);
             }
             mask
         }
@@ -410,10 +435,10 @@ fn mask_from_types(kind: TypeFilterKind, types: &[NodeType]) -> u64 {
             if types.is_empty() {
                 return all_types_mask();
             }
-            let mut mask = 0_u64;
+            let mut mask = QueryTypeMask::NONE;
             for &ty in NodeType::ALL {
                 if types.iter().any(|base| ty.is_a(*base)) {
-                    mask |= 1_u64 << (ty as u8);
+                    mask = mask.with_type(ty);
                 }
             }
             mask
@@ -421,22 +446,25 @@ fn mask_from_types(kind: TypeFilterKind, types: &[NodeType]) -> u64 {
     }
 }
 
-fn allowed_type_mask(expr: Option<&QueryExpr>, kind: TypeFilterKind) -> u64 {
+fn allowed_type_mask(expr: Option<&QueryExpr>, kind: TypeFilterKind) -> QueryTypeMask {
     let Some(expr) = expr else {
         return all_types_mask();
     };
     allowed_type_mask_inner(expr, kind)
 }
 
-fn allowed_type_mask_inner(expr: &QueryExpr, kind: TypeFilterKind) -> u64 {
+fn allowed_type_mask_inner(expr: &QueryExpr, kind: TypeFilterKind) -> QueryTypeMask {
     match expr {
         QueryExpr::All(children) => children.iter().fold(all_types_mask(), |acc, child| {
-            acc & allowed_type_mask_inner(child, kind)
+            acc.intersection(allowed_type_mask_inner(child, kind))
         }),
-        QueryExpr::Any(children) => children.iter().fold(0_u64, |acc, child| {
-            acc | allowed_type_mask_inner(child, kind)
+        QueryExpr::Any(children) => children.iter().fold(QueryTypeMask::NONE, |acc, child| {
+            acc.union(allowed_type_mask_inner(child, kind))
         }),
-        QueryExpr::Not(_) => all_types_mask(),
+        QueryExpr::Not(inner) => match type_mask_only(inner, kind) {
+            Some(mask) => mask.complement(),
+            None => all_types_mask(),
+        },
         QueryExpr::Name(_) | QueryExpr::Tags(_) => all_types_mask(),
         QueryExpr::IsType(types) => match kind {
             TypeFilterKind::Exact => mask_from_types(TypeFilterKind::Exact, types),
@@ -445,6 +473,51 @@ fn allowed_type_mask_inner(expr: &QueryExpr, kind: TypeFilterKind) -> u64 {
         QueryExpr::BaseType(types) => match kind {
             TypeFilterKind::Exact => all_types_mask(),
             TypeFilterKind::Base => mask_from_types(TypeFilterKind::Base, types),
+        },
+        QueryExpr::IsTypeMask(mask) => match kind {
+            TypeFilterKind::Exact => *mask,
+            TypeFilterKind::Base => all_types_mask(),
+        },
+        QueryExpr::BaseTypeMask(mask) => match kind {
+            TypeFilterKind::Exact => all_types_mask(),
+            TypeFilterKind::Base => *mask,
+        },
+    }
+}
+
+fn type_mask_only(expr: &QueryExpr, kind: TypeFilterKind) -> Option<QueryTypeMask> {
+    match expr {
+        QueryExpr::All(children) => {
+            let mut mask = all_types_mask();
+            for child in children {
+                mask = mask.intersection(type_mask_only(child, kind)?);
+            }
+            Some(mask)
+        }
+        QueryExpr::Any(children) => {
+            let mut mask = QueryTypeMask::NONE;
+            for child in children {
+                mask = mask.union(type_mask_only(child, kind)?);
+            }
+            Some(mask)
+        }
+        QueryExpr::Not(inner) => type_mask_only(inner, kind).map(QueryTypeMask::complement),
+        QueryExpr::Name(_) | QueryExpr::Tags(_) => None,
+        QueryExpr::IsType(types) => match kind {
+            TypeFilterKind::Exact => Some(mask_from_types(TypeFilterKind::Exact, types)),
+            TypeFilterKind::Base => None,
+        },
+        QueryExpr::BaseType(types) => match kind {
+            TypeFilterKind::Exact => None,
+            TypeFilterKind::Base => Some(mask_from_types(TypeFilterKind::Base, types)),
+        },
+        QueryExpr::IsTypeMask(mask) => match kind {
+            TypeFilterKind::Exact => Some(*mask),
+            TypeFilterKind::Base => None,
+        },
+        QueryExpr::BaseTypeMask(mask) => match kind {
+            TypeFilterKind::Exact => None,
+            TypeFilterKind::Base => Some(*mask),
         },
     }
 }

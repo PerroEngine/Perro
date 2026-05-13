@@ -35,6 +35,17 @@ let path = ResPathBuf::try_new(format!("dlc://{pack}/textures/player.png"))?;
 let texture = texture_load!(ctx.res, &path);
 ```
 
+Promote borrowed to owned:
+
+```rust
+use perro_api::prelude::*;
+
+let path = res_path!("res://textures/player.png");
+let owned = path.to_buf();
+```
+
+`to_res_path_buf()` is also available.
+
 ## Rules
 
 - Must start with `res://`, `dlc://`, or `user://`.

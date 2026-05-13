@@ -1,6 +1,7 @@
 mod animation;
 mod animation_tree;
 mod audio;
+mod csv_table;
 mod draw_2d;
 mod localization;
 mod material;
@@ -19,6 +20,7 @@ pub use audio::{
     MidiModule, MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong, MidiSound, MidiSpatialPos,
     MidiSpatialPosition, Note, PannedAudio, SpatialAudioOptions, bus_id, program,
 };
+pub use csv_table::{CsvAPI, CsvModule};
 pub use draw_2d::{Draw2DAPI, Draw2DModule};
 pub use localization::{Locale, LocalizationAPI, LocalizationModule};
 pub use material::{MaterialAPI, MaterialModule};

@@ -231,7 +231,7 @@ where
     out.clear();
     let ids = ctx
         .Nodes()
-        .query(TagQuery::new().is_node_types([NodeType::BoneCollider2D]));
+        .query(TagQuery::new().node_type([NodeType::BoneCollider2D]));
     for id in ids {
         let enabled =
             with_base_node!(ctx, BoneCollider2D, id, |node| node.enabled).unwrap_or(false);

@@ -19,5 +19,6 @@ rayon = "1.10"
 perro_particle_math = { path = "../../core/perro_particle_math" }
 perro_runtime = { path = "../../runtime_project/perro_runtime" }
 perro_ui = { path = "../../core/perro_ui" }
+perro_csv = { path = "../../core/perro_csv" }
 csv = "1.4"
 glam = "0.31.0"

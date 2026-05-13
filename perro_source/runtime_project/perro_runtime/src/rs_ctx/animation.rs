@@ -152,7 +152,7 @@ fps = 30
     }
 
     fn new_api_with_lookup(lookup: Option<StaticAnimationLookup>) -> Arc<RuntimeResourceApi> {
-        RuntimeResourceApi::new(None, None, None, lookup, None, None, None)
+        RuntimeResourceApi::new(None, None, None, lookup, None, None, None, None)
     }
 
     fn static_clip_lookup(_path_hash: u64) -> &'static AnimationClip {

@@ -1,0 +1,15 @@
+[package]
+name = "perro_csv"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+csv = "1.4"
+perro_ids = { path = "../perro_ids" }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "huge_csv"
+harness = false

@@ -1,7 +1,7 @@
 use super::state::{RuntimeLocalizationState, RuntimeResourceState};
 use crate::runtime_project::{
-    StaticAnimationLookup, StaticAnimationTreeLookup, StaticAudioLookup, StaticLocalizationLookup,
-    StaticMaterialLookup, StaticSkeletonLookup,
+    StaticAnimationLookup, StaticAnimationTreeLookup, StaticAudioLookup, StaticCsvLookup,
+    StaticLocalizationLookup, StaticMaterialLookup, StaticSkeletonLookup,
 };
 use perro_ids::{SoundFontID, string_to_u64};
 use perro_pawdio::{AudioController, MidiChannel, MidiProgram, MidiSound, Note};
@@ -165,6 +165,8 @@ pub struct RuntimeResourceApi {
     pub(super) static_animation_lookup: Option<StaticAnimationLookup>,
     pub(super) static_animation_tree_lookup: Option<StaticAnimationTreeLookup>,
     pub(super) static_localization_lookup: Option<StaticLocalizationLookup>,
+    pub(super) static_csv_lookup: Option<StaticCsvLookup>,
+    pub(super) csv_cache: Mutex<HashMap<u64, &'static perro_csv::PerroCsv>>,
     pub(super) skeleton_bones_2d_cache:
         Mutex<HashMap<String, Vec<perro_nodes::skeleton_2d::Bone2D>>>,
     pub(super) skeleton_bones_3d_cache:
@@ -173,6 +175,7 @@ pub struct RuntimeResourceApi {
 }
 
 impl RuntimeResourceApi {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         static_material_lookup: Option<StaticMaterialLookup>,
         static_audio_lookup: Option<StaticAudioLookup>,
@@ -180,6 +183,7 @@ impl RuntimeResourceApi {
         static_animation_lookup: Option<StaticAnimationLookup>,
         static_animation_tree_lookup: Option<StaticAnimationTreeLookup>,
         static_localization_lookup: Option<StaticLocalizationLookup>,
+        static_csv_lookup: Option<StaticCsvLookup>,
         localization_config: Option<LocalizationConfig>,
     ) -> Arc<Self> {
         let api = Arc::new(Self {
@@ -200,6 +204,8 @@ impl RuntimeResourceApi {
             static_animation_lookup,
             static_animation_tree_lookup,
             static_localization_lookup,
+            static_csv_lookup,
+            csv_cache: Mutex::new(HashMap::new()),
             skeleton_bones_2d_cache: Mutex::new(HashMap::new()),
             skeleton_bones_3d_cache: Mutex::new(HashMap::new()),
             viewport_size: Mutex::new((1, 1)),

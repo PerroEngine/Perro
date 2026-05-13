@@ -1,3 +1,4 @@
+pub use perro_csv as csv;
 pub use perro_ids as ids;
 pub use perro_input_api as input;
 pub use perro_modules as modules;
@@ -40,6 +41,10 @@ pub use perro_variant as variant;
 pub mod prelude {
     #[cfg(feature = "steamworks")]
     pub use crate::steam;
+    pub use perro_csv::{
+        CSVQuery, CSVQueryResult, CSVQueryRow, CsvCell, CsvCompare, CsvLogic, CsvOrder, CsvRow,
+        CsvRowIndex, PerroCsv, PerroCsvBuf,
+    };
     pub use perro_ids::prelude::*;
     pub use perro_input_api::prelude::*;
     pub use perro_modules::log::*;

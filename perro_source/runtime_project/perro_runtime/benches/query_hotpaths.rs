@@ -2,7 +2,7 @@ use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_ma
 use perro_ids::TagID;
 use perro_nodes::{MeshInstance3D, Node3D, NodeType};
 use perro_runtime::Runtime;
-use perro_runtime_api::sub_apis::{NodeAPI, QueryExpr, QueryScope, TagQuery};
+use perro_runtime_api::sub_apis::{NodeAPI, QueryExpr, QueryScope, QueryTypeMask, TagQuery};
 
 fn build_query_runtime(count: usize) -> Runtime {
     let mut runtime = Runtime::new();
@@ -70,8 +70,105 @@ fn bench_rt_ctx_queries(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_compile_repr_queries(c: &mut Criterion) {
+    let mesh_type_mask = QueryTypeMask::NONE.with_type(NodeType::MeshInstance3D);
+    let node3d_base_mask = QueryTypeMask::NONE.with_type(NodeType::Node3D);
+    let enemy = TagID::from_string("enemy");
+    let alive = TagID::from_string("alive");
+    let boss = TagID::from_string("boss");
+
+    let selective_vec = TagQuery {
+        expr: Some(QueryExpr::All(vec![
+            QueryExpr::IsType(vec![NodeType::MeshInstance3D]),
+            QueryExpr::Name(vec!["enemy".to_string()]),
+            QueryExpr::Tags(vec![enemy, alive, boss]),
+        ])),
+        scope: QueryScope::Root,
+    };
+    let selective_mask = TagQuery {
+        expr: Some(QueryExpr::All(vec![
+            QueryExpr::IsTypeMask(mesh_type_mask),
+            QueryExpr::Name(vec!["enemy".to_string()]),
+            QueryExpr::Tags(vec![enemy, alive, boss]),
+        ])),
+        scope: QueryScope::Root,
+    };
+    let type_vec = TagQuery {
+        expr: Some(QueryExpr::All(vec![
+            QueryExpr::IsType(vec![NodeType::MeshInstance3D]),
+            QueryExpr::BaseType(vec![NodeType::Node3D]),
+        ])),
+        scope: QueryScope::Root,
+    };
+    let type_mask_query = TagQuery {
+        expr: Some(QueryExpr::All(vec![
+            QueryExpr::IsTypeMask(mesh_type_mask),
+            QueryExpr::BaseTypeMask(node3d_base_mask),
+        ])),
+        scope: QueryScope::Root,
+    };
+    let not_type_vec = TagQuery {
+        expr: Some(QueryExpr::Not(Box::new(QueryExpr::IsType(vec![
+            NodeType::MeshInstance3D,
+        ])))),
+        scope: QueryScope::Root,
+    };
+    let not_type_mask = TagQuery {
+        expr: Some(QueryExpr::Not(Box::new(QueryExpr::IsTypeMask(
+            mesh_type_mask,
+        )))),
+        scope: QueryScope::Root,
+    };
+
+    let mut group = c.benchmark_group("query/compile_repr");
+    for count in [2_500usize, 10_000, 50_000] {
+        group.bench_with_input(
+            BenchmarkId::new("selective_vec", count),
+            &count,
+            |b, &count| {
+                let mut runtime = build_query_runtime(count);
+                b.iter(|| black_box(NodeAPI::query_nodes(&mut runtime, selective_vec.clone())))
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("selective_mask", count),
+            &count,
+            |b, &count| {
+                let mut runtime = build_query_runtime(count);
+                b.iter(|| black_box(NodeAPI::query_nodes(&mut runtime, selective_mask.clone())))
+            },
+        );
+        group.bench_with_input(BenchmarkId::new("type_vec", count), &count, |b, &count| {
+            let mut runtime = build_query_runtime(count);
+            b.iter(|| black_box(NodeAPI::query_nodes(&mut runtime, type_vec.clone())))
+        });
+        group.bench_with_input(BenchmarkId::new("type_mask", count), &count, |b, &count| {
+            let mut runtime = build_query_runtime(count);
+            b.iter(|| black_box(NodeAPI::query_nodes(&mut runtime, type_mask_query.clone())))
+        });
+        group.bench_with_input(
+            BenchmarkId::new("not_type_vec", count),
+            &count,
+            |b, &count| {
+                let mut runtime = build_query_runtime(count);
+                b.iter(|| black_box(NodeAPI::query_nodes(&mut runtime, not_type_vec.clone())))
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("not_type_mask", count),
+            &count,
+            |b, &count| {
+                let mut runtime = build_query_runtime(count);
+                b.iter(|| black_box(NodeAPI::query_nodes(&mut runtime, not_type_mask.clone())))
+            },
+        );
+    }
+    group.finish();
+}
+
 fn benches(c: &mut Criterion) {
     bench_rt_ctx_queries(c);
+    bench_compile_repr_queries(c);
 }
 
 criterion_group! {

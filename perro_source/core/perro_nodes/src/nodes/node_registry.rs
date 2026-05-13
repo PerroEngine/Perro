@@ -499,8 +499,8 @@ macro_rules! define_scene_nodes {
                 }
             }
 
-            pub fn is_a(&self, base: NodeType) -> bool {
-                if *self == base {
+            pub const fn is_a(&self, base: NodeType) -> bool {
+                if *self as u8 == base as u8 {
                     return true;
                 }
 
@@ -508,7 +508,7 @@ macro_rules! define_scene_nodes {
                 loop {
                     match cursor.parent_type() {
                         Some(parent) => {
-                            if parent == base {
+                            if parent as u8 == base as u8 {
                                 return true;
                             }
                             cursor = parent;

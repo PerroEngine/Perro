@@ -1,9 +1,9 @@
 use crate::ResPathSource;
 use crate::sub_apis::{
     AnimationAPI, AnimationModule, AnimationTreeAPI, AnimationTreeModule, AudioAPI, AudioModule,
-    Draw2DAPI, Draw2DModule, Locale, LocalizationAPI, LocalizationModule, MaterialAPI,
-    MaterialModule, MeshAPI, MeshModule, PostProcessingAPI, SceneDocAPI, SceneDocModule,
-    SkeletonAPI, SkeletonModule, TextureAPI, TextureModule, VisualAccessibilityAPI,
+    CsvAPI, CsvModule, Draw2DAPI, Draw2DModule, Locale, LocalizationAPI, LocalizationModule,
+    MaterialAPI, MaterialModule, MeshAPI, MeshModule, PostProcessingAPI, SceneDocAPI,
+    SceneDocModule, SkeletonAPI, SkeletonModule, TextureAPI, TextureModule, VisualAccessibilityAPI,
 };
 use perro_scene::{SceneDoc, SceneWrite};
 use perro_structs::{ColorBlindFilter, PostProcessEffect, PostProcessSet, Vector2};
@@ -12,6 +12,7 @@ pub trait ResourceAPI:
     PostProcessingAPI
     + VisualAccessibilityAPI
     + AudioAPI
+    + CsvAPI
     + TextureAPI
     + MeshAPI
     + MaterialAPI
@@ -30,6 +31,7 @@ impl<T> ResourceAPI for T where
     T: PostProcessingAPI
         + VisualAccessibilityAPI
         + AudioAPI
+        + CsvAPI
         + TextureAPI
         + MeshAPI
         + MaterialAPI
@@ -68,6 +70,11 @@ impl<'res, R: ResourceAPI + ?Sized> ResourceWindow<'res, R> {
     #[inline]
     pub fn Audio(&self) -> AudioModule<'_, R> {
         AudioModule::new(self.api)
+    }
+
+    #[inline]
+    pub fn Csv(&self) -> CsvModule<'_, R> {
+        CsvModule::new(self.api)
     }
 
     #[inline]

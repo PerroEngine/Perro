@@ -36,6 +36,7 @@ perro_physics = { path = "../perro_physics" }
 perro_runtime_render = { path = "../perro_runtime_render" }
 perro_particle_math = { path = "../../core/perro_particle_math" }
 perro_pawdio = { path = "../../audio_stack/perro_pawdio" }
+perro_csv = { path = "../../core/perro_csv" }
 perro_steamworks = { path = "../../api_modules/perro_steamworks", default-features = false, optional = true }
 
 [dev-dependencies]
@@ -81,5 +82,10 @@ required-features = ["bench"]
 
 [[bench]]
 name = "signal_hotpaths"
+harness = false
+required-features = ["bench"]
+
+[[bench]]
+name = "csv_loading"
 harness = false
 required-features = ["bench"]

@@ -3023,6 +3023,7 @@ dependencies = [
 name = "perro_api"
 version = "0.1.0"
 dependencies = [
+ "perro_csv",
  "perro_ids",
  "perro_input_api",
  "perro_modules",
@@ -3102,6 +3103,15 @@ dependencies = [
  "perro_scene",
  "perro_static_pipeline",
  "toml 0.8.23",
+]
+
+[[package]]
+name = "perro_csv"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "csv",
+ "perro_ids",
 ]
 
 [[package]]
@@ -3278,6 +3288,7 @@ name = "perro_resource_api"
 version = "0.1.0"
 dependencies = [
  "perro_animation",
+ "perro_csv",
  "perro_ids",
  "perro_nodes",
  "perro_pawdio",
@@ -3302,6 +3313,7 @@ dependencies = [
  "perro_animation",
  "perro_asset_formats",
  "perro_builtin_meshes",
+ "perro_csv",
  "perro_ids",
  "perro_input_api",
  "perro_internal_updates",
@@ -3393,6 +3405,7 @@ dependencies = [
  "image",
  "perro_animation",
  "perro_asset_formats",
+ "perro_csv",
  "perro_ids",
  "perro_io",
  "perro_meshlets",

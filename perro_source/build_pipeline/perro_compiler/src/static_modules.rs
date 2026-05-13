@@ -90,6 +90,10 @@ fn generate_project_static_modules(
                 scope.spawn(|| perro_static_pipeline::generate_static_audios(project_root)),
             ),
             (
+                "csv",
+                scope.spawn(|| perro_static_pipeline::generate_static_csvs(project_root)),
+            ),
+            (
                 "localization",
                 scope.spawn(|| {
                     perro_static_pipeline::generate_static_localizations(project_root, cfg)
@@ -166,6 +170,10 @@ fn generate_dlc_static_modules(
             (
                 "audio",
                 scope.spawn(|| perro_static_pipeline::generate_static_audios(project_root)),
+            ),
+            (
+                "csv",
+                scope.spawn(|| perro_static_pipeline::generate_static_csvs(project_root)),
             ),
             (
                 "localization",

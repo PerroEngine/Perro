@@ -698,7 +698,9 @@ fn script_macros_typecheck_and_forward() {
     assert!(!tag_add!(&mut ctx, id, "player"));
     assert!(!tag_remove!(&mut ctx, id, "player"));
     assert!(query!(&mut ctx, all(tags["player"], not(tags["enemy"]))).is_empty());
-    assert!(query!(&mut ctx, all(is[Node2D], base[Node3D])).is_empty());
+    let player_tag = "player".to_string();
+    assert!(query!(&mut ctx, all(tags[player_tag.as_str()])).is_empty());
+    assert!(query!(&mut ctx, all(node_type[Node2D], base_type[Node3D])).is_empty());
     assert!(!reparent!(&mut ctx, NodeID::new(1), id));
     assert_eq!(reparent_multi!(&mut ctx, NodeID::new(1), [id]), 0);
     assert!(!remove_node!(&mut ctx, id));

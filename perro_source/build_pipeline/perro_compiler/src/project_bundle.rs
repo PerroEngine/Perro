@@ -289,6 +289,7 @@ fn generate_embedded_main(project_root: &Path) -> Result<(), CompilerError> {
     )?;
     ensure_project_dependency_line(project_root, "perro_runtime", "perro_runtime = \"0.1.0\"")?;
     ensure_project_dependency_line(project_root, "perro_ids", "perro_ids = \"0.1.0\"")?;
+    ensure_project_dependency_line(project_root, "perro_csv", "perro_csv = \"0.1.0\"")?;
     ensure_project_dependency_line(
         project_root,
         "perro_animation",
@@ -348,6 +349,7 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         particle_lookup: static_assets::particles::lookup_particle,\n\
         animation_lookup: static_assets::animations::lookup_animation,\n\
         animation_tree_lookup: static_assets::animation_trees::lookup_animation_tree,\n\
+        csv_lookup: static_assets::csvs::lookup_csv,\n\
         mesh_lookup: static_assets::meshes::lookup_mesh,\n\
         collision_trimesh_lookup: static_assets::collision_trimeshes::lookup_collision_trimesh,\n\
         skeleton_lookup: static_assets::skeletons::lookup_skeleton,\n\

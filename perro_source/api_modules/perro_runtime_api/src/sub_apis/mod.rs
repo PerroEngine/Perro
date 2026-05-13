@@ -17,8 +17,9 @@ pub use audio::{
     RuntimeAudioAPI, RuntimeAudioModule, RuntimeMidiModule, SpatialAudioOptions, program,
 };
 pub use node::{
-    IntoNodeTag, IntoNodeTags, MeshDataSurfaceHit3D, MeshDataSurfaceRegion3D, MeshMaterialRegion3D,
-    MeshSurfaceHit3D, NodeAPI, NodeCreationTemplate, NodeModule, QueryExpr, QueryScope, TagQuery,
+    __query_base_type_mask, __query_type_mask, IntoNodeTag, IntoNodeTags, MeshDataSurfaceHit3D,
+    MeshDataSurfaceRegion3D, MeshMaterialRegion3D, MeshSurfaceHit3D, NodeAPI, NodeCreationTemplate,
+    NodeModule, QueryExpr, QueryScope, QueryTypeMask, TagQuery,
 };
 pub use physics::{
     IntoImpulseDirection, PhysicsAPI, PhysicsContact2D, PhysicsContact3D, PhysicsModule,

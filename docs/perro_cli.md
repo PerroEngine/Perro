@@ -185,7 +185,7 @@ perro build --path <project_dir>
 What it does:
 
 1. Runs script compilation (same core script pipeline as `check`).
-2. Generates static scene/material/particle/mesh/texture outputs.
+2. Generates static scene/material/particle/mesh/texture/CSV outputs.
 3. Generates embedded project entry files under `.perro/project`.
 4. Packs `res` assets into `.perro/project/embedded/assets.perro`.
 5. Builds the generated project crate in release mode from `.perro/project`.
@@ -193,7 +193,7 @@ What it does:
 
 Use this to build the final executable into `<project>/.output/`.
 It runs full static project bundle generation and then builds the release executable.
-The static pipeline bakes supported asset types ahead of runtime, including scenes, materials, particles, meshes, textures, and other core resources.
+The static pipeline bakes supported asset types ahead of runtime, including scenes, materials, particles, meshes, textures, CSV tables, and other core resources.
 Scenes become static Rust data, and generated `u64` path-hash lookup functions avoid archive search for supported static assets.
 Exported builds also include `assets.perro`, a binary pack for generic `res/` files that do not have static bake support.
 The static pipeline cost is paid during export; the runtime benchmark target is loading from already-baked data.

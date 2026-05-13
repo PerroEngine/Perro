@@ -18,7 +18,7 @@ use std::borrow::Cow;
 
 use crate::Runtime;
 
-const CREATE_NODES_PARALLEL_MIN: usize = 4_096;
+const CREATE_NODES_PARALLEL_MIN: usize = 16_384;
 
 mod helpers;
 use helpers::*;
@@ -97,8 +97,16 @@ impl NodeAPI for Runtime {
                 parent.children.reserve(ids.len());
                 parent.children.extend(ids.iter().copied());
             }
+            let parent_ui_ancestor = self.closest_ui_ancestor(parent_id);
             for &id in &ids {
-                self.mark_ui_reparent_dirty(id, perro_ids::NodeID::nil(), parent_id);
+                let child_is_ui = self
+                    .nodes
+                    .get(id)
+                    .and_then(|node| ui_base_from_data(&node.data))
+                    .is_some();
+                if child_is_ui || parent_ui_ancestor.is_some() {
+                    self.mark_ui_reparent_dirty(id, perro_ids::NodeID::nil(), parent_id);
+                }
             }
         }
 

@@ -47,6 +47,7 @@
 - [`.uistyle` Format](resources/uistyle.md)
 - [`.ppart` Format](resources/ppart.md)
 - [`.pskel` Format](resources/pskel.md)
+- [CSV Resource API](scripting/contexts/resource_modules/csv.md)
 
 - [Post Processing](resources/postprocess.md)
 - [Visual Accessibility](scripting/contexts/resource_modules/visual_accessibility.md)

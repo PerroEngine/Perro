@@ -845,6 +845,7 @@ mod tests {
             None,
             None,
             Some(static_lookup),
+            None,
             Some(LocalizationConfig {
                 source_csv: "locale.csv".to_string(),
                 key_column: "key".to_string(),
@@ -919,6 +920,7 @@ mod tests {
             None,
             None,
             Some(static_lookup),
+            None,
             Some(LocalizationConfig {
                 source_csv: "locale.csv".to_string(),
                 key_column: "key".to_string(),

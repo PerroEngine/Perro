@@ -102,6 +102,10 @@ impl ResPath {
         ResPathBuf(Cow::Owned(self.0.to_owned()))
     }
 
+    pub fn to_buf(&self) -> ResPathBuf {
+        self.to_res_path_buf()
+    }
+
     pub fn dlc_name(&self) -> Option<&str> {
         let rest = self.0.strip_prefix("dlc://")?;
         Some(rest.split_once('/').map_or(rest, |(name, _)| name))
@@ -551,6 +555,9 @@ mod tests {
         let owned = ResPathBuf::try_new(String::from("res://audio/theme.ogg")).unwrap();
         let borrowed: &ResPath = &owned;
         assert_eq!(borrowed.as_str(), "res://audio/theme.ogg");
+
+        let promoted = borrowed.to_buf();
+        assert_eq!(promoted.as_str(), "res://audio/theme.ogg");
     }
 
     #[test]

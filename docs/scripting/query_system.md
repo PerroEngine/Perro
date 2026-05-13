@@ -37,9 +37,7 @@ Predicate forms:
 
 - `name["Player", "Boss"]`
 - `tags["enemy", "alive"]`
-- `is[Camera3D, MeshInstance3D]`
-- `is_type[Camera3D, MeshInstance3D]`
-- `base[Node3D]`
+- `node_type[Camera3D, MeshInstance3D]`
 - `base_type[Node3D]`
 
 ## Mental Model
@@ -78,7 +76,7 @@ if let Some(id) = target {
 ```rust
 let local_hits = query!(
     ctx,
-    all(base[Node3D], tags["interactable"]),
+    all(base_type[Node3D], tags["interactable"]),
     in_subtree(zone_root_id)
 );
 ```
@@ -96,6 +94,10 @@ for id in allies {
 
 - Core node/script storage is flat and ID-indexed, so post-query operations stay cheap.
 - Query cost depends on match set size and predicate complexity.
+- Literal `tags["enemy"]` values hash at compile time; dynamic tag expressions hash at runtime.
+- Literal `node_type[...]` and `base_type[...]` predicates compile into growable type bitmasks.
+- Type-only boolean groups use mask algebra: `all` intersects, `any` unions, and `not` complements.
+- Runtime query planning reorders predicates by estimated cost and uses tag indexes and type masks when possible.
 - For hot loops:
   - cache stable `NodeID`s when safe
   - refresh cache on scene changes or lifecycle events

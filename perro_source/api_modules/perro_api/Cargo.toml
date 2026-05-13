@@ -17,6 +17,7 @@ perro_structs = { path = "../../core/perro_structs" }
 perro_ui = { path = "../../core/perro_ui" }
 perro_modules = { path = "../perro_modules" }
 perro_variant = { path = "../../core/perro_variant" }
+perro_csv = { path = "../../core/perro_csv" }
 
 [features]
 steamworks = ["dep:perro_steamworks", "perro_steamworks/steamworks-runtime"]

@@ -42,6 +42,7 @@ Static export currently targets core runtime assets such as:
 - animation trees
 - skeletons
 - audio
+- CSV tables
 - shaders
 - localization
 
@@ -102,6 +103,11 @@ Examples:
 | Mesh              | file IO + source mesh path         | lookup baked `PMESH` bytes             |
 | Tileset           | parse `.ptileset` text             | lookup baked `PTSET` bytes             |
 | Audio             | file IO + source load path         | lookup baked `PAWDIO` bytes            |
+| CSV table         | file IO + CSV parse/cache          | `lookup_csv(hash)` -> static table     |
+
+CSV tables also support Rust-side `CSVQuery`.
+Current query path filters table rows, optionally sorts matching rows, applies limit, and returns projected row views.
+Equality and `in` filters seed from lazy per-column hash indexes, so repeated queries avoid full table scans when a matching filter exists.
 
 ## Perf Target
 
@@ -157,6 +163,17 @@ Static asset access:
 | ---------------------------- | ----------------- | ------------------ | ------------------ |
 | Hash `match` lookup          | ~8.27 ns           | ~8.36 ns          | ~6.55 ns            |
 | Load static bytes into `Vec` | 4 KiB in ~0.664 us | 64 KiB in ~2.08 us | 16 KiB in ~0.948 us |
+
+CSV query access:
+
+| Operation                         | 250k rows, 8 cols |
+| --------------------------------- | ----------------- |
+| Primary string find batch         | ~5.6 us           |
+| Primary hash find batch           | ~3.4 us           |
+| Header get batch                  | ~2.8 us           |
+| Filter/sort/limit query, indexed  | ~1.3 ms           |
+| Previous scan query before index  | ~6.3 ms           |
+| First unoptimized query baseline  | ~15.3 ms          |
 
 Compression in export:
 

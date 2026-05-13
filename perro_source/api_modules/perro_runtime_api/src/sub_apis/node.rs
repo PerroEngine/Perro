@@ -28,6 +28,98 @@ pub enum QueryExpr {
     Tags(Vec<TagID>),
     IsType(Vec<NodeType>),
     BaseType(Vec<NodeType>),
+    IsTypeMask(QueryTypeMask),
+    BaseTypeMask(QueryTypeMask),
+}
+
+pub const QUERY_TYPE_MASK_WORDS: usize = NodeType::ALL.len().div_ceil(64);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct QueryTypeMask {
+    bits: [u64; QUERY_TYPE_MASK_WORDS],
+}
+
+impl QueryTypeMask {
+    pub const NONE: Self = Self {
+        bits: [0; QUERY_TYPE_MASK_WORDS],
+    };
+
+    pub const fn from_bits(bits: [u64; QUERY_TYPE_MASK_WORDS]) -> Self {
+        Self { bits }
+    }
+
+    pub const fn bits(self) -> [u64; QUERY_TYPE_MASK_WORDS] {
+        self.bits
+    }
+
+    pub const fn all() -> Self {
+        let mut mask = Self::NONE;
+        let mut index = 0;
+        while index < NodeType::ALL.len() {
+            mask = mask.with_type(NodeType::ALL[index]);
+            index += 1;
+        }
+        mask
+    }
+
+    pub const fn with_type(mut self, node_type: NodeType) -> Self {
+        let bit_index = node_type as usize;
+        let word = bit_index / 64;
+        let bit = bit_index % 64;
+        if word < QUERY_TYPE_MASK_WORDS {
+            self.bits[word] |= 1_u64 << bit;
+        }
+        self
+    }
+
+    pub const fn contains_type(self, node_type: NodeType) -> bool {
+        let bit_index = node_type as usize;
+        let word = bit_index / 64;
+        let bit = bit_index % 64;
+        word < QUERY_TYPE_MASK_WORDS && (self.bits[word] & (1_u64 << bit)) != 0
+    }
+
+    pub const fn union(self, other: Self) -> Self {
+        let mut out = Self::NONE;
+        let mut index = 0;
+        while index < QUERY_TYPE_MASK_WORDS {
+            out.bits[index] = self.bits[index] | other.bits[index];
+            index += 1;
+        }
+        out
+    }
+
+    pub const fn intersection(self, other: Self) -> Self {
+        let mut out = Self::NONE;
+        let mut index = 0;
+        while index < QUERY_TYPE_MASK_WORDS {
+            out.bits[index] = self.bits[index] & other.bits[index];
+            index += 1;
+        }
+        out
+    }
+
+    pub const fn complement(self) -> Self {
+        let all = Self::all();
+        let mut out = Self::NONE;
+        let mut index = 0;
+        while index < QUERY_TYPE_MASK_WORDS {
+            out.bits[index] = all.bits[index] & !self.bits[index];
+            index += 1;
+        }
+        out
+    }
+
+    pub const fn is_empty(self) -> bool {
+        let mut index = 0;
+        while index < QUERY_TYPE_MASK_WORDS {
+            if self.bits[index] != 0 {
+                return false;
+            }
+            index += 1;
+        }
+        true
+    }
 }
 
 /// Query definition used by [`query!`](macro@crate::query) to filter nodes.
@@ -425,7 +517,7 @@ impl TagQuery {
     /// Adds exact type filters.
     ///
     /// Match succeeds if node's concrete type is any one of these.
-    pub fn is_node_types<I>(self, types: I) -> Self
+    pub fn node_type<I>(self, types: I) -> Self
     where
         I: IntoIterator<Item = NodeType>,
     {
@@ -435,7 +527,7 @@ impl TagQuery {
     /// Adds base/inclusive type filters.
     ///
     /// Match succeeds if node's concrete type `is_a` any one of these.
-    pub fn base_node_types<I>(self, types: I) -> Self
+    pub fn base_type<I>(self, types: I) -> Self
     where
         I: IntoIterator<Item = NodeType>,
     {
@@ -452,6 +544,45 @@ impl TagQuery {
         self.scope = QueryScope::Subtree(parent_id);
         self
     }
+}
+
+#[doc(hidden)]
+pub const fn __query_type_mask(types: &[NodeType]) -> QueryTypeMask {
+    let mut mask = QueryTypeMask::NONE;
+    let mut index = 0;
+    while index < types.len() {
+        mask = mask.with_type(types[index]);
+        index += 1;
+    }
+    mask
+}
+
+#[doc(hidden)]
+pub const fn __query_all_type_mask() -> QueryTypeMask {
+    QueryTypeMask::all()
+}
+
+#[doc(hidden)]
+pub const fn __query_base_type_mask(base_types: &[NodeType]) -> QueryTypeMask {
+    if base_types.is_empty() {
+        return __query_all_type_mask();
+    }
+
+    let mut mask = QueryTypeMask::NONE;
+    let mut type_index = 0;
+    while type_index < NodeType::ALL.len() {
+        let node_type = NodeType::ALL[type_index];
+        let mut base_index = 0;
+        while base_index < base_types.len() {
+            if node_type.is_a(base_types[base_index]) {
+                mask = mask.with_type(node_type);
+                break;
+            }
+            base_index += 1;
+        }
+        type_index += 1;
+    }
+    mask
 }
 
 pub trait NodeAPI {
@@ -2125,8 +2256,8 @@ macro_rules! tag_remove {
 /// - `name[...]` OR-list of names
 /// - `tags[...]` list of tags; interpretation comes from wrapper:
 ///   `all(tags[...])`, `any(tags[...])`, or `not(tags[...])`
-/// - `is[...]` / `is_type[...]`
-/// - `base[...]` / `base_type[...]`
+/// - `node_type[...]`
+/// - `base_type[...]`
 ///
 /// Boolean combinators:
 /// - `all(expr, expr, ...)`
@@ -2171,33 +2302,33 @@ macro_rules! query {
         $crate::sub_apis::QueryExpr::Name(vec![$(($name).to_string()),*])
     };
 
+    (@expr tags[$($tag:literal),* $(,)?]) => {
+        $crate::sub_apis::QueryExpr::Tags(vec![$(const { $crate::perro_ids::TagID::from_string($tag) }),*])
+    };
+
     (@expr tags[$($tag:expr),* $(,)?]) => {
         $crate::sub_apis::QueryExpr::Tags(vec![$($crate::perro_ids::IntoTagID::into_tag_id($tag)),*])
     };
 
-    (@expr is[$($ty:ident),* $(,)?]) => {
-        $crate::sub_apis::QueryExpr::IsType(vec![$($crate::perro_nodes::NodeType::$ty),*])
+    (@expr node_type[$($ty:ident),* $(,)?]) => {
+        $crate::sub_apis::QueryExpr::IsTypeMask(const {
+            $crate::sub_apis::__query_type_mask(&[$($crate::perro_nodes::NodeType::$ty),*])
+        })
     };
-    (@expr is[$($ty:path),* $(,)?]) => {
-        $crate::sub_apis::QueryExpr::IsType(vec![$($ty),*])
-    };
-    (@expr is_type[$($ty:ident),* $(,)?]) => {
-        $crate::sub_apis::QueryExpr::IsType(vec![$($crate::perro_nodes::NodeType::$ty),*])
-    };
-    (@expr is_type[$($ty:path),* $(,)?]) => {
-        $crate::sub_apis::QueryExpr::IsType(vec![$($ty),*])
-    };
-    (@expr base[$($ty:ident),* $(,)?]) => {
-        $crate::sub_apis::QueryExpr::BaseType(vec![$($crate::perro_nodes::NodeType::$ty),*])
-    };
-    (@expr base[$($ty:path),* $(,)?]) => {
-        $crate::sub_apis::QueryExpr::BaseType(vec![$($ty),*])
+    (@expr node_type[$($ty:path),* $(,)?]) => {
+        $crate::sub_apis::QueryExpr::IsTypeMask(const {
+            $crate::sub_apis::__query_type_mask(&[$($ty),*])
+        })
     };
     (@expr base_type[$($ty:ident),* $(,)?]) => {
-        $crate::sub_apis::QueryExpr::BaseType(vec![$($crate::perro_nodes::NodeType::$ty),*])
+        $crate::sub_apis::QueryExpr::BaseTypeMask(const {
+            $crate::sub_apis::__query_base_type_mask(&[$($crate::perro_nodes::NodeType::$ty),*])
+        })
     };
     (@expr base_type[$($ty:path),* $(,)?]) => {
-        $crate::sub_apis::QueryExpr::BaseType(vec![$($ty),*])
+        $crate::sub_apis::QueryExpr::BaseTypeMask(const {
+            $crate::sub_apis::__query_base_type_mask(&[$($ty),*])
+        })
     };
 }
 

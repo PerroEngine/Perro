@@ -1,4 +1,5 @@
 use perro_animation::{AnimationClip, AnimationTreeAsset};
+use perro_csv::PerroCsv;
 use perro_render_bridge::{Material3D, ParticleProfile3D};
 use perro_resource_api::sub_apis::Locale;
 use perro_scene::Scene;
@@ -22,6 +23,7 @@ pub enum ProviderMode {
 
 pub type StaticSceneLookup = fn(u64) -> &'static Scene;
 pub type StaticLocalizationLookup = fn(Locale, u64) -> &'static str;
+pub type StaticCsvLookup = fn(u64) -> &'static PerroCsv;
 pub type StaticMaterialLookup = fn(u64) -> &'static Material3D;
 pub type StaticUiStyleLookup = fn(u64) -> &'static UiStyle;
 pub type StaticTilesetLookup = fn(u64) -> &'static [u8];
@@ -42,6 +44,7 @@ pub struct RuntimeProject {
     pub runtime_params: BTreeMap<String, String>,
     pub static_scene_lookup: Option<StaticSceneLookup>,
     pub static_localization_lookup: Option<StaticLocalizationLookup>,
+    pub static_csv_lookup: Option<StaticCsvLookup>,
     pub static_material_lookup: Option<StaticMaterialLookup>,
     pub static_ui_style_lookup: Option<StaticUiStyleLookup>,
     pub static_tileset_lookup: Option<StaticTilesetLookup>,
@@ -67,6 +70,7 @@ impl RuntimeProject {
             runtime_params: BTreeMap::new(),
             static_scene_lookup: None,
             static_localization_lookup: None,
+            static_csv_lookup: None,
             static_material_lookup: None,
             static_ui_style_lookup: None,
             static_tileset_lookup: None,
@@ -92,6 +96,7 @@ impl RuntimeProject {
             runtime_params: BTreeMap::new(),
             static_scene_lookup: None,
             static_localization_lookup: None,
+            static_csv_lookup: None,
             static_material_lookup: None,
             static_ui_style_lookup: None,
             static_tileset_lookup: None,
@@ -126,6 +131,7 @@ impl RuntimeProject {
             runtime_params: BTreeMap::new(),
             static_scene_lookup: None,
             static_localization_lookup: None,
+            static_csv_lookup: None,
             static_material_lookup: None,
             static_ui_style_lookup: None,
             static_tileset_lookup: None,
@@ -154,6 +160,11 @@ impl RuntimeProject {
 
     pub fn with_static_localization_lookup(mut self, lookup: StaticLocalizationLookup) -> Self {
         self.static_localization_lookup = Some(lookup);
+        self
+    }
+
+    pub fn with_static_csv_lookup(mut self, lookup: StaticCsvLookup) -> Self {
+        self.static_csv_lookup = Some(lookup);
         self
     }
 

@@ -9,6 +9,7 @@ members = [
     "perro_source/core/perro_particle_math",
     "perro_source/core/perro_builtin_meshes",
     "perro_source/core/perro_asset_formats",
+    "perro_source/core/perro_csv",
 
     "perro_source/runtime_project/perro_runtime",
     "perro_source/runtime_project/perro_physics",

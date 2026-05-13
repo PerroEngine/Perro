@@ -306,8 +306,10 @@ mod tests {
 
     #[test]
     fn localization_loads_default_locale_and_switches_active_map() {
+        let _project_root_guard = crate::rs_ctx::PROJECT_ROOT_TEST_LOCK.lock().unwrap();
         let _root = setup_csv_project();
         let api = RuntimeResourceApi::new(
+            None,
             None,
             None,
             None,
@@ -380,6 +382,7 @@ mod tests {
             None,
             None,
             Some(static_lookup),
+            None,
             Some(LocalizationConfig {
                 source_csv: "localization.csv".to_string(),
                 key_column: "key".to_string(),

@@ -251,9 +251,7 @@ Predicates:
 
 - `name["Player", "Boss"]`
 - `tags["enemy", "alive"]`
-- `is[Camera3D, MeshInstance3D]`
-- `is_type[Camera3D, MeshInstance3D]`
-- `base[Node3D]`
+- `node_type[Camera3D, MeshInstance3D]`
 - `base_type[Node3D]`
 
 ## Node Types
@@ -286,7 +284,7 @@ let node_ids_d = query!(
 Example:
 
 ```rust
-let ids = query!(ctx.run, all(base[Node3D], not(tags["dead"])));
+let ids = query!(ctx.run, all(base_type[Node3D], not(tags["dead"])));
 for id in ids {
     let _ = with_base_node_mut!(ctx.run, Node3D, id, |node| {
         node.transform.position.y += 0.1;

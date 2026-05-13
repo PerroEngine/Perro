@@ -152,7 +152,7 @@ fn apply_live_root<API: ScriptAPI + ?Sized>(
     });
 
     disable_ui_node_input(ctx, root);
-    for id in query!(ctx.run, base[UiBox], in_subtree(root)) {
+    for id in query!(ctx.run, base_type[UiBox], in_subtree(root)) {
         disable_ui_node_input(ctx, id);
     }
 }
@@ -174,7 +174,7 @@ fn disable_physics<API: ScriptAPI + ?Sized>(
     let ids = query!(
         ctx.run,
         any(
-            is[StaticBody2D, RigidBody2D, Area2D, StaticBody3D, RigidBody3D, Area3D]
+            node_type[StaticBody2D, RigidBody2D, Area2D, StaticBody3D, RigidBody3D, Area3D]
         ),
         in_subtree(root)
     );
