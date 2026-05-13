@@ -234,7 +234,7 @@ impl PerroCsv {
     }
 }
 
-pub static EMPTY_CSV: std::sync::LazyLock<PerroCsv> = std::sync::LazyLock::new(PerroCsv::empty);
+pub static EMPTY_CSV: PerroCsv = PerroCsv::empty();
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PerroCsvBuf {

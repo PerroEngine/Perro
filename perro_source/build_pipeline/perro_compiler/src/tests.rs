@@ -1,8 +1,14 @@
 #[cfg(test)]
 mod tests {
     use super::{
-        ScriptMethodParam, generate_call_param_binding, module_name_from_rel,
-        module_short_name_from_rel, transpile_frontend_script, transpiled_exports_script_ctor,
+        generate_call_param_binding, generate_embedded_main, generate_perro_assets,
+        generate_project_static_modules, module_name_from_rel, module_short_name_from_rel,
+        reset_embedded_dir, sync_scripts, transpile_frontend_script,
+        transpiled_exports_script_ctor, ProjectBuildOptions, ScriptMethodParam,
+    };
+    use perro_project::{
+        ensure_project_layout, ensure_project_scaffold, ensure_project_toml,
+        ensure_source_overrides, load_project_toml,
     };
 
     fn assert_methods_emitted(transpiled: &str, expected_method_names: &[&str]) {
@@ -530,15 +536,32 @@ lifecycle!({});
         assert!(!transpiled.contains("unsafe fn __perro_state_ref"));
         assert!(!transpiled.contains("unsafe fn __perro_state_mut"));
         assert!(!transpiled.contains("std::any::TypeId::of"));
-        assert!(
-            transpiled.contains("perro_api::scripting::state_ref_unchecked::<AllVariantState>")
-        );
-        assert!(
-            transpiled.contains("perro_api::scripting::state_mut_unchecked::<AllVariantState>")
-        );
+        assert!(transpiled.contains("perro_api::scripting::state_ref_unchecked::<AllVariantState>"));
+        assert!(transpiled.contains("perro_api::scripting::state_mut_unchecked::<AllVariantState>"));
         assert!(transpiled.contains("value.into_parse::<NestedCombo>()"));
         assert!(transpiled.contains("fn __perro_set_nested_var"));
         assert_generated_script_compiles(source, &transpiled);
+    }
+
+    #[test]
+    fn generated_project_crate_compiles_after_static_embed() {
+        let root = unique_temp_dir("perro_compiler_project_crate_check");
+        ensure_project_layout(&root).expect("layout");
+        ensure_project_toml(&root, "Generated Compile").expect("project toml");
+        ensure_project_scaffold(&root, "Generated Compile").expect("scaffold");
+        create_static_embed_fixture(&root);
+        ensure_source_overrides(&root).expect("source overrides");
+
+        let cfg = load_project_toml(&root).expect("load project toml");
+        reset_embedded_dir(&root).expect("reset embedded");
+        sync_scripts(&root).expect("sync scripts");
+        generate_project_static_modules(&root, &cfg).expect("generate static modules");
+        perro_static_pipeline::write_static_mod_rs(&root).expect("write static mod");
+        generate_embedded_main(&root).expect("generate embedded main");
+        generate_perro_assets(&root).expect("generate assets");
+        assert_static_module_fixture_refs(&root);
+
+        assert_project_crate_checks(&root, ProjectBuildOptions::new(false, true));
     }
 
     #[test]
@@ -552,6 +575,305 @@ lifecycle!({});
             "scripts_personality_module"
         );
     }
+
+    fn assert_project_crate_checks(project_root: &std::path::Path, options: ProjectBuildOptions) {
+        let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+        let project_crate = project_root.join(".perro").join("project");
+        let target_dir = project_root.join("target");
+        let mut cmd = std::process::Command::new(cargo);
+        cmd.arg("check")
+            .arg("--quiet")
+            .env("CARGO_TARGET_DIR", &target_dir)
+            .current_dir(&project_crate);
+        if !options.console {
+            cmd.env("RUSTFLAGS", "--cfg perro_no_console");
+        }
+        if options.profile {
+            cmd.arg("--features").arg("profile");
+        }
+        let output = cmd.output().expect("run cargo check");
+
+        if output.status.success() {
+            let _ = std::fs::remove_dir_all(project_root);
+            return;
+        }
+
+        panic!(
+            "generated project crate failed cargo check in {}\nstdout:\n{}\nstderr:\n{}",
+            project_crate.display(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn create_static_embed_fixture(root: &std::path::Path) {
+        let res = root.join("res");
+        std::fs::create_dir_all(res.join("textures")).expect("textures dir");
+        std::fs::create_dir_all(res.join("materials")).expect("materials dir");
+        std::fs::create_dir_all(res.join("ui")).expect("ui dir");
+        std::fs::create_dir_all(res.join("tiles")).expect("tiles dir");
+        std::fs::create_dir_all(res.join("particles")).expect("particles dir");
+        std::fs::create_dir_all(res.join("animations")).expect("animations dir");
+        std::fs::create_dir_all(res.join("models")).expect("models dir");
+        std::fs::create_dir_all(res.join("rigs")).expect("rigs dir");
+        std::fs::create_dir_all(res.join("shaders")).expect("shaders dir");
+        std::fs::create_dir_all(res.join("audio")).expect("audio dir");
+
+        std::fs::write(
+            root.join("project.toml"),
+            r#"[project]
+name = "Generated Compile"
+main_scene = "res://main.scn"
+icon = "res://textures/pixel.bmp"
+startup_splash = "res://textures/pixel.bmp"
+
+[graphics]
+virtual_resolution = "320x180"
+
+[localization]
+default_locale = "es"
+"#,
+        )
+        .expect("write project.toml");
+        std::fs::write(
+            root.join("locale.csv"),
+            "key,en,es\nmenu.start,Start,Iniciar\nmenu.quit,Quit,Salir\n",
+        )
+        .expect("write locale csv");
+        std::fs::write(res.join("items.csv"), "key,value\nwood,12\nstone,4\n").expect("write csv");
+        std::fs::write(res.join("textures").join("pixel.bmp"), BMP_1X1).expect("write bmp");
+        std::fs::write(
+            res.join("materials").join("fixture.pmat"),
+            "type = \"standard\"\nbase_color_factor = (0.2, 0.4, 0.8, 1.0)\nroughness_factor = 0.35\n",
+        )
+        .expect("write pmat");
+        std::fs::write(
+            res.join("ui").join("panel.uistyle"),
+            "fill = \"#223344FF\"\nstroke = \"#88AAFFFF\"\nradius = 0.15\n",
+        )
+        .expect("write uistyle");
+        std::fs::write(
+            res.join("tiles").join("fixture.ptileset"),
+            "texture = \"res://textures/pixel.bmp\"\ntile_size = (16, 16)\ncolumns = 1\nrows = 1\n",
+        )
+        .expect("write ptileset");
+        std::fs::write(
+            res.join("particles").join("spark.ppart"),
+            "preset = spiral\npreset_param_a = 4.0\npreset_param_b = 0.25\nlifetime_min = 0.2\nlifetime_max = 0.6\nx = sin(t * tau)\ny = t\nz = cos(t * tau)\n",
+        )
+        .expect("write ppart");
+        std::fs::write(
+            res.join("animations").join("idle.panim"),
+            r#"[Animation]
+name = "Idle"
+fps = 30
+[/Animation]
+
+[Objects]
+Hero = Node3D
+[/Objects]
+
+[Frame0]
+@Hero {
+    position = (0, 0, 0)
+}
+[/Frame0]
+"#,
+        )
+        .expect("write panim");
+        std::fs::write(
+            res.join("animations").join("blend.panimtree"),
+            r#"[AnimationTree]
+name = "BlendTree"
+[/AnimationTree]
+
+[AnimationSlots]
+Idle
+[/AnimationSlots]
+
+[Output]
+input = @Idle
+[/Output]
+"#,
+        )
+        .expect("write panimtree");
+        std::fs::write(res.join("models").join("triangle.pmesh"), pmesh_triangle())
+            .expect("write pmesh");
+        std::fs::write(
+            res.join("rigs").join("root.pskel2d"),
+            r#"[bone "Root"]
+parent = -1
+rest_pos = (0, 0)
+rest_scale = (1, 1)
+rest_rot_deg = 0
+[/bone]
+"#,
+        )
+        .expect("write pskel2d");
+        std::fs::write(
+            res.join("shaders").join("fixture.wgsl"),
+            "@fragment\nfn fs_main() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }\n",
+        )
+        .expect("write wgsl");
+        std::fs::write(res.join("audio").join("beep.wav"), wav_silence()).expect("write wav");
+        std::fs::write(res.join("main.scn"), fixture_scene()).expect("write scene");
+    }
+
+    fn assert_static_module_fixture_refs(root: &std::path::Path) {
+        let static_dir = root
+            .join(".perro")
+            .join("project")
+            .join("src")
+            .join("static");
+        let checks = [
+            ("scenes.rs", "SCENE_HASH_0"),
+            ("materials.rs", "MATERIAL_HASH_0"),
+            ("ui_styles.rs", "UI_STYLE_HASH_0"),
+            ("tilesets.rs", "TILESET_HASH_0"),
+            ("particles.rs", "PARTICLE_HASH_0"),
+            ("animations.rs", "ANIMATION_HASH_0"),
+            ("animation_trees.rs", "ANIMATION_TREE_HASH_0"),
+            ("meshes.rs", "MESH_HASH_0"),
+            ("collision_trimeshes.rs", "COLLISION_TRIMESH_HASH_0"),
+            ("skeletons.rs", "SKELETON_HASH_0"),
+            ("textures.rs", "TEXTURE_HASH_0"),
+            ("shaders.rs", "SHADER_HASH_0"),
+            ("audios.rs", "AUDIO_HASH_0"),
+            ("csvs.rs", "CSV_HASH_0"),
+            ("localizations.rs", "menu.start"),
+        ];
+        for (file, needle) in checks {
+            let src = std::fs::read_to_string(static_dir.join(file))
+                .unwrap_or_else(|err| panic!("read {file}: {err}"));
+            assert!(src.contains(needle), "missing `{needle}` in {file}");
+        }
+    }
+
+    fn fixture_scene() -> &'static str {
+        r#"@root = main
+
+[main]
+
+[Node3D]
+    position = (0, 0, 0)
+[/Node3D]
+[/main]
+
+[mesh]
+parent = @root
+
+[MeshInstance3D]
+    mesh = "res://models/triangle.pmesh"
+    material = "res://materials/fixture.pmat"
+    [Node3D]
+        position = (0, 0, 0)
+    [/Node3D]
+[/MeshInstance3D]
+[/mesh]
+
+[collider]
+parent = @root
+
+[CollisionShape3D]
+    trimesh = "res://models/triangle.pmesh"
+    [Node3D]
+        position = (0, 0, 0)
+    [/Node3D]
+[/CollisionShape3D]
+[/collider]
+
+[sprite]
+parent = @root
+
+[Sprite2D]
+    texture = "res://textures/pixel.bmp"
+    [Node2D]
+        position = (0, 0)
+    [/Node2D]
+[/Sprite2D]
+[/sprite]
+
+[particles]
+parent = @root
+
+[ParticleEmitter3D]
+    profile = "res://particles/spark.ppart"
+    [Node3D]
+        position = (0, 0, 0)
+    [/Node3D]
+[/ParticleEmitter3D]
+[/particles]
+
+[skeleton]
+parent = @root
+
+[Skeleton2D]
+    skeleton = "res://rigs/root.pskel2d"
+[/Skeleton2D]
+[/skeleton]
+
+"#
+    }
+
+    fn pmesh_triangle() -> Vec<u8> {
+        let mut raw = Vec::new();
+        for (pos, normal, uv) in [
+            ([0.0f32, 0.0, 0.0], [0.0f32, 1.0, 0.0], [0.0f32, 0.0]),
+            ([1.0f32, 0.0, 0.0], [0.0f32, 1.0, 0.0], [1.0f32, 0.0]),
+            ([0.0f32, 1.0, 0.0], [0.0f32, 1.0, 0.0], [0.0f32, 1.0]),
+        ] {
+            for value in pos {
+                raw.extend_from_slice(&value.to_le_bytes());
+            }
+            for value in normal {
+                raw.extend_from_slice(&value.to_le_bytes());
+            }
+            for value in uv {
+                raw.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        for index in [0u32, 1, 2] {
+            raw.extend_from_slice(&index.to_le_bytes());
+        }
+        raw.extend_from_slice(&0u32.to_le_bytes());
+        raw.extend_from_slice(&3u32.to_le_bytes());
+
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"PMESH");
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&((1u32 << 31) | 1 | 2).to_le_bytes());
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&(raw.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&raw);
+        bytes
+    }
+
+    fn wav_silence() -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&36u32.to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&8000u32.to_le_bytes());
+        bytes.extend_from_slice(&8000u32.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&8u16.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes
+    }
+
+    const BMP_1X1: &[u8] = &[
+        0x42, 0x4d, 58, 0, 0, 0, 0, 0, 0, 0, 54, 0, 0, 0, 40, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1,
+        0, 24, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 0,
+        0, 0,
+    ];
 
     fn assert_generated_script_compiles(source: &str, transpiled: &str) {
         let workspace_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -620,5 +942,13 @@ perro_runtime = {{ path = "{perro_runtime}" }}
 
     fn toml_path(path: &std::path::Path) -> String {
         path.to_string_lossy().replace('\\', "/")
+    }
+
+    fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        std::env::temp_dir().join(format!("{prefix}_{}_{}", std::process::id(), stamp))
     }
 }
