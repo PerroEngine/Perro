@@ -86,6 +86,8 @@ pub trait GraphicsBackend: RenderBridge {
     fn profile_snapshot(&self) -> GraphicsProfileSnapshot {
         GraphicsProfileSnapshot::default()
     }
+
+    fn wait_idle(&mut self) {}
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -736,6 +738,12 @@ impl GraphicsBackend for PerroGraphics {
         }
     }
 
+    fn wait_idle(&mut self) {
+        if let Some(gpu) = &mut self.gpu {
+            gpu.wait_idle();
+        }
+    }
+
     fn draw_frame(&mut self) {
         let _ = self.draw_frame_timed();
     }
@@ -1007,6 +1015,7 @@ impl PerroGraphics {
                 rects_2d: &self.frame_rects_cache,
                 upload_2d: &upload,
                 sprites_2d: &self.retained_sprites_cache,
+                sprites_2d_revision: self.retained_sprites_cache_revision,
                 point_lights_2d: &self.retained_point_lights_cache,
                 late_overlay_camera_2d,
                 late_overlay_rects_2d: &self.late_overlay_rects_cache,

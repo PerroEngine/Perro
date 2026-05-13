@@ -102,6 +102,7 @@ pub struct RenderFrame<'a> {
     pub rects_2d: &'a [RectInstanceGpu],
     pub upload_2d: &'a RectUploadPlan,
     pub sprites_2d: &'a [Sprite2DCommand],
+    pub sprites_2d_revision: u64,
     pub point_lights_2d: &'a [Light2DState],
     pub late_overlay_camera_2d: Camera2DUniform,
     pub late_overlay_rects_2d: &'a [RectInstanceGpu],
@@ -152,6 +153,10 @@ pub struct RenderGpuTiming {
 }
 
 impl Gpu {
+    pub fn wait_idle(&mut self) {
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+    }
+
     pub fn render_idle_clear(&mut self) -> bool {
         // Keep window alive for the full surface lifetime.
         self.window_handle.id();
@@ -430,6 +435,7 @@ impl Gpu {
             rects_2d,
             upload_2d,
             sprites_2d,
+            sprites_2d_revision,
             point_lights_2d,
             late_overlay_camera_2d,
             late_overlay_rects_2d,
@@ -515,6 +521,8 @@ impl Gpu {
                         rects: rects_2d,
                         upload: upload_2d,
                         sprites: sprites_2d,
+                        sprites_revision: sprites_2d_revision,
+                        force_sprite_prepare: has(DIRTY_RESOURCES),
                         point_lights: point_lights_2d,
                         static_texture_lookup,
                     },
@@ -915,6 +923,8 @@ impl Gpu {
                         rects: late_overlay_rects_2d,
                         upload: late_overlay_upload_2d,
                         sprites: late_overlay_sprites_2d,
+                        sprites_revision: 0,
+                        force_sprite_prepare: true,
                         point_lights: late_overlay_point_lights_2d,
                         static_texture_lookup,
                     },

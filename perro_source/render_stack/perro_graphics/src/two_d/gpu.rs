@@ -76,6 +76,12 @@ struct CachedSpriteTexture {
     height: u32,
 }
 
+#[derive(Clone, Copy, PartialEq)]
+struct SpritePrepareKey {
+    revision: u64,
+    camera: Camera2DUniform,
+}
+
 pub struct Gpu2D {
     camera_bgl: wgpu::BindGroupLayout,
     texture_bgl: wgpu::BindGroupLayout,
@@ -97,6 +103,7 @@ pub struct Gpu2D {
     sprite_batches: Vec<SpriteBatch>,
     sprite_textures: AHashMap<TextureID, CachedSpriteTexture>,
     last_camera: Option<Camera2DUniform>,
+    last_sprite_prepare: Option<SpritePrepareKey>,
 }
 
 pub struct Prepare2D<'a> {
@@ -105,6 +112,8 @@ pub struct Prepare2D<'a> {
     pub rects: &'a [RectInstanceGpu],
     pub upload: &'a RectUploadPlan,
     pub sprites: &'a [Sprite2DCommand],
+    pub sprites_revision: u64,
+    pub force_sprite_prepare: bool,
     pub point_lights: &'a [Light2DState],
     pub static_texture_lookup: Option<StaticTextureLookup>,
 }
@@ -285,6 +294,7 @@ impl Gpu2D {
             sprite_batches: Vec::new(),
             sprite_textures: AHashMap::new(),
             last_camera: None,
+            last_sprite_prepare: None,
         }
     }
 
@@ -328,13 +338,17 @@ impl Gpu2D {
             rects,
             upload,
             sprites,
+            sprites_revision,
+            force_sprite_prepare,
             point_lights,
             static_texture_lookup,
         } = frame;
-        self.sprite_textures
-            .retain(|texture_id, _| resources.has_texture(*texture_id));
+        if force_sprite_prepare {
+            self.sprite_textures
+                .retain(|texture_id, _| resources.has_texture(*texture_id));
+            self.last_sprite_prepare = None;
+        }
         self.ensure_rect_instance_capacity(device, upload.draw_count);
-        self.ensure_sprite_instance_capacity(device, sprites.len());
         self.ensure_point_light_instance_capacity(device, point_lights.len());
         if self.last_camera != Some(camera) {
             queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera));
@@ -361,64 +375,72 @@ impl Gpu2D {
             }
         }
 
-        self.sprite_instances.clear();
-        self.sprite_batches.clear();
-        self.sprite_instances.reserve(sprites.len());
-        self.sprite_batches.reserve(sprites.len());
-        for sprite in sprites {
-            let texture = if let Some(texture) = self.sprite_textures.get(&sprite.texture) {
-                texture
-            } else {
-                if !self.ensure_sprite_texture(
-                    device,
-                    queue,
-                    resources,
-                    sprite.texture,
-                    static_texture_lookup,
+        let sprite_key = SpritePrepareKey {
+            revision: sprites_revision,
+            camera,
+        };
+        if self.last_sprite_prepare != Some(sprite_key) {
+            self.ensure_sprite_instance_capacity(device, sprites.len());
+            self.sprite_instances.clear();
+            self.sprite_batches.clear();
+            self.sprite_instances.reserve(sprites.len());
+            self.sprite_batches.reserve(sprites.len());
+            for sprite in sprites {
+                let texture = if let Some(texture) = self.sprite_textures.get(&sprite.texture) {
+                    texture
+                } else {
+                    if !self.ensure_sprite_texture(
+                        device,
+                        queue,
+                        resources,
+                        sprite.texture,
+                        static_texture_lookup,
+                    ) {
+                        continue;
+                    }
+                    let Some(texture) = self.sprite_textures.get(&sprite.texture) else {
+                        continue;
+                    };
+                    texture
+                };
+                if !sprite_intersects_screen(
+                    sprite,
+                    texture.width as f32,
+                    texture.height as f32,
+                    &camera,
                 ) {
                     continue;
                 }
-                let Some(texture) = self.sprite_textures.get(&sprite.texture) else {
+                let idx = self.sprite_instances.len() as u32;
+                self.sprite_instances.push(SpriteInstanceGpu {
+                    transform_0: sprite.model[0],
+                    transform_1: sprite.model[1],
+                    transform_2: sprite.model[2],
+                    z_index: sprite.z_index,
+                    tint: color_to_unorm8(sprite.tint),
+                });
+                if let Some(batch) = self.sprite_batches.last_mut()
+                    && batch.texture == sprite.texture
+                    && batch.instance_start + batch.instance_count == idx
+                {
+                    batch.instance_count += 1;
                     continue;
                 };
-                texture
-            };
-            if !sprite_intersects_screen(
-                sprite,
-                texture.width as f32,
-                texture.height as f32,
-                &camera,
-            ) {
-                continue;
+                self.sprite_batches.push(SpriteBatch {
+                    texture: sprite.texture,
+                    bind_group: texture.bind_group.clone(),
+                    instance_start: idx,
+                    instance_count: 1,
+                });
             }
-            let idx = self.sprite_instances.len() as u32;
-            self.sprite_instances.push(SpriteInstanceGpu {
-                transform_0: sprite.model[0],
-                transform_1: sprite.model[1],
-                transform_2: sprite.model[2],
-                z_index: sprite.z_index,
-                tint: color_to_unorm8(sprite.tint),
-            });
-            if let Some(batch) = self.sprite_batches.last_mut()
-                && batch.texture == sprite.texture
-                && batch.instance_start + batch.instance_count == idx
-            {
-                batch.instance_count += 1;
-                continue;
+            if !self.sprite_instances.is_empty() {
+                queue.write_buffer(
+                    &self.sprite_instance_buffer,
+                    0,
+                    bytemuck::cast_slice(&self.sprite_instances),
+                );
             }
-            self.sprite_batches.push(SpriteBatch {
-                texture: sprite.texture,
-                bind_group: texture.bind_group.clone(),
-                instance_start: idx,
-                instance_count: 1,
-            });
-        }
-        if !self.sprite_instances.is_empty() {
-            queue.write_buffer(
-                &self.sprite_instance_buffer,
-                0,
-                bytemuck::cast_slice(&self.sprite_instances),
-            );
+            self.last_sprite_prepare = Some(sprite_key);
         }
 
         self.point_light_instances.clear();

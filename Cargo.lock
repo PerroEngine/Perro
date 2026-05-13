@@ -3775,10 +3775,12 @@ version = "0.1.0"
 dependencies = [
  "ahash",
  "bytemuck",
+ "criterion",
  "epaint",
  "glam",
  "gltf",
  "image",
+ "naga",
  "perro_asset_formats",
  "perro_builtin_meshes",
  "perro_graphics_assets",

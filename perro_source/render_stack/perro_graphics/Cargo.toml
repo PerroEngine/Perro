@@ -35,3 +35,23 @@ winit = { version = "0.30.12", default-features = false, features = ["rwh_06", "
 wgpu = { version = "29.0.0", default-features = false, features = ["std", "metal", "wgsl"] }
 winit = { version = "0.30.12", default-features = false, features = ["rwh_06"] }
 
+[dev-dependencies]
+criterion = "0.5"
+naga = { version = "29.0.0", features = ["wgsl-in"] }
+
+[[bench]]
+name = "cpu_prepare"
+harness = false
+
+[[bench]]
+name = "shader_wgsl"
+harness = false
+
+[[bench]]
+name = "frame_timing"
+harness = false
+
+[[bench]]
+name = "gpu_frame"
+harness = false
+
