@@ -10,6 +10,8 @@ use crate::midi::{MidiFileRequest, MidiNoteHandle, MidiNoteRequest};
 use crate::player::BarkPlayer;
 use crate::types::{AudioPlaybackRequest, SpatialAudioParams};
 
+const AUDIO_DISABLED_ENV: &str = "PERRO_AUDIO_DISABLED";
+
 pub struct AudioController {
     tx: Sender<AudioCommand>,
     next_playback_id: Arc<AtomicU64>,
@@ -31,6 +33,10 @@ impl AudioController {
     const COMMAND_QUEUE_CAPACITY: usize = 4096;
 
     pub fn new(static_audio_lookup: Option<fn(u64) -> &'static [u8]>) -> Result<Self, String> {
+        if audio_disabled_by_env() {
+            return Err(format!("audio disabled by {AUDIO_DISABLED_ENV}"));
+        }
+
         let (tx, rx) = crossbeam_channel::bounded::<AudioCommand>(Self::COMMAND_QUEUE_CAPACITY);
         let next_playback_id = Arc::new(AtomicU64::new(1));
         std::thread::Builder::new()
@@ -422,4 +428,11 @@ impl AudioController {
             .try_send(AudioCommand::MidiNotes { requests })
             .is_ok()
     }
+}
+
+fn audio_disabled_by_env() -> bool {
+    std::env::var_os(AUDIO_DISABLED_ENV).is_some_and(|value| {
+        let value = value.to_string_lossy();
+        value == "1" || value.eq_ignore_ascii_case("true") || value.eq_ignore_ascii_case("yes")
+    })
 }

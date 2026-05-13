@@ -35,6 +35,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cargo test
+        env:
+          PERRO_AUDIO_DISABLED: "1"
         run: cargo test --workspace
 
   clippy:

@@ -1,5 +1,5 @@
 use crate::{StaticPipelineError, escape_rust_str, static_dir};
-use csv::StringRecord;
+use perro_csv::PerroCsvBuf;
 use perro_ids::string_to_u64;
 use perro_project::ProjectConfig;
 use std::{collections::HashMap, fmt::Write as _, fs, path::Path};
@@ -25,15 +25,13 @@ pub fn generate_static_localizations(
         ))
     })?;
 
-    let mut reader = csv::ReaderBuilder::new()
-        .has_headers(true)
-        .from_reader(bytes.as_slice());
-    let headers = reader.headers().map_err(|err| {
+    let table = PerroCsvBuf::from_bytes(&bytes).map_err(|err| {
         StaticPipelineError::SceneParse(format!(
             "failed to read localization csv header `{}`: {err}",
             localization.source_csv
         ))
     })?;
+    let headers = table.headers();
 
     let key_idx = find_key_header_index(headers, &localization.key_column).ok_or_else(|| {
         StaticPipelineError::SceneParse(format!(
@@ -70,14 +68,8 @@ pub fn generate_static_localizations(
     let mut key_index_by_hash: HashMap<u64, usize> = HashMap::new();
     let mut locale_tables: Vec<Vec<Option<String>>> = vec![Vec::new(); active_locales.len()];
 
-    for row in reader.records() {
-        let row = row.map_err(|err| {
-            StaticPipelineError::SceneParse(format!(
-                "failed to parse localization csv row `{}`: {err}",
-                localization.source_csv
-            ))
-        })?;
-        let key = row.get(key_idx).unwrap_or("").trim();
+    for row in table.rows() {
+        let key = row.get(key_idx).map(String::as_str).unwrap_or("").trim();
         if key.is_empty() {
             continue;
         }
@@ -108,7 +100,7 @@ pub fn generate_static_localizations(
             let Some(column_idx) = locale_column_by_code.get(*code).copied() else {
                 continue;
             };
-            let value = row.get(column_idx).unwrap_or("").trim();
+            let value = row.get(column_idx).map(String::as_str).unwrap_or("").trim();
             if value.is_empty() {
                 locale_tables[locale_idx][key_index] = None;
             } else {
@@ -334,9 +326,9 @@ pub const fn lookup_localized_string(_locale: perro_api::resource_api::sub_apis:
     Ok(())
 }
 
-fn find_key_header_index(headers: &StringRecord, expected: &str) -> Option<usize> {
+fn find_key_header_index(headers: &[String], expected: &str) -> Option<usize> {
     headers
-        .get(0)
+        .first()
         .is_some_and(|header| header.trim().eq_ignore_ascii_case(expected))
         .then_some(0)
 }

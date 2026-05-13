@@ -1,6 +1,6 @@
 use super::RuntimeResourceApi;
 use super::state::RuntimeLocalizationState;
-use csv::StringRecord;
+use perro_csv::PerroCsvBuf;
 use perro_ids::string_to_u64;
 use perro_resource_api::sub_apis::{Locale, LocalizationAPI};
 use std::{
@@ -176,30 +176,25 @@ fn read_localization_csv(
 ) -> Result<LocalizationLookupMaps, String> {
     let bytes = perro_io::load_asset(source)
         .map_err(|err| format!("failed to read localization csv `{source}`: {err}"))?;
-    let mut reader = csv::ReaderBuilder::new()
-        .has_headers(true)
-        .from_reader(bytes.as_slice());
-    let headers = reader
-        .headers()
-        .map_err(|err| format!("failed to parse csv headers in `{source}`: {err}"))?
-        .clone();
+    let table = PerroCsvBuf::from_bytes(&bytes)
+        .map_err(|err| format!("failed to parse csv headers in `{source}`: {err}"))?;
+    let headers = table.headers();
 
-    let key_idx = find_key_header_index(&headers, key_column)
+    let key_idx = find_key_header_index(headers, key_column)
         .ok_or_else(|| format!("csv `{source}` must use `{key_column}` as first column"))?;
-    let locale_idx = find_header_index(&headers, locale_code).ok_or_else(|| {
+    let locale_idx = find_header_index(headers, locale_code).ok_or_else(|| {
         format!("csv `{source}` is missing locale column `{locale_code}` in header row")
     })?;
 
     let mut by_key: LocalizationByKey = HashMap::new();
     let mut by_hash: LocalizationByHash = HashMap::new();
 
-    for row in reader.records() {
-        let row = row.map_err(|err| format!("failed to parse csv row in `{source}`: {err}"))?;
-        let key = row.get(key_idx).unwrap_or("").trim();
+    for row in table.rows() {
+        let key = row.get(key_idx).map(String::as_str).unwrap_or("").trim();
         if key.is_empty() {
             continue;
         }
-        let value = row.get(locale_idx).unwrap_or("").trim();
+        let value = row.get(locale_idx).map(String::as_str).unwrap_or("").trim();
         let key_static = intern_localization_str(key);
         let value_static = intern_localization_str(value);
         by_hash.insert(string_to_u64(key), value_static);
@@ -233,14 +228,14 @@ fn intern_localization_str(value: &str) -> &'static str {
     leaked
 }
 
-fn find_key_header_index(headers: &StringRecord, expected: &str) -> Option<usize> {
+fn find_key_header_index(headers: &[String], expected: &str) -> Option<usize> {
     headers
-        .get(0)
+        .first()
         .is_some_and(|header| header.trim().eq_ignore_ascii_case(expected))
         .then_some(0)
 }
 
-fn find_header_index(headers: &StringRecord, expected: &str) -> Option<usize> {
+fn find_header_index(headers: &[String], expected: &str) -> Option<usize> {
     headers
         .iter()
         .position(|header| header.trim().eq_ignore_ascii_case(expected))

@@ -3966,7 +3966,6 @@ dependencies = [
  "ahash",
  "arboard",
  "criterion",
- "csv",
  "glam",
  "gltf",
  "image",
