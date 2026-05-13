@@ -2,7 +2,7 @@
 
 `*.ppart` is a **Perro Particle** resource and defines mathematical per-particle profile behavior used by `ParticleEmitter3D` and `ParticleEmitter2D`.
 
-For full emitter + runtime behavior, read [Particle System Guide](../particles.md).
+For full emitter + runtime behavior, read [Particle System Guide](particles.md).
 
 ## Usage
 

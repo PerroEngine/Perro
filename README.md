@@ -20,10 +20,10 @@ For more details, see the full documentation: [perroengine.com/docs](https://www
 Local reference:
 
 - [Docs Index](docs/index.md)
-- [ResPath](docs/respath.md)
-- [Feature Matrix](docs/feature_matrix.md)
-- [Performance + Flexibility Philosophy](docs/performance_philosophy.md)
-- [Perro CLI](docs/perro_cli.md)
+- [ResPath](docs/resources/respath.md)
+- [Feature Matrix](docs/project/feature_matrix.md)
+- [Performance + Flexibility Philosophy](docs/project/performance_philosophy.md)
+- [Perro CLI](docs/tools/perro_cli.md)
 
 ## Dev Checks
 

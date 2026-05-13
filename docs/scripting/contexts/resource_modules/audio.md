@@ -6,7 +6,7 @@ Access:
 
 Shared backend, cache, bus, `.pawdio`, and propagation concepts:
 
-- [Audio](../../../audio.md)
+- [Audio](../../../resources/audio.md)
 
 ## Shared Macros
 
@@ -275,7 +275,7 @@ Built-in vs soundfont:
 - built-in synth uses simple generated waveforms.
 - soundfont uses samples/patches from the `.sf2` bank.
 - same `program` value can sound very different per `.sf2`.
-- full program table lives in [Audio](../../../audio.md#midi-program-table).
+- full program table lives in [Audio](../../../resources/audio.md#midi-program-table).
 
 ## MIDI Examples
 

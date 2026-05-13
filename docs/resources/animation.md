@@ -46,7 +46,7 @@ Hero = Node3D
 
 Scene binding maps `Hero` to a real scene node.
 
-Full format: [`.panim` Format](resources/panim.md).
+Full format: [`.panim` Format](panim.md).
 
 ## `AnimationPlayer`
 
@@ -84,7 +84,7 @@ let _ = anim_player_seek_frame!(ctx, player, 0);
 let _ = anim_player_play!(ctx, player);
 ```
 
-Runtime docs: [Animations Module](scripting/contexts/runtime_modules/animations.md).
+Runtime docs: [Animations Module](../scripting/contexts/runtime_modules/animations.md).
 
 ## `.panimtree`
 
@@ -171,7 +171,7 @@ Aim
 
 `Output` is required.
 
-Full format: [`.panimtree` Format](resources/panimtree.md).
+Full format: [`.panimtree` Format](panimtree.md).
 
 ## `AnimationTree`
 
@@ -239,4 +239,4 @@ Node and input names omit `@` in Rust API, that's just for .panim and .panimtree
 
 Bad refs return `false`.
 
-Scene templates: [Scene Node Templates](scripting/scene_node_templates/index.md).
+Scene templates: [Scene Node Templates](../scripting/scene_node_templates/index.md).

@@ -2,21 +2,21 @@
 
 ## Project Status
 
-- [Feature Matrix](feature_matrix.md)
-- [Performance + Flexibility Philosophy](performance_philosophy.md)
-- [Steamworks](steamworks.md)
+- [Feature Matrix](project/feature_matrix.md)
+- [Performance + Flexibility Philosophy](project/performance_philosophy.md)
+- [Steamworks](platform/steamworks.md)
 
 ## Particles
 
-- [Particle System Guide](particles.md)
+- [Particle System Guide](resources/particles.md)
 
 ## Animation
 
-- [Animation Overview](Animation.md)
+- [Animation Overview](resources/animation.md)
 
 ## Audio
 
-- [Audio](audio.md)
+- [Audio](resources/audio.md)
 
 ## Scripting
 
@@ -44,8 +44,8 @@
 
 ## Resources
 
-- [ResPath](respath.md)
-- [Materials Guide](materials.md)
+- [ResPath](resources/respath.md)
+- [Materials Guide](resources/materials.md)
 - [`.panim` Format](resources/panim.md)
 - [`.panimtree` Format](resources/panimtree.md)
 - [`.pmat` Format](resources/pmat.md)
@@ -60,4 +60,4 @@
 
 ## DLC
 
-- [DLC Guide](dlc.md)
+- [DLC Guide](platform/dlc.md)

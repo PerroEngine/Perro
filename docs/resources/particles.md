@@ -8,7 +8,7 @@ Perro exposes a flexible particle system centered around:
 
 `.ppart` authoring details are documented here:
 
-- [`.ppart` Format](resources/ppart.md)
+- [`.ppart` Format](ppart.md)
 
 ## Overview
 

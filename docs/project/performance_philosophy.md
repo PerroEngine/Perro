@@ -20,7 +20,6 @@ The player build does not need to pay the same text IO and parse work.
 
 Use `perro dev` for testing and dynamic loading through the dev runner.
 Use `perro build` to build the final executable into the project `.output/` folder.
-Run `perro build` when you want release-like loading and performance checks.
 
 ## Static Export Path
 
@@ -82,16 +81,16 @@ For a tiny 1-node scene, static prepare is ~1.2 us.
 
 ## Dev vs Release Load Path
 
-| Step             | Dev dynamic path                              | Release static path                                                                         |
-| ---------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Find asset       | Resolve path under project `res/`             | Hash path to `u64`                                                                          |
-| Get data         | File IO from disk                             | Generated `match` lookup: ~6.55 ns to ~8.36 ns in snapshot                                  |
-| Scene format     | `.scn` text                                   | Already-baked Rust `Scene` data                                                             |
-| Scene work       | Read text, parse, prepare: 512 nodes ~1.58 ms | Prepare baked `Scene`: 512 nodes ~344 us                                                    |
-| Resource format  | Source file or dynamic runtime format         | Baked Rust data or compact binary bytes                                                     |
+| Step             | Dev dynamic path                              | Release static path                                                                           |
+| ---------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Find asset       | Resolve path under project `res/`             | Hash path to `u64`                                                                            |
+| Get data         | File IO from disk                             | Generated `match` lookup: ~6.55 ns to ~8.36 ns in snapshot                                    |
+| Scene format     | `.scn` text                                   | Already-baked Rust `Scene` data                                                               |
+| Scene work       | Read text, parse, prepare: 512 nodes ~1.58 ms | Prepare baked `Scene`: 512 nodes ~344 us                                                      |
+| Resource format  | Source file or dynamic runtime format         | Baked Rust data or compact binary bytes                                                       |
 | Resource work    | Read file, parse/decode, shape runtime data   | Static load into `Vec`: 4 KiB texture ~0.664 us, 64 KiB mesh ~2.08 us, 16 KiB audio ~0.948 us |
-| Generic fallback | Read from `res/`                              | Read compressed entries from embedded `assets.perro` when smaller                           |
-| Main goal        | Flexibility + edit-run speed                  | Near-imperceptible runtime loading                                                          |
+| Generic fallback | Read from `res/`                              | Read compressed entries from embedded `assets.perro` when smaller                             |
+| Main goal        | Flexibility + edit-run speed                  | Near-imperceptible runtime loading                                                            |
 
 Examples:
 
@@ -159,21 +158,21 @@ Scene cost split:
 
 Static asset access:
 
-| Operation                    | Texture           | Mesh               | Audio              |
-| ---------------------------- | ----------------- | ------------------ | ------------------ |
-| Hash `match` lookup          | ~8.27 ns           | ~8.36 ns          | ~6.55 ns            |
+| Operation                    | Texture            | Mesh               | Audio               |
+| ---------------------------- | ------------------ | ------------------ | ------------------- |
+| Hash `match` lookup          | ~8.27 ns           | ~8.36 ns           | ~6.55 ns            |
 | Load static bytes into `Vec` | 4 KiB in ~0.664 us | 64 KiB in ~2.08 us | 16 KiB in ~0.948 us |
 
 CSV query access:
 
-| Operation                         | 250k rows, 8 cols |
-| --------------------------------- | ----------------- |
-| Primary string find batch         | ~5.6 us           |
-| Primary hash find batch           | ~3.4 us           |
-| Header get batch                  | ~2.8 us           |
-| Filter/sort/limit query, indexed  | ~1.3 ms           |
-| Previous scan query before index  | ~6.3 ms           |
-| First unoptimized query baseline  | ~15.3 ms          |
+| Operation                        | 250k rows, 8 cols |
+| -------------------------------- | ----------------- |
+| Primary string find batch        | ~5.6 us           |
+| Primary hash find batch          | ~3.4 us           |
+| Header get batch                 | ~2.8 us           |
+| Filter/sort/limit query, indexed | ~1.3 ms           |
+| Previous scan query before index | ~6.3 ms           |
+| First unoptimized query baseline | ~15.3 ms          |
 
 Compression in export:
 

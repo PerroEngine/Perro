@@ -11,7 +11,7 @@ If multiple cameras are active, the post chain used is the active 3D camera if p
 the active 2D camera.
 
 Visual accessibility settings are separate from post-processing and run as a global final pass after
-camera + global post-processing. See [Visual Accessibility](visual_accessibility.md).
+camera + global post-processing. See [Visual Accessibility](../scripting/contexts/resource_modules/visual_accessibility.md).
 
 ## Built-In Effects
 

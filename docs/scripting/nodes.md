@@ -325,7 +325,7 @@ See `docs/resources/postprocess.md` for full details and examples.
 
 Visual accessibility is configured globally through `ResourceWindow` (not per-camera).
 It runs after camera and global post-processing as the final pass.
-See [Visual Accessibility](../resources/visual_accessibility.md).
+See [Visual Accessibility](contexts/resource_modules/visual_accessibility.md).
 
 ## Bone3D
 

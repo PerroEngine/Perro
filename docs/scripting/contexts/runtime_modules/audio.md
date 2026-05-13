@@ -9,7 +9,7 @@ Point 2D/3D sounds live on `ctx.res.Audio()` because they are resource playback 
 
 Shared backend, cache, bus, `.pawdio`, and propagation concepts:
 
-- [Audio](../../../audio.md)
+- [Audio](../../../resources/audio.md)
 
 ## Attached Audio
 

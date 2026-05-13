@@ -8,8 +8,8 @@ Perro audio has three layers:
 
 Use API docs for script calls:
 
-- [Resource Audio Module](scripting/contexts/resource_modules/audio.md)
-- [Runtime Audio Module](scripting/contexts/runtime_modules/audio.md)
+- [Resource Audio Module](../scripting/contexts/resource_modules/audio.md)
+- [Runtime Audio Module](../scripting/contexts/runtime_modules/audio.md)
 
 ## `perro_pawdio`
 

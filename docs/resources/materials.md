@@ -8,9 +8,9 @@ This guide shows the normal material path:
 4. Create or mutate material data at runtime when needed.
 5. Let static builds bake supported material sources for release.
 
-For exact file syntax, see [`.pmat` Format](resources/pmat.md).
-For API details, see [Materials Module](scripting/contexts/resource_modules/materials.md).
-For custom shader authoring, see [Shaders](resources/shaders.md).
+For exact file syntax, see [`.pmat` Format](pmat.md).
+For API details, see [Materials Module](../scripting/contexts/resource_modules/materials.md).
+For custom shader authoring, see [Shaders](shaders.md).
 
 ## glTF / GLB Sub-Assets
 
@@ -197,7 +197,7 @@ Static builds bake supported material sources into generated lookup data.
 Release runtime loading can resolve baked `.pmat` sources and glTF material sub-assets without reparsing the original text path at runtime.
 
 Generic files that do not have static bake support still belong in `assets.perro`.
-See [Performance + Flexibility Philosophy](performance_philosophy.md).
+See [Performance + Flexibility Philosophy](../project/performance_philosophy.md).
 
 ## Caveats
 

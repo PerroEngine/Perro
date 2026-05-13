@@ -172,7 +172,7 @@ Use this for local development runs and testing.
 The dev runner keeps assets dynamic and reads from normal project files, so iteration does not require a static bake or manual reimport step.
 Dynamic scene/resource loading is optimized for development and is usually fast enough; any extra parse/load cost is a developer-loop cost.
 For release-like asset loading numbers, run `perro build`.
-See [Performance + Flexibility Philosophy](performance_philosophy.md).
+See [Performance + Flexibility Philosophy](../project/performance_philosophy.md).
 
 ## `build`
 
@@ -197,7 +197,7 @@ The static pipeline bakes supported asset types ahead of runtime, including scen
 Scenes become static Rust data, and generated `u64` path-hash lookup functions avoid archive search for supported static assets.
 Exported builds also include `assets.perro`, a binary pack for generic `res/` files that do not have static bake support.
 The static pipeline cost is paid during export; the runtime benchmark target is loading from already-baked data.
-See [Performance + Flexibility Philosophy](performance_philosophy.md).
+See [Performance + Flexibility Philosophy](../project/performance_philosophy.md).
 
 ## `mem-profile`
 
