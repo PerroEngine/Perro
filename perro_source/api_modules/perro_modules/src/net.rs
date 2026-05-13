@@ -7,6 +7,7 @@ use std::{
 
 use perro_ids::SignalID;
 use perro_variant::Variant;
+use tungstenite::{Message, WebSocket, stream::MaybeTlsStream};
 
 pub type NetResult<T> = Result<T, NetError>;
 
@@ -25,6 +26,7 @@ pub enum NetErrorKind {
     FrameTooLarge,
     InvalidFrame,
     Handshake,
+    WebSocket,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -70,6 +72,13 @@ pub enum NetEvent {
     TcpFrame { peer: String, bytes: Vec<u8> },
     HeartbeatPing { peer: String },
     HeartbeatPong { peer: String },
+    WebSocketConnected { peer: String },
+    WebSocketClientConnected { peer: String },
+    WebSocketText { peer: String, text: String },
+    WebSocketBinary { peer: String, bytes: Vec<u8> },
+    WebSocketPing { peer: String, bytes: Vec<u8> },
+    WebSocketPong { peer: String, bytes: Vec<u8> },
+    WebSocketClosed { peer: String },
     NetError { op: String, message: String },
 }
 
@@ -84,6 +93,13 @@ impl NetEvent {
             NetEvent::TcpFrame { .. } => "TCP_Frame",
             NetEvent::HeartbeatPing { .. } => "Net_HeartbeatPing",
             NetEvent::HeartbeatPong { .. } => "Net_HeartbeatPong",
+            NetEvent::WebSocketConnected { .. } => "WebSocket_Connected",
+            NetEvent::WebSocketClientConnected { .. } => "WebSocket_ClientConnected",
+            NetEvent::WebSocketText { .. } => "WebSocket_Text",
+            NetEvent::WebSocketBinary { .. } => "WebSocket_Binary",
+            NetEvent::WebSocketPing { .. } => "WebSocket_Ping",
+            NetEvent::WebSocketPong { .. } => "WebSocket_Pong",
+            NetEvent::WebSocketClosed { .. } => "WebSocket_Closed",
             NetEvent::NetError { .. } => "Net_Error",
         }
     }
@@ -98,11 +114,20 @@ impl NetEvent {
             | NetEvent::TcpClientConnected { peer }
             | NetEvent::TcpDisconnected { peer }
             | NetEvent::HeartbeatPing { peer }
-            | NetEvent::HeartbeatPong { peer } => vec![Variant::from(peer.clone())],
+            | NetEvent::HeartbeatPong { peer }
+            | NetEvent::WebSocketConnected { peer }
+            | NetEvent::WebSocketClientConnected { peer }
+            | NetEvent::WebSocketClosed { peer } => vec![Variant::from(peer.clone())],
             NetEvent::TcpData { peer, bytes }
             | NetEvent::UdpPacket { peer, bytes }
-            | NetEvent::TcpFrame { peer, bytes } => {
+            | NetEvent::TcpFrame { peer, bytes }
+            | NetEvent::WebSocketBinary { peer, bytes }
+            | NetEvent::WebSocketPing { peer, bytes }
+            | NetEvent::WebSocketPong { peer, bytes } => {
                 vec![Variant::from(peer.clone()), Variant::from(bytes.clone())]
+            }
+            NetEvent::WebSocketText { peer, text } => {
+                vec![Variant::from(peer.clone()), Variant::from(text.clone())]
             }
             NetEvent::NetError { op, message } => {
                 vec![Variant::from(op.clone()), Variant::from(message.clone())]
@@ -121,10 +146,18 @@ pub struct TcpConnectionId(pub u32);
 pub struct UdpEndpointId(pub u32);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct WebSocketHostId(pub u32);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct WebSocketConnectionId(pub u32);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum NetSource {
     TcpHost(TcpHostId),
     TcpConnection(TcpConnectionId),
     UdpEndpoint(UdpEndpointId),
+    WebSocketHost(WebSocketHostId),
+    WebSocketConnection(WebSocketConnectionId),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -456,10 +489,202 @@ impl UdpEndpoint {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WebSocketMessage {
+    Text(String),
+    Binary(Vec<u8>),
+    Ping(Vec<u8>),
+    Pong(Vec<u8>),
+    Close,
+}
+
+enum WebSocketStream {
+    Client(WebSocket<MaybeTlsStream<TcpStream>>),
+    Server(WebSocket<TcpStream>),
+}
+
+impl WebSocketStream {
+    fn read(&mut self) -> Result<Message, tungstenite::Error> {
+        match self {
+            Self::Client(socket) => socket.read(),
+            Self::Server(socket) => socket.read(),
+        }
+    }
+
+    fn send(&mut self, message: Message) -> Result<(), tungstenite::Error> {
+        match self {
+            Self::Client(socket) => socket.send(message),
+            Self::Server(socket) => socket.send(message),
+        }
+    }
+
+    fn close(&mut self) -> Result<(), tungstenite::Error> {
+        match self {
+            Self::Client(socket) => socket.close(None),
+            Self::Server(socket) => socket.close(None),
+        }
+    }
+
+    fn set_nonblocking(&mut self, nonblocking: bool) -> NetResult<()> {
+        match self {
+            Self::Client(socket) => set_maybe_tls_nonblocking(socket.get_mut(), nonblocking),
+            Self::Server(socket) => socket
+                .get_mut()
+                .set_nonblocking(nonblocking)
+                .map_err(|err| NetError::from_io(NetErrorKind::SetNonBlocking, err)),
+        }
+    }
+}
+
+pub struct WebSocketConnection {
+    socket: WebSocketStream,
+    peer: String,
+}
+
+impl WebSocketConnection {
+    pub fn connect(url: impl AsRef<str>) -> NetResult<Self> {
+        let (socket, _) = tungstenite::connect(url.as_ref())
+            .map_err(|err| NetError::new(NetErrorKind::Connect, err.to_string()))?;
+        let peer = maybe_tls_peer_string(socket.get_ref()).unwrap_or_else(|| url.as_ref().into());
+        let mut out = Self {
+            socket: WebSocketStream::Client(socket),
+            peer,
+        };
+        out.socket.set_nonblocking(true)?;
+        Ok(out)
+    }
+
+    pub fn accept(stream: TcpStream) -> NetResult<Self> {
+        stream
+            .set_nonblocking(false)
+            .map_err(|err| NetError::from_io(NetErrorKind::SetNonBlocking, err))?;
+        let peer = stream
+            .peer_addr()
+            .map_err(|err| NetError::from_io(NetErrorKind::PeerAddress, err))?
+            .to_string();
+        let socket = tungstenite::accept(stream)
+            .map_err(|err| NetError::new(NetErrorKind::Handshake, err.to_string()))?;
+        let mut out = Self {
+            socket: WebSocketStream::Server(socket),
+            peer,
+        };
+        out.socket.set_nonblocking(true)?;
+        Ok(out)
+    }
+
+    pub fn peer_string(&self) -> String {
+        self.peer.clone()
+    }
+
+    pub fn connected_event(&self) -> NetEvent {
+        NetEvent::WebSocketConnected {
+            peer: self.peer_string(),
+        }
+    }
+
+    pub fn read_message(&mut self, max_bytes: usize) -> NetResult<Option<WebSocketMessage>> {
+        match self.socket.read() {
+            Ok(message) => map_websocket_message(message, max_bytes).map(Some),
+            Err(tungstenite::Error::Io(err)) if err.kind() == io::ErrorKind::WouldBlock => Ok(None),
+            Err(tungstenite::Error::ConnectionClosed) | Err(tungstenite::Error::AlreadyClosed) => {
+                Ok(Some(WebSocketMessage::Close))
+            }
+            Err(err) => Err(NetError::new(NetErrorKind::WebSocket, err.to_string())),
+        }
+    }
+
+    pub fn poll_event(&mut self, max_bytes: usize) -> NetResult<Option<NetEvent>> {
+        let Some(message) = self.read_message(max_bytes)? else {
+            return Ok(None);
+        };
+        let peer = self.peer_string();
+        Ok(Some(match message {
+            WebSocketMessage::Text(text) => NetEvent::WebSocketText { peer, text },
+            WebSocketMessage::Binary(bytes) => NetEvent::WebSocketBinary { peer, bytes },
+            WebSocketMessage::Ping(bytes) => NetEvent::WebSocketPing { peer, bytes },
+            WebSocketMessage::Pong(bytes) => NetEvent::WebSocketPong { peer, bytes },
+            WebSocketMessage::Close => NetEvent::WebSocketClosed { peer },
+        }))
+    }
+
+    pub fn send_text(&mut self, text: impl Into<String>) -> NetResult<()> {
+        self.socket
+            .send(Message::text(text.into()))
+            .map_err(|err| NetError::new(NetErrorKind::Send, err.to_string()))
+    }
+
+    pub fn send_binary(&mut self, bytes: Vec<u8>) -> NetResult<()> {
+        self.socket
+            .send(Message::binary(bytes))
+            .map_err(|err| NetError::new(NetErrorKind::Send, err.to_string()))
+    }
+
+    pub fn send_ping(&mut self, bytes: Vec<u8>) -> NetResult<()> {
+        self.socket
+            .send(Message::Ping(bytes.into()))
+            .map_err(|err| NetError::new(NetErrorKind::Send, err.to_string()))
+    }
+
+    pub fn send_pong(&mut self, bytes: Vec<u8>) -> NetResult<()> {
+        self.socket
+            .send(Message::Pong(bytes.into()))
+            .map_err(|err| NetError::new(NetErrorKind::Send, err.to_string()))
+    }
+
+    pub fn close(&mut self) -> NetResult<()> {
+        self.socket
+            .close()
+            .map_err(|err| NetError::new(NetErrorKind::Send, err.to_string()))
+    }
+}
+
+pub struct WebSocketHost {
+    listener: TcpListener,
+    local: SocketAddr,
+}
+
+impl WebSocketHost {
+    pub fn bind<A: ToSocketAddrs>(addr: A) -> NetResult<Self> {
+        let listener =
+            TcpListener::bind(addr).map_err(|err| NetError::from_io(NetErrorKind::Bind, err))?;
+        listener
+            .set_nonblocking(true)
+            .map_err(|err| NetError::from_io(NetErrorKind::SetNonBlocking, err))?;
+        let local = listener
+            .local_addr()
+            .map_err(|err| NetError::from_io(NetErrorKind::LocalAddress, err))?;
+        Ok(Self { listener, local })
+    }
+
+    pub fn local_addr(&self) -> SocketAddr {
+        self.local
+    }
+
+    pub fn accept(&self) -> NetResult<Option<WebSocketConnection>> {
+        match self.listener.accept() {
+            Ok((stream, _)) => WebSocketConnection::accept(stream).map(Some),
+            Err(err) if err.kind() == io::ErrorKind::WouldBlock => Ok(None),
+            Err(err) => Err(NetError::from_io(NetErrorKind::Accept, err)),
+        }
+    }
+
+    pub fn accept_event(&self) -> NetResult<Option<(WebSocketConnection, NetEvent)>> {
+        let Some(connection) = self.accept()? else {
+            return Ok(None);
+        };
+        let event = NetEvent::WebSocketClientConnected {
+            peer: connection.peer_string(),
+        };
+        Ok(Some((connection, event)))
+    }
+}
+
 pub struct NetworkWorld {
     tcp_hosts: Vec<Option<TcpHost>>,
     tcp_connections: Vec<Option<TcpConnection>>,
     udp_endpoints: Vec<Option<UdpEndpoint>>,
+    websocket_hosts: Vec<Option<WebSocketHost>>,
+    websocket_connections: Vec<Option<WebSocketConnection>>,
 }
 
 impl NetworkWorld {
@@ -468,6 +693,8 @@ impl NetworkWorld {
             tcp_hosts: Vec::new(),
             tcp_connections: Vec::new(),
             udp_endpoints: Vec::new(),
+            websocket_hosts: Vec::new(),
+            websocket_connections: Vec::new(),
         }
     }
 
@@ -492,6 +719,22 @@ impl NetworkWorld {
         )))
     }
 
+    pub fn bind_websocket_host<A: ToSocketAddrs>(&mut self, addr: A) -> NetResult<WebSocketHostId> {
+        let host = WebSocketHost::bind(addr)?;
+        Ok(WebSocketHostId(insert_slot(
+            &mut self.websocket_hosts,
+            host,
+        )))
+    }
+
+    pub fn connect_websocket(&mut self, url: impl AsRef<str>) -> NetResult<WebSocketConnectionId> {
+        let connection = WebSocketConnection::connect(url)?;
+        Ok(WebSocketConnectionId(insert_slot(
+            &mut self.websocket_connections,
+            connection,
+        )))
+    }
+
     pub fn tcp_host_addr(&self, id: TcpHostId) -> NetResult<SocketAddr> {
         Ok(self.tcp_host(id)?.local_addr())
     }
@@ -502,6 +745,10 @@ impl NetworkWorld {
 
     pub fn udp_addr(&self, id: UdpEndpointId) -> NetResult<SocketAddr> {
         Ok(self.udp_endpoint(id)?.local_addr())
+    }
+
+    pub fn websocket_host_addr(&self, id: WebSocketHostId) -> NetResult<SocketAddr> {
+        Ok(self.websocket_host(id)?.local_addr())
     }
 
     pub fn tcp_send(&mut self, id: TcpConnectionId, bytes: &[u8]) -> NetResult<usize> {
@@ -537,6 +784,42 @@ impl NetworkWorld {
         self.udp_endpoint(id)?.send_to(bytes, addr)
     }
 
+    pub fn websocket_send_text(
+        &mut self,
+        id: WebSocketConnectionId,
+        text: impl Into<String>,
+    ) -> NetResult<()> {
+        self.websocket_connection_mut(id)?.send_text(text)
+    }
+
+    pub fn websocket_send_binary(
+        &mut self,
+        id: WebSocketConnectionId,
+        bytes: Vec<u8>,
+    ) -> NetResult<()> {
+        self.websocket_connection_mut(id)?.send_binary(bytes)
+    }
+
+    pub fn websocket_send_ping(
+        &mut self,
+        id: WebSocketConnectionId,
+        bytes: Vec<u8>,
+    ) -> NetResult<()> {
+        self.websocket_connection_mut(id)?.send_ping(bytes)
+    }
+
+    pub fn websocket_send_pong(
+        &mut self,
+        id: WebSocketConnectionId,
+        bytes: Vec<u8>,
+    ) -> NetResult<()> {
+        self.websocket_connection_mut(id)?.send_pong(bytes)
+    }
+
+    pub fn websocket_close(&mut self, id: WebSocketConnectionId) -> NetResult<()> {
+        self.websocket_connection_mut(id)?.close()
+    }
+
     pub fn remove_tcp_host(&mut self, id: TcpHostId) -> bool {
         remove_slot(&mut self.tcp_hosts, id.0)
     }
@@ -549,11 +832,21 @@ impl NetworkWorld {
         remove_slot(&mut self.udp_endpoints, id.0)
     }
 
+    pub fn remove_websocket_host(&mut self, id: WebSocketHostId) -> bool {
+        remove_slot(&mut self.websocket_hosts, id.0)
+    }
+
+    pub fn remove_websocket_connection(&mut self, id: WebSocketConnectionId) -> bool {
+        remove_slot(&mut self.websocket_connections, id.0)
+    }
+
     pub fn poll_events(&mut self, max_per_socket: usize, max_bytes: usize) -> Vec<NetworkEvent> {
         let mut events = Vec::new();
         self.poll_accepts(max_per_socket, &mut events);
+        self.poll_websocket_accepts(max_per_socket, &mut events);
         self.poll_tcp_data(max_per_socket, max_bytes, &mut events);
         self.poll_udp_packets(max_per_socket, max_bytes, &mut events);
+        self.poll_websocket_messages(max_per_socket, max_bytes, &mut events);
         events
     }
 
@@ -564,8 +857,10 @@ impl NetworkWorld {
     ) -> Vec<NetworkEvent> {
         let mut events = Vec::new();
         self.poll_accepts(max_per_socket, &mut events);
+        self.poll_websocket_accepts(max_per_socket, &mut events);
         self.poll_tcp_frames(max_per_socket, max_frame_bytes, &mut events);
         self.poll_udp_packets(max_per_socket, max_frame_bytes, &mut events);
+        self.poll_websocket_messages(max_per_socket, max_frame_bytes, &mut events);
         events
     }
 
@@ -694,6 +989,75 @@ impl NetworkWorld {
         }
     }
 
+    fn poll_websocket_accepts(&mut self, max_per_socket: usize, events: &mut Vec<NetworkEvent>) {
+        for host_index in 0..self.websocket_hosts.len() {
+            let Some(host) = self.websocket_hosts[host_index].as_ref() else {
+                continue;
+            };
+            for _ in 0..max_per_socket {
+                match host.accept_event() {
+                    Ok(Some((connection, event))) => {
+                        let id = WebSocketConnectionId(insert_slot(
+                            &mut self.websocket_connections,
+                            connection,
+                        ));
+                        events.push(NetworkEvent {
+                            source: NetSource::WebSocketConnection(id),
+                            event,
+                        });
+                    }
+                    Ok(None) => break,
+                    Err(err) => {
+                        events.push(net_error_event(
+                            NetSource::WebSocketHost(WebSocketHostId(host_index as u32)),
+                            "websocket_accept",
+                            err,
+                        ));
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    fn poll_websocket_messages(
+        &mut self,
+        max_per_socket: usize,
+        max_bytes: usize,
+        events: &mut Vec<NetworkEvent>,
+    ) {
+        for i in 0..self.websocket_connections.len() {
+            let Some(connection) = self.websocket_connections[i].as_mut() else {
+                continue;
+            };
+            let id = WebSocketConnectionId(i as u32);
+            for _ in 0..max_per_socket {
+                match connection.poll_event(max_bytes) {
+                    Ok(Some(event)) => {
+                        let disconnected = matches!(event, NetEvent::WebSocketClosed { .. });
+                        events.push(NetworkEvent {
+                            source: NetSource::WebSocketConnection(id),
+                            event,
+                        });
+                        if disconnected {
+                            self.websocket_connections[i] = None;
+                            break;
+                        }
+                    }
+                    Ok(None) => break,
+                    Err(err) => {
+                        events.push(net_error_event(
+                            NetSource::WebSocketConnection(id),
+                            "websocket_recv",
+                            err,
+                        ));
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     fn tcp_host(&self, id: TcpHostId) -> NetResult<&TcpHost> {
         get_slot(&self.tcp_hosts, id.0, "tcp host")
     }
@@ -708,6 +1072,21 @@ impl NetworkWorld {
 
     fn udp_endpoint(&self, id: UdpEndpointId) -> NetResult<&UdpEndpoint> {
         get_slot(&self.udp_endpoints, id.0, "udp endpoint")
+    }
+
+    fn websocket_host(&self, id: WebSocketHostId) -> NetResult<&WebSocketHost> {
+        get_slot(&self.websocket_hosts, id.0, "websocket host")
+    }
+
+    fn websocket_connection_mut(
+        &mut self,
+        id: WebSocketConnectionId,
+    ) -> NetResult<&mut WebSocketConnection> {
+        get_slot_mut(
+            &mut self.websocket_connections,
+            id.0,
+            "websocket connection",
+        )
     }
 }
 
@@ -781,6 +1160,48 @@ fn utf8(bytes: Vec<u8>) -> NetResult<String> {
     String::from_utf8(bytes).map_err(|err: FromUtf8Error| {
         NetError::new(NetErrorKind::Handshake, format!("invalid utf8: {err}"))
     })
+}
+
+fn map_websocket_message(message: Message, max_bytes: usize) -> NetResult<WebSocketMessage> {
+    if message.len() > max_bytes {
+        return Err(NetError::new(
+            NetErrorKind::FrameTooLarge,
+            "websocket message exceeds max",
+        ));
+    }
+
+    Ok(match message {
+        Message::Text(text) => WebSocketMessage::Text(text.to_string()),
+        Message::Binary(bytes) => WebSocketMessage::Binary(bytes.to_vec()),
+        Message::Ping(bytes) => WebSocketMessage::Ping(bytes.to_vec()),
+        Message::Pong(bytes) => WebSocketMessage::Pong(bytes.to_vec()),
+        Message::Close(_) => WebSocketMessage::Close,
+        Message::Frame(_) => {
+            return Err(NetError::new(
+                NetErrorKind::InvalidFrame,
+                "raw websocket frame",
+            ));
+        }
+    })
+}
+
+fn maybe_tls_peer_string(stream: &MaybeTlsStream<TcpStream>) -> Option<String> {
+    match stream {
+        MaybeTlsStream::Plain(stream) => stream.peer_addr().ok().map(|addr| addr.to_string()),
+        _ => None,
+    }
+}
+
+fn set_maybe_tls_nonblocking(
+    stream: &mut MaybeTlsStream<TcpStream>,
+    nonblocking: bool,
+) -> NetResult<()> {
+    match stream {
+        MaybeTlsStream::Plain(stream) => stream
+            .set_nonblocking(nonblocking)
+            .map_err(|err| NetError::from_io(NetErrorKind::SetNonBlocking, err)),
+        _ => Ok(()),
+    }
 }
 
 fn insert_slot<T>(slots: &mut Vec<Option<T>>, value: T) -> u32 {

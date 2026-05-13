@@ -25,8 +25,9 @@ pub mod prelude {
     pub use crate::net::{
         NetError, NetErrorKind, NetEvent, NetHandshake, NetSource, NetworkEvent, NetworkWorld,
         TcpConnection, TcpConnectionId, TcpHost, TcpHostId, UdpEndpoint, UdpEndpointId, UdpPacket,
-        decode_next_frame, encode_frame, heartbeat_ping, heartbeat_pong, is_heartbeat_ping,
-        is_heartbeat_pong,
+        WebSocketConnection, WebSocketConnectionId, WebSocketHost, WebSocketHostId,
+        WebSocketMessage, decode_next_frame, encode_frame, heartbeat_ping, heartbeat_pong,
+        is_heartbeat_ping, is_heartbeat_pong,
     };
     pub use crate::random as RandomMod;
     pub use crate::random::{

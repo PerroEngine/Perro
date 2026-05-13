@@ -5,7 +5,7 @@ use perro_variant::Variant;
 
 use crate::net::{
     NetEvent, NetHandshake, NetSource, NetworkWorld, TcpConnection, TcpHost, UdpEndpoint,
-    decode_next_frame, encode_frame, heartbeat_ping,
+    WebSocketConnection, WebSocketHost, decode_next_frame, encode_frame, heartbeat_ping,
 };
 
 #[test]
@@ -163,6 +163,38 @@ fn network_world_accepts_tcp_and_polls_udp() {
     assert!(seen_tcp_source);
     assert!(seen_tcp);
     assert!(seen_udp);
+}
+
+#[test]
+fn websocket_host_accepts_loopback_text_and_binary() {
+    let host = WebSocketHost::bind("127.0.0.1:0").unwrap();
+    let url = format!("ws://{}", host.local_addr());
+
+    let client = thread::spawn(move || {
+        let mut client = WebSocketConnection::connect(url).unwrap();
+        client.send_text("hello").unwrap();
+        client.send_binary(b"bytes".to_vec()).unwrap();
+    });
+
+    let mut server = wait_for(|| host.accept().unwrap());
+    let text = wait_for(|| server.poll_event(64).unwrap());
+    let binary = wait_for(|| server.poll_event(64).unwrap());
+
+    client.join().unwrap();
+    assert_eq!(
+        text,
+        NetEvent::WebSocketText {
+            peer: server.peer_string(),
+            text: "hello".to_string()
+        }
+    );
+    assert_eq!(
+        binary,
+        NetEvent::WebSocketBinary {
+            peer: server.peer_string(),
+            bytes: b"bytes".to_vec()
+        }
+    );
 }
 
 fn wait_for<T>(mut f: impl FnMut() -> Option<T>) -> T {
