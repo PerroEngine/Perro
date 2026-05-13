@@ -450,7 +450,7 @@ fn water_command(i: u32, resolution: u32, impacts: u32) -> RenderCommand {
     RenderCommand::TwoD(Command2D::UpsertWater {
         node: NodeID::from_parts(500_000 + i, 0),
         water: Box::new(Water2DState {
-            model: [[1.0, 0.0, x], [0.0, 1.0, y], [0.0, 0.0, 1.0]],
+            model: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [x, y, 1.0]],
             z_index: i as i32,
             size: [44.0, 44.0],
             resolution: [resolution, resolution],

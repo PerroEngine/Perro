@@ -1149,6 +1149,7 @@ impl PerroGraphics {
                 waters_3d: &self.retained_waters_3d_cache,
                 waters_3d_revision: self.retained_waters_3d_cache_revision,
                 camera_2d,
+                camera_2d_position: camera_2d_state.position,
                 post_processing_2d: camera_2d_state.post_processing.clone(),
                 post_processing_global: Arc::from(self.global_post_processing.to_effects_vec()),
                 accessibility: self.accessibility,

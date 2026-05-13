@@ -200,7 +200,7 @@ impl GpuWater {
         });
         let water_buffer = empty_buffer(device, "perro_water_gpu_waters", 1, true);
         let cell_buffer = empty_buffer(device, "perro_water_gpu_cells", 64, false);
-        let readback_buffer = readback_buffer(device, 64);
+        let readback_buffer = readback_buffer(device, 1);
         let params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_water_gpu_params"),
             size: std::mem::size_of::<WaterParamsGpu>() as u64,
@@ -241,7 +241,7 @@ impl GpuWater {
             water_count: 0,
             water_2d_count: 0,
             frame_index: 0,
-            readback_capacity: 64,
+            readback_capacity: 1,
             readback_mapped_bytes: 0,
             readback_pending_rx: None,
             readback_nodes: Vec::new(),
@@ -256,6 +256,8 @@ impl GpuWater {
         queue: &wgpu::Queue,
         waters_2d: &[(NodeID, Water2DState)],
         waters_3d: &[(NodeID, Water3DState)],
+        camera_2d_position: [f32; 2],
+        camera_3d_position: [f32; 3],
     ) {
         self.poll_readback(device);
         self.frame_index = self.frame_index.wrapping_add(1);
@@ -270,13 +272,27 @@ impl GpuWater {
         let mut staged = Vec::with_capacity(needed);
         let mut cell_needed = 0usize;
         for (node, water) in waters_2d {
-            let cells = water_cell_count(water.resolution);
-            staged.push(water_gpu_2d(*node, water, cell_needed as u32, cells as u32));
+            let resolution = water_lod_resolution_2d(water, camera_2d_position);
+            let cells = water_cell_count(resolution);
+            staged.push(water_gpu_2d(
+                *node,
+                water,
+                resolution,
+                cell_needed as u32,
+                cells as u32,
+            ));
             cell_needed = cell_needed.saturating_add(cells);
         }
         for (node, water) in waters_3d {
-            let cells = water_cell_count(water.resolution);
-            staged.push(water_gpu_3d(*node, water, cell_needed as u32, cells as u32));
+            let resolution = water_lod_resolution_3d(water, camera_3d_position);
+            let cells = water_cell_count(resolution);
+            staged.push(water_gpu_3d(
+                *node,
+                water,
+                resolution,
+                cell_needed as u32,
+                cells as u32,
+            ));
             cell_needed = cell_needed.saturating_add(cells);
         }
         cell_needed = cell_needed.max(WATER_WORKGROUP_SIZE as usize);
@@ -377,25 +393,31 @@ impl GpuWater {
         if self.water_count == 0 || self.readback_pending_rx.is_some() {
             return;
         }
-        let needed_cells =
-            (self.water_count as usize).saturating_mul(WATER_WORKGROUP_SIZE as usize);
-        if needed_cells > self.readback_capacity {
+        let needed_samples = self.water_count as usize;
+        if needed_samples > self.readback_capacity {
             return;
         }
-        let byte_count = (needed_cells * std::mem::size_of::<[f32; 4]>()) as u64;
-        encoder.copy_buffer_to_buffer(&self.cell_buffer, 0, &self.readback_buffer, 0, byte_count);
+        let elem = std::mem::size_of::<[f32; 4]>() as u64;
+        for (idx, offset) in self.readback_offsets.iter().copied().enumerate() {
+            encoder.copy_buffer_to_buffer(
+                &self.cell_buffer,
+                offset as u64 * elem,
+                &self.readback_buffer,
+                idx as u64 * elem,
+                elem,
+            );
+        }
     }
 
     pub fn request_readback(&mut self) {
         if self.water_count == 0 || self.readback_pending_rx.is_some() {
             return;
         }
-        let needed_cells =
-            (self.water_count as usize).saturating_mul(WATER_WORKGROUP_SIZE as usize);
-        if needed_cells > self.readback_capacity {
+        let needed_samples = self.water_count as usize;
+        if needed_samples > self.readback_capacity {
             return;
         }
-        let byte_count = (needed_cells * std::mem::size_of::<[f32; 4]>()) as u64;
+        let byte_count = (needed_samples * std::mem::size_of::<[f32; 4]>()) as u64;
         let slice = self.readback_buffer.slice(0..byte_count);
         let (tx, rx) = mpsc::channel();
         slice.map_async(wgpu::MapMode::Read, move |result| {
@@ -434,9 +456,9 @@ impl GpuWater {
             self.cell_capacity = cap;
             rebuilt = true;
         }
-        if needed_cells > self.readback_capacity {
+        if needed_waters > self.readback_capacity {
             let mut cap = self.readback_capacity.max(64);
-            while cap < needed_cells {
+            while cap < needed_waters {
                 cap *= 2;
             }
             self.readback_buffer = readback_buffer(device, cap);
@@ -458,8 +480,7 @@ impl GpuWater {
                 let cells: &[[f32; 4]] = bytemuck::cast_slice(&data);
                 self.readback_samples.clear();
                 for (idx, node) in self.readback_nodes.iter().enumerate() {
-                    let offset = self.readback_offsets.get(idx).copied().unwrap_or(0);
-                    let cell = cells.get(offset).copied().unwrap_or([0.0; 4]);
+                    let cell = cells.get(idx).copied().unwrap_or([0.0; 4]);
                     self.readback_samples.push(WaterSampleState {
                         node: *node,
                         height: cell[0],
@@ -539,7 +560,48 @@ fn water_cell_count(resolution: [u32; 2]) -> usize {
     x.saturating_mul(y).max(WATER_WORKGROUP_SIZE as usize)
 }
 
-fn water_gpu_2d(node: NodeID, water: &Water2DState, cell_offset: u32, cell_count: u32) -> WaterGpu {
+fn water_lod_resolution_2d(water: &Water2DState, camera: [f32; 2]) -> [u32; 2] {
+    let pos = [water.model[2][0], water.model[2][1]];
+    water_lod_resolution(water.resolution, water.size, pos, camera)
+}
+
+fn water_lod_resolution_3d(water: &Water3DState, camera: [f32; 3]) -> [u32; 2] {
+    let pos = [water.model[3][0], water.model[3][2]];
+    water_lod_resolution(water.resolution, water.size, pos, [camera[0], camera[2]])
+}
+
+fn water_lod_resolution(
+    resolution: [u32; 2],
+    size: [f32; 2],
+    water_pos: [f32; 2],
+    camera_pos: [f32; 2],
+) -> [u32; 2] {
+    let dx = water_pos[0] - camera_pos[0];
+    let dy = water_pos[1] - camera_pos[1];
+    let distance = (dx * dx + dy * dy).sqrt();
+    let radius = size[0].max(size[1]).max(1.0);
+    let div = if distance <= radius * 2.0 {
+        1
+    } else if distance <= radius * 6.0 {
+        2
+    } else if distance <= radius * 14.0 {
+        4
+    } else {
+        8
+    };
+    [
+        (resolution[0] / div).clamp(32, 256),
+        (resolution[1] / div).clamp(32, 256),
+    ]
+}
+
+fn water_gpu_2d(
+    node: NodeID,
+    water: &Water2DState,
+    resolution: [u32; 2],
+    cell_offset: u32,
+    cell_count: u32,
+) -> WaterGpu {
     water_gpu_common(
         node,
         2,
@@ -548,7 +610,7 @@ fn water_gpu_2d(node: NodeID, water: &Water2DState, cell_offset: u32, cell_count
         water.depth,
         water.flow,
         water.wind,
-        water.resolution,
+        resolution,
         water.wave_speed,
         water.wave_scale,
         water.damping,
@@ -564,7 +626,13 @@ fn water_gpu_2d(node: NodeID, water: &Water2DState, cell_offset: u32, cell_count
     )
 }
 
-fn water_gpu_3d(node: NodeID, water: &Water3DState, cell_offset: u32, cell_count: u32) -> WaterGpu {
+fn water_gpu_3d(
+    node: NodeID,
+    water: &Water3DState,
+    resolution: [u32; 2],
+    cell_offset: u32,
+    cell_count: u32,
+) -> WaterGpu {
     water_gpu_common(
         node,
         3,
@@ -573,7 +641,7 @@ fn water_gpu_3d(node: NodeID, water: &Water3DState, cell_offset: u32, cell_count
         water.depth,
         water.flow,
         water.wind,
-        water.resolution,
+        resolution,
         water.wave_speed,
         water.wave_scale,
         water.damping,
@@ -770,5 +838,21 @@ mod tests {
         naga::front::wgsl::parse_str(WATER_WGSL).expect("water wgsl should parse");
         let render_wgsl = water_render_wgsl();
         naga::front::wgsl::parse_str(&render_wgsl).expect("water render wgsl should parse");
+    }
+
+    #[test]
+    fn water_lod_resolution_clamps_with_distance() {
+        assert_eq!(
+            water_lod_resolution([256, 256], [64.0, 64.0], [0.0, 0.0], [0.0, 0.0]),
+            [256, 256]
+        );
+        assert_eq!(
+            water_lod_resolution([256, 256], [64.0, 64.0], [512.0, 0.0], [0.0, 0.0]),
+            [64, 64]
+        );
+        assert_eq!(
+            water_lod_resolution([256, 256], [64.0, 64.0], [2048.0, 0.0], [0.0, 0.0]),
+            [32, 32]
+        );
     }
 }

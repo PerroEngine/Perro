@@ -215,6 +215,7 @@ pub struct RenderFrame<'a> {
     pub waters_3d: &'a [(NodeID, Water3DState)],
     pub waters_3d_revision: u64,
     pub camera_2d: Camera2DUniform,
+    pub camera_2d_position: [f32; 2],
     pub post_processing_2d: Arc<[perro_structs::PostProcessEffect]>,
     pub post_processing_global: Arc<[perro_structs::PostProcessEffect]>,
     pub accessibility: VisualAccessibilitySettings,
@@ -575,6 +576,7 @@ impl Gpu {
             waters_3d,
             waters_3d_revision,
             camera_2d,
+            camera_2d_position,
             post_processing_2d,
             post_processing_global,
             accessibility,
@@ -704,7 +706,14 @@ impl Gpu {
                 ));
             }
             if let Some(water) = self.water.as_mut() {
-                water.prepare(&self.device, &self.queue, waters_2d, waters_3d);
+                water.prepare(
+                    &self.device,
+                    &self.queue,
+                    waters_2d,
+                    waters_3d,
+                    camera_2d_position,
+                    camera_3d.position,
+                );
                 self.last_prepare_water_2d_revision = waters_2d_revision;
                 self.last_prepare_water_3d_revision = waters_3d_revision;
             }
