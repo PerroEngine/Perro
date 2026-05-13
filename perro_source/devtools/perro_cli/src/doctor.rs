@@ -1,4 +1,4 @@
-use crate::project::collect_rs_files_recursive;
+use crate::project::{collect_rs_files_recursive, scripts_command};
 use crate::{COLOR_RESET, COLOR_YELLOW, log_done, parse_flag_value, resolve_local_path};
 use perro_project::{ProjectConfig, load_project_toml};
 use std::collections::{HashMap, HashSet};
@@ -6,6 +6,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub(crate) fn doctor_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    scripts_command(args, cwd).map_err(|err| format!("check failed: {err}"))?;
+
     let project_dir = parse_flag_value(args, "--path")
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
