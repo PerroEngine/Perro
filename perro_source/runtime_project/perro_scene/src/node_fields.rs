@@ -203,6 +203,7 @@ pub enum RigidBody2DField {
     CollisionLayers,
     CollisionMask,
     ContinuousCollisionDetection,
+    Mass,
     LinearVelocity,
     AngularVelocity,
     GravityScale,
@@ -1037,6 +1038,7 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
             "continuous_collision_detection" | "ccd" => Some(NodeField::RigidBody2D(
                 RigidBody2DField::ContinuousCollisionDetection,
             )),
+            "mass" => Some(NodeField::RigidBody2D(RigidBody2DField::Mass)),
             "linear_velocity" | "velocity" => {
                 Some(NodeField::RigidBody2D(RigidBody2DField::LinearVelocity))
             }
@@ -1501,6 +1503,7 @@ fn resolve_scene_rigid_body_2d(field: &SceneFieldName) -> Option<RigidBody2DFiel
         SceneFieldName::ContinuousCollisionDetection => {
             Some(RigidBody2DField::ContinuousCollisionDetection)
         }
+        SceneFieldName::Mass => Some(RigidBody2DField::Mass),
         SceneFieldName::LinearVelocity => Some(RigidBody2DField::LinearVelocity),
         SceneFieldName::AngularVelocity => Some(RigidBody2DField::AngularVelocity),
         SceneFieldName::GravityScale => Some(RigidBody2DField::GravityScale),

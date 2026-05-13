@@ -9,6 +9,56 @@ use perro_nodes::{
 use perro_structs::CollisionMasks;
 
 #[test]
+fn physics_2d_body_desc_carries_mass_and_density() {
+    let mut runtime = Runtime::new();
+    let body_id = NodeAPI::create::<RigidBody2D>(&mut runtime);
+    let shape_id = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, body_id, shape_id));
+
+    if let Some(node) = runtime.nodes.get_mut(body_id)
+        && let SceneNodeData::RigidBody2D(body) = &mut node.data
+    {
+        body.mass = 7.0;
+        body.density = 0.25;
+    }
+
+    let descs = runtime.collect_body_descs_2d();
+    let desc = descs
+        .iter()
+        .find(|desc| desc.id == body_id)
+        .expect("body desc should exist");
+    let rigid = desc.rigid.expect("rigid props should exist");
+    assert_eq!(rigid.mass, 7.0);
+    assert_eq!(rigid.density, 0.25);
+    assert_eq!(desc.shapes[0].density, 0.25);
+}
+
+#[test]
+fn physics_3d_body_desc_carries_mass_and_density() {
+    let mut runtime = Runtime::new();
+    let body_id = NodeAPI::create::<RigidBody3D>(&mut runtime);
+    let shape_id = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, body_id, shape_id));
+
+    if let Some(node) = runtime.nodes.get_mut(body_id)
+        && let SceneNodeData::RigidBody3D(body) = &mut node.data
+    {
+        body.mass = 9.0;
+        body.density = 0.5;
+    }
+
+    let descs = runtime.collect_body_descs_3d();
+    let desc = descs
+        .iter()
+        .find(|desc| desc.id == body_id)
+        .expect("body desc should exist");
+    let rigid = desc.rigid.expect("rigid props should exist");
+    assert_eq!(rigid.mass, 9.0);
+    assert_eq!(rigid.density, 0.5);
+    assert_eq!(desc.shapes[0].density, 0.5);
+}
+
+#[test]
 fn physics_raycast_3d_hits_static_body() {
     let mut runtime = Runtime::new();
     let body = NodeAPI::create::<StaticBody3D>(&mut runtime);
@@ -301,6 +351,7 @@ fn tilemap_explicit_collision_shapes_do_not_merge_with_auto() {
         BitMask::ALL,
         0.7,
         0.0,
+        1.0,
         Some(&tileset),
     );
     assert_eq!(shapes.len(), 2);

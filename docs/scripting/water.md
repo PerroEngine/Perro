@@ -104,14 +104,9 @@ Defaults:
 
 ## Runtime Work
 
-Rendering extracts visible water nodes each frame.
-Camera `render_mask` filters water through node `render_layers`, like sprites and meshes.
-
-The GPU path simulates water cells for all visible water bodies.
+The GPU simulates water cells for all visible water bodies.
 Effective grid resolution drops with camera distance: full near, half mid, quarter far, and eighth beyond far.
 Ripples also fade with distance.
-2D water also draws as a retained 2D water pass.
-3D water is retained in the 3D renderer for the frame.
 
 Water samples are read back from the GPU for physics.
 If no GPU sample is ready, physics uses an analytic idle wave fallback from the same water settings.
@@ -121,8 +116,6 @@ This keeps physics deterministic enough to run even when GPU readback lags.
 
 Water bodies do not create colliders.
 They do not block raycasts, shape casts, contact pairs, or area signals by themselves.
-
-During fixed physics:
 
 1. Runtime finds all `WaterBody2D` and `WaterBody3D` nodes.
 2. Runtime tests rigid body centers against each water rectangle.

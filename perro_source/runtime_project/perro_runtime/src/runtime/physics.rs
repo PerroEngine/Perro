@@ -312,14 +312,14 @@ impl Runtime {
                         BodyKind::Static,
                         body.enabled,
                         None,
-                        (body.friction, body.restitution),
+                        (body.friction, body.restitution, body.density),
                         (body.collision_layers, body.collision_mask),
                     ),
                     SceneNodeData::Area2D(body) => (
                         BodyKind::Area,
                         body.enabled,
                         None,
-                        (0.7, 0.0),
+                        (0.7, 0.0, 1.0),
                         (body.collision_layers, body.collision_mask),
                     ),
                     SceneNodeData::RigidBody2D(body) => (
@@ -329,6 +329,8 @@ impl Runtime {
                             enabled: body.enabled,
                             can_sleep: body.can_sleep,
                             lock_rotation: body.lock_rotation,
+                            mass: body.mass,
+                            density: body.density,
                             continuous_collision_detection: body.continuous_collision_detection,
                             linear_velocity: body.linear_velocity,
                             angular_velocity: body.angular_velocity,
@@ -336,14 +338,14 @@ impl Runtime {
                             linear_damping: body.linear_damping,
                             angular_damping: body.angular_damping,
                         }),
-                        (body.friction, body.restitution),
+                        (body.friction, body.restitution, body.density),
                         (body.collision_layers, body.collision_mask),
                     ),
                     SceneNodeData::TileMap2D(tilemap) => (
                         BodyKind::Static,
                         tilemap.collision_enabled,
                         None,
-                        (0.7, 0.0),
+                        (0.7, 0.0, 1.0),
                         (tilemap.collision_layers, tilemap.collision_mask),
                     ),
                     _ => continue,
@@ -384,6 +386,7 @@ impl Runtime {
             }
             shape_signature = hash_u32(shape_signature, groups.0.bits());
             shape_signature = hash_u32(shape_signature, groups.1.bits());
+            shape_signature = hash_f32(shape_signature, material.2.to_bits());
 
             let needs_shape_rebuild = self
                 .physics
@@ -404,6 +407,7 @@ impl Runtime {
                         groups.1,
                         material.0,
                         material.1,
+                        material.2,
                         tileset.as_ref(),
                     ));
                 } else if let Some(node) = self.nodes.get(id) {
@@ -420,6 +424,7 @@ impl Runtime {
                             desc.sensor = kind == BodyKind::Area;
                             desc.collision_layers = groups.0;
                             desc.collision_mask = groups.1;
+                            desc.density = material.2;
                             shapes.push(desc);
                         }
                     }
@@ -453,14 +458,14 @@ impl Runtime {
                         BodyKind::Static,
                         body.enabled,
                         None,
-                        (body.friction, body.restitution),
+                        (body.friction, body.restitution, body.density),
                         (body.collision_layers, body.collision_mask),
                     ),
                     SceneNodeData::Area3D(body) => (
                         BodyKind::Area,
                         body.enabled,
                         None,
-                        (0.7, 0.0),
+                        (0.7, 0.0, 1.0),
                         (body.collision_layers, body.collision_mask),
                     ),
                     SceneNodeData::RigidBody3D(body) => (
@@ -470,6 +475,7 @@ impl Runtime {
                             enabled: body.enabled,
                             can_sleep: body.can_sleep,
                             mass: body.mass,
+                            density: body.density,
                             continuous_collision_detection: body.continuous_collision_detection,
                             linear_velocity: body.linear_velocity,
                             angular_velocity: body.angular_velocity,
@@ -477,7 +483,7 @@ impl Runtime {
                             linear_damping: body.linear_damping,
                             angular_damping: body.angular_damping,
                         }),
-                        (body.friction, body.restitution),
+                        (body.friction, body.restitution, body.density),
                         (body.collision_layers, body.collision_mask),
                     ),
                     _ => continue,
@@ -493,6 +499,7 @@ impl Runtime {
             shape_signature = hash_f32(shape_signature, global.scale.z.to_bits());
             shape_signature = hash_u32(shape_signature, groups.0.bits());
             shape_signature = hash_u32(shape_signature, groups.1.bits());
+            shape_signature = hash_f32(shape_signature, material.2.to_bits());
 
             if let Some(node) = self.nodes.get(id) {
                 for &child_id in node.children_slice() {
@@ -535,6 +542,7 @@ impl Runtime {
                         desc.sensor = kind == BodyKind::Area;
                         desc.collision_layers = groups.0;
                         desc.collision_mask = groups.1;
+                        desc.density = material.2;
                         shapes.push(desc);
                     }
                 }

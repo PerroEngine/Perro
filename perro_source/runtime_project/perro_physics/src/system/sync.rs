@@ -85,6 +85,7 @@ impl PhysicsSystem {
                     if !approx_eq_f32(rb.angular_damping(), rigid.angular_damping) {
                         rb.set_angular_damping(rigid.angular_damping);
                     }
+                    rb.set_additional_mass(rigid.mass.max(0.0), true);
                     let target_speed_sq = target_lin.norm_squared();
                     let target_ccd = rigid.continuous_collision_detection
                         && target_speed_sq >= CCD_MIN_SPEED_SQ_2D;

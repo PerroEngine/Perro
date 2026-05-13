@@ -18,6 +18,7 @@ pub fn tilemap_shape_descs_2d(
     mask: BitMask,
     friction: f32,
     restitution: f32,
+    density: f32,
     tileset: Option<&ParsedTileset2D>,
 ) -> Vec<ShapeDesc2D> {
     let Some(tileset) = tileset else {
@@ -102,6 +103,7 @@ pub fn tilemap_shape_descs_2d(
                 collision_mask: mask,
                 friction,
                 restitution,
+                density,
             });
         }
     }
@@ -123,6 +125,7 @@ pub fn tilemap_shape_descs_2d(
             collision_mask: mask,
             friction,
             restitution,
+            density,
         });
     }
     out
@@ -154,6 +157,7 @@ pub fn shape_desc_2d(shape: &CollisionShape2D, friction: f32, restitution: f32) 
         collision_mask: BitMask::ALL,
         friction,
         restitution,
+        density: 1.0,
     }
 }
 
@@ -171,6 +175,7 @@ pub fn shape_desc_3d(shape: &CollisionShape3D, friction: f32, restitution: f32) 
         collision_mask: BitMask::ALL,
         friction,
         restitution,
+        density: 1.0,
     }
 }
 
@@ -225,6 +230,7 @@ pub fn build_rigid_body_2d(desc: &BodyDesc2D) -> r2::RigidBody {
             .gravity_scale(rigid.gravity_scale)
             .linear_damping(rigid.linear_damping)
             .angular_damping(rigid.angular_damping)
+            .additional_mass(rigid.mass.max(0.0))
             .ccd_enabled(rigid.continuous_collision_detection)
             .can_sleep(rigid.can_sleep)
             .enabled(rigid.enabled);
@@ -312,6 +318,7 @@ pub fn collider_builder_2d(desc: &ShapeDesc2D) -> Option<r2::Collider> {
             ))
             .friction(desc.friction)
             .restitution(desc.restitution)
+            .density(desc.density.max(0.0))
             .build(),
     )
 }
@@ -472,6 +479,7 @@ pub fn collider_builder_3d(
             ))
             .friction(desc.friction)
             .restitution(desc.restitution)
+            .density(desc.density.max(0.0))
             .build(),
     )
 }

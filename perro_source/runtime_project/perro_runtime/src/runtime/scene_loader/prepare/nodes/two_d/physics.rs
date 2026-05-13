@@ -142,6 +142,11 @@ fn apply_rigid_body_2d_fields(node: &mut RigidBody2D, fields: &[SceneObjectField
                     node.continuous_collision_detection = ccd;
                 }
             }
+            Some(NodeField::RigidBody2D(RigidBody2DField::Mass)) => {
+                if let Some(mass) = as_f32(value) {
+                    node.mass = mass.max(0.0);
+                }
+            }
             Some(NodeField::RigidBody2D(RigidBody2DField::LinearVelocity)) => {
                 if let Some(velocity) = as_vec2(value) {
                     node.linear_velocity = velocity;

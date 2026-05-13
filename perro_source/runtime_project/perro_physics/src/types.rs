@@ -47,6 +47,7 @@ pub struct ShapeDesc2D {
     pub collision_mask: BitMask,
     pub friction: f32,
     pub restitution: f32,
+    pub density: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -64,6 +65,7 @@ pub struct ShapeDesc3D {
     pub collision_mask: BitMask,
     pub friction: f32,
     pub restitution: f32,
+    pub density: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -139,6 +141,8 @@ pub struct RigidProps2D {
     pub enabled: bool,
     pub can_sleep: bool,
     pub lock_rotation: bool,
+    pub mass: f32,
+    pub density: f32,
     pub continuous_collision_detection: bool,
     pub linear_velocity: Vector2,
     pub angular_velocity: f32,
@@ -152,6 +156,7 @@ pub struct RigidProps3D {
     pub enabled: bool,
     pub can_sleep: bool,
     pub mass: f32,
+    pub density: f32,
     pub continuous_collision_detection: bool,
     pub linear_velocity: Vector3,
     pub angular_velocity: Vector3,
