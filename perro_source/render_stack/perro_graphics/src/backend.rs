@@ -142,6 +142,21 @@ struct FrameState {
     scratch_late_overlay_commands: Vec<RenderCommand>,
 }
 
+#[derive(Default)]
+struct CommandBucketCounts {
+    rects_2d: usize,
+    sprites_2d: usize,
+    draws_3d: usize,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CommandBucketKind {
+    Rect2D,
+    Sprite2D,
+    Draw3D,
+    Other,
+}
+
 impl FrameState {
     fn queue(&mut self, command: RenderCommand) {
         self.pending_commands.push(command);
@@ -158,6 +173,38 @@ fn draw_instance_count(draw: &Draw3DInstance) -> u32 {
         1
     } else {
         count.min(u32::MAX as usize) as u32
+    }
+}
+
+fn count_command_buckets(commands: &[RenderCommand]) -> CommandBucketCounts {
+    let mut counts = CommandBucketCounts::default();
+    for command in commands {
+        match command {
+            RenderCommand::TwoD(Command2D::UpsertRect { .. }) => counts.rects_2d += 1,
+            RenderCommand::TwoD(Command2D::UpsertSprite { .. }) => counts.sprites_2d += 1,
+            RenderCommand::ThreeD(cmd) => match &**cmd {
+                Command3D::Draw { .. }
+                | Command3D::DrawMulti { .. }
+                | Command3D::DrawMultiDense { .. } => counts.draws_3d += 1,
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+    counts
+}
+
+fn command_bucket_kind(command: &RenderCommand) -> CommandBucketKind {
+    match command {
+        RenderCommand::TwoD(Command2D::UpsertRect { .. }) => CommandBucketKind::Rect2D,
+        RenderCommand::TwoD(Command2D::UpsertSprite { .. }) => CommandBucketKind::Sprite2D,
+        RenderCommand::ThreeD(cmd) => match &**cmd {
+            Command3D::Draw { .. }
+            | Command3D::DrawMulti { .. }
+            | Command3D::DrawMultiDense { .. } => CommandBucketKind::Draw3D,
+            _ => CommandBucketKind::Other,
+        },
+        _ => CommandBucketKind::Other,
     }
 }
 
@@ -311,14 +358,6 @@ impl PerroGraphics {
     where
         I: IntoIterator<Item = RenderCommand>,
     {
-        let commands = commands.into_iter();
-        let (lower, upper) = commands.size_hint();
-        let reserve_count = upper.unwrap_or(lower);
-        if reserve_count >= 10_000 {
-            self.renderer_2d.reserve_queued_rects(reserve_count);
-            self.renderer_2d.reserve_queued_sprites(reserve_count);
-            self.renderer_3d.reserve_queued_draws(reserve_count);
-        }
         for command in commands {
             match command {
                 RenderCommand::Resource(resource_cmd) => match resource_cmd {
@@ -790,6 +829,37 @@ impl GraphicsBackend for PerroGraphics {
 }
 
 impl PerroGraphics {
+    fn reserve_command_buckets(&mut self, commands: &[RenderCommand]) {
+        if commands.len() < 10_000 {
+            return;
+        }
+        let Some(first) = commands.first() else {
+            return;
+        };
+        let first_bucket = command_bucket_kind(first);
+        if first_bucket != CommandBucketKind::Other {
+            match first_bucket {
+                CommandBucketKind::Rect2D => self.renderer_2d.reserve_queued_rects(commands.len()),
+                CommandBucketKind::Sprite2D => {
+                    self.renderer_2d.reserve_queued_sprites(commands.len())
+                }
+                CommandBucketKind::Draw3D => self.renderer_3d.reserve_queued_draws(commands.len()),
+                CommandBucketKind::Other => {}
+            }
+            return;
+        }
+        let counts = count_command_buckets(commands);
+        if counts.rects_2d > 0 {
+            self.renderer_2d.reserve_queued_rects(counts.rects_2d);
+        }
+        if counts.sprites_2d > 0 {
+            self.renderer_2d.reserve_queued_sprites(counts.sprites_2d);
+        }
+        if counts.draws_3d > 0 {
+            self.renderer_3d.reserve_queued_draws(counts.draws_3d);
+        }
+    }
+
     fn draw_frame_timed_internal<I>(&mut self, late_overlay_commands: I) -> Option<DrawFrameTiming>
     where
         I: IntoIterator<Item = RenderCommand>,
@@ -868,6 +938,7 @@ impl PerroGraphics {
             }
         }
         let process_start = Instant::now();
+        self.reserve_command_buckets(&pending);
         self.process_commands(pending.drain(..));
         self.process_late_overlay_commands(late_overlay_pending.drain(..));
         self.frame.scratch_late_overlay_commands = late_overlay_pending;

@@ -48,7 +48,7 @@
             perlin_fbm(macro_uv * 0.55 + vec2<f32>( 13.0,  -7.0), 2),
             perlin_fbm(macro_uv * 0.55 + vec2<f32>( -5.0,  11.0), 2)
         ) - vec2<f32>(0.5, 0.5);
-        let macro_shape = perlin_fbm(macro_uv + macro_warp * 1.35, 2);
+        let macro_shape = cached_noise2((macro_uv + macro_warp * 1.35) * 0.35, 0u);
         let macro_bias  = smoothstep(0.35, 1.0, macro_shape) * 0.22;
 
         // ── Top layer ─────────────────────────────────────────
@@ -114,8 +114,8 @@
             + vec2<f32>(-27.0, 14.0)) * (clouds_scale * 0.78);
         let high_layer_uv = (sky_uv + rotate2(wind_dir, shear_high) * cloud_clock * 0.68
             + vec2<f32>(33.0, -21.0)) * (clouds_scale * 1.34);
-        let low_layer_raw  = perlin_fbm(low_layer_uv,  2);
-        let high_layer_raw = perlin_fbm(high_layer_uv, 2);
+        let low_layer_raw  = cached_noise2(low_layer_uv * 0.30, 1u);
+        let high_layer_raw = cached_noise2(high_layer_uv * 0.42, 2u);
 
         let low_layer = smoothstep(
             clouds_cutoff - 0.06,

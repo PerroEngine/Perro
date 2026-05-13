@@ -3,6 +3,7 @@ use super::*;
 impl Gpu3D {
     pub fn new(
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         color_format: wgpu::TextureFormat,
         config: Gpu3DConfig,
     ) -> Self {
@@ -197,19 +198,37 @@ impl Gpu3D {
         });
         let sky_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_sky3d_bgl"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: Some(
-                        std::num::NonZeroU64::new(std::mem::size_of::<SkyUniform>() as u64)
-                            .expect("sky uniform size must be non-zero"),
-                    ),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: Some(
+                            std::num::NonZeroU64::new(std::mem::size_of::<SkyUniform>() as u64)
+                                .expect("sky uniform size must be non-zero"),
+                        ),
+                    },
+                    count: None,
                 },
-                count: None,
-            }],
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
         });
         let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_camera3d_buffer"),
@@ -248,6 +267,8 @@ impl Gpu3D {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let (sky_noise_texture, sky_noise_view, sky_noise_sampler) =
+            create_sky_noise_texture(device, queue);
         let skeleton_capacity = 1usize;
         let skeleton_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_skeleton_palette_buffer"),
@@ -392,10 +413,20 @@ impl Gpu3D {
         let sky_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_sky3d_bg"),
             layout: &sky_bgl,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: sky_buffer.as_entire_binding(),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: sky_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&sky_noise_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&sky_noise_sampler),
+                },
+            ],
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -1049,6 +1080,9 @@ impl Gpu3D {
             _shadow_map_sampler: shadow_map_sampler,
             sky_buffer,
             sky_bind_group,
+            _sky_noise_texture: sky_noise_texture,
+            _sky_noise_view: sky_noise_view,
+            _sky_noise_sampler: sky_noise_sampler,
             skeleton_buffer,
             skeleton_capacity,
             staged_skeletons: Vec::new(),

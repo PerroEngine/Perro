@@ -228,3 +228,78 @@ pub(super) fn create_sky_pipeline(
         cache: None,
     })
 }
+
+pub(super) fn create_sky_noise_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) -> (wgpu::Texture, wgpu::TextureView, wgpu::Sampler) {
+    const SIZE: u32 = 128;
+    let mut rgba = vec![0u8; (SIZE * SIZE * 4) as usize];
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            let i = ((y * SIZE + x) * 4) as usize;
+            rgba[i] = sky_noise_hash(x, y, 0x8da6_b343);
+            rgba[i + 1] = sky_noise_hash(x, y, 0xd816_3841);
+            rgba[i + 2] = sky_noise_hash(x, y, 0xcb1a_3c6d);
+            rgba[i + 3] = sky_noise_hash(x, y, 0x1656_67b1);
+        }
+    }
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("perro_sky_noise_cache"),
+        size: wgpu::Extent3d {
+            width: SIZE,
+            height: SIZE,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        &rgba,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(SIZE * 4),
+            rows_per_image: Some(SIZE),
+        },
+        wgpu::Extent3d {
+            width: SIZE,
+            height: SIZE,
+            depth_or_array_layers: 1,
+        },
+    );
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("perro_sky_noise_sampler"),
+        address_mode_u: wgpu::AddressMode::Repeat,
+        address_mode_v: wgpu::AddressMode::Repeat,
+        address_mode_w: wgpu::AddressMode::Repeat,
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
+        mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+        ..Default::default()
+    });
+    (texture, view, sampler)
+}
+
+fn sky_noise_hash(x: u32, y: u32, seed: u32) -> u8 {
+    let mut n = x
+        .wrapping_mul(0x9e37_79b1)
+        .wrapping_add(y.wrapping_mul(0x85eb_ca6b))
+        .wrapping_add(seed);
+    n ^= n >> 16;
+    n = n.wrapping_mul(0x7feb_352d);
+    n ^= n >> 15;
+    n = n.wrapping_mul(0x846c_a68b);
+    n ^= n >> 16;
+    (n & 0xff) as u8
+}

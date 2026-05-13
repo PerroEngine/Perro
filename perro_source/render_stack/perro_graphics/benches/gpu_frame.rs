@@ -28,6 +28,7 @@ const SAMPLE_FRAMES: usize = 60;
 // - sky_clouds cost is the sky_clear delta; keep it stable while tuning FBM count.
 // Past regressions: sprites 100k hit ~9ms GPU prep; rects 100k hit ~112us CPU prep.
 // Tried: branch-skipping night cloud FBM and hash-vector grad noise; both failed GPU timing here.
+// Kept: cached sky noise for macro/low/high clouds; latest run cut sky_clouds gpuq ~337us -> ~269us.
 
 #[derive(Default)]
 struct TimingSum {

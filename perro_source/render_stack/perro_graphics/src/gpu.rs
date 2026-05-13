@@ -409,6 +409,7 @@ impl Gpu {
         let ui = Some(GpuUi::new(&device, surface_format));
         let three_d = Gpu3D::new(
             &device,
+            &queue,
             render_format,
             Gpu3DConfig {
                 sample_count,
@@ -663,6 +664,7 @@ impl Gpu {
             if self.three_d.is_none() {
                 self.three_d = Some(Gpu3D::new(
                     &self.device,
+                    &self.queue,
                     self.render_format,
                     Gpu3DConfig {
                         sample_count: self.sample_count,

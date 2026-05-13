@@ -12,6 +12,10 @@ struct SkyUniform {
 
 @group(0) @binding(0)
 var<uniform> sky: SkyUniform;
+@group(0) @binding(1)
+var sky_noise_cache: texture_2d<f32>;
+@group(0) @binding(2)
+var sky_noise_sampler: sampler;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -116,6 +120,20 @@ fn gradient3(colors: array<vec4<f32>, 3>, t_in: f32) -> vec3<f32> {
     }
     let local_t = smoothstep(0.0, 1.0, (t - 0.5) * 2.0);
     return mix(colors[1].xyz, colors[2].xyz, local_t);
+}
+
+fn cached_noise2(p: vec2<f32>, channel: u32) -> f32 {
+    let sample = textureSample(sky_noise_cache, sky_noise_sampler, fract(p));
+    if (channel == 0u) {
+        return sample.r;
+    }
+    if (channel == 1u) {
+        return sample.g;
+    }
+    if (channel == 2u) {
+        return sample.b;
+    }
+    return sample.a;
 }
 
 fn gradient3_blur(colors: array<vec4<f32>, 3>, t_in: f32, radius: f32) -> vec3<f32> {
