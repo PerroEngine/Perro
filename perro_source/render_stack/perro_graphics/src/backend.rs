@@ -1192,6 +1192,13 @@ impl PerroGraphics {
                     samples: Arc::from(water_samples.into_boxed_slice()),
                 });
             }
+            let mut water_body_samples = Vec::new();
+            gpu.drain_water_body_samples(&mut water_body_samples);
+            if !water_body_samples.is_empty() {
+                self.events.push(RenderEvent::WaterBodySamples {
+                    samples: Arc::from(water_body_samples.into_boxed_slice()),
+                });
+            }
             self.redraw_requested = !gpu_timing.presented;
         }
         let timing = DrawFrameTiming {

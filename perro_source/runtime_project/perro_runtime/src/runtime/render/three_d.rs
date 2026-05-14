@@ -16,7 +16,8 @@ use perro_render_bridge::{
     ParticlePath3D, ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D,
     PointLight3DState, PointParticles3DState, RayLight3DState, RenderCommand, ResourceCommand,
     SkeletonPalette, Sky3DState, SkyTime3DState, SpotLight3DState, Water3DState,
-    WaterCoastlineShape3D, WaterIdleModeState, WaterImpact3D, WaterLinkState, WaterShapeState,
+    WaterBodyQueryState, WaterCoastlineShape3D, WaterContact3D, WaterIdleModeState,
+    WaterImpact3D, WaterLinkState, WaterShapeState,
 };
 use perro_runtime_render::{material_3d_request, mesh_3d_request};
 use perro_structs::BitMask;
@@ -222,7 +223,9 @@ impl Runtime {
                     .to_mat4()
                     .to_cols_array_2d();
                 let coastline_shapes = self.collect_water_coastline_shapes_3d(node, &water);
+                let queries = self.collect_water_queries_3d(node);
                 let impacts = self.collect_water_impacts_3d(node, &water);
+                let contacts = self.collect_water_contacts_3d(node);
                 let links = self.collect_water_links_3d(node, &water);
                 self.queue_render_command(RenderCommand::ThreeD(Box::new(
                     Command3D::UpsertWater {
@@ -277,7 +280,9 @@ impl Runtime {
                             coastline_edge_noise: water.coastline.edge_noise,
                             debug: water.debug,
                             links,
+                            queries,
                             impacts,
+                            contacts,
                             coastline_shapes,
                         }),
                     },
@@ -1316,6 +1321,44 @@ impl Runtime {
         Arc::from(shapes)
     }
 
+    fn collect_water_queries_3d(&mut self, water_id: NodeID) -> Arc<[WaterBodyQueryState]> {
+        let Some(queries) = self.pending_water_queries_3d.get(&water_id) else {
+            return Arc::from([]);
+        };
+        Arc::from(
+            queries
+                .iter()
+                .map(|query| WaterBodyQueryState {
+                    water: water_id,
+                    body: query.body,
+                    point: query.point,
+                    local: [query.local.x, query.local.y],
+                })
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        )
+    }
+
+    fn collect_water_contacts_3d(&mut self, water_id: NodeID) -> Arc<[WaterContact3D]> {
+        let Some(contacts) = self.water_contacts_3d.get(&water_id) else {
+            return Arc::from([]);
+        };
+        Arc::from(
+            contacts
+                .iter()
+                .map(|contact| WaterContact3D {
+                    body: contact.body,
+                    position: [contact.position.x, contact.position.y, contact.position.z],
+                    velocity: [contact.velocity.x, contact.velocity.y, contact.velocity.z],
+                    radius: contact.radius,
+                    foam_amount: contact.foam_amount,
+                    persist: contact.persist,
+                })
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        )
+    }
+
     fn collect_water_impacts_3d(
         &mut self,
         water_id: NodeID,
@@ -1416,6 +1459,25 @@ impl Runtime {
                 radius: impact.radius,
                 cavitation: impact.cavitation,
             });
+        }
+        if let Some(contacts) = self.water_contacts_3d.get(&water_id) {
+            for contact in contacts {
+                let local = water_local_point_3d(water_inv, contact.position);
+                if local.x.abs() > half.x + contact.radius
+                    || local.z.abs() > half.y + contact.radius
+                    || local.y > contact.radius
+                    || local.y < -water.shape.depth(water.depth) - contact.radius
+                {
+                    continue;
+                }
+                impacts.push(WaterImpact3D {
+                    position: [local.x, local.y, local.z],
+                    velocity: [contact.velocity.x, contact.velocity.y, contact.velocity.z],
+                    strength: (contact.foam_amount * 6.5).max(0.5),
+                    radius: contact.radius * (1.0 + contact.persist),
+                    cavitation: contact.foam_amount * 0.2,
+                });
+            }
         }
         for link in self.collect_water_links_3d(water_id, water).iter() {
             for impact in self.force_water_impacts_3d.iter() {

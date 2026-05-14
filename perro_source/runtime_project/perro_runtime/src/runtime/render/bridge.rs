@@ -55,6 +55,27 @@ impl Runtime {
                 );
             }
         }
+        if let RenderEvent::WaterBodySamples { samples } = &event {
+            for sample in samples.iter() {
+                self.water_body_samples.insert(
+                    crate::runtime::WaterBodySampleKey {
+                        water: sample.water,
+                        body: sample.body,
+                        point: sample.point,
+                    },
+                    crate::runtime::WaterBodySampleCache {
+                        local: perro_structs::Vector2::new(sample.local[0], sample.local[1]),
+                        height: sample.height,
+                        velocity: perro_structs::Vector2::new(
+                            sample.velocity[0],
+                            sample.velocity[1],
+                        ),
+                        foam: sample.foam,
+                        sample_time: self.time.elapsed,
+                    },
+                );
+            }
+        }
         if let RenderEvent::MeshCreated { request, id, .. } = &event
             && let Some(node) = decode_3d_mesh_request_node(*request)
             && let Some(source) = self.render_3d.mesh_sources.get(&node).cloned()

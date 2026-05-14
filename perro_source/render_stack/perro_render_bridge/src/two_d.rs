@@ -91,6 +91,16 @@ pub struct WaterImpact2D {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WaterContact2D {
+    pub body: NodeID,
+    pub position: [f32; 2],
+    pub velocity: [f32; 2],
+    pub radius: f32,
+    pub foam_amount: f32,
+    pub persist: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum WaterCoastlineShape2D {
     Quad {
         center: [f32; 2],
@@ -109,6 +119,25 @@ pub enum WaterCoastlineShape2D {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WaterSampleState {
     pub node: NodeID,
+    pub height: f32,
+    pub velocity: [f32; 2],
+    pub foam: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WaterBodyQueryState {
+    pub water: NodeID,
+    pub body: NodeID,
+    pub point: u8,
+    pub local: [f32; 2],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WaterBodySampleState {
+    pub water: NodeID,
+    pub body: NodeID,
+    pub point: u8,
+    pub local: [f32; 2],
     pub height: f32,
     pub velocity: [f32; 2],
     pub foam: f32,
@@ -176,7 +205,9 @@ pub struct Water2DState {
     pub coastline_edge_noise: f32,
     pub debug: bool,
     pub links: Arc<[WaterLinkState]>,
+    pub queries: Arc<[WaterBodyQueryState]>,
     pub impacts: Arc<[WaterImpact2D]>,
+    pub contacts: Arc<[WaterContact2D]>,
     pub coastline_shapes: Arc<[WaterCoastlineShape2D]>,
 }
 

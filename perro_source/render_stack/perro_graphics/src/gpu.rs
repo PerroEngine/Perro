@@ -18,7 +18,7 @@ use epaint::{ClippedPrimitive, textures::TexturesDelta};
 use perro_ids::NodeID;
 use perro_render_bridge::{
     Camera3DState, Light2DState, PointParticles3DState, Sprite2DCommand, Water2DState,
-    Water3DState, WaterSampleState,
+    Water3DState, WaterBodySampleState, WaterSampleState,
 };
 use perro_structs::VisualAccessibilitySettings;
 use std::sync::{Arc, mpsc};
@@ -1282,6 +1282,12 @@ impl Gpu {
     pub fn drain_water_samples(&mut self, out: &mut Vec<WaterSampleState>) {
         if let Some(water) = self.water.as_mut() {
             water.drain_samples(out);
+        }
+    }
+
+    pub fn drain_water_body_samples(&mut self, out: &mut Vec<WaterBodySampleState>) {
+        if let Some(water) = self.water.as_mut() {
+            water.drain_body_samples(out);
         }
     }
 

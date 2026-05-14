@@ -78,7 +78,9 @@ fn water_2d_state() -> Water2DState {
             wave_transfer: 0.75,
             flow_transfer: 0.5,
         }]),
+        queries: Arc::from([]),
         impacts: Arc::from([]),
+        contacts: Arc::from([]),
         coastline_shapes: Arc::from([]),
     }
 }
@@ -146,7 +148,9 @@ fn water_3d_state() -> Water3DState {
             wave_transfer: 0.75,
             flow_transfer: 0.5,
         }]),
+        queries: Arc::from([]),
         impacts: Arc::from([]),
+        contacts: Arc::from([]),
         coastline_shapes: Arc::from([]),
     }
 }

@@ -247,6 +247,9 @@ pub enum RenderEvent {
     WaterSamples {
         samples: Arc<[WaterSampleState]>,
     },
+    WaterBodySamples {
+        samples: Arc<[WaterBodySampleState]>,
+    },
     Failed {
         request: RenderRequestID,
         reason: String,

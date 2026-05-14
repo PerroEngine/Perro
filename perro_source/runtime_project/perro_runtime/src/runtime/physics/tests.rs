@@ -380,6 +380,7 @@ fn floating_body_tracks_wave_vertical_velocity() {
         body_base,
         &water_index,
         &AHashMap::new(),
+        &AHashMap::new(),
         elapsed,
         Vector2::ZERO,
     )[0]
@@ -390,6 +391,7 @@ fn floating_body_tracks_wave_vertical_velocity() {
             ..body_base
         },
         &water_index,
+        &AHashMap::new(),
         &AHashMap::new(),
         elapsed,
         Vector2::ZERO,
@@ -415,7 +417,8 @@ fn water_physics_uses_cached_visual_height_offset() {
         velocity: Vector2::ZERO,
         foam: 0.6,
     };
-    let synced = water_physics_sample_for_body_cached(&surface, local, elapsed, Some(cached));
+    let synced =
+        water_physics_sample_for_body_cached(&surface, local, elapsed, None, Some(cached));
 
     assert!((synced.height - analytic.height - 0.75).abs() < 0.001);
     assert_eq!(synced.foam, 0.6);
@@ -455,11 +458,19 @@ fn floating_body_gets_mass_scaled_wave_drive() {
         collision_layers: BitMask::ALL,
         collision_mask: BitMask::NONE,
     };
-    let light =
-        water_forces_for_body_2d(body, &water_index, &AHashMap::new(), 0.0, Vector2::ZERO)[0].1;
+    let light = water_forces_for_body_2d(
+        body,
+        &water_index,
+        &AHashMap::new(),
+        &AHashMap::new(),
+        0.0,
+        Vector2::ZERO,
+    )[0]
+        .1;
     let heavy = water_forces_for_body_2d(
         RuntimeWaterBody2D { mass: 4.0, ..body },
         &water_index,
+        &AHashMap::new(),
         &AHashMap::new(),
         0.0,
         Vector2::ZERO,
@@ -502,8 +513,15 @@ fn deeply_submerged_3d_body_gets_enough_lift_to_leave_bed() {
         collision_mask: BitMask::NONE,
     };
 
-    let force =
-        water_forces_for_body_3d(body, &water_index, &AHashMap::new(), 0.0, Vector2::ZERO)[0].1;
+    let force = water_forces_for_body_3d(
+        body,
+        &water_index,
+        &AHashMap::new(),
+        &AHashMap::new(),
+        0.0,
+        Vector2::ZERO,
+    )[0]
+        .1;
 
     assert!(force.y > body.mass * 9.81 * 4.0);
 }
@@ -538,7 +556,7 @@ fn downward_surface_entry_creates_water_splash() {
         collision_mask: BitMask::NONE,
     };
 
-    let impacts = water_body_splashes_2d(&[body], &water_index, 0.0);
+    let impacts = water_body_splashes_2d(&[body], &water_index, &AHashMap::new(), 0.0);
     assert_eq!(impacts.len(), 1);
     assert!(impacts[0].strength > 0.0);
     assert!(impacts[0].cavitation > 0.0);
@@ -547,7 +565,7 @@ fn downward_surface_entry_creates_water_splash() {
         velocity: Vector2::ZERO,
         ..body
     };
-    assert!(water_body_splashes_2d(&[floating], &water_index, 0.0).is_empty());
+    assert!(water_body_splashes_2d(&[floating], &water_index, &AHashMap::new(), 0.0).is_empty());
 }
 
 #[test]

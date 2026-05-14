@@ -11,8 +11,8 @@ use perro_render_bridge::{
     AmbientLight2DState, Camera2DState, Command2D, ParticlePath2D, ParticleProfile2D,
     ParticleSimulationMode2D, PointLight2DState, PointParticles2DState, RayLight2DState,
     RenderCommand, ResourceCommand, SpotLight2DState, Sprite2DCommand, TileMap2DCommand,
-    Water2DState, WaterCoastlineShape2D, WaterIdleModeState, WaterImpact2D, WaterLinkState,
-    WaterShapeState,
+    Water2DState, WaterBodyQueryState, WaterCoastlineShape2D, WaterContact2D,
+    WaterIdleModeState, WaterImpact2D, WaterLinkState, WaterShapeState,
 };
 use perro_runtime_render::{sprite_2d_texture_request, tilemap_2d_texture_request};
 use perro_structs::BitMask;
@@ -256,7 +256,9 @@ impl Runtime {
                         .to_mat3()
                         .to_cols_array_2d();
                     let coastline_shapes = self.collect_water_coastline_shapes_2d(node, &water);
+                    let queries = self.collect_water_queries_2d(node);
                     let impacts = self.collect_water_impacts_2d(node, &water);
+                    let contacts = self.collect_water_contacts_2d(node);
                     let links = self.collect_water_links_2d(node, &water);
                     self.queue_render_command(RenderCommand::TwoD(Command2D::UpsertWater {
                         node,
@@ -311,7 +313,9 @@ impl Runtime {
                             coastline_edge_noise: water.coastline.edge_noise,
                             debug: water.debug,
                             links,
+                            queries,
                             impacts,
+                            contacts,
                             coastline_shapes,
                         }),
                     }));
@@ -783,6 +787,44 @@ impl Runtime {
         Arc::from(shapes)
     }
 
+    fn collect_water_queries_2d(&mut self, water_id: NodeID) -> Arc<[WaterBodyQueryState]> {
+        let Some(queries) = self.pending_water_queries_2d.get(&water_id) else {
+            return Arc::from([]);
+        };
+        Arc::from(
+            queries
+                .iter()
+                .map(|query| WaterBodyQueryState {
+                    water: water_id,
+                    body: query.body,
+                    point: query.point,
+                    local: [query.local.x, query.local.y],
+                })
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        )
+    }
+
+    fn collect_water_contacts_2d(&mut self, water_id: NodeID) -> Arc<[WaterContact2D]> {
+        let Some(contacts) = self.water_contacts_2d.get(&water_id) else {
+            return Arc::from([]);
+        };
+        Arc::from(
+            contacts
+                .iter()
+                .map(|contact| WaterContact2D {
+                    body: contact.body,
+                    position: [contact.position.x, contact.position.y],
+                    velocity: [contact.velocity.x, contact.velocity.y],
+                    radius: contact.radius,
+                    foam_amount: contact.foam_amount,
+                    persist: contact.persist,
+                })
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        )
+    }
+
     fn collect_water_impacts_2d(
         &mut self,
         water_id: NodeID,
@@ -865,6 +907,22 @@ impl Runtime {
                 radius: impact.radius,
                 cavitation: impact.cavitation,
             });
+        }
+        if let Some(contacts) = self.water_contacts_2d.get(&water_id) {
+            for contact in contacts {
+                let local = water_local_point_2d(water_inv, contact.position);
+                if local.x.abs() > half.x + contact.radius || local.y.abs() > half.y + contact.radius
+                {
+                    continue;
+                }
+                impacts.push(WaterImpact2D {
+                    position: [local.x, local.y],
+                    velocity: [contact.velocity.x, contact.velocity.y],
+                    strength: (contact.foam_amount * 6.0).max(0.5),
+                    radius: contact.radius * (1.0 + contact.persist),
+                    cavitation: contact.foam_amount * 0.2,
+                });
+            }
         }
         for link in self.collect_water_links_2d(water_id, water).iter() {
             for impact in self.force_water_impacts_2d.iter() {

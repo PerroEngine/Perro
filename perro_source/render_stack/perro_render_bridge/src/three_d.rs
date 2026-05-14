@@ -1,5 +1,5 @@
 use super::*;
-use crate::two_d::{WaterIdleModeState, WaterLinkState, WaterShapeState};
+use crate::two_d::{WaterBodyQueryState, WaterIdleModeState, WaterLinkState, WaterShapeState};
 use perro_structs::{AudioListenerOptions, BitMask, Color};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -80,6 +80,16 @@ pub struct WaterImpact3D {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WaterContact3D {
+    pub body: NodeID,
+    pub position: [f32; 3],
+    pub velocity: [f32; 3],
+    pub radius: f32,
+    pub foam_amount: f32,
+    pub persist: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum WaterCoastlineShape3D {
     Box {
         center: [f32; 3],
@@ -152,7 +162,9 @@ pub struct Water3DState {
     pub coastline_edge_noise: f32,
     pub debug: bool,
     pub links: Arc<[WaterLinkState]>,
+    pub queries: Arc<[WaterBodyQueryState]>,
     pub impacts: Arc<[WaterImpact3D]>,
+    pub contacts: Arc<[WaterContact3D]>,
     pub coastline_shapes: Arc<[WaterCoastlineShape3D]>,
 }
 

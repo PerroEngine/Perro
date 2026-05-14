@@ -1,8 +1,8 @@
 use bytemuck::{Pod, Zeroable};
 use perro_ids::NodeID;
 use perro_render_bridge::{
-    Water2DState, Water3DState, WaterCoastlineShape2D, WaterCoastlineShape3D, WaterIdleModeState,
-    WaterSampleState, WaterShapeState,
+    Water2DState, Water3DState, WaterBodyQueryState, WaterBodySampleState, WaterCoastlineShape2D,
+    WaterCoastlineShape3D, WaterIdleModeState, WaterSampleState, WaterShapeState,
 };
 use std::sync::mpsc;
 
@@ -83,6 +83,9 @@ pub struct GpuWater {
     readback_nodes: Vec<NodeID>,
     readback_offsets: Vec<usize>,
     readback_samples: Vec<WaterSampleState>,
+    readback_queries: Vec<WaterBodyQueryState>,
+    readback_body_samples: Vec<WaterBodySampleState>,
+    readback_water_sample_count: usize,
     readback_frame: u32,
     readback_period_frames: u32,
     readback_copy_encoded: bool,
@@ -289,14 +292,14 @@ impl GpuWater {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
+                cull_mode: Some(wgpu::Face::Back),
                 polygon_mode: wgpu::PolygonMode::Fill,
                 unclipped_depth: false,
                 conservative: false,
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth24Plus,
-                depth_write_enabled: Some(false),
+                depth_write_enabled: Some(true),
                 depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
@@ -364,6 +367,9 @@ impl GpuWater {
             readback_nodes: Vec::new(),
             readback_offsets: Vec::new(),
             readback_samples: Vec::new(),
+            readback_queries: Vec::new(),
+            readback_body_samples: Vec::new(),
+            readback_water_sample_count: 0,
             readback_frame: 0,
             readback_period_frames: 2,
             readback_copy_encoded: false,
@@ -496,6 +502,7 @@ impl GpuWater {
         queue.write_buffer(&self.params_buffer, 0, bytemuck::bytes_of(&params));
         self.readback_nodes.clear();
         self.readback_offsets.clear();
+        self.readback_queries.clear();
         for ((node, _), water) in waters_2d.iter().zip(staged.iter()) {
             if water.sim[1] > 0 {
                 self.readback_nodes.push(*node);
@@ -508,6 +515,21 @@ impl GpuWater {
                 self.readback_offsets.push(water_center_cell_offset(water));
             }
         }
+        self.readback_water_sample_count = self.readback_nodes.len();
+        for ((node, state), water) in waters_2d.iter().zip(staged.iter()) {
+            for query in state.queries.iter() {
+                self.readback_queries.push(*query);
+                self.readback_offsets.push(water_query_cell_offset(water, query.local));
+                debug_assert_eq!(query.water, *node);
+            }
+        }
+        for ((node, state), water) in waters_3d.iter().zip(staged.iter().skip(waters_2d.len())) {
+            for query in state.queries.iter() {
+                self.readback_queries.push(*query);
+                self.readback_offsets.push(water_query_cell_offset(water, query.local));
+                debug_assert_eq!(query.water, *node);
+            }
+        }
     }
 
     pub fn clear_active(&mut self) {
@@ -518,6 +540,9 @@ impl GpuWater {
         self.max_3d_vertices = 0;
         self.readback_nodes.clear();
         self.readback_offsets.clear();
+        self.readback_queries.clear();
+        self.readback_body_samples.clear();
+        self.readback_water_sample_count = 0;
         self.readback_copy_encoded = false;
     }
 
@@ -685,6 +710,10 @@ impl GpuWater {
         out.append(&mut self.readback_samples);
     }
 
+    pub fn drain_body_samples(&mut self, out: &mut Vec<WaterBodySampleState>) {
+        out.append(&mut self.readback_body_samples);
+    }
+
     fn ensure_capacity(
         &mut self,
         device: &wgpu::Device,
@@ -734,10 +763,31 @@ impl GpuWater {
                 let data = slice.get_mapped_range();
                 let cells: &[[f32; 4]] = bytemuck::cast_slice(&data);
                 self.readback_samples.clear();
-                for (idx, node) in self.readback_nodes.iter().enumerate() {
+                self.readback_body_samples.clear();
+                for (idx, node) in self
+                    .readback_nodes
+                    .iter()
+                    .take(self.readback_water_sample_count)
+                    .enumerate()
+                {
                     let cell = cells.get(idx).copied().unwrap_or([0.0; 4]);
                     self.readback_samples.push(WaterSampleState {
                         node: *node,
+                        height: cell[0],
+                        velocity: [cell[1], 0.0],
+                        foam: cell[2],
+                    });
+                }
+                for (idx, query) in self.readback_queries.iter().enumerate() {
+                    let cell = cells
+                        .get(self.readback_water_sample_count + idx)
+                        .copied()
+                        .unwrap_or([0.0; 4]);
+                    self.readback_body_samples.push(WaterBodySampleState {
+                        water: query.water,
+                        body: query.body,
+                        point: query.point,
+                        local: query.local,
                         height: cell[0],
                         velocity: [cell[1], 0.0],
                         foam: cell[2],
@@ -1107,6 +1157,22 @@ fn water_center_cell_offset(water: &WaterGpu) -> usize {
     let height = water.sim[3].max(1);
     let center = (height / 2).saturating_mul(width).saturating_add(width / 2);
     water.sim[0].saturating_add(center.min(water.sim[1].saturating_sub(1))) as usize
+}
+
+fn water_query_cell_offset(water: &WaterGpu, local: [f32; 2]) -> usize {
+    let width = water.sim[2].max(1);
+    let height = water.sim[3].max(1);
+    let sx = water.size_depth_time[0].max(0.001);
+    let sy = water.size_depth_time[1].max(0.001);
+    let u = (local[0] / sx + 0.5).clamp(0.0, 0.999_999);
+    let v = (local[1] / sy + 0.5).clamp(0.0, 0.999_999);
+    let x = (u * width as f32).floor() as u32;
+    let y = (v * height as f32).floor() as u32;
+    let cell = y
+        .saturating_mul(width)
+        .saturating_add(x)
+        .min(water.sim[1].saturating_sub(1));
+    water.sim[0].saturating_add(cell) as usize
 }
 
 fn water_3d_vertex_count(water: &WaterGpu) -> u32 {
@@ -2387,6 +2453,7 @@ mod tests {
                 wave_transfer: 1.0,
                 flow_transfer: 1.0,
             }]),
+            queries: Arc::from([]),
             impacts: Arc::from([perro_render_bridge::WaterImpact2D {
                 position: [0.0, 0.0],
                 velocity: [1.0, 0.0],
@@ -2394,6 +2461,7 @@ mod tests {
                 radius: 2.0,
                 cavitation: 0.5,
             }]),
+            contacts: Arc::from([]),
             coastline_shapes: Arc::from([]),
         }
     }
@@ -2454,6 +2522,7 @@ mod tests {
             coastline_edge_noise: 0.2,
             debug: false,
             links: Arc::from([]),
+            queries: Arc::from([]),
             impacts: Arc::from([perro_render_bridge::WaterImpact3D {
                 position: [0.0, 0.0, 0.0],
                 velocity: [1.0, 0.0, 0.0],
@@ -2461,6 +2530,7 @@ mod tests {
                 radius: 2.0,
                 cavitation: 0.5,
             }]),
+            contacts: Arc::from([]),
             coastline_shapes: Arc::from([]),
         }
     }
