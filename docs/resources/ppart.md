@@ -163,3 +163,4 @@ Constants/inputs:
 
 - `ring_u`: stable low-discrepancy scalar in `[0,1)`, useful for ring/circle layouts.
 - `emitter_x`, `emitter_y`, `emitter_z`: emitter world position components.
+- `prev_x`, `prev_y`, `prev_z`: previous-frame particle position before custom `x/y/z` offsets.

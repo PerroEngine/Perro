@@ -34,6 +34,7 @@ use perro_render_bridge::{
     Camera3DState, CameraProjectionState, LODOptions3D, Material3D, MaterialParamOverride3D,
     MaterialParamOverrideValue3D, MeshBlendOptions3D, MeshSurfaceBinding3D, StandardMaterial3D,
 };
+use perro_structs::BitMask;
 use std::{
     borrow::Cow,
     cmp::Ordering,
@@ -449,6 +450,8 @@ pub struct Gpu3D {
     depth_view: wgpu::TextureView,
     depth_prepass_texture: wgpu::Texture,
     depth_prepass_view: wgpu::TextureView,
+    mesh_blend_depth_texture: wgpu::Texture,
+    mesh_blend_depth_view: wgpu::TextureView,
     depth_size: (u32, u32),
     gpu_occlusion_enabled: bool,
     hiz_texture: wgpu::Texture,
@@ -586,6 +589,9 @@ struct DrawBatch {
     disable_hiz_occlusion: bool,
     casts_shadows: bool,
     mesh_blend: bool,
+    mesh_blend_depth: bool,
+    blend_layers: u32,
+    blend_mask: u32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -653,6 +659,7 @@ mod tests {
         VERSION as PMESH_VERSION,
     };
     use perro_graphics_assets::{MeshRange, decode_pmesh, decode_ptex};
+    use perro_structs::BitMask;
 
     #[test]
     fn decode_pmesh_accepts_v1_render_payload_with_all_attributes() {
@@ -795,6 +802,9 @@ mod tests {
                 disable_hiz_occlusion: false,
                 casts_shadows: true,
                 mesh_blend: false,
+                mesh_blend_depth: false,
+                blend_layers: BitMask::ALL.bits(),
+                blend_mask: BitMask::NONE.bits(),
             },
         );
         push_draw_batch(
@@ -813,6 +823,9 @@ mod tests {
                 disable_hiz_occlusion: false,
                 casts_shadows: true,
                 mesh_blend: false,
+                mesh_blend_depth: false,
+                blend_layers: BitMask::ALL.bits(),
+                blend_mask: BitMask::NONE.bits(),
             },
         );
 
@@ -860,6 +873,9 @@ mod tests {
                 disable_hiz_occlusion: false,
                 casts_shadows: true,
                 mesh_blend: false,
+                mesh_blend_depth: false,
+                blend_layers: BitMask::ALL.bits(),
+                blend_mask: BitMask::NONE.bits(),
             },
         );
         push_draw_batch(
@@ -878,6 +894,9 @@ mod tests {
                 disable_hiz_occlusion: false,
                 casts_shadows: true,
                 mesh_blend: false,
+                mesh_blend_depth: false,
+                blend_layers: BitMask::ALL.bits(),
+                blend_mask: BitMask::NONE.bits(),
             },
         );
         push_draw_batch(
@@ -896,6 +915,9 @@ mod tests {
                 disable_hiz_occlusion: false,
                 casts_shadows: true,
                 mesh_blend: false,
+                mesh_blend_depth: false,
+                blend_layers: BitMask::ALL.bits(),
+                blend_mask: BitMask::NONE.bits(),
             },
         );
 

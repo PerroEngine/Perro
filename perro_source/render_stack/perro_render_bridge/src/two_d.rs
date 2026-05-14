@@ -128,6 +128,7 @@ pub struct WaterLinkState {
 pub struct Water2DState {
     pub model: [[f32; 3]; 3],
     pub z_index: i32,
+    pub paused: bool,
     pub size: [f32; 2],
     pub shape: WaterShapeState,
     pub resolution: [u32; 2],

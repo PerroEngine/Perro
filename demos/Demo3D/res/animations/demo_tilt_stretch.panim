@@ -1,6 +1,6 @@
 [Animation]
 name = "DemoTiltStretch"
-fps = 30
+fps = 60
 default_interp = "interpolate"
 default_ease = "ease_in_out"
 [/Animation]
@@ -11,6 +11,12 @@ Hero = Node3D
 
 [Frame0]
 @Hero {
+    position.interp = "interpolate"
+    position.ease = "ease_in_out"
+    rotation.interp = "slerp"
+    rotation.ease = "ease_in_out"
+    scale.interp = "interpolate"
+    scale.ease = "ease_in_out"
     position = (0, 0, 0)
     rotation_deg = (0, 0, -18)
     scale = (0.65, 1.15, 0.65)
@@ -19,24 +25,48 @@ Hero = Node3D
 
 [Frame24]
 @Hero {
-    position = (0.7, 0.45, -0.45)
-    rotation_deg = (42, 130, 22)
-    scale = (1.25, 0.6, 1.25)
+    position = (0.35, 0.28, -0.25)
+    rotation_deg = (20, 65, 4)
+    scale = (0.96, 0.88, 0.96)
 }
 [/Frame24]
 
 [Frame48]
 @Hero {
-    position = (-0.55, 0.15, 0.35)
-    rotation_deg = (-28, 260, -30)
-    scale = (0.8, 1.35, 0.8)
+    position = (0.7, 0.45, -0.45)
+    rotation_deg = (42, 130, 22)
+    scale = (1.25, 0.6, 1.25)
 }
 [/Frame48]
 
 [Frame72]
 @Hero {
+    position = (0.08, 0.34, 0.0)
+    rotation_deg = (8, 195, -4)
+    scale = (1.02, 0.98, 1.02)
+}
+[/Frame72]
+
+[Frame96]
+@Hero {
+    position = (-0.55, 0.15, 0.35)
+    rotation_deg = (-28, 260, -30)
+    scale = (0.8, 1.35, 0.8)
+}
+[/Frame96]
+
+[Frame120]
+@Hero {
+    position = (-0.25, 0.05, 0.15)
+    rotation_deg = (-12, 315, -24)
+    scale = (0.72, 1.24, 0.72)
+}
+[/Frame120]
+
+[Frame144]
+@Hero {
     position = (0, 0, 0)
     rotation_deg = (0, 360, -18)
     scale = (0.65, 1.15, 0.65)
 }
-[/Frame72]
+[/Frame144]

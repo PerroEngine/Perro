@@ -425,6 +425,25 @@ fn removed_water_3d_emits_remove_node() {
 }
 
 #[test]
+fn physics_pause_updates_water_3d_state() {
+    let mut runtime = Runtime::new();
+    let water = NodeAPI::create::<WaterBody3D>(&mut runtime);
+
+    runtime.extract_render_3d_commands();
+    let first = collect_commands(&mut runtime);
+    assert!(!water_3d_command(&first, water).paused);
+    runtime.clear_dirty_flags();
+
+    runtime.extract_render_3d_commands();
+    assert!(collect_commands(&mut runtime).is_empty());
+
+    runtime.set_physics_paused(true);
+    runtime.extract_render_3d_commands();
+    let paused = collect_commands(&mut runtime);
+    assert!(water_3d_command(&paused, water).paused);
+}
+
+#[test]
 fn unchanged_mesh_instance_emits_draw() {
     let mut runtime = Runtime::new();
     let node = runtime

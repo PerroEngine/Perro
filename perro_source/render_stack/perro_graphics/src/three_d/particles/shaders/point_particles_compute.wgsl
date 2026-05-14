@@ -116,6 +116,9 @@ fn eval_expr(
     emitter_x: f32,
     emitter_y: f32,
     emitter_z: f32,
+    prev_x: f32,
+    prev_y: f32,
+    prev_z: f32,
     params_offset: u32,
     params_len: u32,
 ) -> f32 {
@@ -343,6 +346,21 @@ fn eval_expr(
                 stack[sp] = emitter_z;
                 sp = sp + 1u;
             }
+            case 40u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = prev_x;
+                sp = sp + 1u;
+            }
+            case 41u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = prev_y;
+                sp = sp + 1u;
+            }
+            case 42u: {
+                if sp >= 64u { return 0.0; }
+                stack[sp] = prev_z;
+                sp = sp + 1u;
+            }
             case 43u: {
                 if sp < 1u { return 0.0; }
                 sp = sp - 1u; let a = stack[sp];
@@ -494,6 +512,9 @@ fn eval_particle(particle_index: u32) -> ComputedParticle {
             origin.x,
             origin.y,
             origin.z,
+            prev_pos.x,
+            prev_pos.y,
+            prev_pos.z,
             e.custom_ops_zp.z,
             e.custom_ops_zp.w,
         );
@@ -522,6 +543,9 @@ fn eval_particle(particle_index: u32) -> ComputedParticle {
             origin.x,
             origin.y,
             origin.z,
+            prev_pos.x,
+            prev_pos.y,
+            prev_pos.z,
             e.custom_ops_zp.z,
             e.custom_ops_zp.w,
         );
@@ -550,6 +574,9 @@ fn eval_particle(particle_index: u32) -> ComputedParticle {
             origin.x,
             origin.y,
             origin.z,
+            prev_pos.x,
+            prev_pos.y,
+            prev_pos.z,
             e.custom_ops_zp.z,
             e.custom_ops_zp.w,
         );

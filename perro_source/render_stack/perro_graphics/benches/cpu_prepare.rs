@@ -126,6 +126,7 @@ fn water_command_with_idle(
         water: Box::new(Water2DState {
             model: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [x, y, 1.0]],
             z_index: i as i32,
+            paused: false,
             size: [32.0, 32.0],
             shape: WaterShapeState::Rect,
             resolution: [resolution, resolution],

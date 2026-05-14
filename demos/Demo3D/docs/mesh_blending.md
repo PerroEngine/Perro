@@ -9,6 +9,7 @@ Shows:
 - `blend_enabled`
 - `blend_layers`
 - `blend_mask`
+- `blend_normals`
 - `blend_distance`
 - `blend_min_distance`
 - `noise`
@@ -29,7 +30,8 @@ Why scene works this way:
 - Target shapes tag receiver layer `1` but do not fade.
 - Inserted shapes use `blend_mask = none`, so they can fade against any explicit receiver layer.
 - Runtime uses source blend tuning for the contact.
-- `blend_enabled` enables screen fade and normal assist together.
+- `blend_enabled` enables screen fade.
+- `blend_normals` enables normal assist where seam smoothing needs it.
 - Fade is depth-gated so only close contact seams fade.
 
 Scene map:

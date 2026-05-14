@@ -48,6 +48,34 @@ fn hash_function_works() {
 }
 
 #[test]
+fn prev_position_inputs_work() {
+    let p = compile_expression("prev_x + prev_y * 2.0 + prev_z * 3.0").expect("compile");
+    let mut stack = Vec::new();
+    let input = ParticleEvalInput {
+        t: 0.5,
+        life: 0.5,
+        lifetime: 1.0,
+        spawn_time: 0.0,
+        emitter_time: 0.0,
+        speed: 1.0,
+        particle_id: 1.0,
+        dir: [0.0, 1.0, 0.0],
+        vel: [0.0, 1.0, 0.0],
+        rand: [0.1, 0.2, 0.3],
+        seed: 1.0,
+        ring_u: 0.0,
+        index01: 0.0,
+        emitter_pos: [0.0, 0.0, 0.0],
+        prev_pos: [1.0, 2.0, 3.0],
+        params: &[],
+    };
+    let v = p
+        .eval_particle(&input, &mut stack)
+        .expect("eval should succeed");
+    assert!((v - 14.0).abs() < 1.0e-6);
+}
+
+#[test]
 fn tau_constant_works() {
     let p = compile_expression("tau").expect("compile");
     let mut stack = Vec::new();

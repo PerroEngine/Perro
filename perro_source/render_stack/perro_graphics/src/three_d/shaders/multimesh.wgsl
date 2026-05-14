@@ -141,8 +141,8 @@ fn mesh_blend_alpha(frag_pos: vec4<f32>, world_pos: vec3<f32>, packed: u32) -> f
     if raw_depth_delta <= 0.0 {
         return 1.0;
     }
-    let max_width = max(params.x * 0.08, 0.0001);
-    let min_width = min(params.y * 0.08, max_width);
+    let max_width = max(params.x, 0.0001);
+    let min_width = min(params.y, max_width);
     var noise = 0.0;
     if params.z > 0.0 {
         let tile = max(params.w, 1.0);

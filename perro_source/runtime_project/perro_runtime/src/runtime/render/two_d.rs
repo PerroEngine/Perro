@@ -263,6 +263,7 @@ impl Runtime {
                         water: Box::new(Water2DState {
                             model,
                             z_index,
+                            paused: self.physics_paused(),
                             size: water_render_size(water),
                             shape: water_shape_state(water.shape),
                             resolution: water.resolution,
@@ -695,21 +696,29 @@ impl Runtime {
             .nodes
             .iter()
             .filter_map(|(id, node)| {
-                matches!(node.data, SceneNodeData::StaticBody2D(_)).then_some(id)
+                matches!(
+                    node.data,
+                    SceneNodeData::StaticBody2D(_) | SceneNodeData::RigidBody2D(_)
+                )
+                .then_some(id)
             })
             .collect();
         for body_id in body_ids {
             let Some((enabled, layers, mask, children)) =
-                self.nodes.get(body_id).and_then(|node| {
-                    let SceneNodeData::StaticBody2D(body) = &node.data else {
-                        return None;
-                    };
-                    Some((
+                self.nodes.get(body_id).and_then(|node| match &node.data {
+                    SceneNodeData::StaticBody2D(body) => Some((
                         body.enabled,
                         body.collision_layers,
                         body.collision_mask,
                         node.children_slice().to_vec(),
-                    ))
+                    )),
+                    SceneNodeData::RigidBody2D(body) => Some((
+                        body.enabled,
+                        body.collision_layers,
+                        body.collision_mask,
+                        node.children_slice().to_vec(),
+                    )),
+                    _ => None,
                 })
             else {
                 continue;
@@ -819,8 +828,20 @@ impl Runtime {
             if !water.shape.contains_surface(local) {
                 continue;
             }
+            let sample = crate::runtime::physics::water_physics_sample_for_body(
+                water,
+                local,
+                self.time.elapsed,
+            );
+            let target = crate::runtime::physics::water_target_submerged(density);
+            let submerged = sample.height - local.y;
+            let rel_down = sample.velocity.y - velocity.y;
+            if submerged <= 0.0 || submerged > target * 2.25 || rel_down <= 0.35 {
+                continue;
+            }
             let strength =
-                water_impact_strength(mass.max(density), velocity, water.physics.wake_strength);
+                water_impact_strength(mass.max(density), velocity, water.physics.wake_strength)
+                    .max(rel_down * mass.max(density) * water.physics.wake_strength);
             if strength <= 0.0 {
                 continue;
             }

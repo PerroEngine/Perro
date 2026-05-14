@@ -34,7 +34,7 @@ pub(super) fn create_multimesh_blend_pipeline(
         color_format,
         sample_count,
         cull_mode,
-        true,
+        false,
     )
 }
 

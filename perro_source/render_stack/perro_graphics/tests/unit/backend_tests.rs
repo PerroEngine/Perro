@@ -23,6 +23,7 @@ fn water_2d_state() -> Water2DState {
     Water2DState {
         model: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
         z_index: 0,
+        paused: false,
         size: [32.0, 32.0],
         shape: WaterShapeState::Rect,
         resolution: [64, 64],
@@ -90,6 +91,7 @@ fn water_3d_state() -> Water3DState {
             [0.0, 0.0, 1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0],
         ],
+        paused: false,
         size: [32.0, 32.0],
         shape: WaterShapeState::Rect,
         resolution: [64, 64],

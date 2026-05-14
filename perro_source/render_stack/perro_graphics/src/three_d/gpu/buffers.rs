@@ -335,7 +335,7 @@ impl Gpu3D {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&self.depth_prepass_view),
+                    resource: wgpu::BindingResource::TextureView(&self.mesh_blend_depth_view),
                 },
             ],
         });

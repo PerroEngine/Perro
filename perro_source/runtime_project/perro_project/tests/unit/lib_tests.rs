@@ -629,7 +629,11 @@ fn ensure_source_overrides_repairs_dev_runner_features() {
     let mut src = fs::read_to_string(&manifest).expect("read dev runner manifest");
     src = src
         .replace("ui_profile = [\"perro_app/ui_profile\"]\n", "")
-        .replace("mem_profile = [\"perro_app/mem_profile\"]\n", "");
+        .replace("mem_profile = [\"perro_app/mem_profile\"]\n", "")
+        .replace(
+            "\n[profile.dev.package.perro_physics]\nopt-level = 3\ndebug-assertions = false\noverflow-checks = false\n",
+            "\n",
+        );
     fs::write(&manifest, src).expect("write stale dev runner manifest");
 
     ensure_source_overrides(&root).expect("overrides");
@@ -638,6 +642,9 @@ fn ensure_source_overrides_repairs_dev_runner_features() {
     assert!(repaired.contains("profile = [\"perro_app/profile\"]"));
     assert!(repaired.contains("ui_profile = [\"perro_app/ui_profile\"]"));
     assert!(repaired.contains("mem_profile = [\"perro_app/mem_profile\"]"));
+    assert!(repaired.contains("[profile.dev.package.perro_physics]"));
+    assert!(repaired.contains("debug-assertions = false"));
+    assert!(repaired.contains("overflow-checks = false"));
 
     fs::remove_dir_all(&root).expect("cleanup");
 }

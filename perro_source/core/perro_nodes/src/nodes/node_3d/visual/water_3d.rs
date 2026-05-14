@@ -28,8 +28,8 @@ impl WaterBody3D {
                     damping: 0.988,
                 },
                 physics: crate::WaterPhysicsParams {
-                    buoyancy: 1.1,
-                    drag: 0.36,
+                    buoyancy: 2.4,
+                    drag: 0.85,
                     wake_strength: 1.20,
                     foam_strength: 0.72,
                     sample_readback_rate: 30.0,

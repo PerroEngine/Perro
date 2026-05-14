@@ -3,7 +3,7 @@ mod tests {
     use super::*;
     use perro_nodes::SceneNodeData;
     use perro_scene::Parser;
-    use perro_structs::{BitMask, Vector3};
+    use perro_structs::{BitMask, Color, Vector3};
 
     #[test]
     fn water_body_scene_fields_parse() {
@@ -85,10 +85,10 @@ mod tests {
                 assert_eq!(node.water.lod.min_resolution, [16, 16]);
                 assert_eq!(node.water.collision_layers.bits(), 0b1010);
                 assert_eq!(node.water.collision_mask.bits(), 0b101);
-                assert_eq!(node.water.optics.deep_color.to_rgba(), [0.0, 0.1, 0.2, 0.9]);
+                assert_eq!(node.water.optics.deep_color, Color::new(0.0, 0.1, 0.2, 0.9));
                 assert_eq!(
-                    node.water.optics.shallow_color.to_rgba(),
-                    [0.1, 0.5, 0.7, 0.35]
+                    node.water.optics.shallow_color,
+                    Color::new(0.1, 0.5, 0.7, 0.35)
                 );
                 assert_eq!(node.water.optics.shallow_depth, 10.0);
                 assert_eq!(node.water.optics.sky_bias.ratio(), 0.4);
@@ -98,7 +98,10 @@ mod tests {
                 assert_eq!(node.water.visual.fresnel_power, 4.5);
                 assert_eq!(node.water.visual.normal_strength, 1.4);
                 assert_eq!(node.water.visual.ripple_scale, 0.8);
-                assert_eq!(node.water.visual.foam_color.to_rgba(), [0.7, 0.9, 1.0, 1.0]);
+                assert_eq!(
+                    node.water.visual.foam_color,
+                    Color::new(0.7, 0.9, 1.0, 1.0)
+                );
                 assert_eq!(node.water.visual.foam_amount, 0.67);
                 assert_eq!(node.water.visual.crest_foam_threshold, 0.43);
                 assert_eq!(node.water.visual.caustic_strength, 0.21);
@@ -106,8 +109,8 @@ mod tests {
                 assert_eq!(node.water.visual.scattering_strength, 0.18);
                 assert_eq!(node.water.visual.distance_fog_strength, 0.35);
                 assert_eq!(
-                    node.water.coastline.foam_color.to_rgba(),
-                    [0.8, 0.9, 1.0, 1.0]
+                    node.water.coastline.foam_color,
+                    Color::new(0.8, 0.9, 1.0, 1.0)
                 );
                 assert_eq!(node.water.coastline.foam_strength, 0.9);
                 assert_eq!(node.water.coastline.foam_width, 2.0);

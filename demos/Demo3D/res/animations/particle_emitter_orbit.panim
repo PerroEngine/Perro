@@ -1,0 +1,50 @@
+[Animation]
+name = "ParticleEmitterOrbit"
+fps = 30
+default_interp = "interpolate"
+default_ease = "ease_in_out"
+[/Animation]
+
+[Objects]
+EmitterRig = Node3D
+[/Objects]
+
+[Frame0]
+@EmitterRig {
+    position.interp = "interpolate"
+    position.ease = "ease_in_out"
+    rotation.interp = "slerp"
+    rotation.ease = "linear"
+    position = (0, 1.3, 0)
+    rotation_deg = (0, 0, 0)
+    scale = (1, 1, 1)
+}
+[/Frame0]
+
+[Frame30]
+@EmitterRig {
+    position = (1.4, 1.9, 0.75)
+    rotation_deg = (0, 90, 0)
+}
+[/Frame30]
+
+[Frame60]
+@EmitterRig {
+    position = (0, 1.3, 1.35)
+    rotation_deg = (0, 180, 0)
+}
+[/Frame60]
+
+[Frame90]
+@EmitterRig {
+    position = (-1.4, 1.9, 0.75)
+    rotation_deg = (0, 270, 0)
+}
+[/Frame90]
+
+[Frame120]
+@EmitterRig {
+    position = (0, 1.3, 0)
+    rotation_deg = (0, 360, 0)
+}
+[/Frame120]

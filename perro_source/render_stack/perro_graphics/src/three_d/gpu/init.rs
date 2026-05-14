@@ -980,6 +980,8 @@ impl Gpu3D {
         let (depth_texture, depth_view) = create_depth_texture(device, width, height, sample_count);
         let (depth_prepass_texture, depth_prepass_view) =
             create_depth_prepass_texture(device, width, height);
+        let (mesh_blend_depth_texture, mesh_blend_depth_view) =
+            create_depth_prepass_texture(device, width, height);
         let multimesh_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_multimesh_bg"),
             layout: &multimesh_bgl,
@@ -994,7 +996,7 @@ impl Gpu3D {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&depth_prepass_view),
+                    resource: wgpu::BindingResource::TextureView(&mesh_blend_depth_view),
                 },
             ],
         });
@@ -1003,7 +1005,7 @@ impl Gpu3D {
             layout: &mesh_blend_bgl,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::TextureView(&depth_prepass_view),
+                resource: wgpu::BindingResource::TextureView(&mesh_blend_depth_view),
             }],
         });
         let (hiz_texture, hiz_mip_views, hiz_sample_view, hiz_mip_count, hiz_size) =
@@ -1335,6 +1337,8 @@ impl Gpu3D {
             depth_view,
             depth_prepass_texture,
             depth_prepass_view,
+            mesh_blend_depth_texture,
+            mesh_blend_depth_view,
             depth_size: (width.max(1), height.max(1)),
             gpu_occlusion_enabled,
             hiz_texture,

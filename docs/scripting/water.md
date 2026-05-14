@@ -88,7 +88,7 @@ Height is world `y`.
 - `sim_cells_per_meter`: simulation density only. Runtime derives `sim_resolution` from shape surface size.
 - `render_vertices_per_meter`: render mesh density only. Runtime derives `render_resolution` from shape surface size.
 - `resolution` or `sim_resolution`: absolute simulation grid size. Accepts one number or `(x, y)`. Scene load clamps to `1..4096`; GPU simulation clamps effective grid to `1..256` per axis.
-- `render_resolution`: absolute render mesh grid size. 3D visual tessellation clamps to `1..1024` per axis.
+- `render_resolution`: absolute render mesh grid size. 3D visual tessellation clamps to `1..512` per axis.
 - `depth`: visual/physics water depth hint.
 - `flow`: water current in surface-local axes.
 - `wind`: wave direction for idle modes.

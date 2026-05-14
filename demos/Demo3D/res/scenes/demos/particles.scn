@@ -10,15 +10,15 @@ parent = @ParticlesDemo
 script = "res://scripts/demo_freecam_3d.rs"
 script_vars = {
     yaw = 0.0
-    pitch = -0.15
-    speed = 9.0
+    pitch = -0.12
+    speed = 10.0
 }
     [Camera3D]
         active = true
-        perspective_fov_y_degrees = 68.0
+        perspective_fov_y_degrees = 70.0
         [Node3D]
-            position = (0, 4.5, 12)
-            rotation = (-0.075, 0.0, 0.0, 0.997)
+            position = (0, 5.2, 15)
+            rotation = (-0.10, 0.0, 0.0, 0.995)
         [/Node3D]
     [/Camera3D]
 [/DemoCamera]
@@ -35,13 +35,25 @@ parent = @ParticlesDemo
 parent = @ParticlesDemo
     [PointLight3D]
         color = (0.30, 0.72, 1.0)
-        intensity = 3.0
-        radius = 8.0
+        intensity = 3.6
+        radius = 10.0
         [Node3D]
-            position = (3, 2, 0)
+            position = (2.5, 3.5, 0.5)
         [/Node3D]
     [/PointLight3D]
 [/Fill]
+
+[WarmFill]
+parent = @ParticlesDemo
+    [PointLight3D]
+        color = (1.0, 0.45, 0.18)
+        intensity = 1.8
+        radius = 7.0
+        [Node3D]
+            position = (-4, 2.5, 2)
+        [/Node3D]
+    [/PointLight3D]
+[/WarmFill]
 
 [Floor]
 parent = @ParticlesDemo
@@ -50,10 +62,46 @@ parent = @ParticlesDemo
         material = { type = "standard" base_color_factor = (0.08, 0.09, 0.11, 1.0) roughness_factor = 0.92 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (0, -0.15, 0)
-            scale = (12, 0.1, 8)
+            scale = (18, 0.1, 11)
         [/Node3D]
     [/MeshInstance3D]
 [/Floor]
+
+[PortalRig]
+parent = @ParticlesDemo
+    [Node3D]
+        position = (0, 1.3, 0)
+    [/Node3D]
+[/PortalRig]
+
+[PortalRigPlayer]
+parent = @ParticlesDemo
+    [AnimationPlayer]
+        animation = "res://animations/particle_emitter_orbit.panim"
+        bindings = { EmitterRig = @PortalRig }
+        playback = loop
+        speed = 0.65
+        paused = false
+    [/AnimationPlayer]
+[/PortalRigPlayer]
+
+[PortalVortexEmitter]
+parent = @PortalRig
+    [ParticleEmitter3D]
+        active = true
+        looping = true
+        prewarm = true
+        spawn_rate = 95.0
+        seed = 7
+        params = (1.1, 0.3, 0.8, 0.7)
+        profile = "res://particles/portal_vortex.ppart"
+        sim_mode = default
+        render_mode = billboard
+        [Node3D]
+            position = (0, 0, 0)
+        [/Node3D]
+    [/ParticleEmitter3D]
+[/PortalVortexEmitter]
 
 [FireEmitter]
 parent = @ParticlesDemo
@@ -61,14 +109,14 @@ parent = @ParticlesDemo
         active = true
         looping = true
         prewarm = true
-        spawn_rate = 220.0
+        spawn_rate = 76.0
         seed = 12
-        params = []
+        params = (1.0, 2.2, 1.4, 0.0)
         profile = "res://particles/fire_spiral.ppart"
         sim_mode = default
         render_mode = billboard
         [Node3D]
-            position = (-2.2, 0.2, 0)
+            position = (-5.8, 0.2, -2.0)
         [/Node3D]
     [/ParticleEmitter3D]
 [/FireEmitter]
@@ -79,14 +127,104 @@ parent = @ParticlesDemo
         active = true
         looping = true
         prewarm = true
-        spawn_rate = 150.0
+        spawn_rate = 62.0
         seed = 41
-        params = []
+        params = (0.8, 0.9, 0.6, 0.0)
         profile = "res://particles/spark_orbit.ppart"
         sim_mode = default
-        render_mode = billboard
+        render_mode = point
         [Node3D]
-            position = (2.2, 0.4, 0)
+            position = (-2.9, 0.5, -2.2)
         [/Node3D]
     [/ParticleEmitter3D]
 [/SparkEmitter]
+
+[EmberFountainEmitter]
+parent = @ParticlesDemo
+    [ParticleEmitter3D]
+        active = true
+        looping = true
+        prewarm = true
+        spawn_rate = 70.0
+        seed = 25
+        params = (1.6, 1.1, 0.8, 0.0)
+        profile = "res://particles/ember_fountain.ppart"
+        sim_mode = default
+        render_mode = billboard
+        [Node3D]
+            position = (2.9, 0.15, -2.0)
+        [/Node3D]
+    [/ParticleEmitter3D]
+[/EmberFountainEmitter]
+
+[IceMistEmitter]
+parent = @ParticlesDemo
+    [ParticleEmitter3D]
+        active = true
+        looping = true
+        prewarm = true
+        spawn_rate = 42.0
+        seed = 58
+        params = (0.4, 1.0, 0.8, 0.0)
+        profile = "res://particles/ice_mist.ppart"
+        sim_mode = default
+        render_mode = billboard
+        [Node3D]
+            position = (-5.8, 0.2, 2.4)
+        [/Node3D]
+    [/ParticleEmitter3D]
+[/IceMistEmitter]
+
+[LaserRainEmitter]
+parent = @ParticlesDemo
+    [ParticleEmitter3D]
+        active = true
+        looping = true
+        prewarm = true
+        spawn_rate = 82.0
+        seed = 77
+        params = (1.0, 0.8, 1.3, 0.0)
+        profile = "res://particles/laser_rain.ppart"
+        sim_mode = default
+        render_mode = point
+        [Node3D]
+            position = (-2.9, 2.3, 2.2)
+        [/Node3D]
+    [/ParticleEmitter3D]
+[/LaserRainEmitter]
+
+[OrbitRibbonEmitter]
+parent = @ParticlesDemo
+    [ParticleEmitter3D]
+        active = true
+        looping = true
+        prewarm = true
+        spawn_rate = 72.0
+        seed = 103
+        params = (1.2, 0.8, 0.9, 0.0)
+        profile = "res://particles/orbit_ribbon.ppart"
+        sim_mode = default
+        render_mode = billboard
+        [Node3D]
+            position = (2.9, 0.8, 2.1)
+        [/Node3D]
+    [/ParticleEmitter3D]
+[/OrbitRibbonEmitter]
+
+[ShockwaveRingEmitter]
+parent = @ParticlesDemo
+    [ParticleEmitter3D]
+        active = true
+        looping = true
+        prewarm = true
+        spawn_rate = 78.0
+        seed = 144
+        params = (1.0, 0.9, 0.0, 0.0)
+        profile = "res://particles/shockwave_ring.ppart"
+        sim_mode = default
+        render_mode = point
+        [Node3D]
+            position = (5.8, 0.2, 2.2)
+        [/Node3D]
+    [/ParticleEmitter3D]
+[/ShockwaveRingEmitter]

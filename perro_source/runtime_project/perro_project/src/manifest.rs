@@ -573,11 +573,13 @@ fn ensure_dev_runner_manifest_profile_debug(path: &Path) -> std::io::Result<()> 
         changed |= ensure_dev_package_opt_level(dev_package_table, "perro_runtime");
         changed |= ensure_dev_package_opt_level(dev_package_table, "perro_app");
         changed |= ensure_dev_package_opt_level(dev_package_table, "perro_graphics");
+        changed |= ensure_dev_package_opt_level(dev_package_table, "perro_physics");
         changed |= ensure_dev_package_opt_level(dev_package_table, "rapier2d");
         changed |= ensure_dev_package_opt_level(dev_package_table, "rapier3d");
         changed |= ensure_dev_package_opt_level(dev_package_table, "parry2d");
         changed |= ensure_dev_package_opt_level(dev_package_table, "parry3d");
         changed |= ensure_dev_package_fast_checks(dev_package_table, "perro_runtime");
+        changed |= ensure_dev_package_fast_checks(dev_package_table, "perro_physics");
         changed |= ensure_dev_package_fast_checks(dev_package_table, "rapier2d");
         changed |= ensure_dev_package_fast_checks(dev_package_table, "rapier3d");
         changed |= ensure_dev_package_fast_checks(dev_package_table, "parry2d");

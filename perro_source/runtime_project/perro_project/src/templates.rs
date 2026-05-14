@@ -663,6 +663,11 @@ opt-level = 3
 [profile.dev.package.perro_graphics]
 opt-level = 3
 
+[profile.dev.package.perro_physics]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+
 [profile.dev.package.rapier2d]
 opt-level = 3
 debug-assertions = false

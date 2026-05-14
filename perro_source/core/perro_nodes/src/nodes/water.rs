@@ -41,8 +41,8 @@ pub struct WaterPhysicsParams {
 impl Default for WaterPhysicsParams {
     fn default() -> Self {
         Self {
-            buoyancy: 1.0,
-            drag: 0.35,
+            buoyancy: 2.0,
+            drag: 0.75,
             wake_strength: 1.35,
             foam_strength: 0.9,
             sample_readback_rate: 30.0,
@@ -357,7 +357,7 @@ pub fn analytic_idle_water_height(
             let a = (wave_coord.dot(wind) * tau + phase).sin();
             let b = (wave_coord.dot(cross) * tau * 1.73 - phase * 0.61).sin();
             let c = ((wave_coord.x * 0.37 + wave_coord.y * 0.91) * tau * 2.37 + phase * 1.41).sin();
-            (a * 0.58 + b * 0.26 + c * 0.16) * surface.wave.scale
+            (crest_wave(a) * 0.52 + b * 0.24 + crest_wave(c) * 0.24) * surface.wave.scale
         }
         WaterIdleMode::Chop => {
             let wind = surface.wind.normalized();
@@ -367,7 +367,9 @@ pub fn analytic_idle_water_height(
             let c = ((wave_coord.x * 0.74 + wave_coord.y * 1.36) * tau * 1.83 + phase * 1.46).sin();
             let d =
                 ((wave_coord.x * -1.19 + wave_coord.y * 0.48) * tau * 2.79 - phase * 2.08).cos();
-            (a * 0.38 + b * 0.26 + c * 0.21 + d * 0.15) * surface.wave.scale * 1.25
+            (crest_wave(a) * 0.42 + b * 0.20 + crest_wave(c) * 0.25 + d * 0.13)
+                * surface.wave.scale
+                * 1.45
         }
         WaterIdleMode::Storm => {
             let wind = surface.wind.normalized();
@@ -385,9 +387,14 @@ pub fn analytic_idle_water_height(
                 .sin()
                 .max(0.0)
                 .powf(4.0);
-            (a * 0.22 + b * 0.18 + c * 0.16 + d * 0.12 + swell_a * 0.72 + swell_b * 0.46)
+            (crest_wave(a) * 0.30
+                + b * 0.12
+                + crest_wave(c) * 0.14
+                + d * 0.10
+                + swell_a * 0.82
+                + swell_b * 0.56)
                 * surface.wave.scale
-                * 1.55
+                * 1.65
         }
         WaterIdleMode::River => {
             let flow = surface.flow.normalized();
@@ -397,6 +404,11 @@ pub fn analytic_idle_water_height(
             (a * 0.76 + b * 0.24) * surface.wave.scale * 0.45
         }
     }
+}
+
+#[inline]
+fn crest_wave(v: f32) -> f32 {
+    v.max(0.0).powf(3.0) - (-v).max(0.0).powf(1.35) * 0.30
 }
 
 #[inline]

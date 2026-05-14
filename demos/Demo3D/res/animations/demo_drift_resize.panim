@@ -1,6 +1,6 @@
 [Animation]
 name = "DemoDriftResize"
-fps = 30
+fps = 60
 default_interp = "interpolate"
 default_ease = "ease_in_out"
 [/Animation]
@@ -11,32 +11,62 @@ Hero = Node3D
 
 [Frame0]
 @Hero {
+    position.interp = "interpolate"
+    position.ease = "ease_in_out"
+    rotation.interp = "slerp"
+    rotation.ease = "linear"
+    scale.interp = "interpolate"
+    scale.ease = "ease_in_out"
     position = (-0.9, 0, -0.35)
     rotation_deg = (0, 0, 0)
     scale = (0.55, 0.9, 1.2)
 }
 [/Frame0]
 
-[Frame20]
+[Frame18]
+@Hero {
+    position = (-0.35, 0.45, 0.22)
+    rotation_deg = (0, 58, 22)
+    scale = (0.88, 1.08, 0.82)
+}
+[/Frame18]
+
+[Frame36]
 @Hero {
     position = (0.25, 0.85, 0.45)
     rotation_deg = (0, 115, 38)
     scale = (1.15, 1.15, 0.55)
 }
-[/Frame20]
+[/Frame36]
 
-[Frame40]
+[Frame54]
+@Hero {
+    position = (0.72, 0.58, 0.10)
+    rotation_deg = (0, 172, 8)
+    scale = (0.98, 0.84, 0.92)
+}
+[/Frame54]
+
+[Frame72]
 @Hero {
     position = (0.95, 0.25, -0.15)
     rotation_deg = (0, 230, -28)
     scale = (0.75, 0.55, 1.35)
 }
-[/Frame40]
+[/Frame72]
 
-[Frame60]
+[Frame90]
+@Hero {
+    position = (0.15, 0.08, -0.42)
+    rotation_deg = (0, 302, -10)
+    scale = (0.62, 0.72, 1.25)
+}
+[/Frame90]
+
+[Frame108]
 @Hero {
     position = (-0.9, 0, -0.35)
     rotation_deg = (0, 360, 0)
     scale = (0.55, 0.9, 1.2)
 }
-[/Frame60]
+[/Frame108]

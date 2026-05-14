@@ -95,8 +95,8 @@ parent = @AnimationDemo
     [AnimationPlayer]
         animation = "res://animations/demo_bob.panim"
         bindings = { Hero = @BobA }
-        playback = loop
-        speed = 0.85
+        playback = boomerang
+        speed = 0.7
         paused = false
     [/AnimationPlayer]
 [/BobAPlayer]
@@ -125,7 +125,7 @@ parent = @AnimationDemo
         animation = "res://animations/demo_pulse.panim"
         bindings = { Hero = @PulseA }
         playback = loop
-        speed = 1.1
+        speed = 0.85
         paused = false
     [/AnimationPlayer]
 [/PulseAPlayer]
@@ -182,8 +182,8 @@ parent = @AnimationDemo
     [AnimationPlayer]
         animation = "res://animations/demo_tilt_stretch.panim"
         bindings = { Hero = @TiltStretch }
-        playback = loop
-        speed = 1.05
+        playback = boomerang
+        speed = 0.72
         paused = false
     [/AnimationPlayer]
 [/TiltStretchPlayer]
@@ -212,7 +212,7 @@ parent = @AnimationDemo
         animation = "res://animations/demo_drift_resize.panim"
         bindings = { Hero = @DriftResize }
         playback = loop
-        speed = 1.2
+        speed = 0.88
         paused = false
     [/AnimationPlayer]
 [/DriftResizePlayer]

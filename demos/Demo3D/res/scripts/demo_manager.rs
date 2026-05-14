@@ -191,6 +191,25 @@ impl Default for DemoRefsState {
 }
 
 #[derive(Variant, Clone, Copy)]
+struct PausedAnimPlayerState {
+    pub node: NodeID,
+    pub paused: bool,
+}
+
+#[derive(Variant, Clone, Copy)]
+struct PausedAnimTreeState {
+    pub node: NodeID,
+    pub paused: bool,
+}
+
+#[derive(Variant, Clone, Copy)]
+struct PausedScriptState {
+    pub node: NodeID,
+    pub update: bool,
+    pub fixed_update: bool,
+}
+
+#[derive(Variant, Clone, Copy)]
 struct DemoRuntimeState {
     pub mode: DemoMode,
     pub active_demo: DemoKind,
@@ -203,6 +222,8 @@ struct DemoRuntimeState {
     pub fade_action_done: bool,
     pub pause_alpha: f32,
     pub mouse_sensitivity: f32,
+    pub pause_applied: bool,
+    pub physics_was_paused: bool,
 }
 
 impl Default for DemoRuntimeState {
@@ -219,6 +240,8 @@ impl Default for DemoRuntimeState {
             fade_action_done: true,
             pause_alpha: 0.0,
             mouse_sensitivity: DEFAULT_MOUSE_SENSITIVITY,
+            pause_applied: false,
+            physics_was_paused: false,
         }
     }
 }
@@ -231,6 +254,9 @@ struct DemoManagerState {
     pub refs: DemoRefsState,
     #[default = DemoRuntimeState::default()]
     pub runtime: DemoRuntimeState,
+    pub paused_anim_players: Vec<PausedAnimPlayerState>,
+    pub paused_anim_trees: Vec<PausedAnimTreeState>,
+    pub paused_scripts: Vec<PausedScriptState>,
 }
 
 lifecycle!({
@@ -791,6 +817,7 @@ methods!({
     }
 
     fn unload_active_demo(&self, ctx: &mut ScriptContext<'_, API>) {
+        self.apply_demo_pause(ctx, false);
         let root = with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
             state.refs.active_demo_root
         });
@@ -808,6 +835,7 @@ methods!({
                 state.runtime.mode = DemoMode::Paused;
             }
         });
+        self.apply_demo_pause(ctx, true);
         mouse_show!(ctx.ipt);
         self.sync_ui(ctx);
     }
@@ -816,6 +844,7 @@ methods!({
         let has_demo = with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
             state.runtime.active_demo != DemoKind::None
         });
+        self.apply_demo_pause(ctx, false);
         with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
             state.runtime.mode = if has_demo {
                 DemoMode::DemoActive
@@ -829,6 +858,106 @@ methods!({
             mouse_show!(ctx.ipt);
         }
         self.sync_ui(ctx);
+    }
+
+    fn apply_demo_pause(&self, ctx: &mut ScriptContext<'_, API>, paused: bool) {
+        let (root, already_applied) = with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
+            (state.refs.active_demo_root, state.runtime.pause_applied)
+        });
+
+        if paused {
+            if already_applied || root.is_nil() {
+                return;
+            }
+
+            let physics_was_paused = physics_is_paused!(ctx.run);
+            physics_pause!(ctx.run, true);
+
+            let mut scripts = Vec::new();
+            for node in subtree_nodes(ctx, root) {
+                let update = script_set_update_enabled!(ctx.run, node, false);
+                let fixed_update = script_set_fixed_update_enabled!(ctx.run, node, false);
+                if update || fixed_update {
+                    scripts.push(PausedScriptState {
+                        node,
+                        update,
+                        fixed_update,
+                    });
+                }
+            }
+
+            let mut anim_players = Vec::new();
+            for node in query!(ctx.run, all(node_type[AnimationPlayer]), in_subtree(root)) {
+                if let Some(prev) = with_node_mut!(ctx.run, AnimationPlayer, node, |player| {
+                    let prev = player.paused;
+                    player.paused = true;
+                    prev
+                }) {
+                    anim_players.push(PausedAnimPlayerState { node, paused: prev });
+                }
+            }
+
+            let mut anim_trees = Vec::new();
+            for node in query!(ctx.run, all(node_type[AnimationTree]), in_subtree(root)) {
+                if let Some(prev) = with_node_mut!(ctx.run, AnimationTree, node, |tree| {
+                    let prev = tree.paused;
+                    tree.paused = true;
+                    prev
+                }) {
+                    anim_trees.push(PausedAnimTreeState { node, paused: prev });
+                }
+            }
+
+            with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
+                state.runtime.pause_applied = true;
+                state.runtime.physics_was_paused = physics_was_paused;
+                state.paused_anim_players = anim_players;
+                state.paused_anim_trees = anim_trees;
+                state.paused_scripts = scripts;
+            });
+            return;
+        }
+
+        if !already_applied {
+            return;
+        }
+
+        let (physics_was_paused, anim_players, anim_trees, scripts) =
+            with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
+                (
+                    state.runtime.physics_was_paused,
+                    state.paused_anim_players.clone(),
+                    state.paused_anim_trees.clone(),
+                    state.paused_scripts.clone(),
+                )
+            });
+
+        for saved in scripts {
+            if saved.update {
+                let _ = script_set_update_enabled!(ctx.run, saved.node, true);
+            }
+            if saved.fixed_update {
+                let _ = script_set_fixed_update_enabled!(ctx.run, saved.node, true);
+            }
+        }
+        for saved in anim_players {
+            let _ = with_node_mut!(ctx.run, AnimationPlayer, saved.node, |player| {
+                player.paused = saved.paused;
+            });
+        }
+        for saved in anim_trees {
+            let _ = with_node_mut!(ctx.run, AnimationTree, saved.node, |tree| {
+                tree.paused = saved.paused;
+            });
+        }
+        physics_pause!(ctx.run, physics_was_paused);
+        with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
+            state.runtime.pause_applied = false;
+            state.runtime.physics_was_paused = false;
+            state.paused_anim_players.clear();
+            state.paused_anim_trees.clear();
+            state.paused_scripts.clear();
+        });
     }
 
     fn adjust_mouse_sensitivity(&self, ctx: &mut ScriptContext<'_, API>, delta: f32) {
@@ -1164,6 +1293,29 @@ fn find_descendant_by_name<API: ScriptAPI + ?Sized>(
         }
     }
     NodeID::nil()
+}
+
+fn subtree_nodes<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    root: NodeID,
+) -> Vec<NodeID> {
+    if root.is_nil() {
+        return Vec::new();
+    }
+
+    let mut nodes = Vec::new();
+    let mut stack = vec![root];
+    while let Some(id) = stack.pop() {
+        nodes.push(id);
+        if let Some(children) = get_node_children_ids!(ctx.run, id) {
+            for child in children {
+                if !child.is_nil() {
+                    stack.push(child);
+                }
+            }
+        }
+    }
+    nodes
 }
 
 fn set_button_alpha<API: ScriptAPI + ?Sized>(

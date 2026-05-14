@@ -15,12 +15,16 @@ impl Gpu3D {
             create_depth_prepass_texture(device, width, height);
         self.depth_prepass_texture = depth_prepass_texture;
         self.depth_prepass_view = depth_prepass_view;
+        let (mesh_blend_depth_texture, mesh_blend_depth_view) =
+            create_depth_prepass_texture(device, width, height);
+        self.mesh_blend_depth_texture = mesh_blend_depth_texture;
+        self.mesh_blend_depth_view = mesh_blend_depth_view;
         self.mesh_blend_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_mesh_blend_bg"),
             layout: &self.mesh_blend_bgl,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::TextureView(&self.depth_prepass_view),
+                resource: wgpu::BindingResource::TextureView(&self.mesh_blend_depth_view),
             }],
         });
         self.depth_size = (width, height);
@@ -444,12 +448,16 @@ impl Gpu3D {
             create_depth_prepass_texture(device, width, height);
         self.depth_prepass_texture = depth_prepass_texture;
         self.depth_prepass_view = depth_prepass_view;
+        let (mesh_blend_depth_texture, mesh_blend_depth_view) =
+            create_depth_prepass_texture(device, width, height);
+        self.mesh_blend_depth_texture = mesh_blend_depth_texture;
+        self.mesh_blend_depth_view = mesh_blend_depth_view;
         self.mesh_blend_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_mesh_blend_bg"),
             layout: &self.mesh_blend_bgl,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::TextureView(&self.depth_prepass_view),
+                resource: wgpu::BindingResource::TextureView(&self.mesh_blend_depth_view),
             }],
         });
         self.rebuild_camera_bind_groups(device);

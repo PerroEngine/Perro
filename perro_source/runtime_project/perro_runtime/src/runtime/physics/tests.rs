@@ -4,7 +4,7 @@ use crate::runtime::render_2d::{
 };
 use perro_nodes::{
     Area2D, Area3D, CollisionShape2D, CollisionShape3D, FixedJoint2D, FixedJoint3D, RigidBody2D,
-    RigidBody3D, StaticBody2D, StaticBody3D, WaterBody2D, WaterBody3D, WaterShape,
+    RigidBody3D, StaticBody2D, StaticBody3D, WaterBody2D, WaterBody3D, WaterIdleMode, WaterShape,
     WaterSurfaceParams,
 };
 use perro_runtime_api::sub_apis::PhysicsAPI;
@@ -90,7 +90,41 @@ fn water_3d_buoyancy_uses_density() {
         .find(|pending| pending.id == body_id)
         .expect("water force should be queued")
         .force;
-    assert!((force.y - 0.75).abs() < 0.001);
+    assert!(force.y > 50.0);
+}
+
+#[test]
+fn water_3d_buoyancy_recovers_body_below_depth() {
+    let mut runtime = Runtime::new();
+    let water_id = NodeAPI::create::<WaterBody3D>(&mut runtime);
+    let body_id = NodeAPI::create::<RigidBody3D>(&mut runtime);
+
+    if let Some(node) = runtime.nodes.get_mut(water_id)
+        && let SceneNodeData::WaterBody3D(water) = &mut node.data
+    {
+        water.water.shape = WaterShape::box_volume(Vector3::new(12.0, 4.0, 12.0));
+        water.water.depth = 4.0;
+        water.water.physics.buoyancy = 4.0;
+        water.water.physics.drag = 0.0;
+    }
+
+    if let Some(node) = runtime.nodes.get_mut(body_id)
+        && let SceneNodeData::RigidBody3D(body) = &mut node.data
+    {
+        body.transform.position = Vector3::new(0.0, -6.0, 0.0);
+        body.density = 1.0;
+    }
+
+    runtime.queue_water_forces_3d();
+
+    let force = runtime
+        .physics
+        .pending_forces_3d
+        .iter()
+        .find(|pending| pending.id == body_id)
+        .expect("deep body should still get recovery force")
+        .force;
+    assert!(force.y > 20.0);
 }
 
 #[test]
@@ -204,7 +238,7 @@ fn overlapping_2d_waters_blend_buoyancy_once() {
         .map(|pending| pending.force.y)
         .sum();
     assert!(total > 2.0);
-    assert!(total < 8.0);
+    assert!(total < 40.0);
 }
 
 #[test]
@@ -249,7 +283,7 @@ fn overlapping_3d_waters_blend_buoyancy_once() {
         .map(|pending| pending.force.y)
         .sum();
     assert!(total > 2.0);
-    assert!(total < 8.0);
+    assert!(total < 40.0);
 }
 
 #[test]
@@ -303,6 +337,194 @@ fn rigid_body_crossing_2d_link_boundary_keeps_water_force() {
 }
 
 #[test]
+fn floating_body_tracks_wave_vertical_velocity() {
+    let mut surface = WaterSurfaceParams {
+        shape: WaterShape::rect(Vector2::new(16.0, 16.0)),
+        idle_mode: WaterIdleMode::Sine,
+        ..WaterSurfaceParams::default()
+    };
+    surface.wave.speed = 20.0;
+    surface.wave.scale = 4.0;
+    surface.physics.drag = 0.0;
+    surface.physics.buoyancy = 1.0;
+    surface.physics.wake_strength = 1.0;
+
+    let local = Vector2::ZERO;
+    let elapsed = 0.5;
+    let sample = water_physics_sample_for_body(&surface, local, elapsed);
+    assert!(sample.velocity.y.abs() > 0.01);
+
+    let water = RuntimeWater2D {
+        half: Vector2::new(8.0, 8.0),
+        transform: Mat3::IDENTITY,
+        inv_transform: Mat3::IDENTITY,
+        normal: Vector2::new(0.0, 1.0),
+        min_x: -8.0,
+        max_x: 8.0,
+        surface,
+    };
+    let water_index = RuntimeWaterIndex2D::new(vec![water]);
+    let submerged = water_target_submerged(1.0);
+    let body_base = RuntimeWaterBody2D {
+        id: NodeID::from_parts(90, 0),
+        pos: Vector2::new(0.0, sample.height - submerged),
+        velocity: Vector2::ZERO,
+        mass: 1.0,
+        density: 1.0,
+        float_radius: 0.0,
+        collision_layers: BitMask::ALL,
+        collision_mask: BitMask::NONE,
+    };
+    let still_force = water_forces_for_body_2d(
+        body_base,
+        &water_index,
+        &AHashMap::new(),
+        elapsed,
+        Vector2::ZERO,
+    )[0]
+    .1;
+    let matched_force = water_forces_for_body_2d(
+        RuntimeWaterBody2D {
+            velocity: Vector2::new(0.0, sample.velocity.y),
+            ..body_base
+        },
+        &water_index,
+        &AHashMap::new(),
+        elapsed,
+        Vector2::ZERO,
+    )[0]
+    .1;
+
+    assert!((still_force.y - matched_force.y).abs() > 0.25);
+}
+
+#[test]
+fn floating_body_gets_mass_scaled_wave_drive() {
+    let mut surface = WaterSurfaceParams {
+        shape: WaterShape::rect(Vector2::new(16.0, 16.0)),
+        flow: Vector2::new(2.0, 0.0),
+        ..WaterSurfaceParams::default()
+    };
+    surface.physics.drag = 0.0;
+    surface.physics.buoyancy = 1.0;
+    surface.physics.wake_strength = 2.0;
+
+    let water = RuntimeWater2D {
+        half: Vector2::new(8.0, 8.0),
+        transform: Mat3::IDENTITY,
+        inv_transform: Mat3::IDENTITY,
+        normal: Vector2::new(0.0, 1.0),
+        min_x: -8.0,
+        max_x: 8.0,
+        surface,
+    };
+    let water_index = RuntimeWaterIndex2D::new(vec![water]);
+    let sample = water_physics_sample_for_body(&surface, Vector2::ZERO, 0.0);
+    let submerged = water_target_submerged(1.0);
+    let body = RuntimeWaterBody2D {
+        id: NodeID::from_parts(91, 0),
+        pos: Vector2::new(0.0, sample.height - submerged),
+        velocity: Vector2::ZERO,
+        mass: 1.0,
+        density: 1.0,
+        float_radius: 0.0,
+        collision_layers: BitMask::ALL,
+        collision_mask: BitMask::NONE,
+    };
+    let light =
+        water_forces_for_body_2d(body, &water_index, &AHashMap::new(), 0.0, Vector2::ZERO)[0].1;
+    let heavy = water_forces_for_body_2d(
+        RuntimeWaterBody2D { mass: 4.0, ..body },
+        &water_index,
+        &AHashMap::new(),
+        0.0,
+        Vector2::ZERO,
+    )[0]
+    .1;
+
+    assert!(light.x > 0.0);
+    assert!(heavy.x > light.x);
+}
+
+#[test]
+fn deeply_submerged_3d_body_gets_enough_lift_to_leave_bed() {
+    let mut surface = WaterSurfaceParams {
+        shape: WaterShape::rect(Vector2::new(16.0, 16.0)),
+        depth: 4.0,
+        ..WaterSurfaceParams::default()
+    };
+    surface.physics.buoyancy = 4.0;
+    surface.physics.drag = 0.55;
+
+    let water = RuntimeWater3D {
+        half: Vector2::new(8.0, 8.0),
+        transform: Mat4::IDENTITY,
+        inv_transform: Mat4::IDENTITY,
+        normal: Vector3::new(0.0, 1.0, 0.0),
+        min_x: -8.0,
+        max_x: 8.0,
+        surface,
+    };
+    let water_index = RuntimeWaterIndex3D::new(vec![water]);
+    let body = RuntimeWaterBody3D {
+        id: NodeID::from_parts(92, 0),
+        pos: Vector3::new(0.0, -1.2, 0.0),
+        velocity: Vector3::ZERO,
+        mass: 2.0,
+        density: 1.0,
+        float_radius: 0.45,
+        collision_layers: BitMask::ALL,
+        collision_mask: BitMask::NONE,
+    };
+
+    let force =
+        water_forces_for_body_3d(body, &water_index, &AHashMap::new(), 0.0, Vector2::ZERO)[0].1;
+
+    assert!(force.y > body.mass * 9.81 * 4.0);
+}
+
+#[test]
+fn downward_surface_entry_creates_water_splash() {
+    let mut surface = WaterSurfaceParams {
+        shape: WaterShape::rect(Vector2::new(16.0, 16.0)),
+        ..WaterSurfaceParams::default()
+    };
+    surface.physics.wake_strength = 2.0;
+
+    let water = RuntimeWater2D {
+        half: Vector2::new(8.0, 8.0),
+        transform: Mat3::IDENTITY,
+        inv_transform: Mat3::IDENTITY,
+        normal: Vector2::new(0.0, 1.0),
+        min_x: -8.0,
+        max_x: 8.0,
+        surface,
+    };
+    let water_index = RuntimeWaterIndex2D::new(vec![water]);
+    let body = RuntimeWaterBody2D {
+        id: NodeID::from_parts(92, 0),
+        pos: Vector2::new(0.0, -0.05),
+        velocity: Vector2::new(0.0, -3.0),
+        mass: 2.0,
+        density: 1.0,
+        float_radius: 0.5,
+        collision_layers: BitMask::ALL,
+        collision_mask: BitMask::NONE,
+    };
+
+    let impacts = water_body_splashes_2d(&[body], &water_index, 0.0);
+    assert_eq!(impacts.len(), 1);
+    assert!(impacts[0].strength > 0.0);
+    assert!(impacts[0].cavitation > 0.0);
+
+    let floating = RuntimeWaterBody2D {
+        velocity: Vector2::ZERO,
+        ..body
+    };
+    assert!(water_body_splashes_2d(&[floating], &water_index, 0.0).is_empty());
+}
+
+#[test]
 fn water_link_mask_blocks_2d_blend() {
     let mut a = WaterSurfaceParams::default();
     let mut b = WaterSurfaceParams::default();
@@ -310,7 +532,6 @@ fn water_link_mask_blocks_2d_blend() {
     b.link.link_layers = BitMask::with([1]);
 
     let wa = RuntimeWater2D {
-        id: NodeID::from_parts(1, 0),
         half: a.shape.surface_size() * 0.5,
         transform: glam::Mat3::IDENTITY,
         inv_transform: glam::Mat3::IDENTITY,
@@ -320,7 +541,6 @@ fn water_link_mask_blocks_2d_blend() {
         surface: a,
     };
     let wb = RuntimeWater2D {
-        id: NodeID::from_parts(2, 0),
         half: b.shape.surface_size() * 0.5,
         transform: glam::Mat3::from_translation(glam::Vec2::new(4.0, 0.0)),
         inv_transform: glam::Mat3::from_translation(glam::Vec2::new(4.0, 0.0)).inverse(),

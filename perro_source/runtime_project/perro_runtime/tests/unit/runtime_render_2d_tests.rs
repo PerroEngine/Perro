@@ -448,6 +448,25 @@ fn removed_water_2d_emits_remove_node() {
 }
 
 #[test]
+fn physics_pause_updates_water_2d_state() {
+    let mut runtime = Runtime::new();
+    let water = NodeAPI::create::<WaterBody2D>(&mut runtime);
+
+    runtime.extract_render_2d_commands();
+    let first = collect_commands(&mut runtime);
+    assert!(!water_2d_command(&first, water).paused);
+    runtime.clear_dirty_flags();
+
+    runtime.extract_render_2d_commands();
+    assert!(collect_commands(&mut runtime).is_empty());
+
+    runtime.set_physics_paused(true);
+    runtime.extract_render_2d_commands();
+    let paused = collect_commands(&mut runtime);
+    assert!(water_2d_command(&paused, water).paused);
+}
+
+#[test]
 fn unchanged_camera_2d_skips_redundant_set_camera() {
     let mut runtime = Runtime::new();
     let mut camera = Camera2D::new();

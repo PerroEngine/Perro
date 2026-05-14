@@ -229,6 +229,7 @@ impl Runtime {
                         node,
                         water: Box::new(Water3DState {
                             model,
+                            paused: self.physics_paused(),
                             size: water_render_size(water),
                             shape: water_shape_state(water.shape),
                             resolution: water.resolution,
@@ -1129,27 +1130,36 @@ impl Runtime {
         };
         let water_half = water.shape.surface_size() * 0.5;
         let water_top = water_global.position.y;
+        let submerged_margin = 0.05;
         let water_bottom = water_top - water.shape.depth(water.depth);
         let mut shapes = Vec::new();
         let body_ids: Vec<_> = self
             .nodes
             .iter()
             .filter_map(|(id, node)| {
-                matches!(node.data, SceneNodeData::StaticBody3D(_)).then_some(id)
+                matches!(
+                    node.data,
+                    SceneNodeData::StaticBody3D(_) | SceneNodeData::RigidBody3D(_)
+                )
+                .then_some(id)
             })
             .collect();
         for body_id in body_ids {
             let Some((enabled, layers, mask, children)) =
-                self.nodes.get(body_id).and_then(|node| {
-                    let SceneNodeData::StaticBody3D(body) = &node.data else {
-                        return None;
-                    };
-                    Some((
+                self.nodes.get(body_id).and_then(|node| match &node.data {
+                    SceneNodeData::StaticBody3D(body) => Some((
                         body.enabled,
                         body.collision_layers,
                         body.collision_mask,
                         node.children_slice().to_vec(),
-                    ))
+                    )),
+                    SceneNodeData::RigidBody3D(body) => Some((
+                        body.enabled,
+                        body.collision_layers,
+                        body.collision_mask,
+                        node.children_slice().to_vec(),
+                    )),
+                    _ => None,
                 })
             else {
                 continue;
@@ -1190,7 +1200,8 @@ impl Runtime {
                             size.y.abs() * scale.y.abs() * 0.5,
                             size.z.abs() * scale.z.abs() * 0.5,
                         );
-                        if shape_global.position.y + half.y < water_bottom
+                        if shape_global.position.y + half.y < water_top - submerged_margin
+                            || shape_global.position.y + half.y < water_bottom
                             || shape_global.position.y - half.y > water_top
                         {
                             continue;
@@ -1213,7 +1224,8 @@ impl Runtime {
                     Shape3D::Sphere { radius } => {
                         let radius =
                             radius.abs() * scale.x.abs().max(scale.y.abs()).max(scale.z.abs());
-                        if shape_global.position.y + radius < water_bottom
+                        if shape_global.position.y + radius < water_top - submerged_margin
+                            || shape_global.position.y + radius < water_bottom
                             || shape_global.position.y - radius > water_top
                         {
                             continue;
@@ -1237,7 +1249,8 @@ impl Runtime {
                     } => {
                         let radius = radius.abs() * scale.x.abs().max(scale.z.abs());
                         let half_height = half_height.abs() * scale.y.abs();
-                        if shape_global.position.y + half_height < water_bottom
+                        if shape_global.position.y + half_height < water_top - submerged_margin
+                            || shape_global.position.y + half_height < water_bottom
                             || shape_global.position.y - half_height > water_top
                         {
                             continue;
@@ -1282,7 +1295,10 @@ impl Runtime {
                             let cy = shape_global.position.y + c.y;
                             let min_y = ay.min(by).min(cy);
                             let max_y = ay.max(by).max(cy);
-                            if max_y < water_bottom || min_y > water_top {
+                            if max_y < water_top - submerged_margin
+                                || max_y < water_bottom
+                                || min_y > water_top
+                            {
                                 continue;
                             }
                             shapes.push(WaterCoastlineShape3D::Triangle {
@@ -1319,17 +1335,20 @@ impl Runtime {
             .collect();
         let mut impacts = Vec::new();
         for body_id in body_ids {
-            let Some((layers, mask, mass, velocity)) = self.nodes.get(body_id).and_then(|node| {
-                let SceneNodeData::RigidBody3D(body) = &node.data else {
-                    return None;
-                };
-                Some((
-                    body.collision_layers,
-                    body.collision_mask,
-                    body.mass,
-                    body.linear_velocity,
-                ))
-            }) else {
+            let Some((layers, mask, mass, density, velocity)) =
+                self.nodes.get(body_id).and_then(|node| {
+                    let SceneNodeData::RigidBody3D(body) = &node.data else {
+                        return None;
+                    };
+                    Some((
+                        body.collision_layers,
+                        body.collision_mask,
+                        body.mass,
+                        body.density,
+                        body.linear_velocity,
+                    ))
+                })
+            else {
                 continue;
             };
             if water.collision_mask.intersects(layers) || mask.intersects(water.collision_layers) {
@@ -1338,17 +1357,38 @@ impl Runtime {
             let Some(body_global) = self.get_global_transform_3d(body_id) else {
                 continue;
             };
+            let radius = mass.sqrt().max(1.0);
             let local = water_local_point_3d(water_inv, body_global.position);
             if !water
                 .shape
                 .contains_surface(perro_structs::Vector2::new(local.x, local.z))
-                || local.y > 0.0
+                || local.y > radius
                 || local.y < -water.shape.depth(water.depth)
             {
                 continue;
             }
+            let sample = crate::runtime::physics::water_physics_sample_for_body(
+                water,
+                perro_structs::Vector2::new(local.x, local.z),
+                self.time.elapsed,
+            );
+            let target = crate::runtime::physics::water_target_submerged(density);
+            let submerged = sample.height - local.y;
+            let rel_down = sample.velocity.y - velocity.y;
+            if submerged <= 0.0 || submerged > target * 2.25 || rel_down <= 0.35 {
+                continue;
+            }
             let velocity_2d = perro_structs::Vector2::new(velocity.x, velocity.z);
-            let strength = water_impact_strength(mass, velocity_2d, water.physics.wake_strength);
+            let vertical_impact =
+                (-velocity.y).max(0.0) * (1.0 - (local.y.abs() / radius).clamp(0.0, 1.0));
+            let impact_velocity =
+                perro_structs::Vector2::new(velocity_2d.length(), vertical_impact);
+            let impact_strength =
+                water_impact_strength(mass, impact_velocity, water.physics.wake_strength);
+            let surface_contact = 1.0 - (local.y.abs() / radius).clamp(0.0, 1.0);
+            let displacement_strength =
+                mass.sqrt() * water.physics.wake_strength.max(0.0) * surface_contact * 0.42;
+            let strength = impact_strength.max(displacement_strength.min(18.0));
             if strength <= 0.0 {
                 continue;
             }
@@ -1356,8 +1396,8 @@ impl Runtime {
                 position: [local.x, local.y, local.z],
                 velocity: [velocity.x, velocity.y, velocity.z],
                 strength,
-                radius: mass.sqrt().max(1.0),
-                cavitation: 0.0,
+                radius,
+                cavitation: (vertical_impact * 0.035 + surface_contact * 0.08).clamp(0.0, 1.0),
             });
         }
         for impact in self.force_water_impacts_3d.iter() {

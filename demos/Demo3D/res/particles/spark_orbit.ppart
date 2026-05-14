@@ -14,3 +14,6 @@ color_start = (0.35, 0.92, 1.0, 1.0)
 color_end = (0.12, 0.28, 1.0, 0.0)
 emissive = (0.08, 0.55, 1.0)
 spin = 2.0
+x = sin(emitter_time * (1.4 + params[0]) + id * 0.07 + prev_y * 0.18) * (0.18 + params[1] * 0.22) + (hash(id + t * 19.0) - 0.5) * age_left * 0.35
+y = cos(life * 5.5 + hash(seed + id) * tau) * (0.16 + params[2] * 0.18) + prev_y * 0.035
+z = cos(emitter_time * (1.2 + params[0]) + id * 0.11 + prev_x * 0.18) * (0.18 + params[1] * 0.22) + (hash(id + 31.0) - 0.5) * age_left * 0.35

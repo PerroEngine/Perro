@@ -8,6 +8,9 @@ use std::sync::mpsc;
 
 const WATER_WORKGROUP_SIZE: u32 = 64;
 const WATER_MAX_RENDER_RESOLUTION: u32 = 1024;
+const WATER_FLAG_DEBUG: u32 = 1 << 0;
+const WATER_FLAG_PAUSED: u32 = 1 << 1;
+const WATER_COASTLINE_INSET_METERS: f32 = 1.0;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -249,7 +252,7 @@ impl GpuWater {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
+                cull_mode: Some(wgpu::Face::Back),
                 polygon_mode: wgpu::PolygonMode::Fill,
                 unclipped_depth: false,
                 conservative: false,
@@ -376,7 +379,11 @@ impl GpuWater {
         ctx: WaterPrepareContext,
     ) {
         self.poll_readback(device);
-        self.frame_index = self.frame_index.wrapping_add(1);
+        let all_paused = waters_2d.iter().all(|(_, water)| water.paused)
+            && waters_3d.iter().all(|(_, water)| water.paused);
+        if !all_paused {
+            self.frame_index = self.frame_index.wrapping_add(1);
+        }
         let needed = waters_2d.len() + waters_3d.len();
         self.water_count = needed.min(u32::MAX as usize) as u32;
         self.water_2d_count = waters_2d.len().min(u32::MAX as usize) as u32;
@@ -835,17 +842,21 @@ fn raster_coastline_2d(out: &mut [[f32; 4]], resolution: [u32; 2], water: &Water
                 signed_min = signed_min.min(signed);
                 edge = edge.max(1.0 - (signed / foam_width).clamp(0.0, 1.0));
             }
-            let solid = soft_coastline_solid(signed_min, softness);
+            let (solid, foam_edge, spill_energy) = coastline_fill(signed_min, foam_width, softness);
             let mut wake = 0.0f32;
             for impact in water.impacts.iter() {
                 let dx = p[0] - impact.position[0];
                 let dy = p[1] - impact.position[1];
                 let dist = (dx * dx + dy * dy).sqrt();
                 let radius = impact.radius.max(0.001);
-                wake += (1.0 - (dist / radius).clamp(0.0, 1.0)) * impact.strength / 256.0;
-                wake += (1.0 - (dist / radius).clamp(0.0, 1.0)) * impact.cavitation;
+                let t = (dist / radius).clamp(0.0, 1.0);
+                let push = 1.0 - t;
+                let ring = (1.0 - ((t - 0.72).abs() / 0.28).clamp(0.0, 1.0)).powi(2);
+                wake += push * impact.strength / 256.0;
+                wake += (push * 0.35 + ring * 0.65) * impact.cavitation;
             }
-            out[y * width + x] = [solid, edge, wake.clamp(0.0, 1.0), wake.clamp(0.0, 1.0)];
+            let wake = wake.clamp(0.0, 1.0);
+            out[y * width + x] = [solid, edge.max(foam_edge), wake, spill_energy.max(wake)];
         }
     }
 }
@@ -880,7 +891,10 @@ fn raster_impacts_2d(out: &mut [[f32; 4]], width: usize, height: usize, water: &
                 if amount <= 0.0 {
                     continue;
                 }
-                let wake = amount * (impact.strength / 256.0 + impact.cavitation);
+                let t = (dist / radius).clamp(0.0, 1.0);
+                let ring = (1.0 - ((t - 0.72).abs() / 0.28).clamp(0.0, 1.0)).powi(2);
+                let wake = amount * impact.strength / 256.0
+                    + (amount * 0.35 + ring * 0.65) * impact.cavitation;
                 let cell = &mut out[y * width + x];
                 cell[2] = (cell[2] + wake).clamp(0.0, 1.0);
                 cell[3] = cell[2];
@@ -965,24 +979,33 @@ fn raster_coastline_3d(out: &mut [[f32; 4]], resolution: [u32; 2], water: &Water
                 signed_min = signed_min.min(signed);
                 edge = edge.max(1.0 - (signed / foam_width).clamp(0.0, 1.0));
             }
-            let solid = soft_coastline_solid(signed_min, softness);
+            let (solid, foam_edge, spill_energy) = coastline_fill(signed_min, foam_width, softness);
             let mut wake = 0.0f32;
             for impact in water.impacts.iter() {
                 let dx = p[0] - impact.position[0];
                 let dz = p[1] - impact.position[2];
                 let dist = (dx * dx + dz * dz).sqrt();
                 let radius = impact.radius.max(0.001);
-                wake += (1.0 - (dist / radius).clamp(0.0, 1.0)) * impact.strength / 256.0;
-                wake += (1.0 - (dist / radius).clamp(0.0, 1.0)) * impact.cavitation;
+                let t = (dist / radius).clamp(0.0, 1.0);
+                let push = 1.0 - t;
+                let ring = (1.0 - ((t - 0.72).abs() / 0.28).clamp(0.0, 1.0)).powi(2);
+                wake += push * impact.strength / 256.0;
+                wake += (push * 0.35 + ring * 0.65) * impact.cavitation;
             }
-            out[y * width + x] = [solid, edge, wake.clamp(0.0, 1.0), wake.clamp(0.0, 1.0)];
+            let wake = wake.clamp(0.0, 1.0);
+            out[y * width + x] = [solid, edge.max(foam_edge), wake, spill_energy.max(wake)];
         }
     }
 }
 
-fn soft_coastline_solid(signed: f32, softness: f32) -> f32 {
-    let t = ((signed + softness) / (softness * 2.0)).clamp(0.0, 1.0);
-    1.0 - t * t * (3.0 - 2.0 * t)
+fn coastline_fill(signed: f32, foam_width: f32, softness: f32) -> (f32, f32, f32) {
+    let inset = WATER_COASTLINE_INSET_METERS.max(softness);
+    let block_t = ((-signed - inset) / softness.max(0.001)).clamp(0.0, 1.0);
+    let solid = block_t * block_t * (3.0 - 2.0 * block_t);
+    let foam_edge = 1.0 - (signed.abs() / foam_width.max(0.001)).clamp(0.0, 1.0);
+    let spill_t = ((-signed) / inset).clamp(0.0, 1.0);
+    let spill_energy = (1.0 - spill_t * 0.70) * (1.0 - solid);
+    (solid, foam_edge.max(0.0), spill_energy.clamp(0.0, 1.0))
 }
 
 fn raster_impacts_3d(out: &mut [[f32; 4]], width: usize, height: usize, water: &Water3DState) {
@@ -1015,7 +1038,10 @@ fn raster_impacts_3d(out: &mut [[f32; 4]], width: usize, height: usize, water: &
                 if amount <= 0.0 {
                     continue;
                 }
-                let wake = amount * (impact.strength / 256.0 + impact.cavitation);
+                let t = (dist / radius).clamp(0.0, 1.0);
+                let ring = (1.0 - ((t - 0.72).abs() / 0.28).clamp(0.0, 1.0)).powi(2);
+                let wake = amount * impact.strength / 256.0
+                    + (amount * 0.35 + ring * 0.65) * impact.cavitation;
                 let cell = &mut out[y * width + x];
                 cell[2] = (cell[2] + wake).clamp(0.0, 1.0);
                 cell[3] = cell[2];
@@ -1260,6 +1286,7 @@ fn water_gpu_2d(
         water.coastline_wave_reflection,
         water.coastline_edge_noise,
         water.debug,
+        water.paused,
         water.model,
         [0.0, 0.0, 0.0, 1.0],
         water.z_index,
@@ -1334,6 +1361,7 @@ fn water_gpu_3d(
         water.coastline_wave_reflection,
         water.coastline_edge_noise,
         water.debug,
+        water.paused,
         [
             [water.model[0][0], water.model[0][1], water.model[0][2]],
             [water.model[1][0], water.model[1][1], water.model[1][2]],
@@ -1379,6 +1407,7 @@ fn water_gpu_common(
     coastline_wave_reflection: f32,
     coastline_edge_noise: f32,
     debug: bool,
+    paused: bool,
     model: [[f32; 3]; 3],
     model_w: [f32; 4],
     z_index: i32,
@@ -1397,7 +1426,7 @@ fn water_gpu_common(
         flags: [
             resolution.render[0].clamp(1, WATER_MAX_RENDER_RESOLUTION),
             resolution.render[1].clamp(1, WATER_MAX_RENDER_RESOLUTION),
-            u32::from(debug),
+            (u32::from(debug) * WATER_FLAG_DEBUG) | (u32::from(paused) * WATER_FLAG_PAUSED),
             foam_strength.to_bits(),
         ],
         deep_color,
@@ -1514,6 +1543,10 @@ fn water_shape_alpha(w: Water, uv: vec2<f32>) -> f32 {
     return 0.0;
 }
 
+fn water_crest_wave(v: f32) -> f32 {
+    return pow(max(v, 0.0), 3.0) - pow(max(-v, 0.0), 1.35) * 0.30;
+}
+
 fn water_idle_height(w: Water, local: vec2<f32>, t: f32) -> f32 {
     let phase = t * w.wave.x * 0.2;
     let wave_coord = local / max(w.wave_profile.x, 0.001);
@@ -1527,7 +1560,7 @@ fn water_idle_height(w: Water, local: vec2<f32>, t: f32) -> f32 {
         let a = sin(dot(wave_coord, wind) * tau + phase);
         let b = sin(dot(wave_coord, cross) * tau * 1.73 - phase * 0.61);
         let c = sin((wave_coord.x * 0.37 + wave_coord.y * 0.91) * tau * 2.37 + phase * 1.41);
-        return (a * 0.58 + b * 0.26 + c * 0.16) * w.wave.y;
+        return (water_crest_wave(a) * 0.52 + b * 0.24 + water_crest_wave(c) * 0.24) * w.wave.y;
     }
     if w.idle_mode == 2u {
         let wind = normalize(select(vec2<f32>(1.0, 0.0), w.flow_wind.zw, length(w.flow_wind.zw) > 0.0001));
@@ -1560,6 +1593,21 @@ fn water_idle_height(w: Water, local: vec2<f32>, t: f32) -> f32 {
     return (a * 0.76 + b * 0.24) * w.wave.y * 0.45;
 }
 
+fn water_coast_diffuse(w: Water, local_idx: u32, width: u32) -> f32 {
+    let height = max(w.sim.w, 1u);
+    let x = local_idx % width;
+    let y = local_idx / width;
+    let xl = x - select(0u, 1u, x > 0u);
+    let xr = min(x + 1u, width - 1u);
+    let yd = y - select(0u, 1u, y > 0u);
+    let yu = min(y + 1u, height - 1u);
+    let left = coastline_cells[w.sim.x + min(y * width + xl, w.sim.y - 1u)].y;
+    let right = coastline_cells[w.sim.x + min(y * width + xr, w.sim.y - 1u)].y;
+    let down = coastline_cells[w.sim.x + min(yd * width + x, w.sim.y - 1u)].y;
+    let up = coastline_cells[w.sim.x + min(yu * width + x, w.sim.y - 1u)].y;
+    return (left + right + down + up) * 0.25;
+}
+
 @compute @workgroup_size(64)
 fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let water_idx = gid.y;
@@ -1569,6 +1617,9 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let w = waters[water_idx];
     let local_idx = gid.x;
     if w.sim.y == 0u || local_idx >= w.sim.y {
+        return;
+    }
+    if (w.flags.z & 2u) != 0u {
         return;
     }
     let cell_idx = w.sim.x + local_idx;
@@ -1586,27 +1637,34 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let local = (vec2<f32>(fx, fy) - vec2<f32>(0.5, 0.5)) * w.size_depth_time.xy;
     let idle = water_idle_height(w, local, t);
     let coast = coastline_cells[cell_idx];
-    if coast.x > 0.92 {
+    if coast.x > 0.985 {
         cells[cell_idx] = vec4<f32>(0.0, 0.0, 1.0, 1.0);
         return;
     }
     let edge = max(0.0, 1.0 - min(min(fx, 1.0 - fx), min(fy, 1.0 - fy)) * max(w.coastline.y, 0.001) * 8.0);
-    let shore = max(edge, coast.y);
+    let neighbor_shore = water_coast_diffuse(w, local_idx, width);
+    let shore = max(edge, max(coast.y, neighbor_shore * 0.64)) * (1.0 - coast.x * 0.30);
     let wake = coast.z * w.wave.w * 1.45;
     if shore <= 0.0 && wake <= 0.0 && coast.w <= 0.0 && abs(idle) <= 0.00001 {
         cells[cell_idx] = vec4<f32>(0.0);
         return;
     }
-    let edge_noise = (sin((local.x * 0.31 + local.y * 0.47) + phase * 7.0) + sin((local.x * -0.53 + local.y * 0.29) - phase * 4.3)) * 0.5 * w.model_z.w;
-    let crash_wave = max(0.0, sin((local.x * 0.19 - local.y * 0.23) + phase * 5.5 + edge_noise));
-    let crash = shore * pow(crash_wave, 4.2) * w.model_y.w * w.wave.y * 2.25;
-    let prev = cells[cell_idx].x * w.wave.z * (1.0 - shore * w.coastline.w * 0.35);
-    let crest_line = smoothstep(0.78, 1.0, idle / max(w.wave.y, 0.001)) * (1.0 - smoothstep(1.0, 1.75, idle / max(w.wave.y, 0.001)));
-    let wave_foam = crest_line * bitcast<f32>(w.flags.w) * 0.20;
-    let impact_foam = smoothstep(0.10, 1.35, wake + crash) * bitcast<f32>(w.flags.w) * 0.42;
+    let edge_noise = (sin((local.x * 0.31 + local.y * 0.47) + phase * 7.0) + sin((local.x * -0.53 + local.y * 0.29) - phase * 4.3)) * 0.34 * w.model_z.w;
+    let spill = clamp(coast.w, 0.0, 1.0);
+    let diffusion = max(neighbor_shore - coast.y, 0.0) * 0.45 + spill * 0.20;
+    let crash_wave = max(0.0, water_crest_wave(sin((local.x * 0.19 - local.y * 0.23) + phase * 5.5 + edge_noise)));
+    let reflected = shore * water_crest_wave(sin((local.x * -0.27 + local.y * 0.18) - phase * 4.1 - edge_noise)) * w.model_y.w * w.wave.y * w.model_z.w;
+    let crash_up = shore * pow(crash_wave, 2.4) * w.model_y.w * w.wave.y * 2.10;
+    let crash_down = -shore * pow(max(-crash_wave, 0.0), 1.2) * w.wave.y * 0.34;
+    let crash = (crash_up + crash_down + max(reflected, 0.0) * 0.42) * (0.55 + spill * 0.45) + diffusion * w.wave.y * 0.58;
+    let prev = cells[cell_idx].x * w.wave.z * (1.0 - shore * w.coastline.w * 0.70) * (0.72 + spill * 0.28);
+    let crest_norm = idle / max(w.wave.y, 0.001);
+    let crest_line = smoothstep(0.50, 0.86, crest_norm) * (1.0 - smoothstep(1.10, 1.80, crest_norm));
+    let wave_foam = crest_line * bitcast<f32>(w.flags.w) * 0.28;
+    let impact_foam = smoothstep(0.16, 1.25, wake + abs(crash)) * bitcast<f32>(w.flags.w) * 0.38;
     let shore_foam = smoothstep(0.45, 1.65, crash) * (1.0 - smoothstep(1.65, 2.8, crash)) * w.coastline.x * bitcast<f32>(w.flags.w);
-    let foam = clamp(wave_foam + impact_foam + shore_foam + coast.w * wake * 0.26, 0.0, 1.0);
-    let height = mix(prev + idle * (0.018 + shore * w.model_y.w * 0.12) + wake * 0.16 + crash, idle + wake * 0.18 + crash, 0.62);
+    let foam = clamp(wave_foam + impact_foam + shore_foam + spill * max(wake, shore) * 0.18, 0.0, 1.0);
+    let height = mix(prev + idle * (0.030 + shore * w.model_y.w * 0.18) + wake * 0.24 + crash, idle + wake * 0.24 + crash, 0.48 + spill * 0.10);
     cells[cell_idx] = vec4<f32>(height, idle, foam, shore);
 }
 
@@ -1665,7 +1723,7 @@ fn fs_water_2d(in: Water2DVertexOut) -> @location(0) vec4<f32> {
         let local_idx = min(y * width + x, w.sim.y - 1u);
         let cell_idx = w.sim.x + local_idx;
         ripple = cells[cell_idx] * w.model_x.w;
-        if coastline_cells[cell_idx].x > 0.92 {
+        if coastline_cells[cell_idx].x > 0.985 {
             return vec4<f32>(0.0, 0.0, 0.0, 0.0);
         }
     }
@@ -1820,7 +1878,29 @@ fn water_coast_solid(w: Water, uv: vec2<f32>) -> bool {
     let i11 = min(y1 * width + x1, w.sim.y - 1u);
     let a = mix(coastline_cells[w.sim.x + i00].x, coastline_cells[w.sim.x + i10].x, tx);
     let b = mix(coastline_cells[w.sim.x + i01].x, coastline_cells[w.sim.x + i11].x, tx);
-    return mix(a, b, ty) > 0.92;
+    return mix(a, b, ty) > 0.985;
+}
+
+fn water_coast_sample(w: Water, uv: vec2<f32>) -> vec4<f32> {
+    if w.sim.y == 0u {
+        return vec4<f32>(0.0);
+    }
+    let width = max(w.sim.z, 1u);
+    let height = max(w.sim.w, 1u);
+    let p = clamp(uv, vec2<f32>(0.0), vec2<f32>(1.0)) * vec2<f32>(f32(max(width - 1u, 1u)), f32(max(height - 1u, 1u)));
+    let x0 = u32(floor(p.x));
+    let y0 = u32(floor(p.y));
+    let x1 = min(x0 + 1u, width - 1u);
+    let y1 = min(y0 + 1u, height - 1u);
+    let tx = fract(p.x);
+    let ty = fract(p.y);
+    let i00 = min(y0 * width + x0, w.sim.y - 1u);
+    let i10 = min(y0 * width + x1, w.sim.y - 1u);
+    let i01 = min(y1 * width + x0, w.sim.y - 1u);
+    let i11 = min(y1 * width + x1, w.sim.y - 1u);
+    let a = mix(coastline_cells[w.sim.x + i00], coastline_cells[w.sim.x + i10], tx);
+    let b = mix(coastline_cells[w.sim.x + i01], coastline_cells[w.sim.x + i11], tx);
+    return mix(a, b, ty);
 }
 
 fn water_surface_height(w: Water, uv: vec2<f32>) -> f32 {
@@ -1830,7 +1910,7 @@ fn water_surface_height(w: Water, uv: vec2<f32>) -> f32 {
 
 fn water_ridge_wave(v: f32) -> f32 {
     let s = sin(v);
-    return pow(max(s, 0.0), 3.2) - pow(max(-s, 0.0), 1.35) * 0.42;
+    return pow(max(s, 0.0), 8.0) - pow(max(-s, 0.0), 0.78) * 0.18;
 }
 
 fn water_visual_wave_height(w: Water, uv: vec2<f32>, t: f32) -> f32 {
@@ -1839,15 +1919,31 @@ fn water_visual_wave_height(w: Water, uv: vec2<f32>, t: f32) -> f32 {
     let cross = vec2<f32>(-wind.y, wind.x);
     let ripple_scale = max(w.visual1.y, 0.001);
     let p = local / max(ripple_scale, 0.001);
-    let a = water_ridge_wave(dot(p, wind) * 0.34 + t * w.wave.x * 1.7);
-    let b = water_ridge_wave(dot(p, cross) * 0.71 - t * w.wave.x * 2.3 + 1.4);
-    let c = water_ridge_wave((p.x * 0.43 + p.y * 0.27) + t * w.wave.x * 3.1);
-    let scratch = (water_fbm(local * 0.18 + vec2<f32>(t * 0.08, -t * 0.05)) - 0.5) * 0.22;
-    return (a * 0.52 + b * 0.29 + c * 0.19 + scratch) * w.wave.y * 0.22 * w.visual1.x;
+    let break_n = water_fbm(local * 0.16 + vec2<f32>(t * 0.08, -t * 0.05));
+    let shard = water_fbm(local * 0.075 + vec2<f32>(3.7, 9.2)) * 6.2831853;
+    let break_dir = normalize(vec2<f32>(
+        cos(shard + water_fbm(local * 0.11 + vec2<f32>(11.0, 2.0)) * 1.2),
+        sin(shard + water_fbm(local * 0.09 + vec2<f32>(5.0, 19.0)) * 1.2),
+    ));
+    let a = water_ridge_wave(dot(p, wind) * 0.42 + t * w.wave.x * 1.9 + break_n * 1.6);
+    let b = water_ridge_wave(dot(p, cross) * 0.86 - t * w.wave.x * 2.6 + 1.4 + dot(local, break_dir) * 0.15);
+    let c = water_ridge_wave((p.x * 0.58 + p.y * 0.35) + t * w.wave.x * 3.6 + shard * 0.44);
+    let d = water_ridge_wave(dot(p, break_dir) * 1.42 - t * w.wave.x * 3.2 + break_n * 2.8);
+    let diag_a = water_ridge_wave(dot(p, normalize(vec2<f32>(0.72, 0.69))) * 1.05 + t * w.wave.x * 2.9 + break_n);
+    let diag_b = water_ridge_wave(dot(p, normalize(vec2<f32>(-0.64, 0.77))) * 1.24 - t * w.wave.x * 2.4 + shard * 0.27);
+    let cut_n = water_ridged_fbm(local * 0.28 + vec2<f32>(t * 0.04, -t * 0.03));
+    let fracture = (break_n - 0.5) * 0.14 + (cut_n - 0.5) * 0.10;
+    let ridge = a * 0.32 + b * 0.20 + c * 0.14 + d * 0.15 + diag_a * 0.12 + diag_b * 0.11 + fracture;
+    let snap = sign(ridge) * pow(abs(ridge), 1.46);
+    return snap * w.wave.y * 0.24 * clamp(w.visual1.x, 0.0, 1.4);
 }
 
 fn water_height_visual(w: Water, uv: vec2<f32>, t: f32) -> f32 {
     return water_surface_height(w, uv) + water_visual_wave_height(w, uv, t);
+}
+
+fn water_height_geometry(w: Water, uv: vec2<f32>, t: f32) -> f32 {
+    return water_surface_height(w, uv) + water_visual_wave_height(w, uv, t) * 0.38;
 }
 
 fn water_visual_normal(w: Water, uv: vec2<f32>, t: f32) -> vec3<f32> {
@@ -1859,7 +1955,8 @@ fn water_visual_normal(w: Water, uv: vec2<f32>, t: f32) -> vec3<f32> {
     let h_u = water_height_visual(w, uv + dv, t);
     let sx = max(w.size_depth_time.x * du.x * 2.0, 0.001);
     let sz = max(w.size_depth_time.y * dv.y * 2.0, 0.001);
-    return normalize(vec3<f32>((h_l - h_r) * w.visual1.x, (sx + sz) * 0.72, (h_d - h_u) * w.visual1.x));
+    let normal_scale = clamp(w.visual1.x, 0.0, 1.35) * 0.62;
+    return normalize(vec3<f32>((h_l - h_r) * normal_scale, (sx + sz) * 1.18, (h_d - h_u) * normal_scale));
 }
 
 fn water_hash(p: vec2<f32>) -> f32 {
@@ -1869,7 +1966,7 @@ fn water_hash(p: vec2<f32>) -> f32 {
 fn water_noise(p: vec2<f32>) -> f32 {
     let i = floor(p);
     let f = fract(p);
-    let u = f * f * (3.0 - 2.0 * f);
+    let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
     let a = water_hash(i);
     let b = water_hash(i + vec2<f32>(1.0, 0.0));
     let c = water_hash(i + vec2<f32>(0.0, 1.0));
@@ -1878,7 +1975,32 @@ fn water_noise(p: vec2<f32>) -> f32 {
 }
 
 fn water_fbm(p: vec2<f32>) -> f32 {
-    return water_noise(p) * 0.55 + water_noise(p * 2.17 + vec2<f32>(13.2, 7.7)) * 0.30 + water_noise(p * 4.11 + vec2<f32>(5.1, 19.4)) * 0.15;
+    var q = p;
+    var amp = 0.52;
+    var sum = 0.0;
+    var norm = 0.0;
+    for (var i = 0u; i < 4u; i = i + 1u) {
+        sum += water_noise(q) * amp;
+        norm += amp;
+        q = vec2<f32>(q.x * 1.72 + q.y * 1.11, q.x * -1.04 + q.y * 1.83) + vec2<f32>(17.0, 9.0);
+        amp *= 0.52;
+    }
+    return sum / max(norm, 0.001);
+}
+
+fn water_ridged_fbm(p: vec2<f32>) -> f32 {
+    var q = p;
+    var amp = 0.56;
+    var sum = 0.0;
+    var norm = 0.0;
+    for (var i = 0u; i < 4u; i = i + 1u) {
+        let n = abs(water_noise(q) * 2.0 - 1.0);
+        sum += (1.0 - n) * amp;
+        norm += amp;
+        q = vec2<f32>(q.x * 1.91 - q.y * 0.73, q.x * 0.86 + q.y * 1.68) + vec2<f32>(4.0, 23.0);
+        amp *= 0.50;
+    }
+    return sum / max(norm, 0.001);
 }
 
 fn water_line_layer(p: vec2<f32>, dir: vec2<f32>, t: f32, scale: f32) -> vec3<f32> {
@@ -1889,6 +2011,12 @@ fn water_line_layer(p: vec2<f32>, dir: vec2<f32>, t: f32, scale: f32) -> vec3<f3
     let broken = smoothstep(0.30, 0.74, water_fbm(p * 0.53 + vec2<f32>(t * 0.05, -t * 0.04)));
     let dark = smoothstep(0.62, 0.95, band) * smoothstep(0.42, 0.88, water_fbm(p * 0.12 - dir * t * 0.03));
     return vec3<f32>(line * broken, dark, n);
+}
+
+fn water_schlick_fresnel(cos_theta: f32, power: f32) -> f32 {
+    let f0 = 0.012;
+    let edge = pow(1.0 - clamp(cos_theta, 0.0, 1.0), max(power * 1.35, 0.001));
+    return f0 + (1.0 - f0) * edge * 0.58;
 }
 
 struct WaterVertexLocal {
@@ -1922,7 +2050,7 @@ fn water_surface_vertex(w: Water, vertex_idx: u32) -> WaterVertexLocal {
     let uv = vec2<f32>(f32(cx + c.x) / f32(quad_width), f32(cy + c.y) / f32(quad_height));
     let pos = vec3<f32>(
         (uv.x - 0.5) * w.size_depth_time.x,
-        water_height_visual(w, uv, f32(params.frame_index) * 0.016),
+        water_height_geometry(w, uv, f32(params.frame_index) * 0.016),
         (uv.y - 0.5) * w.size_depth_time.y,
     );
     return WaterVertexLocal(pos, uv, 0.0, true);
@@ -1966,7 +2094,7 @@ fn water_rect_side_vertex(w: Water, side_idx: u32) -> WaterVertexLocal {
         let edge_t = (f32(seg) + c.x) / f32(vertical_segments);
         uv = vec2<f32>(0.0, 1.0 - edge_t);
     }
-    let top = water_height_visual(w, uv, f32(params.frame_index) * 0.016);
+    let top = water_height_geometry(w, uv, f32(params.frame_index) * 0.016);
     let y = mix(-max(w.size_depth_time.z, 0.001), top, top_t);
     let pos = vec3<f32>(
         (uv.x - 0.5) * w.size_depth_time.x,
@@ -1979,7 +2107,7 @@ fn water_rect_side_vertex(w: Water, side_idx: u32) -> WaterVertexLocal {
 fn water_circle_counts(w: Water) -> vec2<u32> {
     let width = max(w.flags.x, 1u);
     let height = max(w.flags.y, 1u);
-    let segments = clamp(max(width, height) * 4u, 16u, 1024u);
+    let segments = clamp(max(width, height) * 4u, 16u, 512u);
     let rings = clamp(min(width, height) / 2u, 1u, 512u);
     return vec2<u32>(segments, rings);
 }
@@ -1988,7 +2116,7 @@ fn water_circle_point(w: Water, angle_t: f32, radius_t: f32) -> WaterVertexLocal
     let angle = angle_t * 6.2831853;
     let local_xz = vec2<f32>(cos(angle), sin(angle)) * w.shape.y * radius_t;
     let uv = local_xz / w.size_depth_time.xy + vec2<f32>(0.5, 0.5);
-    let pos = vec3<f32>(local_xz.x, water_height_visual(w, uv, f32(params.frame_index) * 0.016), local_xz.y);
+    let pos = vec3<f32>(local_xz.x, water_height_geometry(w, uv, f32(params.frame_index) * 0.016), local_xz.y);
     return WaterVertexLocal(pos, uv, 0.0, true);
 }
 
@@ -2090,14 +2218,32 @@ fn fs_water_3d(in: Water3DVertexOut) -> @location(0) vec4<f32> {
     }
     let normal = water_visual_normal(w, in.uv, t);
     let view_dir = normalize(scene.camera_pos.xyz - in.world_pos);
-    let fresnel = pow(1.0 - clamp(dot(normal, view_dir), 0.0, 1.0), max(w.visual0.w, 0.001));
+    let fresnel_base = water_schlick_fresnel(dot(normal, view_dir), w.visual0.w);
     let slope = 1.0 - clamp(normal.y, 0.0, 1.0);
     let edge = max(0.0, 1.0 - min(min(in.uv.x, 1.0 - in.uv.x), min(in.uv.y, 1.0 - in.uv.y)) * max(w.coastline.y, 0.001) * 8.0);
+    let local = (in.uv - vec2<f32>(0.5, 0.5)) * w.size_depth_time.xy;
+    let wave_flow = normalize(select(vec2<f32>(1.0, 0.0), w.flow_wind.zw + w.flow_wind.xy * 0.35, length(w.flow_wind.zw + w.flow_wind.xy * 0.35) > 0.0001));
+    let wave_push = vec2<f32>(normal.x, normal.z) * 0.018 * clamp(w.visual1.x, 0.0, 1.4);
+    let foam_drift = wave_flow * (0.010 * sin(t * w.wave.x * 1.7 + ripple.y) + 0.006 * water_ridged_fbm(local * 0.21 + t * 0.07));
+    let coast_anim = water_coast_sample(w, in.uv + wave_push + foam_drift);
+    let coast_outline = max(edge * 0.35, max(coast_anim.y, ripple.w));
+    let foam_break = water_ridged_fbm(local * 1.35 + wave_flow * t * 0.42 + vec2<f32>(ripple.y * 0.23, -ripple.x * 0.17));
+    let foam_cut = smoothstep(0.54, 0.91, foam_break);
+    let foam_thread = smoothstep(0.64, 0.94, water_ridged_fbm(local * 3.9 - wave_flow * t * 0.68 + vec2<f32>(ripple.x * 0.31, ripple.y * 0.19)));
+    let impact_core = smoothstep(0.20, 0.86, ripple.z) * foam_cut;
+    let impact_lace = impact_core * foam_thread;
+    let decal_noise = water_ridged_fbm(local * 0.74 + wave_flow * t * 0.22 + vec2<f32>(5.0, 13.0));
+    let fresnel_break = smoothstep(0.54, 0.92, decal_noise) * smoothstep(0.05, 0.42, slope + coast_outline * 0.28);
+    let fresnel = fresnel_base * (0.22 + fresnel_break * 0.78);
     let crest_seed = ripple.y / max(w.wave.y, 0.001) + slope * 2.4;
     let crest = smoothstep(max(w.visual1.w, 0.001), max(w.visual1.w + 0.18, 0.002), crest_seed)
         * (1.0 - smoothstep(max(w.visual1.w + 0.20, 0.003), max(w.visual1.w + 0.58, 0.004), crest_seed))
-        * bitcast<f32>(w.flags.w) * 0.52;
-    let foam = clamp((ripple.z * 0.68 + max(edge, ripple.w) * w.coastline.x * 0.12 + crest) * w.visual1.z, 0.0, 1.0);
+        * bitcast<f32>(w.flags.w) * 0.64;
+    let outline_foam = smoothstep(0.34, 0.92, coast_outline)
+        * w.coastline.x
+        * (0.06 + foam_cut * 0.24)
+        * bitcast<f32>(w.flags.w);
+    let foam = clamp((impact_core * 0.28 + impact_lace * 0.52 + outline_foam + crest * 0.62) * w.visual1.z, 0.0, 1.0);
     let auto_shallow_depth = max(max(w.size_depth_time.x, w.size_depth_time.y) * 0.25, 0.001);
     let shallow_depth = select(auto_shallow_depth, max(w.size_depth_time.w, 0.001), w.size_depth_time.w >= 0.0);
     let depth_t = clamp(w.size_depth_time.z / shallow_depth, 0.0, 1.0);
@@ -2106,34 +2252,35 @@ fn fs_water_3d(in: Water3DVertexOut) -> @location(0) vec4<f32> {
     let caustic = smoothstep(0.62, 0.92, caustic_seed) * (1.0 - depth_t) * w.visual2.x;
     let sun_dir = normalize(select(vec3<f32>(0.0, 1.0, 0.0), -scene.ray_light.direction.xyz, length(scene.ray_light.direction.xyz) > 0.001));
     let scatter = (1.0 - depth_t) * w.visual2.z * max(dot(normal, sun_dir), 0.0);
-    let local = (in.uv - vec2<f32>(0.5, 0.5)) * w.size_depth_time.xy;
     let basin = water_fbm(local * 0.035 + vec2<f32>(t * 0.015, -t * 0.009));
     let shoal = water_fbm(local * 0.085 + vec2<f32>(4.3, 8.1));
-    let line_a = water_line_layer(local * 0.092 + vec2<f32>(t * 0.018, -t * 0.011), normalize(vec2<f32>(0.92, 0.38)), t, 0.88);
-    let line_b = water_line_layer(local * 0.061 + vec2<f32>(-t * 0.009, t * 0.014), normalize(vec2<f32>(-0.44, 0.90)), t, 1.17);
-    let ink_lines = clamp(line_a.x * 0.70 + line_b.x * 0.46, 0.0, 1.0) * (1.0 - foam * 0.65);
-    let dark_lines = clamp(line_a.y * 0.62 + line_b.y * 0.38 + basin * 0.18, 0.0, 1.0) * (1.0 - foam);
-    let dark_patch = smoothstep(0.48, 0.86, basin * 0.72 + dark_lines * 0.42) * (1.0 - foam) * 0.45;
-    let light_patch = smoothstep(0.58, 0.91, shoal * 0.70 + ink_lines * 0.38) * (1.0 - depth_t) * 0.38;
-    let scratch_ripple = (line_a.z - 0.5) * line_a.x * 0.030 + (line_b.z - 0.5) * line_b.x * 0.020;
-    let shallow_t = clamp(1.0 - depth_t + idle * 0.06 + foam * 0.10 + caustic * 0.16 + light_patch * 0.20 - dark_patch * 0.25, 0.0, 1.0);
-    let surface_t = clamp(shallow_t + abs(ripple.x + scratch_ripple) * 0.14 + foam * 0.08 + clamp(view_dist / 256.0, 0.0, 1.0) * 0.05, 0.0, 1.0);
-    let depth_rgb = mix(w.deep_color.rgb * (0.72 - dark_patch * 0.35), w.deep_color.rgb, depth_t);
+    let line_a = water_line_layer(local + normal.xz * 4.0, normalize(vec2<f32>(0.74, 0.67)), t * w.wave.x, 0.095);
+    let line_b = water_line_layer(local + normal.xz * 2.5, normalize(vec2<f32>(-0.61, 0.79)), -t * w.wave.x, 0.135);
+    let ink_lines = max(line_a.x, line_b.x) * (1.0 - foam);
+    let dark_lines = max(line_a.y, line_b.y) * (1.0 - foam);
+    let lowlight_noise = water_ridged_fbm(local * 0.095 - wave_flow * t * 0.045);
+    let highlight_noise = water_ridged_fbm(local * 0.31 + wave_flow * t * 0.16 + vec2<f32>(9.0, 2.0));
+    let dark_patch = smoothstep(0.50, 0.92, basin * 0.48 + lowlight_noise * 0.24 + dark_lines * 0.22) * (1.0 - foam) * 0.26;
+    let light_patch = smoothstep(0.56, 0.91, shoal * 0.48 + highlight_noise * 0.42 + ink_lines * 0.34) * (1.0 - depth_t) * 0.48;
+    let scratch_ripple = (highlight_noise - lowlight_noise) * 0.12;
+    let shallow_t = clamp(1.0 - depth_t + idle * 0.06 + foam * 0.035 + caustic * 0.12 + light_patch * 0.14 - dark_patch * 0.25, 0.0, 1.0);
+    let surface_t = clamp(shallow_t + abs(ripple.x + scratch_ripple) * 0.12 + foam * 0.025 + clamp(view_dist / 256.0, 0.0, 1.0) * 0.04, 0.0, 1.0);
+    let depth_rgb = mix(w.deep_color.rgb * (0.84 - dark_patch * 0.12), w.deep_color.rgb, depth_t);
     let water_rgb = mix(depth_rgb, w.shallow_color.rgb + vec3<f32>(light_patch * 0.18), surface_t);
     let refract_tint = vec3<f32>(caustic * 0.22 + w.visual2.y * (1.0 - depth_t) * 0.08 + light_patch * 0.06);
-    let reflected = mix(water_rgb, w.sky_color_bias.rgb, max(w.sky_color_bias.w, w.visual0.y * fresnel));
+    let reflected = mix(water_rgb, w.sky_color_bias.rgb, max(w.sky_color_bias.w, w.visual0.y * fresnel * 0.62));
     let rough_blend = clamp(w.visual0.z, 0.0, 1.0);
     let half_dir = normalize(view_dir + sun_dir);
-    let spec_line = pow(max(dot(normal, half_dir), 0.0), mix(96.0, 22.0, rough_blend)) * (0.55 + ink_lines * 0.75) * w.visual0.y;
-    let lit_water = mix(reflected, water_rgb, rough_blend * 0.55) + refract_tint + scatter + vec3<f32>(spec_line + ink_lines * 0.10) - vec3<f32>(dark_patch * 0.18 + dark_lines * 0.09);
+    let spec_line = pow(max(dot(normal, half_dir), 0.0), mix(128.0, 36.0, rough_blend)) * (0.22 + ink_lines * 0.50) * w.visual0.y * fresnel_break;
+    let lit_water = mix(reflected, water_rgb, rough_blend * 0.55) + refract_tint + scatter + vec3<f32>(spec_line + ink_lines * 0.07) - vec3<f32>(dark_patch * 0.07 + dark_lines * 0.04);
     let fog_t = clamp(view_dist / 620.0, 0.0, 1.0) * w.visual2.w;
     let fogged = mix(lit_water, w.deep_color.rgb, fog_t);
     let foam_rgb = mix(w.coastline_foam_color.rgb, w.foam_color.rgb, w.foam_color.a);
-    let color = mix(fogged, foam_rgb, foam * 0.62);
+    let color = mix(fogged, foam_rgb, foam * 0.42);
     let alpha = mix(w.deep_color.a, w.shallow_color.a, shallow_t) * (1.0 - clamp(w.visual0.x, 0.0, 1.0) * 0.72);
     let side_color = mix(w.deep_color.rgb, color, 0.35);
     let final_color = mix(color, side_color, in.side_t);
-    let final_alpha = mix(alpha + foam * 0.24 + fresnel * w.visual0.y * 0.18, w.deep_color.a * 0.82, in.side_t);
+    let final_alpha = mix(alpha + foam * 0.10 + fresnel * w.visual0.y * 0.06, w.deep_color.a * 0.82, in.side_t);
     return vec4<f32>(final_color, clamp(final_alpha, 0.0, 1.0));
 }
 "#;
@@ -2154,6 +2301,10 @@ fn water_render_wgsl() -> String {
             "let render_only_empty_skip = cell_idx;",
         )
         .replace(
+            "cells[cell_idx] = vec4<f32>(height, idle, foam, shore);",
+            "let render_only_wave_skip = height + idle + foam + shore;",
+        )
+        .replace(
             "let edge_noise = (sin((local.x * 0.31 + local.y * 0.47) + phase * 7.0) + sin((local.x * -0.53 + local.y * 0.29) - phase * 4.3)) * 0.5 * w.model_z.w;\n    let crash_wave = max(0.0, sin((local.x * 0.19 - local.y * 0.23) + phase * 5.5 + edge_noise));\n    let crash = shore * pow(crash_wave, 4.2) * w.model_y.w * w.wave.y * 2.25;\n    let prev = cells[cell_idx].x * w.wave.z * (1.0 - shore * w.coastline.w * 0.35);\n    let crest_line = smoothstep(0.78, 1.0, idle / max(w.wave.y, 0.001)) * (1.0 - smoothstep(1.0, 1.75, idle / max(w.wave.y, 0.001)));\n    let wave_foam = crest_line * bitcast<f32>(w.flags.w) * 0.20;\n    let impact_foam = smoothstep(0.10, 1.35, wake + crash) * bitcast<f32>(w.flags.w) * 0.42;\n    let shore_foam = smoothstep(0.45, 1.65, crash) * (1.0 - smoothstep(1.65, 2.8, crash)) * w.coastline.x * bitcast<f32>(w.flags.w);\n    let foam = clamp(wave_foam + impact_foam + shore_foam + coast.w * wake * 0.26, 0.0, 1.0);\n    let height = mix(prev + idle * (0.018 + shore * w.model_y.w * 0.12) + wake * 0.16 + crash, idle + wake * 0.18 + crash, 0.62);\n    cells[cell_idx] = vec4<f32>(height, idle, foam, shore);",
             "let render_only_unused = idle + shore + wake + coast.w;",
         )
@@ -2168,6 +2319,7 @@ mod tests {
         Water2DState {
             model: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
             z_index: 0,
+            paused: false,
             size: [16.0, 16.0],
             shape: WaterShapeState::Rect,
             resolution: [8, 8],
@@ -2241,6 +2393,7 @@ mod tests {
                 [0.0, 0.0, 1.0, 0.0],
                 [0.0, 0.0, 0.0, 1.0],
             ],
+            paused: false,
             size: [16.0, 16.0],
             shape: WaterShapeState::Rect,
             resolution: [8, 8],
@@ -2351,6 +2504,19 @@ mod tests {
     }
 
     #[test]
+    fn coastline_fill_keeps_foam_inside_one_meter_before_cutoff() {
+        let (edge_solid, edge_foam, edge_energy) = coastline_fill(-0.25, 1.5, 0.25);
+        assert!(edge_solid < 0.01);
+        assert!(edge_foam > 0.8);
+        assert!(edge_energy > 0.7);
+
+        let (deep_solid, deep_foam, deep_energy) = coastline_fill(-1.5, 1.5, 0.25);
+        assert!(deep_solid > 0.9);
+        assert!(deep_foam <= 0.01);
+        assert!(deep_energy < 0.1);
+    }
+
+    #[test]
     fn water_lod_resolution_clamps_with_distance() {
         assert_eq!(
             water_lod(
@@ -2440,6 +2606,21 @@ mod tests {
         assert_eq!(staged.node, 7);
         assert_eq!(staged.sim, [4, 64, 8, 8]);
         assert_eq!(staged.kind, 2);
+        assert_eq!(staged.flags[2] & WATER_FLAG_PAUSED, 0);
+        let mut paused = water;
+        paused.paused = true;
+        let paused_staged = water_gpu_2d(
+            NodeID::from_parts(7, 0),
+            &paused,
+            WaterGridResolution {
+                sim: paused.resolution,
+                render: paused.resolution,
+            },
+            4,
+            64,
+            1.0,
+        );
+        assert_ne!(paused_staged.flags[2] & WATER_FLAG_PAUSED, 0);
     }
 
     #[test]

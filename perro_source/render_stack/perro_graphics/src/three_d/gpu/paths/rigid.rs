@@ -34,7 +34,7 @@ pub(super) fn create_pipeline_rigid_blend(
         color_format,
         sample_count,
         cull_mode,
-        true,
+        false,
     )
 }
 

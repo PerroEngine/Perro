@@ -1,0 +1,17 @@
+preset = ballistic
+lifetime_min = 0.55
+lifetime_max = 1.0
+speed_min = 4.0
+speed_max = 7.0
+spread_radians = 0.10
+size = 3.5
+size_min = 0.6
+size_max = 1.0
+force = (0.0, -3.8, 0.0)
+color_start = (0.15, 1.0, 0.44, 1.0)
+color_end = (0.04, 0.40, 0.08, 0.0)
+emissive = (0.04, 0.90, 0.18)
+spin = 0.0
+x = (rand - 0.5) * (1.8 + params[0]) + sin(emitter_time * 5.0 + id * 0.13) * 0.08 + (prev_x - emitter_x) * 0.04
+y = (1.1 + params[1] * 0.4) - t * (2.4 + params[2]) + hash(id + seed) * 0.12 - age_left * 0.15
+z = (rand2 - 0.5) * (1.8 + params[0]) + cos(emitter_time * 4.0 + id * 0.17) * 0.08 + (prev_z - emitter_z) * 0.04

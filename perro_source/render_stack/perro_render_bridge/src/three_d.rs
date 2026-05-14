@@ -104,6 +104,7 @@ pub enum WaterCoastlineShape3D {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Water3DState {
     pub model: [[f32; 4]; 4],
+    pub paused: bool,
     pub size: [f32; 2],
     pub shape: WaterShapeState,
     pub resolution: [u32; 2],

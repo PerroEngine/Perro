@@ -849,6 +849,11 @@ impl Gpu3D {
                                         || resolved_mesh_blend_active(resolved_blend),
                                     casts_shadows: true,
                                     mesh_blend: resolved_mesh_blend_active(resolved_blend),
+                                    mesh_blend_depth: resolved_mesh_blend_depth_receiver(
+                                        resolved_blend,
+                                    ),
+                                    blend_layers: draw.blend.blend_layers.bits(),
+                                    blend_mask: draw.blend.blend_mask.bits(),
                                 },
                             );
                         }
@@ -952,6 +957,9 @@ impl Gpu3D {
                                 || resolved_mesh_blend_active(resolved_blend),
                             casts_shadows: true,
                             mesh_blend: resolved_mesh_blend_active(resolved_blend),
+                            mesh_blend_depth: resolved_mesh_blend_depth_receiver(resolved_blend),
+                            blend_layers: draw.blend.blend_layers.bits(),
+                            blend_mask: draw.blend.blend_mask.bits(),
                         },
                     );
                 }
@@ -1011,6 +1019,9 @@ impl Gpu3D {
                 disable_hiz_occlusion: true,
                 casts_shadows: false,
                 mesh_blend: false,
+                mesh_blend_depth: false,
+                blend_layers: BitMask::ALL.bits(),
+                blend_mask: BitMask::NONE.bits(),
             });
         }
         if let Some(instance_start) = debug_edges_start
@@ -1043,6 +1054,9 @@ impl Gpu3D {
                 disable_hiz_occlusion: true,
                 casts_shadows: false,
                 mesh_blend: false,
+                mesh_blend_depth: false,
+                blend_layers: BitMask::ALL.bits(),
+                blend_mask: BitMask::NONE.bits(),
             });
         }
         if self.draw_batches.len() >= PARALLEL_BATCH_SORT_MIN {

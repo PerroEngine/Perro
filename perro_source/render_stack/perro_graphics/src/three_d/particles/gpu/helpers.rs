@@ -88,6 +88,9 @@ pub(super) fn encode_gpu_op(op: &Op) -> GpuExprOp {
         Op::EmitterX => (37u32, 0u32),
         Op::EmitterY => (38u32, 0u32),
         Op::EmitterZ => (39u32, 0u32),
+        Op::PrevX => (40u32, 0u32),
+        Op::PrevY => (41u32, 0u32),
+        Op::PrevZ => (42u32, 0u32),
         Op::Hash => (43u32, 0u32),
     };
     GpuExprOp {

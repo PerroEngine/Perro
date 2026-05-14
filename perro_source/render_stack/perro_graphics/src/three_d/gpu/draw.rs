@@ -14,6 +14,9 @@ pub(super) struct DrawBatchPush {
     pub(super) disable_hiz_occlusion: bool,
     pub(super) casts_shadows: bool,
     pub(super) mesh_blend: bool,
+    pub(super) mesh_blend_depth: bool,
+    pub(super) blend_layers: u32,
+    pub(super) blend_mask: u32,
 }
 
 pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatchPush) {
@@ -31,6 +34,9 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
         disable_hiz_occlusion,
         casts_shadows,
         mesh_blend,
+        mesh_blend_depth,
+        blend_layers,
+        blend_mask,
     } = batch;
     if instance_count == 0 {
         return;
@@ -54,7 +60,10 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
             && prev.base_color_texture_slot == base_color_texture_slot
             && prev.occlusion_query.is_none()
             && prev.casts_shadows == casts_shadows
-            && prev.mesh_blend == mesh_blend;
+            && prev.mesh_blend == mesh_blend
+            && prev.mesh_blend_depth == mesh_blend_depth
+            && prev.blend_layers == blend_layers
+            && prev.blend_mask == blend_mask;
         if same_mesh && same_batch_state && prev_end == instance_start {
             prev.instance_count = prev.instance_count.saturating_add(instance_count);
             prev.disable_hiz_occlusion |= disable_hiz_occlusion;
@@ -87,6 +96,9 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
         disable_hiz_occlusion,
         casts_shadows,
         mesh_blend,
+        mesh_blend_depth,
+        blend_layers,
+        blend_mask,
     });
 }
 
@@ -113,6 +125,7 @@ pub(super) struct BuildInstanceArgs {
 pub(super) struct ResolvedMeshBlend {
     pub(super) packed_params: u32,
     pub(super) packed_flags: u32,
+    pub(super) depth_receiver: bool,
 }
 
 const RESOLVED_MESH_BLEND_ACTIVE: u32 = 1u32 << 0;
@@ -122,7 +135,7 @@ const RESOLVED_MESH_BLEND_SCREEN_BLEND: u32 = 1u32 << 3;
 #[inline]
 fn pack_resolved_mesh_blend_flags(blend: MeshBlendOptions3D) -> u32 {
     let mut flags = RESOLVED_MESH_BLEND_ACTIVE;
-    if blend.normal_blending || blend.enabled {
+    if blend.normal_blending {
         flags |= RESOLVED_MESH_BLEND_NORMAL_BLEND;
     }
     if blend.screen_blending {
@@ -134,6 +147,11 @@ fn pack_resolved_mesh_blend_flags(blend: MeshBlendOptions3D) -> u32 {
 #[inline]
 pub(super) fn resolved_mesh_blend_active(blend: ResolvedMeshBlend) -> bool {
     (blend.packed_flags & RESOLVED_MESH_BLEND_ACTIVE) != 0
+}
+
+#[inline]
+pub(super) fn resolved_mesh_blend_depth_receiver(blend: ResolvedMeshBlend) -> bool {
+    blend.depth_receiver
 }
 
 #[inline]
@@ -170,22 +188,27 @@ pub(super) fn resolve_mesh_blends(draws: &[Draw3DInstance], out: &mut Vec<Resolv
             .map(|dense| dense.instances.len() > 1)
             .unwrap_or_else(|| draw.instance_mats.len() > 1);
         let own_layers = draw.blend.blend_layers.bits();
-        let target_found = draws.iter().enumerate().any(|(target_index, target)| {
+        let mut target_found = false;
+        for (target_index, target) in draws.iter().enumerate() {
             if target_index == index && !self_interacts {
-                return false;
+                continue;
             }
             if !matches!(target.kind, Draw3DKind::Mesh(_)) {
-                return false;
+                continue;
             }
             let source_accepts_target =
                 target.blend.blend_layers.bits() & !draw.blend.blend_mask.bits() != 0;
             let target_accepts_source = own_layers & !target.blend.blend_mask.bits() != 0;
-            source_accepts_target && target_accepts_source
-        });
+            if source_accepts_target && target_accepts_source {
+                target_found = true;
+                out[target_index].depth_receiver = true;
+            }
+        }
         if target_found {
             out[index] = ResolvedMeshBlend {
                 packed_params: pack_mesh_blend_params(draw.blend),
                 packed_flags: pack_resolved_mesh_blend_flags(draw.blend),
+                depth_receiver: out[index].depth_receiver,
             };
         }
     }
@@ -684,6 +707,8 @@ mod tests {
         resolve_mesh_blends(&draws, &mut out);
         assert!(resolved_mesh_blend_active(out[0]));
         assert!(resolved_mesh_blend_active(out[1]));
+        assert!(resolved_mesh_blend_depth_receiver(out[0]));
+        assert!(resolved_mesh_blend_depth_receiver(out[1]));
 
         let draws = [
             draw(1, BitMask::with([1]), BitMask::without([2]), 1),
@@ -692,6 +717,21 @@ mod tests {
         resolve_mesh_blends(&draws, &mut out);
         assert!(resolved_mesh_blend_active(out[0]));
         assert!(resolved_mesh_blend_active(out[1]));
+    }
+
+    #[test]
+    fn blend_resolve_respects_default_all_layers() {
+        let mut draws = [
+            draw(1, BitMask::ALL, BitMask::NONE, 1),
+            draw(2, BitMask::with([2]), BitMask::NONE, 1),
+        ];
+        draws[0].blend.enabled = false;
+
+        let mut out = Vec::new();
+        resolve_mesh_blends(&draws, &mut out);
+
+        assert!(resolved_mesh_blend_active(out[1]));
+        assert!(resolved_mesh_blend_depth_receiver(out[0]));
     }
 
     #[test]
@@ -748,6 +788,7 @@ mod tests {
             draw(2, BitMask::with([2]), BitMask::NONE, 1),
         ];
         draws[0].blend.enabled = false;
+        draws[1].blend.normal_blending = true;
 
         let mut out = Vec::new();
         resolve_mesh_blends(&draws, &mut out);
@@ -755,6 +796,19 @@ mod tests {
         assert!(!resolved_mesh_blend_active(out[0]));
         assert!(resolved_mesh_blend_active(out[1]));
         assert!(resolved_mesh_blend_normal_blending(out[1]));
+    }
+
+    #[test]
+    fn blend_resolve_keeps_normal_blending_opt_in() {
+        let draws = [
+            draw(1, BitMask::with([1]), BitMask::NONE, 1),
+            draw(2, BitMask::with([2]), BitMask::NONE, 1),
+        ];
+        let mut out = Vec::new();
+        resolve_mesh_blends(&draws, &mut out);
+
+        assert!(resolved_mesh_blend_active(out[1]));
+        assert!(!resolved_mesh_blend_normal_blending(out[1]));
     }
 
     #[test]
@@ -797,6 +851,7 @@ mod tests {
                 packed_flags: RESOLVED_MESH_BLEND_ACTIVE
                     | RESOLVED_MESH_BLEND_SCREEN_BLEND
                     | RESOLVED_MESH_BLEND_NORMAL_BLEND,
+                depth_receiver: false,
             },
             skeleton_start: 0,
             skeleton_count: 0,
@@ -816,6 +871,7 @@ mod tests {
             mesh_blend: ResolvedMeshBlend {
                 packed_params: 1,
                 packed_flags: RESOLVED_MESH_BLEND_NORMAL_BLEND,
+                depth_receiver: false,
             },
             ..base_args
         };
@@ -836,6 +892,7 @@ mod tests {
                 mesh_blend: ResolvedMeshBlend {
                     packed_params: 1,
                     packed_flags: RESOLVED_MESH_BLEND_ACTIVE | RESOLVED_MESH_BLEND_NORMAL_BLEND,
+                    depth_receiver: false,
                 },
                 skeleton_start: 0,
                 skeleton_count: 0,
