@@ -5,11 +5,13 @@ type SelfNodeType = Node3D;
 const MAIN_MENU_SCENE_PATH: &ResPath = res_path!("res://Menu/MainMenu.scn");
 const PAUSE_MENU_SCENE_PATH: &ResPath = res_path!("res://Menu/PauseMenu.scn");
 const TRANSITION_FADE_SCENE_PATH: &ResPath = res_path!("res://Menu/TransitionFade.scn");
+const PROFILING_OVERLAY_SCENE_PATH: &ResPath = res_path!("res://Menu/ProfilingOverlay.scn");
 const MESH_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/mesh_materials.scn");
 const LIGHTS_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/lights.scn");
 const WATER_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/water.scn");
 const WATER_CANNON_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/water_cannon.scn");
 const ANIMATION_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/animations.scn");
+const PHYSICS_BONES_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/physics_bones.scn");
 const SKY_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/sky.scn");
 const BLEND_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/mesh_blending.scn");
 const MULTIMESH_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/multimesh.scn");
@@ -26,6 +28,7 @@ const DEMO_BUTTON_LIGHTS_NODE_NAME: &str = "demo_btn_lights";
 const DEMO_BUTTON_WATER_NODE_NAME: &str = "demo_btn_water";
 const DEMO_BUTTON_WATER_CANNON_NODE_NAME: &str = "demo_btn_water_cannon";
 const DEMO_BUTTON_ANIMATIONS_NODE_NAME: &str = "demo_btn_animations";
+const DEMO_BUTTON_PHYSICS_BONES_NODE_NAME: &str = "demo_btn_physics_bones";
 const DEMO_BUTTON_SKY_NODE_NAME: &str = "demo_btn_sky";
 const DEMO_BUTTON_BLEND_NODE_NAME: &str = "demo_btn_blend";
 const DEMO_BUTTON_MULTIMESH_NODE_NAME: &str = "demo_btn_multimesh";
@@ -55,6 +58,7 @@ enum DemoKind {
     Water,
     WaterCannon,
     Animations,
+    PhysicsBones,
     Sky,
     MeshBlending,
     MultiMesh,
@@ -71,6 +75,7 @@ impl DemoKind {
             DemoKind::Water => Some(WATER_DEMO_SCENE_PATH),
             DemoKind::WaterCannon => Some(WATER_CANNON_DEMO_SCENE_PATH),
             DemoKind::Animations => Some(ANIMATION_DEMO_SCENE_PATH),
+            DemoKind::PhysicsBones => Some(PHYSICS_BONES_DEMO_SCENE_PATH),
             DemoKind::Sky => Some(SKY_DEMO_SCENE_PATH),
             DemoKind::MeshBlending => Some(BLEND_DEMO_SCENE_PATH),
             DemoKind::MultiMesh => Some(MULTIMESH_DEMO_SCENE_PATH),
@@ -111,11 +116,13 @@ struct DemoScenesState {
     pub main_menu: PreloadedSceneID,
     pub pause_menu: PreloadedSceneID,
     pub fade: PreloadedSceneID,
+    pub profiling_overlay: PreloadedSceneID,
     pub mesh: PreloadedSceneID,
     pub lights: PreloadedSceneID,
     pub water: PreloadedSceneID,
     pub water_cannon: PreloadedSceneID,
     pub animations: PreloadedSceneID,
+    pub physics_bones: PreloadedSceneID,
     pub sky: PreloadedSceneID,
     pub blend: PreloadedSceneID,
     pub multimesh: PreloadedSceneID,
@@ -129,11 +136,13 @@ impl Default for DemoScenesState {
             main_menu: PreloadedSceneID::nil(),
             pause_menu: PreloadedSceneID::nil(),
             fade: PreloadedSceneID::nil(),
+            profiling_overlay: PreloadedSceneID::nil(),
             mesh: PreloadedSceneID::nil(),
             lights: PreloadedSceneID::nil(),
             water: PreloadedSceneID::nil(),
             water_cannon: PreloadedSceneID::nil(),
             animations: PreloadedSceneID::nil(),
+            physics_bones: PreloadedSceneID::nil(),
             sky: PreloadedSceneID::nil(),
             blend: PreloadedSceneID::nil(),
             multimesh: PreloadedSceneID::nil(),
@@ -149,6 +158,7 @@ struct DemoRefsState {
     pub pause_menu_root: NodeID,
     pub fade_root: NodeID,
     pub fade_panel: NodeID,
+    pub profiling_overlay_root: NodeID,
     pub demo_mount: NodeID,
     pub hub_camera: NodeID,
     pub active_demo_root: NodeID,
@@ -163,10 +173,11 @@ impl Default for DemoRefsState {
             pause_menu_root: NodeID::nil(),
             fade_root: NodeID::nil(),
             fade_panel: NodeID::nil(),
+            profiling_overlay_root: NodeID::nil(),
             demo_mount: NodeID::nil(),
             hub_camera: NodeID::nil(),
             active_demo_root: NodeID::nil(),
-            hub_buttons: vec![NodeID::nil(); 10],
+            hub_buttons: vec![NodeID::nil(); 11],
             pause_buttons: vec![NodeID::nil(); 3],
         }
     }
@@ -219,6 +230,8 @@ lifecycle!({
         let pause_menu =
             scene_preload!(ctx.run, PAUSE_MENU_SCENE_PATH).expect("preload pause menu");
         let fade = scene_preload!(ctx.run, TRANSITION_FADE_SCENE_PATH).expect("preload fade");
+        let profiling_overlay = scene_preload!(ctx.run, PROFILING_OVERLAY_SCENE_PATH)
+            .expect("preload profiling overlay");
         let mesh = scene_preload!(ctx.run, MESH_DEMO_SCENE_PATH).expect("preload mesh demo");
         let lights = scene_preload!(ctx.run, LIGHTS_DEMO_SCENE_PATH).expect("preload lights demo");
         let water = scene_preload!(ctx.run, WATER_DEMO_SCENE_PATH).expect("preload water demo");
@@ -226,6 +239,8 @@ lifecycle!({
             .expect("preload water cannon demo");
         let animations =
             scene_preload!(ctx.run, ANIMATION_DEMO_SCENE_PATH).expect("preload animation demo");
+        let physics_bones = scene_preload!(ctx.run, PHYSICS_BONES_DEMO_SCENE_PATH)
+            .expect("preload physics bones demo");
         let sky = scene_preload!(ctx.run, SKY_DEMO_SCENE_PATH).expect("preload sky demo");
         let blend =
             scene_preload!(ctx.run, BLEND_DEMO_SCENE_PATH).expect("preload mesh blend demo");
@@ -245,11 +260,13 @@ lifecycle!({
                 main_menu,
                 pause_menu,
                 fade,
+                profiling_overlay,
                 mesh,
                 lights,
                 water,
                 water_cannon,
                 animations,
+                physics_bones,
                 sky,
                 blend,
                 multimesh,
@@ -290,6 +307,12 @@ lifecycle!({
             ctx.id,
             signal!("demo_animations_click"),
             func!("on_demo_animations_click")
+        );
+        signal_connect!(
+            ctx.run,
+            ctx.id,
+            signal!("demo_physics_bones_click"),
+            func!("on_demo_physics_bones_click")
         );
         signal_connect!(
             ctx.run,
@@ -342,6 +365,7 @@ lifecycle!({
 
         self.load_main_menu_scene(ctx);
         self.load_pause_menu_scene(ctx);
+        self.load_profiling_overlay_scene(ctx);
         self.load_fade_scene(ctx);
         self.set_hub_camera_active(ctx, true);
         self.apply_mode_io(ctx);
@@ -397,6 +421,10 @@ methods!({
 
     fn on_demo_animations_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.queue_load_demo(ctx, DemoKind::Animations);
+    }
+
+    fn on_demo_physics_bones_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+        self.queue_load_demo(ctx, DemoKind::PhysicsBones);
     }
 
     fn on_demo_sky_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
@@ -461,6 +489,8 @@ methods!({
             get_child!(ctx.run, content, DEMO_BUTTON_WATER_CANNON_NODE_NAME)
                 .unwrap_or(NodeID::nil()),
             get_child!(ctx.run, content, DEMO_BUTTON_ANIMATIONS_NODE_NAME).unwrap_or(NodeID::nil()),
+            get_child!(ctx.run, content, DEMO_BUTTON_PHYSICS_BONES_NODE_NAME)
+                .unwrap_or(NodeID::nil()),
             get_child!(ctx.run, content, DEMO_BUTTON_SKY_NODE_NAME).unwrap_or(NodeID::nil()),
             get_child!(ctx.run, content, DEMO_BUTTON_BLEND_NODE_NAME).unwrap_or(NodeID::nil()),
             get_child!(ctx.run, content, DEMO_BUTTON_MULTIMESH_NODE_NAME).unwrap_or(NodeID::nil()),
@@ -532,6 +562,31 @@ methods!({
             state.refs.fade_panel = panel;
         });
         self.apply_transition_fade(ctx, 0.0, false);
+    }
+
+    fn load_profiling_overlay_scene(&self, ctx: &mut ScriptContext<'_, API>) {
+        let (parent, scene) = (
+            get_node_parent_id!(ctx.run, ctx.id).unwrap_or(NodeID::nil()),
+            with_state!(ctx.run, DemoManagerState, ctx.id, |state| state
+                .scenes
+                .profiling_overlay),
+        );
+        if parent.is_nil() || scene.is_nil() {
+            return;
+        }
+
+        let root = match scene_load!(ctx.run, scene) {
+            Ok(id) => id,
+            Err(err) => {
+                log_error!("[DemoManager] profiling overlay load fail: {:?}", err);
+                return;
+            }
+        };
+        reparent!(ctx.run, parent, root);
+        with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
+            state.refs.profiling_overlay_root = root;
+        });
+        set_ui_tree_visible(ctx, root, false);
     }
 
     fn queue_load_demo(&self, ctx: &mut ScriptContext<'_, API>, demo: DemoKind) {
@@ -773,16 +828,22 @@ methods!({
     }
 
     fn sync_ui(&self, ctx: &mut ScriptContext<'_, API>) {
-        let (mode, menu_root, pause_root, pause_alpha) =
+        let (mode, menu_root, pause_root, profiling_overlay_root, pause_alpha) =
             with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
                 (
                     state.runtime.mode,
                     state.refs.main_menu_root,
                     state.refs.pause_menu_root,
+                    state.refs.profiling_overlay_root,
                     state.runtime.pause_alpha,
                 )
             });
         set_ui_tree_visible(ctx, menu_root, mode == DemoMode::Hub);
+        set_ui_tree_visible(
+            ctx,
+            profiling_overlay_root,
+            mode == DemoMode::DemoActive || mode == DemoMode::Paused,
+        );
         set_ui_tree_visible(
             ctx,
             pause_root,

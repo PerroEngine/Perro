@@ -24,6 +24,7 @@ perro new_script --name <script_name> [--path <project_dir>] [--res <res_subdir>
 perro new_scene --name <scene_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>] [--template 2D|3D] [--no-open]
 perro new_animation --name <animation_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>] [--no-open]
 perro new_panimtree --name <tree_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>] [--no-open]
+perro import_anim <model.glb|model.gltf> --output <clip.panim> [--clip <name|index>] [--fps <fps>] [--skeleton <object_name>]
 ```
 
 Health and maintenance:
@@ -365,6 +366,40 @@ perro new_panimtree --name HeroMove --res /animations
 perro new_panimtree --name HeroMove --path D:\GameProjects\MyGame --res res://animations
 perro new_panimtree --name DlcMove --path D:\GameProjects\MyGame --dlc ExpansionOne --res /animations
 perro new_panimtree --name HeroMove --no-open
+```
+
+### `import_anim`
+
+Command:
+
+```powershell
+perro import_anim <model.glb|model.gltf> --output <clip.panim> [--clip <name|index>] [--fps <fps>] [--skeleton <object_name>]
+```
+
+`gltf_to_panim` and `glb_to_panim` are aliases.
+
+What it does:
+
+1. Loads the glTF document.
+2. Selects one animation by `--clip` name or index.
+3. Converts translation, rotation, and scale channels into `.panim` keyframes.
+4. Writes node tracks as `Node3D` objects.
+5. Writes skin joint tracks as `Skeleton3D` bone tracks on `--skeleton` object.
+
+Notes:
+
+- `--clip` defaults to `0`.
+- `--fps` defaults to `60`.
+- `--skeleton` defaults to `Rig`.
+- Scene or script bindings still map `.panim` object names to actual scene nodes.
+- Bone names come from glTF node names, for example `bone["Spine"].rotation`.
+- Morph target weights are ignored.
+
+Examples:
+
+```powershell
+perro import_anim res/models/hero.glb --output res/animations/idle.panim --clip Idle
+perro import_anim res/models/hero.glb --output res/animations/run.panim --clip 1 --fps 30 --skeleton HeroRig
 ```
 
 ## Health And Maintenance

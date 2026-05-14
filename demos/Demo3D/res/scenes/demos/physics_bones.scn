@@ -1,0 +1,193 @@
+$root = @PhysicsBonesDemo
+
+[PhysicsBonesDemo]
+script = "res://scripts/physics_bones_demo.rs"
+    [Node3D]
+        position = (0, 0, 0)
+    [/Node3D]
+[/PhysicsBonesDemo]
+
+[DemoCamera]
+parent = @PhysicsBonesDemo
+script = "res://scripts/demo_freecam_3d.rs"
+script_vars = {
+    yaw = 0.0
+    pitch = -0.12
+    speed = 9.0
+}
+    [Camera3D]
+        active = true
+        perspective_fov_y_degrees = 66.0
+        [Node3D]
+            position = (0, 3.8, 10)
+            rotation = (-0.06, 0.0, 0.0, 0.998)
+        [/Node3D]
+    [/Camera3D]
+[/DemoCamera]
+
+[Projectiles]
+parent = @PhysicsBonesDemo
+    [Node3D]
+    [/Node3D]
+[/Projectiles]
+
+[Ambient]
+parent = @PhysicsBonesDemo
+    [AmbientLight3D]
+        color = (0.65, 0.72, 0.84)
+        intensity = 0.42
+    [/AmbientLight3D]
+[/Ambient]
+
+[KeyLight]
+parent = @PhysicsBonesDemo
+    [RayLight3D]
+        color = (1.0, 0.94, 0.84)
+        intensity = 2.3
+        [Node3D]
+            rotation_deg = (-45, 28, 0)
+        [/Node3D]
+    [/RayLight3D]
+[/KeyLight]
+
+[Floor]
+parent = @PhysicsBonesDemo
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = { type = "standard" base_color_factor = (0.12, 0.14, 0.16, 1.0) roughness_factor = 0.92 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (0, -0.25, 0)
+            scale = (10, 0.15, 7)
+        [/Node3D]
+    [/MeshInstance3D]
+[/Floor]
+
+[Rig]
+parent = @PhysicsBonesDemo
+    [Skeleton3D]
+        skeleton = "res://models/bone_cubes.gltf:skeleton[0]"
+        [Node3D]
+            position = (0, 0.25, 0)
+            scale = (1.4, 1.4, 1.4)
+        [/Node3D]
+    [/Skeleton3D]
+[/Rig]
+
+[RigMesh]
+parent = @PhysicsBonesDemo
+    [MeshInstance3D]
+        mesh = "res://models/bone_cubes.gltf:mesh[0]"
+        skeleton = @Rig
+        material = { type = "standard" base_color_factor = (0.34, 0.72, 0.98, 1.0) roughness_factor = 0.48 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (0, 0.25, 0)
+            scale = (1.4, 1.4, 1.4)
+        [/Node3D]
+    [/MeshInstance3D]
+[/RigMesh]
+
+[RigWavePlayer]
+parent = @PhysicsBonesDemo
+    [AnimationPlayer]
+        animation = "res://animations/bone_cubes_wave.panim"
+        bindings = { Rig = @Rig }
+        playback = loop
+        speed = 0.85
+        paused = false
+    [/AnimationPlayer]
+[/RigWavePlayer]
+
+[RigPhysics]
+parent = @PhysicsBonesDemo
+    [PhysicsBoneChain3D]
+        skeleton = @Rig
+        bone = 2
+        chain_length = 3
+        gravity = (0, -6.0, 0)
+        damping = 0.04
+        stiffness = 0.18
+        radius = 0.24
+        collisions = true
+        iterations = 4
+    [/PhysicsBoneChain3D]
+[/RigPhysics]
+
+[ColliderBackstop]
+parent = @PhysicsBonesDemo
+    [BoneCollider3D]
+        enabled = true
+    [/BoneCollider3D]
+[/ColliderBackstop]
+
+[ColliderBackstopShape]
+parent = @ColliderBackstop
+    [CollisionShape3D]
+        shape = { type = "cube" size = (4.5, 3.5, 0.35) }
+        [Node3D]
+            position = (0, 1.8, -1.8)
+        [/Node3D]
+    [/CollisionShape3D]
+[/ColliderBackstopShape]
+
+[ColliderBackstopMesh]
+parent = @ColliderBackstop
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = { type = "standard" base_color_factor = (0.95, 0.32, 0.16, 0.38) roughness_factor = 0.72 metallic_factor = 0.0 alpha_mode = "BLEND" double_sided = true }
+        [Node3D]
+            position = (0, 1.8, -1.8)
+            scale = (4.5, 3.5, 0.35)
+        [/Node3D]
+    [/MeshInstance3D]
+[/ColliderBackstopMesh]
+
+[ColliderPost]
+parent = @PhysicsBonesDemo
+    [BoneCollider3D]
+        enabled = true
+        [Node3D]
+            position = (1.6, 1.3, 0.1)
+        [/Node3D]
+    [/BoneCollider3D]
+[/ColliderPost]
+
+[ColliderPostShape]
+parent = @ColliderPost
+    [CollisionShape3D]
+        shape = { type = "sphere" radius = 0.45 }
+    [/CollisionShape3D]
+[/ColliderPostShape]
+
+[ColliderPostMesh]
+parent = @ColliderPost
+    [MeshInstance3D]
+        mesh = "__sphere__"
+        material = { type = "unlit" base_color_factor = (1.0, 0.58, 0.12, 1.0) emissive_factor = (1.0, 0.34, 0.08) alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            scale = (0.45, 0.45, 0.45)
+        [/Node3D]
+    [/MeshInstance3D]
+[/ColliderPostMesh]
+
+[GenericCube]
+parent = @PhysicsBonesDemo
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = { type = "standard" base_color_factor = (0.92, 0.62, 0.18, 1.0) roughness_factor = 0.46 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (-2.5, 0.8, 0)
+            scale = (0.75, 0.75, 0.75)
+        [/Node3D]
+    [/MeshInstance3D]
+[/GenericCube]
+
+[GenericCubePlayer]
+parent = @PhysicsBonesDemo
+    [AnimationPlayer]
+        animation = "res://animations/cube_spin_move.panim"
+        bindings = { Cube = @GenericCube }
+        playback = loop
+        speed = 1.0
+        paused = false
+    [/AnimationPlayer]
+[/GenericCubePlayer]

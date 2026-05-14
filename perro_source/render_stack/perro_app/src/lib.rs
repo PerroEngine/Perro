@@ -150,6 +150,20 @@ impl<B: GraphicsBackend> App<B> {
     }
 
     #[inline]
+    pub fn set_frame_timing(
+        &mut self,
+        simulation_time: Duration,
+        graphics_time: Duration,
+        frame_time: Duration,
+        fps: f32,
+    ) {
+        self.runtime.time.simulation = simulation_time;
+        self.runtime.time.graphics = graphics_time;
+        self.runtime.time.frame = frame_time;
+        self.runtime.time.fps = fps;
+    }
+
+    #[inline]
     pub fn set_smoothing(&mut self, enabled: bool) {
         self.graphics.set_smoothing(enabled);
     }

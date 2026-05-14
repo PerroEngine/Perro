@@ -49,7 +49,36 @@ Run `perro check` to sync scripts and get rust-analyzer working.
 - `DemoManager` owns hub, pause menu, transition fade, demo load, restart, and hub return.
 - Demo scenes live in `res/scenes/demos/`.
 - Demo cameras use shared `res://scripts/demo_freecam_3d.rs`.
-- Animation demo uses `.panim` clips in `res/animations/`; see `docs/animations.md`.
+- Demo docs start at `docs/README.md`.
+
+## Demo Table
+
+| Demo | Scene | Docs |
+| --- | --- | --- |
+| Mesh + Materials | `res://scenes/demos/mesh_materials.scn` | `docs/mesh_materials.md` |
+| Lights | `res://scenes/demos/lights.scn` | `docs/lights.md` |
+| Water | `res://scenes/demos/water.scn` | `docs/water.md` |
+| Water Cannon | `res://scenes/demos/water_cannon.scn` | `docs/water_cannon.md` |
+| Animations | `res://scenes/demos/animations.scn` | `docs/animations.md` |
+| Sky | `res://scenes/demos/sky.scn` | `docs/sky.md` |
+| Mesh Blending | `res://scenes/demos/mesh_blending.scn` | `docs/mesh_blending.md` |
+| MultiMesh | `res://scenes/demos/multimesh.scn` | `docs/multimesh.md` |
+| Particles | `res://scenes/demos/particles.scn` | `docs/particles.md` |
+| Positional Audio | `res://scenes/demos/positional_audio.scn` | `docs/positional_audio.md` |
+| Physics Bones | `res://scenes/demos/physics_bones.scn` | `docs/physics_bones.md` |
+
+## Demo Controls
+
+| Input | Action |
+| --- | --- |
+| Mouse | Look in demo scenes. |
+| `W` `A` `S` `D` | Move camera. |
+| `Space` | Move up. |
+| `Shift` | Move down. |
+| `Esc` | Pause/resume or return through menu. |
+| Left mouse | Shoot in Water Cannon and Physics Bones. |
+| Mouse wheel | Change projectile size in shooting demos. |
+| `R` | Toggle audio debug rays in Positional Audio. |
 
 ## Documentation
 The comprehensive docs live in the main Perro repository on GitHub: `https://github.com/PerroEngine/Perro/blob/main/docs/index.md`

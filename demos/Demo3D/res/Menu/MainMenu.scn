@@ -18,7 +18,7 @@ parent = @hub_menu_root
     [UiPanel]
         anchor = "center"
         position_ratio = (0.5, 0.5)
-        size_ratio = (0.42, 0.56)
+        size_ratio = (0.42, 0.64)
         style = { fill = "#0B1018E8" stroke = "#D0E0EF" stroke_width = 1.0 radius = 0.04 }
         padding = 14
     [/UiPanel]
@@ -30,7 +30,7 @@ parent = @hub_menu_panel
         anchor = "center"
         position_ratio = (0.5, 0.5)
         size_ratio = (0.92, 0.92)
-        spacing = 0.035
+        spacing = 0.025
         h_align = "fill"
         v_align = "fill"
     [/UiVLayout]
@@ -63,7 +63,7 @@ parent = @hub_menu_content
 [demo_btn_mesh]
 parent = @hub_menu_content
     [UiButton]
-        size_ratio = (1.0, 0.075)
+        size_ratio = (1.0, 0.06)
         h_align = "fill"
         click_signals = ["demo_mesh_click"]
         style = $button_style
@@ -87,7 +87,7 @@ parent = @demo_btn_mesh
 [demo_btn_lights]
 parent = @hub_menu_content
     [UiButton]
-        size_ratio = (1.0, 0.075)
+        size_ratio = (1.0, 0.06)
         h_align = "fill"
         click_signals = ["demo_lights_click"]
         style = $button_style
@@ -111,7 +111,7 @@ parent = @demo_btn_lights
 [demo_btn_water]
 parent = @hub_menu_content
     [UiButton]
-        size_ratio = (1.0, 0.075)
+        size_ratio = (1.0, 0.06)
         h_align = "fill"
         click_signals = ["demo_water_click"]
         style = $button_style
@@ -135,7 +135,7 @@ parent = @demo_btn_water
 [demo_btn_water_cannon]
 parent = @hub_menu_content
     [UiButton]
-        size_ratio = (1.0, 0.075)
+        size_ratio = (1.0, 0.06)
         h_align = "fill"
         click_signals = ["demo_water_cannon_click"]
         style = $button_style
@@ -159,7 +159,7 @@ parent = @demo_btn_water_cannon
 [demo_btn_animations]
 parent = @hub_menu_content
     [UiButton]
-        size_ratio = (1.0, 0.075)
+        size_ratio = (1.0, 0.06)
         h_align = "fill"
         click_signals = ["demo_animations_click"]
         style = $button_style
@@ -180,10 +180,34 @@ parent = @demo_btn_animations
     [/UiLabel]
 [/demo_btn_animations_label]
 
+[demo_btn_physics_bones]
+parent = @hub_menu_content
+    [UiButton]
+        size_ratio = (1.0, 0.06)
+        h_align = "fill"
+        click_signals = ["demo_physics_bones_click"]
+        style = $button_style
+        hover = { style = $button_hover_style }
+        pressed = { style = $button_pressed_style }
+    [/UiButton]
+[/demo_btn_physics_bones]
+
+[demo_btn_physics_bones_label]
+parent = @demo_btn_physics_bones
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Physics Bones"
+        text_size_ratio = 0.24
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/demo_btn_physics_bones_label]
+
 [demo_btn_sky]
 parent = @hub_menu_content
     [UiButton]
-        size_ratio = (1.0, 0.075)
+        size_ratio = (1.0, 0.06)
         h_align = "fill"
         click_signals = ["demo_sky_click"]
         style = $button_style
@@ -207,7 +231,7 @@ parent = @demo_btn_sky
 [demo_btn_blend]
 parent = @hub_menu_content
     [UiButton]
-        size_ratio = (1.0, 0.075)
+        size_ratio = (1.0, 0.06)
         h_align = "fill"
         click_signals = ["demo_blend_click"]
         style = $button_style
@@ -231,7 +255,7 @@ parent = @demo_btn_blend
 [demo_btn_multimesh]
 parent = @hub_menu_content
     [UiButton]
-        size_ratio = (1.0, 0.075)
+        size_ratio = (1.0, 0.06)
         h_align = "fill"
         click_signals = ["demo_multimesh_click"]
         style = $button_style
@@ -255,7 +279,7 @@ parent = @demo_btn_multimesh
 [demo_btn_particles]
 parent = @hub_menu_content
     [UiButton]
-        size_ratio = (1.0, 0.075)
+        size_ratio = (1.0, 0.06)
         h_align = "fill"
         click_signals = ["demo_particles_click"]
         style = $button_style
@@ -279,7 +303,7 @@ parent = @demo_btn_particles
 [demo_btn_audio]
 parent = @hub_menu_content
     [UiButton]
-        size_ratio = (1.0, 0.075)
+        size_ratio = (1.0, 0.06)
         h_align = "fill"
         click_signals = ["demo_audio_click"]
         style = $button_style

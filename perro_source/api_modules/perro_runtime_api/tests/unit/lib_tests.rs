@@ -7,7 +7,7 @@ use crate::{
 use perro_ids::{AnimationID, AudioBusID, IntoTagID, MeshID, NodeID};
 use perro_nodes::prelude::Node2D;
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
-use std::{any::Any, borrow::Cow};
+use std::{any::Any, borrow::Cow, time::Duration};
 
 struct DummyRuntime {
     state: Box<dyn Any>,
@@ -22,6 +22,18 @@ impl TimeAPI for DummyRuntime {
     }
     fn get_elapsed(&self) -> f32 {
         1.0
+    }
+    fn get_simulation_time(&self) -> Duration {
+        Duration::from_micros(1_000)
+    }
+    fn get_graphics_time(&self) -> Duration {
+        Duration::from_micros(2_000)
+    }
+    fn get_frame_time(&self) -> Duration {
+        Duration::from_micros(16_000)
+    }
+    fn get_fps(&self) -> f32 {
+        60.0
     }
 }
 
@@ -952,9 +964,27 @@ fn script_macros_typecheck_and_forward() {
     let dt_clamped = delta_time_clamped!(&mut ctx, 0.020, 0.030);
     let fdt = fixed_delta_time!(&mut ctx);
     let elapsed = elapsed_time!(&mut ctx);
+    let sim = simulation_time!(&mut ctx);
+    let gfx = graphics_time!(&mut ctx);
+    let frame = frame_time!(&mut ctx);
+    let fps_value = fps!(&mut ctx);
+    let profile = profiling!(&mut ctx);
     assert_eq!(dt, 0.016);
     assert_eq!(dt_capped, 0.010);
     assert_eq!(dt_clamped, 0.020);
     assert_eq!(fdt, 0.016);
     assert_eq!(elapsed, 1.0);
+    assert_eq!(sim, Duration::from_micros(1_000));
+    assert_eq!(gfx, Duration::from_micros(2_000));
+    assert_eq!(frame, Duration::from_micros(16_000));
+    assert_eq!(fps_value, 60.0);
+    assert_eq!(
+        profile,
+        ProfilingSnapshot {
+            simulation_time: Duration::from_micros(1_000),
+            graphics_time: Duration::from_micros(2_000),
+            frame_time: Duration::from_micros(16_000),
+            fps: 60.0,
+        }
+    );
 }

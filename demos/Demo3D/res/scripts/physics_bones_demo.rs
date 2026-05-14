@@ -1,0 +1,80 @@
+use perro_api::prelude::*;
+
+type SelfNodeType = Node3D;
+
+const PROJECTILE_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/physics_bone_projectile.scn");
+const CAMERA_NODE_NAME: &str = "DemoCamera";
+const PROJECTILES_NODE_NAME: &str = "Projectiles";
+
+#[State]
+struct PhysicsBonesDemoState {
+    #[default = NodeID::nil()]
+    pub camera: NodeID,
+    #[default = NodeID::nil()]
+    pub projectiles: NodeID,
+    #[default = 0.38]
+    pub radius: f32,
+    #[default = 18.0]
+    pub speed: f32,
+}
+
+lifecycle!({
+    fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
+        let camera = get_child!(ctx.run, ctx.id, CAMERA_NODE_NAME).unwrap_or(NodeID::nil());
+        let projectiles =
+            get_child!(ctx.run, ctx.id, PROJECTILES_NODE_NAME).unwrap_or(NodeID::nil());
+        with_state_mut!(ctx.run, PhysicsBonesDemoState, ctx.id, |state| {
+            state.camera = camera;
+            state.projectiles = projectiles;
+        });
+    }
+
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        if mouse_mode!(ctx.ipt) != MouseMode::Captured {
+            return;
+        }
+
+        let wheel = mouse_wheel!(ctx.ipt).y;
+        if wheel.abs() > 0.001 {
+            with_state_mut!(ctx.run, PhysicsBonesDemoState, ctx.id, |state| {
+                state.radius = (state.radius + wheel * 0.05).clamp(0.15, 0.85);
+            });
+        }
+
+        if mouse_pressed!(ctx.ipt, MouseButton::Left) {
+            self.fire(ctx);
+        }
+    }
+});
+
+methods!({
+    fn fire(&self, ctx: &mut ScriptContext<'_, API>) {
+        let (camera, projectiles, radius, speed) =
+            with_state!(ctx.run, PhysicsBonesDemoState, ctx.id, |state| {
+                (state.camera, state.projectiles, state.radius, state.speed)
+            });
+        if camera.is_nil() || projectiles.is_nil() {
+            return;
+        }
+
+        let Some(camera_world) = get_global_transform_3d!(ctx.run, camera) else {
+            return;
+        };
+        let forward = camera_world
+            .rotation
+            .rotate_vector3(Vector3::new(0.0, 0.0, -1.0))
+            .normalized();
+        let spawn_pos = camera_world.position + forward * (radius + 0.9);
+
+        let root = match scene_load!(ctx.run, PROJECTILE_SCENE_PATH) {
+            Ok(id) => id,
+            Err(err) => {
+                log_error!("[PhysicsBonesDemo] projectile load fail: {:?}", err);
+                return;
+            }
+        };
+        reparent!(ctx.run, projectiles, root);
+        let _ = set_global_pos_3d!(ctx.run, root, spawn_pos);
+        let _ = call_method!(ctx.run, root, func!("launch"), params![forward * speed, radius]);
+    }
+});

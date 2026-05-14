@@ -31,5 +31,5 @@ pub use scene::{
 };
 pub use script::{IntoScriptMemberID, ScriptAPI, ScriptModule};
 pub use signal::{SignalAPI, SignalModule};
-pub use time::{TimeAPI, TimeModule};
+pub use time::{ProfilingSnapshot, TimeAPI, TimeModule};
 pub use window::{WindowAPI, WindowMode, WindowModule, WindowRequest};

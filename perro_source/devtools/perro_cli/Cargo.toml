@@ -6,4 +6,5 @@ edition = "2024"
 [dependencies]
 perro_compiler = { path = "../../build_pipeline/perro_compiler" }
 perro_project = { path = "../../runtime_project/perro_project" }
+gltf = { version = "1.4.1", features = ["import", "utils"] }
 serde_json = "1"

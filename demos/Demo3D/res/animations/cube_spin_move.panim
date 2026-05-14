@@ -1,0 +1,42 @@
+[Animation]
+name = "CubeSpinMove"
+fps = 30
+default_interp = "interpolate"
+default_ease = "ease_in_out"
+[/Animation]
+
+[Objects]
+Cube = Node3D
+[/Objects]
+
+[Frame0]
+@Cube {
+    position = (-2.5, 0.8, 0)
+    rotation_deg = (0, 0, 0)
+    scale = (0.75, 0.75, 0.75)
+}
+[/Frame0]
+
+[Frame30]
+@Cube {
+    position = (0, 1.8, 0)
+    rotation_deg = (45, 180, 25)
+    scale = (1.1, 1.1, 1.1)
+}
+[/Frame30]
+
+[Frame60]
+@Cube {
+    position = (2.5, 0.8, 0)
+    rotation_deg = (0, 360, 0)
+    scale = (0.75, 0.75, 0.75)
+}
+[/Frame60]
+
+[Frame90]
+@Cube {
+    position = (-2.5, 0.8, 0)
+    rotation_deg = (0, 540, -25)
+    scale = (0.75, 0.75, 0.75)
+}
+[/Frame90]

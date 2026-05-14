@@ -28,7 +28,7 @@ const DEFAULT_FIXED_TIMESTEP: Option<f32> = None;
 const MAX_FIXED_STEPS_PER_FRAME: u32 = 2;
 const MAX_FRAME_DELTA_SECONDS: f32 = 0.250;
 const LOG_INTERVAL_SECONDS: f32 = 3.0;
-#[cfg(not(any(feature = "profile_heavy", feature = "ui_profile")))]
+#[cfg(not(any(feature = "profile_heavy", feature = "ui_profile", feature = "fps")))]
 const LOG_TIMING_SAMPLE_STRIDE: u32 = 20;
 const TIMING_WARMUP_FRAMES: u32 = 8;
 const INITIAL_WINDOW_MONITOR_FRACTION: f32 = 0.75;
@@ -435,7 +435,7 @@ fn bytes_to_mib(bytes: usize) -> f64 {
     bytes as f64 / (1024.0 * 1024.0)
 }
 
-#[cfg(not(perro_no_console))]
+#[cfg(all(feature = "fps", not(perro_no_console)))]
 #[inline]
 fn log_avg_sampled(
     update_us: u128,
@@ -457,7 +457,7 @@ fn log_avg_sampled(
     );
 }
 
-#[cfg(perro_no_console)]
+#[cfg(any(not(feature = "fps"), perro_no_console))]
 #[inline]
 fn log_avg_sampled(
     _update_us: u128,
@@ -1073,11 +1073,11 @@ impl<B: GraphicsBackend> RunnerState<B> {
 
     #[inline]
     fn should_sample_timing(&self) -> bool {
-        #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
+        #[cfg(any(feature = "profile_heavy", feature = "ui_profile", feature = "fps"))]
         {
             true
         }
-        #[cfg(not(any(feature = "profile_heavy", feature = "ui_profile")))]
+        #[cfg(not(any(feature = "profile_heavy", feature = "ui_profile", feature = "fps")))]
         {
             self.frame_index == 1
                 || self
@@ -1379,6 +1379,16 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let active_work_duration = work_duration.saturating_sub(present_wait_duration);
         let frame_end = Instant::now();
         self.last_frame_end = frame_end;
+        self.app.set_frame_timing(
+            simulation_duration,
+            present_active_duration,
+            frame_delta,
+            if frame_delta.is_zero() {
+                0.0
+            } else {
+                1.0 / frame_delta.as_secs_f32()
+            },
+        );
 
         let warmup_frame = self.timing_warmup_frames_left > 0;
         if !warmup_frame {
@@ -1706,6 +1716,16 @@ impl<B: GraphicsBackend> RunnerState<B> {
 
         let frame_end = Instant::now();
         self.last_frame_end = frame_end;
+        self.app.set_frame_timing(
+            simulation_duration,
+            present_active_duration,
+            frame_delta,
+            if frame_delta.is_zero() {
+                0.0
+            } else {
+                1.0 / frame_delta.as_secs_f32()
+            },
+        );
 
         let warmup_frame = self.timing_warmup_frames_left > 0;
         if !warmup_frame {

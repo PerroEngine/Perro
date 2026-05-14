@@ -1,0 +1,35 @@
+[Animation]
+name = "BoneCubesWave"
+fps = 30.0
+default_interp = "interpolate"
+default_ease = "linear"
+[/Animation]
+
+[Objects]
+Rig = Skeleton3D
+[/Objects]
+
+[Frame0]
+@Rig {
+    bone["Mid"].rotation = (0.0, 0.0, 0.0, 1.0)
+    bone["Root"].rotation = (0.0, 0.0, 0.0, 1.0)
+    bone["Tip"].rotation = (0.0, 0.0, 0.0, 1.0)
+}
+[/Frame0]
+
+[Frame15]
+@Rig {
+    bone["Mid"].rotation = (0.258819, 0.0, 0.0, 0.965926)
+    bone["Root"].rotation = (0.0, 0.0, 0.258819, 0.965926)
+    bone["Tip"].rotation = (0.0, 0.382683, 0.0, 0.92388)
+}
+[/Frame15]
+
+[Frame30]
+@Rig {
+    bone["Mid"].rotation = (0.0, 0.0, 0.0, 1.0)
+    bone["Root"].rotation = (0.0, 0.0, 0.0, 1.0)
+    bone["Tip"].rotation = (0.0, 0.0, 0.0, 1.0)
+}
+[/Frame30]
+

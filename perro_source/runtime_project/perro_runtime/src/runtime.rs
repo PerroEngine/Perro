@@ -121,6 +121,14 @@ pub struct Timing {
     pub delta: f32,
     /// Accumulated runtime time in seconds.
     pub elapsed: f32,
+    /// Last measured simulation time.
+    pub simulation: Duration,
+    /// Last measured graphics time.
+    pub graphics: Duration,
+    /// Last measured frame time.
+    pub frame: Duration,
+    /// Last measured frames per second.
+    pub fps: f32,
 }
 
 /// Timing breakdown for variable-step script schedules.
@@ -198,6 +206,10 @@ impl Runtime {
                 fixed_delta: 0.0,
                 delta: 0.0,
                 elapsed: 0.0,
+                simulation: Duration::ZERO,
+                graphics: Duration::ZERO,
+                frame: Duration::ZERO,
+                fps: 0.0,
             },
             provider_mode: ProviderMode::Dynamic,
             scene_cache: RefCell::new(AHashMap::new()),

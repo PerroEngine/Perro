@@ -2,6 +2,7 @@ use std::env;
 use std::path::{Path, PathBuf};
 
 mod doctor;
+mod gltf_animation;
 mod install;
 mod profiling;
 mod project;
@@ -9,6 +10,7 @@ mod scaffold;
 mod vscode;
 
 use doctor::doctor_command;
+use gltf_animation::gltf_to_panim_command;
 use install::install_command;
 use profiling::{flamegraph_command, mem_profile_command};
 use project::{
@@ -58,6 +60,7 @@ fn main() {
             "new_scene" => new_scene_command(&args, &cwd),
             "new_animation" => new_animation_command(&args, &cwd),
             "new_panimtree" => new_panimtree_command(&args, &cwd),
+            "import_anim" | "gltf_to_panim" | "glb_to_panim" => gltf_to_panim_command(&args, &cwd),
             "clean" => clean_command(&args, &cwd),
             "install" => install_command(&args),
             "check" => scripts_command(&args, &cwd),
@@ -126,6 +129,9 @@ fn print_usage() {
     );
     eprintln!(
         "  perro_cli new_panimtree --name <tree_name> [--path <project_dir>] [--res <res_subdir>] [--dlc <dlc_name>]"
+    );
+    eprintln!(
+        "  perro_cli import_anim <model.glb|model.gltf> --output <clip.panim> [--clip <name|index>] [--fps <fps>] [--skeleton <object_name>]"
     );
 }
 

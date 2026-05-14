@@ -23,7 +23,7 @@ parent = @CannonBall
 parent = @CannonBall
     [MeshInstance3D]
         mesh = "__sphere__"
-        material = { type = "standard" base_color_factor = (0.08, 0.08, 0.10, 1.0) roughness_factor = 0.42 metallic_factor = 0.15 alpha_mode = "OPAQUE" double_sided = false }
+        material = { type = "unlit" base_color_factor = (1.0, 0.42, 0.08, 1.0) emissive_factor = (1.0, 0.42, 0.08) alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             scale = (0.45, 0.45, 0.45)
         [/Node3D]
