@@ -110,19 +110,19 @@ pub struct WaterVisualParams {
 impl WaterVisualParams {
     pub const fn new() -> Self {
         Self {
-            transparency: 0.24,
-            reflectivity: 0.46,
-            roughness: 0.18,
-            fresnel_power: 5.0,
-            normal_strength: 1.15,
+            transparency: 0.20,
+            reflectivity: 0.58,
+            roughness: 0.14,
+            fresnel_power: 4.2,
+            normal_strength: 1.28,
             ripple_scale: 1.0,
             foam_color: Color::new(0.86, 0.96, 1.0, 1.0),
-            foam_amount: 0.72,
-            crest_foam_threshold: 0.58,
-            caustic_strength: 0.20,
-            refraction_strength: 0.12,
-            scattering_strength: 0.18,
-            distance_fog_strength: 0.32,
+            foam_amount: 0.86,
+            crest_foam_threshold: 0.50,
+            caustic_strength: 0.26,
+            refraction_strength: 0.16,
+            scattering_strength: 0.24,
+            distance_fog_strength: 0.28,
         }
     }
 }
@@ -191,12 +191,12 @@ impl CoastlineSettings {
     pub const fn new() -> Self {
         Self {
             foam_color: Color::new(0.9, 0.97, 1.0, 1.0),
-            foam_strength: 0.75,
-            foam_width: 1.5,
-            cutoff_softness: 0.25,
+            foam_strength: 1.05,
+            foam_width: 2.25,
+            cutoff_softness: 0.34,
             wave_reflection: 0.45,
-            wave_damping: 0.35,
-            edge_noise: 0.2,
+            wave_damping: 0.42,
+            edge_noise: 0.24,
         }
     }
 }
@@ -347,12 +347,12 @@ pub fn analytic_idle_water_height(
     time_seconds: f32,
 ) -> f32 {
     let phase = time_seconds * surface.wave.speed * water_idle_speed_scale();
-    let wave_coord = local / surface.wave.length.max(0.001);
+    let wave_coord = local * (1.0 / surface.wave.length.max(0.001));
     let tau = std::f32::consts::TAU;
     match surface.idle_mode {
         WaterIdleMode::Calm => 0.0,
         WaterIdleMode::Sine => {
-            let wind = surface.wind.normalized();
+            let wind = normalized_or_x(surface.wind);
             let cross = Vector2::new(-wind.y, wind.x);
             let a = (wave_coord.dot(wind) * tau + phase).sin();
             let b = (wave_coord.dot(cross) * tau * 1.73 - phase * 0.61).sin();
@@ -360,7 +360,7 @@ pub fn analytic_idle_water_height(
             (crest_wave(a) * 0.52 + b * 0.24 + crest_wave(c) * 0.24) * surface.wave.scale
         }
         WaterIdleMode::Chop => {
-            let wind = surface.wind.normalized();
+            let wind = normalized_or_x(surface.wind);
             let cross = Vector2::new(-wind.y, wind.x);
             let a = (wave_coord.dot(wind) * tau * 0.72 + phase * 0.84).sin();
             let b = (wave_coord.dot(cross) * tau * 1.21 - phase * 1.17).cos();
@@ -372,21 +372,23 @@ pub fn analytic_idle_water_height(
                 * 1.45
         }
         WaterIdleMode::Storm => {
-            let wind = surface.wind.normalized();
+            let wind = normalized_or_x(surface.wind);
             let cross = Vector2::new(-wind.y, wind.x);
             let a = (wave_coord.dot(wind) * tau * 0.58 + phase * 0.77).sin();
             let b = (wave_coord.dot(cross) * tau * 1.02 - phase * 0.91).cos();
             let c = ((wave_coord.x * 1.43 + wave_coord.y * 0.61) * tau * 1.74 + phase * 1.37).sin();
             let d =
                 ((wave_coord.x * -0.51 + wave_coord.y * 1.18) * tau * 2.52 - phase * 1.91).cos();
-            let swell_a = (wave_coord.dot(wind) * tau * 0.39 + phase * 0.63)
-                .sin()
-                .max(0.0)
-                .powf(5.0);
-            let swell_b = (wave_coord.dot(cross) * tau * 0.64 - phase * 1.09 + 1.7)
-                .sin()
-                .max(0.0)
-                .powf(4.0);
+            let swell_a = pow5(
+                (wave_coord.dot(wind) * tau * 0.39 + phase * 0.63)
+                    .sin()
+                    .max(0.0),
+            );
+            let swell_b = pow4(
+                (wave_coord.dot(cross) * tau * 0.64 - phase * 1.09 + 1.7)
+                    .sin()
+                    .max(0.0),
+            );
             (crest_wave(a) * 0.30
                 + b * 0.12
                 + crest_wave(c) * 0.14
@@ -397,7 +399,7 @@ pub fn analytic_idle_water_height(
                 * 1.65
         }
         WaterIdleMode::River => {
-            let flow = surface.flow.normalized();
+            let flow = normalized_or_x(surface.flow);
             let cross = Vector2::new(-flow.y, flow.x);
             let a = (wave_coord.dot(flow) * tau * 1.6 - phase * 1.5).sin();
             let b = (wave_coord.dot(cross) * tau * 2.4 + phase * 0.55).sin();
@@ -408,7 +410,47 @@ pub fn analytic_idle_water_height(
 
 #[inline]
 fn crest_wave(v: f32) -> f32 {
-    v.max(0.0).powf(3.0) - (-v).max(0.0).powf(1.35) * 0.30
+    let pos = v.max(0.0);
+    let neg = (-v).max(0.0);
+    pow3(pos) - fast_pow_1_35(neg) * 0.30
+}
+
+#[inline]
+fn normalized_or_x(v: Vector2) -> Vector2 {
+    let len_sq = v.x * v.x + v.y * v.y;
+    if len_sq <= 1.0e-12 {
+        Vector2::new(1.0, 0.0)
+    } else if (len_sq - 1.0).abs() <= 1.0e-4 {
+        v
+    } else {
+        v / len_sq.sqrt()
+    }
+}
+
+#[inline]
+fn pow3(v: f32) -> f32 {
+    v * v * v
+}
+
+#[inline]
+fn pow4(v: f32) -> f32 {
+    let v2 = v * v;
+    v2 * v2
+}
+
+#[inline]
+fn pow5(v: f32) -> f32 {
+    pow4(v) * v
+}
+
+#[inline]
+fn fast_pow_1_35(v: f32) -> f32 {
+    if v <= 0.0 {
+        0.0
+    } else {
+        let sqrt = v.sqrt();
+        v * (sqrt * 0.60 + v * 0.40)
+    }
 }
 
 #[inline]

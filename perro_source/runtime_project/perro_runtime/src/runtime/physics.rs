@@ -59,6 +59,7 @@ fn water_buoyancy_cap(mass: f32, submerged: f32, depth: f32, buoyancy: f32) -> f
 
 #[derive(Clone, Copy)]
 struct RuntimeWater2D {
+    id: NodeID,
     half: Vector2,
     transform: Mat3,
     inv_transform: Mat3,
@@ -70,6 +71,7 @@ struct RuntimeWater2D {
 
 #[derive(Clone, Copy)]
 struct RuntimeWater3D {
+    id: NodeID,
     half: Vector2,
     transform: Mat4,
     inv_transform: Mat4,
@@ -1284,6 +1286,7 @@ impl Runtime {
             let half = water.water.shape.surface_size() * 0.5;
             let (min_x, max_x) = water_world_x_bounds_2d(transform_mat, half);
             waters.push(RuntimeWater2D {
+                id,
                 half,
                 transform: transform_mat,
                 inv_transform,
@@ -1413,6 +1416,7 @@ impl Runtime {
                 water.water.shape.depth(water.water.depth),
             );
             waters.push(RuntimeWater3D {
+                id,
                 half,
                 transform: transform_mat,
                 inv_transform,
@@ -2070,13 +2074,18 @@ fn water_forces_for_body_2d(
             * blend.surface.physics.buoyancy.max(0.0)
             * (1.2 + blend.surface.physics.wake_strength.max(0.0) * 0.25)
             * contact;
-        let wave_speed = (blend.sample.velocity.x * 0.025 + blend.sample.velocity.y * 0.006)
+        let current_speed = blend.sample.velocity.x;
+        let wave_speed = (current_speed + blend.sample.velocity.y.abs() * 0.012)
             * blend.surface.physics.wake_strength.max(0.0)
             * contact;
-        let target_wave_speed = wave_speed.clamp(-0.05, 0.05);
+        let target_wave_speed = wave_speed.clamp(-1.5, 1.5);
         let body_wave_speed = body.velocity.dot(blend.wave_dir);
         let wave_drive = blend.wave_dir
-            * ((target_wave_speed - body_wave_speed).clamp(-0.05, 0.05) * mass * contact * 0.75);
+            * ((target_wave_speed - body_wave_speed).clamp(-2.0, 2.0)
+                * mass
+                * contact
+                * blend.surface.physics.drag.max(0.05)
+                * 5.0);
         let (scale, deadzone) = water_force_lod(
             blend.surface.lod.near_distance,
             blend.surface.lod.mid_distance,
@@ -2084,22 +2093,15 @@ fn water_forces_for_body_2d(
             blend.pos,
             camera_pos,
         );
-        let force_y = (support + spring + drag + wave_follow).clamp(
-            -water_buoyancy_cap(
-                mass,
-                submerged,
-                blend.surface.shape.depth(blend.surface.depth),
-                blend.surface.physics.buoyancy,
-            ),
-            water_buoyancy_cap(
-                mass,
-                submerged,
-                blend.surface.shape.depth(blend.surface.depth),
-                blend.surface.physics.buoyancy,
-            ),
-        ) * scale
-            * blend.lod_weight;
-        let mass_scale = (1.0 / body.mass.max(1.0).sqrt()).clamp(0.25, 1.0);
+        let cap = water_buoyancy_cap(
+            mass,
+            submerged,
+            blend.surface.shape.depth(blend.surface.depth),
+            blend.surface.physics.buoyancy,
+        );
+        let force_y =
+            (support + spring + drag + wave_follow).clamp(-cap, cap) * scale * blend.lod_weight;
+        let mass_scale = (1.0 / mass.max(1.0).sqrt()).clamp(0.35, 1.0);
         let force = blend.normal * force_y + wave_drive * scale * blend.lod_weight * mass_scale;
         if force.length() >= deadzone {
             forces.push((body.id, force));
@@ -2143,13 +2145,18 @@ fn water_forces_for_body_3d(
             * blend.surface.physics.buoyancy.max(0.0)
             * (1.2 + blend.surface.physics.wake_strength.max(0.0) * 0.25)
             * contact;
-        let wave_speed = (blend.sample.velocity.x * 0.025 + blend.sample.velocity.y * 0.006)
+        let current_speed = blend.sample.velocity.x;
+        let wave_speed = (current_speed + blend.sample.velocity.y.abs() * 0.012)
             * blend.surface.physics.wake_strength.max(0.0)
             * contact;
-        let target_wave_speed = wave_speed.clamp(-0.05, 0.05);
+        let target_wave_speed = wave_speed.clamp(-1.5, 1.5);
         let body_wave_speed = body.velocity.dot(blend.wave_dir);
         let wave_drive = blend.wave_dir
-            * ((target_wave_speed - body_wave_speed).clamp(-0.05, 0.05) * mass * contact * 0.75);
+            * ((target_wave_speed - body_wave_speed).clamp(-2.0, 2.0)
+                * mass
+                * contact
+                * blend.surface.physics.drag.max(0.05)
+                * 5.0);
         let water_pos_2d = Vector2::new(blend.pos.x, blend.pos.z);
         let (scale, deadzone) = water_force_lod(
             blend.surface.lod.near_distance,
@@ -2158,22 +2165,15 @@ fn water_forces_for_body_3d(
             water_pos_2d,
             camera_pos,
         );
-        let force_y = (support + spring + drag + wave_follow).clamp(
-            -water_buoyancy_cap(
-                mass,
-                submerged,
-                blend.surface.shape.depth(blend.surface.depth),
-                blend.surface.physics.buoyancy,
-            ),
-            water_buoyancy_cap(
-                mass,
-                submerged,
-                blend.surface.shape.depth(blend.surface.depth),
-                blend.surface.physics.buoyancy,
-            ),
-        ) * scale
-            * blend.lod_weight;
-        let mass_scale = (1.0 / body.mass.max(1.0).sqrt()).clamp(0.25, 1.0);
+        let cap = water_buoyancy_cap(
+            mass,
+            submerged,
+            blend.surface.shape.depth(blend.surface.depth),
+            blend.surface.physics.buoyancy,
+        );
+        let force_y =
+            (support + spring + drag + wave_follow).clamp(-cap, cap) * scale * blend.lod_weight;
+        let mass_scale = (1.0 / mass.max(1.0).sqrt()).clamp(0.35, 1.0);
         let force = blend.normal * force_y + wave_drive * scale * blend.lod_weight * mass_scale;
         if force.length() >= deadzone {
             forces.push((body.id, force));
@@ -2188,13 +2188,14 @@ fn water_body_splashes_2d(
     elapsed: f32,
 ) -> Vec<crate::runtime::ForceWaterImpact2D> {
     let mut impacts = Vec::new();
+    let empty_samples = AHashMap::new();
     for body in bodies {
         for sample in blended_water_samples_2d(
             body.pos,
             body.collision_layers,
             body.collision_mask,
             water_index,
-            &AHashMap::new(),
+            &empty_samples,
             elapsed,
         ) {
             let target = water_target_submerged(body.density);
@@ -2231,13 +2232,14 @@ fn water_body_splashes_3d(
     elapsed: f32,
 ) -> Vec<crate::runtime::ForceWaterImpact3D> {
     let mut impacts = Vec::new();
+    let empty_samples = AHashMap::new();
     for body in bodies {
         for sample in blended_water_samples_3d(
             body.pos,
             body.collision_layers,
             body.collision_mask,
             water_index,
-            &AHashMap::new(),
+            &empty_samples,
             elapsed,
         ) {
             let target = water_target_submerged(body.density);
@@ -2273,7 +2275,7 @@ fn blended_water_samples_2d(
     body_layers: BitMask,
     body_mask: BitMask,
     water_index: &RuntimeWaterIndex2D,
-    _water_samples: &AHashMap<NodeID, perro_nodes::WaterPhysicsSample>,
+    water_samples: &AHashMap<NodeID, perro_nodes::WaterPhysicsSample>,
     elapsed: f32,
 ) -> Vec<BlendedWaterSample2D> {
     let mut first = None;
@@ -2295,7 +2297,12 @@ fn blended_water_samples_2d(
         if !water.surface.shape.contains_surface(local) {
             continue;
         }
-        let sample = water_physics_sample_for_body(&water.surface, local, elapsed);
+        let sample = water_physics_sample_for_body_cached(
+            &water.surface,
+            local,
+            elapsed,
+            water_samples.get(&water.id).copied(),
+        );
         let surface_point =
             water_global_point_2d(water.transform, Vector2::new(local.x, sample.height));
         let candidate = WaterCandidate2D {
@@ -2327,7 +2334,7 @@ fn blended_water_samples_3d(
     body_layers: BitMask,
     body_mask: BitMask,
     water_index: &RuntimeWaterIndex3D,
-    _water_samples: &AHashMap<NodeID, perro_nodes::WaterPhysicsSample>,
+    water_samples: &AHashMap<NodeID, perro_nodes::WaterPhysicsSample>,
     elapsed: f32,
 ) -> Vec<BlendedWaterSample3D> {
     let mut first = None;
@@ -2350,7 +2357,12 @@ fn blended_water_samples_3d(
         if !water.surface.shape.contains_surface(local) {
             continue;
         }
-        let sample = water_physics_sample_for_body(&water.surface, local, elapsed);
+        let sample = water_physics_sample_for_body_cached(
+            &water.surface,
+            local,
+            elapsed,
+            water_samples.get(&water.id).copied(),
+        );
         let surface_point = water_global_point_3d(
             water.transform,
             Vector3::new(local3.x, sample.height, local3.z),
@@ -2510,9 +2522,27 @@ pub(crate) fn water_physics_sample_for_body(
     local: Vector2,
     elapsed: f32,
 ) -> perro_nodes::WaterPhysicsSample {
+    water_physics_sample_for_body_cached(surface, local, elapsed, None)
+}
+
+pub(crate) fn water_physics_sample_for_body_cached(
+    surface: &perro_nodes::WaterSurfaceParams,
+    local: Vector2,
+    elapsed: f32,
+    cached: Option<perro_nodes::WaterPhysicsSample>,
+) -> perro_nodes::WaterPhysicsSample {
     let mut sample = water_physics_sample_or_idle(surface, local, elapsed, None);
+    let height_offset = cached.map_or(0.0, |cached| {
+        let center_now = water_physics_sample_or_idle(surface, Vector2::ZERO, elapsed, None).height;
+        cached.height - center_now
+    });
+    sample.height += height_offset;
+    if let Some(cached) = cached {
+        sample.foam = cached.foam;
+    }
     let prev_height =
-        water_physics_sample_or_idle(surface, local, elapsed - WATER_WAVE_FOLLOW_DT, None).height;
+        water_physics_sample_or_idle(surface, local, elapsed - WATER_WAVE_FOLLOW_DT, None).height
+            + height_offset;
     sample.velocity.y = (sample.height - prev_height) / WATER_WAVE_FOLLOW_DT;
     sample.velocity.x = surface.flow.dot(water_wave_local_dir(*surface));
     sample

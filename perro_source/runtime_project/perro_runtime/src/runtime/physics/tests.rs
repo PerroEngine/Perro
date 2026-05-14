@@ -355,6 +355,7 @@ fn floating_body_tracks_wave_vertical_velocity() {
     assert!(sample.velocity.y.abs() > 0.01);
 
     let water = RuntimeWater2D {
+        id: NodeID::from_parts(1, 0),
         half: Vector2::new(8.0, 8.0),
         transform: Mat3::IDENTITY,
         inv_transform: Mat3::IDENTITY,
@@ -399,6 +400,28 @@ fn floating_body_tracks_wave_vertical_velocity() {
 }
 
 #[test]
+fn water_physics_uses_cached_visual_height_offset() {
+    let surface = WaterSurfaceParams {
+        shape: WaterShape::rect(Vector2::new(16.0, 16.0)),
+        idle_mode: WaterIdleMode::Sine,
+        ..WaterSurfaceParams::default()
+    };
+    let local = Vector2::new(2.0, -1.0);
+    let elapsed = 0.25;
+    let analytic = water_physics_sample_for_body(&surface, local, elapsed);
+    let center = water_physics_sample_for_body(&surface, Vector2::ZERO, elapsed);
+    let cached = perro_nodes::WaterPhysicsSample {
+        height: center.height + 0.75,
+        velocity: Vector2::ZERO,
+        foam: 0.6,
+    };
+    let synced = water_physics_sample_for_body_cached(&surface, local, elapsed, Some(cached));
+
+    assert!((synced.height - analytic.height - 0.75).abs() < 0.001);
+    assert_eq!(synced.foam, 0.6);
+}
+
+#[test]
 fn floating_body_gets_mass_scaled_wave_drive() {
     let mut surface = WaterSurfaceParams {
         shape: WaterShape::rect(Vector2::new(16.0, 16.0)),
@@ -410,6 +433,7 @@ fn floating_body_gets_mass_scaled_wave_drive() {
     surface.physics.wake_strength = 2.0;
 
     let water = RuntimeWater2D {
+        id: NodeID::from_parts(1, 0),
         half: Vector2::new(8.0, 8.0),
         transform: Mat3::IDENTITY,
         inv_transform: Mat3::IDENTITY,
@@ -457,6 +481,7 @@ fn deeply_submerged_3d_body_gets_enough_lift_to_leave_bed() {
     surface.physics.drag = 0.55;
 
     let water = RuntimeWater3D {
+        id: NodeID::from_parts(1, 0),
         half: Vector2::new(8.0, 8.0),
         transform: Mat4::IDENTITY,
         inv_transform: Mat4::IDENTITY,
@@ -492,6 +517,7 @@ fn downward_surface_entry_creates_water_splash() {
     surface.physics.wake_strength = 2.0;
 
     let water = RuntimeWater2D {
+        id: NodeID::from_parts(1, 0),
         half: Vector2::new(8.0, 8.0),
         transform: Mat3::IDENTITY,
         inv_transform: Mat3::IDENTITY,
@@ -532,6 +558,7 @@ fn water_link_mask_blocks_2d_blend() {
     b.link.link_layers = BitMask::with([1]);
 
     let wa = RuntimeWater2D {
+        id: NodeID::from_parts(1, 0),
         half: a.shape.surface_size() * 0.5,
         transform: glam::Mat3::IDENTITY,
         inv_transform: glam::Mat3::IDENTITY,
@@ -541,6 +568,7 @@ fn water_link_mask_blocks_2d_blend() {
         surface: a,
     };
     let wb = RuntimeWater2D {
+        id: NodeID::from_parts(2, 0),
         half: b.shape.surface_size() * 0.5,
         transform: glam::Mat3::from_translation(glam::Vec2::new(4.0, 0.0)),
         inv_transform: glam::Mat3::from_translation(glam::Vec2::new(4.0, 0.0)).inverse(),

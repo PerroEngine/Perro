@@ -499,13 +499,13 @@ impl GpuWater {
         for ((node, _), water) in waters_2d.iter().zip(staged.iter()) {
             if water.sim[1] > 0 {
                 self.readback_nodes.push(*node);
-                self.readback_offsets.push(water.sim[0] as usize);
+                self.readback_offsets.push(water_center_cell_offset(water));
             }
         }
         for ((node, _), water) in waters_3d.iter().zip(staged.iter().skip(waters_2d.len())) {
             if water.sim[1] > 0 {
                 self.readback_nodes.push(*node);
-                self.readback_offsets.push(water.sim[0] as usize);
+                self.readback_offsets.push(water_center_cell_offset(water));
             }
         }
     }
@@ -852,8 +852,9 @@ fn raster_coastline_2d(out: &mut [[f32; 4]], resolution: [u32; 2], water: &Water
                 let t = (dist / radius).clamp(0.0, 1.0);
                 let push = 1.0 - t;
                 let ring = (1.0 - ((t - 0.72).abs() / 0.28).clamp(0.0, 1.0)).powi(2);
-                wake += push * impact.strength / 256.0;
-                wake += (push * 0.35 + ring * 0.65) * impact.cavitation;
+                let strength = impact.strength * (1.0 / 180.0);
+                wake += push * (strength * 0.70 + impact.cavitation * 0.28)
+                    + ring * (strength * 0.30 + impact.cavitation * 0.92);
             }
             let wake = wake.clamp(0.0, 1.0);
             out[y * width + x] = [solid, edge.max(foam_edge), wake, spill_energy.max(wake)];
@@ -893,8 +894,9 @@ fn raster_impacts_2d(out: &mut [[f32; 4]], width: usize, height: usize, water: &
                 }
                 let t = (dist / radius).clamp(0.0, 1.0);
                 let ring = (1.0 - ((t - 0.72).abs() / 0.28).clamp(0.0, 1.0)).powi(2);
-                let wake = amount * impact.strength / 256.0
-                    + (amount * 0.35 + ring * 0.65) * impact.cavitation;
+                let strength = impact.strength * (1.0 / 180.0);
+                let wake = amount * (strength * 0.70 + impact.cavitation * 0.28)
+                    + ring * (strength * 0.30 + impact.cavitation * 0.92);
                 let cell = &mut out[y * width + x];
                 cell[2] = (cell[2] + wake).clamp(0.0, 1.0);
                 cell[3] = cell[2];
@@ -989,8 +991,9 @@ fn raster_coastline_3d(out: &mut [[f32; 4]], resolution: [u32; 2], water: &Water
                 let t = (dist / radius).clamp(0.0, 1.0);
                 let push = 1.0 - t;
                 let ring = (1.0 - ((t - 0.72).abs() / 0.28).clamp(0.0, 1.0)).powi(2);
-                wake += push * impact.strength / 256.0;
-                wake += (push * 0.35 + ring * 0.65) * impact.cavitation;
+                let strength = impact.strength * (1.0 / 180.0);
+                wake += push * (strength * 0.70 + impact.cavitation * 0.28)
+                    + ring * (strength * 0.30 + impact.cavitation * 0.92);
             }
             let wake = wake.clamp(0.0, 1.0);
             out[y * width + x] = [solid, edge.max(foam_edge), wake, spill_energy.max(wake)];
@@ -1040,8 +1043,9 @@ fn raster_impacts_3d(out: &mut [[f32; 4]], width: usize, height: usize, water: &
                 }
                 let t = (dist / radius).clamp(0.0, 1.0);
                 let ring = (1.0 - ((t - 0.72).abs() / 0.28).clamp(0.0, 1.0)).powi(2);
-                let wake = amount * impact.strength / 256.0
-                    + (amount * 0.35 + ring * 0.65) * impact.cavitation;
+                let strength = impact.strength * (1.0 / 180.0);
+                let wake = amount * (strength * 0.70 + impact.cavitation * 0.28)
+                    + ring * (strength * 0.30 + impact.cavitation * 0.92);
                 let cell = &mut out[y * width + x];
                 cell[2] = (cell[2] + wake).clamp(0.0, 1.0);
                 cell[3] = cell[2];
@@ -1096,6 +1100,13 @@ fn water_cell_count(resolution: [u32; 2]) -> usize {
     let x = resolution[0].clamp(1, 256) as usize;
     let y = resolution[1].clamp(1, 256) as usize;
     x.saturating_mul(y)
+}
+
+fn water_center_cell_offset(water: &WaterGpu) -> usize {
+    let width = water.sim[2].max(1);
+    let height = water.sim[3].max(1);
+    let center = (height / 2).saturating_mul(width).saturating_add(width / 2);
+    water.sim[0].saturating_add(center.min(water.sim[1].saturating_sub(1))) as usize
 }
 
 fn water_3d_vertex_count(water: &WaterGpu) -> u32 {
@@ -1660,10 +1671,10 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let prev = cells[cell_idx].x * w.wave.z * (1.0 - shore * w.coastline.w * 0.70) * (0.72 + spill * 0.28);
     let crest_norm = idle / max(w.wave.y, 0.001);
     let crest_line = smoothstep(0.50, 0.86, crest_norm) * (1.0 - smoothstep(1.10, 1.80, crest_norm));
-    let wave_foam = crest_line * bitcast<f32>(w.flags.w) * 0.28;
-    let impact_foam = smoothstep(0.16, 1.25, wake + abs(crash)) * bitcast<f32>(w.flags.w) * 0.38;
-    let shore_foam = smoothstep(0.45, 1.65, crash) * (1.0 - smoothstep(1.65, 2.8, crash)) * w.coastline.x * bitcast<f32>(w.flags.w);
-    let foam = clamp(wave_foam + impact_foam + shore_foam + spill * max(wake, shore) * 0.18, 0.0, 1.0);
+    let wave_foam = crest_line * bitcast<f32>(w.flags.w) * 0.34;
+    let impact_foam = smoothstep(0.10, 1.05, wake + abs(crash)) * bitcast<f32>(w.flags.w) * 0.50;
+    let shore_foam = smoothstep(0.30, 1.55, crash + shore * 0.42) * (1.0 - smoothstep(1.65, 2.8, crash)) * w.coastline.x * bitcast<f32>(w.flags.w);
+    let foam = clamp(wave_foam + impact_foam + shore_foam + spill * max(wake, shore) * 0.26, 0.0, 1.0);
     let height = mix(prev + idle * (0.030 + shore * w.model_y.w * 0.18) + wake * 0.24 + crash, idle + wake * 0.24 + crash, 0.48 + spill * 0.10);
     cells[cell_idx] = vec4<f32>(height, idle, foam, shore);
 }
@@ -2014,9 +2025,11 @@ fn water_line_layer(p: vec2<f32>, dir: vec2<f32>, t: f32, scale: f32) -> vec3<f3
 }
 
 fn water_schlick_fresnel(cos_theta: f32, power: f32) -> f32 {
-    let f0 = 0.012;
-    let edge = pow(1.0 - clamp(cos_theta, 0.0, 1.0), max(power * 1.35, 0.001));
-    return f0 + (1.0 - f0) * edge * 0.58;
+    let f0 = 0.020;
+    let grazing = 1.0 - clamp(cos_theta, 0.0, 1.0);
+    let edge = pow(grazing, max(power, 0.001));
+    let shoulder = smoothstep(0.18, 0.88, grazing);
+    return f0 + (1.0 - f0) * (edge * 0.68 + shoulder * 0.18);
 }
 
 struct WaterVertexLocal {
