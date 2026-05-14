@@ -103,6 +103,11 @@ Height is world `y`.
 - `lod_min_resolution` or `min_resolution`: lowest effective simulation resolution inside `lod_far`. GPU clamps it to `1..256`.
 - `collision_layers`: water sensor tagged layers. Defaults to all layers.
 - `collision_mask`: tagged layers water ignores for buoyancy, wakes, and coastline. Defaults to no layers.
+- `link_layers`: water link layers. Defaults to all layers.
+- `link_mask`: water link layers ignored for automatic cross-body blending. Defaults to no layers.
+- `blend_width`: explicit overlap blend width. `0` picks an automatic cubic blend width from the overlap size.
+- `wave_transfer`: wave/foam transfer multiplier across linked water. Defaults to `1`.
+- `flow_transfer`: flow velocity transfer multiplier across linked water. Defaults to `1`.
 - `coastline`: foam color, foam strength/width, cutoff softness, wave reflection/damping, and edge noise for static-body shorelines.
 - `debug`: enable debug water view.
 
@@ -110,13 +115,14 @@ Defaults:
 
 - `WaterBody2D`: `size = (32, 32)`, `resolution = (128, 128)`, `depth = 4`.
 - `WaterBody3D`: `size = (128, 128)`, `resolution = (128, 128)`, `depth = 12`.
-- Shared defaults: `idle_mode = "calm"`, `wave_speed = 1`, `wave_scale = 1`, `damping = 0.985`, `deep_color = (0.02, 0.16, 0.28, 0.86)`, `shallow_color = (0.08, 0.46, 0.62, 0.48)`, `shallow_depth = -1`, `sky_bias = "none"`, `buoyancy = 1`, `drag = 0.35`, `wake_strength = 1`, `foam_strength = 0.65`, `sample_readback_rate = 30`, `lod_near = 128`, `lod_mid = 384`, `lod_far = 896`, `min_resolution = (32, 32)`, `collision_layers = all`, `collision_mask = []`.
+- Shared defaults: `idle_mode = "calm"`, `wave_speed = 1`, `wave_scale = 1`, `damping = 0.985`, `deep_color = (0.02, 0.16, 0.28, 0.86)`, `shallow_color = (0.08, 0.46, 0.62, 0.48)`, `shallow_depth = -1`, `sky_bias = "none"`, `buoyancy = 1`, `drag = 0.35`, `wake_strength = 1`, `foam_strength = 0.65`, `sample_readback_rate = 30`, `lod_near = 128`, `lod_mid = 384`, `lod_far = 896`, `min_resolution = (32, 32)`, `collision_layers = all`, `collision_mask = []`, `link_layers = all`, `link_mask = []`, `blend_width = 0`, `wave_transfer = 1`, `flow_transfer = 1`.
 
 ## Runtime Work
 
 The GPU simulates water cells inside the water shape bounds for all visible water bodies inside `lod_far`.
 Water past `lod_far` keeps the analytic visual surface but skips ripple/coastline simulation and readback.
-Each water body simulates separately; adjacent bodies do not merge or bake waves into each other.
+Intersecting water bodies auto-link when link layers/masks allow it.
+Linked bodies keep separate simulation grids, but overlap samples use a cubic blend for surface height, flow, foam, buoyancy, and wake transfer.
 Effective grid resolution drops with camera distance: full near, half mid, quarter far, and off beyond far.
 Ripples also fade with distance.
 

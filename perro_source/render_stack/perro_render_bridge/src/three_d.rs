@@ -1,6 +1,6 @@
 use super::*;
-use crate::two_d::{WaterIdleModeState, WaterShapeState};
-use perro_structs::{AudioListenerOptions, BitMask};
+use crate::two_d::{WaterIdleModeState, WaterLinkState, WaterShapeState};
+use perro_structs::{AudioListenerOptions, BitMask, Color};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Camera3DState {
@@ -133,6 +133,7 @@ pub struct Water3DState {
     pub coastline_wave_damping: f32,
     pub coastline_edge_noise: f32,
     pub debug: bool,
+    pub links: Arc<[WaterLinkState]>,
     pub impacts: Arc<[WaterImpact3D]>,
     pub coastline_shapes: Arc<[WaterCoastlineShape3D]>,
 }
@@ -679,7 +680,43 @@ pub struct MaterialParamOverride3D {
 pub struct MeshSurfaceBinding3D {
     pub material: Option<MaterialID>,
     pub overrides: Arc<[MaterialParamOverride3D]>,
-    pub modulate: [f32; 4],
+    pub modulate: Color,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MeshBlendOptions3D {
+    pub enabled: bool,
+    pub blend_layers: BitMask,
+    pub blend_mask: BitMask,
+    pub distance: f32,
+    pub min_distance: f32,
+    pub noise_factor: f32,
+    pub noise_scale: f32,
+}
+
+impl MeshBlendOptions3D {
+    pub const fn new() -> Self {
+        Self {
+            enabled: false,
+            blend_layers: BitMask::ALL,
+            blend_mask: BitMask::NONE,
+            distance: 0.10,
+            min_distance: 0.0,
+            noise_factor: 0.0,
+            noise_scale: 1.0,
+        }
+    }
+
+    #[inline]
+    pub const fn active(self) -> bool {
+        self.enabled && self.blend_layers.bits() != 0 && self.blend_mask.bits() != 0
+    }
+}
+
+impl Default for MeshBlendOptions3D {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

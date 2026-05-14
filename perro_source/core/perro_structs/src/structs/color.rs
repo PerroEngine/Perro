@@ -59,9 +59,19 @@ impl Color {
         [self.r, self.g, self.b, self.a]
     }
 
+    #[inline(always)]
+    pub const fn to_gpu(self) -> [f32; 4] {
+        self.to_rgba()
+    }
+
     #[inline]
     pub const fn from_rgba(v: [f32; 4]) -> Self {
         Self::new(v[0], v[1], v[2], v[3])
+    }
+
+    #[inline(always)]
+    pub const fn from_gpu(v: [f32; 4]) -> Self {
+        Self::from_rgba(v)
     }
 
     #[inline]
@@ -135,6 +145,20 @@ impl Color {
 impl fmt::Display for Color {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Color({}, {}, {}, {})", self.r, self.g, self.b, self.a)
+    }
+}
+
+impl From<Color> for [f32; 4] {
+    #[inline(always)]
+    fn from(value: Color) -> Self {
+        value.to_gpu()
+    }
+}
+
+impl From<[f32; 4]> for Color {
+    #[inline(always)]
+    fn from(value: [f32; 4]) -> Self {
+        Self::from_gpu(value)
     }
 }
 

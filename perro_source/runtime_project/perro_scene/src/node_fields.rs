@@ -139,6 +139,11 @@ pub enum WaterBodyField {
     LodMinResolution,
     CollisionLayers,
     CollisionMask,
+    LinkLayers,
+    LinkMask,
+    BlendWidth,
+    WaveTransfer,
+    FlowTransfer,
     DeepColor,
     ShallowColor,
     ShallowDepth,
@@ -275,6 +280,12 @@ pub enum MeshInstance3DField {
     Meshlets,
     MinLod,
     MaxLod,
+    Blend,
+    BlendEnabled,
+    BlendLayers,
+    BlendMask,
+    BlendDistance,
+    BlendMinDistance,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -753,6 +764,22 @@ fn resolve_scene_node_field_for_type(
             }
             SceneFieldName::MinLod => Some(NodeField::MeshInstance3D(MeshInstance3DField::MinLod)),
             SceneFieldName::MaxLod => Some(NodeField::MeshInstance3D(MeshInstance3DField::MaxLod)),
+            SceneFieldName::Blend => Some(NodeField::MeshInstance3D(MeshInstance3DField::Blend)),
+            SceneFieldName::BlendEnabled => {
+                Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendEnabled))
+            }
+            SceneFieldName::BlendLayers => {
+                Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendLayers))
+            }
+            SceneFieldName::BlendMask => {
+                Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendMask))
+            }
+            SceneFieldName::BlendDistance => Some(NodeField::MeshInstance3D(
+                MeshInstance3DField::BlendDistance,
+            )),
+            SceneFieldName::BlendMinDistance => Some(NodeField::MeshInstance3D(
+                MeshInstance3DField::BlendMinDistance,
+            )),
             _ => None,
         },
         NodeType::Skeleton2D => match field {
@@ -1170,6 +1197,18 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
             }
             "min_lod" | "lod_min" => Some(NodeField::MeshInstance3D(MeshInstance3DField::MinLod)),
             "max_lod" | "lod_max" => Some(NodeField::MeshInstance3D(MeshInstance3DField::MaxLod)),
+            "blend" | "mesh_blend" | "blending" => {
+                Some(NodeField::MeshInstance3D(MeshInstance3DField::Blend))
+            }
+            "blend_enabled" => Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendEnabled)),
+            "blend_layers" => Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendLayers)),
+            "blend_mask" => Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendMask)),
+            "blend_distance" | "blend_size" => Some(NodeField::MeshInstance3D(
+                MeshInstance3DField::BlendDistance,
+            )),
+            "blend_min_distance" | "blend_min_size" => Some(NodeField::MeshInstance3D(
+                MeshInstance3DField::BlendMinDistance,
+            )),
             _ => None,
         },
         NodeType::MultiMeshInstance3D => match field {
@@ -1182,6 +1221,18 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
             }
             "min_lod" | "lod_min" => Some(NodeField::MeshInstance3D(MeshInstance3DField::MinLod)),
             "max_lod" | "lod_max" => Some(NodeField::MeshInstance3D(MeshInstance3DField::MaxLod)),
+            "blend" | "mesh_blend" | "blending" => {
+                Some(NodeField::MeshInstance3D(MeshInstance3DField::Blend))
+            }
+            "blend_enabled" => Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendEnabled)),
+            "blend_layers" => Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendLayers)),
+            "blend_mask" => Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendMask)),
+            "blend_distance" | "blend_size" => Some(NodeField::MeshInstance3D(
+                MeshInstance3DField::BlendDistance,
+            )),
+            "blend_min_distance" | "blend_min_size" => Some(NodeField::MeshInstance3D(
+                MeshInstance3DField::BlendMinDistance,
+            )),
             _ => None,
         },
         NodeType::Skeleton3D => match field {
@@ -1481,6 +1532,11 @@ fn resolve_water_body(field: &str) -> Option<WaterBodyField> {
         "lod_min_resolution" | "min_resolution" => Some(WaterBodyField::LodMinResolution),
         "collision_layers" => Some(WaterBodyField::CollisionLayers),
         "collision_mask" => Some(WaterBodyField::CollisionMask),
+        "link_layers" | "water_link_layers" => Some(WaterBodyField::LinkLayers),
+        "link_mask" | "water_link_mask" => Some(WaterBodyField::LinkMask),
+        "blend_width" | "link_blend_width" => Some(WaterBodyField::BlendWidth),
+        "wave_transfer" | "link_wave_transfer" => Some(WaterBodyField::WaveTransfer),
+        "flow_transfer" | "link_flow_transfer" => Some(WaterBodyField::FlowTransfer),
         "deep_color" | "deep_water_color" => Some(WaterBodyField::DeepColor),
         "shallow_color" | "shallow_water_color" => Some(WaterBodyField::ShallowColor),
         "shallow_depth" | "shallow_cutoff" | "shallowness" | "shallowness_depth" => {
@@ -1889,6 +1945,27 @@ mod tests {
             Some(NodeField::Node3D(Node3DField::RenderLayers))
         );
         assert_eq!(resolve_node_field("MeshInstance3D", "render_mask"), None);
+    }
+
+    #[test]
+    fn mesh_blend_fields_use_layers_and_mask_names() {
+        assert_eq!(
+            resolve_node_field("MeshInstance3D", "blend_layers"),
+            Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendLayers))
+        );
+        assert_eq!(
+            resolve_node_field("MeshInstance3D", "blend_mask"),
+            Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendMask))
+        );
+        assert_eq!(
+            resolve_node_field("MultiMeshInstance3D", "blend_layers"),
+            Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendLayers))
+        );
+        assert_eq!(
+            resolve_node_field("MultiMeshInstance3D", "blend_mask"),
+            Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendMask))
+        );
+        assert_eq!(resolve_node_field("MeshInstance3D", "blend_layer"), None);
     }
 
     #[test]

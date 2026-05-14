@@ -45,6 +45,7 @@ struct DecodedMaterialParams {
     meshlet_debug_view: bool,
     flat_shading: bool,
     has_base_color_texture: bool,
+    mesh_blend: bool,
 }
 
 @group(0) @binding(0)
@@ -65,6 +66,8 @@ var<uniform> shadow: Shadow3D;
 var shadow_map_tex: texture_depth_2d;
 @group(2) @binding(2)
 var shadow_map_sampler: sampler_comparison;
+@group(3) @binding(0)
+var mesh_blend_depth_tex: texture_depth_2d;
 
 struct VertexInput {
     @location(0) pos: vec3<f32>,
@@ -100,6 +103,7 @@ struct VertexOutput {
 };
 
 struct FragmentInput {
+    @builtin(position) frag_pos: vec4<f32>,
     @builtin(front_facing) is_front: bool,
     @location(0) world_pos: vec3<f32>,
     @location(1) normal_ws: vec3<f32>,
@@ -139,7 +143,48 @@ fn decode_material_params(packed: u32) -> DecodedMaterialParams {
         (flags & 0x1u) != 0u,
         (flags & 0x2u) != 0u,
         (flags & 0x4u) != 0u,
+        (flags & 0x8u) != 0u,
     );
+}
+
+fn decode_mesh_blend_params(packed: u32) -> vec4<f32> {
+    return vec4<f32>(
+        unpack_unorm8(packed, 0u) * 16.0,
+        unpack_unorm8(packed, 8u) * 16.0,
+        unpack_unorm8(packed, 16u),
+        unpack_unorm8(packed, 24u) * 64.0,
+    );
+}
+
+fn mesh_blend_noise(p: vec2<f32>) -> f32 {
+    return fract(sin(dot(p, vec2<f32>(12.9898, 78.233))) * 43758.5453);
+}
+
+fn apply_mesh_blend_alpha(in: FragmentInput, material: DecodedMaterialParams, alpha: f32) -> f32 {
+    if !material.mesh_blend {
+        return alpha;
+    }
+    let dims_u = textureDimensions(mesh_blend_depth_tex);
+    let dims = vec2<i32>(i32(dims_u.x), i32(dims_u.y));
+    let coord = vec2<i32>(floor(in.frag_pos.xy));
+    if any(coord < vec2<i32>(0)) || any(coord >= dims) {
+        return alpha;
+    }
+    let scene_depth = textureLoad(mesh_blend_depth_tex, coord, 0);
+    if scene_depth >= 0.999999 {
+        return alpha;
+    }
+    let params = decode_mesh_blend_params(in.packed_pbr_params_1);
+    let max_width = max(params.x * 0.01, 0.00001);
+    let min_width = min(params.y * 0.01, max_width);
+    var noise = 0.0;
+    if params.z > 0.0 {
+        let tile = max(params.w, 1.0);
+        noise = (mesh_blend_noise(floor(in.frag_pos.xy / tile)) - 0.5) * params.z * max_width;
+    }
+    let depth_delta = abs(in.frag_pos.z - scene_depth) + noise;
+    let fade = smoothstep(min_width, max_width, depth_delta);
+    return alpha * fade;
 }
 
 fn decode_standard_pbr_params(packed_0: u32, packed_1: u32) -> vec4<f32> {

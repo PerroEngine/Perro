@@ -32,7 +32,7 @@ use perro_ids::MeshID;
 use perro_io::load_asset;
 use perro_render_bridge::{
     Camera3DState, CameraProjectionState, LODOptions3D, Material3D, MaterialParamOverride3D,
-    MaterialParamOverrideValue3D, MeshSurfaceBinding3D, StandardMaterial3D,
+    MaterialParamOverrideValue3D, MeshBlendOptions3D, MeshSurfaceBinding3D, StandardMaterial3D,
 };
 use std::{
     borrow::Cow,
@@ -115,6 +115,7 @@ const SHADOW_MAP_DEPTH_BIAS_SLOPE: f32 = 2.0;
 const MATERIAL_FLAG_MESHLET_DEBUG_VIEW: u32 = 1u32 << 0;
 const MATERIAL_FLAG_FLAT_SHADING: u32 = 1u32 << 1;
 const MATERIAL_FLAG_HAS_BASE_COLOR_TEXTURE: u32 = 1u32 << 2;
+const MATERIAL_FLAG_MESH_BLEND: u32 = 1u32 << 3;
 const CUSTOM_PARAM_KIND_SCALAR: u32 = 0;
 const CUSTOM_PARAM_KIND_VEC2: u32 = 1;
 const CUSTOM_PARAM_KIND_VEC3: u32 = 2;
@@ -233,7 +234,7 @@ struct MultiMeshDrawParamGpu {
     packed_color: u32,
     packed_emissive: u32,
     scale_bits: u32,
-    _pad: u32,
+    packed_blend_params: u32,
 }
 
 #[repr(C)]
@@ -338,6 +339,8 @@ pub struct Gpu3D {
     _shadow_map_texture: wgpu::Texture,
     shadow_map_view: wgpu::TextureView,
     _shadow_map_sampler: wgpu::Sampler,
+    mesh_blend_bgl: wgpu::BindGroupLayout,
+    mesh_blend_bind_group: wgpu::BindGroup,
     sky_buffer: wgpu::Buffer,
     sky_bind_group: wgpu::BindGroup,
     _sky_noise_texture: wgpu::Texture,
@@ -399,6 +402,7 @@ pub struct Gpu3D {
     draw_batches: Vec<DrawBatch>,
     has_shadow_casters: bool,
     surface_entries_scratch: Vec<(MeshRange, Material3D)>,
+    mesh_blend_scratch: Vec<ResolvedMeshBlend>,
     last_draws: Vec<Draw3DInstance>,
     last_draws_revision: u64,
     last_draw_instance_spans: Vec<Range<u32>>,
@@ -565,6 +569,7 @@ struct DrawBatch {
     occlusion_query: Option<u32>,
     disable_hiz_occlusion: bool,
     casts_shadows: bool,
+    mesh_blend: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -770,6 +775,7 @@ mod tests {
                 occlusion_query: None,
                 disable_hiz_occlusion: false,
                 casts_shadows: true,
+                mesh_blend: false,
             },
         );
         push_draw_batch(
@@ -787,6 +793,7 @@ mod tests {
                 occlusion_query: None,
                 disable_hiz_occlusion: false,
                 casts_shadows: true,
+                mesh_blend: false,
             },
         );
 
@@ -833,6 +840,7 @@ mod tests {
                 occlusion_query: None,
                 disable_hiz_occlusion: false,
                 casts_shadows: true,
+                mesh_blend: false,
             },
         );
         push_draw_batch(
@@ -850,6 +858,7 @@ mod tests {
                 occlusion_query: None,
                 disable_hiz_occlusion: false,
                 casts_shadows: true,
+                mesh_blend: false,
             },
         );
         push_draw_batch(
@@ -867,6 +876,7 @@ mod tests {
                 occlusion_query: Some(11),
                 disable_hiz_occlusion: false,
                 casts_shadows: true,
+                mesh_blend: false,
             },
         );
 

@@ -3,6 +3,7 @@ mod tests {
     use super::*;
     use perro_nodes::SceneNodeData;
     use perro_scene::Parser;
+    use perro_structs::BitMask;
 
     #[test]
     fn water_body_scene_fields_parse() {
@@ -1198,6 +1199,67 @@ mod tests {
             SceneNodeData::MultiMeshInstance3D(mesh) => {
                 assert_eq!(mesh.lod.min_lod, 2);
                 assert_eq!(mesh.lod.max_lod, 4);
+            }
+            other => panic!("expected MultiMeshInstance3D node, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn scene_loader_parses_mesh_blend_options() {
+        let scene = Parser::new(
+            r#"
+            @root = Mesh
+            [Mesh]
+            [MeshInstance3D]
+                blend = { enabled=true blend_layers=[2, 4] blend_mask=[1, 3] distance=0.5 min_distance=0.05 noise=0.25 noise_scale=6.0 }
+            [/MeshInstance3D]
+            [/Mesh]
+
+            [Batch]
+            [MultiMeshInstance3D]
+                blend_enabled = true
+                blend_layers = [5]
+                blend_mask = none
+                blend_distance = 0.25
+            [/MultiMeshInstance3D]
+            [/Batch]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+
+        let mesh = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "Mesh")
+            .expect("mesh node");
+        match &mesh.node.data {
+            SceneNodeData::MeshInstance3D(mesh) => {
+                assert!(mesh.blend.enabled);
+                assert_eq!(mesh.blend.blend_layers, BitMask::with([2, 4]));
+                assert_eq!(mesh.blend.blend_mask, BitMask::with([1, 3]));
+                assert_eq!(mesh.blend.distance, 0.5);
+                assert_eq!(mesh.blend.min_distance, 0.05);
+                assert_eq!(mesh.blend.noise_factor, 0.25);
+                assert_eq!(mesh.blend.noise_scale, 6.0);
+            }
+            other => panic!("expected MeshInstance3D node, got {other:?}"),
+        }
+
+        let batch = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "Batch")
+            .expect("batch node");
+        match &batch.node.data {
+            SceneNodeData::MultiMeshInstance3D(mesh) => {
+                assert!(mesh.blend.enabled);
+                assert_eq!(mesh.blend.blend_layers, BitMask::with([5]));
+                assert_eq!(mesh.blend.blend_mask, BitMask::NONE);
+                assert_eq!(mesh.blend.distance, 0.25);
             }
             other => panic!("expected MultiMeshInstance3D node, got {other:?}"),
         }

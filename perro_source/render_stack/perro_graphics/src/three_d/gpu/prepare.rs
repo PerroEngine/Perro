@@ -489,8 +489,11 @@ impl Gpu3D {
         debug_edge_instances.clear();
         let mut surface_entries = std::mem::take(&mut self.surface_entries_scratch);
         surface_entries.clear();
+        let mut mesh_blends = std::mem::take(&mut self.mesh_blend_scratch);
+        resolve_mesh_blends(draws, &mut mesh_blends);
 
-        for draw in draws {
+        for (draw_index, draw) in draws.iter().enumerate() {
+            let resolved_blend = mesh_blends[draw_index];
             let draw_instance_start = self.staged_instance_transforms.len() as u32;
             let draw_span_start = self.last_draw_instance_spans.len();
             let is_debug_point = matches!(draw.kind, Draw3DKind::DebugPointCube);
@@ -606,7 +609,7 @@ impl Gpu3D {
                             packed_color,
                             packed_emissive,
                             scale_bits: dense.instance_scale.max(0.0001).to_bits(),
-                            _pad: 0,
+                            packed_blend_params: resolved_blend.packed_params,
                         });
                     let instance_start = self.staged_multimesh_instances.len() as u32;
                     for pose in dense.instances.iter().copied() {
@@ -715,6 +718,7 @@ impl Gpu3D {
                             BuildInstanceArgs {
                                 debug_view: self.meshlet_debug_view,
                                 debug_color: debug_color(draw.node.as_u64()),
+                                mesh_blend: resolved_blend,
                                 skeleton_start,
                                 skeleton_count,
                                 custom_params_offset,
@@ -749,6 +753,7 @@ impl Gpu3D {
                             BuildInstanceArgs {
                                 debug_view: self.meshlet_debug_view,
                                 debug_color: debug_color(draw.node.as_u64()),
+                                mesh_blend: resolved_blend,
                                 skeleton_start,
                                 skeleton_count,
                                 custom_params_offset,
@@ -788,6 +793,7 @@ impl Gpu3D {
                                 BuildInstanceArgs {
                                     debug_view: self.meshlet_debug_view,
                                     debug_color: debug_color(draw.node.as_u64()),
+                                    mesh_blend: resolved_blend,
                                     skeleton_start,
                                     skeleton_count,
                                     custom_params_offset,
@@ -828,8 +834,10 @@ impl Gpu3D {
                                     local_bounds: occlusion_bounds,
                                     occlusion_query,
                                     disable_hiz_occlusion: multi_instance
-                                        || standard_params.alpha_mode == 2,
+                                        || standard_params.alpha_mode == 2
+                                        || resolved_blend.active,
                                     casts_shadows: true,
+                                    mesh_blend: resolved_blend.active,
                                 },
                             );
                         }
@@ -882,6 +890,7 @@ impl Gpu3D {
                                 debug_color: debug_color(
                                     (draw.node.as_u64() << 32) ^ meshlet.index_start as u64,
                                 ),
+                                mesh_blend: resolved_blend,
                                 skeleton_start,
                                 skeleton_count,
                                 custom_params_offset,
@@ -928,8 +937,10 @@ impl Gpu3D {
                             local_bounds: (occlusion_center, occlusion_radius),
                             occlusion_query,
                             disable_hiz_occlusion: multi_instance
-                                || standard_params.alpha_mode == 2,
+                                || standard_params.alpha_mode == 2
+                                || resolved_blend.active,
                             casts_shadows: true,
+                            mesh_blend: resolved_blend.active,
                         },
                     );
                 }
@@ -940,6 +951,7 @@ impl Gpu3D {
             self.last_draw_instance_span_ranges
                 .push(draw_span_start..draw_span_end);
         }
+        self.mesh_blend_scratch = mesh_blends;
         self.surface_entries_scratch = surface_entries;
         if !debug_point_instances.is_empty() {
             debug_points_start = Some(self.staged_instance_transforms.len() as u32);
@@ -987,6 +999,7 @@ impl Gpu3D {
                 occlusion_query: None,
                 disable_hiz_occlusion: true,
                 casts_shadows: false,
+                mesh_blend: false,
             });
         }
         if let Some(instance_start) = debug_edges_start
@@ -1018,6 +1031,7 @@ impl Gpu3D {
                 occlusion_query: None,
                 disable_hiz_occlusion: true,
                 casts_shadows: false,
+                mesh_blend: false,
             });
         }
         if self.draw_batches.len() >= PARALLEL_BATCH_SORT_MIN {

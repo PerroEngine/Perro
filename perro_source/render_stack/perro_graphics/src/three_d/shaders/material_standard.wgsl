@@ -26,6 +26,7 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     if material.alpha_mode == 0u {
         alpha = 1.0;
     }
+    alpha = apply_mesh_blend_alpha(in, material, alpha);
     if material.meshlet_debug_view {
         return vec4<f32>(color.rgb, 1.0);
     }

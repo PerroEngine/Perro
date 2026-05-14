@@ -333,6 +333,10 @@ impl Gpu3D {
                     binding: 1,
                     resource: self.multimesh_draw_params_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&self.depth_prepass_view),
+                },
             ],
         });
     }

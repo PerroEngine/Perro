@@ -1,4 +1,4 @@
-use crate::mesh_instance_3d::{LODOptions, MeshSurfaceBinding};
+use crate::mesh_instance_3d::{LODOptions, MeshBlendOptions, MeshSurfaceBinding};
 use crate::node_3d::Node3D;
 use perro_ids::MeshID;
 use perro_structs::{Quaternion, Vector3};
@@ -29,6 +29,7 @@ pub struct MultiMeshInstance3D {
     // Some(false) => force classic indexed draw.
     pub meshlet_override: Option<bool>,
     pub lod: LODOptions,
+    pub blend: MeshBlendOptions,
 }
 
 impl MultiMeshInstance3D {
@@ -41,6 +42,7 @@ impl MultiMeshInstance3D {
             instance_scale: 1.0,
             meshlet_override: None,
             lod: LODOptions::new(),
+            blend: MeshBlendOptions::new(),
         }
     }
 

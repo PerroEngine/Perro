@@ -138,7 +138,7 @@ impl Gpu3D {
             prepass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             let mut current_state: Option<(RenderPath3D, bool)> = None;
             for (i, batch) in self.draw_batches.iter().enumerate() {
-                if batch.draw_on_top || batch.alpha_mode != 0 {
+                if batch.draw_on_top || batch.alpha_mode != 0 || batch.mesh_blend {
                     continue;
                 }
                 let state = (batch.path, batch.double_sided);
@@ -268,6 +268,7 @@ impl Gpu3D {
         } else {
             pass.set_bind_group(1, self.fallback_material_texture_bind_group(), &[]);
             pass.set_bind_group(2, &self.shadow_bind_group, &[]);
+            pass.set_bind_group(3, &self.mesh_blend_bind_group, &[]);
             pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             let mut current_state_key = None;
             let mut current_texture_slot = MATERIAL_TEXTURE_NONE;

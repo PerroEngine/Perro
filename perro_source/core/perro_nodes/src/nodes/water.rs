@@ -49,6 +49,27 @@ impl Default for WaterPhysicsParams {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WaterLinkParams {
+    pub link_layers: BitMask,
+    pub link_mask: BitMask,
+    pub blend_width: f32,
+    pub wave_transfer: f32,
+    pub flow_transfer: f32,
+}
+
+impl Default for WaterLinkParams {
+    fn default() -> Self {
+        Self {
+            link_layers: BitMask::ALL,
+            link_mask: BitMask::NONE,
+            blend_width: 0.0,
+            wave_transfer: 1.0,
+            flow_transfer: 1.0,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WaterLodParams {
     pub near_distance: f32,
     pub mid_distance: f32,
@@ -214,6 +235,7 @@ pub struct WaterSurfaceParams {
     pub lod: WaterLodParams,
     pub collision_layers: BitMask,
     pub collision_mask: BitMask,
+    pub link: WaterLinkParams,
     pub optics: WaterOpticsSettings,
     pub coastline: CoastlineSettings,
     pub debug: bool,
@@ -234,6 +256,7 @@ impl Default for WaterSurfaceParams {
             lod: WaterLodParams::default(),
             collision_layers: BitMask::ALL,
             collision_mask: BitMask::NONE,
+            link: WaterLinkParams::default(),
             optics: WaterOpticsSettings::default(),
             coastline: CoastlineSettings::default(),
             debug: false,
@@ -325,6 +348,16 @@ mod tests {
             water_impact_strength(9.0, Vector2::new(3.0, 4.0), -2.0),
             0.0
         );
+    }
+
+    #[test]
+    fn link_params_default_to_auto_link() {
+        let params = WaterSurfaceParams::default();
+        assert_eq!(params.link.link_layers, BitMask::ALL);
+        assert_eq!(params.link.link_mask, BitMask::NONE);
+        assert_eq!(params.link.blend_width, 0.0);
+        assert_eq!(params.link.wave_transfer, 1.0);
+        assert_eq!(params.link.flow_transfer, 1.0);
     }
 
     #[test]

@@ -87,6 +87,16 @@ Physics:
 - `BitMask::ALL` on a collision mask ignores all collision partners.
 - `BitMask::NONE` on collision layers means the collider belongs to no layers.
 
+Mesh Blend:
+
+- `blend_layers`: mesh tagged-layer membership for 3D mesh blending.
+- `blend_mask`: mesh ignored/target filter for 3D mesh blending.
+- Blending is active only when `blend_enabled = true`, `blend_layers` is not empty, and `blend_mask` is not empty.
+- Default `blend_layers` is `BitMask::ALL`.
+- Default `blend_mask` is `BitMask::NONE`.
+- `BitMask::NONE` on `blend_mask` means the mesh blends with nothing.
+- Use the same scene syntax as render and collision masks: `blend_layers = [1]`, `blend_mask = only(1, 2)`, or `blend_mask = none`.
+
 Audio:
 
 - `audio_layer`: emitted spatial audio tagged-layer membership.

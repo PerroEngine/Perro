@@ -2,10 +2,11 @@ use perro_graphics::{DrawFrameTiming, GraphicsBackend, PerroGraphics};
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
     Camera2DState, Camera3DState, Command2D, Command3D, DenseInstancePose3D, LODOptions3D,
-    Material3D, Mesh3D, MeshSurfaceBinding3D, PointLight3DState, PostProcessingCommand,
-    RayLight3DState, Rect2DCommand, RenderBridge, RenderCommand, RenderEvent, RenderRequestID,
-    ResourceCommand, RuntimeMeshVertex, Sky3DState, SkyTime3DState, SpotLight3DState,
-    Sprite2DCommand, Water2DState, Water3DState, WaterIdleModeState, WaterShapeState,
+    Material3D, Mesh3D, MeshBlendOptions3D, MeshSurfaceBinding3D, PointLight3DState,
+    PostProcessingCommand, RayLight3DState, Rect2DCommand, RenderBridge, RenderCommand,
+    RenderEvent, RenderRequestID, ResourceCommand, RuntimeMeshVertex, Sky3DState, SkyTime3DState,
+    SpotLight3DState, Sprite2DCommand, Water2DState, Water3DState, WaterIdleModeState,
+    WaterShapeState,
 };
 use perro_structs::{BitMask, PostProcessEffect, PostProcessSet};
 use std::sync::Arc;
@@ -334,6 +335,16 @@ fn main() {
                 setup: |w| setup_overdraw_meshes(w, 2_000),
                 redraw: redraw_3d,
             },
+            BenchCase {
+                name: "blend_stack_2k_smooth",
+                setup: |w| setup_blend_stack(w, 2_000, 0.0),
+                redraw: redraw_3d,
+            },
+            BenchCase {
+                name: "blend_stack_2k_noise",
+                setup: |w| setup_blend_stack(w, 2_000, 0.35),
+                redraw: redraw_3d,
+            },
         ],
     };
     event_loop.run_app(&mut app).expect("run app");
@@ -470,6 +481,32 @@ fn setup_overdraw_meshes(window: &Arc<Window>, count: u32) -> PerroGraphics {
     graphics
 }
 
+fn setup_blend_stack(window: &Arc<Window>, count: u32, noise_factor: f32) -> PerroGraphics {
+    let mut graphics = base_graphics(window);
+    let (mesh, material) = create_mesh_material(&mut graphics);
+    graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::SetRayLight {
+        node: NodeID::from_parts(61_000, 0),
+        light: RayLight3DState {
+            direction: [-0.4, -0.8, -0.2],
+            color: [1.0, 1.0, 1.0],
+            intensity: 0.7,
+            cast_shadows: false,
+        },
+    })));
+    let blend = MeshBlendOptions3D {
+        enabled: true,
+        blend_layers: BitMask::with([1]),
+        blend_mask: BitMask::with([1]),
+        distance: 0.25,
+        min_distance: 0.02,
+        noise_factor,
+        noise_scale: 8.0,
+    };
+    graphics.submit_many((0..count).map(|i| draw_overdraw_blend_command(i, mesh, material, blend)));
+    let _ = graphics.draw_frame_timed();
+    graphics
+}
+
 fn redraw_2d(graphics: &mut PerroGraphics) {
     graphics.submit(RenderCommand::TwoD(Command2D::SetCamera {
         camera: Camera2DState::default(),
@@ -553,6 +590,7 @@ fn water_command_with_idle(
             coastline_wave_damping: 0.35,
             coastline_edge_noise: 0.2,
             debug: false,
+            links: Arc::from([]),
             impacts: (0..impacts)
                 .map(|j| perro_render_bridge::WaterImpact2D {
                     position: [(j % 16) as f32 * 2.0, (j / 16) as f32 * 2.0],
@@ -610,6 +648,7 @@ fn water_sim_command(i: u32, resolution: u32, impacts: u32) -> RenderCommand {
             coastline_wave_damping: 0.35,
             coastline_edge_noise: 0.2,
             debug: false,
+            links: Arc::from([]),
             impacts: (0..impacts)
                 .map(|j| perro_render_bridge::WaterImpact3D {
                     position: [(j % 16) as f32 * 2.0, 0.0, (j / 16) as f32 * 2.0],
@@ -634,6 +673,7 @@ fn draw_command(i: u32, mesh: MeshID, material: MaterialID) -> RenderCommand {
         skeleton: None,
         meshlet_override: None,
         lod: LODOptions3D::default(),
+        blend: MeshBlendOptions3D::default(),
     }))
 }
 
@@ -651,6 +691,30 @@ fn draw_overdraw_command(i: u32, mesh: MeshID, material: MaterialID) -> RenderCo
         skeleton: None,
         meshlet_override: None,
         lod: LODOptions3D::default(),
+        blend: MeshBlendOptions3D::default(),
+    }))
+}
+
+fn draw_overdraw_blend_command(
+    i: u32,
+    mesh: MeshID,
+    material: MaterialID,
+    blend: MeshBlendOptions3D,
+) -> RenderCommand {
+    RenderCommand::ThreeD(Box::new(Command3D::Draw {
+        mesh,
+        surfaces: surface(material),
+        node: NodeID::from_parts(100_000 + i, 1),
+        model: [
+            [16.0, 0.0, 0.0, 0.0],
+            [0.0, 16.0, 0.0, 0.0],
+            [0.0, 0.0, 16.0, 0.02 * i as f32],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+        skeleton: None,
+        meshlet_override: None,
+        lod: LODOptions3D::default(),
+        blend,
     }))
 }
 
@@ -732,6 +796,7 @@ fn draw_multi_dense_command(count: u32, mesh: MeshID, material: MaterialID) -> R
         instances,
         meshlet_override: None,
         lod: LODOptions3D::default(),
+        blend: MeshBlendOptions3D::default(),
     }))
 }
 
@@ -765,7 +830,7 @@ fn surface(material: MaterialID) -> Arc<[MeshSurfaceBinding3D]> {
     Arc::from([MeshSurfaceBinding3D {
         material: Some(material),
         overrides: Arc::from([]),
-        modulate: [1.0, 1.0, 1.0, 1.0],
+        modulate: perro_structs::Color::WHITE,
     }])
 }
 

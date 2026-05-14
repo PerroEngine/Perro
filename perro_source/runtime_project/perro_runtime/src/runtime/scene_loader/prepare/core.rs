@@ -235,6 +235,31 @@ fn apply_water_body_fields(node: &mut WaterSurfaceParams, ty: &str, fields: &[Sc
                     node.collision_mask = v;
                 }
             }
+            WaterBodyField::LinkLayers => {
+                if let Some(v) = as_bitmask(value) {
+                    node.link.link_layers = v;
+                }
+            }
+            WaterBodyField::LinkMask => {
+                if let Some(v) = as_bitmask(value) {
+                    node.link.link_mask = v;
+                }
+            }
+            WaterBodyField::BlendWidth => {
+                if let Some(v) = as_f32(value) {
+                    node.link.blend_width = v.max(0.0);
+                }
+            }
+            WaterBodyField::WaveTransfer => {
+                if let Some(v) = as_f32(value) {
+                    node.link.wave_transfer = v.max(0.0);
+                }
+            }
+            WaterBodyField::FlowTransfer => {
+                if let Some(v) = as_f32(value) {
+                    node.link.flow_transfer = v.max(0.0);
+                }
+            }
             WaterBodyField::DeepColor => {
                 if let Some(v) = as_color(value) {
                     node.optics.deep_color = v;

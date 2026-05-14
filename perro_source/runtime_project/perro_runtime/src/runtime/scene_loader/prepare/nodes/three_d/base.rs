@@ -154,6 +154,34 @@ fn apply_mesh_instance_3d_fields(node: &mut MeshInstance3D, fields: &[SceneObjec
                     node.lod.max_lod = v.clamp(0, LODOptions::MAX as i32) as u8;
                 }
             }
+            "blend" | "mesh_blend" | "blending" => {
+                apply_mesh_blend_fields(&mut node.blend, value);
+            }
+            "blend_enabled" => {
+                if let Some(v) = as_bool(value) {
+                    node.blend.enabled = v;
+                }
+            }
+            "blend_layers" => {
+                if let Some(v) = as_bitmask(value) {
+                    node.blend.blend_layers = v;
+                }
+            }
+            "blend_mask" => {
+                if let Some(v) = as_bitmask(value) {
+                    node.blend.blend_mask = v;
+                }
+            }
+            "blend_distance" | "blend_size" => {
+                if let Some(v) = as_f32(value) {
+                    node.blend.distance = v.max(0.0);
+                }
+            }
+            "blend_min_distance" | "blend_min_size" => {
+                if let Some(v) = as_f32(value) {
+                    node.blend.min_distance = v.max(0.0);
+                }
+            }
             _ => {}
         }
     });
@@ -195,9 +223,91 @@ fn apply_multi_mesh_instance_3d_fields(
                     node.lod.max_lod = v.clamp(0, LODOptions::MAX as i32) as u8;
                 }
             }
+            "blend" | "mesh_blend" | "blending" => {
+                apply_mesh_blend_fields(&mut node.blend, value);
+            }
+            "blend_enabled" => {
+                if let Some(v) = as_bool(value) {
+                    node.blend.enabled = v;
+                }
+            }
+            "blend_layers" => {
+                if let Some(v) = as_bitmask(value) {
+                    node.blend.blend_layers = v;
+                }
+            }
+            "blend_mask" => {
+                if let Some(v) = as_bitmask(value) {
+                    node.blend.blend_mask = v;
+                }
+            }
+            "blend_distance" | "blend_size" => {
+                if let Some(v) = as_f32(value) {
+                    node.blend.distance = v.max(0.0);
+                }
+            }
+            "blend_min_distance" | "blend_min_size" => {
+                if let Some(v) = as_f32(value) {
+                    node.blend.min_distance = v.max(0.0);
+                }
+            }
             _ => {}
         }
     });
+}
+
+fn apply_mesh_blend_fields(
+    blend: &mut perro_nodes::MeshBlendOptions,
+    value: &SceneValue,
+) {
+    match value {
+        SceneValue::Bool(v) => {
+            blend.enabled = *v;
+        }
+        SceneValue::Object(entries) => {
+            for (key, value) in entries.iter() {
+                match key.as_ref() {
+                    "enabled" => {
+                        if let Some(v) = as_bool(value) {
+                            blend.enabled = v;
+                        }
+                    }
+                    "layers" | "blend_layers" => {
+                        if let Some(v) = as_bitmask(value) {
+                            blend.blend_layers = v;
+                        }
+                    }
+                    "mask" | "blend_mask" => {
+                        if let Some(v) = as_bitmask(value) {
+                            blend.blend_mask = v;
+                        }
+                    }
+                    "distance" | "size" | "blend_distance" | "blend_size" => {
+                        if let Some(v) = as_f32(value) {
+                            blend.distance = v.max(0.0);
+                        }
+                    }
+                    "min_distance" | "min_size" => {
+                        if let Some(v) = as_f32(value) {
+                            blend.min_distance = v.max(0.0);
+                        }
+                    }
+                    "noise_factor" | "noise" => {
+                        if let Some(v) = as_f32(value) {
+                            blend.noise_factor = v.clamp(0.0, 1.0);
+                        }
+                    }
+                    "noise_scale" | "noise_tile_size" => {
+                        if let Some(v) = as_f32(value) {
+                            blend.noise_scale = v.max(0.0001);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
+    }
 }
 
 fn apply_skeleton_3d_fields(_node: &mut Skeleton3D, _fields: &[SceneObjectField]) {}
@@ -486,10 +596,10 @@ fn parse_override_value(value: &SceneValue) -> Option<MaterialParamOverrideValue
     value.as_const_param()
 }
 
-fn parse_color(value: &SceneValue) -> Option<[f32; 4]> {
+fn parse_color(value: &SceneValue) -> Option<perro_structs::Color> {
     match value {
-        SceneValue::Vec4 { x, y, z, w } => Some([*x, *y, *z, *w]),
-        SceneValue::Vec3 { x, y, z } => Some([*x, *y, *z, 1.0]),
+        SceneValue::Vec4 { x, y, z, w } => Some(perro_structs::Color::new(*x, *y, *z, *w)),
+        SceneValue::Vec3 { x, y, z } => Some(perro_structs::Color::rgb(*x, *y, *z)),
         _ => None,
     }
 }

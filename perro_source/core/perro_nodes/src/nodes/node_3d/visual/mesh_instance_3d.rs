@@ -1,5 +1,6 @@
 use crate::node_3d::Node3D;
 use perro_ids::{MaterialID, MeshID, NodeID};
+use perro_structs::{BitMask, Color};
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
@@ -52,11 +53,42 @@ impl Default for LODOptions {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MeshBlendOptions {
+    pub enabled: bool,
+    pub blend_layers: BitMask,
+    pub blend_mask: BitMask,
+    pub distance: f32,
+    pub min_distance: f32,
+    pub noise_factor: f32,
+    pub noise_scale: f32,
+}
+
+impl MeshBlendOptions {
+    pub const fn new() -> Self {
+        Self {
+            enabled: false,
+            blend_layers: BitMask::ALL,
+            blend_mask: BitMask::NONE,
+            distance: 0.10,
+            min_distance: 0.0,
+            noise_factor: 0.0,
+            noise_scale: 1.0,
+        }
+    }
+}
+
+impl Default for MeshBlendOptions {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct MeshSurfaceBinding {
     pub material: Option<MaterialID>,
     pub overrides: Vec<MaterialParamOverride>,
-    pub modulate: [f32; 4],
+    pub modulate: Color,
 }
 
 impl Default for MeshSurfaceBinding {
@@ -64,7 +96,7 @@ impl Default for MeshSurfaceBinding {
         Self {
             material: None,
             overrides: Vec::new(),
-            modulate: [1.0, 1.0, 1.0, 1.0],
+            modulate: Color::WHITE,
         }
     }
 }
@@ -80,6 +112,7 @@ pub struct MeshInstance3D {
     // Some(false) => force classic indexed draw.
     pub meshlet_override: Option<bool>,
     pub lod: LODOptions,
+    pub blend: MeshBlendOptions,
 }
 
 impl MeshInstance3D {
@@ -91,6 +124,7 @@ impl MeshInstance3D {
             skeleton: NodeID::nil(),
             meshlet_override: None,
             lod: LODOptions::new(),
+            blend: MeshBlendOptions::new(),
         }
     }
 

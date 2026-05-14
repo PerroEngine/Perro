@@ -2,11 +2,12 @@ use criterion::{BatchSize, BenchmarkId, Criterion, black_box, criterion_group, c
 use perro_graphics::{GraphicsBackend, PerroGraphics};
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
-    Command2D, Command3D, LODOptions3D, Material3D, Mesh3D, MeshSurfaceBinding3D, RenderBridge,
-    RenderCommand, RenderEvent, RenderRequestID, ResourceCommand, RuntimeMeshVertex,
-    Sprite2DCommand, Water2DState, WaterIdleModeState, WaterShapeState,
+    Command2D, Command3D, DenseInstancePose3D, LODOptions3D, Material3D, Mesh3D,
+    MeshBlendOptions3D, MeshSurfaceBinding3D, RenderBridge, RenderCommand, RenderEvent,
+    RenderRequestID, ResourceCommand, RuntimeMeshVertex, Sprite2DCommand, Water2DState,
+    WaterIdleModeState, WaterShapeState,
 };
-use perro_structs::BitMask;
+use perro_structs::{BitMask, Color};
 use std::sync::Arc;
 
 fn rect_command(i: u32) -> RenderCommand {
@@ -41,6 +42,15 @@ fn sprite_command(i: u32, texture: TextureID) -> RenderCommand {
 }
 
 fn draw_3d_command(i: u32, mesh: MeshID, material: MaterialID) -> RenderCommand {
+    draw_3d_command_with_blend(i, mesh, material, MeshBlendOptions3D::default())
+}
+
+fn draw_3d_command_with_blend(
+    i: u32,
+    mesh: MeshID,
+    material: MaterialID,
+    blend: MeshBlendOptions3D,
+) -> RenderCommand {
     let x = (i % 256) as f32 * 2.0;
     let z = (i / 256) as f32 * 2.0;
     RenderCommand::ThreeD(Box::new(Command3D::Draw {
@@ -48,7 +58,7 @@ fn draw_3d_command(i: u32, mesh: MeshID, material: MaterialID) -> RenderCommand 
         surfaces: Arc::from([MeshSurfaceBinding3D {
             material: Some(material),
             overrides: Arc::from([]),
-            modulate: [1.0, 1.0, 1.0, 1.0],
+            modulate: Color::WHITE,
         }]),
         node: NodeID::from_parts(i + 1, 0),
         model: [
@@ -60,6 +70,42 @@ fn draw_3d_command(i: u32, mesh: MeshID, material: MaterialID) -> RenderCommand 
         skeleton: None,
         meshlet_override: None,
         lod: LODOptions3D::default(),
+        blend,
+    }))
+}
+
+fn draw_3d_dense_command_with_blend(
+    count: u32,
+    mesh: MeshID,
+    material: MaterialID,
+    blend: MeshBlendOptions3D,
+) -> RenderCommand {
+    let instances: Arc<[DenseInstancePose3D]> = (0..count)
+        .map(|i| DenseInstancePose3D {
+            position: [(i % 2048) as f32 * 0.08, 0.0, (i / 2048) as f32 * 0.08],
+            rotation: [0.0, 0.0, 0.0, 1.0],
+        })
+        .collect::<Vec<_>>()
+        .into();
+    RenderCommand::ThreeD(Box::new(Command3D::DrawMultiDense {
+        mesh,
+        surfaces: Arc::from([MeshSurfaceBinding3D {
+            material: Some(material),
+            overrides: Arc::from([]),
+            modulate: Color::WHITE,
+        }]),
+        node: NodeID::from_parts(900_000, 0),
+        node_model: [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+        instance_scale: 1.0,
+        instances,
+        meshlet_override: None,
+        lod: LODOptions3D::default(),
+        blend,
     }))
 }
 
@@ -111,6 +157,7 @@ fn water_command_with_idle(
             coastline_wave_damping: 0.35,
             coastline_edge_noise: 0.2,
             debug: false,
+            links: Arc::from([]),
             impacts: (0..impacts)
                 .map(|j| perro_render_bridge::WaterImpact2D {
                     position: [(j % 32) as f32, (j / 32) as f32],
@@ -285,6 +332,67 @@ fn bench_3d_draw_prepare(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_3d_blend_prepare(c: &mut Criterion) {
+    let mut group = c.benchmark_group("graphics_3d_blend_prepare");
+    for count in [1_000u32, 10_000, 100_000] {
+        group.bench_with_input(BenchmarkId::from_parameter(count), &count, |b, &count| {
+            let mut graphics = PerroGraphics::new();
+            let (mesh, material) = create_mesh_material(&mut graphics);
+            let blend = MeshBlendOptions3D {
+                enabled: true,
+                blend_layers: BitMask::with([1]),
+                blend_mask: BitMask::with([1]),
+                distance: 0.25,
+                min_distance: 0.02,
+                noise_factor: 0.35,
+                noise_scale: 8.0,
+            };
+            b.iter_batched(
+                || {
+                    (0..count)
+                        .map(|i| draw_3d_command_with_blend(i, mesh, material, blend))
+                        .collect::<Vec<_>>()
+                },
+                |commands| {
+                    graphics.submit_many(commands);
+                    let timing = graphics.draw_frame_timed().expect("timing");
+                    black_box(timing.draw_instances_3d);
+                    black_box(timing.prepare_cpu);
+                },
+                BatchSize::LargeInput,
+            );
+        });
+    }
+    group.finish();
+}
+
+fn bench_3d_blend_dense_prepare(c: &mut Criterion) {
+    let mut group = c.benchmark_group("graphics_3d_blend_dense_prepare");
+    for count in [100_000u32, 1_000_000, 5_000_000] {
+        group.bench_with_input(BenchmarkId::from_parameter(count), &count, |b, &count| {
+            let mut graphics = PerroGraphics::new();
+            let (mesh, material) = create_mesh_material(&mut graphics);
+            let blend = MeshBlendOptions3D {
+                enabled: true,
+                blend_layers: BitMask::with([1]),
+                blend_mask: BitMask::with([1]),
+                distance: 0.25,
+                min_distance: 0.02,
+                noise_factor: 0.35,
+                noise_scale: 8.0,
+            };
+            let command = draw_3d_dense_command_with_blend(count, mesh, material, blend);
+            b.iter(|| {
+                graphics.submit(command.clone());
+                let timing = graphics.draw_frame_timed().expect("timing");
+                black_box(timing.draw_instances_3d);
+                black_box(timing.prepare_cpu);
+            });
+        });
+    }
+    group.finish();
+}
+
 fn bench_resource_churn(c: &mut Criterion) {
     c.bench_function("graphics_resource_churn_1k", |b| {
         b.iter_batched(
@@ -390,6 +498,8 @@ criterion_group!(
     bench_2d_rect_prepare,
     bench_2d_sprite_prepare,
     bench_3d_draw_prepare,
+    bench_3d_blend_prepare,
+    bench_3d_blend_dense_prepare,
     bench_water_prepare,
     bench_water_idle_prepare,
     bench_resource_churn

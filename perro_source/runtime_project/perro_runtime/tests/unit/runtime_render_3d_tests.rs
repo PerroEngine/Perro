@@ -1,7 +1,7 @@
 use super::Runtime;
 use perro_ids::{MaterialID, MeshID};
 use perro_nodes::{
-    CameraProjection, SceneNode, SceneNodeData,
+    CameraProjection, CollisionShape3D, SceneNode, SceneNodeData, StaticBody3D, WaterBody3D,
     ambient_light_3d::AmbientLight3D,
     camera_3d::Camera3D,
     mesh_instance_3d::MeshInstance3D,
@@ -16,6 +16,7 @@ use perro_nodes::{
 use perro_render_bridge::{
     CameraProjectionState, Command3D, RenderCommand, RenderEvent, ResourceCommand,
 };
+use perro_runtime_api::sub_apis::NodeAPI;
 use perro_structs::Transform3D;
 use perro_structs::{BitMask, Quaternion, Vector3};
 
@@ -23,6 +24,97 @@ fn collect_commands(runtime: &mut Runtime) -> Vec<RenderCommand> {
     let mut out = Vec::new();
     runtime.drain_render_commands(&mut out);
     out
+}
+
+fn water_3d_command(
+    commands: &[RenderCommand],
+    node_id: perro_ids::NodeID,
+) -> &perro_render_bridge::Water3DState {
+    commands
+        .iter()
+        .find_map(|command| match command {
+            RenderCommand::ThreeD(command) => match command.as_ref() {
+                Command3D::UpsertWater { node, water } if *node == node_id => Some(water.as_ref()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .expect("water command should exist")
+}
+
+#[test]
+fn linked_3d_water_mirrors_wake_across_overlap() {
+    let mut runtime = Runtime::new();
+    let water_a = NodeAPI::create::<WaterBody3D>(&mut runtime);
+    let water_b = NodeAPI::create::<WaterBody3D>(&mut runtime);
+    for (id, x) in [(water_a, 0.0), (water_b, 12.0)] {
+        if let Some(node) = runtime.nodes.get_mut(id)
+            && let SceneNodeData::WaterBody3D(water) = &mut node.data
+        {
+            water.transform.position.x = x;
+            water.water.size = perro_structs::Vector2::new(16.0, 16.0);
+            water.water.shape = perro_nodes::WaterShape::box_volume(Vector3::new(16.0, 4.0, 16.0));
+            water.water.depth = 4.0;
+        }
+    }
+    runtime
+        .force_water_impacts_3d
+        .push(crate::runtime::ForceWaterImpact3D {
+            position: Vector3::new(8.4, 0.0, 0.0),
+            force: Vector3::new(12.0, 0.0, 0.0),
+            strength: 10.0,
+            radius: 0.25,
+            cavitation: 0.5,
+        });
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+    let water = water_3d_command(&commands, water_a);
+
+    assert_eq!(water.links.len(), 1);
+    assert_eq!(water.impacts.len(), 1);
+    assert!(water.impacts[0].strength > 0.0);
+    assert!(water.impacts[0].strength < 10.0);
+}
+
+#[test]
+fn linked_3d_waters_both_collect_shared_coastline_shape() {
+    let mut runtime = Runtime::new();
+    let water_a = NodeAPI::create::<WaterBody3D>(&mut runtime);
+    let water_b = NodeAPI::create::<WaterBody3D>(&mut runtime);
+    for (id, x) in [(water_a, 0.0), (water_b, 12.0)] {
+        if let Some(node) = runtime.nodes.get_mut(id)
+            && let SceneNodeData::WaterBody3D(water) = &mut node.data
+        {
+            water.transform.position.x = x;
+            water.water.size = perro_structs::Vector2::new(16.0, 16.0);
+            water.water.shape = perro_nodes::WaterShape::box_volume(Vector3::new(16.0, 4.0, 16.0));
+            water.water.depth = 4.0;
+        }
+    }
+    let body = NodeAPI::create::<StaticBody3D>(&mut runtime);
+    let shape = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, body, shape));
+    if let Some(node) = runtime.nodes.get_mut(shape)
+        && let SceneNodeData::CollisionShape3D(shape) = &mut node.data
+    {
+        shape.transform.position = Vector3::new(6.0, -1.0, 0.0);
+        shape.shape = Shape3D::Cube {
+            size: Vector3::new(2.0, 2.0, 4.0),
+        };
+    }
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    assert_eq!(
+        water_3d_command(&commands, water_a).coastline_shapes.len(),
+        1
+    );
+    assert_eq!(
+        water_3d_command(&commands, water_b).coastline_shapes.len(),
+        1
+    );
 }
 
 fn set_primary_material(mesh: &mut MeshInstance3D, material: MaterialID) {
@@ -37,6 +129,83 @@ fn set_primary_material_multi(mesh: &mut MultiMeshInstance3D, material: Material
         mesh.surfaces.push(MeshSurfaceBinding::default());
     }
     mesh.surfaces[0].material = Some(material);
+}
+
+#[test]
+fn mesh_blend_options_reach_draw_command() {
+    let mut runtime = Runtime::new();
+    let mut mesh = MeshInstance3D::new();
+    mesh.mesh = MeshID::from_parts(7, 0);
+    set_primary_material(&mut mesh, MaterialID::from_parts(9, 0));
+    mesh.blend.enabled = true;
+    mesh.blend.blend_layers = BitMask::with([3]);
+    mesh.blend.blend_mask = BitMask::with([2, 4]);
+    mesh.blend.distance = 0.75;
+    mesh.blend.min_distance = 0.125;
+    mesh.blend.noise_factor = 0.5;
+    mesh.blend.noise_scale = 12.0;
+    let node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+    let blend = commands
+        .iter()
+        .find_map(|command| match command {
+            RenderCommand::ThreeD(command) => match command.as_ref() {
+                Command3D::Draw {
+                    node: got, blend, ..
+                } if *got == node => Some(*blend),
+                _ => None,
+            },
+            _ => None,
+        })
+        .expect("mesh draw command");
+
+    assert!(blend.enabled);
+    assert_eq!(blend.blend_layers, BitMask::with([3]));
+    assert_eq!(blend.blend_mask, BitMask::with([2, 4]));
+    assert_eq!(blend.distance, 0.75);
+    assert_eq!(blend.min_distance, 0.125);
+    assert_eq!(blend.noise_factor, 0.5);
+    assert_eq!(blend.noise_scale, 12.0);
+}
+
+#[test]
+fn multimesh_blend_options_reach_dense_draw_command() {
+    let mut runtime = Runtime::new();
+    let mut multi = MultiMeshInstance3D::new();
+    multi.mesh = MeshID::from_parts(8, 0);
+    set_primary_material_multi(&mut multi, MaterialID::from_parts(10, 0));
+    multi.instances.push((Vector3::ZERO, Quaternion::IDENTITY));
+    multi.blend.enabled = true;
+    multi.blend.blend_layers = BitMask::with([5]);
+    multi.blend.blend_mask = BitMask::with([1, 5]);
+    multi.blend.distance = 0.25;
+    let node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MultiMeshInstance3D(multi)));
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+    let blend = commands
+        .iter()
+        .find_map(|command| match command {
+            RenderCommand::ThreeD(command) => match command.as_ref() {
+                Command3D::DrawMultiDense {
+                    node: got, blend, ..
+                } if *got == node => Some(*blend),
+                _ => None,
+            },
+            _ => None,
+        })
+        .expect("multimesh draw command");
+
+    assert!(blend.enabled);
+    assert_eq!(blend.blend_layers, BitMask::with([5]));
+    assert_eq!(blend.blend_mask, BitMask::with([1, 5]));
+    assert_eq!(blend.distance, 0.25);
 }
 
 #[test]

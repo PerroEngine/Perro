@@ -13,6 +13,7 @@ pub(super) struct DrawBatchPush {
     pub(super) occlusion_query: Option<u32>,
     pub(super) disable_hiz_occlusion: bool,
     pub(super) casts_shadows: bool,
+    pub(super) mesh_blend: bool,
 }
 
 pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatchPush) {
@@ -29,6 +30,7 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
         occlusion_query,
         disable_hiz_occlusion,
         casts_shadows,
+        mesh_blend,
     } = batch;
     if instance_count == 0 {
         return;
@@ -51,7 +53,8 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
             && !prev.draw_on_top
             && prev.base_color_texture_slot == base_color_texture_slot
             && prev.occlusion_query.is_none()
-            && prev.casts_shadows == casts_shadows;
+            && prev.casts_shadows == casts_shadows
+            && prev.mesh_blend == mesh_blend;
         if same_mesh && same_batch_state && prev_end == instance_start {
             prev.instance_count = prev.instance_count.saturating_add(instance_count);
             prev.disable_hiz_occlusion |= disable_hiz_occlusion;
@@ -83,6 +86,7 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
         occlusion_query,
         disable_hiz_occlusion,
         casts_shadows,
+        mesh_blend,
     });
 }
 
@@ -98,10 +102,81 @@ pub(super) struct BuiltInstanceParts {
 pub(super) struct BuildInstanceArgs {
     pub(super) debug_view: bool,
     pub(super) debug_color: [f32; 4],
+    pub(super) mesh_blend: ResolvedMeshBlend,
     pub(super) skeleton_start: u32,
     pub(super) skeleton_count: u32,
     pub(super) custom_params_offset: u32,
     pub(super) custom_params_len: u32,
+}
+
+#[derive(Clone, Copy, Default)]
+pub(super) struct ResolvedMeshBlend {
+    pub(super) active: bool,
+    pub(super) packed_params: u32,
+}
+
+#[inline]
+pub(super) fn pack_mesh_blend_params(blend: MeshBlendOptions3D) -> u32 {
+    pack_u8_lanes(
+        quantize_unorm8_range(blend.distance, 16.0),
+        quantize_unorm8_range(blend.min_distance, 16.0),
+        quantize_unorm8(blend.noise_factor),
+        quantize_unorm8_range(blend.noise_scale, 64.0),
+    )
+}
+
+pub(super) fn resolve_mesh_blends(draws: &[Draw3DInstance], out: &mut Vec<ResolvedMeshBlend>) {
+    let mut layer_counts = [0u32; 32];
+    out.clear();
+    out.resize(draws.len(), ResolvedMeshBlend::default());
+
+    for draw in draws {
+        if !draw.blend.enabled
+            || draw.blend.blend_layers.is_empty()
+            || !matches!(draw.kind, Draw3DKind::Mesh(_))
+        {
+            continue;
+        }
+        let mut layers = draw.blend.blend_layers.bits();
+        while layers != 0 {
+            let bit = layers.trailing_zeros() as usize;
+            layer_counts[bit] = layer_counts[bit].saturating_add(1);
+            layers &= layers - 1;
+        }
+    }
+
+    for (index, draw) in draws.iter().enumerate() {
+        if !draw.blend.active() || !matches!(draw.kind, Draw3DKind::Mesh(_)) {
+            continue;
+        }
+        let self_interacts = draw
+            .dense_multimesh
+            .as_ref()
+            .map(|dense| dense.instances.len() > 1)
+            .unwrap_or_else(|| draw.instance_mats.len() > 1);
+        let own_layers = draw.blend.blend_layers.bits();
+        let mut target_bits = draw.blend.blend_mask.bits();
+        let mut has_target = false;
+        while target_bits != 0 {
+            let bit = target_bits.trailing_zeros() as usize;
+            let bit_mask = 1u32 << bit;
+            let mut count = layer_counts[bit];
+            if own_layers & bit_mask != 0 && !self_interacts {
+                count = count.saturating_sub(1);
+            }
+            if count > 0 {
+                has_target = true;
+                break;
+            }
+            target_bits &= target_bits - 1;
+        }
+        if has_target {
+            out[index] = ResolvedMeshBlend {
+                active: true,
+                packed_params: pack_mesh_blend_params(draw.blend),
+            };
+        }
+    }
 }
 
 #[inline]
@@ -171,6 +246,7 @@ pub(super) fn build_instance(
     let BuildInstanceArgs {
         debug_view,
         debug_color,
+        mesh_blend,
         skeleton_start,
         skeleton_count,
         custom_params_offset,
@@ -238,6 +314,12 @@ pub(super) fn build_instance(
     if params.base_color_texture != MATERIAL_TEXTURE_NONE {
         material_flags |= MATERIAL_FLAG_HAS_BASE_COLOR_TEXTURE;
     }
+    let packed_blend_params = if mesh_blend.active && !debug_view {
+        material_flags |= MATERIAL_FLAG_MESH_BLEND;
+        mesh_blend.packed_params
+    } else {
+        0
+    };
 
     BuiltInstanceParts {
         transform: TransformInstanceGpu {
@@ -248,7 +330,7 @@ pub(super) fn build_instance(
         material: MaterialInstanceGpu {
             packed_color: pack_unorm4x8(color),
             packed_pbr_params_0,
-            packed_pbr_params_1,
+            packed_pbr_params_1: packed_pbr_params_1 | packed_blend_params,
             packed_emissive: pack_unorm4x8([
                 emissive_factor[0],
                 emissive_factor[1],
@@ -348,7 +430,8 @@ pub(super) fn apply_surface_binding(
     material
 }
 
-pub(super) fn apply_modulate(material: &mut Material3D, modulate: [f32; 4]) {
+pub(super) fn apply_modulate(material: &mut Material3D, modulate: perro_structs::Color) {
+    let modulate = modulate.to_gpu();
     match material {
         Material3D::Standard(m) => {
             for (dst, src) in m.base_color_factor.iter_mut().zip(modulate) {
@@ -500,6 +583,7 @@ pub(super) fn same_draw_except_model(a: &Draw3DInstance, b: &Draw3DInstance) -> 
         && a.skeleton == b.skeleton
         && a.meshlet_override == b.meshlet_override
         && a.lod == b.lod
+        && a.blend == b.blend
 }
 
 #[inline]
@@ -531,4 +615,69 @@ pub(super) fn hsv_to_rgb(h: f32, s: f32, v: f32) -> [f32; 4] {
         _ => (v, p, q),
     };
     [r, g, b, 1.0]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use perro_ids::{MeshID, NodeID};
+    use perro_structs::BitMask;
+    use std::sync::Arc;
+
+    fn draw(node: u64, layers: BitMask, mask: BitMask, instances: usize) -> Draw3DInstance {
+        Draw3DInstance {
+            node: NodeID::from_parts(node as u32, 0),
+            kind: Draw3DKind::Mesh(MeshID::from_parts(1, 0)),
+            surfaces: Arc::from([]),
+            instance_mats: (0..instances)
+                .map(|_| glam::Mat4::IDENTITY.to_cols_array_2d())
+                .collect::<Vec<_>>()
+                .into(),
+            skeleton: None,
+            dense_multimesh: None,
+            meshlet_override: None,
+            lod: LODOptions3D::default(),
+            blend: MeshBlendOptions3D {
+                enabled: true,
+                blend_layers: layers,
+                blend_mask: mask,
+                distance: 0.25,
+                min_distance: 0.0,
+                noise_factor: 0.0,
+                noise_scale: 1.0,
+            },
+        }
+    }
+
+    #[test]
+    fn blend_resolve_requires_matching_target() {
+        let draws = [draw(1, BitMask::with([1]), BitMask::with([2]), 1)];
+        let mut out = Vec::new();
+        resolve_mesh_blends(&draws, &mut out);
+        assert!(!out[0].active);
+
+        let draws = [
+            draw(1, BitMask::with([1]), BitMask::with([2]), 1),
+            draw(2, BitMask::with([2]), BitMask::NONE, 1),
+        ];
+        resolve_mesh_blends(&draws, &mut out);
+        assert!(out[0].active);
+        assert!(!out[1].active);
+
+        let draws = [
+            draw(1, BitMask::with([1]), BitMask::with([2]), 1),
+            draw(2, BitMask::with([2]), BitMask::with([1]), 1),
+        ];
+        resolve_mesh_blends(&draws, &mut out);
+        assert!(out[0].active);
+        assert!(out[1].active);
+    }
+
+    #[test]
+    fn blend_resolve_allows_multimesh_self_interaction() {
+        let draws = [draw(1, BitMask::with([3]), BitMask::with([3]), 2)];
+        let mut out = Vec::new();
+        resolve_mesh_blends(&draws, &mut out);
+        assert!(out[0].active);
+    }
 }

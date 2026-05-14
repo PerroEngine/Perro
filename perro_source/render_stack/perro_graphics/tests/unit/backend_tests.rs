@@ -6,16 +6,16 @@ use perro_render_bridge::{
     Camera3DState, CameraProjectionState, Command2D, Command3D, LODOptions3D, Material3D,
     MeshSurfaceBinding3D, PostProcessingCommand, RenderBridge, RenderCommand, ResourceCommand,
     Sprite2DCommand, VisualAccessibilityCommand, Water2DState, Water3DState, WaterIdleModeState,
-    WaterShapeState,
+    WaterLinkState, WaterShapeState,
 };
-use perro_structs::{BitMask, ColorBlindFilter, PostProcessEffect, PostProcessSet};
+use perro_structs::{BitMask, Color, ColorBlindFilter, PostProcessEffect, PostProcessSet};
 use std::sync::Arc;
 
 fn surfaces_for(material: MaterialID) -> Arc<[MeshSurfaceBinding3D]> {
     Arc::from([MeshSurfaceBinding3D {
         material: Some(material),
         overrides: Arc::from([]),
-        modulate: [1.0, 1.0, 1.0, 1.0],
+        modulate: Color::WHITE,
     }])
 }
 
@@ -54,6 +54,14 @@ fn water_2d_state() -> Water2DState {
         coastline_wave_damping: 0.35,
         coastline_edge_noise: 0.2,
         debug: false,
+        links: Arc::from([WaterLinkState {
+            other: NodeID::from_parts(31, 0),
+            overlap_min: [-2.0, -1.0],
+            overlap_max: [2.0, 1.0],
+            blend_width: 1.0,
+            wave_transfer: 0.75,
+            flow_transfer: 0.5,
+        }]),
         impacts: Arc::from([]),
         coastline_shapes: Arc::from([]),
     }
@@ -98,6 +106,14 @@ fn water_3d_state() -> Water3DState {
         coastline_wave_damping: 0.35,
         coastline_edge_noise: 0.2,
         debug: false,
+        links: Arc::from([WaterLinkState {
+            other: NodeID::from_parts(32, 0),
+            overlap_min: [-2.0, -1.0],
+            overlap_max: [2.0, 1.0],
+            blend_width: 1.0,
+            wave_transfer: 0.75,
+            flow_transfer: 0.5,
+        }]),
         impacts: Arc::from([]),
         coastline_shapes: Arc::from([]),
     }
@@ -121,6 +137,24 @@ fn water_upsert_retains_and_remove_clears_state() {
 
     assert_eq!(graphics.renderer_2d.retained_water_count(), 1);
     assert_eq!(graphics.renderer_3d.retained_waters_sorted().len(), 1);
+    assert_eq!(
+        graphics
+            .renderer_2d
+            .retained_waters()
+            .next()
+            .expect("2d water should be retained")
+            .1
+            .links
+            .len(),
+        1
+    );
+    assert_eq!(
+        graphics.renderer_3d.retained_waters_sorted()[0]
+            .1
+            .links
+            .len(),
+        1
+    );
 
     graphics.submit(RenderCommand::TwoD(Command2D::RemoveNode {
         node: water_2d,
@@ -257,6 +291,7 @@ fn draw_3d_updates_retained_state_per_node() {
         skeleton: None,
         meshlet_override: None,
         lod: LODOptions3D::default(),
+        blend: Default::default(),
     })));
     graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::Draw {
         mesh: created_meshes[1],
@@ -266,6 +301,7 @@ fn draw_3d_updates_retained_state_per_node() {
         skeleton: None,
         meshlet_override: None,
         lod: LODOptions3D::default(),
+        blend: Default::default(),
     })));
     graphics.draw_frame();
 
@@ -281,6 +317,7 @@ fn draw_3d_updates_retained_state_per_node() {
             dense_multimesh: None,
             meshlet_override: None,
             lod: LODOptions3D::default(),
+            blend: Default::default(),
         })
     );
     assert_eq!(
@@ -294,6 +331,7 @@ fn draw_3d_updates_retained_state_per_node() {
             dense_multimesh: None,
             meshlet_override: None,
             lod: LODOptions3D::default(),
+            blend: Default::default(),
         })
     );
 }
@@ -363,6 +401,7 @@ fn draw_multi_3d_retains_all_instance_mats() {
         skeleton: None,
         meshlet_override: None,
         lod: LODOptions3D::default(),
+        blend: Default::default(),
     })));
     graphics.draw_frame();
 
@@ -377,6 +416,7 @@ fn draw_multi_3d_retains_all_instance_mats() {
             dense_multimesh: None,
             meshlet_override: None,
             lod: LODOptions3D::default(),
+            blend: Default::default(),
         })
     );
 }
@@ -429,6 +469,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
         skeleton: None,
         meshlet_override: None,
         lod: LODOptions3D::default(),
+        blend: Default::default(),
     })));
     graphics.draw_frame();
     assert_eq!(
@@ -442,6 +483,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
             dense_multimesh: None,
             meshlet_override: None,
             lod: LODOptions3D::default(),
+            blend: Default::default(),
         })
     );
 
@@ -460,6 +502,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
         skeleton: None,
         meshlet_override: None,
         lod: LODOptions3D::default(),
+        blend: Default::default(),
     })));
     graphics.draw_frame();
 
@@ -474,6 +517,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
             dense_multimesh: None,
             meshlet_override: None,
             lod: LODOptions3D::default(),
+            blend: Default::default(),
         })
     );
 }
@@ -526,6 +570,7 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
         skeleton: None,
         meshlet_override: None,
         lod: LODOptions3D::default(),
+        blend: Default::default(),
     })));
     graphics.draw_frame();
 
@@ -544,6 +589,7 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
         skeleton: None,
         meshlet_override: None,
         lod: LODOptions3D::default(),
+        blend: Default::default(),
     })));
     graphics.draw_frame();
 
@@ -558,6 +604,7 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
             dense_multimesh: None,
             meshlet_override: None,
             lod: LODOptions3D::default(),
+            blend: Default::default(),
         })
     );
 }

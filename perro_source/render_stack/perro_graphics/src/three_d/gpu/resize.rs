@@ -15,6 +15,14 @@ impl Gpu3D {
             create_depth_prepass_texture(device, width, height);
         self.depth_prepass_texture = depth_prepass_texture;
         self.depth_prepass_view = depth_prepass_view;
+        self.mesh_blend_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_mesh_blend_bg"),
+            layout: &self.mesh_blend_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&self.depth_prepass_view),
+            }],
+        });
         self.depth_size = (width, height);
         let (hiz_texture, hiz_mip_views, hiz_sample_view, hiz_mip_count, hiz_size) =
             create_hiz_texture(device, width, height);
@@ -23,6 +31,7 @@ impl Gpu3D {
         self.hiz_sample_view = hiz_sample_view;
         self.hiz_mip_count = hiz_mip_count;
         self.hiz_size = hiz_size;
+        self.rebuild_camera_bind_groups(device);
         self.rebuild_hiz_bind_groups(device);
         self.hiz_cull_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_hiz_cull_bg"),
@@ -74,6 +83,7 @@ impl Gpu3D {
                 Some(&self.camera_bgl),
                 Some(&self.material_texture_bgl),
                 Some(&self.shadow_bgl),
+                Some(&self.mesh_blend_bgl),
             ],
             immediate_size: 0,
         });
@@ -90,6 +100,7 @@ impl Gpu3D {
                     Some(&self.rigid_camera_bgl),
                     Some(&self.material_texture_bgl),
                     Some(&self.shadow_bgl),
+                    Some(&self.mesh_blend_bgl),
                 ],
                 immediate_size: 0,
             });
@@ -321,6 +332,15 @@ impl Gpu3D {
             create_depth_prepass_texture(device, width, height);
         self.depth_prepass_texture = depth_prepass_texture;
         self.depth_prepass_view = depth_prepass_view;
+        self.mesh_blend_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_mesh_blend_bg"),
+            layout: &self.mesh_blend_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&self.depth_prepass_view),
+            }],
+        });
+        self.rebuild_camera_bind_groups(device);
         self.depth_size = (width.max(1), height.max(1));
         let (hiz_texture, hiz_mip_views, hiz_sample_view, hiz_mip_count, hiz_size) =
             create_hiz_texture(device, width, height);

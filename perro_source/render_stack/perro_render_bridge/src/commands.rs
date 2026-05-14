@@ -118,6 +118,7 @@ pub enum Command3D {
         skeleton: Option<SkeletonPalette>,
         meshlet_override: Option<bool>,
         lod: LODOptions3D,
+        blend: MeshBlendOptions3D,
     },
     DrawMulti {
         mesh: MeshID,
@@ -127,6 +128,7 @@ pub enum Command3D {
         skeleton: Option<SkeletonPalette>,
         meshlet_override: Option<bool>,
         lod: LODOptions3D,
+        blend: MeshBlendOptions3D,
     },
     DrawMultiDense {
         mesh: MeshID,
@@ -137,6 +139,7 @@ pub enum Command3D {
         instances: Arc<[DenseInstancePose3D]>,
         meshlet_override: Option<bool>,
         lod: LODOptions3D,
+        blend: MeshBlendOptions3D,
     },
     DrawDebugPoint3D {
         node: NodeID,

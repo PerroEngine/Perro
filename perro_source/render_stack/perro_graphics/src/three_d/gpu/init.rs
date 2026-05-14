@@ -138,6 +138,16 @@ impl Gpu3D {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
         let material_texture_bgl =
@@ -195,6 +205,19 @@ impl Gpu3D {
                     count: None,
                 },
             ],
+        });
+        let mesh_blend_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("perro_mesh_blend_bgl"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Depth,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            }],
         });
         let sky_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_sky3d_bgl"),
@@ -378,20 +401,6 @@ impl Gpu3D {
                 },
             ],
         });
-        let multimesh_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("perro_multimesh_bg"),
-            layout: &multimesh_bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: camera_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: multimesh_draw_params_buffer.as_entire_binding(),
-                },
-            ],
-        });
         let shadow_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_shadow3d_bg"),
             layout: &shadow_bgl,
@@ -435,6 +444,7 @@ impl Gpu3D {
                 Some(&camera_bgl),
                 Some(&material_texture_bgl),
                 Some(&shadow_bgl),
+                Some(&mesh_blend_bgl),
             ],
             immediate_size: 0,
         });
@@ -445,6 +455,7 @@ impl Gpu3D {
                     Some(&rigid_camera_bgl),
                     Some(&material_texture_bgl),
                     Some(&shadow_bgl),
+                    Some(&mesh_blend_bgl),
                 ],
                 immediate_size: 0,
             });
@@ -857,6 +868,32 @@ impl Gpu3D {
         let (depth_texture, depth_view) = create_depth_texture(device, width, height, sample_count);
         let (depth_prepass_texture, depth_prepass_view) =
             create_depth_prepass_texture(device, width, height);
+        let multimesh_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_multimesh_bg"),
+            layout: &multimesh_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: camera_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: multimesh_draw_params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&depth_prepass_view),
+                },
+            ],
+        });
+        let mesh_blend_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_mesh_blend_bg"),
+            layout: &mesh_blend_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&depth_prepass_view),
+            }],
+        });
         let (hiz_texture, hiz_mip_views, hiz_sample_view, hiz_mip_count, hiz_size) =
             create_hiz_texture(device, width, height);
 
@@ -1078,6 +1115,8 @@ impl Gpu3D {
             _shadow_map_texture: shadow_map_texture,
             shadow_map_view,
             _shadow_map_sampler: shadow_map_sampler,
+            mesh_blend_bgl,
+            mesh_blend_bind_group,
             sky_buffer,
             sky_bind_group,
             _sky_noise_texture: sky_noise_texture,
@@ -1139,6 +1178,7 @@ impl Gpu3D {
             draw_batches: Vec::new(),
             has_shadow_casters: false,
             surface_entries_scratch: Vec::new(),
+            mesh_blend_scratch: Vec::new(),
             last_draws: Vec::new(),
             last_draws_revision: u64::MAX,
             last_draw_instance_spans: Vec::new(),

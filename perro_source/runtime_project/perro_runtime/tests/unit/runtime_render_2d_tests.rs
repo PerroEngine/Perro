@@ -1,7 +1,8 @@
 use super::Runtime;
 use perro_ids::TextureID;
 use perro_nodes::{
-    AmbientLight2D, PointLight2D, RayLight2D, SceneNode, SceneNodeData, SpotLight2D,
+    AmbientLight2D, CollisionShape2D, PointLight2D, RayLight2D, SceneNode, SceneNodeData, Shape2D,
+    SpotLight2D, StaticBody2D, WaterBody2D,
     camera_2d::Camera2D,
     node_2d::Node2D,
     particle_emitter_2d::ParticleEmitter2D,
@@ -15,6 +16,95 @@ fn collect_commands(runtime: &mut Runtime) -> Vec<RenderCommand> {
     let mut out = Vec::new();
     runtime.drain_render_commands(&mut out);
     out
+}
+
+fn water_2d_command(
+    commands: &[RenderCommand],
+    node_id: perro_ids::NodeID,
+) -> &perro_render_bridge::Water2DState {
+    commands
+        .iter()
+        .find_map(|command| match command {
+            RenderCommand::TwoD(Command2D::UpsertWater { node, water }) if *node == node_id => {
+                Some(water.as_ref())
+            }
+            _ => None,
+        })
+        .expect("water command should exist")
+}
+
+#[test]
+fn linked_2d_water_mirrors_wake_across_overlap() {
+    let mut runtime = Runtime::new();
+    let water_a = NodeAPI::create::<WaterBody2D>(&mut runtime);
+    let water_b = NodeAPI::create::<WaterBody2D>(&mut runtime);
+    for (id, x) in [(water_a, 0.0), (water_b, 12.0)] {
+        if let Some(node) = runtime.nodes.get_mut(id)
+            && let SceneNodeData::WaterBody2D(water) = &mut node.data
+        {
+            water.transform.position.x = x;
+            water.water.size = Vector2::new(16.0, 16.0);
+            water.water.shape = perro_nodes::WaterShape::rect(water.water.size);
+        }
+    }
+    runtime
+        .force_water_impacts_2d
+        .push(crate::runtime::ForceWaterImpact2D {
+            position: Vector2::new(8.4, 0.0),
+            force: Vector2::new(12.0, 0.0),
+            strength: 10.0,
+            radius: 0.25,
+            cavitation: 0.5,
+        });
+
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+    let water = water_2d_command(&commands, water_a);
+
+    assert_eq!(water.links.len(), 1);
+    assert_eq!(water.impacts.len(), 1);
+    assert!(water.impacts[0].strength > 0.0);
+    assert!(water.impacts[0].strength < 10.0);
+}
+
+#[test]
+fn linked_2d_waters_both_collect_shared_coastline_shape() {
+    let mut runtime = Runtime::new();
+    let water_a = NodeAPI::create::<WaterBody2D>(&mut runtime);
+    let water_b = NodeAPI::create::<WaterBody2D>(&mut runtime);
+    for (id, x) in [(water_a, 0.0), (water_b, 12.0)] {
+        if let Some(node) = runtime.nodes.get_mut(id)
+            && let SceneNodeData::WaterBody2D(water) = &mut node.data
+        {
+            water.transform.position.x = x;
+            water.water.size = Vector2::new(16.0, 16.0);
+            water.water.shape = perro_nodes::WaterShape::rect(water.water.size);
+        }
+    }
+    let body = NodeAPI::create::<StaticBody2D>(&mut runtime);
+    let shape = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, body, shape));
+    if let Some(node) = runtime.nodes.get_mut(shape)
+        && let SceneNodeData::CollisionShape2D(shape) = &mut node.data
+    {
+        shape.transform.position = Vector2::new(6.0, 0.0);
+        shape.shape = Shape2D::Quad {
+            width: 2.0,
+            height: 4.0,
+        };
+    }
+
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    assert_eq!(
+        water_2d_command(&commands, water_a).coastline_shapes.len(),
+        1
+    );
+    assert_eq!(
+        water_2d_command(&commands, water_b).coastline_shapes.len(),
+        1
+    );
 }
 
 #[test]

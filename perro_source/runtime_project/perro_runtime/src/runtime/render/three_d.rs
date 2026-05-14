@@ -12,11 +12,11 @@ use perro_nodes::{
 use perro_particle_math::compile_expression;
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, Command3D, DenseInstancePose3D,
-    LODOptions3D, Material3D, MaterialParamOverride3D, MeshSurfaceBinding3D, ParticlePath3D,
-    ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D, PointLight3DState,
-    PointParticles3DState, RayLight3DState, RenderCommand, ResourceCommand, SkeletonPalette,
-    Sky3DState, SkyTime3DState, SpotLight3DState, Water3DState, WaterCoastlineShape3D,
-    WaterIdleModeState, WaterImpact3D, WaterShapeState,
+    LODOptions3D, Material3D, MaterialParamOverride3D, MeshBlendOptions3D, MeshSurfaceBinding3D,
+    ParticlePath3D, ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D,
+    PointLight3DState, PointParticles3DState, RayLight3DState, RenderCommand, ResourceCommand,
+    SkeletonPalette, Sky3DState, SkyTime3DState, SpotLight3DState, Water3DState,
+    WaterCoastlineShape3D, WaterIdleModeState, WaterImpact3D, WaterLinkState, WaterShapeState,
 };
 use perro_runtime_render::{material_3d_request, mesh_3d_request};
 use perro_structs::BitMask;
@@ -223,6 +223,7 @@ impl Runtime {
                     .to_cols_array_2d();
                 let coastline_shapes = self.collect_water_coastline_shapes_3d(node, &water);
                 let impacts = self.collect_water_impacts_3d(node, &water);
+                let links = self.collect_water_links_3d(node, &water);
                 self.queue_render_command(RenderCommand::ThreeD(Box::new(
                     Command3D::UpsertWater {
                         node,
@@ -259,6 +260,7 @@ impl Runtime {
                             coastline_wave_damping: water.coastline.wave_damping,
                             coastline_edge_noise: water.coastline.edge_noise,
                             debug: water.debug,
+                            links,
                             impacts,
                             coastline_shapes,
                         }),
@@ -404,6 +406,7 @@ impl Runtime {
                 Option<NodeID>,
                 Option<bool>,
                 LODOptions3D,
+                MeshBlendOptions3D,
                 LocalMeshInstanceData,
             );
             let mesh_header = if effective_visible {
@@ -421,6 +424,15 @@ impl Runtime {
                                     min_lod: mesh.lod.min_lod,
                                     max_lod: mesh.lod.max_lod,
                                 },
+                                MeshBlendOptions3D {
+                                    enabled: mesh.blend.enabled,
+                                    blend_layers: mesh.blend.blend_layers,
+                                    blend_mask: mesh.blend.blend_mask,
+                                    distance: mesh.blend.distance,
+                                    min_distance: mesh.blend.min_distance,
+                                    noise_factor: mesh.blend.noise_factor,
+                                    noise_scale: mesh.blend.noise_scale,
+                                },
                             ))
                         }
                         SceneNodeData::MultiMeshInstance3D(mesh)
@@ -434,6 +446,15 @@ impl Runtime {
                                     min_lod: mesh.lod.min_lod,
                                     max_lod: mesh.lod.max_lod,
                                 },
+                                MeshBlendOptions3D {
+                                    enabled: mesh.blend.enabled,
+                                    blend_layers: mesh.blend.blend_layers,
+                                    blend_mask: mesh.blend.blend_mask,
+                                    distance: mesh.blend.distance,
+                                    min_distance: mesh.blend.min_distance,
+                                    noise_factor: mesh.blend.noise_factor,
+                                    noise_scale: mesh.blend.noise_scale,
+                                },
                             ))
                         }
                         _ => None,
@@ -441,12 +462,13 @@ impl Runtime {
             } else {
                 None
             };
-            let mesh_header = mesh_header.and_then(|(mesh, skeleton, meshlet_override, lod)| {
-                self.resolve_render_mesh_id(node, mesh)
-                    .map(|mesh| (mesh, skeleton, meshlet_override, lod))
-            });
+            let mesh_header =
+                mesh_header.and_then(|(mesh, skeleton, meshlet_override, lod, blend)| {
+                    self.resolve_render_mesh_id(node, mesh)
+                        .map(|mesh| (mesh, skeleton, meshlet_override, lod, blend))
+                });
             let mesh_data: Option<LocalMeshData> =
-                mesh_header.and_then(|(resolved_mesh, skeleton, meshlet_override, lod)| {
+                mesh_header.and_then(|(resolved_mesh, skeleton, meshlet_override, lod, blend)| {
                     self.nodes
                         .get(node)
                         .and_then(|scene_node| match &scene_node.data {
@@ -456,6 +478,7 @@ impl Runtime {
                                 skeleton,
                                 meshlet_override,
                                 lod,
+                                blend,
                                 LocalMeshInstanceData::Single,
                             )),
                             SceneNodeData::MultiMeshInstance3D(mesh) => Some((
@@ -464,6 +487,7 @@ impl Runtime {
                                 skeleton,
                                 meshlet_override,
                                 lod,
+                                blend,
                                 LocalMeshInstanceData::Dense {
                                     instance_scale: mesh.instance_scale.max(0.0001),
                                     poses: {
@@ -517,7 +541,7 @@ impl Runtime {
                             _ => None,
                         })
                 });
-            if let Some((mesh, surfaces, skeleton, meshlet_override, lod, local_instances)) =
+            if let Some((mesh, surfaces, skeleton, meshlet_override, lod, blend, local_instances)) =
                 mesh_data
                 && effective_visible
                 && let Some((mesh, resolved_surfaces)) =
@@ -585,6 +609,7 @@ impl Runtime {
                     skeleton: skeleton_palette.clone(),
                     meshlet_override,
                     lod,
+                    blend,
                 };
                 if self.render_3d.retained_mesh_draws.get(&node) != Some(&draw_state) {
                     let draw_command = match retained_instances {
@@ -601,6 +626,7 @@ impl Runtime {
                             instances: poses,
                             meshlet_override,
                             lod,
+                            blend,
                         },
                         crate::runtime::state::RetainedMeshInstanceState::Matrices(
                             instance_mats,
@@ -615,6 +641,7 @@ impl Runtime {
                             skeleton: skeleton_palette,
                             meshlet_override,
                             lod,
+                            blend,
                         },
                         crate::runtime::state::RetainedMeshInstanceState::Matrices(
                             instance_mats,
@@ -626,6 +653,7 @@ impl Runtime {
                             skeleton: skeleton_palette,
                             meshlet_override,
                             lod,
+                            blend,
                         },
                     };
                     self.queue_render_command(RenderCommand::ThreeD(Box::new(draw_command)));
@@ -1250,6 +1278,7 @@ impl Runtime {
         let Some(water_global) = self.get_global_transform_3d(water_id) else {
             return Arc::from([]);
         };
+        let water_inv = water_global.to_mat4().inverse();
         let half = water.shape.surface_size() * 0.5;
         let body_ids: Vec<_> = self
             .nodes
@@ -1279,12 +1308,12 @@ impl Runtime {
             let Some(body_global) = self.get_global_transform_3d(body_id) else {
                 continue;
             };
-            let local = body_global.position - water_global.position;
+            let local = water_local_point_3d(water_inv, body_global.position);
             if !water
                 .shape
                 .contains_surface(perro_structs::Vector2::new(local.x, local.z))
-                || body_global.position.y > water_global.position.y
-                || body_global.position.y < water_global.position.y - water.shape.depth(water.depth)
+                || local.y > 0.0
+                || local.y < -water.shape.depth(water.depth)
             {
                 continue;
             }
@@ -1302,11 +1331,11 @@ impl Runtime {
             });
         }
         for impact in self.force_water_impacts_3d.iter() {
-            let local = impact.position - water_global.position;
+            let local = water_local_point_3d(water_inv, impact.position);
             if local.x.abs() > half.x + impact.radius
                 || local.z.abs() > half.y + impact.radius
-                || impact.position.y > water_global.position.y + impact.radius
-                || impact.position.y < water_global.position.y - water.depth - impact.radius
+                || local.y > impact.radius
+                || local.y < -water.depth - impact.radius
             {
                 continue;
             }
@@ -1318,7 +1347,100 @@ impl Runtime {
                 cavitation: impact.cavitation,
             });
         }
+        for link in self.collect_water_links_3d(water_id, water).iter() {
+            for impact in self.force_water_impacts_3d.iter() {
+                let local = water_local_point_3d(water_inv, impact.position);
+                if water
+                    .shape
+                    .contains_surface(perro_structs::Vector2::new(local.x, local.z))
+                {
+                    continue;
+                }
+                let pad = link.blend_width + impact.radius;
+                if local.x < link.overlap_min[0] - pad
+                    || local.x > link.overlap_max[0] + pad
+                    || local.z < link.overlap_min[1] - pad
+                    || local.z > link.overlap_max[1] + pad
+                {
+                    continue;
+                }
+                let weight =
+                    water_link_overlap_weight(perro_structs::Vector2::new(local.x, local.z), link);
+                if weight <= 0.0 {
+                    continue;
+                }
+                impacts.push(WaterImpact3D {
+                    position: [local.x, local.y, local.z],
+                    velocity: [impact.force.x, impact.force.y, impact.force.z],
+                    strength: impact.strength * link.wave_transfer * weight,
+                    radius: impact.radius,
+                    cavitation: impact.cavitation * weight,
+                });
+            }
+        }
         Arc::from(impacts)
+    }
+
+    fn collect_water_links_3d(
+        &mut self,
+        water_id: NodeID,
+        water: &perro_nodes::WaterSurfaceParams,
+    ) -> Arc<[WaterLinkState]> {
+        let Some(water_global) = self.get_global_transform_3d(water_id) else {
+            return Arc::from([]);
+        };
+        let other_ids: Vec<_> = self
+            .nodes
+            .iter()
+            .filter_map(|(id, node)| {
+                (id != water_id && matches!(node.data, SceneNodeData::WaterBody3D(_))).then_some(id)
+            })
+            .collect();
+        let mut links = Vec::new();
+        for other_id in other_ids {
+            let Some(other_water) = self.nodes.get(other_id).and_then(|node| {
+                let SceneNodeData::WaterBody3D(other) = &node.data else {
+                    return None;
+                };
+                Some(other.water)
+            }) else {
+                continue;
+            };
+            let Some(other_global) = self.get_global_transform_3d(other_id) else {
+                continue;
+            };
+            if water
+                .link
+                .link_mask
+                .intersects(other_water.link.link_layers)
+                || other_water
+                    .link
+                    .link_mask
+                    .intersects(water.link.link_layers)
+            {
+                continue;
+            }
+            let Some((overlap_min, overlap_max)) =
+                water_overlap_bounds_3d(water, water_global, other_water, other_global)
+            else {
+                continue;
+            };
+            let extent = (overlap_max.x - overlap_min.x).min(overlap_max.y - overlap_min.y);
+            let blend_width = if water.link.blend_width > 0.0 {
+                water.link.blend_width
+            } else {
+                (extent * 0.5).max(0.5)
+            };
+            links.push(WaterLinkState {
+                other: other_id,
+                overlap_min: [overlap_min.x, overlap_min.y],
+                overlap_max: [overlap_max.x, overlap_max.y],
+                blend_width,
+                wave_transfer: water.link.wave_transfer.min(other_water.link.wave_transfer),
+                flow_transfer: water.link.flow_transfer.min(other_water.link.flow_transfer),
+            });
+        }
+        Arc::from(links)
     }
 }
 
@@ -1388,6 +1510,93 @@ fn water_shape_state(shape: perro_nodes::WaterShape) -> WaterShapeState {
 fn water_render_size(water: perro_nodes::WaterSurfaceParams) -> [f32; 2] {
     let size = water.shape.surface_size();
     [size.x, size.y]
+}
+
+fn water_local_point_3d(
+    inv_transform: glam::Mat4,
+    point: perro_structs::Vector3,
+) -> perro_structs::Vector3 {
+    inv_transform.transform_point3(point.into()).into()
+}
+
+fn water_global_point_3d(
+    transform: perro_structs::Transform3D,
+    point: perro_structs::Vector3,
+) -> perro_structs::Vector3 {
+    transform.to_mat4().transform_point3(point.into()).into()
+}
+
+fn water_surface_corners(size: perro_structs::Vector2) -> [perro_structs::Vector3; 4] {
+    let half = size * 0.5;
+    [
+        perro_structs::Vector3::new(-half.x, 0.0, -half.y),
+        perro_structs::Vector3::new(half.x, 0.0, -half.y),
+        perro_structs::Vector3::new(-half.x, 0.0, half.y),
+        perro_structs::Vector3::new(half.x, 0.0, half.y),
+    ]
+}
+
+fn water_overlap_bounds_3d(
+    water: &perro_nodes::WaterSurfaceParams,
+    water_transform: perro_structs::Transform3D,
+    other: perro_nodes::WaterSurfaceParams,
+    other_transform: perro_structs::Transform3D,
+) -> Option<(perro_structs::Vector2, perro_structs::Vector2)> {
+    let water_inv = water_transform.to_mat4().inverse();
+    let other_inv = other_transform.to_mat4().inverse();
+    let mut points = Vec::new();
+    for corner in water_surface_corners(other.shape.surface_size()) {
+        let world = water_global_point_3d(other_transform, corner);
+        let local = water_local_point_3d(water_inv, world);
+        let surface = perro_structs::Vector2::new(local.x, local.z);
+        if water.shape.contains_surface(surface) {
+            points.push(surface);
+        }
+    }
+    for corner in water_surface_corners(water.shape.surface_size()) {
+        let world = water_global_point_3d(water_transform, corner);
+        let other_local = water_local_point_3d(other_inv, world);
+        if other
+            .shape
+            .contains_surface(perro_structs::Vector2::new(other_local.x, other_local.z))
+        {
+            points.push(perro_structs::Vector2::new(corner.x, corner.z));
+        }
+    }
+    let other_center = water_local_point_3d(water_inv, other_transform.position);
+    let other_center_surface = perro_structs::Vector2::new(other_center.x, other_center.z);
+    if water.shape.contains_surface(other_center_surface) {
+        points.push(other_center_surface);
+    }
+    let water_center_in_other = water_local_point_3d(other_inv, water_transform.position);
+    if other.shape.contains_surface(perro_structs::Vector2::new(
+        water_center_in_other.x,
+        water_center_in_other.z,
+    )) {
+        points.push(perro_structs::Vector2::ZERO);
+    }
+    if points.is_empty() {
+        return None;
+    }
+    let mut min = points[0];
+    let mut max = points[0];
+    for point in points.into_iter().skip(1) {
+        min.x = min.x.min(point.x);
+        min.y = min.y.min(point.y);
+        max.x = max.x.max(point.x);
+        max.y = max.y.max(point.y);
+    }
+    (min.x < max.x && min.y < max.y).then_some((min, max))
+}
+
+fn water_link_overlap_weight(local: perro_structs::Vector2, link: &WaterLinkState) -> f32 {
+    let cx = ((link.overlap_min[0] + link.overlap_max[0]) * 0.5 - local.x).abs();
+    let cy = ((link.overlap_min[1] + link.overlap_max[1]) * 0.5 - local.y).abs();
+    let hx = (link.overlap_max[0] - link.overlap_min[0]).abs() * 0.5 + link.blend_width;
+    let hy = (link.overlap_max[1] - link.overlap_min[1]).abs() * 0.5 + link.blend_width;
+    let edge = (1.0 - (cx / hx.max(0.001))).min(1.0 - (cy / hy.max(0.001)));
+    let t = edge.clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
 use super::RuntimePhysicsStepTiming;
 use crate::Runtime;
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
+use glam::{Mat3, Mat4, Vec3};
 use perro_ids::{NodeID, SignalID};
 #[cfg(test)]
 use perro_nodes::TileMap2D;
@@ -10,10 +11,11 @@ use perro_runtime_api::sub_apis::{
     NodeAPI, PhysicsContact2D, PhysicsContact3D, PhysicsQueryFilter, PhysicsRayHit2D,
     PhysicsRayHit3D, PhysicsShapeHit2D, PhysicsShapeHit3D, SignalAPI,
 };
-#[cfg(test)]
-use perro_structs::BitMask;
-use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
+use perro_structs::{BitMask, Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use perro_variant::Variant;
+use rayon::prelude::*;
+
+const WATER_FORCE_PAR_BODY_THRESHOLD: usize = 1024;
 
 pub(crate) type PhysicsState = PhysicsSystem;
 pub(crate) use perro_physics::{AudioRaycastInput, AudioRaycastResult};
@@ -41,6 +43,103 @@ fn water_force_lod(
         return (0.75 - t * 0.35, 0.02 + 0.18 * t);
     }
     (0.25, 0.5)
+}
+
+#[derive(Clone, Copy)]
+struct RuntimeWater2D {
+    id: NodeID,
+    half: Vector2,
+    transform: Mat3,
+    inv_transform: Mat3,
+    normal: Vector2,
+    min_x: f32,
+    max_x: f32,
+    surface: perro_nodes::WaterSurfaceParams,
+}
+
+#[derive(Clone, Copy)]
+struct RuntimeWater3D {
+    id: NodeID,
+    half: Vector2,
+    transform: Mat4,
+    inv_transform: Mat4,
+    normal: Vector3,
+    min_x: f32,
+    max_x: f32,
+    surface: perro_nodes::WaterSurfaceParams,
+}
+
+struct RuntimeWaterIndex2D {
+    waters: Vec<RuntimeWater2D>,
+    bins: Vec<Vec<usize>>,
+    origin_x: f32,
+    inv_cell_width: f32,
+}
+
+struct RuntimeWaterIndex3D {
+    waters: Vec<RuntimeWater3D>,
+    bins: Vec<Vec<usize>>,
+    origin_x: f32,
+    inv_cell_width: f32,
+}
+
+#[derive(Clone, Copy)]
+struct RuntimeWaterBody2D {
+    id: NodeID,
+    pos: Vector2,
+    velocity: Vector2,
+    density: f32,
+    collision_layers: BitMask,
+    collision_mask: BitMask,
+}
+
+#[derive(Clone, Copy)]
+struct RuntimeWaterBody3D {
+    id: NodeID,
+    pos: Vector3,
+    velocity: Vector3,
+    density: f32,
+    collision_layers: BitMask,
+    collision_mask: BitMask,
+}
+
+#[derive(Clone, Copy)]
+struct WaterCandidate2D {
+    water: RuntimeWater2D,
+    local: Vector2,
+    surface_point: Vector2,
+    normal: Vector2,
+    sample: perro_nodes::WaterPhysicsSample,
+    weight: f32,
+}
+
+#[derive(Clone, Copy)]
+struct WaterCandidate3D {
+    water: RuntimeWater3D,
+    local: Vector3,
+    surface_point: Vector3,
+    normal: Vector3,
+    sample: perro_nodes::WaterPhysicsSample,
+    weight: f32,
+}
+
+#[derive(Clone, Copy)]
+struct BlendedWaterSample2D {
+    pos: Vector2,
+    normal: Vector2,
+    submerged: f32,
+    surface: perro_nodes::WaterSurfaceParams,
+    sample: perro_nodes::WaterPhysicsSample,
+    lod_weight: f32,
+}
+
+#[derive(Clone, Copy)]
+struct BlendedWaterSample3D {
+    pos: Vector3,
+    normal: Vector3,
+    submerged: f32,
+    surface: perro_nodes::WaterSurfaceParams,
+    lod_weight: f32,
 }
 
 impl Runtime {
@@ -1144,11 +1243,25 @@ impl Runtime {
             let SceneNodeData::WaterBody2D(water) = &scene_node.data else {
                 continue;
             };
-            waters.push((id, transform.position, water.water));
+            let transform_mat = transform.to_mat3();
+            let inv_transform = transform_mat.inverse();
+            let half = water.water.shape.surface_size() * 0.5;
+            let (min_x, max_x) = water_world_x_bounds_2d(transform_mat, half);
+            waters.push(RuntimeWater2D {
+                id,
+                half,
+                transform: transform_mat,
+                inv_transform,
+                normal: water_normal_2d(transform_mat),
+                min_x,
+                max_x,
+                surface: water.water,
+            });
         }
         if waters.is_empty() {
             return;
         }
+        let water_index = RuntimeWaterIndex2D::new(waters);
         let camera_pos = self
             .render_2d
             .last_camera
@@ -1163,7 +1276,7 @@ impl Runtime {
                 matches!(scene_node.data, SceneNodeData::RigidBody2D(_)).then_some(id)
             })
             .collect();
-        let mut forces = Vec::new();
+        let mut bodies = Vec::with_capacity(body_ids.len());
         for body_id in body_ids {
             let Some(body_transform) = self.get_global_transform_2d(body_id) else {
                 continue;
@@ -1174,42 +1287,44 @@ impl Runtime {
             let SceneNodeData::RigidBody2D(body) = &scene_node.data else {
                 continue;
             };
-            for (water_id, water_pos, surface) in &waters {
-                if surface.collision_mask.intersects(body.collision_layers)
-                    || body.collision_mask.intersects(surface.collision_layers)
-                {
-                    continue;
-                }
-                let local = body_transform.position - *water_pos;
-                if !surface.shape.contains_surface(local) {
-                    continue;
-                }
-                let sample = water_physics_sample_or_idle(
-                    surface,
-                    local,
-                    self.time.elapsed,
-                    self.water_samples.get(water_id).copied(),
-                );
-                let surface_y = water_pos.y + sample.height;
-                let submerged = (surface_y - body_transform.position.y).max(0.0);
-                if submerged <= 0.0 {
-                    continue;
-                }
-                let buoyancy = submerged * surface.physics.buoyancy * body.density.max(0.0);
-                let drag = -body.linear_velocity.y * surface.physics.drag;
-                let (scale, deadzone) = water_force_lod(
-                    surface.lod.near_distance,
-                    surface.lod.mid_distance,
-                    surface.lod.far_distance,
-                    *water_pos,
-                    camera_pos,
-                );
-                let force_y = (buoyancy + drag) * scale;
-                if force_y.abs() >= deadzone {
-                    forces.push((body_id, Vector2::new(0.0, force_y)));
-                }
-            }
+            bodies.push(RuntimeWaterBody2D {
+                id: body_id,
+                pos: body_transform.position,
+                velocity: body.linear_velocity,
+                density: body.density,
+                collision_layers: body.collision_layers,
+                collision_mask: body.collision_mask,
+            });
         }
+        let elapsed = self.time.elapsed;
+        let water_samples = &self.water_samples;
+        let forces: Vec<_> = if bodies.len() >= WATER_FORCE_PAR_BODY_THRESHOLD {
+            bodies
+                .par_iter()
+                .flat_map_iter(|body| {
+                    water_forces_for_body_2d(
+                        *body,
+                        &water_index,
+                        water_samples,
+                        elapsed,
+                        camera_pos,
+                    )
+                })
+                .collect()
+        } else {
+            bodies
+                .iter()
+                .flat_map(|body| {
+                    water_forces_for_body_2d(
+                        *body,
+                        &water_index,
+                        water_samples,
+                        elapsed,
+                        camera_pos,
+                    )
+                })
+                .collect()
+        };
         for (body, force) in forces {
             self.physics.queue_force_2d(body, force);
         }
@@ -1234,11 +1349,29 @@ impl Runtime {
             let SceneNodeData::WaterBody3D(water) = &scene_node.data else {
                 continue;
             };
-            waters.push((id, transform.position, water.water));
+            let transform_mat = transform.to_mat4();
+            let inv_transform = transform_mat.inverse();
+            let half = water.water.shape.surface_size() * 0.5;
+            let (min_x, max_x) = water_world_x_bounds_3d(
+                transform_mat,
+                half,
+                water.water.shape.depth(water.water.depth),
+            );
+            waters.push(RuntimeWater3D {
+                id,
+                half,
+                transform: transform_mat,
+                inv_transform,
+                normal: water_normal_3d(transform_mat),
+                min_x,
+                max_x,
+                surface: water.water,
+            });
         }
         if waters.is_empty() {
             return;
         }
+        let water_index = RuntimeWaterIndex3D::new(waters);
         let camera_pos = self
             .render_3d
             .last_camera
@@ -1253,7 +1386,7 @@ impl Runtime {
                 matches!(scene_node.data, SceneNodeData::RigidBody3D(_)).then_some(id)
             })
             .collect();
-        let mut forces = Vec::new();
+        let mut bodies = Vec::with_capacity(body_ids.len());
         for body_id in body_ids {
             let Some(body_transform) = self.get_global_transform_3d(body_id) else {
                 continue;
@@ -1264,48 +1397,44 @@ impl Runtime {
             let SceneNodeData::RigidBody3D(body) = &scene_node.data else {
                 continue;
             };
-            for (water_id, water_pos, surface) in &waters {
-                if surface.collision_mask.intersects(body.collision_layers)
-                    || body.collision_mask.intersects(surface.collision_layers)
-                {
-                    continue;
-                }
-                let local = Vector2::new(
-                    body_transform.position.x - water_pos.x,
-                    body_transform.position.z - water_pos.z,
-                );
-                if !surface.shape.contains_surface(local)
-                    || body_transform.position.y < water_pos.y - surface.shape.depth(surface.depth)
-                {
-                    continue;
-                }
-                let sample = water_physics_sample_or_idle(
-                    surface,
-                    local,
-                    self.time.elapsed,
-                    self.water_samples.get(water_id).copied(),
-                );
-                let surface_y = water_pos.y + sample.height;
-                let submerged = (surface_y - body_transform.position.y).max(0.0);
-                if submerged <= 0.0 {
-                    continue;
-                }
-                let buoyancy = submerged * surface.physics.buoyancy * body.density.max(0.0);
-                let drag = -body.linear_velocity.y * surface.physics.drag;
-                let water_pos_2d = Vector2::new(water_pos.x, water_pos.z);
-                let (scale, deadzone) = water_force_lod(
-                    surface.lod.near_distance,
-                    surface.lod.mid_distance,
-                    surface.lod.far_distance,
-                    water_pos_2d,
-                    camera_pos,
-                );
-                let force_y = (buoyancy + drag) * scale;
-                if force_y.abs() >= deadzone {
-                    forces.push((body_id, Vector3::new(0.0, force_y, 0.0)));
-                }
-            }
+            bodies.push(RuntimeWaterBody3D {
+                id: body_id,
+                pos: body_transform.position,
+                velocity: body.linear_velocity,
+                density: body.density,
+                collision_layers: body.collision_layers,
+                collision_mask: body.collision_mask,
+            });
         }
+        let elapsed = self.time.elapsed;
+        let water_samples = &self.water_samples;
+        let forces: Vec<_> = if bodies.len() >= WATER_FORCE_PAR_BODY_THRESHOLD {
+            bodies
+                .par_iter()
+                .flat_map_iter(|body| {
+                    water_forces_for_body_3d(
+                        *body,
+                        &water_index,
+                        water_samples,
+                        elapsed,
+                        camera_pos,
+                    )
+                })
+                .collect()
+        } else {
+            bodies
+                .iter()
+                .flat_map(|body| {
+                    water_forces_for_body_3d(
+                        *body,
+                        &water_index,
+                        water_samples,
+                        elapsed,
+                        camera_pos,
+                    )
+                })
+                .collect()
+        };
         for (body, force) in forces {
             self.physics.queue_force_3d(body, force);
         }
@@ -1651,6 +1780,585 @@ fn water_shape_2d(shape: WaterShape) -> Shape2D {
             height: size.z,
         },
     }
+}
+
+fn blend_water_candidates_2d(candidates: Vec<WaterCandidate2D>) -> Vec<BlendedWaterSample2D> {
+    if candidates.len() <= 1 {
+        return candidates
+            .into_iter()
+            .map(blended_water_sample_2d)
+            .collect();
+    }
+    let mut used = vec![false; candidates.len()];
+    let mut out = Vec::new();
+    for start in 0..candidates.len() {
+        if used[start] {
+            continue;
+        }
+        let mut group = vec![start];
+        used[start] = true;
+        let mut cursor = 0;
+        while cursor < group.len() {
+            let a = group[cursor];
+            for b in 0..candidates.len() {
+                if used[b] {
+                    continue;
+                }
+                if water_linked_2d(candidates[a].water, candidates[b].water) {
+                    used[b] = true;
+                    group.push(b);
+                }
+            }
+            cursor += 1;
+        }
+        out.push(blend_water_group_2d(&candidates, &group));
+    }
+    out
+}
+
+fn blend_water_candidates_3d(candidates: Vec<WaterCandidate3D>) -> Vec<BlendedWaterSample3D> {
+    if candidates.len() <= 1 {
+        return candidates
+            .into_iter()
+            .map(blended_water_sample_3d)
+            .collect();
+    }
+    let mut used = vec![false; candidates.len()];
+    let mut out = Vec::new();
+    for start in 0..candidates.len() {
+        if used[start] {
+            continue;
+        }
+        let mut group = vec![start];
+        used[start] = true;
+        let mut cursor = 0;
+        while cursor < group.len() {
+            let a = group[cursor];
+            for b in 0..candidates.len() {
+                if used[b] {
+                    continue;
+                }
+                if water_linked_3d(candidates[a].water, candidates[b].water) {
+                    used[b] = true;
+                    group.push(b);
+                }
+            }
+            cursor += 1;
+        }
+        out.push(blend_water_group_3d(&candidates, &group));
+    }
+    out
+}
+
+fn water_forces_for_body_2d(
+    body: RuntimeWaterBody2D,
+    water_index: &RuntimeWaterIndex2D,
+    water_samples: &AHashMap<NodeID, perro_nodes::WaterPhysicsSample>,
+    elapsed: f32,
+    camera_pos: Vector2,
+) -> Vec<(NodeID, Vector2)> {
+    let samples = blended_water_samples_2d(
+        body.pos,
+        body.collision_layers,
+        body.collision_mask,
+        water_index,
+        water_samples,
+        elapsed,
+    );
+    let mut forces = Vec::with_capacity(samples.len());
+    for blend in samples {
+        let submerged = blend.submerged.max(0.0);
+        if submerged <= 0.0 {
+            continue;
+        }
+        let buoyancy = submerged * blend.surface.physics.buoyancy * body.density.max(0.0);
+        let rel_y = body.velocity.dot(blend.normal) - blend.sample.velocity.y;
+        let drag = -rel_y * blend.surface.physics.drag;
+        let (scale, deadzone) = water_force_lod(
+            blend.surface.lod.near_distance,
+            blend.surface.lod.mid_distance,
+            blend.surface.lod.far_distance,
+            blend.pos,
+            camera_pos,
+        );
+        let force_y = (buoyancy + drag) * scale * blend.lod_weight;
+        if force_y.abs() >= deadzone {
+            forces.push((body.id, blend.normal * force_y));
+        }
+    }
+    forces
+}
+
+fn water_forces_for_body_3d(
+    body: RuntimeWaterBody3D,
+    water_index: &RuntimeWaterIndex3D,
+    water_samples: &AHashMap<NodeID, perro_nodes::WaterPhysicsSample>,
+    elapsed: f32,
+    camera_pos: Vector2,
+) -> Vec<(NodeID, Vector3)> {
+    let samples = blended_water_samples_3d(
+        body.pos,
+        body.collision_layers,
+        body.collision_mask,
+        water_index,
+        water_samples,
+        elapsed,
+    );
+    let mut forces = Vec::with_capacity(samples.len());
+    for blend in samples {
+        let submerged = blend.submerged.max(0.0);
+        if submerged <= 0.0 {
+            continue;
+        }
+        let buoyancy = submerged * blend.surface.physics.buoyancy * body.density.max(0.0);
+        let rel_y = body.velocity.dot(blend.normal);
+        let drag = -rel_y * blend.surface.physics.drag;
+        let water_pos_2d = Vector2::new(blend.pos.x, blend.pos.z);
+        let (scale, deadzone) = water_force_lod(
+            blend.surface.lod.near_distance,
+            blend.surface.lod.mid_distance,
+            blend.surface.lod.far_distance,
+            water_pos_2d,
+            camera_pos,
+        );
+        let force_y = (buoyancy + drag) * scale * blend.lod_weight;
+        if force_y.abs() >= deadzone {
+            forces.push((body.id, blend.normal * force_y));
+        }
+    }
+    forces
+}
+
+fn blended_water_samples_2d(
+    point: Vector2,
+    body_layers: BitMask,
+    body_mask: BitMask,
+    water_index: &RuntimeWaterIndex2D,
+    water_samples: &AHashMap<NodeID, perro_nodes::WaterPhysicsSample>,
+    elapsed: f32,
+) -> Vec<BlendedWaterSample2D> {
+    let mut first = None;
+    let mut candidates: Vec<WaterCandidate2D> = Vec::new();
+    let Some(bin) = water_index.bin(point.x) else {
+        return Vec::new();
+    };
+    for &idx in bin {
+        let water = water_index.waters[idx];
+        if water.surface.collision_mask.intersects(body_layers)
+            || body_mask.intersects(water.surface.collision_layers)
+        {
+            continue;
+        }
+        let local = water_local_point_2d(water.inv_transform, point);
+        if local.x.abs() > water.half.x || local.y.abs() > water.half.y {
+            continue;
+        }
+        if !water.surface.shape.contains_surface(local) {
+            continue;
+        }
+        let sample = water_physics_sample_or_idle(
+            &water.surface,
+            local,
+            elapsed,
+            water_samples.get(&water.id).copied(),
+        );
+        let surface_point =
+            water_global_point_2d(water.transform, Vector2::new(local.x, sample.height));
+        let candidate = WaterCandidate2D {
+            water,
+            local,
+            surface_point,
+            normal: water.normal,
+            sample,
+            weight: water_blend_weight(water.surface.shape, local),
+        };
+        if let Some(existing) = first {
+            if candidates.is_empty() {
+                candidates.push(existing);
+            }
+            candidates.push(candidate);
+        } else {
+            first = Some(candidate);
+        }
+    }
+    if candidates.is_empty() {
+        return first.map(blended_water_sample_2d).into_iter().collect();
+    }
+    blend_water_candidates_2d(candidates)
+}
+
+fn blended_water_samples_3d(
+    point: Vector3,
+    body_layers: BitMask,
+    body_mask: BitMask,
+    water_index: &RuntimeWaterIndex3D,
+    water_samples: &AHashMap<NodeID, perro_nodes::WaterPhysicsSample>,
+    elapsed: f32,
+) -> Vec<BlendedWaterSample3D> {
+    let mut first = None;
+    let mut candidates: Vec<WaterCandidate3D> = Vec::new();
+    let Some(bin) = water_index.bin(point.x) else {
+        return Vec::new();
+    };
+    for &idx in bin {
+        let water = water_index.waters[idx];
+        if water.surface.collision_mask.intersects(body_layers)
+            || body_mask.intersects(water.surface.collision_layers)
+        {
+            continue;
+        }
+        let local3 = water_local_point_3d(water.inv_transform, point);
+        let local = Vector2::new(local3.x, local3.z);
+        if local.x.abs() > water.half.x || local.y.abs() > water.half.y {
+            continue;
+        }
+        if !water.surface.shape.contains_surface(local)
+            || local3.y < -water.surface.shape.depth(water.surface.depth)
+        {
+            continue;
+        }
+        let sample = water_physics_sample_or_idle(
+            &water.surface,
+            local,
+            elapsed,
+            water_samples.get(&water.id).copied(),
+        );
+        let surface_point = water_global_point_3d(
+            water.transform,
+            Vector3::new(local3.x, sample.height, local3.z),
+        );
+        let candidate = WaterCandidate3D {
+            water,
+            local: local3,
+            surface_point,
+            normal: water.normal,
+            sample,
+            weight: water_blend_weight(water.surface.shape, local),
+        };
+        if let Some(existing) = first {
+            if candidates.is_empty() {
+                candidates.push(existing);
+            }
+            candidates.push(candidate);
+        } else {
+            first = Some(candidate);
+        }
+    }
+    if candidates.is_empty() {
+        return first.map(blended_water_sample_3d).into_iter().collect();
+    }
+    blend_water_candidates_3d(candidates)
+}
+
+fn blended_water_sample_2d(candidate: WaterCandidate2D) -> BlendedWaterSample2D {
+    BlendedWaterSample2D {
+        pos: candidate.surface_point,
+        normal: candidate.normal,
+        submerged: candidate.sample.height - candidate.local.y,
+        surface: candidate.water.surface,
+        sample: candidate.sample,
+        lod_weight: 1.0,
+    }
+}
+
+fn blended_water_sample_3d(candidate: WaterCandidate3D) -> BlendedWaterSample3D {
+    BlendedWaterSample3D {
+        pos: candidate.surface_point,
+        normal: candidate.normal,
+        submerged: candidate.sample.height - candidate.local.y,
+        surface: candidate.water.surface,
+        lod_weight: 1.0,
+    }
+}
+
+impl RuntimeWaterIndex2D {
+    fn new(waters: Vec<RuntimeWater2D>) -> Self {
+        let (bins, origin_x, inv_cell_width) =
+            build_water_bins(waters.iter().map(|water| (water.min_x, water.max_x)));
+        Self {
+            waters,
+            bins,
+            origin_x,
+            inv_cell_width,
+        }
+    }
+
+    fn bin(&self, point_x: f32) -> Option<&[usize]> {
+        water_bin(&self.bins, self.origin_x, self.inv_cell_width, point_x)
+    }
+}
+
+impl RuntimeWaterIndex3D {
+    fn new(waters: Vec<RuntimeWater3D>) -> Self {
+        let (bins, origin_x, inv_cell_width) =
+            build_water_bins(waters.iter().map(|water| (water.min_x, water.max_x)));
+        Self {
+            waters,
+            bins,
+            origin_x,
+            inv_cell_width,
+        }
+    }
+
+    fn bin(&self, point_x: f32) -> Option<&[usize]> {
+        water_bin(&self.bins, self.origin_x, self.inv_cell_width, point_x)
+    }
+}
+
+fn build_water_bins(
+    waters: impl Iterator<Item = (f32, f32)> + Clone,
+) -> (Vec<Vec<usize>>, f32, f32) {
+    let mut min_x = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut max_width = 0.0f32;
+    let mut count = 0usize;
+    for (water_min_x, water_max_x) in waters.clone() {
+        min_x = min_x.min(water_min_x);
+        max_x = max_x.max(water_max_x);
+        max_width = max_width.max(water_max_x - water_min_x);
+        count += 1;
+    }
+    if count == 0 || !min_x.is_finite() || !max_x.is_finite() {
+        return (Vec::new(), 0.0, 1.0);
+    }
+    let cell_width = (max_width * 0.5).max(1.0);
+    let inv_cell_width = 1.0 / cell_width;
+    let bin_count = (((max_x - min_x) * inv_cell_width).ceil() as usize)
+        .saturating_add(1)
+        .max(1);
+    let mut bins = vec![Vec::new(); bin_count];
+    for (idx, (water_min_x, water_max_x)) in waters.enumerate() {
+        let first = (((water_min_x - min_x) * inv_cell_width).floor() as isize)
+            .clamp(0, bin_count.saturating_sub(1) as isize) as usize;
+        let last = (((water_max_x - min_x) * inv_cell_width).floor() as isize)
+            .clamp(0, bin_count.saturating_sub(1) as isize) as usize;
+        for bin in &mut bins[first..=last] {
+            bin.push(idx);
+        }
+    }
+    (bins, min_x, inv_cell_width)
+}
+
+fn water_bin(
+    bins: &[Vec<usize>],
+    origin_x: f32,
+    inv_cell_width: f32,
+    point_x: f32,
+) -> Option<&[usize]> {
+    if bins.is_empty() {
+        return None;
+    }
+    let idx = ((point_x - origin_x) * inv_cell_width).floor() as isize;
+    if idx < 0 || idx as usize >= bins.len() {
+        return None;
+    }
+    Some(&bins[idx as usize])
+}
+
+fn water_local_point_2d(inv_transform: Mat3, point: Vector2) -> Vector2 {
+    let p = inv_transform * glam::Vec3::new(point.x, point.y, 1.0);
+    Vector2::new(p.x, p.y)
+}
+
+fn water_global_point_2d(transform: Mat3, point: Vector2) -> Vector2 {
+    let p = transform * glam::Vec3::new(point.x, point.y, 1.0);
+    Vector2::new(p.x, p.y)
+}
+
+fn water_local_point_3d(inv_transform: Mat4, point: Vector3) -> Vector3 {
+    inv_transform.transform_point3(point.into()).into()
+}
+
+fn water_global_point_3d(transform: Mat4, point: Vector3) -> Vector3 {
+    transform.transform_point3(point.into()).into()
+}
+
+fn water_normal_2d(transform: Mat3) -> Vector2 {
+    let up = transform * glam::Vec3::new(0.0, 1.0, 0.0);
+    water_normalize_2d(Vector2::new(up.x, up.y))
+}
+
+fn water_normal_3d(transform: Mat4) -> Vector3 {
+    water_normalize_3d(transform.transform_vector3(Vec3::Y).into())
+}
+
+fn water_normalize_2d(v: Vector2) -> Vector2 {
+    let len = (v.x * v.x + v.y * v.y).sqrt();
+    if len > 1.0e-6 {
+        v / len
+    } else {
+        Vector2::new(0.0, 1.0)
+    }
+}
+
+fn water_normalize_3d(v: Vector3) -> Vector3 {
+    let len = (v.x * v.x + v.y * v.y + v.z * v.z).sqrt();
+    if len > 1.0e-6 {
+        v / len
+    } else {
+        Vector3::new(0.0, 1.0, 0.0)
+    }
+}
+
+fn water_world_x_bounds_2d(transform: Mat3, half: Vector2) -> (f32, f32) {
+    let mut min_x = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    for point in [
+        Vector2::new(-half.x, -half.y),
+        Vector2::new(half.x, -half.y),
+        Vector2::new(-half.x, half.y),
+        Vector2::new(half.x, half.y),
+    ] {
+        let p = water_global_point_2d(transform, point);
+        min_x = min_x.min(p.x);
+        max_x = max_x.max(p.x);
+    }
+    (min_x, max_x)
+}
+
+fn water_world_x_bounds_3d(transform: Mat4, half: Vector2, depth: f32) -> (f32, f32) {
+    let mut min_x = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    for y in [0.0, -depth] {
+        for point in [
+            Vector3::new(-half.x, y, -half.y),
+            Vector3::new(half.x, y, -half.y),
+            Vector3::new(-half.x, y, half.y),
+            Vector3::new(half.x, y, half.y),
+        ] {
+            let p = water_global_point_3d(transform, point);
+            min_x = min_x.min(p.x);
+            max_x = max_x.max(p.x);
+        }
+    }
+    (min_x, max_x)
+}
+
+fn blend_water_group_2d(candidates: &[WaterCandidate2D], group: &[usize]) -> BlendedWaterSample2D {
+    if group.len() == 1 {
+        let candidate = candidates[group[0]];
+        return blended_water_sample_2d(candidate);
+    }
+    let mut total = 0.0;
+    let mut pos = Vector2::ZERO;
+    let mut normal = Vector2::ZERO;
+    let mut submerged = 0.0;
+    let mut sample = perro_nodes::WaterPhysicsSample::default();
+    let mut surface = candidates[group[0]].water.surface;
+    let mut buoyancy = 0.0;
+    let mut drag = 0.0;
+    for &idx in group {
+        let candidate = candidates[idx];
+        let w = candidate.weight.max(0.001);
+        total += w;
+        pos += candidate.surface_point * w;
+        normal += candidate.normal * w;
+        submerged += (candidate.sample.height - candidate.local.y) * w;
+        sample.height += candidate.surface_point.y * w;
+        sample.velocity +=
+            candidate.sample.velocity * w * candidate.water.surface.link.flow_transfer;
+        sample.foam += candidate.sample.foam * w * candidate.water.surface.link.wave_transfer;
+        buoyancy += candidate.water.surface.physics.buoyancy * w;
+        drag += candidate.water.surface.physics.drag * w;
+    }
+    let inv = 1.0 / total.max(0.001);
+    pos *= inv;
+    normal = water_normalize_2d(normal);
+    submerged *= inv;
+    sample.height *= inv;
+    sample.velocity *= inv;
+    sample.foam *= inv;
+    surface.physics.buoyancy = buoyancy * inv;
+    surface.physics.drag = drag * inv;
+    BlendedWaterSample2D {
+        pos,
+        normal,
+        submerged,
+        surface,
+        sample,
+        lod_weight: 1.0,
+    }
+}
+
+fn blend_water_group_3d(candidates: &[WaterCandidate3D], group: &[usize]) -> BlendedWaterSample3D {
+    if group.len() == 1 {
+        let candidate = candidates[group[0]];
+        return blended_water_sample_3d(candidate);
+    }
+    let mut total = 0.0;
+    let mut pos = Vector3::ZERO;
+    let mut normal = Vector3::ZERO;
+    let mut submerged = 0.0;
+    let mut surface = candidates[group[0]].water.surface;
+    let mut buoyancy = 0.0;
+    let mut drag = 0.0;
+    for &idx in group {
+        let candidate = candidates[idx];
+        let w = candidate.weight.max(0.001);
+        total += w;
+        pos += candidate.surface_point * w;
+        normal += candidate.normal * w;
+        submerged += (candidate.sample.height - candidate.local.y) * w;
+        buoyancy += candidate.water.surface.physics.buoyancy * w;
+        drag += candidate.water.surface.physics.drag * w;
+    }
+    let inv = 1.0 / total.max(0.001);
+    pos *= inv;
+    normal = water_normalize_3d(normal);
+    submerged *= inv;
+    surface.physics.buoyancy = buoyancy * inv;
+    surface.physics.drag = drag * inv;
+    BlendedWaterSample3D {
+        pos,
+        normal,
+        submerged,
+        surface,
+        lod_weight: 1.0,
+    }
+}
+
+fn water_link_allowed(
+    a: perro_nodes::WaterSurfaceParams,
+    b: perro_nodes::WaterSurfaceParams,
+) -> bool {
+    !a.link.link_mask.intersects(b.link.link_layers)
+        && !b.link.link_mask.intersects(a.link.link_layers)
+}
+
+fn water_linked_2d(a: RuntimeWater2D, b: RuntimeWater2D) -> bool {
+    water_link_allowed(a.surface, b.surface)
+}
+
+fn water_linked_3d(a: RuntimeWater3D, b: RuntimeWater3D) -> bool {
+    water_link_allowed(a.surface, b.surface)
+}
+
+fn water_blend_weight(shape: WaterShape, local: Vector2) -> f32 {
+    let t = match shape {
+        WaterShape::Rect { size } => {
+            let half = size * 0.5;
+            let edge = (half.x - local.x.abs()).min(half.y - local.y.abs());
+            let width = (half.x.min(half.y) * 0.25).max(0.5);
+            (edge / width).clamp(0.0, 1.0)
+        }
+        WaterShape::Box { size } => {
+            let half = Vector2::new(size.x, size.z) * 0.5;
+            let edge = (half.x - local.x.abs()).min(half.y - local.y.abs());
+            let width = (half.x.min(half.y) * 0.25).max(0.5);
+            (edge / width).clamp(0.0, 1.0)
+        }
+        WaterShape::Circle { radius } | WaterShape::Cylinder { radius, .. } => {
+            let edge = radius - local.length();
+            let width = (radius * 0.25).max(0.5);
+            (edge / width).clamp(0.0, 1.0)
+        }
+    };
+    smoothstep(t)
+}
+
+fn smoothstep(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
 
 fn water_shape_3d(shape: WaterShape, fallback_depth: f32) -> (Shape3D, f32) {

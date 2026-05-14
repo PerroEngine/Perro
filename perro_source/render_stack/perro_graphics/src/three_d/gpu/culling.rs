@@ -36,6 +36,11 @@ impl Gpu3D {
     ) -> bool {
         depth_prepass_needed
             || hiz_active
+            || self.draw_batches.iter().any(|batch| batch.mesh_blend)
+            || self
+                .staged_multimesh_draw_params
+                .iter()
+                .any(|params| params.packed_blend_params != 0)
             || (self.draw_batches.len() >= DEPTH_PREPASS_MIN_BATCHES
                 || self.staged_instance_transforms.len() >= DEPTH_PREPASS_MIN_INSTANCES)
     }
@@ -257,6 +262,7 @@ impl Gpu3D {
             && base.occlusion_query.is_none()
             && next.occlusion_query.is_none()
             && base.casts_shadows == next.casts_shadows
+            && base.mesh_blend == next.mesh_blend
     }
 
     #[inline]

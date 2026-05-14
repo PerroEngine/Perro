@@ -1645,6 +1645,112 @@ fn water_render_wgsl() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+
+    fn test_water_2d() -> Water2DState {
+        Water2DState {
+            model: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            z_index: 0,
+            size: [16.0, 16.0],
+            shape: WaterShapeState::Rect,
+            resolution: [8, 8],
+            depth: 4.0,
+            flow: [0.0, 0.0],
+            wind: [1.0, 0.0],
+            idle_mode: WaterIdleModeState::Calm,
+            wave_speed: 1.0,
+            wave_scale: 1.0,
+            damping: 0.985,
+            wake_strength: 1.0,
+            foam_strength: 0.65,
+            sample_readback_rate: 30.0,
+            lod_near_distance: 128.0,
+            lod_mid_distance: 384.0,
+            lod_far_distance: 896.0,
+            lod_min_resolution: [4, 4],
+            collision_layers: perro_structs::BitMask::ALL,
+            collision_mask: perro_structs::BitMask::NONE,
+            deep_color: [0.02, 0.16, 0.28, 0.86],
+            shallow_color: [0.08, 0.46, 0.62, 0.48],
+            shallow_depth: -1.0,
+            sky_bias_ratio: 0.0,
+            coastline_foam_color: [0.9, 0.97, 1.0, 1.0],
+            coastline_foam_strength: 0.75,
+            coastline_foam_width: 1.5,
+            coastline_cutoff_softness: 0.25,
+            coastline_wave_reflection: 0.45,
+            coastline_wave_damping: 0.35,
+            coastline_edge_noise: 0.2,
+            debug: false,
+            links: Arc::from([perro_render_bridge::WaterLinkState {
+                other: NodeID::from_parts(99, 0),
+                overlap_min: [-1.0, -1.0],
+                overlap_max: [1.0, 1.0],
+                blend_width: 1.0,
+                wave_transfer: 1.0,
+                flow_transfer: 1.0,
+            }]),
+            impacts: Arc::from([perro_render_bridge::WaterImpact2D {
+                position: [0.0, 0.0],
+                velocity: [1.0, 0.0],
+                strength: 2.0,
+                radius: 2.0,
+                cavitation: 0.5,
+            }]),
+            coastline_shapes: Arc::from([]),
+        }
+    }
+
+    fn test_water_3d() -> Water3DState {
+        Water3DState {
+            model: [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            size: [16.0, 16.0],
+            shape: WaterShapeState::Rect,
+            resolution: [8, 8],
+            depth: 4.0,
+            flow: [0.0, 0.0],
+            wind: [1.0, 0.0],
+            idle_mode: WaterIdleModeState::Calm,
+            wave_speed: 1.0,
+            wave_scale: 1.0,
+            damping: 0.985,
+            wake_strength: 1.0,
+            foam_strength: 0.65,
+            sample_readback_rate: 30.0,
+            lod_near_distance: 128.0,
+            lod_mid_distance: 384.0,
+            lod_far_distance: 896.0,
+            lod_min_resolution: [4, 4],
+            collision_layers: perro_structs::BitMask::ALL,
+            collision_mask: perro_structs::BitMask::NONE,
+            deep_color: [0.02, 0.16, 0.28, 0.86],
+            shallow_color: [0.08, 0.46, 0.62, 0.48],
+            shallow_depth: -1.0,
+            sky_bias_ratio: 0.0,
+            coastline_foam_color: [0.9, 0.97, 1.0, 1.0],
+            coastline_foam_strength: 0.75,
+            coastline_foam_width: 1.5,
+            coastline_cutoff_softness: 0.25,
+            coastline_wave_reflection: 0.45,
+            coastline_wave_damping: 0.35,
+            coastline_edge_noise: 0.2,
+            debug: false,
+            links: Arc::from([]),
+            impacts: Arc::from([perro_render_bridge::WaterImpact3D {
+                position: [0.0, 0.0, 0.0],
+                velocity: [1.0, 0.0, 0.0],
+                strength: 2.0,
+                radius: 2.0,
+                cavitation: 0.5,
+            }]),
+            coastline_shapes: Arc::from([]),
+        }
+    }
 
     #[test]
     fn water_wgsl_parses() {
@@ -1705,5 +1811,34 @@ mod tests {
         assert_eq!(readback_period_frames(60.0), 1);
         assert_eq!(readback_period_frames(30.0), 2);
         assert_eq!(readback_period_frames(15.0), 4);
+    }
+
+    #[test]
+    fn water_gpu_2d_staging_accepts_linked_water_state() {
+        let water = test_water_2d();
+        let staged = water_gpu_2d(
+            NodeID::from_parts(7, 0),
+            &water,
+            water.resolution,
+            4,
+            64,
+            1.0,
+        );
+        assert_eq!(staged.node, 7);
+        assert_eq!(staged.sim, [4, 64, 8, 8]);
+        assert_eq!(staged.kind, 2);
+    }
+
+    #[test]
+    fn water_gpu_raster_impacts_2d_and_3d_write_wake_cells() {
+        let water_2d = test_water_2d();
+        let mut cells_2d = vec![[0.0; 4]; 64];
+        raster_impacts_2d(&mut cells_2d, 8, 8, &water_2d);
+        assert!(cells_2d.iter().any(|cell| cell[2] > 0.0 && cell[3] > 0.0));
+
+        let water_3d = test_water_3d();
+        let mut cells_3d = vec![[0.0; 4]; 64];
+        raster_impacts_3d(&mut cells_3d, 8, 8, &water_3d);
+        assert!(cells_3d.iter().any(|cell| cell[2] > 0.0 && cell[3] > 0.0));
     }
 }

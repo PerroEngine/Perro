@@ -2,9 +2,9 @@ use ahash::{AHashMap, AHashSet};
 use perro_ids::{MeshID, NodeID, SignalID};
 use perro_render_bridge::{
     AmbientLight3DState, Camera2DState, Camera3DState, DenseInstancePose3D, LODOptions3D,
-    Material3D, MeshSurfaceBinding3D, PointLight3DState, RayLight3DState, RenderEvent,
-    RenderRequestID, SkeletonPalette, Sky3DState, SpotLight3DState, Sprite2DCommand, UiCommand,
-    UiRectState,
+    Material3D, MeshBlendOptions3D, MeshSurfaceBinding3D, PointLight3DState, RayLight3DState,
+    RenderEvent, RenderRequestID, SkeletonPalette, Sky3DState, SpotLight3DState, Sprite2DCommand,
+    UiCommand, UiRectState,
 };
 use perro_structs::Vector2;
 use perro_ui::{ComputedUiRect, UiSizeMode, UiVector2};
@@ -610,9 +610,10 @@ pub struct RetainedMeshDrawState {
     pub skeleton: Option<SkeletonPalette>,
     pub meshlet_override: Option<bool>,
     pub lod: LODOptions3D,
+    pub blend: MeshBlendOptions3D,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum RetainedMeshInstanceState {
     Matrices(Arc<[[[f32; 4]; 4]]>),
     Dense {
@@ -620,6 +621,31 @@ pub enum RetainedMeshInstanceState {
         instance_scale: f32,
         poses: Arc<[DenseInstancePose3D]>,
     },
+}
+
+impl PartialEq for RetainedMeshInstanceState {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Matrices(a), Self::Matrices(b)) => Arc::ptr_eq(a, b) || a == b,
+            (
+                Self::Dense {
+                    node_model: node_model_a,
+                    instance_scale: instance_scale_a,
+                    poses: poses_a,
+                },
+                Self::Dense {
+                    node_model: node_model_b,
+                    instance_scale: instance_scale_b,
+                    poses: poses_b,
+                },
+            ) => {
+                node_model_a == node_model_b
+                    && instance_scale_a == instance_scale_b
+                    && (Arc::ptr_eq(poses_a, poses_b) || poses_a == poses_b)
+            }
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]

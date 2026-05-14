@@ -3,12 +3,12 @@ use perro_graphics::{DrawFrameTiming, GraphicsBackend, PerroGraphics};
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
     Camera2DState, Camera3DState, Command2D, Command3D, DenseInstancePose3D, LODOptions3D,
-    Material3D, Mesh3D, MeshSurfaceBinding3D, PointLight2DState, PointLight3DState,
-    PostProcessingCommand, Rect2DCommand, RenderBridge, RenderCommand, RenderEvent,
-    RenderRequestID, ResourceCommand, RuntimeMeshVertex, Sky3DState, SkyTime3DState,
+    Material3D, Mesh3D, MeshBlendOptions3D, MeshSurfaceBinding3D, PointLight2DState,
+    PointLight3DState, PostProcessingCommand, Rect2DCommand, RenderBridge, RenderCommand,
+    RenderEvent, RenderRequestID, ResourceCommand, RuntimeMeshVertex, Sky3DState, SkyTime3DState,
     Sprite2DCommand,
 };
-use perro_structs::{PostProcessEffect, PostProcessSet};
+use perro_structs::{Color, PostProcessEffect, PostProcessSet};
 use std::sync::Arc;
 
 fn tiny_mesh() -> Mesh3D {
@@ -45,7 +45,7 @@ fn surface(material: MaterialID) -> Arc<[MeshSurfaceBinding3D]> {
     Arc::from([MeshSurfaceBinding3D {
         material: Some(material),
         overrides: Arc::from([]),
-        modulate: [1.0, 1.0, 1.0, 1.0],
+        modulate: Color::WHITE,
     }])
 }
 
@@ -98,6 +98,7 @@ fn draw_command(i: u32, mesh: MeshID, material: MaterialID) -> RenderCommand {
         skeleton: None,
         meshlet_override: None,
         lod: LODOptions3D::default(),
+        blend: MeshBlendOptions3D::default(),
     }))
 }
 
@@ -111,6 +112,7 @@ fn draw_multi_command(count: u32, mesh: MeshID, material: MaterialID) -> RenderC
         skeleton: None,
         meshlet_override: None,
         lod: LODOptions3D::default(),
+        blend: MeshBlendOptions3D::default(),
     }))
 }
 
@@ -131,6 +133,7 @@ fn draw_multi_dense_command(count: u32, mesh: MeshID, material: MaterialID) -> R
         instances,
         meshlet_override: None,
         lod: LODOptions3D::default(),
+        blend: MeshBlendOptions3D::default(),
     }))
 }
 

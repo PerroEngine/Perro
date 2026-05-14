@@ -39,6 +39,13 @@ impl WaterBody2D {
                 },
                 collision_layers: crate::BitMask::ALL,
                 collision_mask: crate::BitMask::NONE,
+                link: crate::WaterLinkParams {
+                    link_layers: crate::BitMask::ALL,
+                    link_mask: crate::BitMask::NONE,
+                    blend_width: 0.0,
+                    wave_transfer: 1.0,
+                    flow_transfer: 1.0,
+                },
                 optics: crate::WaterOpticsSettings::new(),
                 coastline: crate::CoastlineSettings::new(),
                 debug: false,

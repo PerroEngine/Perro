@@ -11,7 +11,8 @@ use perro_render_bridge::{
     AmbientLight2DState, Camera2DState, Command2D, ParticlePath2D, ParticleProfile2D,
     ParticleSimulationMode2D, PointLight2DState, PointParticles2DState, RayLight2DState,
     RenderCommand, ResourceCommand, SpotLight2DState, Sprite2DCommand, TileMap2DCommand,
-    Water2DState, WaterCoastlineShape2D, WaterIdleModeState, WaterImpact2D, WaterShapeState,
+    Water2DState, WaterCoastlineShape2D, WaterIdleModeState, WaterImpact2D, WaterLinkState,
+    WaterShapeState,
 };
 use perro_runtime_render::{sprite_2d_texture_request, tilemap_2d_texture_request};
 use perro_structs::BitMask;
@@ -256,6 +257,7 @@ impl Runtime {
                         .to_cols_array_2d();
                     let coastline_shapes = self.collect_water_coastline_shapes_2d(node, &water);
                     let impacts = self.collect_water_impacts_2d(node, &water);
+                    let links = self.collect_water_links_2d(node, &water);
                     self.queue_render_command(RenderCommand::TwoD(Command2D::UpsertWater {
                         node,
                         water: Box::new(Water2DState {
@@ -292,6 +294,7 @@ impl Runtime {
                             coastline_wave_damping: water.coastline.wave_damping,
                             coastline_edge_noise: water.coastline.edge_noise,
                             debug: water.debug,
+                            links,
                             impacts,
                             coastline_shapes,
                         }),
@@ -764,6 +767,7 @@ impl Runtime {
         let Some(water_global) = self.get_global_transform_2d(water_id) else {
             return Arc::from([]);
         };
+        let water_inv = water_global.to_mat3().inverse();
         let half = water.shape.surface_size() * 0.5;
         let body_ids: Vec<_> = self
             .nodes
@@ -796,7 +800,7 @@ impl Runtime {
             let Some(body_global) = self.get_global_transform_2d(body_id) else {
                 continue;
             };
-            let local = body_global.position - water_global.position;
+            let local = water_local_point_2d(water_inv, body_global.position);
             if !water.shape.contains_surface(local) {
                 continue;
             }
@@ -814,7 +818,7 @@ impl Runtime {
             });
         }
         for impact in self.force_water_impacts_2d.iter() {
-            let local = impact.position - water_global.position;
+            let local = water_local_point_2d(water_inv, impact.position);
             if local.x.abs() > half.x + impact.radius || local.y.abs() > half.y + impact.radius {
                 continue;
             }
@@ -826,7 +830,96 @@ impl Runtime {
                 cavitation: impact.cavitation,
             });
         }
+        for link in self.collect_water_links_2d(water_id, water).iter() {
+            for impact in self.force_water_impacts_2d.iter() {
+                let local = water_local_point_2d(water_inv, impact.position);
+                if water.shape.contains_surface(local) {
+                    continue;
+                }
+                let pad = link.blend_width + impact.radius;
+                if local.x < link.overlap_min[0] - pad
+                    || local.x > link.overlap_max[0] + pad
+                    || local.y < link.overlap_min[1] - pad
+                    || local.y > link.overlap_max[1] + pad
+                {
+                    continue;
+                }
+                let weight = water_link_overlap_weight(local, link);
+                if weight <= 0.0 {
+                    continue;
+                }
+                impacts.push(WaterImpact2D {
+                    position: [local.x, local.y],
+                    velocity: [impact.force.x, impact.force.y],
+                    strength: impact.strength * link.wave_transfer * weight,
+                    radius: impact.radius,
+                    cavitation: impact.cavitation * weight,
+                });
+            }
+        }
         Arc::from(impacts)
+    }
+
+    fn collect_water_links_2d(
+        &mut self,
+        water_id: NodeID,
+        water: &perro_nodes::WaterSurfaceParams,
+    ) -> Arc<[WaterLinkState]> {
+        let Some(water_global) = self.get_global_transform_2d(water_id) else {
+            return Arc::from([]);
+        };
+        let other_ids: Vec<_> = self
+            .nodes
+            .iter()
+            .filter_map(|(id, node)| {
+                (id != water_id && matches!(node.data, SceneNodeData::WaterBody2D(_))).then_some(id)
+            })
+            .collect();
+        let mut links = Vec::new();
+        for other_id in other_ids {
+            let Some(other_water) = self.nodes.get(other_id).and_then(|node| {
+                let SceneNodeData::WaterBody2D(other) = &node.data else {
+                    return None;
+                };
+                Some(other.water)
+            }) else {
+                continue;
+            };
+            let Some(other_global) = self.get_global_transform_2d(other_id) else {
+                continue;
+            };
+            if water
+                .link
+                .link_mask
+                .intersects(other_water.link.link_layers)
+                || other_water
+                    .link
+                    .link_mask
+                    .intersects(water.link.link_layers)
+            {
+                continue;
+            }
+            let Some((overlap_min, overlap_max)) =
+                water_overlap_bounds_2d(water, water_global, other_water, other_global)
+            else {
+                continue;
+            };
+            let extent = (overlap_max.x - overlap_min.x).min(overlap_max.y - overlap_min.y);
+            let blend_width = if water.link.blend_width > 0.0 {
+                water.link.blend_width
+            } else {
+                (extent * 0.5).max(0.5)
+            };
+            links.push(WaterLinkState {
+                other: other_id,
+                overlap_min: [overlap_min.x, overlap_min.y],
+                overlap_max: [overlap_max.x, overlap_max.y],
+                blend_width,
+                wave_transfer: water.link.wave_transfer.min(other_water.link.wave_transfer),
+                flow_transfer: water.link.flow_transfer.min(other_water.link.flow_transfer),
+            });
+        }
+        Arc::from(links)
     }
 }
 
@@ -862,6 +955,87 @@ fn water_shape_state(shape: perro_nodes::WaterShape) -> WaterShapeState {
 fn water_render_size(water: perro_nodes::WaterSurfaceParams) -> [f32; 2] {
     let size = water.shape.surface_size();
     [size.x, size.y]
+}
+
+fn water_local_point_2d(
+    inv_transform: glam::Mat3,
+    point: perro_structs::Vector2,
+) -> perro_structs::Vector2 {
+    let p = inv_transform * glam::Vec3::new(point.x, point.y, 1.0);
+    perro_structs::Vector2::new(p.x, p.y)
+}
+
+fn water_global_point_2d(
+    transform: perro_structs::Transform2D,
+    point: perro_structs::Vector2,
+) -> perro_structs::Vector2 {
+    let p = transform.to_mat3() * glam::Vec3::new(point.x, point.y, 1.0);
+    perro_structs::Vector2::new(p.x, p.y)
+}
+
+fn water_surface_corners(size: perro_structs::Vector2) -> [perro_structs::Vector2; 4] {
+    let half = size * 0.5;
+    [
+        perro_structs::Vector2::new(-half.x, -half.y),
+        perro_structs::Vector2::new(half.x, -half.y),
+        perro_structs::Vector2::new(-half.x, half.y),
+        perro_structs::Vector2::new(half.x, half.y),
+    ]
+}
+
+fn water_overlap_bounds_2d(
+    water: &perro_nodes::WaterSurfaceParams,
+    water_transform: perro_structs::Transform2D,
+    other: perro_nodes::WaterSurfaceParams,
+    other_transform: perro_structs::Transform2D,
+) -> Option<(perro_structs::Vector2, perro_structs::Vector2)> {
+    let water_inv = water_transform.to_mat3().inverse();
+    let other_inv = other_transform.to_mat3().inverse();
+    let mut points = Vec::new();
+    for corner in water_surface_corners(other.shape.surface_size()) {
+        let world = water_global_point_2d(other_transform, corner);
+        let local = water_local_point_2d(water_inv, world);
+        if water.shape.contains_surface(local) {
+            points.push(local);
+        }
+    }
+    for corner in water_surface_corners(water.shape.surface_size()) {
+        let world = water_global_point_2d(water_transform, corner);
+        let other_local = water_local_point_2d(other_inv, world);
+        if other.shape.contains_surface(other_local) {
+            points.push(corner);
+        }
+    }
+    let other_center = water_local_point_2d(water_inv, other_transform.position);
+    if water.shape.contains_surface(other_center) {
+        points.push(other_center);
+    }
+    let water_center_in_other = water_local_point_2d(other_inv, water_transform.position);
+    if other.shape.contains_surface(water_center_in_other) {
+        points.push(perro_structs::Vector2::ZERO);
+    }
+    if points.is_empty() {
+        return None;
+    }
+    let mut min = points[0];
+    let mut max = points[0];
+    for point in points.into_iter().skip(1) {
+        min.x = min.x.min(point.x);
+        min.y = min.y.min(point.y);
+        max.x = max.x.max(point.x);
+        max.y = max.y.max(point.y);
+    }
+    (min.x < max.x && min.y < max.y).then_some((min, max))
+}
+
+fn water_link_overlap_weight(local: perro_structs::Vector2, link: &WaterLinkState) -> f32 {
+    let cx = ((link.overlap_min[0] + link.overlap_max[0]) * 0.5 - local.x).abs();
+    let cy = ((link.overlap_min[1] + link.overlap_max[1]) * 0.5 - local.y).abs();
+    let hx = (link.overlap_max[0] - link.overlap_min[0]).abs() * 0.5 + link.blend_width;
+    let hy = (link.overlap_max[1] - link.overlap_min[1]).abs() * 0.5 + link.blend_width;
+    let edge = (1.0 - (cx / hx.max(0.001))).min(1.0 - (cy / hy.max(0.001)));
+    let t = edge.clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
 
 pub(crate) fn resolve_tileset_2d(runtime: &mut Runtime, source: &str) -> Option<ParsedTileset2D> {

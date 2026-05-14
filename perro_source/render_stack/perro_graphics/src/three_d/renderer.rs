@@ -4,8 +4,8 @@ use glam::{Mat4, Quat, Vec3};
 use perro_ids::{MeshID, NodeID};
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, DenseInstancePose3D, LODOptions3D,
-    MeshSurfaceBinding3D, PointLight3DState, RayLight3DState, SkeletonPalette, Sky3DState,
-    SpotLight3DState, Water3DState,
+    MeshBlendOptions3D, MeshSurfaceBinding3D, PointLight3DState, RayLight3DState, SkeletonPalette,
+    Sky3DState, SpotLight3DState, Water3DState,
 };
 use rayon::slice::ParallelSliceMut;
 use std::sync::Arc;
@@ -23,11 +23,19 @@ pub enum Draw3DKind {
     DebugEdgeCylinder,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct DenseMultiMeshDraw3D {
     pub node_model: [[f32; 4]; 4],
     pub instance_scale: f32,
     pub instances: Arc<[DenseInstancePose3D]>,
+}
+
+impl PartialEq for DenseMultiMeshDraw3D {
+    fn eq(&self, other: &Self) -> bool {
+        self.node_model == other.node_model
+            && self.instance_scale == other.instance_scale
+            && (Arc::ptr_eq(&self.instances, &other.instances) || self.instances == other.instances)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -40,6 +48,7 @@ pub struct Draw3DInstance {
     pub dense_multimesh: Option<DenseMultiMeshDraw3D>,
     pub meshlet_override: Option<bool>,
     pub lod: LODOptions3D,
+    pub blend: MeshBlendOptions3D,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -112,6 +121,7 @@ impl Renderer3D {
         skeleton: Option<SkeletonPalette>,
         meshlet_override: Option<bool>,
         lod: LODOptions3D,
+        blend: MeshBlendOptions3D,
     ) {
         self.queued_draws.push(Draw3DInstance {
             node,
@@ -122,6 +132,7 @@ impl Renderer3D {
             dense_multimesh: None,
             meshlet_override,
             lod,
+            blend,
         });
     }
 
@@ -135,6 +146,7 @@ impl Renderer3D {
         skeleton: Option<SkeletonPalette>,
         meshlet_override: Option<bool>,
         lod: LODOptions3D,
+        blend: MeshBlendOptions3D,
     ) {
         self.queued_draws.push(Draw3DInstance {
             node,
@@ -145,9 +157,11 @@ impl Renderer3D {
             dense_multimesh: None,
             meshlet_override,
             lod,
+            blend,
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn queue_draw_multi_dense(
         &mut self,
         node: NodeID,
@@ -156,6 +170,7 @@ impl Renderer3D {
         dense_draw: DenseMultiMeshDraw3D,
         meshlet_override: Option<bool>,
         lod: LODOptions3D,
+        blend: MeshBlendOptions3D,
     ) {
         self.queued_draws.push(Draw3DInstance {
             node,
@@ -168,6 +183,7 @@ impl Renderer3D {
             dense_multimesh: Some(dense_draw),
             meshlet_override,
             lod,
+            blend,
         });
     }
 
@@ -187,6 +203,7 @@ impl Renderer3D {
             dense_multimesh: None,
             meshlet_override: Some(false),
             lod: LODOptions3D::default(),
+            blend: MeshBlendOptions3D::default(),
         });
     }
 
@@ -221,6 +238,7 @@ impl Renderer3D {
             dense_multimesh: None,
             meshlet_override: Some(false),
             lod: LODOptions3D::default(),
+            blend: MeshBlendOptions3D::default(),
         });
     }
 

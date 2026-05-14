@@ -114,6 +114,16 @@ pub struct WaterSampleState {
     pub foam: f32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WaterLinkState {
+    pub other: NodeID,
+    pub overlap_min: [f32; 2],
+    pub overlap_max: [f32; 2],
+    pub blend_width: f32,
+    pub wave_transfer: f32,
+    pub flow_transfer: f32,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Water2DState {
     pub model: [[f32; 3]; 3],
@@ -149,6 +159,7 @@ pub struct Water2DState {
     pub coastline_wave_damping: f32,
     pub coastline_edge_noise: f32,
     pub debug: bool,
+    pub links: Arc<[WaterLinkState]>,
     pub impacts: Arc<[WaterImpact2D]>,
     pub coastline_shapes: Arc<[WaterCoastlineShape2D]>,
 }

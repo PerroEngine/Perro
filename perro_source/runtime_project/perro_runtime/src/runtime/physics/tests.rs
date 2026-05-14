@@ -4,7 +4,8 @@ use crate::runtime::render_2d::{
 };
 use perro_nodes::{
     Area2D, Area3D, CollisionShape2D, CollisionShape3D, FixedJoint2D, FixedJoint3D, RigidBody2D,
-    RigidBody3D, StaticBody2D, StaticBody3D, WaterBody2D, WaterBody3D,
+    RigidBody3D, StaticBody2D, StaticBody3D, WaterBody2D, WaterBody3D, WaterShape,
+    WaterSurfaceParams,
 };
 use perro_runtime_api::sub_apis::PhysicsAPI;
 use perro_structs::CollisionPolicy;
@@ -90,6 +91,260 @@ fn water_3d_buoyancy_uses_density() {
         .expect("water force should be queued")
         .force;
     assert!((force.y - 0.75).abs() < 0.001);
+}
+
+#[test]
+fn rotated_2d_water_uses_local_top_for_buoyancy() {
+    let mut runtime = Runtime::new();
+    let water_id = NodeAPI::create::<WaterBody2D>(&mut runtime);
+    let body_id = NodeAPI::create::<RigidBody2D>(&mut runtime);
+
+    if let Some(node) = runtime.nodes.get_mut(water_id)
+        && let SceneNodeData::WaterBody2D(water) = &mut node.data
+    {
+        water.transform.rotation = std::f32::consts::FRAC_PI_2;
+        water.water.size = Vector2::new(2.0, 10.0);
+        water.water.shape = WaterShape::rect(water.water.size);
+        water.water.physics.buoyancy = 1.0;
+        water.water.physics.drag = 0.0;
+    }
+
+    if let Some(node) = runtime.nodes.get_mut(body_id)
+        && let SceneNodeData::RigidBody2D(body) = &mut node.data
+    {
+        body.transform.position = Vector2::new(4.0, 0.0);
+        body.density = 1.0;
+    }
+
+    runtime.queue_water_forces_2d();
+
+    let force = runtime
+        .physics
+        .pending_forces_2d
+        .iter()
+        .find(|pending| pending.id == body_id)
+        .expect("rotated water force should be queued")
+        .force;
+    assert!(force.x < -3.9);
+    assert!(force.y.abs() < 0.01);
+}
+
+#[test]
+fn rotated_3d_water_uses_local_top_for_buoyancy() {
+    let mut runtime = Runtime::new();
+    let water_id = NodeAPI::create::<WaterBody3D>(&mut runtime);
+    let body_id = NodeAPI::create::<RigidBody3D>(&mut runtime);
+
+    if let Some(node) = runtime.nodes.get_mut(water_id)
+        && let SceneNodeData::WaterBody3D(water) = &mut node.data
+    {
+        water.transform.rotation =
+            Quaternion::from_euler_xyz(0.0, 0.0, std::f32::consts::FRAC_PI_2);
+        water.water.size = Vector2::new(4.0, 4.0);
+        water.water.shape = WaterShape::box_volume(Vector3::new(4.0, 6.0, 4.0));
+        water.water.physics.buoyancy = 1.0;
+        water.water.physics.drag = 0.0;
+    }
+
+    if let Some(node) = runtime.nodes.get_mut(body_id)
+        && let SceneNodeData::RigidBody3D(body) = &mut node.data
+    {
+        body.transform.position = Vector3::new(2.0, 0.0, 0.0);
+        body.density = 1.0;
+    }
+
+    runtime.queue_water_forces_3d();
+
+    let force = runtime
+        .physics
+        .pending_forces_3d
+        .iter()
+        .find(|pending| pending.id == body_id)
+        .expect("rotated water force should be queued")
+        .force;
+    assert!(force.x < -1.9);
+    assert!(force.y.abs() < 0.01);
+}
+
+#[test]
+fn overlapping_2d_waters_blend_buoyancy_once() {
+    let mut runtime = Runtime::new();
+    let water_a = NodeAPI::create::<WaterBody2D>(&mut runtime);
+    let water_b = NodeAPI::create::<WaterBody2D>(&mut runtime);
+    let body_id = NodeAPI::create::<RigidBody2D>(&mut runtime);
+
+    if let Some(node) = runtime.nodes.get_mut(water_a)
+        && let SceneNodeData::WaterBody2D(water) = &mut node.data
+    {
+        water.water.size = Vector2::new(16.0, 16.0);
+        water.water.shape = WaterShape::rect(water.water.size);
+        water.water.physics.buoyancy = 2.0;
+        water.water.physics.drag = 0.0;
+    }
+    if let Some(node) = runtime.nodes.get_mut(water_b)
+        && let SceneNodeData::WaterBody2D(water) = &mut node.data
+    {
+        water.transform.position.x = 4.0;
+        water.transform.position.y = 2.0;
+        water.water.size = Vector2::new(16.0, 16.0);
+        water.water.shape = WaterShape::rect(water.water.size);
+        water.water.physics.buoyancy = 2.0;
+        water.water.physics.drag = 0.0;
+    }
+    if let Some(node) = runtime.nodes.get_mut(body_id)
+        && let SceneNodeData::RigidBody2D(body) = &mut node.data
+    {
+        body.transform.position = Vector2::new(2.0, -1.0);
+        body.density = 1.0;
+    }
+
+    runtime.queue_water_forces_2d();
+
+    let total: f32 = runtime
+        .physics
+        .pending_forces_2d
+        .iter()
+        .filter(|pending| pending.id == body_id)
+        .map(|pending| pending.force.y)
+        .sum();
+    assert!(total > 2.0);
+    assert!(total < 8.0);
+}
+
+#[test]
+fn overlapping_3d_waters_blend_buoyancy_once() {
+    let mut runtime = Runtime::new();
+    let water_a = NodeAPI::create::<WaterBody3D>(&mut runtime);
+    let water_b = NodeAPI::create::<WaterBody3D>(&mut runtime);
+    let body_id = NodeAPI::create::<RigidBody3D>(&mut runtime);
+
+    if let Some(node) = runtime.nodes.get_mut(water_a)
+        && let SceneNodeData::WaterBody3D(water) = &mut node.data
+    {
+        water.water.size = Vector2::new(16.0, 16.0);
+        water.water.shape = WaterShape::box_volume(Vector3::new(16.0, 4.0, 16.0));
+        water.water.depth = 4.0;
+        water.water.physics.buoyancy = 2.0;
+        water.water.physics.drag = 0.0;
+    }
+    if let Some(node) = runtime.nodes.get_mut(water_b)
+        && let SceneNodeData::WaterBody3D(water) = &mut node.data
+    {
+        water.transform.position.x = 4.0;
+        water.transform.position.y = 2.0;
+        water.water.size = Vector2::new(16.0, 16.0);
+        water.water.shape = WaterShape::box_volume(Vector3::new(16.0, 4.0, 16.0));
+        water.water.depth = 4.0;
+        water.water.physics.buoyancy = 2.0;
+        water.water.physics.drag = 0.0;
+    }
+    if let Some(node) = runtime.nodes.get_mut(body_id)
+        && let SceneNodeData::RigidBody3D(body) = &mut node.data
+    {
+        body.transform.position = Vector3::new(2.0, -1.0, 0.0);
+        body.density = 1.0;
+    }
+
+    runtime.queue_water_forces_3d();
+
+    let total: f32 = runtime
+        .physics
+        .pending_forces_3d
+        .iter()
+        .filter(|pending| pending.id == body_id)
+        .map(|pending| pending.force.y)
+        .sum();
+    assert!(total > 2.0);
+    assert!(total < 8.0);
+}
+
+#[test]
+fn rigid_body_crossing_2d_link_boundary_keeps_water_force() {
+    let mut runtime = Runtime::new();
+    let water_a = NodeAPI::create::<WaterBody2D>(&mut runtime);
+    let water_b = NodeAPI::create::<WaterBody2D>(&mut runtime);
+    let body_id = NodeAPI::create::<RigidBody2D>(&mut runtime);
+
+    for (id, x) in [(water_a, 0.0), (water_b, 14.0)] {
+        if let Some(node) = runtime.nodes.get_mut(id)
+            && let SceneNodeData::WaterBody2D(water) = &mut node.data
+        {
+            water.transform.position.x = x;
+            water.water.size = Vector2::new(16.0, 16.0);
+            water.water.shape = WaterShape::rect(water.water.size);
+            water.water.physics.buoyancy = 1.5;
+            water.water.physics.drag = 0.0;
+        }
+    }
+    if let Some(node) = runtime.nodes.get_mut(body_id)
+        && let SceneNodeData::RigidBody2D(body) = &mut node.data
+    {
+        body.transform.position = Vector2::new(7.0, -1.0);
+        body.density = 1.0;
+    }
+    runtime.queue_water_forces_2d();
+    let boundary_force: f32 = runtime
+        .physics
+        .pending_forces_2d
+        .iter()
+        .filter(|pending| pending.id == body_id)
+        .map(|pending| pending.force.y)
+        .sum();
+    runtime.physics.pending_forces_2d.clear();
+    if let Some(node) = runtime.nodes.get_mut(body_id)
+        && let SceneNodeData::RigidBody2D(body) = &mut node.data
+    {
+        body.transform.position.x = 14.0;
+    }
+    runtime.queue_water_forces_2d();
+    let after_cross_force: f32 = runtime
+        .physics
+        .pending_forces_2d
+        .iter()
+        .filter(|pending| pending.id == body_id)
+        .map(|pending| pending.force.y)
+        .sum();
+
+    assert!(boundary_force > 0.0);
+    assert!(after_cross_force > 0.0);
+}
+
+#[test]
+fn water_link_mask_blocks_2d_blend() {
+    let mut a = WaterSurfaceParams::default();
+    let mut b = WaterSurfaceParams::default();
+    a.link.link_mask = BitMask::with([1]);
+    b.link.link_layers = BitMask::with([1]);
+
+    let wa = RuntimeWater2D {
+        id: NodeID::from_parts(1, 0),
+        half: a.shape.surface_size() * 0.5,
+        transform: glam::Mat3::IDENTITY,
+        inv_transform: glam::Mat3::IDENTITY,
+        normal: Vector2::new(0.0, 1.0),
+        min_x: -a.shape.surface_size().x * 0.5,
+        max_x: a.shape.surface_size().x * 0.5,
+        surface: a,
+    };
+    let wb = RuntimeWater2D {
+        id: NodeID::from_parts(2, 0),
+        half: b.shape.surface_size() * 0.5,
+        transform: glam::Mat3::from_translation(glam::Vec2::new(4.0, 0.0)),
+        inv_transform: glam::Mat3::from_translation(glam::Vec2::new(4.0, 0.0)).inverse(),
+        normal: Vector2::new(0.0, 1.0),
+        min_x: 4.0 - b.shape.surface_size().x * 0.5,
+        max_x: 4.0 + b.shape.surface_size().x * 0.5,
+        surface: b,
+    };
+
+    assert!(!water_linked_2d(wa, wb));
+}
+
+#[test]
+fn smoothstep_midpoint_is_cubic_half() {
+    assert_eq!(smoothstep(0.0), 0.0);
+    assert_eq!(smoothstep(1.0), 1.0);
+    assert!((smoothstep(0.5) - 0.5).abs() < 0.001);
 }
 
 #[test]
