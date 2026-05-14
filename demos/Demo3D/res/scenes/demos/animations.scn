@@ -1,0 +1,188 @@
+$root = @AnimationDemo
+
+[AnimationDemo]
+    [Node3D]
+        position = (0, 0, 0)
+    [/Node3D]
+[/AnimationDemo]
+
+[DemoCamera]
+parent = @AnimationDemo
+script = "res://scripts/demo_freecam_3d.rs"
+script_vars = {
+    yaw = 0.0
+    pitch = -0.18
+    speed = 8.0
+}
+    [Camera3D]
+        active = true
+        perspective_fov_y_degrees = 65.0
+        [Node3D]
+            position = (0, 4.5, 13)
+            rotation = (-0.09, 0.0, 0.0, 0.996)
+        [/Node3D]
+    [/Camera3D]
+[/DemoCamera]
+
+[Ambient]
+parent = @AnimationDemo
+    [AmbientLight3D]
+        color = (0.70, 0.74, 0.82)
+        intensity = 0.42
+    [/AmbientLight3D]
+[/Ambient]
+
+[KeyLight]
+parent = @AnimationDemo
+    [RayLight3D]
+        color = (1.0, 0.94, 0.84)
+        intensity = 2.1
+        [Node3D]
+            rotation_deg = (-42, 25, 0)
+        [/Node3D]
+    [/RayLight3D]
+[/KeyLight]
+
+[AnimFloor]
+parent = @AnimationDemo
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = { type = "standard" base_color_factor = (0.13, 0.14, 0.16, 1.0) roughness_factor = 0.9 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (0, -0.15, 0)
+            scale = (14, 0.12, 8)
+        [/Node3D]
+    [/MeshInstance3D]
+[/AnimFloor]
+
+[ClipNote]
+parent = @AnimationDemo
+    [UiLabel]
+        text = "AnimationPlayer uses res://animations/*.panim clips"
+        color = "#D9E7FFFF"
+        size = 0.045
+        horizontal_alignment = center
+        vertical_alignment = center
+        [UiBox]
+            position = (0.5, 0.06)
+            anchor = top_left
+            pivot = center
+            size = (0.60, 0.06)
+        [/UiBox]
+    [/UiLabel]
+[/ClipNote]
+
+[BobA]
+parent = @AnimationDemo
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = { type = "standard" base_color_factor = (0.90, 0.25, 0.22, 1.0) roughness_factor = 0.45 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (-5, 0.55, 0)
+            scale = (0.8, 0.8, 0.8)
+        [/Node3D]
+    [/MeshInstance3D]
+[/BobA]
+
+[BobAPlayer]
+parent = @AnimationDemo
+    [AnimationPlayer]
+        animation = "res://animations/demo_bob.panim"
+        bindings = { Hero = @BobA }
+        playback = loop
+        speed = 0.85
+        paused = false
+    [/AnimationPlayer]
+[/BobAPlayer]
+
+[PulseA]
+parent = @AnimationDemo
+    [MeshInstance3D]
+        mesh = "__sphere__"
+        material = { type = "standard" base_color_factor = (0.20, 0.78, 0.95, 1.0) roughness_factor = 0.34 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (-2.5, 0.8, 0)
+            scale = (0.9, 0.9, 0.9)
+        [/Node3D]
+    [/MeshInstance3D]
+[/PulseA]
+
+[PulseAPlayer]
+parent = @AnimationDemo
+    [AnimationPlayer]
+        animation = "res://animations/demo_pulse.panim"
+        bindings = { Hero = @PulseA }
+        playback = loop
+        speed = 1.1
+        paused = false
+    [/AnimationPlayer]
+[/PulseAPlayer]
+
+[BobB]
+parent = @AnimationDemo
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = { type = "standard" base_color_factor = (0.95, 0.72, 0.18, 1.0) roughness_factor = 0.50 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (0, 0.55, 0)
+            scale = (0.75, 0.75, 0.75)
+        [/Node3D]
+    [/MeshInstance3D]
+[/BobB]
+
+[BobBPlayer]
+parent = @AnimationDemo
+    [AnimationPlayer]
+        animation = "res://animations/demo_bob.panim"
+        bindings = { Hero = @BobB }
+        playback = loop
+        speed = 1.25
+        paused = false
+    [/AnimationPlayer]
+[/BobBPlayer]
+
+[PulseB]
+parent = @AnimationDemo
+    [MeshInstance3D]
+        mesh = "__sphere__"
+        material = { type = "standard" base_color_factor = (0.58, 0.82, 0.32, 1.0) roughness_factor = 0.42 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (2.5, 0.8, 0)
+            scale = (0.9, 0.9, 0.9)
+        [/Node3D]
+    [/MeshInstance3D]
+[/PulseB]
+
+[PulseBPlayer]
+parent = @AnimationDemo
+    [AnimationPlayer]
+        animation = "res://animations/demo_pulse.panim"
+        bindings = { Hero = @PulseB }
+        playback = loop
+        speed = 0.75
+        paused = false
+    [/AnimationPlayer]
+[/PulseBPlayer]
+
+[BobC]
+parent = @AnimationDemo
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = { type = "standard" base_color_factor = (0.82, 0.42, 0.92, 1.0) roughness_factor = 0.48 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (5, 0.55, 0)
+            scale = (0.8, 0.8, 0.8)
+        [/Node3D]
+    [/MeshInstance3D]
+[/BobC]
+
+[BobCPlayer]
+parent = @AnimationDemo
+    [AnimationPlayer]
+        animation = "res://animations/demo_bob.panim"
+        bindings = { Hero = @BobC }
+        playback = loop
+        speed = 1.55
+        paused = false
+    [/AnimationPlayer]
+[/BobCPlayer]

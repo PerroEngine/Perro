@@ -541,6 +541,18 @@ mod zones;
 use helpers::*;
 
 impl RuntimeAudioAPI for Runtime {
+    fn set_audio_debug_rays(&mut self, enabled: bool) {
+        self.audio.config.debug_rays = enabled;
+        if !enabled {
+            self.audio.debug_ray_count_3d = 0;
+            self.clear_stale_audio_debug_rays();
+        }
+    }
+
+    fn audio_debug_rays_enabled(&mut self) -> bool {
+        self.audio.config.debug_rays
+    }
+
     fn play_runtime_audio_attached(
         &mut self,
         bus_id: Option<perro_ids::AudioBusID>,

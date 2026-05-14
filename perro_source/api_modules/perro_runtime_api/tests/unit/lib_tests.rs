@@ -483,6 +483,12 @@ impl PhysicsAPI for DummyRuntime {
 }
 
 impl RuntimeAudioAPI for DummyRuntime {
+    fn set_audio_debug_rays(&mut self, _enabled: bool) {}
+
+    fn audio_debug_rays_enabled(&mut self) -> bool {
+        false
+    }
+
     fn play_runtime_audio_attached(
         &mut self,
         _bus_id: Option<AudioBusID>,

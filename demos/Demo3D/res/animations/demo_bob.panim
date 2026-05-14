@@ -1,0 +1,34 @@
+[Animation]
+name = "DemoBob"
+fps = 30
+default_interp = "interpolate"
+default_ease = "ease_in_out"
+[/Animation]
+
+[Objects]
+Hero = Node3D
+[/Objects]
+
+[Frame0]
+@Hero {
+    position = (0, 0, 0)
+    rotation_deg = (0, 0, 0)
+    scale = (1, 1, 1)
+}
+[/Frame0]
+
+[Frame30]
+@Hero {
+    position = (0, 1.2, 0)
+    rotation_deg = (0, 180, 0)
+    scale = (1, 1, 1)
+}
+[/Frame30]
+
+[Frame60]
+@Hero {
+    position = (0, 0, 0)
+    rotation_deg = (0, 360, 0)
+    scale = (1, 1, 1)
+}
+[/Frame60]

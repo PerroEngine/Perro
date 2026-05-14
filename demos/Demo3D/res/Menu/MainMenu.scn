@@ -1,0 +1,301 @@
+$root = @hub_menu_root
+$button_style = { fill = "#101820E8" stroke = "#88AADD" stroke_width = 1.0 radius = 0.08 }
+$button_hover_style = { fill = "#1B2C3CE8" stroke = "#B8D8FF" stroke_width = 1.0 radius = 0.08 }
+$button_pressed_style = { fill = "#071018E8" stroke = "#FFFFFF" stroke_width = 1.0 radius = 0.06 }
+
+[hub_menu_root]
+    [UiPanel]
+        anchor = "center"
+        position_ratio = (0.5, 0.5)
+        size_ratio = (1.0, 1.0)
+        style = { fill = "#070A0F90" stroke = "#00000000" stroke_width = 0.0 radius = 0 }
+        padding = 16
+    [/UiPanel]
+[/hub_menu_root]
+
+[hub_menu_panel]
+parent = @hub_menu_root
+    [UiPanel]
+        anchor = "center"
+        position_ratio = (0.5, 0.5)
+        size_ratio = (0.42, 0.56)
+        style = { fill = "#0B1018E8" stroke = "#D0E0EF" stroke_width = 1.0 radius = 0.04 }
+        padding = 14
+    [/UiPanel]
+[/hub_menu_panel]
+
+[hub_menu_content]
+parent = @hub_menu_panel
+    [UiVLayout]
+        anchor = "center"
+        position_ratio = (0.5, 0.5)
+        size_ratio = (0.92, 0.92)
+        spacing = 0.035
+        h_align = "fill"
+        v_align = "fill"
+    [/UiVLayout]
+[/hub_menu_content]
+
+[hub_title]
+parent = @hub_menu_content
+    [UiLabel]
+        size_ratio = (1.0, 0.12)
+        text = "Perro Demo3D"
+        text_size_ratio = 0.28
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/hub_title]
+
+[hub_subtitle]
+parent = @hub_menu_content
+    [UiLabel]
+        size_ratio = (1.0, 0.08)
+        text = "Pick a feature scene"
+        text_size_ratio = 0.20
+        color = "#B9C7D8"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/hub_subtitle]
+
+[demo_btn_mesh]
+parent = @hub_menu_content
+    [UiButton]
+        size_ratio = (1.0, 0.075)
+        h_align = "fill"
+        click_signals = ["demo_mesh_click"]
+        style = $button_style
+        hover = { style = $button_hover_style }
+        pressed = { style = $button_pressed_style }
+    [/UiButton]
+[/demo_btn_mesh]
+
+[demo_btn_mesh_label]
+parent = @demo_btn_mesh
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Mesh + Materials"
+        text_size_ratio = 0.24
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/demo_btn_mesh_label]
+
+[demo_btn_lights]
+parent = @hub_menu_content
+    [UiButton]
+        size_ratio = (1.0, 0.075)
+        h_align = "fill"
+        click_signals = ["demo_lights_click"]
+        style = $button_style
+        hover = { style = $button_hover_style }
+        pressed = { style = $button_pressed_style }
+    [/UiButton]
+[/demo_btn_lights]
+
+[demo_btn_lights_label]
+parent = @demo_btn_lights
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "3D Lights"
+        text_size_ratio = 0.24
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/demo_btn_lights_label]
+
+[demo_btn_water]
+parent = @hub_menu_content
+    [UiButton]
+        size_ratio = (1.0, 0.075)
+        h_align = "fill"
+        click_signals = ["demo_water_click"]
+        style = $button_style
+        hover = { style = $button_hover_style }
+        pressed = { style = $button_pressed_style }
+    [/UiButton]
+[/demo_btn_water]
+
+[demo_btn_water_label]
+parent = @demo_btn_water
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "WaterBody3D"
+        text_size_ratio = 0.24
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/demo_btn_water_label]
+
+[demo_btn_water_cannon]
+parent = @hub_menu_content
+    [UiButton]
+        size_ratio = (1.0, 0.075)
+        h_align = "fill"
+        click_signals = ["demo_water_cannon_click"]
+        style = $button_style
+        hover = { style = $button_hover_style }
+        pressed = { style = $button_pressed_style }
+    [/UiButton]
+[/demo_btn_water_cannon]
+
+[demo_btn_water_cannon_label]
+parent = @demo_btn_water_cannon
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Water Cannon"
+        text_size_ratio = 0.24
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/demo_btn_water_cannon_label]
+
+[demo_btn_animations]
+parent = @hub_menu_content
+    [UiButton]
+        size_ratio = (1.0, 0.075)
+        h_align = "fill"
+        click_signals = ["demo_animations_click"]
+        style = $button_style
+        hover = { style = $button_hover_style }
+        pressed = { style = $button_pressed_style }
+    [/UiButton]
+[/demo_btn_animations]
+
+[demo_btn_animations_label]
+parent = @demo_btn_animations
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = ".panim Animations"
+        text_size_ratio = 0.24
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/demo_btn_animations_label]
+
+[demo_btn_sky]
+parent = @hub_menu_content
+    [UiButton]
+        size_ratio = (1.0, 0.075)
+        h_align = "fill"
+        click_signals = ["demo_sky_click"]
+        style = $button_style
+        hover = { style = $button_hover_style }
+        pressed = { style = $button_pressed_style }
+    [/UiButton]
+[/demo_btn_sky]
+
+[demo_btn_sky_label]
+parent = @demo_btn_sky
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Sky3D"
+        text_size_ratio = 0.24
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/demo_btn_sky_label]
+
+[demo_btn_blend]
+parent = @hub_menu_content
+    [UiButton]
+        size_ratio = (1.0, 0.075)
+        h_align = "fill"
+        click_signals = ["demo_blend_click"]
+        style = $button_style
+        hover = { style = $button_hover_style }
+        pressed = { style = $button_pressed_style }
+    [/UiButton]
+[/demo_btn_blend]
+
+[demo_btn_blend_label]
+parent = @demo_btn_blend
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Mesh Blending"
+        text_size_ratio = 0.24
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/demo_btn_blend_label]
+
+[demo_btn_multimesh]
+parent = @hub_menu_content
+    [UiButton]
+        size_ratio = (1.0, 0.075)
+        h_align = "fill"
+        click_signals = ["demo_multimesh_click"]
+        style = $button_style
+        hover = { style = $button_hover_style }
+        pressed = { style = $button_pressed_style }
+    [/UiButton]
+[/demo_btn_multimesh]
+
+[demo_btn_multimesh_label]
+parent = @demo_btn_multimesh
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "MultiMesh"
+        text_size_ratio = 0.24
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/demo_btn_multimesh_label]
+
+[demo_btn_particles]
+parent = @hub_menu_content
+    [UiButton]
+        size_ratio = (1.0, 0.075)
+        h_align = "fill"
+        click_signals = ["demo_particles_click"]
+        style = $button_style
+        hover = { style = $button_hover_style }
+        pressed = { style = $button_pressed_style }
+    [/UiButton]
+[/demo_btn_particles]
+
+[demo_btn_particles_label]
+parent = @demo_btn_particles
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Particles"
+        text_size_ratio = 0.24
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/demo_btn_particles_label]
+
+[demo_btn_audio]
+parent = @hub_menu_content
+    [UiButton]
+        size_ratio = (1.0, 0.075)
+        h_align = "fill"
+        click_signals = ["demo_audio_click"]
+        style = $button_style
+        hover = { style = $button_hover_style }
+        pressed = { style = $button_pressed_style }
+    [/UiButton]
+[/demo_btn_audio]
+
+[demo_btn_audio_label]
+parent = @demo_btn_audio
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Positional Audio"
+        text_size_ratio = 0.24
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/demo_btn_audio_label]

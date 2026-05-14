@@ -1,0 +1,46 @@
+$root = @main
+
+[main]
+script = "res://scripts/demo_manager.rs"
+    [Node3D]
+        position = (0, 0, 0)
+    [/Node3D]
+[/main]
+
+[DemoMount]
+parent = @root
+    [Node3D]
+        position = (0, 0, 0)
+    [/Node3D]
+[/DemoMount]
+
+[HubCamera]
+parent = @root
+    [Camera3D]
+        active = true
+        perspective_fov_y_degrees = 60.0
+        [Node3D]
+            position = (0, 3, 10)
+            rotation_deg = (-12, 0, 0)
+        [/Node3D]
+    [/Camera3D]
+[/HubCamera]
+
+[HubAmbient]
+parent = @root
+    [AmbientLight3D]
+        color = (0.8, 0.9, 1.0)
+        intensity = 0.5
+    [/AmbientLight3D]
+[/HubAmbient]
+
+[HubKeyLight]
+parent = @root
+    [RayLight3D]
+        color = (1.0, 0.95, 0.86)
+        intensity = 2.0
+        [Node3D]
+            rotation_deg = (-45, 35, 0)
+        [/Node3D]
+    [/RayLight3D]
+[/HubKeyLight]

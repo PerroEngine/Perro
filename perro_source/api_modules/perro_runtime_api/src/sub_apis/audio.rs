@@ -124,6 +124,9 @@ impl<'a> RuntimeAudio<'a> {
 }
 
 pub trait RuntimeAudioAPI {
+    fn set_audio_debug_rays(&mut self, enabled: bool);
+    fn audio_debug_rays_enabled(&mut self) -> bool;
+
     fn play_runtime_audio_attached(
         &mut self,
         bus_id: Option<AudioBusID>,
@@ -181,6 +184,16 @@ pub struct RuntimeAudioModule<'rt, RT: RuntimeAudioAPI + ?Sized> {
 impl<'rt, RT: RuntimeAudioAPI + ?Sized> RuntimeAudioModule<'rt, RT> {
     pub fn new(rt: &'rt mut RT) -> Self {
         Self { rt }
+    }
+
+    #[inline]
+    pub fn set_debug_rays(&mut self, enabled: bool) {
+        self.rt.set_audio_debug_rays(enabled);
+    }
+
+    #[inline]
+    pub fn debug_rays_enabled(&mut self) -> bool {
+        self.rt.audio_debug_rays_enabled()
     }
 
     #[inline]

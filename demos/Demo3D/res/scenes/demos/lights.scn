@@ -1,0 +1,114 @@
+$root = @LightsDemo
+
+[LightsDemo]
+    [Node3D]
+        position = (0, 0, 0)
+    [/Node3D]
+[/LightsDemo]
+
+[DemoCamera]
+parent = @LightsDemo
+script = "res://scripts/demo_freecam_3d.rs"
+script_vars = {
+    yaw = 0.0
+    pitch = -0.22
+    speed = 7.5
+}
+    [Camera3D]
+        active = true
+        perspective_fov_y_degrees = 65.0
+        [Node3D]
+            position = (0, 4, 12)
+            rotation = (-0.11, 0.0, 0.0, 0.994)
+        [/Node3D]
+    [/Camera3D]
+[/DemoCamera]
+
+[Ambient]
+parent = @LightsDemo
+    [AmbientLight3D]
+        color = (0.15, 0.18, 0.25)
+        intensity = 0.18
+    [/AmbientLight3D]
+[/Ambient]
+
+[Floor]
+parent = @LightsDemo
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = { type = "standard" base_color_factor = (0.16, 0.16, 0.18, 1.0) roughness_factor = 0.75 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (0, -0.55, 0)
+            scale = (14, 0.1, 14)
+        [/Node3D]
+    [/MeshInstance3D]
+[/Floor]
+
+[CenterSphere]
+parent = @LightsDemo
+    [MeshInstance3D]
+        mesh = "__sphere__"
+        material = { type = "standard" base_color_factor = (0.74, 0.76, 0.80, 1.0) roughness_factor = 0.35 metallic_factor = 0.1 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (0, 1.0, 0)
+            scale = (1.6, 1.6, 1.6)
+        [/Node3D]
+    [/MeshInstance3D]
+[/CenterSphere]
+
+[RedLightMarker]
+parent = @LightsDemo
+    [MeshInstance3D]
+        mesh = "__sphere__"
+        material = { type = "unlit" base_color_factor = (1.0, 0.12, 0.08, 1.0) emissive_factor = (1.0, 0.12, 0.08) alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (-3, 2.5, 1.5)
+            scale = (0.25, 0.25, 0.25)
+        [/Node3D]
+    [/MeshInstance3D]
+[/RedLightMarker]
+
+[RedPoint]
+parent = @RedLightMarker
+    [PointLight3D]
+        color = (1.0, 0.12, 0.08)
+        intensity = 5.0
+        range = 8.0
+    [/PointLight3D]
+[/RedPoint]
+
+[BlueLightMarker]
+parent = @LightsDemo
+    [MeshInstance3D]
+        mesh = "__sphere__"
+        material = { type = "unlit" base_color_factor = (0.08, 0.35, 1.0, 1.0) emissive_factor = (0.08, 0.35, 1.0) alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (3, 2.5, 1.5)
+            scale = (0.25, 0.25, 0.25)
+        [/Node3D]
+    [/MeshInstance3D]
+[/BlueLightMarker]
+
+[BluePoint]
+parent = @BlueLightMarker
+    [PointLight3D]
+        color = (0.08, 0.35, 1.0)
+        intensity = 5.0
+        range = 8.0
+    [/PointLight3D]
+[/BluePoint]
+
+[Spot]
+parent = @LightsDemo
+    [SpotLight3D]
+        color = (1.0, 0.86, 0.50)
+        intensity = 8.0
+        range = 14.0
+        inner_angle_degrees = 18.0
+        outer_angle_degrees = 34.0
+        [Node3D]
+            position = (0, 5, -4)
+            rotation_deg = (-55, 0, 0)
+        [/Node3D]
+    [/SpotLight3D]
+[/Spot]

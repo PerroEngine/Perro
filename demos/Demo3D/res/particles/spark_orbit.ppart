@@ -1,0 +1,16 @@
+[ParticleProfile3D]
+path = { type = "orbit_y" angular_velocity = 3.4 radius = 1.8 }
+lifetime_min = 1.4
+lifetime_max = 2.4
+speed_min = 0.6
+speed_max = 1.8
+spread_degrees = 44.0
+size = 3.0
+size_min = 0.5
+size_max = 1.1
+force = (0.0, 1.0, 0.0)
+color_start = (0.35, 0.92, 1.0, 1.0)
+color_end = (0.12, 0.28, 1.0, 0.0)
+emissive = (0.08, 0.55, 1.0)
+spin_angular_velocity = 2.0
+[/ParticleProfile3D]

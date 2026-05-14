@@ -1,0 +1,101 @@
+$root = @SkyDemo
+
+[SkyDemo]
+    [Node3D]
+    [/Node3D]
+[/SkyDemo]
+
+[DemoCamera]
+parent = @SkyDemo
+script = "res://scripts/demo_freecam_3d.rs"
+script_vars = {
+    yaw = 0.0
+    pitch = -0.16
+    speed = 10.0
+}
+    [Camera3D]
+        active = true
+        perspective_fov_y_degrees = 70.0
+        [Node3D]
+            position = (0, 5, 15)
+            rotation = (-0.08, 0.0, 0.0, 0.997)
+        [/Node3D]
+    [/Camera3D]
+[/DemoCamera]
+
+[Sky]
+parent = @SkyDemo
+    [Sky3D]
+        day_colors = [(0.62, 0.84, 1.0), (0.34, 0.66, 0.94), (0.12, 0.34, 0.70)]
+        evening_colors = [(1.0, 0.58, 0.32), (0.92, 0.30, 0.52), (0.28, 0.12, 0.32)]
+        night_colors = [(0.01, 0.02, 0.06), (0.03, 0.05, 0.14), (0.08, 0.10, 0.22)]
+        sky_angle = 0.0
+        time = { time_of_day = 0.36 paused = false scale = 0.08 }
+        cloud_size = 0.82
+        cloud_density = 0.70
+        cloud_variance = 0.32
+        wind_vector = (0.06, 0.02)
+        star_size = 1.0
+        star_scatter = 0.28
+        star_gleam = 0.45
+        moon_size = 0.58
+        sun_size = 0.95
+        active = true
+    [/Sky3D]
+[/Sky]
+
+[Ambient]
+parent = @SkyDemo
+    [AmbientLight3D]
+        color = (0.60, 0.70, 0.86)
+        intensity = 0.28
+    [/AmbientLight3D]
+[/Ambient]
+
+[Sun]
+parent = @SkyDemo
+    [RayLight3D]
+        color = (1.0, 0.92, 0.74)
+        intensity = 2.3
+        [Node3D]
+            rotation_deg = (-36, 32, 0)
+        [/Node3D]
+    [/RayLight3D]
+[/Sun]
+
+[Terrain]
+parent = @SkyDemo
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = { type = "standard" base_color_factor = (0.18, 0.34, 0.22, 1.0) roughness_factor = 0.9 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (0, -0.15, 0)
+            scale = (18, 0.18, 12)
+        [/Node3D]
+    [/MeshInstance3D]
+[/Terrain]
+
+[SkyMarkerA]
+parent = @SkyDemo
+    [MeshInstance3D]
+        mesh = "__sphere__"
+        material = { type = "standard" base_color_factor = (0.88, 0.42, 0.18, 1.0) roughness_factor = 0.35 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (-4, 1.2, -1)
+            scale = (1.2, 1.2, 1.2)
+        [/Node3D]
+    [/MeshInstance3D]
+[/SkyMarkerA]
+
+[SkyMarkerB]
+parent = @SkyDemo
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = { type = "standard" base_color_factor = (0.20, 0.52, 0.88, 1.0) roughness_factor = 0.42 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (4, 1, -2)
+            rotation_deg = (0, 35, 0)
+            scale = (1.1, 1.1, 1.1)
+        [/Node3D]
+    [/MeshInstance3D]
+[/SkyMarkerB]

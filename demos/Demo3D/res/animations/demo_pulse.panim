@@ -1,0 +1,31 @@
+[Animation]
+name = "DemoPulse"
+fps = 30
+default_interp = "interpolate"
+default_ease = "ease_in_out"
+[/Animation]
+
+[Objects]
+Hero = Node3D
+[/Objects]
+
+[Frame0]
+@Hero {
+    scale = (0.7, 0.7, 0.7)
+    rotation_deg = (0, 0, 0)
+}
+[/Frame0]
+
+[Frame18]
+@Hero {
+    scale = (1.35, 0.55, 1.35)
+    rotation_deg = (0, 90, 0)
+}
+[/Frame18]
+
+[Frame36]
+@Hero {
+    scale = (0.7, 0.7, 0.7)
+    rotation_deg = (0, 180, 0)
+}
+[/Frame36]

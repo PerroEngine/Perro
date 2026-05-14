@@ -1,0 +1,108 @@
+$root = @MeshBlendingDemo
+
+[MeshBlendingDemo]
+    [Node3D]
+    [/Node3D]
+[/MeshBlendingDemo]
+
+[DemoCamera]
+parent = @MeshBlendingDemo
+script = "res://scripts/demo_freecam_3d.rs"
+script_vars = {
+    yaw = 0.0
+    pitch = -0.22
+    speed = 8.0
+}
+    [Camera3D]
+        active = true
+        perspective_fov_y_degrees = 65.0
+        [Node3D]
+            position = (0, 4.2, 11)
+            rotation = (-0.11, 0.0, 0.0, 0.994)
+        [/Node3D]
+    [/Camera3D]
+[/DemoCamera]
+
+[Ambient]
+parent = @MeshBlendingDemo
+    [AmbientLight3D]
+        color = (0.70, 0.76, 0.86)
+        intensity = 0.44
+    [/AmbientLight3D]
+[/Ambient]
+
+[KeyLight]
+parent = @MeshBlendingDemo
+    [RayLight3D]
+        color = (1.0, 0.95, 0.82)
+        intensity = 2.0
+        [Node3D]
+            rotation_deg = (-45, 25, 0)
+        [/Node3D]
+    [/RayLight3D]
+[/KeyLight]
+
+[BlendPlane]
+parent = @MeshBlendingDemo
+    [MeshInstance3D]
+        mesh = "__cube__"
+        blend_enabled = true
+        blend_layers = [1]
+        blend_mask = none
+        blend_distance = 0.38
+        material = { type = "standard" base_color_factor = (0.18, 0.20, 0.24, 1.0) roughness_factor = 0.9 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (0, 0, 0)
+            scale = (10, 0.2, 7)
+        [/Node3D]
+    [/MeshInstance3D]
+[/BlendPlane]
+
+[BlendSphereA]
+parent = @MeshBlendingDemo
+    [MeshInstance3D]
+        mesh = "__sphere__"
+        blend_enabled = true
+        blend_layers = [2]
+        blend_mask = none
+        blend_distance = 0.55
+        material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (-2.4, 0.55, 0)
+            scale = (1.45, 1.45, 1.45)
+        [/Node3D]
+    [/MeshInstance3D]
+[/BlendSphereA]
+
+[BlendCube]
+parent = @MeshBlendingDemo
+    [MeshInstance3D]
+        mesh = "__cube__"
+        blend_enabled = true
+        blend_layers = [3]
+        blend_mask = none
+        blend_distance = 0.45
+        material = { type = "standard" base_color_factor = (0.22, 0.70, 0.88, 1.0) roughness_factor = 0.46 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (0, 0.8, 0)
+            rotation_deg = (22, 35, 0)
+            scale = (1.5, 1.5, 1.5)
+        [/Node3D]
+    [/MeshInstance3D]
+[/BlendCube]
+
+[BlendSphereB]
+parent = @MeshBlendingDemo
+    [MeshInstance3D]
+        mesh = "__sphere__"
+        blend_enabled = true
+        blend_layers = [4]
+        blend_mask = none
+        blend_distance = 0.55
+        material = { type = "standard" base_color_factor = (0.62, 0.84, 0.28, 1.0) roughness_factor = 0.42 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (2.4, 0.55, 0)
+            scale = (1.45, 1.45, 1.45)
+        [/Node3D]
+    [/MeshInstance3D]
+[/BlendSphereB]

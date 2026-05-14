@@ -1,0 +1,97 @@
+$root = @WaterDemo
+
+[WaterDemo]
+    [Node3D]
+        position = (0, 0, 0)
+    [/Node3D]
+[/WaterDemo]
+
+[DemoCamera]
+parent = @WaterDemo
+script = "res://scripts/demo_freecam_3d.rs"
+script_vars = {
+    yaw = 0.0
+    pitch = -0.24
+    speed = 9.0
+}
+    [Camera3D]
+        active = true
+        perspective_fov_y_degrees = 65.0
+        [Node3D]
+            position = (0, 5, 14)
+            rotation = (-0.12, 0.0, 0.0, 0.993)
+        [/Node3D]
+    [/Camera3D]
+[/DemoCamera]
+
+[Ambient]
+parent = @WaterDemo
+    [AmbientLight3D]
+        color = (0.55, 0.70, 0.95)
+        intensity = 0.45
+    [/AmbientLight3D]
+[/Ambient]
+
+[Sun]
+parent = @WaterDemo
+    [RayLight3D]
+        color = (1.0, 0.95, 0.82)
+        intensity = 2.0
+        [Node3D]
+            rotation_deg = (-42, 25, 0)
+        [/Node3D]
+    [/RayLight3D]
+[/Sun]
+
+[LakeBed]
+parent = @WaterDemo
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = { type = "standard" base_color_factor = (0.24, 0.27, 0.20, 1.0) roughness_factor = 0.95 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (0, -1.2, 0)
+            scale = (16, 0.2, 16)
+        [/Node3D]
+    [/MeshInstance3D]
+[/LakeBed]
+
+[Water]
+parent = @WaterDemo
+    [WaterBody3D]
+        shape = { type = "cube" size = (14, 2, 14) }
+        resolution = (96, 96)
+        depth = 2.0
+        flow = (0.25, 0.08)
+        wind = (0.8, 0.25)
+        idle_mode = "calm"
+        wave_speed = 1.0
+        wave_scale = 0.75
+        damping = 0.985
+        buoyancy = 1.0
+        drag = 0.35
+        wake_strength = 1.0
+        foam_strength = 0.55
+        sample_readback_rate = 20
+        lod_near = 96
+        lod_mid = 192
+        lod_far = 384
+        min_resolution = 32
+        shallow_color = (0.24, 0.78, 0.92, 0.52)
+        deep_color = (0.02, 0.16, 0.38, 0.78)
+        [Node3D]
+            position = (0, 0, 0)
+        [/Node3D]
+    [/WaterBody3D]
+[/Water]
+
+[FloatMarker]
+parent = @WaterDemo
+    [MeshInstance3D]
+        mesh = "__sphere__"
+        material = { type = "standard" base_color_factor = (1.0, 0.72, 0.20, 1.0) roughness_factor = 0.40 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (0, 0.6, 0)
+            scale = (0.55, 0.55, 0.55)
+        [/Node3D]
+    [/MeshInstance3D]
+[/FloatMarker]

@@ -1,0 +1,92 @@
+$root = @MeshMaterialsDemo
+
+[MeshMaterialsDemo]
+    [Node3D]
+        position = (0, 0, 0)
+    [/Node3D]
+[/MeshMaterialsDemo]
+
+[DemoCamera]
+parent = @MeshMaterialsDemo
+script = "res://scripts/demo_freecam_3d.rs"
+script_vars = {
+    yaw = 0.0
+    pitch = -0.18
+    speed = 8.0
+}
+    [Camera3D]
+        active = true
+        perspective_fov_y_degrees = 65.0
+        [Node3D]
+            position = (0, 3, 10)
+            rotation = (-0.09, 0.0, 0.0, 0.996)
+        [/Node3D]
+    [/Camera3D]
+[/DemoCamera]
+
+[Ambient]
+parent = @MeshMaterialsDemo
+    [AmbientLight3D]
+        color = (0.72, 0.78, 0.92)
+        intensity = 0.35
+    [/AmbientLight3D]
+[/Ambient]
+
+[KeyLight]
+parent = @MeshMaterialsDemo
+    [RayLight3D]
+        color = (1.0, 0.95, 0.86)
+        intensity = 2.3
+        [Node3D]
+            rotation_deg = (-50, 32, 0)
+        [/Node3D]
+    [/RayLight3D]
+[/KeyLight]
+
+[Floor]
+parent = @MeshMaterialsDemo
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = { type = "standard" base_color_factor = (0.20, 0.24, 0.28, 1.0) roughness_factor = 0.85 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (0, -0.55, 0)
+            scale = (12, 0.1, 12)
+        [/Node3D]
+    [/MeshInstance3D]
+[/Floor]
+
+[RedCube]
+parent = @MeshMaterialsDemo
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = { type = "standard" base_color_factor = (0.95, 0.18, 0.12, 1.0) roughness_factor = 0.45 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (-2.5, 0.55, 0)
+            scale = (1.2, 1.2, 1.2)
+        [/Node3D]
+    [/MeshInstance3D]
+[/RedCube]
+
+[BlueSphere]
+parent = @MeshMaterialsDemo
+    [MeshInstance3D]
+        mesh = "__sphere__"
+        material = { type = "standard" base_color_factor = (0.08, 0.36, 1.0, 1.0) roughness_factor = 0.22 metallic_factor = 0.4 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (0, 0.9, 0)
+            scale = (1.35, 1.35, 1.35)
+        [/Node3D]
+    [/MeshInstance3D]
+[/BlueSphere]
+
+[GreenCube]
+parent = @MeshMaterialsDemo
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = { type = "toon" base_color_factor = (0.2, 0.9, 0.35, 1.0) band_count = 4 rim_strength = 0.35 outline_width = 0.015 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (2.5, 0.55, 0)
+            scale = (1.2, 1.2, 1.2)
+        [/Node3D]
+    [/MeshInstance3D]
+[/GreenCube]

@@ -1,0 +1,150 @@
+$root = @PositionalAudioDemo
+
+[PositionalAudioDemo]
+script = "res://scripts/positional_audio_demo.rs"
+    [Node3D]
+    [/Node3D]
+[/PositionalAudioDemo]
+
+[DemoCamera]
+parent = @PositionalAudioDemo
+script = "res://scripts/demo_freecam_3d.rs"
+script_vars = {
+    yaw = 0.0
+    pitch = -0.14
+    speed = 9.0
+}
+    [Camera3D]
+        active = true
+        perspective_fov_y_degrees = 68.0
+        audio_options = { audio_mask = [] effects = [] }
+        [Node3D]
+            position = (0, 3.6, 12)
+            rotation = (-0.07, 0.0, 0.0, 0.998)
+        [/Node3D]
+    [/Camera3D]
+[/DemoCamera]
+
+[AudioDebugLabel]
+parent = @PositionalAudioDemo
+    [UiLabel]
+        text = "Audio debug rays: ON  |  R toggles"
+        color = "#D9E7FFFF"
+        size = 0.045
+        horizontal_alignment = center
+        vertical_alignment = center
+        [UiBox]
+            position = (0.5, 0.06)
+            anchor = top_left
+            pivot = center
+            size = (0.44, 0.06)
+        [/UiBox]
+    [/UiLabel]
+[/AudioDebugLabel]
+
+[Ambient]
+parent = @PositionalAudioDemo
+    [AmbientLight3D]
+        color = (0.54, 0.62, 0.76)
+        intensity = 0.32
+    [/AmbientLight3D]
+[/Ambient]
+
+[Sun]
+parent = @PositionalAudioDemo
+    [RayLight3D]
+        color = (1.0, 0.94, 0.84)
+        intensity = 2.1
+        [Node3D]
+            rotation_deg = (-42, 32, 0)
+        [/Node3D]
+    [/RayLight3D]
+[/Sun]
+
+[Floor]
+parent = @PositionalAudioDemo
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = { type = "standard" base_color_factor = (0.12, 0.13, 0.15, 1.0) roughness_factor = 0.92 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (0, -0.12, 0)
+            scale = (14, 0.1, 10)
+        [/Node3D]
+    [/MeshInstance3D]
+[/Floor]
+
+[OccluderWall]
+parent = @PositionalAudioDemo
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = { type = "standard" base_color_factor = (0.32, 0.34, 0.38, 1.0) roughness_factor = 0.86 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (0, 1.3, -1.4)
+            scale = (5.8, 1.3, 0.22)
+        [/Node3D]
+    [/MeshInstance3D]
+[/OccluderWall]
+
+[AudioWall]
+parent = @PositionalAudioDemo
+    [AudioMask3D]
+        material = { transmission = 0.18 low_pass = 0.65 reflection = 0.22 thickness = 0.8 }
+        [CollisionShape3D]
+            shape = { type = "cube" size = (5.8, 2.6, 0.44) }
+            [Node3D]
+                position = (0, 1.3, -1.4)
+            [/Node3D]
+        [/CollisionShape3D]
+    [/AudioMask3D]
+[/AudioWall]
+
+[ReverbZone]
+parent = @PositionalAudioDemo
+    [AudioEffectZone3D]
+        enabled = true
+        audio_mask = []
+        effects = [{ reverb_send = 0.28 echo = 0.04 dampening = 0.05 }]
+        [CollisionShape3D]
+            shape = { type = "cube" size = (12, 5, 8) }
+            [Node3D]
+                position = (0, 2.2, -1)
+            [/Node3D]
+        [/CollisionShape3D]
+    [/AudioEffectZone3D]
+[/ReverbZone]
+
+[SpeakerA]
+parent = @PositionalAudioDemo
+    [MeshInstance3D]
+        mesh = "__sphere__"
+        material = { type = "unlit" base_color_factor = (0.95, 0.24, 0.18, 1.0) emissive_factor = (0.95, 0.24, 0.18) alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (-4, 1.0, -3.8)
+            scale = (0.45, 0.45, 0.45)
+        [/Node3D]
+    [/MeshInstance3D]
+[/SpeakerA]
+
+[SpeakerB]
+parent = @PositionalAudioDemo
+    [MeshInstance3D]
+        mesh = "__sphere__"
+        material = { type = "unlit" base_color_factor = (0.20, 0.78, 0.96, 1.0) emissive_factor = (0.20, 0.78, 0.96) alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (0, 1.0, -5.2)
+            scale = (0.45, 0.45, 0.45)
+        [/Node3D]
+    [/MeshInstance3D]
+[/SpeakerB]
+
+[SpeakerC]
+parent = @PositionalAudioDemo
+    [MeshInstance3D]
+        mesh = "__sphere__"
+        material = { type = "unlit" base_color_factor = (0.72, 0.88, 0.24, 1.0) emissive_factor = (0.72, 0.88, 0.24) alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (4, 1.0, -3.8)
+            scale = (0.45, 0.45, 0.45)
+        [/Node3D]
+    [/MeshInstance3D]
+[/SpeakerC]
