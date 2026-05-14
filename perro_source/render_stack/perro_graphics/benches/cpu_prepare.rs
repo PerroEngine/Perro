@@ -340,6 +340,8 @@ fn bench_3d_blend_prepare(c: &mut Criterion) {
             let (mesh, material) = create_mesh_material(&mut graphics);
             let blend = MeshBlendOptions3D {
                 enabled: true,
+                screen_blending: true,
+                normal_blending: false,
                 blend_layers: BitMask::with([1]),
                 blend_mask: BitMask::with([1]),
                 distance: 0.25,
@@ -374,6 +376,8 @@ fn bench_3d_blend_dense_prepare(c: &mut Criterion) {
             let (mesh, material) = create_mesh_material(&mut graphics);
             let blend = MeshBlendOptions3D {
                 enabled: true,
+                screen_blending: true,
+                normal_blending: false,
                 blend_layers: BitMask::with([1]),
                 blend_mask: BitMask::with([1]),
                 distance: 0.25,

@@ -640,7 +640,7 @@ impl Gpu3D {
                             instance_count,
                             draw_param_index,
                             double_sided: params.double_sided,
-                            mesh_blend: resolved_blend.active,
+                            mesh_blend: resolved_mesh_blend_active(resolved_blend),
                         });
                     }
                 }
@@ -846,9 +846,9 @@ impl Gpu3D {
                                     occlusion_query,
                                     disable_hiz_occlusion: multi_instance
                                         || standard_params.alpha_mode == 2
-                                        || resolved_blend.active,
+                                        || resolved_mesh_blend_active(resolved_blend),
                                     casts_shadows: true,
-                                    mesh_blend: resolved_blend.active,
+                                    mesh_blend: resolved_mesh_blend_active(resolved_blend),
                                 },
                             );
                         }
@@ -949,9 +949,9 @@ impl Gpu3D {
                             occlusion_query,
                             disable_hiz_occlusion: multi_instance
                                 || standard_params.alpha_mode == 2
-                                || resolved_blend.active,
+                                || resolved_mesh_blend_active(resolved_blend),
                             casts_shadows: true,
-                            mesh_blend: resolved_blend.active,
+                            mesh_blend: resolved_mesh_blend_active(resolved_blend),
                         },
                     );
                 }

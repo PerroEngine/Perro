@@ -7,41 +7,45 @@ Scene:
 Shows:
 
 - `blend_enabled`
+- `blend_screen`
+- `blend_normals`
 - `blend_layers`
 - `blend_mask`
 - `blend_distance`
+- `blend_min_distance`
 - `noise`
 - `noise_scale`
-- multiple mesh shapes blending into same view
-- side-by-side masked vs blended mesh pairs
+- screen-space contact fade tuning
+- same-material and different-material seams
 
 Why scene works this way:
 
-- Left pair uses `blend_mask = all`, so cube/sphere/ground intersections stay hard.
-- Right pair uses `blend_mask = none`, so same layout shows proper intersection fade.
-- Cube corner intersects sphere enough to show blend falloff without visual clutter.
-- Each object uses different layer to show independent blend groups.
-- Planes use same blend setup as their objects, so object-ground transitions compare clearly.
-- Inline materials color-code each test mesh.
-- Moderate blend distance and light noise make material fade easier to see.
+- Grid has four rows and five columns.
+- Top row disables blending, so baseline overlap stays hard.
+- Same-material row sweeps blend distance from tight to wide.
+- Different-material row uses normal assist with same distance sweep.
+- Noise row keeps distance fixed and sweeps noise strength.
+- Distance sweep values are `0.30`, `0.55`, `0.85`, `1.20`, `1.65`.
+- Noise row uses distance `0.95`.
+- Cubes and spheres use `blend_mask = none`, so both allow the seam pair.
+- The visible fade hits the farther surface in screen depth, so front faces stay solid.
+- Both sides define blend distance and noise.
+- Runtime averages source and target blend tuning for the contact.
 
 Scene map:
 
-| Node                   | Role                              |
-| ---------------------- | --------------------------------- |
-| `MaskedPlane`          | Left fully masked base surface.   |
-| `MaskedSphere`         | Left fully masked red base shape. |
-| `MaskedCube`           | Left fully masked blue insert.    |
-| `BlendPlane`           | Right blend-enabled base surface. |
-| `BlendSphere`          | Right red base shape.             |
-| `BlendCube`            | Right blue corner insert.         |
-| `Ambient` / `KeyLight` | Stable lighting.                  |
+| Row | Nodes | Test |
+| --- | ----- | ---- |
+| 1 | `OffTarget*` / `OffSphere*` | No blending. |
+| 2 | `SameTarget*` / `SameSphere*` | Same material, blend distance sweep. |
+| 3 | `MaterialTarget*` / `MaterialSphere*` | Different materials, distance sweep, normal assist. |
+| 4 | `NoiseTarget*` / `NoiseSphere*` | Fixed distance, noise strength sweep, normal assist. |
 
 Controls:
 
-| Input             | Action    |
-| ----------------- | --------- |
-| Mouse             | Look      |
-| `W` `A` `S` `D`   | Move      |
+| Input | Action |
+| ----- | ------ |
+| Mouse | Look |
+| `W` `A` `S` `D` | Move |
 | `Space` / `Shift` | Up / down |
-| `Esc`             | Pause     |
+| `Esc` | Pause |

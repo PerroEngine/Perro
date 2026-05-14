@@ -15,6 +15,8 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     if material.double_sided && !in.is_front {
         n = -n;
     }
+    let mesh_fade = mesh_blend_fade(in, material);
+    n = apply_mesh_normal_blend(material, n, in.world_pos, mesh_fade);
     let v = normalize(scene.camera_pos.xyz - in.world_pos);
     var alpha = clamp(color.a, 0.0, 1.0);
     if material.alpha_mode == 1u && alpha < material.alpha_cutoff {
@@ -23,7 +25,7 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     if material.alpha_mode == 0u {
         alpha = 1.0;
     }
-    alpha = apply_mesh_blend_alpha(in, material, alpha);
+    alpha *= mesh_fade;
     if material.meshlet_debug_view {
         return vec4<f32>(color.rgb, 1.0);
     }

@@ -111,39 +111,54 @@ pub(super) struct BuildInstanceArgs {
 
 #[derive(Clone, Copy, Default)]
 pub(super) struct ResolvedMeshBlend {
-    pub(super) active: bool,
     pub(super) packed_params: u32,
+    pub(super) packed_flags: u32,
+}
+
+const RESOLVED_MESH_BLEND_ACTIVE: u32 = 1u32 << 0;
+const RESOLVED_MESH_BLEND_NORMAL_BLEND: u32 = 1u32 << 1;
+const RESOLVED_MESH_BLEND_SCREEN_BLEND: u32 = 1u32 << 3;
+
+#[inline]
+fn pack_resolved_mesh_blend_flags(blend: MeshBlendOptions3D) -> u32 {
+    let mut flags = RESOLVED_MESH_BLEND_ACTIVE;
+    if blend.normal_blending {
+        flags |= RESOLVED_MESH_BLEND_NORMAL_BLEND;
+    }
+    if blend.screen_blending {
+        flags |= RESOLVED_MESH_BLEND_SCREEN_BLEND;
+    }
+    flags
 }
 
 #[inline]
-pub(super) fn pack_mesh_blend_params(blend: MeshBlendOptions3D) -> u32 {
+pub(super) fn resolved_mesh_blend_active(blend: ResolvedMeshBlend) -> bool {
+    (blend.packed_flags & RESOLVED_MESH_BLEND_ACTIVE) != 0
+}
+
+#[inline]
+fn resolved_mesh_blend_normal_blending(blend: ResolvedMeshBlend) -> bool {
+    (blend.packed_flags & RESOLVED_MESH_BLEND_NORMAL_BLEND) != 0
+}
+
+#[inline]
+fn resolved_mesh_blend_screen_blending(blend: ResolvedMeshBlend) -> bool {
+    (blend.packed_flags & RESOLVED_MESH_BLEND_SCREEN_BLEND) != 0
+}
+
+#[inline]
+fn average_mesh_blend_params(a: MeshBlendOptions3D, b: MeshBlendOptions3D) -> u32 {
     pack_u8_lanes(
-        quantize_unorm8_range(blend.distance, 16.0),
-        quantize_unorm8_range(blend.min_distance, 16.0),
-        quantize_unorm8(blend.noise_factor),
-        quantize_unorm8_range(blend.noise_scale, 64.0),
+        quantize_unorm8_range((a.distance + b.distance) * 0.5, 16.0),
+        quantize_unorm8_range((a.min_distance + b.min_distance) * 0.5, 16.0),
+        quantize_unorm8((a.noise_factor + b.noise_factor) * 0.5),
+        quantize_unorm8_range((a.noise_scale + b.noise_scale) * 0.5, 64.0),
     )
 }
 
 pub(super) fn resolve_mesh_blends(draws: &[Draw3DInstance], out: &mut Vec<ResolvedMeshBlend>) {
-    let mut layer_counts = [0u32; 32];
     out.clear();
     out.resize(draws.len(), ResolvedMeshBlend::default());
-
-    for draw in draws {
-        if !draw.blend.enabled
-            || draw.blend.blend_layers.is_empty()
-            || !matches!(draw.kind, Draw3DKind::Mesh(_))
-        {
-            continue;
-        }
-        let mut layers = draw.blend.blend_layers.bits();
-        while layers != 0 {
-            let bit = layers.trailing_zeros() as usize;
-            layer_counts[bit] = layer_counts[bit].saturating_add(1);
-            layers &= layers - 1;
-        }
-    }
 
     for (index, draw) in draws.iter().enumerate() {
         if !draw.blend.active() || !matches!(draw.kind, Draw3DKind::Mesh(_)) {
@@ -156,24 +171,32 @@ pub(super) fn resolve_mesh_blends(draws: &[Draw3DInstance], out: &mut Vec<Resolv
             .unwrap_or_else(|| draw.instance_mats.len() > 1);
         let own_layers = draw.blend.blend_layers.bits();
         let mut target_bits = !draw.blend.blend_mask.bits();
-        let mut has_target = false;
+        let mut target_params = None;
         while target_bits != 0 {
             let bit = target_bits.trailing_zeros() as usize;
             let bit_mask = 1u32 << bit;
-            let mut count = layer_counts[bit];
-            if own_layers & bit_mask != 0 && !self_interacts {
-                count = count.saturating_sub(1);
-            }
-            if count > 0 {
-                has_target = true;
+            target_params = draws.iter().enumerate().find_map(|(target_index, target)| {
+                if target_index == index && !self_interacts {
+                    return None;
+                }
+                if !target.blend.active()
+                    || !matches!(target.kind, Draw3DKind::Mesh(_))
+                    || target.blend.blend_layers.bits() & bit_mask == 0
+                    || target.blend.blend_mask.bits() & own_layers != 0
+                {
+                    return None;
+                }
+                Some(target.blend)
+            });
+            if target_params.is_some() {
                 break;
             }
             target_bits &= target_bits - 1;
         }
-        if has_target {
+        if let Some(target_blend) = target_params {
             out[index] = ResolvedMeshBlend {
-                active: true,
-                packed_params: pack_mesh_blend_params(draw.blend),
+                packed_params: average_mesh_blend_params(draw.blend, target_blend),
+                packed_flags: pack_resolved_mesh_blend_flags(draw.blend),
             };
         }
     }
@@ -314,8 +337,14 @@ pub(super) fn build_instance(
     if params.base_color_texture != MATERIAL_TEXTURE_NONE {
         material_flags |= MATERIAL_FLAG_HAS_BASE_COLOR_TEXTURE;
     }
-    let packed_blend_params = if mesh_blend.active && !debug_view {
-        material_flags |= MATERIAL_FLAG_MESH_BLEND;
+    let blend_active = resolved_mesh_blend_active(mesh_blend);
+    let packed_blend_params = if blend_active && !debug_view {
+        if resolved_mesh_blend_screen_blending(mesh_blend) {
+            material_flags |= MATERIAL_FLAG_MESH_BLEND;
+        }
+        if resolved_mesh_blend_normal_blending(mesh_blend) {
+            material_flags |= MATERIAL_FLAG_NORMAL_BLEND;
+        }
         mesh_blend.packed_params
     } else {
         0
@@ -640,6 +669,8 @@ mod tests {
             lod: LODOptions3D::default(),
             blend: MeshBlendOptions3D {
                 enabled: true,
+                screen_blending: true,
+                normal_blending: false,
                 blend_layers: layers,
                 blend_mask: mask,
                 distance: 0.25,
@@ -655,23 +686,23 @@ mod tests {
         let draws = [draw(1, BitMask::with([1]), BitMask::without([2]), 1)];
         let mut out = Vec::new();
         resolve_mesh_blends(&draws, &mut out);
-        assert!(!out[0].active);
+        assert!(!resolved_mesh_blend_active(out[0]));
 
         let draws = [
             draw(1, BitMask::with([1]), BitMask::without([2]), 1),
             draw(2, BitMask::with([2]), BitMask::NONE, 1),
         ];
         resolve_mesh_blends(&draws, &mut out);
-        assert!(out[0].active);
-        assert!(out[1].active);
+        assert!(resolved_mesh_blend_active(out[0]));
+        assert!(resolved_mesh_blend_active(out[1]));
 
         let draws = [
             draw(1, BitMask::with([1]), BitMask::without([2]), 1),
             draw(2, BitMask::with([2]), BitMask::without([1]), 1),
         ];
         resolve_mesh_blends(&draws, &mut out);
-        assert!(out[0].active);
-        assert!(out[1].active);
+        assert!(resolved_mesh_blend_active(out[0]));
+        assert!(resolved_mesh_blend_active(out[1]));
     }
 
     #[test]
@@ -682,8 +713,8 @@ mod tests {
         ];
         let mut out = Vec::new();
         resolve_mesh_blends(&draws, &mut out);
-        assert!(out[0].active);
-        assert!(out[1].active);
+        assert!(resolved_mesh_blend_active(out[0]));
+        assert!(resolved_mesh_blend_active(out[1]));
     }
 
     #[test]
@@ -694,10 +725,13 @@ mod tests {
         ];
         let mut out = Vec::new();
         resolve_mesh_blends(&draws, &mut out);
-        assert!(!out[0].active);
+        assert!(!resolved_mesh_blend_active(out[0]));
+        assert!(!resolved_mesh_blend_active(out[1]));
         assert!(
             !MeshBlendOptions3D {
                 enabled: true,
+                screen_blending: true,
+                normal_blending: false,
                 blend_layers: BitMask::with([1]),
                 blend_mask: BitMask::ALL,
                 distance: 0.25,
@@ -714,6 +748,114 @@ mod tests {
         let draws = [draw(1, BitMask::with([3]), BitMask::NONE, 2)];
         let mut out = Vec::new();
         resolve_mesh_blends(&draws, &mut out);
-        assert!(out[0].active);
+        assert!(resolved_mesh_blend_active(out[0]));
+    }
+
+    #[test]
+    fn blend_resolve_preserves_normal_blending_flag() {
+        let mut draws = [
+            draw(1, BitMask::with([1]), BitMask::NONE, 1),
+            draw(2, BitMask::with([2]), BitMask::NONE, 1),
+        ];
+        draws[0].blend.normal_blending = true;
+
+        let mut out = Vec::new();
+        resolve_mesh_blends(&draws, &mut out);
+
+        assert!(resolved_mesh_blend_active(out[0]));
+        assert!(resolved_mesh_blend_normal_blending(out[0]));
+        assert!(resolved_mesh_blend_active(out[1]));
+        assert!(!resolved_mesh_blend_normal_blending(out[1]));
+    }
+
+    #[test]
+    fn blend_resolve_averages_source_and_target_params() {
+        let mut draws = [
+            draw(1, BitMask::with([1]), BitMask::NONE, 1),
+            draw(2, BitMask::with([2]), BitMask::NONE, 1),
+        ];
+        draws[0].blend.distance = 1.0;
+        draws[0].blend.min_distance = 0.2;
+        draws[0].blend.noise_factor = 0.4;
+        draws[0].blend.noise_scale = 8.0;
+        draws[1].blend.distance = 3.0;
+        draws[1].blend.min_distance = 0.6;
+        draws[1].blend.noise_factor = 0.8;
+        draws[1].blend.noise_scale = 24.0;
+
+        let mut out = Vec::new();
+        resolve_mesh_blends(&draws, &mut out);
+
+        assert_eq!(
+            out[0].packed_params,
+            pack_u8_lanes(
+                quantize_unorm8_range(2.0, 16.0),
+                quantize_unorm8_range(0.4, 16.0),
+                quantize_unorm8(0.6),
+                quantize_unorm8_range(16.0, 64.0),
+            )
+        );
+    }
+
+    #[test]
+    fn material_params_sets_normal_blend_flag_only_when_resolved() {
+        let material = perro_render_bridge::Material3D::default();
+        let base_args = BuildInstanceArgs {
+            debug_view: false,
+            debug_color: [1.0, 1.0, 1.0, 1.0],
+            mesh_blend: ResolvedMeshBlend {
+                packed_params: 1,
+                packed_flags: RESOLVED_MESH_BLEND_ACTIVE
+                    | RESOLVED_MESH_BLEND_SCREEN_BLEND
+                    | RESOLVED_MESH_BLEND_NORMAL_BLEND,
+            },
+            skeleton_start: 0,
+            skeleton_count: 0,
+            custom_params_offset: 0,
+            custom_params_len: 0,
+        };
+        let built = build_instance(
+            glam::Mat4::IDENTITY.to_cols_array_2d(),
+            &material,
+            base_args,
+        );
+        let flags = (built.material.packed_material_params >> 3) & 0x1fff;
+        assert_ne!(flags & MATERIAL_FLAG_MESH_BLEND, 0);
+        assert_ne!(flags & MATERIAL_FLAG_NORMAL_BLEND, 0);
+
+        let inactive = BuildInstanceArgs {
+            mesh_blend: ResolvedMeshBlend {
+                packed_params: 1,
+                packed_flags: RESOLVED_MESH_BLEND_NORMAL_BLEND,
+            },
+            ..base_args
+        };
+        let built = build_instance(glam::Mat4::IDENTITY.to_cols_array_2d(), &material, inactive);
+        let flags = (built.material.packed_material_params >> 3) & 0x1fff;
+        assert_eq!(flags & MATERIAL_FLAG_NORMAL_BLEND, 0);
+    }
+
+    #[test]
+    fn material_params_allow_normal_blend_without_screen_alpha() {
+        let material = perro_render_bridge::Material3D::default();
+        let built = build_instance(
+            glam::Mat4::IDENTITY.to_cols_array_2d(),
+            &material,
+            BuildInstanceArgs {
+                debug_view: false,
+                debug_color: [1.0, 1.0, 1.0, 1.0],
+                mesh_blend: ResolvedMeshBlend {
+                    packed_params: 1,
+                    packed_flags: RESOLVED_MESH_BLEND_ACTIVE | RESOLVED_MESH_BLEND_NORMAL_BLEND,
+                },
+                skeleton_start: 0,
+                skeleton_count: 0,
+                custom_params_offset: 0,
+                custom_params_len: 0,
+            },
+        );
+        let flags = (built.material.packed_material_params >> 3) & 0x1fff;
+        assert_eq!(flags & MATERIAL_FLAG_MESH_BLEND, 0);
+        assert_ne!(flags & MATERIAL_FLAG_NORMAL_BLEND, 0);
     }
 }

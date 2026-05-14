@@ -162,6 +162,16 @@ fn apply_mesh_instance_3d_fields(node: &mut MeshInstance3D, fields: &[SceneObjec
                     node.blend.enabled = v;
                 }
             }
+            "blend_normals" => {
+                if let Some(v) = as_bool(value) {
+                    node.blend.normal_blending = v;
+                }
+            }
+            "blend_screen" => {
+                if let Some(v) = as_bool(value) {
+                    node.blend.screen_blending = v;
+                }
+            }
             "blend_layers" => {
                 if let Some(v) = as_bitmask(value) {
                     node.blend.blend_layers = v;
@@ -203,6 +213,11 @@ fn apply_multi_mesh_instance_3d_fields(
                     node.instances = parse_instance_posrot(items.as_ref());
                 }
             }
+            "instance_grid" | "grid_instances" => {
+                if let Some(instances) = parse_instance_grid(value) {
+                    node.instances = instances;
+                }
+            }
             "instance_scale" => {
                 if let Some(v) = as_f32(value) {
                     node.instance_scale = v.max(0.0001);
@@ -229,6 +244,16 @@ fn apply_multi_mesh_instance_3d_fields(
             "blend_enabled" => {
                 if let Some(v) = as_bool(value) {
                     node.blend.enabled = v;
+                }
+            }
+            "blend_normals" => {
+                if let Some(v) = as_bool(value) {
+                    node.blend.normal_blending = v;
+                }
+            }
+            "blend_screen" => {
+                if let Some(v) = as_bool(value) {
+                    node.blend.screen_blending = v;
                 }
             }
             "blend_layers" => {
@@ -270,6 +295,16 @@ fn apply_mesh_blend_fields(
                     "enabled" => {
                         if let Some(v) = as_bool(value) {
                             blend.enabled = v;
+                        }
+                    }
+                    "normal_blending" | "blend_normals" => {
+                        if let Some(v) = as_bool(value) {
+                            blend.normal_blending = v;
+                        }
+                    }
+                    "screen_blending" | "blend_screen" => {
+                        if let Some(v) = as_bool(value) {
+                            blend.screen_blending = v;
                         }
                     }
                     "layers" | "blend_layers" => {
@@ -647,6 +682,87 @@ fn parse_instance_posrot(items: &[SceneValue]) -> Vec<(perro_structs::Vector3, p
         }
     }
     out
+}
+
+fn parse_instance_grid(
+    value: &SceneValue,
+) -> Option<Vec<(perro_structs::Vector3, perro_structs::Quaternion)>> {
+    let SceneValue::Object(entries) = value else {
+        return None;
+    };
+
+    let mut counts = (1_u32, 1_u32, 1_u32);
+    let mut spacing = perro_structs::Vector3::new(1.0, 1.0, 1.0);
+    let mut origin = perro_structs::Vector3::ZERO;
+    let mut height_wave = 0.0_f32;
+    let mut rotation_step_deg = perro_structs::Vector3::ZERO;
+
+    for (key, value) in entries.iter() {
+        match key.as_ref() {
+            "counts" | "count" | "size" | "dims" => {
+                if let Some(v) = as_vec3(value) {
+                    counts = (
+                        v.x.max(1.0) as u32,
+                        v.y.max(1.0) as u32,
+                        v.z.max(1.0) as u32,
+                    );
+                }
+            }
+            "spacing" => {
+                if let Some(v) = as_vec3(value) {
+                    spacing = v;
+                }
+            }
+            "origin" => {
+                if let Some(v) = as_vec3(value) {
+                    origin = v;
+                }
+            }
+            "height_wave" | "wave_height" => {
+                if let Some(v) = as_f32(value) {
+                    height_wave = v;
+                }
+            }
+            "rotation_step_deg" | "rotation_step" => {
+                if let Some(v) = as_vec3(value) {
+                    rotation_step_deg = v;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let total = counts
+        .0
+        .saturating_mul(counts.1)
+        .saturating_mul(counts.2)
+        .min(100_000);
+    let mut out = Vec::with_capacity(total as usize);
+
+    for y in 0..counts.1 {
+        for z in 0..counts.2 {
+            for x in 0..counts.0 {
+                let wave = if height_wave != 0.0 {
+                    ((x as f32) * 0.63 + (z as f32) * 0.41).sin() * height_wave
+                } else {
+                    0.0
+                };
+                let pos = perro_structs::Vector3::new(
+                    origin.x + x as f32 * spacing.x,
+                    origin.y + y as f32 * spacing.y + wave,
+                    origin.z + z as f32 * spacing.z,
+                );
+                let rot = quat_from_deg_xyz(perro_structs::Vector3::new(
+                    x as f32 * rotation_step_deg.x,
+                    (x + z + y) as f32 * rotation_step_deg.y,
+                    z as f32 * rotation_step_deg.z,
+                ));
+                out.push((pos, rot));
+            }
+        }
+    }
+
+    Some(out)
 }
 
 #[inline]

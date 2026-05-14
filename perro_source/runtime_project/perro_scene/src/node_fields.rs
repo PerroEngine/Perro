@@ -278,11 +278,14 @@ pub enum MeshInstance3DField {
     Surfaces,
     Model,
     Skeleton,
+    InstanceGrid,
     Meshlets,
     MinLod,
     MaxLod,
     Blend,
     BlendEnabled,
+    BlendScreen,
+    BlendNormals,
     BlendLayers,
     BlendMask,
     BlendDistance,
@@ -769,6 +772,9 @@ fn resolve_scene_node_field_for_type(
             SceneFieldName::BlendEnabled => {
                 Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendEnabled))
             }
+            SceneFieldName::BlendNormals => {
+                Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendNormals))
+            }
             SceneFieldName::BlendLayers => {
                 Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendLayers))
             }
@@ -1202,6 +1208,8 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
                 Some(NodeField::MeshInstance3D(MeshInstance3DField::Blend))
             }
             "blend_enabled" => Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendEnabled)),
+            "blend_screen" => Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendScreen)),
+            "blend_normals" => Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendNormals)),
             "blend_layers" => Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendLayers)),
             "blend_mask" => Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendMask)),
             "blend_distance" | "blend_size" => Some(NodeField::MeshInstance3D(
@@ -1217,6 +1225,9 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
             "material" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Material)),
             "surfaces" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Surfaces)),
             "model" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Model)),
+            "instance_grid" | "grid_instances" => {
+                Some(NodeField::MeshInstance3D(MeshInstance3DField::InstanceGrid))
+            }
             "meshlets" | "use_meshlets" => {
                 Some(NodeField::MeshInstance3D(MeshInstance3DField::Meshlets))
             }
@@ -1226,6 +1237,8 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
                 Some(NodeField::MeshInstance3D(MeshInstance3DField::Blend))
             }
             "blend_enabled" => Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendEnabled)),
+            "blend_screen" => Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendScreen)),
+            "blend_normals" => Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendNormals)),
             "blend_layers" => Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendLayers)),
             "blend_mask" => Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendMask)),
             "blend_distance" | "blend_size" => Some(NodeField::MeshInstance3D(
@@ -1970,6 +1983,10 @@ mod tests {
         assert_eq!(
             resolve_node_field("MultiMeshInstance3D", "blend_mask"),
             Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendMask))
+        );
+        assert_eq!(
+            resolve_node_field("MultiMeshInstance3D", "instance_grid"),
+            Some(NodeField::MeshInstance3D(MeshInstance3DField::InstanceGrid))
         );
         assert_eq!(resolve_node_field("MeshInstance3D", "blend_layer"), None);
     }

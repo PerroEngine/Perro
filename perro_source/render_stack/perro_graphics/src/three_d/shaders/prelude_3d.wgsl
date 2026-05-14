@@ -46,6 +46,7 @@ struct DecodedMaterialParams {
     flat_shading: bool,
     has_base_color_texture: bool,
     mesh_blend: bool,
+    normal_blend: bool,
 }
 
 @group(0) @binding(0)
@@ -144,6 +145,7 @@ fn decode_material_params(packed: u32) -> DecodedMaterialParams {
         (flags & 0x2u) != 0u,
         (flags & 0x4u) != 0u,
         (flags & 0x8u) != 0u,
+        (flags & 0x10u) != 0u,
     );
 }
 
@@ -160,31 +162,65 @@ fn mesh_blend_noise(p: vec2<f32>) -> f32 {
     return fract(sin(dot(p, vec2<f32>(12.9898, 78.233))) * 43758.5453);
 }
 
-fn apply_mesh_blend_alpha(in: FragmentInput, material: DecodedMaterialParams, alpha: f32) -> f32 {
+fn mesh_blend_fade(in: FragmentInput, material: DecodedMaterialParams) -> f32 {
     if !material.mesh_blend {
-        return alpha;
+        return 1.0;
     }
     let dims_u = textureDimensions(mesh_blend_depth_tex);
     let dims = vec2<i32>(i32(dims_u.x), i32(dims_u.y));
     let coord = vec2<i32>(floor(in.frag_pos.xy));
     if any(coord < vec2<i32>(0)) || any(coord >= dims) {
-        return alpha;
+        return 1.0;
     }
     let scene_depth = textureLoad(mesh_blend_depth_tex, coord, 0);
     if scene_depth >= 0.999999 {
-        return alpha;
+        return 1.0;
+    }
+    if scene_depth + 0.00002 >= in.frag_pos.z {
+        return 1.0;
     }
     let params = decode_mesh_blend_params(in.packed_pbr_params_1);
-    let max_width = max(params.x * 0.01, 0.00001);
-    let min_width = min(params.y * 0.01, max_width);
+    let view_dist = distance(in.world_pos, scene.camera_pos.xyz);
+    let dist_scale = clamp(8.0 / max(view_dist, 1.0), 0.35, 1.0);
+    let max_width = max(params.x * 0.01 * dist_scale, 0.00001);
+    let min_width = min(params.y * 0.01 * dist_scale, max_width);
     var noise = 0.0;
     if params.z > 0.0 {
         let tile = max(params.w, 1.0);
         noise = (mesh_blend_noise(floor(in.frag_pos.xy / tile)) - 0.5) * params.z * max_width;
     }
-    let depth_delta = abs(in.frag_pos.z - scene_depth) + noise;
-    let fade = smoothstep(min_width, max_width, depth_delta);
-    return alpha * fade;
+    let depth_delta = max(in.frag_pos.z - scene_depth + noise, 0.0);
+    return smoothstep(min_width, max_width, depth_delta);
+}
+
+fn apply_mesh_blend_alpha(in: FragmentInput, material: DecodedMaterialParams, alpha: f32) -> f32 {
+    return alpha * mesh_blend_fade(in, material);
+}
+
+fn apply_mesh_normal_blend(
+    material: DecodedMaterialParams,
+    normal_ws: vec3<f32>,
+    world_pos: vec3<f32>,
+    mesh_blend_fade_value: f32,
+) -> vec3<f32> {
+    if !material.normal_blend {
+        return normal_ws;
+    }
+    let contact = 1.0 - mesh_blend_fade_value;
+    if contact <= 0.0001 {
+        return normal_ws;
+    }
+    let proxy_raw = cross(dpdx(world_pos), dpdy(world_pos));
+    let proxy_len_sq = dot(proxy_raw, proxy_raw);
+    if proxy_len_sq <= 1.0e-8 {
+        return normal_ws;
+    }
+    var proxy = proxy_raw * inverseSqrt(proxy_len_sq);
+    if dot(proxy, normal_ws) < 0.0 {
+        proxy = -proxy;
+    }
+    let softened = normalize(normal_ws + proxy);
+    return normalize(mix(normal_ws, softened, clamp(contact * 0.35, 0.0, 0.35)));
 }
 
 fn decode_standard_pbr_params(packed_0: u32, packed_1: u32) -> vec4<f32> {
@@ -231,7 +267,6 @@ fn perro_vs_main_base(v: VertexInput, inst: InstanceInput) -> VertexOutput {
         dot(inst.model_row_1.xyz, normal),
         dot(inst.model_row_2.xyz, normal),
     ));
-
     var out: VertexOutput;
     out.clip_pos = scene.view_proj * world;
     out.world_pos = world.xyz;

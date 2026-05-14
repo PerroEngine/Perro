@@ -46,11 +46,13 @@ struct VertexOutput {
     @builtin(position) clip_pos: vec4<f32>,
     @location(0) lit_color: vec3<f32>,
     @location(1) @interpolate(flat) packed_blend_params: u32,
+    @location(2) world_pos: vec3<f32>,
 };
 
 struct FragmentInput {
     @location(0) lit_color: vec3<f32>,
     @location(1) @interpolate(flat) packed_blend_params: u32,
+    @location(2) world_pos: vec3<f32>,
 };
 
 fn unpack_rgba8(v: u32) -> vec4<f32> {
@@ -82,7 +84,7 @@ fn mesh_blend_noise(p: vec2<f32>) -> f32 {
     return fract(sin(dot(p, vec2<f32>(12.9898, 78.233))) * 43758.5453);
 }
 
-fn mesh_blend_alpha(frag_pos: vec4<f32>, packed: u32) -> f32 {
+fn mesh_blend_alpha(frag_pos: vec4<f32>, world_pos: vec3<f32>, packed: u32) -> f32 {
     if packed == 0u {
         return 1.0;
     }
@@ -96,15 +98,20 @@ fn mesh_blend_alpha(frag_pos: vec4<f32>, packed: u32) -> f32 {
     if scene_depth >= 0.999999 {
         return 1.0;
     }
+    if scene_depth + 0.00002 >= frag_pos.z {
+        return 1.0;
+    }
     let params = decode_mesh_blend_params(packed);
-    let max_width = max(params.x * 0.01, 0.00001);
-    let min_width = min(params.y * 0.01, max_width);
+    let view_dist = distance(world_pos, scene.camera_pos.xyz);
+    let dist_scale = clamp(8.0 / max(view_dist, 1.0), 0.35, 1.0);
+    let max_width = max(params.x * 0.01 * dist_scale, 0.00001);
+    let min_width = min(params.y * 0.01 * dist_scale, max_width);
     var noise = 0.0;
     if params.z > 0.0 {
         let tile = max(params.w, 1.0);
         noise = (mesh_blend_noise(floor(frag_pos.xy / tile)) - 0.5) * params.z * max_width;
     }
-    let depth_delta = abs(frag_pos.z - scene_depth) + noise;
+    let depth_delta = max(frag_pos.z - scene_depth + noise, 0.0);
     return smoothstep(min_width, max_width, depth_delta);
 }
 
@@ -150,10 +157,11 @@ fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
     out.clip_pos = scene.view_proj * world;
     out.lit_color = base.rgb * lit + emissive.rgb;
     out.packed_blend_params = draw.packed_blend_params;
+    out.world_pos = world.xyz;
     return out;
 }
 
 @fragment
 fn fs_main(in: FragmentInput, @builtin(position) frag_pos: vec4<f32>) -> @location(0) vec4<f32> {
-    return vec4<f32>(in.lit_color, mesh_blend_alpha(frag_pos, in.packed_blend_params));
+    return vec4<f32>(in.lit_color, mesh_blend_alpha(frag_pos, in.world_pos, in.packed_blend_params));
 }

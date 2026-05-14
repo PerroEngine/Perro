@@ -688,6 +688,8 @@ pub struct MeshSurfaceBinding3D {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MeshBlendOptions3D {
     pub enabled: bool,
+    pub screen_blending: bool,
+    pub normal_blending: bool,
     pub blend_layers: BitMask,
     pub blend_mask: BitMask,
     pub distance: f32,
@@ -700,6 +702,8 @@ impl MeshBlendOptions3D {
     pub const fn new() -> Self {
         Self {
             enabled: false,
+            screen_blending: true,
+            normal_blending: false,
             blend_layers: BitMask::ALL,
             blend_mask: BitMask::NONE,
             distance: 0.35,

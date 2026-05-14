@@ -52,14 +52,7 @@ lifecycle!({
 
         let _ = with_state_mut!(ctx.run, DemoFreecam3DState, ctx.id, |state| {
             state.debug_frame = state.debug_frame.wrapping_add(1);
-            if state.debug_frame % 30 == 0 {
-                log_info!(
-                    "freecam active mouse=({:.3},{:.3}) warmup={}",
-                    mouse.x,
-                    mouse.y,
-                    state.capture_warmup
-                );
-            }
+           
         });
 
         let dt = delta_time!(ctx.run);
@@ -75,15 +68,7 @@ lifecycle!({
             state.yaw -= look_x * sensitivity;
             state.pitch = (state.pitch + look_y * sensitivity).clamp(-PITCH_LIMIT, PITCH_LIMIT);
             if look_x.abs() > 0.001 || look_y.abs() > 0.001 {
-                log_info!(
-                    "freecam mouse raw=({:.3},{:.3}) look=({:.3},{:.3}) yaw={:.4} pitch={:.4}",
-                    mouse.x,
-                    mouse.y,
-                    look_x,
-                    look_y,
-                    state.yaw,
-                    state.pitch
-                );
+            
             }
             (state.yaw, state.pitch, state.speed)
         })

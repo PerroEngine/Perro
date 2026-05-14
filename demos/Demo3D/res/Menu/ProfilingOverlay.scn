@@ -5,7 +5,7 @@ script = "res://scripts/demo_profiling_overlay.rs"
     [UiPanel]
         anchor = "top"
         position_ratio = (0.5, 0.5)
-        size_ratio = (0.48, 0.065)
+        size_ratio = (0.75, 0.095)
         style = { fill = "#071018B8" stroke = "#88AADDEE" stroke_width = 1.0 radius = 0.035 }
         padding = 8
         visible = false

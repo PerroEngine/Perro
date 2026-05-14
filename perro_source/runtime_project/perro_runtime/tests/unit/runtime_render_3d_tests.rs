@@ -136,6 +136,8 @@ fn mesh_blend_options_reach_draw_command() {
     mesh.mesh = MeshID::from_parts(7, 0);
     set_primary_material(&mut mesh, MaterialID::from_parts(9, 0));
     mesh.blend.enabled = true;
+    mesh.blend.screen_blending = false;
+    mesh.blend.normal_blending = true;
     mesh.blend.blend_layers = BitMask::with([3]);
     mesh.blend.blend_mask = BitMask::with([2, 4]);
     mesh.blend.distance = 0.75;
@@ -162,6 +164,8 @@ fn mesh_blend_options_reach_draw_command() {
         .expect("mesh draw command");
 
     assert!(blend.enabled);
+    assert!(!blend.screen_blending);
+    assert!(blend.normal_blending);
     assert_eq!(blend.blend_layers, BitMask::with([3]));
     assert_eq!(blend.blend_mask, BitMask::with([2, 4]));
     assert_eq!(blend.distance, 0.75);
@@ -178,6 +182,8 @@ fn multimesh_blend_options_reach_dense_draw_command() {
     set_primary_material_multi(&mut multi, MaterialID::from_parts(10, 0));
     multi.instances.push((Vector3::ZERO, Quaternion::IDENTITY));
     multi.blend.enabled = true;
+    multi.blend.screen_blending = false;
+    multi.blend.normal_blending = true;
     multi.blend.blend_layers = BitMask::with([5]);
     multi.blend.blend_mask = BitMask::with([1, 5]);
     multi.blend.distance = 0.25;
@@ -201,6 +207,8 @@ fn multimesh_blend_options_reach_dense_draw_command() {
         .expect("multimesh draw command");
 
     assert!(blend.enabled);
+    assert!(!blend.screen_blending);
+    assert!(blend.normal_blending);
     assert_eq!(blend.blend_layers, BitMask::with([5]));
     assert_eq!(blend.blend_mask, BitMask::with([1, 5]));
     assert_eq!(blend.distance, 0.25);

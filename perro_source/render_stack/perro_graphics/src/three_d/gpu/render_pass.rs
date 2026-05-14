@@ -138,7 +138,7 @@ impl Gpu3D {
             prepass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             let mut current_state: Option<(RenderPath3D, bool)> = None;
             for (i, batch) in self.draw_batches.iter().enumerate() {
-                if batch.draw_on_top || batch.alpha_mode != 0 || batch.mesh_blend {
+                if batch.draw_on_top || batch.alpha_mode != 0 {
                     continue;
                 }
                 let state = (batch.path, batch.double_sided);

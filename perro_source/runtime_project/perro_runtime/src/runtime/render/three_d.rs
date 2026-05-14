@@ -426,6 +426,8 @@ impl Runtime {
                                 },
                                 MeshBlendOptions3D {
                                     enabled: mesh.blend.enabled,
+                                    screen_blending: mesh.blend.screen_blending,
+                                    normal_blending: mesh.blend.normal_blending,
                                     blend_layers: mesh.blend.blend_layers,
                                     blend_mask: mesh.blend.blend_mask,
                                     distance: mesh.blend.distance,
@@ -448,6 +450,8 @@ impl Runtime {
                                 },
                                 MeshBlendOptions3D {
                                     enabled: mesh.blend.enabled,
+                                    screen_blending: mesh.blend.screen_blending,
+                                    normal_blending: mesh.blend.normal_blending,
                                     blend_layers: mesh.blend.blend_layers,
                                     blend_mask: mesh.blend.blend_mask,
                                     distance: mesh.blend.distance,

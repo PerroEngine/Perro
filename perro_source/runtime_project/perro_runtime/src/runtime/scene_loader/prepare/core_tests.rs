@@ -3,7 +3,7 @@ mod tests {
     use super::*;
     use perro_nodes::SceneNodeData;
     use perro_scene::Parser;
-    use perro_structs::BitMask;
+    use perro_structs::{BitMask, Vector3};
 
     #[test]
     fn water_body_scene_fields_parse() {
@@ -324,18 +324,14 @@ mod tests {
             other => panic!("expected Node2D host node, got {other:?}"),
         }
 
-        assert!(
-            prepared
-                .nodes
-                .iter()
-                .any(|pending| pending.key_name == "base_child")
-        );
-        assert!(
-            prepared
-                .nodes
-                .iter()
-                .any(|pending| pending.key_name == "local_child")
-        );
+        assert!(prepared
+            .nodes
+            .iter()
+            .any(|pending| pending.key_name == "base_child"));
+        assert!(prepared
+            .nodes
+            .iter()
+            .any(|pending| pending.key_name == "local_child"));
     }
 
     #[test]
@@ -369,12 +365,10 @@ mod tests {
         })
         .expect("prepare scene");
 
-        assert!(
-            !prepared
-                .scripts
-                .iter()
-                .any(|pending| pending.node_key_name == "host")
-        );
+        assert!(!prepared
+            .scripts
+            .iter()
+            .any(|pending| pending.node_key_name == "host"));
     }
 
     #[test]
@@ -1218,6 +1212,39 @@ mod tests {
     }
 
     #[test]
+    fn scene_loader_parses_multimesh_instance_grid() {
+        let scene = Parser::new(
+            r#"
+            $root = @Batch
+            [Batch]
+            [MultiMeshInstance3D]
+                instance_grid = { counts=(4, 3, 2) spacing=(2, 1.5, 3) origin=(-3, 0.5, -4) height_wave=0.0 rotation_step_deg=(0, 10, 0) }
+            [/MultiMeshInstance3D]
+            [/Batch]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+
+        let batch = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "Batch")
+            .expect("batch node");
+        match &batch.node.data {
+            SceneNodeData::MultiMeshInstance3D(mesh) => {
+                assert_eq!(mesh.instances.len(), 24);
+                assert_eq!(mesh.instances[0].0, Vector3::new(-3.0, 0.5, -4.0));
+                assert_eq!(mesh.instances[23].0, Vector3::new(3.0, 3.5, -1.0));
+            }
+            other => panic!("expected MultiMeshInstance3D node, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn scene_loader_parses_mesh_lod_options() {
         let scene = Parser::new(
             r#"
@@ -1277,13 +1304,15 @@ mod tests {
             $root = @Mesh
             [Mesh]
             [MeshInstance3D]
-                blend = { enabled=true blend_layers=[2, 4] blend_mask=[1, 3] distance=0.5 min_distance=0.05 noise=0.25 noise_scale=6.0 }
+                blend = { enabled=true screen_blending=false normal_blending=true blend_layers=[2, 4] blend_mask=[1, 3] distance=0.5 min_distance=0.05 noise=0.25 noise_scale=6.0 }
             [/MeshInstance3D]
             [/Mesh]
 
             [Batch]
             [MultiMeshInstance3D]
                 blend_enabled = true
+                blend_screen = false
+                blend_normals = true
                 blend_layers = [5]
                 blend_mask = none
                 blend_distance = 0.25
@@ -1305,6 +1334,8 @@ mod tests {
         match &mesh.node.data {
             SceneNodeData::MeshInstance3D(mesh) => {
                 assert!(mesh.blend.enabled);
+                assert!(!mesh.blend.screen_blending);
+                assert!(mesh.blend.normal_blending);
                 assert_eq!(mesh.blend.blend_layers, BitMask::with([2, 4]));
                 assert_eq!(mesh.blend.blend_mask, BitMask::with([1, 3]));
                 assert_eq!(mesh.blend.distance, 0.5);
@@ -1323,11 +1354,44 @@ mod tests {
         match &batch.node.data {
             SceneNodeData::MultiMeshInstance3D(mesh) => {
                 assert!(mesh.blend.enabled);
+                assert!(!mesh.blend.screen_blending);
+                assert!(mesh.blend.normal_blending);
                 assert_eq!(mesh.blend.blend_layers, BitMask::with([5]));
                 assert_eq!(mesh.blend.blend_mask, BitMask::NONE);
                 assert_eq!(mesh.blend.distance, 0.25);
             }
             other => panic!("expected MultiMeshInstance3D node, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn scene_loader_defaults_mesh_normal_blending_false() {
+        let scene = Parser::new(
+            r#"
+            $root = @Mesh
+            [Mesh]
+            [MeshInstance3D]
+            [/MeshInstance3D]
+            [/Mesh]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+
+        let mesh = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "Mesh")
+            .expect("mesh node");
+        match &mesh.node.data {
+            SceneNodeData::MeshInstance3D(mesh) => {
+                assert!(!mesh.blend.normal_blending);
+                assert!(mesh.blend.screen_blending);
+            }
+            other => panic!("expected MeshInstance3D node, got {other:?}"),
         }
     }
 
@@ -1378,21 +1442,16 @@ mod tests {
             .find(|pending| pending.key_name == "box")
             .expect("box node");
         assert_eq!(text_box.locale_text_bindings.len(), 2);
-        assert!(
-            text_box
-                .locale_text_bindings
-                .iter()
-                .any(|binding| binding.key == "ui.entry"
-                    && binding.field == crate::runtime::state::LocaleTextField::TextEditText)
-        );
-        assert!(
-            text_box
-                .locale_text_bindings
-                .iter()
-                .any(|binding| binding.key == "ui.placeholder"
-                    && binding.field
-                        == crate::runtime::state::LocaleTextField::TextEditPlaceholder)
-        );
+        assert!(text_box
+            .locale_text_bindings
+            .iter()
+            .any(|binding| binding.key == "ui.entry"
+                && binding.field == crate::runtime::state::LocaleTextField::TextEditText));
+        assert!(text_box
+            .locale_text_bindings
+            .iter()
+            .any(|binding| binding.key == "ui.placeholder"
+                && binding.field == crate::runtime::state::LocaleTextField::TextEditPlaceholder));
     }
 
     #[test]

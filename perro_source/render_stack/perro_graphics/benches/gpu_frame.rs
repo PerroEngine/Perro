@@ -9,6 +9,7 @@ use perro_render_bridge::{
     WaterShapeState,
 };
 use perro_structs::{BitMask, PostProcessEffect, PostProcessSet};
+use std::env;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
@@ -132,6 +133,11 @@ impl ApplicationHandler for GpuBenchApp {
 
         let window = self.window.as_ref().expect("window").clone();
         for case in &self.cases {
+            if let Ok(filter) = env::var("PERRO_GPU_BENCH")
+                && !case.name.contains(&filter)
+            {
+                continue;
+            }
             let mut graphics = (case.setup)(&window);
             for _ in 0..WARMUP_FRAMES {
                 (case.redraw)(&mut graphics);
@@ -345,6 +351,11 @@ fn main() {
                 setup: |w| setup_blend_stack(w, 2_000, 0.35),
                 redraw: redraw_3d,
             },
+            BenchCase {
+                name: "blend_sphere_256_smooth",
+                setup: |w| setup_blend_sphere_stack(w, 256),
+                redraw: redraw_3d,
+            },
         ],
     };
     event_loop.run_app(&mut app).expect("run app");
@@ -483,7 +494,25 @@ fn setup_overdraw_meshes(window: &Arc<Window>, count: u32) -> PerroGraphics {
 
 fn setup_blend_stack(window: &Arc<Window>, count: u32, noise_factor: f32) -> PerroGraphics {
     let mut graphics = base_graphics(window);
-    let (mesh, material) = create_mesh_material(&mut graphics);
+    let (mesh, material) = create_mesh_material_with(&mut graphics, tiny_mesh());
+    setup_blend_stack_scene(&mut graphics, mesh, material, count, noise_factor);
+    graphics
+}
+
+fn setup_blend_sphere_stack(window: &Arc<Window>, count: u32) -> PerroGraphics {
+    let mut graphics = base_graphics(window);
+    let (mesh, material) = create_mesh_material_with(&mut graphics, uv_sphere_mesh(32, 16));
+    setup_blend_stack_scene(&mut graphics, mesh, material, count, 0.0);
+    graphics
+}
+
+fn setup_blend_stack_scene(
+    graphics: &mut PerroGraphics,
+    mesh: MeshID,
+    material: MaterialID,
+    count: u32,
+    noise_factor: f32,
+) {
     graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::SetRayLight {
         node: NodeID::from_parts(61_000, 0),
         light: RayLight3DState {
@@ -495,6 +524,8 @@ fn setup_blend_stack(window: &Arc<Window>, count: u32, noise_factor: f32) -> Per
     })));
     let blend = MeshBlendOptions3D {
         enabled: true,
+        screen_blending: true,
+        normal_blending: false,
         blend_layers: BitMask::with([1]),
         blend_mask: BitMask::with([1]),
         distance: 0.25,
@@ -504,7 +535,6 @@ fn setup_blend_stack(window: &Arc<Window>, count: u32, noise_factor: f32) -> Per
     };
     graphics.submit_many((0..count).map(|i| draw_overdraw_blend_command(i, mesh, material, blend)));
     let _ = graphics.draw_frame_timed();
-    graphics
 }
 
 fn redraw_2d(graphics: &mut PerroGraphics) {
@@ -864,6 +894,44 @@ fn tiny_mesh() -> Mesh3D {
     }
 }
 
+fn uv_sphere_mesh(slices: u32, stacks: u32) -> Mesh3D {
+    let slices = slices.max(3);
+    let stacks = stacks.max(2);
+    let mut vertices = Vec::with_capacity(((slices + 1) * (stacks + 1)) as usize);
+    let mut indices = Vec::with_capacity((slices * stacks * 6) as usize);
+    for y in 0..=stacks {
+        let v = y as f32 / stacks as f32;
+        let theta = v * std::f32::consts::PI;
+        let sin_theta = theta.sin();
+        let cos_theta = theta.cos();
+        for x in 0..=slices {
+            let u = x as f32 / slices as f32;
+            let phi = u * std::f32::consts::TAU;
+            let normal = [sin_theta * phi.cos(), cos_theta, sin_theta * phi.sin()];
+            vertices.push(RuntimeMeshVertex {
+                position: [normal[0] * 0.5, normal[1] * 0.5, normal[2] * 0.5],
+                normal,
+                uv: [u, v],
+                joints: [0, 0, 0, 0],
+                weights: [1.0, 0.0, 0.0, 0.0],
+            });
+        }
+    }
+    let row = slices + 1;
+    for y in 0..stacks {
+        for x in 0..slices {
+            let a = y * row + x;
+            let b = a + row;
+            indices.extend_from_slice(&[a, b, a + 1, a + 1, b, b + 1]);
+        }
+    }
+    Mesh3D {
+        vertices,
+        indices,
+        surface_ranges: vec![],
+    }
+}
+
 fn create_texture(graphics: &mut PerroGraphics) -> TextureID {
     graphics.submit(RenderCommand::Resource(ResourceCommand::CreateTexture {
         request: RenderRequestID::new(1),
@@ -884,13 +952,20 @@ fn create_texture(graphics: &mut PerroGraphics) -> TextureID {
 }
 
 fn create_mesh_material(graphics: &mut PerroGraphics) -> (MeshID, MaterialID) {
+    create_mesh_material_with(graphics, tiny_mesh())
+}
+
+fn create_mesh_material_with(
+    graphics: &mut PerroGraphics,
+    mesh_data: Mesh3D,
+) -> (MeshID, MaterialID) {
     graphics.submit_many([
         RenderCommand::Resource(ResourceCommand::CreateRuntimeMesh {
             request: RenderRequestID::new(2),
             id: MeshID::nil(),
             source: "__bench_mesh__".to_string(),
             reserved: true,
-            mesh: tiny_mesh(),
+            mesh: mesh_data,
         }),
         RenderCommand::Resource(ResourceCommand::CreateMaterial {
             request: RenderRequestID::new(3),

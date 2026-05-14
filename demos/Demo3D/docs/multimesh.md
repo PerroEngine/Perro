@@ -7,15 +7,17 @@ Scene:
 Shows:
 
 - `MultiMeshInstance3D`
-- repeated cube/sphere batches
-- per-instance positions
-- per-instance rotations
+- 1,000 cube instances
+- stacked height layers
+- generated instance grids
+- per-instance rotations from grid steps
 - meshlet option on batches
 
 Why scene works this way:
 
 - One node draws many instances with same mesh/material.
-- Instance arrays make placement data visible in scene file.
+- `instance_grid` keeps large placement sets compact.
+- Cube batch uses `20 * 5 * 10 = 1,000` instances.
 - Cube and sphere batches show two separate draw groups.
 - Large camera speed fits wider grid layout.
 
