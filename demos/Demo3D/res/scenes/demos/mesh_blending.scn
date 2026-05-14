@@ -54,22 +54,22 @@ parent = @MeshBlendingDemo
     [/MeshInstance3D]
 [/OffTarget0]
 
-[OffSphere0]
+[OffInsert0]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
         mesh = "__sphere__"
         material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (-7.75, 0.9, 4.5)
-            scale = (1.12, 1.12, 1.12)
+            scale = (1.18, 1.18, 1.18)
         [/Node3D]
     [/MeshInstance3D]
-[/OffSphere0]
+[/OffInsert0]
 
 [OffTarget1]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
-        mesh = "__cube__"
+        mesh = "__sq_pyr__"
         material = { type = "standard" base_color_factor = (0.18, 0.20, 0.24, 1.0) roughness_factor = 0.9 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (-4.55, 0.9, 4.5)
@@ -78,22 +78,22 @@ parent = @MeshBlendingDemo
     [/MeshInstance3D]
 [/OffTarget1]
 
-[OffSphere1]
+[OffInsert1]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
-        mesh = "__sphere__"
+        mesh = "__cube__"
         material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (-3.75, 0.9, 4.5)
-            scale = (1.12, 1.12, 1.12)
+            scale = (1.18, 1.18, 1.18)
         [/Node3D]
     [/MeshInstance3D]
-[/OffSphere1]
+[/OffInsert1]
 
 [OffTarget2]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
-        mesh = "__cube__"
+        mesh = "__tri_prism__"
         material = { type = "standard" base_color_factor = (0.18, 0.20, 0.24, 1.0) roughness_factor = 0.9 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (-0.55, 0.9, 4.5)
@@ -102,22 +102,22 @@ parent = @MeshBlendingDemo
     [/MeshInstance3D]
 [/OffTarget2]
 
-[OffSphere2]
+[OffInsert2]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
-        mesh = "__sphere__"
+        mesh = "__cone__"
         material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (0.25, 0.9, 4.5)
-            scale = (1.12, 1.12, 1.12)
+            scale = (1.18, 1.18, 1.18)
         [/Node3D]
     [/MeshInstance3D]
-[/OffSphere2]
+[/OffInsert2]
 
 [OffTarget3]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
-        mesh = "__cube__"
+        mesh = "__cylinder__"
         material = { type = "standard" base_color_factor = (0.18, 0.20, 0.24, 1.0) roughness_factor = 0.9 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (3.45, 0.9, 4.5)
@@ -126,17 +126,17 @@ parent = @MeshBlendingDemo
     [/MeshInstance3D]
 [/OffTarget3]
 
-[OffSphere3]
+[OffInsert3]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
-        mesh = "__sphere__"
+        mesh = "__capsule__"
         material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (4.25, 0.9, 4.5)
-            scale = (1.12, 1.12, 1.12)
+            scale = (1.18, 1.18, 1.18)
         [/Node3D]
     [/MeshInstance3D]
-[/OffSphere3]
+[/OffInsert3]
 
 [OffTarget4]
 parent = @MeshBlendingDemo
@@ -150,28 +150,24 @@ parent = @MeshBlendingDemo
     [/MeshInstance3D]
 [/OffTarget4]
 
-[OffSphere4]
+[OffInsert4]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
-        mesh = "__sphere__"
+        mesh = "__sq_pyr__"
         material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (8.25, 0.9, 4.5)
-            scale = (1.12, 1.12, 1.12)
+            scale = (1.18, 1.18, 1.18)
         [/Node3D]
     [/MeshInstance3D]
-[/OffSphere4]
+[/OffInsert4]
 
 [SameTarget0]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
         mesh = "__cube__"
-        blend_enabled = true
         blend_layers = [1]
-        blend_mask = none
-        blend_screen = true
-        blend_distance = 0.30
-        blend_min_distance = 0.02
+        blend_enabled = false
         material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.42 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (-8.55, 0.9, 1.5)
@@ -180,34 +176,29 @@ parent = @MeshBlendingDemo
     [/MeshInstance3D]
 [/SameTarget0]
 
-[SameSphere0]
+[SameInsert0]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
         mesh = "__sphere__"
         blend_enabled = true
-        blend_screen = true
         blend_layers = [2]
         blend_mask = none
-        blend_distance = 0.30
-        blend_min_distance = 0.02
+        blend_distance = 1.10
+        blend_min_distance = 0.03
         material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.42 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (-7.75, 0.9, 1.5)
-            scale = (1.12, 1.12, 1.12)
+            scale = (1.18, 1.18, 1.18)
         [/Node3D]
     [/MeshInstance3D]
-[/SameSphere0]
+[/SameInsert0]
 
 [SameTarget1]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
-        mesh = "__cube__"
-        blend_enabled = true
+        mesh = "__sq_pyr__"
         blend_layers = [1]
-        blend_mask = none
-        blend_screen = true
-        blend_distance = 0.55
-        blend_min_distance = 0.02
+        blend_enabled = false
         material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.42 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (-4.55, 0.9, 1.5)
@@ -216,34 +207,29 @@ parent = @MeshBlendingDemo
     [/MeshInstance3D]
 [/SameTarget1]
 
-[SameSphere1]
-parent = @MeshBlendingDemo
-    [MeshInstance3D]
-        mesh = "__sphere__"
-        blend_enabled = true
-        blend_screen = true
-        blend_layers = [2]
-        blend_mask = none
-        blend_distance = 0.55
-        blend_min_distance = 0.02
-        material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.42 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
-        [Node3D]
-            position = (-3.75, 0.9, 1.5)
-            scale = (1.12, 1.12, 1.12)
-        [/Node3D]
-    [/MeshInstance3D]
-[/SameSphere1]
-
-[SameTarget2]
+[SameInsert1]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
         mesh = "__cube__"
         blend_enabled = true
-        blend_layers = [1]
+        blend_layers = [2]
         blend_mask = none
-        blend_screen = true
-        blend_distance = 0.85
-        blend_min_distance = 0.02
+        blend_distance = 1.65
+        blend_min_distance = 0.03
+        material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.42 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (-3.75, 0.9, 1.5)
+            scale = (1.18, 1.18, 1.18)
+        [/Node3D]
+    [/MeshInstance3D]
+[/SameInsert1]
+
+[SameTarget2]
+parent = @MeshBlendingDemo
+    [MeshInstance3D]
+        mesh = "__tri_prism__"
+        blend_layers = [1]
+        blend_enabled = false
         material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.42 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (-0.55, 0.9, 1.5)
@@ -252,34 +238,29 @@ parent = @MeshBlendingDemo
     [/MeshInstance3D]
 [/SameTarget2]
 
-[SameSphere2]
+[SameInsert2]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
-        mesh = "__sphere__"
+        mesh = "__cone__"
         blend_enabled = true
-        blend_screen = true
         blend_layers = [2]
         blend_mask = none
-        blend_distance = 0.85
-        blend_min_distance = 0.02
+        blend_distance = 2.30
+        blend_min_distance = 0.03
         material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.42 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (0.25, 0.9, 1.5)
-            scale = (1.12, 1.12, 1.12)
+            scale = (1.18, 1.18, 1.18)
         [/Node3D]
     [/MeshInstance3D]
-[/SameSphere2]
+[/SameInsert2]
 
 [SameTarget3]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
-        mesh = "__cube__"
-        blend_enabled = true
+        mesh = "__cylinder__"
         blend_layers = [1]
-        blend_mask = none
-        blend_screen = true
-        blend_distance = 1.20
-        blend_min_distance = 0.02
+        blend_enabled = false
         material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.42 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (3.45, 0.9, 1.5)
@@ -288,34 +269,29 @@ parent = @MeshBlendingDemo
     [/MeshInstance3D]
 [/SameTarget3]
 
-[SameSphere3]
+[SameInsert3]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
-        mesh = "__sphere__"
+        mesh = "__capsule__"
         blend_enabled = true
-        blend_screen = true
         blend_layers = [2]
         blend_mask = none
-        blend_distance = 1.20
-        blend_min_distance = 0.02
+        blend_distance = 3.10
+        blend_min_distance = 0.03
         material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.42 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (4.25, 0.9, 1.5)
-            scale = (1.12, 1.12, 1.12)
+            scale = (1.18, 1.18, 1.18)
         [/Node3D]
     [/MeshInstance3D]
-[/SameSphere3]
+[/SameInsert3]
 
 [SameTarget4]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
         mesh = "__cube__"
-        blend_enabled = true
         blend_layers = [1]
-        blend_mask = none
-        blend_screen = true
-        blend_distance = 1.65
-        blend_min_distance = 0.02
+        blend_enabled = false
         material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.42 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (7.45, 0.9, 1.5)
@@ -324,35 +300,29 @@ parent = @MeshBlendingDemo
     [/MeshInstance3D]
 [/SameTarget4]
 
-[SameSphere4]
+[SameInsert4]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
-        mesh = "__sphere__"
+        mesh = "__sq_pyr__"
         blend_enabled = true
-        blend_screen = true
         blend_layers = [2]
         blend_mask = none
-        blend_distance = 1.65
-        blend_min_distance = 0.02
+        blend_distance = 4.00
+        blend_min_distance = 0.03
         material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.42 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (8.25, 0.9, 1.5)
-            scale = (1.12, 1.12, 1.12)
+            scale = (1.18, 1.18, 1.18)
         [/Node3D]
     [/MeshInstance3D]
-[/SameSphere4]
+[/SameInsert4]
 
 [MaterialTarget0]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
         mesh = "__cube__"
-        blend_enabled = true
         blend_layers = [1]
-        blend_mask = none
-        blend_screen = true
-        blend_normals = true
-        blend_distance = 0.30
-        blend_min_distance = 0.02
+        blend_enabled = false
         material = { type = "standard" base_color_factor = (0.16, 0.28, 0.80, 1.0) roughness_factor = 0.55 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (-8.55, 0.9, -1.5)
@@ -361,36 +331,29 @@ parent = @MeshBlendingDemo
     [/MeshInstance3D]
 [/MaterialTarget0]
 
-[MaterialSphere0]
+[MaterialInsert0]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
         mesh = "__sphere__"
         blend_enabled = true
-        blend_screen = true
-        blend_normals = true
         blend_layers = [2]
         blend_mask = none
-        blend_distance = 0.30
-        blend_min_distance = 0.02
+        blend_distance = 1.10
+        blend_min_distance = 0.03
         material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (-7.75, 0.9, -1.5)
-            scale = (1.12, 1.12, 1.12)
+            scale = (1.18, 1.18, 1.18)
         [/Node3D]
     [/MeshInstance3D]
-[/MaterialSphere0]
+[/MaterialInsert0]
 
 [MaterialTarget1]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
-        mesh = "__cube__"
-        blend_enabled = true
+        mesh = "__sq_pyr__"
         blend_layers = [1]
-        blend_mask = none
-        blend_screen = true
-        blend_normals = true
-        blend_distance = 0.55
-        blend_min_distance = 0.02
+        blend_enabled = false
         material = { type = "standard" base_color_factor = (0.16, 0.28, 0.80, 1.0) roughness_factor = 0.55 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (-4.55, 0.9, -1.5)
@@ -399,36 +362,29 @@ parent = @MeshBlendingDemo
     [/MeshInstance3D]
 [/MaterialTarget1]
 
-[MaterialSphere1]
-parent = @MeshBlendingDemo
-    [MeshInstance3D]
-        mesh = "__sphere__"
-        blend_enabled = true
-        blend_screen = true
-        blend_normals = true
-        blend_layers = [2]
-        blend_mask = none
-        blend_distance = 0.55
-        blend_min_distance = 0.02
-        material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
-        [Node3D]
-            position = (-3.75, 0.9, -1.5)
-            scale = (1.12, 1.12, 1.12)
-        [/Node3D]
-    [/MeshInstance3D]
-[/MaterialSphere1]
-
-[MaterialTarget2]
+[MaterialInsert1]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
         mesh = "__cube__"
         blend_enabled = true
-        blend_layers = [1]
+        blend_layers = [2]
         blend_mask = none
-        blend_screen = true
-        blend_normals = true
-        blend_distance = 0.85
-        blend_min_distance = 0.02
+        blend_distance = 1.65
+        blend_min_distance = 0.03
+        material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (-3.75, 0.9, -1.5)
+            scale = (1.18, 1.18, 1.18)
+        [/Node3D]
+    [/MeshInstance3D]
+[/MaterialInsert1]
+
+[MaterialTarget2]
+parent = @MeshBlendingDemo
+    [MeshInstance3D]
+        mesh = "__tri_prism__"
+        blend_layers = [1]
+        blend_enabled = false
         material = { type = "standard" base_color_factor = (0.16, 0.28, 0.80, 1.0) roughness_factor = 0.55 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (-0.55, 0.9, -1.5)
@@ -437,36 +393,29 @@ parent = @MeshBlendingDemo
     [/MeshInstance3D]
 [/MaterialTarget2]
 
-[MaterialSphere2]
+[MaterialInsert2]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
-        mesh = "__sphere__"
+        mesh = "__cone__"
         blend_enabled = true
-        blend_screen = true
-        blend_normals = true
         blend_layers = [2]
         blend_mask = none
-        blend_distance = 0.85
-        blend_min_distance = 0.02
+        blend_distance = 2.30
+        blend_min_distance = 0.03
         material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (0.25, 0.9, -1.5)
-            scale = (1.12, 1.12, 1.12)
+            scale = (1.18, 1.18, 1.18)
         [/Node3D]
     [/MeshInstance3D]
-[/MaterialSphere2]
+[/MaterialInsert2]
 
 [MaterialTarget3]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
-        mesh = "__cube__"
-        blend_enabled = true
+        mesh = "__cylinder__"
         blend_layers = [1]
-        blend_mask = none
-        blend_screen = true
-        blend_normals = true
-        blend_distance = 1.20
-        blend_min_distance = 0.02
+        blend_enabled = false
         material = { type = "standard" base_color_factor = (0.16, 0.28, 0.80, 1.0) roughness_factor = 0.55 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (3.45, 0.9, -1.5)
@@ -475,36 +424,29 @@ parent = @MeshBlendingDemo
     [/MeshInstance3D]
 [/MaterialTarget3]
 
-[MaterialSphere3]
+[MaterialInsert3]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
-        mesh = "__sphere__"
+        mesh = "__capsule__"
         blend_enabled = true
-        blend_screen = true
-        blend_normals = true
         blend_layers = [2]
         blend_mask = none
-        blend_distance = 1.20
-        blend_min_distance = 0.02
+        blend_distance = 3.10
+        blend_min_distance = 0.03
         material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (4.25, 0.9, -1.5)
-            scale = (1.12, 1.12, 1.12)
+            scale = (1.18, 1.18, 1.18)
         [/Node3D]
     [/MeshInstance3D]
-[/MaterialSphere3]
+[/MaterialInsert3]
 
 [MaterialTarget4]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
         mesh = "__cube__"
-        blend_enabled = true
         blend_layers = [1]
-        blend_mask = none
-        blend_screen = true
-        blend_normals = true
-        blend_distance = 1.65
-        blend_min_distance = 0.02
+        blend_enabled = false
         material = { type = "standard" base_color_factor = (0.16, 0.28, 0.80, 1.0) roughness_factor = 0.55 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (7.45, 0.9, -1.5)
@@ -513,37 +455,29 @@ parent = @MeshBlendingDemo
     [/MeshInstance3D]
 [/MaterialTarget4]
 
-[MaterialSphere4]
+[MaterialInsert4]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
-        mesh = "__sphere__"
+        mesh = "__sq_pyr__"
         blend_enabled = true
-        blend_screen = true
-        blend_normals = true
         blend_layers = [2]
         blend_mask = none
-        blend_distance = 1.65
-        blend_min_distance = 0.02
+        blend_distance = 4.00
+        blend_min_distance = 0.03
         material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (8.25, 0.9, -1.5)
-            scale = (1.12, 1.12, 1.12)
+            scale = (1.18, 1.18, 1.18)
         [/Node3D]
     [/MeshInstance3D]
-[/MaterialSphere4]
+[/MaterialInsert4]
 
 [NoiseTarget0]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
         mesh = "__cube__"
-        blend_enabled = true
         blend_layers = [1]
-        blend_mask = none
-        blend_screen = true
-        blend_normals = true
-        blend_distance = 1.65
-        blend_min_distance = 0.02
-        blend = { noise = 0.00 noise_scale = 10.0 }
+        blend_enabled = false
         material = { type = "standard" base_color_factor = (0.18, 0.20, 0.24, 1.0) roughness_factor = 0.9 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (-8.55, 0.9, -4.5)
@@ -552,38 +486,30 @@ parent = @MeshBlendingDemo
     [/MeshInstance3D]
 [/NoiseTarget0]
 
-[NoiseSphere0]
+[NoiseInsert0]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
         mesh = "__sphere__"
         blend_enabled = true
-        blend_screen = true
-        blend_normals = true
         blend_layers = [2]
         blend_mask = none
-        blend_distance = 1.65
-        blend_min_distance = 0.02
-        blend = { noise = 0.00 noise_scale = 10.0 }
+        blend_distance = 4.00
+        blend_min_distance = 0.03
+        blend = { noise = 0.00 noise_scale = 18.0 }
         material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (-7.75, 0.9, -4.5)
-            scale = (1.12, 1.12, 1.12)
+            scale = (1.18, 1.18, 1.18)
         [/Node3D]
     [/MeshInstance3D]
-[/NoiseSphere0]
+[/NoiseInsert0]
 
 [NoiseTarget1]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
-        mesh = "__cube__"
-        blend_enabled = true
+        mesh = "__sq_pyr__"
         blend_layers = [1]
-        blend_mask = none
-        blend_screen = true
-        blend_normals = true
-        blend_distance = 1.65
-        blend_min_distance = 0.02
-        blend = { noise = 0.06 noise_scale = 10.0 }
+        blend_enabled = false
         material = { type = "standard" base_color_factor = (0.18, 0.20, 0.24, 1.0) roughness_factor = 0.9 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (-4.55, 0.9, -4.5)
@@ -592,38 +518,30 @@ parent = @MeshBlendingDemo
     [/MeshInstance3D]
 [/NoiseTarget1]
 
-[NoiseSphere1]
-parent = @MeshBlendingDemo
-    [MeshInstance3D]
-        mesh = "__sphere__"
-        blend_enabled = true
-        blend_screen = true
-        blend_normals = true
-        blend_layers = [2]
-        blend_mask = none
-        blend_distance = 1.65
-        blend_min_distance = 0.02
-        blend = { noise = 0.06 noise_scale = 10.0 }
-        material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
-        [Node3D]
-            position = (-3.75, 0.9, -4.5)
-            scale = (1.12, 1.12, 1.12)
-        [/Node3D]
-    [/MeshInstance3D]
-[/NoiseSphere1]
-
-[NoiseTarget2]
+[NoiseInsert1]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
         mesh = "__cube__"
         blend_enabled = true
-        blend_layers = [1]
+        blend_layers = [2]
         blend_mask = none
-        blend_screen = true
-        blend_normals = true
-        blend_distance = 1.65
-        blend_min_distance = 0.02
-        blend = { noise = 0.12 noise_scale = 10.0 }
+        blend_distance = 4.00
+        blend_min_distance = 0.03
+        blend = { noise = 0.12 noise_scale = 18.0 }
+        material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (-3.75, 0.9, -4.5)
+            scale = (1.18, 1.18, 1.18)
+        [/Node3D]
+    [/MeshInstance3D]
+[/NoiseInsert1]
+
+[NoiseTarget2]
+parent = @MeshBlendingDemo
+    [MeshInstance3D]
+        mesh = "__tri_prism__"
+        blend_layers = [1]
+        blend_enabled = false
         material = { type = "standard" base_color_factor = (0.18, 0.20, 0.24, 1.0) roughness_factor = 0.9 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (-0.55, 0.9, -4.5)
@@ -632,38 +550,30 @@ parent = @MeshBlendingDemo
     [/MeshInstance3D]
 [/NoiseTarget2]
 
-[NoiseSphere2]
+[NoiseInsert2]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
-        mesh = "__sphere__"
+        mesh = "__cone__"
         blend_enabled = true
-        blend_screen = true
-        blend_normals = true
         blend_layers = [2]
         blend_mask = none
-        blend_distance = 1.65
-        blend_min_distance = 0.02
-        blend = { noise = 0.12 noise_scale = 10.0 }
+        blend_distance = 4.00
+        blend_min_distance = 0.03
+        blend = { noise = 0.24 noise_scale = 18.0 }
         material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (0.25, 0.9, -4.5)
-            scale = (1.12, 1.12, 1.12)
+            scale = (1.18, 1.18, 1.18)
         [/Node3D]
     [/MeshInstance3D]
-[/NoiseSphere2]
+[/NoiseInsert2]
 
 [NoiseTarget3]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
-        mesh = "__cube__"
-        blend_enabled = true
+        mesh = "__cylinder__"
         blend_layers = [1]
-        blend_mask = none
-        blend_screen = true
-        blend_normals = true
-        blend_distance = 1.65
-        blend_min_distance = 0.02
-        blend = { noise = 0.22 noise_scale = 10.0 }
+        blend_enabled = false
         material = { type = "standard" base_color_factor = (0.18, 0.20, 0.24, 1.0) roughness_factor = 0.9 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (3.45, 0.9, -4.5)
@@ -672,38 +582,30 @@ parent = @MeshBlendingDemo
     [/MeshInstance3D]
 [/NoiseTarget3]
 
-[NoiseSphere3]
+[NoiseInsert3]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
-        mesh = "__sphere__"
+        mesh = "__capsule__"
         blend_enabled = true
-        blend_screen = true
-        blend_normals = true
         blend_layers = [2]
         blend_mask = none
-        blend_distance = 1.65
-        blend_min_distance = 0.02
-        blend = { noise = 0.22 noise_scale = 10.0 }
+        blend_distance = 4.00
+        blend_min_distance = 0.03
+        blend = { noise = 0.38 noise_scale = 18.0 }
         material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (4.25, 0.9, -4.5)
-            scale = (1.12, 1.12, 1.12)
+            scale = (1.18, 1.18, 1.18)
         [/Node3D]
     [/MeshInstance3D]
-[/NoiseSphere3]
+[/NoiseInsert3]
 
 [NoiseTarget4]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
         mesh = "__cube__"
-        blend_enabled = true
         blend_layers = [1]
-        blend_mask = none
-        blend_screen = true
-        blend_normals = true
-        blend_distance = 1.65
-        blend_min_distance = 0.02
-        blend = { noise = 0.34 noise_scale = 10.0 }
+        blend_enabled = false
         material = { type = "standard" base_color_factor = (0.18, 0.20, 0.24, 1.0) roughness_factor = 0.9 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (7.45, 0.9, -4.5)
@@ -712,22 +614,21 @@ parent = @MeshBlendingDemo
     [/MeshInstance3D]
 [/NoiseTarget4]
 
-[NoiseSphere4]
+[NoiseInsert4]
 parent = @MeshBlendingDemo
     [MeshInstance3D]
-        mesh = "__sphere__"
+        mesh = "__sq_pyr__"
         blend_enabled = true
-        blend_screen = true
-        blend_normals = true
         blend_layers = [2]
         blend_mask = none
-        blend_distance = 1.65
-        blend_min_distance = 0.02
-        blend = { noise = 0.34 noise_scale = 10.0 }
+        blend_distance = 4.00
+        blend_min_distance = 0.03
+        blend = { noise = 0.55 noise_scale = 18.0 }
         material = { type = "standard" base_color_factor = (0.90, 0.24, 0.18, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (8.25, 0.9, -4.5)
-            scale = (1.12, 1.12, 1.12)
+            scale = (1.18, 1.18, 1.18)
         [/Node3D]
     [/MeshInstance3D]
-[/NoiseSphere4]
+[/NoiseInsert4]
+

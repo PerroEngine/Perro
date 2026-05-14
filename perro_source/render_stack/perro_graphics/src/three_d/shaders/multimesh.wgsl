@@ -1,8 +1,22 @@
 const MAX_RAY_LIGHTS: u32 = 3u;
+const MAX_POINT_LIGHTS: u32 = 8u;
+const MAX_SPOT_LIGHTS: u32 = 8u;
 
 struct RayLightGpu {
     direction: vec4<f32>,
     color_intensity: vec4<f32>,
+}
+
+struct PointLightGpu {
+    position_range: vec4<f32>,
+    color_intensity: vec4<f32>,
+}
+
+struct SpotLightGpu {
+    position_range: vec4<f32>,
+    direction_outer_cos: vec4<f32>,
+    color_intensity: vec4<f32>,
+    inner_cos_pad: vec4<f32>,
 }
 
 struct Scene3D {
@@ -12,6 +26,9 @@ struct Scene3D {
     ambient_color: vec4<f32>,
     ray_light: RayLightGpu,
     ray_lights: array<RayLightGpu, MAX_RAY_LIGHTS>,
+    point_lights: array<PointLightGpu, MAX_POINT_LIGHTS>,
+    spot_lights: array<SpotLightGpu, MAX_SPOT_LIGHTS>,
+    inv_view_proj: mat4x4<f32>,
 }
 
 struct MultiMeshDrawParam {
@@ -80,8 +97,27 @@ fn decode_mesh_blend_params(packed: u32) -> vec4<f32> {
     );
 }
 
-fn mesh_blend_noise(p: vec2<f32>) -> f32 {
+fn mesh_blend_hash(p: vec2<f32>) -> f32 {
     return fract(sin(dot(p, vec2<f32>(12.9898, 78.233))) * 43758.5453);
+}
+
+fn mesh_blend_noise(p: vec2<f32>) -> f32 {
+    let cell = floor(p);
+    let local = fract(p);
+    let curve = local * local * (3.0 - 2.0 * local);
+    let a = mesh_blend_hash(cell);
+    let b = mesh_blend_hash(cell + vec2<f32>(1.0, 0.0));
+    let c = mesh_blend_hash(cell + vec2<f32>(0.0, 1.0));
+    let d = mesh_blend_hash(cell + vec2<f32>(1.0, 1.0));
+    return mix(mix(a, b, curve.x), mix(c, d, curve.x), curve.y);
+}
+
+fn mesh_blend_world_from_depth(coord: vec2<i32>, dims_u: vec2<u32>, depth: f32) -> vec3<f32> {
+    let uv = (vec2<f32>(coord) + vec2<f32>(0.5)) / vec2<f32>(dims_u);
+    let ndc_xy = vec2<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+    let ndc = vec4<f32>(ndc_xy, depth * 2.0 - 1.0, 1.0);
+    let world_h = scene.inv_view_proj * ndc;
+    return world_h.xyz / max(abs(world_h.w), 1.0e-5);
 }
 
 fn mesh_blend_alpha(frag_pos: vec4<f32>, world_pos: vec3<f32>, packed: u32) -> f32 {
@@ -98,21 +134,27 @@ fn mesh_blend_alpha(frag_pos: vec4<f32>, world_pos: vec3<f32>, packed: u32) -> f
     if scene_depth >= 0.999999 {
         return 1.0;
     }
-    if scene_depth + 0.00002 >= frag_pos.z {
-        return 1.0;
-    }
     let params = decode_mesh_blend_params(packed);
     let view_dist = distance(world_pos, scene.camera_pos.xyz);
-    let dist_scale = clamp(8.0 / max(view_dist, 1.0), 0.35, 1.0);
-    let max_width = max(params.x * 0.01 * dist_scale, 0.00001);
-    let min_width = min(params.y * 0.01 * dist_scale, max_width);
+    let scene_world = mesh_blend_world_from_depth(coord, dims_u, scene_depth);
+    let raw_depth_delta = distance(scene_world, scene.camera_pos.xyz) - view_dist;
+    if raw_depth_delta <= 0.0 {
+        return 1.0;
+    }
+    let max_width = max(params.x * 0.08, 0.0001);
+    let min_width = min(params.y * 0.08, max_width);
     var noise = 0.0;
     if params.z > 0.0 {
         let tile = max(params.w, 1.0);
-        noise = (mesh_blend_noise(floor(frag_pos.xy / tile)) - 0.5) * params.z * max_width;
+        let soft_noise = smoothstep(0.15, 0.85, mesh_blend_noise(frag_pos.xy / tile));
+        noise = (soft_noise - 0.5) * params.z * max_width;
     }
-    let depth_delta = max(frag_pos.z - scene_depth + noise, 0.0);
-    return smoothstep(min_width, max_width, depth_delta);
+    let depth_delta = max(raw_depth_delta + noise, 0.0);
+    if depth_delta > max_width * 1.15 {
+        return 1.0;
+    }
+    let fade = smoothstep(min_width, max_width, depth_delta);
+    return fade * fade * (3.0 - 2.0 * fade);
 }
 
 fn rotate_vec_by_quat(v: vec3<f32>, q: vec4<f32>) -> vec3<f32> {

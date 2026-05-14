@@ -14,12 +14,14 @@ mod tests {
             [WaterBody2D]
                 shape = { type="quad" width=64 height=32 }
                 resolution = (256, 128)
+                render_resolution = (512, 256)
                 depth = 7.5
                 flow = (2, 0)
                 wind = (0, 1)
                 idle_mode = "storm"
                 wave_speed = 3.0
                 wave_scale = 1.5
+                wave_length = 12.0
                 wake_strength = 2.0
                 foam_strength = 0.8
                 damping = 0.96
@@ -36,6 +38,7 @@ mod tests {
                 shallow_color = (0.1, 0.5, 0.7, 0.35)
                 shallow_depth = 10
                 sky_bias = { ratio=0.4 }
+                material = { transparency=0.31 reflectivity=0.52 roughness=0.19 fresnel_power=4.5 normal_strength=1.4 ripple_scale=0.8 foam_color=(0.7, 0.9, 1.0, 1.0) foam_amount=0.67 crest_foam_threshold=0.43 caustic_strength=0.21 refraction_strength=0.13 scattering_strength=0.18 distance_fog_strength=0.35 }
                 coastline = { foam_color=(0.8, 0.9, 1.0, 1.0) foam_strength=0.9 foam_width=2.0 cutoff_softness=0.4 wave_reflection=0.5 wave_damping=0.25 edge_noise=0.1 }
                 debug = true
             [/WaterBody2D]
@@ -62,12 +65,14 @@ mod tests {
                     }
                 );
                 assert_eq!(node.water.resolution, [256, 128]);
+                assert_eq!(node.water.render_resolution, [512, 256]);
                 assert_eq!(node.water.depth, 7.5);
                 assert_eq!(node.water.flow.x, 2.0);
                 assert_eq!(node.water.wind.y, 1.0);
                 assert_eq!(node.water.idle_mode, perro_nodes::WaterIdleMode::Storm);
                 assert_eq!(node.water.wave.speed, 3.0);
                 assert_eq!(node.water.wave.scale, 1.5);
+                assert_eq!(node.water.wave.length, 12.0);
                 assert_eq!(node.water.wave.damping, 0.96);
                 assert_eq!(node.water.physics.wake_strength, 2.0);
                 assert_eq!(node.water.physics.foam_strength, 0.8);
@@ -87,6 +92,19 @@ mod tests {
                 );
                 assert_eq!(node.water.optics.shallow_depth, 10.0);
                 assert_eq!(node.water.optics.sky_bias.ratio(), 0.4);
+                assert_eq!(node.water.visual.transparency, 0.31);
+                assert_eq!(node.water.visual.reflectivity, 0.52);
+                assert_eq!(node.water.visual.roughness, 0.19);
+                assert_eq!(node.water.visual.fresnel_power, 4.5);
+                assert_eq!(node.water.visual.normal_strength, 1.4);
+                assert_eq!(node.water.visual.ripple_scale, 0.8);
+                assert_eq!(node.water.visual.foam_color.to_rgba(), [0.7, 0.9, 1.0, 1.0]);
+                assert_eq!(node.water.visual.foam_amount, 0.67);
+                assert_eq!(node.water.visual.crest_foam_threshold, 0.43);
+                assert_eq!(node.water.visual.caustic_strength, 0.21);
+                assert_eq!(node.water.visual.refraction_strength, 0.13);
+                assert_eq!(node.water.visual.scattering_strength, 0.18);
+                assert_eq!(node.water.visual.distance_fog_strength, 0.35);
                 assert_eq!(
                     node.water.coastline.foam_color.to_rgba(),
                     [0.8, 0.9, 1.0, 1.0]
@@ -167,7 +185,8 @@ mod tests {
             $root = @water
             [water]
             [WaterBody3D]
-                vertices_per_meter = 2
+                sim_cells_per_meter = 2
+                render_vertices_per_meter = 4
                 shape = { type="cube" size=(20, 8, 10) }
             [/WaterBody3D]
             [/water]
@@ -187,6 +206,7 @@ mod tests {
         match &water.node.data {
             SceneNodeData::WaterBody3D(node) => {
                 assert_eq!(node.water.resolution, [41, 21]);
+                assert_eq!(node.water.render_resolution, [81, 41]);
             }
             other => panic!("expected WaterBody3D node, got {other:?}"),
         }
@@ -219,6 +239,7 @@ mod tests {
         match &water.node.data {
             SceneNodeData::WaterBody3D(node) => {
                 assert_eq!(node.water.resolution, [501, 251]);
+                assert_eq!(node.water.render_resolution, [1001, 501]);
             }
             other => panic!("expected WaterBody3D node, got {other:?}"),
         }

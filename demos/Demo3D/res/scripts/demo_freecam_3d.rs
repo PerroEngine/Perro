@@ -52,7 +52,6 @@ lifecycle!({
 
         let _ = with_state_mut!(ctx.run, DemoFreecam3DState, ctx.id, |state| {
             state.debug_frame = state.debug_frame.wrapping_add(1);
-           
         });
 
         let dt = delta_time!(ctx.run);
@@ -67,9 +66,7 @@ lifecycle!({
             let look_y = mouse.y.clamp(-MAX_MOUSE_DELTA, MAX_MOUSE_DELTA);
             state.yaw -= look_x * sensitivity;
             state.pitch = (state.pitch + look_y * sensitivity).clamp(-PITCH_LIMIT, PITCH_LIMIT);
-            if look_x.abs() > 0.001 || look_y.abs() > 0.001 {
-            
-            }
+            if look_x.abs() > 0.001 || look_y.abs() > 0.001 {}
             (state.yaw, state.pitch, state.speed)
         })
         .unwrap_or((0.0, 0.0, 8.0));

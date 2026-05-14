@@ -138,6 +138,7 @@ struct Scene3DUniform {
     ray_lights: [RayLightGpu; MAX_RAY_LIGHTS],
     point_lights: [PointLightGpu; MAX_POINT_LIGHTS],
     spot_lights: [SpotLightGpu; MAX_SPOT_LIGHTS],
+    inv_view_proj: [[f32; 4]; 4],
 }
 
 #[repr(C)]

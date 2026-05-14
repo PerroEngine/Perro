@@ -91,7 +91,9 @@ Mesh Blend:
 
 - `blend_layers`: mesh tagged-layer membership for 3D mesh blending.
 - `blend_mask`: mesh ignored-layer filter for 3D mesh blending.
-- A mesh blends with target meshes when its `blend_mask` does not intersect their `blend_layers`.
+- A mesh with `blend_enabled = true` fades against target meshes when its `blend_mask` does not intersect their `blend_layers`.
+- Target meshes only need explicit `blend_layers`; they do not need `blend_enabled = true`.
+- Usually enable blending only on the inserted/top mesh so only that mesh fades.
 - Blending is active when `blend_enabled = true`, `blend_layers` is not empty, and `blend_mask` is not `BitMask::ALL`.
 - Default `blend_layers` is `BitMask::ALL`.
 - Default `blend_mask` is `BitMask::NONE`.

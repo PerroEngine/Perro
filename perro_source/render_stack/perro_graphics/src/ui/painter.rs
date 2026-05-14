@@ -8,6 +8,7 @@ use epaint::{
 };
 use perro_ids::NodeID;
 use perro_render_bridge::{UiDepthEffectState, UiImageScaleState, UiRectState, UiTextAlignState};
+use perro_structs::Unorm8x4;
 
 const UI_RASTER_SCALE: f32 = 2.0;
 const UI_FONT_ATLAS_SIZE: usize = 4096;
@@ -598,10 +599,7 @@ fn clip_rect_from_state(clip: [f32; 4], viewport: [f32; 2]) -> Rect {
 }
 
 fn color32(color: [f32; 4]) -> Color32 {
-    let r = (color[0].clamp(0.0, 1.0) * 255.0).round() as u8;
-    let g = (color[1].clamp(0.0, 1.0) * 255.0).round() as u8;
-    let b = (color[2].clamp(0.0, 1.0) * 255.0).round() as u8;
-    let a = (color[3].clamp(0.0, 1.0) * 255.0).round() as u8;
+    let [r, g, b, a] = Unorm8x4::new(color).to_u8();
     Color32::from_rgba_unmultiplied(r, g, b, a)
 }
 

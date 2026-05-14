@@ -8,7 +8,7 @@ use perro_render_bridge::{
     PointLight2DState, PointParticles2DState, RayLight2DState, Rect2DCommand, SpotLight2DState,
     Sprite2DCommand, TileMap2DCommand, Water2DState,
 };
-use perro_structs::DrawShape2D;
+use perro_structs::{DrawShape2D, Unorm8x4};
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -931,12 +931,7 @@ fn hash01(seed: u32) -> f32 {
 
 #[inline]
 fn color_to_unorm8(color: [f32; 4]) -> [u8; 4] {
-    [
-        (color[0].clamp(0.0, 1.0) * 255.0).round() as u8,
-        (color[1].clamp(0.0, 1.0) * 255.0).round() as u8,
-        (color[2].clamp(0.0, 1.0) * 255.0).round() as u8,
-        (color[3].clamp(0.0, 1.0) * 255.0).round() as u8,
-    ]
+    Unorm8x4::new(color).to_u8()
 }
 
 #[cfg(test)]

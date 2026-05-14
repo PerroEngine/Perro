@@ -250,12 +250,33 @@ fn cone(segments: u32) -> (Vec<BuiltinMeshVertex>, Vec<u16>) {
     let apex = [0.0, 0.6, 0.0];
     let by = -0.5;
     let r = 0.5;
+    let height = apex[1] - by;
     for i in 0..seg {
         let a0 = i as f32 / seg as f32 * std::f32::consts::TAU;
         let a1 = (i + 1) as f32 / seg as f32 * std::f32::consts::TAU;
         let p0 = [r * a0.cos(), by, r * a0.sin()];
         let p1 = [r * a1.cos(), by, r * a1.sin()];
-        push_triangle(&mut vertices, &mut indices, apex, p0, p1);
+        let n0 = normalize3([height * a0.cos(), r, height * a0.sin()]);
+        let n1 = normalize3([height * a1.cos(), r, height * a1.sin()]);
+        let u0 = i as f32 / seg as f32;
+        let u1 = (i + 1) as f32 / seg as f32;
+        let base = vertices.len() as u16;
+        vertices.push(BuiltinMeshVertex {
+            pos: apex,
+            normal: n0,
+            uv: [u0, 1.0],
+        });
+        vertices.push(BuiltinMeshVertex {
+            pos: p0,
+            normal: n0,
+            uv: [u0, 0.0],
+        });
+        vertices.push(BuiltinMeshVertex {
+            pos: p1,
+            normal: n1,
+            uv: [u1, 0.0],
+        });
+        push_index_triangle_outward(&vertices, &mut indices, base, base + 1, base + 2);
         push_triangle(&mut vertices, &mut indices, [0.0, by, 0.0], p1, p0);
     }
     (vertices, indices)

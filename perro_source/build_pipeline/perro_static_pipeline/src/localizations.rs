@@ -1,5 +1,5 @@
 use crate::{StaticPipelineError, escape_rust_str, static_dir};
-use perro_csv::PerroCsvBuf;
+use perro_csv::CsvBuf;
 use perro_ids::string_to_u64;
 use perro_project::ProjectConfig;
 use std::{collections::HashMap, fmt::Write as _, fs, path::Path};
@@ -25,7 +25,7 @@ pub fn generate_static_localizations(
         ))
     })?;
 
-    let table = PerroCsvBuf::from_bytes(&bytes).map_err(|err| {
+    let table = CsvBuf::from_bytes(&bytes).map_err(|err| {
         StaticPipelineError::SceneParse(format!(
             "failed to read localization csv header `{}`: {err}",
             localization.source_csv

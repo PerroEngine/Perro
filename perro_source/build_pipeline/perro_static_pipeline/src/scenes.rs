@@ -511,17 +511,16 @@ fn is_static_ui_node(node_type: &str) -> bool {
 }
 
 fn emit_static_scene_color4(color: Color) -> String {
+    let [r, g, b, a] = color.to_rgba();
     format!(
         "SceneValue::Vec4 {{ x: {:?}, y: {:?}, z: {:?}, w: {:?} }}",
-        color.r, color.g, color.b, color.a
+        r, g, b, a
     )
 }
 
 fn emit_static_scene_color3(color: Color) -> String {
-    format!(
-        "SceneValue::Vec3 {{ x: {:?}, y: {:?}, z: {:?} }}",
-        color.r, color.g, color.b
-    )
+    let [r, g, b, _] = color.to_rgba();
+    format!("SceneValue::Vec3 {{ x: {:?}, y: {:?}, z: {:?} }}", r, g, b)
 }
 
 fn static_dlc_mount_name() -> Option<String> {

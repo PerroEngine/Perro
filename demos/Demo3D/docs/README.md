@@ -43,6 +43,7 @@ Demo table:
 | Particles        | `res://scenes/demos/particles.scn`        | shared camera              | `ParticleEmitter3D` profiles.                       | [particles.md](particles.md)               |
 | Positional Audio | `res://scenes/demos/positional_audio.scn` | `positional_audio_demo.rs` | Audio mask, reverb zone, debug rays.                | [positional_audio.md](positional_audio.md) |
 | Physics Bones    | `res://scenes/demos/physics_bones.scn`    | `physics_bones_demo.rs`    | glTF rig, `.panim` bones, physics chain collisions. | [physics_bones.md](physics_bones.md)       |
+| Physics Collisions | `res://scenes/demos/physics_collisions.scn` | `physics_collisions_demo.rs` | Rigid/static contacts and `Area3D` color signal. | [physics_collisions.md](physics_collisions.md) |
 
 Why scenes stay split:
 

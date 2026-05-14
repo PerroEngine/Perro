@@ -78,7 +78,7 @@ impl CsvRowIndex {
 }
 
 #[derive(Debug)]
-pub struct PerroCsv {
+pub struct Csv {
     pub headers: &'static [CsvCell],
     pub rows: &'static [CsvRow],
     pub primary_index: &'static [CsvRowIndex],
@@ -86,7 +86,7 @@ pub struct PerroCsv {
     query_indexes: OnceLock<RwLock<HashMap<usize, CsvColumnHashIndex>>>,
 }
 
-impl PerroCsv {
+impl Csv {
     pub const fn new(
         headers: &'static [CsvCell],
         rows: &'static [CsvRow],
@@ -197,8 +197,8 @@ impl PerroCsv {
         CSVQuery::new(self)
     }
 
-    pub fn to_buf(&self) -> PerroCsvBuf {
-        PerroCsvBuf::from_static(self)
+    pub fn to_buf(&self) -> CsvBuf {
+        CsvBuf::from_static(self)
     }
 
     fn hash_index(&'static self, col: usize) -> CsvColumnHashIndex {
@@ -234,15 +234,15 @@ impl PerroCsv {
     }
 }
 
-pub static EMPTY_CSV: PerroCsv = PerroCsv::empty();
+pub static EMPTY_CSV: Csv = Csv::empty();
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct PerroCsvBuf {
+pub struct CsvBuf {
     headers: Vec<String>,
     rows: Vec<Vec<String>>,
 }
 
-impl PerroCsvBuf {
+impl CsvBuf {
     pub fn new(headers: impl IntoIterator<Item = impl Into<String>>) -> Self {
         Self {
             headers: headers.into_iter().map(Into::into).collect(),
@@ -276,7 +276,7 @@ impl PerroCsvBuf {
         Ok(out)
     }
 
-    pub fn from_static(table: &PerroCsv) -> Self {
+    pub fn from_static(table: &Csv) -> Self {
         let headers = table
             .headers
             .iter()
@@ -394,8 +394,8 @@ impl PerroCsvBuf {
     }
 }
 
-impl From<&PerroCsv> for PerroCsvBuf {
-    fn from(value: &PerroCsv) -> Self {
+impl From<&Csv> for CsvBuf {
+    fn from(value: &Csv) -> Self {
         Self::from_static(value)
     }
 }
@@ -406,7 +406,7 @@ struct CsvColumnHashIndex {
 }
 
 impl CsvColumnHashIndex {
-    fn build(table: &PerroCsv, col: usize) -> Self {
+    fn build(table: &Csv, col: usize) -> Self {
         let mut entries = Vec::with_capacity(table.rows.len());
         for (row_idx, row) in table.rows.iter().enumerate() {
             if let Some(cell) = row.cells.get(col) {
@@ -489,7 +489,7 @@ struct CsvSort {
 
 #[derive(Clone, Debug)]
 pub struct CSVQuery {
-    table: &'static PerroCsv,
+    table: &'static Csv,
     filters: Vec<CsvFilter>,
     select_cols: Option<Vec<usize>>,
     sort: Option<CsvSort>,
@@ -497,7 +497,7 @@ pub struct CSVQuery {
 }
 
 impl CSVQuery {
-    pub fn new(table: &'static PerroCsv) -> Self {
+    pub fn new(table: &'static Csv) -> Self {
         Self {
             table,
             filters: Vec::new(),
@@ -885,7 +885,7 @@ fn compare_ord(ord: std::cmp::Ordering, op: CsvCompare) -> bool {
 
 #[derive(Clone, Debug)]
 pub struct CSVQueryResult {
-    table: &'static PerroCsv,
+    table: &'static Csv,
     rows: Vec<usize>,
     select_cols: Vec<usize>,
 }
@@ -937,7 +937,7 @@ impl<'a> Iterator for CSVQueryRows<'a> {
 
 #[derive(Clone, Copy, Debug)]
 pub struct CSVQueryRow<'a> {
-    table: &'static PerroCsv,
+    table: &'static Csv,
     row: usize,
     select_cols: &'a [usize],
 }
@@ -970,7 +970,7 @@ impl CSVQueryRow<'_> {
     }
 }
 
-pub fn parse_csv_static(bytes: &[u8]) -> Result<&'static PerroCsv, String> {
+pub fn parse_csv_static(bytes: &[u8]) -> Result<&'static Csv, String> {
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(true)
         .from_reader(bytes);
@@ -1001,7 +1001,7 @@ pub fn parse_csv_static(bytes: &[u8]) -> Result<&'static PerroCsv, String> {
     }
     index_rows.sort_by_key(|entry| entry.key_hash);
 
-    Ok(Box::leak(Box::new(PerroCsv::new(
+    Ok(Box::leak(Box::new(Csv::new(
         headers,
         Box::leak(rows.into_boxed_slice()),
         Box::leak(index_rows.into_boxed_slice()),
@@ -1111,7 +1111,7 @@ mod tests {
 
     #[test]
     fn csv_buf_builds_edits_and_writes() {
-        let mut csv = PerroCsvBuf::new(["id", "name", "note"]);
+        let mut csv = CsvBuf::new(["id", "name", "note"]);
         csv.push_row(["sword", "Sword", "plain"]).unwrap();
         csv.push_row(["potion", "Potion", "has,comma"]).unwrap();
         csv.set_by_header(0, "note", "sharp").unwrap();
@@ -1123,7 +1123,7 @@ mod tests {
         assert!(text.contains("id,name,note"));
         assert!(text.contains("potion,Potion,\"has,comma\""));
 
-        let parsed = PerroCsvBuf::from_bytes(text.as_bytes()).unwrap();
+        let parsed = CsvBuf::from_bytes(text.as_bytes()).unwrap();
         assert_eq!(parsed, csv);
     }
 
@@ -1136,7 +1136,7 @@ mod tests {
         buf.set_by_header(1, "name", "Big Potion").unwrap();
         assert_eq!(buf.get_by_header(1, "name"), Some("Big Potion"));
 
-        let from_ref = PerroCsvBuf::from(csv);
+        let from_ref = CsvBuf::from(csv);
         assert_eq!(from_ref.get_by_header(1, "name"), Some("Potion"));
     }
 }

@@ -1,10 +1,10 @@
 use super::core::RuntimeResourceApi;
-use perro_csv::{EMPTY_CSV, PerroCsv, PerroCsvBuf};
+use perro_csv::{Csv, CsvBuf, EMPTY_CSV};
 use perro_io::{ProjectRoot, get_project_root, save_asset};
 use perro_resource_api::sub_apis::CsvAPI;
 
 impl CsvAPI for RuntimeResourceApi {
-    fn load_csv_source_hashed(&self, source_hash: u64, source: Option<&str>) -> &'static PerroCsv {
+    fn load_csv_source_hashed(&self, source_hash: u64, source: Option<&str>) -> &'static Csv {
         if let Some(lookup) = self.static_csv_lookup {
             return lookup(source_hash);
         }
@@ -35,7 +35,7 @@ impl CsvAPI for RuntimeResourceApi {
         table
     }
 
-    fn save_csv_source(&self, source: &str, csv: &PerroCsvBuf) -> Result<(), String> {
+    fn save_csv_source(&self, source: &str, csv: &CsvBuf) -> Result<(), String> {
         let bytes = csv.to_bytes()?;
         if let Some(stripped) = source.strip_prefix("res://")
             && let ProjectRoot::Disk { root, .. } = get_project_root()
@@ -123,9 +123,9 @@ mod tests {
             perro_ids::hash_str!("sword"),
             0,
         )];
-        static TABLE: perro_csv::PerroCsv = perro_csv::PerroCsv::new(&HEADERS, &ROWS, &INDEX);
+        static TABLE: perro_csv::Csv = perro_csv::Csv::new(&HEADERS, &ROWS, &INDEX);
 
-        fn lookup(hash: u64) -> &'static perro_csv::PerroCsv {
+        fn lookup(hash: u64) -> &'static perro_csv::Csv {
             if hash == perro_ids::hash_str!("res://data/items.csv") {
                 &TABLE
             } else {
@@ -146,7 +146,7 @@ mod tests {
         let _project_root_guard = crate::rs_ctx::PROJECT_ROOT_TEST_LOCK.lock().unwrap();
         let root = setup_csv_project();
         let api = RuntimeResourceApi::new(None, None, None, None, None, None, None, None);
-        let mut csv = perro_csv::PerroCsvBuf::new(["id", "name", "power"]);
+        let mut csv = perro_csv::CsvBuf::new(["id", "name", "power"]);
         csv.push_row(["axe", "Axe", "14"]).unwrap();
         csv.push_row(["bow", "Bow", "8"]).unwrap();
 

@@ -4,8 +4,8 @@ pub mod sub_apis;
 
 pub use api::ResourceWindow;
 pub use perro_csv::{
-    CSVQuery, CSVQueryResult, CSVQueryRow, CsvCell, CsvCompare, CsvLogic, CsvOrder, CsvRow,
-    CsvRowIndex, PerroCsv, PerroCsvBuf,
+    CSVQuery, CSVQueryResult, CSVQueryRow, Csv, CsvBuf, CsvCell, CsvCompare, CsvLogic, CsvOrder,
+    CsvRow, CsvRowIndex,
 };
 #[doc(hidden)]
 pub use perro_ids::string_to_u64 as __perro_string_to_u64;
@@ -41,8 +41,8 @@ pub mod prelude {
         texture_reserve,
     };
     pub use perro_csv::{
-        CSVQuery, CSVQueryResult, CSVQueryRow, CsvCell, CsvCompare, CsvLogic, CsvOrder, CsvRow,
-        CsvRowIndex, PerroCsv, PerroCsvBuf,
+        CSVQuery, CSVQueryResult, CSVQueryRow, Csv, CsvBuf, CsvCell, CsvCompare, CsvLogic,
+        CsvOrder, CsvRow, CsvRowIndex,
     };
     pub use perro_ids::prelude::{
         AnimationID, LightID, MaterialID, MeshID, NodeID, ScriptMemberID, SignalID, TagID,

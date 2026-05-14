@@ -1,11 +1,12 @@
+use super::{Unorm8, Unorm8x4};
 use std::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct Color {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
-    pub a: f32,
+    pub r: Unorm8,
+    pub g: Unorm8,
+    pub b: Unorm8,
+    pub a: Unorm8,
 }
 
 impl Color {
@@ -46,17 +47,52 @@ impl Color {
 
     #[inline]
     pub const fn new(r: f32, g: f32, b: f32, a: f32) -> Self {
-        Self { r, g, b, a }
+        Self {
+            r: Unorm8::new(r),
+            g: Unorm8::new(g),
+            b: Unorm8::new(b),
+            a: Unorm8::new(a),
+        }
     }
 
     #[inline]
     pub const fn rgb(r: f32, g: f32, b: f32) -> Self {
-        Self { r, g, b, a: 1.0 }
+        Self::new(r, g, b, 1.0)
+    }
+
+    #[inline]
+    pub const fn from_rgba_u8(v: [u8; 4]) -> Self {
+        Self {
+            r: Unorm8::from_u8(v[0]),
+            g: Unorm8::from_u8(v[1]),
+            b: Unorm8::from_u8(v[2]),
+            a: Unorm8::from_u8(v[3]),
+        }
+    }
+
+    #[inline]
+    pub const fn r(self) -> f32 {
+        self.r.to_f32()
+    }
+
+    #[inline]
+    pub const fn g(self) -> f32 {
+        self.g.to_f32()
+    }
+
+    #[inline]
+    pub const fn b(self) -> f32 {
+        self.b.to_f32()
+    }
+
+    #[inline]
+    pub const fn a(self) -> f32 {
+        self.a.to_f32()
     }
 
     #[inline]
     pub const fn to_rgba(self) -> [f32; 4] {
-        [self.r, self.g, self.b, self.a]
+        [self.r(), self.g(), self.b(), self.a()]
     }
 
     #[inline(always)]
@@ -76,7 +112,7 @@ impl Color {
 
     #[inline]
     pub const fn to_rgb(self) -> [f32; 3] {
-        [self.r, self.g, self.b]
+        [self.r(), self.g(), self.b()]
     }
 
     pub fn from_hex(hex: &str) -> Option<Self> {
@@ -86,37 +122,37 @@ impl Color {
                 let r = nibble(raw.as_bytes()[0])?;
                 let g = nibble(raw.as_bytes()[1])?;
                 let b = nibble(raw.as_bytes()[2])?;
-                Some(Self::new(
-                    ((r << 4) | r) as f32 / 255.0,
-                    ((g << 4) | g) as f32 / 255.0,
-                    ((b << 4) | b) as f32 / 255.0,
-                    1.0,
-                ))
+                Some(Self::from_rgba_u8([
+                    (r << 4) | r,
+                    (g << 4) | g,
+                    (b << 4) | b,
+                    255,
+                ]))
             }
             4 => {
                 let r = nibble(raw.as_bytes()[0])?;
                 let g = nibble(raw.as_bytes()[1])?;
                 let b = nibble(raw.as_bytes()[2])?;
                 let a = nibble(raw.as_bytes()[3])?;
-                Some(Self::new(
-                    ((r << 4) | r) as f32 / 255.0,
-                    ((g << 4) | g) as f32 / 255.0,
-                    ((b << 4) | b) as f32 / 255.0,
-                    ((a << 4) | a) as f32 / 255.0,
-                ))
+                Some(Self::from_rgba_u8([
+                    (r << 4) | r,
+                    (g << 4) | g,
+                    (b << 4) | b,
+                    (a << 4) | a,
+                ]))
             }
-            6 => Some(Self::new(
-                byte(&raw[0..2])? as f32 / 255.0,
-                byte(&raw[2..4])? as f32 / 255.0,
-                byte(&raw[4..6])? as f32 / 255.0,
-                1.0,
-            )),
-            8 => Some(Self::new(
-                byte(&raw[0..2])? as f32 / 255.0,
-                byte(&raw[2..4])? as f32 / 255.0,
-                byte(&raw[4..6])? as f32 / 255.0,
-                byte(&raw[6..8])? as f32 / 255.0,
-            )),
+            6 => Some(Self::from_rgba_u8([
+                byte(&raw[0..2])?,
+                byte(&raw[2..4])?,
+                byte(&raw[4..6])?,
+                255,
+            ])),
+            8 => Some(Self::from_rgba_u8([
+                byte(&raw[0..2])?,
+                byte(&raw[2..4])?,
+                byte(&raw[4..6])?,
+                byte(&raw[6..8])?,
+            ])),
             _ => None,
         }
     }
@@ -132,19 +168,31 @@ impl Color {
     }
 
     #[inline]
-    pub fn to_rgba_u8(self) -> [u8; 4] {
+    pub const fn to_unorm8x4(self) -> Unorm8x4 {
+        Unorm8x4::from_u8(self.to_rgba_u8())
+    }
+
+    #[inline]
+    pub const fn to_rgba_u8(self) -> [u8; 4] {
         [
-            quantize(self.r),
-            quantize(self.g),
-            quantize(self.b),
-            quantize(self.a),
+            self.r.to_u8(),
+            self.g.to_u8(),
+            self.b.to_u8(),
+            self.a.to_u8(),
         ]
     }
 }
 
 impl fmt::Display for Color {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Color({}, {}, {}, {})", self.r, self.g, self.b, self.a)
+        write!(
+            f,
+            "Color({}, {}, {}, {})",
+            self.r(),
+            self.g(),
+            self.b(),
+            self.a()
+        )
     }
 }
 
@@ -163,11 +211,6 @@ impl From<[f32; 4]> for Color {
 }
 
 #[inline]
-fn quantize(v: f32) -> u8 {
-    (v.clamp(0.0, 1.0) * 255.0).round() as u8
-}
-
-#[inline]
 fn byte(hex: &str) -> Option<u8> {
     u8::from_str_radix(hex, 16).ok()
 }
@@ -179,5 +222,29 @@ fn nibble(c: u8) -> Option<u8> {
         b'a'..=b'f' => Some(c - b'a' + 10),
         b'A'..=b'F' => Some(c - b'A' + 10),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn color_stores_unorm8_channels() {
+        let color = Color::new(1.0, 0.5, -1.0, 2.0);
+
+        assert_eq!(color.to_rgba_u8(), [255, 128, 0, 255]);
+        assert_eq!(color.r.to_u8(), 255);
+        assert_eq!(color.g.to_u8(), 128);
+        assert_eq!(color.b.to_u8(), 0);
+        assert_eq!(color.a.to_u8(), 255);
+    }
+
+    #[test]
+    fn color_from_hex_keeps_exact_bytes() {
+        let color = Color::from_hex("#336699CC").unwrap();
+
+        assert_eq!(color.to_rgba_u8(), [0x33, 0x66, 0x99, 0xCC]);
+        assert_eq!(color.to_hex_rgba(), "#336699CC");
     }
 }

@@ -14,6 +14,7 @@ impl WaterBody2D {
             water: WaterSurfaceParams {
                 shape: crate::WaterShape::rect(perro_structs::Vector2::new(32.0, 32.0)),
                 resolution: [801, 801],
+                render_resolution: [801, 801],
                 depth: 4.0,
                 flow: perro_structs::Vector2::ZERO,
                 wind: perro_structs::Vector2::new(1.0, 0.0),
@@ -21,6 +22,7 @@ impl WaterBody2D {
                 wave: crate::WaterWaveProfile {
                     speed: 1.0,
                     scale: 1.0,
+                    length: 18.0,
                     damping: 0.985,
                 },
                 physics: crate::WaterPhysicsParams {
@@ -46,6 +48,7 @@ impl WaterBody2D {
                     flow_transfer: 1.0,
                 },
                 optics: crate::WaterOpticsSettings::new(),
+                visual: crate::WaterVisualParams::new(),
                 coastline: crate::CoastlineSettings::new(),
                 debug: false,
             },

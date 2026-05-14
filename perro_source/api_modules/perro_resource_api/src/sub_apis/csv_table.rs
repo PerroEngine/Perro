@@ -1,20 +1,20 @@
 use crate::ResPathSource;
-use perro_csv::{PerroCsv, PerroCsvBuf};
+use perro_csv::{Csv, CsvBuf};
 
 pub trait CsvAPI {
-    fn load_csv_source_hashed(&self, source_hash: u64, source: Option<&str>) -> &'static PerroCsv;
-    fn save_csv_source(&self, source: &str, csv: &PerroCsvBuf) -> Result<(), String>;
+    fn load_csv_source_hashed(&self, source_hash: u64, source: Option<&str>) -> &'static Csv;
+    fn save_csv_source(&self, source: &str, csv: &CsvBuf) -> Result<(), String>;
     fn save_csv_source_hashed(
         &self,
         source_hash: u64,
         source: &str,
-        csv: &PerroCsvBuf,
+        csv: &CsvBuf,
     ) -> Result<(), String> {
         let _ = source_hash;
         self.save_csv_source(source, csv)
     }
 
-    fn load_csv_source(&self, source: &str) -> &'static PerroCsv {
+    fn load_csv_source(&self, source: &str) -> &'static Csv {
         self.load_csv_source_hashed(perro_ids::string_to_u64(source), Some(source))
     }
 }
@@ -29,12 +29,12 @@ impl<'res, R: CsvAPI + ?Sized> CsvModule<'res, R> {
     }
 
     #[inline]
-    pub fn load<S: ResPathSource>(&self, source: S) -> &'static PerroCsv {
+    pub fn load<S: ResPathSource>(&self, source: S) -> &'static Csv {
         self.api.load_csv_source(source.as_res_path_str())
     }
 
     #[inline]
-    pub fn load_hashed(&self, source_hash: u64) -> &'static PerroCsv {
+    pub fn load_hashed(&self, source_hash: u64) -> &'static Csv {
         self.api.load_csv_source_hashed(source_hash, None)
     }
 
@@ -43,13 +43,13 @@ impl<'res, R: CsvAPI + ?Sized> CsvModule<'res, R> {
         &self,
         source_hash: u64,
         source: S,
-    ) -> &'static PerroCsv {
+    ) -> &'static Csv {
         self.api
             .load_csv_source_hashed(source_hash, Some(source.as_res_path_str()))
     }
 
     #[inline]
-    pub fn save<S: ResPathSource>(&self, source: S, csv: &PerroCsvBuf) -> Result<(), String> {
+    pub fn save<S: ResPathSource>(&self, source: S, csv: &CsvBuf) -> Result<(), String> {
         self.api.save_csv_source(source.as_res_path_str(), csv)
     }
 
@@ -58,7 +58,7 @@ impl<'res, R: CsvAPI + ?Sized> CsvModule<'res, R> {
         &self,
         source_hash: u64,
         source: S,
-        csv: &PerroCsvBuf,
+        csv: &CsvBuf,
     ) -> Result<(), String> {
         self.api
             .save_csv_source_hashed(source_hash, source.as_res_path_str(), csv)

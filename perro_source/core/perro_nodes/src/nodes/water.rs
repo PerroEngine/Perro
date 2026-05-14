@@ -14,6 +14,7 @@ pub enum WaterIdleMode {
 pub struct WaterWaveProfile {
     pub speed: f32,
     pub scale: f32,
+    pub length: f32,
     pub damping: f32,
 }
 
@@ -22,6 +23,7 @@ impl Default for WaterWaveProfile {
         Self {
             speed: 1.0,
             scale: 1.0,
+            length: 18.0,
             damping: 0.985,
         }
     }
@@ -85,6 +87,49 @@ impl Default for WaterLodParams {
             far_distance: 896.0,
             min_resolution: [32, 32],
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WaterVisualParams {
+    pub transparency: f32,
+    pub reflectivity: f32,
+    pub roughness: f32,
+    pub fresnel_power: f32,
+    pub normal_strength: f32,
+    pub ripple_scale: f32,
+    pub foam_color: Color,
+    pub foam_amount: f32,
+    pub crest_foam_threshold: f32,
+    pub caustic_strength: f32,
+    pub refraction_strength: f32,
+    pub scattering_strength: f32,
+    pub distance_fog_strength: f32,
+}
+
+impl WaterVisualParams {
+    pub const fn new() -> Self {
+        Self {
+            transparency: 0.24,
+            reflectivity: 0.46,
+            roughness: 0.18,
+            fresnel_power: 5.0,
+            normal_strength: 1.15,
+            ripple_scale: 1.0,
+            foam_color: Color::new(0.86, 0.96, 1.0, 1.0),
+            foam_amount: 0.72,
+            crest_foam_threshold: 0.58,
+            caustic_strength: 0.20,
+            refraction_strength: 0.12,
+            scattering_strength: 0.18,
+            distance_fog_strength: 0.32,
+        }
+    }
+}
+
+impl Default for WaterVisualParams {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -225,6 +270,7 @@ impl Default for WaterShape {
 pub struct WaterSurfaceParams {
     pub shape: WaterShape,
     pub resolution: [u32; 2],
+    pub render_resolution: [u32; 2],
     pub depth: f32,
     pub flow: Vector2,
     pub wind: Vector2,
@@ -236,6 +282,7 @@ pub struct WaterSurfaceParams {
     pub collision_mask: BitMask,
     pub link: WaterLinkParams,
     pub optics: WaterOpticsSettings,
+    pub visual: WaterVisualParams,
     pub coastline: CoastlineSettings,
     pub debug: bool,
 }
@@ -245,6 +292,7 @@ impl Default for WaterSurfaceParams {
         Self {
             shape: WaterShape::rect(Vector2::new(32.0, 32.0)),
             resolution: [801, 801],
+            render_resolution: [801, 801],
             depth: 4.0,
             flow: Vector2::ZERO,
             wind: Vector2::new(1.0, 0.0),
@@ -256,6 +304,7 @@ impl Default for WaterSurfaceParams {
             collision_mask: BitMask::NONE,
             link: WaterLinkParams::default(),
             optics: WaterOpticsSettings::default(),
+            visual: WaterVisualParams::default(),
             coastline: CoastlineSettings::default(),
             debug: false,
         }
@@ -298,48 +347,54 @@ pub fn analytic_idle_water_height(
     time_seconds: f32,
 ) -> f32 {
     let phase = time_seconds * surface.wave.speed * water_idle_speed_scale();
-    let size = surface.shape.surface_size();
-    let wave_coord = Vector2::new(
-        local.x / size.x.abs().max(0.001),
-        local.y / size.y.abs().max(0.001),
-    );
+    let wave_coord = local / surface.wave.length.max(0.001);
     let tau = std::f32::consts::TAU;
     match surface.idle_mode {
         WaterIdleMode::Calm => 0.0,
         WaterIdleMode::Sine => {
             let wind = surface.wind.normalized();
-            (wave_coord.dot(wind) * tau + phase).sin() * surface.wave.scale
+            let cross = Vector2::new(-wind.y, wind.x);
+            let a = (wave_coord.dot(wind) * tau + phase).sin();
+            let b = (wave_coord.dot(cross) * tau * 1.73 - phase * 0.61).sin();
+            let c = ((wave_coord.x * 0.37 + wave_coord.y * 0.91) * tau * 2.37 + phase * 1.41).sin();
+            (a * 0.58 + b * 0.26 + c * 0.16) * surface.wave.scale
         }
         WaterIdleMode::Chop => {
             let wind = surface.wind.normalized();
             let cross = Vector2::new(-wind.y, wind.x);
-            let a = (wave_coord.dot(wind) * tau * 1.4 + phase).sin();
-            let b = (wave_coord.dot(cross) * tau * 0.9 + phase * 1.37).cos();
-            let c = ((wave_coord.x * 0.7 + wave_coord.y * 1.3) * tau * 2.1 - phase * 0.72).sin();
-            (a * 0.48 + b * 0.32 + c * 0.2) * surface.wave.scale * 3.05
+            let a = (wave_coord.dot(wind) * tau * 0.72 + phase * 0.84).sin();
+            let b = (wave_coord.dot(cross) * tau * 1.21 - phase * 1.17).cos();
+            let c = ((wave_coord.x * 0.74 + wave_coord.y * 1.36) * tau * 1.83 + phase * 1.46).sin();
+            let d =
+                ((wave_coord.x * -1.19 + wave_coord.y * 0.48) * tau * 2.79 - phase * 2.08).cos();
+            (a * 0.38 + b * 0.26 + c * 0.21 + d * 0.15) * surface.wave.scale * 1.25
         }
         WaterIdleMode::Storm => {
             let wind = surface.wind.normalized();
             let cross = Vector2::new(-wind.y, wind.x);
-            let a = (wave_coord.dot(wind) * tau * 2.1 + phase * 1.1).sin();
-            let b = (wave_coord.dot(cross) * tau * 1.3 - phase * 0.83).cos();
-            let c = ((wave_coord.x * 1.6 + wave_coord.y * 0.55) * tau * 2.8 + phase * 1.47).sin();
-            let d = ((wave_coord.x * -0.35 + wave_coord.y * 1.2) * tau * 3.7 - phase * 1.91).cos();
-            let swell_a = (wave_coord.dot(wind) * tau * 1.15 + phase * 0.9)
+            let a = (wave_coord.dot(wind) * tau * 0.58 + phase * 0.77).sin();
+            let b = (wave_coord.dot(cross) * tau * 1.02 - phase * 0.91).cos();
+            let c = ((wave_coord.x * 1.43 + wave_coord.y * 0.61) * tau * 1.74 + phase * 1.37).sin();
+            let d =
+                ((wave_coord.x * -0.51 + wave_coord.y * 1.18) * tau * 2.52 - phase * 1.91).cos();
+            let swell_a = (wave_coord.dot(wind) * tau * 0.39 + phase * 0.63)
                 .sin()
                 .max(0.0)
                 .powf(5.0);
-            let swell_b = (wave_coord.dot(cross) * tau * 0.95 - phase * 1.25 + 1.7)
+            let swell_b = (wave_coord.dot(cross) * tau * 0.64 - phase * 1.09 + 1.7)
                 .sin()
                 .max(0.0)
                 .powf(4.0);
             (a * 0.22 + b * 0.18 + c * 0.16 + d * 0.12 + swell_a * 0.72 + swell_b * 0.46)
                 * surface.wave.scale
-                * 3.05
+                * 1.55
         }
         WaterIdleMode::River => {
             let flow = surface.flow.normalized();
-            (wave_coord.dot(flow) * tau * 1.6 - phase * 1.5).sin() * surface.wave.scale * 0.45
+            let cross = Vector2::new(-flow.y, flow.x);
+            let a = (wave_coord.dot(flow) * tau * 1.6 - phase * 1.5).sin();
+            let b = (wave_coord.dot(cross) * tau * 2.4 + phase * 0.55).sin();
+            (a * 0.76 + b * 0.24) * surface.wave.scale * 0.45
         }
     }
 }
@@ -412,7 +467,7 @@ mod tests {
     }
 
     #[test]
-    fn idle_waves_scale_with_surface_size() {
+    fn idle_waves_use_world_space_profile_length() {
         let mut small = WaterSurfaceParams {
             idle_mode: WaterIdleMode::Storm,
             shape: WaterShape::rect(Vector2::new(20.0, 20.0)),
@@ -424,9 +479,12 @@ mod tests {
         large.shape = WaterShape::rect(Vector2::new(200.0, 200.0));
 
         let small_height = analytic_idle_water_height(&small, Vector2::new(4.0, -3.0), 0.5);
-        let large_height = analytic_idle_water_height(&large, Vector2::new(40.0, -30.0), 0.5);
+        let same_world_height = analytic_idle_water_height(&large, Vector2::new(4.0, -3.0), 0.5);
+        let scaled_world_height =
+            analytic_idle_water_height(&large, Vector2::new(40.0, -30.0), 0.5);
 
-        assert!((small_height - large_height).abs() < 0.0001);
+        assert!((small_height - same_world_height).abs() < 0.0001);
+        assert!((small_height - scaled_world_height).abs() > 0.01);
     }
 
     #[test]
@@ -440,9 +498,8 @@ mod tests {
         surface.wave.speed = 1.0;
 
         let scaled = analytic_idle_water_height(&surface, Vector2::ZERO, 1.0);
-        let expected = (water_idle_speed_scale()).sin() * surface.wave.scale;
-
-        assert!((scaled - expected).abs() < 0.0001);
+        assert!(scaled.abs() > 0.0001);
+        assert!(scaled.abs() <= surface.wave.scale);
     }
 
     #[test]

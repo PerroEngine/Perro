@@ -89,9 +89,11 @@ pub(super) struct RuntimeSceneLoadStats {
 pub(super) struct RuntimeSceneLoadStats;
 
 const WATER_BASE_FIDELITY_VERTICES_PER_METER: f32 = 25.0;
+const WATER_BASE_FIDELITY_RENDER_VERTICES_PER_METER: f32 = 50.0;
 
 fn apply_water_body_fields(node: &mut WaterSurfaceParams, ty: &str, fields: &[SceneObjectField]) {
-    let mut vertices_per_meter = None;
+    let mut sim_cells_per_meter = None;
+    let mut render_vertices_per_meter = None;
     SceneFieldIterRef::new(fields).for_each(|name, value| {
         let field = match resolve_node_field(ty, name) {
             Some(NodeField::WaterBody2D(field)) | Some(NodeField::WaterBody3D(field)) => field,
@@ -103,43 +105,70 @@ fn apply_water_body_fields(node: &mut WaterSurfaceParams, ty: &str, fields: &[Sc
                     if let Some(shape) = as_shape_3d(value).and_then(water_shape_from_shape_3d) {
                         node.shape = shape;
                         node.depth = shape.depth(node.depth);
-                        if let Some(density) = vertices_per_meter {
+                        if let Some(density) = sim_cells_per_meter {
                             node.resolution = water_resolution_from_density(node.shape, density);
+                        }
+                        if let Some(density) = render_vertices_per_meter {
+                            node.render_resolution =
+                                water_resolution_from_density(node.shape, density);
                         }
                     }
                 }
                 _ => {
                     if let Some(shape) = as_shape_2d(value).and_then(water_shape_from_shape_2d) {
                         node.shape = shape;
-                        if let Some(density) = vertices_per_meter {
+                        if let Some(density) = sim_cells_per_meter {
                             node.resolution = water_resolution_from_density(node.shape, density);
+                        }
+                        if let Some(density) = render_vertices_per_meter {
+                            node.render_resolution =
+                                water_resolution_from_density(node.shape, density);
                         }
                     }
                 }
             },
             WaterBodyField::Resolution => {
-                if let Some((x, y)) = value.as_vec2() {
-                    node.resolution = [
-                        (x.max(1.0).round() as u32).clamp(1, 4096),
-                        (y.max(1.0).round() as u32).clamp(1, 4096),
-                    ];
-                } else if let Some(v) = as_i32(value) {
-                    let v = v.clamp(1, 4096) as u32;
-                    node.resolution = [v, v];
+                if let Some(resolution) = water_resolution_value(value) {
+                    node.resolution = resolution;
+                }
+            }
+            WaterBodyField::RenderResolution => {
+                if let Some(resolution) = water_resolution_value(value) {
+                    node.render_resolution = resolution;
                 }
             }
             WaterBodyField::VerticesPerMeter => {
                 if let Some(v) = as_f32(value) {
                     let density = v.max(0.01);
-                    vertices_per_meter = Some(density);
+                    sim_cells_per_meter = Some(density);
+                    render_vertices_per_meter = Some(density);
                     node.resolution = water_resolution_from_density(node.shape, density);
+                    node.render_resolution = water_resolution_from_density(node.shape, density);
+                }
+            }
+            WaterBodyField::SimCellsPerMeter => {
+                if let Some(v) = as_f32(value) {
+                    let density = v.max(0.01);
+                    sim_cells_per_meter = Some(density);
+                    node.resolution = water_resolution_from_density(node.shape, density);
+                }
+            }
+            WaterBodyField::RenderVerticesPerMeter => {
+                if let Some(v) = as_f32(value) {
+                    let density = v.max(0.01);
+                    render_vertices_per_meter = Some(density);
+                    node.render_resolution = water_resolution_from_density(node.shape, density);
                 }
             }
             WaterBodyField::BaseFidelity => {
                 if let Some(v) = as_f32(value) {
-                    let density = water_density_from_base_fidelity(v);
-                    vertices_per_meter = Some(density);
-                    node.resolution = water_resolution_from_density(node.shape, density);
+                    let sim_density = water_density_from_base_fidelity(v);
+                    let render_density = water_render_density_from_base_fidelity(v);
+                    sim_cells_per_meter = Some(sim_density);
+                    render_vertices_per_meter = Some(render_density);
+                    node.resolution = water_resolution_from_density(node.shape, sim_density);
+                    node.render_resolution =
+                        water_resolution_from_density(node.shape, render_density);
                 }
             }
             WaterBodyField::Depth => {
@@ -177,6 +206,11 @@ fn apply_water_body_fields(node: &mut WaterSurfaceParams, ty: &str, fields: &[Sc
             WaterBodyField::WaveScale => {
                 if let Some(v) = as_f32(value) {
                     node.wave.scale = v.max(0.0);
+                }
+            }
+            WaterBodyField::WaveLength => {
+                if let Some(v) = as_f32(value) {
+                    node.wave.length = v.max(0.001);
                 }
             }
             WaterBodyField::WakeStrength => {
@@ -293,6 +327,74 @@ fn apply_water_body_fields(node: &mut WaterSurfaceParams, ty: &str, fields: &[Sc
             WaterBodyField::Optics => {
                 apply_water_optics_settings(&mut node.optics, value);
             }
+            WaterBodyField::Material => {
+                apply_water_visual_params(&mut node.visual, value);
+            }
+            WaterBodyField::Transparency => {
+                if let Some(v) = as_f32(value) {
+                    node.visual.transparency = v.clamp(0.0, 1.0);
+                }
+            }
+            WaterBodyField::Reflectivity => {
+                if let Some(v) = as_f32(value) {
+                    node.visual.reflectivity = v.clamp(0.0, 1.0);
+                }
+            }
+            WaterBodyField::Roughness => {
+                if let Some(v) = as_f32(value) {
+                    node.visual.roughness = v.clamp(0.0, 1.0);
+                }
+            }
+            WaterBodyField::FresnelPower => {
+                if let Some(v) = as_f32(value) {
+                    node.visual.fresnel_power = v.max(0.001);
+                }
+            }
+            WaterBodyField::NormalStrength => {
+                if let Some(v) = as_f32(value) {
+                    node.visual.normal_strength = v.max(0.0);
+                }
+            }
+            WaterBodyField::RippleScale => {
+                if let Some(v) = as_f32(value) {
+                    node.visual.ripple_scale = v.max(0.001);
+                }
+            }
+            WaterBodyField::FoamColor => {
+                if let Some(v) = as_color(value) {
+                    node.visual.foam_color = v;
+                }
+            }
+            WaterBodyField::FoamAmount => {
+                if let Some(v) = as_f32(value) {
+                    node.visual.foam_amount = v.max(0.0);
+                }
+            }
+            WaterBodyField::CrestFoamThreshold => {
+                if let Some(v) = as_f32(value) {
+                    node.visual.crest_foam_threshold = v.max(0.0);
+                }
+            }
+            WaterBodyField::CausticStrength => {
+                if let Some(v) = as_f32(value) {
+                    node.visual.caustic_strength = v.max(0.0);
+                }
+            }
+            WaterBodyField::RefractionStrength => {
+                if let Some(v) = as_f32(value) {
+                    node.visual.refraction_strength = v.max(0.0);
+                }
+            }
+            WaterBodyField::ScatteringStrength => {
+                if let Some(v) = as_f32(value) {
+                    node.visual.scattering_strength = v.max(0.0);
+                }
+            }
+            WaterBodyField::DistanceFogStrength => {
+                if let Some(v) = as_f32(value) {
+                    node.visual.distance_fog_strength = v.max(0.0);
+                }
+            }
             WaterBodyField::Coastline => {
                 apply_coastline_settings(&mut node.coastline, value);
             }
@@ -305,6 +407,20 @@ fn apply_water_body_fields(node: &mut WaterSurfaceParams, ty: &str, fields: &[Sc
     });
 }
 
+fn water_resolution_value(value: &SceneValue) -> Option<[u32; 2]> {
+    if let Some((x, y)) = value.as_vec2() {
+        Some([
+            (x.max(1.0).round() as u32).clamp(1, 4096),
+            (y.max(1.0).round() as u32).clamp(1, 4096),
+        ])
+    } else {
+        as_i32(value).map(|v| {
+            let v = v.clamp(1, 4096) as u32;
+            [v, v]
+        })
+    }
+}
+
 fn water_resolution_from_density(shape: WaterShape, vertices_per_meter: f32) -> [u32; 2] {
     let size = shape.surface_size();
     [
@@ -315,6 +431,10 @@ fn water_resolution_from_density(shape: WaterShape, vertices_per_meter: f32) -> 
 
 fn water_density_from_base_fidelity(base_fidelity: f32) -> f32 {
     base_fidelity.max(0.01) * WATER_BASE_FIDELITY_VERTICES_PER_METER
+}
+
+fn water_render_density_from_base_fidelity(base_fidelity: f32) -> f32 {
+    base_fidelity.max(0.01) * WATER_BASE_FIDELITY_RENDER_VERTICES_PER_METER
 }
 
 fn water_shape_from_shape_2d(shape: Shape2D) -> Option<WaterShape> {
@@ -376,6 +496,82 @@ fn apply_water_optics_settings(node: &mut perro_nodes::WaterOpticsSettings, valu
             "sky_bias" | "sky_reflect" | "sky_reflection" => {
                 if let Some(v) = as_water_sky_bias(value) {
                     node.sky_bias = v;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn apply_water_visual_params(node: &mut perro_nodes::WaterVisualParams, value: &SceneValue) {
+    let SceneValue::Object(fields) = value else {
+        return;
+    };
+    for (name, value) in fields.iter() {
+        match name.as_ref() {
+            "transparency" => {
+                if let Some(v) = as_f32(value) {
+                    node.transparency = v.clamp(0.0, 1.0);
+                }
+            }
+            "reflectivity" | "reflection_strength" => {
+                if let Some(v) = as_f32(value) {
+                    node.reflectivity = v.clamp(0.0, 1.0);
+                }
+            }
+            "roughness" => {
+                if let Some(v) = as_f32(value) {
+                    node.roughness = v.clamp(0.0, 1.0);
+                }
+            }
+            "fresnel_power" => {
+                if let Some(v) = as_f32(value) {
+                    node.fresnel_power = v.max(0.001);
+                }
+            }
+            "normal_strength" => {
+                if let Some(v) = as_f32(value) {
+                    node.normal_strength = v.max(0.0);
+                }
+            }
+            "ripple_scale" => {
+                if let Some(v) = as_f32(value) {
+                    node.ripple_scale = v.max(0.001);
+                }
+            }
+            "foam_color" => {
+                if let Some(v) = as_color(value) {
+                    node.foam_color = v;
+                }
+            }
+            "foam_amount" => {
+                if let Some(v) = as_f32(value) {
+                    node.foam_amount = v.max(0.0);
+                }
+            }
+            "crest_foam_threshold" => {
+                if let Some(v) = as_f32(value) {
+                    node.crest_foam_threshold = v.max(0.0);
+                }
+            }
+            "caustic_strength" => {
+                if let Some(v) = as_f32(value) {
+                    node.caustic_strength = v.max(0.0);
+                }
+            }
+            "refraction_strength" => {
+                if let Some(v) = as_f32(value) {
+                    node.refraction_strength = v.max(0.0);
+                }
+            }
+            "scattering_strength" => {
+                if let Some(v) = as_f32(value) {
+                    node.scattering_strength = v.max(0.0);
+                }
+            }
+            "distance_fog_strength" => {
+                if let Some(v) = as_f32(value) {
+                    node.distance_fog_strength = v.max(0.0);
                 }
             }
             _ => {}

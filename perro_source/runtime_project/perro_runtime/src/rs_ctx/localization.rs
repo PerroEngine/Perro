@@ -1,6 +1,6 @@
 use super::RuntimeResourceApi;
 use super::state::RuntimeLocalizationState;
-use perro_csv::PerroCsvBuf;
+use perro_csv::CsvBuf;
 use perro_ids::string_to_u64;
 use perro_resource_api::sub_apis::{Locale, LocalizationAPI};
 use std::{
@@ -176,7 +176,7 @@ fn read_localization_csv(
 ) -> Result<LocalizationLookupMaps, String> {
     let bytes = perro_io::load_asset(source)
         .map_err(|err| format!("failed to read localization csv `{source}`: {err}"))?;
-    let table = PerroCsvBuf::from_bytes(&bytes)
+    let table = CsvBuf::from_bytes(&bytes)
         .map_err(|err| format!("failed to parse csv headers in `{source}`: {err}"))?;
     let headers = table.headers();
 

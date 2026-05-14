@@ -189,7 +189,7 @@ parent = @demo_btn_animations
 [demo_btn_physics_bones]
 parent = @hub_menu_col_left
     [UiButton]
-        size_ratio = (1.0, 0.135)
+        size_ratio = (1.0, 0.112)
         h_align = "fill"
         click_signals = ["demo_physics_bones_click"]
         style = $button_style
@@ -209,6 +209,30 @@ parent = @demo_btn_physics_bones
         mouse_filter = "pass"
     [/UiLabel]
 [/demo_btn_physics_bones_label]
+
+[demo_btn_physics_collisions]
+parent = @hub_menu_col_left
+    [UiButton]
+        size_ratio = (1.0, 0.112)
+        h_align = "fill"
+        click_signals = ["demo_physics_collisions_click"]
+        style = $button_style
+        hover = { style = $button_hover_style }
+        pressed = { style = $button_pressed_style }
+    [/UiButton]
+[/demo_btn_physics_collisions]
+
+[demo_btn_physics_collisions_label]
+parent = @demo_btn_physics_collisions
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Physics Collisions"
+        text_size_ratio = 0.22
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/demo_btn_physics_collisions_label]
 
 [demo_btn_sky]
 parent = @hub_menu_col_right

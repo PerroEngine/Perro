@@ -354,12 +354,7 @@ impl From<&UiDepthEffect> for UiDepthEffectKey {
 }
 
 fn color_key(value: Color) -> [u32; 4] {
-    [
-        value.r.to_bits(),
-        value.g.to_bits(),
-        value.b.to_bits(),
-        value.a.to_bits(),
-    ]
+    value.to_rgba_u8().map(u32::from)
 }
 
 fn ui_style_to_code(style: &UiStyle) -> String {
@@ -387,10 +382,8 @@ fn depth_effect_to_code(effect: UiDepthEffect) -> String {
 }
 
 fn color_to_code(color: Color) -> String {
-    format!(
-        "Color::new({:.6}, {:.6}, {:.6}, {:.6})",
-        color.r, color.g, color.b, color.a
-    )
+    let [r, g, b, a] = color.to_rgba();
+    format!("Color::new({:.6}, {:.6}, {:.6}, {:.6})", r, g, b, a)
 }
 
 #[cfg(test)]

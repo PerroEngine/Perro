@@ -11,6 +11,8 @@ const LIGHTS_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/lights.sc
 const WATER_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/water.scn");
 const ANIMATION_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/animations.scn");
 const PHYSICS_BONES_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/physics_bones.scn");
+const PHYSICS_COLLISIONS_DEMO_SCENE_PATH: &ResPath =
+    res_path!("res://scenes/demos/physics_collisions.scn");
 const SKY_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/sky.scn");
 const BLEND_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/mesh_blending.scn");
 const MULTIMESH_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/multimesh.scn");
@@ -26,6 +28,7 @@ const DEMO_BUTTON_LIGHTS_NODE_NAME: &str = "demo_btn_lights";
 const DEMO_BUTTON_WATER_NODE_NAME: &str = "demo_btn_water";
 const DEMO_BUTTON_ANIMATIONS_NODE_NAME: &str = "demo_btn_animations";
 const DEMO_BUTTON_PHYSICS_BONES_NODE_NAME: &str = "demo_btn_physics_bones";
+const DEMO_BUTTON_PHYSICS_COLLISIONS_NODE_NAME: &str = "demo_btn_physics_collisions";
 const DEMO_BUTTON_SKY_NODE_NAME: &str = "demo_btn_sky";
 const DEMO_BUTTON_BLEND_NODE_NAME: &str = "demo_btn_blend";
 const DEMO_BUTTON_MULTIMESH_NODE_NAME: &str = "demo_btn_multimesh";
@@ -64,6 +67,7 @@ enum DemoKind {
     Water,
     Animations,
     PhysicsBones,
+    PhysicsCollisions,
     Sky,
     MeshBlending,
     MultiMesh,
@@ -80,6 +84,7 @@ impl DemoKind {
             DemoKind::Water => Some(WATER_DEMO_SCENE_PATH),
             DemoKind::Animations => Some(ANIMATION_DEMO_SCENE_PATH),
             DemoKind::PhysicsBones => Some(PHYSICS_BONES_DEMO_SCENE_PATH),
+            DemoKind::PhysicsCollisions => Some(PHYSICS_COLLISIONS_DEMO_SCENE_PATH),
             DemoKind::Sky => Some(SKY_DEMO_SCENE_PATH),
             DemoKind::MeshBlending => Some(BLEND_DEMO_SCENE_PATH),
             DemoKind::MultiMesh => Some(MULTIMESH_DEMO_SCENE_PATH),
@@ -126,6 +131,7 @@ struct DemoScenesState {
     pub water: PreloadedSceneID,
     pub animations: PreloadedSceneID,
     pub physics_bones: PreloadedSceneID,
+    pub physics_collisions: PreloadedSceneID,
     pub sky: PreloadedSceneID,
     pub blend: PreloadedSceneID,
     pub multimesh: PreloadedSceneID,
@@ -145,6 +151,7 @@ impl Default for DemoScenesState {
             water: PreloadedSceneID::nil(),
             animations: PreloadedSceneID::nil(),
             physics_bones: PreloadedSceneID::nil(),
+            physics_collisions: PreloadedSceneID::nil(),
             sky: PreloadedSceneID::nil(),
             blend: PreloadedSceneID::nil(),
             multimesh: PreloadedSceneID::nil(),
@@ -177,7 +184,7 @@ impl Default for DemoRefsState {
             profiling_overlay_root: NodeID::nil(),
             active_demo_root: NodeID::nil(),
             pause_sens_label: NodeID::nil(),
-            hub_buttons: vec![NodeID::nil(); 10],
+            hub_buttons: vec![NodeID::nil(); 11],
             pause_buttons: vec![NodeID::nil(); 5],
         }
     }
@@ -241,6 +248,8 @@ lifecycle!({
             scene_preload!(ctx.run, ANIMATION_DEMO_SCENE_PATH).expect("preload animation demo");
         let physics_bones = scene_preload!(ctx.run, PHYSICS_BONES_DEMO_SCENE_PATH)
             .expect("preload physics bones demo");
+        let physics_collisions = scene_preload!(ctx.run, PHYSICS_COLLISIONS_DEMO_SCENE_PATH)
+            .expect("preload physics collisions demo");
         let sky = scene_preload!(ctx.run, SKY_DEMO_SCENE_PATH).expect("preload sky demo");
         let blend =
             scene_preload!(ctx.run, BLEND_DEMO_SCENE_PATH).expect("preload mesh blend demo");
@@ -262,6 +271,7 @@ lifecycle!({
                 water,
                 animations,
                 physics_bones,
+                physics_collisions,
                 sky,
                 blend,
                 multimesh,
@@ -300,6 +310,12 @@ lifecycle!({
             ctx.id,
             signal!("demo_physics_bones_click"),
             func!("on_demo_physics_bones_click")
+        );
+        signal_connect!(
+            ctx.run,
+            ctx.id,
+            signal!("demo_physics_collisions_click"),
+            func!("on_demo_physics_collisions_click")
         );
         signal_connect!(
             ctx.run,
@@ -421,6 +437,10 @@ methods!({
         self.queue_load_demo(ctx, DemoKind::PhysicsBones);
     }
 
+    fn on_demo_physics_collisions_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+        self.queue_load_demo(ctx, DemoKind::PhysicsCollisions);
+    }
+
     fn on_demo_sky_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.queue_load_demo(ctx, DemoKind::Sky);
     }
@@ -490,6 +510,7 @@ methods!({
             find_descendant_by_name(ctx, content, DEMO_BUTTON_WATER_NODE_NAME),
             find_descendant_by_name(ctx, content, DEMO_BUTTON_ANIMATIONS_NODE_NAME),
             find_descendant_by_name(ctx, content, DEMO_BUTTON_PHYSICS_BONES_NODE_NAME),
+            find_descendant_by_name(ctx, content, DEMO_BUTTON_PHYSICS_COLLISIONS_NODE_NAME),
             find_descendant_by_name(ctx, content, DEMO_BUTTON_SKY_NODE_NAME),
             find_descendant_by_name(ctx, content, DEMO_BUTTON_BLEND_NODE_NAME),
             find_descendant_by_name(ctx, content, DEMO_BUTTON_MULTIMESH_NODE_NAME),

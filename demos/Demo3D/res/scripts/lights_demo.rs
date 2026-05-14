@@ -43,7 +43,8 @@ struct LightsDemoState {
 
 lifecycle!({
     fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
-        let ids = LIGHT_MARKERS.map(|name| get_child!(ctx.run, ctx.id, name).unwrap_or(NodeID::nil()));
+        let ids =
+            LIGHT_MARKERS.map(|name| get_child!(ctx.run, ctx.id, name).unwrap_or(NodeID::nil()));
         with_state_mut!(ctx.run, LightsDemoState, ctx.id, |state| {
             state.red = ids[0];
             state.blue = ids[1];
@@ -94,12 +95,24 @@ fn light_pos(index: usize, phase: f32) -> Vector3 {
     match index {
         0 => orbit(phase, 5.2, 2.6, 0.0),
         1 => orbit(-phase * 1.15, 4.4, 1.8, 1.8),
-        2 => Vector3::new(phase.sin() * 4.7, 3.3 + (phase * 1.7).sin() * 1.1, phase.cos() * 1.7),
+        2 => Vector3::new(
+            phase.sin() * 4.7,
+            3.3 + (phase * 1.7).sin() * 1.1,
+            phase.cos() * 1.7,
+        ),
         3 => Vector3::new((phase * 1.3).sin() * 1.4, 0.55, (phase * 0.8).cos() * 4.8),
         4 => Vector3::new(-4.2, 2.3 + phase.sin() * 1.7, (phase * 1.6).cos() * 3.3),
-        5 => Vector3::new(4.2, 2.0 + (phase * 1.2).cos() * 1.4, (phase * 1.5).sin() * 3.0),
+        5 => Vector3::new(
+            4.2,
+            2.0 + (phase * 1.2).cos() * 1.4,
+            (phase * 1.5).sin() * 3.0,
+        ),
         6 => Vector3::new((phase * 0.65).sin() * 5.4, 4.7, (phase * 1.4).sin() * 2.5),
-        7 => Vector3::new((phase * 1.8).sin() * 2.6, 1.1 + (phase * 2.2).sin() * 0.55, (phase * 0.9).cos() * 5.0),
+        7 => Vector3::new(
+            (phase * 1.8).sin() * 2.6,
+            1.1 + (phase * 2.2).sin() * 0.55,
+            (phase * 0.9).cos() * 5.0,
+        ),
         8 => Vector3::new((phase * 0.7).sin() * 3.2, 5.3, -4.2 + phase.cos() * 0.8),
         _ => Vector3::new((phase * 0.9).cos() * 4.1, 3.8 + phase.sin() * 0.8, 4.1),
     }
@@ -115,7 +128,10 @@ fn orbit(phase: f32, radius: f32, height: f32, y_sway: f32) -> Vector3 {
 
 fn light_rot(index: usize, phase: f32, pos: Vector3) -> Quaternion {
     if index >= 8 {
-        return Quaternion::looking_at(Vector3::new(-pos.x, 0.8 - pos.y, -pos.z), Vector3::new(0.0, 1.0, 0.0));
+        return Quaternion::looking_at(
+            Vector3::new(-pos.x, 0.8 - pos.y, -pos.z),
+            Vector3::new(0.0, 1.0, 0.0),
+        );
     }
     Quaternion::from_euler_xyz(phase * 0.6, phase * 0.9, phase * 0.35)
 }

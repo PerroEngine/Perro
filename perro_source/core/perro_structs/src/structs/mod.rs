@@ -7,6 +7,7 @@ pub mod ik;
 pub mod post_process;
 pub mod structs_2d;
 pub mod structs_3d;
+pub mod unorm;
 pub mod visual_accessibility;
 
 pub use audio::*;
@@ -18,4 +19,5 @@ pub use ik::*;
 pub use post_process::*;
 pub use structs_2d::*;
 pub use structs_3d::*;
+pub use unorm::*;
 pub use visual_accessibility::*;

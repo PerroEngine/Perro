@@ -1,5 +1,5 @@
 use perro_animation::{AnimationClip, AnimationTreeAsset};
-use perro_csv::PerroCsv;
+use perro_csv::Csv;
 use perro_render_bridge::{Material3D, ParticleProfile3D};
 use perro_resource_api::sub_apis::Locale;
 use perro_scene::Scene;
@@ -23,7 +23,7 @@ pub enum ProviderMode {
 
 pub type StaticSceneLookup = fn(u64) -> &'static Scene;
 pub type StaticLocalizationLookup = fn(Locale, u64) -> &'static str;
-pub type StaticCsvLookup = fn(u64) -> &'static PerroCsv;
+pub type StaticCsvLookup = fn(u64) -> &'static Csv;
 pub type StaticMaterialLookup = fn(u64) -> &'static Material3D;
 pub type StaticUiStyleLookup = fn(u64) -> &'static UiStyle;
 pub type StaticTilesetLookup = fn(u64) -> &'static [u8];

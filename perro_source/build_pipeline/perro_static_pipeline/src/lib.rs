@@ -469,8 +469,7 @@ mod tests {
     }
 
     fn parse_ui_style(style: &'static UiStyle) -> usize {
-        let Color { r, g, b, a } = style.fill;
-        (r.to_bits() ^ g.to_bits() ^ b.to_bits() ^ a.to_bits()) as usize
+        style.fill.to_unorm8x4().to_le_u32() as usize
     }
 
     fn parse_particle(particle: &'static ParticleProfile3D) -> usize {

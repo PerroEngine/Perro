@@ -120,7 +120,10 @@ pub enum ParticleEmitter2DField {
 pub enum WaterBodyField {
     Shape,
     Resolution,
+    RenderResolution,
     VerticesPerMeter,
+    SimCellsPerMeter,
+    RenderVerticesPerMeter,
     BaseFidelity,
     Depth,
     Flow,
@@ -128,6 +131,7 @@ pub enum WaterBodyField {
     IdleMode,
     WaveSpeed,
     WaveScale,
+    WaveLength,
     WakeStrength,
     FoamStrength,
     Damping,
@@ -150,6 +154,20 @@ pub enum WaterBodyField {
     ShallowDepth,
     SkyBias,
     Optics,
+    Material,
+    Transparency,
+    Reflectivity,
+    Roughness,
+    FresnelPower,
+    NormalStrength,
+    RippleScale,
+    FoamColor,
+    FoamAmount,
+    CrestFoamThreshold,
+    CausticStrength,
+    RefractionStrength,
+    ScatteringStrength,
+    DistanceFogStrength,
     Coastline,
     Debug,
 }
@@ -1527,11 +1545,18 @@ fn resolve_water_body(field: &str) -> Option<WaterBodyField> {
     match field {
         "shape" => Some(WaterBodyField::Shape),
         "resolution" | "sim_resolution" => Some(WaterBodyField::Resolution),
+        "render_resolution" | "mesh_resolution" => Some(WaterBodyField::RenderResolution),
         "vertices_per_meter"
         | "verts_per_meter"
         | "vpm"
         | "resolution_per_meter"
         | "sim_vertices_per_meter" => Some(WaterBodyField::VerticesPerMeter),
+        "sim_cells_per_meter" | "simulation_cells_per_meter" => {
+            Some(WaterBodyField::SimCellsPerMeter)
+        }
+        "render_vertices_per_meter" | "render_verts_per_meter" | "mesh_vertices_per_meter" => {
+            Some(WaterBodyField::RenderVerticesPerMeter)
+        }
         "base_fidelity" | "fidelity" | "water_fidelity" => Some(WaterBodyField::BaseFidelity),
         "depth" => Some(WaterBodyField::Depth),
         "flow" => Some(WaterBodyField::Flow),
@@ -1539,6 +1564,7 @@ fn resolve_water_body(field: &str) -> Option<WaterBodyField> {
         "idle_mode" | "idle" => Some(WaterBodyField::IdleMode),
         "wave_speed" => Some(WaterBodyField::WaveSpeed),
         "wave_scale" => Some(WaterBodyField::WaveScale),
+        "wave_length" | "wavelength" | "wave_size" => Some(WaterBodyField::WaveLength),
         "wake_strength" => Some(WaterBodyField::WakeStrength),
         "foam_strength" => Some(WaterBodyField::FoamStrength),
         "damping" => Some(WaterBodyField::Damping),
@@ -1563,6 +1589,20 @@ fn resolve_water_body(field: &str) -> Option<WaterBodyField> {
         }
         "sky_bias" | "sky_reflect" | "sky_reflection" => Some(WaterBodyField::SkyBias),
         "optics" | "water_colors" | "colors" => Some(WaterBodyField::Optics),
+        "material" | "visual" | "water_material" => Some(WaterBodyField::Material),
+        "transparency" => Some(WaterBodyField::Transparency),
+        "reflectivity" | "reflection_strength" => Some(WaterBodyField::Reflectivity),
+        "roughness" => Some(WaterBodyField::Roughness),
+        "fresnel_power" => Some(WaterBodyField::FresnelPower),
+        "normal_strength" => Some(WaterBodyField::NormalStrength),
+        "ripple_scale" => Some(WaterBodyField::RippleScale),
+        "foam_color" => Some(WaterBodyField::FoamColor),
+        "foam_amount" => Some(WaterBodyField::FoamAmount),
+        "crest_foam_threshold" => Some(WaterBodyField::CrestFoamThreshold),
+        "caustic_strength" => Some(WaterBodyField::CausticStrength),
+        "refraction_strength" => Some(WaterBodyField::RefractionStrength),
+        "scattering_strength" => Some(WaterBodyField::ScatteringStrength),
+        "distance_fog_strength" => Some(WaterBodyField::DistanceFogStrength),
         "coastline" => Some(WaterBodyField::Coastline),
         "debug" => Some(WaterBodyField::Debug),
         _ => None,

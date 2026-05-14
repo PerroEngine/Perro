@@ -1,9 +1,5 @@
 use super::*;
 
-pub(super) fn compute_view_proj(camera: &Camera3DState, width: u32, height: u32) -> [[f32; 4]; 4] {
-    compute_view_proj_mat(camera, width, height).to_cols_array_2d()
-}
-
 pub(super) fn compute_view_proj_mat(camera: &Camera3DState, width: u32, height: u32) -> Mat4 {
     let w = width.max(1) as f32;
     let h = height.max(1) as f32;
@@ -240,8 +236,10 @@ pub(super) fn build_scene_uniform(
     width: u32,
     height: u32,
 ) -> Scene3DUniform {
+    let view_proj = compute_view_proj_mat(camera, width, height);
+    let inv_view_proj = view_proj.inverse();
     let mut scene = Scene3DUniform {
-        view_proj: compute_view_proj(camera, width, height),
+        view_proj: view_proj.to_cols_array_2d(),
         ambient_and_counts: [0.0, 0.0, 0.0, 0.0],
         camera_pos: [
             camera.position[0],
@@ -268,6 +266,11 @@ pub(super) fn build_scene_uniform(
             color_intensity: [0.0, 0.0, 0.0, 0.0],
             inner_cos_pad: [1.0, 0.0, 0.0, 0.0],
         }; MAX_SPOT_LIGHTS],
+        inv_view_proj: if inv_view_proj.is_finite() {
+            inv_view_proj.to_cols_array_2d()
+        } else {
+            Mat4::IDENTITY.to_cols_array_2d()
+        },
     };
 
     if let Some(sky) = lighting.sky.as_ref() {

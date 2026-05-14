@@ -166,7 +166,7 @@ pub struct RuntimeResourceApi {
     pub(super) static_animation_tree_lookup: Option<StaticAnimationTreeLookup>,
     pub(super) static_localization_lookup: Option<StaticLocalizationLookup>,
     pub(super) static_csv_lookup: Option<StaticCsvLookup>,
-    pub(super) csv_cache: Mutex<HashMap<u64, &'static perro_csv::PerroCsv>>,
+    pub(super) csv_cache: Mutex<HashMap<u64, &'static perro_csv::Csv>>,
     pub(super) skeleton_bones_2d_cache:
         Mutex<HashMap<String, Vec<perro_nodes::skeleton_2d::Bone2D>>>,
     pub(super) skeleton_bones_3d_cache:

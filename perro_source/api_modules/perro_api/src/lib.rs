@@ -43,8 +43,8 @@ pub mod prelude {
     #[cfg(feature = "steamworks")]
     pub use crate::steam;
     pub use perro_csv::{
-        CSVQuery, CSVQueryResult, CSVQueryRow, CsvCell, CsvCompare, CsvLogic, CsvOrder, CsvRow,
-        CsvRowIndex, PerroCsv, PerroCsvBuf,
+        CSVQuery, CSVQueryResult, CSVQueryRow, Csv, CsvBuf, CsvCell, CsvCompare, CsvLogic,
+        CsvOrder, CsvRow, CsvRowIndex,
     };
     pub use perro_ids::prelude::*;
     pub use perro_input_api::prelude::*;

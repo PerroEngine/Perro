@@ -122,7 +122,7 @@ const RESOLVED_MESH_BLEND_SCREEN_BLEND: u32 = 1u32 << 3;
 #[inline]
 fn pack_resolved_mesh_blend_flags(blend: MeshBlendOptions3D) -> u32 {
     let mut flags = RESOLVED_MESH_BLEND_ACTIVE;
-    if blend.normal_blending {
+    if blend.normal_blending || blend.enabled {
         flags |= RESOLVED_MESH_BLEND_NORMAL_BLEND;
     }
     if blend.screen_blending {
@@ -147,12 +147,12 @@ fn resolved_mesh_blend_screen_blending(blend: ResolvedMeshBlend) -> bool {
 }
 
 #[inline]
-fn average_mesh_blend_params(a: MeshBlendOptions3D, b: MeshBlendOptions3D) -> u32 {
+fn pack_mesh_blend_params(blend: MeshBlendOptions3D) -> u32 {
     pack_u8_lanes(
-        quantize_unorm8_range((a.distance + b.distance) * 0.5, 16.0),
-        quantize_unorm8_range((a.min_distance + b.min_distance) * 0.5, 16.0),
-        quantize_unorm8((a.noise_factor + b.noise_factor) * 0.5),
-        quantize_unorm8_range((a.noise_scale + b.noise_scale) * 0.5, 64.0),
+        quantize_unorm8_range(blend.distance, 16.0),
+        quantize_unorm8_range(blend.min_distance, 16.0),
+        quantize_unorm8(blend.noise_factor),
+        quantize_unorm8_range(blend.noise_scale, 64.0),
     )
 }
 
@@ -170,32 +170,21 @@ pub(super) fn resolve_mesh_blends(draws: &[Draw3DInstance], out: &mut Vec<Resolv
             .map(|dense| dense.instances.len() > 1)
             .unwrap_or_else(|| draw.instance_mats.len() > 1);
         let own_layers = draw.blend.blend_layers.bits();
-        let mut target_bits = !draw.blend.blend_mask.bits();
-        let mut target_params = None;
-        while target_bits != 0 {
-            let bit = target_bits.trailing_zeros() as usize;
-            let bit_mask = 1u32 << bit;
-            target_params = draws.iter().enumerate().find_map(|(target_index, target)| {
-                if target_index == index && !self_interacts {
-                    return None;
-                }
-                if !target.blend.active()
-                    || !matches!(target.kind, Draw3DKind::Mesh(_))
-                    || target.blend.blend_layers.bits() & bit_mask == 0
-                    || target.blend.blend_mask.bits() & own_layers != 0
-                {
-                    return None;
-                }
-                Some(target.blend)
-            });
-            if target_params.is_some() {
-                break;
+        let target_found = draws.iter().enumerate().any(|(target_index, target)| {
+            if target_index == index && !self_interacts {
+                return false;
             }
-            target_bits &= target_bits - 1;
-        }
-        if let Some(target_blend) = target_params {
+            if !matches!(target.kind, Draw3DKind::Mesh(_)) {
+                return false;
+            }
+            let source_accepts_target =
+                target.blend.blend_layers.bits() & !draw.blend.blend_mask.bits() != 0;
+            let target_accepts_source = own_layers & !target.blend.blend_mask.bits() != 0;
+            source_accepts_target && target_accepts_source
+        });
+        if target_found {
             out[index] = ResolvedMeshBlend {
-                packed_params: average_mesh_blend_params(draw.blend, target_blend),
+                packed_params: pack_mesh_blend_params(draw.blend),
                 packed_flags: pack_resolved_mesh_blend_flags(draw.blend),
             };
         }
@@ -689,8 +678,8 @@ mod tests {
         assert!(!resolved_mesh_blend_active(out[0]));
 
         let draws = [
-            draw(1, BitMask::with([1]), BitMask::without([2]), 1),
-            draw(2, BitMask::with([2]), BitMask::NONE, 1),
+            draw(1, BitMask::with([2]), BitMask::NONE, 1),
+            draw(2, BitMask::with([1]), BitMask::without([2]), 1),
         ];
         resolve_mesh_blends(&draws, &mut out);
         assert!(resolved_mesh_blend_active(out[0]));
@@ -706,14 +695,15 @@ mod tests {
     }
 
     #[test]
-    fn blend_resolve_treats_none_mask_as_ignore_nothing() {
-        let draws = [
+    fn blend_resolve_uses_receiver_layers_without_receiver_fade() {
+        let mut draws = [
             draw(1, BitMask::with([1]), BitMask::NONE, 1),
-            draw(2, BitMask::with([2]), BitMask::NONE, 1),
+            draw(2, BitMask::with([2]), BitMask::without([1]), 1),
         ];
+        draws[0].blend.enabled = false;
         let mut out = Vec::new();
         resolve_mesh_blends(&draws, &mut out);
-        assert!(resolved_mesh_blend_active(out[0]));
+        assert!(!resolved_mesh_blend_active(out[0]));
         assert!(resolved_mesh_blend_active(out[1]));
     }
 
@@ -757,19 +747,18 @@ mod tests {
             draw(1, BitMask::with([1]), BitMask::NONE, 1),
             draw(2, BitMask::with([2]), BitMask::NONE, 1),
         ];
-        draws[0].blend.normal_blending = true;
+        draws[0].blend.enabled = false;
 
         let mut out = Vec::new();
         resolve_mesh_blends(&draws, &mut out);
 
-        assert!(resolved_mesh_blend_active(out[0]));
-        assert!(resolved_mesh_blend_normal_blending(out[0]));
+        assert!(!resolved_mesh_blend_active(out[0]));
         assert!(resolved_mesh_blend_active(out[1]));
-        assert!(!resolved_mesh_blend_normal_blending(out[1]));
+        assert!(resolved_mesh_blend_normal_blending(out[1]));
     }
 
     #[test]
-    fn blend_resolve_averages_source_and_target_params() {
+    fn blend_resolve_uses_source_params() {
         let mut draws = [
             draw(1, BitMask::with([1]), BitMask::NONE, 1),
             draw(2, BitMask::with([2]), BitMask::NONE, 1),
@@ -787,12 +776,12 @@ mod tests {
         resolve_mesh_blends(&draws, &mut out);
 
         assert_eq!(
-            out[0].packed_params,
+            out[1].packed_params,
             pack_u8_lanes(
-                quantize_unorm8_range(2.0, 16.0),
-                quantize_unorm8_range(0.4, 16.0),
-                quantize_unorm8(0.6),
-                quantize_unorm8_range(16.0, 64.0),
+                quantize_unorm8_range(3.0, 16.0),
+                quantize_unorm8_range(0.6, 16.0),
+                quantize_unorm8(0.8),
+                quantize_unorm8_range(24.0, 64.0),
             )
         );
     }

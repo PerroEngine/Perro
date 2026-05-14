@@ -20,12 +20,12 @@ let items = ctx.res.Csv().load("res://data/items.csv");
 
 ## Mutable Buffers
 
-`PerroCsv` is immutable.
+`Csv` is immutable.
 
-Use `PerroCsvBuf` when code needs to build, edit, or save CSV data.
+Use `CsvBuf` when code needs to build, edit, or save CSV data.
 
 ```rust
-let mut generated = PerroCsvBuf::new(["id", "name", "power"]);
+let mut generated = CsvBuf::new(["id", "name", "power"]);
 generated.push_row(["axe", "Axe", "14"])?;
 generated.set_by_header(0, "power", "16")?;
 
@@ -50,10 +50,10 @@ ctx.res.Csv().save("res://data/generated.csv", &generated)?;
 
 Common buffer methods:
 
-- `PerroCsvBuf::new(headers)`
-- `PerroCsvBuf::from_bytes(bytes)`
-- `PerroCsvBuf::from_static(table)`
-- `PerroCsv::to_buf()`
+- `CsvBuf::new(headers)`
+- `CsvBuf::from_bytes(bytes)`
+- `CsvBuf::from_static(table)`
+- `Csv::to_buf()`
 - `push_row(row)`
 - `set(row, col, value)`
 - `set_by_header(row, header, value)`
@@ -154,7 +154,7 @@ potion,Potion,consumable,0,8
 
 Dev mode reads and parses the CSV once, then caches the table.
 
-Static builds emit CSV tables as Rust static data and return `&'static PerroCsv`.
+Static builds emit CSV tables as Rust static data and return `&'static Csv`.
 
 Release lookup avoids file IO, CSV parse work, and per-load allocation.
 
