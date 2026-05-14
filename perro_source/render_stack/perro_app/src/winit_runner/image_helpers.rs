@@ -54,7 +54,7 @@ fn load_project_image_bytes(
     None
 }
 
-pub(super) fn load_image_size(
+pub(crate) fn load_image_size(
     project: &perro_runtime::RuntimeProject,
     source: &str,
     source_hash: Option<u64>,

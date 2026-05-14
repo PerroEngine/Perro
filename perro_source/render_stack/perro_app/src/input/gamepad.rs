@@ -1,5 +1,63 @@
 use crate::App;
+use crate::threaded::RenderThreadBridge;
 use perro_graphics::GraphicsBackend;
+use perro_input_api::{GamepadAxis, GamepadButton, InputEvent};
+
+trait GamepadSink {
+    fn set_gamepad_button_state(&mut self, index: usize, button: GamepadButton, is_down: bool);
+    fn set_gamepad_axis(&mut self, index: usize, axis: GamepadAxis, value: f32);
+    fn set_gamepad_gyro(&mut self, index: usize, x: f32, y: f32, z: f32);
+    fn set_gamepad_accel(&mut self, index: usize, x: f32, y: f32, z: f32);
+    fn take_gamepad_rumble_requests(&mut self) -> Vec<perro_input_api::GamepadRumbleRequest>;
+}
+
+impl<B: GraphicsBackend> GamepadSink for App<B> {
+    fn set_gamepad_button_state(&mut self, index: usize, button: GamepadButton, is_down: bool) {
+        App::set_gamepad_button_state(self, index, button, is_down);
+    }
+
+    fn set_gamepad_axis(&mut self, index: usize, axis: GamepadAxis, value: f32) {
+        App::set_gamepad_axis(self, index, axis, value);
+    }
+
+    fn set_gamepad_gyro(&mut self, index: usize, x: f32, y: f32, z: f32) {
+        App::set_gamepad_gyro(self, index, x, y, z);
+    }
+
+    fn set_gamepad_accel(&mut self, index: usize, x: f32, y: f32, z: f32) {
+        App::set_gamepad_accel(self, index, x, y, z);
+    }
+
+    fn take_gamepad_rumble_requests(&mut self) -> Vec<perro_input_api::GamepadRumbleRequest> {
+        App::take_gamepad_rumble_requests(self)
+    }
+}
+
+impl GamepadSink for RenderThreadBridge {
+    fn set_gamepad_button_state(&mut self, index: usize, button: GamepadButton, is_down: bool) {
+        self.push_input_event(InputEvent::GamepadButton {
+            index,
+            button,
+            is_down,
+        });
+    }
+
+    fn set_gamepad_axis(&mut self, index: usize, axis: GamepadAxis, value: f32) {
+        self.push_input_event(InputEvent::GamepadAxis { index, axis, value });
+    }
+
+    fn set_gamepad_gyro(&mut self, index: usize, x: f32, y: f32, z: f32) {
+        self.push_input_event(InputEvent::GamepadGyro { index, x, y, z });
+    }
+
+    fn set_gamepad_accel(&mut self, index: usize, x: f32, y: f32, z: f32) {
+        self.push_input_event(InputEvent::GamepadAccel { index, x, y, z });
+    }
+
+    fn take_gamepad_rumble_requests(&mut self) -> Vec<perro_input_api::GamepadRumbleRequest> {
+        Vec::new()
+    }
+}
 
 mod backend {
     use super::*;
@@ -63,7 +121,7 @@ mod backend {
     }
 
     impl GamepadBackend {
-        pub fn begin_frame<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
+        pub(super) fn begin_frame<S: GamepadSink>(&mut self, app: &mut S) {
             self.ensure_gilrs();
             self.consume_output_requests(app);
             let Some(mut gilrs) = self.gilrs.take() else {
@@ -104,7 +162,7 @@ mod backend {
             self.gilrs = Some(gilrs);
         }
 
-        fn consume_output_requests<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
+        fn consume_output_requests<S: GamepadSink>(&mut self, app: &mut S) {
             for req in app.take_gamepad_rumble_requests() {
                 self.apply_rumble(
                     req.index,
@@ -191,9 +249,9 @@ mod backend {
             }
         }
 
-        fn handle_event<B: GraphicsBackend>(
+        fn handle_event<S: GamepadSink>(
             &mut self,
-            app: &mut App<B>,
+            app: &mut S,
             gilrs: &Gilrs,
             event: gilrs::Event,
         ) {
@@ -266,9 +324,9 @@ mod backend {
             }
         }
 
-        fn set_button<B: GraphicsBackend>(
+        fn set_button<S: GamepadSink>(
             &mut self,
-            app: &mut App<B>,
+            app: &mut S,
             gilrs: &Gilrs,
             id: GamepadId,
             button: GamepadButton,
@@ -297,9 +355,9 @@ mod backend {
             app.set_gamepad_button_state(index, button, is_down);
         }
 
-        fn handle_dpad_axis<B: GraphicsBackend>(
+        fn handle_dpad_axis<S: GamepadSink>(
             &mut self,
-            app: &mut App<B>,
+            app: &mut S,
             gilrs: &Gilrs,
             id: GamepadId,
             axis: Axis,
@@ -318,9 +376,9 @@ mod backend {
             }
         }
 
-        fn set_trigger_axis_from_button<B: GraphicsBackend>(
+        fn set_trigger_axis_from_button<S: GamepadSink>(
             &mut self,
-            app: &mut App<B>,
+            app: &mut S,
             gilrs: &Gilrs,
             id: GamepadId,
             button: Button,
@@ -367,7 +425,7 @@ mod backend {
             Some(index)
         }
 
-        fn handle_disconnect<B: GraphicsBackend>(&mut self, app: &mut App<B>, id: GamepadId) {
+        fn handle_disconnect<S: GamepadSink>(&mut self, app: &mut S, id: GamepadId) {
             let Some(uuid) = self.id_to_uuid.get(&id).copied() else {
                 return;
             };
@@ -408,7 +466,7 @@ mod backend {
             index
         }
 
-        fn sync_buttons<B: GraphicsBackend>(&mut self, app: &mut App<B>, gilrs: &Gilrs) {
+        fn sync_buttons<S: GamepadSink>(&mut self, app: &mut S, gilrs: &Gilrs) {
             self.sync_ids.clear();
             self.sync_ids.extend(self.id_to_uuid.keys().copied());
             while let Some(id) = self.sync_ids.pop() {
@@ -426,7 +484,7 @@ mod backend {
             }
         }
 
-        fn sync_axes<B: GraphicsBackend>(&mut self, app: &mut App<B>, gilrs: &Gilrs) {
+        fn sync_axes<S: GamepadSink>(&mut self, app: &mut S, gilrs: &Gilrs) {
             self.sync_ids.clear();
             self.sync_ids.extend(self.id_to_uuid.keys().copied());
             for id in self.sync_ids.iter().copied() {
@@ -564,7 +622,7 @@ mod backend {
         Some(mapped)
     }
 
-    fn clear_gamepad<B: GraphicsBackend>(app: &mut App<B>, index: usize) {
+    fn clear_gamepad<S: GamepadSink>(app: &mut S, index: usize) {
         for button in ALL_BUTTONS {
             app.set_gamepad_button_state(index, button, false);
         }
@@ -630,5 +688,10 @@ impl GamepadInput {
 
     pub fn begin_frame<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
         self.backend.begin_frame(app);
+    }
+
+    pub fn begin_frame_threaded(&mut self, bridge: &RenderThreadBridge) {
+        let mut bridge = bridge.clone();
+        self.backend.begin_frame(&mut bridge);
     }
 }

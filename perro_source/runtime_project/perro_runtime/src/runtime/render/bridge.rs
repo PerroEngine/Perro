@@ -31,6 +31,14 @@ impl Runtime {
         self.render.drain_commands(out);
     }
 
+    pub fn extract_render_snapshot_commands(&mut self, out: &mut Vec<RenderCommand>) {
+        self.extract_render_2d_commands();
+        self.extract_render_3d_commands();
+        self.extract_render_ui_commands();
+        self.drain_render_commands(out);
+        self.clear_dirty_flags();
+    }
+
     pub fn apply_render_event(&mut self, event: RenderEvent) {
         if let RenderEvent::WaterSamples { samples } = &event {
             for sample in samples.iter() {

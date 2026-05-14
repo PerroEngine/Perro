@@ -105,7 +105,9 @@ impl Default for KbmInput {
     }
 }
 
-fn map_winit_key_code(code: winit::keyboard::KeyCode) -> Option<perro_input_api::KeyCode> {
+pub(crate) fn map_winit_key_code(
+    code: winit::keyboard::KeyCode,
+) -> Option<perro_input_api::KeyCode> {
     match code {
         winit::keyboard::KeyCode::Backquote => Some(perro_input_api::KeyCode::Backquote),
         winit::keyboard::KeyCode::Backslash => Some(perro_input_api::KeyCode::Backslash),
@@ -331,7 +333,9 @@ fn map_winit_key_code(code: winit::keyboard::KeyCode) -> Option<perro_input_api:
     }
 }
 
-fn map_winit_mouse_button(button: WinitMouseButton) -> Option<perro_input_api::MouseButton> {
+pub(crate) fn map_winit_mouse_button(
+    button: WinitMouseButton,
+) -> Option<perro_input_api::MouseButton> {
     match button {
         WinitMouseButton::Left => Some(perro_input_api::MouseButton::Left),
         WinitMouseButton::Right => Some(perro_input_api::MouseButton::Right),

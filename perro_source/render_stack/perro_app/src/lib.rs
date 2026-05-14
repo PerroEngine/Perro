@@ -725,4 +725,5 @@ impl<B: GraphicsBackend> App<B> {
 
 pub mod entry;
 pub mod input;
+pub mod threaded;
 pub mod winit_runner;

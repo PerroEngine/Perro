@@ -1,7 +1,7 @@
 use super::Runtime;
 use perro_input_api::{
-    GamepadAxis, GamepadButton, GamepadRumbleRequest, JoyConIndicatorRequest, JoyConRumbleRequest,
-    KeyCode, MouseButton, MouseMode, PlayerBinding, PlayerState,
+    GamepadAxis, GamepadButton, GamepadRumbleRequest, InputFrame, JoyConIndicatorRequest,
+    JoyConRumbleRequest, KeyCode, MouseButton, MouseMode, PlayerBinding, PlayerState,
 };
 
 impl Runtime {
@@ -9,6 +9,11 @@ impl Runtime {
     pub fn begin_input_frame(&mut self) {
         self.input.apply_queued_commands();
         self.input.begin_frame();
+    }
+
+    #[inline]
+    pub fn apply_input_frame(&mut self, frame: &InputFrame) {
+        frame.apply_to_snapshot(&mut self.input);
     }
 
     #[inline]
@@ -84,6 +89,12 @@ impl Runtime {
         if self.input.viewport_size() != old_size {
             self.mark_ui_viewport_dirty();
         }
+    }
+
+    #[inline]
+    pub fn input_viewport_size_pixels(&self) -> [u32; 2] {
+        let size = self.input.viewport_size();
+        [size.x.max(1.0) as u32, size.y.max(1.0) as u32]
     }
 
     #[inline]

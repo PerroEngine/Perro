@@ -1,4 +1,5 @@
 use crate::App;
+use crate::threaded::{ThreadedStartupSplash, ThreadedWinitRunner};
 use crate::winit_runner::{AppExitError, AppExitResult, WinitRunner};
 use perro_graphics::{GraphicsBackend, OcclusionCullingMode, PerroGraphics};
 pub use perro_runtime::{OcclusionCulling, ParticleSimDefault};
@@ -105,6 +106,26 @@ pub fn run_dev_project_from_path(
         .map_err(RunProjectError::from)
 }
 
+pub fn run_threaded_dev_project_from_path(
+    project_root: &Path,
+    default_name: &str,
+) -> Result<AppExitResult, RunProjectError> {
+    let project = RuntimeProject::from_project_dir_with_default_name(project_root, default_name)?;
+    let window_title = project.config.name.clone();
+    let fixed = project.config.target_fixed_update;
+    let startup_splash = ThreadedStartupSplash::from_project(&project);
+    let graphics = graphics_from_project_config(&project.config, false);
+    ThreadedWinitRunner::new()
+        .run_with_timestep_and_startup(
+            graphics,
+            &window_title,
+            move || Runtime::from_project(project, ProviderMode::Dynamic),
+            fixed,
+            Some(startup_splash),
+        )
+        .map_err(RunProjectError::from)
+}
+
 pub fn run_static_project_from_path(
     project_root: &Path,
     default_name: &str,
@@ -119,6 +140,26 @@ pub fn run_static_project_from_path(
         .and_then(|p| p.config.target_fixed_update);
     WinitRunner::new()
         .run_with_timestep(app, &window_title, fixed)
+        .map_err(RunProjectError::from)
+}
+
+pub fn run_threaded_static_project_from_path(
+    project_root: &Path,
+    default_name: &str,
+) -> Result<AppExitResult, RunProjectError> {
+    let project = RuntimeProject::from_project_dir_with_default_name(project_root, default_name)?;
+    let window_title = project.config.name.clone();
+    let fixed = project.config.target_fixed_update;
+    let startup_splash = ThreadedStartupSplash::from_project(&project);
+    let graphics = graphics_from_project_config(&project.config, true);
+    ThreadedWinitRunner::new()
+        .run_with_timestep_and_startup(
+            graphics,
+            &window_title,
+            move || Runtime::from_project(project, ProviderMode::Static),
+            fixed,
+            Some(startup_splash),
+        )
         .map_err(RunProjectError::from)
 }
 

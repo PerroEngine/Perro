@@ -1,6 +1,6 @@
 mod gamepad;
 mod joycon;
-mod kbm;
+pub(crate) mod kbm;
 
 pub use gamepad::GamepadInput;
 pub use joycon::JoyConInput;

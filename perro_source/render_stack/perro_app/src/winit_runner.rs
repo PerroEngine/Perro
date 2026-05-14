@@ -22,7 +22,7 @@ use winit::{
     window::{CursorGrabMode, CursorIcon as WinitCursorIcon, Fullscreen, Window, WindowAttributes},
 };
 
-mod image_helpers;
+pub(crate) mod image_helpers;
 
 const DEFAULT_FIXED_TIMESTEP: Option<f32> = None;
 const MAX_FIXED_STEPS_PER_FRAME: u32 = 2;

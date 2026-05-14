@@ -1,3 +1,4 @@
+mod frame;
 mod gamepad;
 mod joycon;
 mod keycode;
@@ -9,6 +10,7 @@ mod state;
 mod types;
 mod window;
 
+pub use frame::*;
 pub use gamepad::{GamepadAxis, GamepadButton, GamepadState};
 pub use joycon::{JoyConButton, JoyConSide, JoyConState};
 pub use keycode::KeyCode;

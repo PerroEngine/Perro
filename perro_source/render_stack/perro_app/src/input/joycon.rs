@@ -1,5 +1,10 @@
 use crate::App;
+use crate::threaded::RenderThreadBridge;
 use perro_graphics::GraphicsBackend;
+use perro_input_api::{
+    InputEvent, JoyConButton, JoyConIndicatorRequest, JoyConRumbleRequest, JoyConSide,
+    PlayerBinding, PlayerState,
+};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -7,6 +12,120 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
+
+trait JoyConSink {
+    fn set_joycon_button_state(&mut self, index: usize, button: JoyConButton, is_down: bool);
+    fn set_joycon_stick(&mut self, index: usize, x: f32, y: f32);
+    fn set_joycon_side(&mut self, index: usize, side: JoyConSide);
+    fn set_joycon_connected(&mut self, index: usize, connected: bool);
+    fn set_joycon_calibrated(&mut self, index: usize, calibrated: bool);
+    fn set_joycon_calibration_in_progress(&mut self, index: usize, in_progress: bool);
+    fn set_joycon_calibration_bias(&mut self, index: usize, x: f32, y: f32, z: f32);
+    fn set_joycon_gyro(&mut self, index: usize, x: f32, y: f32, z: f32);
+    fn set_joycon_accel(&mut self, index: usize, x: f32, y: f32, z: f32);
+    fn take_joycon_calibration_requests(&mut self) -> Vec<usize>;
+    fn take_joycon_rumble_requests(&mut self) -> Vec<JoyConRumbleRequest>;
+    fn take_joycon_indicator_requests(&mut self) -> Vec<JoyConIndicatorRequest>;
+    fn player_bindings(&self) -> Vec<PlayerBinding>;
+    fn bind_player(&mut self, index: usize, binding: PlayerBinding);
+}
+
+impl<B: GraphicsBackend> JoyConSink for App<B> {
+    fn set_joycon_button_state(&mut self, index: usize, button: JoyConButton, is_down: bool) {
+        App::set_joycon_button_state(self, index, button, is_down);
+    }
+    fn set_joycon_stick(&mut self, index: usize, x: f32, y: f32) {
+        App::set_joycon_stick(self, index, x, y);
+    }
+    fn set_joycon_side(&mut self, index: usize, side: JoyConSide) {
+        App::set_joycon_side(self, index, side);
+    }
+    fn set_joycon_connected(&mut self, index: usize, connected: bool) {
+        App::set_joycon_connected(self, index, connected);
+    }
+    fn set_joycon_calibrated(&mut self, index: usize, calibrated: bool) {
+        App::set_joycon_calibrated(self, index, calibrated);
+    }
+    fn set_joycon_calibration_in_progress(&mut self, index: usize, in_progress: bool) {
+        App::set_joycon_calibration_in_progress(self, index, in_progress);
+    }
+    fn set_joycon_calibration_bias(&mut self, index: usize, x: f32, y: f32, z: f32) {
+        App::set_joycon_calibration_bias(self, index, x, y, z);
+    }
+    fn set_joycon_gyro(&mut self, index: usize, x: f32, y: f32, z: f32) {
+        App::set_joycon_gyro(self, index, x, y, z);
+    }
+    fn set_joycon_accel(&mut self, index: usize, x: f32, y: f32, z: f32) {
+        App::set_joycon_accel(self, index, x, y, z);
+    }
+    fn take_joycon_calibration_requests(&mut self) -> Vec<usize> {
+        App::take_joycon_calibration_requests(self)
+    }
+    fn take_joycon_rumble_requests(&mut self) -> Vec<JoyConRumbleRequest> {
+        App::take_joycon_rumble_requests(self)
+    }
+    fn take_joycon_indicator_requests(&mut self) -> Vec<JoyConIndicatorRequest> {
+        App::take_joycon_indicator_requests(self)
+    }
+    fn player_bindings(&self) -> Vec<PlayerBinding> {
+        self.players()
+            .iter()
+            .map(PlayerState::get_binding)
+            .collect()
+    }
+    fn bind_player(&mut self, index: usize, binding: PlayerBinding) {
+        App::bind_player(self, index, binding);
+    }
+}
+
+impl JoyConSink for RenderThreadBridge {
+    fn set_joycon_button_state(&mut self, index: usize, button: JoyConButton, is_down: bool) {
+        self.push_input_event(InputEvent::JoyConButton {
+            index,
+            button,
+            is_down,
+        });
+    }
+    fn set_joycon_stick(&mut self, index: usize, x: f32, y: f32) {
+        self.push_input_event(InputEvent::JoyConStick { index, x, y });
+    }
+    fn set_joycon_side(&mut self, index: usize, side: JoyConSide) {
+        self.push_input_event(InputEvent::JoyConSide { index, side });
+    }
+    fn set_joycon_connected(&mut self, index: usize, connected: bool) {
+        self.push_input_event(InputEvent::JoyConConnected { index, connected });
+    }
+    fn set_joycon_calibrated(&mut self, index: usize, calibrated: bool) {
+        self.push_input_event(InputEvent::JoyConCalibrated { index, calibrated });
+    }
+    fn set_joycon_calibration_in_progress(&mut self, index: usize, in_progress: bool) {
+        self.push_input_event(InputEvent::JoyConCalibrationInProgress { index, in_progress });
+    }
+    fn set_joycon_calibration_bias(&mut self, index: usize, x: f32, y: f32, z: f32) {
+        self.push_input_event(InputEvent::JoyConCalibrationBias { index, x, y, z });
+    }
+    fn set_joycon_gyro(&mut self, index: usize, x: f32, y: f32, z: f32) {
+        self.push_input_event(InputEvent::JoyConGyro { index, x, y, z });
+    }
+    fn set_joycon_accel(&mut self, index: usize, x: f32, y: f32, z: f32) {
+        self.push_input_event(InputEvent::JoyConAccel { index, x, y, z });
+    }
+    fn take_joycon_calibration_requests(&mut self) -> Vec<usize> {
+        Vec::new()
+    }
+    fn take_joycon_rumble_requests(&mut self) -> Vec<JoyConRumbleRequest> {
+        Vec::new()
+    }
+    fn take_joycon_indicator_requests(&mut self) -> Vec<JoyConIndicatorRequest> {
+        Vec::new()
+    }
+    fn player_bindings(&self) -> Vec<PlayerBinding> {
+        Vec::new()
+    }
+    fn bind_player(&mut self, index: usize, binding: PlayerBinding) {
+        self.push_input_event(InputEvent::BindPlayer { index, binding });
+    }
+}
 
 mod backend {
     use super::*;
@@ -211,7 +330,7 @@ mod backend {
     ];
 
     impl JoyConBackend {
-        pub fn begin_frame<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
+        pub(super) fn begin_frame<S: JoyConSink>(&mut self, app: &mut S) {
             self.ensure_channel();
             self.scan_if_needed(app);
             self.consume_calibration_requests(app);
@@ -243,7 +362,7 @@ mod backend {
             self.ble_started = true;
         }
 
-        fn scan_if_needed<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
+        fn scan_if_needed<S: JoyConSink>(&mut self, app: &mut S) {
             let now = Instant::now();
             let scan_due = self
                 .last_scan
@@ -404,7 +523,7 @@ mod backend {
                 .insert(slot_key, DeviceHandle { stop, tx: cmd_tx });
         }
 
-        fn drain_events<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
+        fn drain_events<S: JoyConSink>(&mut self, app: &mut S) {
             let Some(rx) = self.rx.take() else {
                 return;
             };
@@ -419,7 +538,7 @@ mod backend {
             self.rx = Some(rx);
         }
 
-        fn handle_event<B: GraphicsBackend>(&mut self, app: &mut App<B>, event: JoyConEvent) {
+        fn handle_event<S: JoyConSink>(&mut self, app: &mut S, event: JoyConEvent) {
             match event {
                 JoyConEvent::Connected {
                     index,
@@ -462,14 +581,14 @@ mod backend {
             }
         }
 
-        fn consume_calibration_requests<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
+        fn consume_calibration_requests<S: JoyConSink>(&mut self, app: &mut S) {
             let requests = app.take_joycon_calibration_requests();
             for index in requests {
                 self.start_calibration(app, index);
             }
         }
 
-        fn consume_output_requests<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
+        fn consume_output_requests<S: JoyConSink>(&mut self, app: &mut S) {
             for req in app.take_joycon_rumble_requests() {
                 self.apply_rumble(
                     req.index,
@@ -501,15 +620,15 @@ mod backend {
             }
         }
 
-        fn sync_player_binding_lamps<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
+        fn sync_player_binding_lamps<S: JoyConSink>(&mut self, app: &mut S) {
             let mut desired: HashMap<usize, u8> = HashMap::new();
-            for (player_idx, player) in app.players().iter().enumerate() {
+            for (player_idx, binding) in app.player_bindings().iter().copied().enumerate() {
                 let Some(indicator) = PlayerIndicatorSlot::from_player_number(player_idx + 1)
                 else {
                     continue;
                 };
                 let pattern = indicator.to_lamp_pattern();
-                match player.get_binding() {
+                match binding {
                     PlayerBinding::JoyConSingle { index } => {
                         desired.insert(index, pattern);
                     }
@@ -528,7 +647,7 @@ mod backend {
             }
         }
 
-        fn start_calibration<B: GraphicsBackend>(&mut self, app: &mut App<B>, index: usize) {
+        fn start_calibration<S: JoyConSink>(&mut self, app: &mut S, index: usize) {
             if let Some((_, controller)) = self
                 .connected
                 .iter_mut()
@@ -542,9 +661,9 @@ mod backend {
             }
         }
 
-        fn on_connected<B: GraphicsBackend>(
+        fn on_connected<S: JoyConSink>(
             &mut self,
-            app: &mut App<B>,
+            app: &mut S,
             index: usize,
             side: JoyConSide,
             serial: &str,
@@ -580,8 +699,9 @@ mod backend {
             app.set_joycon_calibration_in_progress(index, false);
             app.set_joycon_calibrated(index, status == CalibrationStatus::Calibrated);
             app.set_joycon_calibration_bias(index, bias.0, bias.1, bias.2);
-            if !is_joycon_bound(app.players(), index)
-                && let Some(player_index) = first_unbound_player_slot(app.players())
+            let bindings = app.player_bindings();
+            if !is_joycon_bound(&bindings, index)
+                && let Some(player_index) = first_unbound_player_slot(&bindings)
             {
                 app.bind_player(player_index, PlayerBinding::JoyConSingle { index });
             }
@@ -926,8 +1046,8 @@ mod backend {
         }
     }
 
-    fn apply_report<B: GraphicsBackend>(
-        app: &mut App<B>,
+    fn apply_report<S: JoyConSink>(
+        app: &mut S,
         index: usize,
         side: JoyConSide,
         data: JoyConInputData,
@@ -948,8 +1068,8 @@ mod backend {
         app.set_joycon_accel(index, data.accel.0, data.accel.1, data.accel.2);
     }
 
-    fn stabilize_gyro<B: GraphicsBackend>(
-        app: &mut App<B>,
+    fn stabilize_gyro<S: JoyConSink>(
+        app: &mut S,
         key: (usize, JoyConSide),
         raw_gyro: (f32, f32, f32),
         connected: &mut HashMap<(usize, JoyConSide), ConnectedJoyCon>,
@@ -1021,7 +1141,7 @@ mod backend {
         (x, y, z)
     }
 
-    fn clear_joycon_index<B: GraphicsBackend>(app: &mut App<B>, index: usize) {
+    fn clear_joycon_index<S: JoyConSink>(app: &mut S, index: usize) {
         for button in ALL_BUTTONS {
             app.set_joycon_button_state(index, button, false);
         }
@@ -1034,8 +1154,8 @@ mod backend {
         app.set_joycon_accel(index, 0.0, 0.0, 0.0);
     }
 
-    fn apply_buttons<B: GraphicsBackend>(
-        app: &mut App<B>,
+    fn apply_buttons<S: JoyConSink>(
+        app: &mut S,
         index: usize,
         buttons: ButtonBits,
         prev: Option<ButtonBits>,
@@ -1332,9 +1452,9 @@ mod backend {
         Ok(())
     }
 
-    fn is_joycon_bound(players: &[perro_input_api::PlayerState], joycon_index: usize) -> bool {
-        for player in players {
-            match player.get_binding() {
+    fn is_joycon_bound(bindings: &[PlayerBinding], joycon_index: usize) -> bool {
+        for binding in bindings {
+            match *binding {
                 PlayerBinding::JoyConSingle { index } if index == joycon_index => return true,
                 PlayerBinding::JoyConPair { left, right }
                     if left == joycon_index || right == joycon_index =>
@@ -1347,14 +1467,14 @@ mod backend {
         false
     }
 
-    fn first_unbound_player_slot(players: &[perro_input_api::PlayerState]) -> Option<usize> {
-        for (idx, player) in players.iter().enumerate() {
-            if matches!(player.get_binding(), PlayerBinding::None) {
+    fn first_unbound_player_slot(bindings: &[PlayerBinding]) -> Option<usize> {
+        for (idx, binding) in bindings.iter().enumerate() {
+            if matches!(binding, PlayerBinding::None) {
                 return Some(idx);
             }
         }
-        if players.len() < 8 {
-            Some(players.len())
+        if bindings.len() < 8 {
+            Some(bindings.len())
         } else {
             None
         }
@@ -1568,5 +1688,10 @@ impl JoyConInput {
 
     pub fn begin_frame<B: GraphicsBackend>(&mut self, app: &mut App<B>) {
         self.backend.begin_frame(app);
+    }
+
+    pub fn begin_frame_threaded(&mut self, bridge: &RenderThreadBridge) {
+        let mut bridge = bridge.clone();
+        self.backend.begin_frame(&mut bridge);
     }
 }
