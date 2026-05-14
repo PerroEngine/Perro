@@ -1,6 +1,6 @@
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use perro_nodes::{
-    WaterIdleMode, WaterPhysicsSample, WaterSurfaceParams, water_impact_strength,
+    WaterIdleMode, WaterPhysicsSample, WaterShape, WaterSurfaceParams, water_impact_strength,
     water_physics_sample_or_idle,
 };
 use perro_structs::Vector2;
@@ -54,7 +54,7 @@ fn linked_waters(count: usize, resolution: u32) -> Vec<LinkedWater2> {
     (0..count)
         .map(|i| {
             let mut surface = water_surface(resolution);
-            surface.size = Vector2::new(16.0, 16.0);
+            surface.shape = WaterShape::rect(Vector2::new(16.0, 16.0));
             surface.physics.buoyancy = 2.0;
             surface.physics.drag = 0.35;
             LinkedWater2 {
@@ -112,7 +112,7 @@ fn build_bins(waters: impl Iterator<Item = (f32, f32)> + Clone) -> (Vec<Vec<usiz
 
 fn water_surface(resolution: u32) -> WaterSurfaceParams {
     let mut surface = WaterSurfaceParams {
-        size: Vector2::new(128.0, 128.0),
+        shape: WaterShape::rect(Vector2::new(128.0, 128.0)),
         resolution: [resolution, resolution],
         idle_mode: WaterIdleMode::Chop,
         ..Default::default()

@@ -95,29 +95,16 @@ fn apply_water_body_fields(node: &mut WaterSurfaceParams, ty: &str, fields: &[Sc
             _ => return,
         };
         match field {
-            WaterBodyField::Size => {
-                if let Some(v) = as_vec2(value) {
-                    node.size = v;
-                    node.shape = match ty {
-                        "WaterBody3D" => {
-                            WaterShape::box_volume(Vector3::new(v.x, node.depth.max(0.001), v.y))
-                        }
-                        _ => WaterShape::rect(v),
-                    };
-                }
-            }
             WaterBodyField::Shape => match ty {
                 "WaterBody3D" => {
                     if let Some(shape) = as_shape_3d(value).and_then(water_shape_from_shape_3d) {
                         node.shape = shape;
-                        node.size = shape.surface_size();
                         node.depth = shape.depth(node.depth);
                     }
                 }
                 _ => {
                     if let Some(shape) = as_shape_2d(value).and_then(water_shape_from_shape_2d) {
                         node.shape = shape;
-                        node.size = shape.surface_size();
                     }
                 }
             },

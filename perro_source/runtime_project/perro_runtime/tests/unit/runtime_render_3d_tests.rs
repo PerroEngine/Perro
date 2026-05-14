@@ -52,7 +52,6 @@ fn linked_3d_water_mirrors_wake_across_overlap() {
             && let SceneNodeData::WaterBody3D(water) = &mut node.data
         {
             water.transform.position.x = x;
-            water.water.size = perro_structs::Vector2::new(16.0, 16.0);
             water.water.shape = perro_nodes::WaterShape::box_volume(Vector3::new(16.0, 4.0, 16.0));
             water.water.depth = 4.0;
         }
@@ -87,7 +86,6 @@ fn linked_3d_waters_both_collect_shared_coastline_shape() {
             && let SceneNodeData::WaterBody3D(water) = &mut node.data
         {
             water.transform.position.x = x;
-            water.water.size = perro_structs::Vector2::new(16.0, 16.0);
             water.water.shape = perro_nodes::WaterShape::box_volume(Vector3::new(16.0, 4.0, 16.0));
             water.water.depth = 4.0;
         }

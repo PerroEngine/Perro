@@ -709,7 +709,9 @@ impl MeshBlendOptions3D {
 
     #[inline]
     pub const fn active(self) -> bool {
-        self.enabled && self.blend_layers.bits() != 0 && self.blend_mask.bits() != 0
+        self.enabled
+            && self.blend_layers.bits() != 0
+            && self.blend_mask.bits() != BitMask::ALL.bits()
     }
 }
 

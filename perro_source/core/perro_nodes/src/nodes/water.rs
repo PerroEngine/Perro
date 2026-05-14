@@ -223,7 +223,6 @@ impl Default for WaterShape {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WaterSurfaceParams {
-    pub size: Vector2,
     pub shape: WaterShape,
     pub resolution: [u32; 2],
     pub depth: f32,
@@ -244,7 +243,6 @@ pub struct WaterSurfaceParams {
 impl Default for WaterSurfaceParams {
     fn default() -> Self {
         Self {
-            size: Vector2::new(32.0, 32.0),
             shape: WaterShape::rect(Vector2::new(32.0, 32.0)),
             resolution: [128, 128],
             depth: 4.0,

@@ -43,8 +43,7 @@ fn linked_2d_water_mirrors_wake_across_overlap() {
             && let SceneNodeData::WaterBody2D(water) = &mut node.data
         {
             water.transform.position.x = x;
-            water.water.size = Vector2::new(16.0, 16.0);
-            water.water.shape = perro_nodes::WaterShape::rect(water.water.size);
+            water.water.shape = perro_nodes::WaterShape::rect(Vector2::new(16.0, 16.0));
         }
     }
     runtime
@@ -77,8 +76,7 @@ fn linked_2d_waters_both_collect_shared_coastline_shape() {
             && let SceneNodeData::WaterBody2D(water) = &mut node.data
         {
             water.transform.position.x = x;
-            water.water.size = Vector2::new(16.0, 16.0);
-            water.water.shape = perro_nodes::WaterShape::rect(water.water.size);
+            water.water.shape = perro_nodes::WaterShape::rect(Vector2::new(16.0, 16.0));
         }
     }
     let body = NodeAPI::create::<StaticBody2D>(&mut runtime);

@@ -9,13 +9,13 @@ Use water bodies for pools, rivers, lakes, ocean patches, or gameplay zones wher
 ## Authoring
 
 2D water uses `Node2D` transform data.
-The water plane covers `size.x` by `size.y` around the node position.
+The water surface uses `shape` around the node position.
 Height is along world `y`.
 
 ```text
 [Pond]
     [WaterBody2D]
-        size = (64, 24)
+        shape = { type="quad", width=64, height=24 }
         resolution = (256, 128)
         depth = 5.0
         flow = (0.5, 0)
@@ -46,14 +46,13 @@ Height is along world `y`.
 ```
 
 3D water uses `Node3D` transform data.
-The water plane covers local `x/z`.
+The water surface uses `shape` in local `x/z`.
 Height is world `y`.
-`size.x` maps to world `x`; `size.y` maps to world `z`.
 
 ```text
 [Lake]
     [WaterBody3D]
-        size = (128, 128)
+        shape = { type="cube", size=(128, 12, 128) }
         resolution = 256
         depth = 12.0
         flow = (0, 0.25)
@@ -81,8 +80,9 @@ Height is world `y`.
 
 ## Fields
 
-- `size`: surface width/depth in world units.
-- `shape`: optional water shape. 2D accepts `rect`/`quad` and `circle`. 3D accepts `cube`/`box`, `cylinder`, or `sphere` as a cylinder shortcut. `size` remains a shorthand for rectangular water.
+- `shape`: water bounds. 2D accepts `rect`/`quad` and `circle`. 3D accepts `cube`/`box`, `cylinder`, or `sphere` as a cylinder shortcut.
+- 2D quad/rect surface axes are local `x/y`.
+- 3D box/cylinder surface axes are local `x/z`; height/depth is local/world `y`.
 - `resolution` or `sim_resolution`: authored simulation grid size. Accepts one number or `(x, y)`. Scene load clamps to `1..4096`; GPU simulation clamps the effective grid to `1..256` per axis.
 - `depth`: visual/physics water depth hint.
 - `flow`: water current in surface-local axes.
@@ -113,8 +113,8 @@ Height is world `y`.
 
 Defaults:
 
-- `WaterBody2D`: `size = (32, 32)`, `resolution = (128, 128)`, `depth = 4`.
-- `WaterBody3D`: `size = (128, 128)`, `resolution = (128, 128)`, `depth = 12`.
+- `WaterBody2D`: `shape = { type="quad", width=32, height=32 }`, `resolution = (128, 128)`, `depth = 4`.
+- `WaterBody3D`: `shape = { type="cube", size=(128, 12, 128) }`, `resolution = (128, 128)`, `depth = 12`.
 - Shared defaults: `idle_mode = "calm"`, `wave_speed = 1`, `wave_scale = 1`, `damping = 0.985`, `deep_color = (0.02, 0.16, 0.28, 0.86)`, `shallow_color = (0.08, 0.46, 0.62, 0.48)`, `shallow_depth = -1`, `sky_bias = "none"`, `buoyancy = 1`, `drag = 0.35`, `wake_strength = 1`, `foam_strength = 0.65`, `sample_readback_rate = 30`, `lod_near = 128`, `lod_mid = 384`, `lod_far = 896`, `min_resolution = (32, 32)`, `collision_layers = all`, `collision_mask = []`, `link_layers = all`, `link_mask = []`, `blend_width = 0`, `wave_transfer = 1`, `flow_transfer = 1`.
 
 ## Runtime Work
@@ -137,7 +137,7 @@ They do not block motion, raycasts, or contact pairs.
 They emit `WaterNodeName_Entered`, `WaterNodeName_Occupied`, and `WaterNodeName_Exited` like `Area2D`/`Area3D`.
 
 1. Runtime finds all `WaterBody2D` and `WaterBody3D` nodes.
-2. Runtime tests rigid body centers against each water rectangle.
+2. Runtime tests rigid body centers against each water shape.
 3. Runtime samples surface height at the body local point.
 4. Runtime scales the force by water LOD distance from the active camera.
 5. If the body center is below the sampled surface, runtime queues an upward force plus vertical drag when force is above the LOD deadzone.
@@ -145,7 +145,7 @@ They emit `WaterNodeName_Entered`, `WaterNodeName_Occupied`, and `WaterNodeName_
 
 Physics LOD:
 
-- Near: full force, no deadzoneb.
+- Near: full force, no deadzone.
 - Mid: force fades to `0.75x`, small deadzone.
 - Far: force fades to `0.4x`, larger deadzone.
 - Beyond far: `0.25x` force, `0.5` deadzone.

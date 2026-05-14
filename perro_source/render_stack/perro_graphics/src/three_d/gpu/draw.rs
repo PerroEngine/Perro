@@ -155,7 +155,7 @@ pub(super) fn resolve_mesh_blends(draws: &[Draw3DInstance], out: &mut Vec<Resolv
             .map(|dense| dense.instances.len() > 1)
             .unwrap_or_else(|| draw.instance_mats.len() > 1);
         let own_layers = draw.blend.blend_layers.bits();
-        let mut target_bits = draw.blend.blend_mask.bits();
+        let mut target_bits = !draw.blend.blend_mask.bits();
         let mut has_target = false;
         while target_bits != 0 {
             let bit = target_bits.trailing_zeros() as usize;
@@ -651,22 +651,22 @@ mod tests {
 
     #[test]
     fn blend_resolve_requires_matching_target() {
-        let draws = [draw(1, BitMask::with([1]), BitMask::with([2]), 1)];
+        let draws = [draw(1, BitMask::with([1]), BitMask::without([2]), 1)];
         let mut out = Vec::new();
         resolve_mesh_blends(&draws, &mut out);
         assert!(!out[0].active);
 
         let draws = [
-            draw(1, BitMask::with([1]), BitMask::with([2]), 1),
+            draw(1, BitMask::with([1]), BitMask::without([2]), 1),
             draw(2, BitMask::with([2]), BitMask::NONE, 1),
         ];
         resolve_mesh_blends(&draws, &mut out);
         assert!(out[0].active);
-        assert!(!out[1].active);
+        assert!(out[1].active);
 
         let draws = [
-            draw(1, BitMask::with([1]), BitMask::with([2]), 1),
-            draw(2, BitMask::with([2]), BitMask::with([1]), 1),
+            draw(1, BitMask::with([1]), BitMask::without([2]), 1),
+            draw(2, BitMask::with([2]), BitMask::without([1]), 1),
         ];
         resolve_mesh_blends(&draws, &mut out);
         assert!(out[0].active);
@@ -674,8 +674,43 @@ mod tests {
     }
 
     #[test]
+    fn blend_resolve_treats_none_mask_as_ignore_nothing() {
+        let draws = [
+            draw(1, BitMask::with([1]), BitMask::NONE, 1),
+            draw(2, BitMask::with([2]), BitMask::NONE, 1),
+        ];
+        let mut out = Vec::new();
+        resolve_mesh_blends(&draws, &mut out);
+        assert!(out[0].active);
+        assert!(out[1].active);
+    }
+
+    #[test]
+    fn blend_resolve_treats_all_mask_as_ignore_all() {
+        let draws = [
+            draw(1, BitMask::with([1]), BitMask::ALL, 1),
+            draw(2, BitMask::with([2]), BitMask::NONE, 1),
+        ];
+        let mut out = Vec::new();
+        resolve_mesh_blends(&draws, &mut out);
+        assert!(!out[0].active);
+        assert!(
+            !MeshBlendOptions3D {
+                enabled: true,
+                blend_layers: BitMask::with([1]),
+                blend_mask: BitMask::ALL,
+                distance: 0.25,
+                min_distance: 0.0,
+                noise_factor: 0.0,
+                noise_scale: 1.0,
+            }
+            .active()
+        );
+    }
+
+    #[test]
     fn blend_resolve_allows_multimesh_self_interaction() {
-        let draws = [draw(1, BitMask::with([3]), BitMask::with([3]), 2)];
+        let draws = [draw(1, BitMask::with([3]), BitMask::NONE, 2)];
         let mut out = Vec::new();
         resolve_mesh_blends(&draws, &mut out);
         assert!(out[0].active);

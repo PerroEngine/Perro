@@ -12,7 +12,7 @@ mod tests {
             @root = water
             [water]
             [WaterBody2D]
-                size = (64, 32)
+                shape = { type="quad" width=64 height=32 }
                 resolution = (256, 128)
                 depth = 7.5
                 flow = (2, 0)
@@ -55,8 +55,12 @@ mod tests {
 
         match &water.node.data {
             SceneNodeData::WaterBody2D(node) => {
-                assert_eq!(node.water.size.x, 64.0);
-                assert_eq!(node.water.size.y, 32.0);
+                assert_eq!(
+                    node.water.shape,
+                    perro_nodes::WaterShape::Rect {
+                        size: Vector2::new(64.0, 32.0),
+                    }
+                );
                 assert_eq!(node.water.resolution, [256, 128]);
                 assert_eq!(node.water.depth, 7.5);
                 assert_eq!(node.water.flow.x, 2.0);
@@ -134,7 +138,6 @@ mod tests {
 
         match &lake.node.data {
             SceneNodeData::WaterBody2D(node) => {
-                assert_eq!(node.water.size, Vector2::new(48.0, 48.0));
                 assert_eq!(
                     node.water.shape,
                     perro_nodes::WaterShape::Circle { radius: 24.0 }
@@ -144,7 +147,6 @@ mod tests {
         }
         match &tank.node.data {
             SceneNodeData::WaterBody3D(node) => {
-                assert_eq!(node.water.size, Vector2::new(32.0, 32.0));
                 assert_eq!(node.water.depth, 10.0);
                 assert_eq!(
                     node.water.shape,

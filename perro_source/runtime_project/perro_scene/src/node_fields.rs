@@ -118,7 +118,6 @@ pub enum ParticleEmitter2DField {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WaterBodyField {
-    Size,
     Shape,
     Resolution,
     Depth,
@@ -1511,7 +1510,6 @@ fn resolve_scene_water_body(field: &SceneFieldName) -> Option<WaterBodyField> {
 
 fn resolve_water_body(field: &str) -> Option<WaterBodyField> {
     match field {
-        "size" => Some(WaterBodyField::Size),
         "shape" => Some(WaterBodyField::Shape),
         "resolution" | "sim_resolution" => Some(WaterBodyField::Resolution),
         "depth" => Some(WaterBodyField::Depth),

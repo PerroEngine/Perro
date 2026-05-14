@@ -12,7 +12,6 @@ impl WaterBody3D {
         Self {
             base: Node3D::new(),
             water: WaterSurfaceParams {
-                size: perro_structs::Vector2::new(128.0, 128.0),
                 shape: crate::WaterShape::box_volume(perro_structs::Vector3::new(
                     128.0, 12.0, 128.0,
                 )),

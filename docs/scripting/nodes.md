@@ -36,10 +36,11 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 
 `WaterBody2D`
 
-- Rectangular water surface centered on its `Node2D` position.
+- Shaped water surface centered on its `Node2D` position.
+- Supports quad/rect and circle bounds through `shape`.
 - Renders through the retained 2D water path when visible and not hidden by camera `render_mask`.
 - Runs GPU height/foam simulation with idle modes, wind, flow, damping, wake, foam, camera-distance LOD, and sample readback controls.
-- Applies camera-distance-LOD fixed-step buoyancy and vertical drag to `RigidBody2D` when body centers are inside the water rect and below sampled surface height.
+- Applies camera-distance-LOD fixed-step buoyancy and vertical drag to `RigidBody2D` when body centers are inside the water shape and below sampled surface height.
 - Uses `RigidBody2D.density` for buoyancy scale.
 - Does not create collision shapes, raycast hits, contacts, or area signals by itself.
 - Add `StaticBody2D`, `Area2D`, or `CollisionShape2D` nodes separately for solid banks, floors, triggers, or queries.
@@ -183,11 +184,12 @@ See [TileMap2D](tilemap.md).
 
 `WaterBody3D`
 
-- Rectangular water surface centered on its `Node3D` position.
+- Shaped water surface centered on its `Node3D` position.
 - Uses local X/Z as surface axes and world Y as height.
+- Supports box and cylinder bounds through `shape`.
 - Renders through the 3D water path when visible and not hidden by camera `render_mask`.
 - Runs GPU height/foam simulation with idle modes, wind, flow, damping, wake, foam, camera-distance LOD, and sample readback controls.
-- Applies camera-distance-LOD fixed-step buoyancy and vertical drag to `RigidBody3D` when body centers are inside the water rect and below sampled surface height.
+- Applies camera-distance-LOD fixed-step buoyancy and vertical drag to `RigidBody3D` when body centers are inside the water shape and below sampled surface height.
 - Uses `RigidBody3D.density` for buoyancy scale.
 - Does not create collision shapes, raycast hits, contacts, or area signals by itself.
 - Add `StaticBody3D`, `Area3D`, or `CollisionShape3D` nodes separately for lake beds, shores, triggers, or queries.
