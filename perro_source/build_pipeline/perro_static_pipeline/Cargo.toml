@@ -13,6 +13,7 @@ perro_render_bridge = { path = "../../render_stack/perro_render_bridge" }
 perro_animation = { path = "../../core/perro_animation" }
 perro_project = { path = "../../runtime_project/perro_project" }
 perro_ids = { path = "../../core/perro_ids" }
+perro_nodes = { path = "../../core/perro_nodes" }
 image = { version = "0.25.9", default-features = true }
 gltf = { version = "1.4.1", features = ["import", "utils"] }
 rayon = "1.10"

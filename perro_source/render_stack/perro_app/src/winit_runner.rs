@@ -962,21 +962,15 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 window.set_cursor_visible(false);
                 (MouseMode::Hidden, false)
             }
-            MouseMode::Captured => match window.set_cursor_grab(CursorGrabMode::Locked) {
+            MouseMode::Captured => match window.set_cursor_grab(CursorGrabMode::Confined) {
                 Ok(_) => {
                     window.set_cursor_visible(false);
-                    (MouseMode::Captured, true)
+                    (MouseMode::ConfinedHidden, false)
                 }
-                Err(_locked_err) => match window.set_cursor_grab(CursorGrabMode::Confined) {
-                    Ok(_) => {
-                        window.set_cursor_visible(false);
-                        (MouseMode::ConfinedHidden, false)
-                    }
-                    Err(_confined_err) => {
-                        window.set_cursor_visible(true);
-                        (MouseMode::Visible, false)
-                    }
-                },
+                Err(_confined_err) => {
+                    window.set_cursor_visible(true);
+                    (MouseMode::Visible, false)
+                }
             },
             MouseMode::Confined => match window.set_cursor_grab(CursorGrabMode::Confined) {
                 Ok(_) => {
@@ -1010,11 +1004,33 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.mouse_mode = applied_mode;
             self.mouse_uses_raw_motion = uses_raw_motion;
             self.app.set_mouse_mode_state(applied_mode);
+            self.app.clear_mouse_delta();
+            self.kbm_input.reset_cursor_position();
+            if applied_mode == MouseMode::ConfinedHidden && !uses_raw_motion {
+                center_cursor(window.as_ref());
+            }
+        } else {
+            self.mouse_mode = MouseMode::Visible;
+            self.mouse_uses_raw_motion = false;
+            self.app.set_mouse_mode_state(MouseMode::Visible);
+        }
+    }
+
+    fn reset_mouse_mode_for_exit(&mut self) {
+        if let Some(window) = &self.window {
+            let (applied_mode, _uses_raw_motion) =
+                Self::apply_mouse_mode(window.as_ref(), MouseMode::Visible);
+            self.mouse_mode = applied_mode;
+            self.mouse_uses_raw_motion = false;
+            self.app.set_mouse_mode_state(applied_mode);
+            self.app.clear_mouse_delta();
             self.kbm_input.reset_cursor_position();
         } else {
             self.mouse_mode = MouseMode::Visible;
             self.mouse_uses_raw_motion = false;
             self.app.set_mouse_mode_state(MouseMode::Visible);
+            self.app.clear_mouse_delta();
+            self.kbm_input.reset_cursor_position();
         }
     }
 
@@ -2530,8 +2546,26 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                     return;
                 }
                 self.cursor_inside_window = true;
-                self.kbm_input
-                    .handle_window_event(&mut self.app, &cursor_moved);
+                if self.mouse_mode == MouseMode::Captured && self.mouse_uses_raw_motion {
+                    self.kbm_input.reset_cursor_position();
+                } else if self.mouse_mode == MouseMode::ConfinedHidden {
+                    if let Some(window) = &self.window
+                        && let WindowEvent::CursorMoved { position, .. } = cursor_moved
+                    {
+                        let center = window_center(window.as_ref());
+                        let dx = (position.x - center.x) as f32;
+                        let dy = (center.y - position.y) as f32;
+                        if dx.abs() > 0.001 || dy.abs() > 0.001 {
+                            self.app.add_mouse_delta(dx, dy);
+                            self.app
+                                .set_mouse_position(position.x as f32, position.y as f32);
+                            center_cursor(window.as_ref());
+                        }
+                    }
+                } else {
+                    self.kbm_input
+                        .handle_window_event(&mut self.app, &cursor_moved);
+                }
             }
             WindowEvent::MouseWheel { .. } => {
                 if self.startup_splash.blocks_input() {
@@ -2570,6 +2604,7 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             }
             WindowEvent::CloseRequested => {
                 self.exit_result = Some(AppExitResult::window_close());
+                self.reset_mouse_mode_for_exit();
                 if let Some(window) = self.window.take() {
                     window.set_visible(false);
                 }
@@ -2604,6 +2639,12 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
         if let Some(window) = &self.window {
             window.request_redraw();
         }
+    }
+}
+
+impl<B: GraphicsBackend> Drop for RunnerState<B> {
+    fn drop(&mut self) {
+        self.reset_mouse_mode_for_exit();
     }
 }
 
@@ -2651,6 +2692,15 @@ fn window_attributes(
 
     attrs = attrs.with_inner_size(Size::Physical(fitted));
     attrs.with_position(Position::Physical(centered))
+}
+
+fn window_center(window: &Window) -> PhysicalPosition<f64> {
+    let size = window.inner_size();
+    PhysicalPosition::new(size.width as f64 * 0.5, size.height as f64 * 0.5)
+}
+
+fn center_cursor(window: &Window) {
+    let _ = window.set_cursor_position(window_center(window));
 }
 
 fn parse_window_mode_override() -> Option<String> {

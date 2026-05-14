@@ -477,14 +477,12 @@ impl Gpu3D {
         let mut debug_points_count: u32 = 0;
         let mut debug_points_double_sided = false;
         let mut debug_points_local_center = [0.0f32; 3];
-        let mut debug_points_local_radius = 0.0f32;
         let mut debug_point_instances = std::mem::take(&mut self.debug_point_instances_scratch);
         debug_point_instances.clear();
         let mut debug_edges_start: Option<u32> = None;
         let mut debug_edges_count: u32 = 0;
         let mut debug_edges_double_sided = false;
         let mut debug_edges_local_center = [0.0f32; 3];
-        let mut debug_edges_local_radius = 0.0f32;
         let mut debug_edge_instances = std::mem::take(&mut self.debug_edge_instances_scratch);
         debug_edge_instances.clear();
         let mut surface_entries = std::mem::take(&mut self.surface_entries_scratch);
@@ -528,26 +526,40 @@ impl Gpu3D {
             let active_lod = select_mesh_lod(&mesh_asset, lod_model, camera.position, draw.lod);
             surface_entries.clear();
             match draw.kind {
-                Draw3DKind::DebugPointCube => surface_entries.push((
-                    active_lod.full,
-                    Material3D::Standard(StandardMaterial3D {
-                        base_color_factor: [1.0, 0.92, 0.2, 1.0],
-                        roughness_factor: 0.35,
-                        metallic_factor: 0.0,
-                        emissive_factor: [0.35, 0.3, 0.06],
-                        ..StandardMaterial3D::default()
-                    }),
-                )),
-                Draw3DKind::DebugEdgeCylinder => surface_entries.push((
-                    active_lod.full,
-                    Material3D::Standard(StandardMaterial3D {
-                        base_color_factor: [0.15, 0.95, 0.95, 1.0],
-                        roughness_factor: 0.6,
-                        metallic_factor: 0.0,
-                        emissive_factor: [0.06, 0.3, 0.3],
-                        ..StandardMaterial3D::default()
-                    }),
-                )),
+                Draw3DKind::DebugPointCube => {
+                    let color = draw.debug_color.unwrap_or([1.0, 0.92, 0.2, 1.0]);
+                    surface_entries.push((
+                        active_lod.full,
+                        Material3D::Standard(StandardMaterial3D {
+                            base_color_factor: color,
+                            roughness_factor: 0.35,
+                            metallic_factor: 0.0,
+                            emissive_factor: [
+                                color[0] * color[3] * 0.55,
+                                color[1] * color[3] * 0.55,
+                                color[2] * color[3] * 0.55,
+                            ],
+                            ..StandardMaterial3D::default()
+                        }),
+                    ));
+                }
+                Draw3DKind::DebugEdgeCylinder => {
+                    let color = draw.debug_color.unwrap_or([0.15, 0.95, 0.95, 1.0]);
+                    surface_entries.push((
+                        active_lod.full,
+                        Material3D::Standard(StandardMaterial3D {
+                            base_color_factor: color,
+                            roughness_factor: 0.6,
+                            metallic_factor: 0.0,
+                            emissive_factor: [
+                                color[0] * color[3] * 0.4,
+                                color[1] * color[3] * 0.4,
+                                color[2] * color[3] * 0.4,
+                            ],
+                            ..StandardMaterial3D::default()
+                        }),
+                    ));
+                }
                 Draw3DKind::Mesh(_) => {
                     for (surface_index, surface) in draw.surfaces.iter().enumerate() {
                         let Some(range) = active_lod.surface_ranges.get(surface_index).copied()
@@ -628,6 +640,7 @@ impl Gpu3D {
                             instance_count,
                             draw_param_index,
                             double_sided: params.double_sided,
+                            mesh_blend: resolved_blend.active,
                         });
                     }
                 }
@@ -709,7 +722,6 @@ impl Gpu3D {
                         debug_points_double_sided =
                             material.standard_params().double_sided || self.meshlet_debug_view;
                         debug_points_local_center = mesh_asset.bounds_center;
-                        debug_points_local_radius = mesh_asset.bounds_radius;
                     }
                     for model in instance_mats.iter().copied() {
                         debug_point_instances.push(build_instance(
@@ -744,7 +756,6 @@ impl Gpu3D {
                         debug_edges_double_sided =
                             material.standard_params().double_sided || self.meshlet_debug_view;
                         debug_edges_local_center = mesh_asset.bounds_center;
-                        debug_edges_local_radius = mesh_asset.bounds_radius;
                     }
                     for model in instance_mats.iter().copied() {
                         debug_edge_instances.push(build_instance(
@@ -995,7 +1006,7 @@ impl Gpu3D {
                 draw_on_top: true,
                 base_color_texture_slot: MATERIAL_TEXTURE_NONE,
                 local_center: debug_points_local_center,
-                local_radius: debug_points_local_radius.max(0.0),
+                local_radius: 1.0e9,
                 occlusion_query: None,
                 disable_hiz_occlusion: true,
                 casts_shadows: false,
@@ -1027,7 +1038,7 @@ impl Gpu3D {
                 draw_on_top: true,
                 base_color_texture_slot: MATERIAL_TEXTURE_NONE,
                 local_center: debug_edges_local_center,
-                local_radius: debug_edges_local_radius.max(0.0),
+                local_radius: 1.0e9,
                 occlusion_query: None,
                 disable_hiz_occlusion: true,
                 casts_shadows: false,
@@ -1043,11 +1054,22 @@ impl Gpu3D {
         self.compact_sorted_draw_batches(draws.len());
         if self.multimesh_batches.len() >= PARALLEL_BATCH_SORT_MIN {
             self.multimesh_batches.par_sort_unstable_by_key(|b| {
-                (b.double_sided, b.mesh.index_start, b.draw_param_index)
+                (
+                    b.mesh_blend,
+                    b.double_sided,
+                    b.mesh.index_start,
+                    b.draw_param_index,
+                )
             });
         } else {
-            self.multimesh_batches
-                .sort_unstable_by_key(|b| (b.double_sided, b.mesh.index_start, b.draw_param_index));
+            self.multimesh_batches.sort_unstable_by_key(|b| {
+                (
+                    b.mesh_blend,
+                    b.double_sided,
+                    b.mesh.index_start,
+                    b.draw_param_index,
+                )
+            });
         }
         if HIZ_DEBUG_READBACK_ENABLED {
             self.debug_frustum_visible_est = 0;

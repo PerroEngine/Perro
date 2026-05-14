@@ -310,11 +310,15 @@ impl GpuPointParticles3D {
                             .compute_particle_spawn_rotation_buffer
                             .as_entire_binding(),
                     },
-                    wgpu::BindGroupEntry {
-                        binding: 8,
-                        resource: self.compute_particle_buffer.as_entire_binding(),
-                    },
                 ],
+            });
+            self.compute_render_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("perro_particles3d_compute_render_bg"),
+                layout: &self.compute_render_bgl,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 8,
+                    resource: self.compute_particle_buffer.as_entire_binding(),
+                }],
             });
         }
         spawn_origin_recreated || spawn_rotation_recreated

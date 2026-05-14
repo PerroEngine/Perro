@@ -9,7 +9,7 @@ const BALL_MESH_NODE_NAME: &str = "CannonBallMesh";
 const BALL_SHAPE_NODE_NAME: &str = "CannonBallShape";
 
 #[State]
-struct WaterCannonDemoState {
+struct WaterDemoState {
     #[default = NodeID::nil()]
     pub camera: NodeID,
     #[default = NodeID::nil()]
@@ -27,7 +27,7 @@ lifecycle!({
         let camera = get_child!(ctx.run, ctx.id, CAMERA_NODE_NAME).unwrap_or(NodeID::nil());
         let projectiles =
             get_child!(ctx.run, ctx.id, PROJECTILES_NODE_NAME).unwrap_or(NodeID::nil());
-        with_state_mut!(ctx.run, WaterCannonDemoState, ctx.id, |state| {
+        with_state_mut!(ctx.run, WaterDemoState, ctx.id, |state| {
             state.camera = camera;
             state.projectiles = projectiles;
         });
@@ -40,7 +40,7 @@ lifecycle!({
 
         let wheel = mouse_wheel!(ctx.ipt).y;
         if wheel.abs() > 0.001 {
-            with_state_mut!(ctx.run, WaterCannonDemoState, ctx.id, |state| {
+            with_state_mut!(ctx.run, WaterDemoState, ctx.id, |state| {
                 state.radius = (state.radius + wheel * 0.06).clamp(0.18, 1.25);
                 state.mass = (state.radius * state.radius * state.radius * 22.0).clamp(0.4, 42.0);
             });
@@ -55,7 +55,7 @@ lifecycle!({
 methods!({
     fn fire(&self, ctx: &mut ScriptContext<'_, API>) {
         let (camera, projectiles, radius, mass, speed) =
-            with_state!(ctx.run, WaterCannonDemoState, ctx.id, |state| {
+            with_state!(ctx.run, WaterDemoState, ctx.id, |state| {
                 (
                     state.camera,
                     state.projectiles,
@@ -82,7 +82,7 @@ methods!({
         let root = match scene_load!(ctx.run, CANNON_BALL_SCENE_PATH) {
             Ok(id) => id,
             Err(err) => {
-                log_error!("[WaterCannonDemo] cannon ball load fail: {:?}", err);
+                log_error!("[WaterDemo] projectile load fail: {:?}", err);
                 return;
             }
         };
@@ -96,7 +96,8 @@ methods!({
         });
 
         if let Some(mesh) = get_child!(ctx.run, root, BALL_MESH_NODE_NAME) {
-            let _ = set_local_scale_3d!(ctx.run, mesh, Vector3::new(radius, radius, radius));
+            let diameter = radius * 2.0;
+            let _ = set_local_scale_3d!(ctx.run, mesh, Vector3::new(diameter, diameter, diameter));
         }
         if let Some(shape) = get_child!(ctx.run, root, BALL_SHAPE_NODE_NAME) {
             with_node_mut!(ctx.run, CollisionShape3D, shape, |shape| {

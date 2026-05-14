@@ -13,7 +13,7 @@ impl WaterBody2D {
             base: Node2D::new(),
             water: WaterSurfaceParams {
                 shape: crate::WaterShape::rect(perro_structs::Vector2::new(32.0, 32.0)),
-                resolution: [128, 128],
+                resolution: [801, 801],
                 depth: 4.0,
                 flow: perro_structs::Vector2::ZERO,
                 wind: perro_structs::Vector2::new(1.0, 0.0),
@@ -26,8 +26,8 @@ impl WaterBody2D {
                 physics: crate::WaterPhysicsParams {
                     buoyancy: 1.0,
                     drag: 0.35,
-                    wake_strength: 1.0,
-                    foam_strength: 0.65,
+                    wake_strength: 1.35,
+                    foam_strength: 0.9,
                     sample_readback_rate: 30.0,
                 },
                 lod: crate::WaterLodParams {

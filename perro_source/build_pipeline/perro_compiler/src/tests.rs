@@ -750,7 +750,7 @@ rest_rot_deg = 0
     }
 
     fn fixture_scene() -> &'static str {
-        r#"@root = main
+        r#"$root = @main
 
 [main]
 
@@ -760,7 +760,7 @@ rest_rot_deg = 0
 [/main]
 
 [mesh]
-parent = @root
+parent = $root
 
 [MeshInstance3D]
     mesh = "res://models/triangle.pmesh"
@@ -772,7 +772,7 @@ parent = @root
 [/mesh]
 
 [collider]
-parent = @root
+parent = $root
 
 [CollisionShape3D]
     trimesh = "res://models/triangle.pmesh"
@@ -783,7 +783,7 @@ parent = @root
 [/collider]
 
 [sprite]
-parent = @root
+parent = $root
 
 [Sprite2D]
     texture = "res://textures/pixel.bmp"
@@ -794,7 +794,7 @@ parent = @root
 [/sprite]
 
 [particles]
-parent = @root
+parent = $root
 
 [ParticleEmitter3D]
     profile = "res://particles/spark.ppart"
@@ -805,7 +805,7 @@ parent = @root
 [/particles]
 
 [skeleton]
-parent = @root
+parent = $root
 
 [Skeleton2D]
     skeleton = "res://rigs/root.pskel2d"

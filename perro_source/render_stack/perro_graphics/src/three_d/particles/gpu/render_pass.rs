@@ -79,7 +79,7 @@ impl GpuPointParticles3D {
             if self.compute_has_point {
                 pass.set_pipeline(&self.compute_render_pipeline);
                 pass.set_bind_group(0, &self.camera_bg, &[]);
-                pass.set_bind_group(1, &self.compute_bg, &[]);
+                pass.set_bind_group(1, &self.compute_render_bg, &[]);
                 for range in &self.compute_point_ranges {
                     pass.draw(0..1, range.start..(range.start + range.count));
                 }
@@ -87,7 +87,7 @@ impl GpuPointParticles3D {
             if self.compute_has_billboard {
                 pass.set_pipeline(&self.compute_render_billboard_pipeline);
                 pass.set_bind_group(0, &self.camera_bg, &[]);
-                pass.set_bind_group(1, &self.compute_bg, &[]);
+                pass.set_bind_group(1, &self.compute_render_bg, &[]);
                 for range in &self.compute_billboard_ranges {
                     pass.draw(0..4, range.start..(range.start + range.count));
                 }

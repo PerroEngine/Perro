@@ -3,9 +3,9 @@ $root = @profiling_overlay_root
 [profiling_overlay_root]
 script = "res://scripts/demo_profiling_overlay.rs"
     [UiPanel]
-        anchor = "top_left"
-        position_ratio = (0.012, 0.018)
-        size_ratio = (0.20, 0.13)
+        anchor = "top"
+        position_ratio = (0.5, 0.5)
+        size_ratio = (0.48, 0.065)
         style = { fill = "#071018B8" stroke = "#88AADDEE" stroke_width = 1.0 radius = 0.035 }
         padding = 8
         visible = false
@@ -14,16 +14,50 @@ script = "res://scripts/demo_profiling_overlay.rs"
     [/UiPanel]
 [/profiling_overlay_root]
 
-[profiling_overlay_text]
+[profiling_overlay_row]
 parent = @profiling_overlay_root
-    [UiLabel]
+    [UiHLayout]
         anchor = "center"
         position_ratio = (0.5, 0.5)
-        size_ratio = (0.90, 0.82)
-        text = "FPS 0.0\nSim 0 us\nRender 0 us"
-        text_size_ratio = 0.18
+        size_ratio = (0.94, 0.82)
+        spacing = 0.025
+        h_align = "fill"
+        v_align = "fill"
+    [/UiHLayout]
+[/profiling_overlay_row]
+
+[profiling_overlay_fps]
+parent = @profiling_overlay_row
+    [UiLabel]
+        size_ratio = (0.28, 1.0)
+        text = "FPS 0.0"
+        text_size_ratio = 0.26
         color = "#D9E7FFFF"
         input_enabled = false
         mouse_filter = "pass"
     [/UiLabel]
-[/profiling_overlay_text]
+[/profiling_overlay_fps]
+
+[profiling_overlay_sim]
+parent = @profiling_overlay_row
+    [UiLabel]
+        size_ratio = (0.33, 1.0)
+        text = "Sim 0 us"
+        text_size_ratio = 0.26
+        color = "#D9E7FFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/profiling_overlay_sim]
+
+[profiling_overlay_graphics]
+parent = @profiling_overlay_row
+    [UiLabel]
+        size_ratio = (0.34, 1.0)
+        text = "Gfx 0 us"
+        text_size_ratio = 0.26
+        color = "#D9E7FFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/profiling_overlay_graphics]

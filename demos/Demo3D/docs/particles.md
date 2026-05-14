@@ -14,7 +14,7 @@ Shows:
 - `ParticleEmitter3D`
 - looping/prewarm emitters
 - profile-driven particle settings
-- point render mode
+- billboard render mode
 - local emitter placement
 
 Why scene works this way:

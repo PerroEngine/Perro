@@ -531,6 +531,7 @@ impl Runtime {
         self.audio.counters.active_positional = sounds.len() as u32;
         self.audio.counters.propagation_time = start.elapsed();
         self.audio.sounds = sounds;
+        self.clear_stale_audio_debug_rays();
     }
 }
 

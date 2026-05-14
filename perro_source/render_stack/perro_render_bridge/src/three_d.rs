@@ -84,6 +84,8 @@ pub enum WaterCoastlineShape3D {
     Box {
         center: [f32; 3],
         half_extents: [f32; 3],
+        axis_x: [f32; 2],
+        axis_z: [f32; 2],
     },
     Sphere {
         center: [f32; 3],
@@ -700,10 +702,10 @@ impl MeshBlendOptions3D {
             enabled: false,
             blend_layers: BitMask::ALL,
             blend_mask: BitMask::NONE,
-            distance: 0.10,
+            distance: 0.35,
             min_distance: 0.0,
-            noise_factor: 0.0,
-            noise_scale: 1.0,
+            noise_factor: 0.25,
+            noise_scale: 8.0,
         }
     }
 

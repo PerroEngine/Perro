@@ -49,8 +49,8 @@ parent = @AnimationDemo
         mesh = "__cube__"
         material = { type = "standard" base_color_factor = (0.13, 0.14, 0.16, 1.0) roughness_factor = 0.9 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
-            position = (0, -0.15, 0)
-            scale = (14, 0.12, 8)
+            position = (0, -0.15, 0.5)
+            scale = (18, 0.12, 11)
         [/Node3D]
     [/MeshInstance3D]
 [/AnimFloor]
@@ -72,13 +72,19 @@ parent = @AnimationDemo
     [/UiLabel]
 [/ClipNote]
 
-[BobA]
+[BobAOrigin]
 parent = @AnimationDemo
+    [Node3D]
+        position = (-6, 0.55, -2.2)
+    [/Node3D]
+[/BobAOrigin]
+
+[BobA]
+parent = @BobAOrigin
     [MeshInstance3D]
         mesh = "__cube__"
         material = { type = "standard" base_color_factor = (0.90, 0.25, 0.22, 1.0) roughness_factor = 0.45 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
-            position = (-5, 0.55, 0)
             scale = (0.8, 0.8, 0.8)
         [/Node3D]
     [/MeshInstance3D]
@@ -95,13 +101,19 @@ parent = @AnimationDemo
     [/AnimationPlayer]
 [/BobAPlayer]
 
-[PulseA]
+[PulseAOrigin]
 parent = @AnimationDemo
+    [Node3D]
+        position = (-2.8, 0.8, 1.9)
+    [/Node3D]
+[/PulseAOrigin]
+
+[PulseA]
+parent = @PulseAOrigin
     [MeshInstance3D]
         mesh = "__sphere__"
         material = { type = "standard" base_color_factor = (0.20, 0.78, 0.95, 1.0) roughness_factor = 0.34 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
-            position = (-2.5, 0.8, 0)
             scale = (0.9, 0.9, 0.9)
         [/Node3D]
     [/MeshInstance3D]
@@ -118,71 +130,89 @@ parent = @AnimationDemo
     [/AnimationPlayer]
 [/PulseAPlayer]
 
-[BobB]
+[SpinMoveOrigin]
 parent = @AnimationDemo
+    [Node3D]
+        position = (1.2, 0.45, -1.6)
+    [/Node3D]
+[/SpinMoveOrigin]
+
+[SpinMove]
+parent = @SpinMoveOrigin
     [MeshInstance3D]
         mesh = "__cube__"
         material = { type = "standard" base_color_factor = (0.95, 0.72, 0.18, 1.0) roughness_factor = 0.50 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
-            position = (0, 0.55, 0)
             scale = (0.75, 0.75, 0.75)
         [/Node3D]
     [/MeshInstance3D]
-[/BobB]
+[/SpinMove]
 
-[BobBPlayer]
+[SpinMovePlayer]
 parent = @AnimationDemo
     [AnimationPlayer]
-        animation = "res://animations/demo_bob.panim"
-        bindings = { Hero = @BobB }
-        playback = loop
-        speed = 1.25
-        paused = false
-    [/AnimationPlayer]
-[/BobBPlayer]
-
-[PulseB]
-parent = @AnimationDemo
-    [MeshInstance3D]
-        mesh = "__sphere__"
-        material = { type = "standard" base_color_factor = (0.58, 0.82, 0.32, 1.0) roughness_factor = 0.42 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
-        [Node3D]
-            position = (2.5, 0.8, 0)
-            scale = (0.9, 0.9, 0.9)
-        [/Node3D]
-    [/MeshInstance3D]
-[/PulseB]
-
-[PulseBPlayer]
-parent = @AnimationDemo
-    [AnimationPlayer]
-        animation = "res://animations/demo_pulse.panim"
-        bindings = { Hero = @PulseB }
+        animation = "res://animations/cube_spin_move.panim"
+        bindings = { Cube = @SpinMove }
         playback = loop
         speed = 0.75
         paused = false
     [/AnimationPlayer]
-[/PulseBPlayer]
+[/SpinMovePlayer]
 
-[BobC]
+[TiltStretchOrigin]
 parent = @AnimationDemo
+    [Node3D]
+        position = (4.6, 0.75, 2.1)
+    [/Node3D]
+[/TiltStretchOrigin]
+
+[TiltStretch]
+parent = @TiltStretchOrigin
+    [MeshInstance3D]
+        mesh = "__sphere__"
+        material = { type = "standard" base_color_factor = (0.58, 0.82, 0.32, 1.0) roughness_factor = 0.42 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            scale = (0.9, 0.9, 0.9)
+        [/Node3D]
+    [/MeshInstance3D]
+[/TiltStretch]
+
+[TiltStretchPlayer]
+parent = @AnimationDemo
+    [AnimationPlayer]
+        animation = "res://animations/demo_tilt_stretch.panim"
+        bindings = { Hero = @TiltStretch }
+        playback = loop
+        speed = 1.05
+        paused = false
+    [/AnimationPlayer]
+[/TiltStretchPlayer]
+
+[DriftResizeOrigin]
+parent = @AnimationDemo
+    [Node3D]
+        position = (6.4, 0.65, -2.3)
+    [/Node3D]
+[/DriftResizeOrigin]
+
+[DriftResize]
+parent = @DriftResizeOrigin
     [MeshInstance3D]
         mesh = "__cube__"
         material = { type = "standard" base_color_factor = (0.82, 0.42, 0.92, 1.0) roughness_factor = 0.48 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
-            position = (5, 0.55, 0)
             scale = (0.8, 0.8, 0.8)
         [/Node3D]
     [/MeshInstance3D]
-[/BobC]
+[/DriftResize]
 
-[BobCPlayer]
+[DriftResizePlayer]
 parent = @AnimationDemo
     [AnimationPlayer]
-        animation = "res://animations/demo_bob.panim"
-        bindings = { Hero = @BobC }
+        animation = "res://animations/demo_drift_resize.panim"
+        bindings = { Hero = @DriftResize }
         playback = loop
-        speed = 1.55
+        speed = 1.2
         paused = false
     [/AnimationPlayer]
-[/BobCPlayer]
+[/DriftResizePlayer]

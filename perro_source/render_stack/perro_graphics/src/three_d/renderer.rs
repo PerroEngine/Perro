@@ -44,6 +44,7 @@ pub struct Draw3DInstance {
     pub kind: Draw3DKind,
     pub surfaces: Arc<[MeshSurfaceBinding3D]>,
     pub instance_mats: Arc<[[[f32; 4]; 4]]>,
+    pub debug_color: Option<[f32; 4]>,
     pub skeleton: Option<SkeletonPalette>,
     pub dense_multimesh: Option<DenseMultiMeshDraw3D>,
     pub meshlet_override: Option<bool>,
@@ -128,6 +129,7 @@ impl Renderer3D {
             kind: Draw3DKind::Mesh(mesh),
             surfaces,
             instance_mats: Arc::from([model]),
+            debug_color: None,
             skeleton,
             dense_multimesh: None,
             meshlet_override,
@@ -153,6 +155,7 @@ impl Renderer3D {
             kind: Draw3DKind::Mesh(mesh),
             surfaces,
             instance_mats,
+            debug_color: None,
             skeleton,
             dense_multimesh: None,
             meshlet_override,
@@ -179,6 +182,7 @@ impl Renderer3D {
             // Dense path uploads compact pose data directly in GPU prepare.
             // Keep this empty to avoid N x matrix expansion in retained CPU state.
             instance_mats: Arc::from([]),
+            debug_color: None,
             skeleton: None,
             dense_multimesh: Some(dense_draw),
             meshlet_override,
@@ -187,7 +191,13 @@ impl Renderer3D {
         });
     }
 
-    pub fn queue_debug_point(&mut self, node: NodeID, position: [f32; 3], size: f32) {
+    pub fn queue_debug_point(
+        &mut self,
+        node: NodeID,
+        position: [f32; 3],
+        size: f32,
+        color: [f32; 4],
+    ) {
         let model = Mat4::from_scale_rotation_translation(
             Vec3::splat(size.max(0.001)),
             Quat::IDENTITY,
@@ -199,6 +209,7 @@ impl Renderer3D {
             kind: Draw3DKind::DebugPointCube,
             surfaces: Arc::from([]),
             instance_mats: Arc::from([model]),
+            debug_color: Some(color),
             skeleton: None,
             dense_multimesh: None,
             meshlet_override: Some(false),
@@ -213,6 +224,7 @@ impl Renderer3D {
         start: [f32; 3],
         end: [f32; 3],
         thickness: f32,
+        color: [f32; 4],
     ) {
         let start = Vec3::from(start);
         let end = Vec3::from(end);
@@ -234,6 +246,7 @@ impl Renderer3D {
             kind: Draw3DKind::DebugEdgeCylinder,
             surfaces: Arc::from([]),
             instance_mats: Arc::from([model]),
+            debug_color: Some(color),
             skeleton: None,
             dense_multimesh: None,
             meshlet_override: Some(false),

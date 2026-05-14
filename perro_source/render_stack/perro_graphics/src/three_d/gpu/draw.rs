@@ -633,6 +633,7 @@ mod tests {
                 .map(|_| glam::Mat4::IDENTITY.to_cols_array_2d())
                 .collect::<Vec<_>>()
                 .into(),
+            debug_color: None,
             skeleton: None,
             dense_multimesh: None,
             meshlet_override: None,

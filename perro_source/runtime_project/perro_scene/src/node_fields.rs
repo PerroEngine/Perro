@@ -120,6 +120,8 @@ pub enum ParticleEmitter2DField {
 pub enum WaterBodyField {
     Shape,
     Resolution,
+    VerticesPerMeter,
+    BaseFidelity,
     Depth,
     Flow,
     Wind,
@@ -1512,6 +1514,12 @@ fn resolve_water_body(field: &str) -> Option<WaterBodyField> {
     match field {
         "shape" => Some(WaterBodyField::Shape),
         "resolution" | "sim_resolution" => Some(WaterBodyField::Resolution),
+        "vertices_per_meter"
+        | "verts_per_meter"
+        | "vpm"
+        | "resolution_per_meter"
+        | "sim_vertices_per_meter" => Some(WaterBodyField::VerticesPerMeter),
+        "base_fidelity" | "fidelity" | "water_fidelity" => Some(WaterBodyField::BaseFidelity),
         "depth" => Some(WaterBodyField::Depth),
         "flow" => Some(WaterBodyField::Flow),
         "wind" => Some(WaterBodyField::Wind),

@@ -1,0 +1,42 @@
+[Animation]
+name = "DemoTiltStretch"
+fps = 30
+default_interp = "interpolate"
+default_ease = "ease_in_out"
+[/Animation]
+
+[Objects]
+Hero = Node3D
+[/Objects]
+
+[Frame0]
+@Hero {
+    position = (0, 0, 0)
+    rotation_deg = (0, 0, -18)
+    scale = (0.65, 1.15, 0.65)
+}
+[/Frame0]
+
+[Frame24]
+@Hero {
+    position = (0.7, 0.45, -0.45)
+    rotation_deg = (42, 130, 22)
+    scale = (1.25, 0.6, 1.25)
+}
+[/Frame24]
+
+[Frame48]
+@Hero {
+    position = (-0.55, 0.15, 0.35)
+    rotation_deg = (-28, 260, -30)
+    scale = (0.8, 1.35, 0.8)
+}
+[/Frame48]
+
+[Frame72]
+@Hero {
+    position = (0, 0, 0)
+    rotation_deg = (0, 360, -18)
+    scale = (0.65, 1.15, 0.65)
+}
+[/Frame72]

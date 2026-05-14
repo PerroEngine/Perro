@@ -3,7 +3,7 @@
 use super::Runtime;
 use crate::render_result::RuntimeRenderResult;
 use perro_ids::NodeID;
-use perro_render_bridge::{RenderCommand, RenderEvent, RenderRequestID};
+use perro_render_bridge::{Command2D, Command3D, RenderCommand, RenderEvent, RenderRequestID};
 use perro_runtime_render::{decode_3d_mesh_request_node, decode_render_request_node_from_event};
 
 impl Runtime {
@@ -137,5 +137,12 @@ impl Runtime {
         self.render_3d.note_removed_node(node);
         self.render_ui.note_removed_node(node);
         self.locale_text.remove_node_bindings(node);
+        self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
+        self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::RemoveNode {
+            node,
+        })));
+        self.queue_render_command(RenderCommand::Ui(
+            perro_render_bridge::UiCommand::RemoveNode { node },
+        ));
     }
 }

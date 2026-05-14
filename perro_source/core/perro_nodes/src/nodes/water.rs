@@ -41,8 +41,8 @@ impl Default for WaterPhysicsParams {
         Self {
             buoyancy: 1.0,
             drag: 0.35,
-            wake_strength: 1.0,
-            foam_strength: 0.65,
+            wake_strength: 1.35,
+            foam_strength: 0.9,
             sample_readback_rate: 30.0,
         }
     }
@@ -128,8 +128,8 @@ pub struct WaterOpticsSettings {
 impl WaterOpticsSettings {
     pub const fn new() -> Self {
         Self {
-            deep_color: Color::new(0.02, 0.16, 0.28, 0.86),
-            shallow_color: Color::new(0.08, 0.46, 0.62, 0.48),
+            deep_color: Color::new(0.02, 0.16, 0.28, 0.94),
+            shallow_color: Color::new(0.08, 0.46, 0.62, 0.74),
             shallow_depth: -1.0,
             sky_bias: WaterSkyBias::None,
         }
@@ -244,7 +244,7 @@ impl Default for WaterSurfaceParams {
     fn default() -> Self {
         Self {
             shape: WaterShape::rect(Vector2::new(32.0, 32.0)),
-            resolution: [128, 128],
+            resolution: [801, 801],
             depth: 4.0,
             flow: Vector2::ZERO,
             wind: Vector2::new(1.0, 0.0),
@@ -287,31 +287,59 @@ pub fn water_impact_strength(mass: f32, velocity: Vector2, wake_strength: f32) -
 }
 
 #[inline]
+pub const fn water_idle_speed_scale() -> f32 {
+    0.2
+}
+
+#[inline]
 pub fn analytic_idle_water_height(
     surface: &WaterSurfaceParams,
     local: Vector2,
     time_seconds: f32,
 ) -> f32 {
-    let phase = time_seconds * surface.wave.speed;
+    let phase = time_seconds * surface.wave.speed * water_idle_speed_scale();
+    let size = surface.shape.surface_size();
+    let wave_coord = Vector2::new(
+        local.x / size.x.abs().max(0.001),
+        local.y / size.y.abs().max(0.001),
+    );
+    let tau = std::f32::consts::TAU;
     match surface.idle_mode {
         WaterIdleMode::Calm => 0.0,
         WaterIdleMode::Sine => {
             let wind = surface.wind.normalized();
-            (local.dot(wind) * 0.125 + phase).sin() * surface.wave.scale
+            (wave_coord.dot(wind) * tau + phase).sin() * surface.wave.scale
         }
         WaterIdleMode::Chop => {
-            let a = (local.x * 0.17 + phase).sin();
-            let b = (local.y * 0.11 + phase * 1.37).cos();
-            (a * 0.7 + b * 0.3) * surface.wave.scale
+            let wind = surface.wind.normalized();
+            let cross = Vector2::new(-wind.y, wind.x);
+            let a = (wave_coord.dot(wind) * tau * 1.4 + phase).sin();
+            let b = (wave_coord.dot(cross) * tau * 0.9 + phase * 1.37).cos();
+            let c = ((wave_coord.x * 0.7 + wave_coord.y * 1.3) * tau * 2.1 - phase * 0.72).sin();
+            (a * 0.48 + b * 0.32 + c * 0.2) * surface.wave.scale * 3.05
         }
         WaterIdleMode::Storm => {
-            let a = (local.x * 0.23 + phase * 1.8).sin();
-            let b = ((local.x + local.y) * 0.07 - phase * 1.2).cos();
-            (a * 0.55 + b * 0.45) * surface.wave.scale * 1.8
+            let wind = surface.wind.normalized();
+            let cross = Vector2::new(-wind.y, wind.x);
+            let a = (wave_coord.dot(wind) * tau * 2.1 + phase * 1.1).sin();
+            let b = (wave_coord.dot(cross) * tau * 1.3 - phase * 0.83).cos();
+            let c = ((wave_coord.x * 1.6 + wave_coord.y * 0.55) * tau * 2.8 + phase * 1.47).sin();
+            let d = ((wave_coord.x * -0.35 + wave_coord.y * 1.2) * tau * 3.7 - phase * 1.91).cos();
+            let swell_a = (wave_coord.dot(wind) * tau * 1.15 + phase * 0.9)
+                .sin()
+                .max(0.0)
+                .powf(5.0);
+            let swell_b = (wave_coord.dot(cross) * tau * 0.95 - phase * 1.25 + 1.7)
+                .sin()
+                .max(0.0)
+                .powf(4.0);
+            (a * 0.22 + b * 0.18 + c * 0.16 + d * 0.12 + swell_a * 0.72 + swell_b * 0.46)
+                * surface.wave.scale
+                * 3.05
         }
         WaterIdleMode::River => {
             let flow = surface.flow.normalized();
-            (local.dot(flow) * 0.2 - phase * 1.5).sin() * surface.wave.scale * 0.45
+            (wave_coord.dot(flow) * tau * 1.6 - phase * 1.5).sin() * surface.wave.scale * 0.45
         }
     }
 }
@@ -381,5 +409,61 @@ mod tests {
         assert_ne!(fallback.height, 4.0);
         assert_eq!(fallback.velocity, surface.flow);
         assert_eq!(fallback.foam, 0.0);
+    }
+
+    #[test]
+    fn idle_waves_scale_with_surface_size() {
+        let mut small = WaterSurfaceParams {
+            idle_mode: WaterIdleMode::Storm,
+            shape: WaterShape::rect(Vector2::new(20.0, 20.0)),
+            ..Default::default()
+        };
+        small.wave.scale = 1.0;
+
+        let mut large = small;
+        large.shape = WaterShape::rect(Vector2::new(200.0, 200.0));
+
+        let small_height = analytic_idle_water_height(&small, Vector2::new(4.0, -3.0), 0.5);
+        let large_height = analytic_idle_water_height(&large, Vector2::new(40.0, -30.0), 0.5);
+
+        assert!((small_height - large_height).abs() < 0.0001);
+    }
+
+    #[test]
+    fn idle_wave_speed_uses_slow_authoring_scale() {
+        let mut surface = WaterSurfaceParams {
+            idle_mode: WaterIdleMode::Sine,
+            shape: WaterShape::rect(Vector2::new(20.0, 20.0)),
+            wind: Vector2::new(1.0, 0.0),
+            ..Default::default()
+        };
+        surface.wave.speed = 1.0;
+
+        let scaled = analytic_idle_water_height(&surface, Vector2::ZERO, 1.0);
+        let expected = (water_idle_speed_scale()).sin() * surface.wave.scale;
+
+        assert!((scaled - expected).abs() < 0.0001);
+    }
+
+    #[test]
+    fn storm_idle_allows_large_stacked_swell_waves() {
+        let mut surface = WaterSurfaceParams {
+            idle_mode: WaterIdleMode::Storm,
+            shape: WaterShape::rect(Vector2::new(20.0, 20.0)),
+            wind: Vector2::new(0.8, 0.2),
+            ..Default::default()
+        };
+        surface.wave.scale = 1.0;
+
+        for x in -4..=4 {
+            for y in -4..=4 {
+                let height = analytic_idle_water_height(
+                    &surface,
+                    Vector2::new(x as f32 * 2.0, y as f32 * 2.0),
+                    1.25,
+                );
+                assert!(height.abs() <= 5.68);
+            }
+        }
     }
 }

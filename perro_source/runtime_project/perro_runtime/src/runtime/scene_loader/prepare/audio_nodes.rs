@@ -82,7 +82,10 @@ pub(super) fn apply_audio_portal_3d_data(node: &mut AudioPortal3D, data: &SceneD
     }
 }
 
-pub(super) fn apply_audio_effect_zone_2d_data(node: &mut AudioEffectZone2D, data: &SceneDefNodeData) {
+pub(super) fn apply_audio_effect_zone_2d_data(
+    node: &mut AudioEffectZone2D,
+    data: &SceneDefNodeData,
+) {
     for (name, value) in flatten_scene_node_fields(data) {
         match name.as_ref() {
             "enabled" => {
@@ -124,7 +127,10 @@ pub(super) fn apply_audio_effect_zone_2d_data(node: &mut AudioEffectZone2D, data
     }
 }
 
-pub(super) fn apply_audio_effect_zone_3d_data(node: &mut AudioEffectZone3D, data: &SceneDefNodeData) {
+pub(super) fn apply_audio_effect_zone_3d_data(
+    node: &mut AudioEffectZone3D,
+    data: &SceneDefNodeData,
+) {
     for (name, value) in flatten_scene_node_fields(data) {
         match name.as_ref() {
             "enabled" => {
@@ -231,9 +237,7 @@ fn first_audio_effect_zone_effect_mut(
     &mut effects[0]
 }
 
-fn audio_effect_zone_effects_from_value(
-    value: &SceneValue,
-) -> Vec<perro_structs::AudioEffect> {
+fn audio_effect_zone_effects_from_value(value: &SceneValue) -> Vec<perro_structs::AudioEffect> {
     let effects: Vec<_> = match value {
         SceneValue::Array(items) => items
             .iter()

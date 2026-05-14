@@ -53,14 +53,14 @@ mod skinned_path;
 #[path = "gpu/texture_cache.rs"]
 mod texture_cache;
 
-use multimesh_path::{create_multimesh_pipeline, pack_unorm4x8};
+use multimesh_path::{create_multimesh_blend_pipeline, create_multimesh_pipeline, pack_unorm4x8};
 use rigid_path::{
     create_depth_prepass_pipeline_rigid, create_pipeline_overlay_rigid, create_pipeline_rigid,
-    create_shadow_depth_pipeline_rigid,
+    create_pipeline_rigid_blend, create_shadow_depth_pipeline_rigid,
 };
 use skinned_path::{
     create_depth_prepass_pipeline_skinned, create_pipeline_overlay_skinned,
-    create_pipeline_skinned, create_shadow_depth_pipeline_skinned,
+    create_pipeline_skinned, create_pipeline_skinned_blend, create_shadow_depth_pipeline_skinned,
 };
 use texture_cache::{CachedMaterialTexture, create_cached_material_texture};
 
@@ -300,18 +300,30 @@ pub struct Gpu3D {
     sky_pipeline: wgpu::RenderPipeline,
     pipeline_rigid_culled: wgpu::RenderPipeline,
     pipeline_rigid_double_sided: wgpu::RenderPipeline,
+    pipeline_rigid_blend_culled: wgpu::RenderPipeline,
+    pipeline_rigid_blend_double_sided: wgpu::RenderPipeline,
     pipeline_rigid_unlit_culled: wgpu::RenderPipeline,
     pipeline_rigid_unlit_double_sided: wgpu::RenderPipeline,
+    pipeline_rigid_unlit_blend_culled: wgpu::RenderPipeline,
+    pipeline_rigid_unlit_blend_double_sided: wgpu::RenderPipeline,
     pipeline_rigid_toon_culled: wgpu::RenderPipeline,
     pipeline_rigid_toon_double_sided: wgpu::RenderPipeline,
+    pipeline_rigid_toon_blend_culled: wgpu::RenderPipeline,
+    pipeline_rigid_toon_blend_double_sided: wgpu::RenderPipeline,
     pipeline_rigid_overlay_culled: wgpu::RenderPipeline,
     pipeline_rigid_overlay_double_sided: wgpu::RenderPipeline,
     pipeline_culled: wgpu::RenderPipeline,
     pipeline_double_sided: wgpu::RenderPipeline,
+    pipeline_blend_culled: wgpu::RenderPipeline,
+    pipeline_blend_double_sided: wgpu::RenderPipeline,
     pipeline_unlit_culled: wgpu::RenderPipeline,
     pipeline_unlit_double_sided: wgpu::RenderPipeline,
+    pipeline_unlit_blend_culled: wgpu::RenderPipeline,
+    pipeline_unlit_blend_double_sided: wgpu::RenderPipeline,
     pipeline_toon_culled: wgpu::RenderPipeline,
     pipeline_toon_double_sided: wgpu::RenderPipeline,
+    pipeline_toon_blend_culled: wgpu::RenderPipeline,
+    pipeline_toon_blend_double_sided: wgpu::RenderPipeline,
     pipeline_overlay_culled: wgpu::RenderPipeline,
     pipeline_overlay_double_sided: wgpu::RenderPipeline,
     pipeline_depth_prepass_culled: wgpu::RenderPipeline,
@@ -324,6 +336,8 @@ pub struct Gpu3D {
     pipeline_shadow_depth_rigid_double_sided: wgpu::RenderPipeline,
     pipeline_multimesh_culled: wgpu::RenderPipeline,
     pipeline_multimesh_double_sided: wgpu::RenderPipeline,
+    pipeline_multimesh_blend_culled: wgpu::RenderPipeline,
+    pipeline_multimesh_blend_double_sided: wgpu::RenderPipeline,
     custom_pipelines: AHashMap<u32, CustomPipeline>,
     custom_pipelines_rigid: AHashMap<u32, CustomPipeline>,
     custom_pipeline_tokens: AHashMap<String, u32>,
@@ -585,6 +599,7 @@ struct MultiMeshBatch {
     instance_count: u32,
     draw_param_index: u32,
     double_sided: bool,
+    mesh_blend: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -598,6 +613,8 @@ enum MaterialPipelineKind {
 struct CustomPipeline {
     pipeline_culled: wgpu::RenderPipeline,
     pipeline_double_sided: wgpu::RenderPipeline,
+    pipeline_blend_culled: wgpu::RenderPipeline,
+    pipeline_blend_double_sided: wgpu::RenderPipeline,
 }
 
 #[derive(Clone, Copy)]

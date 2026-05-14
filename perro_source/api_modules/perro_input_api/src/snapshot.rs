@@ -87,6 +87,11 @@ impl InputSnapshot {
     }
 
     #[inline]
+    pub fn clear_mouse_delta(&mut self) {
+        self.mouse.clear_delta();
+    }
+
+    #[inline]
     pub fn add_mouse_wheel(&mut self, dx: f32, dy: f32) {
         self.mouse.add_wheel(dx, dy);
     }

@@ -222,6 +222,11 @@ impl<B: GraphicsBackend> App<B> {
     }
 
     #[inline]
+    pub fn clear_mouse_delta(&mut self) {
+        self.runtime.clear_mouse_delta();
+    }
+
+    #[inline]
     pub fn add_mouse_wheel(&mut self, dx: f32, dy: f32) {
         self.runtime.add_mouse_wheel(dx, dy);
     }

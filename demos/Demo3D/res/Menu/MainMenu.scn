@@ -18,7 +18,7 @@ parent = @hub_menu_root
     [UiPanel]
         anchor = "center"
         position_ratio = (0.5, 0.5)
-        size_ratio = (0.42, 0.64)
+        size_ratio = (0.95, 0.75)
         style = { fill = "#0B1018E8" stroke = "#D0E0EF" stroke_width = 1.0 radius = 0.04 }
         padding = 14
     [/UiPanel]
@@ -29,7 +29,7 @@ parent = @hub_menu_panel
     [UiVLayout]
         anchor = "center"
         position_ratio = (0.5, 0.5)
-        size_ratio = (0.92, 0.92)
+        size_ratio = (0.94, 0.92)
         spacing = 0.025
         h_align = "fill"
         v_align = "fill"
@@ -60,10 +60,40 @@ parent = @hub_menu_content
     [/UiLabel]
 [/hub_subtitle]
 
-[demo_btn_mesh]
+[hub_menu_columns]
 parent = @hub_menu_content
+    [UiHLayout]
+        size_ratio = (1.0, 0.72)
+        spacing = 0.025
+        h_align = "fill"
+        v_align = "fill"
+    [/UiHLayout]
+[/hub_menu_columns]
+
+[hub_menu_col_left]
+parent = @hub_menu_columns
+    [UiVLayout]
+        size_ratio = (0.487, 1.0)
+        spacing = 0.035
+        h_align = "fill"
+        v_align = "fill"
+    [/UiVLayout]
+[/hub_menu_col_left]
+
+[hub_menu_col_right]
+parent = @hub_menu_columns
+    [UiVLayout]
+        size_ratio = (0.487, 1.0)
+        spacing = 0.035
+        h_align = "fill"
+        v_align = "fill"
+    [/UiVLayout]
+[/hub_menu_col_right]
+
+[demo_btn_mesh]
+parent = @hub_menu_col_left
     [UiButton]
-        size_ratio = (1.0, 0.06)
+        size_ratio = (1.0, 0.135)
         h_align = "fill"
         click_signals = ["demo_mesh_click"]
         style = $button_style
@@ -85,9 +115,9 @@ parent = @demo_btn_mesh
 [/demo_btn_mesh_label]
 
 [demo_btn_lights]
-parent = @hub_menu_content
+parent = @hub_menu_col_left
     [UiButton]
-        size_ratio = (1.0, 0.06)
+        size_ratio = (1.0, 0.135)
         h_align = "fill"
         click_signals = ["demo_lights_click"]
         style = $button_style
@@ -109,9 +139,9 @@ parent = @demo_btn_lights
 [/demo_btn_lights_label]
 
 [demo_btn_water]
-parent = @hub_menu_content
+parent = @hub_menu_col_left
     [UiButton]
-        size_ratio = (1.0, 0.06)
+        size_ratio = (1.0, 0.135)
         h_align = "fill"
         click_signals = ["demo_water_click"]
         style = $button_style
@@ -124,7 +154,7 @@ parent = @hub_menu_content
 parent = @demo_btn_water
     [UiLabel]
         size_ratio = (1.0, 1.0)
-        text = "WaterBody3D"
+        text = "Water"
         text_size_ratio = 0.24
         color = "#FFFFFF"
         input_enabled = false
@@ -132,34 +162,10 @@ parent = @demo_btn_water
     [/UiLabel]
 [/demo_btn_water_label]
 
-[demo_btn_water_cannon]
-parent = @hub_menu_content
-    [UiButton]
-        size_ratio = (1.0, 0.06)
-        h_align = "fill"
-        click_signals = ["demo_water_cannon_click"]
-        style = $button_style
-        hover = { style = $button_hover_style }
-        pressed = { style = $button_pressed_style }
-    [/UiButton]
-[/demo_btn_water_cannon]
-
-[demo_btn_water_cannon_label]
-parent = @demo_btn_water_cannon
-    [UiLabel]
-        size_ratio = (1.0, 1.0)
-        text = "Water Cannon"
-        text_size_ratio = 0.24
-        color = "#FFFFFF"
-        input_enabled = false
-        mouse_filter = "pass"
-    [/UiLabel]
-[/demo_btn_water_cannon_label]
-
 [demo_btn_animations]
-parent = @hub_menu_content
+parent = @hub_menu_col_left
     [UiButton]
-        size_ratio = (1.0, 0.06)
+        size_ratio = (1.0, 0.135)
         h_align = "fill"
         click_signals = ["demo_animations_click"]
         style = $button_style
@@ -181,9 +187,9 @@ parent = @demo_btn_animations
 [/demo_btn_animations_label]
 
 [demo_btn_physics_bones]
-parent = @hub_menu_content
+parent = @hub_menu_col_left
     [UiButton]
-        size_ratio = (1.0, 0.06)
+        size_ratio = (1.0, 0.135)
         h_align = "fill"
         click_signals = ["demo_physics_bones_click"]
         style = $button_style
@@ -205,9 +211,9 @@ parent = @demo_btn_physics_bones
 [/demo_btn_physics_bones_label]
 
 [demo_btn_sky]
-parent = @hub_menu_content
+parent = @hub_menu_col_right
     [UiButton]
-        size_ratio = (1.0, 0.06)
+        size_ratio = (1.0, 0.135)
         h_align = "fill"
         click_signals = ["demo_sky_click"]
         style = $button_style
@@ -229,9 +235,9 @@ parent = @demo_btn_sky
 [/demo_btn_sky_label]
 
 [demo_btn_blend]
-parent = @hub_menu_content
+parent = @hub_menu_col_right
     [UiButton]
-        size_ratio = (1.0, 0.06)
+        size_ratio = (1.0, 0.135)
         h_align = "fill"
         click_signals = ["demo_blend_click"]
         style = $button_style
@@ -253,9 +259,9 @@ parent = @demo_btn_blend
 [/demo_btn_blend_label]
 
 [demo_btn_multimesh]
-parent = @hub_menu_content
+parent = @hub_menu_col_right
     [UiButton]
-        size_ratio = (1.0, 0.06)
+        size_ratio = (1.0, 0.135)
         h_align = "fill"
         click_signals = ["demo_multimesh_click"]
         style = $button_style
@@ -277,9 +283,9 @@ parent = @demo_btn_multimesh
 [/demo_btn_multimesh_label]
 
 [demo_btn_particles]
-parent = @hub_menu_content
+parent = @hub_menu_col_right
     [UiButton]
-        size_ratio = (1.0, 0.06)
+        size_ratio = (1.0, 0.135)
         h_align = "fill"
         click_signals = ["demo_particles_click"]
         style = $button_style
@@ -301,9 +307,9 @@ parent = @demo_btn_particles
 [/demo_btn_particles_label]
 
 [demo_btn_audio]
-parent = @hub_menu_content
+parent = @hub_menu_col_right
     [UiButton]
-        size_ratio = (1.0, 0.06)
+        size_ratio = (1.0, 0.135)
         h_align = "fill"
         click_signals = ["demo_audio_click"]
         style = $button_style

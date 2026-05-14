@@ -40,7 +40,7 @@ fn crate_name_from_project_name(project_name: &str) -> String {
 }
 
 fn default_main_scene() -> String {
-    r#"@root = main
+    r#"$root = @main
 
 [main]
 
@@ -50,7 +50,7 @@ fn default_main_scene() -> String {
 [/main]
 
 [camera]
-parent = @root
+parent = $root
 
 [Camera3D]
     active = true
@@ -61,7 +61,7 @@ parent = @root
 [/camera]
 
 [ambient]
-parent = @root
+parent = $root
 
 [AmbientLight3D]
     color = (1.0, 1.0, 1.0)

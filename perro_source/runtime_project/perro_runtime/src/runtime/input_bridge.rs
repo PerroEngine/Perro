@@ -37,6 +37,11 @@ impl Runtime {
     }
 
     #[inline]
+    pub fn clear_mouse_delta(&mut self) {
+        self.input.clear_mouse_delta();
+    }
+
+    #[inline]
     pub fn add_mouse_wheel(&mut self, dx: f32, dy: f32) {
         self.input.add_mouse_wheel(dx, dy);
     }

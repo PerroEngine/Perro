@@ -125,10 +125,15 @@ impl MouseState {
     pub fn begin_frame(&mut self) {
         self.pressed = 0;
         self.released = 0;
-        self.delta_x = 0.0;
-        self.delta_y = 0.0;
+        self.clear_delta();
         self.wheel_x = 0.0;
         self.wheel_y = 0.0;
+    }
+
+    #[inline]
+    pub fn clear_delta(&mut self) {
+        self.delta_x = 0.0;
+        self.delta_y = 0.0;
     }
 
     #[inline]

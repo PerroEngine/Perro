@@ -529,6 +529,7 @@ impl NodeAPI for Runtime {
                 continue;
             }
             self.note_removed_render_node(current);
+            self.remove_attached_audio_for_node(current);
 
             // Remove script state first so script-side lookups cannot outlive node removal.
             let _ = self.remove_script_instance(current);

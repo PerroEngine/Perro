@@ -75,6 +75,11 @@ methods!({
         };
         reparent!(ctx.run, projectiles, root);
         let _ = set_global_pos_3d!(ctx.run, root, spawn_pos);
-        let _ = call_method!(ctx.run, root, func!("launch"), params![forward * speed, radius]);
+        let _ = call_method!(
+            ctx.run,
+            root,
+            func!("launch"),
+            params![forward * speed, radius]
+        );
     }
 });

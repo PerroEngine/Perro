@@ -597,17 +597,20 @@ impl PerroGraphics {
                         node,
                         position,
                         size,
+                        color,
                     } => {
-                        self.renderer_3d.queue_debug_point(node, position, size);
+                        self.renderer_3d
+                            .queue_debug_point(node, position, size, color);
                     }
                     Command3D::DrawDebugLine3D {
                         node,
                         start,
                         end,
                         thickness,
+                        color,
                     } => {
                         self.renderer_3d
-                            .queue_debug_line(node, start, end, thickness);
+                            .queue_debug_line(node, start, end, thickness, color);
                     }
                     Command3D::SetCamera { camera } => {
                         self.renderer_3d.set_camera(camera);

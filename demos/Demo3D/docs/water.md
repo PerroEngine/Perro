@@ -4,38 +4,48 @@ Scene:
 
 - `res://scenes/demos/water.scn`
 
+Scripts:
+
+- `res://scripts/water_demo.rs`
+
+Projectile:
+
+- `res://scenes/demos/cannon_ball.scn`
+
 Shows:
 
-- `WaterBody3D`
-- cube water bounds
-- simulation resolution
-- flow/wind/wave settings
-- shallow/deep color
-- sample readback config
+- one `WaterBody3D` pool
+- shooting `RigidBody3D` balls
+- runtime scene spawn
+- runtime body mass/velocity edits
+- runtime collision shape scaling
 
 Why scene works this way:
 
-- One large water body makes all water fields easy to see.
-- Lake bed sits under water so depth/color has context.
-- `FloatMarker` gives a visible reference near water surface.
-- LOD/readback fields show real runtime tuning knobs.
+- Projectiles live in separate scene so spawning is cheap and clean.
+- Root script caches camera and projectile parent once at init.
+- Ball radius changes mass and collision radius together.
+- `RigidBody3D` handles water buoyancy because water affects rigid bodies.
+- Separate `Projectiles` parent keeps spawned nodes easy to unload.
 
-Scene map:
+Script flow:
 
-| Node              | Role                      |
-| ----------------- | ------------------------- |
-| `WaterDemo`       | Demo root.                |
-| `DemoCamera`      | Fly camera.               |
-| `LakeBed`         | Visual bottom.            |
-| `Water`           | Main `WaterBody3D`.       |
-| `FloatMarker`     | Surface height reference. |
-| `Sun` / `Ambient` | Readable water lighting.  |
+| Step                      | Why                                   |
+| ------------------------- | ------------------------------------- |
+| Read camera transform     | Use aim direction from view.          |
+| Load cannon ball scene    | Keep projectile setup reusable.       |
+| Reparent to `Projectiles` | Keep runtime nodes grouped.           |
+| Set world position        | Spawn in front of camera.             |
+| Set body velocity         | Shoot along camera forward.           |
+| Scale mesh + shape        | Keep visuals and collision same size. |
 
 Controls:
 
-| Input             | Action    |
-| ----------------- | --------- |
-| Mouse             | Look      |
-| `W` `A` `S` `D`   | Move      |
-| `Space` / `Shift` | Up / down |
-| `Esc`             | Pause     |
+| Input             | Action             |
+| ----------------- | ------------------ |
+| Mouse             | Look               |
+| `W` `A` `S` `D`   | Move               |
+| `Space` / `Shift` | Up / down          |
+| Left mouse        | Shoot ball         |
+| Mouse wheel       | Change ball radius |
+| `Esc`             | Pause              |

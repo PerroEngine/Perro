@@ -33,8 +33,8 @@ fn water_2d_state() -> Water2DState {
         wave_speed: 1.0,
         wave_scale: 1.0,
         damping: 0.985,
-        wake_strength: 1.0,
-        foam_strength: 0.65,
+        wake_strength: 1.35,
+        foam_strength: 0.9,
         sample_readback_rate: 30.0,
         lod_near_distance: 128.0,
         lod_mid_distance: 384.0,
@@ -42,8 +42,8 @@ fn water_2d_state() -> Water2DState {
         lod_min_resolution: [32, 32],
         collision_layers: BitMask::with([1]),
         collision_mask: BitMask::NONE,
-        deep_color: [0.02, 0.16, 0.28, 0.86],
-        shallow_color: [0.08, 0.46, 0.62, 0.48],
+        deep_color: [0.02, 0.16, 0.28, 0.94],
+        shallow_color: [0.08, 0.46, 0.62, 0.74],
         shallow_depth: -1.0,
         sky_bias_ratio: 0.0,
         coastline_foam_color: [0.9, 0.97, 1.0, 1.0],
@@ -85,8 +85,8 @@ fn water_3d_state() -> Water3DState {
         wave_speed: 1.0,
         wave_scale: 1.0,
         damping: 0.985,
-        wake_strength: 1.0,
-        foam_strength: 0.65,
+        wake_strength: 1.35,
+        foam_strength: 0.9,
         sample_readback_rate: 30.0,
         lod_near_distance: 128.0,
         lod_mid_distance: 384.0,
@@ -94,8 +94,8 @@ fn water_3d_state() -> Water3DState {
         lod_min_resolution: [32, 32],
         collision_layers: BitMask::with([1]),
         collision_mask: BitMask::NONE,
-        deep_color: [0.02, 0.16, 0.28, 0.86],
-        shallow_color: [0.08, 0.46, 0.62, 0.48],
+        deep_color: [0.02, 0.16, 0.28, 0.94],
+        shallow_color: [0.08, 0.46, 0.62, 0.74],
         shallow_depth: -1.0,
         sky_bias_ratio: 0.0,
         coastline_foam_color: [0.9, 0.97, 1.0, 1.0],
@@ -318,6 +318,7 @@ fn draw_3d_updates_retained_state_per_node() {
             meshlet_override: None,
             lod: LODOptions3D::default(),
             blend: Default::default(),
+            debug_color: None,
         })
     );
     assert_eq!(
@@ -332,6 +333,7 @@ fn draw_3d_updates_retained_state_per_node() {
             meshlet_override: None,
             lod: LODOptions3D::default(),
             blend: Default::default(),
+            debug_color: None,
         })
     );
 }
@@ -417,6 +419,7 @@ fn draw_multi_3d_retains_all_instance_mats() {
             meshlet_override: None,
             lod: LODOptions3D::default(),
             blend: Default::default(),
+            debug_color: None,
         })
     );
 }
@@ -484,6 +487,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
             meshlet_override: None,
             lod: LODOptions3D::default(),
             blend: Default::default(),
+            debug_color: None,
         })
     );
 
@@ -518,6 +522,7 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
             meshlet_override: None,
             lod: LODOptions3D::default(),
             blend: Default::default(),
+            debug_color: None,
         })
     );
 }
@@ -605,6 +610,7 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
             meshlet_override: None,
             lod: LODOptions3D::default(),
             blend: Default::default(),
+            debug_color: None,
         })
     );
 }

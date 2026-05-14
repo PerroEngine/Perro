@@ -118,15 +118,15 @@ fn parse_script_vars_object() {
 #[test]
 fn node_refs_use_at_before_bare_scene_key() {
     let src = r#"
-    $root = @Root
+    $root = @scene_root
 
-    [Root]
+    [scene_root]
     [Node/]
-    [/Root]
+    [/scene_root]
 
     [Child]
-    parent = @Root
-    script_vars = { target = @Root }
+    parent = $root
+    script_vars = { target = @scene_root }
     [Node/]
     [/Child]
     "#;
@@ -134,13 +134,19 @@ fn node_refs_use_at_before_bare_scene_key() {
     let scene = Parser::new(src).parse_scene();
     let child = find_node(&scene, "Child");
 
-    assert_eq!(scene.root.and_then(|k| scene.key_name(k)), Some("Root"));
-    assert_eq!(child.parent.and_then(|k| scene.key_name(k)), Some("Root"));
+    assert_eq!(
+        scene.root.and_then(|k| scene.key_name(k)),
+        Some("scene_root")
+    );
+    assert_eq!(
+        child.parent.and_then(|k| scene.key_name(k)),
+        Some("scene_root")
+    );
     assert!(
         child
             .script_vars
             .iter()
-            .any(|(name, value)| name.as_ref() == "target" && value.as_key() == Some("Root"))
+            .any(|(name, value)| name.as_ref() == "target" && value.as_key() == Some("scene_root"))
     );
 }
 
@@ -246,9 +252,13 @@ fn parse_root_of_without_type_block() {
 #[test]
 fn parse_header_only_node_without_type_block_defaults_to_node() {
     let src = r#"
-    $root = @root
+    $root = @scene_root
+    [scene_root]
+    [Node/]
+    [/scene_root]
+
     [relationship_manager]
-    parent = @root
+    parent = $root
     script = "res://scripts/relationship_manager.rs"
     script_vars = {
         max_character_id = 36
@@ -261,7 +271,10 @@ fn parse_header_only_node_without_type_block_defaults_to_node() {
 
     assert_eq!(node.data.ty.as_ref(), "Node");
     assert!(!node.has_data_override);
-    assert_eq!(node.parent.and_then(|k| scene.key_name(k)), Some("root"));
+    assert_eq!(
+        node.parent.and_then(|k| scene.key_name(k)),
+        Some("scene_root")
+    );
     assert_eq!(
         node.script.as_ref().map(|s| s.as_ref()),
         Some("res://scripts/relationship_manager.rs")
@@ -276,14 +289,14 @@ fn parse_header_only_node_without_type_block_defaults_to_node() {
 #[test]
 fn parse_self_closing_type_block() {
     let src = r#"
-    $root = @root
-    [root]
+    $root = @scene_root
+    [scene_root]
     [Node2D/]
-    [/root]
+    [/scene_root]
     "#;
 
     let scene = Parser::new(src).parse_scene();
-    let node = find_node(&scene, "root");
+    let node = find_node(&scene, "scene_root");
 
     assert!(node.has_data_override);
     assert_eq!(node.data.ty.as_ref(), "Node2D");
@@ -294,10 +307,10 @@ fn parse_self_closing_type_block() {
 #[test]
 fn scene_doc_writes_empty_type_block_self_closing() {
     let src = r#"
-    $root = @root
-    [root]
+    $root = @scene_root
+    [scene_root]
     [Node2D/]
-    [/root]
+    [/scene_root]
     "#;
 
     let doc = Parser::new(src).parse_scene_doc();
@@ -311,15 +324,15 @@ fn scene_doc_writes_empty_type_block_self_closing() {
 #[test]
 fn scene_doc_writes_valid_scene_and_syncs_children() {
     let src = r#"
-    $root = @root
+    $root = @scene_root
     $shared = { color: (1, 0, 0, 1), roughness: 0.5 }
 
-    [root]
+    [scene_root]
     [Node/]
-    [/root]
+    [/scene_root]
 
     [child]
-    parent = @root
+    parent = $root
     [MeshInstance3D]
         material = $shared
     [/MeshInstance3D]
@@ -328,7 +341,7 @@ fn scene_doc_writes_valid_scene_and_syncs_children() {
 
     let mut doc = Parser::new(src).parse_scene_doc();
     doc.normalize_links();
-    let root = find_node(&doc.scene, "root");
+    let root = find_node(&doc.scene, "scene_root");
     assert_eq!(root.children.len(), 1);
     assert_eq!(doc.scene.key_name(root.children[0]), Some("child"));
 
@@ -336,7 +349,7 @@ fn scene_doc_writes_valid_scene_and_syncs_children() {
     let reparsed = Parser::new(&text).parse_scene();
     assert_eq!(
         reparsed.root.and_then(|key| reparsed.key_name(key)),
-        Some("root")
+        Some("scene_root")
     );
     assert!(
         reparsed

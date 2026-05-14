@@ -764,6 +764,9 @@ impl Gpu {
                 self.last_prepare_water_3d_revision = waters_3d_revision;
             }
         } else if !needs_water {
+            if let Some(water) = self.water.as_mut() {
+                water.clear_active();
+            }
             self.last_prepare_water_2d_revision = u64::MAX;
             self.last_prepare_water_3d_revision = u64::MAX;
         }

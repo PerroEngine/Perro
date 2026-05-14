@@ -70,10 +70,10 @@ impl MeshBlendOptions {
             enabled: false,
             blend_layers: BitMask::ALL,
             blend_mask: BitMask::NONE,
-            distance: 0.10,
+            distance: 0.35,
             min_distance: 0.0,
-            noise_factor: 0.0,
-            noise_scale: 1.0,
+            noise_factor: 0.25,
+            noise_scale: 8.0,
         }
     }
 }

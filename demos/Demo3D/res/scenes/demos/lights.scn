@@ -1,6 +1,7 @@
 $root = @LightsDemo
 
 [LightsDemo]
+script = "res://scripts/lights_demo.rs"
     [Node3D]
         position = (0, 0, 0)
     [/Node3D]
@@ -18,7 +19,7 @@ script_vars = {
         active = true
         perspective_fov_y_degrees = 65.0
         [Node3D]
-            position = (0, 4, 12)
+            position = (0, 4.4, 13.5)
             rotation = (-0.11, 0.0, 0.0, 0.994)
         [/Node3D]
     [/Camera3D]
@@ -27,88 +28,345 @@ script_vars = {
 [Ambient]
 parent = @LightsDemo
     [AmbientLight3D]
-        color = (0.15, 0.18, 0.25)
-        intensity = 0.18
+        color = (0.10, 0.12, 0.18)
+        intensity = 0.12
     [/AmbientLight3D]
 [/Ambient]
+
+[KeyRay]
+parent = @LightsDemo
+    [RayLight3D]
+        color = (0.65, 0.72, 1.0)
+        intensity = 0.35
+        [Node3D]
+            rotation_deg = (-42, -30, 0)
+        [/Node3D]
+    [/RayLight3D]
+[/KeyRay]
 
 [Floor]
 parent = @LightsDemo
     [MeshInstance3D]
         mesh = "__cube__"
-        material = { type = "standard" base_color_factor = (0.16, 0.16, 0.18, 1.0) roughness_factor = 0.75 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = { type = "standard" base_color_factor = (0.10, 0.11, 0.13, 1.0) roughness_factor = 0.82 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
             position = (0, -0.55, 0)
-            scale = (14, 0.1, 14)
+            scale = (15, 0.1, 15)
         [/Node3D]
     [/MeshInstance3D]
 [/Floor]
 
-[CenterSphere]
+[BackWall]
 parent = @LightsDemo
     [MeshInstance3D]
-        mesh = "__sphere__"
-        material = { type = "standard" base_color_factor = (0.74, 0.76, 0.80, 1.0) roughness_factor = 0.35 metallic_factor = 0.1 alpha_mode = "OPAQUE" double_sided = false }
+        mesh = "__cube__"
+        material = { type = "standard" base_color_factor = (0.11, 0.12, 0.16, 1.0) roughness_factor = 0.68 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
-            position = (0, 1.0, 0)
-            scale = (1.6, 1.6, 1.6)
+            position = (0, 3.0, -6.4)
+            scale = (15, 7.0, 0.12)
         [/Node3D]
     [/MeshInstance3D]
-[/CenterSphere]
+[/BackWall]
 
-[RedLightMarker]
+[MirrorBlock]
+parent = @LightsDemo
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = { type = "standard" base_color_factor = (0.62, 0.67, 0.72, 1.0) roughness_factor = 0.18 metallic_factor = 0.75 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (-2.9, 0.95, -1.0)
+            rotation_deg = (0, 28, 0)
+            scale = (1.2, 2.0, 1.2)
+        [/Node3D]
+    [/MeshInstance3D]
+[/MirrorBlock]
+
+[MatteSphere]
 parent = @LightsDemo
     [MeshInstance3D]
         mesh = "__sphere__"
-        material = { type = "unlit" base_color_factor = (1.0, 0.12, 0.08, 1.0) emissive_factor = (1.0, 0.12, 0.08) alpha_mode = "OPAQUE" double_sided = false }
+        material = { type = "standard" base_color_factor = (0.78, 0.80, 0.83, 1.0) roughness_factor = 0.48 metallic_factor = 0.05 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
-            position = (-3, 2.5, 1.5)
+            position = (0, 1.05, 0)
+            scale = (1.55, 1.55, 1.55)
+        [/Node3D]
+    [/MeshInstance3D]
+[/MatteSphere]
+
+[ToonPyramid]
+parent = @LightsDemo
+    [MeshInstance3D]
+        mesh = "__sq_pyr__"
+        material = { type = "toon" base_color_factor = (0.92, 0.38, 0.24, 1.0) band_count = 4 rim_strength = 0.32 outline_width = 0.02 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (2.9, 0.75, -1.2)
+            rotation_deg = (0, -24, 0)
+            scale = (1.25, 1.8, 1.25)
+        [/Node3D]
+    [/MeshInstance3D]
+[/ToonPyramid]
+
+[GlassPrism]
+parent = @LightsDemo
+    [MeshInstance3D]
+        mesh = "__tri_prism__"
+        material = { type = "standard" base_color_factor = (0.25, 0.76, 1.0, 0.55) roughness_factor = 0.08 metallic_factor = 0.0 alpha_mode = "BLEND" double_sided = true }
+        [Node3D]
+            position = (-0.2, 0.75, 3.1)
+            rotation_deg = (0, 30, 0)
+            scale = (1.6, 1.4, 1.6)
+        [/Node3D]
+    [/MeshInstance3D]
+[/GlassPrism]
+
+[GoldCylinder]
+parent = @LightsDemo
+    [MeshInstance3D]
+        mesh = "__cylinder__"
+        material = { type = "standard" base_color_factor = (1.0, 0.70, 0.24, 1.0) roughness_factor = 0.28 metallic_factor = 0.85 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (-4.7, 0.75, 2.4)
+            scale = (0.8, 1.6, 0.8)
+        [/Node3D]
+    [/MeshInstance3D]
+[/GoldCylinder]
+
+[BlueCone]
+parent = @LightsDemo
+    [MeshInstance3D]
+        mesh = "__cone__"
+        material = { type = "toon" base_color_factor = (0.18, 0.35, 1.0, 1.0) band_count = 3 rim_strength = 0.44 outline_width = 0.02 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (4.7, 0.75, 2.2)
+            rotation_deg = (0, -20, 0)
+            scale = (1.0, 1.7, 1.0)
+        [/Node3D]
+    [/MeshInstance3D]
+[/BlueCone]
+
+[GreenCapsule]
+parent = @LightsDemo
+    [MeshInstance3D]
+        mesh = "__capsule__"
+        material = { type = "standard" base_color_factor = (0.36, 0.92, 0.42, 1.0) roughness_factor = 0.55 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (0, 1.0, -3.8)
+            rotation_deg = (0, 0, 18)
+            scale = (1.0, 2.1, 1.0)
+        [/Node3D]
+    [/MeshInstance3D]
+[/GreenCapsule]
+
+[RedOrb]
+parent = @LightsDemo
+    [MeshInstance3D]
+        mesh = "__sphere__"
+        material = { type = "unlit" base_color_factor = (1.0, 0.08, 0.05, 1.0) emissive_factor = (1.0, 0.08, 0.05) alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (5.2, 2.6, 0)
             scale = (0.25, 0.25, 0.25)
         [/Node3D]
     [/MeshInstance3D]
-[/RedLightMarker]
+[/RedOrb]
 
 [RedPoint]
-parent = @RedLightMarker
+parent = @RedOrb
     [PointLight3D]
-        color = (1.0, 0.12, 0.08)
-        intensity = 5.0
+        color = (1.0, 0.08, 0.05)
+        intensity = 4.9
         range = 8.0
     [/PointLight3D]
 [/RedPoint]
 
-[BlueLightMarker]
+[BlueOrb]
 parent = @LightsDemo
     [MeshInstance3D]
-        mesh = "__sphere__"
-        material = { type = "unlit" base_color_factor = (0.08, 0.35, 1.0, 1.0) emissive_factor = (0.08, 0.35, 1.0) alpha_mode = "OPAQUE" double_sided = false }
+        mesh = "__cube__"
+        material = { type = "unlit" base_color_factor = (0.08, 0.30, 1.0, 1.0) emissive_factor = (0.08, 0.30, 1.0) alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
-            position = (3, 2.5, 1.5)
-            scale = (0.25, 0.25, 0.25)
+            position = (-4.4, 1.8, 0)
+            scale = (0.28, 0.28, 0.28)
         [/Node3D]
     [/MeshInstance3D]
-[/BlueLightMarker]
+[/BlueOrb]
 
 [BluePoint]
-parent = @BlueLightMarker
+parent = @BlueOrb
     [PointLight3D]
-        color = (0.08, 0.35, 1.0)
-        intensity = 5.0
+        color = (0.08, 0.30, 1.0)
+        intensity = 4.7
         range = 8.0
     [/PointLight3D]
 [/BluePoint]
 
-[Spot]
+[GreenOrb]
 parent = @LightsDemo
+    [MeshInstance3D]
+        mesh = "__cylinder__"
+        material = { type = "unlit" base_color_factor = (0.20, 1.0, 0.28, 1.0) emissive_factor = (0.20, 1.0, 0.28) alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (0, 3.3, 1.7)
+            scale = (0.22, 0.38, 0.22)
+        [/Node3D]
+    [/MeshInstance3D]
+[/GreenOrb]
+
+[GreenPoint]
+parent = @GreenOrb
+    [PointLight3D]
+        color = (0.20, 1.0, 0.28)
+        intensity = 4.5
+        range = 8.0
+    [/PointLight3D]
+[/GreenPoint]
+
+[AmberOrb]
+parent = @LightsDemo
+    [MeshInstance3D]
+        mesh = "__cone__"
+        material = { type = "unlit" base_color_factor = (1.0, 0.56, 0.10, 1.0) emissive_factor = (1.0, 0.56, 0.10) alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (0, 0.55, 4.8)
+            scale = (0.34, 0.42, 0.34)
+        [/Node3D]
+    [/MeshInstance3D]
+[/AmberOrb]
+
+[AmberPoint]
+parent = @AmberOrb
+    [PointLight3D]
+        color = (1.0, 0.56, 0.10)
+        intensity = 4.4
+        range = 7.5
+    [/PointLight3D]
+[/AmberPoint]
+
+[VioletOrb]
+parent = @LightsDemo
+    [MeshInstance3D]
+        mesh = "__sq_pyr__"
+        material = { type = "unlit" base_color_factor = (0.78, 0.24, 1.0, 1.0) emissive_factor = (0.78, 0.24, 1.0) alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (-4.2, 2.3, 0)
+            scale = (0.34, 0.34, 0.34)
+        [/Node3D]
+    [/MeshInstance3D]
+[/VioletOrb]
+
+[VioletPoint]
+parent = @VioletOrb
+    [PointLight3D]
+        color = (0.78, 0.24, 1.0)
+        intensity = 4.8
+        range = 8.0
+    [/PointLight3D]
+[/VioletPoint]
+
+[CyanOrb]
+parent = @LightsDemo
+    [MeshInstance3D]
+        mesh = "__tri_pyr__"
+        material = { type = "unlit" base_color_factor = (0.0, 0.92, 1.0, 1.0) emissive_factor = (0.0, 0.92, 1.0) alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (4.2, 2.0, 0)
+            scale = (0.35, 0.35, 0.35)
+        [/Node3D]
+    [/MeshInstance3D]
+[/CyanOrb]
+
+[CyanPoint]
+parent = @CyanOrb
+    [PointLight3D]
+        color = (0.0, 0.92, 1.0)
+        intensity = 4.8
+        range = 8.0
+    [/PointLight3D]
+[/CyanPoint]
+
+[PinkOrb]
+parent = @LightsDemo
+    [MeshInstance3D]
+        mesh = "__capsule__"
+        material = { type = "unlit" base_color_factor = (1.0, 0.18, 0.55, 1.0) emissive_factor = (1.0, 0.18, 0.55) alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (0, 4.7, 0)
+            scale = (0.24, 0.42, 0.24)
+        [/Node3D]
+    [/MeshInstance3D]
+[/PinkOrb]
+
+[PinkPoint]
+parent = @PinkOrb
+    [PointLight3D]
+        color = (1.0, 0.18, 0.55)
+        intensity = 4.3
+        range = 7.5
+    [/PointLight3D]
+[/PinkPoint]
+
+[LimeOrb]
+parent = @LightsDemo
+    [MeshInstance3D]
+        mesh = "__tri_prism__"
+        material = { type = "unlit" base_color_factor = (0.72, 1.0, 0.08, 1.0) emissive_factor = (0.72, 1.0, 0.08) alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (0, 1.1, 5.0)
+            scale = (0.32, 0.32, 0.32)
+        [/Node3D]
+    [/MeshInstance3D]
+[/LimeOrb]
+
+[LimePoint]
+parent = @LimeOrb
+    [PointLight3D]
+        color = (0.72, 1.0, 0.08)
+        intensity = 4.2
+        range = 7.5
+    [/PointLight3D]
+[/LimePoint]
+
+[WhiteSpotRig]
+parent = @LightsDemo
+    [MeshInstance3D]
+        mesh = "__cone__"
+        material = { type = "unlit" base_color_factor = (0.95, 0.98, 1.0, 1.0) emissive_factor = (0.95, 0.98, 1.0) alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (0, 5.3, -4.2)
+            scale = (0.28, 0.42, 0.28)
+        [/Node3D]
+    [/MeshInstance3D]
+[/WhiteSpotRig]
+
+[WhiteSpot]
+parent = @WhiteSpotRig
     [SpotLight3D]
-        color = (1.0, 0.86, 0.50)
+        color = (0.95, 0.98, 1.0)
         intensity = 8.0
         range = 14.0
-        inner_angle_degrees = 18.0
-        outer_angle_degrees = 34.0
-        [Node3D]
-            position = (0, 5, -4)
-            rotation_deg = (-55, 0, 0)
-        [/Node3D]
+        inner_angle_degrees = 14.0
+        outer_angle_degrees = 30.0
     [/SpotLight3D]
-[/Spot]
+[/WhiteSpot]
+
+[GoldSpotRig]
+parent = @LightsDemo
+    [MeshInstance3D]
+        mesh = "__cone__"
+        material = { type = "unlit" base_color_factor = (1.0, 0.78, 0.34, 1.0) emissive_factor = (1.0, 0.78, 0.34) alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            position = (4.1, 3.8, 4.1)
+            scale = (0.28, 0.42, 0.28)
+        [/Node3D]
+    [/MeshInstance3D]
+[/GoldSpotRig]
+
+[GoldSpot]
+parent = @GoldSpotRig
+    [SpotLight3D]
+        color = (1.0, 0.78, 0.34)
+        intensity = 7.0
+        range = 13.0
+        inner_angle_degrees = 16.0
+        outer_angle_degrees = 36.0
+    [/SpotLight3D]
+[/GoldSpot]

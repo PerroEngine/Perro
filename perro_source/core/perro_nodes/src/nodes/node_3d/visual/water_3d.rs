@@ -15,7 +15,7 @@ impl WaterBody3D {
                 shape: crate::WaterShape::box_volume(perro_structs::Vector3::new(
                     128.0, 12.0, 128.0,
                 )),
-                resolution: [128, 128],
+                resolution: [3201, 3201],
                 depth: 12.0,
                 flow: perro_structs::Vector2::ZERO,
                 wind: perro_structs::Vector2::new(1.0, 0.0),
@@ -28,8 +28,8 @@ impl WaterBody3D {
                 physics: crate::WaterPhysicsParams {
                     buoyancy: 1.0,
                     drag: 0.35,
-                    wake_strength: 1.0,
-                    foam_strength: 0.65,
+                    wake_strength: 1.35,
+                    foam_strength: 0.9,
                     sample_readback_rate: 30.0,
                 },
                 lod: crate::WaterLodParams {

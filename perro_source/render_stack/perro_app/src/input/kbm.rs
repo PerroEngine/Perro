@@ -57,7 +57,7 @@ impl KbmInput {
             WindowEvent::CursorMoved { position, .. } => {
                 if let Some(prev) = self.last_cursor_position {
                     let dx = (position.x - prev.x) as f32;
-                    let dy = (position.y - prev.y) as f32;
+                    let dy = (prev.y - position.y) as f32;
                     app.add_mouse_delta(dx, dy);
                 }
                 app.set_mouse_position(position.x as f32, position.y as f32);
@@ -86,16 +86,8 @@ impl KbmInput {
         delta_y: f64,
     ) {
         let dx = delta_x as f32;
-        let dy = delta_y as f32;
+        let dy = -delta_y as f32;
         app.add_mouse_delta(dx, dy);
-
-        let next = if let Some(prev) = self.last_cursor_position {
-            winit::dpi::PhysicalPosition::new(prev.x + delta_x, prev.y + delta_y)
-        } else {
-            winit::dpi::PhysicalPosition::new(delta_x, delta_y)
-        };
-        app.set_mouse_position(next.x as f32, next.y as f32);
-        self.last_cursor_position = Some(next);
     }
 
     pub fn reset_cursor_position(&mut self) {

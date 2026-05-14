@@ -45,7 +45,8 @@ methods!({
         });
 
         if let Some(mesh) = get_child!(ctx.run, ctx.id, PROJECTILE_MESH_NODE_NAME) {
-            let _ = set_local_scale_3d!(ctx.run, mesh, Vector3::new(radius, radius, radius));
+            let diameter = radius * 2.0;
+            let _ = set_local_scale_3d!(ctx.run, mesh, Vector3::new(diameter, diameter, diameter));
         }
         if let Some(shape) = get_child!(ctx.run, ctx.id, PROJECTILE_SHAPE_NODE_NAME) {
             with_node_mut!(ctx.run, CollisionShape3D, shape, |shape| {

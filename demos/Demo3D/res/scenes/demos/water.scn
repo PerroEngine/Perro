@@ -1,6 +1,7 @@
 $root = @WaterDemo
 
 [WaterDemo]
+script = "res://scripts/water_demo.rs"
     [Node3D]
         position = (0, 0, 0)
     [/Node3D]
@@ -11,87 +12,230 @@ parent = @WaterDemo
 script = "res://scripts/demo_freecam_3d.rs"
 script_vars = {
     yaw = 0.0
-    pitch = -0.24
-    speed = 9.0
+    pitch = -0.18
+    speed = 12.0
 }
     [Camera3D]
         active = true
-        perspective_fov_y_degrees = 65.0
+        perspective_fov_y_degrees = 68.0
         [Node3D]
-            position = (0, 5, 14)
-            rotation = (-0.12, 0.0, 0.0, 0.993)
+            position = (0, 5, 18)
+            rotation = (-0.09, 0.0, 0.0, 0.996)
         [/Node3D]
     [/Camera3D]
 [/DemoCamera]
 
+[Projectiles]
+parent = @WaterDemo
+    [Node3D]
+    [/Node3D]
+[/Projectiles]
+
 [Ambient]
 parent = @WaterDemo
     [AmbientLight3D]
-        color = (0.55, 0.70, 0.95)
-        intensity = 0.45
+        color = (0.58, 0.70, 0.90)
+        intensity = 0.38
     [/AmbientLight3D]
 [/Ambient]
 
 [Sun]
 parent = @WaterDemo
     [RayLight3D]
-        color = (1.0, 0.95, 0.82)
-        intensity = 2.0
+        color = (1.0, 0.94, 0.82)
+        intensity = 2.4
         [Node3D]
-            rotation_deg = (-42, 25, 0)
+            rotation_deg = (-48, 28, 0)
         [/Node3D]
     [/RayLight3D]
 [/Sun]
 
-[LakeBed]
+[BedCenter]
 parent = @WaterDemo
     [MeshInstance3D]
         mesh = "__cube__"
-        material = { type = "standard" base_color_factor = (0.24, 0.27, 0.20, 1.0) roughness_factor = 0.95 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = { type = "standard" base_color_factor = (0.22, 0.25, 0.20, 1.0) roughness_factor = 0.95 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         [Node3D]
-            position = (0, -1.2, 0)
-            scale = (16, 0.2, 16)
+            position = (0, -1.25, 0)
+            scale = (12, 0.18, 12)
         [/Node3D]
     [/MeshInstance3D]
-[/LakeBed]
+[/BedCenter]
+
+[ReefBlockA]
+parent = @WaterDemo
+    [StaticBody3D]
+        [Node3D]
+            position = (-12, 1.0, -8)
+            rotation_deg = (0, 18, 0)
+        [/Node3D]
+    [/StaticBody3D]
+[/ReefBlockA]
+
+[ReefBlockAShape]
+parent = @ReefBlockA
+    [CollisionShape3D]
+        shape = { type = "cube" size = (1.0, 1.0, 1.0) }
+        [Node3D]
+            scale = (4.5, 6.0, 2.2)
+        [/Node3D]
+    [/CollisionShape3D]
+[/ReefBlockAShape]
+
+[ReefBlockAMesh]
+parent = @ReefBlockA
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = { type = "standard" base_color_factor = (0.32, 0.31, 0.25, 1.0) roughness_factor = 0.92 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            scale = (4.5, 6.0, 2.2)
+        [/Node3D]
+    [/MeshInstance3D]
+[/ReefBlockAMesh]
+
+[ReefBlockB]
+parent = @WaterDemo
+    [StaticBody3D]
+        [Node3D]
+            position = (10, 0.65, -3)
+            rotation_deg = (0, -28, 0)
+        [/Node3D]
+    [/StaticBody3D]
+[/ReefBlockB]
+
+[ReefBlockBShape]
+parent = @ReefBlockB
+    [CollisionShape3D]
+        shape = { type = "cube" size = (1.0, 1.0, 1.0) }
+        [Node3D]
+            scale = (2.5, 4.2, 6.5)
+        [/Node3D]
+    [/CollisionShape3D]
+[/ReefBlockBShape]
+
+[ReefBlockBMesh]
+parent = @ReefBlockB
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = { type = "standard" base_color_factor = (0.38, 0.36, 0.28, 1.0) roughness_factor = 0.88 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            scale = (2.5, 4.2, 6.5)
+        [/Node3D]
+    [/MeshInstance3D]
+[/ReefBlockBMesh]
+
+[ReefRockA]
+parent = @WaterDemo
+    [StaticBody3D]
+        [Node3D]
+            position = (-3, 0.8, 11)
+        [/Node3D]
+    [/StaticBody3D]
+[/ReefRockA]
+
+[ReefRockAShape]
+parent = @ReefRockA
+    [CollisionShape3D]
+        shape = { type = "cylinder" radius = 0.5 half_height = 0.5 }
+        [Node3D]
+            scale = (2.4, 1.7, 2.4)
+        [/Node3D]
+    [/CollisionShape3D]
+[/ReefRockAShape]
+
+[ReefRockAMesh]
+parent = @ReefRockA
+    [MeshInstance3D]
+        mesh = "__sphere__"
+        material = { type = "standard" base_color_factor = (0.26, 0.29, 0.24, 1.0) roughness_factor = 0.94 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            scale = (2.4, 1.7, 2.4)
+        [/Node3D]
+    [/MeshInstance3D]
+[/ReefRockAMesh]
+
+[ReefRockB]
+parent = @WaterDemo
+    [StaticBody3D]
+        [Node3D]
+            position = (17, 0.35, 13)
+        [/Node3D]
+    [/StaticBody3D]
+[/ReefRockB]
+
+[ReefRockBShape]
+parent = @ReefRockB
+    [CollisionShape3D]
+        shape = { type = "cylinder" radius = 0.5 half_height = 0.5 }
+        [Node3D]
+            scale = (1.35, 0.9, 1.35)
+        [/Node3D]
+    [/CollisionShape3D]
+[/ReefRockBShape]
+
+[ReefRockBMesh]
+parent = @ReefRockB
+    [MeshInstance3D]
+        mesh = "__sphere__"
+        material = { type = "standard" base_color_factor = (0.30, 0.27, 0.22, 1.0) roughness_factor = 0.96 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            scale = (1.35, 0.9, 1.35)
+        [/Node3D]
+    [/MeshInstance3D]
+[/ReefRockBMesh]
+
+[ReefPillar]
+parent = @WaterDemo
+    [StaticBody3D]
+        [Node3D]
+            position = (-20, 1.55, 9)
+            rotation_deg = (0, 8, 0)
+        [/Node3D]
+    [/StaticBody3D]
+[/ReefPillar]
+
+[ReefPillarShape]
+parent = @ReefPillar
+    [CollisionShape3D]
+        shape = { type = "cube" size = (1.0, 1.0, 1.0) }
+        [Node3D]
+            scale = (1.8, 7.0, 1.8)
+        [/Node3D]
+    [/CollisionShape3D]
+[/ReefPillarShape]
+
+[ReefPillarMesh]
+parent = @ReefPillar
+    [MeshInstance3D]
+        mesh = "__cube__"
+        material = { type = "standard" base_color_factor = (0.24, 0.23, 0.20, 1.0) roughness_factor = 0.90 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        [Node3D]
+            scale = (1.8, 7.0, 1.8)
+        [/Node3D]
+    [/MeshInstance3D]
+[/ReefPillarMesh]
 
 [Water]
 parent = @WaterDemo
     [WaterBody3D]
-        shape = { type = "cube" size = (14, 2, 14) }
-        resolution = (96, 96)
+        shape = { type = "cube" size = (500, 35, 500) }
+        base_fidelity = 1
         depth = 2.0
-        flow = (0.25, 0.08)
-        wind = (0.8, 0.25)
-        idle_mode = "calm"
-        wave_speed = 1.0
-        wave_scale = 0.75
-        damping = 0.985
-        buoyancy = 1.0
-        drag = 0.35
-        wake_strength = 1.0
-        foam_strength = 0.55
-        sample_readback_rate = 20
-        lod_near = 96
-        lod_mid = 192
-        lod_far = 384
-        min_resolution = 32
-        shallow_color = (0.24, 0.78, 0.92, 0.52)
-        deep_color = (0.02, 0.16, 0.38, 0.78)
+        flow = (0.10, 0.03)
+        wind = (0.8, 0.2)
+        idle_mode = "chop"
+        wave_speed = 0.38
+        wave_scale = 0.55
+        damping = 0.988
+        buoyancy = 1.1
+        drag = 0.36
+        wake_strength = 1.20
+        foam_strength = 0.72
+        coastline = { foam_color = (0.68, 0.86, 0.92, 0.72) foam_strength = 0.52 foam_width = 1.65 cutoff_softness = 0.45 wave_reflection = 0.42 wave_damping = 0.48 edge_noise = 0.06 }
+        shallow_color = (0.04, 0.25, 0.34, 0.95)
+        deep_color = (0.005, 0.035, 0.15, 0.99)
         [Node3D]
             position = (0, 0, 0)
         [/Node3D]
     [/WaterBody3D]
 [/Water]
-
-[FloatMarker]
-parent = @WaterDemo
-    [MeshInstance3D]
-        mesh = "__sphere__"
-        material = { type = "standard" base_color_factor = (1.0, 0.72, 0.20, 1.0) roughness_factor = 0.40 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
-        [Node3D]
-            position = (0, 0.6, 0)
-            scale = (0.55, 0.55, 0.55)
-        [/Node3D]
-    [/MeshInstance3D]
-[/FloatMarker]

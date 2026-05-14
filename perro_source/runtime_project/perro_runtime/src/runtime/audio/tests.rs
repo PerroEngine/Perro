@@ -506,6 +506,104 @@ fn audio_mask_3d_blocks_without_physical_collision() {
 }
 
 #[test]
+fn audio_debug_rays_color_direct_vs_wall_diffusion() {
+    let mut direct = Runtime::new();
+    direct.set_audio_debug_rays(true);
+    assert!(direct.play_runtime_audio_3d(
+        looped_audio(),
+        Vector3::new(5.0, 0.0, 0.0),
+        spatial_options(10.0),
+    ));
+    direct.update_audio_propagation(1.0);
+    let mut commands = Vec::new();
+    direct.drain_render_commands(&mut commands);
+    assert!(commands.iter().any(|cmd| {
+        matches!(
+            cmd,
+            perro_render_bridge::RenderCommand::ThreeD(command)
+                if matches!(
+                    command.as_ref(),
+                    perro_render_bridge::Command3D::DrawDebugLine3D { color, .. }
+                        if color[1] > color[2]
+                )
+        )
+    }));
+    assert!(commands.iter().all(|cmd| {
+        !matches!(
+            cmd,
+            perro_render_bridge::RenderCommand::ThreeD(command)
+                if matches!(
+                    command.as_ref(),
+                    perro_render_bridge::Command3D::DrawDebugLine3D { node, .. }
+                        | perro_render_bridge::Command3D::DrawDebugPoint3D { node, .. }
+                        if node.is_nil()
+                )
+        )
+    }));
+
+    let mut wall = Runtime::new();
+    wall.set_audio_debug_rays(true);
+    let mask = wall.nodes.insert(SceneNode::new(SceneNodeData::AudioMask3D(
+        AudioMask3D::new(),
+    )));
+    if let Some(node) = wall.nodes.get_mut(mask)
+        && let SceneNodeData::AudioMask3D(mask) = &mut node.data
+    {
+        mask.material.transmission = 0.2;
+        mask.material.reflection = 0.45;
+        mask.material.absorption = 0.6;
+    }
+    let shape = NodeAPI::create::<CollisionShape3D>(&mut wall);
+    assert!(NodeAPI::reparent(&mut wall, mask, shape));
+    if let Some(node) = wall.nodes.get_mut(shape)
+        && let SceneNodeData::CollisionShape3D(shape) = &mut node.data
+    {
+        shape.shape = perro_nodes::Shape3D::Cube {
+            size: Vector3::new(1.0, 2.0, 2.0),
+        };
+    }
+    assert!(NodeAPI::set_global_transform_3d(
+        &mut wall,
+        mask,
+        Transform3D::new(
+            Vector3::new(2.5, 0.0, 0.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE
+        ),
+    ));
+    assert!(wall.play_runtime_audio_3d(
+        looped_audio(),
+        Vector3::new(5.0, 0.0, 0.0),
+        spatial_options(10.0),
+    ));
+    wall.update_audio_propagation(1.0);
+    commands.clear();
+    wall.drain_render_commands(&mut commands);
+    assert!(commands.iter().any(|cmd| {
+        matches!(
+            cmd,
+            perro_render_bridge::RenderCommand::ThreeD(command)
+                if matches!(
+                    command.as_ref(),
+                    perro_render_bridge::Command3D::DrawDebugLine3D { color, thickness, .. }
+                        if color[2] > color[1] && *thickness > 0.0
+                )
+        )
+    }));
+    assert!(commands.iter().any(|cmd| {
+        matches!(
+            cmd,
+            perro_render_bridge::RenderCommand::ThreeD(command)
+                if matches!(
+                    command.as_ref(),
+                    perro_render_bridge::Command3D::DrawDebugPoint3D { color, .. }
+                        if color[2] > color[1]
+                )
+        )
+    }));
+}
+
+#[test]
 fn reflection_loses_strength_per_bounce_and_stops_at_cutoff() {
     let mut runtime = Runtime::new();
     runtime.audio.config.energy_cutoff = 0.02;
@@ -1091,7 +1189,7 @@ fn audio_effect_zone_3d_mixes_effect_when_path_crosses() {
 }
 
 #[test]
-fn attached_sound_follows_and_freezes_after_remove() {
+fn attached_sound_removed_with_node() {
     let mut runtime = Runtime::new();
     let node = NodeAPI::create::<perro_nodes::Node2D>(&mut runtime);
     assert!(
@@ -1109,10 +1207,52 @@ fn attached_sound_follows_and_freezes_after_remove() {
     );
     assert!(NodeAPI::remove_node(&mut runtime, node));
     runtime.update_audio_propagation(1.0);
-    assert_eq!(
-        runtime.audio.sounds[0].last_2d,
-        Some(Vector2::new(3.0, 0.0))
+    assert!(runtime.audio.sounds.is_empty());
+}
+
+#[test]
+fn removed_attached_source_clears_3d_audio_debug_rays() {
+    let mut runtime = Runtime::new();
+    runtime.set_audio_debug_rays(true);
+    runtime.resource_api.set_audio_listener_3d(
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+        perro_structs::AudioListenerOptions::new(),
     );
+    let node = NodeAPI::create::<perro_nodes::Node3D>(&mut runtime);
+    assert!(NodeAPI::set_global_transform_3d(
+        &mut runtime,
+        node,
+        Transform3D::new(
+            Vector3::new(0.0, 0.0, -5.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE
+        ),
+    ));
+    assert!(
+        runtime.play_runtime_audio_attached(None, looped_audio(), node, spatial_options(10.0),)
+    );
+    runtime.update_audio_propagation(1.0);
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    assert!(commands.iter().any(|cmd| {
+        matches!(
+            cmd,
+            perro_render_bridge::RenderCommand::ThreeD(command)
+                if matches!(command.as_ref(), perro_render_bridge::Command3D::DrawDebugLine3D { .. })
+        )
+    }));
+
+    assert!(NodeAPI::remove_node(&mut runtime, node));
+    commands.clear();
+    runtime.drain_render_commands(&mut commands);
+    assert!(commands.iter().any(|cmd| {
+        matches!(
+            cmd,
+            perro_render_bridge::RenderCommand::ThreeD(command)
+                if matches!(command.as_ref(), perro_render_bridge::Command3D::RemoveNode { .. })
+        )
+    }));
 }
 
 #[test]

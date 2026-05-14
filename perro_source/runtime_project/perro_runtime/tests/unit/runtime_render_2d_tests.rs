@@ -428,6 +428,26 @@ fn sprite_becoming_invisible_emits_remove_node() {
 }
 
 #[test]
+fn removed_water_2d_emits_remove_node() {
+    let mut runtime = Runtime::new();
+    let water = NodeAPI::create::<WaterBody2D>(&mut runtime);
+
+    runtime.extract_render_2d_commands();
+    let first = collect_commands(&mut runtime);
+    assert!(first.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::UpsertWater { node, .. }) if *node == water
+    )));
+
+    assert!(NodeAPI::remove_node(&mut runtime, water));
+    let second = collect_commands(&mut runtime);
+    assert!(second.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::RemoveNode { node }) if *node == water
+    )));
+}
+
+#[test]
 fn unchanged_camera_2d_skips_redundant_set_camera() {
     let mut runtime = Runtime::new();
     let mut camera = Camera2D::new();

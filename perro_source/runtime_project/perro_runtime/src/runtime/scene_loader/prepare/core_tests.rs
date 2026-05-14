@@ -9,7 +9,7 @@ mod tests {
     fn water_body_scene_fields_parse() {
         let scene = Parser::new(
             r#"
-            @root = water
+            $root = @water
             [water]
             [WaterBody2D]
                 shape = { type="quad" width=64 height=32 }
@@ -80,17 +80,17 @@ mod tests {
                 assert_eq!(node.water.lod.min_resolution, [16, 16]);
                 assert_eq!(node.water.collision_layers.bits(), 0b1010);
                 assert_eq!(node.water.collision_mask.bits(), 0b101);
-                assert_eq!(
-                    node.water.optics.deep_color.to_rgba(),
-                    [0.0, 0.1, 0.2, 0.9]
-                );
+                assert_eq!(node.water.optics.deep_color.to_rgba(), [0.0, 0.1, 0.2, 0.9]);
                 assert_eq!(
                     node.water.optics.shallow_color.to_rgba(),
                     [0.1, 0.5, 0.7, 0.35]
                 );
                 assert_eq!(node.water.optics.shallow_depth, 10.0);
                 assert_eq!(node.water.optics.sky_bias.ratio(), 0.4);
-                assert_eq!(node.water.coastline.foam_color.to_rgba(), [0.8, 0.9, 1.0, 1.0]);
+                assert_eq!(
+                    node.water.coastline.foam_color.to_rgba(),
+                    [0.8, 0.9, 1.0, 1.0]
+                );
                 assert_eq!(node.water.coastline.foam_strength, 0.9);
                 assert_eq!(node.water.coastline.foam_width, 2.0);
                 assert_eq!(node.water.coastline.cutoff_softness, 0.4);
@@ -107,7 +107,7 @@ mod tests {
     fn water_body_shape_fields_parse() {
         let scene = Parser::new(
             r#"
-            @root = lake2d
+            $root = @lake2d
             [lake2d]
             [WaterBody2D]
                 shape = { type="circle" radius=24 }
@@ -161,10 +161,74 @@ mod tests {
     }
 
     #[test]
+    fn water_vertices_per_meter_derives_resolution_from_shape() {
+        let scene = Parser::new(
+            r#"
+            $root = @water
+            [water]
+            [WaterBody3D]
+                vertices_per_meter = 2
+                shape = { type="cube" size=(20, 8, 10) }
+            [/WaterBody3D]
+            [/water]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+        let water = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "water")
+            .expect("water node");
+
+        match &water.node.data {
+            SceneNodeData::WaterBody3D(node) => {
+                assert_eq!(node.water.resolution, [41, 21]);
+            }
+            other => panic!("expected WaterBody3D node, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn water_base_fidelity_scales_from_high_quality_default_density() {
+        let scene = Parser::new(
+            r#"
+            $root = @water
+            [water]
+            [WaterBody3D]
+                base_fidelity = 1
+                shape = { type="cube" size=(20, 8, 10) }
+            [/WaterBody3D]
+            [/water]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+        let water = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "water")
+            .expect("water node");
+
+        match &water.node.data {
+            SceneNodeData::WaterBody3D(node) => {
+                assert_eq!(node.water.resolution, [501, 251]);
+            }
+            other => panic!("expected WaterBody3D node, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn root_of_merges_root_defaults_overrides_and_children() {
         let host = Parser::new(
             r#"
-            @root = host
+            $root = @host
             [host]
             root_of = "res://base.scn"
             script_vars = {
@@ -188,7 +252,7 @@ mod tests {
 
         let base = Parser::new(
             r#"
-            @root = base_root
+            $root = @base_root
             [base_root]
             script = "res://base_script.rs"
             script_vars = {
@@ -278,7 +342,7 @@ mod tests {
     fn root_of_script_clear_prevents_inherited_script() {
         let host = Parser::new(
             r#"
-            @root = host
+            $root = @host
             [host]
             root_of = "res://base.scn"
             script = null
@@ -290,7 +354,7 @@ mod tests {
 
         let base = Parser::new(
             r#"
-            @root = base_root
+            $root = @base_root
             [base_root]
             script = "res://base_script.rs"
             [Node/]
@@ -317,7 +381,7 @@ mod tests {
     fn root_of_without_host_type_block_inherits_template_root_data() {
         let host = Parser::new(
             r#"
-            @root = host
+            $root = @host
             [host]
             root_of = "res://base.scn"
             [/host]
@@ -327,7 +391,7 @@ mod tests {
 
         let base = Parser::new(
             r#"
-            @root = base_root
+            $root = @base_root
             [base_root]
             [Node2D]
                 position = (7, 8)
@@ -363,12 +427,12 @@ mod tests {
     fn scene_loader_accepts_rotation_deg_for_spatial_nodes() {
         let scene = Parser::new(
             r#"
-            @root = root
-            [root]
+            $root = @scene_root
+            [scene_root]
             [Node2D]
                 rotation_deg = 90
             [/Node2D]
-            [/root]
+            [/scene_root]
 
             [camera]
             [Camera3D]
@@ -386,7 +450,7 @@ mod tests {
         let root = prepared
             .nodes
             .iter()
-            .find(|pending| pending.key_name == "root")
+            .find(|pending| pending.key_name == "scene_root")
             .expect("root node");
         match &root.node.data {
             SceneNodeData::Node2D(node) => {
@@ -415,7 +479,7 @@ mod tests {
     fn scene_loader_button_state_style_inherits_base_fields() {
         let scene = Parser::new(
             r##"
-            @root = button
+            $root = @button
             [button]
             [UiButton]
                 style = {
@@ -481,7 +545,7 @@ mod tests {
     fn scene_loader_ui_input_masks_apply_to_button_and_text_edit() {
         let scene = Parser::new(
             r#"
-            @root = button
+            $root = @button
             [button]
             [UiButton]
                 input_only_players = [0, 2]
@@ -582,7 +646,7 @@ mod tests {
 
         let scene = Parser::new(
             r#"
-            @root = button
+            $root = @button
             [button]
             [UiButton]
                 style = "res://ui/base.uistyle"
@@ -641,7 +705,7 @@ mod tests {
     fn scene_loader_builds_ui_nodes_from_scene_blocks() {
         let scene = Parser::new(
             r##"
-            @root = menu
+            $root = @menu
             [menu]
             [UiButton]
                 visible = false
@@ -941,7 +1005,7 @@ mod tests {
     fn scene_loader_builds_ik_target_3d_fields_and_skeleton_link() {
         let scene = Parser::new(
             r#"
-            @root = Rig
+            $root = @Rig
             [Rig]
             [Skeleton3D]
                 skeleton = "res://rig.pskel"
@@ -990,7 +1054,7 @@ mod tests {
     fn scene_loader_parses_physics_bone_chain_iters_alias() {
         let scene = Parser::new(
             r#"
-            @root = Rig
+            $root = @Rig
             [Rig]
             [Skeleton3D]
                 skeleton = "res://rig.pskel"
@@ -1045,7 +1109,7 @@ mod tests {
     fn scene_loader_rejects_bone_2d_node() {
         let scene = Parser::new(
             r#"
-            @root = Rig2D
+            $root = @Rig2D
             [Rig2D]
             [Skeleton2D]
                 position = (10, 20)
@@ -1079,7 +1143,7 @@ mod tests {
     fn scene_loader_builds_skeleton_2d_mirror_nodes() {
         let scene = Parser::new(
             r#"
-            @root = Rig2D
+            $root = @Rig2D
             [Rig2D]
             [Skeleton2D]
                 position = (10, 20)
@@ -1128,7 +1192,7 @@ mod tests {
     fn scene_loader_rejects_quoted_skeleton_node_refs() {
         let scene = Parser::new(
             r#"
-            @root = Rig
+            $root = @Rig
             [Rig]
             [Skeleton3D]
                 skeleton = "res://rig.pskel"
@@ -1157,7 +1221,7 @@ mod tests {
     fn scene_loader_parses_mesh_lod_options() {
         let scene = Parser::new(
             r#"
-            @root = Mesh
+            $root = @Mesh
             [Mesh]
             [MeshInstance3D]
                 min_lod = 1
@@ -1210,7 +1274,7 @@ mod tests {
     fn scene_loader_parses_mesh_blend_options() {
         let scene = Parser::new(
             r#"
-            @root = Mesh
+            $root = @Mesh
             [Mesh]
             [MeshInstance3D]
                 blend = { enabled=true blend_layers=[2, 4] blend_mask=[1, 3] distance=0.5 min_distance=0.05 noise=0.25 noise_scale=6.0 }
@@ -1271,7 +1335,7 @@ mod tests {
     fn scene_loader_parses_locale_text_markers() {
         let scene = Parser::new(
             r#"
-            @root = label
+            $root = @label
             [label]
             [UiLabel]
                 text = "%loc:\"ui.center\""
@@ -1335,7 +1399,7 @@ mod tests {
     fn scene_loader_escapes_locale_text_marker_prefix() {
         let scene = Parser::new(
             r#"
-            @root = label
+            $root = @label
             [label]
             [UiLabel]
                 text = "%%loc:not_key"
@@ -1365,7 +1429,7 @@ mod tests {
     fn scene_loader_builds_animated_sprite_2d_animations() {
         let scene = Parser::new(
             r#"
-            @root = hero
+            $root = @hero
             [hero]
             [AnimatedSprite2D]
                 texture = "res://hero.png"
@@ -1729,7 +1793,7 @@ mod tests {
     fn scene_loader_accepts_layer_arrays_for_bitmasks() {
         let scene = Parser::new(
             r#"
-            @root = sprite
+            $root = @sprite
             [sprite]
             [Sprite2D]
                 render_layers = [1, 3]
@@ -1814,7 +1878,7 @@ mod tests {
     fn scene_loader_accepts_bitmask_only_and_without_calls() {
         let scene = Parser::new(
             r#"
-            @root = sprite
+            $root = @sprite
             [sprite]
             [Sprite2D]
                 render_layers = only(1, 3)

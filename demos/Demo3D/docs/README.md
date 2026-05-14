@@ -35,8 +35,7 @@ Demo table:
 | ---------------- | ----------------------------------------- | -------------------------- | --------------------------------------------------- | ------------------------------------------ |
 | Mesh + Materials | `res://scenes/demos/mesh_materials.scn`   | shared camera              | Built-in meshes, standard/toon/unlit materials.     | [mesh_materials.md](mesh_materials.md)     |
 | Lights           | `res://scenes/demos/lights.scn`           | shared camera              | Ambient, point, spot, emissive markers.             | [lights.md](lights.md)                     |
-| Water            | `res://scenes/demos/water.scn`            | shared camera              | `WaterBody3D` visual + sim settings.                | [water.md](water.md)                       |
-| Water Cannon     | `res://scenes/demos/water_cannon.scn`     | `water_cannon_demo.rs`     | Rigid projectiles into water bodies.                | [water_cannon.md](water_cannon.md)         |
+| Water            | `res://scenes/demos/water.scn`            | `water_demo.rs`     | Rigid projectiles into one water body.              | [water.md](water.md)                       |
 | Animations       | `res://scenes/demos/animations.scn`       | shared camera              | `.panim` clips on `AnimationPlayer`.                | [animations.md](animations.md)             |
 | Sky              | `res://scenes/demos/sky.scn`              | shared camera              | `Sky3D` time, clouds, sun/moon/stars.               | [sky.md](sky.md)                           |
 | Mesh Blending    | `res://scenes/demos/mesh_blending.scn`    | shared camera              | Mesh blend flags/layers/distances.                  | [mesh_blending.md](mesh_blending.md)       |

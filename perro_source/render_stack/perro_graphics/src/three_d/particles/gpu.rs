@@ -131,6 +131,8 @@ pub struct GpuPointParticles3D {
     hybrid_params_bg: wgpu::BindGroup,
     compute_bgl: wgpu::BindGroupLayout,
     compute_bg: wgpu::BindGroup,
+    compute_render_bgl: wgpu::BindGroupLayout,
+    compute_render_bg: wgpu::BindGroup,
     particle_buffer: wgpu::Buffer,
     particle_capacity: usize,
     billboard_particle_buffer: wgpu::Buffer,

@@ -4,6 +4,7 @@ use crate::{
 };
 use perro_asset_formats::source_ext;
 use perro_io::walkdir::collect_file_paths;
+use perro_nodes::NodeType;
 use perro_scene::{Parser, SceneFieldName, SceneNodeData, SceneNodeDataBase, SceneValue};
 use perro_structs::Color;
 use rayon::prelude::*;
@@ -317,55 +318,18 @@ fn emit_node_data_consts(
 
 fn emit_static_node_type(ty: &str) -> Result<&'static str, StaticPipelineError> {
     match ty {
-        "Node" => Ok("Node"),
-        "Node2D" => Ok("Node2D"),
-        "CollisionShape2D" => Ok("CollisionShape2D"),
-        "StaticBody2D" => Ok("StaticBody2D"),
-        "Area2D" => Ok("Area2D"),
-        "RigidBody2D" => Ok("RigidBody2D"),
-        "Sprite2D" => Ok("Sprite2D"),
-        "Skeleton2D" => Ok("Skeleton2D"),
-        "BoneAttachment2D" => Ok("BoneAttachment2D"),
-        "IKTarget2D" => Ok("IKTarget2D"),
-        "PhysicsBoneChain2D" => Ok("PhysicsBoneChain2D"),
-        "BoneCollider2D" => Ok("BoneCollider2D"),
-        "Camera2D" => Ok("Camera2D"),
-        "Node3D" => Ok("Node3D"),
-        "MeshInstance3D" => Ok("MeshInstance3D"),
-        "MultiMeshInstance3D" => Ok("MultiMeshInstance3D"),
-        "CollisionShape3D" => Ok("CollisionShape3D"),
-        "StaticBody3D" => Ok("StaticBody3D"),
-        "Area3D" => Ok("Area3D"),
-        "RigidBody3D" => Ok("RigidBody3D"),
-        "Skeleton3D" => Ok("Skeleton3D"),
-        "Camera3D" => Ok("Camera3D"),
-        "AmbientLight3D" => Ok("AmbientLight3D"),
-        "Sky3D" => Ok("Sky3D"),
-        "RayLight3D" => Ok("RayLight3D"),
-        "PointLight3D" => Ok("PointLight3D"),
-        "SpotLight3D" => Ok("SpotLight3D"),
-        "ParticleEmitter2D" => Ok("ParticleEmitter2D"),
-        "ParticleEmitter3D" => Ok("ParticleEmitter3D"),
-        "UiBox" => Ok("UiBox"),
-        "UiPanel" => Ok("UiPanel"),
-        "UiButton" => Ok("UiButton"),
-        "UiImage" => Ok("UiImage"),
-        "UiAnimatedImage" => Ok("UiAnimatedImage"),
-        "UiLabel" => Ok("UiLabel"),
-        "UiTextBox" => Ok("UiTextBox"),
-        "UiTextBlock" => Ok("UiTextBlock"),
         "UiScrollContainer" | "UiScroll" => Ok("UiScrollContainer"),
-        "UiLayout" => Ok("UiLayout"),
         "UiHLayout" => Ok("UiHLayout"),
         "UiHBox" => Ok("UiHBox"),
-        "UiVLayout" => Ok("UiVLayout"),
         "UiVBox" => Ok("UiVBox"),
-        "UiGrid" => Ok("UiGrid"),
-        "UiTreeList" => Ok("UiTreeList"),
-        "AnimationPlayer" => Ok("AnimationPlayer"),
-        _ => Err(StaticPipelineError::SceneParse(format!(
-            "unsupported static node type `{ty}`"
-        ))),
+        canonical => canonical
+            .parse::<NodeType>()
+            .map(|node_type| node_type.as_str())
+            .map_err(|_| {
+                StaticPipelineError::SceneParse(format!(
+                    "unsupported static node type `{canonical}`"
+                ))
+            }),
     }
 }
 
@@ -643,61 +607,27 @@ fn sanitize_ident(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{emit_static_node_type, emit_static_scene_value_str, resolve_scene_dlc_self_paths};
+    use perro_nodes::NodeType;
     use perro_scene::Parser;
 
     #[test]
     fn static_node_type_supports_registry_nodes() {
-        let nodes = [
-            "Node",
-            "Node2D",
-            "Camera2D",
-            "Sprite2D",
-            "CollisionShape2D",
-            "StaticBody2D",
-            "Area2D",
-            "RigidBody2D",
-            "Skeleton2D",
-            "BoneAttachment2D",
-            "IKTarget2D",
-            "PhysicsBoneChain2D",
-            "BoneCollider2D",
-            "Node3D",
-            "Camera3D",
-            "MeshInstance3D",
-            "MultiMeshInstance3D",
-            "CollisionShape3D",
-            "StaticBody3D",
-            "Area3D",
-            "RigidBody3D",
-            "Skeleton3D",
-            "ParticleEmitter2D",
-            "ParticleEmitter3D",
-            "AmbientLight3D",
-            "Sky3D",
-            "RayLight3D",
-            "PointLight3D",
-            "SpotLight3D",
-            "UiBox",
-            "UiPanel",
-            "UiButton",
-            "UiImage",
-            "UiAnimatedImage",
-            "UiLabel",
-            "UiTextBox",
-            "UiTextBlock",
-            "UiScrollContainer",
-            "UiLayout",
-            "UiHLayout",
-            "UiHBox",
-            "UiVLayout",
-            "UiVBox",
-            "UiGrid",
-            "UiTreeList",
-            "AnimationPlayer",
+        for node_type in NodeType::ALL {
+            let node = node_type.as_str();
+            assert_eq!(emit_static_node_type(node).unwrap(), node);
+        }
+    }
+
+    #[test]
+    fn static_node_type_supports_scene_aliases() {
+        let aliases = [
+            ("UiScroll", "UiScrollContainer"),
+            ("UiHBox", "UiHBox"),
+            ("UiVBox", "UiVBox"),
         ];
 
-        for node in nodes {
-            assert_eq!(emit_static_node_type(node).unwrap(), node);
+        for (alias, emitted) in aliases {
+            assert_eq!(emit_static_node_type(alias).unwrap(), emitted);
         }
     }
 
@@ -777,7 +707,7 @@ mod tests {
     fn resolve_scene_dlc_self_paths_rewrites_scene_strings() {
         let mut scene = Parser::new(
             r#"
-            @root = main
+            $root = @main
             [main]
             script = "dlc://self/scripts/script.rs"
             script_vars = { mesh = "dlc://self/models/hero.glb" }

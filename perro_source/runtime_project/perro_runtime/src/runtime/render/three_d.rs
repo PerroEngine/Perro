@@ -232,7 +232,7 @@ impl Runtime {
                             size: water_render_size(water),
                             shape: water_shape_state(water.shape),
                             resolution: water.resolution,
-                            depth: water.depth,
+                            depth: water.shape.depth(water.depth),
                             flow: [water.flow.x, water.flow.y],
                             wind: [water.wind.x, water.wind.y],
                             idle_mode: water_idle_mode_state(water.idle_mode),
@@ -908,6 +908,7 @@ impl Runtime {
                     start: world_start,
                     end: world_end,
                     thickness: 0.035,
+                    color: [0.15, 0.95, 0.95, 1.0],
                 },
             )));
             edge_count = edge_count.saturating_add(1);
@@ -1178,6 +1179,16 @@ impl Runtime {
                         shapes.push(WaterCoastlineShape3D::Box {
                             center: [local.x, local.y, local.z],
                             half_extents: [half.x, half.y, half.z],
+                            axis_x: water_local_axis_xz(
+                                water_global,
+                                shape_global,
+                                perro_structs::Vector3::new(1.0, 0.0, 0.0),
+                            ),
+                            axis_z: water_local_axis_xz(
+                                water_global,
+                                shape_global,
+                                perro_structs::Vector3::new(0.0, 0.0, 1.0),
+                            ),
                         });
                     }
                     Shape3D::Sphere { radius } => {
@@ -1335,7 +1346,7 @@ impl Runtime {
             if local.x.abs() > half.x + impact.radius
                 || local.z.abs() > half.y + impact.radius
                 || local.y > impact.radius
-                || local.y < -water.depth - impact.radius
+                || local.y < -water.shape.depth(water.depth) - impact.radius
             {
                 continue;
             }
@@ -1524,6 +1535,22 @@ fn water_global_point_3d(
     point: perro_structs::Vector3,
 ) -> perro_structs::Vector3 {
     transform.to_mat4().transform_point3(point.into()).into()
+}
+
+fn water_local_axis_xz(
+    water_transform: perro_structs::Transform3D,
+    shape_transform: perro_structs::Transform3D,
+    axis: perro_structs::Vector3,
+) -> [f32; 2] {
+    let world_axis = shape_transform.rotation.rotate_vector3(axis);
+    let local_axis = water_transform
+        .rotation
+        .inverse()
+        .rotate_vector3(world_axis);
+    let len = (local_axis.x * local_axis.x + local_axis.z * local_axis.z)
+        .sqrt()
+        .max(0.0001);
+    [local_axis.x / len, local_axis.z / len]
 }
 
 fn water_surface_corners(size: perro_structs::Vector2) -> [perro_structs::Vector3; 4] {

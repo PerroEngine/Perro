@@ -352,15 +352,20 @@ impl Gpu3D {
             mm_pass.set_vertex_buffer(0, self.rigid_vertex_buffer.slice(..));
             mm_pass.set_vertex_buffer(1, self.multimesh_instance_buffer.slice(..));
             mm_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            let mut current_double_sided: Option<bool> = None;
+            let mut current_state: Option<(bool, bool)> = None;
             for batch in &self.multimesh_batches {
-                if current_double_sided != Some(batch.double_sided) {
-                    mm_pass.set_pipeline(if batch.double_sided {
+                let state = (batch.double_sided, batch.mesh_blend);
+                if current_state != Some(state) {
+                    mm_pass.set_pipeline(if batch.mesh_blend && batch.double_sided {
+                        &self.pipeline_multimesh_blend_double_sided
+                    } else if batch.mesh_blend {
+                        &self.pipeline_multimesh_blend_culled
+                    } else if batch.double_sided {
                         &self.pipeline_multimesh_double_sided
                     } else {
                         &self.pipeline_multimesh_culled
                     });
-                    current_double_sided = Some(batch.double_sided);
+                    current_state = Some(state);
                 }
                 let start = batch.mesh.index_start;
                 let end = start + batch.mesh.index_count;

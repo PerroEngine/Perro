@@ -9,7 +9,6 @@ const PROFILING_OVERLAY_SCENE_PATH: &ResPath = res_path!("res://Menu/ProfilingOv
 const MESH_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/mesh_materials.scn");
 const LIGHTS_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/lights.scn");
 const WATER_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/water.scn");
-const WATER_CANNON_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/water_cannon.scn");
 const ANIMATION_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/animations.scn");
 const PHYSICS_BONES_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/physics_bones.scn");
 const SKY_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/sky.scn");
@@ -19,14 +18,12 @@ const PARTICLES_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/partic
 const POSITIONAL_AUDIO_DEMO_SCENE_PATH: &ResPath =
     res_path!("res://scenes/demos/positional_audio.scn");
 
-const DEMO_MOUNT_NODE_NAME: &str = "DemoMount";
-const HUB_CAMERA_NODE_NAME: &str = "HubCamera";
+const DEMO_UI_ROOT_NODE_NAME: &str = "demo_ui_root";
 const HUB_MENU_PANEL_NODE_NAME: &str = "hub_menu_panel";
 const HUB_MENU_CONTENT_NODE_NAME: &str = "hub_menu_content";
 const DEMO_BUTTON_MESH_NODE_NAME: &str = "demo_btn_mesh";
 const DEMO_BUTTON_LIGHTS_NODE_NAME: &str = "demo_btn_lights";
 const DEMO_BUTTON_WATER_NODE_NAME: &str = "demo_btn_water";
-const DEMO_BUTTON_WATER_CANNON_NODE_NAME: &str = "demo_btn_water_cannon";
 const DEMO_BUTTON_ANIMATIONS_NODE_NAME: &str = "demo_btn_animations";
 const DEMO_BUTTON_PHYSICS_BONES_NODE_NAME: &str = "demo_btn_physics_bones";
 const DEMO_BUTTON_SKY_NODE_NAME: &str = "demo_btn_sky";
@@ -36,11 +33,20 @@ const DEMO_BUTTON_PARTICLES_NODE_NAME: &str = "demo_btn_particles";
 const DEMO_BUTTON_AUDIO_NODE_NAME: &str = "demo_btn_audio";
 const PAUSE_PANEL_NODE_NAME: &str = "pause_panel";
 const PAUSE_CONTENT_NODE_NAME: &str = "pause_content";
+const PAUSE_TITLE_NODE_NAME: &str = "pause_title";
+const PAUSE_SENS_ROW_NODE_NAME: &str = "pause_sens_row";
+const PAUSE_SENS_LABEL_NODE_NAME: &str = "pause_sens_label";
+const PAUSE_BUTTON_SENS_DOWN_NODE_NAME: &str = "pause_btn_sens_down";
+const PAUSE_BUTTON_SENS_UP_NODE_NAME: &str = "pause_btn_sens_up";
 const PAUSE_BUTTON_RESUME_NODE_NAME: &str = "pause_btn_resume";
 const PAUSE_BUTTON_RESTART_NODE_NAME: &str = "pause_btn_restart";
 const PAUSE_BUTTON_HUB_NODE_NAME: &str = "pause_btn_hub";
 const TRANSITION_FADE_PANEL_NODE_NAME: &str = "transition_fade_panel";
 
+const DEFAULT_MOUSE_SENSITIVITY: f32 = 0.00012;
+const MIN_MOUSE_SENSITIVITY: f32 = 0.00004;
+const MAX_MOUSE_SENSITIVITY: f32 = 0.00030;
+const MOUSE_SENSITIVITY_STEP: f32 = 0.00002;
 const FADE_IN_SECONDS: f32 = 0.35;
 const FADE_HOLD_SECONDS: f32 = 0.20;
 const FADE_OUT_SECONDS: f32 = 0.35;
@@ -56,7 +62,6 @@ enum DemoKind {
     MeshMaterials,
     Lights,
     Water,
-    WaterCannon,
     Animations,
     PhysicsBones,
     Sky,
@@ -73,7 +78,6 @@ impl DemoKind {
             DemoKind::MeshMaterials => Some(MESH_DEMO_SCENE_PATH),
             DemoKind::Lights => Some(LIGHTS_DEMO_SCENE_PATH),
             DemoKind::Water => Some(WATER_DEMO_SCENE_PATH),
-            DemoKind::WaterCannon => Some(WATER_CANNON_DEMO_SCENE_PATH),
             DemoKind::Animations => Some(ANIMATION_DEMO_SCENE_PATH),
             DemoKind::PhysicsBones => Some(PHYSICS_BONES_DEMO_SCENE_PATH),
             DemoKind::Sky => Some(SKY_DEMO_SCENE_PATH),
@@ -120,7 +124,6 @@ struct DemoScenesState {
     pub mesh: PreloadedSceneID,
     pub lights: PreloadedSceneID,
     pub water: PreloadedSceneID,
-    pub water_cannon: PreloadedSceneID,
     pub animations: PreloadedSceneID,
     pub physics_bones: PreloadedSceneID,
     pub sky: PreloadedSceneID,
@@ -140,7 +143,6 @@ impl Default for DemoScenesState {
             mesh: PreloadedSceneID::nil(),
             lights: PreloadedSceneID::nil(),
             water: PreloadedSceneID::nil(),
-            water_cannon: PreloadedSceneID::nil(),
             animations: PreloadedSceneID::nil(),
             physics_bones: PreloadedSceneID::nil(),
             sky: PreloadedSceneID::nil(),
@@ -159,9 +161,8 @@ struct DemoRefsState {
     pub fade_root: NodeID,
     pub fade_panel: NodeID,
     pub profiling_overlay_root: NodeID,
-    pub demo_mount: NodeID,
-    pub hub_camera: NodeID,
     pub active_demo_root: NodeID,
+    pub pause_sens_label: NodeID,
     pub hub_buttons: Vec<NodeID>,
     pub pause_buttons: Vec<NodeID>,
 }
@@ -174,11 +175,10 @@ impl Default for DemoRefsState {
             fade_root: NodeID::nil(),
             fade_panel: NodeID::nil(),
             profiling_overlay_root: NodeID::nil(),
-            demo_mount: NodeID::nil(),
-            hub_camera: NodeID::nil(),
             active_demo_root: NodeID::nil(),
-            hub_buttons: vec![NodeID::nil(); 11],
-            pause_buttons: vec![NodeID::nil(); 3],
+            pause_sens_label: NodeID::nil(),
+            hub_buttons: vec![NodeID::nil(); 10],
+            pause_buttons: vec![NodeID::nil(); 5],
         }
     }
 }
@@ -195,6 +195,7 @@ struct DemoRuntimeState {
     pub fade_active: bool,
     pub fade_action_done: bool,
     pub pause_alpha: f32,
+    pub mouse_sensitivity: f32,
 }
 
 impl Default for DemoRuntimeState {
@@ -210,6 +211,7 @@ impl Default for DemoRuntimeState {
             fade_active: false,
             fade_action_done: true,
             pause_alpha: 0.0,
+            mouse_sensitivity: DEFAULT_MOUSE_SENSITIVITY,
         }
     }
 }
@@ -235,8 +237,6 @@ lifecycle!({
         let mesh = scene_preload!(ctx.run, MESH_DEMO_SCENE_PATH).expect("preload mesh demo");
         let lights = scene_preload!(ctx.run, LIGHTS_DEMO_SCENE_PATH).expect("preload lights demo");
         let water = scene_preload!(ctx.run, WATER_DEMO_SCENE_PATH).expect("preload water demo");
-        let water_cannon = scene_preload!(ctx.run, WATER_CANNON_DEMO_SCENE_PATH)
-            .expect("preload water cannon demo");
         let animations =
             scene_preload!(ctx.run, ANIMATION_DEMO_SCENE_PATH).expect("preload animation demo");
         let physics_bones = scene_preload!(ctx.run, PHYSICS_BONES_DEMO_SCENE_PATH)
@@ -251,10 +251,6 @@ lifecycle!({
         let positional_audio = scene_preload!(ctx.run, POSITIONAL_AUDIO_DEMO_SCENE_PATH)
             .expect("preload positional audio demo");
 
-        let parent = get_node_parent_id!(ctx.run, ctx.id).unwrap_or(NodeID::nil());
-        let demo_mount = get_child!(ctx.run, parent, DEMO_MOUNT_NODE_NAME).unwrap_or(NodeID::nil());
-        let hub_camera = get_child!(ctx.run, parent, HUB_CAMERA_NODE_NAME).unwrap_or(NodeID::nil());
-
         with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
             state.scenes = DemoScenesState {
                 main_menu,
@@ -264,7 +260,6 @@ lifecycle!({
                 mesh,
                 lights,
                 water,
-                water_cannon,
                 animations,
                 physics_bones,
                 sky,
@@ -273,8 +268,6 @@ lifecycle!({
                 particles,
                 positional_audio,
             };
-            state.refs.demo_mount = demo_mount;
-            state.refs.hub_camera = hub_camera;
             state.runtime = DemoRuntimeState::default();
         });
 
@@ -295,12 +288,6 @@ lifecycle!({
             ctx.id,
             signal!("demo_water_click"),
             func!("on_demo_water_click")
-        );
-        signal_connect!(
-            ctx.run,
-            ctx.id,
-            signal!("demo_water_cannon_click"),
-            func!("on_demo_water_cannon_click")
         );
         signal_connect!(
             ctx.run,
@@ -347,6 +334,18 @@ lifecycle!({
         signal_connect!(
             ctx.run,
             ctx.id,
+            signal!("pause_sens_down_click"),
+            func!("on_pause_sens_down_click")
+        );
+        signal_connect!(
+            ctx.run,
+            ctx.id,
+            signal!("pause_sens_up_click"),
+            func!("on_pause_sens_up_click")
+        );
+        signal_connect!(
+            ctx.run,
+            ctx.id,
             signal!("pause_resume_click"),
             func!("on_pause_resume_click")
         );
@@ -365,9 +364,8 @@ lifecycle!({
 
         self.load_main_menu_scene(ctx);
         self.load_pause_menu_scene(ctx);
-        self.load_profiling_overlay_scene(ctx);
         self.load_fade_scene(ctx);
-        self.set_hub_camera_active(ctx, true);
+        self.load_profiling_overlay_scene(ctx);
         self.apply_mode_io(ctx);
         self.sync_ui(ctx);
     }
@@ -415,10 +413,6 @@ methods!({
         self.queue_load_demo(ctx, DemoKind::Water);
     }
 
-    fn on_demo_water_cannon_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
-        self.queue_load_demo(ctx, DemoKind::WaterCannon);
-    }
-
     fn on_demo_animations_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.queue_load_demo(ctx, DemoKind::Animations);
     }
@@ -451,6 +445,14 @@ methods!({
         self.resume_demo(ctx);
     }
 
+    fn on_pause_sens_down_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+        self.adjust_mouse_sensitivity(ctx, -MOUSE_SENSITIVITY_STEP);
+    }
+
+    fn on_pause_sens_up_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+        self.adjust_mouse_sensitivity(ctx, MOUSE_SENSITIVITY_STEP);
+    }
+
     fn on_pause_restart_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.queue_restart_demo(ctx);
     }
@@ -461,7 +463,7 @@ methods!({
 
     fn load_main_menu_scene(&self, ctx: &mut ScriptContext<'_, API>) {
         let (parent, scene) = (
-            get_node_parent_id!(ctx.run, ctx.id).unwrap_or(NodeID::nil()),
+            scene_ui_parent(ctx, ctx.id),
             with_state!(ctx.run, DemoManagerState, ctx.id, |state| state
                 .scenes
                 .main_menu),
@@ -483,19 +485,16 @@ methods!({
         let content =
             get_child!(ctx.run, panel, HUB_MENU_CONTENT_NODE_NAME).unwrap_or(NodeID::nil());
         let buttons = vec![
-            get_child!(ctx.run, content, DEMO_BUTTON_MESH_NODE_NAME).unwrap_or(NodeID::nil()),
-            get_child!(ctx.run, content, DEMO_BUTTON_LIGHTS_NODE_NAME).unwrap_or(NodeID::nil()),
-            get_child!(ctx.run, content, DEMO_BUTTON_WATER_NODE_NAME).unwrap_or(NodeID::nil()),
-            get_child!(ctx.run, content, DEMO_BUTTON_WATER_CANNON_NODE_NAME)
-                .unwrap_or(NodeID::nil()),
-            get_child!(ctx.run, content, DEMO_BUTTON_ANIMATIONS_NODE_NAME).unwrap_or(NodeID::nil()),
-            get_child!(ctx.run, content, DEMO_BUTTON_PHYSICS_BONES_NODE_NAME)
-                .unwrap_or(NodeID::nil()),
-            get_child!(ctx.run, content, DEMO_BUTTON_SKY_NODE_NAME).unwrap_or(NodeID::nil()),
-            get_child!(ctx.run, content, DEMO_BUTTON_BLEND_NODE_NAME).unwrap_or(NodeID::nil()),
-            get_child!(ctx.run, content, DEMO_BUTTON_MULTIMESH_NODE_NAME).unwrap_or(NodeID::nil()),
-            get_child!(ctx.run, content, DEMO_BUTTON_PARTICLES_NODE_NAME).unwrap_or(NodeID::nil()),
-            get_child!(ctx.run, content, DEMO_BUTTON_AUDIO_NODE_NAME).unwrap_or(NodeID::nil()),
+            find_descendant_by_name(ctx, content, DEMO_BUTTON_MESH_NODE_NAME),
+            find_descendant_by_name(ctx, content, DEMO_BUTTON_LIGHTS_NODE_NAME),
+            find_descendant_by_name(ctx, content, DEMO_BUTTON_WATER_NODE_NAME),
+            find_descendant_by_name(ctx, content, DEMO_BUTTON_ANIMATIONS_NODE_NAME),
+            find_descendant_by_name(ctx, content, DEMO_BUTTON_PHYSICS_BONES_NODE_NAME),
+            find_descendant_by_name(ctx, content, DEMO_BUTTON_SKY_NODE_NAME),
+            find_descendant_by_name(ctx, content, DEMO_BUTTON_BLEND_NODE_NAME),
+            find_descendant_by_name(ctx, content, DEMO_BUTTON_MULTIMESH_NODE_NAME),
+            find_descendant_by_name(ctx, content, DEMO_BUTTON_PARTICLES_NODE_NAME),
+            find_descendant_by_name(ctx, content, DEMO_BUTTON_AUDIO_NODE_NAME),
         ];
 
         with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
@@ -506,7 +505,7 @@ methods!({
 
     fn load_pause_menu_scene(&self, ctx: &mut ScriptContext<'_, API>) {
         let (parent, scene) = (
-            get_node_parent_id!(ctx.run, ctx.id).unwrap_or(NodeID::nil()),
+            scene_ui_parent(ctx, ctx.id),
             with_state!(ctx.run, DemoManagerState, ctx.id, |state| state
                 .scenes
                 .pause_menu),
@@ -526,7 +525,14 @@ methods!({
 
         let panel = get_child!(ctx.run, root, PAUSE_PANEL_NODE_NAME).unwrap_or(root);
         let content = get_child!(ctx.run, panel, PAUSE_CONTENT_NODE_NAME).unwrap_or(NodeID::nil());
+        let sens_row =
+            get_child!(ctx.run, content, PAUSE_SENS_ROW_NODE_NAME).unwrap_or(NodeID::nil());
+        let sens_label =
+            get_child!(ctx.run, sens_row, PAUSE_SENS_LABEL_NODE_NAME).unwrap_or(NodeID::nil());
         let buttons = vec![
+            get_child!(ctx.run, sens_row, PAUSE_BUTTON_SENS_DOWN_NODE_NAME)
+                .unwrap_or(NodeID::nil()),
+            get_child!(ctx.run, sens_row, PAUSE_BUTTON_SENS_UP_NODE_NAME).unwrap_or(NodeID::nil()),
             get_child!(ctx.run, content, PAUSE_BUTTON_RESUME_NODE_NAME).unwrap_or(NodeID::nil()),
             get_child!(ctx.run, content, PAUSE_BUTTON_RESTART_NODE_NAME).unwrap_or(NodeID::nil()),
             get_child!(ctx.run, content, PAUSE_BUTTON_HUB_NODE_NAME).unwrap_or(NodeID::nil()),
@@ -534,14 +540,16 @@ methods!({
 
         with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
             state.refs.pause_menu_root = root;
+            state.refs.pause_sens_label = sens_label;
             state.refs.pause_buttons = buttons;
         });
+        self.sync_mouse_sensitivity_label(ctx);
         self.apply_pause_alpha(ctx, 0.0);
     }
 
     fn load_fade_scene(&self, ctx: &mut ScriptContext<'_, API>) {
         let (parent, scene) = (
-            get_node_parent_id!(ctx.run, ctx.id).unwrap_or(NodeID::nil()),
+            scene_ui_parent(ctx, ctx.id),
             with_state!(ctx.run, DemoManagerState, ctx.id, |state| state.scenes.fade),
         );
         if parent.is_nil() || scene.is_nil() {
@@ -566,7 +574,7 @@ methods!({
 
     fn load_profiling_overlay_scene(&self, ctx: &mut ScriptContext<'_, API>) {
         let (parent, scene) = (
-            get_node_parent_id!(ctx.run, ctx.id).unwrap_or(NodeID::nil()),
+            scene_ui_parent(ctx, ctx.id),
             with_state!(ctx.run, DemoManagerState, ctx.id, |state| state
                 .scenes
                 .profiling_overlay),
@@ -586,7 +594,7 @@ methods!({
         with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
             state.refs.profiling_overlay_root = root;
         });
-        set_ui_tree_visible(ctx, root, false);
+        set_ui_tree_visible(ctx, root, true);
     }
 
     fn queue_load_demo(&self, ctx: &mut ScriptContext<'_, API>, demo: DemoKind) {
@@ -640,6 +648,7 @@ methods!({
             state.runtime.fade_active = true;
         });
         mouse_show!(ctx.ipt);
+        self.sync_ui(ctx);
         self.apply_mode_io(ctx);
         self.apply_transition_fade(ctx, 0.0, true);
     }
@@ -718,7 +727,6 @@ methods!({
                     state.runtime.active_demo = DemoKind::None;
                     state.runtime.queued_demo = DemoKind::None;
                 });
-                self.set_hub_camera_active(ctx, true);
                 mouse_show!(ctx.ipt);
             }
         }
@@ -730,11 +738,8 @@ methods!({
             return;
         };
 
-        let mount = with_state!(ctx.run, DemoManagerState, ctx.id, |state| state
-            .refs
-            .demo_mount);
-        if mount.is_nil() {
-            log_error!("[DemoManager] demo mount missing");
+        if ctx.id.is_nil() {
+            log_error!("[DemoManager] manager root missing");
             return;
         }
 
@@ -746,14 +751,21 @@ methods!({
             }
         };
 
-        reparent!(ctx.run, mount, root);
+        let scene_root = get_node_parent_id!(ctx.run, root).unwrap_or(root);
+        let root_to_attach = if scene_root.is_nil() {
+            root
+        } else {
+            scene_root
+        };
+
+        reparent!(ctx.run, ctx.id, root_to_attach);
         with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
-            state.refs.active_demo_root = root;
+            state.refs.active_demo_root = root_to_attach;
             state.runtime.active_demo = demo;
             state.runtime.mode = DemoMode::DemoActive;
             state.runtime.pause_alpha = 0.0;
         });
-        self.set_hub_camera_active(ctx, false);
+        self.apply_mouse_sensitivity_to_active_demo(ctx);
         mouse_capture!(ctx.ipt);
     }
 
@@ -798,6 +810,15 @@ methods!({
         self.sync_ui(ctx);
     }
 
+    fn adjust_mouse_sensitivity(&self, ctx: &mut ScriptContext<'_, API>, delta: f32) {
+        with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
+            state.runtime.mouse_sensitivity = (state.runtime.mouse_sensitivity + delta)
+                .clamp(MIN_MOUSE_SENSITIVITY, MAX_MOUSE_SENSITIVITY);
+        });
+        self.sync_mouse_sensitivity_label(ctx);
+        self.apply_mouse_sensitivity_to_active_demo(ctx);
+    }
+
     fn update_pause_fade(&self, ctx: &mut ScriptContext<'_, API>, dt: f32) {
         let alpha = with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
             let target = if state.runtime.mode == DemoMode::Paused {
@@ -828,22 +849,21 @@ methods!({
     }
 
     fn sync_ui(&self, ctx: &mut ScriptContext<'_, API>) {
-        let (mode, menu_root, pause_root, profiling_overlay_root, pause_alpha) =
+        let (mode, fade_action, menu_root, pause_root, profiling_overlay_root, pause_alpha) =
             with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
                 (
                     state.runtime.mode,
+                    state.runtime.fade_action,
                     state.refs.main_menu_root,
                     state.refs.pause_menu_root,
                     state.refs.profiling_overlay_root,
                     state.runtime.pause_alpha,
                 )
             });
-        set_ui_tree_visible(ctx, menu_root, mode == DemoMode::Hub);
-        set_ui_tree_visible(
-            ctx,
-            profiling_overlay_root,
-            mode == DemoMode::DemoActive || mode == DemoMode::Paused,
-        );
+        let show_hub_menu = mode == DemoMode::Hub
+            && !matches!(fade_action, FadeAction::LoadDemo | FadeAction::RestartDemo);
+        set_ui_tree_visible(ctx, menu_root, show_hub_menu);
+        set_ui_tree_visible(ctx, profiling_overlay_root, true);
         set_ui_tree_visible(
             ctx,
             pause_root,
@@ -854,18 +874,22 @@ methods!({
     }
 
     fn apply_mode_io(&self, ctx: &mut ScriptContext<'_, API>) {
-        let (mode, fade_active, hub_buttons, pause_buttons, pause_alpha) =
+        let (mode, fade_active, fade_action, hub_buttons, pause_buttons, pause_alpha) =
             with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
                 (
                     state.runtime.mode,
                     state.runtime.fade_active,
+                    state.runtime.fade_action,
                     state.refs.hub_buttons.clone(),
                     state.refs.pause_buttons.clone(),
                     state.runtime.pause_alpha,
                 )
             });
 
-        let hub_enabled = mode == DemoMode::Hub && !fade_active;
+        let hub_visible = mode == DemoMode::Hub
+            && !matches!(fade_action, FadeAction::LoadDemo | FadeAction::RestartDemo);
+        let pause_visible = mode == DemoMode::Paused || pause_alpha > 0.001;
+        let hub_enabled = hub_visible && !fade_active;
         let pause_enabled = mode == DemoMode::Paused
             && !fade_active
             && (pause_alpha / PAUSE_BG_MAX_ALPHA).clamp(0.0, 1.0) >= 0.85;
@@ -886,21 +910,82 @@ methods!({
             }
         }
 
-        if mode == DemoMode::Hub || mode == DemoMode::Paused || fade_active {
+        if hub_visible || pause_visible {
+            self.apply_freecam_input_enabled_to_active_demo(ctx, false);
             mouse_show!(ctx.ipt);
         } else {
+            self.apply_freecam_input_enabled_to_active_demo(ctx, true);
             mouse_capture!(ctx.ipt);
         }
     }
 
-    fn set_hub_camera_active(&self, ctx: &mut ScriptContext<'_, API>, active: bool) {
-        let id = with_state!(ctx.run, DemoManagerState, ctx.id, |state| state
-            .refs
-            .hub_camera);
-        if !id.is_nil() {
-            with_node_mut!(ctx.run, Camera3D, id, |camera| {
-                camera.active = active;
-            });
+    fn sync_mouse_sensitivity_label(&self, ctx: &mut ScriptContext<'_, API>) {
+        let (label, sensitivity) = with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
+            (state.refs.pause_sens_label, state.runtime.mouse_sensitivity)
+        });
+        if label.is_nil() {
+            return;
+        }
+        let scale = sensitivity / DEFAULT_MOUSE_SENSITIVITY;
+        with_node_mut!(ctx.run, UiLabel, label, |node| {
+            node.text = format!("Mouse Sens {:.2}x", scale).into();
+        });
+    }
+
+    fn apply_mouse_sensitivity_to_active_demo(&self, ctx: &mut ScriptContext<'_, API>) {
+        let (root, sensitivity) = with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
+            (
+                state.refs.active_demo_root,
+                state
+                    .runtime
+                    .mouse_sensitivity
+                    .clamp(MIN_MOUSE_SENSITIVITY, MAX_MOUSE_SENSITIVITY),
+            )
+        });
+        if root.is_nil() {
+            return;
+        }
+
+        let mut stack = vec![root];
+        while let Some(id) = stack.pop() {
+            set_var!(
+                ctx.run,
+                id,
+                var!("mouse_sensitivity"),
+                variant!(sensitivity)
+            );
+            if let Some(children) = get_node_children_ids!(ctx.run, id) {
+                for child in children {
+                    if !child.is_nil() {
+                        stack.push(child);
+                    }
+                }
+            }
+        }
+    }
+
+    fn apply_freecam_input_enabled_to_active_demo(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+        enabled: bool,
+    ) {
+        let root = with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
+            state.refs.active_demo_root
+        });
+        if root.is_nil() {
+            return;
+        }
+
+        let mut stack = vec![root];
+        while let Some(id) = stack.pop() {
+            set_var!(ctx.run, id, var!("input_enabled"), variant!(enabled));
+            if let Some(children) = get_node_children_ids!(ctx.run, id) {
+                for child in children {
+                    if !child.is_nil() {
+                        stack.push(child);
+                    }
+                }
+            }
         }
     }
 
@@ -928,13 +1013,15 @@ methods!({
     }
 
     fn apply_pause_alpha(&self, ctx: &mut ScriptContext<'_, API>, alpha: f32) {
-        let (mode, root, buttons) = with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
-            (
-                state.runtime.mode,
-                state.refs.pause_menu_root,
-                state.refs.pause_buttons.clone(),
-            )
-        });
+        let (mode, root, buttons, sens_label) =
+            with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
+                (
+                    state.runtime.mode,
+                    state.refs.pause_menu_root,
+                    state.refs.pause_buttons.clone(),
+                    state.refs.pause_sens_label,
+                )
+            });
         if root.is_nil() {
             return;
         }
@@ -973,6 +1060,24 @@ methods!({
         };
         if !content.is_nil() {
             set_ui_tree_visible(ctx, content, show);
+            let title =
+                get_child!(ctx.run, content, PAUSE_TITLE_NODE_NAME).unwrap_or(NodeID::nil());
+            if !title.is_nil() {
+                with_node_mut!(ctx.run, UiLabel, title, |label| {
+                    label.visible = show;
+                    if let Some(color) = color_with_alpha("#FFFFFF", t) {
+                        label.color = color;
+                    }
+                });
+            }
+            if !sens_label.is_nil() {
+                with_node_mut!(ctx.run, UiLabel, sens_label, |label| {
+                    label.visible = show;
+                    if let Some(color) = color_with_alpha("#FFFFFF", t) {
+                        label.color = color;
+                    }
+                });
+            }
         }
 
         for button in buttons {
@@ -1007,6 +1112,39 @@ fn set_ui_tree_visible<API: ScriptAPI + ?Sized>(
     }
 }
 
+fn scene_ui_parent<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    manager: NodeID,
+) -> NodeID {
+    let scene_root = get_node_parent_id!(ctx.run, manager).unwrap_or(manager);
+    get_child!(ctx.run, scene_root, DEMO_UI_ROOT_NODE_NAME).unwrap_or(scene_root)
+}
+
+fn find_descendant_by_name<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    root: NodeID,
+    name: &str,
+) -> NodeID {
+    if root.is_nil() {
+        return NodeID::nil();
+    }
+
+    let mut stack = vec![root];
+    while let Some(id) = stack.pop() {
+        if let Some(child) = get_child!(ctx.run, id, name) {
+            return child;
+        }
+        if let Some(children) = get_node_children_ids!(ctx.run, id) {
+            for child in children {
+                if !child.is_nil() {
+                    stack.push(child);
+                }
+            }
+        }
+    }
+    NodeID::nil()
+}
+
 fn set_button_alpha<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     button: NodeID,
@@ -1038,4 +1176,21 @@ fn set_button_alpha<API: ScriptAPI + ?Sized>(
 fn color_with_alpha(base: &str, alpha: f32) -> Option<Color> {
     let byte = (alpha.clamp(0.0, 1.0) * 255.0).round() as u8;
     Color::from_hex(&format!("{base}{byte:02X}"))
+}
+
+fn demo_mode_name(mode: DemoMode) -> &'static str {
+    match mode {
+        DemoMode::Hub => "hub",
+        DemoMode::DemoActive => "demo_active",
+        DemoMode::Paused => "paused",
+    }
+}
+
+fn fade_action_name(action: FadeAction) -> &'static str {
+    match action {
+        FadeAction::None => "none",
+        FadeAction::LoadDemo => "load_demo",
+        FadeAction::RestartDemo => "restart_demo",
+        FadeAction::BackToHub => "back_to_hub",
+    }
 }

@@ -99,20 +99,6 @@ impl<'a> Parser<'a> {
                 }
                 continue;
             }
-            if self.current == Token::At {
-                self.advance();
-                if self.current == Token::At {
-                    continue;
-                }
-                let name = self.expect_ident();
-                if name == "root" && self.current == Token::Equals {
-                    self.advance();
-                    let value = self.parse_value();
-                    self.vars.insert("root".to_string(), value.clone());
-                    vars.push(("root".to_string(), value));
-                }
-                continue;
-            }
             self.advance();
         }
         vars
@@ -517,22 +503,7 @@ impl<'a> Parser<'a> {
                 }
 
                 Token::At => {
-                    self.advance();
-                    let name = self.expect_ident();
-                    self.expect(Token::Equals);
-
-                    if name == "root" {
-                        match self.parse_value() {
-                            SceneValue::Key(k) => {
-                                let key = k.to_string();
-                                root_name = Some(key.clone());
-                                self.vars.insert("root".to_string(), SceneValue::Key(k));
-                            }
-                            _ => panic!("root must be a node ref like @Main"),
-                        }
-                    } else {
-                        let _ = self.parse_value();
-                    }
+                    panic!("use `$root = @NodeKey`; @ only marks node refs");
                 }
 
                 Token::LBracket => {
@@ -677,10 +648,14 @@ impl<'a> Parser<'a> {
             let parent = if let Some(parent) = key_ids.get(parent_name.as_str()) {
                 *parent
             } else {
-                let parent = SceneKey::new(key_names.len() as u32);
-                key_ids.insert(Cow::Owned(parent_name.clone()), parent);
-                key_names.push(Cow::Owned(parent_name));
-                parent
+                panic!(
+                    "parent node key `{}` not found for child `{}`",
+                    parent_name,
+                    key_names
+                        .get(nodes[idx].key.as_usize())
+                        .map(|name| name.as_ref())
+                        .unwrap_or("<unknown>")
+                );
             };
             nodes[idx].parent = Some(parent);
         }
@@ -688,10 +663,7 @@ impl<'a> Parser<'a> {
             if let Some(root) = key_ids.get(name.as_str()) {
                 *root
             } else {
-                let root = SceneKey::new(key_names.len() as u32);
-                key_ids.insert(Cow::Owned(name.clone()), root);
-                key_names.push(Cow::Owned(name));
-                root
+                panic!("scene root `{name}` not found in node list");
             }
         });
 

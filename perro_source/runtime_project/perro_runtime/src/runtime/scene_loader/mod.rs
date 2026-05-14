@@ -822,7 +822,7 @@ mod tests {
 
         let scene = Parser::new(
             r#"
-            @root = label
+            $root = @label
             [label]
             [UiLabel]
                 text = "%loc:\"ui.center\""
@@ -903,7 +903,7 @@ mod tests {
 
         let scene = Parser::new(
             r#"
-            @root = label
+            $root = @label
             [label]
             [UiLabel]
                 text = %loc: "ui.center"

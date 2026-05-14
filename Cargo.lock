@@ -4073,6 +4073,7 @@ dependencies = [
  "perro_ids",
  "perro_io",
  "perro_meshlets",
+ "perro_nodes",
  "perro_particle_math",
  "perro_project",
  "perro_render_bridge",

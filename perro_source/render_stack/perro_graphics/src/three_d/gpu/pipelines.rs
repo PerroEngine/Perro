@@ -92,6 +92,44 @@ impl Gpu3D {
                 None,
             )
         };
+        let pipeline_blend_culled = if path == RenderPath3D::Rigid {
+            create_pipeline_rigid_blend(
+                device,
+                &self.rigid_material_pipeline_layout,
+                &shader,
+                self.color_format,
+                self.sample_count,
+                Some(wgpu::Face::Back),
+            )
+        } else {
+            create_pipeline_skinned_blend(
+                device,
+                &self.material_pipeline_layout,
+                &shader,
+                self.color_format,
+                self.sample_count,
+                Some(wgpu::Face::Back),
+            )
+        };
+        let pipeline_blend_double_sided = if path == RenderPath3D::Rigid {
+            create_pipeline_rigid_blend(
+                device,
+                &self.rigid_material_pipeline_layout,
+                &shader,
+                self.color_format,
+                self.sample_count,
+                None,
+            )
+        } else {
+            create_pipeline_skinned_blend(
+                device,
+                &self.material_pipeline_layout,
+                &shader,
+                self.color_format,
+                self.sample_count,
+                None,
+            )
+        };
         let map = if path == RenderPath3D::Rigid {
             &mut self.custom_pipelines_rigid
         } else {
@@ -102,6 +140,8 @@ impl Gpu3D {
             CustomPipeline {
                 pipeline_culled,
                 pipeline_double_sided,
+                pipeline_blend_culled,
+                pipeline_blend_double_sided,
             },
         );
         Some(token)
@@ -149,7 +189,15 @@ impl Gpu3D {
         }
         match &batch.material_kind {
             MaterialPipelineKind::Standard => {
-                if batch.double_sided && is_rigid {
+                if batch.mesh_blend && batch.double_sided && is_rigid {
+                    &self.pipeline_rigid_blend_double_sided
+                } else if batch.mesh_blend && is_rigid {
+                    &self.pipeline_rigid_blend_culled
+                } else if batch.mesh_blend && batch.double_sided {
+                    &self.pipeline_blend_double_sided
+                } else if batch.mesh_blend {
+                    &self.pipeline_blend_culled
+                } else if batch.double_sided && is_rigid {
                     &self.pipeline_rigid_double_sided
                 } else if is_rigid {
                     &self.pipeline_rigid_culled
@@ -160,7 +208,15 @@ impl Gpu3D {
                 }
             }
             MaterialPipelineKind::Unlit => {
-                if batch.double_sided && is_rigid {
+                if batch.mesh_blend && batch.double_sided && is_rigid {
+                    &self.pipeline_rigid_unlit_blend_double_sided
+                } else if batch.mesh_blend && is_rigid {
+                    &self.pipeline_rigid_unlit_blend_culled
+                } else if batch.mesh_blend && batch.double_sided {
+                    &self.pipeline_unlit_blend_double_sided
+                } else if batch.mesh_blend {
+                    &self.pipeline_unlit_blend_culled
+                } else if batch.double_sided && is_rigid {
                     &self.pipeline_rigid_unlit_double_sided
                 } else if is_rigid {
                     &self.pipeline_rigid_unlit_culled
@@ -171,7 +227,15 @@ impl Gpu3D {
                 }
             }
             MaterialPipelineKind::Toon => {
-                if batch.double_sided && is_rigid {
+                if batch.mesh_blend && batch.double_sided && is_rigid {
+                    &self.pipeline_rigid_toon_blend_double_sided
+                } else if batch.mesh_blend && is_rigid {
+                    &self.pipeline_rigid_toon_blend_culled
+                } else if batch.mesh_blend && batch.double_sided {
+                    &self.pipeline_toon_blend_double_sided
+                } else if batch.mesh_blend {
+                    &self.pipeline_toon_blend_culled
+                } else if batch.double_sided && is_rigid {
                     &self.pipeline_rigid_toon_double_sided
                 } else if is_rigid {
                     &self.pipeline_rigid_toon_culled
@@ -189,14 +253,26 @@ impl Gpu3D {
                 };
                 map.get(token)
                     .map(|pipeline| {
-                        if batch.double_sided {
+                        if batch.mesh_blend && batch.double_sided {
+                            &pipeline.pipeline_blend_double_sided
+                        } else if batch.mesh_blend {
+                            &pipeline.pipeline_blend_culled
+                        } else if batch.double_sided {
                             &pipeline.pipeline_double_sided
                         } else {
                             &pipeline.pipeline_culled
                         }
                     })
                     .unwrap_or_else(|| {
-                        if batch.double_sided && is_rigid {
+                        if batch.mesh_blend && batch.double_sided && is_rigid {
+                            &self.pipeline_rigid_blend_double_sided
+                        } else if batch.mesh_blend && is_rigid {
+                            &self.pipeline_rigid_blend_culled
+                        } else if batch.mesh_blend && batch.double_sided {
+                            &self.pipeline_blend_double_sided
+                        } else if batch.mesh_blend {
+                            &self.pipeline_blend_culled
+                        } else if batch.double_sided && is_rigid {
                             &self.pipeline_rigid_double_sided
                         } else if is_rigid {
                             &self.pipeline_rigid_culled

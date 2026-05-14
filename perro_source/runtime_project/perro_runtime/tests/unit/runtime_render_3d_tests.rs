@@ -395,6 +395,28 @@ fn mesh_under_invisible_parent_emits_remove_node() {
 }
 
 #[test]
+fn removed_water_3d_emits_remove_node() {
+    let mut runtime = Runtime::new();
+    let water = NodeAPI::create::<WaterBody3D>(&mut runtime);
+
+    runtime.extract_render_3d_commands();
+    let first = collect_commands(&mut runtime);
+    assert!(first.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command_3d)
+            if matches!(command_3d.as_ref(), Command3D::UpsertWater { node, .. } if *node == water)
+    )));
+
+    assert!(NodeAPI::remove_node(&mut runtime, water));
+    let second = collect_commands(&mut runtime);
+    assert!(second.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command_3d)
+            if matches!(command_3d.as_ref(), Command3D::RemoveNode { node } if *node == water)
+    )));
+}
+
+#[test]
 fn unchanged_mesh_instance_emits_draw() {
     let mut runtime = Runtime::new();
     let node = runtime

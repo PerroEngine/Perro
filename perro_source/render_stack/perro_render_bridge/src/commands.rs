@@ -145,12 +145,14 @@ pub enum Command3D {
         node: NodeID,
         position: [f32; 3],
         size: f32,
+        color: [f32; 4],
     },
     DrawDebugLine3D {
         node: NodeID,
         start: [f32; 3],
         end: [f32; 3],
         thickness: f32,
+        color: [f32; 4],
     },
     SetCamera {
         camera: Camera3DState,

@@ -8,6 +8,45 @@ pub(super) fn create_multimesh_pipeline(
     sample_count: u32,
     cull_mode: Option<wgpu::Face>,
 ) -> wgpu::RenderPipeline {
+    create_multimesh_pipeline_with_depth_write(
+        device,
+        pipeline_layout,
+        shader,
+        color_format,
+        sample_count,
+        cull_mode,
+        true,
+    )
+}
+
+pub(super) fn create_multimesh_blend_pipeline(
+    device: &wgpu::Device,
+    pipeline_layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    color_format: wgpu::TextureFormat,
+    sample_count: u32,
+    cull_mode: Option<wgpu::Face>,
+) -> wgpu::RenderPipeline {
+    create_multimesh_pipeline_with_depth_write(
+        device,
+        pipeline_layout,
+        shader,
+        color_format,
+        sample_count,
+        cull_mode,
+        true,
+    )
+}
+
+fn create_multimesh_pipeline_with_depth_write(
+    device: &wgpu::Device,
+    pipeline_layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    color_format: wgpu::TextureFormat,
+    sample_count: u32,
+    cull_mode: Option<wgpu::Face>,
+    depth_write_enabled: bool,
+) -> wgpu::RenderPipeline {
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("perro_multimesh_pipeline"),
         layout: Some(pipeline_layout),
@@ -78,7 +117,7 @@ pub(super) fn create_multimesh_pipeline(
         },
         depth_stencil: Some(wgpu::DepthStencilState {
             format: DEPTH_FORMAT,
-            depth_write_enabled: Some(true),
+            depth_write_enabled: Some(depth_write_enabled),
             depth_compare: Some(wgpu::CompareFunction::LessEqual),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),

@@ -10,6 +10,12 @@ use crate::{material_schema, runtime_project::StaticUiStyleLookup};
 use perro_ids::{NodeID, string_to_u64};
 use perro_io::load_asset;
 use perro_nodes::{
+    AmbientLight2D, Area2D, Area3D, AudioEffectZone2D, AudioEffectZone3D, AudioMask2D, AudioMask3D,
+    AudioPortal2D, AudioPortal3D, BallJoint3D, CollisionShape2D, CollisionShape3D, DistanceJoint2D,
+    FixedJoint2D, FixedJoint3D, HingeJoint3D, PhysicsForceEmitter2D, PhysicsForceEmitter3D,
+    PhysicsForceProfile, PinJoint2D, PointLight2D, RayLight2D, RigidBody2D, RigidBody3D, SceneNode,
+    SceneNodeData, Shape2D, Shape3D, SpotLight2D, StaticBody2D, StaticBody3D, Triangle2DKind,
+    WaterBody2D, WaterBody3D, WaterIdleMode, WaterShape, WaterSkyBias, WaterSurfaceParams,
     ambient_light_3d::AmbientLight3D,
     animation_player::AnimationPlayer,
     animation_tree::AnimationTree,
@@ -27,41 +33,34 @@ use perro_nodes::{
     node_3d::Node3D,
     particle_emitter_2d::ParticleEmitter2D,
     particle_emitter_2d::ParticleEmitterSimMode2D,
-    tilemap_2d::TileMap2D,
     particle_emitter_3d::ParticleEmitter3D,
     particle_emitter_3d::{ParticleEmitterSimMode3D, ParticleType},
     physics_bone_chain_3d::PhysicsBoneChain3D,
     point_light_3d::PointLight3D,
     ray_light_3d::RayLight3D,
-    skeleton_2d::{
-        BoneAttachment2D, BoneCollider2D, IKTarget2D, PhysicsBoneChain2D, Skeleton2D,
-    },
+    skeleton_2d::{BoneAttachment2D, BoneCollider2D, IKTarget2D, PhysicsBoneChain2D, Skeleton2D},
     skeleton_3d::Skeleton3D,
     sky_3d::{Sky3D, SkyStyle},
     spot_light_3d::SpotLight3D,
     sprite_2d::{AnimatedSprite, AnimatedSprite2D, Sprite2D},
-    WaterBody2D, WaterBody3D, WaterIdleMode, WaterShape, WaterSkyBias, WaterSurfaceParams,
-    AmbientLight2D, Area2D, Area3D, AudioMask2D, AudioMask3D, AudioPortal2D, AudioPortal3D,
-    AudioEffectZone2D, AudioEffectZone3D, BallJoint3D, CollisionShape2D, CollisionShape3D, DistanceJoint2D,
-    FixedJoint2D, FixedJoint3D, HingeJoint3D, PinJoint2D, PointLight2D, RayLight2D,
-    PhysicsForceEmitter2D, PhysicsForceEmitter3D, PhysicsForceProfile, RigidBody2D, RigidBody3D,
-    SceneNode, SceneNodeData, Shape2D, Shape3D, SpotLight2D, StaticBody2D, StaticBody3D,
-    Triangle2DKind,
+    tilemap_2d::TileMap2D,
 };
 use perro_render_bridge::Material3D;
 use perro_scene::{
-    AnimatedSprite2DField, AnimationPlayerField, AnimationTreeField, Area2DField, Area3DField, BoneAttachment2DField, BoneAttachment3DField,
-    BoneCollider2DField, BoneCollider3DField, Camera2DField, Camera3DField, CollisionShape2DField, CollisionShape3DField, DistanceJoint2DField, HingeJoint3DField, IKTarget2DField, IKTarget3DField, Joint2DField, Joint3DField, Light3DField,
-    Light2DField, MeshInstance3DField, NodeField, Parser,
-    ParticleEmitter2DField, PointLight2DField, RayLight2DField, SpotLight2DField,
-    ParticleEmitter3DField, PhysicsForceEmitterField, TileMap2DField,
-    PhysicsBoneChain2DField, PhysicsBoneChain3DField, PointLight3DField, RayLight3DField, RigidBody2DField, RigidBody3DField, Scene,
-    SceneFieldIterRef, SceneFieldName, SceneKey, SceneNodeData as SceneDefNodeData,
-    SceneNodeEntry as SceneDefNodeEntry, SceneObjectField, SceneValue, Skeleton3DField,
-    Sky3DField, SpotLight3DField, Sprite2DField, StaticBody2DField, StaticBody3DField,
-    UiAnimatedImageField, UiImageField, WaterBodyField, resolve_node_field, resolve_scene_node_field,
+    AnimatedSprite2DField, AnimationPlayerField, AnimationTreeField, Area2DField, Area3DField,
+    BoneAttachment2DField, BoneAttachment3DField, BoneCollider2DField, BoneCollider3DField,
+    Camera2DField, Camera3DField, CollisionShape2DField, CollisionShape3DField,
+    DistanceJoint2DField, HingeJoint3DField, IKTarget2DField, IKTarget3DField, Joint2DField,
+    Joint3DField, Light2DField, Light3DField, MeshInstance3DField, NodeField, Parser,
+    ParticleEmitter2DField, ParticleEmitter3DField, PhysicsBoneChain2DField,
+    PhysicsBoneChain3DField, PhysicsForceEmitterField, PointLight2DField, PointLight3DField,
+    RayLight2DField, RayLight3DField, RigidBody2DField, RigidBody3DField, Scene, SceneFieldIterRef,
+    SceneFieldName, SceneKey, SceneNodeData as SceneDefNodeData,
+    SceneNodeEntry as SceneDefNodeEntry, SceneObjectField, SceneValue, Skeleton3DField, Sky3DField,
+    SpotLight2DField, SpotLight3DField, Sprite2DField, StaticBody2DField, StaticBody3DField,
+    TileMap2DField, UiAnimatedImageField, UiImageField, WaterBodyField, resolve_node_field,
+    resolve_scene_node_field,
 };
-use rayon::prelude::*;
 use perro_structs::{
     BitMask, Color, CustomPostParam, CustomPostParamValue, IKTargetSolver, PostProcessEffect,
     PostProcessSet, Quaternion, Vector2, Vector3,
@@ -71,6 +70,7 @@ use perro_ui::{
     UiImageScaleMode, UiLabel, UiLayout, UiMouseFilter, UiPanel, UiScrollContainer, UiTextAlign,
     UiTextBlock, UiTextBox, UiTreeList, UiVLayout,
 };
+use rayon::prelude::*;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -88,7 +88,10 @@ pub(super) struct RuntimeSceneLoadStats {
 #[cfg(not(feature = "profile"))]
 pub(super) struct RuntimeSceneLoadStats;
 
+const WATER_BASE_FIDELITY_VERTICES_PER_METER: f32 = 25.0;
+
 fn apply_water_body_fields(node: &mut WaterSurfaceParams, ty: &str, fields: &[SceneObjectField]) {
+    let mut vertices_per_meter = None;
     SceneFieldIterRef::new(fields).for_each(|name, value| {
         let field = match resolve_node_field(ty, name) {
             Some(NodeField::WaterBody2D(field)) | Some(NodeField::WaterBody3D(field)) => field,
@@ -100,11 +103,17 @@ fn apply_water_body_fields(node: &mut WaterSurfaceParams, ty: &str, fields: &[Sc
                     if let Some(shape) = as_shape_3d(value).and_then(water_shape_from_shape_3d) {
                         node.shape = shape;
                         node.depth = shape.depth(node.depth);
+                        if let Some(density) = vertices_per_meter {
+                            node.resolution = water_resolution_from_density(node.shape, density);
+                        }
                     }
                 }
                 _ => {
                     if let Some(shape) = as_shape_2d(value).and_then(water_shape_from_shape_2d) {
                         node.shape = shape;
+                        if let Some(density) = vertices_per_meter {
+                            node.resolution = water_resolution_from_density(node.shape, density);
+                        }
                     }
                 }
             },
@@ -117,6 +126,20 @@ fn apply_water_body_fields(node: &mut WaterSurfaceParams, ty: &str, fields: &[Sc
                 } else if let Some(v) = as_i32(value) {
                     let v = v.clamp(1, 4096) as u32;
                     node.resolution = [v, v];
+                }
+            }
+            WaterBodyField::VerticesPerMeter => {
+                if let Some(v) = as_f32(value) {
+                    let density = v.max(0.01);
+                    vertices_per_meter = Some(density);
+                    node.resolution = water_resolution_from_density(node.shape, density);
+                }
+            }
+            WaterBodyField::BaseFidelity => {
+                if let Some(v) = as_f32(value) {
+                    let density = water_density_from_base_fidelity(v);
+                    vertices_per_meter = Some(density);
+                    node.resolution = water_resolution_from_density(node.shape, density);
                 }
             }
             WaterBodyField::Depth => {
@@ -282,11 +305,24 @@ fn apply_water_body_fields(node: &mut WaterSurfaceParams, ty: &str, fields: &[Sc
     });
 }
 
+fn water_resolution_from_density(shape: WaterShape, vertices_per_meter: f32) -> [u32; 2] {
+    let size = shape.surface_size();
+    [
+        ((size.x.abs() * vertices_per_meter).ceil() as u32 + 1).clamp(1, 4096),
+        ((size.y.abs() * vertices_per_meter).ceil() as u32 + 1).clamp(1, 4096),
+    ]
+}
+
+fn water_density_from_base_fidelity(base_fidelity: f32) -> f32 {
+    base_fidelity.max(0.01) * WATER_BASE_FIDELITY_VERTICES_PER_METER
+}
+
 fn water_shape_from_shape_2d(shape: Shape2D) -> Option<WaterShape> {
     match shape {
-        Shape2D::Quad { width, height } => {
-            Some(WaterShape::rect(Vector2::new(width.max(0.001), height.max(0.001))))
-        }
+        Shape2D::Quad { width, height } => Some(WaterShape::rect(Vector2::new(
+            width.max(0.001),
+            height.max(0.001),
+        ))),
         Shape2D::Circle { radius } => Some(WaterShape::Circle {
             radius: radius.max(0.001),
         }),
@@ -566,7 +602,13 @@ pub(super) struct PendingSurfaceMaterial {
 }
 
 type AnimationSceneBindings = Vec<(String, String)>;
-type AnimationTreeAnimationEntry = (String, AnimationSceneBindings, f32, bool, perro_nodes::AnimationPlaybackType);
+type AnimationTreeAnimationEntry = (
+    String,
+    AnimationSceneBindings,
+    f32,
+    bool,
+    perro_nodes::AnimationPlaybackType,
+);
 type AnimationTreeAnimationEntries = Vec<AnimationTreeAnimationEntry>;
 
 type SceneNodeExtraction = (
@@ -696,7 +738,12 @@ pub(super) fn prepare_scene_with_loader_and_styles(
     static_ui_style_lookup: Option<StaticUiStyleLookup>,
 ) -> Result<PreparedScene, String> {
     let mut include_stack = HashSet::new();
-    prepare_scene_with_stack(scene, &mut include_stack, load_scene, static_ui_style_lookup)
+    prepare_scene_with_stack(
+        scene,
+        &mut include_stack,
+        load_scene,
+        static_ui_style_lookup,
+    )
 }
 
 fn prepare_scene_with_stack(
@@ -860,18 +907,21 @@ fn prepare_node_no_root(
         animation_tree_source,
         animation_tree_animations: animation_tree_animations
             .into_iter()
-            .map(|(source, bindings, speed, paused, playback_type)| PendingAnimationTreeAnimation {
-                source,
-                bindings: bindings
-                    .into_iter()
-                    .filter_map(|(object, target)| {
-                        scene_key_by_name(scene, target.as_str()).map(|target| (object, target.as_u32()))
-                    })
-                    .collect(),
-                speed,
-                paused,
-                playback_type,
-            })
+            .map(
+                |(source, bindings, speed, paused, playback_type)| PendingAnimationTreeAnimation {
+                    source,
+                    bindings: bindings
+                        .into_iter()
+                        .filter_map(|(object, target)| {
+                            scene_key_by_name(scene, target.as_str())
+                                .map(|target| (object, target.as_u32()))
+                        })
+                        .collect(),
+                    speed,
+                    paused,
+                    playback_type,
+                },
+            )
             .collect(),
         texture_source,
         mesh_source,
@@ -991,19 +1041,21 @@ fn push_entry_prepared(
         animation_tree_source,
         animation_tree_animations: animation_tree_animations
             .into_iter()
-            .map(|(source, bindings, speed, paused, playback_type)| PendingAnimationTreeAnimation {
-                source,
-                bindings: bindings
-                    .into_iter()
-                    .filter_map(|(object, target)| {
-                        scene_key_by_name(scene, target.as_str())
-                            .map(|target| (object, remap_key(target, key_map)))
-                    })
-                    .collect(),
-                speed,
-                paused,
-                playback_type,
-            })
+            .map(
+                |(source, bindings, speed, paused, playback_type)| PendingAnimationTreeAnimation {
+                    source,
+                    bindings: bindings
+                        .into_iter()
+                        .filter_map(|(object, target)| {
+                            scene_key_by_name(scene, target.as_str())
+                                .map(|target| (object, remap_key(target, key_map)))
+                        })
+                        .collect(),
+                    speed,
+                    paused,
+                    playback_type,
+                },
+            )
             .collect(),
         texture_source,
         mesh_source,
@@ -1100,22 +1152,21 @@ fn expand_import_children_into_host(
         if node.key == *import_root {
             continue;
         }
-        let remapped_key = map
-            .get(&node.key)
-            .copied()
-            .ok_or_else(|| format!("missing remap key for `{}` in root_of `{path}`", import_scene.key_name_or_id(node.key)))?;
-        push_entry_prepared(
-            import_scene,
-            node,
-            Some(remapped_key),
-            &map,
-            ctx,
-        )?;
+        let remapped_key = map.get(&node.key).copied().ok_or_else(|| {
+            format!(
+                "missing remap key for `{}` in root_of `{path}`",
+                import_scene.key_name_or_id(node.key)
+            )
+        })?;
+        push_entry_prepared(import_scene, node, Some(remapped_key), &map, ctx)?;
     }
     Ok(())
 }
 
-fn merge_root_host_entry(host: &SceneDefNodeEntry, base_root: &SceneDefNodeEntry) -> SceneDefNodeEntry {
+fn merge_root_host_entry(
+    host: &SceneDefNodeEntry,
+    base_root: &SceneDefNodeEntry,
+) -> SceneDefNodeEntry {
     let mut merged = host.clone();
     merged.name = host.name.clone().or_else(|| base_root.name.clone());
     if host.tags.is_empty() {
@@ -1471,7 +1522,9 @@ fn scene_node_data_from(
         "Node" => Ok(SceneNodeData::Node),
         "Node2D" => Ok(SceneNodeData::Node2D(build_node_2d(data))),
         "Sprite2D" => Ok(SceneNodeData::Sprite2D(build_sprite_2d(data))),
-        "AnimatedSprite2D" => Ok(SceneNodeData::AnimatedSprite2D(build_animated_sprite_2d(data))),
+        "AnimatedSprite2D" => Ok(SceneNodeData::AnimatedSprite2D(build_animated_sprite_2d(
+            data,
+        ))),
         "ParticleEmitter2D" => Ok(SceneNodeData::ParticleEmitter2D(build_particle_emitter_2d(
             data,
         ))),
@@ -1482,10 +1535,12 @@ fn scene_node_data_from(
         "TileMap2D" => Ok(SceneNodeData::TileMap2D(build_tilemap_2d(data))),
         "WaterBody2D" => Ok(SceneNodeData::WaterBody2D(build_water_body_2d(data))),
         "Skeleton2D" => Ok(SceneNodeData::Skeleton2D(build_skeleton_2d(data))),
-        "Bone2D" => Err("unsupported scene node type `Bone2D`; use Skeleton2D.bones from .pskel2d".to_string()),
-        "BoneAttachment2D" => Ok(SceneNodeData::BoneAttachment2D(
-            build_bone_attachment_2d(data),
-        )),
+        "Bone2D" => Err(
+            "unsupported scene node type `Bone2D`; use Skeleton2D.bones from .pskel2d".to_string(),
+        ),
+        "BoneAttachment2D" => Ok(SceneNodeData::BoneAttachment2D(build_bone_attachment_2d(
+            data,
+        ))),
         "IKTarget2D" => Ok(SceneNodeData::IKTarget2D(build_ik_target_2d(data))),
         "PhysicsBoneChain2D" => Ok(SceneNodeData::PhysicsBoneChain2D(
             build_physics_bone_chain_2d(data),
@@ -1502,7 +1557,9 @@ fn scene_node_data_from(
             build_physics_force_emitter_2d(data),
         )),
         "PinJoint2D" => Ok(SceneNodeData::PinJoint2D(build_pin_joint_2d(data))),
-        "DistanceJoint2D" => Ok(SceneNodeData::DistanceJoint2D(build_distance_joint_2d(data))),
+        "DistanceJoint2D" => Ok(SceneNodeData::DistanceJoint2D(build_distance_joint_2d(
+            data,
+        ))),
         "FixedJoint2D" => Ok(SceneNodeData::FixedJoint2D(build_fixed_joint_2d(data))),
         "AudioMask2D" => Ok(SceneNodeData::AudioMask2D(build_audio_mask_2d(data))),
         "AudioEffectZone2D" => Ok(SceneNodeData::AudioEffectZone2D(
@@ -1532,9 +1589,9 @@ fn scene_node_data_from(
         )),
         "AudioPortal3D" => Ok(SceneNodeData::AudioPortal3D(build_audio_portal_3d(data))),
         "Skeleton3D" => Ok(SceneNodeData::Skeleton3D(build_skeleton_3d(data))),
-        "BoneAttachment3D" => Ok(SceneNodeData::BoneAttachment3D(
-            build_bone_attachment_3d(data),
-        )),
+        "BoneAttachment3D" => Ok(SceneNodeData::BoneAttachment3D(build_bone_attachment_3d(
+            data,
+        ))),
         "IKTarget3D" => Ok(SceneNodeData::IKTarget3D(build_ik_target_3d(data))),
         "PhysicsBoneChain3D" => Ok(SceneNodeData::PhysicsBoneChain3D(
             build_physics_bone_chain_3d(data),
@@ -1553,10 +1610,18 @@ fn scene_node_data_from(
         "PointLight3D" => Ok(SceneNodeData::PointLight3D(build_point_light_3d(data))),
         "SpotLight3D" => Ok(SceneNodeData::SpotLight3D(build_spot_light_3d(data))),
         "UiBox" => Ok(SceneNodeData::UiBox(build_ui_box(data))),
-        "UiPanel" => Ok(SceneNodeData::UiPanel(build_ui_panel(data, static_ui_style_lookup))),
-        "UiButton" => Ok(SceneNodeData::UiButton(build_ui_button(data, static_ui_style_lookup))),
+        "UiPanel" => Ok(SceneNodeData::UiPanel(build_ui_panel(
+            data,
+            static_ui_style_lookup,
+        ))),
+        "UiButton" => Ok(SceneNodeData::UiButton(build_ui_button(
+            data,
+            static_ui_style_lookup,
+        ))),
         "UiImage" => Ok(SceneNodeData::UiImage(build_ui_image(data))),
-        "UiAnimatedImage" => Ok(SceneNodeData::UiAnimatedImage(build_ui_animated_image(data))),
+        "UiAnimatedImage" => Ok(SceneNodeData::UiAnimatedImage(build_ui_animated_image(
+            data,
+        ))),
         "UiLabel" => Ok(SceneNodeData::UiLabel(build_ui_label(data))),
         "UiTextBox" => Ok(SceneNodeData::UiTextBox(build_ui_text_box(
             data,
@@ -1566,9 +1631,9 @@ fn scene_node_data_from(
             data,
             static_ui_style_lookup,
         ))),
-        "UiScrollContainer" | "UiScroll" => {
-            Ok(SceneNodeData::UiScrollContainer(build_ui_scroll_container(data)))
-        }
+        "UiScrollContainer" | "UiScroll" => Ok(SceneNodeData::UiScrollContainer(
+            build_ui_scroll_container(data),
+        )),
         "UiLayout" => Ok(SceneNodeData::UiLayout(build_ui_layout(data))),
         "UiHLayout" | "UiHBox" => Ok(SceneNodeData::UiHLayout(build_ui_hlayout(data))),
         "UiVLayout" | "UiVBox" => Ok(SceneNodeData::UiVLayout(build_ui_vlayout(data))),
@@ -1577,4 +1642,3 @@ fn scene_node_data_from(
         other => Err(format!("unsupported scene node type `{other}`")),
     }
 }
-

@@ -505,6 +505,22 @@ impl Gpu3D {
             sample_count,
             None,
         );
+        let pipeline_blend_culled = create_pipeline_skinned_blend(
+            device,
+            &pipeline_layout,
+            &shader,
+            color_format,
+            sample_count,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline_blend_double_sided = create_pipeline_skinned_blend(
+            device,
+            &pipeline_layout,
+            &shader,
+            color_format,
+            sample_count,
+            None,
+        );
         let pipeline_unlit_culled = create_pipeline_skinned(
             device,
             &pipeline_layout,
@@ -521,6 +537,22 @@ impl Gpu3D {
             sample_count,
             None,
         );
+        let pipeline_unlit_blend_culled = create_pipeline_skinned_blend(
+            device,
+            &pipeline_layout,
+            &shader_unlit,
+            color_format,
+            sample_count,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline_unlit_blend_double_sided = create_pipeline_skinned_blend(
+            device,
+            &pipeline_layout,
+            &shader_unlit,
+            color_format,
+            sample_count,
+            None,
+        );
         let pipeline_toon_culled = create_pipeline_skinned(
             device,
             &pipeline_layout,
@@ -530,6 +562,22 @@ impl Gpu3D {
             Some(wgpu::Face::Back),
         );
         let pipeline_toon_double_sided = create_pipeline_skinned(
+            device,
+            &pipeline_layout,
+            &shader_toon,
+            color_format,
+            sample_count,
+            None,
+        );
+        let pipeline_toon_blend_culled = create_pipeline_skinned_blend(
+            device,
+            &pipeline_layout,
+            &shader_toon,
+            color_format,
+            sample_count,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline_toon_blend_double_sided = create_pipeline_skinned_blend(
             device,
             &pipeline_layout,
             &shader_toon,
@@ -569,6 +617,22 @@ impl Gpu3D {
             sample_count,
             None,
         );
+        let pipeline_rigid_blend_culled = create_pipeline_rigid_blend(
+            device,
+            &rigid_pipeline_layout,
+            &shader_rigid,
+            color_format,
+            sample_count,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline_rigid_blend_double_sided = create_pipeline_rigid_blend(
+            device,
+            &rigid_pipeline_layout,
+            &shader_rigid,
+            color_format,
+            sample_count,
+            None,
+        );
         let pipeline_rigid_unlit_culled = create_pipeline_rigid(
             device,
             &rigid_pipeline_layout,
@@ -585,6 +649,22 @@ impl Gpu3D {
             sample_count,
             None,
         );
+        let pipeline_rigid_unlit_blend_culled = create_pipeline_rigid_blend(
+            device,
+            &rigid_pipeline_layout,
+            &shader_rigid_unlit,
+            color_format,
+            sample_count,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline_rigid_unlit_blend_double_sided = create_pipeline_rigid_blend(
+            device,
+            &rigid_pipeline_layout,
+            &shader_rigid_unlit,
+            color_format,
+            sample_count,
+            None,
+        );
         let pipeline_rigid_toon_culled = create_pipeline_rigid(
             device,
             &rigid_pipeline_layout,
@@ -594,6 +674,22 @@ impl Gpu3D {
             Some(wgpu::Face::Back),
         );
         let pipeline_rigid_toon_double_sided = create_pipeline_rigid(
+            device,
+            &rigid_pipeline_layout,
+            &shader_rigid_toon,
+            color_format,
+            sample_count,
+            None,
+        );
+        let pipeline_rigid_toon_blend_culled = create_pipeline_rigid_blend(
+            device,
+            &rigid_pipeline_layout,
+            &shader_rigid_toon,
+            color_format,
+            sample_count,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline_rigid_toon_blend_double_sided = create_pipeline_rigid_blend(
             device,
             &rigid_pipeline_layout,
             &shader_rigid_toon,
@@ -626,6 +722,22 @@ impl Gpu3D {
             Some(wgpu::Face::Back),
         );
         let pipeline_multimesh_double_sided = create_multimesh_pipeline(
+            device,
+            &multimesh_pipeline_layout,
+            &shader_multimesh,
+            color_format,
+            sample_count,
+            None,
+        );
+        let pipeline_multimesh_blend_culled = create_multimesh_blend_pipeline(
+            device,
+            &multimesh_pipeline_layout,
+            &shader_multimesh,
+            color_format,
+            sample_count,
+            Some(wgpu::Face::Back),
+        );
+        let pipeline_multimesh_blend_double_sided = create_multimesh_blend_pipeline(
             device,
             &multimesh_pipeline_layout,
             &shader_multimesh,
@@ -1080,18 +1192,30 @@ impl Gpu3D {
             sky_pipeline,
             pipeline_rigid_culled,
             pipeline_rigid_double_sided,
+            pipeline_rigid_blend_culled,
+            pipeline_rigid_blend_double_sided,
             pipeline_rigid_unlit_culled,
             pipeline_rigid_unlit_double_sided,
+            pipeline_rigid_unlit_blend_culled,
+            pipeline_rigid_unlit_blend_double_sided,
             pipeline_rigid_toon_culled,
             pipeline_rigid_toon_double_sided,
+            pipeline_rigid_toon_blend_culled,
+            pipeline_rigid_toon_blend_double_sided,
             pipeline_rigid_overlay_culled,
             pipeline_rigid_overlay_double_sided,
             pipeline_culled,
             pipeline_double_sided,
+            pipeline_blend_culled,
+            pipeline_blend_double_sided,
             pipeline_unlit_culled,
             pipeline_unlit_double_sided,
+            pipeline_unlit_blend_culled,
+            pipeline_unlit_blend_double_sided,
             pipeline_toon_culled,
             pipeline_toon_double_sided,
+            pipeline_toon_blend_culled,
+            pipeline_toon_blend_double_sided,
             pipeline_overlay_culled,
             pipeline_overlay_double_sided,
             pipeline_depth_prepass_culled,
@@ -1104,6 +1228,8 @@ impl Gpu3D {
             pipeline_shadow_depth_rigid_double_sided,
             pipeline_multimesh_culled,
             pipeline_multimesh_double_sided,
+            pipeline_multimesh_blend_culled,
+            pipeline_multimesh_blend_double_sided,
             camera_buffer,
             camera_bind_group,
             rigid_camera_bind_group,

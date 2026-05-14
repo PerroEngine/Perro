@@ -12,19 +12,31 @@ impl Runtime {
         self.clear_stale_audio_debug_rays();
     }
 
-    pub(super) fn queue_audio_debug_ray_2d(&mut self, from: Vector2, to: Vector2) {
+    pub(super) fn queue_audio_debug_ray_2d(
+        &mut self,
+        from: Vector2,
+        to: Vector2,
+        color: [f32; 4],
+        energy: f32,
+    ) {
         if !self.audio.config.debug_rays {
             return;
         }
         self.queue_render_command(RenderCommand::TwoD(Command2D::DrawShape {
             draw: DrawShape2DCommand {
-                shape: DrawShape2D::line(to - from, [0.15, 0.95, 0.95, 0.85], 2.0),
+                shape: DrawShape2D::line(to - from, color, audio_debug_ray_width(energy)),
                 position: [from.x, from.y],
             },
         }));
     }
 
-    pub(super) fn queue_audio_debug_ray_3d(&mut self, from: Vector3, to: Vector3) {
+    pub(super) fn queue_audio_debug_ray_3d(
+        &mut self,
+        from: Vector3,
+        to: Vector3,
+        color: [f32; 4],
+        energy: f32,
+    ) {
         if !self.audio.config.debug_rays {
             return;
         }
@@ -35,7 +47,29 @@ impl Runtime {
                 node: audio_debug_ray_node(index),
                 start: [from.x, from.y, from.z],
                 end: [to.x, to.y, to.z],
-                thickness: 0.025,
+                thickness: audio_debug_ray_thickness(energy),
+                color,
+            },
+        )));
+    }
+
+    pub(super) fn queue_audio_debug_point_3d(
+        &mut self,
+        position: Vector3,
+        color: [f32; 4],
+        energy: f32,
+    ) {
+        if !self.audio.config.debug_rays {
+            return;
+        }
+        let index = self.audio.debug_ray_count_3d;
+        self.audio.debug_ray_count_3d = self.audio.debug_ray_count_3d.saturating_add(1);
+        self.queue_render_command(RenderCommand::ThreeD(Box::new(
+            Command3D::DrawDebugPoint3D {
+                node: audio_debug_ray_node(index),
+                position: [position.x, position.y, position.z],
+                size: audio_debug_dot_size(energy),
+                color,
             },
         )));
     }
@@ -49,6 +83,31 @@ impl Runtime {
             })));
         }
         self.audio.prev_debug_ray_count_3d = self.audio.debug_ray_count_3d;
+    }
+
+    pub(crate) fn remove_attached_audio_for_node(&mut self, node: NodeID) {
+        let mut removed = false;
+        let mut i = 0usize;
+        while i < self.audio.sounds.len() {
+            let attached =
+                matches!(self.audio.sounds[i].pos, SpatialSoundPos::Attached(id) if id == node);
+            if attached {
+                if let Some(id) = self.audio.sounds[i].playback_id
+                    && let Ok(guard) = self.resource_api.bark.lock()
+                    && let Some(player) = guard.as_ref()
+                {
+                    let _ = player.stop_playback(id);
+                }
+                self.audio.sounds.remove(i);
+                removed = true;
+            } else {
+                i += 1;
+            }
+        }
+        if removed && self.audio.config.debug_rays {
+            self.audio.debug_ray_count_3d = 0;
+            self.clear_stale_audio_debug_rays();
+        }
     }
 
     pub(super) fn refresh_audio_scene_flags(&mut self) {
@@ -508,5 +567,20 @@ impl Runtime {
 }
 
 fn audio_debug_ray_node(index: u32) -> NodeID {
-    NodeID::from_u64(0xAD00_0000_0000_0000u64 | index as u64)
+    NodeID::from_u64(0xAD00_0000_0000_0000u64 | index.saturating_add(1) as u64)
+}
+
+#[inline]
+fn audio_debug_ray_thickness(energy: f32) -> f32 {
+    0.012 + energy.clamp(0.0, 1.0).sqrt() * 0.06
+}
+
+#[inline]
+fn audio_debug_ray_width(energy: f32) -> f32 {
+    1.0 + energy.clamp(0.0, 1.0).sqrt() * 4.0
+}
+
+#[inline]
+fn audio_debug_dot_size(energy: f32) -> f32 {
+    0.06 + energy.clamp(0.0, 1.0).sqrt() * 0.18
 }

@@ -10,24 +10,32 @@ Shows:
 - `blend_layers`
 - `blend_mask`
 - `blend_distance`
+- `noise`
+- `noise_scale`
 - multiple mesh shapes blending into same view
+- side-by-side masked vs blended mesh pairs
 
 Why scene works this way:
 
-- All blend objects sit close together so blend falloff is visible.
+- Left pair uses `blend_mask = all`, so cube/sphere/ground intersections stay hard.
+- Right pair uses `blend_mask = none`, so same layout shows proper intersection fade.
+- Cube corner intersects sphere enough to show blend falloff without visual clutter.
 - Each object uses different layer to show independent blend groups.
-- Plane uses blend too, so object-ground transitions are visible.
+- Planes use same blend setup as their objects, so object-ground transitions compare clearly.
 - Inline materials color-code each test mesh.
+- Moderate blend distance and light noise make material fade easier to see.
 
 Scene map:
 
-| Node                   | Role                        |
-| ---------------------- | --------------------------- |
-| `BlendPlane`           | Blend-enabled base surface. |
-| `BlendSphereA`         | Red blend source.           |
-| `BlendCube`            | Blue blend source.          |
-| `BlendSphereB`         | Green blend source.         |
-| `Ambient` / `KeyLight` | Stable lighting.            |
+| Node                   | Role                              |
+| ---------------------- | --------------------------------- |
+| `MaskedPlane`          | Left fully masked base surface.   |
+| `MaskedSphere`         | Left fully masked red base shape. |
+| `MaskedCube`           | Left fully masked blue insert.    |
+| `BlendPlane`           | Right blend-enabled base surface. |
+| `BlendSphere`          | Right red base shape.             |
+| `BlendCube`            | Right blue corner insert.         |
+| `Ambient` / `KeyLight` | Stable lighting.                  |
 
 Controls:
 

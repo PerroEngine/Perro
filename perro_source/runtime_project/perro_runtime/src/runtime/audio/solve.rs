@@ -1,5 +1,21 @@
 use super::*;
 
+const AUDIO_DEBUG_DIRECT: [f32; 4] = [0.1, 1.0, 0.55, 1.0];
+const AUDIO_DEBUG_THROUGH: [f32; 4] = [0.68, 0.18, 1.0, 0.9];
+const AUDIO_DEBUG_BOUNCE: [f32; 4] = [1.0, 0.56, 0.12, 0.9];
+const AUDIO_DEBUG_ABSORB: [f32; 4] = [0.34, 0.18, 0.74, 0.55];
+
+#[inline]
+fn audio_debug_color(color: [f32; 4], energy: f32) -> [f32; 4] {
+    let strength = (0.25 + energy.clamp(0.0, 1.0).sqrt() * 0.75).clamp(0.0, 1.0);
+    [
+        color[0] * strength,
+        color[1] * strength,
+        color[2] * strength,
+        color[3],
+    ]
+}
+
 impl Runtime {
     pub(super) fn solve_2d(
         &mut self,
@@ -76,6 +92,25 @@ impl Runtime {
             reflection = self.bounce_energy(
                 (material.reflection * (0.75 + hardness * 0.5)).clamp(0.0, 1.0),
                 self.audio.config.max_bounces_2d,
+            );
+            let through_energy = (attenuation * transmission).clamp(0.05, 1.0);
+            self.queue_audio_debug_ray_2d(
+                listener_pos,
+                hit.point,
+                audio_debug_color(AUDIO_DEBUG_THROUGH, through_energy),
+                through_energy,
+            );
+            self.queue_audio_debug_ray_2d(
+                hit.point,
+                source_pos,
+                audio_debug_color(AUDIO_DEBUG_THROUGH, through_energy),
+                through_energy,
+            );
+            self.queue_audio_debug_ray_2d(
+                hit.point,
+                perceived,
+                audio_debug_color(AUDIO_DEBUG_BOUNCE, reflection),
+                reflection,
             );
         }
         if self.audio.has_audio_portal_2d
@@ -156,7 +191,9 @@ impl Runtime {
             perceived_2d: Some(perceived),
             perceived_3d: None,
         };
-        self.queue_audio_debug_ray_2d(listener_pos, perceived);
+        if hit.is_none() {
+            self.queue_audio_debug_ray_2d(listener_pos, perceived, AUDIO_DEBUG_DIRECT, attenuation);
+        }
         Some(result)
     }
 
@@ -232,6 +269,31 @@ impl Runtime {
                 (material.reflection * (0.75 + hardness * 0.5)).clamp(0.0, 1.0),
                 self.audio.config.max_bounces_3d,
             );
+            let through_energy = (attenuation * transmission).clamp(0.05, 1.0);
+            self.queue_audio_debug_ray_3d(
+                listener_pos,
+                hit.point,
+                audio_debug_color(AUDIO_DEBUG_THROUGH, through_energy),
+                through_energy,
+            );
+            self.queue_audio_debug_ray_3d(
+                hit.point,
+                source_pos,
+                audio_debug_color(AUDIO_DEBUG_THROUGH, through_energy),
+                through_energy,
+            );
+            if let Some(reflected) = reflect_3d(dir, hit.normal) {
+                self.queue_audio_debug_ray_3d(
+                    hit.point,
+                    hit.point + reflected * 0.8,
+                    audio_debug_color(AUDIO_DEBUG_BOUNCE, reflection),
+                    reflection,
+                );
+            }
+            let absorbed = (material.absorption.clamp(0.0, 1.0) * occlusion).clamp(0.0, 1.0);
+            if absorbed > 0.01 {
+                self.queue_audio_debug_absorption_3d(hit.point, hit.normal, absorbed);
+            }
         }
         if self.audio.has_audio_portal_3d
             && let Some(path) = self.best_audio_portal_3d(source_pos, listener_pos)
@@ -307,7 +369,9 @@ impl Runtime {
             perceived_2d: None,
             perceived_3d: Some(perceived),
         };
-        self.queue_audio_debug_ray_3d(listener_pos, perceived);
+        if hit.is_none() {
+            self.queue_audio_debug_ray_3d(listener_pos, perceived, AUDIO_DEBUG_DIRECT, attenuation);
+        }
         Some(result)
     }
 
@@ -322,6 +386,37 @@ impl Runtime {
             energy *= reflection.clamp(0.0, 1.0);
         }
         total.clamp(0.0, 1.0)
+    }
+
+    fn queue_audio_debug_absorption_3d(&mut self, point: Vector3, normal: Vector3, energy: f32) {
+        let mut tangent = normal.cross(Vector3::new(0.0, 1.0, 0.0));
+        if tangent.length_squared() <= 0.0001 {
+            tangent = normal.cross(Vector3::new(1.0, 0.0, 0.0));
+        }
+        if tangent.length_squared() <= 0.0001 {
+            self.queue_audio_debug_point_3d(
+                point,
+                audio_debug_color(AUDIO_DEBUG_ABSORB, energy),
+                energy,
+            );
+            return;
+        }
+        tangent = tangent.normalized();
+        let bitangent = normal.cross(tangent).normalized();
+        let scale = 0.18 + energy.clamp(0.0, 1.0) * 0.22;
+        for offset in [
+            tangent * scale,
+            -tangent * scale,
+            bitangent * scale,
+            -bitangent * scale,
+            (tangent + bitangent).normalized() * scale * 0.8,
+        ] {
+            self.queue_audio_debug_point_3d(
+                point + offset,
+                audio_debug_color(AUDIO_DEBUG_ABSORB, energy),
+                energy,
+            );
+        }
     }
 
     pub(super) fn trace_audio_bounce_path_2d(
@@ -431,9 +526,14 @@ impl Runtime {
             echo = echo.max(hit.echo);
             low_pass = low_pass.max(hit.low_pass);
             perceived = hit.point;
+            self.queue_audio_debug_ray_2d(
+                origin,
+                hit.point,
+                audio_debug_color(AUDIO_DEBUG_BOUNCE, volume),
+                volume,
+            );
             origin = hit.point + reflected * AUDIO_PORTAL_EPSILON;
             direction = reflected;
-            self.queue_audio_debug_ray_2d(origin, hit.point);
         }
         None
     }
@@ -548,9 +648,14 @@ impl Runtime {
             echo = echo.max(hit.echo);
             low_pass = low_pass.max(hit.low_pass);
             perceived = hit.point;
+            self.queue_audio_debug_ray_3d(
+                origin,
+                hit.point,
+                audio_debug_color(AUDIO_DEBUG_BOUNCE, volume),
+                volume,
+            );
             origin = hit.point + reflected * AUDIO_PORTAL_EPSILON;
             direction = reflected;
-            self.queue_audio_debug_ray_3d(origin, hit.point);
         }
         None
     }
