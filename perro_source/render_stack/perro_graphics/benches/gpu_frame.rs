@@ -23,6 +23,11 @@ const HEIGHT: u32 = 720;
 const WARMUP_FRAMES: usize = 8;
 const SAMPLE_FRAMES: usize = 60;
 
+#[inline]
+fn color(v: [f32; 4]) -> perro_structs::Color {
+    v.into()
+}
+
 // Bench intent:
 // - empty shows fixed acquire/submit/present cost.
 // - retained rect/sprite/dense multimesh cases should stay close to empty.
@@ -555,7 +560,7 @@ fn rect_command(i: u32) -> RenderCommand {
         rect: Rect2DCommand {
             center: grid2(i, 12.0),
             size: [10.0, 10.0],
-            color: [0.2, 0.7, 1.0, 1.0],
+            color: color([0.2, 0.7, 1.0, 1.0]),
             z_index: i as i32,
         },
     })
@@ -568,7 +573,7 @@ fn sprite_command(i: u32, texture: TextureID) -> RenderCommand {
         sprite: Sprite2DCommand {
             texture,
             model: [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [x, y, 1.0]],
-            tint: [1.0, 1.0, 1.0, 1.0],
+            tint: color([1.0, 1.0, 1.0, 1.0]),
             uv_min: [0.0, 0.0],
             uv_max: [1.0, 1.0],
             size: [10.0, 10.0],
@@ -613,8 +618,8 @@ fn water_command_with_idle(
             lod_min_resolution: [32, 32],
             collision_layers: BitMask::with([1]),
             collision_mask: BitMask::NONE,
-            deep_color: [0.02, 0.16, 0.28, 0.86],
-            shallow_color: [0.08, 0.46, 0.62, 0.48],
+            deep_color: color([0.02, 0.16, 0.28, 0.86]),
+            shallow_color: color([0.08, 0.46, 0.62, 0.48]),
             shallow_depth: -1.0,
             sky_bias_ratio: 0.0,
             transparency: 0.24,
@@ -623,14 +628,14 @@ fn water_command_with_idle(
             fresnel_power: 5.0,
             normal_strength: 1.15,
             ripple_scale: 1.0,
-            foam_color: [0.86, 0.96, 1.0, 1.0],
+            foam_color: color([0.86, 0.96, 1.0, 1.0]),
             foam_amount: 0.72,
             crest_foam_threshold: 0.58,
             caustic_strength: 0.20,
             refraction_strength: 0.12,
             scattering_strength: 0.18,
             distance_fog_strength: 0.32,
-            coastline_foam_color: [0.9, 0.97, 1.0, 1.0],
+            coastline_foam_color: color([0.9, 0.97, 1.0, 1.0]),
             coastline_foam_strength: if impacts > 0 { 0.75 } else { 0.0 },
             coastline_foam_width: 1.5,
             coastline_cutoff_softness: 0.25,
@@ -639,6 +644,7 @@ fn water_command_with_idle(
             coastline_edge_noise: 0.2,
             debug: false,
             links: Arc::from([]),
+            queries: Arc::from([]),
             impacts: (0..impacts)
                 .map(|j| perro_render_bridge::WaterImpact2D {
                     position: [(j % 16) as f32 * 2.0, (j / 16) as f32 * 2.0],
@@ -689,8 +695,8 @@ fn water_sim_command(i: u32, resolution: u32, impacts: u32) -> RenderCommand {
             lod_min_resolution: [32, 32],
             collision_layers: BitMask::with([1]),
             collision_mask: BitMask::NONE,
-            deep_color: [0.02, 0.16, 0.28, 0.86],
-            shallow_color: [0.08, 0.46, 0.62, 0.48],
+            deep_color: color([0.02, 0.16, 0.28, 0.86]),
+            shallow_color: color([0.08, 0.46, 0.62, 0.48]),
             shallow_depth: -1.0,
             sky_bias_ratio: 0.35,
             transparency: 0.24,
@@ -699,14 +705,14 @@ fn water_sim_command(i: u32, resolution: u32, impacts: u32) -> RenderCommand {
             fresnel_power: 5.0,
             normal_strength: 1.15,
             ripple_scale: 1.0,
-            foam_color: [0.86, 0.96, 1.0, 1.0],
+            foam_color: color([0.86, 0.96, 1.0, 1.0]),
             foam_amount: 0.72,
             crest_foam_threshold: 0.58,
             caustic_strength: 0.20,
             refraction_strength: 0.12,
             scattering_strength: 0.18,
             distance_fog_strength: 0.32,
-            coastline_foam_color: [0.9, 0.97, 1.0, 1.0],
+            coastline_foam_color: color([0.9, 0.97, 1.0, 1.0]),
             coastline_foam_strength: if impacts > 0 { 0.75 } else { 0.0 },
             coastline_foam_width: 1.5,
             coastline_cutoff_softness: 0.25,
@@ -715,6 +721,7 @@ fn water_sim_command(i: u32, resolution: u32, impacts: u32) -> RenderCommand {
             coastline_edge_noise: 0.2,
             debug: false,
             links: Arc::from([]),
+            queries: Arc::from([]),
             impacts: (0..impacts)
                 .map(|j| perro_render_bridge::WaterImpact3D {
                     position: [(j % 16) as f32 * 2.0, 0.0, (j / 16) as f32 * 2.0],
@@ -908,21 +915,21 @@ fn tiny_mesh() -> Mesh3D {
                 normal: [0.0, 1.0, 0.0],
                 uv: [0.0, 0.0],
                 joints: [0, 0, 0, 0],
-                weights: [1.0, 0.0, 0.0, 0.0],
+                weights: [1.0, 0.0, 0.0, 0.0].into(),
             },
             RuntimeMeshVertex {
                 position: [1.0, 0.0, 0.0],
                 normal: [0.0, 1.0, 0.0],
                 uv: [1.0, 0.0],
                 joints: [0, 0, 0, 0],
-                weights: [1.0, 0.0, 0.0, 0.0],
+                weights: [1.0, 0.0, 0.0, 0.0].into(),
             },
             RuntimeMeshVertex {
                 position: [0.0, 1.0, 0.0],
                 normal: [0.0, 1.0, 0.0],
                 uv: [0.0, 1.0],
                 joints: [0, 0, 0, 0],
-                weights: [1.0, 0.0, 0.0, 0.0],
+                weights: [1.0, 0.0, 0.0, 0.0].into(),
             },
         ],
         indices: vec![0, 1, 2],
@@ -949,7 +956,7 @@ fn uv_sphere_mesh(slices: u32, stacks: u32) -> Mesh3D {
                 normal,
                 uv: [u, v],
                 joints: [0, 0, 0, 0],
-                weights: [1.0, 0.0, 0.0, 0.0],
+                weights: [1.0, 0.0, 0.0, 0.0].into(),
             });
         }
     }

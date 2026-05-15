@@ -46,6 +46,19 @@ const LOG_INTERVAL_SECONDS: f32 = 3.0;
 const LOG_TIMING_SAMPLE_STRIDE: u32 = 20;
 const TIMING_WARMUP_FRAMES: u32 = 8;
 
+#[inline]
+fn should_sample_timing_frame(frame_index: u64) -> bool {
+    #[cfg(any(feature = "profile_heavy", feature = "ui_profile", feature = "fps"))]
+    {
+        let _ = frame_index;
+        true
+    }
+    #[cfg(not(any(feature = "profile_heavy", feature = "ui_profile", feature = "fps")))]
+    {
+        frame_index == 1 || frame_index.is_multiple_of(LOG_TIMING_SAMPLE_STRIDE as u64)
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SimFrameTiming {
     pub simulation_time: Duration,
@@ -911,17 +924,7 @@ impl<B: GraphicsBackend> ThreadedRunnerState<B> {
 
     #[inline]
     fn should_sample_timing(&self) -> bool {
-        #[cfg(any(feature = "profile_heavy", feature = "ui_profile", feature = "fps"))]
-        {
-            true
-        }
-        #[cfg(not(any(feature = "profile_heavy", feature = "ui_profile", feature = "fps")))]
-        {
-            self.frame_index == 1
-                || self
-                    .frame_index
-                    .is_multiple_of(LOG_TIMING_SAMPLE_STRIDE as u64)
-        }
+        should_sample_timing_frame(self.frame_index)
     }
 
     fn reset_timing_batch(&mut self, now: Instant) {
@@ -962,15 +965,17 @@ impl<B: GraphicsBackend> ThreadedRunnerState<B> {
         let simulation_duration = simulation_timing.simulation_time;
         let frame_end = Instant::now();
         self.last_frame_end = frame_end;
-        self.bridge.publish_render_timing(RenderFrameTiming {
-            graphics_time: present_active_duration,
-            frame_time: frame_delta,
-            fps: if frame_delta.is_zero() {
-                0.0
-            } else {
-                1.0 / frame_delta.as_secs_f32()
-            },
-        });
+        if should_sample_timing {
+            self.bridge.publish_render_timing(RenderFrameTiming {
+                graphics_time: present_active_duration,
+                frame_time: frame_delta,
+                fps: if frame_delta.is_zero() {
+                    0.0
+                } else {
+                    1.0 / frame_delta.as_secs_f32()
+                },
+            });
+        }
 
         if let Some(csv) = &mut self.timing_csv {
             csv.write(CsvFrameSample {
@@ -1353,14 +1358,18 @@ fn run_sim_loop(mut runtime: Runtime, bridge: SimBridge, config: SimThreadConfig
             .min(0.250);
         last_tick = tick_start;
         let render_timing = bridge.read_render_timing();
+        let next_frame_id = frame_id.saturating_add(1);
+        let should_sample_timing = should_sample_timing_frame(next_frame_id);
 
         let input_frame = bridge.seal_input_frame();
         runtime.time.elapsed = tick_start
             .saturating_duration_since(run_start)
             .as_secs_f32();
-        runtime.time.graphics = render_timing.graphics_time;
-        runtime.time.frame = render_timing.frame_time;
-        runtime.time.fps = render_timing.fps;
+        if should_sample_timing {
+            runtime.time.graphics = render_timing.graphics_time;
+            runtime.time.frame = render_timing.frame_time;
+            runtime.time.fps = render_timing.fps;
+        }
         runtime.apply_input_frame(&input_frame);
         bridge.apply_render_events(&mut runtime);
 
@@ -1389,9 +1398,14 @@ fn run_sim_loop(mut runtime: Runtime, bridge: SimBridge, config: SimThreadConfig
         runtime.extract_render_snapshot_commands(&mut commands);
         let mut snapshot_commands = bridge.checkout_command_buffer();
         std::mem::swap(&mut commands, &mut snapshot_commands);
-        let simulation_duration = tick_start.elapsed();
-        runtime.time.simulation = simulation_duration;
-        frame_id = frame_id.saturating_add(1);
+        let simulation_duration = if should_sample_timing {
+            let duration = tick_start.elapsed();
+            runtime.time.simulation = duration;
+            duration
+        } else {
+            runtime.time.simulation
+        };
+        frame_id = next_frame_id;
         bridge.publish_snapshot(RenderSnapshot::new(
             frame_id,
             runtime.time.elapsed,

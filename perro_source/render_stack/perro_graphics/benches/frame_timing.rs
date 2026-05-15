@@ -11,6 +11,11 @@ use perro_render_bridge::{
 use perro_structs::{Color, PostProcessEffect, PostProcessSet};
 use std::sync::Arc;
 
+#[inline]
+fn color(v: [f32; 4]) -> Color {
+    v.into()
+}
+
 fn tiny_mesh() -> Mesh3D {
     Mesh3D {
         vertices: vec![
@@ -19,21 +24,21 @@ fn tiny_mesh() -> Mesh3D {
                 normal: [0.0, 1.0, 0.0],
                 uv: [0.0, 0.0],
                 joints: [0, 0, 0, 0],
-                weights: [1.0, 0.0, 0.0, 0.0],
+                weights: [1.0, 0.0, 0.0, 0.0].into(),
             },
             RuntimeMeshVertex {
                 position: [1.0, 0.0, 0.0],
                 normal: [0.0, 1.0, 0.0],
                 uv: [1.0, 0.0],
                 joints: [0, 0, 0, 0],
-                weights: [1.0, 0.0, 0.0, 0.0],
+                weights: [1.0, 0.0, 0.0, 0.0].into(),
             },
             RuntimeMeshVertex {
                 position: [0.0, 1.0, 0.0],
                 normal: [0.0, 1.0, 0.0],
                 uv: [0.0, 1.0],
                 joints: [0, 0, 0, 0],
-                weights: [1.0, 0.0, 0.0, 0.0],
+                weights: [1.0, 0.0, 0.0, 0.0].into(),
             },
         ],
         indices: vec![0, 1, 2],
@@ -64,7 +69,7 @@ fn rect_command(i: u32) -> RenderCommand {
         rect: Rect2DCommand {
             center: [(i % 256) as f32 * 4.0, (i / 256) as f32 * 4.0],
             size: [3.0, 3.0],
-            color: [0.2, 0.7, 1.0, 1.0],
+            color: color([0.2, 0.7, 1.0, 1.0]),
             z_index: i as i32,
         },
     })
@@ -80,7 +85,7 @@ fn sprite_command(i: u32, texture: TextureID) -> RenderCommand {
                 [0.0, 16.0, 0.0],
                 [(i % 256) as f32 * 4.0, (i / 256) as f32 * 4.0, 1.0],
             ],
-            tint: [1.0, 1.0, 1.0, 1.0],
+            tint: color([1.0, 1.0, 1.0, 1.0]),
             uv_min: [0.0, 0.0],
             uv_max: [1.0, 1.0],
             size: [16.0, 16.0],

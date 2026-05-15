@@ -1396,16 +1396,18 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let active_work_duration = work_duration.saturating_sub(present_wait_duration);
         let frame_end = Instant::now();
         self.last_frame_end = frame_end;
-        self.app.set_frame_timing(
-            simulation_duration,
-            present_active_duration,
-            frame_delta,
-            if frame_delta.is_zero() {
-                0.0
-            } else {
-                1.0 / frame_delta.as_secs_f32()
-            },
-        );
+        if should_sample_timing {
+            self.app.set_frame_timing(
+                simulation_duration,
+                present_active_duration,
+                frame_delta,
+                if frame_delta.is_zero() {
+                    0.0
+                } else {
+                    1.0 / frame_delta.as_secs_f32()
+                },
+            );
+        }
 
         let warmup_frame = self.timing_warmup_frames_left > 0;
         if !warmup_frame {
@@ -1733,16 +1735,18 @@ impl<B: GraphicsBackend> RunnerState<B> {
 
         let frame_end = Instant::now();
         self.last_frame_end = frame_end;
-        self.app.set_frame_timing(
-            simulation_duration,
-            present_active_duration,
-            frame_delta,
-            if frame_delta.is_zero() {
-                0.0
-            } else {
-                1.0 / frame_delta.as_secs_f32()
-            },
-        );
+        if should_sample_timing {
+            self.app.set_frame_timing(
+                simulation_duration,
+                present_active_duration,
+                frame_delta,
+                if frame_delta.is_zero() {
+                    0.0
+                } else {
+                    1.0 / frame_delta.as_secs_f32()
+                },
+            );
+        }
 
         let warmup_frame = self.timing_warmup_frames_left > 0;
         if !warmup_frame {
