@@ -419,9 +419,7 @@ impl Renderer2D {
         let mut changed = false;
         for SpritePacket { node, sprite } in queued {
             if resources.has_texture(sprite.texture) {
-                if self.upsert_retained_sprite(node, sprite) {
-                    changed = true;
-                }
+                changed |= self.upsert_retained_sprite(node, sprite);
                 stats.accepted_draws = stats.accepted_draws.saturating_add(1);
             } else {
                 if let Some(retained) = self.retained_sprite_mut(node) {

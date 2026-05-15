@@ -74,7 +74,8 @@ pub const MAX_SPOT_LIGHTS: usize = 8;
 
 pub struct Renderer3D {
     queued_draws: Vec<Draw3DInstance>,
-    retained_draws: AHashMap<NodeID, Draw3DInstance>,
+    retained_draws: Vec<Draw3DInstance>,
+    node_to_draw_index: AHashMap<NodeID, usize>,
     ambient_lights: AHashMap<NodeID, AmbientLight3DState>,
     skies: AHashMap<NodeID, Sky3DState>,
     ray_lights: AHashMap<NodeID, RayLight3DState>,
@@ -256,7 +257,7 @@ impl Renderer3D {
     }
 
     pub fn remove_node(&mut self, node: NodeID) {
-        if self.retained_draws.remove(&node).is_some() {
+        if self.remove_retained_draw(node) {
             self.draw_revision = self.draw_revision.wrapping_add(1);
             self.rebuild_sorted_draws_cache();
         }
@@ -352,14 +353,14 @@ impl Renderer3D {
             for draw in queued {
                 let (material_ready, mesh_ready, draw_ready) = draw_readiness(&draw, resources);
                 if draw_ready {
-                    let changed = self.retained_draws.get(&draw.node) != Some(&draw);
+                    let changed = self.retained_draw(draw.node).as_ref() != Some(&draw);
                     if changed {
-                        self.retained_draws.insert(draw.node, draw);
+                        self.upsert_retained_draw(draw);
                         draws_changed = true;
                     }
                     stats.accepted_draws = stats.accepted_draws.saturating_add(1);
                 } else {
-                    if let Some(retained) = self.retained_draws.get_mut(&draw.node) {
+                    if let Some(retained) = self.retained_draw_mut(draw.node) {
                         // Keep previous mesh/material bindings until replacements exist,
                         // but continue applying latest transform updates.
                         draws_changed |= update_unready_retained_draw(
@@ -447,20 +448,21 @@ impl Renderer3D {
                 let changed = self.retained_draws_sorted_cache[index] != *draw;
                 if changed {
                     self.retained_draws_sorted_cache[index] = draw.clone();
-                    self.retained_draws.insert(draw.node, draw.clone());
+                    self.upsert_retained_draw(draw.clone());
                     draws_changed = true;
                 }
                 stats.accepted_draws = stats.accepted_draws.saturating_add(1);
             } else {
-                if let Some(retained) = self.retained_draws.get_mut(&draw.node) {
+                if let Some(retained) = self.retained_draw_mut(draw.node) {
                     draws_changed |= update_unready_retained_draw(
                         retained,
                         draw.clone(),
                         mesh_ready,
                         material_ready,
                     );
-                    if self.retained_draws_sorted_cache[index] != *retained {
-                        self.retained_draws_sorted_cache[index] = retained.clone();
+                    let retained_updated = retained.clone();
+                    if self.retained_draws_sorted_cache[index] != retained_updated {
+                        self.retained_draws_sorted_cache[index] = retained_updated;
                     }
                 }
                 stats.rejected_draws = stats.rejected_draws.saturating_add(1);
@@ -470,7 +472,8 @@ impl Renderer3D {
     }
 
     pub fn retained_draw(&self, node: NodeID) -> Option<Draw3DInstance> {
-        self.retained_draws.get(&node).cloned()
+        let idx = *self.node_to_draw_index.get(&node)?;
+        self.retained_draws.get(idx).cloned()
     }
 
     pub fn retained_draw_count(&self) -> usize {
@@ -487,11 +490,11 @@ impl Renderer3D {
     }
 
     pub fn retained_draws(&self) -> impl Iterator<Item = Draw3DInstance> + '_ {
-        self.retained_draws.values().cloned()
+        self.retained_draws.iter().cloned()
     }
 
     pub fn all_draws(&self) -> impl Iterator<Item = Draw3DInstance> + '_ {
-        self.retained_draws.values().cloned()
+        self.retained_draws.iter().cloned()
     }
 
     pub fn retained_draws_sorted(&self) -> &[Draw3DInstance] {
@@ -562,7 +565,7 @@ impl Renderer3D {
                 .reserve(self.retained_draws.len() - self.retained_draws_sorted_cache.capacity());
         }
         self.retained_draws_sorted_cache
-            .extend(self.retained_draws.values().cloned());
+            .extend(self.retained_draws.iter().cloned());
         if self.retained_draws_sorted_cache.len() >= PARALLEL_PREP_SORT_MIN {
             self.retained_draws_sorted_cache
                 .par_sort_unstable_by_key(|draw| draw.node.as_u64());
@@ -570,6 +573,35 @@ impl Renderer3D {
             self.retained_draws_sorted_cache
                 .sort_unstable_by_key(|draw| draw.node.as_u64());
         }
+    }
+
+    fn upsert_retained_draw(&mut self, draw: Draw3DInstance) {
+        if let Some(&idx) = self.node_to_draw_index.get(&draw.node) {
+            self.retained_draws[idx] = draw;
+            return;
+        }
+        let idx = self.retained_draws.len();
+        self.retained_draws.push(draw);
+        self.node_to_draw_index
+            .insert(self.retained_draws[idx].node, idx);
+    }
+
+    fn retained_draw_mut(&mut self, node: NodeID) -> Option<&mut Draw3DInstance> {
+        let idx = *self.node_to_draw_index.get(&node)?;
+        self.retained_draws.get_mut(idx)
+    }
+
+    fn remove_retained_draw(&mut self, node: NodeID) -> bool {
+        let Some(removed_idx) = self.node_to_draw_index.remove(&node) else {
+            return false;
+        };
+        let last = self.retained_draws.len() - 1;
+        self.retained_draws.swap_remove(removed_idx);
+        if removed_idx != last {
+            let moved_node = self.retained_draws[removed_idx].node;
+            self.node_to_draw_index.insert(moved_node, removed_idx);
+        }
+        true
     }
 }
 
@@ -633,7 +665,8 @@ impl Default for Renderer3D {
     fn default() -> Self {
         Self {
             queued_draws: Vec::new(),
-            retained_draws: AHashMap::new(),
+            retained_draws: Vec::new(),
+            node_to_draw_index: AHashMap::new(),
             ambient_lights: AHashMap::new(),
             skies: AHashMap::new(),
             ray_lights: AHashMap::new(),

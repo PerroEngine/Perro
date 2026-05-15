@@ -39,6 +39,7 @@ const PAUSE_CONTENT_NODE_NAME: &str = "pause_content";
 const PAUSE_TITLE_NODE_NAME: &str = "pause_title";
 const PAUSE_SENS_ROW_NODE_NAME: &str = "pause_sens_row";
 const PAUSE_SENS_LABEL_NODE_NAME: &str = "pause_sens_label";
+const DEMO_CAMERA_NODE_NAME: &str = "DemoCamera";
 const PAUSE_BUTTON_SENS_DOWN_NODE_NAME: &str = "pause_btn_sens_down";
 const PAUSE_BUTTON_SENS_UP_NODE_NAME: &str = "pause_btn_sens_up";
 const PAUSE_BUTTON_RESUME_NODE_NAME: &str = "pause_btn_resume";
@@ -50,6 +51,10 @@ const DEFAULT_MOUSE_SENSITIVITY: f32 = 0.00012;
 const MIN_MOUSE_SENSITIVITY: f32 = 0.00004;
 const MAX_MOUSE_SENSITIVITY: f32 = 0.00030;
 const MOUSE_SENSITIVITY_STEP: f32 = 0.00002;
+const DEFAULT_FREECAM_SPEED: f32 = 8.0;
+const MIN_FREECAM_SPEED: f32 = 1.0;
+const MAX_FREECAM_SPEED: f32 = 48.0;
+const FREECAM_SPEED_STEP: f32 = 1.5;
 const FADE_IN_SECONDS: f32 = 0.35;
 const FADE_HOLD_SECONDS: f32 = 0.20;
 const FADE_OUT_SECONDS: f32 = 0.35;
@@ -222,6 +227,7 @@ struct DemoRuntimeState {
     pub fade_action_done: bool,
     pub pause_alpha: f32,
     pub mouse_sensitivity: f32,
+    pub freecam_speed: f32,
     pub pause_applied: bool,
     pub physics_was_paused: bool,
 }
@@ -240,6 +246,7 @@ impl Default for DemoRuntimeState {
             fade_action_done: true,
             pause_alpha: 0.0,
             mouse_sensitivity: DEFAULT_MOUSE_SENSITIVITY,
+            freecam_speed: DEFAULT_FREECAM_SPEED,
             pause_applied: false,
             physics_was_paused: false,
         }
@@ -424,6 +431,10 @@ lifecycle!({
         if fade_active {
             self.apply_mode_io(ctx);
             return;
+        }
+
+        if mode == DemoMode::DemoActive {
+            self.adjust_freecam_speed_from_scroll(ctx);
         }
 
         if key_pressed!(ctx.ipt, KeyCode::Escape) {
@@ -813,6 +824,7 @@ methods!({
             state.runtime.pause_alpha = 0.0;
         });
         self.apply_mouse_sensitivity_to_active_demo(ctx);
+        self.apply_freecam_speed_to_active_demo(ctx);
         mouse_capture!(ctx.ipt);
     }
 
@@ -967,6 +979,19 @@ methods!({
         });
         self.sync_mouse_sensitivity_label(ctx);
         self.apply_mouse_sensitivity_to_active_demo(ctx);
+    }
+
+    fn adjust_freecam_speed_from_scroll(&self, ctx: &mut ScriptContext<'_, API>) {
+        let wheel = mouse_wheel!(ctx.ipt).y;
+        if wheel.abs() <= 0.001 {
+            return;
+        }
+
+        with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
+            state.runtime.freecam_speed = (state.runtime.freecam_speed + wheel * FREECAM_SPEED_STEP)
+                .clamp(MIN_FREECAM_SPEED, MAX_FREECAM_SPEED);
+        });
+        self.apply_freecam_speed_to_active_demo(ctx);
     }
 
     fn update_pause_fade(&self, ctx: &mut ScriptContext<'_, API>, dt: f32) {
@@ -1137,6 +1162,28 @@ methods!({
                 }
             }
         }
+    }
+
+    fn apply_freecam_speed_to_active_demo(&self, ctx: &mut ScriptContext<'_, API>) {
+        let (root, speed) = with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
+            (
+                state.refs.active_demo_root,
+                state
+                    .runtime
+                    .freecam_speed
+                    .clamp(MIN_FREECAM_SPEED, MAX_FREECAM_SPEED),
+            )
+        });
+        if root.is_nil() {
+            return;
+        }
+
+        let camera = find_descendant_by_name(ctx, root, DEMO_CAMERA_NODE_NAME);
+        if camera.is_nil() {
+            return;
+        }
+
+        set_var!(ctx.run, camera, var!("speed"), variant!(speed));
     }
 
     fn apply_transition_fade(&self, ctx: &mut ScriptContext<'_, API>, alpha: f32, visible: bool) {

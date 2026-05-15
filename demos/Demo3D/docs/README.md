@@ -18,6 +18,7 @@ Common controls:
 | `W` `A` `S` `D` | Move camera    |
 | `Space`         | Move up        |
 | `Shift`         | Move down      |
+| Mouse wheel     | Change speed   |
 | `Esc`           | Pause / resume |
 
 Shared files:

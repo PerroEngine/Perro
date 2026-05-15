@@ -75,6 +75,7 @@ Run `perro check` to sync scripts and get rust-analyzer working.
 | `W` `A` `S` `D` | Move camera. |
 | `Space` | Move up. |
 | `Shift` | Move down. |
+| Mouse wheel | Change free camera speed. |
 | `Esc` | Pause/resume or return through menu. |
 | Left mouse | Shoot in Water and Physics Bones. |
 | Mouse wheel | Change projectile size in shooting demos. |
