@@ -2500,13 +2500,40 @@ fn water_ridged_fbm(p: vec2<f32>) -> f32 {
     return sum / max(norm, 0.001);
 }
 
+fn water_hex_noise(p: vec2<f32>) -> f32 {
+    let rot_a = vec2<f32>(p.x * 0.5 - p.y * 0.8660254, p.x * 0.8660254 + p.y * 0.5);
+    let rot_b = vec2<f32>(p.x * 0.5 + p.y * 0.8660254, -p.x * 0.8660254 + p.y * 0.5);
+    let a = water_noise(p);
+    let b = water_noise(rot_a + vec2<f32>(11.0, 7.0));
+    let c = water_noise(rot_b + vec2<f32>(23.0, 17.0));
+    let cell = water_noise(p * 0.19 + vec2<f32>(3.0, 5.0));
+    return mix((a + b + c) * 0.33333334, max(a, max(b, c)), 0.22 + cell * 0.18);
+}
+
+fn water_hex_ridged_fbm(p: vec2<f32>) -> f32 {
+    var q = p;
+    var amp = 0.58;
+    var sum = 0.0;
+    var norm = 0.0;
+    for (var i = 0u; i < 4u; i = i + 1u) {
+        let n = abs(water_hex_noise(q) * 2.0 - 1.0);
+        sum += (1.0 - n) * amp;
+        norm += amp;
+        q = vec2<f32>(q.x * 1.73 - q.y * 0.94, q.x * 0.88 + q.y * 1.61) + vec2<f32>(13.0, 29.0);
+        amp *= 0.52;
+    }
+    return sum / max(norm, 0.001);
+}
+
 fn water_line_layer(p: vec2<f32>, dir: vec2<f32>, t: f32, scale: f32) -> vec3<f32> {
-    let n = water_fbm(p * 0.21 + dir * t * 0.08);
+    let n = water_hex_noise(p * 0.21 + dir * t * 0.08);
     let q = dot(p, dir) * scale + n * 1.35 + t * 0.18;
     let band = abs(fract(q) - 0.5) * 2.0;
     let line = 1.0 - smoothstep(0.035, 0.13, band);
-    let broken = smoothstep(0.30, 0.74, water_fbm(p * 0.53 + vec2<f32>(t * 0.05, -t * 0.04)));
-    let dark = smoothstep(0.62, 0.95, band) * smoothstep(0.42, 0.88, water_fbm(p * 0.12 - dir * t * 0.03));
+    let broken =
+        smoothstep(0.30, 0.74, water_hex_noise(p * 0.53 + vec2<f32>(t * 0.05, -t * 0.04)));
+    let dark = smoothstep(0.62, 0.95, band)
+        * smoothstep(0.42, 0.88, water_hex_noise(p * 0.12 - dir * t * 0.03));
     return vec3<f32>(line * broken, dark, n);
 }
 
@@ -2758,6 +2785,27 @@ fn fs_water_3d(in: Water3DVertexOut) -> @location(0) vec4<f32> {
     let auto_shallow_depth = max(max(w.size_depth_time.x, w.size_depth_time.y) * 0.25, 0.001);
     let shallow_depth = select(auto_shallow_depth, max(w.size_depth_time.w, 0.001), w.size_depth_time.w >= 0.0);
     let depth_t = clamp(w.size_depth_time.z / shallow_depth, 0.0, 1.0);
+    if view_dist >= 320.0 {
+        let coast_outline = max(edge * 0.54, ripple.w);
+        let foam = clamp(
+            (smoothstep(0.32, 0.90, ripple.z) * 0.16 + smoothstep(0.58, 0.96, coast_outline) * w.coastline.x * 0.44)
+                * w.visual1.z,
+            0.0,
+            1.0,
+        );
+        let shallow_t = clamp(1.0 - depth_t + idle * 0.02 + foam * 0.02, 0.0, 1.0);
+        let fresnel = fresnel_base * (0.42 + coast_outline * 0.48);
+        let water_rgb = mix(w.deep_color.rgb, w.shallow_color.rgb, shallow_t);
+        let reflected = mix(water_rgb, w.sky_color_bias.rgb, max(w.sky_color_bias.w, w.visual0.y * fresnel * 0.62));
+        let fog_t = clamp(view_dist / 620.0, 0.0, 1.0) * w.visual2.w;
+        let outline_white = smoothstep(0.66, 0.96, coast_outline);
+        let color = mix(mix(reflected, w.deep_color.rgb, fog_t), vec3<f32>(1.0), outline_white);
+        let alpha = mix(w.deep_color.a, w.shallow_color.a, shallow_t) * (1.0 - clamp(w.visual0.x, 0.0, 1.0) * 0.72);
+        let side_color = mix(w.deep_color.rgb, color, 0.22);
+        let final_color = mix(color, side_color, in.side_t);
+        let final_alpha = mix(alpha + foam * 0.04 + fresnel * w.visual0.y * 0.03, w.deep_color.a * 0.82, in.side_t);
+        return vec4<f32>(final_color, clamp(final_alpha, 0.0, 1.0));
+    }
     if view_dist >= 220.0 {
         let coast_outline = max(edge * 0.50, ripple.w);
         let crest_seed = ripple.y / max(w.wave.y, 0.001) + slope * 2.2;
@@ -2776,7 +2824,12 @@ fn fs_water_3d(in: Water3DVertexOut) -> @location(0) vec4<f32> {
         let reflected = mix(water_rgb, w.sky_color_bias.rgb, max(w.sky_color_bias.w, w.visual0.y * fresnel * 0.58));
         let fog_t = clamp(view_dist / 620.0, 0.0, 1.0) * w.visual2.w;
         let foam_rgb = mix(w.coastline_foam_color.rgb, w.foam_color.rgb, w.foam_color.a);
-        let color = mix(mix(reflected, w.deep_color.rgb, fog_t), foam_rgb, foam * 0.30);
+        let outline_white = smoothstep(0.62, 0.95, coast_outline);
+        let color = mix(
+            mix(mix(reflected, w.deep_color.rgb, fog_t), foam_rgb, foam * 0.30),
+            vec3<f32>(1.0),
+            outline_white,
+        );
         let alpha = mix(w.deep_color.a, w.shallow_color.a, shallow_t) * (1.0 - clamp(w.visual0.x, 0.0, 1.0) * 0.72);
         let side_color = mix(w.deep_color.rgb, color, 0.28);
         let final_color = mix(color, side_color, in.side_t);
@@ -2786,15 +2839,22 @@ fn fs_water_3d(in: Water3DVertexOut) -> @location(0) vec4<f32> {
     let local = (in.uv - vec2<f32>(0.5, 0.5)) * w.size_depth_time.xy;
     let wave_flow = normalize(select(vec2<f32>(1.0, 0.0), w.flow_wind.zw + w.flow_wind.xy * 0.35, length(w.flow_wind.zw + w.flow_wind.xy * 0.35) > 0.0001));
     let wave_push = vec2<f32>(normal.x, normal.z) * 0.018 * clamp(w.visual1.x, 0.0, 1.4);
-    let foam_drift = wave_flow * (0.010 * sin(t * w.wave.x * 1.7 + ripple.y) + 0.006 * water_ridged_fbm(local * (0.21 - far_t * 0.08) + t * 0.07));
+    let foam_drift = wave_flow
+        * (0.010 * sin(t * w.wave.x * 1.7 + ripple.y)
+            + 0.006 * water_hex_ridged_fbm(local * (0.21 - far_t * 0.08) + t * 0.07));
     let coast_anim = water_coast_sample(w, in.uv + wave_push + foam_drift);
     let coast_outline = max(edge * 0.55, max(coast_anim.y * 1.15, ripple.w));
-    let foam_break = water_ridged_fbm(local * 1.35 + wave_flow * t * 0.42 + vec2<f32>(ripple.y * 0.23, -ripple.x * 0.17));
+    let foam_break =
+        water_hex_ridged_fbm(local * 1.35 + wave_flow * t * 0.42 + vec2<f32>(ripple.y * 0.23, -ripple.x * 0.17));
     let foam_cut = smoothstep(0.54, 0.91, foam_break);
-    let foam_thread = smoothstep(0.64, 0.94, water_ridged_fbm(local * 3.9 - wave_flow * t * 0.68 + vec2<f32>(ripple.x * 0.31, ripple.y * 0.19)));
+    let foam_thread = smoothstep(
+        0.64,
+        0.94,
+        water_hex_ridged_fbm(local * 3.9 - wave_flow * t * 0.68 + vec2<f32>(ripple.x * 0.31, ripple.y * 0.19)),
+    );
     let impact_core = smoothstep(0.20, 0.86, ripple.z) * foam_cut;
     let impact_lace = impact_core * foam_thread;
-    let decal_noise = water_ridged_fbm(local * 0.74 + wave_flow * t * 0.22 + vec2<f32>(5.0, 13.0));
+    let decal_noise = water_hex_ridged_fbm(local * 0.74 + wave_flow * t * 0.22 + vec2<f32>(5.0, 13.0));
     let fresnel_break = smoothstep(0.54, 0.92, decal_noise) * smoothstep(0.05, 0.42, slope + coast_outline * 0.28);
     let fresnel = fresnel_base * (0.28 + max(fresnel_break, coast_outline * 0.65) * 0.86);
     let crest_seed = ripple.y / max(w.wave.y, 0.001) + slope * 2.4;
@@ -2811,14 +2871,16 @@ fn fs_water_3d(in: Water3DVertexOut) -> @location(0) vec4<f32> {
     let caustic = smoothstep(0.62, 0.92, caustic_seed) * (1.0 - depth_t) * w.visual2.x;
     let sun_dir = normalize(select(vec3<f32>(0.0, 1.0, 0.0), -scene.ray_light.direction.xyz, length(scene.ray_light.direction.xyz) > 0.001));
     let scatter = (1.0 - depth_t) * w.visual2.z * max(dot(normal, sun_dir), 0.0);
-    let basin = water_fbm(local * mix(0.035, 0.020, far_t) + vec2<f32>(t * 0.015, -t * 0.009));
-    let shoal = water_fbm(local * mix(0.085, 0.050, far_t) + vec2<f32>(4.3, 8.1));
+    let basin = water_hex_noise(local * mix(0.035, 0.020, far_t) + vec2<f32>(t * 0.015, -t * 0.009));
+    let shoal = water_hex_noise(local * mix(0.085, 0.050, far_t) + vec2<f32>(4.3, 8.1));
     let line_a = water_line_layer(local + normal.xz * mix(4.0, 2.0, far_t), normalize(vec2<f32>(0.74, 0.67)), t * w.wave.x, mix(0.095, 0.060, far_t));
     let line_b = water_line_layer(local + normal.xz * mix(2.5, 1.4, far_t), normalize(vec2<f32>(-0.61, 0.79)), -t * w.wave.x, mix(0.135, 0.080, far_t));
     let ink_lines = max(line_a.x, line_b.x) * (1.0 - foam);
     let dark_lines = max(line_a.y, line_b.y) * (1.0 - foam);
-    let lowlight_noise = water_ridged_fbm(local * mix(0.095, 0.055, far_t) - wave_flow * t * 0.045);
-    let highlight_noise = water_ridged_fbm(local * mix(0.31, 0.18, far_t) + wave_flow * t * 0.16 + vec2<f32>(9.0, 2.0));
+    let lowlight_noise =
+        water_hex_ridged_fbm(local * mix(0.095, 0.055, far_t) - wave_flow * t * 0.045);
+    let highlight_noise =
+        water_hex_ridged_fbm(local * mix(0.31, 0.18, far_t) + wave_flow * t * 0.16 + vec2<f32>(9.0, 2.0));
     let dark_patch = smoothstep(0.50, 0.92, basin * 0.48 + lowlight_noise * 0.24 + dark_lines * 0.22) * (1.0 - foam) * 0.26;
     let light_patch = smoothstep(0.56, 0.91, shoal * 0.48 + highlight_noise * 0.42 + ink_lines * 0.34) * (1.0 - depth_t) * 0.48;
     let scratch_ripple = (highlight_noise - lowlight_noise) * 0.12;
@@ -2835,7 +2897,8 @@ fn fs_water_3d(in: Water3DVertexOut) -> @location(0) vec4<f32> {
     let fog_t = clamp(view_dist / 620.0, 0.0, 1.0) * w.visual2.w;
     let fogged = mix(lit_water, w.deep_color.rgb, fog_t);
     let foam_rgb = mix(w.coastline_foam_color.rgb, w.foam_color.rgb, w.foam_color.a);
-    let color = mix(fogged, foam_rgb, foam * 0.42);
+    let outline_white = smoothstep(0.60, 0.94, max(coast_anim.y, ripple.w));
+    let color = mix(mix(fogged, foam_rgb, foam * 0.42), vec3<f32>(1.0), outline_white);
     let alpha = mix(w.deep_color.a, w.shallow_color.a, shallow_t) * (1.0 - clamp(w.visual0.x, 0.0, 1.0) * 0.72);
     let side_color = mix(w.deep_color.rgb, color, 0.35);
     let final_color = mix(color, side_color, in.side_t);

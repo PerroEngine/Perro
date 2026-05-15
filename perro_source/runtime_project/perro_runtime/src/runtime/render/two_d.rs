@@ -699,12 +699,24 @@ impl Runtime {
         let body_ids: Vec<_> = self
             .nodes
             .iter()
-            .filter_map(|(id, node)| matches!(node.data, SceneNodeData::StaticBody2D(_)).then_some(id))
+            .filter_map(|(id, node)| {
+                matches!(
+                    node.data,
+                    SceneNodeData::StaticBody2D(_) | SceneNodeData::RigidBody2D(_)
+                )
+                .then_some(id)
+            })
             .collect();
         for body_id in body_ids {
             let Some((enabled, layers, mask, children)) =
                 self.nodes.get(body_id).and_then(|node| match &node.data {
                     SceneNodeData::StaticBody2D(body) => Some((
+                        body.enabled,
+                        body.collision_layers,
+                        body.collision_mask,
+                        node.children_slice().to_vec(),
+                    )),
+                    SceneNodeData::RigidBody2D(body) => Some((
                         body.enabled,
                         body.collision_layers,
                         body.collision_mask,

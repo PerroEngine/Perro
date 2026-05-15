@@ -283,7 +283,7 @@ fn overlapping_3d_waters_blend_buoyancy_once() {
         .map(|pending| pending.force.y)
         .sum();
     assert!(total > 2.0);
-    assert!(total < 40.0);
+    assert!(total < 96.0);
 }
 
 #[test]
@@ -373,6 +373,7 @@ fn floating_body_tracks_wave_vertical_velocity() {
         mass: 1.0,
         density: 1.0,
         float_radius: 0.0,
+        sleeping: false,
         collision_layers: BitMask::ALL,
         collision_mask: BitMask::NONE,
     };
@@ -455,6 +456,7 @@ fn floating_body_gets_mass_scaled_wave_drive() {
         mass: 1.0,
         density: 1.0,
         float_radius: 0.0,
+        sleeping: false,
         collision_layers: BitMask::ALL,
         collision_mask: BitMask::NONE,
     };
@@ -509,21 +511,24 @@ fn deeply_submerged_3d_body_gets_enough_lift_to_leave_bed() {
         mass: 2.0,
         density: 1.0,
         float_radius: 0.45,
+        sleeping: false,
         collision_layers: BitMask::ALL,
         collision_mask: BitMask::NONE,
     };
 
-    let force = water_forces_for_body_3d(
+    let total_force: f32 = water_forces_for_body_3d(
         body,
         &water_index,
         &AHashMap::new(),
         &AHashMap::new(),
         0.0,
         Vector2::ZERO,
-    )[0]
-        .1;
+    )
+    .iter()
+    .map(|(_, force)| force.y)
+    .sum();
 
-    assert!(force.y > body.mass * 9.81 * 4.0);
+    assert!(total_force > body.mass * 9.81 * 4.0);
 }
 
 #[test]
@@ -552,6 +557,7 @@ fn downward_surface_entry_creates_water_splash() {
         mass: 2.0,
         density: 1.0,
         float_radius: 0.5,
+        sleeping: false,
         collision_layers: BitMask::ALL,
         collision_mask: BitMask::NONE,
     };
