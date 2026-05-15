@@ -385,7 +385,7 @@ fn floating_body_tracks_wave_vertical_velocity() {
         elapsed,
         Vector2::ZERO,
     )[0]
-    .1;
+    .force;
     let matched_force = water_forces_for_body_2d(
         RuntimeWaterBody2D {
             velocity: Vector2::new(0.0, sample.velocity.y),
@@ -397,7 +397,7 @@ fn floating_body_tracks_wave_vertical_velocity() {
         elapsed,
         Vector2::ZERO,
     )[0]
-    .1;
+    .force;
 
     assert!((still_force.y - matched_force.y).abs() > 0.25);
 }
@@ -418,8 +418,7 @@ fn water_physics_uses_cached_visual_height_offset() {
         velocity: Vector2::ZERO,
         foam: 0.6,
     };
-    let synced =
-        water_physics_sample_for_body_cached(&surface, local, elapsed, None, Some(cached));
+    let synced = water_physics_sample_for_body_cached(&surface, local, elapsed, None, Some(cached));
 
     assert!((synced.height - analytic.height - 0.75).abs() < 0.001);
     assert_eq!(synced.foam, 0.6);
@@ -468,7 +467,7 @@ fn floating_body_gets_mass_scaled_wave_drive() {
         0.0,
         Vector2::ZERO,
     )[0]
-        .1;
+    .force;
     let heavy = water_forces_for_body_2d(
         RuntimeWaterBody2D { mass: 4.0, ..body },
         &water_index,
@@ -477,7 +476,7 @@ fn floating_body_gets_mass_scaled_wave_drive() {
         0.0,
         Vector2::ZERO,
     )[0]
-    .1;
+    .force;
 
     assert!(light.x > 0.0);
     assert!(heavy.x > light.x);
@@ -525,7 +524,7 @@ fn deeply_submerged_3d_body_gets_enough_lift_to_leave_bed() {
         Vector2::ZERO,
     )
     .iter()
-    .map(|(_, force)| force.y)
+    .map(|effect| effect.force.y)
     .sum();
 
     assert!(total_force > body.mass * 9.81 * 4.0);

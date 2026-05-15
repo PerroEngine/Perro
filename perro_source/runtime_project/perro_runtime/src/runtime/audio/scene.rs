@@ -24,7 +24,7 @@ impl Runtime {
         }
         self.queue_render_command(RenderCommand::TwoD(Command2D::DrawShape {
             draw: DrawShape2DCommand {
-                shape: DrawShape2D::line(to - from, color, audio_debug_ray_width(energy)),
+                shape: DrawShape2D::line(to - from, color.into(), audio_debug_ray_width(energy)),
                 position: [from.x, from.y],
             },
         }));

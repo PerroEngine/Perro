@@ -242,7 +242,7 @@ impl Renderer2D {
                 && rect.size[1].is_finite()
                 && rect.center[0].is_finite()
                 && rect.center[1].is_finite()
-                && rect.color.iter().all(|v| v.is_finite())
+                && rect.color.to_rgba().iter().all(|v| v.is_finite())
                 && rect.size[0] > 0.0
                 && rect.size[1] > 0.0
             {
@@ -251,7 +251,7 @@ impl Renderer2D {
                     RectInstanceGpu {
                         center: rect.center,
                         size: rect.size,
-                        color: color_to_unorm8(rect.color),
+                        color: color_to_unorm8(rect.color.into()),
                         z_index: rect.z_index,
                         shape_kind: 0,
                         thickness: 1.0,
@@ -286,7 +286,7 @@ impl Renderer2D {
                 } => {
                     if !radius.is_finite()
                         || radius <= 0.0
-                        || !color.iter().all(|v| v.is_finite())
+                        || !color.to_rgba().iter().all(|v| v.is_finite())
                         || !thickness.is_finite()
                     {
                         continue;
@@ -294,7 +294,7 @@ impl Renderer2D {
                     self.frame_shapes.push(RectInstanceGpu {
                         center,
                         size: [radius * 2.0, radius * 2.0],
-                        color: color_to_unorm8(color),
+                        color: color_to_unorm8(color.into()),
                         z_index: 900,
                         shape_kind: 1,
                         thickness: thickness.max(0.0),
@@ -311,7 +311,7 @@ impl Renderer2D {
                         || !size.y.is_finite()
                         || size.x <= 0.0
                         || size.y <= 0.0
-                        || !color.iter().all(|v| v.is_finite())
+                        || !color.to_rgba().iter().all(|v| v.is_finite())
                         || !thickness.is_finite()
                     {
                         continue;
@@ -319,7 +319,7 @@ impl Renderer2D {
                     self.frame_shapes.push(RectInstanceGpu {
                         center,
                         size: [size.x, size.y],
-                        color: color_to_unorm8(color),
+                        color: color_to_unorm8(color.into()),
                         z_index: 900,
                         shape_kind: if filled { 0 } else { 2 },
                         thickness: thickness.max(0.0),
@@ -333,7 +333,14 @@ impl Renderer2D {
                 } => {
                     let end =
                         normalized_screen_to_virtual_centered([end.x, end.y], self.virtual_size);
-                    append_line_rect(&mut self.frame_shapes, center, end, color, thickness, 900);
+                    append_line_rect(
+                        &mut self.frame_shapes,
+                        center,
+                        end,
+                        color.into(),
+                        thickness,
+                        900,
+                    );
                 }
                 DrawShape2D::Polyline {
                     points,
@@ -344,7 +351,7 @@ impl Renderer2D {
                     append_polyline_rects(
                         &mut self.frame_shapes,
                         points.as_ref(),
-                        color,
+                        color.into(),
                         thickness,
                         closed,
                         self.virtual_size,
@@ -359,7 +366,7 @@ impl Renderer2D {
                     append_polyline_rects(
                         &mut self.frame_shapes,
                         points.as_ref(),
-                        color,
+                        color.into(),
                         thickness,
                         false,
                         self.virtual_size,
@@ -377,7 +384,7 @@ impl Renderer2D {
                         || !size.y.is_finite()
                         || size.x <= 0.0
                         || size.y <= 0.0
-                        || !tint.iter().all(|v| v.is_finite())
+                        || !tint.to_rgba().iter().all(|v| v.is_finite())
                     {
                         continue;
                     }
@@ -819,7 +826,7 @@ fn append_point_particles(
         let world = transform_point_2d(emitter.model, local);
         let size = (emitter.size * (emitter.size_min + (emitter.size_max - emitter.size_min) * h3))
             .max(1.0);
-        let color = lerp_color(emitter.color_start, emitter.color_end, t);
+        let color = lerp_color(emitter.color_start.into(), emitter.color_end.into(), t);
         if !world[0].is_finite() || !world[1].is_finite() || !size.is_finite() {
             continue;
         }

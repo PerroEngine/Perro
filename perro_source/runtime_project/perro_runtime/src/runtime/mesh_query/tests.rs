@@ -1,4 +1,5 @@
 use super::*;
+use perro_structs::Unorm8x4;
 
 #[test]
 fn runtime_mesh_data_builds_query_surfaces() {
@@ -7,7 +8,7 @@ fn runtime_mesh_data_builds_query_surfaces() {
         normal: [0.0, 1.0, 0.0],
         uv: [0.0, 0.0],
         joints: [0; 4],
-        weights: [0.0; 4],
+        weights: Unorm8x4::ZERO,
     };
     let mesh = Mesh3D {
         vertices: vec![

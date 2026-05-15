@@ -1,3 +1,4 @@
+use crate::Color;
 use crate::Vector2;
 use perro_ids::TextureID;
 use std::sync::Arc;
@@ -6,43 +7,43 @@ use std::sync::Arc;
 pub enum DrawShape2D {
     Circle {
         radius: f32,
-        color: [f32; 4],
+        color: Color,
         filled: bool,
         thickness: f32,
     },
     Rect {
         size: Vector2,
-        color: [f32; 4],
+        color: Color,
         filled: bool,
         thickness: f32,
     },
     Line {
         end: Vector2,
-        color: [f32; 4],
+        color: Color,
         thickness: f32,
     },
     Polyline {
         points: Arc<[Vector2]>,
-        color: [f32; 4],
+        color: Color,
         thickness: f32,
         closed: bool,
     },
     Path {
         points: Arc<[Vector2]>,
-        color: [f32; 4],
+        color: Color,
         thickness: f32,
     },
     Sprite {
         texture: TextureID,
         size: Vector2,
-        tint: [f32; 4],
+        tint: Color,
         texture_region: Option<[f32; 4]>,
     },
 }
 
 impl DrawShape2D {
     #[inline]
-    pub const fn circle(radius: f32, color: [f32; 4]) -> Self {
+    pub const fn circle(radius: f32, color: Color) -> Self {
         Self::Circle {
             radius,
             color,
@@ -52,7 +53,7 @@ impl DrawShape2D {
     }
 
     #[inline]
-    pub const fn ring(radius: f32, color: [f32; 4], thickness: f32) -> Self {
+    pub const fn ring(radius: f32, color: Color, thickness: f32) -> Self {
         Self::Circle {
             radius,
             color,
@@ -62,7 +63,7 @@ impl DrawShape2D {
     }
 
     #[inline]
-    pub const fn rect(size: Vector2, color: [f32; 4]) -> Self {
+    pub const fn rect(size: Vector2, color: Color) -> Self {
         Self::Rect {
             size,
             color,
@@ -72,7 +73,7 @@ impl DrawShape2D {
     }
 
     #[inline]
-    pub const fn rect_stroke(size: Vector2, color: [f32; 4], thickness: f32) -> Self {
+    pub const fn rect_stroke(size: Vector2, color: Color, thickness: f32) -> Self {
         Self::Rect {
             size,
             color,
@@ -82,7 +83,7 @@ impl DrawShape2D {
     }
 
     #[inline]
-    pub const fn line(end: Vector2, color: [f32; 4], thickness: f32) -> Self {
+    pub const fn line(end: Vector2, color: Color, thickness: f32) -> Self {
         Self::Line {
             end,
             color,
@@ -91,7 +92,7 @@ impl DrawShape2D {
     }
 
     #[inline]
-    pub fn polyline(points: impl Into<Arc<[Vector2]>>, color: [f32; 4], thickness: f32) -> Self {
+    pub fn polyline(points: impl Into<Arc<[Vector2]>>, color: Color, thickness: f32) -> Self {
         Self::Polyline {
             points: points.into(),
             color,
@@ -101,7 +102,7 @@ impl DrawShape2D {
     }
 
     #[inline]
-    pub fn polygon(points: impl Into<Arc<[Vector2]>>, color: [f32; 4], thickness: f32) -> Self {
+    pub fn polygon(points: impl Into<Arc<[Vector2]>>, color: Color, thickness: f32) -> Self {
         Self::Polyline {
             points: points.into(),
             color,
@@ -111,7 +112,7 @@ impl DrawShape2D {
     }
 
     #[inline]
-    pub fn path(points: impl Into<Arc<[Vector2]>>, color: [f32; 4], thickness: f32) -> Self {
+    pub fn path(points: impl Into<Arc<[Vector2]>>, color: Color, thickness: f32) -> Self {
         Self::Path {
             points: points.into(),
             color,
@@ -120,7 +121,7 @@ impl DrawShape2D {
     }
 
     #[inline]
-    pub const fn sprite(texture: TextureID, size: Vector2, tint: [f32; 4]) -> Self {
+    pub const fn sprite(texture: TextureID, size: Vector2, tint: Color) -> Self {
         Self::Sprite {
             texture,
             size,
@@ -133,7 +134,7 @@ impl DrawShape2D {
     pub const fn atlas_sprite(
         texture: TextureID,
         size: Vector2,
-        tint: [f32; 4],
+        tint: Color,
         texture_region: [f32; 4],
     ) -> Self {
         Self::Sprite {

@@ -2,7 +2,7 @@ use super::Runtime;
 use perro_ids::TextureID;
 use perro_nodes::{
     AmbientLight2D, CollisionShape2D, PointLight2D, RayLight2D, SceneNode, SceneNodeData, Shape2D,
-    SpotLight2D, StaticBody2D, WaterBody2D,
+    SpotLight2D, StaticBody2D, WaterBody2D, physics_2d::RigidBody2D,
     camera_2d::Camera2D,
     node_2d::Node2D,
     particle_emitter_2d::ParticleEmitter2D,
@@ -11,6 +11,7 @@ use perro_nodes::{
 use perro_render_bridge::{Command2D, ParticlePath2D, RenderCommand, RenderEvent, ResourceCommand};
 use perro_runtime_api::sub_apis::{NodeAPI, NodeCreationTemplate};
 use perro_structs::{BitMask, Vector2};
+use std::sync::Arc;
 
 fn collect_commands(runtime: &mut Runtime) -> Vec<RenderCommand> {
     let mut out = Vec::new();
@@ -103,6 +104,41 @@ fn linked_2d_waters_both_collect_shared_coastline_shape() {
         water_2d_command(&commands, water_b).coastline_shapes.len(),
         1
     );
+}
+
+#[test]
+fn water_2d_impacts_use_live_body_pos_not_stale_cached_sample() {
+    let mut runtime = Runtime::new();
+    let water = NodeAPI::create::<WaterBody2D>(&mut runtime);
+    let body = NodeAPI::create::<RigidBody2D>(&mut runtime);
+    if let Some(node) = runtime.nodes.get_mut(body)
+        && let SceneNodeData::RigidBody2D(rigid) = &mut node.data
+    {
+        rigid.transform.position = Vector2::new(1.25, -0.35);
+        rigid.linear_velocity = Vector2::new(0.0, -2.5);
+        rigid.mass = 4.0;
+        rigid.density = 1.0;
+    }
+    runtime.time.elapsed = 1.0;
+    runtime.apply_render_event(RenderEvent::WaterBodySamples {
+        samples: Arc::from([perro_render_bridge::WaterBodySampleState {
+            water,
+            body,
+            point: 0,
+            local: [5.5, 0.0],
+            height: 2.0,
+            velocity: [0.0, 0.0],
+            foam: 1.0,
+        }]),
+    });
+
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+    let water = water_2d_command(&commands, water);
+
+    assert_eq!(water.impacts.len(), 1);
+    assert!((water.impacts[0].position[0] - 1.25).abs() < 0.01);
+    assert!((water.impacts[0].position[1] + 0.35).abs() < 0.01);
 }
 
 #[test]

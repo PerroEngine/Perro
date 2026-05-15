@@ -60,10 +60,10 @@ pub(in crate::runtime::render_ui) fn text_edit_command(ctx: TextEditCommandCtx<'
         ),
         text: Cow::Owned(edit.text.to_string()),
         placeholder: Cow::Owned(edit.placeholder.to_string()),
-        color: edit.color.to_rgba(),
-        placeholder_color: edit.placeholder_color.to_rgba(),
-        selection_color: edit.selection_color.to_rgba(),
-        caret_color: edit.caret_color.to_rgba(),
+        color: edit.color,
+        placeholder_color: edit.placeholder_color,
+        selection_color: edit.selection_color,
+        caret_color: edit.caret_color,
         font_size: {
             let (base, node_scale) =
                 if let Some(px) = text_size_from_rect_ratio(rect.size, edit.text_size_ratio) {
@@ -145,7 +145,7 @@ pub(in crate::runtime::render_ui) fn ui_depth_effect_state(
     scale: f32,
 ) -> UiDepthEffectState {
     UiDepthEffectState {
-        color: effect.color.to_rgba(),
+        color: effect.color,
         distance: effect.distance * scale,
         falloff: effect.falloff * scale,
         vector: [effect.vector.x, effect.vector.y],

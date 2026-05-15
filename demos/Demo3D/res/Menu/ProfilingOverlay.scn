@@ -29,7 +29,7 @@ parent = @profiling_overlay_root
 [profiling_overlay_fps]
 parent = @profiling_overlay_row
     [UiLabel]
-        size_ratio = (0.28, 1.0)
+        size_ratio = (0.22, 1.0)
         text = "FPS 0.0"
         text_size_ratio = 0.26
         color = "#D9E7FFFF"
@@ -41,8 +41,8 @@ parent = @profiling_overlay_row
 [profiling_overlay_sim]
 parent = @profiling_overlay_row
     [UiLabel]
-        size_ratio = (0.33, 1.0)
-        text = "Sim 0 us"
+        size_ratio = (0.47, 1.0)
+        text = "Sim 0 us | dt 0 us"
         text_size_ratio = 0.26
         color = "#D9E7FFFF"
         input_enabled = false
@@ -53,7 +53,7 @@ parent = @profiling_overlay_row
 [profiling_overlay_graphics]
 parent = @profiling_overlay_row
     [UiLabel]
-        size_ratio = (0.34, 1.0)
+        size_ratio = (0.25, 1.0)
         text = "Gfx 0 us"
         text_size_ratio = 0.26
         color = "#D9E7FFFF"

@@ -56,10 +56,7 @@ impl Runtime {
                     sample.node,
                     perro_nodes::WaterPhysicsSample {
                         height: sample.height,
-                        velocity: perro_structs::Vector2::new(
-                            sample.velocity[0],
-                            velocity_y,
-                        ),
+                        velocity: perro_structs::Vector2::new(sample.velocity[0], velocity_y),
                         foam: sample.foam,
                     },
                 );
@@ -97,10 +94,7 @@ impl Runtime {
                     crate::runtime::WaterBodySampleCache {
                         local: perro_structs::Vector2::new(sample.local[0], sample.local[1]),
                         height: sample.height,
-                        velocity: perro_structs::Vector2::new(
-                            sample.velocity[0],
-                            velocity_y,
-                        ),
+                        velocity: perro_structs::Vector2::new(sample.velocity[0], velocity_y),
                         foam: sample.foam,
                         sample_time,
                     },

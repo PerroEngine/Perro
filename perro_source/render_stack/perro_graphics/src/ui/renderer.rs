@@ -4,14 +4,15 @@ use perro_ids::{NodeID, TextureID};
 use perro_render_bridge::{
     UiCommand, UiDepthEffectState, UiImageScaleState, UiRectState, UiTextAlignState,
 };
+use perro_structs::Color;
 use std::borrow::Cow;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct UiPanelDraw {
     pub(crate) rect: UiRectState,
     pub(crate) clip_rect: [f32; 4],
-    pub(crate) fill: [f32; 4],
-    pub(crate) stroke: [f32; 4],
+    pub(crate) fill: Color,
+    pub(crate) stroke: Color,
     pub(crate) stroke_width: f32,
     pub(crate) corner_radius: f32,
     pub(crate) shadow: UiDepthEffectState,
@@ -23,7 +24,7 @@ pub(crate) struct UiLabelDraw {
     pub(crate) rect: UiRectState,
     pub(crate) clip_rect: [f32; 4],
     pub(crate) text: Cow<'static, str>,
-    pub(crate) color: [f32; 4],
+    pub(crate) color: Color,
     pub(crate) font_size: f32,
     pub(crate) h_align: UiTextAlignState,
     pub(crate) v_align: UiTextAlignState,
@@ -40,7 +41,7 @@ pub(crate) struct UiImageDraw {
     pub(crate) rect: UiRectState,
     pub(crate) clip_rect: [f32; 4],
     pub(crate) texture: TextureID,
-    pub(crate) tint: [f32; 4],
+    pub(crate) tint: Color,
     pub(crate) uv_min: [f32; 2],
     pub(crate) uv_max: [f32; 2],
     pub(crate) scale_mode: UiImageScaleState,
@@ -54,10 +55,10 @@ pub(crate) struct UiTextEditDraw {
     pub(crate) panel: UiPanelDraw,
     pub(crate) text: Cow<'static, str>,
     pub(crate) placeholder: Cow<'static, str>,
-    pub(crate) color: [f32; 4],
-    pub(crate) placeholder_color: [f32; 4],
-    pub(crate) selection_color: [f32; 4],
-    pub(crate) caret_color: [f32; 4],
+    pub(crate) color: Color,
+    pub(crate) placeholder_color: Color,
+    pub(crate) selection_color: Color,
+    pub(crate) caret_color: Color,
     pub(crate) font_size: f32,
     pub(crate) padding: [f32; 4],
     pub(crate) scroll: [f32; 2],
@@ -114,8 +115,8 @@ impl UiRenderer {
                 UiDraw::Panel(UiPanelDraw {
                     rect,
                     clip_rect,
-                    fill,
-                    stroke,
+                    fill: fill.into(),
+                    stroke: stroke.into(),
                     stroke_width,
                     corner_radius,
                     shadow,
@@ -139,8 +140,8 @@ impl UiRenderer {
                     panel: UiPanelDraw {
                         rect,
                         clip_rect,
-                        fill,
-                        stroke,
+                        fill: fill.into(),
+                        stroke: stroke.into(),
                         stroke_width,
                         corner_radius,
                         shadow,
@@ -226,8 +227,8 @@ impl UiRenderer {
                     panel: UiPanelDraw {
                         rect,
                         clip_rect,
-                        fill,
-                        stroke,
+                        fill: fill.into(),
+                        stroke: stroke.into(),
                         stroke_width,
                         corner_radius,
                         shadow,
@@ -334,7 +335,7 @@ mod tests {
             },
             clip_rect: [0.0, 0.0, 800.0, 600.0],
             text: Cow::Borrowed("Run"),
-            color: [1.0, 1.0, 1.0, 1.0],
+            color: Color::WHITE,
             font_size: 18.0,
             h_align: UiTextAlignState::Center,
             v_align: UiTextAlignState::Center,

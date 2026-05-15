@@ -18,8 +18,10 @@ struct DemoProfilingOverlayState {
     pub graphics_label: NodeID,
     pub refresh_timer: f32,
     pub fps_value: f32,
+    pub dt_us_value: f32,
     pub sim_us_value: f32,
     pub graphics_us_value: f32,
+    pub dt_us_sum: f32,
     pub sim_us_sum: f32,
     pub graphics_us_sum: f32,
     pub timing_samples: u32,
@@ -48,6 +50,7 @@ lifecycle!({
         } else {
             0.0
         };
+        let dt_us = dt * 1_000_000.0;
         let sim_us = p.simulation_time.as_micros() as f32;
         let graphics_us = p.graphics_time.as_micros() as f32;
 
@@ -56,7 +59,8 @@ lifecycle!({
             if fps > 0.0 {
                 state.fps_value = fps;
             }
-            if sim_us > 0.0 || graphics_us > 0.0 {
+            if dt_us > 0.0 || sim_us > 0.0 || graphics_us > 0.0 {
+                state.dt_us_sum += dt_us;
                 state.sim_us_sum += sim_us;
                 state.graphics_us_sum += graphics_us;
                 state.timing_samples = state.timing_samples.saturating_add(1);
@@ -65,8 +69,10 @@ lifecycle!({
                 state.refresh_timer = 0.0;
                 if state.timing_samples > 0 {
                     let samples = state.timing_samples as f32;
+                    state.dt_us_value = state.dt_us_sum / samples;
                     state.sim_us_value = state.sim_us_sum / samples;
                     state.graphics_us_value = state.graphics_us_sum / samples;
+                    state.dt_us_sum = 0.0;
                     state.sim_us_sum = 0.0;
                     state.graphics_us_sum = 0.0;
                     state.timing_samples = 0;
@@ -85,20 +91,21 @@ lifecycle!({
 
 methods!({
     fn refresh_text(&self, ctx: &mut ScriptContext<'_, API>) {
-        let (fps_label, sim_label, graphics_label, fps, sim_us, graphics_us) =
+        let (fps_label, sim_label, graphics_label, fps, dt_us, sim_us, graphics_us) =
             with_state!(ctx.run, DemoProfilingOverlayState, ctx.id, |state| {
                 (
                     state.fps_label,
                     state.sim_label,
                     state.graphics_label,
                     state.fps_value,
+                    state.dt_us_value,
                     state.sim_us_value,
                     state.graphics_us_value,
                 )
             });
 
         set_label_text(ctx, fps_label, format!("FPS {:.1}", fps));
-        set_label_text(ctx, sim_label, format!("Sim {:.0} us", sim_us));
+        set_label_text(ctx, sim_label, format!("Sim {:.0} us | dt {:.0} us", sim_us, dt_us));
         set_label_text(ctx, graphics_label, format!("Gfx {:.0} us", graphics_us));
     }
 });

@@ -22,33 +22,33 @@ impl<'res, R: Draw2DAPI + ?Sized> Draw2DModule<'res, R> {
 
     #[inline]
     pub fn circle(&self, center: Vector2, radius: f32, color: [f32; 4]) {
-        self.push(DrawShape2D::circle(radius, color), center);
+        self.push(DrawShape2D::circle(radius, color.into()), center);
     }
 
     #[inline]
     pub fn ring(&self, center: Vector2, radius: f32, color: [f32; 4], thickness: f32) {
-        self.push(DrawShape2D::ring(radius, color, thickness), center);
+        self.push(DrawShape2D::ring(radius, color.into(), thickness), center);
     }
 
     #[inline]
     pub fn rect(&self, center: Vector2, size: Vector2, color: [f32; 4]) {
-        self.push(DrawShape2D::rect(size, color), center);
+        self.push(DrawShape2D::rect(size, color.into()), center);
     }
 
     #[inline]
     pub fn rect_stroke(&self, center: Vector2, size: Vector2, color: [f32; 4], thickness: f32) {
-        self.push(DrawShape2D::rect_stroke(size, color, thickness), center);
+        self.push(DrawShape2D::rect_stroke(size, color.into(), thickness), center);
     }
 
     #[inline]
     pub fn line(&self, start: Vector2, end: Vector2, color: [f32; 4], thickness: f32) {
-        self.push(DrawShape2D::line(end, color, thickness), start);
+        self.push(DrawShape2D::line(end, color.into(), thickness), start);
     }
 
     #[inline]
     pub fn polyline(&self, points: Vec<Vector2>, color: [f32; 4], thickness: f32) {
         self.push(
-            DrawShape2D::polyline(points.into_boxed_slice(), color, thickness),
+            DrawShape2D::polyline(points.into_boxed_slice(), color.into(), thickness),
             Vector2::ZERO,
         );
     }
@@ -56,7 +56,7 @@ impl<'res, R: Draw2DAPI + ?Sized> Draw2DModule<'res, R> {
     #[inline]
     pub fn polygon(&self, points: Vec<Vector2>, color: [f32; 4], thickness: f32) {
         self.push(
-            DrawShape2D::polygon(points.into_boxed_slice(), color, thickness),
+            DrawShape2D::polygon(points.into_boxed_slice(), color.into(), thickness),
             Vector2::ZERO,
         );
     }
@@ -64,14 +64,14 @@ impl<'res, R: Draw2DAPI + ?Sized> Draw2DModule<'res, R> {
     #[inline]
     pub fn path(&self, points: Vec<Vector2>, color: [f32; 4], thickness: f32) {
         self.push(
-            DrawShape2D::path(points.into_boxed_slice(), color, thickness),
+            DrawShape2D::path(points.into_boxed_slice(), color.into(), thickness),
             Vector2::ZERO,
         );
     }
 
     #[inline]
     pub fn sprite(&self, center: Vector2, texture: TextureID, size: Vector2, tint: [f32; 4]) {
-        self.push(DrawShape2D::sprite(texture, size, tint), center);
+        self.push(DrawShape2D::sprite(texture, size, tint.into()), center);
     }
 
     #[inline]
@@ -84,7 +84,7 @@ impl<'res, R: Draw2DAPI + ?Sized> Draw2DModule<'res, R> {
         texture_region: [f32; 4],
     ) {
         self.push(
-            DrawShape2D::atlas_sprite(texture, size, tint, texture_region),
+            DrawShape2D::atlas_sprite(texture, size, tint.into(), texture_region),
             center,
         );
     }

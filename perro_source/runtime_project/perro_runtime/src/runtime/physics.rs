@@ -168,6 +168,20 @@ struct BlendedWaterSample3D {
     lod_weight: f32,
 }
 
+#[derive(Clone, Copy)]
+struct WaterBodyForce2D {
+    id: NodeID,
+    force: Vector2,
+    impulse: Vector2,
+}
+
+#[derive(Clone, Copy)]
+struct WaterBodyForce3D {
+    id: NodeID,
+    force: Vector3,
+    impulse: Vector3,
+}
+
 impl Runtime {
     pub fn set_physics_paused(&mut self, paused: bool) {
         if self.physics.paused() == paused {
@@ -231,6 +245,7 @@ impl Runtime {
         }
 
         let apply_forces_impulses_start = std::time::Instant::now();
+        self.reset_water_scan_cache_all();
         self.queue_physics_force_emitters_2d();
         self.queue_physics_force_emitters_3d();
         self.queue_water_forces_2d();
@@ -1152,13 +1167,7 @@ impl Runtime {
         emitter_pos: Vector2,
         emitter: &perro_nodes::PhysicsForceEmitter2D,
     ) {
-        let ids = self
-            .nodes
-            .iter()
-            .filter_map(|(id, node)| {
-                matches!(node.data, SceneNodeData::WaterBody2D(_)).then_some(id)
-            })
-            .collect::<Vec<_>>();
+        let ids = self.cached_water_ids_2d().to_vec();
         for id in ids {
             let Some(global) = self.get_global_transform_2d(id) else {
                 continue;
@@ -1208,13 +1217,7 @@ impl Runtime {
         emitter_pos: Vector3,
         emitter: &perro_nodes::PhysicsForceEmitter3D,
     ) {
-        let ids = self
-            .nodes
-            .iter()
-            .filter_map(|(id, node)| {
-                matches!(node.data, SceneNodeData::WaterBody3D(_)).then_some(id)
-            })
-            .collect::<Vec<_>>();
+        let ids = self.cached_water_ids_3d().to_vec();
         for id in ids {
             let Some(global) = self.get_global_transform_3d(id) else {
                 continue;
@@ -1270,13 +1273,7 @@ impl Runtime {
     fn queue_water_forces_2d(&mut self) {
         self.pending_water_queries_2d.clear();
         self.water_contacts_2d.clear();
-        let water_ids: Vec<_> = self
-            .nodes
-            .iter()
-            .filter_map(|(id, scene_node)| {
-                matches!(scene_node.data, SceneNodeData::WaterBody2D(_)).then_some(id)
-            })
-            .collect();
+        let water_ids = self.cached_water_ids_2d().to_vec();
         let mut waters = Vec::new();
         for &id in water_ids.iter() {
             let Some(transform) = self.get_global_transform_2d(id) else {
@@ -1314,13 +1311,7 @@ impl Runtime {
             .map(|camera| Vector2::new(camera.position[0], camera.position[1]))
             .unwrap_or(Vector2::ZERO);
 
-        let body_ids: Vec<_> = self
-            .nodes
-            .iter()
-            .filter_map(|(id, scene_node)| {
-                matches!(scene_node.data, SceneNodeData::RigidBody2D(_)).then_some(id)
-            })
-            .collect();
+        let body_ids = self.cached_rigid_body_ids_2d().to_vec();
         let mut bodies = Vec::with_capacity(body_ids.len());
         for body_id in body_ids {
             let Some(body_transform) = self.get_global_transform_2d(body_id) else {
@@ -1401,9 +1392,12 @@ impl Runtime {
                 })
                 .collect()
         };
-        for (body, force) in forces {
-            self.physics.queue_force_2d(body, force);
-            self.apply_water_angular_nudge_2d(body, force.x * 0.04);
+        for effect in forces {
+            self.physics.queue_force_2d(effect.id, effect.force);
+            if effect.impulse.length_squared() > 0.000_001 {
+                self.physics.queue_impulse_2d(effect.id, effect.impulse);
+            }
+            self.apply_water_angular_nudge_2d(effect.id, effect.force.x * 0.04);
         }
         if !splash_impacts.is_empty() {
             self.force_water_impacts_2d.extend(splash_impacts);
@@ -1416,13 +1410,7 @@ impl Runtime {
     fn queue_water_forces_3d(&mut self) {
         self.pending_water_queries_3d.clear();
         self.water_contacts_3d.clear();
-        let water_ids: Vec<_> = self
-            .nodes
-            .iter()
-            .filter_map(|(id, scene_node)| {
-                matches!(scene_node.data, SceneNodeData::WaterBody3D(_)).then_some(id)
-            })
-            .collect();
+        let water_ids = self.cached_water_ids_3d().to_vec();
         let mut waters = Vec::new();
         for &id in water_ids.iter() {
             let Some(transform) = self.get_global_transform_3d(id) else {
@@ -1464,13 +1452,7 @@ impl Runtime {
             .map(|camera| Vector2::new(camera.position[0], camera.position[2]))
             .unwrap_or(Vector2::ZERO);
 
-        let body_ids: Vec<_> = self
-            .nodes
-            .iter()
-            .filter_map(|(id, scene_node)| {
-                matches!(scene_node.data, SceneNodeData::RigidBody3D(_)).then_some(id)
-            })
-            .collect();
+        let body_ids = self.cached_rigid_body_ids_3d().to_vec();
         let mut bodies = Vec::with_capacity(body_ids.len());
         for body_id in body_ids {
             let Some(body_transform) = self.get_global_transform_3d(body_id) else {
@@ -1551,11 +1533,14 @@ impl Runtime {
                 })
                 .collect()
         };
-        for (body, force) in forces {
-            self.physics.queue_force_3d(body, force);
+        for effect in forces {
+            self.physics.queue_force_3d(effect.id, effect.force);
+            if effect.impulse.length_squared() > 0.000_001 {
+                self.physics.queue_impulse_3d(effect.id, effect.impulse);
+            }
             self.apply_water_angular_nudge_3d(
-                body,
-                Vector3::new(force.z * 0.025, 0.0, -force.x * 0.025),
+                effect.id,
+                Vector3::new(effect.force.z * 0.025, 0.0, -effect.force.x * 0.025),
             );
         }
         if !splash_impacts.is_empty() {
@@ -1686,7 +1671,11 @@ impl Runtime {
                 (1u8, body.pos + Vector2::new(-radius * 0.75, 0.0)),
                 (2u8, body.pos + Vector2::new(radius * 0.75, 0.0)),
             ];
-            let sample_count = if body.sleeping { 1 } else { sample_points.len() };
+            let sample_count = if body.sleeping {
+                1
+            } else {
+                sample_points.len()
+            };
             for (point, pos) in sample_points.into_iter().take(sample_count) {
                 register_water_query_candidates_2d(
                     &mut self.pending_water_queries_2d,
@@ -1713,7 +1702,11 @@ impl Runtime {
                 (3u8, body.pos + Vector3::new(0.0, 0.0, -radius * 0.75)),
                 (4u8, body.pos + Vector3::new(0.0, 0.0, radius * 0.75)),
             ];
-            let sample_count = if body.sleeping { 1 } else { sample_points.len() };
+            let sample_count = if body.sleeping {
+                1
+            } else {
+                sample_points.len()
+            };
             for (point, pos) in sample_points.into_iter().take(sample_count) {
                 register_water_query_candidates_3d(
                     &mut self.pending_water_queries_3d,
@@ -1749,17 +1742,15 @@ impl Runtime {
                     continue;
                 }
                 if let Some(water_id) = sample_water_id_2d(body.pos, water_index, sample.pos) {
-                    self.water_contacts_2d
-                        .entry(water_id)
-                        .or_default()
-                        .push(crate::runtime::WaterBodyContact2D {
-                        position: sample.pos,
-                        velocity: body.velocity,
-                        radius: body.float_radius.max(0.75),
-                        foam_amount: (sample.sample.foam + body.velocity.length() * 0.06)
-                            .clamp(0.1, 1.0),
-                        persist: 0.22,
-                    });
+                    self.water_contacts_2d.entry(water_id).or_default().push(
+                        crate::runtime::WaterBodyContact2D {
+                            position: sample.pos,
+                            velocity: body.velocity,
+                            radius: body.float_radius.max(0.75) * 0.5,
+                            foam_amount: (sample.sample.foam + body.velocity.length() * 0.06)
+                                .clamp(0.1, 1.0),
+                        },
+                    );
                 }
             }
         }
@@ -1788,18 +1779,16 @@ impl Runtime {
                     continue;
                 }
                 if let Some(water_id) = sample_water_id_3d(body.pos, water_index, sample.pos) {
-                    self.water_contacts_3d
-                        .entry(water_id)
-                        .or_default()
-                        .push(crate::runtime::WaterBodyContact3D {
-                        position: sample.pos,
-                        velocity: body.velocity,
-                        radius: body.float_radius.max(0.75),
-                        foam_amount: (sample.sample.foam
-                            + Vector2::new(body.velocity.x, body.velocity.z).length() * 0.05)
-                            .clamp(0.1, 1.0),
-                        persist: 0.26,
-                    });
+                    self.water_contacts_3d.entry(water_id).or_default().push(
+                        crate::runtime::WaterBodyContact3D {
+                            position: sample.pos,
+                            velocity: body.velocity,
+                            radius: body.float_radius.max(0.75) * 0.5,
+                            foam_amount: (sample.sample.foam
+                                + Vector2::new(body.velocity.x, body.velocity.z).length() * 0.05)
+                                .clamp(0.1, 1.0),
+                        },
+                    );
                 }
             }
         }
@@ -2219,10 +2208,13 @@ fn water_forces_for_body_2d(
     body: RuntimeWaterBody2D,
     water_index: &RuntimeWaterIndex2D,
     water_samples: &AHashMap<NodeID, perro_nodes::WaterPhysicsSample>,
-    water_body_samples: &AHashMap<crate::runtime::WaterBodySampleKey, crate::runtime::WaterBodySampleCache>,
+    water_body_samples: &AHashMap<
+        crate::runtime::WaterBodySampleKey,
+        crate::runtime::WaterBodySampleCache,
+    >,
     elapsed: f32,
     camera_pos: Vector2,
-) -> Vec<(NodeID, Vector2)> {
+) -> Vec<WaterBodyForce2D> {
     let samples = blended_water_samples_2d(
         body.pos,
         body.collision_layers,
@@ -2284,7 +2276,15 @@ fn water_forces_for_body_2d(
         let mass_scale = (1.0 / mass.max(1.0).sqrt()).clamp(0.35, 1.0);
         let force = blend.normal * force_y + wave_drive * scale * blend.lod_weight * mass_scale;
         if force.length() >= deadzone {
-            forces.push((body.id, force));
+            let target_normal_speed = blend.sample.velocity.y;
+            let follow_delta =
+                (target_normal_speed - body.velocity.dot(blend.normal)).clamp(-4.5, 4.5);
+            let impulse = blend.normal * (follow_delta * mass * contact * 0.38 * blend.lod_weight);
+            forces.push(WaterBodyForce2D {
+                id: body.id,
+                force,
+                impulse,
+            });
         }
     }
     forces
@@ -2294,10 +2294,13 @@ fn water_forces_for_body_3d(
     body: RuntimeWaterBody3D,
     water_index: &RuntimeWaterIndex3D,
     water_samples: &AHashMap<NodeID, perro_nodes::WaterPhysicsSample>,
-    water_body_samples: &AHashMap<crate::runtime::WaterBodySampleKey, crate::runtime::WaterBodySampleCache>,
+    water_body_samples: &AHashMap<
+        crate::runtime::WaterBodySampleKey,
+        crate::runtime::WaterBodySampleCache,
+    >,
     elapsed: f32,
     camera_pos: Vector2,
-) -> Vec<(NodeID, Vector3)> {
+) -> Vec<WaterBodyForce3D> {
     let radius = body.float_radius.max(0.5);
     let sample_points = [
         (0u8, body.pos),
@@ -2306,7 +2309,11 @@ fn water_forces_for_body_3d(
         (3u8, body.pos + Vector3::new(0.0, 0.0, -radius * 0.75)),
         (4u8, body.pos + Vector3::new(0.0, 0.0, radius * 0.75)),
     ];
-    let sample_count = if body.sleeping { 1 } else { sample_points.len() };
+    let sample_count = if body.sleeping {
+        1
+    } else {
+        sample_points.len()
+    };
     let mut forces = Vec::new();
     for (point_id, point_pos) in sample_points.into_iter().take(sample_count) {
         let samples = blended_water_samples_3d(
@@ -2330,8 +2337,7 @@ fn water_forces_for_body_3d(
             let target_submerged = (float_radius * body.density.clamp(0.05, 1.2))
                 .max(water_target_submerged(body.density));
             let contact = (submerged / target_submerged.max(0.001)).clamp(0.0, 1.5);
-            let support =
-                mass * 9.81 * (submerged / target_submerged.max(0.001)).clamp(0.0, 1.45);
+            let support = mass * 9.81 * (submerged / target_submerged.max(0.001)).clamp(0.0, 1.45);
             let spring =
                 (submerged - target_submerged) * blend.surface.physics.buoyancy * mass * 12.5;
             let rel_y = body.velocity.dot(blend.normal) - blend.sample.velocity.y;
@@ -2367,13 +2373,21 @@ fn water_forces_for_body_3d(
                 blend.surface.shape.depth(blend.surface.depth),
                 blend.surface.physics.buoyancy,
             );
-            let force_y = (support + spring + drag + wave_follow).clamp(-cap, cap)
-                * scale
-                * blend.lod_weight;
+            let force_y =
+                (support + spring + drag + wave_follow).clamp(-cap, cap) * scale * blend.lod_weight;
             let mass_scale = (1.0 / body.mass.max(1.0).sqrt()).clamp(0.35, 1.0);
             let force = blend.normal * force_y + wave_drive * scale * blend.lod_weight * mass_scale;
             if force.length() >= deadzone {
-                forces.push((body.id, force));
+                let target_normal_speed = blend.sample.velocity.y;
+                let follow_delta =
+                    (target_normal_speed - body.velocity.dot(blend.normal)).clamp(-4.8, 4.8);
+                let impulse =
+                    blend.normal * (follow_delta * mass * contact * 0.44 * blend.lod_weight);
+                forces.push(WaterBodyForce3D {
+                    id: body.id,
+                    force,
+                    impulse,
+                });
             }
         }
     }
@@ -2383,7 +2397,10 @@ fn water_forces_for_body_3d(
 fn water_body_splashes_2d(
     bodies: &[RuntimeWaterBody2D],
     water_index: &RuntimeWaterIndex2D,
-    water_body_samples: &AHashMap<crate::runtime::WaterBodySampleKey, crate::runtime::WaterBodySampleCache>,
+    water_body_samples: &AHashMap<
+        crate::runtime::WaterBodySampleKey,
+        crate::runtime::WaterBodySampleCache,
+    >,
     elapsed: f32,
 ) -> Vec<crate::runtime::ForceWaterImpact2D> {
     let mut impacts = Vec::new();
@@ -2395,14 +2412,14 @@ fn water_body_splashes_2d(
         for sample in blended_water_samples_2d(
             body.pos,
             body.collision_layers,
-                body.collision_mask,
-                water_index,
-                &empty_samples,
-                water_body_samples,
-                body.id,
-                0,
-                elapsed,
-            ) {
+            body.collision_mask,
+            water_index,
+            &empty_samples,
+            water_body_samples,
+            body.id,
+            0,
+            elapsed,
+        ) {
             let target = water_target_submerged(body.density);
             if sample.submerged <= 0.0 || sample.submerged > target * 2.25 {
                 continue;
@@ -2434,7 +2451,10 @@ fn water_body_splashes_2d(
 fn water_body_splashes_3d(
     bodies: &[RuntimeWaterBody3D],
     water_index: &RuntimeWaterIndex3D,
-    water_body_samples: &AHashMap<crate::runtime::WaterBodySampleKey, crate::runtime::WaterBodySampleCache>,
+    water_body_samples: &AHashMap<
+        crate::runtime::WaterBodySampleKey,
+        crate::runtime::WaterBodySampleCache,
+    >,
     elapsed: f32,
 ) -> Vec<crate::runtime::ForceWaterImpact3D> {
     let mut impacts = Vec::new();
@@ -2446,14 +2466,14 @@ fn water_body_splashes_3d(
         for sample in blended_water_samples_3d(
             body.pos,
             body.collision_layers,
-                body.collision_mask,
-                water_index,
-                &empty_samples,
-                water_body_samples,
-                body.id,
-                0,
-                elapsed,
-            ) {
+            body.collision_mask,
+            water_index,
+            &empty_samples,
+            water_body_samples,
+            body.id,
+            0,
+            elapsed,
+        ) {
             let target = water_target_submerged(body.density);
             if sample.submerged <= 0.0 || sample.submerged > target * 2.25 {
                 continue;
@@ -2488,7 +2508,10 @@ fn blended_water_samples_2d(
     body_mask: BitMask,
     water_index: &RuntimeWaterIndex2D,
     water_samples: &AHashMap<NodeID, perro_nodes::WaterPhysicsSample>,
-    water_body_samples: &AHashMap<crate::runtime::WaterBodySampleKey, crate::runtime::WaterBodySampleCache>,
+    water_body_samples: &AHashMap<
+        crate::runtime::WaterBodySampleKey,
+        crate::runtime::WaterBodySampleCache,
+    >,
     body_id: NodeID,
     point_id: u8,
     elapsed: f32,
@@ -2558,7 +2581,10 @@ fn blended_water_samples_3d(
     body_mask: BitMask,
     water_index: &RuntimeWaterIndex3D,
     water_samples: &AHashMap<NodeID, perro_nodes::WaterPhysicsSample>,
-    water_body_samples: &AHashMap<crate::runtime::WaterBodySampleKey, crate::runtime::WaterBodySampleCache>,
+    water_body_samples: &AHashMap<
+        crate::runtime::WaterBodySampleKey,
+        crate::runtime::WaterBodySampleCache,
+    >,
     body_id: NodeID,
     point_id: u8,
     elapsed: f32,
@@ -2791,8 +2817,11 @@ pub(crate) fn water_physics_sample_for_body_cached(
     sample
 }
 
-fn lookup_water_body_sample(
-    water_body_samples: &AHashMap<crate::runtime::WaterBodySampleKey, crate::runtime::WaterBodySampleCache>,
+pub(crate) fn lookup_water_body_sample(
+    water_body_samples: &AHashMap<
+        crate::runtime::WaterBodySampleKey,
+        crate::runtime::WaterBodySampleCache,
+    >,
     water: NodeID,
     body: NodeID,
     point: u8,
@@ -2904,8 +2933,13 @@ fn register_water_query_candidates_2d(
     };
     for &idx in bin {
         let water = water_index.waters[idx];
-        if water.surface.collision_mask.intersects(body.collision_layers)
-            || body.collision_mask.intersects(water.surface.collision_layers)
+        if water
+            .surface
+            .collision_mask
+            .intersects(body.collision_layers)
+            || body
+                .collision_mask
+                .intersects(water.surface.collision_layers)
         {
             continue;
         }
@@ -2915,7 +2949,9 @@ fn register_water_query_candidates_2d(
         }
         let list = out.entry(water.id).or_default();
         if list.len() >= WATER_QUERY_MAX_PER_WATER
-            || list.iter().any(|query| query.body == body.id && query.point == point)
+            || list
+                .iter()
+                .any(|query| query.body == body.id && query.point == point)
         {
             continue;
         }
@@ -2939,8 +2975,13 @@ fn register_water_query_candidates_3d(
     };
     for &idx in bin {
         let water = water_index.waters[idx];
-        if water.surface.collision_mask.intersects(body.collision_layers)
-            || body.collision_mask.intersects(water.surface.collision_layers)
+        if water
+            .surface
+            .collision_mask
+            .intersects(body.collision_layers)
+            || body
+                .collision_mask
+                .intersects(water.surface.collision_layers)
         {
             continue;
         }
@@ -2951,7 +2992,9 @@ fn register_water_query_candidates_3d(
         }
         let list = out.entry(water.id).or_default();
         if list.len() >= WATER_QUERY_MAX_PER_WATER
-            || list.iter().any(|query| query.body == body.id && query.point == point)
+            || list
+                .iter()
+                .any(|query| query.body == body.id && query.point == point)
         {
             continue;
         }
@@ -2977,7 +3020,9 @@ fn sample_water_id_2d(
         if !water.surface.shape.contains_surface(local) {
             continue;
         }
-        let dist = (surface_point - water_global_point_2d(water.transform, Vector2::new(local.x, surface_point.y))).length();
+        let dist = (surface_point
+            - water_global_point_2d(water.transform, Vector2::new(local.x, surface_point.y)))
+        .length();
         if dist < best_dist {
             best = Some(water.id);
             best_dist = dist;
@@ -3005,7 +3050,10 @@ fn sample_water_id_3d(
             continue;
         }
         let dist = (surface_point
-            - water_global_point_3d(water.transform, Vector3::new(local.x, surface_point.y, local.z)))
+            - water_global_point_3d(
+                water.transform,
+                Vector3::new(local.x, surface_point.y, local.z),
+            ))
         .length();
         if dist < best_dist {
             best = Some(water.id);

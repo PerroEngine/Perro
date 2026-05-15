@@ -749,12 +749,12 @@ pub(super) fn parse_pparticle_source(source: &str) -> Option<ParticleProfile3D> 
             }
             "color_start" => {
                 if let Some(v) = parse_vec4_literal(value) {
-                    profile.color_start = v;
+                    profile.color_start = v.into();
                 }
             }
             "color_end" => {
                 if let Some(v) = parse_vec4_literal(value) {
-                    profile.color_end = v;
+                    profile.color_end = v.into();
                 }
             }
             "emissive" => {

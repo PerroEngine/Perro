@@ -16,8 +16,8 @@ use perro_render_bridge::{
     ParticlePath3D, ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D,
     PointLight3DState, PointParticles3DState, RayLight3DState, RenderCommand, ResourceCommand,
     SkeletonPalette, Sky3DState, SkyTime3DState, SpotLight3DState, Water3DState,
-    WaterBodyQueryState, WaterCoastlineShape3D, WaterIdleModeState, WaterImpact3D,
-    WaterLinkState, WaterShapeState,
+    WaterBodyQueryState, WaterCoastlineShape3D, WaterIdleModeState, WaterImpact3D, WaterLinkState,
+    WaterShapeState,
 };
 use perro_runtime_render::{material_3d_request, mesh_3d_request};
 use perro_structs::BitMask;
@@ -32,6 +32,7 @@ use helpers::*;
 
 impl Runtime {
     pub fn extract_render_3d_commands(&mut self) {
+        self.reset_water_scan_cache_3d();
         let bootstrap_scan = self.render_3d.prev_visible.is_empty()
             && self.render_3d.retained_ambient_lights.is_empty()
             && self.render_3d.retained_skies.is_empty()
@@ -255,8 +256,8 @@ impl Runtime {
                             lod_min_resolution: water.lod.min_resolution,
                             collision_layers: water.collision_layers,
                             collision_mask: water.collision_mask,
-                            deep_color: water.optics.deep_color.to_rgba(),
-                            shallow_color: water.optics.shallow_color.to_rgba(),
+                            deep_color: water.optics.deep_color,
+                            shallow_color: water.optics.shallow_color,
                             shallow_depth: water.optics.shallow_depth,
                             sky_bias_ratio: water.optics.sky_bias.ratio(),
                             transparency: water.visual.transparency,
@@ -265,14 +266,14 @@ impl Runtime {
                             fresnel_power: water.visual.fresnel_power,
                             normal_strength: water.visual.normal_strength,
                             ripple_scale: water.visual.ripple_scale,
-                            foam_color: water.visual.foam_color.to_rgba(),
+                            foam_color: water.visual.foam_color,
                             foam_amount: water.visual.foam_amount,
                             crest_foam_threshold: water.visual.crest_foam_threshold,
                             caustic_strength: water.visual.caustic_strength,
                             refraction_strength: water.visual.refraction_strength,
                             scattering_strength: water.visual.scattering_strength,
                             distance_fog_strength: water.visual.distance_fog_strength,
-                            coastline_foam_color: water.coastline.foam_color.to_rgba(),
+                            coastline_foam_color: water.coastline.foam_color,
                             coastline_foam_strength: water.coastline.foam_strength,
                             coastline_foam_width: water.coastline.foam_width,
                             coastline_cutoff_softness: water.coastline.cutoff_softness,
@@ -1150,19 +1151,21 @@ impl Runtime {
             })
             .collect();
         for body_id in body_ids {
-            let Some((enabled, layers, mask, children)) =
+            let Some((enabled, layers, mask, children, scale_bias)) =
                 self.nodes.get(body_id).and_then(|node| match &node.data {
                     SceneNodeData::StaticBody3D(body) => Some((
                         body.enabled,
                         body.collision_layers,
                         body.collision_mask,
                         node.children_slice().to_vec(),
+                        0.85f32,
                     )),
                     SceneNodeData::RigidBody3D(body) => Some((
                         body.enabled,
                         body.collision_layers,
                         body.collision_mask,
                         node.children_slice().to_vec(),
+                        0.50f32,
                     )),
                     _ => None,
                 })
@@ -1213,7 +1216,7 @@ impl Runtime {
                         }
                         shapes.push(WaterCoastlineShape3D::Box {
                             center: [local.x, local.y, local.z],
-                            half_extents: [half.x, half.y, half.z],
+                            half_extents: [half.x * scale_bias, half.y, half.z * scale_bias],
                             axis_x: water_local_axis_xz(
                                 water_global,
                                 shape_global,
@@ -1237,7 +1240,7 @@ impl Runtime {
                         }
                         shapes.push(WaterCoastlineShape3D::Sphere {
                             center: [local.x, local.y, local.z],
-                            radius,
+                            radius: radius * scale_bias,
                         });
                     }
                     Shape3D::Capsule {
@@ -1262,7 +1265,7 @@ impl Runtime {
                         }
                         shapes.push(WaterCoastlineShape3D::Cylinder {
                             center: [local.x, local.y, local.z],
-                            radius,
+                            radius: radius * scale_bias,
                             half_height,
                         });
                     }
@@ -1306,11 +1309,20 @@ impl Runtime {
                             {
                                 continue;
                             }
+                            let centroid_x = (a.x + b.x + c.x) / 3.0;
+                            let centroid_z = (a.z + b.z + c.z) / 3.0;
+                            let shrink = |x: f32, y: f32, z: f32| -> [f32; 3] {
+                                [
+                                    local.x + centroid_x + (x - centroid_x) * scale_bias,
+                                    local.y + y,
+                                    local.z + centroid_z + (z - centroid_z) * scale_bias,
+                                ]
+                            };
                             shapes.push(WaterCoastlineShape3D::Triangle {
                                 points: [
-                                    [local.x + a.x, local.y + a.y, local.z + a.z],
-                                    [local.x + b.x, local.y + b.y, local.z + b.z],
-                                    [local.x + c.x, local.y + c.y, local.z + c.z],
+                                    shrink(a.x, a.y, a.z),
+                                    shrink(b.x, b.y, b.z),
+                                    shrink(c.x, c.y, c.z),
                                 ],
                             });
                         }
@@ -1349,28 +1361,22 @@ impl Runtime {
         };
         let water_inv = water_global.to_mat4().inverse();
         let half = water.shape.surface_size() * 0.5;
-        self.water_collect_ids_scratch.clear();
-        self.water_collect_ids_scratch.extend(
-            self.nodes.iter().filter_map(|(id, node)| {
-                matches!(node.data, SceneNodeData::RigidBody3D(_)).then_some(id)
-            }),
-        );
-        let mut body_ids = std::mem::take(&mut self.water_collect_ids_scratch);
+        let body_ids = self.cached_rigid_body_ids_3d().to_vec();
         let mut impacts = Vec::new();
         for body_id in body_ids.iter().copied() {
             let Some((layers, mask, mass, density, velocity)) =
                 self.nodes.get(body_id).and_then(|node| {
-                let SceneNodeData::RigidBody3D(body) = &node.data else {
-                    return None;
-                };
-                Some((
-                    body.collision_layers,
-                    body.collision_mask,
-                    body.mass,
-                    body.density,
-                    body.linear_velocity,
-                ))
-            })
+                    let SceneNodeData::RigidBody3D(body) = &node.data else {
+                        return None;
+                    };
+                    Some((
+                        body.collision_layers,
+                        body.collision_mask,
+                        body.mass,
+                        body.density,
+                        body.linear_velocity,
+                    ))
+                })
             else {
                 continue;
             };
@@ -1390,17 +1396,21 @@ impl Runtime {
             {
                 continue;
             }
+            let local_xz = perro_structs::Vector2::new(local.x, local.z);
+            let cached_sample = crate::runtime::physics::lookup_water_body_sample(
+                &self.water_body_samples,
+                water_id,
+                body_id,
+                0,
+                local_xz,
+                self.time.elapsed,
+            );
+            let local = perro_structs::Vector3::new(local_xz.x, local.y, local_xz.y);
             let sample = crate::runtime::physics::water_physics_sample_for_body_cached(
                 water,
-                perro_structs::Vector2::new(local.x, local.z),
+                local_xz,
                 self.time.elapsed,
-                self.water_body_samples
-                    .get(&crate::runtime::WaterBodySampleKey {
-                        water: water_id,
-                        body: body_id,
-                        point: 0,
-                    })
-                    .copied(),
+                cached_sample,
                 self.water_samples.get(&water_id).copied(),
             );
             let target = crate::runtime::physics::water_target_submerged(density);
@@ -1426,13 +1436,11 @@ impl Runtime {
             impacts.push(WaterImpact3D {
                 position: [local.x, local.y, local.z],
                 velocity: [velocity.x, velocity.y, velocity.z],
-                strength,
-                radius,
+                strength: strength * 1.18,
+                radius: radius * 0.5,
                 cavitation: (vertical_impact * 0.035 + surface_contact * 0.08).clamp(0.0, 1.0),
             });
         }
-        body_ids.clear();
-        self.water_collect_ids_scratch = body_ids;
         for impact in self.force_water_impacts_3d.iter() {
             let local = water_local_point_3d(water_inv, impact.position);
             if local.x.abs() > half.x + impact.radius
@@ -1463,8 +1471,8 @@ impl Runtime {
                 impacts.push(WaterImpact3D {
                     position: [local.x, local.y, local.z],
                     velocity: [contact.velocity.x, contact.velocity.y, contact.velocity.z],
-                    strength: (contact.foam_amount * 6.5).max(0.5),
-                    radius: contact.radius * (1.0 + contact.persist),
+                    strength: (contact.foam_amount * 5.8).max(0.35),
+                    radius: contact.radius,
                     cavitation: contact.foam_amount * 0.2,
                 });
             }
@@ -1511,15 +1519,12 @@ impl Runtime {
         let Some(water_global) = self.get_global_transform_3d(water_id) else {
             return Arc::from([]);
         };
-        self.water_collect_ids_scratch.clear();
-        self.water_collect_ids_scratch.extend(
-            self.nodes.iter().filter_map(|(id, node)| {
-                (id != water_id && matches!(node.data, SceneNodeData::WaterBody3D(_))).then_some(id)
-            }),
-        );
-        let mut other_ids = std::mem::take(&mut self.water_collect_ids_scratch);
+        let other_ids = self.cached_water_ids_3d().to_vec();
         let mut links = Vec::new();
         for other_id in other_ids.iter().copied() {
+            if other_id == water_id {
+                continue;
+            }
             let Some(other_water) = self.nodes.get(other_id).and_then(|node| {
                 let SceneNodeData::WaterBody3D(other) = &node.data else {
                     return None;
@@ -1562,8 +1567,6 @@ impl Runtime {
                 flow_transfer: water.link.flow_transfer.min(other_water.link.flow_transfer),
             });
         }
-        other_ids.clear();
-        self.water_collect_ids_scratch = other_ids;
         Arc::from(links)
     }
 }

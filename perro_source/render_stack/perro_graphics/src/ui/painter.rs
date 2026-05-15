@@ -8,7 +8,6 @@ use epaint::{
 };
 use perro_ids::NodeID;
 use perro_render_bridge::{UiDepthEffectState, UiImageScaleState, UiRectState, UiTextAlignState};
-use perro_structs::Unorm8x4;
 
 const UI_RASTER_SCALE: f32 = 2.0;
 const UI_FONT_ATLAS_SIZE: usize = 4096;
@@ -286,7 +285,7 @@ fn push_shadow_shapes(
     for step in (0..steps).rev() {
         let t = (step + 1) as f32 / steps as f32;
         let expand = effect_size_expand(rect, effect) + effect.falloff.max(0.0) * t;
-        let alpha = effect.color[3] * (1.0 - t * 0.82);
+        let alpha = effect.color.a() * (1.0 - t * 0.82);
         let color = with_alpha(effect.color, alpha);
         if !valid_color(color) || alpha <= 0.0 {
             continue;
@@ -321,7 +320,7 @@ fn push_highlight_shapes(
         let t = step as f32 / steps as f32;
         let inset = effect.distance.max(0.0) + effect.falloff.max(0.0) * t;
         let stroke_width = (stroke_base * (1.0 - t * 0.65)).max(0.5);
-        let alpha = effect.color[3] * (1.0 - t);
+        let alpha = effect.color.a() * (1.0 - t);
         let color = with_alpha(effect.color, alpha);
         if !valid_color(color) || alpha <= 0.0 {
             continue;
@@ -535,7 +534,7 @@ struct TextShapeInput<'a> {
     clip_rect: Rect,
     text: &'a str,
     font_size: f32,
-    color: [f32; 4],
+    color: perro_structs::Color,
     h_align: UiTextAlignState,
     v_align: UiTextAlignState,
 }
@@ -598,8 +597,8 @@ fn clip_rect_from_state(clip: [f32; 4], viewport: [f32; 2]) -> Rect {
     Rect::from_min_max(pos2(min_x, min_y), pos2(max_x, max_y))
 }
 
-fn color32(color: [f32; 4]) -> Color32 {
-    let [r, g, b, a] = Unorm8x4::new(color).to_u8();
+fn color32(color: perro_structs::Color) -> Color32 {
+    let [r, g, b, a] = color.to_rgba_u8();
     Color32::from_rgba_unmultiplied(r, g, b, a)
 }
 
@@ -610,13 +609,13 @@ fn valid_rect(rect: UiRectState) -> bool {
         && rect.size[1] > 0.0
 }
 
-fn valid_color(color: [f32; 4]) -> bool {
-    color.iter().all(|v| v.is_finite())
+fn valid_color(color: perro_structs::Color) -> bool {
+    color.to_rgba().iter().all(|v| v.is_finite())
 }
 
 fn valid_effect(effect: UiDepthEffectState) -> bool {
     valid_color(effect.color)
-        && effect.color[3] > 0.0
+        && effect.color.a() > 0.0
         && effect.distance.is_finite()
         && effect.falloff.is_finite()
         && effect.vector.iter().all(|v| v.is_finite())
@@ -635,9 +634,9 @@ fn effect_offset(effect: UiDepthEffectState) -> epaint::Vec2 {
     )
 }
 
-fn with_alpha(mut color: [f32; 4], alpha: f32) -> [f32; 4] {
-    color[3] = alpha.clamp(0.0, 1.0);
-    color
+fn with_alpha(color: perro_structs::Color, alpha: f32) -> perro_structs::Color {
+    let [r, g, b, _] = color.to_rgba();
+    perro_structs::Color::new(r, g, b, alpha.clamp(0.0, 1.0))
 }
 
 fn effect_size_expand(rect: Rect, effect: UiDepthEffectState) -> f32 {
@@ -718,8 +717,8 @@ mod tests {
                 z_index: 0,
             },
             clip_rect: [0.0, 0.0, 800.0, 600.0],
-            fill: [0.0, 0.0, 0.0, 1.0],
-            stroke: [0.0, 0.0, 0.0, 0.0],
+            fill: perro_structs::Color::BLACK,
+            stroke: perro_structs::Color::TRANSPARENT,
             stroke_width: 0.0,
             corner_radius: 0.5,
             shadow: UiDepthEffectState::none(),
@@ -740,8 +739,8 @@ mod tests {
                 z_index: 0,
             },
             clip_rect: [0.0, 0.0, 800.0, 600.0],
-            fill: [0.0, 0.0, 0.0, 1.0],
-            stroke: [0.0, 0.0, 0.0, 0.0],
+            fill: perro_structs::Color::BLACK,
+            stroke: perro_structs::Color::TRANSPARENT,
             stroke_width: 0.0,
             corner_radius: 2.0,
             shadow: UiDepthEffectState::none(),

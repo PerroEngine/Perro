@@ -1147,7 +1147,8 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     STARTUP_SPLASH_BG_COLOR[1],
                     STARTUP_SPLASH_BG_COLOR[2],
                     STARTUP_SPLASH_BG_COLOR[3] * alpha,
-                ],
+                ]
+                .into(),
                 z_index: STARTUP_SPLASH_BG_Z,
             },
         }));
@@ -1184,7 +1185,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             sprite: Sprite2DCommand {
                 texture: texture_id,
                 model: [[sx, 0.0, 0.0], [0.0, sy, 0.0], [0.0, 0.0, 1.0]],
-                tint: [1.0, 1.0, 1.0, alpha],
+                tint: [1.0, 1.0, 1.0, alpha].into(),
                 z_index: STARTUP_SPLASH_IMAGE_Z,
                 uv_min: [0.0, 0.0],
                 uv_max: [0.0, 0.0],

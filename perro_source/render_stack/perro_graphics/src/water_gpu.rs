@@ -82,8 +82,10 @@ pub struct GpuWater {
     render_pipeline_3d: wgpu::RenderPipeline,
     compute_bgl: wgpu::BindGroupLayout,
     render_bgl: wgpu::BindGroupLayout,
+    depth_bgl: wgpu::BindGroupLayout,
     compute_bind_group: wgpu::BindGroup,
     render_bind_group: wgpu::BindGroup,
+    depth_bind_group: wgpu::BindGroup,
     water_buffer: wgpu::Buffer,
     cell_buffer: wgpu::Buffer,
     coastline_buffer: wgpu::Buffer,
@@ -136,6 +138,7 @@ impl GpuWater {
         sample_count: u32,
         camera_bgl: &wgpu::BindGroupLayout,
         camera_3d_bgl: &wgpu::BindGroupLayout,
+        scene_depth_view: &wgpu::TextureView,
     ) -> Self {
         let compute_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_water_gpu_bgl"),
@@ -237,6 +240,19 @@ impl GpuWater {
                 },
             ],
         });
+        let depth_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("perro_water_depth_bgl"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Depth,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            }],
+        });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("perro_water_gpu_shader"),
             source: wgpu::ShaderSource::Wgsl(WATER_WGSL.into()),
@@ -270,7 +286,7 @@ impl GpuWater {
         });
         let render_layout_3d = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_water_3d_render_layout"),
-            bind_group_layouts: &[Some(&render_bgl), Some(camera_3d_bgl)],
+            bind_group_layouts: &[Some(&render_bgl), Some(camera_3d_bgl), Some(&depth_bgl)],
             immediate_size: 0,
         });
         let render_pipeline_2d = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -383,14 +399,22 @@ impl GpuWater {
             &params_buffer,
             "perro_water_render_bg",
         );
+        let depth_bind_group = make_depth_bind_group(
+            device,
+            &depth_bgl,
+            scene_depth_view,
+            "perro_water_depth_bg",
+        );
         Self {
             compute_pipeline,
             render_pipeline_2d,
             render_pipeline_3d,
             compute_bgl,
             render_bgl,
+            depth_bgl,
             compute_bind_group,
             render_bind_group,
+            depth_bind_group,
             water_buffer,
             cell_buffer,
             coastline_buffer,
@@ -425,6 +449,19 @@ impl GpuWater {
             staged_render_chunks: Vec::new(),
             coastline_cells_scratch: Vec::new(),
         }
+    }
+
+    pub fn set_scene_depth_view(
+        &mut self,
+        device: &wgpu::Device,
+        scene_depth_view: &wgpu::TextureView,
+    ) {
+        self.depth_bind_group = make_depth_bind_group(
+            device,
+            &self.depth_bgl,
+            scene_depth_view,
+            "perro_water_depth_bg",
+        );
     }
 
     pub fn prepare(
@@ -530,12 +567,18 @@ impl GpuWater {
         self.max_3d_chunk_vertices = self
             .staged_render_chunks
             .iter()
-            .map(|chunk| water_render_chunk_vertex_count(&self.staged_waters[chunk.water_idx as usize], chunk))
+            .map(|chunk| {
+                water_render_chunk_vertex_count(
+                    &self.staged_waters[chunk.water_idx as usize],
+                    chunk,
+                )
+            })
             .max()
             .unwrap_or(0);
         self.render_3d_chunk_count = self.staged_render_chunks.len().min(u32::MAX as usize) as u32;
         self.readback_interval_seconds = readback_interval_seconds(readback_rate);
-        let rebuilt = self.ensure_capacity(device, needed, cell_needed, self.staged_render_chunks.len());
+        let rebuilt =
+            self.ensure_capacity(device, needed, cell_needed, self.staged_render_chunks.len());
         if rebuilt {
             self.compute_bind_group = make_compute_bind_group(
                 device,
@@ -557,7 +600,11 @@ impl GpuWater {
                 "perro_water_render_bg",
             );
         }
-        queue.write_buffer(&self.water_buffer, 0, bytemuck::cast_slice(&self.staged_waters));
+        queue.write_buffer(
+            &self.water_buffer,
+            0,
+            bytemuck::cast_slice(&self.staged_waters),
+        );
         if !self.staged_render_chunks.is_empty() {
             queue.write_buffer(
                 &self.render_chunk_buffer,
@@ -634,7 +681,8 @@ impl GpuWater {
             }
             for query in state.queries.iter() {
                 self.readback_queries.push(*query);
-                self.readback_offsets.push(water_query_cell_offset(water, query.local));
+                self.readback_offsets
+                    .push(water_query_cell_offset(water, query.local));
                 debug_assert_eq!(query.water, *node);
             }
         }
@@ -647,7 +695,8 @@ impl GpuWater {
             }
             for query in state.queries.iter() {
                 self.readback_queries.push(*query);
-                self.readback_offsets.push(water_query_cell_offset(water, query.local));
+                self.readback_offsets
+                    .push(water_query_cell_offset(water, query.local));
                 debug_assert_eq!(query.water, *node);
             }
         }
@@ -766,6 +815,7 @@ impl GpuWater {
         pass.set_pipeline(&self.render_pipeline_3d);
         pass.set_bind_group(0, &self.render_bind_group, &[]);
         pass.set_bind_group(1, camera_bind_group, &[]);
+        pass.set_bind_group(2, &self.depth_bind_group, &[]);
         pass.draw(0..self.max_3d_chunk_vertices, 0..self.render_3d_chunk_count);
     }
 
@@ -1067,6 +1117,22 @@ fn make_render_bind_group(
     })
 }
 
+fn make_depth_bind_group(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    scene_depth_view: &wgpu::TextureView,
+    label: &str,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some(label),
+        layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: wgpu::BindingResource::TextureView(scene_depth_view),
+        }],
+    })
+}
+
 fn build_render_chunks_3d(
     out: &mut Vec<WaterRenderChunkGpu>,
     water_idx: u32,
@@ -1099,7 +1165,8 @@ fn build_render_chunks_3d(
                     let start_x = cx * WATER_CHUNK_QUADS;
                     let start_y = cy * WATER_CHUNK_QUADS;
                     let chunk_quads_x = (quad_width.saturating_sub(start_x)).min(WATER_CHUNK_QUADS);
-                    let chunk_quads_y = (quad_height.saturating_sub(start_y)).min(WATER_CHUNK_QUADS);
+                    let chunk_quads_y =
+                        (quad_height.saturating_sub(start_y)).min(WATER_CHUNK_QUADS);
                     let chunk_width = chunk_quads_x + 1;
                     let chunk_height = chunk_quads_y + 1;
                     let uv_origin = [
@@ -1147,12 +1214,8 @@ fn water_chunk_visible(
         (center_uv[1] - 0.5) * water.size_depth_time[1],
         1.0,
     );
-    let model = Mat4::from_cols_array_2d(&[
-        water.model_x,
-        water.model_y,
-        water.model_z,
-        water.model_w,
-    ]);
+    let model =
+        Mat4::from_cols_array_2d(&[water.model_x, water.model_y, water.model_z, water.model_w]);
     if !model.is_finite() {
         return true;
     }
@@ -1163,7 +1226,8 @@ fn water_chunk_visible(
     let chunk_half_x = water.size_depth_time[0].abs() * uv_scale[0] * 0.5;
     let chunk_half_z = water.size_depth_time[1].abs() * uv_scale[1] * 0.5;
     let depth = water.size_depth_time[2].abs().max(0.5);
-    let radius_local = (chunk_half_x * chunk_half_x + chunk_half_z * chunk_half_z + depth * depth).sqrt();
+    let radius_local =
+        (chunk_half_x * chunk_half_x + chunk_half_z * chunk_half_z + depth * depth).sqrt();
     let radius = radius_local * sx.max(sy).max(sz).max(1.0e-6);
     for plane in planes {
         let p = Vec4::from_array(*plane);
@@ -1269,8 +1333,8 @@ fn raster_impacts_2d(out: &mut [[f32; 4]], width: usize, height: usize, water: &
                 }
                 let outline_width = (0.20 / radius).clamp(0.08, 0.42);
                 let ring_center = (1.0 - outline_width * 0.65).clamp(0.42, 0.96);
-                let ring = (1.0 - ((t - ring_center).abs() / outline_width).clamp(0.0, 1.0))
-                    .powi(2);
+                let ring =
+                    (1.0 - ((t - ring_center).abs() / outline_width).clamp(0.0, 1.0)).powi(2);
                 let strength = impact.strength * (1.0 / 180.0);
                 let wake = amount * (strength * 0.70 + impact.cavitation * 0.28)
                     + ring * (strength * 0.44 + impact.cavitation * 1.08);
@@ -1425,8 +1489,8 @@ fn raster_impacts_3d(out: &mut [[f32; 4]], width: usize, height: usize, water: &
                 }
                 let outline_width = (0.20 / radius).clamp(0.08, 0.42);
                 let ring_center = (1.0 - outline_width * 0.65).clamp(0.42, 0.96);
-                let ring = (1.0 - ((t - ring_center).abs() / outline_width).clamp(0.0, 1.0))
-                    .powi(2);
+                let ring =
+                    (1.0 - ((t - ring_center).abs() / outline_width).clamp(0.0, 1.0)).powi(2);
                 let strength = impact.strength * (1.0 / 180.0);
                 let wake = amount * (strength * 0.70 + impact.cavitation * 0.28)
                     + ring * (strength * 0.44 + impact.cavitation * 1.08);
@@ -1680,12 +1744,12 @@ fn water_gpu_2d(
         water.foam_strength,
         water.collision_layers.bits(),
         water.collision_mask.bits(),
-        water.coastline_foam_color,
-        water.deep_color,
-        water.shallow_color,
+        water.coastline_foam_color.into(),
+        water.deep_color.into(),
+        water.shallow_color.into(),
         water.shallow_depth,
         [0.0, 0.0, 0.0, 0.0],
-        water.foam_color,
+        water.foam_color.into(),
         [
             water.transparency,
             water.reflectivity,
@@ -1750,9 +1814,9 @@ fn water_gpu_3d(
         water.foam_strength,
         water.collision_layers.bits(),
         water.collision_mask.bits(),
-        water.coastline_foam_color,
-        water.deep_color,
-        water.shallow_color,
+        water.coastline_foam_color.into(),
+        water.deep_color.into(),
+        water.shallow_color.into(),
         water.shallow_depth,
         [
             sky_color[0],
@@ -1760,7 +1824,7 @@ fn water_gpu_3d(
             sky_color[2],
             water.sky_bias_ratio.clamp(0.0, 1.0),
         ],
-        water.foam_color,
+        water.foam_color.into(),
         [
             water.transparency,
             water.reflectivity,
@@ -2114,7 +2178,7 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
         * w.model_z.w;
     let crash_up = shore * (1.0 + coast_push * 0.85) * pow(crash_wave, 2.4) * w.model_y.w * w.wave.y * 2.10;
     let crash_down = -shore * pow(max(-crash_wave, 0.0), 1.2) * w.wave.y * 0.34;
-    let crash = (crash_up + crash_down + max(reflected, 0.0) * 0.42) * (0.55 + spill * 0.45) + diffusion * w.wave.y * 0.58;
+    let crash = (crash_up + crash_down + max(reflected, 0.0) * 0.54) * (0.60 + spill * 0.52) + diffusion * w.wave.y * 0.74;
     let prev = cells[cell_idx].x
         * w.wave.z
         * (1.0 - shore * (0.52 + coast_push * 0.26) * w.coastline.w)
@@ -2122,10 +2186,10 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let crest_norm = idle / max(w.wave.y, 0.001);
     let crest_line = smoothstep(0.50, 0.86, crest_norm) * (1.0 - smoothstep(1.10, 1.80, crest_norm));
     let wave_foam = crest_line * bitcast<f32>(w.flags.w) * 0.34;
-    let impact_foam = smoothstep(0.10, 1.05, wake + abs(crash)) * bitcast<f32>(w.flags.w) * 0.50;
-    let shore_foam = smoothstep(0.30, 1.55, crash + shore * 0.42) * (1.0 - smoothstep(1.65, 2.8, crash)) * w.coastline.x * bitcast<f32>(w.flags.w);
-    let foam = clamp(wave_foam + impact_foam + shore_foam + spill * max(wake, shore) * 0.26, 0.0, 1.0);
-    let height = mix(prev + idle * (0.030 + shore * w.model_y.w * 0.18) + wake * 0.24 + crash, idle + wake * 0.24 + crash, 0.48 + spill * 0.10);
+    let impact_foam = smoothstep(0.08, 0.96, wake + abs(crash)) * bitcast<f32>(w.flags.w) * 0.46;
+    let shore_foam = smoothstep(0.24, 1.42, crash + shore * 0.50) * (1.0 - smoothstep(1.55, 2.65, crash)) * w.coastline.x * bitcast<f32>(w.flags.w);
+    let foam = clamp(wave_foam + impact_foam + shore_foam + spill * max(wake, shore) * 0.22, 0.0, 1.0);
+    let height = mix(prev + idle * (0.030 + shore * w.model_y.w * 0.18) + wake * 0.30 + crash, idle + wake * 0.28 + crash, 0.44 + spill * 0.14);
     cells[cell_idx] = vec4<f32>(height, idle, foam, shore);
 }
 
@@ -2268,6 +2332,7 @@ struct Scene3D {
     ray_lights: array<RayLightGpu, 3>,
     point_lights: array<PointLightGpu, 8>,
     spot_lights: array<SpotLightGpu, 8>,
+    inv_view_proj: mat4x4<f32>,
 }
 
 @group(0) @binding(0)
@@ -2290,6 +2355,8 @@ struct WaterRenderChunk {
 var<storage, read> render_chunks: array<WaterRenderChunk>;
 @group(1) @binding(0)
 var<uniform> scene: Scene3D;
+@group(2) @binding(0)
+var scene_depth_tex: texture_depth_2d;
 
 struct Water3DVertexOut {
     @builtin(position) clip_pos: vec4<f32>,
@@ -2460,6 +2527,18 @@ fn water_hash(p: vec2<f32>) -> f32 {
     return fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453);
 }
 
+fn water_hash2(p: vec2<f32>) -> vec2<f32> {
+    let x = fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453);
+    let y = fract(sin(dot(p, vec2<f32>(269.5, 183.3))) * 43758.5453);
+    return vec2<f32>(x, y);
+}
+
+fn water_grad2(p: vec2<f32>) -> vec2<f32> {
+    let h = water_hash2(p) * 2.0 - 1.0;
+    let len2 = max(dot(h, h), 1.0e-4);
+    return h * inverseSqrt(len2);
+}
+
 fn water_noise(p: vec2<f32>) -> f32 {
     let i = floor(p);
     let f = fract(p);
@@ -2469,6 +2548,21 @@ fn water_noise(p: vec2<f32>) -> f32 {
     let c = water_hash(i + vec2<f32>(0.0, 1.0));
     let d = water_hash(i + vec2<f32>(1.0, 1.0));
     return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+fn water_perlin_noise(p: vec2<f32>) -> f32 {
+    let i = floor(p);
+    let f = fract(p);
+    let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    let g00 = water_grad2(i);
+    let g10 = water_grad2(i + vec2<f32>(1.0, 0.0));
+    let g01 = water_grad2(i + vec2<f32>(0.0, 1.0));
+    let g11 = water_grad2(i + vec2<f32>(1.0, 1.0));
+    let a = dot(g00, f - vec2<f32>(0.0, 0.0));
+    let b = dot(g10, f - vec2<f32>(1.0, 0.0));
+    let c = dot(g01, f - vec2<f32>(0.0, 1.0));
+    let d = dot(g11, f - vec2<f32>(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y) * 0.5 + 0.5;
 }
 
 fn water_fbm(p: vec2<f32>) -> f32 {
@@ -2481,6 +2575,20 @@ fn water_fbm(p: vec2<f32>) -> f32 {
         norm += amp;
         q = vec2<f32>(q.x * 1.72 + q.y * 1.11, q.x * -1.04 + q.y * 1.83) + vec2<f32>(17.0, 9.0);
         amp *= 0.52;
+    }
+    return sum / max(norm, 0.001);
+}
+
+fn water_perlin_fbm(p: vec2<f32>) -> f32 {
+    var q = p;
+    var amp = 0.54;
+    var sum = 0.0;
+    var norm = 0.0;
+    for (var i = 0u; i < 5u; i = i + 1u) {
+        sum += water_perlin_noise(q) * amp;
+        norm += amp;
+        q = vec2<f32>(q.x * 1.84 - q.y * 0.74, q.x * 0.92 + q.y * 1.67) + vec2<f32>(7.0, 19.0);
+        amp *= 0.53;
     }
     return sum / max(norm, 0.001);
 }
@@ -2543,6 +2651,46 @@ fn water_schlick_fresnel(cos_theta: f32, power: f32) -> f32 {
     let edge = pow(grazing, max(power, 0.001));
     let shoulder = smoothstep(0.18, 0.88, grazing);
     return f0 + (1.0 - f0) * (edge * 0.68 + shoulder * 0.18);
+}
+
+fn water_scene_world_from_depth(coord: vec2<i32>, dims_u: vec2<u32>, depth: f32) -> vec3<f32> {
+    let uv = (vec2<f32>(coord) + vec2<f32>(0.5)) / vec2<f32>(dims_u);
+    let ndc_xy = vec2<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+    let ndc = vec4<f32>(ndc_xy, depth * 2.0 - 1.0, 1.0);
+    let world_h = scene.inv_view_proj * ndc;
+    return world_h.xyz / max(abs(world_h.w), 1.0e-5);
+}
+
+fn water_screen_contact_outline(in: Water3DVertexOut) -> vec2<f32> {
+    let dims_u = textureDimensions(scene_depth_tex);
+    let dims = vec2<i32>(i32(dims_u.x), i32(dims_u.y));
+    let coord = vec2<i32>(floor(in.clip_pos.xy));
+    if any(coord < vec2<i32>(0)) || any(coord >= dims) {
+        return vec2<f32>(0.0, 1.0e9);
+    }
+    let water_view_dist = distance(in.world_pos, scene.camera_pos.xyz);
+    var nearest_delta = 1.0e9;
+    var edge = 0.0;
+    for (var oy = -2; oy <= 2; oy = oy + 1) {
+        for (var ox = -2; ox <= 2; ox = ox + 1) {
+            let sample_coord = clamp(coord + vec2<i32>(ox, oy), vec2<i32>(0), dims - vec2<i32>(1));
+            let scene_depth = textureLoad(scene_depth_tex, sample_coord, 0);
+            if scene_depth >= 0.999999 {
+                continue;
+            }
+            let scene_world = water_scene_world_from_depth(sample_coord, dims_u, scene_depth);
+            let delta = water_view_dist - distance(scene_world, scene.camera_pos.xyz);
+            if delta <= 0.0 {
+                continue;
+            }
+            nearest_delta = min(nearest_delta, delta);
+            let pixel_dist = length(vec2<f32>(f32(ox), f32(oy)));
+            let radius_fade = 1.0 - smoothstep(0.0, 2.8, pixel_dist);
+            let gap_fade = 1.0 - smoothstep(0.01, 0.30, delta);
+            edge = max(edge, gap_fade * (0.42 + radius_fade * 0.58));
+        }
+    }
+    return vec2<f32>(edge, nearest_delta);
 }
 
 struct WaterVertexLocal {
@@ -2780,70 +2928,81 @@ fn fs_water_3d(in: Water3DVertexOut) -> @location(0) vec4<f32> {
     let normal = normalize(mix(water_visual_normal(w, in.uv, t), water_visual_normal_fast(w, in.uv), far_t));
     let view_dir = normalize(scene.camera_pos.xyz - in.world_pos);
     let fresnel_base = water_schlick_fresnel(dot(normal, view_dir), w.visual0.w);
+    let screen_contact = water_screen_contact_outline(in);
+    let screen_outline = screen_contact.x;
+    let screen_outline_core = 1.0 - smoothstep(0.01, 0.09, screen_contact.y);
+    let screen_contact_foam = smoothstep(0.18, 0.92, screen_outline) * (0.42 + screen_outline_core * 0.58);
     let slope = 1.0 - clamp(normal.y, 0.0, 1.0);
     let edge = max(0.0, 1.0 - min(min(in.uv.x, 1.0 - in.uv.x), min(in.uv.y, 1.0 - in.uv.y)) * max(w.coastline.y, 0.001) * 8.0);
     let auto_shallow_depth = max(max(w.size_depth_time.x, w.size_depth_time.y) * 0.25, 0.001);
     let shallow_depth = select(auto_shallow_depth, max(w.size_depth_time.w, 0.001), w.size_depth_time.w >= 0.0);
     let depth_t = clamp(w.size_depth_time.z / shallow_depth, 0.0, 1.0);
     if view_dist >= 320.0 {
-        let coast_outline = max(edge * 0.54, ripple.w);
+        let coast_outline = max(max(edge * 0.20, ripple.w * 0.35), screen_outline);
         let foam = clamp(
-            (smoothstep(0.32, 0.90, ripple.z) * 0.16 + smoothstep(0.58, 0.96, coast_outline) * w.coastline.x * 0.44)
+            (smoothstep(0.32, 0.90, ripple.z) * 0.08 + screen_contact_foam * w.coastline.x * 0.96)
                 * w.visual1.z,
             0.0,
             1.0,
         );
+        let foam_aa = max(fwidth(foam), 0.01);
+        let foam_blend = smoothstep(0.06 - foam_aa, 0.72 + foam_aa, foam);
         let shallow_t = clamp(1.0 - depth_t + idle * 0.02 + foam * 0.02, 0.0, 1.0);
-        let fresnel = fresnel_base * (0.42 + coast_outline * 0.48);
+        let fresnel = fresnel_base * (0.24 + screen_outline * 0.22 + screen_outline_core * 0.08);
         let water_rgb = mix(w.deep_color.rgb, w.shallow_color.rgb, shallow_t);
         let reflected = mix(water_rgb, w.sky_color_bias.rgb, max(w.sky_color_bias.w, w.visual0.y * fresnel * 0.62));
         let fog_t = clamp(view_dist / 620.0, 0.0, 1.0) * w.visual2.w;
-        let outline_white = smoothstep(0.66, 0.96, coast_outline);
-        let color = mix(mix(reflected, w.deep_color.rgb, fog_t), vec3<f32>(1.0), outline_white);
+        let outline_aa = max(fwidth(screen_outline), 0.01);
+        let outline_white = smoothstep(0.34 - outline_aa, 0.80 + outline_aa, screen_outline);
+        let color = mix(mix(reflected, w.deep_color.rgb, fog_t), vec3<f32>(0.94), outline_white * max(foam_blend, screen_contact_foam * 0.72));
         let alpha = mix(w.deep_color.a, w.shallow_color.a, shallow_t) * (1.0 - clamp(w.visual0.x, 0.0, 1.0) * 0.72);
         let side_color = mix(w.deep_color.rgb, color, 0.22);
         let final_color = mix(color, side_color, in.side_t);
-        let final_alpha = mix(alpha + foam * 0.04 + fresnel * w.visual0.y * 0.03, w.deep_color.a * 0.82, in.side_t);
+        let final_alpha = mix(alpha + foam_blend * 0.04 + fresnel * w.visual0.y * 0.03, w.deep_color.a * 0.82, in.side_t);
         return vec4<f32>(final_color, clamp(final_alpha, 0.0, 1.0));
     }
     if view_dist >= 220.0 {
-        let coast_outline = max(edge * 0.50, ripple.w);
+        let coast_outline = max(max(edge * 0.18, ripple.w * 0.30), screen_outline);
         let crest_seed = ripple.y / max(w.wave.y, 0.001) + slope * 2.2;
         let crest = smoothstep(max(w.visual1.w, 0.001), max(w.visual1.w + 0.16, 0.002), crest_seed)
             * (1.0 - smoothstep(max(w.visual1.w + 0.24, 0.003), max(w.visual1.w + 0.52, 0.004), crest_seed))
             * bitcast<f32>(w.flags.w);
         let foam = clamp(
-            (smoothstep(0.22, 0.88, ripple.z) * 0.20 + coast_outline * w.coastline.x * 0.34 + crest * 0.62)
+            (smoothstep(0.22, 0.88, ripple.z) * 0.10 + screen_contact_foam * w.coastline.x * 0.92 + crest * 0.24)
                 * w.visual1.z,
             0.0,
             1.0,
         );
+        let foam_aa = max(fwidth(foam), 0.01);
+        let foam_blend = smoothstep(0.06 - foam_aa, 0.74 + foam_aa, foam);
         let shallow_t = clamp(1.0 - depth_t + idle * 0.04 + foam * 0.02, 0.0, 1.0);
-        let fresnel = fresnel_base * (0.34 + coast_outline * 0.42);
+        let fresnel = fresnel_base * (0.22 + screen_outline * 0.20 + screen_outline_core * 0.08);
         let water_rgb = mix(w.deep_color.rgb, w.shallow_color.rgb, shallow_t);
         let reflected = mix(water_rgb, w.sky_color_bias.rgb, max(w.sky_color_bias.w, w.visual0.y * fresnel * 0.58));
         let fog_t = clamp(view_dist / 620.0, 0.0, 1.0) * w.visual2.w;
         let foam_rgb = mix(w.coastline_foam_color.rgb, w.foam_color.rgb, w.foam_color.a);
-        let outline_white = smoothstep(0.62, 0.95, coast_outline);
+        let outline_aa = max(fwidth(screen_outline), 0.01);
+        let outline_white = smoothstep(0.32 - outline_aa, 0.78 + outline_aa, screen_outline);
         let color = mix(
-            mix(mix(reflected, w.deep_color.rgb, fog_t), foam_rgb, foam * 0.30),
-            vec3<f32>(1.0),
-            outline_white,
+            mix(mix(reflected, w.deep_color.rgb, fog_t), foam_rgb, foam_blend * 0.26),
+            vec3<f32>(0.94),
+            outline_white * max(foam_blend, screen_contact_foam * 0.72),
         );
         let alpha = mix(w.deep_color.a, w.shallow_color.a, shallow_t) * (1.0 - clamp(w.visual0.x, 0.0, 1.0) * 0.72);
         let side_color = mix(w.deep_color.rgb, color, 0.28);
         let final_color = mix(color, side_color, in.side_t);
-        let final_alpha = mix(alpha + foam * 0.06 + fresnel * w.visual0.y * 0.04, w.deep_color.a * 0.82, in.side_t);
+        let final_alpha = mix(alpha + foam_blend * 0.05 + fresnel * w.visual0.y * 0.04, w.deep_color.a * 0.82, in.side_t);
         return vec4<f32>(final_color, clamp(final_alpha, 0.0, 1.0));
     }
     let local = (in.uv - vec2<f32>(0.5, 0.5)) * w.size_depth_time.xy;
+    let world_uv = in.world_pos.xz;
     let wave_flow = normalize(select(vec2<f32>(1.0, 0.0), w.flow_wind.zw + w.flow_wind.xy * 0.35, length(w.flow_wind.zw + w.flow_wind.xy * 0.35) > 0.0001));
     let wave_push = vec2<f32>(normal.x, normal.z) * 0.018 * clamp(w.visual1.x, 0.0, 1.4);
     let foam_drift = wave_flow
         * (0.010 * sin(t * w.wave.x * 1.7 + ripple.y)
             + 0.006 * water_hex_ridged_fbm(local * (0.21 - far_t * 0.08) + t * 0.07));
     let coast_anim = water_coast_sample(w, in.uv + wave_push + foam_drift);
-    let coast_outline = max(edge * 0.55, max(coast_anim.y * 1.15, ripple.w));
+    let coast_outline = max(screen_outline, max(edge * 0.18, max(coast_anim.y * 0.20, ripple.w * 0.18)));
     let foam_break =
         water_hex_ridged_fbm(local * 1.35 + wave_flow * t * 0.42 + vec2<f32>(ripple.y * 0.23, -ripple.x * 0.17));
     let foam_cut = smoothstep(0.54, 0.91, foam_break);
@@ -2854,55 +3013,52 @@ fn fs_water_3d(in: Water3DVertexOut) -> @location(0) vec4<f32> {
     );
     let impact_core = smoothstep(0.20, 0.86, ripple.z) * foam_cut;
     let impact_lace = impact_core * foam_thread;
-    let decal_noise = water_hex_ridged_fbm(local * 0.74 + wave_flow * t * 0.22 + vec2<f32>(5.0, 13.0));
-    let fresnel_break = smoothstep(0.54, 0.92, decal_noise) * smoothstep(0.05, 0.42, slope + coast_outline * 0.28);
-    let fresnel = fresnel_base * (0.28 + max(fresnel_break, coast_outline * 0.65) * 0.86);
+    let fresnel_break = water_perlin_fbm(world_uv * mix(0.070, 0.040, far_t) + wave_flow * t * 0.028 + normal.xz * 1.7);
+    let fresnel = fresnel_base * (0.32 + screen_outline * 0.34 + slope * 0.18 + fresnel_break * 0.16);
     let crest_seed = ripple.y / max(w.wave.y, 0.001) + slope * 2.4;
     let crest_base = smoothstep(max(w.visual1.w, 0.001), max(w.visual1.w + 0.18, 0.002), crest_seed)
         * (1.0 - smoothstep(max(w.visual1.w + 0.20, 0.003), max(w.visual1.w + 0.58, 0.004), crest_seed))
         * bitcast<f32>(w.flags.w) * 0.64;
-    let crest = crest_base * (0.42 + foam_cut * 0.28 + foam_thread * 0.44);
-    let outline_foam = smoothstep(0.24, 0.88, coast_outline)
-        * w.coastline.x
-        * (0.18 + foam_cut * 0.34 + impact_lace * 0.12)
-        * bitcast<f32>(w.flags.w);
-    let foam = clamp((impact_core * 0.22 + impact_lace * 0.56 + outline_foam + crest * 0.78) * w.visual1.z, 0.0, 1.0);
+    let crest = crest_base * 0.18;
+    let outline_foam = screen_contact_foam * w.coastline.x * bitcast<f32>(w.flags.w);
+    let foam = clamp((impact_core * 0.10 + impact_lace * 0.14 + outline_foam * 0.92 + crest) * w.visual1.z, 0.0, 1.0);
     let caustic_seed = water_fbm(in.uv * max(w.size_depth_time.xy, vec2<f32>(1.0)) * 0.42 + vec2<f32>(t * 0.18, -t * 0.13));
     let caustic = smoothstep(0.62, 0.92, caustic_seed) * (1.0 - depth_t) * w.visual2.x;
     let sun_dir = normalize(select(vec3<f32>(0.0, 1.0, 0.0), -scene.ray_light.direction.xyz, length(scene.ray_light.direction.xyz) > 0.001));
     let scatter = (1.0 - depth_t) * w.visual2.z * max(dot(normal, sun_dir), 0.0);
-    let basin = water_hex_noise(local * mix(0.035, 0.020, far_t) + vec2<f32>(t * 0.015, -t * 0.009));
-    let shoal = water_hex_noise(local * mix(0.085, 0.050, far_t) + vec2<f32>(4.3, 8.1));
-    let line_a = water_line_layer(local + normal.xz * mix(4.0, 2.0, far_t), normalize(vec2<f32>(0.74, 0.67)), t * w.wave.x, mix(0.095, 0.060, far_t));
-    let line_b = water_line_layer(local + normal.xz * mix(2.5, 1.4, far_t), normalize(vec2<f32>(-0.61, 0.79)), -t * w.wave.x, mix(0.135, 0.080, far_t));
-    let ink_lines = max(line_a.x, line_b.x) * (1.0 - foam);
-    let dark_lines = max(line_a.y, line_b.y) * (1.0 - foam);
-    let lowlight_noise =
-        water_hex_ridged_fbm(local * mix(0.095, 0.055, far_t) - wave_flow * t * 0.045);
-    let highlight_noise =
-        water_hex_ridged_fbm(local * mix(0.31, 0.18, far_t) + wave_flow * t * 0.16 + vec2<f32>(9.0, 2.0));
-    let dark_patch = smoothstep(0.50, 0.92, basin * 0.48 + lowlight_noise * 0.24 + dark_lines * 0.22) * (1.0 - foam) * 0.26;
-    let light_patch = smoothstep(0.56, 0.91, shoal * 0.48 + highlight_noise * 0.42 + ink_lines * 0.34) * (1.0 - depth_t) * 0.48;
-    let scratch_ripple = (highlight_noise - lowlight_noise) * 0.12;
+    let basin = water_perlin_fbm(world_uv * mix(0.060, 0.034, far_t) + vec2<f32>(t * 0.012, -t * 0.008));
+    let shoal = water_perlin_fbm(world_uv * mix(0.130, 0.075, far_t) + vec2<f32>(4.3, 8.1));
+    let macro_break = water_ridged_fbm(world_uv * mix(0.095, 0.050, far_t) - wave_flow * t * 0.032 + normal.xz * 0.6);
+    let lowlight_noise = water_perlin_fbm(world_uv * mix(0.18, 0.10, far_t) - wave_flow * t * 0.045 + vec2<f32>(3.0, 17.0));
+    let highlight_noise = water_perlin_fbm(world_uv * mix(0.34, 0.21, far_t) + wave_flow * t * 0.14 + vec2<f32>(9.0, 2.0));
+    let micro_break = water_ridged_fbm(world_uv * mix(0.52, 0.30, far_t) + wave_flow * t * 0.11 + vec2<f32>(14.0, 5.0));
+    let dark_patch = smoothstep(0.42, 0.86, basin * 0.54 + lowlight_noise * 0.36 + macro_break * 0.22) * (1.0 - foam) * 0.34;
+    let light_patch = smoothstep(0.50, 0.88, shoal * 0.46 + highlight_noise * 0.40 + micro_break * 0.20) * (1.0 - depth_t) * 0.46;
+    let scratch_ripple = (highlight_noise - lowlight_noise) * 0.08 + (micro_break - 0.5) * 0.06;
     let shallow_t = clamp(1.0 - depth_t + idle * 0.06 + foam * 0.035 + caustic * 0.12 + light_patch * 0.14 - dark_patch * 0.25, 0.0, 1.0);
     let surface_t = clamp(shallow_t + abs(ripple.x + scratch_ripple) * 0.12 + foam * 0.025 + clamp(view_dist / 256.0, 0.0, 1.0) * 0.04, 0.0, 1.0);
-    let depth_rgb = mix(w.deep_color.rgb * (0.84 - dark_patch * 0.12), w.deep_color.rgb, depth_t);
+    let depth_rgb = mix(w.deep_color.rgb * (0.74 - dark_patch * 0.18), w.deep_color.rgb, depth_t);
     let water_rgb = mix(depth_rgb, w.shallow_color.rgb + vec3<f32>(light_patch * 0.18), surface_t);
     let refract_tint = vec3<f32>(caustic * 0.22 + w.visual2.y * (1.0 - depth_t) * 0.08 + light_patch * 0.06);
-    let reflected = mix(water_rgb, w.sky_color_bias.rgb, max(w.sky_color_bias.w, w.visual0.y * fresnel * 0.62));
+    let reflected = mix(water_rgb, w.sky_color_bias.rgb, max(w.sky_color_bias.w, w.visual0.y * fresnel * 0.34));
     let rough_blend = clamp(w.visual0.z, 0.0, 1.0);
     let half_dir = normalize(view_dir + sun_dir);
-    let spec_line = pow(max(dot(normal, half_dir), 0.0), mix(128.0, 36.0, rough_blend)) * (0.22 + ink_lines * 0.50) * w.visual0.y * fresnel_break;
-    let lit_water = mix(reflected, water_rgb, rough_blend * 0.55) + refract_tint + scatter + vec3<f32>(spec_line + ink_lines * 0.07) - vec3<f32>(dark_patch * 0.07 + dark_lines * 0.04);
+    let spec_line = pow(max(dot(normal, half_dir), 0.0), mix(128.0, 36.0, rough_blend)) * 0.08 * w.visual0.y * (1.0 - screen_outline * 0.85);
+    let fresnel_tint = vec3<f32>(0.16, 0.22, 0.26) * fresnel * w.visual0.y;
+    let lit_water = mix(reflected, water_rgb, rough_blend * 0.48) + refract_tint + scatter + fresnel_tint + vec3<f32>(spec_line + micro_break * 0.025) - vec3<f32>(dark_patch * 0.10);
     let fog_t = clamp(view_dist / 620.0, 0.0, 1.0) * w.visual2.w;
     let fogged = mix(lit_water, w.deep_color.rgb, fog_t);
     let foam_rgb = mix(w.coastline_foam_color.rgb, w.foam_color.rgb, w.foam_color.a);
-    let outline_white = smoothstep(0.60, 0.94, max(coast_anim.y, ripple.w));
-    let color = mix(mix(fogged, foam_rgb, foam * 0.42), vec3<f32>(1.0), outline_white);
+    let foam_aa = max(fwidth(foam), 0.01);
+    let foam_blend = smoothstep(0.05 - foam_aa, 0.76 + foam_aa, foam);
+    let outline_mask = screen_outline;
+    let outline_aa = max(fwidth(outline_mask), 0.01);
+    let outline_white = smoothstep(0.24 - outline_aa, 0.74 + outline_aa, outline_mask);
+    let color = mix(mix(fogged, foam_rgb, foam_blend * 0.34), vec3<f32>(0.94), outline_white * max(foam_blend, screen_contact_foam * 0.76));
     let alpha = mix(w.deep_color.a, w.shallow_color.a, shallow_t) * (1.0 - clamp(w.visual0.x, 0.0, 1.0) * 0.72);
     let side_color = mix(w.deep_color.rgb, color, 0.35);
     let final_color = mix(color, side_color, in.side_t);
-    let final_alpha = mix(alpha + foam * 0.10 + fresnel * w.visual0.y * 0.06, w.deep_color.a * 0.82, in.side_t);
+    let final_alpha = mix(alpha + foam_blend * 0.08 + fresnel * w.visual0.y * 0.06, w.deep_color.a * 0.82, in.side_t);
     return vec4<f32>(final_color, clamp(final_alpha, 0.0, 1.0));
 }
 "#;
@@ -2965,8 +3121,8 @@ mod tests {
             lod_min_resolution: [4, 4],
             collision_layers: perro_structs::BitMask::ALL,
             collision_mask: perro_structs::BitMask::NONE,
-            deep_color: [0.02, 0.16, 0.28, 0.94],
-            shallow_color: [0.08, 0.46, 0.62, 0.74],
+            deep_color: perro_structs::Color::new(0.02, 0.16, 0.28, 0.94),
+            shallow_color: perro_structs::Color::new(0.08, 0.46, 0.62, 0.74),
             shallow_depth: -1.0,
             sky_bias_ratio: 0.0,
             transparency: 0.24,
@@ -2975,14 +3131,14 @@ mod tests {
             fresnel_power: 5.0,
             normal_strength: 1.15,
             ripple_scale: 1.0,
-            foam_color: [0.86, 0.96, 1.0, 1.0],
+            foam_color: perro_structs::Color::new(0.86, 0.96, 1.0, 1.0),
             foam_amount: 0.72,
             crest_foam_threshold: 0.58,
             caustic_strength: 0.20,
             refraction_strength: 0.12,
             scattering_strength: 0.18,
             distance_fog_strength: 0.32,
-            coastline_foam_color: [0.9, 0.97, 1.0, 1.0],
+            coastline_foam_color: perro_structs::Color::new(0.9, 0.97, 1.0, 1.0),
             coastline_foam_strength: 0.75,
             coastline_foam_width: 1.5,
             coastline_cutoff_softness: 0.25,
@@ -3042,8 +3198,8 @@ mod tests {
             lod_min_resolution: [4, 4],
             collision_layers: perro_structs::BitMask::ALL,
             collision_mask: perro_structs::BitMask::NONE,
-            deep_color: [0.02, 0.16, 0.28, 0.94],
-            shallow_color: [0.08, 0.46, 0.62, 0.74],
+            deep_color: perro_structs::Color::new(0.02, 0.16, 0.28, 0.94),
+            shallow_color: perro_structs::Color::new(0.08, 0.46, 0.62, 0.74),
             shallow_depth: -1.0,
             sky_bias_ratio: 0.0,
             transparency: 0.24,
@@ -3052,14 +3208,14 @@ mod tests {
             fresnel_power: 5.0,
             normal_strength: 1.15,
             ripple_scale: 1.0,
-            foam_color: [0.86, 0.96, 1.0, 1.0],
+            foam_color: perro_structs::Color::new(0.86, 0.96, 1.0, 1.0),
             foam_amount: 0.72,
             crest_foam_threshold: 0.58,
             caustic_strength: 0.20,
             refraction_strength: 0.12,
             scattering_strength: 0.18,
             distance_fog_strength: 0.32,
-            coastline_foam_color: [0.9, 0.97, 1.0, 1.0],
+            coastline_foam_color: perro_structs::Color::new(0.9, 0.97, 1.0, 1.0),
             coastline_foam_strength: 0.75,
             coastline_foam_width: 1.5,
             coastline_cutoff_softness: 0.25,
@@ -3095,8 +3251,16 @@ mod tests {
         assert!(WATER_3D_RENDER_WGSL.contains("water_circle_surface_vertex"));
         assert!(WATER_3D_RENDER_WGSL.contains("water_circle_side_vertex"));
         assert!(WATER_3D_RENDER_WGSL.contains("horizontal_segments * 2u + vertical_segments"));
-        assert!(WATER_3D_RENDER_WGSL.contains("vec2<u32>(0u, 0u),\n        vec2<u32>(1u, 1u),\n        vec2<u32>(1u, 0u)"));
-        assert!(WATER_3D_RENDER_WGSL.contains("vec2<u32>(0u, 0u),\n        vec2<u32>(0u, 1u),\n        vec2<u32>(1u, 1u)"));
+        assert!(
+            WATER_3D_RENDER_WGSL.contains(
+                "vec2<u32>(0u, 0u),\n        vec2<u32>(1u, 1u),\n        vec2<u32>(1u, 0u)"
+            )
+        );
+        assert!(
+            WATER_3D_RENDER_WGSL.contains(
+                "vec2<u32>(0u, 0u),\n        vec2<u32>(0u, 1u),\n        vec2<u32>(1u, 1u)"
+            )
+        );
     }
 
     #[test]

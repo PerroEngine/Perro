@@ -100,7 +100,6 @@ pub(crate) struct WaterBodyContact2D {
     pub(crate) velocity: perro_structs::Vector2,
     pub(crate) radius: f32,
     pub(crate) foam_amount: f32,
-    pub(crate) persist: f32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -109,7 +108,6 @@ pub(crate) struct WaterBodyContact3D {
     pub(crate) velocity: perro_structs::Vector3,
     pub(crate) radius: f32,
     pub(crate) foam_amount: f32,
-    pub(crate) persist: f32,
 }
 
 /// Live game runtime state.
@@ -154,7 +152,10 @@ pub struct Runtime {
     pending_water_queries_3d: AHashMap<NodeID, Vec<PendingWaterQuery>>,
     water_contacts_2d: AHashMap<NodeID, Vec<WaterBodyContact2D>>,
     water_contacts_3d: AHashMap<NodeID, Vec<WaterBodyContact3D>>,
-    water_collect_ids_scratch: Vec<NodeID>,
+    water_rigid_body_ids_2d_cache: Vec<NodeID>,
+    water_rigid_body_ids_3d_cache: Vec<NodeID>,
+    water_ids_2d_cache: Vec<NodeID>,
+    water_ids_3d_cache: Vec<NodeID>,
     pub(crate) force_water_impacts_2d: Vec<ForceWaterImpact2D>,
     pub(crate) force_water_impacts_3d: Vec<ForceWaterImpact3D>,
     pub(crate) pending_force_emitters_2d: Vec<perro_nodes::PhysicsForceEmitter2D>,
@@ -293,7 +294,10 @@ impl Runtime {
             pending_water_queries_3d: AHashMap::new(),
             water_contacts_2d: AHashMap::new(),
             water_contacts_3d: AHashMap::new(),
-            water_collect_ids_scratch: Vec::new(),
+            water_rigid_body_ids_2d_cache: Vec::new(),
+            water_rigid_body_ids_3d_cache: Vec::new(),
+            water_ids_2d_cache: Vec::new(),
+            water_ids_3d_cache: Vec::new(),
             force_water_impacts_2d: Vec::new(),
             force_water_impacts_3d: Vec::new(),
             pending_force_emitters_2d: Vec::new(),
@@ -304,6 +308,68 @@ impl Runtime {
 
     pub fn from_project(project: RuntimeProject, provider_mode: ProviderMode) -> Self {
         Self::from_project_with_script_registry(project, provider_mode, None)
+    }
+
+    #[inline]
+    pub(crate) fn reset_water_scan_cache_2d(&mut self) {
+        self.water_rigid_body_ids_2d_cache.clear();
+        self.water_ids_2d_cache.clear();
+    }
+
+    #[inline]
+    pub(crate) fn reset_water_scan_cache_3d(&mut self) {
+        self.water_rigid_body_ids_3d_cache.clear();
+        self.water_ids_3d_cache.clear();
+    }
+
+    #[inline]
+    pub(crate) fn reset_water_scan_cache_all(&mut self) {
+        self.reset_water_scan_cache_2d();
+        self.reset_water_scan_cache_3d();
+    }
+
+    pub(crate) fn cached_rigid_body_ids_2d(&mut self) -> &[NodeID] {
+        if self.water_rigid_body_ids_2d_cache.is_empty() {
+            self.water_rigid_body_ids_2d_cache
+                .extend(self.nodes.iter().filter_map(|(id, node)| match &node.data {
+                    perro_nodes::SceneNodeData::RigidBody2D(body) if body.enabled => Some(id),
+                    _ => None,
+                }));
+        }
+        &self.water_rigid_body_ids_2d_cache
+    }
+
+    pub(crate) fn cached_rigid_body_ids_3d(&mut self) -> &[NodeID] {
+        if self.water_rigid_body_ids_3d_cache.is_empty() {
+            self.water_rigid_body_ids_3d_cache
+                .extend(self.nodes.iter().filter_map(|(id, node)| match &node.data {
+                    perro_nodes::SceneNodeData::RigidBody3D(body) if body.enabled => Some(id),
+                    _ => None,
+                }));
+        }
+        &self.water_rigid_body_ids_3d_cache
+    }
+
+    pub(crate) fn cached_water_ids_2d(&mut self) -> &[NodeID] {
+        if self.water_ids_2d_cache.is_empty() {
+            self.water_ids_2d_cache
+                .extend(self.nodes.iter().filter_map(|(id, node)| match node.data {
+                    perro_nodes::SceneNodeData::WaterBody2D(_) => Some(id),
+                    _ => None,
+                }));
+        }
+        &self.water_ids_2d_cache
+    }
+
+    pub(crate) fn cached_water_ids_3d(&mut self) -> &[NodeID] {
+        if self.water_ids_3d_cache.is_empty() {
+            self.water_ids_3d_cache
+                .extend(self.nodes.iter().filter_map(|(id, node)| match node.data {
+                    perro_nodes::SceneNodeData::WaterBody3D(_) => Some(id),
+                    _ => None,
+                }));
+        }
+        &self.water_ids_3d_cache
     }
 
     pub fn from_project_with_script_registry(

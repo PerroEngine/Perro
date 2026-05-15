@@ -357,7 +357,7 @@ pub(super) fn ui_command_from_node(
             rect,
             clip_rect,
             text: Cow::Owned(label.text.to_string()),
-            color: label.color.to_rgba(),
+            color: label.color,
             font_size: {
                 let (base, node_scale) =
                     if let Some(px) = text_size_from_rect_ratio(rect.size, label.text_size_ratio) {
@@ -381,7 +381,7 @@ pub(super) fn ui_command_from_node(
                 rect,
                 clip_rect,
                 texture: image.texture,
-                tint: image.tint.to_rgba(),
+                tint: image.tint,
                 uv_min,
                 uv_max,
                 scale_mode: ui_image_scale_state(image.scale_mode),
@@ -401,7 +401,7 @@ pub(super) fn ui_command_from_node(
                 rect,
                 clip_rect,
                 texture: image.texture,
-                tint: image.tint.to_rgba(),
+                tint: image.tint,
                 uv_min,
                 uv_max,
                 scale_mode: ui_image_scale_state(image.scale_mode),

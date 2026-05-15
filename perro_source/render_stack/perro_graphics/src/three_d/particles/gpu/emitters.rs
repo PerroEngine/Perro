@@ -273,7 +273,7 @@ impl GpuPointParticles3D {
             }
             pos = origin + spawn_rotation * (pos - origin);
             let size = emitter.size * (size_min + (size_max - size_min) * h2);
-            let color = lerp4(emitter.color_start, emitter.color_end, age);
+            let color = lerp4(emitter.color_start.into(), emitter.color_end.into(), age);
             let particle = PointParticleGpu {
                 world_pos: pos.to_array(),
                 size_alpha: [size, color[3]],
@@ -414,8 +414,8 @@ impl GpuPointParticles3D {
                 emitter.gravity[2],
                 path_kind as f32,
             ],
-            color_start: emitter.color_start,
-            color_end: emitter.color_end,
+            color_start: emitter.color_start.into(),
+            color_end: emitter.color_end.into(),
             emissive_point: [
                 emitter.emissive[0],
                 emitter.emissive[1],
@@ -708,8 +708,8 @@ impl GpuPointParticles3D {
                 emitter.gravity[2],
                 path_kind as f32,
             ],
-            color_start: emitter.color_start,
-            color_end: emitter.color_end,
+            color_start: emitter.color_start.into(),
+            color_end: emitter.color_end.into(),
             emissive_point: [
                 emitter.emissive[0],
                 emitter.emissive[1],

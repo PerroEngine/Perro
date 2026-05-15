@@ -417,7 +417,7 @@ impl Gpu2D {
                     transform_1: sprite.model[1],
                     transform_2: sprite.model[2],
                     z_index: sprite.z_index,
-                    tint: color_to_unorm8(sprite.tint),
+                    tint: color_to_unorm8(sprite.tint.into()),
                 });
                 if let Some(batch) = self.sprite_batches.last_mut()
                     && batch.texture == sprite.texture

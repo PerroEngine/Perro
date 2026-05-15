@@ -38,6 +38,7 @@ pub(crate) use perro_render_bridge::{
 
 impl Runtime {
     pub fn extract_render_2d_commands(&mut self) {
+        self.reset_water_scan_cache_2d();
         let bootstrap_scan = self.render_2d.prev_visible.is_empty()
             && self.render_2d.retained_sprites.is_empty()
             && self.render_2d.last_camera.is_none();
@@ -288,8 +289,8 @@ impl Runtime {
                             lod_min_resolution: water.lod.min_resolution,
                             collision_layers: water.collision_layers,
                             collision_mask: water.collision_mask,
-                            deep_color: water.optics.deep_color.to_rgba(),
-                            shallow_color: water.optics.shallow_color.to_rgba(),
+                            deep_color: water.optics.deep_color,
+                            shallow_color: water.optics.shallow_color,
                             shallow_depth: water.optics.shallow_depth,
                             sky_bias_ratio: water.optics.sky_bias.ratio(),
                             transparency: water.visual.transparency,
@@ -298,14 +299,14 @@ impl Runtime {
                             fresnel_power: water.visual.fresnel_power,
                             normal_strength: water.visual.normal_strength,
                             ripple_scale: water.visual.ripple_scale,
-                            foam_color: water.visual.foam_color.to_rgba(),
+                            foam_color: water.visual.foam_color,
                             foam_amount: water.visual.foam_amount,
                             crest_foam_threshold: water.visual.crest_foam_threshold,
                             caustic_strength: water.visual.caustic_strength,
                             refraction_strength: water.visual.refraction_strength,
                             scattering_strength: water.visual.scattering_strength,
                             distance_fog_strength: water.visual.distance_fog_strength,
-                            coastline_foam_color: water.coastline.foam_color.to_rgba(),
+                            coastline_foam_color: water.coastline.foam_color,
                             coastline_foam_strength: water.coastline.foam_strength,
                             coastline_foam_width: water.coastline.foam_width,
                             coastline_cutoff_softness: water.coastline.cutoff_softness,
@@ -591,7 +592,7 @@ impl Runtime {
         let sprite = Sprite2DCommand {
             texture: resolved_texture,
             model: emit.model,
-            tint: [1.0, 1.0, 1.0, 1.0],
+            tint: perro_structs::Color::WHITE,
             uv_min,
             uv_max,
             size,
@@ -708,19 +709,21 @@ impl Runtime {
             })
             .collect();
         for body_id in body_ids {
-            let Some((enabled, layers, mask, children)) =
+            let Some((enabled, layers, mask, children, scale_bias)) =
                 self.nodes.get(body_id).and_then(|node| match &node.data {
                     SceneNodeData::StaticBody2D(body) => Some((
                         body.enabled,
                         body.collision_layers,
                         body.collision_mask,
                         node.children_slice().to_vec(),
+                        0.85f32,
                     )),
                     SceneNodeData::RigidBody2D(body) => Some((
                         body.enabled,
                         body.collision_layers,
                         body.collision_mask,
                         node.children_slice().to_vec(),
+                        0.50f32,
                     )),
                     _ => None,
                 })
@@ -757,8 +760,8 @@ impl Runtime {
                         shapes.push(WaterCoastlineShape2D::Quad {
                             center: [local.x, local.y],
                             half_extents: [
-                                width.abs() * shape_global.scale.x.abs() * 0.5,
-                                height.abs() * shape_global.scale.y.abs() * 0.5,
+                                width.abs() * shape_global.scale.x.abs() * 0.5 * scale_bias,
+                                height.abs() * shape_global.scale.y.abs() * 0.5 * scale_bias,
                             ],
                             rotation: shape_global.rotation - water_global.rotation,
                         });
@@ -767,18 +770,26 @@ impl Runtime {
                         shapes.push(WaterCoastlineShape2D::Circle {
                             center: [local.x, local.y],
                             radius: radius.abs()
-                                * shape_global.scale.x.abs().max(shape_global.scale.y.abs()),
+                                * shape_global.scale.x.abs().max(shape_global.scale.y.abs())
+                                * scale_bias,
                         });
                     }
                     Shape2D::Triangle { width, height, .. } => {
                         let hw = width.abs() * shape_global.scale.x.abs() * 0.5;
                         let hh = height.abs() * shape_global.scale.y.abs() * 0.5;
+                        let center = [local.x, local.y];
+                        let points = [
+                            [local.x, local.y + hh],
+                            [local.x - hw, local.y - hh],
+                            [local.x + hw, local.y - hh],
+                        ];
                         shapes.push(WaterCoastlineShape2D::Triangle {
-                            points: [
-                                [local.x, local.y + hh],
-                                [local.x - hw, local.y - hh],
-                                [local.x + hw, local.y - hh],
-                            ],
+                            points: points.map(|point| {
+                                [
+                                    center[0] + (point[0] - center[0]) * scale_bias,
+                                    center[1] + (point[1] - center[1]) * scale_bias,
+                                ]
+                            }),
                         });
                     }
                 }
@@ -815,28 +826,22 @@ impl Runtime {
         };
         let water_inv = water_global.to_mat3().inverse();
         let half = water.shape.surface_size() * 0.5;
-        self.water_collect_ids_scratch.clear();
-        self.water_collect_ids_scratch.extend(
-            self.nodes.iter().filter_map(|(id, node)| {
-                matches!(node.data, SceneNodeData::RigidBody2D(_)).then_some(id)
-            }),
-        );
-        let mut body_ids = std::mem::take(&mut self.water_collect_ids_scratch);
+        let body_ids = self.cached_rigid_body_ids_2d().to_vec();
         let mut impacts = Vec::new();
         for body_id in body_ids.iter().copied() {
             let Some((layers, mask, mass, density, velocity)) =
                 self.nodes.get(body_id).and_then(|node| {
-                let SceneNodeData::RigidBody2D(body) = &node.data else {
-                    return None;
-                };
-                Some((
-                    body.collision_layers,
-                    body.collision_mask,
-                    body.mass,
-                    body.density,
-                    body.linear_velocity,
-                ))
-            })
+                    let SceneNodeData::RigidBody2D(body) = &node.data else {
+                        return None;
+                    };
+                    Some((
+                        body.collision_layers,
+                        body.collision_mask,
+                        body.mass,
+                        body.density,
+                        body.linear_velocity,
+                    ))
+                })
             else {
                 continue;
             };
@@ -850,17 +855,19 @@ impl Runtime {
             if !water.shape.contains_surface(local) {
                 continue;
             }
+            let cached_sample = crate::runtime::physics::lookup_water_body_sample(
+                &self.water_body_samples,
+                water_id,
+                body_id,
+                0,
+                local,
+                self.time.elapsed,
+            );
             let sample = crate::runtime::physics::water_physics_sample_for_body_cached(
                 water,
                 local,
                 self.time.elapsed,
-                self.water_body_samples
-                    .get(&crate::runtime::WaterBodySampleKey {
-                        water: water_id,
-                        body: body_id,
-                        point: 0,
-                    })
-                    .copied(),
+                cached_sample,
                 self.water_samples.get(&water_id).copied(),
             );
             let target = crate::runtime::physics::water_target_submerged(density);
@@ -878,13 +885,11 @@ impl Runtime {
             impacts.push(WaterImpact2D {
                 position: [local.x, local.y],
                 velocity: [velocity.x, velocity.y],
-                strength,
-                radius: mass.max(density).sqrt().max(1.0),
+                strength: strength * 1.15,
+                radius: mass.max(density).sqrt().max(1.0) * 0.5,
                 cavitation: 0.0,
             });
         }
-        body_ids.clear();
-        self.water_collect_ids_scratch = body_ids;
         for impact in self.force_water_impacts_2d.iter() {
             let local = water_local_point_2d(water_inv, impact.position);
             if local.x.abs() > half.x + impact.radius || local.y.abs() > half.y + impact.radius {
@@ -901,15 +906,16 @@ impl Runtime {
         if let Some(contacts) = self.water_contacts_2d.get(&water_id) {
             for contact in contacts {
                 let local = water_local_point_2d(water_inv, contact.position);
-                if local.x.abs() > half.x + contact.radius || local.y.abs() > half.y + contact.radius
+                if local.x.abs() > half.x + contact.radius
+                    || local.y.abs() > half.y + contact.radius
                 {
                     continue;
                 }
                 impacts.push(WaterImpact2D {
                     position: [local.x, local.y],
                     velocity: [contact.velocity.x, contact.velocity.y],
-                    strength: (contact.foam_amount * 6.0).max(0.5),
-                    radius: contact.radius * (1.0 + contact.persist),
+                    strength: (contact.foam_amount * 5.4).max(0.35),
+                    radius: contact.radius,
                     cavitation: contact.foam_amount * 0.2,
                 });
             }
@@ -952,15 +958,12 @@ impl Runtime {
         let Some(water_global) = self.get_global_transform_2d(water_id) else {
             return Arc::from([]);
         };
-        self.water_collect_ids_scratch.clear();
-        self.water_collect_ids_scratch.extend(
-            self.nodes.iter().filter_map(|(id, node)| {
-                (id != water_id && matches!(node.data, SceneNodeData::WaterBody2D(_))).then_some(id)
-            }),
-        );
-        let mut other_ids = std::mem::take(&mut self.water_collect_ids_scratch);
+        let other_ids = self.cached_water_ids_2d().to_vec();
         let mut links = Vec::new();
         for other_id in other_ids.iter().copied() {
+            if other_id == water_id {
+                continue;
+            }
             let Some(other_water) = self.nodes.get(other_id).and_then(|node| {
                 let SceneNodeData::WaterBody2D(other) = &node.data else {
                     return None;
@@ -1003,8 +1006,6 @@ impl Runtime {
                 flow_transfer: water.link.flow_transfer.min(other_water.link.flow_transfer),
             });
         }
-        other_ids.clear();
-        self.water_collect_ids_scratch = other_ids;
         Arc::from(links)
     }
 }
@@ -1185,7 +1186,7 @@ fn build_tilemap_sprites(build: TilemapSpriteBuild<'_>) -> Vec<Sprite2DCommand> 
         out.push(Sprite2DCommand {
             texture: build.texture,
             model,
-            tint: [1.0, 1.0, 1.0, 1.0],
+            tint: perro_structs::Color::WHITE,
             uv_min: [atlas_x, atlas_y],
             uv_max: [atlas_x + tw, atlas_y + th],
             size: [tw, th],
@@ -1388,12 +1389,12 @@ fn parse_pparticle_source_2d(source: &str) -> Option<ParticleProfile2D> {
             "size_max" => profile.size_max = value.parse::<f32>().ok().unwrap_or(profile.size_max),
             "color_start" => {
                 if let Some(v) = parse_vec4_literal_2d(value) {
-                    profile.color_start = v;
+                    profile.color_start = v.into();
                 }
             }
             "color_end" => {
                 if let Some(v) = parse_vec4_literal_2d(value) {
-                    profile.color_end = v;
+                    profile.color_end = v.into();
                 }
             }
             "spin" => {

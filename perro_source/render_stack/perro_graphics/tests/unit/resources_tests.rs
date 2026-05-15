@@ -1,5 +1,6 @@
 use super::ResourceStore;
 use perro_render_bridge::{Material3D, RuntimeMeshData, RuntimeMeshVertex, StandardMaterial3D};
+use perro_structs::Unorm8x4;
 
 fn simple_runtime_mesh(scale: f32) -> RuntimeMeshData {
     RuntimeMeshData {
@@ -9,21 +10,21 @@ fn simple_runtime_mesh(scale: f32) -> RuntimeMeshData {
                 normal: [0.0, 1.0, 0.0],
                 uv: [0.0, 0.0],
                 joints: [0, 0, 0, 0],
-                weights: [1.0, 0.0, 0.0, 0.0],
+                weights: Unorm8x4::new([1.0, 0.0, 0.0, 0.0]),
             },
             RuntimeMeshVertex {
                 position: [scale, 0.0, 0.0],
                 normal: [0.0, 1.0, 0.0],
                 uv: [1.0, 0.0],
                 joints: [0, 0, 0, 0],
-                weights: [1.0, 0.0, 0.0, 0.0],
+                weights: Unorm8x4::new([1.0, 0.0, 0.0, 0.0]),
             },
             RuntimeMeshVertex {
                 position: [0.0, scale, 0.0],
                 normal: [0.0, 1.0, 0.0],
                 uv: [0.0, 1.0],
                 joints: [0, 0, 0, 0],
-                weights: [1.0, 0.0, 0.0, 0.0],
+                weights: Unorm8x4::new([1.0, 0.0, 0.0, 0.0]),
             },
         ],
         indices: vec![0, 1, 2],

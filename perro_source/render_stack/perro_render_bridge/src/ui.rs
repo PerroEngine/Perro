@@ -26,7 +26,7 @@ impl UiRectState {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct UiDepthEffectState {
-    pub color: [f32; 4],
+    pub color: Color,
     pub distance: f32,
     pub falloff: f32,
     pub vector: [f32; 2],
@@ -36,7 +36,7 @@ pub struct UiDepthEffectState {
 impl UiDepthEffectState {
     pub const fn none() -> Self {
         Self {
-            color: [0.0, 0.0, 0.0, 0.0],
+            color: Color::TRANSPARENT,
             distance: 0.0,
             falloff: 0.0,
             vector: [0.0, -1.0],
@@ -81,7 +81,7 @@ pub enum UiCommand {
         rect: UiRectState,
         clip_rect: [f32; 4],
         text: Cow<'static, str>,
-        color: [f32; 4],
+        color: Color,
         font_size: f32,
         h_align: UiTextAlignState,
         v_align: UiTextAlignState,
@@ -91,7 +91,7 @@ pub enum UiCommand {
         rect: UiRectState,
         clip_rect: [f32; 4],
         texture: TextureID,
-        tint: [f32; 4],
+        tint: Color,
         uv_min: [f32; 2],
         uv_max: [f32; 2],
         scale_mode: UiImageScaleState,
@@ -111,10 +111,10 @@ pub enum UiCommand {
         highlight: UiDepthEffectState,
         text: Cow<'static, str>,
         placeholder: Cow<'static, str>,
-        color: [f32; 4],
-        placeholder_color: [f32; 4],
-        selection_color: [f32; 4],
-        caret_color: [f32; 4],
+        color: Color,
+        placeholder_color: Color,
+        selection_color: Color,
+        caret_color: Color,
         font_size: f32,
         padding: [f32; 4],
         scroll: [f32; 2],

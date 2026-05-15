@@ -1147,7 +1147,7 @@ impl ThreadedStartupSplashState {
             rect: Rect2DCommand {
                 center: [0.0, 0.0],
                 size: [virtual_width, virtual_height],
-                color: [0.0, 0.0, 0.0, alpha],
+                color: [0.0, 0.0, 0.0, alpha].into(),
                 z_index: 950,
             },
         }));
@@ -1176,7 +1176,7 @@ impl ThreadedStartupSplashState {
                 sprite: Sprite2DCommand {
                     texture: STARTUP_SPLASH_TEXTURE_ID,
                     model: [[scale, 0.0, 0.0], [0.0, scale, 0.0], [0.0, 0.0, 1.0]],
-                    tint: [1.0, 1.0, 1.0, alpha],
+                    tint: [1.0, 1.0, 1.0, alpha].into(),
                     z_index: 951,
                     uv_min: [0.0, 0.0],
                     uv_max: [0.0, 0.0],
@@ -1293,7 +1293,13 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for ThreadedRunn
                 if splash_finished {
                     self.reset_timing_batch(now);
                 }
-                self.record_timing(phase, frame_start, frame_delta, idle_duration, present_timing);
+                self.record_timing(
+                    phase,
+                    frame_start,
+                    frame_delta,
+                    idle_duration,
+                    present_timing,
+                );
             }
             WindowEvent::CloseRequested => {
                 self.exit_result = Some(crate::winit_runner::AppExitResult::window_close());

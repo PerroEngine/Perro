@@ -2,8 +2,8 @@ use bytemuck::{Pod, Zeroable};
 use perro_asset_formats::pmesh::{
     FLAG_HAS_JOINTS as PMESH_FLAG_HAS_JOINTS, FLAG_HAS_NORMAL as PMESH_FLAG_HAS_NORMAL,
     FLAG_HAS_UV0 as PMESH_FLAG_HAS_UV0, FLAG_HAS_WEIGHTS as PMESH_FLAG_HAS_WEIGHTS,
-    FLAG_WEIGHTS_UNORM8 as PMESH_FLAG_WEIGHTS_UNORM8,
-    FLAG_PAYLOAD_RAW as PMESH_FLAG_PAYLOAD_RAW, MAGIC as PMESH_MAGIC, VERSION as PMESH_VERSION,
+    FLAG_PAYLOAD_RAW as PMESH_FLAG_PAYLOAD_RAW, FLAG_WEIGHTS_UNORM8 as PMESH_FLAG_WEIGHTS_UNORM8,
+    MAGIC as PMESH_MAGIC, VERSION as PMESH_VERSION,
 };
 use perro_io::{decompress_zlib, load_asset};
 use perro_meshlets::{
@@ -164,7 +164,7 @@ pub fn load_mesh3d_from_source(
                 normal: v.normal,
                 uv: v.uv,
                 joints: v.joints,
-                weights: v.weights.to_f32(),
+                weights: v.weights,
             })
             .collect(),
         indices: decoded.indices,
@@ -228,7 +228,7 @@ fn decode_runtime_mesh(mesh: &RuntimeMeshData) -> Option<DecodedMesh> {
             normal: v.normal,
             uv: v.uv,
             joints: v.joints,
-            weights: quantize_skin_weights(v.weights),
+            weights: v.weights,
         })
         .collect();
     if vertices
@@ -346,7 +346,7 @@ fn build_dynamic_lods(mut decoded: DecodedMesh, build_meshlets_for_lods: bool) -
 fn mesh_vertices_have_skinning(vertices: &[RuntimeMeshVertex]) -> bool {
     vertices.iter().any(|vertex| {
         vertex.joints.iter().any(|&joint| joint != 0)
-            || vertex.weights != [1.0, 0.0, 0.0, 0.0]
+            || vertex.weights != perro_structs::Unorm8x4::new([1.0, 0.0, 0.0, 0.0])
     })
 }
 

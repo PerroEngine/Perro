@@ -8,6 +8,7 @@ use perro_nodes::{
     mesh_instance_3d::MeshSurfaceBinding,
     multi_mesh_instance_3d::MultiMeshInstance3D,
     node_3d::Node3D,
+    physics_3d::RigidBody3D,
     physics_3d::Shape3D,
     ray_light_3d::RayLight3D,
     skeleton_3d::{Bone3D, Skeleton3D},
@@ -19,6 +20,7 @@ use perro_render_bridge::{
 use perro_runtime_api::sub_apis::NodeAPI;
 use perro_structs::Transform3D;
 use perro_structs::{BitMask, Quaternion, Vector3};
+use std::sync::Arc;
 
 fn collect_commands(runtime: &mut Runtime) -> Vec<RenderCommand> {
     let mut out = Vec::new();
@@ -76,7 +78,6 @@ fn linked_3d_water_mirrors_wake_across_overlap() {
     assert!(water.impacts[0].strength < 10.0);
 }
 
-
 #[test]
 fn linked_3d_waters_both_collect_shared_coastline_shape() {
     let mut runtime = Runtime::new();
@@ -114,6 +115,42 @@ fn linked_3d_waters_both_collect_shared_coastline_shape() {
         water_3d_command(&commands, water_b).coastline_shapes.len(),
         1
     );
+}
+
+#[test]
+fn water_3d_impacts_use_live_body_pos_not_stale_cached_sample() {
+    let mut runtime = Runtime::new();
+    let water = NodeAPI::create::<WaterBody3D>(&mut runtime);
+    let body = NodeAPI::create::<RigidBody3D>(&mut runtime);
+    if let Some(node) = runtime.nodes.get_mut(body)
+        && let SceneNodeData::RigidBody3D(rigid) = &mut node.data
+    {
+        rigid.transform.position = Vector3::new(1.5, -0.4, -0.75);
+        rigid.linear_velocity = Vector3::new(0.0, -2.8, 0.0);
+        rigid.mass = 4.0;
+        rigid.density = 1.0;
+    }
+    runtime.time.elapsed = 1.0;
+    runtime.apply_render_event(RenderEvent::WaterBodySamples {
+        samples: Arc::from([perro_render_bridge::WaterBodySampleState {
+            water,
+            body,
+            point: 0,
+            local: [6.0, 4.0],
+            height: 2.0,
+            velocity: [0.0, 0.0],
+            foam: 1.0,
+        }]),
+    });
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+    let water = water_3d_command(&commands, water);
+
+    assert_eq!(water.impacts.len(), 1);
+    assert!((water.impacts[0].position[0] - 1.5).abs() < 0.01);
+    assert!((water.impacts[0].position[1] + 0.4).abs() < 0.01);
+    assert!((water.impacts[0].position[2] + 0.75).abs() < 0.01);
 }
 
 fn set_primary_material(mesh: &mut MeshInstance3D, material: MaterialID) {

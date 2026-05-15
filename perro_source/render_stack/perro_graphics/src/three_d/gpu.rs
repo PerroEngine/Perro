@@ -656,8 +656,7 @@ mod tests {
     use perro_asset_formats::pmesh::{
         FLAG_HAS_JOINTS as PMESH_FLAG_HAS_JOINTS, FLAG_HAS_NORMAL as PMESH_FLAG_HAS_NORMAL,
         FLAG_HAS_UV0 as PMESH_FLAG_HAS_UV0, FLAG_HAS_WEIGHTS as PMESH_FLAG_HAS_WEIGHTS,
-        FLAG_WEIGHTS_UNORM8 as PMESH_FLAG_WEIGHTS_UNORM8,
-        VERSION as PMESH_VERSION,
+        FLAG_WEIGHTS_UNORM8 as PMESH_FLAG_WEIGHTS_UNORM8, VERSION as PMESH_VERSION,
     };
     use perro_graphics_assets::{MeshRange, decode_pmesh, decode_ptex};
     use perro_structs::BitMask;

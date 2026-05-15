@@ -18,8 +18,8 @@ use epaint::{ClippedPrimitive, textures::TexturesDelta};
 use glam::{Mat4, Quat, Vec3, Vec4};
 use perro_ids::NodeID;
 use perro_render_bridge::{
-    Camera3DState, CameraProjectionState, Light2DState, PointParticles3DState, Sprite2DCommand, Water2DState,
-    Water3DState, WaterBodySampleState, WaterSampleState,
+    Camera3DState, CameraProjectionState, Light2DState, PointParticles3DState, Sprite2DCommand,
+    Water2DState, Water3DState, WaterBodySampleState, WaterSampleState,
 };
 use perro_structs::VisualAccessibilitySettings;
 use std::sync::{Arc, mpsc};
@@ -53,12 +53,24 @@ fn water_camera_view_proj(camera: &Camera3DState, width: u32, height: u32) -> Ma
             let fov = fov_y_degrees
                 .to_radians()
                 .clamp(10.0f32.to_radians(), 120.0f32.to_radians());
-            Mat4::perspective_rh_gl(fov, aspect.max(1.0e-6), near.max(1.0e-3), far.max(near + 1.0e-3))
+            Mat4::perspective_rh_gl(
+                fov,
+                aspect.max(1.0e-6),
+                near.max(1.0e-3),
+                far.max(near + 1.0e-3),
+            )
         }
         CameraProjectionState::Orthographic { size, near, far } => {
             let half_h = (size.abs() * 0.5).max(1.0e-3);
             let half_w = half_h * aspect.max(1.0e-6);
-            Mat4::orthographic_rh(-half_w, half_w, -half_h, half_h, near.max(1.0e-3), far.max(near + 1.0e-3))
+            Mat4::orthographic_rh(
+                -half_w,
+                half_w,
+                -half_h,
+                half_h,
+                near.max(1.0e-3),
+                far.max(near + 1.0e-3),
+            )
         }
         CameraProjectionState::Frustum {
             left,
@@ -67,7 +79,14 @@ fn water_camera_view_proj(camera: &Camera3DState, width: u32, height: u32) -> Ma
             top,
             near,
             far,
-        } => Mat4::frustum_rh_gl(left, right, bottom, top, near.max(1.0e-3), far.max(near + 1.0e-3)),
+        } => Mat4::frustum_rh_gl(
+            left,
+            right,
+            bottom,
+            top,
+            near.max(1.0e-3),
+            far.max(near + 1.0e-3),
+        ),
     };
     let pos = Vec3::from(camera.position);
     let rot_raw = Quat::from_xyzw(
@@ -86,10 +105,30 @@ fn water_camera_view_proj(camera: &Camera3DState, width: u32, height: u32) -> Ma
 }
 
 fn water_extract_frustum_planes(view_proj: Mat4) -> [[f32; 4]; 6] {
-    let r0 = Vec4::new(view_proj.x_axis.x, view_proj.y_axis.x, view_proj.z_axis.x, view_proj.w_axis.x);
-    let r1 = Vec4::new(view_proj.x_axis.y, view_proj.y_axis.y, view_proj.z_axis.y, view_proj.w_axis.y);
-    let r2 = Vec4::new(view_proj.x_axis.z, view_proj.y_axis.z, view_proj.z_axis.z, view_proj.w_axis.z);
-    let r3 = Vec4::new(view_proj.x_axis.w, view_proj.y_axis.w, view_proj.z_axis.w, view_proj.w_axis.w);
+    let r0 = Vec4::new(
+        view_proj.x_axis.x,
+        view_proj.y_axis.x,
+        view_proj.z_axis.x,
+        view_proj.w_axis.x,
+    );
+    let r1 = Vec4::new(
+        view_proj.x_axis.y,
+        view_proj.y_axis.y,
+        view_proj.z_axis.y,
+        view_proj.w_axis.y,
+    );
+    let r2 = Vec4::new(
+        view_proj.x_axis.z,
+        view_proj.y_axis.z,
+        view_proj.z_axis.z,
+        view_proj.w_axis.z,
+    );
+    let r3 = Vec4::new(
+        view_proj.x_axis.w,
+        view_proj.y_axis.w,
+        view_proj.z_axis.w,
+        view_proj.w_axis.w,
+    );
     [
         water_normalize_plane(r3 + r0).to_array(),
         water_normalize_plane(r3 - r0).to_array(),
@@ -531,6 +570,7 @@ impl Gpu {
             sample_count,
             two_d.camera_bind_group_layout(),
             three_d.camera_bind_group_layout(),
+            three_d.depth_prepass_view(),
         ));
         let msaa_color =
             create_msaa_color_target(&device, render_format, width, height, sample_count);
@@ -813,9 +853,11 @@ impl Gpu {
                     self.sample_count,
                     two_d.camera_bind_group_layout(),
                     three_d.camera_bind_group_layout(),
+                    three_d.depth_prepass_view(),
                 ));
             }
-            if let Some(water) = self.water.as_mut() {
+            if let (Some(water), Some(three_d)) = (self.water.as_mut(), self.three_d.as_ref()) {
+                water.set_scene_depth_view(&self.device, three_d.depth_prepass_view());
                 let sky_color = sky_clear_color(lighting_3d)
                     .map(|color| [color.r as f32, color.g as f32, color.b as f32])
                     .unwrap_or([0.0, 0.0, 0.0]);
@@ -967,7 +1009,8 @@ impl Gpu {
             && !post_requested
             && !accessibility_enabled
             && self.render_format == self.config.format;
-        let depth_prepass_needed = (camera_post_enabled
+        let depth_prepass_needed = !waters_3d.is_empty()
+            || (camera_post_enabled
             && PostProcessor::uses_depth(camera_post_chain))
             || (global_post_enabled && PostProcessor::uses_depth(global_post_chain));
         let mut frame = None;

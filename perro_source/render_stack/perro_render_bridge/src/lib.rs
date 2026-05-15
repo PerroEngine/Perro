@@ -2,7 +2,9 @@ use perro_asset_formats::ptset::{MAGIC as TILESET2D_MAGIC, VERSION as TILESET2D_
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 pub use perro_particle_math::Op as ParticleExprOp2D;
 pub use perro_particle_math::Op as ParticleExprOp3D;
-use perro_structs::{ColorBlindFilter, DrawShape2D, PostProcessEffect, PostProcessSet};
+use perro_structs::{
+    Color, ColorBlindFilter, DrawShape2D, PostProcessEffect, PostProcessSet, Unorm8x4,
+};
 use std::borrow::Cow;
 use std::sync::Arc;
 
