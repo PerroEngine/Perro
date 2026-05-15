@@ -24,6 +24,7 @@ pub mod pmesh {
     pub const FLAG_HAS_JOINTS: u32 = 1 << 2;
     pub const FLAG_HAS_WEIGHTS: u32 = 1 << 3;
     pub const FLAG_INDEX_U16: u32 = 1 << 4;
+    pub const FLAG_WEIGHTS_UNORM8: u32 = 1 << 5;
     pub const FLAG_PAYLOAD_RAW: u32 = 1 << 31;
 }
 

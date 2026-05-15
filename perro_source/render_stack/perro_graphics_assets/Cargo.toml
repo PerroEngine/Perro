@@ -13,3 +13,4 @@ perro_ids = { path = "../../core/perro_ids" }
 perro_io = { path = "../../io_stack/perro_io" }
 perro_meshlets = { path = "../perro_meshlets" }
 perro_render_bridge = { path = "../perro_render_bridge" }
+perro_structs = { path = "../../core/perro_structs" }

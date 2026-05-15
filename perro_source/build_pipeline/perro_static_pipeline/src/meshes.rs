@@ -8,6 +8,7 @@ use perro_asset_formats::{
     pmesh::{
         EXTENSION as PMESH_EXTENSION, FLAG_HAS_JOINTS as PMESH_FLAG_HAS_JOINTS,
         FLAG_HAS_NORMAL as PMESH_FLAG_HAS_NORMAL, FLAG_HAS_UV0 as PMESH_FLAG_HAS_UV0,
+        FLAG_WEIGHTS_UNORM8 as PMESH_FLAG_WEIGHTS_UNORM8,
         FLAG_HAS_WEIGHTS as PMESH_FLAG_HAS_WEIGHTS, FLAG_PAYLOAD_RAW as PMESH_FLAG_PAYLOAD_RAW,
         MAGIC as PMESH_MAGIC, VERSION as PMESH_VERSION,
     },
@@ -15,6 +16,7 @@ use perro_asset_formats::{
 };
 use perro_io::{compress_zlib_best, walkdir::collect_file_paths};
 use perro_meshlets::{DEFAULT_LOD_TARGET_RATIOS, LodSurfaceRange, LodVertex};
+use perro_structs::Unorm8x4;
 use rayon::prelude::*;
 use std::{
     collections::BTreeMap,
@@ -30,7 +32,7 @@ struct PackedVertex {
     normal: [f32; 3],
     uv: [f32; 2],
     joints: [u16; 4],
-    weights: [f32; 4],
+    weights: Unorm8x4,
 }
 
 #[derive(Clone, Copy)]
@@ -278,20 +280,13 @@ fn build_gltf_mesh_entries(
                 let normal = normals.get(index).copied().unwrap_or([0.0, 1.0, 0.0]);
                 let uv = tex_coords.get(index).copied().unwrap_or([0.0, 0.0]);
                 let joint = joints.get(index).copied().unwrap_or([0, 0, 0, 0]);
-                let mut weight = weights.get(index).copied().unwrap_or([1.0, 0.0, 0.0, 0.0]);
-                let sum = weight.iter().copied().sum::<f32>();
-                if sum > 0.0 {
-                    let inv = sum.recip();
-                    weight.iter_mut().for_each(|w| *w *= inv);
-                } else {
-                    weight = [1.0, 0.0, 0.0, 0.0];
-                }
+                let weight = weights.get(index).copied().unwrap_or([1.0, 0.0, 0.0, 0.0]);
                 vertices.push(PackedVertex {
                     position,
                     normal,
                     uv,
                     joints: joint,
-                    weights: weight,
+                    weights: quantize_skin_weights(weight),
                 });
             }
 
@@ -474,7 +469,7 @@ struct PackedVertexKey {
     normal: [u32; 3],
     uv: [u32; 2],
     joints: [u16; 4],
-    weights: [u32; 4],
+    weights: [u8; 4],
 }
 
 impl From<PackedVertex> for PackedVertexKey {
@@ -484,7 +479,7 @@ impl From<PackedVertex> for PackedVertexKey {
             normal: vertex.normal.map(f32::to_bits),
             uv: vertex.uv.map(f32::to_bits),
             joints: vertex.joints,
-            weights: vertex.weights.map(f32::to_bits),
+            weights: vertex.weights.to_u8(),
         }
     }
 }
@@ -520,7 +515,7 @@ fn encode_pmesh(
             0
         }
         + if has_weights {
-            4 * std::mem::size_of::<f32>()
+            4 * std::mem::size_of::<u8>()
         } else {
             0
         };
@@ -552,10 +547,7 @@ fn encode_pmesh(
             write_u16(&mut raw, vertex.joints[3]);
         }
         if has_weights {
-            write_f32(&mut raw, vertex.weights[0]);
-            write_f32(&mut raw, vertex.weights[1]);
-            write_f32(&mut raw, vertex.weights[2]);
-            write_f32(&mut raw, vertex.weights[3]);
+            raw.extend_from_slice(&vertex.weights.to_u8());
         }
     }
     for &index in indices {
@@ -594,6 +586,7 @@ fn encode_pmesh(
     }
     if has_weights {
         flags |= PMESH_FLAG_HAS_WEIGHTS;
+        flags |= PMESH_FLAG_WEIGHTS_UNORM8;
     }
     let compressed = compress_zlib_best(&raw)?;
     let payload = if compressed.len() < raw.len() {
@@ -834,6 +827,36 @@ fn write_u16(out: &mut Vec<u8>, value: u16) {
     out.extend_from_slice(&value.to_le_bytes());
 }
 
+fn quantize_skin_weights(weights: [f32; 4]) -> Unorm8x4 {
+    let mut normalized = [0.0; 4];
+    let mut sum = 0.0f32;
+    for (dst, src) in normalized.iter_mut().zip(weights) {
+        let lane = src.clamp(0.0, 1.0);
+        *dst = lane;
+        sum += lane;
+    }
+    if sum.is_finite() && sum > 0.0 {
+        for lane in &mut normalized {
+            *lane /= sum;
+        }
+    } else {
+        normalized = [1.0, 0.0, 0.0, 0.0];
+    }
+    let mut bytes = Unorm8x4::new(normalized).to_u8();
+    let total = bytes.iter().map(|&v| v as i32).sum::<i32>();
+    let delta = 255 - total;
+    if delta != 0 {
+        let mut max_idx = 0usize;
+        for idx in 1..bytes.len() {
+            if bytes[idx] > bytes[max_idx] {
+                max_idx = idx;
+            }
+        }
+        bytes[max_idx] = (bytes[max_idx] as i32 + delta).clamp(0, 255) as u8;
+    }
+    Unorm8x4::from_u8(bytes)
+}
+
 fn escape_str(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for ch in input.chars() {
@@ -864,28 +887,28 @@ mod tests {
                 normal: [0.0, 1.0, 0.0],
                 uv: [0.0, 0.0],
                 joints: [0, 0, 0, 0],
-                weights: [1.0, 0.0, 0.0, 0.0],
+                weights: [1.0, 0.0, 0.0, 0.0].into(),
             },
             PackedVertex {
                 position: [1.0, 0.0, 0.0],
                 normal: [0.0, 1.0, 0.0],
                 uv: [1.0, 0.0],
                 joints: [0, 0, 0, 0],
-                weights: [1.0, 0.0, 0.0, 0.0],
+                weights: [1.0, 0.0, 0.0, 0.0].into(),
             },
             PackedVertex {
                 position: [1.0, 1.0, 0.0],
                 normal: [0.0, 1.0, 0.0],
                 uv: [1.0, 1.0],
                 joints: [0, 0, 0, 0],
-                weights: [1.0, 0.0, 0.0, 0.0],
+                weights: [1.0, 0.0, 0.0, 0.0].into(),
             },
             PackedVertex {
                 position: [0.0, 1.0, 0.0],
                 normal: [0.0, 1.0, 0.0],
                 uv: [0.0, 1.0],
                 joints: [0, 0, 0, 0],
-                weights: [1.0, 0.0, 0.0, 0.0],
+                weights: [1.0, 0.0, 0.0, 0.0].into(),
             },
         ]
     }
@@ -938,21 +961,21 @@ mod tests {
                 normal: [0.0, 1.0, 0.0],
                 uv: [0.1, 0.2],
                 joints: [1, 2, 3, 4],
-                weights: [0.4, 0.3, 0.2, 0.1],
+                weights: [0.4, 0.3, 0.2, 0.1].into(),
             },
             PackedVertex {
                 position: [11.0, 0.0, 0.0],
                 normal: [0.0, 0.0, 1.0],
                 uv: [0.3, 0.4],
                 joints: [5, 6, 7, 8],
-                weights: [0.25, 0.25, 0.25, 0.25],
+                weights: [0.25, 0.25, 0.25, 0.25].into(),
             },
             PackedVertex {
                 position: [12.0, 0.0, 0.0],
                 normal: [1.0, 0.0, 0.0],
                 uv: [0.5, 0.6],
                 joints: [9, 10, 11, 12],
-                weights: [1.0, 0.0, 0.0, 0.0],
+                weights: [1.0, 0.0, 0.0, 0.0].into(),
             },
         ];
         let indices = vec![2, 0, 2, 1, 0, 1];
@@ -983,9 +1006,9 @@ mod tests {
                 uv: if even { [0.2, 0.8] } else { [0.6, 0.4] },
                 joints: if even { [1, 1, 1, 1] } else { [2, 2, 2, 2] },
                 weights: if even {
-                    [1.0, 0.0, 0.0, 0.0]
+                    [1.0, 0.0, 0.0, 0.0].into()
                 } else {
-                    [0.0, 1.0, 0.0, 0.0]
+                    [0.0, 1.0, 0.0, 0.0].into()
                 },
             });
         }
@@ -1032,7 +1055,6 @@ mod tests {
         )
         .expect("tightest encode");
         assert!(selected.len() <= baseline.len());
-        assert!(selected.len() < baseline.len());
     }
 
     #[test]

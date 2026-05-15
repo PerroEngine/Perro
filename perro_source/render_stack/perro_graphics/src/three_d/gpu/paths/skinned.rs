@@ -81,7 +81,7 @@ fn create_pipeline_skinned_with_depth_write(
                         wgpu::VertexAttribute {
                             offset: 40,
                             shader_location: 3,
-                            format: wgpu::VertexFormat::Float32x4,
+                            format: wgpu::VertexFormat::Unorm8x4,
                         },
                     ],
                 },
@@ -229,7 +229,7 @@ pub(super) fn create_pipeline_overlay_skinned(
                         wgpu::VertexAttribute {
                             offset: 40,
                             shader_location: 3,
-                            format: wgpu::VertexFormat::Float32x4,
+                            format: wgpu::VertexFormat::Unorm8x4,
                         },
                     ],
                 },
@@ -365,7 +365,7 @@ pub(super) fn create_depth_prepass_pipeline_skinned(
                         wgpu::VertexAttribute {
                             offset: 40,
                             shader_location: 3,
-                            format: wgpu::VertexFormat::Float32x4,
+                            format: wgpu::VertexFormat::Unorm8x4,
                         },
                     ],
                 },
@@ -455,7 +455,7 @@ pub(super) fn create_shadow_depth_pipeline_skinned(
                         wgpu::VertexAttribute {
                             offset: 40,
                             shader_location: 3,
-                            format: wgpu::VertexFormat::Float32x4,
+                            format: wgpu::VertexFormat::Unorm8x4,
                         },
                     ],
                 },

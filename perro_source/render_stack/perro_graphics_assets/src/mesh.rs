@@ -2,6 +2,7 @@ use bytemuck::{Pod, Zeroable};
 use perro_asset_formats::pmesh::{
     FLAG_HAS_JOINTS as PMESH_FLAG_HAS_JOINTS, FLAG_HAS_NORMAL as PMESH_FLAG_HAS_NORMAL,
     FLAG_HAS_UV0 as PMESH_FLAG_HAS_UV0, FLAG_HAS_WEIGHTS as PMESH_FLAG_HAS_WEIGHTS,
+    FLAG_WEIGHTS_UNORM8 as PMESH_FLAG_WEIGHTS_UNORM8,
     FLAG_PAYLOAD_RAW as PMESH_FLAG_PAYLOAD_RAW, MAGIC as PMESH_MAGIC, VERSION as PMESH_VERSION,
 };
 use perro_io::{decompress_zlib, load_asset};
@@ -9,6 +10,7 @@ use perro_meshlets::{
     DEFAULT_LOD_TARGET_RATIOS, LodSurfaceRange, LodVertex, pack_meshlets_from_positions,
 };
 use perro_render_bridge::{Mesh3D, MeshSurfaceRange, RuntimeMeshData, RuntimeMeshVertex};
+use perro_structs::Unorm8x4;
 use std::{borrow::Cow, collections::BTreeMap};
 
 pub type StaticMeshBytesLookup = fn(path_hash: u64) -> &'static [u8];
@@ -22,7 +24,7 @@ pub struct MeshVertex {
     pub normal: [f32; 3],
     pub uv: [f32; 2],
     pub joints: [u16; 4],
-    pub weights: [f32; 4],
+    pub weights: Unorm8x4,
 }
 
 #[derive(Clone, Copy)]
@@ -162,7 +164,7 @@ pub fn load_mesh3d_from_source(
                 normal: v.normal,
                 uv: v.uv,
                 joints: v.joints,
-                weights: v.weights,
+                weights: v.weights.to_f32(),
             })
             .collect(),
         indices: decoded.indices,
@@ -226,7 +228,7 @@ fn decode_runtime_mesh(mesh: &RuntimeMeshData) -> Option<DecodedMesh> {
             normal: v.normal,
             uv: v.uv,
             joints: v.joints,
-            weights: v.weights,
+            weights: quantize_skin_weights(v.weights),
         })
         .collect();
     if vertices
@@ -344,8 +346,7 @@ fn build_dynamic_lods(mut decoded: DecodedMesh, build_meshlets_for_lods: bool) -
 fn mesh_vertices_have_skinning(vertices: &[RuntimeMeshVertex]) -> bool {
     vertices.iter().any(|vertex| {
         vertex.joints.iter().any(|&joint| joint != 0)
-            || vertex.weights[1..].iter().any(|&weight| weight != 0.0)
-            || vertex.weights[0] != 1.0
+            || vertex.weights != [1.0, 0.0, 0.0, 0.0]
     })
 }
 
@@ -479,7 +480,7 @@ struct MeshVertexKey {
     normal: [u32; 3],
     uv: [u32; 2],
     joints: [u16; 4],
-    weights: [u32; 4],
+    weights: [u8; 4],
 }
 
 impl From<MeshVertex> for MeshVertexKey {
@@ -489,7 +490,7 @@ impl From<MeshVertex> for MeshVertexKey {
             normal: vertex.normal.map(f32::to_bits),
             uv: vertex.uv.map(f32::to_bits),
             joints: vertex.joints,
-            weights: vertex.weights.map(f32::to_bits),
+            weights: vertex.weights.to_u8(),
         }
     }
 }
@@ -557,11 +558,16 @@ pub fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
     let has_uv0 = (flags & PMESH_FLAG_HAS_UV0) != 0;
     let has_joints = (flags & PMESH_FLAG_HAS_JOINTS) != 0;
     let has_weights = (flags & PMESH_FLAG_HAS_WEIGHTS) != 0;
+    let weights_unorm8 = (flags & PMESH_FLAG_WEIGHTS_UNORM8) != 0;
     let vertex_stride = 12
         + if has_normal { 12 } else { 0 }
         + if has_uv0 { 8 } else { 0 }
         + if has_joints { 8 } else { 0 }
-        + if has_weights { 16 } else { 0 };
+        + if has_weights {
+            if weights_unorm8 { 4 } else { 16 }
+        } else {
+            0
+        };
     let vertex_bytes = vertex_count.checked_mul(vertex_stride)?;
     let index_bytes = index_count.checked_mul(4)?;
     let surface_bytes = surface_count.checked_mul(8)?;
@@ -620,14 +626,20 @@ pub fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
             [0, 0, 0, 0]
         };
         let weights = if has_weights {
-            [
-                f32::from_le_bytes(raw[cursor..cursor + 4].try_into().ok()?),
-                f32::from_le_bytes(raw[cursor + 4..cursor + 8].try_into().ok()?),
-                f32::from_le_bytes(raw[cursor + 8..cursor + 12].try_into().ok()?),
-                f32::from_le_bytes(raw[cursor + 12..cursor + 16].try_into().ok()?),
-            ]
+            if weights_unorm8 {
+                let bytes: [u8; 4] = raw[cursor..cursor + 4].try_into().ok()?;
+                Unorm8x4::from_u8(bytes)
+            } else {
+                let weights = [
+                    f32::from_le_bytes(raw[cursor..cursor + 4].try_into().ok()?),
+                    f32::from_le_bytes(raw[cursor + 4..cursor + 8].try_into().ok()?),
+                    f32::from_le_bytes(raw[cursor + 8..cursor + 12].try_into().ok()?),
+                    f32::from_le_bytes(raw[cursor + 12..cursor + 16].try_into().ok()?),
+                ];
+                quantize_skin_weights(weights)
+            }
         } else {
-            [1.0, 0.0, 0.0, 0.0]
+            Unorm8x4::from_u8([255, 0, 0, 0])
         };
         vertices.push(MeshVertex {
             pos,
@@ -756,19 +768,13 @@ pub fn decode_gltf_mesh(bytes: &[u8], mesh_index: usize) -> Option<DecodedMesh> 
         let base_vertex = vertices.len() as u32;
         for (i, position) in positions.iter().copied().enumerate() {
             let joint = joints.get(i).copied().unwrap_or([0, 0, 0, 0]);
-            let mut weight = weights.get(i).copied().unwrap_or([1.0, 0.0, 0.0, 0.0]);
-            let sum = weight.iter().copied().sum::<f32>();
-            if sum.is_finite() && sum > 0.0 {
-                for lane in &mut weight {
-                    *lane /= sum;
-                }
-            }
+            let weight = weights.get(i).copied().unwrap_or([1.0, 0.0, 0.0, 0.0]);
             vertices.push(MeshVertex {
                 pos: position,
                 normal: normals.get(i).copied().unwrap_or([0.0, 1.0, 0.0]),
                 uv: tex_coords.get(i).copied().unwrap_or([0.0, 0.0]),
                 joints: joint,
-                weights: weight,
+                weights: quantize_skin_weights(weight),
             });
         }
         let surface_start = indices.len() as u32;
@@ -806,4 +812,35 @@ fn decode_static_payload(flags: u32, payload: &[u8]) -> Option<Vec<u8>> {
     } else {
         decompress_zlib(payload).ok()
     }
+}
+
+fn quantize_skin_weights(weights: [f32; 4]) -> Unorm8x4 {
+    let mut normalized = [0.0; 4];
+    let mut sum = 0.0f32;
+    for (dst, src) in normalized.iter_mut().zip(weights) {
+        let lane = src.clamp(0.0, 1.0);
+        *dst = lane;
+        sum += lane;
+    }
+    if sum.is_finite() && sum > 0.0 {
+        for lane in &mut normalized {
+            *lane /= sum;
+        }
+    } else {
+        normalized = [1.0, 0.0, 0.0, 0.0];
+    }
+    let mut bytes = Unorm8x4::new(normalized).to_u8();
+    let total = bytes.iter().map(|&v| v as i32).sum::<i32>();
+    let delta = 255 - total;
+    if delta != 0 {
+        let mut max_idx = 0usize;
+        for idx in 1..bytes.len() {
+            if bytes[idx] > bytes[max_idx] {
+                max_idx = idx;
+            }
+        }
+        let fixed = (bytes[max_idx] as i32 + delta).clamp(0, 255) as u8;
+        bytes[max_idx] = fixed;
+    }
+    Unorm8x4::from_u8(bytes)
 }

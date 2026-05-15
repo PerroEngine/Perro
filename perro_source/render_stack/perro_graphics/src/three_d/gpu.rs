@@ -656,6 +656,7 @@ mod tests {
     use perro_asset_formats::pmesh::{
         FLAG_HAS_JOINTS as PMESH_FLAG_HAS_JOINTS, FLAG_HAS_NORMAL as PMESH_FLAG_HAS_NORMAL,
         FLAG_HAS_UV0 as PMESH_FLAG_HAS_UV0, FLAG_HAS_WEIGHTS as PMESH_FLAG_HAS_WEIGHTS,
+        FLAG_WEIGHTS_UNORM8 as PMESH_FLAG_WEIGHTS_UNORM8,
         VERSION as PMESH_VERSION,
     };
     use perro_graphics_assets::{MeshRange, decode_pmesh, decode_ptex};
@@ -676,10 +677,7 @@ mod tests {
         raw.extend_from_slice(&5u16.to_le_bytes());
         raw.extend_from_slice(&6u16.to_le_bytes());
         raw.extend_from_slice(&7u16.to_le_bytes());
-        raw.extend_from_slice(&0.1f32.to_le_bytes());
-        raw.extend_from_slice(&0.2f32.to_le_bytes());
-        raw.extend_from_slice(&0.3f32.to_le_bytes());
-        raw.extend_from_slice(&0.4f32.to_le_bytes());
+        raw.extend_from_slice(&[26u8, 51, 77, 101]);
         raw.extend_from_slice(&0u32.to_le_bytes());
         raw.extend_from_slice(&0u32.to_le_bytes());
         raw.extend_from_slice(&0u32.to_le_bytes());
@@ -699,7 +697,8 @@ mod tests {
         let flags = PMESH_FLAG_HAS_NORMAL
             | PMESH_FLAG_HAS_UV0
             | PMESH_FLAG_HAS_JOINTS
-            | PMESH_FLAG_HAS_WEIGHTS;
+            | PMESH_FLAG_HAS_WEIGHTS
+            | PMESH_FLAG_WEIGHTS_UNORM8;
         bytes.extend_from_slice(&flags.to_le_bytes());
         bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -716,7 +715,7 @@ mod tests {
         assert_eq!(decoded.vertices[0].normal, [0.0, 1.0, 0.0]);
         assert_eq!(decoded.vertices[0].uv, [0.25, 0.75]);
         assert_eq!(decoded.vertices[0].joints, [4, 5, 6, 7]);
-        assert_eq!(decoded.vertices[0].weights, [0.1, 0.2, 0.3, 0.4]);
+        assert_eq!(decoded.vertices[0].weights.to_u8(), [26, 51, 77, 101]);
         assert_eq!(decoded.surface_ranges.len(), 1);
         assert_eq!(decoded.surface_ranges[0].index_start, 0);
         assert_eq!(decoded.surface_ranges[0].index_count, 3);

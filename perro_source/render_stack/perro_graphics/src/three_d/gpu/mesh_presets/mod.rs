@@ -93,7 +93,7 @@ fn to_mesh_vertex(vertex: BuiltinMeshVertex) -> MeshVertex {
         normal: vertex.normal,
         uv: vertex.uv,
         joints: [0, 0, 0, 0],
-        weights: [1.0, 0.0, 0.0, 0.0],
+        weights: [1.0, 0.0, 0.0, 0.0].into(),
     }
 }
 

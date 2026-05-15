@@ -213,11 +213,16 @@ pub fn decode_render_pmesh_trimesh(bytes: &[u8], sx: f32, sy: f32, sz: f32) -> O
     let has_uv0 = (flags & (1 << 1)) != 0;
     let has_joints = (flags & (1 << 2)) != 0;
     let has_weights = (flags & (1 << 3)) != 0;
+    let weights_unorm8 = (flags & perro_asset_formats::pmesh::FLAG_WEIGHTS_UNORM8) != 0;
     let stride = 12
         + if has_normal { 12 } else { 0 }
         + if has_uv0 { 8 } else { 0 }
         + if has_joints { 8 } else { 0 }
-        + if has_weights { 16 } else { 0 };
+        + if has_weights {
+            if weights_unorm8 { 4 } else { 16 }
+        } else {
+            0
+        };
     let vertex_bytes = vertex_count.checked_mul(stride)?;
     let index_bytes = index_count.checked_mul(4)?;
     let surface_bytes = surface_count.checked_mul(8)?;

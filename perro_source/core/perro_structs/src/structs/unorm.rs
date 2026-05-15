@@ -1,5 +1,7 @@
+use bytemuck::{Pod, Zeroable};
+
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Pod, Zeroable)]
 pub struct Unorm8(pub u8);
 
 impl Unorm8 {
@@ -56,7 +58,7 @@ impl From<Unorm8> for f32 {
 }
 
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default, Pod, Zeroable)]
 pub struct Unorm8x4(pub [u8; 4]);
 
 impl Unorm8x4 {

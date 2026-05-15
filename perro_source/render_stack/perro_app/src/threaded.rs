@@ -8,6 +8,8 @@ use perro_render_bridge::{
 use perro_runtime::{Runtime, WindowRequest};
 use std::{
     collections::VecDeque,
+    fs,
+    io::Write,
     sync::{
         Arc, Mutex, TryLockError,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -39,11 +41,142 @@ const STARTUP_SPLASH_IMAGE_NODE: NodeID =
 
 const DEFAULT_INPUT_RING_CAPACITY: usize = 4096;
 const DEFAULT_SNAPSHOT_RING_CAPACITY: usize = 3;
+const LOG_INTERVAL_SECONDS: f32 = 3.0;
+#[cfg(not(any(feature = "profile_heavy", feature = "ui_profile", feature = "fps")))]
+const LOG_TIMING_SAMPLE_STRIDE: u32 = 20;
+const TIMING_WARMUP_FRAMES: u32 = 8;
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SimFrameTiming {
+    pub simulation_time: Duration,
+    pub fixed_steps: u32,
+    pub fixed_step_seconds: f32,
+    pub fixed_accum_before: f32,
+    pub fixed_accum_after: f32,
+    pub fixed_catchup_dropped: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct RenderFrameTiming {
+    graphics_time: Duration,
+    frame_time: Duration,
+    fps: f32,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct ThreadedPresentTiming {
+    gpu_present: Duration,
+    total: Duration,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct CsvFrameSample {
+    frame_index: u64,
+    phase: &'static str,
+    warmup: bool,
+    sampled: bool,
+    frame_delta_us: u128,
+    idle_before_frame_us: u128,
+    simulation_us: u128,
+    render_active_us: u128,
+    work_active_us: u128,
+    present_wait_us: u128,
+    fixed_steps: u32,
+    fixed_step_us: u128,
+    fixed_accum_before_us: u128,
+    fixed_accum_after_us: u128,
+    fixed_catchup_dropped: bool,
+}
+
+struct TimingCsvWriter {
+    file: fs::File,
+}
+
+impl TimingCsvWriter {
+    fn from_env() -> Option<Self> {
+        let path = std::env::var("PERRO_TIMING_CSV").ok()?;
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .ok()?;
+        let _ = writeln!(
+            file,
+            "frame,phase,warmup,sampled,frame_delta_us,idle_before_frame_us,simulation_us,render_active_us,work_active_us,present_wait_us,fixed_steps,fixed_step_us,fixed_accum_before_us,fixed_accum_after_us,fixed_catchup_dropped"
+        );
+        Some(Self { file })
+    }
+
+    fn write(&mut self, sample: CsvFrameSample) {
+        let _ = writeln!(
+            self.file,
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+            sample.frame_index,
+            sample.phase,
+            if sample.warmup { 1 } else { 0 },
+            if sample.sampled { 1 } else { 0 },
+            sample.frame_delta_us,
+            sample.idle_before_frame_us,
+            sample.simulation_us,
+            sample.render_active_us,
+            sample.work_active_us,
+            sample.present_wait_us,
+            sample.fixed_steps,
+            sample.fixed_step_us,
+            sample.fixed_accum_before_us,
+            sample.fixed_accum_after_us,
+            if sample.fixed_catchup_dropped { 1 } else { 0 }
+        );
+        let _ = self.file.flush();
+    }
+}
+
+#[inline]
+fn avg_micros(total: Duration, samples: u32) -> u128 {
+    if samples == 0 {
+        return 0;
+    }
+    total.as_micros() / u128::from(samples)
+}
+
+#[cfg(all(feature = "fps", not(perro_no_console)))]
+#[inline]
+fn log_avg_sampled(
+    update_us: u128,
+    render_us: u128,
+    total_us: u128,
+    idle_before_frame_us: u128,
+    present_wait_us: u128,
+) {
+    let frame_us = total_us
+        .saturating_add(idle_before_frame_us)
+        .saturating_add(present_wait_us);
+    let fps_x100 = 100_000_000u128.checked_div(frame_us).unwrap_or(0) as u64;
+    let mut out = std::io::stdout().lock();
+    let _ = writeln!(
+        out,
+        "avg(sampled): update=({update_us}us) | render=({render_us}us) | total=({total_us}us) | idle=({idle_before_frame_us}us) | present_wait=({present_wait_us}us) | frame=({frame_us}us) | fps=({}.{:02})",
+        fps_x100 / 100,
+        fps_x100 % 100
+    );
+}
+
+#[cfg(any(not(feature = "fps"), perro_no_console))]
+#[inline]
+fn log_avg_sampled(
+    _update_us: u128,
+    _render_us: u128,
+    _total_us: u128,
+    _idle_before_frame_us: u128,
+    _present_wait_us: u128,
+) {
+}
 
 #[derive(Debug, Clone)]
 pub struct RenderSnapshot {
     pub frame_id: u64,
     pub sim_time: f32,
+    pub timing: SimFrameTiming,
     pub viewport_size: [u32; 2],
     pub commands: Vec<RenderCommand>,
 }
@@ -52,15 +185,21 @@ impl RenderSnapshot {
     pub fn new(
         frame_id: u64,
         sim_time: f32,
+        timing: SimFrameTiming,
         viewport_size: [u32; 2],
         commands: Vec<RenderCommand>,
     ) -> Self {
         Self {
             frame_id,
             sim_time,
+            timing,
             viewport_size,
             commands,
         }
+    }
+
+    fn recycle_commands(self, pool: &CommandBufferPool) {
+        pool.recycle(self.commands);
     }
 }
 
@@ -86,24 +225,29 @@ impl SnapshotRing {
         }
     }
 
-    pub fn push(&mut self, snapshot: RenderSnapshot) {
+    fn push(&mut self, snapshot: RenderSnapshot, pool: &CommandBufferPool) {
         if self.capacity == 0 {
             self.stats.dropped_snapshots = self.stats.dropped_snapshots.saturating_add(1);
+            snapshot.recycle_commands(pool);
             return;
         }
         if self.snapshots.len() == self.capacity {
-            self.snapshots.pop_front();
+            if let Some(snapshot) = self.snapshots.pop_front() {
+                snapshot.recycle_commands(pool);
+            }
             self.stats.dropped_snapshots = self.stats.dropped_snapshots.saturating_add(1);
         }
         self.snapshots.push_back(snapshot);
         self.stats.published_snapshots = self.stats.published_snapshots.saturating_add(1);
     }
 
-    pub fn take_latest(&mut self) -> Option<RenderSnapshot> {
+    fn take_latest(&mut self, pool: &CommandBufferPool) -> Option<RenderSnapshot> {
         let skipped = self.snapshots.len().saturating_sub(1) as u64;
         self.stats.skipped_snapshots = self.stats.skipped_snapshots.saturating_add(skipped);
         let latest = self.snapshots.pop_back();
-        self.snapshots.clear();
+        while let Some(snapshot) = self.snapshots.pop_front() {
+            snapshot.recycle_commands(pool);
+        }
         latest
     }
 
@@ -123,6 +267,36 @@ impl SnapshotRing {
     }
 }
 
+#[derive(Default)]
+struct CommandBufferPool {
+    buffers: Mutex<Vec<Vec<RenderCommand>>>,
+}
+
+impl CommandBufferPool {
+    fn checkout(&self) -> Vec<RenderCommand> {
+        match self.buffers.lock() {
+            Ok(mut buffers) => buffers.pop().unwrap_or_default(),
+            Err(err) => err.into_inner().pop().unwrap_or_default(),
+        }
+    }
+
+    fn recycle(&self, mut buffer: Vec<RenderCommand>) {
+        buffer.clear();
+        match self.buffers.lock() {
+            Ok(mut buffers) => buffers.push(buffer),
+            Err(err) => err.into_inner().push(buffer),
+        }
+    }
+
+    #[cfg(test)]
+    fn available(&self) -> usize {
+        match self.buffers.lock() {
+            Ok(buffers) => buffers.len(),
+            Err(err) => err.into_inner().len(),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct SharedSnapshotRing {
     ring: Arc<Mutex<SnapshotRing>>,
@@ -137,20 +311,21 @@ impl SharedSnapshotRing {
         }
     }
 
-    pub fn publish_latest_wins(&self, snapshot: RenderSnapshot) {
+    fn publish_latest_wins(&self, snapshot: RenderSnapshot, pool: &CommandBufferPool) {
         match self.ring.try_lock() {
-            Ok(mut ring) => ring.push(snapshot),
+            Ok(mut ring) => ring.push(snapshot, pool),
             Err(TryLockError::WouldBlock) => {
                 self.dropped_on_lock.fetch_add(1, Ordering::Relaxed);
+                snapshot.recycle_commands(pool);
             }
-            Err(TryLockError::Poisoned(err)) => err.into_inner().push(snapshot),
+            Err(TryLockError::Poisoned(err)) => err.into_inner().push(snapshot, pool),
         }
     }
 
-    pub fn take_latest(&self) -> Option<RenderSnapshot> {
+    fn take_latest(&self, pool: &CommandBufferPool) -> Option<RenderSnapshot> {
         match self.ring.lock() {
-            Ok(mut ring) => ring.take_latest(),
-            Err(err) => err.into_inner().take_latest(),
+            Ok(mut ring) => ring.take_latest(pool),
+            Err(err) => err.into_inner().take_latest(pool),
         }
     }
 
@@ -170,6 +345,8 @@ impl SharedSnapshotRing {
 pub struct RenderThreadBridge {
     input_ring: Arc<Mutex<InputRingBuffer>>,
     snapshot_ring: SharedSnapshotRing,
+    command_pool: Arc<CommandBufferPool>,
+    render_timing: Arc<Mutex<RenderFrameTiming>>,
     render_event_tx: Sender<RenderEvent>,
     window_request_rx: Arc<Mutex<Receiver<WindowRequest>>>,
     stop: Arc<AtomicBool>,
@@ -183,6 +360,8 @@ impl RenderThreadBridge {
     pub fn with_capacity(input_capacity: usize, snapshot_capacity: usize) -> (Self, SimBridge) {
         let input_ring = Arc::new(Mutex::new(InputRingBuffer::new(input_capacity)));
         let snapshot_ring = SharedSnapshotRing::new(snapshot_capacity);
+        let command_pool = Arc::new(CommandBufferPool::default());
+        let render_timing = Arc::new(Mutex::new(RenderFrameTiming::default()));
         let (render_event_tx, render_event_rx) = mpsc::channel();
         let (window_request_tx, window_request_rx) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
@@ -191,6 +370,8 @@ impl RenderThreadBridge {
             Self {
                 input_ring: input_ring.clone(),
                 snapshot_ring: snapshot_ring.clone(),
+                command_pool: command_pool.clone(),
+                render_timing: render_timing.clone(),
                 render_event_tx,
                 window_request_rx: Arc::new(Mutex::new(window_request_rx)),
                 stop: stop.clone(),
@@ -198,6 +379,8 @@ impl RenderThreadBridge {
             SimBridge {
                 input_ring,
                 snapshot_ring,
+                command_pool,
+                render_timing,
                 render_event_rx,
                 window_request_tx,
                 stop,
@@ -213,7 +396,7 @@ impl RenderThreadBridge {
     }
 
     pub fn take_latest_snapshot(&self) -> Option<RenderSnapshot> {
-        self.snapshot_ring.take_latest()
+        self.snapshot_ring.take_latest(&self.command_pool)
     }
 
     pub fn send_render_events<I>(&self, events: I)
@@ -239,6 +422,17 @@ impl RenderThreadBridge {
         self.stop.store(true, Ordering::Release);
     }
 
+    fn recycle_command_buffer(&self, buffer: Vec<RenderCommand>) {
+        self.command_pool.recycle(buffer);
+    }
+
+    fn publish_render_timing(&self, timing: RenderFrameTiming) {
+        match self.render_timing.lock() {
+            Ok(mut slot) => *slot = timing,
+            Err(err) => *err.into_inner() = timing,
+        }
+    }
+
     pub fn snapshot_stats(&self) -> SnapshotRingStats {
         self.snapshot_ring.stats()
     }
@@ -247,6 +441,8 @@ impl RenderThreadBridge {
 pub struct SimBridge {
     input_ring: Arc<Mutex<InputRingBuffer>>,
     snapshot_ring: SharedSnapshotRing,
+    command_pool: Arc<CommandBufferPool>,
+    render_timing: Arc<Mutex<RenderFrameTiming>>,
     render_event_rx: Receiver<RenderEvent>,
     window_request_tx: Sender<WindowRequest>,
     stop: Arc<AtomicBool>,
@@ -267,7 +463,8 @@ impl SimBridge {
     }
 
     fn publish_snapshot(&self, snapshot: RenderSnapshot) {
-        self.snapshot_ring.publish_latest_wins(snapshot);
+        self.snapshot_ring
+            .publish_latest_wins(snapshot, &self.command_pool);
     }
 
     fn send_window_requests(&self, requests: &mut Vec<WindowRequest>) {
@@ -278,6 +475,17 @@ impl SimBridge {
 
     fn should_stop(&self) -> bool {
         self.stop.load(Ordering::Acquire)
+    }
+
+    fn checkout_command_buffer(&self) -> Vec<RenderCommand> {
+        self.command_pool.checkout()
+    }
+
+    fn read_render_timing(&self) -> RenderFrameTiming {
+        match self.render_timing.lock() {
+            Ok(slot) => *slot,
+            Err(err) => *err.into_inner(),
+        }
     }
 }
 
@@ -369,7 +577,9 @@ impl<B: GraphicsBackend> SnapshotPresenter<B> {
         I: IntoIterator<Item = RenderCommand>,
     {
         if let Some(snapshot) = bridge.take_latest_snapshot() {
-            self.current_snapshot = Some(snapshot);
+            if let Some(old_snapshot) = self.current_snapshot.replace(snapshot) {
+                bridge.recycle_command_buffer(old_snapshot.commands);
+            }
         }
         if let Some(snapshot) = &self.current_snapshot {
             self.graphics.submit_many(snapshot.commands.iter().cloned());
@@ -378,6 +588,35 @@ impl<B: GraphicsBackend> SnapshotPresenter<B> {
         self.graphics.draw_frame();
         self.graphics.drain_events(&mut self.event_buffer);
         bridge.send_render_events(self.event_buffer.drain(..));
+    }
+
+    fn present_from_bridge_with_overlay_timed<I>(
+        &mut self,
+        bridge: &RenderThreadBridge,
+        overlay: I,
+    ) -> ThreadedPresentTiming
+    where
+        I: IntoIterator<Item = RenderCommand>,
+    {
+        let total_start = Instant::now();
+        if let Some(snapshot) = bridge.take_latest_snapshot() {
+            if let Some(old_snapshot) = self.current_snapshot.replace(snapshot) {
+                bridge.recycle_command_buffer(old_snapshot.commands);
+            }
+        }
+        if let Some(snapshot) = &self.current_snapshot {
+            self.graphics.submit_many(snapshot.commands.iter().cloned());
+        }
+        self.graphics.submit_many(overlay);
+        let present_start = Instant::now();
+        let _ = self.graphics.draw_frame_timed();
+        let gpu_present = present_start.elapsed();
+        self.graphics.drain_events(&mut self.event_buffer);
+        bridge.send_render_events(self.event_buffer.drain(..));
+        ThreadedPresentTiming {
+            gpu_present,
+            total: total_start.elapsed(),
+        }
     }
 }
 
@@ -506,6 +745,20 @@ struct ThreadedRunnerState<B: GraphicsBackend> {
     gamepad_input: GamepadInput,
     joycon_input: JoyConInput,
     startup_splash: Option<ThreadedStartupSplashState>,
+    last_frame_start: Instant,
+    last_frame_end: Instant,
+    frame_index: u64,
+    timing_csv: Option<TimingCsvWriter>,
+    timing_warmup_frames_left: u32,
+    batch_start: Instant,
+    batch_frames: u32,
+    batch_timing_samples: u32,
+    batch_work: Duration,
+    batch_simulation: Duration,
+    batch_present: Duration,
+    batch_idle_before_frame: Duration,
+    batch_present_wait: Duration,
+    batch_idle: Duration,
 }
 
 impl<B: GraphicsBackend> ThreadedRunnerState<B> {
@@ -516,6 +769,7 @@ impl<B: GraphicsBackend> ThreadedRunnerState<B> {
         title: String,
         startup_splash: Option<ThreadedStartupSplash>,
     ) -> Self {
+        let now = Instant::now();
         Self {
             presenter,
             bridge,
@@ -529,6 +783,20 @@ impl<B: GraphicsBackend> ThreadedRunnerState<B> {
             gamepad_input: GamepadInput::new(),
             joycon_input: JoyConInput::new(),
             startup_splash: startup_splash.map(ThreadedStartupSplashState::new),
+            last_frame_start: now,
+            last_frame_end: now,
+            frame_index: 0,
+            timing_csv: TimingCsvWriter::from_env(),
+            timing_warmup_frames_left: TIMING_WARMUP_FRAMES,
+            batch_start: now,
+            batch_frames: 0,
+            batch_timing_samples: 0,
+            batch_work: Duration::ZERO,
+            batch_simulation: Duration::ZERO,
+            batch_present: Duration::ZERO,
+            batch_idle_before_frame: Duration::ZERO,
+            batch_present_wait: Duration::ZERO,
+            batch_idle: Duration::ZERO,
         }
     }
 
@@ -536,6 +804,9 @@ impl<B: GraphicsBackend> ThreadedRunnerState<B> {
         self.bridge.request_stop();
         if let Some(sim) = self.sim.take() {
             let _ = sim.join();
+        }
+        if let Some(snapshot) = self.presenter.current_snapshot.take() {
+            self.bridge.recycle_command_buffer(snapshot.commands);
         }
     }
 
@@ -636,6 +907,143 @@ impl<B: GraphicsBackend> ThreadedRunnerState<B> {
 
     fn text_input_suppressed(&self) -> bool {
         self.modifiers.control_key() || self.modifiers.alt_key() || self.modifiers.super_key()
+    }
+
+    #[inline]
+    fn should_sample_timing(&self) -> bool {
+        #[cfg(any(feature = "profile_heavy", feature = "ui_profile", feature = "fps"))]
+        {
+            true
+        }
+        #[cfg(not(any(feature = "profile_heavy", feature = "ui_profile", feature = "fps")))]
+        {
+            self.frame_index == 1
+                || self
+                    .frame_index
+                    .is_multiple_of(LOG_TIMING_SAMPLE_STRIDE as u64)
+        }
+    }
+
+    fn reset_timing_batch(&mut self, now: Instant) {
+        self.timing_warmup_frames_left = TIMING_WARMUP_FRAMES;
+        self.batch_start = now;
+        self.batch_frames = 0;
+        self.batch_timing_samples = 0;
+        self.batch_work = Duration::ZERO;
+        self.batch_simulation = Duration::ZERO;
+        self.batch_present = Duration::ZERO;
+        self.batch_idle_before_frame = Duration::ZERO;
+        self.batch_present_wait = Duration::ZERO;
+        self.batch_idle = Duration::ZERO;
+    }
+
+    fn record_timing(
+        &mut self,
+        phase: &'static str,
+        frame_start: Instant,
+        frame_delta: Duration,
+        idle_duration: Duration,
+        present_timing: Option<ThreadedPresentTiming>,
+    ) {
+        let should_sample_timing = self.should_sample_timing();
+        let present_wait_duration = present_timing
+            .map(|timing| timing.gpu_present)
+            .unwrap_or(Duration::ZERO);
+        let present_active_duration = present_timing
+            .map(|timing| timing.total.saturating_sub(timing.gpu_present))
+            .unwrap_or(Duration::ZERO);
+        let work_active_duration = present_active_duration;
+        let simulation_timing = self
+            .presenter
+            .current_snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.timing)
+            .unwrap_or_default();
+        let simulation_duration = simulation_timing.simulation_time;
+        let frame_end = Instant::now();
+        self.last_frame_end = frame_end;
+        self.bridge.publish_render_timing(RenderFrameTiming {
+            graphics_time: present_active_duration,
+            frame_time: frame_delta,
+            fps: if frame_delta.is_zero() {
+                0.0
+            } else {
+                1.0 / frame_delta.as_secs_f32()
+            },
+        });
+
+        if let Some(csv) = &mut self.timing_csv {
+            csv.write(CsvFrameSample {
+                frame_index: self.frame_index,
+                phase,
+                warmup: self.timing_warmup_frames_left > 0,
+                sampled: should_sample_timing,
+                frame_delta_us: frame_delta.as_micros(),
+                idle_before_frame_us: idle_duration.as_micros(),
+                simulation_us: simulation_duration.as_micros(),
+                render_active_us: present_active_duration.as_micros(),
+                work_active_us: work_active_duration.as_micros(),
+                present_wait_us: present_wait_duration.as_micros(),
+                fixed_steps: simulation_timing.fixed_steps,
+                fixed_step_us: Duration::from_secs_f32(simulation_timing.fixed_step_seconds)
+                    .as_micros(),
+                fixed_accum_before_us: Duration::from_secs_f32(
+                    simulation_timing.fixed_accum_before,
+                )
+                .as_micros(),
+                fixed_accum_after_us: Duration::from_secs_f32(simulation_timing.fixed_accum_after)
+                    .as_micros(),
+                fixed_catchup_dropped: simulation_timing.fixed_catchup_dropped,
+            });
+        }
+
+        if self.timing_warmup_frames_left > 0 {
+            self.timing_warmup_frames_left = self.timing_warmup_frames_left.saturating_sub(1);
+            if self.timing_warmup_frames_left == 0 {
+                self.batch_start = frame_end;
+            }
+            return;
+        }
+
+        self.batch_frames = self.batch_frames.saturating_add(1);
+        if should_sample_timing {
+            self.batch_timing_samples = self.batch_timing_samples.saturating_add(1);
+            self.batch_work += work_active_duration;
+            self.batch_simulation += simulation_duration;
+            self.batch_present += present_active_duration;
+            self.batch_idle_before_frame += idle_duration;
+            self.batch_present_wait += present_wait_duration;
+            self.batch_idle += idle_duration + present_wait_duration;
+        }
+
+        let batch_elapsed_secs = frame_end.duration_since(self.batch_start).as_secs_f32();
+        if batch_elapsed_secs >= LOG_INTERVAL_SECONDS && self.batch_timing_samples > 0 {
+            let avg_work_us = avg_micros(self.batch_work, self.batch_timing_samples);
+            let avg_simulation_us = avg_micros(self.batch_simulation, self.batch_timing_samples);
+            let avg_present_us = avg_micros(self.batch_present, self.batch_timing_samples);
+            let avg_idle_before_frame_us =
+                avg_micros(self.batch_idle_before_frame, self.batch_timing_samples);
+            let avg_present_wait_us =
+                avg_micros(self.batch_present_wait, self.batch_timing_samples);
+            log_avg_sampled(
+                avg_simulation_us,
+                avg_present_us,
+                avg_work_us,
+                avg_idle_before_frame_us,
+                avg_present_wait_us,
+            );
+            self.batch_start = frame_end;
+            self.batch_frames = 0;
+            self.batch_timing_samples = 0;
+            self.batch_work = Duration::ZERO;
+            self.batch_simulation = Duration::ZERO;
+            self.batch_present = Duration::ZERO;
+            self.batch_idle_before_frame = Duration::ZERO;
+            self.batch_present_wait = Duration::ZERO;
+            self.batch_idle = Duration::ZERO;
+        }
+
+        let _ = frame_start;
     }
 }
 
@@ -818,6 +1226,10 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for ThreadedRunn
         self.presenter
             .graphics_mut()
             .resize(size.width, size.height);
+        let now = Instant::now();
+        self.last_frame_start = now;
+        self.last_frame_end = now;
+        self.batch_start = now;
         self.bridge
             .push_input_event(perro_input_api::InputEvent::ViewportSize {
                 width: size.width,
@@ -852,21 +1264,36 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for ThreadedRunn
                     });
             }
             WindowEvent::RedrawRequested => {
+                self.frame_index = self.frame_index.saturating_add(1);
+                let frame_start = Instant::now();
+                let frame_delta = frame_start.duration_since(self.last_frame_start);
+                self.last_frame_start = frame_start;
+                let idle_duration = frame_start.saturating_duration_since(self.last_frame_end);
                 let had_snapshot = self.bridge.snapshot_stats().published_snapshots > 0;
-                let now = Instant::now();
+                let now = frame_start;
                 let mut overlay = Vec::new();
+                let mut phase = "steady";
+                let mut splash_finished = false;
                 if let Some(splash) = &mut self.startup_splash {
+                    phase = "startup";
                     splash.update(now, had_snapshot);
                     if splash.active {
                         overlay = splash.commands(now);
                     } else {
                         overlay.extend(ThreadedStartupSplashState::cleanup_commands());
                         self.startup_splash = None;
+                        splash_finished = true;
                     }
                 }
-                self.presenter
-                    .present_from_bridge_with_overlay(&self.bridge, overlay);
+                let present_timing = Some(
+                    self.presenter
+                        .present_from_bridge_with_overlay_timed(&self.bridge, overlay),
+                );
                 self.apply_window_requests();
+                if splash_finished {
+                    self.reset_timing_batch(now);
+                }
+                self.record_timing(phase, frame_start, frame_delta, idle_duration, present_timing);
             }
             WindowEvent::CloseRequested => {
                 self.exit_result = Some(crate::winit_runner::AppExitResult::window_close());
@@ -909,7 +1336,7 @@ fn run_sim_loop(mut runtime: Runtime, bridge: SimBridge, config: SimThreadConfig
     let run_start = Instant::now();
     let mut last_tick = Instant::now();
     let mut fixed_accumulator = 0.0f32;
-    let mut commands = Vec::new();
+    let mut commands = bridge.checkout_command_buffer();
     let mut window_requests = Vec::new();
 
     while !bridge.should_stop() {
@@ -919,20 +1346,31 @@ fn run_sim_loop(mut runtime: Runtime, bridge: SimBridge, config: SimThreadConfig
             .as_secs_f32()
             .min(0.250);
         last_tick = tick_start;
+        let render_timing = bridge.read_render_timing();
 
         let input_frame = bridge.seal_input_frame();
         runtime.time.elapsed = tick_start
             .saturating_duration_since(run_start)
             .as_secs_f32();
+        runtime.time.graphics = render_timing.graphics_time;
+        runtime.time.frame = render_timing.frame_time;
+        runtime.time.fps = render_timing.fps;
         runtime.apply_input_frame(&input_frame);
         bridge.apply_render_events(&mut runtime);
 
+        let fixed_accumulator_before = fixed_accumulator;
+        let mut fixed_steps = 1u32;
+        let mut fixed_step_seconds = delta;
+        let fixed_catchup_dropped = false;
         if let Some(step) = config.fixed_timestep {
+            fixed_steps = 0;
             fixed_accumulator += delta;
             while fixed_accumulator >= step {
                 runtime.fixed_update(step);
                 fixed_accumulator -= step;
+                fixed_steps = fixed_steps.saturating_add(1);
             }
+            fixed_step_seconds = step;
         } else {
             runtime.fixed_update(delta);
         }
@@ -943,14 +1381,25 @@ fn run_sim_loop(mut runtime: Runtime, bridge: SimBridge, config: SimThreadConfig
 
         commands.clear();
         runtime.extract_render_snapshot_commands(&mut commands);
+        let mut snapshot_commands = bridge.checkout_command_buffer();
+        std::mem::swap(&mut commands, &mut snapshot_commands);
+        let simulation_duration = tick_start.elapsed();
+        runtime.time.simulation = simulation_duration;
         frame_id = frame_id.saturating_add(1);
         bridge.publish_snapshot(RenderSnapshot::new(
             frame_id,
             runtime.time.elapsed,
+            SimFrameTiming {
+                simulation_time: simulation_duration,
+                fixed_steps,
+                fixed_step_seconds,
+                fixed_accum_before: fixed_accumulator_before,
+                fixed_accum_after: fixed_accumulator,
+                fixed_catchup_dropped,
+            },
             runtime.input_viewport_size_pixels(),
-            std::mem::take(&mut commands),
+            snapshot_commands,
         ));
-        commands = Vec::new();
 
         if !config.idle_sleep.is_zero() {
             thread::sleep(config.idle_sleep);
@@ -967,6 +1416,7 @@ mod tests {
         RenderSnapshot::new(
             frame_id,
             frame_id as f32,
+            SimFrameTiming::default(),
             [640, 360],
             vec![RenderCommand::TwoD(Command2D::RemoveNode {
                 node: perro_ids::NodeID::from_u64(frame_id),
@@ -984,16 +1434,31 @@ mod tests {
     #[test]
     fn ring_keeps_latest_and_counts_drops() {
         let mut ring = SnapshotRing::new(3);
-        ring.push(snapshot(1));
-        ring.push(snapshot(2));
-        ring.push(snapshot(3));
-        ring.push(snapshot(4));
+        let pool = CommandBufferPool::default();
+        ring.push(snapshot(1), &pool);
+        ring.push(snapshot(2), &pool);
+        ring.push(snapshot(3), &pool);
+        ring.push(snapshot(4), &pool);
 
         assert_eq!(ring.stats().dropped_snapshots, 1);
-        let latest = ring.take_latest().unwrap();
+        let latest = ring.take_latest(&pool).unwrap();
         assert_eq!(latest.frame_id, 4);
         assert_eq!(ring.stats().skipped_snapshots, 2);
         assert!(ring.is_empty());
+    }
+
+    #[test]
+    fn ring_recycles_dropped_and_skipped_buffers() {
+        let mut ring = SnapshotRing::new(2);
+        let pool = CommandBufferPool::default();
+
+        ring.push(snapshot(1), &pool);
+        ring.push(snapshot(2), &pool);
+        ring.push(snapshot(3), &pool);
+        let latest = ring.take_latest(&pool).unwrap();
+        latest.recycle_commands(&pool);
+
+        assert_eq!(pool.available(), 3);
     }
 
     #[test]

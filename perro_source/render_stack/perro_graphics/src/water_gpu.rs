@@ -299,7 +299,7 @@ impl GpuWater {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth24Plus,
-                depth_write_enabled: Some(true),
+                depth_write_enabled: Some(false),
                 depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
@@ -1250,7 +1250,7 @@ struct WaterLodDecision {
 fn water_lod(
     sim_resolution: [u32; 2],
     render_resolution: [u32; 2],
-    size: [f32; 2],
+    _size: [f32; 2],
     distances: [f32; 3],
     min_resolution: [u32; 2],
     water_pos: [f32; 2],
@@ -1259,8 +1259,7 @@ fn water_lod(
     let dx = water_pos[0] - camera_pos[0];
     let dy = water_pos[1] - camera_pos[1];
     let distance = (dx * dx + dy * dy).sqrt();
-    let radius = size[0].max(size[1]).max(1.0);
-    let near = distances[0].max(radius * 2.0);
+    let near = distances[0].max(5.0);
     let mid = distances[1].max(near);
     let far = distances[2].max(mid);
     let (lod_t, ripple_blend) = if distance <= near {
@@ -1283,8 +1282,19 @@ fn water_lod(
         };
     };
     let q = lod_t * lod_t;
-    let sim_div = 1.0 + q * 7.0;
-    let render_div = 1.0 + q * 3.0;
+    let (early_sim_div, early_render_div, early_ripple) = if distance <= 5.0 {
+        (1.0, 1.0, 1.0)
+    } else if distance <= 10.0 {
+        (1.0 / 0.95, 1.0 / 0.975, 0.95)
+    } else if distance <= 15.0 {
+        (1.0 / 0.90, 1.0 / 0.95, 0.90)
+    } else if distance <= 20.0 {
+        (1.0 / 0.75, 1.0 / 0.875, 0.82)
+    } else {
+        (1.0, 1.0, 1.0)
+    };
+    let sim_div = early_sim_div * (1.0 + q * 7.0);
+    let render_div = early_render_div * (1.0 + q * 3.0);
     WaterLodDecision {
         grid: WaterGridResolution {
             sim: [
@@ -1300,7 +1310,7 @@ fn water_lod(
                     .clamp(1, WATER_MAX_RENDER_RESOLUTION),
             ],
         },
-        ripple_blend,
+        ripple_blend: ripple_blend.min(early_ripple),
     }
 }
 
@@ -2117,11 +2127,11 @@ fn water_surface_vertex(w: Water, vertex_idx: u32) -> WaterVertexLocal {
     }
     var corner = array<vec2<u32>, 6>(
         vec2<u32>(0u, 0u),
+        vec2<u32>(1u, 1u),
         vec2<u32>(1u, 0u),
-        vec2<u32>(1u, 1u),
         vec2<u32>(0u, 0u),
-        vec2<u32>(1u, 1u),
         vec2<u32>(0u, 1u),
+        vec2<u32>(1u, 1u),
     );
     let cx = cell % quad_width;
     let cy = cell / quad_width;
@@ -2209,11 +2219,11 @@ fn water_circle_surface_vertex(w: Water, vertex_idx: u32) -> WaterVertexLocal {
     }
     var corner = array<vec2<u32>, 6>(
         vec2<u32>(0u, 0u),
+        vec2<u32>(1u, 1u),
         vec2<u32>(1u, 0u),
-        vec2<u32>(1u, 1u),
         vec2<u32>(0u, 0u),
-        vec2<u32>(1u, 1u),
         vec2<u32>(0u, 1u),
+        vec2<u32>(1u, 1u),
     );
     let seg = cell % segments;
     let ring = cell / segments;
@@ -2550,6 +2560,8 @@ mod tests {
         assert!(WATER_3D_RENDER_WGSL.contains("water_circle_surface_vertex"));
         assert!(WATER_3D_RENDER_WGSL.contains("water_circle_side_vertex"));
         assert!(WATER_3D_RENDER_WGSL.contains("horizontal_segments * 2u + vertical_segments"));
+        assert!(WATER_3D_RENDER_WGSL.contains("vec2<u32>(0u, 0u),\n        vec2<u32>(1u, 1u),\n        vec2<u32>(1u, 0u)"));
+        assert!(WATER_3D_RENDER_WGSL.contains("vec2<u32>(0u, 0u),\n        vec2<u32>(0u, 1u),\n        vec2<u32>(1u, 1u)"));
     }
 
     #[test]

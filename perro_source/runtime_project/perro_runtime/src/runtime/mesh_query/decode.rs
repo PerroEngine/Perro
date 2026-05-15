@@ -181,11 +181,16 @@ pub(super) fn decode_pmesh_query(bytes: &[u8]) -> Option<QueryMeshData> {
     let has_uv0 = (flags & (1 << 1)) != 0;
     let has_joints = (flags & (1 << 2)) != 0;
     let has_weights = (flags & (1 << 3)) != 0;
+    let weights_unorm8 = (flags & perro_asset_formats::pmesh::FLAG_WEIGHTS_UNORM8) != 0;
     let vertex_stride = 12
         + if has_normal { 12 } else { 0 }
         + if has_uv0 { 8 } else { 0 }
         + if has_joints { 8 } else { 0 }
-        + if has_weights { 16 } else { 0 };
+        + if has_weights {
+            if weights_unorm8 { 4 } else { 16 }
+        } else {
+            0
+        };
 
     let vertex_bytes = vertex_count.checked_mul(vertex_stride)?;
     let index_bytes = index_count.checked_mul(4)?;
