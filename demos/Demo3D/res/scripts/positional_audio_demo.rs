@@ -11,6 +11,8 @@ const DEBUG_LABEL: &str = "AudioDebugLabel";
 
 #[State]
 struct PositionalAudioDemoState {
+    #[default = NodeID::nil()]
+    pub overlay: NodeID,
     #[default = vec![NodeID::nil(); 3]]
     pub speakers: Vec<NodeID>,
     #[default = 0.0]
@@ -27,6 +29,7 @@ lifecycle!({
             get_child!(ctx.run, ctx.id, SPEAKER_C).unwrap_or(NodeID::nil()),
         ];
         with_state_mut!(ctx.run, PositionalAudioDemoState, ctx.id, |state| {
+            state.overlay = NodeID::nil();
             state.speakers = speakers;
             state.debug_rays = true;
         });
@@ -40,6 +43,7 @@ lifecycle!({
         }
         ctx.run.Audio().set_debug_rays(true);
         self.sync_label(ctx);
+        self.push_overlay(ctx);
     }
 
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
@@ -67,6 +71,7 @@ lifecycle!({
         if play {
             self.play_chord(ctx);
         }
+        self.push_overlay(ctx);
     }
 
     fn on_removal(&self, ctx: &mut ScriptContext<'_, API>) {
@@ -75,6 +80,13 @@ lifecycle!({
 });
 
 methods!({
+    fn set_info_overlay(&self, ctx: &mut ScriptContext<'_, API>, overlay: NodeID) {
+        with_state_mut!(ctx.run, PositionalAudioDemoState, ctx.id, |state| {
+            state.overlay = overlay;
+        });
+        self.push_overlay(ctx);
+    }
+
     fn play_chord(&self, ctx: &mut ScriptContext<'_, API>) {
         let speakers = with_state!(ctx.run, PositionalAudioDemoState, ctx.id, |state| {
             state.speakers.clone()
@@ -125,5 +137,29 @@ methods!({
             }
             .into();
         });
+    }
+
+    fn push_overlay(&self, ctx: &mut ScriptContext<'_, API>) {
+        let (overlay, debug, speakers) =
+            with_state!(ctx.run, PositionalAudioDemoState, ctx.id, |state| {
+                (state.overlay, state.debug_rays, state.speakers.clone())
+            });
+        if overlay.is_nil() {
+            return;
+        }
+        let ready = speakers.iter().filter(|id| !id.is_nil()).count();
+        let zones = query!(ctx.run, all(node_type[AudioEffectZone3D]), in_subtree(ctx.id)).len();
+        let body = format!(
+            "speakers {}\nfx zones {} | debug {}",
+            ready,
+            zones,
+            if debug { "on" } else { "off" }
+        );
+        let _ = call_method!(
+            ctx.run,
+            overlay,
+            func!("set_content"),
+            params!["Positional Audio".to_string(), body]
+        );
     }
 });

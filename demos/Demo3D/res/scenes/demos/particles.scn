@@ -1,6 +1,7 @@
 $root = @ParticlesDemo
 
 [ParticlesDemo]
+script = "res://scripts/particles_demo.rs"
     [Node3D]
     [/Node3D]
 [/ParticlesDemo]

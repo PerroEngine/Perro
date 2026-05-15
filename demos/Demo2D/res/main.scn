@@ -1,0 +1,105 @@
+$root = @Demo2D
+
+[Demo2D]
+script = "res://scripts/demo2d_manager.rs"
+    [Node2D]
+        position = (0, 0)
+    [/Node2D]
+[/Demo2D]
+
+[demo_ui_root]
+    [UiBox]
+        anchor = "center"
+        position_ratio = (0.5, 0.5)
+        size_ratio = (1.0, 1.0)
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiBox]
+[/demo_ui_root]
+
+[Camera]
+parent = @Demo2D
+script = "res://scripts/camera_pan_2d.rs"
+    [Camera2D]
+        zoom = 1.0
+        active = true
+        [Node2D]
+            position = (0, 0)
+        [/Node2D]
+    [/Camera2D]
+[/Camera]
+
+[TopBar]
+    [UiPanel]
+        style = { fill = "#09111BE6" stroke = "#78A4D6CC" stroke_width = 1.0 radius = 12.0 }
+        [UiBox]
+            anchor = top_left
+            position = (20, 20)
+            size = (820, 122)
+        [/UiBox]
+    [/UiPanel]
+[/TopBar]
+
+[Title]
+parent = @TopBar
+    [UiLabel]
+        text = "Demo2D stress map"
+        color = "#FFFFFFFF"
+        size = 0.050
+        horizontal_alignment = left
+        vertical_alignment = center
+        [UiBox]
+            anchor = top_left
+            position = (24, 18)
+            size = (360, 30)
+        [/UiBox]
+    [/UiLabel]
+[/Title]
+
+[Info]
+parent = @TopBar
+    [UiLabel]
+        text = "WASD/arrows pan | wheel zoom | R rebuild"
+        color = "#CFE5FFFF"
+        size = 0.032
+        horizontal_alignment = left
+        vertical_alignment = center
+        [UiBox]
+            anchor = top_left
+            position = (24, 58)
+            size = (460, 22)
+        [/UiBox]
+    [/UiLabel]
+[/Info]
+
+[Counts]
+parent = @TopBar
+    [UiLabel]
+        text = "static: 256/1024/4096 | anim: 64/256/1024 | lights: 12 | water floaters: 48 | physics: 240 | players: 48 | rigs: 12"
+        color = "#9FC2E8FF"
+        size = 0.026
+        horizontal_alignment = left
+        vertical_alignment = center
+        [UiBox]
+            anchor = top_left
+            position = (24, 82)
+            size = (760, 18)
+        [/UiBox]
+    [/UiLabel]
+[/Counts]
+
+[Parity]
+parent = @TopBar
+    [UiLabel]
+        text = "3D parity: mesh->sprites | multimesh->sprite batch | lights | water | anims | phys bones | phys collisions"
+        color = "#7EA4CFFF"
+        size = 0.023
+        horizontal_alignment = left
+        vertical_alignment = center
+        [UiBox]
+            anchor = top_left
+            position = (24, 98)
+            size = (790, 16)
+        [/UiBox]
+    [/UiLabel]
+[/Parity]

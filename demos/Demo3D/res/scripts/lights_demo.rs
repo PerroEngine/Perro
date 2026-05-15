@@ -20,6 +20,8 @@ const SPEED: f32 = 0.78;
 #[State]
 struct LightsDemoState {
     #[default = NodeID::nil()]
+    pub overlay: NodeID,
+    #[default = NodeID::nil()]
     pub red: NodeID,
     #[default = NodeID::nil()]
     pub blue: NodeID,
@@ -46,6 +48,7 @@ lifecycle!({
         let ids =
             LIGHT_MARKERS.map(|name| get_child!(ctx.run, ctx.id, name).unwrap_or(NodeID::nil()));
         with_state_mut!(ctx.run, LightsDemoState, ctx.id, |state| {
+            state.overlay = NodeID::nil();
             state.red = ids[0];
             state.blue = ids[1];
             state.green = ids[2];
@@ -57,6 +60,7 @@ lifecycle!({
             state.white_spot = ids[8];
             state.gold_spot = ids[9];
         });
+        self.push_overlay(ctx);
     }
 
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
@@ -86,10 +90,35 @@ lifecycle!({
             let _ = set_local_pos_3d!(ctx.run, id, pos);
             let _ = set_local_rot_3d!(ctx.run, id, rot);
         }
+        self.push_overlay(ctx);
     }
 });
 
-methods!({});
+methods!({
+    fn set_info_overlay(&self, ctx: &mut ScriptContext<'_, API>, overlay: NodeID) {
+        with_state_mut!(ctx.run, LightsDemoState, ctx.id, |state| {
+            state.overlay = overlay;
+        });
+        self.push_overlay(ctx);
+    }
+
+    fn push_overlay(&self, ctx: &mut ScriptContext<'_, API>) {
+        let overlay = with_state!(ctx.run, LightsDemoState, ctx.id, |state| state.overlay);
+        if overlay.is_nil() {
+            return;
+        }
+        let points = query!(ctx.run, all(node_type[PointLight3D]), in_subtree(ctx.id)).len();
+        let spots = query!(ctx.run, all(node_type[SpotLight3D]), in_subtree(ctx.id)).len();
+        let rays = query!(ctx.run, all(node_type[RayLight3D]), in_subtree(ctx.id)).len();
+        let body = format!("point lights {}\nspot rigs {} | ray lights {}", points, spots, rays);
+        let _ = call_method!(
+            ctx.run,
+            overlay,
+            func!("set_content"),
+            params!["Lights".to_string(), body]
+        );
+    }
+});
 
 fn light_pos(index: usize, phase: f32) -> Vector3 {
     match index {

@@ -1,0 +1,53 @@
+[Animation]
+name = "RigWave"
+fps = 24
+[/Animation]
+
+[Objects]
+Rig = Skeleton2D
+[/Objects]
+
+[Frame0]
+@Rig {
+    bones["Spine"].rotation_deg = 0
+    bones["Head"].rotation_deg = 0
+    bones["Arm"].rotation_deg = 12
+    bones["Forearm"].rotation_deg = 8
+}
+[/Frame0]
+
+[Frame6]
+@Rig {
+    bones["Spine"].rotation_deg = 6
+    bones["Head"].rotation_deg = -4
+    bones["Arm"].rotation_deg = 40
+    bones["Forearm"].rotation_deg = 32
+}
+[/Frame6]
+
+[Frame12]
+@Rig {
+    bones["Spine"].rotation_deg = 0
+    bones["Head"].rotation_deg = 0
+    bones["Arm"].rotation_deg = 8
+    bones["Forearm"].rotation_deg = 2
+}
+[/Frame12]
+
+[Frame18]
+@Rig {
+    bones["Spine"].rotation_deg = -6
+    bones["Head"].rotation_deg = 4
+    bones["Arm"].rotation_deg = -26
+    bones["Forearm"].rotation_deg = -18
+}
+[/Frame18]
+
+[Frame24]
+@Rig {
+    bones["Spine"].rotation_deg = 0
+    bones["Head"].rotation_deg = 0
+    bones["Arm"].rotation_deg = 12
+    bones["Forearm"].rotation_deg = 8
+}
+[/Frame24]

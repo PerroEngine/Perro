@@ -20,6 +20,17 @@ pub(super) struct UiDirectionalNav {
 }
 
 impl Runtime {
+    fn ui_pointer_screen_point(&mut self) -> Vector2 {
+        if let Some(point) = self.render_ui.pointer_screen_point {
+            return point;
+        }
+        let mouse = self.input.mouse_position();
+        let viewport = self.input.viewport_size();
+        let point = Vector2::new((mouse.x - 0.5) * viewport.x, (mouse.y - 0.5) * viewport.y);
+        self.render_ui.pointer_screen_point = Some(point);
+        point
+    }
+
     pub(super) fn ui_pointer_changed(&self) -> bool {
         let pointer = (
             self.input.mouse_position(),
@@ -55,9 +66,10 @@ impl Runtime {
         command_ids: &mut Vec<NodeID>,
         command_seen: &mut ahash::AHashSet<NodeID>,
     ) {
+        let pointer_point = self.ui_pointer_screen_point();
         if self.input.is_mouse_pressed(MouseButton::Left) {
             let hit = self
-                .hovered_focusable(computed, UiInputSource::Kbm)
+                .hovered_focusable(computed, UiInputSource::Kbm, pointer_point)
                 .map(|hit| hit.node);
             self.set_ui_focus(hit, command_ids, command_seen);
         }
@@ -89,9 +101,10 @@ impl Runtime {
         command_seen: &mut ahash::AHashSet<NodeID>,
     ) {
         let mouse_pos = self.input.mouse_position();
+        let pointer_point = self.ui_pointer_screen_point();
         let mouse_pressed = self.input.is_mouse_pressed(MouseButton::Left);
         let mouse_down = self.input.is_mouse_down(MouseButton::Left);
-        let hovered = self.hovered_text_edit(computed, UiInputSource::Kbm);
+        let hovered = self.hovered_text_edit(computed, UiInputSource::Kbm, pointer_point);
         if self.render_ui.hovered_text_edit != hovered {
             if let Some(prev) = self.render_ui.hovered_text_edit {
                 self.emit_text_edit_event(prev, "unhovered", None);
@@ -215,13 +228,14 @@ impl Runtime {
         &self,
         computed: &AHashMap<NodeID, ComputedUiRect>,
         source: UiInputSource,
+        point: Vector2,
     ) -> Option<NodeID> {
-        let mouse = self.input.mouse_position();
-        let viewport = self.input.viewport_size();
-        let point = Vector2::new((mouse.x - 0.5) * viewport.x, (mouse.y - 0.5) * viewport.y);
         let mut best = None;
         let mut best_z = i32::MIN;
-        for (node, scene_node) in self.nodes.iter() {
+        for &node in &self.render_ui.visible_text_edits {
+            let Some(scene_node) = self.nodes.get(node) else {
+                continue;
+            };
             let Some(edit) = text_edit_ref(&scene_node.data) else {
                 continue;
             };
@@ -288,7 +302,8 @@ impl Runtime {
         command_ids: &mut Vec<NodeID>,
         command_seen: &mut ahash::AHashSet<NodeID>,
     ) {
-        let hovered = self.hovered_button(computed, UiInputSource::Kbm);
+        let pointer_point = self.ui_pointer_screen_point();
+        let hovered = self.hovered_button(computed, UiInputSource::Kbm, pointer_point);
         let mouse_down = self.input.is_mouse_down(MouseButton::Left);
         let mut next_states = std::mem::take(&mut self.render_ui.button_states);
         next_states.retain(|node, _| self.nodes.get(*node).is_some());
@@ -322,7 +337,7 @@ impl Runtime {
         }
 
         self.render_ui.button_states = next_states;
-        let text_hovered = self.hovered_text_edit(computed, UiInputSource::Kbm);
+        let text_hovered = self.hovered_text_edit(computed, UiInputSource::Kbm, pointer_point);
         let cursor_icon = text_hovered
             .map(|_| perro_ui::CursorIcon::Text)
             .or_else(|| {
@@ -485,13 +500,13 @@ impl Runtime {
         &self,
         computed: &AHashMap<NodeID, ComputedUiRect>,
         source: UiInputSource,
+        point: Vector2,
     ) -> Option<NodeID> {
-        let viewport = self.input.viewport_size();
-        let mouse = self.input.mouse_position();
-        let point = Vector2::new((mouse.x - 0.5) * viewport.x, (mouse.y - 0.5) * viewport.y);
-
         let mut best: Option<(NodeID, i32)> = None;
-        for (node, scene_node) in self.nodes.iter() {
+        for &node in &self.render_ui.visible_buttons {
+            let Some(scene_node) = self.nodes.get(node) else {
+                continue;
+            };
             let SceneNodeData::UiButton(button) = &scene_node.data else {
                 continue;
             };
@@ -580,9 +595,10 @@ impl Runtime {
         &self,
         computed: &AHashMap<NodeID, ComputedUiRect>,
         source: UiInputSource,
+        point: Vector2,
     ) -> Option<UiFocusCandidate> {
-        let text = self.hovered_text_edit(computed, source);
-        let button = self.hovered_button(computed, source);
+        let text = self.hovered_text_edit(computed, source, point);
+        let button = self.hovered_button(computed, source, point);
         match (text, button) {
             (Some(text), Some(button)) => {
                 let text_z = self.ui_effective_z(text);
@@ -601,7 +617,7 @@ impl Runtime {
         source: UiInputSource,
     ) -> Vec<UiFocusCandidate> {
         let mut out = Vec::new();
-        for (node, _) in self.nodes.iter() {
+        for &node in &self.render_ui.focusable_nodes {
             if let Some(candidate) = self.focus_candidate(computed, node, source) {
                 out.push(candidate);
             }

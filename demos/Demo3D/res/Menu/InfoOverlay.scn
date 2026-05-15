@@ -1,0 +1,42 @@
+$root = @info_overlay_root
+
+[info_overlay_root]
+script = "res://scripts/demo_info_overlay.rs"
+    [UiPanel]
+        anchor = "bottom"
+        position_ratio = (0.5, 0.5)
+        size_ratio = (0.75, 0.095)
+        style = { fill = "#071018B8" stroke = "#88AADDEE" stroke_width = 1.0 radius = 0.035 }
+        padding = 8
+        visible = true
+        input_enabled = false
+        mouse_filter = "pass"
+        z_index = 5
+    [/UiPanel]
+[/info_overlay_root]
+
+[info_overlay_title]
+parent = @info_overlay_root
+    [UiLabel]
+        size_ratio = (0.30, 1.0)
+        text = "Demo"
+        text_size_ratio = 0.26
+        color = "#D9E7FFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/info_overlay_title]
+
+[info_overlay_body]
+parent = @info_overlay_root
+    [UiLabel]
+        anchor = "center"
+        position_ratio = (0.68, 0.5)
+        size_ratio = (0.56, 0.82)
+        text = ""
+        text_size_ratio = 0.22
+        color = "#D9E7FFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/info_overlay_body]

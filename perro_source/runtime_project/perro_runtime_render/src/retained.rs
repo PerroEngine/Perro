@@ -120,6 +120,7 @@ pub struct Render2DState {
     pub texture_sources: AHashMap<NodeID, String>,
     pub last_camera: Option<Camera2DState>,
     pub removed_nodes: Vec<NodeID>,
+    pub force_full_scan_once: bool,
 }
 
 pub type Render2dSystem = Render2DState;
@@ -137,11 +138,16 @@ impl Render2DState {
             texture_sources: AHashMap::default(),
             last_camera: None,
             removed_nodes: Vec::new(),
+            force_full_scan_once: false,
         }
     }
 
     pub fn note_removed_node(&mut self, node: NodeID) {
         self.removed_nodes.push(node);
+    }
+
+    pub fn request_full_scan_once(&mut self) {
+        self.force_full_scan_once = true;
     }
 
     pub fn collect_traversal<I, A, F>(
@@ -156,12 +162,14 @@ impl Render2DState {
         A: IntoIterator<Item = NodeID>,
         F: FnMut(NodeID, &mut Vec<NodeID>),
     {
+        let include_all = self.force_full_scan_once || bootstrap_scan;
+        self.force_full_scan_once = false;
         let mut traversal_ids = std::mem::take(&mut self.traversal_ids);
         collect_tree_traversal(
             &mut traversal_ids,
             dirty_ids,
             all_ids,
-            bootstrap_scan,
+            include_all,
             children_of,
         );
         traversal_ids
@@ -218,6 +226,10 @@ pub struct RenderUiState {
     pub retained_commands: AHashMap<NodeID, UiCommand>,
     pub retained_rects: AHashMap<NodeID, UiRectState>,
     pub button_states: AHashMap<NodeID, UiButtonVisualState>,
+    pub interactive_scan_seen: AHashSet<NodeID>,
+    pub visible_buttons: Vec<NodeID>,
+    pub visible_text_edits: Vec<NodeID>,
+    pub focusable_nodes: Vec<NodeID>,
     pub hovered_text_edit: Option<NodeID>,
     pub focused_ui_node: Option<NodeID>,
     pub nav_pressed_button: Option<NodeID>,
@@ -228,6 +240,7 @@ pub struct RenderUiState {
     pub text_edit_repeat_key: Option<perro_input_api::KeyCode>,
     pub text_edit_repeat_timer: f32,
     pub last_ui_pointer: Option<(Vector2, bool)>,
+    pub pointer_screen_point: Option<Vector2>,
     pub cursor_icon: perro_ui::CursorIcon,
     pub removed_nodes: Vec<NodeID>,
     pub event_signal_scratch: Vec<SignalID>,
@@ -275,6 +288,10 @@ impl RenderUiState {
             retained_commands: AHashMap::default(),
             retained_rects: AHashMap::default(),
             button_states: AHashMap::default(),
+            interactive_scan_seen: AHashSet::default(),
+            visible_buttons: Vec::new(),
+            visible_text_edits: Vec::new(),
+            focusable_nodes: Vec::new(),
             hovered_text_edit: None,
             focused_ui_node: None,
             nav_pressed_button: None,
@@ -285,6 +302,7 @@ impl RenderUiState {
             text_edit_repeat_key: None,
             text_edit_repeat_timer: 0.0,
             last_ui_pointer: None,
+            pointer_screen_point: None,
             cursor_icon: perro_ui::CursorIcon::Default,
             removed_nodes: Vec::new(),
             event_signal_scratch: Vec::new(),

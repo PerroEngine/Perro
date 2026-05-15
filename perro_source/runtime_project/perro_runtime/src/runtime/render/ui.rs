@@ -33,6 +33,90 @@ const UI_NAV_STICK_ON: f32 = 0.55;
 const UI_NAV_STICK_OFF: f32 = 0.35;
 
 impl Runtime {
+    fn rebuild_visible_interactive_ui_cache(
+        &mut self,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+    ) {
+        let mut scan_seen = std::mem::take(&mut self.render_ui.interactive_scan_seen);
+        let mut buttons = std::mem::take(&mut self.render_ui.visible_buttons);
+        let mut text_edits = std::mem::take(&mut self.render_ui.visible_text_edits);
+        let mut focusables = std::mem::take(&mut self.render_ui.focusable_nodes);
+        scan_seen.clear();
+        buttons.clear();
+        text_edits.clear();
+        focusables.clear();
+
+        for node in self.render_ui.prev_visible.iter().copied() {
+            if !scan_seen.insert(node) {
+                continue;
+            }
+            self.collect_visible_interactive_ui_node(
+                node,
+                computed,
+                &mut buttons,
+                &mut text_edits,
+                &mut focusables,
+            );
+        }
+        for node in computed.keys().copied() {
+            if !scan_seen.insert(node) {
+                continue;
+            }
+            self.collect_visible_interactive_ui_node(
+                node,
+                computed,
+                &mut buttons,
+                &mut text_edits,
+                &mut focusables,
+            );
+        }
+
+        self.render_ui.interactive_scan_seen = scan_seen;
+        self.render_ui.visible_buttons = buttons;
+        self.render_ui.visible_text_edits = text_edits;
+        self.render_ui.focusable_nodes = focusables;
+    }
+
+    fn collect_visible_interactive_ui_node(
+        &self,
+        node: NodeID,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+        buttons: &mut Vec<NodeID>,
+        text_edits: &mut Vec<NodeID>,
+        focusables: &mut Vec<NodeID>,
+    ) {
+        if !self.is_effectively_visible_for_ui(node) {
+            return;
+        }
+        let has_rect =
+            computed.contains_key(&node) || self.render_ui.retained_rects.contains_key(&node);
+        if !has_rect {
+            return;
+        }
+        let Some(scene_node) = self.nodes.get(node) else {
+            return;
+        };
+        match &scene_node.data {
+            SceneNodeData::UiButton(button) => {
+                if !button.visible || button.disabled || !button.input_enabled {
+                    return;
+                }
+                buttons.push(node);
+                focusables.push(node);
+            }
+            data => {
+                let Some(edit) = text_edit_ref(data) else {
+                    return;
+                };
+                if !edit.base.visible || !edit.base.input_enabled {
+                    return;
+                }
+                text_edits.push(node);
+                focusables.push(node);
+            }
+        }
+    }
+
     pub(crate) fn mark_ui_viewport_dirty(&mut self) {
         let ids: Vec<NodeID> = self
             .nodes
@@ -104,6 +188,7 @@ impl Runtime {
 
     fn extract_render_ui_commands_inner(&mut self, timing: Option<&mut RuntimeUiTiming>) {
         self.refresh_locale_text_bindings();
+        self.render_ui.pointer_screen_point = None;
         let total_start = timing.as_ref().map(|_| std::time::Instant::now());
         let bootstrap_scan = self.render_ui.prev_visible.is_empty()
             && self.render_ui.retained_commands.is_empty()
@@ -225,6 +310,10 @@ impl Runtime {
             self.render_ui.computed_scales.remove(&node);
             self.render_ui.retained_rects.remove(&node);
             self.render_ui.button_states.remove(&node);
+            self.render_ui.interactive_scan_seen.remove(&node);
+            self.render_ui.visible_buttons.retain(|id| *id != node);
+            self.render_ui.visible_text_edits.retain(|id| *id != node);
+            self.render_ui.focusable_nodes.retain(|id| *id != node);
             if self.render_ui.retained_commands.remove(&node).is_some() {
                 self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode { node }));
             }
@@ -263,6 +352,7 @@ impl Runtime {
             timing.auto_layout_batches = auto_layout_computed.len().min(u32::MAX as usize) as u32;
         }
         self.render_ui.auto_layout_computed = auto_layout_computed;
+        self.rebuild_visible_interactive_ui_cache(&computed);
         if let Some(timing) = timing.as_deref_mut() {
             timing.layout += layout_start
                 .expect("ui layout timing start exists")

@@ -123,7 +123,7 @@ impl NodeAPI for Runtime {
         }
 
         let slot = cached_slot_for(self, id);
-        let (transform_changed, ui_before, ui_after, camera_active_changed, value) = {
+        let (transform_changed, ui_before, ui_after, camera_2d_changed, camera_3d_changed, value) = {
             let node = if let Some((index, generation)) = slot {
                 self.nodes.slot_get_mut_checked(index, generation)?
             } else {
@@ -131,9 +131,18 @@ impl NodeAPI for Runtime {
             };
 
             let track_ui = T::NODE_TYPE.is_a(NodeType::UiBox);
-            let track_camera = T::NODE_TYPE == NodeType::Camera3D;
+            let track_camera_2d = T::NODE_TYPE == NodeType::Camera2D;
+            let track_camera_3d = T::NODE_TYPE == NodeType::Camera3D;
             let ui_before = track_ui.then(|| node.data.clone());
-            let cam_active_before = if track_camera {
+            let cam_2d_before = if track_camera_2d {
+                match &node.data {
+                    SceneNodeData::Camera2D(cam) => Some((cam.active, cam.transform, cam.zoom)),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            let cam_3d_before = if track_camera_3d {
                 match &node.data {
                     SceneNodeData::Camera3D(cam) => Some(cam.active),
                     _ => None,
@@ -151,7 +160,15 @@ impl NodeAPI for Runtime {
             });
             result?;
             let ui_after = track_ui.then(|| node.data.clone());
-            let cam_active_after = if track_camera {
+            let cam_2d_after = if track_camera_2d {
+                match &node.data {
+                    SceneNodeData::Camera2D(cam) => Some((cam.active, cam.transform, cam.zoom)),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            let cam_3d_after = if track_camera_3d {
                 match &node.data {
                     SceneNodeData::Camera3D(cam) => Some(cam.active),
                     _ => None,
@@ -163,7 +180,8 @@ impl NodeAPI for Runtime {
                 changed,
                 ui_before,
                 ui_after,
-                cam_active_before != cam_active_after,
+                cam_2d_before != cam_2d_after,
+                cam_3d_before != cam_3d_after,
                 value,
             )
         };
@@ -174,7 +192,10 @@ impl NodeAPI for Runtime {
         if transform_changed {
             self.mark_transform_dirty_recursive(id);
         }
-        if camera_active_changed {
+        if camera_2d_changed {
+            self.request_full_2d_scan_once();
+        }
+        if camera_3d_changed {
             self.request_full_3d_scan_once();
         }
         if let (Some(before), Some(after)) = (ui_before.as_ref(), ui_after.as_ref()) {
@@ -249,7 +270,16 @@ impl NodeAPI for Runtime {
             return None;
         }
 
-        let (value, transform_changed, ui_before, ui_after, vis_2d_changed, vis_3d_changed) = {
+        let (
+            value,
+            transform_changed,
+            ui_before,
+            ui_after,
+            vis_2d_changed,
+            vis_3d_changed,
+            active_camera_2d_changed,
+            active_camera_3d_changed,
+        ) = {
             let node = if let Some((index, generation)) = slot {
                 self.nodes.slot_get_mut_checked(index, generation)?
             } else {
@@ -259,12 +289,28 @@ impl NodeAPI for Runtime {
             let before_3d = node.with_base_ref::<Node3D, _>(|base| base.transform);
             let before_vis_2d = node.with_base_ref::<Node2D, _>(|base| base.visible);
             let before_vis_3d = node.with_base_ref::<Node3D, _>(|base| base.visible);
+            let before_camera_2d = match &node.data {
+                SceneNodeData::Camera2D(camera) if camera.active => Some(camera.transform),
+                _ => None,
+            };
+            let before_camera_3d = match &node.data {
+                SceneNodeData::Camera3D(camera) if camera.active => Some(camera.transform),
+                _ => None,
+            };
             let ui_before = node.with_base_ref::<UiBox, _>(Clone::clone);
             let value = node.with_base_mut::<T, _>(f)?;
             let after_2d = node.with_base_ref::<Node2D, _>(|base| base.transform);
             let after_3d = node.with_base_ref::<Node3D, _>(|base| base.transform);
             let after_vis_2d = node.with_base_ref::<Node2D, _>(|base| base.visible);
             let after_vis_3d = node.with_base_ref::<Node3D, _>(|base| base.visible);
+            let after_camera_2d = match &node.data {
+                SceneNodeData::Camera2D(camera) if camera.active => Some(camera.transform),
+                _ => None,
+            };
+            let after_camera_3d = match &node.data {
+                SceneNodeData::Camera3D(camera) if camera.active => Some(camera.transform),
+                _ => None,
+            };
             let ui_after = node.with_base_ref::<UiBox, _>(Clone::clone);
             let changed = before_2d != after_2d || before_3d != after_3d;
             (
@@ -274,6 +320,8 @@ impl NodeAPI for Runtime {
                 ui_after,
                 before_vis_2d != after_vis_2d,
                 before_vis_3d != after_vis_3d,
+                before_camera_2d != after_camera_2d,
+                before_camera_3d != after_camera_3d,
             )
         };
 
@@ -283,6 +331,12 @@ impl NodeAPI for Runtime {
         }
         if transform_changed {
             self.mark_transform_dirty_recursive(id);
+        }
+        if active_camera_2d_changed {
+            self.request_full_2d_scan_once();
+        }
+        if active_camera_3d_changed {
+            self.request_full_3d_scan_once();
         }
         if let (Some(before), Some(after)) = (ui_before.as_ref(), ui_after.as_ref()) {
             self.mark_ui_base_change(id, before, after);

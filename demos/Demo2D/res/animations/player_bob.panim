@@ -1,0 +1,38 @@
+[Animation]
+name = "PlayerBob"
+fps = 24
+[/Animation]
+
+[Objects]
+Actor = Node2D
+[/Objects]
+
+[Frame0]
+@Actor {
+    position = (0, 0)
+}
+[/Frame0]
+
+[Frame6]
+@Actor {
+    position = (0, 6)
+}
+[/Frame6]
+
+[Frame12]
+@Actor {
+    position = (0, 0)
+}
+[/Frame12]
+
+[Frame18]
+@Actor {
+    position = (0, -5)
+}
+[/Frame18]
+
+[Frame24]
+@Actor {
+    position = (0, 0)
+}
+[/Frame24]

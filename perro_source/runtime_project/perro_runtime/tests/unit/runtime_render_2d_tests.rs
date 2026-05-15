@@ -628,6 +628,62 @@ fn camera_2d_move_does_not_rewalk_sprite_render_layers() {
 }
 
 #[test]
+fn active_camera_2d_change_via_node_api_forces_full_rescan() {
+    let mut runtime = Runtime::new();
+
+    let mut camera_a = Camera2D::new();
+    camera_a.active = true;
+    camera_a.render_mask = BitMask::with([1]);
+    let camera_a = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Camera2D(camera_a)));
+
+    let mut camera_b = Camera2D::new();
+    camera_b.active = false;
+    camera_b.render_mask = BitMask::with([2]);
+    let camera_b = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Camera2D(camera_b)));
+
+    let mut sprite = Sprite2D::new();
+    sprite.texture = TextureID::from_parts(95, 0);
+    sprite.render_layers = BitMask::with([1]);
+    let sprite_node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Sprite2D(sprite)));
+
+    runtime.extract_render_2d_commands();
+    let first = collect_commands(&mut runtime);
+    assert!(!first.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::UpsertSprite { node, .. }) if *node == sprite_node
+    )));
+
+    runtime
+        .with_node_mut::<Camera2D, _, _>(camera_a, |camera| {
+            camera.active = false;
+        })
+        .expect("cam a");
+    runtime
+        .with_node_mut::<Camera2D, _, _>(camera_b, |camera| {
+            camera.active = true;
+        })
+        .expect("cam b");
+
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+    assert!(
+        commands
+            .iter()
+            .any(|command| matches!(command, RenderCommand::TwoD(Command2D::SetCamera { .. })))
+    );
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::UpsertSprite { node, .. }) if *node == sprite_node
+    )));
+}
+
+#[test]
 fn sprite_under_parent_uses_global_transform() {
     let mut runtime = Runtime::new();
 

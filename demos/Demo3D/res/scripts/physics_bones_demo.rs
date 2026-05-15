@@ -9,6 +9,8 @@ const PROJECTILES_NODE_NAME: &str = "Projectiles";
 #[State]
 struct PhysicsBonesDemoState {
     #[default = NodeID::nil()]
+    pub overlay: NodeID,
+    #[default = NodeID::nil()]
     pub camera: NodeID,
     #[default = NodeID::nil()]
     pub projectiles: NodeID,
@@ -24,9 +26,11 @@ lifecycle!({
         let projectiles =
             get_child!(ctx.run, ctx.id, PROJECTILES_NODE_NAME).unwrap_or(NodeID::nil());
         with_state_mut!(ctx.run, PhysicsBonesDemoState, ctx.id, |state| {
+            state.overlay = NodeID::nil();
             state.camera = camera;
             state.projectiles = projectiles;
         });
+        self.push_overlay(ctx);
     }
 
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
@@ -44,10 +48,18 @@ lifecycle!({
         if mouse_pressed!(ctx.ipt, MouseButton::Left) {
             self.fire(ctx);
         }
+        self.push_overlay(ctx);
     }
 });
 
 methods!({
+    fn set_info_overlay(&self, ctx: &mut ScriptContext<'_, API>, overlay: NodeID) {
+        with_state_mut!(ctx.run, PhysicsBonesDemoState, ctx.id, |state| {
+            state.overlay = overlay;
+        });
+        self.push_overlay(ctx);
+    }
+
     fn fire(&self, ctx: &mut ScriptContext<'_, API>) {
         let (camera, projectiles, radius, speed) =
             with_state!(ctx.run, PhysicsBonesDemoState, ctx.id, |state| {
@@ -80,6 +92,35 @@ methods!({
             root,
             func!("launch"),
             params![forward * speed, radius]
+        );
+        self.push_overlay(ctx);
+    }
+
+    fn push_overlay(&self, ctx: &mut ScriptContext<'_, API>) {
+        let (overlay, radius, projectiles) =
+            with_state!(ctx.run, PhysicsBonesDemoState, ctx.id, |state| {
+                (state.overlay, state.radius, state.projectiles)
+            });
+        if overlay.is_nil() {
+            return;
+        }
+        let projectile_cnt = if projectiles.is_nil() {
+            0
+        } else {
+            query!(ctx.run, all(node_type[RigidBody3D]), in_subtree(projectiles)).len()
+        };
+        let chains = query!(ctx.run, all(node_type[PhysicsBoneChain3D]), in_subtree(ctx.id)).len();
+        let body = format!(
+            "bone chains {}\nprojectiles {} | radius {:.2}",
+            chains,
+            projectile_cnt,
+            radius
+        );
+        let _ = call_method!(
+            ctx.run,
+            overlay,
+            func!("set_content"),
+            params!["Physics Bones".to_string(), body]
         );
     }
 });

@@ -1,0 +1,6 @@
+# Optional script crate dependencies.
+# On `perro check`, `perro dev`, and `perro build`, these are merged into:
+#   .perro/scripts/Cargo.toml -> [dependencies]
+#
+# Keep `perro_api` + `perro_runtime` managed by engine.
+[dependencies]

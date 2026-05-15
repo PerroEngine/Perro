@@ -1,0 +1,44 @@
+[bone "Root"]
+    parent = -1
+    rest_pos = (0, 0)
+[/bone]
+
+[bone "Spine"]
+    parent = 0
+    rest_pos = (0, 20)
+[/bone]
+
+[bone "Head"]
+    parent = 1
+    rest_pos = (0, 18)
+[/bone]
+
+[bone "Arm"]
+    parent = 1
+    rest_pos = (18, 6)
+[/bone]
+
+[bone "Forearm"]
+    parent = 3
+    rest_pos = (16, 0)
+[/bone]
+
+[bone "TailA"]
+    parent = 0
+    rest_pos = (0, -14)
+[/bone]
+
+[bone "TailB"]
+    parent = 5
+    rest_pos = (0, -12)
+[/bone]
+
+[bone "TailC"]
+    parent = 6
+    rest_pos = (0, -12)
+[/bone]
+
+[bone "TailD"]
+    parent = 7
+    rest_pos = (0, -12)
+[/bone]

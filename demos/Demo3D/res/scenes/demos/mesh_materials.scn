@@ -1,6 +1,7 @@
 $root = @MeshMaterialsDemo
 
 [MeshMaterialsDemo]
+script = "res://scripts/mesh_materials_demo.rs"
     [Node3D]
         position = (0, 0, 0)
     [/Node3D]

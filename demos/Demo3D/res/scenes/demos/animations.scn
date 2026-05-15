@@ -1,6 +1,7 @@
 $root = @AnimationDemo
 
 [AnimationDemo]
+script = "res://scripts/animations_demo.rs"
     [Node3D]
         position = (0, 0, 0)
     [/Node3D]

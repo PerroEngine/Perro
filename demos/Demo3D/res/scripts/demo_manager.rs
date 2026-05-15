@@ -6,6 +6,7 @@ const MAIN_MENU_SCENE_PATH: &ResPath = res_path!("res://Menu/MainMenu.scn");
 const PAUSE_MENU_SCENE_PATH: &ResPath = res_path!("res://Menu/PauseMenu.scn");
 const TRANSITION_FADE_SCENE_PATH: &ResPath = res_path!("res://Menu/TransitionFade.scn");
 const PROFILING_OVERLAY_SCENE_PATH: &ResPath = res_path!("res://Menu/ProfilingOverlay.scn");
+const INFO_OVERLAY_SCENE_PATH: &ResPath = res_path!("res://Menu/InfoOverlay.scn");
 const MESH_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/mesh_materials.scn");
 const LIGHTS_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/lights.scn");
 const WATER_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/water.scn");
@@ -131,6 +132,7 @@ struct DemoScenesState {
     pub pause_menu: PreloadedSceneID,
     pub fade: PreloadedSceneID,
     pub profiling_overlay: PreloadedSceneID,
+    pub info_overlay: PreloadedSceneID,
     pub mesh: PreloadedSceneID,
     pub lights: PreloadedSceneID,
     pub water: PreloadedSceneID,
@@ -151,6 +153,7 @@ impl Default for DemoScenesState {
             pause_menu: PreloadedSceneID::nil(),
             fade: PreloadedSceneID::nil(),
             profiling_overlay: PreloadedSceneID::nil(),
+            info_overlay: PreloadedSceneID::nil(),
             mesh: PreloadedSceneID::nil(),
             lights: PreloadedSceneID::nil(),
             water: PreloadedSceneID::nil(),
@@ -173,6 +176,7 @@ struct DemoRefsState {
     pub fade_root: NodeID,
     pub fade_panel: NodeID,
     pub profiling_overlay_root: NodeID,
+    pub info_overlay_root: NodeID,
     pub active_demo_root: NodeID,
     pub pause_sens_label: NodeID,
     pub hub_buttons: Vec<NodeID>,
@@ -187,6 +191,7 @@ impl Default for DemoRefsState {
             fade_root: NodeID::nil(),
             fade_panel: NodeID::nil(),
             profiling_overlay_root: NodeID::nil(),
+            info_overlay_root: NodeID::nil(),
             active_demo_root: NodeID::nil(),
             pause_sens_label: NodeID::nil(),
             hub_buttons: vec![NodeID::nil(); 11],
@@ -230,6 +235,10 @@ struct DemoRuntimeState {
     pub freecam_speed: f32,
     pub pause_applied: bool,
     pub physics_was_paused: bool,
+    pub hub_input_enabled: bool,
+    pub pause_input_enabled: bool,
+    pub freecam_input_enabled: bool,
+    pub mouse_captured: bool,
 }
 
 impl Default for DemoRuntimeState {
@@ -249,6 +258,10 @@ impl Default for DemoRuntimeState {
             freecam_speed: DEFAULT_FREECAM_SPEED,
             pause_applied: false,
             physics_was_paused: false,
+            hub_input_enabled: false,
+            pause_input_enabled: false,
+            freecam_input_enabled: false,
+            mouse_captured: false,
         }
     }
 }
@@ -274,6 +287,8 @@ lifecycle!({
         let fade = scene_preload!(ctx.run, TRANSITION_FADE_SCENE_PATH).expect("preload fade");
         let profiling_overlay = scene_preload!(ctx.run, PROFILING_OVERLAY_SCENE_PATH)
             .expect("preload profiling overlay");
+        let info_overlay =
+            scene_preload!(ctx.run, INFO_OVERLAY_SCENE_PATH).expect("preload info overlay");
         let mesh = scene_preload!(ctx.run, MESH_DEMO_SCENE_PATH).expect("preload mesh demo");
         let lights = scene_preload!(ctx.run, LIGHTS_DEMO_SCENE_PATH).expect("preload lights demo");
         let water = scene_preload!(ctx.run, WATER_DEMO_SCENE_PATH).expect("preload water demo");
@@ -299,6 +314,7 @@ lifecycle!({
                 pause_menu,
                 fade,
                 profiling_overlay,
+                info_overlay,
                 mesh,
                 lights,
                 water,
@@ -415,6 +431,7 @@ lifecycle!({
         self.load_pause_menu_scene(ctx);
         self.load_fade_scene(ctx);
         self.load_profiling_overlay_scene(ctx);
+        self.load_info_overlay_scene(ctx);
         self.apply_mode_io(ctx);
         self.sync_ui(ctx);
     }
@@ -655,6 +672,31 @@ methods!({
         set_ui_tree_visible(ctx, root, true);
     }
 
+    fn load_info_overlay_scene(&self, ctx: &mut ScriptContext<'_, API>) {
+        let (parent, scene) = (
+            scene_ui_parent(ctx, ctx.id),
+            with_state!(ctx.run, DemoManagerState, ctx.id, |state| state
+                .scenes
+                .info_overlay),
+        );
+        if parent.is_nil() || scene.is_nil() {
+            return;
+        }
+
+        let root = match scene_load!(ctx.run, scene) {
+            Ok(id) => id,
+            Err(err) => {
+                log_error!("[DemoManager] info overlay load fail: {:?}", err);
+                return;
+            }
+        };
+        reparent!(ctx.run, parent, root);
+        with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
+            state.refs.info_overlay_root = root;
+        });
+        self.sync_info_overlay(ctx);
+    }
+
     fn queue_load_demo(&self, ctx: &mut ScriptContext<'_, API>, demo: DemoKind) {
         if demo == DemoKind::None {
             return;
@@ -823,6 +865,9 @@ methods!({
             state.runtime.mode = DemoMode::DemoActive;
             state.runtime.pause_alpha = 0.0;
         });
+        self.sync_info_overlay(ctx);
+        self.sync_ui(ctx);
+        self.apply_info_overlay_to_active_demo(ctx);
         self.apply_mouse_sensitivity_to_active_demo(ctx);
         self.apply_freecam_speed_to_active_demo(ctx);
         mouse_capture!(ctx.ipt);
@@ -839,6 +884,8 @@ methods!({
         with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
             state.refs.active_demo_root = NodeID::nil();
         });
+        self.sync_info_overlay(ctx);
+        self.sync_ui(ctx);
     }
 
     fn open_pause(&self, ctx: &mut ScriptContext<'_, API>) {
@@ -1024,21 +1071,30 @@ methods!({
     }
 
     fn sync_ui(&self, ctx: &mut ScriptContext<'_, API>) {
-        let (mode, fade_action, menu_root, pause_root, profiling_overlay_root, pause_alpha) =
-            with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
-                (
-                    state.runtime.mode,
-                    state.runtime.fade_action,
-                    state.refs.main_menu_root,
-                    state.refs.pause_menu_root,
-                    state.refs.profiling_overlay_root,
-                    state.runtime.pause_alpha,
-                )
-            });
+        let (
+            mode,
+            fade_action,
+            menu_root,
+            pause_root,
+            profiling_overlay_root,
+            info_overlay_root,
+            pause_alpha,
+        ) = with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
+            (
+                state.runtime.mode,
+                state.runtime.fade_action,
+                state.refs.main_menu_root,
+                state.refs.pause_menu_root,
+                state.refs.profiling_overlay_root,
+                state.refs.info_overlay_root,
+                state.runtime.pause_alpha,
+            )
+        });
         let show_hub_menu = mode == DemoMode::Hub
             && !matches!(fade_action, FadeAction::LoadDemo | FadeAction::RestartDemo);
         set_ui_tree_visible(ctx, menu_root, show_hub_menu);
         set_ui_tree_visible(ctx, profiling_overlay_root, true);
+        set_ui_tree_visible(ctx, info_overlay_root, true);
         set_ui_tree_visible(
             ctx,
             pause_root,
@@ -1046,6 +1102,59 @@ methods!({
         );
         self.apply_pause_alpha(ctx, pause_alpha);
         self.apply_mode_io(ctx);
+    }
+
+    fn sync_info_overlay(&self, ctx: &mut ScriptContext<'_, API>) {
+        let (overlay, active_demo, active_root) =
+            with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
+                (
+                    state.refs.info_overlay_root,
+                    state.runtime.active_demo,
+                    state.refs.active_demo_root,
+                )
+            });
+        if overlay.is_nil() {
+            return;
+        }
+        set_var!(
+            ctx.run,
+            overlay,
+            var!("active_demo"),
+            variant!(active_demo_name(active_demo))
+        );
+        set_var!(
+            ctx.run,
+            overlay,
+            var!("active_demo_root"),
+            variant!(active_root)
+        );
+        let _ = call_method!(ctx.run, overlay, func!("clear_content"), params![]);
+    }
+
+    fn apply_info_overlay_to_active_demo(&self, ctx: &mut ScriptContext<'_, API>) {
+        let (root, overlay) = with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
+            (state.refs.active_demo_root, state.refs.info_overlay_root)
+        });
+        if root.is_nil() {
+            return;
+        }
+
+        let mut stack = vec![root];
+        while let Some(id) = stack.pop() {
+            let _ = call_method!(
+                ctx.run,
+                id,
+                func!("set_info_overlay"),
+                params![overlay]
+            );
+            if let Some(children) = get_node_children_ids!(ctx.run, id) {
+                for child in children {
+                    if !child.is_nil() {
+                        stack.push(child);
+                    }
+                }
+            }
+        }
     }
 
     fn apply_mode_io(&self, ctx: &mut ScriptContext<'_, API>) {
@@ -1068,29 +1177,52 @@ methods!({
         let pause_enabled = mode == DemoMode::Paused
             && !fade_active
             && (pause_alpha / PAUSE_BG_MAX_ALPHA).clamp(0.0, 1.0) >= 0.85;
+        let freecam_enabled = !(hub_visible || pause_visible);
+        let mouse_captured = freecam_enabled;
+        let (chg_hub, chg_pause, chg_freecam, chg_mouse) =
+            with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
+                let chg_hub = state.runtime.hub_input_enabled != hub_enabled;
+                let chg_pause = state.runtime.pause_input_enabled != pause_enabled;
+                let chg_freecam = state.runtime.freecam_input_enabled != freecam_enabled;
+                let chg_mouse = state.runtime.mouse_captured != mouse_captured;
+                state.runtime.hub_input_enabled = hub_enabled;
+                state.runtime.pause_input_enabled = pause_enabled;
+                state.runtime.freecam_input_enabled = freecam_enabled;
+                state.runtime.mouse_captured = mouse_captured;
+                (chg_hub, chg_pause, chg_freecam, chg_mouse)
+            })
+            .unwrap_or((false, false, false, false));
 
-        for id in hub_buttons {
-            if !id.is_nil() {
-                with_node_mut!(ctx.run, UiButton, id, |button| {
-                    button.input_enabled = hub_enabled;
-                });
+        if chg_hub {
+            for id in hub_buttons {
+                if !id.is_nil() {
+                    with_node_mut!(ctx.run, UiButton, id, |button| {
+                        button.input_enabled = hub_enabled;
+                    });
+                }
             }
         }
 
-        for id in pause_buttons {
-            if !id.is_nil() {
-                with_node_mut!(ctx.run, UiButton, id, |button| {
-                    button.input_enabled = pause_enabled;
-                });
+        if chg_pause {
+            for id in pause_buttons {
+                if !id.is_nil() {
+                    with_node_mut!(ctx.run, UiButton, id, |button| {
+                        button.input_enabled = pause_enabled;
+                    });
+                }
             }
         }
 
-        if hub_visible || pause_visible {
-            self.apply_freecam_input_enabled_to_active_demo(ctx, false);
-            mouse_show!(ctx.ipt);
-        } else {
-            self.apply_freecam_input_enabled_to_active_demo(ctx, true);
-            mouse_capture!(ctx.ipt);
+        if chg_freecam {
+            self.apply_freecam_input_enabled_to_active_demo(ctx, freecam_enabled);
+        }
+
+        if chg_mouse {
+            if mouse_captured {
+                mouse_capture!(ctx.ipt);
+            } else {
+                mouse_show!(ctx.ipt);
+            }
         }
     }
 
@@ -1412,5 +1544,22 @@ fn fade_action_name(action: FadeAction) -> &'static str {
         FadeAction::LoadDemo => "load_demo",
         FadeAction::RestartDemo => "restart_demo",
         FadeAction::BackToHub => "back_to_hub",
+    }
+}
+
+fn active_demo_name(demo: DemoKind) -> &'static str {
+    match demo {
+        DemoKind::None => "none",
+        DemoKind::MeshMaterials => "mesh_materials",
+        DemoKind::Lights => "lights",
+        DemoKind::Water => "water",
+        DemoKind::Animations => "animations",
+        DemoKind::PhysicsBones => "physics_bones",
+        DemoKind::PhysicsCollisions => "physics_collisions",
+        DemoKind::Sky => "sky",
+        DemoKind::MeshBlending => "mesh_blending",
+        DemoKind::MultiMesh => "multimesh",
+        DemoKind::Particles => "particles",
+        DemoKind::PositionalAudio => "positional_audio",
     }
 }

@@ -1,0 +1,114 @@
+$root = @pause_bg_panel
+$button_style = { fill = "#101820F0" stroke = "#88AADD" stroke_width = 1.0 radius = 0.08 }
+$button_hover_style = { fill = "#1B2C3CF0" stroke = "#B8D8FF" stroke_width = 1.0 radius = 0.08 }
+$button_pressed_style = { fill = "#071018F0" stroke = "#FFFFFF" stroke_width = 1.0 radius = 0.06 }
+
+[pause_bg_panel]
+    [UiPanel]
+        anchor = "center"
+        position_ratio = (0.5, 0.5)
+        size_ratio = (1.0, 1.0)
+        style = { fill = "#070A0F00" stroke = "#00000000" stroke_width = 0.0 radius = 0 }
+        visible = false
+        padding = 12
+    [/UiPanel]
+[/pause_bg_panel]
+
+[pause_panel]
+parent = @pause_bg_panel
+    [UiPanel]
+        anchor = "center"
+        position_ratio = (0.5, 0.5)
+        size_ratio = (0.42, 0.46)
+        style = { fill = "#0B101800" stroke = "#D0E0EF00" stroke_width = 1.0 radius = 0.04 }
+        padding = 12
+    [/UiPanel]
+[/pause_panel]
+
+[pause_content]
+parent = @pause_panel
+    [UiVLayout]
+        anchor = "center"
+        position_ratio = (0.5, 0.5)
+        size_ratio = (0.90, 0.90)
+        spacing = 0.035
+        h_align = "fill"
+        v_align = "fill"
+    [/UiVLayout]
+[/pause_content]
+
+[pause_title]
+parent = @pause_content
+    [UiLabel]
+        size_ratio = (1.0, 0.18)
+        text = "Paused"
+        text_size_ratio = 0.30
+        color = "#FFFFFF00"
+    [/UiLabel]
+[/pause_title]
+
+[pause_btn_resume]
+parent = @pause_content
+    [UiButton]
+        size_ratio = (1.0, 0.22)
+        click_signals = ["pause_resume_click"]
+        style = $button_style
+        hover = { style = $button_hover_style }
+        pressed = { style = $button_pressed_style }
+    [/UiButton]
+[/pause_btn_resume]
+[pause_btn_resume_label]
+parent = @pause_btn_resume
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Resume"
+        text_size_ratio = 0.25
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/pause_btn_resume_label]
+
+[pause_btn_restart]
+parent = @pause_content
+    [UiButton]
+        size_ratio = (1.0, 0.22)
+        click_signals = ["pause_restart_click"]
+        style = $button_style
+        hover = { style = $button_hover_style }
+        pressed = { style = $button_pressed_style }
+    [/UiButton]
+[/pause_btn_restart]
+[pause_btn_restart_label]
+parent = @pause_btn_restart
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Restart Demo"
+        text_size_ratio = 0.25
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/pause_btn_restart_label]
+
+[pause_btn_hub]
+parent = @pause_content
+    [UiButton]
+        size_ratio = (1.0, 0.22)
+        click_signals = ["pause_hub_click"]
+        style = $button_style
+        hover = { style = $button_hover_style }
+        pressed = { style = $button_pressed_style }
+    [/UiButton]
+[/pause_btn_hub]
+[pause_btn_hub_label]
+parent = @pause_btn_hub
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Quit To Main Menu"
+        text_size_ratio = 0.25
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/pause_btn_hub_label]

@@ -11,6 +11,8 @@ const DROP_BALL_NODE_NAME: &str = "DropBall";
 #[State]
 struct PhysicsCollisionsDemoState {
     #[default = NodeID::nil()]
+    pub overlay: NodeID,
+    #[default = NodeID::nil()]
     pub area_mesh: NodeID,
     #[default = NodeID::nil()]
     pub area_probe: NodeID,
@@ -46,6 +48,7 @@ lifecycle!({
         );
 
         with_state_mut!(ctx.run, PhysicsCollisionsDemoState, ctx.id, |state| {
+            state.overlay = NodeID::nil();
             state.area_mesh = area_mesh;
             state.area_probe = area_probe;
             state.left_ball = left_ball;
@@ -70,6 +73,7 @@ lifecycle!({
 
         self.reset_bodies(ctx);
         self.set_area_active(ctx, false);
+        self.push_overlay(ctx);
     }
 
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
@@ -88,17 +92,27 @@ lifecycle!({
         if do_reset {
             self.reset_bodies(ctx);
             self.set_area_active(ctx, false);
+            self.push_overlay(ctx);
         }
     }
 });
 
 methods!({
+    fn set_info_overlay(&self, ctx: &mut ScriptContext<'_, API>, overlay: NodeID) {
+        with_state_mut!(ctx.run, PhysicsCollisionsDemoState, ctx.id, |state| {
+            state.overlay = overlay;
+        });
+        self.push_overlay(ctx);
+    }
+
     fn on_area_entered(&self, ctx: &mut ScriptContext<'_, API>, _area: NodeID, _other: NodeID) {
         self.set_area_active(ctx, true);
+        self.push_overlay(ctx);
     }
 
     fn on_area_exited(&self, ctx: &mut ScriptContext<'_, API>, _area: NodeID, _other: NodeID) {
         self.set_area_active(ctx, false);
+        self.push_overlay(ctx);
     }
 
     fn reset_bodies(&self, ctx: &mut ScriptContext<'_, API>) {
@@ -157,6 +171,28 @@ methods!({
         with_node_mut!(ctx.run, MeshInstance3D, mesh, |node| {
             node.set_material(material);
         });
+    }
+
+    fn push_overlay(&self, ctx: &mut ScriptContext<'_, API>) {
+        let overlay = with_state!(ctx.run, PhysicsCollisionsDemoState, ctx.id, |state| state.overlay);
+        if overlay.is_nil() {
+            return;
+        }
+        let rigid = query!(ctx.run, all(node_type[RigidBody3D]), in_subtree(ctx.id)).len();
+        let active = with_state!(ctx.run, PhysicsCollisionsDemoState, ctx.id, |state| {
+            state.reset_timer
+        }) < 0.25;
+        let body = format!(
+            "rigid bodies {}\nsignal area {}",
+            rigid,
+            if active { "active" } else { "idle" }
+        );
+        let _ = call_method!(
+            ctx.run,
+            overlay,
+            func!("set_content"),
+            params!["Physics Collisions".to_string(), body]
+        );
     }
 });
 

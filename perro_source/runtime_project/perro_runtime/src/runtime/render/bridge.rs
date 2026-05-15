@@ -151,6 +151,10 @@ impl Runtime {
         self.render_3d.request_full_scan_once();
     }
 
+    pub(crate) fn request_full_2d_scan_once(&mut self) {
+        self.render_2d.request_full_scan_once();
+    }
+
     pub fn force_rerender(&mut self, root_id: NodeID) {
         if root_id.is_nil() || self.nodes.get(root_id).is_none() {
             return;
