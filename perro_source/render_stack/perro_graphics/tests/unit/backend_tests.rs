@@ -24,6 +24,8 @@ fn water_2d_state() -> Water2DState {
         model: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
         z_index: 0,
         paused: false,
+        simulation_time: 0.0,
+        simulation_delta: 1.0 / 60.0,
         size: [32.0, 32.0],
         shape: WaterShapeState::Rect,
         resolution: [64, 64],
@@ -80,7 +82,6 @@ fn water_2d_state() -> Water2DState {
         }]),
         queries: Arc::from([]),
         impacts: Arc::from([]),
-        contacts: Arc::from([]),
         coastline_shapes: Arc::from([]),
     }
 }
@@ -94,6 +95,8 @@ fn water_3d_state() -> Water3DState {
             [0.0, 0.0, 0.0, 1.0],
         ],
         paused: false,
+        simulation_time: 0.0,
+        simulation_delta: 1.0 / 60.0,
         size: [32.0, 32.0],
         shape: WaterShapeState::Rect,
         resolution: [64, 64],
@@ -150,7 +153,6 @@ fn water_3d_state() -> Water3DState {
         }]),
         queries: Arc::from([]),
         impacts: Arc::from([]),
-        contacts: Arc::from([]),
         coastline_shapes: Arc::from([]),
     }
 }

@@ -6,6 +6,7 @@ const DEFAULT_MOUSE_SENSITIVITY: f32 = 0.00012;
 const MAX_MOUSE_DELTA: f32 = 120.0;
 const PITCH_LIMIT: f32 = 1.553343;
 const CAPTURE_WARMUP_FRAMES: u8 = 2;
+const MAX_MOVE_DT: f32 = 1.0 / 45.0;
 const WORLD_UP: Vector3 = Vector3::new(0.0, 1.0, 0.0);
 
 #[State]
@@ -54,7 +55,7 @@ lifecycle!({
             state.debug_frame = state.debug_frame.wrapping_add(1);
         });
 
-        let dt = delta_time!(ctx.run);
+        let dt = delta_time!(ctx.run).clamp(0.0, MAX_MOVE_DT);
 
         let (yaw, pitch, speed) = with_state_mut!(ctx.run, DemoFreecam3DState, ctx.id, |state| {
             if state.capture_warmup > 0 {

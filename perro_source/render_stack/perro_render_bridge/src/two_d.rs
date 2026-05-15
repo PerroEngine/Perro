@@ -158,6 +158,8 @@ pub struct Water2DState {
     pub model: [[f32; 3]; 3],
     pub z_index: i32,
     pub paused: bool,
+    pub simulation_time: f32,
+    pub simulation_delta: f32,
     pub size: [f32; 2],
     pub shape: WaterShapeState,
     pub resolution: [u32; 2],
@@ -207,7 +209,6 @@ pub struct Water2DState {
     pub links: Arc<[WaterLinkState]>,
     pub queries: Arc<[WaterBodyQueryState]>,
     pub impacts: Arc<[WaterImpact2D]>,
-    pub contacts: Arc<[WaterContact2D]>,
     pub coastline_shapes: Arc<[WaterCoastlineShape2D]>,
 }
 

@@ -16,8 +16,8 @@ use perro_render_bridge::{
     ParticlePath3D, ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D,
     PointLight3DState, PointParticles3DState, RayLight3DState, RenderCommand, ResourceCommand,
     SkeletonPalette, Sky3DState, SkyTime3DState, SpotLight3DState, Water3DState,
-    WaterBodyQueryState, WaterCoastlineShape3D, WaterContact3D, WaterIdleModeState,
-    WaterImpact3D, WaterLinkState, WaterShapeState,
+    WaterBodyQueryState, WaterCoastlineShape3D, WaterIdleModeState, WaterImpact3D,
+    WaterLinkState, WaterShapeState,
 };
 use perro_runtime_render::{material_3d_request, mesh_3d_request};
 use perro_structs::BitMask;
@@ -225,7 +225,6 @@ impl Runtime {
                 let coastline_shapes = self.collect_water_coastline_shapes_3d(node, &water);
                 let queries = self.collect_water_queries_3d(node);
                 let impacts = self.collect_water_impacts_3d(node, &water);
-                let contacts = self.collect_water_contacts_3d(node);
                 let links = self.collect_water_links_3d(node, &water);
                 self.queue_render_command(RenderCommand::ThreeD(Box::new(
                     Command3D::UpsertWater {
@@ -233,6 +232,8 @@ impl Runtime {
                         water: Box::new(Water3DState {
                             model,
                             paused: self.physics_paused(),
+                            simulation_time: self.time.elapsed,
+                            simulation_delta: self.time.delta.max(0.0),
                             size: water_render_size(water),
                             shape: water_shape_state(water.shape),
                             resolution: water.resolution,
@@ -282,7 +283,6 @@ impl Runtime {
                             links,
                             queries,
                             impacts,
-                            contacts,
                             coastline_shapes,
                         }),
                     },
@@ -1141,24 +1141,12 @@ impl Runtime {
         let body_ids: Vec<_> = self
             .nodes
             .iter()
-            .filter_map(|(id, node)| {
-                matches!(
-                    node.data,
-                    SceneNodeData::StaticBody3D(_) | SceneNodeData::RigidBody3D(_)
-                )
-                .then_some(id)
-            })
+            .filter_map(|(id, node)| matches!(node.data, SceneNodeData::StaticBody3D(_)).then_some(id))
             .collect();
         for body_id in body_ids {
             let Some((enabled, layers, mask, children)) =
                 self.nodes.get(body_id).and_then(|node| match &node.data {
                     SceneNodeData::StaticBody3D(body) => Some((
-                        body.enabled,
-                        body.collision_layers,
-                        body.collision_mask,
-                        node.children_slice().to_vec(),
-                    )),
-                    SceneNodeData::RigidBody3D(body) => Some((
                         body.enabled,
                         body.collision_layers,
                         body.collision_mask,
@@ -1339,26 +1327,6 @@ impl Runtime {
         )
     }
 
-    fn collect_water_contacts_3d(&mut self, water_id: NodeID) -> Arc<[WaterContact3D]> {
-        let Some(contacts) = self.water_contacts_3d.get(&water_id) else {
-            return Arc::from([]);
-        };
-        Arc::from(
-            contacts
-                .iter()
-                .map(|contact| WaterContact3D {
-                    body: contact.body,
-                    position: [contact.position.x, contact.position.y, contact.position.z],
-                    velocity: [contact.velocity.x, contact.velocity.y, contact.velocity.z],
-                    radius: contact.radius,
-                    foam_amount: contact.foam_amount,
-                    persist: contact.persist,
-                })
-                .collect::<Vec<_>>()
-                .into_boxed_slice(),
-        )
-    }
-
     fn collect_water_impacts_3d(
         &mut self,
         water_id: NodeID,
@@ -1369,28 +1337,28 @@ impl Runtime {
         };
         let water_inv = water_global.to_mat4().inverse();
         let half = water.shape.surface_size() * 0.5;
-        let body_ids: Vec<_> = self
-            .nodes
-            .iter()
-            .filter_map(|(id, node)| {
+        self.water_collect_ids_scratch.clear();
+        self.water_collect_ids_scratch.extend(
+            self.nodes.iter().filter_map(|(id, node)| {
                 matches!(node.data, SceneNodeData::RigidBody3D(_)).then_some(id)
-            })
-            .collect();
+            }),
+        );
+        let mut body_ids = std::mem::take(&mut self.water_collect_ids_scratch);
         let mut impacts = Vec::new();
-        for body_id in body_ids {
+        for body_id in body_ids.iter().copied() {
             let Some((layers, mask, mass, density, velocity)) =
                 self.nodes.get(body_id).and_then(|node| {
-                    let SceneNodeData::RigidBody3D(body) = &node.data else {
-                        return None;
-                    };
-                    Some((
-                        body.collision_layers,
-                        body.collision_mask,
-                        body.mass,
-                        body.density,
-                        body.linear_velocity,
-                    ))
-                })
+                let SceneNodeData::RigidBody3D(body) = &node.data else {
+                    return None;
+                };
+                Some((
+                    body.collision_layers,
+                    body.collision_mask,
+                    body.mass,
+                    body.density,
+                    body.linear_velocity,
+                ))
+            })
             else {
                 continue;
             };
@@ -1410,10 +1378,18 @@ impl Runtime {
             {
                 continue;
             }
-            let sample = crate::runtime::physics::water_physics_sample_for_body(
+            let sample = crate::runtime::physics::water_physics_sample_for_body_cached(
                 water,
                 perro_structs::Vector2::new(local.x, local.z),
                 self.time.elapsed,
+                self.water_body_samples
+                    .get(&crate::runtime::WaterBodySampleKey {
+                        water: water_id,
+                        body: body_id,
+                        point: 0,
+                    })
+                    .copied(),
+                self.water_samples.get(&water_id).copied(),
             );
             let target = crate::runtime::physics::water_target_submerged(density);
             let submerged = sample.height - local.y;
@@ -1443,6 +1419,8 @@ impl Runtime {
                 cavitation: (vertical_impact * 0.035 + surface_contact * 0.08).clamp(0.0, 1.0),
             });
         }
+        body_ids.clear();
+        self.water_collect_ids_scratch = body_ids;
         for impact in self.force_water_impacts_3d.iter() {
             let local = water_local_point_3d(water_inv, impact.position);
             if local.x.abs() > half.x + impact.radius
@@ -1521,15 +1499,15 @@ impl Runtime {
         let Some(water_global) = self.get_global_transform_3d(water_id) else {
             return Arc::from([]);
         };
-        let other_ids: Vec<_> = self
-            .nodes
-            .iter()
-            .filter_map(|(id, node)| {
+        self.water_collect_ids_scratch.clear();
+        self.water_collect_ids_scratch.extend(
+            self.nodes.iter().filter_map(|(id, node)| {
                 (id != water_id && matches!(node.data, SceneNodeData::WaterBody3D(_))).then_some(id)
-            })
-            .collect();
+            }),
+        );
+        let mut other_ids = std::mem::take(&mut self.water_collect_ids_scratch);
         let mut links = Vec::new();
-        for other_id in other_ids {
+        for other_id in other_ids.iter().copied() {
             let Some(other_water) = self.nodes.get(other_id).and_then(|node| {
                 let SceneNodeData::WaterBody3D(other) = &node.data else {
                     return None;
@@ -1572,6 +1550,8 @@ impl Runtime {
                 flow_transfer: water.link.flow_transfer.min(other_water.link.flow_transfer),
             });
         }
+        other_ids.clear();
+        self.water_collect_ids_scratch = other_ids;
         Arc::from(links)
     }
 }

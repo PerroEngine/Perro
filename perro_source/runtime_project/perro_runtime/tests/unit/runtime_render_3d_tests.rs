@@ -76,6 +76,7 @@ fn linked_3d_water_mirrors_wake_across_overlap() {
     assert!(water.impacts[0].strength < 10.0);
 }
 
+
 #[test]
 fn linked_3d_waters_both_collect_shared_coastline_shape() {
     let mut runtime = Runtime::new();

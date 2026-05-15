@@ -15,9 +15,10 @@ use crate::{
     visual_accessibility::VisualAccessibilityProcessor,
 };
 use epaint::{ClippedPrimitive, textures::TexturesDelta};
+use glam::{Mat4, Quat, Vec3, Vec4};
 use perro_ids::NodeID;
 use perro_render_bridge::{
-    Camera3DState, Light2DState, PointParticles3DState, Sprite2DCommand, Water2DState,
+    Camera3DState, CameraProjectionState, Light2DState, PointParticles3DState, Sprite2DCommand, Water2DState,
     Water3DState, WaterBodySampleState, WaterSampleState,
 };
 use perro_structs::VisualAccessibilitySettings;
@@ -38,6 +39,75 @@ const CLEAR_R: f64 = 0.011612245179743885;
 const CLEAR_G: f64 = 0.009134058702220787;
 const CLEAR_B: f64 = 0.008568125618069307;
 const SMOOTH_SAMPLE_COUNT: u32 = 4;
+
+fn water_camera_view_proj(camera: &Camera3DState, width: u32, height: u32) -> Mat4 {
+    let w = width.max(1) as f32;
+    let h = height.max(1) as f32;
+    let aspect = w / h;
+    let proj = match camera.projection {
+        CameraProjectionState::Perspective {
+            fov_y_degrees,
+            near,
+            far,
+        } => {
+            let fov = fov_y_degrees
+                .to_radians()
+                .clamp(10.0f32.to_radians(), 120.0f32.to_radians());
+            Mat4::perspective_rh_gl(fov, aspect.max(1.0e-6), near.max(1.0e-3), far.max(near + 1.0e-3))
+        }
+        CameraProjectionState::Orthographic { size, near, far } => {
+            let half_h = (size.abs() * 0.5).max(1.0e-3);
+            let half_w = half_h * aspect.max(1.0e-6);
+            Mat4::orthographic_rh(-half_w, half_w, -half_h, half_h, near.max(1.0e-3), far.max(near + 1.0e-3))
+        }
+        CameraProjectionState::Frustum {
+            left,
+            right,
+            bottom,
+            top,
+            near,
+            far,
+        } => Mat4::frustum_rh_gl(left, right, bottom, top, near.max(1.0e-3), far.max(near + 1.0e-3)),
+    };
+    let pos = Vec3::from(camera.position);
+    let rot_raw = Quat::from_xyzw(
+        camera.rotation[0],
+        camera.rotation[1],
+        camera.rotation[2],
+        camera.rotation[3],
+    );
+    let rot = if rot_raw.is_finite() && rot_raw.length_squared() > 1.0e-6 {
+        rot_raw.normalize()
+    } else {
+        Quat::IDENTITY
+    };
+    let world = Mat4::from_rotation_translation(rot, pos);
+    proj * world.inverse()
+}
+
+fn water_extract_frustum_planes(view_proj: Mat4) -> [[f32; 4]; 6] {
+    let r0 = Vec4::new(view_proj.x_axis.x, view_proj.y_axis.x, view_proj.z_axis.x, view_proj.w_axis.x);
+    let r1 = Vec4::new(view_proj.x_axis.y, view_proj.y_axis.y, view_proj.z_axis.y, view_proj.w_axis.y);
+    let r2 = Vec4::new(view_proj.x_axis.z, view_proj.y_axis.z, view_proj.z_axis.z, view_proj.w_axis.z);
+    let r3 = Vec4::new(view_proj.x_axis.w, view_proj.y_axis.w, view_proj.z_axis.w, view_proj.w_axis.w);
+    [
+        water_normalize_plane(r3 + r0).to_array(),
+        water_normalize_plane(r3 - r0).to_array(),
+        water_normalize_plane(r3 + r1).to_array(),
+        water_normalize_plane(r3 - r1).to_array(),
+        water_normalize_plane(r3 + r2).to_array(),
+        water_normalize_plane(r3 - r2).to_array(),
+    ]
+}
+
+fn water_normalize_plane(plane: Vec4) -> Vec4 {
+    let len = plane.truncate().length();
+    if len > 1.0e-6 && len.is_finite() {
+        plane / len
+    } else {
+        plane
+    }
+}
 
 pub const DIRTY_2D: u32 = 1 << 0;
 pub const DIRTY_3D: u32 = 1 << 1;
@@ -251,6 +321,8 @@ pub struct RenderFrame<'a> {
     pub ui_texture_size: [u32; 2],
     pub ui_revision: u64,
     pub redraw_requested: bool,
+    pub frame_time_seconds: f32,
+    pub frame_delta_seconds: f32,
     pub frame_dirty_bits: u32,
     pub static_texture_lookup: Option<StaticTextureLookup>,
     pub static_mesh_lookup: Option<StaticMeshLookup>,
@@ -611,6 +683,8 @@ impl Gpu {
             late_overlay_sprites_2d,
             late_overlay_point_lights_2d,
             redraw_requested,
+            frame_time_seconds,
+            frame_delta_seconds,
             frame_dirty_bits,
             static_texture_lookup,
             static_mesh_lookup,
@@ -672,11 +746,7 @@ impl Gpu {
             && (has(DIRTY_PARTICLES_3D)
                 || self.last_prepare_particles_revision != point_particles_3d_revision
                 || three_d_content_changed);
-        let needs_water_prepare = needs_water
-            && (self.last_prepare_water_2d_revision != waters_2d_revision
-                || self.last_prepare_water_3d_revision != waters_3d_revision
-                || three_d_content_changed
-                || redraw_requested);
+        let needs_water_prepare = needs_water;
 
         let prepare_2d_start = Instant::now();
         let mut did_prepare_2d = false;
@@ -749,6 +819,8 @@ impl Gpu {
                 let sky_color = sky_clear_color(lighting_3d)
                     .map(|color| [color.r as f32, color.g as f32, color.b as f32])
                     .unwrap_or([0.0, 0.0, 0.0]);
+                let water_view_proj =
+                    water_camera_view_proj(&camera_3d, self.config.width, self.config.height);
                 water.prepare(
                     &self.device,
                     &self.queue,
@@ -757,7 +829,10 @@ impl Gpu {
                     WaterPrepareContext {
                         camera_2d_position,
                         camera_3d_position: camera_3d.position,
+                        camera_3d_frustum_planes: water_extract_frustum_planes(water_view_proj),
                         sky_color,
+                        time_seconds: frame_time_seconds,
+                        delta_seconds: frame_delta_seconds,
                     },
                 );
                 self.last_prepare_water_2d_revision = waters_2d_revision;

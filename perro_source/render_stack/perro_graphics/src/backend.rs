@@ -259,6 +259,9 @@ pub struct PerroGraphics {
     accessibility: VisualAccessibilitySettings,
     frame_index: u32,
     redraw_requested: bool,
+    frame_time_seconds: f32,
+    frame_delta_seconds: f32,
+    last_frame_instant: Option<Instant>,
 }
 
 impl PerroGraphics {
@@ -311,6 +314,9 @@ impl PerroGraphics {
             accessibility: VisualAccessibilitySettings::default(),
             frame_index: 0,
             redraw_requested: true,
+            frame_time_seconds: 0.0,
+            frame_delta_seconds: 0.0,
+            last_frame_instant: None,
         }
     }
 
@@ -893,6 +899,15 @@ impl PerroGraphics {
         I: IntoIterator<Item = RenderCommand>,
     {
         let total_start = Instant::now();
+        let now = Instant::now();
+        self.frame_delta_seconds = self
+            .last_frame_instant
+            .map(|prev| now.duration_since(prev).as_secs_f32())
+            .unwrap_or(0.0)
+            .max(0.0);
+        self.last_frame_instant = Some(now);
+        self.frame_time_seconds =
+            (self.frame_time_seconds + self.frame_delta_seconds).rem_euclid(1.0e9);
         let mut late_overlay_pending =
             std::mem::take(&mut self.frame.scratch_late_overlay_commands);
         late_overlay_pending.clear();
@@ -1180,6 +1195,8 @@ impl PerroGraphics {
                 ui_texture_size: ui_paint.texture_size,
                 ui_revision: ui_paint.revision,
                 redraw_requested: self.redraw_requested,
+                frame_time_seconds: self.frame_time_seconds,
+                frame_delta_seconds: self.frame_delta_seconds,
                 frame_dirty_bits,
                 static_texture_lookup: self.static_texture_lookup,
                 static_mesh_lookup: self.static_mesh_lookup,

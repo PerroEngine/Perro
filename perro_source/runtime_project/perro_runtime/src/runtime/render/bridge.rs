@@ -42,21 +42,52 @@ impl Runtime {
     pub fn apply_render_event(&mut self, event: RenderEvent) {
         if let RenderEvent::WaterSamples { samples } = &event {
             for sample in samples.iter() {
+                let sample_time = self.time.elapsed;
+                let velocity_y = self
+                    .water_samples
+                    .get(&sample.node)
+                    .zip(self.water_sample_times.get(&sample.node))
+                    .and_then(|(prev, prev_time)| {
+                        let dt = (sample_time - *prev_time).max(0.0);
+                        (dt > 1.0e-5).then_some((sample.height - prev.height) / dt)
+                    })
+                    .unwrap_or(0.0);
                 self.water_samples.insert(
                     sample.node,
                     perro_nodes::WaterPhysicsSample {
                         height: sample.height,
                         velocity: perro_structs::Vector2::new(
                             sample.velocity[0],
-                            sample.velocity[1],
+                            velocity_y,
                         ),
                         foam: sample.foam,
                     },
                 );
+                self.water_sample_times.insert(sample.node, sample_time);
             }
         }
         if let RenderEvent::WaterBodySamples { samples } = &event {
             for sample in samples.iter() {
+                let sample_time = self.time.elapsed;
+                let velocity_y = self
+                    .water_body_samples
+                    .get(&crate::runtime::WaterBodySampleKey {
+                        water: sample.water,
+                        body: sample.body,
+                        point: sample.point,
+                    })
+                    .and_then(|prev| {
+                        let dt = (sample_time - prev.sample_time).max(0.0);
+                        if dt <= 1.0e-5
+                            || (prev.local.x - sample.local[0]).abs() > 0.35
+                            || (prev.local.y - sample.local[1]).abs() > 0.35
+                        {
+                            None
+                        } else {
+                            Some((sample.height - prev.height) / dt)
+                        }
+                    })
+                    .unwrap_or(0.0);
                 self.water_body_samples.insert(
                     crate::runtime::WaterBodySampleKey {
                         water: sample.water,
@@ -68,10 +99,10 @@ impl Runtime {
                         height: sample.height,
                         velocity: perro_structs::Vector2::new(
                             sample.velocity[0],
-                            sample.velocity[1],
+                            velocity_y,
                         ),
                         foam: sample.foam,
-                        sample_time: self.time.elapsed,
+                        sample_time,
                     },
                 );
             }
@@ -173,5 +204,54 @@ impl Runtime {
         self.queue_render_command(RenderCommand::Ui(
             perro_render_bridge::UiCommand::RemoveNode { node },
         ));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn water_body_samples_derive_vertical_velocity_from_height_delta() {
+        let mut runtime = Runtime::new();
+        let water = NodeID::from_parts(10, 0);
+        let body = NodeID::from_parts(20, 0);
+
+        runtime.time.elapsed = 1.0;
+        runtime.apply_render_event(RenderEvent::WaterBodySamples {
+            samples: Arc::from([perro_render_bridge::WaterBodySampleState {
+                water,
+                body,
+                point: 0,
+                local: [0.0, 0.0],
+                height: 1.0,
+                velocity: [0.0, 0.0],
+                foam: 0.0,
+            }]),
+        });
+        runtime.time.elapsed = 1.1;
+        runtime.apply_render_event(RenderEvent::WaterBodySamples {
+            samples: Arc::from([perro_render_bridge::WaterBodySampleState {
+                water,
+                body,
+                point: 0,
+                local: [0.0, 0.0],
+                height: 1.3,
+                velocity: [0.0, 0.0],
+                foam: 0.0,
+            }]),
+        });
+
+        let cached = runtime
+            .water_body_samples
+            .get(&crate::runtime::WaterBodySampleKey {
+                water,
+                body,
+                point: 0,
+            })
+            .copied()
+            .expect("cached water body sample");
+        assert!(cached.velocity.y > 2.9);
     }
 }

@@ -96,7 +96,6 @@ pub(crate) struct PendingWaterQuery {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct WaterBodyContact2D {
-    pub(crate) body: NodeID,
     pub(crate) position: perro_structs::Vector2,
     pub(crate) velocity: perro_structs::Vector2,
     pub(crate) radius: f32,
@@ -106,7 +105,6 @@ pub(crate) struct WaterBodyContact2D {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct WaterBodyContact3D {
-    pub(crate) body: NodeID,
     pub(crate) position: perro_structs::Vector3,
     pub(crate) velocity: perro_structs::Vector3,
     pub(crate) radius: f32,
@@ -150,11 +148,13 @@ pub struct Runtime {
     pub(crate) window_requests: Vec<WindowRequest>,
     physics: physics::PhysicsState,
     water_samples: AHashMap<NodeID, perro_nodes::WaterPhysicsSample>,
+    water_sample_times: AHashMap<NodeID, f32>,
     water_body_samples: AHashMap<WaterBodySampleKey, WaterBodySampleCache>,
     pending_water_queries_2d: AHashMap<NodeID, Vec<PendingWaterQuery>>,
     pending_water_queries_3d: AHashMap<NodeID, Vec<PendingWaterQuery>>,
     water_contacts_2d: AHashMap<NodeID, Vec<WaterBodyContact2D>>,
     water_contacts_3d: AHashMap<NodeID, Vec<WaterBodyContact3D>>,
+    water_collect_ids_scratch: Vec<NodeID>,
     pub(crate) force_water_impacts_2d: Vec<ForceWaterImpact2D>,
     pub(crate) force_water_impacts_3d: Vec<ForceWaterImpact3D>,
     pub(crate) pending_force_emitters_2d: Vec<perro_nodes::PhysicsForceEmitter2D>,
@@ -287,11 +287,13 @@ impl Runtime {
             window_requests: Vec::new(),
             physics: physics::PhysicsState::new(),
             water_samples: AHashMap::new(),
+            water_sample_times: AHashMap::new(),
             water_body_samples: AHashMap::new(),
             pending_water_queries_2d: AHashMap::new(),
             pending_water_queries_3d: AHashMap::new(),
             water_contacts_2d: AHashMap::new(),
             water_contacts_3d: AHashMap::new(),
+            water_collect_ids_scratch: Vec::new(),
             force_water_impacts_2d: Vec::new(),
             force_water_impacts_3d: Vec::new(),
             pending_force_emitters_2d: Vec::new(),

@@ -115,6 +115,8 @@ pub enum WaterCoastlineShape3D {
 pub struct Water3DState {
     pub model: [[f32; 4]; 4],
     pub paused: bool,
+    pub simulation_time: f32,
+    pub simulation_delta: f32,
     pub size: [f32; 2],
     pub shape: WaterShapeState,
     pub resolution: [u32; 2],
@@ -164,7 +166,6 @@ pub struct Water3DState {
     pub links: Arc<[WaterLinkState]>,
     pub queries: Arc<[WaterBodyQueryState]>,
     pub impacts: Arc<[WaterImpact3D]>,
-    pub contacts: Arc<[WaterContact3D]>,
     pub coastline_shapes: Arc<[WaterCoastlineShape3D]>,
 }
 
