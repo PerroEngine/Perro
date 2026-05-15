@@ -37,7 +37,10 @@ impl<'res, R: Draw2DAPI + ?Sized> Draw2DModule<'res, R> {
 
     #[inline]
     pub fn rect_stroke(&self, center: Vector2, size: Vector2, color: [f32; 4], thickness: f32) {
-        self.push(DrawShape2D::rect_stroke(size, color.into(), thickness), center);
+        self.push(
+            DrawShape2D::rect_stroke(size, color.into(), thickness),
+            center,
+        );
     }
 
     #[inline]

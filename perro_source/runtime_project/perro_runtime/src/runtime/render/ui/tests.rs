@@ -7,6 +7,10 @@ use perro_ui::{
     UiScrollContainer, UiTreeList, UiVLayout, UiVector2,
 };
 
+fn rgba(r: f32, g: f32, b: f32, a: f32) -> [f32; 4] {
+    Color::new(r, g, b, a).to_gpu()
+}
+
 #[test]
 fn unchanged_ui_skips_redundant_upsert() {
     let mut runtime = Runtime::new();
@@ -140,7 +144,7 @@ fn dirty_ui_node_emits_changed_upsert_only() {
 
     assert_eq!(commands.len(), 1);
     assert!(
-        matches!(&commands[0], RenderCommand::Ui(UiCommand::UpsertPanel { node: n, fill, .. }) if *n == node && *fill == [0.8, 0.1, 0.1, 1.0])
+        matches!(&commands[0], RenderCommand::Ui(UiCommand::UpsertPanel { node: n, fill, .. }) if *n == node && *fill == rgba(0.8, 0.1, 0.1, 1.0))
     );
 }
 
@@ -341,7 +345,7 @@ fn ui_child_added_to_retained_layout_renders_without_resize() {
     assert!(commands.iter().any(|cmd| matches!(
         cmd,
         RenderCommand::Ui(UiCommand::UpsertPanel { node, rect, fill, .. })
-            if *node == child && rect.size == [80.0, 40.0] && *fill == [0.7, 0.2, 0.1, 1.0]
+            if *node == child && rect.size == [80.0, 40.0] && *fill == rgba(0.7, 0.2, 0.1, 1.0)
     )));
 }
 
@@ -357,7 +361,7 @@ fn button_uses_hover_and_pressed_styles_from_mouse_state() {
     assert!(commands.iter().any(|cmd| matches!(
         cmd,
         RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
-            if *n == node && *fill == [0.1, 0.2, 0.3, 1.0]
+            if *n == node && *fill == rgba(0.1, 0.2, 0.3, 1.0)
     )));
     runtime.clear_dirty_flags();
 
@@ -368,7 +372,7 @@ fn button_uses_hover_and_pressed_styles_from_mouse_state() {
     assert!(commands.iter().any(|cmd| matches!(
         cmd,
         RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
-            if *n == node && *fill == [0.2, 0.3, 0.4, 1.0]
+            if *n == node && *fill == rgba(0.2, 0.3, 0.4, 1.0)
     )));
 
     runtime.clear_dirty_flags();
@@ -379,7 +383,7 @@ fn button_uses_hover_and_pressed_styles_from_mouse_state() {
     assert!(commands.iter().any(|cmd| matches!(
         cmd,
         RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
-            if *n == node && *fill == [0.3, 0.4, 0.5, 1.0]
+            if *n == node && *fill == rgba(0.3, 0.4, 0.5, 1.0)
     )));
 }
 
@@ -405,7 +409,7 @@ fn disabled_button_ignores_hover_and_pressed_mouse_state() {
     assert!(!commands.iter().any(|cmd| matches!(
         cmd,
         RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
-            if *n == node && *fill == [0.2, 0.3, 0.4, 1.0]
+            if *n == node && *fill == rgba(0.2, 0.3, 0.4, 1.0)
     )));
     assert_eq!(runtime.take_cursor_icon_request(), None);
 
@@ -417,7 +421,7 @@ fn disabled_button_ignores_hover_and_pressed_mouse_state() {
     assert!(!commands.iter().any(|cmd| matches!(
         cmd,
         RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
-            if *n == node && *fill == [0.3, 0.4, 0.5, 1.0]
+            if *n == node && *fill == rgba(0.3, 0.4, 0.5, 1.0)
     )));
     assert_eq!(runtime.take_cursor_icon_request(), None);
 }
@@ -444,7 +448,7 @@ fn input_disabled_button_ignores_hover_and_pressed_mouse_state() {
     assert!(!commands.iter().any(|cmd| matches!(
         cmd,
         RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
-            if *n == node && *fill == [0.2, 0.3, 0.4, 1.0]
+            if *n == node && *fill == rgba(0.2, 0.3, 0.4, 1.0)
     )));
     assert_eq!(runtime.take_cursor_icon_request(), None);
 
@@ -456,7 +460,7 @@ fn input_disabled_button_ignores_hover_and_pressed_mouse_state() {
     assert!(!commands.iter().any(|cmd| matches!(
         cmd,
         RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
-            if *n == node && *fill == [0.3, 0.4, 0.5, 1.0]
+            if *n == node && *fill == rgba(0.3, 0.4, 0.5, 1.0)
     )));
     assert_eq!(runtime.take_cursor_icon_request(), None);
 }
@@ -494,7 +498,7 @@ fn disabling_hovered_button_restores_neutral_visual_state() {
             fill,
             disabled,
             ..
-        }) if *n == node && *fill == [0.1, 0.2, 0.3, 1.0] && *disabled
+        }) if *n == node && *fill == rgba(0.1, 0.2, 0.3, 1.0) && *disabled
     )));
     assert_eq!(
         runtime.render_ui.button_states.get(&node).copied(),
@@ -535,7 +539,7 @@ fn input_disabling_hovered_button_restores_neutral_visual_state() {
             fill,
             disabled,
             ..
-        }) if *n == node && *fill == [0.1, 0.2, 0.3, 1.0] && !*disabled
+        }) if *n == node && *fill == rgba(0.1, 0.2, 0.3, 1.0) && !*disabled
     )));
     assert_eq!(
         runtime.render_ui.button_states.get(&node).copied(),
@@ -597,7 +601,7 @@ fn button_hover_respects_rounded_visible_shape() {
     assert!(!commands.iter().any(|cmd| matches!(
         cmd,
         RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
-            if *n == node && *fill == [0.2, 0.3, 0.4, 1.0]
+            if *n == node && *fill == rgba(0.2, 0.3, 0.4, 1.0)
     )));
     assert_eq!(runtime.take_cursor_icon_request(), None);
 
@@ -609,7 +613,7 @@ fn button_hover_respects_rounded_visible_shape() {
     assert!(commands.iter().any(|cmd| matches!(
         cmd,
         RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
-            if *n == node && *fill == [0.2, 0.3, 0.4, 1.0]
+            if *n == node && *fill == rgba(0.2, 0.3, 0.4, 1.0)
     )));
 }
 
@@ -1125,7 +1129,7 @@ fn button_hover_style_without_size_override_keeps_base_size() {
         RenderCommand::Ui(UiCommand::UpsertButton { node: id, rect, fill, .. })
             if *id == node
                 && rect.size == [120.0, 40.0]
-                && *fill == [0.3, 0.4, 0.5, 1.0]
+                && *fill == rgba(0.3, 0.4, 0.5, 1.0)
     )));
 }
 
@@ -2005,7 +2009,7 @@ fn parent_visibility_toggle_restores_button_hover_without_resize() {
     assert!(commands.iter().any(|cmd| matches!(
         cmd,
         RenderCommand::Ui(UiCommand::UpsertButton { node: n, fill, .. })
-            if *n == button && *fill == [0.2, 0.3, 0.4, 1.0]
+            if *n == button && *fill == rgba(0.2, 0.3, 0.4, 1.0)
     )));
 }
 

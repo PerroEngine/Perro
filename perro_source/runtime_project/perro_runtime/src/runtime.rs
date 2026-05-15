@@ -352,22 +352,24 @@ impl Runtime {
 
     pub(crate) fn cached_water_ids_2d(&mut self) -> &[NodeID] {
         if self.water_ids_2d_cache.is_empty() {
-            self.water_ids_2d_cache
-                .extend(self.nodes.iter().filter_map(|(id, node)| match node.data {
+            self.water_ids_2d_cache.extend(self.nodes.iter().filter_map(
+                |(id, node)| match node.data {
                     perro_nodes::SceneNodeData::WaterBody2D(_) => Some(id),
                     _ => None,
-                }));
+                },
+            ));
         }
         &self.water_ids_2d_cache
     }
 
     pub(crate) fn cached_water_ids_3d(&mut self) -> &[NodeID] {
         if self.water_ids_3d_cache.is_empty() {
-            self.water_ids_3d_cache
-                .extend(self.nodes.iter().filter_map(|(id, node)| match node.data {
+            self.water_ids_3d_cache.extend(self.nodes.iter().filter_map(
+                |(id, node)| match node.data {
                     perro_nodes::SceneNodeData::WaterBody3D(_) => Some(id),
                     _ => None,
-                }));
+                },
+            ));
         }
         &self.water_ids_3d_cache
     }

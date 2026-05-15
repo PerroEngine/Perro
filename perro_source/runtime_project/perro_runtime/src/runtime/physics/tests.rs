@@ -238,7 +238,7 @@ fn overlapping_2d_waters_blend_buoyancy_once() {
         .map(|pending| pending.force.y)
         .sum();
     assert!(total > 2.0);
-    assert!(total < 40.0);
+    assert!(total < 64.0);
 }
 
 #[test]

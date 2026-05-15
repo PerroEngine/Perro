@@ -1010,8 +1010,7 @@ impl Gpu {
             && !accessibility_enabled
             && self.render_format == self.config.format;
         let depth_prepass_needed = !waters_3d.is_empty()
-            || (camera_post_enabled
-            && PostProcessor::uses_depth(camera_post_chain))
+            || (camera_post_enabled && PostProcessor::uses_depth(camera_post_chain))
             || (global_post_enabled && PostProcessor::uses_depth(global_post_chain));
         let mut frame = None;
         let mut swap_view = None;

@@ -2,10 +2,11 @@ use super::Runtime;
 use perro_ids::TextureID;
 use perro_nodes::{
     AmbientLight2D, CollisionShape2D, PointLight2D, RayLight2D, SceneNode, SceneNodeData, Shape2D,
-    SpotLight2D, StaticBody2D, WaterBody2D, physics_2d::RigidBody2D,
+    SpotLight2D, StaticBody2D, WaterBody2D,
     camera_2d::Camera2D,
     node_2d::Node2D,
     particle_emitter_2d::ParticleEmitter2D,
+    physics_2d::RigidBody2D,
     sprite_2d::{AnimatedSprite, AnimatedSprite2D, Sprite2D},
 };
 use perro_render_bridge::{Command2D, ParticlePath2D, RenderCommand, RenderEvent, ResourceCommand};

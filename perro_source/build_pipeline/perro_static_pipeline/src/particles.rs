@@ -68,6 +68,7 @@ pub fn generate_static_particles(project_root: &Path) -> Result<(), StaticPipeli
     out.push_str(
         "use perro_render_bridge::{ParticleExprOp3D, ParticlePath3D, ParticleProfile3D};\n",
     );
+    out.push_str("use perro_structs::Color;\n");
     out.push_str("use std::borrow::Cow;\n\n");
 
     for (index, particle) in unique_particles.iter().enumerate() {
@@ -77,7 +78,7 @@ pub fn generate_static_particles(project_root: &Path) -> Result<(), StaticPipeli
     }
     out.push('\n');
     out.push_str(
-        "static EMPTY_PARTICLE: ParticleProfile3D = ParticleProfile3D { path: ParticlePath3D::None, expr_x_ops: None, expr_y_ops: None, expr_z_ops: None, lifetime_min: 0.6, lifetime_max: 1.4, speed_min: 1.0, speed_max: 3.0, spread_radians: core::f32::consts::FRAC_PI_3, size: 6.0, size_min: 0.65, size_max: 1.35, force: [0.0, 0.0, 0.0], color_start: [1.0, 1.0, 1.0, 1.0], color_end: [1.0, 0.4, 0.1, 0.0], emissive: [0.0, 0.0, 0.0], spin_angular_velocity: 0.0 };\n\n",
+        "static EMPTY_PARTICLE: ParticleProfile3D = ParticleProfile3D { path: ParticlePath3D::None, expr_x_ops: None, expr_y_ops: None, expr_z_ops: None, lifetime_min: 0.6, lifetime_max: 1.4, speed_min: 1.0, speed_max: 3.0, spread_radians: core::f32::consts::FRAC_PI_3, size: 6.0, size_min: 0.65, size_max: 1.35, force: [0.0, 0.0, 0.0], color_start: Color::WHITE, color_end: Color::new(1.0, 0.4, 0.1, 0.0), emissive: [0.0, 0.0, 0.0], spin_angular_velocity: 0.0 };\n\n",
     );
     for (index, (path, _)) in particle_refs.iter().enumerate() {
         write_hash_const(&mut out, &format!("PARTICLE_HASH_{index}"), path);
@@ -280,7 +281,7 @@ fn emit_particle_literal(particle: &ParticleLiteral) -> String {
         .map(|ops| format!("Some(Cow::Borrowed(&[{}]))", emit_ops_literal(ops)))
         .unwrap_or_else(|| "None".to_string());
     format!(
-        "ParticleProfile3D {{ path: {path}, expr_x_ops: {expr_x_ops}, expr_y_ops: {expr_y_ops}, expr_z_ops: {expr_z_ops}, lifetime_min: {:?}, lifetime_max: {:?}, speed_min: {:?}, speed_max: {:?}, spread_radians: {:?}, size: {:?}, size_min: {:?}, size_max: {:?}, force: [{:?}, {:?}, {:?}], color_start: [{:?}, {:?}, {:?}, {:?}], color_end: [{:?}, {:?}, {:?}, {:?}], emissive: [{:?}, {:?}, {:?}], spin_angular_velocity: {:?} }}",
+        "ParticleProfile3D {{ path: {path}, expr_x_ops: {expr_x_ops}, expr_y_ops: {expr_y_ops}, expr_z_ops: {expr_z_ops}, lifetime_min: {:?}, lifetime_max: {:?}, speed_min: {:?}, speed_max: {:?}, spread_radians: {:?}, size: {:?}, size_min: {:?}, size_max: {:?}, force: [{:?}, {:?}, {:?}], color_start: Color::new({:?}, {:?}, {:?}, {:?}), color_end: Color::new({:?}, {:?}, {:?}, {:?}), emissive: [{:?}, {:?}, {:?}], spin_angular_velocity: {:?} }}",
         particle.lifetime_min,
         particle.lifetime_max,
         particle.speed_min,

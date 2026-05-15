@@ -576,10 +576,10 @@ impl<B: GraphicsBackend> SnapshotPresenter<B> {
     where
         I: IntoIterator<Item = RenderCommand>,
     {
-        if let Some(snapshot) = bridge.take_latest_snapshot() {
-            if let Some(old_snapshot) = self.current_snapshot.replace(snapshot) {
-                bridge.recycle_command_buffer(old_snapshot.commands);
-            }
+        if let Some(snapshot) = bridge.take_latest_snapshot()
+            && let Some(old_snapshot) = self.current_snapshot.replace(snapshot)
+        {
+            bridge.recycle_command_buffer(old_snapshot.commands);
         }
         if let Some(snapshot) = &self.current_snapshot {
             self.graphics.submit_many(snapshot.commands.iter().cloned());
@@ -599,10 +599,10 @@ impl<B: GraphicsBackend> SnapshotPresenter<B> {
         I: IntoIterator<Item = RenderCommand>,
     {
         let total_start = Instant::now();
-        if let Some(snapshot) = bridge.take_latest_snapshot() {
-            if let Some(old_snapshot) = self.current_snapshot.replace(snapshot) {
-                bridge.recycle_command_buffer(old_snapshot.commands);
-            }
+        if let Some(snapshot) = bridge.take_latest_snapshot()
+            && let Some(old_snapshot) = self.current_snapshot.replace(snapshot)
+        {
+            bridge.recycle_command_buffer(old_snapshot.commands);
         }
         if let Some(snapshot) = &self.current_snapshot {
             self.graphics.submit_many(snapshot.commands.iter().cloned());

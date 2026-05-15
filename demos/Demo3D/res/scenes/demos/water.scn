@@ -729,19 +729,20 @@ parent = @FloatCrateF
 parent = @WaterDemo
     [WaterBody3D]
         shape = { type = "cube" size = (100, 15, 100) }
-        fidelity = 0.12
+        fidelity = 0.05
         depth = 8.0
-        wave_speed = 0.52
-        wave_scale = 0.72
-        wave_length = 16.0
+        wave_speed = 0.35
+        wave_scale = 0.75
+        wave_length = 24.0
         buoyancy = 4.0
         drag = 0.55
+        idle = "calm"
         foam_strength = 1.05
         sample_readback_rate = 1
-        shallow_depth = 7.5
+        shallow_depth = 1.0
         deep_color = (0.0, 0.018, 0.075, 1.0)
         shallow_color = (0.010, 0.115, 0.18, 1.0)
-        material = { transparency = 0.0 reflectivity = 0.58 roughness = 0.16 fresnel_power = 4.2 normal_strength = 1.85 ripple_scale = 0.74 foam_color = (0.76, 0.93, 1.0, 1.0) foam_amount = 0.88 crest_foam_threshold = 0.42 caustic_strength = 0.05 refraction_strength = 0.02 scattering_strength = 0.05 distance_fog_strength = 0.58 }
+        material = { transparency = 0.0 reflectivity = 0.58 roughness = 0.24 fresnel_power = 4.2 normal_strength = 1.95 ripple_scale = 0.74 foam_color = (0.78, 0.95, 1.0, 1.0) foam_amount = 0.89 crest_foam_threshold = 0.42 caustic_strength = 0.05 refraction_strength = 0.02 scattering_strength = 0.05 distance_fog_strength = 0.58 }
         lod_near = 25
         lod_mid = 100
         lod_far = 500.0

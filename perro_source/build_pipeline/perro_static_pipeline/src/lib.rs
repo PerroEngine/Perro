@@ -345,8 +345,8 @@ mod tests {
         size_min: 0.65,
         size_max: 1.35,
         force: [0.0, 0.0, 0.0],
-        color_start: [1.0, 1.0, 1.0, 1.0],
-        color_end: [1.0, 0.4, 0.1, 0.0],
+        color_start: Color::WHITE,
+        color_end: Color::new(1.0, 0.4, 0.1, 0.0),
         emissive: [0.0, 0.0, 0.0],
         spin_angular_velocity: 0.0,
     };
@@ -654,7 +654,7 @@ mod tests {
                 normal,
                 uv,
                 joints: [0, 0, 0, 0],
-                weights: [1.0, 0.0, 0.0, 0.0],
+                weights: perro_structs::Unorm8x4::new([1.0, 0.0, 0.0, 0.0]),
             });
         }
         let mut indices = Vec::with_capacity(index_count);

@@ -1136,8 +1136,8 @@ impl Runtime {
         };
         let water_half = water.shape.surface_size() * 0.5;
         let water_top = water_global.position.y;
-        let submerged_margin = 0.05;
-        let water_bottom = water_top - water.shape.depth(water.depth);
+        let surface_band = water.coastline.foam_width.max(0.35) * 0.65;
+        let surface_epsilon = surface_band.max(0.05) * 0.2;
         let mut shapes = Vec::new();
         let body_ids: Vec<_> = self
             .nodes
@@ -1158,14 +1158,14 @@ impl Runtime {
                         body.collision_layers,
                         body.collision_mask,
                         node.children_slice().to_vec(),
-                        0.85f32,
+                        1.02f32,
                     )),
                     SceneNodeData::RigidBody3D(body) => Some((
                         body.enabled,
                         body.collision_layers,
                         body.collision_mask,
                         node.children_slice().to_vec(),
-                        0.50f32,
+                        1.00f32,
                     )),
                     _ => None,
                 })
@@ -1208,9 +1208,13 @@ impl Runtime {
                             size.y.abs() * scale.y.abs() * 0.5,
                             size.z.abs() * scale.z.abs() * 0.5,
                         );
-                        if shape_global.position.y + half.y < water_top - submerged_margin
-                            || shape_global.position.y + half.y < water_bottom
-                            || shape_global.position.y - half.y > water_top
+                        let min_y = shape_global.position.y - half.y;
+                        let max_y = shape_global.position.y + half.y;
+                        let crosses_surface = min_y <= water_top + surface_epsilon
+                            && max_y >= water_top - surface_epsilon;
+                        if !crosses_surface
+                            || max_y < water_top - surface_band
+                            || min_y > water_top + surface_band
                         {
                             continue;
                         }
@@ -1232,9 +1236,13 @@ impl Runtime {
                     Shape3D::Sphere { radius } => {
                         let radius =
                             radius.abs() * scale.x.abs().max(scale.y.abs()).max(scale.z.abs());
-                        if shape_global.position.y + radius < water_top - submerged_margin
-                            || shape_global.position.y + radius < water_bottom
-                            || shape_global.position.y - radius > water_top
+                        let min_y = shape_global.position.y - radius;
+                        let max_y = shape_global.position.y + radius;
+                        let crosses_surface = min_y <= water_top + surface_epsilon
+                            && max_y >= water_top - surface_epsilon;
+                        if !crosses_surface
+                            || max_y < water_top - surface_band
+                            || min_y > water_top + surface_band
                         {
                             continue;
                         }
@@ -1257,9 +1265,13 @@ impl Runtime {
                     } => {
                         let radius = radius.abs() * scale.x.abs().max(scale.z.abs());
                         let half_height = half_height.abs() * scale.y.abs();
-                        if shape_global.position.y + half_height < water_top - submerged_margin
-                            || shape_global.position.y + half_height < water_bottom
-                            || shape_global.position.y - half_height > water_top
+                        let min_y = shape_global.position.y - half_height;
+                        let max_y = shape_global.position.y + half_height;
+                        let crosses_surface = min_y <= water_top + surface_epsilon
+                            && max_y >= water_top - surface_epsilon;
+                        if !crosses_surface
+                            || max_y < water_top - surface_band
+                            || min_y > water_top + surface_band
                         {
                             continue;
                         }
@@ -1303,9 +1315,11 @@ impl Runtime {
                             let cy = shape_global.position.y + c.y;
                             let min_y = ay.min(by).min(cy);
                             let max_y = ay.max(by).max(cy);
-                            if max_y < water_top - submerged_margin
-                                || max_y < water_bottom
-                                || min_y > water_top
+                            let crosses_surface = min_y <= water_top + surface_epsilon
+                                && max_y >= water_top - surface_epsilon;
+                            if !crosses_surface
+                                || max_y < water_top - surface_band
+                                || min_y > water_top + surface_band
                             {
                                 continue;
                             }
