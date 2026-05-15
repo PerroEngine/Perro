@@ -270,11 +270,26 @@ pub(super) fn create_sprite_pipeline(
                         wgpu::VertexAttribute {
                             offset: 36,
                             shader_location: 5,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 44,
+                            shader_location: 6,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 52,
+                            shader_location: 7,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 60,
+                            shader_location: 8,
                             format: wgpu::VertexFormat::Sint32,
                         },
                         wgpu::VertexAttribute {
-                            offset: 40,
-                            shader_location: 6,
+                            offset: 64,
+                            shader_location: 9,
                             format: wgpu::VertexFormat::Unorm8x4,
                         },
                     ],

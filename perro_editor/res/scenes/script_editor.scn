@@ -1,0 +1,175 @@
+$col_panel = "#2F3540"
+$col_panel_2 = "#3A404C"
+$col_view = "#1E2218"
+$col_line_soft = "#5E6676"
+$col_text = "#F2F1EE"
+$col_code = "#D8F55C"
+$tab_idle = { fill = "#444B58" stroke = "#00000000" stroke_width = 0 radius = 0.10 }
+
+$root = @script_editor_root
+
+[script_editor_root]
+[UiPanel]
+    anchor = "center"
+    position_ratio = (0.5, 0.5)
+    size_ratio = (1.0, 1.0)
+    fill = $col_panel
+    stroke = "#00000000"
+    stroke_width = 0
+[/UiPanel]
+[/script_editor_root]
+
+[script_files_panel]
+parent = $root
+[UiPanel]
+    anchor = "l"
+    position_ratio = (0.0, 0.5)
+    pivot_ratio = (0.0, 0.5)
+    size_ratio = (0.18, 1.0)
+    fill = $col_panel
+    stroke = $col_line_soft
+    stroke_width = 1
+[/UiPanel]
+[/script_files_panel]
+
+[script_files_body]
+parent = @script_files_panel
+[UiLabel]
+    anchor = "tl"
+    position_ratio = (0.08, 0.04)
+    pivot_ratio = (0.0, 0.0)
+    size_ratio = (0.74, 0.88)
+    text = "script.rs\n\nscript.rs\n\nscript.rs\n\nscript.rs\n\nscript.rs\n\nmod.rs"
+    text_size_ratio = 0.12
+    color = $col_text
+    h_align = "start"
+    v_align = "start"
+    text_align = "left"
+[/UiLabel]
+[/script_files_body]
+
+[script_tabs_bar]
+parent = $root
+[UiPanel]
+    anchor = "t"
+    position_ratio = (0.59, 0.0)
+    pivot_ratio = (0.5, 0.0)
+    size_ratio = (0.82, 0.045)
+    fill = $col_panel_2
+    stroke = "#00000000"
+    stroke_width = 0
+[/UiPanel]
+[/script_tabs_bar]
+
+[script_tab_1]
+parent = @script_tabs_bar
+[UiButton]
+    anchor = "l"
+    position_ratio = (0.015, 0.5)
+    pivot_ratio = (0.0, 0.5)
+    size_ratio = (0.13, 0.74)
+    style = $tab_idle
+[/UiButton]
+[/script_tab_1]
+
+[script_tab_1_label]
+parent = @script_tab_1
+[UiLabel]
+    size_ratio = (1.0, 1.0)
+    text = "script.rs"
+    text_size_ratio = 0.24
+    color = $col_text
+[/UiLabel]
+[/script_tab_1_label]
+
+[script_tab_2]
+parent = @script_tabs_bar
+[UiButton]
+    anchor = "l"
+    position_ratio = (0.157, 0.5)
+    pivot_ratio = (0.0, 0.5)
+    size_ratio = (0.13, 0.74)
+    style = $tab_idle
+[/UiButton]
+[/script_tab_2]
+
+[script_tab_2_label]
+parent = @script_tab_2
+[UiLabel]
+    size_ratio = (1.0, 1.0)
+    text = "script.rs"
+    text_size_ratio = 0.24
+    color = $col_text
+[/UiLabel]
+[/script_tab_2_label]
+
+[script_tab_3]
+parent = @script_tabs_bar
+[UiButton]
+    anchor = "l"
+    position_ratio = (0.299, 0.5)
+    pivot_ratio = (0.0, 0.5)
+    size_ratio = (0.13, 0.74)
+    style = $tab_idle
+[/UiButton]
+[/script_tab_3]
+
+[script_tab_3_label]
+parent = @script_tab_3
+[UiLabel]
+    size_ratio = (1.0, 1.0)
+    text = "script.rs"
+    text_size_ratio = 0.24
+    color = $col_text
+[/UiLabel]
+[/script_tab_3_label]
+
+[script_tab_4]
+parent = @script_tabs_bar
+[UiButton]
+    anchor = "l"
+    position_ratio = (0.441, 0.5)
+    pivot_ratio = (0.0, 0.5)
+    size_ratio = (0.13, 0.74)
+    style = $tab_idle
+[/UiButton]
+[/script_tab_4]
+
+[script_tab_4_label]
+parent = @script_tab_4
+[UiLabel]
+    size_ratio = (1.0, 1.0)
+    text = "script.rs"
+    text_size_ratio = 0.24
+    color = $col_text
+[/UiLabel]
+[/script_tab_4_label]
+
+[script_code_panel]
+parent = $root
+[UiPanel]
+    anchor = "tr"
+    position_ratio = (1.0, 1.0)
+    pivot_ratio = (1.0, 1.0)
+    size_ratio = (0.82, 0.955)
+    fill = $col_view
+    stroke = "#A1A6B0"
+    stroke_width = 1
+[/UiPanel]
+[/script_code_panel]
+
+[script_code_text]
+parent = @script_code_panel
+[UiLabel]
+    anchor = "tl"
+    position_ratio = (0.015, 0.02)
+    pivot_ratio = (0.0, 0.0)
+    size_ratio = (0.84, 0.90)
+    text = "use perro_api::prelude::*;\n\ntype SelfNodeType = UiPanel;\n\n#[State]\nstruct EditorState {\n    #[default = 0]\n    active_tab: i32,\n}\n\nlifecycle!({\n    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {\n        // text blkout\n    }\n});"
+    text_size_ratio = 0.055
+    color = $col_code
+    h_align = "start"
+    v_align = "start"
+    text_align = "left"
+[/UiLabel]
+[/script_code_text]

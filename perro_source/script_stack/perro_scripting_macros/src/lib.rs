@@ -372,11 +372,19 @@ fn derive_state_field_enum(
     let mut unit_tag = 0u16;
     let variant_key = shared_arc_str("__variant");
     let data_key = shared_arc_str("__data");
+    let mut default_variant = None;
 
     for variant in variants {
         let variant_ident = variant.ident;
         let variant_name = variant_ident.to_string();
         let variant_name_arc = shared_arc_str(&variant_name);
+        let has_default_attr = variant
+            .attrs
+            .iter()
+            .any(|attr| attr.path().is_ident("default"));
+        if has_default_attr && matches!(variant.fields, Fields::Unit) {
+            default_variant = Some(variant_ident.clone());
+        }
         match variant.fields {
             Fields::Unit => {
                 let numeric_tag = unit_tag;
@@ -714,6 +722,21 @@ fn derive_state_field_enum(
         }
     }
 
+    let null_default_ref = default_variant.as_ref().map(|variant_ident| {
+        quote! {
+            if matches!(value, ::perro_api::variant::Variant::Null) {
+                return Some(Self::#variant_ident);
+            }
+        }
+    });
+    let null_default_owned = default_variant.as_ref().map(|variant_ident| {
+        quote! {
+            if matches!(value, ::perro_api::variant::Variant::Null) {
+                return Some(Self::#variant_ident);
+            }
+        }
+    });
+
     let tag_read = match options.enum_tag_mode {
         EnumTagMode::String => quote! {
             let tag = obj.get("__variant")?.as_str()?;
@@ -741,6 +764,7 @@ fn derive_state_field_enum(
             fn from_variant(value: &::perro_api::variant::Variant) -> ::core::option::Option<Self> {
                 fn __perro_hint_use_derive_variant<T: ::perro_api::variant::DeriveVariant>() {}
                 #(#codec_hints)*
+                #null_default_ref
                 let obj = value.as_object()?;
                 #tag_read
                 match tag {
@@ -752,6 +776,7 @@ fn derive_state_field_enum(
             fn from_owned_variant(value: ::perro_api::variant::Variant) -> ::core::option::Option<Self> {
                 fn __perro_hint_use_derive_variant<T: ::perro_api::variant::DeriveVariant>() {}
                 #(#codec_hints)*
+                #null_default_owned
                 let mut obj = match value {
                     ::perro_api::variant::Variant::Object(obj) => obj,
                     _ => return None,

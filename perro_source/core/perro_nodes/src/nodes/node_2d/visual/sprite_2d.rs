@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
     ops::{Deref, DerefMut},
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
 use crate::node_2d::Node2D;
@@ -97,17 +98,37 @@ impl AnimatedSprite {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct AnimatedSprite2D {
     pub base: Node2D,
     pub texture: TextureID,
     pub animations: Vec<AnimatedSprite>,
     pub current_animation: Cow<'static, str>,
+    current_animation_index: AtomicUsize,
     pub current_frame: u32,
     pub fps_scale: f32,
     pub playing: bool,
     pub looping: bool,
     pub frame_accum: f32,
+}
+
+impl Clone for AnimatedSprite2D {
+    fn clone(&self) -> Self {
+        Self {
+            base: self.base.clone(),
+            texture: self.texture,
+            animations: self.animations.clone(),
+            current_animation: self.current_animation.clone(),
+            current_animation_index: AtomicUsize::new(
+                self.current_animation_index.load(Ordering::Relaxed),
+            ),
+            current_frame: self.current_frame,
+            fps_scale: self.fps_scale,
+            playing: self.playing,
+            looping: self.looping,
+            frame_accum: self.frame_accum,
+        }
+    }
 }
 
 impl Default for AnimatedSprite2D {
@@ -123,6 +144,7 @@ impl AnimatedSprite2D {
             texture: TextureID::nil(),
             animations: Vec::new(),
             current_animation: Cow::Borrowed("default"),
+            current_animation_index: AtomicUsize::new(usize::MAX),
             current_frame: 0,
             fps_scale: 1.0,
             playing: true,
@@ -132,14 +154,61 @@ impl AnimatedSprite2D {
     }
 
     pub fn current_animation_data(&self) -> Option<&AnimatedSprite> {
-        self.animations
+        let current_name = self.current_animation.as_ref();
+        let cached = self.current_animation_index.load(Ordering::Relaxed);
+        if cached != usize::MAX
+            && let Some(animation) = self.animations.get(cached)
+            && animation.name.as_ref() == current_name
+        {
+            return Some(animation);
+        }
+        if let Some(index) = self
+            .animations
             .iter()
-            .find(|animation| animation.name.as_ref() == self.current_animation.as_ref())
-            .or_else(|| self.animations.first())
+            .position(|animation| animation.name.as_ref() == current_name)
+        {
+            self.current_animation_index.store(index, Ordering::Relaxed);
+            return self.animations.get(index);
+        }
+        if let Some(animation) = self.animations.first() {
+            self.current_animation_index.store(0, Ordering::Relaxed);
+            return Some(animation);
+        }
+        self.current_animation_index
+            .store(usize::MAX, Ordering::Relaxed);
+        None
     }
 
     pub fn current_texture_region(&self) -> Option<[f32; 4]> {
         self.current_animation_data()
             .and_then(|animation| animation.texture_region_for_frame(self.current_frame))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn current_animation_cache_refresh_on_name_chg() {
+        let mut sprite = AnimatedSprite2D::new();
+        sprite.animations.push(AnimatedSprite::new("idle"));
+        sprite.animations.push(AnimatedSprite::new("run"));
+
+        assert_eq!(
+            sprite
+                .current_animation_data()
+                .map(|anim| anim.name.as_ref()),
+            Some("idle")
+        );
+
+        sprite.current_animation = Cow::Borrowed("run");
+
+        assert_eq!(
+            sprite
+                .current_animation_data()
+                .map(|anim| anim.name.as_ref()),
+            Some("run")
+        );
     }
 }

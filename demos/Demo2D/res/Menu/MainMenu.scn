@@ -170,7 +170,7 @@ parent = @hub_menu_col_left
 parent = @demo_btn_animations
     [UiLabel]
         size_ratio = (1.0, 1.0)
-        text = "2D Animations"
+        text = "Animated Sprites"
         text_size_ratio = 0.24
         color = "#FFFFFF"
         input_enabled = false
@@ -236,7 +236,7 @@ parent = @hub_menu_col_right
 parent = @demo_btn_sky
     [UiLabel]
         size_ratio = (1.0, 1.0)
-        text = "Reserved"
+        text = "Animations"
         text_size_ratio = 0.24
         color = "#FFFFFF"
         input_enabled = false

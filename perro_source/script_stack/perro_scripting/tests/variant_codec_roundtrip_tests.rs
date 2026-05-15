@@ -81,6 +81,13 @@ enum CompactBotState {
     Fired { power: f32, direction: CompactVec3 },
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Variant)]
+enum DefaultBotState {
+    #[default]
+    Idle,
+    Charging,
+}
+
 fn sample_profile() -> BotProfile {
     let mut overrides = BTreeMap::<Arc<str>, i32>::new();
     overrides.insert(Arc::<str>::from("aggression"), 7);
@@ -390,4 +397,15 @@ fn compact_enum_u16_tag_roundtrip_and_shape() {
     let decoded =
         <CompactBotState as DeriveVariant>::from_variant(&encoded).expect("decode compact enum");
     assert_eq!(decoded, value);
+}
+
+#[test]
+fn default_enum_decodes_from_null() {
+    let decoded = <DefaultBotState as DeriveVariant>::from_variant(&VariantValue::Null)
+        .expect("null -> default");
+    assert_eq!(decoded, DefaultBotState::Idle);
+
+    let decoded = <DefaultBotState as DeriveVariant>::from_owned_variant(VariantValue::Null)
+        .expect("owned null -> default");
+    assert_eq!(decoded, DefaultBotState::Idle);
 }

@@ -18,7 +18,7 @@ pub fn internal_update<RT, R, IP>(
     .unwrap_or(false);
 
     if changed {
-        let _ = force_rerender!(ctx, id);
+        let _ = ctx.Nodes().mark_needs_rerender(id);
     }
 }
 

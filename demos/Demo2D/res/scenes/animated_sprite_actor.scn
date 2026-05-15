@@ -1,0 +1,23 @@
+$root = @AnimatedSpriteActor
+
+[AnimatedSpriteActor]
+    [AnimatedSprite2D]
+        texture = "res://hero_sheet.png"
+        current_animation = "idle"
+        current_frame = 0
+        fps_scale = 1.0
+        playing = true
+        looping = true
+        animations = [
+            { name = "idle", start = (0, 0), frame_size = (32, 32), frame_count = 4, fps = 6 },
+            { name = "run", start = (0, 32), frame_size = (32, 32), frame_count = 4, fps = 10 },
+            { name = "hurt_grid", start = (0, 64), frame_size = (32, 32), frame_count = 8, columns = 4, fps = 12 }
+        ]
+        [Node2D]
+            position = (0, 0)
+            scale = (1, 1)
+            z_index = 0
+            visible = true
+        [/Node2D]
+    [/AnimatedSprite2D]
+[/AnimatedSpriteActor]

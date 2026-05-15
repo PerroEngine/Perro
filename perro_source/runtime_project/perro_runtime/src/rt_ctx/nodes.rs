@@ -540,6 +540,14 @@ impl NodeAPI for Runtime {
         true
     }
 
+    fn mark_needs_rerender(&mut self, node_id: perro_ids::NodeID) -> bool {
+        if node_id.is_nil() || self.nodes.get(node_id).is_none() {
+            return false;
+        }
+        Runtime::mark_needs_rerender(self, node_id);
+        true
+    }
+
     fn reparent_multi<I>(&mut self, parent_id: perro_ids::NodeID, child_ids: I) -> usize
     where
         I: IntoIterator<Item = perro_ids::NodeID>,

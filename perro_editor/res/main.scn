@@ -1,0 +1,208 @@
+$col_bg = "#252A33"
+$col_top = "#232934"
+$col_panel = "#2F3540"
+$col_panel_2 = "#3A404C"
+$col_panel_3 = "#4A515F"
+$col_view = "#1F232A"
+$col_line = "#F1F1F1"
+$col_line_soft = "#5E6676"
+$col_text = "#F2F1EE"
+$col_text_dim = "#B4BBC6"
+$col_scene = "#78E24E"
+$col_script = "#51B1FF"
+$col_anim = "#BBA0FF"
+$btn_idle = { fill = "#3E4552" stroke = "#00000000" stroke_width = 0 radius = 0 }
+$btn_hover = { fill = "#525B6A" stroke = "#00000000" stroke_width = 0 radius = 0 }
+$btn_press = { fill = "#646E80" stroke = "#00000000" stroke_width = 0 radius = 0 }
+
+$root = @editor_root
+
+[editor_root]
+script = "res://scripts/main.rs"
+[UiPanel]
+    anchor = "center"
+    position_ratio = (0.5, 0.5)
+    size_ratio = (1.0, 1.0)
+    style = { fill = $col_bg stroke = "#00000000" stroke_width = 0 radius = 0 }
+[/UiPanel]
+[/editor_root]
+
+[top_bar]
+parent = $root
+[UiPanel]
+    anchor = "t"
+    position_ratio = (0.5, 0.0)
+    pivot_ratio = (0.5, 0.0)
+    size_ratio = (1.0, 0.045)
+    style = { fill = $col_top stroke = "#00000000" stroke_width = 0 radius = 0 }
+[/UiPanel]
+[/top_bar]
+
+[play_button]
+parent = @top_bar
+[UiButton]
+    anchor = "center"
+    position_ratio = (0.50, 0.5)
+    pivot_ratio = (1.0, 0.5)
+    size_ratio = (0.088, 0.82)
+    style = $btn_idle
+    hover = { style = $btn_hover }
+    pressed = { style = $btn_press }
+[/UiButton]
+[/play_button]
+
+[play_label]
+parent = @play_button
+[UiLabel]
+    size_ratio = (1.0, 1.0)
+    text = "Play"
+    text_size_ratio = 0.50
+    color = $col_text
+    input_enabled = false
+    mouse_filter = "pass"
+[/UiLabel]
+[/play_label]
+
+[stop_button]
+parent = @top_bar
+[UiButton]
+    anchor = "center"
+    position_ratio = (0.53, 0.5)
+    pivot_ratio = (0.0, 0.5)
+    size_ratio = (0.088, 0.82)
+    style = $btn_idle
+    hover = { style = $btn_hover }
+    pressed = { style = $btn_press }
+[/UiButton]
+[/stop_button]
+
+[stop_label]
+parent = @stop_button
+[UiLabel]
+    size_ratio = (1.0, 1.0)
+    text = "Stop"
+    text_size_ratio = 0.50
+    color = $col_text
+    input_enabled = false
+    mouse_filter = "pass"
+[/UiLabel]
+[/stop_label]
+
+[left_rail]
+parent = $root
+[UiPanel]
+    anchor = "l"
+    position_ratio = (0.0, 0.5225)
+    pivot_ratio = (0.0, 0.5)
+    size_ratio = (0.028, 0.955)
+    style = { fill = $col_top stroke = $col_line_soft stroke_width = 1 radius = 0 }
+[/UiPanel]
+[/left_rail]
+
+[left_rail_layout]
+parent = @left_rail
+[UiVLayout]
+    anchor = "t"
+    position_ratio = (0.5, 0.01)
+    pivot_ratio = (0.5, 0.0)
+    size_ratio = (0.82, 0.24)
+    spacing = 0.045
+    h_align = "fill"
+    v_align = "start"
+[/UiVLayout]
+[/left_rail_layout]
+
+[tab_scene_button]
+parent = @left_rail_layout
+[UiButton]
+    size_ratio = (1.0, 0.26)
+    click_signals = ["editor_tab_scene"]
+    style = $btn_idle
+    hover = { style = $btn_hover }
+    pressed = { style = $btn_press }
+[/UiButton]
+[/tab_scene_button]
+
+[tab_scene_label]
+parent = @tab_scene_button
+[UiLabel]
+    size_ratio = (1.0, 1.0)
+    text = "[]"
+    text_size_ratio = 0.40
+    color = $col_text
+    input_enabled = false
+    mouse_filter = "pass"
+[/UiLabel]
+[/tab_scene_label]
+
+[tab_script_button]
+parent = @left_rail_layout
+[UiButton]
+    size_ratio = (1.0, 0.26)
+    click_signals = ["editor_tab_script"]
+    style = $btn_idle
+    hover = { style = $btn_hover }
+    pressed = { style = $btn_press }
+[/UiButton]
+[/tab_script_button]
+
+[tab_script_label]
+parent = @tab_script_button
+[UiLabel]
+    size_ratio = (1.0, 1.0)
+    text = "||"
+    text_size_ratio = 0.40
+    color = $col_text
+    input_enabled = false
+    mouse_filter = "pass"
+[/UiLabel]
+[/tab_script_label]
+
+[tab_anim_button]
+parent = @left_rail_layout
+[UiButton]
+    size_ratio = (1.0, 0.26)
+    click_signals = ["editor_tab_anim"]
+    style = $btn_idle
+    hover = { style = $btn_hover }
+    pressed = { style = $btn_press }
+[/UiButton]
+[/tab_anim_button]
+
+[tab_anim_label]
+parent = @tab_anim_button
+[UiLabel]
+    size_ratio = (1.0, 1.0)
+    text = "<>"
+    text_size_ratio = 0.40
+    color = $col_text
+    input_enabled = false
+    mouse_filter = "pass"
+[/UiLabel]
+[/tab_anim_label]
+
+[workspace]
+parent = $root
+[UiPanel]
+    anchor = "tr"
+    position_ratio = (1.0, 1.0)
+    pivot_ratio = (1.0, 1.0)
+    size_ratio = (0.972, 0.955)
+    style = { fill = $col_panel stroke = "#00000000" stroke_width = 0 radius = 0 }
+[/UiPanel]
+[/workspace]
+
+[scene_editor_root]
+parent = @workspace
+root_of = "res://scenes/scene_editor.scn"
+[/scene_editor_root]
+
+[script_editor_root]
+parent = @workspace
+root_of = "res://scenes/script_editor.scn"
+[/script_editor_root]
+
+[anim_editor_root]
+parent = @workspace
+root_of = "res://scenes/anim_editor.scn"
+[/anim_editor_root]

@@ -4,8 +4,8 @@ type SelfNodeType = Camera2D;
 
 const PAN_SPEED: f32 = 900.0;
 const ZOOM_STEP: f32 = 0.08;
-const MIN_ZOOM: f32 = -0.65;
-const MAX_ZOOM: f32 = 1.25;
+const MIN_ZOOM: f32 = 0.10;
+const MAX_ZOOM: f32 = 8.0;
 
 lifecycle!({
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
@@ -35,7 +35,7 @@ lifecycle!({
         let wheel = mouse_wheel!(ctx.ipt).y;
         if wheel.abs() > 0.001 {
             let _ = with_node_mut!(ctx.run, Camera2D, ctx.id, |cam| {
-                cam.zoom = (cam.zoom - wheel * ZOOM_STEP).clamp(MIN_ZOOM, MAX_ZOOM);
+                cam.zoom = (cam.zoom + wheel * ZOOM_STEP).clamp(MIN_ZOOM, MAX_ZOOM);
             });
         }
     }

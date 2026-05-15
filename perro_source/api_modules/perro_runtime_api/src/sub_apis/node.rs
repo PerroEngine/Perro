@@ -775,6 +775,9 @@ pub trait NodeAPI {
     /// Marks one node + all descendants dirty for render extraction this frame.
     fn force_rerender(&mut self, root_id: NodeID) -> bool;
 
+    /// Marks one node dirty for render extraction this frame.
+    fn mark_needs_rerender(&mut self, node_id: NodeID) -> bool;
+
     /// Batch reparent. Returns count of successful operations.
     fn reparent_multi<I>(&mut self, parent_id: NodeID, child_ids: I) -> usize
     where
@@ -1091,6 +1094,10 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
 
     pub fn force_rerender(&mut self, root_id: NodeID) -> bool {
         self.rt.force_rerender(root_id)
+    }
+
+    pub fn mark_needs_rerender(&mut self, node_id: NodeID) -> bool {
+        self.rt.mark_needs_rerender(node_id)
     }
 
     pub fn reparent_multi<I>(&mut self, parent_id: NodeID, child_ids: I) -> usize

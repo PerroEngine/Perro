@@ -1,6 +1,6 @@
 [project]
 name = "Perro Editor"
-main_scene = "res://proj_manager.scn"
+main_scene = "res://main.scn"
 icon = "res://perro-logo.png"
 startup_splash = "res://perro-logo.png"
 

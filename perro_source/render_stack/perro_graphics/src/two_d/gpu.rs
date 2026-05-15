@@ -40,6 +40,9 @@ struct SpriteInstanceGpu {
     transform_0: [f32; 3],
     transform_1: [f32; 3],
     transform_2: [f32; 3],
+    uv_min: [f32; 2],
+    uv_max: [f32; 2],
+    size: [f32; 2],
     z_index: i32,
     tint: [u8; 4],
 }
@@ -438,6 +441,9 @@ impl Gpu2D {
                     transform_0: sprite.model[0],
                     transform_1: sprite.model[1],
                     transform_2: sprite.model[2],
+                    uv_min: sprite.uv_min,
+                    uv_max: sprite.uv_max,
+                    size: sprite.size,
                     z_index: sprite.z_index,
                     tint: color_to_unorm8(sprite.tint.into()),
                 });

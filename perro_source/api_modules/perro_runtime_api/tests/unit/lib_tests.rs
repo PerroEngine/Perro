@@ -143,6 +143,10 @@ impl NodeAPI for DummyRuntime {
         false
     }
 
+    fn mark_needs_rerender(&mut self, _node_id: NodeID) -> bool {
+        false
+    }
+
     fn reparent_multi<I>(&mut self, _parent: NodeID, _child_ids: I) -> usize
     where
         I: IntoIterator<Item = NodeID>,

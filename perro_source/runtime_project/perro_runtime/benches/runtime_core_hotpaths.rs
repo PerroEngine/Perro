@@ -1,7 +1,9 @@
 use ahash::AHashMap;
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use perro_ids::{NodeID, TextureID};
-use perro_nodes::{Node2D, Node3D, SceneNode, SceneNodeData, Sprite2D};
+use perro_nodes::{
+    AnimatedSprite, AnimatedSprite2D, Node2D, Node3D, SceneNode, SceneNodeData, Sprite2D,
+};
 use perro_render_bridge::{Command2D, RenderCommand};
 use perro_runtime::{NodeArena, Runtime};
 use perro_runtime_api::sub_apis::{NodeAPI, NodeCreationTemplate};
@@ -241,6 +243,89 @@ fn bench_trimesh_vertices_clone_vs_arc_share(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_animated_sprite_2d_hotpaths(c: &mut Criterion) {
+    let mut sprite = AnimatedSprite2D::new();
+    sprite.current_animation = "run".into();
+    for i in 0..32 {
+        let mut animation = AnimatedSprite::new(format!("anim_{i}"));
+        animation.frame_size = [16.0, 16.0];
+        animation.frame_count = 16;
+        animation.columns = 4;
+        animation.fps = 12.0 + i as f32;
+        sprite.animations.push(animation);
+    }
+    let mut run = AnimatedSprite::new("run");
+    run.start = [32.0, 16.0];
+    run.frame_size = [16.0, 16.0];
+    run.frame_count = 24;
+    run.columns = 6;
+    run.fps = 24.0;
+    sprite.animations.push(run);
+
+    let mut group = c.benchmark_group("runtime_core/animated_sprite_2d_hotpaths");
+    group.bench_function("current_animation_data", |b| {
+        b.iter(|| {
+            let animation = black_box(&sprite)
+                .current_animation_data()
+                .expect("animation");
+            black_box(animation.frame_count)
+        })
+    });
+    group.bench_function("current_texture_region", |b| {
+        b.iter(|| black_box(&sprite).current_texture_region())
+    });
+    group.bench_function("step_like_update", |b| {
+        b.iter_batched(
+            || sprite.clone(),
+            |mut sprite| {
+                for _ in 0..120 {
+                    let Some(animation) = sprite.current_animation_data() else {
+                        return black_box(sprite.current_frame);
+                    };
+                    let frame_count = animation.frame_count.max(1);
+                    let fps = animation.fps.max(0.0) * sprite.fps_scale.max(0.0);
+                    sprite.current_frame = sprite.current_frame.min(frame_count.saturating_sub(1));
+                    if sprite.playing && fps > 0.0 && frame_count > 1 {
+                        sprite.frame_accum += 1.0 / 60.0 * fps;
+                        let steps = sprite.frame_accum.floor() as u32;
+                        if steps > 0 {
+                            sprite.frame_accum -= steps as f32;
+                            sprite.current_frame = (sprite.current_frame + steps) % frame_count;
+                        }
+                    }
+                }
+                black_box(sprite.current_frame)
+            },
+            criterion::BatchSize::SmallInput,
+        )
+    });
+    group.bench_function("leaf_force_rerender", |b| {
+        b.iter_batched(
+            || {
+                let mut runtime = Runtime::new();
+                let ids = (0..10_000)
+                    .map(|_| {
+                        runtime
+                            .nodes
+                            .insert(SceneNode::new(SceneNodeData::AnimatedSprite2D(
+                                AnimatedSprite2D::new(),
+                            )))
+                    })
+                    .collect::<Vec<_>>();
+                (runtime, ids)
+            },
+            |(mut runtime, ids)| {
+                for id in ids {
+                    runtime.mark_needs_rerender(id);
+                }
+                black_box(runtime.dirty_node_count())
+            },
+            criterion::BatchSize::LargeInput,
+        )
+    });
+    group.finish();
+}
+
 fn benches(c: &mut Criterion) {
     bench_node_arena_len_hotloop(c);
     bench_internal_schedule_unregister(c);
@@ -250,6 +335,7 @@ fn benches(c: &mut Criterion) {
     bench_render_command_drain_hotloop(c);
     bench_map_and_schedule_scans(c);
     bench_trimesh_vertices_clone_vs_arc_share(c);
+    bench_animated_sprite_2d_hotpaths(c);
 }
 
 criterion_group! {

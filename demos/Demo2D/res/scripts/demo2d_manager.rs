@@ -6,6 +6,7 @@ const SPRITE_SHEET: &ResPath = res_path!("res://sprite_sheet.png");
 const HERO_SHEET: &ResPath = res_path!("res://hero_sheet.png");
 const LIGHT_DISC: &ResPath = res_path!("res://light_disc.png");
 const RIG_SCENE: &ResPath = res_path!("res://scenes/rig_actor.scn");
+const ANIMATED_SPRITE_SCENE: &ResPath = res_path!("res://scenes/animated_sprite_actor.scn");
 const PLAYER_BOB: &ResPath = res_path!("res://animations/player_bob.panim");
 const MAIN_MENU_SCENE: &ResPath = res_path!("res://Menu/MainMenu.scn");
 const PAUSE_MENU_SCENE: &ResPath = res_path!("res://Menu/PauseMenu.scn");
@@ -16,7 +17,8 @@ const DEMO_UI_ROOT_NODE_NAME: &str = "demo_ui_root";
 const CAMERA_NODE_NAME: &str = "Camera";
 const TOP_BAR_NODE_NAME: &str = "TopBar";
 const TRANSITION_FADE_PANEL_NODE_NAME: &str = "transition_fade_panel";
-const FADE_SECONDS: f32 = 0.30;
+const FADE_IN_SECONDS: f32 = 0.20;
+const FADE_OUT_SECONDS: f32 = 0.22;
 
 #[derive(Variant, Clone, Copy, PartialEq, Eq, Default)]
 enum DemoKind {
@@ -25,6 +27,7 @@ enum DemoKind {
     MeshMaterials,
     Lights,
     Water,
+    AnimatedSprites,
     Animations,
     PhysicsBones,
     PhysicsCollisions,
@@ -37,10 +40,8 @@ enum DemoKind {
 
 #[derive(Variant, Clone, Copy, Default)]
 struct DemoAssets {
-    sprite_sheet: TextureID,
-    hero_sheet: TextureID,
-    light_disc: TextureID,
     rig_scene: PreloadedSceneID,
+    animated_sprite_scene: PreloadedSceneID,
     player_bob: AnimationID,
     main_menu: PreloadedSceneID,
     pause_menu: PreloadedSceneID,
@@ -69,6 +70,14 @@ enum FadeAction {
     RestartDemo,
 }
 
+#[derive(Variant, Clone, Copy, PartialEq, Eq, Default)]
+enum FadePhase {
+    #[default]
+    Idle,
+    FadeIn,
+    FadeOut,
+}
+
 #[derive(Variant, Clone, Copy)]
 struct DemoRuntimeState {
     active_demo: DemoKind,
@@ -76,7 +85,7 @@ struct DemoRuntimeState {
     paused: bool,
     fade_alpha: f32,
     fade_active: bool,
-    fade_midpoint_done: bool,
+    fade_phase: FadePhase,
     fade_action: FadeAction,
 }
 
@@ -88,7 +97,7 @@ impl Default for DemoRuntimeState {
             paused: false,
             fade_alpha: 0.0,
             fade_active: false,
-            fade_midpoint_done: false,
+            fade_phase: FadePhase::Idle,
             fade_action: FadeAction::None,
         }
     }
@@ -107,10 +116,9 @@ struct Demo2DState {
 lifecycle!({
     fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
         let assets = DemoAssets {
-            sprite_sheet: texture_load!(ctx.res, SPRITE_SHEET),
-            hero_sheet: texture_load!(ctx.res, HERO_SHEET),
-            light_disc: texture_load!(ctx.res, LIGHT_DISC),
             rig_scene: scene_preload!(ctx.run, RIG_SCENE).expect("preload rig scene"),
+            animated_sprite_scene: scene_preload!(ctx.run, ANIMATED_SPRITE_SCENE)
+                .expect("preload animated sprite scene"),
             player_bob: animation_load!(ctx.res, PLAYER_BOB),
             main_menu: scene_preload!(ctx.run, MAIN_MENU_SCENE).expect("preload main menu"),
             pause_menu: scene_preload!(ctx.run, PAUSE_MENU_SCENE).expect("preload pause menu"),
@@ -159,6 +167,9 @@ methods!({
         self.activate_demo(ctx, DemoKind::Water);
     }
     fn on_demo_animations_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+        self.activate_demo(ctx, DemoKind::AnimatedSprites);
+    }
+    fn on_demo_sky_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.activate_demo(ctx, DemoKind::Animations);
     }
     fn on_demo_physics_bones_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
@@ -166,9 +177,6 @@ methods!({
     }
     fn on_demo_physics_collisions_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.activate_demo(ctx, DemoKind::PhysicsCollisions);
-    }
-    fn on_demo_sky_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
-        self.activate_demo(ctx, DemoKind::SkyGap);
     }
     fn on_demo_blend_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.activate_demo(ctx, DemoKind::BlendGap);
@@ -208,10 +216,10 @@ methods!({
             DemoKind::Water => {
                 self.spawn_water_zone(ctx, Vector2::new(1500.0, 120.0));
             }
+            DemoKind::AnimatedSprites => {
+                self.spawn_animated_sprite_showcase(ctx, Vector2::new(-1450.0, 260.0));
+            }
             DemoKind::Animations => {
-                self.spawn_animated_sprite_zone(ctx, Vector2::new(-2400.0, 260.0), 8, 8, 44.0);
-                self.spawn_animated_sprite_zone(ctx, Vector2::new(-1700.0, 260.0), 16, 16, 24.0);
-                self.spawn_animated_sprite_zone(ctx, Vector2::new(-450.0, 260.0), 32, 32, 13.0);
                 self.spawn_animation_player_zone(ctx, Vector2::new(-1750.0, -920.0));
             }
             DemoKind::PhysicsBones => {
@@ -220,7 +228,13 @@ methods!({
             DemoKind::PhysicsCollisions => {
                 self.spawn_physics_zone(ctx, Vector2::new(1350.0, -920.0));
             }
-            DemoKind::SkyGap | DemoKind::BlendGap | DemoKind::ParticlesGap | DemoKind::AudioGap => {}
+            DemoKind::ParticlesGap => {
+                self.spawn_particles_zone(ctx, Vector2::new(1300.0, 1250.0));
+            }
+            DemoKind::AudioGap => {
+                self.spawn_audio_zone(ctx, Vector2::new(1950.0, 1250.0));
+            }
+            DemoKind::SkyGap | DemoKind::BlendGap => {}
             DemoKind::MultiMesh => {
                 self.spawn_static_sprite_zone(ctx, Vector2::new(-450.0, 900.0), 64, 64, 10.0, "multimesh_2d");
             }
@@ -340,38 +354,49 @@ methods!({
 
     fn start_transition_fade(&self, ctx: &mut ScriptContext<'_, API>) {
         with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| {
-            state.runtime.fade_alpha = 1.0;
+            state.runtime.fade_alpha = 0.0;
             state.runtime.fade_active = true;
-            state.runtime.fade_midpoint_done = false;
+            state.runtime.fade_phase = FadePhase::FadeIn;
         });
-        self.apply_transition_fade(ctx, 1.0, true);
+        self.apply_transition_fade(ctx, 0.0, true);
     }
 
     fn update_fade(&self, ctx: &mut ScriptContext<'_, API>) {
         let dt = delta_time!(ctx.run);
-        let Some((alpha, active, midpoint)) = with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| {
+        let Some((alpha, active, do_action)) = with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| {
             if !state.runtime.fade_active {
                 return (0.0, false, false);
             }
-            let prev_alpha = state.runtime.fade_alpha;
-            let step = if FADE_SECONDS <= 0.0001 { 1.0 } else { dt / FADE_SECONDS };
-            state.runtime.fade_alpha = (state.runtime.fade_alpha - step).max(0.0);
-            let midpoint =
-                !state.runtime.fade_midpoint_done && prev_alpha > 0.5 && state.runtime.fade_alpha <= 0.5;
-            if midpoint {
-                state.runtime.fade_midpoint_done = true;
+            let mut do_action = false;
+            match state.runtime.fade_phase {
+                FadePhase::Idle => {
+                    state.runtime.fade_active = false;
+                }
+                FadePhase::FadeIn => {
+                    let step = if FADE_IN_SECONDS <= 0.0001 { 1.0 } else { dt / FADE_IN_SECONDS };
+                    state.runtime.fade_alpha = (state.runtime.fade_alpha + step).min(1.0);
+                    if state.runtime.fade_alpha >= 0.999 {
+                        state.runtime.fade_alpha = 1.0;
+                        state.runtime.fade_phase = FadePhase::FadeOut;
+                        do_action = true;
+                    }
+                }
+                FadePhase::FadeOut => {
+                    let step = if FADE_OUT_SECONDS <= 0.0001 { 1.0 } else { dt / FADE_OUT_SECONDS };
+                    state.runtime.fade_alpha = (state.runtime.fade_alpha - step).max(0.0);
+                    if state.runtime.fade_alpha <= 0.001 {
+                        state.runtime.fade_alpha = 0.0;
+                        state.runtime.fade_active = false;
+                        state.runtime.fade_phase = FadePhase::Idle;
+                        state.runtime.fade_action = FadeAction::None;
+                    }
+                }
             }
-            if state.runtime.fade_alpha <= 0.001 {
-                state.runtime.fade_alpha = 0.0;
-                state.runtime.fade_active = false;
-                state.runtime.fade_midpoint_done = false;
-                state.runtime.fade_action = FadeAction::None;
-            }
-            (state.runtime.fade_alpha, state.runtime.fade_active, midpoint)
+            (state.runtime.fade_alpha, state.runtime.fade_active, do_action)
         }) else {
             return;
         };
-        if midpoint {
+        if do_action {
             self.apply_fade_action(ctx);
         }
         self.apply_transition_fade(ctx, alpha, active);
@@ -410,6 +435,9 @@ methods!({
         }
         let target = demo_anchor(demo);
         let _ = set_local_pos_2d!(ctx.run, camera, target);
+        let _ = with_node_mut!(ctx.run, Camera2D, camera, |cam| {
+            cam.zoom = 1.0;
+        });
     }
 
     fn apply_fade_action(&self, ctx: &mut ScriptContext<'_, API>) {
@@ -421,6 +449,7 @@ methods!({
             FadeAction::ActivateDemo | FadeAction::RestartDemo => {
                 with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| {
                     state.runtime.active_demo = demo;
+                    state.runtime.queued_demo = DemoKind::None;
                     state.runtime.paused = false;
                 });
                 self.rebuild(ctx, demo);
@@ -430,6 +459,7 @@ methods!({
             FadeAction::ShowHub => {
                 with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| {
                     state.runtime.active_demo = DemoKind::None;
+                    state.runtime.queued_demo = DemoKind::None;
                     state.runtime.paused = false;
                 });
                 self.clear_dynamic(ctx);
@@ -478,7 +508,7 @@ methods!({
         step: f32,
         _name: &str,
     ) {
-        let tex = self.assets(ctx).sprite_sheet;
+        let tex = texture_load!(ctx.res, SPRITE_SHEET);
         for y in 0..rows {
             for x in 0..cols {
                 let idx = ((y * cols + x) % 64) as f32;
@@ -495,44 +525,33 @@ methods!({
         }
     }
 
-    fn spawn_animated_sprite_zone(
-        &self,
-        ctx: &mut ScriptContext<'_, API>,
-        origin: Vector2,
-        cols: i32,
-        rows: i32,
-        step: f32,
-    ) {
-        let tex = self.assets(ctx).hero_sheet;
-        for y in 0..rows {
-            for x in 0..cols {
-                let node = create_node!(ctx.run, AnimatedSprite2D, "anim_sprite", tags!["demo2d_dynamic"], ctx.id);
-                let px = origin.x + x as f32 * step;
-                let py = origin.y - y as f32 * step;
-                let _ = with_node_mut!(ctx.run, AnimatedSprite2D, node, |sprite| {
-                    sprite.texture = tex;
-                    sprite.animations = vec![AnimatedSprite {
-                        name: "run".into(),
-                        start: [0.0, 0.0],
-                        frame_size: [32.0, 32.0],
-                        frame_count: 4,
-                        columns: 4,
-                        fps: 10.0 + ((x + y) % 4) as f32,
-                    }];
-                    sprite.current_animation = "run".into();
-                    sprite.playing = true;
-                    sprite.looping = true;
-                    sprite.transform.position = Vector2::new(px, py);
-                    sprite.transform.scale = Vector2::new(0.75, 0.75);
-                });
-            }
+    fn spawn_animated_sprite_showcase(&self, ctx: &mut ScriptContext<'_, API>, origin: Vector2) {
+        let scene = self.assets(ctx).animated_sprite_scene;
+        let defs = [
+            ("idle", Vector2::new(-220.0, 40.0), 2.8),
+            ("run", Vector2::new(0.0, 40.0), 2.8),
+            ("hurt_grid", Vector2::new(220.0, 40.0), 2.8),
+        ];
+        for (name, offset, scale) in defs {
+            let Ok(node) = scene_load!(ctx.run, scene) else { continue; };
+            reparent!(ctx.run, ctx.id, node);
+            tag_add!(ctx.run, node, tags!["demo2d_dynamic"]);
+            let _ = with_node_mut!(ctx.run, AnimatedSprite2D, node, |sprite| {
+                sprite.current_animation = name.into();
+                sprite.current_frame = 0;
+                sprite.fps_scale = 1.0;
+                sprite.playing = true;
+                sprite.looping = true;
+                sprite.transform.position = origin + offset;
+                sprite.transform.scale = Vector2::new(scale, scale);
+            });
         }
     }
 
     fn spawn_light_zone(&self, ctx: &mut ScriptContext<'_, API>, origin: Vector2) {
         self.spawn_static_sprite_zone(ctx, origin + Vector2::new(-360.0, 120.0), 16, 16, 22.0, "light_bg");
 
-        let disc = self.assets(ctx).light_disc;
+        let disc = texture_load!(ctx.res, LIGHT_DISC);
         for i in 0..8 {
             let node = create_node!(ctx.run, PointLight2D, "point_light", tags!["demo2d_dynamic"], ctx.id);
             let x = origin.x - 280.0 + i as f32 * 80.0;
@@ -614,7 +633,7 @@ methods!({
                 let _ = with_node_mut!(ctx.run, CollisionShape2D, shape, |s| {
                     s.shape = Shape2D::Quad { width: 20.0, height: 20.0 };
                 });
-                let sprite_sheet = self.assets(ctx).sprite_sheet;
+                let sprite_sheet = texture_load!(ctx.res, SPRITE_SHEET);
                 self.spawn_child_sprite(ctx, body, sprite_sheet, 32.0 * ((i % 8) as f32), 64.0, 32.0, 32.0, 0.65);
             }
         }
@@ -648,14 +667,14 @@ methods!({
                     Shape2D::Quad { width: 24.0, height: 24.0 }
                 };
             });
-            let sprite_sheet = self.assets(ctx).sprite_sheet;
+            let sprite_sheet = texture_load!(ctx.res, SPRITE_SHEET);
             self.spawn_child_sprite(ctx, body, sprite_sheet, 32.0 * ((i % 8) as f32), 96.0, 32.0, 32.0, 0.7);
         }
     }
 
     fn spawn_animation_player_zone(&self, ctx: &mut ScriptContext<'_, API>, origin: Vector2) {
         let clip = self.assets(ctx).player_bob;
-        let tex = self.assets(ctx).hero_sheet;
+        let tex = texture_load!(ctx.res, HERO_SHEET);
         for i in 0..48 {
             let actor = create_node!(ctx.run, Node2D, "actor_root", tags!["demo2d_dynamic"], ctx.id);
             let col = (i % 12) as f32;
@@ -664,18 +683,10 @@ methods!({
                 node.transform.position = origin + Vector2::new(-330.0 + col * 62.0, row * 84.0);
             });
 
-            let sprite = create_node!(ctx.run, AnimatedSprite2D, "actor_sprite", tags!["demo2d_dynamic"], actor);
-            let _ = with_node_mut!(ctx.run, AnimatedSprite2D, sprite, |node| {
+            let sprite = create_node!(ctx.run, Sprite2D, "actor_sprite", tags!["demo2d_dynamic"], actor);
+            let _ = with_node_mut!(ctx.run, Sprite2D, sprite, |node| {
                 node.texture = tex;
-                node.animations = vec![AnimatedSprite {
-                    name: "run".into(),
-                    start: [0.0, 0.0],
-                    frame_size: [32.0, 32.0],
-                    frame_count: 4,
-                    columns: 4,
-                    fps: 9.0 + (i % 4) as f32,
-                }];
-                node.current_animation = "run".into();
+                node.texture_region = Some([32.0 * (i % 4) as f32, 0.0, 32.0, 32.0]);
                 node.transform.scale = Vector2::new(1.0, 1.0);
             });
 
@@ -701,6 +712,69 @@ methods!({
             let pos = origin + Vector2::new(-260.0 + col * 180.0, row * 170.0);
             let _ = set_local_pos_2d!(ctx.run, root, pos);
             let _ = set_local_scale_2d!(ctx.run, root, Vector2::new(1.5, 1.5));
+        }
+    }
+
+    fn spawn_particles_zone(&self, ctx: &mut ScriptContext<'_, API>, origin: Vector2) {
+        self.spawn_static_sprite_zone(ctx, origin + Vector2::new(-320.0, 120.0), 14, 10, 26.0, "particle_bg");
+        let disc = texture_load!(ctx.res, LIGHT_DISC);
+        for i in 0..4 {
+            let node = create_node!(ctx.run, ParticleEmitter2D, "particles", tags!["demo2d_dynamic"], ctx.id);
+            let pos = origin
+                + match i {
+                    0 => Vector2::new(-220.0, 90.0),
+                    1 => Vector2::new(-40.0, 0.0),
+                    2 => Vector2::new(150.0, 100.0),
+                    _ => Vector2::new(310.0, -20.0),
+                };
+            let profile = match i {
+                0 => "inline://preset = spiral\npreset_param_a = 2.6\npreset_param_b = 18.0\nlifetime_min = 1.0\nlifetime_max = 1.4\nspeed_min = 12.0\nspeed_max = 24.0\nsize_min = 6.0\nsize_max = 12.0\ncolor_start = (1.0, 0.6, 0.2, 1.0)\ncolor_end = (0.9, 0.1, 0.0, 0.0)".to_string(),
+                1 => "inline://preset = ballistic\nforce = (0.0, -55.0)\nlifetime_min = 0.8\nlifetime_max = 1.1\nspeed_min = 40.0\nspeed_max = 88.0\nspread_radians = 0.5\nsize_min = 4.0\nsize_max = 9.0\ncolor_start = (0.4, 0.9, 1.0, 1.0)\ncolor_end = (0.1, 0.3, 1.0, 0.0)".to_string(),
+                2 => "inline://preset = noise_drift\npreset_param_a = 22.0\npreset_param_b = 1.8\nlifetime_min = 1.6\nlifetime_max = 2.3\nspeed_min = 8.0\nspeed_max = 18.0\nsize_min = 8.0\nsize_max = 15.0\ncolor_start = (0.8, 1.0, 0.9, 0.7)\ncolor_end = (0.8, 1.0, 0.9, 0.0)".to_string(),
+                _ => "inline://preset = flat_disk\nlifetime_min = 0.6\nlifetime_max = 0.9\nspeed_min = 26.0\nspeed_max = 44.0\nsize_min = 5.0\nsize_max = 10.0\ncolor_start = (1.0, 0.95, 0.5, 1.0)\ncolor_end = (1.0, 0.3, 0.1, 0.0)".to_string(),
+            };
+            let _ = with_node_mut!(ctx.run, ParticleEmitter2D, node, |emitter| {
+                emitter.transform.position = pos;
+                emitter.spawn_rate = 180.0 + i as f32 * 70.0;
+                emitter.seed = 10 + i as u32;
+                emitter.profile = profile.clone();
+                emitter.prewarm = true;
+            });
+            self.spawn_marker_sprite(ctx, disc, pos, 1.0 + i as f32 * 0.2);
+        }
+    }
+
+    fn spawn_audio_zone(&self, ctx: &mut ScriptContext<'_, API>, origin: Vector2) {
+        self.spawn_static_sprite_zone(ctx, origin + Vector2::new(-280.0, 100.0), 12, 8, 28.0, "audio_bg");
+        let disc = texture_load!(ctx.res, LIGHT_DISC);
+        for i in 0..3 {
+            let pos = origin + Vector2::new(-180.0 + i as f32 * 180.0, 40.0 + (i % 2) as f32 * 80.0);
+            let mask = create_node!(ctx.run, AudioMask2D, "audio_mask", tags!["demo2d_dynamic"], ctx.id);
+            let _ = with_node_mut!(ctx.run, AudioMask2D, mask, |node| {
+                node.transform.position = pos;
+            });
+            let zone = create_node!(ctx.run, AudioEffectZone2D, "audio_zone", tags!["demo2d_dynamic"], ctx.id);
+            let _ = with_node_mut!(ctx.run, AudioEffectZone2D, zone, |node| {
+                node.transform.position = pos + Vector2::new(0.0, -70.0);
+                node.bounce = i % 2 == 0;
+            });
+            self.spawn_marker_sprite(ctx, disc, pos, 1.8);
+            self.spawn_ring(ctx, pos, 56.0 + i as f32 * 18.0, 18 + i * 6);
+        }
+    }
+
+    fn spawn_ring(&self, ctx: &mut ScriptContext<'_, API>, center: Vector2, radius: f32, count: i32) {
+        let disc = texture_load!(ctx.res, LIGHT_DISC);
+        for i in 0..count {
+            let t = i as f32 / count as f32;
+            let a = t * std::f32::consts::TAU;
+            let pos = center + Vector2::new(a.cos() * radius, a.sin() * radius);
+            let node = create_node!(ctx.run, Sprite2D, "audio_dot", tags!["demo2d_dynamic"], ctx.id);
+            let _ = with_node_mut!(ctx.run, Sprite2D, node, |sprite| {
+                sprite.texture = disc;
+                sprite.transform.position = pos;
+                sprite.transform.scale = Vector2::new(0.18, 0.18);
+            });
         }
     }
 
@@ -752,26 +826,29 @@ methods!({
             DemoKind::MeshMaterials => "Sprite Stress".to_string(),
             DemoKind::Lights => "Lights".to_string(),
             DemoKind::Water => "Water".to_string(),
+            DemoKind::AnimatedSprites => "Animated Sprites".to_string(),
             DemoKind::Animations => "Animations".to_string(),
             DemoKind::PhysicsBones => "Physics Bones".to_string(),
             DemoKind::PhysicsCollisions => "Physics Collisions".to_string(),
             DemoKind::SkyGap => "Reserved".to_string(),
             DemoKind::BlendGap => "Reserved".to_string(),
             DemoKind::MultiMesh => "Sprite Batch".to_string(),
-            DemoKind::ParticlesGap => "Reserved".to_string(),
-            DemoKind::AudioGap => "Reserved".to_string(),
+            DemoKind::ParticlesGap => "Particles".to_string(),
+            DemoKind::AudioGap => "Audio".to_string(),
         };
+        let active_anim_sprites = query!(ctx.run, all(node_type[AnimatedSprite2D]), in_subtree(ctx.id)).len();
         let body = match active_demo {
             DemoKind::None => "pick lane frm hub".to_string(),
             DemoKind::MeshMaterials => "sprites 256/1024/4096".to_string(),
             DemoKind::Lights => "point 8 | spot 2 | ray 2".to_string(),
             DemoKind::Water => "water 3 | floaters 48".to_string(),
-            DemoKind::Animations => "anim sprites 64/256/1024 | players 48".to_string(),
+            DemoKind::AnimatedSprites => format!("active animated sprites {}", active_anim_sprites),
+            DemoKind::Animations => "transform clips | players 48".to_string(),
             DemoKind::PhysicsBones => "rigs 12 | bone chains 12".to_string(),
             DemoKind::PhysicsCollisions => "rigid 240".to_string(),
-            DemoKind::SkyGap | DemoKind::BlendGap | DemoKind::ParticlesGap | DemoKind::AudioGap => {
-                "gap lane".to_string()
-            }
+            DemoKind::ParticlesGap => "emitters 4 | mixed cpu particles".to_string(),
+            DemoKind::AudioGap => "masks 3 | fx zones 3".to_string(),
+            DemoKind::SkyGap | DemoKind::BlendGap => "gap lane".to_string(),
             DemoKind::MultiMesh => "dense retained sprite batch".to_string(),
         };
         let _ = call_method!(ctx.run, overlay, func!("set_content"), params![title, body]);
@@ -852,9 +929,10 @@ fn demo_anchor(demo: DemoKind) -> Vector2 {
         DemoKind::None | DemoKind::MeshMaterials => Vector2::new(-1450.0, 650.0),
         DemoKind::Lights => Vector2::new(1450.0, 850.0),
         DemoKind::Water => Vector2::new(1500.0, 120.0),
+        DemoKind::AnimatedSprites => Vector2::new(-1450.0, 260.0),
         DemoKind::Animations => Vector2::new(-1750.0, -920.0),
-        DemoKind::PhysicsBones => Vector2::new(100.0, -920.0),
-        DemoKind::PhysicsCollisions => Vector2::new(1350.0, -920.0),
+        DemoKind::PhysicsBones => Vector2::new(0.0, -780.0),
+        DemoKind::PhysicsCollisions => Vector2::new(1350.0, -520.0),
         DemoKind::SkyGap => Vector2::new(0.0, 1250.0),
         DemoKind::BlendGap => Vector2::new(650.0, 1250.0),
         DemoKind::MultiMesh => Vector2::new(-450.0, 900.0),

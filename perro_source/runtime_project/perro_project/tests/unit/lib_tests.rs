@@ -650,6 +650,26 @@ fn ensure_source_overrides_repairs_dev_runner_features() {
 }
 
 #[test]
+fn ensure_source_overrides_recreates_missing_scripts_manifest() {
+    let root = unique_temp_dir("perro_restore_scripts_manifest");
+    ensure_project_layout(&root).expect("layout");
+    ensure_project_scaffold(&root, "Restore Scripts Manifest").expect("scaffold");
+
+    let manifest = root.join(".perro").join("scripts").join("Cargo.toml");
+    fs::remove_file(&manifest).expect("rm scripts manifest");
+
+    ensure_source_overrides(&root).expect("overrides");
+
+    let repaired = fs::read_to_string(&manifest).expect("read repaired scripts manifest");
+    assert!(repaired.contains("name = \"scripts\""));
+    assert!(repaired.contains("crate-type = [\"cdylib\", \"rlib\"]"));
+    assert!(repaired.contains("perro_api = \"0.1.0\""));
+    assert!(repaired.contains("perro_runtime = \"0.1.0\""));
+
+    fs::remove_dir_all(&root).expect("cleanup");
+}
+
+#[test]
 fn scaffold_project_release_strip_only_targets_project_package() {
     let root = unique_temp_dir("perro_release_strip_project_only");
     ensure_project_layout(&root).expect("layout");
