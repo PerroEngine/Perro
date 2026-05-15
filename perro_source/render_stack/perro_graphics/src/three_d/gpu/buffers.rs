@@ -339,6 +339,14 @@ impl Gpu3D {
                 },
             ],
         });
+        self.camera_bind_group_generation = self.camera_bind_group_generation.wrapping_add(1);
+        if self.camera_bind_group_generation == 0 {
+            self.camera_bind_group_generation = 1;
+        }
+        self.multimesh_bind_group_generation = self.multimesh_bind_group_generation.wrapping_add(1);
+        if self.multimesh_bind_group_generation == 0 {
+            self.multimesh_bind_group_generation = 1;
+        }
     }
 
     pub(super) fn ensure_skeleton_capacity(&mut self, device: &wgpu::Device, needed: usize) {

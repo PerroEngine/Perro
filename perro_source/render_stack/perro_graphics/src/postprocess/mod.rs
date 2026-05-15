@@ -57,6 +57,30 @@ struct EncodedEffectParams {
     custom_params: Vec<[f32; 4]>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum PostInputKind {
+    External,
+    PingA,
+    PingB,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct PostBindGroupKey {
+    input_kind: PostInputKind,
+    external_input_view_id: usize,
+    depth_view_id: usize,
+    uniform_buffer_generation: u32,
+    params_buffer_generation: u32,
+    lut_2d_key: u64,
+    lut_3d_key: u64,
+}
+
+#[derive(Clone, Copy, Default)]
+struct PostPerfCounters {
+    bind_group_hits: u32,
+    bind_group_misses: u32,
+}
+
 pub struct PostProcessContext<'a> {
     pub(crate) device: &'a wgpu::Device,
     pub(crate) queue: &'a wgpu::Queue,
@@ -90,14 +114,20 @@ pub struct PostProcessor {
     lut_2d_textures: HashMap<String, CachedPostTexture>,
     lut_3d_textures: HashMap<String, CachedPostTexture>,
     bgl: wgpu::BindGroupLayout,
+    pipeline_layout: wgpu::PipelineLayout,
     builtin_pipeline: wgpu::RenderPipeline,
     custom_pipelines: HashMap<String, wgpu::RenderPipeline>,
+    post_bind_groups: HashMap<PostBindGroupKey, wgpu::BindGroup>,
     uniform_buffer: wgpu::Buffer,
     uniform_stride: u64,
     uniform_capacity: usize,
+    uniform_buffer_generation: u32,
     params_buffer: wgpu::Buffer,
     params_capacity: usize,
+    params_buffer_generation: u32,
+    lut_generation: u32,
     frame_counter: u64,
+    perf_counters: PostPerfCounters,
 }
 
 struct PostBindGroupDesc<'a> {
@@ -307,14 +337,20 @@ impl PostProcessor {
             lut_2d_textures: HashMap::new(),
             lut_3d_textures: HashMap::new(),
             bgl,
+            pipeline_layout,
             builtin_pipeline,
             custom_pipelines: HashMap::new(),
+            post_bind_groups: HashMap::new(),
             uniform_buffer,
             uniform_stride,
             uniform_capacity,
+            uniform_buffer_generation: 1,
             params_buffer,
             params_capacity,
+            params_buffer_generation: 1,
+            lut_generation: 1,
             frame_counter: 0,
+            perf_counters: PostPerfCounters::default(),
         }
     }
 
@@ -336,6 +372,7 @@ impl PostProcessor {
         self.ping_a_view = ping_a_view;
         self.ping_b = ping_b;
         self.ping_b_view = ping_b_view;
+        self.post_bind_groups.clear();
     }
 
     pub fn scene_view(&self) -> &wgpu::TextureView {
@@ -386,6 +423,7 @@ impl PostProcessor {
         let inv_height = 1.0 / height;
         self.frame_counter = self.frame_counter.wrapping_add(1);
         let time = self.frame_counter as f32;
+        self.perf_counters = PostPerfCounters::default();
 
         let mut max_params = 0usize;
         for effect in *effects {
@@ -407,9 +445,9 @@ impl PostProcessor {
             let last = index + 1 == effects.len();
             self.ensure_lut_texture(device, queue, effect, *static_texture_lookup);
             let current_input = match input_kind {
-                0 => *input_view,
-                1 => &self.ping_a_view,
-                _ => &self.ping_b_view,
+                0 => (*input_view).clone(),
+                1 => self.ping_a_view.clone(),
+                _ => self.ping_b_view.clone(),
             };
 
             // Use the new struct for encoded params
@@ -449,12 +487,23 @@ impl PostProcessor {
             );
 
             let target_view = if last {
-                *output_view
+                (*output_view).clone()
             } else if use_ping_a {
-                &self.ping_a_view
+                self.ping_a_view.clone()
             } else {
-                &self.ping_b_view
+                self.ping_b_view.clone()
             };
+            let bind_group = self.bind_group_for_effect(
+                device,
+                effect,
+                match input_kind {
+                    0 => PostInputKind::External,
+                    1 => PostInputKind::PingA,
+                    _ => PostInputKind::PingB,
+                },
+                &current_input,
+                depth_view,
+            );
             let pipeline = match effect {
                 PostProcessEffect::Custom { shader_path, .. } => self
                     .custom_pipelines
@@ -463,27 +512,11 @@ impl PostProcessor {
                 _ => &self.builtin_pipeline,
             };
 
-            let (lut_2d_view, lut_3d_view) = self.lut_views(effect);
-            let bind_group = create_post_bind_group(
-                device,
-                PostBindGroupDesc {
-                    bgl: &self.bgl,
-                    input_view: current_input,
-                    sampler: &self.sampler,
-                    depth_view,
-                    uniform_buffer: &self.uniform_buffer,
-                    uniform_size_bytes: std::mem::size_of::<PostUniform>() as u64,
-                    params_buffer: &self.params_buffer,
-                    lut_2d_view,
-                    lut_3d_view,
-                },
-            );
-
             {
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("perro_post_pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: target_view,
+                        view: &target_view,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -539,12 +572,7 @@ impl PostProcessor {
             label: Some("perro_post_custom"),
             source: wgpu::ShaderSource::Wgsl(wgsl.into()),
         });
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("perro_post_pipeline_layout"),
-            bind_group_layouts: &[Some(&self.bgl)],
-            immediate_size: 0,
-        });
-        let pipeline = create_pipeline(device, &pipeline_layout, &shader, self.format);
+        let pipeline = create_pipeline(device, &self.pipeline_layout, &shader, self.format);
         self.custom_pipelines
             .insert(shader_path.to_string(), pipeline);
         self.custom_pipelines.get(shader_path)
@@ -572,6 +600,7 @@ impl PostProcessor {
                 };
                 let texture = create_post_lut_2d(device, queue, rgba, width, height);
                 self.lut_2d_textures.insert(key, texture);
+                self.bump_lut_generation();
             }
             PostProcessEffect::Lut3D {
                 texture_path, size, ..
@@ -590,6 +619,7 @@ impl PostProcessor {
                 };
                 let texture = create_post_lut_3d(device, queue, rgba_3d, size);
                 self.lut_3d_textures.insert(key, texture);
+                self.bump_lut_generation();
             }
             _ => {}
         }
@@ -638,6 +668,8 @@ impl PostProcessor {
             mapped_at_creation: false,
         });
         self.params_capacity = new_capacity;
+        self.params_buffer_generation = next_generation(self.params_buffer_generation);
+        self.post_bind_groups.clear();
     }
 
     fn ensure_uniform_capacity(&mut self, device: &wgpu::Device, needed: usize) {
@@ -655,6 +687,96 @@ impl PostProcessor {
             mapped_at_creation: false,
         });
         self.uniform_capacity = new_capacity;
+        self.uniform_buffer_generation = next_generation(self.uniform_buffer_generation);
+        self.post_bind_groups.clear();
+    }
+
+    fn bind_group_for_effect(
+        &mut self,
+        device: &wgpu::Device,
+        effect: &PostProcessEffect,
+        input_kind: PostInputKind,
+        input_view: &wgpu::TextureView,
+        depth_view: &wgpu::TextureView,
+    ) -> wgpu::BindGroup {
+        let lut_2d_key = lut_hash_2d(effect);
+        let lut_3d_key = lut_hash_3d(effect);
+        let key = PostBindGroupKey {
+            input_kind,
+            external_input_view_id: if input_kind == PostInputKind::External {
+                texture_view_id(input_view)
+            } else {
+                0
+            },
+            depth_view_id: texture_view_id(depth_view),
+            uniform_buffer_generation: self.uniform_buffer_generation,
+            params_buffer_generation: self.params_buffer_generation,
+            lut_2d_key,
+            lut_3d_key,
+        };
+        if !self.post_bind_groups.contains_key(&key) {
+            let (lut_2d_view, lut_3d_view) = self.lut_views(effect);
+            let bind_group = create_post_bind_group(
+                device,
+                PostBindGroupDesc {
+                    bgl: &self.bgl,
+                    input_view,
+                    sampler: &self.sampler,
+                    depth_view,
+                    uniform_buffer: &self.uniform_buffer,
+                    uniform_size_bytes: std::mem::size_of::<PostUniform>() as u64,
+                    params_buffer: &self.params_buffer,
+                    lut_2d_view,
+                    lut_3d_view,
+                },
+            );
+            self.post_bind_groups.insert(key, bind_group);
+            self.perf_counters.bind_group_misses =
+                self.perf_counters.bind_group_misses.saturating_add(1);
+        } else {
+            self.perf_counters.bind_group_hits =
+                self.perf_counters.bind_group_hits.saturating_add(1);
+        }
+        self.post_bind_groups
+            .get(&key)
+            .expect("post bind group cache must contain built key")
+            .clone()
+    }
+
+    fn bump_lut_generation(&mut self) {
+        self.lut_generation = next_generation(self.lut_generation);
+        self.post_bind_groups.clear();
+    }
+}
+
+#[inline]
+fn texture_view_id(view: &wgpu::TextureView) -> usize {
+    view as *const _ as usize
+}
+
+#[inline]
+fn next_generation(current: u32) -> u32 {
+    let next = current.wrapping_add(1);
+    if next == 0 { 1 } else { next }
+}
+
+#[inline]
+fn lut_hash_2d(effect: &PostProcessEffect) -> u64 {
+    match effect {
+        PostProcessEffect::Lut2D {
+            texture_path, size, ..
+        } => perro_ids::string_to_u64(&lut_key(texture_path.as_ref(), *size)),
+        _ => 0,
+    }
+}
+
+#[inline]
+fn lut_hash_3d(effect: &PostProcessEffect) -> u64 {
+    match effect {
+        PostProcessEffect::Lut3D {
+            texture_path, size, ..
+        } => perro_ids::string_to_u64(&lut_key(texture_path.as_ref(), *size)),
+        _ => 0,
     }
 }
 
@@ -1231,6 +1353,50 @@ mod tests {
         assert_eq!(encoded.params2, [0.01, 0.02, 0.03, 0.4]);
         assert_eq!(encoded.params3, [1.1, 1.2, 1.3, 0.0]);
         assert_eq!(encoded.params4, [-0.01, -0.02, -0.03, 0.0]);
+    }
+
+    #[test]
+    fn post_bind_group_key_changes_on_generations_and_inputs() {
+        let a = PostBindGroupKey {
+            input_kind: PostInputKind::External,
+            external_input_view_id: 10,
+            depth_view_id: 20,
+            uniform_buffer_generation: 1,
+            params_buffer_generation: 1,
+            lut_2d_key: 0,
+            lut_3d_key: 0,
+        };
+        let b = PostBindGroupKey {
+            uniform_buffer_generation: 2,
+            ..a
+        };
+        let c = PostBindGroupKey {
+            input_kind: PostInputKind::PingA,
+            external_input_view_id: 0,
+            ..a
+        };
+
+        assert_ne!(a, b);
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn lut_hashes_track_effect_identity() {
+        let lut_2d = PostProcessEffect::Lut2D {
+            texture_path: "res://luts/a.png".into(),
+            size: 16,
+            strength: 1.0,
+        };
+        let lut_3d = PostProcessEffect::Lut3D {
+            texture_path: "res://luts/a.png".into(),
+            size: 16,
+            strength: 1.0,
+        };
+
+        assert_ne!(lut_hash_2d(&lut_2d), 0);
+        assert_ne!(lut_hash_3d(&lut_3d), 0);
+        assert_eq!(lut_hash_2d(&lut_3d), 0);
+        assert_eq!(lut_hash_3d(&lut_2d), 0);
     }
 
     fn lut_fixture_horizontal(size: u32) -> Vec<u8> {

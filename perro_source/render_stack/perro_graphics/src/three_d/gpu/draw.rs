@@ -43,6 +43,16 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
     }
     let state_key =
         draw_batch_state_key(render_path, false, double_sided, alpha_mode, &material_kind);
+    let render_state = render_state_key(
+        state_key,
+        base_color_texture_slot,
+        mesh.index_start,
+        mesh.base_vertex,
+        false,
+        alpha_mode,
+        mesh_blend,
+    );
+    let order_index = next_draw_batch_order(draw_batches);
     let (local_center, local_radius) = local_bounds;
     if occlusion_query.is_none()
         && let Some(prev) = draw_batches.last_mut()
@@ -81,6 +91,7 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
     }
     draw_batches.push(DrawBatch {
         state_key,
+        render_state,
         mesh,
         instance_start,
         instance_count,
@@ -99,7 +110,16 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
         mesh_blend_depth,
         blend_layers,
         blend_mask,
+        order_index,
     });
+}
+
+#[inline]
+fn next_draw_batch_order(draw_batches: &[DrawBatch]) -> u32 {
+    draw_batches
+        .last()
+        .map(|batch| batch.order_index.saturating_add(1))
+        .unwrap_or(0)
 }
 
 #[derive(Clone, Copy)]
@@ -575,12 +595,41 @@ pub(super) fn override_bool(value: &MaterialParamOverrideValue3D) -> Option<bool
 
 #[inline]
 pub(super) fn compare_draw_batch_keys(a: &DrawBatch, b: &DrawBatch) -> Ordering {
-    a.state_key
-        .cmp(&b.state_key)
-        .then_with(|| a.base_color_texture_slot.cmp(&b.base_color_texture_slot))
-        .then_with(|| a.mesh.index_start.cmp(&b.mesh.index_start))
-        .then_with(|| a.mesh.base_vertex.cmp(&b.mesh.base_vertex))
-        .then_with(|| a.instance_start.cmp(&b.instance_start))
+    a.render_state
+        .batch_kind
+        .cmp(&b.render_state.batch_kind)
+        .then_with(|| match a.render_state.batch_kind {
+            RenderBatchKind::Opaque => a
+                .render_state
+                .pipeline_key
+                .cmp(&b.render_state.pipeline_key)
+                .then_with(|| {
+                    a.render_state
+                        .texture_slot
+                        .cmp(&b.render_state.texture_slot)
+                })
+                .then_with(|| {
+                    a.render_state
+                        .mesh_index_start
+                        .cmp(&b.render_state.mesh_index_start)
+                })
+                .then_with(|| {
+                    a.render_state
+                        .mesh_base_vertex
+                        .cmp(&b.render_state.mesh_base_vertex)
+                })
+                .then_with(|| a.instance_start.cmp(&b.instance_start)),
+            RenderBatchKind::Alpha | RenderBatchKind::MeshBlend | RenderBatchKind::Overlay => {
+                a.order_index.cmp(&b.order_index)
+            }
+        })
+}
+
+#[inline]
+pub(super) fn draw_batches_sorted(batches: &[DrawBatch]) -> bool {
+    batches
+        .windows(2)
+        .all(|pair| compare_draw_batch_keys(&pair[0], &pair[1]) != Ordering::Greater)
 }
 
 #[inline]
@@ -617,6 +666,34 @@ pub(super) fn draw_batch_state_key(
 }
 
 #[inline]
+pub(super) fn render_state_key(
+    pipeline_key: u64,
+    texture_slot: u32,
+    mesh_index_start: u32,
+    mesh_base_vertex: i32,
+    draw_on_top: bool,
+    alpha_mode: u8,
+    mesh_blend: bool,
+) -> RenderStateKey {
+    let batch_kind = if draw_on_top {
+        RenderBatchKind::Overlay
+    } else if mesh_blend {
+        RenderBatchKind::MeshBlend
+    } else if alpha_mode != 0 {
+        RenderBatchKind::Alpha
+    } else {
+        RenderBatchKind::Opaque
+    };
+    RenderStateKey {
+        pipeline_key,
+        texture_slot,
+        mesh_index_start,
+        mesh_base_vertex,
+        batch_kind,
+    }
+}
+
+#[inline]
 pub(super) fn same_draw_except_model(a: &Draw3DInstance, b: &Draw3DInstance) -> bool {
     a.node == b.node
         && a.kind == b.kind
@@ -625,6 +702,40 @@ pub(super) fn same_draw_except_model(a: &Draw3DInstance, b: &Draw3DInstance) -> 
         && a.meshlet_override == b.meshlet_override
         && a.lod == b.lod
         && a.blend == b.blend
+}
+
+impl Gpu3D {
+    pub(super) fn rebuild_batch_views(&mut self) {
+        self.opaque_batch_indices.clear();
+        self.alpha_batch_indices.clear();
+        self.mesh_blend_batch_indices.clear();
+        self.overlay_batch_indices.clear();
+        self.shadow_batch_indices.clear();
+        self.depth_prepass_batch_indices.clear();
+        self.mesh_blend_depth_batch_indices.clear();
+        self.perf_counters.draw_batches = self.draw_batches.len() as u32;
+        for (index, batch) in self.draw_batches.iter().enumerate() {
+            match batch.render_state.batch_kind {
+                RenderBatchKind::Opaque => self.opaque_batch_indices.push(index),
+                RenderBatchKind::Alpha => self.alpha_batch_indices.push(index),
+                RenderBatchKind::MeshBlend => self.mesh_blend_batch_indices.push(index),
+                RenderBatchKind::Overlay => self.overlay_batch_indices.push(index),
+            }
+            if !batch.draw_on_top && batch.casts_shadows && batch.alpha_mode == 0 {
+                self.shadow_batch_indices.push(index);
+            }
+            if !batch.draw_on_top && batch.alpha_mode == 0 && !batch.mesh_blend {
+                self.depth_prepass_batch_indices.push(index);
+            }
+            if !batch.draw_on_top
+                && batch.alpha_mode == 0
+                && !batch.mesh_blend
+                && batch.mesh_blend_depth
+            {
+                self.mesh_blend_depth_batch_indices.push(index);
+            }
+        }
+    }
 }
 
 #[inline]

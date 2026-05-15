@@ -75,7 +75,8 @@ pub struct Renderer2D {
     node_to_rect_index: AHashMap<NodeID, usize>,
     rect_dirty_ranges: Vec<Range<usize>>,
     rect_structure_dirty: bool,
-    retained_sprites: AHashMap<NodeID, Sprite2DCommand>,
+    retained_sprites: Vec<SpritePacket>,
+    node_to_sprite_index: AHashMap<NodeID, usize>,
     retained_tilemaps: AHashMap<NodeID, Arc<[Sprite2DCommand]>>,
     retained_point_particles: AHashMap<NodeID, PointParticles2DState>,
     retained_waters: AHashMap<NodeID, Water2DState>,
@@ -102,7 +103,8 @@ impl Renderer2D {
             node_to_rect_index: AHashMap::new(),
             rect_dirty_ranges: Vec::new(),
             rect_structure_dirty: false,
-            retained_sprites: AHashMap::new(),
+            retained_sprites: Vec::new(),
+            node_to_sprite_index: AHashMap::new(),
             retained_tilemaps: AHashMap::new(),
             retained_point_particles: AHashMap::new(),
             retained_waters: AHashMap::new(),
@@ -229,35 +231,15 @@ impl Renderer2D {
         if self.retained_tilemaps.remove(&node).is_some() {
             self.retained_sprites_revision = self.retained_sprites_revision.wrapping_add(1);
         }
-        if self.retained_sprites.remove(&node).is_some() {
-            self.retained_sprites_revision = self.retained_sprites_revision.wrapping_add(1);
-        }
+        self.remove_retained_sprite(node);
     }
 
     fn apply_queued_rect_updates(&mut self) -> Renderer2DStats {
         let queued = std::mem::take(&mut self.queued_rects);
         let mut stats = Renderer2DStats::default();
         for RectPacket { node, rect } in queued {
-            if rect.size[0].is_finite()
-                && rect.size[1].is_finite()
-                && rect.center[0].is_finite()
-                && rect.center[1].is_finite()
-                && rect.color.to_rgba().iter().all(|v| v.is_finite())
-                && rect.size[0] > 0.0
-                && rect.size[1] > 0.0
-            {
-                self.upsert_retained_rect(
-                    node,
-                    RectInstanceGpu {
-                        center: rect.center,
-                        size: rect.size,
-                        color: color_to_unorm8(rect.color.into()),
-                        z_index: rect.z_index,
-                        shape_kind: 0,
-                        thickness: 1.0,
-                        filled: 1,
-                    },
-                );
+            if let Some(rect) = retained_rect_instance(rect) {
+                self.upsert_retained_rect(node, rect);
                 stats.accepted_rects = stats.accepted_rects.saturating_add(1);
             } else {
                 self.remove_retained_rect(node);
@@ -424,25 +406,28 @@ impl Renderer2D {
     }
 
     fn flush_sprite_packets(&mut self, resources: &ResourceStore) -> Renderer2DStats {
+        let queued = std::mem::take(&mut self.queued_sprites);
+        if let Some((stats, changed)) =
+            self.try_apply_sequential_sprite_packets(queued.as_slice(), resources)
+        {
+            if changed {
+                self.retained_sprites_revision = self.retained_sprites_revision.wrapping_add(1);
+            }
+            return stats;
+        }
         let mut stats = Renderer2DStats::default();
         let mut changed = false;
-        for SpritePacket { node, sprite } in self.queued_sprites.drain(..) {
+        for SpritePacket { node, sprite } in queued {
             if resources.has_texture(sprite.texture) {
-                if self.retained_sprites.insert(node, sprite) != Some(sprite) {
+                if self.upsert_retained_sprite(node, sprite) {
                     changed = true;
                 }
                 stats.accepted_draws = stats.accepted_draws.saturating_add(1);
             } else {
-                if let Some(retained) = self.retained_sprites.get_mut(&node) {
+                if let Some(retained) = self.retained_sprite_mut(node) {
                     // Keep previous texture binding until replacement exists,
                     // but still apply latest transform/depth updates.
-                    let old_model = retained.model;
-                    let old_z = retained.z_index;
-                    retained.model = sprite.model;
-                    retained.z_index = sprite.z_index;
-                    if retained.model != old_model || retained.z_index != old_z {
-                        changed = true;
-                    }
+                    changed |= update_unready_retained_sprite(retained, sprite);
                 }
                 stats.rejected_draws = stats.rejected_draws.saturating_add(1);
             }
@@ -475,7 +460,8 @@ impl Renderer2D {
     }
 
     pub fn retained_sprite(&self, node: NodeID) -> Option<Sprite2DCommand> {
-        self.retained_sprites.get(&node).copied()
+        let idx = *self.node_to_sprite_index.get(&node)?;
+        Some(self.retained_sprites.get(idx)?.sprite)
     }
 
     pub fn retained_sprite_count(&self) -> usize {
@@ -490,8 +476,8 @@ impl Renderer2D {
 
     pub fn retained_sprites(&self) -> impl Iterator<Item = Sprite2DCommand> + '_ {
         self.retained_sprites
-            .values()
-            .copied()
+            .iter()
+            .map(|packet| packet.sprite)
             .chain(
                 self.retained_tilemaps
                     .values()
@@ -553,6 +539,73 @@ impl Renderer2D {
         self.retained_nodes.push(node);
         self.node_to_rect_index.insert(node, idx);
         self.rect_structure_dirty = true;
+    }
+
+    fn upsert_retained_sprite(&mut self, node: NodeID, sprite: Sprite2DCommand) -> bool {
+        if let Some(&idx) = self.node_to_sprite_index.get(&node) {
+            if self.retained_sprites[idx].sprite != sprite {
+                self.retained_sprites[idx].sprite = sprite;
+                return true;
+            }
+            return false;
+        }
+
+        let idx = self.retained_sprites.len();
+        self.retained_sprites.push(SpritePacket { node, sprite });
+        self.node_to_sprite_index.insert(node, idx);
+        true
+    }
+
+    fn try_apply_sequential_sprite_packets(
+        &mut self,
+        queued: &[SpritePacket],
+        resources: &ResourceStore,
+    ) -> Option<(Renderer2DStats, bool)> {
+        if queued.len() != self.retained_sprites.len() {
+            return None;
+        }
+        if !queued
+            .iter()
+            .zip(self.retained_sprites.iter())
+            .all(|(queued, retained)| queued.node == retained.node)
+        {
+            return None;
+        }
+
+        let mut stats = Renderer2DStats::default();
+        let mut changed = false;
+        for (queued, retained) in queued.iter().zip(self.retained_sprites.iter_mut()) {
+            if resources.has_texture(queued.sprite.texture) {
+                if retained.sprite != queued.sprite {
+                    retained.sprite = queued.sprite;
+                    changed = true;
+                }
+                stats.accepted_draws = stats.accepted_draws.saturating_add(1);
+            } else {
+                changed |= update_unready_retained_sprite(&mut retained.sprite, queued.sprite);
+                stats.rejected_draws = stats.rejected_draws.saturating_add(1);
+            }
+        }
+        Some((stats, changed))
+    }
+
+    fn retained_sprite_mut(&mut self, node: NodeID) -> Option<&mut Sprite2DCommand> {
+        let idx = *self.node_to_sprite_index.get(&node)?;
+        Some(&mut self.retained_sprites.get_mut(idx)?.sprite)
+    }
+
+    fn remove_retained_sprite(&mut self, node: NodeID) {
+        let Some(removed_idx) = self.node_to_sprite_index.remove(&node) else {
+            return;
+        };
+
+        let last = self.retained_sprites.len() - 1;
+        self.retained_sprites.swap_remove(removed_idx);
+        if removed_idx != last {
+            let moved_node = self.retained_sprites[removed_idx].node;
+            self.node_to_sprite_index.insert(moved_node, removed_idx);
+        }
+        self.retained_sprites_revision = self.retained_sprites_revision.wrapping_add(1);
     }
 
     fn remove_retained_rect(&mut self, node: NodeID) {
@@ -939,6 +992,36 @@ fn hash01(seed: u32) -> f32 {
 #[inline]
 fn color_to_unorm8(color: [f32; 4]) -> [u8; 4] {
     Unorm8x4::new(color).to_u8()
+}
+
+fn retained_rect_instance(rect: Rect2DCommand) -> Option<RectInstanceGpu> {
+    if !(rect.size[0].is_finite()
+        && rect.size[1].is_finite()
+        && rect.center[0].is_finite()
+        && rect.center[1].is_finite()
+        && rect.color.to_rgba().iter().all(|v| v.is_finite())
+        && rect.size[0] > 0.0
+        && rect.size[1] > 0.0)
+    {
+        return None;
+    }
+    Some(RectInstanceGpu {
+        center: rect.center,
+        size: rect.size,
+        color: color_to_unorm8(rect.color.into()),
+        z_index: rect.z_index,
+        shape_kind: 0,
+        thickness: 1.0,
+        filled: 1,
+    })
+}
+
+fn update_unready_retained_sprite(retained: &mut Sprite2DCommand, sprite: Sprite2DCommand) -> bool {
+    let old_model = retained.model;
+    let old_z = retained.z_index;
+    retained.model = sprite.model;
+    retained.z_index = sprite.z_index;
+    retained.model != old_model || retained.z_index != old_z
 }
 
 #[cfg(test)]

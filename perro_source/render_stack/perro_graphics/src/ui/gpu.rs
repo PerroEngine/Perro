@@ -46,11 +46,17 @@ struct UiSupersampleTarget {
     size: [u32; 2],
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct UiMeshGpu {
     index_start: u32,
     index_count: u32,
     clip_rect: [u32; 4],
     texture_id: TextureId,
+}
+
+#[derive(Clone, Copy, Default)]
+struct UiPerfCounters {
+    draw_calls: u32,
 }
 
 pub struct GpuUi {
@@ -73,6 +79,7 @@ pub struct GpuUi {
     indices: Vec<u32>,
     prepared_revision: u64,
     prepared_viewport: [u32; 2],
+    perf_counters: UiPerfCounters,
 }
 
 pub struct UiPrepareInput<'a> {
@@ -315,6 +322,7 @@ impl GpuUi {
             indices: Vec::new(),
             prepared_revision: u64::MAX,
             prepared_viewport: [0, 0],
+            perf_counters: UiPerfCounters::default(),
         }
     }
 
@@ -358,6 +366,7 @@ impl GpuUi {
         self.meshes.clear();
         self.vertices.clear();
         self.indices.clear();
+        self.perf_counters = UiPerfCounters::default();
         for primitive in primitives {
             let Primitive::Mesh(mesh) = &primitive.primitive else {
                 continue;
@@ -399,21 +408,15 @@ impl GpuUi {
                     color: vertex.color.to_array(),
                 }));
             let index_count = mesh.indices.len().min(u32::MAX as usize) as u32;
-            if let Some(last) = self.meshes.last_mut()
-                && last.clip_rect == clip_rect
-                && last.texture_id == mesh.texture_id
-                && last.index_start.saturating_add(last.index_count) == index_start
-            {
-                last.index_count = last.index_count.saturating_add(index_count);
-                continue;
-            }
-            self.meshes.push(UiMeshGpu {
+            push_ui_mesh(
+                &mut self.meshes,
                 index_start,
                 index_count,
                 clip_rect,
-                texture_id: mesh.texture_id,
-            });
+                mesh.texture_id,
+            );
         }
+        self.perf_counters.draw_calls = self.meshes.len() as u32;
         self.upload_mesh_buffers(device, queue);
         self.prepared_revision = revision;
         self.prepared_viewport = viewport;
@@ -760,5 +763,54 @@ impl GpuUi {
             },
         );
         true
+    }
+}
+
+fn push_ui_mesh(
+    meshes: &mut Vec<UiMeshGpu>,
+    index_start: u32,
+    index_count: u32,
+    clip_rect: [u32; 4],
+    texture_id: TextureId,
+) {
+    if let Some(last) = meshes.last_mut()
+        && last.clip_rect == clip_rect
+        && last.texture_id == texture_id
+        && last.index_start.saturating_add(last.index_count) == index_start
+    {
+        last.index_count = last.index_count.saturating_add(index_count);
+        return;
+    }
+    meshes.push(UiMeshGpu {
+        index_start,
+        index_count,
+        clip_rect,
+        texture_id,
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{UiMeshGpu, push_ui_mesh};
+    use epaint::TextureId;
+
+    #[test]
+    fn compact_meshes_only_merge_exact_clip_and_texture() {
+        let mut meshes = Vec::new();
+        push_ui_mesh(&mut meshes, 0, 3, [0, 0, 8, 8], TextureId::Managed(1));
+        push_ui_mesh(&mut meshes, 3, 6, [0, 0, 8, 8], TextureId::Managed(1));
+        push_ui_mesh(&mut meshes, 9, 3, [1, 0, 8, 8], TextureId::Managed(1));
+        push_ui_mesh(&mut meshes, 12, 3, [1, 0, 8, 8], TextureId::Managed(2));
+
+        assert_eq!(meshes.len(), 3);
+        assert_eq!(
+            meshes[0],
+            UiMeshGpu {
+                index_start: 0,
+                index_count: 9,
+                clip_rect: [0, 0, 8, 8],
+                texture_id: TextureId::Managed(1),
+            }
+        );
     }
 }

@@ -67,6 +67,14 @@ struct SpriteBatch {
     instance_count: u32,
 }
 
+struct SpriteBatchCandidate {
+    texture: TextureID,
+    texture_key: u64,
+    z_index: i32,
+    original_order: usize,
+    instance_index: usize,
+}
+
 struct CachedSpriteTexture {
     _texture: wgpu::Texture,
     _view: wgpu::TextureView,
@@ -80,6 +88,12 @@ struct CachedSpriteTexture {
 struct SpritePrepareKey {
     revision: u64,
     camera: Camera2DUniform,
+}
+
+#[derive(Clone, Copy, Default)]
+struct SpritePerfCounters {
+    draw_batches: u32,
+    bind_group_switches: u32,
 }
 
 pub struct Gpu2D {
@@ -99,11 +113,14 @@ pub struct Gpu2D {
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     sprite_instances: Vec<SpriteInstanceGpu>,
+    sprite_stage_instances: Vec<SpriteInstanceGpu>,
+    sprite_batch_candidates: Vec<SpriteBatchCandidate>,
     point_light_instances: Vec<Light2DGpu>,
     sprite_batches: Vec<SpriteBatch>,
     sprite_textures: AHashMap<TextureID, CachedSpriteTexture>,
     last_camera: Option<Camera2DUniform>,
     last_sprite_prepare: Option<SpritePrepareKey>,
+    sprite_perf: SpritePerfCounters,
 }
 
 pub struct Prepare2D<'a> {
@@ -290,11 +307,14 @@ impl Gpu2D {
             camera_buffer,
             camera_bind_group,
             sprite_instances: Vec::new(),
+            sprite_stage_instances: Vec::new(),
+            sprite_batch_candidates: Vec::new(),
             point_light_instances: Vec::new(),
             sprite_batches: Vec::new(),
             sprite_textures: AHashMap::new(),
             last_camera: None,
             last_sprite_prepare: None,
+            sprite_perf: SpritePerfCounters::default(),
         }
     }
 
@@ -382,9 +402,12 @@ impl Gpu2D {
         if self.last_sprite_prepare != Some(sprite_key) {
             self.ensure_sprite_instance_capacity(device, sprites.len());
             self.sprite_instances.clear();
+            self.sprite_stage_instances.clear();
             self.sprite_batches.clear();
-            self.sprite_instances.reserve(sprites.len());
+            self.sprite_batch_candidates.clear();
+            self.sprite_stage_instances.reserve(sprites.len());
             self.sprite_batches.reserve(sprites.len());
+            self.sprite_batch_candidates.reserve(sprites.len());
             for sprite in sprites {
                 let texture = if let Some(texture) = self.sprite_textures.get(&sprite.texture) {
                     texture
@@ -411,28 +434,58 @@ impl Gpu2D {
                 ) {
                     continue;
                 }
-                let idx = self.sprite_instances.len() as u32;
-                self.sprite_instances.push(SpriteInstanceGpu {
+                self.sprite_stage_instances.push(SpriteInstanceGpu {
                     transform_0: sprite.model[0],
                     transform_1: sprite.model[1],
                     transform_2: sprite.model[2],
                     z_index: sprite.z_index,
                     tint: color_to_unorm8(sprite.tint.into()),
                 });
+                self.sprite_batch_candidates.push(SpriteBatchCandidate {
+                    texture: sprite.texture,
+                    texture_key: sprite.texture.as_u64(),
+                    z_index: sprite.z_index,
+                    original_order: self.sprite_batch_candidates.len(),
+                    instance_index: self.sprite_stage_instances.len() - 1,
+                });
+            }
+            let candidates_sorted =
+                sprite_batch_candidates_sorted(self.sprite_batch_candidates.as_slice());
+            self.sprite_perf = SpritePerfCounters::default();
+            if candidates_sorted {
+                std::mem::swap(&mut self.sprite_instances, &mut self.sprite_stage_instances);
+            } else {
+                sort_sprite_batch_candidates(self.sprite_batch_candidates.as_mut_slice());
+                self.sprite_instances
+                    .reserve(self.sprite_batch_candidates.len());
+                for candidate in self.sprite_batch_candidates.iter() {
+                    self.sprite_instances
+                        .push(self.sprite_stage_instances[candidate.instance_index]);
+                }
+            }
+            for (idx, candidate) in self.sprite_batch_candidates.iter().enumerate() {
+                let idx = idx as u32;
                 if let Some(batch) = self.sprite_batches.last_mut()
-                    && batch.texture == sprite.texture
+                    && batch.texture == candidate.texture
                     && batch.instance_start + batch.instance_count == idx
                 {
                     batch.instance_count += 1;
                     continue;
-                };
+                }
+                let bind_group = self
+                    .sprite_textures
+                    .get(&candidate.texture)
+                    .map(|texture| texture.bind_group.clone())
+                    .expect("sprite texture cache must contain prepared texture");
                 self.sprite_batches.push(SpriteBatch {
-                    texture: sprite.texture,
-                    bind_group: texture.bind_group.clone(),
+                    texture: candidate.texture,
+                    bind_group,
                     instance_start: idx,
                     instance_count: 1,
                 });
             }
+            self.sprite_perf.draw_batches = self.sprite_batches.len() as u32;
+            self.sprite_perf.bind_group_switches = self.sprite_batches.len() as u32;
             if !self.sprite_instances.is_empty() {
                 queue.write_buffer(
                     &self.sprite_instance_buffer,
@@ -703,5 +756,104 @@ impl Gpu2D {
 
     pub fn virtual_size() -> [f32; 2] {
         [VIRTUAL_WIDTH, VIRTUAL_HEIGHT]
+    }
+}
+
+fn sort_sprite_batch_candidates(candidates: &mut [SpriteBatchCandidate]) {
+    candidates.sort_unstable_by(|a, b| {
+        sprite_batch_sort_key(a.z_index, a.texture_key, a.original_order).cmp(
+            &sprite_batch_sort_key(b.z_index, b.texture_key, b.original_order),
+        )
+    });
+}
+
+fn sprite_batch_candidates_sorted(candidates: &[SpriteBatchCandidate]) -> bool {
+    candidates.windows(2).all(|pair| {
+        sprite_batch_sort_key(pair[0].z_index, pair[0].texture_key, pair[0].original_order)
+            <= sprite_batch_sort_key(pair[1].z_index, pair[1].texture_key, pair[1].original_order)
+    })
+}
+
+#[inline]
+fn sprite_batch_sort_key(
+    z_index: i32,
+    texture_key: u64,
+    original_order: usize,
+) -> (i32, u64, usize) {
+    (z_index, texture_key, original_order)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SpriteBatchCandidate, sprite_batch_candidates_sorted, sprite_batch_sort_key};
+    use perro_ids::TextureID;
+
+    #[test]
+    fn sprite_sort_keeps_z_buckets_and_groups_textures() {
+        let tex_a = TextureID::from_parts(1, 0);
+        let tex_b = TextureID::from_parts(2, 0);
+        let mut keys = vec![
+            sprite_batch_sort_key(2, tex_b.as_u64(), 0),
+            sprite_batch_sort_key(1, tex_a.as_u64(), 1),
+            sprite_batch_sort_key(1, tex_b.as_u64(), 2),
+            sprite_batch_sort_key(2, tex_a.as_u64(), 3),
+        ];
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            vec![
+                (1, tex_a.as_u64(), 1),
+                (1, tex_b.as_u64(), 2),
+                (2, tex_a.as_u64(), 3),
+                (2, tex_b.as_u64(), 0),
+            ]
+        );
+    }
+
+    #[test]
+    fn sprite_batch_candidates_sorted_detects_fast_path() {
+        let tex_a = TextureID::from_parts(1, 0);
+        let tex_b = TextureID::from_parts(2, 0);
+        let sorted = vec![
+            SpriteBatchCandidate {
+                texture: tex_a,
+                texture_key: tex_a.as_u64(),
+                z_index: 1,
+                original_order: 0,
+                instance_index: 0,
+            },
+            SpriteBatchCandidate {
+                texture: tex_b,
+                texture_key: tex_b.as_u64(),
+                z_index: 1,
+                original_order: 1,
+                instance_index: 1,
+            },
+            SpriteBatchCandidate {
+                texture: tex_b,
+                texture_key: tex_b.as_u64(),
+                z_index: 2,
+                original_order: 2,
+                instance_index: 2,
+            },
+        ];
+        let unsorted = vec![
+            SpriteBatchCandidate {
+                texture: tex_b,
+                texture_key: tex_b.as_u64(),
+                z_index: 2,
+                original_order: 0,
+                instance_index: 0,
+            },
+            SpriteBatchCandidate {
+                texture: tex_a,
+                texture_key: tex_a.as_u64(),
+                z_index: 1,
+                original_order: 1,
+                instance_index: 1,
+            },
+        ];
+        assert!(sprite_batch_candidates_sorted(&sorted));
+        assert!(!sprite_batch_candidates_sorted(&unsorted));
     }
 }

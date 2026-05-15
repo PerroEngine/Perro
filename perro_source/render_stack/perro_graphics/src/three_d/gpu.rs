@@ -417,6 +417,13 @@ pub struct Gpu3D {
     last_hiz_params: Option<HizCullParamsGpu>,
     last_prepare_step_timing: Prepare3DStepTiming,
     draw_batches: Vec<DrawBatch>,
+    opaque_batch_indices: Vec<usize>,
+    alpha_batch_indices: Vec<usize>,
+    mesh_blend_batch_indices: Vec<usize>,
+    overlay_batch_indices: Vec<usize>,
+    shadow_batch_indices: Vec<usize>,
+    depth_prepass_batch_indices: Vec<usize>,
+    mesh_blend_depth_batch_indices: Vec<usize>,
     has_shadow_casters: bool,
     surface_entries_scratch: Vec<(MeshRange, Material3D)>,
     mesh_blend_scratch: Vec<ResolvedMeshBlend>,
@@ -502,6 +509,9 @@ pub struct Gpu3D {
     dirty_cull_batch_spans_scratch: Vec<Range<usize>>,
     debug_point_instances_scratch: Vec<BuiltInstanceParts>,
     debug_edge_instances_scratch: Vec<BuiltInstanceParts>,
+    camera_bind_group_generation: u32,
+    multimesh_bind_group_generation: u32,
+    perf_counters: RenderPerfCounters,
 }
 
 pub struct Prepare3D<'a> {
@@ -540,6 +550,31 @@ pub struct Gpu3DConfig {
     pub indirect_first_instance_enabled: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum RenderBatchKind {
+    Opaque,
+    Alpha,
+    MeshBlend,
+    Overlay,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct RenderStateKey {
+    pipeline_key: u64,
+    texture_slot: u32,
+    mesh_index_start: u32,
+    mesh_base_vertex: i32,
+    batch_kind: RenderBatchKind,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct RenderPerfCounters {
+    pipeline_switches: u32,
+    texture_bind_group_switches: u32,
+    camera_bind_group_switches: u32,
+    draw_batches: u32,
+}
+
 #[derive(Clone, Copy)]
 struct MeshletRange {
     index_start: u32,
@@ -574,6 +609,7 @@ struct MeshLodView<'a> {
 #[derive(Clone)]
 struct DrawBatch {
     state_key: u64,
+    render_state: RenderStateKey,
     mesh: MeshRange,
     instance_start: u32,
     instance_count: u32,
@@ -592,6 +628,7 @@ struct DrawBatch {
     mesh_blend_depth: bool,
     blend_layers: u32,
     blend_mask: u32,
+    order_index: u32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -650,8 +687,9 @@ const OCCLUSION_PROBE_INTERVAL: u64 = 1;
 #[cfg(test)]
 mod tests {
     use super::{
-        DrawBatchPush, MATERIAL_TEXTURE_NONE, MaterialPipelineKind, RenderPath3D,
-        draw_batch_state_key, push_draw_batch,
+        DrawBatch, DrawBatchPush, MATERIAL_TEXTURE_NONE, MaterialPipelineKind, RenderBatchKind,
+        RenderPath3D, compare_draw_batch_keys, draw_batch_state_key, push_draw_batch,
+        render_state_key,
     };
     use perro_asset_formats::pmesh::{
         FLAG_HAS_JOINTS as PMESH_FLAG_HAS_JOINTS, FLAG_HAS_NORMAL as PMESH_FLAG_HAS_NORMAL,
@@ -920,5 +958,84 @@ mod tests {
         );
 
         assert_eq!(batches.len(), 3);
+    }
+
+    #[test]
+    fn compare_draw_batch_keys_sorts_opaque_before_alpha_and_overlay() {
+        let opaque = test_batch(0, false, 0, false, 2, 0);
+        let alpha = test_batch(1, false, 2, false, 1, 1);
+        let overlay = test_batch(2, true, 0, false, 0, 2);
+        let mut batches = [overlay.clone(), alpha.clone(), opaque.clone()];
+
+        batches.sort_unstable_by(compare_draw_batch_keys);
+
+        assert_eq!(batches[0].render_state.batch_kind, RenderBatchKind::Opaque);
+        assert_eq!(batches[1].render_state.batch_kind, RenderBatchKind::Alpha);
+        assert_eq!(batches[2].render_state.batch_kind, RenderBatchKind::Overlay);
+    }
+
+    #[test]
+    fn compare_draw_batch_keys_keep_alpha_submission_order() {
+        let first = test_batch(0, false, 2, false, 1, 0);
+        let second = test_batch(1, false, 2, false, 0, 1);
+        let mut batches = [second.clone(), first.clone()];
+
+        batches.sort_unstable_by(compare_draw_batch_keys);
+
+        assert_eq!(batches[0].order_index, first.order_index);
+        assert_eq!(batches[1].order_index, second.order_index);
+    }
+
+    fn test_batch(
+        order_index: u32,
+        draw_on_top: bool,
+        alpha_mode: u8,
+        mesh_blend: bool,
+        texture_slot: u32,
+        mesh_index_start: u32,
+    ) -> DrawBatch {
+        let material_kind = MaterialPipelineKind::Standard;
+        let state_key = draw_batch_state_key(
+            RenderPath3D::Rigid,
+            draw_on_top,
+            false,
+            alpha_mode,
+            &material_kind,
+        );
+        DrawBatch {
+            state_key,
+            render_state: render_state_key(
+                state_key,
+                texture_slot,
+                mesh_index_start,
+                0,
+                draw_on_top,
+                alpha_mode,
+                mesh_blend,
+            ),
+            mesh: MeshRange {
+                index_start: mesh_index_start,
+                index_count: 3,
+                base_vertex: 0,
+            },
+            instance_start: order_index,
+            instance_count: 1,
+            path: RenderPath3D::Rigid,
+            double_sided: false,
+            material_kind,
+            alpha_mode,
+            draw_on_top,
+            base_color_texture_slot: texture_slot,
+            local_center: [0.0; 3],
+            local_radius: 1.0,
+            occlusion_query: None,
+            disable_hiz_occlusion: false,
+            casts_shadows: true,
+            mesh_blend,
+            mesh_blend_depth: false,
+            blend_layers: BitMask::ALL.bits(),
+            blend_mask: BitMask::NONE.bits(),
+            order_index,
+        }
     }
 }

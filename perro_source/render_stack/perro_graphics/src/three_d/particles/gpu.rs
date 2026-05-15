@@ -89,7 +89,7 @@ struct GpuExprOp {
     words: [u32; 4], // opcode, arg_bits, reserved, reserved
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct InstanceRange {
     start: u32,
     count: u32,

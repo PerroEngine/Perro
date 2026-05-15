@@ -341,69 +341,44 @@ impl Renderer3D {
             self.cloud_time_pending_frames = 0;
         }
 
-        for draw in self.queued_draws.drain(..) {
-            let material_ready = draw.surfaces.iter().all(|surface| {
-                surface
-                    .material
-                    .map(|id| resources.has_material(id))
-                    .unwrap_or(true)
-            });
-            let mesh_ready = match draw.kind {
-                Draw3DKind::Mesh(mesh) => resources.has_mesh(mesh),
-                Draw3DKind::DebugPointCube | Draw3DKind::DebugEdgeCylinder => true,
-            };
-            let draw_ready = match draw.kind {
-                Draw3DKind::Mesh(_) => mesh_ready && material_ready,
-                Draw3DKind::DebugPointCube | Draw3DKind::DebugEdgeCylinder => material_ready,
-            };
-            if draw_ready {
-                let changed = self.retained_draws.get(&draw.node) != Some(&draw);
-                if changed {
-                    self.retained_draws.insert(draw.node, draw);
-                    draws_changed = true;
+        let queued = std::mem::take(&mut self.queued_draws);
+        let used_sequential_draw_fast_path = if let Some((fast_stats, fast_changed)) =
+            self.try_apply_sequential_draw_packets(queued.as_slice(), resources)
+        {
+            stats = fast_stats;
+            draws_changed = fast_changed;
+            true
+        } else {
+            for draw in queued {
+                let (material_ready, mesh_ready, draw_ready) = draw_readiness(&draw, resources);
+                if draw_ready {
+                    let changed = self.retained_draws.get(&draw.node) != Some(&draw);
+                    if changed {
+                        self.retained_draws.insert(draw.node, draw);
+                        draws_changed = true;
+                    }
+                    stats.accepted_draws = stats.accepted_draws.saturating_add(1);
+                } else {
+                    if let Some(retained) = self.retained_draws.get_mut(&draw.node) {
+                        // Keep previous mesh/material bindings until replacements exist,
+                        // but continue applying latest transform updates.
+                        draws_changed |= update_unready_retained_draw(
+                            retained,
+                            draw,
+                            mesh_ready,
+                            material_ready,
+                        );
+                    }
+                    stats.rejected_draws = stats.rejected_draws.saturating_add(1);
                 }
-                stats.accepted_draws = stats.accepted_draws.saturating_add(1);
-            } else {
-                if let Some(retained) = self.retained_draws.get_mut(&draw.node) {
-                    // Keep previous mesh/material bindings until replacements exist,
-                    // but continue applying latest transform updates.
-                    if retained.instance_mats != draw.instance_mats {
-                        retained.instance_mats = draw.instance_mats;
-                        draws_changed = true;
-                    }
-                    if mesh_ready && retained.kind != draw.kind {
-                        retained.kind = draw.kind;
-                        draws_changed = true;
-                    }
-                    if material_ready && retained.surfaces != draw.surfaces {
-                        retained.surfaces = draw.surfaces;
-                        draws_changed = true;
-                    }
-                    if draw.skeleton.is_some() && retained.skeleton != draw.skeleton {
-                        retained.skeleton = draw.skeleton;
-                        draws_changed = true;
-                    }
-                    if draw.dense_multimesh.is_some()
-                        && retained.dense_multimesh != draw.dense_multimesh
-                    {
-                        retained.dense_multimesh = draw.dense_multimesh;
-                        draws_changed = true;
-                    }
-                    if retained.meshlet_override != draw.meshlet_override {
-                        retained.meshlet_override = draw.meshlet_override;
-                        draws_changed = true;
-                    }
-                    if retained.lod != draw.lod {
-                        retained.lod = draw.lod;
-                        draws_changed = true;
-                    }
-                }
-                stats.rejected_draws = stats.rejected_draws.saturating_add(1);
             }
-        }
+            false
+        };
         if draws_changed {
             self.draw_revision = self.draw_revision.wrapping_add(1);
-            self.rebuild_sorted_draws_cache();
+            if !used_sequential_draw_fast_path {
+                self.rebuild_sorted_draws_cache();
+            }
         }
 
         let mut lighting = Lighting3DState::default();
@@ -446,6 +421,52 @@ impl Renderer3D {
         }
 
         (self.camera.clone(), stats, lighting)
+    }
+
+    fn try_apply_sequential_draw_packets(
+        &mut self,
+        queued: &[Draw3DInstance],
+        resources: &ResourceStore,
+    ) -> Option<(Renderer3DStats, bool)> {
+        if queued.len() != self.retained_draws_sorted_cache.len() {
+            return None;
+        }
+        if !queued
+            .iter()
+            .zip(self.retained_draws_sorted_cache.iter())
+            .all(|(queued, retained)| queued.node == retained.node)
+        {
+            return None;
+        }
+
+        let mut stats = Renderer3DStats::default();
+        let mut draws_changed = false;
+        for (index, draw) in queued.iter().enumerate() {
+            let (material_ready, mesh_ready, draw_ready) = draw_readiness(draw, resources);
+            if draw_ready {
+                let changed = self.retained_draws_sorted_cache[index] != *draw;
+                if changed {
+                    self.retained_draws_sorted_cache[index] = draw.clone();
+                    self.retained_draws.insert(draw.node, draw.clone());
+                    draws_changed = true;
+                }
+                stats.accepted_draws = stats.accepted_draws.saturating_add(1);
+            } else {
+                if let Some(retained) = self.retained_draws.get_mut(&draw.node) {
+                    draws_changed |= update_unready_retained_draw(
+                        retained,
+                        draw.clone(),
+                        mesh_ready,
+                        material_ready,
+                    );
+                    if self.retained_draws_sorted_cache[index] != *retained {
+                        self.retained_draws_sorted_cache[index] = retained.clone();
+                    }
+                }
+                stats.rejected_draws = stats.rejected_draws.saturating_add(1);
+            }
+        }
+        Some((stats, draws_changed))
     }
 
     pub fn retained_draw(&self, node: NodeID) -> Option<Draw3DInstance> {
@@ -552,6 +573,62 @@ impl Renderer3D {
     }
 }
 
+fn draw_readiness(draw: &Draw3DInstance, resources: &ResourceStore) -> (bool, bool, bool) {
+    let material_ready = draw.surfaces.iter().all(|surface| {
+        surface
+            .material
+            .map(|id| resources.has_material(id))
+            .unwrap_or(true)
+    });
+    let mesh_ready = match draw.kind {
+        Draw3DKind::Mesh(mesh) => resources.has_mesh(mesh),
+        Draw3DKind::DebugPointCube | Draw3DKind::DebugEdgeCylinder => true,
+    };
+    let draw_ready = match draw.kind {
+        Draw3DKind::Mesh(_) => mesh_ready && material_ready,
+        Draw3DKind::DebugPointCube | Draw3DKind::DebugEdgeCylinder => material_ready,
+    };
+    (material_ready, mesh_ready, draw_ready)
+}
+
+fn update_unready_retained_draw(
+    retained: &mut Draw3DInstance,
+    draw: Draw3DInstance,
+    mesh_ready: bool,
+    material_ready: bool,
+) -> bool {
+    let mut changed = false;
+    if retained.instance_mats != draw.instance_mats {
+        retained.instance_mats = draw.instance_mats;
+        changed = true;
+    }
+    if mesh_ready && retained.kind != draw.kind {
+        retained.kind = draw.kind;
+        changed = true;
+    }
+    if material_ready && retained.surfaces != draw.surfaces {
+        retained.surfaces = draw.surfaces;
+        changed = true;
+    }
+    if draw.skeleton.is_some() && retained.skeleton != draw.skeleton {
+        retained.skeleton = draw.skeleton;
+        changed = true;
+    }
+    if draw.dense_multimesh.is_some() && retained.dense_multimesh != draw.dense_multimesh {
+        retained.dense_multimesh = draw.dense_multimesh;
+        changed = true;
+    }
+    if retained.meshlet_override != draw.meshlet_override {
+        retained.meshlet_override = draw.meshlet_override;
+        changed = true;
+    }
+    if retained.lod != draw.lod {
+        retained.lod = draw.lod;
+        changed = true;
+    }
+    changed
+}
+
 impl Default for Renderer3D {
     fn default() -> Self {
         Self {
@@ -594,3 +671,7 @@ impl Default for Renderer3D {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/three_d_renderer_tests.rs"]
+mod tests;

@@ -185,3 +185,57 @@ fn point_light_is_retained_and_removed_by_node() {
 
     assert_eq!(renderer.light_count(), 0);
 }
+
+#[test]
+fn retained_sprite_order_stays_stable_across_equal_upserts() {
+    let mut renderer = Renderer2D::new();
+    let mut resources = ResourceStore::new();
+    let tex = resources.create_texture("__test__", false);
+
+    for node_raw in [3u32, 7, 11] {
+        renderer.queue_sprite(
+            NodeID::from_parts(node_raw, 0),
+            Sprite2DCommand {
+                texture: tex,
+                model: [
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [node_raw as f32, 0.0, 1.0],
+                ],
+                tint: Color::WHITE,
+                z_index: node_raw as i32,
+                ..Sprite2DCommand::default()
+            },
+        );
+    }
+    let _ = renderer.prepare_frame(&resources);
+    let first: Vec<_> = renderer
+        .retained_sprites()
+        .map(|sprite| sprite.z_index)
+        .collect();
+
+    for node_raw in [3u32, 7, 11] {
+        renderer.queue_sprite(
+            NodeID::from_parts(node_raw, 0),
+            Sprite2DCommand {
+                texture: tex,
+                model: [
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [node_raw as f32, 0.0, 1.0],
+                ],
+                tint: Color::WHITE,
+                z_index: node_raw as i32,
+                ..Sprite2DCommand::default()
+            },
+        );
+    }
+    let _ = renderer.prepare_frame(&resources);
+    let second: Vec<_> = renderer
+        .retained_sprites()
+        .map(|sprite| sprite.z_index)
+        .collect();
+
+    assert_eq!(first, second);
+    assert_eq!(second, vec![3, 7, 11]);
+}

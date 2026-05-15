@@ -287,3 +287,26 @@ pub(super) fn hash01(seed: u32) -> f32 {
     x = (x >> 22) ^ x;
     (x as f32) / (u32::MAX as f32)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{InstanceRange, push_instance_range};
+
+    #[test]
+    fn push_instance_range_compacts_adjacent_matching_paths() {
+        let mut ranges = Vec::new();
+        push_instance_range(&mut ranges, 0, 4, 1);
+        push_instance_range(&mut ranges, 4, 2, 1);
+        push_instance_range(&mut ranges, 6, 3, 2);
+
+        assert_eq!(ranges.len(), 2);
+        assert_eq!(
+            ranges[0],
+            InstanceRange {
+                start: 0,
+                count: 6,
+                path_kind: 1,
+            }
+        );
+    }
+}

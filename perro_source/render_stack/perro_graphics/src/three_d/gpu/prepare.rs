@@ -78,7 +78,8 @@ impl Gpu3D {
             }
         }
         let draws_unchanged = self.last_draws_revision == draws_revision;
-        let has_dense_multimesh = draws.iter().any(|d| d.dense_multimesh.is_some());
+        let has_dense_multimesh =
+            !draws_unchanged && draws.iter().any(|d| d.dense_multimesh.is_some());
         let transform_only_semantic = !draws_unchanged
             && !has_dense_multimesh
             && draws.len() == self.last_draws.len()
@@ -996,13 +997,23 @@ impl Gpu3D {
             && debug_points_count > 0
         {
             let material_kind = MaterialPipelineKind::Standard;
+            let state_key = draw_batch_state_key(
+                RenderPath3D::Rigid,
+                true,
+                debug_points_double_sided,
+                0,
+                &material_kind,
+            );
             self.draw_batches.push(DrawBatch {
-                state_key: draw_batch_state_key(
-                    RenderPath3D::Rigid,
+                state_key,
+                render_state: render_state_key(
+                    state_key,
+                    MATERIAL_TEXTURE_NONE,
+                    default_mesh.full.index_start,
+                    default_mesh.full.base_vertex,
                     true,
-                    debug_points_double_sided,
                     0,
-                    &material_kind,
+                    false,
                 ),
                 mesh: default_mesh.full,
                 instance_start,
@@ -1022,6 +1033,7 @@ impl Gpu3D {
                 mesh_blend_depth: false,
                 blend_layers: BitMask::ALL.bits(),
                 blend_mask: BitMask::NONE.bits(),
+                order_index: self.draw_batches.len() as u32,
             });
         }
         if let Some(instance_start) = debug_edges_start
@@ -1031,13 +1043,23 @@ impl Gpu3D {
                 .resolve_builtin_mesh_asset("__cylinder__")
                 .unwrap_or_else(|| default_mesh.clone());
             let material_kind = MaterialPipelineKind::Standard;
+            let state_key = draw_batch_state_key(
+                RenderPath3D::Rigid,
+                true,
+                debug_edges_double_sided,
+                0,
+                &material_kind,
+            );
             self.draw_batches.push(DrawBatch {
-                state_key: draw_batch_state_key(
-                    RenderPath3D::Rigid,
+                state_key,
+                render_state: render_state_key(
+                    state_key,
+                    MATERIAL_TEXTURE_NONE,
+                    debug_edge_mesh.full.index_start,
+                    debug_edge_mesh.full.base_vertex,
                     true,
-                    debug_edges_double_sided,
                     0,
-                    &material_kind,
+                    false,
                 ),
                 mesh: debug_edge_mesh.full,
                 instance_start,
@@ -1057,15 +1079,19 @@ impl Gpu3D {
                 mesh_blend_depth: false,
                 blend_layers: BitMask::ALL.bits(),
                 blend_mask: BitMask::NONE.bits(),
+                order_index: self.draw_batches.len() as u32,
             });
         }
-        if self.draw_batches.len() >= PARALLEL_BATCH_SORT_MIN {
-            self.draw_batches
-                .par_sort_unstable_by(compare_draw_batch_keys);
-        } else {
-            self.draw_batches.sort_unstable_by(compare_draw_batch_keys);
+        if !draw_batches_sorted(&self.draw_batches) {
+            if self.draw_batches.len() >= PARALLEL_BATCH_SORT_MIN {
+                self.draw_batches
+                    .par_sort_unstable_by(compare_draw_batch_keys);
+            } else {
+                self.draw_batches.sort_unstable_by(compare_draw_batch_keys);
+            }
         }
         self.compact_sorted_draw_batches(draws.len());
+        self.rebuild_batch_views();
         if self.multimesh_batches.len() >= PARALLEL_BATCH_SORT_MIN {
             self.multimesh_batches.par_sort_unstable_by_key(|b| {
                 (
