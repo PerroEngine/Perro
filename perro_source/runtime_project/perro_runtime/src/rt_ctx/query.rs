@@ -7,7 +7,11 @@ use perro_runtime_api::sub_apis::{QueryExpr, QueryScope, QueryTypeMask, TagQuery
 use perro_structs::BitMask;
 use rayon::prelude::*;
 #[cfg(feature = "profile")]
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
+#[cfg(feature = "profile")]
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 
 const PARALLEL_MIN_NODES: usize = 10_000;
 const PARALLEL_MIN_WORK_UNITS: u64 = 30_000;

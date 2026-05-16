@@ -5,26 +5,28 @@ edition = "2024"
 build = "build.rs"
 
 [dependencies]
-perro_runtime = { path = "../../runtime_project/perro_runtime" }
-perro_graphics = { path = "../perro_graphics" }
-perro_render_bridge = { path = "../perro_render_bridge" }
-perro_ids = { path = "../../core/perro_ids" }
-perro_asset_formats = { path = "../../core/perro_asset_formats" }
-perro_scripting = { path = "../../script_stack/perro_scripting" }
-perro_input_api = { path = "../../api_modules/perro_input_api" }
-perro_runtime_api = { path = "../../api_modules/perro_runtime_api" }
-perro_ui = { path = "../../core/perro_ui" }
+perro_runtime.workspace = true
+perro_graphics.workspace = true
+perro_render_bridge.workspace = true
+perro_ids.workspace = true
+perro_asset_formats.workspace = true
+perro_scripting.workspace = true
+perro_input_api.workspace = true
+perro_runtime_api.workspace = true
+perro_ui.workspace = true
 image = { version = "0.25.9", default-features = false, features = ["png", "jpeg", "gif", "bmp", "tga", "webp", "ico"] }
+futures-util = "0.3.31"
+uuid = "1.18.1"
+perro_io.workspace = true
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+memory-stats = "1.2.0"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 hidapi = "2.6.3"
 btleplug = "0.11.8"
 gilrs = "0.11"
 tokio = { version = "1.48.0", features = ["rt", "time"] }
-futures-util = "0.3.31"
-uuid = "1.18.1"
-perro_io = { path = "../../io_stack/perro_io" }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-memory-stats = "1.2.0"
 
 [features]
 fps = []
@@ -42,3 +44,10 @@ winit = { version = "0.30.12", default-features = false, features = ["rwh_06", "
 
 [target.'cfg(target_os = "macos")'.dependencies]
 winit = { version = "0.30.12", default-features = false, features = ["rwh_06"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+winit = { version = "0.30.12", default-features = false, features = ["rwh_06"] }
+wasm-bindgen = "0.2.105"
+web-sys = { version = "0.3.82", features = ["Document", "Window", "HtmlCanvasElement", "Element"] }
+getrandom = { version = "0.3.4", features = ["wasm_js"] }
+web-time = "1.1.0"

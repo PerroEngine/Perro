@@ -989,6 +989,21 @@ fn script_macros_typecheck_and_forward() {
             graphics_time: Duration::from_micros(2_000),
             frame_time: Duration::from_micros(16_000),
             fps: 60.0,
+            draw_gpu_prepare_3d: Duration::ZERO,
+            draw_gpu_prepare_3d_frustum: Duration::ZERO,
+            draw_gpu_prepare_3d_hiz: Duration::ZERO,
+            draw_gpu_prepare_3d_indirect: Duration::ZERO,
+            draw_gpu_prepare_3d_cull_inputs: Duration::ZERO,
+            draw_calls_2d: 0,
+            draw_calls_3d: 0,
+            draw_calls_total: 0,
+            draw_instances_3d: 0,
+            draw_material_refs_3d: 0,
+            skip_prepare_3d: 0,
+            skip_prepare_3d_frustum: 0,
+            skip_prepare_3d_hiz: 0,
+            skip_prepare_3d_indirect: 0,
+            skip_prepare_3d_cull_inputs: 0,
         }
     );
 }

@@ -7,13 +7,17 @@ use perro_ids::{NodeID, TagID};
 use perro_nodes::Spatial;
 use perro_structs::{Transform2D, Transform3D};
 use std::{path::PathBuf, sync::Arc};
+#[cfg(not(target_arch = "wasm32"))]
+type DynamicScriptLibrary = libloading::Library;
+#[cfg(target_arch = "wasm32")]
+type DynamicScriptLibrary = ();
 
 pub(crate) struct ScriptRuntimeState {
     pub(crate) active_script_stack: Vec<(usize, NodeID)>,
     pub(crate) last_node_lookup: Option<(NodeID, usize, u32)>,
     pub(crate) pending_start_scripts: Vec<NodeID>,
     pub(crate) pending_start_flags: Vec<Option<NodeID>>,
-    pub(crate) script_libraries: Vec<libloading::Library>,
+    pub(crate) script_libraries: Vec<DynamicScriptLibrary>,
     pub(crate) base_scripts_loaded: bool,
     pub(crate) mounted_dlc_script_libs: AHashMap<String, PathBuf>,
     pub(crate) loaded_dlc_script_libs: AHashSet<String>,

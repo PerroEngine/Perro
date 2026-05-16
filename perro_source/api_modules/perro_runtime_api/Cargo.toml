@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-perro_ids = { path = "../../core/perro_ids" }
-perro_resource_api = { path = "../perro_resource_api" }
-perro_variant = { path = "../../core/perro_variant" }
-perro_nodes = { path = "../../core/perro_nodes" }
-perro_structs = { path = "../../core/perro_structs" }
-perro_pawdio = { path = "../../audio_stack/perro_pawdio" }
+perro_ids.workspace = true
+perro_resource_api.workspace = true
+perro_variant.workspace = true
+perro_nodes.workspace = true
+perro_structs.workspace = true
+perro_pawdio.workspace = true

@@ -1,23 +1,30 @@
 //! Project image loading helpers for window icons and startup splash sizing.
 
+#[cfg(not(target_arch = "wasm32"))]
 use perro_asset_formats::ptex::{
     FLAG_FORMAT_MASK as PTEX_FLAG_FORMAT_MASK, FLAG_FORMAT_R8 as PTEX_FLAG_FORMAT_R8,
     FLAG_FORMAT_RGB8 as PTEX_FLAG_FORMAT_RGB8, FLAG_FORMAT_RGBA8 as PTEX_FLAG_FORMAT_RGBA8,
-    FLAG_PAYLOAD_RAW as PTEX_FLAG_PAYLOAD_RAW, MAGIC as PTEX_MAGIC, VERSION as PTEX_VERSION,
+    FLAG_PAYLOAD_RAW as PTEX_FLAG_PAYLOAD_RAW,
 };
+use perro_asset_formats::ptex::{MAGIC as PTEX_MAGIC, VERSION as PTEX_VERSION};
+#[cfg(not(target_arch = "wasm32"))]
 use perro_io::decompress_zlib;
+#[cfg(not(target_arch = "wasm32"))]
 use std::{
     fs,
     path::{Path, PathBuf},
 };
+#[cfg(not(target_arch = "wasm32"))]
 use winit::window::Icon;
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn load_project_window_icon(project: &perro_runtime::RuntimeProject) -> Option<Icon> {
     let bytes = load_project_icon_bytes(project)?;
     let (rgba, width, height) = decode_image_rgba(&bytes)?;
     Icon::from_rgba(rgba, width, height).ok()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn load_project_icon_bytes(project: &perro_runtime::RuntimeProject) -> Option<Vec<u8>> {
     load_project_image_bytes(
         project,
@@ -31,6 +38,7 @@ fn load_project_image_bytes(
     source: &str,
     source_hash: Option<u64>,
 ) -> Option<Vec<u8>> {
+    #[cfg(not(target_arch = "wasm32"))]
     if let Some(path) = resolve_project_asset_path(project, source)
         && let Ok(bytes) = fs::read(path)
     {
@@ -71,6 +79,7 @@ fn decode_image_size(bytes: &[u8]) -> Option<(u32, u32)> {
     Some((decoded.width().max(1), decoded.height().max(1)))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn decode_image_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
     if let Some(decoded) = decode_ptex_rgba(bytes) {
         return Some(decoded);
@@ -97,6 +106,7 @@ fn decode_ptex_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
     Some((width, height))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn decode_ptex_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
     if bytes.len() < 24 || &bytes[0..4] != PTEX_MAGIC {
         return None;
@@ -151,6 +161,7 @@ fn decode_ptex_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
     Some((rgba, width, height))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn decode_ptex_payload(flags: u32, payload: &[u8]) -> Option<Vec<u8>> {
     if (flags & PTEX_FLAG_PAYLOAD_RAW) != 0 {
         Some(payload.to_vec())
@@ -159,6 +170,7 @@ fn decode_ptex_payload(flags: u32, payload: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn resolve_project_asset_path(
     project: &perro_runtime::RuntimeProject,
     source: &str,

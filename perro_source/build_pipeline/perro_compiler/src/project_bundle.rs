@@ -2,12 +2,48 @@
 pub struct ProjectBuildOptions {
     pub profile: bool,
     pub console: bool,
+    pub release: bool,
+    pub target: ProjectBuildTarget,
+    pub web_output_dir: WebOutputDir,
 }
 
 impl ProjectBuildOptions {
     pub fn new(profile: bool, console: bool) -> Self {
-        Self { profile, console }
+        Self {
+            profile,
+            console,
+            release: true,
+            target: ProjectBuildTarget::Native,
+            web_output_dir: WebOutputDir::Build,
+        }
     }
+
+    pub fn with_target(mut self, target: ProjectBuildTarget) -> Self {
+        self.target = target;
+        self
+    }
+
+    pub fn with_release(mut self, release: bool) -> Self {
+        self.release = release;
+        self
+    }
+
+    pub fn with_web_output_dir(mut self, output_dir: WebOutputDir) -> Self {
+        self.web_output_dir = output_dir;
+        self
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProjectBuildTarget {
+    Native,
+    Web,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WebOutputDir {
+    Build,
+    Dev,
 }
 
 pub fn compile_project_bundle(
@@ -22,7 +58,7 @@ pub fn compile_project_bundle(
     generate_project_static_modules(project_root, &cfg)?;
     perro_static_pipeline::write_static_mod_rs(project_root)
         .map_err(|err| CompilerError::SceneParse(format!("static mod generation failed: {err}")))?;
-    generate_embedded_main(project_root)?;
+    generate_embedded_entry_files(project_root)?;
     generate_perro_assets(project_root)?;
     build_project_crate(project_root, options, cfg.steam.enabled)?;
     Ok(())
@@ -55,10 +91,24 @@ fn build_project_crate(
     let target_dir = project_root.join("target");
     let mut cmd = Command::new("cargo");
     cmd.arg("build")
-        .arg("--release")
         .env("CARGO_TARGET_DIR", &target_dir)
-        .current_dir(project_crate);
-    if !options.console {
+        .current_dir(&project_crate);
+    if options.release {
+        cmd.arg("--release");
+    }
+    if options.target == ProjectBuildTarget::Web {
+        cmd.arg("--lib")
+            .arg("--target")
+            .arg("wasm32-unknown-unknown");
+        cmd.env(
+            "RUSTFLAGS",
+            append_rustflag(
+                env::var_os("RUSTFLAGS"),
+                "--cfg getrandom_backend=\"wasm_js\"",
+            ),
+        );
+    }
+    if options.target == ProjectBuildTarget::Native && !options.console {
         cmd.env(
             "RUSTFLAGS",
             append_rustflag(env::var_os("RUSTFLAGS"), "--cfg perro_no_console"),
@@ -79,7 +129,10 @@ fn build_project_crate(
     if !status.success() {
         return Err(CompilerError::CargoFailed(status.code().unwrap_or(-1)));
     }
-    export_project_binary(project_root, &target_dir)?;
+    match options.target {
+        ProjectBuildTarget::Native => export_project_binary(project_root, &target_dir)?,
+        ProjectBuildTarget::Web => export_project_web_bundle(project_root, &target_dir, options)?,
+    }
     Ok(())
 }
 
@@ -276,7 +329,7 @@ fn ensure_project_dependency_line(
     Ok(())
 }
 
-fn generate_embedded_main(project_root: &Path) -> Result<(), CompilerError> {
+fn generate_embedded_entry_files(project_root: &Path) -> Result<(), CompilerError> {
     let cfg = load_project_toml(project_root)
         .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
     let project_src = project_root.join(".perro").join("project").join("src");
@@ -392,18 +445,110 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         steam_app_id = emit_optional_u32(cfg.steam.app_id),
     );
     let embedded_block = indent_block(&embedded_block, 2);
+    let embedded_web_block = format!(
+        "let root = project_root();\n\
+perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbeddedProject {{\n\
+  project: perro_app::entry::StaticEmbeddedProjectInfo {{\n\
+        project_root: &root,\n\
+        project_name: \"{name}\",\n\
+        main_scene_hash: {main_scene_hash}u64,\n\
+        icon_hash: {icon_hash}u64,\n\
+        startup_splash_hash: {startup_splash_hash}u64,\n\
+        virtual_width: {w},\n\
+        virtual_height: {h},\n\
+  }},\n\
+  graphics: perro_app::entry::StaticEmbeddedGraphicsConfig {{\n\
+        vsync: {vsync},\n\
+        msaa: {msaa},\n\
+        meshlets: {meshlets},\n\
+        dev_meshlets: {dev_meshlets},\n\
+        release_meshlets: {release_meshlets},\n\
+        meshlet_debug_view: {meshlet_debug_view},\n\
+        occlusion_culling: {occlusion_culling},\n\
+        particle_sim_default: {particle_sim_default},\n\
+  }},\n\
+  runtime: perro_app::entry::StaticEmbeddedRuntimeConfig {{\n\
+        target_fixed_update: {target_fixed_update},\n\
+        physics_gravity: {physics_gravity},\n\
+        physics_coef: {physics_coef},\n\
+  }},\n\
+  metadata: perro_app::entry::StaticEmbeddedMetadataConfig {{\n\
+        description: {metadata_description},\n\
+        company: {metadata_company},\n\
+        version: {metadata_version},\n\
+        copyright: {metadata_copyright},\n\
+        trademark: {metadata_trademark},\n\
+  }},\n\
+  localization: perro_app::entry::StaticEmbeddedLocalizationConfig {{\n\
+        default_locale: {localization_default_locale},\n\
+  }},\n\
+  steam: perro_app::entry::StaticEmbeddedSteamConfig {{\n\
+        enabled: {steam_enabled},\n\
+        app_id: {steam_app_id},\n\
+  }},\n\
+  assets: perro_app::entry::StaticEmbeddedAssetsConfig {{\n\
+        perro_assets: PERRO_ASSETS,\n\
+        scene_lookup: static_assets::scenes::lookup_scene,\n\
+        localization_lookup: static_assets::localizations::lookup_localized_string,\n\
+        material_lookup: static_assets::materials::lookup_material,\n\
+        ui_style_lookup: static_assets::ui_styles::lookup_ui_style,\n\
+        tileset_lookup: static_assets::tilesets::lookup_tileset,\n\
+        particle_lookup: static_assets::particles::lookup_particle,\n\
+        animation_lookup: static_assets::animations::lookup_animation,\n\
+        animation_tree_lookup: static_assets::animation_trees::lookup_animation_tree,\n\
+        csv_lookup: static_assets::csvs::lookup_csv,\n\
+        mesh_lookup: static_assets::meshes::lookup_mesh,\n\
+        collision_trimesh_lookup: static_assets::collision_trimeshes::lookup_collision_trimesh,\n\
+        skeleton_lookup: static_assets::skeletons::lookup_skeleton,\n\
+        texture_lookup: static_assets::textures::lookup_texture,\n\
+        shader_lookup: static_assets::shaders::lookup_shader,\n\
+        audio_lookup: static_assets::audios::lookup_audio,\n\
+        static_script_registry: Some(scripts::SCRIPT_REGISTRY),\n\
+  }},\n\
+}})",
+        name = escape_str(&cfg.name),
+        main_scene_hash = perro_ids::string_to_u64(&cfg.main_scene),
+        icon_hash = perro_ids::string_to_u64(&cfg.icon),
+        startup_splash_hash = perro_ids::string_to_u64(&cfg.startup_splash),
+        w = cfg.virtual_width,
+        h = cfg.virtual_height,
+        vsync = cfg.vsync,
+        msaa = cfg.msaa,
+        meshlets = cfg.meshlets,
+        dev_meshlets = cfg.dev_meshlets,
+        release_meshlets = cfg.release_meshlets,
+        meshlet_debug_view = cfg.meshlet_debug_view,
+        occlusion_culling = emit_occlusion_culling_expr(cfg.occlusion_culling),
+        particle_sim_default = emit_particle_sim_default_expr(cfg.particle_sim_default),
+        target_fixed_update = emit_optional_f32(cfg.target_fixed_update),
+        physics_gravity = emit_f32(cfg.physics_gravity),
+        physics_coef = emit_f32(cfg.physics_coef),
+        metadata_description = emit_optional_static_str(cfg.metadata.description.as_deref()),
+        metadata_company = emit_optional_static_str(cfg.metadata.company.as_deref()),
+        metadata_version = emit_optional_static_str(cfg.metadata.version.as_deref()),
+        metadata_copyright = emit_optional_static_str(cfg.metadata.copyright.as_deref()),
+        metadata_trademark = emit_optional_static_str(cfg.metadata.trademark.as_deref()),
+        localization_default_locale = emit_static_str(
+            cfg.localization
+                .as_ref()
+                .map(|loc| loc.default_locale.as_str())
+                .unwrap_or("en"),
+        ),
+        steam_enabled = cfg.steam.enabled,
+        steam_app_id = emit_optional_u32(cfg.steam.app_id),
+    );
+    let embedded_web_block = indent_block(&embedded_web_block, 4);
 
-    let main_src = format!(
+    let lib_src = format!(
         "#![cfg_attr(all(perro_no_console, target_os = \"windows\"), windows_subsystem = \"windows\")]\n\n\
 #[path = \"static/mod.rs\"]\n\
-  mod static_assets;\n\n\
+mod static_assets;\n\n\
 static PERRO_ASSETS: &[u8] = include_bytes!(\"../embedded/assets.perro\");\n\n\
-// To show this is a Perro Engine Project, we include a specific static marker string in the binary and read it in main to prevent dead code stripping.\n\
 #[used]\n\
 #[unsafe(no_mangle)]\n\
 pub static PERRO_ENGINE_DETECT: [u8; 89] =\n\
     *b\"PERRO_ENGINE_DETECT:v1;engine=Perro Engine;format=.perro;site=https://www.perroengine.com\";\n\n\
-fn keep_perro_engine_marker() {{\n\
+pub fn keep_perro_engine_marker() {{\n\
     unsafe {{\n\
         std::hint::black_box(std::ptr::read_volatile(PERRO_ENGINE_DETECT.as_ptr()));\n\
         std::hint::black_box(std::ptr::read_volatile(\n\
@@ -411,7 +556,8 @@ fn keep_perro_engine_marker() {{\n\
         ));\n\
     }}\n\
 }}\n\n\
-fn project_root() -> std::path::PathBuf {{\n\
+#[cfg(not(target_arch = \"wasm32\"))]\n\
+pub fn project_root() -> std::path::PathBuf {{\n\
     if let Ok(exe) = std::env::current_exe() {{\n\
         if let Some(exe_dir) = exe.parent() {{\n\
             for dir in exe_dir.ancestors() {{\n\
@@ -427,15 +573,146 @@ fn project_root() -> std::path::PathBuf {{\n\
         return root.canonicalize().unwrap_or(root);\n\
     }}\n\
     std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(\".\"))\n\
-  }}\n\n\
-  fn main() {{\n\
-    keep_perro_engine_marker();\n\
+}}\n\n\
+#[cfg(target_arch = \"wasm32\")]\n\
+pub fn project_root() -> std::path::PathBuf {{\n\
+    std::path::PathBuf::from(\".\")\n\
+}}\n\n\
+#[cfg(not(target_arch = \"wasm32\"))]\n\
+pub fn run_native() {{\n\
 {embedded_block}\n\
-  }}\n",
+}}\n\n\
+#[cfg(target_arch = \"wasm32\")]\n\
+#[wasm_bindgen::prelude::wasm_bindgen(start)]\n\
+pub fn run_web() -> Result<(), wasm_bindgen::JsValue> {{\n\
+    console_error_panic_hook::set_once();\n\
+{embedded_web_block}\n\
+}}\n",
         embedded_block = embedded_block,
+        embedded_web_block = embedded_web_block,
     );
+    let main_src = "fn main() {\n  important_project::keep_perro_engine_marker();\n  important_project::run_native();\n}\n";
+    let crate_name = read_project_binary_name(project_root)?;
+    let main_src = main_src.replace("important_project", &crate_name);
+    fs::write(project_src.join("lib.rs"), lib_src)?;
     fs::write(project_src.join("main.rs"), main_src)?;
     Ok(())
+}
+
+fn export_project_web_bundle(
+    project_root: &Path,
+    target_dir: &Path,
+    options: ProjectBuildOptions,
+) -> Result<(), CompilerError> {
+    let package_name = read_project_binary_name(project_root)?;
+    let project_cfg = load_project_toml(project_root)
+        .map_err(|err| CompilerError::SceneParse(format!("failed to load project.toml: {err}")))?;
+    let profile_dir = if options.release { "release" } else { "debug" };
+    let built_wasm = target_dir
+        .join("wasm32-unknown-unknown")
+        .join(profile_dir)
+        .join(format!("{package_name}.wasm"));
+    if !built_wasm.exists() {
+        return Err(CompilerError::SceneParse(format!(
+            "project wasm not found after build: {}",
+            built_wasm.display()
+        )));
+    }
+
+    let output_dir = match options.web_output_dir {
+        WebOutputDir::Build => project_root.join(".output").join("web"),
+        WebOutputDir::Dev => project_root.join(".output").join("web-dev"),
+    };
+    if output_dir.exists() {
+        fs::remove_dir_all(&output_dir)?;
+    }
+    fs::create_dir_all(&output_dir)?;
+
+    let bindgen_status = Command::new("wasm-bindgen")
+        .arg("--target")
+        .arg("web")
+        .arg("--no-typescript")
+        .arg("--out-dir")
+        .arg(&output_dir)
+        .arg("--out-name")
+        .arg("app")
+        .arg(&built_wasm)
+        .status()
+        .map_err(|err| {
+            CompilerError::SceneParse(format!(
+                "failed to run wasm-bindgen for {}: {err}. install via `cargo install wasm-bindgen-cli`",
+                built_wasm.display()
+            ))
+        })?;
+    if !bindgen_status.success() {
+        return Err(CompilerError::SceneParse(format!(
+            "wasm-bindgen failed with exit code {:?}",
+            bindgen_status.code()
+        )));
+    }
+
+    fs::write(output_dir.join("boot.js"), web_boot_js())?;
+    fs::write(
+        output_dir.join("index.html"),
+        web_index_html(&project_cfg.name),
+    )?;
+    println!("exported web bundle: {}", output_dir.display());
+    Ok(())
+}
+
+fn web_boot_js() -> &'static str {
+    "import init from './app.js';\n\
+\n\
+const boot = document.getElementById('boot');\n\
+const setBoot = (text, kind = 'info') => {\n\
+  if (!boot) return;\n\
+  boot.textContent = text;\n\
+  boot.dataset.kind = kind;\n\
+};\n\
+\n\
+const hideBoot = () => {\n\
+  if (!boot) return;\n\
+  boot.dataset.state = 'done';\n\
+  window.setTimeout(() => boot.remove(), 400);\n\
+};\n\
+\n\
+const obs = new MutationObserver(() => {\n\
+  if (document.querySelector('canvas')) {\n\
+    hideBoot();\n\
+    obs.disconnect();\n\
+  }\n\
+});\n\
+obs.observe(document.body, { childList: true, subtree: true });\n\
+\n\
+setBoot('loading wasm...');\n\
+\n\
+try {\n\
+  await init();\n\
+  setBoot('starting render...');\n\
+  if (document.querySelector('canvas')) {\n\
+    hideBoot();\n\
+    obs.disconnect();\n\
+  }\n\
+} catch (err) {\n\
+  console.error('perro web boot fail', err);\n\
+  const msg = err instanceof Error ? err.message : String(err);\n\
+  setBoot(`boot fail: ${msg}`, 'error');\n\
+  obs.disconnect();\n\
+}\n"
+}
+
+fn web_index_html(project_name: &str) -> String {
+    format!(
+        "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>{title}</title>\n<style>\n:root{{color-scheme:dark}}html,body{{margin:0;height:100%;background:#111;color:#eee;font-family:system-ui,sans-serif}}body{{display:flex;flex-direction:column;overflow:hidden}}canvas{{display:block;width:100vw;height:100vh;outline:none}}#boot{{position:fixed;left:12px;top:12px;max-width:min(480px,calc(100vw - 24px));padding:8px 10px;background:rgba(0,0,0,.65);border:1px solid rgba(255,255,255,.12);border-radius:8px;font-size:13px;line-height:1.4;z-index:10;transition:opacity .2s ease}}#boot[data-kind='error']{{color:#ffb4b4;border-color:rgba(255,120,120,.35)}}#boot[data-state='done']{{opacity:0;pointer-events:none}}\n</style>\n</head>\n<body>\n<div id=\"boot\">{boot}</div>\n<script type=\"module\" src=\"./boot.js\"></script>\n</body>\n</html>\n",
+        title = escape_html(project_name),
+        boot = escape_html(&format!("{project_name} boot")),
+    )
+}
+
+fn escape_html(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 fn escape_str(s: &str) -> String {

@@ -4,22 +4,22 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-perro_structs = { path = "../../core/perro_structs" }
-perro_asset_formats = { path = "../../core/perro_asset_formats" }
-perro_io = { path = "../../io_stack/perro_io" }
-perro_meshlets = { path = "../../render_stack/perro_meshlets" }
-perro_scene = { path = "../../runtime_project/perro_scene" }
-perro_render_bridge = { path = "../../render_stack/perro_render_bridge" }
-perro_animation = { path = "../../core/perro_animation" }
-perro_project = { path = "../../runtime_project/perro_project" }
-perro_ids = { path = "../../core/perro_ids" }
-perro_nodes = { path = "../../core/perro_nodes" }
+perro_structs.workspace = true
+perro_asset_formats.workspace = true
+perro_io.workspace = true
+perro_meshlets.workspace = true
+perro_scene.workspace = true
+perro_render_bridge.workspace = true
+perro_animation.workspace = true
+perro_project.workspace = true
+perro_ids.workspace = true
+perro_nodes.workspace = true
 image = { version = "0.25.9", default-features = true }
 gltf = { version = "1.4.1", features = ["import", "utils"] }
 rayon = "1.10"
-perro_particle_math = { path = "../../core/perro_particle_math" }
-perro_runtime = { path = "../../runtime_project/perro_runtime" }
-perro_ui = { path = "../../core/perro_ui" }
-perro_csv = { path = "../../core/perro_csv" }
+perro_particle_math.workspace = true
+perro_runtime.workspace = true
+perro_ui.workspace = true
+perro_csv.workspace = true
 csv = "1.4"
 glam = "0.31.0"

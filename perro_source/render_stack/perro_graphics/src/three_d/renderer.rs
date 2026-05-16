@@ -9,7 +9,10 @@ use perro_render_bridge::{
 };
 use rayon::slice::ParallelSliceMut;
 use std::sync::Arc;
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 
 const SKY_DAY_SECONDS: f32 = 1580.0;
 const SKY_CLOUD_TIME_SPEED_SCALE: f32 = 0.2;

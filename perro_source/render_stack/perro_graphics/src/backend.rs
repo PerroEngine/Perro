@@ -23,7 +23,13 @@ use perro_render_bridge::{
 };
 use perro_structs::{PostProcessSet, VisualAccessibilitySettings};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+#[cfg(target_arch = "wasm32")]
+use std::sync::Mutex;
+use std::time::Duration;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 use winit::window::Window;
 
 pub type StaticTextureLookup = fn(path_hash: u64) -> &'static [u8];
@@ -262,6 +268,8 @@ pub struct PerroGraphics {
     frame_time_seconds: f32,
     frame_delta_seconds: f32,
     last_frame_instant: Option<Instant>,
+    #[cfg(target_arch = "wasm32")]
+    pending_gpu: Option<Arc<Mutex<Option<Gpu>>>>,
 }
 
 impl PerroGraphics {
@@ -317,6 +325,8 @@ impl PerroGraphics {
             frame_time_seconds: 0.0,
             frame_delta_seconds: 0.0,
             last_frame_instant: None,
+            #[cfg(target_arch = "wasm32")]
+            pending_gpu: None,
         }
     }
 
@@ -758,23 +768,58 @@ impl RenderBridge for PerroGraphics {
 impl GraphicsBackend for PerroGraphics {
     fn attach_window(&mut self, window: Arc<Window>) {
         if self.gpu.is_none() {
-            let mut gpu = Gpu::new(
-                window,
-                self.smoothing_samples,
-                self.vsync_enabled,
-                self.meshlets_enabled,
-                self.dev_meshlets,
-                self.meshlet_debug_view,
-                self.occlusion_culling,
-            );
-            if let Some(gpu_ref) = gpu.as_mut() {
-                let [vw, vh] = Gpu::virtual_size();
-                self.renderer_2d.set_virtual_viewport(vw, vh);
-                self.late_overlay_2d.set_virtual_viewport(vw, vh);
-                gpu_ref.resize(self.viewport.0.max(1), self.viewport.1.max(1));
+            #[cfg(target_arch = "wasm32")]
+            {
+                if self.pending_gpu.is_some() {
+                    return;
+                }
+                let slot = Arc::new(Mutex::new(None));
+                let slot_clone = slot.clone();
+                let smoothing_samples = self.smoothing_samples;
+                let vsync_enabled = self.vsync_enabled;
+                let meshlets_enabled = self.meshlets_enabled;
+                let dev_meshlets = self.dev_meshlets;
+                let meshlet_debug_view = self.meshlet_debug_view;
+                let occlusion_culling = self.occlusion_culling;
+                wasm_bindgen_futures::spawn_local(async move {
+                    let gpu = Gpu::new_async(
+                        window,
+                        smoothing_samples,
+                        vsync_enabled,
+                        meshlets_enabled,
+                        dev_meshlets,
+                        meshlet_debug_view,
+                        occlusion_culling,
+                    )
+                    .await;
+                    if let Ok(mut pending) = slot_clone.lock() {
+                        *pending = gpu;
+                    }
+                });
+                self.pending_gpu = Some(slot);
+                self.redraw_requested = true;
+                return;
             }
-            self.gpu = gpu;
-            self.redraw_requested = true;
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let mut gpu = Gpu::new(
+                    window,
+                    self.smoothing_samples,
+                    self.vsync_enabled,
+                    self.meshlets_enabled,
+                    self.dev_meshlets,
+                    self.meshlet_debug_view,
+                    self.occlusion_culling,
+                );
+                if let Some(gpu_ref) = gpu.as_mut() {
+                    let [vw, vh] = Gpu::virtual_size();
+                    self.renderer_2d.set_virtual_viewport(vw, vh);
+                    self.late_overlay_2d.set_virtual_viewport(vw, vh);
+                    gpu_ref.resize(self.viewport.0.max(1), self.viewport.1.max(1));
+                }
+                self.gpu = gpu;
+                self.redraw_requested = true;
+            }
         }
     }
 
@@ -898,6 +943,8 @@ impl PerroGraphics {
     where
         I: IntoIterator<Item = RenderCommand>,
     {
+        #[cfg(target_arch = "wasm32")]
+        self.try_finish_gpu_init();
         let total_start = Instant::now();
         let now = Instant::now();
         self.frame_delta_seconds = self
@@ -1259,6 +1306,25 @@ impl PerroGraphics {
         pending.clear();
         self.frame.scratch_commands = pending;
         Some(timing)
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl PerroGraphics {
+    fn try_finish_gpu_init(&mut self) {
+        let Some(slot) = self.pending_gpu.as_ref() else {
+            return;
+        };
+        let Some(mut gpu) = slot.lock().ok().and_then(|mut guard| guard.take()) else {
+            return;
+        };
+        let [vw, vh] = Gpu::virtual_size();
+        self.renderer_2d.set_virtual_viewport(vw, vh);
+        self.late_overlay_2d.set_virtual_viewport(vw, vh);
+        gpu.resize(self.viewport.0.max(1), self.viewport.1.max(1));
+        self.gpu = Some(gpu);
+        self.pending_gpu = None;
+        self.redraw_requested = true;
     }
 }
 

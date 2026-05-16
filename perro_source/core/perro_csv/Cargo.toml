@@ -5,8 +5,7 @@ edition = "2024"
 
 [dependencies]
 csv = "1.4"
-perro_ids = { path = "../perro_ids" }
-
+perro_ids.workspace = true
 [dev-dependencies]
 criterion = "0.5"
 

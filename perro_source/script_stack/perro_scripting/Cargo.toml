@@ -4,13 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-perro_ids = { path = "../../core/perro_ids" }
-perro_runtime_api = { path = "../../api_modules/perro_runtime_api" }
-perro_resource_api = { path = "../../api_modules/perro_resource_api" }
-perro_input_api = { path = "../../api_modules/perro_input_api" }
-perro_variant = { path = "../../core/perro_variant" }
-perro_scripting_macros = { path = "../perro_scripting_macros", version = "0.1.0" }
-
+perro_ids.workspace = true
+perro_runtime_api.workspace = true
+perro_resource_api.workspace = true
+perro_input_api.workspace = true
+perro_variant.workspace = true
+perro_scripting_macros.workspace = true
 [dev-dependencies]
 trybuild = "1.0"
 criterion = "0.5"

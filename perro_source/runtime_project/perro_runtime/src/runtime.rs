@@ -9,8 +9,12 @@ use perro_input_api::InputSnapshot;
 use perro_runtime_api::sub_apis::{PreloadedSceneID, WindowRequest};
 use perro_scene::Scene;
 use perro_scripting::{ScriptAPI, ScriptBehavior, ScriptConstructor};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
 use std::{cell::RefCell, sync::Arc};
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 
 // Runtime subsystem leaves. Public API glue stays here; heavy behavior lives in folders.
 mod audio;
@@ -178,6 +182,36 @@ pub struct Timing {
     pub frame: Duration,
     /// Last measured frames per second.
     pub fps: f32,
+    /// Last measured 3D gpu prepare total.
+    pub draw_gpu_prepare_3d: Duration,
+    /// Last measured 3D frustum prepare.
+    pub draw_gpu_prepare_3d_frustum: Duration,
+    /// Last measured 3D hiz prepare.
+    pub draw_gpu_prepare_3d_hiz: Duration,
+    /// Last measured 3D indirect prepare.
+    pub draw_gpu_prepare_3d_indirect: Duration,
+    /// Last measured 3D cull input prepare.
+    pub draw_gpu_prepare_3d_cull_inputs: Duration,
+    /// Last measured 2D draw calls.
+    pub draw_calls_2d: u32,
+    /// Last measured 3D draw calls.
+    pub draw_calls_3d: u32,
+    /// Last measured total draw calls.
+    pub draw_calls_total: u32,
+    /// Last measured 3D instances.
+    pub draw_instances_3d: u32,
+    /// Last measured 3D material refs.
+    pub draw_material_refs_3d: u32,
+    /// Last measured 3D prepare skips.
+    pub skip_prepare_3d: u32,
+    /// Last measured frustum prepare skips.
+    pub skip_prepare_3d_frustum: u32,
+    /// Last measured hiz prepare skips.
+    pub skip_prepare_3d_hiz: u32,
+    /// Last measured indirect prepare skips.
+    pub skip_prepare_3d_indirect: u32,
+    /// Last measured cull input prepare skips.
+    pub skip_prepare_3d_cull_inputs: u32,
 }
 
 /// Timing breakdown for variable-step script schedules.
@@ -259,6 +293,21 @@ impl Runtime {
                 graphics: Duration::ZERO,
                 frame: Duration::ZERO,
                 fps: 0.0,
+                draw_gpu_prepare_3d: Duration::ZERO,
+                draw_gpu_prepare_3d_frustum: Duration::ZERO,
+                draw_gpu_prepare_3d_hiz: Duration::ZERO,
+                draw_gpu_prepare_3d_indirect: Duration::ZERO,
+                draw_gpu_prepare_3d_cull_inputs: Duration::ZERO,
+                draw_calls_2d: 0,
+                draw_calls_3d: 0,
+                draw_calls_total: 0,
+                draw_instances_3d: 0,
+                draw_material_refs_3d: 0,
+                skip_prepare_3d: 0,
+                skip_prepare_3d_frustum: 0,
+                skip_prepare_3d_hiz: 0,
+                skip_prepare_3d_indirect: 0,
+                skip_prepare_3d_cull_inputs: 0,
             },
             provider_mode: ProviderMode::Dynamic,
             scene_cache: RefCell::new(AHashMap::new()),
@@ -446,22 +495,22 @@ impl Runtime {
 
     #[inline]
     pub fn update_timed(&mut self, delta_time: f32) -> RuntimeUpdateTiming {
-        let total_start = std::time::Instant::now();
+        let total_start = Instant::now();
         self.time.delta = delta_time;
         #[cfg(feature = "steamworks")]
         let _ = perro_steamworks::runtime::run_callbacks();
 
-        let start_schedule_start = std::time::Instant::now();
+        let start_schedule_start = Instant::now();
         self.run_start_schedule();
         let start_schedule = start_schedule_start.elapsed();
 
-        let snapshot_start = std::time::Instant::now();
+        let snapshot_start = Instant::now();
         self.schedules.snapshot_update(&self.scripts);
         let snapshot_update = snapshot_start.elapsed();
 
         let update_schedule = self.run_update_schedule_timed();
 
-        let internal_start = std::time::Instant::now();
+        let internal_start = Instant::now();
         self.run_internal_update_schedule();
         let internal_update = internal_start.elapsed();
         self.propagate_pending_transform_dirty();

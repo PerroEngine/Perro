@@ -4,21 +4,20 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-perro_ids = { path = "../../core/perro_ids" }
-perro_input_api = { path = "../perro_input_api" }
-perro_project = { path = "../../runtime_project/perro_project" }
-perro_resource_api = { path = "../perro_resource_api" }
-perro_runtime_api = { path = "../perro_runtime_api" }
-perro_scene = { path = "../../runtime_project/perro_scene" }
-perro_scripting = { path = "../../script_stack/perro_scripting" }
-perro_steamworks = { path = "../perro_steamworks", default-features = false, optional = true }
-perro_nodes = { path = "../../core/perro_nodes" }
-perro_structs = { path = "../../core/perro_structs" }
-perro_ui = { path = "../../core/perro_ui" }
-perro_modules = { path = "../perro_modules" }
-perro_networking = { path = "../perro_networking" }
-perro_variant = { path = "../../core/perro_variant" }
-perro_csv = { path = "../../core/perro_csv" }
-
+perro_ids.workspace = true
+perro_input_api.workspace = true
+perro_project.workspace = true
+perro_resource_api.workspace = true
+perro_runtime_api.workspace = true
+perro_scene.workspace = true
+perro_scripting.workspace = true
+perro_steamworks = { workspace = true, optional = true }
+perro_nodes.workspace = true
+perro_structs.workspace = true
+perro_ui.workspace = true
+perro_modules.workspace = true
+perro_networking.workspace = true
+perro_variant.workspace = true
+perro_csv.workspace = true
 [features]
 steamworks = ["dep:perro_steamworks", "perro_steamworks/steamworks-runtime"]

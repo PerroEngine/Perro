@@ -1,5 +1,9 @@
 use super::*;
 use rayon::slice::ParallelSliceMut;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 
 const PARALLEL_BATCH_SORT_MIN: usize = 10_000;
 
@@ -128,7 +132,7 @@ impl Gpu3D {
                     || self.indirect_staging.len() != self.draw_batches.len()
                     || self.frustum_cull_staging.len() != self.draw_batches.len();
                 if frustum_inputs_invalid {
-                    let indirect_start = std::time::Instant::now();
+                    let indirect_start = Instant::now();
                     self.ensure_frustum_cull_capacity(device, self.draw_batches.len());
                     self.indirect_staging.clear();
                     self.indirect_staging.reserve(self.draw_batches.len());
@@ -148,7 +152,7 @@ impl Gpu3D {
                     );
                     step_timing.indirect_prep += indirect_start.elapsed();
 
-                    let cull_start = std::time::Instant::now();
+                    let cull_start = Instant::now();
                     self.frustum_cull_staging.clear();
                     self.frustum_cull_staging.reserve(self.draw_batches.len());
                     for batch in &self.draw_batches {
@@ -191,7 +195,7 @@ impl Gpu3D {
                         step_timing.cull_input_skipped.saturating_add(1);
                 }
 
-                let frustum_start = std::time::Instant::now();
+                let frustum_start = Instant::now();
                 let frustum = extract_frustum_planes(view_proj);
                 let frustum_written = self.write_frustum_params_if_needed(queue, &frustum);
                 step_timing.frustum_prep += frustum_start.elapsed();
@@ -200,7 +204,7 @@ impl Gpu3D {
                 }
 
                 if hiz_active {
-                    let hiz_start = std::time::Instant::now();
+                    let hiz_start = Instant::now();
                     let hiz_written =
                         self.write_hiz_params_if_needed(queue, &uniform, self.draw_batches.len());
                     step_timing.hiz_prep += hiz_start.elapsed();
@@ -272,7 +276,7 @@ impl Gpu3D {
                     || self.indirect_staging.len() != self.draw_batches.len()
                     || self.frustum_cull_staging.len() != self.draw_batches.len();
                 if frustum_inputs_invalid {
-                    let indirect_start = std::time::Instant::now();
+                    let indirect_start = Instant::now();
                     self.ensure_frustum_cull_capacity(device, self.draw_batches.len());
                     self.indirect_staging.clear();
                     self.indirect_staging.reserve(self.draw_batches.len());
@@ -292,7 +296,7 @@ impl Gpu3D {
                     );
                     step_timing.indirect_prep += indirect_start.elapsed();
 
-                    let cull_start = std::time::Instant::now();
+                    let cull_start = Instant::now();
                     self.frustum_cull_staging.clear();
                     self.frustum_cull_staging.reserve(self.draw_batches.len());
                     for batch in &self.draw_batches {
@@ -332,7 +336,7 @@ impl Gpu3D {
                 } else {
                     step_timing.indirect_skipped = step_timing.indirect_skipped.saturating_add(1);
 
-                    let cull_start = std::time::Instant::now();
+                    let cull_start = Instant::now();
                     self.dirty_cull_batch_spans_scratch.clear();
                     let mut dirty_span_idx = 0usize;
                     for (batch_idx, batch) in self.draw_batches.iter().enumerate() {
@@ -405,7 +409,7 @@ impl Gpu3D {
                     }
                 }
 
-                let frustum_start = std::time::Instant::now();
+                let frustum_start = Instant::now();
                 let frustum = extract_frustum_planes(view_proj);
                 let frustum_written = self.write_frustum_params_if_needed(queue, &frustum);
                 step_timing.frustum_prep += frustum_start.elapsed();
@@ -414,7 +418,7 @@ impl Gpu3D {
                 }
 
                 if hiz_active {
-                    let hiz_start = std::time::Instant::now();
+                    let hiz_start = Instant::now();
                     let hiz_written =
                         self.write_hiz_params_if_needed(queue, &uniform, self.draw_batches.len());
                     step_timing.hiz_prep += hiz_start.elapsed();
@@ -1223,7 +1227,7 @@ impl Gpu3D {
         let frustum_cull_active = self.should_run_frustum_cull();
         let hiz_active = self.should_run_hiz_occlusion(frustum_cull_active);
         if frustum_cull_active {
-            let indirect_start = std::time::Instant::now();
+            let indirect_start = Instant::now();
             self.ensure_frustum_cull_capacity(device, self.draw_batches.len());
             self.indirect_staging.clear();
             self.indirect_staging.reserve(self.draw_batches.len());
@@ -1270,7 +1274,7 @@ impl Gpu3D {
             );
             step_timing.indirect_prep += indirect_start.elapsed();
 
-            let cull_start = std::time::Instant::now();
+            let cull_start = Instant::now();
             queue.write_buffer(
                 &self.frustum_cull_items_buffer,
                 0,
@@ -1278,14 +1282,14 @@ impl Gpu3D {
             );
             step_timing.cull_input_prep += cull_start.elapsed();
 
-            let frustum_start = std::time::Instant::now();
+            let frustum_start = Instant::now();
             let frustum_written = self.write_frustum_params_if_needed(queue, &frustum);
             step_timing.frustum_prep += frustum_start.elapsed();
             if !frustum_written {
                 step_timing.frustum_skipped = step_timing.frustum_skipped.saturating_add(1);
             }
             if hiz_active {
-                let hiz_start = std::time::Instant::now();
+                let hiz_start = Instant::now();
                 let hiz_written =
                     self.write_hiz_params_if_needed(queue, &uniform, self.draw_batches.len());
                 step_timing.hiz_prep += hiz_start.elapsed();

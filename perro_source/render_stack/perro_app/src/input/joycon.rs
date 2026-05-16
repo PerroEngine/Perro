@@ -1,18 +1,16 @@
 use crate::App;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::threaded::RenderThreadBridge;
 use perro_graphics::GraphicsBackend;
+#[cfg(not(target_arch = "wasm32"))]
+use perro_input_api::InputEvent;
+#[cfg(not(target_arch = "wasm32"))]
 use perro_input_api::{
-    InputEvent, JoyConButton, JoyConIndicatorRequest, JoyConRumbleRequest, JoyConSide,
-    PlayerBinding, PlayerState,
+    JoyConButton, JoyConIndicatorRequest, JoyConRumbleRequest, JoyConSide, PlayerBinding,
+    PlayerState,
 };
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::thread;
-use std::time::{Duration, Instant};
 
+#[cfg(not(target_arch = "wasm32"))]
 trait JoyConSink {
     fn set_joycon_button_state(&mut self, index: usize, button: JoyConButton, is_down: bool);
     fn set_joycon_stick(&mut self, index: usize, x: f32, y: f32);
@@ -30,6 +28,7 @@ trait JoyConSink {
     fn bind_player(&mut self, index: usize, binding: PlayerBinding);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<B: GraphicsBackend> JoyConSink for App<B> {
     fn set_joycon_button_state(&mut self, index: usize, button: JoyConButton, is_down: bool) {
         App::set_joycon_button_state(self, index, button, is_down);
@@ -78,6 +77,7 @@ impl<B: GraphicsBackend> JoyConSink for App<B> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl JoyConSink for RenderThreadBridge {
     fn set_joycon_button_state(&mut self, index: usize, button: JoyConButton, is_down: bool) {
         self.push_input_event(InputEvent::JoyConButton {
@@ -127,6 +127,7 @@ impl JoyConSink for RenderThreadBridge {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 mod backend {
     use super::*;
     use btleplug::api::{Central, CharPropFlags, Manager as _, Peripheral as _, ScanFilter};
@@ -136,7 +137,12 @@ mod backend {
     use perro_input_api::{JoyConButton, JoyConSide, PlayerBinding, PlayerIndicatorSlot};
     use perro_io::{load_asset, save_asset};
     use serde::{Deserialize, Serialize};
-    use std::sync::OnceLock;
+    use std::collections::{HashMap, HashSet};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::mpsc::{self, Receiver, Sender};
+    use std::sync::{Arc, Mutex, OnceLock};
+    use std::thread;
+    use std::time::{Duration, Instant};
     use tokio::runtime::Builder;
     use tokio::time::{self, Duration as TokioDuration, Instant as TokioInstant};
     use uuid::Uuid;
@@ -1676,6 +1682,16 @@ mod backend {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
+mod backend {
+    #[derive(Default)]
+    pub struct JoyConBackend;
+
+    impl JoyConBackend {
+        pub fn begin_frame<S>(&mut self, _app: &mut S) {}
+    }
+}
+
 #[derive(Default)]
 pub struct JoyConInput {
     backend: backend::JoyConBackend,
@@ -1690,6 +1706,7 @@ impl JoyConInput {
         self.backend.begin_frame(app);
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn begin_frame_threaded(&mut self, bridge: &RenderThreadBridge) {
         let mut bridge = bridge.clone();
         self.backend.begin_frame(&mut bridge);

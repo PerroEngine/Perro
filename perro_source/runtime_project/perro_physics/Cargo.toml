@@ -7,16 +7,21 @@ edition = "2024"
 ahash = "0.8"
 gltf = { version = "1.4.1", features = ["import", "utils"] }
 rayon = "1.10"
+perro_asset_formats.workspace = true
+perro_ids.workspace = true
+perro_io.workspace = true
+perro_nodes.workspace = true
+perro_render_bridge.workspace = true
+perro_runtime_api.workspace = true
+perro_structs.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rapier2d = { version = "0.23", features = ["simd-stable", "parallel"] }
 rapier3d = { version = "0.23", features = ["simd-stable", "parallel"] }
 
-perro_asset_formats = { path = "../../core/perro_asset_formats" }
-perro_ids = { path = "../../core/perro_ids" }
-perro_io = { path = "../../io_stack/perro_io" }
-perro_nodes = { path = "../../core/perro_nodes" }
-perro_render_bridge = { path = "../../render_stack/perro_render_bridge" }
-perro_runtime_api = { path = "../../api_modules/perro_runtime_api" }
-perro_structs = { path = "../../core/perro_structs" }
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+rapier2d = { version = "0.23", features = ["simd-stable"] }
+rapier3d = { version = "0.23", features = ["simd-stable"] }
 
 [dev-dependencies]
 criterion = "0.5"

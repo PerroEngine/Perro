@@ -1,5 +1,34 @@
 use super::*;
 
+#[cfg(not(target_arch = "wasm32"))]
+fn frustum_cull_default(indirect_first_instance_enabled: bool) -> bool {
+    indirect_first_instance_enabled
+}
+
+#[cfg(target_arch = "wasm32")]
+fn frustum_cull_default(_: bool) -> bool {
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::frustum_cull_default;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn native_keeps_frustum_cull_support() {
+        assert!(frustum_cull_default(true));
+        assert!(!frustum_cull_default(false));
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[test]
+    fn wasm_disables_frustum_cull_support() {
+        assert!(!frustum_cull_default(true));
+        assert!(!frustum_cull_default(false));
+    }
+}
+
 impl Gpu3D {
     pub fn new(
         device: &wgpu::Device,
@@ -873,7 +902,7 @@ impl Gpu3D {
             mapped_at_creation: false,
         });
 
-        let frustum_cull_enabled = indirect_first_instance_enabled;
+        let frustum_cull_enabled = frustum_cull_default(indirect_first_instance_enabled);
         let frustum_shader = create_frustum_cull_shader_module(device);
         let frustum_cull_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_frustum_cull_bgl"),

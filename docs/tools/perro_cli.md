@@ -10,8 +10,8 @@ Build and run:
 
 ```powershell
 perro check [--path <project_dir>]
-perro dev [--path <project_dir>] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]]
-perro build [--path <project_dir>] [--profile] [--console]
+perro dev [--path <project_dir>] [--target native|web] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]
+perro build [--path <project_dir>] [--target native|web] [--profile] [--console]
 perro dlc --name <dlc_name> [--path <project_dir>]
 ```
 
@@ -96,21 +96,34 @@ Use this when you only need script compilation/update.
 Command:
 
 ```powershell
-perro dev --path <project_dir> [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]]
+perro dev --path <project_dir> [--target native|web] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]
 ```
 
 What it does:
 
 1. Runs the same scripts build pipeline as `check`.
-2. Builds the project-local dev runner at `<project_dir>/.perro/dev_runner`.
-3. Launches the generated dev runner binary with your `--path`.
+2. With `--target native` or no `--target`, builds the project-local dev runner at `<project_dir>/.perro/dev_runner`.
+3. With `--target native`, launches the generated dev runner binary with your `--path`.
+4. With `--target web`, builds a wasm web bundle from `.perro/project`.
+5. With `--target web`, starts a built-in static server and opens your browser.
 
 Flags:
 
-- `--profile`: enables dev runner `profile` feature.
-- `--ui-profile`: enables dev runner `ui_profile` feature.
-- `--release`: builds and runs release dev runner binary.
-- `--csv-profile [csv_name]`: writes profile metrics CSV under `.output/profiling/`.
+- `--target native|web`: selects native runner or browser wasm bundle. Default `native`.
+- `--profile`: enables profiling feature for the selected dev target.
+- `--ui-profile`: enables native dev runner `ui_profile` feature.
+- `--release`: builds release dev target.
+- `--csv-profile [csv_name]`: writes native dev profile metrics CSV under `.output/profiling/`.
+- `--host <addr>`: web target only. Static server bind host. Default `127.0.0.1`.
+- `--port <num>`: web target only. Static server bind port. Default `8000`.
+
+Web target notes:
+
+- `--ui-profile` is not supported with `perro dev --target web` yet.
+- `--csv-profile` is not supported with `perro dev --target web` yet.
+- web output dir: `<project_dir>/.output/web-dev/`
+- web path uses static embedded wasm runtime, not the native dynamic file-loading dev runner.
+- see [WASM / Web Target](../WASM.md)
 
 Use this for local development runs and testing.
 The dev runner keeps assets dynamic and reads from normal project files.
@@ -123,7 +136,7 @@ See [Performance + Flexibility Philosophy](../project/performance_philosophy.md)
 Command:
 
 ```powershell
-perro build --path <project_dir> [--profile] [--console]
+perro build --path <project_dir> [--target native|web] [--profile] [--console]
 ```
 
 What it does:
@@ -134,12 +147,21 @@ What it does:
 4. Optimizes supported assets into match tables and preparsed compile-time statics.
 5. Packs unsupported/generic assets into `.perro/project/embedded/assets.perro`.
 6. Builds the generated project crate in release mode from `.perro/project`.
-7. Copies the built executable to `<project>/.output/`.
+7. With `--target native` or no `--target`, copies the built executable to `<project>/.output/`.
+8. With `--target web`, exports browser bundle files to `<project>/.output/web/`.
 
 Flags:
 
-- `--profile`: enables profile build options for generated project bundle.
-- `--console`: enables console build options for generated project bundle.
+- `--target native|web`: selects native executable or browser wasm bundle. Default `native`.
+- `--profile`: enables profile build options for the generated project bundle.
+- `--console`: enables console build options for generated native project bundle.
+
+Web target notes:
+
+- `--console` is not supported with `perro build --target web`.
+- web build uses `wasm32-unknown-unknown` + `wasm-bindgen --target web`.
+- web output includes `index.html`, `boot.js`, `app.js`, and `app_bg.wasm`.
+- see [WASM / Web Target](../WASM.md)
 
 Use this to build the final executable into `<project>/.output/`.
 The static pipeline packs all `res` assets.

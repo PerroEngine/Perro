@@ -11,16 +11,16 @@ ahash = "0.8.12"
 epaint = "0.33.0"
 rayon = "1.10"
 
-perro_ids = { path = "../../core/perro_ids" }
-perro_asset_formats = { path = "../../core/perro_asset_formats" }
-perro_builtin_meshes = { path = "../../core/perro_builtin_meshes" }
-perro_graphics_assets = { path = "../perro_graphics_assets" }
-perro_meshlets = { path = "../perro_meshlets" }
-perro_render_bridge = { path = "../perro_render_bridge" }
-perro_particle_math = { path = "../../core/perro_particle_math" }
-perro_io = { path = "../../io_stack/perro_io" }
-perro_structs = { path = "../../core/perro_structs" }
-perro_macros = { path = "../perro_macros" }
+perro_ids.workspace = true
+perro_asset_formats.workspace = true
+perro_builtin_meshes.workspace = true
+perro_graphics_assets.workspace = true
+perro_meshlets.workspace = true
+perro_render_bridge.workspace = true
+perro_particle_math.workspace = true
+perro_io.workspace = true
+perro_structs.workspace = true
+perro_macros.workspace = true
 image = { version = "0.25.8", default-features = true }
 gltf = "1.4.1"
 
@@ -35,6 +35,13 @@ winit = { version = "0.30.12", default-features = false, features = ["rwh_06", "
 [target.'cfg(target_os = "macos")'.dependencies]
 wgpu = { version = "29.0.0", default-features = false, features = ["std", "metal", "wgsl"] }
 winit = { version = "0.30.12", default-features = false, features = ["rwh_06"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wgpu = { version = "29.0.0", default-features = false, features = ["std", "webgpu", "wgsl"] }
+winit = { version = "0.30.12", default-features = false, features = ["rwh_06"] }
+wasm-bindgen-futures = "0.4.55"
+getrandom = { version = "0.3.4", features = ["wasm_js"] }
+web-time = "1.1.0"
 
 [dev-dependencies]
 criterion = "0.5"
@@ -55,4 +62,3 @@ harness = false
 [[bench]]
 name = "gpu_frame"
 harness = false
-

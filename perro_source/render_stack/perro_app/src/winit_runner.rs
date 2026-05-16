@@ -1,7 +1,9 @@
 //! Winit app runner, frame loop, input bridge, profiling, and window setup.
 
 use crate::App;
-use image_helpers::{load_image_size, load_project_window_icon};
+use image_helpers::load_image_size;
+#[cfg(not(target_arch = "wasm32"))]
+use image_helpers::load_project_window_icon;
 use perro_graphics::GraphicsBackend;
 use perro_ids::{NodeID, TextureID, string_to_u64};
 use perro_input_api::MouseMode;
@@ -11,14 +13,23 @@ use perro_render_bridge::{
 };
 use perro_runtime::{WindowMode, WindowRequest};
 use std::io::Write;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
 use std::{fs, sync::Arc};
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
+#[cfg(target_arch = "wasm32")]
+use winit::monitor::MonitorHandle;
+#[cfg(target_arch = "wasm32")]
+use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys, WindowExtWebSys};
+#[cfg(not(target_arch = "wasm32"))]
+use winit::{dpi::Position, monitor::MonitorHandle};
 use winit::{
-    dpi::{PhysicalPosition, PhysicalSize, Position, Size},
+    dpi::{PhysicalPosition, PhysicalSize, Size},
     event::{DeviceEvent, ElementState, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
-    monitor::MonitorHandle,
     window::{CursorGrabMode, CursorIcon as WinitCursorIcon, Fullscreen, Window, WindowAttributes},
 };
 
@@ -31,6 +42,7 @@ const LOG_INTERVAL_SECONDS: f32 = 3.0;
 #[cfg(not(any(feature = "profile_heavy", feature = "ui_profile", feature = "fps")))]
 const LOG_TIMING_SAMPLE_STRIDE: u32 = 20;
 const TIMING_WARMUP_FRAMES: u32 = 8;
+#[cfg(not(target_arch = "wasm32"))]
 const INITIAL_WINDOW_MONITOR_FRACTION: f32 = 0.75;
 const STARTUP_SPLASH_FADE_DURATION: Duration = Duration::from_millis(320);
 const STARTUP_SPLASH_HOLD_DURATION: Duration = Duration::from_millis(2000);
@@ -517,7 +529,7 @@ impl WinitRunner {
         Self
     }
 
-    pub fn run<B: GraphicsBackend>(
+    pub fn run<B: GraphicsBackend + 'static>(
         self,
         app: App<B>,
         title: &str,
@@ -525,7 +537,7 @@ impl WinitRunner {
         self.run_with_timestep(app, title, DEFAULT_FIXED_TIMESTEP)
     }
 
-    pub fn run_with_timestep<B: GraphicsBackend>(
+    pub fn run_with_timestep<B: GraphicsBackend + 'static>(
         self,
         app: App<B>,
         title: &str,
@@ -534,14 +546,23 @@ impl WinitRunner {
         let event_loop = EventLoop::new().map_err(|err| AppExitError {
             message: format!("failed to create winit event loop: {err}"),
         })?;
-        let mut state = RunnerState::new(app, title, fixed_timestep);
-        event_loop.run_app(&mut state).map_err(|err| AppExitError {
-            message: format!("winit event loop failed: {err}"),
-        })?;
-        Ok(state
-            .exit_result
-            .take()
-            .unwrap_or_else(AppExitResult::event_loop_exit))
+        #[cfg(target_arch = "wasm32")]
+        {
+            let state = RunnerState::new(app, title, fixed_timestep);
+            event_loop.spawn_app(state);
+            Ok(AppExitResult::event_loop_exit())
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let mut state = RunnerState::new(app, title, fixed_timestep);
+            event_loop.run_app(&mut state).map_err(|err| AppExitError {
+                message: format!("winit event loop failed: {err}"),
+            })?;
+            Ok(state
+                .exit_result
+                .take()
+                .unwrap_or_else(AppExitResult::event_loop_exit))
+        }
     }
 
     pub fn event_loop_type_name() -> &'static str {
@@ -1407,6 +1428,8 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     1.0 / frame_delta.as_secs_f32()
                 },
             );
+            #[cfg(feature = "profile_heavy")]
+            self.app.set_present_timing_profile(&present_timing);
         }
 
         let warmup_frame = self.timing_warmup_frames_left > 0;
@@ -1746,6 +1769,8 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     1.0 / frame_delta.as_secs_f32()
                 },
             );
+            #[cfg(feature = "profile_heavy")]
+            self.app.set_present_timing_profile(&present_timing);
         }
 
         let warmup_frame = self.timing_warmup_frames_left > 0;
@@ -2352,6 +2377,8 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                     .create_window(attrs)
                     .expect("failed to create winit window"),
             );
+            #[cfg(target_arch = "wasm32")]
+            sync_web_window_size(window.as_ref());
             window.set_ime_allowed(true);
             self.app.attach_window(window.clone());
             let initial_size = window.inner_size();
@@ -2504,6 +2531,10 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
 
         match event {
             WindowEvent::Resized(size) => {
+                #[cfg(target_arch = "wasm32")]
+                if let Some(window) = &self.window {
+                    sync_web_window_size(window.as_ref());
+                }
                 self.app.resize_surface(size.width, size.height);
             }
             WindowEvent::Moved(_) => {
@@ -2600,6 +2631,8 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             }
             WindowEvent::ScaleFactorChanged { .. } => {
                 if let Some(window) = &self.window {
+                    #[cfg(target_arch = "wasm32")]
+                    sync_web_window_size(window.as_ref());
                     let size = window.inner_size();
                     self.app.resize_surface(size.width, size.height);
                 }
@@ -2658,6 +2691,9 @@ fn window_attributes(
     project: Option<&perro_runtime::RuntimeProject>,
     fallback_title: &str,
 ) -> WindowAttributes {
+    #[cfg(target_arch = "wasm32")]
+    let _ = event_loop;
+
     let title = project
         .map(|project| project.config.name.as_str())
         .unwrap_or(fallback_title)
@@ -2666,10 +2702,15 @@ fn window_attributes(
     let mut attrs = WindowAttributes::default()
         .with_title(title)
         .with_visible(false);
+    #[cfg(target_arch = "wasm32")]
+    {
+        attrs = attrs.with_append(true);
+    }
     let Some(project) = project else {
         return attrs;
     };
 
+    #[cfg(not(target_arch = "wasm32"))]
     if let Some(icon) = load_project_window_icon(project) {
         attrs = attrs.with_window_icon(Some(icon));
     }
@@ -2679,24 +2720,55 @@ fn window_attributes(
         return attrs;
     }
 
-    let Some(monitor) = pick_monitor(event_loop) else {
-        return attrs.with_inner_size(Size::Physical(desired));
-    };
-    if let Some(mode) = parse_window_mode_override()
-        && (mode == "borderless" || mode == "borderless_fullscreen")
+    #[cfg(target_arch = "wasm32")]
     {
-        return attrs.with_fullscreen(Some(Fullscreen::Borderless(Some(monitor))));
+        let viewport = browser_viewport_size().unwrap_or(desired);
+        attrs.with_inner_size(Size::Physical(viewport))
     }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let Some(monitor) = pick_monitor(event_loop) else {
+            return attrs.with_inner_size(Size::Physical(desired));
+        };
+        if let Some(mode) = parse_window_mode_override()
+            && (mode == "borderless" || mode == "borderless_fullscreen")
+        {
+            return attrs.with_fullscreen(Some(Fullscreen::Borderless(Some(monitor))));
+        }
 
-    let max_width =
-        ((monitor.size().width as f32) * INITIAL_WINDOW_MONITOR_FRACTION).floor() as u32;
-    let max_height =
-        ((monitor.size().height as f32) * INITIAL_WINDOW_MONITOR_FRACTION).floor() as u32;
-    let fitted = fit_aspect(desired, max_width.max(1), max_height.max(1));
-    let centered = center_position(&monitor, fitted);
+        let max_width =
+            ((monitor.size().width as f32) * INITIAL_WINDOW_MONITOR_FRACTION).floor() as u32;
+        let max_height =
+            ((monitor.size().height as f32) * INITIAL_WINDOW_MONITOR_FRACTION).floor() as u32;
+        let fitted = fit_aspect(desired, max_width.max(1), max_height.max(1));
+        let centered = center_position(&monitor, fitted);
 
-    attrs = attrs.with_inner_size(Size::Physical(fitted));
-    attrs.with_position(Position::Physical(centered))
+        attrs = attrs.with_inner_size(Size::Physical(fitted));
+        attrs.with_position(Position::Physical(centered))
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn browser_viewport_size() -> Option<PhysicalSize<u32>> {
+    let window = web_sys::window()?;
+    let width = window.inner_width().ok()?.as_f64()?;
+    let height = window.inner_height().ok()?.as_f64()?;
+    let width = width.round().max(1.0) as u32;
+    let height = height.round().max(1.0) as u32;
+    Some(PhysicalSize::new(width, height))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn sync_web_window_size(window: &Window) {
+    if let Some(viewport) = browser_viewport_size() {
+        let _ = window.request_inner_size(viewport);
+    }
+    if let Some(canvas) = window.canvas() {
+        let _ = canvas.set_attribute(
+            "style",
+            "display:block;width:100vw;height:100vh;outline:none;position:fixed;inset:0;",
+        );
+    }
 }
 
 fn window_center(window: &Window) -> PhysicalPosition<f64> {
@@ -2708,18 +2780,26 @@ fn center_cursor(window: &Window) {
     let _ = window.set_cursor_position(window_center(window));
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn parse_window_mode_override() -> Option<String> {
     std::env::var("PERRO_WINDOW_MODE")
         .ok()
         .map(|raw| raw.trim().to_ascii_lowercase())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn pick_monitor(event_loop: &ActiveEventLoop) -> Option<MonitorHandle> {
     event_loop
         .primary_monitor()
         .or_else(|| event_loop.available_monitors().next())
 }
 
+#[cfg(target_arch = "wasm32")]
+fn pick_monitor(_event_loop: &ActiveEventLoop) -> Option<MonitorHandle> {
+    None
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn fit_aspect(desired: PhysicalSize<u32>, max_width: u32, max_height: u32) -> PhysicalSize<u32> {
     if desired.width <= max_width && desired.height <= max_height {
         return desired;
@@ -2734,6 +2814,7 @@ fn fit_aspect(desired: PhysicalSize<u32>, max_width: u32, max_height: u32) -> Ph
     PhysicalSize::new(width, height)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn center_position(
     monitor: &MonitorHandle,
     window_size: PhysicalSize<u32>,

@@ -376,6 +376,9 @@ version = "0.1.0"
 edition = "2024"
 build = "build.rs"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 perro_app = "0.1.0"
 perro_api = "0.1.0"
@@ -388,6 +391,12 @@ scripts = {{ path = "../scripts" }}
 [features]
 profile = ["perro_app/profile"]
 steamworks = ["perro_app/steamworks", "perro_api/steamworks", "perro_runtime/steamworks"]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2.105"
+console_error_panic_hook = "0.1.7"
+getrandom = {{ version = "0.3.4", features = ["wasm_js"] }}
+getrandom_js = {{ package = "getrandom", version = "0.2.17", features = ["js"] }}
 
 [target.'cfg(target_os = "windows")'.build-dependencies]
 winresource = "0.1.20"

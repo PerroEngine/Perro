@@ -20,6 +20,7 @@ For more details, see the full documentation: [perroengine.com/docs](https://www
 Local reference:
 
 - [Docs Index](docs/index.md)
+- [WASM / Web Target](docs/WASM.md)
 - [ResPath](docs/resources/respath.md)
 - [Feature Matrix](docs/project/feature_matrix.md)
 - [Performance + Flexibility Philosophy](docs/project/performance_philosophy.md)

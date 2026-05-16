@@ -4,13 +4,13 @@ use perro_input_api::InputWindow;
 use perro_io::push_dlc_self_context;
 use perro_resource_api::ResourceWindow;
 use perro_runtime_api::RuntimeWindow;
-use perro_scripting::{ScriptBehavior, ScriptConstructor, ScriptContext};
+#[cfg(not(target_arch = "wasm32"))]
+use perro_scripting::ScriptConstructor;
+use perro_scripting::{ScriptBehavior, ScriptContext};
 use perro_variant::Variant;
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+#[cfg(not(target_arch = "wasm32"))]
+use std::{fs, path::PathBuf};
+use std::{path::Path, sync::Arc};
 
 impl Runtime {
     pub(crate) fn attach_scene_scripts(
@@ -149,6 +149,7 @@ impl Runtime {
         Ok(())
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn ensure_dynamic_script_registry_loaded(
         &mut self,
         project_root: &Path,
@@ -182,6 +183,16 @@ impl Runtime {
         Ok(())
     }
 
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn ensure_dynamic_script_registry_loaded(
+        &mut self,
+        _project_root: &Path,
+        _project_name: &str,
+    ) -> Result<(), String> {
+        Err("dynamic scripts are not supported on web target".to_string())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn load_script_registry_library(
         &mut self,
         dylib_path: &Path,
@@ -260,6 +271,7 @@ impl Runtime {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn resolve_scripts_dylib_path(project_root: &Path) -> Result<PathBuf, String> {
     let profiles = ["debug", "release"];
     let mut scanned = Vec::<String>::new();
@@ -313,47 +325,47 @@ fn resolve_scripts_dylib_path(project_root: &Path) -> Result<PathBuf, String> {
     ))
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(all(not(target_arch = "wasm32"), target_os = "windows"))]
 fn scripts_dylib_name() -> &'static str {
     "scripts.dll"
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(not(target_arch = "wasm32"), target_os = "linux"))]
 fn scripts_dylib_name() -> &'static str {
     "libscripts.so"
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(all(not(target_arch = "wasm32"), target_os = "macos"))]
 fn scripts_dylib_name() -> &'static str {
     "libscripts.dylib"
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(all(not(target_arch = "wasm32"), target_os = "windows"))]
 fn scripts_dylib_prefix() -> &'static str {
     "scripts-"
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(not(target_arch = "wasm32"), target_os = "linux"))]
 fn scripts_dylib_prefix() -> &'static str {
     "libscripts-"
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(all(not(target_arch = "wasm32"), target_os = "macos"))]
 fn scripts_dylib_prefix() -> &'static str {
     "libscripts-"
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(all(not(target_arch = "wasm32"), target_os = "windows"))]
 fn scripts_dylib_suffix() -> &'static str {
     ".dll"
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(not(target_arch = "wasm32"), target_os = "linux"))]
 fn scripts_dylib_suffix() -> &'static str {
     ".so"
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(all(not(target_arch = "wasm32"), target_os = "macos"))]
 fn scripts_dylib_suffix() -> &'static str {
     ".dylib"
 }

@@ -14,6 +14,10 @@ use perro_runtime_api::sub_apis::{
 use perro_structs::{BitMask, Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 use perro_variant::Variant;
 use rayon::prelude::*;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 
 const WATER_FORCE_PAR_BODY_THRESHOLD: usize = 1024;
 const WATER_WAVE_FOLLOW_DT: f32 = 1.0 / 60.0;
@@ -209,21 +213,21 @@ impl Runtime {
     }
 
     pub(crate) fn physics_fixed_step_timed(&mut self) -> RuntimePhysicsStepTiming {
-        let total_start = std::time::Instant::now();
+        let total_start = Instant::now();
 
-        let pre_transforms_start = std::time::Instant::now();
+        let pre_transforms_start = Instant::now();
         self.propagate_pending_transform_dirty();
         self.refresh_dirty_global_transforms();
         let pre_transforms = pre_transforms_start.elapsed();
 
-        let collect_start = std::time::Instant::now();
+        let collect_start = Instant::now();
         let bodies_2d = self.collect_body_descs_2d();
         let bodies_3d = self.collect_body_descs_3d();
         let joints_2d = self.collect_joint_descs_2d();
         let joints_3d = self.collect_joint_descs_3d();
         let collect = collect_start.elapsed();
 
-        let sync_world_start = std::time::Instant::now();
+        let sync_world_start = Instant::now();
         self.sync_world_2d(&bodies_2d);
         self.sync_world_3d(&bodies_3d);
         self.sync_joints_2d(&joints_2d);
@@ -244,7 +248,7 @@ impl Runtime {
             };
         }
 
-        let apply_forces_impulses_start = std::time::Instant::now();
+        let apply_forces_impulses_start = Instant::now();
         self.reset_water_scan_cache_all();
         self.queue_physics_force_emitters_2d();
         self.queue_physics_force_emitters_3d();
@@ -256,22 +260,22 @@ impl Runtime {
         self.apply_pending_impulses_3d();
         let apply_forces_impulses = apply_forces_impulses_start.elapsed();
 
-        let step_start = std::time::Instant::now();
+        let step_start = Instant::now();
         self.step_world_2d();
         self.step_world_3d();
         let step = step_start.elapsed();
 
-        let sync_nodes_start = std::time::Instant::now();
+        let sync_nodes_start = Instant::now();
         self.sync_world_to_nodes_2d();
         self.sync_world_to_nodes_3d();
         let sync_nodes = sync_nodes_start.elapsed();
 
-        let post_transforms_start = std::time::Instant::now();
+        let post_transforms_start = Instant::now();
         self.propagate_pending_transform_dirty();
         self.refresh_dirty_global_transforms();
         let post_transforms = post_transforms_start.elapsed();
 
-        let signals_start = std::time::Instant::now();
+        let signals_start = Instant::now();
         self.emit_collision_signals_2d();
         self.emit_collision_signals_3d();
         self.emit_area_signals_2d();

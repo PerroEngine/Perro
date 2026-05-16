@@ -3,14 +3,18 @@ use perro_ids::NodeID;
 use perro_ids::ScriptMemberID;
 use perro_ids::parse_hashed_source_uri;
 use perro_ids::string_to_u64;
+use perro_io::{ProjectRoot, clear_dlc_mounts, set_project_root};
+#[cfg(not(target_arch = "wasm32"))]
 use perro_io::{
-    ProjectRoot, clear_dlc_mounts, data_local_dir, is_reserved_dlc_name, mount_dlc_archive,
-    mount_dlc_disk, read_mounted_dlc_file, register_dlc_static_binary_lookup, set_project_root,
+    data_local_dir, is_reserved_dlc_name, mount_dlc_archive, mount_dlc_disk, read_mounted_dlc_file,
+    register_dlc_static_binary_lookup,
 };
 use perro_runtime_api::sub_apis::PreloadedSceneID;
 use perro_scene::Scene;
 use perro_variant::Variant;
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs;
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 #[cfg(feature = "profile")]
@@ -476,6 +480,7 @@ impl Runtime {
         Ok(())
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn reload_dlc_mounts(&mut self) -> Result<(), String> {
         clear_dlc_mounts();
         self.script_runtime.mounted_dlc_script_libs.clear();
@@ -638,6 +643,14 @@ impl Runtime {
 
         Ok(())
     }
+
+    #[cfg(target_arch = "wasm32")]
+    fn reload_dlc_mounts(&mut self) -> Result<(), String> {
+        clear_dlc_mounts();
+        self.script_runtime.mounted_dlc_script_libs.clear();
+        self.script_runtime.loaded_dlc_script_libs.clear();
+        Ok(())
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -655,6 +668,7 @@ fn runtime_scripts_dylib_name() -> &'static str {
     "libscripts.dylib"
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn resolve_dev_dlc_scripts_dylib_path(project_root: &Path, dlc_name: &str) -> Option<PathBuf> {
     let staged = project_root
         .join(".perro")
@@ -683,6 +697,7 @@ fn runtime_pack_dylib_name() -> &'static str {
     "libpack.dylib"
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn parse_manifest_string(manifest: &str, key: &str) -> Option<String> {
     for line in manifest.lines() {
         let trimmed = line.trim();
@@ -698,6 +713,7 @@ fn parse_manifest_string(manifest: &str, key: &str) -> Option<String> {
     None
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn extract_dlc_archive_file_to_cache(
     dlc_name: &str,
     virtual_path: &str,

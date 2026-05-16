@@ -5,7 +5,7 @@ script = "res://scripts/demo_profiling_overlay.rs"
     [UiPanel]
         anchor = "top"
         position_ratio = (0.5, 0.5)
-        size_ratio = (0.75, 0.095)
+        size_ratio = (0.92, 0.19)
         style = { fill = "#071018B8" stroke = "#88AADDEE" stroke_width = 1.0 radius = 0.035 }
         padding = 8
         visible = false
@@ -14,24 +14,24 @@ script = "res://scripts/demo_profiling_overlay.rs"
     [/UiPanel]
 [/profiling_overlay_root]
 
-[profiling_overlay_row]
+[profiling_overlay_col]
 parent = @profiling_overlay_root
-    [UiHLayout]
+    [UiVLayout]
         anchor = "center"
         position_ratio = (0.5, 0.5)
-        size_ratio = (0.94, 0.82)
-        spacing = 0.025
+        size_ratio = (0.96, 0.88)
+        spacing = 0.018
         h_align = "fill"
         v_align = "fill"
-    [/UiHLayout]
-[/profiling_overlay_row]
+    [/UiVLayout]
+[/profiling_overlay_col]
 
 [profiling_overlay_fps]
-parent = @profiling_overlay_row
+parent = @profiling_overlay_col
     [UiLabel]
-        size_ratio = (0.22, 1.0)
+        size_ratio = (1.0, 0.19)
         text = "FPS 0.0"
-        text_size_ratio = 0.26
+        text_size_ratio = 0.18
         color = "#D9E7FFFF"
         input_enabled = false
         mouse_filter = "pass"
@@ -39,11 +39,11 @@ parent = @profiling_overlay_row
 [/profiling_overlay_fps]
 
 [profiling_overlay_sim]
-parent = @profiling_overlay_row
+parent = @profiling_overlay_col
     [UiLabel]
-        size_ratio = (0.47, 1.0)
+        size_ratio = (1.0, 0.19)
         text = "Sim 0 us | dt 0 us"
-        text_size_ratio = 0.26
+        text_size_ratio = 0.18
         color = "#D9E7FFFF"
         input_enabled = false
         mouse_filter = "pass"
@@ -51,13 +51,37 @@ parent = @profiling_overlay_row
 [/profiling_overlay_sim]
 
 [profiling_overlay_graphics]
-parent = @profiling_overlay_row
+parent = @profiling_overlay_col
     [UiLabel]
-        size_ratio = (0.25, 1.0)
+        size_ratio = (1.0, 0.19)
         text = "Gfx 0 us"
-        text_size_ratio = 0.26
+        text_size_ratio = 0.18
         color = "#D9E7FFFF"
         input_enabled = false
         mouse_filter = "pass"
     [/UiLabel]
 [/profiling_overlay_graphics]
+
+[profiling_overlay_prep]
+parent = @profiling_overlay_col
+    [UiLabel]
+        size_ratio = (1.0, 0.19)
+        text = "3D prep 0 us"
+        text_size_ratio = 0.18
+        color = "#D9E7FFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/profiling_overlay_prep]
+
+[profiling_overlay_draw]
+parent = @profiling_overlay_col
+    [UiLabel]
+        size_ratio = (1.0, 0.19)
+        text = "Draw 0"
+        text_size_ratio = 0.18
+        color = "#D9E7FFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/profiling_overlay_draw]

@@ -5,6 +5,7 @@
 - [Feature Matrix](project/feature_matrix.md)
 - [Performance + Flexibility Philosophy](project/performance_philosophy.md)
 - [Steamworks](platform/steamworks.md)
+- [WASM / Web Target](WASM.md)
 
 ## Particles
 

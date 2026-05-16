@@ -838,6 +838,8 @@ version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af491d569909a7e4dee0ad7db7f5341fef5c614d5b8ec8cf765732aba3cff681"
 dependencies = [
+ "serde",
+ "termcolor",
  "unicode-width",
 ]
 
@@ -1845,9 +1847,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "r-efi 5.3.0",
  "wasip2",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -3692,6 +3696,7 @@ version = "0.1.0"
 dependencies = [
  "btleplug",
  "futures-util",
+ "getrandom 0.3.4",
  "gilrs",
  "hidapi",
  "image",
@@ -3710,6 +3715,9 @@ dependencies = [
  "serde_json",
  "tokio",
  "uuid",
+ "wasm-bindgen",
+ "web-sys",
+ "web-time",
  "winit",
 ]
 
@@ -3778,6 +3786,7 @@ dependencies = [
  "bytemuck",
  "criterion",
  "epaint",
+ "getrandom 0.3.4",
  "glam",
  "gltf",
  "image",
@@ -3794,6 +3803,8 @@ dependencies = [
  "perro_structs",
  "pollster",
  "rayon",
+ "wasm-bindgen-futures",
+ "web-time",
  "wgpu",
  "winit",
 ]
@@ -4001,6 +4012,7 @@ dependencies = [
  "rapier2d",
  "rapier3d",
  "rayon",
+ "web-time",
 ]
 
 [[package]]
@@ -6473,6 +6485,7 @@ dependencies = [
  "hashbrown 0.16.1",
  "js-sys",
  "log",
+ "naga",
  "portable-atomic",
  "profiling",
  "raw-window-handle",

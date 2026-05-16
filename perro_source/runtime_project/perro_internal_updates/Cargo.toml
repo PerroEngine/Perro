@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-perro_ids = { path = "../../core/perro_ids" }
-perro_nodes = { path = "../../core/perro_nodes" }
-perro_runtime_api = { path = "../../api_modules/perro_runtime_api" }
-perro_resource_api = { path = "../../api_modules/perro_resource_api" }
-perro_input_api = { path = "../../api_modules/perro_input_api" }
-perro_animation = { path = "../../core/perro_animation" }
-perro_scene = { path = "../perro_scene" }
+perro_ids.workspace = true
+perro_nodes.workspace = true
+perro_runtime_api.workspace = true
+perro_resource_api.workspace = true
+perro_input_api.workspace = true
+perro_animation.workspace = true
+perro_scene.workspace = true
 glam = "0.31.0"

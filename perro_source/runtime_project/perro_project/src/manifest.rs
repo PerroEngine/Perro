@@ -33,6 +33,7 @@ pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
     ensure_project_manifest_deps(&project_manifest)?;
     ensure_project_manifest_icon_build_support(&project_manifest)?;
     ensure_project_manifest_features(&project_manifest)?;
+    ensure_project_manifest_web_support(&project_manifest)?;
     ensure_scripts_manifest_deps(&scripts_manifest)?;
     ensure_scripts_manifest_features(&scripts_manifest)?;
     ensure_scripts_manifest_user_deps(project_root, &scripts_manifest)?;
@@ -332,6 +333,101 @@ fn ensure_project_manifest_icon_build_support(path: &Path) -> std::io::Result<()
             ]),
         );
         build_deps_table.insert("image".to_string(), Value::Table(image));
+        changed = true;
+    }
+
+    if !changed {
+        return Ok(());
+    }
+
+    let rendered = toml::to_string(&value)
+        .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
+    fs::write(path, rendered)
+}
+
+fn ensure_project_manifest_web_support(path: &Path) -> std::io::Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let src = fs::read_to_string(path)?;
+    let Ok(mut value) = src.parse::<Value>() else {
+        return Ok(());
+    };
+    let Some(root) = value.as_table_mut() else {
+        return Ok(());
+    };
+
+    let lib = root
+        .entry("lib")
+        .or_insert_with(|| Value::Table(Default::default()));
+    let Some(lib_table) = lib.as_table_mut() else {
+        return Ok(());
+    };
+    let crate_type = lib_table
+        .entry("crate-type")
+        .or_insert_with(|| Value::Array(Vec::new()));
+    let Some(crate_type_arr) = crate_type.as_array_mut() else {
+        return Ok(());
+    };
+
+    let mut changed = false;
+    for name in ["cdylib", "rlib"] {
+        if !crate_type_arr.iter().any(|v| v.as_str() == Some(name)) {
+            crate_type_arr.push(Value::String(name.to_string()));
+            changed = true;
+        }
+    }
+
+    let target = root
+        .entry("target")
+        .or_insert_with(|| Value::Table(Default::default()));
+    let Some(target_table) = target.as_table_mut() else {
+        return Ok(());
+    };
+    let wasm_key = "cfg(target_arch = \"wasm32\")".to_string();
+    let wasm = target_table
+        .entry(wasm_key)
+        .or_insert_with(|| Value::Table(Default::default()));
+    let Some(wasm_table) = wasm.as_table_mut() else {
+        return Ok(());
+    };
+    let deps = wasm_table
+        .entry("dependencies")
+        .or_insert_with(|| Value::Table(Default::default()));
+    let Some(deps_table) = deps.as_table_mut() else {
+        return Ok(());
+    };
+
+    for (name, version) in [
+        ("wasm-bindgen", "0.2.105"),
+        ("console_error_panic_hook", "0.1.7"),
+        ("getrandom", "0.3.4"),
+    ] {
+        if !deps_table.contains_key(name) {
+            deps_table.insert(name.to_string(), Value::String(version.to_string()));
+            changed = true;
+        }
+    }
+    if deps_table.get("getrandom").and_then(Value::as_str) == Some("0.3.4") {
+        let mut spec = toml::value::Table::new();
+        spec.insert("version".to_string(), Value::String("0.3.4".to_string()));
+        spec.insert(
+            "features".to_string(),
+            Value::Array(vec![Value::String("wasm_js".to_string())]),
+        );
+        deps_table.insert("getrandom".to_string(), Value::Table(spec));
+        changed = true;
+    }
+    if !deps_table.contains_key("getrandom_js") {
+        let mut spec = toml::value::Table::new();
+        spec.insert("package".to_string(), Value::String("getrandom".to_string()));
+        spec.insert("version".to_string(), Value::String("0.2.17".to_string()));
+        spec.insert(
+            "features".to_string(),
+            Value::Array(vec![Value::String("js".to_string())]),
+        );
+        deps_table.insert("getrandom_js".to_string(), Value::Table(spec));
         changed = true;
     }
 

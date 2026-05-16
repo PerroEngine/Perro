@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use super::{
-        generate_call_param_binding, generate_embedded_main, generate_perro_assets,
+        generate_call_param_binding, generate_embedded_entry_files, generate_perro_assets,
         generate_project_static_modules, module_name_from_rel, module_short_name_from_rel,
         reset_embedded_dir, sync_scripts, transpile_frontend_script,
         transpiled_exports_script_ctor, ProjectBuildOptions, ScriptMethodParam,
@@ -557,7 +557,7 @@ lifecycle!({});
         sync_scripts(&root).expect("sync scripts");
         generate_project_static_modules(&root, &cfg).expect("generate static modules");
         perro_static_pipeline::write_static_mod_rs(&root).expect("write static mod");
-        generate_embedded_main(&root).expect("generate embedded main");
+        generate_embedded_entry_files(&root).expect("generate embedded main");
         generate_perro_assets(&root).expect("generate assets");
         assert_static_module_fixture_refs(&root);
 

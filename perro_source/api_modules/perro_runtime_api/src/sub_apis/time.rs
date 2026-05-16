@@ -6,6 +6,21 @@ pub struct ProfilingSnapshot {
     pub graphics_time: Duration,
     pub frame_time: Duration,
     pub fps: f32,
+    pub draw_gpu_prepare_3d: Duration,
+    pub draw_gpu_prepare_3d_frustum: Duration,
+    pub draw_gpu_prepare_3d_hiz: Duration,
+    pub draw_gpu_prepare_3d_indirect: Duration,
+    pub draw_gpu_prepare_3d_cull_inputs: Duration,
+    pub draw_calls_2d: u32,
+    pub draw_calls_3d: u32,
+    pub draw_calls_total: u32,
+    pub draw_instances_3d: u32,
+    pub draw_material_refs_3d: u32,
+    pub skip_prepare_3d: u32,
+    pub skip_prepare_3d_frustum: u32,
+    pub skip_prepare_3d_hiz: u32,
+    pub skip_prepare_3d_indirect: u32,
+    pub skip_prepare_3d_cull_inputs: u32,
 }
 
 pub trait TimeAPI {
@@ -16,6 +31,51 @@ pub trait TimeAPI {
     fn get_graphics_time(&self) -> Duration;
     fn get_frame_time(&self) -> Duration;
     fn get_fps(&self) -> f32;
+    fn get_draw_gpu_prepare_3d(&self) -> Duration {
+        Duration::ZERO
+    }
+    fn get_draw_gpu_prepare_3d_frustum(&self) -> Duration {
+        Duration::ZERO
+    }
+    fn get_draw_gpu_prepare_3d_hiz(&self) -> Duration {
+        Duration::ZERO
+    }
+    fn get_draw_gpu_prepare_3d_indirect(&self) -> Duration {
+        Duration::ZERO
+    }
+    fn get_draw_gpu_prepare_3d_cull_inputs(&self) -> Duration {
+        Duration::ZERO
+    }
+    fn get_draw_calls_2d(&self) -> u32 {
+        0
+    }
+    fn get_draw_calls_3d(&self) -> u32 {
+        0
+    }
+    fn get_draw_calls_total(&self) -> u32 {
+        0
+    }
+    fn get_draw_instances_3d(&self) -> u32 {
+        0
+    }
+    fn get_draw_material_refs_3d(&self) -> u32 {
+        0
+    }
+    fn get_skip_prepare_3d(&self) -> u32 {
+        0
+    }
+    fn get_skip_prepare_3d_frustum(&self) -> u32 {
+        0
+    }
+    fn get_skip_prepare_3d_hiz(&self) -> u32 {
+        0
+    }
+    fn get_skip_prepare_3d_indirect(&self) -> u32 {
+        0
+    }
+    fn get_skip_prepare_3d_cull_inputs(&self) -> u32 {
+        0
+    }
 
     fn get_profiling(&self) -> ProfilingSnapshot {
         ProfilingSnapshot {
@@ -23,6 +83,21 @@ pub trait TimeAPI {
             graphics_time: self.get_graphics_time(),
             frame_time: self.get_frame_time(),
             fps: self.get_fps(),
+            draw_gpu_prepare_3d: self.get_draw_gpu_prepare_3d(),
+            draw_gpu_prepare_3d_frustum: self.get_draw_gpu_prepare_3d_frustum(),
+            draw_gpu_prepare_3d_hiz: self.get_draw_gpu_prepare_3d_hiz(),
+            draw_gpu_prepare_3d_indirect: self.get_draw_gpu_prepare_3d_indirect(),
+            draw_gpu_prepare_3d_cull_inputs: self.get_draw_gpu_prepare_3d_cull_inputs(),
+            draw_calls_2d: self.get_draw_calls_2d(),
+            draw_calls_3d: self.get_draw_calls_3d(),
+            draw_calls_total: self.get_draw_calls_total(),
+            draw_instances_3d: self.get_draw_instances_3d(),
+            draw_material_refs_3d: self.get_draw_material_refs_3d(),
+            skip_prepare_3d: self.get_skip_prepare_3d(),
+            skip_prepare_3d_frustum: self.get_skip_prepare_3d_frustum(),
+            skip_prepare_3d_hiz: self.get_skip_prepare_3d_hiz(),
+            skip_prepare_3d_indirect: self.get_skip_prepare_3d_indirect(),
+            skip_prepare_3d_cull_inputs: self.get_skip_prepare_3d_cull_inputs(),
         }
     }
 }

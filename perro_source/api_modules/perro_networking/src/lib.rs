@@ -1,72 +1,7 @@
-use std::{
-    collections::{BTreeMap, VecDeque},
-    fmt,
-    io::{self, Read, Write},
-    net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs, UdpSocket},
-    string::FromUtf8Error,
-    sync::{Arc, Mutex},
-};
+#[cfg(not(target_arch = "wasm32"))]
+mod native;
+#[cfg(target_arch = "wasm32")]
+mod web_stub;
 
-use ::webrtc::{
-    api::APIBuilder,
-    data_channel::{RTCDataChannel, data_channel_message::DataChannelMessage},
-    ice_transport::{ice_candidate::RTCIceCandidateInit, ice_server::RTCIceServer},
-    peer_connection::{
-        RTCPeerConnection, configuration::RTCConfiguration,
-        sdp::session_description::RTCSessionDescription,
-    },
-};
-use bytes::Bytes;
-use perro_ids::SignalID;
-use perro_io::{compress_zlib_best, decompress_zlib};
-use perro_variant::Variant;
-use tokio::{runtime::Runtime, task};
-use tungstenite::{
-    ClientRequestBuilder, Message, WebSocket,
-    http::Uri,
-    protocol::{
-        CloseFrame, WebSocketConfig,
-        frame::{Utf8Bytes, coding::CloseCode},
-    },
-    stream::MaybeTlsStream,
-};
-
-mod error;
-mod event;
-mod ids;
-mod slot;
-mod tcp;
-mod udp;
-mod util;
-mod webrtc;
-mod websocket;
-mod world;
-
-pub mod http;
-
-pub use error::*;
-pub use event::*;
-pub use http::*;
-pub use ids::*;
-pub use tcp::*;
-pub use udp::*;
-pub use webrtc::*;
-pub use websocket::*;
-pub use world::*;
-
-pub(crate) use slot::*;
-pub(crate) use util::*;
-
-#[macro_export]
-macro_rules! emit_net_event {
-    ($ctx:expr, $event:expr) => {{
-        let event = $event;
-        let params = event.signal_params();
-        $ctx.Signals()
-            .signal_emit(event.signal_id(), params.as_slice())
-    }};
-}
-
-#[cfg(test)]
-#[path = "../tests/unit/net_tests.rs"]
-mod tests;
+#[cfg(not(target_arch = "wasm32"))]
+pub use native::*;

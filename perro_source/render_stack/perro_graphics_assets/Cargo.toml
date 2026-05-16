@@ -8,9 +8,9 @@ bytemuck = { version = "1.24.0", features = ["derive"] }
 gltf = "1.4.1"
 image = { version = "0.25.8", default-features = true }
 
-perro_asset_formats = { path = "../../core/perro_asset_formats" }
-perro_ids = { path = "../../core/perro_ids" }
-perro_io = { path = "../../io_stack/perro_io" }
-perro_meshlets = { path = "../perro_meshlets" }
-perro_render_bridge = { path = "../perro_render_bridge" }
-perro_structs = { path = "../../core/perro_structs" }
+perro_asset_formats.workspace = true
+perro_ids.workspace = true
+perro_io.workspace = true
+perro_meshlets.workspace = true
+perro_render_bridge.workspace = true
+perro_structs.workspace = true

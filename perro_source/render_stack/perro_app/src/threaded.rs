@@ -1369,6 +1369,21 @@ fn run_sim_loop(mut runtime: Runtime, bridge: SimBridge, config: SimThreadConfig
             runtime.time.graphics = render_timing.graphics_time;
             runtime.time.frame = render_timing.frame_time;
             runtime.time.fps = render_timing.fps;
+            runtime.time.draw_gpu_prepare_3d = Duration::ZERO;
+            runtime.time.draw_gpu_prepare_3d_frustum = Duration::ZERO;
+            runtime.time.draw_gpu_prepare_3d_hiz = Duration::ZERO;
+            runtime.time.draw_gpu_prepare_3d_indirect = Duration::ZERO;
+            runtime.time.draw_gpu_prepare_3d_cull_inputs = Duration::ZERO;
+            runtime.time.draw_calls_2d = 0;
+            runtime.time.draw_calls_3d = 0;
+            runtime.time.draw_calls_total = 0;
+            runtime.time.draw_instances_3d = 0;
+            runtime.time.draw_material_refs_3d = 0;
+            runtime.time.skip_prepare_3d = 0;
+            runtime.time.skip_prepare_3d_frustum = 0;
+            runtime.time.skip_prepare_3d_hiz = 0;
+            runtime.time.skip_prepare_3d_indirect = 0;
+            runtime.time.skip_prepare_3d_cull_inputs = 0;
         }
         runtime.apply_input_frame(&input_frame);
         bridge.apply_render_events(&mut runtime);

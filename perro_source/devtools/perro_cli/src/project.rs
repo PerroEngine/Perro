@@ -9,15 +9,23 @@ use crate::{
     resolve_local_path, workspace_root,
 };
 use perro_compiler::{
-    ProjectBuildOptions, ScriptsBuildProfile, compile_dlc_bundle, compile_project_bundle,
-    compile_scripts_with_profile, sync_scripts,
+    ProjectBuildOptions, ProjectBuildTarget, ScriptsBuildProfile, WebOutputDir, compile_dlc_bundle,
+    compile_project_bundle, compile_scripts_with_profile, sync_scripts,
 };
 use perro_project::{ensure_source_overrides, load_project_toml};
 use std::env;
 use std::fs;
+use std::io::Read;
 use std::io::{self, IsTerminal, Write};
+use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CliTarget {
+    Native,
+    Web,
+}
 
 pub(crate) fn clean_command(args: &[String], _cwd: &Path) -> Result<(), String> {
     let project_dir = parse_flag_value(args, "--path")
@@ -183,6 +191,10 @@ pub(crate) fn dlc_command(args: &[String], cwd: &Path) -> Result<(), String> {
 }
 
 pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    let target = parse_cli_target(args)?;
+    if target == CliTarget::Web {
+        return dev_web_command(args, cwd);
+    }
     let profile_requested = args.iter().any(|a| a == "--profile");
     let ui_profile = args.iter().any(|a| a == "--ui-profile");
     let release = args.iter().any(|a| a == "--release");
@@ -413,6 +425,10 @@ pub(crate) fn collect_rs_files_recursive(dir: &Path, out: &mut Vec<PathBuf>) -> 
 }
 
 pub(crate) fn project_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    let target = parse_cli_target(args)?;
+    if target == CliTarget::Web {
+        return build_web_command(args, cwd);
+    }
     let profile = args.iter().any(|a| a == "--profile");
     let console = args.iter().any(|a| a == "--console");
     let project_dir = parse_flag_value(args, "--path")
@@ -432,4 +448,256 @@ pub(crate) fn project_command(args: &[String], cwd: &Path) -> Result<(), String>
                 project_dir.display()
             )
         })
+}
+
+fn parse_cli_target(args: &[String]) -> Result<CliTarget, String> {
+    let Some(raw) = parse_flag_value(args, "--target") else {
+        return Ok(CliTarget::Native);
+    };
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "native" => Ok(CliTarget::Native),
+        "web" => Ok(CliTarget::Web),
+        other => Err(format!(
+            "invalid `--target {other}`. use `native` or `web`."
+        )),
+    }
+}
+
+fn build_web_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    let profile = args.iter().any(|a| a == "--profile");
+    if args.iter().any(|a| a == "--console") {
+        return Err("`--console` is not supported with `--target web`".to_string());
+    }
+    let project_dir = parse_flag_value(args, "--path")
+        .map(|p| resolve_local_path(&p, cwd))
+        .unwrap_or_else(|| cwd.to_path_buf());
+    let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
+    update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
+    update_project_vscode_linked_projects(&project_dir)?;
+    log_step("Building Web Project Bundle");
+    compile_project_bundle(
+        &project_dir,
+        ProjectBuildOptions::new(profile, false)
+            .with_target(ProjectBuildTarget::Web)
+            .with_web_output_dir(WebOutputDir::Build),
+    )
+    .map(|_| {
+        log_done("Web Project Bundle Built");
+    })
+    .map_err(|err| {
+        format!(
+            "web project pipeline failed for {}: {err}",
+            project_dir.display()
+        )
+    })
+}
+
+fn dev_web_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    if args.iter().any(|a| a == "--ui-profile") {
+        return Err(
+            "`--ui-profile` is not supported with `perro dev --target web` yet".to_string(),
+        );
+    }
+    if args.iter().any(|a| a == "--csv-profile") {
+        return Err(
+            "`--csv-profile` is not supported with `perro dev --target web` yet".to_string(),
+        );
+    }
+    let profile = args.iter().any(|a| a == "--profile");
+    let release = args.iter().any(|a| a == "--release");
+    let host = parse_flag_value(args, "--host").unwrap_or_else(|| "127.0.0.1".to_string());
+    let requested_port = parse_flag_value(args, "--port")
+        .map(|raw| {
+            raw.parse::<u16>()
+                .map_err(|_| format!("invalid `--port {raw}`"))
+        })
+        .transpose()?;
+    let port = requested_port.unwrap_or(8000);
+    let project_dir = parse_flag_value(args, "--path")
+        .map(|p| resolve_local_path(&p, cwd))
+        .unwrap_or_else(|| cwd.to_path_buf());
+    let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
+    update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
+    update_project_vscode_linked_projects(&project_dir)?;
+    log_step("Building Web Dev Bundle");
+    compile_project_bundle(
+        &project_dir,
+        ProjectBuildOptions::new(profile, false)
+            .with_target(ProjectBuildTarget::Web)
+            .with_release(release)
+            .with_web_output_dir(WebOutputDir::Dev),
+    )
+    .map_err(|err| {
+        format!(
+            "web dev pipeline failed for {}: {err}",
+            project_dir.display()
+        )
+    })?;
+    log_done("Web Dev Bundle Built");
+
+    let output_dir = project_dir.join(".output").join("web-dev");
+    let (listener, port) = bind_web_dev_listener(&host, port)?;
+    let url = format!("http://{host}:{port}/");
+    log_note(&format!("Web Dev Bundle -> {}", output_dir.display()));
+    if port != requested_port.unwrap_or(8000) {
+        log_note(&format!("Port busy -> use {port}"));
+    }
+    open_browser(&url)?;
+    log_note(&format!("Serving {url}"));
+    run_static_server(&output_dir, listener)
+}
+
+fn open_browser(url: &str) -> Result<(), String> {
+    let mut cmd = if cfg!(target_os = "windows") {
+        let mut cmd = Command::new("cmd");
+        cmd.arg("/c").arg("start").arg("").arg(url);
+        cmd
+    } else if cfg!(target_os = "macos") {
+        let mut cmd = Command::new("open");
+        cmd.arg(url);
+        cmd
+    } else {
+        let mut cmd = Command::new("xdg-open");
+        cmd.arg(url);
+        cmd
+    };
+    let status = cmd
+        .status()
+        .map_err(|err| format!("failed to open browser for {url}: {err}"))?;
+    if !status.success() {
+        return Err(format!(
+            "browser open failed for {url} with exit code {:?}",
+            status.code()
+        ));
+    }
+    Ok(())
+}
+
+fn bind_web_dev_listener(host: &str, start_port: u16) -> Result<(TcpListener, u16), String> {
+    let mut port = start_port;
+    loop {
+        match TcpListener::bind((host, port)) {
+            Ok(listener) => return Ok((listener, port)),
+            Err(err) if err.kind() == std::io::ErrorKind::AddrInUse => {
+                port = port
+                    .checked_add(1)
+                    .ok_or_else(|| format!("no free web dev port from {start_port}..65535"))?;
+            }
+            Err(err) => {
+                return Err(format!(
+                    "failed to bind web dev server on {host}:{port}: {err}"
+                ));
+            }
+        }
+    }
+}
+
+fn run_static_server(root: &Path, listener: TcpListener) -> Result<(), String> {
+    for stream in listener.incoming() {
+        match stream {
+            Ok(stream) => {
+                let _ = handle_http_connection(stream, root);
+            }
+            Err(err) => return Err(format!("web dev server accept failed: {err}")),
+        }
+    }
+    Ok(())
+}
+
+fn handle_http_connection(mut stream: TcpStream, root: &Path) -> Result<(), String> {
+    let mut buffer = [0u8; 4096];
+    let read_len = stream
+        .read(&mut buffer)
+        .map_err(|err| format!("http read failed: {err}"))?;
+    if read_len == 0 {
+        return Ok(());
+    }
+    let request = String::from_utf8_lossy(&buffer[..read_len]);
+    let first_line = request.lines().next().unwrap_or_default();
+    let mut parts = first_line.split_whitespace();
+    let method = parts.next().unwrap_or_default();
+    let raw_path = parts.next().unwrap_or("/");
+    if method != "GET" && method != "HEAD" {
+        return write_http_response(
+            &mut stream,
+            "405 Method Not Allowed",
+            "text/plain; charset=utf-8",
+            b"method not allowed",
+        );
+    }
+    let rel = raw_path.split('?').next().unwrap_or("/");
+    let rel = rel.trim_start_matches('/');
+    let rel = if rel.is_empty() { "index.html" } else { rel };
+    let path = root.join(rel.replace('/', "\\"));
+    let path = if path.is_dir() {
+        path.join("index.html")
+    } else {
+        path
+    };
+    if !path.exists() {
+        return write_http_response(
+            &mut stream,
+            "404 Not Found",
+            "text/plain; charset=utf-8",
+            b"not found",
+        );
+    }
+    let body =
+        fs::read(&path).map_err(|err| format!("failed to read {}: {err}", path.display()))?;
+    write_http_response(&mut stream, "200 OK", content_type_for_path(&path), &body)
+}
+
+fn write_http_response(
+    stream: &mut TcpStream,
+    status: &str,
+    content_type: &str,
+    body: &[u8],
+) -> Result<(), String> {
+    let headers = format!(
+        "HTTP/1.1 {status}\r\nContent-Length: {}\r\nContent-Type: {content_type}\r\nCache-Control: no-store, no-cache, must-revalidate\r\nPragma: no-cache\r\nExpires: 0\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    stream
+        .write_all(headers.as_bytes())
+        .and_then(|_| stream.write_all(body))
+        .map_err(|err| format!("http write failed: {err}"))
+}
+
+fn content_type_for_path(path: &Path) -> &'static str {
+    match path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or_default()
+    {
+        "html" => "text/html; charset=utf-8",
+        "js" => "text/javascript; charset=utf-8",
+        "mjs" => "text/javascript; charset=utf-8",
+        "wasm" => "application/wasm",
+        "json" => "application/json; charset=utf-8",
+        "css" => "text/css; charset=utf-8",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "svg" => "image/svg+xml",
+        "ico" => "image/x-icon",
+        _ => "application/octet-stream",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bind_web_dev_listener;
+    use std::net::TcpListener;
+
+    #[test]
+    fn bind_web_dev_listener_bumps_busy_port() {
+        let busy = TcpListener::bind(("127.0.0.1", 0)).expect("bind busy listener");
+        let busy_port = busy.local_addr().expect("read busy addr").port();
+
+        let (free, free_port) =
+            bind_web_dev_listener("127.0.0.1", busy_port).expect("bind free listener");
+
+        assert_eq!(free_port, busy_port + 1);
+        drop(free);
+    }
 }

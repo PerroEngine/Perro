@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-perro_asset_formats = { path = "../../core/perro_asset_formats" }
+perro_asset_formats.workspace = true
 flate2 = { version = "1.0", default-features = false, features = ["rust_backend"] }
 rayon = "1.10"

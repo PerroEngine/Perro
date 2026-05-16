@@ -49,6 +49,47 @@ members = [
 
 resolver = "3"
 
+[workspace.dependencies]
+perro_api = { version = "0.1.0", path = "perro_source/api_modules/perro_api" }
+perro_input_api = { version = "0.1.0", path = "perro_source/api_modules/perro_input_api" }
+perro_modules = { version = "0.1.0", path = "perro_source/api_modules/perro_modules" }
+perro_networking = { version = "0.1.0", path = "perro_source/api_modules/perro_networking" }
+perro_resource_api = { version = "0.1.0", path = "perro_source/api_modules/perro_resource_api" }
+perro_runtime_api = { version = "0.1.0", path = "perro_source/api_modules/perro_runtime_api" }
+perro_steamworks = { version = "0.1.0", path = "perro_source/api_modules/perro_steamworks", default-features = false }
+perro_pawdio = { version = "0.1.0", path = "perro_source/audio_stack/perro_pawdio" }
+perro_compiler = { version = "0.1.0", path = "perro_source/build_pipeline/perro_compiler" }
+perro_static_pipeline = { version = "0.1.0", path = "perro_source/build_pipeline/perro_static_pipeline" }
+perro_animation = { version = "0.1.0", path = "perro_source/core/perro_animation" }
+perro_asset_formats = { version = "0.1.0", path = "perro_source/core/perro_asset_formats" }
+perro_builtin_meshes = { version = "0.1.0", path = "perro_source/core/perro_builtin_meshes" }
+perro_csv = { version = "0.1.0", path = "perro_source/core/perro_csv" }
+perro_ids = { version = "0.1.0", path = "perro_source/core/perro_ids" }
+perro_nodes = { version = "0.1.0", path = "perro_source/core/perro_nodes" }
+perro_particle_math = { version = "0.1.0", path = "perro_source/core/perro_particle_math" }
+perro_structs = { version = "0.1.0", path = "perro_source/core/perro_structs" }
+perro_ui = { version = "0.1.0", path = "perro_source/core/perro_ui" }
+perro_variant = { version = "0.1.0", path = "perro_source/core/perro_variant" }
+perro_cli = { version = "0.1.0", path = "perro_source/devtools/perro_cli" }
+perro_dev_runner = { version = "0.1.0", path = "perro_source/devtools/perro_dev_runner" }
+perro_assets = { version = "0.1.0", path = "perro_source/io_stack/perro_assets" }
+perro_io = { version = "0.1.0", path = "perro_source/io_stack/perro_io" }
+perro_app = { version = "0.1.0", path = "perro_source/render_stack/perro_app" }
+perro_graphics = { version = "0.1.0", path = "perro_source/render_stack/perro_graphics" }
+perro_graphics_assets = { version = "0.1.0", path = "perro_source/render_stack/perro_graphics_assets" }
+perro_macros = { version = "0.1.0", path = "perro_source/render_stack/perro_macros" }
+perro_meshlets = { version = "0.1.0", path = "perro_source/render_stack/perro_meshlets" }
+perro_render_bridge = { version = "0.1.0", path = "perro_source/render_stack/perro_render_bridge" }
+perro_internal_updates = { version = "0.1.0", path = "perro_source/runtime_project/perro_internal_updates" }
+perro_physics = { version = "0.1.0", path = "perro_source/runtime_project/perro_physics" }
+perro_project = { version = "0.1.0", path = "perro_source/runtime_project/perro_project" }
+perro_runtime = { version = "0.1.0", path = "perro_source/runtime_project/perro_runtime" }
+perro_runtime_render = { version = "0.1.0", path = "perro_source/runtime_project/perro_runtime_render" }
+perro_scene = { version = "0.1.0", path = "perro_source/runtime_project/perro_scene" }
+perro_scripting = { version = "0.1.0", path = "perro_source/script_stack/perro_scripting" }
+perro_scripting_macros = { version = "0.1.0", path = "perro_source/script_stack/perro_scripting_macros" }
+
+
 [profile.release.package.rapier2d]
 opt-level = 3
 

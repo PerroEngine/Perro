@@ -23,7 +23,11 @@ use perro_render_bridge::{
 };
 use perro_structs::VisualAccessibilitySettings;
 use std::sync::{Arc, mpsc};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 use winit::window::Window;
 
 #[path = "gpu/present.rs"]
@@ -403,9 +407,13 @@ pub struct RenderGpuTiming {
 }
 
 impl Gpu {
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn wait_idle(&mut self) {
         let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
     }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn wait_idle(&mut self) {}
 
     pub fn render_idle_clear(&mut self) -> bool {
         // Keep window alive for the full surface lifetime.
@@ -459,7 +467,7 @@ impl Gpu {
         true
     }
 
-    pub fn new(
+    pub async fn new_async(
         window: Arc<Window>,
         smoothing_samples: u32,
         vsync_enabled: bool,
@@ -471,12 +479,14 @@ impl Gpu {
         let instance = wgpu::Instance::default();
         let surface = instance.create_surface(window.clone()).ok()?;
 
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: Some(&surface),
-            force_fallback_adapter: false,
-        }))
-        .ok()?;
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                compatible_surface: Some(&surface),
+                force_fallback_adapter: false,
+            })
+            .await
+            .ok()?;
         let adapter_features = adapter.features();
         let mut required_features = wgpu::Features::empty();
         if adapter_features.contains(wgpu::Features::INDIRECT_FIRST_INSTANCE) {
@@ -488,15 +498,17 @@ impl Gpu {
             required_features |= timestamp_features;
         }
 
-        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-            label: Some("perro_device"),
-            required_features,
-            required_limits: wgpu::Limits::default(),
-            experimental_features: wgpu::ExperimentalFeatures::disabled(),
-            memory_hints: wgpu::MemoryHints::Performance,
-            trace: wgpu::Trace::default(),
-        }))
-        .ok()?;
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("perro_device"),
+                required_features,
+                required_limits: wgpu::Limits::default(),
+                experimental_features: wgpu::ExperimentalFeatures::disabled(),
+                memory_hints: wgpu::MemoryHints::Performance,
+                trace: wgpu::Trace::default(),
+            })
+            .await
+            .ok()?;
         let indirect_first_instance_enabled =
             required_features.contains(wgpu::Features::INDIRECT_FIRST_INSTANCE);
         let timestamp_query_enabled = required_features.contains(timestamp_features);
@@ -619,6 +631,27 @@ impl Gpu {
             indirect_first_instance_enabled,
             gpu_timer,
         })
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn new(
+        window: Arc<Window>,
+        smoothing_samples: u32,
+        vsync_enabled: bool,
+        meshlets_enabled: bool,
+        dev_meshlets: bool,
+        meshlet_debug_view: bool,
+        occlusion_culling: OcclusionCullingMode,
+    ) -> Option<Self> {
+        pollster::block_on(Self::new_async(
+            window,
+            smoothing_samples,
+            vsync_enabled,
+            meshlets_enabled,
+            dev_meshlets,
+            meshlet_debug_view,
+            occlusion_culling,
+        ))
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {

@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-perro_asset_formats = { path = "../../core/perro_asset_formats" }
-perro_io = { path = "../../io_stack/perro_io" }
-perro_ids = { path = "../../core/perro_ids" }
+perro_asset_formats.workspace = true
+perro_io.workspace = true
+perro_ids.workspace = true
 crossbeam-channel = "0.5"
 midly = "0.5.3"
 rodio = { version = "0.17", default-features = true }

@@ -21,6 +21,10 @@ use perro_ui::{
 };
 use perro_variant::Variant;
 use std::borrow::Cow;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 
 #[path = "ui/locale.rs"]
 mod locale;
@@ -189,7 +193,7 @@ impl Runtime {
     fn extract_render_ui_commands_inner(&mut self, timing: Option<&mut RuntimeUiTiming>) {
         self.refresh_locale_text_bindings();
         self.render_ui.pointer_screen_point = None;
-        let total_start = timing.as_ref().map(|_| std::time::Instant::now());
+        let total_start = timing.as_ref().map(|_| Instant::now());
         let bootstrap_scan = self.render_ui.prev_visible.is_empty()
             && self.render_ui.retained_commands.is_empty()
             && self.render_ui.computed_rects.is_empty();
@@ -328,7 +332,7 @@ impl Runtime {
         }
         let mut auto_layout_computed = std::mem::take(&mut self.render_ui.auto_layout_computed);
         auto_layout_computed.clear();
-        let layout_start = timing.as_ref().map(|_| std::time::Instant::now());
+        let layout_start = timing.as_ref().map(|_| Instant::now());
         for node in traversal_ids.iter().copied() {
             let was_cached = computed.contains_key(&node);
             let before_len = computed.len();
@@ -363,7 +367,7 @@ impl Runtime {
         self.process_text_edit_input(&computed, &mut command_ids, &mut command_seen);
         self.refresh_button_visual_states(&computed, &mut command_ids, &mut command_seen);
 
-        let commands_start = timing.as_ref().map(|_| std::time::Instant::now());
+        let commands_start = timing.as_ref().map(|_| Instant::now());
         for node in command_ids.iter().copied() {
             if let Some(timing) = timing.as_deref_mut() {
                 timing.command_nodes = timing.command_nodes.saturating_add(1);

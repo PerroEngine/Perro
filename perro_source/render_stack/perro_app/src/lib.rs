@@ -7,6 +7,10 @@ use perro_render_bridge::RenderEvent;
 use perro_runtime::{Runtime, WindowRequest};
 use std::sync::Arc;
 use std::time::Duration;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
 use winit::window::Window;
 
 pub struct App<B: GraphicsBackend> {
@@ -161,6 +165,46 @@ impl<B: GraphicsBackend> App<B> {
         self.runtime.time.graphics = graphics_time;
         self.runtime.time.frame = frame_time;
         self.runtime.time.fps = fps;
+        self.runtime.time.draw_gpu_prepare_3d = Duration::ZERO;
+        self.runtime.time.draw_gpu_prepare_3d_frustum = Duration::ZERO;
+        self.runtime.time.draw_gpu_prepare_3d_hiz = Duration::ZERO;
+        self.runtime.time.draw_gpu_prepare_3d_indirect = Duration::ZERO;
+        self.runtime.time.draw_gpu_prepare_3d_cull_inputs = Duration::ZERO;
+        self.runtime.time.draw_calls_2d = 0;
+        self.runtime.time.draw_calls_3d = 0;
+        self.runtime.time.draw_calls_total = 0;
+        self.runtime.time.draw_instances_3d = 0;
+        self.runtime.time.draw_material_refs_3d = 0;
+        self.runtime.time.skip_prepare_3d = 0;
+        self.runtime.time.skip_prepare_3d_frustum = 0;
+        self.runtime.time.skip_prepare_3d_hiz = 0;
+        self.runtime.time.skip_prepare_3d_indirect = 0;
+        self.runtime.time.skip_prepare_3d_cull_inputs = 0;
+    }
+
+    #[inline]
+    pub fn set_present_timing_profile(&mut self, timing: &PresentTiming) {
+        #[cfg(feature = "profile_heavy")]
+        {
+            self.runtime.time.draw_gpu_prepare_3d = timing.draw_gpu_prepare_3d;
+            self.runtime.time.draw_gpu_prepare_3d_frustum = timing.draw_gpu_prepare_3d_frustum;
+            self.runtime.time.draw_gpu_prepare_3d_hiz = timing.draw_gpu_prepare_3d_hiz;
+            self.runtime.time.draw_gpu_prepare_3d_indirect = timing.draw_gpu_prepare_3d_indirect;
+            self.runtime.time.draw_gpu_prepare_3d_cull_inputs =
+                timing.draw_gpu_prepare_3d_cull_inputs;
+            self.runtime.time.draw_calls_2d = timing.draw_calls_2d;
+            self.runtime.time.draw_calls_3d = timing.draw_calls_3d;
+            self.runtime.time.draw_calls_total = timing.draw_calls_total;
+            self.runtime.time.draw_instances_3d = timing.draw_instances_3d;
+            self.runtime.time.draw_material_refs_3d = timing.draw_material_refs_3d;
+            self.runtime.time.skip_prepare_3d = timing.skip_prepare_3d;
+            self.runtime.time.skip_prepare_3d_frustum = timing.skip_prepare_3d_frustum;
+            self.runtime.time.skip_prepare_3d_hiz = timing.skip_prepare_3d_hiz;
+            self.runtime.time.skip_prepare_3d_indirect = timing.skip_prepare_3d_indirect;
+            self.runtime.time.skip_prepare_3d_cull_inputs = timing.skip_prepare_3d_cull_inputs;
+        }
+        #[cfg(not(feature = "profile_heavy"))]
+        let _ = timing;
     }
 
     #[inline]
@@ -451,18 +495,18 @@ impl<B: GraphicsBackend> App<B> {
     where
         I: IntoIterator<Item = perro_render_bridge::RenderCommand>,
     {
-        let total_start = std::time::Instant::now();
+        let total_start = Instant::now();
         #[cfg(feature = "profile_heavy")]
         let dirty_node_count = self.runtime.dirty_node_count() as u32;
 
         #[cfg(feature = "profile_heavy")]
-        let extract_2d_start = std::time::Instant::now();
+        let extract_2d_start = Instant::now();
         self.runtime.extract_render_2d_commands();
         #[cfg(feature = "profile_heavy")]
         let extract_2d = extract_2d_start.elapsed();
 
         #[cfg(feature = "profile_heavy")]
-        let extract_3d_start = std::time::Instant::now();
+        let extract_3d_start = Instant::now();
         self.runtime.extract_render_3d_commands();
         #[cfg(feature = "profile_heavy")]
         let extract_3d = extract_3d_start.elapsed();
@@ -475,7 +519,7 @@ impl<B: GraphicsBackend> App<B> {
         let extract_ui_duration = ui_timing.total;
 
         #[cfg(feature = "profile_heavy")]
-        let drain_commands_start = std::time::Instant::now();
+        let drain_commands_start = Instant::now();
         self.runtime.drain_render_commands(&mut self.command_buffer);
         #[cfg(feature = "profile_heavy")]
         let render_command_count = self.command_buffer.len() as u32;
@@ -483,12 +527,12 @@ impl<B: GraphicsBackend> App<B> {
         let drain_commands = drain_commands_start.elapsed();
 
         #[cfg(feature = "profile_heavy")]
-        let submit_start = std::time::Instant::now();
+        let submit_start = Instant::now();
         self.graphics.submit_many(self.command_buffer.drain(..));
         #[cfg(feature = "profile_heavy")]
         let submit_commands = submit_start.elapsed();
 
-        let draw_frame_start = std::time::Instant::now();
+        let draw_frame_start = Instant::now();
         let draw_timing = if late_overlay {
             self.graphics
                 .draw_frame_with_late_overlay_timed(overlay_commands)
@@ -504,13 +548,13 @@ impl<B: GraphicsBackend> App<B> {
         self.runtime.clear_dirty_flags();
 
         #[cfg(feature = "profile_heavy")]
-        let drain_events_start = std::time::Instant::now();
+        let drain_events_start = Instant::now();
         self.graphics.drain_events(&mut self.event_buffer);
         #[cfg(feature = "profile_heavy")]
         let drain_events = drain_events_start.elapsed();
 
         #[cfg(feature = "profile_heavy")]
-        let apply_events_start = std::time::Instant::now();
+        let apply_events_start = Instant::now();
         self.runtime
             .apply_render_events(self.event_buffer.drain(..));
         #[cfg(feature = "profile_heavy")]
@@ -725,5 +769,6 @@ impl<B: GraphicsBackend> App<B> {
 
 pub mod entry;
 pub mod input;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod threaded;
 pub mod winit_runner;
