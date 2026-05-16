@@ -8,15 +8,9 @@
 
 ## Philosophy
 
-Perro tries to remove busywork, not power.
-You author normal project files and normal Rust scripts.
-Then the Perro compiler and build pipeline manage script wiring, asset baking, and release shaping so runtime stays fast without making authoring hard to learn.
-
-That goal stays in the background of the workflow:
-
-- **Simple To Learn**: start with scenes, nodes, and Rust scripts without large registration steps or custom import-db workflows.
-- **Flexible To Use**: keep direct control over project files, resource layout, and gameplay code instead of hiding work behind a locked editor pipeline.
-- **Fast In Release**: let the compiler and static pipeline convert supported assets into pre-shaped data so shipped games spend less time on IO, parsing, and setup.
+- **Simple To Learn**: start with scenes, nodes, and Rust scripts without large registration steps or boilerplate.
+- **Flexible To Use**: removes a lot of borrow checker issues by having direct apis and scoped closures for when we need mutable access, seperating state from the script behavior means we will never have a runtime borrow fail.
+- **Fast In Release**: nodes and scripts are laid out for efficient node and state access, all resources are statically baked in release for efficient and quick retrieval
 
 ## Design Goals
 

@@ -217,10 +217,84 @@ Click flow on native:
 
 ## Deploy Note
 
-Host web build as SPA-style static site:
+Web build output use plain static files.
 
-- all app routes like `/docs` or `/pricing` need rewrite -> same `index.html`
-- w/o rewrite, browser refresh on non-root route hit host 404
+Output shape:
+
+- `/index.html`
+- `/boot.js`
+- `/app.js`
+- `/app_bg.wasm`
+- `/assets/...`
+- each `routes.toml` entry also emit route html like `/docs/index.html`
+
+Route note:
+
+- route html + static assets use relative file refs
+- route nav + route fetch use root-absolute href like `/docs`
+- host bundle at site root like `https://game.example.com/`
+- subdir mount like `https://example.com/games/my-game/` ! fit now
+
+### itch.io
+
+Use case:
+
+- good fit 4 root-only web build
+- best fit if prj use only `/` route
+
+Upload flow:
+
+1. run `perro build --path <project_dir> --target web`
+2. open `<project_dir>/.output/web/`
+3. zip contents of dir, ! dir itself
+4. chk zip root has `index.html`
+5. upload zip as HTML game
+
+Notes:
+
+- itch host game in iframe
+- itch doc ask relative paths in uploaded files
+- Perro asset refs fit that rule
+- Perro route nav ! fit itch multi-page embed well cuz route hrefs use `/docs` root style
+- if you use `routes.toml` + web route buttons, expect route nav/direct deep link issues on itch
+
+Safe itch path now:
+
+- use single `/` route
+- keep nav in-canvas/in-game, ! browser route path
+- treat itch build as 1 entry page
+
+### Cloudflare Pages
+
+Use case:
+
+- good fit 4 full web deploy
+- good fit 4 multi-route `routes.toml`
+
+Deploy flow:
+
+1. run `perro build --path <project_dir> --target web`
+2. deploy `<project_dir>/.output/web/` as Pages static output
+3. use Pages project root/custom domain root, ! subdir mount
+
+Why this fit:
+
+- Pages serve matching html file on route path
+- `/docs/index.html` auto-serve on `/docs/`
+- Pages also redirect html file paths 2 extension-less route paths
+- if top-level `404.html` miss, Pages default SPA fallback map unknown paths -> `/`
+
+Optional `_redirects`:
+
+- add only if you want custom canonical/legacy path rules
+- put `_redirects` in `.output/web/`
+
+Ex:
+
+```text
+/docs /docs/ 301
+/old-home / 301
+```
 
 ## Support Matrix
 
