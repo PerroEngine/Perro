@@ -15,6 +15,12 @@ Do not use `std::path::Path` for these paths.
 
 `ResPath` is for engine resources.
 
+Web target note:
+
+- `user://...` still valid on web
+- browser build maps `user://...` -> `localStorage`
+- session/cookie vals use `perro_web::storage`, ! `ResPath`
+
 ## API
 
 Borrowed path:

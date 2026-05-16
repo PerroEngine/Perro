@@ -418,6 +418,105 @@ virtual_resolution = "1920x1080"
     assert_eq!(parsed.metadata.trademark.as_deref(), Some("Perro Lab"));
 }
 
+#[test]
+fn parse_project_toml_reads_web_metadata() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[web]
+title = "Game Site"
+description = "Ship fast"
+keywords = ["rust", "engine", "web"]
+
+[graphics]
+virtual_resolution = "1920x1080"
+"#;
+
+    let parsed = parse_project_toml(toml).expect("failed to parse project.toml");
+    assert_eq!(parsed.web.title.as_deref(), Some("Game Site"));
+    assert_eq!(parsed.web.description.as_deref(), Some("Ship fast"));
+    assert_eq!(parsed.web.keywords, vec!["rust", "engine", "web"]);
+}
+
+#[test]
+fn parse_routes_toml_reads_routes() {
+    let parsed = parse_routes_toml(
+        r#"
+[[route]]
+href = "/"
+name = "home"
+scene = "res://routes/home.scn"
+
+[[route]]
+href = "docs/"
+name = "docs"
+scene = "res://routes/docs.scn"
+title = "Docs"
+description = "API docs"
+keywords = ["docs", "api"]
+"#,
+    )
+    .expect("parse routes");
+
+    assert_eq!(parsed.routes.len(), 2);
+    assert_eq!(parsed.routes[0].href, "/");
+    assert_eq!(parsed.routes[1].href, "/docs");
+    assert_eq!(parsed.routes[1].title.as_deref(), Some("Docs"));
+    assert_eq!(parsed.routes[1].description.as_deref(), Some("API docs"));
+    assert_eq!(parsed.routes[1].keywords, vec!["docs", "api"]);
+}
+
+#[test]
+fn load_routes_toml_defaults_to_main_scene() {
+    let root = unique_temp_dir("perro_routes_default");
+    ensure_project_layout(&root).expect("layout");
+    fs::write(
+        root.join("project.toml"),
+        r#"[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+virtual_resolution = "1920x1080"
+"#,
+    )
+    .expect("write project");
+
+    let project = load_project_toml(&root).expect("load project");
+    let routes = load_routes_toml(&root, &project).expect("load routes");
+    assert_eq!(routes.routes.len(), 1);
+    assert_eq!(routes.routes[0].href, "/");
+    assert_eq!(routes.routes[0].scene, "res://main.scn");
+
+    fs::remove_dir_all(&root).expect("cleanup");
+}
+
+#[test]
+fn parse_routes_toml_rejects_bad_scene() {
+    let err = parse_routes_toml(
+        r#"
+[[route]]
+href = "/"
+name = "home"
+scene = "./bad.scn"
+"#,
+    )
+    .expect_err("bad scene");
+    assert!(matches!(err, ProjectError::InvalidField("route.scene", _)));
+}
+
+#[test]
+fn normalize_route_href_trims_extra_bits() {
+    assert_eq!(normalize_route_href("/"), "/");
+    assert_eq!(normalize_route_href("/docs/"), "/docs");
+    assert_eq!(normalize_route_href("docs"), "/docs");
+    assert_eq!(normalize_route_href("/docs/index.html"), "/docs");
+}
+
 fn unique_temp_dir(prefix: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)

@@ -101,6 +101,28 @@ pub struct ProjectMetadata {
     pub trademark: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ProjectWebConfig {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub keywords: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectRoute {
+    pub href: String,
+    pub name: String,
+    pub scene: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub keywords: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ProjectRoutesConfig {
+    pub routes: Vec<ProjectRoute>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StaticProjectConfig {
     pub name: &'static str,
@@ -294,6 +316,7 @@ impl StaticProjectConfig {
                 copyright: self.metadata_copyright.map(str::to_string),
                 trademark: self.metadata_trademark.map(str::to_string),
             },
+            web: ProjectWebConfig::default(),
             main_scene: self.main_scene_hash.to_string(),
             main_scene_hash: Some(self.main_scene_hash),
             icon: self.icon_hash.to_string(),
@@ -346,6 +369,7 @@ impl StaticProjectConfig {
 pub struct ProjectConfig {
     pub name: String,
     pub metadata: ProjectMetadata,
+    pub web: ProjectWebConfig,
     pub main_scene: String,
     pub main_scene_hash: Option<u64>,
     pub icon: String,
@@ -375,6 +399,7 @@ impl ProjectConfig {
         Self {
             name: name.into(),
             metadata: ProjectMetadata::default(),
+            web: ProjectWebConfig::default(),
             main_scene: "res://main.scn".to_string(),
             main_scene_hash: None,
             icon: "res://icon.png".to_string(),
@@ -398,6 +423,15 @@ impl ProjectConfig {
             localization: None,
             steam: SteamConfig::default(),
         }
+    }
+}
+
+impl ProjectRoutesConfig {
+    pub fn scene_for_href(&self, href: &str) -> Option<&str> {
+        self.routes
+            .iter()
+            .find(|route| route.href == href)
+            .map(|route| route.scene.as_str())
     }
 }
 

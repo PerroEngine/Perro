@@ -572,6 +572,11 @@ fn clamp_to_char_boundary(text: &str, mut index: usize) -> usize {
     index
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UiButtonWebAction {
+    pub href: Cow<'static, str>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiButton {
     pub base: UiBox,
@@ -589,6 +594,7 @@ pub struct UiButton {
     pub pressed_signals: Vec<SignalID>,
     pub released_signals: Vec<SignalID>,
     pub click_signals: Vec<SignalID>,
+    pub web: Option<UiButtonWebAction>,
     pub disabled: bool,
 }
 
@@ -624,6 +630,7 @@ impl UiButton {
             pressed_signals: Vec::new(),
             released_signals: Vec::new(),
             click_signals: Vec::new(),
+            web: None,
             disabled: false,
         }
     }

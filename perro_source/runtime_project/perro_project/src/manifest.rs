@@ -961,6 +961,7 @@ fn crate_workspace_rel_path(crate_name: &str) -> Option<&'static str> {
         "perro_modules" => Some("perro_source/api_modules/perro_modules"),
         "perro_networking" => Some("perro_source/api_modules/perro_networking"),
         "perro_input_api" => Some("perro_source/api_modules/perro_input_api"),
+        "perro_web" => Some("perro_source/api_modules/perro_web"),
         "perro_steamworks" => Some("perro_source/api_modules/perro_steamworks"),
         "perro_render_bridge" => Some("perro_source/render_stack/perro_render_bridge"),
         "perro_graphics" => Some("perro_source/render_stack/perro_graphics"),

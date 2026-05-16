@@ -332,6 +332,8 @@ fn ensure_project_dependency_line(
 fn generate_embedded_entry_files(project_root: &Path) -> Result<(), CompilerError> {
     let cfg = load_project_toml(project_root)
         .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
+    let routes = perro_project::load_routes_toml(project_root, &cfg)
+        .map_err(|e| CompilerError::SceneParse(format!("failed to load routes.toml: {e}")))?;
     let project_src = project_root.join(".perro").join("project").join("src");
     fs::create_dir_all(project_src.join("static"))?;
     ensure_project_dependency_line(project_root, "perro_scene", "perro_scene = \"0.1.0\"")?;
@@ -362,6 +364,9 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         startup_splash_hash: {startup_splash_hash}u64,\n\
         virtual_width: {w},\n\
         virtual_height: {h},\n\
+  }},\n\
+  routes: perro_app::entry::StaticEmbeddedRoutesConfig {{\n\
+        routes: {routes_block},\n\
   }},\n\
   graphics: perro_app::entry::StaticEmbeddedGraphicsConfig {{\n\
         vsync: {vsync},\n\
@@ -419,6 +424,7 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         startup_splash_hash = perro_ids::string_to_u64(&cfg.startup_splash),
         w = cfg.virtual_width,
         h = cfg.virtual_height,
+        routes_block = emit_static_routes_block(&routes),
         vsync = cfg.vsync,
         msaa = cfg.msaa,
         meshlets = cfg.meshlets,
@@ -456,6 +462,9 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
         startup_splash_hash: {startup_splash_hash}u64,\n\
         virtual_width: {w},\n\
         virtual_height: {h},\n\
+  }},\n\
+  routes: perro_app::entry::StaticEmbeddedRoutesConfig {{\n\
+        routes: {routes_block},\n\
   }},\n\
   graphics: perro_app::entry::StaticEmbeddedGraphicsConfig {{\n\
         vsync: {vsync},\n\
@@ -512,6 +521,7 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
         startup_splash_hash = perro_ids::string_to_u64(&cfg.startup_splash),
         w = cfg.virtual_width,
         h = cfg.virtual_height,
+        routes_block = emit_static_routes_block(&routes),
         vsync = cfg.vsync,
         msaa = cfg.msaa,
         meshlets = cfg.meshlets,
@@ -607,6 +617,8 @@ fn export_project_web_bundle(
     let package_name = read_project_binary_name(project_root)?;
     let project_cfg = load_project_toml(project_root)
         .map_err(|err| CompilerError::SceneParse(format!("failed to load project.toml: {err}")))?;
+    let routes = perro_project::load_routes_toml(project_root, &project_cfg)
+        .map_err(|err| CompilerError::SceneParse(format!("failed to load routes.toml: {err}")))?;
     let profile_dir = if options.release { "release" } else { "debug" };
     let built_wasm = target_dir
         .join("wasm32-unknown-unknown")
@@ -652,10 +664,7 @@ fn export_project_web_bundle(
     }
 
     fs::write(output_dir.join("boot.js"), web_boot_js())?;
-    fs::write(
-        output_dir.join("index.html"),
-        web_index_html(&project_cfg.name),
-    )?;
+    emit_web_route_html_files(project_root, &output_dir, &project_cfg, &routes)?;
     println!("exported web bundle: {}", output_dir.display());
     Ok(())
 }
@@ -664,15 +673,95 @@ fn web_boot_js() -> &'static str {
     "import init from './app.js';\n\
 \n\
 const boot = document.getElementById('boot');\n\
+const staticPage = document.getElementById('perro-static-page');\n\
+const shellCache = new Map();\n\
+const parser = new DOMParser();\n\
 const setBoot = (text, kind = 'info') => {\n\
   if (!boot) return;\n\
   boot.textContent = text;\n\
   boot.dataset.kind = kind;\n\
 };\n\
 \n\
+const appReady = () => document.body.dataset.perroApp === 'ready';\n\
+\n\
+const splitHref = (href) => {\n\
+  const url = new URL(href, window.location.href);\n\
+  let path = url.pathname || '/';\n\
+  if (path.length > '/index.html'.length && path.endsWith('/index.html')) {\n\
+    path = path.slice(0, -'/index.html'.length);\n\
+  }\n\
+  while (path.length > 1 && path.endsWith('/')) {\n\
+    path = path.slice(0, -1);\n\
+  }\n\
+  if (!path.startsWith('/')) {\n\
+    path = `/${path}`;\n\
+  }\n\
+  return {\n\
+    path,\n\
+    historyHref: `${path}${url.search}${url.hash}`,\n\
+    documentHref: path === '/' ? '/index.html' : `${path}/index.html`,\n\
+  };\n\
+};\n\
+\n\
+const syncHead = (doc) => {\n\
+  if (doc.title) {\n\
+    document.title = doc.title;\n\
+  }\n\
+  for (const name of ['description', 'keywords']) {\n\
+    const next = doc.head.querySelector(`meta[name=\"${name}\"]`);\n\
+    const current = document.head.querySelector(`meta[name=\"${name}\"]`);\n\
+    if (next && current) {\n\
+      current.setAttribute('content', next.getAttribute('content') || '');\n\
+    } else if (next && !current) {\n\
+      document.head.appendChild(next.cloneNode(true));\n\
+    } else if (!next && current) {\n\
+      current.remove();\n\
+    }\n\
+  }\n\
+  const nextIcon = doc.head.querySelector('link[rel=\"icon\"]');\n\
+  const currentIcon = document.head.querySelector('link[rel=\"icon\"]');\n\
+  if (nextIcon && currentIcon) {\n\
+    currentIcon.setAttribute('href', nextIcon.getAttribute('href') || '');\n\
+  }\n\
+};\n\
+\n\
+const fetchShellDoc = async (href) => {\n\
+  const parts = splitHref(href);\n\
+  let pending = shellCache.get(parts.path);\n\
+  if (!pending) {\n\
+    pending = fetch(parts.documentHref, { credentials: 'same-origin' }).then((resp) => {\n\
+      if (!resp.ok) {\n\
+        throw new Error(`route fetch fail: ${resp.status}`);\n\
+      }\n\
+      return resp.text();\n\
+    });\n\
+    shellCache.set(parts.path, pending);\n\
+  }\n\
+  const text = await pending;\n\
+  return { parts, doc: parser.parseFromString(text, 'text/html') };\n\
+};\n\
+\n\
+const applyShellDoc = (doc) => {\n\
+  if (!staticPage) return;\n\
+  const nextStatic = doc.getElementById('perro-static-page');\n\
+  if (!nextStatic) return;\n\
+  staticPage.innerHTML = nextStatic.innerHTML;\n\
+  syncHead(doc);\n\
+};\n\
+\n\
+const navShell = async (href, pushHistory) => {\n\
+  if (appReady()) return;\n\
+  const { parts, doc } = await fetchShellDoc(href);\n\
+  applyShellDoc(doc);\n\
+  if (pushHistory) {\n\
+    window.history.pushState(null, '', parts.historyHref);\n\
+  }\n\
+};\n\
+\n\
 const hideBoot = () => {\n\
   if (!boot) return;\n\
   boot.dataset.state = 'done';\n\
+  document.body.dataset.perroApp = 'ready';\n\
   window.setTimeout(() => boot.remove(), 400);\n\
 };\n\
 \n\
@@ -683,6 +772,47 @@ const obs = new MutationObserver(() => {\n\
   }\n\
 });\n\
 obs.observe(document.body, { childList: true, subtree: true });\n\
+\n\
+document.addEventListener('click', (event) => {\n\
+  if (appReady()) return;\n\
+  if (event.defaultPrevented || event.button !== 0) return;\n\
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;\n\
+  const anchor = event.target instanceof Element\n\
+    ? event.target.closest('#perro-static-page a[href]')\n\
+    : null;\n\
+  if (!(anchor instanceof HTMLAnchorElement)) return;\n\
+  if (anchor.target && anchor.target !== '_self') return;\n\
+  const url = new URL(anchor.href, window.location.href);\n\
+  if (url.origin !== window.location.origin) return;\n\
+  event.preventDefault();\n\
+  setBoot('loading route...');\n\
+  navShell(url.href, true).catch((err) => {\n\
+    console.error('perro route shell fail', err);\n\
+    window.location.href = url.href;\n\
+  });\n\
+});\n\
+\n\
+const prefetchShell = (target) => {\n\
+  if (appReady()) return;\n\
+  const anchor = target instanceof Element\n\
+    ? target.closest('#perro-static-page a[href]')\n\
+    : null;\n\
+  if (!(anchor instanceof HTMLAnchorElement)) return;\n\
+  const url = new URL(anchor.href, window.location.href);\n\
+  if (url.origin !== window.location.origin) return;\n\
+  fetchShellDoc(url.href).catch(() => {});\n\
+};\n\
+\n\
+document.addEventListener('pointerover', (event) => prefetchShell(event.target), { passive: true });\n\
+document.addEventListener('focusin', (event) => prefetchShell(event.target));\n\
+window.addEventListener('popstate', () => {\n\
+  if (appReady()) return;\n\
+  setBoot('loading route...');\n\
+  navShell(window.location.href, false).catch((err) => {\n\
+    console.error('perro route shell fail', err);\n\
+    window.location.reload();\n\
+  });\n\
+});\n\
 \n\
 setBoot('loading wasm...');\n\
 \n\
@@ -696,16 +826,441 @@ try {\n\
 } catch (err) {\n\
   console.error('perro web boot fail', err);\n\
   const msg = err instanceof Error ? err.message : String(err);\n\
+  document.body.dataset.perroApp = 'boot-fail';\n\
   setBoot(`boot fail: ${msg}`, 'error');\n\
   obs.disconnect();\n\
 }\n"
 }
 
-fn web_index_html(project_name: &str) -> String {
+struct StaticWebPage {
+    title: String,
+    description: Option<String>,
+    keywords: Vec<String>,
+    icon_href: String,
+    boot_href: String,
+    app_href: String,
+    wasm_href: String,
+    body_html: String,
+    boot_label: String,
+}
+
+fn emit_web_route_html_files(
+    project_root: &Path,
+    output_dir: &Path,
+    project_cfg: &perro_project::ProjectConfig,
+    routes: &perro_project::ProjectRoutesConfig,
+) -> Result<(), CompilerError> {
+    let icon_output = copy_res_asset_into_web_output(project_root, output_dir, &project_cfg.icon)?;
+    for route in &routes.routes {
+        let html_path = web_route_html_path(output_dir, &route.href);
+        if let Some(parent) = html_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let body_html = render_route_scene_html(project_root, output_dir, &html_path, &route.scene)?;
+        let title = route
+            .title
+            .clone()
+            .or_else(|| {
+                (route.href == "/")
+                    .then(|| project_cfg.web.title.clone())
+                    .flatten()
+            })
+            .unwrap_or_else(|| {
+                if route.href == "/" {
+                    project_cfg
+                        .web
+                        .title
+                        .clone()
+                        .unwrap_or_else(|| project_cfg.name.clone())
+                } else {
+                    let site_title = project_cfg
+                        .web
+                        .title
+                        .clone()
+                        .unwrap_or_else(|| project_cfg.name.clone());
+                    format!("{} | {site_title}", route.name)
+                }
+            });
+        let description = route
+            .description
+            .clone()
+            .or_else(|| project_cfg.web.description.clone());
+        let keywords = merge_web_keywords(&project_cfg.web.keywords, &route.keywords);
+        let page = StaticWebPage {
+            title: title.clone(),
+            description,
+            keywords,
+            icon_href: relative_output_href(&html_path, &icon_output),
+            boot_href: relative_output_href(&html_path, &output_dir.join("boot.js")),
+            app_href: relative_output_href(&html_path, &output_dir.join("app.js")),
+            wasm_href: relative_output_href(&html_path, &output_dir.join("app_bg.wasm")),
+            body_html,
+            boot_label: format!("{title} boot"),
+        };
+        fs::write(&html_path, web_index_html(&page))?;
+    }
+    Ok(())
+}
+
+fn web_route_html_path(output_dir: &Path, href: &str) -> PathBuf {
+    let href = perro_project::normalize_route_href(href);
+    if href == "/" {
+        return output_dir.join("index.html");
+    }
+    output_dir
+        .join(href.trim_start_matches('/'))
+        .join("index.html")
+}
+
+fn copy_res_asset_into_web_output(
+    project_root: &Path,
+    output_dir: &Path,
+    res_path: &str,
+) -> Result<PathBuf, CompilerError> {
+    let rel = res_path.trim().strip_prefix("res://").ok_or_else(|| {
+        CompilerError::SceneParse(format!("expected res:// path for web asset, got `{res_path}`"))
+    })?;
+    let source = project_root.join("res").join(res_rel_to_path(rel));
+    if !source.exists() {
+        return Err(CompilerError::SceneParse(format!(
+            "web asset not found: {}",
+            source.display()
+        )));
+    }
+    let target = output_dir.join("assets").join(res_rel_to_path(rel));
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::copy(&source, &target)?;
+    Ok(target)
+}
+
+fn render_route_scene_html(
+    project_root: &Path,
+    output_dir: &Path,
+    html_path: &Path,
+    scene_path: &str,
+) -> Result<String, CompilerError> {
+    let rel = scene_path.trim().strip_prefix("res://").ok_or_else(|| {
+        CompilerError::SceneParse(format!("expected res:// scene path, got `{scene_path}`"))
+    })?;
+    let scene_file = project_root.join("res").join(res_rel_to_path(rel));
+    let scene_src = fs::read_to_string(&scene_file)?;
+    let scene = std::panic::catch_unwind(|| perro_scene::Parser::new(&scene_src).parse_scene())
+        .map_err(|_| {
+            CompilerError::SceneParse(format!(
+                "failed to parse scene for static web html: {}",
+                scene_file.display()
+            ))
+        })?;
+    let mut html = String::new();
+    if let Some(root) = scene.root {
+        html.push_str(&render_scene_entry_html(
+            project_root,
+            output_dir,
+            html_path,
+            &scene,
+            root,
+        )?);
+    } else {
+        for entry in scene.nodes.iter().filter(|entry| entry.parent.is_none()) {
+            html.push_str(&render_scene_entry_html(
+                project_root,
+                output_dir,
+                html_path,
+                &scene,
+                entry.key,
+            )?);
+        }
+    }
+    if html.trim().is_empty() {
+        html.push_str("<main class=\"perro-static-page__content\"></main>");
+    }
+    Ok(html)
+}
+
+fn render_scene_entry_html(
+    project_root: &Path,
+    output_dir: &Path,
+    html_path: &Path,
+    scene: &perro_scene::Scene,
+    key: perro_scene::SceneKey,
+) -> Result<String, CompilerError> {
+    let Some(entry) = scene.nodes.get(key.as_usize()) else {
+        return Ok(String::new());
+    };
+    if scene_field_bool(&entry.data, "visible") == Some(false) {
+        return Ok(String::new());
+    }
+    let children_html = render_scene_children_html(project_root, output_dir, html_path, scene, entry)?;
+    let name_attr = entry
+        .name
+        .as_deref()
+        .map(escape_html_attr)
+        .map(|value| format!(" data-perro-name=\"{value}\""))
+        .unwrap_or_default();
+    let node_attr = format!(
+        " class=\"perro-node perro-node--{}\" data-perro-node=\"{}\"{}",
+        escape_html_attr(entry.data.ty.as_ref()),
+        escape_html_attr(entry.data.ty.as_ref()),
+        name_attr
+    );
+    match entry.data.ty.as_ref() {
+        "UiLabel" => {
+            let text = scene_field_str(&entry.data, "text")
+                .map(decode_scene_text_literal)
+                .map(normalize_static_html_text)
+                .unwrap_or_default();
+            Ok(format!("<p{node_attr}>{}</p>", escape_html(&text)))
+        }
+        "UiTextBox" | "UiTextBlock" => {
+            let text = scene_field_str(&entry.data, "text")
+                .map(decode_scene_text_literal)
+                .or_else(|| scene_field_str(&entry.data, "placeholder").map(decode_scene_text_literal))
+                .map(normalize_static_html_text)
+                .unwrap_or_default();
+            Ok(format!("<p{node_attr}>{}</p>", escape_html(&text)))
+        }
+        "UiButton" => {
+            let inner = if children_html.trim().is_empty() {
+                let fallback = entry
+                    .name
+                    .as_deref()
+                    .map(str::to_string)
+                    .unwrap_or_else(|| "link".to_string());
+                escape_html(&fallback)
+            } else {
+                children_html
+            };
+            if let Some(href) = extract_button_href(&entry.data) {
+                Ok(format!(
+                    "<a href=\"{}\"{node_attr}>{inner}</a>",
+                    escape_html_attr(&href)
+                ))
+            } else {
+                Ok(format!("<button type=\"button\"{node_attr}>{inner}</button>"))
+            }
+        }
+        "UiImage" | "UiAnimatedImage" => {
+            if let Some(texture) = extract_ui_image_source(&entry.data) {
+                let copied = copy_res_asset_into_web_output(project_root, output_dir, &texture)?;
+                let src = relative_output_href(html_path, &copied);
+                let alt = entry.name.as_deref().unwrap_or("");
+                Ok(format!(
+                    "<img src=\"{}\" alt=\"{}\"{node_attr}>",
+                    escape_html_attr(&src),
+                    escape_html_attr(alt)
+                ))
+            } else {
+                Ok(children_html)
+            }
+        }
+        ty if is_static_web_container(ty) => {
+            let tag = static_web_container_tag(entry);
+            Ok(format!("<{tag}{node_attr}>{children_html}</{tag}>"))
+        }
+        _ => Ok(children_html),
+    }
+}
+
+fn render_scene_children_html(
+    project_root: &Path,
+    output_dir: &Path,
+    html_path: &Path,
+    scene: &perro_scene::Scene,
+    entry: &perro_scene::SceneNodeEntry,
+) -> Result<String, CompilerError> {
+    let mut out = String::new();
+    let child_keys: Vec<_> = if entry.children.is_empty() {
+        scene.nodes
+            .iter()
+            .filter(|candidate| candidate.parent == Some(entry.key))
+            .map(|candidate| candidate.key)
+            .collect()
+    } else {
+        entry.children.iter().copied().collect()
+    };
+    for child in child_keys {
+        out.push_str(&render_scene_entry_html(
+            project_root,
+            output_dir,
+            html_path,
+            scene,
+            child,
+        )?);
+    }
+    Ok(out)
+}
+
+fn is_static_web_container(ty: &str) -> bool {
+    matches!(
+        ty,
+        "UiBox"
+            | "UiPanel"
+            | "UiLayout"
+            | "UiHLayout"
+            | "UiHBox"
+            | "UiVLayout"
+            | "UiVBox"
+            | "UiGrid"
+            | "UiScrollContainer"
+            | "UiScroll"
+            | "UiTreeList"
+    )
+}
+
+fn static_web_container_tag(entry: &perro_scene::SceneNodeEntry) -> &'static str {
+    let name = entry.name.as_deref().unwrap_or("").to_ascii_lowercase();
+    if name.contains("nav") {
+        "nav"
+    } else if name.contains("header") {
+        "header"
+    } else if name.contains("footer") {
+        "footer"
+    } else if name.contains("section") || name.contains("hero") {
+        "section"
+    } else {
+        "div"
+    }
+}
+
+fn scene_field_bool(data: &perro_scene::SceneNodeData, field: &str) -> Option<bool> {
+    scene_field_value(data, field)?.as_bool()
+}
+
+fn scene_field_str<'a>(data: &'a perro_scene::SceneNodeData, field: &str) -> Option<&'a str> {
+    scene_field_value(data, field)?.as_str()
+}
+
+fn scene_field_value<'a>(
+    data: &'a perro_scene::SceneNodeData,
+    field: &str,
+) -> Option<&'a perro_scene::SceneValue> {
+    let mut found = data.base_ref().and_then(|base| scene_field_value(base, field));
+    for (name, value) in data.fields.iter() {
+        if name.as_ref() == field {
+            found = Some(value);
+        }
+    }
+    found
+}
+
+fn extract_button_href(data: &perro_scene::SceneNodeData) -> Option<String> {
+    let perro_scene::SceneValue::Object(fields) = scene_field_value(data, "web")? else {
+        return None;
+    };
+    fields.iter().find_map(|(name, value)| {
+        (name.as_ref() == "href")
+            .then(|| value.as_str().map(perro_project::normalize_route_href))
+            .flatten()
+    })
+}
+
+fn extract_ui_image_source(data: &perro_scene::SceneNodeData) -> Option<String> {
+    for field in ["texture", "image", "source", "src"] {
+        if let Some(value) = scene_field_str(data, field)
+            && value.starts_with("res://")
+        {
+            return Some(value.to_string());
+        }
+    }
+    None
+}
+
+fn decode_scene_text_literal(text: &str) -> String {
+    if let Some(stripped) = text.strip_prefix("%%loc:") {
+        return decode_text_escapes(&format!("%loc:{stripped}"));
+    }
+    if let Some(raw) = text.strip_prefix("%loc:") {
+        let raw = raw.trim().trim_matches('"').trim();
+        return raw.to_string();
+    }
+    decode_text_escapes(text)
+}
+
+fn normalize_static_html_text(text: String) -> String {
+    text.replace("\\n", " ")
+        .replace("\\r", " ")
+        .replace("\\t", " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn decode_text_escapes(text: &str) -> String {
+    if !text.contains('\\') {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            out.push(ch);
+            continue;
+        }
+        match chars.next() {
+            Some('n') => out.push('\n'),
+            Some('r') => out.push('\r'),
+            Some('t') => out.push('\t'),
+            Some('\\') => out.push('\\'),
+            Some('"') => out.push('"'),
+            Some(other) => {
+                out.push('\\');
+                out.push(other);
+            }
+            None => out.push('\\'),
+        }
+    }
+    out
+}
+
+fn merge_web_keywords(global: &[String], route: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    for keyword in global.iter().chain(route.iter()) {
+        let trimmed = keyword.trim();
+        if trimmed.is_empty() || out.iter().any(|existing: &String| existing == trimmed) {
+            continue;
+        }
+        out.push(trimmed.to_string());
+    }
+    out
+}
+
+fn relative_output_href(from_html: &Path, to: &Path) -> String {
+    relative_include_path(from_html, to).replace('\\', "/")
+}
+
+fn res_rel_to_path(rel: &str) -> PathBuf {
+    rel.split('/')
+        .filter(|part| !part.is_empty())
+        .collect::<PathBuf>()
+}
+
+fn web_index_html(page: &StaticWebPage) -> String {
+    let description = page
+        .description
+        .as_deref()
+        .map(|value| format!("<meta name=\"description\" content=\"{}\">\n", escape_html_attr(value)))
+        .unwrap_or_default();
+    let keywords = if page.keywords.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "<meta name=\"keywords\" content=\"{}\">\n",
+            escape_html_attr(&page.keywords.join(", "))
+        )
+    };
     format!(
-        "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>{title}</title>\n<style>\n:root{{color-scheme:dark}}html,body{{margin:0;height:100%;background:#111;color:#eee;font-family:system-ui,sans-serif}}body{{display:flex;flex-direction:column;overflow:hidden}}canvas{{display:block;width:100vw;height:100vh;outline:none}}#boot{{position:fixed;left:12px;top:12px;max-width:min(480px,calc(100vw - 24px));padding:8px 10px;background:rgba(0,0,0,.65);border:1px solid rgba(255,255,255,.12);border-radius:8px;font-size:13px;line-height:1.4;z-index:10;transition:opacity .2s ease}}#boot[data-kind='error']{{color:#ffb4b4;border-color:rgba(255,120,120,.35)}}#boot[data-state='done']{{opacity:0;pointer-events:none}}\n</style>\n</head>\n<body>\n<div id=\"boot\">{boot}</div>\n<script type=\"module\" src=\"./boot.js\"></script>\n</body>\n</html>\n",
-        title = escape_html(project_name),
-        boot = escape_html(&format!("{project_name} boot")),
+        "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>{title}</title>\n<link rel=\"icon\" href=\"{icon}\">\n<link rel=\"modulepreload\" href=\"{app_href}\">\n<link rel=\"preload\" href=\"{wasm_href}\" as=\"fetch\" type=\"application/wasm\" crossorigin>\n{description}{keywords}<style>\n:root{{color-scheme:dark}}html,body{{margin:0;min-height:100%;background:radial-gradient(circle at top,#182233 0%,#0b0d12 55%,#07090d 100%);color:#dce7f9;font-family:Inter,Segoe UI,system-ui,sans-serif}}body{{display:flex;flex-direction:column}}#perro-static-page{{width:min(1240px,calc(100vw - 32px));margin:0 auto;padding:18px 0 36px}}#perro-static-page *{{box-sizing:border-box}}#perro-static-page a{{color:inherit}}#perro-static-page img{{max-width:100%;height:auto;display:block}}#perro-static-page nav,#perro-static-page header,#perro-static-page section,#perro-static-page footer,#perro-static-page div{{width:100%}}#perro-static-page .perro-node--UiHLayout{{display:flex;gap:18px;align-items:stretch;flex-wrap:wrap}}#perro-static-page .perro-node--UiVLayout,#perro-static-page .perro-node--UiScrollContainer{{display:grid;gap:18px}}#perro-static-page .perro-node--UiPanel,#perro-static-page .perro-node--UiScrollContainer{{padding:18px;border:1px solid #334158;border-radius:18px;background:rgba(16,21,30,.92);box-shadow:0 18px 60px rgba(0,0,0,.28)}}#perro-static-page nav{{display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:16px 18px;border:1px solid #334158;border-radius:18px;background:rgba(16,21,30,.92);box-shadow:0 18px 60px rgba(0,0,0,.28)}}#perro-static-page nav .perro-node--UiButton{{background:#1a2230;color:#dce7f9;border-color:#4a5f81;box-shadow:none}}#perro-static-page nav .perro-node--UiButton:first-child{{background:transparent;border-color:transparent;color:#fff4d4;padding-inline:10px}}#perro-static-page footer{{padding:18px;border:1px solid #334158;border-radius:18px;background:rgba(16,21,30,.92)}}#perro-static-page .perro-node--UiLabel{{margin:0;line-height:1.45;color:inherit}}#perro-static-page a.perro-node--UiButton,#perro-static-page button.perro-node--UiButton{{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:46px;padding:12px 18px;border:1px solid #f7d891;border-radius:14px;background:#e4b85b;color:#201406;font-weight:700;text-decoration:none;transition:transform .18s ease,background .18s ease,border-color .18s ease}}#perro-static-page a.perro-node--UiButton:hover,#perro-static-page button.perro-node--UiButton:hover{{transform:translateY(-1px);background:#f0c96d}}#perro-static-page p[data-perro-name*='title'],#perro-static-page p[data-perro-name*='hero']{{font-size:clamp(1.8rem,4vw,3.4rem);line-height:1.05;color:#fff7e0;font-weight:800;letter-spacing:-.04em}}#perro-static-page p[data-perro-name*='text'],#perro-static-page p[data-perro-name*='copy']{{color:#c8d4e8}}body[data-perro-app='ready'] #perro-static-page{{display:none}}canvas{{display:block;width:100vw;height:100vh;outline:none}}#boot{{position:fixed;left:12px;top:12px;max-width:min(480px,calc(100vw - 24px));padding:8px 10px;background:rgba(0,0,0,.78);border:1px solid rgba(255,255,255,.12);border-radius:8px;font-size:13px;line-height:1.4;z-index:10;transition:opacity .2s ease;opacity:0;pointer-events:none}}#boot[data-kind='error']{{opacity:1;pointer-events:auto;color:#ffb4b4;border-color:rgba(255,120,120,.35)}}#boot[data-state='done']{{opacity:0;pointer-events:none}}@media (max-width: 760px){{#perro-static-page{{width:calc(100vw - 24px);padding:12px 0 28px}}#perro-static-page .perro-node--UiHLayout{{gap:12px}}#perro-static-page nav{{gap:10px;padding:14px}}#perro-static-page .perro-node--UiPanel,#perro-static-page .perro-node--UiScrollContainer,#perro-static-page footer{{padding:14px}}#perro-static-page a.perro-node--UiButton,#perro-static-page button.perro-node--UiButton{{width:100%}}}}\n</style>\n</head>\n<body>\n<main id=\"perro-static-page\">{body}</main>\n<div id=\"boot\">{boot}</div>\n<script type=\"module\" src=\"{boot_href}\"></script>\n</body>\n</html>\n",
+        title = escape_html(&page.title),
+        icon = escape_html_attr(&page.icon_href),
+        app_href = escape_html_attr(&page.app_href),
+        wasm_href = escape_html_attr(&page.wasm_href),
+        description = description,
+        keywords = keywords,
+        body = page.body_html,
+        boot = escape_html(&page.boot_label),
+        boot_href = escape_html_attr(&page.boot_href),
     )
 }
 
@@ -713,6 +1268,10 @@ fn escape_html(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+}
+
+fn escape_html_attr(s: &str) -> String {
+    escape_html(s).replace('"', "&quot;").replace('\'', "&#39;")
 }
 
 fn escape_str(s: &str) -> String {
@@ -814,6 +1373,25 @@ fn emit_optional_static_str(value: Option<&str>) -> String {
 
 fn emit_static_str(value: &str) -> String {
     format!("\"{}\"", escape_str(value))
+}
+
+fn emit_static_routes_block(routes: &perro_project::ProjectRoutesConfig) -> String {
+    let mut out = String::from("&[");
+    for route in &routes.routes {
+        out.push_str("\n            perro_app::entry::StaticEmbeddedRoute { ");
+        out.push_str(&format!(
+            "href: {}, name: {}, scene_hash: {}u64 }},",
+            emit_static_str(&route.href),
+            emit_static_str(&route.name),
+            perro_ids::parse_hashed_source_uri(&route.scene)
+                .unwrap_or_else(|| perro_ids::string_to_u64(&route.scene))
+        ));
+    }
+    if !routes.routes.is_empty() {
+        out.push_str("\n        ");
+    }
+    out.push(']');
+    out
 }
 
 fn indent_block(src: &str, spaces: usize) -> String {

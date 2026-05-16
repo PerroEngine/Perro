@@ -9,6 +9,7 @@ use perro_io::{
     data_local_dir, is_reserved_dlc_name, mount_dlc_archive, mount_dlc_disk, read_mounted_dlc_file,
     register_dlc_static_binary_lookup,
 };
+use perro_runtime_api::sub_apis::NodeAPI;
 use perro_runtime_api::sub_apis::PreloadedSceneID;
 use perro_scene::Scene;
 use perro_variant::Variant;
@@ -111,6 +112,50 @@ impl Runtime {
 
     fn resolve_scene_by_path(&self, path: &str) -> Result<Arc<Scene>, String> {
         self.resolve_scene_by_hash_and_path(Self::source_hash(path), path)
+    }
+
+    fn route_scene_path(&self, href: &str) -> Option<String> {
+        let href = perro_project::normalize_route_href(href);
+        self.project()
+            .and_then(|project| project.routes.scene_for_href(&href))
+            .map(str::to_string)
+    }
+
+    fn initial_route_scene_for_href(&self, browser_href: Option<&str>) -> Option<(String, String)> {
+        let href = perro_project::normalize_route_href(browser_href?);
+        if let Some(scene) = self.route_scene_path(&href) {
+            return Some((href, scene));
+        }
+        self.route_scene_path("/")
+            .map(|scene| ("/".to_string(), scene))
+    }
+
+    fn initial_route_scene(&self) -> Option<(String, String)> {
+        self.initial_route_scene_for_href(perro_web::current_href().as_deref())
+    }
+
+    pub(crate) fn process_pending_web_route_change(&mut self) {
+        let Some(next_href) = perro_web::take_pending_route_change() else {
+            return;
+        };
+        let _ = self.apply_route_change(&next_href);
+    }
+
+    fn apply_route_change(&mut self, next_href: &str) -> Result<(), String> {
+        let next_href = perro_project::normalize_route_href(next_href);
+        if self.active_route_href.as_deref() == Some(next_href.as_str()) {
+            return Ok(());
+        }
+        let Some(scene_path) = self.route_scene_path(&next_href) else {
+            return Err(format!("route `{next_href}` not found"));
+        };
+        if let Some(root) = self.active_route_root.take() {
+            let _ = NodeAPI::remove_node(self, root);
+        }
+        let root = self.load_scene_at_runtime(&scene_path)?;
+        self.active_route_href = Some(next_href);
+        self.active_route_root = Some(root);
+        Ok(())
     }
 
     fn prepare_scene_with_project_styles(
@@ -264,8 +309,9 @@ impl Runtime {
         let (
             project_root,
             project_name,
-            main_scene_path,
-            main_scene_hash,
+            boot_scene_path,
+            boot_scene_hash,
+            boot_route_href,
             static_lookup,
             static_resource_lookups,
             perro_assets_bytes,
@@ -273,14 +319,27 @@ impl Runtime {
             let project = self
                 .project()
                 .ok_or_else(|| "Runtime project is not set".to_string())?;
+            let mut route_href = None;
+            let mut scene_path = project.config.main_scene.clone();
+            if let Some((href, route_scene)) = self.initial_route_scene() {
+                route_href = Some(href);
+                scene_path = route_scene;
+            }
             (
                 project.root.clone(),
                 project.config.name.clone(),
-                project.config.main_scene.clone(),
-                project
-                    .config
-                    .main_scene_hash
-                    .unwrap_or_else(|| string_to_u64(&project.config.main_scene)),
+                scene_path.clone(),
+                parse_hashed_source_uri(&scene_path).unwrap_or_else(|| {
+                    if scene_path == project.config.main_scene {
+                        project
+                            .config
+                            .main_scene_hash
+                            .unwrap_or_else(|| string_to_u64(&project.config.main_scene))
+                    } else {
+                        string_to_u64(&scene_path)
+                    }
+                }),
+                route_href,
                 project.static_scene_lookup,
                 project.static_resource_lookups,
                 project.perro_assets_bytes,
@@ -375,6 +434,8 @@ impl Runtime {
         self.script_runtime.script_behavior_cache.clear();
         self.script_runtime.script_libraries.clear();
         self.node_index.node_tag_index.clear();
+        self.active_route_href = None;
+        self.active_route_root = None;
         let mode_label;
         #[cfg(feature = "profile")]
         let mut source_load: Option<Duration> = None;
@@ -386,7 +447,7 @@ impl Runtime {
         match self.provider_mode {
             ProviderMode::Dynamic => {
                 mode_label = "dynamic";
-                let (runtime_scene, load_stats) = load_runtime_scene_from_disk(&main_scene_path)?;
+                let (runtime_scene, load_stats) = load_runtime_scene_from_disk(&boot_scene_path)?;
                 #[cfg(feature = "profile")]
                 {
                     source_load = Some(load_stats.source_load);
@@ -410,7 +471,7 @@ impl Runtime {
             }
             ProviderMode::Static => {
                 if let Some(lookup) = static_lookup {
-                    let scene = lookup(main_scene_hash);
+                    let scene = lookup(boot_scene_hash);
                     mode_label = "static";
                     let prepared = self.prepare_scene_with_project_styles(scene, &|path| {
                         self.resolve_scene_by_path(path)
@@ -425,7 +486,7 @@ impl Runtime {
                 } else {
                     mode_label = "static_fallback_dynamic";
                     let (runtime_scene, load_stats) =
-                        load_runtime_scene_from_disk(&main_scene_path)?;
+                        load_runtime_scene_from_disk(&boot_scene_path)?;
                     #[cfg(feature = "profile")]
                     {
                         source_load = Some(load_stats.source_load);
@@ -453,6 +514,8 @@ impl Runtime {
         self.rebuild_internal_node_schedules();
         self.rebuild_node_tag_index();
         self.attach_scene_scripts(merged.script_nodes)?;
+        self.active_route_href = boot_route_href;
+        self.active_route_root = Some(merged.scene_root);
         #[cfg(not(feature = "profile"))]
         {
             let _ = mode_label;
@@ -469,14 +532,14 @@ impl Runtime {
         println!(
             "[scene_load] mode={} path={} total_us={:.3} source_us={} parse_us={} insert_us={:.3}",
             stats.mode_label,
-            main_scene_path,
+            boot_scene_path,
             as_us(stats.total_excluding_debug_print),
             fmt_duration(stats.source_load),
             fmt_duration(stats.parse),
             as_us(stats.node_insert),
         );
         #[cfg(not(feature = "profile"))]
-        let _ = main_scene_path;
+        let _ = boot_scene_path;
         Ok(())
     }
 
@@ -754,6 +817,8 @@ mod tests {
     const EMPTY_KEYS: &[SceneKey] = &[];
     const EMPTY_TAGS: &[Cow<'static, str>] = &[];
     const HOST_KEY_NAMES: &[Cow<'static, str>] = &[Cow::Borrowed("wi")];
+    const HOME_KEY_NAMES: &[Cow<'static, str>] = &[Cow::Borrowed("home")];
+    const DOCS_KEY_NAMES: &[Cow<'static, str>] = &[Cow::Borrowed("docs"), Cow::Borrowed("copy")];
     const EMPTY_KEY_NAMES: &[Cow<'static, str>] = &[];
     const HOST_DATA: SceneNodeData = SceneNodeData {
         ty: Cow::Borrowed("Node"),
@@ -778,6 +843,73 @@ mod tests {
         root: Some(SceneKey(0)),
         key_names: Cow::Borrowed(HOST_KEY_NAMES),
     };
+    const HOME_DATA: SceneNodeData = SceneNodeData {
+        ty: Cow::Borrowed("Node"),
+        fields: Cow::Borrowed(EMPTY_FIELDS),
+        base: None,
+    };
+    const HOME_NODES: &[SceneNodeEntry] = &[SceneNodeEntry {
+        data: HOME_DATA,
+        has_data_override: true,
+        key: SceneKey(0),
+        name: Some(Cow::Borrowed("home")),
+        tags: Cow::Borrowed(EMPTY_TAGS),
+        children: Cow::Borrowed(EMPTY_KEYS),
+        parent: None,
+        script: None,
+        clear_script: false,
+        root_of: None,
+        script_vars: Cow::Borrowed(EMPTY_FIELDS),
+    }];
+    static HOME_SCENE: Scene = Scene {
+        nodes: Cow::Borrowed(HOME_NODES),
+        root: Some(SceneKey(0)),
+        key_names: Cow::Borrowed(HOME_KEY_NAMES),
+    };
+    const DOCS_CHILD_KEYS: &[SceneKey] = &[SceneKey(1)];
+    const DOCS_ROOT_DATA: SceneNodeData = SceneNodeData {
+        ty: Cow::Borrowed("Node"),
+        fields: Cow::Borrowed(EMPTY_FIELDS),
+        base: None,
+    };
+    const DOCS_COPY_DATA: SceneNodeData = SceneNodeData {
+        ty: Cow::Borrowed("Node"),
+        fields: Cow::Borrowed(EMPTY_FIELDS),
+        base: None,
+    };
+    const DOCS_NODES: &[SceneNodeEntry] = &[
+        SceneNodeEntry {
+            data: DOCS_ROOT_DATA,
+            has_data_override: true,
+            key: SceneKey(0),
+            name: Some(Cow::Borrowed("docs")),
+            tags: Cow::Borrowed(EMPTY_TAGS),
+            children: Cow::Borrowed(DOCS_CHILD_KEYS),
+            parent: None,
+            script: None,
+            clear_script: false,
+            root_of: None,
+            script_vars: Cow::Borrowed(EMPTY_FIELDS),
+        },
+        SceneNodeEntry {
+            data: DOCS_COPY_DATA,
+            has_data_override: true,
+            key: SceneKey(1),
+            name: Some(Cow::Borrowed("copy")),
+            tags: Cow::Borrowed(EMPTY_TAGS),
+            children: Cow::Borrowed(EMPTY_KEYS),
+            parent: Some(SceneKey(0)),
+            script: None,
+            clear_script: false,
+            root_of: None,
+            script_vars: Cow::Borrowed(EMPTY_FIELDS),
+        },
+    ];
+    static DOCS_SCENE: Scene = Scene {
+        nodes: Cow::Borrowed(DOCS_NODES),
+        root: Some(SceneKey(0)),
+        key_names: Cow::Borrowed(DOCS_KEY_NAMES),
+    };
     static EMPTY_SCENE: Scene = Scene {
         nodes: Cow::Borrowed(&[]),
         root: None,
@@ -787,9 +919,100 @@ mod tests {
     fn test_lookup(path_hash: u64) -> &'static Scene {
         if path_hash == perro_ids::string_to_u64("res://boot.scn") {
             &HOST_SCENE
+        } else if path_hash == 100 {
+            &HOME_SCENE
+        } else if path_hash == 200 {
+            &DOCS_SCENE
         } else {
             &EMPTY_SCENE
         }
+    }
+
+    #[test]
+    fn initial_route_scene_uses_match_or_root_fallback() {
+        let mut project = RuntimeProject::new("Route Test", ".");
+        project.routes = perro_project::ProjectRoutesConfig {
+            routes: vec![
+                perro_project::ProjectRoute {
+                    href: "/".to_string(),
+                    name: "home".to_string(),
+                    scene: "100".to_string(),
+                    title: None,
+                    description: None,
+                    keywords: Vec::new(),
+                },
+                perro_project::ProjectRoute {
+                    href: "/docs".to_string(),
+                    name: "docs".to_string(),
+                    scene: "200".to_string(),
+                    title: None,
+                    description: None,
+                    keywords: Vec::new(),
+                },
+            ],
+        };
+        let mut runtime = Runtime::new();
+        runtime.project = Some(Arc::new(project));
+
+        assert_eq!(
+            runtime.initial_route_scene_for_href(Some("/docs?x=1#y")),
+            Some(("/docs".to_string(), "200".to_string()))
+        );
+        assert_eq!(
+            runtime.initial_route_scene_for_href(Some("/docs/index.html")),
+            Some(("/docs".to_string(), "200".to_string()))
+        );
+        assert_eq!(
+            runtime.initial_route_scene_for_href(Some("/missing")),
+            Some(("/".to_string(), "100".to_string()))
+        );
+    }
+
+    #[test]
+    fn apply_route_change_swaps_scene_root() {
+        let mut project = RuntimeProject::new("Route Test", ".");
+        project.routes = perro_project::ProjectRoutesConfig {
+            routes: vec![
+                perro_project::ProjectRoute {
+                    href: "/".to_string(),
+                    name: "home".to_string(),
+                    scene: "100".to_string(),
+                    title: None,
+                    description: None,
+                    keywords: Vec::new(),
+                },
+                perro_project::ProjectRoute {
+                    href: "/docs".to_string(),
+                    name: "docs".to_string(),
+                    scene: "200".to_string(),
+                    title: None,
+                    description: None,
+                    keywords: Vec::new(),
+                },
+            ],
+        };
+        project.static_scene_lookup = Some(test_lookup);
+        let mut runtime = Runtime::new();
+        runtime.project = Some(Arc::new(project));
+        runtime.provider_mode = ProviderMode::Static;
+
+        runtime.active_route_root = Some(runtime.load_scene_at_runtime("100").expect("load home"));
+        runtime.active_route_href = Some("/".to_string());
+
+        runtime.apply_route_change("/docs").expect("route change");
+        assert_eq!(runtime.active_route_href.as_deref(), Some("/docs"));
+        assert!(
+            runtime
+                .nodes
+                .iter()
+                .any(|(_, node)| node.name.as_ref() == "docs")
+        );
+        assert!(
+            runtime
+                .nodes
+                .iter()
+                .any(|(_, node)| node.name.as_ref() == "copy")
+        );
     }
 
     #[test]

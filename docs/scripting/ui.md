@@ -12,6 +12,7 @@ UiBox
 - UiImage
 - UiAnimatedImage
 - UiLabel
+- UiScrollContainer
 - UiLayout
 - UiHLayout
 - UiVLayout
@@ -60,6 +61,17 @@ UiBox
 - Text visual.
 - Holds `text`, `color`, `text_size_ratio`, and text alignment.
 - Can have children, but usually should not.
+
+`UiScrollContainer`
+
+- Invisible clipped UI container with scroll offset.
+- Holds `scroll` / `scroll_x` / `scroll_y`.
+- Offsets child content and clips descendants to its rect.
+- Wheel targets hovered scroller.
+- Keyboard targets focused-node ancestor scroller or sole visible root scroller.
+- Key map: `ArrowUp`, `ArrowDown`, `PageUp`, `PageDown`, `Home`, `End`.
+- Current v1 target = desktop wheel + keyboard.
+- Touch / drag scroll path defer.
 
 `UiLayout`
 

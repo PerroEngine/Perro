@@ -16,6 +16,13 @@ startup_splash = "res://icon.png"
 # copyright = "Copyright (c) 2026 Studio Name"
 # trademark = ""
 
+# Optional web metadata.
+#
+# [web]
+# title = "{name}"
+# description = "{name}"
+# keywords = ["rust", "game engine"]
+
 [graphics]
 virtual_resolution = "1920x1080"
 vsync = false
@@ -76,6 +83,18 @@ pub fn load_project_toml(root: &Path) -> Result<ProjectConfig, ProjectError> {
     Ok(config)
 }
 
+pub fn load_routes_toml(
+    root: &Path,
+    project: &ProjectConfig,
+) -> Result<ProjectRoutesConfig, ProjectError> {
+    let path = root.join("routes.toml");
+    if !path.exists() {
+        return Ok(default_routes_config(project));
+    }
+    let routes_toml = fs::read_to_string(path)?;
+    parse_routes_toml(&routes_toml)
+}
+
 pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError> {
     let value: Value = contents.parse::<Value>()?;
     let project_table = value
@@ -93,6 +112,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
     let metadata_table = value.get("metadata").and_then(Value::as_table);
     let steam_table = value.get("steam").and_then(Value::as_table);
     let audio_table = value.get("audio").and_then(Value::as_table);
+    let web_table = value.get("web").and_then(Value::as_table);
 
     let name = project_table
         .get("name")
@@ -182,10 +202,12 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
     let metadata = parse_metadata(metadata_table)?;
     let steam = parse_steam(steam_table)?;
     let audio = parse_audio(audio_table)?;
+    let web = parse_web(web_table)?;
 
     Ok(ProjectConfig {
         name,
         metadata,
+        web,
         main_scene,
         main_scene_hash: None,
         icon,
@@ -209,6 +231,69 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         localization,
         steam,
     })
+}
+
+pub fn default_routes_config(project: &ProjectConfig) -> ProjectRoutesConfig {
+    ProjectRoutesConfig {
+        routes: vec![ProjectRoute {
+            href: "/".to_string(),
+            name: "main".to_string(),
+            scene: project.main_scene.clone(),
+            title: None,
+            description: None,
+            keywords: Vec::new(),
+        }],
+    }
+}
+
+pub fn parse_routes_toml(contents: &str) -> Result<ProjectRoutesConfig, ProjectError> {
+    let value: Value = contents.parse::<Value>()?;
+    let route_entries = value
+        .get("route")
+        .and_then(Value::as_array)
+        .ok_or(ProjectError::MissingField("route"))?;
+    let mut routes = Vec::with_capacity(route_entries.len());
+    for entry in route_entries {
+        let table = entry
+            .as_table()
+            .ok_or(ProjectError::InvalidField("route", "must be table array".to_string()))?;
+        let href_raw = table
+            .get("href")
+            .and_then(Value::as_str)
+            .ok_or(ProjectError::MissingField("route.href"))?;
+        let scene = table
+            .get("scene")
+            .and_then(Value::as_str)
+            .ok_or(ProjectError::MissingField("route.scene"))?
+            .to_string();
+        validate_res_path("route.scene", &scene)?;
+        let name = table
+            .get("name")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or(ProjectError::MissingField("route.name"))?
+            .to_string();
+        let href = normalize_route_href(href_raw);
+        let title = parse_optional_route_str(table, "title")?;
+        let description = parse_optional_route_str(table, "description")?;
+        let keywords = parse_keywords_table_field(table, "route.keywords", "keywords")?;
+        routes.push(ProjectRoute {
+            href,
+            name,
+            scene,
+            title,
+            description,
+            keywords,
+        });
+    }
+    if routes.is_empty() {
+        return Err(ProjectError::InvalidField(
+            "route",
+            "need at least 1 route".to_string(),
+        ));
+    }
+    Ok(ProjectRoutesConfig { routes })
 }
 
 fn parse_steam(table: Option<&toml::map::Map<String, Value>>) -> Result<SteamConfig, ProjectError> {
@@ -583,31 +668,109 @@ fn parse_metadata(
     })
 }
 
+fn parse_web(
+    table: Option<&toml::map::Map<String, Value>>,
+) -> Result<ProjectWebConfig, ProjectError> {
+    let Some(table) = table else {
+        return Ok(ProjectWebConfig::default());
+    };
+
+    Ok(ProjectWebConfig {
+        title: parse_optional_table_str(table, "title", "web.title")?,
+        description: parse_optional_table_str(table, "description", "web.description")?,
+        keywords: parse_keywords_table_field(table, "web.keywords", "keywords")?,
+    })
+}
+
 fn parse_optional_metadata_str(
     table: &toml::map::Map<String, Value>,
     key: &'static str,
+) -> Result<Option<String>, ProjectError> {
+    parse_optional_table_str(
+        table,
+        key,
+        match key {
+            "description" => "metadata.description",
+            "company" => "metadata.company",
+            "version" => "metadata.version",
+            "copyright" => "metadata.copyright",
+            "trademark" => "metadata.trademark",
+            _ => "metadata",
+        },
+    )
+}
+
+fn parse_optional_route_str(
+    table: &toml::map::Map<String, Value>,
+    key: &'static str,
+) -> Result<Option<String>, ProjectError> {
+    parse_optional_table_str(
+        table,
+        key,
+        match key {
+            "title" => "route.title",
+            "description" => "route.description",
+            _ => "route",
+        },
+    )
+}
+
+fn parse_optional_table_str(
+    table: &toml::map::Map<String, Value>,
+    key: &'static str,
+    path: &'static str,
 ) -> Result<Option<String>, ProjectError> {
     let Some(value) = table.get(key) else {
         return Ok(None);
     };
     let Some(raw) = value.as_str() else {
-        return Err(ProjectError::InvalidField(
-            match key {
-                "description" => "metadata.description",
-                "company" => "metadata.company",
-                "version" => "metadata.version",
-                "copyright" => "metadata.copyright",
-                "trademark" => "metadata.trademark",
-                _ => "metadata",
-            },
-            "must be a string".to_string(),
-        ));
+        return Err(ProjectError::InvalidField(path, "must be a string".to_string()));
     };
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         Ok(None)
     } else {
         Ok(Some(trimmed.to_string()))
+    }
+}
+
+fn parse_keywords_table_field(
+    table: &toml::map::Map<String, Value>,
+    path: &'static str,
+    key: &'static str,
+) -> Result<Vec<String>, ProjectError> {
+    let Some(value) = table.get(key) else {
+        return Ok(Vec::new());
+    };
+    match value {
+        Value::Array(items) => {
+            let mut out = Vec::new();
+            for item in items {
+                let Some(raw) = item.as_str() else {
+                    return Err(ProjectError::InvalidField(
+                        path,
+                        "must be array of strings".to_string(),
+                    ));
+                };
+                let trimmed = raw.trim();
+                if !trimmed.is_empty() {
+                    out.push(trimmed.to_string());
+                }
+            }
+            Ok(out)
+        }
+        Value::String(raw) => {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                Ok(Vec::new())
+            } else {
+                Ok(vec![trimmed.to_string()])
+            }
+        }
+        _ => Err(ProjectError::InvalidField(
+            path,
+            "must be string or array of strings".to_string(),
+        )),
     }
 }
 
@@ -619,6 +782,25 @@ fn validate_res_path(field: &'static str, path: &str) -> Result<(), ProjectError
         field,
         "must start with `res://`".to_string(),
     ))
+}
+
+pub fn normalize_route_href(path: &str) -> String {
+    let trimmed = path.trim();
+    let core = trimmed.split(['?', '#']).next().unwrap_or("/").trim();
+    let mut out = if core.is_empty() {
+        "/".to_string()
+    } else if core.starts_with('/') {
+        core.to_string()
+    } else {
+        format!("/{core}")
+    };
+    if out.len() > "/index.html".len() && out.ends_with("/index.html") {
+        out.truncate(out.len() - "/index.html".len());
+    }
+    while out.len() > 1 && out.ends_with('/') {
+        out.pop();
+    }
+    out
 }
 
 fn parse_resolution(raw: &str) -> Result<(u32, u32), ProjectError> {

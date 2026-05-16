@@ -61,6 +61,167 @@ Flow:
 Build command ! start local server.
 Host bundle on any static file host.
 
+## Rust Web API
+
+Use `perro_web` in runtime-side Rust code:
+
+```rust
+use perro_web::{
+    current_href,
+    get_args,
+    init_router,
+    pop_route,
+    push_route,
+    split_href,
+    split_query_args,
+    storage::{
+        load_cookie_bytes,
+        load_local_bytes,
+        load_session_bytes,
+        remove_cookie,
+        remove_local,
+        remove_session,
+        save_cookie_bytes,
+        save_local_bytes,
+        save_session_bytes,
+    },
+    take_pending_route_change,
+};
+```
+
+API map:
+
+- `init_router()` -> init browser router on `wasm32`
+- `current_href()` -> ret current normalized browser path
+- `get_args()` -> ret current query arg arr like `["arg1", "arg2"]`
+- `push_route("/docs")` -> push browser history + queue route chg
+- `pop_route()` -> cal browser back path
+- `split_href("/docs/api")` -> ret path seg arr
+- `split_query_args("?arg1&arg2")` -> ret query arg arr
+- `take_pending_route_change()` -> ret next queued href on route chg
+- `save_local_bytes(key, data)` -> wr browser `localStorage`
+- `load_local_bytes(key)` -> rd browser `localStorage`
+- `remove_local(key)` -> rm browser `localStorage` key
+- `save_session_bytes(key, data)` -> wr browser `sessionStorage`
+- `load_session_bytes(key)` -> rd browser `sessionStorage`
+- `remove_session(key)` -> rm browser `sessionStorage` key
+- `save_cookie_bytes(key, data)` -> wr browser cookie val
+- `load_cookie_bytes(key)` -> rd browser cookie val
+- `remove_cookie(key)` -> rm browser cookie
+
+Native path:
+
+- all `perro_web` route fns use no-op stub
+- all `perro_web::storage::*` fns ret `Unsupported`
+- `current_href()` -> `None`
+- `get_args()` -> `None`
+- `push_route()` + `pop_route()` -> `false`
+- `take_pending_route_change()` -> `None`
+
+Route norm:
+
+- add leading `/` if miss
+- trim trailing `/` except root `/`
+- strip query `?x=1` + hash `#part`
+
+Ex:
+
+- `"docs"` => `"/docs"`
+- `"/docs/"` => `"/docs"`
+- `"/docs?tab=api#top"` => `"/docs"`
+
+Arg split ex:
+
+- `"/docs?arg1&arg2"` => `get_args() = ["arg1", "arg2"]`
+- `"/docs?a=1&b=2"` => `get_args() = ["a=1", "b=2"]`
+- `"/"` => `[]`
+- `"/docs"` => `split_href(...) = ["docs"]`
+- `"/docs/api"` => `split_href(...) = ["docs", "api"]`
+
+## `routes.toml`
+
+Web prj route map use opt sibling fle of `project.toml`:
+
+```text
+my_game/
+|- project.toml
+|- routes.toml
+`- res/
+```
+
+Fmt:
+
+```toml
+[[route]]
+href = "/"
+name = "home"
+scene = "res://routes/home.scn"
+
+[[route]]
+href = "/docs"
+name = "docs"
+scene = "res://routes/docs.scn"
+```
+
+Rules:
+
+- use `[[route]]` array tbl
+- `href` req
+- `name` req
+- `scene` req
+- `href` use exact match only
+- dynamic params + wildcard path ! support
+
+Boot + runtime flow:
+
+1. web boot cal `perro_web::init_router()`
+2. runtime rd browser path frm `current_href()`
+3. if route match, runtime load route `scene`
+4. each frame runtime poll `take_pending_route_change()`
+5. if href match, runtime swap root scene 2 route scene
+
+Miss cfg path:
+
+- if `routes.toml` miss, runtime mk default route cfg
+- default route map use `/` => `project.main_scene`
+
+Miss href path:
+
+- boot miss -> fall back 2 `/`
+- if `/` miss too, fall back 2 `project.main_scene`
+- later push/pop miss -> runtime kp current scene
+
+## UI Button Web Route
+
+`UiButton` support opt `web` cfg block:
+
+```scn
+[UiButton]
+    text = "Docs"
+    web = { href = "/docs" }
+[/UiButton]
+```
+
+Click flow on web:
+
+- button click cal `perro_web::push_route(href)`
+- runtime route poll find new href
+- runtime load scene frm `routes.toml`
+- normal button click evt still fire
+
+Click flow on native:
+
+- `web = { ... }` parse ok
+- route push ! run
+- normal button click evt still fire
+
+## Deploy Note
+
+Host web build as SPA-style static site:
+
+- all app routes like `/docs` or `/pricing` need rewrite -> same `index.html`
+- w/o rewrite, browser refresh on non-root route hit host 404
+
 ## Support Matrix
 
 ### CLI + Build Flow
@@ -146,6 +307,38 @@ Native `perro build`:
 Web `perro build --target web`:
 
 - output browser bundle into `.output/web/`
+
+## Web Save Data
+
+`user://` auto-map on web target.
+
+Path map:
+
+- native `user://save/slot1.json` => OS user data dir
+- web `user://save/slot1.json` => browser `localStorage`
+- key fmt: `perro:user:<ProjectName>:data:save/slot1.json`
+
+Notes:
+
+- web path use `localStorage` now
+- vals store as base64 so binary data work
+- same project name => same browser save namespace
+- diff origins/domains keep diff browser storage
+- browser clear/site-data clear => save gone
+- `sessionStorage` + cookie path ! auto-bind 2 `user://`
+- use `perro_web::storage::*` if you need session-only or cookie-backed vals
+
+Pick storage:
+
+- `user://...` / `localStorage` -> save files, settings, long-lived user data
+- `sessionStorage` -> tmp per-tab state
+- cookie -> tiny server-visible vals, auth-ish bridge, legacy web flows
+
+Limits:
+
+- `localStorage` + `sessionStorage` size small vs disk save
+- cookie size very small, send on HTTP req, use only 4 tiny vals
+- IndexedDB ! wire yet
 
 ## Troubleshoot
 

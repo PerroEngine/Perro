@@ -31,6 +31,14 @@ Write restriction:
 - write paths must be `user://...` or absolute paths
 - relative non-`user://` writes return permission error
 
+Web target note:
+
+- `user://...` load/save use browser `localStorage`
+- key fmt: `perro:user:<ProjectName>:data:<relative_user_path>`
+- vals use base64 so `save_bytes` work for binary data too
+- `sessionStorage` + cookie save path ! use `modules::file`
+- use `perro_web::storage::*` in runtime Rust code for session/cookie vals
+
 ## `modules::json`
 
 JSON <-> `Variant` conversion helpers.

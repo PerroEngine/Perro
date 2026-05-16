@@ -1,6 +1,7 @@
 //! Winit app runner, frame loop, input bridge, profiling, and window setup.
 
 use crate::App;
+#[cfg(not(target_arch = "wasm32"))]
 use image_helpers::load_image_size;
 #[cfg(not(target_arch = "wasm32"))]
 use image_helpers::load_project_window_icon;
@@ -114,28 +115,42 @@ struct StartupSplashState {
 
 impl StartupSplashState {
     fn from_project(project: Option<&perro_runtime::RuntimeProject>, now: Instant) -> Self {
-        let mut source = None::<String>;
-        let mut source_hash = None::<u64>;
-        if let Some(p) = project {
-            let splash = p.config.startup_splash.trim();
-            if !splash.is_empty() {
-                source = Some(splash.to_string());
-                source_hash = p.config.startup_splash_hash;
-            } else {
-                let icon = p.config.icon.trim();
-                if !icon.is_empty() {
-                    source = Some(icon.to_string());
-                    source_hash = p.config.icon_hash;
+        #[cfg(target_arch = "wasm32")]
+        let _ = project;
+        #[cfg(target_arch = "wasm32")]
+        let splash = None::<(String, Option<u64>, Option<(u32, u32)>)>;
+        #[cfg(not(target_arch = "wasm32"))]
+        let splash = {
+            let mut source = None::<String>;
+            let mut source_hash = None::<u64>;
+            if let Some(p) = project {
+                let splash = p.config.startup_splash.trim();
+                if !splash.is_empty() {
+                    source = Some(splash.to_string());
+                    source_hash = p.config.startup_splash_hash;
+                } else {
+                    let icon = p.config.icon.trim();
+                    if !icon.is_empty() {
+                        source = Some(icon.to_string());
+                        source_hash = p.config.icon_hash;
+                    }
                 }
             }
-        }
-        let image_size = project.and_then(|p| {
-            source
-                .as_deref()
-                .and_then(|s| load_image_size(p, s, source_hash))
-        });
+            let image_size = project.and_then(|p| {
+                source
+                    .as_deref()
+                    .and_then(|s| load_image_size(p, s, source_hash))
+            });
+            source.map(|source| (source, source_hash, image_size))
+        };
+        let (active, source, source_hash, image_size, fade_started_at, first_frame_captured) =
+            if let Some((source, source_hash, image_size)) = splash {
+                (true, Some(source), source_hash, image_size, None, false)
+            } else {
+                (false, None, None, None, Some(now), true)
+            };
         Self {
-            active: true,
+            active,
             source,
             source_hash,
             image_size,
@@ -143,9 +158,9 @@ impl StartupSplashState {
             texture_id: None,
             ready_streak: 0,
             shown_at: now,
-            fade_started_at: None,
+            fade_started_at,
             first_frame_inflight: Vec::new(),
-            first_frame_captured: false,
+            first_frame_captured,
         }
     }
 

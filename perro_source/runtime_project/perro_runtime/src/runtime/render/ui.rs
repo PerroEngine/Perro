@@ -198,6 +198,7 @@ impl Runtime {
             && self.render_ui.retained_commands.is_empty()
             && self.render_ui.computed_rects.is_empty();
         let input_changed = self.ui_pointer_changed() || self.ui_nav_input_changed();
+        let scroll_input_changed = self.ui_scroll_input_changed();
         let text_input_changed =
             self.render_ui.focused_text_edit.is_some() && self.ui_text_input_changed();
         let has_extraction_work = self.dirty.has_any_dirty()
@@ -205,6 +206,7 @@ impl Runtime {
             || !self.render_ui.removed_nodes.is_empty()
             || bootstrap_scan
             || input_changed
+            || scroll_input_changed
             || text_input_changed;
         if !has_extraction_work {
             if let Some(timing) = timing {
@@ -365,6 +367,13 @@ impl Runtime {
 
         self.process_ui_focus_input(&computed, &mut command_ids, &mut command_seen);
         self.process_text_edit_input(&computed, &mut command_ids, &mut command_seen);
+        self.process_ui_scroll_input(
+            &mut computed,
+            &mut computed_scales,
+            root_rect,
+            &mut command_ids,
+            &mut command_seen,
+        );
         self.refresh_button_visual_states(&computed, &mut command_ids, &mut command_seen);
 
         let commands_start = timing.as_ref().map(|_| Instant::now());

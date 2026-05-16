@@ -128,6 +128,7 @@ Web target notes:
 Use this for local development runs and testing.
 The dev runner keeps assets dynamic and reads from normal project files.
 Dynamic scene/resource loading is optimized for development.
+Perro CLI handles compiler/setup glue so day-to-day workflow stays simple while project structure stays flexible.
 For release-like asset loading numbers, run `perro build`.
 See [Performance + Flexibility Philosophy](../project/performance_philosophy.md).
 
@@ -166,6 +167,7 @@ Web target notes:
 Use this to build the final executable into `<project>/.output/`.
 The static pipeline packs all `res` assets.
 Supported assets, such as scenes, animations, materials, particles, meshes, textures, and CSV tables, are optimized into match tables and preparsed formats as compile-time statics for efficient runtime performance.
+This is main Perro trade: author normal files in dev, then let compiler pipeline reshape them for release performance.
 Other `res` files are packed generically into `assets.perro`.
 See [Performance + Flexibility Philosophy](../project/performance_philosophy.md).
 

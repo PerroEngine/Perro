@@ -174,6 +174,11 @@ fn rounded_contains_keeps_center_and_edge_band() {
 }
 
 #[test]
+fn ui_button_defaults_to_no_web_action() {
+    assert!(UiButton::new().web.is_none());
+}
+
+#[test]
 fn right_anchor_offsets_size_inward() {
     let mut layout = UiLayoutData::new();
     let mut transform = UiTransform::new();

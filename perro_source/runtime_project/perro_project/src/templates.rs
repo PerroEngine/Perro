@@ -118,6 +118,8 @@ Run `perro check` to sync scripts and get rust-analyzer working.
 - Use `res://` paths to reference files in res/
 - Use `user://` when you want user data, either to read or write. On Windows this resolves to:
   `C:\Users\<You>\AppData\Local\<ProjectName>\data\...`
+- On web target, `user://...` maps to browser `localStorage` with project-scoped keys.
+- Use `perro_web::storage` if you need `sessionStorage` or cookie-backed values.
 - You cannot write to res in release
 
 ## Documentation
@@ -424,6 +426,9 @@ fn default_project_build_rs() -> String {
     r#"#[cfg(target_os = "windows")]
 fn main() {
     println!("cargo:rustc-check-cfg=cfg(perro_no_console)");
+    if !target_supports_windows_resource() {
+        return;
+    }
     if let Err(err) = embed_windows_icon() {
         println!("cargo:warning=perro icon embedding skipped: {err}");
     }
@@ -432,6 +437,19 @@ fn main() {
 #[cfg(not(target_os = "windows"))]
 fn main() {
     println!("cargo:rustc-check-cfg=cfg(perro_no_console)");
+}
+
+#[cfg(target_os = "windows")]
+fn target_supports_windows_resource() -> bool {
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    if target_os != "windows" {
+        return false;
+    }
+
+    matches!(
+        std::env::var("CARGO_CFG_TARGET_ENV").ok().as_deref(),
+        Some("gnu" | "msvc")
+    )
 }
 
 #[cfg(target_os = "windows")]
@@ -814,6 +832,13 @@ fn project_root() -> std::path::PathBuf {
               startup_splash_hash: 6859512821849760879u64,
               virtual_width: 1920,
               virtual_height: 1080,
+          },
+          routes: perro_app::entry::StaticEmbeddedRoutesConfig {
+              routes: &[perro_app::entry::StaticEmbeddedRoute {
+                  href: "/",
+                  name: "main",
+                  scene_hash: 7300106721993353294u64,
+              }],
           },
           graphics: perro_app::entry::StaticEmbeddedGraphicsConfig {
               vsync: false,

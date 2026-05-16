@@ -1,5 +1,11 @@
 # Docs Index
 
+Perro docs follow one core idea:
+keep authoring simple, keep workflow flexible, and let the compiler + static pipeline do the heavy work needed for fast release builds.
+
+That applies to 2D, 3D, and UI too.
+UI aims for powerful layout behavior with relative sizing + clamping, and runtime aims for high-fps game workloads across both 2D + 3D.
+
 ## Project Status
 
 - [Feature Matrix](project/feature_matrix.md)

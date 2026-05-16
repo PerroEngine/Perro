@@ -1,14 +1,14 @@
 #[cfg(test)]
 mod tests {
     use super::{
-        generate_call_param_binding, generate_embedded_entry_files, generate_perro_assets,
-        generate_project_static_modules, module_name_from_rel, module_short_name_from_rel,
-        reset_embedded_dir, sync_scripts, transpile_frontend_script,
+        emit_web_route_html_files, generate_call_param_binding, generate_embedded_entry_files,
+        generate_perro_assets, generate_project_static_modules, module_name_from_rel,
+        module_short_name_from_rel, reset_embedded_dir, sync_scripts, transpile_frontend_script,
         transpiled_exports_script_ctor, ProjectBuildOptions, ScriptMethodParam,
     };
     use perro_project::{
         ensure_project_layout, ensure_project_scaffold, ensure_project_toml,
-        ensure_source_overrides, load_project_toml,
+        ensure_source_overrides, load_project_toml, load_routes_toml,
     };
 
     fn assert_methods_emitted(transpiled: &str, expected_method_names: &[&str]) {
@@ -565,6 +565,91 @@ lifecycle!({});
     }
 
     #[test]
+    fn web_route_emit_writes_multi_page_html_with_keywords_and_icon() {
+        let root = unique_temp_dir("perro_web_route_emit");
+        std::fs::create_dir_all(root.join("res").join("routes")).expect("routes dir");
+        std::fs::create_dir_all(root.join("res").join("textures")).expect("textures dir");
+
+        std::fs::write(
+            root.join("project.toml"),
+            r#"[project]
+name = "Site"
+main_scene = "res://routes/home.scn"
+icon = "res://textures/icon.bmp"
+startup_splash = "res://textures/icon.bmp"
+
+[web]
+title = "Perro Site"
+description = "Global desc"
+keywords = ["rust", "engine"]
+
+[graphics]
+virtual_resolution = "1280x720"
+"#,
+        )
+        .expect("write project");
+        std::fs::write(
+            root.join("routes.toml"),
+            r#"[[route]]
+href = "/"
+name = "home"
+scene = "res://routes/home.scn"
+title = "Home"
+keywords = ["home"]
+
+[[route]]
+href = "/docs"
+name = "docs"
+scene = "res://routes/docs.scn"
+title = "Docs"
+description = "Docs page"
+keywords = ["docs", "api"]
+"#,
+        )
+        .expect("write routes");
+        std::fs::write(root.join("res").join("textures").join("icon.bmp"), BMP_1X1)
+            .expect("write icon");
+        std::fs::write(root.join("res").join("textures").join("logo.bmp"), BMP_1X1)
+            .expect("write logo");
+        std::fs::write(
+            root.join("res").join("routes").join("home.scn"),
+            static_web_home_scene(),
+        )
+        .expect("write home scene");
+        std::fs::write(
+            root.join("res").join("routes").join("docs.scn"),
+            static_web_docs_scene(),
+        )
+        .expect("write docs scene");
+
+        let cfg = load_project_toml(&root).expect("load project");
+        let routes = load_routes_toml(&root, &cfg).expect("load routes");
+        let output = root.join(".output").join("web-static-test");
+        std::fs::create_dir_all(&output).expect("mk output");
+        std::fs::write(output.join("boot.js"), "console.log('boot');").expect("boot js");
+
+        emit_web_route_html_files(&root, &output, &cfg, &routes).expect("emit route html");
+
+        let home_html =
+            std::fs::read_to_string(output.join("index.html")).expect("read home index");
+        let docs_html =
+            std::fs::read_to_string(output.join("docs").join("index.html")).expect("read docs");
+
+        assert!(home_html.contains("Home Hero"));
+        assert!(home_html.contains("href=\"/docs\""));
+        assert!(home_html.contains("src=\"assets/textures/logo.bmp\""));
+        assert!(home_html.contains("rel=\"icon\" href=\"assets/textures/icon.bmp\""));
+        assert!(!home_html.contains("\\n"));
+
+        assert!(docs_html.contains("Docs body"));
+        assert!(docs_html.contains("name=\"keywords\" content=\"rust, engine, docs, api\""));
+        assert!(docs_html.contains("name=\"description\" content=\"Docs page\""));
+        assert!(docs_html.contains("rel=\"icon\" href=\"../assets/textures/icon.bmp\""));
+
+        std::fs::remove_dir_all(&root).expect("cleanup");
+    }
+
+    #[test]
     fn module_short_name_drops_rs_suffix() {
         assert_eq!(
             module_name_from_rel("scripts/personality_module.rs"),
@@ -812,6 +897,61 @@ parent = $root
 [/Skeleton2D]
 [/skeleton]
 
+"#
+    }
+
+    fn static_web_home_scene() -> &'static str {
+        r#"$root = @page
+
+[page]
+[UiVBox]
+[/UiVBox]
+[/page]
+
+[hero]
+parent = page
+[UiLabel]
+    text = "Home Hero"
+[/UiLabel]
+[/hero]
+
+[logo]
+parent = page
+[UiImage]
+    texture = "res://textures/logo.bmp"
+[/UiImage]
+[/logo]
+
+[cta]
+parent = page
+[UiButton]
+    web = { href = "/docs" }
+[/UiButton]
+[/cta]
+
+[cta_text]
+parent = cta
+[UiLabel]
+    text = "Read Docs"
+[/UiLabel]
+[/cta_text]
+"#
+    }
+
+    fn static_web_docs_scene() -> &'static str {
+        r#"$root = @page
+
+[page]
+[UiVBox]
+[/UiVBox]
+[/page]
+
+[body]
+parent = page
+[UiLabel]
+    text = "Docs body"
+[/UiLabel]
+[/body]
 "#
     }
 

@@ -1960,7 +1960,17 @@ fn scroll_container_offsets_children_and_clips_to_view() {
         .get(&child)
         .copied()
         .expect("child rect");
-    assert_eq!(child_rect.center, Vector2::new(-30.0, 40.0));
+    assert_eq!(child_rect.center, Vector2::ZERO);
+
+    let scroll = runtime
+        .nodes
+        .get(scroller_id)
+        .and_then(|node| match &node.data {
+            SceneNodeData::UiScrollContainer(scroller) => Some(scroller.scroll),
+            _ => None,
+        })
+        .expect("scroller node");
+    assert_eq!(scroll, Vector2::ZERO);
 
     let mut commands = Vec::new();
     runtime.drain_render_commands(&mut commands);
@@ -1976,6 +1986,162 @@ fn scroll_container_offsets_children_and_clips_to_view() {
     for (actual, expected) in clip.iter().zip([300.0, 250.0, 500.0, 350.0]) {
         assert!((actual - expected).abs() < 1.0e-5);
     }
+}
+
+#[test]
+fn wheel_scroll_updates_hovered_scroll_container() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut scroller = UiScrollContainer::new();
+    scroller.layout.size = UiVector2::pixels(200.0, 100.0);
+    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+
+    let child = insert_panel(&mut runtime, [200.0, 300.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    attach_child(&mut runtime, scroller_id, child);
+
+    runtime.extract_render_ui_commands();
+    runtime.clear_dirty_flags();
+
+    runtime.begin_input_frame();
+    runtime.set_mouse_position(400.0, 300.0);
+    runtime.add_mouse_wheel(0.0, -1.0);
+    runtime.extract_render_ui_commands();
+
+    let scroll = runtime
+        .nodes
+        .get(scroller_id)
+        .and_then(|node| match &node.data {
+            SceneNodeData::UiScrollContainer(scroller) => Some(scroller.scroll.y),
+            _ => None,
+        })
+        .expect("scroller node");
+    assert!((scroll - 12.0).abs() < 1.0e-5);
+}
+
+#[test]
+fn keyboard_scroll_targets_focused_scroll_container_ancestor() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut scroller = UiScrollContainer::new();
+    scroller.layout.size = UiVector2::pixels(200.0, 100.0);
+    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+
+    let mut button = perro_ui::UiButton::new();
+    button.layout.size = UiVector2::pixels(120.0, 40.0);
+    let button_id = insert_ui_node(&mut runtime, SceneNodeData::UiButton(button));
+    attach_child(&mut runtime, scroller_id, button_id);
+
+    let child = insert_panel(&mut runtime, [200.0, 300.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    attach_child(&mut runtime, scroller_id, child);
+
+    runtime.extract_render_ui_commands();
+    runtime.clear_dirty_flags();
+
+    click_mouse_and_extract(&mut runtime, 400.0, 300.0);
+    runtime.clear_dirty_flags();
+    tap_key_and_extract(&mut runtime, KeyCode::End);
+
+    let max_scroll = runtime
+        .nodes
+        .get(scroller_id)
+        .and_then(|node| match &node.data {
+            SceneNodeData::UiScrollContainer(scroller) => Some(scroller.scroll.y),
+            _ => None,
+        })
+        .expect("scroller node");
+    assert!((max_scroll - 100.0).abs() < 1.0e-5);
+
+    runtime.clear_dirty_flags();
+    tap_key_and_extract(&mut runtime, KeyCode::Home);
+    let reset_scroll = runtime
+        .nodes
+        .get(scroller_id)
+        .and_then(|node| match &node.data {
+            SceneNodeData::UiScrollContainer(scroller) => Some(scroller.scroll.y),
+            _ => None,
+        })
+        .expect("scroller node");
+    assert_eq!(reset_scroll, 0.0);
+}
+
+#[test]
+fn keyboard_scroll_falls_back_to_sole_root_scroll_container() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut scroller = UiScrollContainer::new();
+    scroller.layout.size = UiVector2::pixels(200.0, 100.0);
+    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+
+    let child = insert_panel(&mut runtime, [200.0, 300.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    attach_child(&mut runtime, scroller_id, child);
+
+    runtime.extract_render_ui_commands();
+    runtime.clear_dirty_flags();
+
+    tap_key_and_extract(&mut runtime, KeyCode::PageDown);
+
+    let scroll = runtime
+        .nodes
+        .get(scroller_id)
+        .and_then(|node| match &node.data {
+            SceneNodeData::UiScrollContainer(scroller) => Some(scroller.scroll.y),
+            _ => None,
+        })
+        .expect("scroller node");
+    assert!((scroll - 90.0).abs() < 1.0e-5);
+}
+
+#[test]
+fn multiline_text_edit_wheel_takes_precedence_over_parent_scroll_container() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut scroller = UiScrollContainer::new();
+    scroller.layout.size = UiVector2::pixels(240.0, 120.0);
+    let scroller_id = insert_ui_node(&mut runtime, SceneNodeData::UiScrollContainer(scroller));
+
+    let mut text_block = perro_ui::UiTextBlock::new();
+    text_block.inner.base.layout.size = UiVector2::pixels(220.0, 100.0);
+    text_block.inner.text = Cow::Borrowed("line1\nline2\nline3\nline4\nline5\nline6");
+    let text_id = insert_ui_node(&mut runtime, SceneNodeData::UiTextBlock(text_block));
+    attach_child(&mut runtime, scroller_id, text_id);
+
+    let filler = insert_panel(&mut runtime, [220.0, 260.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    attach_child(&mut runtime, scroller_id, filler);
+
+    runtime.extract_render_ui_commands();
+    runtime.clear_dirty_flags();
+
+    click_mouse_and_extract(&mut runtime, 400.0, 300.0);
+    runtime.clear_dirty_flags();
+
+    runtime.begin_input_frame();
+    runtime.set_mouse_position(400.0, 300.0);
+    runtime.add_mouse_wheel(0.0, -1.0);
+    runtime.extract_render_ui_commands();
+
+    let parent_scroll = runtime
+        .nodes
+        .get(scroller_id)
+        .and_then(|node| match &node.data {
+            SceneNodeData::UiScrollContainer(scroller) => Some(scroller.scroll.y),
+            _ => None,
+        })
+        .expect("scroller node");
+    assert_eq!(parent_scroll, 0.0);
+
+    let text_scroll = runtime
+        .nodes
+        .get(text_id)
+        .and_then(|node| match &node.data {
+            SceneNodeData::UiTextBlock(text_block) => Some(text_block.inner.v_scroll),
+            _ => None,
+        })
+        .expect("text block node");
+    assert!(text_scroll > 0.0);
 }
 
 #[test]

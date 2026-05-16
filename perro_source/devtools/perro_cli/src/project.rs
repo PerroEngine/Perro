@@ -20,7 +20,6 @@ use std::io::{self, IsTerminal, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
@@ -545,26 +544,16 @@ fn dev_web_command(args: &[String], cwd: &Path) -> Result<(), String> {
     if port != requested_port.unwrap_or(8000) {
         log_note(&format!("Port busy -> use {port}"));
     }
-    let (tx, rx) = mpsc::channel();
-    let listener_clone = listener
-        .try_clone()
-        .map_err(|err| format!("failed to clone listener: {err}"))?;
-    let output = output_dir.clone();
-    let handle = thread::spawn(move || run_static_server_with_shutdown(&output, listener_clone, rx));
     log_note(&format!("Serving {url}"));
     open_browser(&url)?;
-    let _ = tx.send(());
-    let server_res = handle
-        .join()
-        .map_err(|_| "web dev server thread panicked".to_string())?;
-    server_res
+    log_note("Stop w/ Ctrl+C");
+    run_static_server(&output_dir, listener)
 }
 
 fn open_browser(url: &str) -> Result<(), String> {
     let mut cmd = if cfg!(target_os = "windows") {
         let mut cmd = Command::new("cmd");
-        // use start /WAIT to block until browser process exits when possible
-        cmd.arg("/c").arg("start").arg("/WAIT").arg("").arg(url);
+        cmd.arg("/c").arg("start").arg("").arg(url);
         cmd
     } else if cfg!(target_os = "macos") {
         let mut cmd = Command::new("open");
@@ -575,7 +564,9 @@ fn open_browser(url: &str) -> Result<(), String> {
         cmd.arg(url);
         cmd
     };
-    let status = cmd.status().map_err(|err| format!("failed to open browser for {url}: {err}"))?;
+    let status = cmd
+        .status()
+        .map_err(|err| format!("failed to open browser for {url}: {err}"))?;
     if !status.success() {
         return Err(format!(
             "browser open failed for {url} with exit code {:?}",
@@ -605,29 +596,10 @@ fn bind_web_dev_listener(host: &str, start_port: u16) -> Result<(TcpListener, u1
 }
 
 fn run_static_server(root: &Path, listener: TcpListener) -> Result<(), String> {
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                let _ = handle_http_connection(stream, root);
-            }
-            Err(err) => return Err(format!("web dev server accept failed: {err}")),
-        }
-    }
-    Ok(())
-}
-
-fn run_static_server_with_shutdown(
-    root: &Path,
-    listener: TcpListener,
-    shutdown: mpsc::Receiver<()>,
-) -> Result<(), String> {
     listener
         .set_nonblocking(true)
         .map_err(|err| format!("failed to set nonblocking listener: {err}"))?;
     loop {
-        if shutdown.try_recv().is_ok() {
-            break;
-        }
         match listener.accept() {
             Ok((stream, _)) => {
                 let _ = handle_http_connection(stream, root);
@@ -639,7 +611,6 @@ fn run_static_server_with_shutdown(
             Err(err) => return Err(format!("web dev server accept failed: {err}")),
         }
     }
-    Ok(())
 }
 
 fn handle_http_connection(mut stream: TcpStream, root: &Path) -> Result<(), String> {

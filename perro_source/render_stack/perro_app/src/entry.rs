@@ -48,6 +48,25 @@ pub fn create_runtime_from_project(
     Runtime::from_project(project, provider_mode)
 }
 
+fn static_embedded_routes(
+    input: &StaticEmbeddedRoutesConfig<'_>,
+) -> perro_runtime::ProjectRoutesConfig {
+    perro_runtime::ProjectRoutesConfig {
+        routes: input
+            .routes
+            .iter()
+            .map(|route| perro_runtime::ProjectRoute {
+                href: route.href.to_string(),
+                name: route.name.to_string(),
+                scene: route.scene_hash.to_string(),
+                title: None,
+                description: None,
+                keywords: Vec::new(),
+            })
+            .collect(),
+    }
+}
+
 pub fn create_dev_runtime(project: RuntimeProject) -> Runtime {
     create_runtime_from_project(project, ProviderMode::Dynamic)
 }
@@ -82,7 +101,7 @@ fn graphics_from_project_config(
     let occlusion_culling = effective_occlusion_culling(config.occlusion_culling);
     PerroGraphics::new()
         .with_vsync(config.vsync)
-        .with_msaa(config.msaa)
+        .with_msaa(effective_msaa(config.msaa))
         .with_meshlets_enabled(config.meshlets)
         .with_dev_meshlets(!release_mode && config.dev_meshlets)
         .with_meshlet_debug_view(config.meshlet_debug_view)
@@ -103,6 +122,16 @@ fn effective_occlusion_culling(_: OcclusionCulling) -> OcclusionCulling {
     OcclusionCulling::Off
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn effective_msaa(enabled: bool) -> bool {
+    enabled
+}
+
+#[cfg(target_arch = "wasm32")]
+fn effective_msaa(_: bool) -> bool {
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -118,6 +147,8 @@ mod tests {
             effective_occlusion_culling(OcclusionCulling::Cpu),
             OcclusionCulling::Cpu
         );
+        assert!(effective_msaa(true));
+        assert!(!effective_msaa(false));
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -131,6 +162,8 @@ mod tests {
             effective_occlusion_culling(OcclusionCulling::Cpu),
             OcclusionCulling::Off
         );
+        assert!(!effective_msaa(true));
+        assert!(!effective_msaa(false));
     }
 }
 
@@ -138,6 +171,7 @@ pub fn run_dev_project_from_path(
     project_root: &Path,
     default_name: &str,
 ) -> Result<AppExitResult, RunProjectError> {
+    let _ = perro_web::init_router();
     let project = RuntimeProject::from_project_dir_with_default_name(project_root, default_name)?;
     let window_title = project.config.name.clone();
     let graphics = graphics_from_project_config(&project.config, false);
@@ -176,6 +210,7 @@ pub fn run_static_project_from_path(
     project_root: &Path,
     default_name: &str,
 ) -> Result<AppExitResult, RunProjectError> {
+    let _ = perro_web::init_router();
     let project = RuntimeProject::from_project_dir_with_default_name(project_root, default_name)?;
     let window_title = project.config.name.clone();
     let graphics = graphics_from_project_config(&project.config, true);
@@ -212,6 +247,7 @@ pub fn run_threaded_static_project_from_path(
 
 pub struct StaticEmbeddedProject<'a> {
     pub project: StaticEmbeddedProjectInfo<'a>,
+    pub routes: StaticEmbeddedRoutesConfig<'a>,
     pub graphics: StaticEmbeddedGraphicsConfig,
     pub runtime: StaticEmbeddedRuntimeConfig,
     pub metadata: StaticEmbeddedMetadataConfig,
@@ -228,6 +264,17 @@ pub struct StaticEmbeddedProjectInfo<'a> {
     pub startup_splash_hash: u64,
     pub virtual_width: u32,
     pub virtual_height: u32,
+}
+
+#[derive(Clone, Copy)]
+pub struct StaticEmbeddedRoute {
+    pub href: &'static str,
+    pub name: &'static str,
+    pub scene_hash: u64,
+}
+
+pub struct StaticEmbeddedRoutesConfig<'a> {
+    pub routes: &'a [StaticEmbeddedRoute],
 }
 
 pub struct StaticEmbeddedGraphicsConfig {
@@ -287,6 +334,7 @@ pub struct StaticEmbeddedAssetsConfig {
 pub fn run_static_embedded_project(
     input: StaticEmbeddedProject<'_>,
 ) -> Result<AppExitResult, RunProjectError> {
+    let _ = perro_web::init_router();
     let mut static_config = perro_runtime::StaticProjectConfig::new(
         input.project.project_name,
         input.project.main_scene_hash,
@@ -316,7 +364,8 @@ pub fn run_static_embedded_project(
     static_config = static_config.with_localization(input.localization.default_locale);
     static_config = static_config.with_steam(input.steam.enabled, input.steam.app_id);
     let mut project =
-        RuntimeProject::from_static(static_config, input.project.project_root.to_path_buf());
+        RuntimeProject::from_static(static_config, input.project.project_root.to_path_buf())
+            .with_routes(static_embedded_routes(&input.routes));
 
     project = project
         .with_static_scene_lookup(input.assets.scene_lookup)
@@ -370,6 +419,7 @@ pub fn run_static_embedded_project_web(input: StaticEmbeddedProject<'_>) -> Resu
     }
 
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = perro_web::init_router();
         let mut static_config = perro_runtime::StaticProjectConfig::new(
             input.project.project_name,
             input.project.main_scene_hash,
@@ -399,7 +449,8 @@ pub fn run_static_embedded_project_web(input: StaticEmbeddedProject<'_>) -> Resu
         static_config = static_config.with_localization(input.localization.default_locale);
         static_config = static_config.with_steam(input.steam.enabled, input.steam.app_id);
         let mut project =
-            RuntimeProject::from_static(static_config, input.project.project_root.to_path_buf());
+            RuntimeProject::from_static(static_config, input.project.project_root.to_path_buf())
+                .with_routes(static_embedded_routes(&input.routes));
 
         project = project
             .with_static_scene_lookup(input.assets.scene_lookup)

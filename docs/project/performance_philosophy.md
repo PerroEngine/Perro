@@ -1,12 +1,27 @@
 # Performance + Flexibility Philosophy
 
-Perro keeps the normal development loop flexible.
-You work with plain files under `res/`.
-You edit scenes, textures, meshes, materials, scripts, and other assets directly.
+Perro tries to keep one trade honest:
+performance + simplicity without sacrificing either.
+
+That shows up as three practical goals:
+
+- simple to learn
+- flexible to use
+- fast in release
+
+That trade depends on Perro owning compiler-pipeline work.
+You keep normal project files under `res/`.
+You edit scenes, textures, meshes, materials, scripts, UI resources, and other assets directly.
 There is no proprietary import database to manage and no manual reimport step as the core workflow.
 
 The engine owns the parse, bake, and load details.
-That means you can keep authoring simple, then let export move supported assets into the faster static path.
+That means you keep authoring simple, then let export move supported assets into the faster static path.
+Goal ! trade flexibility away for performance.
+Goal = move that cost into Perro compiler/build pipeline so runtime stays lean.
+
+This applies across engine, including 2D + UI.
+Perro aims to support both 2D + 3D performantly, w/ high fps as main target.
+UI fits same model too: strong layout tools such as relative sizing + clamping in authoring, heavier prep in build, faster runtime loading in release.
 
 ## Dev Path
 

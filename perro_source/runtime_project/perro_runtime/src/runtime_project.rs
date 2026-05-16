@@ -9,8 +9,9 @@ use std::{collections::BTreeMap, path::PathBuf};
 pub use perro_project::{
     AudioConfig, AudioPropagationConfig, LocalizationConfig, OcclusionCulling, ParticleSimDefault,
     ProjectConfig as RuntimeProjectConfig, ProjectError as ProjectLoadError, ProjectMetadata,
-    StaticProjectConfig, default_project_toml, ensure_project_layout, ensure_project_toml,
-    load_project_toml, parse_project_toml,
+    ProjectRoute, ProjectRoutesConfig, StaticProjectConfig, default_project_toml,
+    default_routes_config, ensure_project_layout, ensure_project_toml, load_project_toml,
+    load_routes_toml, normalize_route_href, parse_project_toml, parse_routes_toml,
 };
 
 /// Script/provider loading mode used when constructing the runtime.
@@ -41,6 +42,7 @@ pub struct RuntimeProject {
     pub name: String,
     pub root: PathBuf,
     pub config: RuntimeProjectConfig,
+    pub routes: ProjectRoutesConfig,
     pub runtime_params: BTreeMap<String, String>,
     pub static_scene_lookup: Option<StaticSceneLookup>,
     pub static_localization_lookup: Option<StaticLocalizationLookup>,
@@ -63,10 +65,12 @@ pub struct RuntimeProject {
 impl RuntimeProject {
     pub fn new(name: impl Into<String>, root: impl Into<PathBuf>) -> Self {
         let name = name.into();
+        let config = perro_project::ProjectConfig::default_for_name(name.clone());
         Self {
             name: name.clone(),
             root: root.into(),
-            config: perro_project::ProjectConfig::default_for_name(name),
+            routes: perro_project::default_routes_config(&config),
+            config,
             runtime_params: BTreeMap::new(),
             static_scene_lookup: None,
             static_localization_lookup: None,
@@ -89,10 +93,12 @@ impl RuntimeProject {
 
     pub fn from_static(config: StaticProjectConfig, root: impl Into<PathBuf>) -> Self {
         let config = config.to_runtime();
+        let routes = perro_project::default_routes_config(&config);
         Self {
             name: config.name.clone(),
             root: root.into(),
             config,
+            routes,
             runtime_params: BTreeMap::new(),
             static_scene_lookup: None,
             static_localization_lookup: None,
@@ -122,12 +128,14 @@ impl RuntimeProject {
         default_name: &str,
     ) -> Result<Self, ProjectLoadError> {
         let root = project_root.into();
-        let _ = default_name;
         let config = perro_project::load_project_toml(&root)?;
+        let routes = perro_project::load_routes_toml(&root, &config)?;
+        let _ = default_name;
         Ok(Self {
             name: config.name.clone(),
             root,
             config,
+            routes,
             runtime_params: BTreeMap::new(),
             static_scene_lookup: None,
             static_localization_lookup: None,
@@ -150,6 +158,11 @@ impl RuntimeProject {
 
     pub fn with_param(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.runtime_params.insert(key.into(), value.into());
+        self
+    }
+
+    pub fn with_routes(mut self, routes: ProjectRoutesConfig) -> Self {
+        self.routes = routes;
         self
     }
 

@@ -331,8 +331,11 @@ pub(super) fn choose_present_mode(
     modes.first().copied().unwrap_or(wgpu::PresentMode::Fifo)
 }
 
-pub(super) fn choose_max_frame_latency(vsync_enabled: bool) -> u32 {
-    let default = if vsync_enabled { 3 } else { 1 };
+pub(super) fn choose_max_frame_latency(_vsync_enabled: bool) -> u32 {
+    #[cfg(target_arch = "wasm32")]
+    let default = 1;
+    #[cfg(not(target_arch = "wasm32"))]
+    let default = if _vsync_enabled { 3 } else { 1 };
     std::env::var("PERRO_FRAME_LATENCY")
         .ok()
         .and_then(|raw| raw.parse::<u32>().ok())

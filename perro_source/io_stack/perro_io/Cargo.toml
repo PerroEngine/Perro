@@ -8,6 +8,9 @@ perro_assets.workspace = true
 perro_ids.workspace = true
 flate2 = { version = "1.0", default-features = false, features = ["rust_backend"] }
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+perro_web.workspace = true
+
 [dev-dependencies]
 criterion = "0.5"
 

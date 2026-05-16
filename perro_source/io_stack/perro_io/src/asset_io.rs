@@ -7,6 +7,7 @@ use std::{
     sync::{Arc, LazyLock, RwLock},
 };
 
+#[cfg(not(target_arch = "wasm32"))]
 use crate::data_local_dir;
 use perro_assets::archive::{PerroAssetsArchive, PerroAssetsFile};
 
@@ -200,6 +201,7 @@ impl Drop for DlcSelfContextGuard {
 #[derive(Debug, Clone)]
 pub enum ResolvedPath {
     Disk(PathBuf),
+    WebUserStorage(String),
     PerroAssets(String),
     StaticBinary(String),
     DlcStaticBinary { dlc: String, path: String },
@@ -210,26 +212,43 @@ fn normalize_user_app_name(name: &str) -> String {
     name.replace(' ', "_")
 }
 
+fn user_app_name(project_root_opt: &Option<ProjectRoot>) -> String {
+    let app_name = project_root_opt
+        .as_ref()
+        .map(|root| match root {
+            ProjectRoot::Disk { name, .. } => name.as_str(),
+            ProjectRoot::PerroAssets { name, .. } => name.as_str(),
+        })
+        .expect("Project root not set");
+    normalize_user_app_name(app_name)
+}
+
+#[cfg(any(test, target_arch = "wasm32"))]
+fn user_storage_key(app_name: &str, relative_path: &str) -> String {
+    format!("perro:user:{app_name}:data:{relative_path}")
+}
+
 /// Resolve virtual path (res://foo/bar.png or user://save.dat) to actual location
 pub fn resolve_path(path: &str) -> ResolvedPath {
     let project_root_opt = PROJECT_ROOT.read().unwrap().clone();
 
     // Handle user:// paths (always disk)
     if let Some(stripped) = path.strip_prefix("user://") {
-        let app_name = project_root_opt
-            .as_ref()
-            .map(|root| match root {
-                ProjectRoot::Disk { name, .. } => name.as_str(),
-                ProjectRoot::PerroAssets { name, .. } => name.as_str(),
-            })
-            .expect("Project root not set");
-        let app_name = normalize_user_app_name(app_name);
+        let app_name = user_app_name(&project_root_opt);
 
-        let base = data_local_dir()
-            .unwrap_or_else(std::env::temp_dir)
-            .join(app_name)
-            .join("data");
-        return ResolvedPath::Disk(base.join(stripped));
+        #[cfg(target_arch = "wasm32")]
+        {
+            return ResolvedPath::WebUserStorage(user_storage_key(&app_name, stripped));
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let base = data_local_dir()
+                .unwrap_or_else(std::env::temp_dir)
+                .join(app_name)
+                .join("data");
+            return ResolvedPath::Disk(base.join(stripped));
+        }
     }
 
     if let Some(rest) = path.strip_prefix("dlc://") {
@@ -302,6 +321,7 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
 pub fn load_asset(path: &str) -> io::Result<Vec<u8>> {
     match resolve_path(path) {
         ResolvedPath::Disk(pb) => fs::read(pb),
+        ResolvedPath::WebUserStorage(key) => load_web_user_asset(&key),
         ResolvedPath::PerroAssets(virtual_path) => {
             if let Some(archive) = PERRO_ASSETS_ARCHIVE.read().unwrap().as_ref() {
                 archive.read_file(&virtual_path)
@@ -330,6 +350,10 @@ pub fn stream_asset(path: &str) -> io::Result<Box<dyn ReadSeek>> {
         ResolvedPath::Disk(pb) => {
             let file = File::open(pb)?;
             Ok(Box::new(file))
+        }
+        ResolvedPath::WebUserStorage(key) => {
+            let bytes = load_web_user_asset(&key)?;
+            Ok(Box::new(std::io::Cursor::new(bytes)))
         }
         ResolvedPath::PerroAssets(virtual_path) => {
             if let Some(archive) = PERRO_ASSETS_ARCHIVE.read().unwrap().as_ref() {
@@ -367,6 +391,7 @@ pub fn save_asset(path: &str, data: &[u8]) -> io::Result<()> {
             let mut file = File::create(pb)?;
             file.write_all(data)
         }
+        ResolvedPath::WebUserStorage(key) => save_web_user_asset(&key, data),
         ResolvedPath::PerroAssets(_)
         | ResolvedPath::StaticBinary(_)
         | ResolvedPath::DlcStaticBinary { .. }
@@ -374,6 +399,37 @@ pub fn save_asset(path: &str, data: &[u8]) -> io::Result<()> {
             Err(io::Error::other("Cannot save to packed archive"))
         }
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn load_web_user_asset(key: &str) -> io::Result<Vec<u8>> {
+    perro_web::storage::load_local_bytes(key)?.ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("web user data !found: {key}"),
+        )
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn load_web_user_asset(key: &str) -> io::Result<Vec<u8>> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        format!("web user data unsupported: {key}"),
+    ))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn save_web_user_asset(key: &str, data: &[u8]) -> io::Result<()> {
+    perro_web::storage::save_local_bytes(key, data)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn save_web_user_asset(key: &str, _: &[u8]) -> io::Result<()> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        format!("web user data unsupported: {key}"),
+    ))
 }
 
 fn load_dlc_static_binary(dlc: &str, path: &str) -> io::Result<Vec<u8>> {
@@ -504,6 +560,14 @@ mod tests {
         let as_text = disk_path.to_string_lossy();
         assert!(as_text.contains("My_Cool_Game"));
         assert!(!as_text.contains("My Cool Game"));
+    }
+
+    #[test]
+    fn user_storage_key_uses_app_name_prefix() {
+        assert_eq!(
+            super::user_storage_key("My_Cool_Game", "save/slot1.dat"),
+            "perro:user:My_Cool_Game:data:save/slot1.dat"
+        );
     }
 
     fn static_lookup(path_hash: u64) -> &'static [u8] {

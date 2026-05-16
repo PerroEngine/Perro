@@ -122,6 +122,8 @@ pub struct Runtime {
     pub time: Timing,
     provider_mode: ProviderMode,
     project: Option<Arc<RuntimeProject>>,
+    pub(crate) active_route_href: Option<String>,
+    pub(crate) active_route_root: Option<NodeID>,
     pub(crate) scene_cache: RefCell<AHashMap<String, Arc<Scene>>>,
     pub(crate) preloaded_scenes: AHashMap<PreloadedSceneID, Arc<Scene>>,
     pub(crate) preloaded_scene_paths: AHashMap<u64, PreloadedSceneID>,
@@ -310,6 +312,8 @@ impl Runtime {
                 skip_prepare_3d_cull_inputs: 0,
             },
             provider_mode: ProviderMode::Dynamic,
+            active_route_href: None,
+            active_route_root: None,
             scene_cache: RefCell::new(AHashMap::new()),
             preloaded_scenes: AHashMap::new(),
             preloaded_scene_paths: AHashMap::new(),
@@ -483,6 +487,7 @@ impl Runtime {
     #[inline]
     pub fn update(&mut self, delta_time: f32) {
         self.time.delta = delta_time;
+        self.process_pending_web_route_change();
         #[cfg(feature = "steamworks")]
         let _ = perro_steamworks::runtime::run_callbacks();
         self.run_start_schedule();
@@ -497,6 +502,7 @@ impl Runtime {
     pub fn update_timed(&mut self, delta_time: f32) -> RuntimeUpdateTiming {
         let total_start = Instant::now();
         self.time.delta = delta_time;
+        self.process_pending_web_route_change();
         #[cfg(feature = "steamworks")]
         let _ = perro_steamworks::runtime::run_callbacks();
 

@@ -4,12 +4,25 @@
   <img src="icon.png" alt="Perro Logo" width="200"/>
 </div>
 
-**Perro** is an experimental, open-source game engine written in **Rust**. Built with a focus on **simplicity** and **performance**, while the 2D, UI, and tooling layers keep growing toward full game-making coverage.
+**Perro** is an experimental, open-source game engine written in **Rust**. With a focus on performance and simplicity without sacrificing either.
+
+## Philosophy
+
+Perro tries to remove busywork, not power.
+You author normal project files and normal Rust scripts.
+Then the Perro compiler and build pipeline manage script wiring, asset baking, and release shaping so runtime stays fast without making authoring hard to learn.
+
+That goal stays in the background of the workflow:
+
+- **Simple To Learn**: start with scenes, nodes, and Rust scripts without large registration steps or custom import-db workflows.
+- **Flexible To Use**: keep direct control over project files, resource layout, and gameplay code instead of hiding work behind a locked editor pipeline.
+- **Fast In Release**: let the compiler and static pipeline convert supported assets into pre-shaped data so shipped games spend less time on IO, parsing, and setup.
 
 ## Design Goals
 
-- **Rendering Stack**: build 3D scenes today, with practical 2D sprites/cameras/physics and UI nodes that are still growing toward larger 2D and UI-heavy games.
+- **Full Game-Making Scope**: 2D, 3D, and UI all matter. Perro aims to support both 2D and 3D performantly, with high frame rates and a workflow that stays simple.
 - **Simple Start**: get first scene and script running quickly, with minimal setup and no script-registration boilerplate.
+- **Compiler-Managed Workflow**: let Perro sync scripts, generate glue code, and prepare supported assets so project setup stays small.
 - **Split Model**: scripts are just Rust files (lifecycle + methods); they store #[State] structs which each instance gets a copy of.
 - **Safe Mutation**: access through `NodeID` closures and engine-managed storage avoids borrow-contention edge cases in normal gameplay code (no "try_get_mut" fails).
 - **Fast Access**: flat ID lookups keep common node/script operations efficient, with room to cache IDs for hot paths.
@@ -36,6 +49,8 @@ Local reference:
 
 - **Behavior Scripts + Per-Node State**: a script is function entry points (lifecycle hooks + methods), not a mutable script object. When a node binds that script, runtime uses that node’s `ctx.id` to run behavior and resolve that node’s own `#[State]` via `with_state!`/`with_state_mut!`.
 - **Object-Centric Scene Model**: parent/child relationships, concrete node types, and traditional game-object structure stay front and center.
+- **Compiler-Backed Asset Flow**: dev stays flexible with plain files, while build/export bakes supported assets into fast static lookup paths and packs the rest.
+- **Powerful UI System**: UI is built as a real engine system with relative sizing, clamping, and layouts designed to scale from simple menus to larger game interfaces.
 - **Flat ID-Based Runtime Access**: node and script data are addressed by `NodeID`, enabling constant-time lookups for common operations and efficient cross-system interaction.
 - **Predictable Failure Modes**: most runtime misses come from real-world state changes (deleted node, missing tag/name match, unbound script), not from borrow contention between unrelated systems. (NoT "try_get_mut" runtime errors)
 - **Powerful Query Layer**: if you prefer query-style access, filter by type, base type, tag, name, and subtree to gather `NodeID`s, then operate directly through script/node APIs. See [Query System](docs/scripting/query_system.md).

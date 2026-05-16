@@ -390,6 +390,9 @@ fn apply_ui_button_fields(
         "click_signals" | "clicked_signals" => {
             node.click_signals = as_signal_ids(value);
         }
+        "web" => {
+            node.web = parse_ui_button_web_action(value);
+        }
         "cursor_icon" | "hover_cursor_icon" => {
             if let Some(v) = as_cursor_icon(value) {
                 node.cursor_icon = v;
@@ -405,6 +408,20 @@ fn apply_ui_button_fields(
     apply_ui_style_fields(&mut node.pressed_style, fields, "pressed_");
     apply_ui_button_state_fields(node, fields, "hover", static_ui_style_lookup);
     apply_ui_button_state_fields(node, fields, "pressed", static_ui_style_lookup);
+}
+
+fn parse_ui_button_web_action(value: &SceneValue) -> Option<perro_ui::UiButtonWebAction> {
+    let SceneValue::Object(fields) = value else {
+        return None;
+    };
+    let href = fields.iter().find_map(|(name, value)| {
+        (name.as_ref().trim() == "href")
+            .then(|| as_str(value).map(perro_project::normalize_route_href))
+            .flatten()
+    })?;
+    Some(perro_ui::UiButtonWebAction {
+        href: std::borrow::Cow::Owned(href),
+    })
 }
 
 fn apply_ui_input_mask_fields(mask: &mut perro_ui::UiInputMask, fields: &[SceneObjectField]) {

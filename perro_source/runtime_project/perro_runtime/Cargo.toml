@@ -33,6 +33,7 @@ perro_runtime_render.workspace = true
 perro_particle_math.workspace = true
 perro_pawdio.workspace = true
 perro_csv.workspace = true
+perro_web.workspace = true
 perro_steamworks = { workspace = true, optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

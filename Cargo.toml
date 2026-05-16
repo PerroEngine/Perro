@@ -24,6 +24,7 @@ members = [
     "perro_source/api_modules/perro_api",
     "perro_source/api_modules/perro_resource_api",
     "perro_source/api_modules/perro_runtime_api",
+    "perro_source/api_modules/perro_web",
     "perro_source/api_modules/perro_steamworks",
 
     "perro_source/render_stack/perro_app",
@@ -56,6 +57,7 @@ perro_modules = { version = "0.1.0", path = "perro_source/api_modules/perro_modu
 perro_networking = { version = "0.1.0", path = "perro_source/api_modules/perro_networking" }
 perro_resource_api = { version = "0.1.0", path = "perro_source/api_modules/perro_resource_api" }
 perro_runtime_api = { version = "0.1.0", path = "perro_source/api_modules/perro_runtime_api" }
+perro_web = { version = "0.1.0", path = "perro_source/api_modules/perro_web" }
 perro_steamworks = { version = "0.1.0", path = "perro_source/api_modules/perro_steamworks", default-features = false }
 perro_pawdio = { version = "0.1.0", path = "perro_source/audio_stack/perro_pawdio" }
 perro_compiler = { version = "0.1.0", path = "perro_source/build_pipeline/perro_compiler" }

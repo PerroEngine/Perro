@@ -3711,6 +3711,7 @@ dependencies = [
  "perro_runtime_api",
  "perro_scripting",
  "perro_ui",
+ "perro_web",
  "serde",
  "serde_json",
  "tokio",
@@ -3857,6 +3858,7 @@ dependencies = [
  "flate2",
  "perro_assets",
  "perro_ids",
+ "perro_web",
 ]
 
 [[package]]
@@ -4009,6 +4011,7 @@ dependencies = [
  "perro_structs",
  "perro_ui",
  "perro_variant",
+ "perro_web",
  "rapier2d",
  "rapier3d",
  "rayon",
@@ -4129,6 +4132,16 @@ dependencies = [
  "perro_ids",
  "perro_structs",
  "serde_json",
+]
+
+[[package]]
+name = "perro_web"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "js-sys",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]

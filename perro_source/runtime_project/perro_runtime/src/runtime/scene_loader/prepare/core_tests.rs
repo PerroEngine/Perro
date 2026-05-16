@@ -617,6 +617,38 @@ mod tests {
     }
 
     #[test]
+    fn scene_loader_button_web_href_parses() {
+        let scene = Parser::new(
+            r#"
+            $root = @button
+            [button]
+            [UiButton]
+                web = { href = "docs/" }
+            [/UiButton]
+            [/button]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+
+        let button = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "button")
+            .expect("button node");
+        match &button.node.data {
+            SceneNodeData::UiButton(button) => {
+                let web = button.web.as_ref().expect("web config");
+                assert_eq!(web.href.as_ref(), "/docs");
+            }
+            other => panic!("expected UiButton node, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn scene_loader_ui_style_resource_applies_base_state_and_focus() {
         static BASE: perro_ui::UiStyle = perro_ui::UiStyle {
             fill: Color::new(0.10, 0.20, 0.30, 1.0),

@@ -1,6 +1,7 @@
 # Scripting Overview
 
 Perro scripts are authored in Rust and compiled into script modules.
+Perro manages most glue code for you, so scripting stays close to normal Rust instead of turning into registration boilerplate.
 
 Core pieces:
 

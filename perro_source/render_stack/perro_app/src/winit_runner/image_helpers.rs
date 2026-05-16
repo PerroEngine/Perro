@@ -6,6 +6,7 @@ use perro_asset_formats::ptex::{
     FLAG_FORMAT_RGB8 as PTEX_FLAG_FORMAT_RGB8, FLAG_FORMAT_RGBA8 as PTEX_FLAG_FORMAT_RGBA8,
     FLAG_PAYLOAD_RAW as PTEX_FLAG_PAYLOAD_RAW,
 };
+#[cfg(not(target_arch = "wasm32"))]
 use perro_asset_formats::ptex::{MAGIC as PTEX_MAGIC, VERSION as PTEX_VERSION};
 #[cfg(not(target_arch = "wasm32"))]
 use perro_io::decompress_zlib;
@@ -33,6 +34,7 @@ fn load_project_icon_bytes(project: &perro_runtime::RuntimeProject) -> Option<Ve
     )
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn load_project_image_bytes(
     project: &perro_runtime::RuntimeProject,
     source: &str,
@@ -62,6 +64,7 @@ fn load_project_image_bytes(
     None
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn load_image_size(
     project: &perro_runtime::RuntimeProject,
     source: &str,
@@ -71,6 +74,7 @@ pub(crate) fn load_image_size(
     decode_image_size(&bytes)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn decode_image_size(bytes: &[u8]) -> Option<(u32, u32)> {
     if let Some((width, height)) = decode_ptex_dimensions(bytes) {
         return Some((width.max(1), height.max(1)));
@@ -90,6 +94,7 @@ fn decode_image_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
     Some((rgba.into_raw(), width, height))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn decode_ptex_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
     if bytes.len() < 16 || &bytes[0..4] != PTEX_MAGIC {
         return None;

@@ -52,6 +52,13 @@ impl Runtime {
             || self.render_ui.ui_nav_repeat_dir.is_some()
     }
 
+    pub(super) fn ui_scroll_input_changed(&self) -> bool {
+        self.input.mouse_wheel() != Vector2::ZERO
+            || ui_scroll_keys()
+                .iter()
+                .any(|&key| self.input.is_key_pressed(key) || self.input.is_key_down(key))
+    }
+
     pub(super) fn ui_text_input_changed(&self) -> bool {
         !self.input.text_inputs().is_empty()
             || self.input.mouse_wheel() != Vector2::ZERO
@@ -191,6 +198,77 @@ impl Runtime {
         }
         if text_changed {
             self.emit_text_edit_event(focused, "text_changed", changed_text.as_deref());
+        }
+    }
+
+    pub(super) fn process_ui_scroll_input(
+        &mut self,
+        computed: &mut AHashMap<NodeID, ComputedUiRect>,
+        computed_scales: &mut AHashMap<NodeID, Vector2>,
+        root_rect: ComputedUiRect,
+        command_ids: &mut Vec<NodeID>,
+        command_seen: &mut ahash::AHashSet<NodeID>,
+    ) {
+        let mut changed = Vec::new();
+        let mut changed_seen = ahash::AHashSet::default();
+        let wheel = self.input.mouse_wheel();
+
+        if wheel.y != 0.0 && !self.focused_multiline_text_edit_consumes_wheel() {
+            let pointer = self.ui_pointer_screen_point();
+            if let Some(scroller) = self.hovered_scroll_container(computed, pointer) {
+                let step = computed
+                    .get(&scroller)
+                    .map(|rect| rect.size.y * 0.12)
+                    .unwrap_or(0.0);
+                if step > 0.0
+                    && self.adjust_scroll_container(scroller, computed, -(wheel.y * step))
+                    && changed_seen.insert(scroller)
+                {
+                    changed.push(scroller);
+                }
+            }
+        }
+
+        if self.render_ui.focused_text_edit.is_none()
+            && let Some(scroller) = self.keyboard_scroll_container_target(computed)
+            && let Some(delta) = self.scroll_container_keyboard_delta(scroller, computed)
+            && self.adjust_scroll_container(scroller, computed, delta)
+            && changed_seen.insert(scroller)
+        {
+            changed.push(scroller);
+        }
+
+        for scroller in self.visible_scroll_containers(computed) {
+            if self.clamp_scroll_container(scroller, computed) && changed_seen.insert(scroller) {
+                changed.push(scroller);
+            }
+        }
+
+        if changed.is_empty() {
+            return;
+        }
+
+        let mut recompute = Vec::new();
+        let mut recompute_seen = ahash::AHashSet::default();
+        for node in changed {
+            self.collect_ui_subtree_nodes(node, &mut recompute, &mut recompute_seen);
+        }
+        for &node in &recompute {
+            computed.remove(&node);
+            computed_scales.remove(&node);
+        }
+        let mut auto_layout_computed = ahash::AHashSet::default();
+        for &node in &recompute {
+            self.compute_ui_rect(
+                node,
+                root_rect,
+                computed,
+                computed_scales,
+                &mut auto_layout_computed,
+            );
+            if command_seen.insert(node) {
+                command_ids.push(node);
+            }
         }
     }
 
@@ -362,6 +440,9 @@ impl Runtime {
 
     pub(super) fn emit_button_events(&mut self, events: &[(NodeID, &'static str)]) {
         for &(node, event) in events {
+            if event == "click" {
+                self.process_button_web_action(node);
+            }
             self.collect_button_event_signals(node, event);
             if self.render_ui.event_signal_scratch.is_empty() {
                 continue;
@@ -374,6 +455,19 @@ impl Runtime {
             signals.clear();
             self.render_ui.event_signal_scratch = signals;
         }
+    }
+
+    fn process_button_web_action(&mut self, node: NodeID) {
+        let Some(scene_node) = self.nodes.get(node) else {
+            return;
+        };
+        let SceneNodeData::UiButton(button) = &scene_node.data else {
+            return;
+        };
+        let Some(web) = button.web.as_ref() else {
+            return;
+        };
+        let _ = perro_web::push_route(web.href.as_ref());
     }
 
     pub(super) fn emit_text_edit_event(&mut self, node: NodeID, event: &str, text: Option<&str>) {
@@ -552,6 +646,285 @@ impl Runtime {
             }
         }
         best.map(|(node, _)| node)
+    }
+
+    fn hovered_scroll_container(
+        &self,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+        point: Vector2,
+    ) -> Option<NodeID> {
+        let mut best: Option<(NodeID, i32)> = None;
+        for node in self.visible_scroll_containers(computed) {
+            let Some(rect) = computed.get(&node).copied().or_else(|| {
+                self.render_ui
+                    .retained_rects
+                    .get(&node)
+                    .map(computed_rect_from_state)
+            }) else {
+                continue;
+            };
+            if !rect.contains(point) {
+                continue;
+            }
+            let z = self.ui_effective_z(node);
+            match best {
+                Some((best_node, best_z))
+                    if best_z > z || (best_z == z && best_node.as_u64() > node.as_u64()) => {}
+                _ => best = Some((node, z)),
+            }
+        }
+        best.map(|(node, _)| node)
+    }
+
+    fn visible_scroll_containers(
+        &self,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+    ) -> Vec<NodeID> {
+        let mut out = Vec::new();
+        for (node, scene_node) in self.nodes.iter() {
+            let SceneNodeData::UiScrollContainer(scroller) = &scene_node.data else {
+                continue;
+            };
+            if !scroller.visible
+                || !scroller.input_enabled
+                || !self.is_effectively_visible_for_ui(node)
+                || !matches!(
+                    scroller.mouse_filter,
+                    perro_ui::UiMouseFilter::Stop | perro_ui::UiMouseFilter::Pass
+                )
+                || (!computed.contains_key(&node)
+                    && !self.render_ui.retained_rects.contains_key(&node))
+            {
+                continue;
+            }
+            out.push(node);
+        }
+        out
+    }
+
+    fn focused_multiline_text_edit_consumes_wheel(&self) -> bool {
+        self.render_ui
+            .focused_text_edit
+            .and_then(|node| self.nodes.get(node))
+            .and_then(|scene_node| text_edit_ref(&scene_node.data))
+            .is_some_and(|edit| edit.multiline)
+    }
+
+    fn keyboard_scroll_container_target(
+        &self,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+    ) -> Option<NodeID> {
+        self.render_ui
+            .focused_ui_node
+            .and_then(|node| self.closest_scroll_container_ancestor(node))
+            .or_else(|| self.sole_root_scroll_container(computed))
+    }
+
+    fn closest_scroll_container_ancestor(&self, mut node: NodeID) -> Option<NodeID> {
+        loop {
+            let scene_node = self.nodes.get(node)?;
+            if matches!(scene_node.data, SceneNodeData::UiScrollContainer(_)) {
+                return Some(node);
+            }
+            if scene_node.parent.is_nil() {
+                return None;
+            }
+            node = scene_node.parent;
+        }
+    }
+
+    fn sole_root_scroll_container(
+        &self,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+    ) -> Option<NodeID> {
+        let mut found = None;
+        for node in self.visible_scroll_containers(computed) {
+            let Some(scene_node) = self.nodes.get(node) else {
+                continue;
+            };
+            let Some(parent) = (!scene_node.parent.is_nil()).then_some(scene_node.parent) else {
+                if found.replace(node).is_some() {
+                    return None;
+                }
+                continue;
+            };
+            if self.closest_scroll_container_ancestor(parent).is_some() {
+                continue;
+            }
+            if found.replace(node).is_some() {
+                return None;
+            }
+        }
+        found
+    }
+
+    fn scroll_container_keyboard_delta(
+        &self,
+        node: NodeID,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+    ) -> Option<f32> {
+        let view_h = computed.get(&node)?.size.y;
+        let line = view_h * 0.10;
+        let page = view_h * 0.90;
+        if self.input.is_key_pressed(KeyCode::Home) {
+            return Some(f32::NEG_INFINITY);
+        }
+        if self.input.is_key_pressed(KeyCode::End) {
+            return Some(f32::INFINITY);
+        }
+        if self.input.is_key_pressed(KeyCode::PageDown) {
+            return Some(page);
+        }
+        if self.input.is_key_pressed(KeyCode::PageUp) {
+            return Some(-page);
+        }
+        if self.input.is_key_pressed(KeyCode::ArrowDown) {
+            return Some(line);
+        }
+        if self.input.is_key_pressed(KeyCode::ArrowUp) {
+            return Some(-line);
+        }
+        None
+    }
+
+    fn adjust_scroll_container(
+        &mut self,
+        node: NodeID,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+        delta: f32,
+    ) -> bool {
+        let max_scroll = self.scroll_container_max_y(node, computed).unwrap_or(0.0);
+        let Some(scene_node) = self.nodes.get_mut(node) else {
+            return false;
+        };
+        let SceneNodeData::UiScrollContainer(scroller) = &mut scene_node.data else {
+            return false;
+        };
+        let old = scroller.scroll;
+        scroller.scroll.x = 0.0;
+        scroller.scroll.y = if delta.is_infinite() && delta.is_sign_negative() {
+            0.0
+        } else if delta.is_infinite() {
+            max_scroll
+        } else {
+            (scroller.scroll.y + delta).clamp(0.0, max_scroll)
+        };
+        if scroller.scroll == old {
+            return false;
+        }
+        self.mark_ui_dirty(
+            node,
+            Runtime::UI_DIRTY_LAYOUT_SELF
+                | Runtime::UI_DIRTY_LAYOUT_PARENT
+                | Runtime::UI_DIRTY_COMMANDS,
+        );
+        true
+    }
+
+    fn clamp_scroll_container(
+        &mut self,
+        node: NodeID,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+    ) -> bool {
+        let max_scroll = self.scroll_container_max_y(node, computed).unwrap_or(0.0);
+        let Some(scene_node) = self.nodes.get_mut(node) else {
+            return false;
+        };
+        let SceneNodeData::UiScrollContainer(scroller) = &mut scene_node.data else {
+            return false;
+        };
+        let old = scroller.scroll;
+        scroller.scroll.x = 0.0;
+        scroller.scroll.y = scroller.scroll.y.clamp(0.0, max_scroll);
+        if scroller.scroll == old {
+            return false;
+        }
+        self.mark_ui_dirty(
+            node,
+            Runtime::UI_DIRTY_LAYOUT_SELF
+                | Runtime::UI_DIRTY_LAYOUT_PARENT
+                | Runtime::UI_DIRTY_COMMANDS,
+        );
+        true
+    }
+
+    fn scroll_container_max_y(
+        &self,
+        node: NodeID,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+    ) -> Option<f32> {
+        let scene_node = self.nodes.get(node)?;
+        let SceneNodeData::UiScrollContainer(scroller) = &scene_node.data else {
+            return None;
+        };
+        let rect = computed.get(&node).copied().or_else(|| {
+            self.render_ui
+                .retained_rects
+                .get(&node)
+                .map(computed_rect_from_state)
+        })?;
+        let content = rect.inset(scroller.layout.padding);
+        let (_, content_min_y) = self.scroll_container_unscrolled_bounds(node, computed)?;
+        Some((content.min().y - content_min_y).max(0.0))
+    }
+
+    fn scroll_container_unscrolled_bounds(
+        &self,
+        node: NodeID,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+    ) -> Option<(f32, f32)> {
+        let scene_node = self.nodes.get(node)?;
+        let SceneNodeData::UiScrollContainer(scroller) = &scene_node.data else {
+            return None;
+        };
+        let offset = Vector2::new(scroller.scroll.x, -scroller.scroll.y);
+        let mut min_y = f32::INFINITY;
+        let mut max_y = f32::NEG_INFINITY;
+        let mut found = false;
+        for child in self.ui_layout_children(node) {
+            let Some(rect) = computed.get(&child).copied().or_else(|| {
+                self.render_ui
+                    .retained_rects
+                    .get(&child)
+                    .map(computed_rect_from_state)
+            }) else {
+                continue;
+            };
+            let unscrolled = ComputedUiRect::new(rect.center + offset, rect.size);
+            min_y = min_y.min(unscrolled.min().y);
+            max_y = max_y.max(unscrolled.max().y);
+            found = true;
+        }
+        found.then_some((max_y, min_y))
+    }
+
+    fn collect_ui_subtree_nodes(
+        &self,
+        root: NodeID,
+        out: &mut Vec<NodeID>,
+        seen: &mut ahash::AHashSet<NodeID>,
+    ) {
+        if !seen.insert(root) {
+            return;
+        }
+        out.push(root);
+        let Some(scene_node) = self.nodes.get(root) else {
+            return;
+        };
+        let mut stack = scene_node.get_children_ids().to_vec();
+        while let Some(node) = stack.pop() {
+            let Some(child) = self.nodes.get(node) else {
+                continue;
+            };
+            if ui_root_from_data(&child.data).is_some() {
+                if seen.insert(node) {
+                    out.push(node);
+                }
+                stack.extend(child.get_children_ids().iter().copied());
+                continue;
+            }
+            stack.extend(child.get_children_ids().iter().copied());
+        }
     }
 
     fn set_ui_focus(
@@ -991,4 +1364,15 @@ fn stick_nav_direction(stick: Vector2, threshold: f32) -> Option<[i8; 2]> {
     } else {
         Some(if stick.y < 0.0 { [0, -1] } else { [0, 1] })
     }
+}
+
+fn ui_scroll_keys() -> &'static [KeyCode] {
+    &[
+        KeyCode::ArrowUp,
+        KeyCode::ArrowDown,
+        KeyCode::PageUp,
+        KeyCode::PageDown,
+        KeyCode::Home,
+        KeyCode::End,
+    ]
 }

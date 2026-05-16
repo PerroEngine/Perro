@@ -492,9 +492,13 @@ impl Gpu {
         if adapter_features.contains(wgpu::Features::INDIRECT_FIRST_INSTANCE) {
             required_features |= wgpu::Features::INDIRECT_FIRST_INSTANCE;
         }
+        #[cfg(not(target_arch = "wasm32"))]
+        let enable_timestamp_queries = true;
+        #[cfg(target_arch = "wasm32")]
+        let enable_timestamp_queries = false;
         let timestamp_features =
             wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS;
-        if adapter_features.contains(timestamp_features) {
+        if enable_timestamp_queries && adapter_features.contains(timestamp_features) {
             required_features |= timestamp_features;
         }
 

@@ -10,25 +10,6 @@ fn frustum_cull_default(_: bool) -> bool {
     false
 }
 
-#[cfg(test)]
-mod tests {
-    use super::frustum_cull_default;
-
-    #[cfg(not(target_arch = "wasm32"))]
-    #[test]
-    fn native_keeps_frustum_cull_support() {
-        assert!(frustum_cull_default(true));
-        assert!(!frustum_cull_default(false));
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    #[test]
-    fn wasm_disables_frustum_cull_support() {
-        assert!(!frustum_cull_default(true));
-        assert!(!frustum_cull_default(false));
-    }
-}
-
 impl Gpu3D {
     pub fn new(
         device: &wgpu::Device,
@@ -1435,5 +1416,24 @@ impl Gpu3D {
         };
         gpu.rebuild_hiz_bind_groups(device);
         gpu
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::frustum_cull_default;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn native_keeps_frustum_cull_support() {
+        assert!(frustum_cull_default(true));
+        assert!(!frustum_cull_default(false));
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[test]
+    fn wasm_disables_frustum_cull_support() {
+        assert!(!frustum_cull_default(true));
+        assert!(!frustum_cull_default(false));
     }
 }
