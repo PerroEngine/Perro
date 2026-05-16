@@ -245,6 +245,24 @@ methods!({
             frame_us,
             prep_3d_us,
             prep_frustum_us,
+        ) = with_state!(ctx.run, DemoProfilingOverlayState, ctx.id, |state| {
+            (
+                state.fps_label,
+                state.sim_label,
+                state.graphics_label,
+                state.prep_label,
+                state.draw_label,
+                state.fps_value,
+                state.dt_us_value,
+                state.sim_us_value,
+                state.graphics_us_value,
+                state.frame_us_value,
+                state.prep_3d_us_value,
+                state.prep_frustum_us_value,
+            )
+        });
+
+        let (
             prep_hiz_us,
             prep_indirect_us,
             prep_cull_inputs_us,
@@ -257,40 +275,28 @@ methods!({
             skip_prepare_3d_frustum,
             skip_prepare_3d_hiz,
             skip_prepare_3d_indirect,
-            skip_prepare_3d_cull_inputs,
-        ) = with_state!(
+        ) = with_state!(ctx.run, DemoProfilingOverlayState, ctx.id, |state| {
+            (
+                state.prep_hiz_us_value,
+                state.prep_indirect_us_value,
+                state.prep_cull_inputs_us_value,
+                state.draw_calls_2d_value,
+                state.draw_calls_3d_value,
+                state.draw_calls_total_value,
+                state.draw_instances_3d_value,
+                state.draw_material_refs_3d_value,
+                state.skip_prepare_3d_value,
+                state.skip_prepare_3d_frustum_value,
+                state.skip_prepare_3d_hiz_value,
+                state.skip_prepare_3d_indirect_value,
+            )
+        });
+
+        let skip_prepare_3d_cull_inputs = with_state!(
             ctx.run,
             DemoProfilingOverlayState,
             ctx.id,
-            |state| {
-                (
-                    state.fps_label,
-                    state.sim_label,
-                    state.graphics_label,
-                    state.prep_label,
-                    state.draw_label,
-                    state.fps_value,
-                    state.dt_us_value,
-                    state.sim_us_value,
-                    state.graphics_us_value,
-                    state.frame_us_value,
-                    state.prep_3d_us_value,
-                    state.prep_frustum_us_value,
-                    state.prep_hiz_us_value,
-                    state.prep_indirect_us_value,
-                    state.prep_cull_inputs_us_value,
-                    state.draw_calls_2d_value,
-                    state.draw_calls_3d_value,
-                    state.draw_calls_total_value,
-                    state.draw_instances_3d_value,
-                    state.draw_material_refs_3d_value,
-                    state.skip_prepare_3d_value,
-                    state.skip_prepare_3d_frustum_value,
-                    state.skip_prepare_3d_hiz_value,
-                    state.skip_prepare_3d_indirect_value,
-                    state.skip_prepare_3d_cull_inputs_value,
-                )
-            }
+            |state| state.skip_prepare_3d_cull_inputs_value
         );
 
         set_label_text(
