@@ -2157,10 +2157,10 @@ mod tests {
         naga::front::wgsl::parse_str(WATER_3D_RENDER_WGSL)
             .expect("water 3d render wgsl should parse");
         assert!(!WATER_3D_RENDER_WGSL.contains("water_screen_contact_outline"));
-        assert!(!WATER_3D_RENDER_WGSL.contains("foam_blend"));
         assert!(!WATER_3D_RENDER_WGSL.contains("outline_white"));
         assert!(WATER_3D_RENDER_WGSL.contains("water_analytic_wave"));
         assert!(WATER_3D_RENDER_WGSL.contains("water_depth_thickness"));
+        assert!(WATER_3D_RENDER_WGSL.contains("water_surface_contact_foam"));
         assert!(WATER_3D_RENDER_WGSL.contains("vec4<f32>(w.model_x.xyz, 0.0)"));
         assert!(WATER_3D_RENDER_WGSL.contains("vec4<f32>(w.model_y.xyz, 0.0)"));
         assert!(WATER_3D_RENDER_WGSL.contains("vec4<f32>(w.model_z.xyz, 0.0)"));
