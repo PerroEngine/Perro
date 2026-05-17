@@ -406,9 +406,7 @@ pub fn analytic_idle_water_height(
             let rush = (downstream * tau * 2.6 - phase * 4.2).sin();
             let train = (downstream * tau * 5.1 - phase * 7.4 + across * 1.15).sin();
             let shear = (across * tau * 1.35 + downstream * 0.9 - phase * 1.1).sin();
-            (crest_wave(rush) * 0.58 + train * 0.28 + shear * 0.14)
-                * surface.wave.scale
-                * 0.52
+            (crest_wave(rush) * 0.58 + train * 0.28 + shear * 0.14) * surface.wave.scale * 0.52
         }
     }
 }

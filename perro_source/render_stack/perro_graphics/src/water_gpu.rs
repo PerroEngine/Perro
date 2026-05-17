@@ -84,17 +84,21 @@ pub struct GpuWater {
     compute_bgl: wgpu::BindGroupLayout,
     render_bgl: wgpu::BindGroupLayout,
     depth_bgl: wgpu::BindGroupLayout,
-    compute_bind_group: wgpu::BindGroup,
-    render_bind_group: wgpu::BindGroup,
+    compute_bind_group_ab: wgpu::BindGroup,
+    compute_bind_group_ba: wgpu::BindGroup,
+    render_bind_group_a: wgpu::BindGroup,
+    render_bind_group_b: wgpu::BindGroup,
     depth_bind_group: wgpu::BindGroup,
     water_buffer: wgpu::Buffer,
-    cell_buffer: wgpu::Buffer,
+    cell_buffer_a: wgpu::Buffer,
+    cell_buffer_b: wgpu::Buffer,
     coastline_buffer: wgpu::Buffer,
     render_chunk_buffer: wgpu::Buffer,
     params_buffer: wgpu::Buffer,
     readback_buffer: wgpu::Buffer,
     water_capacity: usize,
     cell_capacity: usize,
+    active_cell_buffer_b: bool,
     render_chunk_capacity: usize,
     active_cell_count: usize,
     max_cells_per_water: usize,
@@ -108,7 +112,7 @@ pub struct GpuWater {
     readback_nodes: Vec<NodeID>,
     readback_offsets: Vec<usize>,
     readback_samples: Vec<WaterSampleState>,
-    readback_queries: Vec<WaterBodyQueryState>,
+    readback_queries: Vec<WaterReadbackQuery>,
     readback_body_samples: Vec<WaterBodySampleState>,
     readback_water_sample_count: usize,
     readback_interval_seconds: f32,
@@ -120,6 +124,12 @@ pub struct GpuWater {
     staged_waters: Vec<WaterGpu>,
     staged_render_chunks: Vec<WaterRenderChunkGpu>,
     coastline_cells_scratch: Vec<[f32; 4]>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct WaterReadbackQuery {
+    query: WaterBodyQueryState,
+    frac: [f32; 2],
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -158,7 +168,7 @@ impl GpuWater {
                     binding: 1,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
@@ -179,6 +189,16 @@ impl GpuWater {
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
@@ -357,7 +377,7 @@ impl GpuWater {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth24Plus,
-                depth_write_enabled: Some(false),
+                depth_write_enabled: Some(true),
                 depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
@@ -371,7 +391,8 @@ impl GpuWater {
             cache: None,
         });
         let water_buffer = empty_buffer(device, "perro_water_gpu_waters", 1, true);
-        let cell_buffer = empty_buffer(device, "perro_water_gpu_cells", 64, false);
+        let cell_buffer_a = empty_buffer(device, "perro_water_gpu_cells_a", 64, false);
+        let cell_buffer_b = empty_buffer(device, "perro_water_gpu_cells_b", 64, false);
         let coastline_buffer = empty_buffer(device, "perro_water_gpu_coastline", 64, false);
         let render_chunk_buffer = empty_buffer(device, "perro_water_gpu_render_chunks", 1, true);
         let readback_buffer = readback_buffer(device, 1);
@@ -381,26 +402,49 @@ impl GpuWater {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let compute_bind_group = make_compute_bind_group(
+        let compute_bind_group_ab = make_compute_bind_group(
             device,
             &compute_bgl,
             &water_buffer,
-            &cell_buffer,
+            &cell_buffer_a,
+            &cell_buffer_b,
             &coastline_buffer,
             &params_buffer,
-            "perro_water_gpu_bg",
+            "perro_water_gpu_bg_ab",
         );
-        let render_bind_group = make_render_bind_group(
+        let compute_bind_group_ba = make_compute_bind_group(
+            device,
+            &compute_bgl,
+            &water_buffer,
+            &cell_buffer_b,
+            &cell_buffer_a,
+            &coastline_buffer,
+            &params_buffer,
+            "perro_water_gpu_bg_ba",
+        );
+        let render_bind_group_a = make_render_bind_group(
             device,
             &render_bgl,
             RenderBindGroupBuffers {
                 waters: &water_buffer,
-                cells: &cell_buffer,
+                cells: &cell_buffer_a,
                 coastline: &coastline_buffer,
                 render_chunks: &render_chunk_buffer,
                 params: &params_buffer,
             },
-            "perro_water_render_bg",
+            "perro_water_render_bg_a",
+        );
+        let render_bind_group_b = make_render_bind_group(
+            device,
+            &render_bgl,
+            RenderBindGroupBuffers {
+                waters: &water_buffer,
+                cells: &cell_buffer_b,
+                coastline: &coastline_buffer,
+                render_chunks: &render_chunk_buffer,
+                params: &params_buffer,
+            },
+            "perro_water_render_bg_b",
         );
         let depth_bind_group =
             make_depth_bind_group(device, &depth_bgl, scene_depth_view, "perro_water_depth_bg");
@@ -411,17 +455,21 @@ impl GpuWater {
             compute_bgl,
             render_bgl,
             depth_bgl,
-            compute_bind_group,
-            render_bind_group,
+            compute_bind_group_ab,
+            compute_bind_group_ba,
+            render_bind_group_a,
+            render_bind_group_b,
             depth_bind_group,
             water_buffer,
-            cell_buffer,
+            cell_buffer_a,
+            cell_buffer_b,
             coastline_buffer,
             render_chunk_buffer,
             params_buffer,
             readback_buffer,
             water_capacity: 1,
             cell_capacity: 64,
+            active_cell_buffer_b: false,
             render_chunk_capacity: 1,
             active_cell_count: 0,
             max_cells_per_water: 64,
@@ -545,16 +593,31 @@ impl GpuWater {
                 ctx.sky_color,
             ));
             let water_idx = (self.staged_waters.len().saturating_sub(1)) as u32;
-            let staged = *self.staged_waters.last().expect("staged water");
-            build_render_chunks_3d(
-                &mut self.staged_render_chunks,
-                water_idx,
-                water,
-                staged,
-                &ctx.camera_3d_frustum_planes,
-            );
+            if lod.grid.render[0] > 0 && lod.grid.render[1] > 0 {
+                let staged = *self.staged_waters.last().expect("staged water");
+                build_render_chunks_3d(
+                    &mut self.staged_render_chunks,
+                    water_idx,
+                    water,
+                    staged,
+                    &ctx.camera_3d_frustum_planes,
+                );
+            }
             cell_needed = cell_needed.saturating_add(cells);
         }
+        self.staged_render_chunks.sort_by(|a, b| {
+            let da = water_render_chunk_distance_sq(
+                &self.staged_waters[a.water_idx as usize],
+                a,
+                ctx.camera_3d_position,
+            );
+            let db = water_render_chunk_distance_sq(
+                &self.staged_waters[b.water_idx as usize],
+                b,
+                ctx.camera_3d_position,
+            );
+            da.total_cmp(&db)
+        });
         cell_needed = cell_needed.max(WATER_WORKGROUP_SIZE as usize);
         self.active_cell_count = cell_needed;
         self.max_cells_per_water = self
@@ -579,27 +642,7 @@ impl GpuWater {
         let rebuilt =
             self.ensure_capacity(device, needed, cell_needed, self.staged_render_chunks.len());
         if rebuilt {
-            self.compute_bind_group = make_compute_bind_group(
-                device,
-                &self.compute_bgl,
-                &self.water_buffer,
-                &self.cell_buffer,
-                &self.coastline_buffer,
-                &self.params_buffer,
-                "perro_water_gpu_bg",
-            );
-            self.render_bind_group = make_render_bind_group(
-                device,
-                &self.render_bgl,
-                RenderBindGroupBuffers {
-                    waters: &self.water_buffer,
-                    cells: &self.cell_buffer,
-                    coastline: &self.coastline_buffer,
-                    render_chunks: &self.render_chunk_buffer,
-                    params: &self.params_buffer,
-                },
-                "perro_water_render_bg",
-            );
+            self.rebuild_cell_bind_groups(device);
         }
         queue.write_buffer(
             &self.water_buffer,
@@ -681,9 +724,12 @@ impl GpuWater {
                 continue;
             }
             for query in state.queries.iter() {
-                self.readback_queries.push(*query);
-                self.readback_offsets
-                    .push(water_query_cell_offset(water, query.local));
+                let sample = water_query_sample_offsets(water, query.local);
+                self.readback_queries.push(WaterReadbackQuery {
+                    query: *query,
+                    frac: sample.frac,
+                });
+                self.readback_offsets.extend(sample.offsets);
                 debug_assert_eq!(query.water, *node);
             }
         }
@@ -695,12 +741,16 @@ impl GpuWater {
                 continue;
             }
             for query in state.queries.iter() {
-                self.readback_queries.push(*query);
-                self.readback_offsets
-                    .push(water_query_cell_offset(water, query.local));
+                let sample = water_query_sample_offsets(water, query.local);
+                self.readback_queries.push(WaterReadbackQuery {
+                    query: *query,
+                    frac: sample.frac,
+                });
+                self.readback_offsets.extend(sample.offsets);
                 debug_assert_eq!(query.water, *node);
             }
         }
+        self.ensure_readback_capacity(device, self.readback_offsets.len());
     }
 
     pub fn clear_active(&mut self) {
@@ -733,7 +783,7 @@ impl GpuWater {
             timestamp_writes: None,
         });
         pass.set_pipeline(&self.compute_pipeline);
-        pass.set_bind_group(0, &self.compute_bind_group, &[]);
+        pass.set_bind_group(0, self.compute_bind_group(), &[]);
         let workgroups_x = self
             .max_cells_per_water
             .max(WATER_WORKGROUP_SIZE as usize)
@@ -770,7 +820,7 @@ impl GpuWater {
             multiview_mask: None,
         });
         pass.set_pipeline(&self.render_pipeline_2d);
-        pass.set_bind_group(0, &self.render_bind_group, &[]);
+        pass.set_bind_group(0, self.render_bind_group(), &[]);
         pass.set_bind_group(1, camera_bind_group, &[]);
         pass.draw(0..6, 0..self.water_2d_count);
     }
@@ -814,7 +864,7 @@ impl GpuWater {
             multiview_mask: None,
         });
         pass.set_pipeline(&self.render_pipeline_3d);
-        pass.set_bind_group(0, &self.render_bind_group, &[]);
+        pass.set_bind_group(0, self.render_bind_group(), &[]);
         pass.set_bind_group(1, camera_bind_group, &[]);
         pass.set_bind_group(2, &self.depth_bind_group, &[]);
         pass.draw(0..self.max_3d_chunk_vertices, 0..self.render_3d_chunk_count);
@@ -840,7 +890,7 @@ impl GpuWater {
         let elem = std::mem::size_of::<[f32; 4]>() as u64;
         for (idx, offset) in self.readback_offsets.iter().copied().enumerate() {
             encoder.copy_buffer_to_buffer(
-                &self.cell_buffer,
+                self.render_cell_buffer(),
                 offset as u64 * elem,
                 &self.readback_buffer,
                 idx as u64 * elem,
@@ -886,6 +936,12 @@ impl GpuWater {
         self.readback_copy_encoded = false;
     }
 
+    pub fn finish_frame(&mut self) {
+        if self.water_count != 0 {
+            self.active_cell_buffer_b = !self.active_cell_buffer_b;
+        }
+    }
+
     pub fn drain_samples(&mut self, out: &mut Vec<WaterSampleState>) {
         out.append(&mut self.readback_samples);
     }
@@ -916,19 +972,15 @@ impl GpuWater {
             while cap < needed_cells {
                 cap *= 2;
             }
-            self.cell_buffer = empty_buffer(device, "perro_water_gpu_cells", cap, false);
+            self.cell_buffer_a = empty_buffer(device, "perro_water_gpu_cells_a", cap, false);
+            self.cell_buffer_b = empty_buffer(device, "perro_water_gpu_cells_b", cap, false);
             self.coastline_buffer = empty_buffer(device, "perro_water_gpu_coastline", cap, false);
             self.cell_capacity = cap;
+            self.active_cell_buffer_b = false;
             rebuilt = true;
         }
         if needed_waters > self.readback_capacity {
-            let mut cap = self.readback_capacity.max(64);
-            while cap < needed_waters {
-                cap *= 2;
-            }
-            self.readback_buffer = readback_buffer(device, cap);
-            self.readback_capacity = cap;
-            self.readback_pending_rx = None;
+            self.ensure_readback_capacity(device, needed_waters);
         }
         if needed_render_chunks > self.render_chunk_capacity {
             let mut cap = self.render_chunk_capacity.max(1);
@@ -941,6 +993,90 @@ impl GpuWater {
             rebuilt = true;
         }
         rebuilt
+    }
+
+    fn compute_bind_group(&self) -> &wgpu::BindGroup {
+        if self.active_cell_buffer_b {
+            &self.compute_bind_group_ba
+        } else {
+            &self.compute_bind_group_ab
+        }
+    }
+
+    fn render_bind_group(&self) -> &wgpu::BindGroup {
+        if self.active_cell_buffer_b {
+            &self.render_bind_group_a
+        } else {
+            &self.render_bind_group_b
+        }
+    }
+
+    fn render_cell_buffer(&self) -> &wgpu::Buffer {
+        if self.active_cell_buffer_b {
+            &self.cell_buffer_a
+        } else {
+            &self.cell_buffer_b
+        }
+    }
+
+    fn rebuild_cell_bind_groups(&mut self, device: &wgpu::Device) {
+        self.compute_bind_group_ab = make_compute_bind_group(
+            device,
+            &self.compute_bgl,
+            &self.water_buffer,
+            &self.cell_buffer_a,
+            &self.cell_buffer_b,
+            &self.coastline_buffer,
+            &self.params_buffer,
+            "perro_water_gpu_bg_ab",
+        );
+        self.compute_bind_group_ba = make_compute_bind_group(
+            device,
+            &self.compute_bgl,
+            &self.water_buffer,
+            &self.cell_buffer_b,
+            &self.cell_buffer_a,
+            &self.coastline_buffer,
+            &self.params_buffer,
+            "perro_water_gpu_bg_ba",
+        );
+        self.render_bind_group_a = make_render_bind_group(
+            device,
+            &self.render_bgl,
+            RenderBindGroupBuffers {
+                waters: &self.water_buffer,
+                cells: &self.cell_buffer_a,
+                coastline: &self.coastline_buffer,
+                render_chunks: &self.render_chunk_buffer,
+                params: &self.params_buffer,
+            },
+            "perro_water_render_bg_a",
+        );
+        self.render_bind_group_b = make_render_bind_group(
+            device,
+            &self.render_bgl,
+            RenderBindGroupBuffers {
+                waters: &self.water_buffer,
+                cells: &self.cell_buffer_b,
+                coastline: &self.coastline_buffer,
+                render_chunks: &self.render_chunk_buffer,
+                params: &self.params_buffer,
+            },
+            "perro_water_render_bg_b",
+        );
+    }
+
+    fn ensure_readback_capacity(&mut self, device: &wgpu::Device, needed_samples: usize) {
+        if needed_samples <= self.readback_capacity {
+            return;
+        }
+        let mut cap = self.readback_capacity.max(64);
+        while cap < needed_samples {
+            cap *= 2;
+        }
+        self.readback_buffer = readback_buffer(device, cap);
+        self.readback_capacity = cap;
+        self.readback_pending_rx = None;
     }
 
     fn poll_readback(&mut self, device: &wgpu::Device) {
@@ -969,11 +1105,15 @@ impl GpuWater {
                         foam: cell[2],
                     });
                 }
-                for (idx, query) in self.readback_queries.iter().enumerate() {
-                    let cell = cells
-                        .get(self.readback_water_sample_count + idx)
-                        .copied()
-                        .unwrap_or([0.0; 4]);
+                let mut query_base = self.readback_water_sample_count;
+                for sample in self.readback_queries.iter() {
+                    let c00 = cells.get(query_base).copied().unwrap_or([0.0; 4]);
+                    let c10 = cells.get(query_base + 1).copied().unwrap_or(c00);
+                    let c01 = cells.get(query_base + 2).copied().unwrap_or(c00);
+                    let c11 = cells.get(query_base + 3).copied().unwrap_or(c10);
+                    query_base += 4;
+                    let cell = water_lerp_cell(c00, c10, c01, c11, sample.frac);
+                    let query = sample.query;
                     self.readback_body_samples.push(WaterBodySampleState {
                         water: query.water,
                         body: query.body,
@@ -1050,6 +1190,7 @@ fn make_compute_bind_group(
     layout: &wgpu::BindGroupLayout,
     waters: &wgpu::Buffer,
     cells: &wgpu::Buffer,
+    next_cells: &wgpu::Buffer,
     coastline: &wgpu::Buffer,
     params: &wgpu::Buffer,
     label: &'static str,
@@ -1073,6 +1214,10 @@ fn make_compute_bind_group(
             wgpu::BindGroupEntry {
                 binding: 3,
                 resource: coastline.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 5,
+                resource: next_cells.as_entire_binding(),
             },
         ],
     })
@@ -1256,6 +1401,28 @@ fn water_render_chunk_vertex_count(water: &WaterGpu, chunk: &WaterRenderChunkGpu
     } else {
         surface
     }
+}
+
+fn water_render_chunk_distance_sq(
+    water: &WaterGpu,
+    chunk: &WaterRenderChunkGpu,
+    camera: [f32; 3],
+) -> f32 {
+    let uv = [
+        chunk.uv_origin[0] + chunk.uv_scale[0] * 0.5,
+        chunk.uv_origin[1] + chunk.uv_scale[1] * 0.5,
+    ];
+    let local_x = (uv[0] - 0.5) * water.size_depth_time[0];
+    let local_z = (uv[1] - 0.5) * water.size_depth_time[1];
+    let world = [
+        water.model_w[0] + water.model_x[0] * local_x + water.model_z[0] * local_z,
+        water.model_w[1] + water.model_x[1] * local_x + water.model_z[1] * local_z,
+        water.model_w[2] + water.model_x[2] * local_x + water.model_z[2] * local_z,
+    ];
+    let dx = world[0] - camera[0];
+    let dy = world[1] - camera[1];
+    let dz = world[2] - camera[2];
+    dx * dx + dy * dy + dz * dz
 }
 
 fn raster_coastline_2d(out: &mut [[f32; 4]], resolution: [u32; 2], water: &Water2DState) {
@@ -1560,20 +1727,60 @@ fn water_center_cell_offset(water: &WaterGpu) -> usize {
     water.sim[0].saturating_add(center.min(water.sim[1].saturating_sub(1))) as usize
 }
 
-fn water_query_cell_offset(water: &WaterGpu, local: [f32; 2]) -> usize {
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct WaterQuerySampleOffsets {
+    offsets: [usize; 4],
+    frac: [f32; 2],
+}
+
+fn water_query_sample_offsets(water: &WaterGpu, local: [f32; 2]) -> WaterQuerySampleOffsets {
     let width = water.sim[2].max(1);
     let height = water.sim[3].max(1);
     let sx = water.size_depth_time[0].max(0.001);
     let sy = water.size_depth_time[1].max(0.001);
-    let u = (local[0] / sx + 0.5).clamp(0.0, 0.999_999);
-    let v = (local[1] / sy + 0.5).clamp(0.0, 0.999_999);
-    let x = (u * width as f32).floor() as u32;
-    let y = (v * height as f32).floor() as u32;
+    let u = (local[0] / sx + 0.5).clamp(0.0, 1.0);
+    let v = (local[1] / sy + 0.5).clamp(0.0, 1.0);
+    let x = u * width.saturating_sub(1).max(1) as f32;
+    let y = v * height.saturating_sub(1).max(1) as f32;
+    let x0 = x.floor() as u32;
+    let y0 = y.floor() as u32;
+    let x1 = (x0 + 1).min(width - 1);
+    let y1 = (y0 + 1).min(height - 1);
+    WaterQuerySampleOffsets {
+        offsets: [
+            water_query_offset_from_xy(water, width, x0, y0),
+            water_query_offset_from_xy(water, width, x1, y0),
+            water_query_offset_from_xy(water, width, x0, y1),
+            water_query_offset_from_xy(water, width, x1, y1),
+        ],
+        frac: [x.fract(), y.fract()],
+    }
+}
+
+fn water_query_offset_from_xy(water: &WaterGpu, width: u32, x: u32, y: u32) -> usize {
     let cell = y
         .saturating_mul(width)
         .saturating_add(x)
         .min(water.sim[1].saturating_sub(1));
     water.sim[0].saturating_add(cell) as usize
+}
+
+fn water_lerp_cell(
+    c00: [f32; 4],
+    c10: [f32; 4],
+    c01: [f32; 4],
+    c11: [f32; 4],
+    frac: [f32; 2],
+) -> [f32; 4] {
+    let tx = frac[0].clamp(0.0, 1.0);
+    let ty = frac[1].clamp(0.0, 1.0);
+    let mut out = [0.0; 4];
+    for i in 0..4 {
+        let a = c00[i] + (c10[i] - c00[i]) * tx;
+        let b = c01[i] + (c11[i] - c01[i]) * tx;
+        out[i] = a + (b - a) * ty;
+    }
+    out
 }
 
 fn water_3d_vertex_count(water: &WaterGpu) -> u32 {
@@ -1631,19 +1838,31 @@ fn water_lod_2d(water: &Water2DState, camera: [f32; 2]) -> WaterLodDecision {
     )
 }
 
-fn water_lod_3d(water: &Water3DState, _camera: [f32; 3]) -> WaterLodDecision {
+fn water_lod_3d(water: &Water3DState, camera: [f32; 3]) -> WaterLodDecision {
+    let pos = water.model[3];
+    let radius = water_lod_shape_radius(water.shape, water.size);
+    let lod = water_lod_from_distance(
+        water.resolution,
+        water.render_resolution,
+        [
+            water.lod_near_distance,
+            water.lod_mid_distance,
+            water.lod_far_distance,
+        ],
+        water.lod_min_resolution,
+        water_lod_surface_distance([pos[0], pos[2]], [camera[0], camera[2]], radius),
+        WATER_3D_MAX_RENDER_RESOLUTION,
+        4.0,
+    );
     WaterLodDecision {
         grid: WaterGridResolution {
             sim: [
                 water.resolution[0].clamp(1, 256),
                 water.resolution[1].clamp(1, 256),
             ],
-            render: [
-                water.render_resolution[0].clamp(2, WATER_3D_MAX_RENDER_RESOLUTION),
-                water.render_resolution[1].clamp(2, WATER_3D_MAX_RENDER_RESOLUTION),
-            ],
+            render: lod.grid.render,
         },
-        ripple_blend: 1.0,
+        ripple_blend: lod.ripple_blend,
     }
 }
 
@@ -1665,6 +1884,26 @@ fn water_lod(
     let dx = water_pos[0] - camera_pos[0];
     let dy = water_pos[1] - camera_pos[1];
     let distance = (dx * dx + dy * dy).sqrt();
+    water_lod_from_distance(
+        sim_resolution,
+        render_resolution,
+        distances,
+        min_resolution,
+        distance,
+        WATER_MAX_RENDER_RESOLUTION,
+        3.0,
+    )
+}
+
+fn water_lod_from_distance(
+    sim_resolution: [u32; 2],
+    render_resolution: [u32; 2],
+    distances: [f32; 3],
+    min_resolution: [u32; 2],
+    distance: f32,
+    max_render_resolution: u32,
+    render_lod_strength: f32,
+) -> WaterLodDecision {
     let near = distances[0].max(5.0);
     let mid = distances[1].max(near);
     let far = distances[2].max(mid);
@@ -1672,12 +1911,12 @@ fn water_lod(
         (0.0, 1.0)
     } else if distance <= mid {
         let span = (mid - near).max(0.001);
-        let t = ((distance - near) / span).clamp(0.0, 1.0);
-        (t * 0.5, 1.0 - t * 0.35)
+        let t = smooth01(((distance - near) / span).clamp(0.0, 1.0));
+        (t * 0.42, 1.0 - t * 0.18)
     } else if distance <= far {
         let span = (far - mid).max(0.001);
-        let t = ((distance - mid) / span).clamp(0.0, 1.0);
-        (0.5 + t * 0.5, 0.65 - t * 0.45)
+        let t = smooth01(((distance - mid) / span).clamp(0.0, 1.0));
+        (0.42 + t * 0.58, 0.82 - t * 0.42)
     } else {
         return WaterLodDecision {
             grid: WaterGridResolution {
@@ -1687,20 +1926,9 @@ fn water_lod(
             ripple_blend: 0.0,
         };
     };
-    let q = lod_t * lod_t;
-    let (early_sim_div, early_render_div, early_ripple) = if distance <= 5.0 {
-        (1.0, 1.0, 1.0)
-    } else if distance <= 10.0 {
-        (1.0 / 0.95, 1.0 / 0.975, 0.95)
-    } else if distance <= 15.0 {
-        (1.0 / 0.90, 1.0 / 0.95, 0.90)
-    } else if distance <= 20.0 {
-        (1.0 / 0.75, 1.0 / 0.875, 0.82)
-    } else {
-        (1.0, 1.0, 1.0)
-    };
-    let sim_div = early_sim_div * (1.0 + q * 7.0);
-    let render_div = early_render_div * (1.0 + q * 3.0);
+    let q = lod_t * lod_t * (3.0 - 2.0 * lod_t);
+    let sim_div = 1.0 + q * 3.5;
+    let render_div = 1.0 + q * render_lod_strength.max(0.0);
     WaterLodDecision {
         grid: WaterGridResolution {
             sim: [
@@ -1711,13 +1939,30 @@ fn water_lod(
             ],
             render: [
                 ((render_resolution[0] as f32 / render_div).round() as u32)
-                    .clamp(1, WATER_MAX_RENDER_RESOLUTION),
+                    .clamp(2, max_render_resolution),
                 ((render_resolution[1] as f32 / render_div).round() as u32)
-                    .clamp(1, WATER_MAX_RENDER_RESOLUTION),
+                    .clamp(2, max_render_resolution),
             ],
         },
-        ripple_blend: ripple_blend.min(early_ripple),
+        ripple_blend,
     }
+}
+
+fn smooth01(t: f32) -> f32 {
+    t * t * (3.0 - 2.0 * t)
+}
+
+fn water_lod_shape_radius(shape: WaterShapeState, size: [f32; 2]) -> f32 {
+    match shape {
+        WaterShapeState::Rect => size[0].max(size[1]) * 0.5,
+        WaterShapeState::Circle { radius } | WaterShapeState::Cylinder { radius, .. } => radius,
+    }
+}
+
+fn water_lod_surface_distance(water_pos: [f32; 2], camera_pos: [f32; 2], radius: f32) -> f32 {
+    let dx = water_pos[0] - camera_pos[0];
+    let dz = water_pos[1] - camera_pos[1];
+    ((dx * dx + dz * dz).sqrt() - radius.max(0.0)).max(0.0)
 }
 
 fn water_gpu_2d(
@@ -1978,26 +2223,21 @@ const WATER_3D_RENDER_WGSL: &str =
 
 fn water_render_wgsl() -> String {
     WATER_WGSL
-        .replace("var<storage, read_write> cells", "var<storage, read> cells")
         .replace(
-            "cells[cell_idx] = vec4<f32>(0.0);",
+            "next_cells[cell_idx] = vec4<f32>(0.0);",
             "let render_only_shape_skip = cell_idx;",
         )
         .replace(
-            "cells[cell_idx] = vec4<f32>(0.0, 0.0, 1.0, 1.0);",
+            "next_cells[cell_idx] = vec4<f32>(0.0, 0.0, 1.0, 1.0);",
             "let render_only_coast_skip = cell_idx;",
         )
         .replace(
-            "cells[cell_idx] = vec4<f32>(0.0);",
+            "next_cells[cell_idx] = vec4<f32>(0.0);",
             "let render_only_empty_skip = cell_idx;",
         )
         .replace(
-            "cells[cell_idx] = vec4<f32>(height, idle, foam, shore);",
-            "let render_only_wave_skip = height + idle + foam + shore;",
-        )
-        .replace(
-            "let edge_noise = (sin((local.x * 0.31 + local.y * 0.47) + phase * 7.0) + sin((local.x * -0.53 + local.y * 0.29) - phase * 4.3)) * 0.5 * w.model_z.w;\n    let crash_wave = max(0.0, sin((local.x * 0.19 - local.y * 0.23) + phase * 5.5 + edge_noise));\n    let crash = shore * pow(crash_wave, 4.2) * w.model_y.w * w.wave.y * 2.25;\n    let prev = cells[cell_idx].x * w.wave.z * (1.0 - shore * w.coastline.w * 0.35);\n    let crest_line = smoothstep(0.78, 1.0, idle / max(w.wave.y, 0.001)) * (1.0 - smoothstep(1.0, 1.75, idle / max(w.wave.y, 0.001)));\n    let wave_foam = crest_line * bitcast<f32>(w.flags.w) * 0.20;\n    let impact_foam = smoothstep(0.10, 1.35, wake + crash) * bitcast<f32>(w.flags.w) * 0.42;\n    let shore_foam = smoothstep(0.45, 1.65, crash) * (1.0 - smoothstep(1.65, 2.8, crash)) * w.coastline.x * bitcast<f32>(w.flags.w);\n    let foam = clamp(wave_foam + impact_foam + shore_foam + coast.w * wake * 0.26, 0.0, 1.0);\n    let height = mix(prev + idle * (0.018 + shore * w.model_y.w * 0.12) + wake * 0.16 + crash, idle + wake * 0.18 + crash, 0.62);\n    cells[cell_idx] = vec4<f32>(height, idle, foam, shore);",
-            "let render_only_unused = idle + shore + wake + coast.w;",
+            "next_cells[cell_idx] = vec4<f32>(blended_height, velocity, foam, shore);",
+            "let render_only_wave_skip = blended_height + velocity + foam + shore;",
         )
 }
 
@@ -2160,7 +2400,7 @@ mod tests {
         assert!(!WATER_3D_RENDER_WGSL.contains("outline_white"));
         assert!(WATER_3D_RENDER_WGSL.contains("water_analytic_wave"));
         assert!(WATER_3D_RENDER_WGSL.contains("water_depth_thickness"));
-        assert!(WATER_3D_RENDER_WGSL.contains("water_surface_contact_foam"));
+        assert!(!WATER_3D_RENDER_WGSL.contains("water_surface_contact_foam"));
         assert!(WATER_3D_RENDER_WGSL.contains("vec4<f32>(w.model_x.xyz, 0.0)"));
         assert!(WATER_3D_RENDER_WGSL.contains("vec4<f32>(w.model_y.xyz, 0.0)"));
         assert!(WATER_3D_RENDER_WGSL.contains("vec4<f32>(w.model_z.xyz, 0.0)"));
@@ -2251,9 +2491,9 @@ mod tests {
             [512.0, 0.0],
             [0.0, 0.0],
         );
-        assert_eq!(mid.grid.sim, [69, 69]);
-        assert_eq!(mid.grid.render, [236, 236]);
-        assert!(mid.ripple_blend > 0.5 && mid.ripple_blend < 0.6);
+        assert_eq!(mid.grid.sim, [91, 91]);
+        assert_eq!(mid.grid.render, [201, 201]);
+        assert!(mid.ripple_blend > 0.75 && mid.ripple_blend < 0.85);
         let high = water_lod(
             [4096, 4096],
             [4096, 4096],
@@ -2288,17 +2528,21 @@ mod tests {
     }
 
     #[test]
-    fn water_lod_3d_keeps_simulation_camera_stable() {
+    fn water_lod_3d_keeps_simulation_active_while_render_lods() {
         let mut water = test_water_3d();
         water.resolution = [4096, 2048];
-        water.render_resolution = [4096, 4096];
+        water.render_resolution = [256, 256];
         let near = water_lod_3d(&water, [0.0, 2.0, 0.0]);
-        let far = water_lod_3d(&water, [100_000.0, 2.0, 100_000.0]);
+        let mid = water_lod_3d(&water, [260.0, 2.0, 0.0]);
+        let culled = water_lod_3d(&water, [100_000.0, 2.0, 100_000.0]);
 
         assert_eq!(near.grid.sim, [256, 256]);
-        assert_eq!(far.grid.sim, near.grid.sim);
-        assert_eq!(far.grid.render, near.grid.render);
-        assert_eq!(far.ripple_blend, 1.0);
+        assert_eq!(mid.grid.sim, near.grid.sim);
+        assert_eq!(culled.grid.sim, near.grid.sim);
+        assert!(mid.grid.render[0] < near.grid.render[0]);
+        assert_eq!(culled.grid.render, [0, 0]);
+        assert!(mid.ripple_blend < near.ripple_blend);
+        assert_eq!(culled.ripple_blend, 0.0);
     }
 
     #[test]
@@ -2307,6 +2551,33 @@ mod tests {
         assert!((readback_interval_seconds(60.0) - (1.0 / 60.0)).abs() < 1.0e-6);
         assert!((readback_interval_seconds(30.0) - (1.0 / 30.0)).abs() < 1.0e-6);
         assert!((readback_interval_seconds(15.0) - (1.0 / 15.0)).abs() < 1.0e-6);
+    }
+
+    #[test]
+    fn water_query_offsets_sample_four_cells_for_bilinear_height() {
+        let water = water_gpu_3d(
+            NodeID::from_parts(1, 0),
+            &test_water_3d(),
+            WaterGridResolution {
+                sim: [4, 4],
+                render: [4, 4],
+            },
+            10,
+            16,
+            1.0,
+            [0.0, 0.0, 0.0],
+        );
+        let sample = water_query_sample_offsets(&water, [0.0, 0.0]);
+        assert_eq!(sample.offsets, [15, 16, 19, 20]);
+        assert_eq!(sample.frac, [0.5, 0.5]);
+        let cell = water_lerp_cell(
+            [0.0, 0.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0, 0.0],
+            [4.0, 0.0, 0.0, 0.0],
+            [6.0, 0.0, 0.0, 0.0],
+            sample.frac,
+        );
+        assert_eq!(cell[0], 3.0);
     }
 
     #[test]

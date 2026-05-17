@@ -730,16 +730,18 @@ parent = @FloatCrateF
 parent = @WaterDemo
     [WaterBody3D]
         shape = { type = "cube" size = (100, 15, 100) }
-        fidelity = 0.05
+        resolution = (128, 128)
+        render_resolution = (256, 256)
+        lod_min_resolution = (32, 32)
         depth = 8.0
-        wave_speed = 0.35
-        wave_scale = 0.75
-        wave_length = 24.0
+        wave_speed = 0.4
+        wave_scale = 1.1
+        wave_length = 32.0
         buoyancy = 4.0
         drag = 0.55
         idle = "storm"
         foam_strength = 1.01
-        sample_readback_rate = 1
+        sample_readback_rate = 30
         shallow_depth = 1.0
         deep_color = (0.0, 0.018, 0.075, 1.0)
         shallow_color = (0.010, 0.11, 0.18, 1.0)

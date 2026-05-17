@@ -1408,6 +1408,7 @@ impl Gpu {
             timer.request_readback();
         }
         if let Some(water) = self.water.as_mut() {
+            water.finish_frame();
             water.request_readback();
         }
         timing.submit_queue_main = submit_queue_start.elapsed();

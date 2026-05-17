@@ -2318,7 +2318,8 @@ fn water_forces_for_body_3d(
     } else {
         sample_points.len()
     };
-    let mut forces = Vec::new();
+    let mut total_force = Vector3::ZERO;
+    let mut total_impulse = Vector3::ZERO;
     for (point_id, point_pos) in sample_points.into_iter().take(sample_count) {
         let samples = blended_water_samples_3d(WaterBlendQuery3D {
             point: point_pos,
@@ -2337,19 +2338,19 @@ fn water_forces_for_body_3d(
             if submerged <= 0.0 {
                 continue;
             }
-            let mass = body.mass.max(0.001) / (sample_count as f32).sqrt();
+            let mass = body.mass.max(0.001) / sample_count as f32;
             let target_submerged = (float_radius * body.density.clamp(0.05, 1.2))
                 .max(water_target_submerged(body.density));
             let contact = (submerged / target_submerged.max(0.001)).clamp(0.0, 1.5);
-            let support = mass * 9.81 * (submerged / target_submerged.max(0.001)).clamp(0.0, 1.45);
+            let support = mass * 9.81 * (submerged / target_submerged.max(0.001)).clamp(0.0, 1.25);
             let spring =
-                (submerged - target_submerged) * blend.surface.physics.buoyancy * mass * 12.5;
+                (submerged - target_submerged) * blend.surface.physics.buoyancy * mass * 9.5;
             let rel_y = body.velocity.dot(blend.normal) - blend.sample.velocity.y;
             let drag = -rel_y * blend.surface.physics.drag * mass * 4.0;
             let wave_follow = (blend.sample.velocity.y - body.velocity.dot(blend.normal))
                 * mass
                 * blend.surface.physics.buoyancy.max(0.0)
-                * (2.6 + blend.surface.physics.wake_strength.max(0.0) * 0.55)
+                * (2.0 + blend.surface.physics.wake_strength.max(0.0) * 0.42)
                 * contact;
             let current_speed = blend.sample.velocity.x;
             let wave_speed = (current_speed + blend.sample.velocity.y.abs() * 0.018)
@@ -2384,16 +2385,21 @@ fn water_forces_for_body_3d(
             if force.length() >= deadzone {
                 let target_normal_speed = blend.sample.velocity.y;
                 let follow_delta =
-                    (target_normal_speed - body.velocity.dot(blend.normal)).clamp(-4.8, 4.8);
+                    (target_normal_speed - body.velocity.dot(blend.normal)).clamp(-3.6, 3.6);
                 let impulse =
-                    blend.normal * (follow_delta * mass * contact * 0.44 * blend.lod_weight);
-                forces.push(WaterBodyForce3D {
-                    id: body.id,
-                    force,
-                    impulse,
-                });
+                    blend.normal * (follow_delta * mass * contact * 0.34 * blend.lod_weight);
+                total_force += force;
+                total_impulse += impulse;
             }
         }
+    }
+    let mut forces = Vec::new();
+    if total_force.length_squared() > 0.0 || total_impulse.length_squared() > 0.0 {
+        forces.push(WaterBodyForce3D {
+            id: body.id,
+            force: total_force,
+            impulse: total_impulse,
+        });
     }
     forces
 }

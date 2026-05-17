@@ -216,14 +216,15 @@ mod tests {
     }
 
     #[test]
-    fn water_base_fidelity_scales_from_high_quality_default_density() {
+    fn water_resolution_fields_set_sim_and_render_density() {
         let scene = Parser::new(
             r#"
             $root = @water
             [water]
             [WaterBody3D]
-                base_fidelity = 1
                 shape = { type="cube" size=(20, 8, 10) }
+                sim_cells_per_meter = 25
+                render_vertices_per_meter = 50
             [/WaterBody3D]
             [/water]
             "#,

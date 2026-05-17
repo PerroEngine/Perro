@@ -88,9 +88,6 @@ pub(super) struct RuntimeSceneLoadStats {
 #[cfg(not(feature = "profile"))]
 pub(super) struct RuntimeSceneLoadStats;
 
-const WATER_BASE_FIDELITY_VERTICES_PER_METER: f32 = 25.0;
-const WATER_BASE_FIDELITY_RENDER_VERTICES_PER_METER: f32 = 50.0;
-
 fn apply_water_body_fields(node: &mut WaterSurfaceParams, ty: &str, fields: &[SceneObjectField]) {
     let mut sim_cells_per_meter = None;
     let mut render_vertices_per_meter = None;
@@ -158,17 +155,6 @@ fn apply_water_body_fields(node: &mut WaterSurfaceParams, ty: &str, fields: &[Sc
                     let density = v.max(0.01);
                     render_vertices_per_meter = Some(density);
                     node.render_resolution = water_resolution_from_density(node.shape, density);
-                }
-            }
-            WaterBodyField::BaseFidelity => {
-                if let Some(v) = as_f32(value) {
-                    let sim_density = water_density_from_base_fidelity(v);
-                    let render_density = water_render_density_from_base_fidelity(v);
-                    sim_cells_per_meter = Some(sim_density);
-                    render_vertices_per_meter = Some(render_density);
-                    node.resolution = water_resolution_from_density(node.shape, sim_density);
-                    node.render_resolution =
-                        water_resolution_from_density(node.shape, render_density);
                 }
             }
             WaterBodyField::Depth => {
@@ -427,14 +413,6 @@ fn water_resolution_from_density(shape: WaterShape, vertices_per_meter: f32) -> 
         ((size.x.abs() * vertices_per_meter).ceil() as u32 + 1).clamp(1, 4096),
         ((size.y.abs() * vertices_per_meter).ceil() as u32 + 1).clamp(1, 4096),
     ]
-}
-
-fn water_density_from_base_fidelity(base_fidelity: f32) -> f32 {
-    base_fidelity.max(0.01) * WATER_BASE_FIDELITY_VERTICES_PER_METER
-}
-
-fn water_render_density_from_base_fidelity(base_fidelity: f32) -> f32 {
-    base_fidelity.max(0.01) * WATER_BASE_FIDELITY_RENDER_VERTICES_PER_METER
 }
 
 fn water_shape_from_shape_2d(shape: Shape2D) -> Option<WaterShape> {

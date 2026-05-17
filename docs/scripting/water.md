@@ -16,7 +16,9 @@ Height is along world `y`.
 [Pond]
     [WaterBody2D]
         shape = { type="quad", width=64, height=24 }
-        base_fidelity = 1
+        resolution = (128, 64)
+        render_resolution = (192, 96)
+        lod_min_resolution = (32, 16)
         depth = 5.0
         flow = (0.5, 0)
         wind = (1, 0)
@@ -53,7 +55,9 @@ Height is world `y`.
 [Lake]
     [WaterBody3D]
         shape = { type="cube", size=(128, 12, 128) }
-        base_fidelity = 1
+        resolution = (128, 128)
+        render_resolution = (256, 256)
+        lod_min_resolution = (32, 32)
         depth = 12.0
         flow = (0, 0.25)
         wind = (1, 0)
@@ -83,12 +87,11 @@ Height is world `y`.
 - `shape`: water bounds. 2D accepts `rect`/`quad` and `circle`. 3D accepts `cube`/`box`, `cylinder`, or `sphere` as a cylinder shortcut.
 - 2D quad/rect surface axes are local `x/y`.
 - 3D box/cylinder surface axes are local `x/z`; height/depth is local/world `y`.
-- `base_fidelity` or `fidelity`: preferred water quality. `1` sets simulation density to 25 cells/meter and render density to 50 vertices/meter before runtime clamps.
 - `vertices_per_meter` or `verts_per_meter`: legacy direct density. It sets both simulation and render resolution from shape surface size.
 - `sim_cells_per_meter`: simulation density only. Runtime derives `sim_resolution` from shape surface size.
 - `render_vertices_per_meter`: render mesh density only. Runtime derives `render_resolution` from shape surface size.
 - `resolution` or `sim_resolution`: absolute simulation grid size. Accepts one number or `(x, y)`. Scene load clamps to `1..4096`; GPU simulation clamps effective grid to `1..256` per axis.
-- `render_resolution`: absolute render mesh grid size. 3D visual tessellation clamps to a low fixed GPU cap and does not drop with camera distance.
+- `render_resolution`: absolute render mesh grid size. 3D visual tessellation clamps to a fixed GPU cap and drops with camera distance while simulation stays stable.
 - `depth`: visual/physics water depth hint.
 - `flow`: water current in surface-local axes.
 - `wind`: wave direction for idle modes.
@@ -101,14 +104,14 @@ Height is world `y`.
 - `buoyancy`: upward force multiplier for rigid bodies inside the surface bounds.
 - `drag`: vertical velocity damping applied while submerged.
 - `wake_strength`: wake impulse scale used by the water simulation.
-- `foam_strength`: 2D foam response scale. 3D keeps this field for compatibility, but current 3D visual water ignores foam.
+- `foam_strength`: simulation foam response scale.
 - `sample_readback_rate` or `readback_rate`: target GPU sample readback rate. Renderer uses the max requested rate across visible water bodies.
 - `deep_color` and `shallow_color`: water color/opacity endpoints. Surface color derives between them from depth, waves, Fresnel, and refraction tint. Shallow alpha should usually be lower than deep alpha, but default water stays mostly opaque.
 - `shallow_depth`: visual depth cutoff where water finishes fading from shallow color/alpha toward deep color/alpha. `-1` uses the automatic old scale. Use larger values for fish tanks or clear pools that should stay see-through.
 - `sky_bias`: optional active `Sky3D` color pull. Use `sky_bias = "none"`, `sky_bias = 0.0`, or `sky_bias = { ratio=0.35 }`. `optics = { ... }` accepts the same color, `shallow_depth`, and sky fields.
-- `material` or `visual`: WaterMaterial-style render knobs: `transparency`, `reflectivity`, `roughness`, `fresnel_power`, `normal_strength`, `ripple_scale`, `foam_color`, `foam_amount`, `crest_foam_threshold`, `caustic_strength`, `refraction_strength`, `scattering_strength`, and `distance_fog_strength`. 3D currently ignores foam fields; they stay parseable for compatibility.
-- `lod_near_distance`/`lod_near`, `lod_mid_distance`/`lod_mid`, `lod_far_distance`/`lod_far`: camera distance thresholds for lower simulation resolution and lower physics force detail.
-- `lod_min_resolution` or `min_resolution`: lowest effective simulation resolution inside `lod_far`. GPU clamps it to `1..256`.
+- `material` or `visual`: WaterMaterial-style render knobs: `transparency`, `reflectivity`, `roughness`, `fresnel_power`, `normal_strength`, `ripple_scale`, `foam_color`, `foam_amount`, `crest_foam_threshold`, `caustic_strength`, `refraction_strength`, `scattering_strength`, and `distance_fog_strength`.
+- `lod_near_distance`/`lod_near`, `lod_mid_distance`/`lod_mid`, `lod_far_distance`/`lod_far`: camera distance thresholds for render mesh detail and physics force detail.
+- `lod_min_resolution` or `min_resolution`: lowest 2D effective simulation resolution inside `lod_far`. GPU clamps it to `1..256`. 3D keeps simulation resolution stable and only LODs render detail.
 - `collision_layers`: water sensor tagged layers. Defaults to all layers.
 - `collision_mask`: tagged layers water ignores for buoyancy, wakes, and coastline. Defaults to no layers.
 - `link_layers`: water link layers. Defaults to all layers.
@@ -121,19 +124,19 @@ Height is world `y`.
 
 Defaults:
 
-- `WaterBody2D`: `shape = { type="quad", width=32, height=32 }`, `base_fidelity = 1`, `depth = 4`.
+- `WaterBody2D`: `shape = { type="quad", width=32, height=32 }`, `resolution = (17, 17)`, `render_resolution = (33, 33)`, `depth = 4`.
 - `WaterBody3D`: `shape = { type="cube", size=(500, 35, 500) }`, mid-quality ocean defaults, `sim_resolution = (4096, 4096)`, `render_resolution = (4096, 4096)`.
 - Shared defaults: `shallow_depth = -1`, `sky_bias = "none"`, `sample_readback_rate = 30`, `lod_near = 128`, `lod_mid = 384`, `lod_far = 896`, `min_resolution = (32, 32)`, `collision_layers = all`, `collision_mask = []`, `link_layers = all`, `link_mask = []`, `blend_width = 0`, `wave_transfer = 1`, `flow_transfer = 1`.
 
 ## Runtime Work
 
-The GPU simulates water cells inside the water shape bounds for all visible water bodies inside `lod_far`.
-Water past `lod_far` keeps the analytic visual surface but skips ripple/coastline simulation and readback.
+The GPU simulates water cells inside the water shape bounds.
+3D water keeps its simulation grid active so XZ height samples stay stable while render LOD changes.
 Intersecting water bodies auto-link when link layers/masks allow it.
 Linked bodies keep separate simulation grids, but overlap samples use a cubic blend for surface height, flow, buoyancy, and wake transfer.
 2D effective simulation and render grid resolution drop separately with quadratic camera distance falloff, then turn off beyond `lod_far`.
-3D water keeps simulation and render resolution camera-stable; frustum culling still skips off-screen chunks.
-3D ripples do not fade from camera distance.
+3D render grid resolution drops with distance, but 3D simulation resolution stays camera-stable for height samples and buoyancy.
+3D mid/far water uses a cheaper shader path for lower GPU cost.
 
 Water samples are read back from the GPU for physics.
 If no GPU sample is ready, physics uses an analytic idle wave fallback from the same water settings.

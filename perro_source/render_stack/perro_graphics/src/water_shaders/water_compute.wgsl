@@ -45,11 +45,13 @@ struct Camera2D {
 @group(0) @binding(0)
 var<storage, read> waters: array<Water>;
 @group(0) @binding(1)
-var<storage, read_write> cells: array<vec4<f32>>;
+var<storage, read> cells: array<vec4<f32>>;
 @group(0) @binding(2)
 var<uniform> params: Params;
 @group(0) @binding(3)
 var<storage, read> coastline_cells: array<vec4<f32>>;
+@group(0) @binding(5)
+var<storage, read_write> next_cells: array<vec4<f32>>;
 @group(1) @binding(0)
 var<uniform> camera: Camera2D;
 
@@ -154,6 +156,12 @@ fn water_coast_normal(w: Water, local_idx: u32, width: u32) -> vec2<f32> {
     return grad / len;
 }
 
+fn water_prev_cell(w: Water, x: u32, y: u32, width: u32, height: u32) -> vec4<f32> {
+    let ix = min(x, width - 1u);
+    let iy = min(y, height - 1u);
+    return cells[w.sim.x + min(iy * width + ix, w.sim.y - 1u)];
+}
+
 @compute @workgroup_size(64)
 fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let water_idx = gid.y;
@@ -166,16 +174,18 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
         return;
     }
     if (w.flags.z & 2u) != 0u {
+        next_cells[w.sim.x + local_idx] = cells[w.sim.x + local_idx];
         return;
     }
     let cell_idx = w.sim.x + local_idx;
     let width = max(w.sim.z, 1u);
+    let height_cells = max(w.sim.w, 1u);
     let x_cell = local_idx % width;
     let y_cell = local_idx / width;
     let fx = f32(x_cell) / max(f32(width - 1u), 1.0);
     let fy = f32(y_cell) / max(f32(max(w.sim.w, 1u) - 1u), 1.0);
     if water_shape_alpha(w, vec2<f32>(fx, fy)) <= 0.0 {
-        cells[cell_idx] = vec4<f32>(0.0);
+        next_cells[cell_idx] = vec4<f32>(0.0);
         return;
     }
     let t = params.time_seconds;
@@ -184,7 +194,7 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let idle = water_idle_height(w, local, t);
     let coast = coastline_cells[cell_idx];
     if coast.x > 0.985 {
-        cells[cell_idx] = vec4<f32>(0.0, 0.0, 1.0, 1.0);
+        next_cells[cell_idx] = vec4<f32>(0.0, 0.0, 1.0, 1.0);
         return;
     }
     let edge = max(0.0, 1.0 - min(min(fx, 1.0 - fx), min(fy, 1.0 - fy)) * max(w.coastline.y, 0.001) * 8.0);
@@ -193,7 +203,8 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let shore = max(edge, max(coast.y, neighbor_shore * 0.92)) * (1.0 - coast.x * 0.40);
     let wake = coast.z * w.wave.w * 1.45;
     if shore <= 0.0 && wake <= 0.0 && coast.w <= 0.0 && abs(idle) <= 0.00001 {
-        cells[cell_idx] = vec4<f32>(0.0);
+        let prev = cells[cell_idx];
+        next_cells[cell_idx] = vec4<f32>(prev.x * 0.985, prev.y * 0.94, prev.z * 0.90, 0.0);
         return;
     }
     let edge_noise = (sin((local.x * 0.31 + local.y * 0.47) + phase * 7.0) + sin((local.x * -0.53 + local.y * 0.29) - phase * 4.3)) * 0.34 * w.model_z.w;
@@ -208,25 +219,46 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
         * w.model_y.w
         * w.wave.y
         * w.model_z.w;
-    let crash_up = shore * (1.18 + coast_push * 1.12 + coast_slide * 0.24) * pow(crash_wave, 2.4) * w.model_y.w * w.wave.y * 2.45;
-    let crash_down = -shore * pow(max(-crash_wave, 0.0), 1.2) * w.wave.y * 0.34;
-    let crash = (crash_up + crash_down + max(reflected, 0.0) * 0.88) * (0.70 + spill * 0.68) + diffusion * w.wave.y * 1.08;
-    let prev = cells[cell_idx].x
-        * w.wave.z
-        * (1.0 - shore * (0.72 + coast_push * 0.44 + coast_slide * 0.16) * w.coastline.w)
-        * (0.50 + spill * 0.28 + coast_slide * 0.12);
+    let crash_energy = crash_wave * crash_wave * (0.72 + crash_wave * 0.28);
+    let crash_up = shore * (1.18 + coast_push * 1.12 + coast_slide * 0.24) * crash_energy * w.model_y.w * w.wave.y * 2.30;
+    let crash = (crash_up + max(reflected, 0.0) * 0.88) * (0.70 + spill * 0.68) + diffusion * w.wave.y * 1.08;
+    let prev_cell = cells[cell_idx];
+    let xl = x_cell - select(0u, 1u, x_cell > 0u);
+    let xr = min(x_cell + 1u, width - 1u);
+    let yd = y_cell - select(0u, 1u, y_cell > 0u);
+    let yu = min(y_cell + 1u, height_cells - 1u);
+    let neighbor_height = (
+        water_prev_cell(w, xl, y_cell, width, height_cells).x
+        + water_prev_cell(w, xr, y_cell, width, height_cells).x
+        + water_prev_cell(w, x_cell, yd, width, height_cells).x
+        + water_prev_cell(w, x_cell, yu, width, height_cells).x
+    ) * 0.25;
+    let laplacian = neighbor_height - prev_cell.x;
+    let dt = clamp(params.delta_seconds, 0.0, 0.050);
+    let shore_damp = 1.0 - shore * (0.72 + coast_push * 0.44 + coast_slide * 0.16) * w.coastline.w;
+    let damping = clamp(w.wave.z * shore_damp, 0.0, 0.999);
+    let step_t = clamp(dt * 60.0, 0.0, 1.0);
+    let damping_step = mix(1.0, damping, step_t);
     let crest_norm = idle / max(w.wave.y, 0.001);
     let crest_line = smoothstep(0.44, 0.82, crest_norm) * (1.0 - smoothstep(1.04, 1.72, crest_norm));
-    let wave_foam = crest_line * bitcast<f32>(w.flags.w) * 0.46;
-    let impact_foam = smoothstep(0.06, 0.84, wake + abs(crash)) * bitcast<f32>(w.flags.w) * 0.62;
-    let shore_foam = smoothstep(0.18, 1.20, crash + shore * 0.62) * (1.0 - smoothstep(1.42, 2.45, crash)) * w.coastline.x * bitcast<f32>(w.flags.w) * 1.12;
+    let foam_strength = bitcast<f32>(w.flags.w);
+    let wave_foam = crest_line * foam_strength * 0.46;
+    let impact_foam = smoothstep(0.06, 0.84, wake + abs(crash)) * foam_strength * 0.62;
+    let shore_foam = smoothstep(0.18, 1.20, crash + shore * 0.62) * (1.0 - smoothstep(1.42, 2.45, crash)) * w.coastline.x * foam_strength * 1.12;
+    let foam_decay = 1.0 - 0.10 * step_t;
     let foam = select(
-        clamp(wave_foam + impact_foam + shore_foam + spill * max(wake, shore) * 0.34, 0.0, 1.0),
+        clamp(max(prev_cell.z * foam_decay, wave_foam + impact_foam + shore_foam) + spill * max(wake, shore) * 0.28, 0.0, 1.0),
         0.0,
         w.kind == 3u,
     );
-    let height = mix(prev + idle * (0.030 + shore * w.model_y.w * 0.18) + wake * 0.30 + crash, idle + wake * 0.28 + crash, 0.44 + spill * 0.14);
-    cells[cell_idx] = vec4<f32>(height, idle, foam, shore);
+    let goal_height = idle + wake * 0.28 + crash;
+    let stiffness = mix(7.0, 16.0, clamp(w.wave.y / 2.0, 0.0, 1.0)) * (1.0 + shore * 0.35 + spill * 0.20);
+    let wave_speed = mix(16.0, 34.0, clamp(w.wave.y / 2.0, 0.0, 1.0));
+    let force = (goal_height - prev_cell.x) * stiffness + laplacian * wave_speed + crash * (0.42 + shore * 0.30);
+    let velocity = clamp((prev_cell.y + force * dt) * damping_step, -max(w.wave.y * 8.0, 2.0), max(w.wave.y * 8.0, 2.0));
+    let height = prev_cell.x + velocity * dt + idle * (0.020 + shore * w.model_y.w * 0.10);
+    let blended_height = mix(height, goal_height, clamp(0.04 + spill * 0.08 + wake * 0.018, 0.0, 0.20));
+    next_cells[cell_idx] = vec4<f32>(blended_height, velocity, foam, shore);
 }
 
 struct Water2DVertexOut {

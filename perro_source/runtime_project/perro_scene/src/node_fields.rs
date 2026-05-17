@@ -124,7 +124,6 @@ pub enum WaterBodyField {
     VerticesPerMeter,
     SimCellsPerMeter,
     RenderVerticesPerMeter,
-    BaseFidelity,
     Depth,
     Flow,
     Wind,
@@ -1557,7 +1556,6 @@ fn resolve_water_body(field: &str) -> Option<WaterBodyField> {
         "render_vertices_per_meter" | "render_verts_per_meter" | "mesh_vertices_per_meter" => {
             Some(WaterBodyField::RenderVerticesPerMeter)
         }
-        "base_fidelity" | "fidelity" | "water_fidelity" => Some(WaterBodyField::BaseFidelity),
         "depth" => Some(WaterBodyField::Depth),
         "flow" => Some(WaterBodyField::Flow),
         "wind" => Some(WaterBodyField::Wind),
