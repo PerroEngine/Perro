@@ -399,11 +399,16 @@ pub fn analytic_idle_water_height(
                 * 1.65
         }
         WaterIdleMode::River => {
-            let flow = normalized_or_x(surface.flow);
+            let flow = normalized_or(surface.flow, normalized_or_x(surface.wind));
             let cross = Vector2::new(-flow.y, flow.x);
-            let a = (wave_coord.dot(flow) * tau * 1.6 - phase * 1.5).sin();
-            let b = (wave_coord.dot(cross) * tau * 2.4 + phase * 0.55).sin();
-            (a * 0.76 + b * 0.24) * surface.wave.scale * 0.45
+            let downstream = wave_coord.dot(flow);
+            let across = wave_coord.dot(cross);
+            let rush = (downstream * tau * 2.6 - phase * 4.2).sin();
+            let train = (downstream * tau * 5.1 - phase * 7.4 + across * 1.15).sin();
+            let shear = (across * tau * 1.35 + downstream * 0.9 - phase * 1.1).sin();
+            (crest_wave(rush) * 0.58 + train * 0.28 + shear * 0.14)
+                * surface.wave.scale
+                * 0.52
         }
     }
 }
@@ -417,9 +422,14 @@ fn crest_wave(v: f32) -> f32 {
 
 #[inline]
 fn normalized_or_x(v: Vector2) -> Vector2 {
+    normalized_or(v, Vector2::new(1.0, 0.0))
+}
+
+#[inline]
+fn normalized_or(v: Vector2, fallback: Vector2) -> Vector2 {
     let len_sq = v.x * v.x + v.y * v.y;
     if len_sq <= 1.0e-12 {
-        Vector2::new(1.0, 0.0)
+        fallback
     } else if (len_sq - 1.0).abs() <= 1.0e-4 {
         v
     } else {
@@ -576,5 +586,32 @@ mod tests {
                 assert!(height.abs() <= 5.68);
             }
         }
+    }
+
+    #[test]
+    fn river_idle_uses_flow_as_rush_direction() {
+        let x_flow = WaterSurfaceParams {
+            idle_mode: WaterIdleMode::River,
+            shape: WaterShape::rect(Vector2::new(20.0, 20.0)),
+            flow: Vector2::new(1.0, 0.0),
+            wind: Vector2::new(0.0, 1.0),
+            wave: WaterWaveProfile {
+                speed: 1.0,
+                scale: 1.0,
+                length: 10.0,
+                damping: 0.985,
+            },
+            ..Default::default()
+        };
+        let y_flow = WaterSurfaceParams {
+            flow: Vector2::new(0.0, 1.0),
+            ..x_flow
+        };
+        let sample = Vector2::new(3.0, 0.0);
+
+        let x_height = analytic_idle_water_height(&x_flow, sample, 0.7);
+        let y_height = analytic_idle_water_height(&y_flow, sample, 0.7);
+
+        assert!((x_height - y_height).abs() > 0.05);
     }
 }

@@ -13,7 +13,8 @@ const WATER_MAX_RENDER_RESOLUTION: u32 = 1024;
 const WATER_FLAG_DEBUG: u32 = 1 << 0;
 const WATER_FLAG_PAUSED: u32 = 1 << 1;
 const WATER_COASTLINE_INSET_METERS: f32 = 1.0;
-const WATER_CHUNK_QUADS: u32 = 48;
+const WATER_CHUNK_QUADS: u32 = 128;
+const WATER_3D_MAX_RENDER_RESOLUTION: u32 = 256;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -1630,21 +1631,20 @@ fn water_lod_2d(water: &Water2DState, camera: [f32; 2]) -> WaterLodDecision {
     )
 }
 
-fn water_lod_3d(water: &Water3DState, camera: [f32; 3]) -> WaterLodDecision {
-    let pos = [water.model[3][0], water.model[3][2]];
-    water_lod(
-        water.resolution,
-        water.render_resolution,
-        water.size,
-        [
-            water.lod_near_distance,
-            water.lod_mid_distance,
-            water.lod_far_distance,
-        ],
-        water.lod_min_resolution,
-        pos,
-        [camera[0], camera[2]],
-    )
+fn water_lod_3d(water: &Water3DState, _camera: [f32; 3]) -> WaterLodDecision {
+    WaterLodDecision {
+        grid: WaterGridResolution {
+            sim: [
+                water.resolution[0].clamp(1, 256),
+                water.resolution[1].clamp(1, 256),
+            ],
+            render: [
+                water.render_resolution[0].clamp(2, WATER_3D_MAX_RENDER_RESOLUTION),
+                water.render_resolution[1].clamp(2, WATER_3D_MAX_RENDER_RESOLUTION),
+            ],
+        },
+        ripple_blend: 1.0,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -2156,6 +2156,11 @@ mod tests {
         naga::front::wgsl::parse_str(&render_wgsl).expect("water render wgsl should parse");
         naga::front::wgsl::parse_str(WATER_3D_RENDER_WGSL)
             .expect("water 3d render wgsl should parse");
+        assert!(!WATER_3D_RENDER_WGSL.contains("water_screen_contact_outline"));
+        assert!(!WATER_3D_RENDER_WGSL.contains("foam_blend"));
+        assert!(!WATER_3D_RENDER_WGSL.contains("outline_white"));
+        assert!(WATER_3D_RENDER_WGSL.contains("water_analytic_wave"));
+        assert!(WATER_3D_RENDER_WGSL.contains("water_depth_thickness"));
         assert!(WATER_3D_RENDER_WGSL.contains("vec4<f32>(w.model_x.xyz, 0.0)"));
         assert!(WATER_3D_RENDER_WGSL.contains("vec4<f32>(w.model_y.xyz, 0.0)"));
         assert!(WATER_3D_RENDER_WGSL.contains("vec4<f32>(w.model_z.xyz, 0.0)"));
@@ -2280,6 +2285,20 @@ mod tests {
         );
         assert_eq!(water_cell_count([0, 0]), 0);
         assert_eq!(water_cell_count([1, 1]), 1);
+    }
+
+    #[test]
+    fn water_lod_3d_keeps_simulation_camera_stable() {
+        let mut water = test_water_3d();
+        water.resolution = [4096, 2048];
+        water.render_resolution = [4096, 4096];
+        let near = water_lod_3d(&water, [0.0, 2.0, 0.0]);
+        let far = water_lod_3d(&water, [100_000.0, 2.0, 100_000.0]);
+
+        assert_eq!(near.grid.sim, [256, 256]);
+        assert_eq!(far.grid.sim, near.grid.sim);
+        assert_eq!(far.grid.render, near.grid.render);
+        assert_eq!(far.ripple_blend, 1.0);
     }
 
     #[test]

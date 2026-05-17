@@ -463,7 +463,7 @@ fn removed_water_3d_emits_remove_node() {
 }
 
 #[test]
-fn physics_pause_updates_water_3d_state() {
+fn physics_pause_keeps_water_3d_visual_state_live() {
     let mut runtime = Runtime::new();
     let water = NodeAPI::create::<WaterBody3D>(&mut runtime);
 
@@ -478,7 +478,7 @@ fn physics_pause_updates_water_3d_state() {
     runtime.set_physics_paused(true);
     runtime.extract_render_3d_commands();
     let paused = collect_commands(&mut runtime);
-    assert!(water_3d_command(&paused, water).paused);
+    assert!(!water_3d_command(&paused, water).paused);
 }
 
 #[test]

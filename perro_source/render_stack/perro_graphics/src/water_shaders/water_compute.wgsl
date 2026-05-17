@@ -108,11 +108,15 @@ fn water_idle_height(w: Water, local: vec2<f32>, t: f32) -> f32 {
             + (b * 0.12 + c * 0.14 + d * 0.10);
         return (chop + swell_a * 0.82 + swell_b * 0.56) * w.wave.y * 1.65;
     }
-    let flow = normalize(select(vec2<f32>(1.0, 0.0), w.flow_wind.xy, length(w.flow_wind.xy) > 0.0001));
+    let fallback_dir = normalize(select(vec2<f32>(1.0, 0.0), w.flow_wind.zw, length(w.flow_wind.zw) > 0.0001));
+    let flow = normalize(select(fallback_dir, w.flow_wind.xy, length(w.flow_wind.xy) > 0.0001));
     let cross = vec2<f32>(-flow.y, flow.x);
-    let a = sin(dot(wave_coord, flow) * tau * 1.6 - phase * 1.5);
-    let b = sin(dot(wave_coord, cross) * tau * 2.4 + phase * 0.55);
-    return (a * 0.76 + b * 0.24) * w.wave.y * 0.45;
+    let downstream = dot(wave_coord, flow);
+    let across = dot(wave_coord, cross);
+    let rush = sin(downstream * tau * 2.6 - phase * 4.2);
+    let train = sin(downstream * tau * 5.1 - phase * 7.4 + across * 1.15);
+    let shear = sin(across * tau * 1.35 + downstream * 0.9 - phase * 1.1);
+    return (water_crest_wave(rush) * 0.58 + train * 0.28 + shear * 0.14) * w.wave.y * 0.52;
 }
 
 fn water_coast_diffuse(w: Water, local_idx: u32, width: u32) -> f32 {
@@ -216,7 +220,11 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let wave_foam = crest_line * bitcast<f32>(w.flags.w) * 0.46;
     let impact_foam = smoothstep(0.06, 0.84, wake + abs(crash)) * bitcast<f32>(w.flags.w) * 0.62;
     let shore_foam = smoothstep(0.18, 1.20, crash + shore * 0.62) * (1.0 - smoothstep(1.42, 2.45, crash)) * w.coastline.x * bitcast<f32>(w.flags.w) * 1.12;
-    let foam = clamp(wave_foam + impact_foam + shore_foam + spill * max(wake, shore) * 0.34, 0.0, 1.0);
+    let foam = select(
+        clamp(wave_foam + impact_foam + shore_foam + spill * max(wake, shore) * 0.34, 0.0, 1.0),
+        0.0,
+        w.kind == 3u,
+    );
     let height = mix(prev + idle * (0.030 + shore * w.model_y.w * 0.18) + wake * 0.30 + crash, idle + wake * 0.28 + crash, 0.44 + spill * 0.14);
     cells[cell_idx] = vec4<f32>(height, idle, foam, shore);
 }

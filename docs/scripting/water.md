@@ -2,7 +2,7 @@
 
 `WaterBody2D` and `WaterBody3D` define simulated water surfaces.
 
-They render water, run a GPU height/foam simulation, and feed buoyancy forces into rigid bodies during fixed physics.
+They render water, run a GPU height simulation, and feed buoyancy forces into rigid bodies during fixed physics.
 
 Use water bodies for pools, rivers, lakes, ocean patches, or gameplay zones where bodies should float and slow down.
 
@@ -88,11 +88,11 @@ Height is world `y`.
 - `sim_cells_per_meter`: simulation density only. Runtime derives `sim_resolution` from shape surface size.
 - `render_vertices_per_meter`: render mesh density only. Runtime derives `render_resolution` from shape surface size.
 - `resolution` or `sim_resolution`: absolute simulation grid size. Accepts one number or `(x, y)`. Scene load clamps to `1..4096`; GPU simulation clamps effective grid to `1..256` per axis.
-- `render_resolution`: absolute render mesh grid size. 3D visual tessellation clamps to `1..512` per axis.
+- `render_resolution`: absolute render mesh grid size. 3D visual tessellation clamps to a low fixed GPU cap and does not drop with camera distance.
 - `depth`: visual/physics water depth hint.
 - `flow`: water current in surface-local axes.
 - `wind`: wave direction for idle modes.
-- `idle_mode` or `idle`: `"calm"`, `"sine"`, `"chop"`/`"choppy"`, `"storm"`, or `"river"`.
+- `idle_mode` or `idle`: `"calm"`, `"sine"`, `"chop"`/`"choppy"`, `"storm"`, or `"river"`. River mode rushes along `flow`; if `flow = (0, 0)`, it falls back to `wind`.
 - `wave_speed`: idle wave time scale. `1` is a slow default; old fast motion is closer to `5`.
 - `wave_scale`: idle wave height scale.
 - `wave_length`, `wavelength`, or `wave_size`: world-space wave profile length in meters. Defaults do not scale wave size from water body bounds.
@@ -101,12 +101,12 @@ Height is world `y`.
 - `buoyancy`: upward force multiplier for rigid bodies inside the surface bounds.
 - `drag`: vertical velocity damping applied while submerged.
 - `wake_strength`: wake impulse scale used by the water simulation.
-- `foam_strength`: foam response scale for wave crests, wake impacts, and shore crashes.
+- `foam_strength`: 2D foam response scale. 3D keeps this field for compatibility, but current 3D visual water ignores foam.
 - `sample_readback_rate` or `readback_rate`: target GPU sample readback rate. Renderer uses the max requested rate across visible water bodies.
-- `deep_color` and `shallow_color`: water color/opacity endpoints. Surface color derives between them from depth, waves, and foam. Shallow alpha should usually be lower than deep alpha, but default water stays mostly opaque.
+- `deep_color` and `shallow_color`: water color/opacity endpoints. Surface color derives between them from depth, waves, Fresnel, and refraction tint. Shallow alpha should usually be lower than deep alpha, but default water stays mostly opaque.
 - `shallow_depth`: visual depth cutoff where water finishes fading from shallow color/alpha toward deep color/alpha. `-1` uses the automatic old scale. Use larger values for fish tanks or clear pools that should stay see-through.
 - `sky_bias`: optional active `Sky3D` color pull. Use `sky_bias = "none"`, `sky_bias = 0.0`, or `sky_bias = { ratio=0.35 }`. `optics = { ... }` accepts the same color, `shallow_depth`, and sky fields.
-- `material` or `visual`: WaterMaterial-style render knobs: `transparency`, `reflectivity`, `roughness`, `fresnel_power`, `normal_strength`, `ripple_scale`, `foam_color`, `foam_amount`, `crest_foam_threshold`, `caustic_strength`, `refraction_strength`, `scattering_strength`, and `distance_fog_strength`.
+- `material` or `visual`: WaterMaterial-style render knobs: `transparency`, `reflectivity`, `roughness`, `fresnel_power`, `normal_strength`, `ripple_scale`, `foam_color`, `foam_amount`, `crest_foam_threshold`, `caustic_strength`, `refraction_strength`, `scattering_strength`, and `distance_fog_strength`. 3D currently ignores foam fields; they stay parseable for compatibility.
 - `lod_near_distance`/`lod_near`, `lod_mid_distance`/`lod_mid`, `lod_far_distance`/`lod_far`: camera distance thresholds for lower simulation resolution and lower physics force detail.
 - `lod_min_resolution` or `min_resolution`: lowest effective simulation resolution inside `lod_far`. GPU clamps it to `1..256`.
 - `collision_layers`: water sensor tagged layers. Defaults to all layers.
@@ -114,9 +114,9 @@ Height is world `y`.
 - `link_layers`: water link layers. Defaults to all layers.
 - `link_mask`: water link layers ignored for automatic cross-body blending. Defaults to no layers.
 - `blend_width`: explicit overlap blend width. `0` picks an automatic cubic blend width from the overlap size.
-- `wave_transfer`: wave/foam transfer multiplier across linked water. Defaults to `1`.
+- `wave_transfer`: wave transfer multiplier across linked water. Defaults to `1`. Foam transfer fields stay compatible, but 3D visual foam is disabled.
 - `flow_transfer`: flow velocity transfer multiplier across linked water. Defaults to `1`.
-- `coastline`: foam color, foam strength/width, cutoff softness, wave reflection/damping, and edge noise for static-body shorelines.
+- `coastline`: static-body shoreline cut settings. Foam/color outline fields stay compatible, but 3D visual foam/outlines are disabled.
 - `debug`: enable debug water view.
 
 Defaults:
@@ -130,9 +130,10 @@ Defaults:
 The GPU simulates water cells inside the water shape bounds for all visible water bodies inside `lod_far`.
 Water past `lod_far` keeps the analytic visual surface but skips ripple/coastline simulation and readback.
 Intersecting water bodies auto-link when link layers/masks allow it.
-Linked bodies keep separate simulation grids, but overlap samples use a cubic blend for surface height, flow, foam, buoyancy, and wake transfer.
-Effective simulation and render grid resolution drop separately with quadratic camera distance falloff, then turn off beyond `lod_far`.
-Ripples also fade with distance.
+Linked bodies keep separate simulation grids, but overlap samples use a cubic blend for surface height, flow, buoyancy, and wake transfer.
+2D effective simulation and render grid resolution drop separately with quadratic camera distance falloff, then turn off beyond `lod_far`.
+3D water keeps simulation and render resolution camera-stable; frustum culling still skips off-screen chunks.
+3D ripples do not fade from camera distance.
 
 Water samples are read back from the GPU for physics.
 If no GPU sample is ready, physics uses an analytic idle wave fallback from the same water settings.
@@ -165,16 +166,16 @@ It uses body `density` in the buoyancy calculation.
 It uses body `density` in the buoyancy calculation.
 
 Static bodies are not moved by buoyancy.
-Static collision shapes that pass the water/body mask test cut coastline holes, add edge foam, and damp waves.
+Static collision shapes that pass the water/body mask test cut coastline holes and damp waves. 3D shoreline foam/outlines are disabled for now.
 
 Physics force emitters also affect water.
 `PhysicsForceEmitter2D` and `PhysicsForceEmitter3D` send nearby force events into water when `affect_water = true`.
-Water converts those events into wakes, foam, and a cavitation scalar.
+Water converts those events into wakes and a cavitation scalar. 2D still uses foam; 3D visual foam is disabled for now.
 Explosion, lift, current, vortex, and custom force profiles all use the same water interaction path.
 
 ## Design Idea
 
-Water owns surface simulation, visual state, sensor overlap, wake/foam parameters, LOD, coastline masking, and buoyancy sampling.
+Water owns surface simulation, visual state, sensor overlap, wake parameters, LOD, coastline masking, and buoyancy sampling.
 Static/rigid bodies keep owning solid collision and contact behavior.
 
 This keeps common authoring simple:

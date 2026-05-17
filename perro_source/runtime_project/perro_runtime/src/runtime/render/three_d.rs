@@ -232,7 +232,7 @@ impl Runtime {
                         node,
                         water: Box::new(Water3DState {
                             model,
-                            paused: self.physics_paused(),
+                            paused: false,
                             simulation_time: self.time.elapsed,
                             simulation_delta: self.time.delta.max(0.0),
                             size: water_render_size(water),
