@@ -7,9 +7,9 @@ use perro_ids::{NodeID, TagID};
 use perro_nodes::Spatial;
 use perro_structs::{Transform2D, Transform3D};
 use std::{path::PathBuf, sync::Arc};
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 type DynamicScriptLibrary = libloading::Library;
-#[cfg(target_arch = "wasm32")]
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 type DynamicScriptLibrary = ();
 
 pub(crate) struct ScriptRuntimeState {

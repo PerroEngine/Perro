@@ -9,6 +9,8 @@ use perro_scripting::ScriptConstructor;
 use std::path::Path;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsValue;
+#[cfg(target_os = "android")]
+pub use winit::platform::android::activity::AndroidApp;
 
 type StaticScriptRegistry = &'static [(u64, ScriptConstructor<perro_runtime::RuntimeScriptApi>)];
 
@@ -403,6 +405,83 @@ pub fn run_static_embedded_project(
         .and_then(|p| p.config.target_fixed_update);
     WinitRunner::new()
         .run_with_timestep(app, &window_title, fixed)
+        .map_err(RunProjectError::from)
+}
+
+#[cfg(target_os = "android")]
+pub fn run_static_embedded_project_android(
+    android_app: AndroidApp,
+    input: StaticEmbeddedProject<'_>,
+) -> Result<AppExitResult, RunProjectError> {
+    let _ = perro_web::init_router();
+    let mut static_config = perro_runtime::StaticProjectConfig::new(
+        input.project.project_name,
+        input.project.main_scene_hash,
+        input.project.icon_hash,
+        input.project.startup_splash_hash,
+        input.project.virtual_width,
+        input.project.virtual_height,
+    )
+    .with_vsync(input.graphics.vsync)
+    .with_target_fixed_update(input.runtime.target_fixed_update)
+    .with_physics_gravity(input.runtime.physics_gravity)
+    .with_physics_coef(input.runtime.physics_coef)
+    .with_msaa(input.graphics.msaa)
+    .with_meshlets(input.graphics.meshlets)
+    .with_dev_meshlets(input.graphics.dev_meshlets)
+    .with_release_meshlets(input.graphics.release_meshlets)
+    .with_meshlet_debug_view(input.graphics.meshlet_debug_view)
+    .with_occlusion_culling(input.graphics.occlusion_culling)
+    .with_particle_sim_default(input.graphics.particle_sim_default)
+    .with_metadata(
+        input.metadata.description,
+        input.metadata.company,
+        input.metadata.version,
+        input.metadata.copyright,
+        input.metadata.trademark,
+    );
+    static_config = static_config.with_localization(input.localization.default_locale);
+    static_config = static_config.with_steam(input.steam.enabled, input.steam.app_id);
+    let mut project =
+        RuntimeProject::from_static(static_config, input.project.project_root.to_path_buf())
+            .with_routes(static_embedded_routes(&input.routes));
+
+    project = project
+        .with_static_scene_lookup(input.assets.scene_lookup)
+        .with_static_localization_lookup(input.assets.localization_lookup)
+        .with_static_material_lookup(input.assets.material_lookup)
+        .with_static_ui_style_lookup(input.assets.ui_style_lookup)
+        .with_static_tileset_lookup(input.assets.tileset_lookup)
+        .with_static_particle_lookup(input.assets.particle_lookup)
+        .with_static_animation_lookup(input.assets.animation_lookup)
+        .with_static_animation_tree_lookup(input.assets.animation_tree_lookup)
+        .with_static_csv_lookup(input.assets.csv_lookup)
+        .with_static_mesh_lookup(input.assets.mesh_lookup)
+        .with_static_collision_trimesh_lookup(input.assets.collision_trimesh_lookup)
+        .with_static_skeleton_lookup(input.assets.skeleton_lookup)
+        .with_static_audio_lookup(input.assets.audio_lookup)
+        .with_static_texture_lookup(input.assets.texture_lookup)
+        .with_static_shader_lookup(input.assets.shader_lookup)
+        .with_static_icon_lookup(input.assets.texture_lookup)
+        .with_perro_assets_bytes(input.assets.perro_assets);
+
+    let window_title = project.config.name.clone();
+    let graphics = graphics_from_project_config(&project.config, true)
+        .with_static_mesh_lookup(input.assets.mesh_lookup)
+        .with_static_texture_lookup(input.assets.texture_lookup)
+        .with_static_shader_lookup(input.assets.shader_lookup);
+    let runtime = Runtime::from_project_with_script_registry(
+        project,
+        ProviderMode::Static,
+        input.assets.static_script_registry,
+    );
+    let app = App::new(runtime, graphics);
+    let fixed = app
+        .runtime
+        .project()
+        .and_then(|p| p.config.target_fixed_update);
+    WinitRunner::new()
+        .run_with_timestep_android(app, &window_title, fixed, android_app)
         .map_err(RunProjectError::from)
 }
 

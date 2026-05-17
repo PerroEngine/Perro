@@ -322,7 +322,7 @@ pub(in crate::runtime::render_ui) fn apply_text_edit_key_input(
     changed
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 pub(in crate::runtime::render_ui) fn copy_selection_to_clipboard(edit: &UiTextEdit) -> bool {
     let (start, end) = selection_range(edit);
     if start == end {
@@ -336,12 +336,12 @@ pub(in crate::runtime::render_ui) fn copy_selection_to_clipboard(edit: &UiTextEd
         .is_ok()
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 pub(in crate::runtime::render_ui) fn copy_selection_to_clipboard(_edit: &UiTextEdit) -> bool {
     false
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 pub(in crate::runtime::render_ui) fn read_clipboard_text(multiline: bool) -> Option<String> {
     let mut clipboard = arboard::Clipboard::new().ok()?;
     let text = clipboard.get_text().ok()?;
@@ -349,7 +349,7 @@ pub(in crate::runtime::render_ui) fn read_clipboard_text(multiline: bool) -> Opt
     (!text.is_empty()).then_some(text)
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 pub(in crate::runtime::render_ui) fn read_clipboard_text(_multiline: bool) -> Option<String> {
     None
 }

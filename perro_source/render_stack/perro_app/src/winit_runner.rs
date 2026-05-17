@@ -22,6 +22,8 @@ use std::{fs, sync::Arc};
 use web_time::Instant;
 #[cfg(target_arch = "wasm32")]
 use winit::monitor::MonitorHandle;
+#[cfg(target_os = "android")]
+use winit::platform::android::{EventLoopBuilderExtAndroid, activity::AndroidApp};
 #[cfg(target_arch = "wasm32")]
 use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys, WindowExtWebSys};
 #[cfg(not(target_arch = "wasm32"))]
@@ -578,6 +580,29 @@ impl WinitRunner {
                 .take()
                 .unwrap_or_else(AppExitResult::event_loop_exit))
         }
+    }
+
+    #[cfg(target_os = "android")]
+    pub fn run_with_timestep_android<B: GraphicsBackend + 'static>(
+        self,
+        app: App<B>,
+        title: &str,
+        fixed_timestep: Option<f32>,
+        android_app: AndroidApp,
+    ) -> Result<AppExitResult, AppExitError> {
+        let mut builder = EventLoop::<()>::builder();
+        builder.with_android_app(android_app);
+        let event_loop = builder.build().map_err(|err| AppExitError {
+            message: format!("failed to create android winit event loop: {err}"),
+        })?;
+        let mut state = RunnerState::new(app, title, fixed_timestep);
+        event_loop.run_app(&mut state).map_err(|err| AppExitError {
+            message: format!("winit event loop failed: {err}"),
+        })?;
+        Ok(state
+            .exit_result
+            .take()
+            .unwrap_or_else(AppExitResult::event_loop_exit))
     }
 
     pub fn event_loop_type_name() -> &'static str {

@@ -2,15 +2,15 @@ use crate::App;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::threaded::RenderThreadBridge;
 use perro_graphics::GraphicsBackend;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 use perro_input_api::InputEvent;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 use perro_input_api::{
     JoyConButton, JoyConIndicatorRequest, JoyConRumbleRequest, JoyConSide, PlayerBinding,
     PlayerState,
 };
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 trait JoyConSink {
     fn set_joycon_button_state(&mut self, index: usize, button: JoyConButton, is_down: bool);
     fn set_joycon_stick(&mut self, index: usize, x: f32, y: f32);
@@ -28,7 +28,7 @@ trait JoyConSink {
     fn bind_player(&mut self, index: usize, binding: PlayerBinding);
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 impl<B: GraphicsBackend> JoyConSink for App<B> {
     fn set_joycon_button_state(&mut self, index: usize, button: JoyConButton, is_down: bool) {
         App::set_joycon_button_state(self, index, button, is_down);
@@ -77,7 +77,7 @@ impl<B: GraphicsBackend> JoyConSink for App<B> {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 impl JoyConSink for RenderThreadBridge {
     fn set_joycon_button_state(&mut self, index: usize, button: JoyConButton, is_down: bool) {
         self.push_input_event(InputEvent::JoyConButton {
@@ -127,7 +127,7 @@ impl JoyConSink for RenderThreadBridge {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 mod backend {
     use super::*;
     use btleplug::api::{Central, CharPropFlags, Manager as _, Peripheral as _, ScanFilter};
@@ -1682,7 +1682,7 @@ mod backend {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 mod backend {
     #[derive(Default)]
     pub struct JoyConBackend;
@@ -1706,9 +1706,15 @@ impl JoyConInput {
         self.backend.begin_frame(app);
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
     pub fn begin_frame_threaded(&mut self, bridge: &RenderThreadBridge) {
         let mut bridge = bridge.clone();
         self.backend.begin_frame(&mut bridge);
     }
+
+    #[cfg(all(
+        not(target_arch = "wasm32"),
+        not(any(target_os = "windows", target_os = "linux", target_os = "macos"))
+    ))]
+    pub fn begin_frame_threaded(&mut self, _bridge: &RenderThreadBridge) {}
 }

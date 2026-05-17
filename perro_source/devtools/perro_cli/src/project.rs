@@ -27,6 +27,7 @@ use std::time::Duration;
 enum CliTarget {
     Native,
     Web,
+    Android,
 }
 
 pub(crate) fn clean_command(args: &[String], _cwd: &Path) -> Result<(), String> {
@@ -196,6 +197,9 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     let target = parse_cli_target(args)?;
     if target == CliTarget::Web {
         return dev_web_command(args, cwd);
+    }
+    if target == CliTarget::Android {
+        return dev_android_command(args, cwd);
     }
     let profile_requested = args.iter().any(|a| a == "--profile");
     let ui_profile = args.iter().any(|a| a == "--ui-profile");
@@ -431,6 +435,9 @@ pub(crate) fn project_command(args: &[String], cwd: &Path) -> Result<(), String>
     if target == CliTarget::Web {
         return build_web_command(args, cwd);
     }
+    if target == CliTarget::Android {
+        return build_android_command(args, cwd);
+    }
     let profile = args.iter().any(|a| a == "--profile");
     let console = args.iter().any(|a| a == "--console");
     let project_dir = parse_flag_value(args, "--path")
@@ -459,8 +466,9 @@ fn parse_cli_target(args: &[String]) -> Result<CliTarget, String> {
     match raw.trim().to_ascii_lowercase().as_str() {
         "native" => Ok(CliTarget::Native),
         "web" => Ok(CliTarget::Web),
+        "android" => Ok(CliTarget::Android),
         other => Err(format!(
-            "invalid `--target {other}`. use `native` or `web`."
+            "invalid `--target {other}`. use `native`, `web`, or `android`."
         )),
     }
 }
@@ -492,6 +500,276 @@ fn build_web_command(args: &[String], cwd: &Path) -> Result<(), String> {
             project_dir.display()
         )
     })
+}
+
+fn build_android_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    if args.iter().any(|a| a == "--console") {
+        return Err("`--console` is not supported with `--target android`".to_string());
+    }
+    let profile = args.iter().any(|a| a == "--profile");
+    let project_dir = parse_flag_value(args, "--path")
+        .map(|p| resolve_local_path(&p, cwd))
+        .unwrap_or_else(|| cwd.to_path_buf());
+    let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
+    update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
+    update_project_vscode_linked_projects(&project_dir)?;
+
+    let android = prepare_android_toolchain()?;
+
+    log_step("Building Android Project Bundle");
+    compile_project_bundle(
+        &project_dir,
+        ProjectBuildOptions::new(profile, false)
+            .with_target(ProjectBuildTarget::Android)
+            .with_android_sdk_root(Some(leak_string(
+                android.sdk_root.to_string_lossy().to_string(),
+            )))
+            .with_android_ndk_root(Some(leak_string(
+                android.ndk_root.to_string_lossy().to_string(),
+            ))),
+    )
+    .map(|_| {
+        log_done("Android Project Bundle Built");
+    })
+    .map_err(|err| {
+        format!(
+            "android project pipeline failed for {}: {err}",
+            project_dir.display()
+        )
+    })
+}
+
+fn dev_android_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    if args.iter().any(|a| a == "--ui-profile") {
+        return Err(
+            "`--ui-profile` is not supported with `perro dev --target android` yet".to_string(),
+        );
+    }
+    if args.iter().any(|a| a == "--csv-profile") {
+        return Err(
+            "`--csv-profile` is not supported with `perro dev --target android` yet".to_string(),
+        );
+    }
+    if args.iter().any(|a| a == "--console") {
+        return Err("`--console` is not supported with `--target android`".to_string());
+    }
+
+    let profile = args.iter().any(|a| a == "--profile");
+    let release = args.iter().any(|a| a == "--release");
+    let project_dir = parse_flag_value(args, "--path")
+        .map(|p| resolve_local_path(&p, cwd))
+        .unwrap_or_else(|| cwd.to_path_buf());
+    let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
+    update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
+    update_project_vscode_linked_projects(&project_dir)?;
+
+    let android = prepare_android_toolchain()?;
+
+    log_step("Building Android Dev Bundle");
+    compile_project_bundle(
+        &project_dir,
+        ProjectBuildOptions::new(profile, false)
+            .with_target(ProjectBuildTarget::Android)
+            .with_release(release)
+            .with_android_sdk_root(Some(leak_string(
+                android.sdk_root.to_string_lossy().to_string(),
+            )))
+            .with_android_ndk_root(Some(leak_string(
+                android.ndk_root.to_string_lossy().to_string(),
+            ))),
+    )
+    .map_err(|err| {
+        format!(
+            "android dev pipeline failed for {}: {err}",
+            project_dir.display()
+        )
+    })?;
+    log_done("Android Dev Bundle Built");
+
+    log_note("Running Android App");
+    run_android_project(&project_dir, &android, release)
+}
+
+fn leak_string(value: String) -> &'static str {
+    Box::leak(value.into_boxed_str())
+}
+
+struct AndroidToolchain {
+    sdk_root: PathBuf,
+    ndk_root: PathBuf,
+}
+
+fn prepare_android_toolchain() -> Result<AndroidToolchain, String> {
+    ensure_rust_target_installed("aarch64-linux-android")?;
+    ensure_cargo_apk_installed()?;
+    let sdk_root = find_android_sdk_root().ok_or_else(android_sdk_missing_error)?;
+    let ndk_root =
+        find_android_ndk_root(&sdk_root).ok_or_else(|| android_ndk_missing_error(&sdk_root))?;
+    Ok(AndroidToolchain { sdk_root, ndk_root })
+}
+
+fn ensure_rust_target_installed(target: &str) -> Result<(), String> {
+    let output = Command::new("rustup")
+        .arg("target")
+        .arg("list")
+        .arg("--installed")
+        .output()
+        .map_err(|err| format!("failed to run `rustup target list --installed`: {err}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "`rustup target list --installed` failed with exit code {:?}",
+            output.status.code()
+        ));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if stdout.lines().any(|line| line.trim() == target) {
+        return Ok(());
+    }
+
+    log_note(&format!("Installing Rust target {target}"));
+    let status = Command::new("rustup")
+        .arg("target")
+        .arg("add")
+        .arg(target)
+        .status()
+        .map_err(|err| format!("failed to run `rustup target add {target}`: {err}"))?;
+    if !status.success() {
+        return Err(format!(
+            "`rustup target add {target}` failed with exit code {:?}",
+            status.code()
+        ));
+    }
+    Ok(())
+}
+
+fn ensure_cargo_apk_installed() -> Result<(), String> {
+    let status = Command::new("cargo").arg("apk").arg("--help").status();
+    if status.as_ref().is_ok_and(|status| status.success()) {
+        return Ok(());
+    }
+
+    log_note("Installing cargo-apk");
+    let install_status = Command::new("cargo")
+        .arg("install")
+        .arg("cargo-apk")
+        .arg("--locked")
+        .status()
+        .map_err(|err| format!("failed to run `cargo install cargo-apk --locked`: {err}"))?;
+    if !install_status.success() {
+        return Err(format!(
+            "`cargo install cargo-apk --locked` failed with exit code {:?}",
+            install_status.code()
+        ));
+    }
+    Ok(())
+}
+
+fn run_android_project(
+    project_dir: &Path,
+    android: &AndroidToolchain,
+    release: bool,
+) -> Result<(), String> {
+    let project_crate = project_dir.join(".perro").join("project");
+    let target_dir = project_dir.join("target");
+    let mut cmd = Command::new("cargo");
+    cmd.arg("apk")
+        .arg("run")
+        .arg("--lib")
+        .arg("--target")
+        .arg("aarch64-linux-android")
+        .env("CARGO_TARGET_DIR", &target_dir)
+        .env("ANDROID_SDK_ROOT", &android.sdk_root)
+        .env("ANDROID_HOME", &android.sdk_root)
+        .env("ANDROID_NDK_ROOT", &android.ndk_root)
+        .env("ANDROID_NDK_HOME", &android.ndk_root)
+        .env("NDK_HOME", &android.ndk_root)
+        .current_dir(&project_crate);
+    if release {
+        cmd.arg("--release");
+    }
+    let status = cmd.status().map_err(|err| {
+        format!(
+            "failed to launch cargo apk run from {}: {err}",
+            project_crate.display()
+        )
+    })?;
+    if !status.success() {
+        return Err(format!(
+            "cargo apk run failed with exit code {:?}. ensure an emulator or android device is available.",
+            status.code()
+        ));
+    }
+    log_done("Android App Finished");
+    Ok(())
+}
+
+fn find_android_sdk_root() -> Option<PathBuf> {
+    let mut candidates = Vec::<PathBuf>::new();
+    for key in ["ANDROID_SDK_ROOT", "ANDROID_HOME"] {
+        if let Some(value) = env::var_os(key) {
+            candidates.push(PathBuf::from(value));
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(local_app_data) = env::var_os("LOCALAPPDATA") {
+            candidates.push(PathBuf::from(local_app_data).join("Android").join("Sdk"));
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Some(home) = env::var_os("HOME") {
+            candidates.push(PathBuf::from(&home).join("Android").join("Sdk"));
+            candidates.push(
+                PathBuf::from(home)
+                    .join("Library")
+                    .join("Android")
+                    .join("sdk"),
+            );
+        }
+    }
+
+    candidates
+        .into_iter()
+        .find(|path| path.join("platform-tools").exists() || path.join("ndk").exists())
+}
+
+fn find_android_ndk_root(sdk_root: &Path) -> Option<PathBuf> {
+    for key in ["ANDROID_NDK_ROOT", "ANDROID_NDK_HOME", "NDK_HOME"] {
+        if let Some(value) = env::var_os(key) {
+            let path = PathBuf::from(value);
+            if path.exists() {
+                return Some(path);
+            }
+        }
+    }
+
+    let ndk_bundle = sdk_root.join("ndk-bundle");
+    if ndk_bundle.exists() {
+        return Some(ndk_bundle);
+    }
+    let ndk_dir = sdk_root.join("ndk");
+    if !ndk_dir.exists() {
+        return None;
+    }
+    let mut versions = fs::read_dir(&ndk_dir)
+        .ok()?
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| path.is_dir())
+        .collect::<Vec<_>>();
+    versions.sort();
+    versions.pop()
+}
+
+fn android_sdk_missing_error() -> String {
+    "android sdk not found. set ANDROID_SDK_ROOT or ANDROID_HOME, or install Android SDK in the default platform location.".to_string()
+}
+
+fn android_ndk_missing_error(sdk_root: &Path) -> String {
+    format!(
+        "android ndk not found. set ANDROID_NDK_ROOT / ANDROID_NDK_HOME / NDK_HOME, or install an NDK under `{}`.",
+        sdk_root.display()
+    )
 }
 
 fn dev_web_command(args: &[String], cwd: &Path) -> Result<(), String> {

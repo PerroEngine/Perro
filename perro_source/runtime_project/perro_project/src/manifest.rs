@@ -34,6 +34,7 @@ pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
     ensure_project_manifest_icon_build_support(&project_manifest)?;
     ensure_project_manifest_features(&project_manifest)?;
     ensure_project_manifest_web_support(&project_manifest)?;
+    ensure_project_manifest_android_support(&project_manifest)?;
     ensure_scripts_manifest_deps(&scripts_manifest)?;
     ensure_scripts_manifest_features(&scripts_manifest)?;
     ensure_scripts_manifest_user_deps(project_root, &scripts_manifest)?;
@@ -428,6 +429,90 @@ fn ensure_project_manifest_web_support(path: &Path) -> std::io::Result<()> {
             Value::Array(vec![Value::String("js".to_string())]),
         );
         deps_table.insert("getrandom_js".to_string(), Value::Table(spec));
+        changed = true;
+    }
+
+    if !changed {
+        return Ok(());
+    }
+
+    let rendered = toml::to_string(&value)
+        .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
+    fs::write(path, rendered)
+}
+
+fn ensure_project_manifest_android_support(path: &Path) -> std::io::Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let src = fs::read_to_string(path)?;
+    let Ok(mut value) = src.parse::<Value>() else {
+        return Ok(());
+    };
+    let Some(root) = value.as_table_mut() else {
+        return Ok(());
+    };
+
+    let lib = root
+        .entry("lib")
+        .or_insert_with(|| Value::Table(Default::default()));
+    let Some(lib_table) = lib.as_table_mut() else {
+        return Ok(());
+    };
+
+    let mut changed = false;
+    if lib_table.get("name").and_then(Value::as_str) != Some("main") {
+        lib_table.insert("name".to_string(), Value::String("main".to_string()));
+        changed = true;
+    }
+
+    let package = root
+        .entry("package")
+        .or_insert_with(|| Value::Table(Default::default()));
+    let Some(package_table) = package.as_table_mut() else {
+        return Ok(());
+    };
+    let metadata = package_table
+        .entry("metadata")
+        .or_insert_with(|| Value::Table(Default::default()));
+    let Some(metadata_table) = metadata.as_table_mut() else {
+        return Ok(());
+    };
+    let android = metadata_table
+        .entry("android")
+        .or_insert_with(|| Value::Table(Default::default()));
+    let Some(android_table) = android.as_table_mut() else {
+        return Ok(());
+    };
+
+    if !android_table.contains_key("package") {
+        android_table.insert(
+            "package".to_string(),
+            Value::String("com.perro.perro_project".to_string()),
+        );
+        changed = true;
+    }
+    if !android_table.contains_key("build_targets") {
+        android_table.insert(
+            "build_targets".to_string(),
+            Value::Array(vec![Value::String("aarch64-linux-android".to_string())]),
+        );
+        changed = true;
+    }
+    if !android_table.contains_key("label") {
+        android_table.insert(
+            "label".to_string(),
+            Value::String("Perro Project".to_string()),
+        );
+        changed = true;
+    }
+    if !android_table.contains_key("min_sdk_version") {
+        android_table.insert("min_sdk_version".to_string(), Value::Integer(26));
+        changed = true;
+    }
+    if !android_table.contains_key("target_sdk_version") {
+        android_table.insert("target_sdk_version".to_string(), Value::Integer(35));
         changed = true;
     }
 

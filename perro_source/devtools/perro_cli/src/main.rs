@@ -91,13 +91,13 @@ fn print_usage() {
         "  perro_cli check [--path <project_dir>]    # scripts-only compile (.perro/scripts)"
     );
     eprintln!(
-        "  perro_cli build [--path <project_dir>] [--target native|web] [--profile] [--console]    # full static project bundle + build"
+        "  perro_cli build [--path <project_dir>] [--target native|web|android] [--profile] [--console]    # full static project bundle + build"
     );
     eprintln!(
         "  perro_cli dlc --name <dlc_name> [--path <project_dir>] # build one runtime-loadable DLC package"
     );
     eprintln!(
-        "  perro_cli dev [--path <project_dir>] [--target native|web] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]      # build scripts + run dev runner or web server"
+        "  perro_cli dev [--path <project_dir>] [--target native|web|android] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]      # build scripts + run dev runner, web server, or android app"
     );
     eprintln!(
         "  perro_cli mem-profile [--path <project_dir>] [--release] [--csv [csv_name]]    # run dev runner + process memory samples"

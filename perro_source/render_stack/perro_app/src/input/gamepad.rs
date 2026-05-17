@@ -2,12 +2,12 @@ use crate::App;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::threaded::RenderThreadBridge;
 use perro_graphics::GraphicsBackend;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 use perro_input_api::InputEvent;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 use perro_input_api::{GamepadAxis, GamepadButton};
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 trait GamepadSink {
     fn set_gamepad_button_state(&mut self, index: usize, button: GamepadButton, is_down: bool);
     fn set_gamepad_axis(&mut self, index: usize, axis: GamepadAxis, value: f32);
@@ -16,7 +16,7 @@ trait GamepadSink {
     fn take_gamepad_rumble_requests(&mut self) -> Vec<perro_input_api::GamepadRumbleRequest>;
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 impl<B: GraphicsBackend> GamepadSink for App<B> {
     fn set_gamepad_button_state(&mut self, index: usize, button: GamepadButton, is_down: bool) {
         App::set_gamepad_button_state(self, index, button, is_down);
@@ -39,7 +39,7 @@ impl<B: GraphicsBackend> GamepadSink for App<B> {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 impl GamepadSink for RenderThreadBridge {
     fn set_gamepad_button_state(&mut self, index: usize, button: GamepadButton, is_down: bool) {
         self.push_input_event(InputEvent::GamepadButton {
@@ -66,7 +66,7 @@ impl GamepadSink for RenderThreadBridge {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 mod backend {
     use super::*;
     use gilrs::ff::{BaseEffect, BaseEffectType, Effect, EffectBuilder, Repeat, Replay, Ticks};
@@ -684,7 +684,7 @@ mod backend {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 mod backend {
     #[derive(Default)]
     pub struct GamepadBackend;
@@ -708,9 +708,15 @@ impl GamepadInput {
         self.backend.begin_frame(app);
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
     pub fn begin_frame_threaded(&mut self, bridge: &RenderThreadBridge) {
         let mut bridge = bridge.clone();
         self.backend.begin_frame(&mut bridge);
     }
+
+    #[cfg(all(
+        not(target_arch = "wasm32"),
+        not(any(target_os = "windows", target_os = "linux", target_os = "macos"))
+    ))]
+    pub fn begin_frame_threaded(&mut self, _bridge: &RenderThreadBridge) {}
 }

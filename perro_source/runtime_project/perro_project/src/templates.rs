@@ -379,6 +379,7 @@ edition = "2024"
 build = "build.rs"
 
 [lib]
+name = "main"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
@@ -400,6 +401,13 @@ console_error_panic_hook = "0.1.7"
 getrandom = {{ version = "0.3.4", features = ["wasm_js"] }}
 getrandom_js = {{ package = "getrandom", version = "0.2.17", features = ["js"] }}
 
+[package.metadata.android]
+package = "com.perro.__PROJECT_CRATE__"
+build_targets = ["aarch64-linux-android"]
+label = "__PROJECT_NAME__"
+min_sdk_version = 26
+target_sdk_version = 35
+
 [target.'cfg(target_os = "windows")'.build-dependencies]
 winresource = "0.1.20"
 toml = "0.8.23"
@@ -418,8 +426,10 @@ overflow-checks = false
 
 [profile.release.package.{crate_name}]
 strip = "symbols"
- "#
+ "# 
     )
+    .replace("__PROJECT_CRATE__", crate_name)
+    .replace("__PROJECT_NAME__", crate_name)
 }
 
 fn default_project_build_rs() -> String {

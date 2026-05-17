@@ -5,6 +5,8 @@ pub struct ProjectBuildOptions {
     pub release: bool,
     pub target: ProjectBuildTarget,
     pub web_output_dir: WebOutputDir,
+    pub android_sdk_root: Option<&'static str>,
+    pub android_ndk_root: Option<&'static str>,
 }
 
 impl ProjectBuildOptions {
@@ -15,6 +17,8 @@ impl ProjectBuildOptions {
             release: true,
             target: ProjectBuildTarget::Native,
             web_output_dir: WebOutputDir::Build,
+            android_sdk_root: None,
+            android_ndk_root: None,
         }
     }
 
@@ -32,12 +36,23 @@ impl ProjectBuildOptions {
         self.web_output_dir = output_dir;
         self
     }
+
+    pub fn with_android_sdk_root(mut self, sdk_root: Option<&'static str>) -> Self {
+        self.android_sdk_root = sdk_root;
+        self
+    }
+
+    pub fn with_android_ndk_root(mut self, ndk_root: Option<&'static str>) -> Self {
+        self.android_ndk_root = ndk_root;
+        self
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProjectBuildTarget {
     Native,
     Web,
+    Android,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -53,6 +68,7 @@ pub fn compile_project_bundle(
     ensure_source_overrides(project_root)?;
     let cfg = load_project_toml(project_root)
         .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
+    sync_android_project_manifest(project_root, &cfg, options)?;
     reset_embedded_dir(project_root)?;
     let _ = sync_scripts(project_root)?;
     generate_project_static_modules(project_root, &cfg)?;
@@ -90,14 +106,11 @@ fn build_project_crate(
     let project_crate = project_root.join(".perro").join("project");
     let target_dir = project_root.join("target");
     let mut cmd = Command::new("cargo");
-    cmd.arg("build")
-        .env("CARGO_TARGET_DIR", &target_dir)
+    cmd.env("CARGO_TARGET_DIR", &target_dir)
         .current_dir(&project_crate);
-    if options.release {
-        cmd.arg("--release");
-    }
     if options.target == ProjectBuildTarget::Web {
-        cmd.arg("--lib")
+        cmd.arg("build")
+            .arg("--lib")
             .arg("--target")
             .arg("wasm32-unknown-unknown");
         cmd.env(
@@ -107,12 +120,32 @@ fn build_project_crate(
                 "--cfg getrandom_backend=\"wasm_js\"",
             ),
         );
+    } else if options.target == ProjectBuildTarget::Android {
+        cmd.arg("apk")
+            .arg("build")
+            .arg("--lib")
+            .arg("--target")
+            .arg("aarch64-linux-android");
+    } else {
+        cmd.arg("build");
+    }
+    if options.release {
+        cmd.arg("--release");
     }
     if options.target == ProjectBuildTarget::Native && !options.console {
         cmd.env(
             "RUSTFLAGS",
             append_rustflag(env::var_os("RUSTFLAGS"), "--cfg perro_no_console"),
         );
+    }
+    if let Some(sdk_root) = options.android_sdk_root {
+        cmd.env("ANDROID_SDK_ROOT", sdk_root)
+            .env("ANDROID_HOME", sdk_root);
+    }
+    if let Some(ndk_root) = options.android_ndk_root {
+        cmd.env("ANDROID_NDK_ROOT", ndk_root)
+            .env("ANDROID_NDK_HOME", ndk_root)
+            .env("NDK_HOME", ndk_root);
     }
     let mut features = Vec::new();
     if options.profile {
@@ -132,6 +165,7 @@ fn build_project_crate(
     match options.target {
         ProjectBuildTarget::Native => export_project_binary(project_root, &target_dir)?,
         ProjectBuildTarget::Web => export_project_web_bundle(project_root, &target_dir, options)?,
+        ProjectBuildTarget::Android => export_project_android_bundle(project_root, &target_dir)?,
     }
     Ok(())
 }
@@ -146,7 +180,7 @@ fn append_rustflag(existing: Option<std::ffi::OsString>, flag: &str) -> std::ffi
 }
 
 fn export_project_binary(project_root: &Path, target_dir: &Path) -> Result<(), CompilerError> {
-    let package_bin_name = read_project_binary_name(project_root)?;
+    let package_bin_name = read_project_package_name(project_root)?;
     let output_bin_name = read_project_output_binary_name(project_root, &package_bin_name)?;
     let built_bin = target_dir
         .join("release")
@@ -165,6 +199,48 @@ fn export_project_binary(project_root: &Path, target_dir: &Path) -> Result<(), C
     fs::copy(&built_bin, &copied_bin)?;
     rename_exported_binary(&copied_bin, &output_bin)?;
     println!("exported project binary: {}", output_bin.display());
+    Ok(())
+}
+
+fn export_project_android_bundle(
+    project_root: &Path,
+    target_dir: &Path,
+) -> Result<(), CompilerError> {
+    let output_name = read_project_output_binary_name(
+        project_root,
+        &read_project_package_name(project_root)?,
+    )?;
+    let mut newest_apk = None::<(std::time::SystemTime, PathBuf)>;
+    walk_dir(target_dir, &mut |path| {
+        if !path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("apk"))
+        {
+            return Ok(());
+        }
+        if let Ok(meta) = fs::metadata(path)
+            && let Ok(modified) = meta.modified()
+        {
+            match &newest_apk {
+                Some((current, _)) if *current >= modified => {}
+                _ => newest_apk = Some((modified, path.to_path_buf())),
+            }
+        }
+        Ok(())
+    })
+    .map_err(|err| CompilerError::SceneParse(format!("failed to scan target dir: {err}")))?;
+    let newest_apk = newest_apk.map(|(_, path)| path).ok_or_else(|| {
+        CompilerError::SceneParse(format!(
+            "android apk not found after build under {}",
+            target_dir.display()
+        ))
+    })?;
+
+    let output_dir = project_root.join(".output").join("android");
+    fs::create_dir_all(&output_dir)?;
+    let output_apk = output_dir.join(format!("{output_name}.apk"));
+    fs::copy(&newest_apk, &output_apk)?;
+    println!("exported android apk: {}", output_apk.display());
     Ok(())
 }
 
@@ -230,7 +306,7 @@ fn platform_binary_name(bin_name: &str) -> String {
     }
 }
 
-fn read_project_binary_name(project_root: &Path) -> Result<String, CompilerError> {
+fn read_project_package_name(project_root: &Path) -> Result<String, CompilerError> {
     let manifest_path = project_root
         .join(".perro")
         .join("project")
@@ -259,6 +335,36 @@ fn read_project_binary_name(project_root: &Path) -> Result<String, CompilerError
         "failed to resolve package.name from {}",
         manifest_path.display()
     )))
+}
+
+fn read_project_library_name(
+    project_root: &Path,
+    fallback_name: &str,
+) -> Result<String, CompilerError> {
+    let manifest_path = project_root
+        .join(".perro")
+        .join("project")
+        .join("Cargo.toml");
+    let source = fs::read_to_string(&manifest_path)?;
+    let mut in_lib = false;
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            in_lib = trimmed == "[lib]";
+            continue;
+        }
+        if !in_lib || !trimmed.starts_with("name") {
+            continue;
+        }
+        let Some((_, raw_value)) = trimmed.split_once('=') else {
+            continue;
+        };
+        let value = raw_value.trim().trim_matches('"');
+        if !value.is_empty() {
+            return Ok(value.to_string());
+        }
+    }
+    Ok(fallback_name.to_string())
 }
 
 fn read_project_output_binary_name(
@@ -547,10 +653,108 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
         steam_enabled = cfg.steam.enabled,
         steam_app_id = emit_optional_u32(cfg.steam.app_id),
     );
+    let embedded_android_block = format!(
+        "let root = project_root();\n\
+perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::StaticEmbeddedProject {{\n\
+  project: perro_app::entry::StaticEmbeddedProjectInfo {{\n\
+        project_root: &root,\n\
+        project_name: \"{name}\",\n\
+        main_scene_hash: {main_scene_hash}u64,\n\
+        icon_hash: {icon_hash}u64,\n\
+        startup_splash_hash: {startup_splash_hash}u64,\n\
+        virtual_width: {w},\n\
+        virtual_height: {h},\n\
+  }},\n\
+  routes: perro_app::entry::StaticEmbeddedRoutesConfig {{\n\
+        routes: {routes_block},\n\
+  }},\n\
+  graphics: perro_app::entry::StaticEmbeddedGraphicsConfig {{\n\
+        vsync: {vsync},\n\
+        msaa: {msaa},\n\
+        meshlets: {meshlets},\n\
+        dev_meshlets: {dev_meshlets},\n\
+        release_meshlets: {release_meshlets},\n\
+        meshlet_debug_view: {meshlet_debug_view},\n\
+        occlusion_culling: {occlusion_culling},\n\
+        particle_sim_default: {particle_sim_default},\n\
+  }},\n\
+  runtime: perro_app::entry::StaticEmbeddedRuntimeConfig {{\n\
+        target_fixed_update: {target_fixed_update},\n\
+        physics_gravity: {physics_gravity},\n\
+        physics_coef: {physics_coef},\n\
+  }},\n\
+  metadata: perro_app::entry::StaticEmbeddedMetadataConfig {{\n\
+        description: {metadata_description},\n\
+        company: {metadata_company},\n\
+        version: {metadata_version},\n\
+        copyright: {metadata_copyright},\n\
+        trademark: {metadata_trademark},\n\
+  }},\n\
+  localization: perro_app::entry::StaticEmbeddedLocalizationConfig {{\n\
+        default_locale: {localization_default_locale},\n\
+  }},\n\
+  steam: perro_app::entry::StaticEmbeddedSteamConfig {{\n\
+        enabled: {steam_enabled},\n\
+        app_id: {steam_app_id},\n\
+  }},\n\
+  assets: perro_app::entry::StaticEmbeddedAssetsConfig {{\n\
+        perro_assets: PERRO_ASSETS,\n\
+        scene_lookup: static_assets::scenes::lookup_scene,\n\
+        localization_lookup: static_assets::localizations::lookup_localized_string,\n\
+        material_lookup: static_assets::materials::lookup_material,\n\
+        ui_style_lookup: static_assets::ui_styles::lookup_ui_style,\n\
+        tileset_lookup: static_assets::tilesets::lookup_tileset,\n\
+        particle_lookup: static_assets::particles::lookup_particle,\n\
+        animation_lookup: static_assets::animations::lookup_animation,\n\
+        animation_tree_lookup: static_assets::animation_trees::lookup_animation_tree,\n\
+        csv_lookup: static_assets::csvs::lookup_csv,\n\
+        mesh_lookup: static_assets::meshes::lookup_mesh,\n\
+        collision_trimesh_lookup: static_assets::collision_trimeshes::lookup_collision_trimesh,\n\
+        skeleton_lookup: static_assets::skeletons::lookup_skeleton,\n\
+        texture_lookup: static_assets::textures::lookup_texture,\n\
+        shader_lookup: static_assets::shaders::lookup_shader,\n\
+        audio_lookup: static_assets::audios::lookup_audio,\n\
+        static_script_registry: Some(scripts::SCRIPT_REGISTRY),\n\
+  }},\n\
+}})\n\
+.expect(\"failed to run embedded static project on android\");",
+        name = escape_str(&cfg.name),
+        main_scene_hash = perro_ids::string_to_u64(&cfg.main_scene),
+        icon_hash = perro_ids::string_to_u64(&cfg.icon),
+        startup_splash_hash = perro_ids::string_to_u64(&cfg.startup_splash),
+        w = cfg.virtual_width,
+        h = cfg.virtual_height,
+        routes_block = emit_static_routes_block(&routes),
+        vsync = cfg.vsync,
+        msaa = cfg.msaa,
+        meshlets = cfg.meshlets,
+        dev_meshlets = cfg.dev_meshlets,
+        release_meshlets = cfg.release_meshlets,
+        meshlet_debug_view = cfg.meshlet_debug_view,
+        occlusion_culling = emit_occlusion_culling_expr(cfg.occlusion_culling),
+        particle_sim_default = emit_particle_sim_default_expr(cfg.particle_sim_default),
+        target_fixed_update = emit_optional_f32(cfg.target_fixed_update),
+        physics_gravity = emit_f32(cfg.physics_gravity),
+        physics_coef = emit_f32(cfg.physics_coef),
+        metadata_description = emit_optional_static_str(cfg.metadata.description.as_deref()),
+        metadata_company = emit_optional_static_str(cfg.metadata.company.as_deref()),
+        metadata_version = emit_optional_static_str(cfg.metadata.version.as_deref()),
+        metadata_copyright = emit_optional_static_str(cfg.metadata.copyright.as_deref()),
+        metadata_trademark = emit_optional_static_str(cfg.metadata.trademark.as_deref()),
+        localization_default_locale = emit_static_str(
+            cfg.localization
+                .as_ref()
+                .map(|loc| loc.default_locale.as_str())
+                .unwrap_or("en"),
+        ),
+        steam_enabled = cfg.steam.enabled,
+        steam_app_id = emit_optional_u32(cfg.steam.app_id),
+    );
+    let embedded_android_block = indent_block(&embedded_android_block, 2);
     let embedded_web_block = indent_block(&embedded_web_block, 4);
 
-    let lib_src = format!(
-        "#![cfg_attr(all(perro_no_console, target_os = \"windows\"), windows_subsystem = \"windows\")]\n\n\
+    let shared_src = format!(
+        "#![allow(dead_code)]\n\n\
 #[path = \"static/mod.rs\"]\n\
 mod static_assets;\n\n\
 static PERRO_ASSETS: &[u8] = include_bytes!(\"../embedded/assets.perro\");\n\n\
@@ -566,7 +770,11 @@ pub fn keep_perro_engine_marker() {{\n\
         ));\n\
     }}\n\
 }}\n\n\
-#[cfg(not(target_arch = \"wasm32\"))]\n\
+#[cfg(any(target_os = \"android\", target_arch = \"wasm32\"))]\n\
+pub fn project_root() -> std::path::PathBuf {{\n\
+    std::path::PathBuf::from(\".\")\n\
+}}\n\n\
+#[cfg(all(not(target_os = \"android\"), not(target_arch = \"wasm32\")))]\n\
 pub fn project_root() -> std::path::PathBuf {{\n\
     if let Ok(exe) = std::env::current_exe() {{\n\
         if let Some(exe_dir) = exe.parent() {{\n\
@@ -584,26 +792,26 @@ pub fn project_root() -> std::path::PathBuf {{\n\
     }}\n\
     std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(\".\"))\n\
 }}\n\n\
-#[cfg(target_arch = \"wasm32\")]\n\
-pub fn project_root() -> std::path::PathBuf {{\n\
-    std::path::PathBuf::from(\".\")\n\
-}}\n\n\
-#[cfg(not(target_arch = \"wasm32\"))]\n\
+#[cfg(all(not(target_os = \"android\"), not(target_arch = \"wasm32\")))]\n\
 pub fn run_native() {{\n\
 {embedded_block}\n\
 }}\n\n\
+#[cfg(target_os = \"android\")]\n\
+pub fn run_android(app: perro_app::entry::AndroidApp) {{\n\
+{embedded_android_block}\n\
+}}\n\n\
 #[cfg(target_arch = \"wasm32\")]\n\
-#[wasm_bindgen::prelude::wasm_bindgen(start)]\n\
 pub fn run_web() -> Result<(), wasm_bindgen::JsValue> {{\n\
     console_error_panic_hook::set_once();\n\
 {embedded_web_block}\n\
 }}\n",
         embedded_block = embedded_block,
+        embedded_android_block = embedded_android_block,
         embedded_web_block = embedded_web_block,
     );
-    let main_src = "fn main() {\n  important_project::keep_perro_engine_marker();\n  important_project::run_native();\n}\n";
-    let crate_name = read_project_binary_name(project_root)?;
-    let main_src = main_src.replace("important_project", &crate_name);
+    let lib_src = "#![cfg_attr(all(perro_no_console, target_os = \"windows\"), windows_subsystem = \"windows\")]\n\n#[path = \"entry_shared.rs\"]\nmod entry_shared;\n\npub use entry_shared::*;\n\n#[cfg(target_os = \"android\")]\n#[unsafe(no_mangle)]\npub fn android_main(app: perro_app::entry::AndroidApp) {\n    keep_perro_engine_marker();\n    run_android(app);\n}\n\n#[cfg(target_arch = \"wasm32\")]\n#[wasm_bindgen::prelude::wasm_bindgen(start)]\npub fn run_web_entry() -> Result<(), wasm_bindgen::JsValue> {\n    keep_perro_engine_marker();\n    run_web()\n}\n";
+    let main_src = "#[path = \"entry_shared.rs\"]\nmod entry_shared;\n\n#[cfg(all(not(target_os = \"android\"), not(target_arch = \"wasm32\")))]\nfn main() {\n  entry_shared::keep_perro_engine_marker();\n  entry_shared::run_native();\n}\n";
+    fs::write(project_src.join("entry_shared.rs"), shared_src)?;
     fs::write(project_src.join("lib.rs"), lib_src)?;
     fs::write(project_src.join("main.rs"), main_src)?;
     Ok(())
@@ -614,7 +822,8 @@ fn export_project_web_bundle(
     target_dir: &Path,
     options: ProjectBuildOptions,
 ) -> Result<(), CompilerError> {
-    let package_name = read_project_binary_name(project_root)?;
+    let package_name = read_project_package_name(project_root)?;
+    let library_name = read_project_library_name(project_root, &package_name)?;
     let project_cfg = load_project_toml(project_root)
         .map_err(|err| CompilerError::SceneParse(format!("failed to load project.toml: {err}")))?;
     let routes = perro_project::load_routes_toml(project_root, &project_cfg)
@@ -623,7 +832,7 @@ fn export_project_web_bundle(
     let built_wasm = target_dir
         .join("wasm32-unknown-unknown")
         .join(profile_dir)
-        .join(format!("{package_name}.wasm"));
+        .join(format!("{library_name}.wasm"));
     if !built_wasm.exists() {
         return Err(CompilerError::SceneParse(format!(
             "project wasm not found after build: {}",
@@ -667,6 +876,123 @@ fn export_project_web_bundle(
     emit_web_route_html_files(project_root, &output_dir, &project_cfg, &routes)?;
     println!("exported web bundle: {}", output_dir.display());
     Ok(())
+}
+
+fn sync_android_project_manifest(
+    project_root: &Path,
+    cfg: &perro_project::ProjectConfig,
+    options: ProjectBuildOptions,
+) -> Result<(), CompilerError> {
+    if options.target != ProjectBuildTarget::Android {
+        return Ok(());
+    }
+
+    let manifest_path = project_root
+        .join(".perro")
+        .join("project")
+        .join("Cargo.toml");
+    let src = fs::read_to_string(&manifest_path)?;
+    let mut value = src.parse::<toml::Value>().map_err(|err| {
+        CompilerError::SceneParse(format!(
+            "failed to parse generated project manifest {}: {err}",
+            manifest_path.display()
+        ))
+    })?;
+    let root = value.as_table_mut().ok_or_else(|| {
+        CompilerError::SceneParse(format!(
+            "generated project manifest is not a TOML table: {}",
+            manifest_path.display()
+        ))
+    })?;
+
+    {
+        let package = root
+            .entry("package")
+            .or_insert_with(|| toml::Value::Table(Default::default()));
+        let package_table = package.as_table_mut().ok_or_else(|| {
+            CompilerError::SceneParse("generated project package table invalid".to_string())
+        })?;
+        if let Some(version) = cfg.metadata.version.as_ref() {
+            package_table.insert("version".to_string(), toml::Value::String(version.clone()));
+        }
+
+        let metadata = package_table
+            .entry("metadata")
+            .or_insert_with(|| toml::Value::Table(Default::default()));
+        let metadata_table = metadata.as_table_mut().ok_or_else(|| {
+            CompilerError::SceneParse("generated project package.metadata invalid".to_string())
+        })?;
+        let android = metadata_table
+            .entry("android")
+            .or_insert_with(|| toml::Value::Table(Default::default()));
+        let android_table = android.as_table_mut().ok_or_else(|| {
+            CompilerError::SceneParse(
+                "generated project package.metadata.android invalid".to_string(),
+            )
+        })?;
+        android_table.insert(
+            "package".to_string(),
+            toml::Value::String(android_package_name(project_root, cfg)),
+        );
+        android_table.insert(
+            "build_targets".to_string(),
+            toml::Value::Array(vec![toml::Value::String(
+                "aarch64-linux-android".to_string(),
+            )]),
+        );
+        android_table.insert("label".to_string(), toml::Value::String(cfg.name.clone()));
+        android_table.insert("min_sdk_version".to_string(), toml::Value::Integer(26));
+        android_table.insert("target_sdk_version".to_string(), toml::Value::Integer(35));
+    }
+
+    let lib = root
+        .entry("lib")
+        .or_insert_with(|| toml::Value::Table(Default::default()));
+    let lib_table = lib.as_table_mut().ok_or_else(|| {
+        CompilerError::SceneParse("generated project lib table invalid".to_string())
+    })?;
+    lib_table.insert("name".to_string(), toml::Value::String("main".to_string()));
+
+    let rendered = toml::to_string(&value).map_err(|err| {
+        CompilerError::SceneParse(format!(
+            "failed to render generated project manifest {}: {err}",
+            manifest_path.display()
+        ))
+    })?;
+    fs::write(&manifest_path, rendered)?;
+    Ok(())
+}
+
+fn android_package_name(project_root: &Path, cfg: &perro_project::ProjectConfig) -> String {
+    let fallback = project_root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("perro_project");
+    let source = sanitize_android_ident(if cfg.name.trim().is_empty() {
+        fallback
+    } else {
+        &cfg.name
+    });
+    format!("com.perro.{source}")
+}
+
+fn sanitize_android_ident(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for c in input.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c.to_ascii_lowercase());
+        } else {
+            out.push('_');
+        }
+    }
+    let trimmed = out.trim_matches('_');
+    if trimmed.is_empty() {
+        "perro_project".to_string()
+    } else if trimmed.as_bytes()[0].is_ascii_digit() {
+        format!("perro_{trimmed}")
+    } else {
+        trimmed.to_string()
+    }
 }
 
 fn web_boot_js() -> &'static str {
