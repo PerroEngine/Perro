@@ -51,6 +51,60 @@ macro_rules! key_released {
 
 #[macro_export]
 /// Signature:
+/// - `action_down!(&InputWindow<_>, &str) -> bool`
+///
+/// Usage:
+/// - `action_down!(ipt, "jump") -> bool`
+///
+/// Checks whether any binding in the named input-map action is currently down.
+macro_rules! action_down {
+    ($ipt:expr, $action:literal) => {{
+        const __PERRO_ACTION_HASH: u64 = $crate::action_hash($action);
+        $ipt.Actions().down_hash(__PERRO_ACTION_HASH)
+    }};
+    ($ipt:expr, $action:expr) => {
+        $ipt.Actions().down_hash($crate::action_hash($action))
+    };
+}
+
+#[macro_export]
+/// Signature:
+/// - `action_pressed!(&InputWindow<_>, &str) -> bool`
+///
+/// Usage:
+/// - `action_pressed!(ipt, "jump") -> bool`
+///
+/// Checks whether any binding in the named input-map action was pressed this frame.
+macro_rules! action_pressed {
+    ($ipt:expr, $action:literal) => {{
+        const __PERRO_ACTION_HASH: u64 = $crate::action_hash($action);
+        $ipt.Actions().pressed_hash(__PERRO_ACTION_HASH)
+    }};
+    ($ipt:expr, $action:expr) => {
+        $ipt.Actions().pressed_hash($crate::action_hash($action))
+    };
+}
+
+#[macro_export]
+/// Signature:
+/// - `action_released!(&InputWindow<_>, &str) -> bool`
+///
+/// Usage:
+/// - `action_released!(ipt, "jump") -> bool`
+///
+/// Checks whether any binding in the named input-map action was released this frame.
+macro_rules! action_released {
+    ($ipt:expr, $action:literal) => {{
+        const __PERRO_ACTION_HASH: u64 = $crate::action_hash($action);
+        $ipt.Actions().released_hash(__PERRO_ACTION_HASH)
+    }};
+    ($ipt:expr, $action:expr) => {
+        $ipt.Actions().released_hash($crate::action_hash($action))
+    };
+}
+
+#[macro_export]
+/// Signature:
 /// - `mouse_down!(&InputWindow<_>, MouseButton) -> bool`
 ///
 /// Usage:

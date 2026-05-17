@@ -76,11 +76,25 @@ max_ray_distance = 500.0
     )
 }
 
+pub fn default_input_map_toml() -> String {
+    "[jump]\nkeys = [\"KeySpace\", \"KeyUp\"]\n".to_string()
+}
+
 pub fn load_project_toml(root: &Path) -> Result<ProjectConfig, ProjectError> {
     let project_toml = fs::read_to_string(root.join("project.toml"))?;
     let mut config = parse_project_toml(&project_toml)?;
     apply_sibling_localization(root, &mut config)?;
+    config.input_map = load_input_map_toml(root)?;
     Ok(config)
+}
+
+pub fn load_input_map_toml(root: &Path) -> Result<perro_input_api::InputMap, ProjectError> {
+    let path = root.join("input_map.toml");
+    if !path.exists() {
+        return Ok(perro_input_api::InputMap::new());
+    }
+    let input_map_toml = fs::read_to_string(path)?;
+    parse_input_map_toml(&input_map_toml)
 }
 
 pub fn load_routes_toml(
@@ -229,8 +243,121 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         particle_sim_default,
         audio,
         localization,
+        input_map: perro_input_api::InputMap::new(),
         steam,
     })
+}
+
+pub fn parse_input_map_toml(contents: &str) -> Result<perro_input_api::InputMap, ProjectError> {
+    let value: Value = contents.parse::<Value>()?;
+    let root = value.as_table().ok_or_else(|| {
+        ProjectError::InvalidField("input_map", "must be a TOML table".to_string())
+    })?;
+    let mut actions = Vec::new();
+    for (name, value) in root {
+        let table = value.as_table().ok_or_else(|| {
+            ProjectError::InvalidField("input_map", format!("action `{name}` must be table"))
+        })?;
+        let action_name = name.trim();
+        if action_name.is_empty() {
+            return Err(ProjectError::InvalidField(
+                "input_map",
+                "action name must not be empty".to_string(),
+            ));
+        }
+        let mut bindings = Vec::new();
+        parse_input_map_binding_list(
+            table,
+            "keys",
+            &mut bindings,
+            parse_input_map_key_binding,
+            "keys",
+            action_name,
+        )?;
+        parse_input_map_binding_list(
+            table,
+            "mouse",
+            &mut bindings,
+            parse_input_map_mouse_binding,
+            "mouse",
+            action_name,
+        )?;
+        parse_input_map_binding_list(
+            table,
+            "gamepad",
+            &mut bindings,
+            parse_input_map_gamepad_binding,
+            "gamepad",
+            action_name,
+        )?;
+        parse_input_map_binding_list(
+            table,
+            "joycon",
+            &mut bindings,
+            parse_input_map_joycon_binding,
+            "joycon",
+            action_name,
+        )?;
+        if bindings.is_empty() {
+            return Err(ProjectError::InvalidField(
+                "input_map",
+                format!("action `{action_name}` needs at least 1 binding"),
+            ));
+        }
+        actions.push(perro_input_api::InputAction::new(action_name, bindings));
+    }
+    Ok(perro_input_api::InputMap::from_actions(actions))
+}
+
+fn parse_input_map_binding_list(
+    table: &toml::map::Map<String, Value>,
+    key: &'static str,
+    bindings: &mut Vec<perro_input_api::InputBinding>,
+    parse: fn(&str) -> Option<perro_input_api::InputBinding>,
+    field: &'static str,
+    action_name: &str,
+) -> Result<(), ProjectError> {
+    let Some(value) = table.get(key) else {
+        return Ok(());
+    };
+    let Value::Array(items) = value else {
+        return Err(ProjectError::InvalidField(
+            "input_map",
+            format!("action `{action_name}` field `{field}` must be array of strings"),
+        ));
+    };
+    for item in items {
+        let Some(raw) = item.as_str() else {
+            return Err(ProjectError::InvalidField(
+                "input_map",
+                format!("action `{action_name}` field `{field}` must be array of strings"),
+            ));
+        };
+        let Some(binding) = parse(raw) else {
+            return Err(ProjectError::InvalidField(
+                "input_map",
+                format!("unknown {field} binding `{raw}` in action `{action_name}`"),
+            ));
+        };
+        bindings.push(binding);
+    }
+    Ok(())
+}
+
+fn parse_input_map_key_binding(raw: &str) -> Option<perro_input_api::InputBinding> {
+    perro_input_api::KeyCode::from_name(raw).map(perro_input_api::InputBinding::Key)
+}
+
+fn parse_input_map_mouse_binding(raw: &str) -> Option<perro_input_api::InputBinding> {
+    perro_input_api::MouseButton::from_name(raw).map(perro_input_api::InputBinding::Mouse)
+}
+
+fn parse_input_map_gamepad_binding(raw: &str) -> Option<perro_input_api::InputBinding> {
+    perro_input_api::GamepadButton::from_name(raw).map(perro_input_api::InputBinding::Gamepad)
+}
+
+fn parse_input_map_joycon_binding(raw: &str) -> Option<perro_input_api::InputBinding> {
+    perro_input_api::JoyConButton::from_name(raw).map(perro_input_api::InputBinding::JoyCon)
 }
 
 pub fn default_routes_config(project: &ProjectConfig) -> ProjectRoutesConfig {

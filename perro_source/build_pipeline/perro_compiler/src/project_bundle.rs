@@ -449,6 +449,11 @@ fn generate_embedded_entry_files(project_root: &Path) -> Result<(), CompilerErro
         "perro_render_bridge = \"0.1.0\"",
     )?;
     ensure_project_dependency_line(project_root, "perro_runtime", "perro_runtime = \"0.1.0\"")?;
+    ensure_project_dependency_line(
+        project_root,
+        "perro_input_api",
+        "perro_input_api = \"0.1.0\"",
+    )?;
     ensure_project_dependency_line(project_root, "perro_ids", "perro_ids = \"0.1.0\"")?;
     ensure_project_dependency_line(project_root, "perro_csv", "perro_csv = \"0.1.0\"")?;
     ensure_project_dependency_line(
@@ -473,6 +478,9 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
   }},\n\
   routes: perro_app::entry::StaticEmbeddedRoutesConfig {{\n\
         routes: {routes_block},\n\
+  }},\n\
+  input: perro_app::entry::StaticEmbeddedInputMapConfig {{\n\
+        actions: {input_map_block},\n\
   }},\n\
   graphics: perro_app::entry::StaticEmbeddedGraphicsConfig {{\n\
         vsync: {vsync},\n\
@@ -531,6 +539,7 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         w = cfg.virtual_width,
         h = cfg.virtual_height,
         routes_block = emit_static_routes_block(&routes),
+        input_map_block = emit_static_input_map_block(&cfg.input_map),
         vsync = cfg.vsync,
         msaa = cfg.msaa,
         meshlets = cfg.meshlets,
@@ -571,6 +580,9 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
   }},\n\
   routes: perro_app::entry::StaticEmbeddedRoutesConfig {{\n\
         routes: {routes_block},\n\
+  }},\n\
+  input: perro_app::entry::StaticEmbeddedInputMapConfig {{\n\
+        actions: {input_map_block},\n\
   }},\n\
   graphics: perro_app::entry::StaticEmbeddedGraphicsConfig {{\n\
         vsync: {vsync},\n\
@@ -628,6 +640,7 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
         w = cfg.virtual_width,
         h = cfg.virtual_height,
         routes_block = emit_static_routes_block(&routes),
+        input_map_block = emit_static_input_map_block(&cfg.input_map),
         vsync = cfg.vsync,
         msaa = cfg.msaa,
         meshlets = cfg.meshlets,
@@ -667,6 +680,9 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
   }},\n\
   routes: perro_app::entry::StaticEmbeddedRoutesConfig {{\n\
         routes: {routes_block},\n\
+  }},\n\
+  input: perro_app::entry::StaticEmbeddedInputMapConfig {{\n\
+        actions: {input_map_block},\n\
   }},\n\
   graphics: perro_app::entry::StaticEmbeddedGraphicsConfig {{\n\
         vsync: {vsync},\n\
@@ -725,6 +741,7 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
         w = cfg.virtual_width,
         h = cfg.virtual_height,
         routes_block = emit_static_routes_block(&routes),
+        input_map_block = emit_static_input_map_block(&cfg.input_map),
         vsync = cfg.vsync,
         msaa = cfg.msaa,
         meshlets = cfg.meshlets,
@@ -1718,6 +1735,54 @@ fn emit_static_routes_block(routes: &perro_project::ProjectRoutesConfig) -> Stri
     }
     out.push(']');
     out
+}
+
+fn emit_static_input_map_block(input_map: &perro_input_api::InputMap) -> String {
+    let mut out = String::from("&[");
+    for action in input_map.actions() {
+        let mut keys = Vec::new();
+        let mut mouse = Vec::new();
+        let mut gamepad = Vec::new();
+        let mut joycon = Vec::new();
+        for binding in &action.bindings {
+            match binding {
+                perro_input_api::InputBinding::Key(key) => {
+                    keys.push(format!("perro_input_api::KeyCode::{key:?}"));
+                }
+                perro_input_api::InputBinding::Mouse(button) => {
+                    mouse.push(format!("perro_input_api::MouseButton::{button:?}"));
+                }
+                perro_input_api::InputBinding::Gamepad(button) => {
+                    gamepad.push(format!("perro_input_api::GamepadButton::{button:?}"));
+                }
+                perro_input_api::InputBinding::JoyCon(button) => {
+                    joycon.push(format!("perro_input_api::JoyConButton::{button:?}"));
+                }
+            }
+        }
+        out.push_str("\n            perro_app::entry::StaticEmbeddedInputAction { ");
+        out.push_str(&format!(
+            "name: {}, keys: &{}, mouse: &{}, gamepad: &{}, joycon: &{} }},",
+            emit_static_str(&action.name),
+            emit_static_input_binding_array(&keys),
+            emit_static_input_binding_array(&mouse),
+            emit_static_input_binding_array(&gamepad),
+            emit_static_input_binding_array(&joycon)
+        ));
+    }
+    if !input_map.actions().is_empty() {
+        out.push_str("\n        ");
+    }
+    out.push(']');
+    out
+}
+
+fn emit_static_input_binding_array(items: &[String]) -> String {
+    if items.is_empty() {
+        "[]".to_string()
+    } else {
+        format!("[{}]", items.join(", "))
+    }
 }
 
 fn indent_block(src: &str, spaces: usize) -> String {

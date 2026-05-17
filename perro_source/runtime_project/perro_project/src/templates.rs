@@ -389,6 +389,7 @@ perro_scene = "0.1.0"
 perro_render_bridge = "0.1.0"
 perro_animation = "0.1.0"
 perro_structs = "0.1.0"
+perro_input_api = "0.1.0"
 scripts = {{ path = "../scripts" }}
 
 [features]
@@ -848,6 +849,15 @@ fn project_root() -> std::path::PathBuf {
                   href: "/",
                   name: "main",
                   scene_hash: 7300106721993353294u64,
+              }],
+          },
+          input: perro_app::entry::StaticEmbeddedInputMapConfig {
+              actions: &[perro_app::entry::StaticEmbeddedInputAction {
+                  name: "jump",
+                  keys: &[perro_input_api::KeyCode::Space, perro_input_api::KeyCode::ArrowUp],
+                  mouse: &[],
+                  gamepad: &[],
+                  joycon: &[],
               }],
           },
           graphics: perro_app::entry::StaticEmbeddedGraphicsConfig {

@@ -1,5 +1,6 @@
 mod frame;
 mod gamepad;
+mod input_map;
 mod joycon;
 mod keycode;
 mod macros;
@@ -12,6 +13,7 @@ mod window;
 
 pub use frame::*;
 pub use gamepad::{GamepadAxis, GamepadButton, GamepadState};
+pub use input_map::{InputAction, InputBinding, InputMap, action_hash};
 pub use joycon::{JoyConButton, JoyConSide, JoyConState};
 pub use keycode::KeyCode;
 pub use mouse_button::MouseButton;
@@ -28,13 +30,14 @@ mod tests;
 
 pub mod prelude {
     pub use crate::{
-        GamepadAxis, GamepadButton, GamepadIndex, GamepadModule, GamepadState, InputAPI,
-        InputSnapshot, InputWindow, JoyConButton, JoyConIndex, JoyConModule, JoyConSide,
-        JoyConState, KeyCode, KeyModule, KeyboardModule, KeyboardState, MouseButton, MouseMode,
-        MouseModule, MouseState, MouseStateModule, PlayerBinding, PlayerIndicatorSlot,
-        PlayerModule, PlayerState, RumbleIntensity, gamepad_accel, gamepad_down, gamepad_get,
-        gamepad_gyro, gamepad_left_stick, gamepad_list, gamepad_pressed, gamepad_released,
-        gamepad_right_stick, gamepad_set_rumble, joycon_accel, joycon_calibrated,
+        ActionModule, GamepadAxis, GamepadButton, GamepadIndex, GamepadModule, GamepadState,
+        InputAPI, InputAction, InputBinding, InputMap, InputSnapshot, InputWindow, JoyConButton,
+        JoyConIndex, JoyConModule, JoyConSide, JoyConState, KeyCode, KeyModule, KeyboardModule,
+        KeyboardState, MouseButton, MouseMode, MouseModule, MouseState, MouseStateModule,
+        PlayerBinding, PlayerIndicatorSlot, PlayerModule, PlayerState, RumbleIntensity,
+        action_down, action_hash, action_pressed, action_released, gamepad_accel, gamepad_down,
+        gamepad_get, gamepad_gyro, gamepad_left_stick, gamepad_list, gamepad_pressed,
+        gamepad_released, gamepad_right_stick, gamepad_set_rumble, joycon_accel, joycon_calibrated,
         joycon_calibrating, joycon_calibration_bias, joycon_connected, joycon_down, joycon_get,
         joycon_gyro, joycon_list, joycon_needs_calibration, joycon_pressed, joycon_released,
         joycon_request_calibration, joycon_set_indicator, joycon_set_rumble, joycon_side,

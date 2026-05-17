@@ -203,4 +203,29 @@ impl KeyCode {
     pub const fn as_index(self) -> usize {
         self as usize
     }
+
+    #[inline]
+    pub fn from_name(name: &str) -> Option<Self> {
+        let name = match name.trim() {
+            "KeySpace" => "Space",
+            "KeyUp" => "ArrowUp",
+            "KeyDown" => "ArrowDown",
+            "KeyLeft" => "ArrowLeft",
+            "KeyRight" => "ArrowRight",
+            other => other,
+        };
+        (0..Self::COUNT)
+            .filter_map(Self::from_index)
+            .find(|key| format!("{key:?}") == name)
+    }
+
+    #[inline]
+    pub fn from_index(index: usize) -> Option<Self> {
+        if index < Self::COUNT {
+            // KeyCode is repr(u16) and variants are contiguous from 0 to COUNT - 1.
+            Some(unsafe { std::mem::transmute::<u16, Self>(index as u16) })
+        } else {
+            None
+        }
+    }
 }

@@ -517,6 +517,107 @@ fn normalize_route_href_trims_extra_bits() {
     assert_eq!(normalize_route_href("/docs/index.html"), "/docs");
 }
 
+#[test]
+fn parse_input_map_toml_reads_key_mouse_gamepad_and_joycon() {
+    let parsed = parse_input_map_toml(
+        r#"
+[jump]
+keys = ["KeySpace", "KeyUp"]
+mouse = ["Left"]
+gamepad = ["Bottom"]
+joycon = ["Bottom"]
+"#,
+    )
+    .expect("parse input map");
+    let action = parsed.action("jump").expect("jump action");
+
+    assert_eq!(action.bindings.len(), 5);
+    assert!(
+        action
+            .bindings
+            .contains(&perro_input_api::InputBinding::Key(
+                perro_input_api::KeyCode::Space
+            ))
+    );
+    assert!(
+        action
+            .bindings
+            .contains(&perro_input_api::InputBinding::Key(
+                perro_input_api::KeyCode::ArrowUp
+            ))
+    );
+    assert!(
+        action
+            .bindings
+            .contains(&perro_input_api::InputBinding::Mouse(
+                perro_input_api::MouseButton::Left
+            ))
+    );
+    assert!(
+        action
+            .bindings
+            .contains(&perro_input_api::InputBinding::Gamepad(
+                perro_input_api::GamepadButton::Bottom
+            ))
+    );
+    assert!(
+        action
+            .bindings
+            .contains(&perro_input_api::InputBinding::JoyCon(
+                perro_input_api::JoyConButton::Bottom
+            ))
+    );
+}
+
+#[test]
+fn parse_input_map_toml_rejects_unknown_binding() {
+    let err = parse_input_map_toml(
+        r#"
+[jump]
+keys = ["Nope"]
+"#,
+    )
+    .expect_err("unknown key");
+
+    assert!(matches!(err, ProjectError::InvalidField("input_map", _)));
+}
+
+#[test]
+fn load_project_toml_reads_sibling_input_map() {
+    let root = unique_temp_dir("perro_input_map_sibling");
+    ensure_project_layout(&root).expect("layout");
+    fs::write(
+        root.join("project.toml"),
+        r#"[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+virtual_resolution = "1920x1080"
+"#,
+    )
+    .expect("write project");
+    fs::write(root.join("input_map.toml"), "[jump]\nkeys = [\"KeySpace\"]\n")
+        .expect("write input map");
+
+    let project = load_project_toml(&root).expect("load project");
+    assert!(project.input_map.action("jump").is_some());
+
+    fs::remove_dir_all(&root).expect("cleanup");
+}
+
+#[test]
+fn load_input_map_toml_missing_returns_empty() {
+    let root = unique_temp_dir("perro_input_map_missing");
+    ensure_project_layout(&root).expect("layout");
+
+    let input_map = load_input_map_toml(&root).expect("load missing input map");
+    assert!(input_map.is_empty());
+
+    fs::remove_dir_all(&root).expect("cleanup");
+}
+
 fn unique_temp_dir(prefix: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)

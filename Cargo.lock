@@ -3755,6 +3755,7 @@ version = "0.1.0"
 dependencies = [
  "perro_assets",
  "perro_ids",
+ "perro_input_api",
  "perro_io",
  "perro_project",
  "perro_scene",
@@ -3833,6 +3834,7 @@ version = "0.1.0"
 name = "perro_input_api"
 version = "0.1.0"
 dependencies = [
+ "perro_ids",
  "perro_structs",
 ]
 
@@ -3949,6 +3951,7 @@ dependencies = [
 name = "perro_project"
 version = "0.1.0"
 dependencies = [
+ "perro_input_api",
  "toml 0.8.23",
 ]
 

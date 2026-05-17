@@ -357,6 +357,7 @@ impl StaticProjectConfig {
                 key_column: "key".to_string(),
                 default_locale: self.localization_default_locale.to_string(),
             }),
+            input_map: perro_input_api::InputMap::new(),
             steam: SteamConfig {
                 enabled: self.steam_enabled,
                 app_id: self.steam_app_id,
@@ -391,6 +392,7 @@ pub struct ProjectConfig {
     pub particle_sim_default: ParticleSimDefault,
     pub audio: AudioConfig,
     pub localization: Option<LocalizationConfig>,
+    pub input_map: perro_input_api::InputMap,
     pub steam: SteamConfig,
 }
 
@@ -421,6 +423,7 @@ impl ProjectConfig {
             particle_sim_default: ParticleSimDefault::Cpu,
             audio: AudioConfig::default(),
             localization: None,
+            input_map: perro_input_api::InputMap::new(),
             steam: SteamConfig::default(),
         }
     }

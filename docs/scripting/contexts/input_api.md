@@ -10,9 +10,46 @@ Purpose:
 Accessors:
 - `ctx.ipt.Keys()`
 - `ctx.ipt.Mouse()`
+- `ctx.ipt.Actions()`
 - `ctx.ipt.Gamepads()`
 - `ctx.ipt.JoyCons()`
 - `ctx.ipt.Players()`
+
+## Input Map
+
+Create `input_map.toml` next to `project.toml`:
+
+```toml
+[jump]
+keys = ["KeySpace", "KeyUp"]
+mouse = ["Left"]
+gamepad = ["Bottom"]
+joycon = ["Bottom"]
+```
+
+Query actions:
+
+```rust
+if action_pressed!(ctx.ipt, "jump") {
+    signal_emit!(ctx.run, signal!("jump"));
+}
+```
+
+Methods:
+- `ctx.ipt.Actions().down("jump") -> bool`
+- `ctx.ipt.Actions().pressed("jump") -> bool`
+- `ctx.ipt.Actions().released("jump") -> bool`
+
+Macros:
+- `action_down!(ipt, "jump") -> bool`
+- `action_pressed!(ipt, "jump") -> bool`
+- `action_released!(ipt, "jump") -> bool`
+
+Bindings:
+- `keys`: `KeyCode` names, plus aliases like `KeySpace` and `KeyUp`
+- `mouse`: `MouseButton` names
+- `gamepad`: `GamepadButton` names, matched against any connected gamepad
+- `joycon`: `JoyConButton` names, matched against any connected Joy-Con
 
 ## Input Modules
 

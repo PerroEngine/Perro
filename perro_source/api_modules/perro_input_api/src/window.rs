@@ -48,6 +48,11 @@ impl<'ipt, IP: InputAPI + ?Sized> InputWindow<'ipt, IP> {
     }
 
     #[inline]
+    pub fn Actions(&self) -> ActionModule<'_, IP> {
+        ActionModule::new(self.ipt)
+    }
+
+    #[inline]
     pub fn bind_player(&self, index: usize, binding: PlayerBinding) {
         if let Some(buffer) = self.ipt.command_buffer() {
             buffer
@@ -122,6 +127,46 @@ impl<'ipt, IP: InputAPI + ?Sized> InputWindow<'ipt, IP> {
                 indicator: slot,
             });
         }
+    }
+}
+
+pub struct ActionModule<'ipt, IP: InputAPI + ?Sized> {
+    ipt: &'ipt IP,
+}
+
+impl<'ipt, IP: InputAPI + ?Sized> ActionModule<'ipt, IP> {
+    pub fn new(ipt: &'ipt IP) -> Self {
+        Self { ipt }
+    }
+
+    #[inline]
+    pub fn down(&self, name: &str) -> bool {
+        self.down_hash(action_hash(name))
+    }
+
+    #[inline]
+    pub fn pressed(&self, name: &str) -> bool {
+        self.pressed_hash(action_hash(name))
+    }
+
+    #[inline]
+    pub fn released(&self, name: &str) -> bool {
+        self.released_hash(action_hash(name))
+    }
+
+    #[inline]
+    pub fn down_hash(&self, name_hash: u64) -> bool {
+        self.ipt.action_down_hash(name_hash)
+    }
+
+    #[inline]
+    pub fn pressed_hash(&self, name_hash: u64) -> bool {
+        self.ipt.action_pressed_hash(name_hash)
+    }
+
+    #[inline]
+    pub fn released_hash(&self, name_hash: u64) -> bool {
+        self.ipt.action_released_hash(name_hash)
     }
 }
 

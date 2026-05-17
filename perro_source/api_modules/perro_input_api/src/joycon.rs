@@ -37,6 +37,24 @@ impl JoyConButton {
     pub fn as_index(self) -> usize {
         self as usize
     }
+
+    #[inline]
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name.trim() {
+            "Top" | "JoyConTop" => Some(Self::Top),
+            "Bottom" | "JoyConBottom" => Some(Self::Bottom),
+            "Left" | "JoyConLeft" => Some(Self::Left),
+            "Right" | "JoyConRight" => Some(Self::Right),
+            "Bumper" | "JoyConBumper" => Some(Self::Bumper),
+            "Trigger" | "JoyConTrigger" => Some(Self::Trigger),
+            "Stick" | "JoyConStick" => Some(Self::Stick),
+            "SL" | "JoyConSL" => Some(Self::SL),
+            "SR" | "JoyConSR" => Some(Self::SR),
+            "Start" | "JoyConStart" => Some(Self::Start),
+            "Meta" | "JoyConMeta" => Some(Self::Meta),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

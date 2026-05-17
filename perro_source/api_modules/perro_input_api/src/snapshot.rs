@@ -7,6 +7,10 @@ pub struct InputSnapshot {
     gamepads: Vec<GamepadState>,
     joycons: Vec<JoyConState>,
     players: Vec<PlayerState>,
+    input_map: InputMap,
+    action_down: Vec<u64>,
+    action_pressed: Vec<u64>,
+    action_released: Vec<u64>,
     commands: RefCell<Vec<InputCommand>>,
     pending_mouse_mode: Option<MouseMode>,
     pending_gamepad_rumble: Vec<GamepadRumbleRequest>,
@@ -22,6 +26,10 @@ impl InputSnapshot {
             gamepads: Vec::new(),
             joycons: Vec::new(),
             players: Vec::new(),
+            input_map: InputMap::new(),
+            action_down: Vec::new(),
+            action_pressed: Vec::new(),
+            action_released: Vec::new(),
             commands: RefCell::new(Vec::new()),
             pending_mouse_mode: None,
             pending_gamepad_rumble: Vec::new(),
@@ -44,11 +52,15 @@ impl InputSnapshot {
         for player in &mut self.players {
             player.begin_frame();
         }
+        self.action_pressed.fill(0);
+        self.action_released.fill(0);
+        self.refresh_all_action_down();
     }
 
     #[inline]
     pub fn set_key_state(&mut self, key: KeyCode, is_down: bool) {
         self.keyboard.set_key_state(key, is_down);
+        self.refresh_key_actions(key);
     }
 
     #[inline]
@@ -79,6 +91,7 @@ impl InputSnapshot {
     #[inline]
     pub fn set_mouse_button_state(&mut self, button: MouseButton, is_down: bool) {
         self.mouse.set_button_state(button, is_down);
+        self.refresh_mouse_actions(button);
     }
 
     #[inline]
@@ -134,6 +147,18 @@ impl InputSnapshot {
     #[inline]
     pub fn players(&self) -> &[PlayerState] {
         &self.players
+    }
+
+    #[inline]
+    pub fn input_map(&self) -> &InputMap {
+        &self.input_map
+    }
+
+    #[inline]
+    pub fn set_input_map(&mut self, input_map: InputMap) {
+        self.input_map = input_map;
+        self.resize_action_bits();
+        self.refresh_all_action_states();
     }
 
     #[inline]
@@ -222,6 +247,7 @@ impl InputSnapshot {
     #[inline]
     pub fn set_gamepad_button_state(&mut self, index: usize, button: GamepadButton, is_down: bool) {
         self.gamepad_mut(index).set_button_state(button, is_down);
+        self.refresh_gamepad_actions(button);
     }
 
     #[inline]
@@ -243,12 +269,14 @@ impl InputSnapshot {
     pub fn set_joycon_button_state(&mut self, index: usize, button: JoyConButton, is_down: bool) {
         let state = self.joycon_mut(index);
         state.set_button_state(button, is_down);
+        self.refresh_joycon_actions(button);
     }
 
     #[inline]
     pub fn set_joycon_side(&mut self, index: usize, side: JoyConSide) {
         let state = self.joycon_mut(index);
         state.set_side(side);
+        self.refresh_all_action_states();
     }
 
     #[inline]
@@ -354,6 +382,148 @@ impl InputSnapshot {
     pub fn take_joycon_indicator_requests(&mut self) -> Vec<JoyConIndicatorRequest> {
         std::mem::take(&mut self.pending_joycon_indicator)
     }
+
+    #[inline]
+    pub fn is_action_down_hash(&self, name_hash: u64) -> bool {
+        self.input_map
+            .action_index(name_hash)
+            .is_some_and(|index| test_bit(&self.action_down, index))
+    }
+
+    #[inline]
+    pub fn is_action_pressed_hash(&self, name_hash: u64) -> bool {
+        self.input_map
+            .action_index(name_hash)
+            .is_some_and(|index| test_bit(&self.action_pressed, index))
+    }
+
+    #[inline]
+    pub fn is_action_released_hash(&self, name_hash: u64) -> bool {
+        self.input_map
+            .action_index(name_hash)
+            .is_some_and(|index| test_bit(&self.action_released, index))
+    }
+
+    fn resize_action_bits(&mut self) {
+        let words = self.input_map.action_count().div_ceil(64);
+        self.action_down.resize(words, 0);
+        self.action_pressed.resize(words, 0);
+        self.action_released.resize(words, 0);
+    }
+
+    fn refresh_key_actions(&mut self, key: KeyCode) {
+        let actions = self.input_map.actions_for_key(key).to_vec();
+        self.refresh_action_states(&actions);
+    }
+
+    fn refresh_mouse_actions(&mut self, button: MouseButton) {
+        let actions = self.input_map.actions_for_mouse(button).to_vec();
+        self.refresh_action_states(&actions);
+    }
+
+    fn refresh_gamepad_actions(&mut self, button: GamepadButton) {
+        let actions = self.input_map.actions_for_gamepad(button).to_vec();
+        self.refresh_action_states(&actions);
+    }
+
+    fn refresh_joycon_actions(&mut self, button: JoyConButton) {
+        let actions = self.input_map.actions_for_joycon(button).to_vec();
+        self.refresh_action_states(&actions);
+    }
+
+    fn refresh_all_action_down(&mut self) {
+        let actions: Vec<usize> = (0..self.input_map.action_count()).collect();
+        for action in actions {
+            let down = self.compute_action_down(action);
+            set_bit(&mut self.action_down, action, down);
+        }
+    }
+
+    fn refresh_all_action_states(&mut self) {
+        let actions: Vec<usize> = (0..self.input_map.action_count()).collect();
+        self.refresh_action_states(&actions);
+    }
+
+    fn refresh_action_states(&mut self, actions: &[usize]) {
+        for &action in actions {
+            let down = self.compute_action_down(action);
+            let pressed = self.compute_action_pressed(action);
+            let released = self.compute_action_released(action);
+            set_bit(&mut self.action_down, action, down);
+            set_bit(&mut self.action_pressed, action, pressed);
+            set_bit(&mut self.action_released, action, released);
+        }
+    }
+
+    fn compute_action_down(&self, action: usize) -> bool {
+        self.input_map.actions().get(action).is_some_and(|action| {
+            action.bindings.iter().any(|binding| match binding {
+                InputBinding::Key(key) => self.keyboard.is_key_down(*key),
+                InputBinding::Mouse(button) => self.mouse.is_button_down(*button),
+                InputBinding::Gamepad(button) => {
+                    self.gamepads.iter().any(|pad| pad.is_button_down(*button))
+                }
+                InputBinding::JoyCon(button) => self
+                    .joycons
+                    .iter()
+                    .any(|joycon| joycon.is_button_down(*button)),
+            })
+        })
+    }
+
+    fn compute_action_pressed(&self, action: usize) -> bool {
+        self.input_map.actions().get(action).is_some_and(|action| {
+            action.bindings.iter().any(|binding| match binding {
+                InputBinding::Key(key) => self.keyboard.is_key_pressed(*key),
+                InputBinding::Mouse(button) => self.mouse.is_button_pressed(*button),
+                InputBinding::Gamepad(button) => self
+                    .gamepads
+                    .iter()
+                    .any(|pad| pad.is_button_pressed(*button)),
+                InputBinding::JoyCon(button) => self
+                    .joycons
+                    .iter()
+                    .any(|joycon| joycon.is_button_pressed(*button)),
+            })
+        })
+    }
+
+    fn compute_action_released(&self, action: usize) -> bool {
+        self.input_map.actions().get(action).is_some_and(|action| {
+            action.bindings.iter().any(|binding| match binding {
+                InputBinding::Key(key) => self.keyboard.is_key_released(*key),
+                InputBinding::Mouse(button) => self.mouse.is_button_released(*button),
+                InputBinding::Gamepad(button) => self
+                    .gamepads
+                    .iter()
+                    .any(|pad| pad.is_button_released(*button)),
+                InputBinding::JoyCon(button) => self
+                    .joycons
+                    .iter()
+                    .any(|joycon| joycon.is_button_released(*button)),
+            })
+        })
+    }
+}
+
+#[inline]
+fn test_bit(bits: &[u64], index: usize) -> bool {
+    let word = index / 64;
+    let bit = 1_u64 << (index % 64);
+    bits.get(word).is_some_and(|word| word & bit != 0)
+}
+
+#[inline]
+fn set_bit(bits: &mut [u64], index: usize, enabled: bool) {
+    let word = index / 64;
+    let bit = 1_u64 << (index % 64);
+    if let Some(value) = bits.get_mut(word) {
+        if enabled {
+            *value |= bit;
+        } else {
+            *value &= !bit;
+        }
+    }
 }
 
 impl Default for InputSnapshot {
@@ -394,6 +564,34 @@ pub trait InputAPI {
     fn gamepads(&self) -> &[GamepadState];
     fn joycons(&self) -> &[JoyConState];
     fn players(&self) -> &[PlayerState];
+    fn input_map(&self) -> &InputMap;
+    fn action_down_hash(&self, name_hash: u64) -> bool {
+        self.input_map().down_hash(
+            name_hash,
+            self.keyboard(),
+            self.mouse(),
+            self.gamepads(),
+            self.joycons(),
+        )
+    }
+    fn action_pressed_hash(&self, name_hash: u64) -> bool {
+        self.input_map().pressed_hash(
+            name_hash,
+            self.keyboard(),
+            self.mouse(),
+            self.gamepads(),
+            self.joycons(),
+        )
+    }
+    fn action_released_hash(&self, name_hash: u64) -> bool {
+        self.input_map().released_hash(
+            name_hash,
+            self.keyboard(),
+            self.mouse(),
+            self.gamepads(),
+            self.joycons(),
+        )
+    }
     #[inline]
     fn command_buffer(&self) -> Option<&RefCell<Vec<InputCommand>>> {
         None
@@ -424,6 +622,26 @@ impl InputAPI for InputSnapshot {
     #[inline]
     fn players(&self) -> &[PlayerState] {
         self.players()
+    }
+
+    #[inline]
+    fn input_map(&self) -> &InputMap {
+        self.input_map()
+    }
+
+    #[inline]
+    fn action_down_hash(&self, name_hash: u64) -> bool {
+        self.is_action_down_hash(name_hash)
+    }
+
+    #[inline]
+    fn action_pressed_hash(&self, name_hash: u64) -> bool {
+        self.is_action_pressed_hash(name_hash)
+    }
+
+    #[inline]
+    fn action_released_hash(&self, name_hash: u64) -> bool {
+        self.is_action_released_hash(name_hash)
     }
 
     #[inline]

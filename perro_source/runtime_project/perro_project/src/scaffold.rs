@@ -81,6 +81,7 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
     let crate_name = crate_name_from_project_name(project_name);
     write_if_missing(root.join(".gitignore"), &default_gitignore())?;
     write_if_missing(root.join("deps.toml"), &default_deps_toml())?;
+    write_if_missing(root.join("input_map.toml"), &default_input_map_toml())?;
     write_if_missing(
         root.join("README.md"),
         &default_project_readme_md(project_name),

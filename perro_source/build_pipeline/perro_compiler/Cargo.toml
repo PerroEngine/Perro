@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 perro_assets.workspace = true
 perro_ids.workspace = true
+perro_input_api.workspace = true
 perro_io.workspace = true
 perro_project.workspace = true
 perro_scene.workspace = true

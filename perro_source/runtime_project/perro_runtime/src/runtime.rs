@@ -441,6 +441,7 @@ impl Runtime {
         let static_localization_lookup = project.static_localization_lookup;
         let static_csv_lookup = project.static_csv_lookup;
         let localization_config = project.config.localization.clone();
+        let input_map = project.config.input_map.clone();
         #[cfg(feature = "steamworks")]
         let steam_config = project.config.steam.clone();
         runtime.project = Some(Arc::new(project));
@@ -456,6 +457,7 @@ impl Runtime {
             localization_config,
         );
         runtime.configure_audio_from_project();
+        runtime.input.set_input_map(input_map);
         if let Some(entries) = script_registry {
             for (path_hash, ctor) in entries {
                 runtime

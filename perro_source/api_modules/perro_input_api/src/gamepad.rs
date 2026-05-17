@@ -27,6 +27,31 @@ impl GamepadButton {
     pub fn as_index(self) -> usize {
         self as usize
     }
+
+    #[inline]
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name.trim() {
+            "Bottom" | "GamepadBottom" => Some(Self::Bottom),
+            "Right" | "GamepadRight" => Some(Self::Right),
+            "Left" | "GamepadLeft" => Some(Self::Left),
+            "Top" | "GamepadTop" => Some(Self::Top),
+            "DpadUp" | "GamepadDpadUp" => Some(Self::DpadUp),
+            "DpadDown" | "GamepadDpadDown" => Some(Self::DpadDown),
+            "DpadLeft" | "GamepadDpadLeft" => Some(Self::DpadLeft),
+            "DpadRight" | "GamepadDpadRight" => Some(Self::DpadRight),
+            "Start" | "GamepadStart" => Some(Self::Start),
+            "Select" | "GamepadSelect" => Some(Self::Select),
+            "Home" | "GamepadHome" => Some(Self::Home),
+            "Capture" | "GamepadCapture" => Some(Self::Capture),
+            "L1" | "GamepadL1" => Some(Self::L1),
+            "R1" | "GamepadR1" => Some(Self::R1),
+            "L2" | "GamepadL2" => Some(Self::L2),
+            "R2" | "GamepadR2" => Some(Self::R2),
+            "L3" | "GamepadL3" => Some(Self::L3),
+            "R3" | "GamepadR3" => Some(Self::R3),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
