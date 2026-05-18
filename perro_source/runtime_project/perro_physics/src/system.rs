@@ -1,4 +1,4 @@
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashSet;
 use perro_ids::NodeID;
 use perro_nodes::{Shape2D, Shape3D};
 use perro_runtime_api::sub_apis::{
@@ -42,9 +42,11 @@ pub struct PhysicsSystem {
     pub stale_ids_3d: Vec<NodeID>,
     pub stale_joint_ids_2d: Vec<NodeID>,
     pub stale_joint_ids_3d: Vec<NodeID>,
+    pub body_sync_epoch_2d: u64,
+    pub body_sync_epoch_3d: u64,
     pub joint_sync_epoch_2d: u64,
     pub joint_sync_epoch_3d: u64,
-    pub trimesh_cache: AHashMap<u64, TriMeshData>,
+    pub trimesh_cache: ahash::AHashMap<u64, TriMeshData>,
     pub next_opaque_handle: u64,
     pub signal_name_scratch: String,
 }
@@ -67,9 +69,11 @@ impl PhysicsSystem {
             stale_ids_3d: Vec::new(),
             stale_joint_ids_2d: Vec::new(),
             stale_joint_ids_3d: Vec::new(),
+            body_sync_epoch_2d: 0,
+            body_sync_epoch_3d: 0,
             joint_sync_epoch_2d: 0,
             joint_sync_epoch_3d: 0,
-            trimesh_cache: AHashMap::default(),
+            trimesh_cache: ahash::AHashMap::default(),
             next_opaque_handle: 1,
             signal_name_scratch: String::new(),
         }
@@ -90,6 +94,8 @@ impl PhysicsSystem {
         self.stale_ids_3d.clear();
         self.stale_joint_ids_2d.clear();
         self.stale_joint_ids_3d.clear();
+        self.body_sync_epoch_2d = 0;
+        self.body_sync_epoch_3d = 0;
         self.joint_sync_epoch_2d = 0;
         self.joint_sync_epoch_3d = 0;
         self.trimesh_cache.clear();

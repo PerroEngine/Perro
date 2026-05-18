@@ -15,10 +15,18 @@ impl PhysicsSystem {
             return;
         }
 
+        let next_epoch = self.body_sync_epoch_2d.wrapping_add(1);
+        let reset_epochs = next_epoch == 0;
+        self.body_sync_epoch_2d = if reset_epochs { 1 } else { next_epoch };
+        let sync_epoch = self.body_sync_epoch_2d;
+
         let mut world = self.world_2d.take().unwrap_or_default();
-        let mut alive = AHashSet::default();
+        if reset_epochs {
+            for state in world.body_map.values_mut() {
+                state.sync_epoch = 0;
+            }
+        }
         for body in bodies {
-            alive.insert(body.id);
             if !world.body_map.contains_key(&body.id) {
                 let rb_handle = world.bodies.insert(build_rigid_body_2d(body));
                 let opaque = self.alloc_opaque_handle();
@@ -30,6 +38,7 @@ impl PhysicsSystem {
                         kind: body.kind,
                         shape_signature: 0,
                         opaque_handle: opaque,
+                        sync_epoch,
                     },
                 );
                 set_body_handle(body.id, Some(opaque));
@@ -40,6 +49,7 @@ impl PhysicsSystem {
             };
 
             state.kind = body.kind;
+            state.sync_epoch = sync_epoch;
             if let Some(rb) = world.bodies.get_mut(state.handle) {
                 rb.set_enabled(body.enabled);
                 let target_body_type = match body.kind {
@@ -127,9 +137,8 @@ impl PhysicsSystem {
         stale.extend(
             world
                 .body_map
-                .keys()
-                .copied()
-                .filter(|id| !alive.contains(id)),
+                .iter()
+                .filter_map(|(&id, state)| (state.sync_epoch != sync_epoch).then_some(id)),
         );
 
         for id in stale.iter().copied() {
@@ -168,10 +177,18 @@ impl PhysicsSystem {
             return;
         }
 
+        let next_epoch = self.body_sync_epoch_3d.wrapping_add(1);
+        let reset_epochs = next_epoch == 0;
+        self.body_sync_epoch_3d = if reset_epochs { 1 } else { next_epoch };
+        let sync_epoch = self.body_sync_epoch_3d;
+
         let mut world = self.world_3d.take().unwrap_or_default();
-        let mut alive = AHashSet::default();
+        if reset_epochs {
+            for state in world.body_map.values_mut() {
+                state.sync_epoch = 0;
+            }
+        }
         for body in bodies {
-            alive.insert(body.id);
             if !world.body_map.contains_key(&body.id) {
                 let rb_handle = world.bodies.insert(build_rigid_body_3d(body));
                 let opaque = self.alloc_opaque_handle();
@@ -183,6 +200,7 @@ impl PhysicsSystem {
                         kind: body.kind,
                         shape_signature: 0,
                         opaque_handle: opaque,
+                        sync_epoch,
                     },
                 );
                 set_body_handle(body.id, Some(opaque));
@@ -193,6 +211,7 @@ impl PhysicsSystem {
             };
 
             state.kind = body.kind;
+            state.sync_epoch = sync_epoch;
             if let Some(rb) = world.bodies.get_mut(state.handle) {
                 rb.set_enabled(body.enabled);
                 let target_body_type = match body.kind {
@@ -306,9 +325,8 @@ impl PhysicsSystem {
         stale.extend(
             world
                 .body_map
-                .keys()
-                .copied()
-                .filter(|id| !alive.contains(id)),
+                .iter()
+                .filter_map(|(&id, state)| (state.sync_epoch != sync_epoch).then_some(id)),
         );
 
         for id in stale.iter().copied() {

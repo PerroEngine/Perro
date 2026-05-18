@@ -12,6 +12,7 @@ pub struct BodyState2D {
     pub kind: BodyKind,
     pub shape_signature: u64,
     pub opaque_handle: u64,
+    pub sync_epoch: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -21,6 +22,7 @@ pub struct BodyState3D {
     pub kind: BodyKind,
     pub shape_signature: u64,
     pub opaque_handle: u64,
+    pub sync_epoch: u64,
 }
 
 #[derive(Clone, Debug)]

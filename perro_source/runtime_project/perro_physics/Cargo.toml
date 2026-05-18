@@ -29,3 +29,7 @@ criterion = "0.5"
 [[bench]]
 name = "joint_sync"
 harness = false
+
+[[bench]]
+name = "rapier_core"
+harness = false

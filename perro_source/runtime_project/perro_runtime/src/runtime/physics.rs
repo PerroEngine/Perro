@@ -5,7 +5,9 @@ use glam::{Mat3, Mat4, Vec3};
 use perro_ids::{NodeID, SignalID};
 #[cfg(test)]
 use perro_nodes::TileMap2D;
-use perro_nodes::{SceneNodeData, Shape2D, Shape3D, WaterShape, water_physics_sample_or_idle};
+use perro_nodes::{
+    Node2D, Node3D, SceneNodeData, Shape2D, Shape3D, WaterShape, water_physics_sample_or_idle,
+};
 use perro_physics::*;
 use perro_runtime_api::sub_apis::{
     NodeAPI, PhysicsContact2D, PhysicsContact3D, PhysicsQueryFilter, PhysicsRayHit2D,
@@ -1088,14 +1090,10 @@ impl Runtime {
         if emitter.radius <= 0.0 {
             return;
         }
-        let ids = self
-            .nodes
-            .iter()
-            .filter_map(|(id, node)| {
-                matches!(node.data, SceneNodeData::RigidBody2D(_)).then_some(id)
-            })
-            .collect::<Vec<_>>();
-        for id in ids {
+        let radius_sq = emitter.radius * emitter.radius;
+        let body_count = self.internal_updates.physics_body_nodes_2d.len();
+        for i in 0..body_count {
+            let id = self.internal_updates.physics_body_nodes_2d[i];
             let Some(global) = self.get_global_transform_2d(id) else {
                 continue;
             };
@@ -1114,10 +1112,11 @@ impl Runtime {
                 continue;
             }
             let offset = global.position - emitter_pos;
-            let dist = offset.length();
-            if dist > emitter.radius {
+            let dist_sq = offset.length_squared();
+            if dist_sq > radius_sq {
                 continue;
             }
+            let dist = dist_sq.sqrt();
             let force = force_emitter_force_2d(emitter, offset, dist);
             if force.length_squared() <= 0.000_001 {
                 continue;
@@ -1141,14 +1140,10 @@ impl Runtime {
         if emitter.radius <= 0.0 {
             return;
         }
-        let ids = self
-            .nodes
-            .iter()
-            .filter_map(|(id, node)| {
-                matches!(node.data, SceneNodeData::RigidBody3D(_)).then_some(id)
-            })
-            .collect::<Vec<_>>();
-        for id in ids {
+        let radius_sq = emitter.radius * emitter.radius;
+        let body_count = self.internal_updates.physics_body_nodes_3d.len();
+        for i in 0..body_count {
+            let id = self.internal_updates.physics_body_nodes_3d[i];
             let Some(global) = self.get_global_transform_3d(id) else {
                 continue;
             };
@@ -1167,10 +1162,11 @@ impl Runtime {
                 continue;
             }
             let offset = global.position - emitter_pos;
-            let dist = offset.length();
-            if dist > emitter.radius {
+            let dist_sq = offset.length_squared();
+            if dist_sq > radius_sq {
                 continue;
             }
+            let dist = dist_sq.sqrt();
             let force = force_emitter_force_3d(emitter, offset, dist);
             if force.length_squared() <= 0.000_001 {
                 continue;
@@ -1593,13 +1589,20 @@ impl Runtime {
     }
 
     fn body_float_radius_2d(&mut self, body: NodeID, body_pos: Vector2) -> f32 {
-        let child_ids = self
+        let child_count = self
             .nodes
             .get(body)
-            .map(|node| node.children_slice().to_vec())
-            .unwrap_or_default();
+            .map(|node| node.children_slice().len())
+            .unwrap_or(0);
         let mut radius = 0.0f32;
-        for child_id in child_ids {
+        for i in 0..child_count {
+            let Some(child_id) = self
+                .nodes
+                .get(body)
+                .and_then(|node| node.children_slice().get(i).copied())
+            else {
+                continue;
+            };
             let Some(shape) = self.nodes.get(child_id).and_then(|child| {
                 let SceneNodeData::CollisionShape2D(shape) = &child.data else {
                     return None;
@@ -1623,39 +1626,46 @@ impl Runtime {
     }
 
     fn body_float_radius_3d(&mut self, body: NodeID, body_pos: Vector3) -> f32 {
-        let child_ids = self
+        let child_count = self
             .nodes
             .get(body)
-            .map(|node| node.children_slice().to_vec())
-            .unwrap_or_default();
+            .map(|node| node.children_slice().len())
+            .unwrap_or(0);
         let mut radius = 0.0f32;
-        for child_id in child_ids {
-            let Some(shape) = self.nodes.get(child_id).and_then(|child| {
+        for i in 0..child_count {
+            let Some(child_id) = self
+                .nodes
+                .get(body)
+                .and_then(|node| node.children_slice().get(i).copied())
+            else {
+                continue;
+            };
+            let Some(shape_y) = self.nodes.get(child_id).and_then(|child| {
                 let SceneNodeData::CollisionShape3D(shape) = &child.data else {
                     return None;
                 };
-                Some(shape.shape.clone())
+                Some(match &shape.shape {
+                    Shape3D::Cube { size }
+                    | Shape3D::TriPrism { size }
+                    | Shape3D::TriangularPyramid { size }
+                    | Shape3D::SquarePyramid { size } => size.y.abs() * 0.5,
+                    Shape3D::Sphere { radius } => radius.abs(),
+                    Shape3D::Capsule {
+                        radius,
+                        half_height,
+                    } => radius.abs() + half_height.abs(),
+                    Shape3D::Cylinder { half_height, .. } | Shape3D::Cone { half_height, .. } => {
+                        half_height.abs()
+                    }
+                    Shape3D::TriMesh { .. } => 0.0,
+                })
             }) else {
                 continue;
             };
             let Some(global) = self.get_global_transform_3d(child_id) else {
                 continue;
             };
-            let half_y = match shape {
-                Shape3D::Cube { size }
-                | Shape3D::TriPrism { size }
-                | Shape3D::TriangularPyramid { size }
-                | Shape3D::SquarePyramid { size } => size.y.abs() * global.scale.y.abs() * 0.5,
-                Shape3D::Sphere { radius } => radius.abs() * global.scale.y.abs(),
-                Shape3D::Capsule {
-                    radius,
-                    half_height,
-                } => (radius.abs() + half_height.abs()) * global.scale.y.abs(),
-                Shape3D::Cylinder { half_height, .. } | Shape3D::Cone { half_height, .. } => {
-                    half_height.abs() * global.scale.y.abs()
-                }
-                Shape3D::TriMesh { .. } => 0.0,
-            };
+            let half_y = shape_y * global.scale.y.abs();
             radius = radius.max((global.position.y - body_pos.y).abs() + half_y);
         }
         radius
@@ -1836,12 +1846,7 @@ impl Runtime {
             let lin = Vector2::new(body.linvel().x, body.linvel().y);
             let ang = body.angvel();
 
-            let mut target = self
-                .get_global_transform_2d(id)
-                .unwrap_or(Transform2D::IDENTITY);
-            target.position = position;
-            target.rotation = rotation;
-            let _ = NodeAPI::set_global_transform_2d(self, id, target);
+            self.set_physics_body_transform_2d(id, position, rotation);
 
             if let Some(scene_node) = self.nodes.get_mut(id)
                 && let SceneNodeData::RigidBody2D(node) = &mut scene_node.data
@@ -1877,12 +1882,7 @@ impl Runtime {
             let lin = Vector3::new(body.linvel().x, body.linvel().y, body.linvel().z);
             let ang = Vector3::new(body.angvel().x, body.angvel().y, body.angvel().z);
 
-            let mut target = self
-                .get_global_transform_3d(id)
-                .unwrap_or(Transform3D::IDENTITY);
-            target.position = position;
-            target.rotation = rotation;
-            let _ = NodeAPI::set_global_transform_3d(self, id, target);
+            self.set_physics_body_transform_3d(id, position, rotation);
 
             if let Some(scene_node) = self.nodes.get_mut(id)
                 && let SceneNodeData::RigidBody3D(node) = &mut scene_node.data
@@ -1893,6 +1893,51 @@ impl Runtime {
         }
 
         self.physics.world_3d = Some(world);
+    }
+
+    fn set_physics_body_transform_2d(&mut self, id: NodeID, position: Vector2, rotation: f32) {
+        let Some(parent) = self.nodes.get(id).map(|node| node.parent) else {
+            return;
+        };
+        if parent.is_nil() {
+            let _ = self.with_base_node_mut::<Node2D, _, _>(id, |node| {
+                node.transform.position = position;
+                node.transform.rotation = rotation;
+            });
+            return;
+        }
+
+        let mut target = self
+            .get_global_transform_2d(id)
+            .unwrap_or(Transform2D::IDENTITY);
+        target.position = position;
+        target.rotation = rotation;
+        let _ = NodeAPI::set_global_transform_2d(self, id, target);
+    }
+
+    fn set_physics_body_transform_3d(
+        &mut self,
+        id: NodeID,
+        position: Vector3,
+        rotation: Quaternion,
+    ) {
+        let Some(parent) = self.nodes.get(id).map(|node| node.parent) else {
+            return;
+        };
+        if parent.is_nil() {
+            let _ = self.with_base_node_mut::<Node3D, _, _>(id, |node| {
+                node.transform.position = position;
+                node.transform.rotation = rotation;
+            });
+            return;
+        }
+
+        let mut target = self
+            .get_global_transform_3d(id)
+            .unwrap_or(Transform3D::IDENTITY);
+        target.position = position;
+        target.rotation = rotation;
+        let _ = NodeAPI::set_global_transform_3d(self, id, target);
     }
 
     fn set_body_handle_2d(&mut self, id: NodeID, handle: Option<u64>) {
@@ -3301,7 +3346,13 @@ fn falloff_scale(dist: f32, radius: f32, falloff: f32) -> f32 {
         return 0.0;
     }
     let t = (1.0 - dist / radius).clamp(0.0, 1.0);
-    if falloff <= 0.0 { 1.0 } else { t.powf(falloff) }
+    if falloff <= 0.0 {
+        1.0
+    } else if (falloff - 1.0).abs() <= f32::EPSILON {
+        t
+    } else {
+        t.powf(falloff)
+    }
 }
 
 fn force_emitter_force_2d(

@@ -1,8 +1,11 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use perro_ids::NodeID;
+use perro_nodes::{PhysicsForceEmitter2D, PhysicsForceEmitter3D, PhysicsForceProfile};
 use perro_runtime::Runtime;
-use perro_runtime_api::sub_apis::{NodeAPI, PhysicsQueryFilter};
-use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
+use perro_runtime_api::sub_apis::{NodeAPI, PhysicsAPI, PhysicsQueryFilter};
+use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
+
+const DT: f32 = 1.0 / 60.0;
 
 fn bench_physics_scan_ids_clone_vs_scratch(c: &mut Criterion) {
     let ids: Vec<NodeID> = (1..=200_000).map(|i| NodeID::from_parts(i, 0)).collect();
@@ -118,11 +121,248 @@ fn bench_physics_shape_cast_3d(c: &mut Criterion) {
     });
 }
 
+fn runtime_with_rigid_bodies_2d(count: u32) -> (Runtime, Vec<NodeID>) {
+    let mut runtime = Runtime::new();
+    let mut bodies = Vec::with_capacity(count as usize);
+    for i in 0..count {
+        let body = NodeAPI::create::<perro_nodes::RigidBody2D>(&mut runtime);
+        let shape = NodeAPI::create::<perro_nodes::CollisionShape2D>(&mut runtime);
+        assert!(NodeAPI::reparent(&mut runtime, body, shape));
+        let _ =
+            NodeAPI::with_node_mut::<perro_nodes::RigidBody2D, _, _>(&mut runtime, body, |node| {
+                node.transform = Transform2D::new(
+                    Vector2::new((i % 64) as f32 - 32.0, 2.0 + (i / 64) as f32 * 1.25),
+                    0.0,
+                    Vector2::ONE,
+                );
+                node.can_sleep = false;
+                node.continuous_collision_detection = false;
+                node.linear_velocity = Vector2::new((i % 7) as f32 * 0.05, 0.0);
+            });
+        bodies.push(body);
+    }
+    (runtime, bodies)
+}
+
+fn runtime_with_rigid_bodies_3d(count: u32) -> (Runtime, Vec<NodeID>) {
+    let mut runtime = Runtime::new();
+    let mut bodies = Vec::with_capacity(count as usize);
+    for i in 0..count {
+        let body = NodeAPI::create::<perro_nodes::RigidBody3D>(&mut runtime);
+        let shape = NodeAPI::create::<perro_nodes::CollisionShape3D>(&mut runtime);
+        assert!(NodeAPI::reparent(&mut runtime, body, shape));
+        let _ =
+            NodeAPI::with_node_mut::<perro_nodes::RigidBody3D, _, _>(&mut runtime, body, |node| {
+                node.transform = Transform3D::new(
+                    Vector3::new(
+                        (i % 16) as f32 - 8.0,
+                        2.0 + (i / 256) as f32 * 1.25,
+                        ((i / 16) % 16) as f32 - 8.0,
+                    ),
+                    Quaternion::IDENTITY,
+                    Vector3::ONE,
+                );
+                node.can_sleep = false;
+                node.continuous_collision_detection = false;
+                node.linear_velocity =
+                    Vector3::new((i % 7) as f32 * 0.05, 0.0, (i % 5) as f32 * -0.03);
+            });
+        bodies.push(body);
+    }
+    (runtime, bodies)
+}
+
+fn bench_runtime_force_impulse_queue_2d(c: &mut Criterion) {
+    c.bench_function("physics/runtime_force_impulse_queue_2d_4096", |b| {
+        let (mut runtime, bodies) = runtime_with_rigid_bodies_2d(4096);
+        b.iter(|| {
+            for &body in black_box(&bodies) {
+                black_box(PhysicsAPI::apply_force_2d(
+                    &mut runtime,
+                    body,
+                    Vector2::new(0.4, 0.1),
+                ));
+                black_box(PhysicsAPI::apply_impulse_2d(
+                    &mut runtime,
+                    body,
+                    Vector2::new(0.02, 0.01),
+                ));
+            }
+        })
+    });
+}
+
+fn bench_runtime_force_impulse_queue_3d(c: &mut Criterion) {
+    c.bench_function("physics/runtime_force_impulse_queue_3d_4096", |b| {
+        let (mut runtime, bodies) = runtime_with_rigid_bodies_3d(4096);
+        b.iter(|| {
+            for &body in black_box(&bodies) {
+                black_box(PhysicsAPI::apply_force_3d(
+                    &mut runtime,
+                    body,
+                    Vector3::new(0.4, 0.1, -0.2),
+                ));
+                black_box(PhysicsAPI::apply_impulse_3d(
+                    &mut runtime,
+                    body,
+                    Vector3::new(0.02, 0.01, 0.03),
+                ));
+            }
+        })
+    });
+}
+
+fn bench_runtime_predict_body(c: &mut Criterion) {
+    let mut group = c.benchmark_group("physics/runtime_predict_body");
+    group.bench_function("predict_2d_4096", |b| {
+        let (mut runtime, bodies) = runtime_with_rigid_bodies_2d(4096);
+        b.iter(|| {
+            let mut acc = Vector2::ZERO;
+            for (i, &body) in black_box(&bodies).iter().enumerate() {
+                if let Some(predicted) = PhysicsAPI::predict_body_2d(
+                    &mut runtime,
+                    body,
+                    0.25 + i as f32 * 0.0001,
+                    Vector2::new(0.1, -0.2),
+                ) {
+                    acc += predicted.position + predicted.velocity;
+                }
+            }
+            black_box(acc)
+        })
+    });
+    group.bench_function("predict_3d_4096", |b| {
+        let (mut runtime, bodies) = runtime_with_rigid_bodies_3d(4096);
+        b.iter(|| {
+            let mut acc = Vector3::ZERO;
+            for (i, &body) in black_box(&bodies).iter().enumerate() {
+                if let Some(predicted) = PhysicsAPI::predict_body_3d(
+                    &mut runtime,
+                    body,
+                    0.25 + i as f32 * 0.0001,
+                    Vector3::new(0.1, -0.2, 0.3),
+                ) {
+                    acc += predicted.position + predicted.velocity;
+                }
+            }
+            black_box(acc)
+        })
+    });
+    group.finish();
+}
+
+fn bench_runtime_fixed_step_forces(c: &mut Criterion) {
+    let mut group = c.benchmark_group("physics/runtime_fixed_step_forces");
+    group.bench_function("fixed_step_2d_512", |b| {
+        b.iter_batched(
+            || runtime_with_rigid_bodies_2d(512),
+            |(mut runtime, bodies)| {
+                for &body in &bodies {
+                    black_box(PhysicsAPI::apply_force_2d(
+                        &mut runtime,
+                        body,
+                        Vector2::new(0.4, 0.1),
+                    ));
+                    black_box(PhysicsAPI::apply_impulse_2d(
+                        &mut runtime,
+                        body,
+                        Vector2::new(0.02, 0.01),
+                    ));
+                }
+                runtime.fixed_update(DT);
+                black_box(runtime.nodes.len())
+            },
+            criterion::BatchSize::LargeInput,
+        )
+    });
+    group.bench_function("fixed_step_3d_512", |b| {
+        b.iter_batched(
+            || runtime_with_rigid_bodies_3d(512),
+            |(mut runtime, bodies)| {
+                for &body in &bodies {
+                    black_box(PhysicsAPI::apply_force_3d(
+                        &mut runtime,
+                        body,
+                        Vector3::new(0.4, 0.1, -0.2),
+                    ));
+                    black_box(PhysicsAPI::apply_impulse_3d(
+                        &mut runtime,
+                        body,
+                        Vector3::new(0.02, 0.01, 0.03),
+                    ));
+                }
+                runtime.fixed_update(DT);
+                black_box(runtime.nodes.len())
+            },
+            criterion::BatchSize::LargeInput,
+        )
+    });
+    group.finish();
+}
+
+fn bench_runtime_force_emitters(c: &mut Criterion) {
+    let mut group = c.benchmark_group("physics/runtime_force_emitters");
+    group.bench_function("custom_2d_512", |b| {
+        b.iter_batched(
+            || {
+                let (runtime, _bodies) = runtime_with_rigid_bodies_2d(512);
+                runtime
+            },
+            |mut runtime| {
+                let mut emitter = PhysicsForceEmitter2D::new();
+                emitter.profile = PhysicsForceProfile::Custom;
+                emitter.radius = 96.0;
+                emitter.strength = 2.0;
+                emitter.falloff = 1.0;
+                emitter.vectors = vec![
+                    Vector2::new(0.0, 1.0),
+                    Vector2::new(1.0, 0.25),
+                    Vector2::new(-0.25, 0.8),
+                ];
+                black_box(PhysicsAPI::emit_force_2d(&mut runtime, emitter));
+                runtime.fixed_update(DT);
+                black_box(runtime.nodes.len())
+            },
+            criterion::BatchSize::LargeInput,
+        )
+    });
+    group.bench_function("custom_3d_512", |b| {
+        b.iter_batched(
+            || {
+                let (runtime, _bodies) = runtime_with_rigid_bodies_3d(512);
+                runtime
+            },
+            |mut runtime| {
+                let mut emitter = PhysicsForceEmitter3D::new();
+                emitter.profile = PhysicsForceProfile::Custom;
+                emitter.radius = 96.0;
+                emitter.strength = 2.0;
+                emitter.falloff = 1.0;
+                emitter.vectors = vec![
+                    Vector3::new(0.0, 1.0, 0.0),
+                    Vector3::new(1.0, 0.25, -0.25),
+                    Vector3::new(-0.25, 0.8, 0.5),
+                ];
+                black_box(PhysicsAPI::emit_force_3d(&mut runtime, emitter));
+                runtime.fixed_update(DT);
+                black_box(runtime.nodes.len())
+            },
+            criterion::BatchSize::LargeInput,
+        )
+    });
+    group.finish();
+}
+
 fn benches(c: &mut Criterion) {
     bench_physics_scan_ids_clone_vs_scratch(c);
     bench_physics_children_clone_vs_slice_scan(c);
     bench_physics_raycast_2d_query_filter(c);
     bench_physics_shape_cast_3d(c);
+    bench_runtime_force_impulse_queue_2d(c);
+    bench_runtime_force_impulse_queue_3d(c);
+    bench_runtime_predict_body(c);
+    bench_runtime_fixed_step_forces(c);
+    bench_runtime_force_emitters(c);
 }
 
 criterion_group! {
