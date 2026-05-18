@@ -21,6 +21,7 @@ virtual_resolution = "1280x720"
     assert_eq!(parsed.virtual_width, 1280);
     assert_eq!(parsed.virtual_height, 720);
     assert!(!parsed.vsync);
+    assert_eq!(parsed.frame_rate_cap, FrameRateCap::Unlimited);
     assert!(parsed.msaa);
     assert!(!parsed.meshlets);
     assert!(!parsed.dev_meshlets);
@@ -32,6 +33,43 @@ virtual_resolution = "1280x720"
     assert_eq!(parsed.physics_coef, 1.0);
     assert!(parsed.localization.is_none());
     assert_eq!(parsed.steam, SteamConfig::default());
+}
+
+#[test]
+fn parse_project_toml_reads_frame_rate_cap() {
+    let fps = parse_project_toml(
+        r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+virtual_resolution = "1920x1080"
+
+[runtime]
+frame_rate_cap = 144
+"#,
+    )
+    .expect("fps cap");
+    assert_eq!(fps.frame_rate_cap, FrameRateCap::Fps(144.0));
+
+    let refresh = parse_project_toml(
+        r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+virtual_resolution = "1920x1080"
+
+[runtime]
+frame_rate_cap = "refresh_rate"
+"#,
+    )
+    .expect("refresh cap");
+    assert_eq!(refresh.frame_rate_cap, FrameRateCap::RefreshRate);
 }
 
 #[test]

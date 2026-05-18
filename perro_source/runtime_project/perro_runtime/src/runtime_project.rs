@@ -7,12 +7,12 @@ use perro_ui::UiStyle;
 use std::{collections::BTreeMap, path::PathBuf};
 
 pub use perro_project::{
-    AudioConfig, AudioPropagationConfig, LocalizationConfig, OcclusionCulling, ParticleSimDefault,
-    ProjectConfig as RuntimeProjectConfig, ProjectError as ProjectLoadError, ProjectMetadata,
-    ProjectRoute, ProjectRoutesConfig, StaticProjectConfig, default_input_map_toml,
-    default_project_toml, default_routes_config, ensure_project_layout, ensure_project_toml,
-    load_input_map_toml, load_project_toml, load_routes_toml, normalize_route_href,
-    parse_input_map_toml, parse_project_toml, parse_routes_toml,
+    AudioConfig, AudioPropagationConfig, FrameRateCap, LocalizationConfig, OcclusionCulling,
+    ParticleSimDefault, ProjectConfig as RuntimeProjectConfig, ProjectError as ProjectLoadError,
+    ProjectMetadata, ProjectRoute, ProjectRoutesConfig, StaticProjectConfig,
+    default_input_map_toml, default_project_toml, default_routes_config, ensure_project_layout,
+    ensure_project_toml, load_input_map_toml, load_project_toml, load_routes_toml,
+    normalize_route_href, parse_input_map_toml, parse_project_toml, parse_routes_toml,
 };
 
 /// Script/provider loading mode used when constructing the runtime.

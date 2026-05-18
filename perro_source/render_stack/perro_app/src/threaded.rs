@@ -6,6 +6,7 @@ use perro_render_bridge::{
     ResourceCommand, Sprite2DCommand,
 };
 use perro_runtime::{Runtime, WindowRequest};
+use perro_runtime_api::sub_apis::FrameRateCap as RuntimeFrameRateCap;
 use std::{
     collections::VecDeque,
     fs,
@@ -28,6 +29,56 @@ use winit::{
 
 use crate::input::{GamepadInput, JoyConInput};
 use crate::winit_runner::image_helpers::load_image_size;
+
+const MIN_FRAME_RATE_CAP_FPS: f32 = 1.0;
+const MAX_FRAME_RATE_CAP_FPS: f32 = 1000.0;
+
+fn normalize_frame_rate_cap(cap: RuntimeFrameRateCap) -> RuntimeFrameRateCap {
+    match cap {
+        RuntimeFrameRateCap::Fps(fps) if fps.is_finite() && fps > 0.0 => {
+            RuntimeFrameRateCap::Fps(fps.clamp(MIN_FRAME_RATE_CAP_FPS, MAX_FRAME_RATE_CAP_FPS))
+        }
+        RuntimeFrameRateCap::Fps(_) => RuntimeFrameRateCap::Unlimited,
+        other => other,
+    }
+}
+
+fn project_frame_rate_cap(cap: perro_runtime::FrameRateCap) -> RuntimeFrameRateCap {
+    match cap {
+        perro_runtime::FrameRateCap::Unlimited => RuntimeFrameRateCap::Unlimited,
+        perro_runtime::FrameRateCap::Fps(fps) => RuntimeFrameRateCap::Fps(fps),
+        perro_runtime::FrameRateCap::RefreshRate => RuntimeFrameRateCap::RefreshRate,
+    }
+}
+
+fn frame_interval_from_fps(fps: f32) -> Duration {
+    Duration::from_secs_f64(1.0 / f64::from(fps))
+}
+
+fn active_refresh_rate_hz(window: Option<&winit::window::Window>) -> Option<f32> {
+    let monitor = window.and_then(winit::window::Window::current_monitor)?;
+    let refresh_millihertz = monitor
+        .video_modes()
+        .map(|mode| mode.refresh_rate_millihertz())
+        .max()?;
+    if refresh_millihertz == 0 {
+        return None;
+    }
+    Some(refresh_millihertz as f32 / 1000.0)
+}
+
+fn refresh_rate_interval(window: Option<&winit::window::Window>) -> Option<Duration> {
+    let refresh_hz = active_refresh_rate_hz(window)?;
+    Some(Duration::from_secs_f64(1.0 / f64::from(refresh_hz)))
+}
+
+fn sim_frame_cap_interval(cap: RuntimeFrameRateCap) -> Option<Duration> {
+    match normalize_frame_rate_cap(cap) {
+        RuntimeFrameRateCap::Unlimited => None,
+        RuntimeFrameRateCap::Fps(fps) => Some(frame_interval_from_fps(fps)),
+        RuntimeFrameRateCap::RefreshRate => Some(frame_interval_from_fps(60.0)),
+    }
+}
 
 const STARTUP_SPLASH_FADE_DURATION: Duration = Duration::from_millis(320);
 const STARTUP_SPLASH_HOLD_DURATION: Duration = Duration::from_millis(2000);
@@ -74,6 +125,7 @@ struct RenderFrameTiming {
     graphics_time: Duration,
     frame_time: Duration,
     fps: f32,
+    active_refresh_rate: Option<f32>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -760,6 +812,8 @@ struct ThreadedRunnerState<B: GraphicsBackend> {
     startup_splash: Option<ThreadedStartupSplashState>,
     last_frame_start: Instant,
     last_frame_end: Instant,
+    frame_rate_cap: RuntimeFrameRateCap,
+    next_frame_deadline: Option<Instant>,
     frame_index: u64,
     timing_csv: Option<TimingCsvWriter>,
     timing_warmup_frames_left: u32,
@@ -798,6 +852,8 @@ impl<B: GraphicsBackend> ThreadedRunnerState<B> {
             startup_splash: startup_splash.map(ThreadedStartupSplashState::new),
             last_frame_start: now,
             last_frame_end: now,
+            frame_rate_cap: RuntimeFrameRateCap::Unlimited,
+            next_frame_deadline: None,
             frame_index: 0,
             timing_csv: TimingCsvWriter::from_env(),
             timing_warmup_frames_left: TIMING_WARMUP_FRAMES,
@@ -841,7 +897,54 @@ impl<B: GraphicsBackend> ThreadedRunnerState<B> {
                 WindowRequest::SetMode(perro_runtime::WindowMode::BorderlessFullscreen) => {
                     window.set_fullscreen(Some(Fullscreen::Borderless(window.current_monitor())));
                 }
+                WindowRequest::SetFrameRateCap(cap) => {
+                    self.frame_rate_cap = normalize_frame_rate_cap(cap);
+                    self.next_frame_deadline = None;
+                }
             }
+        }
+    }
+
+    fn frame_cap_interval(&self) -> Option<Duration> {
+        match self.frame_rate_cap {
+            RuntimeFrameRateCap::Unlimited => None,
+            RuntimeFrameRateCap::Fps(fps) => Some(frame_interval_from_fps(fps)),
+            RuntimeFrameRateCap::RefreshRate => refresh_rate_interval(self.window.as_deref())
+                .or_else(|| Some(frame_interval_from_fps(60.0))),
+        }
+    }
+
+    fn cap_blocks_frame(&self, now: Instant) -> bool {
+        self.next_frame_deadline
+            .is_some_and(|deadline| deadline > now)
+    }
+
+    fn update_frame_deadline(&mut self, frame_start: Instant, frame_end: Instant) {
+        let Some(interval) = self.frame_cap_interval() else {
+            self.next_frame_deadline = None;
+            return;
+        };
+        let next = self
+            .next_frame_deadline
+            .and_then(|deadline| deadline.checked_add(interval))
+            .filter(|deadline| *deadline > frame_end)
+            .unwrap_or_else(|| frame_start.checked_add(interval).unwrap_or(frame_end));
+        self.next_frame_deadline = Some(next);
+    }
+
+    fn apply_frame_control_flow(&self, event_loop: &ActiveEventLoop, now: Instant) {
+        if self.startup_splash.is_some()
+            || matches!(self.frame_rate_cap, RuntimeFrameRateCap::Unlimited)
+        {
+            event_loop.set_control_flow(ControlFlow::Poll);
+            return;
+        }
+        if let Some(deadline) = self.next_frame_deadline
+            && deadline > now
+        {
+            event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
+        } else {
+            event_loop.set_control_flow(ControlFlow::Poll);
         }
     }
 
@@ -974,6 +1077,7 @@ impl<B: GraphicsBackend> ThreadedRunnerState<B> {
                 } else {
                     1.0 / frame_delta.as_secs_f32()
                 },
+                active_refresh_rate: active_refresh_rate_hz(self.window.as_deref()),
             });
         }
 
@@ -1269,8 +1373,12 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for ThreadedRunn
                     });
             }
             WindowEvent::RedrawRequested => {
-                self.frame_index = self.frame_index.saturating_add(1);
                 let frame_start = Instant::now();
+                if self.startup_splash.is_none() && self.cap_blocks_frame(frame_start) {
+                    self.apply_frame_control_flow(event_loop, frame_start);
+                    return;
+                }
+                self.frame_index = self.frame_index.saturating_add(1);
                 let frame_delta = frame_start.duration_since(self.last_frame_start);
                 self.last_frame_start = frame_start;
                 let idle_duration = frame_start.saturating_duration_since(self.last_frame_end);
@@ -1305,6 +1413,7 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for ThreadedRunn
                     idle_duration,
                     present_timing,
                 );
+                self.update_frame_deadline(frame_start, Instant::now());
             }
             WindowEvent::CloseRequested => {
                 self.exit_result = Some(crate::winit_runner::AppExitResult::window_close());
@@ -1334,10 +1443,18 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for ThreadedRunn
         if event_loop.exiting() || self.exit_result.is_some() {
             return;
         }
+        let now = Instant::now();
+        self.apply_frame_control_flow(event_loop, now);
         self.gamepad_input.begin_frame_threaded(&self.bridge);
         self.joycon_input.begin_frame_threaded(&self.bridge);
         if let Some(window) = &self.window {
-            window.request_redraw();
+            if self
+                .next_frame_deadline
+                .is_none_or(|deadline| deadline <= now)
+                || self.startup_splash.is_some()
+            {
+                window.request_redraw();
+            }
         }
     }
 }
@@ -1349,6 +1466,14 @@ fn run_sim_loop(mut runtime: Runtime, bridge: SimBridge, config: SimThreadConfig
     let mut fixed_accumulator = 0.0f32;
     let mut commands = bridge.checkout_command_buffer();
     let mut window_requests = Vec::new();
+    let mut sim_frame_rate_cap = runtime
+        .project()
+        .map(|project| project_frame_rate_cap(project.config.frame_rate_cap))
+        .unwrap_or(RuntimeFrameRateCap::Unlimited);
+    if runtime.project().is_some() {
+        window_requests.push(WindowRequest::SetFrameRateCap(sim_frame_rate_cap));
+        bridge.send_window_requests(&mut window_requests);
+    }
 
     while !bridge.should_stop() {
         let tick_start = Instant::now();
@@ -1358,6 +1483,7 @@ fn run_sim_loop(mut runtime: Runtime, bridge: SimBridge, config: SimThreadConfig
             .min(0.250);
         last_tick = tick_start;
         let render_timing = bridge.read_render_timing();
+        runtime.set_active_refresh_rate(render_timing.active_refresh_rate);
         let next_frame_id = frame_id.saturating_add(1);
         let should_sample_timing = should_sample_timing_frame(next_frame_id);
 
@@ -1407,6 +1533,11 @@ fn run_sim_loop(mut runtime: Runtime, bridge: SimBridge, config: SimThreadConfig
         runtime.update(delta);
 
         runtime.drain_window_requests(&mut window_requests);
+        for request in &window_requests {
+            if let WindowRequest::SetFrameRateCap(cap) = request {
+                sim_frame_rate_cap = normalize_frame_rate_cap(*cap);
+            }
+        }
         bridge.send_window_requests(&mut window_requests);
 
         commands.clear();
@@ -1436,7 +1567,15 @@ fn run_sim_loop(mut runtime: Runtime, bridge: SimBridge, config: SimThreadConfig
             snapshot_commands,
         ));
 
-        if !config.idle_sleep.is_zero() {
+        if let Some(interval) = sim_frame_cap_interval(sim_frame_rate_cap) {
+            let target = tick_start
+                .checked_add(interval)
+                .unwrap_or_else(Instant::now);
+            let now = Instant::now();
+            if target > now {
+                thread::sleep(target.duration_since(now));
+            }
+        } else if !config.idle_sleep.is_zero() {
             thread::sleep(config.idle_sleep);
         }
     }

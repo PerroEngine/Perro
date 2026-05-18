@@ -3,7 +3,7 @@ use crate::App;
 use crate::threaded::{ThreadedStartupSplash, ThreadedWinitRunner};
 use crate::winit_runner::{AppExitError, AppExitResult, WinitRunner};
 use perro_graphics::{GraphicsBackend, OcclusionCullingMode, PerroGraphics};
-pub use perro_runtime::{OcclusionCulling, ParticleSimDefault};
+pub use perro_runtime::{FrameRateCap, OcclusionCulling, ParticleSimDefault};
 use perro_runtime::{ProjectLoadError, ProviderMode, Runtime, RuntimeProject};
 use perro_scripting::ScriptConstructor;
 use std::path::Path;
@@ -67,6 +67,46 @@ fn static_embedded_routes(
             })
             .collect(),
     }
+}
+
+fn static_embedded_input_map(
+    input: &StaticEmbeddedInputMapConfig<'_>,
+) -> perro_input_api::InputMap {
+    let actions = input
+        .actions
+        .iter()
+        .map(|action| {
+            let bindings = action
+                .keys
+                .iter()
+                .copied()
+                .map(perro_input_api::InputBinding::Key)
+                .chain(
+                    action
+                        .mouse
+                        .iter()
+                        .copied()
+                        .map(perro_input_api::InputBinding::Mouse),
+                )
+                .chain(
+                    action
+                        .gamepad
+                        .iter()
+                        .copied()
+                        .map(perro_input_api::InputBinding::Gamepad),
+                )
+                .chain(
+                    action
+                        .joycon
+                        .iter()
+                        .copied()
+                        .map(perro_input_api::InputBinding::JoyCon),
+                )
+                .collect();
+            perro_input_api::InputAction::new(action.name, bindings)
+        })
+        .collect();
+    perro_input_api::InputMap::from_actions(actions)
 }
 
 pub fn create_dev_runtime(project: RuntimeProject) -> Runtime {
@@ -250,6 +290,7 @@ pub fn run_threaded_static_project_from_path(
 pub struct StaticEmbeddedProject<'a> {
     pub project: StaticEmbeddedProjectInfo<'a>,
     pub routes: StaticEmbeddedRoutesConfig<'a>,
+    pub input: StaticEmbeddedInputMapConfig<'a>,
     pub graphics: StaticEmbeddedGraphicsConfig,
     pub runtime: StaticEmbeddedRuntimeConfig,
     pub metadata: StaticEmbeddedMetadataConfig,
@@ -279,6 +320,19 @@ pub struct StaticEmbeddedRoutesConfig<'a> {
     pub routes: &'a [StaticEmbeddedRoute],
 }
 
+#[derive(Clone, Copy)]
+pub struct StaticEmbeddedInputAction {
+    pub name: &'static str,
+    pub keys: &'static [perro_input_api::KeyCode],
+    pub mouse: &'static [perro_input_api::MouseButton],
+    pub gamepad: &'static [perro_input_api::GamepadButton],
+    pub joycon: &'static [perro_input_api::JoyConButton],
+}
+
+pub struct StaticEmbeddedInputMapConfig<'a> {
+    pub actions: &'a [StaticEmbeddedInputAction],
+}
+
 pub struct StaticEmbeddedGraphicsConfig {
     pub vsync: bool,
     pub msaa: bool,
@@ -292,6 +346,7 @@ pub struct StaticEmbeddedGraphicsConfig {
 
 pub struct StaticEmbeddedRuntimeConfig {
     pub target_fixed_update: Option<f32>,
+    pub frame_rate_cap: FrameRateCap,
     pub physics_gravity: f32,
     pub physics_coef: f32,
 }
@@ -347,6 +402,7 @@ pub fn run_static_embedded_project(
     )
     .with_vsync(input.graphics.vsync)
     .with_target_fixed_update(input.runtime.target_fixed_update)
+    .with_frame_rate_cap(input.runtime.frame_rate_cap)
     .with_physics_gravity(input.runtime.physics_gravity)
     .with_physics_coef(input.runtime.physics_coef)
     .with_msaa(input.graphics.msaa)
@@ -367,7 +423,8 @@ pub fn run_static_embedded_project(
     static_config = static_config.with_steam(input.steam.enabled, input.steam.app_id);
     let mut project =
         RuntimeProject::from_static(static_config, input.project.project_root.to_path_buf())
-            .with_routes(static_embedded_routes(&input.routes));
+            .with_routes(static_embedded_routes(&input.routes))
+            .with_input_map(static_embedded_input_map(&input.input));
 
     project = project
         .with_static_scene_lookup(input.assets.scene_lookup)
@@ -424,6 +481,7 @@ pub fn run_static_embedded_project_android(
     )
     .with_vsync(input.graphics.vsync)
     .with_target_fixed_update(input.runtime.target_fixed_update)
+    .with_frame_rate_cap(input.runtime.frame_rate_cap)
     .with_physics_gravity(input.runtime.physics_gravity)
     .with_physics_coef(input.runtime.physics_coef)
     .with_msaa(input.graphics.msaa)
@@ -444,7 +502,8 @@ pub fn run_static_embedded_project_android(
     static_config = static_config.with_steam(input.steam.enabled, input.steam.app_id);
     let mut project =
         RuntimeProject::from_static(static_config, input.project.project_root.to_path_buf())
-            .with_routes(static_embedded_routes(&input.routes));
+            .with_routes(static_embedded_routes(&input.routes))
+            .with_input_map(static_embedded_input_map(&input.input));
 
     project = project
         .with_static_scene_lookup(input.assets.scene_lookup)
@@ -509,6 +568,7 @@ pub fn run_static_embedded_project_web(input: StaticEmbeddedProject<'_>) -> Resu
         )
         .with_vsync(input.graphics.vsync)
         .with_target_fixed_update(input.runtime.target_fixed_update)
+        .with_frame_rate_cap(input.runtime.frame_rate_cap)
         .with_physics_gravity(input.runtime.physics_gravity)
         .with_physics_coef(input.runtime.physics_coef)
         .with_msaa(input.graphics.msaa)
@@ -529,7 +589,8 @@ pub fn run_static_embedded_project_web(input: StaticEmbeddedProject<'_>) -> Resu
         static_config = static_config.with_steam(input.steam.enabled, input.steam.app_id);
         let mut project =
             RuntimeProject::from_static(static_config, input.project.project_root.to_path_buf())
-                .with_routes(static_embedded_routes(&input.routes));
+                .with_routes(static_embedded_routes(&input.routes))
+                .with_input_map(static_embedded_input_map(&input.input));
 
         project = project
             .with_static_scene_lookup(input.assets.scene_lookup)

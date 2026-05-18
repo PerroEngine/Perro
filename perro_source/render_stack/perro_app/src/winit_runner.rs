@@ -13,6 +13,7 @@ use perro_render_bridge::{
     Sprite2DCommand,
 };
 use perro_runtime::{WindowMode, WindowRequest};
+use perro_runtime_api::sub_apis::FrameRateCap as RuntimeFrameRateCap;
 use std::io::Write;
 use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
@@ -41,6 +42,8 @@ pub(crate) mod image_helpers;
 const DEFAULT_FIXED_TIMESTEP: Option<f32> = None;
 const MAX_FIXED_STEPS_PER_FRAME: u32 = 2;
 const MAX_FRAME_DELTA_SECONDS: f32 = 0.250;
+const MIN_FRAME_RATE_CAP_FPS: f32 = 1.0;
+const MAX_FRAME_RATE_CAP_FPS: f32 = 1000.0;
 const LOG_INTERVAL_SECONDS: f32 = 3.0;
 #[cfg(not(any(feature = "profile_heavy", feature = "ui_profile", feature = "fps")))]
 const LOG_TIMING_SAMPLE_STRIDE: u32 = 20;
@@ -203,6 +206,60 @@ fn normalize_fixed_timestep_seconds(value: Option<f32>) -> Option<f32> {
     } else {
         Some(1.0 / raw)
     }
+}
+
+#[inline]
+fn normalize_frame_rate_cap(cap: RuntimeFrameRateCap) -> RuntimeFrameRateCap {
+    match cap {
+        RuntimeFrameRateCap::Fps(fps) if fps.is_finite() && fps > 0.0 => {
+            RuntimeFrameRateCap::Fps(fps.clamp(MIN_FRAME_RATE_CAP_FPS, MAX_FRAME_RATE_CAP_FPS))
+        }
+        RuntimeFrameRateCap::Fps(_) => RuntimeFrameRateCap::Unlimited,
+        other => other,
+    }
+}
+
+#[inline]
+fn project_frame_rate_cap(cap: perro_runtime::FrameRateCap) -> RuntimeFrameRateCap {
+    match cap {
+        perro_runtime::FrameRateCap::Unlimited => RuntimeFrameRateCap::Unlimited,
+        perro_runtime::FrameRateCap::Fps(fps) => RuntimeFrameRateCap::Fps(fps),
+        perro_runtime::FrameRateCap::RefreshRate => RuntimeFrameRateCap::RefreshRate,
+    }
+}
+
+#[inline]
+fn frame_interval_from_fps(fps: f32) -> Duration {
+    Duration::from_secs_f64(1.0 / f64::from(fps))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn active_refresh_rate_hz(window: Option<&Window>) -> Option<f32> {
+    let monitor = window.and_then(Window::current_monitor)?;
+    let refresh_millihertz = monitor
+        .video_modes()
+        .map(|mode| mode.refresh_rate_millihertz())
+        .max()?;
+    if refresh_millihertz == 0 {
+        return None;
+    }
+    Some(refresh_millihertz as f32 / 1000.0)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn active_refresh_rate_hz(_window: Option<&Window>) -> Option<f32> {
+    Some(60.0)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn refresh_rate_interval(window: Option<&Window>) -> Option<Duration> {
+    let refresh_hz = active_refresh_rate_hz(window)?;
+    Some(Duration::from_secs_f64(1.0 / f64::from(refresh_hz)))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn refresh_rate_interval(_window: Option<&Window>) -> Option<Duration> {
+    Some(frame_interval_from_fps(60.0))
 }
 
 #[inline]
@@ -776,6 +833,8 @@ struct RunnerState<B: GraphicsBackend> {
     batch_sim_delta_seconds: f64,
     fixed_timestep: Option<f32>,
     fixed_accumulator: f32,
+    frame_rate_cap: RuntimeFrameRateCap,
+    next_frame_deadline: Option<Instant>,
     frame_index: u64,
     timing_csv: Option<TimingCsvWriter>,
     #[cfg(feature = "profile_heavy")]
@@ -814,12 +873,19 @@ impl<B: GraphicsBackend> RunnerState<B> {
         let now = Instant::now();
         let startup_splash = StartupSplashState::from_project(app.runtime.project(), now);
         let normalized_fixed_timestep = normalize_fixed_timestep_seconds(fixed_timestep);
+        let frame_rate_cap = app
+            .runtime
+            .project()
+            .map(|project| project_frame_rate_cap(project.config.frame_rate_cap))
+            .unwrap_or(RuntimeFrameRateCap::Unlimited);
         Self {
             app,
             title: title.to_owned(),
             window: None,
             fixed_timestep: normalized_fixed_timestep,
             fixed_accumulator: 0.0,
+            frame_rate_cap: normalize_frame_rate_cap(frame_rate_cap),
+            next_frame_deadline: None,
             last_frame_start: now,
             last_frame_end: now,
             run_start: now,
@@ -1144,7 +1210,56 @@ impl<B: GraphicsBackend> RunnerState<B> {
                         .or_else(|| pick_monitor(event_loop));
                     window.set_fullscreen(Some(Fullscreen::Borderless(monitor)));
                 }
+                WindowRequest::SetFrameRateCap(cap) => {
+                    self.frame_rate_cap = normalize_frame_rate_cap(cap);
+                    self.next_frame_deadline = None;
+                }
             }
+        }
+    }
+
+    fn frame_cap_interval(&self) -> Option<Duration> {
+        match self.frame_rate_cap {
+            RuntimeFrameRateCap::Unlimited => None,
+            RuntimeFrameRateCap::Fps(fps) => Some(frame_interval_from_fps(fps)),
+            RuntimeFrameRateCap::RefreshRate => refresh_rate_interval(self.window.as_deref())
+                .or_else(|| Some(frame_interval_from_fps(60.0))),
+        }
+    }
+
+    fn cap_blocks_frame(&mut self, now: Instant) -> bool {
+        let Some(deadline) = self.next_frame_deadline else {
+            return false;
+        };
+        deadline > now
+    }
+
+    fn update_frame_deadline(&mut self, frame_start: Instant, frame_end: Instant) {
+        let Some(interval) = self.frame_cap_interval() else {
+            self.next_frame_deadline = None;
+            return;
+        };
+        let next = self
+            .next_frame_deadline
+            .and_then(|deadline| deadline.checked_add(interval))
+            .filter(|deadline| *deadline > frame_end)
+            .unwrap_or_else(|| frame_start.checked_add(interval).unwrap_or(frame_end));
+        self.next_frame_deadline = Some(next);
+    }
+
+    fn apply_frame_control_flow(&self, event_loop: &ActiveEventLoop, now: Instant) {
+        if self.startup_splash.active
+            || matches!(self.frame_rate_cap, RuntimeFrameRateCap::Unlimited)
+        {
+            event_loop.set_control_flow(ControlFlow::Poll);
+            return;
+        }
+        if let Some(deadline) = self.next_frame_deadline
+            && deadline > now
+        {
+            event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
+        } else {
+            event_loop.set_control_flow(ControlFlow::Poll);
         }
     }
 
@@ -1614,6 +1729,13 @@ impl<B: GraphicsBackend> RunnerState<B> {
         if event_loop.exiting() || self.exit_result.is_some() {
             return;
         }
+        self.app
+            .runtime
+            .set_active_refresh_rate(active_refresh_rate_hz(self.window.as_deref()));
+        if !self.startup_splash.active && self.cap_blocks_frame(now) {
+            self.apply_frame_control_flow(event_loop, now);
+            return;
+        }
         self.frame_index = self.frame_index.saturating_add(1);
         let frame_index = self.frame_index;
         let frame_start = now;
@@ -1798,6 +1920,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
 
         let frame_end = Instant::now();
         self.last_frame_end = frame_end;
+        self.update_frame_deadline(frame_start, frame_end);
         if should_sample_timing {
             self.app.set_frame_timing(
                 simulation_duration,
@@ -2434,6 +2557,9 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             window.set_visible(true);
             self.window = Some(window);
             self.set_mouse_mode(MouseMode::Visible);
+            self.app
+                .runtime
+                .set_active_refresh_rate(active_refresh_rate_hz(self.window.as_deref()));
             let now = Instant::now();
             self.last_frame_start = now;
             self.last_frame_end = now;
@@ -2446,6 +2572,7 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 self.startup_splash.first_frame_captured = false;
             }
             self.fixed_accumulator = 0.0;
+            self.next_frame_deadline = None;
             self.frame_index = 0;
             self.batch_start = now;
             self.batch_frames = 0;
@@ -2714,8 +2841,16 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
         if event_loop.exiting() || self.exit_result.is_some() {
             return;
         }
+        let now = Instant::now();
+        self.apply_frame_control_flow(event_loop, now);
         if let Some(window) = &self.window {
-            window.request_redraw();
+            if self
+                .next_frame_deadline
+                .is_none_or(|deadline| deadline <= now)
+                || self.startup_splash.active
+            {
+                window.request_redraw();
+            }
         }
     }
 }

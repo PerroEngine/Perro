@@ -11,6 +11,8 @@ use std::{any::Any, borrow::Cow, time::Duration};
 
 struct DummyRuntime {
     state: Box<dyn Any>,
+    gravity: f32,
+    coefficient: f32,
 }
 
 impl TimeAPI for DummyRuntime {
@@ -48,6 +50,14 @@ impl WindowAPI for DummyRuntime {
 
     fn set_window_mode(&mut self, mode: WindowMode) {
         self.state = Box::new(mode);
+    }
+
+    fn set_frame_rate_cap(&mut self, cap: FrameRateCap) {
+        self.state = Box::new(cap);
+    }
+
+    fn get_active_refresh_rate(&mut self) -> Option<f32> {
+        Some(60.0)
     }
 }
 
@@ -425,6 +435,22 @@ impl SignalAPI for DummyRuntime {
 }
 
 impl PhysicsAPI for DummyRuntime {
+    fn get_gravity(&mut self) -> f32 {
+        self.gravity
+    }
+
+    fn set_gravity(&mut self, gravity: f32) {
+        self.gravity = gravity;
+    }
+
+    fn get_coefficient(&mut self) -> f32 {
+        self.coefficient
+    }
+
+    fn set_coefficient(&mut self, coefficient: f32) {
+        self.coefficient = coefficient;
+    }
+
     fn apply_force_2d(&mut self, _body_id: NodeID, _force: Vector2) -> bool {
         true
     }
@@ -680,6 +706,8 @@ impl SceneAPI for DummyRuntime {
 fn script_macros_typecheck_and_forward() {
     let mut rt = DummyRuntime {
         state: Box::new(5_i32),
+        gravity: -9.81,
+        coefficient: 1.0,
     };
     let mut ctx = RuntimeWindow::new(&mut rt);
     let id = NodeID::new(42);
@@ -870,6 +898,11 @@ fn script_macros_typecheck_and_forward() {
     assert!(apply_force!(&mut ctx, id, Vector3::new(0.0, 3.5, 0.0)));
     assert!(apply_impulse!(&mut ctx, id, Vector2::new(0.0, 1.25)));
     assert!(apply_impulse!(&mut ctx, id, Vector3::new(2.75, 0.0, 0.0)));
+    assert_eq!(physics_predict_body_2d!(&mut ctx, id, 1.0), None);
+    assert_eq!(
+        physics_predict_body_3d!(&mut ctx, id, 1.0, Vector3::new(0.5, 0.0, 0.0)),
+        None
+    );
     assert_eq!(
         physics_raycast_3d!(
             &mut ctx,
@@ -1006,4 +1039,165 @@ fn script_macros_typecheck_and_forward() {
             skip_prepare_3d_cull_inputs: 0,
         }
     );
+}
+
+fn dummy_runtime() -> DummyRuntime {
+    DummyRuntime {
+        state: Box::new(0_i32),
+        gravity: -9.81,
+        coefficient: 1.0,
+    }
+}
+
+fn assert_vec2_close(actual: Vector2, expected: Vector2, epsilon: f32) {
+    assert!(
+        (actual - expected).length() <= epsilon,
+        "actual={actual:?} expected={expected:?}"
+    );
+}
+
+fn assert_vec3_close(actual: Vector3, expected: Vector3, epsilon: f32) {
+    assert!(
+        (actual - expected).length() <= epsilon,
+        "actual={actual:?} expected={expected:?}"
+    );
+}
+
+fn simulate_2d(
+    origin: Vector2,
+    velocity: Vector2,
+    drift: Vector2,
+    gravity: f32,
+    time: f32,
+) -> Vector2 {
+    origin + (velocity + drift) * time + Vector2::new(0.0, gravity) * (0.5 * time * time)
+}
+
+fn simulate_3d(
+    origin: Vector3,
+    velocity: Vector3,
+    drift: Vector3,
+    gravity: f32,
+    time: f32,
+) -> Vector3 {
+    origin + (velocity + drift) * time + Vector3::new(0.0, gravity, 0.0) * (0.5 * time * time)
+}
+
+#[test]
+fn physics_solve_velocity_to_target_2d_hits_target() {
+    let mut rt = dummy_runtime();
+    let mut ctx = RuntimeWindow::new(&mut rt);
+    let origin = Vector2::new(0.0, 0.0);
+    let target = Vector2::new(12.0, 3.0);
+    let time = 1.5;
+
+    let velocity = physics_solve_velocity_to_target_2d!(&mut ctx, origin, target, time).unwrap();
+    let hit = simulate_2d(origin, velocity, Vector2::ZERO, -9.81, time);
+
+    assert_vec2_close(hit, target, 1.0e-4);
+}
+
+#[test]
+fn physics_solve_velocity_to_target_3d_hits_target_with_drift() {
+    let mut rt = dummy_runtime();
+    let mut ctx = RuntimeWindow::new(&mut rt);
+    let origin = Vector3::new(0.0, 1.0, 0.0);
+    let target = Vector3::new(8.0, 2.0, -4.0);
+    let drift = Vector3::new(1.0, 0.0, -0.5);
+    let time = 1.25;
+
+    let velocity =
+        physics_solve_velocity_to_target_3d!(&mut ctx, origin, target, time, drift).unwrap();
+    let hit = simulate_3d(origin, velocity, drift, -9.81, time);
+
+    assert_vec3_close(hit, target, 1.0e-4);
+}
+
+#[test]
+fn physics_solve_launch_velocity_2d_returns_low_and_high_arcs() {
+    let mut rt = dummy_runtime();
+    let mut ctx = RuntimeWindow::new(&mut rt);
+    let origin = Vector2::new(0.0, 0.0);
+    let target = Vector2::new(10.0, 0.0);
+    let speed = 12.0;
+
+    let solution = physics_solve_launch_velocity_2d!(&mut ctx, origin, target, speed, 5.0).unwrap();
+    let low_time = 10.0 / solution.low.x;
+    let high_time = 10.0 / solution.high.x;
+    let low_hit = simulate_2d(origin, solution.low, Vector2::ZERO, -9.81, low_time);
+    let high_hit = simulate_2d(origin, solution.high, Vector2::ZERO, -9.81, high_time);
+
+    assert!(
+        low_time < high_time,
+        "low_time={low_time} high_time={high_time}"
+    );
+    assert_vec2_close(low_hit, target, 2.0e-3);
+    assert_vec2_close(high_hit, target, 2.0e-3);
+    assert!((solution.low.length() - speed).abs() < 2.0e-3);
+    assert!((solution.high.length() - speed).abs() < 2.0e-3);
+}
+
+#[test]
+fn physics_solve_launch_velocity_3d_returns_none_when_unreachable() {
+    let mut rt = dummy_runtime();
+    let mut ctx = RuntimeWindow::new(&mut rt);
+
+    let solution = physics_solve_launch_velocity_3d!(
+        &mut ctx,
+        Vector3::new(0.0, 0.0, 0.0),
+        Vector3::new(100.0, 0.0, 0.0),
+        1.0,
+        4.0
+    );
+
+    assert_eq!(solution, None);
+}
+
+#[test]
+fn physics_trajectory_solver_rejects_invalid_inputs() {
+    let mut rt = dummy_runtime();
+    let mut ctx = RuntimeWindow::new(&mut rt);
+
+    assert_eq!(
+        physics_solve_velocity_to_target_2d!(&mut ctx, Vector2::ZERO, Vector2::new(1.0, 0.0), 0.0),
+        None
+    );
+    assert_eq!(
+        physics_solve_velocity_to_target_3d!(&mut ctx, Vector3::ZERO, Vector3::ZERO, 1.0),
+        None
+    );
+    assert_eq!(
+        physics_solve_launch_velocity_2d!(
+            &mut ctx,
+            Vector2::ZERO,
+            Vector2::new(1.0, 0.0),
+            0.0,
+            1.0
+        ),
+        None
+    );
+    assert_eq!(
+        physics_solve_launch_velocity_3d!(
+            &mut ctx,
+            Vector3::ZERO,
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+            0.0
+        ),
+        None
+    );
+}
+
+#[test]
+fn physics_trajectory_solver_uses_gravity_coefficient() {
+    let mut rt = dummy_runtime();
+    rt.gravity = -5.0;
+    rt.coefficient = 2.0;
+    let mut ctx = RuntimeWindow::new(&mut rt);
+
+    let velocity =
+        physics_solve_velocity_to_target_2d!(&mut ctx, Vector2::ZERO, Vector2::new(10.0, 0.0), 1.0)
+            .unwrap();
+
+    assert_vec2_close(velocity, Vector2::new(10.0, 5.0), 1.0e-6);
 }

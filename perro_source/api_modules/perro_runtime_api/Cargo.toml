@@ -10,3 +10,10 @@ perro_variant.workspace = true
 perro_nodes.workspace = true
 perro_structs.workspace = true
 perro_pawdio.workspace = true
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "physics_trajectory_solver"
+harness = false

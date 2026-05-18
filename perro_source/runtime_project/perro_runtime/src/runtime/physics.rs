@@ -187,6 +187,26 @@ struct WaterBodyForce3D {
 }
 
 impl Runtime {
+    pub fn get_physics_gravity(&self) -> f32 {
+        self.physics_gravity_raw()
+    }
+
+    pub fn set_physics_gravity(&mut self, gravity: f32) {
+        if gravity.is_finite() {
+            self.physics_gravity_override = Some(gravity);
+        }
+    }
+
+    pub fn get_physics_coefficient(&self) -> f32 {
+        self.physics_coef()
+    }
+
+    pub fn set_physics_coefficient(&mut self, coefficient: f32) {
+        if coefficient.is_finite() && coefficient > 0.0 {
+            self.physics_coef_override = Some(coefficient);
+        }
+    }
+
     pub fn set_physics_paused(&mut self, paused: bool) {
         if self.physics.paused() == paused {
             return;
@@ -1898,16 +1918,19 @@ impl Runtime {
     }
 
     fn physics_gravity(&self) -> f32 {
-        self.project()
-            .map(|p| p.config.physics_gravity)
+        self.physics_gravity_raw() * self.physics_coef()
+    }
+
+    fn physics_gravity_raw(&self) -> f32 {
+        self.physics_gravity_override
+            .or_else(|| self.project().map(|p| p.config.physics_gravity))
             .filter(|v| v.is_finite())
             .unwrap_or(-9.81)
-            * self.physics_coef()
     }
 
     fn physics_coef(&self) -> f32 {
-        self.project()
-            .map(|p| p.config.physics_coef)
+        self.physics_coef_override
+            .or_else(|| self.project().map(|p| p.config.physics_coef))
             .filter(|v| v.is_finite() && *v > 0.0)
             .unwrap_or(1.0)
     }

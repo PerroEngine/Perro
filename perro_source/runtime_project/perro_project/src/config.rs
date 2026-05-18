@@ -35,6 +35,19 @@ impl ParticleSimDefault {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FrameRateCap {
+    Unlimited,
+    Fps(f32),
+    RefreshRate,
+}
+
+impl Default for FrameRateCap {
+    fn default() -> Self {
+        Self::Unlimited
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalizationConfig {
     pub source_csv: String,
@@ -137,6 +150,7 @@ pub struct StaticProjectConfig {
     pub virtual_width: u32,
     pub virtual_height: u32,
     pub vsync: bool,
+    pub frame_rate_cap: FrameRateCap,
     pub target_fixed_update: Option<f32>,
     pub physics_gravity: f32,
     pub physics_coef: f32,
@@ -184,6 +198,7 @@ impl StaticProjectConfig {
             virtual_width,
             virtual_height,
             vsync: false,
+            frame_rate_cap: FrameRateCap::Unlimited,
             target_fixed_update: Some(60.0),
             physics_gravity: -9.81,
             physics_coef: 1.0,
@@ -212,6 +227,11 @@ impl StaticProjectConfig {
 
     pub const fn with_vsync(mut self, enabled: bool) -> Self {
         self.vsync = enabled;
+        self
+    }
+
+    pub const fn with_frame_rate_cap(mut self, cap: FrameRateCap) -> Self {
+        self.frame_rate_cap = cap;
         self
     }
 
@@ -326,6 +346,7 @@ impl StaticProjectConfig {
             virtual_width: self.virtual_width,
             virtual_height: self.virtual_height,
             vsync: self.vsync,
+            frame_rate_cap: self.frame_rate_cap,
             target_fixed_update: self.target_fixed_update,
             physics_gravity: self.physics_gravity,
             physics_coef: self.physics_coef,
@@ -380,6 +401,7 @@ pub struct ProjectConfig {
     pub virtual_width: u32,
     pub virtual_height: u32,
     pub vsync: bool,
+    pub frame_rate_cap: FrameRateCap,
     pub target_fixed_update: Option<f32>,
     pub physics_gravity: f32,
     pub physics_coef: f32,
@@ -411,6 +433,7 @@ impl ProjectConfig {
             virtual_width: 1920,
             virtual_height: 1080,
             vsync: false,
+            frame_rate_cap: FrameRateCap::Unlimited,
             target_fixed_update: Some(60.0),
             physics_gravity: -9.81,
             physics_coef: 1.0,

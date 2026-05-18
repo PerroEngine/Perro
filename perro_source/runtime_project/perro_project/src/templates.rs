@@ -872,6 +872,7 @@ fn project_root() -> std::path::PathBuf {
           },
           runtime: perro_app::entry::StaticEmbeddedRuntimeConfig {
               target_fixed_update: Some(60.0),
+              frame_rate_cap: perro_app::entry::FrameRateCap::Unlimited,
               physics_gravity: -9.81,
               physics_coef: 1.0,
           },

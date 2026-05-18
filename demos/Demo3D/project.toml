@@ -30,6 +30,7 @@ occlusion_culling = "gpu"
 particle_sim_default = "gpu"
 
 [runtime]
+frame_rate_cap = "refresh_rate"
 target_fixed_update = 60
 
 [physics]

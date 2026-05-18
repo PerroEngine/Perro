@@ -22,8 +22,10 @@ pub use node::{
     NodeModule, QueryExpr, QueryScope, QueryTypeMask, TagQuery,
 };
 pub use physics::{
-    IntoImpulseDirection, PhysicsAPI, PhysicsContact2D, PhysicsContact3D, PhysicsModule,
-    PhysicsQueryFilter, PhysicsRayHit2D, PhysicsRayHit3D, PhysicsShapeHit2D, PhysicsShapeHit3D,
+    IntoImpulseDirection, PhysicsAPI, PhysicsBodyPrediction2D, PhysicsBodyPrediction3D,
+    PhysicsContact2D, PhysicsContact3D, PhysicsLaunchSolution2D, PhysicsLaunchSolution3D,
+    PhysicsModule, PhysicsQueryFilter, PhysicsRayHit2D, PhysicsRayHit3D, PhysicsShapeHit2D,
+    PhysicsShapeHit3D,
 };
 pub use scene::{
     IntoPreloadedSceneID, IntoPreloadedSceneTarget, IntoSceneLoadSource, IntoScenePath,
@@ -32,4 +34,4 @@ pub use scene::{
 pub use script::{IntoScriptMemberID, ScriptAPI, ScriptModule};
 pub use signal::{SignalAPI, SignalModule};
 pub use time::{ProfilingSnapshot, TimeAPI, TimeModule};
-pub use window::{WindowAPI, WindowMode, WindowModule, WindowRequest};
+pub use window::{FrameRateCap, WindowAPI, WindowMode, WindowModule, WindowRequest};

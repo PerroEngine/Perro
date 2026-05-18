@@ -494,6 +494,7 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
   }},\n\
   runtime: perro_app::entry::StaticEmbeddedRuntimeConfig {{\n\
         target_fixed_update: {target_fixed_update},\n\
+        frame_rate_cap: {frame_rate_cap},\n\
         physics_gravity: {physics_gravity},\n\
         physics_coef: {physics_coef},\n\
   }},\n\
@@ -549,6 +550,7 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         occlusion_culling = emit_occlusion_culling_expr(cfg.occlusion_culling),
         particle_sim_default = emit_particle_sim_default_expr(cfg.particle_sim_default),
         target_fixed_update = emit_optional_f32(cfg.target_fixed_update),
+        frame_rate_cap = emit_frame_rate_cap_expr(cfg.frame_rate_cap),
         physics_gravity = emit_f32(cfg.physics_gravity),
         physics_coef = emit_f32(cfg.physics_coef),
         metadata_description = emit_optional_static_str(cfg.metadata.description.as_deref()),
@@ -596,6 +598,7 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
   }},\n\
   runtime: perro_app::entry::StaticEmbeddedRuntimeConfig {{\n\
         target_fixed_update: {target_fixed_update},\n\
+        frame_rate_cap: {frame_rate_cap},\n\
         physics_gravity: {physics_gravity},\n\
         physics_coef: {physics_coef},\n\
   }},\n\
@@ -650,6 +653,7 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
         occlusion_culling = emit_occlusion_culling_expr(cfg.occlusion_culling),
         particle_sim_default = emit_particle_sim_default_expr(cfg.particle_sim_default),
         target_fixed_update = emit_optional_f32(cfg.target_fixed_update),
+        frame_rate_cap = emit_frame_rate_cap_expr(cfg.frame_rate_cap),
         physics_gravity = emit_f32(cfg.physics_gravity),
         physics_coef = emit_f32(cfg.physics_coef),
         metadata_description = emit_optional_static_str(cfg.metadata.description.as_deref()),
@@ -696,6 +700,7 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
   }},\n\
   runtime: perro_app::entry::StaticEmbeddedRuntimeConfig {{\n\
         target_fixed_update: {target_fixed_update},\n\
+        frame_rate_cap: {frame_rate_cap},\n\
         physics_gravity: {physics_gravity},\n\
         physics_coef: {physics_coef},\n\
   }},\n\
@@ -751,6 +756,7 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
         occlusion_culling = emit_occlusion_culling_expr(cfg.occlusion_culling),
         particle_sim_default = emit_particle_sim_default_expr(cfg.particle_sim_default),
         target_fixed_update = emit_optional_f32(cfg.target_fixed_update),
+        frame_rate_cap = emit_frame_rate_cap_expr(cfg.frame_rate_cap),
         physics_gravity = emit_f32(cfg.physics_gravity),
         physics_coef = emit_f32(cfg.physics_coef),
         metadata_description = emit_optional_static_str(cfg.metadata.description.as_deref()),
@@ -1681,6 +1687,23 @@ fn emit_particle_sim_default_expr(mode: perro_project::ParticleSimDefault) -> &'
         }
         perro_project::ParticleSimDefault::GpuCompute => {
             "perro_app::entry::ParticleSimDefault::GpuCompute"
+        }
+    }
+}
+
+fn emit_frame_rate_cap_expr(cap: perro_project::FrameRateCap) -> String {
+    match cap {
+        perro_project::FrameRateCap::Unlimited => {
+            "perro_app::entry::FrameRateCap::Unlimited".to_string()
+        }
+        perro_project::FrameRateCap::Fps(fps) if fps.is_finite() && fps > 0.0 => {
+            format!("perro_app::entry::FrameRateCap::Fps({}f32)", fps)
+        }
+        perro_project::FrameRateCap::Fps(_) => {
+            "perro_app::entry::FrameRateCap::Unlimited".to_string()
+        }
+        perro_project::FrameRateCap::RefreshRate => {
+            "perro_app::entry::FrameRateCap::RefreshRate".to_string()
         }
     }
 }

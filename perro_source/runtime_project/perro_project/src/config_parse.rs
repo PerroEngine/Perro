@@ -39,6 +39,7 @@ occlusion_culling = "gpu"
 particle_sim_default = "gpu"
 
 [runtime]
+frame_rate_cap = "unlimited"
 target_fixed_update = 60
 
 [physics]
@@ -193,7 +194,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
     }
 
     let vsync = parse_bool_with_default(graphics_table, "vsync", false)?;
-    reject_target_fps(runtime_table)?;
+    let frame_rate_cap = parse_frame_rate_cap(runtime_table)?;
     let target_fixed_update = parse_target_fixed_update(runtime_table)?;
     let physics_gravity = parse_physics_gravity(physics_table)?;
     let physics_coef = parse_physics_coef(physics_table)?;
@@ -231,6 +232,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         virtual_width,
         virtual_height,
         vsync,
+        frame_rate_cap,
         target_fixed_update,
         physics_gravity,
         physics_coef,
@@ -575,17 +577,42 @@ fn parse_bool_with_default(
     })
 }
 
-fn reject_target_fps(runtime: Option<&toml::map::Map<String, Value>>) -> Result<(), ProjectError> {
+fn parse_frame_rate_cap(
+    runtime: Option<&toml::map::Map<String, Value>>,
+) -> Result<FrameRateCap, ProjectError> {
     let Some(runtime) = runtime else {
-        return Ok(());
+        return Ok(FrameRateCap::Unlimited);
     };
-    let Some(value) = runtime.get("target_fps") else {
-        return Ok(());
+    let Some(value) = runtime
+        .get("frame_rate_cap")
+        .or_else(|| runtime.get("target_fps"))
+    else {
+        return Ok(FrameRateCap::Unlimited);
     };
-    Err(ProjectError::InvalidField(
-        "runtime.target_fps",
-        format!("target_fps unsupported; remove field (found: {value})"),
-    ))
+    if let Some(raw) = value.as_str() {
+        return match raw.trim().to_ascii_lowercase().as_str() {
+            "unlimited" | "uncapped" | "off" | "none" => Ok(FrameRateCap::Unlimited),
+            "refresh_rate" | "refresh" | "display" | "monitor" => Ok(FrameRateCap::RefreshRate),
+            _ => Err(ProjectError::InvalidField(
+                "runtime.frame_rate_cap",
+                "must be positive number, \"unlimited\", or \"refresh_rate\"".to_string(),
+            )),
+        };
+    }
+    let raw = value
+        .as_float()
+        .or_else(|| value.as_integer().map(|v| v as f64))
+        .ok_or_else(|| {
+            ProjectError::InvalidField(
+                "runtime.frame_rate_cap",
+                "must be positive number, \"unlimited\", or \"refresh_rate\"".to_string(),
+            )
+        })?;
+    if raw.is_finite() && raw > 0.0 {
+        Ok(FrameRateCap::Fps(raw as f32))
+    } else {
+        Ok(FrameRateCap::Unlimited)
+    }
 }
 
 fn parse_target_fixed_update(

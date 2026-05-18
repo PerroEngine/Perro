@@ -17,6 +17,28 @@ Pause macros:
 - `physics_pause!(ctx, paused)`
 - `physics_is_paused!(ctx) -> bool`
 
+World config macros:
+
+- `physics_get_gravity!(ctx) -> f32`
+- `physics_set_gravity!(ctx, gravity)`
+- `physics_get_coefficient!(ctx) -> f32`
+- `physics_set_coefficient!(ctx, coefficient)`
+
+Trajectory solver macros:
+
+- `physics_solve_velocity_to_target_2d!(ctx, origin, target, time) -> Option<Vector2>`
+- `physics_solve_velocity_to_target_2d!(ctx, origin, target, time, drift) -> Option<Vector2>`
+- `physics_solve_velocity_to_target_3d!(ctx, origin, target, time) -> Option<Vector3>`
+- `physics_solve_velocity_to_target_3d!(ctx, origin, target, time, drift) -> Option<Vector3>`
+- `physics_solve_launch_velocity_2d!(ctx, origin, target, speed, max_time) -> Option<PhysicsLaunchSolution2D>`
+- `physics_solve_launch_velocity_2d!(ctx, origin, target, speed, max_time, drift) -> Option<PhysicsLaunchSolution2D>`
+- `physics_solve_launch_velocity_3d!(ctx, origin, target, speed, max_time) -> Option<PhysicsLaunchSolution3D>`
+- `physics_solve_launch_velocity_3d!(ctx, origin, target, speed, max_time, drift) -> Option<PhysicsLaunchSolution3D>`
+- `physics_predict_body_2d!(ctx, body_id, time) -> Option<PhysicsBodyPrediction2D>`
+- `physics_predict_body_2d!(ctx, body_id, time, drift) -> Option<PhysicsBodyPrediction2D>`
+- `physics_predict_body_3d!(ctx, body_id, time) -> Option<PhysicsBodyPrediction3D>`
+- `physics_predict_body_3d!(ctx, body_id, time, drift) -> Option<PhysicsBodyPrediction3D>`
+
 Raycast macros:
 
 - `physics_raycast_2d!(ctx, origin, direction, max_distance) -> Option<PhysicsRayHit2D>`
@@ -53,6 +75,22 @@ Behavior:
 - While paused, gravity/velocity integration + collision/area signal propagation do not advance.
 - `physics_pause!(ctx, false)` resumes from current physics world state.
 - Queued force/impulse calls made during pause stay queued and apply after resume.
+- Runtime gravity and coefficient changes override `project.toml` values.
+- Coefficient must be finite and greater than zero.
+- Trajectory solvers use effective gravity: `physics_get_gravity!(ctx) * physics_get_coefficient!(ctx)`.
+- Solver model: `target = origin + (velocity + drift) * time + 0.5 * gravity * time * time`.
+- Drift is constant velocity from wind, water flow, or gameplay current.
+- Omitted drift uses zero vector.
+- Fixed-time solvers return the needed velocity vector.
+- Fixed-speed solvers return `low` and `high` launch arcs.
+- Fixed-speed solvers use a fast analytic path when drift is omitted or zero.
+- Fixed-speed solvers with drift scan forward in time to find valid arcs.
+- Fixed-speed solvers return `None` when target is unreachable before `max_time`.
+- Solvers return `None` for invalid inputs, non-positive time/speed/max-time, or same origin and target.
+- Body prediction reads current rigidbody transform, linear/angular velocity, and gravity scale.
+- Body prediction does not mutate the runtime or step the physics world.
+- Body prediction ignores collisions, joints, damping, sleeping, and queued forces/impulses.
+- Body prediction returns predicted `position`, `rotation`, `velocity`, and `angular_velocity`.
 - `physics_raycast_3d!` hits `StaticBody3D`, `RigidBody3D`, and `Area3D` colliders.
 - `physics_raycast_3d_with_areas!` is an explicit alias for area-inclusive raycasts.
 - `physics_raycast_3d_without_areas!` skips `Area3D` sensor colliders.
@@ -228,6 +266,27 @@ if menu_open {
 }
 if menu_closed {
     physics_pause!(ctx, false);
+}
+
+if let Some(velocity) = physics_solve_velocity_to_target_3d!(
+    ctx,
+    cannon_pos,
+    target_pos,
+    1.2,
+    Vector3::new(0.8, 0.0, 0.0)
+) {
+    apply_impulse!(ctx, cannon_ball_id, velocity * mass);
+}
+
+if let Some(arcs) = physics_solve_launch_velocity_3d!(ctx, origin, target, 22.0, 4.0) {
+    let grenade_velocity = arcs.high;
+    apply_impulse!(ctx, grenade_id, grenade_velocity * mass);
+}
+
+if let Some(predicted) = physics_predict_body_3d!(ctx, ball_id, 0.75) {
+    let expected_ball_pos = predicted.position;
+    let expected_ball_rot = predicted.rotation;
+    let expected_ball_velocity = predicted.velocity;
 }
 
 if let Some(hit) = physics_raycast_3d!(

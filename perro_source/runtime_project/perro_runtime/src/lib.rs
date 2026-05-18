@@ -24,13 +24,14 @@ pub use runtime::{Runtime, RuntimeFixedUpdateTiming, RuntimeScriptApi, RuntimeUp
 #[cfg(feature = "bench")]
 pub use runtime::{bench_prepare_and_merge_scene, bench_prepare_scene};
 pub use runtime_project::{
-    AudioConfig, AudioPropagationConfig, LocalizationConfig, OcclusionCulling, ParticleSimDefault,
-    ProjectLoadError, ProjectMetadata, ProjectRoute, ProjectRoutesConfig, ProviderMode,
-    RuntimeProject, RuntimeProjectConfig, StaticAnimationLookup, StaticAnimationTreeLookup,
-    StaticAudioLookup, StaticBytesLookup, StaticCsvLookup, StaticLocalizationLookup,
-    StaticMaterialLookup, StaticParticleLookup, StaticProjectConfig, StaticSceneLookup,
-    StaticShaderLookup, StaticSkeletonLookup, StaticTilesetLookup, StaticUiStyleLookup,
-    default_input_map_toml, default_project_toml, default_routes_config, ensure_project_layout,
-    ensure_project_toml, load_input_map_toml, load_project_toml, load_routes_toml,
-    normalize_route_href, parse_input_map_toml, parse_project_toml, parse_routes_toml,
+    AudioConfig, AudioPropagationConfig, FrameRateCap, LocalizationConfig, OcclusionCulling,
+    ParticleSimDefault, ProjectLoadError, ProjectMetadata, ProjectRoute, ProjectRoutesConfig,
+    ProviderMode, RuntimeProject, RuntimeProjectConfig, StaticAnimationLookup,
+    StaticAnimationTreeLookup, StaticAudioLookup, StaticBytesLookup, StaticCsvLookup,
+    StaticLocalizationLookup, StaticMaterialLookup, StaticParticleLookup, StaticProjectConfig,
+    StaticSceneLookup, StaticShaderLookup, StaticSkeletonLookup, StaticTilesetLookup,
+    StaticUiStyleLookup, default_input_map_toml, default_project_toml, default_routes_config,
+    ensure_project_layout, ensure_project_toml, load_input_map_toml, load_project_toml,
+    load_routes_toml, normalize_route_href, parse_input_map_toml, parse_project_toml,
+    parse_routes_toml,
 };

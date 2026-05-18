@@ -4,17 +4,27 @@ pub enum WindowMode {
     BorderlessFullscreen,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum FrameRateCap {
+    Unlimited,
+    Fps(f32),
+    RefreshRate,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum WindowRequest {
     SetTitle(String),
     SetSize { width: u32, height: u32 },
     SetMode(WindowMode),
+    SetFrameRateCap(FrameRateCap),
 }
 
 pub trait WindowAPI {
     fn set_window_title(&mut self, title: impl Into<String>);
     fn set_window_size(&mut self, width: u32, height: u32);
     fn set_window_mode(&mut self, mode: WindowMode);
+    fn set_frame_rate_cap(&mut self, cap: FrameRateCap);
+    fn get_active_refresh_rate(&mut self) -> Option<f32>;
 }
 
 pub struct WindowModule<'rt, R: WindowAPI + ?Sized> {
@@ -45,6 +55,26 @@ impl<'rt, R: WindowAPI + ?Sized> WindowModule<'rt, R> {
     pub fn set_borderless_fullscreen(&mut self) {
         self.set_mode(WindowMode::BorderlessFullscreen);
     }
+
+    pub fn set_frame_rate_cap(&mut self, cap: FrameRateCap) {
+        self.rt.set_frame_rate_cap(cap);
+    }
+
+    pub fn set_frame_rate_limit(&mut self, fps: f32) {
+        self.set_frame_rate_cap(FrameRateCap::Fps(fps));
+    }
+
+    pub fn set_refresh_rate_cap(&mut self) {
+        self.set_frame_rate_cap(FrameRateCap::RefreshRate);
+    }
+
+    pub fn set_unlimited_frame_rate(&mut self) {
+        self.set_frame_rate_cap(FrameRateCap::Unlimited);
+    }
+
+    pub fn get_active_refresh_rate(&mut self) -> Option<f32> {
+        self.rt.get_active_refresh_rate()
+    }
 }
 
 #[macro_export]
@@ -65,5 +95,26 @@ macro_rules! window_set_size {
 macro_rules! window_set_mode {
     ($ctx:expr, $mode:expr) => {
         $ctx.Window().set_mode($mode)
+    };
+}
+
+#[macro_export]
+macro_rules! window_set_frame_rate_cap {
+    ($ctx:expr, $cap:expr) => {
+        $ctx.Window().set_frame_rate_cap($cap)
+    };
+}
+
+#[macro_export]
+macro_rules! window_set_frame_rate_limit {
+    ($ctx:expr, $fps:expr) => {
+        $ctx.Window().set_frame_rate_limit($fps)
+    };
+}
+
+#[macro_export]
+macro_rules! window_get_active_refresh_rate {
+    ($ctx:expr) => {
+        $ctx.Window().get_active_refresh_rate()
     };
 }
