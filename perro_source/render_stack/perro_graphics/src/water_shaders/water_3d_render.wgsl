@@ -1,4 +1,3 @@
-
 struct Water {
     node: u32,
     kind: u32,
@@ -388,52 +387,18 @@ fn water_hex_ridged_fbm(p: vec2<f32>) -> f32 {
     return sum / max(norm, 0.001);
 }
 
-fn water_foam_web(p: vec2<f32>) -> vec2<f32> {
-    let ip = floor(p);
-    let fp = fract(p);
-    var d1 = 64.0;
-    var d2 = 64.0;
-    var id = 0.0;
-    for (var y = -1; y <= 1; y = y + 1) {
-        for (var x = -1; x <= 1; x = x + 1) {
-            let g = vec2<f32>(f32(x), f32(y));
-            let h = water_hash2(ip + g);
-            let jitter = 0.28 + h * 0.54;
-            let r = g + jitter - fp;
-            let d = dot(r, r);
-            if d < d1 {
-                d2 = d1;
-                d1 = d;
-                id = water_hash(ip + g);
-            } else if d < d2 {
-                d2 = d;
-            }
-        }
-    }
-    let gap = sqrt(d2) - sqrt(d1);
-    let edge = 1.0 - smoothstep(0.020, 0.105, gap);
-    let broken = smoothstep(0.22, 0.82, water_hex_noise(p * 1.7 + vec2<f32>(id * 17.0, id * 31.0)));
-    return vec2<f32>(edge * broken, id);
-}
-
-fn water_line_layer(p: vec2<f32>, dir: vec2<f32>, t: f32, scale: f32) -> vec3<f32> {
-    let n = water_hex_noise(p * 0.21 + dir * t * 0.08);
-    let q = dot(p, dir) * scale + n * 1.35 + t * 0.18;
-    let band = abs(fract(q) - 0.5) * 2.0;
-    let line = 1.0 - smoothstep(0.035, 0.13, band);
-    let broken =
-        smoothstep(0.30, 0.74, water_hex_noise(p * 0.53 + vec2<f32>(t * 0.05, -t * 0.04)));
-    let dark = smoothstep(0.62, 0.95, band)
-        * smoothstep(0.42, 0.88, water_hex_noise(p * 0.12 - dir * t * 0.03));
-    return vec3<f32>(line * broken, dark, n);
-}
-
 fn water_schlick_fresnel(cos_theta: f32, power: f32) -> f32 {
     let f0 = 0.028;
     let grazing = 1.0 - clamp(cos_theta, 0.0, 1.0);
     let edge = pow(grazing, max(power * 0.72, 0.001));
     let shoulder = smoothstep(0.12, 0.78, grazing);
     return f0 + (1.0 - f0) * (edge * 0.88 + shoulder * 0.26);
+}
+
+fn water_snells_window(normal: vec3<f32>, view: vec3<f32>, ior: f32) -> f32 {
+    let cos_theta = clamp(abs(dot(normal, view)), 0.0, 1.0);
+    let sin_theta = sqrt(max(0.0, 1.0 - cos_theta * cos_theta));
+    return 1.0 - smoothstep(0.96, 1.02, sin_theta * ior);
 }
 
 fn water_scene_world_from_depth(coord: vec2<i32>, dims_u: vec2<u32>, depth: f32) -> vec3<f32> {
@@ -602,14 +567,22 @@ fn water_scene_lighting(base: vec3<f32>, n: vec3<f32>, v: vec3<f32>, pos: vec3<f
 fn water_depth_thickness(in: Water3DVertexOut, normal: vec3<f32>) -> f32 {
     let dims_u = textureDimensions(scene_depth_tex);
     let dims = vec2<i32>(i32(dims_u.x), i32(dims_u.y));
-    let offset = vec2<i32>(round(normal.xz * clamp(waters[in.water_idx].visual2.y * 18.0, 0.0, 32.0)));
-    let coord = clamp(vec2<i32>(floor(in.clip_pos.xy)) + offset, vec2<i32>(0), dims - vec2<i32>(1));
+    let base_coord = clamp(vec2<i32>(floor(in.clip_pos.xy)), vec2<i32>(0), dims - vec2<i32>(1));
+    let base_depth = textureLoad(scene_depth_tex, base_coord, 0);
+    let view_water = distance(in.world_pos, scene.camera_pos.xyz);
+    var base_thickness = waters[in.water_idx].size_depth_time.z;
+    if base_depth < 0.999999 {
+        let base_world = water_scene_world_from_depth(base_coord, dims_u, base_depth);
+        base_thickness = max(distance(base_world, scene.camera_pos.xyz) - view_water, 0.0);
+    }
+    let thickness_refraction = clamp(0.35 + smoothstep(0.08, max(waters[in.water_idx].size_depth_time.z * 0.45, 0.5), base_thickness) * 0.65, 0.0, 1.0);
+    let offset = vec2<i32>(round(normal.xz * clamp(waters[in.water_idx].visual2.y * 22.0 * thickness_refraction, 0.0, 40.0)));
+    let coord = clamp(base_coord + offset, vec2<i32>(0), dims - vec2<i32>(1));
     let scene_depth = textureLoad(scene_depth_tex, coord, 0);
     if scene_depth >= 0.999999 {
         return waters[in.water_idx].size_depth_time.z;
     }
     let scene_world = water_scene_world_from_depth(coord, dims_u, scene_depth);
-    let view_water = distance(in.world_pos, scene.camera_pos.xyz);
     let view_scene = distance(scene_world, scene.camera_pos.xyz);
     return max(view_scene - view_water, 0.0);
 }
@@ -833,101 +806,68 @@ fn vs_water_3d(
 }
 
 @fragment
-fn fs_water_3d(in: Water3DVertexOut) -> @location(0) vec4<f32> {
+fn fs_water_3d(in: Water3DVertexOut, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
     let w = waters[in.water_idx];
     if in.side_t <= 0.5 && water_shape_alpha(w, in.uv) <= 0.0 {
         return vec4<f32>(0.0);
     }
     let t = params.time_seconds;
     let top_surface_mask = 1.0 - smoothstep(0.02, 0.18, in.side_t);
-    let idle = sin((in.uv.x + in.uv.y + t * w.wave.x * 0.2) * 6.2831853) * 0.5 + 0.5;
-    let ripple_raw = water_cell(w, in.uv);
-    var ripple = water_cell_smooth(w, in.uv);
     if water_coast_solid(w, in.uv) {
         return vec4<f32>(0.0);
     }
-    let view_dist = distance(scene.camera_pos.xyz, in.world_pos);
-    let view_dir = normalize(scene.camera_pos.xyz - in.world_pos);
-    let far_t = smoothstep(140.0, 760.0, view_dist);
-    let detail_lod = clamp(w.model_x.w, 0.0, 1.0);
-    let normal = normalize(mix(water_analytic_normal(w, in.uv, t), water_visual_normal(w, in.uv, t), 0.42));
-    let fresnel = water_schlick_fresnel(dot(normal, view_dir), w.visual0.w) * w.visual0.y;
-    let auto_shallow_depth = max(max(w.size_depth_time.x, w.size_depth_time.y) * 0.25, 0.001);
-    let shallow_depth = select(auto_shallow_depth, max(w.size_depth_time.w, 0.001), w.size_depth_time.w >= 0.0);
-    let scene_thickness = water_depth_thickness(in, normal);
-    let depth_t = clamp(scene_thickness / shallow_depth, 0.0, 1.0);
-    let local = (in.uv - vec2<f32>(0.5, 0.5)) * w.size_depth_time.xy;
-    let world_uv = in.world_pos.xz;
-    let wave_flow = normalize(select(vec2<f32>(1.0, 0.0), w.flow_wind.zw + w.flow_wind.xy * 0.35, length(w.flow_wind.zw + w.flow_wind.xy * 0.35) > 0.0001));
-    let analytic = water_analytic_wave(w, in.uv, t, true);
-    let caustic_seed = water_fbm((local + normal.xz * 2.0) * 0.42 + wave_flow * t * 0.18);
-    let caustic = smoothstep(0.62, 0.92, caustic_seed) * (1.0 - depth_t) * w.visual2.x;
-    let sun_dir = normalize(select(vec3<f32>(0.0, 1.0, 0.0), -scene.ray_light.direction.xyz, length(scene.ray_light.direction.xyz) > 0.001));
-    let forward_light = pow(max(dot(-view_dir, sun_dir), 0.0), 2.0);
-    let scatter = (1.0 - depth_t) * w.visual2.z * (0.18 + 0.42 * forward_light) * max(dot(normal, sun_dir), 0.0);
-    let basin = water_perlin_fbm(world_uv * mix(0.050, 0.028, far_t) + vec2<f32>(t * 0.008, -t * 0.005));
-    let shoal = water_perlin_fbm(world_uv * mix(0.095, 0.052, far_t) + vec2<f32>(4.3, 8.1));
-    let macro_break = water_ridged_fbm(world_uv * mix(0.082, 0.045, far_t) - wave_flow * t * 0.026 + normal.xz * 0.38);
-    let detail_amp = mix(0.32, 1.0, detail_lod);
-    let lowlight_noise = water_perlin_fbm(world_uv * mix(0.11, 0.060, far_t) - wave_flow * t * 0.030 + vec2<f32>(3.0, 17.0));
-    let highlight_noise = water_perlin_fbm(world_uv * mix(0.18, 0.095, far_t) + wave_flow * t * 0.080 + vec2<f32>(9.0, 2.0));
-    let micro_break = water_ridged_fbm(world_uv * mix(0.26, 0.13, far_t) + wave_flow * t * 0.070 + vec2<f32>(14.0, 5.0));
-    let wave_extrema = smoothstep(w.visual1.w + 0.18, w.visual1.w + 0.78, abs(analytic.x) + abs(ripple.x) * 0.12);
-    let crest_slope = smoothstep(0.28, 0.78, length(normal.xz));
-    let crest_side = smoothstep(0.16, 0.62, analytic.x) + smoothstep(0.18, 0.76, -analytic.x) * 0.34;
-    let wind_coord = vec2<f32>(dot(local, wave_flow), dot(local, vec2<f32>(-wave_flow.y, wave_flow.x)));
-    let web_a = water_foam_web(wind_coord * vec2<f32>(0.145, 0.230) + vec2<f32>(t * w.wave.x * 0.10, -t * 0.04));
-    let web_b = water_foam_web(wind_coord * vec2<f32>(0.310, 0.480) + vec2<f32>(19.0, 7.0) - vec2<f32>(t * 0.06, t * 0.09));
-    let lace = water_line_layer(wind_coord, vec2<f32>(1.0, 0.0), t, 0.060 + far_t * 0.020).x;
-    let fine_spray = water_ridged_fbm(world_uv * mix(3.10, 1.35, far_t) + wave_flow * t * 0.46 + normal.xz * 3.5);
-    let vein = max(web_a.x, web_b.x * 0.54);
-    let web_break = smoothstep(0.50, 0.92, fine_spray * 0.38 + water_hex_noise(wind_coord * 0.42 + vec2<f32>(t * 0.05, -t * 0.03)) * 0.62);
-    let crest_foam = wave_extrema * crest_slope * crest_side * (vein * 0.96 + lace * 0.32) * web_break * w.visual1.z;
-    let wake_foam = smoothstep(0.70, 0.99, ripple.z) * smoothstep(0.20, 0.56, abs(ripple.x) + max(ripple.y, 0.0) * 0.016) * vein;
-    let surface_foam = clamp((crest_foam + wake_foam * 0.14) * top_surface_mask, 0.0, 1.0);
-    let dark_patch = smoothstep(0.48, 0.90, basin * 0.62 + lowlight_noise * 0.24 + macro_break * 0.14) * 0.16 * detail_amp;
-    let light_patch = smoothstep(0.58, 0.93, shoal * 0.55 + highlight_noise * 0.28 + micro_break * 0.12) * (1.0 - depth_t) * 0.22 * detail_amp;
-    let scratch_ripple = (highlight_noise - lowlight_noise) * 0.026 + (micro_break - 0.5) * 0.018;
-    let shallow_t = smoothstep(0.0, 1.0, clamp(1.0 - depth_t + idle * 0.018 + caustic * 0.06 + light_patch * 0.08 + surface_foam * 0.018 - dark_patch * 0.12, 0.0, 1.0));
-    let surface_t = smoothstep(0.0, 1.0, clamp(shallow_t + abs(ripple.x + analytic.x * 0.55 + scratch_ripple) * 0.040 + clamp(view_dist / 420.0, 0.0, 1.0) * 0.025, 0.0, 1.0));
-    let depth_rgb = mix(w.deep_color.rgb * (0.86 - dark_patch * 0.08), w.deep_color.rgb, depth_t);
-    let water_rgb = mix(depth_rgb, w.shallow_color.rgb + vec3<f32>(light_patch * 0.10), surface_t);
-    let refract_tint = vec3<f32>(caustic * 0.16 + w.visual2.y * (1.0 - depth_t) * 0.055 + light_patch * 0.045);
-    let reflected = mix(water_rgb, w.sky_color_bias.rgb, max(w.sky_color_bias.w, w.visual0.y * fresnel * 0.82));
-    let rough_blend = clamp(w.visual0.z, 0.0, 1.0);
-    let half_dir = normalize(view_dir + sun_dir);
-    let spec_line = pow(max(dot(normal, half_dir), 0.0), mix(128.0, 36.0, rough_blend)) * 0.12 * w.visual0.y;
-    let fresnel_tint = vec3<f32>(0.22, 0.30, 0.38) * fresnel * w.visual0.y;
-    let ambient_strength = clamp(scene.ambient_color.w, 0.0, 4.0);
-    let ambient_tint = mix(vec3<f32>(1.0), scene.ambient_color.xyz, clamp(ambient_strength * 0.42, 0.0, 1.0));
-    let shaded_base = mix(reflected, water_rgb, rough_blend * 0.48) * ambient_tint;
-    let scene_lit = water_scene_lighting(
-        max(shaded_base, vec3<f32>(0.0)),
-        normal,
-        view_dir,
-        in.world_pos,
-        mix(0.035, 0.64, rough_blend),
-        w.visual0.y,
-    );
-    let light_gain = clamp(length(scene_lit) / max(length(shaded_base), 0.001), 0.48, 2.8);
-    let lowlight = (1.0 - clamp(light_gain * 0.58 + ambient_strength * 0.14, 0.0, 1.0)) * 0.30;
-    let lit_water = mix(shaded_base, scene_lit, 0.72)
-        + refract_tint
-        + scatter * ambient_tint
-        + fresnel_tint
-        + vec3<f32>(spec_line + micro_break * 0.006 * detail_amp)
-        - vec3<f32>(dark_patch * (0.08 + lowlight));
-    let fog_t = clamp(view_dist / 900.0, 0.0, 1.0) * w.visual2.w * 0.45;
-    let base_color = mix(lit_water, w.deep_color.rgb, fog_t);
-    let foam_fresnel = pow(1.0 - clamp(dot(normal, view_dir), 0.0, 1.0), 2.6);
-    let foam_lit = clamp(0.78 + ambient_strength * 0.10 + max(dot(normal, sun_dir), 0.0) * 0.18 + foam_fresnel * 0.22, 0.76, 1.26);
-    let foam_rgb = mix(vec3<f32>(0.97, 0.985, 1.0) * foam_lit, w.foam_color.rgb, clamp(w.foam_color.a, 0.0, 1.0) * 0.18);
-    let foam_aa = max(fwidth(surface_foam), 0.01);
-    let foam_blend = smoothstep(0.24 - foam_aa, 0.82 + foam_aa, surface_foam);
-    let color = mix(base_color, foam_rgb, foam_blend * (0.58 + detail_lod * 0.18));
-    let alpha = mix(w.deep_color.a, w.shallow_color.a, shallow_t) * (1.0 - clamp(w.visual0.x, 0.0, 1.0) * 0.72);
-    let side_color = mix(w.deep_color.rgb, color, 0.28);
-    let final_color = mix(color, side_color, in.side_t);
-    let final_alpha = mix(alpha + (fresnel * 0.10 + foam_blend * 0.08) * top_surface_mask, w.deep_color.a * 0.82, in.side_t);
-    return vec4<f32>(final_color, clamp(final_alpha, 0.0, 1.0));
+
+    {
+        let view_dist = distance(scene.camera_pos.xyz, in.world_pos);
+        let view_dir = normalize(scene.camera_pos.xyz - in.world_pos);
+        let normal = normalize(mix(water_analytic_normal(w, in.uv, t), water_visual_normal(w, in.uv, t), 0.42));
+        let fresnel = water_schlick_fresnel(dot(normal, view_dir), w.visual0.w) * w.visual0.y;
+        let auto_shallow_depth = max(max(w.size_depth_time.x, w.size_depth_time.y) * 0.25, 0.001);
+        let shallow_depth = select(auto_shallow_depth, max(w.size_depth_time.w, 0.001), w.size_depth_time.w >= 0.0);
+        let scene_thickness = max(water_depth_thickness(in, normal), 0.0);
+        let depth_t = clamp(1.0 - exp(-scene_thickness / max(shallow_depth, 0.001)), 0.0, 1.0);
+        let sun_dir = normalize(select(vec3<f32>(0.0, 1.0, 0.0), -scene.ray_light.direction.xyz, length(scene.ray_light.direction.xyz) > 0.001));
+        let forward_light = pow(max(dot(-view_dir, sun_dir), 0.0), 2.0);
+        let scatter = (1.0 - depth_t) * w.visual2.z * (0.12 + 0.58 * forward_light) * max(dot(normal, sun_dir), 0.0);
+        let absorption = exp(-scene_thickness * vec3<f32>(0.075, 0.032, 0.014));
+        let shallow_rgb = max(w.shallow_color.rgb, vec3<f32>(0.04, 0.25, 0.36));
+        let deep_rgb = max(w.deep_color.rgb, vec3<f32>(0.0, 0.028, 0.090));
+        let volume_rgb = mix(deep_rgb, shallow_rgb, absorption);
+        let water_rgb = volume_rgb
+            + vec3<f32>(0.00, 0.030, 0.060) * (1.0 - absorption.b);
+        let reflected = mix(water_rgb, w.sky_color_bias.rgb, max(w.sky_color_bias.w, fresnel * 0.55));
+        let rough_blend = clamp(w.visual0.z, 0.0, 1.0);
+        let half_dir = normalize(view_dir + sun_dir);
+        let spec = pow(max(dot(normal, half_dir), 0.0), mix(96.0, 36.0, rough_blend)) * w.visual0.y * 0.10;
+        let fresnel_tint = vec3<f32>(0.18, 0.28, 0.38) * fresnel * w.visual0.y;
+        let ambient_strength = clamp(scene.ambient_color.w, 0.0, 4.0);
+        let ambient_tint = mix(vec3<f32>(1.0), scene.ambient_color.xyz, clamp(ambient_strength * 0.42, 0.0, 1.0));
+        let shaded_base = mix(reflected, water_rgb, rough_blend * 0.48) * ambient_tint;
+        let scene_lit = water_scene_lighting(
+            max(shaded_base, vec3<f32>(0.0)),
+            normal,
+            view_dir,
+            in.world_pos,
+            mix(0.035, 0.64, rough_blend),
+            w.visual0.y,
+        );
+        let lit_water = mix(shaded_base, scene_lit, 0.58)
+            + scatter * ambient_tint
+            + fresnel_tint
+            + vec3<f32>(spec);
+        let fog_t = clamp(view_dist / 900.0, 0.0, 1.0) * w.visual2.w * 0.34;
+        let base_color = mix(lit_water, deep_rgb, fog_t);
+        let color = base_color;
+        let water_veil = mix(0.42, 0.88, depth_t) * top_surface_mask;
+        let alpha = max(mix(w.shallow_color.a, w.deep_color.a, depth_t), water_veil) * (1.0 - clamp(w.visual0.x, 0.0, 1.0) * 0.64)
+            + fresnel * 0.10 * top_surface_mask;
+        let side_color = mix(w.deep_color.rgb, color, 0.28);
+        let snell_window = water_snells_window(normal, view_dir, 1.333);
+        let underside_mask = select(1.0, 0.0, front_facing) * top_surface_mask;
+        let underside_color = mix(w.deep_color.rgb * 0.72, color, snell_window);
+        let final_color = mix(mix(color, underside_color, underside_mask), side_color, in.side_t);
+        let underside_alpha = mix(max(alpha, 0.72), alpha, snell_window);
+        let final_alpha = mix(mix(alpha, underside_alpha, underside_mask), w.deep_color.a * 0.82, in.side_t);
+        return vec4<f32>(final_color, clamp(final_alpha, 0.0, 1.0));
+    }
 }

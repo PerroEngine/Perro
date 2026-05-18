@@ -50,8 +50,8 @@ impl WaterBody3D {
                     flow_transfer: 1.0,
                 },
                 optics: crate::WaterOpticsSettings {
-                    deep_color: perro_structs::Color::new(0.005, 0.035, 0.15, 0.99),
-                    shallow_color: perro_structs::Color::new(0.04, 0.25, 0.34, 0.95),
+                    deep_color: perro_structs::Color::new(0.0, 0.045, 0.14, 0.98),
+                    shallow_color: perro_structs::Color::new(0.035, 0.32, 0.48, 0.90),
                     shallow_depth: -1.0,
                     sky_bias: crate::WaterSkyBias::None,
                 },

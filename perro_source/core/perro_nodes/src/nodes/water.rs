@@ -110,19 +110,19 @@ pub struct WaterVisualParams {
 impl WaterVisualParams {
     pub const fn new() -> Self {
         Self {
-            transparency: 0.20,
-            reflectivity: 0.58,
-            roughness: 0.14,
+            transparency: 0.08,
+            reflectivity: 0.62,
+            roughness: 0.18,
             fresnel_power: 4.2,
-            normal_strength: 1.28,
-            ripple_scale: 1.0,
-            foam_color: Color::new(0.86, 0.96, 1.0, 1.0),
-            foam_amount: 0.86,
-            crest_foam_threshold: 0.50,
-            caustic_strength: 0.26,
-            refraction_strength: 0.16,
-            scattering_strength: 0.24,
-            distance_fog_strength: 0.28,
+            normal_strength: 0.95,
+            ripple_scale: 1.10,
+            foam_color: Color::new(0.92, 0.98, 1.0, 1.0),
+            foam_amount: 0.0,
+            crest_foam_threshold: 1.0,
+            caustic_strength: 0.0,
+            refraction_strength: 0.10,
+            scattering_strength: 0.18,
+            distance_fog_strength: 0.30,
         }
     }
 }
