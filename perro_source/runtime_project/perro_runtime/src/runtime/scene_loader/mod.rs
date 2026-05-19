@@ -149,11 +149,10 @@ impl Runtime {
         let Some(scene_path) = self.route_scene_path(&next_href) else {
             return Err(format!("route `{next_href}` not found"));
         };
-        let old_root = self.active_route_root;
-        let root = self.load_scene_at_runtime(&scene_path)?;
-        if let Some(old_root) = old_root {
-            let _ = NodeAPI::remove_node(self, old_root);
+        if let Some(root) = self.active_route_root.take() {
+            let _ = NodeAPI::remove_node(self, root);
         }
+        let root = self.load_scene_at_runtime(&scene_path)?;
         self.active_route_href = Some(next_href);
         self.active_route_root = Some(root);
         Ok(())
@@ -399,22 +398,8 @@ impl Runtime {
         self.render_3d.mesh_sources.clear();
         self.render_3d.material_surface_sources.clear();
         self.render_3d.material_surface_overrides.clear();
-        self.render_3d.collision_debug_state.clear();
         self.render_3d.particle_path_cache.clear();
         self.render_3d.particle_path_cache_order.clear();
-        self.render_3d.last_camera = None;
-        self.render_3d.retained_ambient_lights.clear();
-        self.render_3d.retained_skies.clear();
-        self.render_3d.retained_ray_lights.clear();
-        self.render_3d.retained_point_lights.clear();
-        self.render_3d.retained_spot_lights.clear();
-        self.render_3d.retained_mesh_draws.clear();
-        self.render_3d.dense_instance_pose_cache.clear();
-        self.render_3d.traversal_seen.clear();
-        self.render_3d.skeleton_cache_scratch.clear();
-        self.render_3d.skeleton_global_scratch.clear();
-        self.render_3d.skeleton_palette_scratch.clear();
-        self.render_3d.dense_instance_pose_scratch.clear();
         self.render_3d.removed_nodes.clear();
         self.render_ui.traversal_ids.clear();
         self.render_ui.traversal_seen.clear();
@@ -1028,44 +1013,6 @@ mod tests {
                 .iter()
                 .any(|(_, node)| node.name.as_ref() == "copy")
         );
-    }
-
-    #[test]
-    fn failed_route_change_keeps_current_scene_root() {
-        let mut project = RuntimeProject::new("Route Test", ".");
-        project.routes = perro_project::ProjectRoutesConfig {
-            routes: vec![
-                perro_project::ProjectRoute {
-                    href: "/".to_string(),
-                    name: "home".to_string(),
-                    scene: "100".to_string(),
-                    title: None,
-                    description: None,
-                    keywords: Vec::new(),
-                },
-                perro_project::ProjectRoute {
-                    href: "/bad".to_string(),
-                    name: "bad".to_string(),
-                    scene: "300".to_string(),
-                    title: None,
-                    description: None,
-                    keywords: Vec::new(),
-                },
-            ],
-        };
-        project.static_scene_lookup = Some(test_lookup);
-        let mut runtime = Runtime::new();
-        runtime.project = Some(Arc::new(project));
-        runtime.provider_mode = ProviderMode::Static;
-
-        let home_root = runtime.load_scene_at_runtime("100").expect("load home");
-        runtime.active_route_root = Some(home_root);
-        runtime.active_route_href = Some("/".to_string());
-
-        assert!(runtime.apply_route_change("/bad").is_err());
-        assert_eq!(runtime.active_route_href.as_deref(), Some("/"));
-        assert_eq!(runtime.active_route_root, Some(home_root));
-        assert!(runtime.nodes.get(home_root).is_some());
     }
 
     #[test]

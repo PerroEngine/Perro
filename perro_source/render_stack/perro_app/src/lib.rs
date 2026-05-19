@@ -18,7 +18,6 @@ pub struct App<B: GraphicsBackend> {
     pub graphics: B,
     command_buffer: Vec<perro_render_bridge::RenderCommand>,
     event_buffer: Vec<RenderEvent>,
-    ui_priority_flush_used: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -142,7 +141,6 @@ impl<B: GraphicsBackend> App<B> {
             graphics,
             command_buffer: Vec::new(),
             event_buffer: Vec::new(),
-            ui_priority_flush_used: false,
         }
     }
 
@@ -458,27 +456,6 @@ impl<B: GraphicsBackend> App<B> {
     where
         I: IntoIterator<Item = perro_render_bridge::RenderCommand>,
     {
-        if self.runtime.has_scene_render_work()
-            && self.runtime.has_ui_render_work()
-            && !self.ui_priority_flush_used
-        {
-            self.runtime.extract_render_ui_commands_priority();
-            self.runtime.drain_render_commands(&mut self.command_buffer);
-            self.graphics.submit_many(self.command_buffer.drain(..));
-            if late_overlay {
-                self.graphics.draw_frame_with_late_overlay(overlay_commands);
-            } else {
-                self.graphics.submit_many(overlay_commands);
-                self.graphics.draw_frame();
-            }
-            self.runtime.clear_ui_dirty_flags_keep_scene();
-            self.graphics.drain_events(&mut self.event_buffer);
-            self.runtime
-                .apply_render_events(self.event_buffer.drain(..));
-            self.ui_priority_flush_used = true;
-            return;
-        }
-
         self.runtime.extract_render_2d_commands();
         self.runtime.extract_render_3d_commands();
         self.runtime.extract_render_ui_commands();
@@ -494,7 +471,6 @@ impl<B: GraphicsBackend> App<B> {
         self.graphics.drain_events(&mut self.event_buffer);
         self.runtime
             .apply_render_events(self.event_buffer.drain(..));
-        self.ui_priority_flush_used = false;
     }
 
     pub fn present_with_overlay_timed<I>(&mut self, overlay_commands: I) -> PresentTiming
@@ -522,267 +498,6 @@ impl<B: GraphicsBackend> App<B> {
         let total_start = Instant::now();
         #[cfg(feature = "profile_heavy")]
         let dirty_node_count = self.runtime.dirty_node_count() as u32;
-
-        if self.runtime.has_scene_render_work()
-            && self.runtime.has_ui_render_work()
-            && !self.ui_priority_flush_used
-        {
-            #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-            let ui_timing = self.runtime.extract_render_ui_commands_priority_timed();
-            #[cfg(not(any(feature = "profile_heavy", feature = "ui_profile")))]
-            self.runtime.extract_render_ui_commands_priority();
-
-            #[cfg(feature = "profile_heavy")]
-            let drain_commands_start = Instant::now();
-            self.runtime.drain_render_commands(&mut self.command_buffer);
-            #[cfg(feature = "profile_heavy")]
-            let render_command_count = self.command_buffer.len() as u32;
-            #[cfg(feature = "profile_heavy")]
-            let drain_commands = drain_commands_start.elapsed();
-
-            #[cfg(feature = "profile_heavy")]
-            let submit_start = Instant::now();
-            self.graphics.submit_many(self.command_buffer.drain(..));
-            #[cfg(feature = "profile_heavy")]
-            let submit_commands = submit_start.elapsed();
-
-            let draw_frame_start = Instant::now();
-            let draw_timing = if late_overlay {
-                self.graphics
-                    .draw_frame_with_late_overlay_timed(overlay_commands)
-            } else {
-                self.graphics.submit_many(overlay_commands);
-                self.graphics.draw_frame_timed()
-            };
-            let gpu_present = draw_frame_start.elapsed();
-            #[cfg(not(feature = "profile_heavy"))]
-            let _ = &draw_timing;
-            #[cfg(feature = "profile_heavy")]
-            let graphics_profile = self.graphics.profile_snapshot();
-
-            self.runtime.clear_ui_dirty_flags_keep_scene();
-
-            #[cfg(feature = "profile_heavy")]
-            let drain_events_start = Instant::now();
-            self.graphics.drain_events(&mut self.event_buffer);
-            #[cfg(feature = "profile_heavy")]
-            let drain_events = drain_events_start.elapsed();
-
-            #[cfg(feature = "profile_heavy")]
-            let apply_events_start = Instant::now();
-            self.runtime
-                .apply_render_events(self.event_buffer.drain(..));
-            #[cfg(feature = "profile_heavy")]
-            let apply_events = apply_events_start.elapsed();
-
-            self.ui_priority_flush_used = true;
-
-            return PresentTiming {
-                gpu_present,
-                total: total_start.elapsed(),
-                #[cfg(feature = "profile_heavy")]
-                extract_2d: Duration::ZERO,
-                #[cfg(feature = "profile_heavy")]
-                extract_3d: Duration::ZERO,
-                #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-                extract_ui: ui_timing.total,
-                #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-                ui_layout: ui_timing.layout,
-                #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-                ui_commands: ui_timing.commands,
-                #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-                ui_dirty_nodes: ui_timing.dirty_nodes,
-                #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-                ui_affected_nodes: ui_timing.affected_nodes,
-                #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-                ui_recalculated_rects: ui_timing.recalculated_rects,
-                #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-                ui_cached_rects: ui_timing.cached_rects,
-                #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-                ui_auto_layout_batches: ui_timing.auto_layout_batches,
-                #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-                ui_command_nodes: ui_timing.command_nodes,
-                #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-                ui_command_emitted: ui_timing.command_emitted,
-                #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-                ui_command_skipped: ui_timing.command_skipped,
-                #[cfg(any(feature = "profile_heavy", feature = "ui_profile"))]
-                ui_removed_nodes: ui_timing.removed_nodes,
-                #[cfg(feature = "profile_heavy")]
-                drain_commands,
-                #[cfg(feature = "profile_heavy")]
-                submit_commands,
-                #[cfg(feature = "profile_heavy")]
-                draw_process_commands: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.process_commands)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                draw_prepare_cpu: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.prepare_cpu)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                draw_gpu_prepare_2d: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.gpu_prepare_2d)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                draw_gpu_prepare_3d: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.gpu_prepare_3d)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                draw_gpu_prepare_particles_3d: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.gpu_prepare_particles_3d)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                draw_gpu_prepare_3d_frustum: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.gpu_prepare_3d_frustum)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                draw_gpu_prepare_3d_hiz: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.gpu_prepare_3d_hiz)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                draw_gpu_prepare_3d_indirect: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.gpu_prepare_3d_indirect)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                draw_gpu_prepare_3d_cull_inputs: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.gpu_prepare_3d_cull_inputs)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                draw_gpu_acquire: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.gpu_acquire)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                draw_gpu_acquire_surface: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.gpu_acquire_surface)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                draw_gpu_acquire_view: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.gpu_acquire_view)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                draw_gpu_encode_main: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.gpu_encode_main)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                draw_gpu_submit_main: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.gpu_submit_main)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                draw_gpu_submit_finish_main: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.gpu_submit_finish_main)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                draw_gpu_submit_queue_main: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.gpu_submit_queue_main)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                draw_gpu_post_process: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.gpu_post_process)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                draw_gpu_accessibility: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.gpu_accessibility)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                draw_gpu_present: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.gpu_present)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                draw_calls_2d: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.draw_calls_2d)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                draw_calls_3d: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.draw_calls_3d)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                draw_calls_total: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.draw_calls_2d + timing.draw_calls_3d)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                draw_instances_3d: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.draw_instances_3d)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                draw_material_refs_3d: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.draw_material_refs_3d)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                skip_prepare_2d: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.skip_prepare_2d)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                skip_prepare_3d: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.skip_prepare_3d)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                skip_prepare_particles_3d: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.skip_prepare_particles_3d)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                skip_prepare_3d_frustum: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.skip_prepare_3d_frustum)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                skip_prepare_3d_hiz: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.skip_prepare_3d_hiz)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                skip_prepare_3d_indirect: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.skip_prepare_3d_indirect)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                skip_prepare_3d_cull_inputs: draw_timing
-                    .as_ref()
-                    .map(|timing| timing.skip_prepare_3d_cull_inputs)
-                    .unwrap_or_default(),
-                #[cfg(feature = "profile_heavy")]
-                drain_events,
-                #[cfg(feature = "profile_heavy")]
-                apply_events,
-                #[cfg(feature = "profile_heavy")]
-                render_command_count,
-                #[cfg(feature = "profile_heavy")]
-                dirty_node_count,
-                #[cfg(feature = "profile_heavy")]
-                active_meshes: graphics_profile.active_meshes,
-                #[cfg(feature = "profile_heavy")]
-                active_materials: graphics_profile.active_materials,
-                #[cfg(feature = "profile_heavy")]
-                active_textures: graphics_profile.active_textures,
-            };
-        }
 
         #[cfg(feature = "profile_heavy")]
         let extract_2d_start = Instant::now();

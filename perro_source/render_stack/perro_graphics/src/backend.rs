@@ -22,7 +22,6 @@ use perro_render_bridge::{
     Water2DState, Water3DState,
 };
 use perro_structs::{PostProcessSet, VisualAccessibilitySettings};
-use std::collections::VecDeque;
 use std::sync::Arc;
 #[cfg(target_arch = "wasm32")]
 use std::sync::Mutex;
@@ -37,8 +36,6 @@ pub type StaticTextureLookup = fn(path_hash: u64) -> &'static [u8];
 pub type StaticMeshLookup = fn(path_hash: u64) -> &'static [u8];
 pub type StaticShaderLookup = fn(path_hash: u64) -> &'static str;
 const GC_INTERVAL_FRAMES: u32 = 4;
-const DEFAULT_RENDER_COMMAND_BUDGET: Duration = Duration::from_millis(2);
-const COMMAND_BUDGET_CHECK_INTERVAL: usize = 64;
 
 #[inline]
 fn normalize_aa_sample_count(samples: u32) -> u32 {
@@ -148,7 +145,8 @@ pub struct DrawFrameTiming {
 
 #[derive(Default)]
 struct FrameState {
-    pending_commands: VecDeque<RenderCommand>,
+    pending_commands: Vec<RenderCommand>,
+    scratch_commands: Vec<RenderCommand>,
     scratch_late_overlay_commands: Vec<RenderCommand>,
 }
 
@@ -169,11 +167,7 @@ enum CommandBucketKind {
 
 impl FrameState {
     fn queue(&mut self, command: RenderCommand) {
-        self.pending_commands.push_back(command);
-    }
-
-    fn has_pending_commands(&self) -> bool {
-        !self.pending_commands.is_empty()
+        self.pending_commands.push(command);
     }
 }
 
@@ -219,38 +213,6 @@ fn command_bucket_kind(command: &RenderCommand) -> CommandBucketKind {
             _ => CommandBucketKind::Other,
         },
         _ => CommandBucketKind::Other,
-    }
-}
-
-fn command_dirty_bits(command: &RenderCommand) -> u32 {
-    match command {
-        RenderCommand::TwoD(cmd_2d) => {
-            let mut bits = DIRTY_2D;
-            if matches!(cmd_2d, Command2D::SetCamera { .. }) {
-                bits |= DIRTY_CAMERA_2D;
-            }
-            bits
-        }
-        RenderCommand::ThreeD(cmd_3d) => match &**cmd_3d {
-            Command3D::Draw { .. }
-            | Command3D::DrawMulti { .. }
-            | Command3D::DrawMultiDense { .. }
-            | Command3D::DrawDebugPoint3D { .. }
-            | Command3D::DrawDebugLine3D { .. }
-            | Command3D::RemoveNode { .. }
-            | Command3D::UpsertWater { .. } => DIRTY_3D,
-            Command3D::SetCamera { .. } => DIRTY_CAMERA_3D,
-            Command3D::SetAmbientLight { .. }
-            | Command3D::SetSky { .. }
-            | Command3D::SetRayLight { .. }
-            | Command3D::SetPointLight { .. }
-            | Command3D::SetSpotLight { .. } => DIRTY_LIGHTS_3D,
-            Command3D::UpsertPointParticles { .. } => DIRTY_PARTICLES_3D,
-        },
-        RenderCommand::Resource(_) => DIRTY_RESOURCES,
-        RenderCommand::Ui(_) => DIRTY_2D,
-        RenderCommand::PostProcessing(_) => DIRTY_POSTFX,
-        RenderCommand::VisualAccessibility(_) => DIRTY_ACCESSIBILITY,
     }
 }
 
@@ -303,7 +265,6 @@ pub struct PerroGraphics {
     accessibility: VisualAccessibilitySettings,
     frame_index: u32,
     redraw_requested: bool,
-    render_command_budget: Duration,
     frame_time_seconds: f32,
     frame_delta_seconds: f32,
     last_frame_instant: Option<Instant>,
@@ -361,7 +322,6 @@ impl PerroGraphics {
             accessibility: VisualAccessibilitySettings::default(),
             frame_index: 0,
             redraw_requested: true,
-            render_command_budget: DEFAULT_RENDER_COMMAND_BUDGET,
             frame_time_seconds: 0.0,
             frame_delta_seconds: 0.0,
             last_frame_instant: None,
@@ -420,358 +380,317 @@ impl PerroGraphics {
         self
     }
 
-    #[cfg(test)]
-    fn with_render_command_budget(mut self, budget: Duration) -> Self {
-        self.render_command_budget = budget;
-        self
-    }
-
-    fn process_command(&mut self, command: RenderCommand) {
-        match command {
-            RenderCommand::Resource(resource_cmd) => match resource_cmd {
-                ResourceCommand::CreateMesh {
-                    request,
-                    id,
-                    source,
-                    reserved,
-                } => {
-                    if let Err(reason) =
-                        validate_mesh_source(source.as_str(), self.static_mesh_lookup)
-                    {
-                        self.events.push(RenderEvent::Failed { request, reason });
-                        return;
-                    }
-                    let out_id = if id.is_nil() {
-                        self.resources.create_mesh(source.as_str(), reserved)
-                    } else {
-                        self.resources
-                            .create_mesh_with_id(id, source.as_str(), reserved)
-                    };
-                    let mesh_data =
-                        load_mesh3d_from_source(source.as_str(), self.static_mesh_lookup);
-                    if let Some(mesh) = mesh_data.clone() {
-                        self.resources
-                            .set_runtime_mesh_data(source.as_str(), mesh.clone());
-                        let _ = self.resources.set_runtime_mesh_data_by_id(out_id, mesh);
-                    }
-                    self.events.push(RenderEvent::MeshCreated {
-                        request,
-                        id: out_id,
-                        mesh: mesh_data,
-                    });
-                }
-                ResourceCommand::CreateRuntimeMesh {
-                    request,
-                    id,
-                    source,
-                    reserved,
-                    mesh,
-                } => {
-                    let out_id = if id.is_nil() {
-                        self.resources.create_mesh(source.as_str(), reserved)
-                    } else {
-                        self.resources
-                            .create_mesh_with_id(id, source.as_str(), reserved)
-                    };
-                    self.resources
-                        .set_runtime_mesh_data(source.as_str(), mesh.clone());
-                    let _ = self
-                        .resources
-                        .set_runtime_mesh_data_by_id(out_id, mesh.clone());
-                    self.events.push(RenderEvent::MeshCreated {
-                        request,
-                        id: out_id,
-                        mesh: Some(mesh),
-                    });
-                }
-                ResourceCommand::WriteMeshData { id, mesh } => {
-                    let _ = self.resources.set_runtime_mesh_data_by_id(id, mesh);
-                }
-                ResourceCommand::CreateTexture {
-                    request,
-                    id,
-                    source,
-                    reserved,
-                } => {
-                    let id = if id.is_nil() {
-                        self.resources.create_texture(source.as_str(), reserved)
-                    } else {
-                        self.resources
-                            .create_texture_with_id(id, source.as_str(), reserved)
-                    };
-                    self.events
-                        .push(RenderEvent::TextureCreated { request, id });
-                }
-                ResourceCommand::CreateMaterial {
-                    request,
-                    id,
-                    material,
-                    source,
-                    reserved,
-                } => {
-                    let id = if id.is_nil() {
-                        self.resources
-                            .create_material(material, source.as_deref(), reserved)
-                    } else {
-                        self.resources.create_material_with_id(
-                            id,
-                            material,
-                            source.as_deref(),
-                            reserved,
-                        )
-                    };
-                    self.events
-                        .push(RenderEvent::MaterialCreated { request, id });
-                }
-                ResourceCommand::WriteMaterialData { id, material } => {
-                    let _ = self.resources.set_material_data(id, material);
-                }
-                ResourceCommand::SetMeshReserved { id, reserved } => {
-                    self.resources.set_mesh_reserved(id, reserved);
-                }
-                ResourceCommand::SetTextureReserved { id, reserved } => {
-                    self.resources.set_texture_reserved(id, reserved);
-                }
-                ResourceCommand::SetMaterialReserved { id, reserved } => {
-                    self.resources.set_material_reserved(id, reserved);
-                }
-                ResourceCommand::DropMesh { id } => {
-                    self.resources.drop_mesh(id);
-                }
-                ResourceCommand::DropTexture { id } => {
-                    self.resources.drop_texture(id);
-                }
-                ResourceCommand::DropMaterial { id } => {
-                    self.resources.drop_material(id);
-                }
-            },
-            RenderCommand::TwoD(cmd_2d) => match cmd_2d {
-                Command2D::UpsertSprite { node, sprite } => {
-                    self.renderer_2d.queue_sprite(node, sprite);
-                }
-                Command2D::UpsertTileMap { node, tilemap } => {
-                    self.renderer_2d.upsert_tilemap(node, tilemap);
-                }
-                Command2D::UpsertRect { node, rect } => {
-                    self.renderer_2d.queue_rect(node, rect);
-                }
-                Command2D::UpsertPointParticles { node, particles } => {
-                    self.renderer_2d.queue_point_particles(node, *particles);
-                }
-                Command2D::UpsertWater { node, water } => {
-                    self.renderer_2d.upsert_water(node, *water);
-                }
-                Command2D::SetAmbientLight { node, light } => {
-                    self.renderer_2d.set_ambient_light(node, light);
-                }
-                Command2D::SetRayLight { node, light } => {
-                    self.renderer_2d.set_ray_light(node, light);
-                }
-                Command2D::SetPointLight { node, light } => {
-                    self.renderer_2d.set_point_light(node, light);
-                }
-                Command2D::SetSpotLight { node, light } => {
-                    self.renderer_2d.set_spot_light(node, light);
-                }
-                Command2D::RemoveNode { node } => {
-                    self.renderer_2d.remove_node(node);
-                }
-                Command2D::SetCamera { camera } => {
-                    self.renderer_2d.set_camera(camera);
-                }
-                Command2D::DrawShape { draw } => {
-                    self.renderer_2d.queue_shape(draw);
-                }
-            },
-            RenderCommand::ThreeD(cmd_3d) => match *cmd_3d {
-                Command3D::Draw {
-                    mesh,
-                    surfaces,
-                    node,
-                    model,
-                    skeleton,
-                    meshlet_override,
-                    lod,
-                    blend,
-                } => {
-                    self.renderer_3d.queue_draw(
-                        node,
-                        mesh,
-                        surfaces,
-                        model,
-                        skeleton,
-                        meshlet_override,
-                        lod,
-                        blend,
-                    );
-                }
-                Command3D::DrawMulti {
-                    mesh,
-                    surfaces,
-                    node,
-                    instance_mats,
-                    skeleton,
-                    meshlet_override,
-                    lod,
-                    blend,
-                } => {
-                    self.renderer_3d.queue_draw_multi(
-                        node,
-                        mesh,
-                        surfaces,
-                        instance_mats,
-                        skeleton,
-                        meshlet_override,
-                        lod,
-                        blend,
-                    );
-                }
-                Command3D::DrawMultiDense {
-                    mesh,
-                    surfaces,
-                    node,
-                    node_model,
-                    instance_scale,
-                    instances,
-                    meshlet_override,
-                    lod,
-                    blend,
-                } => {
-                    self.renderer_3d.queue_draw_multi_dense(
-                        node,
-                        mesh,
-                        surfaces,
-                        crate::three_d::renderer::DenseMultiMeshDraw3D {
-                            node_model,
-                            instance_scale,
-                            instances,
-                        },
-                        meshlet_override,
-                        lod,
-                        blend,
-                    );
-                }
-                Command3D::DrawDebugPoint3D {
-                    node,
-                    position,
-                    size,
-                    color,
-                } => {
-                    self.renderer_3d
-                        .queue_debug_point(node, position, size, color);
-                }
-                Command3D::DrawDebugLine3D {
-                    node,
-                    start,
-                    end,
-                    thickness,
-                    color,
-                } => {
-                    self.renderer_3d
-                        .queue_debug_line(node, start, end, thickness, color);
-                }
-                Command3D::SetCamera { camera } => {
-                    self.renderer_3d.set_camera(camera);
-                }
-                Command3D::SetAmbientLight { node, light } => {
-                    self.renderer_3d.set_ambient_light(node, light);
-                }
-                Command3D::SetSky { node, sky } => {
-                    self.renderer_3d.set_sky(node, *sky);
-                }
-                Command3D::SetRayLight { node, light } => {
-                    self.renderer_3d.set_ray_light(node, light);
-                }
-                Command3D::SetPointLight { node, light } => {
-                    self.renderer_3d.set_point_light(node, light);
-                }
-                Command3D::SetSpotLight { node, light } => {
-                    self.renderer_3d.set_spot_light(node, light);
-                }
-                Command3D::UpsertPointParticles { node, particles } => {
-                    self.particles_3d.queue_point_particles(node, *particles);
-                }
-                Command3D::UpsertWater { node, water } => {
-                    self.renderer_3d.upsert_water(node, *water);
-                }
-                Command3D::RemoveNode { node } => {
-                    self.renderer_3d.remove_node(node);
-                    self.particles_3d.remove_node(node);
-                }
-            },
-            RenderCommand::Ui(cmd) => {
-                self.renderer_ui.submit(cmd);
-            }
-            RenderCommand::VisualAccessibility(command) => match command {
-                VisualAccessibilityCommand::EnableColorBlind { mode, strength } => {
-                    self.accessibility.color_blind =
-                        Some(perro_structs::ColorBlindSetting::new(mode, strength));
-                }
-                VisualAccessibilityCommand::DisableColorBlind => {
-                    self.accessibility.color_blind = None;
-                }
-            },
-            RenderCommand::PostProcessing(command) => match command {
-                PostProcessingCommand::SetGlobal(set) => {
-                    self.global_post_processing = set;
-                }
-                PostProcessingCommand::AddGlobalNamed { name, effect } => {
-                    self.global_post_processing.add(name, effect);
-                }
-                PostProcessingCommand::AddGlobalUnnamed(effect) => {
-                    self.global_post_processing.add_unnamed(effect);
-                }
-                PostProcessingCommand::RemoveGlobalByName(name) => {
-                    self.global_post_processing.remove(name.as_ref());
-                }
-                PostProcessingCommand::RemoveGlobalByIndex(index) => {
-                    self.global_post_processing.remove_index(index);
-                }
-                PostProcessingCommand::ClearGlobal => {
-                    self.global_post_processing.clear();
-                }
-            },
-        }
-    }
-
     fn process_commands<I>(&mut self, commands: I)
     where
         I: IntoIterator<Item = RenderCommand>,
     {
         for command in commands {
-            self.process_command(command);
-        }
-    }
-
-    fn process_pending_commands_budgeted(
-        &mut self,
-        pending: &mut VecDeque<RenderCommand>,
-    ) -> (Duration, u32) {
-        let process_start = Instant::now();
-        if pending.is_empty() {
-            return (process_start.elapsed(), 0);
-        }
-
-        let (front, back) = pending.as_slices();
-        let reserve = if front.is_empty() {
-            &back[..back.len().min(COMMAND_BUDGET_CHECK_INTERVAL)]
-        } else {
-            &front[..front.len().min(COMMAND_BUDGET_CHECK_INTERVAL)]
-        };
-        self.reserve_command_buckets(reserve);
-        let mut frame_dirty_bits = 0u32;
-        let mut processed = 0usize;
-        while let Some(command) = pending.pop_front() {
-            frame_dirty_bits |= command_dirty_bits(&command);
-            self.process_command(command);
-            processed += 1;
-            if (processed == 1 || processed % COMMAND_BUDGET_CHECK_INTERVAL == 0)
-                && process_start.elapsed() >= self.render_command_budget
-            {
-                break;
+            match command {
+                RenderCommand::Resource(resource_cmd) => match resource_cmd {
+                    ResourceCommand::CreateMesh {
+                        request,
+                        id,
+                        source,
+                        reserved,
+                    } => {
+                        if let Err(reason) =
+                            validate_mesh_source(source.as_str(), self.static_mesh_lookup)
+                        {
+                            self.events.push(RenderEvent::Failed { request, reason });
+                            continue;
+                        }
+                        let out_id = if id.is_nil() {
+                            self.resources.create_mesh(source.as_str(), reserved)
+                        } else {
+                            self.resources
+                                .create_mesh_with_id(id, source.as_str(), reserved)
+                        };
+                        let mesh_data =
+                            load_mesh3d_from_source(source.as_str(), self.static_mesh_lookup);
+                        if let Some(mesh) = mesh_data.clone() {
+                            self.resources
+                                .set_runtime_mesh_data(source.as_str(), mesh.clone());
+                            let _ = self.resources.set_runtime_mesh_data_by_id(out_id, mesh);
+                        }
+                        self.events.push(RenderEvent::MeshCreated {
+                            request,
+                            id: out_id,
+                            mesh: mesh_data,
+                        });
+                    }
+                    ResourceCommand::CreateRuntimeMesh {
+                        request,
+                        id,
+                        source,
+                        reserved,
+                        mesh,
+                    } => {
+                        let out_id = if id.is_nil() {
+                            self.resources.create_mesh(source.as_str(), reserved)
+                        } else {
+                            self.resources
+                                .create_mesh_with_id(id, source.as_str(), reserved)
+                        };
+                        self.resources
+                            .set_runtime_mesh_data(source.as_str(), mesh.clone());
+                        let _ = self
+                            .resources
+                            .set_runtime_mesh_data_by_id(out_id, mesh.clone());
+                        self.events.push(RenderEvent::MeshCreated {
+                            request,
+                            id: out_id,
+                            mesh: Some(mesh),
+                        });
+                    }
+                    ResourceCommand::WriteMeshData { id, mesh } => {
+                        let _ = self.resources.set_runtime_mesh_data_by_id(id, mesh);
+                    }
+                    ResourceCommand::CreateTexture {
+                        request,
+                        id,
+                        source,
+                        reserved,
+                    } => {
+                        let id = if id.is_nil() {
+                            self.resources.create_texture(source.as_str(), reserved)
+                        } else {
+                            self.resources
+                                .create_texture_with_id(id, source.as_str(), reserved)
+                        };
+                        self.events
+                            .push(RenderEvent::TextureCreated { request, id });
+                    }
+                    ResourceCommand::CreateMaterial {
+                        request,
+                        id,
+                        material,
+                        source,
+                        reserved,
+                    } => {
+                        let id = if id.is_nil() {
+                            self.resources
+                                .create_material(material, source.as_deref(), reserved)
+                        } else {
+                            self.resources.create_material_with_id(
+                                id,
+                                material,
+                                source.as_deref(),
+                                reserved,
+                            )
+                        };
+                        self.events
+                            .push(RenderEvent::MaterialCreated { request, id });
+                    }
+                    ResourceCommand::WriteMaterialData { id, material } => {
+                        let _ = self.resources.set_material_data(id, material);
+                    }
+                    ResourceCommand::SetMeshReserved { id, reserved } => {
+                        self.resources.set_mesh_reserved(id, reserved);
+                    }
+                    ResourceCommand::SetTextureReserved { id, reserved } => {
+                        self.resources.set_texture_reserved(id, reserved);
+                    }
+                    ResourceCommand::SetMaterialReserved { id, reserved } => {
+                        self.resources.set_material_reserved(id, reserved);
+                    }
+                    ResourceCommand::DropMesh { id } => {
+                        self.resources.drop_mesh(id);
+                    }
+                    ResourceCommand::DropTexture { id } => {
+                        self.resources.drop_texture(id);
+                    }
+                    ResourceCommand::DropMaterial { id } => {
+                        self.resources.drop_material(id);
+                    }
+                },
+                RenderCommand::TwoD(cmd_2d) => match cmd_2d {
+                    Command2D::UpsertSprite { node, sprite } => {
+                        self.renderer_2d.queue_sprite(node, sprite);
+                    }
+                    Command2D::UpsertTileMap { node, tilemap } => {
+                        self.renderer_2d.upsert_tilemap(node, tilemap);
+                    }
+                    Command2D::UpsertRect { node, rect } => {
+                        self.renderer_2d.queue_rect(node, rect);
+                    }
+                    Command2D::UpsertPointParticles { node, particles } => {
+                        self.renderer_2d.queue_point_particles(node, *particles);
+                    }
+                    Command2D::UpsertWater { node, water } => {
+                        self.renderer_2d.upsert_water(node, *water);
+                    }
+                    Command2D::SetAmbientLight { node, light } => {
+                        self.renderer_2d.set_ambient_light(node, light);
+                    }
+                    Command2D::SetRayLight { node, light } => {
+                        self.renderer_2d.set_ray_light(node, light);
+                    }
+                    Command2D::SetPointLight { node, light } => {
+                        self.renderer_2d.set_point_light(node, light);
+                    }
+                    Command2D::SetSpotLight { node, light } => {
+                        self.renderer_2d.set_spot_light(node, light);
+                    }
+                    Command2D::RemoveNode { node } => {
+                        self.renderer_2d.remove_node(node);
+                    }
+                    Command2D::SetCamera { camera } => {
+                        self.renderer_2d.set_camera(camera);
+                    }
+                    Command2D::DrawShape { draw } => {
+                        self.renderer_2d.queue_shape(draw);
+                    }
+                },
+                RenderCommand::ThreeD(cmd_3d) => match *cmd_3d {
+                    Command3D::Draw {
+                        mesh,
+                        surfaces,
+                        node,
+                        model,
+                        skeleton,
+                        meshlet_override,
+                        lod,
+                        blend,
+                    } => {
+                        self.renderer_3d.queue_draw(
+                            node,
+                            mesh,
+                            surfaces,
+                            model,
+                            skeleton,
+                            meshlet_override,
+                            lod,
+                            blend,
+                        );
+                    }
+                    Command3D::DrawMulti {
+                        mesh,
+                        surfaces,
+                        node,
+                        instance_mats,
+                        skeleton,
+                        meshlet_override,
+                        lod,
+                        blend,
+                    } => {
+                        self.renderer_3d.queue_draw_multi(
+                            node,
+                            mesh,
+                            surfaces,
+                            instance_mats,
+                            skeleton,
+                            meshlet_override,
+                            lod,
+                            blend,
+                        );
+                    }
+                    Command3D::DrawMultiDense {
+                        mesh,
+                        surfaces,
+                        node,
+                        node_model,
+                        instance_scale,
+                        instances,
+                        meshlet_override,
+                        lod,
+                        blend,
+                    } => {
+                        self.renderer_3d.queue_draw_multi_dense(
+                            node,
+                            mesh,
+                            surfaces,
+                            crate::three_d::renderer::DenseMultiMeshDraw3D {
+                                node_model,
+                                instance_scale,
+                                instances,
+                            },
+                            meshlet_override,
+                            lod,
+                            blend,
+                        );
+                    }
+                    Command3D::DrawDebugPoint3D {
+                        node,
+                        position,
+                        size,
+                        color,
+                    } => {
+                        self.renderer_3d
+                            .queue_debug_point(node, position, size, color);
+                    }
+                    Command3D::DrawDebugLine3D {
+                        node,
+                        start,
+                        end,
+                        thickness,
+                        color,
+                    } => {
+                        self.renderer_3d
+                            .queue_debug_line(node, start, end, thickness, color);
+                    }
+                    Command3D::SetCamera { camera } => {
+                        self.renderer_3d.set_camera(camera);
+                    }
+                    Command3D::SetAmbientLight { node, light } => {
+                        self.renderer_3d.set_ambient_light(node, light);
+                    }
+                    Command3D::SetSky { node, sky } => {
+                        self.renderer_3d.set_sky(node, *sky);
+                    }
+                    Command3D::SetRayLight { node, light } => {
+                        self.renderer_3d.set_ray_light(node, light);
+                    }
+                    Command3D::SetPointLight { node, light } => {
+                        self.renderer_3d.set_point_light(node, light);
+                    }
+                    Command3D::SetSpotLight { node, light } => {
+                        self.renderer_3d.set_spot_light(node, light);
+                    }
+                    Command3D::UpsertPointParticles { node, particles } => {
+                        self.particles_3d.queue_point_particles(node, *particles);
+                    }
+                    Command3D::UpsertWater { node, water } => {
+                        self.renderer_3d.upsert_water(node, *water);
+                    }
+                    Command3D::RemoveNode { node } => {
+                        self.renderer_3d.remove_node(node);
+                        self.particles_3d.remove_node(node);
+                    }
+                },
+                RenderCommand::Ui(cmd) => {
+                    self.renderer_ui.submit(cmd);
+                }
+                RenderCommand::VisualAccessibility(command) => match command {
+                    VisualAccessibilityCommand::EnableColorBlind { mode, strength } => {
+                        self.accessibility.color_blind =
+                            Some(perro_structs::ColorBlindSetting::new(mode, strength));
+                    }
+                    VisualAccessibilityCommand::DisableColorBlind => {
+                        self.accessibility.color_blind = None;
+                    }
+                },
+                RenderCommand::PostProcessing(command) => match command {
+                    PostProcessingCommand::SetGlobal(set) => {
+                        self.global_post_processing = set;
+                    }
+                    PostProcessingCommand::AddGlobalNamed { name, effect } => {
+                        self.global_post_processing.add(name, effect);
+                    }
+                    PostProcessingCommand::AddGlobalUnnamed(effect) => {
+                        self.global_post_processing.add_unnamed(effect);
+                    }
+                    PostProcessingCommand::RemoveGlobalByName(name) => {
+                        self.global_post_processing.remove(name.as_ref());
+                    }
+                    PostProcessingCommand::RemoveGlobalByIndex(index) => {
+                        self.global_post_processing.remove_index(index);
+                    }
+                    PostProcessingCommand::ClearGlobal => {
+                        self.global_post_processing.clear();
+                    }
+                },
             }
         }
-        (process_start.elapsed(), frame_dirty_bits)
     }
 
     fn process_late_overlay_commands<I>(&mut self, commands: I)
@@ -1040,7 +959,7 @@ impl PerroGraphics {
             std::mem::take(&mut self.frame.scratch_late_overlay_commands);
         late_overlay_pending.clear();
         late_overlay_pending.extend(late_overlay_commands);
-        let has_pending = self.frame.has_pending_commands();
+        let has_pending = !self.frame.pending_commands.is_empty();
         let has_late_overlay = !late_overlay_pending.is_empty()
             || self.late_overlay_2d.retained_sprite_count() > 0
             || !self.late_overlay_2d.retained_rects().is_empty();
@@ -1074,13 +993,51 @@ impl PerroGraphics {
                 ..DrawFrameTiming::default()
             });
         }
-        let mut pending = std::mem::take(&mut self.frame.pending_commands);
-        let (process_commands, frame_dirty_bits) =
-            self.process_pending_commands_budgeted(&mut pending);
-        self.frame.pending_commands = pending;
-        self.redraw_requested |= self.frame.has_pending_commands();
+        let mut pending = std::mem::take(&mut self.frame.scratch_commands);
+        pending.clear();
+        std::mem::swap(&mut pending, &mut self.frame.pending_commands);
+        let mut frame_dirty_bits = 0u32;
+        for command in &pending {
+            match command {
+                RenderCommand::TwoD(cmd_2d) => {
+                    frame_dirty_bits |= DIRTY_2D;
+                    if matches!(cmd_2d, Command2D::SetCamera { .. }) {
+                        frame_dirty_bits |= DIRTY_CAMERA_2D;
+                    }
+                    if matches!(cmd_2d, Command2D::UpsertWater { .. }) {
+                        frame_dirty_bits |= DIRTY_2D;
+                    }
+                }
+                RenderCommand::ThreeD(cmd_3d) => match &**cmd_3d {
+                    Command3D::Draw { .. }
+                    | Command3D::DrawMulti { .. }
+                    | Command3D::DrawMultiDense { .. }
+                    | Command3D::DrawDebugPoint3D { .. }
+                    | Command3D::DrawDebugLine3D { .. }
+                    | Command3D::RemoveNode { .. } => frame_dirty_bits |= DIRTY_3D,
+                    Command3D::SetCamera { .. } => frame_dirty_bits |= DIRTY_CAMERA_3D,
+                    Command3D::SetAmbientLight { .. }
+                    | Command3D::SetSky { .. }
+                    | Command3D::SetRayLight { .. }
+                    | Command3D::SetPointLight { .. }
+                    | Command3D::SetSpotLight { .. } => frame_dirty_bits |= DIRTY_LIGHTS_3D,
+                    Command3D::UpsertPointParticles { .. } => {
+                        frame_dirty_bits |= DIRTY_PARTICLES_3D
+                    }
+                    Command3D::UpsertWater { .. } => frame_dirty_bits |= DIRTY_3D,
+                },
+                RenderCommand::Resource(_) => frame_dirty_bits |= DIRTY_RESOURCES,
+                RenderCommand::Ui(_) => frame_dirty_bits |= DIRTY_2D,
+                RenderCommand::PostProcessing(_) => frame_dirty_bits |= DIRTY_POSTFX,
+                RenderCommand::VisualAccessibility(_) => frame_dirty_bits |= DIRTY_ACCESSIBILITY,
+            }
+        }
+        let process_start = Instant::now();
+        self.reserve_command_buckets(&pending);
+        self.process_commands(pending.drain(..));
         self.process_late_overlay_commands(late_overlay_pending.drain(..));
         self.frame.scratch_late_overlay_commands = late_overlay_pending;
+        let process_commands = process_start.elapsed();
         let prepare_start = Instant::now();
         let (camera_2d, _stats, upload) = self.renderer_2d.prepare_frame(&self.resources);
         let camera_2d_state = self.renderer_2d.camera();
@@ -1306,7 +1263,7 @@ impl PerroGraphics {
                     samples: Arc::from(water_body_samples.into_boxed_slice()),
                 });
             }
-            self.redraw_requested = !gpu_timing.presented || self.frame.has_pending_commands();
+            self.redraw_requested = !gpu_timing.presented;
         }
         let timing = DrawFrameTiming {
             process_commands,
@@ -1346,6 +1303,8 @@ impl PerroGraphics {
             total: total_start.elapsed(),
             idle_clear: false,
         };
+        pending.clear();
+        self.frame.scratch_commands = pending;
         Some(timing)
     }
 }

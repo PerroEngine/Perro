@@ -333,6 +333,8 @@ pub(crate) fn format_command(args: &[String], cwd: &Path) -> Result<(), String> 
     log_step("Formatting User Scripts");
     for file in &script_files {
         let status = Command::new("rustfmt")
+            .arg("--edition")
+            .arg("2024")
             .arg(file)
             .status()
             .map_err(|err| format!("failed to run rustfmt for {}: {err}", file.display()))?;

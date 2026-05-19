@@ -10,7 +10,6 @@ use perro_render_bridge::{
 };
 use perro_structs::{BitMask, Color, ColorBlindFilter, PostProcessEffect, PostProcessSet};
 use std::sync::Arc;
-use std::time::Duration;
 
 fn surfaces_for(material: MaterialID) -> Arc<[MeshSurfaceBinding3D]> {
     Arc::from([MeshSurfaceBinding3D {
@@ -30,8 +29,8 @@ fn rect_command() -> Rect2DCommand {
 }
 
 #[test]
-fn command_budget_leaves_pending_work_for_next_frame() {
-    let mut graphics = PerroGraphics::new().with_render_command_budget(Duration::ZERO);
+fn draw_frame_drains_pending_commands_in_one_pass() {
+    let mut graphics = PerroGraphics::new();
     for i in 0..65 {
         graphics.submit(RenderCommand::TwoD(Command2D::UpsertRect {
             node: NodeID::from_parts(i, 0),
@@ -41,16 +40,8 @@ fn command_budget_leaves_pending_work_for_next_frame() {
 
     graphics.draw_frame();
 
-    assert_eq!(graphics.renderer_2d.retained_rects().len(), 1);
-    assert_eq!(graphics.frame.pending_commands.len(), 64);
-    assert!(graphics.redraw_requested);
-
-    while !graphics.frame.pending_commands.is_empty() {
-        graphics.draw_frame();
-    }
-
-    assert_eq!(graphics.renderer_2d.retained_rects().len(), 65);
     assert!(graphics.frame.pending_commands.is_empty());
+    assert_eq!(graphics.renderer_2d.retained_rects().len(), 65);
 }
 
 fn water_2d_state() -> Water2DState {

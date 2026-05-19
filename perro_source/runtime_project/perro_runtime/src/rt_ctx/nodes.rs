@@ -532,7 +532,7 @@ impl NodeAPI for Runtime {
         }
 
         self.mark_transform_dirty_recursive(child_id);
-        self.force_rerender(child_id);
+        self.mark_needs_rerender(child_id);
         self.mark_ui_reparent_dirty(child_id, old_parent, parent_id);
         true
     }

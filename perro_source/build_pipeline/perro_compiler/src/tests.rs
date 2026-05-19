@@ -560,6 +560,7 @@ lifecycle!({});
         generate_embedded_entry_files(&root).expect("generate embedded main");
         generate_perro_assets(&root).expect("generate assets");
         assert_static_module_fixture_refs(&root);
+        assert_generated_native_main_hides_windows_console(&root);
 
         assert_project_crate_checks(&root, ProjectBuildOptions::new(false, true));
     }
@@ -688,6 +689,23 @@ keywords = ["docs", "api"]
             project_crate.display(),
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn assert_generated_native_main_hides_windows_console(project_root: &std::path::Path) {
+        let main_src = std::fs::read_to_string(
+            project_root
+                .join(".perro")
+                .join("project")
+                .join("src")
+                .join("main.rs"),
+        )
+        .expect("read generated main");
+        assert!(
+            main_src.contains(
+                "#![cfg_attr(all(perro_no_console, target_os = \"windows\"), windows_subsystem = \"windows\")]"
+            ),
+            "generated native binary main must hide the Windows console when perro_no_console is set"
         );
     }
 
