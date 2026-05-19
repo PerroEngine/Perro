@@ -193,7 +193,7 @@ impl NodeAPI for DummyRuntime {
         false
     }
 
-    fn query_nodes(&mut self, _query: TagQuery) -> Vec<NodeID> {
+    fn query_nodes(&mut self, _query: NodeQueryView<'_>) -> Vec<NodeID> {
         Vec::new()
     }
 
@@ -763,8 +763,18 @@ fn script_macros_typecheck_and_forward() {
     assert!(query!(&mut ctx, all(layers[1], mask[2, 3])).is_empty());
     let layer = 4usize;
     assert!(query!(&mut ctx, all(layers[layer], mask[layer])).is_empty());
-    let direct_query = TagQuery::new().where_expr(QueryExpr::Name(vec!["Player".to_string()]));
-    assert!(ctx.NodeQuery().query(direct_query).is_empty());
+    let expr = query_expr!(all(tags["player"], not(tags["enemy"])));
+    assert!(matches!(expr, QueryExpr::All(_)));
+    let reusable_query = query_builder!(all(tags["player"]), in_subtree(id));
+    assert_eq!(reusable_query.scope, QueryScope::Subtree(id));
+    assert!(query!(&mut ctx, &reusable_query).is_empty());
+    let original_scope = reusable_query.scope;
+    assert!(query!(&mut ctx, &reusable_query, in_subtree(NodeID::new(7))).is_empty());
+    assert_eq!(reusable_query.scope, original_scope);
+    assert!(query!(&mut ctx, query_builder!(all(tags["player"]))).is_empty());
+    assert!(query_first!(&mut ctx, &reusable_query).is_none());
+    let direct_query = NodeQuery::new().where_expr(QueryExpr::Name(vec!["Player".to_string()]));
+    assert!(ctx.NodeQuery().query(&direct_query).is_empty());
     assert!(!reparent!(&mut ctx, NodeID::new(1), id));
     assert_eq!(reparent_multi!(&mut ctx, NodeID::new(1), [id]), 0);
     assert!(!remove_node!(&mut ctx, id));

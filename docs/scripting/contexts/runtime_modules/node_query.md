@@ -12,19 +12,25 @@ Macros:
 
 - `query!(ctx.run, expr) -> Vec<NodeID>`
 - `query!(ctx.run, expr, in_subtree(parent_id)) -> Vec<NodeID>`
+- `query!(ctx.run, &node_query) -> Vec<NodeID>`
+- `query!(ctx.run, &node_query, in_subtree(parent_id)) -> Vec<NodeID>`
 - `query_first!(ctx.run, expr) -> Option<NodeID>`
 - `query_first!(ctx.run, expr, in_subtree(parent_id)) -> Option<NodeID>`
+- `query_expr!(expr) -> QueryExpr`
+- `query_builder!(expr) -> NodeQuery`
+- `query_builder!(expr, in_subtree(parent_id)) -> NodeQuery`
 
 Direct API:
 
 ```rust
-let q = TagQuery::new().where_expr(QueryExpr::Name(vec!["Player".to_string()]));
-let ids = ctx.run.NodeQuery().query(q);
+let q = NodeQuery::new().where_expr(query_expr!(all(name["Player"])));
+let ids = ctx.run.NodeQuery().query(&q);
 ```
 
 What queries are:
 
 - Query is a runtime filter that returns `NodeID` values.
+- Query execution belongs to `NodeQuery`, not `Nodes`.
 - `in_subtree(parent_id)` limits search to descendants of that node.
 - Default query scope is full scene tree.
 - `all(...)` means every condition must match.
@@ -66,6 +72,34 @@ if let Some(camera_id) = query_first!(ctx.run, all(node_type[Camera3D])) {
     // use camera_id
 }
 ```
+
+```rust
+fn actor_query(include_sleeping: bool) -> NodeQuery {
+    let mut q = query_builder!(all(
+        base_type[Node3D],
+        tags["actor"],
+        layers[1]
+    ));
+
+    if !include_sleeping {
+        q = q.where_expr(query_expr!(not(tags["sleeping"])));
+    }
+
+    q
+}
+
+let actors = actor_query(false);
+let all_actors = query!(ctx.run, &actors);
+let room_actors = query!(ctx.run, &actors, in_subtree(room_root_id));
+```
+
+Reusable query rules:
+
+- Pass `&query` to reuse without cloning.
+- Use `query_expr!` for shared predicate chunks.
+- Use `query_builder!` for dynamic filters.
+- `query!(..., in_subtree(...))` overrides scope for one call and keeps source query unchanged.
+- Cache stable `NodeID` values when a hot path does not need dynamic lookup.
 
 Perf rules:
 

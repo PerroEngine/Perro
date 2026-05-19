@@ -3,7 +3,7 @@ use ahash::{AHashMap, AHashSet};
 use perro_ids::NodeID;
 use perro_ids::TagID;
 use perro_nodes::{Node2D, Node3D, NodeType, SceneNode};
-use perro_runtime_api::sub_apis::{QueryExpr, QueryScope, QueryTypeMask, TagQuery};
+use perro_runtime_api::sub_apis::{NodeQueryView, QueryExpr, QueryScope, QueryTypeMask};
 use perro_structs::BitMask;
 use rayon::prelude::*;
 #[cfg(feature = "profile")]
@@ -18,7 +18,7 @@ const PARALLEL_MIN_WORK_UNITS: u64 = 30_000;
 
 pub(super) fn query_node_ids(
     arena: &NodeArena,
-    query: TagQuery,
+    query: NodeQueryView<'_>,
     tag_index: Option<&AHashMap<TagID, AHashSet<NodeID>>>,
 ) -> Vec<NodeID> {
     query_node_ids_with_worker_override(arena, query, None, tag_index)
@@ -26,7 +26,7 @@ pub(super) fn query_node_ids(
 
 fn query_node_ids_with_worker_override(
     arena: &NodeArena,
-    query: TagQuery,
+    query: NodeQueryView<'_>,
     worker_override: Option<usize>,
     tag_index: Option<&AHashMap<TagID, AHashSet<NodeID>>>,
 ) -> Vec<NodeID> {
@@ -37,7 +37,7 @@ fn query_node_ids_with_worker_override(
         #[cfg(feature = "profile")]
         {
             print_query_timing(
-                &query,
+                query,
                 0,
                 slot_count,
                 start.elapsed().as_secs_f64() * 1_000_000.0,
@@ -46,12 +46,12 @@ fn query_node_ids_with_worker_override(
         return Vec::new();
     }
 
-    let plan = QueryPlan::from_query(&query.expr);
+    let plan = QueryPlan::from_query(query.expr);
     if plan.exact_type_mask.is_empty() || plan.base_type_mask.is_empty() {
         #[cfg(feature = "profile")]
         {
             print_query_timing(
-                &query,
+                query,
                 0,
                 slot_count,
                 start.elapsed().as_secs_f64() * 1_000_000.0,
@@ -61,7 +61,7 @@ fn query_node_ids_with_worker_override(
     }
     let out = match query.scope {
         QueryScope::Root => {
-            if let Some(candidates) = candidate_ids_from_index(&query.expr, tag_index, slot_count) {
+            if let Some(candidates) = candidate_ids_from_index(query.expr, tag_index, slot_count) {
                 if candidates.exact {
                     candidates.ids
                 } else {
@@ -105,7 +105,7 @@ fn query_node_ids_with_worker_override(
     #[cfg(feature = "profile")]
     {
         print_query_timing(
-            &query,
+            query,
             out.len(),
             slot_count,
             start.elapsed().as_secs_f64() * 1_000_000.0,
@@ -664,7 +664,12 @@ fn type_mask_only(expr: &QueryExpr, kind: TypeFilterKind) -> Option<QueryTypeMas
 }
 
 #[cfg(feature = "profile")]
-fn print_query_timing(query: &TagQuery, matches: usize, slot_count: usize, elapsed_us: f64) {
+fn print_query_timing(
+    query: NodeQueryView<'_>,
+    matches: usize,
+    slot_count: usize,
+    elapsed_us: f64,
+) {
     #[cfg(not(debug_assertions))]
     {
         let _ = (query, matches, slot_count, elapsed_us);

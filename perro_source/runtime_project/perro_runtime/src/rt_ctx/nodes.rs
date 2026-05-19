@@ -10,7 +10,7 @@ use perro_nodes::{
 };
 use perro_runtime_api::sub_apis::{
     IntoNodeTag, IntoNodeTags, MeshDataSurfaceHit3D, MeshDataSurfaceRegion3D, MeshMaterialRegion3D,
-    MeshSurfaceHit3D, MeshSurfaceRay3D, NodeAPI, NodeCreationTemplate, TagQuery,
+    MeshSurfaceHit3D, MeshSurfaceRay3D, NodeAPI, NodeCreationTemplate, NodeQueryView,
 };
 use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
 use rayon::prelude::*;
@@ -732,7 +732,7 @@ impl NodeAPI for Runtime {
         true
     }
 
-    fn query_nodes(&mut self, query: TagQuery) -> Vec<perro_ids::NodeID> {
+    fn query_nodes(&mut self, query: NodeQueryView<'_>) -> Vec<perro_ids::NodeID> {
         super::query::query_node_ids(&self.nodes, query, Some(&self.node_index.node_tag_index))
     }
 

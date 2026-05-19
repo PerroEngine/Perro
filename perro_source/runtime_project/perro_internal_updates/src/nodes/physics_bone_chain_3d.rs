@@ -230,9 +230,8 @@ where
     RT: RuntimeAPI + ?Sized,
 {
     out.clear();
-    let ids = ctx
-        .Nodes()
-        .query(TagQuery::new().node_type([NodeType::BoneCollider3D]));
+    let query = NodeQuery::new().node_type([NodeType::BoneCollider3D]);
+    let ids = ctx.NodeQuery().query(&query);
     for id in ids {
         let enabled =
             with_base_node!(ctx, BoneCollider3D, id, |node| node.enabled).unwrap_or(false);

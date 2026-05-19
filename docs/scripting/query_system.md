@@ -5,6 +5,7 @@ Use it when direct refs are not enough and you want dynamic lookup.
 
 Runtime module: `ctx.run.NodeQuery()`.
 The `query!` and `query_first!` macros route to `NodeQuery`.
+Reusable query type: `NodeQuery`.
 
 This works on top of Perro's object-centric node model.
 Queries do not replace nodes or script state.
@@ -21,8 +22,13 @@ Queries help find nodes, then you act through normal node/script APIs.
 
 - `query!(ctx.run, expr) -> Vec<NodeID>`
 - `query!(ctx.run, expr, in_subtree(parent_id)) -> Vec<NodeID>`
+- `query!(ctx.run, &node_query) -> Vec<NodeID>`
+- `query!(ctx.run, &node_query, in_subtree(parent_id)) -> Vec<NodeID>`
 - `query_first!(ctx.run, expr) -> Option<NodeID>`
 - `query_first!(ctx.run, expr, in_subtree(parent_id)) -> Option<NodeID>`
+- `query_expr!(expr) -> QueryExpr`
+- `query_builder!(expr) -> NodeQuery`
+- `query_builder!(expr, in_subtree(parent_id)) -> NodeQuery`
 
 ## Expression Grammar
 
@@ -49,6 +55,7 @@ Predicate forms:
 
 - Query filters current runtime node set.
 - Return value is `NodeID` handles only.
+- Query execution belongs to `ctx.run.NodeQuery()`, not `ctx.run.Nodes()`.
 - You still choose typed access after query:
   - `with_node!` for exact type
   - `with_base_node!` for base-type access
@@ -80,13 +87,49 @@ if let Some(id) = target {
 
 ```rust
 let local_hits = query!(
-    ctx,
+    ctx.run,
     all(base_type[Node3D], tags["interactable"]),
     in_subtree(zone_root_id)
 );
 ```
 
-### 4) Query -> Script Interop
+### 4) Reusable NodeQuery
+
+Use `query_builder!` when several systems share the same filter or when gameplay options add extra predicates.
+
+```rust
+fn actor_query(include_sleeping: bool) -> NodeQuery {
+    let mut q = query_builder!(all(
+        base_type[Node3D],
+        tags["actor"],
+        layers[1]
+    ));
+
+    if !include_sleeping {
+        q = q.where_expr(query_expr!(not(tags["sleeping"])));
+    }
+
+    q
+}
+
+let actors = actor_query(false);
+
+let all_actors = query!(ctx.run, &actors);
+let room_actors = query!(ctx.run, &actors, in_subtree(room_root_id));
+```
+
+- Passing `&actors` reuses the query without cloning.
+- `in_subtree(...)` on `query!` overrides scope for that call only.
+- Use this for target systems, editor/tool panels, optional filters, and room-local scans.
+
+### 5) Direct NodeQuery Module
+
+```rust
+let q = NodeQuery::new().where_expr(query_expr!(all(name["Player"])));
+let ids = ctx.run.NodeQuery().query(&q);
+```
+
+### 6) Query -> Script Interop
 
 ```rust
 let allies = query!(ctx.run, all(tags["ally"], tags["alive"]));
@@ -95,7 +138,7 @@ for id in allies {
 }
 ```
 
-### 5) Render Layer Filters
+### 7) Render Layer Filters
 
 ```rust
 let layer_one = query!(ctx.run, all(base_type[Node2D], layers[1]));

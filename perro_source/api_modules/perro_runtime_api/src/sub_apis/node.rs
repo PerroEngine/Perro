@@ -128,9 +128,22 @@ impl QueryTypeMask {
 
 /// Query definition used by [`query!`](macro@crate::query) to filter nodes.
 #[derive(Clone, Debug, Default)]
-pub struct TagQuery {
+pub struct NodeQuery {
     pub expr: Option<QueryExpr>,
     pub scope: QueryScope,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct NodeQueryView<'a> {
+    pub expr: &'a Option<QueryExpr>,
+    pub scope: QueryScope,
+}
+
+impl<'a> NodeQueryView<'a> {
+    pub const fn in_subtree(mut self, parent_id: NodeID) -> Self {
+        self.scope = QueryScope::Subtree(parent_id);
+        self
+    }
 }
 
 /// Converts a single tag into stored node tag data.
@@ -488,7 +501,7 @@ impl IntoNodeTags for Vec<String> {
     }
 }
 
-impl TagQuery {
+impl NodeQuery {
     /// Creates an empty query (matches all nodes).
     pub const fn new() -> Self {
         Self {
@@ -576,6 +589,13 @@ impl TagQuery {
     pub fn in_subtree(mut self, parent_id: NodeID) -> Self {
         self.scope = QueryScope::Subtree(parent_id);
         self
+    }
+
+    pub const fn as_view(&self) -> NodeQueryView<'_> {
+        NodeQueryView {
+            expr: &self.expr,
+            scope: self.scope,
+        }
     }
 }
 
@@ -812,7 +832,7 @@ pub trait NodeAPI {
         T: IntoTagID;
 
     /// Executes a node query and returns matching node IDs.
-    fn query_nodes(&mut self, query: TagQuery) -> Vec<NodeID>;
+    fn query_nodes(&mut self, query: NodeQueryView<'_>) -> Vec<NodeID>;
 
     /// Returns the current global transform for a 2D spatial node.
     fn get_global_transform_2d(&mut self, node_id: NodeID) -> Option<Transform2D>;
@@ -1172,10 +1192,6 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         self.rt.remove_node_tag(node_id, tag)
     }
 
-    pub fn query(&mut self, query: TagQuery) -> Vec<NodeID> {
-        self.rt.query_nodes(query)
-    }
-
     pub fn get_global_transform_2d(&mut self, node_id: NodeID) -> Option<Transform2D> {
         self.rt.get_global_transform_2d(node_id)
     }
@@ -1496,7 +1512,12 @@ impl<'rt, R: NodeAPI + ?Sized> NodeQueryModule<'rt, R> {
         Self { rt }
     }
 
-    pub fn query(&mut self, query: TagQuery) -> Vec<NodeID> {
+    pub fn query(&mut self, query: &NodeQuery) -> Vec<NodeID> {
+        self.query_view(query.as_view())
+    }
+
+    #[doc(hidden)]
+    pub fn query_view(&mut self, query: NodeQueryView<'_>) -> Vec<NodeID> {
         self.rt.query_nodes(query)
     }
 }
@@ -2415,6 +2436,29 @@ macro_rules! tag_remove {
     };
 }
 
+/// Builds a query expression without executing it.
+#[macro_export]
+macro_rules! query_expr {
+    ($kind:ident $args:tt $(,)?) => {
+        $crate::query!(@expr $kind $args)
+    };
+}
+
+/// Builds a reusable node query without executing it.
+#[macro_export]
+macro_rules! query_builder {
+    ($kind:ident $args:tt, in_subtree($parent:expr) $(,)?) => {{
+        let __expr = $crate::query_expr!($kind $args);
+        $crate::sub_apis::NodeQuery::new()
+            .where_expr(__expr)
+            .in_subtree($parent)
+    }};
+    ($kind:ident $args:tt $(,)?) => {{
+        let __expr = $crate::query_expr!($kind $args);
+        $crate::sub_apis::NodeQuery::new().where_expr(__expr)
+    }};
+}
+
 /// Executes a node query and returns `Vec<NodeID>`.
 ///
 /// Preferred syntax:
@@ -2450,15 +2494,25 @@ macro_rules! query {
     }};
     ($ctx:expr, $kind:ident $args:tt, in_subtree($parent:expr) $(,)?) => {{
         let __expr = $crate::query!(@expr $kind $args);
-        let __query = $crate::sub_apis::TagQuery::new()
+        let __query = $crate::sub_apis::NodeQuery::new()
             .where_expr(__expr)
             .in_subtree($parent);
-        $ctx.NodeQuery().query(__query)
+        $ctx.NodeQuery().query(&__query)
     }};
     ($ctx:expr, $kind:ident $args:tt $(,)?) => {{
         let __expr = $crate::query!(@expr $kind $args);
-        let __query = $crate::sub_apis::TagQuery::new().where_expr(__expr);
-        $ctx.NodeQuery().query(__query)
+        let __query = $crate::sub_apis::NodeQuery::new().where_expr(__expr);
+        $ctx.NodeQuery().query(&__query)
+    }};
+    ($ctx:expr, $query:expr, in_subtree($parent:expr) $(,)?) => {{
+        let __query = $query;
+        let __query_view = (&__query).as_view().in_subtree($parent);
+        $ctx.NodeQuery().query_view(__query_view)
+    }};
+    ($ctx:expr, $query:expr $(,)?) => {{
+        let __query = $query;
+        let __query_view = (&__query).as_view();
+        $ctx.NodeQuery().query_view(__query_view)
     }};
 
     (@expr all($($kind:ident $args:tt),* $(,)?)) => {
@@ -2547,5 +2601,13 @@ macro_rules! query_first {
     }};
     ($ctx:expr, $kind:ident $args:tt $(,)?) => {{
         $crate::query!($ctx, $kind $args).into_iter().next()
+    }};
+    ($ctx:expr, $query:expr, in_subtree($parent:expr) $(,)?) => {{
+        $crate::query!($ctx, $query, in_subtree($parent))
+            .into_iter()
+            .next()
+    }};
+    ($ctx:expr, $query:expr $(,)?) => {{
+        $crate::query!($ctx, $query).into_iter().next()
     }};
 }

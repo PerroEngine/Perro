@@ -175,7 +175,7 @@ Tag macros:
 
 Related modules:
 
-- Use [NodeQuery Module](node_query.md) for `query!` and `query_first!`.
+- Use [NodeQuery Module](node_query.md) for `query!`, `query_first!`, and reusable `NodeQuery`.
 - Use [MeshQuery Module](mesh_query.md) for mesh surface hits, batch rays, and mesh regions.
 
 ## Node Types
