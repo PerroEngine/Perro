@@ -2843,14 +2843,13 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
         }
         let now = Instant::now();
         self.apply_frame_control_flow(event_loop, now);
-        if let Some(window) = &self.window {
-            if self
+        if let Some(window) = &self.window
+            && (self
                 .next_frame_deadline
                 .is_none_or(|deadline| deadline <= now)
-                || self.startup_splash.active
-            {
-                window.request_redraw();
-            }
+                || self.startup_splash.active)
+        {
+            window.request_redraw();
         }
     }
 }

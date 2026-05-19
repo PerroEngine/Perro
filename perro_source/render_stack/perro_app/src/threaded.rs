@@ -1447,14 +1447,13 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for ThreadedRunn
         self.apply_frame_control_flow(event_loop, now);
         self.gamepad_input.begin_frame_threaded(&self.bridge);
         self.joycon_input.begin_frame_threaded(&self.bridge);
-        if let Some(window) = &self.window {
-            if self
+        if let Some(window) = &self.window
+            && (self
                 .next_frame_deadline
                 .is_none_or(|deadline| deadline <= now)
-                || self.startup_splash.is_some()
-            {
-                window.request_redraw();
-            }
+                || self.startup_splash.is_some())
+        {
+            window.request_redraw();
         }
     }
 }

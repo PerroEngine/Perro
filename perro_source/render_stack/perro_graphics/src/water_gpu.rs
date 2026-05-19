@@ -405,21 +405,25 @@ impl GpuWater {
         let compute_bind_group_ab = make_compute_bind_group(
             device,
             &compute_bgl,
-            &water_buffer,
-            &cell_buffer_a,
-            &cell_buffer_b,
-            &coastline_buffer,
-            &params_buffer,
+            ComputeBindGroupBuffers {
+                waters: &water_buffer,
+                cells: &cell_buffer_a,
+                next_cells: &cell_buffer_b,
+                coastline: &coastline_buffer,
+                params: &params_buffer,
+            },
             "perro_water_gpu_bg_ab",
         );
         let compute_bind_group_ba = make_compute_bind_group(
             device,
             &compute_bgl,
-            &water_buffer,
-            &cell_buffer_b,
-            &cell_buffer_a,
-            &coastline_buffer,
-            &params_buffer,
+            ComputeBindGroupBuffers {
+                waters: &water_buffer,
+                cells: &cell_buffer_b,
+                next_cells: &cell_buffer_a,
+                coastline: &coastline_buffer,
+                params: &params_buffer,
+            },
             "perro_water_gpu_bg_ba",
         );
         let render_bind_group_a = make_render_bind_group(
@@ -1023,21 +1027,25 @@ impl GpuWater {
         self.compute_bind_group_ab = make_compute_bind_group(
             device,
             &self.compute_bgl,
-            &self.water_buffer,
-            &self.cell_buffer_a,
-            &self.cell_buffer_b,
-            &self.coastline_buffer,
-            &self.params_buffer,
+            ComputeBindGroupBuffers {
+                waters: &self.water_buffer,
+                cells: &self.cell_buffer_a,
+                next_cells: &self.cell_buffer_b,
+                coastline: &self.coastline_buffer,
+                params: &self.params_buffer,
+            },
             "perro_water_gpu_bg_ab",
         );
         self.compute_bind_group_ba = make_compute_bind_group(
             device,
             &self.compute_bgl,
-            &self.water_buffer,
-            &self.cell_buffer_b,
-            &self.cell_buffer_a,
-            &self.coastline_buffer,
-            &self.params_buffer,
+            ComputeBindGroupBuffers {
+                waters: &self.water_buffer,
+                cells: &self.cell_buffer_b,
+                next_cells: &self.cell_buffer_a,
+                coastline: &self.coastline_buffer,
+                params: &self.params_buffer,
+            },
             "perro_water_gpu_bg_ba",
         );
         self.render_bind_group_a = make_render_bind_group(
@@ -1188,11 +1196,7 @@ fn water_adaptive_readback_interval(
 fn make_compute_bind_group(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
-    waters: &wgpu::Buffer,
-    cells: &wgpu::Buffer,
-    next_cells: &wgpu::Buffer,
-    coastline: &wgpu::Buffer,
-    params: &wgpu::Buffer,
+    buffers: ComputeBindGroupBuffers<'_>,
     label: &'static str,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1201,26 +1205,34 @@ fn make_compute_bind_group(
         entries: &[
             wgpu::BindGroupEntry {
                 binding: 0,
-                resource: waters.as_entire_binding(),
+                resource: buffers.waters.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 1,
-                resource: cells.as_entire_binding(),
+                resource: buffers.cells.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 2,
-                resource: params.as_entire_binding(),
+                resource: buffers.params.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 3,
-                resource: coastline.as_entire_binding(),
+                resource: buffers.coastline.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 5,
-                resource: next_cells.as_entire_binding(),
+                resource: buffers.next_cells.as_entire_binding(),
             },
         ],
     })
+}
+
+struct ComputeBindGroupBuffers<'a> {
+    waters: &'a wgpu::Buffer,
+    cells: &'a wgpu::Buffer,
+    next_cells: &'a wgpu::Buffer,
+    coastline: &'a wgpu::Buffer,
+    params: &'a wgpu::Buffer,
 }
 
 struct RenderBindGroupBuffers<'a> {

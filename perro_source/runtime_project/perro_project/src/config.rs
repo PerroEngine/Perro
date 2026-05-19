@@ -35,17 +35,12 @@ impl ParticleSimDefault {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum FrameRateCap {
+    #[default]
     Unlimited,
     Fps(f32),
     RefreshRate,
-}
-
-impl Default for FrameRateCap {
-    fn default() -> Self {
-        Self::Unlimited
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

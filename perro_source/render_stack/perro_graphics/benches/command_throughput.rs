@@ -59,17 +59,21 @@ fn bench_command_throughput(c: &mut Criterion) {
     for count in [1_024_u32, 8_192, 32_768] {
         let commands = mixed_commands(count);
         group.throughput(Throughput::Elements(count as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(count), &commands, |b, commands| {
-            b.iter_batched(
-                || (PerroGraphics::new(), commands.clone()),
-                |(mut graphics, commands)| {
-                    graphics.submit_many(commands);
-                    graphics.draw_frame();
-                    black_box(graphics);
-                },
-                criterion::BatchSize::SmallInput,
-            );
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(count),
+            &commands,
+            |b, commands| {
+                b.iter_batched(
+                    || (PerroGraphics::new(), commands.clone()),
+                    |(mut graphics, commands)| {
+                        graphics.submit_many(commands);
+                        graphics.draw_frame();
+                        black_box(graphics);
+                    },
+                    criterion::BatchSize::SmallInput,
+                );
+            },
+        );
     }
     group.finish();
 }
