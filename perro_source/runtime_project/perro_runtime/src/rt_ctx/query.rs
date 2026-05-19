@@ -61,13 +61,11 @@ fn query_node_ids_with_worker_override(
     }
     let out = match query.scope {
         QueryScope::Root => {
-            if let Some(candidates) =
-                candidate_ids_from_tag_index(&query.expr, tag_index, slot_count)
-            {
-                if query.expr.as_ref().is_some_and(expr_is_tag_only) {
-                    candidates
+            if let Some(candidates) = candidate_ids_from_index(&query.expr, tag_index, slot_count) {
+                if candidates.exact {
+                    candidates.ids
                 } else {
-                    scan_candidates(arena, candidates, &plan)
+                    scan_candidates(arena, candidates.ids, &plan)
                 }
             } else {
                 let worker_count = worker_override.unwrap_or_else(|| {
@@ -116,121 +114,243 @@ fn query_node_ids_with_worker_override(
     out
 }
 
-fn candidate_ids_from_tag_index<'a>(
+struct QueryCandidates {
+    ids: Vec<NodeID>,
+    exact: bool,
+}
+
+fn candidate_ids_from_index<'a>(
     expr: &'a Option<QueryExpr>,
     tag_index: Option<&'a AHashMap<TagID, AHashSet<NodeID>>>,
     slot_count: usize,
-) -> Option<Vec<NodeID>> {
+) -> Option<QueryCandidates> {
     let query_expr = expr.as_ref()?;
     let index = tag_index?;
-    let mode = candidate_tag_mode(query_expr)?;
-    match mode {
-        CandidateTagMode::All(required) => {
-            if required.is_empty() {
-                return None;
-            }
-            let mut sets: Vec<&AHashSet<NodeID>> = Vec::with_capacity(required.len());
-            for tag in required {
-                let set = index.get(&tag)?;
-                sets.push(set);
-            }
-            sets.sort_by_key(|set| set.len());
+    candidate_ids_for_expr(query_expr, TagClauseContext::Any, index, slot_count)
+}
 
-            let mut out = Vec::new();
-            if let Some(seed) = sets.first().copied() {
-                'outer: for &id in seed {
-                    for set in sets.iter().skip(1) {
-                        if !set.contains(&id) {
-                            continue 'outer;
-                        }
-                    }
-                    out.push(id);
+fn candidate_ids_for_expr(
+    expr: &QueryExpr,
+    tag_ctx: TagClauseContext,
+    tag_index: &AHashMap<TagID, AHashSet<NodeID>>,
+    slot_count: usize,
+) -> Option<QueryCandidates> {
+    match expr {
+        QueryExpr::Tags(tags) => match tag_ctx {
+            TagClauseContext::All => Some(QueryCandidates {
+                ids: tag_intersection_candidates(tags, tag_index),
+                exact: true,
+            }),
+            TagClauseContext::Any => Some(QueryCandidates {
+                ids: tag_union_candidates(tags, tag_index, slot_count),
+                exact: true,
+            }),
+        },
+        QueryExpr::All(children) => candidate_ids_for_all(children, tag_index, slot_count),
+        QueryExpr::Any(children) => candidate_ids_for_any(children, tag_index, slot_count),
+        QueryExpr::Not(_)
+        | QueryExpr::Name(_)
+        | QueryExpr::IsType(_)
+        | QueryExpr::BaseType(_)
+        | QueryExpr::IsTypeMask(_)
+        | QueryExpr::BaseTypeMask(_)
+        | QueryExpr::Layers(_)
+        | QueryExpr::Mask(_) => None,
+    }
+}
+
+fn candidate_ids_for_all(
+    children: &[QueryExpr],
+    tag_index: &AHashMap<TagID, AHashSet<NodeID>>,
+    slot_count: usize,
+) -> Option<QueryCandidates> {
+    if children.is_empty() {
+        return None;
+    }
+
+    let mut indexed = Vec::new();
+    let mut all_children_indexed = true;
+    for child in children {
+        if let Some(candidates) =
+            candidate_ids_for_expr(child, TagClauseContext::All, tag_index, slot_count)
+        {
+            indexed.push(candidates);
+        } else {
+            all_children_indexed = false;
+        }
+    }
+    if indexed.is_empty() {
+        return None;
+    }
+
+    indexed.sort_by_key(|candidates| candidates.ids.len());
+    let ids =
+        intersect_candidate_vectors(indexed.iter().map(|candidates| &candidates.ids), slot_count);
+    Some(QueryCandidates {
+        ids,
+        exact: all_children_indexed && indexed.iter().all(|candidates| candidates.exact),
+    })
+}
+
+fn candidate_ids_for_any(
+    children: &[QueryExpr],
+    tag_index: &AHashMap<TagID, AHashSet<NodeID>>,
+    slot_count: usize,
+) -> Option<QueryCandidates> {
+    if children.is_empty() {
+        return None;
+    }
+
+    let mut indexed = Vec::with_capacity(children.len());
+    for child in children {
+        indexed.push(candidate_ids_for_expr(
+            child,
+            TagClauseContext::Any,
+            tag_index,
+            slot_count,
+        )?);
+    }
+
+    indexed.sort_by_key(|candidates| candidates.ids.len());
+    let mut ids = Vec::new();
+    let bit_words = slot_count.max(1).div_ceil(64);
+    let mut marks = vec![0u64; bit_words];
+    for candidates in &indexed {
+        push_unique_ids(&candidates.ids, &mut marks, &mut ids);
+    }
+    Some(QueryCandidates {
+        ids,
+        exact: indexed.iter().all(|candidates| candidates.exact),
+    })
+}
+
+fn tag_intersection_candidates(
+    tags: &[TagID],
+    tag_index: &AHashMap<TagID, AHashSet<NodeID>>,
+) -> Vec<NodeID> {
+    if tags.is_empty() {
+        return Vec::new();
+    }
+
+    let mut sets = Vec::with_capacity(tags.len());
+    for tag in tags {
+        let Some(set) = tag_index.get(tag) else {
+            return Vec::new();
+        };
+        sets.push(set);
+    }
+    sets.sort_by_key(|set| set.len());
+
+    let mut out = Vec::new();
+    if let Some(seed) = sets.first().copied() {
+        'outer: for &id in seed {
+            for set in sets.iter().skip(1) {
+                if !set.contains(&id) {
+                    continue 'outer;
                 }
             }
-            Some(out)
+            out.push(id);
         }
-        CandidateTagMode::Any(tags) => {
-            if tags.is_empty() {
-                return None;
-            }
-            let mut out = Vec::new();
-            let bit_words = slot_count.max(1).div_ceil(64);
+    }
+    out
+}
+
+fn tag_union_candidates(
+    tags: &[TagID],
+    tag_index: &AHashMap<TagID, AHashSet<NodeID>>,
+    slot_count: usize,
+) -> Vec<NodeID> {
+    if tags.is_empty() {
+        return Vec::new();
+    }
+
+    let mut sets = Vec::with_capacity(tags.len());
+    for tag in tags {
+        if let Some(set) = tag_index.get(tag) {
+            sets.push(set);
+        }
+    }
+    sets.sort_by_key(|set| set.len());
+
+    let mut out = Vec::new();
+    let bit_words = slot_count.max(1).div_ceil(64);
+    let mut marks = vec![0u64; bit_words];
+    for set in sets {
+        for &id in set {
+            push_unique_id(id, &mut marks, &mut out);
+        }
+    }
+    out
+}
+
+fn intersect_candidate_vectors<'a>(
+    mut candidates: impl Iterator<Item = &'a Vec<NodeID>>,
+    slot_count: usize,
+) -> Vec<NodeID> {
+    let Some(seed) = candidates.next() else {
+        return Vec::new();
+    };
+    let rest = candidates.collect::<Vec<_>>();
+    if rest.is_empty() {
+        return seed.clone();
+    }
+
+    let bit_words = slot_count.max(1).div_ceil(64);
+    let rest_marks = rest
+        .iter()
+        .map(|candidate| {
             let mut marks = vec![0u64; bit_words];
-            for tag in tags {
-                let Some(set) = index.get(&tag) else {
-                    continue;
-                };
-                for &id in set {
-                    let slot = id.index() as usize;
-                    let word = slot / 64;
-                    if word >= marks.len() {
-                        continue;
-                    }
-                    let bit = 1u64 << (slot & 63);
-                    if (marks[word] & bit) != 0 {
-                        continue;
-                    }
-                    marks[word] |= bit;
-                    out.push(id);
-                }
+            for &id in candidate.iter() {
+                mark_id(id, &mut marks);
             }
-            if out.is_empty() { None } else { Some(out) }
+            marks
+        })
+        .collect::<Vec<_>>();
+
+    let mut out = Vec::with_capacity(seed.len());
+    'outer: for &id in seed {
+        for marks in &rest_marks {
+            if !is_marked(id, marks) {
+                continue 'outer;
+            }
         }
+        out.push(id);
+    }
+    out
+}
+
+fn push_unique_ids(ids: &[NodeID], marks: &mut [u64], out: &mut Vec<NodeID>) {
+    for &id in ids {
+        push_unique_id(id, marks, out);
     }
 }
 
-enum CandidateTagMode {
-    All(Vec<TagID>),
-    Any(Vec<TagID>),
+fn push_unique_id(id: NodeID, marks: &mut [u64], out: &mut Vec<NodeID>) {
+    if is_marked(id, marks) {
+        return;
+    }
+    mark_id(id, marks);
+    out.push(id);
 }
 
-fn candidate_tag_mode(expr: &QueryExpr) -> Option<CandidateTagMode> {
-    match expr {
-        QueryExpr::All(children) => {
-            let mut merged = Vec::new();
-            for child in children {
-                if let QueryExpr::Tags(tags) = child {
-                    merged.extend(tags.iter().copied());
-                }
-            }
-            if merged.is_empty() {
-                None
-            } else {
-                Some(CandidateTagMode::All(merged))
-            }
-        }
-        QueryExpr::Any(children) => {
-            let mut merged = Vec::new();
-            for child in children {
-                if let QueryExpr::Tags(tags) = child {
-                    merged.extend(tags.iter().copied());
-                } else {
-                    return None;
-                }
-            }
-            if merged.is_empty() {
-                None
-            } else {
-                Some(CandidateTagMode::Any(merged))
-            }
-        }
-        QueryExpr::Tags(tags) if !tags.is_empty() => Some(CandidateTagMode::Any(tags.clone())),
-        _ => None,
+fn mark_id(id: NodeID, marks: &mut [u64]) {
+    let slot = id.index() as usize;
+    let word = slot / 64;
+    if word >= marks.len() {
+        return;
     }
+    let bit = 1u64 << (slot & 63);
+    marks[word] |= bit;
 }
 
-fn expr_is_tag_only(expr: &QueryExpr) -> bool {
-    match expr {
-        QueryExpr::Tags(tags) => !tags.is_empty(),
-        QueryExpr::All(children) | QueryExpr::Any(children) => {
-            !children.is_empty()
-                && children.iter().all(|child| match child {
-                    QueryExpr::Tags(tags) => !tags.is_empty(),
-                    _ => false,
-                })
-        }
-        _ => false,
+fn is_marked(id: NodeID, marks: &[u64]) -> bool {
+    let slot = id.index() as usize;
+    let word = slot / 64;
+    if word >= marks.len() {
+        return false;
     }
+    let bit = 1u64 << (slot & 63);
+    (marks[word] & bit) != 0
 }
 
 fn recommended_workers(total_nodes: usize, estimated_cost_per_node: u32) -> usize {

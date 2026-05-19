@@ -12,6 +12,7 @@ Shared backend, cache, bus, `.pawdio`, and propagation concepts:
 
 - `audio_bus!("name") -> AudioBusID`
 - `audio_load!(res, source) -> bool`
+- `audio_is_loaded!(res, source) -> bool`
 - `audio_reserve!(res, source) -> bool`
 - `audio_drop!(res, source) -> bool`
 - `audio_stop_source!(res, source) -> bool`
@@ -28,6 +29,14 @@ Shared backend, cache, bus, `.pawdio`, and propagation concepts:
 ## Base Audio
 
 Base audio uses explicit pan values.
+
+Load readiness:
+
+- `audio_load!` / `audio_reserve!` queue decode/backend work.
+- `audio_is_loaded!` returns `true` once the source is ready in the audio backend.
+- Use it before starting music, ambience, or critical one-shot sounds where silence on first frame is bad.
+- Skip it for disposable effects where a missed early play is acceptable.
+- Poll during load screens or on a timer; avoid checking every source every frame.
 
 Macros:
 
@@ -181,7 +190,8 @@ It can play live notes, held notes, and `.mid` / `.midi` files.
 
 Macros:
 
-- `midi_load_soundfont!(res, "res://soundfonts/game.sf2") -> bool`
+- `midi_load_soundfont!(res, "res://soundfonts/game.sf2") -> SoundFontID`
+- `midi_soundfont_is_loaded!(res, soundfont_id) -> bool`
 - `midi_play!(res, Note::C4, MidiNoteOptions::default()) -> bool`
 - `midi_play!(res, bus_id, Note::C4, options) -> bool`
 - `midi_play!(res, MidiSong::new("res://music/theme.mid")) -> bool`
@@ -195,6 +205,7 @@ Macros:
 Methods:
 
 - `res.Audio().midi().play_note(Note::C4, options) -> bool`
+- `res.Audio().midi().is_soundfont_loaded(soundfont_id) -> bool`
 - `res.Audio().midi().start_note(Note::C4, options) -> Option<MidiNoteHandle>`
 - `res.Audio().midi().release_note(handle) -> bool`
 - `res.Audio().midi().play_file(MidiSong::new("res://music/theme.mid")) -> bool`
@@ -266,6 +277,7 @@ Rules:
 - `Vector3` position routes to 3D propagation.
 - positional live notes, held notes, and MIDI files use the same raycast propagation path as audio.
 - `midi_load_soundfont!` loads `.sf2` and returns `SoundFontID`.
+- `midi_soundfont_is_loaded!` returns `true` once `.sf2` is ready.
 - static builds embed `.mid`, `.midi`, and `.sf2` files under `embedded/audios/`.
 
 Built-in vs soundfont:
@@ -312,6 +324,7 @@ Soundfont notes:
 ```rust
 let font = "res://soundfonts/game.sf2";
 let font_id = midi_load_soundfont!(res, font);
+let ready = midi_soundfont_is_loaded!(res, font_id);
 
 let opts = MidiNoteOptions {
     sound: MidiSound::SoundFont(font_id),
@@ -357,6 +370,7 @@ let _ = midi_play_at!(
 ## Shared Methods
 
 - `res.Audio().load_source(source) -> bool`
+- `res.Audio().is_loaded(source) -> bool`
 - `res.Audio().reserve_source(source) -> bool`
 - `res.Audio().drop_source(source) -> bool`
 - `res.Audio().stop_source(source) -> bool`

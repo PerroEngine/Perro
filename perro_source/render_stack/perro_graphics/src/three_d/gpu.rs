@@ -25,8 +25,9 @@ use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Quat, Vec3, Vec4};
 use mesh_presets::build_builtin_mesh_buffer;
 use perro_graphics_assets::{
-    DecodedLod, DecodedMesh, DecodedMeshlet, MeshRange, MeshVertex, decode_ptex,
-    gltf_texture_source_from_mesh_source, load_mesh_from_source, load_texture_rgba,
+    DecodedLod, DecodedMesh, DecodedMeshlet, MeshRange, MeshVertex,
+    gltf_texture_source_from_mesh_source, load_mesh_from_source,
+    load_mesh_from_source_no_dynamic_lods, load_texture_rgba,
 };
 use perro_ids::MeshID;
 use perro_io::load_asset;

@@ -163,6 +163,7 @@ pub(super) struct RuntimeResourceState {
     pub(super) texture_pending_id_by_request: HashMap<RenderRequestID, TextureID>,
     pub(super) texture_reserve_pending: HashSet<u64>,
     pub(super) texture_drop_pending: HashSet<u64>,
+    pub(super) texture_loaded_by_id: HashSet<TextureID>,
     pub(super) mesh_by_source: HashMap<u64, MeshID>,
     pub(super) mesh_source_by_id: HashMap<MeshID, String>,
     pub(super) mesh_id_alias: HashMap<MeshID, MeshID>,
@@ -180,10 +181,13 @@ pub(super) struct RuntimeResourceState {
     pub(super) material_reserve_pending: HashSet<u64>,
     pub(super) material_drop_pending: HashSet<u64>,
     pub(super) material_data_by_id: HashMap<MaterialID, Material3D>,
+    pub(super) material_loaded_by_id: HashSet<MaterialID>,
     pub(super) animation_by_source: HashMap<u64, AnimationID>,
     pub(super) animation_data_by_id: HashMap<AnimationID, Arc<AnimationClip>>,
+    pub(super) animation_loaded_by_id: HashSet<AnimationID>,
     pub(super) animation_tree_by_source: HashMap<u64, AnimationTreeID>,
     pub(super) animation_tree_data_by_id: HashMap<AnimationTreeID, Arc<AnimationTreeAsset>>,
+    pub(super) animation_tree_loaded_by_id: HashSet<AnimationTreeID>,
 }
 
 impl RuntimeResourceState {

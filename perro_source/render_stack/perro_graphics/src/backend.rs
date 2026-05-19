@@ -3,7 +3,7 @@ use crate::{
         DIRTY_2D, DIRTY_3D, DIRTY_ACCESSIBILITY, DIRTY_CAMERA_2D, DIRTY_CAMERA_3D, DIRTY_LIGHTS_3D,
         DIRTY_PARTICLES_3D, DIRTY_POSTFX, DIRTY_RESOURCES, Gpu, RenderFrame, RenderGpuTiming,
     },
-    resources::ResourceStore,
+    resources::{DecodedTextureRgba, ResourceStore},
     three_d::particles::renderer::Particles3DRenderer,
     three_d::renderer::Renderer3D,
     three_d::{
@@ -15,7 +15,9 @@ use crate::{
     ui::renderer::UiRenderer,
 };
 use ahash::AHashSet;
+use perro_graphics_assets::decode_ptex;
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
+use perro_io::load_asset;
 use perro_render_bridge::{
     Command2D, Command3D, Light2DState, PointParticles3DState, PostProcessingCommand, RenderBridge,
     RenderCommand, RenderEvent, ResourceCommand, Sprite2DCommand, VisualAccessibilityCommand,
@@ -25,6 +27,8 @@ use perro_structs::{PostProcessSet, VisualAccessibilitySettings};
 use std::sync::Arc;
 #[cfg(target_arch = "wasm32")]
 use std::sync::Mutex;
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::mpsc;
 use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
@@ -157,6 +161,34 @@ struct CommandBucketCounts {
     draws_3d: usize,
 }
 
+#[cfg(all(not(target_arch = "wasm32"), not(test)))]
+struct AsyncMeshLoadResult {
+    request: perro_render_bridge::RenderRequestID,
+    id: MeshID,
+    source: String,
+    mesh: Option<perro_render_bridge::Mesh3D>,
+    error: Option<String>,
+}
+
+#[cfg(all(not(target_arch = "wasm32"), not(test)))]
+struct AsyncMeshLoadJob {
+    request: perro_render_bridge::RenderRequestID,
+    id: MeshID,
+    source: String,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+struct AsyncTextureLoadResult {
+    id: TextureID,
+    texture: Option<DecodedTextureRgba>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+struct AsyncTextureLoadJob {
+    id: TextureID,
+    source: String,
+}
+
 impl FrameState {
     fn queue(&mut self, command: RenderCommand) {
         self.pending_commands.push(command);
@@ -194,7 +226,6 @@ fn count_command_buckets(commands: &[RenderCommand]) -> CommandBucketCounts {
     counts
 }
 
-#[derive(Default)]
 pub struct PerroGraphics {
     frame: FrameState,
     resources: ResourceStore,
@@ -205,6 +236,22 @@ pub struct PerroGraphics {
     renderer_ui: UiRenderer,
     gpu: Option<Gpu>,
     events: Vec<RenderEvent>,
+    #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+    async_mesh_load_tx: mpsc::Sender<AsyncMeshLoadResult>,
+    #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+    async_mesh_load_rx: mpsc::Receiver<AsyncMeshLoadResult>,
+    #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+    pending_async_mesh_loads: AHashSet<MeshID>,
+    #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+    queued_async_mesh_loads: Vec<AsyncMeshLoadJob>,
+    #[cfg(not(target_arch = "wasm32"))]
+    async_texture_load_tx: mpsc::Sender<AsyncTextureLoadResult>,
+    #[cfg(not(target_arch = "wasm32"))]
+    async_texture_load_rx: mpsc::Receiver<AsyncTextureLoadResult>,
+    #[cfg(not(target_arch = "wasm32"))]
+    pending_async_texture_loads: AHashSet<TextureID>,
+    #[cfg(not(target_arch = "wasm32"))]
+    queued_async_texture_loads: Vec<AsyncTextureLoadJob>,
     viewport: (u32, u32),
     vsync_enabled: bool,
     smoothing_enabled: bool,
@@ -250,8 +297,204 @@ pub struct PerroGraphics {
     pending_gpu: Option<Arc<Mutex<Option<Gpu>>>>,
 }
 
+impl Default for PerroGraphics {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PerroGraphics {
+    fn decode_texture_source(
+        source: &str,
+        static_texture_lookup: Option<StaticTextureLookup>,
+    ) -> Option<DecodedTextureRgba> {
+        let (rgba, width, height) = if source == "__default__" {
+            (vec![255u8, 255, 255, 255], 1, 1)
+        } else if let Some(lookup) = static_texture_lookup {
+            let source_hash = perro_ids::parse_hashed_source_uri(source)
+                .unwrap_or_else(|| perro_ids::string_to_u64(source));
+            let bytes = lookup(source_hash);
+            if !bytes.is_empty() {
+                decode_ptex(bytes)?
+            } else {
+                Self::decode_texture_file(source)?
+            }
+        } else {
+            Self::decode_texture_file(source)?
+        };
+        Some(DecodedTextureRgba {
+            rgba,
+            width: width.max(1),
+            height: height.max(1),
+        })
+    }
+
+    fn decode_texture_file(source: &str) -> Option<(Vec<u8>, u32, u32)> {
+        let bytes = load_asset(source).ok()?;
+        let image = image::load_from_memory(&bytes).ok()?;
+        let rgba = image.to_rgba8();
+        let (width, height) = rgba.dimensions();
+        Some((rgba.into_raw(), width, height))
+    }
+
+    #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+    fn start_async_mesh_load(
+        &mut self,
+        request: perro_render_bridge::RenderRequestID,
+        id: MeshID,
+        source: String,
+    ) {
+        self.queued_async_mesh_loads.push(AsyncMeshLoadJob {
+            request,
+            id,
+            source,
+        });
+    }
+
+    #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+    fn flush_async_mesh_loads(&mut self) {
+        if self.queued_async_mesh_loads.is_empty() {
+            return;
+        }
+        let jobs = std::mem::take(&mut self.queued_async_mesh_loads);
+        let tx = self.async_mesh_load_tx.clone();
+        let static_mesh_lookup = self.static_mesh_lookup;
+        rayon::spawn(move || {
+            for job in jobs {
+                let error = validate_mesh_source(job.source.as_str(), static_mesh_lookup).err();
+                let mesh = if error.is_none() {
+                    load_mesh3d_from_source(job.source.as_str(), static_mesh_lookup)
+                } else {
+                    None
+                };
+                let _ = tx.send(AsyncMeshLoadResult {
+                    request: job.request,
+                    id: job.id,
+                    source: job.source,
+                    mesh,
+                    error,
+                });
+            }
+        });
+    }
+
+    #[cfg(any(target_arch = "wasm32", test))]
+    fn start_async_mesh_load(
+        &mut self,
+        request: perro_render_bridge::RenderRequestID,
+        id: MeshID,
+        source: String,
+    ) {
+        if let Err(reason) = validate_mesh_source(source.as_str(), self.static_mesh_lookup) {
+            self.resources.drop_mesh(id);
+            self.events.push(RenderEvent::Failed { request, reason });
+            return;
+        }
+        let mesh_data = load_mesh3d_from_source(source.as_str(), self.static_mesh_lookup);
+        if let Some(mesh) = mesh_data.clone() {
+            self.resources
+                .set_runtime_mesh_data(source.as_str(), mesh.clone());
+            let _ = self.resources.set_runtime_mesh_data_by_id(id, mesh);
+        }
+        self.events.push(RenderEvent::MeshCreated {
+            request,
+            id,
+            mesh: mesh_data,
+        });
+    }
+
+    #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+    fn poll_async_mesh_loads(&mut self) {
+        while let Ok(result) = self.async_mesh_load_rx.try_recv() {
+            self.pending_async_mesh_loads.remove(&result.id);
+            if let Some(reason) = result.error {
+                self.resources.drop_mesh(result.id);
+                self.events.push(RenderEvent::Failed {
+                    request: result.request,
+                    reason,
+                });
+                continue;
+            }
+            if let Some(mesh) = result.mesh.clone() {
+                self.resources
+                    .set_runtime_mesh_data(result.source.as_str(), mesh.clone());
+                let _ = self.resources.set_runtime_mesh_data_by_id(result.id, mesh);
+            }
+            self.events.push(RenderEvent::MeshCreated {
+                request: result.request,
+                id: result.id,
+                mesh: result.mesh,
+            });
+            self.redraw_requested = true;
+        }
+    }
+
+    #[cfg(any(target_arch = "wasm32", test))]
+    fn poll_async_mesh_loads(&mut self) {}
+
+    #[cfg(any(target_arch = "wasm32", test))]
+    fn flush_async_mesh_loads(&mut self) {}
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn start_async_texture_load(&mut self, id: TextureID, source: String) {
+        self.queued_async_texture_loads
+            .push(AsyncTextureLoadJob { id, source });
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn flush_async_texture_loads(&mut self) {
+        if self.queued_async_texture_loads.is_empty() {
+            return;
+        }
+        let jobs = std::mem::take(&mut self.queued_async_texture_loads);
+        let tx = self.async_texture_load_tx.clone();
+        let static_texture_lookup = self.static_texture_lookup;
+        rayon::spawn(move || {
+            for job in jobs {
+                let texture =
+                    Self::decode_texture_source(job.source.as_str(), static_texture_lookup);
+                let _ = tx.send(AsyncTextureLoadResult {
+                    id: job.id,
+                    texture,
+                });
+            }
+        });
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn start_async_texture_load(&mut self, id: TextureID, source: String) {
+        if let Some(texture) =
+            Self::decode_texture_source(source.as_str(), self.static_texture_lookup)
+        {
+            let _ = self.resources.set_decoded_texture_data(id, texture);
+            self.events.push(RenderEvent::TextureLoaded { id });
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn poll_async_texture_loads(&mut self) {
+        while let Ok(result) = self.async_texture_load_rx.try_recv() {
+            self.pending_async_texture_loads.remove(&result.id);
+            if let Some(texture) = result.texture {
+                let _ = self.resources.set_decoded_texture_data(result.id, texture);
+                self.events
+                    .push(RenderEvent::TextureLoaded { id: result.id });
+                self.redraw_requested = true;
+            }
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn poll_async_texture_loads(&mut self) {}
+
+    #[cfg(target_arch = "wasm32")]
+    fn flush_async_texture_loads(&mut self) {}
+
     pub fn new() -> Self {
+        #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+        let (async_mesh_load_tx, async_mesh_load_rx) = mpsc::channel();
+        #[cfg(not(target_arch = "wasm32"))]
+        let (async_texture_load_tx, async_texture_load_rx) = mpsc::channel();
         Self {
             frame: FrameState::default(),
             resources: ResourceStore::new(),
@@ -262,6 +505,22 @@ impl PerroGraphics {
             renderer_ui: UiRenderer::new(),
             gpu: None,
             events: Vec::new(),
+            #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+            async_mesh_load_tx,
+            #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+            async_mesh_load_rx,
+            #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+            pending_async_mesh_loads: AHashSet::new(),
+            #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+            queued_async_mesh_loads: Vec::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            async_texture_load_tx,
+            #[cfg(not(target_arch = "wasm32"))]
+            async_texture_load_rx,
+            #[cfg(not(target_arch = "wasm32"))]
+            pending_async_texture_loads: AHashSet::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            queued_async_texture_loads: Vec::new(),
             viewport: (0, 0),
             vsync_enabled: true,
             smoothing_enabled: true,
@@ -362,6 +621,8 @@ impl PerroGraphics {
     where
         I: IntoIterator<Item = RenderCommand>,
     {
+        self.poll_async_mesh_loads();
+        self.poll_async_texture_loads();
         for command in commands {
             match command {
                 RenderCommand::Resource(resource_cmd) => match resource_cmd {
@@ -371,30 +632,29 @@ impl PerroGraphics {
                         source,
                         reserved,
                     } => {
-                        if let Err(reason) =
-                            validate_mesh_source(source.as_str(), self.static_mesh_lookup)
-                        {
-                            self.events.push(RenderEvent::Failed { request, reason });
-                            continue;
-                        }
                         let out_id = if id.is_nil() {
                             self.resources.create_mesh(source.as_str(), reserved)
                         } else {
                             self.resources
                                 .create_mesh_with_id(id, source.as_str(), reserved)
                         };
-                        let mesh_data =
-                            load_mesh3d_from_source(source.as_str(), self.static_mesh_lookup);
-                        if let Some(mesh) = mesh_data.clone() {
-                            self.resources
-                                .set_runtime_mesh_data(source.as_str(), mesh.clone());
-                            let _ = self.resources.set_runtime_mesh_data_by_id(out_id, mesh);
+                        if let Some(mesh) = self.resources.runtime_mesh_data_by_id(out_id).cloned()
+                        {
+                            self.events.push(RenderEvent::MeshCreated {
+                                request,
+                                id: out_id,
+                                mesh: Some(mesh),
+                            });
+                            continue;
                         }
-                        self.events.push(RenderEvent::MeshCreated {
-                            request,
-                            id: out_id,
-                            mesh: mesh_data,
-                        });
+                        #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+                        {
+                            if self.pending_async_mesh_loads.insert(out_id) {
+                                self.start_async_mesh_load(request, out_id, source);
+                            }
+                        }
+                        #[cfg(any(target_arch = "wasm32", test))]
+                        self.start_async_mesh_load(request, out_id, source);
                     }
                     ResourceCommand::CreateRuntimeMesh {
                         request,
@@ -435,6 +695,16 @@ impl PerroGraphics {
                             self.resources
                                 .create_texture_with_id(id, source.as_str(), reserved)
                         };
+                        if self.resources.decoded_texture_data(id).is_none() {
+                            #[cfg(not(target_arch = "wasm32"))]
+                            {
+                                if self.pending_async_texture_loads.insert(id) {
+                                    self.start_async_texture_load(id, source);
+                                }
+                            }
+                            #[cfg(target_arch = "wasm32")]
+                            self.start_async_texture_load(id, source);
+                        }
                         self.events
                             .push(RenderEvent::TextureCreated { request, id });
                     }
@@ -669,6 +939,10 @@ impl PerroGraphics {
                 },
             }
         }
+        self.flush_async_mesh_loads();
+        self.flush_async_texture_loads();
+        self.poll_async_mesh_loads();
+        self.poll_async_texture_loads();
     }
 
     fn process_late_overlay_commands<I>(&mut self, commands: I)
@@ -909,6 +1183,8 @@ impl PerroGraphics {
         #[cfg(target_arch = "wasm32")]
         self.try_finish_gpu_init();
         let total_start = Instant::now();
+        self.poll_async_mesh_loads();
+        self.poll_async_texture_loads();
         let now = Instant::now();
         self.frame_delta_seconds = self
             .last_frame_instant

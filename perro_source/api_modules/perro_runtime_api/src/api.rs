@@ -1,7 +1,8 @@
 use crate::sub_apis::{
-    AnimPlayerAPI, AnimPlayerModule, AnimTreeAPI, AnimTreeModule, NodeAPI, NodeModule, PhysicsAPI,
-    PhysicsModule, RuntimeAudioAPI, RuntimeAudioModule, SceneAPI, SceneModule, ScriptAPI,
-    ScriptModule, SignalAPI, SignalModule, TimeAPI, TimeModule, WindowAPI, WindowModule,
+    AnimPlayerAPI, AnimPlayerModule, AnimTreeAPI, AnimTreeModule, MeshQueryModule, NodeAPI,
+    NodeModule, NodeQueryModule, PhysicsAPI, PhysicsModule, RuntimeAudioAPI, RuntimeAudioModule,
+    SceneAPI, SceneModule, ScriptAPI, ScriptModule, SignalAPI, SignalModule, TimeAPI, TimeModule,
+    WindowAPI, WindowModule,
 };
 
 pub trait RuntimeAPI:
@@ -55,6 +56,16 @@ impl<'rt, RT: RuntimeAPI + ?Sized> RuntimeWindow<'rt, RT> {
     #[inline]
     pub fn Nodes(&mut self) -> NodeModule<'_, RT> {
         NodeModule::new(self.rt)
+    }
+
+    #[inline]
+    pub fn NodeQuery(&mut self) -> NodeQueryModule<'_, RT> {
+        NodeQueryModule::new(self.rt)
+    }
+
+    #[inline]
+    pub fn MeshQuery(&mut self) -> MeshQueryModule<'_, RT> {
+        MeshQueryModule::new(self.rt)
     }
 
     #[inline]

@@ -240,6 +240,9 @@ pub enum RenderEvent {
         request: RenderRequestID,
         id: TextureID,
     },
+    TextureLoaded {
+        id: TextureID,
+    },
     MaterialCreated {
         request: RenderRequestID,
         id: MaterialID,

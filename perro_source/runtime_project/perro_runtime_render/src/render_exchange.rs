@@ -74,7 +74,9 @@ impl RenderState {
                 self.resolved_requests
                     .insert(request, RuntimeRenderResult::Failed(reason));
             }
-            RenderEvent::WaterSamples { .. } | RenderEvent::WaterBodySamples { .. } => {}
+            RenderEvent::TextureLoaded { .. }
+            | RenderEvent::WaterSamples { .. }
+            | RenderEvent::WaterBodySamples { .. } => {}
         }
     }
 

@@ -3,14 +3,86 @@ use crate::runtime_project::{
     StaticAnimationLookup, StaticAnimationTreeLookup, StaticAudioLookup, StaticCsvLookup,
     StaticLocalizationLookup, StaticMaterialLookup, StaticSkeletonLookup,
 };
+#[cfg(all(not(target_arch = "wasm32"), not(test)))]
+use perro_animation::{AnimationClip, AnimationTreeAsset};
 use perro_ids::{SoundFontID, string_to_u64};
 use perro_pawdio::{AudioController, MidiChannel, MidiProgram, MidiSound, Note};
 use perro_project::LocalizationConfig;
+#[cfg(not(target_arch = "wasm32"))]
+use perro_render_bridge::Material3D;
 use perro_render_bridge::{RenderCommand, RenderEvent};
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::mpsc;
 use std::{
+    borrow::Cow,
     collections::HashMap,
     sync::{Arc, Mutex},
 };
+
+#[cfg(not(target_arch = "wasm32"))]
+struct AsyncMaterialLoadResult {
+    id: perro_ids::MaterialID,
+    material: Option<Material3D>,
+}
+
+#[cfg(all(not(target_arch = "wasm32"), not(test)))]
+struct AsyncAnimationLoadResult {
+    id: perro_ids::AnimationID,
+    clip: Arc<AnimationClip>,
+}
+
+#[cfg(all(not(target_arch = "wasm32"), not(test)))]
+struct AsyncAnimationTreeLoadResult {
+    id: perro_ids::AnimationTreeID,
+    tree: Arc<AnimationTreeAsset>,
+}
+
+fn split_source_fragment_for_material(source: &str) -> &str {
+    let Some((path, selector)) = source.rsplit_once(':') else {
+        return source;
+    };
+    if path.is_empty() || selector.contains('/') || selector.contains('\\') {
+        return source;
+    }
+    if selector.contains('[') && selector.ends_with(']') {
+        return path;
+    }
+    source
+}
+
+fn load_animation_clip_from_source(source: &str) -> Arc<perro_animation::AnimationClip> {
+    if source.ends_with(".panim")
+        && let Ok(bytes) = perro_io::load_asset(source)
+        && let Ok(text) = std::str::from_utf8(&bytes)
+        && let Ok(clip) = perro_animation::parse_panim(text)
+    {
+        return Arc::new(clip);
+    }
+    Arc::new(perro_animation::AnimationClip {
+        name: Cow::Borrowed("Animation"),
+        fps: 60.0,
+        total_frames: 1,
+        objects: Cow::Borrowed(&[]),
+        object_tracks: Cow::Borrowed(&[]),
+        frame_events: Cow::Borrowed(&[]),
+    })
+}
+
+fn load_animation_tree_from_source(source: &str) -> Arc<perro_animation::AnimationTreeAsset> {
+    if source.ends_with(".panimtree")
+        && let Ok(bytes) = perro_io::load_asset(source)
+        && let Ok(text) = std::str::from_utf8(&bytes)
+        && let Ok(tree) = perro_animation::parse_panimtree(text)
+    {
+        return Arc::new(tree);
+    }
+    Arc::new(perro_animation::AnimationTreeAsset {
+        name: Cow::Borrowed("AnimationTree"),
+        slots: Cow::Borrowed(&[]),
+        nodes: Cow::Borrowed(&[]),
+        output: Cow::Borrowed(""),
+    })
+}
 
 #[derive(Clone, Debug)]
 pub(crate) enum QueuedSpatialAudioPos {
@@ -172,6 +244,18 @@ pub struct RuntimeResourceApi {
     pub(super) skeleton_bones_3d_cache:
         Mutex<HashMap<String, Vec<perro_nodes::skeleton_3d::Bone3D>>>,
     pub(super) viewport_size: Mutex<(u32, u32)>,
+    #[cfg(not(target_arch = "wasm32"))]
+    material_load_tx: mpsc::Sender<AsyncMaterialLoadResult>,
+    #[cfg(not(target_arch = "wasm32"))]
+    material_load_rx: Mutex<mpsc::Receiver<AsyncMaterialLoadResult>>,
+    #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+    animation_load_tx: mpsc::Sender<AsyncAnimationLoadResult>,
+    #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+    animation_load_rx: Mutex<mpsc::Receiver<AsyncAnimationLoadResult>>,
+    #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+    animation_tree_load_tx: mpsc::Sender<AsyncAnimationTreeLoadResult>,
+    #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+    animation_tree_load_rx: Mutex<mpsc::Receiver<AsyncAnimationTreeLoadResult>>,
 }
 
 impl RuntimeResourceApi {
@@ -186,6 +270,12 @@ impl RuntimeResourceApi {
         static_csv_lookup: Option<StaticCsvLookup>,
         localization_config: Option<LocalizationConfig>,
     ) -> Arc<Self> {
+        #[cfg(not(target_arch = "wasm32"))]
+        let (material_load_tx, material_load_rx) = mpsc::channel();
+        #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+        let (animation_load_tx, animation_load_rx) = mpsc::channel();
+        #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+        let (animation_tree_load_tx, animation_tree_load_rx) = mpsc::channel();
         let api = Arc::new(Self {
             state: Mutex::new(RuntimeResourceState::new()),
             localization: std::sync::RwLock::new(RuntimeLocalizationState::new(
@@ -209,6 +299,18 @@ impl RuntimeResourceApi {
             skeleton_bones_2d_cache: Mutex::new(HashMap::new()),
             skeleton_bones_3d_cache: Mutex::new(HashMap::new()),
             viewport_size: Mutex::new((1, 1)),
+            #[cfg(not(target_arch = "wasm32"))]
+            material_load_tx,
+            #[cfg(not(target_arch = "wasm32"))]
+            material_load_rx: Mutex::new(material_load_rx),
+            #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+            animation_load_tx,
+            #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+            animation_load_rx: Mutex::new(animation_load_rx),
+            #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+            animation_tree_load_tx,
+            #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+            animation_tree_load_rx: Mutex::new(animation_tree_load_rx),
         });
         api.initialize_localization();
         api
@@ -262,9 +364,178 @@ impl RuntimeResourceApi {
     }
 
     pub(crate) fn drain_commands(&self, out: &mut Vec<RenderCommand>) {
+        self.poll_async_material_loads();
+        self.poll_async_animation_loads();
+        self.poll_async_animation_tree_loads();
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         out.append(&mut state.queued_commands);
     }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn queue_material_source_load(&self, id: perro_ids::MaterialID, source: String) {
+        let tx = self.material_load_tx.clone();
+        rayon::spawn(move || {
+            let normalized = if source.contains('\\') {
+                std::borrow::Cow::Owned(source.replace('\\', "/"))
+            } else {
+                std::borrow::Cow::Borrowed(source.as_str())
+            };
+            let path = split_source_fragment_for_material(source.as_str());
+            let normalized_path = split_source_fragment_for_material(normalized.as_ref());
+            let material = crate::material_schema::load_from_source(source.as_str())
+                .or_else(|| crate::material_schema::load_from_source(path))
+                .or_else(|| crate::material_schema::load_from_source(normalized.as_ref()))
+                .or_else(|| crate::material_schema::load_from_source(normalized_path));
+            let _ = tx.send(AsyncMaterialLoadResult { id, material });
+        });
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn queue_material_source_load(&self, id: perro_ids::MaterialID, source: String) {
+        let normalized = if source.contains('\\') {
+            std::borrow::Cow::Owned(source.replace('\\', "/"))
+        } else {
+            std::borrow::Cow::Borrowed(source.as_str())
+        };
+        let path = split_source_fragment_for_material(source.as_str());
+        let normalized_path = split_source_fragment_for_material(normalized.as_ref());
+        if let Some(material) = crate::material_schema::load_from_source(source.as_str())
+            .or_else(|| crate::material_schema::load_from_source(path))
+            .or_else(|| crate::material_schema::load_from_source(normalized.as_ref()))
+            .or_else(|| crate::material_schema::load_from_source(normalized_path))
+        {
+            let mut state = self.state.lock().expect("resource api mutex poisoned");
+            state.material_data_by_id.insert(id, material.clone());
+            state.material_loaded_by_id.insert(id);
+            state.queued_commands.push(RenderCommand::Resource(
+                perro_render_bridge::ResourceCommand::WriteMaterialData { id, material },
+            ));
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn poll_async_material_loads(&self) {
+        let Ok(rx) = self.material_load_rx.lock() else {
+            return;
+        };
+        let mut loaded = Vec::new();
+        while let Ok(result) = rx.try_recv() {
+            loaded.push(result);
+        }
+        drop(rx);
+        if loaded.is_empty() {
+            return;
+        }
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        for result in loaded {
+            let Some(material) = result.material else {
+                continue;
+            };
+            state
+                .material_data_by_id
+                .insert(result.id, material.clone());
+            state.material_loaded_by_id.insert(result.id);
+            state.queued_commands.push(RenderCommand::Resource(
+                perro_render_bridge::ResourceCommand::WriteMaterialData {
+                    id: result.id,
+                    material,
+                },
+            ));
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn poll_async_material_loads(&self) {}
+
+    #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+    pub(crate) fn queue_animation_source_load(&self, id: perro_ids::AnimationID, source: String) {
+        let tx = self.animation_load_tx.clone();
+        rayon::spawn(move || {
+            let clip = load_animation_clip_from_source(source.as_str());
+            let _ = tx.send(AsyncAnimationLoadResult { id, clip });
+        });
+    }
+
+    #[cfg(any(target_arch = "wasm32", test))]
+    pub(crate) fn queue_animation_source_load(&self, id: perro_ids::AnimationID, source: String) {
+        let clip = load_animation_clip_from_source(source.as_str());
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        state.animation_data_by_id.insert(id, clip);
+        state.animation_loaded_by_id.insert(id);
+    }
+
+    #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+    pub(crate) fn poll_async_animation_loads(&self) {
+        let Ok(rx) = self.animation_load_rx.lock() else {
+            return;
+        };
+        let mut loaded = Vec::new();
+        while let Ok(result) = rx.try_recv() {
+            loaded.push(result);
+        }
+        drop(rx);
+        if loaded.is_empty() {
+            return;
+        }
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        for result in loaded {
+            state.animation_data_by_id.insert(result.id, result.clip);
+            state.animation_loaded_by_id.insert(result.id);
+        }
+    }
+
+    #[cfg(any(target_arch = "wasm32", test))]
+    pub(crate) fn poll_async_animation_loads(&self) {}
+
+    #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+    pub(crate) fn queue_animation_tree_source_load(
+        &self,
+        id: perro_ids::AnimationTreeID,
+        source: String,
+    ) {
+        let tx = self.animation_tree_load_tx.clone();
+        rayon::spawn(move || {
+            let tree = load_animation_tree_from_source(source.as_str());
+            let _ = tx.send(AsyncAnimationTreeLoadResult { id, tree });
+        });
+    }
+
+    #[cfg(any(target_arch = "wasm32", test))]
+    pub(crate) fn queue_animation_tree_source_load(
+        &self,
+        id: perro_ids::AnimationTreeID,
+        source: String,
+    ) {
+        let tree = load_animation_tree_from_source(source.as_str());
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        state.animation_tree_data_by_id.insert(id, tree);
+        state.animation_tree_loaded_by_id.insert(id);
+    }
+
+    #[cfg(all(not(target_arch = "wasm32"), not(test)))]
+    pub(crate) fn poll_async_animation_tree_loads(&self) {
+        let Ok(rx) = self.animation_tree_load_rx.lock() else {
+            return;
+        };
+        let mut loaded = Vec::new();
+        while let Ok(result) = rx.try_recv() {
+            loaded.push(result);
+        }
+        drop(rx);
+        if loaded.is_empty() {
+            return;
+        }
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        for result in loaded {
+            state
+                .animation_tree_data_by_id
+                .insert(result.id, result.tree);
+            state.animation_tree_loaded_by_id.insert(result.id);
+        }
+    }
+
+    #[cfg(any(target_arch = "wasm32", test))]
+    pub(crate) fn poll_async_animation_tree_loads(&self) {}
 
     pub(crate) fn apply_render_event(&self, event: &RenderEvent) {
         let mut state = self.state.lock().expect("resource api mutex poisoned");
@@ -295,6 +566,9 @@ impl RuntimeResourceApi {
                         }
                     }
                 }
+            }
+            RenderEvent::TextureLoaded { id } => {
+                state.texture_loaded_by_id.insert(*id);
             }
             RenderEvent::MeshCreated { request, id, mesh } => {
                 if id.is_nil() {
@@ -382,6 +656,9 @@ impl RuntimeResourceApi {
                 {
                     if let Some(data) = state.material_data_by_id.remove(&pending_id) {
                         state.material_data_by_id.insert(*id, data);
+                        if state.material_loaded_by_id.remove(&pending_id) {
+                            state.material_loaded_by_id.insert(*id);
+                        }
                     }
                     let _ = state.free_material_id(pending_id);
                 }

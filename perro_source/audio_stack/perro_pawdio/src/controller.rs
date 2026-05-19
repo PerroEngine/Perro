@@ -1,6 +1,6 @@
 use crossbeam_channel::{self, Sender};
 use perro_ids::AudioBusID;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -16,6 +16,13 @@ pub struct AudioController {
     tx: Sender<AudioCommand>,
     next_playback_id: Arc<AtomicU64>,
     source_pool: Mutex<HashMap<u64, Arc<str>>>,
+    loaded: Arc<Mutex<AudioLoadedState>>,
+}
+
+#[derive(Default)]
+struct AudioLoadedState {
+    sources: HashSet<Arc<str>>,
+    soundfonts: HashSet<perro_ids::SoundFontID>,
 }
 
 #[derive(Clone)]
@@ -39,6 +46,8 @@ impl AudioController {
 
         let (tx, rx) = crossbeam_channel::bounded::<AudioCommand>(Self::COMMAND_QUEUE_CAPACITY);
         let next_playback_id = Arc::new(AtomicU64::new(1));
+        let loaded = Arc::new(Mutex::new(AudioLoadedState::default()));
+        let loaded_for_thread = Arc::clone(&loaded);
         std::thread::Builder::new()
             .name("perro_pawdio_audio".to_string())
             .spawn(move || {
@@ -49,10 +58,19 @@ impl AudioController {
                 while let Ok(cmd) = rx.recv() {
                     match cmd {
                         AudioCommand::Load { source, reserved } => {
-                            let _ = player.load_source(&source, reserved);
+                            if player.load_source(&source, reserved).is_ok() {
+                                if let Ok(mut loaded) = loaded_for_thread.lock() {
+                                    loaded.sources.insert(Arc::clone(&source));
+                                }
+                            } else if let Ok(mut loaded) = loaded_for_thread.lock() {
+                                loaded.sources.remove(&source);
+                            }
                         }
                         AudioCommand::DropAsset { source } => {
                             let _ = player.drop_source_asset(&source);
+                            if let Ok(mut loaded) = loaded_for_thread.lock() {
+                                loaded.sources.remove(&source);
+                            }
                         }
                         AudioCommand::Play { request } => {
                             let _ = player.play_source(AudioPlaybackRequest {
@@ -122,7 +140,13 @@ impl AudioController {
                             let _ = reply.send(player.source_length_seconds(&source));
                         }
                         AudioCommand::LoadSoundFont { id, source } => {
-                            let _ = player.load_soundfont(id, &source);
+                            if player.load_soundfont(id, &source).is_ok() {
+                                if let Ok(mut loaded) = loaded_for_thread.lock() {
+                                    loaded.soundfonts.insert(id);
+                                }
+                            } else if let Ok(mut loaded) = loaded_for_thread.lock() {
+                                loaded.soundfonts.remove(&id);
+                            }
                         }
                         AudioCommand::LoadMidiFile { source } => {
                             let _ = player.load_midi_file(&source);
@@ -149,6 +173,7 @@ impl AudioController {
             tx,
             next_playback_id,
             source_pool: Mutex::new(HashMap::new()),
+            loaded,
         })
     }
 
@@ -245,6 +270,14 @@ impl AudioController {
             .is_ok()
     }
 
+    pub fn is_source_loaded(&self, source: &str) -> bool {
+        let source = self.intern_source(source);
+        self.loaded
+            .lock()
+            .map(|loaded| loaded.sources.contains(&source))
+            .unwrap_or(false)
+    }
+
     pub fn reserve_source(&self, source: &str) -> bool {
         let source = self.intern_source(source);
         self.tx
@@ -337,6 +370,13 @@ impl AudioController {
         let source = self.intern_source(source);
         let _ = self.tx.try_send(AudioCommand::LoadSoundFont { id, source });
         id
+    }
+
+    pub fn is_soundfont_loaded(&self, id: perro_ids::SoundFontID) -> bool {
+        self.loaded
+            .lock()
+            .map(|loaded| loaded.soundfonts.contains(&id))
+            .unwrap_or(false)
     }
 
     pub fn load_midi_file(&self, source: &str) -> bool {

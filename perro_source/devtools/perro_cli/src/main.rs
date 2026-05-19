@@ -1,6 +1,7 @@
 use std::env;
 use std::path::{Path, PathBuf};
 
+mod bench;
 mod doctor;
 mod gltf_animation;
 mod install;
@@ -9,6 +10,7 @@ mod project;
 mod scaffold;
 mod vscode;
 
+use bench::bench_command;
 use doctor::doctor_command;
 use gltf_animation::gltf_to_panim_command;
 use install::install_command;
@@ -67,6 +69,7 @@ fn main() {
             "build" => project_command(&args, &cwd),
             "dlc" => dlc_command(&args, &cwd),
             "dev" => dev_command(&args, &cwd),
+            "bench" => bench_command(&args, &cwd),
             "doctor" => doctor_command(&args, &cwd),
             "mem-profile" => mem_profile_command(&args, &cwd),
             "flamegraph" => flamegraph_command(&args, &cwd),
@@ -98,6 +101,9 @@ fn print_usage() {
     );
     eprintln!(
         "  perro_cli dev [--path <project_dir>] [--target native|web|android] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]      # build scripts + run dev runner, web server, or android app"
+    );
+    eprintln!(
+        "  perro_cli bench [--path <project_dir>] [--script <hash>] [--method <name>] [--var <name>] [-- <criterion_args>]    # criterion bench scripts"
     );
     eprintln!(
         "  perro_cli mem-profile [--path <project_dir>] [--release] [--csv [csv_name]]    # run dev runner + process memory samples"

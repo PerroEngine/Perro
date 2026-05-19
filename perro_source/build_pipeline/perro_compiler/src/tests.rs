@@ -3,8 +3,9 @@ mod tests {
     use super::{
         emit_web_route_html_files, generate_call_param_binding, generate_embedded_entry_files,
         generate_perro_assets, generate_project_static_modules, module_name_from_rel,
-        module_short_name_from_rel, reset_embedded_dir, sync_scripts, transpile_frontend_script,
-        transpiled_exports_script_ctor, ProjectBuildOptions, ScriptMethodParam,
+        module_short_name_from_rel, normalize_cargo_output_paths, reset_embedded_dir, sync_scripts,
+        transpile_frontend_script, transpiled_exports_script_ctor, ProjectBuildOptions,
+        ScriptMethodParam,
     };
     use perro_project::{
         ensure_project_layout, ensure_project_scaffold, ensure_project_toml,
@@ -32,6 +33,27 @@ mod tests {
                 "missing call_method arm for {method_name}"
             );
         }
+    }
+
+    #[test]
+    fn normalizes_script_cargo_paths_to_project_relative_slashes() {
+        let project = std::path::Path::new("D:/Game");
+        let crate_dir = project.join(".perro/scripts");
+        let input = "src\\scripts\\../../../../res/scripts/game_manager.rs:1929:68: error: bad\n";
+        let out = normalize_cargo_output_paths(project, Some(&crate_dir), input);
+        assert_eq!(
+            out,
+            "res/scripts/game_manager.rs:1929:68: error: bad\n"
+        );
+    }
+
+    #[test]
+    fn normalizes_nested_script_cargo_paths_to_project_relative_slashes() {
+        let project = std::path::Path::new("D:/Game");
+        let crate_dir = project.join(".perro/scripts");
+        let input = " --> src\\scripts\\ai\\../../../../../res/scripts/ai/brain.rs:7:3\n";
+        let out = normalize_cargo_output_paths(project, Some(&crate_dir), input);
+        assert_eq!(out, " --> res/scripts/ai/brain.rs:7:3\n");
     }
 
     #[test]

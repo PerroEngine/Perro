@@ -51,7 +51,7 @@ impl Gpu3D {
         resources: &ResourceStore,
         slot: u32,
         mesh_source: &str,
-        static_texture_lookup: Option<StaticTextureLookup>,
+        _static_texture_lookup: Option<StaticTextureLookup>,
     ) {
         if slot == MATERIAL_TEXTURE_NONE {
             return;
@@ -82,24 +82,18 @@ impl Gpu3D {
             return;
         }
 
-        let decoded = if source == "__default__" {
-            Some((vec![255u8, 255, 255, 255], 1, 1))
-        } else if let Some(lookup) = static_texture_lookup {
-            let source_hash = perro_ids::parse_hashed_source_uri(source.as_str())
-                .unwrap_or_else(|| perro_ids::string_to_u64(source.as_str()));
-            let bytes = lookup(source_hash);
-            if !bytes.is_empty() {
-                decode_ptex(bytes)
+        let (rgba, width, height) =
+            if let Some(decoded) = resources.decoded_texture_data_by_source(source.as_str()) {
+                (decoded.rgba.clone(), decoded.width, decoded.height)
+            } else if resources.has_texture_source(source.as_str()) {
+                self.material_textures.remove(&slot);
+                return;
+            } else if let Some(decoded) = load_texture_rgba(source.as_str()) {
+                decoded
             } else {
-                load_texture_rgba(source.as_str())
-            }
-        } else {
-            load_texture_rgba(source.as_str())
-        };
-        let Some((rgba, width, height)) = decoded else {
-            self.material_textures.remove(&slot);
-            return;
-        };
+                self.material_textures.remove(&slot);
+                return;
+            };
         let cached = create_cached_material_texture(
             device,
             queue,
@@ -781,19 +775,19 @@ impl Gpu3D {
             return Some(range);
         }
         let decoded = if let Some(mesh) = resources.runtime_mesh_data_by_id(mesh_id) {
-            load_mesh_from_source(
-                source,
-                static_mesh_lookup,
-                Some(mesh),
-                self.meshlets_enabled && self.dev_meshlets,
-            )?
+            load_mesh_from_source_no_dynamic_lods(source, static_mesh_lookup, Some(mesh))?
         } else {
-            load_mesh_from_source(
-                source,
-                static_mesh_lookup,
-                resources.runtime_mesh_data(source),
-                self.meshlets_enabled && self.dev_meshlets,
-            )?
+            let runtime_mesh = resources.runtime_mesh_data(source);
+            if let Some(mesh) = runtime_mesh {
+                load_mesh_from_source_no_dynamic_lods(source, static_mesh_lookup, Some(mesh))?
+            } else {
+                load_mesh_from_source(
+                    source,
+                    static_mesh_lookup,
+                    None,
+                    self.meshlets_enabled && self.dev_meshlets,
+                )?
+            }
         };
         let range = self.append_mesh_data(device, queue, source, decoded)?;
         self.custom_mesh_ranges

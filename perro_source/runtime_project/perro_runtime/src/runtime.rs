@@ -374,6 +374,27 @@ impl Runtime {
         self.resource_api.create_mesh_data(data)
     }
 
+    #[cfg(feature = "bench")]
+    pub fn bench_with_script_context<R>(
+        &mut self,
+        id: NodeID,
+        f: impl FnOnce(&mut perro_scripting::ScriptContext<'_, RuntimeScriptApi>) -> R,
+    ) -> R {
+        let resource_api = self.resource_api.clone();
+        let res = perro_resource_api::ResourceWindow::new(resource_api.as_ref());
+        let input_ptr = std::ptr::addr_of!(self.input);
+        // SAFETY: Bench callback mirrors runtime script dispatch. Input stays immutable for call.
+        let ipt = unsafe { perro_input_api::InputWindow::new(&*input_ptr) };
+        let mut run = perro_runtime_api::RuntimeWindow::new(self);
+        let mut ctx = perro_scripting::ScriptContext {
+            run: &mut run,
+            res: &res,
+            ipt: &ipt,
+            id,
+        };
+        f(&mut ctx)
+    }
+
     pub fn from_project(project: RuntimeProject, provider_mode: ProviderMode) -> Self {
         Self::from_project_with_script_registry(project, provider_mode, None)
     }

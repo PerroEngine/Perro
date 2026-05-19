@@ -164,7 +164,7 @@ Global transform macros:
 - `to_global_transform_3d!(ctx.run, node_id, local_transform) -> Option<Transform3D>`
 - `to_local_transform_3d!(ctx.run, node_id, global_transform) -> Option<Transform3D>`
 
-Tag/query macros:
+Tag macros:
 
 - `get_node_tags!(ctx.run, node_id) -> Option<Vec<Cow<'static, str>>>`
 - `tag_set!(ctx.run, node_id, tags) -> bool`
@@ -172,125 +172,17 @@ Tag/query macros:
 - `tag_add!(ctx.run, node_id, tags) -> bool`
 - `tag_remove!(ctx.run, node_id, tag) -> bool`
 - `tag_remove!(ctx.run, node_id) -> bool`
-- `query!(ctx.run, expr) -> Vec<NodeID>`
-- `query!(ctx.run, expr, in_subtree(parent_id)) -> Vec<NodeID>`
-- `query_first!(ctx.run, expr) -> Option<NodeID>`
-- `query_first!(ctx.run, expr, in_subtree(parent_id)) -> Option<NodeID>`
 
-Mesh query macros:
+Related modules:
 
-- Instance-aware queries (runtime surface binding aware):
-- `mesh_instance_surface_at_global_point_3d!(ctx.run, node_id, global_point) -> Option<MeshSurfaceHit3D>`
-- `mesh_instance_surface_on_global_ray_3d!(ctx.run, node_id, ray_origin, ray_direction, max_distance) -> Option<MeshSurfaceHit3D>`
-- `mesh_instance_material_regions_3d!(ctx.run, node_id, material_id) -> Vec<MeshMaterialRegion3D>`
-- Raw mesh-data queries (surface-index/file-data oriented):
-- `mesh_data_surface_at_local_point_3d!(ctx.run, mesh_id, local_point) -> Option<MeshDataSurfaceHit3D>`
-- `mesh_data_surface_on_local_ray_3d!(ctx.run, mesh_id, ray_origin_local, ray_direction_local, max_distance) -> Option<MeshDataSurfaceHit3D>`
-- `mesh_data_surface_regions_3d!(ctx.run, mesh_id, surface_index) -> Vec<MeshDataSurfaceRegion3D>`
-
-`MeshSurfaceHit3D` fields:
-
-- `instance_index`: instance id for `MultiMeshInstance3D` (0 for regular mesh)
-- `surface_index`: matched mesh surface
-- `material`: material bound on that surface (`Option<MaterialID>`)
-- `global_point`: nearest point on mesh in global space
-- `local_point`: nearest point in mesh local space
-- `global_normal`: surface normal in global space at nearest point
-- `local_normal`: surface normal in mesh local space at nearest point
-- `distance`: distance from query point to nearest point
-
-`MeshMaterialRegion3D` fields:
-
-- `instance_index`, `surface_index`, `material`
-- `triangle_count`
-- `center_global`, `center_local`
-- `aabb_min_global`, `aabb_max_global`
-- `aabb_min_local`, `aabb_max_local`
-
-`MeshDataSurfaceHit3D` fields:
-
-- `surface_index`: matched mesh surface
-- `local_point`: nearest point in mesh local space
-- `local_normal`: surface normal in mesh local space at nearest point
-- `distance`: distance from query point to nearest point in mesh local space
-
-`MeshDataSurfaceRegion3D` fields:
-
-- `surface_index`
-- `triangle_count`
-- `center_local`
-- `aabb_min_local`, `aabb_max_local`
-
-Pick correct lane:
-
-- Need "where is material X on this mesh instance now?" -> use instance lane.
-- Need "where is surface slot N from mesh data?" -> use data lane with `MeshID`.
-- Need inverse hit "point/ray -> surface + runtime material" -> use instance lane.
-- Need inverse hit "local point/ray -> raw surface index only" -> use data lane with `MeshID`.
-
-What queries are:
-
-- For deeper query docs (mental model, patterns, perf), see [Query System](../../query_system.md).
-- For mesh query perf snapshot + budget table, see [Mesh Query Perf Snapshot](../../mesh_query_perf.md).
-- Query is a runtime filter that returns `NodeID` of nodes that match the values.
-- You can combine boolean expressions and type/name/tag predicates.
-- `in_subtree(parent_id)` restricts matches to descendants of that node's children, by default the entire tree is queried.
-- `all(...)` means every condition inside must match.
-- `any(...)` means at least one condition inside must match.
-- `not(...)` means the inner condition must not match.
-- You can nest these expressions to build complex filters.
-
-Query forms:
-
-- `all(expr1, expr2, ...)`
-- `any(expr1, expr2, ...)`
-- `not(expr)`
-- `in_subtree(parent_id)`
-
-Predicates:
-
-- `name["Player", "Boss"]`
-- `tags["enemy", "alive"]`
-- `node_type[Camera3D, MeshInstance3D]`
-- `base_type[Node3D]`
+- Use [NodeQuery Module](node_query.md) for `query!` and `query_first!`.
+- Use [MeshQuery Module](mesh_query.md) for mesh surface hits, batch rays, and mesh regions.
 
 ## Node Types
 
 See the full list and per-node notes here:
 
 - [Node Types](../../nodes.md)
-
-Composition examples:
-
-```rust
-// Must satisfy BOTH: enemy and alive
-let node_ids_a = query!(ctx.run, all(tags["enemy"], tags["alive"]));
-
-// Must satisfy AT LEAST ONE: Player or Boss
-let node_ids_b = query!(ctx.run, any(name["Player"], name["Boss"]));
-
-// Must NOT satisfy: dead
-let node_ids_c = query!(ctx.run, not(tags["dead"]));
-
-// Nested combination:
-// (enemy OR Boss) AND NOT dead, limited to one subtree
-let node_ids_d = query!(
-    ctx,
-    all(any(tags["enemy"], name["Boss"]), not(tags["dead"])),
-    in_subtree(root_id)
-);
-```
-
-Example:
-
-```rust
-let ids = query!(ctx.run, all(base_type[Node3D], not(tags["dead"])));
-for id in ids {
-    let _ = with_base_node_mut!(ctx.run, Node3D, id, |node| {
-        node.transform.position.y += 0.1;
-    });
-}
-```
 
 Global transform example:
 
@@ -307,51 +199,6 @@ if let Some(global) = get_global_transform_3d!(ctx.run, self_id) {
 let muzzle_local = Vector3::new(0.0, 0.0, -1.0);
 if let Some(muzzle_global) = to_global_point_3d!(ctx.run, self_id, muzzle_local) {
     // Use global-space point for spawning/projectiles/etc.
-}
-```
-
-Mesh query examples:
-
-```rust
-let p = Vector3::new(2.0, 1.0, -5.0);
-if let Some(hit) = mesh_instance_surface_at_global_point_3d!(ctx.run, mesh_node_id, p) {
-    // hit.surface_index
-    // hit.material
-    // hit.global_point
-    // hit.global_normal
-}
-```
-
-```rust
-let regions = mesh_instance_material_regions_3d!(ctx.run, mesh_node_id, material_id);
-for r in regions {
-    // r.surface_index
-    // r.center_global
-    // r.aabb_min_global / r.aabb_max_global
-}
-```
-
-```rust
-// Raw mesh-data lane: query fixed surface index from mesh topology.
-let data_regions = mesh_data_surface_regions_3d!(ctx.run, mesh_id, 2);
-for r in data_regions {
-    // r.surface_index == 2
-    // r.center_local
-    // r.aabb_min_local / r.aabb_max_local
-}
-```
-
-```rust
-// Raw mesh-data inverse hit: gets surface index, no runtime material bind.
-if let Some(hit) = mesh_data_surface_on_local_ray_3d!(
-    ctx.run,
-    mesh_id,
-    ray_origin_local,
-    ray_dir_local,
-    100.0
-) {
-    // hit.surface_index
-    // hit.local_point
 }
 ```
 

@@ -9,6 +9,7 @@ pub trait AudioAPI {
     fn load_audio_source(&self, source: &str) -> bool;
     fn reserve_audio_source(&self, source: &str) -> bool;
     fn drop_audio_source(&self, source: &str) -> bool;
+    fn is_audio_source_loaded(&self, source: &str) -> bool;
     fn play_audio(&self, bus_id: Option<AudioBusID>, audio: Audio<'_>, pan: AudioPan) -> bool;
     fn play_audio_2d(&self, bus_id: Option<AudioBusID>, audio: Audio2D<'_>) -> bool;
     fn play_audio_3d(&self, bus_id: Option<AudioBusID>, audio: Audio3D<'_>) -> bool;
@@ -26,6 +27,7 @@ pub trait AudioAPI {
     fn load_midi_soundfont(&self, source: &str) -> SoundFontID {
         self.load_midi_soundfont_hashed(perro_ids::string_to_u64(source), Some(source))
     }
+    fn is_midi_soundfont_loaded(&self, id: SoundFontID) -> bool;
     fn play_midi_note(&self, note: Note, options: MidiNoteOptions) -> bool;
     fn start_midi_note(&self, note: Note, options: MidiNoteOptions) -> Option<MidiNoteHandle>;
     fn release_midi_note(&self, handle: MidiNoteHandle) -> bool;
@@ -369,6 +371,10 @@ impl<'res, R: AudioAPI + ?Sized> AudioModule<'res, R> {
         self.api.reserve_audio_source(source.as_res_path_str())
     }
 
+    pub fn is_loaded<S: ResPathSource>(&self, source: S) -> bool {
+        self.api.is_audio_source_loaded(source.as_res_path_str())
+    }
+
     #[inline]
     pub fn drop_source<S: ResPathSource>(&self, source: S) -> bool {
         self.api.drop_audio_source(source.as_res_path_str())
@@ -532,6 +538,10 @@ impl<'res, R: AudioAPI + ?Sized> MidiModule<'res, R> {
             .load_midi_soundfont_hashed(source_hash, Some(source.as_res_path_str()))
     }
 
+    pub fn is_soundfont_loaded(&self, id: SoundFontID) -> bool {
+        self.api.is_midi_soundfont_loaded(id)
+    }
+
     #[inline]
     pub fn play_note(&self, note: Note, options: MidiNoteOptions) -> bool {
         self.api.play_midi_note(note, options)
@@ -621,6 +631,13 @@ impl<'res, R: AudioAPI + ?Sized> Audio3DModule<'res, R> {
 macro_rules! audio_load {
     ($res:expr, $source:expr) => {
         $res.Audio().load_source($source)
+    };
+}
+
+#[macro_export]
+macro_rules! audio_is_loaded {
+    ($res:expr, $source:expr) => {
+        $res.Audio().is_loaded($source)
     };
 }
 
@@ -751,6 +768,13 @@ macro_rules! midi_load_soundfont {
 }
 
 #[macro_export]
+macro_rules! midi_soundfont_is_loaded {
+    ($res:expr, $id:expr) => {
+        $res.Audio().midi().is_soundfont_loaded($id)
+    };
+}
+
+#[macro_export]
 macro_rules! midi_play {
     ($res:expr, $bus_id:expr, $note:expr, $options:expr) => {
         $res.Audio().midi().play_note_bus($bus_id, $note, $options)
@@ -824,6 +848,10 @@ mod tests {
             true
         }
 
+        fn is_audio_source_loaded(&self, _source: &str) -> bool {
+            true
+        }
+
         fn play_audio(
             &self,
             _bus_id: Option<AudioBusID>,
@@ -890,6 +918,10 @@ mod tests {
             _source: Option<&str>,
         ) -> SoundFontID {
             SoundFontID::from_u64(source_hash)
+        }
+
+        fn is_midi_soundfont_loaded(&self, _id: SoundFontID) -> bool {
+            true
         }
 
         fn play_midi_note(&self, _note: Note, _options: MidiNoteOptions) -> bool {

@@ -53,6 +53,26 @@ Reserve convention:
 - `load` implies `reserved: false` (auto-evict when no references remain).
 - `reserve` implies `reserved: true` (keep cached until explicit drop).
 
+Async load convention:
+
+- ID-returning resource loads return the ID immediately.
+- Decode, parse, and GPU/audio backend work can finish later.
+- Until loaded, draw/play paths may skip that resource or use an empty/default value.
+- Use `*_is_loaded!` when gameplay needs to know readiness.
+- Good uses: hide loading UI, delay spawning visible objects, wait before starting a cutscene, defer soundfont notes until bank load completes.
+- Bad uses: calling every frame for every object when retained render state can naturally skip missing resources.
+- Prefer polling during load screens, state transitions, or a small timer such as every 1-2 seconds.
+
+Loaded check macros:
+
+- `texture_is_loaded!(res, texture_id) -> bool`
+- `mesh_is_loaded!(res, mesh_id) -> bool`
+- `material_is_loaded!(res, material_id) -> bool`
+- `animation_is_loaded!(res, animation_id) -> bool`
+- `animation_tree_is_loaded!(res, animation_tree_id) -> bool`
+- `audio_is_loaded!(res, source) -> bool`
+- `midi_soundfont_is_loaded!(res, soundfont_id) -> bool`
+
 Copy data workflow:
 
 - Read snapshot copy (`mesh_get_data!` / `material_get_data!`)

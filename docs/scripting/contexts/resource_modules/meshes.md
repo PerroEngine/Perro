@@ -7,6 +7,7 @@ Access:
 Macros:
 
 - `mesh_load!(res, source) -> MeshID`
+- `mesh_is_loaded!(res, mesh_id) -> bool`
 - `mesh_reserve!(res, source) -> MeshID`
 - `mesh_drop!(res, source) -> bool`
 - `mesh_get_data!(res, mesh_id) -> Option<Mesh3D>`
@@ -23,6 +24,7 @@ When to use each:
 Methods:
 
 - `res.Meshes().load(source) -> MeshID`
+- `res.Meshes().is_loaded(mesh_id) -> bool`
 - `res.Meshes().reserve(source) -> MeshID`
 - `res.Meshes().drop(source) -> bool`
 - `res.Meshes().get_data(mesh_id) -> Option<Mesh3D>`
@@ -42,6 +44,13 @@ What `load` does:
 - If already cached, returns existing ID.
 - If not cached, allocates an ID and queues mesh creation with `reserved: false`.
 - GPU upload/creation happens asynchronously.
+
+What `is_loaded` does:
+
+- Returns `true` once mesh data exists and renderer creation has resolved.
+- Returns `false` while load is pending, after drop, or for unknown/nil IDs.
+- Use before gameplay depends on mesh data, for example surface queries, spawn gates, or load-screen progress.
+- Do not need it for normal retained rendering; mesh users can keep the ID and render path skips until ready.
 
 What `reserve` does:
 
@@ -95,6 +104,7 @@ Example:
 ```rust
 // `MeshSurfaceRange` comes from Perro prelude.
 let id = mesh_load!(res, "res://meshes/rock.glb:mesh[0]");
+let ready = mesh_is_loaded!(res, id);
 let _same_id = mesh_reserve!(res, "res://meshes/rock.glb:mesh[0]");
 let _ = mesh_drop!(res, "res://meshes/rock.glb:mesh[0]");
 

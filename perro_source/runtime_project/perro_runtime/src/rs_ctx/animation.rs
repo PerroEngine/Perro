@@ -2,7 +2,6 @@ use super::core::RuntimeResourceApi;
 use perro_animation::AnimationClip;
 use perro_ids::AnimationID;
 use perro_resource_api::sub_apis::AnimationAPI;
-use std::borrow::Cow;
 use std::sync::Arc;
 
 impl AnimationAPI for RuntimeResourceApi {
@@ -33,11 +32,22 @@ impl AnimationAPI for RuntimeResourceApi {
         }
 
         let clip = self
-            .load_animation_source_data(source_hash, source.map(str::trim))
+            .static_animation_lookup
+            .map(|lookup| Arc::new(lookup(source_hash).clone()))
             .unwrap_or_else(|| Arc::new(AnimationClip::default()));
         let id = state.allocate_animation_id();
         state.animation_by_source.insert(source_hash, id);
         state.animation_data_by_id.insert(id, clip);
+        if self.static_animation_lookup.is_some() {
+            state.animation_loaded_by_id.insert(id);
+        }
+        if self.static_animation_lookup.is_none()
+            && let Some(source) = source.map(str::trim).filter(|v| !v.is_empty())
+        {
+            let source = source.to_string();
+            drop(state);
+            self.queue_animation_source_load(id, source);
+        }
         id
     }
 
@@ -59,6 +69,7 @@ impl AnimationAPI for RuntimeResourceApi {
             .animation_by_source
             .retain(|_, existing| *existing != id);
         state.animation_data_by_id.remove(&id);
+        state.animation_loaded_by_id.remove(&id);
         let _ = state.free_animation_id(id);
         true
     }
@@ -68,38 +79,18 @@ impl AnimationAPI for RuntimeResourceApi {
             return None;
         }
 
+        self.poll_async_animation_loads();
         let state = self.state.lock().expect("resource api mutex poisoned");
         state.animation_data_by_id.get(&id).cloned()
     }
-}
 
-impl RuntimeResourceApi {
-    fn load_animation_source_data(
-        &self,
-        source_hash: u64,
-        source: Option<&str>,
-    ) -> Option<Arc<AnimationClip>> {
-        if let Some(lookup) = self.static_animation_lookup {
-            return Some(Arc::new(lookup(source_hash).clone()));
+    fn is_animation_loaded(&self, id: AnimationID) -> bool {
+        if id.is_nil() {
+            return false;
         }
-
-        let source = source?;
-        if source.ends_with(".panim")
-            && let Ok(bytes) = perro_io::load_asset(source)
-            && let Ok(text) = std::str::from_utf8(&bytes)
-            && let Ok(clip) = perro_animation::parse_panim(text)
-        {
-            return Some(Arc::new(clip));
-        }
-
-        Some(Arc::new(AnimationClip {
-            name: Cow::Borrowed("Animation"),
-            fps: 60.0,
-            total_frames: 1,
-            objects: Cow::Borrowed(&[]),
-            object_tracks: Cow::Borrowed(&[]),
-            frame_events: Cow::Borrowed(&[]),
-        }))
+        self.poll_async_animation_loads();
+        let state = self.state.lock().expect("resource api mutex poisoned");
+        state.animation_loaded_by_id.contains(&id)
     }
 }
 
@@ -112,6 +103,7 @@ mod tests {
         AnimationEventScope, AnimationObject, AnimationObjectKey, AnimationObjectTrack,
         AnimationParam, AnimationTrackValue,
     };
+    use std::borrow::Cow;
     use std::path::PathBuf;
     use std::sync::{Arc, OnceLock};
     use std::time::{SystemTime, UNIX_EPOCH};

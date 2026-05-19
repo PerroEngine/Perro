@@ -18,8 +18,9 @@ pub use audio::{
 };
 pub use node::{
     __query_base_type_mask, __query_type_mask, IntoNodeTag, IntoNodeTags, MeshDataSurfaceHit3D,
-    MeshDataSurfaceRegion3D, MeshMaterialRegion3D, MeshSurfaceHit3D, NodeAPI, NodeCreationTemplate,
-    NodeModule, QueryExpr, QueryScope, QueryTypeMask, TagQuery,
+    MeshDataSurfaceRegion3D, MeshMaterialRegion3D, MeshQueryModule, MeshSurfaceHit3D,
+    MeshSurfaceRay3D, NodeAPI, NodeCreationTemplate, NodeModule, NodeQueryModule, QueryExpr,
+    QueryScope, QueryTypeMask, TagQuery,
 };
 pub use physics::{
     IntoImpulseDirection, PhysicsAPI, PhysicsBodyPrediction2D, PhysicsBodyPrediction3D,

@@ -18,6 +18,7 @@ pub trait AnimationAPI {
     }
     fn drop_animation_source(&self, id: AnimationID) -> bool;
     fn get_animation(&self, id: AnimationID) -> Option<Arc<AnimationClip>>;
+    fn is_animation_loaded(&self, id: AnimationID) -> bool;
 }
 
 pub struct AnimationModule<'res, R: AnimationAPI + ?Sized> {
@@ -78,6 +79,11 @@ impl<'res, R: AnimationAPI + ?Sized> AnimationModule<'res, R> {
     pub fn get(&self, id: AnimationID) -> Option<Arc<AnimationClip>> {
         self.api.get_animation(id)
     }
+
+    #[inline]
+    pub fn is_loaded(&self, id: AnimationID) -> bool {
+        self.api.is_animation_loaded(id)
+    }
 }
 
 #[macro_export]
@@ -107,5 +113,12 @@ macro_rules! animation_reserve {
 macro_rules! animation_drop {
     ($res:expr, $id:expr) => {
         $res.Animations().drop($id)
+    };
+}
+
+#[macro_export]
+macro_rules! animation_is_loaded {
+    ($res:expr, $id:expr) => {
+        $res.Animations().is_loaded($id)
     };
 }

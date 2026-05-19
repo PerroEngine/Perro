@@ -1,6 +1,7 @@
 # Mesh Query Perf Snapshot
 
 This page records mesh-query benchmark results.
+Runtime module: `ctx.run.MeshQuery()`.
 
 ## Big Takeaway
 
@@ -12,6 +13,9 @@ This page records mesh-query benchmark results.
 
 - Time for one mesh query call, in microseconds.
 - It does not include full test runtime overhead (mesh build + repeated sampling).
+- For several rays against the same mesh node, prefer `mesh_instance_surfaces_on_global_rays_3d!`.
+- Batch rays reuse node lookup, mesh cache lookup, node transform, and instance data.
+- Pass `resolve_material = false` when surface index is enough.
 
 ## Test Output Shape
 

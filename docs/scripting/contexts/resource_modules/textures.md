@@ -5,11 +5,13 @@ Access:
 
 Macros:
 - `texture_load!(res, source) -> TextureID`
+- `texture_is_loaded!(res, texture_id) -> bool`
 - `texture_reserve!(res, source) -> TextureID`
 - `texture_drop!(res, source) -> bool`
 
 Methods:
 - `res.Textures().load(source) -> TextureID`
+- `res.Textures().is_loaded(texture_id) -> bool`
 - `res.Textures().reserve(source) -> TextureID`
 - `res.Textures().drop(source) -> bool`
 
@@ -18,6 +20,12 @@ What `load` does:
 - If `source` already exists in cache, returns the existing ID immediately.
 - If not cached, allocates an ID immediately and queues a renderer create command with `reserved: false`.
 - Actual GPU creation is async relative to script call.
+
+What `is_loaded` does:
+- Returns `true` after texture decode and renderer upload/creation resolve.
+- Returns `false` while pending, after drop, or for unknown/nil IDs.
+- Use for loading UI, delayed material setup, or any path that must know texture readiness.
+- Do not need it for normal sprite/UI retained state; renderer skips missing textures until ready.
 
 What `reserve` does:
 - Same as `load`, but marks/creates the texture as reserved (`reserved: true`).
@@ -42,6 +50,7 @@ Example:
 
 ```rust
 let id = texture_load!(res, "res://textures/smoke.png");
+let ready = texture_is_loaded!(res, id);
 let _same_id = texture_load!(res, "res://textures/smoke.png");
 let _ = texture_reserve!(res, "res://textures/smoke.png");
 let _ = texture_drop!(res, "res://textures/smoke.png");

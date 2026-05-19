@@ -303,6 +303,15 @@ impl NodeAPI for DummyRuntime {
         None
     }
 
+    fn mesh_instance_surfaces_on_global_rays(
+        &mut self,
+        _node_id: NodeID,
+        rays: &[MeshSurfaceRay3D],
+        _resolve_material: bool,
+    ) -> Vec<Option<MeshSurfaceHit3D>> {
+        vec![None; rays.len()]
+    }
+
     fn mesh_instance_material_regions(
         &mut self,
         _node_id: NodeID,
@@ -754,6 +763,8 @@ fn script_macros_typecheck_and_forward() {
     assert!(query!(&mut ctx, all(layers[1], mask[2, 3])).is_empty());
     let layer = 4usize;
     assert!(query!(&mut ctx, all(layers[layer], mask[layer])).is_empty());
+    let direct_query = TagQuery::new().where_expr(QueryExpr::Name(vec!["Player".to_string()]));
+    assert!(ctx.NodeQuery().query(direct_query).is_empty());
     assert!(!reparent!(&mut ctx, NodeID::new(1), id));
     assert_eq!(reparent_multi!(&mut ctx, NodeID::new(1), [id]), 0);
     assert!(!remove_node!(&mut ctx, id));
@@ -891,6 +902,29 @@ fn script_macros_typecheck_and_forward() {
         ),
         None
     );
+    assert_eq!(
+        mesh_instance_surfaces_on_global_rays_3d!(
+            &mut ctx,
+            id,
+            &[MeshSurfaceRay3D {
+                origin: Vector3::new(0.0, 1.0, 0.0),
+                direction: Vector3::new(0.0, -1.0, 0.0),
+                max_distance: 100.0,
+            }],
+            false
+        ),
+        vec![None]
+    );
+    let direct_hits = ctx.MeshQuery().instance_surfaces_on_global_rays(
+        id,
+        &[MeshSurfaceRay3D {
+            origin: Vector3::new(0.0, 1.0, 0.0),
+            direction: Vector3::new(0.0, -1.0, 0.0),
+            max_distance: 100.0,
+        }],
+        false,
+    );
+    assert_eq!(direct_hits, vec![None]);
     assert!(
         mesh_instance_material_regions_3d!(&mut ctx, id, perro_ids::MaterialID::new(1)).is_empty()
     );

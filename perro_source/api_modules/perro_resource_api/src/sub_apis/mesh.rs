@@ -8,6 +8,7 @@ pub trait MeshAPI {
     fn create_mesh_data(&self, data: Mesh3D) -> MeshID;
     fn get_mesh_data(&self, id: MeshID) -> Option<Mesh3D>;
     fn write_mesh_data(&self, id: MeshID, data: Mesh3D) -> bool;
+    fn is_mesh_loaded(&self, id: MeshID) -> bool;
     fn load_mesh(&self, source: &str) -> MeshID {
         self.load_mesh_hashed(perro_ids::string_to_u64(source), Some(source))
     }
@@ -81,6 +82,11 @@ impl<'res, R: MeshAPI + ?Sized> MeshModule<'res, R> {
     pub fn write(&self, id: MeshID, data: Mesh3D) -> bool {
         self.api.write_mesh_data(id, data)
     }
+
+    #[inline]
+    pub fn is_loaded(&self, id: MeshID) -> bool {
+        self.api.is_mesh_loaded(id)
+    }
 }
 
 #[macro_export]
@@ -130,5 +136,12 @@ macro_rules! mesh_get_data {
 macro_rules! mesh_write {
     ($res:expr, $id:expr, $data:expr) => {
         $res.Meshes().write($id, $data)
+    };
+}
+
+#[macro_export]
+macro_rules! mesh_is_loaded {
+    ($res:expr, $id:expr) => {
+        $res.Meshes().is_loaded($id)
     };
 }

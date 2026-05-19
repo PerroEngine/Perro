@@ -40,6 +40,16 @@ impl AudioAPI for RuntimeResourceApi {
         player.drop_source(source)
     }
 
+    fn is_audio_source_loaded(&self, source: &str) -> bool {
+        let Ok(guard) = self.bark.lock() else {
+            return false;
+        };
+        let Some(player) = guard.as_ref() else {
+            return false;
+        };
+        player.is_source_loaded(source)
+    }
+
     fn play_audio(
         &self,
         bus_id: Option<AudioBusID>,
@@ -273,6 +283,16 @@ impl AudioAPI for RuntimeResourceApi {
             return id;
         };
         player.load_soundfont_with_id(id, source)
+    }
+
+    fn is_midi_soundfont_loaded(&self, id: SoundFontID) -> bool {
+        let Ok(guard) = self.bark.lock() else {
+            return false;
+        };
+        let Some(player) = guard.as_ref() else {
+            return false;
+        };
+        player.is_soundfont_loaded(id)
     }
 
     fn play_midi_note(&self, note: Note, options: MidiNoteOptions) -> bool {

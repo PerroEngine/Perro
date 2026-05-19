@@ -1,33 +1,5 @@
 use super::*;
 
-pub(super) fn load_ui_texture_rgba(
-    source: &str,
-    static_texture_lookup: Option<StaticTextureLookup>,
-) -> Option<(Vec<u8>, u32, u32)> {
-    if source == "__default__" {
-        return Some((vec![255, 255, 255, 255], 1, 1));
-    }
-    if let Some(lookup) = static_texture_lookup {
-        let source_hash = perro_ids::parse_hashed_source_uri(source)
-            .unwrap_or_else(|| perro_ids::string_to_u64(source));
-        let bytes = lookup(source_hash);
-        if !bytes.is_empty() {
-            if let Some(decoded) = decode_ptex(bytes) {
-                return Some(decoded);
-            }
-            let image = image::load_from_memory(bytes).ok()?;
-            let rgba = image.to_rgba8();
-            let (width, height) = rgba.dimensions();
-            return Some((rgba.into_raw(), width.max(1), height.max(1)));
-        }
-    }
-    let bytes = load_asset(source).ok()?;
-    let image = image::load_from_memory(&bytes).ok()?;
-    let rgba = image.to_rgba8();
-    let (width, height) = rgba.dimensions();
-    Some((rgba.into_raw(), width.max(1), height.max(1)))
-}
-
 pub(super) fn font_delta_required_size(
     delta_size: [u32; 2],
     origin: [usize; 2],

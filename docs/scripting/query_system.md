@@ -3,6 +3,9 @@
 Perro query system returns `NodeID` lists from scene graph filters.
 Use it when direct refs are not enough and you want dynamic lookup.
 
+Runtime module: `ctx.run.NodeQuery()`.
+The `query!` and `query_first!` macros route to `NodeQuery`.
+
 This works on top of Perro's object-centric node model.
 Queries do not replace nodes or script state.
 Queries help find nodes, then you act through normal node/script APIs.
@@ -116,6 +119,15 @@ let not_layer_one = query!(ctx.run, all(base_type[Node2D], mask[1]));
 - Literal `layers[...]` and `mask[...]` predicates compile into `BitMask` layer masks.
 - Type-only boolean groups use mask algebra: `all` intersects, `any` unions, and `not` complements.
 - Runtime query planning reorders predicates by estimated cost and uses tag indexes and type masks when possible.
+- Indexed tag candidate sets are intersected smallest-to-largest before full predicate eval.
+- Mixed queries like `all(tags["rare"], name["Boss"])` scan rare tag candidates, not the full scene.
+- Large full-tree scans can split work across workers.
+- Use the query benchmark when changing query planner/index code:
+
+```bash
+cargo bench -p perro_runtime --bench query_hotpaths
+```
+
 - For hot loops:
   - cache stable `NodeID`s when safe
   - refresh cache on scene changes or lifecycle events

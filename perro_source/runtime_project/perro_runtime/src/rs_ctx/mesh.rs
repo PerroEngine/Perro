@@ -62,6 +62,15 @@ impl MeshAPI for RuntimeResourceApi {
         true
     }
 
+    fn is_mesh_loaded(&self, id: MeshID) -> bool {
+        if id.is_nil() {
+            return false;
+        }
+        let canonical = self.canonical_mesh_id(id);
+        let state = self.state.lock().expect("resource api mutex poisoned");
+        state.mesh_data_by_id.contains_key(&canonical)
+    }
+
     fn load_mesh_hashed(&self, source_hash: u64, source: Option<&str>) -> MeshID {
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         if let Some(id) = state.mesh_by_source.get(&source_hash).copied() {

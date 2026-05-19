@@ -60,6 +60,10 @@ name = "command_throughput"
 harness = false
 
 [[bench]]
+name = "resource_loading"
+harness = false
+
+[[bench]]
 name = "shader_wgsl"
 harness = false
 

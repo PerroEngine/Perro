@@ -219,6 +219,13 @@ pub struct MeshSurfaceHit3D {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MeshSurfaceRay3D {
+    pub origin: Vector3,
+    pub direction: Vector3,
+    pub max_distance: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MeshMaterialRegion3D {
     pub instance_index: u32,
     pub surface_index: u32,
@@ -887,6 +894,18 @@ pub trait NodeAPI {
         max_distance: f32,
     ) -> Option<MeshSurfaceHit3D>;
 
+    /// Finds mesh surface hits for many global-space rays against the same mesh node.
+    ///
+    /// Reuses node lookup, mesh decode/cache lookup, node global transform, and instance data
+    /// across all rays. `resolve_material=false` skips material lookup and leaves hit material
+    /// as `None`, useful when scripts only need `surface_index`.
+    fn mesh_instance_surfaces_on_global_rays(
+        &mut self,
+        node_id: NodeID,
+        rays: &[MeshSurfaceRay3D],
+        resolve_material: bool,
+    ) -> Vec<Option<MeshSurfaceHit3D>>;
+
     /// Returns regions (one per matching surface) where `material` exists on a mesh node.
     ///
     /// Region bounds/centers are coarse geometric summaries for gameplay queries.
@@ -1417,6 +1436,16 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         )
     }
 
+    pub fn mesh_instance_surfaces_on_global_rays(
+        &mut self,
+        node_id: NodeID,
+        rays: &[MeshSurfaceRay3D],
+        resolve_material: bool,
+    ) -> Vec<Option<MeshSurfaceHit3D>> {
+        self.rt
+            .mesh_instance_surfaces_on_global_rays(node_id, rays, resolve_material)
+    }
+
     pub fn mesh_instance_material_regions(
         &mut self,
         node_id: NodeID,
@@ -1450,6 +1479,104 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
     }
 
     pub fn mesh_data_surface_regions(
+        &mut self,
+        mesh_id: MeshID,
+        surface_index: u32,
+    ) -> Vec<MeshDataSurfaceRegion3D> {
+        self.rt.mesh_data_surface_regions(mesh_id, surface_index)
+    }
+}
+
+pub struct NodeQueryModule<'rt, R: NodeAPI + ?Sized> {
+    rt: &'rt mut R,
+}
+
+impl<'rt, R: NodeAPI + ?Sized> NodeQueryModule<'rt, R> {
+    pub fn new(rt: &'rt mut R) -> Self {
+        Self { rt }
+    }
+
+    pub fn query(&mut self, query: TagQuery) -> Vec<NodeID> {
+        self.rt.query_nodes(query)
+    }
+}
+
+pub struct MeshQueryModule<'rt, R: NodeAPI + ?Sized> {
+    rt: &'rt mut R,
+}
+
+impl<'rt, R: NodeAPI + ?Sized> MeshQueryModule<'rt, R> {
+    pub fn new(rt: &'rt mut R) -> Self {
+        Self { rt }
+    }
+
+    pub fn instance_surface_at_global_point(
+        &mut self,
+        node_id: NodeID,
+        global_point: Vector3,
+    ) -> Option<MeshSurfaceHit3D> {
+        self.rt
+            .mesh_instance_surface_at_global_point(node_id, global_point)
+    }
+
+    pub fn instance_surface_on_global_ray(
+        &mut self,
+        node_id: NodeID,
+        ray_origin: Vector3,
+        ray_direction: Vector3,
+        max_distance: f32,
+    ) -> Option<MeshSurfaceHit3D> {
+        self.rt.mesh_instance_surface_on_global_ray(
+            node_id,
+            ray_origin,
+            ray_direction,
+            max_distance,
+        )
+    }
+
+    pub fn instance_surfaces_on_global_rays(
+        &mut self,
+        node_id: NodeID,
+        rays: &[MeshSurfaceRay3D],
+        resolve_material: bool,
+    ) -> Vec<Option<MeshSurfaceHit3D>> {
+        self.rt
+            .mesh_instance_surfaces_on_global_rays(node_id, rays, resolve_material)
+    }
+
+    pub fn instance_material_regions(
+        &mut self,
+        node_id: NodeID,
+        material: MaterialID,
+    ) -> Vec<MeshMaterialRegion3D> {
+        self.rt.mesh_instance_material_regions(node_id, material)
+    }
+
+    pub fn data_surface_at_local_point(
+        &mut self,
+        mesh_id: MeshID,
+        local_point: Vector3,
+    ) -> Option<MeshDataSurfaceHit3D> {
+        self.rt
+            .mesh_data_surface_at_local_point(mesh_id, local_point)
+    }
+
+    pub fn data_surface_on_local_ray(
+        &mut self,
+        mesh_id: MeshID,
+        ray_origin_local: Vector3,
+        ray_direction_local: Vector3,
+        max_distance: f32,
+    ) -> Option<MeshDataSurfaceHit3D> {
+        self.rt.mesh_data_surface_on_local_ray(
+            mesh_id,
+            ray_origin_local,
+            ray_direction_local,
+            max_distance,
+        )
+    }
+
+    pub fn data_surface_regions(
         &mut self,
         mesh_id: MeshID,
         surface_index: u32,
@@ -2152,8 +2279,8 @@ macro_rules! to_local_transform_3d {
 #[macro_export]
 macro_rules! mesh_instance_surface_at_global_point_3d {
     ($ctx:expr, $id:expr, $point:expr) => {
-        $ctx.Nodes()
-            .mesh_instance_surface_at_global_point($id, $point)
+        $ctx.MeshQuery()
+            .instance_surface_at_global_point($id, $point)
     };
 }
 
@@ -2163,8 +2290,19 @@ macro_rules! mesh_instance_surface_at_global_point_3d {
 #[macro_export]
 macro_rules! mesh_instance_surface_on_global_ray_3d {
     ($ctx:expr, $id:expr, $origin:expr, $direction:expr, $max_distance:expr) => {
-        $ctx.Nodes()
-            .mesh_instance_surface_on_global_ray($id, $origin, $direction, $max_distance)
+        $ctx.MeshQuery()
+            .instance_surface_on_global_ray($id, $origin, $direction, $max_distance)
+    };
+}
+
+/// Finds mesh surface hits for many global-space rays against one mesh instance node.
+/// Usage:
+/// `mesh_instance_surfaces_on_global_rays_3d!(ctx, node_id, rays, resolve_material) -> Vec<Option<MeshSurfaceHit3D>>`.
+#[macro_export]
+macro_rules! mesh_instance_surfaces_on_global_rays_3d {
+    ($ctx:expr, $id:expr, $rays:expr, $resolve_material:expr) => {
+        $ctx.MeshQuery()
+            .instance_surfaces_on_global_rays($id, $rays, $resolve_material)
     };
 }
 
@@ -2173,7 +2311,7 @@ macro_rules! mesh_instance_surface_on_global_ray_3d {
 #[macro_export]
 macro_rules! mesh_instance_material_regions_3d {
     ($ctx:expr, $id:expr, $material:expr) => {
-        $ctx.Nodes().mesh_instance_material_regions($id, $material)
+        $ctx.MeshQuery().instance_material_regions($id, $material)
     };
 }
 
@@ -2181,8 +2319,8 @@ macro_rules! mesh_instance_material_regions_3d {
 #[macro_export]
 macro_rules! mesh_data_surface_at_local_point_3d {
     ($ctx:expr, $mesh_id:expr, $point_local:expr) => {
-        $ctx.Nodes()
-            .mesh_data_surface_at_local_point($mesh_id, $point_local)
+        $ctx.MeshQuery()
+            .data_surface_at_local_point($mesh_id, $point_local)
     };
 }
 
@@ -2190,7 +2328,7 @@ macro_rules! mesh_data_surface_at_local_point_3d {
 #[macro_export]
 macro_rules! mesh_data_surface_on_local_ray_3d {
     ($ctx:expr, $mesh_id:expr, $origin_local:expr, $direction_local:expr, $max_distance:expr) => {
-        $ctx.Nodes().mesh_data_surface_on_local_ray(
+        $ctx.MeshQuery().data_surface_on_local_ray(
             $mesh_id,
             $origin_local,
             $direction_local,
@@ -2203,8 +2341,8 @@ macro_rules! mesh_data_surface_on_local_ray_3d {
 #[macro_export]
 macro_rules! mesh_data_surface_regions_3d {
     ($ctx:expr, $mesh_id:expr, $surface_index:expr) => {
-        $ctx.Nodes()
-            .mesh_data_surface_regions($mesh_id, $surface_index)
+        $ctx.MeshQuery()
+            .data_surface_regions($mesh_id, $surface_index)
     };
 }
 
@@ -2315,12 +2453,12 @@ macro_rules! query {
         let __query = $crate::sub_apis::TagQuery::new()
             .where_expr(__expr)
             .in_subtree($parent);
-        $ctx.Nodes().query(__query)
+        $ctx.NodeQuery().query(__query)
     }};
     ($ctx:expr, $kind:ident $args:tt $(,)?) => {{
         let __expr = $crate::query!(@expr $kind $args);
         let __query = $crate::sub_apis::TagQuery::new().where_expr(__expr);
-        $ctx.Nodes().query(__query)
+        $ctx.NodeQuery().query(__query)
     }};
 
     (@expr all($($kind:ident $args:tt),* $(,)?)) => {

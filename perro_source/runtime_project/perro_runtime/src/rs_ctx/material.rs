@@ -1,5 +1,4 @@
 use super::core::RuntimeResourceApi;
-use crate::material_schema;
 use perro_ids::MaterialID;
 use perro_render_bridge::{Material3D, RenderCommand, ResourceCommand};
 use perro_resource_api::sub_apis::MaterialAPI;
@@ -22,9 +21,7 @@ impl MaterialAPI for RuntimeResourceApi {
     }
 
     fn load_material_source_hashed(&self, source_hash: u64, source: Option<&str>) -> MaterialID {
-        let material = self
-            .load_material_source_data(source_hash, source)
-            .unwrap_or_default();
+        let material = self.static_material(source_hash).unwrap_or_default();
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         if let Some(id) = state.material_by_source.get(&source_hash).copied() {
             return id;
@@ -35,6 +32,9 @@ impl MaterialAPI for RuntimeResourceApi {
         let request = state.allocate_request();
         let id = state.allocate_material_id();
         state.material_data_by_id.insert(id, material.clone());
+        if self.static_material_lookup.is_some() {
+            state.material_loaded_by_id.insert(id);
+        }
         state.material_by_source.insert(source_hash, id);
         state
             .material_pending_by_source
@@ -52,6 +52,11 @@ impl MaterialAPI for RuntimeResourceApi {
                 source: Some(source.to_string()),
                 reserved: false,
             }));
+        let source = source.to_string();
+        drop(state);
+        if self.static_material_lookup.is_none() {
+            self.queue_material_source_load(id, source);
+        }
         id
     }
 
@@ -61,6 +66,7 @@ impl MaterialAPI for RuntimeResourceApi {
         let id = state.allocate_material_id();
         state.material_pending_id_by_request.insert(request, id);
         state.material_data_by_id.insert(id, material.clone());
+        state.material_loaded_by_id.insert(id);
         state
             .queued_commands
             .push(RenderCommand::Resource(ResourceCommand::CreateMaterial {
@@ -84,16 +90,24 @@ impl MaterialAPI for RuntimeResourceApi {
         }
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         state.material_data_by_id.insert(id, material.clone());
+        state.material_loaded_by_id.insert(id);
         state.queued_commands.push(RenderCommand::Resource(
             ResourceCommand::WriteMaterialData { id, material },
         ));
         true
     }
 
+    fn is_material_loaded(&self, id: MaterialID) -> bool {
+        if id.is_nil() {
+            return false;
+        }
+        self.poll_async_material_loads();
+        let state = self.state.lock().expect("resource api mutex poisoned");
+        state.material_loaded_by_id.contains(&id)
+    }
+
     fn reserve_material_source_hashed(&self, source_hash: u64, source: Option<&str>) -> MaterialID {
-        let material = self
-            .load_material_source_data(source_hash, source)
-            .unwrap_or_default();
+        let material = self.static_material(source_hash).unwrap_or_default();
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         if let Some(id) = state.material_by_source.get(&source_hash).copied() {
             if state.material_pending_by_source.contains_key(&source_hash) {
@@ -113,6 +127,9 @@ impl MaterialAPI for RuntimeResourceApi {
         let request = state.allocate_request();
         let id = state.allocate_material_id();
         state.material_data_by_id.insert(id, material.clone());
+        if self.static_material_lookup.is_some() {
+            state.material_loaded_by_id.insert(id);
+        }
         state.material_by_source.insert(source_hash, id);
         state
             .material_pending_by_source
@@ -130,12 +147,18 @@ impl MaterialAPI for RuntimeResourceApi {
                 source: Some(source.to_string()),
                 reserved: true,
             }));
+        let source = source.to_string();
+        drop(state);
+        if self.static_material_lookup.is_none() {
+            self.queue_material_source_load(id, source);
+        }
         id
     }
 
     fn drop_material_source(&self, id: MaterialID) -> bool {
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         state.material_data_by_id.remove(&id);
+        state.material_loaded_by_id.remove(&id);
         let source = state
             .material_by_source
             .iter()
@@ -159,30 +182,9 @@ impl MaterialAPI for RuntimeResourceApi {
 }
 
 impl RuntimeResourceApi {
-    fn load_material_source_data(
-        &self,
-        source_hash: u64,
-        source: Option<&str>,
-    ) -> Option<Material3D> {
-        let source = source.map(str::trim);
-        if source.is_some_and(|v| v.is_empty()) {
-            return None;
-        }
-        if let Some(lookup) = self.static_material_lookup {
-            return Some(lookup(source_hash).clone());
-        }
-        let source = source?;
-        let normalized = normalize_source_slashes(source);
-        material_schema::load_from_source(source)
-            .or_else(|| material_schema::load_from_source(normalized.as_ref()))
-    }
-}
-
-fn normalize_source_slashes(source: &str) -> std::borrow::Cow<'_, str> {
-    if source.contains('\\') {
-        std::borrow::Cow::Owned(source.replace('\\', "/"))
-    } else {
-        std::borrow::Cow::Borrowed(source)
+    fn static_material(&self, source_hash: u64) -> Option<Material3D> {
+        self.static_material_lookup
+            .map(|lookup| lookup(source_hash).clone())
     }
 }
 

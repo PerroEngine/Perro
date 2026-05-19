@@ -98,9 +98,18 @@ impl TextureAPI for RuntimeResourceApi {
             state.texture_by_source.remove(&source_hash);
         }
         let _ = state.free_texture_id(id);
+        state.texture_loaded_by_id.remove(&id);
         state
             .queued_commands
             .push(RenderCommand::Resource(ResourceCommand::DropTexture { id }));
         true
+    }
+
+    fn is_texture_loaded(&self, id: TextureID) -> bool {
+        if id.is_nil() {
+            return false;
+        }
+        let state = self.state.lock().expect("resource api mutex poisoned");
+        state.texture_loaded_by_id.contains(&id)
     }
 }

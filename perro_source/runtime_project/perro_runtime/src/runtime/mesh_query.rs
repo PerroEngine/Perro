@@ -15,6 +15,7 @@ use perro_nodes::{MeshSurfaceBinding, SceneNodeData};
 use perro_render_bridge::Mesh3D;
 use perro_runtime_api::sub_apis::{
     MeshDataSurfaceHit3D, MeshDataSurfaceRegion3D, MeshMaterialRegion3D, MeshSurfaceHit3D,
+    MeshSurfaceRay3D,
 };
 use perro_structs::Vector3;
 use rayon::prelude::*;
@@ -207,6 +208,15 @@ impl Runtime {
         )
     }
 
+    pub(crate) fn query_mesh_instance_surfaces_on_global_rays(
+        &mut self,
+        node_id: NodeID,
+        rays: &[MeshSurfaceRay3D],
+        resolve_material: bool,
+    ) -> Vec<Option<MeshSurfaceHit3D>> {
+        self.query_mesh_surfaces_on_global_rays_impl(node_id, rays, resolve_material)
+    }
+
     pub(crate) fn query_mesh_data_surface_on_local_ray(
         &mut self,
         mesh_id: MeshID,
@@ -368,6 +378,72 @@ impl Runtime {
             local_normal: best.local_normal.into(),
             distance: best.metric,
         })
+    }
+
+    fn query_mesh_surfaces_on_global_rays_impl(
+        &mut self,
+        node_id: NodeID,
+        rays: &[MeshSurfaceRay3D],
+        resolve_material: bool,
+    ) -> Vec<Option<MeshSurfaceHit3D>> {
+        if rays.is_empty() {
+            return Vec::new();
+        }
+        let Some(node) = self.query_node_mesh_data(node_id) else {
+            return vec![None; rays.len()];
+        };
+        let Some(mesh) = self.load_query_mesh_data(node.source.as_str()) else {
+            return vec![None; rays.len()];
+        };
+        if mesh.vertices.is_empty() || mesh.triangles.is_empty() {
+            return vec![None; rays.len()];
+        }
+        let Some(node_global) = self.get_global_transform_3d(node_id).map(|t| t.to_mat4()) else {
+            return vec![None; rays.len()];
+        };
+
+        let instance_parallel =
+            should_parallel_instances(node.instance_local.len(), mesh.triangles.len());
+        let ray_parallel = rays.len() >= QUERY_INSTANCE_PAR_THRESHOLD
+            && rays.len() * mesh.triangles.len() >= QUERY_PAR_WORK_THRESHOLD;
+
+        let best_for_ray = |ray: &MeshSurfaceRay3D| {
+            query_global_ray_candidates_for_node_mesh(
+                mesh.as_ref(),
+                &node.instance_local,
+                node_global,
+                *ray,
+                instance_parallel,
+            )
+        };
+
+        let best_hits: Vec<Option<QueryHitCandidate>> = if ray_parallel {
+            rays.par_iter().map(best_for_ray).collect()
+        } else {
+            rays.iter().map(best_for_ray).collect()
+        };
+
+        best_hits
+            .into_iter()
+            .map(|best| {
+                let best = best?;
+                let material = if resolve_material {
+                    self.query_surface_material(node_id, &node, best.surface_index)
+                } else {
+                    None
+                };
+                Some(MeshSurfaceHit3D {
+                    instance_index: best.instance_index,
+                    surface_index: best.surface_index,
+                    material,
+                    global_point: best.global_point.into(),
+                    local_point: best.local_point.into(),
+                    global_normal: best.global_normal.into(),
+                    local_normal: best.local_normal.into(),
+                    distance: best.metric,
+                })
+            })
+            .collect()
     }
 
     pub(crate) fn query_mesh_instance_material_regions(
@@ -728,6 +804,86 @@ impl Runtime {
         self.resource_api
             .mesh_source(mesh_id)
             .and_then(|source| self.load_query_mesh_data(source.as_str()))
+    }
+}
+
+fn query_global_ray_candidates_for_node_mesh(
+    mesh: &QueryMeshData,
+    instance_local: &[Mat4],
+    node_global: Mat4,
+    ray: MeshSurfaceRay3D,
+    instance_parallel: bool,
+) -> Option<QueryHitCandidate> {
+    let ray_origin_global: Vec3 = ray.origin.into();
+    let ray_dir_global_raw: Vec3 = ray.direction.into();
+    let ray_dir_len = ray_dir_global_raw.length();
+    if ray_dir_len <= 0.000001 {
+        return None;
+    }
+    let ray_dir_global = ray_dir_global_raw / ray_dir_len;
+    let max_t = if ray.max_distance.is_finite() && ray.max_distance > 0.0 {
+        ray.max_distance
+    } else {
+        f32::INFINITY
+    };
+
+    let best_for_instance = |(instance_index, local): (usize, &Mat4)| {
+        let global_from_mesh = node_global * *local;
+        let mesh_from_global = global_from_mesh.inverse();
+        let global_normal_basis = Mat3::from_mat4(global_from_mesh).inverse().transpose();
+        let ray_origin_local = mesh_from_global.transform_point3(ray_origin_global);
+        let ray_dir_local = mesh_from_global
+            .transform_vector3(ray_dir_global)
+            .normalize_or_zero();
+        if ray_dir_local.length_squared() <= 1e-10 {
+            return None;
+        }
+        let mut best: Option<QueryHitCandidate> = None;
+        match query_mesh_strategy(mesh.triangles.len()) {
+            QueryMeshStrategy::Linear => {
+                for tri_idx in 0..mesh.triangles.len() {
+                    best = query_ray_tri_global(
+                        mesh,
+                        tri_idx,
+                        ray_origin_local,
+                        ray_dir_local,
+                        ray_origin_global,
+                        max_t,
+                        instance_index as u32,
+                        global_from_mesh,
+                        global_normal_basis,
+                        best,
+                    )?;
+                }
+            }
+            QueryMeshStrategy::Bvh => {
+                best = query_ray_mesh_bvh_global(
+                    mesh,
+                    ray_origin_local,
+                    ray_dir_local,
+                    ray_origin_global,
+                    max_t,
+                    instance_index as u32,
+                    global_from_mesh,
+                    global_normal_basis,
+                    best,
+                )?;
+            }
+        }
+        best
+    };
+    if instance_parallel {
+        instance_local
+            .par_iter()
+            .enumerate()
+            .map(best_for_instance)
+            .reduce(|| None, nearer_hit)
+    } else {
+        instance_local
+            .iter()
+            .enumerate()
+            .map(best_for_instance)
+            .fold(None, nearer_hit)
     }
 }
 

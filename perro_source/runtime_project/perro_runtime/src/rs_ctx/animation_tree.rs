@@ -2,7 +2,6 @@ use super::core::RuntimeResourceApi;
 use perro_animation::AnimationTreeAsset;
 use perro_ids::AnimationTreeID;
 use perro_resource_api::sub_apis::AnimationTreeAPI;
-use std::borrow::Cow;
 use std::sync::Arc;
 
 impl AnimationTreeAPI for RuntimeResourceApi {
@@ -29,11 +28,22 @@ impl AnimationTreeAPI for RuntimeResourceApi {
         }
 
         let tree = self
-            .load_animation_tree_source_data(source_hash, source.map(str::trim))
+            .static_animation_tree_lookup
+            .map(|lookup| Arc::new(lookup(source_hash).clone()))
             .unwrap_or_else(|| Arc::new(AnimationTreeAsset::default()));
         let id = state.allocate_animation_tree_id();
         state.animation_tree_by_source.insert(source_hash, id);
         state.animation_tree_data_by_id.insert(id, tree);
+        if self.static_animation_tree_lookup.is_some() {
+            state.animation_tree_loaded_by_id.insert(id);
+        }
+        if self.static_animation_tree_lookup.is_none()
+            && let Some(source) = source.map(str::trim).filter(|v| !v.is_empty())
+        {
+            let source = source.to_string();
+            drop(state);
+            self.queue_animation_tree_source_load(id, source);
+        }
         id
     }
 
@@ -41,35 +51,17 @@ impl AnimationTreeAPI for RuntimeResourceApi {
         if id.is_nil() {
             return None;
         }
+        self.poll_async_animation_tree_loads();
         let state = self.state.lock().expect("resource api mutex poisoned");
         state.animation_tree_data_by_id.get(&id).cloned()
     }
-}
 
-impl RuntimeResourceApi {
-    fn load_animation_tree_source_data(
-        &self,
-        source_hash: u64,
-        source: Option<&str>,
-    ) -> Option<Arc<AnimationTreeAsset>> {
-        if let Some(lookup) = self.static_animation_tree_lookup {
-            return Some(Arc::new(lookup(source_hash).clone()));
+    fn is_animation_tree_loaded(&self, id: AnimationTreeID) -> bool {
+        if id.is_nil() {
+            return false;
         }
-
-        let source = source?;
-        if source.ends_with(".panimtree")
-            && let Ok(bytes) = perro_io::load_asset(source)
-            && let Ok(text) = std::str::from_utf8(&bytes)
-            && let Ok(tree) = perro_animation::parse_panimtree(text)
-        {
-            return Some(Arc::new(tree));
-        }
-
-        Some(Arc::new(AnimationTreeAsset {
-            name: Cow::Borrowed("AnimationTree"),
-            slots: Cow::Borrowed(&[]),
-            nodes: Cow::Borrowed(&[]),
-            output: Cow::Borrowed(""),
-        }))
+        self.poll_async_animation_tree_loads();
+        let state = self.state.lock().expect("resource api mutex poisoned");
+        state.animation_tree_loaded_by_id.contains(&id)
     }
 }

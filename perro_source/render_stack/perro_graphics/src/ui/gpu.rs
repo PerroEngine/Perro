@@ -2,9 +2,7 @@ use crate::{backend::StaticTextureLookup, resources::ResourceStore};
 use ahash::AHashMap;
 use bytemuck::{Pod, Zeroable};
 use epaint::{ClippedPrimitive, ImageData, Primitive, TextureId, textures::TexturesDelta};
-use perro_graphics_assets::decode_ptex;
 use perro_ids::TextureID;
-use perro_io::load_asset;
 use std::borrow::Cow;
 
 #[path = "gpu/helpers.rs"]
@@ -690,7 +688,7 @@ impl GpuUi {
         queue: &wgpu::Queue,
         resources: &ResourceStore,
         texture_id: TextureId,
-        static_texture_lookup: Option<StaticTextureLookup>,
+        _static_texture_lookup: Option<StaticTextureLookup>,
     ) -> bool {
         let TextureId::User(raw) = texture_id else {
             return false;
@@ -699,13 +697,15 @@ impl GpuUi {
         if self.image_textures.contains_key(&texture_key) {
             return true;
         }
-        let Some(source) = resources.texture_source(texture_key) else {
+        if resources.texture_source(texture_key).is_none() {
+            return false;
+        }
+        let Some(decoded) = resources.decoded_texture_data(texture_key) else {
             return false;
         };
-        let Some((rgba, width, height)) = load_ui_texture_rgba(source, static_texture_lookup)
-        else {
-            return false;
-        };
+        let rgba = decoded.rgba.clone();
+        let width = decoded.width;
+        let height = decoded.height;
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("perro_ui_image_texture"),
             size: wgpu::Extent3d {

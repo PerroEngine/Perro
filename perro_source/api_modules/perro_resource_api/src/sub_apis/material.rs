@@ -7,6 +7,7 @@ pub trait MaterialAPI {
     fn create_material(&self, material: Material3D) -> MaterialID;
     fn get_material_data(&self, id: MaterialID) -> Option<Material3D>;
     fn write_material_data(&self, id: MaterialID, material: Material3D) -> bool;
+    fn is_material_loaded(&self, id: MaterialID) -> bool;
     fn reserve_material_source_hashed(&self, source_hash: u64, source: Option<&str>) -> MaterialID;
     fn load_material_source(&self, source: &str) -> MaterialID {
         self.load_material_source_hashed(perro_ids::string_to_u64(source), Some(source))
@@ -59,6 +60,11 @@ impl<'res, R: MaterialAPI + ?Sized> MaterialModule<'res, R> {
     #[inline]
     pub fn write(&self, id: MaterialID, material: Material3D) -> bool {
         self.api.write_material_data(id, material)
+    }
+
+    #[inline]
+    pub fn is_loaded(&self, id: MaterialID) -> bool {
+        self.api.is_material_loaded(id)
     }
 
     #[inline]
@@ -134,5 +140,12 @@ macro_rules! material_get_data {
 macro_rules! material_write {
     ($res:expr, $id:expr, $material:expr) => {
         $res.Materials().write($id, $material)
+    };
+}
+
+#[macro_export]
+macro_rules! material_is_loaded {
+    ($res:expr, $id:expr) => {
+        $res.Materials().is_loaded($id)
     };
 }

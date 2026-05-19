@@ -98,11 +98,7 @@ pub fn compile_scripts_with_profile(
         apply_fast_release_dylib_profile(&mut cmd);
     }
     add_steamworks_feature(&mut cmd, cfg.steam.enabled);
-    let status = cmd.status()?;
-
-    if !status.success() {
-        return Err(CompilerError::CargoFailed(status.code().unwrap_or(-1)));
-    }
+    run_cargo_command_with_normalized_paths(&mut cmd, project_root)?;
     compile_all_dlc_scripts_with_profile(project_root, profile, cfg.steam.enabled)?;
 
     Ok(copied)
@@ -166,10 +162,7 @@ fn compile_scripts_crate(
         apply_fast_release_dylib_profile(&mut cmd);
     }
     add_steamworks_feature(&mut cmd, steam_enabled);
-    let status = cmd.status()?;
-    if !status.success() {
-        return Err(CompilerError::CargoFailed(status.code().unwrap_or(-1)));
-    }
+    run_cargo_command_with_normalized_paths(&mut cmd, project_root)?;
     Ok(())
 }
 
@@ -187,11 +180,153 @@ fn compile_dlc_package_crate(
     let cfg = load_project_toml(project_root)
         .map_err(|e| CompilerError::SceneParse(format!("failed to load project.toml: {e}")))?;
     add_steamworks_feature(&mut cmd, cfg.steam.enabled);
-    let status = cmd.status()?;
-    if !status.success() {
-        return Err(CompilerError::CargoFailed(status.code().unwrap_or(-1)));
+    run_cargo_command_with_normalized_paths(&mut cmd, project_root)?;
+    Ok(())
+}
+
+fn run_cargo_command_with_normalized_paths(
+    cmd: &mut Command,
+    project_root: &Path,
+) -> Result<(), CompilerError> {
+    let crate_dir = cmd.get_current_dir().map(Path::to_path_buf);
+    let output = cmd.output()?;
+    write_normalized_cargo_output(
+        io::stdout(),
+        project_root,
+        crate_dir.as_deref(),
+        &output.stdout,
+    )?;
+    write_normalized_cargo_output(
+        io::stderr(),
+        project_root,
+        crate_dir.as_deref(),
+        &output.stderr,
+    )?;
+    if !output.status.success() {
+        return Err(CompilerError::CargoFailed(output.status.code().unwrap_or(-1)));
     }
     Ok(())
+}
+
+fn write_normalized_cargo_output<W: Write>(
+    mut writer: W,
+    project_root: &Path,
+    crate_dir: Option<&Path>,
+    bytes: &[u8],
+) -> Result<(), CompilerError> {
+    if bytes.is_empty() {
+        return Ok(());
+    }
+    let text = String::from_utf8_lossy(bytes);
+    let normalized = normalize_cargo_output_paths(project_root, crate_dir, &text);
+    writer.write_all(normalized.as_bytes())?;
+    Ok(())
+}
+
+fn normalize_cargo_output_paths(
+    project_root: &Path,
+    crate_dir: Option<&Path>,
+    text: &str,
+) -> String {
+    let slash_text = text.replace('\\', "/");
+    let mut out = String::with_capacity(slash_text.len());
+    let mut cursor = 0usize;
+    while let Some(rel) = slash_text[cursor..].find(".rs") {
+        let rs_end = cursor + rel + ".rs".len();
+        let start = find_path_start(&slash_text, cursor + rel);
+        let end = find_path_end(&slash_text, rs_end);
+        if start < cursor {
+            out.push_str(&slash_text[cursor..rs_end]);
+            cursor = rs_end;
+            continue;
+        }
+        out.push_str(&slash_text[cursor..start]);
+        let segment = &slash_text[start..end];
+        out.push_str(&normalize_cargo_path_segment(
+            project_root,
+            crate_dir,
+            segment,
+        ));
+        cursor = end;
+    }
+    out.push_str(&slash_text[cursor..]);
+    out
+}
+
+fn find_path_start(text: &str, before_rs: usize) -> usize {
+    let bytes = text.as_bytes();
+    let mut start = before_rs;
+    while start > 0 && is_path_byte(bytes[start - 1]) {
+        start -= 1;
+    }
+    start
+}
+
+fn find_path_end(text: &str, after_rs: usize) -> usize {
+    let bytes = text.as_bytes();
+    let mut end = after_rs;
+    while end < bytes.len() && is_path_suffix_byte(bytes[end]) {
+        end += 1;
+    }
+    end
+}
+
+fn is_path_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.' | b'/' | b':' | b'@')
+}
+
+fn is_path_suffix_byte(byte: u8) -> bool {
+    is_path_byte(byte)
+}
+
+fn normalize_cargo_path_segment(
+    project_root: &Path,
+    crate_dir: Option<&Path>,
+    segment: &str,
+) -> String {
+    let Some((path, suffix)) = split_rust_path_suffix(segment) else {
+        return segment.to_string();
+    };
+    let path_buf = PathBuf::from(path);
+    let joined = if path_buf.is_absolute() {
+        path_buf
+    } else if let Some(crate_dir) = crate_dir {
+        crate_dir.join(path)
+    } else {
+        path_buf
+    };
+    let cleaned = clean_path(&joined);
+    let display_path = project_relative_display_path(project_root, &cleaned);
+    format!("{display_path}{suffix}")
+}
+
+fn split_rust_path_suffix(segment: &str) -> Option<(&str, &str)> {
+    let idx = segment.find(".rs")? + ".rs".len();
+    Some(segment.split_at(idx))
+}
+
+fn project_relative_display_path(project_root: &Path, path: &Path) -> String {
+    let project_root = clean_path(project_root);
+    let rel = path.strip_prefix(&project_root).unwrap_or(path);
+    normalize_generated_include_path(&rel.to_string_lossy())
+}
+
+fn clean_path(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for comp in path.components() {
+        match comp {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                if !out.pop() {
+                    out.push("..");
+                }
+            }
+            std::path::Component::Prefix(prefix) => out.push(prefix.as_os_str()),
+            std::path::Component::RootDir => out.push(comp.as_os_str()),
+            std::path::Component::Normal(part) => out.push(part),
+        }
+    }
+    out
 }
 
 fn apply_fast_release_dylib_profile(cmd: &mut Command) {

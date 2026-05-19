@@ -1,4 +1,5 @@
 use super::*;
+use ahash::{AHashMap, AHashSet};
 use perro_ids::TagID;
 use perro_nodes::{Node2D, Node3D, SceneNodeData};
 use perro_structs::BitMask;
@@ -101,4 +102,69 @@ fn layer_predicates_use_spatial_render_layers() {
     assert!(!eval_expr(&QueryExpr::Layers(BitMask::with([2])), &node));
     assert!(!eval_expr(&QueryExpr::Mask(BitMask::with([1])), &node));
     assert!(eval_expr(&QueryExpr::Mask(BitMask::with([2])), &node));
+}
+
+#[test]
+fn indexed_all_candidates_intersect_smallest_sets_first() {
+    let a = TagID::from_string("a");
+    let b = TagID::from_string("b");
+    let c = TagID::from_string("c");
+    let id1 = NodeID::new(1);
+    let id2 = NodeID::new(2);
+    let id3 = NodeID::new(3);
+    let id4 = NodeID::new(4);
+
+    let mut index: AHashMap<TagID, AHashSet<NodeID>> = AHashMap::default();
+    index.insert(a, [id1, id2, id3, id4].into_iter().collect());
+    index.insert(b, [id2, id4].into_iter().collect());
+    index.insert(c, [id4].into_iter().collect());
+
+    let expr = QueryExpr::All(vec![
+        QueryExpr::Tags(vec![a]),
+        QueryExpr::Tags(vec![b]),
+        QueryExpr::Tags(vec![c]),
+    ]);
+    let candidates = candidate_ids_from_index(&Some(expr), Some(&index), 8).expect("candidate ids");
+
+    assert!(candidates.exact);
+    assert_eq!(candidates.ids, vec![id4]);
+}
+
+#[test]
+fn indexed_all_with_nonindexed_predicate_uses_small_tag_seed() {
+    let common = TagID::from_string("common");
+    let rare = TagID::from_string("rare");
+    let id1 = NodeID::new(1);
+    let id2 = NodeID::new(2);
+    let id3 = NodeID::new(3);
+
+    let mut index: AHashMap<TagID, AHashSet<NodeID>> = AHashMap::default();
+    index.insert(common, [id1, id2, id3].into_iter().collect());
+    index.insert(rare, [id3].into_iter().collect());
+
+    let expr = QueryExpr::All(vec![
+        QueryExpr::Tags(vec![common]),
+        QueryExpr::Name(vec!["target".to_string()]),
+        QueryExpr::Tags(vec![rare]),
+    ]);
+    let candidates = candidate_ids_from_index(&Some(expr), Some(&index), 8).expect("candidate ids");
+
+    assert!(!candidates.exact);
+    assert_eq!(candidates.ids, vec![id3]);
+}
+
+#[test]
+fn indexed_missing_required_tag_returns_exact_empty() {
+    let present = TagID::from_string("present");
+    let missing = TagID::from_string("missing");
+    let id1 = NodeID::new(1);
+
+    let mut index: AHashMap<TagID, AHashSet<NodeID>> = AHashMap::default();
+    index.insert(present, [id1].into_iter().collect());
+
+    let expr = QueryExpr::All(vec![QueryExpr::Tags(vec![present, missing])]);
+    let candidates = candidate_ids_from_index(&Some(expr), Some(&index), 8).expect("candidate ids");
+
+    assert!(candidates.exact);
+    assert!(candidates.ids.is_empty());
 }

@@ -49,9 +49,16 @@ fn bench_rt_ctx_queries(c: &mut Criterion) {
         ])])),
         scope: QueryScope::Root,
     };
+    let rare_tag_name = TagQuery {
+        expr: Some(QueryExpr::All(vec![
+            QueryExpr::Tags(vec![TagID::from_string("boss")]),
+            QueryExpr::Name(vec!["enemy".to_string()]),
+        ])),
+        scope: QueryScope::Root,
+    };
 
     let mut group = c.benchmark_group("query/rt_ctx_queries");
-    for count in [2_500usize, 10_000, 50_000] {
+    for count in [100usize, 2_500, 10_000, 50_000, 100_000] {
         group.bench_with_input(BenchmarkId::new("selective", count), &count, |b, &count| {
             b.iter_batched(
                 || build_query_runtime(count),
@@ -66,6 +73,19 @@ fn bench_rt_ctx_queries(c: &mut Criterion) {
                 criterion::BatchSize::LargeInput,
             )
         });
+        group.bench_with_input(
+            BenchmarkId::new("rare_tag_name", count),
+            &count,
+            |b, &count| {
+                b.iter_batched(
+                    || build_query_runtime(count),
+                    |mut runtime| {
+                        black_box(NodeAPI::query_nodes(&mut runtime, rare_tag_name.clone()))
+                    },
+                    criterion::BatchSize::LargeInput,
+                )
+            },
+        );
     }
     group.finish();
 }
@@ -119,9 +139,16 @@ fn bench_compile_repr_queries(c: &mut Criterion) {
         )))),
         scope: QueryScope::Root,
     };
+    let rare_tag_name = TagQuery {
+        expr: Some(QueryExpr::All(vec![
+            QueryExpr::Tags(vec![boss]),
+            QueryExpr::Name(vec!["enemy".to_string()]),
+        ])),
+        scope: QueryScope::Root,
+    };
 
     let mut group = c.benchmark_group("query/compile_repr");
-    for count in [2_500usize, 10_000, 50_000] {
+    for count in [100usize, 2_500, 10_000, 50_000, 100_000] {
         group.bench_with_input(
             BenchmarkId::new("selective_vec", count),
             &count,
@@ -160,6 +187,14 @@ fn bench_compile_repr_queries(c: &mut Criterion) {
             |b, &count| {
                 let mut runtime = build_query_runtime(count);
                 b.iter(|| black_box(NodeAPI::query_nodes(&mut runtime, not_type_mask.clone())))
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("rare_tag_name", count),
+            &count,
+            |b, &count| {
+                let mut runtime = build_query_runtime(count);
+                b.iter(|| black_box(NodeAPI::query_nodes(&mut runtime, rare_tag_name.clone())))
             },
         );
     }

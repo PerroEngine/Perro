@@ -2,6 +2,13 @@ use ahash::AHashMap;
 use perro_ids::{MaterialID, MeshID, TextureID};
 use perro_render_bridge::{Material3D, Mesh3D};
 
+#[derive(Debug, Clone)]
+pub(crate) struct DecodedTextureRgba {
+    pub rgba: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+}
+
 #[derive(Default)]
 struct SlotArena {
     generations: Vec<u32>,
@@ -100,6 +107,8 @@ pub struct ResourceStore {
     texture_by_source: AHashMap<String, TextureID>,
     texture_source_by: AHashMap<TextureID, String>,
     texture_source_by_slot: Vec<Option<String>>,
+    decoded_texture_by_source: AHashMap<String, DecodedTextureRgba>,
+    decoded_texture_by_id: AHashMap<TextureID, DecodedTextureRgba>,
     material_by: AHashMap<MaterialID, Material3D>,
     material_by_source: AHashMap<String, MaterialID>,
     material_source_by: AHashMap<MaterialID, String>,
@@ -405,6 +414,35 @@ impl ResourceStore {
     }
 
     #[inline]
+    pub(crate) fn set_decoded_texture_data(
+        &mut self,
+        id: TextureID,
+        texture: DecodedTextureRgba,
+    ) -> bool {
+        if !self.has_texture(id) {
+            return false;
+        }
+        self.decoded_texture_by_id.insert(id, texture.clone());
+        if let Some(source) = self.texture_source(id).map(str::to_string) {
+            self.decoded_texture_by_source.insert(source, texture);
+        }
+        true
+    }
+
+    #[inline]
+    pub(crate) fn decoded_texture_data(&self, id: TextureID) -> Option<&DecodedTextureRgba> {
+        self.decoded_texture_by_id.get(&id)
+    }
+
+    #[inline]
+    pub(crate) fn decoded_texture_data_by_source(
+        &self,
+        source: &str,
+    ) -> Option<&DecodedTextureRgba> {
+        self.decoded_texture_by_source.get(source)
+    }
+
+    #[inline]
     pub fn texture_source_by_index(&self, index: u32) -> Option<&str> {
         if index == 0 {
             return None;
@@ -427,6 +465,11 @@ impl ResourceStore {
     #[inline]
     pub fn has_mesh_source(&self, source: &str) -> bool {
         self.mesh_by_source.contains_key(source)
+    }
+
+    #[inline]
+    pub fn has_texture_source(&self, source: &str) -> bool {
+        self.texture_by_source.contains_key(source)
     }
 
     #[inline]
@@ -674,7 +717,9 @@ impl ResourceStore {
                 self.log_manual_drop("texture", id.index(), id.generation(), &source);
             }
             self.texture_by_source.remove(&source);
+            self.decoded_texture_by_source.remove(&source);
         }
+        self.decoded_texture_by_id.remove(&id);
         self.clear_texture_source_slot(id.index());
         self.texture_meta_by.remove(&id);
         true

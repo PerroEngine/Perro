@@ -67,6 +67,25 @@ pub fn load_mesh_from_source(
     runtime_mesh: Option<&RuntimeMeshData>,
     dev_meshlets: bool,
 ) -> Option<DecodedMesh> {
+    let _ = dev_meshlets;
+    load_mesh_from_source_inner(source, static_mesh_lookup, runtime_mesh, false, false)
+}
+
+pub fn load_mesh_from_source_no_dynamic_lods(
+    source: &str,
+    static_mesh_lookup: Option<StaticMeshBytesLookup>,
+    runtime_mesh: Option<&RuntimeMeshData>,
+) -> Option<DecodedMesh> {
+    load_mesh_from_source_inner(source, static_mesh_lookup, runtime_mesh, false, false)
+}
+
+fn load_mesh_from_source_inner(
+    source: &str,
+    static_mesh_lookup: Option<StaticMeshBytesLookup>,
+    runtime_mesh: Option<&RuntimeMeshData>,
+    dev_meshlets: bool,
+    build_lods: bool,
+) -> Option<DecodedMesh> {
     let mut decoded = if let Some(mesh) = runtime_mesh {
         decode_runtime_mesh(mesh)?
     } else if let Some(lookup) = static_mesh_lookup {
@@ -118,9 +137,9 @@ pub fn load_mesh_from_source(
 
     if decoded.has_skinning {
         decoded.lods.clear();
-    } else if decoded.lods.is_empty() {
+    } else if build_lods && decoded.lods.is_empty() {
         decoded = build_dynamic_lods(decoded, dev_meshlets);
-    } else if decoded.meshlets.is_empty() && dev_meshlets {
+    } else if build_lods && decoded.meshlets.is_empty() && dev_meshlets {
         let (packed_indices, meshlets) = build_meshlets(&decoded.vertices, &decoded.indices);
         decoded.indices = packed_indices;
         decoded.meshlets = meshlets;
@@ -144,7 +163,7 @@ pub fn validate_mesh_source(
     if source.starts_with("__") {
         return Ok(());
     }
-    if load_mesh_from_source(source, static_mesh_lookup, None, false).is_some() {
+    if load_mesh_from_source_inner(source, static_mesh_lookup, None, false, false).is_some() {
         return Ok(());
     }
     Err(format!("mesh source failed to decode: {}", source))
@@ -154,7 +173,7 @@ pub fn load_mesh3d_from_source(
     source: &str,
     static_mesh_lookup: Option<StaticMeshBytesLookup>,
 ) -> Option<Mesh3D> {
-    let decoded = load_mesh_from_source(source, static_mesh_lookup, None, false)?;
+    let decoded = load_mesh_from_source_inner(source, static_mesh_lookup, None, false, false)?;
     Some(Mesh3D {
         vertices: decoded
             .vertices

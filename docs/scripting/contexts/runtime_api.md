@@ -12,6 +12,8 @@ Runtime macros take `ctx.run` as argument 1.
 - [Time Module](runtime_modules/time.md)
 - [Window Module](runtime_modules/window.md)
 - [Nodes Module](runtime_modules/nodes.md)
+- [NodeQuery Module](runtime_modules/node_query.md)
+- [MeshQuery Module](runtime_modules/mesh_query.md)
 - [Animations Module](runtime_modules/animations.md)
 - [Scripts Module](runtime_modules/scripts.md)
 - [Signals Module](runtime_modules/signals.md)

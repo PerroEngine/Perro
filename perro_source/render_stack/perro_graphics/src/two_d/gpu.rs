@@ -6,9 +6,7 @@ use crate::backend::StaticTextureLookup;
 use crate::resources::ResourceStore;
 use ahash::AHashMap;
 use bytemuck::{Pod, Zeroable};
-use perro_graphics_assets::decode_ptex;
 use perro_ids::TextureID;
-use perro_io::load_asset;
 use perro_render_bridge::{Light2DState, Sprite2DCommand};
 use wgpu::util::DeviceExt;
 
@@ -594,48 +592,21 @@ impl Gpu2D {
         queue: &wgpu::Queue,
         resources: &ResourceStore,
         texture_key: TextureID,
-        static_texture_lookup: Option<StaticTextureLookup>,
+        _static_texture_lookup: Option<StaticTextureLookup>,
     ) -> bool {
         if self.sprite_textures.contains_key(&texture_key) {
             return true;
         }
-        let Some(source) = resources.texture_source(texture_key) else {
+        if resources.texture_source(texture_key).is_none() {
+            return false;
+        }
+
+        let Some(decoded) = resources.decoded_texture_data(texture_key) else {
             return false;
         };
-
-        let (rgba, width, height) = if source == "__default__" {
-            (vec![255u8, 255, 255, 255], 1u32, 1u32)
-        } else if let Some(lookup) = static_texture_lookup {
-            let source_hash = perro_ids::parse_hashed_source_uri(source)
-                .unwrap_or_else(|| perro_ids::string_to_u64(source));
-            let bytes = lookup(source_hash);
-            if !bytes.is_empty() {
-                let Some(decoded) = decode_ptex(bytes) else {
-                    return false;
-                };
-                decoded
-            } else {
-                let Ok(bytes) = load_asset(source) else {
-                    return false;
-                };
-                let Ok(image) = image::load_from_memory(&bytes) else {
-                    return false;
-                };
-                let rgba = image.to_rgba8();
-                let (w, h) = rgba.dimensions();
-                (rgba.into_raw(), w.max(1), h.max(1))
-            }
-        } else {
-            let Ok(bytes) = load_asset(source) else {
-                return false;
-            };
-            let Ok(image) = image::load_from_memory(&bytes) else {
-                return false;
-            };
-            let rgba = image.to_rgba8();
-            let (w, h) = rgba.dimensions();
-            (rgba.into_raw(), w.max(1), h.max(1))
-        };
+        let rgba = decoded.rgba.clone();
+        let width = decoded.width;
+        let height = decoded.height;
 
         let gpu_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("perro_sprite_texture"),

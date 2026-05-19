@@ -10,7 +10,7 @@ use perro_nodes::{
 };
 use perro_runtime_api::sub_apis::{
     IntoNodeTag, IntoNodeTags, MeshDataSurfaceHit3D, MeshDataSurfaceRegion3D, MeshMaterialRegion3D,
-    MeshSurfaceHit3D, NodeAPI, NodeCreationTemplate, TagQuery,
+    MeshSurfaceHit3D, MeshSurfaceRay3D, NodeAPI, NodeCreationTemplate, TagQuery,
 };
 use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
 use rayon::prelude::*;
@@ -921,6 +921,15 @@ impl NodeAPI for Runtime {
             ray_direction,
             max_distance,
         )
+    }
+
+    fn mesh_instance_surfaces_on_global_rays(
+        &mut self,
+        node_id: perro_ids::NodeID,
+        rays: &[MeshSurfaceRay3D],
+        resolve_material: bool,
+    ) -> Vec<Option<MeshSurfaceHit3D>> {
+        self.query_mesh_instance_surfaces_on_global_rays(node_id, rays, resolve_material)
     }
 
     fn mesh_instance_material_regions(

@@ -1,7 +1,6 @@
 //! 3D scene extraction into render bridge commands.
 
 use super::Runtime;
-use crate::material_schema;
 use glam::{Mat4, Quat, Vec3};
 use perro_ids::{MaterialID, MeshID, NodeID, parse_hashed_source_uri, string_to_u64};
 use perro_nodes::{
@@ -19,6 +18,7 @@ use perro_render_bridge::{
     WaterBodyQueryState, WaterCoastlineShape3D, WaterIdleModeState, WaterImpact3D, WaterLinkState,
     WaterShapeState,
 };
+use perro_resource_api::sub_apis::MaterialAPI;
 use perro_runtime_render::{material_3d_request, mesh_3d_request};
 use perro_structs::BitMask;
 use std::borrow::Cow;
@@ -1006,19 +1006,35 @@ impl Runtime {
                 .and_then(|sources| sources.get(surface_index))
                 .cloned()
                 .flatten();
-            let material = self
+            let material_override = self
                 .render_3d
                 .material_surface_overrides
                 .get(&node)
                 .and_then(|overrides| overrides.get(surface_index))
                 .cloned()
-                .flatten()
-                .or_else(|| {
-                    source
-                        .as_ref()
-                        .and_then(|src| load_material_from_source(self, src))
-                })
-                .unwrap_or_else(Material3D::default);
+                .flatten();
+            if material_override.is_none()
+                && let Some(source) = source.as_deref()
+                && let Some(id) = (!source.trim().is_empty())
+                    .then(|| self.resource_api.load_material_source(source))
+                && !id.is_nil()
+            {
+                surfaces[surface_index].material = Some(id);
+                if let Some(node) = self.nodes.get_mut(node) {
+                    match &mut node.data {
+                        SceneNodeData::MeshInstance3D(mesh_instance) => {
+                            mesh_instance.set_surface_material(surface_index, Some(id));
+                        }
+                        SceneNodeData::MultiMeshInstance3D(mesh_instance) => {
+                            mesh_instance.ensure_surface_mut(surface_index).material = Some(id);
+                        }
+                        _ => {}
+                    }
+                }
+                continue;
+            }
+
+            let material = material_override.unwrap_or_else(Material3D::default);
             if !self.render.is_inflight(request) {
                 self.render.mark_inflight(request);
                 self.queue_render_command(RenderCommand::Resource(

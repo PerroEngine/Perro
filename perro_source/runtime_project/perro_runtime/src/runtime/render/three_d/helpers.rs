@@ -549,67 +549,6 @@ pub(super) fn quaternion_forward(rotation: perro_structs::Quaternion) -> [f32; 3
     [forward.x, forward.y, forward.z]
 }
 
-pub(super) fn load_material_from_source(runtime: &Runtime, source: &str) -> Option<Material3D> {
-    let source = source.trim();
-    if source.is_empty() {
-        return None;
-    }
-    if let Some(hash) = parse_hashed_source_uri(source) {
-        return runtime
-            .project()
-            .and_then(|project| project.static_material_lookup)
-            .map(|lookup| lookup(hash).clone());
-    }
-
-    let normalized = normalize_source_slashes(source);
-    let (path, _fragment) = split_source_fragment(source);
-    let (normalized_path, _) = split_source_fragment(normalized.as_ref());
-    if let Some(lookup) = runtime
-        .project()
-        .and_then(|project| project.static_material_lookup)
-    {
-        return Some(lookup(string_to_u64(source)).clone());
-    }
-
-    if path.ends_with(".pmat") || path.ends_with(".glb") || path.ends_with(".gltf") {
-        return material_schema::load_from_source(source)
-            .or_else(|| material_schema::load_from_source(path));
-    }
-    if normalized_path.ends_with(".pmat")
-        || normalized_path.ends_with(".glb")
-        || normalized_path.ends_with(".gltf")
-    {
-        return material_schema::load_from_source(normalized.as_ref())
-            .or_else(|| material_schema::load_from_source(normalized_path));
-    }
-
-    None
-}
-
-pub(super) fn normalize_source_slashes(source: &str) -> std::borrow::Cow<'_, str> {
-    if source.contains('\\') {
-        std::borrow::Cow::Owned(source.replace('\\', "/"))
-    } else {
-        std::borrow::Cow::Borrowed(source)
-    }
-}
-
-pub(super) fn split_source_fragment(source: &str) -> (&str, Option<&str>) {
-    let Some((path, selector)) = source.rsplit_once(':') else {
-        return (source, None);
-    };
-    if path.is_empty() {
-        return (source, None);
-    }
-    if selector.contains('/') || selector.contains('\\') {
-        return (source, None);
-    }
-    if selector.contains('[') && selector.ends_with(']') {
-        return (path, Some(selector));
-    }
-    (source, None)
-}
-
 pub(super) fn resolve_particle_profile(
     runtime: &mut Runtime,
     source: &str,

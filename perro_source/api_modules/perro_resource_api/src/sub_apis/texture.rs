@@ -11,6 +11,7 @@ pub trait TextureAPI {
         self.reserve_texture_hashed(perro_ids::string_to_u64(source), Some(source))
     }
     fn drop_texture(&self, id: TextureID) -> bool;
+    fn is_texture_loaded(&self, id: TextureID) -> bool;
 }
 
 pub struct TextureModule<'res, R: TextureAPI + ?Sized> {
@@ -66,6 +67,11 @@ impl<'res, R: TextureAPI + ?Sized> TextureModule<'res, R> {
     pub fn drop(&self, id: TextureID) -> bool {
         self.api.drop_texture(id)
     }
+
+    #[inline]
+    pub fn is_loaded(&self, id: TextureID) -> bool {
+        self.api.is_texture_loaded(id)
+    }
 }
 
 #[macro_export]
@@ -94,5 +100,12 @@ macro_rules! texture_reserve {
 macro_rules! texture_drop {
     ($res:expr, $id:expr) => {
         $res.Textures().drop($id)
+    };
+}
+
+#[macro_export]
+macro_rules! texture_is_loaded {
+    ($res:expr, $id:expr) => {
+        $res.Textures().is_loaded($id)
     };
 }

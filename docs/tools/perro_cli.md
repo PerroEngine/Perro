@@ -39,6 +39,7 @@ perro clean [--path <project_dir>]
 Profiling:
 
 ```powershell
+perro bench [--path <project_dir>] [--script <hash>] [--method <name>] [--var <name>] [-- <criterion_args>]
 perro mem-profile [--path <project_dir>] [--release] [--csv [csv_name]]
 perro flamegraph [--path <project_dir>] [--profile] [--root]
 ```
@@ -492,6 +493,38 @@ What it does:
 ## Profiling
 
 Use these commands to record memory samples or produce flamegraphs from the dev runner.
+
+### `bench`
+
+Command:
+
+```powershell
+perro bench --path <project_dir> [--script <hash>] [--method <name>] [--var <name>] [-- <criterion_args>]
+```
+
+What it does:
+
+1. Syncs project scripts into `<project_dir>/.perro/scripts`.
+2. Adds a Criterion bench target for script benches.
+3. Runs `cargo bench --bench perro_script_bench` from the generated scripts crate.
+4. Benches script constructor/state creation and lifecycle callbacks.
+5. Benches methods passed with `--method` using empty params.
+6. Benches vars passed with `--var` through generated get/set state paths.
+
+Flags:
+
+- `--script <hash>`: filters to one script registry hash. Repeat for more scripts.
+- `--method <name>`: benches a generated script method by member name. Repeat for more methods.
+- `--var <name>`: benches generated state get/set by member name. Repeat for more vars.
+- `-- <criterion_args>`: forwards remaining args to Criterion.
+
+Examples:
+
+```powershell
+perro bench --path D:\GameProjects\MyGame
+perro bench --path D:\GameProjects\MyGame --method tick_ai --method rebuild_path -- --sample-size 20
+perro bench --path D:\GameProjects\MyGame --script 529874888977469606 --var health
+```
 
 ### `mem-profile`
 

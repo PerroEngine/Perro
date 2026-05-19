@@ -7,6 +7,7 @@ Access:
 Macros:
 
 - `material_load!(res, source) -> MaterialID`
+- `material_is_loaded!(res, material_id) -> bool`
 - `material_reserve!(res, source) -> MaterialID`
 - `material_drop!(res, source) -> bool`
 - `material_create!(res, material) -> MaterialID`
@@ -23,6 +24,7 @@ When to use each:
 Methods:
 
 - `res.Materials().load(source) -> MaterialID`
+- `res.Materials().is_loaded(material_id) -> bool`
 - `res.Materials().reserve(source) -> MaterialID`
 - `res.Materials().drop(source) -> bool`
 - `res.Materials().create(material) -> MaterialID`
@@ -35,6 +37,13 @@ What `load` does:
 - If source is already cached, returns existing ID.
 - If not cached, allocates an ID and queues renderer material creation with `reserved: false`.
 - Creation is async relative to script call.
+
+What `is_loaded` does:
+
+- Returns `true` once material data exists and renderer creation has resolved.
+- Returns `false` while pending, after drop, or for unknown/nil IDs.
+- Use before code reads or mutates material data, before showing a material picker preview, or for load progress.
+- Do not need it for normal mesh instances; retained render state can hold the ID and draw once ready.
 
 What `reserve` does:
 
@@ -70,6 +79,7 @@ Example:
 
 ```rust
 let src_id = material_load!(res, "res://models/rig.glb:mat[0]");
+let ready = material_is_loaded!(res, src_id);
 let _same_id = material_reserve!(res, "res://models/rig.glb:mat[0]");
 let _ = material_drop!(res, "res://models/rig.glb:mat[0]");
 
