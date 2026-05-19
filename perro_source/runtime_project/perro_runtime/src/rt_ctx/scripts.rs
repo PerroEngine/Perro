@@ -10,6 +10,80 @@ use std::sync::Arc;
 
 use crate::Runtime;
 
+#[cfg(feature = "bench")]
+#[derive(Clone, Debug, Default)]
+pub struct BenchScriptState {
+    pub frame: u64,
+    pub hp: i32,
+    pub pos: [f32; 3],
+}
+
+#[cfg(feature = "bench")]
+pub fn bench_insert_state_script(runtime: &mut Runtime, id: NodeID) {
+    use crate::RuntimeScriptApi;
+    use perro_scripting::{ScriptBehavior, ScriptFlags, ScriptLifecycle};
+    use std::any::Any;
+
+    struct BenchStateScript;
+
+    impl ScriptLifecycle<RuntimeScriptApi> for BenchStateScript {}
+
+    impl ScriptBehavior<RuntimeScriptApi> for BenchStateScript {
+        fn script_flags(&self) -> ScriptFlags {
+            ScriptFlags::new(ScriptFlags::HAS_UPDATE | ScriptFlags::HAS_FIXED_UPDATE)
+        }
+
+        fn create_state(&self) -> Box<dyn Any> {
+            Box::<BenchScriptState>::default()
+        }
+
+        fn get_var(&self, state: &dyn Any, var: ScriptMemberID) -> Variant {
+            let Some(state) = state.downcast_ref::<BenchScriptState>() else {
+                return Variant::Null;
+            };
+            match var.0 {
+                1 => Variant::from(state.frame as i64),
+                2 => Variant::from(state.hp),
+                _ => Variant::Null,
+            }
+        }
+
+        fn set_var(&self, state: &mut dyn Any, var: ScriptMemberID, value: Variant) {
+            let Some(state) = state.downcast_mut::<BenchScriptState>() else {
+                return;
+            };
+            match var.0 {
+                1 => {
+                    if let Some(value) = value.as_i64() {
+                        state.frame = value.max(0) as u64;
+                    }
+                }
+                2 => {
+                    if let Some(value) = value.as_i32() {
+                        state.hp = value;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        fn call_method(
+            &self,
+            _method: ScriptMemberID,
+            _ctx: &mut ScriptContext<'_, RuntimeScriptApi>,
+            _params: &[Variant],
+        ) -> Variant {
+            Variant::Null
+        }
+    }
+
+    runtime.scripts.insert(
+        id,
+        Arc::new(BenchStateScript),
+        Box::<BenchScriptState>::default(),
+    );
+}
+
 impl Runtime {
     #[inline(always)]
     pub(crate) fn queue_start_script(&mut self, id: NodeID) {

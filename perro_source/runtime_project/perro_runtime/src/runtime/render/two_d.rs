@@ -45,6 +45,7 @@ impl Runtime {
         let has_extraction_work = self.dirty.has_any_dirty()
             || self.dirty.has_pending_transform_roots()
             || !self.render_2d.removed_nodes.is_empty()
+            || self.render_2d.force_full_scan_once
             || bootstrap_scan;
         if !has_extraction_work {
             return;

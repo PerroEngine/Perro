@@ -880,9 +880,17 @@ fn ensure_source_overrides_repairs_dev_runner_features() {
     assert!(repaired.contains("profile = [\"perro_app/profile\"]"));
     assert!(repaired.contains("ui_profile = [\"perro_app/ui_profile\"]"));
     assert!(repaired.contains("mem_profile = [\"perro_app/mem_profile\"]"));
+    assert!(repaired.contains("build = \"build.rs\""));
+    assert!(repaired.contains("winresource = \"0.1.20\""));
+    assert!(repaired.contains("toml = \"0.8.23\""));
+    assert!(repaired.contains("image = { version = \"0.25.9\""));
     assert!(repaired.contains("[profile.dev.package.perro_physics]"));
     assert!(repaired.contains("debug-assertions = false"));
     assert!(repaired.contains("overflow-checks = false"));
+
+    let build_rs = fs::read_to_string(root.join(".perro").join("dev_runner").join("build.rs"))
+        .expect("read dev runner build script");
+    assert!(build_rs.contains("embed_windows_icon"));
 
     fs::remove_dir_all(&root).expect("cleanup");
 }

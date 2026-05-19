@@ -365,6 +365,13 @@ impl Runtime {
         }
     }
 
+    #[cfg(feature = "bench")]
+    pub fn bench_create_mesh_data(&self, data: perro_render_bridge::Mesh3D) -> perro_ids::MeshID {
+        use perro_resource_api::sub_apis::MeshAPI;
+
+        self.resource_api.create_mesh_data(data)
+    }
+
     pub fn from_project(project: RuntimeProject, provider_mode: ProviderMode) -> Self {
         Self::from_project_with_script_registry(project, provider_mode, None)
     }

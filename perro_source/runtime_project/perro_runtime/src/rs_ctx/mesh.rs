@@ -26,6 +26,7 @@ impl MeshAPI for RuntimeResourceApi {
         let id = state.allocate_mesh_id();
         let source = format!("runtime://mesh/{}:{}", id.index(), id.generation());
         state.mesh_data_by_id.insert(id, data.clone());
+        state.mesh_revision_by_id.insert(id, 1);
         state.mesh_source_by_id.insert(id, source.clone());
         state.queued_commands.push(RenderCommand::Resource(
             ResourceCommand::CreateRuntimeMesh {
@@ -50,6 +51,8 @@ impl MeshAPI for RuntimeResourceApi {
         }
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         state.mesh_data_by_id.insert(id, data.clone());
+        let revision = state.mesh_revision_by_id.entry(id).or_insert(0);
+        *revision = revision.wrapping_add(1).max(1);
         state
             .queued_commands
             .push(RenderCommand::Resource(ResourceCommand::WriteMeshData {
@@ -152,6 +155,7 @@ impl MeshAPI for RuntimeResourceApi {
     fn drop_mesh(&self, id: MeshID) -> bool {
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         state.mesh_data_by_id.remove(&id);
+        state.mesh_revision_by_id.remove(&id);
         let source = state
             .mesh_by_source
             .iter()
@@ -196,10 +200,16 @@ impl RuntimeResourceApi {
             })
     }
 
-    pub(crate) fn mesh_data(&self, mesh: MeshID) -> Option<Mesh3D> {
+    pub(crate) fn mesh_data_with_revision(&self, mesh: MeshID) -> Option<(Mesh3D, u64)> {
         let canonical = self.canonical_mesh_id(mesh);
         let state = self.state.lock().expect("resource api mutex poisoned");
-        state.mesh_data_by_id.get(&canonical).cloned()
+        let data = state.mesh_data_by_id.get(&canonical)?.clone();
+        let revision = state
+            .mesh_revision_by_id
+            .get(&canonical)
+            .copied()
+            .unwrap_or(0);
+        Some((data, revision))
     }
 
     pub(crate) fn mesh_source(&self, mesh: MeshID) -> Option<String> {

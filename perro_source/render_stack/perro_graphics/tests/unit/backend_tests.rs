@@ -4,12 +4,13 @@ use crate::three_d::renderer::Draw3DKind;
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
     Camera3DState, CameraProjectionState, Command2D, Command3D, LODOptions3D, Material3D,
-    MeshSurfaceBinding3D, PostProcessingCommand, RenderBridge, RenderCommand, ResourceCommand,
-    Sprite2DCommand, VisualAccessibilityCommand, Water2DState, Water3DState, WaterIdleModeState,
-    WaterLinkState, WaterShapeState,
+    MeshSurfaceBinding3D, PostProcessingCommand, Rect2DCommand, RenderBridge, RenderCommand,
+    ResourceCommand, Sprite2DCommand, VisualAccessibilityCommand, Water2DState, Water3DState,
+    WaterIdleModeState, WaterLinkState, WaterShapeState,
 };
 use perro_structs::{BitMask, Color, ColorBlindFilter, PostProcessEffect, PostProcessSet};
 use std::sync::Arc;
+use std::time::Duration;
 
 fn surfaces_for(material: MaterialID) -> Arc<[MeshSurfaceBinding3D]> {
     Arc::from([MeshSurfaceBinding3D {
@@ -17,6 +18,39 @@ fn surfaces_for(material: MaterialID) -> Arc<[MeshSurfaceBinding3D]> {
         overrides: Arc::from([]),
         modulate: Color::WHITE,
     }])
+}
+
+fn rect_command() -> Rect2DCommand {
+    Rect2DCommand {
+        center: [0.0, 0.0],
+        size: [8.0, 8.0],
+        color: Color::WHITE,
+        z_index: 0,
+    }
+}
+
+#[test]
+fn command_budget_leaves_pending_work_for_next_frame() {
+    let mut graphics = PerroGraphics::new().with_render_command_budget(Duration::ZERO);
+    for i in 0..65 {
+        graphics.submit(RenderCommand::TwoD(Command2D::UpsertRect {
+            node: NodeID::from_parts(i, 0),
+            rect: rect_command(),
+        }));
+    }
+
+    graphics.draw_frame();
+
+    assert_eq!(graphics.renderer_2d.retained_rects().len(), 1);
+    assert_eq!(graphics.frame.pending_commands.len(), 64);
+    assert!(graphics.redraw_requested);
+
+    while !graphics.frame.pending_commands.is_empty() {
+        graphics.draw_frame();
+    }
+
+    assert_eq!(graphics.renderer_2d.retained_rects().len(), 65);
+    assert!(graphics.frame.pending_commands.is_empty());
 }
 
 fn water_2d_state() -> Water2DState {

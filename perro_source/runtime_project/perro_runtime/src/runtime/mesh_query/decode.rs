@@ -285,6 +285,7 @@ pub(super) fn decode_pmesh_payload(flags: u32, payload: &[u8]) -> Option<Vec<u8>
     }
 }
 
+#[inline]
 pub(super) fn ray_intersect_triangle(
     origin: Vec3,
     direction: Vec3,
@@ -320,6 +321,7 @@ pub(super) fn ray_intersect_triangle(
     Some(t)
 }
 
+#[inline]
 pub(super) fn closest_point_on_triangle(p: Vec3, a: Vec3, b: Vec3, c: Vec3) -> Vec3 {
     let ab = b - a;
     let ac = c - a;

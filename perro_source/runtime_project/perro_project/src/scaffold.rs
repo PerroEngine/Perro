@@ -112,6 +112,7 @@ pub fn ensure_project_scaffold(root: &Path, project_name: &str) -> std::io::Resu
         dev_runner_crate.join("Cargo.toml"),
         &default_dev_runner_crate_toml(),
     )?;
+    write_if_missing(dev_runner_crate.join("build.rs"), &default_project_build_rs())?;
     write_if_missing(
         project_src.join("main.rs"),
         &default_project_main_rs(project_name),

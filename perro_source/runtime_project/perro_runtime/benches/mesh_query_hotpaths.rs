@@ -1,4 +1,7 @@
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use perro_render_bridge::{Mesh3D, MeshSurfaceRange, RuntimeMeshVertex};
+use perro_runtime::Runtime;
+use perro_runtime_api::sub_apis::NodeAPI;
 use perro_structs::Vector3;
 
 fn closest_point_on_triangle(p: Vector3, a: Vector3, b: Vector3, c: Vector3) -> Vector3 {
@@ -73,8 +76,100 @@ fn bench_mesh_query_synthetic(c: &mut Criterion) {
     group.finish();
 }
 
+fn grid_mesh(side: usize) -> Mesh3D {
+    let vertex = |x: usize, z: usize| RuntimeMeshVertex {
+        position: [x as f32, ((x * 17 + z * 31) % 11) as f32 * 0.03, z as f32],
+        normal: [0.0, 1.0, 0.0],
+        uv: [x as f32 / side as f32, z as f32 / side as f32],
+        joints: [0; 4],
+        weights: Default::default(),
+    };
+    let mut vertices = Vec::with_capacity((side + 1) * (side + 1));
+    for z in 0..=side {
+        for x in 0..=side {
+            vertices.push(vertex(x, z));
+        }
+    }
+
+    let mut indices = Vec::with_capacity(side * side * 6);
+    for z in 0..side {
+        for x in 0..side {
+            let a = (z * (side + 1) + x) as u32;
+            let b = a + 1;
+            let c = a + (side + 1) as u32;
+            let d = c + 1;
+            indices.extend_from_slice(&[a, c, b, b, c, d]);
+        }
+    }
+
+    Mesh3D {
+        vertices,
+        surface_ranges: vec![MeshSurfaceRange {
+            index_start: 0,
+            index_count: indices.len() as u32,
+        }],
+        indices,
+    }
+}
+
+fn bench_mesh_query_bvh_runtime_api(c: &mut Criterion) {
+    let mut group = c.benchmark_group("mesh_query/bvh_runtime_api");
+    for side in [1usize, 2, 4, 8, 16, 64, 128] {
+        let mut runtime = Runtime::new();
+        let mesh = runtime.bench_create_mesh_data(grid_mesh(side));
+        let tri_count = side * side * 2;
+        let point = Vector3::new(side as f32 * 0.52, 1.7, side as f32 * 0.48);
+        let ray_origin = Vector3::new(side as f32 * 0.5, 10.0, side as f32 * 0.5);
+        let ray_dir = Vector3::new(0.0, -1.0, 0.0);
+
+        black_box(NodeAPI::mesh_data_surface_at_local_point(
+            &mut runtime,
+            mesh,
+            point,
+        ));
+        black_box(NodeAPI::mesh_data_surface_on_local_ray(
+            &mut runtime,
+            mesh,
+            ray_origin,
+            ray_dir,
+            100.0,
+        ));
+
+        group.bench_with_input(
+            BenchmarkId::new("point_nearest", format!("{tri_count}_tri")),
+            &mesh,
+            |b, &mesh| {
+                b.iter(|| {
+                    black_box(NodeAPI::mesh_data_surface_at_local_point(
+                        &mut runtime,
+                        black_box(mesh),
+                        black_box(point),
+                    ))
+                })
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("ray_hit", format!("{tri_count}_tri")),
+            &mesh,
+            |b, &mesh| {
+                b.iter(|| {
+                    black_box(NodeAPI::mesh_data_surface_on_local_ray(
+                        &mut runtime,
+                        black_box(mesh),
+                        black_box(ray_origin),
+                        black_box(ray_dir),
+                        black_box(100.0),
+                    ))
+                })
+            },
+        );
+    }
+    group.finish();
+}
+
 fn benches(c: &mut Criterion) {
     bench_mesh_query_synthetic(c);
+    bench_mesh_query_bvh_runtime_api(c);
 }
 
 criterion_group! {

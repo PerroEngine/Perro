@@ -6,6 +6,11 @@ use perro_nodes::{Node2D, Node3D, Spatial};
 use perro_structs::{Transform2D, Transform3D};
 
 impl Runtime {
+    #[cfg(feature = "bench")]
+    pub fn bench_refresh_dirty_global_transforms(&mut self) {
+        self.refresh_dirty_global_transforms();
+    }
+
     pub(crate) fn propagate_pending_transform_dirty(&mut self) {
         let mut roots = std::mem::take(&mut self.transforms.pending_transform_roots);
         self.dirty.take_pending_transform_roots(&mut roots);

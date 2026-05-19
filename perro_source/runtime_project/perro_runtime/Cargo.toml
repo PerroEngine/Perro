@@ -77,6 +77,11 @@ harness = false
 required-features = ["bench"]
 
 [[bench]]
+name = "node_state_hotpaths"
+harness = false
+required-features = ["bench"]
+
+[[bench]]
 name = "physics_hotpaths"
 harness = false
 required-features = ["bench"]

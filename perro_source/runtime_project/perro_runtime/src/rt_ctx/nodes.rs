@@ -64,7 +64,9 @@ impl NodeAPI for Runtime {
 
                 self.register_internal_node_schedules(id, prepared.node_type);
                 self.mark_needs_rerender(id);
-                self.mark_transform_dirty_recursive(id);
+                if parent_id.is_nil() {
+                    self.mark_transform_dirty_recursive(id);
+                }
                 for tag in prepared.tag_ids {
                     self.node_index
                         .node_tag_index
@@ -81,7 +83,9 @@ impl NodeAPI for Runtime {
 
                 self.register_internal_node_schedules(id, prepared.node_type);
                 self.mark_needs_rerender(id);
-                self.mark_transform_dirty_recursive(id);
+                if parent_id.is_nil() {
+                    self.mark_transform_dirty_recursive(id);
+                }
                 for tag in prepared.tag_ids {
                     self.node_index
                         .node_tag_index
@@ -97,6 +101,7 @@ impl NodeAPI for Runtime {
                 parent.children.reserve(ids.len());
                 parent.children.extend(ids.iter().copied());
             }
+            self.mark_transform_dirty_recursive(parent_id);
             let parent_ui_ancestor = self.closest_ui_ancestor(parent_id);
             for &id in &ids {
                 let child_is_ui = self

@@ -17,6 +17,10 @@ pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
         .join(".perro")
         .join("dev_runner")
         .join("Cargo.toml");
+    let dev_runner_build_script = project_root
+        .join(".perro")
+        .join("dev_runner")
+        .join("build.rs");
     let dev_runner_main = project_root
         .join(".perro")
         .join("dev_runner")
@@ -39,7 +43,9 @@ pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
     ensure_scripts_manifest_features(&scripts_manifest)?;
     ensure_scripts_manifest_user_deps(project_root, &scripts_manifest)?;
     ensure_dev_runner_source_sync(&dev_runner_manifest, &dev_runner_main)?;
+    ensure_dev_runner_build_script(&dev_runner_build_script)?;
     ensure_dev_runner_manifest_deps(&dev_runner_manifest)?;
+    ensure_project_manifest_icon_build_support(&dev_runner_manifest)?;
     ensure_dev_runner_manifest_features(&dev_runner_manifest)?;
     ensure_dev_runner_manifest_profile_debug(&dev_runner_manifest)?;
     ensure_scripts_manifest_rust_analyzer_cfg(&scripts_manifest)?;
@@ -70,6 +76,13 @@ fn ensure_dev_runner_source_sync(manifest_path: &Path, main_rs_path: &Path) -> s
 }
 
 fn ensure_project_build_script(path: &Path) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    write_if_changed(path, &default_project_build_rs())
+}
+
+fn ensure_dev_runner_build_script(path: &Path) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }

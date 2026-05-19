@@ -63,6 +63,7 @@ const QUERY_TRI_PAR_THRESHOLD: usize = 4096;
 const QUERY_INSTANCE_PAR_THRESHOLD: usize = 8;
 const QUERY_REGION_SURFACE_PAR_THRESHOLD: usize = 8;
 const QUERY_PAR_WORK_THRESHOLD: usize = 32768;
+const QUERY_LINEAR_TRI_THRESHOLD: usize = 32;
 
 type QueryMeshCache = AHashMap<u64, Arc<QueryMeshData>>;
 
@@ -92,59 +93,14 @@ impl Runtime {
 
         let p_local: Vec3 = local_point.into();
         let mut best: Option<QueryHitCandidate> = None;
-        let mut stack = vec![0_u32];
-        while let Some(node_idx) = stack.pop() {
-            let bvh = *mesh.bvh_nodes.get(node_idx as usize)?;
-            let node_d2 = aabb_distance2(p_local, bvh.aabb_min, bvh.aabb_max);
-            if let Some(hit) = best
-                && node_d2 >= hit.metric
-            {
-                continue;
+        match query_mesh_strategy(mesh.triangles.len()) {
+            QueryMeshStrategy::Linear => {
+                for tri_idx in 0..mesh.triangles.len() {
+                    best = query_point_tri_local(mesh.as_ref(), tri_idx, p_local, best)?;
+                }
             }
-            if bvh.left == u32::MAX || bvh.right == u32::MAX {
-                let start = bvh.tri_start as usize;
-                let end = start + bvh.tri_count as usize;
-                for &tri_idx in &mesh.bvh_tri_indices[start..end] {
-                    let tri = *mesh.triangles.get(tri_idx as usize)?;
-                    let acc = *mesh.tri_accel.get(tri_idx as usize)?;
-                    let tri_d2 = aabb_distance2(p_local, acc.aabb_min, acc.aabb_max);
-                    if let Some(hit) = best
-                        && tri_d2 >= hit.metric
-                    {
-                        continue;
-                    }
-                    let a = mesh.vertices[tri.a as usize];
-                    let b = mesh.vertices[tri.b as usize];
-                    let c = mesh.vertices[tri.c as usize];
-                    let nearest_local = closest_point_on_triangle(p_local, a, b, c);
-                    let d2 = nearest_local.distance_squared(p_local);
-                    if let Some(hit) = best
-                        && d2 >= hit.metric
-                    {
-                        continue;
-                    }
-                    best = Some(QueryHitCandidate {
-                        instance_index: 0,
-                        surface_index: tri.surface_index,
-                        global_point: nearest_local,
-                        local_point: nearest_local,
-                        global_normal: acc.normal,
-                        local_normal: acc.normal,
-                        metric: d2,
-                    });
-                }
-            } else {
-                let left = *mesh.bvh_nodes.get(bvh.left as usize)?;
-                let right = *mesh.bvh_nodes.get(bvh.right as usize)?;
-                let ld2 = aabb_distance2(p_local, left.aabb_min, left.aabb_max);
-                let rd2 = aabb_distance2(p_local, right.aabb_min, right.aabb_max);
-                if ld2 < rd2 {
-                    stack.push(bvh.right);
-                    stack.push(bvh.left);
-                } else {
-                    stack.push(bvh.left);
-                    stack.push(bvh.right);
-                }
+            QueryMeshStrategy::Bvh => {
+                best = query_point_mesh_bvh(mesh.as_ref(), p_local, best)?;
             }
         }
         let best = best?;
@@ -178,61 +134,29 @@ impl Runtime {
             let global_normal_basis = Mat3::from_mat4(global_from_mesh).inverse().transpose();
             let p_local = mesh_from_global.transform_point3(p_global);
             let mut best: Option<QueryHitCandidate> = None;
-            let mut stack = vec![0_u32];
-            while let Some(node_idx) = stack.pop() {
-                let bvh = *mesh.bvh_nodes.get(node_idx as usize)?;
-                let node_d2 = aabb_distance2(p_local, bvh.aabb_min, bvh.aabb_max);
-                if let Some(hit) = best
-                    && node_d2 >= hit.metric
-                {
-                    continue;
+            match query_mesh_strategy(mesh.triangles.len()) {
+                QueryMeshStrategy::Linear => {
+                    for tri_idx in 0..mesh.triangles.len() {
+                        best = query_point_tri_global(
+                            mesh.as_ref(),
+                            tri_idx,
+                            p_local,
+                            instance_index as u32,
+                            global_from_mesh,
+                            global_normal_basis,
+                            best,
+                        )?;
+                    }
                 }
-                if bvh.left == u32::MAX || bvh.right == u32::MAX {
-                    let start = bvh.tri_start as usize;
-                    let end = start + bvh.tri_count as usize;
-                    for &tri_idx in &mesh.bvh_tri_indices[start..end] {
-                        let tri = *mesh.triangles.get(tri_idx as usize)?;
-                        let acc = *mesh.tri_accel.get(tri_idx as usize)?;
-                        let tri_d2 = aabb_distance2(p_local, acc.aabb_min, acc.aabb_max);
-                        if let Some(hit) = best
-                            && tri_d2 >= hit.metric
-                        {
-                            continue;
-                        }
-                        let a = mesh.vertices[tri.a as usize];
-                        let b = mesh.vertices[tri.b as usize];
-                        let c = mesh.vertices[tri.c as usize];
-                        let nearest_local = closest_point_on_triangle(p_local, a, b, c);
-                        let d2 = nearest_local.distance_squared(p_local);
-                        if let Some(hit) = best
-                            && d2 >= hit.metric
-                        {
-                            continue;
-                        }
-                        let nearest_global = global_from_mesh.transform_point3(nearest_local);
-                        let global_normal = (global_normal_basis * acc.normal).normalize_or_zero();
-                        best = Some(QueryHitCandidate {
-                            instance_index: instance_index as u32,
-                            surface_index: tri.surface_index,
-                            global_point: nearest_global,
-                            local_point: nearest_local,
-                            global_normal,
-                            local_normal: acc.normal,
-                            metric: d2,
-                        });
-                    }
-                } else {
-                    let left = *mesh.bvh_nodes.get(bvh.left as usize)?;
-                    let right = *mesh.bvh_nodes.get(bvh.right as usize)?;
-                    let ld2 = aabb_distance2(p_local, left.aabb_min, left.aabb_max);
-                    let rd2 = aabb_distance2(p_local, right.aabb_min, right.aabb_max);
-                    if ld2 < rd2 {
-                        stack.push(bvh.right);
-                        stack.push(bvh.left);
-                    } else {
-                        stack.push(bvh.left);
-                        stack.push(bvh.right);
-                    }
+                QueryMeshStrategy::Bvh => {
+                    best = query_point_mesh_bvh_global(
+                        mesh.as_ref(),
+                        p_local,
+                        instance_index as u32,
+                        global_from_mesh,
+                        global_normal_basis,
+                        best,
+                    )?;
                 }
             }
             best
@@ -309,86 +233,27 @@ impl Runtime {
         };
 
         let mut best: Option<QueryHitCandidate> = None;
-        let mut stack = vec![0_u32];
-        while let Some(node_idx) = stack.pop() {
-            let bvh = *mesh.bvh_nodes.get(node_idx as usize)?;
-            if ray_aabb_tmin(
-                ray_origin_local,
-                ray_dir_local,
-                bvh.aabb_min,
-                bvh.aabb_max,
-                best.map_or(max_t, |h| h.metric.min(max_t)),
-            )
-            .is_none()
-            {
-                continue;
-            }
-            if bvh.left == u32::MAX || bvh.right == u32::MAX {
-                let start = bvh.tri_start as usize;
-                let end = start + bvh.tri_count as usize;
-                for &tri_idx in &mesh.bvh_tri_indices[start..end] {
-                    let tri = *mesh.triangles.get(tri_idx as usize)?;
-                    let acc = *mesh.tri_accel.get(tri_idx as usize)?;
-                    if ray_aabb_tmin(
+        match query_mesh_strategy(mesh.triangles.len()) {
+            QueryMeshStrategy::Linear => {
+                for tri_idx in 0..mesh.triangles.len() {
+                    best = query_ray_tri_local(
+                        mesh.as_ref(),
+                        tri_idx,
                         ray_origin_local,
                         ray_dir_local,
-                        acc.aabb_min,
-                        acc.aabb_max,
-                        best.map_or(max_t, |h| h.metric.min(max_t)),
-                    )
-                    .is_none()
-                    {
-                        continue;
-                    }
-                    let a = mesh.vertices[tri.a as usize];
-                    let b = mesh.vertices[tri.b as usize];
-                    let c = mesh.vertices[tri.c as usize];
-                    let t = ray_intersect_triangle(ray_origin_local, ray_dir_local, a, b, c)?;
-                    if t > max_t {
-                        continue;
-                    }
-                    if let Some(hit) = best
-                        && t >= hit.metric
-                    {
-                        continue;
-                    }
-                    let hit_local = ray_origin_local + ray_dir_local * t;
-                    best = Some(QueryHitCandidate {
-                        instance_index: 0,
-                        surface_index: tri.surface_index,
-                        global_point: hit_local,
-                        local_point: hit_local,
-                        global_normal: acc.normal,
-                        local_normal: acc.normal,
-                        metric: t,
-                    });
+                        max_t,
+                        best,
+                    )?;
                 }
-            } else {
-                let left = *mesh.bvh_nodes.get(bvh.left as usize)?;
-                let right = *mesh.bvh_nodes.get(bvh.right as usize)?;
-                let lt = ray_aabb_tmin(
+            }
+            QueryMeshStrategy::Bvh => {
+                best = query_ray_mesh_bvh(
+                    mesh.as_ref(),
                     ray_origin_local,
                     ray_dir_local,
-                    left.aabb_min,
-                    left.aabb_max,
-                    best.map_or(max_t, |h| h.metric.min(max_t)),
-                )
-                .unwrap_or(f32::INFINITY);
-                let rt = ray_aabb_tmin(
-                    ray_origin_local,
-                    ray_dir_local,
-                    right.aabb_min,
-                    right.aabb_max,
-                    best.map_or(max_t, |h| h.metric.min(max_t)),
-                )
-                .unwrap_or(f32::INFINITY);
-                if lt < rt {
-                    stack.push(bvh.right);
-                    stack.push(bvh.left);
-                } else {
-                    stack.push(bvh.left);
-                    stack.push(bvh.right);
-                }
+                    max_t,
+                    best,
+                )?;
             }
         }
         let best = best?;
@@ -442,92 +307,35 @@ impl Runtime {
                 return None;
             }
             let mut best: Option<QueryHitCandidate> = None;
-            let mut stack = vec![0_u32];
-            while let Some(node_idx) = stack.pop() {
-                let bvh = *mesh.bvh_nodes.get(node_idx as usize)?;
-                if ray_aabb_tmin(
-                    ray_origin_local,
-                    ray_dir_local,
-                    bvh.aabb_min,
-                    bvh.aabb_max,
-                    best.map_or(max_t, |h| h.metric.min(max_t)),
-                )
-                .is_none()
-                {
-                    continue;
-                }
-                if bvh.left == u32::MAX || bvh.right == u32::MAX {
-                    let start = bvh.tri_start as usize;
-                    let end = start + bvh.tri_count as usize;
-                    for &tri_idx in &mesh.bvh_tri_indices[start..end] {
-                        let tri = *mesh.triangles.get(tri_idx as usize)?;
-                        let acc = *mesh.tri_accel.get(tri_idx as usize)?;
-                        if ray_aabb_tmin(
+            match query_mesh_strategy(mesh.triangles.len()) {
+                QueryMeshStrategy::Linear => {
+                    for tri_idx in 0..mesh.triangles.len() {
+                        best = query_ray_tri_global(
+                            mesh.as_ref(),
+                            tri_idx,
                             ray_origin_local,
                             ray_dir_local,
-                            acc.aabb_min,
-                            acc.aabb_max,
-                            best.map_or(max_t, |h| h.metric.min(max_t)),
-                        )
-                        .is_none()
-                        {
-                            continue;
-                        }
-                        let a = mesh.vertices[tri.a as usize];
-                        let b = mesh.vertices[tri.b as usize];
-                        let c = mesh.vertices[tri.c as usize];
-                        let t = ray_intersect_triangle(ray_origin_local, ray_dir_local, a, b, c)?;
-                        if t > max_t {
-                            continue;
-                        }
-                        if let Some(hit) = best
-                            && t >= hit.metric
-                        {
-                            continue;
-                        }
-                        let hit_local = ray_origin_local + ray_dir_local * t;
-                        let hit_global = global_from_mesh.transform_point3(hit_local);
-                        let global_t = (hit_global - ray_origin_global).length();
-                        if global_t > max_t {
-                            continue;
-                        }
-                        let global_normal = (global_normal_basis * acc.normal).normalize_or_zero();
-                        best = Some(QueryHitCandidate {
-                            instance_index: instance_index as u32,
-                            surface_index: tri.surface_index,
-                            global_point: hit_global,
-                            local_point: hit_local,
-                            global_normal,
-                            local_normal: acc.normal,
-                            metric: global_t,
-                        });
+                            ray_origin_global,
+                            max_t,
+                            instance_index as u32,
+                            global_from_mesh,
+                            global_normal_basis,
+                            best,
+                        )?;
                     }
-                } else {
-                    let left = *mesh.bvh_nodes.get(bvh.left as usize)?;
-                    let right = *mesh.bvh_nodes.get(bvh.right as usize)?;
-                    let lt = ray_aabb_tmin(
+                }
+                QueryMeshStrategy::Bvh => {
+                    best = query_ray_mesh_bvh_global(
+                        mesh.as_ref(),
                         ray_origin_local,
                         ray_dir_local,
-                        left.aabb_min,
-                        left.aabb_max,
-                        best.map_or(max_t, |h| h.metric.min(max_t)),
-                    )
-                    .unwrap_or(f32::INFINITY);
-                    let rt = ray_aabb_tmin(
-                        ray_origin_local,
-                        ray_dir_local,
-                        right.aabb_min,
-                        right.aabb_max,
-                        best.map_or(max_t, |h| h.metric.min(max_t)),
-                    )
-                    .unwrap_or(f32::INFINITY);
-                    if lt < rt {
-                        stack.push(bvh.right);
-                        stack.push(bvh.left);
-                    } else {
-                        stack.push(bvh.left);
-                        stack.push(bvh.right);
-                    }
+                        ray_origin_global,
+                        max_t,
+                        instance_index as u32,
+                        global_from_mesh,
+                        global_normal_basis,
+                        best,
+                    )?;
                 }
             }
             best
@@ -904,8 +712,18 @@ impl Runtime {
             return None;
         }
         let mesh_id = self.resource_api.canonical_mesh_id(mesh_id);
-        if let Some(data) = self.resource_api.mesh_data(mesh_id) {
-            return build_query_mesh_from_runtime_mesh(&data).map(Arc::new);
+        if let Some((data, revision)) = self.resource_api.mesh_data_with_revision(mesh_id) {
+            let cache_key = runtime_mesh_query_cache_key(mesh_id, revision);
+            if let Ok(cache) = mesh_query_cache().read()
+                && let Some(mesh) = cache.get(&cache_key)
+            {
+                return Some(mesh.clone());
+            }
+            let mesh = build_query_mesh_from_runtime_mesh(&data).map(Arc::new)?;
+            if let Ok(mut cache) = mesh_query_cache().write() {
+                cache.insert(cache_key, mesh.clone());
+            }
+            return Some(mesh);
         }
         self.resource_api
             .mesh_source(mesh_id)

@@ -676,6 +676,7 @@ fn default_dev_runner_crate_toml() -> String {
 name = "perro_dev_runner"
 version = "0.1.0"
 edition = "2024"
+build = "build.rs"
 
 [dependencies]
 perro_app = "0.1.0"
@@ -686,6 +687,11 @@ profile = ["perro_app/profile"]
 ui_profile = ["perro_app/ui_profile"]
 mem_profile = ["perro_app/mem_profile"]
 steamworks = ["perro_app/steamworks"]
+
+[target.'cfg(target_os = "windows")'.build-dependencies]
+winresource = "0.1.20"
+toml = "0.8.23"
+image = { version = "0.25.9", default-features = false, features = ["png", "jpeg", "gif", "bmp", "tga", "webp", "ico"] }
 
 [profile.dev]
 opt-level = 1

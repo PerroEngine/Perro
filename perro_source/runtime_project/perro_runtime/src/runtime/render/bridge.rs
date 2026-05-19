@@ -186,6 +186,27 @@ impl Runtime {
         self.dirty.clear_keep_ui_dirty();
     }
 
+    pub fn clear_ui_dirty_flags_keep_scene(&mut self) {
+        self.dirty.clear_ui_dirty_keep_scene();
+    }
+
+    pub fn has_ui_render_work(&self) -> bool {
+        self.dirty.has_ui_dirty()
+            || !self.render_ui.removed_nodes.is_empty()
+            || (self.render_ui.prev_visible.is_empty()
+                && self.render_ui.retained_commands.is_empty()
+                && self.render_ui.computed_rects.is_empty())
+    }
+
+    pub fn has_scene_render_work(&self) -> bool {
+        self.dirty.has_non_ui_dirty()
+            || self.dirty.has_pending_transform_roots()
+            || !self.render_2d.removed_nodes.is_empty()
+            || !self.render_3d.removed_nodes.is_empty()
+            || self.render_2d.force_full_scan_once
+            || self.render_3d.force_full_scan_once
+    }
+
     pub fn dirty_node_count(&self) -> usize {
         self.dirty.dirty_count()
     }

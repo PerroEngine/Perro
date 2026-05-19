@@ -181,16 +181,30 @@ impl Runtime {
     }
 
     pub fn extract_render_ui_commands(&mut self) {
-        self.extract_render_ui_commands_inner(None);
+        self.extract_render_ui_commands_inner(None, false);
+    }
+
+    pub fn extract_render_ui_commands_priority(&mut self) {
+        self.extract_render_ui_commands_inner(None, true);
     }
 
     pub fn extract_render_ui_commands_timed(&mut self) -> RuntimeUiTiming {
         let mut timing = RuntimeUiTiming::default();
-        self.extract_render_ui_commands_inner(Some(&mut timing));
+        self.extract_render_ui_commands_inner(Some(&mut timing), false);
         timing
     }
 
-    fn extract_render_ui_commands_inner(&mut self, timing: Option<&mut RuntimeUiTiming>) {
+    pub fn extract_render_ui_commands_priority_timed(&mut self) -> RuntimeUiTiming {
+        let mut timing = RuntimeUiTiming::default();
+        self.extract_render_ui_commands_inner(Some(&mut timing), true);
+        timing
+    }
+
+    fn extract_render_ui_commands_inner(
+        &mut self,
+        timing: Option<&mut RuntimeUiTiming>,
+        ui_dirty_only: bool,
+    ) {
         self.refresh_locale_text_bindings();
         self.render_ui.pointer_screen_point = None;
         let total_start = timing.as_ref().map(|_| Instant::now());
@@ -201,8 +215,12 @@ impl Runtime {
         let scroll_input_changed = self.ui_scroll_input_changed();
         let text_input_changed =
             self.render_ui.focused_text_edit.is_some() && self.ui_text_input_changed();
-        let has_extraction_work = self.dirty.has_any_dirty()
-            || self.dirty.has_pending_transform_roots()
+        let has_dirty_work = if ui_dirty_only {
+            self.dirty.has_ui_dirty()
+        } else {
+            self.dirty.has_any_dirty() || self.dirty.has_pending_transform_roots()
+        };
+        let has_extraction_work = has_dirty_work
             || !self.render_ui.removed_nodes.is_empty()
             || bootstrap_scan
             || input_changed
@@ -228,9 +246,11 @@ impl Runtime {
             .iter()
             .filter_map(|&raw_index| {
                 let index = raw_index as usize;
-                self.nodes
-                    .slot_get(index)
-                    .map(|(node, _)| (node, self.dirty.ui_flags_at(index)))
+                let flags = self.dirty.ui_flags_at(index);
+                if ui_dirty_only && flags == 0 {
+                    return None;
+                }
+                self.nodes.slot_get(index).map(|(node, _)| (node, flags))
             })
             .collect::<Vec<_>>();
         let dirty_node_count = dirty_entries.len();

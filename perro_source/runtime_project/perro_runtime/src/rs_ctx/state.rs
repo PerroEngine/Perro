@@ -172,6 +172,7 @@ pub(super) struct RuntimeResourceState {
     pub(super) mesh_reserve_pending: HashSet<u64>,
     pub(super) mesh_drop_pending: HashSet<u64>,
     pub(super) mesh_data_by_id: HashMap<MeshID, Mesh3D>,
+    pub(super) mesh_revision_by_id: HashMap<MeshID, u64>,
     pub(super) material_by_source: HashMap<u64, MaterialID>,
     pub(super) material_pending_by_source: HashMap<u64, RenderRequestID>,
     pub(super) material_pending_source_by_request: HashMap<RenderRequestID, String>,
