@@ -8,6 +8,7 @@ use perro_runtime_api::RuntimeWindow;
 const NONE_POS: u32 = u32::MAX;
 
 impl Runtime {
+    #[allow(dead_code)]
     pub(crate) fn rebuild_internal_node_schedules(&mut self) {
         self.internal_updates.internal_update_nodes.clear();
         self.internal_updates.internal_fixed_update_nodes.clear();
@@ -225,6 +226,7 @@ impl Runtime {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn rebuild_node_tag_index(&mut self) {
         self.node_index.node_tag_index.clear();
         for (id, node) in self.nodes.iter() {

@@ -72,6 +72,16 @@ harness = false
 required-features = ["bench"]
 
 [[bench]]
+name = "scene_parse_prepare"
+harness = false
+required-features = ["bench"]
+
+[[bench]]
+name = "scene_merge_extract"
+harness = false
+required-features = ["bench"]
+
+[[bench]]
 name = "runtime_core_hotpaths"
 harness = false
 required-features = ["bench"]

@@ -112,7 +112,7 @@ impl Runtime {
                     .get(*id)
                     .is_some_and(|node| matches!(node.data, SceneNodeData::Skeleton3D(_)))
             })
-            .collect::<Vec<_>>();
+            .collect::<ahash::AHashSet<_>>();
         if !dirty_skeletons.is_empty() {
             for (id, node) in self.nodes.iter() {
                 let SceneNodeData::MeshInstance3D(mesh) = &node.data else {

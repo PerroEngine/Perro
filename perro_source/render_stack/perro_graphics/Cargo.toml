@@ -56,6 +56,10 @@ name = "cpu_prepare"
 harness = false
 
 [[bench]]
+name = "command_throughput"
+harness = false
+
+[[bench]]
 name = "shader_wgsl"
 harness = false
 

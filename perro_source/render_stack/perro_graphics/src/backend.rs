@@ -157,14 +157,6 @@ struct CommandBucketCounts {
     draws_3d: usize,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum CommandBucketKind {
-    Rect2D,
-    Sprite2D,
-    Draw3D,
-    Other,
-}
-
 impl FrameState {
     fn queue(&mut self, command: RenderCommand) {
         self.pending_commands.push(command);
@@ -200,20 +192,6 @@ fn count_command_buckets(commands: &[RenderCommand]) -> CommandBucketCounts {
         }
     }
     counts
-}
-
-fn command_bucket_kind(command: &RenderCommand) -> CommandBucketKind {
-    match command {
-        RenderCommand::TwoD(Command2D::UpsertRect { .. }) => CommandBucketKind::Rect2D,
-        RenderCommand::TwoD(Command2D::UpsertSprite { .. }) => CommandBucketKind::Sprite2D,
-        RenderCommand::ThreeD(cmd) => match &**cmd {
-            Command3D::Draw { .. }
-            | Command3D::DrawMulti { .. }
-            | Command3D::DrawMultiDense { .. } => CommandBucketKind::Draw3D,
-            _ => CommandBucketKind::Other,
-        },
-        _ => CommandBucketKind::Other,
-    }
 }
 
 #[derive(Default)]
@@ -910,21 +888,6 @@ impl GraphicsBackend for PerroGraphics {
 impl PerroGraphics {
     fn reserve_command_buckets(&mut self, commands: &[RenderCommand]) {
         if commands.len() < 10_000 {
-            return;
-        }
-        let Some(first) = commands.first() else {
-            return;
-        };
-        let first_bucket = command_bucket_kind(first);
-        if first_bucket != CommandBucketKind::Other {
-            match first_bucket {
-                CommandBucketKind::Rect2D => self.renderer_2d.reserve_queued_rects(commands.len()),
-                CommandBucketKind::Sprite2D => {
-                    self.renderer_2d.reserve_queued_sprites(commands.len())
-                }
-                CommandBucketKind::Draw3D => self.renderer_3d.reserve_queued_draws(commands.len()),
-                CommandBucketKind::Other => {}
-            }
             return;
         }
         let counts = count_command_buckets(commands);

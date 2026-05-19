@@ -86,8 +86,20 @@ pub(super) fn merge_prepared_scene(
     engine_root.name = Cow::Borrowed("Game Root");
     runtime.nodes.reserve(nodes.len().saturating_add(1));
     let engine_root = runtime.nodes.insert(engine_root);
-    if let Some(node) = runtime.nodes.get(engine_root) {
-        runtime.register_internal_node_schedules(engine_root, node.node_type());
+    if let Some((ty, tags)) = runtime
+        .nodes
+        .get(engine_root)
+        .map(|node| (node.node_type(), node.get_tag_ids()))
+    {
+        runtime.register_internal_node_schedules(engine_root, ty);
+        for tag in tags {
+            runtime
+                .node_index
+                .node_tag_index
+                .entry(tag)
+                .or_default()
+                .insert(engine_root);
+        }
     }
 
     let mut key_to: HashMap<u32, NodeID> = HashMap::with_capacity(nodes.len());
@@ -136,9 +148,20 @@ pub(super) fn merge_prepared_scene(
         }
 
         let node = runtime.nodes.insert(node);
-        if let Some(inserted) = runtime.nodes.get(node) {
-            let ty = inserted.node_type();
+        if let Some((ty, tags)) = runtime
+            .nodes
+            .get(node)
+            .map(|inserted| (inserted.node_type(), inserted.get_tag_ids()))
+        {
             runtime.register_internal_node_schedules(node, ty);
+            for tag in tags {
+                runtime
+                    .node_index
+                    .node_tag_index
+                    .entry(tag)
+                    .or_default()
+                    .insert(node);
+            }
         }
         for binding in locale_text_bindings {
             runtime.add_locale_text_binding(node, binding.field, binding.key, binding.key_hash);

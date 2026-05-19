@@ -39,7 +39,9 @@ mod world_state;
 use audio::AudioPropagationState;
 pub(crate) use scene_loader::PendingScriptAttach;
 #[cfg(feature = "bench")]
-pub use scene_loader::{bench_prepare_and_merge_scene, bench_prepare_scene};
+pub use scene_loader::{
+    bench_prepare_and_merge_scene, bench_prepare_merge_extract_scene, bench_prepare_scene,
+};
 pub(crate) use state::CollisionDebugState;
 use state::{
     DirtyState, InternalUpdateState, NodeApiScratchState, NodeIndexState, Render2DState,

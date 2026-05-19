@@ -49,6 +49,20 @@ pub fn bench_prepare_and_merge_scene(scene: &Scene) -> Result<usize, String> {
     Ok(runtime.nodes.len())
 }
 
+#[cfg(feature = "bench")]
+pub fn bench_prepare_merge_extract_scene(scene: &Scene) -> Result<(usize, usize), String> {
+    let prepared = prepare_scene_with_loader_and_styles(
+        scene,
+        &|path| Err(format!("bench scene import unsupported: {path}")),
+        None,
+    )?;
+    let mut runtime = Runtime::new();
+    let _ = merge_prepared_scene(&mut runtime, prepared)?;
+    let mut commands = Vec::new();
+    runtime.extract_render_snapshot_commands(&mut commands);
+    Ok((runtime.nodes.len(), commands.len()))
+}
+
 pub(crate) struct PendingScriptAttach {
     pub(crate) node_id: NodeID,
     pub(crate) script_path_hash: u64,
@@ -242,8 +256,6 @@ impl Runtime {
             self.resolve_scene_by_path(import_path)
         })?;
         let merged = merge_prepared_scene(self, prepared)?;
-        self.rebuild_internal_node_schedules();
-        self.rebuild_node_tag_index();
         self.attach_scene_scripts(merged.script_nodes)?;
         Ok(merged.scene_root)
     }
@@ -295,8 +307,6 @@ impl Runtime {
             }
         };
 
-        self.rebuild_internal_node_schedules();
-        self.rebuild_node_tag_index();
         self.attach_scene_scripts(merged.script_nodes)?;
         #[cfg(not(feature = "profile"))]
         let _ = path;
@@ -511,8 +521,6 @@ impl Runtime {
                 }
             }
         }
-        self.rebuild_internal_node_schedules();
-        self.rebuild_node_tag_index();
         self.attach_scene_scripts(merged.script_nodes)?;
         self.active_route_href = boot_route_href;
         self.active_route_root = Some(merged.scene_root);
@@ -1012,6 +1020,28 @@ mod tests {
                 .nodes
                 .iter()
                 .any(|(_, node)| node.name.as_ref() == "copy")
+        );
+    }
+
+    #[test]
+    fn scene_load_updates_tag_index_during_merge() {
+        let scene = Parser::new(
+            "$root = @root\n\n[root]\ntags = [\"scene_loaded\"]\n[Node]\n[/Node]\n[/root]\n",
+        )
+        .parse_scene();
+        let prepared =
+            prepare_scene_with_loader_and_styles(&scene, &|_| unreachable!(), None).unwrap();
+        let mut runtime = Runtime::new();
+
+        let merged = merge_prepared_scene(&mut runtime, prepared).unwrap();
+        let tag = perro_ids::TagID::from_string("scene_loaded");
+
+        assert!(
+            runtime
+                .node_index
+                .node_tag_index
+                .get(&tag)
+                .is_some_and(|nodes| nodes.contains(&merged.scene_root))
         );
     }
 
