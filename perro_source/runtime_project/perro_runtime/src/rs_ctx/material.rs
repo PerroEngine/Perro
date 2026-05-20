@@ -229,6 +229,17 @@ impl RuntimeResourceApi {
         self.static_material_lookup
             .map(|lookup| lookup(source_hash).clone())
     }
+
+    pub(crate) fn is_material_id_pending(&self, material: MaterialID) -> bool {
+        if material.is_nil() {
+            return false;
+        }
+        let state = self.state.lock().expect("resource api mutex poisoned");
+        state
+            .material_pending_id_by_request
+            .values()
+            .any(|pending| *pending == material)
+    }
 }
 
 #[cfg(test)]

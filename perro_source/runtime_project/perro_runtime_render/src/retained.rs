@@ -8,7 +8,7 @@ use perro_render_bridge::{
 };
 use perro_structs::Vector2;
 use perro_ui::{ComputedUiRect, UiSizeMode, UiVector2};
-use std::{cell::RefCell, collections::VecDeque, sync::Arc};
+use std::{cell::RefCell, collections::VecDeque, sync::Arc, sync::mpsc};
 
 pub fn sprite_2d_texture_request(node: NodeID) -> RenderRequestID {
     RenderRequestID::new((node.as_u64() << 8) | 0x2D)
@@ -121,7 +121,15 @@ pub struct Render2DState {
     pub retained_sprites: AHashMap<NodeID, Sprite2DCommand>,
     pub particle_path_cache: AHashMap<String, perro_render_bridge::ParticleProfile2D>,
     pub particle_path_cache_order: VecDeque<String>,
+    pub pending_particle_path_loads: AHashSet<String>,
+    pub particle_path_load_tx:
+        mpsc::Sender<(String, Option<perro_render_bridge::ParticleProfile2D>)>,
+    pub particle_path_load_rx:
+        mpsc::Receiver<(String, Option<perro_render_bridge::ParticleProfile2D>)>,
     pub tileset_cache: AHashMap<u64, perro_render_bridge::TileSet2D>,
+    pub pending_tileset_loads: AHashSet<u64>,
+    pub tileset_load_tx: mpsc::Sender<(u64, Option<perro_render_bridge::TileSet2D>)>,
+    pub tileset_load_rx: mpsc::Receiver<(u64, Option<perro_render_bridge::TileSet2D>)>,
     pub texture_sources: AHashMap<NodeID, String>,
     pub last_camera: Option<Camera2DState>,
     pub removed_nodes: Vec<NodeID>,
@@ -132,6 +140,8 @@ pub type Render2dSystem = Render2DState;
 
 impl Render2DState {
     pub fn new() -> Self {
+        let (particle_path_load_tx, particle_path_load_rx) = mpsc::channel();
+        let (tileset_load_tx, tileset_load_rx) = mpsc::channel();
         Self {
             traversal_ids: Vec::new(),
             visible_now: AHashSet::default(),
@@ -139,7 +149,13 @@ impl Render2DState {
             retained_sprites: AHashMap::default(),
             particle_path_cache: AHashMap::default(),
             particle_path_cache_order: VecDeque::new(),
+            pending_particle_path_loads: AHashSet::default(),
+            particle_path_load_tx,
+            particle_path_load_rx,
             tileset_cache: AHashMap::default(),
+            pending_tileset_loads: AHashSet::default(),
+            tileset_load_tx,
+            tileset_load_rx,
             texture_sources: AHashMap::default(),
             last_camera: None,
             removed_nodes: Vec::new(),
@@ -500,6 +516,11 @@ pub struct Render3DState {
     pub collision_debug_state: AHashMap<NodeID, CollisionDebugState>,
     pub particle_path_cache: AHashMap<String, perro_render_bridge::ParticleProfile3D>,
     pub particle_path_cache_order: VecDeque<String>,
+    pub pending_particle_path_loads: AHashSet<String>,
+    pub particle_path_load_tx:
+        mpsc::Sender<(String, Option<perro_render_bridge::ParticleProfile3D>)>,
+    pub particle_path_load_rx:
+        mpsc::Receiver<(String, Option<perro_render_bridge::ParticleProfile3D>)>,
     pub last_camera: Option<Camera3DState>,
     pub retained_ambient_lights: AHashMap<NodeID, AmbientLight3DState>,
     pub retained_skies: AHashMap<NodeID, Sky3DState>,
@@ -523,6 +544,7 @@ pub type Render3dSystem = Render3DState;
 
 impl Render3DState {
     pub fn new() -> Self {
+        let (particle_path_load_tx, particle_path_load_rx) = mpsc::channel();
         Self {
             traversal_ids: Vec::new(),
             visible_now: AHashSet::default(),
@@ -533,6 +555,9 @@ impl Render3DState {
             collision_debug_state: AHashMap::default(),
             particle_path_cache: AHashMap::default(),
             particle_path_cache_order: VecDeque::new(),
+            pending_particle_path_loads: AHashSet::default(),
+            particle_path_load_tx,
+            particle_path_load_rx,
             last_camera: None,
             retained_ambient_lights: AHashMap::default(),
             retained_skies: AHashMap::default(),

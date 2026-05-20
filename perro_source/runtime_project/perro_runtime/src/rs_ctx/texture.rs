@@ -155,3 +155,16 @@ impl TextureAPI for RuntimeResourceApi {
         state.texture_loaded_by_id.contains(&id)
     }
 }
+
+impl RuntimeResourceApi {
+    pub(crate) fn is_texture_id_pending(&self, texture: TextureID) -> bool {
+        if texture.is_nil() {
+            return false;
+        }
+        let state = self.state.lock().expect("resource api mutex poisoned");
+        state
+            .texture_pending_id_by_request
+            .values()
+            .any(|pending| *pending == texture)
+    }
+}

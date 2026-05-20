@@ -834,6 +834,11 @@ pub trait NodeAPI {
     /// Executes a node query and returns matching node IDs.
     fn query_nodes(&mut self, query: NodeQueryView<'_>) -> Vec<NodeID>;
 
+    /// Executes a node query and returns the first matching node ID.
+    fn query_first_node(&mut self, query: NodeQueryView<'_>) -> Option<NodeID> {
+        self.query_nodes(query).into_iter().next()
+    }
+
     /// Returns the current global transform for a 2D spatial node.
     fn get_global_transform_2d(&mut self, node_id: NodeID) -> Option<Transform2D>;
 
@@ -1516,9 +1521,32 @@ impl<'rt, R: NodeAPI + ?Sized> NodeQueryModule<'rt, R> {
         self.query_view(query.as_view())
     }
 
+    /// Executes a node query and returns owned node ids as an iterator.
+    ///
+    /// This still allocates the same `Vec<NodeID>` as [`Self::query`], then
+    /// returns its `IntoIter`.
+    pub fn query_iter(&mut self, query: &NodeQuery) -> std::vec::IntoIter<NodeID> {
+        self.query(query).into_iter()
+    }
+
+    /// Executes a node query and returns the first matching node id.
+    pub fn query_first(&mut self, query: &NodeQuery) -> Option<NodeID> {
+        self.query_view_first(query.as_view())
+    }
+
     #[doc(hidden)]
     pub fn query_view(&mut self, query: NodeQueryView<'_>) -> Vec<NodeID> {
         self.rt.query_nodes(query)
+    }
+
+    #[doc(hidden)]
+    pub fn query_view_iter(&mut self, query: NodeQueryView<'_>) -> std::vec::IntoIter<NodeID> {
+        self.query_view(query).into_iter()
+    }
+
+    #[doc(hidden)]
+    pub fn query_view_first(&mut self, query: NodeQueryView<'_>) -> Option<NodeID> {
+        self.rt.query_first_node(query)
     }
 }
 
@@ -2586,6 +2614,83 @@ macro_rules! query {
     };
 }
 
+/// Executes a node query and returns owned `NodeID`s as an iterator.
+///
+/// This has the same syntax as [`query!`](macro@crate::query). It still uses
+/// the runtime's owned query result internally, then returns `Vec::into_iter()`.
+#[macro_export]
+macro_rules! query_iter {
+    ($ctx:expr, $kind:ident $args:tt, in_subtree($parent:expr) $(,)?) => {{
+        $crate::query!($ctx, $kind $args, in_subtree($parent)).into_iter()
+    }};
+    ($ctx:expr, $kind:ident $args:tt $(,)?) => {{
+        $crate::query!($ctx, $kind $args).into_iter()
+    }};
+    ($ctx:expr, $query:expr, in_subtree($parent:expr) $(,)?) => {{
+        let __query = $query;
+        let __query_view = (&__query).as_view().in_subtree($parent);
+        $ctx.NodeQuery().query_view_iter(__query_view)
+    }};
+    ($ctx:expr, $query:expr $(,)?) => {{
+        let __query = $query;
+        $ctx.NodeQuery().query_iter(&__query)
+    }};
+}
+
+/// Executes a node query and runs a closure once for each matching `NodeID`.
+///
+/// This has the same query syntax as [`query!`](macro@crate::query).
+#[macro_export]
+macro_rules! query_each {
+    ($ctx:expr, $kind:ident $args:tt, in_subtree($parent:expr), $f:expr $(,)?) => {{
+        for __node_id in $crate::query_iter!($ctx, $kind $args, in_subtree($parent)) {
+            $f(__node_id);
+        }
+    }};
+    ($ctx:expr, $kind:ident $args:tt, $f:expr $(,)?) => {{
+        for __node_id in $crate::query_iter!($ctx, $kind $args) {
+            $f(__node_id);
+        }
+    }};
+    ($ctx:expr, $query:expr, in_subtree($parent:expr), $f:expr $(,)?) => {{
+        for __node_id in $crate::query_iter!($ctx, $query, in_subtree($parent)) {
+            $f(__node_id);
+        }
+    }};
+    ($ctx:expr, $query:expr, $f:expr $(,)?) => {{
+        for __node_id in $crate::query_iter!($ctx, $query) {
+            $f(__node_id);
+        }
+    }};
+}
+
+/// Executes a node query and maps each matching `NodeID` into a collected `Vec`.
+///
+/// This has the same query syntax as [`query!`](macro@crate::query).
+#[macro_export]
+macro_rules! query_map {
+    ($ctx:expr, $kind:ident $args:tt, in_subtree($parent:expr), $f:expr $(,)?) => {{
+        $crate::query_iter!($ctx, $kind $args, in_subtree($parent))
+            .map($f)
+            .collect::<Vec<_>>()
+    }};
+    ($ctx:expr, $kind:ident $args:tt, $f:expr $(,)?) => {{
+        $crate::query_iter!($ctx, $kind $args)
+            .map($f)
+            .collect::<Vec<_>>()
+    }};
+    ($ctx:expr, $query:expr, in_subtree($parent:expr), $f:expr $(,)?) => {{
+        $crate::query_iter!($ctx, $query, in_subtree($parent))
+            .map($f)
+            .collect::<Vec<_>>()
+    }};
+    ($ctx:expr, $query:expr, $f:expr $(,)?) => {{
+        $crate::query_iter!($ctx, $query)
+            .map($f)
+            .collect::<Vec<_>>()
+    }};
+}
+
 /// Executes a node query and returns the first result as owned `NodeID`.
 ///
 /// Usage:
@@ -2595,19 +2700,24 @@ macro_rules! query {
 ///   R is the return type of the underlying API method call this macro expands to.
 macro_rules! query_first {
     ($ctx:expr, $kind:ident $args:tt, in_subtree($parent:expr) $(,)?) => {{
-        $crate::query!($ctx, $kind $args, in_subtree($parent))
-            .into_iter()
-            .next()
+        let __expr = $crate::query!(@expr $kind $args);
+        let __query = $crate::sub_apis::NodeQuery::new()
+            .where_expr(__expr)
+            .in_subtree($parent);
+        $ctx.NodeQuery().query_first(&__query)
     }};
     ($ctx:expr, $kind:ident $args:tt $(,)?) => {{
-        $crate::query!($ctx, $kind $args).into_iter().next()
+        let __expr = $crate::query!(@expr $kind $args);
+        let __query = $crate::sub_apis::NodeQuery::new().where_expr(__expr);
+        $ctx.NodeQuery().query_first(&__query)
     }};
     ($ctx:expr, $query:expr, in_subtree($parent:expr) $(,)?) => {{
-        $crate::query!($ctx, $query, in_subtree($parent))
-            .into_iter()
-            .next()
+        let __query = $query;
+        let __query_view = (&__query).as_view().in_subtree($parent);
+        $ctx.NodeQuery().query_view_first(__query_view)
     }};
     ($ctx:expr, $query:expr $(,)?) => {{
-        $crate::query!($ctx, $query).into_iter().next()
+        let __query = $query;
+        $ctx.NodeQuery().query_first(&__query)
     }};
 }

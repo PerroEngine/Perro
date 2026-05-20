@@ -11,12 +11,10 @@ use perro_project::LocalizationConfig;
 #[cfg(not(target_arch = "wasm32"))]
 use perro_render_bridge::Material3D;
 use perro_render_bridge::{RenderCommand, RenderEvent};
-#[cfg(not(target_arch = "wasm32"))]
-use std::sync::mpsc;
 use std::{
     borrow::Cow,
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, mpsc},
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -35,6 +33,16 @@ struct AsyncAnimationLoadResult {
 struct AsyncAnimationTreeLoadResult {
     id: perro_ids::AnimationTreeID,
     tree: Arc<AnimationTreeAsset>,
+}
+
+pub(super) struct AsyncSkeleton2DLoadResult {
+    pub(super) source: String,
+    pub(super) bones: Vec<perro_nodes::skeleton_2d::Bone2D>,
+}
+
+pub(super) struct AsyncSkeleton3DLoadResult {
+    pub(super) source: String,
+    pub(super) bones: Vec<perro_nodes::skeleton_3d::Bone3D>,
 }
 
 fn split_source_fragment_for_material(source: &str) -> &str {
@@ -243,6 +251,12 @@ pub struct RuntimeResourceApi {
         Mutex<HashMap<String, Vec<perro_nodes::skeleton_2d::Bone2D>>>,
     pub(super) skeleton_bones_3d_cache:
         Mutex<HashMap<String, Vec<perro_nodes::skeleton_3d::Bone3D>>>,
+    pub(super) skeleton_bones_2d_pending: Mutex<std::collections::HashSet<String>>,
+    pub(super) skeleton_bones_3d_pending: Mutex<std::collections::HashSet<String>>,
+    pub(super) skeleton_2d_load_tx: mpsc::Sender<AsyncSkeleton2DLoadResult>,
+    pub(super) skeleton_2d_load_rx: Mutex<mpsc::Receiver<AsyncSkeleton2DLoadResult>>,
+    pub(super) skeleton_3d_load_tx: mpsc::Sender<AsyncSkeleton3DLoadResult>,
+    pub(super) skeleton_3d_load_rx: Mutex<mpsc::Receiver<AsyncSkeleton3DLoadResult>>,
     pub(super) viewport_size: Mutex<(u32, u32)>,
     #[cfg(not(target_arch = "wasm32"))]
     material_load_tx: mpsc::Sender<AsyncMaterialLoadResult>,
@@ -276,6 +290,8 @@ impl RuntimeResourceApi {
         let (animation_load_tx, animation_load_rx) = mpsc::channel();
         #[cfg(all(not(target_arch = "wasm32"), not(test)))]
         let (animation_tree_load_tx, animation_tree_load_rx) = mpsc::channel();
+        let (skeleton_2d_load_tx, skeleton_2d_load_rx) = mpsc::channel();
+        let (skeleton_3d_load_tx, skeleton_3d_load_rx) = mpsc::channel();
         let api = Arc::new(Self {
             state: Mutex::new(RuntimeResourceState::new()),
             localization: std::sync::RwLock::new(RuntimeLocalizationState::new(
@@ -298,6 +314,12 @@ impl RuntimeResourceApi {
             csv_cache: Mutex::new(HashMap::new()),
             skeleton_bones_2d_cache: Mutex::new(HashMap::new()),
             skeleton_bones_3d_cache: Mutex::new(HashMap::new()),
+            skeleton_bones_2d_pending: Mutex::new(std::collections::HashSet::new()),
+            skeleton_bones_3d_pending: Mutex::new(std::collections::HashSet::new()),
+            skeleton_2d_load_tx,
+            skeleton_2d_load_rx: Mutex::new(skeleton_2d_load_rx),
+            skeleton_3d_load_tx,
+            skeleton_3d_load_rx: Mutex::new(skeleton_3d_load_rx),
             viewport_size: Mutex::new((1, 1)),
             #[cfg(not(target_arch = "wasm32"))]
             material_load_tx,

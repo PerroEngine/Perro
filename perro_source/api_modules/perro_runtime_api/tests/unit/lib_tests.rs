@@ -194,7 +194,10 @@ impl NodeAPI for DummyRuntime {
     }
 
     fn query_nodes(&mut self, _query: NodeQueryView<'_>) -> Vec<NodeID> {
-        Vec::new()
+        self.state
+            .downcast_ref::<Vec<NodeID>>()
+            .cloned()
+            .unwrap_or_default()
     }
 
     fn get_global_transform_2d(&mut self, _node_id: NodeID) -> Option<perro_structs::Transform2D> {
@@ -1083,6 +1086,49 @@ fn script_macros_typecheck_and_forward() {
             skip_prepare_3d_cull_inputs: 0,
         }
     );
+}
+
+#[test]
+fn node_query_iterator_macros_typecheck_and_forward() {
+    let ids = vec![NodeID::new(1), NodeID::new(2), NodeID::new(3)];
+    let mut rt = DummyRuntime {
+        state: Box::new(ids.clone()),
+        gravity: -9.81,
+        coefficient: 1.0,
+    };
+    let mut ctx = RuntimeWindow::new(&mut rt);
+    let parent = NodeID::new(99);
+
+    let iter_hits = query_iter!(&mut ctx, all(tags["enemy"])).collect::<Vec<_>>();
+    assert_eq!(iter_hits, ids);
+
+    let subtree_hits =
+        query_iter!(&mut ctx, all(tags["enemy"]), in_subtree(parent)).collect::<Vec<_>>();
+    assert_eq!(subtree_hits, ids);
+
+    let reusable_query = query_builder!(all(tags["enemy"]));
+    let reusable_hits = query_iter!(&mut ctx, &reusable_query).collect::<Vec<_>>();
+    assert_eq!(reusable_hits, ids);
+
+    let reusable_subtree_hits =
+        query_iter!(&mut ctx, &reusable_query, in_subtree(parent)).collect::<Vec<_>>();
+    assert_eq!(reusable_subtree_hits, ids);
+
+    let module_hits = ctx
+        .NodeQuery()
+        .query_iter(&reusable_query)
+        .collect::<Vec<_>>();
+    assert_eq!(module_hits, ids);
+
+    let mut each_count = 0;
+    query_each!(&mut ctx, all(tags["enemy"]), |id| {
+        let _ = get_node_name!(&mut ctx, id);
+        each_count += 1;
+    });
+    assert_eq!(each_count, ids.len());
+
+    let mapped = query_map!(&mut ctx, all(tags["enemy"]), |id| id.index());
+    assert_eq!(mapped, vec![1, 2, 3]);
 }
 
 fn dummy_runtime() -> DummyRuntime {

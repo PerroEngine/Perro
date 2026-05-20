@@ -777,18 +777,7 @@ impl Runtime {
             if effective_visible
                 && !visible_now.contains(&node)
                 && self.render_3d.retained_mesh_draws.contains_key(&node)
-                && self
-                    .nodes
-                    .get(node)
-                    .is_some_and(|scene_node| match &scene_node.data {
-                        SceneNodeData::MeshInstance3D(mesh) => {
-                            !mesh.mesh.is_nil() && self.resource_api.is_mesh_id_pending(mesh.mesh)
-                        }
-                        SceneNodeData::MultiMeshInstance3D(mesh) => {
-                            !mesh.mesh.is_nil() && self.resource_api.is_mesh_id_pending(mesh.mesh)
-                        }
-                        _ => false,
-                    })
+                && self.mesh_draw_has_pending_asset(node)
             {
                 visible_now.insert(node);
             }
@@ -1108,6 +1097,9 @@ impl Runtime {
                 .material
                 .unwrap_or(MaterialID::nil());
             if !material.is_nil() {
+                if self.resource_api.is_material_id_pending(material) {
+                    return None;
+                }
                 continue;
             }
 
@@ -1221,6 +1213,30 @@ impl Runtime {
             })
             .collect();
         Some((mesh, std::sync::Arc::from(converted)))
+    }
+
+    pub(crate) fn mesh_draw_has_pending_asset(&self, node: NodeID) -> bool {
+        self.nodes
+            .get(node)
+            .is_some_and(|scene_node| match &scene_node.data {
+                SceneNodeData::MeshInstance3D(mesh) => {
+                    (!mesh.mesh.is_nil() && self.resource_api.is_mesh_id_pending(mesh.mesh))
+                        || mesh.surfaces.iter().any(|surface| {
+                            surface.material.is_some_and(|material| {
+                                self.resource_api.is_material_id_pending(material)
+                            })
+                        })
+                }
+                SceneNodeData::MultiMeshInstance3D(mesh) => {
+                    (!mesh.mesh.is_nil() && self.resource_api.is_mesh_id_pending(mesh.mesh))
+                        || mesh.surfaces.iter().any(|surface| {
+                            surface.material.is_some_and(|material| {
+                                self.resource_api.is_material_id_pending(material)
+                            })
+                        })
+                }
+                _ => false,
+            })
     }
 
     pub(crate) fn resolve_render_mesh_id(

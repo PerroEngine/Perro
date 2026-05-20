@@ -557,6 +557,15 @@ pub(crate) fn resolve_particle_profile(
     if source.is_empty() {
         return None;
     }
+    while let Ok((loaded_source, profile)) = runtime.render_3d.particle_path_load_rx.try_recv() {
+        runtime
+            .render_3d
+            .pending_particle_path_loads
+            .remove(loaded_source.as_str());
+        if let Some(profile) = profile {
+            cache_particle_profile(runtime, loaded_source, profile);
+        }
+    }
     if let Some(path) = runtime.render_3d.particle_path_cache.get(source) {
         return Some(path.clone());
     }
@@ -570,19 +579,44 @@ pub(crate) fn resolve_particle_profile(
             let source_hash =
                 parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
             lookup(source_hash).clone()
+        } else if runtime
+            .render_3d
+            .pending_particle_path_loads
+            .insert(source.to_string())
+        {
+            spawn_particle_profile_load(
+                source.to_string(),
+                runtime.render_3d.particle_path_load_tx.clone(),
+            );
+            return None;
         } else {
-            let bytes = perro_io::load_asset(source).ok()?;
-            let text = std::str::from_utf8(&bytes).ok()?;
-            parse_pparticle_source(text)?
+            return None;
         }
     } else if let Some(inline) = source.strip_prefix("inline://") {
         parse_pparticle_source(inline)?
+    } else if runtime
+        .render_3d
+        .pending_particle_path_loads
+        .insert(source.to_string())
+    {
+        spawn_particle_profile_load(
+            source.to_string(),
+            runtime.render_3d.particle_path_load_tx.clone(),
+        );
+        return None;
     } else {
-        let bytes = perro_io::load_asset(source).ok()?;
-        let text = std::str::from_utf8(&bytes).ok()?;
-        parse_pparticle_source(text)?
+        return None;
     };
-    if !runtime.render_3d.particle_path_cache.contains_key(source) {
+    cache_particle_profile(runtime, source.to_string(), parsed.clone());
+    Some(parsed)
+}
+
+fn cache_particle_profile(runtime: &mut Runtime, source: String, parsed: ParticleProfile3D) {
+    if !runtime
+        .render_3d
+        .particle_path_cache
+        .contains_key(source.as_str())
+    {
         while runtime.render_3d.particle_path_cache.len() >= PARTICLE_PATH_CACHE_MAX {
             let Some(evict_key) = runtime.render_3d.particle_path_cache_order.pop_front() else {
                 break;
@@ -595,13 +629,37 @@ pub(crate) fn resolve_particle_profile(
         runtime
             .render_3d
             .particle_path_cache_order
-            .push_back(source.to_string());
+            .push_back(source.clone());
     }
-    runtime
-        .render_3d
-        .particle_path_cache
-        .insert(source.to_string(), parsed.clone());
-    Some(parsed)
+    runtime.render_3d.particle_path_cache.insert(source, parsed);
+}
+
+fn spawn_particle_profile_load(
+    source: String,
+    tx: std::sync::mpsc::Sender<(String, Option<ParticleProfile3D>)>,
+) {
+    #[cfg(not(target_arch = "wasm32"))]
+    rayon::spawn(move || {
+        let profile = perro_io::load_asset(source.as_str())
+            .ok()
+            .and_then(|bytes| {
+                std::str::from_utf8(&bytes)
+                    .ok()
+                    .and_then(parse_pparticle_source)
+            });
+        let _ = tx.send((source, profile));
+    });
+    #[cfg(target_arch = "wasm32")]
+    {
+        let profile = perro_io::load_asset(source.as_str())
+            .ok()
+            .and_then(|bytes| {
+                std::str::from_utf8(&bytes)
+                    .ok()
+                    .and_then(parse_pparticle_source)
+            });
+        let _ = tx.send((source, profile));
+    }
 }
 
 pub(super) fn parse_pparticle_source(source: &str) -> Option<ParticleProfile3D> {

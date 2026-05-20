@@ -83,6 +83,7 @@ where
                 .iter()
                 .map(|slot| AnimationTreeSlotPlayback {
                     name: Cow::Owned(slot.name.to_string()),
+                    last_animation: AnimationID::nil(),
                     current_frame: 0,
                     playback_frame: 0.0,
                     boomerang_direction: 1.0,
@@ -106,10 +107,18 @@ where
         for idx in 0..tree.internal.slots.len() {
             let entry = tree.animations.get(idx).cloned().unwrap_or_default();
             let slot = &mut tree.internal.slots[idx];
-            if slot.paused || entry.paused || entry.animation.is_nil() {
+            let animation = if res.Animations().is_loaded(entry.animation) {
+                slot.last_animation = entry.animation;
+                entry.animation
+            } else if res.Animations().is_loaded(slot.last_animation) {
+                slot.last_animation
+            } else {
+                AnimationID::nil()
+            };
+            if slot.paused || entry.paused || animation.is_nil() {
                 continue;
             }
-            let Some(clip) = res.Animations().get(entry.animation) else {
+            let Some(clip) = res.Animations().get(animation) else {
                 continue;
             };
             let frame_count = clip.frame_count();
@@ -229,7 +238,12 @@ where
     let Some(animation) = tree.animations.get(slot_index) else {
         return Pose::default();
     };
-    let Some(clip) = res.Animations().get(animation.animation) else {
+    let animation_id = if res.Animations().is_loaded(animation.animation) {
+        animation.animation
+    } else {
+        slot.last_animation
+    };
+    let Some(clip) = res.Animations().get(animation_id) else {
         return Pose::default();
     };
     sample_clip_pose(&clip, slot.current_frame, &animation.bindings)
@@ -385,6 +399,9 @@ where
             .collect::<Vec<_>>()
     });
     for (animation, frame) in entries {
+        if !res.Animations().is_loaded(animation.animation) {
+            continue;
+        }
         let Some(clip) = res.Animations().get(animation.animation) else {
             continue;
         };

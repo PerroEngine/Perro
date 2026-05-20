@@ -8,8 +8,13 @@ impl AnimPlayerAPI for Runtime {
         player: perro_ids::NodeID,
         animation: perro_ids::AnimationID,
     ) -> bool {
+        let pending = self.resource_api.is_animation_id_pending(animation);
         self.with_node_mut::<AnimationPlayer, _, _>(player, |node| {
-            node.set_animation(animation);
+            if pending {
+                node.animation = animation;
+            } else {
+                node.set_animation(animation);
+            }
         })
         .is_some()
     }

@@ -29,7 +29,18 @@ pub fn internal_update<RT, R, IP>(
     R: ResourceAPI + ?Sized,
     IP: InputAPI + ?Sized,
 {
-    let animation_id = with_node!(ctx, SelfNodeType, id, |player| player.animation);
+    let animation_id = with_node!(ctx, SelfNodeType, id, |player| {
+        if res.Animations().is_loaded(player.animation) {
+            player.animation
+        } else if res
+            .Animations()
+            .is_loaded(player.internal.last_applied_animation)
+        {
+            player.internal.last_applied_animation
+        } else {
+            AnimationID::nil()
+        }
+    });
     if animation_id.is_nil() {
         return;
     }
@@ -42,7 +53,7 @@ pub fn internal_update<RT, R, IP>(
     }
 
     let delta_seconds = delta_time!(ctx).max(0.0);
-    let Some(step) = step_animation_player(ctx, id, &clip, delta_seconds) else {
+    let Some(step) = step_animation_player(ctx, id, animation_id, &clip, delta_seconds) else {
         return;
     };
     if !step.should_apply {
@@ -73,6 +84,7 @@ struct AnimationStep {
 fn step_animation_player<RT>(
     ctx: &mut RuntimeWindow<'_, RT>,
     id: NodeID,
+    animation_id: AnimationID,
     clip: &Arc<perro_animation::AnimationClip>,
     delta_seconds: f32,
 ) -> Option<AnimationStep>
@@ -105,12 +117,12 @@ where
         let binding_hash = hash_bindings(&player.bindings);
         let frame_changed = player.current_frame != previous_frame;
         let binding_changed = binding_hash != player.internal.last_binding_hash;
-        let animation_changed = player.animation != player.internal.last_applied_animation;
+        let animation_changed = animation_id != player.internal.last_applied_animation;
         let frame_unapplied = player.current_frame != player.internal.last_applied_frame;
         let should_apply = animation_changed || frame_changed || binding_changed || frame_unapplied;
 
         if should_apply {
-            player.internal.last_applied_animation = player.animation;
+            player.internal.last_applied_animation = animation_id;
             player.internal.last_applied_frame = player.current_frame;
             player.internal.last_binding_hash = binding_hash;
         }

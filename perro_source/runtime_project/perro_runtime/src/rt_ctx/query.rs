@@ -24,6 +24,43 @@ pub(super) fn query_node_ids(
     query_node_ids_with_worker_override(arena, query, None, tag_index)
 }
 
+pub(super) fn query_first_node_id(
+    arena: &NodeArena,
+    query: NodeQueryView<'_>,
+    tag_index: Option<&AHashMap<TagID, AHashSet<NodeID>>>,
+) -> Option<NodeID> {
+    let slot_count = arena.slot_count();
+    if slot_count <= 1 {
+        return None;
+    }
+
+    let plan = QueryPlan::from_query(query.expr);
+    if plan.exact_type_mask.is_empty() || plan.base_type_mask.is_empty() {
+        return None;
+    }
+
+    match query.scope {
+        QueryScope::Root => {
+            if let Some(candidates) = candidate_ids_from_index(query.expr, tag_index, slot_count) {
+                if candidates.exact {
+                    candidates.ids.into_iter().next()
+                } else {
+                    first_in_candidates(arena, candidates.ids, &plan)
+                }
+            } else {
+                first_in_range(arena, 1, slot_count, &plan)
+            }
+        }
+        QueryScope::Subtree(root_id) => {
+            if root_id.is_nil() {
+                None
+            } else {
+                first_in_subtree(arena, root_id, &plan)
+            }
+        }
+    }
+}
+
 fn query_node_ids_with_worker_override(
     arena: &NodeArena,
     query: NodeQueryView<'_>,
@@ -406,6 +443,48 @@ fn scan_candidates(arena: &NodeArena, candidates: Vec<NodeID>, plan: &QueryPlan)
         }
     }
     out
+}
+
+fn first_in_range(arena: &NodeArena, start: usize, end: usize, plan: &QueryPlan) -> Option<NodeID> {
+    for index in start..end {
+        let Some((id, node)) = arena.slot_get(index) else {
+            continue;
+        };
+        if matches_query(node, plan) {
+            return Some(id);
+        }
+    }
+    None
+}
+
+fn first_in_subtree(arena: &NodeArena, root_id: NodeID, plan: &QueryPlan) -> Option<NodeID> {
+    let mut stack = vec![root_id];
+    while let Some(id) = stack.pop() {
+        let Some(node) = arena.get(id) else {
+            continue;
+        };
+        if matches_query(node, plan) {
+            return Some(id);
+        }
+        stack.extend(node.children_slice().iter().copied());
+    }
+    None
+}
+
+fn first_in_candidates(
+    arena: &NodeArena,
+    candidates: Vec<NodeID>,
+    plan: &QueryPlan,
+) -> Option<NodeID> {
+    for id in candidates {
+        let Some(node) = arena.get(id) else {
+            continue;
+        };
+        if matches_query(node, plan) {
+            return Some(id);
+        }
+    }
+    None
 }
 
 fn matches_query(node: &SceneNode, plan: &QueryPlan) -> bool {

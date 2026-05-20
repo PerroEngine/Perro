@@ -22,6 +22,7 @@ impl SkeletonAPI for RuntimeResourceApi {
         if source.is_empty() {
             return Vec::new();
         }
+        self.poll_skeleton_bone_loads();
 
         {
             let cache = self
@@ -33,20 +34,25 @@ impl SkeletonAPI for RuntimeResourceApi {
             }
         }
 
-        let bones = load_bones_2d_uncached(self, source).unwrap_or_default();
+        if self.static_skeleton_lookup.is_some() {
+            let bones = load_bones_2d_static(self, source).unwrap_or_default();
+            let mut cache = self
+                .skeleton_bones_2d_cache
+                .lock()
+                .expect("skeleton 2d cache mutex poisoned");
+            cache.insert(source.to_string(), bones.clone());
+            return bones;
+        }
 
-        let mut cache = self
-            .skeleton_bones_2d_cache
-            .lock()
-            .expect("skeleton 2d cache mutex poisoned");
-        cache.insert(source.to_string(), bones.clone());
-        bones
+        self.queue_skeleton_2d_load(source);
+        Vec::new()
     }
 
     fn load_bones_3d(&self, source: &str) -> Vec<Bone3D> {
         if source.is_empty() {
             return Vec::new();
         }
+        self.poll_skeleton_bone_loads();
 
         {
             let cache = self
@@ -58,14 +64,18 @@ impl SkeletonAPI for RuntimeResourceApi {
             }
         }
 
-        let bones = load_bones_3d_uncached(self, source).unwrap_or_default();
+        if self.static_skeleton_lookup.is_some() {
+            let bones = load_bones_3d_static(self, source).unwrap_or_default();
+            let mut cache = self
+                .skeleton_bones_3d_cache
+                .lock()
+                .expect("skeleton 3d cache mutex poisoned");
+            cache.insert(source.to_string(), bones.clone());
+            return bones;
+        }
 
-        let mut cache = self
-            .skeleton_bones_3d_cache
-            .lock()
-            .expect("skeleton 3d cache mutex poisoned");
-        cache.insert(source.to_string(), bones.clone());
-        bones
+        self.queue_skeleton_3d_load(source);
+        Vec::new()
     }
 
     fn load_bones(&self, source: &str) -> Vec<Bone3D> {
@@ -73,7 +83,122 @@ impl SkeletonAPI for RuntimeResourceApi {
     }
 }
 
-fn load_bones_2d_uncached(api: &RuntimeResourceApi, source: &str) -> Option<Vec<Bone2D>> {
+impl RuntimeResourceApi {
+    pub(crate) fn poll_skeleton_bone_loads(&self) {
+        while let Ok(result) = self
+            .skeleton_2d_load_rx
+            .lock()
+            .expect("skeleton 2d load rx mutex poisoned")
+            .try_recv()
+        {
+            self.skeleton_bones_2d_pending
+                .lock()
+                .expect("skeleton 2d pending mutex poisoned")
+                .remove(result.source.as_str());
+            self.skeleton_bones_2d_cache
+                .lock()
+                .expect("skeleton 2d cache mutex poisoned")
+                .insert(result.source, result.bones);
+        }
+        while let Ok(result) = self
+            .skeleton_3d_load_rx
+            .lock()
+            .expect("skeleton 3d load rx mutex poisoned")
+            .try_recv()
+        {
+            self.skeleton_bones_3d_pending
+                .lock()
+                .expect("skeleton 3d pending mutex poisoned")
+                .remove(result.source.as_str());
+            self.skeleton_bones_3d_cache
+                .lock()
+                .expect("skeleton 3d cache mutex poisoned")
+                .insert(result.source, result.bones);
+        }
+    }
+
+    pub(crate) fn cached_bones_2d(&self, source: &str) -> Option<Vec<Bone2D>> {
+        self.poll_skeleton_bone_loads();
+        self.skeleton_bones_2d_cache
+            .lock()
+            .expect("skeleton 2d cache mutex poisoned")
+            .get(source)
+            .cloned()
+    }
+
+    pub(crate) fn cached_bones_3d(&self, source: &str) -> Option<Vec<Bone3D>> {
+        self.poll_skeleton_bone_loads();
+        self.skeleton_bones_3d_cache
+            .lock()
+            .expect("skeleton 3d cache mutex poisoned")
+            .get(source)
+            .cloned()
+    }
+
+    pub(crate) fn is_skeleton_2d_pending(&self, source: &str) -> bool {
+        self.skeleton_bones_2d_pending
+            .lock()
+            .expect("skeleton 2d pending mutex poisoned")
+            .contains(source)
+    }
+
+    pub(crate) fn is_skeleton_3d_pending(&self, source: &str) -> bool {
+        self.skeleton_bones_3d_pending
+            .lock()
+            .expect("skeleton 3d pending mutex poisoned")
+            .contains(source)
+    }
+
+    fn queue_skeleton_2d_load(&self, source: &str) {
+        {
+            let mut pending = self
+                .skeleton_bones_2d_pending
+                .lock()
+                .expect("skeleton 2d pending mutex poisoned");
+            if !pending.insert(source.to_string()) {
+                return;
+            }
+        }
+        let source = source.to_string();
+        let tx = self.skeleton_2d_load_tx.clone();
+        #[cfg(not(target_arch = "wasm32"))]
+        rayon::spawn(move || {
+            let bones = load_bones_2d_dynamic(source.as_str()).unwrap_or_default();
+            let _ = tx.send(super::core::AsyncSkeleton2DLoadResult { source, bones });
+        });
+        #[cfg(target_arch = "wasm32")]
+        {
+            let bones = load_bones_2d_dynamic(source.as_str()).unwrap_or_default();
+            let _ = tx.send(super::core::AsyncSkeleton2DLoadResult { source, bones });
+        }
+    }
+
+    fn queue_skeleton_3d_load(&self, source: &str) {
+        {
+            let mut pending = self
+                .skeleton_bones_3d_pending
+                .lock()
+                .expect("skeleton 3d pending mutex poisoned");
+            if !pending.insert(source.to_string()) {
+                return;
+            }
+        }
+        let source = source.to_string();
+        let tx = self.skeleton_3d_load_tx.clone();
+        #[cfg(not(target_arch = "wasm32"))]
+        rayon::spawn(move || {
+            let bones = load_bones_3d_dynamic(source.as_str()).unwrap_or_default();
+            let _ = tx.send(super::core::AsyncSkeleton3DLoadResult { source, bones });
+        });
+        #[cfg(target_arch = "wasm32")]
+        {
+            let bones = load_bones_3d_dynamic(source.as_str()).unwrap_or_default();
+            let _ = tx.send(super::core::AsyncSkeleton3DLoadResult { source, bones });
+        }
+    }
+}
+
+fn load_bones_2d_static(api: &RuntimeResourceApi, source: &str) -> Option<Vec<Bone2D>> {
     let path_hash = parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
     if let Some(lookup) = api.static_skeleton_lookup {
         let bytes = lookup(path_hash);
@@ -82,7 +207,10 @@ fn load_bones_2d_uncached(api: &RuntimeResourceApi, source: &str) -> Option<Vec<
         }
         return decode_pskel_2d(bytes).ok();
     }
+    None
+}
 
+fn load_bones_2d_dynamic(source: &str) -> Option<Vec<Bone2D>> {
     if source.ends_with(".pskel2d") {
         let bytes = load_asset(source).ok()?;
         if bytes.starts_with(PSKEL_MAGIC) {
@@ -96,7 +224,7 @@ fn load_bones_2d_uncached(api: &RuntimeResourceApi, source: &str) -> Option<Vec<
     None
 }
 
-fn load_bones_3d_uncached(api: &RuntimeResourceApi, source: &str) -> Option<Vec<Bone3D>> {
+fn load_bones_3d_static(api: &RuntimeResourceApi, source: &str) -> Option<Vec<Bone3D>> {
     let path_hash = parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
     if let Some(lookup) = api.static_skeleton_lookup {
         let bytes = lookup(path_hash);
@@ -105,7 +233,10 @@ fn load_bones_3d_uncached(api: &RuntimeResourceApi, source: &str) -> Option<Vec<
         }
         return decode_pskel(bytes).ok();
     }
+    None
+}
 
+fn load_bones_3d_dynamic(source: &str) -> Option<Vec<Bone3D>> {
     if source.ends_with(".pskel") || source.ends_with(".pskel3d") {
         let bytes = load_asset(source).ok()?;
         if bytes.starts_with(PSKEL_MAGIC) {
@@ -791,7 +922,10 @@ fn read_quat(raw: &[u8], cursor: &mut usize) -> Result<Quaternion, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_pskel, decode_pskel_2d, parse_pskel_text, parse_pskel2d_text};
+    use super::{
+        RuntimeResourceApi, decode_pskel, decode_pskel_2d, parse_pskel_text, parse_pskel2d_text,
+    };
+    use perro_resource_api::sub_apis::SkeletonAPI;
     use perro_structs::{Quaternion, Vector2, Vector3};
 
     #[test]
@@ -917,5 +1051,25 @@ mod tests {
                 "non-v1 pskel version {version} must reject"
             );
         }
+    }
+
+    #[test]
+    fn dynamic_skeleton_load_returns_empty_and_completes_async() {
+        let api = RuntimeResourceApi::new(None, None, None, None, None, None, None, None);
+        let source = "res://missing_async_skeleton.pskel";
+
+        assert!(api.load_bones_3d(source).is_empty());
+        assert!(api.is_skeleton_3d_pending(source));
+
+        for _ in 0..50 {
+            api.poll_skeleton_bone_loads();
+            if !api.is_skeleton_3d_pending(source) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+
+        assert!(!api.is_skeleton_3d_pending(source));
+        assert!(api.cached_bones_3d(source).is_some());
     }
 }

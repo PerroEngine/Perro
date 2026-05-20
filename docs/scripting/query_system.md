@@ -2,28 +2,32 @@
 
 ## Page Map
 
-| Header | Link |
-| --- | --- |
-| Purpose | [Purpose](#purpose) |
+| Header    | Link                    |
+| --------- | ----------------------- |
+| Purpose   | [Purpose](#purpose)     |
 | Use Cases | [Use Cases](#use-cases) |
-| Example | [Example](#example) |
+| Example   | [Example](#example)     |
 | Reference | [Reference](#reference) |
-
-## Purpose
-
-Use `Query System` when this feature, type group, file format, or workflow appears in game code or assets.
 
 ## Use Cases
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+Use queries when game logic needs a set of nodes chosen by runtime state, not a hardcoded reference.
+
+- Find all enemies, pickups, interactables, or team members by tag.
+- Treat tags like dataless components: `enemy`, `alive`, `quest_target`, `damage_zone`.
+- Limit work to one room, UI panel, spawned wave, or scene chunk with `in_subtree(...)`.
+- Find nodes by type when a system owns behavior for all `Node2D`, `Node3D`, camera, light, or UI nodes.
+- Combine filters for gameplay systems, debug tools, editor panels, and target selection.
+- Use `query_iter!`, `query_each!`, and `query_map!` to keep common loop code short.
 
 ## Example
 
 ```rust
 lifecycle!({
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
+        query_each!(ctx.run, all(tags["enemy"], tags["alive"]), |id| {
+            call_method!(ctx.run, id, method!("on_player_seen"), params![]);
+        });
     }
 });
 ```
@@ -56,11 +60,133 @@ Queries help find nodes, then you act through normal node/script APIs.
 - `query!(ctx.run, expr, in_subtree(parent_id)) -> Vec<NodeID>`
 - `query!(ctx.run, &node_query) -> Vec<NodeID>`
 - `query!(ctx.run, &node_query, in_subtree(parent_id)) -> Vec<NodeID>`
+- `query_iter!(ctx.run, expr) -> impl Iterator<Item = NodeID>`
+- `query_each!(ctx.run, expr, |id| { ... })`
+- `query_map!(ctx.run, expr, |id| value) -> Vec<T>`
 - `query_first!(ctx.run, expr) -> Option<NodeID>`
 - `query_first!(ctx.run, expr, in_subtree(parent_id)) -> Option<NodeID>`
 - `query_expr!(expr) -> QueryExpr`
 - `query_builder!(expr) -> NodeQuery`
 - `query_builder!(expr, in_subtree(parent_id)) -> NodeQuery`
+
+## Which Helper To Use
+
+### `query!`
+
+Use `query!` when the matched IDs are the thing you want.
+It returns `Vec<NodeID>`.
+Pick it when you need to sort, count, store, diff, reuse, or loop more than once.
+
+```rust
+let enemies = query!(ctx.run, all(tags["enemy"], not(tags["dead"])));
+if enemies.len() > 20 {
+    signal_emit!(ctx.run, signal!("too_many_enemies"));
+}
+```
+
+### `query_iter!`
+
+Use `query_iter!` when iterator adapters make the code smaller or clearer.
+It exists so query results can flow into normal Rust iterator chains.
+Pick it for `take`, `filter`, `filter_map`, `map`, `find`, `any`, `all`, or `collect`.
+
+```rust
+let first_three = query_iter!(ctx.run, all(tags["pickup"], not(tags["claimed"])))
+    .take(3)
+    .collect::<Vec<_>>();
+```
+
+### `query_each!`
+
+Use `query_each!` when each match triggers an action and you do not need a result list.
+It exists to remove boilerplate for query -> for loop -> side effect.
+Pick it for calling methods, setting vars, adding tags, moving nodes, or sending signals per node.
+
+```rust
+query_each!(ctx.run, all(tags["enemy"], tags["awake"]), |id| {
+    call_method!(ctx.run, id, method!("on_alarm"), params![]);
+});
+```
+
+### `query_map!`
+
+Use `query_map!` when each matched node becomes one output value.
+It exists for query -> transform -> collect.
+Pick it for collecting positions, names, script vars, distances, or optional lookups.
+
+```rust
+let enemy_positions = query_map!(ctx.run, all(tags["enemy"], base_type[Node3D]), |id| {
+    get_global_pos_3d!(ctx.run, id)
+});
+```
+
+### `query_first!`
+
+Use `query_first!` when one match is enough.
+It exists for singleton-style lookup and fallback target lookup.
+Pick it for player, camera, boss, selected node, current objective, or first available interactable.
+
+```rust
+if let Some(target) = query_first!(ctx.run, any(name["Boss"], tags["primary_target"])) {
+    set_var!(ctx.run, target, var!("tracked"), variant!(true));
+}
+```
+
+### `query_expr!`
+
+Use `query_expr!` when you need a `QueryExpr` value.
+It exists so you can compose or conditionally add filters in normal Rust code.
+
+```rust
+let hidden_filter = query_expr!(not(tags["hidden"]));
+let query = NodeQuery::new().where_expr(hidden_filter);
+```
+
+### `query_builder!`
+
+Use `query_builder!` when the same filter is reused.
+It exists to turn macro syntax into a reusable `NodeQuery`.
+Pick it for shared helper functions, systems that run every frame, and filters with optional subtree overrides.
+
+```rust
+let actors = query_builder!(all(base_type[Node3D], tags["actor"]));
+let room_actors = query!(ctx.run, &actors, in_subtree(room_root_id));
+```
+
+### Cost Model
+
+Most helper macros run the same runtime query first.
+That query builds an owned `Vec<NodeID>`.
+
+- `query!` returns that `Vec`.
+- `query_iter!` turns that `Vec` into `Vec::into_iter()`.
+- `query_each!` loops over that iterator.
+- `query_map!` maps that iterator into a new `Vec<T>`.
+- `query_first!` uses a first-match runtime path and avoids building the full result list when the runtime supports it.
+
+Use these helpers to pick the clearest gameplay code shape.
+Do not pick `query_iter!` expecting a streaming scene scan or zero allocation.
+
+Why not make `query_iter!` fully borrowed?
+Because gameplay usually does more runtime work inside the loop.
+A borrowed iterator would keep `ctx.run` borrowed for the whole scan, so this would fail:
+
+```rust
+for id in query_iter!(ctx.run, all(tags["enemy"])) {
+    call_method!(ctx.run, id, method!("tick"), params![]);
+}
+```
+
+Current owned `query_iter!` releases the runtime borrow before the loop body.
+That keeps normal script code usable.
+
+For hot paths, prefer one of these:
+
+- Cache stable `NodeID`s after scene load or spawn.
+- Re-run queries only when tags, scene chunks, or spawned groups change.
+- Use `in_subtree(...)` to shrink the scanned node set.
+- Use rare tags like `boss`, `quest_target`, or `active_enemy` to narrow candidates.
+- Add a dedicated runtime API later if a system needs true early-exit or no-alloc traversal.
 
 ## Expression Grammar
 
@@ -98,12 +224,11 @@ Predicate forms:
 ### 1) Tag Groups
 
 ```rust
-let enemies = query!(ctx.run, all(tags["enemy"], not(tags["dead"])));
-for id in enemies {
+query_each!(ctx.run, all(tags["enemy"], not(tags["dead"])), |id| {
     let _ = with_base_node_mut!(ctx.run, Node3D, id, |node| {
         node.transform.position.y += 0.1;
     });
-}
+});
 ```
 
 ### 2) Name or Tag Fallback
@@ -161,16 +286,36 @@ let q = NodeQuery::new().where_expr(query_expr!(all(name["Player"])));
 let ids = ctx.run.NodeQuery().query(&q);
 ```
 
-### 6) Query -> Script Interop
+### 6) Iterator Adapters
+
+Use `query_iter!` when iterator shape makes the operation clearer.
+This is useful for caps, maps, and chained ID lookups.
 
 ```rust
-let allies = query!(ctx.run, all(tags["ally"], tags["alive"]));
-for id in allies {
-    call_method!(ctx.run, id, method!("on_team_buff"), params![variant!(5.0_f32)]);
-}
+let closest_three = query_iter!(ctx.run, all(tags["pickup"], not(tags["claimed"])))
+    .take(3)
+    .collect::<Vec<_>>();
 ```
 
-### 7) Render Layer Filters
+### 7) Query Map
+
+Use `query_map!` when the output is data derived from each node.
+
+```rust
+let enemy_positions = query_map!(ctx.run, all(tags["enemy"], base_type[Node3D]), |id| {
+    get_global_pos_3d!(ctx.run, id)
+});
+```
+
+### 8) Query -> Script Interop
+
+```rust
+query_each!(ctx.run, all(tags["ally"], tags["alive"]), |id| {
+    call_method!(ctx.run, id, method!("on_team_buff"), params![variant!(5.0_f32)]);
+});
+```
+
+### 9) Render Layer Filters
 
 ```rust
 let layer_one = query!(ctx.run, all(base_type[Node2D], layers[1]));

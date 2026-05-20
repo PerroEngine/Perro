@@ -6,7 +6,11 @@ script_vars = {
     mirror_original = @MirrorOriginal
     mirror_flip_x = @MirrorFlipX
     mirror_flip_y = @MirrorFlipY
+    mirror_flip_z = @MirrorFlipZ
     mirror_flip_xy = @MirrorFlipXY
+    mirror_flip_xz = @MirrorFlipXZ
+    mirror_flip_yz = @MirrorFlipYZ
+    mirror_flip_xyz = @MirrorFlipXYZ
 }
     [Node3D]
         position = (0, 0, 0)
@@ -106,7 +110,7 @@ parent = @MeshMaterialsDemo
         flip_y = false
         flip_z = false
         [Node3D]
-            position = (-4.2, 0.7, -3.0)
+            position = (0.0, 0.7, -3.0)
             scale = (1.15, 1.15, 1.15)
         [/Node3D]
     [/MeshInstance3D]
@@ -120,7 +124,7 @@ parent = @MeshMaterialsDemo
         flip_y = false
         flip_z = false
         [Node3D]
-            position = (-1.4, 0.7, -3.0)
+            position = (-2.8, 0.7, -1.6)
             scale = (1.15, 1.15, 1.15)
         [/Node3D]
     [/MeshInstance3D]
@@ -129,27 +133,83 @@ parent = @MeshMaterialsDemo
 [MirrorFlipY]
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
-        material = { type = "standard" base_color_factor = (0.74, 0.92, 0.25, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = { type = "standard" base_color_factor = (0.18, 0.72, 1.0, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         flip_x = false
         flip_y = true
         flip_z = false
         [Node3D]
-            position = (1.4, 0.7, -3.0)
+            position = (0.0, 0.7, -1.6)
             scale = (1.15, 1.15, 1.15)
         [/Node3D]
     [/MeshInstance3D]
 [/MirrorFlipY]
 
+[MirrorFlipZ]
+parent = @MeshMaterialsDemo
+    [MeshInstance3D]
+        material = { type = "standard" base_color_factor = (0.18, 0.72, 1.0, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        flip_x = false
+        flip_y = false
+        flip_z = true
+        [Node3D]
+            position = (2.8, 0.7, -1.6)
+            scale = (1.15, 1.15, 1.15)
+        [/Node3D]
+    [/MeshInstance3D]
+[/MirrorFlipZ]
+
 [MirrorFlipXY]
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
-        material = { type = "standard" base_color_factor = (0.95, 0.34, 0.72, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = { type = "standard" base_color_factor = (0.18, 0.72, 1.0, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
         flip_x = true
         flip_y = true
         flip_z = false
         [Node3D]
-            position = (4.2, 0.7, -3.0)
+            position = (-2.8, 0.7, -3.0)
             scale = (1.15, 1.15, 1.15)
         [/Node3D]
     [/MeshInstance3D]
 [/MirrorFlipXY]
+
+[MirrorFlipXZ]
+parent = @MeshMaterialsDemo
+    [MeshInstance3D]
+        material = { type = "standard" base_color_factor = (0.18, 0.72, 1.0, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        flip_x = true
+        flip_y = false
+        flip_z = true
+        [Node3D]
+            position = (2.8, 0.7, -3.0)
+            scale = (1.15, 1.15, 1.15)
+        [/Node3D]
+    [/MeshInstance3D]
+[/MirrorFlipXZ]
+
+[MirrorFlipYZ]
+parent = @MeshMaterialsDemo
+    [MeshInstance3D]
+        material = { type = "standard" base_color_factor = (0.18, 0.72, 1.0, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        flip_x = false
+        flip_y = true
+        flip_z = true
+        [Node3D]
+            position = (-2.8, 0.7, -4.4)
+            scale = (1.15, 1.15, 1.15)
+        [/Node3D]
+    [/MeshInstance3D]
+[/MirrorFlipYZ]
+
+[MirrorFlipXYZ]
+parent = @MeshMaterialsDemo
+    [MeshInstance3D]
+        material = { type = "standard" base_color_factor = (0.18, 0.72, 1.0, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        flip_x = true
+        flip_y = true
+        flip_z = true
+        [Node3D]
+            position = (0.0, 0.7, -4.4)
+            scale = (1.15, 1.15, 1.15)
+        [/Node3D]
+    [/MeshInstance3D]
+[/MirrorFlipXYZ]

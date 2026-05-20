@@ -254,9 +254,9 @@ Swap tool mesh without a stall:
 methods!({
     fn equip_tool_version(&self, ctx: &mut ScriptContext<'_, API>, tool_node: NodeID, version: i32) {
         let source = match version {
-            2 => "res://meshes/tools/hammer_v2.glb:mesh[0]",
-            3 => "res://meshes/tools/hammer_v3.glb:mesh[0]",
-            _ => "res://meshes/tools/hammer_v1.glb:mesh[0]",
+            2 => "res://meshes/tools/hammer_v2.glb",
+            3 => "res://meshes/tools/hammer_v3.glb",
+            _ => "res://meshes/tools/hammer_v1.glb",
         };
         let next_mesh = mesh_load!(ctx.res, source);
 

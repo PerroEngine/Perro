@@ -99,6 +99,35 @@ impl AnimationAPI for RuntimeResourceApi {
     }
 }
 
+impl RuntimeResourceApi {
+    pub(crate) fn is_animation_id_pending(&self, animation: AnimationID) -> bool {
+        if animation.is_nil() {
+            return false;
+        }
+        self.poll_async_animation_loads();
+        let state = self.state.lock().expect("resource api mutex poisoned");
+        state.animation_data_by_id.contains_key(&animation)
+            && !state.animation_loaded_by_id.contains(&animation)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_create_animation(&self, clip: AnimationClip, loaded: bool) -> AnimationID {
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        let id = state.allocate_animation_id();
+        state.animation_data_by_id.insert(id, Arc::new(clip));
+        if loaded {
+            state.animation_loaded_by_id.insert(id);
+        }
+        id
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_mark_animation_loaded(&self, id: AnimationID) {
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        state.animation_loaded_by_id.insert(id);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -616,6 +616,10 @@ impl Runtime {
             }
         }
         for node in self.render_2d.collect_removed_visible_nodes(&visible_now) {
+            if self.node_2d_has_pending_visual_asset(node) {
+                visible_now.insert(node);
+                continue;
+            }
             self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
             self.render_2d.retained_sprites.remove(&node);
         }
@@ -749,7 +753,32 @@ impl Runtime {
             return None;
         }
 
+        if self.resource_api.is_texture_id_pending(texture) {
+            return None;
+        }
+
         Some(texture)
+    }
+
+    pub(crate) fn node_2d_has_pending_visual_asset(&self, node: NodeID) -> bool {
+        self.nodes
+            .get(node)
+            .is_some_and(|scene_node| match &scene_node.data {
+                SceneNodeData::Sprite2D(sprite) => {
+                    self.render_2d.retained_sprites.contains_key(&node)
+                        && !sprite.texture.is_nil()
+                        && self.resource_api.is_texture_id_pending(sprite.texture)
+                }
+                SceneNodeData::AnimatedSprite2D(sprite) => {
+                    self.render_2d.retained_sprites.contains_key(&node)
+                        && !sprite.texture.is_nil()
+                        && self.resource_api.is_texture_id_pending(sprite.texture)
+                }
+                SceneNodeData::TileMap2D(_) => {
+                    self.render.is_inflight(tilemap_2d_texture_request(node))
+                }
+                _ => false,
+            })
     }
 
     pub(crate) fn resolve_tilemap_texture(
@@ -1230,6 +1259,12 @@ fn water_link_overlap_weight(local: perro_structs::Vector2, link: &WaterLinkStat
 
 pub(crate) fn resolve_tileset_2d(runtime: &mut Runtime, source: &str) -> Option<ParsedTileset2D> {
     let source_hash = parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
+    while let Ok((hash, tileset)) = runtime.render_2d.tileset_load_rx.try_recv() {
+        runtime.render_2d.pending_tileset_loads.remove(&hash);
+        if let Some(tileset) = tileset {
+            runtime.render_2d.tileset_cache.insert(hash, tileset);
+        }
+    }
     if let Some(tileset) = runtime.render_2d.tileset_cache.get(&source_hash) {
         return Some(tileset.clone());
     }
@@ -1243,18 +1278,42 @@ pub(crate) fn resolve_tileset_2d(runtime: &mut Runtime, source: &str) -> Option<
     } else {
         None
     };
-    let tileset = if let Some(bytes) = static_tileset {
-        perro_render_bridge::decode_tileset_2d_binary(bytes)?
-    } else {
-        let bytes = perro_io::load_asset(source).ok()?;
-        let text = std::str::from_utf8(&bytes).ok()?;
-        perro_render_bridge::parse_ptileset_source(text)?
-    };
-    runtime
-        .render_2d
-        .tileset_cache
-        .insert(source_hash, tileset.clone());
-    Some(tileset)
+    if let Some(bytes) = static_tileset {
+        let tileset = perro_render_bridge::decode_tileset_2d_binary(bytes)?;
+        runtime
+            .render_2d
+            .tileset_cache
+            .insert(source_hash, tileset.clone());
+        return Some(tileset);
+    }
+
+    if runtime.render_2d.pending_tileset_loads.insert(source_hash) {
+        let source = source.to_string();
+        let tx = runtime.render_2d.tileset_load_tx.clone();
+        #[cfg(not(target_arch = "wasm32"))]
+        rayon::spawn(move || {
+            let tileset = perro_io::load_asset(source.as_str())
+                .ok()
+                .and_then(|bytes| {
+                    std::str::from_utf8(&bytes)
+                        .ok()
+                        .and_then(perro_render_bridge::parse_ptileset_source)
+                });
+            let _ = tx.send((source_hash, tileset));
+        });
+        #[cfg(target_arch = "wasm32")]
+        {
+            let tileset = perro_io::load_asset(source.as_str())
+                .ok()
+                .and_then(|bytes| {
+                    std::str::from_utf8(&bytes)
+                        .ok()
+                        .and_then(perro_render_bridge::parse_ptileset_source)
+                });
+            let _ = tx.send((source_hash, tileset));
+        }
+    }
+    None
 }
 
 pub(crate) struct TilemapSpriteBuild<'a> {
@@ -1343,6 +1402,15 @@ pub(crate) fn resolve_particle_profile_2d(
     if source.is_empty() {
         return None;
     }
+    while let Ok((loaded_source, profile)) = runtime.render_2d.particle_path_load_rx.try_recv() {
+        runtime
+            .render_2d
+            .pending_particle_path_loads
+            .remove(loaded_source.as_str());
+        if let Some(profile) = profile {
+            cache_particle_profile_2d(runtime, loaded_source, profile);
+        }
+    }
     if let Some(path) = runtime.render_2d.particle_path_cache.get(source) {
         return Some(path.clone());
     }
@@ -1356,19 +1424,44 @@ pub(crate) fn resolve_particle_profile_2d(
             let source_hash =
                 parse_hashed_source_uri(source).unwrap_or_else(|| string_to_u64(source));
             particle_profile_2d_from_3d(lookup(source_hash))
+        } else if runtime
+            .render_2d
+            .pending_particle_path_loads
+            .insert(source.to_string())
+        {
+            spawn_particle_profile_2d_load(
+                source.to_string(),
+                runtime.render_2d.particle_path_load_tx.clone(),
+            );
+            return None;
         } else {
-            let bytes = perro_io::load_asset(source).ok()?;
-            let text = std::str::from_utf8(&bytes).ok()?;
-            parse_pparticle_source_2d(text)?
+            return None;
         }
     } else if let Some(inline) = source.strip_prefix("inline://") {
         parse_pparticle_source_2d(inline)?
+    } else if runtime
+        .render_2d
+        .pending_particle_path_loads
+        .insert(source.to_string())
+    {
+        spawn_particle_profile_2d_load(
+            source.to_string(),
+            runtime.render_2d.particle_path_load_tx.clone(),
+        );
+        return None;
     } else {
-        let bytes = perro_io::load_asset(source).ok()?;
-        let text = std::str::from_utf8(&bytes).ok()?;
-        parse_pparticle_source_2d(text)?
+        return None;
     };
-    if !runtime.render_2d.particle_path_cache.contains_key(source) {
+    cache_particle_profile_2d(runtime, source.to_string(), parsed.clone());
+    Some(parsed)
+}
+
+fn cache_particle_profile_2d(runtime: &mut Runtime, source: String, parsed: ParticleProfile2D) {
+    if !runtime
+        .render_2d
+        .particle_path_cache
+        .contains_key(source.as_str())
+    {
         while runtime.render_2d.particle_path_cache.len() >= PARTICLE_PATH_CACHE_MAX {
             let Some(evict_key) = runtime.render_2d.particle_path_cache_order.pop_front() else {
                 break;
@@ -1381,13 +1474,37 @@ pub(crate) fn resolve_particle_profile_2d(
         runtime
             .render_2d
             .particle_path_cache_order
-            .push_back(source.to_string());
+            .push_back(source.clone());
     }
-    runtime
-        .render_2d
-        .particle_path_cache
-        .insert(source.to_string(), parsed.clone());
-    Some(parsed)
+    runtime.render_2d.particle_path_cache.insert(source, parsed);
+}
+
+fn spawn_particle_profile_2d_load(
+    source: String,
+    tx: std::sync::mpsc::Sender<(String, Option<ParticleProfile2D>)>,
+) {
+    #[cfg(not(target_arch = "wasm32"))]
+    rayon::spawn(move || {
+        let profile = perro_io::load_asset(source.as_str())
+            .ok()
+            .and_then(|bytes| {
+                std::str::from_utf8(&bytes)
+                    .ok()
+                    .and_then(parse_pparticle_source_2d)
+            });
+        let _ = tx.send((source, profile));
+    });
+    #[cfg(target_arch = "wasm32")]
+    {
+        let profile = perro_io::load_asset(source.as_str())
+            .ok()
+            .and_then(|bytes| {
+                std::str::from_utf8(&bytes)
+                    .ok()
+                    .and_then(parse_pparticle_source_2d)
+            });
+        let _ = tx.send((source, profile));
+    }
 }
 
 fn particle_profile_2d_from_3d(

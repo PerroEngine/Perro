@@ -1,7 +1,11 @@
 use super::Runtime;
+use perro_animation::{
+    AnimationClip, AnimationObject, AnimationObjectKey, AnimationObjectTrack, AnimationTrackValue,
+};
 use perro_ids::{MaterialID, MeshID};
 use perro_nodes::{
-    CameraProjection, CollisionShape3D, SceneNode, SceneNodeData, StaticBody3D, WaterBody3D,
+    AnimationPlayer, CameraProjection, CollisionShape3D, SceneNode, SceneNodeData, StaticBody3D,
+    WaterBody3D,
     ambient_light_3d::AmbientLight3D,
     camera_3d::Camera3D,
     mesh_instance_3d::MeshInstance3D,
@@ -17,10 +21,12 @@ use perro_nodes::{
 use perro_render_bridge::{
     CameraProjectionState, Command3D, RenderCommand, RenderEvent, ResourceCommand,
 };
-use perro_resource_api::sub_apis::MeshAPI;
-use perro_runtime_api::sub_apis::NodeAPI;
+use perro_resource_api::sub_apis::{MaterialAPI, MeshAPI};
+use perro_runtime_api::sub_apis::{AnimPlayerAPI, NodeAPI};
+use perro_scene::{Node3DField, NodeField};
 use perro_structs::Transform3D;
 use perro_structs::{BitMask, Quaternion, Vector3};
+use std::borrow::Cow;
 use std::sync::Arc;
 
 fn collect_commands(runtime: &mut Runtime) -> Vec<RenderCommand> {
@@ -166,6 +172,41 @@ fn set_primary_material_multi(mesh: &mut MultiMeshInstance3D, material: Material
         mesh.surfaces.push(MeshSurfaceBinding::default());
     }
     mesh.surfaces[0].material = Some(material);
+}
+
+fn node3d_position_clip(xs: &[(u32, f32)]) -> AnimationClip {
+    AnimationClip {
+        name: Cow::Borrowed("tool"),
+        fps: 1.0,
+        total_frames: xs.last().map(|(frame, _)| frame + 1).unwrap_or(0),
+        objects: Cow::Owned(vec![AnimationObject {
+            name: Cow::Borrowed("Tool"),
+            node_type: Cow::Borrowed("Node3D"),
+        }]),
+        object_tracks: Cow::Owned(vec![AnimationObjectTrack {
+            object: Cow::Borrowed("Tool"),
+            field: NodeField::Node3D(Node3DField::Position),
+            bone_target: None,
+            interpolation: perro_animation::AnimationInterpolation::Step,
+            ease: perro_animation::AnimationEase::Linear,
+            keys: Cow::Owned(
+                xs.iter()
+                    .map(|(frame, x)| AnimationObjectKey {
+                        frame: *frame,
+                        mode: perro_animation::AnimationKeyMode::Closed,
+                        interpolation: perro_animation::AnimationInterpolation::Step,
+                        ease: perro_animation::AnimationEase::Linear,
+                        value: AnimationTrackValue::Transform3D(Transform3D::new(
+                            Vector3::new(*x, 0.0, 0.0),
+                            Quaternion::IDENTITY,
+                            Vector3::ONE,
+                        )),
+                    })
+                    .collect(),
+            ),
+        }]),
+        frame_events: Cow::Borrowed(&[]),
+    }
 }
 
 #[test]
@@ -543,6 +584,153 @@ fn mesh_instance_keeps_retained_mesh_while_replacement_mesh_is_pending() {
                     if *draw_node == node && *mesh == pending_mesh
             )
     )));
+}
+
+#[test]
+fn mesh_instance_keeps_retained_material_while_replacement_material_is_pending() {
+    let mut runtime = Runtime::new();
+    let mesh_id = MeshID::from_parts(51, 0);
+    let old_material = MaterialID::from_parts(52, 0);
+    let mut mesh = MeshInstance3D::new();
+    mesh.mesh = mesh_id;
+    set_primary_material(&mut mesh, old_material);
+    let node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+
+    runtime.extract_render_3d_commands();
+    let first = collect_commands(&mut runtime);
+    assert!(first.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command)
+            if matches!(
+                command.as_ref(),
+                Command3D::Draw { node: draw_node, surfaces, .. }
+                    if *draw_node == node
+                        && surfaces
+                            .first()
+                            .and_then(|surface| surface.material)
+                            .is_some_and(|material| material == old_material)
+            )
+    )));
+
+    let pending_material = runtime
+        .resource_api
+        .load_material_source("res://materials/tool_version_b.pmat");
+    let pending_request =
+        collect_commands(&mut runtime)
+            .into_iter()
+            .find_map(|command| match command {
+                RenderCommand::Resource(ResourceCommand::CreateMaterial {
+                    request, id, ..
+                }) if id == pending_material => Some(request),
+                _ => None,
+            })
+            .expect("expected pending material create request");
+    if let Some(scene_node) = runtime.nodes.get_mut(node)
+        && let SceneNodeData::MeshInstance3D(mesh) = &mut scene_node.data
+    {
+        set_primary_material(mesh, pending_material);
+    }
+    runtime.mark_needs_rerender(node);
+
+    runtime.extract_render_3d_commands();
+    let pending = collect_commands(&mut runtime);
+    assert!(!pending.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command)
+            if matches!(command.as_ref(), Command3D::RemoveNode { node: removed } if *removed == node)
+    )));
+    assert!(!pending.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command)
+            if matches!(command.as_ref(), Command3D::Draw { node: draw_node, .. } if *draw_node == node)
+    )));
+    assert_eq!(
+        runtime
+            .render_3d
+            .retained_mesh_draws
+            .get(&node)
+            .and_then(|draw| draw.surfaces.first())
+            .and_then(|surface| surface.material),
+        Some(old_material)
+    );
+
+    runtime.apply_render_event(RenderEvent::MaterialCreated {
+        request: pending_request,
+        id: pending_material,
+    });
+    runtime.mark_needs_rerender(node);
+    runtime.extract_render_3d_commands();
+    let ready = collect_commands(&mut runtime);
+    assert!(ready.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command)
+            if matches!(
+                command.as_ref(),
+                Command3D::Draw { node: draw_node, surfaces, .. }
+                    if *draw_node == node
+                        && surfaces
+                            .first()
+                            .and_then(|surface| surface.material)
+                            .is_some_and(|material| material == pending_material)
+            )
+    )));
+}
+
+#[test]
+fn animation_player_keeps_old_clip_while_replacement_clip_is_pending() {
+    let mut runtime = Runtime::new();
+    let target = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Node3D(Node3D::new())));
+    let player = NodeAPI::create::<AnimationPlayer>(&mut runtime);
+    let old_clip = runtime
+        .resource_api
+        .test_create_animation(node3d_position_clip(&[(0, 1.0), (1, 2.0), (2, 3.0)]), true);
+    let pending_clip = runtime
+        .resource_api
+        .test_create_animation(node3d_position_clip(&[(0, 100.0), (1, 200.0)]), false);
+
+    assert!(runtime.animation_set_clip(player, old_clip));
+    assert!(runtime.animation_bind(player, "Tool", target));
+    runtime.update(1.0);
+    let x_after_old = runtime
+        .nodes
+        .get(target)
+        .and_then(|node| match &node.data {
+            SceneNodeData::Node3D(node) => Some(node.transform.position.x),
+            _ => None,
+        })
+        .expect("target node");
+    assert_eq!(x_after_old, 1.0);
+
+    assert!(runtime.animation_set_clip(player, pending_clip));
+    assert!(runtime.animation_seek_frame(player, 1));
+    runtime.update(1.0);
+    let x_while_pending = runtime
+        .nodes
+        .get(target)
+        .and_then(|node| match &node.data {
+            SceneNodeData::Node3D(node) => Some(node.transform.position.x),
+            _ => None,
+        })
+        .expect("target node");
+    assert_eq!(x_while_pending, 2.0);
+
+    runtime
+        .resource_api
+        .test_mark_animation_loaded(pending_clip);
+    runtime.update(1.0);
+    let x_after_ready = runtime
+        .nodes
+        .get(target)
+        .and_then(|node| match &node.data {
+            SceneNodeData::Node3D(node) => Some(node.transform.position.x),
+            _ => None,
+        })
+        .expect("target node");
+    assert!(x_after_ready >= 100.0);
 }
 
 #[test]

@@ -1,5 +1,7 @@
 use super::*;
 use perro_nodes::{SceneNode, SceneNodeData};
+use perro_render_bridge::RenderEvent;
+use perro_resource_api::sub_apis::TextureAPI;
 use perro_runtime_api::sub_apis::NodeAPI;
 use perro_structs::Color;
 use perro_ui::{
@@ -9,6 +11,25 @@ use perro_ui::{
 
 fn rgba(r: f32, g: f32, b: f32, a: f32) -> [f32; 4] {
     Color::new(r, g, b, a).to_float_slice()
+}
+
+fn collect_resource_texture_request(
+    runtime: &mut Runtime,
+    texture: TextureID,
+) -> perro_render_bridge::RenderRequestID {
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    commands
+        .into_iter()
+        .find_map(|command| match command {
+            RenderCommand::Resource(ResourceCommand::CreateTexture { request, id, .. })
+                if id == texture =>
+            {
+                Some(request)
+            }
+            _ => None,
+        })
+        .expect("expected texture create request")
 }
 
 #[test]
@@ -56,6 +77,73 @@ fn ui_animated_image_emits_current_frame_region() {
         cmd,
         RenderCommand::Ui(UiCommand::UpsertImage { node: n, uv_min, uv_max, .. })
             if *n == node && *uv_min == [16.0, 0.0] && *uv_max == [32.0, 16.0]
+    )));
+}
+
+#[test]
+fn ui_image_keeps_retained_texture_while_replacement_texture_is_pending() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let old_texture = TextureID::from_parts(61, 0);
+    let mut image = perro_ui::UiImage::new();
+    image.texture = old_texture;
+    image.layout.size = UiVector2::pixels(64.0, 64.0);
+    let node = insert_ui_node(&mut runtime, SceneNodeData::UiImage(image));
+
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertImage { node: n, texture, .. })
+            if *n == node && *texture == old_texture
+    )));
+
+    let pending_texture = runtime
+        .resource_api
+        .load_texture("res://textures/ui_tool_version_b.png");
+    let pending_request = collect_resource_texture_request(&mut runtime, pending_texture);
+    if let Some(scene_node) = runtime.nodes.get_mut(node)
+        && let SceneNodeData::UiImage(image) = &mut scene_node.data
+    {
+        image.texture = pending_texture;
+    }
+    runtime.mark_ui_dirty(node, Runtime::UI_DIRTY_COMMANDS);
+
+    runtime.extract_render_ui_commands();
+    commands.clear();
+    runtime.drain_render_commands(&mut commands);
+    assert!(!commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::RemoveNode { node: n }) if *n == node
+    )));
+    assert!(!commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertImage { node: n, .. }) if *n == node
+    )));
+    assert!(
+        runtime
+            .render_ui
+            .retained_commands
+            .get(&node)
+            .is_some_and(|cmd| {
+                matches!(cmd, UiCommand::UpsertImage { texture, .. } if *texture == old_texture)
+            })
+    );
+
+    runtime.apply_render_event(RenderEvent::TextureCreated {
+        request: pending_request,
+        id: pending_texture,
+    });
+    runtime.mark_ui_dirty(node, Runtime::UI_DIRTY_COMMANDS);
+    runtime.extract_render_ui_commands();
+    commands.clear();
+    runtime.drain_render_commands(&mut commands);
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertImage { node: n, texture, .. })
+            if *n == node && *texture == pending_texture
     )));
 }
 

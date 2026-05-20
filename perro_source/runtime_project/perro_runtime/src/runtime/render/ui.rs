@@ -177,7 +177,27 @@ impl Runtime {
             return None;
         }
 
+        if self.resource_api.is_texture_id_pending(texture) {
+            return None;
+        }
+
         Some(texture)
+    }
+
+    fn ui_image_has_pending_texture(&self, node: NodeID) -> bool {
+        self.nodes
+            .get(node)
+            .is_some_and(|scene_node| match &scene_node.data {
+                SceneNodeData::UiImage(image) => {
+                    !image.texture.is_nil()
+                        && self.resource_api.is_texture_id_pending(image.texture)
+                }
+                SceneNodeData::UiAnimatedImage(image) => {
+                    !image.texture.is_nil()
+                        && self.resource_api.is_texture_id_pending(image.texture)
+                }
+                _ => false,
+            })
     }
 
     pub fn extract_render_ui_commands(&mut self) {
@@ -405,6 +425,13 @@ impl Runtime {
                 .get(&node)
                 .copied()
                 .unwrap_or_default();
+            if effective_visible
+                && self.render_ui.retained_commands.contains_key(&node)
+                && self.ui_image_has_pending_texture(node)
+            {
+                visible_now.insert(node);
+                continue;
+            }
             let effective_z = self.ui_effective_z(node);
             let rect_state = if let Some(rect) = computed.get(&node).copied() {
                 ui_rect_state_from_node(&scene_node.data, rect, state, effective_z)
@@ -515,6 +542,20 @@ impl Runtime {
             }
             self.render_ui.retained_rects.insert(node, rect_state);
             visible_now.insert(node);
+        }
+        for node in self
+            .render_ui
+            .prev_visible
+            .iter()
+            .copied()
+            .collect::<Vec<_>>()
+        {
+            if !visible_now.contains(&node)
+                && self.render_ui.retained_commands.contains_key(&node)
+                && self.ui_image_has_pending_texture(node)
+            {
+                visible_now.insert(node);
+            }
         }
         self.remove_no_longer_visible_ui_nodes(&visible_now);
         if let Some(timing) = timing.as_deref_mut() {

@@ -167,6 +167,8 @@ pub struct Runtime {
     water_rigid_body_ids_3d_cache: Vec<NodeID>,
     water_ids_2d_cache: Vec<NodeID>,
     water_ids_3d_cache: Vec<NodeID>,
+    pending_skeleton_sources_2d: AHashMap<NodeID, String>,
+    pending_skeleton_sources_3d: AHashMap<NodeID, String>,
     pub(crate) force_water_impacts_2d: Vec<ForceWaterImpact2D>,
     pub(crate) force_water_impacts_3d: Vec<ForceWaterImpact3D>,
     pub(crate) pending_force_emitters_2d: Vec<perro_nodes::PhysicsForceEmitter2D>,
@@ -359,6 +361,8 @@ impl Runtime {
             water_rigid_body_ids_3d_cache: Vec::new(),
             water_ids_2d_cache: Vec::new(),
             water_ids_3d_cache: Vec::new(),
+            pending_skeleton_sources_2d: AHashMap::new(),
+            pending_skeleton_sources_3d: AHashMap::new(),
             force_water_impacts_2d: Vec::new(),
             force_water_impacts_3d: Vec::new(),
             pending_force_emitters_2d: Vec::new(),
@@ -463,6 +467,46 @@ impl Runtime {
         &self.water_ids_3d_cache
     }
 
+    pub(crate) fn apply_loaded_skeleton_bones(&mut self) {
+        self.resource_api.poll_skeleton_bone_loads();
+        let mut changed_2d = Vec::new();
+        for (node, source) in &self.pending_skeleton_sources_2d {
+            if let Some(bones) = self.resource_api.cached_bones_2d(source)
+                && let Some(scene_node) = self.nodes.get_mut(*node)
+                && let perro_nodes::SceneNodeData::Skeleton2D(skeleton) = &mut scene_node.data
+            {
+                skeleton.bones = bones;
+                changed_2d.push(*node);
+            }
+        }
+        for node in &changed_2d {
+            self.pending_skeleton_sources_2d.remove(node);
+            self.mark_transform_dirty_recursive(*node);
+        }
+
+        let mut changed_3d = Vec::new();
+        for (node, source) in &self.pending_skeleton_sources_3d {
+            if let Some(bones) = self.resource_api.cached_bones_3d(source)
+                && let Some(scene_node) = self.nodes.get_mut(*node)
+                && let perro_nodes::SceneNodeData::Skeleton3D(skeleton) = &mut scene_node.data
+            {
+                skeleton.bones = bones;
+                changed_3d.push(*node);
+            }
+        }
+        for node in &changed_3d {
+            self.pending_skeleton_sources_3d.remove(node);
+            self.mark_transform_dirty_recursive(*node);
+        }
+
+        if !changed_2d.is_empty() {
+            self.render_2d.request_full_scan_once();
+        }
+        if !changed_3d.is_empty() {
+            self.render_3d.request_full_scan_once();
+        }
+    }
+
     pub fn from_project_with_script_registry(
         project: RuntimeProject,
         provider_mode: ProviderMode,
@@ -526,6 +570,7 @@ impl Runtime {
     pub fn update(&mut self, delta_time: f32) {
         self.time.delta = delta_time;
         self.process_pending_web_route_change();
+        self.apply_loaded_skeleton_bones();
         #[cfg(feature = "steamworks")]
         let _ = perro_steamworks::runtime::run_callbacks();
         self.run_start_schedule();
@@ -541,6 +586,7 @@ impl Runtime {
         let total_start = Instant::now();
         self.time.delta = delta_time;
         self.process_pending_web_route_change();
+        self.apply_loaded_skeleton_bones();
         #[cfg(feature = "steamworks")]
         let _ = perro_steamworks::runtime::run_callbacks();
 

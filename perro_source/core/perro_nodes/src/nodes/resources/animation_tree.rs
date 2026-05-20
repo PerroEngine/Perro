@@ -19,6 +19,7 @@ impl Default for AnimationTreeAnimation {
 #[derive(Clone, Debug, Default)]
 pub struct AnimationTreeSlotPlayback {
     pub name: Cow<'static, str>,
+    pub last_animation: AnimationID,
     pub current_frame: u32,
     pub playback_frame: f32,
     pub boomerang_direction: f32,

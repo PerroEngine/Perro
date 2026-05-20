@@ -12,6 +12,7 @@ use perro_nodes::{
 use perro_render_bridge::{
     CameraStreamCommand, Command2D, ParticlePath2D, RenderCommand, RenderEvent, ResourceCommand,
 };
+use perro_resource_api::sub_apis::TextureAPI;
 use perro_runtime_api::sub_apis::{NodeAPI, NodeCreationTemplate};
 use perro_structs::{BitMask, Vector2};
 use std::sync::Arc;
@@ -445,6 +446,78 @@ fn sprite_requests_texture_once_until_created() {
         RenderCommand::TwoD(Command2D::UpsertSprite { node, sprite })
         if node == expected_node && sprite.texture == texture
     ));
+}
+
+#[test]
+fn sprite_keeps_retained_texture_while_replacement_texture_is_pending() {
+    let mut runtime = Runtime::new();
+    let old_texture = TextureID::from_parts(31, 0);
+    let mut sprite = Sprite2D::new();
+    sprite.texture = old_texture;
+    let node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Sprite2D(sprite)));
+
+    runtime.extract_render_2d_commands();
+    let first = collect_commands(&mut runtime);
+    assert!(first.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::UpsertSprite { node: draw_node, sprite })
+            if *draw_node == node && sprite.texture == old_texture
+    )));
+
+    let pending_texture = runtime
+        .resource_api
+        .load_texture("res://textures/tool_version_b.png");
+    let pending_request = collect_commands(&mut runtime)
+        .into_iter()
+        .find_map(|command| match command {
+            RenderCommand::Resource(ResourceCommand::CreateTexture { request, id, .. })
+                if id == pending_texture =>
+            {
+                Some(request)
+            }
+            _ => None,
+        })
+        .expect("expected pending texture create request");
+    if let Some(scene_node) = runtime.nodes.get_mut(node)
+        && let SceneNodeData::Sprite2D(sprite) = &mut scene_node.data
+    {
+        sprite.texture = pending_texture;
+    }
+    runtime.mark_needs_rerender(node);
+
+    runtime.extract_render_2d_commands();
+    let pending = collect_commands(&mut runtime);
+    assert!(!pending.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::RemoveNode { node: removed }) if *removed == node
+    )));
+    assert!(!pending.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::UpsertSprite { node: draw_node, .. }) if *draw_node == node
+    )));
+    assert_eq!(
+        runtime
+            .render_2d
+            .retained_sprites
+            .get(&node)
+            .map(|sprite| sprite.texture),
+        Some(old_texture)
+    );
+
+    runtime.apply_render_event(RenderEvent::TextureCreated {
+        request: pending_request,
+        id: pending_texture,
+    });
+    runtime.mark_needs_rerender(node);
+    runtime.extract_render_2d_commands();
+    let ready = collect_commands(&mut runtime);
+    assert!(ready.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::UpsertSprite { node: draw_node, sprite })
+            if *draw_node == node && sprite.texture == pending_texture
+    )));
 }
 
 #[test]

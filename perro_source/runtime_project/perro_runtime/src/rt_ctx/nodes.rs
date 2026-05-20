@@ -768,6 +768,10 @@ impl NodeAPI for Runtime {
         super::query::query_node_ids(&self.nodes, query, Some(&self.node_index.node_tag_index))
     }
 
+    fn query_first_node(&mut self, query: NodeQueryView<'_>) -> Option<perro_ids::NodeID> {
+        super::query::query_first_node_id(&self.nodes, query, Some(&self.node_index.node_tag_index))
+    }
+
     fn get_global_transform_2d(&mut self, node_id: perro_ids::NodeID) -> Option<Transform2D> {
         Runtime::get_global_transform_2d(self, node_id)
     }

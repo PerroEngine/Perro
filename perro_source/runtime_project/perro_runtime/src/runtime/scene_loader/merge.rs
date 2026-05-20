@@ -251,9 +251,19 @@ pub(super) fn merge_prepared_scene(
                 match &mut node_data.data {
                     SceneNodeData::Skeleton2D(skeleton) => {
                         skeleton.bones = res.Skeletons().load_bones_2d(&source);
+                        if resource_api.is_skeleton_2d_pending(&source) {
+                            runtime
+                                .pending_skeleton_sources_2d
+                                .insert(node, source.clone());
+                        }
                     }
                     SceneNodeData::Skeleton3D(skeleton) => {
                         skeleton.bones = res.Skeletons().load_bones_3d(&source);
+                        if resource_api.is_skeleton_3d_pending(&source) {
+                            runtime
+                                .pending_skeleton_sources_3d
+                                .insert(node, source.clone());
+                        }
                     }
                     _ => {}
                 }

@@ -96,6 +96,37 @@ fn rect_upload_plan_tracks_incremental_updates() {
 }
 
 #[test]
+fn rect_upload_plan_keeps_10k_updates_incremental() {
+    let mut renderer = Renderer2D::new();
+    let resources = ResourceStore::new();
+    let rect = Rect2DCommand {
+        center: [0.0, 0.0],
+        size: [8.0, 8.0],
+        color: Color::RED,
+        z_index: 1,
+    };
+
+    for i in 0..10_000u32 {
+        renderer.queue_rect(NodeID::from_parts(i + 1, 0), rect);
+    }
+    let (_, _, first_plan) = renderer.prepare_frame(&resources);
+    assert!(first_plan.full_reupload);
+    assert_eq!(first_plan.draw_count, 10_000);
+
+    renderer.queue_rect(
+        NodeID::from_parts(5_000, 0),
+        Rect2DCommand {
+            color: Color::GREEN,
+            ..rect
+        },
+    );
+    let (_, _, second_plan) = renderer.prepare_frame(&resources);
+    assert!(!second_plan.full_reupload);
+    assert_eq!(second_plan.dirty_ranges.len(), 1);
+    assert_eq!(second_plan.draw_count, 10_000);
+}
+
+#[test]
 fn draw_shape_uses_normalized_screen_position_with_center_at_half() {
     let mut renderer = Renderer2D::new();
     let resources = ResourceStore::new();

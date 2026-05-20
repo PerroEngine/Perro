@@ -268,6 +268,39 @@ fn gc_drop_budget_batches_expired_candidates() {
 }
 
 #[test]
+fn resource_store_handles_10k_load_mark_and_gc_budget() {
+    let mut store = ResourceStore::new();
+    let mut textures = Vec::with_capacity(10_000);
+    let mut meshes = Vec::with_capacity(10_000);
+    let mut materials = Vec::with_capacity(10_000);
+
+    for i in 0..10_000 {
+        textures.push(store.create_texture(&format!("__tmp_stress_texture_{i}__"), false));
+        meshes.push(store.create_mesh(&format!("res://meshes/stress_{i}.glb"), false));
+        materials.push(store.create_material(
+            Material3D::default(),
+            Some(&format!("res://materials/stress_{i}.pmat")),
+            false,
+        ));
+    }
+
+    for i in 0..10_000 {
+        store.mark_texture_used(textures[i]);
+        store.mark_mesh_used(meshes[i]);
+        store.mark_material_used(materials[i]);
+    }
+    store.reset_ref_counts();
+
+    let drops = store.gc_unused_after_frames(1, 1, 128);
+    assert_eq!(drops.textures.len(), 128);
+    assert_eq!(drops.meshes.len(), 128);
+    assert_eq!(drops.materials.len(), 128);
+    assert_eq!(store.active_texture_count(), 9_872);
+    assert_eq!(store.active_mesh_count(), 9_872);
+    assert_eq!(store.active_material_count(), 9_872);
+}
+
+#[test]
 fn auto_gc_texture_drains_source_maps() {
     let mut store = ResourceStore::new();
     let source = "__tmp_auto_gc_texture__";

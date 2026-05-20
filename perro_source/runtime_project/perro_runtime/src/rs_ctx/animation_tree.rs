@@ -84,3 +84,16 @@ impl AnimationTreeAPI for RuntimeResourceApi {
         state.animation_tree_loaded_by_id.contains(&id)
     }
 }
+
+impl RuntimeResourceApi {
+    #[allow(dead_code)]
+    pub(crate) fn is_animation_tree_id_pending(&self, tree: AnimationTreeID) -> bool {
+        if tree.is_nil() {
+            return false;
+        }
+        self.poll_async_animation_tree_loads();
+        let state = self.state.lock().expect("resource api mutex poisoned");
+        state.animation_tree_data_by_id.contains_key(&tree)
+            && !state.animation_tree_loaded_by_id.contains(&tree)
+    }
+}

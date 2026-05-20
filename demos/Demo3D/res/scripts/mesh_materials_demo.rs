@@ -13,7 +13,15 @@ struct MeshMaterialsDemoState {
     #[default = NodeID::nil()]
     pub mirror_flip_y: NodeID,
     #[default = NodeID::nil()]
+    pub mirror_flip_z: NodeID,
+    #[default = NodeID::nil()]
     pub mirror_flip_xy: NodeID,
+    #[default = NodeID::nil()]
+    pub mirror_flip_xz: NodeID,
+    #[default = NodeID::nil()]
+    pub mirror_flip_yz: NodeID,
+    #[default = NodeID::nil()]
+    pub mirror_flip_xyz: NodeID,
 }
 
 lifecycle!({
@@ -40,7 +48,7 @@ methods!({
         let lights = query!(ctx.run, all(node_type[AmbientLight3D]), in_subtree(ctx.id)).len()
             + query!(ctx.run, all(node_type[RayLight3D]), in_subtree(ctx.id)).len();
         let body = format!(
-            "mesh samples {}\nlight rigs {}\nmirror set same runtime mesh\nflip_x / flip_y GPU mirror",
+            "mesh samples {}\nlight rigs {}\nmirror set same runtime mesh\nall flip_x/y/z combos",
             meshes, lights
         );
         let _ = call_method!(
@@ -58,7 +66,11 @@ methods!({
                 state.mirror_original,
                 state.mirror_flip_x,
                 state.mirror_flip_y,
+                state.mirror_flip_z,
                 state.mirror_flip_xy,
+                state.mirror_flip_xz,
+                state.mirror_flip_yz,
+                state.mirror_flip_xyz,
             ]
         });
         for node in nodes {
@@ -89,6 +101,8 @@ fn mirror_sample_mesh() -> Mesh3D {
     );
     add_box(&mut mesh, [0.10, 0.15, -0.11], [0.95, 0.55, 0.11]);
     add_box(&mut mesh, [0.52, 0.45, -0.10], [0.88, 0.95, 0.10]);
+    add_box(&mut mesh, [-0.10, -0.52, 0.10], [0.10, -0.22, 0.95]);
+    add_box(&mut mesh, [-0.09, -0.46, 0.52], [0.09, -0.02, 0.84]);
     mesh.surface_ranges[0].index_count = mesh.indices.len() as u32;
     mesh
 }
