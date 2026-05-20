@@ -161,6 +161,61 @@ impl MeshAPI for RuntimeResourceApi {
         id
     }
 
+    fn reserve_mesh_id(&self, id: MeshID) -> bool {
+        if id.is_nil() {
+            return false;
+        }
+        let id = self.canonical_mesh_id(id);
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        let known = state.mesh_data_by_id.contains_key(&id)
+            || state
+                .mesh_by_source
+                .values()
+                .any(|existing| *existing == id)
+            || state.mesh_pending_id_by_request.values().any(|pending| {
+                state
+                    .mesh_id_alias
+                    .get(pending)
+                    .copied()
+                    .unwrap_or(*pending)
+                    == id
+            });
+        if !known {
+            return false;
+        }
+        if let Some(source_hash) = state
+            .mesh_by_source
+            .iter()
+            .find_map(|(source_hash, existing)| (*existing == id).then_some(*source_hash))
+            .or_else(|| {
+                state
+                    .mesh_pending_id_by_request
+                    .iter()
+                    .find_map(|(request, pending_id)| {
+                        (state
+                            .mesh_id_alias
+                            .get(pending_id)
+                            .copied()
+                            .unwrap_or(*pending_id)
+                            == id)
+                            .then(|| state.mesh_pending_source_by_request.get(request))
+                            .flatten()
+                            .map(|source| string_to_u64(source))
+                    })
+            })
+        {
+            state.mesh_reserve_pending.insert(source_hash);
+            state.mesh_drop_pending.remove(&source_hash);
+        }
+        state
+            .queued_commands
+            .push(RenderCommand::Resource(ResourceCommand::SetMeshReserved {
+                id,
+                reserved: true,
+            }));
+        true
+    }
+
     fn drop_mesh(&self, id: MeshID) -> bool {
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         state.mesh_data_by_id.remove(&id);
@@ -251,5 +306,73 @@ fn normalize_source_slashes(source: &str) -> std::borrow::Cow<'_, str> {
         std::borrow::Cow::Owned(source.replace('\\', "/"))
     } else {
         std::borrow::Cow::Borrowed(source)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RuntimeResourceApi;
+    use perro_render_bridge::{RenderCommand, ResourceCommand};
+    use perro_resource_api::{
+        ResourceWindow, material_load, material_reserve, mesh_load, mesh_reserve, texture_load,
+        texture_reserve,
+    };
+
+    fn new_api() -> std::sync::Arc<RuntimeResourceApi> {
+        RuntimeResourceApi::new(None, None, None, None, None, None, None, None)
+    }
+
+    #[test]
+    fn mesh_reserve_macro_promotes_existing_id() {
+        let api = new_api();
+        let res = ResourceWindow::new(api.as_ref());
+        let mesh = mesh_load!(res, "res://meshes/promote.glb:mesh[0]");
+        let promoted = mesh_reserve!(res, mesh);
+
+        assert_eq!(promoted, mesh);
+
+        let mut commands = Vec::new();
+        api.drain_commands(&mut commands);
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::Resource(ResourceCommand::SetMeshReserved { id, reserved: true })
+                if *id == mesh
+        )));
+    }
+
+    #[test]
+    fn texture_reserve_macro_promotes_existing_id() {
+        let api = new_api();
+        let res = ResourceWindow::new(api.as_ref());
+        let texture = texture_load!(res, "res://textures/promote.png");
+        let promoted = texture_reserve!(res, texture);
+
+        assert_eq!(promoted, texture);
+
+        let mut commands = Vec::new();
+        api.drain_commands(&mut commands);
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::Resource(ResourceCommand::SetTextureReserved { id, reserved: true })
+                if *id == texture
+        )));
+    }
+
+    #[test]
+    fn material_reserve_macro_promotes_existing_id() {
+        let api = new_api();
+        let res = ResourceWindow::new(api.as_ref());
+        let material = material_load!(res, "res://materials/promote.pmat");
+        let promoted = material_reserve!(res, material);
+
+        assert_eq!(promoted, material);
+
+        let mut commands = Vec::new();
+        api.drain_commands(&mut commands);
+        assert!(commands.iter().any(|command| matches!(
+            command,
+            RenderCommand::Resource(ResourceCommand::SetMaterialReserved { id, reserved: true })
+                if *id == material
+        )));
     }
 }

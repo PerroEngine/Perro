@@ -91,6 +91,7 @@ struct ResourceMeta {
     zero_ref_frames: u32,
     used_once: bool,
     reserved: bool,
+    gc_queued: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -122,6 +123,15 @@ pub struct ResourceStore {
     mesh_meta_by: AHashMap<MeshID, ResourceMeta>,
     texture_meta_by: AHashMap<TextureID, ResourceMeta>,
     material_meta_by: AHashMap<MaterialID, ResourceMeta>,
+    mesh_meta_by_slot: Vec<Option<ResourceMeta>>,
+    texture_meta_by_slot: Vec<Option<ResourceMeta>>,
+    material_meta_by_slot: Vec<Option<ResourceMeta>>,
+    mesh_gc_candidates: Vec<MeshID>,
+    texture_gc_candidates: Vec<TextureID>,
+    material_gc_candidates: Vec<MaterialID>,
+    mesh_ref_ids: Vec<MeshID>,
+    texture_ref_ids: Vec<TextureID>,
+    material_ref_ids: Vec<MaterialID>,
 }
 
 impl ResourceStore {
@@ -144,6 +154,30 @@ impl ResourceStore {
     #[inline]
     pub fn active_texture_count(&self) -> usize {
         self.texture_meta_by.len()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn texture_ref_count(&self, id: TextureID) -> u32 {
+        self.texture_meta_by
+            .get(&id)
+            .map(|meta| meta.ref_count)
+            .unwrap_or(0)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn mesh_ref_count(&self, id: MeshID) -> u32 {
+        self.mesh_meta_by
+            .get(&id)
+            .map(|meta| meta.ref_count)
+            .unwrap_or(0)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn material_ref_count(&self, id: MaterialID) -> u32 {
+        self.material_meta_by
+            .get(&id)
+            .map(|meta| meta.ref_count)
+            .unwrap_or(0)
     }
 
     #[inline]
@@ -219,13 +253,148 @@ impl ResourceStore {
     }
 
     #[inline]
+    fn set_mesh_meta(&mut self, id: MeshID, meta: ResourceMeta) {
+        let slot = id.index() as usize - 1;
+        if self.mesh_meta_by_slot.len() <= slot {
+            self.mesh_meta_by_slot.resize(slot + 1, None);
+        }
+        self.mesh_meta_by_slot[slot] = Some(meta);
+        self.mesh_meta_by.insert(id, meta);
+    }
+
+    #[inline]
+    fn set_texture_meta(&mut self, id: TextureID, meta: ResourceMeta) {
+        let slot = id.index() as usize - 1;
+        if self.texture_meta_by_slot.len() <= slot {
+            self.texture_meta_by_slot.resize(slot + 1, None);
+        }
+        self.texture_meta_by_slot[slot] = Some(meta);
+        self.texture_meta_by.insert(id, meta);
+    }
+
+    #[inline]
+    fn set_material_meta(&mut self, id: MaterialID, meta: ResourceMeta) {
+        let slot = id.index() as usize - 1;
+        if self.material_meta_by_slot.len() <= slot {
+            self.material_meta_by_slot.resize(slot + 1, None);
+        }
+        self.material_meta_by_slot[slot] = Some(meta);
+        self.material_meta_by.insert(id, meta);
+    }
+
+    #[inline]
+    fn clear_mesh_meta(&mut self, id: MeshID) {
+        if id.index() > 0 {
+            let slot = id.index() as usize - 1;
+            if let Some(meta) = self.mesh_meta_by_slot.get_mut(slot) {
+                *meta = None;
+            }
+        }
+        self.mesh_meta_by.remove(&id);
+    }
+
+    #[inline]
+    fn clear_texture_meta(&mut self, id: TextureID) {
+        if id.index() > 0 {
+            let slot = id.index() as usize - 1;
+            if let Some(meta) = self.texture_meta_by_slot.get_mut(slot) {
+                *meta = None;
+            }
+        }
+        self.texture_meta_by.remove(&id);
+    }
+
+    #[inline]
+    fn clear_material_meta(&mut self, id: MaterialID) {
+        if id.index() > 0 {
+            let slot = id.index() as usize - 1;
+            if let Some(meta) = self.material_meta_by_slot.get_mut(slot) {
+                *meta = None;
+            }
+        }
+        self.material_meta_by.remove(&id);
+    }
+
+    #[inline]
+    fn mesh_meta_mut(&mut self, id: MeshID) -> Option<&mut ResourceMeta> {
+        if !self.has_mesh(id) {
+            return None;
+        }
+        self.mesh_meta_by_slot
+            .get_mut(id.index() as usize - 1)
+            .and_then(Option::as_mut)
+    }
+
+    #[inline]
+    fn texture_meta_mut(&mut self, id: TextureID) -> Option<&mut ResourceMeta> {
+        if !self.has_texture(id) {
+            return None;
+        }
+        self.texture_meta_by_slot
+            .get_mut(id.index() as usize - 1)
+            .and_then(Option::as_mut)
+    }
+
+    #[inline]
+    fn material_meta_mut(&mut self, id: MaterialID) -> Option<&mut ResourceMeta> {
+        if !self.has_material(id) {
+            return None;
+        }
+        self.material_meta_by_slot
+            .get_mut(id.index() as usize - 1)
+            .and_then(Option::as_mut)
+    }
+
+    #[inline]
+    fn queue_texture_gc(&mut self, id: TextureID) {
+        if let Some(meta) = self.texture_meta_mut(id)
+            && meta.used_once
+            && !meta.reserved
+            && !meta.gc_queued
+        {
+            meta.gc_queued = true;
+            let updated = *meta;
+            self.texture_meta_by.insert(id, updated);
+            self.texture_gc_candidates.push(id);
+        }
+    }
+
+    #[inline]
+    fn queue_mesh_gc(&mut self, id: MeshID) {
+        if let Some(meta) = self.mesh_meta_mut(id)
+            && meta.used_once
+            && !meta.reserved
+            && !meta.gc_queued
+        {
+            meta.gc_queued = true;
+            let updated = *meta;
+            self.mesh_meta_by.insert(id, updated);
+            self.mesh_gc_candidates.push(id);
+        }
+    }
+
+    #[inline]
+    fn queue_material_gc(&mut self, id: MaterialID) {
+        if let Some(meta) = self.material_meta_mut(id)
+            && meta.used_once
+            && !meta.reserved
+            && !meta.gc_queued
+        {
+            meta.gc_queued = true;
+            let updated = *meta;
+            self.material_meta_by.insert(id, updated);
+            self.material_gc_candidates.push(id);
+        }
+    }
+
+    #[inline]
     fn purge_stale_mesh_source(&mut self, source: &str, id: MeshID) {
         self.mesh_by_source.remove(source);
         self.mesh_source_by.remove(&id);
         self.runtime_mesh_by_source.remove(source);
         self.runtime_mesh_by_id.remove(&id);
         self.mesh_revision_by_id.remove(&id);
-        self.mesh_meta_by.remove(&id);
+        self.clear_mesh_meta(id);
         self.clear_mesh_source_slot_if(id.index(), source);
     }
 
@@ -235,7 +404,7 @@ impl ResourceStore {
         self.texture_source_by.remove(&id);
         self.decoded_texture_by_source.remove(source);
         self.decoded_texture_by_id.remove(&id);
-        self.texture_meta_by.remove(&id);
+        self.clear_texture_meta(id);
         self.clear_texture_source_slot_if(id.index(), source);
     }
 
@@ -244,7 +413,7 @@ impl ResourceStore {
         self.material_by_source.remove(source);
         self.material_source_by.remove(&id);
         self.material_by.remove(&id);
-        self.material_meta_by.remove(&id);
+        self.clear_material_meta(id);
     }
 
     #[inline]
@@ -264,7 +433,7 @@ impl ResourceStore {
         self.mesh_by_source.insert(source.to_string(), id);
         self.mesh_source_by.insert(id, source.to_string());
         self.set_mesh_source_slot(index, source);
-        self.mesh_meta_by.insert(
+        self.set_mesh_meta(
             id,
             ResourceMeta {
                 reserved,
@@ -302,7 +471,7 @@ impl ResourceStore {
         self.mesh_by_source.insert(source.to_string(), id);
         self.mesh_source_by.insert(id, source.to_string());
         self.set_mesh_source_slot(id.index(), source);
-        self.mesh_meta_by.insert(
+        self.set_mesh_meta(
             id,
             ResourceMeta {
                 reserved,
@@ -331,7 +500,7 @@ impl ResourceStore {
         self.texture_by_source.insert(source.to_string(), id);
         self.texture_source_by.insert(id, source.to_string());
         self.set_texture_source_slot(index, source);
-        self.texture_meta_by.insert(
+        self.set_texture_meta(
             id,
             ResourceMeta {
                 reserved,
@@ -371,7 +540,7 @@ impl ResourceStore {
         self.texture_by_source.insert(source.to_string(), id);
         self.texture_source_by.insert(id, source.to_string());
         self.set_texture_source_slot(id.index(), source);
-        self.texture_meta_by.insert(
+        self.set_texture_meta(
             id,
             ResourceMeta {
                 reserved,
@@ -409,7 +578,7 @@ impl ResourceStore {
             self.material_by_source.insert(source.clone(), id);
             self.material_source_by.insert(id, source);
         }
-        self.material_meta_by.insert(
+        self.set_material_meta(
             id,
             ResourceMeta {
                 reserved,
@@ -461,7 +630,7 @@ impl ResourceStore {
             self.material_by_source.insert(source.clone(), id);
             self.material_source_by.insert(id, source);
         }
-        self.material_meta_by.insert(
+        self.set_material_meta(
             id,
             ResourceMeta {
                 reserved,
@@ -617,28 +786,57 @@ impl ResourceStore {
 
     #[inline]
     pub fn reset_ref_counts(&mut self) {
-        for meta in self.texture_meta_by.values_mut() {
-            meta.ref_count = 0;
+        for id in std::mem::take(&mut self.texture_ref_ids) {
+            if let Some(meta) = self.texture_meta_mut(id) {
+                meta.ref_count = 0;
+                let updated = *meta;
+                self.texture_meta_by.insert(id, updated);
+            }
         }
-        for meta in self.mesh_meta_by.values_mut() {
-            meta.ref_count = 0;
+        for id in std::mem::take(&mut self.mesh_ref_ids) {
+            if let Some(meta) = self.mesh_meta_mut(id) {
+                meta.ref_count = 0;
+                let updated = *meta;
+                self.mesh_meta_by.insert(id, updated);
+            }
         }
-        for meta in self.material_meta_by.values_mut() {
-            meta.ref_count = 0;
+        for id in std::mem::take(&mut self.material_ref_ids) {
+            if let Some(meta) = self.material_meta_mut(id) {
+                meta.ref_count = 0;
+                let updated = *meta;
+                self.material_meta_by.insert(id, updated);
+            }
         }
     }
 
     #[inline]
     pub fn mark_texture_used(&mut self, id: TextureID) {
-        let should_log = self
-            .texture_meta_by
-            .get(&id)
-            .map(|meta| !meta.used_once)
-            .unwrap_or(false);
-        if let Some(meta) = self.texture_meta_by.get_mut(&id) {
-            meta.ref_count = meta.ref_count.saturating_add(1);
+        self.mark_texture_used_count(id, 1);
+    }
+
+    #[inline]
+    pub fn mark_texture_used_count(&mut self, id: TextureID, count: u32) {
+        if count == 0 {
+            return;
+        }
+        let Some(meta) = self.texture_meta_mut(id) else {
+            return;
+        };
+        let should_log = !meta.used_once;
+        let should_queue = !meta.reserved && !meta.gc_queued;
+        let should_track_ref = meta.ref_count == 0;
+        let updated = {
+            meta.ref_count = meta.ref_count.saturating_add(count);
             meta.used_once = true;
             meta.zero_ref_frames = 0;
+            *meta
+        };
+        self.texture_meta_by.insert(id, updated);
+        if should_track_ref {
+            self.texture_ref_ids.push(id);
+        }
+        if should_queue {
+            self.queue_texture_gc(id);
         }
         if should_log {
             let source = self
@@ -652,15 +850,32 @@ impl ResourceStore {
 
     #[inline]
     pub fn mark_mesh_used(&mut self, id: MeshID) {
-        let should_log = self
-            .mesh_meta_by
-            .get(&id)
-            .map(|meta| !meta.used_once)
-            .unwrap_or(false);
-        if let Some(meta) = self.mesh_meta_by.get_mut(&id) {
-            meta.ref_count = meta.ref_count.saturating_add(1);
+        self.mark_mesh_used_count(id, 1);
+    }
+
+    #[inline]
+    pub fn mark_mesh_used_count(&mut self, id: MeshID, count: u32) {
+        if count == 0 {
+            return;
+        }
+        let Some(meta) = self.mesh_meta_mut(id) else {
+            return;
+        };
+        let should_log = !meta.used_once;
+        let should_queue = !meta.reserved && !meta.gc_queued;
+        let should_track_ref = meta.ref_count == 0;
+        let updated = {
+            meta.ref_count = meta.ref_count.saturating_add(count);
             meta.used_once = true;
             meta.zero_ref_frames = 0;
+            *meta
+        };
+        self.mesh_meta_by.insert(id, updated);
+        if should_track_ref {
+            self.mesh_ref_ids.push(id);
+        }
+        if should_queue {
+            self.queue_mesh_gc(id);
         }
         if should_log {
             let source = self
@@ -674,15 +889,32 @@ impl ResourceStore {
 
     #[inline]
     pub fn mark_material_used(&mut self, id: MaterialID) {
-        let should_log = self
-            .material_meta_by
-            .get(&id)
-            .map(|meta| !meta.used_once)
-            .unwrap_or(false);
-        if let Some(meta) = self.material_meta_by.get_mut(&id) {
-            meta.ref_count = meta.ref_count.saturating_add(1);
+        self.mark_material_used_count(id, 1);
+    }
+
+    #[inline]
+    pub fn mark_material_used_count(&mut self, id: MaterialID, count: u32) {
+        if count == 0 {
+            return;
+        }
+        let Some(meta) = self.material_meta_mut(id) else {
+            return;
+        };
+        let should_log = !meta.used_once;
+        let should_queue = !meta.reserved && !meta.gc_queued;
+        let should_track_ref = meta.ref_count == 0;
+        let updated = {
+            meta.ref_count = meta.ref_count.saturating_add(count);
             meta.used_once = true;
             meta.zero_ref_frames = 0;
+            *meta
+        };
+        self.material_meta_by.insert(id, updated);
+        if should_track_ref {
+            self.material_ref_ids.push(id);
+        }
+        if should_queue {
+            self.queue_material_gc(id);
         }
         if should_log {
             let source = self
@@ -695,20 +927,50 @@ impl ResourceStore {
     }
 
     pub fn gc_unused(&mut self, ttl_frames: u32) -> ResourceGcDrops {
+        self.gc_unused_after_frames(ttl_frames, 1, usize::MAX)
+    }
+
+    pub fn gc_unused_after_frames(
+        &mut self,
+        ttl_frames: u32,
+        elapsed_frames: u32,
+        max_drops_per_kind: usize,
+    ) -> ResourceGcDrops {
         let ttl_frames = ttl_frames.max(1);
+        let elapsed_frames = elapsed_frames.max(1);
         let mut drops = ResourceGcDrops::default();
 
-        let mut drop_textures = Vec::new();
-        for (id, meta) in &mut self.texture_meta_by {
-            if meta.ref_count > 0 || meta.reserved || !meta.used_once {
+        let texture_candidates = std::mem::take(&mut self.texture_gc_candidates);
+        for id in texture_candidates {
+            let Some(meta) = self.texture_meta_mut(id) else {
+                continue;
+            };
+            if meta.ref_count > 0 {
+                let updated = {
+                    meta.zero_ref_frames = 0;
+                    *meta
+                };
+                self.texture_meta_by.insert(id, updated);
+                self.texture_gc_candidates.push(id);
                 continue;
             }
-            meta.zero_ref_frames = meta.zero_ref_frames.saturating_add(1);
-            if meta.zero_ref_frames >= ttl_frames {
-                drop_textures.push(*id);
+            if meta.reserved || !meta.used_once || !meta.gc_queued {
+                continue;
+            }
+            let updated = {
+                meta.zero_ref_frames = meta.zero_ref_frames.saturating_add(elapsed_frames);
+                *meta
+            };
+            self.texture_meta_by.insert(id, updated);
+            if updated.zero_ref_frames >= ttl_frames && drops.textures.len() < max_drops_per_kind {
+                drops.textures.push(id);
+            } else {
+                self.texture_gc_candidates.push(id);
             }
         }
-        for id in drop_textures {
+        let mut write = 0usize;
+        for read in 0..drops.textures.len() {
+            let id = drops.textures[read];
             let source = self
                 .texture_source_by
                 .get(&id)
@@ -716,21 +978,42 @@ impl ResourceStore {
                 .unwrap_or("<unknown>");
             self.log_auto_drop("texture", id.index(), id.generation(), source, ttl_frames);
             if self.drop_texture_inner(id, false) {
-                drops.textures.push(id);
+                drops.textures[write] = id;
+                write += 1;
             }
         }
-
-        let mut drop_meshes = Vec::new();
-        for (id, meta) in &mut self.mesh_meta_by {
-            if meta.ref_count > 0 || meta.reserved || !meta.used_once {
+        drops.textures.truncate(write);
+        let mesh_candidates = std::mem::take(&mut self.mesh_gc_candidates);
+        for id in mesh_candidates {
+            let Some(meta) = self.mesh_meta_mut(id) else {
+                continue;
+            };
+            if meta.ref_count > 0 {
+                let updated = {
+                    meta.zero_ref_frames = 0;
+                    *meta
+                };
+                self.mesh_meta_by.insert(id, updated);
+                self.mesh_gc_candidates.push(id);
                 continue;
             }
-            meta.zero_ref_frames = meta.zero_ref_frames.saturating_add(1);
-            if meta.zero_ref_frames >= ttl_frames {
-                drop_meshes.push(*id);
+            if meta.reserved || !meta.used_once || !meta.gc_queued {
+                continue;
+            }
+            let updated = {
+                meta.zero_ref_frames = meta.zero_ref_frames.saturating_add(elapsed_frames);
+                *meta
+            };
+            self.mesh_meta_by.insert(id, updated);
+            if updated.zero_ref_frames >= ttl_frames && drops.meshes.len() < max_drops_per_kind {
+                drops.meshes.push(id);
+            } else {
+                self.mesh_gc_candidates.push(id);
             }
         }
-        for id in drop_meshes {
+        let mut write = 0usize;
+        for read in 0..drops.meshes.len() {
+            let id = drops.meshes[read];
             let source = self
                 .mesh_source_by
                 .get(&id)
@@ -738,21 +1021,42 @@ impl ResourceStore {
                 .unwrap_or("<unknown>");
             self.log_auto_drop("mesh", id.index(), id.generation(), source, ttl_frames);
             if self.drop_mesh_inner(id, false) {
-                drops.meshes.push(id);
+                drops.meshes[write] = id;
+                write += 1;
             }
         }
-
-        let mut drop_materials = Vec::new();
-        for (id, meta) in &mut self.material_meta_by {
-            if meta.ref_count > 0 || meta.reserved || !meta.used_once {
+        drops.meshes.truncate(write);
+        let material_candidates = std::mem::take(&mut self.material_gc_candidates);
+        for id in material_candidates {
+            let Some(meta) = self.material_meta_mut(id) else {
+                continue;
+            };
+            if meta.ref_count > 0 {
+                let updated = {
+                    meta.zero_ref_frames = 0;
+                    *meta
+                };
+                self.material_meta_by.insert(id, updated);
+                self.material_gc_candidates.push(id);
                 continue;
             }
-            meta.zero_ref_frames = meta.zero_ref_frames.saturating_add(1);
-            if meta.zero_ref_frames >= ttl_frames {
-                drop_materials.push(*id);
+            if meta.reserved || !meta.used_once || !meta.gc_queued {
+                continue;
+            }
+            let updated = {
+                meta.zero_ref_frames = meta.zero_ref_frames.saturating_add(elapsed_frames);
+                *meta
+            };
+            self.material_meta_by.insert(id, updated);
+            if updated.zero_ref_frames >= ttl_frames && drops.materials.len() < max_drops_per_kind {
+                drops.materials.push(id);
+            } else {
+                self.material_gc_candidates.push(id);
             }
         }
-        for id in drop_materials {
+        let mut write = 0usize;
+        for read in 0..drops.materials.len() {
+            let id = drops.materials[read];
             let source = self
                 .material_source_by
                 .get(&id)
@@ -760,18 +1064,26 @@ impl ResourceStore {
                 .unwrap_or("<inline>");
             self.log_auto_drop("material", id.index(), id.generation(), source, ttl_frames);
             if self.drop_material_inner(id, false) {
-                drops.materials.push(id);
+                drops.materials[write] = id;
+                write += 1;
             }
         }
+        drops.materials.truncate(write);
         drops
     }
 
     #[inline]
     pub fn set_texture_reserved(&mut self, id: TextureID, reserved: bool) -> bool {
-        if let Some(meta) = self.texture_meta_by.get_mut(&id) {
+        if let Some(meta) = self.texture_meta_mut(id) {
             meta.reserved = reserved;
             if reserved {
                 meta.zero_ref_frames = 0;
+                meta.gc_queued = false;
+            }
+            let updated = *meta;
+            self.texture_meta_by.insert(id, updated);
+            if !reserved {
+                self.queue_texture_gc(id);
             }
             return true;
         }
@@ -780,10 +1092,16 @@ impl ResourceStore {
 
     #[inline]
     pub fn set_mesh_reserved(&mut self, id: MeshID, reserved: bool) -> bool {
-        if let Some(meta) = self.mesh_meta_by.get_mut(&id) {
+        if let Some(meta) = self.mesh_meta_mut(id) {
             meta.reserved = reserved;
             if reserved {
                 meta.zero_ref_frames = 0;
+                meta.gc_queued = false;
+            }
+            let updated = *meta;
+            self.mesh_meta_by.insert(id, updated);
+            if !reserved {
+                self.queue_mesh_gc(id);
             }
             return true;
         }
@@ -792,10 +1110,16 @@ impl ResourceStore {
 
     #[inline]
     pub fn set_material_reserved(&mut self, id: MaterialID, reserved: bool) -> bool {
-        if let Some(meta) = self.material_meta_by.get_mut(&id) {
+        if let Some(meta) = self.material_meta_mut(id) {
             meta.reserved = reserved;
             if reserved {
                 meta.zero_ref_frames = 0;
+                meta.gc_queued = false;
+            }
+            let updated = *meta;
+            self.material_meta_by.insert(id, updated);
+            if !reserved {
+                self.queue_material_gc(id);
             }
             return true;
         }
@@ -827,7 +1151,7 @@ impl ResourceStore {
         if removed {
             self.clear_texture_source_slot(id.index());
         }
-        self.texture_meta_by.remove(&id);
+        self.clear_texture_meta(id);
         removed
     }
 
@@ -857,7 +1181,7 @@ impl ResourceStore {
         if removed {
             self.clear_mesh_source_slot(id.index());
         }
-        self.mesh_meta_by.remove(&id);
+        self.clear_mesh_meta(id);
         removed
     }
 
@@ -881,7 +1205,7 @@ impl ResourceStore {
                 self.material_by_source.remove(&source);
             }
         }
-        self.material_meta_by.remove(&id);
+        self.clear_material_meta(id);
         removed
     }
 

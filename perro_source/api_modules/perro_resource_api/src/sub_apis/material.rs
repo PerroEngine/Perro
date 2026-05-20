@@ -9,6 +9,7 @@ pub trait MaterialAPI {
     fn write_material_data(&self, id: MaterialID, material: Material3D) -> bool;
     fn is_material_loaded(&self, id: MaterialID) -> bool;
     fn reserve_material_source_hashed(&self, source_hash: u64, source: Option<&str>) -> MaterialID;
+    fn reserve_material_id(&self, id: MaterialID) -> bool;
     fn load_material_source(&self, source: &str) -> MaterialID {
         self.load_material_source_hashed(perro_ids::string_to_u64(source), Some(source))
     }
@@ -16,6 +17,52 @@ pub trait MaterialAPI {
         self.reserve_material_source_hashed(perro_ids::string_to_u64(source), Some(source))
     }
     fn drop_material_source(&self, id: MaterialID) -> bool;
+}
+
+pub trait MaterialReserveArg<R: MaterialAPI + ?Sized> {
+    type Output;
+    fn reserve_with(self, api: &R) -> Self::Output;
+}
+
+impl<R, S> MaterialReserveArg<R> for S
+where
+    R: MaterialAPI + ?Sized,
+    S: ResPathSource,
+{
+    type Output = MaterialID;
+
+    #[inline]
+    fn reserve_with(self, api: &R) -> Self::Output {
+        api.reserve_material_source(self.as_res_path_str())
+    }
+}
+
+impl<R> MaterialReserveArg<R> for MaterialID
+where
+    R: MaterialAPI + ?Sized,
+{
+    type Output = MaterialID;
+
+    #[inline]
+    fn reserve_with(self, api: &R) -> Self::Output {
+        if api.reserve_material_id(self) {
+            self
+        } else {
+            MaterialID::nil()
+        }
+    }
+}
+
+impl<R> MaterialReserveArg<R> for &MaterialID
+where
+    R: MaterialAPI + ?Sized,
+{
+    type Output = MaterialID;
+
+    #[inline]
+    fn reserve_with(self, api: &R) -> Self::Output {
+        (*self).reserve_with(api)
+    }
 }
 
 pub struct MaterialModule<'res, R: MaterialAPI + ?Sized> {
@@ -68,8 +115,11 @@ impl<'res, R: MaterialAPI + ?Sized> MaterialModule<'res, R> {
     }
 
     #[inline]
-    pub fn reserve<S: ResPathSource>(&self, source: S) -> MaterialID {
-        self.api.reserve_material_source(source.as_res_path_str())
+    pub fn reserve<A>(&self, arg: A) -> A::Output
+    where
+        A: MaterialReserveArg<R>,
+    {
+        arg.reserve_with(self.api)
     }
 
     #[inline]

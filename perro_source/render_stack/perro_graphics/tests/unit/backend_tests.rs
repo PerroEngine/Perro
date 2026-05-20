@@ -1,4 +1,4 @@
-use super::PerroGraphics;
+use super::{GC_INTERVAL_FRAMES, PerroGraphics};
 use crate::backend::GraphicsBackend;
 use crate::three_d::renderer::Draw3DKind;
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
@@ -42,6 +42,34 @@ fn draw_frame_drains_pending_commands_in_one_pass() {
 
     assert!(graphics.frame.pending_commands.is_empty());
     assert_eq!(graphics.renderer_2d.retained_rects().len(), 65);
+}
+
+#[test]
+fn auto_gc_runs_on_interval_not_every_frame() {
+    let mut graphics = PerroGraphics::new();
+    let texture = graphics
+        .resources
+        .create_texture("__tmp_gc_interval_texture__", false);
+    graphics.resources.mark_texture_used(texture);
+    graphics.resources.reset_ref_counts();
+
+    for frame in 0..(GC_INTERVAL_FRAMES - 1) {
+        graphics.submit(RenderCommand::TwoD(Command2D::UpsertRect {
+            node: NodeID::from_parts(10_000 + frame, 0),
+            rect: rect_command(),
+        }));
+        graphics.draw_frame();
+    }
+
+    assert!(graphics.resources.has_texture(texture));
+
+    graphics.submit(RenderCommand::TwoD(Command2D::UpsertRect {
+        node: NodeID::from_parts(20_000, 0),
+        rect: rect_command(),
+    }));
+    graphics.draw_frame();
+
+    assert!(!graphics.resources.has_texture(texture));
 }
 
 fn water_2d_state() -> Water2DState {
@@ -804,6 +832,101 @@ fn rejected_sprite_texture_swap_keeps_previous_texture_binding() {
             z_index: 7,
         })
     );
+}
+
+#[test]
+fn retained_sprite_instances_count_texture_refs_per_node() {
+    let mut graphics = PerroGraphics::new();
+    let texture = graphics
+        .resources
+        .create_texture("__tmp_ref_sprite__", false);
+    let first = NodeID::from_parts(91, 0);
+    let second = NodeID::from_parts(92, 0);
+
+    for node in [first, second] {
+        graphics.submit(RenderCommand::TwoD(Command2D::UpsertSprite {
+            node,
+            sprite: Sprite2DCommand {
+                texture,
+                model: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+                tint: Color::WHITE,
+                uv_min: [0.0, 0.0],
+                uv_max: [1.0, 1.0],
+                size: [16.0, 16.0],
+                z_index: 0,
+            },
+        }));
+    }
+    graphics.draw_frame();
+
+    assert_eq!(graphics.resources.texture_ref_count(texture), 2);
+}
+
+#[test]
+fn retained_mesh_instances_count_mesh_refs_per_node() {
+    let mut graphics = PerroGraphics::new();
+    let mesh = graphics
+        .resources
+        .create_mesh("res://meshes/ref_count.glb", false);
+    let material = graphics
+        .resources
+        .create_material(Material3D::default(), None, false);
+    let surfaces = surfaces_for(material);
+
+    for node in [NodeID::from_parts(101, 0), NodeID::from_parts(102, 0)] {
+        graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::Draw {
+            node,
+            mesh,
+            surfaces: Arc::clone(&surfaces),
+            model: [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            skeleton: None,
+            meshlet_override: None,
+            lod: LODOptions3D::default(),
+            blend: Default::default(),
+        })));
+    }
+    graphics.draw_frame();
+
+    assert_eq!(graphics.resources.mesh_ref_count(mesh), 2);
+    assert_eq!(graphics.resources.material_ref_count(material), 2);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn stale_async_texture_result_after_drop_does_not_emit_loaded() {
+    let mut graphics = PerroGraphics::new();
+    let id = graphics
+        .resources
+        .create_texture("__tmp_async_drop_texture__", false);
+    graphics.pending_async_texture_loads.insert(id);
+    assert!(graphics.resources.drop_texture(id));
+
+    graphics
+        .async_texture_load_tx
+        .send(super::AsyncTextureLoadResult {
+            id,
+            texture: Some(super::DecodedTextureRgba {
+                rgba: vec![255, 255, 255, 255],
+                width: 1,
+                height: 1,
+            }),
+        })
+        .unwrap();
+
+    graphics.draw_frame();
+
+    let mut events = Vec::new();
+    graphics.drain_events(&mut events);
+    assert!(!events
+        .iter()
+        .any(|event| matches!(event, perro_render_bridge::RenderEvent::TextureLoaded { id: got } if *got == id)));
+    assert!(!graphics.resources.has_texture(id));
+    assert!(graphics.resources.decoded_texture_data(id).is_none());
 }
 
 #[test]

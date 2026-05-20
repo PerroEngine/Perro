@@ -11,3 +11,4 @@ pub use backend::{
     DrawFrameTiming, GraphicsBackend, OcclusionCullingMode, PerroGraphics, StaticMeshLookup,
     StaticShaderLookup, StaticTextureLookup,
 };
+pub use resources::{ResourceGcDrops, ResourceStore};

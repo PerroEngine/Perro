@@ -10,7 +10,9 @@
 
 ## Resource Window
 
-Use `ctx.res` for resources and renderer-facing resource commands. Resource calls are shared/read-oriented at script level; many return stable IDs while upload or decode completes later.
+Use `ctx.res` for resources and renderer-facing resource commands. Render resource loads return stable IDs immediately. Decode and upload can finish later without blocking the frame; renderer uses the ID once data is ready.
+
+For lifetime rules, auto load, auto drop, and ref-count behavior, see [Resource Management](../../resources/resource_management.md).
 
 ## Resource Modules
 

@@ -1,4 +1,5 @@
 use super::ResourceStore;
+use perro_ids::TextureID;
 use perro_render_bridge::{Material3D, RuntimeMeshData, RuntimeMeshVertex, StandardMaterial3D};
 use perro_structs::Unorm8x4;
 
@@ -174,6 +175,96 @@ fn reserved_texture_is_not_auto_dropped() {
         store.gc_unused(ResourceStore::DEFAULT_ZERO_REF_TTL_FRAMES);
     }
     assert!(store.has_texture(id));
+}
+
+#[test]
+fn reserving_existing_texture_resets_zero_ref_ttl() {
+    let mut store = ResourceStore::new();
+    let source = "__tmp_reserve_existing__";
+    let id = store.create_texture(source, false);
+    store.mark_texture_used(id);
+
+    for _ in 0..(ResourceStore::DEFAULT_ZERO_REF_TTL_FRAMES - 1) {
+        store.reset_ref_counts();
+        store.gc_unused(ResourceStore::DEFAULT_ZERO_REF_TTL_FRAMES);
+    }
+
+    let reserved = store.create_texture(source, true);
+    assert_eq!(reserved, id);
+    assert_eq!(store.texture_meta_by.get(&id).unwrap().zero_ref_frames, 0);
+
+    for _ in 0..(ResourceStore::DEFAULT_ZERO_REF_TTL_FRAMES * 2) {
+        store.reset_ref_counts();
+        store.gc_unused(ResourceStore::DEFAULT_ZERO_REF_TTL_FRAMES);
+    }
+    assert!(store.has_texture(id));
+}
+
+#[test]
+fn duplicate_create_with_id_for_same_loading_texture_keeps_original_id() {
+    let mut store = ResourceStore::new();
+    let source = "__tmp_pending_texture__";
+    let first = TextureID::from_parts(77, 3);
+    let second = TextureID::from_parts(77, 4);
+
+    let out_first = store.create_texture_with_id(first, source, false);
+    let out_second = store.create_texture_with_id(second, source, false);
+
+    assert_eq!(out_first, first);
+    assert_eq!(out_second, first);
+    assert!(store.has_texture(first));
+    assert!(!store.has_texture(second));
+}
+
+#[test]
+fn mark_used_count_tracks_multiple_live_users() {
+    let mut store = ResourceStore::new();
+    let texture = store.create_texture("__tmp_ref_count_texture__", false);
+    let mesh = store.create_mesh("res://meshes/ref_count.glb", false);
+    let material = store.create_material(
+        Material3D::default(),
+        Some("res://materials/ref_count.pmat"),
+        false,
+    );
+
+    store.mark_texture_used_count(texture, 3);
+    store.mark_mesh_used_count(mesh, 2);
+    store.mark_material_used_count(material, 4);
+
+    assert_eq!(store.texture_meta_by.get(&texture).unwrap().ref_count, 3);
+    assert_eq!(store.mesh_meta_by.get(&mesh).unwrap().ref_count, 2);
+    assert_eq!(store.material_meta_by.get(&material).unwrap().ref_count, 4);
+
+    store.reset_ref_counts();
+
+    assert_eq!(store.texture_meta_by.get(&texture).unwrap().ref_count, 0);
+    assert_eq!(store.mesh_meta_by.get(&mesh).unwrap().ref_count, 0);
+    assert_eq!(store.material_meta_by.get(&material).unwrap().ref_count, 0);
+}
+
+#[test]
+fn gc_drop_budget_batches_expired_candidates() {
+    let mut store = ResourceStore::new();
+    let mut textures = Vec::new();
+    for i in 0..70 {
+        let texture = store.create_texture(&format!("__tmp_batch_drop_{i}__"), false);
+        store.mark_texture_used(texture);
+        textures.push(texture);
+    }
+    store.reset_ref_counts();
+
+    let first = store.gc_unused_after_frames(1, 1, 8);
+    assert_eq!(first.textures.len(), 8);
+    assert_eq!(store.active_texture_count(), 62);
+
+    let second = store.gc_unused_after_frames(1, 1, 8);
+    assert_eq!(second.textures.len(), 8);
+    assert_eq!(store.active_texture_count(), 54);
+
+    for id in first.textures.into_iter().chain(second.textures) {
+        assert!(!store.has_texture(id));
+    }
+    assert!(textures.iter().filter(|id| store.has_texture(**id)).count() >= 54);
 }
 
 #[test]

@@ -155,6 +155,49 @@ impl MaterialAPI for RuntimeResourceApi {
         id
     }
 
+    fn reserve_material_id(&self, id: MaterialID) -> bool {
+        if id.is_nil() {
+            return false;
+        }
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        let known = state.material_data_by_id.contains_key(&id)
+            || state.material_loaded_by_id.contains(&id)
+            || state
+                .material_by_source
+                .values()
+                .any(|existing| *existing == id)
+            || state
+                .material_pending_id_by_request
+                .values()
+                .any(|pending| *pending == id);
+        if !known {
+            return false;
+        }
+        if let Some(source_hash) = state
+            .material_by_source
+            .iter()
+            .find_map(|(source_hash, existing)| (*existing == id).then_some(*source_hash))
+            .or_else(|| {
+                state
+                    .material_pending_id_by_request
+                    .iter()
+                    .find_map(|(request, pending_id)| {
+                        (*pending_id == id)
+                            .then(|| state.material_pending_source_by_request.get(request))
+                            .flatten()
+                            .map(|source| perro_ids::string_to_u64(source))
+                    })
+            })
+        {
+            state.material_reserve_pending.insert(source_hash);
+            state.material_drop_pending.remove(&source_hash);
+        }
+        state.queued_commands.push(RenderCommand::Resource(
+            ResourceCommand::SetMaterialReserved { id, reserved: true },
+        ));
+        true
+    }
+
     fn drop_material_source(&self, id: MaterialID) -> bool {
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         state.material_data_by_id.remove(&id);

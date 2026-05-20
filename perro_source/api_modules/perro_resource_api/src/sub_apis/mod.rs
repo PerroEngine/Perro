@@ -23,11 +23,11 @@ pub use audio::{
 pub use csv_table::{CsvAPI, CsvModule};
 pub use draw_2d::{Draw2DAPI, Draw2DModule};
 pub use localization::{Locale, LocalizationAPI, LocalizationModule};
-pub use material::{MaterialAPI, MaterialModule};
-pub use mesh::{MeshAPI, MeshModule};
+pub use material::{MaterialAPI, MaterialModule, MaterialReserveArg};
+pub use mesh::{MeshAPI, MeshModule, MeshReserveArg};
 pub use perro_ids::{AudioBusID, SoundFontID};
 pub use post_processing::PostProcessingAPI;
 pub use scene_doc::{IntoSceneDoc, SceneDocAPI, SceneDocModule};
 pub use skeleton::{SkeletonAPI, SkeletonModule};
-pub use texture::{TextureAPI, TextureModule};
+pub use texture::{TextureAPI, TextureModule, TextureReserveArg};
 pub use visual_accessibility::VisualAccessibilityAPI;

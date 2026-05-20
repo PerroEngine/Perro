@@ -4,6 +4,7 @@ use perro_ids::TextureID;
 pub trait TextureAPI {
     fn load_texture_hashed(&self, source_hash: u64, source: Option<&str>) -> TextureID;
     fn reserve_texture_hashed(&self, source_hash: u64, source: Option<&str>) -> TextureID;
+    fn reserve_texture_id(&self, id: TextureID) -> bool;
     fn load_texture(&self, source: &str) -> TextureID {
         self.load_texture_hashed(perro_ids::string_to_u64(source), Some(source))
     }
@@ -12,6 +13,52 @@ pub trait TextureAPI {
     }
     fn drop_texture(&self, id: TextureID) -> bool;
     fn is_texture_loaded(&self, id: TextureID) -> bool;
+}
+
+pub trait TextureReserveArg<R: TextureAPI + ?Sized> {
+    type Output;
+    fn reserve_with(self, api: &R) -> Self::Output;
+}
+
+impl<R, S> TextureReserveArg<R> for S
+where
+    R: TextureAPI + ?Sized,
+    S: ResPathSource,
+{
+    type Output = TextureID;
+
+    #[inline]
+    fn reserve_with(self, api: &R) -> Self::Output {
+        api.reserve_texture(self.as_res_path_str())
+    }
+}
+
+impl<R> TextureReserveArg<R> for TextureID
+where
+    R: TextureAPI + ?Sized,
+{
+    type Output = TextureID;
+
+    #[inline]
+    fn reserve_with(self, api: &R) -> Self::Output {
+        if api.reserve_texture_id(self) {
+            self
+        } else {
+            TextureID::nil()
+        }
+    }
+}
+
+impl<R> TextureReserveArg<R> for &TextureID
+where
+    R: TextureAPI + ?Sized,
+{
+    type Output = TextureID;
+
+    #[inline]
+    fn reserve_with(self, api: &R) -> Self::Output {
+        (*self).reserve_with(api)
+    }
 }
 
 pub struct TextureModule<'res, R: TextureAPI + ?Sized> {
@@ -44,8 +91,11 @@ impl<'res, R: TextureAPI + ?Sized> TextureModule<'res, R> {
     }
 
     #[inline]
-    pub fn reserve<S: ResPathSource>(&self, source: S) -> TextureID {
-        self.api.reserve_texture(source.as_res_path_str())
+    pub fn reserve<A>(&self, arg: A) -> A::Output
+    where
+        A: TextureReserveArg<R>,
+    {
+        arg.reserve_with(self.api)
     }
 
     #[inline]

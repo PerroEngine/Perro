@@ -83,6 +83,48 @@ impl TextureAPI for RuntimeResourceApi {
         id
     }
 
+    fn reserve_texture_id(&self, id: TextureID) -> bool {
+        if id.is_nil() {
+            return false;
+        }
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        let known = state.texture_loaded_by_id.contains(&id)
+            || state
+                .texture_by_source
+                .values()
+                .any(|existing| *existing == id)
+            || state
+                .texture_pending_id_by_request
+                .values()
+                .any(|pending| *pending == id);
+        if !known {
+            return false;
+        }
+        if let Some(source_hash) = state
+            .texture_by_source
+            .iter()
+            .find_map(|(source_hash, existing)| (*existing == id).then_some(*source_hash))
+            .or_else(|| {
+                state
+                    .texture_pending_id_by_request
+                    .iter()
+                    .find_map(|(request, pending_id)| {
+                        (*pending_id == id)
+                            .then(|| state.texture_pending_source_by_request.get(request))
+                            .flatten()
+                            .map(|source| perro_ids::string_to_u64(source))
+                    })
+            })
+        {
+            state.texture_reserve_pending.insert(source_hash);
+            state.texture_drop_pending.remove(&source_hash);
+        }
+        state.queued_commands.push(RenderCommand::Resource(
+            ResourceCommand::SetTextureReserved { id, reserved: true },
+        ));
+        true
+    }
+
     fn drop_texture(&self, id: TextureID) -> bool {
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         let source = state

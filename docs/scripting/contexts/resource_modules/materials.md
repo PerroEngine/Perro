@@ -29,6 +29,8 @@
 ## Overview
 
 This resource module belongs to `ctx.res` and documents materials calls.
+Material loads return a `MaterialID` immediately and do not block the frame.
+Renderer uses the material once async load/upload completes.
 
 ## Context
 
@@ -58,7 +60,7 @@ lifecycle!({
 | Signature | `pub fn load<S: ResPathSource>(&self, source: S) -> MaterialID` |
 | Params | `&self, source: S` |
 | Returns | `MaterialID` |
-| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Use when | Use when code needs an ID now; renderer can use it once async load finishes. |
 | Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
 Example:
@@ -209,10 +211,10 @@ lifecycle!({
 | Field | Detail |
 | --- | --- |
 | Access | `ctx.res.Materials()` |
-| Signature | `pub fn reserve<S: ResPathSource>(&self, source: S) -> MaterialID` |
-| Params | `&self, source: S` |
+| Signature | `pub fn reserve<A: MaterialReserveArg>(&self, arg: A) -> MaterialID` |
+| Params | `&self, source_or_id` |
 | Returns | `MaterialID` |
-| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it, or when an existing `MaterialID` should be promoted to reserved. |
 | Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
 Example:
@@ -221,7 +223,9 @@ Example:
 lifecycle!({
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
         let value = ctx.res.Materials().reserve("res://path/to/resource");
+        let same = ctx.res.Materials().reserve(value);
         let _ = value;
+        let _ = same;
     }
 });
 ```
@@ -319,7 +323,7 @@ lifecycle!({
 | Field | Detail |
 | --- | --- |
 | Access | `ctx.res.Materials()` |
-| Signature | `material_reserve!(ctx.res.res, source)` |
+| Signature | `material_reserve!(ctx.res, source_or_id)` |
 | Params | `ctx.res, source` |
 | Returns | `resource/runtime ID or `Result` as shown by backing method` |
 | Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
@@ -331,7 +335,9 @@ Example:
 lifecycle!({
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
         let value = material_reserve!(ctx.res, "res://materials/hero.pmat");
+        let same = material_reserve!(ctx.res, value);
         let _ = value;
+        let _ = same;
     }
 });
 ```

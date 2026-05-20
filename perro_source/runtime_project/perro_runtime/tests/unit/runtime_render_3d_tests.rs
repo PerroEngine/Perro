@@ -17,6 +17,7 @@ use perro_nodes::{
 use perro_render_bridge::{
     CameraProjectionState, Command3D, RenderCommand, RenderEvent, ResourceCommand,
 };
+use perro_resource_api::sub_apis::MeshAPI;
 use perro_runtime_api::sub_apis::NodeAPI;
 use perro_structs::Transform3D;
 use perro_structs::{BitMask, Quaternion, Vector3};
@@ -456,6 +457,91 @@ fn mesh_instance_can_request_mesh_and_material_in_separate_frames() {
         command,
         RenderCommand::ThreeD(command)
             if matches!(command.as_ref(), Command3D::Draw { node, .. } if *node == inserted)
+    )));
+}
+
+#[test]
+fn mesh_instance_keeps_retained_mesh_while_replacement_mesh_is_pending() {
+    let mut runtime = Runtime::new();
+    let old_mesh = MeshID::from_parts(41, 0);
+    let old_material = MaterialID::from_parts(42, 0);
+    let mut mesh = MeshInstance3D::new();
+    mesh.mesh = old_mesh;
+    set_primary_material(&mut mesh, old_material);
+    let node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+
+    runtime.extract_render_3d_commands();
+    let first = collect_commands(&mut runtime);
+    assert!(first.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command)
+            if matches!(
+                command.as_ref(),
+                Command3D::Draw { node: draw_node, mesh, .. }
+                    if *draw_node == node && *mesh == old_mesh
+            )
+    )));
+
+    let pending_mesh = runtime
+        .resource_api
+        .load_mesh("res://meshes/tool_version_b.glb:mesh[0]");
+    let pending_request = collect_commands(&mut runtime)
+        .into_iter()
+        .find_map(|command| match command {
+            RenderCommand::Resource(ResourceCommand::CreateMesh { request, id, .. })
+                if id == pending_mesh =>
+            {
+                Some(request)
+            }
+            _ => None,
+        })
+        .expect("expected pending mesh create request");
+    if let Some(scene_node) = runtime.nodes.get_mut(node)
+        && let SceneNodeData::MeshInstance3D(mesh) = &mut scene_node.data
+    {
+        mesh.mesh = pending_mesh;
+    }
+    runtime.mark_needs_rerender(node);
+
+    runtime.extract_render_3d_commands();
+    let pending = collect_commands(&mut runtime);
+    assert!(!pending.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command)
+            if matches!(command.as_ref(), Command3D::RemoveNode { node: removed } if *removed == node)
+    )));
+    assert!(!pending.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command)
+            if matches!(command.as_ref(), Command3D::Draw { node: draw_node, .. } if *draw_node == node)
+    )));
+    assert_eq!(
+        runtime
+            .render_3d
+            .retained_mesh_draws
+            .get(&node)
+            .map(|draw| draw.mesh),
+        Some(old_mesh)
+    );
+
+    runtime.apply_render_event(RenderEvent::MeshCreated {
+        request: pending_request,
+        id: pending_mesh,
+        mesh: None,
+    });
+    runtime.mark_needs_rerender(node);
+    runtime.extract_render_3d_commands();
+    let ready = collect_commands(&mut runtime);
+    assert!(ready.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command)
+            if matches!(
+                command.as_ref(),
+                Command3D::Draw { node: draw_node, mesh, .. }
+                    if *draw_node == node && *mesh == pending_mesh
+            )
     )));
 }
 

@@ -770,7 +770,26 @@ impl Runtime {
                         },
                     };
                     self.queue_render_command(RenderCommand::ThreeD(Box::new(draw_command)));
+                    self.render_3d.retained_mesh_draws.insert(node, draw_state);
                 }
+                visible_now.insert(node);
+            }
+            if effective_visible
+                && !visible_now.contains(&node)
+                && self.render_3d.retained_mesh_draws.contains_key(&node)
+                && self
+                    .nodes
+                    .get(node)
+                    .is_some_and(|scene_node| match &scene_node.data {
+                        SceneNodeData::MeshInstance3D(mesh) => {
+                            !mesh.mesh.is_nil() && self.resource_api.is_mesh_id_pending(mesh.mesh)
+                        }
+                        SceneNodeData::MultiMeshInstance3D(mesh) => {
+                            !mesh.mesh.is_nil() && self.resource_api.is_mesh_id_pending(mesh.mesh)
+                        }
+                        _ => false,
+                    })
+            {
                 visible_now.insert(node);
             }
             let collision_shape_debug_data =

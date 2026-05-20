@@ -39,7 +39,8 @@ use winit::window::Window;
 pub type StaticTextureLookup = fn(path_hash: u64) -> &'static [u8];
 pub type StaticMeshLookup = fn(path_hash: u64) -> &'static [u8];
 pub type StaticShaderLookup = fn(path_hash: u64) -> &'static str;
-const GC_INTERVAL_FRAMES: u32 = 4;
+const GC_INTERVAL_FRAMES: u32 = 60;
+const GC_MAX_DROPS_PER_KIND: usize = 64;
 
 #[inline]
 fn normalize_aa_sample_count(samples: u32) -> u32 {
@@ -303,9 +304,9 @@ pub struct PerroGraphics {
     late_overlay_sprites_cache: Vec<Sprite2DCommand>,
     late_overlay_point_lights_cache: Vec<Light2DState>,
     late_overlay_rects_cache: Vec<RectInstanceGpu>,
-    used_texture_refs_cache: AHashSet<TextureID>,
-    used_mesh_refs_cache: AHashSet<MeshID>,
-    used_material_refs_cache: AHashSet<MaterialID>,
+    used_texture_refs_cache: AHashMap<TextureID, u32>,
+    used_mesh_refs_cache: AHashMap<MeshID, u32>,
+    used_material_refs_cache: AHashMap<MaterialID, u32>,
     used_ref_draws_revision: u64,
     used_ref_sprites_revision: u64,
     global_post_processing: PostProcessSet,
@@ -504,8 +505,9 @@ impl PerroGraphics {
     fn poll_async_texture_loads(&mut self) {
         while let Ok(result) = self.async_texture_load_rx.try_recv() {
             self.pending_async_texture_loads.remove(&result.id);
-            if let Some(texture) = result.texture {
-                let _ = self.resources.set_decoded_texture_data(result.id, texture);
+            if let Some(texture) = result.texture
+                && self.resources.set_decoded_texture_data(result.id, texture)
+            {
                 self.events
                     .push(RenderEvent::TextureLoaded { id: result.id });
                 self.redraw_requested = true;
@@ -581,9 +583,9 @@ impl PerroGraphics {
             late_overlay_sprites_cache: Vec::new(),
             late_overlay_point_lights_cache: Vec::new(),
             late_overlay_rects_cache: Vec::new(),
-            used_texture_refs_cache: AHashSet::new(),
-            used_mesh_refs_cache: AHashSet::new(),
-            used_material_refs_cache: AHashSet::new(),
+            used_texture_refs_cache: AHashMap::new(),
+            used_mesh_refs_cache: AHashMap::new(),
+            used_material_refs_cache: AHashMap::new(),
             used_ref_draws_revision: u64::MAX,
             used_ref_sprites_revision: u64::MAX,
             global_post_processing: PostProcessSet::new(),
@@ -1562,11 +1564,12 @@ impl PerroGraphics {
             self.used_texture_refs_cache.clear();
             self.used_texture_refs_cache
                 .reserve(self.retained_sprites_cache.len());
-            self.used_texture_refs_cache.extend(
-                self.retained_sprites_cache
-                    .iter()
-                    .map(|sprite| sprite.texture),
-            );
+            for sprite in &self.retained_sprites_cache {
+                *self
+                    .used_texture_refs_cache
+                    .entry(sprite.texture)
+                    .or_insert(0) += 1;
+            }
             self.used_ref_sprites_revision = sprites_revision;
         }
         let draws_refs_changed = self.used_ref_draws_revision != draws_revision;
@@ -1579,34 +1582,37 @@ impl PerroGraphics {
                 .reserve(self.retained_draws_cache.len());
             for draw in &self.retained_draws_cache {
                 if let Draw3DKind::Mesh(mesh) = draw.kind {
-                    self.used_mesh_refs_cache.insert(mesh);
+                    *self.used_mesh_refs_cache.entry(mesh).or_insert(0) += 1;
                 }
-                self.used_material_refs_cache
-                    .extend(draw.surfaces.iter().filter_map(|surface| surface.material));
+                for material in draw.surfaces.iter().filter_map(|surface| surface.material) {
+                    *self.used_material_refs_cache.entry(material).or_insert(0) += 1;
+                }
             }
             self.used_ref_draws_revision = draws_revision;
         }
 
         if sprites_refs_changed || draws_refs_changed || (frame_dirty_bits & DIRTY_RESOURCES) != 0 {
             self.resources.reset_ref_counts();
-            for texture in &self.used_texture_refs_cache {
-                self.resources.mark_texture_used(*texture);
+            for (texture, count) in &self.used_texture_refs_cache {
+                self.resources.mark_texture_used_count(*texture, *count);
             }
             for texture in &ui_image_textures {
                 self.resources.mark_texture_used(*texture);
             }
-            for mesh in &self.used_mesh_refs_cache {
-                self.resources.mark_mesh_used(*mesh);
+            for (mesh, count) in &self.used_mesh_refs_cache {
+                self.resources.mark_mesh_used_count(*mesh, *count);
             }
-            for material in &self.used_material_refs_cache {
-                self.resources.mark_material_used(*material);
+            for (material, count) in &self.used_material_refs_cache {
+                self.resources.mark_material_used_count(*material, *count);
             }
         }
         self.frame_index = self.frame_index.wrapping_add(1);
         if self.frame_index.is_multiple_of(GC_INTERVAL_FRAMES) {
-            let drops = self
-                .resources
-                .gc_unused(ResourceStore::DEFAULT_ZERO_REF_TTL_FRAMES);
+            let drops = self.resources.gc_unused_after_frames(
+                ResourceStore::DEFAULT_ZERO_REF_TTL_FRAMES,
+                GC_INTERVAL_FRAMES,
+                GC_MAX_DROPS_PER_KIND,
+            );
             self.events.extend(
                 drops
                     .textures

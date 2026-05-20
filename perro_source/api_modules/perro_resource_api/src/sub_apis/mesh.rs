@@ -5,6 +5,7 @@ use perro_render_bridge::Mesh3D;
 pub trait MeshAPI {
     fn load_mesh_hashed(&self, source_hash: u64, source: Option<&str>) -> MeshID;
     fn reserve_mesh_hashed(&self, source_hash: u64, source: Option<&str>) -> MeshID;
+    fn reserve_mesh_id(&self, id: MeshID) -> bool;
     fn create_mesh_data(&self, data: Mesh3D) -> MeshID;
     fn get_mesh_data(&self, id: MeshID) -> Option<Mesh3D>;
     fn write_mesh_data(&self, id: MeshID, data: Mesh3D) -> bool;
@@ -16,6 +17,52 @@ pub trait MeshAPI {
         self.reserve_mesh_hashed(perro_ids::string_to_u64(source), Some(source))
     }
     fn drop_mesh(&self, id: MeshID) -> bool;
+}
+
+pub trait MeshReserveArg<R: MeshAPI + ?Sized> {
+    type Output;
+    fn reserve_with(self, api: &R) -> Self::Output;
+}
+
+impl<R, S> MeshReserveArg<R> for S
+where
+    R: MeshAPI + ?Sized,
+    S: ResPathSource,
+{
+    type Output = MeshID;
+
+    #[inline]
+    fn reserve_with(self, api: &R) -> Self::Output {
+        api.reserve_mesh(self.as_res_path_str())
+    }
+}
+
+impl<R> MeshReserveArg<R> for MeshID
+where
+    R: MeshAPI + ?Sized,
+{
+    type Output = MeshID;
+
+    #[inline]
+    fn reserve_with(self, api: &R) -> Self::Output {
+        if api.reserve_mesh_id(self) {
+            self
+        } else {
+            MeshID::nil()
+        }
+    }
+}
+
+impl<R> MeshReserveArg<R> for &MeshID
+where
+    R: MeshAPI + ?Sized,
+{
+    type Output = MeshID;
+
+    #[inline]
+    fn reserve_with(self, api: &R) -> Self::Output {
+        (*self).reserve_with(api)
+    }
 }
 
 pub struct MeshModule<'res, R: MeshAPI + ?Sized> {
@@ -44,8 +91,11 @@ impl<'res, R: MeshAPI + ?Sized> MeshModule<'res, R> {
     }
 
     #[inline]
-    pub fn reserve<S: ResPathSource>(&self, source: S) -> MeshID {
-        self.api.reserve_mesh(source.as_res_path_str())
+    pub fn reserve<A>(&self, arg: A) -> A::Output
+    where
+        A: MeshReserveArg<R>,
+    {
+        arg.reserve_with(self.api)
     }
 
     #[inline]

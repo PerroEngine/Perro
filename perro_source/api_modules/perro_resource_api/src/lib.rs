@@ -20,11 +20,11 @@ pub mod prelude {
         AnimationAPI, AnimationModule, Audio, Audio2D, Audio2DModule, Audio3D, Audio3DModule,
         AudioAPI, AudioBusID, AudioDirection, AudioModule, AudioPan, AudioPlayConfig, CsvAPI,
         CsvModule, Draw2DAPI, Draw2DModule, Locale, LocalizationAPI, LocalizationModule,
-        MaterialAPI, MaterialModule, MeshAPI, MeshModule, MidiChannel, MidiModule, MidiNoteHandle,
-        MidiNoteOptions, MidiProgram, MidiSong, MidiSound, MidiSpatialPos, MidiSpatialPosition,
-        Note, PannedAudio, PostProcessingAPI, SceneDocAPI, SceneDocModule, SkeletonAPI,
-        SkeletonModule, SpatialAudioOptions, TextureAPI, TextureModule, VisualAccessibilityAPI,
-        program,
+        MaterialAPI, MaterialModule, MaterialReserveArg, MeshAPI, MeshModule, MeshReserveArg,
+        MidiChannel, MidiModule, MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong, MidiSound,
+        MidiSpatialPos, MidiSpatialPosition, Note, PannedAudio, PostProcessingAPI, SceneDocAPI,
+        SceneDocModule, SkeletonAPI, SkeletonModule, SpatialAudioOptions, TextureAPI,
+        TextureModule, TextureReserveArg, VisualAccessibilityAPI, program,
     };
     pub use crate::{
         animation_drop, animation_is_loaded, animation_load, animation_reserve,

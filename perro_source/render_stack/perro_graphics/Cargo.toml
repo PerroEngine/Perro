@@ -64,6 +64,10 @@ name = "resource_loading"
 harness = false
 
 [[bench]]
+name = "resource_gc"
+harness = false
+
+[[bench]]
 name = "shader_wgsl"
 harness = false
 
