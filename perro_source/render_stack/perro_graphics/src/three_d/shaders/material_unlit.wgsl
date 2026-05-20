@@ -5,8 +5,11 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     var n = normalize(in.normal_ws);
     if material.flat_shading {
         n = normalize(cross(dpdx(in.world_pos), dpdy(in.world_pos)));
+        if material.mirrored_winding {
+            n = -n;
+        }
     }
-    if material.double_sided && !in.is_front {
+    if material.double_sided && (in.is_front == material.mirrored_winding) {
         n = -n;
     }
     var alpha = clamp(color.a, 0.0, 1.0);

@@ -3,16 +3,20 @@ use std::time::Duration;
 
 type SelfNodeType = Node3D;
 
-const SPEAKER_A: &str = "SpeakerA";
-const SPEAKER_B: &str = "SpeakerB";
-const SPEAKER_C: &str = "SpeakerC";
-const AUDIO_WALL: &str = "AudioWall";
-const DEBUG_LABEL: &str = "AudioDebugLabel";
-
 #[State]
 struct PositionalAudioDemoState {
     #[default = NodeID::nil()]
     pub overlay: NodeID,
+    #[default = NodeID::nil()]
+    pub speaker_a: NodeID,
+    #[default = NodeID::nil()]
+    pub speaker_b: NodeID,
+    #[default = NodeID::nil()]
+    pub speaker_c: NodeID,
+    #[default = NodeID::nil()]
+    pub audio_wall: NodeID,
+    #[default = NodeID::nil()]
+    pub debug_label: NodeID,
     #[default = vec![NodeID::nil(); 3]]
     pub speakers: Vec<NodeID>,
     #[default = 0.0]
@@ -23,17 +27,18 @@ struct PositionalAudioDemoState {
 
 lifecycle!({
     fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
-        let speakers = vec![
-            get_child!(ctx.run, ctx.id, SPEAKER_A).unwrap_or(NodeID::nil()),
-            get_child!(ctx.run, ctx.id, SPEAKER_B).unwrap_or(NodeID::nil()),
-            get_child!(ctx.run, ctx.id, SPEAKER_C).unwrap_or(NodeID::nil()),
-        ];
+        let (speakers, wall) = with_state!(ctx.run, PositionalAudioDemoState, ctx.id, |state| {
+            (
+                vec![state.speaker_a, state.speaker_b, state.speaker_c],
+                state.audio_wall,
+            )
+        });
         with_state_mut!(ctx.run, PositionalAudioDemoState, ctx.id, |state| {
             state.overlay = NodeID::nil();
             state.speakers = speakers;
             state.debug_rays = true;
         });
-        if let Some(wall) = get_child!(ctx.run, ctx.id, AUDIO_WALL) {
+        if !wall.is_nil() {
             with_node_mut!(ctx.run, AudioMask3D, wall, |wall| {
                 wall.material.transmission = 0.18;
                 wall.material.low_pass_strength = 0.65;
@@ -126,9 +131,12 @@ methods!({
     fn sync_label(&self, ctx: &mut ScriptContext<'_, API>) {
         let debug = with_state!(ctx.run, PositionalAudioDemoState, ctx.id, |state| state
             .debug_rays);
-        let Some(label) = get_child!(ctx.run, ctx.id, DEBUG_LABEL) else {
+        let label = with_state!(ctx.run, PositionalAudioDemoState, ctx.id, |state| {
+            state.debug_label
+        });
+        if label.is_nil() {
             return;
-        };
+        }
         with_node_mut!(ctx.run, UiLabel, label, |label| {
             label.text = if debug {
                 "Audio debug rays: ON  |  R toggles"

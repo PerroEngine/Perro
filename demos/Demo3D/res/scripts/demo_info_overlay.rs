@@ -2,8 +2,6 @@ use perro_api::prelude::*;
 
 type SelfNodeType = UiPanel;
 
-const TITLE_LABEL_NODE_NAME: &str = "info_overlay_title";
-const BODY_LABEL_NODE_NAME: &str = "info_overlay_body";
 const REFRESH_SECONDS: f32 = 0.35;
 
 #[State]
@@ -26,12 +24,6 @@ struct DemoInfoOverlayState {
 
 lifecycle!({
     fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
-        let title = get_child!(ctx.run, ctx.id, TITLE_LABEL_NODE_NAME).unwrap_or(NodeID::nil());
-        let body = get_child!(ctx.run, ctx.id, BODY_LABEL_NODE_NAME).unwrap_or(NodeID::nil());
-        with_state_mut!(ctx.run, DemoInfoOverlayState, ctx.id, |state| {
-            state.title_label = title;
-            state.body_label = body;
-        });
         self.refresh(ctx);
     }
 

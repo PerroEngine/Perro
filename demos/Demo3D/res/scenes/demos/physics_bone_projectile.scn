@@ -2,6 +2,10 @@ $root = @PhysicsBoneProjectile
 
 [PhysicsBoneProjectile]
 script = "res://scripts/physics_bone_projectile.rs"
+script_vars = {
+    projectile_mesh = @ProjectileMesh
+    projectile_shape = @ProjectileShape
+}
     [BoneCollider3D]
         enabled = true
     [/BoneCollider3D]

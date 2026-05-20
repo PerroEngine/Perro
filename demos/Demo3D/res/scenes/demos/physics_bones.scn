@@ -2,6 +2,10 @@ $root = @PhysicsBonesDemo
 
 [PhysicsBonesDemo]
 script = "res://scripts/physics_bones_demo.rs"
+script_vars = {
+    camera = @DemoCamera
+    projectiles = @Projectiles
+}
     [Node3D]
         position = (0, 0, 0)
     [/Node3D]

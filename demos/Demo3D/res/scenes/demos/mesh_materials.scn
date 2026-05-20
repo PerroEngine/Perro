@@ -2,6 +2,12 @@ $root = @MeshMaterialsDemo
 
 [MeshMaterialsDemo]
 script = "res://scripts/mesh_materials_demo.rs"
+script_vars = {
+    mirror_original = @MirrorOriginal
+    mirror_flip_x = @MirrorFlipX
+    mirror_flip_y = @MirrorFlipY
+    mirror_flip_xy = @MirrorFlipXY
+}
     [Node3D]
         position = (0, 0, 0)
     [/Node3D]
@@ -91,3 +97,59 @@ parent = @MeshMaterialsDemo
         [/Node3D]
     [/MeshInstance3D]
 [/GreenCube]
+
+[MirrorOriginal]
+parent = @MeshMaterialsDemo
+    [MeshInstance3D]
+        material = { type = "standard" base_color_factor = (1.0, 0.72, 0.18, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        flip_x = false
+        flip_y = false
+        flip_z = false
+        [Node3D]
+            position = (-4.2, 0.7, -3.0)
+            scale = (1.15, 1.15, 1.15)
+        [/Node3D]
+    [/MeshInstance3D]
+[/MirrorOriginal]
+
+[MirrorFlipX]
+parent = @MeshMaterialsDemo
+    [MeshInstance3D]
+        material = { type = "standard" base_color_factor = (0.18, 0.72, 1.0, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        flip_x = true
+        flip_y = false
+        flip_z = false
+        [Node3D]
+            position = (-1.4, 0.7, -3.0)
+            scale = (1.15, 1.15, 1.15)
+        [/Node3D]
+    [/MeshInstance3D]
+[/MirrorFlipX]
+
+[MirrorFlipY]
+parent = @MeshMaterialsDemo
+    [MeshInstance3D]
+        material = { type = "standard" base_color_factor = (0.74, 0.92, 0.25, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        flip_x = false
+        flip_y = true
+        flip_z = false
+        [Node3D]
+            position = (1.4, 0.7, -3.0)
+            scale = (1.15, 1.15, 1.15)
+        [/Node3D]
+    [/MeshInstance3D]
+[/MirrorFlipY]
+
+[MirrorFlipXY]
+parent = @MeshMaterialsDemo
+    [MeshInstance3D]
+        material = { type = "standard" base_color_factor = (0.95, 0.34, 0.72, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        flip_x = true
+        flip_y = true
+        flip_z = false
+        [Node3D]
+            position = (4.2, 0.7, -3.0)
+            scale = (1.15, 1.15, 1.15)
+        [/Node3D]
+    [/MeshInstance3D]
+[/MirrorFlipXY]

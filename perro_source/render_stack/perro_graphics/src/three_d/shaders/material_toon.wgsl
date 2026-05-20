@@ -11,8 +11,11 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     var n = normalize(in.normal_ws);
     if material.flat_shading {
         n = normalize(cross(dpdx(in.world_pos), dpdy(in.world_pos)));
+        if material.mirrored_winding {
+            n = -n;
+        }
     }
-    if material.double_sided && !in.is_front {
+    if material.double_sided && (in.is_front == material.mirrored_winding) {
         n = -n;
     }
     let mesh_fade = mesh_blend_fade(in, material);

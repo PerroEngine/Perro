@@ -1288,8 +1288,8 @@ impl ThreadedStartupSplashState {
                     tint: [1.0, 1.0, 1.0, alpha].into(),
                     z_index: 951,
                     uv_min: [0.0, 0.0],
-                    uv_max: [0.0, 0.0],
-                    size: [0.0, 0.0],
+                    uv_max: [image_w as f32, image_h as f32],
+                    size: [image_w as f32, image_h as f32],
                 },
             }));
         }

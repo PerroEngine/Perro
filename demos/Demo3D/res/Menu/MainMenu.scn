@@ -4,6 +4,22 @@ $button_hover_style = { fill = "#1B2C3CE8" stroke = "#B8D8FF" stroke_width = 1.0
 $button_pressed_style = { fill = "#071018E8" stroke = "#FFFFFF" stroke_width = 1.0 radius = 0.06 }
 
 [hub_menu_root]
+script = "res://scripts/demo_main_menu_refs.rs"
+script_vars = {
+    hub_menu_panel = @hub_menu_panel
+    hub_menu_content = @hub_menu_content
+    demo_btn_mesh = @demo_btn_mesh
+    demo_btn_lights = @demo_btn_lights
+    demo_btn_water = @demo_btn_water
+    demo_btn_animations = @demo_btn_animations
+    demo_btn_physics_bones = @demo_btn_physics_bones
+    demo_btn_physics_collisions = @demo_btn_physics_collisions
+    demo_btn_sky = @demo_btn_sky
+    demo_btn_blend = @demo_btn_blend
+    demo_btn_multimesh = @demo_btn_multimesh
+    demo_btn_particles = @demo_btn_particles
+    demo_btn_audio = @demo_btn_audio
+}
     [UiPanel]
         anchor = "center"
         position_ratio = (0.5, 0.5)

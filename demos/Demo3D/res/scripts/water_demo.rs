@@ -6,6 +6,8 @@ type SelfNodeType = Node3D;
 struct WaterDemoState {
     #[default = NodeID::nil()]
     pub overlay: NodeID,
+    #[default = NodeID::nil()]
+    pub projectiles: NodeID,
     #[default = String::new()]
     pub last_body: String,
 }
@@ -36,7 +38,8 @@ methods!({
 
         let water = query!(ctx.run, all(node_type[WaterBody3D]), in_subtree(ctx.id));
         let rigid = query!(ctx.run, all(node_type[RigidBody3D]), in_subtree(ctx.id));
-        let projectiles = get_child!(ctx.run, ctx.id, "Projectiles").unwrap_or(NodeID::nil());
+        let projectiles = with_state!(ctx.run, WaterDemoState, ctx.id, |state| state
+            .projectiles);
         let projectile_cnt = if projectiles.is_nil() {
             0
         } else {

@@ -24,6 +24,8 @@ const PARTICLE_PATH_CACHE_MAX: usize = 256;
 struct Sprite2DEmit {
     texture: TextureID,
     texture_region: Option<[f32; 4]>,
+    flip_x: bool,
+    flip_y: bool,
     model: [[f32; 3]; 3],
     z_index: i32,
 }
@@ -113,6 +115,8 @@ impl Runtime {
                         && render_mask_matches(camera_render_mask, sprite.render_layers),
                     sprite.texture,
                     sprite.texture_region,
+                    sprite.flip_x,
+                    sprite.flip_y,
                     sprite.transform,
                     sprite.z_index,
                 )),
@@ -122,12 +126,22 @@ impl Runtime {
                         && render_mask_matches(camera_render_mask, sprite.render_layers),
                     sprite.texture,
                     sprite.current_texture_region(),
+                    sprite.flip_x,
+                    sprite.flip_y,
                     sprite.transform,
                     sprite.z_index,
                 )),
                 _ => None,
             });
-            if let Some((visible, texture, texture_region, local_transform, z_index)) = sprite_data
+            if let Some((
+                visible,
+                texture,
+                texture_region,
+                flip_x,
+                flip_y,
+                local_transform,
+                z_index,
+            )) = sprite_data
             {
                 let model = self
                     .get_global_transform_2d(node)
@@ -140,6 +154,8 @@ impl Runtime {
                     Sprite2DEmit {
                         texture,
                         texture_region,
+                        flip_x,
+                        flip_y,
                         model,
                         z_index,
                     },
@@ -654,7 +670,13 @@ impl Runtime {
             return;
         };
 
-        let (uv_min, uv_max, size) = sprite_region_uv(emit.texture_region);
+        let (mut uv_min, mut uv_max, size) = sprite_region_uv(emit.texture_region);
+        if emit.flip_x {
+            std::mem::swap(&mut uv_min[0], &mut uv_max[0]);
+        }
+        if emit.flip_y {
+            std::mem::swap(&mut uv_min[1], &mut uv_max[1]);
+        }
         let sprite = Sprite2DCommand {
             texture: resolved_texture,
             model: emit.model,

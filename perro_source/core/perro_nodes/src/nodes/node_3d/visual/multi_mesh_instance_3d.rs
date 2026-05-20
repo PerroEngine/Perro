@@ -24,6 +24,9 @@ pub struct MultiMeshInstance3D {
     pub surfaces: Vec<MeshSurfaceBinding>,
     pub instances: Vec<(Vector3, Quaternion)>,
     pub instance_scale: f32,
+    pub flip_x: bool,
+    pub flip_y: bool,
+    pub flip_z: bool,
     // None => follow renderer default.
     // Some(true) => force meshlet draw.
     // Some(false) => force classic indexed draw.
@@ -40,6 +43,9 @@ impl MultiMeshInstance3D {
             surfaces: Vec::new(),
             instances: Vec::new(),
             instance_scale: 1.0,
+            flip_x: false,
+            flip_y: false,
+            flip_z: false,
             meshlet_override: None,
             lod: LODOptions::new(),
             blend: MeshBlendOptions::new(),

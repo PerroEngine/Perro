@@ -275,3 +275,31 @@ pub fn create_hiz_occlusion_cull_shader_module(device: &wgpu::Device) -> wgpu::S
         source: wgpu::ShaderSource::Wgsl(culling::HIZ_OCCLUSION_CULL_WGSL.into()),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn three_d_material_wgsl_parses() {
+        for prelude in [
+            regular::PRELUDE_WGSL,
+            regular::PRELUDE_RIGID_WGSL,
+            regular::PRELUDE_SKINNED_WGSL,
+        ] {
+            for material in [
+                regular::MATERIAL_STANDARD_WGSL,
+                regular::MATERIAL_UNLIT_WGSL,
+                regular::MATERIAL_TOON_WGSL,
+            ] {
+                let wgsl = build_material_shader_with_prelude(prelude, material);
+                naga::front::wgsl::parse_str(&wgsl).expect("3d material wgsl parses");
+            }
+        }
+    }
+
+    #[test]
+    fn multimesh_wgsl_parses() {
+        naga::front::wgsl::parse_str(regular::MULTIMESH_WGSL).expect("multimesh wgsl parses");
+    }
+}

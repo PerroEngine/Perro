@@ -48,6 +48,7 @@ struct DecodedMaterialParams {
     has_base_color_texture: bool,
     mesh_blend: bool,
     normal_blend: bool,
+    mirrored_winding: bool,
 }
 
 @group(0) @binding(0)
@@ -147,6 +148,7 @@ fn decode_material_params(packed: u32) -> DecodedMaterialParams {
         (flags & 0x4u) != 0u,
         (flags & 0x8u) != 0u,
         (flags & 0x10u) != 0u,
+        (flags & 0x20u) != 0u,
     );
 }
 
@@ -268,6 +270,31 @@ fn decode_toon_params(packed_0: u32, packed_1: u32) -> vec3<f32> {
     );
 }
 
+fn transform_normal_ws(
+    row_0: vec3<f32>,
+    row_1: vec3<f32>,
+    row_2: vec3<f32>,
+    normal: vec3<f32>,
+) -> vec3<f32> {
+    let cof_0 = cross(row_1, row_2);
+    let cof_1 = cross(row_2, row_0);
+    let cof_2 = cross(row_0, row_1);
+    let det = dot(row_0, cof_0);
+    if abs(det) <= 1.0e-8 {
+        return normalize(vec3<f32>(
+            dot(row_0, normal),
+            dot(row_1, normal),
+            dot(row_2, normal),
+        ));
+    }
+    let det_sign = select(-1.0, 1.0, det >= 0.0);
+    return normalize(vec3<f32>(
+        dot(cof_0, normal),
+        dot(cof_1, normal),
+        dot(cof_2, normal),
+    ) * det_sign);
+}
+
 fn perro_vs_main_base(v: VertexInput, inst: InstanceInput) -> VertexOutput {
     var pos = v.pos;
     var normal = v.normal;
@@ -288,11 +315,12 @@ fn perro_vs_main_base(v: VertexInput, inst: InstanceInput) -> VertexOutput {
         dot(inst.model_row_2, p),
         1.0,
     );
-    let normal_ws = normalize(vec3<f32>(
-        dot(inst.model_row_0.xyz, normal),
-        dot(inst.model_row_1.xyz, normal),
-        dot(inst.model_row_2.xyz, normal),
-    ));
+    let normal_ws = transform_normal_ws(
+        inst.model_row_0.xyz,
+        inst.model_row_1.xyz,
+        inst.model_row_2.xyz,
+        normal,
+    );
     var out: VertexOutput;
     out.clip_pos = scene.view_proj * world;
     out.world_pos = world.xyz;

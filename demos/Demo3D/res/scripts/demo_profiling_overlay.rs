@@ -2,12 +2,6 @@ use perro_api::prelude::*;
 
 type SelfNodeType = UiPanel;
 
-const FPS_LABEL_NODE_NAME: &str = "profiling_overlay_fps";
-const CPU_LABEL_NODE_NAME: &str = "profiling_overlay_cpu";
-const DELTA_LABEL_NODE_NAME: &str = "profiling_overlay_delta";
-const GFX_LABEL_NODE_NAME: &str = "profiling_overlay_gfx";
-const ROW_NODE_NAME: &str = "profiling_overlay_row";
-
 const REFRESH_SECONDS: f32 = 2.0;
 const PROFILE_SAMPLE_EVERY_FRAMES: u32 = 60;
 
@@ -37,19 +31,6 @@ struct DemoProfilingOverlayState {
 
 lifecycle!({
     fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
-        let row = get_child!(ctx.run, ctx.id, ROW_NODE_NAME).unwrap_or(NodeID::nil());
-        let fps_label = get_child!(ctx.run, row, FPS_LABEL_NODE_NAME).unwrap_or(NodeID::nil());
-        let cpu_label = get_child!(ctx.run, row, CPU_LABEL_NODE_NAME).unwrap_or(NodeID::nil());
-        let delta_label = get_child!(ctx.run, row, DELTA_LABEL_NODE_NAME).unwrap_or(NodeID::nil());
-        let gfx_label = get_child!(ctx.run, row, GFX_LABEL_NODE_NAME).unwrap_or(NodeID::nil());
-
-        with_state_mut!(ctx.run, DemoProfilingOverlayState, ctx.id, |state| {
-            state.fps_label = fps_label;
-            state.cpu_label = cpu_label;
-            state.delta_label = delta_label;
-            state.gfx_label = gfx_label;
-        });
-
         self.refresh_text(ctx);
     }
 

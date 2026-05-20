@@ -253,6 +253,76 @@ fn multimesh_blend_options_reach_dense_draw_command() {
 }
 
 #[test]
+fn mesh_instance_flip_x_mirrors_model_about_local_origin() {
+    let mut runtime = Runtime::new();
+    let mut mesh = MeshInstance3D::new();
+    mesh.mesh = MeshID::from_parts(11, 0);
+    set_primary_material(&mut mesh, MaterialID::from_parts(13, 0));
+    mesh.flip_x = true;
+    mesh.transform.position = Vector3::new(3.0, 4.0, 5.0);
+    let node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+    let model = commands
+        .iter()
+        .find_map(|command| match command {
+            RenderCommand::ThreeD(command) => match command.as_ref() {
+                Command3D::Draw {
+                    node: got, model, ..
+                } if *got == node => Some(*model),
+                _ => None,
+            },
+            _ => None,
+        })
+        .expect("mesh draw command");
+
+    assert_eq!(model[0], [-1.0, 0.0, 0.0, 0.0]);
+    assert_eq!(model[1], [0.0, 1.0, 0.0, 0.0]);
+    assert_eq!(model[2], [0.0, 0.0, 1.0, 0.0]);
+    assert_eq!(model[3], [3.0, 4.0, 5.0, 1.0]);
+}
+
+#[test]
+fn multimesh_flip_xy_mirrors_node_model_about_local_origin() {
+    let mut runtime = Runtime::new();
+    let mut multi = MultiMeshInstance3D::new();
+    multi.mesh = MeshID::from_parts(12, 0);
+    set_primary_material_multi(&mut multi, MaterialID::from_parts(14, 0));
+    multi.instances.push((Vector3::ZERO, Quaternion::IDENTITY));
+    multi.flip_x = true;
+    multi.flip_y = true;
+    multi.transform.position = Vector3::new(1.0, 2.0, 3.0);
+    let node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MultiMeshInstance3D(multi)));
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+    let model = commands
+        .iter()
+        .find_map(|command| match command {
+            RenderCommand::ThreeD(command) => match command.as_ref() {
+                Command3D::DrawMultiDense {
+                    node: got,
+                    node_model,
+                    ..
+                } if *got == node => Some(*node_model),
+                _ => None,
+            },
+            _ => None,
+        })
+        .expect("multimesh draw command");
+
+    assert_eq!(model[0], [-1.0, 0.0, 0.0, 0.0]);
+    assert_eq!(model[1], [0.0, -1.0, 0.0, 0.0]);
+    assert_eq!(model[2], [0.0, 0.0, 1.0, 0.0]);
+    assert_eq!(model[3], [1.0, 2.0, 3.0, 1.0]);
+}
+
+#[test]
 fn mesh_instance_without_mesh_source_requests_nothing() {
     let mut runtime = Runtime::new();
     let mut mesh = MeshInstance3D::new();
@@ -296,7 +366,7 @@ fn mesh_instance_requests_missing_assets_once_until_events_arrive() {
 }
 
 #[test]
-fn mesh_instance_emits_draw_after_mesh_and_material_created() {
+fn mesh_instance_emits_draw_after_mesh_created_and_inline_material_allocated() {
     let mut runtime = Runtime::new();
     let expected_node = runtime
         .nodes
@@ -323,37 +393,32 @@ fn mesh_instance_emits_draw_after_mesh_and_material_created() {
     });
     runtime.extract_render_3d_commands();
     let second = collect_commands(&mut runtime);
-    let material_request = match &second[0] {
-        RenderCommand::Resource(ResourceCommand::CreateMaterial { request, .. }) => *request,
-        _ => panic!("expected material create request"),
-    };
-
-    let expected_material = MaterialID::from_parts(7, 4);
-    runtime.apply_render_event(RenderEvent::MaterialCreated {
-        request: material_request,
-        id: expected_material,
+    let expected_material = second
+        .iter()
+        .find_map(|command| match command {
+            RenderCommand::Resource(ResourceCommand::CreateMaterial { id, .. }) => Some(*id),
+            _ => None,
+        })
+        .expect("expected material create command");
+    assert!(!expected_material.is_nil());
+    let drew_expected = second.iter().any(|command| match command {
+        RenderCommand::ThreeD(command) => matches!(
+            command.as_ref(),
+            Command3D::Draw {
+                node,
+                mesh,
+                surfaces,
+                ..
+            } if *node == expected_node
+                && *mesh == expected_mesh
+                && surfaces
+                    .first()
+                    .and_then(|surface| surface.material)
+                    .is_some_and(|id| id == expected_material)
+        ),
+        _ => false,
     });
-    runtime.extract_render_3d_commands();
-    let third = collect_commands(&mut runtime);
-    assert_eq!(third.len(), 1);
-    assert!(matches!(
-        &third[0],
-        RenderCommand::ThreeD(command)
-            if matches!(
-                command.as_ref(),
-                Command3D::Draw {
-                    node,
-                    mesh,
-                    surfaces,
-                    ..
-                } if *node == expected_node
-                    && *mesh == expected_mesh
-                    && surfaces
-                        .first()
-                        .and_then(|surface| surface.material)
-                        .is_some_and(|id| id == expected_material)
-            )
-    ));
+    assert!(drew_expected);
 }
 
 #[test]
@@ -383,11 +448,15 @@ fn mesh_instance_can_request_mesh_and_material_in_separate_frames() {
     });
     runtime.extract_render_3d_commands();
     let second = collect_commands(&mut runtime);
-    assert_eq!(second.len(), 1);
-    assert!(matches!(
-        second[0],
+    assert!(second.iter().any(|command| matches!(
+        command,
         RenderCommand::Resource(ResourceCommand::CreateMaterial { .. })
-    ));
+    )));
+    assert!(second.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command)
+            if matches!(command.as_ref(), Command3D::Draw { node, .. } if *node == inserted)
+    )));
 }
 
 #[test]
@@ -693,6 +762,35 @@ fn active_camera_3d_emits_set_camera_command() {
                             CameraProjectionState::Orthographic { size, near, far }
                                 if size == 24.0 && near == 0.2 && far == 600.0
                         )
+            )
+    )));
+}
+
+#[test]
+fn newly_activated_camera_3d_wins_over_higher_slot_old_camera() {
+    let mut runtime = Runtime::new();
+    let dummy = NodeAPI::create::<Node3D>(&mut runtime);
+    let old_camera = NodeAPI::create::<Camera3D>(&mut runtime);
+    NodeAPI::with_node_mut::<Camera3D, _, _>(&mut runtime, old_camera, |camera| {
+        camera.active = true;
+        camera.transform.position.x = 1.0;
+    });
+    let _ = NodeAPI::remove_node(&mut runtime, dummy);
+    let new_camera = NodeAPI::create::<Camera3D>(&mut runtime);
+    NodeAPI::with_node_mut::<Camera3D, _, _>(&mut runtime, new_camera, |camera| {
+        camera.active = true;
+        camera.transform.position.x = 9.0;
+    });
+
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command_3d)
+            if matches!(
+                command_3d.as_ref(),
+                Command3D::SetCamera { camera } if camera.position[0] == 9.0
             )
     )));
 }

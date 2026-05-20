@@ -2,19 +2,6 @@ use perro_api::prelude::*;
 
 type SelfNodeType = Node3D;
 
-const LIGHT_MARKERS: [&str; 10] = [
-    "RedOrb",
-    "BlueOrb",
-    "GreenOrb",
-    "AmberOrb",
-    "VioletOrb",
-    "CyanOrb",
-    "PinkOrb",
-    "LimeOrb",
-    "WhiteSpotRig",
-    "GoldSpotRig",
-];
-
 const SPEED: f32 = 0.78;
 
 #[State]
@@ -45,20 +32,8 @@ struct LightsDemoState {
 
 lifecycle!({
     fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
-        let ids =
-            LIGHT_MARKERS.map(|name| get_child!(ctx.run, ctx.id, name).unwrap_or(NodeID::nil()));
         with_state_mut!(ctx.run, LightsDemoState, ctx.id, |state| {
             state.overlay = NodeID::nil();
-            state.red = ids[0];
-            state.blue = ids[1];
-            state.green = ids[2];
-            state.amber = ids[3];
-            state.violet = ids[4];
-            state.cyan = ids[5];
-            state.pink = ids[6];
-            state.lime = ids[7];
-            state.white_spot = ids[8];
-            state.gold_spot = ids[9];
         });
         self.push_overlay(ctx);
     }

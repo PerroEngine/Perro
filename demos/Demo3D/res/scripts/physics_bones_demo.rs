@@ -3,8 +3,6 @@ use perro_api::prelude::*;
 type SelfNodeType = Node3D;
 
 const PROJECTILE_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/physics_bone_projectile.scn");
-const CAMERA_NODE_NAME: &str = "DemoCamera";
-const PROJECTILES_NODE_NAME: &str = "Projectiles";
 
 #[State]
 struct PhysicsBonesDemoState {
@@ -22,13 +20,8 @@ struct PhysicsBonesDemoState {
 
 lifecycle!({
     fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
-        let camera = get_child!(ctx.run, ctx.id, CAMERA_NODE_NAME).unwrap_or(NodeID::nil());
-        let projectiles =
-            get_child!(ctx.run, ctx.id, PROJECTILES_NODE_NAME).unwrap_or(NodeID::nil());
         with_state_mut!(ctx.run, PhysicsBonesDemoState, ctx.id, |state| {
             state.overlay = NodeID::nil();
-            state.camera = camera;
-            state.projectiles = projectiles;
         });
         self.push_overlay(ctx);
     }

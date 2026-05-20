@@ -167,6 +167,21 @@ fn apply_mesh_instance_3d_fields(node: &mut MeshInstance3D, fields: &[SceneObjec
                     node.meshlet_override = Some(v);
                 }
             }
+            "flip_x" | "mirror_x" => {
+                if let Some(v) = as_bool(value) {
+                    node.flip_x = v;
+                }
+            }
+            "flip_y" | "mirror_y" => {
+                if let Some(v) = as_bool(value) {
+                    node.flip_y = v;
+                }
+            }
+            "flip_z" | "mirror_z" => {
+                if let Some(v) = as_bool(value) {
+                    node.flip_z = v;
+                }
+            }
             "min_lod" | "lod_min" => {
                 if let Some(v) = as_i32(value) {
                     node.lod.min_lod = v.clamp(0, LODOptions::MAX as i32) as u8;
@@ -249,6 +264,21 @@ fn apply_multi_mesh_instance_3d_fields(
             "meshlets" | "use_meshlets" => {
                 if let Some(v) = as_bool(value) {
                     node.meshlet_override = Some(v);
+                }
+            }
+            "flip_x" | "mirror_x" => {
+                if let Some(v) = as_bool(value) {
+                    node.flip_x = v;
+                }
+            }
+            "flip_y" | "mirror_y" => {
+                if let Some(v) = as_bool(value) {
+                    node.flip_y = v;
+                }
+            }
+            "flip_z" | "mirror_z" => {
+                if let Some(v) = as_bool(value) {
+                    node.flip_z = v;
                 }
             }
             "min_lod" | "lod_min" => {

@@ -106,12 +106,16 @@ pub enum Camera2DField {
 pub enum Sprite2DField {
     Texture,
     TextureRegion,
+    FlipX,
+    FlipY,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AnimatedSprite2DField {
     Texture,
     Animations,
+    FlipX,
+    FlipY,
     CurrentAnimation,
     CurrentFrame,
     FpsScale,
@@ -310,6 +314,9 @@ pub enum MeshInstance3DField {
     Surfaces,
     Model,
     Skeleton,
+    FlipX,
+    FlipY,
+    FlipZ,
     InstanceGrid,
     Meshlets,
     MinLod,
@@ -667,6 +674,8 @@ fn resolve_scene_node_field_for_type(
             SceneFieldName::TextureRegion => {
                 Some(NodeField::Sprite2D(Sprite2DField::TextureRegion))
             }
+            SceneFieldName::FlipX => Some(NodeField::Sprite2D(Sprite2DField::FlipX)),
+            SceneFieldName::FlipY => Some(NodeField::Sprite2D(Sprite2DField::FlipY)),
             _ => None,
         },
         NodeType::AnimatedSprite2D => match field {
@@ -676,6 +685,12 @@ fn resolve_scene_node_field_for_type(
             SceneFieldName::Animations => Some(NodeField::AnimatedSprite2D(
                 AnimatedSprite2DField::Animations,
             )),
+            SceneFieldName::FlipX => {
+                Some(NodeField::AnimatedSprite2D(AnimatedSprite2DField::FlipX))
+            }
+            SceneFieldName::FlipY => {
+                Some(NodeField::AnimatedSprite2D(AnimatedSprite2DField::FlipY))
+            }
             SceneFieldName::CurrentAnimation | SceneFieldName::Animation => Some(
                 NodeField::AnimatedSprite2D(AnimatedSprite2DField::CurrentAnimation),
             ),
@@ -798,6 +813,9 @@ fn resolve_scene_node_field_for_type(
             SceneFieldName::Skeleton => {
                 Some(NodeField::MeshInstance3D(MeshInstance3DField::Skeleton))
             }
+            SceneFieldName::FlipX => Some(NodeField::MeshInstance3D(MeshInstance3DField::FlipX)),
+            SceneFieldName::FlipY => Some(NodeField::MeshInstance3D(MeshInstance3DField::FlipY)),
+            SceneFieldName::FlipZ => Some(NodeField::MeshInstance3D(MeshInstance3DField::FlipZ)),
             SceneFieldName::Meshlets => {
                 Some(NodeField::MeshInstance3D(MeshInstance3DField::Meshlets))
             }
@@ -1038,6 +1056,8 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
             "texture_region" | "region" | "atlas_region" => {
                 Some(NodeField::Sprite2D(Sprite2DField::TextureRegion))
             }
+            "flip_x" | "flip_h" | "mirror_x" => Some(NodeField::Sprite2D(Sprite2DField::FlipX)),
+            "flip_y" | "flip_v" | "mirror_y" => Some(NodeField::Sprite2D(Sprite2DField::FlipY)),
             _ => None,
         },
         NodeType::AnimatedSprite2D => match field {
@@ -1045,6 +1065,12 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
             "animations" | "sprites" => Some(NodeField::AnimatedSprite2D(
                 AnimatedSprite2DField::Animations,
             )),
+            "flip_x" | "flip_h" | "mirror_x" => {
+                Some(NodeField::AnimatedSprite2D(AnimatedSprite2DField::FlipX))
+            }
+            "flip_y" | "flip_v" | "mirror_y" => {
+                Some(NodeField::AnimatedSprite2D(AnimatedSprite2DField::FlipY))
+            }
             "current_animation" | "animation" | "clip" => Some(NodeField::AnimatedSprite2D(
                 AnimatedSprite2DField::CurrentAnimation,
             )),
@@ -1234,6 +1260,9 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
             "surfaces" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Surfaces)),
             "model" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Model)),
             "skeleton" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Skeleton)),
+            "flip_x" | "mirror_x" => Some(NodeField::MeshInstance3D(MeshInstance3DField::FlipX)),
+            "flip_y" | "mirror_y" => Some(NodeField::MeshInstance3D(MeshInstance3DField::FlipY)),
+            "flip_z" | "mirror_z" => Some(NodeField::MeshInstance3D(MeshInstance3DField::FlipZ)),
             "meshlets" | "use_meshlets" => {
                 Some(NodeField::MeshInstance3D(MeshInstance3DField::Meshlets))
             }
@@ -1260,6 +1289,9 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
             "material" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Material)),
             "surfaces" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Surfaces)),
             "model" => Some(NodeField::MeshInstance3D(MeshInstance3DField::Model)),
+            "flip_x" | "mirror_x" => Some(NodeField::MeshInstance3D(MeshInstance3DField::FlipX)),
+            "flip_y" | "mirror_y" => Some(NodeField::MeshInstance3D(MeshInstance3DField::FlipY)),
+            "flip_z" | "mirror_z" => Some(NodeField::MeshInstance3D(MeshInstance3DField::FlipZ)),
             "instance_grid" | "grid_instances" => {
                 Some(NodeField::MeshInstance3D(MeshInstance3DField::InstanceGrid))
             }
@@ -2061,6 +2093,26 @@ mod tests {
             Some(NodeField::MeshInstance3D(MeshInstance3DField::InstanceGrid))
         );
         assert_eq!(resolve_node_field("MeshInstance3D", "blend_layer"), None);
+    }
+
+    #[test]
+    fn flip_fields_resolve_for_sprites_and_meshes() {
+        assert_eq!(
+            resolve_node_field("Sprite2D", "flip_x"),
+            Some(NodeField::Sprite2D(Sprite2DField::FlipX))
+        );
+        assert_eq!(
+            resolve_node_field("AnimatedSprite2D", "flip_y"),
+            Some(NodeField::AnimatedSprite2D(AnimatedSprite2DField::FlipY))
+        );
+        assert_eq!(
+            resolve_node_field("MeshInstance3D", "flip_z"),
+            Some(NodeField::MeshInstance3D(MeshInstance3DField::FlipZ))
+        );
+        assert_eq!(
+            resolve_node_field("MultiMeshInstance3D", "mirror_x"),
+            Some(NodeField::MeshInstance3D(MeshInstance3DField::FlipX))
+        );
     }
 
     #[test]

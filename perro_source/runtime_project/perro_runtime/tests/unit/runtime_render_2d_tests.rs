@@ -480,6 +480,31 @@ fn animated_sprite_advances_frame_and_emits_region() {
 }
 
 #[test]
+fn sprite_flip_swaps_region_uv_without_changing_size() {
+    let mut runtime = Runtime::new();
+    let mut sprite = Sprite2D::new();
+    sprite.texture = TextureID::from_parts(30, 0);
+    sprite.texture_region = Some([4.0, 8.0, 16.0, 32.0]);
+    sprite.flip_x = true;
+    sprite.flip_y = true;
+    let expected_node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Sprite2D(sprite)));
+
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::UpsertSprite { node, sprite })
+            if *node == expected_node
+                && sprite.uv_min == [20.0, 40.0]
+                && sprite.uv_max == [4.0, 8.0]
+                && sprite.size == [16.0, 32.0]
+    )));
+}
+
+#[test]
 fn create_nodes_10k_sprites_emit_render_commands() {
     let mut runtime = Runtime::new();
     let templates = vec![NodeCreationTemplate::new::<Sprite2D>(); 10_000];

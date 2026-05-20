@@ -162,6 +162,31 @@ fn rotate_vec_by_quat(v: vec3<f32>, q: vec4<f32>) -> vec3<f32> {
     return v + q.w * t + cross(q.xyz, t);
 }
 
+fn transform_normal_ws(
+    row_0: vec3<f32>,
+    row_1: vec3<f32>,
+    row_2: vec3<f32>,
+    normal: vec3<f32>,
+) -> vec3<f32> {
+    let cof_0 = cross(row_1, row_2);
+    let cof_1 = cross(row_2, row_0);
+    let cof_2 = cross(row_0, row_1);
+    let det = dot(row_0, cof_0);
+    if abs(det) <= 1.0e-8 {
+        return normalize(vec3<f32>(
+            dot(row_0, normal),
+            dot(row_1, normal),
+            dot(row_2, normal),
+        ));
+    }
+    let det_sign = select(-1.0, 1.0, det >= 0.0);
+    return normalize(vec3<f32>(
+        dot(cof_0, normal),
+        dot(cof_1, normal),
+        dot(cof_2, normal),
+    ) * det_sign);
+}
+
 @vertex
 fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
     let draw = multimesh_draws[inst.draw_id];
@@ -176,11 +201,12 @@ fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
         dot(draw.model_row_2, p),
         1.0,
     );
-    let normal_ws = normalize(vec3<f32>(
-        dot(draw.model_row_0.xyz, local_nrm),
-        dot(draw.model_row_1.xyz, local_nrm),
-        dot(draw.model_row_2.xyz, local_nrm),
-    ));
+    let normal_ws = transform_normal_ws(
+        draw.model_row_0.xyz,
+        draw.model_row_1.xyz,
+        draw.model_row_2.xyz,
+        local_nrm,
+    );
 
     let base = unpack_rgba8(draw.packed_color);
     let emissive = unpack_rgba8(draw.packed_emissive);

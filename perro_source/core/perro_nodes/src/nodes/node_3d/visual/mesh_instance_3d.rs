@@ -111,6 +111,9 @@ pub struct MeshInstance3D {
     pub mesh: MeshID,
     pub surfaces: Vec<MeshSurfaceBinding>,
     pub skeleton: NodeID,
+    pub flip_x: bool,
+    pub flip_y: bool,
+    pub flip_z: bool,
     // None => follow renderer default.
     // Some(true) => force meshlet draw.
     // Some(false) => force classic indexed draw.
@@ -126,6 +129,9 @@ impl MeshInstance3D {
             mesh: MeshID::nil(),
             surfaces: Vec::new(),
             skeleton: NodeID::nil(),
+            flip_x: false,
+            flip_y: false,
+            flip_z: false,
             meshlet_override: None,
             lod: LODOptions::new(),
             blend: MeshBlendOptions::new(),

@@ -2,6 +2,12 @@ $root = @profiling_overlay_root
 
 [profiling_overlay_root]
 script = "res://scripts/demo_profiling_overlay.rs"
+script_vars = {
+    fps_label = @profiling_overlay_fps
+    cpu_label = @profiling_overlay_cpu
+    delta_label = @profiling_overlay_delta
+    gfx_label = @profiling_overlay_gfx
+}
     [UiPanel]
         anchor = "top"
         position_ratio = (0.5, 0.5)

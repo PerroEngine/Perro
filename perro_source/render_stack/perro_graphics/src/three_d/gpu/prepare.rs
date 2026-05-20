@@ -645,6 +645,7 @@ impl Gpu3D {
                             scale_bits: dense.instance_scale.max(0.0001).to_bits(),
                             packed_blend_params: resolved_blend.packed_params,
                         });
+                    let mirrored_winding = draw_model.determinant() < 0.0;
                     let instance_start = self.staged_multimesh_instances.len() as u32;
                     for pose in dense.instances.iter().copied() {
                         self.staged_multimesh_instances.push(MultiMeshInstanceGpu {
@@ -661,7 +662,7 @@ impl Gpu3D {
                             instance_start,
                             instance_count,
                             draw_param_index,
-                            double_sided: params.double_sided,
+                            double_sided: params.double_sided || mirrored_winding,
                             mesh_blend: resolved_mesh_blend_active(resolved_blend),
                         });
                     }
@@ -844,6 +845,9 @@ impl Gpu3D {
                             .saturating_sub(instance_start);
                         if instance_count > 0 {
                             let multi_instance = instance_count > 1;
+                            let mirrored_winding = instance_mats
+                                .iter()
+                                .any(|model| Mat4::from_cols_array_2d(model).determinant() < 0.0);
                             let occlusion_bounds = if multi_instance {
                                 ([0.0, 0.0, 0.0], 1.0e9)
                             } else {
@@ -861,7 +865,8 @@ impl Gpu3D {
                                     instance_start,
                                     instance_count,
                                     double_sided: standard_params.double_sided
-                                        || self.meshlet_debug_view,
+                                        || self.meshlet_debug_view
+                                        || mirrored_winding,
                                     material_kind,
                                     alpha_mode: standard_params.alpha_mode,
                                     base_color_texture_slot: standard_params.base_color_texture,
@@ -948,6 +953,9 @@ impl Gpu3D {
                         continue;
                     }
                     let multi_instance = instance_count > 1;
+                    let mirrored_winding = instance_mats
+                        .iter()
+                        .any(|model| Mat4::from_cols_array_2d(model).determinant() < 0.0);
                     // Use per-meshlet local bounds for tighter frustum/occlusion rejection.
                     let (occlusion_center, occlusion_radius) = if multi_instance {
                         ([0.0, 0.0, 0.0], 1.0e9)
@@ -969,7 +977,9 @@ impl Gpu3D {
                             },
                             instance_start,
                             instance_count,
-                            double_sided: standard_params.double_sided || self.meshlet_debug_view,
+                            double_sided: standard_params.double_sided
+                                || self.meshlet_debug_view
+                                || mirrored_winding,
                             material_kind: material_kind.clone(),
                             alpha_mode: standard_params.alpha_mode,
                             base_color_texture_slot: standard_params.base_color_texture,

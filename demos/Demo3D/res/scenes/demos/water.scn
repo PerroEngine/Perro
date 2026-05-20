@@ -2,6 +2,9 @@ $root = @WaterDemo
 
 [WaterDemo]
 script = "res://scripts/water_demo.rs"
+script_vars = {
+    projectiles = @Projectiles
+}
     [Node3D]
         position = (0, 0, 0)
     [/Node3D]

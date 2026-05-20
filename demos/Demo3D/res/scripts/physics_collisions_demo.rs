@@ -2,12 +2,6 @@ use perro_api::prelude::*;
 
 type SelfNodeType = Node3D;
 
-const AREA_MESH_NODE_NAME: &str = "SignalAreaMesh";
-const AREA_PROBE_NODE_NAME: &str = "AreaProbe";
-const LEFT_BALL_NODE_NAME: &str = "RigidBallLeft";
-const RIGHT_BALL_NODE_NAME: &str = "RigidBallRight";
-const DROP_BALL_NODE_NAME: &str = "DropBall";
-
 #[State]
 struct PhysicsCollisionsDemoState {
     #[default = NodeID::nil()]
@@ -32,12 +26,6 @@ struct PhysicsCollisionsDemoState {
 
 lifecycle!({
     fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
-        let area_mesh = get_child!(ctx.run, ctx.id, AREA_MESH_NODE_NAME).unwrap_or(NodeID::nil());
-        let area_probe = get_child!(ctx.run, ctx.id, AREA_PROBE_NODE_NAME).unwrap_or(NodeID::nil());
-        let left_ball = get_child!(ctx.run, ctx.id, LEFT_BALL_NODE_NAME).unwrap_or(NodeID::nil());
-        let right_ball = get_child!(ctx.run, ctx.id, RIGHT_BALL_NODE_NAME).unwrap_or(NodeID::nil());
-        let drop_ball = get_child!(ctx.run, ctx.id, DROP_BALL_NODE_NAME).unwrap_or(NodeID::nil());
-
         let idle = material_create!(
             ctx.res,
             area_material([0.08, 0.70, 0.95, 0.28], [0.02, 0.18, 0.30])
@@ -49,11 +37,6 @@ lifecycle!({
 
         with_state_mut!(ctx.run, PhysicsCollisionsDemoState, ctx.id, |state| {
             state.overlay = NodeID::nil();
-            state.area_mesh = area_mesh;
-            state.area_probe = area_probe;
-            state.left_ball = left_ball;
-            state.right_ball = right_ball;
-            state.drop_ball = drop_ball;
             state.area_idle_material = idle;
             state.area_active_material = active;
         });

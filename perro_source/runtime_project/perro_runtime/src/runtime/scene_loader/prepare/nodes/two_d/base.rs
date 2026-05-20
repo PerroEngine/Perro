@@ -624,12 +624,26 @@ fn as_particle_sim_mode_2d(value: &SceneValue) -> Option<ParticleEmitterSimMode2
 
 fn apply_sprite_2d_fields(node: &mut Sprite2D, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each_field(|field, value| {
-        if matches!(field, SceneFieldName::TextureRegion)
-            && let Some((x, y, w, h)) = value.as_vec4()
-            && w > 0.0
-            && h > 0.0
-        {
-            node.texture_region = Some([x, y, w, h]);
+        match field {
+            SceneFieldName::TextureRegion => {
+                if let Some((x, y, w, h)) = value.as_vec4()
+                    && w > 0.0
+                    && h > 0.0
+                {
+                    node.texture_region = Some([x, y, w, h]);
+                }
+            }
+            SceneFieldName::FlipX => {
+                if let Some(v) = value.as_bool() {
+                    node.flip_x = v;
+                }
+            }
+            SceneFieldName::FlipY => {
+                if let Some(v) = value.as_bool() {
+                    node.flip_y = v;
+                }
+            }
+            _ => {}
         }
     });
 }
@@ -640,6 +654,16 @@ fn apply_animated_sprite_2d_fields(node: &mut AnimatedSprite2D, fields: &[SceneO
             Some(NodeField::AnimatedSprite2D(AnimatedSprite2DField::Animations)) => {
                 if let Some(animations) = parse_animated_sprite_list(value) {
                     node.animations = animations;
+                }
+            }
+            Some(NodeField::AnimatedSprite2D(AnimatedSprite2DField::FlipX)) => {
+                if let Some(v) = value.as_bool() {
+                    node.flip_x = v;
+                }
+            }
+            Some(NodeField::AnimatedSprite2D(AnimatedSprite2DField::FlipY)) => {
+                if let Some(v) = value.as_bool() {
+                    node.flip_y = v;
                 }
             }
             Some(NodeField::AnimatedSprite2D(AnimatedSprite2DField::CurrentAnimation)) => {

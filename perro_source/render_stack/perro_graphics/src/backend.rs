@@ -151,6 +151,7 @@ pub struct DrawFrameTiming {
 struct FrameState {
     pending_commands: Vec<RenderCommand>,
     scratch_commands: Vec<RenderCommand>,
+    scratch_camera_commands: Vec<RenderCommand>,
     scratch_late_overlay_commands: Vec<RenderCommand>,
 }
 
@@ -260,7 +261,7 @@ pub struct PerroGraphics {
     #[cfg(all(not(target_arch = "wasm32"), not(test)))]
     async_mesh_load_rx: mpsc::Receiver<AsyncMeshLoadResult>,
     #[cfg(all(not(target_arch = "wasm32"), not(test)))]
-    pending_async_mesh_loads: AHashSet<MeshID>,
+    pending_async_mesh_loads: AHashMap<MeshID, Vec<perro_render_bridge::RenderRequestID>>,
     #[cfg(all(not(target_arch = "wasm32"), not(test)))]
     queued_async_mesh_loads: Vec<AsyncMeshLoadJob>,
     #[cfg(not(target_arch = "wasm32"))]
@@ -427,13 +428,18 @@ impl PerroGraphics {
     #[cfg(all(not(target_arch = "wasm32"), not(test)))]
     fn poll_async_mesh_loads(&mut self) {
         while let Ok(result) = self.async_mesh_load_rx.try_recv() {
-            self.pending_async_mesh_loads.remove(&result.id);
+            let requests = self
+                .pending_async_mesh_loads
+                .remove(&result.id)
+                .unwrap_or_else(|| vec![result.request]);
             if let Some(reason) = result.error {
                 self.resources.drop_mesh(result.id);
-                self.events.push(RenderEvent::Failed {
-                    request: result.request,
-                    reason,
-                });
+                for request in requests {
+                    self.events.push(RenderEvent::Failed {
+                        request,
+                        reason: reason.clone(),
+                    });
+                }
                 continue;
             }
             if let Some(mesh) = result.mesh.clone() {
@@ -441,11 +447,13 @@ impl PerroGraphics {
                     .set_runtime_mesh_data(result.source.as_str(), mesh.clone());
                 let _ = self.resources.set_runtime_mesh_data_by_id(result.id, mesh);
             }
-            self.events.push(RenderEvent::MeshCreated {
-                request: result.request,
-                id: result.id,
-                mesh: result.mesh,
-            });
+            for request in requests {
+                self.events.push(RenderEvent::MeshCreated {
+                    request,
+                    id: result.id,
+                    mesh: result.mesh.clone(),
+                });
+            }
             self.redraw_requested = true;
         }
     }
@@ -531,7 +539,7 @@ impl PerroGraphics {
             #[cfg(all(not(target_arch = "wasm32"), not(test)))]
             async_mesh_load_rx,
             #[cfg(all(not(target_arch = "wasm32"), not(test)))]
-            pending_async_mesh_loads: AHashSet::new(),
+            pending_async_mesh_loads: AHashMap::new(),
             #[cfg(all(not(target_arch = "wasm32"), not(test)))]
             queued_async_mesh_loads: Vec::new(),
             #[cfg(not(target_arch = "wasm32"))]
@@ -693,7 +701,12 @@ impl PerroGraphics {
                         }
                         #[cfg(all(not(target_arch = "wasm32"), not(test)))]
                         {
-                            if self.pending_async_mesh_loads.insert(out_id) {
+                            let waiters = self.pending_async_mesh_loads.entry(out_id).or_default();
+                            let start_load = waiters.is_empty();
+                            if !waiters.contains(&request) {
+                                waiters.push(request);
+                            }
+                            if start_load {
                                 self.start_async_mesh_load(request, out_id, source);
                             }
                         }
@@ -1393,7 +1406,30 @@ impl PerroGraphics {
         }
         let process_start = Instant::now();
         self.reserve_command_buckets(&pending);
+        let mut camera_commands = std::mem::take(&mut self.frame.scratch_camera_commands);
+        camera_commands.clear();
+        let mut write = 0usize;
+        for read in 0..pending.len() {
+            let is_camera_command = match &pending[read] {
+                RenderCommand::TwoD(Command2D::SetCamera { .. }) => true,
+                RenderCommand::ThreeD(cmd) => {
+                    matches!(cmd.as_ref(), Command3D::SetCamera { .. })
+                }
+                _ => false,
+            };
+            if is_camera_command {
+                camera_commands.push(pending[read].clone());
+            } else {
+                if read != write {
+                    pending.swap(write, read);
+                }
+                write += 1;
+            }
+        }
+        pending.truncate(write);
+        self.process_commands(camera_commands.drain(..));
         self.process_commands(pending.drain(..));
+        self.frame.scratch_camera_commands = camera_commands;
         self.process_late_overlay_commands(late_overlay_pending.drain(..));
         self.frame.scratch_late_overlay_commands = late_overlay_pending;
         let process_commands = process_start.elapsed();

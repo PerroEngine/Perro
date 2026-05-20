@@ -2,6 +2,13 @@ $root = @PhysicsCollisionsDemo
 
 [PhysicsCollisionsDemo]
 script = "res://scripts/physics_collisions_demo.rs"
+script_vars = {
+    area_mesh = @SignalAreaMesh
+    area_probe = @AreaProbe
+    left_ball = @RigidBallLeft
+    right_ball = @RigidBallRight
+    drop_ball = @DropBall
+}
     [Node3D]
         position = (0, 0, 0)
     [/Node3D]

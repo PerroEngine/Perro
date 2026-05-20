@@ -21,32 +21,7 @@ const PARTICLES_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/partic
 const POSITIONAL_AUDIO_DEMO_SCENE_PATH: &ResPath =
     res_path!("res://scenes/demos/positional_audio.scn");
 
-const DEMO_UI_ROOT_NODE_NAME: &str = "demo_ui_root";
-const HUB_MENU_PANEL_NODE_NAME: &str = "hub_menu_panel";
-const HUB_MENU_CONTENT_NODE_NAME: &str = "hub_menu_content";
-const DEMO_BUTTON_MESH_NODE_NAME: &str = "demo_btn_mesh";
-const DEMO_BUTTON_LIGHTS_NODE_NAME: &str = "demo_btn_lights";
-const DEMO_BUTTON_WATER_NODE_NAME: &str = "demo_btn_water";
-const DEMO_BUTTON_ANIMATIONS_NODE_NAME: &str = "demo_btn_animations";
-const DEMO_BUTTON_PHYSICS_BONES_NODE_NAME: &str = "demo_btn_physics_bones";
-const DEMO_BUTTON_PHYSICS_COLLISIONS_NODE_NAME: &str = "demo_btn_physics_collisions";
-const DEMO_BUTTON_SKY_NODE_NAME: &str = "demo_btn_sky";
-const DEMO_BUTTON_BLEND_NODE_NAME: &str = "demo_btn_blend";
-const DEMO_BUTTON_MULTIMESH_NODE_NAME: &str = "demo_btn_multimesh";
-const DEMO_BUTTON_PARTICLES_NODE_NAME: &str = "demo_btn_particles";
-const DEMO_BUTTON_AUDIO_NODE_NAME: &str = "demo_btn_audio";
-const PAUSE_PANEL_NODE_NAME: &str = "pause_panel";
-const PAUSE_CONTENT_NODE_NAME: &str = "pause_content";
-const PAUSE_TITLE_NODE_NAME: &str = "pause_title";
-const PAUSE_SENS_ROW_NODE_NAME: &str = "pause_sens_row";
-const PAUSE_SENS_LABEL_NODE_NAME: &str = "pause_sens_label";
 const DEMO_CAMERA_NODE_NAME: &str = "DemoCamera";
-const PAUSE_BUTTON_SENS_DOWN_NODE_NAME: &str = "pause_btn_sens_down";
-const PAUSE_BUTTON_SENS_UP_NODE_NAME: &str = "pause_btn_sens_up";
-const PAUSE_BUTTON_RESUME_NODE_NAME: &str = "pause_btn_resume";
-const PAUSE_BUTTON_RESTART_NODE_NAME: &str = "pause_btn_restart";
-const PAUSE_BUTTON_HUB_NODE_NAME: &str = "pause_btn_hub";
-const TRANSITION_FADE_PANEL_NODE_NAME: &str = "transition_fade_panel";
 
 const DEFAULT_MOUSE_SENSITIVITY: f32 = 0.00012;
 const MIN_MOUSE_SENSITIVITY: f32 = 0.00004;
@@ -173,6 +148,9 @@ impl Default for DemoScenesState {
 struct DemoRefsState {
     pub main_menu_root: NodeID,
     pub pause_menu_root: NodeID,
+    pub pause_panel: NodeID,
+    pub pause_content: NodeID,
+    pub pause_title: NodeID,
     pub fade_root: NodeID,
     pub fade_panel: NodeID,
     pub profiling_overlay_root: NodeID,
@@ -188,6 +166,9 @@ impl Default for DemoRefsState {
         Self {
             main_menu_root: NodeID::nil(),
             pause_menu_root: NodeID::nil(),
+            pause_panel: NodeID::nil(),
+            pause_content: NodeID::nil(),
+            pause_title: NodeID::nil(),
             fade_root: NodeID::nil(),
             fade_panel: NodeID::nil(),
             profiling_overlay_root: NodeID::nil(),
@@ -268,6 +249,8 @@ impl Default for DemoRuntimeState {
 
 #[State]
 struct DemoManagerState {
+    #[default = NodeID::nil()]
+    pub demo_ui_root: NodeID,
     #[default = DemoScenesState::default()]
     pub scenes: DemoScenesState,
     #[default = DemoRefsState::default()]
@@ -555,21 +538,18 @@ methods!({
         };
         reparent!(ctx.run, parent, root);
 
-        let panel = get_child!(ctx.run, root, HUB_MENU_PANEL_NODE_NAME).unwrap_or(root);
-        let content =
-            get_child!(ctx.run, panel, HUB_MENU_CONTENT_NODE_NAME).unwrap_or(NodeID::nil());
         let buttons = vec![
-            find_descendant_by_name(ctx, content, DEMO_BUTTON_MESH_NODE_NAME),
-            find_descendant_by_name(ctx, content, DEMO_BUTTON_LIGHTS_NODE_NAME),
-            find_descendant_by_name(ctx, content, DEMO_BUTTON_WATER_NODE_NAME),
-            find_descendant_by_name(ctx, content, DEMO_BUTTON_ANIMATIONS_NODE_NAME),
-            find_descendant_by_name(ctx, content, DEMO_BUTTON_PHYSICS_BONES_NODE_NAME),
-            find_descendant_by_name(ctx, content, DEMO_BUTTON_PHYSICS_COLLISIONS_NODE_NAME),
-            find_descendant_by_name(ctx, content, DEMO_BUTTON_SKY_NODE_NAME),
-            find_descendant_by_name(ctx, content, DEMO_BUTTON_BLEND_NODE_NAME),
-            find_descendant_by_name(ctx, content, DEMO_BUTTON_MULTIMESH_NODE_NAME),
-            find_descendant_by_name(ctx, content, DEMO_BUTTON_PARTICLES_NODE_NAME),
-            find_descendant_by_name(ctx, content, DEMO_BUTTON_AUDIO_NODE_NAME),
+            node_var(ctx, root, "demo_btn_mesh"),
+            node_var(ctx, root, "demo_btn_lights"),
+            node_var(ctx, root, "demo_btn_water"),
+            node_var(ctx, root, "demo_btn_animations"),
+            node_var(ctx, root, "demo_btn_physics_bones"),
+            node_var(ctx, root, "demo_btn_physics_collisions"),
+            node_var(ctx, root, "demo_btn_sky"),
+            node_var(ctx, root, "demo_btn_blend"),
+            node_var(ctx, root, "demo_btn_multimesh"),
+            node_var(ctx, root, "demo_btn_particles"),
+            node_var(ctx, root, "demo_btn_audio"),
         ];
 
         with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
@@ -598,23 +578,23 @@ methods!({
         };
         reparent!(ctx.run, parent, root);
 
-        let panel = get_child!(ctx.run, root, PAUSE_PANEL_NODE_NAME).unwrap_or(root);
-        let content = get_child!(ctx.run, panel, PAUSE_CONTENT_NODE_NAME).unwrap_or(NodeID::nil());
-        let sens_row =
-            get_child!(ctx.run, content, PAUSE_SENS_ROW_NODE_NAME).unwrap_or(NodeID::nil());
-        let sens_label =
-            get_child!(ctx.run, sens_row, PAUSE_SENS_LABEL_NODE_NAME).unwrap_or(NodeID::nil());
+        let panel = node_var(ctx, root, "pause_panel");
+        let content = node_var(ctx, root, "pause_content");
+        let title = node_var(ctx, root, "pause_title");
+        let sens_label = node_var(ctx, root, "pause_sens_label");
         let buttons = vec![
-            get_child!(ctx.run, sens_row, PAUSE_BUTTON_SENS_DOWN_NODE_NAME)
-                .unwrap_or(NodeID::nil()),
-            get_child!(ctx.run, sens_row, PAUSE_BUTTON_SENS_UP_NODE_NAME).unwrap_or(NodeID::nil()),
-            get_child!(ctx.run, content, PAUSE_BUTTON_RESUME_NODE_NAME).unwrap_or(NodeID::nil()),
-            get_child!(ctx.run, content, PAUSE_BUTTON_RESTART_NODE_NAME).unwrap_or(NodeID::nil()),
-            get_child!(ctx.run, content, PAUSE_BUTTON_HUB_NODE_NAME).unwrap_or(NodeID::nil()),
+            node_var(ctx, root, "pause_btn_sens_down"),
+            node_var(ctx, root, "pause_btn_sens_up"),
+            node_var(ctx, root, "pause_btn_resume"),
+            node_var(ctx, root, "pause_btn_restart"),
+            node_var(ctx, root, "pause_btn_hub"),
         ];
 
         with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
             state.refs.pause_menu_root = root;
+            state.refs.pause_panel = panel;
+            state.refs.pause_content = content;
+            state.refs.pause_title = title;
             state.refs.pause_sens_label = sens_label;
             state.refs.pause_buttons = buttons;
         });
@@ -639,7 +619,7 @@ methods!({
             }
         };
         reparent!(ctx.run, parent, root);
-        let panel = get_child!(ctx.run, root, TRANSITION_FADE_PANEL_NODE_NAME).unwrap_or(root);
+        let panel = node_var(ctx, root, "transition_fade_panel");
         with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
             state.refs.fade_root = root;
             state.refs.fade_panel = panel;
@@ -1342,11 +1322,14 @@ methods!({
     }
 
     fn apply_pause_alpha(&self, ctx: &mut ScriptContext<'_, API>, alpha: f32) {
-        let (mode, root, buttons, sens_label) =
+        let (mode, root, panel, content, title, buttons, sens_label) =
             with_state!(ctx.run, DemoManagerState, ctx.id, |state| {
                 (
                     state.runtime.mode,
                     state.refs.pause_menu_root,
+                    state.refs.pause_panel,
+                    state.refs.pause_content,
+                    state.refs.pause_title,
                     state.refs.pause_buttons.clone(),
                     state.refs.pause_sens_label,
                 )
@@ -1368,7 +1351,6 @@ methods!({
             }
         });
 
-        let panel = get_child!(ctx.run, root, PAUSE_PANEL_NODE_NAME).unwrap_or(NodeID::nil());
         if !panel.is_nil() {
             with_node_mut!(ctx.run, UiPanel, panel, |node| {
                 node.visible = show;
@@ -1382,15 +1364,8 @@ methods!({
             });
         }
 
-        let content = if panel.is_nil() {
-            NodeID::nil()
-        } else {
-            get_child!(ctx.run, panel, PAUSE_CONTENT_NODE_NAME).unwrap_or(NodeID::nil())
-        };
         if !content.is_nil() {
             set_ui_tree_visible(ctx, content, show);
-            let title =
-                get_child!(ctx.run, content, PAUSE_TITLE_NODE_NAME).unwrap_or(NodeID::nil());
             if !title.is_nil() {
                 with_node_mut!(ctx.run, UiLabel, title, |label| {
                     label.visible = show;
@@ -1445,8 +1420,22 @@ fn scene_ui_parent<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     manager: NodeID,
 ) -> NodeID {
+    let ui_root = with_state!(ctx.run, DemoManagerState, manager, |state| state.demo_ui_root);
+    if !ui_root.is_nil() {
+        return ui_root;
+    }
     let scene_root = get_node_parent_id!(ctx.run, manager).unwrap_or(manager);
-    get_child!(ctx.run, scene_root, DEMO_UI_ROOT_NODE_NAME).unwrap_or(scene_root)
+    scene_root
+}
+
+fn node_var<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    node: NodeID,
+    name: &str,
+) -> NodeID {
+    get_var!(ctx.run, node, name)
+        .as_node()
+        .unwrap_or(NodeID::nil())
 }
 
 fn find_descendant_by_name<API: ScriptAPI + ?Sized>(

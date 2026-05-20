@@ -211,6 +211,8 @@ struct MaterialInstanceGpu {
     packed_material_params: u32, // alpha_mode/alpha_cutoff/double_sided/flags
 }
 
+const MATERIAL_FLAG_MIRRORED_WINDING: u32 = 1u32 << 5;
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct RigidInstanceMetaGpu {

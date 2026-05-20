@@ -163,6 +163,11 @@ pub(super) fn merge_prepared_scene(
                     .insert(node);
             }
         }
+        if runtime.nodes.get(node).is_some_and(
+            |inserted| matches!(&inserted.data, SceneNodeData::Camera3D(camera) if camera.active),
+        ) {
+            runtime.note_camera_3d_activated(node);
+        }
         for binding in locale_text_bindings {
             runtime.add_locale_text_binding(node, binding.field, binding.key, binding.key_hash);
         }

@@ -363,6 +363,10 @@ pub(super) fn build_instance(
         };
     let params = material.standard_params();
     let mut material_flags = debug_flags;
+    let mirrored_winding = Mat4::from_cols_array_2d(&model).determinant() < 0.0;
+    if mirrored_winding {
+        material_flags |= MATERIAL_FLAG_MIRRORED_WINDING;
+    }
     if params.flat_shading {
         material_flags |= MATERIAL_FLAG_FLAT_SHADING;
     }
@@ -401,7 +405,7 @@ pub(super) fn build_instance(
             packed_material_params: pack_material_params(
                 params.alpha_mode,
                 params.alpha_cutoff,
-                params.double_sided,
+                params.double_sided || mirrored_winding,
                 material_flags,
             ),
         },
@@ -1014,5 +1018,36 @@ mod tests {
         let flags = (built.material.packed_material_params >> 3) & 0x1fff;
         assert_eq!(flags & MATERIAL_FLAG_MESH_BLEND, 0);
         assert_ne!(flags & MATERIAL_FLAG_NORMAL_BLEND, 0);
+    }
+
+    #[test]
+    fn mirrored_winding_flag_tracks_odd_negative_axes() {
+        let material = perro_render_bridge::Material3D::default();
+        let args = BuildInstanceArgs {
+            debug_view: false,
+            debug_color: [1.0, 1.0, 1.0, 1.0],
+            mesh_blend: ResolvedMeshBlend::default(),
+            skeleton_start: 0,
+            skeleton_count: 0,
+            custom_params_offset: 0,
+            custom_params_len: 0,
+        };
+        let odd = build_instance(
+            glam::Mat4::from_scale(glam::Vec3::new(-1.0, 1.0, 1.0)).to_cols_array_2d(),
+            &material,
+            args,
+        );
+        let odd_flags = (odd.material.packed_material_params >> 3) & 0x1fff;
+        assert_ne!(odd_flags & MATERIAL_FLAG_MIRRORED_WINDING, 0);
+        assert_ne!((odd.material.packed_material_params >> 2) & 0x1, 0);
+
+        let even = build_instance(
+            glam::Mat4::from_scale(glam::Vec3::new(-1.0, -1.0, 1.0)).to_cols_array_2d(),
+            &material,
+            args,
+        );
+        let even_flags = (even.material.packed_material_params >> 3) & 0x1fff;
+        assert_eq!(even_flags & MATERIAL_FLAG_MIRRORED_WINDING, 0);
+        assert_eq!((even.material.packed_material_params >> 2) & 0x1, 0);
     }
 }

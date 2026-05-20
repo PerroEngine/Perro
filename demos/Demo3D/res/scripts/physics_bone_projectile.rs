@@ -2,11 +2,12 @@ use perro_api::prelude::*;
 
 type SelfNodeType = BoneCollider3D;
 
-const PROJECTILE_MESH_NODE_NAME: &str = "ProjectileMesh";
-const PROJECTILE_SHAPE_NODE_NAME: &str = "ProjectileShape";
-
 #[State]
 struct PhysicsBoneProjectileState {
+    #[default = NodeID::nil()]
+    pub projectile_mesh: NodeID,
+    #[default = NodeID::nil()]
+    pub projectile_shape: NodeID,
     #[default = Vector3::ZERO]
     pub velocity: Vector3,
     #[default = 2.5]
@@ -44,11 +45,14 @@ methods!({
             state.life = 2.5;
         });
 
-        if let Some(mesh) = get_child!(ctx.run, ctx.id, PROJECTILE_MESH_NODE_NAME) {
+        let (mesh, shape) = with_state!(ctx.run, PhysicsBoneProjectileState, ctx.id, |state| {
+            (state.projectile_mesh, state.projectile_shape)
+        });
+        if !mesh.is_nil() {
             let diameter = radius * 2.0;
             let _ = set_local_scale_3d!(ctx.run, mesh, Vector3::new(diameter, diameter, diameter));
         }
-        if let Some(shape) = get_child!(ctx.run, ctx.id, PROJECTILE_SHAPE_NODE_NAME) {
+        if !shape.is_nil() {
             with_node_mut!(ctx.run, CollisionShape3D, shape, |shape| {
                 shape.shape = Shape3D::Sphere { radius };
             });

@@ -33,6 +33,11 @@ impl NodeAPI for Runtime {
             let ty = node.node_type();
             self.register_internal_node_schedules(id, ty);
         }
+        if self.nodes.get(id).is_some_and(
+            |node| matches!(&node.data, SceneNodeData::Camera3D(camera) if camera.active),
+        ) {
+            self.note_camera_3d_activated(id);
+        }
         // Ensure freshly created nodes participate in render/transform extraction
         // even before caller-side mutation paths run.
         self.mark_needs_rerender(id);
@@ -63,6 +68,11 @@ impl NodeAPI for Runtime {
                 ids.push(id);
 
                 self.register_internal_node_schedules(id, prepared.node_type);
+                if self.nodes.get(id).is_some_and(
+                    |node| matches!(&node.data, SceneNodeData::Camera3D(camera) if camera.active),
+                ) {
+                    self.note_camera_3d_activated(id);
+                }
                 self.mark_needs_rerender(id);
                 if parent_id.is_nil() {
                     self.mark_transform_dirty_recursive(id);
@@ -82,6 +92,11 @@ impl NodeAPI for Runtime {
                 ids.push(id);
 
                 self.register_internal_node_schedules(id, prepared.node_type);
+                if self.nodes.get(id).is_some_and(
+                    |node| matches!(&node.data, SceneNodeData::Camera3D(camera) if camera.active),
+                ) {
+                    self.note_camera_3d_activated(id);
+                }
                 self.mark_needs_rerender(id);
                 if parent_id.is_nil() {
                     self.mark_transform_dirty_recursive(id);
@@ -128,7 +143,15 @@ impl NodeAPI for Runtime {
         }
 
         let slot = cached_slot_for(self, id);
-        let (transform_changed, ui_before, ui_after, camera_2d_changed, camera_3d_changed, value) = {
+        let (
+            transform_changed,
+            ui_before,
+            ui_after,
+            camera_2d_changed,
+            camera_3d_changed,
+            camera_3d_activated,
+            value,
+        ) = {
             let node = if let Some((index, generation)) = slot {
                 self.nodes.slot_get_mut_checked(index, generation)?
             } else {
@@ -187,6 +210,7 @@ impl NodeAPI for Runtime {
                 ui_after,
                 cam_2d_before != cam_2d_after,
                 cam_3d_before != cam_3d_after,
+                cam_3d_before != Some(true) && cam_3d_after == Some(true),
                 value,
             )
         };
@@ -202,6 +226,9 @@ impl NodeAPI for Runtime {
         }
         if camera_3d_changed {
             self.request_full_3d_scan_once();
+        }
+        if camera_3d_activated {
+            self.note_camera_3d_activated(id);
         }
         if let (Some(before), Some(after)) = (ui_before.as_ref(), ui_after.as_ref()) {
             self.mark_ui_data_change(id, before, after);
@@ -284,6 +311,7 @@ impl NodeAPI for Runtime {
             vis_3d_changed,
             active_camera_2d_changed,
             active_camera_3d_changed,
+            active_camera_3d_activated,
         ) = {
             let node = if let Some((index, generation)) = slot {
                 self.nodes.slot_get_mut_checked(index, generation)?
@@ -327,6 +355,7 @@ impl NodeAPI for Runtime {
                 before_vis_3d != after_vis_3d,
                 before_camera_2d != after_camera_2d,
                 before_camera_3d != after_camera_3d,
+                before_camera_3d.is_none() && after_camera_3d.is_some(),
             )
         };
 
@@ -342,6 +371,9 @@ impl NodeAPI for Runtime {
         }
         if active_camera_3d_changed {
             self.request_full_3d_scan_once();
+        }
+        if active_camera_3d_activated {
+            self.note_camera_3d_activated(id);
         }
         if let (Some(before), Some(after)) = (ui_before.as_ref(), ui_after.as_ref()) {
             self.mark_ui_base_change(id, before, after);

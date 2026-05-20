@@ -2,6 +2,13 @@ $root = @PositionalAudioDemo
 
 [PositionalAudioDemo]
 script = "res://scripts/positional_audio_demo.rs"
+script_vars = {
+    speaker_a = @SpeakerA
+    speaker_b = @SpeakerB
+    speaker_c = @SpeakerC
+    audio_wall = @AudioWall
+    debug_label = @AudioDebugLabel
+}
     [Node3D]
     [/Node3D]
 [/PositionalAudioDemo]

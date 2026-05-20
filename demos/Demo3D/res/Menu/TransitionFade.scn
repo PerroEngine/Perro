@@ -1,6 +1,10 @@
 $root = @transition_fade_root
 
 [transition_fade_root]
+script = "res://scripts/demo_fade_refs.rs"
+script_vars = {
+    transition_fade_panel = @transition_fade_panel
+}
     [UiPanel]
         anchor = "center"
         position_ratio = (0.5, 0.5)

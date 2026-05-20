@@ -2,6 +2,18 @@ $root = @LightsDemo
 
 [LightsDemo]
 script = "res://scripts/lights_demo.rs"
+script_vars = {
+    red = @RedOrb
+    blue = @BlueOrb
+    green = @GreenOrb
+    amber = @AmberOrb
+    violet = @VioletOrb
+    cyan = @CyanOrb
+    pink = @PinkOrb
+    lime = @LimeOrb
+    white_spot = @WhiteSpotRig
+    gold_spot = @GoldSpotRig
+}
     [Node3D]
         position = (0, 0, 0)
     [/Node3D]

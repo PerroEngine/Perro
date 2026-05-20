@@ -25,6 +25,8 @@ pub struct Sprite2D {
     pub base: Node2D,
     pub texture: TextureID,
     pub texture_region: Option<[f32; 4]>,
+    pub flip_x: bool,
+    pub flip_y: bool,
 }
 
 impl Sprite2D {
@@ -33,6 +35,8 @@ impl Sprite2D {
             base: Node2D::new(),
             texture: TextureID::nil(),
             texture_region: None,
+            flip_x: false,
+            flip_y: false,
         }
     }
 }
@@ -103,6 +107,8 @@ pub struct AnimatedSprite2D {
     pub base: Node2D,
     pub texture: TextureID,
     pub animations: Vec<AnimatedSprite>,
+    pub flip_x: bool,
+    pub flip_y: bool,
     pub current_animation: Cow<'static, str>,
     current_animation_index: AtomicUsize,
     pub current_frame: u32,
@@ -118,6 +124,8 @@ impl Clone for AnimatedSprite2D {
             base: self.base.clone(),
             texture: self.texture,
             animations: self.animations.clone(),
+            flip_x: self.flip_x,
+            flip_y: self.flip_y,
             current_animation: self.current_animation.clone(),
             current_animation_index: AtomicUsize::new(
                 self.current_animation_index.load(Ordering::Relaxed),
@@ -143,6 +151,8 @@ impl AnimatedSprite2D {
             base: Node2D::new(),
             texture: TextureID::nil(),
             animations: Vec::new(),
+            flip_x: false,
+            flip_y: false,
             current_animation: Cow::Borrowed("default"),
             current_animation_index: AtomicUsize::new(usize::MAX),
             current_frame: 0,

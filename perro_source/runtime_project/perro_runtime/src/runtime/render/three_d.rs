@@ -26,6 +26,25 @@ use std::sync::Arc;
 
 const PARTICLE_PATH_CACHE_MAX: usize = 256;
 
+type Camera3DPick = (
+    (u64, u32, u32),
+    NodeID,
+    perro_structs::Transform3D,
+    CameraProjection,
+    BitMask,
+    perro_structs::PostProcessSet,
+    perro_structs::AudioListenerOptions,
+);
+
+#[inline]
+fn mirror_matrix_3d(flip_x: bool, flip_y: bool, flip_z: bool) -> Mat4 {
+    Mat4::from_scale(Vec3::new(
+        if flip_x { -1.0 } else { 1.0 },
+        if flip_y { -1.0 } else { 1.0 },
+        if flip_z { -1.0 } else { 1.0 },
+    ))
+}
+
 #[path = "three_d/helpers.rs"]
 mod helpers;
 use helpers::*;
@@ -97,7 +116,7 @@ impl Runtime {
         let mut traversal_ids = self.render_3d.collect_traversal(
             dirty_ids,
             all_ids,
-            bootstrap_scan || camera_render_mask_changed,
+            bootstrap_scan || camera_changed || camera_render_mask_changed,
             |node, out| {
                 if let Some(node_ref) = nodes.get(node) {
                     out.extend(node_ref.get_children_ids().iter().copied());
@@ -482,6 +501,7 @@ impl Runtime {
                 Option<bool>,
                 LODOptions3D,
                 MeshBlendOptions3D,
+                (bool, bool, bool),
                 LocalMeshInstanceData,
             );
             let mesh_header = if effective_visible {
@@ -510,6 +530,7 @@ impl Runtime {
                                     noise_factor: mesh.blend.noise_factor,
                                     noise_scale: mesh.blend.noise_scale,
                                 },
+                                (mesh.flip_x, mesh.flip_y, mesh.flip_z),
                             ))
                         }
                         SceneNodeData::MultiMeshInstance3D(mesh)
@@ -534,6 +555,7 @@ impl Runtime {
                                     noise_factor: mesh.blend.noise_factor,
                                     noise_scale: mesh.blend.noise_scale,
                                 },
+                                (mesh.flip_x, mesh.flip_y, mesh.flip_z),
                             ))
                         }
                         _ => None,
@@ -542,12 +564,12 @@ impl Runtime {
                 None
             };
             let mesh_header =
-                mesh_header.and_then(|(mesh, skeleton, meshlet_override, lod, blend)| {
+                mesh_header.and_then(|(mesh, skeleton, meshlet_override, lod, blend, flip)| {
                     self.resolve_render_mesh_id(node, mesh)
-                        .map(|mesh| (mesh, skeleton, meshlet_override, lod, blend))
+                        .map(|mesh| (mesh, skeleton, meshlet_override, lod, blend, flip))
                 });
-            let mesh_data: Option<LocalMeshData> =
-                mesh_header.and_then(|(resolved_mesh, skeleton, meshlet_override, lod, blend)| {
+            let mesh_data: Option<LocalMeshData> = mesh_header.and_then(
+                |(resolved_mesh, skeleton, meshlet_override, lod, blend, flip)| {
                     self.nodes
                         .get(node)
                         .and_then(|scene_node| match &scene_node.data {
@@ -558,6 +580,7 @@ impl Runtime {
                                 meshlet_override,
                                 lod,
                                 blend,
+                                flip,
                                 LocalMeshInstanceData::Single,
                             )),
                             SceneNodeData::MultiMeshInstance3D(mesh) => Some((
@@ -567,6 +590,7 @@ impl Runtime {
                                 meshlet_override,
                                 lod,
                                 blend,
+                                flip,
                                 LocalMeshInstanceData::Dense {
                                     instance_scale: mesh.instance_scale.max(0.0001),
                                     poses: {
@@ -619,9 +643,18 @@ impl Runtime {
                             )),
                             _ => None,
                         })
-                });
-            if let Some((mesh, surfaces, skeleton, meshlet_override, lod, blend, local_instances)) =
-                mesh_data
+                },
+            );
+            if let Some((
+                mesh,
+                surfaces,
+                skeleton,
+                meshlet_override,
+                lod,
+                blend,
+                flip,
+                local_instances,
+            )) = mesh_data
                 && effective_visible
                 && let Some((mesh, resolved_surfaces)) =
                     self.resolve_render_mesh_assets(node, mesh, surfaces)
@@ -629,7 +662,8 @@ impl Runtime {
                 let node_global = self
                     .get_global_transform_3d(node)
                     .unwrap_or(perro_structs::Transform3D::IDENTITY)
-                    .to_mat4();
+                    .to_mat4()
+                    * mirror_matrix_3d(flip.0, flip.1, flip.2);
                 let retained_instances = match &local_instances {
                     LocalMeshInstanceData::Single => {
                         crate::runtime::state::RetainedMeshInstanceState::Matrices(Arc::from([
@@ -917,6 +951,7 @@ impl Runtime {
     }
 
     fn remove_retained_render_3d_node(&mut self, node: NodeID) {
+        self.render_3d.camera_activation_order.remove(&node);
         self.render_3d.dense_instance_pose_cache.remove(&node);
         if let Some(prev) = self.render_3d.collision_debug_state.remove(&node) {
             Self::queue_remove_collision_debug_nodes(self, node, 0, prev.edge_count);
@@ -933,7 +968,7 @@ impl Runtime {
     }
 
     fn active_render_camera_3d(&mut self) -> Option<Camera3DState> {
-        let mut found = None;
+        let mut found: Option<Camera3DPick> = None;
         for (node, scene_node) in self.nodes.iter() {
             let SceneNodeData::Camera3D(camera) = &scene_node.data else {
                 continue;
@@ -941,17 +976,38 @@ impl Runtime {
             if !camera.active || !self.is_effectively_visible(node) {
                 continue;
             }
-            found = Some((
-                node,
-                camera.transform,
-                camera.projection.clone(),
-                camera.render_mask,
-                camera.post_processing.clone(),
-                camera.audio_options.clone(),
-            ));
+            let order = self
+                .render_3d
+                .camera_activation_order
+                .get(&node)
+                .copied()
+                .unwrap_or(0);
+            let priority = (order, node.generation(), node.index());
+            let replace = found
+                .as_ref()
+                .map(|(current, ..)| priority > *current)
+                .unwrap_or(true);
+            if replace {
+                found = Some((
+                    priority,
+                    node,
+                    camera.transform,
+                    camera.projection.clone(),
+                    camera.render_mask,
+                    camera.post_processing.clone(),
+                    camera.audio_options.clone(),
+                ));
+            }
         }
-        let (node, local_transform, projection, render_mask, post_processing, audio_options) =
-            found?;
+        let (
+            _priority,
+            node,
+            local_transform,
+            projection,
+            render_mask,
+            post_processing,
+            audio_options,
+        ) = found?;
         let global = self
             .get_global_transform_3d(node)
             .unwrap_or(local_transform);
@@ -968,6 +1024,13 @@ impl Runtime {
             post_processing: Arc::from(post_processing.to_effects_vec()),
             audio_options,
         })
+    }
+
+    pub(crate) fn note_camera_3d_activated(&mut self, node: NodeID) {
+        let order = self.render_3d.next_camera_activation_order;
+        self.render_3d.next_camera_activation_order = order.wrapping_add(1).max(1);
+        self.render_3d.camera_activation_order.insert(node, order);
+        self.request_full_3d_scan_once();
     }
 
     fn queue_collision_shape_debug_draws(
@@ -1088,6 +1151,23 @@ impl Runtime {
             }
 
             let material = material_override.unwrap_or_else(Material3D::default);
+            if source.is_none() {
+                let id = self.resource_api.create_material(material);
+                surfaces[surface_index].material = Some(id);
+                if let Some(node) = self.nodes.get_mut(node) {
+                    match &mut node.data {
+                        SceneNodeData::MeshInstance3D(mesh_instance) => {
+                            mesh_instance.set_surface_material(surface_index, Some(id));
+                        }
+                        SceneNodeData::MultiMeshInstance3D(mesh_instance) => {
+                            mesh_instance.ensure_surface_mut(surface_index).material = Some(id);
+                        }
+                        _ => {}
+                    }
+                }
+                continue;
+            }
+
             if !self.render.is_inflight(request) {
                 self.render.mark_inflight(request);
                 self.queue_render_command(RenderCommand::Resource(

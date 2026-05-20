@@ -4,6 +4,18 @@ $button_hover_style = { fill = "#1B2C3CF0" stroke = "#B8D8FF" stroke_width = 1.0
 $button_pressed_style = { fill = "#071018F0" stroke = "#FFFFFF" stroke_width = 1.0 radius = 0.06 }
 
 [pause_bg_panel]
+script = "res://scripts/demo_pause_menu_refs.rs"
+script_vars = {
+    pause_panel = @pause_panel
+    pause_content = @pause_content
+    pause_title = @pause_title
+    pause_sens_label = @pause_sens_label
+    pause_btn_sens_down = @pause_btn_sens_down
+    pause_btn_sens_up = @pause_btn_sens_up
+    pause_btn_resume = @pause_btn_resume
+    pause_btn_restart = @pause_btn_restart
+    pause_btn_hub = @pause_btn_hub
+}
     [UiPanel]
         anchor = "center"
         position_ratio = (0.5, 0.5)
