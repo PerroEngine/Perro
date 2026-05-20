@@ -1,5 +1,37 @@
 # UI Nodes
 
+## Page Map
+
+| Header | Link |
+| --- | --- |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
+| Example | [Example](#example) |
+| Reference | [Reference](#reference) |
+
+## Purpose
+
+Use `UI Nodes` when this feature, type group, file format, or workflow appears in game code or assets.
+
+## Use Cases
+
+Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+
+## Example
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let dt = delta_time!(ctx.run);
+        let _ = dt;
+    }
+});
+```
+
+## Reference
+
+# UI Nodes
+
 UI nodes are data-only scene nodes backed by `perro_ui`.
 They use `UiBox` as their base node type.
 
@@ -409,24 +441,24 @@ Connect to named and custom signals:
 
 ```rust
 lifecycle!({
-    fn on_all_init(&self, ctx, res, ipt, self_id) {
-        signal_connect!(ctx, self_id, signal!("play_button_hover_enter"), func!("on_button"));
-        signal_connect!(ctx, self_id, signal!("play_button_hover_exit"), func!("on_button"));
-        signal_connect!(ctx, self_id, signal!("play_button_pressed"), func!("on_button"));
-        signal_connect!(ctx, self_id, signal!("play_button_released"), func!("on_button"));
-        signal_connect!(ctx, self_id, signal!("play_button_click"), func!("on_button"));
+    fn on_all_init(&self, ctx: &mut ScriptContext<'_, API>) {
+        signal_connect!(ctx.run, ctx.id, signal!("play_button_hover_enter"), func!("on_button"));
+        signal_connect!(ctx.run, ctx.id, signal!("play_button_hover_exit"), func!("on_button"));
+        signal_connect!(ctx.run, ctx.id, signal!("play_button_pressed"), func!("on_button"));
+        signal_connect!(ctx.run, ctx.id, signal!("play_button_released"), func!("on_button"));
+        signal_connect!(ctx.run, ctx.id, signal!("play_button_click"), func!("on_button"));
 
-        signal_connect!(ctx, self_id, signal!("menu_button_hover"), func!("on_button"));
-        signal_connect!(ctx, self_id, signal!("play_down"), func!("on_button"));
-        signal_connect!(ctx, self_id, signal!("any_button_down"), func!("on_button"));
-        signal_connect!(ctx, self_id, signal!("play_up"), func!("on_button"));
-        signal_connect!(ctx, self_id, signal!("play_clicked"), func!("on_button"));
-        signal_connect!(ctx, self_id, signal!("any_button_clicked"), func!("on_button"));
+        signal_connect!(ctx.run, ctx.id, signal!("menu_button_hover"), func!("on_button"));
+        signal_connect!(ctx.run, ctx.id, signal!("play_down"), func!("on_button"));
+        signal_connect!(ctx.run, ctx.id, signal!("any_button_down"), func!("on_button"));
+        signal_connect!(ctx.run, ctx.id, signal!("play_up"), func!("on_button"));
+        signal_connect!(ctx.run, ctx.id, signal!("play_clicked"), func!("on_button"));
+        signal_connect!(ctx.run, ctx.id, signal!("any_button_clicked"), func!("on_button"));
     }
 });
 
 methods!({
-    fn on_button(&self, ctx, res, ipt, self_id, button: NodeID) {
+    fn on_button(&self, ctx: &mut ScriptContext<'_, API>, button: NodeID) {
         println!("button={button:?}");
     }
 });
@@ -497,5 +529,3 @@ Scene example:
 [/UiTextBlock]
 [/bio_input]
 ```
-
-

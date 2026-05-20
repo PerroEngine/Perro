@@ -1,5 +1,37 @@
 # Mesh Query Perf Snapshot
 
+## Page Map
+
+| Header | Link |
+| --- | --- |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
+| Example | [Example](#example) |
+| Reference | [Reference](#reference) |
+
+## Purpose
+
+Use `Mesh Query Perf Snapshot` when this feature, type group, file format, or workflow appears in game code or assets.
+
+## Use Cases
+
+Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+
+## Example
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let dt = delta_time!(ctx.run);
+        let _ = dt;
+    }
+});
+```
+
+## Reference
+
+# Mesh Query Perf Snapshot
+
 This page records mesh-query benchmark results.
 Runtime module: `ctx.run.MeshQuery()`.
 

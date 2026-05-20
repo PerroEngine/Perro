@@ -8,11 +8,11 @@ use perro_nodes::{
 };
 use perro_particle_math::compile_expression;
 use perro_render_bridge::{
-    AmbientLight2DState, Camera2DState, Command2D, ParticlePath2D, ParticleProfile2D,
-    ParticleSimulationMode2D, PointLight2DState, PointParticles2DState, RayLight2DState,
-    RenderCommand, ResourceCommand, SpotLight2DState, Sprite2DCommand, TileMap2DCommand,
-    Water2DState, WaterBodyQueryState, WaterCoastlineShape2D, WaterIdleModeState, WaterImpact2D,
-    WaterLinkState, WaterShapeState,
+    AmbientLight2DState, Camera2DState, CameraStreamCommand, Command2D, ParticlePath2D,
+    ParticleProfile2D, ParticleSimulationMode2D, PointLight2DState, PointParticles2DState,
+    RayLight2DState, RenderCommand, ResourceCommand, SpotLight2DState, Sprite2DCommand,
+    TileMap2DCommand, Water2DState, WaterBodyQueryState, WaterCoastlineShape2D, WaterIdleModeState,
+    WaterImpact2D, WaterLinkState, WaterShapeState,
 };
 use perro_runtime_render::{sprite_2d_texture_request, tilemap_2d_texture_request};
 use perro_structs::BitMask;
@@ -145,6 +145,71 @@ impl Runtime {
                     },
                     &mut visible_now,
                 );
+            }
+
+            let stream_data = self.nodes.get(node).and_then(|node| match &node.data {
+                SceneNodeData::CameraStream2D(stream) => Some((
+                    effective_visible
+                        && stream.visible
+                        && stream.stream.enabled
+                        && render_mask_matches(camera_render_mask, stream.render_layers),
+                    stream.stream.clone(),
+                    stream.transform,
+                    stream.z_index,
+                    stream.tint,
+                )),
+                _ => None,
+            });
+            if let Some((visible, stream, local_transform, z_index, tint)) = stream_data {
+                if visible {
+                    if let Some(stream_state) = self.camera_stream_state(node, &stream) {
+                        let aspect =
+                            camera_stream_aspect_ratio(stream.aspect_ratio, stream.resolution);
+                        let model = self
+                            .get_global_transform_2d(node)
+                            .unwrap_or(local_transform)
+                            .to_mat3()
+                            .to_cols_array_2d();
+                        let sprite = Sprite2DCommand {
+                            texture: Runtime::camera_stream_texture_id(node),
+                            model,
+                            tint,
+                            uv_min: [0.0, 0.0],
+                            uv_max: [1.0, 1.0],
+                            size: [aspect, 1.0],
+                            z_index,
+                        };
+                        self.queue_render_command(RenderCommand::CameraStream(
+                            CameraStreamCommand::Upsert {
+                                node,
+                                state: Box::new(stream_state.clone()),
+                            },
+                        ));
+                        self.queue_render_command(RenderCommand::TwoD(
+                            Command2D::UpsertCameraStream {
+                                node,
+                                stream: Box::new(stream_state),
+                                sprite,
+                            },
+                        ));
+                        self.render_2d.retained_sprites.insert(node, sprite);
+                        visible_now.insert(node);
+                    } else {
+                        self.queue_render_command(RenderCommand::CameraStream(
+                            CameraStreamCommand::RemoveNode { node },
+                        ));
+                        self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode {
+                            node,
+                        }));
+                        self.render_2d.retained_sprites.remove(&node);
+                    }
+                } else {
+                    self.queue_render_command(RenderCommand::CameraStream(
+                        CameraStreamCommand::RemoveNode { node },
+                    ));
+                    self.queue_render_command(RenderCommand::TwoD(Command2D::RemoveNode { node }));
+                    self.render_2d.retained_sprites.remove(&node);
+                }
             }
 
             let point_emitter_data = self.nodes.get(node).and_then(|node| match &node.data {
@@ -614,7 +679,7 @@ impl Runtime {
         visible_now.insert(node);
     }
 
-    fn resolve_sprite_texture(
+    pub(crate) fn resolve_sprite_texture(
         &mut self,
         node: NodeID,
         mut texture: TextureID,
@@ -665,7 +730,11 @@ impl Runtime {
         Some(texture)
     }
 
-    fn resolve_tilemap_texture(&mut self, node: NodeID, source: &str) -> Option<TextureID> {
+    pub(crate) fn resolve_tilemap_texture(
+        &mut self,
+        node: NodeID,
+        source: &str,
+    ) -> Option<TextureID> {
         let request = tilemap_2d_texture_request(node);
         if let Some(result) = self.take_render_result(request) {
             return match result {
@@ -688,7 +757,7 @@ impl Runtime {
         None
     }
 
-    fn collect_water_coastline_shapes_2d(
+    pub(crate) fn collect_water_coastline_shapes_2d(
         &mut self,
         water_id: NodeID,
         water: &perro_nodes::WaterSurfaceParams,
@@ -799,7 +868,10 @@ impl Runtime {
         Arc::from(shapes)
     }
 
-    fn collect_water_queries_2d(&mut self, water_id: NodeID) -> Arc<[WaterBodyQueryState]> {
+    pub(crate) fn collect_water_queries_2d(
+        &mut self,
+        water_id: NodeID,
+    ) -> Arc<[WaterBodyQueryState]> {
         let Some(queries) = self.pending_water_queries_2d.get(&water_id) else {
             return Arc::from([]);
         };
@@ -817,7 +889,7 @@ impl Runtime {
         )
     }
 
-    fn collect_water_impacts_2d(
+    pub(crate) fn collect_water_impacts_2d(
         &mut self,
         water_id: NodeID,
         water: &perro_nodes::WaterSurfaceParams,
@@ -951,7 +1023,7 @@ impl Runtime {
         Arc::from(impacts)
     }
 
-    fn collect_water_links_2d(
+    pub(crate) fn collect_water_links_2d(
         &mut self,
         water_id: NodeID,
         water: &perro_nodes::WaterSurfaceParams,
@@ -1016,7 +1088,15 @@ fn render_mask_matches(camera_mask: BitMask, render_layers: BitMask) -> bool {
     !camera_mask.intersects(render_layers)
 }
 
-fn water_idle_mode_state(mode: perro_nodes::WaterIdleMode) -> WaterIdleModeState {
+fn camera_stream_aspect_ratio(aspect_ratio: f32, resolution: [u32; 2]) -> f32 {
+    if aspect_ratio.is_finite() && aspect_ratio > 0.0 {
+        aspect_ratio
+    } else {
+        resolution[0].max(1) as f32 / resolution[1].max(1) as f32
+    }
+}
+
+pub(crate) fn water_idle_mode_state(mode: perro_nodes::WaterIdleMode) -> WaterIdleModeState {
     match mode {
         perro_nodes::WaterIdleMode::Calm => WaterIdleModeState::Calm,
         perro_nodes::WaterIdleMode::Sine => WaterIdleModeState::Sine,
@@ -1026,7 +1106,7 @@ fn water_idle_mode_state(mode: perro_nodes::WaterIdleMode) -> WaterIdleModeState
     }
 }
 
-fn water_shape_state(shape: perro_nodes::WaterShape) -> WaterShapeState {
+pub(crate) fn water_shape_state(shape: perro_nodes::WaterShape) -> WaterShapeState {
     match shape {
         perro_nodes::WaterShape::Circle { radius } => WaterShapeState::Circle { radius },
         perro_nodes::WaterShape::Cylinder {
@@ -1040,7 +1120,7 @@ fn water_shape_state(shape: perro_nodes::WaterShape) -> WaterShapeState {
     }
 }
 
-fn water_render_size(water: perro_nodes::WaterSurfaceParams) -> [f32; 2] {
+pub(crate) fn water_render_size(water: perro_nodes::WaterSurfaceParams) -> [f32; 2] {
     let size = water.shape.surface_size();
     [size.x, size.y]
 }
@@ -1155,18 +1235,18 @@ pub(crate) fn resolve_tileset_2d(runtime: &mut Runtime, source: &str) -> Option<
     Some(tileset)
 }
 
-struct TilemapSpriteBuild<'a> {
-    texture: TextureID,
-    width: u32,
-    height: u32,
-    z_index: i32,
-    empty_tile: i32,
-    base_model: [[f32; 3]; 3],
-    tiles: &'a [i32],
-    tileset: &'a ParsedTileset2D,
+pub(crate) struct TilemapSpriteBuild<'a> {
+    pub texture: TextureID,
+    pub width: u32,
+    pub height: u32,
+    pub z_index: i32,
+    pub empty_tile: i32,
+    pub base_model: [[f32; 3]; 3],
+    pub tiles: &'a [i32],
+    pub tileset: &'a ParsedTileset2D,
 }
 
-fn build_tilemap_sprites(build: TilemapSpriteBuild<'_>) -> Vec<Sprite2DCommand> {
+pub(crate) fn build_tilemap_sprites(build: TilemapSpriteBuild<'_>) -> Vec<Sprite2DCommand> {
     let max = (build.width as usize)
         .saturating_mul(build.height as usize)
         .min(build.tiles.len());
@@ -1211,11 +1291,11 @@ fn mul_mat3(a: [[f32; 3]; 3], b: [[f32; 3]; 3]) -> [[f32; 3]; 3] {
     out
 }
 
-fn direction_from_rotation_2d(rotation: f32) -> [f32; 2] {
+pub(crate) fn direction_from_rotation_2d(rotation: f32) -> [f32; 2] {
     [rotation.sin(), -rotation.cos()]
 }
 
-fn derived_particle_budget(spawn_rate: f32, lifetime_max: f32) -> u32 {
+pub(crate) fn derived_particle_budget(spawn_rate: f32, lifetime_max: f32) -> u32 {
     if spawn_rate <= 0.0 || lifetime_max <= 0.0 {
         return 1;
     }
@@ -1223,7 +1303,9 @@ fn derived_particle_budget(spawn_rate: f32, lifetime_max: f32) -> u32 {
     budget.clamp(1, 1_000_000)
 }
 
-fn resolve_particle_sim_mode_2d(mode: ParticleEmitterSimMode2D) -> ParticleSimulationMode2D {
+pub(crate) fn resolve_particle_sim_mode_2d(
+    mode: ParticleEmitterSimMode2D,
+) -> ParticleSimulationMode2D {
     match mode {
         ParticleEmitterSimMode2D::Default | ParticleEmitterSimMode2D::Cpu => {
             ParticleSimulationMode2D::Cpu
@@ -1231,7 +1313,10 @@ fn resolve_particle_sim_mode_2d(mode: ParticleEmitterSimMode2D) -> ParticleSimul
     }
 }
 
-fn resolve_particle_profile_2d(runtime: &mut Runtime, source: &str) -> Option<ParticleProfile2D> {
+pub(crate) fn resolve_particle_profile_2d(
+    runtime: &mut Runtime,
+    source: &str,
+) -> Option<ParticleProfile2D> {
     let source = source.trim();
     if source.is_empty() {
         return None;

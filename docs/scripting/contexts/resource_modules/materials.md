@@ -1,169 +1,447 @@
 # Materials Module
 
-Access:
+## Page Map
 
-- `res.Materials()`
+| Header | Link |
+| --- | --- |
+| Overview | [Overview](#overview) |
+| Context | [Context](#context) |
+| API Reference | [API Reference](#api-reference) |
+| `load` | [`load`](#load) |
+| `load_hashed` | [`load_hashed`](#load_hashed) |
+| `load_hashed_with_source` | [`load_hashed_with_source`](#load_hashed_with_source) |
+| `create` | [`create`](#create) |
+| `get_data` | [`get_data`](#get_data) |
+| `write` | [`write`](#write) |
+| `is_loaded` | [`is_loaded`](#is_loaded) |
+| `reserve` | [`reserve`](#reserve) |
+| `reserve_hashed` | [`reserve_hashed`](#reserve_hashed) |
+| `reserve_hashed_with_source` | [`reserve_hashed_with_source`](#reserve_hashed_with_source) |
+| `drop` | [`drop`](#drop) |
+| `material_load` | [`material_load`](#material_load) |
+| `material_reserve` | [`material_reserve`](#material_reserve) |
+| `material_drop` | [`material_drop`](#material_drop) |
+| `material_create` | [`material_create`](#material_create) |
+| `material_get_data` | [`material_get_data`](#material_get_data) |
+| `material_write` | [`material_write`](#material_write) |
+| `material_is_loaded` | [`material_is_loaded`](#material_is_loaded) |
 
-Macros:
+## Overview
 
-- `material_load!(res, source) -> MaterialID`
-- `material_is_loaded!(res, material_id) -> bool`
-- `material_reserve!(res, source) -> MaterialID`
-- `material_drop!(res, source) -> bool`
-- `material_create!(res, material) -> MaterialID`
-- `material_get_data!(res, material_id) -> Option<Material3D>`
-- `material_write!(res, material_id, material) -> bool`
+This resource module belongs to `ctx.res` and documents materials calls.
 
-When to use each:
+## Context
 
-- `material_load!` / `material_reserve!`: default path for preauthored material sources (`.pmat`, glTF `:mat[index]`).
-- `material_create!`: create a material directly from runtime data.
-- `material_get_data!` + `material_write!`: runtime mutation path for an existing material id.
-- Typical `get/write` use-cases: dynamic param edits (roughness/metallic/emissive/tint) and runtime material variants.
+- Script context path: `ctx.res`
+- Module access: `ctx.res.Materials()`
+- Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
 
-Methods:
+## Practical Example
 
-- `res.Materials().load(source) -> MaterialID`
-- `res.Materials().is_loaded(material_id) -> bool`
-- `res.Materials().reserve(source) -> MaterialID`
-- `res.Materials().drop(source) -> bool`
-- `res.Materials().create(material) -> MaterialID`
-- `res.Materials().get_data(material_id) -> Option<Material3D>`
-- `res.Materials().write(material_id, material) -> bool`
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let material = material_load!(ctx.res, "res://materials/player.pmat");
+        let ready = material_is_loaded!(ctx.res, material);
+        let _ = ready;
+    }
+});
+```
 
-What `load` does:
+## API Reference
 
-- Loads material data from `source` and returns a stable `MaterialID`.
-- If source is already cached, returns existing ID.
-- If not cached, allocates an ID and queues renderer material creation with `reserved: false`.
-- Creation is async relative to script call.
+### `load`
 
-What `is_loaded` does:
-
-- Returns `true` once material data exists and renderer creation has resolved.
-- Returns `false` while pending, after drop, or for unknown/nil IDs.
-- Use before code reads or mutates material data, before showing a material picker preview, or for load progress.
-- Do not need it for normal mesh instances; retained render state can hold the ID and draw once ready.
-
-What `reserve` does:
-
-- Same as `load`, but marks/creates as reserved (`reserved: true`).
-- If already created, reserve flag is set immediately.
-- If pending, reserve intent is deferred and applied after creation.
-
-What `drop` does:
-
-- Removes source mapping and queues renderer drop when material exists.
-- If creation is pending, marks drop-pending so it is dropped right after creation resolves.
-- Returns `true` when matching pending/loaded source exists.
-- Returns `false` when source is not known.
-
-What `create_material` does:
-
-- Creates a runtime material directly from `Material3D` data.
-- Does not create a source-path mapping.
-- Intended for transient/generated materials.
-
-Important behavior:
-
-- `load/reserve/drop` are source-cache operations.
-- `create_material` is data-driven and bypasses source cache lookup.
-- Data APIs are copy-based; `material_get_data!` returns a cloned material value.
-- `material_write!` replaces material data for that id in one write operation.
-- Most projects mainly load authored materials and assign ids in scenes; `material_get_data!/material_write!` are for deliberate runtime updates.
-- Reserved policy:
-- `reserved: false` (from `load`) means the material can be automatically evicted from cache when no references remain.
-- `reserved: true` (from `reserve`) means it will not be auto-evicted; only explicit `material_drop!` removes it.
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Materials()` |
+| Signature | `pub fn load<S: ResPathSource>(&self, source: S) -> MaterialID` |
+| Params | `&self, source: S` |
+| Returns | `MaterialID` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
 Example:
 
 ```rust
-let src_id = material_load!(res, "res://models/rig.glb:mat[0]");
-let ready = material_is_loaded!(res, src_id);
-let _same_id = material_reserve!(res, "res://models/rig.glb:mat[0]");
-let _ = material_drop!(res, "res://models/rig.glb:mat[0]");
-
-if let Some(mut mat) = material_get_data!(res, src_id) {
-    if let Material3D::Standard(params) = &mut mat {
-        params.roughness_factor = 0.2;
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Materials().load("res://path/to/resource");
+        let _ = value;
     }
-    let _ = material_write!(res, src_id, mat);
-}
+});
 ```
 
-## Material3D Presets
+### `load_hashed`
 
-`Material3D` is a preset enum:
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Materials()` |
+| Signature | `pub fn load_hashed(&self, source_hash: u64) -> MaterialID` |
+| Params | `&self, source_hash: u64` |
+| Returns | `MaterialID` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
-- `Material3D::Standard(StandardMaterial3D)`
-- `Material3D::Unlit(UnlitMaterial3D)`
-- `Material3D::Toon(ToonMaterial3D)`
-- `Material3D::Custom(CustomMaterial3D)`
-
-Each preset has its own params struct. Custom materials carry a shader path and a list of typed params.
-
-See also: `docs/resources/shaders.md` for WGSL authoring notes and current limitations.
-
-## Programmatic Examples
+Example:
 
 ```rust
-// Material types come from Perro prelude.
-
-// Standard (PBR-ish)
-let standard_id = material_create!(
-    res,
-    Material3D::Standard(StandardMaterial3D {
-        base_color_factor: [0.8, 0.2, 0.2, 1.0],
-        roughness_factor: 0.4,
-        metallic_factor: 0.1,
-        ..StandardMaterial3D::default()
-    })
-);
-
-// Unlit
-let unlit_id = material_create!(
-    res,
-    Material3D::Unlit(UnlitMaterial3D {
-        base_color_factor: [0.2, 0.8, 0.9, 1.0],
-        ..UnlitMaterial3D::default()
-    })
-);
-
-// Toon
-let toon_id = material_create!(
-    res,
-    Material3D::Toon(ToonMaterial3D {
-        base_color_factor: [0.9, 0.9, 0.2, 1.0],
-        band_count: 3,
-        rim_strength: 0.4,
-        outline_width: 1.5,
-        ..ToonMaterial3D::default()
-    })
-);
-
-// Custom
-let custom_id = material_create!(
-    res,
-    Material3D::Custom(CustomMaterial3D::with_params(
-        "res://shaders/custom.wgsl",
-        vec![
-            CustomMaterialParam3D::named("glow", CustomMaterialParamValue3D::F32(1.25)),
-            CustomMaterialParam3D::named(
-                "tint",
-                CustomMaterialParamValue3D::Vec4([1.0, 0.2, 0.4, 1.0]),
-            ),
-        ],
-    ))
-);
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Materials().load_hashed(0);
+        let _ = value;
+    }
+});
 ```
 
-glTF sub-asset access:
+### `load_hashed_with_source`
 
-- `res://path/to/model.gltf:mat[0]`
-- `res://path/to/model.glb:mat[1]`
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Materials()` |
+| Signature | `pub fn load_hashed_with_source<S: ResPathSource>( &self, source_hash: u64, source: S, ) -> MaterialID` |
+| Params | `&self, source_hash: u64, source: S,` |
+| Returns | `MaterialID` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
-Use the `:mat[index]` suffix to target a specific material inside a glTF/glb.
+Example:
 
-Direct `.pmat` sources:
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Materials().load_hashed_with_source(0, "res://path/to/resource");
+        let _ = value;
+    }
+});
+```
 
-- `res://path/to/material.pmat`
+### `create`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Materials()` |
+| Signature | `pub fn create(&self, material: Material3D) -> MaterialID` |
+| Params | `&self, material: Material3D` |
+| Returns | `MaterialID` |
+| Use when | Use when gameplay needs a new runtime/resource object built from typed data. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Materials().create(0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_data`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Materials()` |
+| Signature | `pub fn get_data(&self, id: MaterialID) -> Option<Material3D>` |
+| Params | `&self, id: MaterialID` |
+| Returns | `Option<Material3D>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Materials().get_data(0.1);
+        let _ = value;
+    }
+});
+```
+
+### `write`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Materials()` |
+| Signature | `pub fn write(&self, id: MaterialID, material: Material3D) -> bool` |
+| Params | `&self, id: MaterialID, material: Material3D` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Materials().write(0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `is_loaded`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Materials()` |
+| Signature | `pub fn is_loaded(&self, id: MaterialID) -> bool` |
+| Params | `&self, id: MaterialID` |
+| Returns | `bool` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Materials().is_loaded(0.1);
+        let _ = value;
+    }
+});
+```
+
+### `reserve`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Materials()` |
+| Signature | `pub fn reserve<S: ResPathSource>(&self, source: S) -> MaterialID` |
+| Params | `&self, source: S` |
+| Returns | `MaterialID` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Materials().reserve("res://path/to/resource");
+        let _ = value;
+    }
+});
+```
+
+### `reserve_hashed`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Materials()` |
+| Signature | `pub fn reserve_hashed(&self, source_hash: u64) -> MaterialID` |
+| Params | `&self, source_hash: u64` |
+| Returns | `MaterialID` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Materials().reserve_hashed(0);
+        let _ = value;
+    }
+});
+```
+
+### `reserve_hashed_with_source`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Materials()` |
+| Signature | `pub fn reserve_hashed_with_source<S: ResPathSource>( &self, source_hash: u64, source: S, ) -> MaterialID` |
+| Params | `&self, source_hash: u64, source: S,` |
+| Returns | `MaterialID` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Materials().reserve_hashed_with_source(0, "res://path/to/resource");
+        let _ = value;
+    }
+});
+```
+
+### `drop`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Materials()` |
+| Signature | `pub fn drop(&self, id: MaterialID) -> bool` |
+| Params | `&self, id: MaterialID` |
+| Returns | `bool` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Materials().drop(0.1);
+        let _ = value;
+    }
+});
+```
+
+### `material_load`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Materials()` |
+| Signature | `material_load!(ctx.res.res, source)` |
+| Params | `ctx.res, source` |
+| Returns | `resource/runtime ID or `Result` as shown by backing method` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = material_load!(ctx.res, "res://materials/hero.pmat");
+        let _ = value;
+    }
+});
+```
+
+### `material_reserve`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Materials()` |
+| Signature | `material_reserve!(ctx.res.res, source)` |
+| Params | `ctx.res, source` |
+| Returns | `resource/runtime ID or `Result` as shown by backing method` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = material_reserve!(ctx.res, "res://materials/hero.pmat");
+        let _ = value;
+    }
+});
+```
+
+### `material_drop`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Materials()` |
+| Signature | `material_drop!(ctx.res.res, id)` |
+| Params | `ctx.res, id` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = material_drop!(ctx.res, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `material_create`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Materials()` |
+| Signature | `material_create!(ctx.res.res, material)` |
+| Params | `ctx.res, material` |
+| Returns | `resource/runtime ID or `Result` as shown by backing method` |
+| Use when | Use when gameplay needs a new runtime/resource object built from typed data. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = material_create!(ctx.res, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `material_get_data`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Materials()` |
+| Signature | `material_get_data!(ctx.res.res, id)` |
+| Params | `ctx.res, id` |
+| Returns | `same as backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = material_get_data!(ctx.res, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `material_write`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Materials()` |
+| Signature | `material_write!(ctx.res.res, id, material)` |
+| Params | `ctx.res, id, material` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = material_write!(ctx.res, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `material_is_loaded`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Materials()` |
+| Signature | `material_is_loaded!(ctx.res.res, id)` |
+| Params | `ctx.res, id` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = material_is_loaded!(ctx.res, 0.1);
+        let _ = value;
+    }
+});
+```

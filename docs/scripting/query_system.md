@@ -1,5 +1,37 @@
 # Query System
 
+## Page Map
+
+| Header | Link |
+| --- | --- |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
+| Example | [Example](#example) |
+| Reference | [Reference](#reference) |
+
+## Purpose
+
+Use `Query System` when this feature, type group, file format, or workflow appears in game code or assets.
+
+## Use Cases
+
+Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+
+## Example
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let dt = delta_time!(ctx.run);
+        let _ = dt;
+    }
+});
+```
+
+## Reference
+
+# Query System
+
 Perro query system returns `NodeID` lists from scene graph filters.
 Use it when direct refs are not enough and you want dynamic lookup.
 
@@ -189,4 +221,3 @@ cargo bench -p perro_runtime --bench query_hotpaths
 - [Script Contexts](contexts/README.md)
 - [Script State](state.md)
 - [Script Methods](methods.md)
-

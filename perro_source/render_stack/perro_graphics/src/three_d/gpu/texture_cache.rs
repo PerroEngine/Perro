@@ -4,7 +4,7 @@ const MATERIAL_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8U
 
 pub(super) struct CachedMaterialTexture {
     pub(super) source: String,
-    pub(super) _texture: wgpu::Texture,
+    pub(super) _texture: Option<wgpu::Texture>,
     pub(super) _view: wgpu::TextureView,
     pub(super) _sampler: wgpu::Sampler,
     pub(super) bind_group: wgpu::BindGroup,
@@ -87,8 +87,47 @@ pub(super) fn create_cached_material_texture(
     });
     CachedMaterialTexture {
         source,
-        _texture: texture,
+        _texture: Some(texture),
         _view: view,
+        _sampler: sampler,
+        bind_group,
+    }
+}
+
+pub(super) fn create_external_material_texture(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    view: &wgpu::TextureView,
+    source: String,
+) -> CachedMaterialTexture {
+    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("perro_external_material_texture_sampler"),
+        address_mode_u: wgpu::AddressMode::ClampToEdge,
+        address_mode_v: wgpu::AddressMode::ClampToEdge,
+        address_mode_w: wgpu::AddressMode::ClampToEdge,
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
+        mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+        ..Default::default()
+    });
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("perro_external_material_texture_bg"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Sampler(&sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(view),
+            },
+        ],
+    });
+    CachedMaterialTexture {
+        source,
+        _texture: None,
+        _view: view.clone(),
         _sampler: sampler,
         bind_group,
     }

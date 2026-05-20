@@ -8,7 +8,7 @@ use perro_ui::{
 };
 
 fn rgba(r: f32, g: f32, b: f32, a: f32) -> [f32; 4] {
-    Color::new(r, g, b, a).to_gpu()
+    Color::new(r, g, b, a).to_float_slice()
 }
 
 #[test]

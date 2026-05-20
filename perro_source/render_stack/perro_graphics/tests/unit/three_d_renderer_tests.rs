@@ -123,3 +123,30 @@ fn repeated_equal_draw_upsert_keep_sorted_node_order() {
         ]
     );
 }
+
+#[test]
+fn camera_stream_quad_retains_texture_draw() {
+    let mut renderer = Renderer3D::new();
+    let mut resources = ResourceStore::new();
+    let texture = resources.create_texture("__camera_stream__:7", true);
+    let node = NodeID::from_parts(7, 0);
+
+    renderer.queue_camera_stream_quad(
+        node,
+        texture,
+        glam::Mat4::IDENTITY.to_cols_array_2d(),
+        [2.0, 1.0],
+        [1.0, 0.8, 0.6, 0.5],
+    );
+    let _ = renderer.prepare_frame(&resources);
+
+    let retained = renderer.retained_draw(node).unwrap();
+    assert_eq!(
+        retained.kind,
+        Draw3DKind::CameraStreamQuad {
+            texture,
+            tint: [1.0, 0.8, 0.6, 0.5]
+        }
+    );
+    assert_eq!(retained.instance_mats.len(), 1);
+}

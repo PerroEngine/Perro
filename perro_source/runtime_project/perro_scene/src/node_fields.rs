@@ -8,6 +8,7 @@ pub enum NodeField {
     Node2D(Node2DField),
     Node3D(Node3DField),
     Camera2D(Camera2DField),
+    CameraStream(CameraStreamField),
     Sprite2D(Sprite2DField),
     AnimatedSprite2D(AnimatedSprite2DField),
     ParticleEmitter2D(ParticleEmitter2DField),
@@ -56,6 +57,20 @@ pub enum NodeField {
     FixedJoint3D(Joint3DField),
     UiImage(UiImageField),
     UiAnimatedImage(UiAnimatedImageField),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CameraStreamField {
+    Camera,
+    Resolution,
+    Width,
+    Height,
+    AspectRatio,
+    AspectMode,
+    PostProcessing,
+    Enabled,
+    Size,
+    ZIndex,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -606,6 +621,9 @@ fn resolve_scene_node_field_for_type(
             SceneFieldName::Active => Some(NodeField::Camera2D(Camera2DField::Active)),
             _ => None,
         },
+        NodeType::CameraStream2D | NodeType::CameraStream3D | NodeType::UiCameraStream => {
+            resolve_scene_camera_stream(field).map(NodeField::CameraStream)
+        }
         NodeType::Camera3D => match field {
             SceneFieldName::Zoom => Some(NodeField::Camera3D(Camera3DField::Zoom)),
             SceneFieldName::RenderMask => Some(NodeField::Camera3D(Camera3DField::RenderMask)),
@@ -1957,6 +1975,22 @@ fn resolve_base_scene_node_field(node_type: NodeType, field: &SceneFieldName) ->
     }
 
     None
+}
+
+fn resolve_scene_camera_stream(field: &SceneFieldName) -> Option<CameraStreamField> {
+    match field {
+        SceneFieldName::Camera => Some(CameraStreamField::Camera),
+        SceneFieldName::Resolution => Some(CameraStreamField::Resolution),
+        SceneFieldName::Width => Some(CameraStreamField::Width),
+        SceneFieldName::Height => Some(CameraStreamField::Height),
+        SceneFieldName::AspectRatio => Some(CameraStreamField::AspectRatio),
+        SceneFieldName::AspectMode => Some(CameraStreamField::AspectMode),
+        SceneFieldName::PostProcessing => Some(CameraStreamField::PostProcessing),
+        SceneFieldName::Enabled | SceneFieldName::Active => Some(CameraStreamField::Enabled),
+        SceneFieldName::Size => Some(CameraStreamField::Size),
+        SceneFieldName::ZIndex => Some(CameraStreamField::ZIndex),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

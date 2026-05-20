@@ -1,5 +1,37 @@
 # Scripting Overview
 
+## Page Map
+
+| Header | Link |
+| --- | --- |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
+| Example | [Example](#example) |
+| Reference | [Reference](#reference) |
+
+## Purpose
+
+Use `Scripting Overview` when this feature, type group, file format, or workflow appears in game code or assets.
+
+## Use Cases
+
+Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+
+## Example
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let dt = delta_time!(ctx.run);
+        let _ = dt;
+    }
+});
+```
+
+## Reference
+
+# Scripting Overview
+
 Perro scripts are authored in Rust and compiled into script modules.
 Perro manages most glue code for you, so scripting stays close to normal Rust instead of turning into registration boilerplate.
 
@@ -31,7 +63,7 @@ See:
 - [Project Script Modules](project_modules.md)
 - [Script Contexts](contexts/README.md)
 - [Script Utility Modules](modules.md)
-- [Math Types](math_types.md)
+- [Struct Types](structs/index.md)
 - [Node Types](nodes.md)
 - [Water Bodies](water.md)
 - [Scene Node Templates](scene_node_templates/index.md)

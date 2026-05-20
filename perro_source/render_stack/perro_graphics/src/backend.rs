@@ -14,14 +14,14 @@ use crate::{
     two_d::renderer::{RectInstanceGpu, Renderer2D},
     ui::renderer::UiRenderer,
 };
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use perro_graphics_assets::decode_ptex;
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_io::load_asset;
 use perro_render_bridge::{
-    Command2D, Command3D, Light2DState, PointParticles3DState, PostProcessingCommand, RenderBridge,
-    RenderCommand, RenderEvent, ResourceCommand, Sprite2DCommand, VisualAccessibilityCommand,
-    Water2DState, Water3DState,
+    CameraStreamCommand, CameraStreamState, Command2D, Command3D, Light2DState,
+    PointParticles3DState, PostProcessingCommand, RenderBridge, RenderCommand, RenderEvent,
+    ResourceCommand, Sprite2DCommand, VisualAccessibilityCommand, Water2DState, Water3DState,
 };
 use perro_structs::{PostProcessSet, VisualAccessibilitySettings};
 use std::sync::Arc;
@@ -213,7 +213,9 @@ fn count_command_buckets(commands: &[RenderCommand]) -> CommandBucketCounts {
     for command in commands {
         match command {
             RenderCommand::TwoD(Command2D::UpsertRect { .. }) => counts.rects_2d += 1,
-            RenderCommand::TwoD(Command2D::UpsertSprite { .. }) => counts.sprites_2d += 1,
+            RenderCommand::TwoD(
+                Command2D::UpsertSprite { .. } | Command2D::UpsertCameraStream { .. },
+            ) => counts.sprites_2d += 1,
             RenderCommand::ThreeD(cmd) => match &**cmd {
                 Command3D::Draw { .. }
                 | Command3D::DrawMulti { .. }
@@ -224,6 +226,23 @@ fn count_command_buckets(commands: &[RenderCommand]) -> CommandBucketCounts {
         }
     }
     counts
+}
+
+#[inline]
+fn camera_stream_texture_id(node: NodeID) -> TextureID {
+    TextureID::from_parts(node.index(), node.generation())
+}
+
+fn upsert_camera_stream_state(
+    streams: &mut Vec<(NodeID, CameraStreamState)>,
+    node: NodeID,
+    state: CameraStreamState,
+) {
+    if let Some((_, existing)) = streams.iter_mut().find(|(id, _)| *id == node) {
+        *existing = state;
+    } else {
+        streams.push((node, state));
+    }
 }
 
 pub struct PerroGraphics {
@@ -277,6 +296,8 @@ pub struct PerroGraphics {
     retained_sprites_cache_revision: u64,
     retained_point_lights_cache: Vec<Light2DState>,
     retained_point_lights_cache_revision: u64,
+    camera_stream_targets: AHashMap<NodeID, [u32; 2]>,
+    retained_camera_streams: Vec<(NodeID, CameraStreamState)>,
     frame_rects_cache: Vec<RectInstanceGpu>,
     late_overlay_sprites_cache: Vec<Sprite2DCommand>,
     late_overlay_point_lights_cache: Vec<Light2DState>,
@@ -546,6 +567,8 @@ impl PerroGraphics {
             retained_sprites_cache_revision: u64::MAX,
             retained_point_lights_cache: Vec::new(),
             retained_point_lights_cache_revision: u64::MAX,
+            camera_stream_targets: AHashMap::new(),
+            retained_camera_streams: Vec::new(),
             frame_rects_cache: Vec::new(),
             late_overlay_sprites_cache: Vec::new(),
             late_overlay_point_lights_cache: Vec::new(),
@@ -625,6 +648,27 @@ impl PerroGraphics {
         self.poll_async_texture_loads();
         for command in commands {
             match command {
+                RenderCommand::CameraStream(command) => match command {
+                    CameraStreamCommand::Upsert { node, state } => {
+                        let state = *state;
+                        upsert_camera_stream_state(
+                            &mut self.retained_camera_streams,
+                            node,
+                            state.clone(),
+                        );
+                        self.upsert_camera_stream_texture(
+                            node,
+                            state.output_texture,
+                            state.resolution,
+                        );
+                    }
+                    CameraStreamCommand::RemoveNode { node } => {
+                        let id = camera_stream_texture_id(node);
+                        self.camera_stream_targets.remove(&node);
+                        self.retained_camera_streams.retain(|(id, _)| *id != node);
+                        let _ = self.resources.drop_texture(id);
+                    }
+                },
                 RenderCommand::Resource(resource_cmd) => match resource_cmd {
                     ResourceCommand::CreateMesh {
                         request,
@@ -752,6 +796,19 @@ impl PerroGraphics {
                     }
                 },
                 RenderCommand::TwoD(cmd_2d) => match cmd_2d {
+                    Command2D::UpsertCameraStream {
+                        node,
+                        stream,
+                        sprite,
+                    } => {
+                        let stream = *stream;
+                        self.upsert_camera_stream_texture(
+                            node,
+                            stream.output_texture,
+                            stream.resolution,
+                        );
+                        self.renderer_2d.queue_sprite(node, sprite);
+                    }
                     Command2D::UpsertSprite { node, sprite } => {
                         self.renderer_2d.queue_sprite(node, sprite);
                     }
@@ -790,6 +847,21 @@ impl PerroGraphics {
                     }
                 },
                 RenderCommand::ThreeD(cmd_3d) => match *cmd_3d {
+                    Command3D::UpsertCameraStream { node, stream, quad } => {
+                        let stream = *stream;
+                        self.upsert_camera_stream_texture(
+                            node,
+                            stream.output_texture,
+                            stream.resolution,
+                        );
+                        self.renderer_3d.queue_camera_stream_quad(
+                            node,
+                            stream.output_texture,
+                            quad.model,
+                            quad.size,
+                            quad.tint.to_float_slice(),
+                        );
+                    }
                     Command3D::Draw {
                         mesh,
                         surfaces,
@@ -945,6 +1017,39 @@ impl PerroGraphics {
         self.poll_async_texture_loads();
     }
 
+    fn upsert_camera_stream_texture(
+        &mut self,
+        node: NodeID,
+        texture: TextureID,
+        resolution: [u32; 2],
+    ) {
+        let texture = if texture.is_nil() {
+            camera_stream_texture_id(node)
+        } else {
+            texture
+        };
+        let source = format!("__camera_stream__:{}", node.as_u64());
+        let id = self
+            .resources
+            .create_texture_with_id(texture, &source, true);
+        let width = resolution[0].clamp(1, 8192);
+        let height = resolution[1].clamp(1, 8192);
+        let resolution = [width, height];
+        if self.camera_stream_targets.get(&node).copied() == Some(resolution) {
+            return;
+        }
+        self.camera_stream_targets.insert(node, resolution);
+        let len = width as usize * height as usize * 4;
+        let _ = self.resources.set_decoded_texture_data(
+            id,
+            DecodedTextureRgba {
+                rgba: vec![0; len],
+                width,
+                height,
+            },
+        );
+    }
+
     fn process_late_overlay_commands<I>(&mut self, commands: I)
     where
         I: IntoIterator<Item = RenderCommand>,
@@ -955,6 +1060,19 @@ impl PerroGraphics {
                     self.process_commands(std::iter::once(RenderCommand::Resource(resource_cmd)));
                 }
                 RenderCommand::TwoD(cmd_2d) => match cmd_2d {
+                    Command2D::UpsertCameraStream {
+                        node,
+                        stream,
+                        sprite,
+                    } => {
+                        let stream = *stream;
+                        self.upsert_camera_stream_texture(
+                            node,
+                            stream.output_texture,
+                            stream.resolution,
+                        );
+                        self.late_overlay_2d.queue_sprite(node, sprite);
+                    }
                     Command2D::UpsertSprite { node, sprite } => {
                         self.late_overlay_2d.queue_sprite(node, sprite);
                     }
@@ -1248,7 +1366,8 @@ impl PerroGraphics {
                     }
                 }
                 RenderCommand::ThreeD(cmd_3d) => match &**cmd_3d {
-                    Command3D::Draw { .. }
+                    Command3D::UpsertCameraStream { .. }
+                    | Command3D::Draw { .. }
                     | Command3D::DrawMulti { .. }
                     | Command3D::DrawMultiDense { .. }
                     | Command3D::DrawDebugPoint3D { .. }
@@ -1266,6 +1385,7 @@ impl PerroGraphics {
                     Command3D::UpsertWater { .. } => frame_dirty_bits |= DIRTY_3D,
                 },
                 RenderCommand::Resource(_) => frame_dirty_bits |= DIRTY_RESOURCES,
+                RenderCommand::CameraStream(_) => frame_dirty_bits |= DIRTY_RESOURCES,
                 RenderCommand::Ui(_) => frame_dirty_bits |= DIRTY_2D,
                 RenderCommand::PostProcessing(_) => frame_dirty_bits |= DIRTY_POSTFX,
                 RenderCommand::VisualAccessibility(_) => frame_dirty_bits |= DIRTY_ACCESSIBILITY,
@@ -1459,6 +1579,7 @@ impl PerroGraphics {
                 point_particles_3d_revision: self.retained_point_particles_cache_revision,
                 waters_3d: &self.retained_waters_3d_cache,
                 waters_3d_revision: self.retained_waters_3d_cache_revision,
+                camera_streams: &self.retained_camera_streams,
                 camera_2d,
                 camera_2d_position: camera_2d_state.position,
                 post_processing_2d: camera_2d_state.post_processing.clone(),

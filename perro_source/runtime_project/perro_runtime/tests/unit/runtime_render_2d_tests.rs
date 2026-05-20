@@ -1,15 +1,17 @@
 use super::Runtime;
 use perro_ids::TextureID;
 use perro_nodes::{
-    AmbientLight2D, CollisionShape2D, PointLight2D, RayLight2D, SceneNode, SceneNodeData, Shape2D,
-    SpotLight2D, StaticBody2D, WaterBody2D,
+    AmbientLight2D, CameraStream2D, CollisionShape2D, PointLight2D, RayLight2D, SceneNode,
+    SceneNodeData, Shape2D, SpotLight2D, StaticBody2D, WaterBody2D,
     camera_2d::Camera2D,
     node_2d::Node2D,
     particle_emitter_2d::ParticleEmitter2D,
     physics_2d::RigidBody2D,
     sprite_2d::{AnimatedSprite, AnimatedSprite2D, Sprite2D},
 };
-use perro_render_bridge::{Command2D, ParticlePath2D, RenderCommand, RenderEvent, ResourceCommand};
+use perro_render_bridge::{
+    CameraStreamCommand, Command2D, ParticlePath2D, RenderCommand, RenderEvent, ResourceCommand,
+};
 use perro_runtime_api::sub_apis::{NodeAPI, NodeCreationTemplate};
 use perro_structs::{BitMask, Vector2};
 use std::sync::Arc;
@@ -33,6 +35,108 @@ fn water_2d_command(
             _ => None,
         })
         .expect("water command should exist")
+}
+
+#[test]
+fn camera_stream_2d_emits_stream_and_sprite_commands() {
+    let mut runtime = Runtime::new();
+    let camera = NodeAPI::create::<Camera2D>(&mut runtime);
+    let stream = NodeAPI::create::<CameraStream2D>(&mut runtime);
+    if let Some(node) = runtime.nodes.get_mut(stream)
+        && let SceneNodeData::CameraStream2D(data) = &mut node.data
+    {
+        data.stream.camera = camera;
+        data.stream.resolution = [320, 180];
+    }
+
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+            if *node == stream && state.resolution == [320, 180]
+    )));
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::UpsertCameraStream { node, sprite, .. })
+            if *node == stream && sprite.texture == Runtime::camera_stream_texture_id(stream)
+    )));
+}
+
+#[test]
+fn camera_stream_2d_uses_source_camera_render_mask() {
+    let mut runtime = Runtime::new();
+    let camera = NodeAPI::create::<Camera2D>(&mut runtime);
+    let stream = NodeAPI::create::<CameraStream2D>(&mut runtime);
+    let visible_sprite = NodeAPI::create::<Sprite2D>(&mut runtime);
+    let masked_sprite = NodeAPI::create::<Sprite2D>(&mut runtime);
+    if let Some(node) = runtime.nodes.get_mut(camera)
+        && let SceneNodeData::Camera2D(data) = &mut node.data
+    {
+        data.render_mask = BitMask::with([2]);
+    }
+    if let Some(node) = runtime.nodes.get_mut(stream)
+        && let SceneNodeData::CameraStream2D(data) = &mut node.data
+    {
+        data.stream.camera = camera;
+    }
+    for (node_id, layer, texture) in [
+        (visible_sprite, 1, TextureID::from_parts(100, 0)),
+        (masked_sprite, 2, TextureID::from_parts(101, 0)),
+    ] {
+        if let Some(node) = runtime.nodes.get_mut(node_id)
+            && let SceneNodeData::Sprite2D(data) = &mut node.data
+        {
+            data.render_layers = BitMask::with([layer]);
+            data.texture = texture;
+        }
+    }
+
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    let stream_state = commands
+        .iter()
+        .find_map(|command| match command {
+            RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+                if *node == stream =>
+            {
+                Some(state)
+            }
+            _ => None,
+        })
+        .expect("stream state");
+    assert_eq!(stream_state.sprites_2d.len(), 1);
+    assert_eq!(
+        stream_state.sprites_2d[0].texture,
+        TextureID::from_parts(100, 0)
+    );
+}
+
+#[test]
+fn disabled_camera_stream_2d_emits_remove_commands() {
+    let mut runtime = Runtime::new();
+    let camera = NodeAPI::create::<Camera2D>(&mut runtime);
+    let stream = NodeAPI::create::<CameraStream2D>(&mut runtime);
+    if let Some(node) = runtime.nodes.get_mut(stream)
+        && let SceneNodeData::CameraStream2D(data) = &mut node.data
+    {
+        data.stream.camera = camera;
+        data.stream.enabled = false;
+    }
+
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::CameraStream(CameraStreamCommand::RemoveNode { node }) if *node == stream
+    )));
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::RemoveNode { node }) if *node == stream
+    )));
 }
 
 #[test]

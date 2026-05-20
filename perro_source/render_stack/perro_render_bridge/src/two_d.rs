@@ -11,6 +11,80 @@ pub struct Camera2DState {
     pub audio_options: AudioListenerOptions,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum CameraStreamSourceState {
+    TwoD(Camera2DState),
+    ThreeD(Camera3DState),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CameraStreamState {
+    pub source: CameraStreamSourceState,
+    pub resolution: [u32; 2],
+    pub aspect_ratio: f32,
+    pub post_processing: Arc<[PostProcessEffect]>,
+    pub output_texture: TextureID,
+    pub sprites_2d: Arc<[Sprite2DCommand]>,
+    pub lights_2d: Arc<[Light2DState]>,
+    pub point_particles_2d: Arc<[(NodeID, PointParticles2DState)]>,
+    pub waters_2d: Arc<[(NodeID, Water2DState)]>,
+    pub draws_3d: Arc<[CameraStreamDraw3DState]>,
+    pub lighting_3d: CameraStreamLighting3DState,
+    pub point_particles_3d: Arc<[(NodeID, PointParticles3DState)]>,
+    pub waters_3d: Arc<[(NodeID, Water3DState)]>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct CameraStreamLighting3DState {
+    pub ambient_light: Option<AmbientLight3DState>,
+    pub sky: Option<Sky3DState>,
+    pub ray_lights: [Option<RayLight3DState>; 3],
+    pub point_lights: [Option<PointLight3DState>; 8],
+    pub spot_lights: [Option<SpotLight3DState>; 8],
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CameraStreamDraw3DState {
+    Draw {
+        mesh: MeshID,
+        surfaces: Arc<[MeshSurfaceBinding3D]>,
+        node: NodeID,
+        model: [[f32; 4]; 4],
+        skeleton: Option<SkeletonPalette>,
+        meshlet_override: Option<bool>,
+        lod: LODOptions3D,
+        blend: MeshBlendOptions3D,
+    },
+    DrawMulti {
+        mesh: MeshID,
+        surfaces: Arc<[MeshSurfaceBinding3D]>,
+        node: NodeID,
+        instance_mats: Arc<[[[f32; 4]; 4]]>,
+        skeleton: Option<SkeletonPalette>,
+        meshlet_override: Option<bool>,
+        lod: LODOptions3D,
+        blend: MeshBlendOptions3D,
+    },
+    DrawMultiDense {
+        mesh: MeshID,
+        surfaces: Arc<[MeshSurfaceBinding3D]>,
+        node: NodeID,
+        node_model: [[f32; 4]; 4],
+        instance_scale: f32,
+        instances: Arc<[DenseInstancePose3D]>,
+        meshlet_override: Option<bool>,
+        lod: LODOptions3D,
+        blend: MeshBlendOptions3D,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CameraStream3DState {
+    pub model: [[f32; 4]; 4],
+    pub size: [f32; 2],
+    pub tint: Color,
+}
+
 impl Default for Camera2DState {
     fn default() -> Self {
         Self {

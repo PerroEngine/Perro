@@ -1,191 +1,343 @@
-# MeshQuery Module
+# Mesh Query Module
 
-Runtime handle:
+## Page Map
 
-- Direct module: `ctx.run.MeshQuery()`
-- Macro route: `mesh_*_3d!`
+| Header | Link |
+| --- | --- |
+| Overview | [Overview](#overview) |
+| Context | [Context](#context) |
+| API Reference | [API Reference](#api-reference) |
+| `instance_surface_at_global_point` | [`instance_surface_at_global_point`](#instance_surface_at_global_point) |
+| `instance_surface_on_global_ray` | [`instance_surface_on_global_ray`](#instance_surface_on_global_ray) |
+| `instance_surfaces_on_global_rays` | [`instance_surfaces_on_global_rays`](#instance_surfaces_on_global_rays) |
+| `instance_material_regions` | [`instance_material_regions`](#instance_material_regions) |
+| `data_surface_at_local_point` | [`data_surface_at_local_point`](#data_surface_at_local_point) |
+| `data_surface_on_local_ray` | [`data_surface_on_local_ray`](#data_surface_on_local_ray) |
+| `data_surface_regions` | [`data_surface_regions`](#data_surface_regions) |
+| `mesh_instance_surface_at_global_point_3d` | [`mesh_instance_surface_at_global_point_3d`](#mesh_instance_surface_at_global_point_3d) |
+| `mesh_instance_surface_on_global_ray_3d` | [`mesh_instance_surface_on_global_ray_3d`](#mesh_instance_surface_on_global_ray_3d) |
+| `mesh_instance_surfaces_on_global_rays_3d` | [`mesh_instance_surfaces_on_global_rays_3d`](#mesh_instance_surfaces_on_global_rays_3d) |
+| `mesh_instance_material_regions_3d` | [`mesh_instance_material_regions_3d`](#mesh_instance_material_regions_3d) |
+| `mesh_data_surface_at_local_point_3d` | [`mesh_data_surface_at_local_point_3d`](#mesh_data_surface_at_local_point_3d) |
+| `mesh_data_surface_on_local_ray_3d` | [`mesh_data_surface_on_local_ray_3d`](#mesh_data_surface_on_local_ray_3d) |
+| `mesh_data_surface_regions_3d` | [`mesh_data_surface_regions_3d`](#mesh_data_surface_regions_3d) |
 
-Use `MeshQuery` for surface hits, batch rays, and coarse mesh regions.
-Use `Nodes` for node fields/transforms when you are not intersecting mesh topology.
-Use `NodeQuery` to find mesh nodes by name/tag/type.
+## Overview
 
-Macros:
+This runtime module belongs to `ctx.run` and documents mesh query calls.
 
-- `mesh_instance_surface_at_global_point_3d!(ctx.run, node_id, global_point) -> Option<MeshSurfaceHit3D>`
-- `mesh_instance_surface_on_global_ray_3d!(ctx.run, node_id, ray_origin, ray_direction, max_distance) -> Option<MeshSurfaceHit3D>`
-- `mesh_instance_surfaces_on_global_rays_3d!(ctx.run, node_id, rays, resolve_material) -> Vec<Option<MeshSurfaceHit3D>>`
-- `mesh_instance_material_regions_3d!(ctx.run, node_id, material_id) -> Vec<MeshMaterialRegion3D>`
-- `mesh_data_surface_at_local_point_3d!(ctx.run, mesh_id, local_point) -> Option<MeshDataSurfaceHit3D>`
-- `mesh_data_surface_on_local_ray_3d!(ctx.run, mesh_id, ray_origin_local, ray_direction_local, max_distance) -> Option<MeshDataSurfaceHit3D>`
-- `mesh_data_surface_regions_3d!(ctx.run, mesh_id, surface_index) -> Vec<MeshDataSurfaceRegion3D>`
+## Context
 
-Direct API:
+- Script context path: `ctx.run`
+- Module access: `ctx.run.MeshQuery()`
+- Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
 
-```rust
-let hit = ctx.run.MeshQuery().instance_surface_on_global_ray(
-    mesh_node_id,
-    ray_origin,
-    ray_direction,
-    100.0,
-);
-```
+## API Reference
 
-```rust
-let hits = ctx.run.MeshQuery().instance_surfaces_on_global_rays(
-    mesh_node_id,
-    &rays,
-    false,
-);
-```
+### `instance_surface_at_global_point`
 
-Pick correct lane:
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.MeshQuery()` |
+| Signature | `pub fn instance_surface_at_global_point( &mut self, node_id: NodeID, global_point: Vector3, ) -> Option<MeshSurfaceHit3D>` |
+| Params | `&mut self, node_id: NodeID, global_point: Vector3,` |
+| Returns | `Option<MeshSurfaceHit3D>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
-- Need one nearest surface from a global point on a live node -> use `mesh_instance_surface_at_global_point_3d!`.
-- Need one downward/forward ray hit on a live node -> use `mesh_instance_surface_on_global_ray_3d!`.
-- Need several rays against the same live node in one frame -> use `mesh_instance_surfaces_on_global_rays_3d!`.
-- Need only surface index from batch hits -> pass `resolve_material = false`.
-- Need runtime material from batch hits -> pass `resolve_material = true`.
-- Need "where is material X on this mesh instance now?" -> use `mesh_instance_material_regions_3d!`.
-- Need "where is surface slot N from mesh data?" -> use `mesh_data_surface_regions_3d!` with `MeshID`.
-- Need inverse hit "local point/ray -> raw surface index only" -> use mesh-data lane with `MeshID`.
-- Need global transforms, runtime material binds, or multimesh instance index -> use instance lane.
-- Need raw topology only, no node transform, no material bind -> use mesh-data lane.
-
-`MeshSurfaceRay3D` fields:
-
-- `origin`: ray origin in global space
-- `direction`: ray direction in global space; it does not need to be normalized
-- `max_distance`: max ray travel distance
-
-`MeshSurfaceHit3D` fields:
-
-- `instance_index`: instance id for `MultiMeshInstance3D` (0 for regular mesh)
-- `surface_index`: matched mesh surface
-- `material`: material bound on that surface (`Option<MaterialID>`)
-- `global_point`: nearest point on mesh in global space
-- `local_point`: nearest point in mesh local space
-- `global_normal`: surface normal in global space at nearest point
-- `local_normal`: surface normal in mesh local space at nearest point
-- `distance`: distance from query point to nearest point
-
-`MeshMaterialRegion3D` fields:
-
-- `instance_index`, `surface_index`, `material`
-- `triangle_count`
-- `center_global`, `center_local`
-- `aabb_min_global`, `aabb_max_global`
-- `aabb_min_local`, `aabb_max_local`
-
-`MeshDataSurfaceHit3D` fields:
-
-- `surface_index`: matched mesh surface
-- `local_point`: nearest point in mesh local space
-- `local_normal`: surface normal in mesh local space at nearest point
-- `distance`: distance from query point to nearest point in mesh local space
-
-`MeshDataSurfaceRegion3D` fields:
-
-- `surface_index`
-- `triangle_count`
-- `center_local`
-- `aabb_min_local`, `aabb_max_local`
-
-Examples:
+Example:
 
 ```rust
-let p = Vector3::new(2.0, 1.0, -5.0);
-if let Some(hit) = mesh_instance_surface_at_global_point_3d!(ctx.run, mesh_node_id, p) {
-    // hit.surface_index
-    // hit.material
-    // hit.global_point
-    // hit.global_normal
-}
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.MeshQuery().instance_surface_at_global_point(ctx.id, Vector3::new(0.0, 0.0, 0.0));
+        let _ = value;
+    }
+});
 ```
+
+### `instance_surface_on_global_ray`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.MeshQuery()` |
+| Signature | `pub fn instance_surface_on_global_ray( &mut self, node_id: NodeID, ray_origin: Vector3, ray_direction: Vector3, max_distance: f32, ) -> Option<MeshSurfaceHit3D>` |
+| Params | `&mut self, node_id: NodeID, ray_origin: Vector3, ray_direction: Vector3, max_distance: f32,` |
+| Returns | `Option<MeshSurfaceHit3D>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
 
 ```rust
-let ray_origin = Vector3::new(2.0, 10.0, -5.0);
-let ray_dir = Vector3::new(0.0, -1.0, 0.0);
-if let Some(hit) =
-    mesh_instance_surface_on_global_ray_3d!(ctx.run, mesh_node_id, ray_origin, ray_dir, 64.0)
-{
-    // hit.surface_index
-    // hit.global_point
-}
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.MeshQuery().instance_surface_on_global_ray(ctx.id, Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0);
+        let _ = value;
+    }
+});
 ```
+
+### `instance_surfaces_on_global_rays`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.MeshQuery()` |
+| Signature | `pub fn instance_surfaces_on_global_rays( &mut self, node_id: NodeID, rays: &[MeshSurfaceRay3D], resolve_material: bool, ) -> Vec<Option<MeshSurfaceHit3D>>` |
+| Params | `&mut self, node_id: NodeID, rays: &[MeshSurfaceRay3D], resolve_material: bool,` |
+| Returns | `Vec<Option<MeshSurfaceHit3D>>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
 
 ```rust
-let y = Vector3::new(0.0, 12.0, 0.0);
-let down = Vector3::new(0.0, -1.0, 0.0);
-let rays = [
-    MeshSurfaceRay3D {
-        origin: sample_pos + y,
-        direction: down,
-        max_distance: 64.0,
-    },
-    MeshSurfaceRay3D {
-        origin: sample_pos + Vector3::new(0.1, 12.0, 0.0),
-        direction: down,
-        max_distance: 64.0,
-    },
-    MeshSurfaceRay3D {
-        origin: sample_pos + Vector3::new(-0.1, 12.0, 0.0),
-        direction: down,
-        max_distance: 64.0,
-    },
-];
-let hits = mesh_instance_surfaces_on_global_rays_3d!(
-    ctx.run,
-    terrain_mesh_id,
-    &rays,
-    false
-);
-for hit in hits.into_iter().flatten() {
-    // hit.surface_index
-    // hit.material is None because resolve_material=false
-}
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.MeshQuery().instance_surfaces_on_global_rays(ctx.id, Default::default(), true);
+        let _ = value;
+    }
+});
 ```
+
+### `instance_material_regions`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.MeshQuery()` |
+| Signature | `pub fn instance_material_regions( &mut self, node_id: NodeID, material: MaterialID, ) -> Vec<MeshMaterialRegion3D>` |
+| Params | `&mut self, node_id: NodeID, material: MaterialID,` |
+| Returns | `Vec<MeshMaterialRegion3D>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
 
 ```rust
-let regions = mesh_instance_material_regions_3d!(ctx.run, mesh_node_id, material_id);
-for r in regions {
-    // r.surface_index
-    // r.center_global
-    // r.aabb_min_global / r.aabb_max_global
-}
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.MeshQuery().instance_material_regions(ctx.id, 0.1);
+        let _ = value;
+    }
+});
 ```
+
+### `data_surface_at_local_point`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.MeshQuery()` |
+| Signature | `pub fn data_surface_at_local_point( &mut self, mesh_id: MeshID, local_point: Vector3, ) -> Option<MeshDataSurfaceHit3D>` |
+| Params | `&mut self, mesh_id: MeshID, local_point: Vector3,` |
+| Returns | `Option<MeshDataSurfaceHit3D>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
 
 ```rust
-let data_regions = mesh_data_surface_regions_3d!(ctx.run, mesh_id, 2);
-for r in data_regions {
-    // r.surface_index == 2
-    // r.center_local
-    // r.aabb_min_local / r.aabb_max_local
-}
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.MeshQuery().data_surface_at_local_point(ctx.id, Vector3::new(0.0, 0.0, 0.0));
+        let _ = value;
+    }
+});
 ```
+
+### `data_surface_on_local_ray`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.MeshQuery()` |
+| Signature | `pub fn data_surface_on_local_ray( &mut self, mesh_id: MeshID, ray_origin_local: Vector3, ray_direction_local: Vector3, max_distance: f32, ) -> Option<MeshDataSurfaceHit3D>` |
+| Params | `&mut self, mesh_id: MeshID, ray_origin_local: Vector3, ray_direction_local: Vector3, max_distance: f32,` |
+| Returns | `Option<MeshDataSurfaceHit3D>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
 
 ```rust
-if let Some(hit) = mesh_data_surface_on_local_ray_3d!(
-    ctx.run,
-    mesh_id,
-    ray_origin_local,
-    ray_dir_local,
-    100.0
-) {
-    // hit.surface_index
-    // hit.local_point
-}
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.MeshQuery().data_surface_on_local_ray(ctx.id, Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0);
+        let _ = value;
+    }
+});
 ```
 
-Perf rules:
+### `data_surface_regions`
 
-- Use batch rays when probing many offsets against same terrain mesh.
-- Use `resolve_material = false` when `surface_index` is enough.
-- Cache `NodeID`, `MeshID`, and `MaterialID`; avoid scene queries in hot loops.
-- Prefer surface-index classification when terrain surface order is stable.
-- Use material lookup for imported content where surface order may shift.
-- Use region queries during setup, spawn placement, or infrequent layout logic.
-- Avoid region queries every frame; they summarize triangle sets and can scan topology.
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.MeshQuery()` |
+| Signature | `pub fn data_surface_regions( &mut self, mesh_id: MeshID, surface_index: u32, ) -> Vec<MeshDataSurfaceRegion3D>` |
+| Params | `&mut self, mesh_id: MeshID, surface_index: u32,` |
+| Returns | `Vec<MeshDataSurfaceRegion3D>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
-More:
+Example:
 
-- [Mesh Query Perf Snapshot](../../mesh_query_perf.md)
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.MeshQuery().data_surface_regions(ctx.id, 0);
+        let _ = value;
+    }
+});
+```
+
+### `mesh_instance_surface_at_global_point_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.MeshQuery()` |
+| Signature | `mesh_instance_surface_at_global_point_3d!(ctx.run, id, point)` |
+| Params | `ctx, id, point` |
+| Returns | `same as backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = mesh_instance_surface_at_global_point_3d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `mesh_instance_surface_on_global_ray_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.MeshQuery()` |
+| Signature | `mesh_instance_surface_on_global_ray_3d!(ctx.run, id, origin, direction, max_distance)` |
+| Params | `ctx, id, origin, direction, max_distance` |
+| Returns | `same as backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = mesh_instance_surface_on_global_ray_3d!(ctx.run, 0.0, 0.1, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `mesh_instance_surfaces_on_global_rays_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.MeshQuery()` |
+| Signature | `mesh_instance_surfaces_on_global_rays_3d!(ctx.run, id, rays, resolve_material)` |
+| Params | `ctx, id, rays, resolve_material` |
+| Returns | `same as backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = mesh_instance_surfaces_on_global_rays_3d!(ctx.run, 0.0, 0.1, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `mesh_instance_material_regions_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.MeshQuery()` |
+| Signature | `mesh_instance_material_regions_3d!(ctx.run, id, material)` |
+| Params | `ctx, id, material` |
+| Returns | `same as backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = mesh_instance_material_regions_3d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `mesh_data_surface_at_local_point_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.MeshQuery()` |
+| Signature | `mesh_data_surface_at_local_point_3d!(ctx.run, mesh_id, point_local)` |
+| Params | `ctx, mesh_id, point_local` |
+| Returns | `same as backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = mesh_data_surface_at_local_point_3d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `mesh_data_surface_on_local_ray_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.MeshQuery()` |
+| Signature | `mesh_data_surface_on_local_ray_3d!(ctx.run, mesh_id, origin_local, direction_local, max_distance)` |
+| Params | `ctx, mesh_id, origin_local, direction_local, max_distance` |
+| Returns | `same as backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = mesh_data_surface_on_local_ray_3d!(ctx.run, 0.0, 0.1, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `mesh_data_surface_regions_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.MeshQuery()` |
+| Signature | `mesh_data_surface_regions_3d!(ctx.run, mesh_id, surface_index)` |
+| Params | `ctx, mesh_id, surface_index` |
+| Returns | `same as backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = mesh_data_surface_regions_3d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```

@@ -2,12 +2,13 @@ use crate::{
     AmbientLight2D, AmbientLight3D, AnimatedSprite2D, AnimationPlayer, AnimationTree, Area2D,
     Area3D, AudioEffectZone2D, AudioEffectZone3D, AudioMask2D, AudioMask3D, AudioPortal2D,
     AudioPortal3D, BallJoint3D, BoneAttachment2D, BoneAttachment3D, BoneCollider2D, BoneCollider3D,
-    Camera2D, Camera3D, CollisionShape2D, CollisionShape3D, DistanceJoint2D, FixedJoint2D,
-    FixedJoint3D, HingeJoint3D, IKTarget2D, IKTarget3D, MeshInstance3D, MultiMeshInstance3D,
-    Node2D, Node3D, ParticleEmitter2D, ParticleEmitter3D, PhysicsBoneChain2D, PhysicsBoneChain3D,
-    PhysicsForceEmitter2D, PhysicsForceEmitter3D, PinJoint2D, PointLight2D, PointLight3D,
-    RayLight2D, RayLight3D, RigidBody2D, RigidBody3D, Skeleton2D, Skeleton3D, Sky3D, SpotLight2D,
-    SpotLight3D, Sprite2D, StaticBody2D, StaticBody3D, TileMap2D, WaterBody2D, WaterBody3D,
+    Camera2D, Camera3D, CameraStream2D, CameraStream3D, CollisionShape2D, CollisionShape3D,
+    DistanceJoint2D, FixedJoint2D, FixedJoint3D, HingeJoint3D, IKTarget2D, IKTarget3D,
+    MeshInstance3D, MultiMeshInstance3D, Node2D, Node3D, ParticleEmitter2D, ParticleEmitter3D,
+    PhysicsBoneChain2D, PhysicsBoneChain3D, PhysicsForceEmitter2D, PhysicsForceEmitter3D,
+    PinJoint2D, PointLight2D, PointLight3D, RayLight2D, RayLight3D, RigidBody2D, RigidBody3D,
+    Skeleton2D, Skeleton3D, Sky3D, SpotLight2D, SpotLight3D, Sprite2D, StaticBody2D, StaticBody3D,
+    TileMap2D, UiCameraStream, WaterBody2D, WaterBody3D,
 };
 use perro_ids::{NodeID, NodeTag, TagID};
 use perro_structs::{Transform2D, Transform3D};
@@ -819,6 +820,7 @@ define_scene_nodes! {
         Camera2D => (Node2D, Camera2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
 
         // visual
+        CameraStream2D => (Node2D, CameraStream2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         Sprite2D => (Node2D, Sprite2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         AnimatedSprite2D => (Node2D, AnimatedSprite2D, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         TileMap2D => (Node2D, TileMap2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::True),
@@ -861,6 +863,7 @@ define_scene_nodes! {
         Camera3D => (Node3D, Camera3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
 
         // visual
+        CameraStream3D => (Node3D, CameraStream3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         MeshInstance3D => (Node3D, MeshInstance3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         MultiMeshInstance3D => (Node3D, MultiMeshInstance3D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         ParticleEmitter3D => (Node3D, ParticleEmitter3D, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
@@ -900,6 +903,7 @@ define_scene_nodes! {
         UiBox => (None, UiBox, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
 
         // visual
+        UiCameraStream => (UiBox, UiCameraStream, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiPanel => (UiBox, UiPanel, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiButton => (UiBox, UiButton, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiImage => (UiBox, UiImage, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),

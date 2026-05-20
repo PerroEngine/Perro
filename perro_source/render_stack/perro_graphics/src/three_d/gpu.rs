@@ -64,7 +64,9 @@ use skinned_path::{
     create_depth_prepass_pipeline_skinned, create_pipeline_overlay_skinned,
     create_pipeline_skinned, create_pipeline_skinned_blend, create_shadow_depth_pipeline_skinned,
 };
-use texture_cache::{CachedMaterialTexture, create_cached_material_texture};
+use texture_cache::{
+    CachedMaterialTexture, create_cached_material_texture, create_external_material_texture,
+};
 
 #[path = "gpu/asset_bridge.rs"]
 mod asset_bridge;

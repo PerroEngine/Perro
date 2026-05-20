@@ -1,126 +1,757 @@
 # Animations Module
 
-Access:
+## Page Map
 
-- `ctx.AnimPlayer()`
+| Header | Link |
+| --- | --- |
+| Overview | [Overview](#overview) |
+| Context | [Context](#context) |
+| API Reference | [API Reference](#api-reference) |
+| `set_clip` | [`set_clip`](#set_clip) |
+| `play` | [`play`](#play) |
+| `pause` | [`pause`](#pause) |
+| `seek_frame` | [`seek_frame`](#seek_frame) |
+| `set_speed` | [`set_speed`](#set_speed) |
+| `bind` | [`bind`](#bind) |
+| `clear_bindings` | [`clear_bindings`](#clear_bindings) |
+| `anim_player_set_clip` | [`anim_player_set_clip`](#anim_player_set_clip) |
+| `anim_player_play` | [`anim_player_play`](#anim_player_play) |
+| `anim_player_pause` | [`anim_player_pause`](#anim_player_pause) |
+| `anim_player_seek_frame` | [`anim_player_seek_frame`](#anim_player_seek_frame) |
+| `anim_player_set_speed` | [`anim_player_set_speed`](#anim_player_set_speed) |
+| `anim_player_bind` | [`anim_player_bind`](#anim_player_bind) |
+| `anim_player_clear_bindings` | [`anim_player_clear_bindings`](#anim_player_clear_bindings) |
+| `set_clip` | [`set_clip`](#set_clip) |
+| `play_slot` | [`play_slot`](#play_slot) |
+| `pause_slot` | [`pause_slot`](#pause_slot) |
+| `seek_slot_frame` | [`seek_slot_frame`](#seek_slot_frame) |
+| `set_slot_speed` | [`set_slot_speed`](#set_slot_speed) |
+| `set_slot_playback` | [`set_slot_playback`](#set_slot_playback) |
+| `seek_node_time` | [`seek_node_time`](#seek_node_time) |
+| `set_weight` | [`set_weight`](#set_weight) |
+| `pause` | [`pause`](#pause) |
+| `anim_tree_set_clip` | [`anim_tree_set_clip`](#anim_tree_set_clip) |
+| `anim_tree_play_slot` | [`anim_tree_play_slot`](#anim_tree_play_slot) |
+| `anim_tree_pause_slot` | [`anim_tree_pause_slot`](#anim_tree_pause_slot) |
+| `anim_tree_seek_slot_frame` | [`anim_tree_seek_slot_frame`](#anim_tree_seek_slot_frame) |
+| `anim_tree_set_slot_speed` | [`anim_tree_set_slot_speed`](#anim_tree_set_slot_speed) |
+| `anim_tree_set_slot_playback` | [`anim_tree_set_slot_playback`](#anim_tree_set_slot_playback) |
+| `anim_tree_seek_node_time` | [`anim_tree_seek_node_time`](#anim_tree_seek_node_time) |
+| `anim_tree_set_weight` | [`anim_tree_set_weight`](#anim_tree_set_weight) |
+| `anim_tree_pause` | [`anim_tree_pause`](#anim_tree_pause) |
 
-Macros:
+## Overview
 
-- `anim_player_set_clip!(ctx, animation_player_id, animation_id) -> bool`
-- `anim_player_play!(ctx, animation_player_id) -> bool`
-- `anim_player_pause!(ctx, animation_player_id, paused) -> bool`
-- `anim_player_seek_frame!(ctx, animation_player_id, frame) -> bool`
-- `anim_player_set_speed!(ctx, animation_player_id, speed) -> bool`
-- `anim_player_bind!(ctx, animation_player_id, track_name, node_id) -> bool`
-- `anim_player_bind!(ctx, animation_player_id, ["Track": node_id, ...]) -> bool`
-- `anim_player_bind!(ctx, animation_player_id, {"Track" => node_id, ...}) -> bool`
-- `anim_player_clear_bindings!(ctx, animation_player_id) -> bool`
+This runtime module belongs to `ctx.run` and documents animations calls.
 
-Methods:
+## Context
 
-- `ctx.AnimPlayer().set_clip(animation_player_id, animation_id) -> bool`
-- `ctx.AnimPlayer().play(animation_player_id) -> bool`
-- `ctx.AnimPlayer().pause(animation_player_id, paused) -> bool`
-- `ctx.AnimPlayer().seek_frame(animation_player_id, frame) -> bool`
-- `ctx.AnimPlayer().set_speed(animation_player_id, speed) -> bool`
-- `ctx.AnimPlayer().bind(animation_player_id, track, node_id) -> bool`
-- `ctx.AnimPlayer().clear_bindings(animation_player_id) -> bool`
+- Script context path: `ctx.run`
+- Module access: `ctx.run.AnimPlayer() / ctx.run.AnimTree()`
+- Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
 
-## What `animation_player_id` Is
+## API Reference
 
-`animation_player_id` must be a `NodeID` for an `AnimationPlayer` node.
+### `set_clip`
 
-All macros return `false` when:
-
-- `animation_player_id` is invalid, or
-- `animation_player_id` is not an `AnimationPlayer`
-
-## Clip Assignment
-
-Typical flow:
-
-1. load clip via `ResourceWindow` (`animation_load!`)
-2. set clip on `AnimationPlayer` (`anim_player_set_clip!`)
-3. bind clip objects to scene nodes (`anim_player_bind!`)
-4. play (`anim_player_play!`)
-
-## Track Binding
-
-`anim_player_bind!` maps clip object names to runtime nodes.
-
-- `track` is the object name from `[Objects]` in `.panim` (without `@`)
-- bindings are per-player
-- rebinding same track overwrites previous node
-- mapping forms apply multiple entries and return `true` only if all binds succeed
-- this is a link from `AnimationObject` -> runtime `NodeID`
-- bind the object to a node of the expected type for that object's animated fields
-- if types do not match, those track writes will not apply as intended at runtime
-- event reference params in `.panim` also use this binding (`@Object` and `@Object.field`)
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimPlayer()` |
+| Signature | `pub fn set_clip(&mut self, player: NodeID, animation: AnimationID) -> bool` |
+| Params | `&mut self, player: NodeID, animation: AnimationID` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
 Example:
 
 ```rust
-let _ = anim_player_bind!(ctx, animation_player_id, "Hero", hero_node_id);
-let _ = anim_player_bind!(ctx, animation_player_id, "MainCam", camera_node_id);
-
-let _ = anim_player_bind!(ctx, animation_player_id, [
-    "Hero": hero_node_id,
-    "MainCam": camera_node_id,
-]);
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.AnimPlayer().set_clip(ctx.id, 0.1);
+        let _ = value;
+    }
+});
 ```
 
-## Playback Controls
+### `play`
 
-- `play`: unpauses player.
-- `pause(true)`: pauses player.
-- `seek_frame`: sets current frame directly.
-- `set_speed`: multiplies playback speed.
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimPlayer()` |
+| Signature | `pub fn play(&mut self, player: NodeID) -> bool` |
+| Params | `&mut self, player: NodeID` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
-Scene `playback` mode (`once`, `loop`, `boomerang`) is a property on `AnimationPlayer` node data, not part of this module API.
-
-## Full Example
+Example:
 
 ```rust
-let clip = animation_load!(res, "res://animations/hero_run.panim");
-let _ = anim_player_set_clip!(ctx, animation_player_id, clip);
-
-let _ = anim_player_bind!(ctx, animation_player_id, [
-    "Hero": hero_id,
-    "Weapon": weapon_id,
-]);
-
-let _ = anim_player_set_speed!(ctx, animation_player_id, 1.25);
-let _ = anim_player_seek_frame!(ctx, animation_player_id, 0);
-let _ = anim_player_play!(ctx, animation_player_id);
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.AnimPlayer().play(ctx.id);
+        let _ = value;
+    }
+});
 ```
 
-## Scene Authoring Relation
+### `pause`
 
-`AnimationPlayer` fields in `.scn`:
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimPlayer()` |
+| Signature | `pub fn pause(&mut self, player: NodeID, paused: bool) -> bool` |
+| Params | `&mut self, player: NodeID, paused: bool` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
-- `animation = "res://animations/clip.panim"`
-- `bindings = [{ Hero = HeroNode }, { Weapon = WeaponNode }]`
-- `bindings = [{ "Hero": HeroNode }, { "Weapon": WeaponNode }]`
-- bindings are map entries: `AnimationObject -> @SceneKey`
-- scene key (`HeroNode`) is resolved to runtime `NodeID` during scene merge
-- `speed = 1.0`
-- `paused = true|false`
-- `playback = "once" | "loop" | "boomerang"`
-- default `paused` is `false`
+Example:
 
-Example scene-key binding:
-
-```scn
-[bob]
-    [Node3D/]
-[/bob]
-
-[anim_player]
-    [AnimationPlayer]
-        animation = "res://animations/hero_run.panim"
-        bindings = [{ Hero = bob }]
-    [/AnimationPlayer]
-[/anim_player]
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.AnimPlayer().pause(ctx.id, true);
+        let _ = value;
+    }
+});
 ```
 
-Scripts can override or update these values at runtime.
+### `seek_frame`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimPlayer()` |
+| Signature | `pub fn seek_frame(&mut self, player: NodeID, frame: u32) -> bool` |
+| Params | `&mut self, player: NodeID, frame: u32` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.AnimPlayer().seek_frame(ctx.id, 0);
+        let _ = value;
+    }
+});
+```
+
+### `set_speed`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimPlayer()` |
+| Signature | `pub fn set_speed(&mut self, player: NodeID, speed: f32) -> bool` |
+| Params | `&mut self, player: NodeID, speed: f32` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.AnimPlayer().set_speed(ctx.id, 1.0);
+        let _ = value;
+    }
+});
+```
+
+### `bind`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimPlayer()` |
+| Signature | `pub fn bind<S: AsRef<str>>(&mut self, player: NodeID, track: S, node: NodeID) -> bool` |
+| Params | `&mut self, player: NodeID, track: S, node: NodeID` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.AnimPlayer().bind(ctx.id, Default::default(), ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `clear_bindings`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimPlayer()` |
+| Signature | `pub fn clear_bindings(&mut self, player: NodeID) -> bool` |
+| Params | `&mut self, player: NodeID` |
+| Returns | `bool` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.AnimPlayer().clear_bindings(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `anim_player_set_clip`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimPlayer() / ctx.run.AnimTree()` |
+| Signature | `anim_player_set_clip!(ctx.run, player, animation)` |
+| Params | `ctx, player, animation` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = anim_player_set_clip!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `anim_player_play`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimPlayer() / ctx.run.AnimTree()` |
+| Signature | `anim_player_play!(ctx.run, player)` |
+| Params | `ctx, player` |
+| Returns | `same as backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = anim_player_play!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `anim_player_pause`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimPlayer() / ctx.run.AnimTree()` |
+| Signature | `anim_player_pause!(ctx.run, player, paused)` |
+| Params | `ctx, player, paused` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = anim_player_pause!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `anim_player_seek_frame`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimPlayer() / ctx.run.AnimTree()` |
+| Signature | `anim_player_seek_frame!(ctx.run, player, frame)` |
+| Params | `ctx, player, frame` |
+| Returns | `same as backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = anim_player_seek_frame!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `anim_player_set_speed`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimPlayer() / ctx.run.AnimTree()` |
+| Signature | `anim_player_set_speed!(ctx.run, player, speed)` |
+| Params | `ctx, player, speed` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = anim_player_set_speed!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `anim_player_bind`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimPlayer() / ctx.run.AnimTree()` |
+| Signature | `anim_player_bind!(ctx.run, player, [ $(track : node),* $(,)? ])` |
+| Params | `ctx, player, [ $(track : node),* $(,)? ]` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = anim_player_bind!(ctx.run, 0.0, 0.1, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `anim_player_clear_bindings`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimPlayer() / ctx.run.AnimTree()` |
+| Signature | `anim_player_clear_bindings!(ctx.run, player)` |
+| Params | `ctx, player` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = anim_player_clear_bindings!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `set_clip`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimTree()` |
+| Signature | `pub fn set_clip<'a, S: IntoAnimTreeSlotArg<'a>>( &mut self, tree: NodeID, slot: S, animation: AnimationID, ) -> bool` |
+| Params | `&mut self, tree: NodeID, slot: S, animation: AnimationID,` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.AnimTree().set_clip(ctx.id, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `play_slot`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimTree()` |
+| Signature | `pub fn play_slot(&mut self, tree: NodeID, slot: &str) -> bool` |
+| Params | `&mut self, tree: NodeID, slot: &str` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.AnimTree().play_slot(ctx.id, "name");
+        let _ = value;
+    }
+});
+```
+
+### `pause_slot`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimTree()` |
+| Signature | `pub fn pause_slot(&mut self, tree: NodeID, slot: &str, paused: bool) -> bool` |
+| Params | `&mut self, tree: NodeID, slot: &str, paused: bool` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.AnimTree().pause_slot(ctx.id, "name", true);
+        let _ = value;
+    }
+});
+```
+
+### `seek_slot_frame`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimTree()` |
+| Signature | `pub fn seek_slot_frame(&mut self, tree: NodeID, slot: &str, frame: u32) -> bool` |
+| Params | `&mut self, tree: NodeID, slot: &str, frame: u32` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.AnimTree().seek_slot_frame(ctx.id, "name", 0);
+        let _ = value;
+    }
+});
+```
+
+### `set_slot_speed`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimTree()` |
+| Signature | `pub fn set_slot_speed(&mut self, tree: NodeID, slot: &str, speed: f32) -> bool` |
+| Params | `&mut self, tree: NodeID, slot: &str, speed: f32` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.AnimTree().set_slot_speed(ctx.id, "name", 1.0);
+        let _ = value;
+    }
+});
+```
+
+### `set_slot_playback`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimTree()` |
+| Signature | `pub fn set_slot_playback( &mut self, tree: NodeID, slot: &str, playback_type: AnimationPlaybackType, ) -> bool` |
+| Params | `&mut self, tree: NodeID, slot: &str, playback_type: AnimationPlaybackType,` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.AnimTree().set_slot_playback(ctx.id, "name", 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `seek_node_time`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimTree()` |
+| Signature | `pub fn seek_node_time(&mut self, tree: NodeID, node: &str, seconds: f32) -> bool` |
+| Params | `&mut self, tree: NodeID, node: &str, seconds: f32` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.AnimTree().seek_node_time(ctx.id, ctx.id, 1.0);
+        let _ = value;
+    }
+});
+```
+
+### `set_weight`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimTree()` |
+| Signature | `pub fn set_weight(&mut self, tree: NodeID, node: &str, input: &str, weight: f32) -> bool` |
+| Params | `&mut self, tree: NodeID, node: &str, input: &str, weight: f32` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.AnimTree().set_weight(ctx.id, ctx.id, "name", 1.0);
+        let _ = value;
+    }
+});
+```
+
+### `pause`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimTree()` |
+| Signature | `pub fn pause(&mut self, tree: NodeID, paused: bool) -> bool` |
+| Params | `&mut self, tree: NodeID, paused: bool` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.AnimTree().pause(ctx.id, true);
+        let _ = value;
+    }
+});
+```
+
+### `anim_tree_set_clip`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimPlayer() / ctx.run.AnimTree()` |
+| Signature | `anim_tree_set_clip!(ctx.run, tree, slot, animation)` |
+| Params | `ctx, tree, slot, animation` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = anim_tree_set_clip!(ctx.run, 0.0, 0.1, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `anim_tree_play_slot`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimPlayer() / ctx.run.AnimTree()` |
+| Signature | `anim_tree_play_slot!(ctx.run, tree, slot)` |
+| Params | `ctx, tree, slot` |
+| Returns | `same as backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = anim_tree_play_slot!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `anim_tree_pause_slot`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimPlayer() / ctx.run.AnimTree()` |
+| Signature | `anim_tree_pause_slot!(ctx.run, tree, slot, paused)` |
+| Params | `ctx, tree, slot, paused` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = anim_tree_pause_slot!(ctx.run, 0.0, 0.1, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `anim_tree_seek_slot_frame`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimPlayer() / ctx.run.AnimTree()` |
+| Signature | `anim_tree_seek_slot_frame!(ctx.run, tree, slot, frame)` |
+| Params | `ctx, tree, slot, frame` |
+| Returns | `same as backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = anim_tree_seek_slot_frame!(ctx.run, 0.0, 0.1, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `anim_tree_set_slot_speed`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimPlayer() / ctx.run.AnimTree()` |
+| Signature | `anim_tree_set_slot_speed!(ctx.run, tree, slot, speed)` |
+| Params | `ctx, tree, slot, speed` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = anim_tree_set_slot_speed!(ctx.run, 0.0, 0.1, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `anim_tree_set_slot_playback`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimPlayer() / ctx.run.AnimTree()` |
+| Signature | `anim_tree_set_slot_playback!(ctx.run, tree, slot, playback)` |
+| Params | `ctx, tree, slot, playback` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = anim_tree_set_slot_playback!(ctx.run, 0.0, 0.1, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `anim_tree_seek_node_time`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimPlayer() / ctx.run.AnimTree()` |
+| Signature | `anim_tree_seek_node_time!(ctx.run, tree, node, seconds)` |
+| Params | `ctx, tree, node, seconds` |
+| Returns | `same as backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = anim_tree_seek_node_time!(ctx.run, 0.0, 0.1, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `anim_tree_set_weight`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimPlayer() / ctx.run.AnimTree()` |
+| Signature | `anim_tree_set_weight!(ctx.run, tree, node, input, weight)` |
+| Params | `ctx, tree, node, input, weight` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = anim_tree_set_weight!(ctx.run, 0.0, 0.1, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `anim_tree_pause`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.AnimPlayer() / ctx.run.AnimTree()` |
+| Signature | `anim_tree_pause!(ctx.run, tree, paused)` |
+| Params | `ctx, tree, paused` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = anim_tree_pause!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```

@@ -172,6 +172,8 @@ impl IDs {
 pub enum EngineStruct {
     Vector2(Vector2),
     Vector3(Vector3),
+    UVector2(UVector2),
+    UVector3(UVector3),
     Transform2D(Transform2D),
     Transform3D(Transform3D),
     Quaternion(Quaternion),
@@ -630,6 +632,43 @@ impl DeriveVariant for Vector3 {
     }
 }
 
+impl DeriveVariant for UVector2 {
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        if let Some(v) = value.as_uvec2() {
+            return Some(v);
+        }
+        let obj = value.as_object()?;
+        let x = variant_to_u32(obj.get("x")?)?;
+        let y = variant_to_u32(obj.get("y")?)?;
+        Some(UVector2::new(x, y))
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::from(*self)
+    }
+}
+
+impl DeriveVariant for UVector3 {
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        if let Some(v) = value.as_uvec3() {
+            return Some(v);
+        }
+        let obj = value.as_object()?;
+        let x = variant_to_u32(obj.get("x")?)?;
+        let y = variant_to_u32(obj.get("y")?)?;
+        let z = variant_to_u32(obj.get("z")?)?;
+        Some(UVector3::new(x, y, z))
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::from(*self)
+    }
+}
+
 impl DeriveVariant for Quaternion {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
@@ -1043,6 +1082,22 @@ impl Variant {
     }
 
     #[inline]
+    pub fn as_uvec2(&self) -> Option<UVector2> {
+        match self {
+            Variant::EngineStruct(EngineStruct::UVector2(v)) => Some(*v),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_uvec3(&self) -> Option<UVector3> {
+        match self {
+            Variant::EngineStruct(EngineStruct::UVector3(v)) => Some(*v),
+            _ => None,
+        }
+    }
+
+    #[inline]
     pub fn as_transform2d(&self) -> Option<Transform2D> {
         match self {
             Variant::EngineStruct(EngineStruct::Transform2D(t)) => Some(*t),
@@ -1329,6 +1384,18 @@ impl From<Vector3> for Variant {
         Variant::EngineStruct(EngineStruct::Vector3(v))
     }
 }
+impl From<UVector2> for Variant {
+    #[inline]
+    fn from(v: UVector2) -> Self {
+        Variant::EngineStruct(EngineStruct::UVector2(v))
+    }
+}
+impl From<UVector3> for Variant {
+    #[inline]
+    fn from(v: UVector3) -> Self {
+        Variant::EngineStruct(EngineStruct::UVector3(v))
+    }
+}
 impl From<Transform2D> for Variant {
     #[inline]
     fn from(v: Transform2D) -> Self {
@@ -1428,6 +1495,19 @@ impl Variant {
                 map.insert("x".to_string(), float_to_json(v.x as f64));
                 map.insert("y".to_string(), float_to_json(v.y as f64));
                 map.insert("z".to_string(), float_to_json(v.z as f64));
+                JsonValue::Object(map)
+            }
+            Variant::EngineStruct(EngineStruct::UVector2(v)) => {
+                let mut map = JsonMap::new();
+                map.insert("x".to_string(), JsonValue::Number(JsonNumber::from(v.x)));
+                map.insert("y".to_string(), JsonValue::Number(JsonNumber::from(v.y)));
+                JsonValue::Object(map)
+            }
+            Variant::EngineStruct(EngineStruct::UVector3(v)) => {
+                let mut map = JsonMap::new();
+                map.insert("x".to_string(), JsonValue::Number(JsonNumber::from(v.x)));
+                map.insert("y".to_string(), JsonValue::Number(JsonNumber::from(v.y)));
+                map.insert("z".to_string(), JsonValue::Number(JsonNumber::from(v.z)));
                 JsonValue::Object(map)
             }
             Variant::EngineStruct(EngineStruct::Transform2D(v)) => {
@@ -1803,5 +1883,21 @@ fn parse_u64_id_string(s: &str) -> Option<u64> {
         u64::from_str_radix(&compact[..16.min(compact.len())], 16).ok()
     } else {
         compact.parse::<u64>().ok()
+    }
+}
+
+fn variant_to_u32(value: &Variant) -> Option<u32> {
+    match value.as_number()? {
+        Number::I8(v) => u32::try_from(v).ok(),
+        Number::I16(v) => u32::try_from(v).ok(),
+        Number::I32(v) => u32::try_from(v).ok(),
+        Number::I64(v) => u32::try_from(v).ok(),
+        Number::I128(v) => u32::try_from(v).ok(),
+        Number::U8(v) => Some(v as u32),
+        Number::U16(v) => Some(v as u32),
+        Number::U32(v) => Some(v),
+        Number::U64(v) => u32::try_from(v).ok(),
+        Number::U128(v) => u32::try_from(v).ok(),
+        Number::F32(_) | Number::F64(_) => None,
     }
 }

@@ -35,6 +35,7 @@ pub(super) struct TextEditCommandCtx<'a> {
 pub(super) fn ui_root_from_data(data: &SceneNodeData) -> Option<&UiBox> {
     match data {
         SceneNodeData::UiBox(root) => Some(root),
+        SceneNodeData::UiCameraStream(node) => Some(&node.base),
         SceneNodeData::UiPanel(node) => Some(&node.base),
         SceneNodeData::UiButton(node) => Some(&node.base),
         SceneNodeData::UiImage(node) => Some(&node.base),
@@ -410,6 +411,27 @@ pub(super) fn ui_command_from_node(
                 aspect_ratio,
             })
         }
+        SceneNodeData::UiCameraStream(stream) => {
+            if !stream.stream.enabled || stream.stream.camera.is_nil() {
+                return None;
+            }
+            Some(UiCommand::UpsertImage {
+                node,
+                rect,
+                clip_rect,
+                texture: Runtime::camera_stream_texture_id(node),
+                tint: stream.tint,
+                uv_min: [0.0, 0.0],
+                uv_max: [1.0, 1.0],
+                scale_mode: ui_image_scale_state(stream.stream.aspect_mode),
+                h_align: UiTextAlignState::Center,
+                v_align: UiTextAlignState::Center,
+                aspect_ratio: camera_stream_aspect_ratio(
+                    stream.stream.aspect_ratio,
+                    stream.stream.resolution,
+                ),
+            })
+        }
         SceneNodeData::UiTextBox(text_box) => Some(text_edit_command(TextEditCommandCtx {
             command: command_ctx,
             edit: &text_box.inner,
@@ -643,6 +665,14 @@ pub(super) fn ui_image_region_uv(
         return ([0.0, 0.0], [1.0, 1.0], aspect_ratio.max(0.0));
     }
     ([x, y], [x + w, y + h], aspect_ratio.max(w / h))
+}
+
+pub(super) fn camera_stream_aspect_ratio(aspect_ratio: f32, resolution: [u32; 2]) -> f32 {
+    if aspect_ratio.is_finite() && aspect_ratio > 0.0 {
+        aspect_ratio
+    } else {
+        resolution[0].max(1) as f32 / resolution[1].max(1) as f32
+    }
 }
 
 mod text_edit;

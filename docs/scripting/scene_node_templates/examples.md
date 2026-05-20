@@ -1,5 +1,37 @@
 # Extra Scene Node Examples
 
+## Page Map
+
+| Header | Link |
+| --- | --- |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
+| Example | [Example](#example) |
+| Reference | [Reference](#reference) |
+
+## Purpose
+
+Use `Extra Scene Node Examples` when this feature, type group, file format, or workflow appears in game code or assets.
+
+## Use Cases
+
+Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+
+## Example
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let dt = delta_time!(ctx.run);
+        let _ = dt;
+    }
+});
+```
+
+## Reference
+
+# Extra Scene Node Examples
+
 [Back to index](index.md)
 
 ## Parent And Root
@@ -35,6 +67,43 @@ parent = @Player
 
 Parent sets transform inheritance.
 `Muzzle` moves with `Player`.
+
+## Security Camera Stream
+
+```text
+[SecurityCamera]
+parent = $root
+    [Camera3D]
+        active = false
+        post_processing = [
+            { type = "bloom", intensity = 0.15 }
+        ]
+        [Node3D]
+            position = (0, 3, -6)
+            rotation_deg = (-15, 0, 0)
+        [/Node3D]
+    [/Camera3D]
+[/SecurityCamera]
+
+[Monitor]
+parent = $root
+    [CameraStream3D]
+        camera = @SecurityCamera
+        resolution = (640, 360)
+        aspect_mode = "fit"
+        size = (1.6, 0.9)
+        post_processing = [
+            { type = "crt", scanline_strength = 0.35, vignette = 0.2 }
+        ]
+        [Node3D]
+            position = (2, 1.2, -2)
+        [/Node3D]
+    [/CameraStream3D]
+[/Monitor]
+```
+
+Camera post-processing runs first.
+Stream post-processing runs after.
 
 ## Script Vars
 

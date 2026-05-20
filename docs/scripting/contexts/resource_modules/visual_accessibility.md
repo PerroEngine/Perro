@@ -1,46 +1,67 @@
-# Visual Accessibility
+# Visual Accessibility Module
 
-Access:
+## Page Map
 
-- Direct `ResourceWindow` methods/macros (no module accessor).
+| Header | Link |
+| --- | --- |
+| Overview | [Overview](#overview) |
+| Context | [Context](#context) |
+| API Reference | [API Reference](#api-reference) |
+| `enable_colorblind_filter` | [`enable_colorblind_filter`](#enable_colorblind_filter) |
+| `disable_colorblind_filter` | [`disable_colorblind_filter`](#disable_colorblind_filter) |
 
-Macros:
+## Overview
 
-- `enable_colorblind_filter!(res, filter, strength)`
-- `disable_colorblind_filter!(res)`
+This resource module belongs to `ctx.res` and documents visual accessibility calls.
 
-Methods:
+## Context
 
-- `res.enable_colorblind_filter(filter, strength)`
-- `res.disable_colorblind_filter()`
+- Script context path: `ctx.res`
+- Module access: `ctx.res`
+- Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
 
-Current settings:
+## API Reference
 
-- `ColorBlindFilter::Protan`
-- `ColorBlindFilter::Deuteran`
-- `ColorBlindFilter::Tritan`
-- `ColorBlindFilter::Achroma`
+### `enable_colorblind_filter`
 
-Notes:
-
-- `Protan`/`Deuteran`/`Tritan` are correction modes.
-- `Achroma` is a luminance contrast-assist mode (not color restoration).
-
-Behavior:
-
-- Visual accessibility is global (not per camera).
-- Only one color-blind filter can be active at a time.
-- Visual accessibility is applied after camera and global post-processing as the final render pass.
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res` |
+| Signature | `enable_colorblind_filter!(ctx.res.res, mode, strength)` |
+| Params | `ctx.res, mode, strength` |
+| Returns | `same as backing method` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
 Example:
 
 ```rust
-enable_colorblind_filter!(res, ColorBlindFilter::Tritan, 0.75);
-
-// Replace mode:
-enable_colorblind_filter!(res, ColorBlindFilter::Protan, 0.9);
-
-// Disable:
-disable_colorblind_filter!(res);
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = enable_colorblind_filter!(ctx.res, 0.0, 0.1);
+        let _ = value;
+    }
+});
 ```
 
+### `disable_colorblind_filter`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res` |
+| Signature | `disable_colorblind_filter!(ctx.res.res)` |
+| Params | `ctx.res` |
+| Returns | `same as backing method` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = disable_colorblind_filter!(ctx.res);
+        let _ = value;
+    }
+});
+```

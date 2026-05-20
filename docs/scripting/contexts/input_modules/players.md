@@ -1,48 +1,67 @@
 # Players Module
 
-Access:
+## Page Map
 
-- `ipt.Players()`
+| Header | Link |
+| --- | --- |
+| Overview | [Overview](#overview) |
+| Context | [Context](#context) |
+| API Reference | [API Reference](#api-reference) |
 
-Purpose:
-- Track whatever a "player" means in your game and map that player to a concrete input source.
-- As long as you have a player index, you can get its binding and then read input from the right device.
+## Overview
 
-Macros:
+This input module belongs to `ctx.ipt` and documents players calls.
 
-- `player_list!(ipt) -> &[PlayerState]`
-- `player_get!(ipt, index) -> Option<&PlayerState>`
-- `player_bind!(ipt, index, binding)`
+## Context
 
-Methods:
+- Script context path: `ctx.ipt`
+- Module access: `ctx.ipt.Players()`
+- Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
 
-- `ipt.Players().all() -> &[PlayerState]`
-- `ipt.Players().get(index) -> Option<&PlayerState>`
+## API Reference
 
-Common `PlayerState` methods:
-- `state.get_binding() -> PlayerBinding`
-- `state.get_kbm(keyboard, mouse) -> Option<(&KeyboardState, &MouseState)>`
-- `state.get_gamepad(gamepads) -> Option<&GamepadState>`
-- `state.get_joycon_single(joycons) -> Option<&JoyConState>`
-- `state.get_joycon_pair(joycons) -> Option<(&JoyConState, &JoyConState)>`
+No standalone public macro or method is defined for this helper page.
 
-How to use:
-- If you already know which device a player should use, call the matching `get_*` method to access that device directly.
-- If you do not know the device ahead of time, call `get_binding()` and branch on the `PlayerBinding` enum to decide what to read.
+### `player_get`
 
-Bindings:
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.ipt` |
+| Signature | `player_get!(ctx.ipt, 0)` |
+| Params | `ctx.ipt, 0` |
+| Returns | `Option` |
+| Use when | Use when code needs current input device data without storing platform input state itself. |
+| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
 
-- `PlayerBinding::None`
-- `PlayerBinding::Kbm`
-- `PlayerBinding::Gamepad { index }`
-- `PlayerBinding::JoyConSingle { index }`
-- `PlayerBinding::JoyConPair { left, right }`
+Example:
 
-Notes:
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = player_get!(ctx.ipt, 0);
+        let _ = value;
+    }
+});
+```
 
-- Bindings are developer-defined: you choose which device indices map to each player.
-- For Joy-Con pairs, `left` / `right` are just slots; you can map whichever indices you want.
+### `player_list`
 
-Source of truth:
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.ipt` |
+| Signature | `player_list!(ctx.ipt)` |
+| Params | `ctx.ipt` |
+| Returns | `slice` |
+| Use when | Use when code needs current input device data without storing platform input state itself. |
+| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
 
-- `perro_source/api_modules/perro_input_api/src/player.rs`
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = player_list!(ctx.ipt);
+        let _ = value;
+    }
+});
+```

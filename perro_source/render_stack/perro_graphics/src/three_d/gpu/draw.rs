@@ -492,7 +492,7 @@ pub(super) fn apply_surface_binding(
 }
 
 pub(super) fn apply_modulate(material: &mut Material3D, modulate: perro_structs::Color) {
-    let modulate = modulate.to_gpu();
+    let modulate = modulate.to_float_slice();
     match material {
         Material3D::Standard(m) => {
             for (dst, src) in m.base_color_factor.iter_mut().zip(modulate) {

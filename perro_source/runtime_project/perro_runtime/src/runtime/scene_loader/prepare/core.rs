@@ -11,11 +11,12 @@ use perro_ids::{NodeID, string_to_u64};
 use perro_io::load_asset;
 use perro_nodes::{
     AmbientLight2D, Area2D, Area3D, AudioEffectZone2D, AudioEffectZone3D, AudioMask2D, AudioMask3D,
-    AudioPortal2D, AudioPortal3D, BallJoint3D, CollisionShape2D, CollisionShape3D, DistanceJoint2D,
-    FixedJoint2D, FixedJoint3D, HingeJoint3D, PhysicsForceEmitter2D, PhysicsForceEmitter3D,
-    PhysicsForceProfile, PinJoint2D, PointLight2D, RayLight2D, RigidBody2D, RigidBody3D, SceneNode,
-    SceneNodeData, Shape2D, Shape3D, SpotLight2D, StaticBody2D, StaticBody3D, Triangle2DKind,
-    WaterBody2D, WaterBody3D, WaterIdleMode, WaterShape, WaterSkyBias, WaterSurfaceParams,
+    AudioPortal2D, AudioPortal3D, BallJoint3D, CameraStream, CameraStream2D, CameraStream3D,
+    CollisionShape2D, CollisionShape3D, DistanceJoint2D, FixedJoint2D, FixedJoint3D, HingeJoint3D,
+    PhysicsForceEmitter2D, PhysicsForceEmitter3D, PhysicsForceProfile, PinJoint2D, PointLight2D,
+    RayLight2D, RigidBody2D, RigidBody3D, SceneNode, SceneNodeData, Shape2D, Shape3D, SpotLight2D,
+    StaticBody2D, StaticBody3D, Triangle2DKind, UiCameraStream, WaterBody2D, WaterBody3D,
+    WaterIdleMode, WaterShape, WaterSkyBias, WaterSurfaceParams,
     ambient_light_3d::AmbientLight3D,
     animation_player::AnimationPlayer,
     animation_tree::AnimationTree,
@@ -1695,6 +1696,7 @@ fn scene_node_data_from(
     match data.ty.as_ref() {
         "Node" => Ok(SceneNodeData::Node),
         "Node2D" => Ok(SceneNodeData::Node2D(build_node_2d(data))),
+        "CameraStream2D" => Ok(SceneNodeData::CameraStream2D(build_camera_stream_2d(data))),
         "Sprite2D" => Ok(SceneNodeData::Sprite2D(build_sprite_2d(data))),
         "AnimatedSprite2D" => Ok(SceneNodeData::AnimatedSprite2D(build_animated_sprite_2d(
             data,
@@ -1741,6 +1743,7 @@ fn scene_node_data_from(
         )),
         "AudioPortal2D" => Ok(SceneNodeData::AudioPortal2D(build_audio_portal_2d(data))),
         "Node3D" => Ok(SceneNodeData::Node3D(build_node_3d(data))),
+        "CameraStream3D" => Ok(SceneNodeData::CameraStream3D(build_camera_stream_3d(data))),
         "MeshInstance3D" => Ok(SceneNodeData::MeshInstance3D(build_mesh_instance_3d(data))),
         "MultiMeshInstance3D" => Ok(SceneNodeData::MultiMeshInstance3D(
             build_multi_mesh_instance_3d(data),
@@ -1792,6 +1795,7 @@ fn scene_node_data_from(
             data,
             static_ui_style_lookup,
         ))),
+        "UiCameraStream" => Ok(SceneNodeData::UiCameraStream(build_ui_camera_stream(data))),
         "UiImage" => Ok(SceneNodeData::UiImage(build_ui_image(data))),
         "UiAnimatedImage" => Ok(SceneNodeData::UiAnimatedImage(build_ui_animated_image(
             data,
@@ -1815,4 +1819,56 @@ fn scene_node_data_from(
         "UiTreeList" => Ok(SceneNodeData::UiTreeList(build_ui_tree_list(data))),
         other => Err(format!("unsupported scene node type `{other}`")),
     }
+}
+
+fn apply_camera_stream_fields(stream: &mut CameraStream, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "camera" | "camera_id" | "source_camera" => {
+            if let Some(v) = as_node_id(value) {
+                stream.camera = v;
+            }
+        }
+        "resolution" => {
+            if let Some(v) = as_vec2(value) {
+                stream.resolution = [v.x.max(1.0) as u32, v.y.max(1.0) as u32];
+            }
+        }
+        "width" => {
+            if let Some(v) = as_u32(value) {
+                stream.resolution[0] = v.max(1);
+            }
+        }
+        "height" => {
+            if let Some(v) = as_u32(value) {
+                stream.resolution[1] = v.max(1);
+            }
+        }
+        "aspect_ratio" | "ratio" => {
+            if let Some(v) = as_f32(value) {
+                stream.aspect_ratio = v.max(0.0);
+            }
+        }
+        "aspect_mode" | "scale_mode" | "image_scale" => {
+            if let Some(v) = as_str(value) {
+                stream.aspect_mode = match v {
+                    "stretch" | "fill" => UiImageScaleMode::Stretch,
+                    "cover" | "crop" => UiImageScaleMode::Cover,
+                    _ => UiImageScaleMode::Fit,
+                };
+            }
+        }
+        "post_processing" => {
+            if let Some(v) = as_post_processing(value) {
+                stream.post_processing = v;
+            }
+        }
+        "enabled" | "active" => {
+            if let Some(v) = as_bool(value) {
+                stream.enabled = v;
+            }
+        }
+        _ => {}
+    });
+    stream.resolution[0] = stream.resolution[0].clamp(1, 8192);
+    stream.resolution[1] = stream.resolution[1].clamp(1, 8192);
 }

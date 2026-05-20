@@ -1,138 +1,159 @@
-# NodeQuery Module
+# Node Query Module
 
-Runtime handle:
+## Page Map
 
-- Direct module: `ctx.run.NodeQuery()`
-- Macro route: `query!` and `query_first!`
+| Header | Link |
+| --- | --- |
+| Overview | [Overview](#overview) |
+| Context | [Context](#context) |
+| API Reference | [API Reference](#api-reference) |
+| `query` | [`query`](#query) |
+| `query_view` | [`query_view`](#query_view) |
+| `query_expr` | [`query_expr`](#query_expr) |
+| `query_builder` | [`query_builder`](#query_builder) |
+| `query` | [`query`](#query) |
+| `query_first` | [`query_first`](#query_first) |
 
-Use `NodeQuery` when you need `NodeID` values from scene filters.
-Use `Nodes` when you already have a `NodeID` and need read/write node data.
+## Overview
 
-Macros:
+This runtime module belongs to `ctx.run` and documents node query calls.
 
-- `query!(ctx.run, expr) -> Vec<NodeID>`
-- `query!(ctx.run, expr, in_subtree(parent_id)) -> Vec<NodeID>`
-- `query!(ctx.run, &node_query) -> Vec<NodeID>`
-- `query!(ctx.run, &node_query, in_subtree(parent_id)) -> Vec<NodeID>`
-- `query_first!(ctx.run, expr) -> Option<NodeID>`
-- `query_first!(ctx.run, expr, in_subtree(parent_id)) -> Option<NodeID>`
-- `query_expr!(expr) -> QueryExpr`
-- `query_builder!(expr) -> NodeQuery`
-- `query_builder!(expr, in_subtree(parent_id)) -> NodeQuery`
+## Context
 
-Direct API:
+- Script context path: `ctx.run`
+- Module access: `ctx.run.NodeQuery()`
+- Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
 
-```rust
-let q = NodeQuery::new().where_expr(query_expr!(all(name["Player"])));
-let ids = ctx.run.NodeQuery().query(&q);
-```
+## API Reference
 
-What queries are:
+### `query`
 
-- Query is a runtime filter that returns `NodeID` values.
-- Query execution belongs to `NodeQuery`, not `Nodes`.
-- `in_subtree(parent_id)` limits search to descendants of that node.
-- Default query scope is full scene tree.
-- `all(...)` means every condition must match.
-- `any(...)` means one condition must match.
-- `not(...)` means inner condition must not match.
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.NodeQuery()` |
+| Signature | `pub fn query(&mut self, query: &NodeQuery) -> Vec<NodeID>` |
+| Params | `&mut self, query: &NodeQuery` |
+| Returns | `Vec<NodeID>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
-Query forms:
-
-- `all(expr1, expr2, ...)`
-- `any(expr1, expr2, ...)`
-- `not(expr)`
-- `in_subtree(parent_id)`
-
-Predicates:
-
-- `name["Player", "Boss"]`
-- `tags["enemy", "alive"]`
-- `node_type[Camera3D, MeshInstance3D]`
-- `base_type[Node3D]`
-- `layers[1, 2]`
-- `mask[3]`
-
-Examples:
+Example:
 
 ```rust
-let enemies = query!(ctx.run, all(tags["enemy"], not(tags["dead"])));
-```
-
-```rust
-let local_hits = query!(
-    ctx.run,
-    all(any(tags["enemy"], name["Boss"]), not(tags["dead"])),
-    in_subtree(room_root_id)
-);
-```
-
-```rust
-if let Some(camera_id) = query_first!(ctx.run, all(node_type[Camera3D])) {
-    // use camera_id
-}
-```
-
-```rust
-fn actor_query(include_sleeping: bool) -> NodeQuery {
-    let mut q = query_builder!(all(
-        base_type[Node3D],
-        tags["actor"],
-        layers[1]
-    ));
-
-    if !include_sleeping {
-        q = q.where_expr(query_expr!(not(tags["sleeping"])));
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.NodeQuery().query(0.1);
+        let _ = value;
     }
-
-    q
-}
-
-let actors = actor_query(false);
-let all_actors = query!(ctx.run, &actors);
-let room_actors = query!(ctx.run, &actors, in_subtree(room_root_id));
+});
 ```
 
-Reusable query rules:
+### `query_view`
 
-- Pass `&query` to reuse without cloning.
-- Use `query_expr!` for shared predicate chunks.
-- Use `query_builder!` for dynamic filters.
-- `query!(..., in_subtree(...))` overrides scope for one call and keeps source query unchanged.
-- Cache stable `NodeID` values when a hot path does not need dynamic lookup.
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.NodeQuery()` |
+| Signature | `pub fn query_view(&mut self, query: NodeQueryView<'_>) -> Vec<NodeID>` |
+| Params | `&mut self, query: NodeQueryView<'_>` |
+| Returns | `Vec<NodeID>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
-Perf rules:
+Example:
 
-- Cache stable `NodeID` values after setup.
-- Avoid full-tree query in hot loops.
-- Prefer `in_subtree(...)` when you know the owner/root.
-- Query once during bind/init, then use `Nodes` for direct access.
-- Prefer `node_type[...]` or `base_type[...]` filters in broad queries.
-- Prefer tag-only queries when tags define the group; runtime can seed candidates from tag index.
-- Prefer literal type predicates in macros; they compile to type masks.
-
-Runtime optimizations:
-
-- Type masks prune exact/base type misses before full expression eval.
-- Tag index can seed candidate IDs for tag-only and simple tag queries.
-- Indexed tag candidates are intersected from smallest set to largest set.
-- `all(...)` with tag + non-tag predicates scans only the smallest indexed candidate set.
-- Missing required indexed tags return exact empty results without full scan.
-- `all(...)` and `any(...)` children are reordered by estimated cost.
-- Large full-tree scans can split work across workers.
-- `in_subtree(...)` scans only the requested subtree.
-
-Bench:
-
-```bash
-cargo bench -p perro_runtime --bench query_hotpaths
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.NodeQuery().query_view(0.1);
+        let _ = value;
+    }
+});
 ```
 
-Bench groups:
+### `query_expr`
 
-- `query/rt_ctx_queries`: broad/selective/rare-tag+name queries over `100`, `2_500`, `10_000`, `50_000`, `100_000` nodes.
-- `query/compile_repr`: vec-type predicates vs type-mask predicates.
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.NodeQuery()` |
+| Signature | `query_expr!(kind args $(,)?)` |
+| Params | `kind args $(,)?` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
-More:
+Example:
 
-- [Query System](../../query_system.md)
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = query_expr!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `query_builder`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.NodeQuery()` |
+| Signature | `query_builder!(kind args, in_subtree(parent) $(,)?)` |
+| Params | `kind args, in_subtree(parent) $(,)?` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = query_builder!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `query`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.NodeQuery()` |
+| Signature | `query!(ctx.run, tags[$(tag)*], in_subtree(parent) $(,)?)` |
+| Params | `ctx, tags[$(tag)*], in_subtree(parent) $(,)?` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = query!(ctx.run, 0.0, 0.1, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `query_first`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.NodeQuery()` |
+| Signature | `query_first!(ctx.run, kind args, in_subtree(parent) $(,)?)` |
+| Params | `ctx, kind args, in_subtree(parent) $(,)?` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = query_first!(ctx.run, 0.0, 0.1, 0.1);
+        let _ = value;
+    }
+});
+```

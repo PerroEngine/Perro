@@ -1,56 +1,113 @@
-# Global Post Processing
+# Post Processing Module
 
-Access:
+## Page Map
 
-- Direct `ResourceWindow` methods/macros (no module accessor).
+| Header | Link |
+| --- | --- |
+| Overview | [Overview](#overview) |
+| Context | [Context](#context) |
+| API Reference | [API Reference](#api-reference) |
+| `post_processing_set` | [`post_processing_set`](#post_processing_set) |
+| `post_processing_add` | [`post_processing_add`](#post_processing_add) |
+| `post_processing_remove` | [`post_processing_remove`](#post_processing_remove) |
+| `post_processing_clear` | [`post_processing_clear`](#post_processing_clear) |
 
-Macros:
+## Overview
 
-- `post_processing_set!(res, PostProcessSet)`
-- `post_processing_add!(res, effect)`
-- `post_processing_add!(res, "name", effect)`
-- `post_processing_remove!(res, name = "name")`
-- `post_processing_remove!(res, index = 0usize)`
-- `post_processing_clear!(res)`
+This resource module belongs to `ctx.res` and documents post processing calls.
 
-Methods:
+## Context
 
-- `res.set_global_post_processing(set)`
-- `res.add_global_post_processing(effect)`
-- `res.add_global_post_processing_named(name, effect)`
-- `res.remove_global_post_processing_by_name(name)`
-- `res.remove_global_post_processing_by_index(index)`
-- `res.clear_global_post_processing()`
+- Script context path: `ctx.res`
+- Module access: `ctx.res`
+- Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
 
-Behavior:
+## API Reference
 
-- Global post-processing is applied to the full composed frame.
-- Order is: camera post-processing chain, then global post-processing chain, then visual accessibility.
-- Effects use the same `PostProcessEffect` / `PostProcessSet` types as camera post-processing.
-- `PostProcessSet` stores `Vec<PostProcessEntry>`; each entry has `name` + `effect`.
+### `post_processing_set`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res` |
+| Signature | `post_processing_set!(ctx.res.res, set)` |
+| Params | `ctx.res, set` |
+| Returns | `same as backing method` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
 Example:
 
 ```rust
-post_processing_add!(
-    res,
-    "crt",
-    PostProcessEffect::Crt {
-        scanline_strength: 0.35,
-        curvature: 0.15,
-        chromatic: 1.0,
-        vignette: 0.25,
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = post_processing_set!(ctx.res, 0.1);
+        let _ = value;
     }
-);
-
-post_processing_add!(res, PostProcessEffect::Bloom {
-    strength: 0.7,
-    threshold: 0.75,
-    radius: 1.5,
 });
-
-let _ = post_processing_remove!(res, name = "crt");
-let _ = post_processing_remove!(res, index = 0usize);
-post_processing_clear!(res);
 ```
 
+### `post_processing_add`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res` |
+| Signature | `post_processing_add!(ctx.res.res, effect)` |
+| Params | `ctx.res, effect` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = post_processing_add!(ctx.res, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `post_processing_remove`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res` |
+| Signature | `post_processing_remove!(ctx.res.res, name = name)` |
+| Params | `ctx.res, name = name` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = post_processing_remove!(ctx.res, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `post_processing_clear`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res` |
+| Signature | `post_processing_clear!(ctx.res.res)` |
+| Params | `ctx.res` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = post_processing_clear!(ctx.res);
+        let _ = value;
+    }
+});
+```

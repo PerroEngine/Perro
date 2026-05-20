@@ -1,30 +1,43 @@
 # Runtime API
 
-Type:
+## Page Map
 
-- `ctx: &mut ScriptContext<'_, API>`
-- runtime window handle: `ctx.run`
+| Header | Link |
+| --- | --- |
+| Runtime Window | [Runtime Window](#runtime-window) |
+| Runtime Modules | [Runtime Modules](#runtime-modules) |
+| Example | [Example](#example) |
 
-Runtime macros take `ctx.run` as argument 1.
+## Runtime Window
+
+Use `ctx.run` for runtime state: time, window commands, node mutation, scene loading, script calls, signals, physics, animation playback, and runtime audio.
 
 ## Runtime Modules
 
-- [Time Module](runtime_modules/time.md)
-- [Window Module](runtime_modules/window.md)
-- [Nodes Module](runtime_modules/nodes.md)
-- [NodeQuery Module](runtime_modules/node_query.md)
-- [MeshQuery Module](runtime_modules/mesh_query.md)
-- [Animations Module](runtime_modules/animations.md)
-- [Scripts Module](runtime_modules/scripts.md)
-- [Signals Module](runtime_modules/signals.md)
-- [Physics Module](runtime_modules/physics.md)
-- [Audio Module](runtime_modules/audio.md)
-- [Helpers](runtime_modules/helpers.md)
+| Module | Page | Ctx |
+| --- | --- | --- |
+| Animations | [animations](runtime_modules/animations.md) | `ctx.run.AnimPlayer() / ctx.run.AnimTree()` |
+| Audio | [audio](runtime_modules/audio.md) | `ctx.run.Audio()` |
+| Helpers | [helpers](runtime_modules/helpers.md) | `helper macros` |
+| Mesh Query | [mesh_query](runtime_modules/mesh_query.md) | `ctx.run.MeshQuery()` |
+| Node Query | [node_query](runtime_modules/node_query.md) | `ctx.run.NodeQuery()` |
+| Nodes | [nodes](runtime_modules/nodes.md) | `ctx.run.Nodes()` |
+| Physics | [physics](runtime_modules/physics.md) | `ctx.run.Physics()` |
+| Scenes | [scenes](runtime_modules/scenes.md) | `ctx.run.Scene()` |
+| Scripts | [scripts](runtime_modules/scripts.md) | `ctx.run.Scripts()` |
+| Signals | [signals](runtime_modules/signals.md) | `ctx.run.Signals()` |
+| Time | [time](runtime_modules/time.md) | `ctx.run.Time()` |
+| Window | [window](runtime_modules/window.md) | `ctx.run.Window()` |
 
-Each module page contains:
-- Macro reference
-- Signature notes
-- Examples
-- Behavioral guidance (ownership, mutability, IDs, and query/inheritance usage)
+## Example
 
-
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let dt = delta_time!(ctx.run);
+        if dt > 0.0 {
+            window_set_title!(ctx.run, "Perro");
+        }
+    }
+});
+```

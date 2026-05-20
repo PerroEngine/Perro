@@ -1,5 +1,37 @@
 # UI Scene Node Templates
 
+## Page Map
+
+| Header | Link |
+| --- | --- |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
+| Example | [Example](#example) |
+| Reference | [Reference](#reference) |
+
+## Purpose
+
+Use `UI Scene Node Templates` when this feature, type group, file format, or workflow appears in game code or assets.
+
+## Use Cases
+
+Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+
+## Example
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let dt = delta_time!(ctx.run);
+        let _ = dt;
+    }
+});
+```
+
+## Reference
+
+# UI Scene Node Templates
+
 [Back to index](index.md)
 
 ## UI Templates
@@ -163,6 +195,41 @@ script = "res://path/to/script.rs"
         [/UiBox]
     [/UiLabel]
 [/ui_label]
+
+[ui_camera_stream]
+parent = @PARENTKEY
+script = "res://path/to/script.rs"
+    [UiCameraStream]
+        camera = @CameraNode
+        resolution = (512, 512)
+        aspect_ratio = 0.0
+        aspect_mode = "fit"
+        enabled = true
+        tint = (1, 1, 1, 1)
+        post_processing = []
+        [UiBox]
+            visible = true
+            input_enabled = true
+            mouse_filter = "stop"
+            clip_children = false
+            anchor = "center"
+            position_ratio = (0.5, 0.5)
+            size_ratio = (0.25, 0.25)
+            pivot_ratio = (0.5, 0.5)
+            scale = (1, 1)
+            rotation = 0.0
+            h_size = "fixed"
+            v_size = "fixed"
+            h_align = "center"
+            v_align = "center"
+            min_size_ratio = (1.0, 1.0)
+            max_size_ratio = (inf, inf)
+            padding = 0
+            margin = 0
+            z_index = 0
+        [/UiBox]
+    [/UiCameraStream]
+[/ui_camera_stream]
 
 [ui_text_box]
 parent = @PARENTKEY
@@ -429,4 +496,3 @@ script = "res://path/to/script.rs"
     [/UiTreeList]
 [/ui_tree_list]
 ```
-

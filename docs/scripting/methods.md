@@ -1,61 +1,85 @@
 # Script Methods
 
-`methods!` defines callable behavior methods on your script type.
+## Page Map
 
-Use methods for reusable logic that you call from lifecycle hooks or through `call_method!`.
+| Header | Link |
+| --- | --- |
+| Why `methods!` Exists | [Why `methods!` Exists](#why-methods-exists) |
+| Method Shape | [Method Shape](#method-shape) |
+| Direct Calls | [Direct Calls](#direct-calls) |
+| Runtime Dispatch | [Runtime Dispatch](#runtime-dispatch) |
+| Typed Params And Returns | [Typed Params And Returns](#typed-params-and-returns) |
 
-## Shape
+## Why `methods!` Exists
+
+`methods!` adds callable behavior methods to the generated script type. The macro rewrites methods that take `ctx: &mut ScriptContext<'_, API>` into generic Rust methods with the correct `where API: ScriptAPI + ?Sized` bound. Because the macro owns that rewrite, methods do not declare `<API: ScriptAPI>` themselves.
+
+Use `methods!` for logic you want to call directly from lifecycle hooks or dynamically through `call_method!`.
+
+## Method Shape
 
 ```rust
 methods!({
-    fn my_method(
-        &self,
-        ctx: &mut ScriptContext<'_, API>,
-        value: i32,
-    ) {
-        // logic
+    fn apply_damage(&self, ctx: &mut ScriptContext<'_, API>, amount: i32) -> bool {
+        amount > 0
     }
 });
 ```
 
-Required leading args:
-- `&self`
-- `ctx: &mut ScriptContext<'_, API>`
+| Part | Requirement |
+| --- | --- |
+| receiver | `&self` |
+| context | `ctx: &mut ScriptContext<'_, API>` |
+| custom params | any supported typed params after `ctx` |
+| return | `()` or supported typed return |
 
-After that, add your own params.
+## Direct Calls
 
-For custom typed params/returns in `methods!`, derive `Variant` on the custom type.
-
-Manual decode path also exists via `Variant::parse::<T>()`.
-This equals `<T as DeriveVariant>::from_variant(&value)`.
-
-```rust
-let control_mode = params
-    .first()
-    .and_then(|v| v.parse::<ArcheryControlMode>().ok())
-    .unwrap_or_default();
-```
-
-## Calling Methods
-
-Internal call:
+Direct calls are normal Rust calls. Use them inside the same script when you know the method at compile time.
 
 ```rust
-self.my_method(ctx, 10);
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        if key_pressed!(ctx.ipt, KeyCode::Space) {
+            let accepted = self.apply_damage(ctx, 1);
+            let _ = accepted;
+        }
+    }
+});
+
+methods!({
+    fn apply_damage(&self, ctx: &mut ScriptContext<'_, API>, amount: i32) -> bool {
+        amount > 0
+    }
+});
 ```
 
-Runtime-dispatched call:
+## Runtime Dispatch
+
+Use `call_method!` for cross-script calls or dynamic calls by `ScriptMemberID`. This path passes `Variant` params and returns a `Variant`.
 
 ```rust
-let out = call_method!(ctx.run, ctx.id, method!("my_method"), params![10_i32]);
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let out = call_method!(ctx.run, ctx.id, method!("apply_damage"), params![10_i32]);
+        let _ = out;
+    }
+});
 ```
 
-## Guidance
+## Typed Params And Returns
 
-- Prefer direct Rust calls (`self.foo(...)`) for local behavior.
-- Use `call_method!` for dynamic/cross-script calls.
-- Keep state mutations explicit with `with_state_mut!`.
+Built-in scalar types work through `Variant`. Custom structs/enums used as method params or returns should derive `Variant`.
 
+```rust
+#[derive(Clone, Debug, Default, Variant)]
+struct HitInfo {
+    amount: i32,
+}
 
-
-
+methods!({
+    fn apply_hit(&self, ctx: &mut ScriptContext<'_, API>, hit: HitInfo) -> bool {
+        hit.amount > 0
+    }
+});
+```

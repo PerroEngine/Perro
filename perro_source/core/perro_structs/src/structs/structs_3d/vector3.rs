@@ -1,3 +1,4 @@
+use super::{IVector3, UVector3};
 use glam::Vec3;
 use std::fmt;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign};
@@ -54,6 +55,98 @@ impl Vector3 {
         Self { x, y, z }
     }
 
+    /// Returns components as an array.
+    #[inline]
+    pub const fn to_array(self) -> [f32; 3] {
+        [self.x, self.y, self.z]
+    }
+
+    /// Returns components as a tuple.
+    #[inline]
+    pub const fn to_tuple(self) -> (f32, f32, f32) {
+        (self.x, self.y, self.z)
+    }
+
+    /// Converts to `UVector3` by clamping negatives/non-finite values to zero and truncating decimals.
+    #[inline]
+    pub fn as_uvector3_saturating(self) -> UVector3 {
+        UVector3::new(
+            f32_to_u32_saturating(self.x),
+            f32_to_u32_saturating(self.y),
+            f32_to_u32_saturating(self.z),
+        )
+    }
+
+    /// Converts to `UVector3` by flooring each component first.
+    #[inline]
+    pub fn as_uvector3_floor(self) -> UVector3 {
+        UVector3::new(
+            f32_to_u32_saturating(self.x.floor()),
+            f32_to_u32_saturating(self.y.floor()),
+            f32_to_u32_saturating(self.z.floor()),
+        )
+    }
+
+    /// Converts to `UVector3` by rounding each component first.
+    #[inline]
+    pub fn as_uvector3_round(self) -> UVector3 {
+        UVector3::new(
+            f32_to_u32_saturating(self.x.round()),
+            f32_to_u32_saturating(self.y.round()),
+            f32_to_u32_saturating(self.z.round()),
+        )
+    }
+
+    /// Converts to `UVector3` by ceiling each component first.
+    #[inline]
+    pub fn as_uvector3_ceil(self) -> UVector3 {
+        UVector3::new(
+            f32_to_u32_saturating(self.x.ceil()),
+            f32_to_u32_saturating(self.y.ceil()),
+            f32_to_u32_saturating(self.z.ceil()),
+        )
+    }
+
+    /// Converts to `IVector3` by clamping non-finite/out-of-range values and truncating decimals.
+    #[inline]
+    pub fn as_ivector3_saturating(self) -> IVector3 {
+        IVector3::new(
+            f32_to_i32_saturating(self.x),
+            f32_to_i32_saturating(self.y),
+            f32_to_i32_saturating(self.z),
+        )
+    }
+
+    /// Converts to `IVector3` by flooring each component first.
+    #[inline]
+    pub fn as_ivector3_floor(self) -> IVector3 {
+        IVector3::new(
+            f32_to_i32_saturating(self.x.floor()),
+            f32_to_i32_saturating(self.y.floor()),
+            f32_to_i32_saturating(self.z.floor()),
+        )
+    }
+
+    /// Converts to `IVector3` by rounding each component first.
+    #[inline]
+    pub fn as_ivector3_round(self) -> IVector3 {
+        IVector3::new(
+            f32_to_i32_saturating(self.x.round()),
+            f32_to_i32_saturating(self.y.round()),
+            f32_to_i32_saturating(self.z.round()),
+        )
+    }
+
+    /// Converts to `IVector3` by ceiling each component first.
+    #[inline]
+    pub fn as_ivector3_ceil(self) -> IVector3 {
+        IVector3::new(
+            f32_to_i32_saturating(self.x.ceil()),
+            f32_to_i32_saturating(self.y.ceil()),
+            f32_to_i32_saturating(self.z.ceil()),
+        )
+    }
+
     // Helper to convert to glam for operations
     #[inline(always)]
     const fn to_glam(self) -> Vec3 {
@@ -76,6 +169,28 @@ impl Vector3 {
     #[inline]
     pub fn dot(self, rhs: Self) -> f32 {
         self.to_glam().dot(rhs.to_glam())
+    }
+
+    /// Component-wise minimum.
+    #[inline]
+    pub fn min(self, rhs: Self) -> Self {
+        Self::new(self.x.min(rhs.x), self.y.min(rhs.y), self.z.min(rhs.z))
+    }
+
+    /// Component-wise maximum.
+    #[inline]
+    pub fn max(self, rhs: Self) -> Self {
+        Self::new(self.x.max(rhs.x), self.y.max(rhs.y), self.z.max(rhs.z))
+    }
+
+    /// Component-wise clamp.
+    #[inline]
+    pub fn clamp(self, min: Self, max: Self) -> Self {
+        Self::new(
+            self.x.clamp(min.x, max.x),
+            self.y.clamp(min.y, max.y),
+            self.z.clamp(min.z, max.z),
+        )
     }
 
     /// Cross product returns a vector perpendicular to both inputs
@@ -196,6 +311,41 @@ impl Vector3 {
         *self = self.lerped(to, t);
         self
     }
+
+    /// Returns a spherically interpolated copy between this vector and `to`.
+    #[inline]
+    pub fn slerped(self, to: Self, t: f32) -> Self {
+        let from_len = self.length();
+        let to_len = to.length();
+        if from_len <= f32::EPSILON || to_len <= f32::EPSILON {
+            return self.lerped(to, t);
+        }
+
+        let from_dir = self / from_len;
+        let to_dir = to / to_len;
+        let dot = from_dir.dot(to_dir).clamp(-1.0, 1.0);
+        let theta = dot.acos();
+        if theta.abs() <= f32::EPSILON {
+            return self.lerped(to, t);
+        }
+
+        let sin_theta = theta.sin();
+        if sin_theta.abs() <= f32::EPSILON {
+            return self.lerped(to, t);
+        }
+
+        let a = ((1.0 - t) * theta).sin() / sin_theta;
+        let b = (t * theta).sin() / sin_theta;
+        let dir = from_dir * a + to_dir * b;
+        dir * (from_len + (to_len - from_len) * t)
+    }
+
+    /// Spherically interpolates this vector toward `to` in place.
+    #[inline]
+    pub fn slerp(&mut self, to: Self, t: f32) -> &mut Self {
+        *self = self.slerped(to, t);
+        self
+    }
 }
 
 // Conversion traits for seamless glam integration
@@ -217,12 +367,64 @@ impl From<Vec3> for Vector3 {
     }
 }
 
+impl From<[f32; 3]> for Vector3 {
+    #[inline]
+    fn from(v: [f32; 3]) -> Self {
+        Self::new(v[0], v[1], v[2])
+    }
+}
+
+impl From<Vector3> for [f32; 3] {
+    #[inline]
+    fn from(v: Vector3) -> Self {
+        v.to_array()
+    }
+}
+
+impl From<(f32, f32, f32)> for Vector3 {
+    #[inline]
+    fn from(v: (f32, f32, f32)) -> Self {
+        Self::new(v.0, v.1, v.2)
+    }
+}
+
+impl From<Vector3> for (f32, f32, f32) {
+    #[inline]
+    fn from(v: Vector3) -> Self {
+        v.to_tuple()
+    }
+}
+
 impl Add for Vector3 {
     type Output = Self;
 
     #[inline]
     fn add(self, rhs: Self) -> Self::Output {
         Self::new(self.x + rhs.x, self.y + rhs.y, self.z + rhs.z)
+    }
+}
+
+#[inline]
+fn f32_to_u32_saturating(value: f32) -> u32 {
+    if !value.is_finite() || value <= 0.0 {
+        0
+    } else if value >= u32::MAX as f32 {
+        u32::MAX
+    } else {
+        value as u32
+    }
+}
+
+#[inline]
+fn f32_to_i32_saturating(value: f32) -> i32 {
+    if value.is_nan() {
+        0
+    } else if value <= i32::MIN as f32 {
+        i32::MIN
+    } else if value >= i32::MAX as f32 {
+        i32::MAX
+    } else {
+        value as i32
     }
 }
 
@@ -331,5 +533,52 @@ impl Neg for Vector3 {
     #[inline]
     fn neg(self) -> Self::Output {
         Self::new(-self.x, -self.y, -self.z)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vector3_array_tuple_min_max_clamp() {
+        let v = Vector3::new(2.0, 5.0, 8.0);
+        assert_eq!(v.to_array(), [2.0, 5.0, 8.0]);
+        assert_eq!(v.to_tuple(), (2.0, 5.0, 8.0));
+        assert_eq!(Vector3::from([1.0, 2.0, 3.0]), Vector3::new(1.0, 2.0, 3.0));
+        assert_eq!(Vector3::from((3.0, 4.0, 5.0)), Vector3::new(3.0, 4.0, 5.0));
+        assert_eq!(
+            v.min(Vector3::new(3.0, 4.0, 9.0)),
+            Vector3::new(2.0, 4.0, 8.0)
+        );
+        assert_eq!(
+            v.max(Vector3::new(3.0, 4.0, 9.0)),
+            Vector3::new(3.0, 5.0, 9.0)
+        );
+        assert_eq!(
+            v.clamp(Vector3::new(3.0, 1.0, 7.0), Vector3::new(4.0, 4.0, 7.5)),
+            Vector3::new(3.0, 4.0, 7.5)
+        );
+    }
+
+    #[test]
+    fn vector3_slerp_rotates_between_axes() {
+        let v = Vector3::new(1.0, 0.0, 0.0).slerped(Vector3::new(0.0, 1.0, 0.0), 0.5);
+        let s = std::f32::consts::FRAC_1_SQRT_2;
+        assert!((v.x - s).abs() < 1e-5);
+        assert!((v.y - s).abs() < 1e-5);
+        assert!(v.z.abs() < 1e-5);
+    }
+
+    #[test]
+    fn vector3_round_modes_convert_to_ivector3() {
+        let v = Vector3::new(-2.2, 2.5, 2.8);
+        assert_eq!(v.as_ivector3_floor(), IVector3::new(-3, 2, 2));
+        assert_eq!(v.as_ivector3_round(), IVector3::new(-2, 3, 3));
+        assert_eq!(v.as_ivector3_ceil(), IVector3::new(-2, 3, 3));
+        assert_eq!(
+            Vector3::new(f32::NAN, f32::INFINITY, f32::NEG_INFINITY).as_ivector3_saturating(),
+            IVector3::new(0, i32::MAX, i32::MIN)
+        );
     }
 }

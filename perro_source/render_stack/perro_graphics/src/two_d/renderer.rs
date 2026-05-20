@@ -664,6 +664,24 @@ impl Renderer2D {
     }
 }
 
+pub fn camera_2d_uniform_from_state(
+    camera: &Camera2DState,
+    width: u32,
+    height: u32,
+) -> Camera2DUniform {
+    let view = compute_view_matrix(camera);
+    let ndc_scale = ndc_scale(
+        (width.max(1), height.max(1)),
+        [width.max(1) as f32, height.max(1) as f32],
+        camera.zoom,
+    );
+    Camera2DUniform {
+        view,
+        ndc_scale,
+        pad: [0.0, 0.0],
+    }
+}
+
 #[inline]
 fn ndc_scale(viewport: (u32, u32), virtual_size: [f32; 2], zoom: f32) -> [f32; 2] {
     let width = viewport.0.max(1) as f32;
@@ -814,7 +832,7 @@ fn translation_scale_mat3(center: [f32; 2], size: [f32; 2]) -> [[f32; 3]; 3] {
     ]
 }
 
-fn append_point_particles(
+pub(crate) fn append_point_particles(
     out: &mut Vec<RectInstanceGpu>,
     stack: &mut Vec<f32>,
     emitter: &PointParticles2DState,

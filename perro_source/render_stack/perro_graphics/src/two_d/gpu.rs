@@ -1,4 +1,4 @@
-use super::renderer::{Camera2DUniform, RectInstanceGpu, RectUploadPlan};
+use super::renderer::{Camera2DUniform, RectInstanceGpu, RectUploadPlan, append_point_particles};
 use super::shaders::{
     create_point_light_2d_shader_module, create_rect_shader_module, create_sprite_shader_module,
 };
@@ -6,8 +6,8 @@ use crate::backend::StaticTextureLookup;
 use crate::resources::ResourceStore;
 use ahash::AHashMap;
 use bytemuck::{Pod, Zeroable};
-use perro_ids::TextureID;
-use perro_render_bridge::{Light2DState, Sprite2DCommand};
+use perro_ids::{NodeID, TextureID};
+use perro_render_bridge::{Light2DState, PointParticles2DState, Sprite2DCommand};
 use wgpu::util::DeviceExt;
 
 #[path = "gpu/helpers.rs"]
@@ -77,7 +77,7 @@ struct SpriteBatchCandidate {
 }
 
 struct CachedSpriteTexture {
-    _texture: wgpu::Texture,
+    _texture: Option<wgpu::Texture>,
     _view: wgpu::TextureView,
     _sampler: wgpu::Sampler,
     bind_group: wgpu::BindGroup,
@@ -117,6 +117,8 @@ pub struct Gpu2D {
     sprite_stage_instances: Vec<SpriteInstanceGpu>,
     sprite_batch_candidates: Vec<SpriteBatchCandidate>,
     point_light_instances: Vec<Light2DGpu>,
+    stream_particle_rects: Vec<RectInstanceGpu>,
+    stream_particle_eval_stack: Vec<f32>,
     sprite_batches: Vec<SpriteBatch>,
     sprite_textures: AHashMap<TextureID, CachedSpriteTexture>,
     last_camera: Option<Camera2DUniform>,
@@ -311,6 +313,8 @@ impl Gpu2D {
             sprite_stage_instances: Vec::new(),
             sprite_batch_candidates: Vec::new(),
             point_light_instances: Vec::new(),
+            stream_particle_rects: Vec::new(),
+            stream_particle_eval_stack: Vec::new(),
             sprite_batches: Vec::new(),
             sprite_textures: AHashMap::new(),
             last_camera: None,
@@ -516,6 +520,78 @@ impl Gpu2D {
         }
     }
 
+    pub fn prepare_stream_point_particles(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        emitters: &[(NodeID, PointParticles2DState)],
+    ) -> u32 {
+        self.stream_particle_rects.clear();
+        self.stream_particle_eval_stack.clear();
+        for (_, emitter) in emitters {
+            append_point_particles(
+                &mut self.stream_particle_rects,
+                &mut self.stream_particle_eval_stack,
+                emitter,
+            );
+        }
+        self.ensure_rect_instance_capacity(device, self.stream_particle_rects.len());
+        if !self.stream_particle_rects.is_empty() {
+            queue.write_buffer(
+                &self.rect_instance_buffer,
+                0,
+                bytemuck::cast_slice(&self.stream_particle_rects),
+            );
+        }
+        self.stream_particle_rects.len() as u32
+    }
+
+    pub fn upsert_external_texture(
+        &mut self,
+        device: &wgpu::Device,
+        texture_key: TextureID,
+        view: wgpu::TextureView,
+        width: u32,
+        height: u32,
+    ) {
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("perro_external_sprite_sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_external_sprite_texture_bg"),
+            layout: &self.texture_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+            ],
+        });
+        self.sprite_textures.insert(
+            texture_key,
+            CachedSpriteTexture {
+                _texture: None,
+                _view: view,
+                _sampler: sampler,
+                bind_group,
+                width: width.max(1),
+                height: height.max(1),
+            },
+        );
+        self.last_sprite_prepare = None;
+    }
+
     pub fn render_pass(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -669,7 +745,7 @@ impl Gpu2D {
         self.sprite_textures.insert(
             texture_key,
             CachedSpriteTexture {
-                _texture: gpu_texture,
+                _texture: Some(gpu_texture),
                 _view: view,
                 _sampler: sampler,
                 bind_group,

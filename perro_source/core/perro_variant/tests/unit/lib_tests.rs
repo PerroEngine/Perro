@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use perro_ids::{NodeID, PreloadedSceneID, TextureID};
 use perro_structs::{
-    ColorBlindFilter, PostProcessEffect, PostProcessSet, Vector2, Vector3,
+    ColorBlindFilter, PostProcessEffect, PostProcessSet, UVector2, UVector3, Vector2, Vector3,
     VisualAccessibilitySettings,
 };
 
@@ -179,6 +179,40 @@ fn test_variant_as_vec3() {
     };
     let v = Variant::from(vec);
     assert_eq!(v.as_vec3(), Some(vec));
+}
+
+#[test]
+fn test_variant_as_uvec2() {
+    let vec = UVector2::new(1, 2);
+    let v = Variant::from(vec);
+    assert_eq!(v.as_uvec2(), Some(vec));
+}
+
+#[test]
+fn test_variant_as_uvec3() {
+    let vec = UVector3::new(1, 2, 3);
+    let v = Variant::from(vec);
+    assert_eq!(v.as_uvec3(), Some(vec));
+}
+
+#[test]
+fn test_uvec_parse_from_object() {
+    let mut vec2 = BTreeMap::new();
+    vec2.insert(Arc::from("x"), Variant::from(8_u32));
+    vec2.insert(Arc::from("y"), Variant::from(13_u32));
+    assert_eq!(
+        Variant::Object(vec2).parse::<UVector2>(),
+        Ok(UVector2::new(8, 13))
+    );
+
+    let mut vec3 = BTreeMap::new();
+    vec3.insert(Arc::from("x"), Variant::from(1_i64));
+    vec3.insert(Arc::from("y"), Variant::from(2_i64));
+    vec3.insert(Arc::from("z"), Variant::from(3_i64));
+    assert_eq!(
+        Variant::Object(vec3).parse::<UVector3>(),
+        Ok(UVector3::new(1, 2, 3))
+    );
 }
 
 #[test]

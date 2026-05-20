@@ -1,7 +1,7 @@
 use crate::resources::ResourceStore;
 use ahash::AHashMap;
 use glam::{Mat4, Quat, Vec3};
-use perro_ids::{MeshID, NodeID};
+use perro_ids::{MeshID, NodeID, TextureID};
 use perro_render_bridge::{
     AmbientLight3DState, Camera3DState, CameraProjectionState, DenseInstancePose3D, LODOptions3D,
     MeshBlendOptions3D, MeshSurfaceBinding3D, PointLight3DState, RayLight3DState, SkeletonPalette,
@@ -22,6 +22,7 @@ const PARALLEL_PREP_SORT_MIN: usize = 10_000;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Draw3DKind {
     Mesh(MeshID),
+    CameraStreamQuad { texture: TextureID, tint: [f32; 4] },
     DebugPointCube,
     DebugEdgeCylinder,
 }
@@ -192,6 +193,30 @@ impl Renderer3D {
             meshlet_override,
             lod,
             blend,
+        });
+    }
+
+    pub fn queue_camera_stream_quad(
+        &mut self,
+        node: NodeID,
+        texture: TextureID,
+        model: [[f32; 4]; 4],
+        size: [f32; 2],
+        tint: [f32; 4],
+    ) {
+        let model = Mat4::from_cols_array_2d(&model)
+            * Mat4::from_scale(Vec3::new(size[0].max(0.001), size[1].max(0.001), 1.0));
+        self.queued_draws.push(Draw3DInstance {
+            node,
+            kind: Draw3DKind::CameraStreamQuad { texture, tint },
+            surfaces: Arc::from([]),
+            instance_mats: Arc::from([model.to_cols_array_2d()]),
+            debug_color: None,
+            skeleton: None,
+            dense_multimesh: None,
+            meshlet_override: Some(false),
+            lod: LODOptions3D::default(),
+            blend: MeshBlendOptions3D::default(),
         });
     }
 
@@ -617,10 +642,12 @@ fn draw_readiness(draw: &Draw3DInstance, resources: &ResourceStore) -> (bool, bo
     });
     let mesh_ready = match draw.kind {
         Draw3DKind::Mesh(mesh) => resources.has_mesh(mesh),
+        Draw3DKind::CameraStreamQuad { texture, .. } => resources.has_texture(texture),
         Draw3DKind::DebugPointCube | Draw3DKind::DebugEdgeCylinder => true,
     };
     let draw_ready = match draw.kind {
         Draw3DKind::Mesh(_) => mesh_ready && material_ready,
+        Draw3DKind::CameraStreamQuad { .. } => mesh_ready,
         Draw3DKind::DebugPointCube | Draw3DKind::DebugEdgeCylinder => material_ready,
     };
     (material_ready, mesh_ready, draw_ready)

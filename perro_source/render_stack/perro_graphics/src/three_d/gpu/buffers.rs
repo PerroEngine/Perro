@@ -106,6 +106,21 @@ impl Gpu3D {
         self.material_textures.insert(slot, cached);
     }
 
+    pub fn upsert_external_material_texture(
+        &mut self,
+        device: &wgpu::Device,
+        slot: u32,
+        view: &wgpu::TextureView,
+        source: String,
+    ) {
+        if slot == MATERIAL_TEXTURE_NONE {
+            return;
+        }
+        let cached =
+            create_external_material_texture(device, &self.material_texture_bgl, view, source);
+        self.material_textures.insert(slot, cached);
+    }
+
     pub(super) fn ensure_instance_transform_capacity(
         &mut self,
         device: &wgpu::Device,

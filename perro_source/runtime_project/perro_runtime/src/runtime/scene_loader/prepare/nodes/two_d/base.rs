@@ -4,6 +4,24 @@ fn build_node_2d(data: &SceneDefNodeData) -> Node2D {
     node
 }
 
+fn build_camera_stream_2d(data: &SceneDefNodeData) -> CameraStream2D {
+    let mut node = CameraStream2D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_2d_data(&mut node, base);
+    }
+    apply_node_2d_fields(&mut node, &data.fields);
+    apply_camera_stream_fields(&mut node.stream, &data.fields);
+    SceneFieldIterRef::new(&data.fields).for_each(|name, value| match name {
+        "tint" | "color" | "modulate" => {
+            if let Some(v) = as_scene_color(value) {
+                node.tint = v;
+            }
+        }
+        _ => {}
+    });
+    node
+}
+
 fn build_sprite_2d(data: &SceneDefNodeData) -> Sprite2D {
     let mut node = Sprite2D::new();
     if let Some(base) = data.base_ref() {

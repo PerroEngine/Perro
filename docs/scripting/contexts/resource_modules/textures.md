@@ -1,67 +1,310 @@
 # Textures Module
 
-Access:
-- `res.Textures()`
+## Page Map
 
-Macros:
-- `texture_load!(res, source) -> TextureID`
-- `texture_is_loaded!(res, texture_id) -> bool`
-- `texture_reserve!(res, source) -> TextureID`
-- `texture_drop!(res, source) -> bool`
+| Header | Link |
+| --- | --- |
+| Overview | [Overview](#overview) |
+| Context | [Context](#context) |
+| API Reference | [API Reference](#api-reference) |
+| `load` | [`load`](#load) |
+| `load_hashed` | [`load_hashed`](#load_hashed) |
+| `load_hashed_with_source` | [`load_hashed_with_source`](#load_hashed_with_source) |
+| `reserve` | [`reserve`](#reserve) |
+| `reserve_hashed` | [`reserve_hashed`](#reserve_hashed) |
+| `reserve_hashed_with_source` | [`reserve_hashed_with_source`](#reserve_hashed_with_source) |
+| `drop` | [`drop`](#drop) |
+| `is_loaded` | [`is_loaded`](#is_loaded) |
+| `texture_load` | [`texture_load`](#texture_load) |
+| `texture_reserve` | [`texture_reserve`](#texture_reserve) |
+| `texture_drop` | [`texture_drop`](#texture_drop) |
+| `texture_is_loaded` | [`texture_is_loaded`](#texture_is_loaded) |
 
-Methods:
-- `res.Textures().load(source) -> TextureID`
-- `res.Textures().is_loaded(texture_id) -> bool`
-- `res.Textures().reserve(source) -> TextureID`
-- `res.Textures().drop(source) -> bool`
+## Overview
 
-What `load` does:
-- Returns a stable `TextureID` for `source`.
-- If `source` already exists in cache, returns the existing ID immediately.
-- If not cached, allocates an ID immediately and queues a renderer create command with `reserved: false`.
-- Actual GPU creation is async relative to script call.
+This resource module belongs to `ctx.res` and documents textures calls.
 
-What `is_loaded` does:
-- Returns `true` after texture decode and renderer upload/creation resolve.
-- Returns `false` while pending, after drop, or for unknown/nil IDs.
-- Use for loading UI, delayed material setup, or any path that must know texture readiness.
-- Do not need it for normal sprite/UI retained state; renderer skips missing textures until ready.
+## Context
 
-What `reserve` does:
-- Same as `load`, but marks/creates the texture as reserved (`reserved: true`).
-- If texture already exists and is fully created, it queues a "set reserved" command.
-- If creation is still pending, reserve is recorded and applied when creation completes.
+- Script context path: `ctx.res`
+- Module access: `ctx.res.Textures()`
+- Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
 
-What `drop` does:
-- Removes the source mapping and queues a renderer drop when resource exists.
-- If creation is still pending, marks drop-pending so it is dropped right after creation finishes.
-- Returns `true` when a pending or existing texture matched `source`.
-- Returns `false` when `source` was unknown.
+## Practical Example
 
-Important behavior:
-- Cache key is the exact `source` string.
-- Repeated `load` or `reserve` for the same `source` returns the same ID.
-- `drop` is source-based, not ID-based.
-- Reserved policy:
-- `reserved: false` (from `load`) means the texture can be automatically evicted from cache when no references remain.
-- `reserved: true` (from `reserve`) means it will not be auto-evicted; only explicit `texture_drop!` removes it.
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let texture = texture_load!(ctx.res, "res://textures/player.png");
+        if texture_is_loaded!(ctx.res, texture) {
+            // bind texture to a sprite/material here
+        }
+    }
+});
+```
+
+## API Reference
+
+### `load`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Textures()` |
+| Signature | `pub fn load<S: ResPathSource>(&self, source: S) -> TextureID` |
+| Params | `&self, source: S` |
+| Returns | `TextureID` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
 Example:
 
 ```rust
-let id = texture_load!(res, "res://textures/smoke.png");
-let ready = texture_is_loaded!(res, id);
-let _same_id = texture_load!(res, "res://textures/smoke.png");
-let _ = texture_reserve!(res, "res://textures/smoke.png");
-let _ = texture_drop!(res, "res://textures/smoke.png");
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Textures().load("res://path/to/resource");
+        let _ = value;
+    }
+});
 ```
 
-glTF sub-asset access:
+### `load_hashed`
 
-- `res://path/to/model.glb:tex[0]`
-- `res://path/to/model.glb:texture[1]`
-- `res://path/to/model.glb:img[2]`
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Textures()` |
+| Signature | `pub fn load_hashed(&self, source_hash: u64) -> TextureID` |
+| Params | `&self, source_hash: u64` |
+| Returns | `TextureID` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
-Use these suffixes to target texture/image data inside a glTF/glb.
-Prefer `.glb` or embedded glTF image data for this path.
+Example:
 
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Textures().load_hashed(0);
+        let _ = value;
+    }
+});
+```
+
+### `load_hashed_with_source`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Textures()` |
+| Signature | `pub fn load_hashed_with_source<S: ResPathSource>( &self, source_hash: u64, source: S, ) -> TextureID` |
+| Params | `&self, source_hash: u64, source: S,` |
+| Returns | `TextureID` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Textures().load_hashed_with_source(0, "res://path/to/resource");
+        let _ = value;
+    }
+});
+```
+
+### `reserve`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Textures()` |
+| Signature | `pub fn reserve<S: ResPathSource>(&self, source: S) -> TextureID` |
+| Params | `&self, source: S` |
+| Returns | `TextureID` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Textures().reserve("res://path/to/resource");
+        let _ = value;
+    }
+});
+```
+
+### `reserve_hashed`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Textures()` |
+| Signature | `pub fn reserve_hashed(&self, source_hash: u64) -> TextureID` |
+| Params | `&self, source_hash: u64` |
+| Returns | `TextureID` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Textures().reserve_hashed(0);
+        let _ = value;
+    }
+});
+```
+
+### `reserve_hashed_with_source`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Textures()` |
+| Signature | `pub fn reserve_hashed_with_source<S: ResPathSource>( &self, source_hash: u64, source: S, ) -> TextureID` |
+| Params | `&self, source_hash: u64, source: S,` |
+| Returns | `TextureID` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Textures().reserve_hashed_with_source(0, "res://path/to/resource");
+        let _ = value;
+    }
+});
+```
+
+### `drop`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Textures()` |
+| Signature | `pub fn drop(&self, id: TextureID) -> bool` |
+| Params | `&self, id: TextureID` |
+| Returns | `bool` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Textures().drop(0.1);
+        let _ = value;
+    }
+});
+```
+
+### `is_loaded`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Textures()` |
+| Signature | `pub fn is_loaded(&self, id: TextureID) -> bool` |
+| Params | `&self, id: TextureID` |
+| Returns | `bool` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Textures().is_loaded(0.1);
+        let _ = value;
+    }
+});
+```
+
+### `texture_load`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Textures()` |
+| Signature | `texture_load!(ctx.res.res, source)` |
+| Params | `ctx.res, source` |
+| Returns | `resource/runtime ID or `Result` as shown by backing method` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = texture_load!(ctx.res, "res://textures/player.png");
+        let _ = value;
+    }
+});
+```
+
+### `texture_reserve`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Textures()` |
+| Signature | `texture_reserve!(ctx.res.res, source)` |
+| Params | `ctx.res, source` |
+| Returns | `resource/runtime ID or `Result` as shown by backing method` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = texture_reserve!(ctx.res, "res://textures/player.png");
+        let _ = value;
+    }
+});
+```
+
+### `texture_drop`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Textures()` |
+| Signature | `texture_drop!(ctx.res.res, id)` |
+| Params | `ctx.res, id` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = texture_drop!(ctx.res, texture_load!(ctx.res, "res://textures/player.png"));
+        let _ = value;
+    }
+});
+```
+
+### `texture_is_loaded`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Textures()` |
+| Signature | `texture_is_loaded!(ctx.res.res, id)` |
+| Params | `ctx.res, id` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = texture_is_loaded!(ctx.res, texture_load!(ctx.res, "res://textures/player.png"));
+        let _ = value;
+    }
+});
+```

@@ -485,7 +485,7 @@ pub(super) fn append_arc_segments(
     }
 }
 
-pub(super) fn derived_particle_budget(spawn_rate: f32, lifetime_max: f32) -> u32 {
+pub(crate) fn derived_particle_budget(spawn_rate: f32, lifetime_max: f32) -> u32 {
     if spawn_rate <= 0.0 || lifetime_max <= 0.0 {
         return 1;
     }
@@ -514,7 +514,7 @@ pub(super) fn fnv_mix_u32(hash: u64, value: u32) -> u64 {
     (hash ^ value as u64).wrapping_mul(0x100000001b3)
 }
 
-pub(super) fn resolve_particle_sim_mode(
+pub(crate) fn resolve_particle_sim_mode(
     override_mode: ParticleEmitterSimMode3D,
     default_mode: perro_project::ParticleSimDefault,
 ) -> ParticleSimulationMode3D {
@@ -530,7 +530,7 @@ pub(super) fn resolve_particle_sim_mode(
     }
 }
 
-pub(super) fn resolve_particle_render_mode(mode: ParticleType) -> ParticleRenderMode3D {
+pub(crate) fn resolve_particle_render_mode(mode: ParticleType) -> ParticleRenderMode3D {
     match mode {
         ParticleType::Point => ParticleRenderMode3D::Point,
         ParticleType::Billboard => ParticleRenderMode3D::Billboard,
@@ -549,7 +549,7 @@ pub(super) fn quaternion_forward(rotation: perro_structs::Quaternion) -> [f32; 3
     [forward.x, forward.y, forward.z]
 }
 
-pub(super) fn resolve_particle_profile(
+pub(crate) fn resolve_particle_profile(
     runtime: &mut Runtime,
     source: &str,
 ) -> Option<ParticleProfile3D> {

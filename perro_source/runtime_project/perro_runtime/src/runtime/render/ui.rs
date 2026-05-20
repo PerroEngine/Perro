@@ -9,8 +9,8 @@ use perro_input_api::GamepadAxis;
 use perro_input_api::{GamepadButton, JoyConButton, KeyCode, MouseButton, PlayerBinding};
 use perro_nodes::SceneNodeData;
 use perro_render_bridge::{
-    RenderCommand, ResourceCommand, UiCommand, UiDepthEffectState, UiImageScaleState, UiRectState,
-    UiTextAlignState,
+    CameraStreamCommand, RenderCommand, ResourceCommand, UiCommand, UiDepthEffectState,
+    UiImageScaleState, UiRectState, UiTextAlignState,
 };
 use perro_runtime_api::sub_apis::SignalAPI;
 use perro_runtime_render::{UiDirtyMask, UiExtractionOptions, ui_image_texture_request};
@@ -419,12 +419,42 @@ impl Runtime {
                 continue;
             };
             if !effective_visible {
+                if matches!(scene_node.data, SceneNodeData::UiCameraStream(_)) {
+                    self.queue_render_command(RenderCommand::CameraStream(
+                        CameraStreamCommand::RemoveNode { node },
+                    ));
+                }
                 self.remove_retained_ui_node(node);
                 if let Some(timing) = timing.as_deref_mut() {
                     timing.removed_nodes = timing.removed_nodes.saturating_add(1);
                 }
                 continue;
             }
+            let ui_stream = match &scene_node.data {
+                SceneNodeData::UiCameraStream(stream_node) => Some(stream_node.stream.clone()),
+                _ => None,
+            };
+            if let Some(stream) = ui_stream {
+                if let Some(state) = self.camera_stream_state(node, &stream) {
+                    self.queue_render_command(RenderCommand::CameraStream(
+                        CameraStreamCommand::Upsert {
+                            node,
+                            state: Box::new(state),
+                        },
+                    ));
+                } else {
+                    self.queue_render_command(RenderCommand::CameraStream(
+                        CameraStreamCommand::RemoveNode { node },
+                    ));
+                }
+            }
+            let Some(scene_node) = self.nodes.get(node) else {
+                self.remove_retained_ui_node(node);
+                if let Some(timing) = timing.as_deref_mut() {
+                    timing.removed_nodes = timing.removed_nodes.saturating_add(1);
+                }
+                continue;
+            };
             let scale = computed_scales.get(&node).copied().unwrap_or(Vector2::ONE);
             let clip_rect = if computed.contains_key(&node) {
                 self.ui_effective_clip_rect_screen(node, &computed, viewport)

@@ -501,8 +501,10 @@ impl Gpu3D {
             let draw_span_start = self.last_draw_instance_spans.len();
             let is_debug_point = matches!(draw.kind, Draw3DKind::DebugPointCube);
             let is_debug_edge = matches!(draw.kind, Draw3DKind::DebugEdgeCylinder);
+            let is_camera_stream_quad = matches!(draw.kind, Draw3DKind::CameraStreamQuad { .. });
             let mesh_source = match draw.kind {
                 Draw3DKind::Mesh(mesh) => resources.mesh_source(mesh).unwrap_or("__cube__"),
+                Draw3DKind::CameraStreamQuad { .. } => "__quad__",
                 Draw3DKind::DebugPointCube => "__cube__",
                 Draw3DKind::DebugEdgeCylinder => "__cylinder__",
             };
@@ -516,6 +518,9 @@ impl Gpu3D {
                         mesh_source,
                         static_mesh_lookup,
                     )
+                    .unwrap_or_else(|| default_mesh.clone()),
+                Draw3DKind::CameraStreamQuad { .. } => self
+                    .resolve_builtin_mesh_asset("__quad__")
                     .unwrap_or_else(|| default_mesh.clone()),
                 Draw3DKind::DebugPointCube => self
                     .resolve_builtin_mesh_asset("__cube__")
@@ -562,6 +567,18 @@ impl Gpu3D {
                                 color[2] * color[3] * 0.4,
                             ],
                             ..StandardMaterial3D::default()
+                        }),
+                    ));
+                }
+                Draw3DKind::CameraStreamQuad { texture, tint } => {
+                    surface_entries.push((
+                        active_lod.full,
+                        Material3D::Unlit(perro_render_bridge::UnlitMaterial3D {
+                            base_color_factor: tint,
+                            alpha_mode: 2,
+                            double_sided: true,
+                            base_color_texture: texture.index(),
+                            ..perro_render_bridge::UnlitMaterial3D::default()
                         }),
                     ));
                 }
@@ -662,6 +679,7 @@ impl Gpu3D {
             let allow_meshlets = draw.meshlet_override.unwrap_or(!builtin_primitive_source);
             let use_meshlets = !is_debug_point
                 && !is_debug_edge
+                && !is_camera_stream_quad
                 && self.meshlets_enabled
                 && allow_meshlets
                 && !active_lod.meshlets.is_empty()
@@ -852,7 +870,7 @@ impl Gpu3D {
                                     disable_hiz_occlusion: multi_instance
                                         || standard_params.alpha_mode == 2
                                         || resolved_mesh_blend_active(resolved_blend),
-                                    casts_shadows: true,
+                                    casts_shadows: !is_camera_stream_quad,
                                     mesh_blend: resolved_mesh_blend_active(resolved_blend),
                                     mesh_blend_depth: resolved_mesh_blend_depth_receiver(
                                         resolved_blend,

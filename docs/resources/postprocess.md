@@ -1,5 +1,37 @@
 # Post Processing
 
+## Page Map
+
+| Header | Link |
+| --- | --- |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
+| Example | [Example](#example) |
+| Reference | [Reference](#reference) |
+
+## Purpose
+
+Use `Post Processing` when this feature, type group, file format, or workflow appears in game code or assets.
+
+## Use Cases
+
+Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+
+## Example
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let dt = delta_time!(ctx.run);
+        let _ = dt;
+    }
+});
+```
+
+## Reference
+
+# Post Processing
+
 Post-processing can be configured as:
 
 - **Per camera** using `post_processing` on `Camera2D`/`Camera3D`.
@@ -353,6 +385,3 @@ fn post_process(uv: vec2<f32>, color: vec4<f32>, depth: f32) -> vec4<f32> {
     return vec4<f32>(color.rgb + edge * strength, color.a);
 }
 ```
-
-
-

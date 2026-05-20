@@ -1,136 +1,447 @@
 # Meshes Module
 
-Access:
+## Page Map
 
-- `res.Meshes()`
+| Header | Link |
+| --- | --- |
+| Overview | [Overview](#overview) |
+| Context | [Context](#context) |
+| API Reference | [API Reference](#api-reference) |
+| `load` | [`load`](#load) |
+| `load_hashed` | [`load_hashed`](#load_hashed) |
+| `load_hashed_with_source` | [`load_hashed_with_source`](#load_hashed_with_source) |
+| `reserve` | [`reserve`](#reserve) |
+| `reserve_hashed` | [`reserve_hashed`](#reserve_hashed) |
+| `reserve_hashed_with_source` | [`reserve_hashed_with_source`](#reserve_hashed_with_source) |
+| `drop` | [`drop`](#drop) |
+| `create` | [`create`](#create) |
+| `get_data` | [`get_data`](#get_data) |
+| `write` | [`write`](#write) |
+| `is_loaded` | [`is_loaded`](#is_loaded) |
+| `mesh_load` | [`mesh_load`](#mesh_load) |
+| `mesh_reserve` | [`mesh_reserve`](#mesh_reserve) |
+| `mesh_drop` | [`mesh_drop`](#mesh_drop) |
+| `mesh_create` | [`mesh_create`](#mesh_create) |
+| `mesh_get_data` | [`mesh_get_data`](#mesh_get_data) |
+| `mesh_write` | [`mesh_write`](#mesh_write) |
+| `mesh_is_loaded` | [`mesh_is_loaded`](#mesh_is_loaded) |
 
-Macros:
+## Overview
 
-- `mesh_load!(res, source) -> MeshID`
-- `mesh_is_loaded!(res, mesh_id) -> bool`
-- `mesh_reserve!(res, source) -> MeshID`
-- `mesh_drop!(res, source) -> bool`
-- `mesh_get_data!(res, mesh_id) -> Option<Mesh3D>`
-- `mesh_create!(res, data) -> MeshID`
-- `mesh_write!(res, mesh_id, data) -> bool`
+This resource module belongs to `ctx.res` and documents meshes calls.
 
-When to use each:
+## Context
 
-- `mesh_load!` / `mesh_reserve!`: default path for preauthored meshes (`.gltf/.glb/.pmesh`) used by scene/runtime nodes.
-- `mesh_create!`: create a mesh fully from runtime data (no source file).
-- `mesh_get_data!` + `mesh_write!`: runtime mutation path for an existing mesh id.
-- Typical `get/write` use-cases: procedural edits, deformation, slicing, patching surfaces, generating variants at runtime.
+- Script context path: `ctx.res`
+- Module access: `ctx.res.Meshes()`
+- Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
 
-Methods:
+## Practical Example
 
-- `res.Meshes().load(source) -> MeshID`
-- `res.Meshes().is_loaded(mesh_id) -> bool`
-- `res.Meshes().reserve(source) -> MeshID`
-- `res.Meshes().drop(source) -> bool`
-- `res.Meshes().get_data(mesh_id) -> Option<Mesh3D>`
-- `res.Meshes().create(data) -> MeshID`
-- `res.Meshes().write(mesh_id, data) -> bool`
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let mesh = mesh_load!(ctx.res, "res://meshes/player.glb");
+        let ready = mesh_is_loaded!(ctx.res, mesh);
+        let _ = ready;
+    }
+});
+```
 
-Runtime mesh data shape:
+## API Reference
 
-- `Mesh3D { vertices, indices, surface_ranges }`
-- `MeshSurfaceRange { index_start, index_count }`
-- `surface_ranges` partitions triangle index buffer into surfaces.
-- If `surface_ranges` is empty, runtime treats mesh as one full surface.
+### `load`
 
-What `load` does:
-
-- Returns a stable `MeshID` for `source`.
-- If already cached, returns existing ID.
-- If not cached, allocates an ID and queues mesh creation with `reserved: false`.
-- GPU upload/creation happens asynchronously.
-
-What `is_loaded` does:
-
-- Returns `true` once mesh data exists and renderer creation has resolved.
-- Returns `false` while load is pending, after drop, or for unknown/nil IDs.
-- Use before gameplay depends on mesh data, for example surface queries, spawn gates, or load-screen progress.
-- Do not need it for normal retained rendering; mesh users can keep the ID and render path skips until ready.
-
-What `reserve` does:
-
-- Same lookup/allocation flow as `load`, but sets `reserved: true`.
-- If mesh already exists and is ready, reserve state is applied immediately.
-- If mesh is still pending, reserve intent is stored and applied on completion.
-
-What `drop` does:
-
-- Removes source mapping and queues mesh drop when mesh exists.
-- If pending, marks drop-pending so it is dropped once creation resolves.
-- Returns `true` when matching pending/loaded source exists.
-- Returns `false` when source is not known.
-
-Important behavior:
-
-- Exact source string is the cache key.
-- Repeated `load`/`reserve` returns the same `MeshID` for that source.
-- `drop` operates by source path.
-- Reserved policy:
-- `reserved: false` (from `load`) means the mesh can be automatically evicted from cache when no references remain.
-- `reserved: true` (from `reserve`) means it will not be auto-evicted; only explicit `mesh_drop!` removes it.
-- Data APIs are copy-based. `mesh_get_data!` returns a copy snapshot.
-- `mesh_write!` atomically replaces runtime mesh snapshot for that id.
-- Mesh payload does not store material ids. Surface->material assignment stays in `MeshInstance3D.surfaces`.
-- Prefer batched edits + one `mesh_write!`; avoid per-frame writes.
-- Most projects primarily use authored assets via `mesh_load!`; `mesh_get_data!/mesh_write!` are for explicit runtime geometry updates.
-
-LOD behavior:
-
-- Authored meshes get automatic render LODs.
-- Dynamic/dev load builds LODs when the mesh loads.
-- Static build preparses LODs and packs them into `.pmesh` v1.
-- Up to 6 LODs are stored: `100%`, `80%`, `60%`, `40%`, `25%`, `12.5%` triangle targets.
-- Tiny meshes may store fewer LODs when decimation would duplicate an existing level.
-- LOD switch uses `distance / mesh_bounds_radius`.
-- Current thresholds are `36x`, `54x`, `72x`, `108x`, and `144x` mesh radius.
-- Surface slots are preserved per LOD, so `MeshInstance3D.surfaces` material bindings keep the same indices.
-- Meshes with joints/weights do not generate LODs.
-- Skinning data is detected from mesh data and from `.pmesh` attribute flags.
-- Mesh surface queries use LOD0/full detail.
-- `MeshInstance3D` and `MultiMeshInstance3D` can clamp automatic selection with `min_lod`/`max_lod`.
-- Clamp values are quality levels: `0` least detail through `5` most detail.
-
-Practical tip:
-
-- If a complex mesh is used repeatedly and you see lag spikes from drop/recreate churn, call `mesh_reserve!` to keep it cached.
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Meshes()` |
+| Signature | `pub fn load<S: ResPathSource>(&self, source: S) -> MeshID` |
+| Params | `&self, source: S` |
+| Returns | `MeshID` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
 Example:
 
 ```rust
-// `MeshSurfaceRange` comes from Perro prelude.
-let id = mesh_load!(res, "res://meshes/rock.glb:mesh[0]");
-let ready = mesh_is_loaded!(res, id);
-let _same_id = mesh_reserve!(res, "res://meshes/rock.glb:mesh[0]");
-let _ = mesh_drop!(res, "res://meshes/rock.glb:mesh[0]");
-
-if let Some(mut data) = mesh_get_data!(res, id) {
-    data.surface_ranges = vec![
-        MeshSurfaceRange {
-            index_start: 0,
-            index_count: (data.indices.len() as u32) / 2,
-        },
-        MeshSurfaceRange {
-            index_start: (data.indices.len() as u32) / 2,
-            index_count: (data.indices.len() as u32) - ((data.indices.len() as u32) / 2),
-        },
-    ];
-    let _ = mesh_write!(res, id, data);
-}
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Meshes().load("res://path/to/resource");
+        let _ = value;
+    }
+});
 ```
 
-glTF sub-asset access:
+### `load_hashed`
 
-- `res://path/to/model.gltf:mesh[0]`
-- `res://path/to/model.glb:mesh[1]`
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Meshes()` |
+| Signature | `pub fn load_hashed(&self, source_hash: u64) -> MeshID` |
+| Params | `&self, source_hash: u64` |
+| Returns | `MeshID` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
-Use the `:mesh[index]` suffix to target a specific mesh inside a glTF/glb.
+Example:
 
-Skinning note:
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Meshes().load_hashed(0);
+        let _ = value;
+    }
+});
+```
 
-- If the mesh contains `JOINTS_0/WEIGHTS_0` and a `MeshInstance3D` is bound to a `Skeleton3D`,
-  the mesh will be skinned using that skeleton.
+### `load_hashed_with_source`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Meshes()` |
+| Signature | `pub fn load_hashed_with_source<S: ResPathSource>(&self, source_hash: u64, source: S) -> MeshID` |
+| Params | `&self, source_hash: u64, source: S` |
+| Returns | `MeshID` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Meshes().load_hashed_with_source(0, "res://path/to/resource");
+        let _ = value;
+    }
+});
+```
+
+### `reserve`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Meshes()` |
+| Signature | `pub fn reserve<S: ResPathSource>(&self, source: S) -> MeshID` |
+| Params | `&self, source: S` |
+| Returns | `MeshID` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Meshes().reserve("res://path/to/resource");
+        let _ = value;
+    }
+});
+```
+
+### `reserve_hashed`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Meshes()` |
+| Signature | `pub fn reserve_hashed(&self, source_hash: u64) -> MeshID` |
+| Params | `&self, source_hash: u64` |
+| Returns | `MeshID` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Meshes().reserve_hashed(0);
+        let _ = value;
+    }
+});
+```
+
+### `reserve_hashed_with_source`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Meshes()` |
+| Signature | `pub fn reserve_hashed_with_source<S: ResPathSource>( &self, source_hash: u64, source: S, ) -> MeshID` |
+| Params | `&self, source_hash: u64, source: S,` |
+| Returns | `MeshID` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Meshes().reserve_hashed_with_source(0, "res://path/to/resource");
+        let _ = value;
+    }
+});
+```
+
+### `drop`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Meshes()` |
+| Signature | `pub fn drop(&self, id: MeshID) -> bool` |
+| Params | `&self, id: MeshID` |
+| Returns | `bool` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Meshes().drop(0.1);
+        let _ = value;
+    }
+});
+```
+
+### `create`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Meshes()` |
+| Signature | `pub fn create(&self, data: Mesh3D) -> MeshID` |
+| Params | `&self, data: Mesh3D` |
+| Returns | `MeshID` |
+| Use when | Use when gameplay needs a new runtime/resource object built from typed data. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Meshes().create(0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_data`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Meshes()` |
+| Signature | `pub fn get_data(&self, id: MeshID) -> Option<Mesh3D>` |
+| Params | `&self, id: MeshID` |
+| Returns | `Option<Mesh3D>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Meshes().get_data(0.1);
+        let _ = value;
+    }
+});
+```
+
+### `write`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Meshes()` |
+| Signature | `pub fn write(&self, id: MeshID, data: Mesh3D) -> bool` |
+| Params | `&self, id: MeshID, data: Mesh3D` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Meshes().write(0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `is_loaded`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Meshes()` |
+| Signature | `pub fn is_loaded(&self, id: MeshID) -> bool` |
+| Params | `&self, id: MeshID` |
+| Returns | `bool` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Meshes().is_loaded(0.1);
+        let _ = value;
+    }
+});
+```
+
+### `mesh_load`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Meshes()` |
+| Signature | `mesh_load!(ctx.res.res, source)` |
+| Params | `ctx.res, source` |
+| Returns | `resource/runtime ID or `Result` as shown by backing method` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = mesh_load!(ctx.res, "res://meshes/hero.glb");
+        let _ = value;
+    }
+});
+```
+
+### `mesh_reserve`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Meshes()` |
+| Signature | `mesh_reserve!(ctx.res.res, source)` |
+| Params | `ctx.res, source` |
+| Returns | `resource/runtime ID or `Result` as shown by backing method` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = mesh_reserve!(ctx.res, "res://meshes/hero.glb");
+        let _ = value;
+    }
+});
+```
+
+### `mesh_drop`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Meshes()` |
+| Signature | `mesh_drop!(ctx.res.res, id)` |
+| Params | `ctx.res, id` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = mesh_drop!(ctx.res, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `mesh_create`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Meshes()` |
+| Signature | `mesh_create!(ctx.res.res, data)` |
+| Params | `ctx.res, data` |
+| Returns | `resource/runtime ID or `Result` as shown by backing method` |
+| Use when | Use when gameplay needs a new runtime/resource object built from typed data. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = mesh_create!(ctx.res, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `mesh_get_data`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Meshes()` |
+| Signature | `mesh_get_data!(ctx.res.res, id)` |
+| Params | `ctx.res, id` |
+| Returns | `same as backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = mesh_get_data!(ctx.res, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `mesh_write`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Meshes()` |
+| Signature | `mesh_write!(ctx.res.res, id, data)` |
+| Params | `ctx.res, id, data` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = mesh_write!(ctx.res, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `mesh_is_loaded`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Meshes()` |
+| Signature | `mesh_is_loaded!(ctx.res.res, id)` |
+| Params | `ctx.res, id` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = mesh_is_loaded!(ctx.res, 0.1);
+        let _ = value;
+    }
+});
+```

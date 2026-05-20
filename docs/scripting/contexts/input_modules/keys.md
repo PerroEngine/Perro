@@ -1,43 +1,124 @@
 # Keys Module
 
-Access:
-- `ipt.Keys()`
+## Page Map
 
-Macros:
-- `key_down!(ipt, key) -> bool`
-- `key_pressed!(ipt, key) -> bool`
-- `key_released!(ipt, key) -> bool`
+| Header | Link |
+| --- | --- |
+| Overview | [Overview](#overview) |
+| Context | [Context](#context) |
+| API Reference | [API Reference](#api-reference) |
+| `down` | [`down`](#down) |
+| `pressed` | [`pressed`](#pressed) |
+| `released` | [`released`](#released) |
 
-Methods:
-- `ipt.Keys().down(key) -> bool`
-- `ipt.Keys().pressed(key) -> bool`
-- `ipt.Keys().released(key) -> bool`
+## Overview
 
-Inputs:
-- `key: KeyCode`
+This input module belongs to `ctx.ipt` and documents keys calls.
 
-Available `KeyCode` values are defined by the engine enum and include:
+## Context
 
-- Punctuation and symbols:
-  - `Backquote`, `Backslash`, `BracketLeft`, `BracketRight`, `Comma`, `Equal`, `Minus`, `Period`, `Quote`, `Semicolon`, `Slash`
-- Number row:
-  - `Digit0`..`Digit9`
-- Letter keys:
-  - `KeyA`..`KeyZ`
-- Modifiers and editing:
-  - `AltLeft`, `AltRight`, `Backspace`, `CapsLock`, `ContextMenu`, `ControlLeft`, `ControlRight`, `Enter`, `SuperLeft`, `SuperRight`, `ShiftLeft`, `ShiftRight`, `Space`, `Tab`
-- International / IME:
-  - `IntlBackslash`, `IntlRo`, `IntlYen`, `Convert`, `KanaMode`, `Lang1`, `Lang2`, `Lang3`, `Lang4`, `Lang5`, `NonConvert`, `Hiragana`, `Katakana`
-- Navigation:
-  - `Delete`, `End`, `Help`, `Home`, `Insert`, `PageDown`, `PageUp`, `ArrowDown`, `ArrowLeft`, `ArrowRight`, `ArrowUp`
-- Numpad:
-  - `NumLock`, `Numpad0`..`Numpad9`, `NumpadAdd`, `NumpadBackspace`, `NumpadClear`, `NumpadClearEntry`, `NumpadComma`, `NumpadDecimal`, `NumpadDivide`, `NumpadEnter`, `NumpadEqual`, `NumpadHash`, `NumpadMemoryAdd`, `NumpadMemoryClear`, `NumpadMemoryRecall`, `NumpadMemoryStore`, `NumpadMemorySubtract`, `NumpadMultiply`, `NumpadParenLeft`, `NumpadParenRight`, `NumpadStar`, `NumpadSubtract`
-- System and browser/media:
-  - `Escape`, `Fn`, `FnLock`, `PrintScreen`, `ScrollLock`, `Pause`, `BrowserBack`, `BrowserFavorites`, `BrowserForward`, `BrowserHome`, `BrowserRefresh`, `BrowserSearch`, `BrowserStop`, `Eject`, `LaunchApp1`, `LaunchApp2`, `LaunchMail`, `MediaPlayPause`, `MediaSelect`, `MediaStop`, `MediaTrackNext`, `MediaTrackPrevious`, `Power`, `Sleep`, `AudioVolumeDown`, `AudioVolumeMute`, `AudioVolumeUp`, `WakeUp`
-- Extended/control:
-  - `Meta`, `Hyper`, `Turbo`, `Abort`, `Resume`, `Suspend`, `Again`, `Copy`, `Cut`, `Find`, `Open`, `Paste`, `Props`, `Select`, `Undo`
-- Function keys:
-  - `F1`..`F35`
+- Script context path: `ctx.ipt`
+- Module access: `ctx.ipt.Keys()`
+- Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
 
-Source of truth:
-- `perro_source/api_modules/perro_input_api/src/keycode.rs`
+## Practical Example
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        if key_pressed!(ctx.ipt, KeyCode::Space) {
+            // jump once
+        }
+    }
+});
+```
+
+## API Reference
+
+### `down`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.ipt.Keys()` |
+| Signature | `pub fn down(&self, key: KeyCode) -> bool` |
+| Params | `&self, key: KeyCode` |
+| Returns | `bool` |
+| Use when | Use when code branches on current state or a one-frame state edge. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.ipt.Keys().down(KeyCode::Space);
+        let _ = value;
+    }
+});
+```
+
+### `pressed`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.ipt.Keys()` |
+| Signature | `pub fn pressed(&self, key: KeyCode) -> bool` |
+| Params | `&self, key: KeyCode` |
+| Returns | `bool` |
+| Use when | Use when code branches on current state or a one-frame state edge. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.ipt.Keys().pressed(KeyCode::Space);
+        let _ = value;
+    }
+});
+```
+
+### `released`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.ipt.Keys()` |
+| Signature | `pub fn released(&self, key: KeyCode) -> bool` |
+| Params | `&self, key: KeyCode` |
+| Returns | `bool` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.ipt.Keys().released(KeyCode::Space);
+        let _ = value;
+    }
+});
+```
+
+### `key_released`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.ipt` |
+| Signature | `key_released!(ctx.ipt, KeyCode::Space)` |
+| Params | `ctx.ipt, KeyCode::Space` |
+| Returns | `bool` |
+| Use when | Use when gameplay needs a one-frame input edge, such as jump, confirm, cancel, or release. |
+| Fails when / edge behavior | Missing device slots return `None`, `false`, or a zero vector depending on the macro return type. Command macros queue work when an input command buffer exists. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = key_released!(ctx.ipt, KeyCode::Space);
+        let _ = value;
+    }
+});
+```

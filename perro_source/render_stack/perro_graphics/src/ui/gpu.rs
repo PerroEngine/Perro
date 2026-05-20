@@ -32,7 +32,7 @@ struct UiUniformGpu {
 }
 
 struct UiTextureGpu {
-    texture: wgpu::Texture,
+    texture: Option<wgpu::Texture>,
     bind_group: wgpu::BindGroup,
     size: [u32; 2],
 }
@@ -634,7 +634,7 @@ impl GpuUi {
                 ],
             });
             self.font_texture = Some(UiTextureGpu {
-                texture,
+                texture: Some(texture),
                 bind_group,
                 size: required_size,
             });
@@ -642,9 +642,12 @@ impl GpuUi {
         let Some(font_texture) = self.font_texture.as_ref() else {
             return;
         };
+        let Some(font_texture_gpu) = font_texture.texture.as_ref() else {
+            return;
+        };
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
-                texture: &font_texture.texture,
+                texture: font_texture_gpu,
                 mip_level: 0,
                 origin: wgpu::Origin3d {
                     x: origin[0] as u32,
@@ -757,12 +760,44 @@ impl GpuUi {
         self.image_textures.insert(
             texture_key,
             UiTextureGpu {
-                texture,
+                texture: Some(texture),
                 bind_group,
                 size: [width, height],
             },
         );
         true
+    }
+
+    pub fn upsert_external_image_texture(
+        &mut self,
+        device: &wgpu::Device,
+        texture_key: TextureID,
+        view: wgpu::TextureView,
+        size: [u32; 2],
+    ) {
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_ui_external_image_bg"),
+            layout: &self.texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        });
+        self.image_textures.insert(
+            texture_key,
+            UiTextureGpu {
+                texture: None,
+                bind_group,
+                size: [size[0].max(1), size[1].max(1)],
+            },
+        );
+        self.prepared_revision = u64::MAX;
     }
 }
 

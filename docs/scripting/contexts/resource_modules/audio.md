@@ -1,500 +1,1539 @@
 # Audio Module
 
-Access:
+## Page Map
 
-- `res.Audio()`
+| Header | Link |
+| --- | --- |
+| Overview | [Overview](#overview) |
+| Context | [Context](#context) |
+| API Reference | [API Reference](#api-reference) |
+| `load_source` | [`load_source`](#load_source) |
+| `reserve_source` | [`reserve_source`](#reserve_source) |
+| `is_loaded` | [`is_loaded`](#is_loaded) |
+| `drop_source` | [`drop_source`](#drop_source) |
+| `play` | [`play`](#play) |
+| `play_bus` | [`play_bus`](#play_bus) |
+| `play_master` | [`play_master`](#play_master) |
+| `play_master_audio` | [`play_master_audio`](#play_master_audio) |
+| `play_panned` | [`play_panned`](#play_panned) |
+| `play_master_panned` | [`play_master_panned`](#play_master_panned) |
+| `two_d` | [`two_d`](#two_d) |
+| `three_d` | [`three_d`](#three_d) |
+| `midi` | [`midi`](#midi) |
+| `stop_audio` | [`stop_audio`](#stop_audio) |
+| `stop_master_audio` | [`stop_master_audio`](#stop_master_audio) |
+| `stop_source` | [`stop_source`](#stop_source) |
+| `source_length_seconds` | [`source_length_seconds`](#source_length_seconds) |
+| `source_length_millis` | [`source_length_millis`](#source_length_millis) |
+| `stop_all` | [`stop_all`](#stop_all) |
+| `set_master_volume` | [`set_master_volume`](#set_master_volume) |
+| `set_bus_volume` | [`set_bus_volume`](#set_bus_volume) |
+| `set_bus_speed` | [`set_bus_speed`](#set_bus_speed) |
+| `pause_bus` | [`pause_bus`](#pause_bus) |
+| `resume_bus` | [`resume_bus`](#resume_bus) |
+| `stop_bus` | [`stop_bus`](#stop_bus) |
+| `play` | [`play`](#play) |
+| `play_master` | [`play_master`](#play_master) |
+| `load_soundfont` | [`load_soundfont`](#load_soundfont) |
+| `load_soundfont_hashed` | [`load_soundfont_hashed`](#load_soundfont_hashed) |
+| `load_soundfont_hashed_with_source` | [`load_soundfont_hashed_with_source`](#load_soundfont_hashed_with_source) |
+| `is_soundfont_loaded` | [`is_soundfont_loaded`](#is_soundfont_loaded) |
+| `play_note` | [`play_note`](#play_note) |
+| `play_note_bus` | [`play_note_bus`](#play_note_bus) |
+| `start_note` | [`start_note`](#start_note) |
+| `start_note_bus` | [`start_note_bus`](#start_note_bus) |
+| `release_note` | [`release_note`](#release_note) |
+| `play_file` | [`play_file`](#play_file) |
+| `play_note_at` | [`play_note_at`](#play_note_at) |
+| `start_note_at` | [`start_note_at`](#start_note_at) |
+| `play_file_at` | [`play_file_at`](#play_file_at) |
+| `play` | [`play`](#play) |
+| `play_master` | [`play_master`](#play_master) |
+| `audio_load` | [`audio_load`](#audio_load) |
+| `audio_is_loaded` | [`audio_is_loaded`](#audio_is_loaded) |
+| `audio_reserve` | [`audio_reserve`](#audio_reserve) |
+| `audio_drop` | [`audio_drop`](#audio_drop) |
+| `audio_play` | [`audio_play`](#audio_play) |
+| `audio_stop` | [`audio_stop`](#audio_stop) |
+| `audio_stop_source` | [`audio_stop_source`](#audio_stop_source) |
+| `audio_length_seconds` | [`audio_length_seconds`](#audio_length_seconds) |
+| `audio_length_millis` | [`audio_length_millis`](#audio_length_millis) |
+| `audio_stop_all` | [`audio_stop_all`](#audio_stop_all) |
+| `audio_set_master_volume` | [`audio_set_master_volume`](#audio_set_master_volume) |
+| `audio_bus_set_volume` | [`audio_bus_set_volume`](#audio_bus_set_volume) |
+| `audio_bus_set_speed` | [`audio_bus_set_speed`](#audio_bus_set_speed) |
+| `audio_bus_pause` | [`audio_bus_pause`](#audio_bus_pause) |
+| `audio_bus_resume` | [`audio_bus_resume`](#audio_bus_resume) |
+| `audio_bus_stop` | [`audio_bus_stop`](#audio_bus_stop) |
+| `audio_bus` | [`audio_bus`](#audio_bus) |
+| `midi_load_soundfont` | [`midi_load_soundfont`](#midi_load_soundfont) |
+| `midi_soundfont_is_loaded` | [`midi_soundfont_is_loaded`](#midi_soundfont_is_loaded) |
+| `midi_play` | [`midi_play`](#midi_play) |
+| `midi_start` | [`midi_start`](#midi_start) |
+| `midi_release` | [`midi_release`](#midi_release) |
+| `midi_play_at` | [`midi_play_at`](#midi_play_at) |
+| `midi_start_at` | [`midi_start_at`](#midi_start_at) |
 
-Shared backend, cache, bus, `.pawdio`, and propagation concepts:
+## Overview
 
-- [Audio](../../../resources/audio.md)
+This resource module belongs to `ctx.res` and documents audio calls.
 
-## Shared Macros
+## Context
 
-- `audio_bus!("name") -> AudioBusID`
-- `audio_load!(res, source) -> bool`
-- `audio_is_loaded!(res, source) -> bool`
-- `audio_reserve!(res, source) -> bool`
-- `audio_drop!(res, source) -> bool`
-- `audio_stop_source!(res, source) -> bool`
-- `audio_length_seconds!(res, source) -> Option<f32>`
-- `audio_length_millis!(res, source) -> Option<u64>`
-- `audio_stop_all!(res)`
-- `audio_set_master_volume!(res, volume) -> bool`
-- `audio_bus_set_volume!(res, bus_id, volume) -> bool`
-- `audio_bus_set_speed!(res, bus_id, speed) -> bool`
-- `audio_bus_pause!(res, bus_id) -> bool`
-- `audio_bus_resume!(res, bus_id) -> bool`
-- `audio_bus_stop!(res, bus_id) -> bool`
+- Script context path: `ctx.res`
+- Module access: `ctx.res.Audio()`
+- Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
 
-## Base Audio
+## API Reference
 
-Base audio uses explicit pan values.
+### `load_source`
 
-Load readiness:
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn load_source<S: ResPathSource>(&self, source: S) -> bool` |
+| Params | `&self, source: S` |
+| Returns | `bool` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
-- `audio_load!` / `audio_reserve!` queue decode/backend work.
-- `audio_is_loaded!` returns `true` once the source is ready in the audio backend.
-- Use it before starting music, ambience, or critical one-shot sounds where silence on first frame is bad.
-- Skip it for disposable effects where a missed early play is acceptable.
-- Poll during load screens or on a timer; avoid checking every source every frame.
-
-Macros:
-
-- `audio_play!(res, bus_id, Audio { source, looped, volume, effects, from_start, from_end }) -> bool`
-- `audio_play!(res, Audio { source, looped, volume, effects, from_start, from_end }) -> bool`
-- `audio_play!(res, bus_id, PannedAudio { audio, pan }) -> bool`
-- `audio_play!(res, (audio, pan)) -> bool`
-- `audio_stop!(res, bus_id, Audio { source, looped, volume, effects, from_start, from_end }) -> bool`
-- `audio_stop!(res, Audio { source, looped, volume, effects, from_start, from_end }) -> bool`
-
-Type:
+Example:
 
 ```rust
-Audio {
-    source: &str,      // literal or ResPath::as_str()
-    looped: bool,
-    volume: f32,      // 1.0 normal, 0.0 silent, >1 amplified
-    effects: AudioEffects,
-    from_start: f32,  // seconds trimmed from the start (>= 0.0)
-    from_end: f32,    // seconds trimmed from the end (>= 0.0)
-}
-
-AudioEffects {
-    speed: f32,        // 1.0 normal playback speed (also changes pitch)
-    low_pass: f32,
-    reverb_send: f32,
-    echo: f32,
-    reflection: f32,
-    occlusion: f32,
-    eq: AudioEq,                  // low_gain, mid_gain, high_gain
-    compression: AudioCompression // threshold, ratio, attack, release
-}
-
-PannedAudio {
-    audio: Audio,
-    pan: AudioPan,    // x left/right, y down/up, z back/front
-}
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().load_source("res://path/to/resource");
+        let _ = value;
+    }
+});
 ```
 
-Methods:
+### `reserve_source`
 
-- `res.Audio().play_bus(bus_id, Audio { source, looped, volume, effects, from_start, from_end }) -> bool`
-- `res.Audio().play_master(Audio { source, looped, volume, effects, from_start, from_end }) -> bool`
-- `res.Audio().play_bus(bus_id, PannedAudio { audio, pan }) -> bool`
-- `res.Audio().play_panned(bus_id, audio, pan) -> bool`
-- `res.Audio().play_master_panned(audio, pan) -> bool`
-- `res.Audio().stop_audio(bus_id, Audio { source, looped, volume, effects, from_start, from_end }) -> bool`
-- `res.Audio().stop_master_audio(Audio { source, looped, volume, effects, from_start, from_end }) -> bool`
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn reserve_source<S: ResPathSource>(&self, source: S) -> bool` |
+| Params | `&self, source: S` |
+| Returns | `bool` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
-Rules:
-
-- plain `Audio` plays centered.
-- `PannedAudio.pan.x` is clamped to `-1.0..1.0` for left/right.
-- `PannedAudio.pan.y` is clamped to `-1.0..1.0` for down/up.
-- `PannedAudio.pan.z` is clamped to `-1.0..1.0` for back/front spatial flavor.
-
-## Audio2D
-
-Audio2D uses `Vector2` position and enters the runtime audio propagation solver.
-The active `Camera2D` is the listener.
-
-Macros:
-
-- `audio_play!(res, bus_id, Audio2D::new(source, position, range)) -> bool`
-- `audio_play!(res, Audio2D::new(source, position, range)) -> bool`
-
-Type:
+Example:
 
 ```rust
-Audio2D {
-    audio: Audio,
-    position: Vector2,
-    range: f32,
-    audio_layer: BitMask,
-    enable_propagation: bool,
-    direction: Option<AudioDirection<Vector2>>,
-}
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().reserve_source("res://path/to/resource");
+        let _ = value;
+    }
+});
 ```
 
-Methods:
+### `is_loaded`
 
-- `res.Audio().two_d().play(bus_id, audio_2d) -> bool`
-- `res.Audio().two_d().play_master(audio_2d) -> bool`
-- `res.Audio().play_bus(bus_id, audio_2d) -> bool`
-- `res.Audio().play_master(audio_2d) -> bool`
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn is_loaded<S: ResPathSource>(&self, source: S) -> bool` |
+| Params | `&self, source: S` |
+| Returns | `bool` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
-Rules:
-
-- `Audio2D.position` is a one-shot point emitter.
-- `direction: None` means omni playback.
-- `direction: Some(AudioDirection::Directional(forward))` sets direction.
-- omni ignores direction.
-- `AudioDirection::Directional(forward)` is loudest toward `forward`.
-- `AudioDirection::InverseDirectional(forward)` is loudest opposite `forward`.
-- `AudioDirection::Bidirectional(forward)` is loudest toward both `forward` and `-forward`.
-- Audio2D has no manual pan; pan comes from the propagated perceived direction.
-- Audio outside `range` or `[audio].listener_max_distance` is skipped.
-- Direct volume fades linearly from full at camera to silent at `range`.
-- Propagation uses listener, physics audio materials, masks, zones, and portals.
-- Use Runtime Audio when the sound should be bound to a moving node.
-
-## Audio3D
-
-Audio3D uses `Vector3` position and enters the runtime audio propagation solver.
-The active `Camera3D` is the listener.
-
-Macros:
-
-- `audio_play!(res, bus_id, Audio3D::new(source, position, range)) -> bool`
-- `audio_play!(res, Audio3D::new(source, position, range)) -> bool`
-
-Type:
+Example:
 
 ```rust
-Audio3D {
-    audio: Audio,
-    position: Vector3,
-    range: f32,
-    audio_layer: BitMask,
-    enable_propagation: bool,
-    direction: Option<AudioDirection<Vector3>>,
-}
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().is_loaded("res://path/to/resource");
+        let _ = value;
+    }
+});
 ```
 
-Methods:
+### `drop_source`
 
-- `res.Audio().three_d().play(bus_id, audio_3d) -> bool`
-- `res.Audio().three_d().play_master(audio_3d) -> bool`
-- `res.Audio().play_bus(bus_id, audio_3d) -> bool`
-- `res.Audio().play_master(audio_3d) -> bool`
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn drop_source<S: ResPathSource>(&self, source: S) -> bool` |
+| Params | `&self, source: S` |
+| Returns | `bool` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
-Rules:
-
-- `Audio3D.position` is a one-shot point emitter.
-- `direction: None` means omni playback.
-- `direction: Some(AudioDirection::Directional(forward))` sets direction.
-- omni ignores direction.
-- `AudioDirection::Directional(forward)` is loudest toward `forward`.
-- `AudioDirection::InverseDirectional(forward)` is loudest opposite `forward`.
-- `AudioDirection::Bidirectional(forward)` is loudest toward both `forward` and `-forward`.
-- Audio3D has no manual pan; pan comes from the propagated perceived direction.
-- Audio outside `range` or `[audio].listener_max_distance` is skipped.
-- Direct volume fades linearly from full at camera to silent at `range`.
-- Propagation uses listener, physics audio materials, zones, and portals.
-- Use Runtime Audio when the sound should follow a moving node.
-
-## MIDI
-
-MIDI lives under `res.Audio().midi()`.
-It can play live notes, held notes, and `.mid` / `.midi` files.
-
-Macros:
-
-- `midi_load_soundfont!(res, "res://soundfonts/game.sf2") -> SoundFontID`
-- `midi_soundfont_is_loaded!(res, soundfont_id) -> bool`
-- `midi_play!(res, Note::C4, MidiNoteOptions::default()) -> bool`
-- `midi_play!(res, bus_id, Note::C4, options) -> bool`
-- `midi_play!(res, MidiSong::new("res://music/theme.mid")) -> bool`
-- `midi_start!(res, Note::C4, options) -> Option<MidiNoteHandle>`
-- `midi_release!(res, handle) -> bool`
-- `midi_play_at!(res, Note::C4, Vector2::new(4.0, 2.0), 20.0, options) -> bool`
-- `midi_play_at!(res, Note::C4, Vector3::new(4.0, 2.0, 0.0), 20.0, options) -> bool`
-- `midi_start_at!(res, Note::C4, position, range, options) -> Option<MidiNoteHandle>`
-- `midi_play_at!(res, MidiSong::new("res://music/theme.mid"), position, range) -> bool`
-
-Methods:
-
-- `res.Audio().midi().play_note(Note::C4, options) -> bool`
-- `res.Audio().midi().is_soundfont_loaded(soundfont_id) -> bool`
-- `res.Audio().midi().start_note(Note::C4, options) -> Option<MidiNoteHandle>`
-- `res.Audio().midi().release_note(handle) -> bool`
-- `res.Audio().midi().play_file(MidiSong::new("res://music/theme.mid")) -> bool`
-- `res.Audio().midi().play_note_at(Note::C4, position, range, options) -> bool`
-- `res.Audio().midi().start_note_at(Note::C4, position, range, options) -> Option<MidiNoteHandle>`
-- `res.Audio().midi().play_file_at(song, position, range) -> bool`
-
-Types:
+Example:
 
 ```rust
-MidiNoteOptions {
-    velocity: u8,          // 0..127
-    sustain: Duration,     // auto note-off for play_note
-    channel: MidiChannel,  // 0..15, channel 9 for drums
-    program: MidiProgram,  // GM patch number
-    sound: MidiSound,      // BuiltIn or SoundFont(soundfont_id)
-    bus_id: Option<AudioBusID>,
-    volume: f32,
-    pan: AudioPan,
-}
-
-MidiSong {
-    source: &str,          // literal or ResPath::as_str()
-    sound: MidiSound,
-    bus_id: Option<AudioBusID>,
-    volume: f32,
-    looped: bool,
-}
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().drop_source("res://path/to/resource");
+        let _ = value;
+    }
+});
 ```
 
-Sound choices:
+### `play`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn play(&self, bus_id: AudioBusID, audio: Audio<'_>) -> bool` |
+| Params | `&self, bus_id: AudioBusID, audio: Audio<'_>` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
 
 ```rust
-MidiSound::BuiltIn
-MidiSound::SoundFont(soundfont_id)
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().play(ctx.id, 0.1);
+        let _ = value;
+    }
+});
 ```
 
-Note helpers:
+### `play_bus`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn play_bus<C>(&self, bus_id: AudioBusID, audio: C) -> bool where C: AudioPlayConfig<R>,` |
+| Params | `&self, bus_id: AudioBusID, audio: C` |
+| Returns | `bool where C: AudioPlayConfig<R>,` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
 
 ```rust
-Note::C4              // middle C, MIDI key 60
-Note::A4              // 440 Hz
-Note::from_midi(36)   // raw MIDI key
-Note::C4.midi_key()
-Note::A4.frequency_hz()
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().play_bus(ctx.id, 0.1);
+        let _ = value;
+    }
+});
 ```
 
-Program groups:
+### `play_master`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn play_master<C>(&self, audio: C) -> bool where C: AudioPlayConfig<R>,` |
+| Params | `&self, audio: C` |
+| Returns | `bool where C: AudioPlayConfig<R>,` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
 
 ```rust
-program::Piano::AcousticGrand
-program::Organ::Drawbar
-program::Guitar::Nylon
-program::Brass::Trumpet
-program::SynthLead::Square
-program::DrumKit::Standard
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().play_master(0.1);
+        let _ = value;
+    }
+});
 ```
 
-Rules:
+### `play_master_audio`
 
-- `Note` is pitch, for example `Note::C4`.
-- `velocity` is hit strength.
-- `sustain` is note length for `play_note`; held notes use `start_note` + `release_note`.
-- `channel` is shared MIDI lane state.
-- `program` is instrument patch.
-- `MidiSound::BuiltIn` uses procedural GM-ish patches.
-- `MidiSound::SoundFont(soundfont_id)` uses a loaded project soundfont.
-- `Vector2` position routes to 2D propagation.
-- `Vector3` position routes to 3D propagation.
-- positional live notes, held notes, and MIDI files use the same raycast propagation path as audio.
-- `midi_load_soundfont!` loads `.sf2` and returns `SoundFontID`.
-- `midi_soundfont_is_loaded!` returns `true` once `.sf2` is ready.
-- static builds embed `.mid`, `.midi`, and `.sf2` files under `embedded/audios/`.
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn play_master_audio(&self, audio: Audio<'_>) -> bool` |
+| Params | `&self, audio: Audio<'_>` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
-Built-in vs soundfont:
-
-- `MidiSound` chooses the synth.
-- `program` chooses the patch inside that synth.
-- built-in synth uses simple generated waveforms.
-- soundfont uses samples/patches from the `.sf2` bank.
-- same `program` value can sound very different per `.sf2`.
-- full program table lives in [Audio](../../../resources/audio.md#midi-program-table).
-
-## MIDI Examples
-
-Built-in note:
+Example:
 
 ```rust
-let opts = MidiNoteOptions {
-    program: program::SynthLead::Square,
-    velocity: 110,
-    sustain: std::time::Duration::from_millis(120),
-    ..MidiNoteOptions::default()
-};
-
-let _ = midi_play!(res, Note::C4, opts);
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().play_master_audio(0.1);
+        let _ = value;
+    }
+});
 ```
 
-Held note:
+### `play_panned`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn play_panned(&self, bus_id: AudioBusID, audio: Audio<'_>, pan: AudioPan) -> bool` |
+| Params | `&self, bus_id: AudioBusID, audio: Audio<'_>, pan: AudioPan` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
 
 ```rust
-let opts = MidiNoteOptions {
-    program: program::Bass::Finger,
-    ..MidiNoteOptions::default()
-};
-
-let held = midi_start!(res, Note::C2, opts);
-
-if let Some(handle) = held {
-    let _ = midi_release!(res, handle);
-}
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().play_panned(ctx.id, 0.0, 0.1);
+        let _ = value;
+    }
+});
 ```
 
-Soundfont notes:
+### `play_master_panned`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn play_master_panned(&self, audio: Audio<'_>, pan: AudioPan) -> bool` |
+| Params | `&self, audio: Audio<'_>, pan: AudioPan` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
 
 ```rust
-let font = "res://soundfonts/game.sf2";
-let font_id = midi_load_soundfont!(res, font);
-let ready = midi_soundfont_is_loaded!(res, font_id);
-
-let opts = MidiNoteOptions {
-    sound: MidiSound::SoundFont(font_id),
-    program: program::Piano::AcousticGrand,
-    sustain: std::time::Duration::from_millis(400),
-    ..MidiNoteOptions::default()
-};
-
-let _ = midi_play!(res, Note::C4, opts);
-let _ = midi_play!(res, Note::E4, opts);
-let _ = midi_play!(res, Note::G4, opts);
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().play_master_panned(0.0, 0.1);
+        let _ = value;
+    }
+});
 ```
 
-Soundfont MIDI file:
+### `two_d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn two_d(&self) -> Audio2DModule<'res, R>` |
+| Params | `&self` |
+| Returns | `Audio2DModule<'res, R>` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
 
 ```rust
-let font = "res://soundfonts/game.sf2";
-let font_id = midi_load_soundfont!(res, font);
-let song = MidiSong::new("res://music/theme.mid")
-    .with_sound(MidiSound::SoundFont(font_id))
-    .looped();
-
-let _ = res.Audio().midi().play_file(song);
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().two_d();
+        let _ = value;
+    }
+});
 ```
 
-Positional note:
+### `three_d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn three_d(&self) -> Audio3DModule<'res, R>` |
+| Params | `&self` |
+| Returns | `Audio3DModule<'res, R>` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
 
 ```rust
-let opts = MidiNoteOptions {
-    program: program::Brass::Trumpet,
-    ..MidiNoteOptions::default()
-};
-
-let _ = midi_play_at!(
-    res,
-    Note::C5,
-    Vector3::new(0.0, 2.0, -6.0),
-    40.0,
-    opts
-);
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().three_d();
+        let _ = value;
+    }
+});
 ```
 
-## Shared Methods
+### `midi`
 
-- `res.Audio().load_source(source) -> bool`
-- `res.Audio().is_loaded(source) -> bool`
-- `res.Audio().reserve_source(source) -> bool`
-- `res.Audio().drop_source(source) -> bool`
-- `res.Audio().stop_source(source) -> bool`
-- `res.Audio().source_length_seconds(source) -> Option<f32>`
-- `res.Audio().source_length_millis(source) -> Option<u64>`
-- `res.Audio().stop_all()`
-- `res.Audio().set_master_volume(volume) -> bool`
-- `res.Audio().set_bus_volume(bus_id, volume) -> bool`
-- `res.Audio().set_bus_speed(bus_id, speed) -> bool`
-- `res.Audio().pause_bus(bus_id) -> bool`
-- `res.Audio().resume_bus(bus_id) -> bool`
-- `res.Audio().stop_bus(bus_id) -> bool`
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn midi(&self) -> MidiModule<'res, R>` |
+| Params | `&self` |
+| Returns | `MidiModule<'res, R>` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
-## Macro/Method Parity
-
-- `audio_load!(res, source)` is equivalent to `res.Audio().load_source(source)`.
-- `audio_reserve!(res, source)` is equivalent to `res.Audio().reserve_source(source)`.
-- `audio_drop!(res, source)` is equivalent to `res.Audio().drop_source(source)`.
-- `audio_play!(res, bus_id, cfg)` is equivalent to `res.Audio().play_bus(bus_id, cfg)`.
-- `audio_play!(res, cfg)` is equivalent to `res.Audio().play_master(cfg)`.
-- `audio_play!(...)` accepts `Audio`, panned `Audio`, `Audio2D`, or `Audio3D`.
-- `audio_stop!(res, bus_id, cfg)` is equivalent to `res.Audio().stop_audio(bus_id, cfg)`.
-- `audio_stop!(res, cfg)` is equivalent to `res.Audio().stop_master_audio(cfg)`.
-- Other audio macros map directly to same-named `res.Audio()` methods.
-
-## Spatial Examples
-
-Use point audio for short sounds with fixed world positions.
-Use runtime attached audio when the sound must follow a node.
-Bus ids live in the play call.
-Point spatial data lives on `Audio2D` or `Audio3D`.
-
-One-shot 2D hit:
+Example:
 
 ```rust
-let sfx = audio_bus!("sfx");
-
-let hit = Audio2D {
-    audio: Audio::new("res://audio/hit.wav"),
-    position: enemy_pos,
-    range: 256.0,
-    audio_layer: BitMask::ALL,
-    enable_propagation: true,
-    direction: None,
-};
-
-let _ = audio_play!(res, sfx, hit);
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().midi();
+        let _ = value;
+    }
+});
 ```
 
-3D speaker cone:
+### `stop_audio`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn stop_audio(&self, bus_id: AudioBusID, audio: Audio<'_>) -> bool` |
+| Params | `&self, bus_id: AudioBusID, audio: Audio<'_>` |
+| Returns | `bool` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
 
 ```rust
-let speaker = Audio3D {
-    audio: Audio::new("res://audio/alert.wav"),
-    position: speaker_pos,
-    range: 35.0,
-    audio_layer: BitMask::ALL,
-    enable_propagation: true,
-    direction: Some(AudioDirection::Directional(Vector3::new(0.0, 0.0, -1.0))),
-};
-
-let _ = audio_play!(res, audio_bus!("sfx"), speaker);
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().stop_audio(ctx.id, 0.1);
+        let _ = value;
+    }
+});
 ```
 
-No ray propagation:
+### `stop_master_audio`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn stop_master_audio(&self, audio: Audio<'_>) -> bool` |
+| Params | `&self, audio: Audio<'_>` |
+| Returns | `bool` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
 
 ```rust
-let ui_world_ping = Audio2D {
-    audio: Audio::new("res://audio/ping.wav"),
-    position: marker_pos,
-    range: 128.0,
-    audio_layer: BitMask::ALL,
-    enable_propagation: false,
-    direction: None,
-};
-
-let _ = audio_play!(res, ui_world_ping);
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().stop_master_audio(0.1);
+        let _ = value;
+    }
+});
 ```
 
-## Example
+### `stop_source`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn stop_source<S: ResPathSource>(&self, source: S) -> bool` |
+| Params | `&self, source: S` |
+| Returns | `bool` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
 
 ```rust
-let music = audio_bus!("music");
-let _ = audio_set_master_volume!(res, 1.0);
-let _ = audio_bus_set_volume!(res, music, 0.7);
-let _ = audio_bus_set_speed!(res, music, 1.0);
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().stop_source("res://path/to/resource");
+        let _ = value;
+    }
+});
+```
 
-let base = Audio {
-    source: "res://groantube.mp3",
-    looped: true,
-    volume: 1.0,
-    effects: AudioEffects::new(),
-    from_start: 0.0,
-    from_end: 0.0,
-};
+### `source_length_seconds`
 
-let _ = audio_play!(res, music, base);
-let _ = res.Audio().play_bus(music, base);
-let _ = audio_stop!(res, music, base);
-let _ = audio_play!(res, base);
-let _ = audio_play!(res, music, (base, AudioPan::new(-0.5, 0.0, 0.25)));
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn source_length_seconds<S: ResPathSource>(&self, source: S) -> Option<f32>` |
+| Params | `&self, source: S` |
+| Returns | `Option<f32>` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
-let hit = Audio2D::new("res://hit.wav", Vector2::new(128.0, 64.0), 512.0);
-let _ = audio_play!(res, hit);
+Example:
 
-let step = Audio3D {
-    audio: Audio::new("res://step.wav"),
-    position: Vector3::new(0.0, 0.0, -5.0),
-    range: 20.0,
-    audio_layer: BitMask::ALL,
-    enable_propagation: true,
-    direction: Some(AudioDirection::Directional(Vector3::new(0.0, 0.0, 1.0))),
-};
-let _ = audio_play!(res, music, step);
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().source_length_seconds("res://path/to/resource");
+        let _ = value;
+    }
+});
+```
 
-if let Some(length) = audio_length_seconds!(res, "res://groantube.mp3") {
-    let half = Audio {
-        source: "res://groantube.mp3",
-        looped: false,
-        volume: 1.0,
-        effects: AudioEffects::new(),
-        from_start: 0.0,
-        from_end: length * 0.5,
-    };
-    let _ = audio_play!(res, music, half);
-}
+### `source_length_millis`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn source_length_millis<S: ResPathSource>(&self, source: S) -> Option<u64>` |
+| Params | `&self, source: S` |
+| Returns | `Option<u64>` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().source_length_millis("res://path/to/resource");
+        let _ = value;
+    }
+});
+```
+
+### `stop_all`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn stop_all(&self)` |
+| Params | `&self` |
+| Returns | `()` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().stop_all();
+        let _ = value;
+    }
+});
+```
+
+### `set_master_volume`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn set_master_volume(&self, volume: f32) -> bool` |
+| Params | `&self, volume: f32` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().set_master_volume(1.0);
+        let _ = value;
+    }
+});
+```
+
+### `set_bus_volume`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn set_bus_volume(&self, bus_id: AudioBusID, volume: f32) -> bool` |
+| Params | `&self, bus_id: AudioBusID, volume: f32` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().set_bus_volume(ctx.id, 1.0);
+        let _ = value;
+    }
+});
+```
+
+### `set_bus_speed`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn set_bus_speed(&self, bus_id: AudioBusID, speed: f32) -> bool` |
+| Params | `&self, bus_id: AudioBusID, speed: f32` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().set_bus_speed(ctx.id, 1.0);
+        let _ = value;
+    }
+});
+```
+
+### `pause_bus`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn pause_bus(&self, bus_id: AudioBusID) -> bool` |
+| Params | `&self, bus_id: AudioBusID` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().pause_bus(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `resume_bus`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn resume_bus(&self, bus_id: AudioBusID) -> bool` |
+| Params | `&self, bus_id: AudioBusID` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().resume_bus(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `stop_bus`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `pub fn stop_bus(&self, bus_id: AudioBusID) -> bool` |
+| Params | `&self, bus_id: AudioBusID` |
+| Returns | `bool` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().stop_bus(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `play`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio().two_d()` |
+| Signature | `pub fn play(&self, bus_id: AudioBusID, audio: Audio2D<'_>) -> bool` |
+| Params | `&self, bus_id: AudioBusID, audio: Audio2D<'_>` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().two_d().play(ctx.id, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `play_master`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio().two_d()` |
+| Signature | `pub fn play_master(&self, audio: Audio2D<'_>) -> bool` |
+| Params | `&self, audio: Audio2D<'_>` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().two_d().play_master(0.1);
+        let _ = value;
+    }
+});
+```
+
+### `load_soundfont`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio().midi()` |
+| Signature | `pub fn load_soundfont<S: ResPathSource>(&self, source: S) -> SoundFontID` |
+| Params | `&self, source: S` |
+| Returns | `SoundFontID` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().midi().load_soundfont("res://path/to/resource");
+        let _ = value;
+    }
+});
+```
+
+### `load_soundfont_hashed`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio().midi()` |
+| Signature | `pub fn load_soundfont_hashed(&self, source_hash: u64) -> SoundFontID` |
+| Params | `&self, source_hash: u64` |
+| Returns | `SoundFontID` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().midi().load_soundfont_hashed(0);
+        let _ = value;
+    }
+});
+```
+
+### `load_soundfont_hashed_with_source`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio().midi()` |
+| Signature | `pub fn load_soundfont_hashed_with_source<S: ResPathSource>( &self, source_hash: u64, source: S, ) -> SoundFontID` |
+| Params | `&self, source_hash: u64, source: S,` |
+| Returns | `SoundFontID` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().midi().load_soundfont_hashed_with_source(0, "res://path/to/resource");
+        let _ = value;
+    }
+});
+```
+
+### `is_soundfont_loaded`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio().midi()` |
+| Signature | `pub fn is_soundfont_loaded(&self, id: SoundFontID) -> bool` |
+| Params | `&self, id: SoundFontID` |
+| Returns | `bool` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().midi().is_soundfont_loaded(0.1);
+        let _ = value;
+    }
+});
+```
+
+### `play_note`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio().midi()` |
+| Signature | `pub fn play_note(&self, note: Note, options: MidiNoteOptions) -> bool` |
+| Params | `&self, note: Note, options: MidiNoteOptions` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().midi().play_note(0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `play_note_bus`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio().midi()` |
+| Signature | `pub fn play_note_bus( &self, bus_id: AudioBusID, note: Note, mut options: MidiNoteOptions, ) -> bool` |
+| Params | `&self, bus_id: AudioBusID, note: Note, mut options: MidiNoteOptions,` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().midi().play_note_bus(ctx.id, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `start_note`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio().midi()` |
+| Signature | `pub fn start_note(&self, note: Note, options: MidiNoteOptions) -> Option<MidiNoteHandle>` |
+| Params | `&self, note: Note, options: MidiNoteOptions` |
+| Returns | `Option<MidiNoteHandle>` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().midi().start_note(0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `start_note_bus`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio().midi()` |
+| Signature | `pub fn start_note_bus( &self, bus_id: AudioBusID, note: Note, mut options: MidiNoteOptions, ) -> Option<MidiNoteHandle>` |
+| Params | `&self, bus_id: AudioBusID, note: Note, mut options: MidiNoteOptions,` |
+| Returns | `Option<MidiNoteHandle>` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().midi().start_note_bus(ctx.id, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `release_note`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio().midi()` |
+| Signature | `pub fn release_note(&self, handle: MidiNoteHandle) -> bool` |
+| Params | `&self, handle: MidiNoteHandle` |
+| Returns | `bool` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().midi().release_note(0.1);
+        let _ = value;
+    }
+});
+```
+
+### `play_file`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio().midi()` |
+| Signature | `pub fn play_file(&self, song: MidiSong) -> bool` |
+| Params | `&self, song: MidiSong` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().midi().play_file(0.1);
+        let _ = value;
+    }
+});
+```
+
+### `play_note_at`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio().midi()` |
+| Signature | `pub fn play_note_at<P: MidiSpatialPos>( &self, note: Note, position: P, range: f32, options: MidiNoteOptions, ) -> bool` |
+| Params | `&self, note: Note, position: P, range: f32, options: MidiNoteOptions,` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().midi().play_note_at(0.0, 0.1, 1.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `start_note_at`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio().midi()` |
+| Signature | `pub fn start_note_at<P: MidiSpatialPos>( &self, note: Note, position: P, range: f32, options: MidiNoteOptions, ) -> Option<MidiNoteHandle>` |
+| Params | `&self, note: Note, position: P, range: f32, options: MidiNoteOptions,` |
+| Returns | `Option<MidiNoteHandle>` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().midi().start_note_at(0.0, 0.1, 1.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `play_file_at`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio().midi()` |
+| Signature | `pub fn play_file_at<P: MidiSpatialPos>(&self, song: MidiSong, position: P, range: f32) -> bool` |
+| Params | `&self, song: MidiSong, position: P, range: f32` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().midi().play_file_at(0.0, 0.1, 1.0);
+        let _ = value;
+    }
+});
+```
+
+### `play`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio().three_d()` |
+| Signature | `pub fn play(&self, bus_id: AudioBusID, audio: Audio3D<'_>) -> bool` |
+| Params | `&self, bus_id: AudioBusID, audio: Audio3D<'_>` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().three_d().play(ctx.id, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `play_master`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio().three_d()` |
+| Signature | `pub fn play_master(&self, audio: Audio3D<'_>) -> bool` |
+| Params | `&self, audio: Audio3D<'_>` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Audio().three_d().play_master(0.1);
+        let _ = value;
+    }
+});
+```
+
+### `audio_load`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `audio_load!(ctx.res.res, source)` |
+| Params | `ctx.res, source` |
+| Returns | `resource/runtime ID or `Result` as shown by backing method` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = audio_load!(ctx.res, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `audio_is_loaded`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `audio_is_loaded!(ctx.res.res, source)` |
+| Params | `ctx.res, source` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = audio_is_loaded!(ctx.res, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `audio_reserve`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `audio_reserve!(ctx.res.res, source)` |
+| Params | `ctx.res, source` |
+| Returns | `resource/runtime ID or `Result` as shown by backing method` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = audio_reserve!(ctx.res, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `audio_drop`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `audio_drop!(ctx.res.res, source)` |
+| Params | `ctx.res, source` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = audio_drop!(ctx.res, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `audio_play`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `audio_play!(ctx.res.res, bus_id, audio)` |
+| Params | `ctx.res, bus_id, audio` |
+| Returns | `same as backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = audio_play!(ctx.res, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `audio_stop`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `audio_stop!(ctx.res.res, bus_id, audio)` |
+| Params | `ctx.res, bus_id, audio` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = audio_stop!(ctx.res, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `audio_stop_source`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `audio_stop_source!(ctx.res.res, source)` |
+| Params | `ctx.res, source` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = audio_stop_source!(ctx.res, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `audio_length_seconds`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `audio_length_seconds!(ctx.res.res, source)` |
+| Params | `ctx.res, source` |
+| Returns | `same as backing method` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = audio_length_seconds!(ctx.res, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `audio_length_millis`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `audio_length_millis!(ctx.res.res, source)` |
+| Params | `ctx.res, source` |
+| Returns | `same as backing method` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = audio_length_millis!(ctx.res, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `audio_stop_all`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `audio_stop_all!(ctx.res.res)` |
+| Params | `ctx.res` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = audio_stop_all!(ctx.res);
+        let _ = value;
+    }
+});
+```
+
+### `audio_set_master_volume`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `audio_set_master_volume!(ctx.res.res, volume)` |
+| Params | `ctx.res, volume` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = audio_set_master_volume!(ctx.res, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `audio_bus_set_volume`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `audio_bus_set_volume!(ctx.res.res, bus_id, volume)` |
+| Params | `ctx.res, bus_id, volume` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = audio_bus_set_volume!(ctx.res, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `audio_bus_set_speed`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `audio_bus_set_speed!(ctx.res.res, bus_id, speed)` |
+| Params | `ctx.res, bus_id, speed` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = audio_bus_set_speed!(ctx.res, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `audio_bus_pause`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `audio_bus_pause!(ctx.res.res, bus_id)` |
+| Params | `ctx.res, bus_id` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = audio_bus_pause!(ctx.res, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `audio_bus_resume`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `audio_bus_resume!(ctx.res.res, bus_id)` |
+| Params | `ctx.res, bus_id` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = audio_bus_resume!(ctx.res, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `audio_bus_stop`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `audio_bus_stop!(ctx.res.res, bus_id)` |
+| Params | `ctx.res, bus_id` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = audio_bus_stop!(ctx.res, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `audio_bus`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `audio_bus!(name)` |
+| Params | `name` |
+| Returns | `same as backing method` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = audio_bus!(ctx.res);
+        let _ = value;
+    }
+});
+```
+
+### `midi_load_soundfont`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `midi_load_soundfont!(ctx.res.res, source)` |
+| Params | `ctx.res, source` |
+| Returns | `resource/runtime ID or `Result` as shown by backing method` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = midi_load_soundfont!(ctx.res, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `midi_soundfont_is_loaded`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `midi_soundfont_is_loaded!(ctx.res.res, id)` |
+| Params | `ctx.res, id` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = midi_soundfont_is_loaded!(ctx.res, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `midi_play`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `midi_play!(ctx.res.res, bus_id, note, options)` |
+| Params | `ctx.res, bus_id, note, options` |
+| Returns | `same as backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = midi_play!(ctx.res, 0.0, 0.1, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `midi_start`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `midi_start!(ctx.res.res, bus_id, note, options)` |
+| Params | `ctx.res, bus_id, note, options` |
+| Returns | `same as backing method` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = midi_start!(ctx.res, 0.0, 0.1, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `midi_release`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `midi_release!(ctx.res.res, handle)` |
+| Params | `ctx.res, handle` |
+| Returns | `same as backing method` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = midi_release!(ctx.res, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `midi_play_at`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `midi_play_at!(ctx.res.res, note, pos, range, options)` |
+| Params | `ctx.res, note, pos, range, options` |
+| Returns | `same as backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = midi_play_at!(ctx.res, 0.0, 0.1, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `midi_start_at`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Audio()` |
+| Signature | `midi_start_at!(ctx.res.res, note, pos, range, options)` |
+| Params | `ctx.res, note, pos, range, options` |
+| Returns | `same as backing method` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = midi_start_at!(ctx.res, 0.0, 0.1, 0.0, 0.1);
+        let _ = value;
+    }
+});
 ```

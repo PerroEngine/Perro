@@ -1,216 +1,3356 @@
 # Nodes Module
 
-Purpose:
+## Page Map
 
-- Read and mutate scene nodes through `NodeID` handles at runtime.
-- `NodeID` is how you address nodes created in scene load, queries, parent/child traversal, or dynamic creation.
+| Header | Link |
+| --- | --- |
+| Overview | [Overview](#overview) |
+| Context | [Context](#context) |
+| API Reference | [API Reference](#api-reference) |
+| `create` | [`create`](#create) |
+| `create_nodes` | [`create_nodes`](#create_nodes) |
+| `with_node_mut` | [`with_node_mut`](#with_node_mut) |
+| `with_node` | [`with_node`](#with_node) |
+| `with_base_node` | [`with_base_node`](#with_base_node) |
+| `with_base_node_mut` | [`with_base_node_mut`](#with_base_node_mut) |
+| `get_node_name` | [`get_node_name`](#get_node_name) |
+| `set_node_name` | [`set_node_name`](#set_node_name) |
+| `get_skeleton_bone_name` | [`get_skeleton_bone_name`](#get_skeleton_bone_name) |
+| `get_skeleton_bone_index` | [`get_skeleton_bone_index`](#get_skeleton_bone_index) |
+| `set_ui_rotation` | [`set_ui_rotation`](#set_ui_rotation) |
+| `bind_locale_text` | [`bind_locale_text`](#bind_locale_text) |
+| `bind_locale_placeholder` | [`bind_locale_placeholder`](#bind_locale_placeholder) |
+| `get_node_parent_id` | [`get_node_parent_id`](#get_node_parent_id) |
+| `get_node_children_ids` | [`get_node_children_ids`](#get_node_children_ids) |
+| `get_children` | [`get_children`](#get_children) |
+| `get_child_at` | [`get_child_at`](#get_child_at) |
+| `get_child_by_name` | [`get_child_by_name`](#get_child_by_name) |
+| `get_children_by_name` | [`get_children_by_name`](#get_children_by_name) |
+| `get_child` | [`get_child`](#get_child) |
+| `get_node_type` | [`get_node_type`](#get_node_type) |
+| `reparent` | [`reparent`](#reparent) |
+| `force_rerender` | [`force_rerender`](#force_rerender) |
+| `mark_needs_rerender` | [`mark_needs_rerender`](#mark_needs_rerender) |
+| `reparent_multi` | [`reparent_multi`](#reparent_multi) |
+| `remove_node` | [`remove_node`](#remove_node) |
+| `get_node_tags` | [`get_node_tags`](#get_node_tags) |
+| `tag_set` | [`tag_set`](#tag_set) |
+| `add_node_tag` | [`add_node_tag`](#add_node_tag) |
+| `add_node_tags` | [`add_node_tags`](#add_node_tags) |
+| `remove_node_tag` | [`remove_node_tag`](#remove_node_tag) |
+| `get_global_transform_2d` | [`get_global_transform_2d`](#get_global_transform_2d) |
+| `get_global_transform_3d` | [`get_global_transform_3d`](#get_global_transform_3d) |
+| `get_local_transform_2d` | [`get_local_transform_2d`](#get_local_transform_2d) |
+| `get_local_transform_3d` | [`get_local_transform_3d`](#get_local_transform_3d) |
+| `set_local_transform_2d` | [`set_local_transform_2d`](#set_local_transform_2d) |
+| `set_local_transform_3d` | [`set_local_transform_3d`](#set_local_transform_3d) |
+| `set_global_transform_2d` | [`set_global_transform_2d`](#set_global_transform_2d) |
+| `set_global_transform_3d` | [`set_global_transform_3d`](#set_global_transform_3d) |
+| `get_local_pos_2d` | [`get_local_pos_2d`](#get_local_pos_2d) |
+| `get_local_pos_3d` | [`get_local_pos_3d`](#get_local_pos_3d) |
+| `set_local_pos_2d` | [`set_local_pos_2d`](#set_local_pos_2d) |
+| `set_local_pos_3d` | [`set_local_pos_3d`](#set_local_pos_3d) |
+| `get_global_pos_2d` | [`get_global_pos_2d`](#get_global_pos_2d) |
+| `get_global_pos_3d` | [`get_global_pos_3d`](#get_global_pos_3d) |
+| `set_global_pos_2d` | [`set_global_pos_2d`](#set_global_pos_2d) |
+| `set_global_pos_3d` | [`set_global_pos_3d`](#set_global_pos_3d) |
+| `get_local_rot_2d` | [`get_local_rot_2d`](#get_local_rot_2d) |
+| `get_local_rot_3d` | [`get_local_rot_3d`](#get_local_rot_3d) |
+| `set_local_rot_2d` | [`set_local_rot_2d`](#set_local_rot_2d) |
+| `set_local_rot_3d` | [`set_local_rot_3d`](#set_local_rot_3d) |
+| `get_global_rot_2d` | [`get_global_rot_2d`](#get_global_rot_2d) |
+| `get_global_rot_3d` | [`get_global_rot_3d`](#get_global_rot_3d) |
+| `set_global_rot_2d` | [`set_global_rot_2d`](#set_global_rot_2d) |
+| `set_global_rot_3d` | [`set_global_rot_3d`](#set_global_rot_3d) |
+| `get_local_scale_2d` | [`get_local_scale_2d`](#get_local_scale_2d) |
+| `get_local_scale_3d` | [`get_local_scale_3d`](#get_local_scale_3d) |
+| `set_local_scale_2d` | [`set_local_scale_2d`](#set_local_scale_2d) |
+| `set_local_scale_3d` | [`set_local_scale_3d`](#set_local_scale_3d) |
+| `get_global_scale_2d` | [`get_global_scale_2d`](#get_global_scale_2d) |
+| `get_global_scale_3d` | [`get_global_scale_3d`](#get_global_scale_3d) |
+| `set_global_scale_2d` | [`set_global_scale_2d`](#set_global_scale_2d) |
+| `set_global_scale_3d` | [`set_global_scale_3d`](#set_global_scale_3d) |
+| `to_global_point_2d` | [`to_global_point_2d`](#to_global_point_2d) |
+| `to_local_point_2d` | [`to_local_point_2d`](#to_local_point_2d) |
+| `to_global_point_3d` | [`to_global_point_3d`](#to_global_point_3d) |
+| `to_local_point_3d` | [`to_local_point_3d`](#to_local_point_3d) |
+| `to_global_transform_2d` | [`to_global_transform_2d`](#to_global_transform_2d) |
+| `to_local_transform_2d` | [`to_local_transform_2d`](#to_local_transform_2d) |
+| `to_global_transform_3d` | [`to_global_transform_3d`](#to_global_transform_3d) |
+| `to_local_transform_3d` | [`to_local_transform_3d`](#to_local_transform_3d) |
+| `mesh_instance_surface_at_global_point` | [`mesh_instance_surface_at_global_point`](#mesh_instance_surface_at_global_point) |
+| `mesh_instance_surface_on_global_ray` | [`mesh_instance_surface_on_global_ray`](#mesh_instance_surface_on_global_ray) |
+| `mesh_instance_surfaces_on_global_rays` | [`mesh_instance_surfaces_on_global_rays`](#mesh_instance_surfaces_on_global_rays) |
+| `mesh_instance_material_regions` | [`mesh_instance_material_regions`](#mesh_instance_material_regions) |
+| `mesh_data_surface_at_local_point` | [`mesh_data_surface_at_local_point`](#mesh_data_surface_at_local_point) |
+| `mesh_data_surface_on_local_ray` | [`mesh_data_surface_on_local_ray`](#mesh_data_surface_on_local_ray) |
+| `mesh_data_surface_regions` | [`mesh_data_surface_regions`](#mesh_data_surface_regions) |
+| `with_node_mut` | [`with_node_mut`](#with_node_mut) |
+| `with_node` | [`with_node`](#with_node) |
+| `with_base_node` | [`with_base_node`](#with_base_node) |
+| `with_base_node_mut` | [`with_base_node_mut`](#with_base_node_mut) |
+| `create_node` | [`create_node`](#create_node) |
+| `node_template` | [`node_template`](#node_template) |
+| `create_nodes` | [`create_nodes`](#create_nodes) |
+| `get_node_name` | [`get_node_name`](#get_node_name) |
+| `set_node_name` | [`set_node_name`](#set_node_name) |
+| `get_skeleton_bone_name` | [`get_skeleton_bone_name`](#get_skeleton_bone_name) |
+| `get_skeleton_bone_index` | [`get_skeleton_bone_index`](#get_skeleton_bone_index) |
+| `set_ui_rotation` | [`set_ui_rotation`](#set_ui_rotation) |
+| `bind_locale_text` | [`bind_locale_text`](#bind_locale_text) |
+| `bind_locale_placeholder` | [`bind_locale_placeholder`](#bind_locale_placeholder) |
+| `get_node_parent_id` | [`get_node_parent_id`](#get_node_parent_id) |
+| `get_node_children_ids` | [`get_node_children_ids`](#get_node_children_ids) |
+| `get_children` | [`get_children`](#get_children) |
+| `get_child` | [`get_child`](#get_child) |
+| `get_node_type` | [`get_node_type`](#get_node_type) |
+| `reparent` | [`reparent`](#reparent) |
+| `force_rerender` | [`force_rerender`](#force_rerender) |
+| `reparent_multi` | [`reparent_multi`](#reparent_multi) |
+| `remove_node` | [`remove_node`](#remove_node) |
+| `get_global_transform_2d` | [`get_global_transform_2d`](#get_global_transform_2d) |
+| `get_global_transform_3d` | [`get_global_transform_3d`](#get_global_transform_3d) |
+| `get_local_transform_2d` | [`get_local_transform_2d`](#get_local_transform_2d) |
+| `get_local_transform_3d` | [`get_local_transform_3d`](#get_local_transform_3d) |
+| `set_global_transform_2d` | [`set_global_transform_2d`](#set_global_transform_2d) |
+| `set_global_transform_3d` | [`set_global_transform_3d`](#set_global_transform_3d) |
+| `set_local_transform_2d` | [`set_local_transform_2d`](#set_local_transform_2d) |
+| `set_local_transform_3d` | [`set_local_transform_3d`](#set_local_transform_3d) |
+| `get_local_pos_2d` | [`get_local_pos_2d`](#get_local_pos_2d) |
+| `get_local_pos_3d` | [`get_local_pos_3d`](#get_local_pos_3d) |
+| `set_local_pos_2d` | [`set_local_pos_2d`](#set_local_pos_2d) |
+| `set_local_pos_3d` | [`set_local_pos_3d`](#set_local_pos_3d) |
+| `get_global_pos_2d` | [`get_global_pos_2d`](#get_global_pos_2d) |
+| `get_global_pos_3d` | [`get_global_pos_3d`](#get_global_pos_3d) |
+| `set_global_pos_2d` | [`set_global_pos_2d`](#set_global_pos_2d) |
+| `set_global_pos_3d` | [`set_global_pos_3d`](#set_global_pos_3d) |
+| `get_local_rot_2d` | [`get_local_rot_2d`](#get_local_rot_2d) |
+| `get_local_rot_3d` | [`get_local_rot_3d`](#get_local_rot_3d) |
+| `set_local_rot_2d` | [`set_local_rot_2d`](#set_local_rot_2d) |
+| `set_local_rot_3d` | [`set_local_rot_3d`](#set_local_rot_3d) |
+| `get_global_rot_2d` | [`get_global_rot_2d`](#get_global_rot_2d) |
+| `get_global_rot_3d` | [`get_global_rot_3d`](#get_global_rot_3d) |
+| `set_global_rot_2d` | [`set_global_rot_2d`](#set_global_rot_2d) |
+| `set_global_rot_3d` | [`set_global_rot_3d`](#set_global_rot_3d) |
+| `get_local_scale_2d` | [`get_local_scale_2d`](#get_local_scale_2d) |
+| `get_local_scale_3d` | [`get_local_scale_3d`](#get_local_scale_3d) |
+| `set_local_scale_2d` | [`set_local_scale_2d`](#set_local_scale_2d) |
+| `set_local_scale_3d` | [`set_local_scale_3d`](#set_local_scale_3d) |
+| `get_global_scale_2d` | [`get_global_scale_2d`](#get_global_scale_2d) |
+| `get_global_scale_3d` | [`get_global_scale_3d`](#get_global_scale_3d) |
+| `set_global_scale_2d` | [`set_global_scale_2d`](#set_global_scale_2d) |
+| `set_global_scale_3d` | [`set_global_scale_3d`](#set_global_scale_3d) |
+| `to_global_point_2d` | [`to_global_point_2d`](#to_global_point_2d) |
+| `to_local_point_2d` | [`to_local_point_2d`](#to_local_point_2d) |
+| `to_global_point_3d` | [`to_global_point_3d`](#to_global_point_3d) |
+| `to_local_point_3d` | [`to_local_point_3d`](#to_local_point_3d) |
+| `to_global_transform_2d` | [`to_global_transform_2d`](#to_global_transform_2d) |
+| `to_local_transform_2d` | [`to_local_transform_2d`](#to_local_transform_2d) |
+| `to_global_transform_3d` | [`to_global_transform_3d`](#to_global_transform_3d) |
+| `to_local_transform_3d` | [`to_local_transform_3d`](#to_local_transform_3d) |
+| `get_node_tags` | [`get_node_tags`](#get_node_tags) |
+| `tag_set` | [`tag_set`](#tag_set) |
+| `tag_add` | [`tag_add`](#tag_add) |
+| `tag_remove` | [`tag_remove`](#tag_remove) |
 
-Creation macros:
+## Overview
 
-- `create_node!(ctx.run, NodeType) -> NodeID`
-- `create_node!(ctx.run, NodeType, name) -> NodeID`
-- `create_node!(ctx.run, NodeType, name, tags) -> NodeID`
-- `create_node!(ctx.run, NodeType, name, tags, parent_id) -> NodeID`
-- `create_nodes!(ctx.run, &[NodeCreationTemplate]) -> Vec<NodeID>`
-- `create_nodes!(ctx.run, &[NodeCreationTemplate], parent_id) -> Vec<NodeID>`
-- `node_template!(NodeType) -> NodeCreationTemplate`
-- `node_template!(NodeType, name) -> NodeCreationTemplate`
-- `node_template!(NodeType, name, tags) -> NodeCreationTemplate`
+This runtime module belongs to `ctx.run` and documents nodes calls.
 
-Batch creation example:
+## Context
 
-```rust
-let ids = create_nodes!(
-    ctx.run,
-    [
-        node_template!(Node2D, "EnemyA", tags!["enemy"]),
-        node_template!(Node2D, "EnemyB", tags!["enemy"]),
-        node_template!(Node2D, "EnemyC", tags!["enemy"]),
-        node_template!(Node2D, "EnemyD", tags!["enemy"]),
-    ],
-    parent_id
-);
-```
+- Script context path: `ctx.run`
+- Module access: `ctx.run.Nodes()`
+- Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
 
-Access macros:
+## API Reference
 
-- `with_node_mut!(ctx.run, NodeType, node_id, |node| -> V { ... }) -> Option<V>`
-- `with_node!(ctx.run, NodeType, node_id, |node| -> V { ... }) -> V`
-- `with_base_node!(ctx.run, BaseType, node_id, |node| -> V { ... }) -> Option<V>`
-- `with_base_node_mut!(ctx.run, BaseType, node_id, |node| -> V { ... }) -> Option<V>`
+### `create`
 
-Exact type vs base type:
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn create<T>(&mut self) -> NodeID where T: Default + Into<SceneNodeData>,` |
+| Params | `&mut self` |
+| Returns | `NodeID where T: Default + Into<SceneNodeData>,` |
+| Use when | Use when gameplay needs a new runtime/resource object built from typed data. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
-- `with_node*` requires exact concrete type match.
-- `with_base_node*` uses inheritance checks (`is_a`) and succeeds for descendants of `BaseType`.
-- Use `with_base_node*` when you do not know exact type of a node at compile time but you do know a common base.
-
-Mutability semantics:
-
-- `with_node_mut` and `with_base_node_mut` let you write fields.
-- `with_node` and `with_base_node` are read-only.
-- Mutating access returns `Option<V>` because invalid IDs or type mismatch can fail.
-
-Practical inheritance example:
-
-- If query/parent traversal gives mixed `Node3D` descendants, use `with_base_node_mut!(ctx.run, Node3D, id, ...)`.
-- Inside closure you can only access fields defined on `Node3D`, but that's expected since that's the type passed in.
-
-Metadata/hierarchy macros:
-
-- `get_node_name!(ctx.run, node_id) -> Option<Cow<'static, str>>`
-- `set_node_name!(ctx.run, node_id, name) -> bool`
-- `get_node_parent_id!(ctx.run, node_id) -> Option<NodeID>`
-- `get_node_children_ids!(ctx.run, node_id) -> Option<Vec<NodeID>>`
-- `get_node_type!(ctx.run, node_id) -> Option<NodeType>`
-- `reparent!(ctx.run, parent_id, child_id) -> bool`
-- `force_rerender!(ctx.run, root_id) -> bool`
-- `reparent_multi!(ctx.run, parent_id, child_ids) -> usize`
-- `remove_node!(ctx.run, node_id) -> bool`
-- `bind_locale_text!(ctx.run, node_id, "ui.key") -> bool`
-- `bind_locale_placeholder!(ctx.run, node_id, "ui.key") -> bool`
-
-Runtime node base data:
-
-- `SceneNode.name` stores `Cow<'static, str>`.
-- `SceneNode.parent` stores `NodeID`.
-- `SceneNode.children` stores `Vec<NodeID>`.
-- `SceneNode.tags` stores `Vec<NodeTag>`.
-- `node.get_children_ids()` / `node.children_slice()` -> `&[NodeID]`.
-- `node.get_tag_ids()` returns ids for internal query/index use.
-- `node.tags_slice()` -> `&[NodeTag]`.
-- `node.set_children_ids(Some(children))` replaces children from any `Into<Vec<NodeID>>`.
-- `node.set_children_ids(None)` clears children.
-- `node.set_tags(Some(tags))` replaces tags from `Vec<NodeTag>`.
-- `node.set_tag_ids(None)` clears tags.
-- `get_node_children_ids!(...)` and `get_node_tags!(...)` return owned `Vec` copies through runtime context.
-- `get_node_tags!(...)` returns tag names; ids stay under hood.
-- `tag_set!(ctx.run, node_id, tags)` uploads tags back through runtime context.
-
-`force_rerender!` behavior:
-
-- Marks `root_id` + all descendants dirty for current extraction frame.
-- Use if you want to force rerender instead of the engine deciding.
-- Returns `false` if `root_id` is nil or missing.
-
-Runtime locale text binding:
-
-- `bind_locale_text!` binds main text to a localization key.
-- Works on `UiLabel.text`, `UiTextBox.text`, and `UiTextBlock.text`.
-- `bind_locale_placeholder!` binds placeholder text.
-- Works on `UiTextBox.placeholder` and `UiTextBlock.placeholder`.
-- Calling bind again on same node/field replaces the old key.
-- Bound text refreshes when current locale changes.
-
-Global transform macros:
-
-- `get_global_transform_2d!(ctx.run, node_id) -> Option<Transform2D>`
-- `get_global_transform_3d!(ctx.run, node_id) -> Option<Transform3D>`
-
-- `get_local_transform_2d!(ctx.run, node_id) -> Option<Transform2D>`
-- `get_local_transform_3d!(ctx.run, node_id) -> Option<Transform3D>`
-
-- `set_global_transform_2d!(ctx.run, node_id, global_transform) -> bool`
-- `set_global_transform_3d!(ctx.run, node_id, global_transform) -> bool`
-
-- `set_local_transform_2d!(ctx.run, node_id, local_transform) -> bool`
-- `set_local_transform_3d!(ctx.run, node_id, local_transform) -> bool`
-
-- `get_local_pos_2d!(ctx.run, node_id) -> Option<Vector2>`
-- `get_local_pos_3d!(ctx.run, node_id) -> Option<Vector3>`
-
-- `set_local_pos_2d!(ctx.run, node_id, pos) -> bool`
-- `set_local_pos_3d!(ctx.run, node_id, pos) -> bool`
-
-- `get_global_pos_2d!(ctx.run, node_id) -> Option<Vector2>`
-- `get_global_pos_3d!(ctx.run, node_id) -> Option<Vector3>`
-
-- `set_global_pos_2d!(ctx.run, node_id, pos) -> bool`
-- `set_global_pos_3d!(ctx.run, node_id, pos) -> bool`
-
-- `get_local_rot_2d!(ctx.run, node_id) -> Option<f32>`
-- `get_local_rot_3d!(ctx.run, node_id) -> Option<Quaternion>`
-
-- `set_local_rot_2d!(ctx.run, node_id, rot) -> bool`
-- `set_local_rot_3d!(ctx.run, node_id, rot) -> bool`
-
-- `get_global_rot_2d!(ctx.run, node_id) -> Option<f32>`
-- `get_global_rot_3d!(ctx.run, node_id) -> Option<Quaternion>`
-
-- `set_global_rot_2d!(ctx.run, node_id, rot) -> bool`
-- `set_global_rot_3d!(ctx.run, node_id, rot) -> bool`
-
-- `get_local_scale_2d!(ctx.run, node_id) -> Option<Vector2>`
-- `get_local_scale_3d!(ctx.run, node_id) -> Option<Vector3>`
-
-- `set_local_scale_2d!(ctx.run, node_id, scale) -> bool`
-- `set_local_scale_3d!(ctx.run, node_id, scale) -> bool`
-
-- `get_global_scale_2d!(ctx.run, node_id) -> Option<Vector2>`
-- `get_global_scale_3d!(ctx.run, node_id) -> Option<Vector3>`
-
-- `set_global_scale_2d!(ctx.run, node_id, scale) -> bool`
-- `set_global_scale_3d!(ctx.run, node_id, scale) -> bool`
-
-- `to_global_point_2d!(ctx.run, node_id, local_point) -> Option<Vector2>`
-- `to_local_point_2d!(ctx.run, node_id, global_point) -> Option<Vector2>`
-
-- `to_global_point_3d!(ctx.run, node_id, local_point) -> Option<Vector3>`
-- `to_local_point_3d!(ctx.run, node_id, global_point) -> Option<Vector3>`
-
-- `to_global_transform_2d!(ctx.run, node_id, local_transform) -> Option<Transform2D>`
-- `to_local_transform_2d!(ctx.run, node_id, global_transform) -> Option<Transform2D>`
-
-- `to_global_transform_3d!(ctx.run, node_id, local_transform) -> Option<Transform3D>`
-- `to_local_transform_3d!(ctx.run, node_id, global_transform) -> Option<Transform3D>`
-
-Tag macros:
-
-- `get_node_tags!(ctx.run, node_id) -> Option<Vec<Cow<'static, str>>>`
-- `tag_set!(ctx.run, node_id, tags) -> bool`
-- `tag_set!(ctx.run, node_id) -> bool`
-- `tag_add!(ctx.run, node_id, tags) -> bool`
-- `tag_remove!(ctx.run, node_id, tag) -> bool`
-- `tag_remove!(ctx.run, node_id) -> bool`
-
-Related modules:
-
-- Use [NodeQuery Module](node_query.md) for `query!`, `query_first!`, and reusable `NodeQuery`.
-- Use [MeshQuery Module](mesh_query.md) for mesh surface hits, batch rays, and mesh regions.
-
-## Node Types
-
-See the full list and per-node notes here:
-
-- [Node Types](../../nodes.md)
-
-Global transform example:
+Example:
 
 ```rust
-// Read global transform
-if let Some(global) = get_global_transform_3d!(ctx.run, self_id) {
-    // Move 1 meter up in global space while keeping parent relation
-    let mut target = global;
-    target.position.y += 1.0;
-    let _ = set_global_transform_3d!(ctx.run, self_id, target);
-}
-
-// Convert a local offset to global point
-let muzzle_local = Vector3::new(0.0, 0.0, -1.0);
-if let Some(muzzle_global) = to_global_point_3d!(ctx.run, self_id, muzzle_local) {
-    // Use global-space point for spawning/projectiles/etc.
-}
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().create();
+        let _ = value;
+    }
+});
 ```
 
-Force rerender example:
+### `create_nodes`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn create_nodes( &mut self, requests: &[NodeCreationTemplate], parent_id: NodeID, ) -> Vec<NodeID>` |
+| Params | `&mut self, requests: &[NodeCreationTemplate], parent_id: NodeID,` |
+| Returns | `Vec<NodeID>` |
+| Use when | Use when gameplay needs a new runtime/resource object built from typed data. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
 
 ```rust
-// Script updates custom material params outside node fields.
-// Force subtree refresh in same frame.
-let ok = force_rerender!(ctx.run, character_root_id);
-if !ok {
-    // invalid/missing root id
-}
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().create_nodes(Default::default(), ctx.id);
+        let _ = value;
+    }
+});
 ```
 
+### `with_node_mut`
 
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn with_node_mut<T, V, F>(&mut self, id: NodeID, f: F) -> Option<V> where T: NodeTypeDispatch, F: FnOnce(&mut T) -> V,` |
+| Params | `&mut self, id: NodeID, f: F) -> Option<V> where T: NodeTypeDispatch, F: FnOnce(&mut T` |
+| Returns | `Option<V> where T: NodeTypeDispatch, F: FnOnce(&mut T) -> V,` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().with_node_mut(ctx.id, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `with_node`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn with_node<T, V: Clone + Default>( &mut self, node_id: NodeID, f: impl FnOnce(&T) -> V, ) -> V where T: NodeTypeDispatch,` |
+| Params | `&mut self, node_id: NodeID, f: impl FnOnce(&T) -> V,` |
+| Returns | `V, ) -> V where T: NodeTypeDispatch,` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().with_node(ctx.id, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `with_base_node`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn with_base_node<T, V, F>(&mut self, id: NodeID, f: F) -> Option<V> where T: NodeBaseDispatch, F: FnOnce(&T) -> V,` |
+| Params | `&mut self, id: NodeID, f: F) -> Option<V> where T: NodeBaseDispatch, F: FnOnce(&T` |
+| Returns | `Option<V> where T: NodeBaseDispatch, F: FnOnce(&T) -> V,` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().with_base_node(ctx.id, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `with_base_node_mut`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn with_base_node_mut<T, V, F>(&mut self, id: NodeID, f: F) -> Option<V> where T: NodeBaseDispatch, F: FnOnce(&mut T) -> V,` |
+| Params | `&mut self, id: NodeID, f: F) -> Option<V> where T: NodeBaseDispatch, F: FnOnce(&mut T` |
+| Returns | `Option<V> where T: NodeBaseDispatch, F: FnOnce(&mut T) -> V,` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().with_base_node_mut(ctx.id, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_node_name`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_node_name(&mut self, node_id: NodeID) -> Option<Cow<'static, str>>` |
+| Params | `&mut self, node_id: NodeID` |
+| Returns | `Option<Cow<'static, str>>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_node_name(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `set_node_name`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn set_node_name<S>(&mut self, node_id: NodeID, name: S) -> bool where S: Into<Cow<'static, str>>,` |
+| Params | `&mut self, node_id: NodeID, name: S` |
+| Returns | `bool where S: Into<Cow<'static, str>>,` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().set_node_name(ctx.id, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_skeleton_bone_name`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_skeleton_bone_name( &mut self, skeleton_id: NodeID, bone_index: usize, ) -> Option<Cow<'static, str>>` |
+| Params | `&mut self, skeleton_id: NodeID, bone_index: usize,` |
+| Returns | `Option<Cow<'static, str>>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_skeleton_bone_name(ctx.id, 0);
+        let _ = value;
+    }
+});
+```
+
+### `get_skeleton_bone_index`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_skeleton_bone_index<S>(&mut self, skeleton_id: NodeID, bone_name: S) -> Option<usize> where S: AsRef<str>,` |
+| Params | `&mut self, skeleton_id: NodeID, bone_name: S` |
+| Returns | `Option<usize> where S: AsRef<str>,` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_skeleton_bone_index(ctx.id, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `set_ui_rotation`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn set_ui_rotation(&mut self, node_id: NodeID, rotation: f32) -> bool` |
+| Params | `&mut self, node_id: NodeID, rotation: f32` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().set_ui_rotation(ctx.id, 1.0);
+        let _ = value;
+    }
+});
+```
+
+### `bind_locale_text`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn bind_locale_text<S>(&mut self, node_id: NodeID, key: S) -> bool where S: AsRef<str>,` |
+| Params | `&mut self, node_id: NodeID, key: S` |
+| Returns | `bool where S: AsRef<str>,` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().bind_locale_text(ctx.id, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `bind_locale_placeholder`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn bind_locale_placeholder<S>(&mut self, node_id: NodeID, key: S) -> bool where S: AsRef<str>,` |
+| Params | `&mut self, node_id: NodeID, key: S` |
+| Returns | `bool where S: AsRef<str>,` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().bind_locale_placeholder(ctx.id, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_node_parent_id`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_node_parent_id(&mut self, node_id: NodeID) -> Option<NodeID>` |
+| Params | `&mut self, node_id: NodeID` |
+| Returns | `Option<NodeID>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_node_parent_id(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `get_node_children_ids`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_node_children_ids(&mut self, node_id: NodeID) -> Option<Vec<NodeID>>` |
+| Params | `&mut self, node_id: NodeID` |
+| Returns | `Option<Vec<NodeID>>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_node_children_ids(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `get_children`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_children(&mut self, node_id: NodeID) -> Vec<NodeID>` |
+| Params | `&mut self, node_id: NodeID` |
+| Returns | `Vec<NodeID>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_children(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `get_child_at`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_child_at(&mut self, parent_id: NodeID, index: usize) -> Option<NodeID>` |
+| Params | `&mut self, parent_id: NodeID, index: usize` |
+| Returns | `Option<NodeID>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_child_at(ctx.id, 0);
+        let _ = value;
+    }
+});
+```
+
+### `get_child_by_name`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_child_by_name<S>(&mut self, parent_id: NodeID, name: S) -> Option<NodeID> where S: AsRef<str>,` |
+| Params | `&mut self, parent_id: NodeID, name: S` |
+| Returns | `Option<NodeID> where S: AsRef<str>,` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_child_by_name(ctx.id, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_children_by_name`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_children_by_name<S>(&mut self, parent_id: NodeID, name: S) -> Vec<NodeID> where S: AsRef<str>,` |
+| Params | `&mut self, parent_id: NodeID, name: S` |
+| Returns | `Vec<NodeID> where S: AsRef<str>,` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_children_by_name(ctx.id, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_child`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_child<T>(&mut self, parent_id: NodeID, selector: T) -> Option<NodeID> where T: IntoChildSelector,` |
+| Params | `&mut self, parent_id: NodeID, selector: T` |
+| Returns | `Option<NodeID> where T: IntoChildSelector,` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_child(ctx.id, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_node_type`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_node_type(&mut self, node_id: NodeID) -> Option<NodeType>` |
+| Params | `&mut self, node_id: NodeID` |
+| Returns | `Option<NodeType>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_node_type(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `reparent`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn reparent(&mut self, parent_id: NodeID, child_id: NodeID) -> bool` |
+| Params | `&mut self, parent_id: NodeID, child_id: NodeID` |
+| Returns | `bool` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().reparent(ctx.id, ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `force_rerender`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn force_rerender(&mut self, root_id: NodeID) -> bool` |
+| Params | `&mut self, root_id: NodeID` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().force_rerender(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `mark_needs_rerender`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn mark_needs_rerender(&mut self, node_id: NodeID) -> bool` |
+| Params | `&mut self, node_id: NodeID` |
+| Returns | `bool` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().mark_needs_rerender(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `reparent_multi`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn reparent_multi<I>(&mut self, parent_id: NodeID, child_ids: I) -> usize where I: IntoIterator<Item = NodeID>,` |
+| Params | `&mut self, parent_id: NodeID, child_ids: I` |
+| Returns | `usize where I: IntoIterator<Item = NodeID>,` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().reparent_multi(ctx.id, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `remove_node`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn remove_node(&mut self, node_id: NodeID) -> bool` |
+| Params | `&mut self, node_id: NodeID` |
+| Returns | `bool` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().remove_node(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `get_node_tags`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_node_tags(&mut self, node_id: NodeID) -> Option<Vec<Cow<'static, str>>>` |
+| Params | `&mut self, node_id: NodeID` |
+| Returns | `Option<Vec<Cow<'static, str>>>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_node_tags(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `tag_set`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn tag_set<T>(&mut self, node_id: NodeID, tags: Option<T>) -> bool where T: IntoNodeTags,` |
+| Params | `&mut self, node_id: NodeID, tags: Option<T>` |
+| Returns | `bool where T: IntoNodeTags,` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().tag_set(ctx.id, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `add_node_tag`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn add_node_tag<T>(&mut self, node_id: NodeID, tag: T) -> bool where T: IntoNodeTag,` |
+| Params | `&mut self, node_id: NodeID, tag: T` |
+| Returns | `bool where T: IntoNodeTag,` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().add_node_tag(ctx.id, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `add_node_tags`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn add_node_tags<T>(&mut self, node_id: NodeID, tags: T) -> bool where T: IntoNodeTags,` |
+| Params | `&mut self, node_id: NodeID, tags: T` |
+| Returns | `bool where T: IntoNodeTags,` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().add_node_tags(ctx.id, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `remove_node_tag`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn remove_node_tag<T>(&mut self, node_id: NodeID, tag: T) -> bool where T: IntoTagID,` |
+| Params | `&mut self, node_id: NodeID, tag: T` |
+| Returns | `bool where T: IntoTagID,` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().remove_node_tag(ctx.id, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_global_transform_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_global_transform_2d(&mut self, node_id: NodeID) -> Option<Transform2D>` |
+| Params | `&mut self, node_id: NodeID` |
+| Returns | `Option<Transform2D>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_global_transform_2d(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `get_global_transform_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_global_transform_3d(&mut self, node_id: NodeID) -> Option<Transform3D>` |
+| Params | `&mut self, node_id: NodeID` |
+| Returns | `Option<Transform3D>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_global_transform_3d(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `get_local_transform_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_local_transform_2d(&mut self, node_id: NodeID) -> Option<Transform2D>` |
+| Params | `&mut self, node_id: NodeID` |
+| Returns | `Option<Transform2D>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_local_transform_2d(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `get_local_transform_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_local_transform_3d(&mut self, node_id: NodeID) -> Option<Transform3D>` |
+| Params | `&mut self, node_id: NodeID` |
+| Returns | `Option<Transform3D>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_local_transform_3d(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `set_local_transform_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn set_local_transform_2d(&mut self, node_id: NodeID, transform: Transform2D) -> bool` |
+| Params | `&mut self, node_id: NodeID, transform: Transform2D` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().set_local_transform_2d(ctx.id, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `set_local_transform_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn set_local_transform_3d(&mut self, node_id: NodeID, transform: Transform3D) -> bool` |
+| Params | `&mut self, node_id: NodeID, transform: Transform3D` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().set_local_transform_3d(ctx.id, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `set_global_transform_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn set_global_transform_2d(&mut self, node_id: NodeID, global: Transform2D) -> bool` |
+| Params | `&mut self, node_id: NodeID, global: Transform2D` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().set_global_transform_2d(ctx.id, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `set_global_transform_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn set_global_transform_3d(&mut self, node_id: NodeID, global: Transform3D) -> bool` |
+| Params | `&mut self, node_id: NodeID, global: Transform3D` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().set_global_transform_3d(ctx.id, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_local_pos_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_local_pos_2d(&mut self, node_id: NodeID) -> Option<Vector2>` |
+| Params | `&mut self, node_id: NodeID` |
+| Returns | `Option<Vector2>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_local_pos_2d(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `get_local_pos_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_local_pos_3d(&mut self, node_id: NodeID) -> Option<Vector3>` |
+| Params | `&mut self, node_id: NodeID` |
+| Returns | `Option<Vector3>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_local_pos_3d(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `set_local_pos_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn set_local_pos_2d(&mut self, node_id: NodeID, pos: Vector2) -> bool` |
+| Params | `&mut self, node_id: NodeID, pos: Vector2` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().set_local_pos_2d(ctx.id, Vector2::new(0.0, 0.0));
+        let _ = value;
+    }
+});
+```
+
+### `set_local_pos_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn set_local_pos_3d(&mut self, node_id: NodeID, pos: Vector3) -> bool` |
+| Params | `&mut self, node_id: NodeID, pos: Vector3` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().set_local_pos_3d(ctx.id, Vector3::new(0.0, 0.0, 0.0));
+        let _ = value;
+    }
+});
+```
+
+### `get_global_pos_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_global_pos_2d(&mut self, node_id: NodeID) -> Option<Vector2>` |
+| Params | `&mut self, node_id: NodeID` |
+| Returns | `Option<Vector2>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_global_pos_2d(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `get_global_pos_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_global_pos_3d(&mut self, node_id: NodeID) -> Option<Vector3>` |
+| Params | `&mut self, node_id: NodeID` |
+| Returns | `Option<Vector3>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_global_pos_3d(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `set_global_pos_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn set_global_pos_2d(&mut self, node_id: NodeID, pos: Vector2) -> bool` |
+| Params | `&mut self, node_id: NodeID, pos: Vector2` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().set_global_pos_2d(ctx.id, Vector2::new(0.0, 0.0));
+        let _ = value;
+    }
+});
+```
+
+### `set_global_pos_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn set_global_pos_3d(&mut self, node_id: NodeID, pos: Vector3) -> bool` |
+| Params | `&mut self, node_id: NodeID, pos: Vector3` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().set_global_pos_3d(ctx.id, Vector3::new(0.0, 0.0, 0.0));
+        let _ = value;
+    }
+});
+```
+
+### `get_local_rot_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_local_rot_2d(&mut self, node_id: NodeID) -> Option<f32>` |
+| Params | `&mut self, node_id: NodeID` |
+| Returns | `Option<f32>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_local_rot_2d(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `get_local_rot_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_local_rot_3d(&mut self, node_id: NodeID) -> Option<Quaternion>` |
+| Params | `&mut self, node_id: NodeID` |
+| Returns | `Option<Quaternion>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_local_rot_3d(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `set_local_rot_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn set_local_rot_2d(&mut self, node_id: NodeID, rot: f32) -> bool` |
+| Params | `&mut self, node_id: NodeID, rot: f32` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().set_local_rot_2d(ctx.id, 1.0);
+        let _ = value;
+    }
+});
+```
+
+### `set_local_rot_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn set_local_rot_3d(&mut self, node_id: NodeID, rot: Quaternion) -> bool` |
+| Params | `&mut self, node_id: NodeID, rot: Quaternion` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().set_local_rot_3d(ctx.id, Quaternion::IDENTITY);
+        let _ = value;
+    }
+});
+```
+
+### `get_global_rot_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_global_rot_2d(&mut self, node_id: NodeID) -> Option<f32>` |
+| Params | `&mut self, node_id: NodeID` |
+| Returns | `Option<f32>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_global_rot_2d(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `get_global_rot_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_global_rot_3d(&mut self, node_id: NodeID) -> Option<Quaternion>` |
+| Params | `&mut self, node_id: NodeID` |
+| Returns | `Option<Quaternion>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_global_rot_3d(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `set_global_rot_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn set_global_rot_2d(&mut self, node_id: NodeID, rot: f32) -> bool` |
+| Params | `&mut self, node_id: NodeID, rot: f32` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().set_global_rot_2d(ctx.id, 1.0);
+        let _ = value;
+    }
+});
+```
+
+### `set_global_rot_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn set_global_rot_3d(&mut self, node_id: NodeID, rot: Quaternion) -> bool` |
+| Params | `&mut self, node_id: NodeID, rot: Quaternion` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().set_global_rot_3d(ctx.id, Quaternion::IDENTITY);
+        let _ = value;
+    }
+});
+```
+
+### `get_local_scale_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_local_scale_2d(&mut self, node_id: NodeID) -> Option<Vector2>` |
+| Params | `&mut self, node_id: NodeID` |
+| Returns | `Option<Vector2>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_local_scale_2d(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `get_local_scale_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_local_scale_3d(&mut self, node_id: NodeID) -> Option<Vector3>` |
+| Params | `&mut self, node_id: NodeID` |
+| Returns | `Option<Vector3>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_local_scale_3d(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `set_local_scale_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn set_local_scale_2d(&mut self, node_id: NodeID, scale: Vector2) -> bool` |
+| Params | `&mut self, node_id: NodeID, scale: Vector2` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().set_local_scale_2d(ctx.id, Vector2::new(0.0, 0.0));
+        let _ = value;
+    }
+});
+```
+
+### `set_local_scale_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn set_local_scale_3d(&mut self, node_id: NodeID, scale: Vector3) -> bool` |
+| Params | `&mut self, node_id: NodeID, scale: Vector3` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().set_local_scale_3d(ctx.id, Vector3::new(0.0, 0.0, 0.0));
+        let _ = value;
+    }
+});
+```
+
+### `get_global_scale_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_global_scale_2d(&mut self, node_id: NodeID) -> Option<Vector2>` |
+| Params | `&mut self, node_id: NodeID` |
+| Returns | `Option<Vector2>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_global_scale_2d(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `get_global_scale_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn get_global_scale_3d(&mut self, node_id: NodeID) -> Option<Vector3>` |
+| Params | `&mut self, node_id: NodeID` |
+| Returns | `Option<Vector3>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().get_global_scale_3d(ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `set_global_scale_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn set_global_scale_2d(&mut self, node_id: NodeID, scale: Vector2) -> bool` |
+| Params | `&mut self, node_id: NodeID, scale: Vector2` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().set_global_scale_2d(ctx.id, Vector2::new(0.0, 0.0));
+        let _ = value;
+    }
+});
+```
+
+### `set_global_scale_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn set_global_scale_3d(&mut self, node_id: NodeID, scale: Vector3) -> bool` |
+| Params | `&mut self, node_id: NodeID, scale: Vector3` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().set_global_scale_3d(ctx.id, Vector3::new(0.0, 0.0, 0.0));
+        let _ = value;
+    }
+});
+```
+
+### `to_global_point_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn to_global_point_2d(&mut self, node_id: NodeID, local: Vector2) -> Option<Vector2>` |
+| Params | `&mut self, node_id: NodeID, local: Vector2` |
+| Returns | `Option<Vector2>` |
+| Use when | Use when converting points or transforms between local node space and world space. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().to_global_point_2d(ctx.id, Vector2::new(0.0, 0.0));
+        let _ = value;
+    }
+});
+```
+
+### `to_local_point_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn to_local_point_2d(&mut self, node_id: NodeID, global: Vector2) -> Option<Vector2>` |
+| Params | `&mut self, node_id: NodeID, global: Vector2` |
+| Returns | `Option<Vector2>` |
+| Use when | Use when converting points or transforms between local node space and world space. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().to_local_point_2d(ctx.id, Vector2::new(0.0, 0.0));
+        let _ = value;
+    }
+});
+```
+
+### `to_global_point_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn to_global_point_3d(&mut self, node_id: NodeID, local: Vector3) -> Option<Vector3>` |
+| Params | `&mut self, node_id: NodeID, local: Vector3` |
+| Returns | `Option<Vector3>` |
+| Use when | Use when converting points or transforms between local node space and world space. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().to_global_point_3d(ctx.id, Vector3::new(0.0, 0.0, 0.0));
+        let _ = value;
+    }
+});
+```
+
+### `to_local_point_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn to_local_point_3d(&mut self, node_id: NodeID, global: Vector3) -> Option<Vector3>` |
+| Params | `&mut self, node_id: NodeID, global: Vector3` |
+| Returns | `Option<Vector3>` |
+| Use when | Use when converting points or transforms between local node space and world space. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().to_local_point_3d(ctx.id, Vector3::new(0.0, 0.0, 0.0));
+        let _ = value;
+    }
+});
+```
+
+### `to_global_transform_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn to_global_transform_2d( &mut self, node_id: NodeID, local: Transform2D, ) -> Option<Transform2D>` |
+| Params | `&mut self, node_id: NodeID, local: Transform2D,` |
+| Returns | `Option<Transform2D>` |
+| Use when | Use when converting points or transforms between local node space and world space. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().to_global_transform_2d(ctx.id, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `to_local_transform_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn to_local_transform_2d( &mut self, node_id: NodeID, global: Transform2D, ) -> Option<Transform2D>` |
+| Params | `&mut self, node_id: NodeID, global: Transform2D,` |
+| Returns | `Option<Transform2D>` |
+| Use when | Use when converting points or transforms between local node space and world space. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().to_local_transform_2d(ctx.id, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `to_global_transform_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn to_global_transform_3d( &mut self, node_id: NodeID, local: Transform3D, ) -> Option<Transform3D>` |
+| Params | `&mut self, node_id: NodeID, local: Transform3D,` |
+| Returns | `Option<Transform3D>` |
+| Use when | Use when converting points or transforms between local node space and world space. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().to_global_transform_3d(ctx.id, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `to_local_transform_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn to_local_transform_3d( &mut self, node_id: NodeID, global: Transform3D, ) -> Option<Transform3D>` |
+| Params | `&mut self, node_id: NodeID, global: Transform3D,` |
+| Returns | `Option<Transform3D>` |
+| Use when | Use when converting points or transforms between local node space and world space. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().to_local_transform_3d(ctx.id, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `mesh_instance_surface_at_global_point`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn mesh_instance_surface_at_global_point( &mut self, node_id: NodeID, global_point: Vector3, ) -> Option<MeshSurfaceHit3D>` |
+| Params | `&mut self, node_id: NodeID, global_point: Vector3,` |
+| Returns | `Option<MeshSurfaceHit3D>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().mesh_instance_surface_at_global_point(ctx.id, Vector3::new(0.0, 0.0, 0.0));
+        let _ = value;
+    }
+});
+```
+
+### `mesh_instance_surface_on_global_ray`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn mesh_instance_surface_on_global_ray( &mut self, node_id: NodeID, ray_origin: Vector3, ray_direction: Vector3, max_distance: f32, ) -> Option<MeshSurfaceHit3D>` |
+| Params | `&mut self, node_id: NodeID, ray_origin: Vector3, ray_direction: Vector3, max_distance: f32,` |
+| Returns | `Option<MeshSurfaceHit3D>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().mesh_instance_surface_on_global_ray(ctx.id, Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0);
+        let _ = value;
+    }
+});
+```
+
+### `mesh_instance_surfaces_on_global_rays`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn mesh_instance_surfaces_on_global_rays( &mut self, node_id: NodeID, rays: &[MeshSurfaceRay3D], resolve_material: bool, ) -> Vec<Option<MeshSurfaceHit3D>>` |
+| Params | `&mut self, node_id: NodeID, rays: &[MeshSurfaceRay3D], resolve_material: bool,` |
+| Returns | `Vec<Option<MeshSurfaceHit3D>>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().mesh_instance_surfaces_on_global_rays(ctx.id, Default::default(), true);
+        let _ = value;
+    }
+});
+```
+
+### `mesh_instance_material_regions`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn mesh_instance_material_regions( &mut self, node_id: NodeID, material: MaterialID, ) -> Vec<MeshMaterialRegion3D>` |
+| Params | `&mut self, node_id: NodeID, material: MaterialID,` |
+| Returns | `Vec<MeshMaterialRegion3D>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().mesh_instance_material_regions(ctx.id, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `mesh_data_surface_at_local_point`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn mesh_data_surface_at_local_point( &mut self, mesh_id: MeshID, local_point: Vector3, ) -> Option<MeshDataSurfaceHit3D>` |
+| Params | `&mut self, mesh_id: MeshID, local_point: Vector3,` |
+| Returns | `Option<MeshDataSurfaceHit3D>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().mesh_data_surface_at_local_point(ctx.id, Vector3::new(0.0, 0.0, 0.0));
+        let _ = value;
+    }
+});
+```
+
+### `mesh_data_surface_on_local_ray`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn mesh_data_surface_on_local_ray( &mut self, mesh_id: MeshID, ray_origin_local: Vector3, ray_direction_local: Vector3, max_distance: f32, ) -> Option<MeshDataSurfaceHit3D>` |
+| Params | `&mut self, mesh_id: MeshID, ray_origin_local: Vector3, ray_direction_local: Vector3, max_distance: f32,` |
+| Returns | `Option<MeshDataSurfaceHit3D>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().mesh_data_surface_on_local_ray(ctx.id, Vector3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 0.0), 1.0);
+        let _ = value;
+    }
+});
+```
+
+### `mesh_data_surface_regions`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `pub fn mesh_data_surface_regions( &mut self, mesh_id: MeshID, surface_index: u32, ) -> Vec<MeshDataSurfaceRegion3D>` |
+| Params | `&mut self, mesh_id: MeshID, surface_index: u32,` |
+| Returns | `Vec<MeshDataSurfaceRegion3D>` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Nodes().mesh_data_surface_regions(ctx.id, 0);
+        let _ = value;
+    }
+});
+```
+
+### `with_node_mut`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `with_node_mut!(ctx.run, node_ty, id, f)` |
+| Params | `ctx, node_ty, id, f` |
+| Returns | `same as backing method` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = with_node_mut!(ctx.run, 0.0, 0.1, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `with_node`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `with_node!(ctx.run, node_ty, id, f)` |
+| Params | `ctx, node_ty, id, f` |
+| Returns | `same as backing method` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = with_node!(ctx.run, 0.0, 0.1, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `with_base_node`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `with_base_node!(ctx.run, base_ty, id, f)` |
+| Params | `ctx, base_ty, id, f` |
+| Returns | `same as backing method` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = with_base_node!(ctx.run, 0.0, 0.1, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `with_base_node_mut`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `with_base_node_mut!(ctx.run, base_ty, id, f)` |
+| Params | `ctx, base_ty, id, f` |
+| Returns | `same as backing method` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = with_base_node_mut!(ctx.run, 0.0, 0.1, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `create_node`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `create_node!(ctx.run, node_ty)` |
+| Params | `ctx, node_ty` |
+| Returns | `resource/runtime ID or `Result` as shown by backing method` |
+| Use when | Use when gameplay needs a new runtime/resource object built from typed data. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = create_node!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `node_template`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `node_template!(node_ty)` |
+| Params | `node_ty` |
+| Returns | `same as backing method` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = node_template!(ctx.run);
+        let _ = value;
+    }
+});
+```
+
+### `create_nodes`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `create_nodes!(ctx.run, requests)` |
+| Params | `ctx, requests` |
+| Returns | `resource/runtime ID or `Result` as shown by backing method` |
+| Use when | Use when gameplay needs a new runtime/resource object built from typed data. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = create_nodes!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_node_name`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `get_node_name!(ctx.run, id)` |
+| Params | `ctx, id` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = get_node_name!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `set_node_name`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `set_node_name!(ctx.run, id, name)` |
+| Params | `ctx, id, name` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = set_node_name!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_skeleton_bone_name`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `get_skeleton_bone_name!(ctx.run, id, index)` |
+| Params | `ctx, id, index` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = get_skeleton_bone_name!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_skeleton_bone_index`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `get_skeleton_bone_index!(ctx.run, id, name)` |
+| Params | `ctx, id, name` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = get_skeleton_bone_index!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `set_ui_rotation`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `set_ui_rotation!(ctx.run, id, rotation)` |
+| Params | `ctx, id, rotation` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = set_ui_rotation!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `bind_locale_text`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `bind_locale_text!(ctx.run, id, key)` |
+| Params | `ctx, id, key` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = bind_locale_text!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `bind_locale_placeholder`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `bind_locale_placeholder!(ctx.run, id, key)` |
+| Params | `ctx, id, key` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = bind_locale_placeholder!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_node_parent_id`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `get_node_parent_id!(ctx.run, id)` |
+| Params | `ctx, id` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = get_node_parent_id!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_node_children_ids`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `get_node_children_ids!(ctx.run, id)` |
+| Params | `ctx, id` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = get_node_children_ids!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_children`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `get_children!(ctx.run, id)` |
+| Params | `ctx, id` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = get_children!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_child`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `get_child!(ctx.run, id, all[name] $(,)?)` |
+| Params | `ctx, id, all[name] $(,)?` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = get_child!(ctx.run, 0.0, 0.1, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_node_type`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `get_node_type!(ctx.run, id)` |
+| Params | `ctx, id` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = get_node_type!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `reparent`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `reparent!(ctx.run, parent, child)` |
+| Params | `ctx, parent, child` |
+| Returns | `same as backing method` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = reparent!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `force_rerender`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `force_rerender!(ctx.run, id)` |
+| Params | `ctx, id` |
+| Returns | `same as backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = force_rerender!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `reparent_multi`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `reparent_multi!(ctx.run, parent, child_ids)` |
+| Params | `ctx, parent, child_ids` |
+| Returns | `same as backing method` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = reparent_multi!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `remove_node`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `remove_node!(ctx.run, id)` |
+| Params | `ctx, id` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = remove_node!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_global_transform_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `get_global_transform_2d!(ctx.run, id)` |
+| Params | `ctx, id` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = get_global_transform_2d!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_global_transform_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `get_global_transform_3d!(ctx.run, id)` |
+| Params | `ctx, id` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = get_global_transform_3d!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_local_transform_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `get_local_transform_2d!(ctx.run, id)` |
+| Params | `ctx, id` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = get_local_transform_2d!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_local_transform_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `get_local_transform_3d!(ctx.run, id)` |
+| Params | `ctx, id` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = get_local_transform_3d!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `set_global_transform_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `set_global_transform_2d!(ctx.run, id, transform)` |
+| Params | `ctx, id, transform` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = set_global_transform_2d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `set_global_transform_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `set_global_transform_3d!(ctx.run, id, transform)` |
+| Params | `ctx, id, transform` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = set_global_transform_3d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `set_local_transform_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `set_local_transform_2d!(ctx.run, id, transform)` |
+| Params | `ctx, id, transform` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = set_local_transform_2d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `set_local_transform_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `set_local_transform_3d!(ctx.run, id, transform)` |
+| Params | `ctx, id, transform` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = set_local_transform_3d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_local_pos_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `get_local_pos_2d!(ctx.run, id)` |
+| Params | `ctx, id` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = get_local_pos_2d!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_local_pos_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `get_local_pos_3d!(ctx.run, id)` |
+| Params | `ctx, id` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = get_local_pos_3d!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `set_local_pos_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `set_local_pos_2d!(ctx.run, id, pos)` |
+| Params | `ctx, id, pos` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = set_local_pos_2d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `set_local_pos_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `set_local_pos_3d!(ctx.run, id, pos)` |
+| Params | `ctx, id, pos` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = set_local_pos_3d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_global_pos_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `get_global_pos_2d!(ctx.run, id)` |
+| Params | `ctx, id` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = get_global_pos_2d!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_global_pos_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `get_global_pos_3d!(ctx.run, id)` |
+| Params | `ctx, id` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = get_global_pos_3d!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `set_global_pos_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `set_global_pos_2d!(ctx.run, id, pos)` |
+| Params | `ctx, id, pos` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = set_global_pos_2d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `set_global_pos_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `set_global_pos_3d!(ctx.run, id, pos)` |
+| Params | `ctx, id, pos` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = set_global_pos_3d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_local_rot_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `get_local_rot_2d!(ctx.run, id)` |
+| Params | `ctx, id` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = get_local_rot_2d!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_local_rot_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `get_local_rot_3d!(ctx.run, id)` |
+| Params | `ctx, id` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = get_local_rot_3d!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `set_local_rot_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `set_local_rot_2d!(ctx.run, id, rot)` |
+| Params | `ctx, id, rot` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = set_local_rot_2d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `set_local_rot_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `set_local_rot_3d!(ctx.run, id, rot)` |
+| Params | `ctx, id, rot` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = set_local_rot_3d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_global_rot_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `get_global_rot_2d!(ctx.run, id)` |
+| Params | `ctx, id` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = get_global_rot_2d!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_global_rot_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `get_global_rot_3d!(ctx.run, id)` |
+| Params | `ctx, id` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = get_global_rot_3d!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `set_global_rot_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `set_global_rot_2d!(ctx.run, id, rot)` |
+| Params | `ctx, id, rot` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = set_global_rot_2d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `set_global_rot_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `set_global_rot_3d!(ctx.run, id, rot)` |
+| Params | `ctx, id, rot` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = set_global_rot_3d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_local_scale_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `get_local_scale_2d!(ctx.run, id)` |
+| Params | `ctx, id` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = get_local_scale_2d!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_local_scale_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `get_local_scale_3d!(ctx.run, id)` |
+| Params | `ctx, id` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = get_local_scale_3d!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `set_local_scale_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `set_local_scale_2d!(ctx.run, id, scale)` |
+| Params | `ctx, id, scale` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = set_local_scale_2d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `set_local_scale_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `set_local_scale_3d!(ctx.run, id, scale)` |
+| Params | `ctx, id, scale` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = set_local_scale_3d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_global_scale_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `get_global_scale_2d!(ctx.run, id)` |
+| Params | `ctx, id` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = get_global_scale_2d!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_global_scale_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `get_global_scale_3d!(ctx.run, id)` |
+| Params | `ctx, id` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = get_global_scale_3d!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `set_global_scale_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `set_global_scale_2d!(ctx.run, id, scale)` |
+| Params | `ctx, id, scale` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = set_global_scale_2d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `set_global_scale_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `set_global_scale_3d!(ctx.run, id, scale)` |
+| Params | `ctx, id, scale` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = set_global_scale_3d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `to_global_point_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `to_global_point_2d!(ctx.run, id, point)` |
+| Params | `ctx, id, point` |
+| Returns | `same as backing method` |
+| Use when | Use when converting points or transforms between local node space and world space. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = to_global_point_2d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `to_local_point_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `to_local_point_2d!(ctx.run, id, point)` |
+| Params | `ctx, id, point` |
+| Returns | `same as backing method` |
+| Use when | Use when converting points or transforms between local node space and world space. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = to_local_point_2d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `to_global_point_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `to_global_point_3d!(ctx.run, id, point)` |
+| Params | `ctx, id, point` |
+| Returns | `same as backing method` |
+| Use when | Use when converting points or transforms between local node space and world space. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = to_global_point_3d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `to_local_point_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `to_local_point_3d!(ctx.run, id, point)` |
+| Params | `ctx, id, point` |
+| Returns | `same as backing method` |
+| Use when | Use when converting points or transforms between local node space and world space. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = to_local_point_3d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `to_global_transform_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `to_global_transform_2d!(ctx.run, id, transform)` |
+| Params | `ctx, id, transform` |
+| Returns | `same as backing method` |
+| Use when | Use when converting points or transforms between local node space and world space. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = to_global_transform_2d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `to_local_transform_2d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `to_local_transform_2d!(ctx.run, id, transform)` |
+| Params | `ctx, id, transform` |
+| Returns | `same as backing method` |
+| Use when | Use when converting points or transforms between local node space and world space. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = to_local_transform_2d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `to_global_transform_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `to_global_transform_3d!(ctx.run, id, transform)` |
+| Params | `ctx, id, transform` |
+| Returns | `same as backing method` |
+| Use when | Use when converting points or transforms between local node space and world space. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = to_global_transform_3d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `to_local_transform_3d`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `to_local_transform_3d!(ctx.run, id, transform)` |
+| Params | `ctx, id, transform` |
+| Returns | `same as backing method` |
+| Use when | Use when converting points or transforms between local node space and world space. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = to_local_transform_3d!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `get_node_tags`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `get_node_tags!(ctx.run, id)` |
+| Params | `ctx, id` |
+| Returns | `typed value from backing method` |
+| Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = get_node_tags!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `tag_set`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `tag_set!(ctx.run, id, tags)` |
+| Params | `ctx, id, tags` |
+| Returns | `same as backing method` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = tag_set!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `tag_add`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `tag_add!(ctx.run, id, tags)` |
+| Params | `ctx, id, tags` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = tag_add!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `tag_remove`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Nodes()` |
+| Signature | `tag_remove!(ctx.run, id, tag)` |
+| Params | `ctx, id, tag` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = tag_remove!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```

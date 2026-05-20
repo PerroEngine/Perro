@@ -163,4 +163,3 @@ root_of = "res://shared/player_base.scn"
   - If types differ, Imported Scene Instance node data is used as-is.
 - `root_of` expansion supports nesting (a Base Scene Template can itself use `root_of`).
 - Cycles are rejected (`A` includes `B` includes `A`).
-

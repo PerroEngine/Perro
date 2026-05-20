@@ -1,239 +1,389 @@
 # Audio Module
 
-Access:
+## Page Map
 
-- `ctx.run.Audio()`
+| Header | Link |
+| --- | --- |
+| Overview | [Overview](#overview) |
+| Context | [Context](#context) |
+| API Reference | [API Reference](#api-reference) |
+| `set_debug_rays` | [`set_debug_rays`](#set_debug_rays) |
+| `debug_rays_enabled` | [`debug_rays_enabled`](#debug_rays_enabled) |
+| `play_attached` | [`play_attached`](#play_attached) |
+| `play_attached_bus` | [`play_attached_bus`](#play_attached_bus) |
+| `stop_attached` | [`stop_attached`](#stop_attached) |
+| `midi` | [`midi`](#midi) |
+| `play_note_attached` | [`play_note_attached`](#play_note_attached) |
+| `start_note_attached` | [`start_note_attached`](#start_note_attached) |
+| `play_file_attached` | [`play_file_attached`](#play_file_attached) |
+| `release_note` | [`release_note`](#release_note) |
+| `stop_attached` | [`stop_attached`](#stop_attached) |
+| `audio_play_attached` | [`audio_play_attached`](#audio_play_attached) |
+| `midi_play_attached` | [`midi_play_attached`](#midi_play_attached) |
+| `midi_start_attached` | [`midi_start_attached`](#midi_start_attached) |
+| `midi_release_attached` | [`midi_release_attached`](#midi_release_attached) |
+| `midi_stop_attached` | [`midi_stop_attached`](#midi_stop_attached) |
 
-Runtime audio is for node-bound sounds.
-Point 2D/3D sounds live on `ctx.res.Audio()` because they are resource playback requests.
+## Overview
 
-Shared backend, cache, bus, `.pawdio`, and propagation concepts:
+This runtime module belongs to `ctx.run` and documents audio calls.
 
-- [Audio](../../../resources/audio.md)
+## Context
 
-## Attached Audio
+- Script context path: `ctx.run`
+- Module access: `ctx.run.Audio()`
+- Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
 
-Use attached audio when a sound should follow a scene node without adding a dedicated audio node.
-Use it for engine loops, moving speakers, projectile hum, held notes, and any sound that must stay glued to a `Node2D` or `Node3D`.
-Use point audio on `ctx.res.Audio()` for one-shot sounds that do not move after spawn.
+## API Reference
 
-Methods:
+### `set_debug_rays`
 
-- `ctx.run.Audio().play_attached(audio, node_id, options) -> bool`
-- `ctx.run.Audio().play_attached_bus(bus_id, audio, node_id, options) -> bool`
-- `ctx.run.Audio().stop_attached(node_id, source) -> bool`
-- `ctx.run.Audio().midi().play_note_attached(note, node_id, options, spatial) -> bool`
-- `ctx.run.Audio().midi().start_note_attached(note, node_id, options, spatial) -> Option<MidiNoteHandle>`
-- `ctx.run.Audio().midi().play_file_attached(song, node_id, spatial) -> bool`
-- `ctx.run.Audio().midi().release_note(handle) -> bool`
-- `ctx.run.Audio().midi().stop_attached(node_id, handle_or_source) -> bool`
-
-MIDI macros:
-
-- `midi_play_attached!(ctx.run, Note::C4, node_id, options, spatial) -> bool`
-- `midi_play_attached!(ctx.run, MidiSong::new("res://music/theme.mid"), node_id, spatial) -> bool`
-- `midi_start_attached!(ctx.run, Note::C4, node_id, options, spatial) -> Option<MidiNoteHandle>`
-- `midi_release_attached!(ctx.run, handle) -> bool`
-- `midi_stop_attached!(ctx.run, node_id, handle_or_source) -> bool`
-
-Types:
-
-```rust
-RuntimeAudio {
-    source: &str,
-    looped: bool,
-    volume: f32,
-    effects: AudioEffects,
-    from_start: f32,
-    from_end: f32,
-}
-
-AudioEffects {
-    speed: f32,
-    low_pass: f32,
-    reverb_send: f32,
-    echo: f32,
-    reflection: f32,
-    occlusion: f32,
-    eq: AudioEq,
-    compression: AudioCompression,
-}
-
-SpatialAudioOptions {
-    range: f32,
-    audio_layer: BitMask,
-    enable_propagation: bool,
-    direction_2d: AudioDirection<Vector2>,
-    direction_3d: AudioDirection<Vector3>,
-}
-```
-
-Rules:
-
-- `Node2D`-derived nodes use the 2D propagation solver.
-- `Node3D`-derived nodes use the 3D propagation solver.
-- `SpatialAudioOptions` has no shorthand ctor; set range and direction fields.
-- `AudioDirection::Omni` means default omni playback.
-- omni ignores direction.
-- `direction_2d: AudioDirection::Directional(forward)` sets 2D directional mode.
-- `direction_3d: AudioDirection::Directional(forward)` sets 3D directional mode.
-- inverse directional is loudest opposite forward.
-- bidirectional is loudest forward and backward.
-- direction vectors are normalized by the runtime.
-- attached audio uses node rotation as forward when direction is non-omni.
-- explicit direction vector is fallback for point use and non-attached use.
-- Missing node after playback starts freezes the last valid position.
-- `stop_attached(node_id, source)` stops only sounds matching both node and source.
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Audio()` |
+| Signature | `pub fn set_debug_rays(&mut self, enabled: bool)` |
+| Params | `&mut self, enabled: bool` |
+| Returns | `()` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
 Example:
 
 ```rust
-let sound = RuntimeAudio {
-    source: "res://audio/car_loop.wav",
-    looped: true,
-    volume: 1.0,
-    effects: AudioEffects::new(),
-    from_start: 0.0,
-    from_end: 0.0,
-};
-
-let options = SpatialAudioOptions {
-    range: 80.0,
-    audio_layer: BitMask::ALL,
-    enable_propagation: true,
-    direction_2d: AudioDirection::Omni,
-    direction_3d: AudioDirection::Omni,
-};
-
-let _ = ctx.run.Audio().play_attached_bus(audio_bus!("sfx"), sound, car_node, options);
-let _ = ctx.run.Audio().stop_attached(car_node, "res://audio/car_loop.wav");
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Audio().set_debug_rays(true);
+        let _ = value;
+    }
+});
 ```
 
-Directional attached audio:
+### `debug_rays_enabled`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Audio()` |
+| Signature | `pub fn debug_rays_enabled(&mut self) -> bool` |
+| Params | `&mut self` |
+| Returns | `bool` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
 
 ```rust
-let cone = SpatialAudioOptions {
-    range: 60.0,
-    audio_layer: BitMask::ALL,
-    enable_propagation: true,
-    direction_2d: AudioDirection::Omni,
-    direction_3d: AudioDirection::Directional(Vector3::new(0.0, 0.0, -1.0)),
-};
-let _ = ctx.run.Audio().play_attached(sound, speaker_node, cone);
-
-let two_way = SpatialAudioOptions {
-    range: 30.0,
-    audio_layer: BitMask::ALL,
-    enable_propagation: true,
-    direction_2d: AudioDirection::Bidirectional(Vector2::new(0.0, -1.0)),
-    direction_3d: AudioDirection::Omni,
-};
-let _ = ctx.run.Audio().play_attached(sound, siren_node, two_way);
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Audio().debug_rays_enabled();
+        let _ = value;
+    }
+});
 ```
 
-Moving machine loop:
+### `play_attached`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Audio()` |
+| Signature | `pub fn play_attached( &mut self, audio: RuntimeAudio<'_>, node: NodeID, options: SpatialAudioOptions, ) -> bool` |
+| Params | `&mut self, audio: RuntimeAudio<'_>, node: NodeID, options: SpatialAudioOptions,` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
 
 ```rust
-let machine = RuntimeAudio {
-    source: "res://audio/machine_loop.ogg",
-    looped: true,
-    volume: 0.8,
-    effects: AudioEffects {
-        low_pass: 0.05,
-        reverb_send: 0.1,
-        ..AudioEffects::new()
-    },
-    from_start: 0.0,
-    from_end: 0.0,
-};
-
-let spatial = SpatialAudioOptions {
-    range: 48.0,
-    audio_layer: BitMask::ALL,
-    enable_propagation: true,
-    direction_2d: AudioDirection::Omni,
-    direction_3d: AudioDirection::Omni,
-};
-
-let _ = ctx.run.Audio().play_attached_bus(audio_bus!("ambience"), machine, machine_node, spatial);
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Audio().play_attached(Default::default(), ctx.id, 0.1);
+        let _ = value;
+    }
+});
 ```
 
-Rotating siren:
+### `play_attached_bus`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Audio()` |
+| Signature | `pub fn play_attached_bus( &mut self, bus_id: AudioBusID, audio: RuntimeAudio<'_>, node: NodeID, options: SpatialAudioOptions, ) -> bool` |
+| Params | `&mut self, bus_id: AudioBusID, audio: RuntimeAudio<'_>, node: NodeID, options: SpatialAudioOptions,` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
 
 ```rust
-let siren = RuntimeAudio::new("res://audio/siren_loop.wav");
-let spatial = SpatialAudioOptions {
-    range: 96.0,
-    audio_layer: BitMask::ALL,
-    enable_propagation: true,
-    direction_2d: AudioDirection::Bidirectional(Vector2::new(0.0, -1.0)),
-    direction_3d: AudioDirection::Omni,
-};
-
-let _ = ctx.run.Audio().play_attached_bus(audio_bus!("sfx"), siren, siren_node, spatial);
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Audio().play_attached_bus(ctx.id, Default::default(), ctx.id, 0.1);
+        let _ = value;
+    }
+});
 ```
 
-## Attached MIDI
+### `stop_attached`
 
-Attached MIDI derives 2D or 3D from the node spatial type.
-The note or MIDI file follows node transforms and uses propagation raycasts.
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Audio()` |
+| Signature | `pub fn stop_attached(&mut self, node: NodeID, source: &str) -> bool` |
+| Params | `&mut self, node: NodeID, source: &str` |
+| Returns | `bool` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
 
 ```rust
-let spatial = SpatialAudioOptions {
-    range: 40.0,
-    audio_layer: BitMask::ALL,
-    enable_propagation: true,
-    direction_2d: AudioDirection::Omni,
-    direction_3d: AudioDirection::Omni,
-};
-let opts = MidiNoteOptions {
-    program: program::Brass::Trumpet,
-    sustain: std::time::Duration::from_millis(350),
-    ..MidiNoteOptions::default()
-};
-
-let _ = ctx.run.Audio().midi().play_note_attached(Note::C4, node, opts, spatial);
-
-let held = ctx.run.Audio().midi().start_note_attached(Note::G3, node, opts, spatial);
-if let Some(handle) = held {
-    let _ = ctx.run.Audio().midi().release_note(handle);
-}
-
-let song = MidiSong::new("res://music/theme.mid").looped();
-let _ = ctx.run.Audio().midi().play_file_attached(song, node, spatial);
-let _ = ctx.run.Audio().midi().stop_attached(node, "res://music/theme.mid");
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Audio().stop_attached(ctx.id, "name");
+        let _ = value;
+    }
+});
 ```
 
-Attached held note:
+### `midi`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Audio()` |
+| Signature | `pub fn midi(&mut self) -> RuntimeMidiModule<'_, RT>` |
+| Params | `&mut self` |
+| Returns | `RuntimeMidiModule<'_, RT>` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
 
 ```rust
-let spatial = SpatialAudioOptions {
-    range: 24.0,
-    audio_layer: BitMask::ALL,
-    enable_propagation: true,
-    direction_2d: AudioDirection::Omni,
-    direction_3d: AudioDirection::Omni,
-};
-
-let opts = MidiNoteOptions {
-    program: program::SynthLead::Square,
-    volume: 0.6,
-    ..MidiNoteOptions::default()
-};
-
-if let Some(handle) = midi_start_attached!(ctx.run, Note::C4, orb_node, opts, spatial) {
-    let _ = midi_stop_attached!(ctx.run, orb_node, handle);
-}
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Audio().midi();
+        let _ = value;
+    }
+});
 ```
 
-## Point Audio
+### `play_note_attached`
 
-Use `ctx.res.Audio()` for sounds played at points:
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Audio().midi()` |
+| Signature | `pub fn play_note_attached( &mut self, note: Note, node: NodeID, options: MidiNoteOptions, spatial: SpatialAudioOptions, ) -> bool` |
+| Params | `&mut self, note: Note, node: NodeID, options: MidiNoteOptions, spatial: SpatialAudioOptions,` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
 
 ```rust
-let hit = Audio2D::new("res://audio/hit.wav", Vector2::new(128.0, 64.0), 512.0);
-let _ = audio_play!(ctx.res, hit);
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Audio().midi().play_note_attached(Default::default(), ctx.id, 0.0, 0.1);
+        let _ = value;
+    }
+});
 ```
 
-Point sounds also use propagation.
-They do not bind to nodes.
+### `start_note_attached`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Audio().midi()` |
+| Signature | `pub fn start_note_attached( &mut self, note: Note, node: NodeID, options: MidiNoteOptions, spatial: SpatialAudioOptions, ) -> Option<MidiNoteHandle>` |
+| Params | `&mut self, note: Note, node: NodeID, options: MidiNoteOptions, spatial: SpatialAudioOptions,` |
+| Returns | `Option<MidiNoteHandle>` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Audio().midi().start_note_attached(Default::default(), ctx.id, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `play_file_attached`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Audio().midi()` |
+| Signature | `pub fn play_file_attached( &mut self, song: MidiSong, node: NodeID, spatial: SpatialAudioOptions, ) -> bool` |
+| Params | `&mut self, song: MidiSong, node: NodeID, spatial: SpatialAudioOptions,` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Audio().midi().play_file_attached(Default::default(), ctx.id, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `release_note`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Audio().midi()` |
+| Signature | `pub fn release_note(&mut self, handle: MidiNoteHandle) -> bool` |
+| Params | `&mut self, handle: MidiNoteHandle` |
+| Returns | `bool` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Audio().midi().release_note(0.1);
+        let _ = value;
+    }
+});
+```
+
+### `stop_attached`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Audio().midi()` |
+| Signature | `pub fn stop_attached<T: Into<AttachedMidiTarget<'rt>>>( &mut self, node: NodeID, target: T, ) -> bool` |
+| Params | `&mut self, node: NodeID, target: T,` |
+| Returns | `bool` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Audio().midi().stop_attached(ctx.id, ctx.id);
+        let _ = value;
+    }
+});
+```
+
+### `audio_play_attached`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Audio()` |
+| Signature | `audio_play_attached!(ctx.run.run, bus_id, audio, node, options)` |
+| Params | `ctx.run, bus_id, audio, node, options` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = audio_play_attached!(ctx.run, 0.0, 0.1, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `midi_play_attached`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Audio()` |
+| Signature | `midi_play_attached!(ctx.run.run, note, node, options, spatial)` |
+| Params | `ctx.run, note, node, options, spatial` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = midi_play_attached!(ctx.run, 0.0, 0.1, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `midi_start_attached`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Audio()` |
+| Signature | `midi_start_attached!(ctx.run.run, note, node, options, spatial)` |
+| Params | `ctx.run, note, node, options, spatial` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = midi_start_attached!(ctx.run, 0.0, 0.1, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `midi_release_attached`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Audio()` |
+| Signature | `midi_release_attached!(ctx.run.run, handle)` |
+| Params | `ctx.run, handle` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = midi_release_attached!(ctx.run, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `midi_stop_attached`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Audio()` |
+| Signature | `midi_stop_attached!(ctx.run.run, node, target)` |
+| Params | `ctx.run, node, target` |
+| Returns | `bool or () as shown by backing method` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = midi_stop_attached!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```

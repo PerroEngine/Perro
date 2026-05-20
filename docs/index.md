@@ -1,71 +1,90 @@
 # Docs Index
 
-Perro docs follow one core idea:
-keep authoring simple, keep workflow flexible, and let the compiler + static pipeline do the heavy work needed for fast release builds.
+Perro docs are split by system and module. API pages use one block shape for every item: access, signature, params, return, why, edge behavior, and example.
 
-That applies to 2D, 3D, and UI too.
-UI aims for powerful layout behavior with relative sizing + clamping, and runtime aims for high-fps game workloads across both 2D + 3D.
+Ctx map: `ctx.run` = runtime, `ctx.res` = resource, `ctx.ipt` = input.
 
-## Project Status
+## Page Table
 
-- [Feature Matrix](project/feature_matrix.md)
-- [Performance + Flexibility Philosophy](project/performance_philosophy.md)
-- [Steamworks](platform/steamworks.md)
-- [WASM / Web Target](WASM.md)
-
-## Particles
-
-- [Particle System Guide](resources/particles.md)
-
-## Animation
-
-- [Animation Overview](resources/animation.md)
-
-## Audio
-
-- [Audio](resources/audio.md)
-
-## Scripting
-
-- [Scripting Overview](scripting/README.md)
-- [Project Script Modules](scripting/project_modules.md)
-- [Script Utility Modules](scripting/modules.md)
-- [Networking](networking/index.md)
-- [Networking / HTTP](networking/http.md)
-- [Networking / TCP](networking/tcp.md)
-- [Networking / UDP](networking/udp.md)
-- [Networking / WebSocket](networking/websocket.md)
-- [Networking / WebRTC](networking/webrtc.md)
-- [Script Contexts](scripting/contexts/README.md)
-- [Math Types](scripting/math_types.md)
-- [BitMask](scripting/bitmask.md)
-- [Node Types](scripting/nodes.md)
-- [Query System](scripting/query_system.md)
-- [Mesh Query Perf Snapshot](scripting/mesh_query_perf.md)
-- [UI Nodes](scripting/ui.md)
-- [TileMap2D](scripting/tilemap.md)
-- [Water Bodies](scripting/water.md)
-- [Scene Node Templates](scripting/scene_node_templates/index.md)
-- [Script State](scripting/state.md)
-- [Script Lifecycle](scripting/lifecycle.md)
-- [Script Methods](scripting/methods.md)
-
-## Resources
-
-- [ResPath](resources/respath.md)
-- [Materials Guide](resources/materials.md)
-- [`.panim` Format](resources/panim.md)
-- [`.panimtree` Format](resources/panimtree.md)
-- [`.pmat` Format](resources/pmat.md)
-- [`.ptileset` Format](resources/ptileset.md)
-- [`.uistyle` Format](resources/uistyle.md)
-- [`.ppart` Format](resources/ppart.md)
-- [`.pskel` Format](resources/pskel.md)
-- [CSV Resource API](scripting/contexts/resource_modules/csv.md)
-
-- [Post Processing](resources/postprocess.md)
-- [Visual Accessibility](scripting/contexts/resource_modules/visual_accessibility.md)
-
-## DLC
-
-- [DLC Guide](platform/dlc.md)
+| Area | Page | Purpose | Key Headers | Ctx |
+| --- | --- | --- | --- | --- |
+| root | [WASM / Web Target](WASM.md) | General guide | [Page Map](WASM.md#page-map), [Purpose](WASM.md#purpose), [Use Cases](WASM.md#use-cases), [Example](WASM.md#example) |  |
+| networking | [HTTP](networking/http.md) | Networking guide | [Page Map](networking/http.md#page-map), [Purpose](networking/http.md#purpose), [Use Cases](networking/http.md#use-cases), [Example](networking/http.md#example) |  |
+| networking | [TCP](networking/tcp.md) | Networking guide | [Page Map](networking/tcp.md#page-map), [Purpose](networking/tcp.md#purpose), [Use Cases](networking/tcp.md#use-cases), [Example](networking/tcp.md#example) |  |
+| networking | [UDP](networking/udp.md) | Networking guide | [Page Map](networking/udp.md#page-map), [Purpose](networking/udp.md#purpose), [Use Cases](networking/udp.md#use-cases), [Example](networking/udp.md#example) |  |
+| networking | [WebRTC](networking/webrtc.md) | Networking guide | [Page Map](networking/webrtc.md#page-map), [Purpose](networking/webrtc.md#purpose), [Use Cases](networking/webrtc.md#use-cases), [Example](networking/webrtc.md#example) |  |
+| networking | [WebSocket](networking/websocket.md) | Networking guide | [Page Map](networking/websocket.md#page-map), [Purpose](networking/websocket.md#purpose), [Use Cases](networking/websocket.md#use-cases), [Example](networking/websocket.md#example) |  |
+| platform | [DLC Guide](platform/dlc.md) | Platform integration guide | [Page Map](platform/dlc.md#page-map), [Purpose](platform/dlc.md#purpose), [Use Cases](platform/dlc.md#use-cases), [Example](platform/dlc.md#example) |  |
+| platform | [Steamworks](platform/steamworks.md) | Platform integration guide | [Page Map](platform/steamworks.md#page-map), [Purpose](platform/steamworks.md#purpose), [Use Cases](platform/steamworks.md#use-cases), [Example](platform/steamworks.md#example) |  |
+| project | [Feature Matrix](project/feature_matrix.md) | Project status/design guide | [Page Map](project/feature_matrix.md#page-map), [Purpose](project/feature_matrix.md#purpose), [Use Cases](project/feature_matrix.md#use-cases), [Example](project/feature_matrix.md#example) |  |
+| project | [Performance + Flexibility Philosophy](project/performance_philosophy.md) | Project status/design guide | [Page Map](project/performance_philosophy.md#page-map), [Purpose](project/performance_philosophy.md#purpose), [Use Cases](project/performance_philosophy.md#use-cases), [Example](project/performance_philosophy.md#example) |  |
+| resources | [Animation](resources/animation.md) | Resource/file format guide | [Page Map](resources/animation.md#page-map), [Purpose](resources/animation.md#purpose), [Use Cases](resources/animation.md#use-cases), [Example](resources/animation.md#example) |  |
+| resources | [Audio](resources/audio.md) | Resource/file format guide | [Page Map](resources/audio.md#page-map), [Purpose](resources/audio.md#purpose), [Use Cases](resources/audio.md#use-cases), [Example](resources/audio.md#example) |  |
+| resources | [Materials Guide](resources/materials.md) | Resource/file format guide | [Page Map](resources/materials.md#page-map), [Purpose](resources/materials.md#purpose), [Use Cases](resources/materials.md#use-cases), [Example](resources/materials.md#example) |  |
+| resources | [`.panim` Format](resources/panim.md) | Resource/file format guide | [Page Map](resources/panim.md#page-map), [Purpose](resources/panim.md#purpose), [Use Cases](resources/panim.md#use-cases), [Example](resources/panim.md#example) |  |
+| resources | [`.panimtree` Format](resources/panimtree.md) | Resource/file format guide | [Page Map](resources/panimtree.md#page-map), [Purpose](resources/panimtree.md#purpose), [Use Cases](resources/panimtree.md#use-cases), [Example](resources/panimtree.md#example) |  |
+| resources | [Particle System Guide](resources/particles.md) | Resource/file format guide | [Page Map](resources/particles.md#page-map), [Purpose](resources/particles.md#purpose), [Use Cases](resources/particles.md#use-cases), [Example](resources/particles.md#example) |  |
+| resources | [`.pmat` Format](resources/pmat.md) | Resource/file format guide | [Page Map](resources/pmat.md#page-map), [Purpose](resources/pmat.md#purpose), [Use Cases](resources/pmat.md#use-cases), [Example](resources/pmat.md#example) |  |
+| resources | [Post Processing](resources/postprocess.md) | Resource/file format guide | [Page Map](resources/postprocess.md#page-map), [Purpose](resources/postprocess.md#purpose), [Use Cases](resources/postprocess.md#use-cases), [Example](resources/postprocess.md#example) |  |
+| resources | [`.ppart` Format](resources/ppart.md) | Resource/file format guide | [Page Map](resources/ppart.md#page-map), [Purpose](resources/ppart.md#purpose), [Use Cases](resources/ppart.md#use-cases), [Example](resources/ppart.md#example) |  |
+| resources | [`.pskel2d` / `.pskel3d` Formats](resources/pskel.md) | Resource/file format guide | [Page Map](resources/pskel.md#page-map), [Purpose](resources/pskel.md#purpose), [Use Cases](resources/pskel.md#use-cases), [Example](resources/pskel.md#example) |  |
+| resources | [`.ptileset` Format](resources/ptileset.md) | Resource/file format guide | [Page Map](resources/ptileset.md#page-map), [Purpose](resources/ptileset.md#purpose), [Use Cases](resources/ptileset.md#use-cases), [Example](resources/ptileset.md#example) |  |
+| resources | [ResPath](resources/respath.md) | Resource/file format guide | [Page Map](resources/respath.md#page-map), [Purpose](resources/respath.md#purpose), [Use Cases](resources/respath.md#use-cases), [Example](resources/respath.md#example) |  |
+| resources | [Shaders (WGSL)](resources/shaders.md) | Resource/file format guide | [Page Map](resources/shaders.md#page-map), [Purpose](resources/shaders.md#purpose), [Use Cases](resources/shaders.md#use-cases), [Example](resources/shaders.md#example) |  |
+| resources | [`.uistyle` Format](resources/uistyle.md) | Resource/file format guide | [Page Map](resources/uistyle.md#page-map), [Purpose](resources/uistyle.md#purpose), [Use Cases](resources/uistyle.md#use-cases), [Example](resources/uistyle.md#example) |  |
+| scripting | [Scripting Overview](scripting/README.md) | Script authoring guide | [Page Map](scripting/README.md#page-map), [Purpose](scripting/README.md#purpose), [Use Cases](scripting/README.md#use-cases), [Example](scripting/README.md#example) |  |
+| scripting | [BitMask](scripting/bitmask.md) | Script authoring guide | [Page Map](scripting/bitmask.md#page-map), [Purpose](scripting/bitmask.md#purpose), [Use Cases](scripting/bitmask.md#use-cases), [Example](scripting/bitmask.md#example) |  |
+| scripting | [Script Contexts](scripting/contexts/README.md) | Script authoring guide | [Page Map](scripting/contexts/README.md#page-map), [Context Fields](scripting/contexts/README.md#context-fields), [API Areas](scripting/contexts/README.md#api-areas), [Example Shape](scripting/contexts/README.md#example-shape) |  |
+| scripting | [Input API](scripting/contexts/input_api.md) | Script authoring guide | [Page Map](scripting/contexts/input_api.md#page-map), [Input Window](scripting/contexts/input_api.md#input-window), [Input Modules](scripting/contexts/input_api.md#input-modules), [Example](scripting/contexts/input_api.md#example) | `ctx.ipt` |
+| scripting | [Actions Module](scripting/contexts/input_modules/actions.md) | Input module API reference | [Page Map](scripting/contexts/input_modules/actions.md#page-map), [Overview](scripting/contexts/input_modules/actions.md#overview), [Context](scripting/contexts/input_modules/actions.md#context), [API Reference](scripting/contexts/input_modules/actions.md#api-reference) | `ctx.ipt` |
+| scripting | [Gamepads Module](scripting/contexts/input_modules/gamepads.md) | Input module API reference | [Page Map](scripting/contexts/input_modules/gamepads.md#page-map), [Overview](scripting/contexts/input_modules/gamepads.md#overview), [Context](scripting/contexts/input_modules/gamepads.md#context), [API Reference](scripting/contexts/input_modules/gamepads.md#api-reference) | `ctx.ipt` |
+| scripting | [Joycons Module](scripting/contexts/input_modules/joycons.md) | Input module API reference | [Page Map](scripting/contexts/input_modules/joycons.md#page-map), [Overview](scripting/contexts/input_modules/joycons.md#overview), [Context](scripting/contexts/input_modules/joycons.md#context), [API Reference](scripting/contexts/input_modules/joycons.md#api-reference) | `ctx.ipt` |
+| scripting | [Keys Module](scripting/contexts/input_modules/keys.md) | Input module API reference | [Page Map](scripting/contexts/input_modules/keys.md#page-map), [Overview](scripting/contexts/input_modules/keys.md#overview), [Context](scripting/contexts/input_modules/keys.md#context), [Practical Example](scripting/contexts/input_modules/keys.md#practical-example) | `ctx.ipt` |
+| scripting | [Mouse Module](scripting/contexts/input_modules/mouse.md) | Input module API reference | [Page Map](scripting/contexts/input_modules/mouse.md#page-map), [Overview](scripting/contexts/input_modules/mouse.md#overview), [Context](scripting/contexts/input_modules/mouse.md#context), [Practical Example](scripting/contexts/input_modules/mouse.md#practical-example) | `ctx.ipt` |
+| scripting | [Players Module](scripting/contexts/input_modules/players.md) | Input module API reference | [Page Map](scripting/contexts/input_modules/players.md#page-map), [Overview](scripting/contexts/input_modules/players.md#overview), [Context](scripting/contexts/input_modules/players.md#context), [API Reference](scripting/contexts/input_modules/players.md#api-reference) | `ctx.ipt` |
+| scripting | [Resource API](scripting/contexts/resource_api.md) | Script authoring guide | [Page Map](scripting/contexts/resource_api.md#page-map), [Resource Window](scripting/contexts/resource_api.md#resource-window), [Resource Modules](scripting/contexts/resource_api.md#resource-modules), [Example](scripting/contexts/resource_api.md#example) | `ctx.res` |
+| scripting | [Animations Module](scripting/contexts/resource_modules/animations.md) | Resource module API reference | [Page Map](scripting/contexts/resource_modules/animations.md#page-map), [Overview](scripting/contexts/resource_modules/animations.md#overview), [Context](scripting/contexts/resource_modules/animations.md#context), [API Reference](scripting/contexts/resource_modules/animations.md#api-reference) | `ctx.res` |
+| scripting | [Audio Module](scripting/contexts/resource_modules/audio.md) | Resource module API reference | [Page Map](scripting/contexts/resource_modules/audio.md#page-map), [Overview](scripting/contexts/resource_modules/audio.md#overview), [Context](scripting/contexts/resource_modules/audio.md#context), [API Reference](scripting/contexts/resource_modules/audio.md#api-reference) | `ctx.res` |
+| scripting | [Csv Module](scripting/contexts/resource_modules/csv.md) | Resource module API reference | [Page Map](scripting/contexts/resource_modules/csv.md#page-map), [Overview](scripting/contexts/resource_modules/csv.md#overview), [Context](scripting/contexts/resource_modules/csv.md#context), [API Reference](scripting/contexts/resource_modules/csv.md#api-reference) | `ctx.res` |
+| scripting | [Draw 2D Module](scripting/contexts/resource_modules/draw_2d.md) | Resource module API reference | [Page Map](scripting/contexts/resource_modules/draw_2d.md#page-map), [Overview](scripting/contexts/resource_modules/draw_2d.md#overview), [Context](scripting/contexts/resource_modules/draw_2d.md#context), [API Reference](scripting/contexts/resource_modules/draw_2d.md#api-reference) | `ctx.res` |
+| scripting | [Localization Module](scripting/contexts/resource_modules/localization.md) | Resource module API reference | [Page Map](scripting/contexts/resource_modules/localization.md#page-map), [Overview](scripting/contexts/resource_modules/localization.md#overview), [Context](scripting/contexts/resource_modules/localization.md#context), [API Reference](scripting/contexts/resource_modules/localization.md#api-reference) | `ctx.res` |
+| scripting | [Materials Module](scripting/contexts/resource_modules/materials.md) | Resource module API reference | [Page Map](scripting/contexts/resource_modules/materials.md#page-map), [Overview](scripting/contexts/resource_modules/materials.md#overview), [Context](scripting/contexts/resource_modules/materials.md#context), [Practical Example](scripting/contexts/resource_modules/materials.md#practical-example) | `ctx.res` |
+| scripting | [Meshes Module](scripting/contexts/resource_modules/meshes.md) | Resource module API reference | [Page Map](scripting/contexts/resource_modules/meshes.md#page-map), [Overview](scripting/contexts/resource_modules/meshes.md#overview), [Context](scripting/contexts/resource_modules/meshes.md#context), [Practical Example](scripting/contexts/resource_modules/meshes.md#practical-example) | `ctx.res` |
+| scripting | [Post Processing Module](scripting/contexts/resource_modules/post_processing.md) | Resource module API reference | [Page Map](scripting/contexts/resource_modules/post_processing.md#page-map), [Overview](scripting/contexts/resource_modules/post_processing.md#overview), [Context](scripting/contexts/resource_modules/post_processing.md#context), [API Reference](scripting/contexts/resource_modules/post_processing.md#api-reference) | `ctx.res` |
+| scripting | [Scene Docs Module](scripting/contexts/resource_modules/scene_docs.md) | `.scn` parse/write editor API reference | [Page Map](scripting/contexts/resource_modules/scene_docs.md#page-map), [Purpose](scripting/contexts/resource_modules/scene_docs.md#purpose), [Data Types](scripting/contexts/resource_modules/scene_docs.md#data-types), [API Reference](scripting/contexts/resource_modules/scene_docs.md#api-reference) | `ctx.res` |
+| scripting | [Skeletons Module](scripting/contexts/resource_modules/skeletons.md) | Resource module API reference | [Page Map](scripting/contexts/resource_modules/skeletons.md#page-map), [Overview](scripting/contexts/resource_modules/skeletons.md#overview), [Context](scripting/contexts/resource_modules/skeletons.md#context), [API Reference](scripting/contexts/resource_modules/skeletons.md#api-reference) | `ctx.res` |
+| scripting | [Textures Module](scripting/contexts/resource_modules/textures.md) | Resource module API reference | [Page Map](scripting/contexts/resource_modules/textures.md#page-map), [Overview](scripting/contexts/resource_modules/textures.md#overview), [Context](scripting/contexts/resource_modules/textures.md#context), [Practical Example](scripting/contexts/resource_modules/textures.md#practical-example) | `ctx.res` |
+| scripting | [Visual Accessibility Module](scripting/contexts/resource_modules/visual_accessibility.md) | Resource module API reference | [Page Map](scripting/contexts/resource_modules/visual_accessibility.md#page-map), [Overview](scripting/contexts/resource_modules/visual_accessibility.md#overview), [Context](scripting/contexts/resource_modules/visual_accessibility.md#context), [API Reference](scripting/contexts/resource_modules/visual_accessibility.md#api-reference) | `ctx.res` |
+| scripting | [Runtime API](scripting/contexts/runtime_api.md) | Script authoring guide | [Page Map](scripting/contexts/runtime_api.md#page-map), [Runtime Window](scripting/contexts/runtime_api.md#runtime-window), [Runtime Modules](scripting/contexts/runtime_api.md#runtime-modules), [Example](scripting/contexts/runtime_api.md#example) | `ctx.run` |
+| scripting | [Animations Module](scripting/contexts/runtime_modules/animations.md) | Runtime module API reference | [Page Map](scripting/contexts/runtime_modules/animations.md#page-map), [Overview](scripting/contexts/runtime_modules/animations.md#overview), [Context](scripting/contexts/runtime_modules/animations.md#context), [API Reference](scripting/contexts/runtime_modules/animations.md#api-reference) | `ctx.run` |
+| scripting | [Audio Module](scripting/contexts/runtime_modules/audio.md) | Runtime module API reference | [Page Map](scripting/contexts/runtime_modules/audio.md#page-map), [Overview](scripting/contexts/runtime_modules/audio.md#overview), [Context](scripting/contexts/runtime_modules/audio.md#context), [API Reference](scripting/contexts/runtime_modules/audio.md#api-reference) | `ctx.run` |
+| scripting | [Helpers Module](scripting/contexts/runtime_modules/helpers.md) | Runtime module API reference | [Page Map](scripting/contexts/runtime_modules/helpers.md#page-map), [Overview](scripting/contexts/runtime_modules/helpers.md#overview), [Context](scripting/contexts/runtime_modules/helpers.md#context), [API Reference](scripting/contexts/runtime_modules/helpers.md#api-reference) | `ctx.run` |
+| scripting | [Mesh Query Module](scripting/contexts/runtime_modules/mesh_query.md) | Runtime module API reference | [Page Map](scripting/contexts/runtime_modules/mesh_query.md#page-map), [Overview](scripting/contexts/runtime_modules/mesh_query.md#overview), [Context](scripting/contexts/runtime_modules/mesh_query.md#context), [API Reference](scripting/contexts/runtime_modules/mesh_query.md#api-reference) | `ctx.run` |
+| scripting | [Node Query Module](scripting/contexts/runtime_modules/node_query.md) | Runtime module API reference | [Page Map](scripting/contexts/runtime_modules/node_query.md#page-map), [Overview](scripting/contexts/runtime_modules/node_query.md#overview), [Context](scripting/contexts/runtime_modules/node_query.md#context), [API Reference](scripting/contexts/runtime_modules/node_query.md#api-reference) | `ctx.run` |
+| scripting | [Nodes Module](scripting/contexts/runtime_modules/nodes.md) | Runtime module API reference | [Page Map](scripting/contexts/runtime_modules/nodes.md#page-map), [Overview](scripting/contexts/runtime_modules/nodes.md#overview), [Context](scripting/contexts/runtime_modules/nodes.md#context), [API Reference](scripting/contexts/runtime_modules/nodes.md#api-reference) | `ctx.run` |
+| scripting | [Physics Module](scripting/contexts/runtime_modules/physics.md) | Runtime module API reference | [Page Map](scripting/contexts/runtime_modules/physics.md#page-map), [Overview](scripting/contexts/runtime_modules/physics.md#overview), [Context](scripting/contexts/runtime_modules/physics.md#context), [API Reference](scripting/contexts/runtime_modules/physics.md#api-reference) | `ctx.run` |
+| scripting | [Scenes Module](scripting/contexts/runtime_modules/scenes.md) | Runtime module API reference | [Page Map](scripting/contexts/runtime_modules/scenes.md#page-map), [Overview](scripting/contexts/runtime_modules/scenes.md#overview), [Context](scripting/contexts/runtime_modules/scenes.md#context), [API Reference](scripting/contexts/runtime_modules/scenes.md#api-reference) | `ctx.run` |
+| scripting | [Scripts Module](scripting/contexts/runtime_modules/scripts.md) | Runtime module API reference | [Page Map](scripting/contexts/runtime_modules/scripts.md#page-map), [Overview](scripting/contexts/runtime_modules/scripts.md#overview), [Context](scripting/contexts/runtime_modules/scripts.md#context), [Practical Example](scripting/contexts/runtime_modules/scripts.md#practical-example) | `ctx.run` |
+| scripting | [Signals Module](scripting/contexts/runtime_modules/signals.md) | Runtime module API reference | [Page Map](scripting/contexts/runtime_modules/signals.md#page-map), [Overview](scripting/contexts/runtime_modules/signals.md#overview), [Context](scripting/contexts/runtime_modules/signals.md#context), [Practical Example](scripting/contexts/runtime_modules/signals.md#practical-example) | `ctx.run` |
+| scripting | [Time Module](scripting/contexts/runtime_modules/time.md) | Runtime module API reference | [Page Map](scripting/contexts/runtime_modules/time.md#page-map), [Overview](scripting/contexts/runtime_modules/time.md#overview), [Context](scripting/contexts/runtime_modules/time.md#context), [Practical Example](scripting/contexts/runtime_modules/time.md#practical-example) | `ctx.run` |
+| scripting | [Window Module](scripting/contexts/runtime_modules/window.md) | Runtime module API reference | [Page Map](scripting/contexts/runtime_modules/window.md#page-map), [Overview](scripting/contexts/runtime_modules/window.md#overview), [Context](scripting/contexts/runtime_modules/window.md#context), [Practical Example](scripting/contexts/runtime_modules/window.md#practical-example) | `ctx.run` |
+| scripting | [Script Lifecycle](scripting/lifecycle.md) | Script authoring guide | [Page Map](scripting/lifecycle.md#page-map), [Why `lifecycle!` Exists](scripting/lifecycle.md#why-lifecycle-exists), [Hook Signatures](scripting/lifecycle.md#hook-signatures), [Hooks](scripting/lifecycle.md#hooks) |  |
+| scripting | [Struct Types](scripting/structs/index.md) | Script authoring guide | [Page Map](scripting/structs/index.md#page-map), [Purpose](scripting/structs/index.md#purpose), [Struct Groups](scripting/structs/index.md#struct-groups), [Use Cases](scripting/structs/index.md#use-cases) |  |
+| scripting | [2D Structs](scripting/structs/2d.md) | Script authoring guide | [Page Map](scripting/structs/2d.md#page-map), [Struct Table](scripting/structs/2d.md#struct-table), [`Vector2`](scripting/structs/2d.md#vector2), [`IVector2`](scripting/structs/2d.md#ivector2), [`Transform2D`](scripting/structs/2d.md#transform2d) |  |
+| scripting | [3D Structs](scripting/structs/3d.md) | Script authoring guide | [Page Map](scripting/structs/3d.md#page-map), [Struct Table](scripting/structs/3d.md#struct-table), [`Vector3`](scripting/structs/3d.md#vector3), [`IVector3`](scripting/structs/3d.md#ivector3), [`Quaternion`](scripting/structs/3d.md#quaternion) |  |
+| scripting | [Generic Structs](scripting/structs/generic.md) | Script authoring guide | [Page Map](scripting/structs/generic.md#page-map), [Struct Table](scripting/structs/generic.md#struct-table), [Color](scripting/structs/generic.md#color), [Audio Structs](scripting/structs/generic.md#audio-structs) |  |
+| scripting | [Mesh Query Perf Snapshot](scripting/mesh_query_perf.md) | Script authoring guide | [Page Map](scripting/mesh_query_perf.md#page-map), [Purpose](scripting/mesh_query_perf.md#purpose), [Use Cases](scripting/mesh_query_perf.md#use-cases), [Example](scripting/mesh_query_perf.md#example) |  |
+| scripting | [Script Methods](scripting/methods.md) | Script authoring guide | [Page Map](scripting/methods.md#page-map), [Why `methods!` Exists](scripting/methods.md#why-methods-exists), [Method Shape](scripting/methods.md#method-shape), [Direct Calls](scripting/methods.md#direct-calls) |  |
+| scripting | [Script Utility Modules](scripting/modules.md) | Script authoring guide | [Page Map](scripting/modules.md#page-map), [Purpose](scripting/modules.md#purpose), [Use Cases](scripting/modules.md#use-cases), [Example](scripting/modules.md#example) |  |
+| scripting | [Node Types](scripting/nodes.md) | Script authoring guide | [Page Map](scripting/nodes.md#page-map), [Purpose](scripting/nodes.md#purpose), [Use Cases](scripting/nodes.md#use-cases), [Example](scripting/nodes.md#example) |  |
+| scripting | [Project Script Modules](scripting/project_modules.md) | Script authoring guide | [Page Map](scripting/project_modules.md#page-map), [Purpose](scripting/project_modules.md#purpose), [Use Cases](scripting/project_modules.md#use-cases), [Example](scripting/project_modules.md#example) |  |
+| scripting | [Query System](scripting/query_system.md) | Script authoring guide | [Page Map](scripting/query_system.md#page-map), [Purpose](scripting/query_system.md#purpose), [Use Cases](scripting/query_system.md#use-cases), [Example](scripting/query_system.md#example) |  |
+| scripting | [2D Scene Node Templates](scripting/scene_node_templates/2d.md) | Script authoring guide | [Page Map](scripting/scene_node_templates/2d.md#page-map), [Purpose](scripting/scene_node_templates/2d.md#purpose), [Use Cases](scripting/scene_node_templates/2d.md#use-cases), [Example](scripting/scene_node_templates/2d.md#example) |  |
+| scripting | [3D Scene Node Templates](scripting/scene_node_templates/3d.md) | Script authoring guide | [Page Map](scripting/scene_node_templates/3d.md#page-map), [Purpose](scripting/scene_node_templates/3d.md#purpose), [Use Cases](scripting/scene_node_templates/3d.md#use-cases), [Example](scripting/scene_node_templates/3d.md#example) |  |
+| scripting | [Extra Scene Node Examples](scripting/scene_node_templates/examples.md) | Script authoring guide | [Page Map](scripting/scene_node_templates/examples.md#page-map), [Purpose](scripting/scene_node_templates/examples.md#purpose), [Use Cases](scripting/scene_node_templates/examples.md#use-cases), [Example](scripting/scene_node_templates/examples.md#example) |  |
+| scripting | [UI Scene Node Templates](scripting/scene_node_templates/ui.md) | Script authoring guide | [Page Map](scripting/scene_node_templates/ui.md#page-map), [Purpose](scripting/scene_node_templates/ui.md#purpose), [Use Cases](scripting/scene_node_templates/ui.md#use-cases), [Example](scripting/scene_node_templates/ui.md#example) |  |
+| scripting | [Script State](scripting/state.md) | Script authoring guide | [Page Map](scripting/state.md#page-map), [Purpose](scripting/state.md#purpose), [Use Cases](scripting/state.md#use-cases), [Example](scripting/state.md#example) |  |
+| scripting | [TileMap2D](scripting/tilemap.md) | Script authoring guide | [Page Map](scripting/tilemap.md#page-map), [Purpose](scripting/tilemap.md#purpose), [Use Cases](scripting/tilemap.md#use-cases), [Example](scripting/tilemap.md#example) |  |
+| scripting | [UI Nodes](scripting/ui.md) | Script authoring guide | [Page Map](scripting/ui.md#page-map), [Purpose](scripting/ui.md#purpose), [Use Cases](scripting/ui.md#use-cases), [Example](scripting/ui.md#example) |  |
+| scripting | [Water Bodies](scripting/water.md) | Script authoring guide | [Page Map](scripting/water.md#page-map), [Purpose](scripting/water.md#purpose), [Use Cases](scripting/water.md#use-cases), [Example](scripting/water.md#example) |  |
+| tools | [Perro CLI](tools/perro_cli.md) | Tooling guide | [Page Map](tools/perro_cli.md#page-map), [Purpose](tools/perro_cli.md#purpose), [Use Cases](tools/perro_cli.md#use-cases), [Example](tools/perro_cli.md#example) |  |

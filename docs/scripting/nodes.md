@@ -1,5 +1,37 @@
 # Node Types
 
+## Page Map
+
+| Header | Link |
+| --- | --- |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
+| Example | [Example](#example) |
+| Reference | [Reference](#reference) |
+
+## Purpose
+
+Use `Node Types` when this feature, type group, file format, or workflow appears in game code or assets.
+
+## Use Cases
+
+Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+
+## Example
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let dt = delta_time!(ctx.run);
+        let _ = dt;
+    }
+});
+```
+
+## Reference
+
+# Node Types
+
 This page lists the built-in node types and their purpose. Nodes store **data-only** state.
 Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 
@@ -533,6 +565,3 @@ Notes:
 - `bone = -1` or missing `skeleton` disables attachment update.
 - If index is out of range, attachment keeps its current transform.
 - Child nodes render/use physics from attachment transform like any other parented node.
-
-
-

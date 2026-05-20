@@ -71,6 +71,16 @@ impl Color {
     }
 
     #[inline]
+    pub const fn from_unorm8x4(v: Unorm8x4) -> Self {
+        Self::from_rgba_u8(v.to_u8())
+    }
+
+    #[inline]
+    pub const fn from_unorm_slice(v: Unorm8x4) -> Self {
+        Self::from_unorm8x4(v)
+    }
+
+    #[inline]
     pub const fn r(self) -> f32 {
         self.r.to_f32()
     }
@@ -96,7 +106,7 @@ impl Color {
     }
 
     #[inline(always)]
-    pub const fn to_gpu(self) -> [f32; 4] {
+    pub const fn to_float_slice(self) -> [f32; 4] {
         self.to_rgba()
     }
 
@@ -106,7 +116,7 @@ impl Color {
     }
 
     #[inline(always)]
-    pub const fn from_gpu(v: [f32; 4]) -> Self {
+    pub const fn from_float_slice(v: [f32; 4]) -> Self {
         Self::from_rgba(v)
     }
 
@@ -173,6 +183,11 @@ impl Color {
     }
 
     #[inline]
+    pub const fn to_unorm_slice(self) -> Unorm8x4 {
+        self.to_unorm8x4()
+    }
+
+    #[inline]
     pub const fn to_rgba_u8(self) -> [u8; 4] {
         [
             self.r.to_u8(),
@@ -199,14 +214,28 @@ impl fmt::Display for Color {
 impl From<Color> for [f32; 4] {
     #[inline(always)]
     fn from(value: Color) -> Self {
-        value.to_gpu()
+        value.to_float_slice()
     }
 }
 
 impl From<[f32; 4]> for Color {
     #[inline(always)]
     fn from(value: [f32; 4]) -> Self {
-        Self::from_gpu(value)
+        Self::from_float_slice(value)
+    }
+}
+
+impl From<Unorm8x4> for Color {
+    #[inline(always)]
+    fn from(value: Unorm8x4) -> Self {
+        Self::from_unorm8x4(value)
+    }
+}
+
+impl From<Color> for Unorm8x4 {
+    #[inline(always)]
+    fn from(value: Color) -> Self {
+        value.to_unorm8x4()
     }
 }
 
@@ -246,5 +275,15 @@ mod tests {
 
         assert_eq!(color.to_rgba_u8(), [0x33, 0x66, 0x99, 0xCC]);
         assert_eq!(color.to_hex_rgba(), "#336699CC");
+    }
+
+    #[test]
+    fn color_converts_from_unorm8x4() {
+        let packed = Unorm8x4::from_u8([0x33, 0x66, 0x99, 0xCC]);
+        let color = Color::from_unorm8x4(packed);
+
+        assert_eq!(color.to_rgba_u8(), [0x33, 0x66, 0x99, 0xCC]);
+        assert_eq!(Color::from_unorm_slice(packed), color);
+        assert_eq!(Unorm8x4::from(color).to_u8(), packed.to_u8());
     }
 }

@@ -1,5 +1,37 @@
 # Steamworks
 
+## Page Map
+
+| Header | Link |
+| --- | --- |
+| Purpose | [Purpose](#purpose) |
+| Use Cases | [Use Cases](#use-cases) |
+| Example | [Example](#example) |
+| Reference | [Reference](#reference) |
+
+## Purpose
+
+Use `Steamworks` when this feature, type group, file format, or workflow appears in game code or assets.
+
+## Use Cases
+
+Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+
+## Example
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let dt = delta_time!(ctx.run);
+        let _ = dt;
+    }
+});
+```
+
+## Reference
+
+# Steamworks
+
 Use Steam from scripts through `perro_api::prelude::*`.
 
 Perro wraps Steamworks.
@@ -81,7 +113,7 @@ let file = steam::WorkshopFileID::from_id(raw_file);
 | `steam_ach_unlock!(a, b, ...)` | unlock many achs + mark store dirty |
 | `steam_ach_clear!(id)` | clear ach + mark store dirty |
 | `steam_account_self_name!()` | read local user name |
-| `steam_account_self_id!()` | read local user id |
+| `steam_account_ctx.id!()` | read local user id |
 | `steam_account_name!(id)` | read user name |
 | `steam_friend_list!()` | read friend list |
 | `steam_rich_presence_set!(key, val)` | set rich presence |
@@ -256,7 +288,7 @@ Auth uses Perro ticket + result enums.
 
 ```rust
 let (ticket, bytes) = steam::auth::authentication_session_ticket()?;
-let user = steam_account_self_id!()?;
+let user = steam_account_ctx.id!()?;
 
 match steam::auth::begin_authentication_session(user, &bytes)? {
     Ok(()) => {}

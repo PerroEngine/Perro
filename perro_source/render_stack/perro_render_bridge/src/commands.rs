@@ -61,6 +61,11 @@ pub enum ResourceCommand {
 
 #[derive(Debug, Clone)]
 pub enum Command2D {
+    UpsertCameraStream {
+        node: NodeID,
+        stream: Box<CameraStreamState>,
+        sprite: Sprite2DCommand,
+    },
     UpsertSprite {
         node: NodeID,
         sprite: Sprite2DCommand,
@@ -110,6 +115,11 @@ pub enum Command2D {
 
 #[derive(Debug, Clone)]
 pub enum Command3D {
+    UpsertCameraStream {
+        node: NodeID,
+        stream: Box<CameraStreamState>,
+        quad: CameraStream3DState,
+    },
     Draw {
         mesh: MeshID,
         surfaces: Arc<[MeshSurfaceBinding3D]>,
@@ -200,6 +210,7 @@ pub struct DenseInstancePose3D {
 #[allow(clippy::large_enum_variant)]
 pub enum RenderCommand {
     Resource(ResourceCommand),
+    CameraStream(CameraStreamCommand),
     TwoD(Command2D),
     ThreeD(Box<Command3D>),
     Ui(UiCommand),
@@ -256,6 +267,17 @@ pub enum RenderEvent {
     Failed {
         request: RenderRequestID,
         reason: String,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum CameraStreamCommand {
+    Upsert {
+        node: NodeID,
+        state: Box<CameraStreamState>,
+    },
+    RemoveNode {
+        node: NodeID,
     },
 }
 

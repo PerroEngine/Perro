@@ -74,3 +74,7 @@ harness = false
 [[bench]]
 name = "gpu_frame"
 harness = false
+
+[[bench]]
+name = "camera_stream"
+harness = false

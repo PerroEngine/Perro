@@ -1,60 +1,113 @@
 # Skeletons Module
 
-Access:
+## Page Map
 
-- `res.Skeletons()`
+| Header | Link |
+| --- | --- |
+| Overview | [Overview](#overview) |
+| Context | [Context](#context) |
+| API Reference | [API Reference](#api-reference) |
+| `load_bones_2d` | [`load_bones_2d`](#load_bones_2d) |
+| `load_bones_3d` | [`load_bones_3d`](#load_bones_3d) |
+| `load_bones` | [`load_bones`](#load_bones) |
+| `skeleton_load_bones` | [`skeleton_load_bones`](#skeleton_load_bones) |
 
-Macros:
+## Overview
 
-- `skeleton_load_bones!(res, source) -> Vec<Bone3D>`
+This resource module belongs to `ctx.res` and documents skeletons calls.
 
-Methods:
+## Context
 
-- `res.Skeletons().load_bones_2d(source) -> Vec<Bone2D>`
-- `res.Skeletons().load_bones_3d(source) -> Vec<Bone3D>`
-- `res.Skeletons().load_bones(source) -> Vec<Bone3D>` legacy 3D alias
+- Script context path: `ctx.res`
+- Module access: `ctx.res.Skeletons()`
+- Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
 
-What `load_bones` does:
+## API Reference
 
-- Returns a **copy** of cached bone data for `source`.
-- If not cached yet, loads and decodes the skeleton, then caches it.
-- The cache key is the exact `source` string.
+### `load_bones_2d`
 
-Supported sources:
-
-- `res://path/to/rig.glb:skeleton[0]` (parsed from glTF)
-- `res://path/to/rig.pskel2d`
-- `res://path/to/rig.pskel3d`
-- `res://path/to/rig.pskel` legacy 3D
-
-Important behavior:
-
-- Bones are **data-only**. Mutate `Skeleton2D.bones` or `Skeleton3D.bones` for runtime edits.
-- This module does **not** return a handle/ID; it returns data by value.
-- Repeated calls return a new copy (safe to edit without affecting cache).
-- To skin a mesh, bind a `MeshInstance3D` to a `Skeleton3D` node (scene `skeleton = @NodeName`).
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Skeletons()` |
+| Signature | `pub fn load_bones_2d<S: ResPathSource>(&self, source: S) -> Vec<Bone2D>` |
+| Params | `&self, source: S` |
+| Returns | `Vec<Bone2D>` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
 Example:
 
 ```rust
-use perro_api::prelude::*;
-
-let bones = skeleton_load_bones!(res, "res://models/rig.glb:skeleton[0]");
-with_node_mut!(ctx.run, Skeleton3D, self_id, |skel| {
-    skel.bones = bones;
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Skeletons().load_bones_2d("res://path/to/resource");
+        let _ = value;
+    }
 });
 ```
 
-glTF sub-asset access:
+### `load_bones_3d`
 
-- `res://path/to/model.gltf:skeleton[0]`
-- `res://path/to/model.glb:skeleton[1]`
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Skeletons()` |
+| Signature | `pub fn load_bones_3d<S: ResPathSource>(&self, source: S) -> Vec<Bone3D>` |
+| Params | `&self, source: S` |
+| Returns | `Vec<Bone3D>` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
-Use the `:skeleton[index]` suffix to target a specific skeleton/skin inside a glTF/glb.
+Example:
 
-Direct `.pskel` sources:
-- `res://path/to/rig.pskel2d`
-- `res://path/to/rig.pskel3d`
-- `res://path/to/rig.pskel` legacy 3D
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Skeletons().load_bones_3d("res://path/to/resource");
+        let _ = value;
+    }
+});
+```
 
+### `load_bones`
 
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Skeletons()` |
+| Signature | `pub fn load_bones<S: ResPathSource>(&self, source: S) -> Vec<Bone3D>` |
+| Params | `&self, source: S` |
+| Returns | `Vec<Bone3D>` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Skeletons().load_bones("res://path/to/resource");
+        let _ = value;
+    }
+});
+```
+
+### `skeleton_load_bones`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Skeletons()` |
+| Signature | `skeleton_load_bones!(ctx.res.res, source)` |
+| Params | `ctx.res, source` |
+| Returns | `resource/runtime ID or `Result` as shown by backing method` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = skeleton_load_bones!(ctx.res, 0.1);
+        let _ = value;
+    }
+});
+```

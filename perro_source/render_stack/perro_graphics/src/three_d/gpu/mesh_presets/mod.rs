@@ -55,7 +55,6 @@ pub(super) fn build_builtin_mesh_buffer() -> BuiltinMeshBuffer {
         );
         meshlets.insert(name, Arc::from(preset_meshlets));
     }
-
     (all_vertices, all_indices, ranges, meshlets)
 }
 

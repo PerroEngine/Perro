@@ -10,13 +10,13 @@ use perro_nodes::{
 };
 use perro_particle_math::compile_expression;
 use perro_render_bridge::{
-    AmbientLight3DState, Camera3DState, CameraProjectionState, Command3D, DenseInstancePose3D,
-    LODOptions3D, Material3D, MaterialParamOverride3D, MeshBlendOptions3D, MeshSurfaceBinding3D,
-    ParticlePath3D, ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D,
-    PointLight3DState, PointParticles3DState, RayLight3DState, RenderCommand, ResourceCommand,
-    SkeletonPalette, Sky3DState, SkyTime3DState, SpotLight3DState, Water3DState,
-    WaterBodyQueryState, WaterCoastlineShape3D, WaterIdleModeState, WaterImpact3D, WaterLinkState,
-    WaterShapeState,
+    AmbientLight3DState, Camera3DState, CameraProjectionState, CameraStream3DState,
+    CameraStreamCommand, Command3D, DenseInstancePose3D, LODOptions3D, Material3D,
+    MaterialParamOverride3D, MeshBlendOptions3D, MeshSurfaceBinding3D, ParticlePath3D,
+    ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D, PointLight3DState,
+    PointParticles3DState, RayLight3DState, RenderCommand, ResourceCommand, SkeletonPalette,
+    Sky3DState, SkyTime3DState, SpotLight3DState, Water3DState, WaterBodyQueryState,
+    WaterCoastlineShape3D, WaterIdleModeState, WaterImpact3D, WaterLinkState, WaterShapeState,
 };
 use perro_resource_api::sub_apis::MaterialAPI;
 use perro_runtime_render::{material_3d_request, mesh_3d_request};
@@ -29,6 +29,10 @@ const PARTICLE_PATH_CACHE_MAX: usize = 256;
 #[path = "three_d/helpers.rs"]
 mod helpers;
 use helpers::*;
+pub(crate) use helpers::{
+    derived_particle_budget as derived_particle_budget_3d, resolve_particle_profile,
+    resolve_particle_render_mode, resolve_particle_sim_mode,
+};
 
 impl Runtime {
     pub fn extract_render_3d_commands(&mut self) {
@@ -205,6 +209,55 @@ impl Runtime {
                     self.render_3d.retained_skies.insert(node, sky);
                 }
                 visible_now.insert(node);
+            }
+
+            let stream_data = self.nodes.get(node).and_then(|node| match &node.data {
+                SceneNodeData::CameraStream3D(stream) => Some((
+                    effective_visible
+                        && stream.visible
+                        && stream.stream.enabled
+                        && render_mask_matches(camera_render_mask, stream.render_layers),
+                    stream.stream.clone(),
+                    stream.transform,
+                    stream.size,
+                    stream.tint,
+                )),
+                _ => None,
+            });
+            if let Some((visible, stream, local_transform, size, tint)) = stream_data {
+                if visible {
+                    if let Some(stream_state) = self.camera_stream_state(node, &stream) {
+                        let model = self
+                            .get_global_transform_3d(node)
+                            .unwrap_or(local_transform)
+                            .to_mat4()
+                            .to_cols_array_2d();
+                        self.queue_render_command(RenderCommand::CameraStream(
+                            CameraStreamCommand::Upsert {
+                                node,
+                                state: Box::new(stream_state.clone()),
+                            },
+                        ));
+                        self.queue_render_command(RenderCommand::ThreeD(Box::new(
+                            Command3D::UpsertCameraStream {
+                                node,
+                                stream: Box::new(stream_state),
+                                quad: CameraStream3DState { model, size, tint },
+                            },
+                        )));
+                        visible_now.insert(node);
+                    } else {
+                        self.queue_render_command(RenderCommand::CameraStream(
+                            CameraStreamCommand::RemoveNode { node },
+                        ));
+                        self.remove_retained_render_3d_node(node);
+                    }
+                } else {
+                    self.queue_render_command(RenderCommand::CameraStream(
+                        CameraStreamCommand::RemoveNode { node },
+                    ));
+                    self.remove_retained_render_3d_node(node);
+                }
             }
 
             let water_data = self.nodes.get(node).and_then(|node| match &node.data {
@@ -955,7 +1008,7 @@ impl Runtime {
         }
     }
 
-    fn resolve_render_mesh_assets(
+    pub(crate) fn resolve_render_mesh_assets(
         &mut self,
         node: NodeID,
         mut mesh: MeshID,
@@ -1069,7 +1122,11 @@ impl Runtime {
         Some((mesh, std::sync::Arc::from(converted)))
     }
 
-    fn resolve_render_mesh_id(&mut self, node: NodeID, mut mesh: MeshID) -> Option<MeshID> {
+    pub(crate) fn resolve_render_mesh_id(
+        &mut self,
+        node: NodeID,
+        mut mesh: MeshID,
+    ) -> Option<MeshID> {
         let canonical = self.resource_api.canonical_mesh_id(mesh);
         if canonical != mesh {
             mesh = canonical;
@@ -1142,7 +1199,7 @@ impl Runtime {
         Some(mesh)
     }
 
-    fn collect_water_coastline_shapes_3d(
+    pub(crate) fn collect_water_coastline_shapes_3d(
         &mut self,
         water_id: NodeID,
         water: &perro_nodes::WaterSurfaceParams,
@@ -1363,7 +1420,10 @@ impl Runtime {
         Arc::from(shapes)
     }
 
-    fn collect_water_queries_3d(&mut self, water_id: NodeID) -> Arc<[WaterBodyQueryState]> {
+    pub(crate) fn collect_water_queries_3d(
+        &mut self,
+        water_id: NodeID,
+    ) -> Arc<[WaterBodyQueryState]> {
         let Some(queries) = self.pending_water_queries_3d.get(&water_id) else {
             return Arc::from([]);
         };
@@ -1381,7 +1441,7 @@ impl Runtime {
         )
     }
 
-    fn collect_water_impacts_3d(
+    pub(crate) fn collect_water_impacts_3d(
         &mut self,
         water_id: NodeID,
         water: &perro_nodes::WaterSurfaceParams,
@@ -1541,7 +1601,7 @@ impl Runtime {
         Arc::from(impacts)
     }
 
-    fn collect_water_links_3d(
+    pub(crate) fn collect_water_links_3d(
         &mut self,
         water_id: NodeID,
         water: &perro_nodes::WaterSurfaceParams,
@@ -1640,7 +1700,7 @@ fn render_mask_matches(camera_mask: BitMask, render_layers: BitMask) -> bool {
     !camera_mask.intersects(render_layers)
 }
 
-fn water_idle_mode_state(mode: perro_nodes::WaterIdleMode) -> WaterIdleModeState {
+pub(crate) fn water_idle_mode_state(mode: perro_nodes::WaterIdleMode) -> WaterIdleModeState {
     match mode {
         perro_nodes::WaterIdleMode::Calm => WaterIdleModeState::Calm,
         perro_nodes::WaterIdleMode::Sine => WaterIdleModeState::Sine,
@@ -1650,7 +1710,7 @@ fn water_idle_mode_state(mode: perro_nodes::WaterIdleMode) -> WaterIdleModeState
     }
 }
 
-fn water_shape_state(shape: perro_nodes::WaterShape) -> WaterShapeState {
+pub(crate) fn water_shape_state(shape: perro_nodes::WaterShape) -> WaterShapeState {
     match shape {
         perro_nodes::WaterShape::Circle { radius } => WaterShapeState::Circle { radius },
         perro_nodes::WaterShape::Cylinder {
@@ -1664,7 +1724,7 @@ fn water_shape_state(shape: perro_nodes::WaterShape) -> WaterShapeState {
     }
 }
 
-fn water_render_size(water: perro_nodes::WaterSurfaceParams) -> [f32; 2] {
+pub(crate) fn water_render_size(water: perro_nodes::WaterSurfaceParams) -> [f32; 2] {
     let size = water.shape.surface_size();
     [size.x, size.y]
 }

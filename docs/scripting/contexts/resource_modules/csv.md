@@ -1,176 +1,182 @@
-# CSV Module
+# Csv Module
 
-CSV files under `res/` are runtime data tables.
+## Page Map
 
-Use them for item data, balance values, quest rows, spawn tables, dialog tables, and other small database-like files.
+| Header | Link |
+| --- | --- |
+| Overview | [Overview](#overview) |
+| Context | [Context](#context) |
+| API Reference | [API Reference](#api-reference) |
+| `load` | [`load`](#load) |
+| `load_hashed` | [`load_hashed`](#load_hashed) |
+| `load_hashed_with_source` | [`load_hashed_with_source`](#load_hashed_with_source) |
+| `save` | [`save`](#save) |
+| `save_hashed` | [`save_hashed`](#save_hashed) |
+| `csv_load` | [`csv_load`](#csv_load) |
+| `csv_save` | [`csv_save`](#csv_save) |
 
-## Load
+## Overview
 
-```rust
-let items = csv_load!(ctx.res, "res://data/items.csv");
-```
+This resource module belongs to `ctx.res` and documents csv calls.
 
-Equivalent method form:
+## Context
 
-```rust
-let items = ctx.res.Csv().load("res://data/items.csv");
-```
+- Script context path: `ctx.res`
+- Module access: `ctx.res.Csv()`
+- Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
 
-`csv_load!` hashes literal paths at compile time.
+## API Reference
 
-## Mutable Buffers
+### `load`
 
-`Csv` is immutable.
-
-Use `CsvBuf` when code needs to build, edit, or save CSV data.
-
-```rust
-let mut generated = CsvBuf::new(["id", "name", "power"]);
-generated.push_row(["axe", "Axe", "14"])?;
-generated.set_by_header(0, "power", "16")?;
-
-csv_save!(ctx.res, "res://data/generated.csv", &generated)?;
-```
-
-Promote loaded CSV to owned buffer:
-
-```rust
-let items = csv_load!(ctx.res, "res://data/items.csv");
-let mut editable = items.to_buf();
-editable.set_by_header(0, "name", "Iron Sword")?;
-
-csv_save!(ctx.res, "res://data/items.csv", &editable)?;
-```
-
-Equivalent method form:
-
-```rust
-ctx.res.Csv().save("res://data/generated.csv", &generated)?;
-```
-
-Common buffer methods:
-
-- `CsvBuf::new(headers)`
-- `CsvBuf::from_bytes(bytes)`
-- `CsvBuf::from_static(table)`
-- `Csv::to_buf()`
-- `push_row(row)`
-- `set(row, col, value)`
-- `set_by_header(row, header, value)`
-- `to_bytes()`
-- `to_text()`
-
-## Access
-
-```rust
-let sword = items.find_primary("sword");
-let name = sword.and_then(|row| row.get(1));
-let power = sword.and_then(|row| row.get(3));
-
-let rarity = items.get_by_header(0, "rarity");
-```
-
-## Query
-
-```rust
-let weapons = CSVQuery::new(items)
-    .where_eq("kind", "weapon")
-    .where_ge("power", 10.0)
-    .where_in("rarity", &["common", "rare"])
-    .select(&["id", "name", "power"])
-    .order_by_num_desc("power")
-    .limit(8)
-    .run();
-
-for row in weapons.iter() {
-    let id = row.get(0);
-    let name = row.get(1);
-}
-```
-
-Query ops:
-
-- `where_eq`, `where_ne`
-- `where_lt`, `where_le`, `where_gt`, `where_ge`
-- `where_contains`
-- `where_starts_with`
-- `where_in`
-- `or_where_*` variants
-- `select`
-- `order_by_asc`, `order_by_desc`
-- `order_by_num_asc`, `order_by_num_desc`
-- `limit`
-
-Filters combine left-to-right.
-
-Use `where_*` for `AND`.
-
-Use `or_where_*` for `OR`.
-
-`where_lt/le/gt/ge` compare numbers.
-
-`order_by_*` compares text.
-
-`order_by_num_*` compares numbers.
-
-Result rows keep source row access:
-
-```rust
-let row = weapons.row(0);
-let source_row_index = row.map(|row| row.source_row());
-let name_by_selected_col = row.and_then(|row| row.get(1));
-let name_by_header = row.and_then(|row| row.get_header("name"));
-```
-
-Common methods:
-
-- `row_count()`
-- `col_count()`
-- `headers()`
-- `rows()`
-- `row(index)`
-- `get(row, col)`
-- `get_by_header(row, header)`
-- `find_primary(key)`
-- `find_primary_hash(key_hash)`
-- `find(col, key)`
-- `find_hash(col, key_hash)`
-
-## Format
-
-First row is headers.
-
-First column is treated as the primary key.
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Csv()` |
+| Signature | `pub fn load<S: ResPathSource>(&self, source: S) -> &'static Csv` |
+| Params | `&self, source: S` |
+| Returns | `&'static Csv` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
 Example:
 
-```csv
-id,name,kind,power,cost
-sword,Sword,weapon,10,25
-potion,Potion,consumable,0,8
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Csv().load("res://path/to/resource");
+        let _ = value;
+    }
+});
 ```
 
-## Build Behavior
+### `load_hashed`
 
-Dev mode reads and parses the CSV once, then caches the table.
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Csv()` |
+| Signature | `pub fn load_hashed(&self, source_hash: u64) -> &'static Csv` |
+| Params | `&self, source_hash: u64` |
+| Returns | `&'static Csv` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
-Static builds emit CSV tables as Rust static data and return `&'static Csv`.
+Example:
 
-Release lookup avoids file IO, CSV parse work, and per-load allocation.
-
-Missing or invalid CSV returns an empty table.
-
-## Bench Snapshot
-
-Local `perro_csv` bench uses 250,000 rows and 8 columns.
-
-```powershell
-cargo bench -p perro_csv --bench huge_csv -- --sample-size 10 --warm-up-time 1 --measurement-time 2
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Csv().load_hashed(0);
+        let _ = value;
+    }
+});
 ```
 
-Snapshot:
+### `load_hashed_with_source`
 
-- primary string find batch: ~5.6 us
-- primary hash find batch: ~3.4 us
-- header get batch: ~2.8 us
-- filter/sort/limit query: ~1.3 ms after lazy column index warmup
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Csv()` |
+| Signature | `pub fn load_hashed_with_source<S: ResPathSource>( &self, source_hash: u64, source: S, ) -> &'static Csv` |
+| Params | `&self, source_hash: u64, source: S,` |
+| Returns | `&'static Csv` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Csv().load_hashed_with_source(0, "res://path/to/resource");
+        let _ = value;
+    }
+});
+```
+
+### `save`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Csv()` |
+| Signature | `pub fn save<S: ResPathSource>(&self, source: S, csv: &CsvBuf) -> Result<(), String>` |
+| Params | `&self, source: S, csv: &CsvBuf) -> Result<(` |
+| Returns | `Result<(), String>` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Csv().save("res://path/to/resource", 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `save_hashed`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Csv()` |
+| Signature | `pub fn save_hashed<S: ResPathSource>( &self, source_hash: u64, source: S, csv: &CsvBuf, ) -> Result<(), String>` |
+| Params | `&self, source_hash: u64, source: S, csv: &CsvBuf, ) -> Result<(` |
+| Returns | `Result<(), String>` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.res.Csv().save_hashed(0, "res://path/to/resource", 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `csv_load`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Csv()` |
+| Signature | `csv_load!(ctx.res.res, source)` |
+| Params | `ctx.res, source` |
+| Returns | `resource/runtime ID or `Result` as shown by backing method` |
+| Use when | Use when code needs an ID or prepared asset before gameplay uses it. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = csv_load!(ctx.res, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `csv_save`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.res.Csv()` |
+| Signature | `csv_save!(ctx.res.res, source, csv)` |
+| Params | `ctx.res, source, csv` |
+| Returns | `same as backing method` |
+| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = csv_save!(ctx.res, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```

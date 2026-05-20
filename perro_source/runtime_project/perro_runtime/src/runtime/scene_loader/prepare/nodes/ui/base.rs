@@ -71,6 +71,24 @@ fn build_ui_image(data: &SceneDefNodeData) -> UiImage {
     node
 }
 
+fn build_ui_camera_stream(data: &SceneDefNodeData) -> UiCameraStream {
+    let mut node = UiCameraStream::new();
+    if let Some(base) = data.base_ref() {
+        apply_ui_root_data(&mut node.base, base);
+    }
+    apply_ui_root_fields(&mut node.base, &data.fields);
+    apply_camera_stream_fields(&mut node.stream, &data.fields);
+    SceneFieldIterRef::new(&data.fields).for_each(|name, value| match name {
+        "tint" | "color" | "modulate" => {
+            if let Some(v) = as_scene_color(value) {
+                node.tint = v;
+            }
+        }
+        _ => {}
+    });
+    node
+}
+
 fn build_ui_animated_image(data: &SceneDefNodeData) -> UiAnimatedImage {
     let mut node = UiAnimatedImage::new();
     if let Some(base) = data.base_ref() {

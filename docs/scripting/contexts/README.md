@@ -1,30 +1,43 @@
 # Script Contexts
 
-Perro script callbacks receive one script context:
+## Page Map
 
-- `ctx: &mut ScriptContext<'_, API>`
-- runtime window: `ctx.run`
-- resource window: `ctx.res`
-- input window: `ctx.ipt`
-- node id: `ctx.id`
+| Header | Link |
+| --- | --- |
+| Context Fields | [Context Fields](#context-fields) |
+| API Areas | [API Areas](#api-areas) |
+| Example Shape | [Example Shape](#example-shape) |
 
-`API` is a script API marker type that implements `ScriptAPI` and binds:
-- `API::RT` => runtime API
-- `API::RS` => resource API
-- `API::IP` => input API
+## Context Fields
 
-Details:
-- [Runtime API](runtime_api.md)
-- [Resource API](resource_api.md)
-- [Input API](input_api.md)
-- [Query System](../query_system.md)
+Every script lifecycle and method receives one context value.
 
-Reference layout:
-- `runtime_api.md` contains all runtime scripting macros, signatures, accepted types, and return types.
-- `runtime_api.md` contains quick query references and links.
-- `query_system.md` contains deeper query concepts, patterns, and performance notes.
-- `runtime_api.md` is the RuntimeWindow overview and links to module-specific pages in `runtime_modules/`.
-- `resource_api.md` is the ResourceWindow overview and links to module-specific pages in `resource_modules/`.
-- `input_api.md` is the InputWindow overview and links to module-specific pages in `input_modules/`.
+| Field | Meaning | Use for |
+| --- | --- | --- |
+| `ctx.run` | Runtime API window | nodes, scenes, time, window, physics, signals, runtime audio |
+| `ctx.res` | Resource API window | textures, meshes, materials, audio assets, CSV, localization, draw helpers |
+| `ctx.ipt` | Input API window | keys, mouse, gamepads, Joy-Cons, players, action map |
+| `ctx.id` | Current script node ID | self node lookup, state access, node transforms |
 
+## API Areas
 
+| Area | Page | Ctx |
+| --- | --- | --- |
+| Runtime | [Runtime API](runtime_api.md) | `ctx.run` |
+| Resource | [Resource API](resource_api.md) | `ctx.res` |
+| Input | [Input API](input_api.md) | `ctx.ipt` |
+
+## Example Shape
+
+Lifecycle hooks live inside `lifecycle!`. The macro supplies the `impl<API>` wrapper, so hooks use `API` in `ScriptContext` but do not declare their own generic.
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let dt = delta_time!(ctx.run);
+        let jump = key_pressed!(ctx.ipt, KeyCode::Space);
+        let tex = texture_load!(ctx.res, "res://textures/player.png");
+        let _ = (dt, jump, tex);
+    }
+});
+```

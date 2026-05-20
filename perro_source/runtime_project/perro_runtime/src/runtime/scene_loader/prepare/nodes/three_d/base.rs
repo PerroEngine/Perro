@@ -4,6 +4,29 @@ fn build_node_3d(data: &SceneDefNodeData) -> Node3D {
     node
 }
 
+fn build_camera_stream_3d(data: &SceneDefNodeData) -> CameraStream3D {
+    let mut node = CameraStream3D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_3d_data(&mut node, base);
+    }
+    apply_node_3d_fields(&mut node, &data.fields);
+    apply_camera_stream_fields(&mut node.stream, &data.fields);
+    SceneFieldIterRef::new(&data.fields).for_each(|name, value| match name {
+        "size" => {
+            if let Some(v) = as_vec2(value) {
+                node.size = [v.x.max(0.001), v.y.max(0.001)];
+            }
+        }
+        "tint" | "color" | "modulate" => {
+            if let Some(v) = as_scene_color(value) {
+                node.tint = v;
+            }
+        }
+        _ => {}
+    });
+    node
+}
+
 fn build_mesh_instance_3d(data: &SceneDefNodeData) -> MeshInstance3D {
     let mut node = MeshInstance3D::new();
     if let Some(base) = data.base_ref() {

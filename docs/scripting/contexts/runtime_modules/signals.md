@@ -1,191 +1,169 @@
 # Signals Module
 
-Purpose:
+## Page Map
 
-- Global pub/sub messaging between scripts.
-- One script emits a signal, any script listening for that signal name reacts.
-- Signals are **globally broadcast by name** — emitters and listeners don't need to know about each other.
+| Header | Link |
+| --- | --- |
+| Overview | [Overview](#overview) |
+| Context | [Context](#context) |
+| API Reference | [API Reference](#api-reference) |
+| `signal_connect` | [`signal_connect`](#signal_connect) |
+| `signal_disconnect` | [`signal_disconnect`](#signal_disconnect) |
+| `signal_emit` | [`signal_emit`](#signal_emit) |
+| `signal_connect` | [`signal_connect`](#signal_connect) |
+| `signal_disconnect` | [`signal_disconnect`](#signal_disconnect) |
+| `signal_emit` | [`signal_emit`](#signal_emit) |
 
-Macros:
+## Overview
 
-- `signal_connect!(ctx, listener_node_id, signal, handler_function) -> bool`
-- `signal_connect!(ctx, listener_node_id, signal, handler_function, params) -> bool`
-- `signal_disconnect!(ctx, listener_node_id, signal, handler_function) -> bool`
-- `signal_emit!(ctx, signal, params) -> usize`
-- `signal_emit!(ctx, signal) -> usize`
+This runtime module belongs to `ctx.run` and documents signals calls.
 
-Notes:
+## Context
 
-- `listener_node_id` is the node ID of the script that **has the handler function**.
-- `signal` is a `SignalID` created with `signal!("name")`.
-- `handler_function` is the method name on the listener script, created with `func!("name")`.
-- `signal_emit!` returns the count of listeners that were triggered.
-- 3-arg `signal_emit!` uses `&[Variant]` (commonly `params![...]`).
-- 2-arg `signal_emit!` emits with empty params.
-- 5-arg `signal_connect!` stores extra params on the connection.
-- Connection params are appended after `signal_emit!` params.
+- Script context path: `ctx.run`
+- Module access: `ctx.run.Signals()`
+- Lifecycle examples stay inside `lifecycle!` because script hooks get `API` from the macro expansion.
 
-## Example: Simple Broadcast
-
-**Emitter (Player):**
+## Practical Example
 
 ```rust
 lifecycle!({
-    fn on_update(&self, ctx, res, ipt, self_id) {
-        if key_pressed!(ipt, KeyCode::Space) {
-            let listener_count = signal_emit!(ctx, signal!("player_jumped"));
-            log::info!("Jump emitted, {} listeners reacted", listener_count);
-        }
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        signal_emit!(ctx.run, signal!("player_spawned"), params![ctx.id]);
     }
 });
 ```
 
-**Listener (Enemy):**
+## API Reference
 
-```rust
-#[State]
-pub struct EnemyState {
-    alerted: bool,
-}
+### `signal_connect`
 
-lifecycle!({
-    fn on_init(&self, ctx, res, ipt, self_id) {
-        // This enemy listens for "player_jumped" globally and connects to it's own "on_alert" function
-        signal_connect!(ctx, self_id, signal!("player_jumped"), func!("on_alert"));
-    }
-});
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Signals()` |
+| Signature | `pub fn signal_connect( &mut self, script_id: NodeID, signal: SignalID, function: ScriptMemberID, params: &[Variant], ) -> bool` |
+| Params | `&mut self, script_id: NodeID, signal: SignalID, function: ScriptMemberID, params: &[Variant],` |
+| Returns | `bool` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
-methods!({
-    fn on_alert(&self, ctx, res, ipt, self_id) {
-        with_state_mut!(ctx.run, EnemyState, self_id, |state| {
-            state.alerted = true;
-        });
-    }
-});
-```
-
-## Example: Signal With Parameters
-
-**Emitter:**
-
-```rust
-signal_emit!(ctx, signal!("enemy_defeated"), params![enemy_id, 50i32]); // 50 = points
-```
-
-**Listener:**
-
-```rust
-methods!({
-    fn on_enemy_defeated(&self, ctx, res, ipt, self_id, enemy_id: NodeID, points: i32) {
-        log::info!("Defeated enemy {:?} for {} points", enemy_id, points);
-    }
-});
-
-lifecycle!({
-    fn on_init(&self, ctx, res, ipt, self_id) {
-        signal_connect!(ctx, self_id, signal!("enemy_defeated"), func!("on_enemy_defeated"));
-    }
-});
-```
-
-## Example: Connection Parameters
-
-Use connection params when one handler needs to know which connection fired.
+Example:
 
 ```rust
 lifecycle!({
-    fn on_init(&self, ctx, res, ipt, self_id) {
-        signal_connect!(
-            ctx,
-            self_id,
-            signal!("ui_right_button_pressed"),
-            func!("on_button_event"),
-            params!["right_pressed"]
-        );
-
-        signal_connect!(
-            ctx,
-            self_id,
-            signal!("ui_left_button_pressed"),
-            func!("on_button_event"),
-            params!["left_pressed"]
-        );
-    }
-});
-
-methods!({
-    fn on_button_event(&self, ctx, res, ipt, self_id, event_name: String) {
-        match event_name.as_str() {
-            "right_pressed" => log::info!("right"),
-            "left_pressed" => log::info!("left"),
-            _ => {}
-        }
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Signals().signal_connect(ctx.id, 0.0, 0.1, variant!(0_i32));
+        let _ = value;
     }
 });
 ```
 
-If the emitter sends params, they come first:
+### `signal_disconnect`
 
-```rust
-signal_emit!(ctx, signal!("ui_button_pressed"), params![button_id]);
-signal_connect!(
-    ctx,
-    self_id,
-    signal!("ui_button_pressed"),
-    func!("on_button_event"),
-    params!["right_pressed"]
-);
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Signals()` |
+| Signature | `pub fn signal_disconnect( &mut self, script_id: NodeID, signal: SignalID, function: ScriptMemberID, ) -> bool` |
+| Params | `&mut self, script_id: NodeID, signal: SignalID, function: ScriptMemberID,` |
+| Returns | `bool` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
-methods!({
-    fn on_button_event(&self, ctx, res, ipt, self_id, button_id: NodeID, event_name: String) {
-        log::info!("{:?}: {}", button_id, event_name);
-    }
-});
-```
-
-## Physics Collision Signals
-
-Physics bodies automatically emit collision signals:
-
-```rust
-// When RigidBody3D with node name "Player" collides, it emits:
-signal!("Player_Collided")
-// params[0] = source body NodeID
-// params[1] = other body NodeID
-```
-
-**Listen for collisions:**
+Example:
 
 ```rust
 lifecycle!({
-    fn on_init(&self, ctx, res, ipt, self_id) {
-        signal_connect!(ctx, self_id, signal!("Player_Collided"), func!("on_hit"));
-    }
-});
-
-methods!({
-    fn on_hit(&self, ctx, res, ipt, self_id, other_id: NodeID) {
-        log::info!("Collided with {:?}", other_id);
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Signals().signal_disconnect(ctx.id, 0.0, 0.1);
+        let _ = value;
     }
 });
 ```
 
-## Area Overlap Signals
+### `signal_emit`
 
-`Area2D`/`Area3D` emit lifecycle signals:
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Signals()` |
+| Signature | `pub fn signal_emit(&mut self, signal: SignalID, params: &[Variant]) -> usize` |
+| Params | `&mut self, signal: SignalID, params: &[Variant]` |
+| Returns | `usize` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
-- `"{AreaNodeName}_Entered"` — body entered area
-- `"{AreaNodeName}_Occupied"` — body still inside
-- `"{AreaNodeName}_Exited"` — body left area
-
-```rust
-signal_connect!(ctx, self_id, signal!("TriggerZone_Entered"), func!("on_enter"));
-signal_connect!(ctx, self_id, signal!("TriggerZone_Exited"), func!("on_exit"));
-```
-
-## Disconnecting
+Example:
 
 ```rust
-signal_disconnect!(ctx, self_id, signal!("player_jumped"), func!("on_alert"));
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = ctx.run.Signals().signal_emit(Default::default(), variant!(0_i32));
+        let _ = value;
+    }
+});
 ```
 
+### `signal_connect`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Signals()` |
+| Signature | `signal_connect!(ctx.run, script, signal, function, params)` |
+| Params | `ctx, script, signal, function, params` |
+| Returns | `same as backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = signal_connect!(ctx.run, 0.0, 0.1, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `signal_disconnect`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Signals()` |
+| Signature | `signal_disconnect!(ctx.run, script, signal, function)` |
+| Params | `ctx, script, signal, function` |
+| Returns | `same as backing method` |
+| Use when | Use when code must release, remove, stop, or disconnect existing engine state. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = signal_disconnect!(ctx.run, 0.0, 0.1, 0.1);
+        let _ = value;
+    }
+});
+```
+
+### `signal_emit`
+
+| Field | Detail |
+| --- | --- |
+| Access | `ctx.run.Signals()` |
+| Signature | `signal_emit!(ctx.run, signal, params)` |
+| Params | `ctx, signal, params` |
+| Returns | `same as backing method` |
+| Use when | Use when gameplay must change engine state or queue an action this frame. |
+| Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
+
+Example:
+
+```rust
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
+        let value = signal_emit!(ctx.run, 0.0, 0.1);
+        let _ = value;
+    }
+});
+```
