@@ -14,7 +14,7 @@
 
         let cloud_clock      = cloud_time_seconds * (0.011 + wind_len * 0.06);
         let clouds_scale     = mix(1.55, 0.55, cloud_size);
-        let clouds_fuzziness = mix(0.035, 0.24, cloud_variance);
+        let clouds_fuzziness = mix(0.080, 0.32, cloud_variance);
         let coverage_bias    = mix(0.02,  0.14, cloud_density);
 
         // ── Night wisp turbulence ─────────────────────────────
@@ -48,7 +48,7 @@
             perlin_fbm(macro_uv * 0.55 + vec2<f32>( 13.0,  -7.0), 2),
             perlin_fbm(macro_uv * 0.55 + vec2<f32>( -5.0,  11.0), 2)
         ) - vec2<f32>(0.5, 0.5);
-        let macro_shape = cached_noise2((macro_uv + macro_warp * 1.35) * 0.35, 0u);
+        let macro_shape = perlin_fbm((macro_uv + macro_warp * 1.35) * 0.35, 3);
         let macro_bias  = smoothstep(0.35, 1.0, macro_shape) * 0.22;
 
         // ── Top layer ─────────────────────────────────────────
@@ -59,7 +59,7 @@
             perlin_fbm(top_uv * 0.7 + vec2<f32>( 19.0, -23.0), 2),
             perlin_fbm(top_uv * 0.7 + vec2<f32>(-17.0,  29.0), 2)
         ) - vec2<f32>(0.5, 0.5);
-        let noise_top_raw = perlin_fbm(top_uv + top_warp * 0.95, 3);
+        let noise_top_raw = perlin_fbm(top_uv + top_warp * 0.95, 4);
 
         // ── Mid layer ─────────────────────────────────────────
         drift = rotate2(wind_dir, shear_mid) * cloud_clock * 0.94
@@ -69,7 +69,7 @@
             perlin_fbm(mid_uv * 0.68 + vec2<f32>(  7.0, -31.0), 2),
             perlin_fbm(mid_uv * 0.68 + vec2<f32>(-29.0,   5.0), 2)
         ) - vec2<f32>(0.5, 0.5);
-        let noise_middle_raw = perlin_fbm(mid_uv + mid_warp * 0.82, 3);
+        let noise_middle_raw = perlin_fbm(mid_uv + mid_warp * 0.82, 4);
 
         // ── Bottom layer ──────────────────────────────────────
         // Uses a tighter scale (1.32x) so the dark shadow underside has a
@@ -82,13 +82,13 @@
             perlin_fbm(bot_uv * 0.75 + vec2<f32>(-13.0,  17.0), 2),
             perlin_fbm(bot_uv * 0.72 + vec2<f32>( 23.0, -11.0), 2)
         ) - vec2<f32>(0.5, 0.5);
-        let noise_bottom_raw = perlin_fbm(bot_uv + bot_warp * 0.74, 3);
+        let noise_bottom_raw = perlin_fbm(bot_uv + bot_warp * 0.74, 4);
 
         // ── Micro detail ──────────────────────────────────────
         let detail_micro = perlin_fbm(
             (sky_uv + wind_dir * cloud_clock * 1.28 + vec2<f32>(9.0, -13.0))
                 * (clouds_scale * 1.75),
-            2
+            3
         );
 
         // ── Threshold layers ──────────────────────────────────
@@ -114,8 +114,8 @@
             + vec2<f32>(-27.0, 14.0)) * (clouds_scale * 0.78);
         let high_layer_uv = (sky_uv + rotate2(wind_dir, shear_high) * cloud_clock * 0.68
             + vec2<f32>(33.0, -21.0)) * (clouds_scale * 1.34);
-        let low_layer_raw  = cached_noise2(low_layer_uv * 0.30, 1u);
-        let high_layer_raw = cached_noise2(high_layer_uv * 0.42, 2u);
+        let low_layer_raw  = perlin_fbm(low_layer_uv, 3);
+        let high_layer_raw = perlin_fbm(high_layer_uv, 3);
 
         let low_layer = smoothstep(
             clouds_cutoff - 0.06,
@@ -179,6 +179,25 @@
 
         let micro_break = smoothstep(0.32, 0.86, detail_micro);
         clouds_amount_real *= mix(1.08, 0.86, micro_break);
+        let wind_cross = vec2<f32>(-wind_dir.y, wind_dir.x);
+        let streak_uv = vec2<f32>(
+            dot(sky_uv, wind_dir) * 0.34,
+            dot(sky_uv, wind_cross) * 2.45
+        ) * clouds_scale + vec2<f32>(cloud_clock * 0.42, -17.0);
+        let wisp_streak = perlin_fbm(streak_uv, 3);
+        let soft_fray = smoothstep(0.38, 0.86, wisp_streak)
+            * upper_veil
+            * (1.0 - smoothstep(0.46, 0.92, clouds_amount_real));
+        let puff_round = smoothstep(
+            0.18, 0.82,
+            noise_middle_raw * 0.70 + low_layer_raw * 0.30 + coverage_bias
+        );
+        clouds_amount_real = mix(
+            clouds_amount_real,
+            smoothstep(0.04, 0.92, clouds_amount_real + puff_round * 0.16),
+            0.42
+        );
+        clouds_amount_real = clamp(clouds_amount_real - soft_fray * 0.18, 0.0, 1.0);
         clouds_amount_real  = pow(clamp(clouds_amount_real, 0.0, 1.0), 0.96);
 
         let horizon_continuity = smoothstep(

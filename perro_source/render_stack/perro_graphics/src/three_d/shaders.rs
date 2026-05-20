@@ -302,4 +302,10 @@ mod tests {
     fn multimesh_wgsl_parses() {
         naga::front::wgsl::parse_str(regular::MULTIMESH_WGSL).expect("multimesh wgsl parses");
     }
+
+    #[test]
+    fn sky_wgsl_parses() {
+        let wgsl = build_sky_shader();
+        naga::front::wgsl::parse_str(&wgsl).expect("sky wgsl parses");
+    }
 }
