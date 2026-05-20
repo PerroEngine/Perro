@@ -1335,11 +1335,14 @@ impl Runtime {
                 continue;
             };
             for child_id in children {
-                let Some(shape_kind) = self.nodes.get(child_id).and_then(|child| {
+                let Some((shape_kind, flip)) = self.nodes.get(child_id).and_then(|child| {
                     let SceneNodeData::CollisionShape3D(shape) = &child.data else {
                         return None;
                     };
-                    Some(shape.shape.clone())
+                    Some((
+                        shape.shape.clone(),
+                        (shape.flip_x, shape.flip_y, shape.flip_z),
+                    ))
                 }) else {
                     continue;
                 };
@@ -1351,6 +1354,7 @@ impl Runtime {
                     continue;
                 }
                 let scale = shape_global.scale;
+                let mesh_scale = signed_collision_shape_scale(scale, flip);
                 match &shape_kind {
                     Shape3D::Cube { size }
                     | Shape3D::TriPrism { size }
@@ -1447,9 +1451,9 @@ impl Runtime {
                         };
                         let Some((vertices, triangles)) = perro_physics::decode_pmesh_trimesh(
                             bytes,
-                            scale.x.abs(),
-                            scale.y.abs(),
-                            scale.z.abs(),
+                            mesh_scale.x,
+                            mesh_scale.y,
+                            mesh_scale.z,
                         ) else {
                             continue;
                         };
@@ -1739,6 +1743,29 @@ impl Runtime {
         }
         Arc::from(links)
     }
+}
+
+fn signed_collision_shape_scale(
+    scale: perro_structs::Vector3,
+    flip: (bool, bool, bool),
+) -> perro_structs::Vector3 {
+    perro_structs::Vector3::new(
+        if flip.0 {
+            -scale.x.abs()
+        } else {
+            scale.x.abs()
+        },
+        if flip.1 {
+            -scale.y.abs()
+        } else {
+            scale.y.abs()
+        },
+        if flip.2 {
+            -scale.z.abs()
+        } else {
+            scale.z.abs()
+        },
+    )
 }
 
 fn camera_projection_state(projection: &CameraProjection) -> CameraProjectionState {

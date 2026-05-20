@@ -8,6 +8,7 @@
 | Use Cases | [Use Cases](#use-cases) |
 | Example | [Example](#example) |
 | Reference | [Reference](#reference) |
+| 3D Mesh Flips | [3D Mesh Flips](#3d-mesh-flips) |
 
 ## Purpose
 
@@ -193,6 +194,10 @@ See [TileMap2D](tilemap.md).
 - Middle names: `LOW = 1`, `MEDIUM_LOW = 2`, `MEDIUM = 3`, `HIGH = 4`.
 - Scene authoring supports `min_lod`/`max_lod` plus `lod_min`/`lod_max` aliases.
 - Defaults keep full auto range: `min_lod = LODOptions::MIN`, `max_lod = LODOptions::MAX`.
+- `flip_x`, `flip_y`, and `flip_z` mirror the rendered mesh around the node's local origin/pivot.
+- Use mesh flips when a part needs to become its real opposite-side shape without making a second mesh resource.
+- This is different from rotation. A rotated left hair part is still shaped like the left-side mesh. A flipped left hair part becomes the right-side mirror.
+- This is also different from "inside out". The renderer handles mirrored winding/flat normals so the mesh remains renderable as a proper mirror.
 
 `MultiMeshInstance3D`
 
@@ -201,6 +206,7 @@ See [TileMap2D](tilemap.md).
 - `instances` stores per-instance position and rotation.
 - Use it for repeated static props, foliage, debris, or crowd-like non-skinned copies.
 - Supports same LOD clamp fields as `MeshInstance3D`.
+- Supports `flip_x`, `flip_y`, and `flip_z` on the whole multimesh node.
 
 `Camera3D`
 
@@ -255,9 +261,104 @@ Physics 3D:
 - `Area3D`
 - `CollisionShape3D` should be authored as a child of `StaticBody3D` or `RigidBody3D`.
 - `CollisionShape3D` supports primitive `shape` and mesh-backed `trimesh` source.
+- `flip_x`, `flip_y`, and `flip_z` mirror collision geometry around local origin.
 - Trimesh source format: `res://path/to/model.glb:mesh[0]` (mesh index optional, default `0`).
 - Static/rigid bodies and areas participate in audio propagation by default through `audio_interaction`.
 - Collision shapes only provide geometry.
+
+## 3D Mesh Flips
+
+Use `flip_x`, `flip_y`, and `flip_z` when one asymmetric mesh should draw as its mirrored counterpart.
+
+Common cases:
+
+- Character creator hair, horns, shoulder pads, pockets, belt pouches, or earrings.
+- Left/right accessory variants where rotation does not create the correct shape.
+- Modular level pieces where one mesh needs mirrored layout variation.
+- Runtime customization where many nodes reuse one `MeshID`.
+
+Do not use flip for:
+
+- Implicit physics collision mirror. Collision shapes are separate nodes and need their own `flip_x`, `flip_y`, or `flip_z`.
+- Author-time mesh baking. Flip is per node render state.
+- Cases where rotating the object is actually the intended result.
+
+Scene example:
+
+```text
+[HairLeft]
+parent = @Character
+    [MeshInstance3D]
+        mesh = "res://models/hair_part.glb:mesh[0]"
+        flip_x = false
+        [Node3D]
+            position = (-0.18, 1.72, 0.04)
+        [/Node3D]
+    [/MeshInstance3D]
+[/HairLeft]
+
+[HairRight]
+parent = @Character
+    [MeshInstance3D]
+        mesh = "res://models/hair_part.glb:mesh[0]"
+        flip_x = true
+        [Node3D]
+            position = (0.18, 1.72, 0.04)
+        [/Node3D]
+    [/MeshInstance3D]
+[/HairRight]
+```
+
+Script example:
+
+```rust
+methods!({
+    fn set_hair_side(&self, ctx: &mut ScriptContext<'_, API>, hair: NodeID, right_side: bool) {
+        with_node_mut!(ctx.run, MeshInstance3D, hair, |mesh| {
+            mesh.flip_x = right_side;
+        });
+    }
+});
+```
+
+Character creator example:
+
+```rust
+methods!({
+    fn equip_accessory(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+        accessory: NodeID,
+        mesh_id: MeshID,
+        mirror_x: bool,
+    ) {
+        with_node_mut!(ctx.run, MeshInstance3D, accessory, |node| {
+            node.mesh = mesh_id;
+            node.flip_x = mirror_x;
+            node.flip_y = false;
+            node.flip_z = false;
+        });
+    }
+});
+```
+
+Level variation example:
+
+```rust
+with_node_mut!(ctx.run, MeshInstance3D, wall_trim, |node| {
+    node.flip_z = variation_index & 1 != 0;
+});
+```
+
+Behavior notes:
+
+- Flip mirrors around local origin/pivot after the node transform is chosen.
+- Multiple axes can be enabled at once.
+- Odd-axis flips reverse triangle winding internally for render batching.
+- Materials still use the same mesh and surface bindings.
+- `MeshInstance3D` and `MultiMeshInstance3D` share the same field names.
+- For skinned meshes, flip mirrors the rendered skinned result at the mesh node level.
+- `CollisionShape3D` also accepts these fields, but mesh render flip does not affect collision shape flip.
 
 3D physics layer/mask fields:
 

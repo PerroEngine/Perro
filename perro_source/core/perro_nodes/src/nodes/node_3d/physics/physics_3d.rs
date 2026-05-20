@@ -87,6 +87,9 @@ impl Default for Shape3D {
 pub struct CollisionShape3D {
     pub base: Node3D,
     pub shape: Shape3D,
+    pub flip_x: bool,
+    pub flip_y: bool,
+    pub flip_z: bool,
     pub debug: bool,
 }
 
@@ -101,6 +104,9 @@ impl CollisionShape3D {
         Self {
             base: Node3D::new(),
             shape: Shape3D::Cube { size: Vector3::ONE },
+            flip_x: false,
+            flip_y: false,
+            flip_z: false,
             debug: false,
         }
     }

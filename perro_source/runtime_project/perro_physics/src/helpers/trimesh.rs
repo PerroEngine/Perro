@@ -185,7 +185,7 @@ pub fn decode_pmesh_trimesh(bytes: &[u8], sx: f32, sy: f32, sz: f32) -> Option<T
         {
             continue;
         }
-        triangles.push([ia, ib, ic]);
+        triangles.push(mirrored_triangle(sx, sy, sz, [ia, ib, ic]));
     }
 
     if vertices.len() < 3 || triangles.is_empty() {
@@ -273,7 +273,7 @@ pub fn decode_render_pmesh_trimesh(bytes: &[u8], sx: f32, sy: f32, sz: f32) -> O
             && b != c
             && a != c
         {
-            triangles.push([ia, ib, ic]);
+            triangles.push(mirrored_triangle(sx, sy, sz, [ia, ib, ic]));
         }
     }
     if vertices.len() < 3 || triangles.is_empty() {
@@ -354,7 +354,7 @@ pub fn load_trimesh_from_gltf_bytes(
                 let b = base + tri[1];
                 let c = base + tri[2];
                 if a != b && b != c && a != c {
-                    triangles.push([a, b, c]);
+                    triangles.push(mirrored_triangle(sx, sy, sz, [a, b, c]));
                 }
             }
         } else {
@@ -362,7 +362,7 @@ pub fn load_trimesh_from_gltf_bytes(
                 let a = base + i as u32;
                 let b = base + i as u32 + 1;
                 let c = base + i as u32 + 2;
-                triangles.push([a, b, c]);
+                triangles.push(mirrored_triangle(sx, sy, sz, [a, b, c]));
             }
         }
     }
@@ -387,4 +387,13 @@ pub fn trimesh_cache_key(
         sz.to_bits(),
         provider_mode as u8
     ))
+}
+
+fn mirrored_triangle(sx: f32, sy: f32, sz: f32, tri: [u32; 3]) -> [u32; 3] {
+    let flips = (sx < 0.0) as u8 + (sy < 0.0) as u8 + (sz < 0.0) as u8;
+    if flips.is_multiple_of(2) {
+        tri
+    } else {
+        [tri[0], tri[2], tri[1]]
+    }
 }

@@ -162,6 +162,21 @@ fn apply_collision_shape_3d_fields(node: &mut CollisionShape3D, fields: &[SceneO
                     node.shape = Shape3D::TriMesh { source };
                 }
             }
+            Some(NodeField::CollisionShape3D(CollisionShape3DField::FlipX)) => {
+                if let Some(flip) = as_bool(value) {
+                    node.flip_x = flip;
+                }
+            }
+            Some(NodeField::CollisionShape3D(CollisionShape3DField::FlipY)) => {
+                if let Some(flip) = as_bool(value) {
+                    node.flip_y = flip;
+                }
+            }
+            Some(NodeField::CollisionShape3D(CollisionShape3DField::FlipZ)) => {
+                if let Some(flip) = as_bool(value) {
+                    node.flip_z = flip;
+                }
+            }
             Some(NodeField::CollisionShape3D(CollisionShape3DField::Debug)) => {
                 if let Some(debug) = as_bool(value) {
                     node.debug = debug;

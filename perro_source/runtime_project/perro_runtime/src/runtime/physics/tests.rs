@@ -61,6 +61,35 @@ fn physics_3d_body_desc_carries_mass_and_density() {
 }
 
 #[test]
+fn collision_shape_3d_flip_signs_local_mesh_scale() {
+    let mut shape = CollisionShape3D::new();
+    shape.shape = Shape3D::TriMesh {
+        source: "res://models/one_sided.pmesh".to_string(),
+    };
+    shape.transform.scale = Vector3::new(2.0, 3.0, 4.0);
+    shape.flip_x = true;
+    shape.flip_z = true;
+
+    let desc = shape_desc_3d(&shape, 0.7, 0.0);
+
+    assert_eq!(desc.local.scale, Vector3::new(-2.0, 3.0, -4.0));
+    assert!(matches!(desc.shape, ShapeKind3D::TriMesh { .. }));
+}
+
+#[test]
+fn collision_shape_3d_flip_changes_shape_signature() {
+    let a = CollisionShape3D::new();
+    let mut b = CollisionShape3D::new();
+    b.flip_x = true;
+
+    let base = body_signature_seed(BodyKind::Static);
+    let sig_a = hash_collision_shape_3d(base, &a, BodyKind::Static, Vector3::ONE);
+    let sig_b = hash_collision_shape_3d(base, &b, BodyKind::Static, Vector3::ONE);
+
+    assert_ne!(sig_a, sig_b);
+}
+
+#[test]
 fn water_3d_buoyancy_uses_density() {
     let mut runtime = Runtime::new();
     let water_id = NodeAPI::create::<WaterBody3D>(&mut runtime);

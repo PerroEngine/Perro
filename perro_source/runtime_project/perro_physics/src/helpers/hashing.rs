@@ -141,6 +141,12 @@ pub fn hash_collision_shape_2d(state: u64, shape: &CollisionShape2D, kind: BodyK
     hash_shape_2d(state, shape.shape)
 }
 
+pub fn hash_collision_shape_flip_3d(mut state: u64, shape: &CollisionShape3D) -> u64 {
+    state = hash_u64(state, shape.flip_x as u64);
+    state = hash_u64(state, shape.flip_y as u64);
+    hash_u64(state, shape.flip_z as u64)
+}
+
 pub fn hash_tilemap_2d(mut state: u64, tilemap: &TileMap2D) -> u64 {
     state = hash_u32(state, tilemap.width);
     state = hash_u32(state, tilemap.height);

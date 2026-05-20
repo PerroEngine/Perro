@@ -145,6 +145,7 @@ pub fn hash_collision_shape_3d(
         transform.scale.z * inherited_scale.z,
     );
     state = hash_transform_3d(state, transform);
+    state = hash_collision_shape_flip_3d(state, shape);
     hash_shape_3d(state, &shape.shape)
 }
 
@@ -162,8 +163,18 @@ pub fn shape_desc_2d(shape: &CollisionShape2D, friction: f32, restitution: f32) 
 }
 
 pub fn shape_desc_3d(shape: &CollisionShape3D, friction: f32, restitution: f32) -> ShapeDesc3D {
+    let mut local = shape.base.transform;
+    if shape.flip_x {
+        local.scale.x = -local.scale.x;
+    }
+    if shape.flip_y {
+        local.scale.y = -local.scale.y;
+    }
+    if shape.flip_z {
+        local.scale.z = -local.scale.z;
+    }
     ShapeDesc3D {
-        local: shape.base.transform,
+        local,
         shape: match &shape.shape {
             Shape3D::TriMesh { source } => ShapeKind3D::TriMesh {
                 source: source.clone(),
@@ -393,9 +404,12 @@ pub fn collider_builder_3d(
     static_collision_trimesh_lookup: Option<StaticBytesLookup>,
     trimesh_cache: &mut AHashMap<u64, TriMeshData>,
 ) -> Option<r3::Collider> {
-    let sx = desc.local.scale.x.abs().max(0.0001);
-    let sy = desc.local.scale.y.abs().max(0.0001);
-    let sz = desc.local.scale.z.abs().max(0.0001);
+    let signed_sx = signed_axis_scale(desc.local.scale.x);
+    let signed_sy = signed_axis_scale(desc.local.scale.y);
+    let signed_sz = signed_axis_scale(desc.local.scale.z);
+    let sx = signed_sx.abs();
+    let sy = signed_sy.abs();
+    let sz = signed_sz.abs();
     let mut trimesh_load = TrimeshLoadCtx {
         provider_mode,
         static_mesh_lookup,
@@ -457,14 +471,20 @@ pub fn collider_builder_3d(
                 r3::ColliderBuilder::convex_hull(&points)?
             }
             Shape3D::TriMesh { source } => {
-                let (vertices, triangles) =
-                    load_trimesh_from_source(source, [sx, sy, sz], &mut trimesh_load)?;
+                let (vertices, triangles) = load_trimesh_from_source(
+                    source,
+                    [signed_sx, signed_sy, signed_sz],
+                    &mut trimesh_load,
+                )?;
                 r3::ColliderBuilder::trimesh(vertices, triangles).ok()?
             }
         },
         ShapeKind3D::TriMesh { source } => {
-            let (vertices, triangles) =
-                load_trimesh_from_source(source, [sx, sy, sz], &mut trimesh_load)?;
+            let (vertices, triangles) = load_trimesh_from_source(
+                source,
+                [signed_sx, signed_sy, signed_sz],
+                &mut trimesh_load,
+            )?;
             r3::ColliderBuilder::trimesh(vertices, triangles).ok()?
         }
     };
@@ -482,6 +502,14 @@ pub fn collider_builder_3d(
             .density(desc.density.max(0.0))
             .build(),
     )
+}
+
+fn signed_axis_scale(scale: f32) -> f32 {
+    if scale < 0.0 {
+        -scale.abs().max(0.0001)
+    } else {
+        scale.abs().max(0.0001)
+    }
 }
 
 pub fn interaction_groups_2d(layer: BitMask, mask: BitMask) -> r2::InteractionGroups {

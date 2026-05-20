@@ -519,6 +519,9 @@ pub enum SpotLight3DField {
 pub enum CollisionShape3DField {
     Shape,
     Trimesh,
+    FlipX,
+    FlipY,
+    FlipZ,
     Debug,
 }
 
@@ -961,6 +964,15 @@ fn resolve_scene_node_field_for_type(
             }
             SceneFieldName::Trimesh => {
                 Some(NodeField::CollisionShape3D(CollisionShape3DField::Trimesh))
+            }
+            SceneFieldName::FlipX => {
+                Some(NodeField::CollisionShape3D(CollisionShape3DField::FlipX))
+            }
+            SceneFieldName::FlipY => {
+                Some(NodeField::CollisionShape3D(CollisionShape3DField::FlipY))
+            }
+            SceneFieldName::FlipZ => {
+                Some(NodeField::CollisionShape3D(CollisionShape3DField::FlipZ))
             }
             SceneFieldName::Debug => {
                 Some(NodeField::CollisionShape3D(CollisionShape3DField::Debug))
@@ -1464,6 +1476,15 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
             "shape" => Some(NodeField::CollisionShape3D(CollisionShape3DField::Shape)),
             "trimesh" | "tri_mesh" => {
                 Some(NodeField::CollisionShape3D(CollisionShape3DField::Trimesh))
+            }
+            "flip_x" | "mirror_x" => {
+                Some(NodeField::CollisionShape3D(CollisionShape3DField::FlipX))
+            }
+            "flip_y" | "mirror_y" => {
+                Some(NodeField::CollisionShape3D(CollisionShape3DField::FlipY))
+            }
+            "flip_z" | "mirror_z" => {
+                Some(NodeField::CollisionShape3D(CollisionShape3DField::FlipZ))
             }
             "debug" => Some(NodeField::CollisionShape3D(CollisionShape3DField::Debug)),
             _ => None,
@@ -2112,6 +2133,14 @@ mod tests {
         assert_eq!(
             resolve_node_field("MultiMeshInstance3D", "mirror_x"),
             Some(NodeField::MeshInstance3D(MeshInstance3DField::FlipX))
+        );
+        assert_eq!(
+            resolve_node_field("CollisionShape3D", "flip_x"),
+            Some(NodeField::CollisionShape3D(CollisionShape3DField::FlipX))
+        );
+        assert_eq!(
+            resolve_node_field("CollisionShape3D", "mirror_z"),
+            Some(NodeField::CollisionShape3D(CollisionShape3DField::FlipZ))
         );
     }
 
