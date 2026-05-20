@@ -64,6 +64,9 @@ pub fn decode_render_request_node_from_event(event: &RenderEvent) -> Option<Node
         | RenderEvent::MaterialCreated { request, .. }
         | RenderEvent::Failed { request, .. } => *request,
         RenderEvent::TextureLoaded { .. }
+        | RenderEvent::MeshDropped { .. }
+        | RenderEvent::TextureDropped { .. }
+        | RenderEvent::MaterialDropped { .. }
         | RenderEvent::WaterSamples { .. }
         | RenderEvent::WaterBodySamples { .. } => return None,
     };
@@ -551,6 +554,10 @@ impl Render3DState {
     }
 
     pub fn note_removed_node(&mut self, node: NodeID) {
+        self.mesh_sources.remove(&node);
+        self.material_surface_sources.remove(&node);
+        self.material_surface_overrides.remove(&node);
+        self.retained_mesh_draws.remove(&node);
         self.removed_nodes.push(node);
     }
 

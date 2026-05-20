@@ -799,13 +799,19 @@ impl PerroGraphics {
                         self.resources.set_material_reserved(id, reserved);
                     }
                     ResourceCommand::DropMesh { id } => {
-                        self.resources.drop_mesh(id);
+                        if self.resources.drop_mesh(id) {
+                            self.events.push(RenderEvent::MeshDropped { id });
+                        }
                     }
                     ResourceCommand::DropTexture { id } => {
-                        self.resources.drop_texture(id);
+                        if self.resources.drop_texture(id) {
+                            self.events.push(RenderEvent::TextureDropped { id });
+                        }
                     }
                     ResourceCommand::DropMaterial { id } => {
-                        self.resources.drop_material(id);
+                        if self.resources.drop_material(id) {
+                            self.events.push(RenderEvent::MaterialDropped { id });
+                        }
                     }
                 },
                 RenderCommand::TwoD(cmd_2d) => match cmd_2d {
@@ -1598,8 +1604,27 @@ impl PerroGraphics {
         }
         self.frame_index = self.frame_index.wrapping_add(1);
         if self.frame_index.is_multiple_of(GC_INTERVAL_FRAMES) {
-            self.resources
+            let drops = self
+                .resources
                 .gc_unused(ResourceStore::DEFAULT_ZERO_REF_TTL_FRAMES);
+            self.events.extend(
+                drops
+                    .textures
+                    .into_iter()
+                    .map(|id| RenderEvent::TextureDropped { id }),
+            );
+            self.events.extend(
+                drops
+                    .meshes
+                    .into_iter()
+                    .map(|id| RenderEvent::MeshDropped { id }),
+            );
+            self.events.extend(
+                drops
+                    .materials
+                    .into_iter()
+                    .map(|id| RenderEvent::MaterialDropped { id }),
+            );
         }
         let prepare_cpu = prepare_start.elapsed();
 

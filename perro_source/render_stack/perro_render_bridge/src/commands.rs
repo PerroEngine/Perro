@@ -258,6 +258,15 @@ pub enum RenderEvent {
         request: RenderRequestID,
         id: MaterialID,
     },
+    MeshDropped {
+        id: MeshID,
+    },
+    TextureDropped {
+        id: TextureID,
+    },
+    MaterialDropped {
+        id: MaterialID,
+    },
     WaterSamples {
         samples: Arc<[WaterSampleState]>,
     },

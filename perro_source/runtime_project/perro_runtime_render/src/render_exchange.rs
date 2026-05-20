@@ -75,6 +75,9 @@ impl RenderState {
                     .insert(request, RuntimeRenderResult::Failed(reason));
             }
             RenderEvent::TextureLoaded { .. }
+            | RenderEvent::MeshDropped { .. }
+            | RenderEvent::TextureDropped { .. }
+            | RenderEvent::MaterialDropped { .. }
             | RenderEvent::WaterSamples { .. }
             | RenderEvent::WaterBodySamples { .. } => {}
         }

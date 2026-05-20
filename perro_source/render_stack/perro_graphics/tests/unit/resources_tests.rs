@@ -175,3 +175,100 @@ fn reserved_texture_is_not_auto_dropped() {
     }
     assert!(store.has_texture(id));
 }
+
+#[test]
+fn auto_gc_texture_drains_source_maps() {
+    let mut store = ResourceStore::new();
+    let source = "__tmp_auto_gc_texture__";
+    let id = store.create_texture(source, false);
+    store.mark_texture_used(id);
+
+    for _ in 0..ResourceStore::DEFAULT_ZERO_REF_TTL_FRAMES {
+        store.reset_ref_counts();
+        store.gc_unused(ResourceStore::DEFAULT_ZERO_REF_TTL_FRAMES);
+    }
+
+    assert!(!store.has_texture(id));
+    assert!(!store.has_texture_source(source));
+    assert!(store.texture_source(id).is_none());
+    assert!(store.texture_source_by_index(id.index()).is_none());
+
+    let next = store.create_texture(source, false);
+    assert_ne!(next, id);
+    assert!(store.has_texture(next));
+}
+
+#[test]
+fn auto_gc_mesh_drains_source_maps() {
+    let mut store = ResourceStore::new();
+    let source = "res://meshes/auto_gc.glb";
+    let id = store.create_mesh(source, false);
+    store.set_runtime_mesh_data(source, simple_runtime_mesh(1.0));
+    store.mark_mesh_used(id);
+
+    for _ in 0..ResourceStore::DEFAULT_ZERO_REF_TTL_FRAMES {
+        store.reset_ref_counts();
+        store.gc_unused(ResourceStore::DEFAULT_ZERO_REF_TTL_FRAMES);
+    }
+
+    assert!(!store.has_mesh(id));
+    assert!(!store.has_mesh_source(source));
+    assert!(store.mesh_source(id).is_none());
+    assert!(store.runtime_mesh_data(source).is_none());
+
+    let next = store.create_mesh(source, false);
+    assert_ne!(next, id);
+    assert!(store.has_mesh(next));
+}
+
+#[test]
+fn auto_gc_material_drains_source_maps() {
+    let mut store = ResourceStore::new();
+    let source = "res://materials/auto_gc.pmat";
+    let id = store.create_material(Material3D::default(), Some(source), false);
+    store.mark_material_used(id);
+
+    for _ in 0..ResourceStore::DEFAULT_ZERO_REF_TTL_FRAMES {
+        store.reset_ref_counts();
+        store.gc_unused(ResourceStore::DEFAULT_ZERO_REF_TTL_FRAMES);
+    }
+
+    assert!(!store.has_material(id));
+
+    let next = store.create_material(Material3D::default(), Some(source), false);
+    assert_ne!(next, id);
+    assert!(store.has_material(next));
+}
+
+#[test]
+fn stale_source_entries_are_not_reused() {
+    let mut store = ResourceStore::new();
+
+    let texture_source = "__tmp_stale_texture__";
+    let texture = store.create_texture(texture_source, false);
+    store
+        .texture_by_source
+        .insert(texture_source.to_string(), texture);
+    store.texture_source_by.remove(&texture);
+    assert!(store.drop_texture(texture));
+    let texture_next = store.create_texture(texture_source, false);
+    assert_ne!(texture_next, texture);
+
+    let mesh_source = "res://meshes/stale.glb";
+    let mesh = store.create_mesh(mesh_source, false);
+    store.mesh_by_source.insert(mesh_source.to_string(), mesh);
+    store.mesh_source_by.remove(&mesh);
+    assert!(store.drop_mesh(mesh));
+    let mesh_next = store.create_mesh(mesh_source, false);
+    assert_ne!(mesh_next, mesh);
+
+    let material_source = "res://materials/stale.pmat";
+    let material = store.create_material(Material3D::default(), Some(material_source), false);
+    store
+        .material_by_source
+        .insert(material_source.to_string(), material);
+    store.material_source_by.remove(&material);
+    assert!(store.drop_material(material));
+    let material_next = store.create_material(Material3D::default(), Some(material_source), false);
+    assert_ne!(material_next, material);
+}

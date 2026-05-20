@@ -28,7 +28,12 @@ impl AnimationAPI for RuntimeResourceApi {
 
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         if let Some(id) = state.animation_by_source.get(&source_hash).copied() {
-            return id;
+            if state.has_animation_id(id) {
+                return id;
+            }
+            state.animation_by_source.remove(&source_hash);
+            state.animation_data_by_id.remove(&id);
+            state.animation_loaded_by_id.remove(&id);
         }
 
         let clip = self

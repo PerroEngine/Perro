@@ -24,7 +24,12 @@ impl AnimationTreeAPI for RuntimeResourceApi {
 
         let mut state = self.state.lock().expect("resource api mutex poisoned");
         if let Some(id) = state.animation_tree_by_source.get(&source_hash).copied() {
-            return id;
+            if state.has_animation_tree_id(id) {
+                return id;
+            }
+            state.animation_tree_by_source.remove(&source_hash);
+            state.animation_tree_data_by_id.remove(&id);
+            state.animation_tree_loaded_by_id.remove(&id);
         }
 
         let tree = self
@@ -54,6 +59,20 @@ impl AnimationTreeAPI for RuntimeResourceApi {
         self.poll_async_animation_tree_loads();
         let state = self.state.lock().expect("resource api mutex poisoned");
         state.animation_tree_data_by_id.get(&id).cloned()
+    }
+
+    fn drop_animation_tree_source(&self, id: AnimationTreeID) -> bool {
+        if id.is_nil() {
+            return false;
+        }
+
+        let mut state = self.state.lock().expect("resource api mutex poisoned");
+        state
+            .animation_tree_by_source
+            .retain(|_, existing| *existing != id);
+        state.animation_tree_data_by_id.remove(&id);
+        state.animation_tree_loaded_by_id.remove(&id);
+        state.free_animation_tree_id(id)
     }
 
     fn is_animation_tree_loaded(&self, id: AnimationTreeID) -> bool {

@@ -770,7 +770,6 @@ impl Runtime {
                         },
                     };
                     self.queue_render_command(RenderCommand::ThreeD(Box::new(draw_command)));
-                    self.render_3d.retained_mesh_draws.insert(node, draw_state);
                 }
                 visible_now.insert(node);
             }
@@ -953,6 +952,9 @@ impl Runtime {
     fn remove_retained_render_3d_node(&mut self, node: NodeID) {
         self.render_3d.camera_activation_order.remove(&node);
         self.render_3d.dense_instance_pose_cache.remove(&node);
+        self.render_3d.mesh_sources.remove(&node);
+        self.render_3d.material_surface_sources.remove(&node);
+        self.render_3d.material_surface_overrides.remove(&node);
         if let Some(prev) = self.render_3d.collision_debug_state.remove(&node) {
             Self::queue_remove_collision_debug_nodes(self, node, 0, prev.edge_count);
         }

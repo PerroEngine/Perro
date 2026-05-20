@@ -663,6 +663,54 @@ impl RuntimeResourceApi {
                     let _ = state.free_material_id(pending_id);
                 }
             }
+            RenderEvent::TextureDropped { id } => {
+                state.texture_loaded_by_id.remove(id);
+                let source = state
+                    .texture_by_source
+                    .iter()
+                    .find_map(|(source_hash, existing)| (*existing == *id).then_some(*source_hash));
+                if let Some(source_hash) = source {
+                    state.texture_by_source.remove(&source_hash);
+                    state.texture_pending_by_source.remove(&source_hash);
+                    state.texture_reserve_pending.remove(&source_hash);
+                    state.texture_drop_pending.remove(&source_hash);
+                }
+                let _ = state.free_texture_id(*id);
+            }
+            RenderEvent::MeshDropped { id } => {
+                state.mesh_data_by_id.remove(id);
+                state.mesh_revision_by_id.remove(id);
+                state.mesh_source_by_id.remove(id);
+                state
+                    .mesh_id_alias
+                    .retain(|from, to| *from != *id && *to != *id);
+                let source = state
+                    .mesh_by_source
+                    .iter()
+                    .find_map(|(source_hash, existing)| (*existing == *id).then_some(*source_hash));
+                if let Some(source_hash) = source {
+                    state.mesh_by_source.remove(&source_hash);
+                    state.mesh_pending_by_source.remove(&source_hash);
+                    state.mesh_reserve_pending.remove(&source_hash);
+                    state.mesh_drop_pending.remove(&source_hash);
+                }
+                let _ = state.free_mesh_id(*id);
+            }
+            RenderEvent::MaterialDropped { id } => {
+                state.material_data_by_id.remove(id);
+                state.material_loaded_by_id.remove(id);
+                let source = state
+                    .material_by_source
+                    .iter()
+                    .find_map(|(source_hash, existing)| (*existing == *id).then_some(*source_hash));
+                if let Some(source_hash) = source {
+                    state.material_by_source.remove(&source_hash);
+                    state.material_pending_by_source.remove(&source_hash);
+                    state.material_reserve_pending.remove(&source_hash);
+                    state.material_drop_pending.remove(&source_hash);
+                }
+                let _ = state.free_material_id(*id);
+            }
             RenderEvent::Failed { request, .. } => {
                 if let Some(source) = state.texture_pending_source_by_request.remove(request) {
                     let source_hash = string_to_u64(&source);

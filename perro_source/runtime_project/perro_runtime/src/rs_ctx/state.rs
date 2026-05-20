@@ -44,6 +44,15 @@ impl LocalSlotArena {
         true
     }
 
+    fn contains_parts(&self, index: u32, generation: u32) -> bool {
+        if index == 0 {
+            return false;
+        }
+        let slot = index as usize - 1;
+        self.occupied.get(slot).copied().unwrap_or(false)
+            && self.generations.get(slot).copied() == Some(generation)
+    }
+
     fn occupy_parts(&mut self, index: u32, generation: u32) -> bool {
         if index == 0 {
             return false;
@@ -258,8 +267,23 @@ impl RuntimeResourceState {
         self.animation_slots.free_parts(id.index(), id.generation())
     }
 
+    pub(super) fn has_animation_id(&self, id: AnimationID) -> bool {
+        self.animation_slots
+            .contains_parts(id.index(), id.generation())
+    }
+
     pub(super) fn allocate_animation_tree_id(&mut self) -> AnimationTreeID {
         let (index, generation) = self.animation_tree_slots.allocate_parts();
         AnimationTreeID::from_parts(index, generation)
+    }
+
+    pub(super) fn free_animation_tree_id(&mut self, id: AnimationTreeID) -> bool {
+        self.animation_tree_slots
+            .free_parts(id.index(), id.generation())
+    }
+
+    pub(super) fn has_animation_tree_id(&self, id: AnimationTreeID) -> bool {
+        self.animation_tree_slots
+            .contains_parts(id.index(), id.generation())
     }
 }

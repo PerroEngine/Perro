@@ -12,6 +12,7 @@ pub trait AnimationTreeAPI {
     fn load_animation_tree_source(&self, source: &str) -> AnimationTreeID {
         self.load_animation_tree_source_hashed(perro_ids::string_to_u64(source), Some(source))
     }
+    fn drop_animation_tree_source(&self, id: AnimationTreeID) -> bool;
     fn get_animation_tree(&self, id: AnimationTreeID) -> Option<Arc<AnimationTreeAsset>>;
     fn is_animation_tree_loaded(&self, id: AnimationTreeID) -> bool;
 }
@@ -43,6 +44,10 @@ impl<'res, R: AnimationTreeAPI + ?Sized> AnimationTreeModule<'res, R> {
         self.api.get_animation_tree(id)
     }
 
+    pub fn drop(&self, id: AnimationTreeID) -> bool {
+        self.api.drop_animation_tree_source(id)
+    }
+
     pub fn is_loaded(&self, id: AnimationTreeID) -> bool {
         self.api.is_animation_tree_loaded(id)
     }
@@ -64,5 +69,12 @@ macro_rules! animation_tree_load {
 macro_rules! animation_tree_is_loaded {
     ($res:expr, $id:expr) => {
         $res.AnimationTrees().is_loaded($id)
+    };
+}
+
+#[macro_export]
+macro_rules! animation_tree_drop {
+    ($res:expr, $id:expr) => {
+        $res.AnimationTrees().drop($id)
     };
 }
