@@ -271,15 +271,15 @@
             clouds_amount_real - night_edge_feather, 0.0, 1.0);
 
         // ── Base cloud colour ─────────────────────────────────
-        let clouds_edge_color_real   = vec3<f32>(0.74, 0.78, 0.86);
-        let clouds_top_color_real    = vec3<f32>(0.90, 0.92, 0.95);
-        let clouds_middle_color_real = vec3<f32>(0.82, 0.86, 0.92);
-        let clouds_bottom_color_real = vec3<f32>(0.58, 0.62, 0.72);
+        let clouds_edge_color_real   = vec3<f32>(0.76, 0.80, 0.86);
+        let clouds_top_color_real    = vec3<f32>(0.86, 0.88, 0.91);
+        let clouds_middle_color_real = vec3<f32>(0.80, 0.84, 0.89);
+        let clouds_bottom_color_real = vec3<f32>(0.66, 0.70, 0.78);
 
         var clouds_color_real = mix(vec3<f32>(0.0), clouds_top_color_real,    noise_top_s);
         clouds_color_real     = mix(clouds_color_real, clouds_middle_color_real, noise_middle);
         clouds_color_real     = mix(clouds_color_real, clouds_bottom_color_real, noise_bottom);
-        clouds_color_real    -= vec3<f32>(0.07, 0.08, 0.10) * low_layer;
+        clouds_color_real    -= vec3<f32>(0.03, 0.04, 0.05) * low_layer;
         clouds_color_real    += vec3<f32>(0.03, 0.04, 0.05) * high_layer;
         clouds_color_real     = mix(clouds_edge_color_real, clouds_color_real, noise_top_s);
 
@@ -309,7 +309,7 @@
         );
         let top_face_light = clamp(view_up_dot * cloud_layer_height, 0.0, 1.0);
         let top_roundness  = top_face_light * sqrt(top_face_light);
-        let top_col_boost  = mix(vec3<f32>(1.0), vec3<f32>(1.30, 1.22, 1.14), top_roundness);
+        let top_col_boost  = mix(vec3<f32>(1.0), vec3<f32>(1.14, 1.11, 1.08), top_roundness);
         let bottom_shadow_view = clamp(
             (1.0 - view_up_dot) * (1.0 - cloud_layer_height), 0.0, 1.0);
         let underside_cover = smoothstep(0.16, 0.78, noise_bottom + low_layer * 0.55)
@@ -319,8 +319,8 @@
             underside_cover * (0.42 + (1.0 - view_up_dot) * 0.46)
         ) * smoothstep(0.24, 0.85, clouds_amount_real);
         let bottom_col_damp   = mix(
-            vec3<f32>(1.0), vec3<f32>(0.38, 0.40, 0.48),
-            bottom_shadow_str * 0.92
+            vec3<f32>(1.0), vec3<f32>(0.56, 0.58, 0.64),
+            bottom_shadow_str * 0.66
         );
         let cleft_shadow = cloud_vertical_cleft
             * (1.0 - smoothstep(0.56, 0.96, cloud_layer_height))
@@ -328,8 +328,8 @@
         clouds_color_real *= mix(vec3<f32>(1.0), vec3<f32>(0.58, 0.62, 0.70), cleft_shadow * 0.42);
         let sun_top_bonus = clamp(sun_dir.y * 0.6 + 0.4, 0.0, 1.0) * day_t;
         let top_sun_tint  = mix(
-            vec3<f32>(1.0), vec3<f32>(1.18, 1.09, 0.96),
-            (top_roundness + cloud_relief * 0.35) * sun_top_bonus * 0.52
+            vec3<f32>(1.0), vec3<f32>(1.09, 1.05, 0.97),
+            (top_roundness + cloud_relief * 0.35) * sun_top_bonus * 0.36
         );
         clouds_color_real = clouds_color_real
                           * top_col_boost * bottom_col_damp * top_sun_tint;
@@ -467,7 +467,7 @@
         clouds_color_real += vec3<f32>(1.22, 0.70, 0.95)
             * upper_veil * cloud_relief * evening_t * 0.14;
 
-        clouds_color_real = min(clouds_color_real, vec3<f32>(1.15, 1.12, 1.10));
+        clouds_color_real = min(clouds_color_real, vec3<f32>(1.02, 1.02, 1.02));
 
         // ── Night fade / storm ────────────────────────────────
         clouds_color_real = mix(clouds_color_real, color,

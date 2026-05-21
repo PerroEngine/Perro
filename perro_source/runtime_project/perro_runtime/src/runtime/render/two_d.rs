@@ -15,7 +15,7 @@ use perro_render_bridge::{
     WaterImpact2D, WaterLinkState, WaterShapeState,
 };
 use perro_runtime_render::{sprite_2d_texture_request, tilemap_2d_texture_request};
-use perro_structs::BitMask;
+use perro_structs::{BitMask, UVector2};
 use std::borrow::Cow;
 use std::sync::Arc;
 
@@ -1139,11 +1139,11 @@ fn render_mask_matches(camera_mask: BitMask, render_layers: BitMask) -> bool {
     !camera_mask.intersects(render_layers)
 }
 
-fn camera_stream_aspect_ratio(aspect_ratio: f32, resolution: [u32; 2]) -> f32 {
+fn camera_stream_aspect_ratio(aspect_ratio: f32, resolution: UVector2) -> f32 {
     if aspect_ratio.is_finite() && aspect_ratio > 0.0 {
         aspect_ratio
     } else {
-        resolution[0].max(1) as f32 / resolution[1].max(1) as f32
+        resolution.x.max(1) as f32 / resolution.y.max(1) as f32
     }
 }
 

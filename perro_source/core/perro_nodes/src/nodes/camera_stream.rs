@@ -2,13 +2,13 @@ use std::ops::{Deref, DerefMut};
 
 use crate::{Node2D, Node3D};
 use perro_ids::NodeID;
-use perro_structs::{Color, PostProcessSet};
+use perro_structs::{Color, PostProcessSet, UVector2};
 use perro_ui::{UiBox, UiImageScaleMode, UiNodeBase};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CameraStream {
     pub camera: NodeID,
-    pub resolution: [u32; 2],
+    pub resolution: UVector2,
     pub aspect_ratio: f32,
     pub aspect_mode: UiImageScaleMode,
     pub post_processing: PostProcessSet,
@@ -19,7 +19,7 @@ impl CameraStream {
     pub fn new() -> Self {
         Self {
             camera: NodeID::nil(),
-            resolution: [512, 512],
+            resolution: UVector2::new(512, 512),
             aspect_ratio: 0.0,
             aspect_mode: UiImageScaleMode::Fit,
             post_processing: PostProcessSet::new(),

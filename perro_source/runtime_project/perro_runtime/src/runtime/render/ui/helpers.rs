@@ -667,11 +667,11 @@ pub(super) fn ui_image_region_uv(
     ([x, y], [x + w, y + h], aspect_ratio.max(w / h))
 }
 
-pub(super) fn camera_stream_aspect_ratio(aspect_ratio: f32, resolution: [u32; 2]) -> f32 {
+pub(super) fn camera_stream_aspect_ratio(aspect_ratio: f32, resolution: UVector2) -> f32 {
     if aspect_ratio.is_finite() && aspect_ratio > 0.0 {
         aspect_ratio
     } else {
-        resolution[0].max(1) as f32 / resolution[1].max(1) as f32
+        resolution.x.max(1) as f32 / resolution.y.max(1) as f32
     }
 }
 

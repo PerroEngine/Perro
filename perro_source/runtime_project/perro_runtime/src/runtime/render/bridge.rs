@@ -285,8 +285,8 @@ impl Runtime {
         Some(CameraStreamState {
             source,
             resolution: [
-                stream.resolution[0].clamp(1, 8192),
-                stream.resolution[1].clamp(1, 8192),
+                stream.resolution.x.clamp(1, 8192),
+                stream.resolution.y.clamp(1, 8192),
             ],
             aspect_ratio: stream.aspect_ratio.max(0.0),
             post_processing: Arc::from(post_processing),

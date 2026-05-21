@@ -64,7 +64,7 @@ use perro_scene::{
 };
 use perro_structs::{
     BitMask, Color, CustomPostParam, CustomPostParamValue, IKTargetSolver, PostProcessEffect,
-    PostProcessSet, Quaternion, Vector2, Vector3,
+    PostProcessSet, Quaternion, UVector2, Vector2, Vector3,
 };
 use perro_ui::{
     UiAnimatedImage, UiAnimatedImageFrameSet, UiBox, UiButton, UiGrid, UiHLayout, UiImage,
@@ -1830,17 +1830,17 @@ fn apply_camera_stream_fields(stream: &mut CameraStream, fields: &[SceneObjectFi
         }
         "resolution" => {
             if let Some(v) = as_vec2(value) {
-                stream.resolution = [v.x.max(1.0) as u32, v.y.max(1.0) as u32];
+                stream.resolution = UVector2::new(v.x.max(1.0) as u32, v.y.max(1.0) as u32);
             }
         }
         "width" => {
             if let Some(v) = as_u32(value) {
-                stream.resolution[0] = v.max(1);
+                stream.resolution.x = v.max(1);
             }
         }
         "height" => {
             if let Some(v) = as_u32(value) {
-                stream.resolution[1] = v.max(1);
+                stream.resolution.y = v.max(1);
             }
         }
         "aspect_ratio" | "ratio" => {
@@ -1869,6 +1869,6 @@ fn apply_camera_stream_fields(stream: &mut CameraStream, fields: &[SceneObjectFi
         }
         _ => {}
     });
-    stream.resolution[0] = stream.resolution[0].clamp(1, 8192);
-    stream.resolution[1] = stream.resolution[1].clamp(1, 8192);
+    stream.resolution.x = stream.resolution.x.clamp(1, 8192);
+    stream.resolution.y = stream.resolution.y.clamp(1, 8192);
 }

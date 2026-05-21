@@ -47,7 +47,7 @@ fn camera_stream_2d_emits_stream_and_sprite_commands() {
         && let SceneNodeData::CameraStream2D(data) = &mut node.data
     {
         data.stream.camera = camera;
-        data.stream.resolution = [320, 180];
+        data.stream.resolution = [320, 180].into();
     }
 
     runtime.extract_render_2d_commands();
