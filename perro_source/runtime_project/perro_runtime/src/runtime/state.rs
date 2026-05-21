@@ -57,6 +57,13 @@ pub(crate) struct TransformRuntimeState {
     pub(crate) global_transform_3d_generation: Vec<u32>,
     pub(crate) global_chain_scratch: Vec<NodeID>,
     pub(crate) dirty_indices_scratch: Vec<u32>,
+    pub(crate) physics_pose_2d: Vec<PhysicsPose2D>,
+    pub(crate) physics_pose_3d: Vec<PhysicsPose3D>,
+    pub(crate) physics_pose_ids_2d: Vec<NodeID>,
+    pub(crate) physics_pose_ids_3d: Vec<NodeID>,
+    pub(crate) physics_pose_id_flags_2d: Vec<u8>,
+    pub(crate) physics_pose_id_flags_3d: Vec<u8>,
+    pub(crate) render_alpha: f32,
 }
 
 impl TransformRuntimeState {
@@ -74,6 +81,55 @@ impl TransformRuntimeState {
             global_transform_3d_generation: Vec::new(),
             global_chain_scratch: Vec::new(),
             dirty_indices_scratch: Vec::new(),
+            physics_pose_2d: Vec::new(),
+            physics_pose_3d: Vec::new(),
+            physics_pose_ids_2d: Vec::new(),
+            physics_pose_ids_3d: Vec::new(),
+            physics_pose_id_flags_2d: Vec::new(),
+            physics_pose_id_flags_3d: Vec::new(),
+            render_alpha: 1.0,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct PhysicsPose2D {
+    pub(crate) prev: Transform2D,
+    pub(crate) curr: Transform2D,
+    pub(crate) parent: NodeID,
+    pub(crate) generation: u32,
+    pub(crate) valid: bool,
+}
+
+impl Default for PhysicsPose2D {
+    fn default() -> Self {
+        Self {
+            prev: Transform2D::IDENTITY,
+            curr: Transform2D::IDENTITY,
+            parent: NodeID::nil(),
+            generation: 0,
+            valid: false,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct PhysicsPose3D {
+    pub(crate) prev: Transform3D,
+    pub(crate) curr: Transform3D,
+    pub(crate) parent: NodeID,
+    pub(crate) generation: u32,
+    pub(crate) valid: bool,
+}
+
+impl Default for PhysicsPose3D {
+    fn default() -> Self {
+        Self {
+            prev: Transform3D::IDENTITY,
+            curr: Transform3D::IDENTITY,
+            parent: NodeID::nil(),
+            generation: 0,
+            valid: false,
         }
     }
 }

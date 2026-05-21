@@ -1845,7 +1845,21 @@ impl Runtime {
             let rotation = body.rotation().angle();
             let lin = Vector2::new(body.linvel().x, body.linvel().y);
             let ang = body.angvel();
+            let parent = self
+                .nodes
+                .get(id)
+                .map(|node| node.parent)
+                .unwrap_or(NodeID::nil());
+            let before = self
+                .get_global_transform_2d(id)
+                .unwrap_or(Transform2D::IDENTITY);
+            let curr = Transform2D {
+                position,
+                rotation,
+                scale: before.scale,
+            };
 
+            self.record_physics_pose_2d(id, parent, before, curr);
             self.set_physics_body_transform_2d(id, position, rotation);
 
             if let Some(scene_node) = self.nodes.get_mut(id)
@@ -1881,7 +1895,21 @@ impl Runtime {
             let rotation = Quaternion::new(rot.i, rot.j, rot.k, rot.w);
             let lin = Vector3::new(body.linvel().x, body.linvel().y, body.linvel().z);
             let ang = Vector3::new(body.angvel().x, body.angvel().y, body.angvel().z);
+            let parent = self
+                .nodes
+                .get(id)
+                .map(|node| node.parent)
+                .unwrap_or(NodeID::nil());
+            let before = self
+                .get_global_transform_3d(id)
+                .unwrap_or(Transform3D::IDENTITY);
+            let curr = Transform3D {
+                position,
+                rotation,
+                scale: before.scale,
+            };
 
+            self.record_physics_pose_3d(id, parent, before, curr);
             self.set_physics_body_transform_3d(id, position, rotation);
 
             if let Some(scene_node) = self.nodes.get_mut(id)

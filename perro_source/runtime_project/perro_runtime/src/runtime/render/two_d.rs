@@ -144,7 +144,7 @@ impl Runtime {
             )) = sprite_data
             {
                 let model = self
-                    .get_global_transform_2d(node)
+                    .get_render_global_transform_2d(node)
                     .unwrap_or(local_transform)
                     .to_mat3()
                     .to_cols_array_2d();
@@ -182,7 +182,7 @@ impl Runtime {
                         let aspect =
                             camera_stream_aspect_ratio(stream.aspect_ratio, stream.resolution);
                         let model = self
-                            .get_global_transform_2d(node)
+                            .get_render_global_transform_2d(node)
                             .unwrap_or(local_transform)
                             .to_mat3()
                             .to_cols_array_2d();
@@ -273,7 +273,7 @@ impl Runtime {
                         emitter_mut.internal_lifetime_max = lifetime_max;
                     }
                     let model = self
-                        .get_global_transform_2d(node)
+                        .get_render_global_transform_2d(node)
                         .unwrap_or(emitter_transform)
                         .to_mat3()
                         .to_cols_array_2d();
@@ -334,7 +334,7 @@ impl Runtime {
             if let Some((visible, local_transform, z_index, water)) = water_data {
                 if visible {
                     let model = self
-                        .get_global_transform_2d(node)
+                        .get_render_global_transform_2d(node)
                         .unwrap_or(local_transform)
                         .to_mat3()
                         .to_cols_array_2d();
@@ -448,7 +448,7 @@ impl Runtime {
             if let Some((local_transform, z_index, color, intensity)) = ray_light_data {
                 if intensity > 0.0 {
                     let global = self
-                        .get_global_transform_2d(node)
+                        .get_render_global_transform_2d(node)
                         .unwrap_or(local_transform);
                     self.queue_render_command(RenderCommand::TwoD(Command2D::SetRayLight {
                         node,
@@ -484,7 +484,7 @@ impl Runtime {
             {
                 if visible && intensity > 0.0 && range > 0.0 {
                     let global = self
-                        .get_global_transform_2d(node)
+                        .get_render_global_transform_2d(node)
                         .unwrap_or(local_transform);
                     self.queue_render_command(RenderCommand::TwoD(Command2D::SetPointLight {
                         node,
@@ -533,7 +533,7 @@ impl Runtime {
             {
                 if intensity > 0.0 && range > 0.0 {
                     let global = self
-                        .get_global_transform_2d(node)
+                        .get_render_global_transform_2d(node)
                         .unwrap_or(local_transform);
                     self.queue_render_command(RenderCommand::TwoD(Command2D::SetSpotLight {
                         node,
@@ -586,7 +586,7 @@ impl Runtime {
                             self.resolve_tilemap_texture(node, tileset.texture.as_ref())
                     {
                         let global = self
-                            .get_global_transform_2d(node)
+                            .get_render_global_transform_2d(node)
                             .unwrap_or(local_transform)
                             .to_mat3()
                             .to_cols_array_2d();
@@ -647,7 +647,7 @@ impl Runtime {
         }
         let (node, local_transform, zoom, render_mask, post_processing, audio_options) = found?;
         let global = self
-            .get_global_transform_2d(node)
+            .get_render_global_transform_2d(node)
             .unwrap_or(local_transform);
         Some(Camera2DState {
             position: [global.position.x, global.position.y],
@@ -813,7 +813,7 @@ impl Runtime {
         water_id: NodeID,
         water: &perro_nodes::WaterSurfaceParams,
     ) -> Arc<[WaterCoastlineShape2D]> {
-        let Some(water_global) = self.get_global_transform_2d(water_id) else {
+        let Some(water_global) = self.get_render_global_transform_2d(water_id) else {
             return Arc::from([]);
         };
         let water_half = water.shape.surface_size() * 0.5;
@@ -857,7 +857,7 @@ impl Runtime {
             {
                 continue;
             }
-            let Some(_body_global) = self.get_global_transform_2d(body_id) else {
+            let Some(_body_global) = self.get_render_global_transform_2d(body_id) else {
                 continue;
             };
             for child_id in children {
@@ -869,7 +869,7 @@ impl Runtime {
                 }) else {
                     continue;
                 };
-                let Some(shape_global) = self.get_global_transform_2d(child_id) else {
+                let Some(shape_global) = self.get_render_global_transform_2d(child_id) else {
                     continue;
                 };
                 let local = shape_global.position - water_global.position;
@@ -945,7 +945,7 @@ impl Runtime {
         water_id: NodeID,
         water: &perro_nodes::WaterSurfaceParams,
     ) -> Arc<[WaterImpact2D]> {
-        let Some(water_global) = self.get_global_transform_2d(water_id) else {
+        let Some(water_global) = self.get_render_global_transform_2d(water_id) else {
             return Arc::from([]);
         };
         let water_inv = water_global.to_mat3().inverse();
@@ -972,7 +972,7 @@ impl Runtime {
             if water.collision_mask.intersects(layers) || mask.intersects(water.collision_layers) {
                 continue;
             }
-            let Some(body_global) = self.get_global_transform_2d(body_id) else {
+            let Some(body_global) = self.get_render_global_transform_2d(body_id) else {
                 continue;
             };
             let local = water_local_point_2d(water_inv, body_global.position);
@@ -1079,7 +1079,7 @@ impl Runtime {
         water_id: NodeID,
         water: &perro_nodes::WaterSurfaceParams,
     ) -> Arc<[WaterLinkState]> {
-        let Some(water_global) = self.get_global_transform_2d(water_id) else {
+        let Some(water_global) = self.get_render_global_transform_2d(water_id) else {
             return Arc::from([]);
         };
         let other_ids = self.cached_water_ids_2d().to_vec();
@@ -1096,7 +1096,7 @@ impl Runtime {
             }) else {
                 continue;
             };
-            let Some(other_global) = self.get_global_transform_2d(other_id) else {
+            let Some(other_global) = self.get_render_global_transform_2d(other_id) else {
                 continue;
             };
             if water

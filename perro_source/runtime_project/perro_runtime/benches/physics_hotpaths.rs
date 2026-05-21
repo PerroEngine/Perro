@@ -1,6 +1,9 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use perro_ids::NodeID;
-use perro_nodes::{PhysicsForceEmitter2D, PhysicsForceEmitter3D, PhysicsForceProfile};
+use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
+use perro_nodes::{
+    MeshInstance3D, PhysicsForceEmitter2D, PhysicsForceEmitter3D, PhysicsForceProfile, Sprite2D,
+};
+use perro_render_bridge::RenderCommand;
 use perro_runtime::Runtime;
 use perro_runtime_api::sub_apis::{NodeAPI, PhysicsAPI, PhysicsQueryFilter};
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
@@ -353,6 +356,113 @@ fn bench_runtime_force_emitters(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_physics_visual_interp_render_extract(c: &mut Criterion) {
+    c.bench_function("physics/visual_interp_render_extract_2d_1024", |b| {
+        let mut runtime = Runtime::new();
+        let texture = TextureID::from_parts(77, 0);
+        for i in 0..1024 {
+            let body = NodeAPI::create::<perro_nodes::RigidBody2D>(&mut runtime);
+            let sprite = NodeAPI::create::<Sprite2D>(&mut runtime);
+            assert!(NodeAPI::reparent(&mut runtime, body, sprite));
+            let _ = NodeAPI::with_node_mut::<perro_nodes::RigidBody2D, _, _>(
+                &mut runtime,
+                body,
+                |node| {
+                    node.transform = Transform2D::new(
+                        Vector2::new((i % 64) as f32, (i / 64) as f32),
+                        0.0,
+                        Vector2::ONE,
+                    );
+                    node.linear_velocity = Vector2::new(1.0 + (i % 7) as f32 * 0.05, 0.0);
+                    node.continuous_collision_detection = false;
+                    node.can_sleep = false;
+                },
+            );
+            let _ = NodeAPI::with_node_mut::<Sprite2D, _, _>(&mut runtime, sprite, |node| {
+                node.texture = texture;
+            });
+        }
+        runtime.fixed_update(DT);
+        runtime.fixed_update(DT);
+        runtime.extract_render_2d_commands();
+        let mut commands = Vec::<RenderCommand>::new();
+        runtime.drain_render_commands(&mut commands);
+        runtime.clear_dirty_flags();
+        commands.clear();
+        let mut alpha = 0.0f32;
+
+        b.iter(|| {
+            alpha += 0.125;
+            if alpha >= 1.0 {
+                alpha -= 1.0;
+            }
+            runtime.set_physics_render_alpha(black_box(alpha));
+            runtime.extract_render_2d_commands();
+            runtime.drain_render_commands(&mut commands);
+            let len = commands.len();
+            commands.clear();
+            runtime.clear_dirty_flags();
+            black_box(len)
+        })
+    });
+
+    c.bench_function("physics/visual_interp_render_extract_3d_1024", |b| {
+        let mut runtime = Runtime::new();
+        let mesh_id = MeshID::from_parts(77, 0);
+        let material_id = MaterialID::from_parts(78, 0);
+        for i in 0..1024 {
+            let body = NodeAPI::create::<perro_nodes::RigidBody3D>(&mut runtime);
+            let mesh = NodeAPI::create::<MeshInstance3D>(&mut runtime);
+            assert!(NodeAPI::reparent(&mut runtime, body, mesh));
+            let _ = NodeAPI::with_node_mut::<perro_nodes::RigidBody3D, _, _>(
+                &mut runtime,
+                body,
+                |node| {
+                    node.transform = Transform3D::new(
+                        Vector3::new(
+                            (i % 16) as f32,
+                            (i / 256) as f32,
+                            ((i / 16) % 16) as f32,
+                        ),
+                        Quaternion::IDENTITY,
+                        Vector3::ONE,
+                    );
+                    node.linear_velocity =
+                        Vector3::new(1.0 + (i % 7) as f32 * 0.05, 0.0, -0.25);
+                    node.continuous_collision_detection = false;
+                    node.can_sleep = false;
+                },
+            );
+            let _ = NodeAPI::with_node_mut::<MeshInstance3D, _, _>(&mut runtime, mesh, |node| {
+                node.mesh = mesh_id;
+                node.set_material(material_id);
+            });
+        }
+        runtime.fixed_update(DT);
+        runtime.fixed_update(DT);
+        runtime.extract_render_3d_commands();
+        let mut commands = Vec::<RenderCommand>::new();
+        runtime.drain_render_commands(&mut commands);
+        runtime.clear_dirty_flags();
+        commands.clear();
+        let mut alpha = 0.0f32;
+
+        b.iter(|| {
+            alpha += 0.125;
+            if alpha >= 1.0 {
+                alpha -= 1.0;
+            }
+            runtime.set_physics_render_alpha(black_box(alpha));
+            runtime.extract_render_3d_commands();
+            runtime.drain_render_commands(&mut commands);
+            let len = commands.len();
+            commands.clear();
+            runtime.clear_dirty_flags();
+            black_box(len)
+        })
+    });
+}
+
 fn benches(c: &mut Criterion) {
     bench_physics_scan_ids_clone_vs_scratch(c);
     bench_physics_children_clone_vs_slice_scan(c);
@@ -363,6 +473,7 @@ fn benches(c: &mut Criterion) {
     bench_runtime_predict_body(c);
     bench_runtime_fixed_step_forces(c);
     bench_runtime_force_emitters(c);
+    bench_physics_visual_interp_render_extract(c);
 }
 
 criterion_group! {

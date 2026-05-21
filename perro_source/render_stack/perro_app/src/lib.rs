@@ -412,6 +412,10 @@ impl<B: GraphicsBackend> App<B> {
         self.runtime.fixed_update(fixed_delta_time);
     }
 
+    pub fn set_physics_render_alpha(&mut self, alpha: f32) {
+        self.runtime.set_physics_render_alpha(alpha);
+    }
+
     #[inline]
     pub fn fixed_update_runtime_timed(
         &mut self,
@@ -763,6 +767,7 @@ impl<B: GraphicsBackend> App<B> {
 
     pub fn frame(&mut self, delta_time: f32) {
         let _ = self.update_runtime(delta_time);
+        self.set_physics_render_alpha(1.0);
         self.present();
     }
 }

@@ -1470,6 +1470,9 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     }
                 }
                 self.fixed_accumulator = plan.accumulator_after;
+                self.app.set_physics_render_alpha(
+                    (self.fixed_accumulator / effective_fixed_step).clamp(0.0, 1.0),
+                );
                 effective_fixed_step as f64 * plan.steps as f64
             } else {
                 let variable_step = frame_delta.as_secs_f32();
@@ -1497,6 +1500,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     self.app.fixed_update_runtime(variable_step);
                     runtime_update_duration += update_start.elapsed();
                 }
+                self.app.set_physics_render_alpha(1.0);
                 variable_step as f64
             }
         };
@@ -1829,6 +1833,9 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     }
                 }
                 self.fixed_accumulator = plan.accumulator_after;
+                self.app.set_physics_render_alpha(
+                    (self.fixed_accumulator / effective_fixed_step).clamp(0.0, 1.0),
+                );
                 simulated_delta_seconds = effective_fixed_step as f64 * plan.steps as f64;
             } else {
                 let variable_step = frame_delta.as_secs_f32();
@@ -1856,6 +1863,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
                     self.app.fixed_update_runtime(variable_step);
                     runtime_update_duration += update_start.elapsed();
                 }
+                self.app.set_physics_render_alpha(1.0);
                 simulated_delta_seconds = variable_step as f64;
             }
         }

@@ -105,17 +105,21 @@ impl Runtime {
             self.render_3d.last_camera = active_camera;
         }
 
-        let dirty_ids = self
-            .dirty
-            .dirty_indices()
-            .iter()
-            .filter_map(|&raw_index| self.nodes.slot_get(raw_index as usize).map(|(id, _)| id))
-            .collect::<Vec<_>>();
-        let all_ids = self.nodes.iter().map(|(id, _)| id).collect::<Vec<_>>();
+        let mut dirty_ids = std::mem::take(&mut self.render_3d.dirty_ids_scratch);
+        dirty_ids.clear();
+        dirty_ids.extend(
+            self.dirty
+                .dirty_indices()
+                .iter()
+                .filter_map(|&raw_index| self.nodes.slot_get(raw_index as usize).map(|(id, _)| id)),
+        );
+        let mut all_ids = std::mem::take(&mut self.render_3d.all_ids_scratch);
+        all_ids.clear();
+        all_ids.extend(self.nodes.iter().map(|(id, _)| id));
         let nodes = &self.nodes;
         let mut traversal_ids = self.render_3d.collect_traversal(
-            dirty_ids,
-            all_ids,
+            dirty_ids.iter().copied(),
+            all_ids.iter().copied(),
             bootstrap_scan || camera_changed || camera_render_mask_changed,
             |node, out| {
                 if let Some(node_ref) = nodes.get(node) {
@@ -123,19 +127,21 @@ impl Runtime {
                 }
             },
         );
-        let mut traversal_seen = traversal_ids
-            .iter()
-            .copied()
-            .collect::<ahash::AHashSet<_>>();
-        let dirty_skeletons = traversal_ids
-            .iter()
-            .copied()
-            .filter(|id| {
+        dirty_ids.clear();
+        all_ids.clear();
+        self.render_3d.dirty_ids_scratch = dirty_ids;
+        self.render_3d.all_ids_scratch = all_ids;
+
+        let mut traversal_seen = std::mem::take(&mut self.render_3d.traversal_seen);
+        traversal_seen.clear();
+        traversal_seen.extend(traversal_ids.iter().copied());
+        let mut dirty_skeletons = std::mem::take(&mut self.render_3d.dirty_skeletons_scratch);
+        dirty_skeletons.clear();
+        dirty_skeletons.extend(traversal_ids.iter().copied().filter(|id| {
                 self.nodes
                     .get(*id)
                     .is_some_and(|node| matches!(node.data, SceneNodeData::Skeleton3D(_)))
-            })
-            .collect::<ahash::AHashSet<_>>();
+            }));
         if !dirty_skeletons.is_empty() {
             for (id, node) in self.nodes.iter() {
                 let SceneNodeData::MeshInstance3D(mesh) = &node.data else {
@@ -146,6 +152,8 @@ impl Runtime {
                 }
             }
         }
+        dirty_skeletons.clear();
+        self.render_3d.dirty_skeletons_scratch = dirty_skeletons;
         let mut visible_now = self.render_3d.begin_visible_pass();
         let mut skeleton_cache = std::mem::take(&mut self.render_3d.skeleton_cache_scratch);
         skeleton_cache.clear();
@@ -247,7 +255,7 @@ impl Runtime {
                 if visible {
                     if let Some(stream_state) = self.camera_stream_state(node, &stream) {
                         let model = self
-                            .get_global_transform_3d(node)
+                            .get_render_global_transform_3d(node)
                             .unwrap_or(local_transform)
                             .to_mat4()
                             .to_cols_array_2d();
@@ -291,7 +299,7 @@ impl Runtime {
             });
             if let Some((local_transform, water)) = water_data {
                 let model = self
-                    .get_global_transform_3d(node)
+                    .get_render_global_transform_3d(node)
                     .unwrap_or(local_transform)
                     .to_mat4()
                     .to_cols_array_2d();
@@ -381,7 +389,7 @@ impl Runtime {
             });
             if let Some((local_transform, color, intensity, cast_shadows)) = ray_light_data {
                 let global = self
-                    .get_global_transform_3d(node)
+                    .get_render_global_transform_3d(node)
                     .unwrap_or(local_transform);
                 let light = RayLight3DState {
                     direction: quaternion_forward(global.rotation),
@@ -418,7 +426,7 @@ impl Runtime {
             if let Some((local_transform, color, intensity, range, cast_shadows)) = point_light_data
             {
                 let global = self
-                    .get_global_transform_3d(node)
+                    .get_render_global_transform_3d(node)
                     .unwrap_or(local_transform);
                 let light = PointLight3DState {
                     position: [global.position.x, global.position.y, global.position.z],
@@ -466,7 +474,7 @@ impl Runtime {
             )) = spot_light_data
             {
                 let global = self
-                    .get_global_transform_3d(node)
+                    .get_render_global_transform_3d(node)
                     .unwrap_or(local_transform);
                 let light = SpotLight3DState {
                     position: [global.position.x, global.position.y, global.position.z],
@@ -660,15 +668,15 @@ impl Runtime {
                     self.resolve_render_mesh_assets(node, mesh, surfaces)
             {
                 let node_global = self
-                    .get_global_transform_3d(node)
+                    .get_render_global_transform_3d(node)
                     .unwrap_or(perro_structs::Transform3D::IDENTITY)
                     .to_mat4()
                     * mirror_matrix_3d(flip.0, flip.1, flip.2);
                 let retained_instances = match &local_instances {
                     LocalMeshInstanceData::Single => {
-                        crate::runtime::state::RetainedMeshInstanceState::Matrices(Arc::from([
-                            (node_global * Mat4::IDENTITY).to_cols_array_2d(),
-                        ]))
+                        crate::runtime::state::RetainedMeshInstanceState::Single(
+                            node_global.to_cols_array_2d(),
+                        )
                     }
                     LocalMeshInstanceData::Dense {
                         poses,
@@ -680,6 +688,7 @@ impl Runtime {
                     },
                 };
                 let empty = match &retained_instances {
+                    crate::runtime::state::RetainedMeshInstanceState::Single(_) => false,
                     crate::runtime::state::RetainedMeshInstanceState::Matrices(mats) => {
                         mats.is_empty()
                     }
@@ -741,6 +750,18 @@ impl Runtime {
                             lod,
                             blend,
                         },
+                        crate::runtime::state::RetainedMeshInstanceState::Single(model) => {
+                            Command3D::Draw {
+                                mesh,
+                                surfaces: resolved_surfaces,
+                                node,
+                                model,
+                                skeleton: skeleton_palette,
+                                meshlet_override,
+                                lod,
+                                blend,
+                            }
+                        }
                         crate::runtime::state::RetainedMeshInstanceState::Matrices(
                             instance_mats,
                         ) if instance_mats.len() <= 1 => Command3D::Draw {
@@ -797,7 +818,7 @@ impl Runtime {
             if let Some((shape, local_transform, parent)) = collision_shape_debug_data {
                 let (shape, world_from_shape) = if is_physics_body_3d(self, parent) {
                     let parent_global = self
-                        .get_global_transform_3d(parent)
+                        .get_render_global_transform_3d(parent)
                         .unwrap_or(perro_structs::Transform3D::IDENTITY);
                     let parent_no_scale = transform_no_scale_mat4(parent_global);
                     let local_no_scale = transform_no_scale_mat4(local_transform);
@@ -812,7 +833,7 @@ impl Runtime {
                     )
                 } else {
                     let world = self
-                        .get_global_transform_3d(node)
+                        .get_render_global_transform_3d(node)
                         .unwrap_or(local_transform)
                         .to_mat4();
                     (shape, world)
@@ -898,7 +919,7 @@ impl Runtime {
                 let sim_mode = resolve_particle_sim_mode(emitter_sim_mode, default_sim_mode);
                 let render_mode = resolve_particle_render_mode(emitter_render_mode);
                 let particle_model = self
-                    .get_global_transform_3d(node)
+                    .get_render_global_transform_3d(node)
                     .unwrap_or(emitter_transform)
                     .to_mat4()
                     .to_cols_array_2d();
@@ -1019,7 +1040,7 @@ impl Runtime {
             audio_options,
         ) = found?;
         let global = self
-            .get_global_transform_3d(node)
+            .get_render_global_transform_3d(node)
             .unwrap_or(local_transform);
         Some(Camera3DState {
             position: [global.position.x, global.position.y, global.position.z],
@@ -1196,6 +1217,18 @@ impl Runtime {
             return None;
         }
 
+        if self.render_3d.material_surface_sources.get(&node).is_none()
+            && self.render_3d.material_surface_overrides.get(&node).is_none()
+            && surfaces
+                .iter()
+                .all(|surface| surface.overrides.is_empty())
+            && let Some(retained) = self.render_3d.retained_mesh_draws.get(&node)
+            && retained.mesh == mesh
+            && simple_surfaces_match(&surfaces, &retained.surfaces)
+        {
+            return Some((mesh, retained.surfaces.clone()));
+        }
+
         let converted: Vec<MeshSurfaceBinding3D> = surfaces
             .into_iter()
             .map(|surface| MeshSurfaceBinding3D {
@@ -1321,7 +1354,7 @@ impl Runtime {
         water_id: NodeID,
         water: &perro_nodes::WaterSurfaceParams,
     ) -> Arc<[WaterCoastlineShape3D]> {
-        let Some(water_global) = self.get_global_transform_3d(water_id) else {
+        let Some(water_global) = self.get_render_global_transform_3d(water_id) else {
             return Arc::from([]);
         };
         let water_half = water.shape.surface_size() * 0.5;
@@ -1368,7 +1401,7 @@ impl Runtime {
             {
                 continue;
             }
-            let Some(_body_global) = self.get_global_transform_3d(body_id) else {
+            let Some(_body_global) = self.get_render_global_transform_3d(body_id) else {
                 continue;
             };
             for child_id in children {
@@ -1383,7 +1416,7 @@ impl Runtime {
                 }) else {
                     continue;
                 };
-                let Some(shape_global) = self.get_global_transform_3d(child_id) else {
+                let Some(shape_global) = self.get_render_global_transform_3d(child_id) else {
                     continue;
                 };
                 let local = shape_global.position - water_global.position;
@@ -1567,7 +1600,7 @@ impl Runtime {
         water_id: NodeID,
         water: &perro_nodes::WaterSurfaceParams,
     ) -> Arc<[WaterImpact3D]> {
-        let Some(water_global) = self.get_global_transform_3d(water_id) else {
+        let Some(water_global) = self.get_render_global_transform_3d(water_id) else {
             return Arc::from([]);
         };
         let water_inv = water_global.to_mat4().inverse();
@@ -1594,7 +1627,7 @@ impl Runtime {
             if water.collision_mask.intersects(layers) || mask.intersects(water.collision_layers) {
                 continue;
             }
-            let Some(body_global) = self.get_global_transform_3d(body_id) else {
+            let Some(body_global) = self.get_render_global_transform_3d(body_id) else {
                 continue;
             };
             let radius = mass.sqrt().max(1.0);
@@ -1727,7 +1760,7 @@ impl Runtime {
         water_id: NodeID,
         water: &perro_nodes::WaterSurfaceParams,
     ) -> Arc<[WaterLinkState]> {
-        let Some(water_global) = self.get_global_transform_3d(water_id) else {
+        let Some(water_global) = self.get_render_global_transform_3d(water_id) else {
             return Arc::from([]);
         };
         let other_ids = self.cached_water_ids_3d().to_vec();
@@ -1744,7 +1777,7 @@ impl Runtime {
             }) else {
                 continue;
             };
-            let Some(other_global) = self.get_global_transform_3d(other_id) else {
+            let Some(other_global) = self.get_render_global_transform_3d(other_id) else {
                 continue;
             };
             if water
@@ -1871,6 +1904,22 @@ pub(crate) fn water_shape_state(shape: perro_nodes::WaterShape) -> WaterShapeSta
 pub(crate) fn water_render_size(water: perro_nodes::WaterSurfaceParams) -> [f32; 2] {
     let size = water.shape.surface_size();
     [size.x, size.y]
+}
+
+fn simple_surfaces_match(
+    surfaces: &[MeshSurfaceBinding],
+    retained: &[MeshSurfaceBinding3D],
+) -> bool {
+    surfaces.len() == retained.len()
+        && surfaces
+            .iter()
+            .zip(retained.iter())
+            .all(|(surface, retained)| {
+                surface.material == retained.material
+                    && surface.modulate == retained.modulate
+                    && surface.overrides.is_empty()
+                    && retained.overrides.is_empty()
+            })
 }
 
 fn water_local_point_3d(

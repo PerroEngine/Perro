@@ -385,7 +385,7 @@ impl Runtime {
                         self.resolve_tilemap_texture(node, tileset.texture.as_ref())
                 {
                     let base_model = self
-                        .get_global_transform_2d(node)
+                        .get_render_global_transform_2d(node)
                         .unwrap_or(local_transform)
                         .to_mat3()
                         .to_cols_array_2d();
@@ -407,7 +407,7 @@ impl Runtime {
             };
             let (uv_min, uv_max, size) = stream_sprite_region_uv(region);
             let model = self
-                .get_global_transform_2d(node)
+                .get_render_global_transform_2d(node)
                 .unwrap_or(transform)
                 .to_mat3()
                 .to_cols_array_2d();
@@ -538,7 +538,9 @@ impl Runtime {
                     intensity,
                     z_index,
                 }) => {
-                    let global = self.get_global_transform_2d(node).unwrap_or(transform);
+                    let global = self
+                        .get_render_global_transform_2d(node)
+                        .unwrap_or(transform);
                     out.push(Light2DState::Ray(RayLight2DState {
                         direction: direction_from_rotation_2d(global.rotation),
                         color,
@@ -553,7 +555,9 @@ impl Runtime {
                     range,
                     z_index,
                 }) => {
-                    let global = self.get_global_transform_2d(node).unwrap_or(transform);
+                    let global = self
+                        .get_render_global_transform_2d(node)
+                        .unwrap_or(transform);
                     out.push(Light2DState::Point(PointLight2DState {
                         position: [global.position.x, global.position.y],
                         color,
@@ -571,7 +575,9 @@ impl Runtime {
                     outer_angle_radians,
                     z_index,
                 }) => {
-                    let global = self.get_global_transform_2d(node).unwrap_or(transform);
+                    let global = self
+                        .get_render_global_transform_2d(node)
+                        .unwrap_or(transform);
                     out.push(Light2DState::Spot(SpotLight2DState {
                         position: [global.position.x, global.position.y],
                         direction: direction_from_rotation_2d(global.rotation),
@@ -644,7 +650,7 @@ impl Runtime {
             let lifetime_min = profile.lifetime_min.max(0.001);
             let lifetime_max = profile.lifetime_max.max(lifetime_min);
             let model = self
-                .get_global_transform_2d(node)
+                .get_render_global_transform_2d(node)
                 .unwrap_or(transform)
                 .to_mat3()
                 .to_cols_array_2d();
@@ -708,7 +714,7 @@ impl Runtime {
                 continue;
             };
             let model = self
-                .get_global_transform_2d(node)
+                .get_render_global_transform_2d(node)
                 .unwrap_or(local_transform)
                 .to_mat3()
                 .to_cols_array_2d();
@@ -879,7 +885,7 @@ impl Runtime {
                 continue;
             };
             let model = self
-                .get_global_transform_3d(node)
+                .get_render_global_transform_3d(node)
                 .unwrap_or(perro_structs::Transform3D::IDENTITY)
                 .to_mat4()
                 .to_cols_array_2d();
@@ -1055,7 +1061,9 @@ impl Runtime {
                     intensity,
                     cast_shadows,
                 }) => {
-                    let global = self.get_global_transform_3d(node).unwrap_or(transform);
+                    let global = self
+                        .get_render_global_transform_3d(node)
+                        .unwrap_or(transform);
                     ray_lights.push(RayLight3DState {
                         direction: stream_quaternion_forward(global.rotation),
                         color,
@@ -1070,7 +1078,9 @@ impl Runtime {
                     range,
                     cast_shadows,
                 }) => {
-                    let global = self.get_global_transform_3d(node).unwrap_or(transform);
+                    let global = self
+                        .get_render_global_transform_3d(node)
+                        .unwrap_or(transform);
                     point_lights.push(PointLight3DState {
                         position: [global.position.x, global.position.y, global.position.z],
                         color,
@@ -1088,7 +1098,9 @@ impl Runtime {
                     outer_angle_radians,
                     cast_shadows,
                 }) => {
-                    let global = self.get_global_transform_3d(node).unwrap_or(transform);
+                    let global = self
+                        .get_render_global_transform_3d(node)
+                        .unwrap_or(transform);
                     spot_lights.push(SpotLight3DState {
                         position: [global.position.x, global.position.y, global.position.z],
                         direction: stream_quaternion_forward(global.rotation),
@@ -1174,7 +1186,7 @@ impl Runtime {
                 .map(|project| project.config.particle_sim_default)
                 .unwrap_or(perro_project::ParticleSimDefault::Cpu);
             let model = self
-                .get_global_transform_3d(node)
+                .get_render_global_transform_3d(node)
                 .unwrap_or(transform)
                 .to_mat4()
                 .to_cols_array_2d();
@@ -1239,7 +1251,7 @@ impl Runtime {
                 continue;
             };
             let model = self
-                .get_global_transform_3d(node)
+                .get_render_global_transform_3d(node)
                 .unwrap_or(local_transform)
                 .to_mat4()
                 .to_cols_array_2d();
@@ -1334,7 +1346,7 @@ impl Runtime {
             camera_data
         {
             let global = self
-                .get_global_transform_2d(camera_node)
+                .get_render_global_transform_2d(camera_node)
                 .unwrap_or(local_transform);
             return Some(CameraStreamSourceState::TwoD(Camera2DState {
                 position: [global.position.x, global.position.y],
@@ -1362,7 +1374,7 @@ impl Runtime {
         let (local_transform, projection, render_mask, post_processing, audio_options) =
             camera_data?;
         let global = self
-            .get_global_transform_3d(camera_node)
+            .get_render_global_transform_3d(camera_node)
             .unwrap_or(local_transform);
         Some(CameraStreamSourceState::ThreeD(Camera3DState {
             position: [global.position.x, global.position.y, global.position.z],

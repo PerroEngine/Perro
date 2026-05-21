@@ -4,11 +4,129 @@ use crate::runtime::render_2d::{
 };
 use perro_nodes::{
     Area2D, Area3D, CollisionShape2D, CollisionShape3D, FixedJoint2D, FixedJoint3D, RigidBody2D,
-    RigidBody3D, StaticBody2D, StaticBody3D, WaterBody2D, WaterBody3D, WaterIdleMode, WaterShape,
-    WaterSurfaceParams,
+    RigidBody3D, Sprite2D, StaticBody2D, StaticBody3D, WaterBody2D, WaterBody3D, WaterIdleMode,
+    WaterShape, WaterSurfaceParams,
 };
 use perro_runtime_api::sub_apis::PhysicsAPI;
 use perro_structs::CollisionPolicy;
+
+fn approx(a: f32, b: f32) -> bool {
+    (a - b).abs() <= 1.0e-4
+}
+
+fn quat_y(angle: f32) -> Quaternion {
+    Quaternion::from_euler_xyz(0.0, angle, 0.0)
+}
+
+#[test]
+fn physics_interp_2d_uses_prev_curr_alpha_and_keeps_scale() {
+    let mut runtime = Runtime::new();
+    let body_id = NodeAPI::create::<RigidBody2D>(&mut runtime);
+    let prev = Transform2D::new(Vector2::new(0.0, 0.0), 0.0, Vector2::new(2.0, 3.0));
+    let curr = Transform2D::new(
+        Vector2::new(10.0, 0.0),
+        std::f32::consts::PI,
+        Vector2::new(2.0, 3.0),
+    );
+
+    runtime.record_physics_pose_2d(body_id, NodeID::nil(), prev, prev);
+    runtime.record_physics_pose_2d(body_id, NodeID::nil(), prev, curr);
+    runtime.set_physics_render_alpha(0.5);
+
+    let render = runtime
+        .get_render_global_transform_2d(body_id)
+        .expect("render transform");
+    assert!(approx(render.position.x, 5.0));
+    assert!(approx(render.rotation, std::f32::consts::FRAC_PI_2));
+    assert_eq!(render.scale, curr.scale);
+}
+
+#[test]
+fn physics_interp_3d_uses_prev_curr_alpha_and_keeps_scale() {
+    let mut runtime = Runtime::new();
+    let body_id = NodeAPI::create::<RigidBody3D>(&mut runtime);
+    let prev = Transform3D::new(
+        Vector3::new(0.0, 0.0, 0.0),
+        Quaternion::IDENTITY,
+        Vector3::new(2.0, 3.0, 4.0),
+    );
+    let curr = Transform3D::new(
+        Vector3::new(0.0, 0.0, 10.0),
+        quat_y(std::f32::consts::PI),
+        Vector3::new(2.0, 3.0, 4.0),
+    );
+
+    runtime.record_physics_pose_3d(body_id, NodeID::nil(), prev, prev);
+    runtime.record_physics_pose_3d(body_id, NodeID::nil(), prev, curr);
+    runtime.set_physics_render_alpha(0.5);
+
+    let render = runtime
+        .get_render_global_transform_3d(body_id)
+        .expect("render transform");
+    let forward = render.rotation.rotate_vector3(Vector3::new(0.0, 0.0, -1.0));
+    assert!(approx(render.position.z, 5.0));
+    assert!(approx(forward.x.abs(), 1.0));
+    assert_eq!(render.scale, curr.scale);
+}
+
+#[test]
+fn physics_interp_external_teleport_snaps_without_smear() {
+    let mut runtime = Runtime::new();
+    let body_id = NodeAPI::create::<RigidBody2D>(&mut runtime);
+    let old = Transform2D::new(Vector2::new(0.0, 0.0), 0.0, Vector2::ONE);
+    let teleported_scene = Transform2D::new(Vector2::new(100.0, 0.0), 0.0, Vector2::ONE);
+    let curr = Transform2D::new(Vector2::new(110.0, 0.0), 0.0, Vector2::ONE);
+
+    runtime.record_physics_pose_2d(body_id, NodeID::nil(), old, old);
+    runtime.record_physics_pose_2d(body_id, NodeID::nil(), teleported_scene, curr);
+    runtime.set_physics_render_alpha(0.5);
+
+    let render = runtime
+        .get_render_global_transform_2d(body_id)
+        .expect("render transform");
+    assert!(approx(render.position.x, 110.0));
+}
+
+#[test]
+fn physics_interp_child_uses_interpolated_parent() {
+    let mut runtime = Runtime::new();
+    let body_id = NodeAPI::create::<RigidBody2D>(&mut runtime);
+    let child_id = NodeAPI::create::<Sprite2D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, body_id, child_id));
+    runtime
+        .with_node_mut::<Sprite2D, _, _>(child_id, |sprite| {
+            sprite.transform.position = Vector2::new(2.0, 0.0);
+        })
+        .expect("child exists");
+
+    let prev = Transform2D::new(Vector2::new(0.0, 0.0), 0.0, Vector2::ONE);
+    let curr = Transform2D::new(Vector2::new(10.0, 0.0), 0.0, Vector2::ONE);
+    runtime.record_physics_pose_2d(body_id, NodeID::nil(), prev, prev);
+    runtime.record_physics_pose_2d(body_id, NodeID::nil(), prev, curr);
+    runtime.set_physics_render_alpha(0.5);
+
+    let render = runtime
+        .get_render_global_transform_2d(child_id)
+        .expect("child render transform");
+    assert!(approx(render.position.x, 7.0));
+}
+
+#[test]
+fn physics_interp_alpha_one_matches_auth_transform() {
+    let mut runtime = Runtime::new();
+    let body_id = NodeAPI::create::<RigidBody2D>(&mut runtime);
+    let prev = Transform2D::new(Vector2::new(0.0, 0.0), 0.0, Vector2::ONE);
+    let curr = Transform2D::new(Vector2::new(8.0, 0.0), 0.0, Vector2::ONE);
+
+    runtime.record_physics_pose_2d(body_id, NodeID::nil(), prev, prev);
+    runtime.record_physics_pose_2d(body_id, NodeID::nil(), prev, curr);
+    runtime.set_physics_render_alpha(1.0);
+
+    let render = runtime
+        .get_render_global_transform_2d(body_id)
+        .expect("render transform");
+    assert!(approx(render.position.x, 8.0));
+}
 
 #[test]
 fn physics_2d_body_desc_carries_mass_and_density() {

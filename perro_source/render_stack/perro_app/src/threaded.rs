@@ -1526,8 +1526,10 @@ fn run_sim_loop(mut runtime: Runtime, bridge: SimBridge, config: SimThreadConfig
                 fixed_steps = fixed_steps.saturating_add(1);
             }
             fixed_step_seconds = step;
+            runtime.set_physics_render_alpha((fixed_accumulator / step).clamp(0.0, 1.0));
         } else {
             runtime.fixed_update(delta);
+            runtime.set_physics_render_alpha(1.0);
         }
         runtime.update(delta);
 

@@ -508,6 +508,8 @@ pub struct UiSizeClampBaseline {
 
 pub struct Render3DState {
     pub traversal_ids: Vec<NodeID>,
+    pub dirty_ids_scratch: Vec<NodeID>,
+    pub all_ids_scratch: Vec<NodeID>,
     pub visible_now: AHashSet<NodeID>,
     pub prev_visible: AHashSet<NodeID>,
     pub mesh_sources: AHashMap<NodeID, String>,
@@ -532,6 +534,7 @@ pub struct Render3DState {
     pub next_camera_activation_order: u64,
     pub dense_instance_pose_cache: AHashMap<NodeID, DenseInstancePoseCache>,
     pub traversal_seen: AHashSet<NodeID>,
+    pub dirty_skeletons_scratch: AHashSet<NodeID>,
     pub skeleton_cache_scratch: AHashMap<NodeID, SkeletonPalette>,
     pub skeleton_global_scratch: Vec<glam::Mat4>,
     pub skeleton_palette_scratch: Vec<[[f32; 4]; 4]>,
@@ -547,6 +550,8 @@ impl Render3DState {
         let (particle_path_load_tx, particle_path_load_rx) = mpsc::channel();
         Self {
             traversal_ids: Vec::new(),
+            dirty_ids_scratch: Vec::new(),
+            all_ids_scratch: Vec::new(),
             visible_now: AHashSet::default(),
             prev_visible: AHashSet::default(),
             mesh_sources: AHashMap::default(),
@@ -569,6 +574,7 @@ impl Render3DState {
             next_camera_activation_order: 1,
             dense_instance_pose_cache: AHashMap::default(),
             traversal_seen: AHashSet::default(),
+            dirty_skeletons_scratch: AHashSet::default(),
             skeleton_cache_scratch: AHashMap::default(),
             skeleton_global_scratch: Vec::new(),
             skeleton_palette_scratch: Vec::new(),
@@ -671,6 +677,7 @@ pub struct RetainedMeshDrawState {
 
 #[derive(Debug, Clone)]
 pub enum RetainedMeshInstanceState {
+    Single([[f32; 4]; 4]),
     Matrices(Arc<[[[f32; 4]; 4]]>),
     Dense {
         node_model: [[f32; 4]; 4],
@@ -682,6 +689,7 @@ pub enum RetainedMeshInstanceState {
 impl PartialEq for RetainedMeshInstanceState {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
+            (Self::Single(a), Self::Single(b)) => a == b,
             (Self::Matrices(a), Self::Matrices(b)) => Arc::ptr_eq(a, b) || a == b,
             (
                 Self::Dense {
