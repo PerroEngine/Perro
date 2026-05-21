@@ -156,7 +156,12 @@ methods!({
             return;
         }
         let ready = speakers.iter().filter(|id| !id.is_nil()).count();
-        let zones = query!(ctx.run, all(node_type[AudioEffectZone3D]), in_subtree(ctx.id)).len();
+        let zones = query!(
+            ctx.run,
+            all(node_type[AudioEffectZone3D]),
+            in_subtree(ctx.id)
+        )
+        .len();
         let body = format!(
             "speakers {}\nfx zones {} | debug {}",
             ready,

@@ -27,11 +27,19 @@ methods!({
         if overlay.is_nil() {
             return;
         }
-        let emitters = query!(ctx.run, all(node_type[ParticleEmitter3D]), in_subtree(ctx.id)).len();
+        let emitters = query!(
+            ctx.run,
+            all(node_type[ParticleEmitter3D]),
+            in_subtree(ctx.id)
+        )
+        .len();
         let players = query!(ctx.run, all(node_type[AnimationPlayer]), in_subtree(ctx.id)).len();
         let lights = query!(ctx.run, all(node_type[PointLight3D]), in_subtree(ctx.id)).len()
             + query!(ctx.run, all(node_type[AmbientLight3D]), in_subtree(ctx.id)).len();
-        let body = format!("emitters {}\nanim rigs {} | lights {}", emitters, players, lights);
+        let body = format!(
+            "emitters {}\nanim rigs {} | lights {}",
+            emitters, players, lights
+        );
         let _ = call_method!(
             ctx.run,
             overlay,

@@ -1,31 +1,38 @@
 $root = @hub_menu_root
-$button_style = { fill = "#101820E8" stroke = "#88AADD" stroke_width = 1.0 radius = 0.08 }
-$button_hover_style = { fill = "#1B2C3CE8" stroke = "#B8D8FF" stroke_width = 1.0 radius = 0.08 }
-$button_pressed_style = { fill = "#071018E8" stroke = "#FFFFFF" stroke_width = 1.0 radius = 0.06 }
+$button_hover_style = { fill: "#1B2C3CE8", stroke: "#B8D8FF", stroke_width: 1.0, radius: 0.08 }
+$button_pressed_style = { fill: "#071018E8", stroke: "#FFFFFF", stroke_width: 1.0, radius: 0.06 }
+$button_style = { fill: "#101820E8", stroke: "#88AADD", stroke_width: 1.0, radius: 0.08 }
+$var1 = { style: { fill: "#071018E8", stroke: "#FFFFFF", stroke_width: 1.0, radius: 0.06 } }
+$var2 = { style: { fill: "#1B2C3CE8", stroke: "#B8D8FF", stroke_width: 1.0, radius: 0.08 } }
 
 [hub_menu_root]
 script = "res://scripts/demo_main_menu_refs.rs"
 script_vars = {
-    hub_menu_panel = @hub_menu_panel
-    hub_menu_content = @hub_menu_content
-    demo_btn_mesh = @demo_btn_mesh
-    demo_btn_lights = @demo_btn_lights
-    demo_btn_water = @demo_btn_water
-    demo_btn_animations = @demo_btn_animations
-    demo_btn_physics_bones = @demo_btn_physics_bones
-    demo_btn_physics_collisions = @demo_btn_physics_collisions
-    demo_btn_sky = @demo_btn_sky
-    demo_btn_blend = @demo_btn_blend
-    demo_btn_multimesh = @demo_btn_multimesh
-    demo_btn_particles = @demo_btn_particles
+    hub_menu_panel = @hub_menu_panel,
+    hub_menu_content = @hub_menu_content,
+    demo_btn_mesh = @demo_btn_mesh,
+    demo_btn_lights = @demo_btn_lights,
+    demo_btn_water = @demo_btn_water,
+    demo_btn_animations = @demo_btn_animations,
+    demo_btn_physics_bones = @demo_btn_physics_bones,
+    demo_btn_physics_collisions = @demo_btn_physics_collisions,
+    demo_btn_sky = @demo_btn_sky,
+    demo_btn_blend = @demo_btn_blend,
+    demo_btn_multimesh = @demo_btn_multimesh,
+    demo_btn_particles = @demo_btn_particles,
     demo_btn_audio = @demo_btn_audio
 }
     [UiPanel]
         anchor = "center"
         position_ratio = (0.5, 0.5)
         size_ratio = (1.0, 1.0)
-        style = { fill = "#070A0F90" stroke = "#00000000" stroke_width = 0.0 radius = 0 }
-        padding = 16
+        style = {
+            fill = "#070A0F90",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.0
+        }
+        padding = 16.0
     [/UiPanel]
 [/hub_menu_root]
 
@@ -35,8 +42,13 @@ parent = @hub_menu_root
         anchor = "center"
         position_ratio = (0.5, 0.5)
         size_ratio = (0.95, 0.75)
-        style = { fill = "#0B1018E8" stroke = "#D0E0EF" stroke_width = 1.0 radius = 0.04 }
-        padding = 14
+        style = {
+            fill = "#0B1018E8",
+            stroke = "#D0E0EF",
+            stroke_width = 1.0,
+            radius = 0.04
+        }
+        padding = 14.0
     [/UiPanel]
 [/hub_menu_panel]
 
@@ -69,7 +81,7 @@ parent = @hub_menu_content
     [UiLabel]
         size_ratio = (1.0, 0.08)
         text = "Pick a feature scene"
-        text_size_ratio = 0.20
+        text_size_ratio = 0.2
         color = "#B9C7D8"
         input_enabled = false
         mouse_filter = "pass"
@@ -113,8 +125,8 @@ parent = @hub_menu_col_left
         h_align = "fill"
         click_signals = ["demo_mesh_click"]
         style = $button_style
-        hover = { style = $button_hover_style }
-        pressed = { style = $button_pressed_style }
+        hover = $var2
+        pressed = $var1
     [/UiButton]
 [/demo_btn_mesh]
 
@@ -137,8 +149,8 @@ parent = @hub_menu_col_left
         h_align = "fill"
         click_signals = ["demo_lights_click"]
         style = $button_style
-        hover = { style = $button_hover_style }
-        pressed = { style = $button_pressed_style }
+        hover = $var2
+        pressed = $var1
     [/UiButton]
 [/demo_btn_lights]
 
@@ -161,8 +173,8 @@ parent = @hub_menu_col_left
         h_align = "fill"
         click_signals = ["demo_water_click"]
         style = $button_style
-        hover = { style = $button_hover_style }
-        pressed = { style = $button_pressed_style }
+        hover = $var2
+        pressed = $var1
     [/UiButton]
 [/demo_btn_water]
 
@@ -185,8 +197,8 @@ parent = @hub_menu_col_left
         h_align = "fill"
         click_signals = ["demo_animations_click"]
         style = $button_style
-        hover = { style = $button_hover_style }
-        pressed = { style = $button_pressed_style }
+        hover = $var2
+        pressed = $var1
     [/UiButton]
 [/demo_btn_animations]
 
@@ -209,8 +221,8 @@ parent = @hub_menu_col_left
         h_align = "fill"
         click_signals = ["demo_physics_bones_click"]
         style = $button_style
-        hover = { style = $button_hover_style }
-        pressed = { style = $button_pressed_style }
+        hover = $var2
+        pressed = $var1
     [/UiButton]
 [/demo_btn_physics_bones]
 
@@ -233,8 +245,8 @@ parent = @hub_menu_col_left
         h_align = "fill"
         click_signals = ["demo_physics_collisions_click"]
         style = $button_style
-        hover = { style = $button_hover_style }
-        pressed = { style = $button_pressed_style }
+        hover = $var2
+        pressed = $var1
     [/UiButton]
 [/demo_btn_physics_collisions]
 
@@ -257,8 +269,8 @@ parent = @hub_menu_col_right
         h_align = "fill"
         click_signals = ["demo_sky_click"]
         style = $button_style
-        hover = { style = $button_hover_style }
-        pressed = { style = $button_pressed_style }
+        hover = $var2
+        pressed = $var1
     [/UiButton]
 [/demo_btn_sky]
 
@@ -281,8 +293,8 @@ parent = @hub_menu_col_right
         h_align = "fill"
         click_signals = ["demo_blend_click"]
         style = $button_style
-        hover = { style = $button_hover_style }
-        pressed = { style = $button_pressed_style }
+        hover = $var2
+        pressed = $var1
     [/UiButton]
 [/demo_btn_blend]
 
@@ -305,8 +317,8 @@ parent = @hub_menu_col_right
         h_align = "fill"
         click_signals = ["demo_multimesh_click"]
         style = $button_style
-        hover = { style = $button_hover_style }
-        pressed = { style = $button_pressed_style }
+        hover = $var2
+        pressed = $var1
     [/UiButton]
 [/demo_btn_multimesh]
 
@@ -329,8 +341,8 @@ parent = @hub_menu_col_right
         h_align = "fill"
         click_signals = ["demo_particles_click"]
         style = $button_style
-        hover = { style = $button_hover_style }
-        pressed = { style = $button_pressed_style }
+        hover = $var2
+        pressed = $var1
     [/UiButton]
 [/demo_btn_particles]
 
@@ -353,8 +365,8 @@ parent = @hub_menu_col_right
         h_align = "fill"
         click_signals = ["demo_audio_click"]
         style = $button_style
-        hover = { style = $button_hover_style }
-        pressed = { style = $button_pressed_style }
+        hover = $var2
+        pressed = $var1
     [/UiButton]
 [/demo_btn_audio]
 
@@ -369,3 +381,4 @@ parent = @demo_btn_audio
         mouse_filter = "pass"
     [/UiLabel]
 [/demo_btn_audio_label]
+

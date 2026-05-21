@@ -125,7 +125,8 @@ lifecycle!({
             fade: scene_preload!(ctx.run, TRANSITION_FADE_SCENE).expect("preload fade"),
             profiling_overlay: scene_preload!(ctx.run, PROFILING_OVERLAY_SCENE)
                 .expect("preload profiling overlay"),
-            info_overlay: scene_preload!(ctx.run, INFO_OVERLAY_SCENE).expect("preload info overlay"),
+            info_overlay: scene_preload!(ctx.run, INFO_OVERLAY_SCENE)
+                .expect("preload info overlay"),
         };
         with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| state.assets = assets);
         self.load_ui(ctx);
@@ -206,9 +207,30 @@ methods!({
         match demo {
             DemoKind::None => {}
             DemoKind::MeshMaterials => {
-                self.spawn_static_sprite_zone(ctx, Vector2::new(-2400.0, 900.0), 16, 16, 34.0, "static_256");
-                self.spawn_static_sprite_zone(ctx, Vector2::new(-1700.0, 900.0), 32, 32, 18.0, "static_1024");
-                self.spawn_static_sprite_zone(ctx, Vector2::new(-450.0, 900.0), 64, 64, 10.0, "static_4096");
+                self.spawn_static_sprite_zone(
+                    ctx,
+                    Vector2::new(-2400.0, 900.0),
+                    16,
+                    16,
+                    34.0,
+                    "static_256",
+                );
+                self.spawn_static_sprite_zone(
+                    ctx,
+                    Vector2::new(-1700.0, 900.0),
+                    32,
+                    32,
+                    18.0,
+                    "static_1024",
+                );
+                self.spawn_static_sprite_zone(
+                    ctx,
+                    Vector2::new(-450.0, 900.0),
+                    64,
+                    64,
+                    10.0,
+                    "static_4096",
+                );
             }
             DemoKind::Lights => {
                 self.spawn_light_zone(ctx, Vector2::new(1450.0, 850.0));
@@ -236,7 +258,14 @@ methods!({
             }
             DemoKind::SkyGap | DemoKind::BlendGap => {}
             DemoKind::MultiMesh => {
-                self.spawn_static_sprite_zone(ctx, Vector2::new(-450.0, 900.0), 64, 64, 10.0, "multimesh_2d");
+                self.spawn_static_sprite_zone(
+                    ctx,
+                    Vector2::new(-450.0, 900.0),
+                    64,
+                    64,
+                    10.0,
+                    "multimesh_2d",
+                );
             }
         }
     }
@@ -271,7 +300,8 @@ methods!({
         } else {
             get_child!(ctx.run, fade_root, TRANSITION_FADE_PANEL_NODE_NAME).unwrap_or(NodeID::nil())
         };
-        let top_bar_root = get_child!(ctx.run, scene_root, TOP_BAR_NODE_NAME).unwrap_or(NodeID::nil());
+        let top_bar_root =
+            get_child!(ctx.run, scene_root, TOP_BAR_NODE_NAME).unwrap_or(NodeID::nil());
         with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| {
             state.ui.main_menu_root = main_menu_root;
             state.ui.pause_menu_root = pause_menu_root;
@@ -291,7 +321,10 @@ methods!({
             ("demo_water_click", "on_demo_water_click"),
             ("demo_animations_click", "on_demo_animations_click"),
             ("demo_physics_bones_click", "on_demo_physics_bones_click"),
-            ("demo_physics_collisions_click", "on_demo_physics_collisions_click"),
+            (
+                "demo_physics_collisions_click",
+                "on_demo_physics_collisions_click",
+            ),
             ("demo_sky_click", "on_demo_sky_click"),
             ("demo_blend_click", "on_demo_blend_click"),
             ("demo_multimesh_click", "on_demo_multimesh_click"),
@@ -363,37 +396,51 @@ methods!({
 
     fn update_fade(&self, ctx: &mut ScriptContext<'_, API>) {
         let dt = delta_time!(ctx.run);
-        let Some((alpha, active, do_action)) = with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| {
-            if !state.runtime.fade_active {
-                return (0.0, false, false);
-            }
-            let mut do_action = false;
-            match state.runtime.fade_phase {
-                FadePhase::Idle => {
-                    state.runtime.fade_active = false;
+        let Some((alpha, active, do_action)) =
+            with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| {
+                if !state.runtime.fade_active {
+                    return (0.0, false, false);
                 }
-                FadePhase::FadeIn => {
-                    let step = if FADE_IN_SECONDS <= 0.0001 { 1.0 } else { dt / FADE_IN_SECONDS };
-                    state.runtime.fade_alpha = (state.runtime.fade_alpha + step).min(1.0);
-                    if state.runtime.fade_alpha >= 0.999 {
-                        state.runtime.fade_alpha = 1.0;
-                        state.runtime.fade_phase = FadePhase::FadeOut;
-                        do_action = true;
-                    }
-                }
-                FadePhase::FadeOut => {
-                    let step = if FADE_OUT_SECONDS <= 0.0001 { 1.0 } else { dt / FADE_OUT_SECONDS };
-                    state.runtime.fade_alpha = (state.runtime.fade_alpha - step).max(0.0);
-                    if state.runtime.fade_alpha <= 0.001 {
-                        state.runtime.fade_alpha = 0.0;
+                let mut do_action = false;
+                match state.runtime.fade_phase {
+                    FadePhase::Idle => {
                         state.runtime.fade_active = false;
-                        state.runtime.fade_phase = FadePhase::Idle;
-                        state.runtime.fade_action = FadeAction::None;
+                    }
+                    FadePhase::FadeIn => {
+                        let step = if FADE_IN_SECONDS <= 0.0001 {
+                            1.0
+                        } else {
+                            dt / FADE_IN_SECONDS
+                        };
+                        state.runtime.fade_alpha = (state.runtime.fade_alpha + step).min(1.0);
+                        if state.runtime.fade_alpha >= 0.999 {
+                            state.runtime.fade_alpha = 1.0;
+                            state.runtime.fade_phase = FadePhase::FadeOut;
+                            do_action = true;
+                        }
+                    }
+                    FadePhase::FadeOut => {
+                        let step = if FADE_OUT_SECONDS <= 0.0001 {
+                            1.0
+                        } else {
+                            dt / FADE_OUT_SECONDS
+                        };
+                        state.runtime.fade_alpha = (state.runtime.fade_alpha - step).max(0.0);
+                        if state.runtime.fade_alpha <= 0.001 {
+                            state.runtime.fade_alpha = 0.0;
+                            state.runtime.fade_active = false;
+                            state.runtime.fade_phase = FadePhase::Idle;
+                            state.runtime.fade_action = FadeAction::None;
+                        }
                     }
                 }
-            }
-            (state.runtime.fade_alpha, state.runtime.fade_active, do_action)
-        }) else {
+                (
+                    state.runtime.fade_alpha,
+                    state.runtime.fade_active,
+                    do_action,
+                )
+            })
+        else {
             return;
         };
         if do_action {
@@ -512,12 +559,19 @@ methods!({
         for y in 0..rows {
             for x in 0..cols {
                 let idx = ((y * cols + x) % 64) as f32;
-                let node = create_node!(ctx.run, Sprite2D, "static_sprite", tags!["demo2d_dynamic"], ctx.id);
+                let node = create_node!(
+                    ctx.run,
+                    Sprite2D,
+                    "static_sprite",
+                    tags!["demo2d_dynamic"],
+                    ctx.id
+                );
                 let px = origin.x + x as f32 * step;
                 let py = origin.y - y as f32 * step;
                 let _ = with_node_mut!(ctx.run, Sprite2D, node, |sprite| {
                     sprite.texture = tex;
-                    sprite.texture_region = Some([32.0 * (idx % 8.0), 32.0 * (idx / 8.0).floor(), 32.0, 32.0]);
+                    sprite.texture_region =
+                        Some([32.0 * (idx % 8.0), 32.0 * (idx / 8.0).floor(), 32.0, 32.0]);
                     sprite.transform.position = Vector2::new(px, py);
                     sprite.transform.scale = Vector2::new(0.55, 0.55);
                 });
@@ -533,7 +587,9 @@ methods!({
             ("hurt_grid", Vector2::new(220.0, 40.0), 2.8),
         ];
         for (name, offset, scale) in defs {
-            let Ok(node) = scene_load!(ctx.run, scene) else { continue; };
+            let Ok(node) = scene_load!(ctx.run, scene) else {
+                continue;
+            };
             reparent!(ctx.run, ctx.id, node);
             tag_add!(ctx.run, node, tags!["demo2d_dynamic"]);
             let _ = with_node_mut!(ctx.run, AnimatedSprite2D, node, |sprite| {
@@ -549,11 +605,24 @@ methods!({
     }
 
     fn spawn_light_zone(&self, ctx: &mut ScriptContext<'_, API>, origin: Vector2) {
-        self.spawn_static_sprite_zone(ctx, origin + Vector2::new(-360.0, 120.0), 16, 16, 22.0, "light_bg");
+        self.spawn_static_sprite_zone(
+            ctx,
+            origin + Vector2::new(-360.0, 120.0),
+            16,
+            16,
+            22.0,
+            "light_bg",
+        );
 
         let disc = texture_load!(ctx.res, LIGHT_DISC);
         for i in 0..8 {
-            let node = create_node!(ctx.run, PointLight2D, "point_light", tags!["demo2d_dynamic"], ctx.id);
+            let node = create_node!(
+                ctx.run,
+                PointLight2D,
+                "point_light",
+                tags!["demo2d_dynamic"],
+                ctx.id
+            );
             let x = origin.x - 280.0 + i as f32 * 80.0;
             let y = origin.y + if i % 2 == 0 { 100.0 } else { -120.0 };
             let hue = i as f32 / 8.0;
@@ -567,9 +636,19 @@ methods!({
         }
 
         for i in 0..2 {
-            let node = create_node!(ctx.run, SpotLight2D, "spot_light", tags!["demo2d_dynamic"], ctx.id);
+            let node = create_node!(
+                ctx.run,
+                SpotLight2D,
+                "spot_light",
+                tags!["demo2d_dynamic"],
+                ctx.id
+            );
             let _ = with_node_mut!(ctx.run, SpotLight2D, node, |light| {
-                light.color = if i == 0 { [1.0, 0.9, 0.45] } else { [0.45, 0.95, 1.0] };
+                light.color = if i == 0 {
+                    [1.0, 0.9, 0.45]
+                } else {
+                    [0.45, 0.95, 1.0]
+                };
                 light.intensity = 2.6;
                 light.range = 260.0;
                 light.inner_angle_radians = 0.25;
@@ -580,9 +659,19 @@ methods!({
         }
 
         for i in 0..2 {
-            let node = create_node!(ctx.run, RayLight2D, "ray_light", tags!["demo2d_dynamic"], ctx.id);
+            let node = create_node!(
+                ctx.run,
+                RayLight2D,
+                "ray_light",
+                tags!["demo2d_dynamic"],
+                ctx.id
+            );
             let _ = with_node_mut!(ctx.run, RayLight2D, node, |light| {
-                light.color = if i == 0 { [1.0, 0.35, 0.5] } else { [0.55, 1.0, 0.45] };
+                light.color = if i == 0 {
+                    [1.0, 0.35, 0.5]
+                } else {
+                    [0.55, 1.0, 0.45]
+                };
                 light.intensity = 2.0;
                 light.transform.position = origin + Vector2::new(-250.0 + i as f32 * 500.0, -260.0);
                 light.transform.rotation = if i == 0 { 0.4 } else { -0.4 };
@@ -592,7 +681,13 @@ methods!({
 
     fn spawn_water_zone(&self, ctx: &mut ScriptContext<'_, API>, origin: Vector2) {
         for pool in 0..3 {
-            let water = create_node!(ctx.run, WaterBody2D, "water", tags!["demo2d_dynamic"], ctx.id);
+            let water = create_node!(
+                ctx.run,
+                WaterBody2D,
+                "water",
+                tags!["demo2d_dynamic"],
+                ctx.id
+            );
             let base = origin + Vector2::new(pool as f32 * 240.0 - 240.0, 0.0);
             let _ = with_node_mut!(ctx.run, WaterBody2D, water, |node| {
                 node.transform.position = base;
@@ -601,24 +696,51 @@ methods!({
                 node.water.render_resolution = [96, 48];
                 node.water.flow = Vector2::new(0.3 * (pool as f32 - 1.0), 0.0);
                 node.water.wind = Vector2::new(1.0, 0.0);
-                node.water.optics.deep_color = [0.02, 0.15 + pool as f32 * 0.08, 0.26 + pool as f32 * 0.06, 0.96].into();
+                node.water.optics.deep_color = [
+                    0.02,
+                    0.15 + pool as f32 * 0.08,
+                    0.26 + pool as f32 * 0.06,
+                    0.96,
+                ]
+                .into();
                 node.water.optics.shallow_color = [0.12, 0.48, 0.72, 0.72].into();
                 node.water.visual.foam_color = [0.86, 0.96, 1.0, 1.0].into();
                 node.water.physics.buoyancy = 2.8;
                 node.water.physics.drag = 0.7;
             });
 
-            let floor = create_node!(ctx.run, StaticBody2D, "water_floor", tags!["demo2d_dynamic"], ctx.id);
+            let floor = create_node!(
+                ctx.run,
+                StaticBody2D,
+                "water_floor",
+                tags!["demo2d_dynamic"],
+                ctx.id
+            );
             let _ = with_node_mut!(ctx.run, StaticBody2D, floor, |body| {
                 body.transform.position = base + Vector2::new(0.0, -70.0);
             });
-            let shape = create_node!(ctx.run, CollisionShape2D, "water_floor_shape", tags!["demo2d_dynamic"], floor);
+            let shape = create_node!(
+                ctx.run,
+                CollisionShape2D,
+                "water_floor_shape",
+                tags!["demo2d_dynamic"],
+                floor
+            );
             let _ = with_node_mut!(ctx.run, CollisionShape2D, shape, |s| {
-                s.shape = Shape2D::Quad { width: 180.0, height: 16.0 };
+                s.shape = Shape2D::Quad {
+                    width: 180.0,
+                    height: 16.0,
+                };
             });
 
             for i in 0..16 {
-                let body = create_node!(ctx.run, RigidBody2D, "floater", tags!["demo2d_dynamic"], ctx.id);
+                let body = create_node!(
+                    ctx.run,
+                    RigidBody2D,
+                    "floater",
+                    tags!["demo2d_dynamic"],
+                    ctx.id
+                );
                 let px = base.x - 68.0 + (i % 4) as f32 * 44.0;
                 let py = base.y - 16.0 + (i / 4) as f32 * 34.0;
                 let _ = with_node_mut!(ctx.run, RigidBody2D, body, |rb| {
@@ -629,46 +751,104 @@ methods!({
                     rb.density = 0.65;
                     rb.friction = 0.4;
                 });
-                let shape = create_node!(ctx.run, CollisionShape2D, "floater_shape", tags!["demo2d_dynamic"], body);
+                let shape = create_node!(
+                    ctx.run,
+                    CollisionShape2D,
+                    "floater_shape",
+                    tags!["demo2d_dynamic"],
+                    body
+                );
                 let _ = with_node_mut!(ctx.run, CollisionShape2D, shape, |s| {
-                    s.shape = Shape2D::Quad { width: 20.0, height: 20.0 };
+                    s.shape = Shape2D::Quad {
+                        width: 20.0,
+                        height: 20.0,
+                    };
                 });
                 let sprite_sheet = texture_load!(ctx.res, SPRITE_SHEET);
-                self.spawn_child_sprite(ctx, body, sprite_sheet, 32.0 * ((i % 8) as f32), 64.0, 32.0, 32.0, 0.65);
+                self.spawn_child_sprite(
+                    ctx,
+                    body,
+                    sprite_sheet,
+                    32.0 * ((i % 8) as f32),
+                    64.0,
+                    32.0,
+                    32.0,
+                    0.65,
+                );
             }
         }
     }
 
     fn spawn_physics_zone(&self, ctx: &mut ScriptContext<'_, API>, origin: Vector2) {
-        let ground = create_node!(ctx.run, StaticBody2D, "ground", tags!["demo2d_dynamic"], ctx.id);
+        let ground = create_node!(
+            ctx.run,
+            StaticBody2D,
+            "ground",
+            tags!["demo2d_dynamic"],
+            ctx.id
+        );
         let _ = with_node_mut!(ctx.run, StaticBody2D, ground, |body| {
             body.transform.position = origin + Vector2::new(0.0, -40.0);
         });
-        let ground_shape = create_node!(ctx.run, CollisionShape2D, "ground_shape", tags!["demo2d_dynamic"], ground);
+        let ground_shape = create_node!(
+            ctx.run,
+            CollisionShape2D,
+            "ground_shape",
+            tags!["demo2d_dynamic"],
+            ground
+        );
         let _ = with_node_mut!(ctx.run, CollisionShape2D, ground_shape, |shape| {
-            shape.shape = Shape2D::Quad { width: 860.0, height: 24.0 };
+            shape.shape = Shape2D::Quad {
+                width: 860.0,
+                height: 24.0,
+            };
         });
 
         for i in 0..240 {
-            let body = create_node!(ctx.run, RigidBody2D, "crate", tags!["demo2d_dynamic"], ctx.id);
+            let body = create_node!(
+                ctx.run,
+                RigidBody2D,
+                "crate",
+                tags!["demo2d_dynamic"],
+                ctx.id
+            );
             let col = (i % 20) as f32;
             let row = (i / 20) as f32;
             let _ = with_node_mut!(ctx.run, RigidBody2D, body, |rb| {
-                rb.transform.position = origin + Vector2::new(-350.0 + col * 36.0, row * 34.0 + 10.0);
+                rb.transform.position =
+                    origin + Vector2::new(-350.0 + col * 36.0, row * 34.0 + 10.0);
                 rb.angular_velocity = (i % 3) as f32 * 0.15;
                 rb.friction = 0.6;
                 rb.restitution = 0.08;
             });
-            let shape = create_node!(ctx.run, CollisionShape2D, "crate_shape", tags!["demo2d_dynamic"], body);
+            let shape = create_node!(
+                ctx.run,
+                CollisionShape2D,
+                "crate_shape",
+                tags!["demo2d_dynamic"],
+                body
+            );
             let _ = with_node_mut!(ctx.run, CollisionShape2D, shape, |s| {
                 s.shape = if i % 5 == 0 {
                     Shape2D::Circle { radius: 12.0 }
                 } else {
-                    Shape2D::Quad { width: 24.0, height: 24.0 }
+                    Shape2D::Quad {
+                        width: 24.0,
+                        height: 24.0,
+                    }
                 };
             });
             let sprite_sheet = texture_load!(ctx.res, SPRITE_SHEET);
-            self.spawn_child_sprite(ctx, body, sprite_sheet, 32.0 * ((i % 8) as f32), 96.0, 32.0, 32.0, 0.7);
+            self.spawn_child_sprite(
+                ctx,
+                body,
+                sprite_sheet,
+                32.0 * ((i % 8) as f32),
+                96.0,
+                32.0,
+                32.0,
+                0.7,
+            );
         }
     }
 
@@ -676,21 +856,39 @@ methods!({
         let clip = self.assets(ctx).player_bob;
         let tex = texture_load!(ctx.res, HERO_SHEET);
         for i in 0..48 {
-            let actor = create_node!(ctx.run, Node2D, "actor_root", tags!["demo2d_dynamic"], ctx.id);
+            let actor = create_node!(
+                ctx.run,
+                Node2D,
+                "actor_root",
+                tags!["demo2d_dynamic"],
+                ctx.id
+            );
             let col = (i % 12) as f32;
             let row = (i / 12) as f32;
             let _ = with_base_node_mut!(ctx.run, Node2D, actor, |node| {
                 node.transform.position = origin + Vector2::new(-330.0 + col * 62.0, row * 84.0);
             });
 
-            let sprite = create_node!(ctx.run, Sprite2D, "actor_sprite", tags!["demo2d_dynamic"], actor);
+            let sprite = create_node!(
+                ctx.run,
+                Sprite2D,
+                "actor_sprite",
+                tags!["demo2d_dynamic"],
+                actor
+            );
             let _ = with_node_mut!(ctx.run, Sprite2D, sprite, |node| {
                 node.texture = tex;
                 node.texture_region = Some([32.0 * (i % 4) as f32, 0.0, 32.0, 32.0]);
                 node.transform.scale = Vector2::new(1.0, 1.0);
             });
 
-            let player = create_node!(ctx.run, AnimationPlayer, "actor_player", tags!["demo2d_dynamic"], ctx.id);
+            let player = create_node!(
+                ctx.run,
+                AnimationPlayer,
+                "actor_player",
+                tags!["demo2d_dynamic"],
+                ctx.id
+            );
             let _ = with_node_mut!(ctx.run, AnimationPlayer, player, |anim| {
                 anim.animation = clip;
                 anim.speed = 0.8 + (i % 5) as f32 * 0.08;
@@ -704,7 +902,9 @@ methods!({
     fn spawn_skeletal_zone(&self, ctx: &mut ScriptContext<'_, API>, origin: Vector2) {
         let scene = self.assets(ctx).rig_scene;
         for i in 0..12 {
-            let Ok(root) = scene_load!(ctx.run, scene) else { continue; };
+            let Ok(root) = scene_load!(ctx.run, scene) else {
+                continue;
+            };
             reparent!(ctx.run, ctx.id, root);
             tag_add!(ctx.run, root, tags!["demo2d_dynamic"]);
             let col = (i % 4) as f32;
@@ -716,10 +916,23 @@ methods!({
     }
 
     fn spawn_particles_zone(&self, ctx: &mut ScriptContext<'_, API>, origin: Vector2) {
-        self.spawn_static_sprite_zone(ctx, origin + Vector2::new(-320.0, 120.0), 14, 10, 26.0, "particle_bg");
+        self.spawn_static_sprite_zone(
+            ctx,
+            origin + Vector2::new(-320.0, 120.0),
+            14,
+            10,
+            26.0,
+            "particle_bg",
+        );
         let disc = texture_load!(ctx.res, LIGHT_DISC);
         for i in 0..4 {
-            let node = create_node!(ctx.run, ParticleEmitter2D, "particles", tags!["demo2d_dynamic"], ctx.id);
+            let node = create_node!(
+                ctx.run,
+                ParticleEmitter2D,
+                "particles",
+                tags!["demo2d_dynamic"],
+                ctx.id
+            );
             let pos = origin
                 + match i {
                     0 => Vector2::new(-220.0, 90.0),
@@ -745,15 +958,35 @@ methods!({
     }
 
     fn spawn_audio_zone(&self, ctx: &mut ScriptContext<'_, API>, origin: Vector2) {
-        self.spawn_static_sprite_zone(ctx, origin + Vector2::new(-280.0, 100.0), 12, 8, 28.0, "audio_bg");
+        self.spawn_static_sprite_zone(
+            ctx,
+            origin + Vector2::new(-280.0, 100.0),
+            12,
+            8,
+            28.0,
+            "audio_bg",
+        );
         let disc = texture_load!(ctx.res, LIGHT_DISC);
         for i in 0..3 {
-            let pos = origin + Vector2::new(-180.0 + i as f32 * 180.0, 40.0 + (i % 2) as f32 * 80.0);
-            let mask = create_node!(ctx.run, AudioMask2D, "audio_mask", tags!["demo2d_dynamic"], ctx.id);
+            let pos =
+                origin + Vector2::new(-180.0 + i as f32 * 180.0, 40.0 + (i % 2) as f32 * 80.0);
+            let mask = create_node!(
+                ctx.run,
+                AudioMask2D,
+                "audio_mask",
+                tags!["demo2d_dynamic"],
+                ctx.id
+            );
             let _ = with_node_mut!(ctx.run, AudioMask2D, mask, |node| {
                 node.transform.position = pos;
             });
-            let zone = create_node!(ctx.run, AudioEffectZone2D, "audio_zone", tags!["demo2d_dynamic"], ctx.id);
+            let zone = create_node!(
+                ctx.run,
+                AudioEffectZone2D,
+                "audio_zone",
+                tags!["demo2d_dynamic"],
+                ctx.id
+            );
             let _ = with_node_mut!(ctx.run, AudioEffectZone2D, zone, |node| {
                 node.transform.position = pos + Vector2::new(0.0, -70.0);
                 node.bounce = i % 2 == 0;
@@ -763,13 +996,25 @@ methods!({
         }
     }
 
-    fn spawn_ring(&self, ctx: &mut ScriptContext<'_, API>, center: Vector2, radius: f32, count: i32) {
+    fn spawn_ring(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+        center: Vector2,
+        radius: f32,
+        count: i32,
+    ) {
         let disc = texture_load!(ctx.res, LIGHT_DISC);
         for i in 0..count {
             let t = i as f32 / count as f32;
             let a = t * std::f32::consts::TAU;
             let pos = center + Vector2::new(a.cos() * radius, a.sin() * radius);
-            let node = create_node!(ctx.run, Sprite2D, "audio_dot", tags!["demo2d_dynamic"], ctx.id);
+            let node = create_node!(
+                ctx.run,
+                Sprite2D,
+                "audio_dot",
+                tags!["demo2d_dynamic"],
+                ctx.id
+            );
             let _ = with_node_mut!(ctx.run, Sprite2D, node, |sprite| {
                 sprite.texture = disc;
                 sprite.transform.position = pos;
@@ -778,8 +1023,20 @@ methods!({
         }
     }
 
-    fn spawn_marker_sprite(&self, ctx: &mut ScriptContext<'_, API>, tex: TextureID, pos: Vector2, scale: f32) {
-        let node = create_node!(ctx.run, Sprite2D, "light_marker", tags!["demo2d_dynamic"], ctx.id);
+    fn spawn_marker_sprite(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+        tex: TextureID,
+        pos: Vector2,
+        scale: f32,
+    ) {
+        let node = create_node!(
+            ctx.run,
+            Sprite2D,
+            "light_marker",
+            tags!["demo2d_dynamic"],
+            ctx.id
+        );
         let _ = with_node_mut!(ctx.run, Sprite2D, node, |sprite| {
             sprite.texture = tex;
             sprite.transform.position = pos;
@@ -798,7 +1055,13 @@ methods!({
         h: f32,
         scale: f32,
     ) {
-        let sprite = create_node!(ctx.run, Sprite2D, "child_sprite", tags!["demo2d_dynamic"], parent);
+        let sprite = create_node!(
+            ctx.run,
+            Sprite2D,
+            "child_sprite",
+            tags!["demo2d_dynamic"],
+            parent
+        );
         let _ = with_node_mut!(ctx.run, Sprite2D, sprite, |node| {
             node.texture = tex;
             node.texture_region = Some([x, y, w, h]);
@@ -811,7 +1074,9 @@ methods!({
     }
 
     fn active_demo(&self, ctx: &mut ScriptContext<'_, API>) -> DemoKind {
-        with_state!(ctx.run, Demo2DState, ctx.id, |state| state.runtime.active_demo)
+        with_state!(ctx.run, Demo2DState, ctx.id, |state| state
+            .runtime
+            .active_demo)
     }
 
     fn sync_info_overlay(&self, ctx: &mut ScriptContext<'_, API>) {
@@ -836,7 +1101,12 @@ methods!({
             DemoKind::ParticlesGap => "Particles".to_string(),
             DemoKind::AudioGap => "Audio".to_string(),
         };
-        let active_anim_sprites = query!(ctx.run, all(node_type[AnimatedSprite2D]), in_subtree(ctx.id)).len();
+        let active_anim_sprites = query!(
+            ctx.run,
+            all(node_type[AnimatedSprite2D]),
+            in_subtree(ctx.id)
+        )
+        .len();
         let body = match active_demo {
             DemoKind::None => "pick lane frm hub".to_string(),
             DemoKind::MeshMaterials => "sprites 256/1024/4096".to_string(),

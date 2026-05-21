@@ -1015,7 +1015,8 @@ methods!({
         }
 
         with_state_mut!(ctx.run, DemoManagerState, ctx.id, |state| {
-            state.runtime.freecam_speed = (state.runtime.freecam_speed + wheel * FREECAM_SPEED_STEP)
+            state.runtime.freecam_speed = (state.runtime.freecam_speed
+                + wheel * FREECAM_SPEED_STEP)
                 .clamp(MIN_FREECAM_SPEED, MAX_FREECAM_SPEED);
         });
         self.apply_freecam_speed_to_active_demo(ctx);
@@ -1121,12 +1122,7 @@ methods!({
 
         let mut stack = vec![root];
         while let Some(id) = stack.pop() {
-            let _ = call_method!(
-                ctx.run,
-                id,
-                func!("set_info_overlay"),
-                params![overlay]
-            );
+            let _ = call_method!(ctx.run, id, func!("set_info_overlay"), params![overlay]);
             if let Some(children) = get_node_children_ids!(ctx.run, id) {
                 for child in children {
                     if !child.is_nil() {
@@ -1420,7 +1416,8 @@ fn scene_ui_parent<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     manager: NodeID,
 ) -> NodeID {
-    let ui_root = with_state!(ctx.run, DemoManagerState, manager, |state| state.demo_ui_root);
+    let ui_root = with_state!(ctx.run, DemoManagerState, manager, |state| state
+        .demo_ui_root);
     if !ui_root.is_nil() {
         return ui_root;
     }

@@ -2,18 +2,21 @@ $root = @transition_fade_root
 
 [transition_fade_root]
 script = "res://scripts/demo_fade_refs.rs"
-script_vars = {
-    transition_fade_panel = @transition_fade_panel
-}
+script_vars = { transition_fade_panel = @transition_fade_panel }
     [UiPanel]
         anchor = "center"
         position_ratio = (0.5, 0.5)
         size_ratio = (1.2, 1.2)
-        style = { fill = "#00000000" stroke = "#00000000" stroke_width = 0.0 radius = 0 }
+        style = {
+            fill = "#00000000",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.0
+        }
         visible = false
         input_enabled = false
         mouse_filter = "pass"
-        z_index = 1000
+        z_index = 1000.0
     [/UiPanel]
 [/transition_fade_root]
 
@@ -23,10 +26,16 @@ parent = @transition_fade_root
         anchor = "center"
         position_ratio = (0.5, 0.5)
         size_ratio = (1.2, 1.2)
-        style = { fill = "#00000000" stroke = "#00000000" stroke_width = 0.0 radius = 0 }
+        style = {
+            fill = "#00000000",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.0
+        }
         visible = false
         input_enabled = false
         mouse_filter = "pass"
-        z_index = 1001
+        z_index = 1001.0
     [/UiPanel]
 [/transition_fade_panel]
+

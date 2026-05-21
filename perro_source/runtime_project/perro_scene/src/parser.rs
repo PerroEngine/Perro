@@ -14,6 +14,7 @@ pub struct Parser<'a> {
     lexer: Lexer<'a>,
     current: Token<'a>,
     vars: HashMap<String, SceneValue>,
+    lenient_separators: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -25,7 +26,14 @@ impl<'a> Parser<'a> {
             lexer,
             current,
             vars: HashMap::new(),
+            lenient_separators: false,
         }
+    }
+
+    pub(crate) fn new_lenient(src: &'a str) -> Self {
+        let mut parser = Self::new(src);
+        parser.lenient_separators = true;
+        parser
     }
 
     fn advance(&mut self) {
@@ -252,7 +260,6 @@ impl<'a> Parser<'a> {
                     let value = self.parse_value();
                     entries.push((key, value));
 
-                    // delimiter: comma is optional
                     match &self.current {
                         Token::Comma => {
                             self.advance();
@@ -265,15 +272,9 @@ impl<'a> Parser<'a> {
                             break;
                         }
 
-                        // LINE-BASED: next key starts immediately (no comma)
-                        Token::Ident(_) | Token::String(_) => {
-                            continue;
-                        }
+                        Token::Ident(_) | Token::String(_) | Token::Number(_) => continue,
 
-                        other => panic!(
-                            "Expected ',', '}}', or next key in object literal, got {:?}",
-                            other
-                        ),
+                        other => panic!("Expected ',' or '}}' in object literal, got {:?}", other,),
                     }
                 }
 
@@ -305,7 +306,8 @@ impl<'a> Parser<'a> {
                             self.advance();
                             break;
                         }
-                        _ => {}
+                        _ if self.lenient_separators => {}
+                        other => panic!("Expected ',' or ']' in array literal, got {:?}", other),
                     }
                 }
                 SceneValue::Array(Cow::Owned(items))
@@ -472,7 +474,32 @@ impl<'a> Parser<'a> {
         tags
     }
 
-    fn parse_scene_inner(mut self) -> Scene {
+    fn skip_closing_tag_after_lbracket(&mut self) -> Cow<'a, str> {
+        self.expect(Token::Slash);
+        let name = self.expect_scene_key();
+        self.expect(Token::RBracket);
+        name
+    }
+
+    fn skip_node_body(&mut self, key: &str) {
+        loop {
+            match self.current {
+                Token::Eof => break,
+                Token::LBracket => {
+                    self.advance();
+                    if self.current == Token::Slash {
+                        let end = self.skip_closing_tag_after_lbracket();
+                        if end.as_ref() == key {
+                            break;
+                        }
+                    }
+                }
+                _ => self.advance(),
+            }
+        }
+    }
+
+    pub(crate) fn parse_scene_inner(mut self) -> Scene {
         let mut nodes = Vec::new();
         let mut root_name = None::<String>;
         let mut key_names = Vec::<Cow<'static, str>>::new();
@@ -508,6 +535,13 @@ impl<'a> Parser<'a> {
 
                 Token::LBracket => {
                     self.advance();
+                    if self.current == Token::Slash {
+                        let end = self.skip_closing_tag_after_lbracket();
+                        if self.lenient_separators {
+                            continue;
+                        }
+                        panic!("unexpected closing tag `/{end}` outside node block");
+                    }
                     let key = self.expect_scene_key();
                     self.expect(Token::RBracket);
                     let key_ref = key.as_ref();
@@ -520,6 +554,10 @@ impl<'a> Parser<'a> {
                         key_id
                     };
                     if !defined_keys.insert(key_id) {
+                        if self.lenient_separators {
+                            self.skip_node_body(key_ref);
+                            continue;
+                        }
                         panic!("duplicate scene key `{key_ref}`");
                     }
 
@@ -682,8 +720,16 @@ impl<'a> Parser<'a> {
         parser.parse_scene_inner()
     }
 
+    pub(crate) fn parse_scene_lenient(self) -> Scene {
+        let mut parser = Parser::new_lenient(self.src);
+        if needs_var_prefetch(self.src) {
+            parser.vars = Parser::new_lenient(self.src).collect_vars();
+        }
+        parser.parse_scene_inner()
+    }
+
     pub fn parse_scene_doc(self) -> crate::SceneDoc {
-        crate::SceneDoc::parse(self.src)
+        crate::SceneDoc::parse_lenient(self.src)
     }
 
     pub fn parse_value_literal(mut self) -> SceneValue {
@@ -805,52 +851,13 @@ fn normalize_node_fields_for_type(ty: &str, fields: &mut Vec<SceneObjectField>) 
         return;
     }
 
-    let mut rotation_present = false;
-    let mut rotation_deg_2d = None;
-    let mut rotation_deg_3d = None;
-
     for (name, value) in fields.iter_mut() {
         if name.as_ref() == "rotation" {
-            rotation_present = true;
             if is_3d && let SceneValue::Vec3 { x, y, z } = value.clone() {
                 *value = euler_xyz_radians_to_quat_value(x, y, z);
             }
-            continue;
-        }
-
-        if name.as_ref() == "rotation_deg" {
-            if is_2d && let Some(v) = value.as_f32() {
-                rotation_deg_2d = Some(v);
-            }
-            if is_3d && let SceneValue::Vec3 { x, y, z } = value.clone() {
-                rotation_deg_3d = Some((x, y, z));
-            }
-            continue;
         }
     }
-
-    if !rotation_present
-        && is_2d
-        && let Some(deg) = rotation_deg_2d
-    {
-        fields.push((SceneFieldName::Rotation, SceneValue::F32(deg.to_radians())));
-    }
-
-    if !rotation_present
-        && is_3d
-        && let Some((x_deg, y_deg, z_deg)) = rotation_deg_3d
-    {
-        fields.push((
-            SceneFieldName::Rotation,
-            euler_xyz_radians_to_quat_value(
-                x_deg.to_radians(),
-                y_deg.to_radians(),
-                z_deg.to_radians(),
-            ),
-        ));
-    }
-
-    fields.retain(|(name, _)| name.as_ref() != "rotation_deg");
 }
 
 fn euler_xyz_radians_to_quat_value(x: f32, y: f32, z: f32) -> SceneValue {

@@ -486,14 +486,17 @@ What it does:
 Command:
 
 ```powershell
-perro format --path <project_dir>
+perro format --path <project_dir> [--dedup]
 ```
 
 What it does:
 
 1. Resolves your path to that project's `res` root.
-2. Recursively finds all `*.rs` files under `res/**`.
-3. Runs `rustfmt` on those files.
+2. Recursively finds format targets under `res/**`.
+3. Runs `rustfmt` on `*.rs` files.
+4. Formats `*.scn` and `*.fur` scene files.
+5. Formats key/value resource files: `*.pmat`, `*.ppart`, and `*.uistyle`.
+6. With `--dedup`, creates `$varN` values for large repeated scene values used 3+ times.
 
 ### `clippy`
 

@@ -14,12 +14,22 @@ impl SceneDoc {
     pub fn parse(src: &str) -> Self {
         let vars = Parser::new(src).collect_var_entries();
         let scene = Parser::new(src).parse_scene();
+        Self::from_parts(vars, scene)
+    }
+
+    pub(crate) fn parse_lenient(src: &str) -> Self {
+        let vars = Parser::new_lenient(src).collect_var_entries();
+        let scene = Parser::new(src).parse_scene_lenient();
+        Self::from_parts(vars, scene)
+    }
+
+    fn from_parts(vars: Vec<(String, SceneValue)>, scene: Scene) -> Self {
         let root_name = scene
             .root
             .map(|root| scene.key_name_or_id(root).to_string());
         let vars = vars
             .into_iter()
-            .filter(|(name, _)| Some(name.as_str()) != root_name.as_deref())
+            .filter(|(name, _)| name != "root" && Some(name.as_str()) != root_name.as_deref())
             .map(|(name, value)| (Cow::Owned(name), value))
             .collect();
         Self {
@@ -52,9 +62,17 @@ impl SceneDoc {
     }
 
     pub fn to_text(&self) -> String {
+        self.to_text_with_dedup(false)
+    }
+
+    pub fn to_text_dedup(&self) -> String {
+        self.to_text_with_dedup(true)
+    }
+
+    pub fn to_text_with_dedup(&self, dedup: bool) -> String {
         let mut doc = self.clone();
         doc.normalize_links();
-        SceneDocWriter::new(&doc).write()
+        SceneDocWriter::new(&doc, dedup).write()
     }
 }
 
@@ -90,8 +108,12 @@ struct SceneDocWriter<'a> {
 }
 
 impl<'a> SceneDocWriter<'a> {
-    fn new(doc: &'a SceneDoc) -> Self {
-        let value_vars = collect_dedupe_vars(doc);
+    fn new(doc: &'a SceneDoc, dedup: bool) -> Self {
+        let value_vars = if dedup {
+            collect_dedupe_vars(doc)
+        } else {
+            HashMap::new()
+        };
         Self { doc, value_vars }
     }
 
@@ -104,14 +126,6 @@ impl<'a> SceneDocWriter<'a> {
             out.push('\n');
         }
 
-        for (name, value) in self.doc.vars.iter() {
-            out.push('$');
-            out.push_str(name.as_ref());
-            out.push_str(" = ");
-            self.write_value(value, &mut out, 0, false);
-            out.push('\n');
-        }
-
         let mut dedupe_items = self
             .value_vars
             .iter()
@@ -119,9 +133,6 @@ impl<'a> SceneDocWriter<'a> {
             .collect::<Vec<_>>();
         dedupe_items.sort_by(|a, b| a.0.cmp(b.0));
         for (name, value) in dedupe_items {
-            if self.doc.vars.iter().any(|(var, _)| var.as_ref() == name) {
-                continue;
-            }
             out.push('$');
             out.push_str(name);
             out.push_str(" = ");
@@ -185,12 +196,17 @@ impl<'a> SceneDocWriter<'a> {
         }
         if !node.script_vars.is_empty() {
             out.push_str("script_vars = ");
-            self.write_object(node.script_vars.as_ref(), out, 0, true);
+            self.write_object(
+                node.script_vars.as_ref(),
+                out,
+                0,
+                node.script_vars.len() > 1,
+            );
             out.push('\n');
         }
 
         if node.has_data_override {
-            self.write_data(&node.data, out, 0);
+            self.write_data(&node.data, out, 1);
             out.push_str("[/");
             out.push_str(node_key.as_ref());
             out.push_str("]\n");
@@ -210,15 +226,15 @@ impl<'a> SceneDocWriter<'a> {
             return;
         }
         out.push_str("]\n");
-        if let Some(base) = data.base_ref() {
-            self.write_data(base, out, depth + 1);
-        }
         for (name, value) in data.fields.iter() {
             indent(out, depth + 1);
             out.push_str(name.as_ref());
             out.push_str(" = ");
-            self.write_value(value, out, depth + 1, true);
+            self.write_field_value(name.as_ref(), value, out, depth + 1);
             out.push('\n');
+        }
+        if let Some(base) = data.base_ref() {
+            self.write_data(base, out, depth + 1);
         }
         indent(out, depth);
         out.push_str("[/");
@@ -269,19 +285,41 @@ impl<'a> SceneDocWriter<'a> {
             }
             SceneValue::Str(v) => write_str(v, out),
             SceneValue::Hashed(v) => out.push_str(&v.to_string()),
-            SceneValue::Key(v) => write_key_value(v.as_ref(), out),
-            SceneValue::Object(fields) => self.write_object(fields.as_ref(), out, depth, false),
-            SceneValue::Array(items) => {
-                out.push('[');
-                for (idx, item) in items.iter().enumerate() {
-                    if idx > 0 {
-                        out.push_str(", ");
-                    }
-                    self.write_value(item, out, depth, true);
-                }
-                out.push(']');
+            SceneValue::Key(v) => self.write_key_value(v.as_ref(), out),
+            SceneValue::Object(fields) => {
+                self.write_object(fields.as_ref(), out, depth, fields.len() > 1)
             }
+            SceneValue::Array(items) => self.write_array(items.as_ref(), out, depth),
         }
+    }
+
+    fn write_field_value(&self, name: &str, value: &SceneValue, out: &mut String, depth: usize) {
+        if is_node_ref_field(name)
+            && let SceneValue::Key(key) = value
+        {
+            self.write_node_ref_value(key.as_ref(), out);
+            return;
+        }
+        self.write_value(value, out, depth, true);
+    }
+
+    fn write_key_value(&self, value: &str, out: &mut String) {
+        if self
+            .doc
+            .scene
+            .key_names
+            .iter()
+            .any(|name| name.as_ref() == value)
+        {
+            self.write_node_ref_value(value, out);
+            return;
+        }
+        write_key_value(value, out);
+    }
+
+    fn write_node_ref_value(&self, value: &str, out: &mut String) {
+        out.push('@');
+        out.push_str(value);
     }
 
     fn write_object(
@@ -302,22 +340,116 @@ impl<'a> SceneDocWriter<'a> {
                     out.push_str(", ");
                 }
                 out.push_str(name.as_ref());
-                out.push_str(": ");
-                self.write_value(value, out, depth, true);
+                out.push_str(" = ");
+                self.write_value_inline(value, out);
             }
             out.push_str(" }");
             return;
         }
         out.push_str("{\n");
-        for (name, value) in fields {
+        for (idx, (name, value)) in fields.iter().enumerate() {
             indent(out, depth + 1);
             out.push_str(name.as_ref());
             out.push_str(" = ");
             self.write_value(value, out, depth + 1, true);
+            if idx + 1 < fields.len() {
+                out.push(',');
+            }
             out.push('\n');
         }
         indent(out, depth);
         out.push('}');
+    }
+
+    fn write_array(&self, items: &[SceneValue], out: &mut String, depth: usize) {
+        if items.is_empty() {
+            out.push_str("[]");
+            return;
+        }
+        if items.len() == 1 {
+            out.push('[');
+            self.write_value_inline(&items[0], out);
+            out.push(']');
+            return;
+        }
+        out.push_str("[\n");
+        for (idx, item) in items.iter().enumerate() {
+            indent(out, depth + 1);
+            self.write_value(item, out, depth + 1, true);
+            if idx + 1 < items.len() {
+                out.push(',');
+            }
+            out.push('\n');
+        }
+        indent(out, depth);
+        out.push(']');
+    }
+
+    fn write_value_inline(&self, value: &SceneValue, out: &mut String) {
+        let key = value_key(value);
+        if let Some(var) = self.value_vars.get(&key) {
+            out.push('$');
+            out.push_str(var);
+            return;
+        }
+
+        match value {
+            SceneValue::Bool(v) => out.push_str(if *v { "true" } else { "false" }),
+            SceneValue::I32(v) => out.push_str(&v.to_string()),
+            SceneValue::F32(v) => out.push_str(&fmt_f32(*v)),
+            SceneValue::Vec2 { x, y } => {
+                out.push('(');
+                out.push_str(&fmt_f32(*x));
+                out.push_str(", ");
+                out.push_str(&fmt_f32(*y));
+                out.push(')');
+            }
+            SceneValue::Vec3 { x, y, z } => {
+                out.push('(');
+                out.push_str(&fmt_f32(*x));
+                out.push_str(", ");
+                out.push_str(&fmt_f32(*y));
+                out.push_str(", ");
+                out.push_str(&fmt_f32(*z));
+                out.push(')');
+            }
+            SceneValue::Vec4 { x, y, z, w } => {
+                out.push('(');
+                out.push_str(&fmt_f32(*x));
+                out.push_str(", ");
+                out.push_str(&fmt_f32(*y));
+                out.push_str(", ");
+                out.push_str(&fmt_f32(*z));
+                out.push_str(", ");
+                out.push_str(&fmt_f32(*w));
+                out.push(')');
+            }
+            SceneValue::Str(v) => write_str(v, out),
+            SceneValue::Hashed(v) => out.push_str(&v.to_string()),
+            SceneValue::Key(v) => self.write_key_value(v.as_ref(), out),
+            SceneValue::Object(fields) => {
+                out.push_str("{ ");
+                for (idx, (name, value)) in fields.iter().enumerate() {
+                    if idx > 0 {
+                        out.push_str(", ");
+                    }
+                    out.push_str(name.as_ref());
+                    out.push_str(" = ");
+                    self.write_value_inline(value, out);
+                }
+                out.push_str(" }");
+            }
+            SceneValue::Array(items) => {
+                out.push('[');
+                for (idx, item) in items.iter().enumerate() {
+                    if idx > 0 {
+                        out.push_str(", ");
+                    }
+                    self.write_value_inline(item, out);
+                }
+                out.push(']');
+            }
+        }
     }
 }
 
@@ -361,7 +493,7 @@ fn collect_dedupe_vars(doc: &SceneDoc) -> HashMap<String, String> {
     let mut out = HashMap::new();
     let mut idx = 0usize;
     for (value, count) in counts {
-        if count < 2 || value.len() < 24 {
+        if count < 3 || value.len() < 24 {
             continue;
         }
         if let Some(name) = existing.get(&value) {
@@ -484,6 +616,10 @@ fn write_str(value: &str, out: &mut String) {
         }
     }
     out.push('"');
+}
+
+fn is_node_ref_field(name: &str) -> bool {
+    matches!(name, "camera" | "body_a" | "body_b")
 }
 
 fn write_key_value(value: &str, out: &mut String) {

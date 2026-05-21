@@ -114,7 +114,9 @@ fn print_usage() {
     eprintln!(
         "  perro_cli doctor [--path <project_dir>]   # scene/resource/script reference checks"
     );
-    eprintln!("  perro_cli format [--path <project_dir>]   # rustfmt .rs under project res only");
+    eprintln!(
+        "  perro_cli format [--path <project_dir>] [--dedup]   # format .rs, .scn, .fur, .pmat, .ppart, .uistyle under project res"
+    );
     eprintln!(
         "  perro_cli clippy [--path <project_dir>]   # cargo clippy for .rs under project res"
     );

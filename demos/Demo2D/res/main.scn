@@ -3,7 +3,7 @@ $root = @Demo2D
 [Demo2D]
 script = "res://scripts/demo2d_manager.rs"
     [Node2D]
-        position = (0, 0)
+        position = (0.0, 0.0)
     [/Node2D]
 [/Demo2D]
 
@@ -25,7 +25,7 @@ script = "res://scripts/camera_pan_2d.rs"
         zoom = 1.0
         active = true
         [Node2D]
-            position = (0, 0)
+            position = (0.0, 0.0)
         [/Node2D]
     [/Camera2D]
 [/Camera]
@@ -33,11 +33,16 @@ script = "res://scripts/camera_pan_2d.rs"
 [TopBar]
 parent = @demo_ui_root
     [UiPanel]
-        style = { fill = "#09111BE6" stroke = "#78A4D6CC" stroke_width = 1.0 radius = 12.0 }
+        style = {
+            fill = "#09111BE6",
+            stroke = "#78A4D6CC",
+            stroke_width = 1.0,
+            radius = 12.0
+        }
         [UiBox]
             anchor = top_left
-            position = (20, 20)
-            size = (820, 122)
+            position = (20.0, 20.0)
+            size = (820.0, 122.0)
         [/UiBox]
     [/UiPanel]
 [/TopBar]
@@ -47,13 +52,13 @@ parent = @TopBar
     [UiLabel]
         text = "Demo2D stress map"
         color = "#FFFFFFFF"
-        size = 0.050
+        size = 0.05
         horizontal_alignment = left
         vertical_alignment = center
         [UiBox]
             anchor = top_left
-            position = (24, 18)
-            size = (360, 30)
+            position = (24.0, 18.0)
+            size = (360.0, 30.0)
         [/UiBox]
     [/UiLabel]
 [/Title]
@@ -68,8 +73,8 @@ parent = @TopBar
         vertical_alignment = center
         [UiBox]
             anchor = top_left
-            position = (24, 58)
-            size = (460, 22)
+            position = (24.0, 58.0)
+            size = (460.0, 22.0)
         [/UiBox]
     [/UiLabel]
 [/Info]
@@ -84,8 +89,8 @@ parent = @TopBar
         vertical_alignment = center
         [UiBox]
             anchor = top_left
-            position = (24, 82)
-            size = (760, 18)
+            position = (24.0, 82.0)
+            size = (760.0, 18.0)
         [/UiBox]
     [/UiLabel]
 [/Counts]
@@ -100,8 +105,9 @@ parent = @TopBar
         vertical_alignment = center
         [UiBox]
             anchor = top_left
-            position = (24, 98)
-            size = (790, 16)
+            position = (24.0, 98.0)
+            size = (790.0, 16.0)
         [/UiBox]
     [/UiLabel]
 [/Parity]
+

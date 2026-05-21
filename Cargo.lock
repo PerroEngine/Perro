@@ -3746,6 +3746,7 @@ dependencies = [
  "gltf",
  "perro_compiler",
  "perro_project",
+ "perro_scene",
  "serde_json",
 ]
 

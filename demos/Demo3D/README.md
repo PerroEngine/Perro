@@ -20,7 +20,7 @@ Run `perro check` to sync scripts and get rust-analyzer working.
 - `perro dev` builds scripts and runs the dev runner.
 - `perro check` builds scripts only.
 - `perro build` builds the full static bundle.
-- `perro format` runs rustfmt for all `.rs` scripts under `res/`.
+- `perro format` formats `.rs`, `.scn`, `.pmat`, and related text resources under `res/`.
 - `perro new_script` creates a new script template in `res/` (use `--res` for subfolders).
 - `perro new_scene` creates a new scene template in `res/` (use `--res` and `--template 2D|3D`).
 - `perro new_animation` creates a new `.panim` animation clip template (defaults to `res/animations`).

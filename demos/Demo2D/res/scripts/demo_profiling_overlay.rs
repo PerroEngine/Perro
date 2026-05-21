@@ -77,7 +77,11 @@ lifecycle!({
         if should_sample {
             let p = profiling!(ctx.run);
             with_state_mut!(ctx.run, DemoProfilingOverlayState, ctx.id, |state| {
-                let fps = if p.fps.is_finite() && p.fps > 0.0 { p.fps } else { 0.0 };
+                let fps = if p.fps.is_finite() && p.fps > 0.0 {
+                    p.fps
+                } else {
+                    0.0
+                };
                 state.fps_sum += fps;
                 state.dt_us_sum += dt * 1_000_000.0;
                 state.sim_us_sum += p.simulation_time.as_micros() as f32;
@@ -106,12 +110,20 @@ methods!({
                 )
             });
         set_label_text(ctx, fps_label, format!("FPS {:.1}", fps));
-        set_label_text(ctx, sim_label, format!("Sim {:.0} us | dt {:.0} us", sim_us, dt_us));
+        set_label_text(
+            ctx,
+            sim_label,
+            format!("Sim {:.0} us | dt {:.0} us", sim_us, dt_us),
+        );
         set_label_text(ctx, graphics_label, format!("Gfx {:.0} us", graphics_us));
     }
 });
 
-fn set_label_text<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, id: NodeID, text: String) {
+fn set_label_text<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    id: NodeID,
+    text: String,
+) {
     if id.is_nil() {
         return;
     }

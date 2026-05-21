@@ -13,13 +13,16 @@ use perro_compiler::{
     compile_project_bundle, compile_scripts_with_profile, sync_scripts,
 };
 use perro_project::{ensure_source_overrides, load_project_toml};
+use perro_scene::Parser;
 use std::env;
 use std::fs;
 use std::io::Read;
 use std::io::{self, IsTerminal, Write};
 use std::net::{TcpListener, TcpStream};
+use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{LazyLock, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -322,31 +325,44 @@ pub(crate) fn format_command(args: &[String], cwd: &Path) -> Result<(), String> 
         .unwrap_or_else(|| cwd.to_path_buf());
     let base_path = base_path.canonicalize().unwrap_or(base_path);
     let res_dir = resolve_project_res_root(&base_path, "format")?;
+    let dedup = args.iter().any(|arg| arg == "--dedup");
     let mut script_files = Vec::new();
     collect_rs_files_recursive(&res_dir, &mut script_files)?;
+    let mut asset_files = Vec::new();
+    collect_format_asset_files_recursive(&res_dir, &mut asset_files)?;
 
-    if script_files.is_empty() {
-        log_note("No .rs files found under res");
+    if script_files.is_empty() && asset_files.is_empty() {
+        log_note("No format targets found under res");
         return Ok(());
     }
 
-    log_step("Formatting User Scripts");
-    for file in &script_files {
-        let status = Command::new("rustfmt")
-            .arg("--edition")
-            .arg("2024")
-            .arg(file)
-            .status()
-            .map_err(|err| format!("failed to run rustfmt for {}: {err}", file.display()))?;
-        if !status.success() {
-            return Err(format!(
-                "rustfmt failed for {} with exit code {:?}",
-                file.display(),
-                status.code()
-            ));
+    if !script_files.is_empty() {
+        log_step("Formatting User Scripts");
+        for file in &script_files {
+            let status = Command::new("rustfmt")
+                .arg("--edition")
+                .arg("2024")
+                .arg(file)
+                .status()
+                .map_err(|err| format!("failed to run rustfmt for {}: {err}", file.display()))?;
+            if !status.success() {
+                return Err(format!(
+                    "rustfmt failed for {} with exit code {:?}",
+                    file.display(),
+                    status.code()
+                ));
+            }
         }
+        log_done("User Scripts Formatted");
     }
-    log_done("User Scripts Formatted");
+
+    if !asset_files.is_empty() {
+        log_step("Formatting Resource Files");
+        for file in &asset_files {
+            format_asset_file(file, dedup)?;
+        }
+        log_done("Resource Files Formatted");
+    }
     Ok(())
 }
 
@@ -430,6 +446,198 @@ pub(crate) fn collect_rs_files_recursive(dir: &Path, out: &mut Vec<PathBuf>) -> 
         }
     }
     Ok(())
+}
+
+fn collect_format_asset_files_recursive(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+    if !dir.exists() {
+        return Ok(());
+    }
+    let entries = fs::read_dir(dir)
+        .map_err(|err| format!("failed to read directory {}: {err}", dir.display()))?;
+    for entry in entries {
+        let entry = entry
+            .map_err(|err| format!("failed to read directory entry in {}: {err}", dir.display()))?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_format_asset_files_recursive(&path, out)?;
+        } else if path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(is_format_asset_extension)
+        {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn is_format_asset_extension(ext: &str) -> bool {
+    matches!(
+        ext.to_ascii_lowercase().as_str(),
+        "scn" | "fur" | "pmat" | "ppart" | "uistyle"
+    )
+}
+
+fn format_asset_file(path: &Path, dedup: bool) -> Result<(), String> {
+    let src = fs::read_to_string(path)
+        .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
+    let ext = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let formatted = match ext.as_str() {
+        "scn" | "fur" => catch_unwind_silent(|| {
+            Parser::new(&src)
+                .parse_scene_doc()
+                .to_text_with_dedup(dedup)
+        })
+        .map_err(|err| {
+            format!(
+                "failed to parse scene file {}: {}",
+                path.display(),
+                scene_parse_error_detail(&src, err)
+            )
+        })?,
+        "pmat" | "ppart" | "uistyle" => format_key_value_resource(&src),
+        _ => return Ok(()),
+    };
+    if formatted != src {
+        fs::write(path, formatted)
+            .map_err(|err| format!("failed to write {}: {err}", path.display()))?;
+    }
+    Ok(())
+}
+
+static PANIC_HOOK_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+fn catch_unwind_silent<T>(f: impl FnOnce() -> T) -> Result<T, Box<dyn std::any::Any + Send>> {
+    if env::var_os("PERRO_FORMAT_DEBUG_PANIC").is_some() {
+        return panic::catch_unwind(AssertUnwindSafe(f));
+    }
+    let _guard = PANIC_HOOK_LOCK.lock().expect("panic hook lock poisoned");
+    let hook = panic::take_hook();
+    panic::set_hook(Box::new(|_| {}));
+    let result = panic::catch_unwind(AssertUnwindSafe(f));
+    panic::set_hook(hook);
+    result
+}
+
+fn scene_parse_error_detail(src: &str, err: Box<dyn std::any::Any + Send>) -> String {
+    let msg = panic_payload_to_string(&err);
+    if let Some(hint) = scene_syntax_hint(src) {
+        return format!("{msg}; {hint}");
+    }
+    msg
+}
+
+fn panic_payload_to_string(err: &(dyn std::any::Any + Send)) -> String {
+    if let Some(msg) = err.downcast_ref::<String>() {
+        return msg.clone();
+    }
+    if let Some(msg) = err.downcast_ref::<&'static str>() {
+        return (*msg).to_string();
+    }
+    "unknown parser error".to_string()
+}
+
+fn scene_syntax_hint(src: &str) -> Option<String> {
+    for (idx, line) in src.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('/') && trimmed.ends_with(']') {
+            return Some(format!(
+                "line {} looks like missing `[` before closing tag: `{trimmed}`",
+                idx + 1
+            ));
+        }
+    }
+    None
+}
+
+fn format_key_value_resource(src: &str) -> String {
+    let mut out = String::new();
+    let mut depth = 0usize;
+    let mut previous_blank = false;
+
+    for raw_line in src.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            if !out.is_empty() && !previous_blank {
+                out.push('\n');
+            }
+            previous_blank = true;
+            continue;
+        }
+
+        let close_count = leading_close_braces(line);
+        depth = depth.saturating_sub(close_count);
+        indent(&mut out, depth);
+        out.push_str(&format_key_value_line(line));
+        out.push('\n');
+        previous_blank = false;
+
+        let (open_count, close_count) = count_braces_outside_strings(line);
+        depth = depth.saturating_add(open_count).saturating_sub(close_count);
+    }
+
+    out
+}
+
+fn format_key_value_line(line: &str) -> String {
+    let Some(eq_idx) = find_equals_outside_strings(line) else {
+        return line.to_string();
+    };
+    let (left, right) = line.split_at(eq_idx);
+    format!("{} = {}", left.trim(), right[1..].trim())
+}
+
+fn find_equals_outside_strings(line: &str) -> Option<usize> {
+    let mut escaped = false;
+    let mut in_string = false;
+    for (idx, ch) in line.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => escaped = true,
+            '"' => in_string = !in_string,
+            '=' if !in_string => return Some(idx),
+            _ => {}
+        }
+    }
+    None
+}
+
+fn leading_close_braces(line: &str) -> usize {
+    line.chars().take_while(|ch| *ch == '}').count()
+}
+
+fn count_braces_outside_strings(line: &str) -> (usize, usize) {
+    let mut escaped = false;
+    let mut in_string = false;
+    let mut open = 0usize;
+    let mut close = 0usize;
+    for ch in line.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => escaped = true,
+            '"' => in_string = !in_string,
+            '{' if !in_string => open += 1,
+            '}' if !in_string => close += 1,
+            _ => {}
+        }
+    }
+    (open, close)
+}
+
+fn indent(out: &mut String, depth: usize) {
+    for _ in 0..depth {
+        out.push_str("    ");
+    }
 }
 
 pub(crate) fn project_command(args: &[String], cwd: &Path) -> Result<(), String> {
@@ -975,7 +1183,7 @@ fn content_type_for_path(path: &Path) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::bind_web_dev_listener;
+    use super::{bind_web_dev_listener, format_key_value_resource};
     use std::net::TcpListener;
 
     #[test]
@@ -988,5 +1196,30 @@ mod tests {
 
         assert_eq!(free_port, busy_port + 1);
         drop(free);
+    }
+
+    #[test]
+    fn format_key_value_resource_indents_nested_objects() {
+        let src = r#"type="custom"
+shader_path = "res://shaders/custom.wgsl"
+params={
+glow=1.25
+tint = (1.0, 0.2, 0.4, 1.0)
+}
+"#;
+
+        let text = format_key_value_resource(src);
+
+        assert_eq!(
+            text,
+            "type = \"custom\"\nshader_path = \"res://shaders/custom.wgsl\"\nparams = {\n    glow = 1.25\n    tint = (1.0, 0.2, 0.4, 1.0)\n}\n"
+        );
+    }
+
+    #[test]
+    fn scene_syntax_hint_reports_missing_open_bracket() {
+        let hint = super::scene_syntax_hint("[Node]\n/Node]\n").expect("hint");
+        assert!(hint.contains("line 2"));
+        assert!(hint.contains("missing `[`"));
     }
 }

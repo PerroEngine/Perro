@@ -157,7 +157,8 @@ methods!({
     }
 
     fn push_overlay(&self, ctx: &mut ScriptContext<'_, API>) {
-        let overlay = with_state!(ctx.run, PhysicsCollisionsDemoState, ctx.id, |state| state.overlay);
+        let overlay = with_state!(ctx.run, PhysicsCollisionsDemoState, ctx.id, |state| state
+            .overlay);
         if overlay.is_nil() {
             return;
         }

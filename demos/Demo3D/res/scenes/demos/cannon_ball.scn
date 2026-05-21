@@ -4,8 +4,8 @@ $root = @CannonBall
     [RigidBody3D]
         enabled = true
         mass = 2.0
-        linear_velocity = (0, 0, 0)
-        angular_velocity = (0, 0, 0)
+        linear_velocity = (0.0, 0.0, 0.0)
+        angular_velocity = (0.0, 0.0, 0.0)
         friction = 0.55
         restitution = 0.25
         continuous_collision_detection = true
@@ -15,7 +15,10 @@ $root = @CannonBall
 [CannonBallShape]
 parent = @CannonBall
     [CollisionShape3D]
-        shape = { type = "sphere" radius = 0.45 }
+        shape = {
+            type = "sphere",
+            radius = 0.45
+        }
     [/CollisionShape3D]
 [/CannonBallShape]
 
@@ -23,9 +26,16 @@ parent = @CannonBall
 parent = @CannonBall
     [MeshInstance3D]
         mesh = "__sphere__"
-        material = { type = "unlit" base_color_factor = (1.0, 0.42, 0.08, 1.0) emissive_factor = (1.0, 0.42, 0.08) alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "unlit",
+            base_color_factor = (1.0, 0.42, 0.08, 1.0),
+            emissive_factor = (1.0, 0.42, 0.08),
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (0.9, 0.9, 0.9)
         [/Node3D]
     [/MeshInstance3D]
 [/CannonBallMesh]
+

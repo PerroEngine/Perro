@@ -40,7 +40,8 @@ methods!({
     }
 
     fn push_overlay(&self, ctx: &mut ScriptContext<'_, API>) {
-        let overlay = with_state!(ctx.run, MeshMaterialsDemoState, ctx.id, |state| state.overlay);
+        let overlay = with_state!(ctx.run, MeshMaterialsDemoState, ctx.id, |state| state
+            .overlay);
         if overlay.is_nil() {
             return;
         }
@@ -94,11 +95,7 @@ fn mirror_sample_mesh() -> Mesh3D {
         }],
     };
 
-    add_box(
-        &mut mesh,
-        [-0.12, -0.95, -0.12],
-        [0.12, 0.55, 0.12],
-    );
+    add_box(&mut mesh, [-0.12, -0.95, -0.12], [0.12, 0.55, 0.12]);
     add_box(&mut mesh, [0.10, 0.15, -0.11], [0.95, 0.55, 0.11]);
     add_box(&mut mesh, [0.52, 0.45, -0.10], [0.88, 0.95, 0.10]);
     add_box(&mut mesh, [-0.10, -0.52, 0.10], [0.10, -0.22, 0.95]);

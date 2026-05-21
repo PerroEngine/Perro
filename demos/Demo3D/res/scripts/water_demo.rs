@@ -38,12 +38,16 @@ methods!({
 
         let water = query!(ctx.run, all(node_type[WaterBody3D]), in_subtree(ctx.id));
         let rigid = query!(ctx.run, all(node_type[RigidBody3D]), in_subtree(ctx.id));
-        let projectiles = with_state!(ctx.run, WaterDemoState, ctx.id, |state| state
-            .projectiles);
+        let projectiles = with_state!(ctx.run, WaterDemoState, ctx.id, |state| state.projectiles);
         let projectile_cnt = if projectiles.is_nil() {
             0
         } else {
-            query!(ctx.run, all(node_type[RigidBody3D]), in_subtree(projectiles)).len()
+            query!(
+                ctx.run,
+                all(node_type[RigidBody3D]),
+                in_subtree(projectiles)
+            )
+            .len()
         };
         let mut depths = Vec::new();
         for node in water.iter().copied() {

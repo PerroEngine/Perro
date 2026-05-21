@@ -100,14 +100,22 @@ methods!({
         let projectile_cnt = if projectiles.is_nil() {
             0
         } else {
-            query!(ctx.run, all(node_type[RigidBody3D]), in_subtree(projectiles)).len()
+            query!(
+                ctx.run,
+                all(node_type[RigidBody3D]),
+                in_subtree(projectiles)
+            )
+            .len()
         };
-        let chains = query!(ctx.run, all(node_type[PhysicsBoneChain3D]), in_subtree(ctx.id)).len();
+        let chains = query!(
+            ctx.run,
+            all(node_type[PhysicsBoneChain3D]),
+            in_subtree(ctx.id)
+        )
+        .len();
         let body = format!(
             "bone chains {}\nprojectiles {} | radius {:.2}",
-            chains,
-            projectile_cnt,
-            radius
+            chains, projectile_cnt, radius
         );
         let _ = call_method!(
             ctx.run,

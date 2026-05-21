@@ -1,8 +1,9 @@
 $root = @RigActor
+$var1 = "res://sprite_sheet.png"
 
 [RigActor]
     [Node2D]
-        position = (0, 0)
+        position = (0.0, 0.0)
     [/Node2D]
 [/RigActor]
 
@@ -11,7 +12,7 @@ parent = @RigActor
     [Skeleton2D]
         skeleton = "res://rigs/demo_tail.pskel2d"
         [Node2D]
-            position = (0, 0)
+            position = (0.0, 0.0)
         [/Node2D]
     [/Skeleton2D]
 [/Rig]
@@ -20,7 +21,7 @@ parent = @RigActor
 parent = @RigActor
     [BoneAttachment2D]
         skeleton = @Rig
-        bone = 1
+        bone = 1.0
         [Node2D/]
     [/BoneAttachment2D]
 [/TorsoBone]
@@ -28,10 +29,10 @@ parent = @RigActor
 [TorsoSprite]
 parent = @TorsoBone
     [Sprite2D]
-        texture = "res://sprite_sheet.png"
-        texture_region = (0, 0, 32, 32)
+        texture = $var1
+        texture_region = (0.0, 0.0, 32.0, 32.0)
         [Node2D]
-            position = (0, 0)
+            position = (0.0, 0.0)
             scale = (0.9, 1.3)
         [/Node2D]
     [/Sprite2D]
@@ -41,7 +42,7 @@ parent = @TorsoBone
 parent = @RigActor
     [BoneAttachment2D]
         skeleton = @Rig
-        bone = 2
+        bone = 2.0
         [Node2D/]
     [/BoneAttachment2D]
 [/HeadBone]
@@ -49,8 +50,8 @@ parent = @RigActor
 [HeadSprite]
 parent = @HeadBone
     [Sprite2D]
-        texture = "res://sprite_sheet.png"
-        texture_region = (32, 0, 32, 32)
+        texture = $var1
+        texture_region = (32.0, 0.0, 32.0, 32.0)
         [Node2D]
             scale = (0.8, 0.8)
         [/Node2D]
@@ -61,7 +62,7 @@ parent = @HeadBone
 parent = @RigActor
     [BoneAttachment2D]
         skeleton = @Rig
-        bone = 3
+        bone = 3.0
         [Node2D/]
     [/BoneAttachment2D]
 [/ArmBone]
@@ -69,10 +70,10 @@ parent = @RigActor
 [ArmSprite]
 parent = @ArmBone
     [Sprite2D]
-        texture = "res://sprite_sheet.png"
-        texture_region = (64, 0, 32, 32)
+        texture = $var1
+        texture_region = (64.0, 0.0, 32.0, 32.0)
         [Node2D]
-            position = (8, 0)
+            position = (8.0, 0.0)
             scale = (1.0, 0.45)
         [/Node2D]
     [/Sprite2D]
@@ -82,7 +83,7 @@ parent = @ArmBone
 parent = @RigActor
     [BoneAttachment2D]
         skeleton = @Rig
-        bone = 4
+        bone = 4.0
         [Node2D/]
     [/BoneAttachment2D]
 [/ForearmBone]
@@ -90,10 +91,10 @@ parent = @RigActor
 [ForearmSprite]
 parent = @ForearmBone
     [Sprite2D]
-        texture = "res://sprite_sheet.png"
-        texture_region = (96, 0, 32, 32)
+        texture = $var1
+        texture_region = (96.0, 0.0, 32.0, 32.0)
         [Node2D]
-            position = (8, 0)
+            position = (8.0, 0.0)
             scale = (0.9, 0.35)
         [/Node2D]
     [/Sprite2D]
@@ -103,7 +104,7 @@ parent = @ForearmBone
 parent = @RigActor
     [BoneAttachment2D]
         skeleton = @Rig
-        bone = 8
+        bone = 8.0
         [Node2D/]
     [/BoneAttachment2D]
 [/TailTipBone]
@@ -111,8 +112,8 @@ parent = @RigActor
 [TailTipSprite]
 parent = @TailTipBone
     [Sprite2D]
-        texture = "res://sprite_sheet.png"
-        texture_region = (128, 0, 32, 32)
+        texture = $var1
+        texture_region = (128.0, 0.0, 32.0, 32.0)
         [Node2D]
             scale = (0.55, 0.55)
         [/Node2D]
@@ -123,14 +124,14 @@ parent = @TailTipBone
 parent = @RigActor
     [PhysicsBoneChain2D]
         skeleton = @Rig
-        bone = 8
-        chain_length = 4
-        gravity = (0, -18)
-        damping = 0.10
+        bone = 8.0
+        chain_length = 4.0
+        gravity = (0.0, -18.0)
+        damping = 0.1
         stiffness = 0.28
         radius = 5.0
         collisions = false
-        iterations = 4
+        iterations = 4.0
     [/PhysicsBoneChain2D]
 [/TailPhysics]
 
@@ -144,3 +145,4 @@ parent = @RigActor
         paused = false
     [/AnimationPlayer]
 [/RigWavePlayer]
+

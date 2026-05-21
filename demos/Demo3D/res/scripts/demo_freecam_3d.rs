@@ -25,9 +25,7 @@ lifecycle!({
 
         let dt = delta_time!(ctx.run).clamp(0.0, MAX_MOVE_DT);
 
-        let speed = with_state!(ctx.run, DemoFreecam3DState, ctx.id, |state| {
-            state.speed
-        });
+        let speed = with_state!(ctx.run, DemoFreecam3DState, ctx.id, |state| { state.speed });
 
         let mut move_dir = Vector3::ZERO;
 

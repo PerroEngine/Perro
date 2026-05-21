@@ -34,11 +34,17 @@ methods!({
             return;
         }
 
-        let multimeshes = query!(ctx.run, all(node_type[MultiMeshInstance3D]), in_subtree(ctx.id));
+        let multimeshes = query!(
+            ctx.run,
+            all(node_type[MultiMeshInstance3D]),
+            in_subtree(ctx.id)
+        );
         let mut total = 0usize;
         let mut per_mesh = Vec::new();
         for node in multimeshes.iter().copied() {
-            let count = with_node!(ctx.run, MultiMeshInstance3D, node, |mesh| mesh.instances.len());
+            let count = with_node!(ctx.run, MultiMeshInstance3D, node, |mesh| mesh
+                .instances
+                .len());
             total += count;
             per_mesh.push(count.to_string());
         }

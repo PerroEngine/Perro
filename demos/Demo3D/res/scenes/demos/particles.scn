@@ -2,24 +2,23 @@ $root = @ParticlesDemo
 
 [ParticlesDemo]
 script = "res://scripts/particles_demo.rs"
-    [Node3D]
-    [/Node3D]
+    [Node3D/]
 [/ParticlesDemo]
 
 [DemoCamera]
 parent = @ParticlesDemo
 script = "res://scripts/demo_freecam_3d.rs"
 script_vars = {
-    yaw = 0.0
-    pitch = -0.12
+    yaw = 0.0,
+    pitch = -0.12,
     speed = 10.0
 }
     [Camera3D]
         active = true
         perspective_fov_y_degrees = 70.0
         [Node3D]
-            position = (0, 5.2, 15)
-            rotation = (-0.10, 0.0, 0.0, 0.995)
+            position = (0.0, 5.2, 15.0)
+            rotation = (-0.1, 0.0, 0.0, 0.995)
         [/Node3D]
     [/Camera3D]
 [/DemoCamera]
@@ -35,7 +34,7 @@ parent = @ParticlesDemo
 [Fill]
 parent = @ParticlesDemo
     [PointLight3D]
-        color = (0.30, 0.72, 1.0)
+        color = (0.3, 0.72, 1.0)
         intensity = 3.6
         radius = 10.0
         [Node3D]
@@ -51,7 +50,7 @@ parent = @ParticlesDemo
         intensity = 1.8
         radius = 7.0
         [Node3D]
-            position = (-4, 2.5, 2)
+            position = (-4.0, 2.5, 2.0)
         [/Node3D]
     [/PointLight3D]
 [/WarmFill]
@@ -60,10 +59,17 @@ parent = @ParticlesDemo
 parent = @ParticlesDemo
     [MeshInstance3D]
         mesh = "__cube__"
-        material = { type = "standard" base_color_factor = (0.08, 0.09, 0.11, 1.0) roughness_factor = 0.92 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.08, 0.09, 0.11, 1.0),
+            roughness_factor = 0.92,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
-            position = (0, -0.15, 0)
-            scale = (18, 0.1, 11)
+            position = (0.0, -0.15, 0.0)
+            scale = (18.0, 0.1, 11.0)
         [/Node3D]
     [/MeshInstance3D]
 [/Floor]
@@ -71,7 +77,7 @@ parent = @ParticlesDemo
 [PortalRig]
 parent = @ParticlesDemo
     [Node3D]
-        position = (0, 1.3, 0)
+        position = (0.0, 1.3, 0.0)
     [/Node3D]
 [/PortalRig]
 
@@ -93,13 +99,13 @@ parent = @PortalRig
         looping = true
         prewarm = true
         spawn_rate = 95.0
-        seed = 7
+        seed = 7.0
         params = (1.1, 0.3, 0.8, 0.7)
         profile = "res://particles/portal_vortex.ppart"
         sim_mode = default
         render_mode = billboard
         [Node3D]
-            position = (0, 0, 0)
+            position = (0.0, 0.0, 0.0)
         [/Node3D]
     [/ParticleEmitter3D]
 [/PortalVortexEmitter]
@@ -111,7 +117,7 @@ parent = @ParticlesDemo
         looping = true
         prewarm = true
         spawn_rate = 76.0
-        seed = 12
+        seed = 12.0
         params = (1.0, 2.2, 1.4, 0.0)
         profile = "res://particles/fire_spiral.ppart"
         sim_mode = default
@@ -129,7 +135,7 @@ parent = @ParticlesDemo
         looping = true
         prewarm = true
         spawn_rate = 62.0
-        seed = 41
+        seed = 41.0
         params = (0.8, 0.9, 0.6, 0.0)
         profile = "res://particles/spark_orbit.ppart"
         sim_mode = default
@@ -147,7 +153,7 @@ parent = @ParticlesDemo
         looping = true
         prewarm = true
         spawn_rate = 70.0
-        seed = 25
+        seed = 25.0
         params = (1.6, 1.1, 0.8, 0.0)
         profile = "res://particles/ember_fountain.ppart"
         sim_mode = default
@@ -165,7 +171,7 @@ parent = @ParticlesDemo
         looping = true
         prewarm = true
         spawn_rate = 42.0
-        seed = 58
+        seed = 58.0
         params = (0.4, 1.0, 0.8, 0.0)
         profile = "res://particles/ice_mist.ppart"
         sim_mode = default
@@ -183,7 +189,7 @@ parent = @ParticlesDemo
         looping = true
         prewarm = true
         spawn_rate = 82.0
-        seed = 77
+        seed = 77.0
         params = (1.0, 0.8, 1.3, 0.0)
         profile = "res://particles/laser_rain.ppart"
         sim_mode = default
@@ -201,7 +207,7 @@ parent = @ParticlesDemo
         looping = true
         prewarm = true
         spawn_rate = 72.0
-        seed = 103
+        seed = 103.0
         params = (1.2, 0.8, 0.9, 0.0)
         profile = "res://particles/orbit_ribbon.ppart"
         sim_mode = default
@@ -219,7 +225,7 @@ parent = @ParticlesDemo
         looping = true
         prewarm = true
         spawn_rate = 78.0
-        seed = 144
+        seed = 144.0
         params = (1.0, 0.9, 0.0, 0.0)
         profile = "res://particles/shockwave_ring.ppart"
         sim_mode = default
@@ -229,3 +235,4 @@ parent = @ParticlesDemo
         [/Node3D]
     [/ParticleEmitter3D]
 [/ShockwaveRingEmitter]
+

@@ -1,12 +1,11 @@
 $root = @WaterDemo
+$var1 = { type: "cube", size: (1.0, 1.0, 1.0) }
 
 [WaterDemo]
 script = "res://scripts/water_demo.rs"
-script_vars = {
-    projectiles = @Projectiles
-}
+script_vars = { projectiles = @Projectiles }
     [Node3D]
-        position = (0, 0, 0)
+        position = (0.0, 0.0, 0.0)
     [/Node3D]
 [/WaterDemo]
 
@@ -14,15 +13,15 @@ script_vars = {
 parent = @WaterDemo
 script = "res://scripts/demo_freecam_3d.rs"
 script_vars = {
-    yaw = 0.0
-    pitch = -0.18
+    yaw = 0.0,
+    pitch = -0.18,
     speed = 12.0
 }
     [Camera3D]
         active = true
         perspective_fov_y_degrees = 68.0
         [Node3D]
-            position = (0, 5, 18)
+            position = (0.0, 5.0, 18.0)
             rotation = (-0.09, 0.0, 0.0, 0.996)
         [/Node3D]
     [/Camera3D]
@@ -30,20 +29,18 @@ script_vars = {
 
 [Projectiles]
 parent = @WaterDemo
-    [Node3D]
-    [/Node3D]
+    [Node3D/]
 [/Projectiles]
 
 [FloatBodies]
 parent = @WaterDemo
-    [Node3D]
-    [/Node3D]
+    [Node3D/]
 [/FloatBodies]
 
 [Ambient]
 parent = @WaterDemo
     [AmbientLight3D]
-        color = (0.58, 0.70, 0.90)
+        color = (0.58, 0.7, 0.9)
         intensity = 0.38
     [/AmbientLight3D]
 [/Ambient]
@@ -54,7 +51,7 @@ parent = @WaterDemo
         color = (1.0, 0.94, 0.82)
         intensity = 2.4
         [Node3D]
-            rotation_deg = (-48, 28, 0)
+            rotation_deg = (-48.0, 28.0, 0.0)
         [/Node3D]
     [/RayLight3D]
 [/Sun]
@@ -63,8 +60,8 @@ parent = @WaterDemo
 parent = @WaterDemo
     [StaticBody3D]
         [Node3D]
-            position = (0, -1.25, 0)
-            scale = (12, 0.18, 12)
+            position = (0.0, -1.25, 0.0)
+            scale = (12.0, 0.18, 12.0)
         [/Node3D]
     [/StaticBody3D]
 [/BedCenter]
@@ -72,7 +69,7 @@ parent = @WaterDemo
 [BedCenterShape]
 parent = @BedCenter
     [CollisionShape3D]
-        shape = { type = "cube" size = (1.0, 1.0, 1.0) }
+        shape = $var1
     [/CollisionShape3D]
 [/BedCenterShape]
 
@@ -80,7 +77,14 @@ parent = @BedCenter
 parent = @BedCenter
     [MeshInstance3D]
         mesh = "__cube__"
-        material = { type = "standard" base_color_factor = (0.22, 0.25, 0.20, 1.0) roughness_factor = 0.95 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.22, 0.25, 0.2, 1.0),
+            roughness_factor = 0.95,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
     [/MeshInstance3D]
 [/BedCenterMesh]
 
@@ -88,8 +92,8 @@ parent = @BedCenter
 parent = @WaterDemo
     [StaticBody3D]
         [Node3D]
-            position = (-12, 1.0, -8)
-            rotation_deg = (0, 18, 0)
+            position = (-12.0, 1.0, -8.0)
+            rotation_deg = (0.0, 18.0, 0.0)
         [/Node3D]
     [/StaticBody3D]
 [/ReefBlockA]
@@ -97,7 +101,7 @@ parent = @WaterDemo
 [ReefBlockAShape]
 parent = @ReefBlockA
     [CollisionShape3D]
-        shape = { type = "cube" size = (1.0, 1.0, 1.0) }
+        shape = $var1
         [Node3D]
             scale = (4.5, 6.0, 2.2)
         [/Node3D]
@@ -108,7 +112,14 @@ parent = @ReefBlockA
 parent = @ReefBlockA
     [MeshInstance3D]
         mesh = "__cube__"
-        material = { type = "standard" base_color_factor = (0.32, 0.31, 0.25, 1.0) roughness_factor = 0.92 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.32, 0.31, 0.25, 1.0),
+            roughness_factor = 0.92,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (4.5, 6.0, 2.2)
         [/Node3D]
@@ -119,8 +130,8 @@ parent = @ReefBlockA
 parent = @WaterDemo
     [StaticBody3D]
         [Node3D]
-            position = (10, 0.65, -3)
-            rotation_deg = (0, -28, 0)
+            position = (10.0, 0.65, -3.0)
+            rotation_deg = (0.0, -28.0, 0.0)
         [/Node3D]
     [/StaticBody3D]
 [/ReefBlockB]
@@ -128,7 +139,7 @@ parent = @WaterDemo
 [ReefBlockBShape]
 parent = @ReefBlockB
     [CollisionShape3D]
-        shape = { type = "cube" size = (1.0, 1.0, 1.0) }
+        shape = $var1
         [Node3D]
             scale = (2.5, 4.2, 6.5)
         [/Node3D]
@@ -139,7 +150,14 @@ parent = @ReefBlockB
 parent = @ReefBlockB
     [MeshInstance3D]
         mesh = "__cube__"
-        material = { type = "standard" base_color_factor = (0.38, 0.36, 0.28, 1.0) roughness_factor = 0.88 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.38, 0.36, 0.28, 1.0),
+            roughness_factor = 0.88,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (2.5, 4.2, 6.5)
         [/Node3D]
@@ -150,7 +168,7 @@ parent = @ReefBlockB
 parent = @WaterDemo
     [StaticBody3D]
         [Node3D]
-            position = (-3, 0.8, 11)
+            position = (-3.0, 0.8, 11.0)
         [/Node3D]
     [/StaticBody3D]
 [/ReefRockA]
@@ -158,7 +176,11 @@ parent = @WaterDemo
 [ReefRockAShape]
 parent = @ReefRockA
     [CollisionShape3D]
-        shape = { type = "cylinder" radius = 0.5 half_height = 0.5 }
+        shape = {
+            type = "cylinder",
+            radius = 0.5,
+            half_height = 0.5
+        }
         [Node3D]
             scale = (2.4, 1.7, 2.4)
         [/Node3D]
@@ -169,7 +191,14 @@ parent = @ReefRockA
 parent = @ReefRockA
     [MeshInstance3D]
         mesh = "__sphere__"
-        material = { type = "standard" base_color_factor = (0.26, 0.29, 0.24, 1.0) roughness_factor = 0.94 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.26, 0.29, 0.24, 1.0),
+            roughness_factor = 0.94,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (2.4, 1.7, 2.4)
         [/Node3D]
@@ -180,7 +209,7 @@ parent = @ReefRockA
 parent = @WaterDemo
     [StaticBody3D]
         [Node3D]
-            position = (17, 0.35, 13)
+            position = (17.0, 0.35, 13.0)
         [/Node3D]
     [/StaticBody3D]
 [/ReefRockB]
@@ -188,7 +217,11 @@ parent = @WaterDemo
 [ReefRockBShape]
 parent = @ReefRockB
     [CollisionShape3D]
-        shape = { type = "cylinder" radius = 0.5 half_height = 0.5 }
+        shape = {
+            type = "cylinder",
+            radius = 0.5,
+            half_height = 0.5
+        }
         [Node3D]
             scale = (1.35, 0.9, 1.35)
         [/Node3D]
@@ -199,7 +232,14 @@ parent = @ReefRockB
 parent = @ReefRockB
     [MeshInstance3D]
         mesh = "__sphere__"
-        material = { type = "standard" base_color_factor = (0.30, 0.27, 0.22, 1.0) roughness_factor = 0.96 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.3, 0.27, 0.22, 1.0),
+            roughness_factor = 0.96,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (1.35, 0.9, 1.35)
         [/Node3D]
@@ -210,8 +250,8 @@ parent = @ReefRockB
 parent = @WaterDemo
     [StaticBody3D]
         [Node3D]
-            position = (-20, 1.55, 9)
-            rotation_deg = (0, 8, 0)
+            position = (-20.0, 1.55, 9.0)
+            rotation_deg = (0.0, 8.0, 0.0)
         [/Node3D]
     [/StaticBody3D]
 [/ReefPillar]
@@ -219,7 +259,7 @@ parent = @WaterDemo
 [ReefPillarShape]
 parent = @ReefPillar
     [CollisionShape3D]
-        shape = { type = "cube" size = (1.0, 1.0, 1.0) }
+        shape = $var1
         [Node3D]
             scale = (1.8, 7.0, 1.8)
         [/Node3D]
@@ -230,7 +270,14 @@ parent = @ReefPillar
 parent = @ReefPillar
     [MeshInstance3D]
         mesh = "__cube__"
-        material = { type = "standard" base_color_factor = (0.24, 0.23, 0.20, 1.0) roughness_factor = 0.90 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.24, 0.23, 0.2, 1.0),
+            roughness_factor = 0.9,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (1.8, 7.0, 1.8)
         [/Node3D]
@@ -246,8 +293,8 @@ parent = @FloatBodies
         angular_damping = 0.12
         angular_velocity = (0.8, 0.2, -0.4)
         [Node3D]
-            position = (-9, 5.2, -7)
-            rotation_deg = (12, 24, 8)
+            position = (-9.0, 5.2, -7.0)
+            rotation_deg = (12.0, 24.0, 8.0)
         [/Node3D]
     [/RigidBody3D]
 [/FloatCrateA]
@@ -255,7 +302,10 @@ parent = @FloatBodies
 [FloatCrateAShape]
 parent = @FloatCrateA
     [CollisionShape3D]
-        shape = { type = "cube" size = (1.2, 0.8, 1.2) }
+        shape = {
+            type = "cube",
+            size = (1.2, 0.8, 1.2)
+        }
     [/CollisionShape3D]
 [/FloatCrateAShape]
 
@@ -263,7 +313,14 @@ parent = @FloatCrateA
 parent = @FloatCrateA
     [MeshInstance3D]
         mesh = "__cube__"
-        material = { type = "standard" base_color_factor = (0.82, 0.35, 0.16, 1.0) roughness_factor = 0.68 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.82, 0.35, 0.16, 1.0),
+            roughness_factor = 0.68,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (1.2, 0.8, 1.2)
         [/Node3D]
@@ -276,11 +333,11 @@ parent = @FloatBodies
         mass = 0.72
         density = 0.38
         linear_damping = 0.07
-        angular_damping = 0.10
+        angular_damping = 0.1
         angular_velocity = (-0.5, 0.9, 0.3)
         [Node3D]
-            position = (-4, 5.8, -9)
-            rotation_deg = (-8, 38, 15)
+            position = (-4.0, 5.8, -9.0)
+            rotation_deg = (-8.0, 38.0, 15.0)
         [/Node3D]
     [/RigidBody3D]
 [/FloatCrateB]
@@ -288,7 +345,7 @@ parent = @FloatBodies
 [FloatCrateBShape]
 parent = @FloatCrateB
     [CollisionShape3D]
-        shape = { type = "cube" size = (1.0, 1.0, 1.0) }
+        shape = $var1
     [/CollisionShape3D]
 [/FloatCrateBShape]
 
@@ -296,7 +353,14 @@ parent = @FloatCrateB
 parent = @FloatCrateB
     [MeshInstance3D]
         mesh = "__cube__"
-        material = { type = "standard" base_color_factor = (0.12, 0.55, 0.88, 1.0) roughness_factor = 0.42 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.12, 0.55, 0.88, 1.0),
+            roughness_factor = 0.42,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
     [/MeshInstance3D]
 [/FloatCrateBMesh]
 
@@ -309,8 +373,8 @@ parent = @FloatBodies
         angular_damping = 0.08
         angular_velocity = (1.0, -0.3, 0.6)
         [Node3D]
-            position = (1, 6.0, -8)
-            rotation_deg = (0, 10, 0)
+            position = (1.0, 6.0, -8.0)
+            rotation_deg = (0.0, 10.0, 0.0)
         [/Node3D]
     [/RigidBody3D]
 [/FloatSphereA]
@@ -318,7 +382,10 @@ parent = @FloatBodies
 [FloatSphereAShape]
 parent = @FloatSphereA
     [CollisionShape3D]
-        shape = { type = "sphere" radius = 0.65 }
+        shape = {
+            type = "sphere",
+            radius = 0.65
+        }
     [/CollisionShape3D]
 [/FloatSphereAShape]
 
@@ -326,7 +393,14 @@ parent = @FloatSphereA
 parent = @FloatSphereA
     [MeshInstance3D]
         mesh = "__sphere__"
-        material = { type = "standard" base_color_factor = (0.92, 0.76, 0.20, 1.0) roughness_factor = 0.35 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.92, 0.76, 0.2, 1.0),
+            roughness_factor = 0.35,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (0.65, 0.65, 0.65)
         [/Node3D]
@@ -336,14 +410,14 @@ parent = @FloatSphereA
 [FloatBallB]
 parent = @FloatBodies
     [RigidBody3D]
-        mass = 0.50
-        density = 0.30
+        mass = 0.5
+        density = 0.3
         linear_damping = 0.06
         angular_damping = 0.08
         angular_velocity = (-0.6, 0.4, 1.1)
         [Node3D]
-            position = (6, 5.4, -7)
-            rotation_deg = (18, 0, 22)
+            position = (6.0, 5.4, -7.0)
+            rotation_deg = (18.0, 0.0, 22.0)
         [/Node3D]
     [/RigidBody3D]
 [/FloatBallB]
@@ -351,7 +425,10 @@ parent = @FloatBodies
 [FloatBallBShape]
 parent = @FloatBallB
     [CollisionShape3D]
-        shape = { type = "sphere" radius = 0.55 }
+        shape = {
+            type = "sphere",
+            radius = 0.55
+        }
     [/CollisionShape3D]
 [/FloatBallBShape]
 
@@ -359,7 +436,14 @@ parent = @FloatBallB
 parent = @FloatBallB
     [MeshInstance3D]
         mesh = "__sphere__"
-        material = { type = "standard" base_color_factor = (0.22, 0.86, 0.48, 1.0) roughness_factor = 0.50 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.22, 0.86, 0.48, 1.0),
+            roughness_factor = 0.5,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (0.55, 0.55, 0.55)
         [/Node3D]
@@ -369,14 +453,14 @@ parent = @FloatBallB
 [FloatCylA]
 parent = @FloatBodies
     [RigidBody3D]
-        mass = 0.70
+        mass = 0.7
         density = 0.34
         linear_damping = 0.07
         angular_damping = 0.09
         angular_velocity = (0.3, 1.2, 0.7)
         [Node3D]
-            position = (10, 6.2, -5)
-            rotation_deg = (28, 0, 64)
+            position = (10.0, 6.2, -5.0)
+            rotation_deg = (28.0, 0.0, 64.0)
         [/Node3D]
     [/RigidBody3D]
 [/FloatCylA]
@@ -384,7 +468,11 @@ parent = @FloatBodies
 [FloatCylAShape]
 parent = @FloatCylA
     [CollisionShape3D]
-        shape = { type = "cylinder" radius = 0.55 half_height = 0.55 }
+        shape = {
+            type = "cylinder",
+            radius = 0.55,
+            half_height = 0.55
+        }
     [/CollisionShape3D]
 [/FloatCylAShape]
 
@@ -392,7 +480,14 @@ parent = @FloatCylA
 parent = @FloatCylA
     [MeshInstance3D]
         mesh = "__cylinder__"
-        material = { type = "standard" base_color_factor = (0.68, 0.28, 0.82, 1.0) roughness_factor = 0.48 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.68, 0.28, 0.82, 1.0),
+            roughness_factor = 0.48,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (0.55, 0.55, 0.55)
         [/Node3D]
@@ -408,8 +503,8 @@ parent = @FloatBodies
         angular_damping = 0.12
         angular_velocity = (0.2, -0.7, 0.9)
         [Node3D]
-            position = (-10, 6.6, -1)
-            rotation_deg = (6, -44, 18)
+            position = (-10.0, 6.6, -1.0)
+            rotation_deg = (6.0, -44.0, 18.0)
         [/Node3D]
     [/RigidBody3D]
 [/FloatCrateC]
@@ -417,7 +512,10 @@ parent = @FloatBodies
 [FloatCrateCShape]
 parent = @FloatCrateC
     [CollisionShape3D]
-        shape = { type = "cube" size = (0.9, 1.3, 0.9) }
+        shape = {
+            type = "cube",
+            size = (0.9, 1.3, 0.9)
+        }
     [/CollisionShape3D]
 [/FloatCrateCShape]
 
@@ -425,7 +523,14 @@ parent = @FloatCrateC
 parent = @FloatCrateC
     [MeshInstance3D]
         mesh = "__cube__"
-        material = { type = "standard" base_color_factor = (0.75, 0.18, 0.28, 1.0) roughness_factor = 0.58 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.75, 0.18, 0.28, 1.0),
+            roughness_factor = 0.58,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (0.9, 1.3, 0.9)
         [/Node3D]
@@ -441,8 +546,8 @@ parent = @FloatBodies
         angular_damping = 0.07
         angular_velocity = (-0.9, 0.6, -0.2)
         [Node3D]
-            position = (-5, 5.1, 0)
-            rotation_deg = (0, 0, 0)
+            position = (-5.0, 5.1, 0.0)
+            rotation_deg = (0.0, 0.0, 0.0)
         [/Node3D]
     [/RigidBody3D]
 [/FloatSphereC]
@@ -450,7 +555,10 @@ parent = @FloatBodies
 [FloatSphereCShape]
 parent = @FloatSphereC
     [CollisionShape3D]
-        shape = { type = "sphere" radius = 0.7 }
+        shape = {
+            type = "sphere",
+            radius = 0.7
+        }
     [/CollisionShape3D]
 [/FloatSphereCShape]
 
@@ -458,7 +566,14 @@ parent = @FloatSphereC
 parent = @FloatSphereC
     [MeshInstance3D]
         mesh = "__sphere__"
-        material = { type = "standard" base_color_factor = (0.10, 0.72, 0.72, 1.0) roughness_factor = 0.32 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.1, 0.72, 0.72, 1.0),
+            roughness_factor = 0.32,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (0.7, 0.7, 0.7)
         [/Node3D]
@@ -469,13 +584,13 @@ parent = @FloatSphereC
 parent = @FloatBodies
     [RigidBody3D]
         mass = 0.74
-        density = 0.40
+        density = 0.4
         linear_damping = 0.08
         angular_damping = 0.11
         angular_velocity = (0.7, 0.1, -1.0)
         [Node3D]
-            position = (0, 5.9, 2)
-            rotation_deg = (72, 12, -18)
+            position = (0.0, 5.9, 2.0)
+            rotation_deg = (72.0, 12.0, -18.0)
         [/Node3D]
     [/RigidBody3D]
 [/FloatCylB]
@@ -483,7 +598,11 @@ parent = @FloatBodies
 [FloatCylBShape]
 parent = @FloatCylB
     [CollisionShape3D]
-        shape = { type = "cylinder" radius = 0.45 half_height = 0.85 }
+        shape = {
+            type = "cylinder",
+            radius = 0.45,
+            half_height = 0.85
+        }
     [/CollisionShape3D]
 [/FloatCylBShape]
 
@@ -491,7 +610,14 @@ parent = @FloatCylB
 parent = @FloatCylB
     [MeshInstance3D]
         mesh = "__cylinder__"
-        material = { type = "standard" base_color_factor = (0.95, 0.48, 0.14, 1.0) roughness_factor = 0.54 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.95, 0.48, 0.14, 1.0),
+            roughness_factor = 0.54,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (0.45, 0.85, 0.45)
         [/Node3D]
@@ -504,11 +630,11 @@ parent = @FloatBodies
         mass = 0.68
         density = 0.37
         linear_damping = 0.07
-        angular_damping = 0.10
+        angular_damping = 0.1
         angular_velocity = (-0.2, 1.0, -0.5)
         [Node3D]
-            position = (5, 6.5, 1)
-            rotation_deg = (-20, 18, 35)
+            position = (5.0, 6.5, 1.0)
+            rotation_deg = (-20.0, 18.0, 35.0)
         [/Node3D]
     [/RigidBody3D]
 [/FloatCrateD]
@@ -516,7 +642,10 @@ parent = @FloatBodies
 [FloatCrateDShape]
 parent = @FloatCrateD
     [CollisionShape3D]
-        shape = { type = "cube" size = (1.4, 0.7, 0.9) }
+        shape = {
+            type = "cube",
+            size = (1.4, 0.7, 0.9)
+        }
     [/CollisionShape3D]
 [/FloatCrateDShape]
 
@@ -524,7 +653,14 @@ parent = @FloatCrateD
 parent = @FloatCrateD
     [MeshInstance3D]
         mesh = "__cube__"
-        material = { type = "standard" base_color_factor = (0.36, 0.44, 0.94, 1.0) roughness_factor = 0.40 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.36, 0.44, 0.94, 1.0),
+            roughness_factor = 0.4,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (1.4, 0.7, 0.9)
         [/Node3D]
@@ -540,8 +676,8 @@ parent = @FloatBodies
         angular_damping = 0.08
         angular_velocity = (0.4, -1.0, 0.6)
         [Node3D]
-            position = (10, 5.6, 3)
-            rotation_deg = (0, 0, 0)
+            position = (10.0, 5.6, 3.0)
+            rotation_deg = (0.0, 0.0, 0.0)
         [/Node3D]
     [/RigidBody3D]
 [/FloatSphereD]
@@ -549,7 +685,10 @@ parent = @FloatBodies
 [FloatSphereDShape]
 parent = @FloatSphereD
     [CollisionShape3D]
-        shape = { type = "sphere" radius = 0.6 }
+        shape = {
+            type = "sphere",
+            radius = 0.6
+        }
     [/CollisionShape3D]
 [/FloatSphereDShape]
 
@@ -557,7 +696,14 @@ parent = @FloatSphereD
 parent = @FloatSphereD
     [MeshInstance3D]
         mesh = "__sphere__"
-        material = { type = "standard" base_color_factor = (0.78, 0.86, 0.38, 1.0) roughness_factor = 0.44 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.78, 0.86, 0.38, 1.0),
+            roughness_factor = 0.44,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (0.6, 0.6, 0.6)
         [/Node3D]
@@ -573,8 +719,8 @@ parent = @FloatBodies
         angular_damping = 0.09
         angular_velocity = (-0.7, -0.2, 0.8)
         [Node3D]
-            position = (-8, 5.7, 6)
-            rotation_deg = (42, -8, 34)
+            position = (-8.0, 5.7, 6.0)
+            rotation_deg = (42.0, -8.0, 34.0)
         [/Node3D]
     [/RigidBody3D]
 [/FloatCylC]
@@ -582,7 +728,11 @@ parent = @FloatBodies
 [FloatCylCShape]
 parent = @FloatCylC
     [CollisionShape3D]
-        shape = { type = "cylinder" radius = 0.5 half_height = 0.65 }
+        shape = {
+            type = "cylinder",
+            radius = 0.5,
+            half_height = 0.65
+        }
     [/CollisionShape3D]
 [/FloatCylCShape]
 
@@ -590,7 +740,14 @@ parent = @FloatCylC
 parent = @FloatCylC
     [MeshInstance3D]
         mesh = "__cylinder__"
-        material = { type = "standard" base_color_factor = (0.50, 0.82, 0.26, 1.0) roughness_factor = 0.46 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.5, 0.82, 0.26, 1.0),
+            roughness_factor = 0.46,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (0.5, 0.65, 0.5)
         [/Node3D]
@@ -606,8 +763,8 @@ parent = @FloatBodies
         angular_damping = 0.12
         angular_velocity = (0.5, 0.5, -0.9)
         [Node3D]
-            position = (-2, 6.8, 8)
-            rotation_deg = (18, 52, -15)
+            position = (-2.0, 6.8, 8.0)
+            rotation_deg = (18.0, 52.0, -15.0)
         [/Node3D]
     [/RigidBody3D]
 [/FloatCrateE]
@@ -615,7 +772,10 @@ parent = @FloatBodies
 [FloatCrateEShape]
 parent = @FloatCrateE
     [CollisionShape3D]
-        shape = { type = "cube" size = (1.1, 0.9, 1.4) }
+        shape = {
+            type = "cube",
+            size = (1.1, 0.9, 1.4)
+        }
     [/CollisionShape3D]
 [/FloatCrateEShape]
 
@@ -623,7 +783,14 @@ parent = @FloatCrateE
 parent = @FloatCrateE
     [MeshInstance3D]
         mesh = "__cube__"
-        material = { type = "standard" base_color_factor = (0.86, 0.20, 0.54, 1.0) roughness_factor = 0.52 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.86, 0.2, 0.54, 1.0),
+            roughness_factor = 0.52,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (1.1, 0.9, 1.4)
         [/Node3D]
@@ -639,8 +806,8 @@ parent = @FloatBodies
         angular_damping = 0.08
         angular_velocity = (-0.4, 0.8, 0.9)
         [Node3D]
-            position = (4, 5.3, 8)
-            rotation_deg = (0, 0, 0)
+            position = (4.0, 5.3, 8.0)
+            rotation_deg = (0.0, 0.0, 0.0)
         [/Node3D]
     [/RigidBody3D]
 [/FloatSphereE]
@@ -648,7 +815,10 @@ parent = @FloatBodies
 [FloatSphereEShape]
 parent = @FloatSphereE
     [CollisionShape3D]
-        shape = { type = "sphere" radius = 0.75 }
+        shape = {
+            type = "sphere",
+            radius = 0.75
+        }
     [/CollisionShape3D]
 [/FloatSphereEShape]
 
@@ -656,7 +826,14 @@ parent = @FloatSphereE
 parent = @FloatSphereE
     [MeshInstance3D]
         mesh = "__sphere__"
-        material = { type = "standard" base_color_factor = (0.18, 0.64, 0.96, 1.0) roughness_factor = 0.28 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.18, 0.64, 0.96, 1.0),
+            roughness_factor = 0.28,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (0.75, 0.75, 0.75)
         [/Node3D]
@@ -672,8 +849,8 @@ parent = @FloatBodies
         angular_damping = 0.09
         angular_velocity = (0.9, -0.5, 0.2)
         [Node3D]
-            position = (9, 6.1, 8)
-            rotation_deg = (58, 28, -24)
+            position = (9.0, 6.1, 8.0)
+            rotation_deg = (58.0, 28.0, -24.0)
         [/Node3D]
     [/RigidBody3D]
 [/FloatCylD]
@@ -681,7 +858,11 @@ parent = @FloatBodies
 [FloatCylDShape]
 parent = @FloatCylD
     [CollisionShape3D]
-        shape = { type = "cylinder" radius = 0.6 half_height = 0.5 }
+        shape = {
+            type = "cylinder",
+            radius = 0.6,
+            half_height = 0.5
+        }
     [/CollisionShape3D]
 [/FloatCylDShape]
 
@@ -689,7 +870,14 @@ parent = @FloatCylD
 parent = @FloatCylD
     [MeshInstance3D]
         mesh = "__cylinder__"
-        material = { type = "standard" base_color_factor = (0.95, 0.72, 0.34, 1.0) roughness_factor = 0.56 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.95, 0.72, 0.34, 1.0),
+            roughness_factor = 0.56,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (0.6, 0.5, 0.6)
         [/Node3D]
@@ -699,14 +887,14 @@ parent = @FloatCylD
 [FloatCrateF]
 parent = @FloatBodies
     [RigidBody3D]
-        mass = 0.70
+        mass = 0.7
         density = 0.37
         linear_damping = 0.07
-        angular_damping = 0.10
+        angular_damping = 0.1
         angular_velocity = (-0.8, 0.3, -0.3)
         [Node3D]
-            position = (0, 7.0, 12)
-            rotation_deg = (-10, -34, 28)
+            position = (0.0, 7.0, 12.0)
+            rotation_deg = (-10.0, -34.0, 28.0)
         [/Node3D]
     [/RigidBody3D]
 [/FloatCrateF]
@@ -714,7 +902,10 @@ parent = @FloatBodies
 [FloatCrateFShape]
 parent = @FloatCrateF
     [CollisionShape3D]
-        shape = { type = "cube" size = (1.3, 0.8, 1.0) }
+        shape = {
+            type = "cube",
+            size = (1.3, 0.8, 1.0)
+        }
     [/CollisionShape3D]
 [/FloatCrateFShape]
 
@@ -722,7 +913,14 @@ parent = @FloatCrateF
 parent = @FloatCrateF
     [MeshInstance3D]
         mesh = "__cube__"
-        material = { type = "standard" base_color_factor = (0.28, 0.76, 0.42, 1.0) roughness_factor = 0.62 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.28, 0.76, 0.42, 1.0),
+            roughness_factor = 0.62,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (1.3, 0.8, 1.0)
         [/Node3D]
@@ -732,10 +930,13 @@ parent = @FloatCrateF
 [Water]
 parent = @WaterDemo
     [WaterBody3D]
-        shape = { type = "cube" size = (100, 15, 100) }
-        resolution = (128, 128)
-        render_resolution = (256, 256)
-        lod_min_resolution = (32, 32)
+        shape = {
+            type = "cube",
+            size = (100.0, 15.0, 100.0)
+        }
+        resolution = (128.0, 128.0)
+        render_resolution = (256.0, 256.0)
+        lod_min_resolution = (32.0, 32.0)
         depth = 8.0
         wave_speed = 0.4
         wave_scale = 1.1
@@ -744,16 +945,31 @@ parent = @WaterDemo
         drag = 0.55
         idle = "storm"
         foam_strength = 1.01
-        sample_readback_rate = 30
+        sample_readback_rate = 30.0
         shallow_depth = 1.0
         deep_color = (0.0, 0.045, 0.14, 1.0)
         shallow_color = (0.035, 0.32, 0.48, 0.96)
-        material = { transparency = 0.0 reflectivity = 0.55 roughness = 0.20 fresnel_power = 4.2 normal_strength = 1.05 ripple_scale = 1.05 foam_color = (0.92, 0.98, 1.0, 1.0) foam_amount = 0.0 crest_foam_threshold = 1.0 caustic_strength = 0.0 refraction_strength = 0.08 scattering_strength = 0.16 distance_fog_strength = 0.30 }
-        lod_near = 25
-        lod_mid = 100
+        material = {
+            transparency = 0.0,
+            reflectivity = 0.55,
+            roughness = 0.2,
+            fresnel_power = 4.2,
+            normal_strength = 1.05,
+            ripple_scale = 1.05,
+            foam_color = (0.92, 0.98, 1.0, 1.0),
+            foam_amount = 0.0,
+            crest_foam_threshold = 1.0,
+            caustic_strength = 0.0,
+            refraction_strength = 0.08,
+            scattering_strength = 0.16,
+            distance_fog_strength = 0.3
+        }
+        lod_near = 25.0
+        lod_mid = 100.0
         lod_far = 500.0
         [Node3D]
-            position = (0, 0, 0)
+            position = (0.0, 0.0, 0.0)
         [/Node3D]
     [/WaterBody3D]
 [/Water]
+

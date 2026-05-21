@@ -2,24 +2,23 @@ $root = @MultiMeshDemo
 
 [MultiMeshDemo]
 script = "res://scripts/multimesh_demo.rs"
-    [Node3D]
-    [/Node3D]
+    [Node3D/]
 [/MultiMeshDemo]
 
 [DemoCamera]
 parent = @MultiMeshDemo
 script = "res://scripts/demo_freecam_3d.rs"
 script_vars = {
-    yaw = 0.0
-    pitch = -0.28
+    yaw = 0.0,
+    pitch = -0.28,
     speed = 24.0
 }
     [Camera3D]
         active = true
         perspective_fov_y_degrees = 72.0
         [Node3D]
-            position = (0, 13, 30)
-            rotation = (-0.139, 0.0, 0.0, 0.990)
+            position = (0.0, 13.0, 30.0)
+            rotation = (-0.139, 0.0, 0.0, 0.99)
         [/Node3D]
     [/Camera3D]
 [/DemoCamera]
@@ -38,7 +37,7 @@ parent = @MultiMeshDemo
         color = (1.0, 0.95, 0.84)
         intensity = 2.3
         [Node3D]
-            rotation_deg = (-48, 25, 0)
+            rotation_deg = (-48.0, 25.0, 0.0)
         [/Node3D]
     [/RayLight3D]
 [/Sun]
@@ -47,10 +46,17 @@ parent = @MultiMeshDemo
 parent = @MultiMeshDemo
     [MeshInstance3D]
         mesh = "__cube__"
-        material = { type = "standard" base_color_factor = (0.12, 0.14, 0.16, 1.0) roughness_factor = 0.9 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.12, 0.14, 0.16, 1.0),
+            roughness_factor = 0.9,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
-            position = (0, -0.2, 0)
-            scale = (34, 0.12, 24)
+            position = (0.0, -0.2, 0.0)
+            scale = (34.0, 0.12, 24.0)
         [/Node3D]
     [/MeshInstance3D]
 [/GridFloor]
@@ -59,10 +65,23 @@ parent = @MultiMeshDemo
 parent = @MultiMeshDemo
     [MultiMeshInstance3D]
         mesh = "__cube__"
-        material = { type = "standard" base_color_factor = (0.88, 0.32, 0.22, 1.0) roughness_factor = 0.46 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.88, 0.32, 0.22, 1.0),
+            roughness_factor = 0.46,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         instance_scale = 0.65
         meshlets = true
-        instance_grid = { counts = (20, 5, 10) spacing = (1.35, 1.12, 1.35) origin = (-12.825, 0.35, -8.0) height_wave = 0.32 rotation_step_deg = (7, 23, 11) }
+        instance_grid = {
+            counts = (20.0, 5.0, 10.0),
+            spacing = (1.35, 1.12, 1.35),
+            origin = (-12.825, 0.35, -8.0),
+            height_wave = 0.32,
+            rotation_step_deg = (7.0, 23.0, 11.0)
+        }
     [/MultiMeshInstance3D]
 [/CubeBatch]
 
@@ -70,9 +89,23 @@ parent = @MultiMeshDemo
 parent = @MultiMeshDemo
     [MultiMeshInstance3D]
         mesh = "__sphere__"
-        material = { type = "standard" base_color_factor = (0.24, 0.76, 0.92, 1.0) roughness_factor = 0.36 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.24, 0.76, 0.92, 1.0),
+            roughness_factor = 0.36,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         instance_scale = 0.55
         meshlets = true
-        instance_grid = { counts = (10, 5, 5) spacing = (2.7, 1.0, 1.35) origin = (-12.15, 0.7, 7.0) height_wave = 0.22 rotation_step_deg = (0, 17, 0) }
+        instance_grid = {
+            counts = (10.0, 5.0, 5.0),
+            spacing = (2.7, 1.0, 1.35),
+            origin = (-12.15, 0.7, 7.0),
+            height_wave = 0.22,
+            rotation_step_deg = (0.0, 17.0, 0.0)
+        }
     [/MultiMeshInstance3D]
 [/SphereBatch]
+

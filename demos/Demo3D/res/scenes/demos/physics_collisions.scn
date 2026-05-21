@@ -3,14 +3,14 @@ $root = @PhysicsCollisionsDemo
 [PhysicsCollisionsDemo]
 script = "res://scripts/physics_collisions_demo.rs"
 script_vars = {
-    area_mesh = @SignalAreaMesh
-    area_probe = @AreaProbe
-    left_ball = @RigidBallLeft
-    right_ball = @RigidBallRight
+    area_mesh = @SignalAreaMesh,
+    area_probe = @AreaProbe,
+    left_ball = @RigidBallLeft,
+    right_ball = @RigidBallRight,
     drop_ball = @DropBall
 }
     [Node3D]
-        position = (0, 0, 0)
+        position = (0.0, 0.0, 0.0)
     [/Node3D]
 [/PhysicsCollisionsDemo]
 
@@ -18,15 +18,15 @@ script_vars = {
 parent = @PhysicsCollisionsDemo
 script = "res://scripts/demo_freecam_3d.rs"
 script_vars = {
-    yaw = 0.0
-    pitch = -0.22
+    yaw = 0.0,
+    pitch = -0.22,
     speed = 12.0
 }
     [Camera3D]
         active = true
         perspective_fov_y_degrees = 68.0
         [Node3D]
-            position = (0, 6, 17)
+            position = (0.0, 6.0, 17.0)
             rotation = (-0.11, 0.0, 0.0, 0.994)
         [/Node3D]
     [/Camera3D]
@@ -46,7 +46,7 @@ parent = @PhysicsCollisionsDemo
         color = (1.0, 0.94, 0.82)
         intensity = 2.6
         [Node3D]
-            rotation_deg = (-48, 24, 0)
+            rotation_deg = (-48.0, 24.0, 0.0)
         [/Node3D]
     [/RayLight3D]
 [/Sun]
@@ -57,7 +57,7 @@ parent = @PhysicsCollisionsDemo
         friction = 0.9
         restitution = 0.15
         [Node3D]
-            position = (0, -0.15, 0)
+            position = (0.0, -0.15, 0.0)
         [/Node3D]
     [/StaticBody3D]
 [/Floor]
@@ -65,7 +65,10 @@ parent = @PhysicsCollisionsDemo
 [FloorShape]
 parent = @Floor
     [CollisionShape3D]
-        shape = { type = "cube" size = (18.0, 0.3, 11.0) }
+        shape = {
+            type = "cube",
+            size = (18.0, 0.3, 11.0)
+        }
     [/CollisionShape3D]
 [/FloorShape]
 
@@ -73,7 +76,14 @@ parent = @Floor
 parent = @Floor
     [MeshInstance3D]
         mesh = "__cube__"
-        material = { type = "standard" base_color_factor = (0.22, 0.24, 0.26, 1.0) roughness_factor = 0.88 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.22, 0.24, 0.26, 1.0),
+            roughness_factor = 0.88,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (18.0, 0.3, 11.0)
         [/Node3D]
@@ -86,7 +96,7 @@ parent = @PhysicsCollisionsDemo
         friction = 0.65
         restitution = 0.35
         [Node3D]
-            position = (0, 1.35, -5.7)
+            position = (0.0, 1.35, -5.7)
         [/Node3D]
     [/StaticBody3D]
 [/BackStop]
@@ -94,7 +104,10 @@ parent = @PhysicsCollisionsDemo
 [BackStopShape]
 parent = @BackStop
     [CollisionShape3D]
-        shape = { type = "cube" size = (18.0, 2.7, 0.35) }
+        shape = {
+            type = "cube",
+            size = (18.0, 2.7, 0.35)
+        }
     [/CollisionShape3D]
 [/BackStopShape]
 
@@ -102,7 +115,14 @@ parent = @BackStop
 parent = @BackStop
     [MeshInstance3D]
         mesh = "__cube__"
-        material = { type = "standard" base_color_factor = (0.35, 0.32, 0.28, 1.0) roughness_factor = 0.74 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.35, 0.32, 0.28, 1.0),
+            roughness_factor = 0.74,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (18.0, 2.7, 0.35)
         [/Node3D]
@@ -116,7 +136,7 @@ parent = @PhysicsCollisionsDemo
         restitution = 0.65
         [Node3D]
             position = (3.2, 1.5, -0.4)
-            rotation_deg = (0, 18, 0)
+            rotation_deg = (0.0, 18.0, 0.0)
         [/Node3D]
     [/StaticBody3D]
 [/StaticPillar]
@@ -124,7 +144,10 @@ parent = @PhysicsCollisionsDemo
 [StaticPillarShape]
 parent = @StaticPillar
     [CollisionShape3D]
-        shape = { type = "cube" size = (1.0, 3.0, 1.0) }
+        shape = {
+            type = "cube",
+            size = (1.0, 3.0, 1.0)
+        }
     [/CollisionShape3D]
 [/StaticPillarShape]
 
@@ -132,7 +155,14 @@ parent = @StaticPillar
 parent = @StaticPillar
     [MeshInstance3D]
         mesh = "__cube__"
-        material = { type = "standard" base_color_factor = (0.52, 0.42, 0.30, 1.0) roughness_factor = 0.70 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.52, 0.42, 0.3, 1.0),
+            roughness_factor = 0.7,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (1.0, 3.0, 1.0)
         [/Node3D]
@@ -143,7 +173,7 @@ parent = @StaticPillar
 parent = @PhysicsCollisionsDemo
     [Area3D]
         [Node3D]
-            position = (0, 2.2, 2.2)
+            position = (0.0, 2.2, 2.2)
         [/Node3D]
     [/Area3D]
 [/SignalArea]
@@ -151,7 +181,10 @@ parent = @PhysicsCollisionsDemo
 [SignalAreaShape]
 parent = @SignalArea
     [CollisionShape3D]
-        shape = { type = "cube" size = (2.6, 2.6, 2.6) }
+        shape = {
+            type = "cube",
+            size = (2.6, 2.6, 2.6)
+        }
     [/CollisionShape3D]
 [/SignalAreaShape]
 
@@ -159,9 +192,17 @@ parent = @SignalArea
 parent = @PhysicsCollisionsDemo
     [MeshInstance3D]
         mesh = "__cube__"
-        material = { type = "standard" base_color_factor = (0.08, 0.70, 0.95, 0.28) roughness_factor = 0.45 metallic_factor = 0.0 emissive_factor = (0.02, 0.18, 0.30) alpha_mode = "BLEND" double_sided = true }
+        material = {
+            type = "standard",
+            base_color_factor = (0.08, 0.7, 0.95, 0.28),
+            roughness_factor = 0.45,
+            metallic_factor = 0.0,
+            emissive_factor = (0.02, 0.18, 0.3),
+            alpha_mode = "BLEND",
+            double_sided = true
+        }
         [Node3D]
-            position = (0, 2.2, 2.2)
+            position = (0.0, 2.2, 2.2)
             scale = (2.6, 2.6, 2.6)
         [/Node3D]
     [/MeshInstance3D]
@@ -184,7 +225,10 @@ parent = @PhysicsCollisionsDemo
 [AreaProbeShape]
 parent = @AreaProbe
     [CollisionShape3D]
-        shape = { type = "sphere" radius = 0.42 }
+        shape = {
+            type = "sphere",
+            radius = 0.42
+        }
     [/CollisionShape3D]
 [/AreaProbeShape]
 
@@ -192,7 +236,13 @@ parent = @AreaProbe
 parent = @AreaProbe
     [MeshInstance3D]
         mesh = "__sphere__"
-        material = { type = "unlit" base_color_factor = (1.0, 0.82, 0.18, 1.0) emissive_factor = (0.75, 0.45, 0.05) alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "unlit",
+            base_color_factor = (1.0, 0.82, 0.18, 1.0),
+            emissive_factor = (0.75, 0.45, 0.05),
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (0.42, 0.42, 0.42)
         [/Node3D]
@@ -216,7 +266,10 @@ parent = @PhysicsCollisionsDemo
 [RigidBallLeftShape]
 parent = @RigidBallLeft
     [CollisionShape3D]
-        shape = { type = "sphere" radius = 0.75 }
+        shape = {
+            type = "sphere",
+            radius = 0.75
+        }
     [/CollisionShape3D]
 [/RigidBallLeftShape]
 
@@ -224,7 +277,14 @@ parent = @RigidBallLeft
 parent = @RigidBallLeft
     [MeshInstance3D]
         mesh = "__sphere__"
-        material = { type = "standard" base_color_factor = (0.20, 0.62, 1.0, 1.0) roughness_factor = 0.35 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.2, 0.62, 1.0, 1.0),
+            roughness_factor = 0.35,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (0.75, 0.75, 0.75)
         [/Node3D]
@@ -248,7 +308,10 @@ parent = @PhysicsCollisionsDemo
 [RigidBallRightShape]
 parent = @RigidBallRight
     [CollisionShape3D]
-        shape = { type = "sphere" radius = 0.75 }
+        shape = {
+            type = "sphere",
+            radius = 0.75
+        }
     [/CollisionShape3D]
 [/RigidBallRightShape]
 
@@ -256,7 +319,14 @@ parent = @RigidBallRight
 parent = @RigidBallRight
     [MeshInstance3D]
         mesh = "__sphere__"
-        material = { type = "standard" base_color_factor = (1.0, 0.30, 0.18, 1.0) roughness_factor = 0.35 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (1.0, 0.3, 0.18, 1.0),
+            roughness_factor = 0.35,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (0.75, 0.75, 0.75)
         [/Node3D]
@@ -272,7 +342,7 @@ parent = @PhysicsCollisionsDemo
         restitution = 0.62
         continuous_collision_detection = true
         [Node3D]
-            position = (0, 6.2, -0.4)
+            position = (0.0, 6.2, -0.4)
         [/Node3D]
     [/RigidBody3D]
 [/DropBall]
@@ -280,7 +350,10 @@ parent = @PhysicsCollisionsDemo
 [DropBallShape]
 parent = @DropBall
     [CollisionShape3D]
-        shape = { type = "sphere" radius = 0.65 }
+        shape = {
+            type = "sphere",
+            radius = 0.65
+        }
     [/CollisionShape3D]
 [/DropBallShape]
 
@@ -288,9 +361,17 @@ parent = @DropBall
 parent = @DropBall
     [MeshInstance3D]
         mesh = "__sphere__"
-        material = { type = "standard" base_color_factor = (0.82, 0.92, 0.34, 1.0) roughness_factor = 0.42 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.82, 0.92, 0.34, 1.0),
+            roughness_factor = 0.42,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (0.65, 0.65, 0.65)
         [/Node3D]
     [/MeshInstance3D]
 [/DropBallMesh]
+

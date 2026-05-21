@@ -13,23 +13,31 @@ struct EditorShellState {
 }
 
 lifecycle!({
-    fn on_all_init(
-        &self,
-        ctx: &mut ScriptContext<'_, API>,
-    ) {
-        let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_tab_scene"), func!("on_tab_click"));
-        let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_tab_script"), func!("on_tab_click"));
-        let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_tab_anim"), func!("on_tab_click"));
+    fn on_all_init(&self, ctx: &mut ScriptContext<'_, API>) {
+        let _ = signal_connect!(
+            ctx.run,
+            ctx.id,
+            signal!("editor_tab_scene"),
+            func!("on_tab_click")
+        );
+        let _ = signal_connect!(
+            ctx.run,
+            ctx.id,
+            signal!("editor_tab_script"),
+            func!("on_tab_click")
+        );
+        let _ = signal_connect!(
+            ctx.run,
+            ctx.id,
+            signal!("editor_tab_anim"),
+            func!("on_tab_click")
+        );
         set_active_tab(ctx, EditorTab::Scene);
     }
 });
 
 methods!({
-    fn on_tab_click(
-        &self,
-        ctx: &mut ScriptContext<'_, API>,
-        button: NodeID,
-    ) {
+    fn on_tab_click(&self, ctx: &mut ScriptContext<'_, API>, button: NodeID) {
         let next = match get_node_name!(ctx.run, button).as_deref() {
             Some("tab_scene_button") => EditorTab::Scene,
             Some("tab_script_button") => EditorTab::Script,
@@ -39,11 +47,7 @@ methods!({
         set_active_tab(ctx, next);
     }
 
-    fn set_active_tab(
-        &self,
-        ctx: &mut ScriptContext<'_, API>,
-        next: String,
-    ) {
+    fn set_active_tab(&self, ctx: &mut ScriptContext<'_, API>, next: String) {
         let next = match next.as_str() {
             "scene" => EditorTab::Scene,
             "script" => EditorTab::Script,
@@ -54,10 +58,7 @@ methods!({
     }
 });
 
-fn set_active_tab<API: ScriptAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, API>,
-    next: EditorTab,
-) {
+fn set_active_tab<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, next: EditorTab) {
     let _ = with_state_mut!(ctx.run, EditorShellState, ctx.id, |state| {
         state.active_tab = next;
     });

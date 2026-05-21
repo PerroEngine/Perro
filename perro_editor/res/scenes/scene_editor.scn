@@ -1,782 +1,815 @@
-$col_panel = "#2F3540"
-$col_panel_2 = "#3A404C"
-$col_panel_3 = "#4A515F"
-$col_panel_4 = "#5A6170"
-$col_view = "#1F232A"
-$col_view_hdr = "#363D49"
-$col_line = "#F1F1F1"
-$col_line_soft = "#5E6676"
-$col_text = "#F2F1EE"
-$col_text_dim = "#C9CED7"
-$col_red = "#EB203C"
-$col_blue = "#3F6FA7"
-$col_green = "#2FAA59"
-$col_orange = "#FFB11B"
-$col_scene = "#78E24E"
-$col_2d = "#57B6FF"
-$col_3d = "#FF8E2A"
-$tab_idle = { fill = "#444B58" stroke = "#00000000" stroke_width = 0 radius = 0.10 }
-$tab_active = { fill = "#4A515F" stroke = "#00000000" stroke_width = 0 radius = 0.10 }
-$slot_fill = { fill = $col_panel_3 stroke = "#00000000" stroke_width = 0 radius = 0.08 }
-$row_fill = { fill = "#39404C" stroke = "#00000000" stroke_width = 0 radius = 0.05 }
-$row_fill_sel = { fill = "#4B5361" stroke = "#00000000" stroke_width = 0 radius = 0.05 }
-
 $root = @scene_editor_root
+$row_fill = { fill: "#39404C", stroke: "#00000000", stroke_width: 0.0, radius: 0.05 }
+$slot_fill = { fill: "#4A515F", stroke: "#00000000", stroke_width: 0.0, radius: 0.08 }
+$tab_idle = { fill: "#444B58", stroke: "#00000000", stroke_width: 0.0, radius: 0.1 }
+$var1 = { fill: "#2F3540", stroke: "#5E6676", stroke_width: 1.0, radius: 0.0 }
+$var2 = { fill: "#3A404C", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
 
 [scene_editor_root]
-[UiPanel]
-    anchor = "center"
-    position_ratio = (0.5, 0.5)
-    size_ratio = (1.0, 1.0)
-    style = { fill = $col_panel stroke = "#00000000" stroke_width = 0 radius = 0 }
-[/UiPanel]
+    [UiPanel]
+        anchor = "center"
+        position_ratio = (0.5, 0.5)
+        size_ratio = (1.0, 1.0)
+        style = {
+            fill = "#2F3540",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.0
+        }
+    [/UiPanel]
 [/scene_editor_root]
 
 [scene_tree_panel]
-parent = $root
-[UiPanel]
-    anchor = "tl"
-    position_ratio = (0.0, 0.006)
-    pivot_ratio = (0.0, 0.0)
-    size_ratio = (0.195, 0.535)
-    style = { fill = $col_panel stroke = $col_line_soft stroke_width = 1 radius = 0 }
-[/UiPanel]
+parent = @scene_editor_root
+    [UiPanel]
+        anchor = "tl"
+        position_ratio = (0.0, 0.006)
+        pivot_ratio = (0.0, 0.0)
+        size_ratio = (0.195, 0.535)
+        style = $var1
+    [/UiPanel]
 [/scene_tree_panel]
 
 [scene_tree_title]
 parent = @scene_tree_panel
-[UiPanel]
-    anchor = "t"
-    position_ratio = (0.5, 0.0)
-    pivot_ratio = (0.5, 0.0)
-    size_ratio = (1.0, 0.065)
-    style = { fill = $col_panel_2 stroke = "#00000000" stroke_width = 0 radius = 0 }
-[/UiPanel]
+    [UiPanel]
+        anchor = "t"
+        position_ratio = (0.5, 0.0)
+        pivot_ratio = (0.5, 0.0)
+        size_ratio = (1.0, 0.065)
+        style = $var2
+    [/UiPanel]
 [/scene_tree_title]
 
 [scene_tree_title_label]
 parent = @scene_tree_title
-[UiLabel]
-    size_ratio = (1.0, 1.0)
-    text = "Scene Tree"
-    text_size_ratio = 0.20
-    color = $col_text
-[/UiLabel]
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Scene Tree"
+        text_size_ratio = 0.2
+        color = "#F2F1EE"
+    [/UiLabel]
 [/scene_tree_title_label]
 
 [scene_tree_row_1]
 parent = @scene_tree_panel
-[UiPanel]
-    anchor = "tl"
-    position_ratio = (0.04, 0.10)
-    pivot_ratio = (0.0, 0.0)
-    size_ratio = (0.90, 0.070)
-    style = $row_fill_sel
-[/UiPanel]
+    [UiPanel]
+        anchor = "tl"
+        position_ratio = (0.04, 0.1)
+        pivot_ratio = (0.0, 0.0)
+        size_ratio = (0.9, 0.07)
+        style = {
+            fill = "#4B5361",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.05
+        }
+    [/UiPanel]
 [/scene_tree_row_1]
 
 [scene_tree_row_1_label]
 parent = @scene_tree_row_1
-[UiLabel]
-    anchor = "l"
-    position_ratio = (0.08, 0.5)
-    pivot_ratio = (0.0, 0.5)
-    size_ratio = (0.84, 0.82)
-    text = "* Root Node3D"
-    text_size_ratio = 0.16
-    color = $col_text
-    h_align = "start"
-    text_align = "left"
-[/UiLabel]
+    [UiLabel]
+        anchor = "l"
+        position_ratio = (0.08, 0.5)
+        pivot_ratio = (0.0, 0.5)
+        size_ratio = (0.84, 0.82)
+        text = "* Root Node3D"
+        text_size_ratio = 0.16
+        color = "#F2F1EE"
+        h_align = "start"
+        text_align = "left"
+    [/UiLabel]
 [/scene_tree_row_1_label]
 
 [scene_tree_row_2]
 parent = @scene_tree_panel
-[UiPanel]
-    anchor = "tl"
-    position_ratio = (0.09, 0.178)
-    pivot_ratio = (0.0, 0.0)
-    size_ratio = (0.85, 0.068)
-    style = $row_fill
-[/UiPanel]
+    [UiPanel]
+        anchor = "tl"
+        position_ratio = (0.09, 0.178)
+        pivot_ratio = (0.0, 0.0)
+        size_ratio = (0.85, 0.068)
+        style = $row_fill
+    [/UiPanel]
 [/scene_tree_row_2]
 
 [scene_tree_row_2_label]
 parent = @scene_tree_row_2
-[UiLabel]
-    anchor = "l"
-    position_ratio = (0.08, 0.5)
-    pivot_ratio = (0.0, 0.5)
-    size_ratio = (0.84, 0.82)
-    text = "Node3D"
-    text_size_ratio = 0.15
-    color = $col_text
-    h_align = "start"
-    text_align = "left"
-[/UiLabel]
+    [UiLabel]
+        anchor = "l"
+        position_ratio = (0.08, 0.5)
+        pivot_ratio = (0.0, 0.5)
+        size_ratio = (0.84, 0.82)
+        text = "Node3D"
+        text_size_ratio = 0.15
+        color = "#F2F1EE"
+        h_align = "start"
+        text_align = "left"
+    [/UiLabel]
 [/scene_tree_row_2_label]
 
 [scene_tree_row_3]
 parent = @scene_tree_panel
-[UiPanel]
-    anchor = "tl"
-    position_ratio = (0.15, 0.255)
-    pivot_ratio = (0.0, 0.0)
-    size_ratio = (0.79, 0.068)
-    style = $row_fill
-[/UiPanel]
+    [UiPanel]
+        anchor = "tl"
+        position_ratio = (0.15, 0.255)
+        pivot_ratio = (0.0, 0.0)
+        size_ratio = (0.79, 0.068)
+        style = $row_fill
+    [/UiPanel]
 [/scene_tree_row_3]
 
 [scene_tree_row_3_label]
 parent = @scene_tree_row_3
-[UiLabel]
-    anchor = "l"
-    position_ratio = (0.08, 0.5)
-    pivot_ratio = (0.0, 0.5)
-    size_ratio = (0.84, 0.82)
-    text = "Node3D"
-    text_size_ratio = 0.15
-    color = $col_text
-    h_align = "start"
-    text_align = "left"
-[/UiLabel]
+    [UiLabel]
+        anchor = "l"
+        position_ratio = (0.08, 0.5)
+        pivot_ratio = (0.0, 0.5)
+        size_ratio = (0.84, 0.82)
+        text = "Node3D"
+        text_size_ratio = 0.15
+        color = "#F2F1EE"
+        h_align = "start"
+        text_align = "left"
+    [/UiLabel]
 [/scene_tree_row_3_label]
 
 [scene_tree_row_4]
 parent = @scene_tree_panel
-[UiPanel]
-    anchor = "tl"
-    position_ratio = (0.15, 0.332)
-    pivot_ratio = (0.0, 0.0)
-    size_ratio = (0.79, 0.068)
-    style = $row_fill
-[/UiPanel]
+    [UiPanel]
+        anchor = "tl"
+        position_ratio = (0.15, 0.332)
+        pivot_ratio = (0.0, 0.0)
+        size_ratio = (0.79, 0.068)
+        style = $row_fill
+    [/UiPanel]
 [/scene_tree_row_4]
 
 [scene_tree_row_4_label]
 parent = @scene_tree_row_4
-[UiLabel]
-    anchor = "l"
-    position_ratio = (0.08, 0.5)
-    pivot_ratio = (0.0, 0.5)
-    size_ratio = (0.84, 0.82)
-    text = "Node3D"
-    text_size_ratio = 0.15
-    color = $col_text
-    h_align = "start"
-    text_align = "left"
-[/UiLabel]
+    [UiLabel]
+        anchor = "l"
+        position_ratio = (0.08, 0.5)
+        pivot_ratio = (0.0, 0.5)
+        size_ratio = (0.84, 0.82)
+        text = "Node3D"
+        text_size_ratio = 0.15
+        color = "#F2F1EE"
+        h_align = "start"
+        text_align = "left"
+    [/UiLabel]
 [/scene_tree_row_4_label]
 
 [scene_tree_row_5]
 parent = @scene_tree_panel
-[UiPanel]
-    anchor = "tl"
-    position_ratio = (0.09, 0.409)
-    pivot_ratio = (0.0, 0.0)
-    size_ratio = (0.85, 0.068)
-    style = $row_fill
-[/UiPanel]
+    [UiPanel]
+        anchor = "tl"
+        position_ratio = (0.09, 0.409)
+        pivot_ratio = (0.0, 0.0)
+        size_ratio = (0.85, 0.068)
+        style = $row_fill
+    [/UiPanel]
 [/scene_tree_row_5]
 
 [scene_tree_row_5_label]
 parent = @scene_tree_row_5
-[UiLabel]
-    anchor = "l"
-    position_ratio = (0.08, 0.5)
-    pivot_ratio = (0.0, 0.5)
-    size_ratio = (0.84, 0.82)
-    text = "Node3D"
-    text_size_ratio = 0.15
-    color = $col_text
-    h_align = "start"
-    text_align = "left"
-[/UiLabel]
+    [UiLabel]
+        anchor = "l"
+        position_ratio = (0.08, 0.5)
+        pivot_ratio = (0.0, 0.5)
+        size_ratio = (0.84, 0.82)
+        text = "Node3D"
+        text_size_ratio = 0.15
+        color = "#F2F1EE"
+        h_align = "start"
+        text_align = "left"
+    [/UiLabel]
 [/scene_tree_row_5_label]
 
 [filesystem_panel]
-parent = $root
-[UiPanel]
-    anchor = "bl"
-    position_ratio = (0.0, 1.0)
-    pivot_ratio = (0.0, 1.0)
-    size_ratio = (0.195, 0.455)
-    style = { fill = $col_panel stroke = $col_line_soft stroke_width = 1 radius = 0 }
-[/UiPanel]
+parent = @scene_editor_root
+    [UiPanel]
+        anchor = "bl"
+        position_ratio = (0.0, 1.0)
+        pivot_ratio = (0.0, 1.0)
+        size_ratio = (0.195, 0.455)
+        style = $var1
+    [/UiPanel]
 [/filesystem_panel]
 
 [filesystem_title]
 parent = @filesystem_panel
-[UiPanel]
-    anchor = "t"
-    position_ratio = (0.5, 0.0)
-    pivot_ratio = (0.5, 0.0)
-    size_ratio = (1.0, 0.09)
-    style = { fill = $col_panel_2 stroke = "#00000000" stroke_width = 0 radius = 0 }
-[/UiPanel]
+    [UiPanel]
+        anchor = "t"
+        position_ratio = (0.5, 0.0)
+        pivot_ratio = (0.5, 0.0)
+        size_ratio = (1.0, 0.09)
+        style = $var2
+    [/UiPanel]
 [/filesystem_title]
 
 [filesystem_title_label]
 parent = @filesystem_title
-[UiLabel]
-    size_ratio = (1.0, 1.0)
-    text = "FileSystem"
-    text_size_ratio = 0.20
-    color = $col_text
-[/UiLabel]
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "FileSystem"
+        text_size_ratio = 0.2
+        color = "#F2F1EE"
+    [/UiLabel]
 [/filesystem_title_label]
 
 [filesystem_row_1]
 parent = @filesystem_panel
-[UiPanel]
-    anchor = "tl"
-    position_ratio = (0.04, 0.12)
-    pivot_ratio = (0.0, 0.0)
-    size_ratio = (0.90, 0.072)
-    style = $row_fill_sel
-[/UiPanel]
+    [UiPanel]
+        anchor = "tl"
+        position_ratio = (0.04, 0.12)
+        pivot_ratio = (0.0, 0.0)
+        size_ratio = (0.9, 0.072)
+        style = {
+            fill = "#4B5361",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.05
+        }
+    [/UiPanel]
 [/filesystem_row_1]
 
 [filesystem_row_1_label]
 parent = @filesystem_row_1
-[UiLabel]
-    anchor = "l"
-    position_ratio = (0.06, 0.5)
-    pivot_ratio = (0.0, 0.5)
-    size_ratio = (0.88, 0.82)
-    text = "res://"
-    text_size_ratio = 0.16
-    color = $col_text
-    h_align = "start"
-    text_align = "left"
-[/UiLabel]
+    [UiLabel]
+        anchor = "l"
+        position_ratio = (0.06, 0.5)
+        pivot_ratio = (0.0, 0.5)
+        size_ratio = (0.88, 0.82)
+        text = "res://"
+        text_size_ratio = 0.16
+        color = "#F2F1EE"
+        h_align = "start"
+        text_align = "left"
+    [/UiLabel]
 [/filesystem_row_1_label]
 
 [filesystem_row_2]
 parent = @filesystem_panel
-[UiPanel]
-    anchor = "tl"
-    position_ratio = (0.08, 0.203)
-    pivot_ratio = (0.0, 0.0)
-    size_ratio = (0.86, 0.068)
-    style = $row_fill
-[/UiPanel]
+    [UiPanel]
+        anchor = "tl"
+        position_ratio = (0.08, 0.203)
+        pivot_ratio = (0.0, 0.0)
+        size_ratio = (0.86, 0.068)
+        style = $row_fill
+    [/UiPanel]
 [/filesystem_row_2]
 
 [filesystem_row_2_label]
 parent = @filesystem_row_2
-[UiLabel]
-    anchor = "l"
-    position_ratio = (0.06, 0.5)
-    pivot_ratio = (0.0, 0.5)
-    size_ratio = (0.88, 0.82)
-    text = "Scene1.scn"
-    text_size_ratio = 0.15
-    color = $col_text
-    h_align = "start"
-    text_align = "left"
-[/UiLabel]
+    [UiLabel]
+        anchor = "l"
+        position_ratio = (0.06, 0.5)
+        pivot_ratio = (0.0, 0.5)
+        size_ratio = (0.88, 0.82)
+        text = "Scene1.scn"
+        text_size_ratio = 0.15
+        color = "#F2F1EE"
+        h_align = "start"
+        text_align = "left"
+    [/UiLabel]
 [/filesystem_row_2_label]
 
 [filesystem_row_3]
 parent = @filesystem_panel
-[UiPanel]
-    anchor = "tl"
-    position_ratio = (0.08, 0.280)
-    pivot_ratio = (0.0, 0.0)
-    size_ratio = (0.86, 0.068)
-    style = $row_fill
-[/UiPanel]
+    [UiPanel]
+        anchor = "tl"
+        position_ratio = (0.08, 0.28)
+        pivot_ratio = (0.0, 0.0)
+        size_ratio = (0.86, 0.068)
+        style = $row_fill
+    [/UiPanel]
 [/filesystem_row_3]
 
 [filesystem_row_3_label]
 parent = @filesystem_row_3
-[UiLabel]
-    anchor = "l"
-    position_ratio = (0.06, 0.5)
-    pivot_ratio = (0.0, 0.5)
-    size_ratio = (0.88, 0.82)
-    text = "Scene3.scn"
-    text_size_ratio = 0.15
-    color = $col_text
-    h_align = "start"
-    text_align = "left"
-[/UiLabel]
+    [UiLabel]
+        anchor = "l"
+        position_ratio = (0.06, 0.5)
+        pivot_ratio = (0.0, 0.5)
+        size_ratio = (0.88, 0.82)
+        text = "Scene3.scn"
+        text_size_ratio = 0.15
+        color = "#F2F1EE"
+        h_align = "start"
+        text_align = "left"
+    [/UiLabel]
 [/filesystem_row_3_label]
 
 [filesystem_row_4]
 parent = @filesystem_panel
-[UiPanel]
-    anchor = "tl"
-    position_ratio = (0.08, 0.357)
-    pivot_ratio = (0.0, 0.0)
-    size_ratio = (0.86, 0.068)
-    style = $row_fill
-[/UiPanel]
+    [UiPanel]
+        anchor = "tl"
+        position_ratio = (0.08, 0.357)
+        pivot_ratio = (0.0, 0.0)
+        size_ratio = (0.86, 0.068)
+        style = $row_fill
+    [/UiPanel]
 [/filesystem_row_4]
 
 [filesystem_row_4_label]
 parent = @filesystem_row_4
-[UiLabel]
-    anchor = "l"
-    position_ratio = (0.06, 0.5)
-    pivot_ratio = (0.0, 0.5)
-    size_ratio = (0.88, 0.82)
-    text = "Scene12Stuff"
-    text_size_ratio = 0.15
-    color = $col_text
-    h_align = "start"
-    text_align = "left"
-[/UiLabel]
+    [UiLabel]
+        anchor = "l"
+        position_ratio = (0.06, 0.5)
+        pivot_ratio = (0.0, 0.5)
+        size_ratio = (0.88, 0.82)
+        text = "Scene12Stuff"
+        text_size_ratio = 0.15
+        color = "#F2F1EE"
+        h_align = "start"
+        text_align = "left"
+    [/UiLabel]
 [/filesystem_row_4_label]
 
 [filesystem_row_5]
 parent = @filesystem_panel
-[UiPanel]
-    anchor = "tl"
-    position_ratio = (0.14, 0.434)
-    pivot_ratio = (0.0, 0.0)
-    size_ratio = (0.80, 0.066)
-    style = $row_fill
-[/UiPanel]
+    [UiPanel]
+        anchor = "tl"
+        position_ratio = (0.14, 0.434)
+        pivot_ratio = (0.0, 0.0)
+        size_ratio = (0.8, 0.066)
+        style = $row_fill
+    [/UiPanel]
 [/filesystem_row_5]
 
 [filesystem_row_5_label]
 parent = @filesystem_row_5
-[UiLabel]
-    anchor = "l"
-    position_ratio = (0.06, 0.5)
-    pivot_ratio = (0.0, 0.5)
-    size_ratio = (0.88, 0.82)
-    text = "Scene12.scn"
-    text_size_ratio = 0.145
-    color = $col_text
-    h_align = "start"
-    text_align = "left"
-[/UiLabel]
+    [UiLabel]
+        anchor = "l"
+        position_ratio = (0.06, 0.5)
+        pivot_ratio = (0.0, 0.5)
+        size_ratio = (0.88, 0.82)
+        text = "Scene12.scn"
+        text_size_ratio = 0.145
+        color = "#F2F1EE"
+        h_align = "start"
+        text_align = "left"
+    [/UiLabel]
 [/filesystem_row_5_label]
 
 [filesystem_row_6]
 parent = @filesystem_panel
-[UiPanel]
-    anchor = "tl"
-    position_ratio = (0.14, 0.509)
-    pivot_ratio = (0.0, 0.0)
-    size_ratio = (0.80, 0.066)
-    style = $row_fill
-[/UiPanel]
+    [UiPanel]
+        anchor = "tl"
+        position_ratio = (0.14, 0.509)
+        pivot_ratio = (0.0, 0.0)
+        size_ratio = (0.8, 0.066)
+        style = $row_fill
+    [/UiPanel]
 [/filesystem_row_6]
 
 [filesystem_row_6_label]
 parent = @filesystem_row_6
-[UiLabel]
-    anchor = "l"
-    position_ratio = (0.06, 0.5)
-    pivot_ratio = (0.0, 0.5)
-    size_ratio = (0.88, 0.82)
-    text = "animation.panim"
-    text_size_ratio = 0.14
-    color = $col_text
-    h_align = "start"
-    text_align = "left"
-[/UiLabel]
+    [UiLabel]
+        anchor = "l"
+        position_ratio = (0.06, 0.5)
+        pivot_ratio = (0.0, 0.5)
+        size_ratio = (0.88, 0.82)
+        text = "animation.panim"
+        text_size_ratio = 0.14
+        color = "#F2F1EE"
+        h_align = "start"
+        text_align = "left"
+    [/UiLabel]
 [/filesystem_row_6_label]
 
 [inspector_panel]
-parent = $root
-[UiPanel]
-    anchor = "tr"
-    position_ratio = (1.0, 0.006)
-    pivot_ratio = (1.0, 0.0)
-    size_ratio = (0.168, 0.994)
-    style = { fill = $col_panel stroke = $col_line_soft stroke_width = 1 radius = 0 }
-[/UiPanel]
+parent = @scene_editor_root
+    [UiPanel]
+        anchor = "tr"
+        position_ratio = (1.0, 0.006)
+        pivot_ratio = (1.0, 0.0)
+        size_ratio = (0.168, 0.994)
+        style = $var1
+    [/UiPanel]
 [/inspector_panel]
 
 [inspector_title]
 parent = @inspector_panel
-[UiPanel]
-    anchor = "t"
-    position_ratio = (0.5, 0.0)
-    pivot_ratio = (0.5, 0.0)
-    size_ratio = (1.0, 0.065)
-    style = { fill = $col_panel_2 stroke = "#00000000" stroke_width = 0 radius = 0 }
-[/UiPanel]
+    [UiPanel]
+        anchor = "t"
+        position_ratio = (0.5, 0.0)
+        pivot_ratio = (0.5, 0.0)
+        size_ratio = (1.0, 0.065)
+        style = $var2
+    [/UiPanel]
 [/inspector_title]
 
 [inspector_title_label]
 parent = @inspector_title
-[UiLabel]
-    size_ratio = (1.0, 1.0)
-    text = "Inspector"
-    text_size_ratio = 0.20
-    color = $col_text
-[/UiLabel]
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Inspector"
+        text_size_ratio = 0.2
+        color = "#F2F1EE"
+    [/UiLabel]
 [/inspector_title_label]
 
 [inspector_field_1]
 parent = @inspector_panel
-[UiPanel]
-    anchor = "t"
-    position_ratio = (0.5, 0.09)
-    pivot_ratio = (0.5, 0.0)
-    size_ratio = (0.82, 0.038)
-    style = $slot_fill
-[/UiPanel]
+    [UiPanel]
+        anchor = "t"
+        position_ratio = (0.5, 0.09)
+        pivot_ratio = (0.5, 0.0)
+        size_ratio = (0.82, 0.038)
+        style = $slot_fill
+    [/UiPanel]
 [/inspector_field_1]
 
 [inspector_field_1_label]
 parent = @inspector_field_1
-[UiLabel]
-    anchor = "l"
-    position_ratio = (0.08, 0.5)
-    pivot_ratio = (0.0, 0.5)
-    size_ratio = (0.84, 0.82)
-    text = "Position"
-    text_size_ratio = 0.18
-    color = $col_text_dim
-    h_align = "start"
-    text_align = "left"
-[/UiLabel]
+    [UiLabel]
+        anchor = "l"
+        position_ratio = (0.08, 0.5)
+        pivot_ratio = (0.0, 0.5)
+        size_ratio = (0.84, 0.82)
+        text = "Position"
+        text_size_ratio = 0.18
+        color = "#C9CED7"
+        h_align = "start"
+        text_align = "left"
+    [/UiLabel]
 [/inspector_field_1_label]
 
 [inspector_field_2]
 parent = @inspector_panel
-[UiPanel]
-    anchor = "t"
-    position_ratio = (0.5, 0.145)
-    pivot_ratio = (0.5, 0.0)
-    size_ratio = (0.82, 0.038)
-    style = $slot_fill
-[/UiPanel]
+    [UiPanel]
+        anchor = "t"
+        position_ratio = (0.5, 0.145)
+        pivot_ratio = (0.5, 0.0)
+        size_ratio = (0.82, 0.038)
+        style = $slot_fill
+    [/UiPanel]
 [/inspector_field_2]
 
 [inspector_field_2_label]
 parent = @inspector_field_2
-[UiLabel]
-    anchor = "l"
-    position_ratio = (0.08, 0.5)
-    pivot_ratio = (0.0, 0.5)
-    size_ratio = (0.84, 0.82)
-    text = "Rotation"
-    text_size_ratio = 0.18
-    color = $col_text_dim
-    h_align = "start"
-    text_align = "left"
-[/UiLabel]
+    [UiLabel]
+        anchor = "l"
+        position_ratio = (0.08, 0.5)
+        pivot_ratio = (0.0, 0.5)
+        size_ratio = (0.84, 0.82)
+        text = "Rotation"
+        text_size_ratio = 0.18
+        color = "#C9CED7"
+        h_align = "start"
+        text_align = "left"
+    [/UiLabel]
 [/inspector_field_2_label]
 
 [inspector_field_3]
 parent = @inspector_panel
-[UiPanel]
-    anchor = "t"
-    position_ratio = (0.5, 0.20)
-    pivot_ratio = (0.5, 0.0)
-    size_ratio = (0.82, 0.038)
-    style = $slot_fill
-[/UiPanel]
+    [UiPanel]
+        anchor = "t"
+        position_ratio = (0.5, 0.2)
+        pivot_ratio = (0.5, 0.0)
+        size_ratio = (0.82, 0.038)
+        style = $slot_fill
+    [/UiPanel]
 [/inspector_field_3]
 
 [inspector_field_3_label]
 parent = @inspector_field_3
-[UiLabel]
-    anchor = "l"
-    position_ratio = (0.08, 0.5)
-    pivot_ratio = (0.0, 0.5)
-    size_ratio = (0.84, 0.82)
-    text = "Scale"
-    text_size_ratio = 0.18
-    color = $col_text_dim
-    h_align = "start"
-    text_align = "left"
-[/UiLabel]
+    [UiLabel]
+        anchor = "l"
+        position_ratio = (0.08, 0.5)
+        pivot_ratio = (0.0, 0.5)
+        size_ratio = (0.84, 0.82)
+        text = "Scale"
+        text_size_ratio = 0.18
+        color = "#C9CED7"
+        h_align = "start"
+        text_align = "left"
+    [/UiLabel]
 [/inspector_field_3_label]
 
 [scene_mode_bar]
-parent = $root
-[UiPanel]
-    anchor = "t"
-    position_ratio = (0.514, 0.01)
-    pivot_ratio = (0.5, 0.0)
-    size_ratio = (0.612, 0.052)
-    style = { fill = $col_panel_2 stroke = "#00000000" stroke_width = 0 radius = 0 }
-[/UiPanel]
+parent = @scene_editor_root
+    [UiPanel]
+        anchor = "t"
+        position_ratio = (0.514, 0.01)
+        pivot_ratio = (0.5, 0.0)
+        size_ratio = (0.612, 0.052)
+        style = $var2
+    [/UiPanel]
 [/scene_mode_bar]
 
 [scene_mode_ui]
 parent = @scene_mode_bar
-[UiButton]
-    anchor = "center"
-    position_ratio = (0.34, 0.5)
-    size_ratio = (0.14, 0.74)
-    style = $tab_active
-[/UiButton]
+    [UiButton]
+        anchor = "center"
+        position_ratio = (0.34, 0.5)
+        size_ratio = (0.14, 0.74)
+        style = {
+            fill = "#4A515F",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.1
+        }
+    [/UiButton]
 [/scene_mode_ui]
 
 [scene_mode_ui_label]
 parent = @scene_mode_ui
-[UiLabel]
-    size_ratio = (1.0, 1.0)
-    text = "UI"
-    text_size_ratio = 0.34
-    color = $col_scene
-[/UiLabel]
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "UI"
+        text_size_ratio = 0.34
+        color = "#78E24E"
+    [/UiLabel]
 [/scene_mode_ui_label]
 
 [scene_mode_2d]
 parent = @scene_mode_bar
-[UiButton]
-    anchor = "center"
-    position_ratio = (0.50, 0.5)
-    size_ratio = (0.14, 0.74)
-    style = $tab_idle
-[/UiButton]
+    [UiButton]
+        anchor = "center"
+        position_ratio = (0.5, 0.5)
+        size_ratio = (0.14, 0.74)
+        style = $tab_idle
+    [/UiButton]
 [/scene_mode_2d]
 
 [scene_mode_2d_label]
 parent = @scene_mode_2d
-[UiLabel]
-    size_ratio = (1.0, 1.0)
-    text = "2D"
-    text_size_ratio = 0.34
-    color = $col_2d
-[/UiLabel]
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "2D"
+        text_size_ratio = 0.34
+        color = "#57B6FF"
+    [/UiLabel]
 [/scene_mode_2d_label]
 
 [scene_mode_3d]
 parent = @scene_mode_bar
-[UiButton]
-    anchor = "center"
-    position_ratio = (0.66, 0.5)
-    size_ratio = (0.14, 0.74)
-    style = $tab_idle
-[/UiButton]
+    [UiButton]
+        anchor = "center"
+        position_ratio = (0.66, 0.5)
+        size_ratio = (0.14, 0.74)
+        style = $tab_idle
+    [/UiButton]
 [/scene_mode_3d]
 
 [scene_mode_3d_label]
 parent = @scene_mode_3d
-[UiLabel]
-    size_ratio = (1.0, 1.0)
-    text = "3D"
-    text_size_ratio = 0.34
-    color = $col_3d
-[/UiLabel]
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "3D"
+        text_size_ratio = 0.34
+        color = "#FF8E2A"
+    [/UiLabel]
 [/scene_mode_3d_label]
 
 [viewport_panel]
-parent = $root
-[UiPanel]
-    anchor = "t"
-    position_ratio = (0.514, 0.058)
-    pivot_ratio = (0.5, 0.0)
-    size_ratio = (0.612, 0.734)
-    style = { fill = $col_view stroke = $col_line stroke_width = 1 radius = 0 }
-[/UiPanel]
+parent = @scene_editor_root
+    [UiPanel]
+        anchor = "t"
+        position_ratio = (0.514, 0.058)
+        pivot_ratio = (0.5, 0.0)
+        size_ratio = (0.612, 0.734)
+        style = {
+            fill = "#1F232A",
+            stroke = "#F1F1F1",
+            stroke_width = 1.0,
+            radius = 0.0
+        }
+    [/UiPanel]
 [/viewport_panel]
 
 [viewport_header]
 parent = @viewport_panel
-[UiPanel]
-    anchor = "t"
-    position_ratio = (0.5, 0.0)
-    pivot_ratio = (0.5, 0.0)
-    size_ratio = (1.0, 0.035)
-    style = { fill = $col_view_hdr stroke = "#00000000" stroke_width = 0 radius = 0 }
-[/UiPanel]
+    [UiPanel]
+        anchor = "t"
+        position_ratio = (0.5, 0.0)
+        pivot_ratio = (0.5, 0.0)
+        size_ratio = (1.0, 0.035)
+        style = {
+            fill = "#363D49",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.0
+        }
+    [/UiPanel]
 [/viewport_header]
 
 [viewport_header_label]
 parent = @viewport_header
-[UiLabel]
-    anchor = "l"
-    position_ratio = (0.03, 0.5)
-    pivot_ratio = (0.0, 0.5)
-    size_ratio = (0.20, 0.82)
-    text = "Scene"
-    text_size_ratio = 0.28
-    color = $col_text_dim
-    h_align = "start"
-    text_align = "left"
-[/UiLabel]
+    [UiLabel]
+        anchor = "l"
+        position_ratio = (0.03, 0.5)
+        pivot_ratio = (0.0, 0.5)
+        size_ratio = (0.2, 0.82)
+        text = "Scene"
+        text_size_ratio = 0.28
+        color = "#C9CED7"
+        h_align = "start"
+        text_align = "left"
+    [/UiLabel]
 [/viewport_header_label]
 
 [viewport_axis_y]
 parent = @viewport_panel
-[UiPanel]
-    anchor = "center"
-    position_ratio = (0.50, 0.50)
-    size_ratio = (0.004, 1.0)
-    style = { fill = $col_green stroke = "#00000000" stroke_width = 0 radius = 0 }
-[/UiPanel]
+    [UiPanel]
+        anchor = "center"
+        position_ratio = (0.5, 0.5)
+        size_ratio = (0.004, 1.0)
+        style = {
+            fill = "#2FAA59",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.0
+        }
+    [/UiPanel]
 [/viewport_axis_y]
 
 [viewport_axis_x]
 parent = @viewport_panel
-[UiPanel]
-    anchor = "center"
-    position_ratio = (0.50, 0.50)
-    size_ratio = (1.0, 0.004)
-    style = { fill = $col_blue stroke = "#00000000" stroke_width = 0 radius = 0 }
-[/UiPanel]
+    [UiPanel]
+        anchor = "center"
+        position_ratio = (0.5, 0.5)
+        size_ratio = (1.0, 0.004)
+        style = {
+            fill = "#3F6FA7",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.0
+        }
+    [/UiPanel]
 [/viewport_axis_x]
 
 [viewport_axis_diag]
 parent = @viewport_panel
-[UiLabel]
-    size_ratio = (1.0, 1.0)
-    text = "/"
-    text_size_ratio = 1.35
-    color = $col_red
-[/UiLabel]
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "/"
+        text_size_ratio = 1.35
+        color = "#EB203C"
+    [/UiLabel]
 [/viewport_axis_diag]
 
 [viewport_axis_origin]
 parent = @viewport_panel
-[UiLabel]
-    anchor = "center"
-    position_ratio = (0.50, 0.50)
-    size_ratio = (0.05, 0.05)
-    text = "o"
-    text_size_ratio = 0.34
-    color = $col_orange
-[/UiLabel]
+    [UiLabel]
+        anchor = "center"
+        position_ratio = (0.5, 0.5)
+        size_ratio = (0.05, 0.05)
+        text = "o"
+        text_size_ratio = 0.34
+        color = "#FFB11B"
+    [/UiLabel]
 [/viewport_axis_origin]
 
 [bottom_tabs_panel]
-parent = $root
-[UiPanel]
-    anchor = "b"
-    position_ratio = (0.514, 1.0)
-    pivot_ratio = (0.5, 1.0)
-    size_ratio = (0.612, 0.21)
-    style = { fill = $col_panel stroke = $col_line stroke_width = 1 radius = 0 }
-[/UiPanel]
+parent = @scene_editor_root
+    [UiPanel]
+        anchor = "b"
+        position_ratio = (0.514, 1.0)
+        pivot_ratio = (0.5, 1.0)
+        size_ratio = (0.612, 0.21)
+        style = {
+            fill = "#2F3540",
+            stroke = "#F1F1F1",
+            stroke_width = 1.0,
+            radius = 0.0
+        }
+    [/UiPanel]
 [/bottom_tabs_panel]
 
 [bottom_tabs_bar]
 parent = @bottom_tabs_panel
-[UiPanel]
-    anchor = "t"
-    position_ratio = (0.5, 0.0)
-    pivot_ratio = (0.5, 0.0)
-    size_ratio = (1.0, 0.28)
-    style = { fill = $col_panel_2 stroke = "#00000000" stroke_width = 0 radius = 0 }
-[/UiPanel]
+    [UiPanel]
+        anchor = "t"
+        position_ratio = (0.5, 0.0)
+        pivot_ratio = (0.5, 0.0)
+        size_ratio = (1.0, 0.28)
+        style = $var2
+    [/UiPanel]
 [/bottom_tabs_bar]
 
 [scene_doc_1]
 parent = @bottom_tabs_bar
-[UiButton]
-    anchor = "l"
-    position_ratio = (0.02, 0.5)
-    pivot_ratio = (0.0, 0.5)
-    size_ratio = (0.16, 0.72)
-    style = $tab_active
-[/UiButton]
+    [UiButton]
+        anchor = "l"
+        position_ratio = (0.02, 0.5)
+        pivot_ratio = (0.0, 0.5)
+        size_ratio = (0.16, 0.72)
+        style = {
+            fill = "#4A515F",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.1
+        }
+    [/UiButton]
 [/scene_doc_1]
 
 [scene_doc_1_name]
 parent = @scene_doc_1
-[UiLabel]
-    anchor = "l"
-    position_ratio = (0.28, 0.5)
-    pivot_ratio = (0.0, 0.5)
-    size_ratio = (0.50, 0.84)
-    text = "Scene 1"
-    text_size_ratio = 0.28
-    color = $col_text
-    h_align = "start"
-    text_align = "left"
-[/UiLabel]
+    [UiLabel]
+        anchor = "l"
+        position_ratio = (0.28, 0.5)
+        pivot_ratio = (0.0, 0.5)
+        size_ratio = (0.5, 0.84)
+        text = "Scene 1"
+        text_size_ratio = 0.28
+        color = "#F2F1EE"
+        h_align = "start"
+        text_align = "left"
+    [/UiLabel]
 [/scene_doc_1_name]
 
 [scene_doc_1_close]
 parent = @scene_doc_1
-[UiLabel]
-    anchor = "r"
-    position_ratio = (0.93, 0.18)
-    pivot_ratio = (1.0, 0.0)
-    size_ratio = (0.14, 0.40)
-    text = "x"
-    text_size_ratio = 0.34
-    color = "#FF5B5B"
-[/UiLabel]
+    [UiLabel]
+        anchor = "r"
+        position_ratio = (0.93, 0.18)
+        pivot_ratio = (1.0, 0.0)
+        size_ratio = (0.14, 0.4)
+        text = "x"
+        text_size_ratio = 0.34
+        color = "#FF5B5B"
+    [/UiLabel]
 [/scene_doc_1_close]
 
 [scene_doc_2]
 parent = @bottom_tabs_bar
-[UiButton]
-    anchor = "l"
-    position_ratio = (0.19, 0.5)
-    pivot_ratio = (0.0, 0.5)
-    size_ratio = (0.16, 0.72)
-    style = $tab_idle
-[/UiButton]
+    [UiButton]
+        anchor = "l"
+        position_ratio = (0.19, 0.5)
+        pivot_ratio = (0.0, 0.5)
+        size_ratio = (0.16, 0.72)
+        style = $tab_idle
+    [/UiButton]
 [/scene_doc_2]
 
 [scene_doc_2_name]
 parent = @scene_doc_2
-[UiLabel]
-    anchor = "l"
-    position_ratio = (0.28, 0.5)
-    pivot_ratio = (0.0, 0.5)
-    size_ratio = (0.50, 0.84)
-    text = "Scene 3"
-    text_size_ratio = 0.28
-    color = $col_text
-    h_align = "start"
-    text_align = "left"
-[/UiLabel]
+    [UiLabel]
+        anchor = "l"
+        position_ratio = (0.28, 0.5)
+        pivot_ratio = (0.0, 0.5)
+        size_ratio = (0.5, 0.84)
+        text = "Scene 3"
+        text_size_ratio = 0.28
+        color = "#F2F1EE"
+        h_align = "start"
+        text_align = "left"
+    [/UiLabel]
 [/scene_doc_2_name]
 
 [scene_doc_2_close]
 parent = @scene_doc_2
-[UiLabel]
-    anchor = "r"
-    position_ratio = (0.93, 0.18)
-    pivot_ratio = (1.0, 0.0)
-    size_ratio = (0.14, 0.40)
-    text = "x"
-    text_size_ratio = 0.34
-    color = "#FF5B5B"
-[/UiLabel]
+    [UiLabel]
+        anchor = "r"
+        position_ratio = (0.93, 0.18)
+        pivot_ratio = (1.0, 0.0)
+        size_ratio = (0.14, 0.4)
+        text = "x"
+        text_size_ratio = 0.34
+        color = "#FF5B5B"
+    [/UiLabel]
 [/scene_doc_2_close]
 
 [scene_doc_3]
 parent = @bottom_tabs_bar
-[UiButton]
-    anchor = "l"
-    position_ratio = (0.36, 0.5)
-    pivot_ratio = (0.0, 0.5)
-    size_ratio = (0.17, 0.72)
-    style = $tab_idle
-[/UiButton]
+    [UiButton]
+        anchor = "l"
+        position_ratio = (0.36, 0.5)
+        pivot_ratio = (0.0, 0.5)
+        size_ratio = (0.17, 0.72)
+        style = $tab_idle
+    [/UiButton]
 [/scene_doc_3]
 
 [scene_doc_3_name]
 parent = @scene_doc_3
-[UiLabel]
-    anchor = "l"
-    position_ratio = (0.24, 0.5)
-    pivot_ratio = (0.0, 0.5)
-    size_ratio = (0.58, 0.84)
-    text = "Scene 12"
-    text_size_ratio = 0.28
-    color = $col_text
-    h_align = "start"
-    text_align = "left"
-[/UiLabel]
+    [UiLabel]
+        anchor = "l"
+        position_ratio = (0.24, 0.5)
+        pivot_ratio = (0.0, 0.5)
+        size_ratio = (0.58, 0.84)
+        text = "Scene 12"
+        text_size_ratio = 0.28
+        color = "#F2F1EE"
+        h_align = "start"
+        text_align = "left"
+    [/UiLabel]
 [/scene_doc_3_name]
 
 [scene_doc_3_close]
 parent = @scene_doc_3
-[UiLabel]
-    anchor = "r"
-    position_ratio = (0.93, 0.18)
-    pivot_ratio = (1.0, 0.0)
-    size_ratio = (0.14, 0.40)
-    text = "x"
-    text_size_ratio = 0.34
-    color = "#FF5B5B"
-[/UiLabel]
+    [UiLabel]
+        anchor = "r"
+        position_ratio = (0.93, 0.18)
+        pivot_ratio = (1.0, 0.0)
+        size_ratio = (0.14, 0.4)
+        text = "x"
+        text_size_ratio = 0.34
+        color = "#FF5B5B"
+    [/UiLabel]
 [/scene_doc_3_close]
+

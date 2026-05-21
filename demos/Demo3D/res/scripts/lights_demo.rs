@@ -85,7 +85,10 @@ methods!({
         let points = query!(ctx.run, all(node_type[PointLight3D]), in_subtree(ctx.id)).len();
         let spots = query!(ctx.run, all(node_type[SpotLight3D]), in_subtree(ctx.id)).len();
         let rays = query!(ctx.run, all(node_type[RayLight3D]), in_subtree(ctx.id)).len();
-        let body = format!("point lights {}\nspot rigs {} | ray lights {}", points, spots, rays);
+        let body = format!(
+            "point lights {}\nspot rigs {} | ray lights {}",
+            points, spots, rays
+        );
         let _ = call_method!(
             ctx.run,
             overlay,

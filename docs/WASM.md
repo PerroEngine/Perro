@@ -2,11 +2,11 @@
 
 ## Page Map
 
-| Header | Link |
-| --- | --- |
-| Purpose | [Purpose](#purpose) |
+| Header    | Link                    |
+| --------- | ----------------------- |
+| Purpose   | [Purpose](#purpose)     |
 | Use Cases | [Use Cases](#use-cases) |
-| Example | [Example](#example) |
+| Example   | [Example](#example)     |
 | Reference | [Reference](#reference) |
 
 ## Purpose

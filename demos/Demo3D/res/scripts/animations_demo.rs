@@ -29,7 +29,11 @@ methods!({
         }
         let players = query!(ctx.run, all(node_type[AnimationPlayer]), in_subtree(ctx.id)).len();
         let meshes = query!(ctx.run, all(node_type[MeshInstance3D]), in_subtree(ctx.id)).len();
-        let body = format!("anim players {}\nanimated props {}", players, meshes.saturating_sub(1));
+        let body = format!(
+            "anim players {}\nanimated props {}",
+            players,
+            meshes.saturating_sub(1)
+        );
         let _ = call_method!(
             ctx.run,
             overlay,

@@ -91,12 +91,7 @@ methods!({
         set_label_text(ctx, body_label, body);
     }
 
-    fn set_content(
-        &self,
-        ctx: &mut ScriptContext<'_, API>,
-        title: String,
-        body: String,
-    ) {
+    fn set_content(&self, ctx: &mut ScriptContext<'_, API>, title: String, body: String) {
         with_state_mut!(ctx.run, DemoInfoOverlayState, ctx.id, |state| {
             state.title_override = title.clone();
             state.body_override = body.clone();
@@ -134,12 +129,21 @@ fn demo_info_text<API: ScriptAPI + ?Sized>(
     }
 }
 
-fn multimesh_text<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, root: NodeID) -> String {
-    let multimeshes = query!(ctx.run, all(node_type[MultiMeshInstance3D]), in_subtree(root));
+fn multimesh_text<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    root: NodeID,
+) -> String {
+    let multimeshes = query!(
+        ctx.run,
+        all(node_type[MultiMeshInstance3D]),
+        in_subtree(root)
+    );
     let mut total_instances = 0usize;
     let mut per_mesh = Vec::new();
     for node in multimeshes.iter().copied() {
-        let count = with_node!(ctx.run, MultiMeshInstance3D, node, |mesh| mesh.instances.len());
+        let count = with_node!(ctx.run, MultiMeshInstance3D, node, |mesh| mesh
+            .instances
+            .len());
         total_instances += count;
         per_mesh.push(count.to_string());
     }
@@ -182,27 +186,50 @@ fn lights_text<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, root: 
     let spots = query!(ctx.run, all(node_type[SpotLight3D]), in_subtree(root)).len();
     let rays = query!(ctx.run, all(node_type[RayLight3D]), in_subtree(root)).len();
     let ambient = query!(ctx.run, all(node_type[AmbientLight3D]), in_subtree(root)).len();
-    format!("point {} | spot {} | ray {}\nambient {}", points, spots, rays, ambient)
+    format!(
+        "point {} | spot {} | ray {}\nambient {}",
+        points, spots, rays, ambient
+    )
 }
 
-fn animation_text<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, root: NodeID) -> String {
+fn animation_text<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    root: NodeID,
+) -> String {
     let players = query!(ctx.run, all(node_type[AnimationPlayer]), in_subtree(root)).len();
     let meshes = query!(ctx.run, all(node_type[MeshInstance3D]), in_subtree(root)).len();
     format!("anim players {} | meshes {}", players, meshes)
 }
 
-fn particles_text<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, root: NodeID) -> String {
+fn particles_text<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    root: NodeID,
+) -> String {
     let emitters = query!(ctx.run, all(node_type[ParticleEmitter3D]), in_subtree(root)).len();
     let players = query!(ctx.run, all(node_type[AnimationPlayer]), in_subtree(root)).len();
     let points = query!(ctx.run, all(node_type[PointLight3D]), in_subtree(root)).len();
-    format!("emitters {} | anim rigs {}\npoint lights {}", emitters, players, points)
+    format!(
+        "emitters {} | anim rigs {}\npoint lights {}",
+        emitters, players, points
+    )
 }
 
-fn physics_bones_text<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, root: NodeID) -> String {
+fn physics_bones_text<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    root: NodeID,
+) -> String {
     let players = query!(ctx.run, all(node_type[AnimationPlayer]), in_subtree(root)).len();
     let meshes = query!(ctx.run, all(node_type[MeshInstance3D]), in_subtree(root)).len();
-    let bones = query!(ctx.run, all(node_type[PhysicsBoneChain3D]), in_subtree(root)).len();
-    format!("bone chains {} | anim players {}\nmesh props {}", bones, players, meshes)
+    let bones = query!(
+        ctx.run,
+        all(node_type[PhysicsBoneChain3D]),
+        in_subtree(root)
+    )
+    .len();
+    format!(
+        "bone chains {} | anim players {}\nmesh props {}",
+        bones, players, meshes
+    )
 }
 
 fn physics_collisions_text<API: ScriptAPI + ?Sized>(
@@ -212,7 +239,10 @@ fn physics_collisions_text<API: ScriptAPI + ?Sized>(
     let rigid = query!(ctx.run, all(node_type[RigidBody3D]), in_subtree(root)).len();
     let statics = query!(ctx.run, all(node_type[StaticBody3D]), in_subtree(root)).len();
     let meshes = query!(ctx.run, all(node_type[MeshInstance3D]), in_subtree(root)).len();
-    format!("rigid bodies {} | static bodies {}\nmesh vis {}", rigid, statics, meshes)
+    format!(
+        "rigid bodies {} | static bodies {}\nmesh vis {}",
+        rigid, statics, meshes
+    )
 }
 
 fn positional_audio_text<API: ScriptAPI + ?Sized>(
@@ -223,12 +253,24 @@ fn positional_audio_text<API: ScriptAPI + ?Sized>(
     let zones = query!(ctx.run, all(node_type[AudioEffectZone3D]), in_subtree(root)).len();
     let meshes = query!(ctx.run, all(node_type[MeshInstance3D]), in_subtree(root)).len();
     let speakers = meshes.saturating_sub(2);
-    format!("audio masks {} | fx zones {}\nspeaker meshes {}", masks, zones, speakers)
+    format!(
+        "audio masks {} | fx zones {}\nspeaker meshes {}",
+        masks, zones, speakers
+    )
 }
 
-fn mesh_text<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, root: NodeID, label: &str) -> String {
+fn mesh_text<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    root: NodeID,
+    label: &str,
+) -> String {
     let meshes = query!(ctx.run, all(node_type[MeshInstance3D]), in_subtree(root)).len();
-    let multimeshes = query!(ctx.run, all(node_type[MultiMeshInstance3D]), in_subtree(root)).len();
+    let multimeshes = query!(
+        ctx.run,
+        all(node_type[MultiMeshInstance3D]),
+        in_subtree(root)
+    )
+    .len();
     let lights = query!(ctx.run, all(node_type[PointLight3D]), in_subtree(root)).len()
         + query!(ctx.run, all(node_type[SpotLight3D]), in_subtree(root)).len()
         + query!(ctx.run, all(node_type[RayLight3D]), in_subtree(root)).len()

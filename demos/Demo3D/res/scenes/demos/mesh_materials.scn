@@ -1,19 +1,20 @@
 $root = @MeshMaterialsDemo
+$var1 = { type: "standard", base_color_factor: (0.18, 0.72, 1.0, 1.0), roughness_factor: 0.38, metallic_factor: 0.0, alpha_mode: "OPAQUE", double_sided: false }
 
 [MeshMaterialsDemo]
 script = "res://scripts/mesh_materials_demo.rs"
 script_vars = {
-    mirror_original = @MirrorOriginal
-    mirror_flip_x = @MirrorFlipX
-    mirror_flip_y = @MirrorFlipY
-    mirror_flip_z = @MirrorFlipZ
-    mirror_flip_xy = @MirrorFlipXY
-    mirror_flip_xz = @MirrorFlipXZ
-    mirror_flip_yz = @MirrorFlipYZ
+    mirror_original = @MirrorOriginal,
+    mirror_flip_x = @MirrorFlipX,
+    mirror_flip_y = @MirrorFlipY,
+    mirror_flip_z = @MirrorFlipZ,
+    mirror_flip_xy = @MirrorFlipXY,
+    mirror_flip_xz = @MirrorFlipXZ,
+    mirror_flip_yz = @MirrorFlipYZ,
     mirror_flip_xyz = @MirrorFlipXYZ
 }
     [Node3D]
-        position = (0, 0, 0)
+        position = (0.0, 0.0, 0.0)
     [/Node3D]
 [/MeshMaterialsDemo]
 
@@ -21,15 +22,15 @@ script_vars = {
 parent = @MeshMaterialsDemo
 script = "res://scripts/demo_freecam_3d.rs"
 script_vars = {
-    yaw = 0.0
-    pitch = -0.18
+    yaw = 0.0,
+    pitch = -0.18,
     speed = 8.0
 }
     [Camera3D]
         active = true
         perspective_fov_y_degrees = 65.0
         [Node3D]
-            position = (0, 3, 10)
+            position = (0.0, 3.0, 10.0)
             rotation = (-0.09, 0.0, 0.0, 0.996)
         [/Node3D]
     [/Camera3D]
@@ -49,7 +50,7 @@ parent = @MeshMaterialsDemo
         color = (1.0, 0.95, 0.86)
         intensity = 2.3
         [Node3D]
-            rotation_deg = (-50, 32, 0)
+            rotation_deg = (-50.0, 32.0, 0.0)
         [/Node3D]
     [/RayLight3D]
 [/KeyLight]
@@ -58,10 +59,17 @@ parent = @MeshMaterialsDemo
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
         mesh = "__cube__"
-        material = { type = "standard" base_color_factor = (0.20, 0.24, 0.28, 1.0) roughness_factor = 0.85 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.2, 0.24, 0.28, 1.0),
+            roughness_factor = 0.85,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
-            position = (0, -0.55, 0)
-            scale = (12, 0.1, 12)
+            position = (0.0, -0.55, 0.0)
+            scale = (12.0, 0.1, 12.0)
         [/Node3D]
     [/MeshInstance3D]
 [/Floor]
@@ -70,9 +78,16 @@ parent = @MeshMaterialsDemo
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
         mesh = "__cube__"
-        material = { type = "standard" base_color_factor = (0.95, 0.18, 0.12, 1.0) roughness_factor = 0.45 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.95, 0.18, 0.12, 1.0),
+            roughness_factor = 0.45,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
-            position = (-2.5, 0.55, 0)
+            position = (-2.5, 0.55, 0.0)
             scale = (1.2, 1.2, 1.2)
         [/Node3D]
     [/MeshInstance3D]
@@ -82,9 +97,16 @@ parent = @MeshMaterialsDemo
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
         mesh = "__sphere__"
-        material = { type = "standard" base_color_factor = (0.08, 0.36, 1.0, 1.0) roughness_factor = 0.22 metallic_factor = 0.4 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.08, 0.36, 1.0, 1.0),
+            roughness_factor = 0.22,
+            metallic_factor = 0.4,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
-            position = (0, 0.9, 0)
+            position = (0.0, 0.9, 0.0)
             scale = (1.35, 1.35, 1.35)
         [/Node3D]
     [/MeshInstance3D]
@@ -94,9 +116,17 @@ parent = @MeshMaterialsDemo
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
         mesh = "__cube__"
-        material = { type = "toon" base_color_factor = (0.2, 0.9, 0.35, 1.0) band_count = 4 rim_strength = 0.35 outline_width = 0.015 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "toon",
+            base_color_factor = (0.2, 0.9, 0.35, 1.0),
+            band_count = 4.0,
+            rim_strength = 0.35,
+            outline_width = 0.015,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
-            position = (2.5, 0.55, 0)
+            position = (2.5, 0.55, 0.0)
             scale = (1.2, 1.2, 1.2)
         [/Node3D]
     [/MeshInstance3D]
@@ -105,7 +135,14 @@ parent = @MeshMaterialsDemo
 [MirrorOriginal]
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
-        material = { type = "standard" base_color_factor = (1.0, 0.72, 0.18, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (1.0, 0.72, 0.18, 1.0),
+            roughness_factor = 0.38,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         flip_x = false
         flip_y = false
         flip_z = false
@@ -119,7 +156,7 @@ parent = @MeshMaterialsDemo
 [MirrorFlipX]
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
-        material = { type = "standard" base_color_factor = (0.18, 0.72, 1.0, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = $var1
         flip_x = true
         flip_y = false
         flip_z = false
@@ -133,7 +170,7 @@ parent = @MeshMaterialsDemo
 [MirrorFlipY]
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
-        material = { type = "standard" base_color_factor = (0.18, 0.72, 1.0, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = $var1
         flip_x = false
         flip_y = true
         flip_z = false
@@ -147,7 +184,7 @@ parent = @MeshMaterialsDemo
 [MirrorFlipZ]
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
-        material = { type = "standard" base_color_factor = (0.18, 0.72, 1.0, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = $var1
         flip_x = false
         flip_y = false
         flip_z = true
@@ -161,7 +198,7 @@ parent = @MeshMaterialsDemo
 [MirrorFlipXY]
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
-        material = { type = "standard" base_color_factor = (0.18, 0.72, 1.0, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = $var1
         flip_x = true
         flip_y = true
         flip_z = false
@@ -175,7 +212,7 @@ parent = @MeshMaterialsDemo
 [MirrorFlipXZ]
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
-        material = { type = "standard" base_color_factor = (0.18, 0.72, 1.0, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = $var1
         flip_x = true
         flip_y = false
         flip_z = true
@@ -189,7 +226,7 @@ parent = @MeshMaterialsDemo
 [MirrorFlipYZ]
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
-        material = { type = "standard" base_color_factor = (0.18, 0.72, 1.0, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = $var1
         flip_x = false
         flip_y = true
         flip_z = true
@@ -203,7 +240,7 @@ parent = @MeshMaterialsDemo
 [MirrorFlipXYZ]
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
-        material = { type = "standard" base_color_factor = (0.18, 0.72, 1.0, 1.0) roughness_factor = 0.38 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = $var1
         flip_x = true
         flip_y = true
         flip_z = true
@@ -213,3 +250,4 @@ parent = @MeshMaterialsDemo
         [/Node3D]
     [/MeshInstance3D]
 [/MirrorFlipXYZ]
+

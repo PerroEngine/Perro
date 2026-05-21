@@ -3,17 +3,22 @@ $root = @profiling_overlay_root
 [profiling_overlay_root]
 script = "res://scripts/demo_profiling_overlay.rs"
 script_vars = {
-    fps_label = @profiling_overlay_fps
-    cpu_label = @profiling_overlay_cpu
-    delta_label = @profiling_overlay_delta
+    fps_label = @profiling_overlay_fps,
+    cpu_label = @profiling_overlay_cpu,
+    delta_label = @profiling_overlay_delta,
     gfx_label = @profiling_overlay_gfx
 }
     [UiPanel]
         anchor = "top"
         position_ratio = (0.5, 0.5)
         size_ratio = (0.68, 0.07)
-        style = { fill = "#071018B8" stroke = "#88AADDEE" stroke_width = 1.0 radius = 0.035 }
-        padding = 8
+        style = {
+            fill = "#071018B8",
+            stroke = "#88AADDEE",
+            stroke_width = 1.0,
+            radius = 0.035
+        }
+        padding = 8.0
         visible = false
         input_enabled = false
         mouse_filter = "pass"
@@ -25,7 +30,7 @@ parent = @profiling_overlay_root
     [UiHLayout]
         anchor = "center"
         position_ratio = (0.5, 0.5)
-        size_ratio = (0.96, 0.80)
+        size_ratio = (0.96, 0.8)
         spacing = 0.02
         h_align = "fill"
         v_align = "fill"
@@ -35,7 +40,7 @@ parent = @profiling_overlay_root
 [profiling_overlay_fps]
 parent = @profiling_overlay_row
     [UiLabel]
-        size_ratio = (0.20, 1.0)
+        size_ratio = (0.2, 1.0)
         text = "FPS 0.0"
         text_size_ratio = 0.24
         color = "#D9E7FFFF"
@@ -79,3 +84,4 @@ parent = @profiling_overlay_row
         mouse_filter = "pass"
     [/UiLabel]
 [/profiling_overlay_gfx]
+

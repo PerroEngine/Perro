@@ -2,11 +2,9 @@ $root = @main
 
 [main]
 script = "res://scripts/demo_manager.rs"
-script_vars = {
-    demo_ui_root = @demo_ui_root
-}
+script_vars = { demo_ui_root = @demo_ui_root }
     [Node3D]
-        position = (0, 0, 0)
+        position = (0.0, 0.0, 0.0)
     [/Node3D]
 [/main]
 
@@ -19,3 +17,4 @@ script_vars = {
         mouse_filter = "pass"
     [/UiBox]
 [/demo_ui_root]
+

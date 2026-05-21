@@ -3,7 +3,7 @@ $root = @AnimationDemo
 [AnimationDemo]
 script = "res://scripts/animations_demo.rs"
     [Node3D]
-        position = (0, 0, 0)
+        position = (0.0, 0.0, 0.0)
     [/Node3D]
 [/AnimationDemo]
 
@@ -11,15 +11,15 @@ script = "res://scripts/animations_demo.rs"
 parent = @AnimationDemo
 script = "res://scripts/demo_freecam_3d.rs"
 script_vars = {
-    yaw = 0.0
-    pitch = -0.18
+    yaw = 0.0,
+    pitch = -0.18,
     speed = 8.0
 }
     [Camera3D]
         active = true
         perspective_fov_y_degrees = 65.0
         [Node3D]
-            position = (0, 4.5, 13)
+            position = (0.0, 4.5, 13.0)
             rotation = (-0.09, 0.0, 0.0, 0.996)
         [/Node3D]
     [/Camera3D]
@@ -28,7 +28,7 @@ script_vars = {
 [Ambient]
 parent = @AnimationDemo
     [AmbientLight3D]
-        color = (0.70, 0.74, 0.82)
+        color = (0.7, 0.74, 0.82)
         intensity = 0.42
     [/AmbientLight3D]
 [/Ambient]
@@ -39,7 +39,7 @@ parent = @AnimationDemo
         color = (1.0, 0.94, 0.84)
         intensity = 2.1
         [Node3D]
-            rotation_deg = (-42, 25, 0)
+            rotation_deg = (-42.0, 25.0, 0.0)
         [/Node3D]
     [/RayLight3D]
 [/KeyLight]
@@ -48,10 +48,17 @@ parent = @AnimationDemo
 parent = @AnimationDemo
     [MeshInstance3D]
         mesh = "__cube__"
-        material = { type = "standard" base_color_factor = (0.13, 0.14, 0.16, 1.0) roughness_factor = 0.9 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.13, 0.14, 0.16, 1.0),
+            roughness_factor = 0.9,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
-            position = (0, -0.15, 0.5)
-            scale = (18, 0.12, 11)
+            position = (0.0, -0.15, 0.5)
+            scale = (18.0, 0.12, 11.0)
         [/Node3D]
     [/MeshInstance3D]
 [/AnimFloor]
@@ -68,7 +75,7 @@ parent = @AnimationDemo
             position = (0.5, 0.06)
             anchor = top_left
             pivot = center
-            size = (0.60, 0.06)
+            size = (0.6, 0.06)
         [/UiBox]
     [/UiLabel]
 [/ClipNote]
@@ -76,7 +83,7 @@ parent = @AnimationDemo
 [BobAOrigin]
 parent = @AnimationDemo
     [Node3D]
-        position = (-6, 0.55, -2.2)
+        position = (-6.0, 0.55, -2.2)
     [/Node3D]
 [/BobAOrigin]
 
@@ -84,7 +91,14 @@ parent = @AnimationDemo
 parent = @BobAOrigin
     [MeshInstance3D]
         mesh = "__cube__"
-        material = { type = "standard" base_color_factor = (0.90, 0.25, 0.22, 1.0) roughness_factor = 0.45 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.9, 0.25, 0.22, 1.0),
+            roughness_factor = 0.45,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (0.8, 0.8, 0.8)
         [/Node3D]
@@ -113,7 +127,14 @@ parent = @AnimationDemo
 parent = @PulseAOrigin
     [MeshInstance3D]
         mesh = "__sphere__"
-        material = { type = "standard" base_color_factor = (0.20, 0.78, 0.95, 1.0) roughness_factor = 0.34 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.2, 0.78, 0.95, 1.0),
+            roughness_factor = 0.34,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (0.9, 0.9, 0.9)
         [/Node3D]
@@ -142,7 +163,14 @@ parent = @AnimationDemo
 parent = @SpinMoveOrigin
     [MeshInstance3D]
         mesh = "__cube__"
-        material = { type = "standard" base_color_factor = (0.95, 0.72, 0.18, 1.0) roughness_factor = 0.50 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.95, 0.72, 0.18, 1.0),
+            roughness_factor = 0.5,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (0.75, 0.75, 0.75)
         [/Node3D]
@@ -171,7 +199,14 @@ parent = @AnimationDemo
 parent = @TiltStretchOrigin
     [MeshInstance3D]
         mesh = "__sphere__"
-        material = { type = "standard" base_color_factor = (0.58, 0.82, 0.32, 1.0) roughness_factor = 0.42 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.58, 0.82, 0.32, 1.0),
+            roughness_factor = 0.42,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (0.9, 0.9, 0.9)
         [/Node3D]
@@ -200,7 +235,14 @@ parent = @AnimationDemo
 parent = @DriftResizeOrigin
     [MeshInstance3D]
         mesh = "__cube__"
-        material = { type = "standard" base_color_factor = (0.82, 0.42, 0.92, 1.0) roughness_factor = 0.48 metallic_factor = 0.0 alpha_mode = "OPAQUE" double_sided = false }
+        material = {
+            type = "standard",
+            base_color_factor = (0.82, 0.42, 0.92, 1.0),
+            roughness_factor = 0.48,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
             scale = (0.8, 0.8, 0.8)
         [/Node3D]
@@ -217,3 +259,4 @@ parent = @AnimationDemo
         paused = false
     [/AnimationPlayer]
 [/DriftResizePlayer]
+

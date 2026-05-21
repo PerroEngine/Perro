@@ -1,242 +1,233 @@
-$col_panel = "#2F3540"
-$col_panel_2 = "#646A74"
-$col_list = "#2A2F39"
-$col_view = "#1B1814"
-$col_line_soft = "#5E6676"
-$col_text = "#F2F1EE"
-$node_input = "#7B8292"
-$node_mid = "#3D7375"
-$node_out = "#223524"
-$tab_idle = { fill = "#444B58" stroke = "#00000000" stroke_width = 0 radius = 0.10 }
-
 $root = @anim_editor_root
+$tab_idle = { fill: "#444B58", stroke: "#00000000", stroke_width: 0.0, radius: 0.1 }
 
 [anim_editor_root]
-[UiPanel]
-    anchor = "center"
-    position_ratio = (0.5, 0.5)
-    size_ratio = (1.0, 1.0)
-    fill = $col_panel
-    stroke = "#00000000"
-    stroke_width = 0
-[/UiPanel]
+    [UiPanel]
+        anchor = "center"
+        position_ratio = (0.5, 0.5)
+        size_ratio = (1.0, 1.0)
+        fill = "#2F3540"
+        stroke = "#00000000"
+        stroke_width = 0.0
+    [/UiPanel]
 [/anim_editor_root]
 
 [anim_files_panel]
-parent = $root
-[UiPanel]
-    anchor = "l"
-    position_ratio = (0.0, 0.5)
-    pivot_ratio = (0.0, 0.5)
-    size_ratio = (0.18, 1.0)
-    fill = $col_list
-    stroke = $col_line_soft
-    stroke_width = 1
-[/UiPanel]
+parent = @anim_editor_root
+    [UiPanel]
+        anchor = "l"
+        position_ratio = (0.0, 0.5)
+        pivot_ratio = (0.0, 0.5)
+        size_ratio = (0.18, 1.0)
+        fill = "#2A2F39"
+        stroke = "#5E6676"
+        stroke_width = 1.0
+    [/UiPanel]
 [/anim_files_panel]
 
 [anim_files_body]
 parent = @anim_files_panel
-[UiLabel]
-    anchor = "tl"
-    position_ratio = (0.08, 0.04)
-    pivot_ratio = (0.0, 0.0)
-    size_ratio = (0.74, 0.88)
-    text = ".panimtree\n\n.panimtree\n\n.panimtree\n\n.panimtree\n\n.panimtree\n\nblend.panimtree"
-    text_size_ratio = 0.12
-    color = $col_text
-    h_align = "start"
-    v_align = "start"
-    text_align = "left"
-[/UiLabel]
+    [UiLabel]
+        anchor = "tl"
+        position_ratio = (0.08, 0.04)
+        pivot_ratio = (0.0, 0.0)
+        size_ratio = (0.74, 0.88)
+        text = ".panimtree\\n\\n.panimtree\\n\\n.panimtree\\n\\n.panimtree\\n\\n.panimtree\\n\\nblend.panimtree"
+        text_size_ratio = 0.12
+        color = "#F2F1EE"
+        h_align = "start"
+        v_align = "start"
+        text_align = "left"
+    [/UiLabel]
 [/anim_files_body]
 
 [anim_tabs_bar]
-parent = $root
-[UiPanel]
-    anchor = "t"
-    position_ratio = (0.59, 0.0)
-    pivot_ratio = (0.5, 0.0)
-    size_ratio = (0.82, 0.045)
-    fill = $col_panel_2
-    stroke = "#00000000"
-    stroke_width = 0
-[/UiPanel]
+parent = @anim_editor_root
+    [UiPanel]
+        anchor = "t"
+        position_ratio = (0.59, 0.0)
+        pivot_ratio = (0.5, 0.0)
+        size_ratio = (0.82, 0.045)
+        fill = "#646A74"
+        stroke = "#00000000"
+        stroke_width = 0.0
+    [/UiPanel]
 [/anim_tabs_bar]
 
 [anim_tab_1]
 parent = @anim_tabs_bar
-[UiButton]
-    anchor = "l"
-    position_ratio = (0.015, 0.5)
-    pivot_ratio = (0.0, 0.5)
-    size_ratio = (0.13, 0.74)
-    style = $tab_idle
-[/UiButton]
+    [UiButton]
+        anchor = "l"
+        position_ratio = (0.015, 0.5)
+        pivot_ratio = (0.0, 0.5)
+        size_ratio = (0.13, 0.74)
+        style = $tab_idle
+    [/UiButton]
 [/anim_tab_1]
 
 [anim_tab_1_label]
 parent = @anim_tab_1
-[UiLabel]
-    size_ratio = (1.0, 1.0)
-    text = "anim"
-    text_size_ratio = 0.28
-    color = $col_text
-[/UiLabel]
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "anim"
+        text_size_ratio = 0.28
+        color = "#F2F1EE"
+    [/UiLabel]
 [/anim_tab_1_label]
 
 [anim_tab_2]
 parent = @anim_tabs_bar
-[UiButton]
-    anchor = "l"
-    position_ratio = (0.157, 0.5)
-    pivot_ratio = (0.0, 0.5)
-    size_ratio = (0.13, 0.74)
-    style = $tab_idle
-[/UiButton]
+    [UiButton]
+        anchor = "l"
+        position_ratio = (0.157, 0.5)
+        pivot_ratio = (0.0, 0.5)
+        size_ratio = (0.13, 0.74)
+        style = $tab_idle
+    [/UiButton]
 [/anim_tab_2]
 
 [anim_tab_2_label]
 parent = @anim_tab_2
-[UiLabel]
-    size_ratio = (1.0, 1.0)
-    text = "anim2"
-    text_size_ratio = 0.28
-    color = $col_text
-[/UiLabel]
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "anim2"
+        text_size_ratio = 0.28
+        color = "#F2F1EE"
+    [/UiLabel]
 [/anim_tab_2_label]
 
 [anim_tab_3]
 parent = @anim_tabs_bar
-[UiButton]
-    anchor = "l"
-    position_ratio = (0.299, 0.5)
-    pivot_ratio = (0.0, 0.5)
-    size_ratio = (0.13, 0.74)
-    style = $tab_idle
-[/UiButton]
+    [UiButton]
+        anchor = "l"
+        position_ratio = (0.299, 0.5)
+        pivot_ratio = (0.0, 0.5)
+        size_ratio = (0.13, 0.74)
+        style = $tab_idle
+    [/UiButton]
 [/anim_tab_3]
 
 [anim_tab_3_label]
 parent = @anim_tab_3
-[UiLabel]
-    size_ratio = (1.0, 1.0)
-    text = "wave"
-    text_size_ratio = 0.28
-    color = $col_text
-[/UiLabel]
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "wave"
+        text_size_ratio = 0.28
+        color = "#F2F1EE"
+    [/UiLabel]
 [/anim_tab_3_label]
 
 [anim_tab_4]
 parent = @anim_tabs_bar
-[UiButton]
-    anchor = "l"
-    position_ratio = (0.441, 0.5)
-    pivot_ratio = (0.0, 0.5)
-    size_ratio = (0.13, 0.74)
-    style = $tab_idle
-[/UiButton]
+    [UiButton]
+        anchor = "l"
+        position_ratio = (0.441, 0.5)
+        pivot_ratio = (0.0, 0.5)
+        size_ratio = (0.13, 0.74)
+        style = $tab_idle
+    [/UiButton]
 [/anim_tab_4]
 
 [anim_tab_4_label]
 parent = @anim_tab_4
-[UiLabel]
-    size_ratio = (1.0, 1.0)
-    text = "idk"
-    text_size_ratio = 0.28
-    color = $col_text
-[/UiLabel]
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "idk"
+        text_size_ratio = 0.28
+        color = "#F2F1EE"
+    [/UiLabel]
 [/anim_tab_4_label]
 
 [anim_graph_panel]
-parent = $root
-[UiPanel]
-    anchor = "tr"
-    position_ratio = (1.0, 1.0)
-    pivot_ratio = (1.0, 1.0)
-    size_ratio = (0.82, 0.955)
-    fill = $col_view
-    stroke = "#F1F1F1"
-    stroke_width = 1
-[/UiPanel]
+parent = @anim_editor_root
+    [UiPanel]
+        anchor = "tr"
+        position_ratio = (1.0, 1.0)
+        pivot_ratio = (1.0, 1.0)
+        size_ratio = (0.82, 0.955)
+        fill = "#1B1814"
+        stroke = "#F1F1F1"
+        stroke_width = 1.0
+    [/UiPanel]
 [/anim_graph_panel]
 
 [anim_node_input_a]
 parent = @anim_graph_panel
-[UiPanel]
-    anchor = "tl"
-    position_ratio = (0.12, 0.16)
-    pivot_ratio = (0.0, 0.0)
-    size_ratio = (0.17, 0.14)
-    fill = $node_input
-    stroke = "#00000000"
-    stroke_width = 0
-[/UiPanel]
+    [UiPanel]
+        anchor = "tl"
+        position_ratio = (0.12, 0.16)
+        pivot_ratio = (0.0, 0.0)
+        size_ratio = (0.17, 0.14)
+        fill = "#7B8292"
+        stroke = "#00000000"
+        stroke_width = 0.0
+    [/UiPanel]
 [/anim_node_input_a]
 
 [anim_node_input_a_label]
 parent = @anim_node_input_a
-[UiLabel]
-    size_ratio = (1.0, 1.0)
-    text = "Animation Input"
-    text_size_ratio = 0.16
-    color = $col_text
-[/UiLabel]
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Animation Input"
+        text_size_ratio = 0.16
+        color = "#F2F1EE"
+    [/UiLabel]
 [/anim_node_input_a_label]
 
 [anim_node_input_b]
 parent = @anim_graph_panel
-[UiPanel]
-    anchor = "tl"
-    position_ratio = (0.16, 0.52)
-    pivot_ratio = (0.0, 0.0)
-    size_ratio = (0.19, 0.16)
-    fill = $node_input
-    stroke = "#00000000"
-    stroke_width = 0
-[/UiPanel]
+    [UiPanel]
+        anchor = "tl"
+        position_ratio = (0.16, 0.52)
+        pivot_ratio = (0.0, 0.0)
+        size_ratio = (0.19, 0.16)
+        fill = "#7B8292"
+        stroke = "#00000000"
+        stroke_width = 0.0
+    [/UiPanel]
 [/anim_node_input_b]
 
 [anim_node_input_b_label]
 parent = @anim_node_input_b
-[UiLabel]
-    size_ratio = (1.0, 1.0)
-    text = "Animation Input"
-    text_size_ratio = 0.15
-    color = $col_text
-[/UiLabel]
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Animation Input"
+        text_size_ratio = 0.15
+        color = "#F2F1EE"
+    [/UiLabel]
 [/anim_node_input_b_label]
 
 [anim_node_blend]
 parent = @anim_graph_panel
-[UiPanel]
-    anchor = "center"
-    position_ratio = (0.50, 0.48)
-    size_ratio = (0.18, 0.18)
-    fill = $node_mid
-    stroke = "#00000000"
-    stroke_width = 0
-[/UiPanel]
+    [UiPanel]
+        anchor = "center"
+        position_ratio = (0.5, 0.48)
+        size_ratio = (0.18, 0.18)
+        fill = "#3D7375"
+        stroke = "#00000000"
+        stroke_width = 0.0
+    [/UiPanel]
 [/anim_node_blend]
 
 [anim_node_output]
 parent = @anim_graph_panel
-[UiPanel]
-    anchor = "center"
-    position_ratio = (0.86, 0.46)
-    size_ratio = (0.18, 0.20)
-    fill = $node_out
-    stroke = "#00000000"
-    stroke_width = 0
-[/UiPanel]
+    [UiPanel]
+        anchor = "center"
+        position_ratio = (0.86, 0.46)
+        size_ratio = (0.18, 0.2)
+        fill = "#223524"
+        stroke = "#00000000"
+        stroke_width = 0.0
+    [/UiPanel]
 [/anim_node_output]
 
 [anim_node_output_label]
 parent = @anim_node_output
-[UiLabel]
-    size_ratio = (1.0, 1.0)
-    text = "Output"
-    text_size_ratio = 0.19
-    color = $col_text
-[/UiLabel]
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Output"
+        text_size_ratio = 0.19
+        color = "#F2F1EE"
+    [/UiLabel]
 [/anim_node_output_label]
+
