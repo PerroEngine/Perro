@@ -188,7 +188,7 @@ fn stylize_cloud_tint(base: vec3<f32>, sat: f32, gamma: f32, lift: f32) -> vec3<
 }
 
 
-const CLOUD_BASE_HEIGHT: f32 = 0.035;
+const CLOUD_BASE_HEIGHT: f32 = -0.055;
 
 
 

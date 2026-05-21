@@ -33,9 +33,9 @@ parent = @SkyDemo
         sky_angle = 0.0
         time = { time_of_day = 0.36 paused = false scale = 0.08 }
         cloud_size = 0.82
-        cloud_density = 0.70
-        cloud_variance = 0.32
-        wind_vector = (0.06, 0.02)
+        cloud_density = 0.76
+        cloud_variance = 0.22
+        wind_vector = (0.16, 0.12)
         star_size = 1.0
         star_scatter = 0.28
         star_gleam = 0.45

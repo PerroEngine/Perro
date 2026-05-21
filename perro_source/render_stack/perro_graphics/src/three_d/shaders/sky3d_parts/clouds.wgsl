@@ -10,11 +10,14 @@
         let sky_uv_y_adjusted = max(ray.y - CLOUD_BASE_HEIGHT, 0.003) * 0.85;
         let sky_uv_raw        = ray.xz / sqrt(sky_uv_y_adjusted);
         let pole_softening    = smoothstep(0.88, 0.995, abs(ray.y));
-        let sky_uv            = mix(sky_uv_raw, sky_uv_raw * 0.72, pole_softening);
+        var sky_uv            = mix(sky_uv_raw, sky_uv_raw * 0.72, pole_softening);
+        let horizon_parallax  = 1.0 - smoothstep(0.04, 0.56, ray.y);
+        let height_parallax   = 0.55 + horizon_parallax * 3.10;
+        sky_uv += sky.camera_pos.xz * 0.00145 * height_parallax;
 
         let cloud_clock      = cloud_time_seconds * (0.011 + wind_len * 0.06);
         let clouds_scale     = mix(1.55, 0.55, cloud_size);
-        let clouds_fuzziness = mix(0.080, 0.32, cloud_variance);
+        let clouds_fuzziness = mix(0.030, 0.145, cloud_variance);
         let coverage_bias    = mix(0.02,  0.14, cloud_density);
 
         // ── Night wisp turbulence ─────────────────────────────
@@ -49,7 +52,8 @@
             perlin_fbm(macro_uv * 0.55 + vec2<f32>( -5.0,  11.0), 2)
         ) - vec2<f32>(0.5, 0.5);
         let macro_shape = perlin_fbm((macro_uv + macro_warp * 1.35) * 0.35, 3);
-        let macro_bias  = smoothstep(0.35, 1.0, macro_shape) * 0.22;
+        let macro_core  = smoothstep(0.38, 0.86, macro_shape);
+        let macro_bias  = macro_core * 0.25;
 
         // ── Top layer ─────────────────────────────────────────
         var drift  = rotate2(wind_dir, shear_top) * cloud_clock * 1.12
@@ -92,19 +96,22 @@
         );
 
         // ── Threshold layers ──────────────────────────────────
+        let cloud_cut_hi = clouds_cutoff + clouds_fuzziness;
+        let cloud_cut_lo = clouds_cutoff - clouds_fuzziness * 0.18;
+
         let noise_bottom = smoothstep(
-            clouds_cutoff, clouds_cutoff + clouds_fuzziness,
+            cloud_cut_lo, cloud_cut_hi,
             noise_bottom_raw + coverage_bias + macro_bias * 0.80
         ) * 1.10;
 
         let noise_middle = smoothstep(
-            clouds_cutoff, clouds_cutoff + clouds_fuzziness,
+            cloud_cut_lo, cloud_cut_hi,
             noise_middle_raw + noise_bottom * 0.22
                 + coverage_bias * 0.85 + macro_bias * 0.65
         ) * 1.12;
 
         let noise_top_s = smoothstep(
-            clouds_cutoff, clouds_cutoff + clouds_fuzziness,
+            cloud_cut_lo, cloud_cut_hi,
             noise_top_raw + noise_middle * 0.42
                 + coverage_bias * 0.70 + macro_bias * 0.50
         ) * 1.22;
@@ -146,13 +153,13 @@
         );
 
         // ── Erosion / puff / breakup ──────────────────────────
-        let realistic_erosion      = smoothstep(0.18, 0.88, noise_top_raw);
+        let realistic_erosion      = smoothstep(0.28, 0.96, noise_top_raw);
         let realistic_puffs        = smoothstep(0.34, 0.90, noise_middle_raw);
-        let realistic_fine_breakup = smoothstep(0.22, 0.86, noise_bottom_raw);
+        let realistic_fine_breakup = smoothstep(0.34, 0.94, noise_bottom_raw);
 
         var clouds_amount_real = clouds_base * mix(0.82, 0.96, realistic_puffs);
-        clouds_amount_real *= mix(1.02, 0.70, realistic_erosion);
-        clouds_amount_real *= mix(1.0,  0.84, realistic_fine_breakup);
+        clouds_amount_real *= mix(1.04, 0.82, realistic_erosion);
+        clouds_amount_real *= mix(1.0,  0.92, realistic_fine_breakup);
         clouds_amount_real  = clamp(clouds_amount_real, 0.0, 1.0);
         clouds_amount_real *= sqrt(clouds_amount_real);
 
@@ -173,16 +180,23 @@
         let wisp_sun = mix(wisp_mask, wisp_expanded,
             sun_behind * cloud_sun_dot * 0.85);
 
-        clouds_amount_real  = mix(clouds_amount_real, curved_mass, 0.26);
+        let rounded_mass = smoothstep(
+            0.12, 0.74,
+            clouds_amount_real * 0.78
+                + curved_mass * 0.20
+                + macro_core * 0.16
+                + realistic_puffs * 0.10
+        );
+        clouds_amount_real  = mix(clouds_amount_real, rounded_mass, 0.44);
         clouds_amount_real += upper_veil * wisp_sun
-            * mix(0.24, 0.62, sun_behind * cloud_sun_dot);
+            * mix(0.14, 0.36, sun_behind * cloud_sun_dot);
 
         let micro_break = smoothstep(0.32, 0.86, detail_micro);
-        clouds_amount_real *= mix(1.08, 0.86, micro_break);
+        clouds_amount_real *= mix(1.04, 0.94, micro_break);
         let wind_cross = vec2<f32>(-wind_dir.y, wind_dir.x);
         let streak_uv = vec2<f32>(
-            dot(sky_uv, wind_dir) * 0.34,
-            dot(sky_uv, wind_cross) * 2.45
+            dot(sky_uv, wind_dir) * 0.78,
+            dot(sky_uv, wind_cross) * 1.45
         ) * clouds_scale + vec2<f32>(cloud_clock * 0.42, -17.0);
         let wisp_streak = perlin_fbm(streak_uv, 3);
         let soft_fray = smoothstep(0.38, 0.86, wisp_streak)
@@ -192,16 +206,33 @@
             0.18, 0.82,
             noise_middle_raw * 0.70 + low_layer_raw * 0.30 + coverage_bias
         );
+        let lobe_uv_a = rotate2(sky_uv, shear_mid + 0.74) * (clouds_scale * 2.75)
+            + wind_dir * cloud_clock * 0.24
+            + vec2<f32>(23.0, -41.0);
+        let lobe_uv_b = rotate2(sky_uv, shear_bot - 0.58) * (clouds_scale * 4.10)
+            - wind_cross * cloud_clock * 0.18
+            + vec2<f32>(-37.0, 19.0);
+        let small_lobes = smoothstep(0.36, 0.76, perlin_fbm(lobe_uv_a, 3))
+            * smoothstep(0.28, 0.84, perlin_fbm(lobe_uv_b, 2));
+        let edge_zone = smoothstep(0.10, 0.42, clouds_amount_real)
+            * (1.0 - smoothstep(0.50, 0.86, clouds_amount_real));
+        let notch_field = smoothstep(
+            0.44, 0.82,
+            perlin_fbm(lobe_uv_b * 1.28 + vec2<f32>(11.0, -7.0), 3)
+        );
         clouds_amount_real = mix(
             clouds_amount_real,
-            smoothstep(0.04, 0.92, clouds_amount_real + puff_round * 0.16),
-            0.42
+            smoothstep(0.08, 0.76, clouds_amount_real + puff_round * 0.18),
+            0.52
         );
-        clouds_amount_real = clamp(clouds_amount_real - soft_fray * 0.18, 0.0, 1.0);
-        clouds_amount_real  = pow(clamp(clouds_amount_real, 0.0, 1.0), 0.96);
+        clouds_amount_real += small_lobes * edge_zone * 0.18;
+        clouds_amount_real -= notch_field * edge_zone * (1.0 - small_lobes * 0.55) * 0.06;
+        clouds_amount_real = clamp(clouds_amount_real - soft_fray * 0.04, 0.0, 1.0);
+        clouds_amount_real = smoothstep(0.08, 0.88, clouds_amount_real);
+        clouds_amount_real  = pow(clamp(clouds_amount_real, 0.0, 1.0), 0.92);
 
         let horizon_continuity = smoothstep(
-            CLOUD_BASE_HEIGHT, CLOUD_BASE_HEIGHT + 0.06, ray.y);
+            CLOUD_BASE_HEIGHT, CLOUD_BASE_HEIGHT + 0.030, ray.y);
         clouds_amount_real *= horizon_continuity * 1.1;
         clouds_amount_real *= 1.0 - pole_softening * 0.22;
         clouds_amount_real  = clamp(clouds_amount_real, 0.0, 1.0);
@@ -230,11 +261,11 @@
         );
         clouds_amount_real *= mix(
             1.0,
-            clamp(1.0 - night_breakup * 0.78, 0.15, 1.0),
+            clamp(1.0 - night_breakup * 0.46, 0.42, 1.0),
             night_pocket_strength
         );
         // Feather edges more aggressively at night → gossamer wisp look.
-        let night_edge_feather = mix(0.0, 0.30, night_pocket_strength)
+        let night_edge_feather = mix(0.0, 0.12, night_pocket_strength)
             * (1.0 - smoothstep(0.18, 0.55, clouds_amount_real));
         clouds_amount_real = clamp(
             clouds_amount_real - night_edge_feather, 0.0, 1.0);
@@ -243,12 +274,12 @@
         let clouds_edge_color_real   = vec3<f32>(0.74, 0.78, 0.86);
         let clouds_top_color_real    = vec3<f32>(0.90, 0.92, 0.95);
         let clouds_middle_color_real = vec3<f32>(0.82, 0.86, 0.92);
-        let clouds_bottom_color_real = vec3<f32>(0.70, 0.74, 0.82);
+        let clouds_bottom_color_real = vec3<f32>(0.58, 0.62, 0.72);
 
         var clouds_color_real = mix(vec3<f32>(0.0), clouds_top_color_real,    noise_top_s);
         clouds_color_real     = mix(clouds_color_real, clouds_middle_color_real, noise_middle);
         clouds_color_real     = mix(clouds_color_real, clouds_bottom_color_real, noise_bottom);
-        clouds_color_real    += vec3<f32>(0.04, 0.05, 0.07) * low_layer;
+        clouds_color_real    -= vec3<f32>(0.07, 0.08, 0.10) * low_layer;
         clouds_color_real    += vec3<f32>(0.03, 0.04, 0.05) * high_layer;
         clouds_color_real     = mix(clouds_edge_color_real, clouds_color_real, noise_top_s);
 
@@ -267,24 +298,38 @@
         // ── 3D volume shading ─────────────────────────────────
         let view_up_dot = clamp(ray.y / max(ray.y + 0.12, 1.0e-4), 0.0, 1.0);
         let cloud_layer_height = clamp(
-            noise_top_s * 0.55 + noise_middle * 0.30 + noise_bottom * 0.15,
+            noise_top_s * 0.64 + noise_middle * 0.28 + high_layer * 0.24 - noise_bottom * 0.18,
             0.0, 1.0
+        );
+        let cloud_relief = smoothstep(0.18, 0.86, cloud_layer_height)
+                         * smoothstep(0.18, 0.80, clouds_amount_real);
+        let cloud_vertical_cleft = smoothstep(
+            0.18, 0.78,
+            (noise_middle - noise_bottom * 0.54) + (high_layer - low_layer) * 0.32
         );
         let top_face_light = clamp(view_up_dot * cloud_layer_height, 0.0, 1.0);
         let top_roundness  = top_face_light * sqrt(top_face_light);
-        let top_col_boost  = mix(vec3<f32>(1.0), vec3<f32>(1.22, 1.18, 1.14), top_roundness);
+        let top_col_boost  = mix(vec3<f32>(1.0), vec3<f32>(1.30, 1.22, 1.14), top_roundness);
         let bottom_shadow_view = clamp(
             (1.0 - view_up_dot) * (1.0 - cloud_layer_height), 0.0, 1.0);
-        let bottom_shadow_str = bottom_shadow_view * sqrt(bottom_shadow_view)
-                              * smoothstep(0.30, 0.85, clouds_amount_real);
+        let underside_cover = smoothstep(0.16, 0.78, noise_bottom + low_layer * 0.55)
+                            * smoothstep(0.18, 0.82, clouds_amount_real);
+        let bottom_shadow_str = max(
+            bottom_shadow_view * sqrt(bottom_shadow_view),
+            underside_cover * (0.42 + (1.0 - view_up_dot) * 0.46)
+        ) * smoothstep(0.24, 0.85, clouds_amount_real);
         let bottom_col_damp   = mix(
-            vec3<f32>(1.0), vec3<f32>(0.52, 0.54, 0.60),
-            bottom_shadow_str * 0.70
+            vec3<f32>(1.0), vec3<f32>(0.38, 0.40, 0.48),
+            bottom_shadow_str * 0.92
         );
+        let cleft_shadow = cloud_vertical_cleft
+            * (1.0 - smoothstep(0.56, 0.96, cloud_layer_height))
+            * smoothstep(0.22, 0.74, clouds_amount_real);
+        clouds_color_real *= mix(vec3<f32>(1.0), vec3<f32>(0.58, 0.62, 0.70), cleft_shadow * 0.42);
         let sun_top_bonus = clamp(sun_dir.y * 0.6 + 0.4, 0.0, 1.0) * day_t;
         let top_sun_tint  = mix(
-            vec3<f32>(1.0), vec3<f32>(1.10, 1.06, 0.96),
-            top_roundness * sun_top_bonus * 0.45
+            vec3<f32>(1.0), vec3<f32>(1.18, 1.09, 0.96),
+            (top_roundness + cloud_relief * 0.35) * sun_top_bonus * 0.52
         );
         clouds_color_real = clouds_color_real
                           * top_col_boost * bottom_col_damp * top_sun_tint;
@@ -340,7 +385,8 @@
         let silver_lining2 = silver_lining_base * silver_lining_base;
         let silver_lining4 = silver_lining2 * silver_lining2;
         let silver_lining = silver_lining4 * silver_lining2 * silver_lining_base * edge_hint;
-        clouds_color_real += vec3<f32>(0.94, 0.92, 0.88) * silver_lining * 0.08;
+        let warm_silver = mix(vec3<f32>(1.06, 0.94, 0.68), vec3<f32>(1.15, 0.64, 0.92), evening_t);
+        clouds_color_real += warm_silver * silver_lining * 0.16;
 
         // ── Sun punch (daytime) ───────────────────────────────
         if (day_t > 0.5) {
@@ -375,6 +421,19 @@
         clouds_color_real = clouds_color_real
             * mix(vec3<f32>(1.0), sky_tint, 0.10);
 
+        let pastel_yellow = vec3<f32>(1.18, 1.04, 0.72);
+        let pastel_pink   = vec3<f32>(1.18, 0.76, 1.02);
+        let pastel_mix    = mix(pastel_yellow, pastel_pink, smoothstep(0.15, 0.78, evening_t + cloud_sun_dot * 0.22));
+        let pastel_highlight = smoothstep(0.22, 0.82, cloud_relief)
+                             * smoothstep(0.12, 0.72, edge_hint)
+                             * (0.34 + cloud_sun_dot * 0.54)
+                             * day_t;
+        clouds_color_real = mix(
+            clouds_color_real,
+            clouds_color_real * pastel_mix + pastel_mix * 0.10,
+            pastel_highlight * 0.28
+        );
+
         // ── Coloured edge band ────────────────────────────────
         let edge_band = clamp(
             (noise_top_s - noise_middle * 0.45) + (1.0 - noise_bottom) * 0.12,
@@ -390,8 +449,8 @@
             noise_top_raw * 1.25 + noise_middle_raw * 0.95
             + cloud_time_seconds * 0.035
         );
-        let rim_yellow = vec3<f32>(1.20, 1.03, 0.68);
-        let rim_pink   = vec3<f32>(1.20, 0.74, 1.00);
+        let rim_yellow = vec3<f32>(1.34, 1.08, 0.62);
+        let rim_pink   = vec3<f32>(1.34, 0.58, 1.02);
         let rim_blue   = vec3<f32>(0.72, 0.92, 1.25);
         let rim_warm   = mix(rim_yellow, rim_pink, smoothstep(0.18, 0.56, edge_phase));
         let rim_mix    = mix(rim_warm,   rim_blue,  smoothstep(0.52, 0.90, edge_phase));
@@ -402,7 +461,11 @@
 
         let micro_edge = smoothstep(0.30, 0.85, detail_micro)
                        * (1.0 - smoothstep(0.85, 1.0, noise_bottom));
-        clouds_color_real += edge_tint * edge_glow * (0.24 + micro_edge * 0.12);
+        let lit_edge = edge_glow * (0.24 + micro_edge * 0.12)
+                     * (0.65 + cloud_sun_dot * day_t * 0.55);
+        clouds_color_real += edge_tint * lit_edge;
+        clouds_color_real += vec3<f32>(1.22, 0.70, 0.95)
+            * upper_veil * cloud_relief * evening_t * 0.14;
 
         clouds_color_real = min(clouds_color_real, vec3<f32>(1.15, 1.12, 1.10));
 
