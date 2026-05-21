@@ -10,7 +10,6 @@ Topics:
 - [TCP](tcp.md)
 - [UDP](udp.md)
 - [WebSocket](websocket.md)
-- [WebRTC](webrtc.md)
 
 `NetworkWorld` owns TCP hosts, TCP connections, UDP endpoints, WebSocket hosts, and WebSocket connections.
 

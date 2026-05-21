@@ -67,23 +67,6 @@ fn texture_id_generational() {
 }
 
 #[test]
-fn ui_element_from_string_deterministic() {
-    let a = UIElementID::from_string("x-border");
-    let b = UIElementID::from_string("x-border");
-    assert_eq!(a, b);
-}
-
-#[test]
-fn ui_element_from_string_distinguishes_common_cases() {
-    let a = UIElementID::from_string("x-border");
-    let b = UIElementID::from_string("x-border2");
-    let c = UIElementID::from_string("X-BORDER");
-
-    assert_ne!(a, b);
-    assert_ne!(a, c);
-}
-
-#[test]
 fn signal_id_from_string_deterministic() {
     let a = SignalID::from_string("on_damage");
     let b = SignalID::from_string("on_damage");

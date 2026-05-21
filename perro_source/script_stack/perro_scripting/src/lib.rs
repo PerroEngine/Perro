@@ -15,5 +15,5 @@ pub mod prelude {
     pub use perro_input_api::prelude::*;
     pub use perro_resource_api::prelude::*;
     pub use perro_runtime_api::prelude::*;
-    pub use perro_variant::{DeriveVariant, Variant, VariantSchema};
+    pub use perro_variant::{DeriveVariant, Variant, VariantKind, VariantSchema};
 }

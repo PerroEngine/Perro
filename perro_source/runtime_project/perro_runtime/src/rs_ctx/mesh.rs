@@ -25,9 +25,16 @@ impl MeshAPI for RuntimeResourceApi {
         let request = state.allocate_request();
         let id = state.allocate_mesh_id();
         let source = format!("runtime://mesh/{}:{}", id.index(), id.generation());
+        let source_hash = string_to_u64(&source);
         state.mesh_data_by_id.insert(id, data.clone());
         state.mesh_revision_by_id.insert(id, 1);
+        state.mesh_by_source.insert(source_hash, id);
         state.mesh_source_by_id.insert(id, source.clone());
+        state.mesh_pending_by_source.insert(source_hash, request);
+        state
+            .mesh_pending_source_by_request
+            .insert(request, source.clone());
+        state.mesh_pending_id_by_request.insert(request, id);
         state.queued_commands.push(RenderCommand::Resource(
             ResourceCommand::CreateRuntimeMesh {
                 request,
@@ -68,7 +75,20 @@ impl MeshAPI for RuntimeResourceApi {
         }
         let canonical = self.canonical_mesh_id(id);
         let state = self.state.lock().expect("resource api mutex poisoned");
-        state.mesh_data_by_id.contains_key(&canonical)
+        (state.mesh_data_by_id.contains_key(&canonical)
+            || state.mesh_loaded_by_id.contains(&canonical))
+            && !state
+                .mesh_pending_id_by_request
+                .values()
+                .copied()
+                .any(|pending| {
+                    state
+                        .mesh_id_alias
+                        .get(&pending)
+                        .copied()
+                        .unwrap_or(pending)
+                        == canonical
+                })
     }
 
     fn load_mesh_hashed(&self, source_hash: u64, source: Option<&str>) -> MeshID {
@@ -292,6 +312,7 @@ impl RuntimeResourceApi {
         }
         state.mesh_by_source.insert(source_hash, id);
         state.mesh_source_by_id.insert(id, source.to_string());
+        state.mesh_loaded_by_id.insert(id);
         if let Some(request) = state.mesh_pending_by_source.remove(&source_hash) {
             state.mesh_pending_source_by_request.remove(&request);
             state.mesh_pending_id_by_request.remove(&request);
@@ -312,7 +333,7 @@ fn normalize_source_slashes(source: &str) -> std::borrow::Cow<'_, str> {
 #[cfg(test)]
 mod tests {
     use super::RuntimeResourceApi;
-    use perro_render_bridge::{RenderCommand, ResourceCommand};
+    use perro_render_bridge::{Material3D, Mesh3D, RenderCommand, RenderEvent, ResourceCommand};
     use perro_resource_api::{
         ResourceWindow, material_load, material_reserve, mesh_load, mesh_reserve, texture_load,
         texture_reserve,
@@ -320,6 +341,33 @@ mod tests {
 
     fn new_api() -> std::sync::Arc<RuntimeResourceApi> {
         RuntimeResourceApi::new(None, None, None, None, None, None, None, None)
+    }
+
+    fn static_material_lookup(_: u64) -> &'static Material3D {
+        static MATERIAL: Material3D =
+            Material3D::Standard(perro_render_bridge::StandardMaterial3D::const_default());
+        &MATERIAL
+    }
+
+    fn new_static_material_api() -> std::sync::Arc<RuntimeResourceApi> {
+        RuntimeResourceApi::new(
+            Some(static_material_lookup),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+    }
+
+    fn empty_mesh() -> Mesh3D {
+        Mesh3D {
+            vertices: Vec::new(),
+            indices: Vec::new(),
+            surface_ranges: Vec::new(),
+        }
     }
 
     #[test]
@@ -374,5 +422,201 @@ mod tests {
             RenderCommand::Resource(ResourceCommand::SetMaterialReserved { id, reserved: true })
                 if *id == material
         )));
+    }
+
+    #[test]
+    fn created_mesh_is_not_loaded_until_backend_slot_exists() {
+        let api = new_api();
+        let res = ResourceWindow::new(api.as_ref());
+        let mesh = res.Meshes().create(empty_mesh());
+        assert!(!res.Meshes().is_loaded(mesh));
+
+        let request = {
+            let mut commands = Vec::new();
+            api.drain_commands(&mut commands);
+            commands
+                .into_iter()
+                .find_map(|command| match command {
+                    RenderCommand::Resource(ResourceCommand::CreateRuntimeMesh {
+                        request,
+                        id,
+                        ..
+                    }) if id == mesh => Some(request),
+                    _ => None,
+                })
+                .expect("expected runtime mesh create command")
+        };
+
+        api.apply_render_event(&RenderEvent::MeshCreated {
+            request,
+            id: mesh,
+            mesh: Some(empty_mesh()),
+        });
+        assert!(res.Meshes().is_loaded(mesh));
+    }
+
+    #[test]
+    fn mesh_created_without_cpu_data_counts_loaded_after_backend_ack() {
+        let api = new_api();
+        let res = ResourceWindow::new(api.as_ref());
+        let mesh = mesh_load!(res, "__cube__");
+        assert!(!res.Meshes().is_loaded(mesh));
+
+        let request = {
+            let mut commands = Vec::new();
+            api.drain_commands(&mut commands);
+            commands
+                .into_iter()
+                .find_map(|command| match command {
+                    RenderCommand::Resource(ResourceCommand::CreateMesh {
+                        request, id, ..
+                    }) if id == mesh => Some(request),
+                    _ => None,
+                })
+                .expect("expected mesh create command")
+        };
+
+        api.apply_render_event(&RenderEvent::MeshCreated {
+            request,
+            id: mesh,
+            mesh: None,
+        });
+        assert!(res.Meshes().is_loaded(mesh));
+    }
+
+    #[test]
+    fn created_material_is_loaded_after_backend_create_ack() {
+        let api = new_api();
+        let res = ResourceWindow::new(api.as_ref());
+        let material = res.Materials().create(Material3D::default());
+        assert!(!res.Materials().is_loaded(material));
+
+        let request = {
+            let mut commands = Vec::new();
+            api.drain_commands(&mut commands);
+            commands
+                .into_iter()
+                .find_map(|command| match command {
+                    RenderCommand::Resource(ResourceCommand::CreateMaterial {
+                        request,
+                        id,
+                        ..
+                    }) if id == material => Some(request),
+                    _ => None,
+                })
+                .expect("expected material create command")
+        };
+
+        api.apply_render_event(&RenderEvent::MaterialCreated {
+            request,
+            id: material,
+        });
+        assert!(res.Materials().is_loaded(material));
+    }
+
+    #[test]
+    fn static_material_load_is_loaded_after_backend_create_ack() {
+        let api = new_static_material_api();
+        let res = ResourceWindow::new(api.as_ref());
+        let material = material_load!(res, "res://materials/static.pmat");
+        assert!(!res.Materials().is_loaded(material));
+
+        let request = {
+            let mut commands = Vec::new();
+            api.drain_commands(&mut commands);
+            commands
+                .into_iter()
+                .find_map(|command| match command {
+                    RenderCommand::Resource(ResourceCommand::CreateMaterial {
+                        request,
+                        id,
+                        ..
+                    }) if id == material => Some(request),
+                    _ => None,
+                })
+                .expect("expected static material create command")
+        };
+
+        api.apply_render_event(&RenderEvent::MaterialCreated {
+            request,
+            id: material,
+        });
+        assert!(res.Materials().is_loaded(material));
+    }
+
+    #[test]
+    fn async_material_waits_for_source_task() {
+        let api = new_api();
+        let res = ResourceWindow::new(api.as_ref());
+        let material = res.Materials().create(Material3D::default());
+        {
+            let mut state = api.state.lock().expect("resource api mutex poisoned");
+            state.material_load_pending_by_id.insert(material);
+        }
+
+        let request = {
+            let mut commands = Vec::new();
+            api.drain_commands(&mut commands);
+            commands
+                .into_iter()
+                .find_map(|command| match command {
+                    RenderCommand::Resource(ResourceCommand::CreateMaterial {
+                        request,
+                        id,
+                        ..
+                    }) if id == material => Some(request),
+                    _ => None,
+                })
+                .expect("expected material create command")
+        };
+
+        api.apply_render_event(&RenderEvent::MaterialCreated {
+            request,
+            id: material,
+        });
+        assert!(!res.Materials().is_loaded(material));
+
+        api.apply_render_event(&RenderEvent::MaterialLoaded { id: material });
+        assert!(!res.Materials().is_loaded(material));
+
+        {
+            let mut state = api.state.lock().expect("resource api mutex poisoned");
+            state.material_load_pending_by_id.remove(&material);
+        }
+        api.apply_render_event(&RenderEvent::MaterialLoaded { id: material });
+        assert!(res.Materials().is_loaded(material));
+    }
+
+    #[test]
+    fn write_material_keeps_material_loaded() {
+        let api = new_api();
+        let res = ResourceWindow::new(api.as_ref());
+        let material = res.Materials().create(Material3D::default());
+
+        let request = {
+            let mut commands = Vec::new();
+            api.drain_commands(&mut commands);
+            commands
+                .into_iter()
+                .find_map(|command| match command {
+                    RenderCommand::Resource(ResourceCommand::CreateMaterial {
+                        request,
+                        id,
+                        ..
+                    }) if id == material => Some(request),
+                    _ => None,
+                })
+                .expect("expected material create command")
+        };
+
+        api.apply_render_event(&RenderEvent::MaterialCreated {
+            request,
+            id: material,
+        });
+        api.apply_render_event(&RenderEvent::MaterialLoaded { id: material });
+        assert!(res.Materials().is_loaded(material));
+
+        assert!(res.Materials().write(material, Material3D::default()));
+        assert!(res.Materials().is_loaded(material));
     }
 }

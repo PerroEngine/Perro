@@ -49,6 +49,12 @@ lifecycle!({
 });
 ```
 
+`get_var!` and `call_method!` return `Variant` because member lookup is dynamic.
+
+Decode with `as_*`, `parse::<T>()`, or `into_parse::<T>()`.
+
+See [Variant](../../variant.md).
+
 ## API Reference
 
 ### `with_state`
@@ -432,7 +438,7 @@ lifecycle!({
 | Access | `ctx.run.Scripts()` |
 | Signature | `get_var!(ctx.run, id, member)` |
 | Params | `ctx, id, member` |
-| Returns | `typed value from backing method` |
+| Returns | `Variant` |
 | Use when | Use when gameplay needs to read typed engine data and react without owning the storage. |
 | Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
@@ -476,7 +482,7 @@ lifecycle!({
 | Access | `ctx.run.Scripts()` |
 | Signature | `call_method!(ctx.run, id, method, params)` |
 | Params | `ctx, id, method, params` |
-| Returns | `same as backing method` |
+| Returns | `Variant` |
 | Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
 | Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 

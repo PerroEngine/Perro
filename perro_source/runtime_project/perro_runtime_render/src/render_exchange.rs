@@ -75,6 +75,7 @@ impl RenderState {
                     .insert(request, RuntimeRenderResult::Failed(reason));
             }
             RenderEvent::TextureLoaded { .. }
+            | RenderEvent::MaterialLoaded { .. }
             | RenderEvent::MeshDropped { .. }
             | RenderEvent::TextureDropped { .. }
             | RenderEvent::MaterialDropped { .. }

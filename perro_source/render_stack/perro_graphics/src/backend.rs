@@ -19,7 +19,7 @@ use perro_graphics_assets::decode_ptex;
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_io::load_asset;
 use perro_render_bridge::{
-    CameraStreamCommand, CameraStreamState, Command2D, Command3D, Light2DState,
+    CameraStreamCommand, CameraStreamState, Command2D, Command3D, Light2DState, Material3D,
     PointParticles3DState, PostProcessingCommand, RenderBridge, RenderCommand, RenderEvent,
     ResourceCommand, Sprite2DCommand, VisualAccessibilityCommand, Water2DState, Water3DState,
 };
@@ -41,6 +41,18 @@ pub type StaticMeshLookup = fn(path_hash: u64) -> &'static [u8];
 pub type StaticShaderLookup = fn(path_hash: u64) -> &'static str;
 const GC_INTERVAL_FRAMES: u32 = 60;
 const GC_MAX_DROPS_PER_KIND: usize = 64;
+
+#[cfg(not(target_arch = "wasm32"))]
+fn asset_ready_log_enabled() -> bool {
+    std::env::var("PERRO_ASSET_READY_LOG")
+        .ok()
+        .is_some_and(|raw| matches!(raw.as_str(), "1" | "true" | "yes" | "on"))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn asset_ready_log_enabled() -> bool {
+    false
+}
 
 #[inline]
 fn normalize_aa_sample_count(samples: u32) -> u32 {
@@ -692,6 +704,11 @@ impl PerroGraphics {
                             self.resources
                                 .create_mesh_with_id(id, source.as_str(), reserved)
                         };
+                        if asset_ready_log_enabled() {
+                            eprintln!(
+                                "[perro][asset-ready] backend mesh request id={out_id:?} source={source}"
+                            );
+                        }
                         if let Some(mesh) = self.resources.runtime_mesh_data_by_id(out_id).cloned()
                         {
                             self.events.push(RenderEvent::MeshCreated {
@@ -774,6 +791,17 @@ impl PerroGraphics {
                         source,
                         reserved,
                     } => {
+                        let log_kind = if asset_ready_log_enabled() {
+                            Some(match source.as_deref() {
+                                Some(path) => format!("kind=source path={path}"),
+                                None if material == Material3D::default() => {
+                                    "kind=default".to_string()
+                                }
+                                None => "kind=inline".to_string(),
+                            })
+                        } else {
+                            None
+                        };
                         let id = if id.is_nil() {
                             self.resources
                                 .create_material(material, source.as_deref(), reserved)
@@ -787,9 +815,22 @@ impl PerroGraphics {
                         };
                         self.events
                             .push(RenderEvent::MaterialCreated { request, id });
+                        if let Some(log_kind) = log_kind {
+                            eprintln!(
+                                "[perro][asset-ready] backend material created id={id:?} {log_kind}"
+                            );
+                        }
+                        self.events.push(RenderEvent::MaterialLoaded { id });
                     }
                     ResourceCommand::WriteMaterialData { id, material } => {
-                        let _ = self.resources.set_material_data(id, material);
+                        if self.resources.set_material_data(id, material) {
+                            if asset_ready_log_enabled() {
+                                eprintln!(
+                                    "[perro][asset-ready] backend material data applied id={id:?}"
+                                );
+                            }
+                            self.events.push(RenderEvent::MaterialLoaded { id });
+                        }
                     }
                     ResourceCommand::SetMeshReserved { id, reserved } => {
                         self.resources.set_mesh_reserved(id, reserved);

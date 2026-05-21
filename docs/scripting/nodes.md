@@ -117,9 +117,27 @@ Physics 2D:
 - `StaticBody2D`
 - `RigidBody2D`
 - `Area2D`
-- `CollisionShape2D` should be authored as a child of `StaticBody2D` or `RigidBody2D`.
+- `CollisionShape2D` should be authored as a child of `StaticBody2D`, `RigidBody2D`, or `Area2D`.
 - Static/rigid bodies and areas participate in audio propagation by default through `audio_interaction`.
 - Collision shapes only provide geometry.
+- See [Physics Nodes](physics_nodes.md) for scene authoring examples.
+
+2D physics shape authoring:
+
+```text
+[Body]
+    [RigidBody2D]
+        [Node2D/]
+    [/RigidBody2D]
+[/Body]
+
+[BodyShape]
+parent = @Body
+    [CollisionShape2D]
+        shape = { type = quad width = 1.0 height = 1.0 }
+    [/CollisionShape2D]
+[/BodyShape]
+```
 
 2D physics layer/mask fields:
 
@@ -149,6 +167,25 @@ Audio 2D:
 - `AudioMask2D` is invisible audio-only geometry with `CollisionShape2D` children.
 - `AudioEffectZone2D` stores ordered reverb/echo/dampening effects. `audio_mask` ignores matching emitted `audio_layer`; shape overlap with source/listener/path applies the chain.
 - `AudioPortal2D` marks one-way inputs with `CollisionShape2D` children and linked portal exits. Hit point and ray direction transform through target portal global transforms, then continue through portal hits or physics bounces. Immediate re-entry into the portal just exited is blocked until another portal hit or physics bounce.
+- See [Audio Nodes](audio_nodes.md) for scene authoring examples.
+
+2D audio shape authoring:
+
+```text
+[Zone]
+    [AudioEffectZone2D]
+        effects = [{ reverb_send = 0.35 echo = 0.0 dampening = 0.0 }]
+        [Node2D/]
+    [/AudioEffectZone2D]
+[/Zone]
+
+[ZoneShape]
+parent = @Zone
+    [CollisionShape2D]
+        shape = { type = quad width = 4.0 height = 4.0 }
+    [/CollisionShape2D]
+[/ZoneShape]
+```
 
 `TileMap2D` is the tile map node.
 It uses `.ptileset` data and can emit static 2D colliders from `collision_shape = "auto"`.
@@ -259,12 +296,30 @@ Physics 3D:
 - `StaticBody3D`
 - `RigidBody3D`
 - `Area3D`
-- `CollisionShape3D` should be authored as a child of `StaticBody3D` or `RigidBody3D`.
+- `CollisionShape3D` should be authored as a child of `StaticBody3D`, `RigidBody3D`, or `Area3D`.
 - `CollisionShape3D` supports primitive `shape` and mesh-backed `trimesh` source.
 - `flip_x`, `flip_y`, and `flip_z` mirror collision geometry around local origin.
 - Trimesh source format: `res://path/to/model.glb:mesh[0]` (mesh index optional, default `0`).
 - Static/rigid bodies and areas participate in audio propagation by default through `audio_interaction`.
 - Collision shapes only provide geometry.
+- See [Physics Nodes](physics_nodes.md) for scene authoring examples.
+
+3D physics shape authoring:
+
+```text
+[Body]
+    [StaticBody3D]
+        [Node3D/]
+    [/StaticBody3D]
+[/Body]
+
+[BodyShape]
+parent = @Body
+    [CollisionShape3D]
+        shape = { type = cube, size = (1, 1, 1) }
+    [/CollisionShape3D]
+[/BodyShape]
+```
 
 ## 3D Mesh Flips
 
@@ -388,6 +443,24 @@ Audio 3D:
 - `AudioMask3D` is invisible audio-only geometry with `CollisionShape3D` children.
 - `AudioEffectZone3D` stores ordered reverb/echo/dampening effects. `audio_mask` ignores matching emitted `audio_layer`; shape overlap with source/listener/path applies the chain.
 - `AudioPortal3D` marks one-way inputs with `CollisionShape3D` children and linked portal exits. Hit point and ray direction transform through target portal global transforms, then continue through portal hits or physics bounces. Immediate re-entry into the portal just exited is blocked until another portal hit or physics bounce.
+- See [Audio Nodes](audio_nodes.md) for scene authoring examples.
+
+3D audio shape authoring:
+
+```text
+[AudioWall]
+    [AudioMask3D]
+        [Node3D/]
+    [/AudioMask3D]
+[/AudioWall]
+
+[AudioWallShape]
+parent = @AudioWall
+    [CollisionShape3D]
+        shape = { type = cube, size = (1, 2, 0.2) }
+    [/CollisionShape3D]
+[/AudioWallShape]
+```
 
 `Skeleton3D`
 

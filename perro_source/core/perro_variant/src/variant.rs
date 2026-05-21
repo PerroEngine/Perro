@@ -135,6 +135,36 @@ pub enum Variant {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum VariantKind {
+    Null,
+    Bool,
+    Number,
+    String,
+    Bytes,
+    ID,
+    EngineStruct,
+    Array,
+    Object,
+}
+
+impl VariantKind {
+    #[inline]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            VariantKind::Null => "Null",
+            VariantKind::Bool => "Bool",
+            VariantKind::Number => "Number",
+            VariantKind::String => "String",
+            VariantKind::Bytes => "Bytes",
+            VariantKind::ID => "ID",
+            VariantKind::EngineStruct => "EngineStruct",
+            VariantKind::Array => "Array",
+            VariantKind::Object => "Object",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum IDs {
     Node(NodeID),
     Texture(TextureID),
@@ -142,7 +172,6 @@ pub enum IDs {
     Mesh(MeshID),
     Animation(AnimationID),
     Light(LightID),
-    UIElement(UIElementID),
     Signal(SignalID),
     AudioBus(AudioBusID),
     Tag(TagID),
@@ -159,7 +188,6 @@ impl IDs {
             IDs::Mesh(v) => v.as_u64(),
             IDs::Animation(v) => v.as_u64(),
             IDs::Light(v) => v.as_u64(),
-            IDs::UIElement(v) => v.as_u64(),
             IDs::Signal(v) => v.as_u64(),
             IDs::AudioBus(v) => v.as_u64(),
             IDs::Tag(v) => v.as_u64(),
@@ -172,6 +200,8 @@ impl IDs {
 pub enum EngineStruct {
     Vector2(Vector2),
     Vector3(Vector3),
+    IVector2(IVector2),
+    IVector3(IVector3),
     UVector2(UVector2),
     UVector3(UVector3),
     Transform2D(Transform2D),
@@ -589,7 +619,6 @@ impl_statefield_plain_id!(MaterialID);
 impl_statefield_plain_id!(MeshID);
 impl_statefield_plain_id!(AnimationID);
 impl_statefield_plain_id!(LightID);
-impl_statefield_plain_id!(UIElementID);
 impl_statefield_plain_id!(SignalID);
 impl_statefield_plain_id!(AudioBusID);
 impl_statefield_plain_id!(TagID);
@@ -624,6 +653,50 @@ impl DeriveVariant for Vector3 {
         let y = obj.get("y")?.as_f32()?;
         let z = obj.get("z")?.as_f32()?;
         Some(Vector3::new(x, y, z))
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::from(*self)
+    }
+}
+
+impl DeriveVariant for IVector2 {
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        if let Some(v) = value.as_ivec2() {
+            return Some(v);
+        }
+        let obj = value.as_object()?;
+        let x = obj.get("x")?.as_number()?.as_i64_lossy()?;
+        let y = obj.get("y")?.as_number()?.as_i64_lossy()?;
+        Some(IVector2::new(
+            i32::try_from(x).ok()?,
+            i32::try_from(y).ok()?,
+        ))
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::from(*self)
+    }
+}
+
+impl DeriveVariant for IVector3 {
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        if let Some(v) = value.as_ivec3() {
+            return Some(v);
+        }
+        let obj = value.as_object()?;
+        let x = obj.get("x")?.as_number()?.as_i64_lossy()?;
+        let y = obj.get("y")?.as_number()?.as_i64_lossy()?;
+        let z = obj.get("z")?.as_number()?.as_i64_lossy()?;
+        Some(IVector3::new(
+            i32::try_from(x).ok()?,
+            i32::try_from(y).ok()?,
+            i32::try_from(z).ok()?,
+        ))
     }
 
     #[inline]
@@ -891,18 +964,23 @@ where
 
 impl Variant {
     #[inline]
-    pub fn kind_name(&self) -> &'static str {
+    pub fn get_kind(&self) -> VariantKind {
         match self {
-            Variant::Null => "Null",
-            Variant::Bool(_) => "Bool",
-            Variant::Number(_) => "Number",
-            Variant::String(_) => "String",
-            Variant::Bytes(_) => "Bytes",
-            Variant::ID(_) => "ID",
-            Variant::EngineStruct(_) => "EngineStruct",
-            Variant::Array(_) => "Array",
-            Variant::Object(_) => "Object",
+            Variant::Null => VariantKind::Null,
+            Variant::Bool(_) => VariantKind::Bool,
+            Variant::Number(_) => VariantKind::Number,
+            Variant::String(_) => VariantKind::String,
+            Variant::Bytes(_) => VariantKind::Bytes,
+            Variant::ID(_) => VariantKind::ID,
+            Variant::EngineStruct(_) => VariantKind::EngineStruct,
+            Variant::Array(_) => VariantKind::Array,
+            Variant::Object(_) => VariantKind::Object,
         }
+    }
+
+    #[inline]
+    pub fn kind_name(&self) -> &'static str {
+        self.get_kind().as_str()
     }
 
     #[inline]
@@ -1050,6 +1128,62 @@ impl Variant {
     }
 
     #[inline]
+    pub fn as_material(&self) -> Option<MaterialID> {
+        match *self {
+            Variant::ID(IDs::Material(id)) => Some(id),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_mesh(&self) -> Option<MeshID> {
+        match *self {
+            Variant::ID(IDs::Mesh(id)) => Some(id),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_animation(&self) -> Option<AnimationID> {
+        match *self {
+            Variant::ID(IDs::Animation(id)) => Some(id),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_light(&self) -> Option<LightID> {
+        match *self {
+            Variant::ID(IDs::Light(id)) => Some(id),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_signal(&self) -> Option<SignalID> {
+        match *self {
+            Variant::ID(IDs::Signal(id)) => Some(id),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_audio_bus(&self) -> Option<AudioBusID> {
+        match *self {
+            Variant::ID(IDs::AudioBus(id)) => Some(id),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_tag(&self) -> Option<TagID> {
+        match *self {
+            Variant::ID(IDs::Tag(id)) => Some(id),
+            _ => None,
+        }
+    }
+
+    #[inline]
     pub fn as_preloaded_scene(&self) -> Option<PreloadedSceneID> {
         match *self {
             Variant::ID(IDs::PreloadedScene(id)) => Some(id),
@@ -1077,6 +1211,22 @@ impl Variant {
     pub fn as_vec3(&self) -> Option<Vector3> {
         match self {
             Variant::EngineStruct(EngineStruct::Vector3(v)) => Some(*v),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_ivec2(&self) -> Option<IVector2> {
+        match self {
+            Variant::EngineStruct(EngineStruct::IVector2(v)) => Some(*v),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_ivec3(&self) -> Option<IVector3> {
+        match self {
+            Variant::EngineStruct(EngineStruct::IVector3(v)) => Some(*v),
             _ => None,
         }
     }
@@ -1340,12 +1490,6 @@ impl From<LightID> for Variant {
         Variant::ID(IDs::Light(v))
     }
 }
-impl From<UIElementID> for Variant {
-    #[inline]
-    fn from(v: UIElementID) -> Self {
-        Variant::ID(IDs::UIElement(v))
-    }
-}
 impl From<SignalID> for Variant {
     #[inline]
     fn from(v: SignalID) -> Self {
@@ -1382,6 +1526,18 @@ impl From<Vector3> for Variant {
     #[inline]
     fn from(v: Vector3) -> Self {
         Variant::EngineStruct(EngineStruct::Vector3(v))
+    }
+}
+impl From<IVector2> for Variant {
+    #[inline]
+    fn from(v: IVector2) -> Self {
+        Variant::EngineStruct(EngineStruct::IVector2(v))
+    }
+}
+impl From<IVector3> for Variant {
+    #[inline]
+    fn from(v: IVector3) -> Self {
+        Variant::EngineStruct(EngineStruct::IVector3(v))
     }
 }
 impl From<UVector2> for Variant {
@@ -1495,6 +1651,19 @@ impl Variant {
                 map.insert("x".to_string(), float_to_json(v.x as f64));
                 map.insert("y".to_string(), float_to_json(v.y as f64));
                 map.insert("z".to_string(), float_to_json(v.z as f64));
+                JsonValue::Object(map)
+            }
+            Variant::EngineStruct(EngineStruct::IVector2(v)) => {
+                let mut map = JsonMap::new();
+                map.insert("x".to_string(), JsonValue::Number(JsonNumber::from(v.x)));
+                map.insert("y".to_string(), JsonValue::Number(JsonNumber::from(v.y)));
+                JsonValue::Object(map)
+            }
+            Variant::EngineStruct(EngineStruct::IVector3(v)) => {
+                let mut map = JsonMap::new();
+                map.insert("x".to_string(), JsonValue::Number(JsonNumber::from(v.x)));
+                map.insert("y".to_string(), JsonValue::Number(JsonNumber::from(v.y)));
+                map.insert("z".to_string(), JsonValue::Number(JsonNumber::from(v.z)));
                 JsonValue::Object(map)
             }
             Variant::EngineStruct(EngineStruct::UVector2(v)) => {

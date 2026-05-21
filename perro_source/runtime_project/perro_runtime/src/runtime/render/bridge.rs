@@ -127,11 +127,23 @@ impl Runtime {
                 );
             }
         }
-        if let RenderEvent::MeshCreated { request, id, .. } = &event
-            && let Some(node) = decode_3d_mesh_request_node(*request)
-            && let Some(source) = self.render_3d.mesh_sources.get(&node).cloned()
-        {
-            self.resource_api.register_loaded_mesh_source(&source, *id);
+        if let RenderEvent::MeshCreated { request, id, .. } = &event {
+            if let Some(node) = decode_3d_mesh_request_node(*request)
+                && let Some(source) = self.render_3d.mesh_sources.get(&node).cloned()
+            {
+                self.resource_api.register_loaded_mesh_source(&source, *id);
+            }
+            if let Some(source) = self.resource_api.mesh_source(*id) {
+                let dirty_nodes = self
+                    .render_3d
+                    .mesh_sources
+                    .iter()
+                    .filter_map(|(node, node_source)| (node_source == &source).then_some(*node))
+                    .collect::<Vec<_>>();
+                for node in dirty_nodes {
+                    self.mark_needs_rerender(node);
+                }
+            }
         }
         if let Some(node) = decode_render_request_node_from_event(&event) {
             self.mark_needs_rerender(node);

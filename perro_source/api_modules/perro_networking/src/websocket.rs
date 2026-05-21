@@ -324,22 +324,6 @@ impl WebSocketConnection {
         self.poll_variant_event(self.max_message_bytes)
     }
 
-    pub fn poll_webrtc_signal_event(&mut self, max_bytes: usize) -> NetResult<Option<NetEvent>> {
-        let Some(message) = self.read_message(max_bytes)? else {
-            return Ok(None);
-        };
-        let peer = self.peer_string();
-        Ok(Some(match message {
-            WebSocketMessage::Text(text) => WebRtcSignal::from_json_str(&text)?.into_event(peer),
-            WebSocketMessage::Binary(bytes) => NetEvent::WebSocketBinary { peer, bytes },
-            WebSocketMessage::Ping(bytes) => NetEvent::WebSocketPing { peer, bytes },
-            WebSocketMessage::Pong(bytes) => NetEvent::WebSocketPong { peer, bytes },
-            WebSocketMessage::Close { code, reason } => {
-                NetEvent::WebSocketClosed { peer, code, reason }
-            }
-        }))
-    }
-
     pub fn send_text(&mut self, text: impl Into<String>) -> NetResult<()> {
         self.socket
             .send(Message::text(text.into()))
@@ -378,10 +362,6 @@ impl WebSocketConnection {
         let text = serde_json::to_string(&value.to_json_value())
             .map_err(|err| NetError::new(NetErrorKind::InvalidFrame, err.to_string()))?;
         self.send_text(text)
-    }
-
-    pub fn send_webrtc_signal(&mut self, signal: &WebRtcSignal) -> NetResult<()> {
-        self.send_text(signal.to_json_string()?)
     }
 
     pub fn send_ping(&mut self, bytes: Vec<u8>) -> NetResult<()> {

@@ -19,7 +19,8 @@ use perro_nodes::{
     sky_3d::Sky3D,
 };
 use perro_render_bridge::{
-    CameraProjectionState, Command3D, RenderCommand, RenderEvent, ResourceCommand,
+    CameraProjectionState, Command3D, Material3D, Mesh3D, RenderCommand, RenderEvent,
+    ResourceCommand, StandardMaterial3D,
 };
 use perro_resource_api::sub_apis::{MaterialAPI, MeshAPI};
 use perro_runtime_api::sub_apis::{AnimPlayerAPI, NodeAPI};
@@ -464,6 +465,57 @@ fn mesh_instance_emits_draw_after_mesh_created_and_inline_material_allocated() {
 }
 
 #[test]
+fn mesh_instance_ready_waits_for_mesh_and_material_backend_ack() {
+    let mut runtime = Runtime::new();
+    let node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MeshInstance3D(
+            MeshInstance3D::new(),
+        )));
+    runtime
+        .render_3d
+        .mesh_sources
+        .insert(node, "__cube__".to_string());
+
+    runtime.extract_render_3d_commands();
+    let first = collect_commands(&mut runtime);
+    let mesh_request = match first.first() {
+        Some(RenderCommand::Resource(ResourceCommand::CreateMesh { request, .. })) => *request,
+        _ => panic!("expected mesh create request"),
+    };
+    assert!(!NodeAPI::is_mesh_instance_ready(&mut runtime, node));
+
+    let mesh = MeshID::from_parts(99, 0);
+    runtime.apply_render_event(RenderEvent::MeshCreated {
+        request: mesh_request,
+        id: mesh,
+        mesh: Some(Mesh3D {
+            vertices: Vec::new(),
+            indices: Vec::new(),
+            surface_ranges: Vec::new(),
+        }),
+    });
+    runtime.extract_render_3d_commands();
+    let second = collect_commands(&mut runtime);
+    let (material_request, material) = second
+        .iter()
+        .find_map(|command| match command {
+            RenderCommand::Resource(ResourceCommand::CreateMaterial { request, id, .. }) => {
+                Some((*request, *id))
+            }
+            _ => None,
+        })
+        .expect("expected material create command");
+    assert!(!NodeAPI::is_mesh_instance_ready(&mut runtime, node));
+
+    runtime.apply_render_event(RenderEvent::MaterialCreated {
+        request: material_request,
+        id: material,
+    });
+    assert!(NodeAPI::is_mesh_instance_ready(&mut runtime, node));
+}
+
+#[test]
 fn mesh_instance_can_request_mesh_and_material_in_separate_frames() {
     let mut runtime = Runtime::new();
     let inserted = runtime
@@ -499,6 +551,148 @@ fn mesh_instance_can_request_mesh_and_material_in_separate_frames() {
         RenderCommand::ThreeD(command)
             if matches!(command.as_ref(), Command3D::Draw { node, .. } if *node == inserted)
     )));
+}
+
+#[test]
+fn mesh_instances_share_default_material() {
+    let mut runtime = Runtime::new();
+    let first_node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MeshInstance3D(
+            MeshInstance3D::new(),
+        )));
+    let second_node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MeshInstance3D(
+            MeshInstance3D::new(),
+        )));
+    runtime
+        .render_3d
+        .mesh_sources
+        .insert(first_node, "__cube__".to_string());
+    runtime
+        .render_3d
+        .mesh_sources
+        .insert(second_node, "__cube__".to_string());
+
+    runtime.extract_render_3d_commands();
+    let first = collect_commands(&mut runtime);
+    for (request, mesh) in first
+        .iter()
+        .filter_map(|command| match command {
+            RenderCommand::Resource(ResourceCommand::CreateMesh { request, .. }) => Some(*request),
+            _ => None,
+        })
+        .zip([MeshID::from_parts(20, 0), MeshID::from_parts(21, 0)])
+    {
+        runtime.apply_render_event(RenderEvent::MeshCreated {
+            request,
+            id: mesh,
+            mesh: None,
+        });
+    }
+
+    runtime.extract_render_3d_commands();
+    let second = collect_commands(&mut runtime);
+    let default_materials: Vec<MaterialID> = second
+        .iter()
+        .filter_map(|command| match command {
+            RenderCommand::Resource(ResourceCommand::CreateMaterial { id, source, .. })
+                if source.is_none() =>
+            {
+                Some(*id)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(default_materials.len(), 1);
+    let default_material = default_materials[0];
+    let draws_using_default = second
+        .iter()
+        .filter(|command| {
+            matches!(
+                command,
+                RenderCommand::ThreeD(command)
+                    if matches!(
+                        command.as_ref(),
+                        Command3D::Draw { surfaces, .. }
+                            if surfaces
+                                .first()
+                                .and_then(|surface| surface.material)
+                                == Some(default_material)
+                    )
+            )
+        })
+        .count();
+    assert_eq!(draws_using_default, 2);
+}
+
+#[test]
+fn mesh_instances_share_identical_inline_material() {
+    let mut runtime = Runtime::new();
+    let first_node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MeshInstance3D(
+            MeshInstance3D::new(),
+        )));
+    let second_node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MeshInstance3D(
+            MeshInstance3D::new(),
+        )));
+    runtime
+        .render_3d
+        .mesh_sources
+        .insert(first_node, "__cube__".to_string());
+    runtime
+        .render_3d
+        .mesh_sources
+        .insert(second_node, "__cube__".to_string());
+    let standard = StandardMaterial3D {
+        base_color_factor: [0.2, 0.4, 0.8, 1.0],
+        ..Default::default()
+    };
+    let material = Material3D::Standard(standard);
+    runtime
+        .render_3d
+        .material_surface_overrides
+        .insert(first_node, vec![Some(material.clone())]);
+    runtime
+        .render_3d
+        .material_surface_overrides
+        .insert(second_node, vec![Some(material)]);
+
+    runtime.extract_render_3d_commands();
+    let first = collect_commands(&mut runtime);
+    for (request, mesh) in first
+        .iter()
+        .filter_map(|command| match command {
+            RenderCommand::Resource(ResourceCommand::CreateMesh { request, .. }) => Some(*request),
+            _ => None,
+        })
+        .zip([MeshID::from_parts(22, 0), MeshID::from_parts(23, 0)])
+    {
+        runtime.apply_render_event(RenderEvent::MeshCreated {
+            request,
+            id: mesh,
+            mesh: None,
+        });
+    }
+
+    runtime.extract_render_3d_commands();
+    let second = collect_commands(&mut runtime);
+    let inline_materials: Vec<MaterialID> = second
+        .iter()
+        .filter_map(|command| match command {
+            RenderCommand::Resource(ResourceCommand::CreateMaterial { id, source, .. })
+                if source.is_none() =>
+            {
+                Some(*id)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(inline_materials.len(), 1);
 }
 
 #[test]

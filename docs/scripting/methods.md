@@ -2,13 +2,14 @@
 
 ## Page Map
 
-| Header | Link |
-| --- | --- |
-| Why `methods!` Exists | [Why `methods!` Exists](#why-methods-exists) |
-| Method Shape | [Method Shape](#method-shape) |
-| Direct Calls | [Direct Calls](#direct-calls) |
-| Runtime Dispatch | [Runtime Dispatch](#runtime-dispatch) |
+| Header                   | Link                                                  |
+| ------------------------ | ----------------------------------------------------- |
+| Why `methods!` Exists    | [Why `methods!` Exists](#why-methods-exists)          |
+| Method Shape             | [Method Shape](#method-shape)                         |
+| Direct Calls             | [Direct Calls](#direct-calls)                         |
+| Runtime Dispatch         | [Runtime Dispatch](#runtime-dispatch)                 |
 | Typed Params And Returns | [Typed Params And Returns](#typed-params-and-returns) |
+| Variant Decode           | [Variant Decode](#variant-decode)                     |
 
 ## Why `methods!` Exists
 
@@ -26,12 +27,12 @@ methods!({
 });
 ```
 
-| Part | Requirement |
-| --- | --- |
-| receiver | `&self` |
-| context | `ctx: &mut ScriptContext<'_, API>` |
-| custom params | any supported typed params after `ctx` |
-| return | `()` or supported typed return |
+| Part          | Requirement                                                |
+| ------------- | ---------------------------------------------------------- |
+| receiver      | `&self`                                                    |
+| context       | `ctx: &mut ScriptContext<'_, API>`                         |
+| custom params | any supported typed params after `ctx`                     |
+| return        | `()` or any type that converts with `Variant::from(value)` |
 
 ## Direct Calls
 
@@ -56,13 +57,17 @@ methods!({
 
 ## Runtime Dispatch
 
-Use `call_method!` for cross-script calls or dynamic calls by `ScriptMemberID`. This path passes `Variant` params and returns a `Variant`.
+Use `call_method!` for cross-script calls or dynamic calls by `ScriptMemberID`. This path passes `Variant` params and always returns a `Variant`.
+
+If the called method returns `bool`, `i32`, `String`, etc. or engine types like `NodeID`, `MeshID` or any custom `#[derive(Variant)]` type, the generated script bridge wraps that value with `Variant::from(value)`. If the called method returns `()`, the bridge returns `Variant::Null`.
+
+Because dispatch is dynamic, caller code must know the expected return type and decode it.
 
 ```rust
 lifecycle!({
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
         let out = call_method!(ctx.run, ctx.id, method!("apply_damage"), params![10_i32]);
-        let _ = out;
+        let accepted = out.as_bool().unwrap_or(false);
     }
 });
 ```
@@ -81,5 +86,29 @@ methods!({
     fn apply_hit(&self, ctx: &mut ScriptContext<'_, API>, hit: HitInfo) -> bool {
         hit.amount > 0
     }
+
+    fn last_hit(&self, ctx: &mut ScriptContext<'_, API>) -> HitInfo {
+        HitInfo { amount: 10 }
+    }
 });
 ```
+
+## Variant Decode
+
+Decode `call_method!` results from `Variant` at the call site.
+
+This is the same rule as `get_var!`: dynamic API returns `Variant`, caller decodes expected type.
+
+```rust
+let ok = call_method!(ctx.run, target, method!("apply_hit"), params![HitInfo { amount: 10 }])
+    .as_bool()
+    .unwrap_or(false);
+
+let hit = call_method!(ctx.run, target, method!("last_hit"), params![])
+    .into_parse::<HitInfo>()
+    .unwrap_or_default();
+```
+
+Use `as_bool()` and other `as_*` accessors for cheap primitive reads. Use `parse::<T>()` when keeping the `Variant`, or `into_parse::<T>()` when consuming it.
+
+See [Variant](variant.md) for accessors and custom type conversion.

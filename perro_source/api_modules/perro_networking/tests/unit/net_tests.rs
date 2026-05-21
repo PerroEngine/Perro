@@ -5,10 +5,9 @@ use perro_variant::Variant;
 
 use crate::{
     NetEvent, NetHandshake, NetSource, NetworkWorld, TcpConnection, TcpHost, UdpEndpoint,
-    WEBSOCKET_HEARTBEAT_BYTES, WEBSOCKET_VARIANT_PROTOCOL, WebRtcIceCandidate, WebRtcPeer,
-    WebRtcPeerConfig, WebRtcSignal, WebSocketAsyncConnection, WebSocketAsyncHost,
-    WebSocketConnectOptions, WebSocketConnection, WebSocketHost, WebSocketHostOptions,
-    decode_next_frame, encode_frame, heartbeat_ping,
+    WEBSOCKET_HEARTBEAT_BYTES, WEBSOCKET_VARIANT_PROTOCOL, WebSocketAsyncConnection,
+    WebSocketAsyncHost, WebSocketConnectOptions, WebSocketConnection, WebSocketHost,
+    WebSocketHostOptions, decode_next_frame, encode_frame, heartbeat_ping,
 };
 
 #[test]
@@ -303,15 +302,13 @@ fn websocket_async_facade_connects_and_sends_compressed_text() {
         let url = format!("ws://{}", host.local_addr());
 
         let host_for_accept = host.clone();
-        let (client, server) = tokio::join!(
-            WebSocketAsyncConnection::connect(url),
-            wait_for_async(|| {
-                let host = host_for_accept.clone();
-                async move { host.accept().await.unwrap() }
-            })
-        );
-        let client = client.unwrap();
-        let server = server;
+        let client_task = tokio::spawn(WebSocketAsyncConnection::connect(url));
+        let server_task = tokio::spawn(wait_for_async(move || {
+            let host = host_for_accept.clone();
+            async move { host.accept().await.unwrap() }
+        }));
+        let client = client_task.await.unwrap().unwrap();
+        let server = server_task.await.unwrap();
         client.send_compressed_text("async hello").await.unwrap();
 
         let event = wait_for_async(|| {
@@ -377,74 +374,6 @@ fn websocket_options_select_subprotocol_and_poll_invalid_json() {
             bytes: WEBSOCKET_HEARTBEAT_BYTES.to_vec()
         }
     );
-}
-
-#[test]
-fn webrtc_signal_roundtrips_offer_answer_and_ice() {
-    let offer = WebRtcSignal::offer("v=0\r\ns=perro\r\n");
-    let answer = WebRtcSignal::answer("v=0\r\ns=answer\r\n");
-    let ice = WebRtcSignal::ice_candidate(
-        WebRtcIceCandidate::new("candidate:1 1 udp 1 127.0.0.1 7777 typ host")
-            .with_sdp_mid("0")
-            .with_sdp_mline_index(0)
-            .with_username_fragment("ufrag"),
-    );
-
-    assert_eq!(
-        WebRtcSignal::from_json_str(&offer.to_json_string().unwrap()).unwrap(),
-        offer
-    );
-    assert_eq!(
-        WebRtcSignal::from_json_str(&answer.to_json_string().unwrap()).unwrap(),
-        answer
-    );
-    assert_eq!(
-        WebRtcSignal::from_json_str(&ice.to_json_string().unwrap()).unwrap(),
-        ice
-    );
-}
-
-#[test]
-#[cfg_attr(
-    not(feature = "network-tests"),
-    ignore = "requires local socket access"
-)]
-fn websocket_sends_webrtc_signal_and_polls_event() {
-    let host = WebSocketHost::bind("127.0.0.1:0").unwrap();
-    let url = format!("ws://{}", host.local_addr());
-
-    let client = thread::spawn(move || {
-        let mut client = WebSocketConnection::connect(url).unwrap();
-        client
-            .send_webrtc_signal(&WebRtcSignal::offer("v=0\r\ns=perro\r\n"))
-            .unwrap();
-    });
-
-    let mut server = wait_for(|| host.accept().unwrap());
-    let event = wait_for(|| server.poll_webrtc_signal_event(256).unwrap());
-
-    client.join().unwrap();
-    assert_eq!(
-        event,
-        NetEvent::WebRtcOffer {
-            peer: server.peer_string(),
-            sdp: "v=0\r\ns=perro\r\n".to_string()
-        }
-    );
-}
-
-#[test]
-#[cfg_attr(
-    not(feature = "network-tests"),
-    ignore = "requires local socket access"
-)]
-fn webrtc_peer_wraps_crate_peer_connection() {
-    let mut peer = WebRtcPeer::new(WebRtcPeerConfig::new()).unwrap();
-    let channel = peer.create_data_channel("game").unwrap();
-    let offer = peer.create_offer().unwrap();
-
-    assert_eq!(channel.0, 0);
-    assert!(matches!(offer, WebRtcSignal::Offer { .. }));
 }
 
 fn wait_for<T>(mut f: impl FnMut() -> Option<T>) -> T {

@@ -188,15 +188,6 @@ impl NetworkWorld {
         self.websocket_connection_mut(id)?.send_variant(value)
     }
 
-    pub fn websocket_send_webrtc_signal(
-        &mut self,
-        id: WebSocketConnectionId,
-        signal: &WebRtcSignal,
-    ) -> NetResult<()> {
-        self.websocket_connection_mut(id)?
-            .send_webrtc_signal(signal)
-    }
-
     pub fn websocket_send_ping(
         &mut self,
         id: WebSocketConnectionId,
@@ -286,20 +277,6 @@ impl NetworkWorld {
         self.poll_tcp_frames(max_per_socket, max_frame_bytes, &mut events);
         self.poll_udp_packets(max_per_socket, max_frame_bytes, &mut events);
         self.poll_websocket_messages(max_per_socket, max_frame_bytes, &mut events);
-        events
-    }
-
-    pub fn poll_webrtc_signal_events(
-        &mut self,
-        max_per_socket: usize,
-        max_bytes: usize,
-    ) -> Vec<NetworkEvent> {
-        let mut events = Vec::new();
-        self.poll_accepts(max_per_socket, &mut events);
-        self.poll_websocket_accepts(max_per_socket, &mut events);
-        self.poll_tcp_data(max_per_socket, max_bytes, &mut events);
-        self.poll_udp_packets(max_per_socket, max_bytes, &mut events);
-        self.poll_websocket_webrtc_signals(max_per_socket, max_bytes, &mut events);
         events
     }
 
@@ -526,44 +503,6 @@ impl NetworkWorld {
                         events.push(net_error_event(
                             NetSource::WebSocketConnection(id),
                             "websocket_variant",
-                            err,
-                        ));
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    fn poll_websocket_webrtc_signals(
-        &mut self,
-        max_per_socket: usize,
-        max_bytes: usize,
-        events: &mut Vec<NetworkEvent>,
-    ) {
-        for i in 0..self.websocket_connections.len() {
-            let Some(connection) = self.websocket_connections[i].as_mut() else {
-                continue;
-            };
-            let id = WebSocketConnectionId(i as u32);
-            for _ in 0..max_per_socket {
-                match connection.poll_webrtc_signal_event(max_bytes) {
-                    Ok(Some(event)) => {
-                        let disconnected = matches!(event, NetEvent::WebSocketClosed { .. });
-                        events.push(NetworkEvent {
-                            source: NetSource::WebSocketConnection(id),
-                            event,
-                        });
-                        if disconnected {
-                            self.websocket_connections[i] = None;
-                            break;
-                        }
-                    }
-                    Ok(None) => break,
-                    Err(err) => {
-                        events.push(net_error_event(
-                            NetSource::WebSocketConnection(id),
-                            "webrtc_signal",
                             err,
                         ));
                         break;

@@ -2,11 +2,11 @@
 
 ## Page Map
 
-| Header | Link |
-| --- | --- |
-| Purpose | [Purpose](#purpose) |
+| Header    | Link                    |
+| --------- | ----------------------- |
+| Purpose   | [Purpose](#purpose)     |
 | Use Cases | [Use Cases](#use-cases) |
-| Example | [Example](#example) |
+| Example   | [Example](#example)     |
 | Reference | [Reference](#reference) |
 
 ## Purpose
@@ -47,8 +47,8 @@ Each node with that script gets its own state instance, and those fields are wha
 You can keep normal Rust items outside state:
 
 - `const` values
-- `structs` that aren't used in runtime state/methods
-- `enums` that aren't used in runtime state/methods
+- `structs`
+- `enums`
 
 ## Example
 
@@ -67,7 +67,7 @@ If you need cross-script/runtime member access, put that value in `#[State]`.
 ## Custom Types And Variant Conversion
 
 Custom structs/enums used by script APIs must support Variant conversion.
-For new code, derive `Variant` on those types.
+Derive `Variant` on those types.
 
 ```rust
 use perro_api::prelude::*;
@@ -85,10 +85,13 @@ pub struct SpinnerState {
 ```
 
 This applies to both:
+
 - custom types stored in `#[State]`
 - custom typed params/returns used in `methods!` (runtime/cross-script dispatch path)
 
 If a custom type used there does not derive `Variant`, script compilation fails.
+
+See [Variant](variant.md) for accessors, `parse::<T>()`, and `into_parse::<T>()`.
 
 Scene side:
 

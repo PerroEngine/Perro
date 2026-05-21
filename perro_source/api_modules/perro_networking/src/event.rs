@@ -65,39 +65,6 @@ pub enum NetEvent {
         code: Option<u16>,
         reason: String,
     },
-    WebRtcSignal {
-        peer: String,
-        signal: WebRtcSignal,
-    },
-    WebRtcOffer {
-        peer: String,
-        sdp: String,
-    },
-    WebRtcAnswer {
-        peer: String,
-        sdp: String,
-    },
-    WebRtcIceCandidate {
-        peer: String,
-        candidate: WebRtcIceCandidate,
-    },
-    WebRtcDataChannel {
-        label: String,
-    },
-    WebRtcDataChannelOpen {
-        label: String,
-    },
-    WebRtcDataChannelClosed {
-        label: String,
-    },
-    WebRtcDataChannelText {
-        label: String,
-        text: String,
-    },
-    WebRtcDataChannelBinary {
-        label: String,
-        bytes: Vec<u8>,
-    },
     NetError {
         op: String,
         message: String,
@@ -124,15 +91,6 @@ impl NetEvent {
             NetEvent::WebSocketPing { .. } => "WebSocket_Ping",
             NetEvent::WebSocketPong { .. } => "WebSocket_Pong",
             NetEvent::WebSocketClosed { .. } => "WebSocket_Closed",
-            NetEvent::WebRtcSignal { .. } => "WebRTC_Signal",
-            NetEvent::WebRtcOffer { .. } => "WebRTC_Offer",
-            NetEvent::WebRtcAnswer { .. } => "WebRTC_Answer",
-            NetEvent::WebRtcIceCandidate { .. } => "WebRTC_IceCandidate",
-            NetEvent::WebRtcDataChannel { .. } => "WebRTC_DataChannel",
-            NetEvent::WebRtcDataChannelOpen { .. } => "WebRTC_DataChannelOpen",
-            NetEvent::WebRtcDataChannelClosed { .. } => "WebRTC_DataChannelClosed",
-            NetEvent::WebRtcDataChannelText { .. } => "WebRTC_DataChannelText",
-            NetEvent::WebRtcDataChannelBinary { .. } => "WebRTC_DataChannelBinary",
             NetEvent::NetError { .. } => "Net_Error",
         }
     }
@@ -150,9 +108,6 @@ impl NetEvent {
             | NetEvent::HeartbeatPong { peer }
             | NetEvent::WebSocketConnected { peer }
             | NetEvent::WebSocketClientConnected { peer } => vec![Variant::from(peer.clone())],
-            NetEvent::WebRtcDataChannel { label }
-            | NetEvent::WebRtcDataChannelOpen { label }
-            | NetEvent::WebRtcDataChannelClosed { label } => vec![Variant::from(label.clone())],
             NetEvent::TcpData { peer, bytes }
             | NetEvent::UdpPacket { peer, bytes }
             | NetEvent::TcpFrame { peer, bytes }
@@ -181,21 +136,6 @@ impl NetEvent {
                 Variant::from(code.unwrap_or(0)),
                 Variant::from(reason.clone()),
             ],
-            NetEvent::WebRtcSignal { peer, signal } => {
-                vec![Variant::from(peer.clone()), signal.to_variant()]
-            }
-            NetEvent::WebRtcOffer { peer, sdp } | NetEvent::WebRtcAnswer { peer, sdp } => {
-                vec![Variant::from(peer.clone()), Variant::from(sdp.clone())]
-            }
-            NetEvent::WebRtcIceCandidate { peer, candidate } => {
-                vec![Variant::from(peer.clone()), candidate.to_variant()]
-            }
-            NetEvent::WebRtcDataChannelText { label, text } => {
-                vec![Variant::from(label.clone()), Variant::from(text.clone())]
-            }
-            NetEvent::WebRtcDataChannelBinary { label, bytes } => {
-                vec![Variant::from(label.clone()), Variant::from(bytes.clone())]
-            }
             NetEvent::NetError { op, message } => {
                 vec![Variant::from(op.clone()), Variant::from(message.clone())]
             }

@@ -841,7 +841,7 @@ fn canonical_scene_field_name(name: &str) -> SceneFieldName {
     SceneFieldName::from_borrowed(name).unwrap_or_else(|| SceneFieldName::from(name.to_string()))
 }
 
-fn normalize_node_fields_for_type(ty: &str, fields: &mut Vec<SceneObjectField>) {
+fn normalize_node_fields_for_type(ty: &str, fields: &mut [SceneObjectField]) {
     let Ok(node_type) = NodeType::from_str(ty) else {
         return;
     };
@@ -852,10 +852,11 @@ fn normalize_node_fields_for_type(ty: &str, fields: &mut Vec<SceneObjectField>) 
     }
 
     for (name, value) in fields.iter_mut() {
-        if name.as_ref() == "rotation" {
-            if is_3d && let SceneValue::Vec3 { x, y, z } = value.clone() {
-                *value = euler_xyz_radians_to_quat_value(x, y, z);
-            }
+        if name.as_ref() == "rotation"
+            && is_3d
+            && let SceneValue::Vec3 { x, y, z } = value.clone()
+        {
+            *value = euler_xyz_radians_to_quat_value(x, y, z);
         }
     }
 }

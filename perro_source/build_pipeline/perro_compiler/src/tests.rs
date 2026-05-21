@@ -229,6 +229,27 @@ methods!({
     }
 
     #[test]
+    fn transpiles_bool_method_return_into_variant() {
+        let source = r#"
+use perro_api::prelude::*;
+
+methods!({
+    fn is_ready(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+    ) -> bool {
+        let _ = ctx.id;
+        true
+    }
+});
+"#;
+
+        let transpiled = transpile_frontend_script(source, "res://tests/bool_return.rs");
+        assert!(transpiled.contains("Variant::from(self.is_ready(ctx))"));
+        assert!(!transpiled.contains("self.is_ready(ctx);\n                Variant::Null"));
+    }
+
+    #[test]
     fn typed_param_binding_uses_first_for_zero_index() {
         let first = generate_call_param_binding(
             0,
@@ -489,8 +510,6 @@ pub struct AllVariantState {
     pub animation_id: AnimationID,
     #[default = LightID::nil()]
     pub light_id: LightID,
-    #[default = UIElementID::nil()]
-    pub ui_element_id: UIElementID,
     #[default = SignalID::nil()]
     pub signal_id: SignalID,
     #[default = AudioBusID::nil()]

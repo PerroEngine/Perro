@@ -48,7 +48,7 @@ pub mod prelude {
     };
     pub use perro_ids::prelude::{
         AnimationID, AnimationTreeID, LightID, MaterialID, MeshID, NodeID, ScriptMemberID,
-        SignalID, TagID, TextureID, UIElementID,
+        SignalID, TagID, TextureID,
     };
     pub use perro_render_bridge::{Material3D, Mesh3D, MeshSurfaceRange, RuntimeMeshVertex};
     pub use perro_scene::{Scene, SceneDoc, SceneWrite};

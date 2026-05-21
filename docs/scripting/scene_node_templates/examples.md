@@ -322,11 +322,15 @@ parent = $root
     [RigidBody2D]
         collision_layers = [1]
         collision_mask = []
-        [CollisionShape2D]
-            shape = { type = "quad" width = 1 height = 1 }
-        [/CollisionShape2D]
     [/RigidBody2D]
 [/Body]
+
+[BodyShape]
+parent = @Body
+    [CollisionShape2D]
+        shape = { type = "quad" width = 1 height = 1 }
+    [/CollisionShape2D]
+[/BodyShape]
 ```
 
 2D joints:
@@ -337,22 +341,30 @@ parent = $root
     [StaticBody2D]
         collision_layers = [1]
         collision_mask = []
-        [CollisionShape2D]
-            shape = { type = "quad" width = 1 height = 1 }
-        [/CollisionShape2D]
     [/StaticBody2D]
 [/AnchorBody]
+
+[AnchorBodyShape]
+parent = @AnchorBody
+    [CollisionShape2D]
+        shape = { type = "quad" width = 1 height = 1 }
+    [/CollisionShape2D]
+[/AnchorBodyShape]
 
 [SwingBody]
 parent = $root
     [RigidBody2D]
         collision_layers = [1]
         collision_mask = []
-        [CollisionShape2D]
-            shape = { type = "quad" width = 1 height = 1 }
-        [/CollisionShape2D]
     [/RigidBody2D]
 [/SwingBody]
+
+[SwingBodyShape]
+parent = @SwingBody
+    [CollisionShape2D]
+        shape = { type = "quad" width = 1 height = 1 }
+    [/CollisionShape2D]
+[/SwingBodyShape]
 
 [rope_pin]
 parent = $root
@@ -407,22 +419,30 @@ parent = $root
     [StaticBody3D]
         collision_layers = [1]
         collision_mask = []
-        [CollisionShape3D]
-            shape = { type = cube, size = (1, 1, 1) }
-        [/CollisionShape3D]
     [/StaticBody3D]
 [/FrameBody]
+
+[FrameBodyShape]
+parent = @FrameBody
+    [CollisionShape3D]
+        shape = { type = cube, size = (1, 1, 1) }
+    [/CollisionShape3D]
+[/FrameBodyShape]
 
 [DoorBody]
 parent = $root
     [RigidBody3D]
         collision_layers = [1]
         collision_mask = []
-        [CollisionShape3D]
-            shape = { type = cube, size = (1, 2, 0.2) }
-        [/CollisionShape3D]
     [/RigidBody3D]
 [/DoorBody]
+
+[DoorBodyShape]
+parent = @DoorBody
+    [CollisionShape3D]
+        shape = { type = cube, size = (1, 2, 0.2) }
+    [/CollisionShape3D]
+[/DoorBodyShape]
 
 [ball_socket]
 parent = $root

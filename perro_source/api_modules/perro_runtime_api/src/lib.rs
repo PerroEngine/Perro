@@ -37,15 +37,15 @@ pub mod prelude {
         get_local_pos_2d, get_local_pos_3d, get_local_rot_2d, get_local_rot_3d, get_local_scale_2d,
         get_local_scale_3d, get_local_transform_2d, get_local_transform_3d, get_node_children_ids,
         get_node_name, get_node_parent_id, get_node_tags, get_node_type, get_var, graphics_time,
-        mesh_data_surface_at_local_point_3d, mesh_data_surface_on_local_ray_3d,
-        mesh_data_surface_regions_3d, mesh_instance_material_regions_3d,
-        mesh_instance_surface_at_global_point_3d, mesh_instance_surface_on_global_ray_3d,
-        mesh_instance_surfaces_on_global_rays_3d, midi_play_attached, midi_release_attached,
-        midi_start_attached, midi_stop_attached, node_template, physics_get_coefficient,
-        physics_get_gravity, physics_is_paused, physics_pause, physics_predict_body_2d,
-        physics_predict_body_3d, physics_raycast_3d, physics_raycast_3d_with_areas,
-        physics_raycast_3d_without_areas, physics_set_coefficient, physics_set_gravity,
-        physics_solve_launch_velocity_2d, physics_solve_launch_velocity_3d,
+        is_mesh_instance_ready, mesh_data_surface_at_local_point_3d,
+        mesh_data_surface_on_local_ray_3d, mesh_data_surface_regions_3d,
+        mesh_instance_material_regions_3d, mesh_instance_surface_at_global_point_3d,
+        mesh_instance_surface_on_global_ray_3d, mesh_instance_surfaces_on_global_rays_3d,
+        midi_play_attached, midi_release_attached, midi_start_attached, midi_stop_attached,
+        node_template, physics_get_coefficient, physics_get_gravity, physics_is_paused,
+        physics_pause, physics_predict_body_2d, physics_predict_body_3d, physics_raycast_3d,
+        physics_raycast_3d_with_areas, physics_raycast_3d_without_areas, physics_set_coefficient,
+        physics_set_gravity, physics_solve_launch_velocity_2d, physics_solve_launch_velocity_3d,
         physics_solve_velocity_to_target_2d, physics_solve_velocity_to_target_3d, profiling, query,
         query_builder, query_each, query_expr, query_first, query_iter, query_map, remove_node,
         reparent, reparent_multi, scene_drop_preloaded, scene_free_preloaded, scene_load,
@@ -64,10 +64,10 @@ pub mod prelude {
     };
     pub use perro_ids::prelude::{
         AnimationID, AudioBusID, LightID, MaterialID, MeshID, NodeID, PreloadedSceneID,
-        ScriptMemberID, SignalID, TagID, TextureID, UIElementID,
+        ScriptMemberID, SignalID, TagID, TextureID,
     };
     pub use perro_ids::{func, method, sid, signal, smid, tag, tags, var};
-    pub use perro_variant::{params, variant};
+    pub use perro_variant::{VariantKind, params, variant};
 }
 
 #[cfg(test)]

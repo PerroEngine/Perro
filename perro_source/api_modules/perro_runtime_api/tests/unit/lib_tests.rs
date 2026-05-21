@@ -157,6 +157,10 @@ impl NodeAPI for DummyRuntime {
         false
     }
 
+    fn is_mesh_instance_ready(&mut self, _node_id: NodeID) -> bool {
+        false
+    }
+
     fn reparent_multi<I>(&mut self, _parent: NodeID, _child_ids: I) -> usize
     where
         I: IntoIterator<Item = NodeID>,

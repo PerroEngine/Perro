@@ -138,12 +138,6 @@ Types:
 - `NetHandshake`
 - `NetError`
 - `NetErrorKind`
-- `WebRtcPeer`
-- `WebRtcPeerConfig`
-- `WebRtcIceServer`
-- `WebRtcSignal`
-- `WebRtcIceCandidate`
-- `WebRtcDataChannelId`
 
 HTTP:
 
@@ -217,22 +211,6 @@ UDP endpoint:
 Macro:
 
 - `emit_net_event!(ctx, event) -> usize`
-
-WebRTC:
-
-- full guide: [`../networking/webrtc.md`](../networking/webrtc.md)
-- `WebRtcPeer::new(config) -> NetResult<WebRtcPeer>`
-- `create_data_channel(label) -> NetResult<WebRtcDataChannelId>`
-- `create_offer() -> NetResult<WebRtcSignal>`
-- `create_answer() -> NetResult<WebRtcSignal>`
-- `accept_signal(signal) -> NetResult<()>`
-- `add_ice_candidate(candidate) -> NetResult<()>`
-- `send_data_channel_text(id, text) -> NetResult<usize>`
-- `send_data_channel_binary(id, bytes) -> NetResult<usize>`
-- `poll_events(max_events) -> Vec<NetEvent>`
-- `WebSocketConnection::send_webrtc_signal(signal) -> NetResult<()>`
-- `WebSocketConnection::poll_webrtc_signal_event(max_bytes) -> NetResult<Option<NetEvent>>`
-- `NetworkWorld::poll_webrtc_signal_events(max_per_socket, max_bytes) -> Vec<NetworkEvent>`
 
 Frame helpers:
 

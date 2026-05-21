@@ -141,6 +141,7 @@ struct ScriptMethod {
     name: String,
     takes_raw_params: bool,
     params: Vec<ScriptMethodParam>,
+    return_ty: Option<String>,
     returns_variant: bool,
 }
 
@@ -222,6 +223,10 @@ fn generate_call_method_body(methods: &[ScriptMethod]) -> String {
             out.push_str(&format!(
                 "            {const_name} => {{\n{prelude}                {call}\n            }}\n"
             ));
+        } else if method_returns_variant_convertible(method.return_ty.as_deref()) {
+            out.push_str(&format!(
+                "            {const_name} => {{\n{prelude}                Variant::from({call})\n            }}\n"
+            ));
         } else {
             out.push_str(&format!(
                 "            {const_name} => {{\n{prelude}                {call};\n                Variant::Null\n            }}\n"
@@ -231,4 +236,12 @@ fn generate_call_method_body(methods: &[ScriptMethod]) -> String {
     out.push_str("            _ => Variant::Null,\n");
     out.push_str("        }");
     out
+}
+
+fn method_returns_variant_convertible(return_ty: Option<&str>) -> bool {
+    let Some(return_ty) = return_ty else {
+        return false;
+    };
+    let return_ty = normalize_type(return_ty);
+    return_ty != "()"
 }

@@ -585,6 +585,10 @@ impl NodeAPI for Runtime {
         true
     }
 
+    fn is_mesh_instance_ready(&mut self, node_id: perro_ids::NodeID) -> bool {
+        Runtime::mesh_instance_render_ready(self, node_id)
+    }
+
     fn reparent_multi<I>(&mut self, parent_id: perro_ids::NodeID, child_ids: I) -> usize
     where
         I: IntoIterator<Item = perro_ids::NodeID>,

@@ -500,12 +500,16 @@ fn parse_script_method_signature_detailed(line: &str) -> Result<ScriptMethod, St
             ));
         }
 
-        let returns_variant =
-            line.contains("-> Variant") || line.contains("->perro_api::variant::Variant");
+        let return_ty = extract_fn_return_type(line).map(str::to_string);
+        let returns_variant = matches!(
+            return_ty.as_deref().map(normalize_type).as_deref(),
+            Some("Variant" | "perro_api::variant::Variant")
+        );
         Ok(ScriptMethod {
             name,
             takes_raw_params,
             params,
+            return_ty,
             returns_variant,
         })
     }
@@ -643,6 +647,40 @@ fn extract_fn_params_segment(line: &str) -> Option<&str> {
     }
     let end = end?;
     Some(&line[start + 1..end])
+}
+
+fn extract_fn_return_type(line: &str) -> Option<&str> {
+    let start = line.find('(')?;
+    let mut depth = 0_i32;
+    let mut end = None;
+    for (i, c) in line.char_indices().skip(start) {
+        if c == '(' {
+            depth += 1;
+        } else if c == ')' {
+            depth -= 1;
+            if depth == 0 {
+                end = Some(i);
+                break;
+            }
+        }
+    }
+    let mut rest = line[end? + 1..].trim_start();
+    rest = rest.strip_prefix("->")?.trim_start();
+
+    let mut end = rest.len();
+    for (i, c) in rest.char_indices() {
+        if matches!(c, '{' | ';' | '=') {
+            end = i;
+            break;
+        }
+        if rest[i..].starts_with("where ") {
+            end = i;
+            break;
+        }
+    }
+
+    let ty = rest[..end].trim().trim_end_matches(',');
+    (!ty.is_empty()).then_some(ty)
 }
 
 fn split_top_level_commas(s: &str) -> Vec<&str> {

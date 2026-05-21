@@ -18,7 +18,7 @@ use perro_render_bridge::{
     Sky3DState, SkyTime3DState, SpotLight3DState, Water3DState, WaterBodyQueryState,
     WaterCoastlineShape3D, WaterIdleModeState, WaterImpact3D, WaterLinkState, WaterShapeState,
 };
-use perro_resource_api::sub_apis::MaterialAPI;
+use perro_resource_api::sub_apis::{MaterialAPI, MeshAPI};
 use perro_runtime_render::{material_3d_request, mesh_3d_request};
 use perro_structs::BitMask;
 use std::borrow::Cow;
@@ -54,6 +54,29 @@ pub(crate) use helpers::{
 };
 
 impl Runtime {
+    pub(crate) fn mesh_instance_render_ready(&self, node_id: NodeID) -> bool {
+        let Some(node) = self.nodes.get(node_id) else {
+            return false;
+        };
+        let (mesh, surfaces) = match &node.data {
+            SceneNodeData::MeshInstance3D(mesh_instance) => {
+                (mesh_instance.mesh, mesh_instance.surfaces.as_slice())
+            }
+            SceneNodeData::MultiMeshInstance3D(mesh_instance) => {
+                (mesh_instance.mesh, mesh_instance.surfaces.as_slice())
+            }
+            _ => return false,
+        };
+        if mesh.is_nil() || !self.resource_api.is_mesh_loaded(mesh) {
+            return false;
+        }
+        surfaces.iter().all(|surface| {
+            surface
+                .material
+                .is_none_or(|id| !id.is_nil() && self.resource_api.is_material_loaded(id))
+        })
+    }
+
     pub fn extract_render_3d_commands(&mut self) {
         self.reset_water_scan_cache_3d();
         let bootstrap_scan = self.render_3d.prev_visible.is_empty()
@@ -1184,9 +1207,12 @@ impl Runtime {
                 continue;
             }
 
-            let material = material_override.unwrap_or_else(Material3D::default);
             if source.is_none() {
-                let id = self.resource_api.create_material(material);
+                let id = if let Some(material) = material_override.clone() {
+                    self.resource_api.shared_inline_material_id(material)
+                } else {
+                    self.resource_api.default_material_id()
+                };
                 surfaces[surface_index].material = Some(id);
                 if let Some(node) = self.nodes.get_mut(node) {
                     match &mut node.data {
@@ -1202,6 +1228,7 @@ impl Runtime {
                 continue;
             }
 
+            let material = material_override.unwrap_or_else(Material3D::default);
             if !self.render.is_inflight(request) {
                 self.render.mark_inflight(request);
                 self.queue_render_command(RenderCommand::Resource(

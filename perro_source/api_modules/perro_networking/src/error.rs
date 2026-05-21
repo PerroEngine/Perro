@@ -18,7 +18,6 @@ pub enum NetErrorKind {
     InvalidFrame,
     Handshake,
     WebSocket,
-    WebRtc,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

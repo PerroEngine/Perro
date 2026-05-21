@@ -1,9 +1,12 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use perro_ids::{NodeID, PreloadedSceneID, TextureID};
+use perro_ids::{
+    AnimationID, AudioBusID, LightID, MaterialID, MeshID, NodeID, PreloadedSceneID, SignalID,
+    TagID, TextureID,
+};
 use perro_structs::{
-    ColorBlindFilter, PostProcessEffect, PostProcessSet, UVector2, UVector3, Vector2, Vector3,
-    VisualAccessibilitySettings,
+    ColorBlindFilter, IVector2, IVector3, PostProcessEffect, PostProcessSet, UVector2, UVector3,
+    Vector2, Vector3, VisualAccessibilitySettings,
 };
 
 use super::*;
@@ -98,6 +101,27 @@ fn test_variant_parse_helper() {
 // -------------------- Variant Accessors --------------------
 
 #[test]
+fn test_variant_get_kind() {
+    assert_eq!(Variant::Null.get_kind(), VariantKind::Null);
+    assert_eq!(Variant::from(true).get_kind(), VariantKind::Bool);
+    assert_eq!(Variant::from(7_i32).get_kind(), VariantKind::Number);
+    assert_eq!(Variant::from("text").get_kind(), VariantKind::String);
+    assert_eq!(Variant::bytes([1_u8]).get_kind(), VariantKind::Bytes);
+    assert_eq!(
+        Variant::from(NodeID::from_u64(1)).get_kind(),
+        VariantKind::ID
+    );
+    assert_eq!(
+        Variant::from(Vector2::new(1.0, 2.0)).get_kind(),
+        VariantKind::EngineStruct
+    );
+    assert_eq!(Variant::Array(Vec::new()).get_kind(), VariantKind::Array);
+    assert_eq!(Variant::object().get_kind(), VariantKind::Object);
+    assert_eq!(Variant::Null.kind_name(), "Null");
+    assert_eq!(VariantKind::Bool.as_str(), "Bool");
+}
+
+#[test]
 fn test_variant_as_bool() {
     let v = Variant::Bool(true);
     assert_eq!(v.as_bool(), Some(true));
@@ -164,6 +188,26 @@ fn test_variant_as_preloaded_scene() {
 }
 
 #[test]
+fn test_variant_as_engine_ids() {
+    let material = MaterialID::from_u64(10);
+    let mesh = MeshID::from_u64(11);
+    let animation = AnimationID::from_u64(12);
+    let light = LightID::from_u64(13);
+    let signal = SignalID::from_u64(15);
+    let audio_bus = AudioBusID::from_u64(16);
+    let tag = TagID::from_u64(17);
+
+    assert_eq!(Variant::from(material).as_material(), Some(material));
+    assert_eq!(Variant::from(mesh).as_mesh(), Some(mesh));
+    assert_eq!(Variant::from(animation).as_animation(), Some(animation));
+    assert_eq!(Variant::from(light).as_light(), Some(light));
+    assert_eq!(Variant::from(signal).as_signal(), Some(signal));
+    assert_eq!(Variant::from(audio_bus).as_audio_bus(), Some(audio_bus));
+    assert_eq!(Variant::from(tag).as_tag(), Some(tag));
+    assert_eq!(Variant::from(material).as_mesh(), None);
+}
+
+#[test]
 fn test_variant_as_vec2() {
     let vec = Vector2 { x: 1.0, y: 2.0 };
     let v = Variant::from(vec);
@@ -179,6 +223,20 @@ fn test_variant_as_vec3() {
     };
     let v = Variant::from(vec);
     assert_eq!(v.as_vec3(), Some(vec));
+}
+
+#[test]
+fn test_variant_as_ivec2() {
+    let vec = IVector2::new(-1, 2);
+    let v = Variant::from(vec);
+    assert_eq!(v.as_ivec2(), Some(vec));
+}
+
+#[test]
+fn test_variant_as_ivec3() {
+    let vec = IVector3::new(-1, 2, -3);
+    let v = Variant::from(vec);
+    assert_eq!(v.as_ivec3(), Some(vec));
 }
 
 #[test]
@@ -212,6 +270,26 @@ fn test_uvec_parse_from_object() {
     assert_eq!(
         Variant::Object(vec3).parse::<UVector3>(),
         Ok(UVector3::new(1, 2, 3))
+    );
+}
+
+#[test]
+fn test_ivec_parse_from_object() {
+    let mut vec2 = BTreeMap::new();
+    vec2.insert(Arc::from("x"), Variant::from(-8_i32));
+    vec2.insert(Arc::from("y"), Variant::from(13_i32));
+    assert_eq!(
+        Variant::Object(vec2).parse::<IVector2>(),
+        Ok(IVector2::new(-8, 13))
+    );
+
+    let mut vec3 = BTreeMap::new();
+    vec3.insert(Arc::from("x"), Variant::from(-1_i64));
+    vec3.insert(Arc::from("y"), Variant::from(2_i64));
+    vec3.insert(Arc::from("z"), Variant::from(-3_i64));
+    assert_eq!(
+        Variant::Object(vec3).parse::<IVector3>(),
+        Ok(IVector3::new(-1, 2, -3))
     );
 }
 

@@ -258,6 +258,9 @@ pub enum RenderEvent {
         request: RenderRequestID,
         id: MaterialID,
     },
+    MaterialLoaded {
+        id: MaterialID,
+    },
     MeshDropped {
         id: MeshID,
     },

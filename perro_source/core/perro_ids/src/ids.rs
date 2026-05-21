@@ -184,10 +184,6 @@ define_generational!(
     "Light ID — allocated by light system. Index + generation."
 );
 define_generational!(
-    UIElementID,
-    "UI Element ID — allocated by UI or synthetic. Index + generation."
-);
-define_generational!(
     SignalID,
     "Signal ID - hash of signal name (or generational). Used for connect/emit."
 );
@@ -238,31 +234,6 @@ impl TextureID {
                 .map(Self::from_u64)
                 .map_err(|e| format!("Invalid TextureID string: {}", e))
         }
-    }
-}
-
-impl UIElementID {
-    /// Synthetic ID from string (e.g. "{parent}-border"). Uses hash; generation 0.
-    pub fn from_string(s: &str) -> Self {
-        Self::from_u64(string_to_u64(s))
-    }
-
-    /// Parse hex string (8 or 16 chars, optional 0x prefix) into UIElementID (for serialization/deserialization).
-    pub fn parse_str(s: &str) -> Result<Self, String> {
-        let s = s.strip_prefix("0x").unwrap_or(s).replace('-', "");
-        if s.len() <= 8 {
-            u32::from_str_radix(&s, 16)
-                .map(|u| Self::from_parts(u, 0))
-                .map_err(|e| format!("Invalid UIElementID string: {}", e))
-        } else {
-            u64::from_str_radix(&s[..16.min(s.len())], 16)
-                .map(Self::from_u64)
-                .map_err(|e| format!("Invalid UIElementID string: {}", e))
-        }
-    }
-
-    pub fn to_hex_string(self) -> String {
-        format!("{:016x}", self.0)
     }
 }
 

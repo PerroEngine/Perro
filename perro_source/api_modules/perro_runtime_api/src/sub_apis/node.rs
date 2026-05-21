@@ -805,6 +805,10 @@ pub trait NodeAPI {
     /// Marks one node dirty for render extraction this frame.
     fn mark_needs_rerender(&mut self, node_id: NodeID) -> bool;
 
+    /// Returns true when a MeshInstance3D/MultiMeshInstance3D has a retained draw
+    /// using loaded mesh and material resources.
+    fn is_mesh_instance_ready(&mut self, node_id: NodeID) -> bool;
+
     /// Batch reparent. Returns count of successful operations.
     fn reparent_multi<I>(&mut self, parent_id: NodeID, child_ids: I) -> usize
     where
@@ -1142,6 +1146,10 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
 
     pub fn mark_needs_rerender(&mut self, node_id: NodeID) -> bool {
         self.rt.mark_needs_rerender(node_id)
+    }
+
+    pub fn is_mesh_instance_ready(&mut self, node_id: NodeID) -> bool {
+        self.rt.is_mesh_instance_ready(node_id)
     }
 
     pub fn reparent_multi<I>(&mut self, parent_id: NodeID, child_ids: I) -> usize
@@ -1938,6 +1946,15 @@ macro_rules! reparent {
 macro_rules! force_rerender {
     ($ctx:expr, $id:expr) => {
         $ctx.Nodes().force_rerender($id)
+    };
+}
+
+/// Checks whether a MeshInstance3D/MultiMeshInstance3D has a ready retained draw.
+/// Usage: `is_mesh_instance_ready!(ctx, node_id) -> bool`.
+#[macro_export]
+macro_rules! is_mesh_instance_ready {
+    ($ctx:expr, $id:expr) => {
+        $ctx.Nodes().is_mesh_instance_ready($id)
     };
 }
 

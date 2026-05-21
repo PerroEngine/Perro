@@ -77,6 +77,15 @@ script = "res://path/to/script.rs"
 [/name]
 ```
 
+Inner type blocks are inheritance data, not child nodes.
+Example: `[RigidBody3D] ... [Node3D] ... [/Node3D]` means `RigidBody3D` inherits `Node3D` fields.
+
+Child nodes are separate top-level scene entries with `parent = @ParentKey`.
+Example: author `CollisionShape3D` as its own node and set `parent = @RigidBodyKey`.
+
+Templates are per node.
+Composition rules, like physics/audio nodes needing collision shape children, live in [Node Types](../nodes.md).
+
 
 ## Template Sets
 

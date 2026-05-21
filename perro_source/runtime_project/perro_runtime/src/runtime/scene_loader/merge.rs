@@ -227,12 +227,50 @@ pub(super) fn merge_prepared_scene(
             runtime.render_2d.texture_sources.insert(node, source);
         }
         if let Some(source) = mesh_source {
+            let res = ResourceWindow::new(resource_api.as_ref());
+            let mesh = res.Meshes().load(&source);
+            if let Some(node_data) = runtime.nodes.get_mut(node) {
+                match &mut node_data.data {
+                    SceneNodeData::MeshInstance3D(mesh_instance) => {
+                        mesh_instance.mesh = mesh;
+                    }
+                    SceneNodeData::MultiMeshInstance3D(mesh_instance) => {
+                        mesh_instance.mesh = mesh;
+                    }
+                    _ => {}
+                }
+            }
             runtime.render_3d.mesh_sources.insert(node, source);
         }
         if !material_surfaces.is_empty() {
             let mut sources = Vec::with_capacity(material_surfaces.len());
             let mut overrides = Vec::with_capacity(material_surfaces.len());
-            for surface in material_surfaces {
+            let res = ResourceWindow::new(resource_api.as_ref());
+            for (surface_index, surface) in material_surfaces.into_iter().enumerate() {
+                let material = surface
+                    .source
+                    .as_deref()
+                    .map(|source| res.Materials().load(source))
+                    .or_else(|| {
+                        surface
+                            .inline
+                            .clone()
+                            .map(|material| resource_api.shared_inline_material_id(material))
+                    });
+                if let Some(material) = material
+                    && let Some(node_data) = runtime.nodes.get_mut(node)
+                {
+                    match &mut node_data.data {
+                        SceneNodeData::MeshInstance3D(mesh_instance) => {
+                            mesh_instance.set_surface_material(surface_index, Some(material));
+                        }
+                        SceneNodeData::MultiMeshInstance3D(mesh_instance) => {
+                            mesh_instance.ensure_surface_mut(surface_index).material =
+                                Some(material);
+                        }
+                        _ => {}
+                    }
+                }
                 sources.push(surface.source);
                 overrides.push(surface.inline);
             }

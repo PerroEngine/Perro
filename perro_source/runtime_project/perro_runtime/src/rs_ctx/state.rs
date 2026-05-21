@@ -183,14 +183,19 @@ pub(super) struct RuntimeResourceState {
     pub(super) mesh_drop_pending: HashSet<u64>,
     pub(super) mesh_data_by_id: HashMap<MeshID, Mesh3D>,
     pub(super) mesh_revision_by_id: HashMap<MeshID, u64>,
+    pub(super) mesh_loaded_by_id: HashSet<MeshID>,
     pub(super) material_by_source: HashMap<u64, MaterialID>,
     pub(super) material_pending_by_source: HashMap<u64, RenderRequestID>,
     pub(super) material_pending_source_by_request: HashMap<RenderRequestID, String>,
     pub(super) material_pending_id_by_request: HashMap<RenderRequestID, MaterialID>,
+    pub(super) material_load_pending_by_id: HashSet<MaterialID>,
+    pub(super) material_write_pending_by_id: HashSet<MaterialID>,
     pub(super) material_reserve_pending: HashSet<u64>,
     pub(super) material_drop_pending: HashSet<u64>,
     pub(super) material_data_by_id: HashMap<MaterialID, Material3D>,
     pub(super) material_loaded_by_id: HashSet<MaterialID>,
+    pub(super) default_material_id: Option<MaterialID>,
+    pub(super) shared_material_by_data: Vec<(Material3D, MaterialID)>,
     pub(super) animation_by_source: HashMap<u64, AnimationID>,
     pub(super) animation_data_by_id: HashMap<AnimationID, Arc<AnimationClip>>,
     pub(super) animation_loaded_by_id: HashSet<AnimationID>,
@@ -201,9 +206,6 @@ pub(super) struct RuntimeResourceState {
 
 impl RuntimeResourceState {
     const REQUEST_BASE: u64 = 0x1000_0000_0000_0000;
-    // Keep runtime resource-api mesh ids away from low scene-loader ids to avoid
-    // cross-system slot collisions/remaps (scene ids usually occupy low indices).
-    const MESH_ID_INDEX_BASE: u32 = 50_000;
 
     pub(super) fn new() -> Self {
         Self {
@@ -225,7 +227,7 @@ impl RuntimeResourceState {
 
     pub(super) fn allocate_mesh_id(&mut self) -> MeshID {
         let (index, generation) = self.mesh_slots.allocate_parts();
-        MeshID::from_parts(index.saturating_add(Self::MESH_ID_INDEX_BASE), generation)
+        MeshID::from_parts(index, generation)
     }
 
     pub(super) fn allocate_material_id(&mut self) -> MaterialID {
