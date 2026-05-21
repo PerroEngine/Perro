@@ -419,16 +419,11 @@ fn bench_physics_visual_interp_render_extract(c: &mut Criterion) {
                 body,
                 |node| {
                     node.transform = Transform3D::new(
-                        Vector3::new(
-                            (i % 16) as f32,
-                            (i / 256) as f32,
-                            ((i / 16) % 16) as f32,
-                        ),
+                        Vector3::new((i % 16) as f32, (i / 256) as f32, ((i / 16) % 16) as f32),
                         Quaternion::IDENTITY,
                         Vector3::ONE,
                     );
-                    node.linear_velocity =
-                        Vector3::new(1.0 + (i % 7) as f32 * 0.05, 0.0, -0.25);
+                    node.linear_velocity = Vector3::new(1.0 + (i % 7) as f32 * 0.05, 0.0, -0.25);
                     node.continuous_collision_detection = false;
                     node.can_sleep = false;
                 },

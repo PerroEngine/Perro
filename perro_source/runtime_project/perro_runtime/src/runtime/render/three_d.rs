@@ -138,10 +138,10 @@ impl Runtime {
         let mut dirty_skeletons = std::mem::take(&mut self.render_3d.dirty_skeletons_scratch);
         dirty_skeletons.clear();
         dirty_skeletons.extend(traversal_ids.iter().copied().filter(|id| {
-                self.nodes
-                    .get(*id)
-                    .is_some_and(|node| matches!(node.data, SceneNodeData::Skeleton3D(_)))
-            }));
+            self.nodes
+                .get(*id)
+                .is_some_and(|node| matches!(node.data, SceneNodeData::Skeleton3D(_)))
+        }));
         if !dirty_skeletons.is_empty() {
             for (id, node) in self.nodes.iter() {
                 let SceneNodeData::MeshInstance3D(mesh) = &node.data else {
@@ -1218,10 +1218,12 @@ impl Runtime {
         }
 
         if self.render_3d.material_surface_sources.get(&node).is_none()
-            && self.render_3d.material_surface_overrides.get(&node).is_none()
-            && surfaces
-                .iter()
-                .all(|surface| surface.overrides.is_empty())
+            && self
+                .render_3d
+                .material_surface_overrides
+                .get(&node)
+                .is_none()
+            && surfaces.iter().all(|surface| surface.overrides.is_empty())
             && let Some(retained) = self.render_3d.retained_mesh_draws.get(&node)
             && retained.mesh == mesh
             && simple_surfaces_match(&surfaces, &retained.surfaces)
