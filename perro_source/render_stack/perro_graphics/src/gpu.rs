@@ -61,7 +61,7 @@ fn water_camera_view_proj(camera: &Camera3DState, width: u32, height: u32) -> Ma
             let fov = fov_y_degrees
                 .to_radians()
                 .clamp(10.0f32.to_radians(), 120.0f32.to_radians());
-            Mat4::perspective_rh_gl(
+            Mat4::perspective_rh(
                 fov,
                 aspect.max(1.0e-6),
                 near.max(1.0e-3),
@@ -87,7 +87,7 @@ fn water_camera_view_proj(camera: &Camera3DState, width: u32, height: u32) -> Ma
             top,
             near,
             far,
-        } => Mat4::frustum_rh_gl(
+        } => Mat4::frustum_rh(
             left,
             right,
             bottom,

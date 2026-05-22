@@ -693,16 +693,74 @@ const OCCLUSION_PROBE_INTERVAL: u64 = 1;
 mod tests {
     use super::{
         DrawBatch, DrawBatchPush, MATERIAL_TEXTURE_NONE, MaterialPipelineKind, RenderBatchKind,
-        RenderPath3D, compare_draw_batch_keys, draw_batch_state_key, push_draw_batch,
+        RenderPath3D, camera, compare_draw_batch_keys, draw_batch_state_key, push_draw_batch,
         render_state_key,
     };
+    use glam::Vec4;
     use perro_asset_formats::pmesh::{
         FLAG_HAS_JOINTS as PMESH_FLAG_HAS_JOINTS, FLAG_HAS_NORMAL as PMESH_FLAG_HAS_NORMAL,
         FLAG_HAS_UV0 as PMESH_FLAG_HAS_UV0, FLAG_HAS_WEIGHTS as PMESH_FLAG_HAS_WEIGHTS,
         FLAG_WEIGHTS_UNORM8 as PMESH_FLAG_WEIGHTS_UNORM8, VERSION as PMESH_VERSION,
     };
     use perro_graphics_assets::{MeshRange, decode_pmesh, decode_ptex};
+    use perro_render_bridge::CameraProjectionState;
     use perro_structs::BitMask;
+
+    fn assert_approx(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() <= 1.0e-4,
+            "expected {expected}, got {actual}"
+        );
+    }
+
+    fn projected_depth(proj: glam::Mat4, view_z: f32) -> f32 {
+        let clip = proj * Vec4::new(0.0, 0.0, view_z, 1.0);
+        clip.z / clip.w
+    }
+
+    #[test]
+    fn perspective_fov_y_stays_vertical_at_reference_aspect() {
+        let proj = camera::projection_matrix(
+            CameraProjectionState::Perspective {
+                fov_y_degrees: 60.0,
+                near: 0.1,
+                far: 1000.0,
+            },
+            16.0 / 9.0,
+        );
+        let fov = (2.0 * (1.0 / proj.y_axis.y).atan()).to_degrees();
+        assert_approx(fov, 60.0);
+    }
+
+    #[test]
+    fn perspective_fov_y_stays_vertical_at_ultrawide_aspect() {
+        let proj = camera::projection_matrix(
+            CameraProjectionState::Perspective {
+                fov_y_degrees: 60.0,
+                near: 0.1,
+                far: 1000.0,
+            },
+            1864.0 / 768.0,
+        );
+        let fov = (2.0 * (1.0 / proj.y_axis.y).atan()).to_degrees();
+        assert_approx(fov, 60.0);
+    }
+
+    #[test]
+    fn perspective_depth_maps_to_wgpu_range() {
+        let near = 0.1;
+        let far = 1000.0;
+        let proj = camera::projection_matrix(
+            CameraProjectionState::Perspective {
+                fov_y_degrees: 60.0,
+                near,
+                far,
+            },
+            16.0 / 9.0,
+        );
+        assert_approx(projected_depth(proj, -near), 0.0);
+        assert_approx(projected_depth(proj, -far), 1.0);
+    }
 
     #[test]
     fn decode_pmesh_accepts_v1_render_payload_with_all_attributes() {

@@ -112,8 +112,7 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let d_t = textureLoad(hiz_tex, vec2<i32>(cx, y1), i32(mip)).x;
     let hiz_depth = max(max(max(d_center, d_l), max(d_r, d_b)), d_t);
 
-    // Projection matrix is RH_GL; map NDC z [-1, 1] to depth [0, 1].
-    let center_depth = clamp(ndc.z * 0.5 + 0.5, 0.0, 1.0);
+    let center_depth = clamp(ndc.z, 0.0, 1.0);
     // Conservative front depth estimate for object bounds.
     let nearest_depth = max(center_depth - radius_ndc_y * 0.5, 0.0);
     if nearest_depth > hiz_depth + params.depth_bias {

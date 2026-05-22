@@ -179,7 +179,7 @@ fn mesh_blend_noise(p: vec2<f32>) -> f32 {
 fn mesh_blend_world_from_depth(coord: vec2<i32>, dims_u: vec2<u32>, depth: f32) -> vec3<f32> {
     let uv = (vec2<f32>(coord) + vec2<f32>(0.5)) / vec2<f32>(dims_u);
     let ndc_xy = vec2<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
-    let ndc = vec4<f32>(ndc_xy, depth * 2.0 - 1.0, 1.0);
+    let ndc = vec4<f32>(ndc_xy, depth, 1.0);
     let world_h = scene.inv_view_proj * ndc;
     return world_h.xyz / max(abs(world_h.w), 1.0e-5);
 }

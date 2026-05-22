@@ -213,8 +213,8 @@ pub(super) fn projection_matrix(projection: CameraProjectionState, aspect: f32) 
             near,
             far,
         } => {
-            let fov_y_radians = adjusted_perspective_fov_y_radians(fov_y_degrees, aspect);
-            Mat4::perspective_rh_gl(
+            let fov_y_radians = perspective_fov_y_radians(fov_y_degrees);
+            Mat4::perspective_rh(
                 fov_y_radians,
                 aspect.max(1.0e-6),
                 near.max(1.0e-3),
@@ -240,7 +240,7 @@ pub(super) fn projection_matrix(projection: CameraProjectionState, aspect: f32) 
             top,
             near,
             far,
-        } => Mat4::frustum_rh_gl(
+        } => Mat4::frustum_rh(
             left,
             right,
             bottom,
@@ -251,22 +251,14 @@ pub(super) fn projection_matrix(projection: CameraProjectionState, aspect: f32) 
     }
 }
 
-pub(super) const CAMERA_FOV_REFERENCE_ASPECT: f32 = 16.0 / 9.0;
-
-pub(super) fn adjusted_perspective_fov_y_radians(fov_y_degrees: f32, aspect: f32) -> f32 {
-    let base_fov_y_radians = if fov_y_degrees.is_finite() {
+pub(super) fn perspective_fov_y_radians(fov_y_degrees: f32) -> f32 {
+    if fov_y_degrees.is_finite() {
         fov_y_degrees
             .to_radians()
             .clamp(10.0f32.to_radians(), 120.0f32.to_radians())
     } else {
         60.0f32.to_radians()
-    };
-    let safe_aspect = aspect.max(1.0e-6);
-    let base_aspect = CAMERA_FOV_REFERENCE_ASPECT.max(1.0e-6);
-    let base_tan_y = (base_fov_y_radians * 0.5).tan().max(1.0e-6);
-    let diagonal_tan = base_tan_y * (1.0 + base_aspect * base_aspect).sqrt();
-    let adjusted_tan_y = diagonal_tan / (1.0 + safe_aspect * safe_aspect).sqrt();
-    (2.0 * adjusted_tan_y.atan()).clamp(10.0f32.to_radians(), 120.0f32.to_radians())
+    }
 }
 
 #[inline]
@@ -290,7 +282,21 @@ pub(super) fn hash01(seed: u32) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{InstanceRange, push_instance_range};
+    use super::{InstanceRange, projection_matrix, push_instance_range};
+    use glam::Vec4;
+    use perro_render_bridge::CameraProjectionState;
+
+    fn assert_approx(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() <= 1.0e-4,
+            "expected {expected}, got {actual}"
+        );
+    }
+
+    fn projected_depth(proj: glam::Mat4, view_z: f32) -> f32 {
+        let clip = proj * Vec4::new(0.0, 0.0, view_z, 1.0);
+        clip.z / clip.w
+    }
 
     #[test]
     fn push_instance_range_compacts_adjacent_matching_paths() {
@@ -308,5 +314,35 @@ mod tests {
                 path_kind: 1,
             }
         );
+    }
+
+    #[test]
+    fn particle_perspective_matches_stable_vertical_fov() {
+        let proj = projection_matrix(
+            CameraProjectionState::Perspective {
+                fov_y_degrees: 60.0,
+                near: 0.1,
+                far: 1000.0,
+            },
+            1864.0 / 768.0,
+        );
+        let fov = (2.0 * (1.0 / proj.y_axis.y).atan()).to_degrees();
+        assert_approx(fov, 60.0);
+    }
+
+    #[test]
+    fn particle_perspective_depth_maps_to_wgpu_range() {
+        let near = 0.1;
+        let far = 1000.0;
+        let proj = projection_matrix(
+            CameraProjectionState::Perspective {
+                fov_y_degrees: 60.0,
+                near,
+                far,
+            },
+            16.0 / 9.0,
+        );
+        assert_approx(projected_depth(proj, -near), 0.0);
+        assert_approx(projected_depth(proj, -far), 1.0);
     }
 }
