@@ -6,7 +6,7 @@ use super::{
         MAX_SPOT_LIGHTS,
     },
     shaders::{
-        build_material_shader_with_prelude, create_depth_prepass_shader_module_rigid,
+        build_custom_material_shader_with_prelude, create_depth_prepass_shader_module_rigid,
         create_depth_prepass_shader_module_skinned, create_frustum_cull_shader_module,
         create_hiz_depth_copy_shader_module, create_hiz_downsample_shader_module,
         create_hiz_occlusion_cull_shader_module, create_mesh_shader_module_rigid,
@@ -33,7 +33,8 @@ use perro_ids::MeshID;
 use perro_io::load_asset;
 use perro_render_bridge::{
     Camera3DState, CameraProjectionState, LODOptions3D, Material3D, MaterialParamOverride3D,
-    MaterialParamOverrideValue3D, MeshBlendOptions3D, MeshSurfaceBinding3D, StandardMaterial3D,
+    MaterialParamOverrideValue3D, MeshBlendOptions3D, MeshSurfaceBinding3D, PointLight3DState,
+    SpotLight3DState, StandardMaterial3D,
 };
 use perro_structs::BitMask;
 use std::{
@@ -113,6 +114,15 @@ const PACKED_STANDARD_NORMAL_SCALE_MAX: f32 = 4.0;
 const PACKED_TOON_RIM_STRENGTH_MAX: f32 = 4.0;
 const PACKED_TOON_OUTLINE_WIDTH_MAX: f32 = 4.0;
 const SHADOW_MAP_SIZE: u32 = 4096;
+const SHADOW_SPOT_MAP_SIZE: u32 = 2048;
+const SHADOW_POINT_MAP_SIZE: u32 = 1024;
+const MAX_SHADOW_RAY_LIGHTS: usize = 1;
+const MAX_SHADOW_SPOT_LIGHTS: usize = 4;
+const MAX_SHADOW_POINT_LIGHTS: usize = 4;
+const POINT_SHADOW_FACE_COUNT: usize = 6;
+const SHADOW_CAMERA_COUNT: usize = MAX_SHADOW_RAY_LIGHTS
+    + MAX_SHADOW_SPOT_LIGHTS
+    + MAX_SHADOW_POINT_LIGHTS * POINT_SHADOW_FACE_COUNT;
 const SHADOW_DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const SHADOW_MAP_DEPTH_BIAS_CONST: i32 = 2;
 const SHADOW_MAP_DEPTH_BIAS_SLOPE: f32 = 2.0;
@@ -121,11 +131,11 @@ const MATERIAL_FLAG_FLAT_SHADING: u32 = 1u32 << 1;
 const MATERIAL_FLAG_HAS_BASE_COLOR_TEXTURE: u32 = 1u32 << 2;
 const MATERIAL_FLAG_MESH_BLEND: u32 = 1u32 << 3;
 const MATERIAL_FLAG_NORMAL_BLEND: u32 = 1u32 << 4;
+const MATERIAL_FLAG_RECEIVE_SHADOWS: u32 = 1u32 << 6;
 const CUSTOM_PARAM_KIND_SCALAR: u32 = 0;
 const CUSTOM_PARAM_KIND_VEC2: u32 = 1;
 const CUSTOM_PARAM_KIND_VEC3: u32 = 2;
 const CUSTOM_PARAM_KIND_VEC4: u32 = 3;
-const TEMP_DISABLE_SHADOWS: bool = true;
 // Debug lock: force a fixed world-space directional light vector.
 // Set to false after validating shadow stability.
 const DEBUG_FORCE_WORLD_SUN_DIR: bool = false;
@@ -292,7 +302,12 @@ struct HizCullParamsGpu {
 #[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
 struct ShadowUniform {
     light_view_proj: [[f32; 4]; 4],
-    params0: [f32; 4], // enabled, strength, depth_bias, normal_bias
+    spot_light_view_proj: [[[f32; 4]; 4]; MAX_SHADOW_SPOT_LIGHTS],
+    point_light_view_proj: [[[f32; 4]; 4]; MAX_SHADOW_POINT_LIGHTS * POINT_SHADOW_FACE_COUNT],
+    params0: [f32; 4],    // enabled, strength, depth_bias, normal_bias
+    ray_params: [f32; 4], // enabled, reserved, reserved, reserved
+    spot_params: [[f32; 4]; MAX_SHADOW_SPOT_LIGHTS], // enabled, light_index, layer, reserved
+    point_params: [[f32; 4]; MAX_SHADOW_POINT_LIGHTS], // enabled, light_index, base_layer, range
 }
 
 pub struct Gpu3D {
@@ -353,13 +368,19 @@ pub struct Gpu3D {
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     rigid_camera_bind_group: wgpu::BindGroup,
-    shadow_camera_buffer: wgpu::Buffer,
-    shadow_camera_bind_group: wgpu::BindGroup,
-    rigid_shadow_camera_bind_group: wgpu::BindGroup,
+    shadow_camera_buffers: Vec<wgpu::Buffer>,
+    shadow_camera_bind_groups: Vec<wgpu::BindGroup>,
+    rigid_shadow_camera_bind_groups: Vec<wgpu::BindGroup>,
     shadow_buffer: wgpu::Buffer,
     shadow_bind_group: wgpu::BindGroup,
     _shadow_map_texture: wgpu::Texture,
     shadow_map_view: wgpu::TextureView,
+    _spot_shadow_map_texture: wgpu::Texture,
+    _spot_shadow_map_view: wgpu::TextureView,
+    spot_shadow_layer_views: Vec<wgpu::TextureView>,
+    _point_shadow_map_texture: wgpu::Texture,
+    _point_shadow_map_view: wgpu::TextureView,
+    point_shadow_layer_views: Vec<wgpu::TextureView>,
     _shadow_map_sampler: wgpu::Sampler,
     mesh_blend_bgl: wgpu::BindGroupLayout,
     mesh_blend_bind_group: wgpu::BindGroup,
@@ -437,9 +458,12 @@ pub struct Gpu3D {
     last_draw_instance_spans: Vec<Range<u32>>,
     last_draw_instance_span_ranges: Vec<Range<usize>>,
     last_scene: Option<Scene3DUniform>,
-    last_shadow_scene: Option<Scene3DUniform>,
+    last_shadow_scenes: Vec<Option<Scene3DUniform>>,
     last_shadow: Option<ShadowUniform>,
     shadow_pass_enabled: bool,
+    ray_shadow_enabled: bool,
+    spot_shadow_count: usize,
+    point_shadow_count: usize,
     shadow_focus_center: Vec3,
     shadow_focus_radius: f32,
     last_sky: Option<SkyUniform>,
@@ -493,6 +517,8 @@ pub struct Gpu3D {
     meshlets_enabled: bool,
     dev_meshlets: bool,
     meshlet_debug_view: bool,
+    shadow_caster_debug_view: bool,
+    disable_meshlet_shadows: bool,
     cpu_occlusion_enabled: bool,
     last_total_meshlets: usize,
     last_total_drawn: usize,
@@ -629,6 +655,7 @@ struct DrawBatch {
     occlusion_query: Option<u32>,
     disable_hiz_occlusion: bool,
     casts_shadows: bool,
+    receives_shadows: bool,
     mesh_blend: bool,
     mesh_blend_depth: bool,
     blend_layers: u32,
@@ -900,6 +927,7 @@ mod tests {
                 occlusion_query: None,
                 disable_hiz_occlusion: false,
                 casts_shadows: true,
+                receives_shadows: true,
                 mesh_blend: false,
                 mesh_blend_depth: false,
                 blend_layers: BitMask::ALL.bits(),
@@ -921,6 +949,7 @@ mod tests {
                 occlusion_query: None,
                 disable_hiz_occlusion: false,
                 casts_shadows: true,
+                receives_shadows: true,
                 mesh_blend: false,
                 mesh_blend_depth: false,
                 blend_layers: BitMask::ALL.bits(),
@@ -971,6 +1000,7 @@ mod tests {
                 occlusion_query: None,
                 disable_hiz_occlusion: false,
                 casts_shadows: true,
+                receives_shadows: true,
                 mesh_blend: false,
                 mesh_blend_depth: false,
                 blend_layers: BitMask::ALL.bits(),
@@ -992,6 +1022,7 @@ mod tests {
                 occlusion_query: None,
                 disable_hiz_occlusion: false,
                 casts_shadows: true,
+                receives_shadows: true,
                 mesh_blend: false,
                 mesh_blend_depth: false,
                 blend_layers: BitMask::ALL.bits(),
@@ -1013,6 +1044,7 @@ mod tests {
                 occlusion_query: Some(11),
                 disable_hiz_occlusion: false,
                 casts_shadows: true,
+                receives_shadows: true,
                 mesh_blend: false,
                 mesh_blend_depth: false,
                 blend_layers: BitMask::ALL.bits(),
@@ -1094,6 +1126,7 @@ mod tests {
             occlusion_query: None,
             disable_hiz_occlusion: false,
             casts_shadows: true,
+            receives_shadows: true,
             mesh_blend,
             mesh_blend_depth: false,
             blend_layers: BitMask::ALL.bits(),

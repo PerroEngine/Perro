@@ -183,6 +183,55 @@ pub(super) fn create_shadow_map_texture(
     (texture, view)
 }
 
+pub(super) fn create_shadow_map_array_texture(
+    device: &wgpu::Device,
+    label: &'static str,
+    size: u32,
+    layers: u32,
+) -> (wgpu::Texture, wgpu::TextureView, Vec<wgpu::TextureView>) {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some(label),
+        size: wgpu::Extent3d {
+            width: size.max(1),
+            height: size.max(1),
+            depth_or_array_layers: layers.max(1),
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: SHADOW_DEPTH_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let array_view = texture.create_view(&wgpu::TextureViewDescriptor {
+        label: Some(label),
+        format: Some(SHADOW_DEPTH_FORMAT),
+        dimension: Some(wgpu::TextureViewDimension::D2Array),
+        usage: Some(wgpu::TextureUsages::TEXTURE_BINDING),
+        aspect: wgpu::TextureAspect::DepthOnly,
+        base_mip_level: 0,
+        mip_level_count: Some(1),
+        base_array_layer: 0,
+        array_layer_count: Some(layers.max(1)),
+    });
+    let layer_views = (0..layers.max(1))
+        .map(|layer| {
+            texture.create_view(&wgpu::TextureViewDescriptor {
+                label: Some(label),
+                format: Some(SHADOW_DEPTH_FORMAT),
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                usage: Some(wgpu::TextureUsages::RENDER_ATTACHMENT),
+                aspect: wgpu::TextureAspect::DepthOnly,
+                base_mip_level: 0,
+                mip_level_count: Some(1),
+                base_array_layer: layer,
+                array_layer_count: Some(1),
+            })
+        })
+        .collect();
+    (texture, array_view, layer_views)
+}
+
 pub(super) fn create_sky_pipeline(
     device: &wgpu::Device,
     pipeline_layout: &wgpu::PipelineLayout,

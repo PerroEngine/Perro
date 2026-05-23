@@ -257,6 +257,7 @@ impl Gpu3D {
             && base.occlusion_query.is_none()
             && next.occlusion_query.is_none()
             && base.casts_shadows == next.casts_shadows
+            && base.receives_shadows == next.receives_shadows
             && base.mesh_blend == next.mesh_blend
             && base.mesh_blend_depth == next.mesh_blend_depth
             && base.blend_layers == next.blend_layers

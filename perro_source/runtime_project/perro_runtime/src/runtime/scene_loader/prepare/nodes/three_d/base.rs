@@ -192,6 +192,16 @@ fn apply_mesh_instance_3d_fields(node: &mut MeshInstance3D, fields: &[SceneObjec
                     node.lod.max_lod = v.clamp(0, LODOptions::MAX as i32) as u8;
                 }
             }
+            "cast_shadows" | "casts_shadows" => {
+                if let Some(v) = as_bool(value) {
+                    node.cast_shadows = v;
+                }
+            }
+            "receive_shadows" | "receives_shadows" => {
+                if let Some(v) = as_bool(value) {
+                    node.receive_shadows = v;
+                }
+            }
             "blend" | "mesh_blend" | "blending" => {
                 apply_mesh_blend_fields(&mut node.blend, value);
             }
@@ -289,6 +299,16 @@ fn apply_multi_mesh_instance_3d_fields(
             "max_lod" | "lod_max" => {
                 if let Some(v) = as_i32(value) {
                     node.lod.max_lod = v.clamp(0, LODOptions::MAX as i32) as u8;
+                }
+            }
+            "cast_shadows" | "casts_shadows" => {
+                if let Some(v) = as_bool(value) {
+                    node.cast_shadows = v;
+                }
+            }
+            "receive_shadows" | "receives_shadows" => {
+                if let Some(v) = as_bool(value) {
+                    node.receive_shadows = v;
                 }
             }
             "blend" | "mesh_blend" | "blending" => {

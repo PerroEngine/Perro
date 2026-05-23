@@ -54,6 +54,8 @@ pub struct Draw3DInstance {
     pub meshlet_override: Option<bool>,
     pub lod: LODOptions3D,
     pub blend: MeshBlendOptions3D,
+    pub cast_shadows: bool,
+    pub receive_shadows: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -128,6 +130,8 @@ impl Renderer3D {
         meshlet_override: Option<bool>,
         lod: LODOptions3D,
         blend: MeshBlendOptions3D,
+        cast_shadows: bool,
+        receive_shadows: bool,
     ) {
         self.queued_draws.push(Draw3DInstance {
             node,
@@ -140,6 +144,8 @@ impl Renderer3D {
             meshlet_override,
             lod,
             blend,
+            cast_shadows,
+            receive_shadows,
         });
     }
 
@@ -154,6 +160,8 @@ impl Renderer3D {
         meshlet_override: Option<bool>,
         lod: LODOptions3D,
         blend: MeshBlendOptions3D,
+        cast_shadows: bool,
+        receive_shadows: bool,
     ) {
         self.queued_draws.push(Draw3DInstance {
             node,
@@ -166,6 +174,8 @@ impl Renderer3D {
             meshlet_override,
             lod,
             blend,
+            cast_shadows,
+            receive_shadows,
         });
     }
 
@@ -179,6 +189,8 @@ impl Renderer3D {
         meshlet_override: Option<bool>,
         lod: LODOptions3D,
         blend: MeshBlendOptions3D,
+        cast_shadows: bool,
+        receive_shadows: bool,
     ) {
         self.queued_draws.push(Draw3DInstance {
             node,
@@ -193,6 +205,8 @@ impl Renderer3D {
             meshlet_override,
             lod,
             blend,
+            cast_shadows,
+            receive_shadows,
         });
     }
 
@@ -217,6 +231,8 @@ impl Renderer3D {
             meshlet_override: Some(false),
             lod: LODOptions3D::default(),
             blend: MeshBlendOptions3D::default(),
+            cast_shadows: false,
+            receive_shadows: false,
         });
     }
 
@@ -244,6 +260,8 @@ impl Renderer3D {
             meshlet_override: Some(false),
             lod: LODOptions3D::default(),
             blend: MeshBlendOptions3D::default(),
+            cast_shadows: false,
+            receive_shadows: false,
         });
     }
 
@@ -281,6 +299,8 @@ impl Renderer3D {
             meshlet_override: Some(false),
             lod: LODOptions3D::default(),
             blend: MeshBlendOptions3D::default(),
+            cast_shadows: false,
+            receive_shadows: false,
         });
     }
 
@@ -686,6 +706,18 @@ fn update_unready_retained_draw(
     }
     if retained.lod != draw.lod {
         retained.lod = draw.lod;
+        changed = true;
+    }
+    if retained.blend != draw.blend {
+        retained.blend = draw.blend;
+        changed = true;
+    }
+    if retained.cast_shadows != draw.cast_shadows {
+        retained.cast_shadows = draw.cast_shadows;
+        changed = true;
+    }
+    if retained.receive_shadows != draw.receive_shadows {
+        retained.receive_shadows = draw.receive_shadows;
         changed = true;
     }
     changed

@@ -118,16 +118,20 @@ pub(crate) fn load_mesh3d_from_source(
 }
 
 pub(super) fn is_builtin_primitive_mesh_source(source: &str) -> bool {
+    fn is_builtin_or_alias(source: &str) -> bool {
+        source == "__plane__" || perro_builtin_meshes::is_builtin_mesh_source(source)
+    }
+
     let Some((base, selector)) = source.rsplit_once(':') else {
-        return perro_builtin_meshes::is_builtin_mesh_source(source);
+        return is_builtin_or_alias(source);
     };
     if base.is_empty() || selector.contains('/') || selector.contains('\\') {
-        return perro_builtin_meshes::is_builtin_mesh_source(source);
+        return is_builtin_or_alias(source);
     }
     if selector.contains('[') && selector.ends_with(']') {
-        return perro_builtin_meshes::is_builtin_mesh_source(base);
+        return is_builtin_or_alias(base);
     }
-    perro_builtin_meshes::is_builtin_mesh_source(source)
+    is_builtin_or_alias(source)
 }
 
 #[cfg(test)]
@@ -194,5 +198,11 @@ mod tests {
             },
         );
         assert_eq!(clamped.full.index_start, 30);
+    }
+
+    #[test]
+    fn plane_alias_counts_as_builtin_primitive() {
+        assert!(is_builtin_primitive_mesh_source("__plane__"));
+        assert!(is_builtin_primitive_mesh_source("__plane__:mesh[0]"));
     }
 }

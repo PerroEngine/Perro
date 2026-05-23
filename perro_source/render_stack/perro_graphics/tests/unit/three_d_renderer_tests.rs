@@ -35,6 +35,8 @@ fn repeated_equal_draw_upsert_keep_revision_stable() {
         None,
         LODOptions3D::default(),
         MeshBlendOptions3D::default(),
+        true,
+        true,
     );
     let _ = renderer.prepare_frame(&resources);
     let first_revision = renderer.draw_revision();
@@ -53,6 +55,8 @@ fn repeated_equal_draw_upsert_keep_revision_stable() {
         None,
         LODOptions3D::default(),
         MeshBlendOptions3D::default(),
+        true,
+        true,
     );
     let _ = renderer.prepare_frame(&resources);
 
@@ -86,6 +90,8 @@ fn repeated_equal_draw_upsert_keep_sorted_node_order() {
             None,
             LODOptions3D::default(),
             MeshBlendOptions3D::default(),
+            true,
+            true,
         );
     }
     let _ = renderer.prepare_frame(&resources);
@@ -105,6 +111,8 @@ fn repeated_equal_draw_upsert_keep_sorted_node_order() {
             None,
             LODOptions3D::default(),
             MeshBlendOptions3D::default(),
+            true,
+            true,
         );
     }
     let _ = renderer.prepare_frame(&resources);

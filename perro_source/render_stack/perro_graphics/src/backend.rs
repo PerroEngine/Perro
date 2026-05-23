@@ -933,6 +933,8 @@ impl PerroGraphics {
                         meshlet_override,
                         lod,
                         blend,
+                        cast_shadows,
+                        receive_shadows,
                     } => {
                         self.renderer_3d.queue_draw(
                             node,
@@ -943,6 +945,8 @@ impl PerroGraphics {
                             meshlet_override,
                             lod,
                             blend,
+                            cast_shadows,
+                            receive_shadows,
                         );
                     }
                     Command3D::DrawMulti {
@@ -954,6 +958,8 @@ impl PerroGraphics {
                         meshlet_override,
                         lod,
                         blend,
+                        cast_shadows,
+                        receive_shadows,
                     } => {
                         self.renderer_3d.queue_draw_multi(
                             node,
@@ -964,6 +970,8 @@ impl PerroGraphics {
                             meshlet_override,
                             lod,
                             blend,
+                            cast_shadows,
+                            receive_shadows,
                         );
                     }
                     Command3D::DrawMultiDense {
@@ -976,6 +984,8 @@ impl PerroGraphics {
                         meshlet_override,
                         lod,
                         blend,
+                        cast_shadows,
+                        receive_shadows,
                     } => {
                         self.renderer_3d.queue_draw_multi_dense(
                             node,
@@ -989,6 +999,8 @@ impl PerroGraphics {
                             meshlet_override,
                             lod,
                             blend,
+                            cast_shadows,
+                            receive_shadows,
                         );
                     }
                     Command3D::DrawDebugPoint3D {

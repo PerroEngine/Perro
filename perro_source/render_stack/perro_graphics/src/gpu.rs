@@ -136,6 +136,8 @@ fn fill_camera_stream_draws_3d(draws: &[CameraStreamDraw3DState], out: &mut Vec<
             meshlet_override: *meshlet_override,
             lod: *lod,
             blend: *blend,
+            cast_shadows: true,
+            receive_shadows: true,
         },
         CameraStreamDraw3DState::DrawMulti {
             mesh,
@@ -157,6 +159,8 @@ fn fill_camera_stream_draws_3d(draws: &[CameraStreamDraw3DState], out: &mut Vec<
             meshlet_override: *meshlet_override,
             lod: *lod,
             blend: *blend,
+            cast_shadows: true,
+            receive_shadows: true,
         },
         CameraStreamDraw3DState::DrawMultiDense {
             mesh,
@@ -183,6 +187,8 @@ fn fill_camera_stream_draws_3d(draws: &[CameraStreamDraw3DState], out: &mut Vec<
             meshlet_override: *meshlet_override,
             lod: *lod,
             blend: *blend,
+            cast_shadows: true,
+            receive_shadows: true,
         },
     }))
 }

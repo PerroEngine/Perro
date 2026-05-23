@@ -76,6 +76,8 @@ fn draw_3d_command_with_blend(
         meshlet_override: None,
         lod: LODOptions3D::default(),
         blend,
+        cast_shadows: true,
+        receive_shadows: true,
     }))
 }
 
@@ -111,6 +113,8 @@ fn draw_3d_dense_command_with_blend(
         meshlet_override: None,
         lod: LODOptions3D::default(),
         blend,
+        cast_shadows: true,
+        receive_shadows: true,
     }))
 }
 

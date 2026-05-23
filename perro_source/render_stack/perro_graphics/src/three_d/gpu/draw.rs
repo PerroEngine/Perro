@@ -13,6 +13,7 @@ pub(super) struct DrawBatchPush {
     pub(super) occlusion_query: Option<u32>,
     pub(super) disable_hiz_occlusion: bool,
     pub(super) casts_shadows: bool,
+    pub(super) receives_shadows: bool,
     pub(super) mesh_blend: bool,
     pub(super) mesh_blend_depth: bool,
     pub(super) blend_layers: u32,
@@ -33,6 +34,7 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
         occlusion_query,
         disable_hiz_occlusion,
         casts_shadows,
+        receives_shadows,
         mesh_blend,
         mesh_blend_depth,
         blend_layers,
@@ -70,6 +72,7 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
             && prev.base_color_texture_slot == base_color_texture_slot
             && prev.occlusion_query.is_none()
             && prev.casts_shadows == casts_shadows
+            && prev.receives_shadows == receives_shadows
             && prev.mesh_blend == mesh_blend
             && prev.mesh_blend_depth == mesh_blend_depth
             && prev.blend_layers == blend_layers
@@ -106,6 +109,7 @@ pub(super) fn push_draw_batch(draw_batches: &mut Vec<DrawBatch>, batch: DrawBatc
         occlusion_query,
         disable_hiz_occlusion,
         casts_shadows,
+        receives_shadows,
         mesh_blend,
         mesh_blend_depth,
         blend_layers,
@@ -139,6 +143,7 @@ pub(super) struct BuildInstanceArgs {
     pub(super) skeleton_count: u32,
     pub(super) custom_params_offset: u32,
     pub(super) custom_params_len: u32,
+    pub(super) receive_shadows: bool,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -306,6 +311,7 @@ pub(super) fn build_instance(
         skeleton_count,
         custom_params_offset,
         custom_params_len,
+        receive_shadows,
     } = args;
     let (color, packed_pbr_params_0, packed_pbr_params_1, emissive_factor, debug_flags) =
         if debug_view {
@@ -372,6 +378,9 @@ pub(super) fn build_instance(
     }
     if params.base_color_texture != MATERIAL_TEXTURE_NONE {
         material_flags |= MATERIAL_FLAG_HAS_BASE_COLOR_TEXTURE;
+    }
+    if receive_shadows && !matches!(material, Material3D::Unlit(_)) {
+        material_flags |= MATERIAL_FLAG_RECEIVE_SHADOWS;
     }
     let blend_active = resolved_mesh_blend_active(mesh_blend);
     let packed_blend_params = if blend_active && !debug_view {
@@ -706,6 +715,8 @@ pub(super) fn same_draw_except_model(a: &Draw3DInstance, b: &Draw3DInstance) -> 
         && a.meshlet_override == b.meshlet_override
         && a.lod == b.lod
         && a.blend == b.blend
+        && a.cast_shadows == b.cast_shadows
+        && a.receive_shadows == b.receive_shadows
 }
 
 impl Gpu3D {
@@ -805,6 +816,8 @@ mod tests {
                 noise_factor: 0.0,
                 noise_scale: 1.0,
             },
+            cast_shadows: true,
+            receive_shadows: true,
         }
     }
 
@@ -972,6 +985,7 @@ mod tests {
             skeleton_count: 0,
             custom_params_offset: 0,
             custom_params_len: 0,
+            receive_shadows: true,
         };
         let built = build_instance(
             glam::Mat4::IDENTITY.to_cols_array_2d(),
@@ -1013,6 +1027,7 @@ mod tests {
                 skeleton_count: 0,
                 custom_params_offset: 0,
                 custom_params_len: 0,
+                receive_shadows: true,
             },
         );
         let flags = (built.material.packed_material_params >> 3) & 0x1fff;
@@ -1031,6 +1046,7 @@ mod tests {
             skeleton_count: 0,
             custom_params_offset: 0,
             custom_params_len: 0,
+            receive_shadows: true,
         };
         let odd = build_instance(
             glam::Mat4::from_scale(glam::Vec3::new(-1.0, 1.0, 1.0)).to_cols_array_2d(),

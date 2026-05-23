@@ -104,6 +104,8 @@ fn draw_command(i: u32, mesh: MeshID, material: MaterialID) -> RenderCommand {
         meshlet_override: None,
         lod: LODOptions3D::default(),
         blend: MeshBlendOptions3D::default(),
+        cast_shadows: true,
+        receive_shadows: true,
     }))
 }
 
@@ -118,6 +120,8 @@ fn draw_multi_command(count: u32, mesh: MeshID, material: MaterialID) -> RenderC
         meshlet_override: None,
         lod: LODOptions3D::default(),
         blend: MeshBlendOptions3D::default(),
+        cast_shadows: true,
+        receive_shadows: true,
     }))
 }
 
@@ -139,6 +143,8 @@ fn draw_multi_dense_command(count: u32, mesh: MeshID, material: MaterialID) -> R
         meshlet_override: None,
         lod: LODOptions3D::default(),
         blend: MeshBlendOptions3D::default(),
+        cast_shadows: true,
+        receive_shadows: true,
     }))
 }
 

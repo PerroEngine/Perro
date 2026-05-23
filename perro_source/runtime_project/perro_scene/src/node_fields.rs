@@ -321,6 +321,8 @@ pub enum MeshInstance3DField {
     Meshlets,
     MinLod,
     MaxLod,
+    CastShadows,
+    ReceiveShadows,
     Blend,
     BlendEnabled,
     BlendScreen,
@@ -824,6 +826,12 @@ fn resolve_scene_node_field_for_type(
             }
             SceneFieldName::MinLod => Some(NodeField::MeshInstance3D(MeshInstance3DField::MinLod)),
             SceneFieldName::MaxLod => Some(NodeField::MeshInstance3D(MeshInstance3DField::MaxLod)),
+            SceneFieldName::CastShadows => {
+                Some(NodeField::MeshInstance3D(MeshInstance3DField::CastShadows))
+            }
+            SceneFieldName::ReceiveShadows => Some(NodeField::MeshInstance3D(
+                MeshInstance3DField::ReceiveShadows,
+            )),
             SceneFieldName::Blend => Some(NodeField::MeshInstance3D(MeshInstance3DField::Blend)),
             SceneFieldName::BlendEnabled => {
                 Some(NodeField::MeshInstance3D(MeshInstance3DField::BlendEnabled))
@@ -1280,6 +1288,12 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
             }
             "min_lod" | "lod_min" => Some(NodeField::MeshInstance3D(MeshInstance3DField::MinLod)),
             "max_lod" | "lod_max" => Some(NodeField::MeshInstance3D(MeshInstance3DField::MaxLod)),
+            "cast_shadows" | "casts_shadows" => {
+                Some(NodeField::MeshInstance3D(MeshInstance3DField::CastShadows))
+            }
+            "receive_shadows" | "receives_shadows" => Some(NodeField::MeshInstance3D(
+                MeshInstance3DField::ReceiveShadows,
+            )),
             "blend" | "mesh_blend" | "blending" => {
                 Some(NodeField::MeshInstance3D(MeshInstance3DField::Blend))
             }
@@ -1312,6 +1326,12 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
             }
             "min_lod" | "lod_min" => Some(NodeField::MeshInstance3D(MeshInstance3DField::MinLod)),
             "max_lod" | "lod_max" => Some(NodeField::MeshInstance3D(MeshInstance3DField::MaxLod)),
+            "cast_shadows" | "casts_shadows" => {
+                Some(NodeField::MeshInstance3D(MeshInstance3DField::CastShadows))
+            }
+            "receive_shadows" | "receives_shadows" => Some(NodeField::MeshInstance3D(
+                MeshInstance3DField::ReceiveShadows,
+            )),
             "blend" | "mesh_blend" | "blending" => {
                 Some(NodeField::MeshInstance3D(MeshInstance3DField::Blend))
             }

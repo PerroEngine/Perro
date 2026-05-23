@@ -40,25 +40,43 @@ script_vars = {
 parent = @MeshMaterialsDemo
     [AmbientLight3D]
         color = (0.72, 0.78, 0.92)
-        intensity = 0.35
+        intensity = 0.10
     [/AmbientLight3D]
 [/Ambient]
 
-[KeyLight]
+[StaticShadowOrb]
 parent = @MeshMaterialsDemo
-    [RayLight3D]
-        color = (1.0, 0.95, 0.86)
-        intensity = 2.3
+    [MeshInstance3D]
+        mesh = "__sphere__"
+        material = {
+            type = "unlit",
+            base_color_factor = (1.0, 0.82, 0.34, 1.0),
+            emissive_factor = (1.0, 0.82, 0.34),
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
         [Node3D]
-            rotation_deg = (-50.0, 32.0, 0.0)
+            position = (-3.5, 5.0, 3.5)
+            scale = (0.28, 0.28, 0.28)
         [/Node3D]
-    [/RayLight3D]
-[/KeyLight]
+    [/MeshInstance3D]
+[/StaticShadowOrb]
+
+[StaticShadowPoint]
+parent = @StaticShadowOrb
+    [PointLight3D]
+        color = (1.0, 0.82, 0.34)
+        intensity = 18.0
+        range = 16.0
+        cast_shadows = true
+    [/PointLight3D]
+[/StaticShadowPoint]
 
 [Floor]
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
         mesh = "__cube__"
+        receive_shadows = true
         material = {
             type = "standard",
             base_color_factor = (0.2, 0.24, 0.28, 1.0),
@@ -78,6 +96,7 @@ parent = @MeshMaterialsDemo
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
         mesh = "__cube__"
+        cast_shadows = true
         material = {
             type = "standard",
             base_color_factor = (0.95, 0.18, 0.12, 1.0),
@@ -97,6 +116,7 @@ parent = @MeshMaterialsDemo
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
         mesh = "__sphere__"
+        cast_shadows = true
         material = {
             type = "standard",
             base_color_factor = (0.08, 0.36, 1.0, 1.0),
@@ -116,6 +136,7 @@ parent = @MeshMaterialsDemo
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
         mesh = "__cube__"
+        cast_shadows = true
         material = {
             type = "toon",
             base_color_factor = (0.2, 0.9, 0.35, 1.0),
@@ -135,6 +156,7 @@ parent = @MeshMaterialsDemo
 [MirrorOriginal]
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
+        cast_shadows = true
         material = {
             type = "standard",
             base_color_factor = (1.0, 0.72, 0.18, 1.0),
@@ -156,6 +178,7 @@ parent = @MeshMaterialsDemo
 [MirrorFlipX]
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
+        cast_shadows = true
         material = $var1
         flip_x = true
         flip_y = false
@@ -170,6 +193,7 @@ parent = @MeshMaterialsDemo
 [MirrorFlipY]
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
+        cast_shadows = true
         material = $var1
         flip_x = false
         flip_y = true
@@ -184,6 +208,7 @@ parent = @MeshMaterialsDemo
 [MirrorFlipZ]
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
+        cast_shadows = true
         material = $var1
         flip_x = false
         flip_y = false
@@ -198,6 +223,7 @@ parent = @MeshMaterialsDemo
 [MirrorFlipXY]
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
+        cast_shadows = true
         material = $var1
         flip_x = true
         flip_y = true
@@ -212,6 +238,7 @@ parent = @MeshMaterialsDemo
 [MirrorFlipXZ]
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
+        cast_shadows = true
         material = $var1
         flip_x = true
         flip_y = false
@@ -226,6 +253,7 @@ parent = @MeshMaterialsDemo
 [MirrorFlipYZ]
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
+        cast_shadows = true
         material = $var1
         flip_x = false
         flip_y = true
@@ -240,6 +268,7 @@ parent = @MeshMaterialsDemo
 [MirrorFlipXYZ]
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
+        cast_shadows = true
         material = $var1
         flip_x = true
         flip_y = true
@@ -250,4 +279,3 @@ parent = @MeshMaterialsDemo
         [/Node3D]
     [/MeshInstance3D]
 [/MirrorFlipXYZ]
-

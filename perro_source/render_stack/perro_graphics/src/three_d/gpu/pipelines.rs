@@ -40,12 +40,12 @@ impl Gpu3D {
             Some(Cow::Owned(src.to_string()))
         })?;
         let wgsl = if path == RenderPath3D::Rigid {
-            build_material_shader_with_prelude(
+            build_custom_material_shader_with_prelude(
                 perro_macros::include_str_stripped!("shaders/prelude_rigid_3d.wgsl"),
                 src.as_ref(),
             )
         } else {
-            build_material_shader_with_prelude(
+            build_custom_material_shader_with_prelude(
                 perro_macros::include_str_stripped!("shaders/prelude_skinned_3d.wgsl"),
                 src.as_ref(),
             )

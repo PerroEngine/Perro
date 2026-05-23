@@ -28,6 +28,8 @@ impl Gpu3D {
             indirect_first_instance_enabled,
         } = config;
         let (gpu_occlusion_enabled, cpu_occlusion_enabled) = occlusion_flags(occlusion_culling);
+        let shadow_caster_debug_view = std::env::var_os("PERRO_DEBUG_SHADOW_CASTERS").is_some();
+        let disable_meshlet_shadows = std::env::var_os("PERRO_DISABLE_MESHLET_SHADOWS").is_some();
         let shader = create_mesh_shader_module_skinned(device);
         let shader_unlit = create_unlit_shader_module_skinned(device);
         let shader_toon = create_toon_shader_module_skinned(device);
@@ -214,6 +216,26 @@ impl Gpu3D {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
         let mesh_blend_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -269,12 +291,16 @@ impl Gpu3D {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let shadow_camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("perro_shadow_camera3d_buffer"),
-            size: std::mem::size_of::<Scene3DUniform>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        let shadow_camera_buffers: Vec<_> = (0..SHADOW_CAMERA_COUNT)
+            .map(|_| {
+                device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("perro_shadow_camera3d_buffer"),
+                    size: std::mem::size_of::<Scene3DUniform>() as u64,
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                })
+            })
+            .collect();
         let shadow_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_shadow3d_buffer"),
             size: std::mem::size_of::<ShadowUniform>() as u64,
@@ -283,6 +309,20 @@ impl Gpu3D {
         });
         let (shadow_map_texture, shadow_map_view) =
             create_shadow_map_texture(device, SHADOW_MAP_SIZE);
+        let (spot_shadow_map_texture, spot_shadow_map_view, spot_shadow_layer_views) =
+            create_shadow_map_array_texture(
+                device,
+                "perro_spot_shadow_map",
+                SHADOW_SPOT_MAP_SIZE,
+                MAX_SHADOW_SPOT_LIGHTS as u32,
+            );
+        let (point_shadow_map_texture, point_shadow_map_view, point_shadow_layer_views) =
+            create_shadow_map_array_texture(
+                device,
+                "perro_point_shadow_map",
+                SHADOW_POINT_MAP_SIZE,
+                (MAX_SHADOW_POINT_LIGHTS * POINT_SHADOW_FACE_COUNT) as u32,
+            );
         let shadow_map_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("perro_shadow3d_sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -371,46 +411,56 @@ impl Gpu3D {
                 },
             ],
         });
-        let shadow_camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("perro_shadow_camera3d_bg"),
-            layout: &camera_bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: shadow_camera_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: skeleton_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: custom_params_meta_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: custom_params_values_buffer.as_entire_binding(),
-                },
-            ],
-        });
-        let rigid_shadow_camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("perro_shadow_camera3d_rigid_bg"),
-            layout: &rigid_camera_bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: shadow_camera_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: custom_params_meta_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: custom_params_values_buffer.as_entire_binding(),
-                },
-            ],
-        });
+        let shadow_camera_bind_groups: Vec<_> = shadow_camera_buffers
+            .iter()
+            .map(|buffer| {
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("perro_shadow_camera3d_bg"),
+                    layout: &camera_bgl,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: skeleton_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: custom_params_meta_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: custom_params_values_buffer.as_entire_binding(),
+                        },
+                    ],
+                })
+            })
+            .collect();
+        let rigid_shadow_camera_bind_groups: Vec<_> = shadow_camera_buffers
+            .iter()
+            .map(|buffer| {
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("perro_shadow_camera3d_rigid_bg"),
+                    layout: &rigid_camera_bgl,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: custom_params_meta_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: custom_params_values_buffer.as_entire_binding(),
+                        },
+                    ],
+                })
+            })
+            .collect();
         let shadow_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_shadow3d_bg"),
             layout: &shadow_bgl,
@@ -426,6 +476,14 @@ impl Gpu3D {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(&shadow_map_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&spot_shadow_map_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&point_shadow_map_view),
                 },
             ],
         });
@@ -1245,13 +1303,19 @@ impl Gpu3D {
             camera_buffer,
             camera_bind_group,
             rigid_camera_bind_group,
-            shadow_camera_buffer,
-            shadow_camera_bind_group,
-            rigid_shadow_camera_bind_group,
+            shadow_camera_buffers,
+            shadow_camera_bind_groups,
+            rigid_shadow_camera_bind_groups,
             shadow_buffer,
             shadow_bind_group,
             _shadow_map_texture: shadow_map_texture,
             shadow_map_view,
+            _spot_shadow_map_texture: spot_shadow_map_texture,
+            _spot_shadow_map_view: spot_shadow_map_view,
+            spot_shadow_layer_views,
+            _point_shadow_map_texture: point_shadow_map_texture,
+            _point_shadow_map_view: point_shadow_map_view,
+            point_shadow_layer_views,
             _shadow_map_sampler: shadow_map_sampler,
             mesh_blend_bgl,
             mesh_blend_bind_group,
@@ -1329,9 +1393,12 @@ impl Gpu3D {
             last_draw_instance_spans: Vec::new(),
             last_draw_instance_span_ranges: Vec::new(),
             last_scene: None,
-            last_shadow_scene: None,
+            last_shadow_scenes: vec![None; SHADOW_CAMERA_COUNT],
             last_shadow: None,
             shadow_pass_enabled: false,
+            ray_shadow_enabled: false,
+            spot_shadow_count: 0,
+            point_shadow_count: 0,
             shadow_focus_center: Vec3::ZERO,
             shadow_focus_radius: 64.0,
             last_sky: None,
@@ -1385,6 +1452,8 @@ impl Gpu3D {
             meshlets_enabled,
             dev_meshlets,
             meshlet_debug_view,
+            shadow_caster_debug_view,
+            disable_meshlet_shadows,
             cpu_occlusion_enabled,
             last_total_meshlets: 0,
             last_total_drawn: 0,

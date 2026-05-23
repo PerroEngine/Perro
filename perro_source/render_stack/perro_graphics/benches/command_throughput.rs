@@ -39,6 +39,8 @@ fn draw_command(i: u32) -> RenderCommand {
         meshlet_override: None,
         lod: LODOptions3D::default(),
         blend: MeshBlendOptions3D::default(),
+        cast_shadows: true,
+        receive_shadows: true,
     }))
 }
 

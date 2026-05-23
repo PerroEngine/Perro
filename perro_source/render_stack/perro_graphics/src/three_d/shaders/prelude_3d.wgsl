@@ -1,6 +1,9 @@
 const MAX_RAY_LIGHTS: u32 = 3u;
 const MAX_POINT_LIGHTS: u32 = 8u;
 const MAX_SPOT_LIGHTS: u32 = 8u;
+const MAX_SHADOW_SPOT_LIGHTS: u32 = 4u;
+const MAX_SHADOW_POINT_LIGHTS: u32 = 4u;
+const POINT_SHADOW_FACE_COUNT: u32 = 6u;
 const INV_255: f32 = 1.0 / 255.0;
 
 struct RayLightGpu {
@@ -35,7 +38,12 @@ struct Scene3D {
 
 struct Shadow3D {
     light_view_proj: mat4x4<f32>,
+    spot_light_view_proj: array<mat4x4<f32>, 4>,
+    point_light_view_proj: array<mat4x4<f32>, 24>,
     params0: vec4<f32>, // enabled, strength, depth_bias, normal_bias
+    ray_params: vec4<f32>,
+    spot_params: array<vec4<f32>, 4>,
+    point_params: array<vec4<f32>, 4>,
 }
 
 struct DecodedMaterialParams {
@@ -49,6 +57,7 @@ struct DecodedMaterialParams {
     mesh_blend: bool,
     normal_blend: bool,
     mirrored_winding: bool,
+    receive_shadows: bool,
 }
 
 @group(0) @binding(0)
@@ -69,6 +78,10 @@ var<uniform> shadow: Shadow3D;
 var shadow_map_tex: texture_depth_2d;
 @group(2) @binding(2)
 var shadow_map_sampler: sampler_comparison;
+@group(2) @binding(3)
+var spot_shadow_map_tex: texture_depth_2d_array;
+@group(2) @binding(4)
+var point_shadow_map_tex: texture_depth_2d_array;
 @group(3) @binding(0)
 var mesh_blend_depth_tex: texture_depth_2d;
 
@@ -149,6 +162,7 @@ fn decode_material_params(packed: u32) -> DecodedMaterialParams {
         (flags & 0x8u) != 0u,
         (flags & 0x10u) != 0u,
         (flags & 0x20u) != 0u,
+        (flags & 0x40u) != 0u,
     );
 }
 
@@ -412,11 +426,12 @@ fn custom_param_vertex(out: VertexOutput, index: u32) -> vec4<f32> {
 }
 
 fn shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_dir_to_light: vec3<f32>) -> f32 {
-    if shadow.params0.x < 0.5 {
-        return 1.0;
-    }
-    let receiver_pos = world_pos;
-    let light_clip = shadow.light_view_proj * vec4<f32>(receiver_pos, 1.0);
+    return ray_shadow_factor(world_pos, normal_ws, light_dir_to_light);
+}
+
+fn sample_shadow_2d(light_view_proj: mat4x4<f32>, world_pos: vec3<f32>, bias_dir: vec3<f32>) -> f32 {
+    let sample_pos = world_pos + normalize(bias_dir) * shadow.params0.w;
+    let light_clip = light_view_proj * vec4<f32>(sample_pos, 1.0);
     if abs(light_clip.w) <= 1.0e-6 {
         return 1.0;
     }
@@ -431,15 +446,86 @@ fn shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_dir_to_light:
         || any(uv > (vec2<f32>(1.0) - texel)) {
         return 1.0;
     }
-    let uv_safe = uv;
-    let visibility = textureSampleCompare(
-        shadow_map_tex,
-        shadow_map_sampler,
-        uv_safe,
-        depth - bias
-    );
+    return textureSampleCompare(shadow_map_tex, shadow_map_sampler, uv, depth - bias);
+}
+
+fn sample_shadow_array(light_view_proj: mat4x4<f32>, world_pos: vec3<f32>, bias_dir: vec3<f32>, layer: u32, is_point: bool) -> f32 {
+    let sample_pos = world_pos + normalize(bias_dir) * shadow.params0.w;
+    let light_clip = light_view_proj * vec4<f32>(sample_pos, 1.0);
+    if abs(light_clip.w) <= 1.0e-6 {
+        return 1.0;
+    }
+    let ndc = light_clip.xyz / light_clip.w;
+    let uv = ndc.xy * 0.5 + vec2<f32>(0.5);
+    let depth = ndc.z;
+    let bias = shadow.params0.z;
+    let dims = max(vec2<f32>(textureDimensions(shadow_map_tex)), vec2<f32>(1.0));
+    let texel = 1.0 / dims;
+    if depth <= 0.0 || depth >= 1.0
+        || any(uv < texel)
+        || any(uv > (vec2<f32>(1.0) - texel)) {
+        return 1.0;
+    }
+    let layer_i = i32(layer);
+    if is_point {
+        return textureSampleCompare(point_shadow_map_tex, shadow_map_sampler, uv, layer_i, depth - bias);
+    }
+    return textureSampleCompare(spot_shadow_map_tex, shadow_map_sampler, uv, layer_i, depth - bias);
+}
+
+fn ray_shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_dir_to_light: vec3<f32>) -> f32 {
+    let _n = normal_ws;
+    let _l = light_dir_to_light;
+    if shadow.params0.x < 0.5 || shadow.ray_params.x < 0.5 {
+        return 1.0;
+    }
+    let visibility = sample_shadow_2d(shadow.light_view_proj, world_pos, light_dir_to_light);
     let strength = clamp(shadow.params0.y, 0.0, 1.0);
     return mix(1.0, visibility, strength);
+}
+
+fn spot_shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_index: u32) -> f32 {
+    if shadow.params0.x < 0.5 {
+        return 1.0;
+    }
+    for (var i = 0u; i < MAX_SHADOW_SPOT_LIGHTS; i = i + 1u) {
+        let params = shadow.spot_params[i];
+        if params.x > 0.5 && u32(params.y + 0.5) == light_index {
+            let light = scene.spot_lights[light_index];
+            let visibility = sample_shadow_array(shadow.spot_light_view_proj[i], world_pos, light.position_range.xyz - world_pos, u32(params.z + 0.5), false);
+            return mix(1.0, visibility, clamp(shadow.params0.y, 0.0, 1.0));
+        }
+    }
+    return 1.0;
+}
+
+fn point_shadow_face(to_light: vec3<f32>) -> u32 {
+    let v = -to_light;
+    let a = abs(v);
+    if a.x >= a.y && a.x >= a.z {
+        return select(1u, 0u, v.x >= 0.0);
+    }
+    if a.y >= a.z {
+        return select(3u, 2u, v.y >= 0.0);
+    }
+    return select(5u, 4u, v.z >= 0.0);
+}
+
+fn point_shadow_factor(world_pos: vec3<f32>, normal_ws: vec3<f32>, light_index: u32, to_light: vec3<f32>) -> f32 {
+    if shadow.params0.x < 0.5 {
+        return 1.0;
+    }
+    for (var i = 0u; i < MAX_SHADOW_POINT_LIGHTS; i = i + 1u) {
+        let params = shadow.point_params[i];
+        if params.x > 0.5 && u32(params.y + 0.5) == light_index {
+            let face = point_shadow_face(to_light);
+            let layer = u32(params.z + 0.5) + face;
+            let matrix_index = u32(params.z + 0.5) + face;
+            let visibility = sample_shadow_array(shadow.point_light_view_proj[matrix_index], world_pos, to_light, layer, true);
+            return mix(1.0, visibility, clamp(shadow.params0.y, 0.0, 1.0));
+        }
+    }
+    return 1.0;
 }
 
 fn distribution_ggx(n: vec3<f32>, h: vec3<f32>, roughness: f32) -> f32 {

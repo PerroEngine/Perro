@@ -129,6 +129,8 @@ pub enum Command3D {
         meshlet_override: Option<bool>,
         lod: LODOptions3D,
         blend: MeshBlendOptions3D,
+        cast_shadows: bool,
+        receive_shadows: bool,
     },
     DrawMulti {
         mesh: MeshID,
@@ -139,6 +141,8 @@ pub enum Command3D {
         meshlet_override: Option<bool>,
         lod: LODOptions3D,
         blend: MeshBlendOptions3D,
+        cast_shadows: bool,
+        receive_shadows: bool,
     },
     DrawMultiDense {
         mesh: MeshID,
@@ -150,6 +154,8 @@ pub enum Command3D {
         meshlet_override: Option<bool>,
         lod: LODOptions3D,
         blend: MeshBlendOptions3D,
+        cast_shadows: bool,
+        receive_shadows: bool,
     },
     DrawDebugPoint3D {
         node: NodeID,

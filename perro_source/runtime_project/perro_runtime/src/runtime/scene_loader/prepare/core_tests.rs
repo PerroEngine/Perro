@@ -1361,12 +1361,16 @@ mod tests {
             $root = @Mesh
             [Mesh]
             [MeshInstance3D]
+                cast_shadows = false
+                receive_shadows = false
                 blend = { enabled=true screen_blending=false normal_blending=true blend_layers=[2, 4] blend_mask=[1, 3] distance=0.5 min_distance=0.05 noise=0.25 noise_scale=6.0 }
             [/MeshInstance3D]
             [/Mesh]
 
             [Batch]
             [MultiMeshInstance3D]
+                cast_shadows = false
+                receive_shadows = false
                 blend_enabled = true
                 blend_screen = false
                 blend_normals = true
@@ -1390,6 +1394,8 @@ mod tests {
             .expect("mesh node");
         match &mesh.node.data {
             SceneNodeData::MeshInstance3D(mesh) => {
+                assert!(!mesh.cast_shadows);
+                assert!(!mesh.receive_shadows);
                 assert!(mesh.blend.enabled);
                 assert!(!mesh.blend.screen_blending);
                 assert!(mesh.blend.normal_blending);
@@ -1410,6 +1416,8 @@ mod tests {
             .expect("batch node");
         match &batch.node.data {
             SceneNodeData::MultiMeshInstance3D(mesh) => {
+                assert!(!mesh.cast_shadows);
+                assert!(!mesh.receive_shadows);
                 assert!(mesh.blend.enabled);
                 assert!(!mesh.blend.screen_blending);
                 assert!(mesh.blend.normal_blending);

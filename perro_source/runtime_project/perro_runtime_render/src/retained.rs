@@ -674,6 +674,8 @@ pub struct RetainedMeshDrawState {
     pub meshlet_override: Option<bool>,
     pub lod: LODOptions3D,
     pub blend: MeshBlendOptions3D,
+    pub cast_shadows: bool,
+    pub receive_shadows: bool,
 }
 
 #[derive(Debug, Clone)]

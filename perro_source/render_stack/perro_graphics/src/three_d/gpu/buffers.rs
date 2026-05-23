@@ -271,28 +271,34 @@ impl Gpu3D {
                 },
             ],
         });
-        self.shadow_camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("perro_shadow_camera3d_bg"),
-            layout: &self.camera_bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: self.shadow_camera_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: self.skeleton_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: self.custom_params_meta_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: self.custom_params_values_buffer.as_entire_binding(),
-                },
-            ],
-        });
+        self.shadow_camera_bind_groups = self
+            .shadow_camera_buffers
+            .iter()
+            .map(|buffer| {
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("perro_shadow_camera3d_bg"),
+                    layout: &self.camera_bgl,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: self.skeleton_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: self.custom_params_meta_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: self.custom_params_values_buffer.as_entire_binding(),
+                        },
+                    ],
+                })
+            })
+            .collect();
         self.rigid_camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_camera3d_rigid_bg"),
             layout: &self.rigid_camera_bgl,
@@ -311,25 +317,30 @@ impl Gpu3D {
                 },
             ],
         });
-        self.rigid_shadow_camera_bind_group =
-            device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("perro_shadow_camera3d_rigid_bg"),
-                layout: &self.rigid_camera_bgl,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: self.shadow_camera_buffer.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: self.custom_params_meta_buffer.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: self.custom_params_values_buffer.as_entire_binding(),
-                    },
-                ],
-            });
+        self.rigid_shadow_camera_bind_groups = self
+            .shadow_camera_buffers
+            .iter()
+            .map(|buffer| {
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("perro_shadow_camera3d_rigid_bg"),
+                    layout: &self.rigid_camera_bgl,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: self.custom_params_meta_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: self.custom_params_values_buffer.as_entire_binding(),
+                        },
+                    ],
+                })
+            })
+            .collect();
         self.multimesh_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_multimesh_bg"),
             layout: &self.multimesh_bgl,

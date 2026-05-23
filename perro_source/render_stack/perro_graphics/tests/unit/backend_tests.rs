@@ -383,6 +383,8 @@ fn draw_3d_updates_retained_state_per_node() {
         meshlet_override: None,
         lod: LODOptions3D::default(),
         blend: Default::default(),
+        cast_shadows: true,
+        receive_shadows: true,
     })));
     graphics.submit(RenderCommand::ThreeD(Box::new(Command3D::Draw {
         mesh: created_meshes[1],
@@ -393,6 +395,8 @@ fn draw_3d_updates_retained_state_per_node() {
         meshlet_override: None,
         lod: LODOptions3D::default(),
         blend: Default::default(),
+        cast_shadows: true,
+        receive_shadows: true,
     })));
     graphics.draw_frame();
 
@@ -410,6 +414,8 @@ fn draw_3d_updates_retained_state_per_node() {
             lod: LODOptions3D::default(),
             blend: Default::default(),
             debug_color: None,
+            cast_shadows: true,
+            receive_shadows: true,
         })
     );
     assert_eq!(
@@ -425,6 +431,8 @@ fn draw_3d_updates_retained_state_per_node() {
             lod: LODOptions3D::default(),
             blend: Default::default(),
             debug_color: None,
+            cast_shadows: true,
+            receive_shadows: true,
         })
     );
 }
@@ -495,6 +503,8 @@ fn draw_multi_3d_retains_all_instance_mats() {
         meshlet_override: None,
         lod: LODOptions3D::default(),
         blend: Default::default(),
+        cast_shadows: true,
+        receive_shadows: true,
     })));
     graphics.draw_frame();
 
@@ -511,6 +521,8 @@ fn draw_multi_3d_retains_all_instance_mats() {
             lod: LODOptions3D::default(),
             blend: Default::default(),
             debug_color: None,
+            cast_shadows: true,
+            receive_shadows: true,
         })
     );
 }
@@ -564,6 +576,8 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
         meshlet_override: None,
         lod: LODOptions3D::default(),
         blend: Default::default(),
+        cast_shadows: true,
+        receive_shadows: true,
     })));
     graphics.draw_frame();
     assert_eq!(
@@ -579,6 +593,8 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
             lod: LODOptions3D::default(),
             blend: Default::default(),
             debug_color: None,
+            cast_shadows: true,
+            receive_shadows: true,
         })
     );
 
@@ -598,6 +614,8 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
         meshlet_override: None,
         lod: LODOptions3D::default(),
         blend: Default::default(),
+        cast_shadows: true,
+        receive_shadows: true,
     })));
     graphics.draw_frame();
 
@@ -614,6 +632,8 @@ fn rejected_3d_draw_keeps_previous_retained_binding() {
             lod: LODOptions3D::default(),
             blend: Default::default(),
             debug_color: None,
+            cast_shadows: true,
+            receive_shadows: true,
         })
     );
 }
@@ -667,6 +687,8 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
         meshlet_override: None,
         lod: LODOptions3D::default(),
         blend: Default::default(),
+        cast_shadows: true,
+        receive_shadows: true,
     })));
     graphics.draw_frame();
 
@@ -686,6 +708,8 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
         meshlet_override: None,
         lod: LODOptions3D::default(),
         blend: Default::default(),
+        cast_shadows: true,
+        receive_shadows: true,
     })));
     graphics.draw_frame();
 
@@ -702,6 +726,8 @@ fn rejected_3d_material_swap_keeps_previous_material_binding() {
             lod: LODOptions3D::default(),
             blend: Default::default(),
             debug_color: None,
+            cast_shadows: true,
+            receive_shadows: true,
         })
     );
 }
@@ -888,6 +914,8 @@ fn retained_mesh_instances_count_mesh_refs_per_node() {
             meshlet_override: None,
             lod: LODOptions3D::default(),
             blend: Default::default(),
+            cast_shadows: true,
+            receive_shadows: true,
         })));
     }
     graphics.draw_frame();

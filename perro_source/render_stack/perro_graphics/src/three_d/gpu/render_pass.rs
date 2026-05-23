@@ -56,62 +56,74 @@ impl Gpu3D {
             return;
         }
         if self.shadow_pass_enabled && self.has_shadow_casters {
-            let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("perro_shadow3d_pass"),
-                color_attachments: &[],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.shadow_map_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
+            if self.ray_shadow_enabled {
+                let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("perro_ray_shadow3d_pass"),
+                    color_attachments: &[],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &self.shadow_map_view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
                     }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            shadow_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            let mut current_state: Option<(RenderPath3D, bool)> = None;
-            for &batch_index in &self.shadow_batch_indices {
-                let batch = &self.draw_batches[batch_index];
-                let state = (batch.path, batch.double_sided);
-                if current_state != Some(state) {
-                    let (camera_bg, vertex_buf, pipeline) = if batch.path == RenderPath3D::Rigid {
-                        let p = if batch.double_sided {
-                            &self.pipeline_shadow_depth_rigid_double_sided
-                        } else {
-                            &self.pipeline_shadow_depth_rigid_culled
-                        };
-                        (
-                            &self.rigid_shadow_camera_bind_group,
-                            &self.rigid_vertex_buffer,
-                            p,
-                        )
-                    } else {
-                        let p = if batch.double_sided {
-                            &self.pipeline_shadow_depth_double_sided
-                        } else {
-                            &self.pipeline_shadow_depth_culled
-                        };
-                        (&self.shadow_camera_bind_group, &self.vertex_buffer, p)
-                    };
-                    shadow_pass.set_bind_group(0, camera_bg, &[]);
-                    shadow_pass.set_vertex_buffer(0, vertex_buf.slice(..));
-                    shadow_pass.set_vertex_buffer(1, self.instance_transform_buffer.slice(..));
-                    if batch.path == RenderPath3D::Skinned {
-                        shadow_pass
-                            .set_vertex_buffer(2, self.skinned_instance_meta_buffer.slice(..));
-                    }
-                    shadow_pass.set_pipeline(pipeline);
-                    current_state = Some(state);
-                }
-                let start = batch.mesh.index_start;
-                let end = start + batch.mesh.index_count;
-                let instances = batch.instance_start..batch.instance_start + batch.instance_count;
-                shadow_pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                draw_shadow_batches(self, &mut shadow_pass, 0);
+                drop(shadow_pass);
             }
-            drop(shadow_pass);
+            for spot in 0..self
+                .spot_shadow_count
+                .min(self.spot_shadow_layer_views.len())
+            {
+                let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("perro_spot_shadow3d_pass"),
+                    color_attachments: &[],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &self.spot_shadow_layer_views[spot],
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                draw_shadow_batches(self, &mut shadow_pass, MAX_SHADOW_RAY_LIGHTS + spot);
+                drop(shadow_pass);
+            }
+            let point_layers = self
+                .point_shadow_count
+                .saturating_mul(POINT_SHADOW_FACE_COUNT)
+                .min(self.point_shadow_layer_views.len());
+            for layer in 0..point_layers {
+                let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("perro_point_shadow3d_pass"),
+                    color_attachments: &[],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &self.point_shadow_layer_views[layer],
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                draw_shadow_batches(
+                    self,
+                    &mut shadow_pass,
+                    MAX_SHADOW_RAY_LIGHTS + MAX_SHADOW_SPOT_LIGHTS + layer,
+                );
+                drop(shadow_pass);
+            }
         }
         if frustum_cull_active {
             let mut cull_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -640,6 +652,60 @@ fn mesh_blend_receiver_matches(
         return false;
     }
     mesh_blend_batches_overlap(source, target, transforms)
+}
+
+fn draw_shadow_batches<'a>(
+    gpu: &'a Gpu3D,
+    shadow_pass: &mut wgpu::RenderPass<'a>,
+    camera_index: usize,
+) {
+    let Some(shadow_camera_bg) = gpu.shadow_camera_bind_groups.get(camera_index) else {
+        return;
+    };
+    let Some(rigid_shadow_camera_bg) = gpu.rigid_shadow_camera_bind_groups.get(camera_index) else {
+        return;
+    };
+    shadow_pass.set_index_buffer(gpu.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+    let mut current_state: Option<(RenderPath3D, bool)> = None;
+    for &batch_index in &gpu.shadow_batch_indices {
+        let batch = &gpu.draw_batches[batch_index];
+        let state = (batch.path, batch.double_sided);
+        if current_state != Some(state) {
+            let (camera_bg, vertex_buf, pipeline) = if batch.path == RenderPath3D::Rigid {
+                (
+                    rigid_shadow_camera_bg,
+                    &gpu.rigid_vertex_buffer,
+                    if batch.double_sided {
+                        &gpu.pipeline_shadow_depth_rigid_double_sided
+                    } else {
+                        &gpu.pipeline_shadow_depth_rigid_culled
+                    },
+                )
+            } else {
+                (
+                    shadow_camera_bg,
+                    &gpu.vertex_buffer,
+                    if batch.double_sided {
+                        &gpu.pipeline_shadow_depth_double_sided
+                    } else {
+                        &gpu.pipeline_shadow_depth_culled
+                    },
+                )
+            };
+            shadow_pass.set_bind_group(0, camera_bg, &[]);
+            shadow_pass.set_vertex_buffer(0, vertex_buf.slice(..));
+            shadow_pass.set_vertex_buffer(1, gpu.instance_transform_buffer.slice(..));
+            if batch.path == RenderPath3D::Skinned {
+                shadow_pass.set_vertex_buffer(2, gpu.skinned_instance_meta_buffer.slice(..));
+            }
+            shadow_pass.set_pipeline(pipeline);
+            current_state = Some(state);
+        }
+        let start = batch.mesh.index_start;
+        let end = start + batch.mesh.index_count;
+        let instances = batch.instance_start..batch.instance_start + batch.instance_count;
+        shadow_pass.draw_indexed(start..end, batch.mesh.base_vertex, instances);
+    }
 }
 
 fn mesh_blend_batches_overlap(

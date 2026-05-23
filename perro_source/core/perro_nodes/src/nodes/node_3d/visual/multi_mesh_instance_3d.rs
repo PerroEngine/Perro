@@ -33,6 +33,8 @@ pub struct MultiMeshInstance3D {
     pub meshlet_override: Option<bool>,
     pub lod: LODOptions,
     pub blend: MeshBlendOptions,
+    pub cast_shadows: bool,
+    pub receive_shadows: bool,
 }
 
 impl MultiMeshInstance3D {
@@ -49,6 +51,8 @@ impl MultiMeshInstance3D {
             meshlet_override: None,
             lod: LODOptions::new(),
             blend: MeshBlendOptions::new(),
+            cast_shadows: true,
+            receive_shadows: true,
         }
     }
 

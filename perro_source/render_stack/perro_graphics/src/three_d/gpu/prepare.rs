@@ -759,6 +759,7 @@ impl Gpu3D {
                                 skeleton_count,
                                 custom_params_offset,
                                 custom_params_len,
+                                receive_shadows: false,
                             },
                         ));
                         debug_points_count = debug_points_count.saturating_add(1);
@@ -793,6 +794,7 @@ impl Gpu3D {
                                 skeleton_count,
                                 custom_params_offset,
                                 custom_params_len,
+                                receive_shadows: false,
                             },
                         ));
                         debug_edges_count = debug_edges_count.saturating_add(1);
@@ -821,18 +823,27 @@ impl Gpu3D {
                         let (custom_params_offset, custom_params_len) =
                             self.stage_custom_params(material);
                         let instance_start = self.staged_instance_transforms.len() as u32;
+                        let caster_debug = self.shadow_caster_debug_view
+                            && draw.cast_shadows
+                            && standard_params.alpha_mode == 0
+                            && !is_camera_stream_quad;
                         for model in instance_mats.iter().copied() {
                             let instance = build_instance(
                                 model,
                                 material,
                                 BuildInstanceArgs {
                                     debug_view: self.meshlet_debug_view,
-                                    debug_color: debug_color(draw.node.as_u64()),
+                                    debug_color: if caster_debug {
+                                        [1.0, 0.22, 0.82, 1.0]
+                                    } else {
+                                        debug_color(draw.node.as_u64())
+                                    },
                                     mesh_blend: resolved_blend,
                                     skeleton_start,
                                     skeleton_count,
                                     custom_params_offset,
                                     custom_params_len,
+                                    receive_shadows: draw.receive_shadows,
                                 },
                             );
                             self.staged_instance_transforms.push(instance.transform);
@@ -875,7 +886,8 @@ impl Gpu3D {
                                     disable_hiz_occlusion: multi_instance
                                         || standard_params.alpha_mode == 2
                                         || resolved_mesh_blend_active(resolved_blend),
-                                    casts_shadows: !is_camera_stream_quad,
+                                    casts_shadows: draw.cast_shadows && !is_camera_stream_quad,
+                                    receives_shadows: draw.receive_shadows,
                                     mesh_blend: resolved_mesh_blend_active(resolved_blend),
                                     mesh_blend_depth: resolved_mesh_blend_depth_receiver(
                                         resolved_blend,
@@ -919,6 +931,11 @@ impl Gpu3D {
                     (0, 0)
                 };
                 let instance_mats = draw.instance_mats.as_ref();
+                let caster_debug = self.shadow_caster_debug_view
+                    && draw.cast_shadows
+                    && standard_params.alpha_mode == 0
+                    && !is_camera_stream_quad;
+                let meshlet_casts_shadows = draw.cast_shadows && !self.disable_meshlet_shadows;
                 for meshlet in active_lod.meshlets.iter().copied() {
                     // Keep meshlet casters for stable shadow fitting even when off-screen.
                     // CPU query occlusion at meshlet granularity self-occludes dynamic meshes.
@@ -931,14 +948,23 @@ impl Gpu3D {
                             material,
                             BuildInstanceArgs {
                                 debug_view: self.meshlet_debug_view,
-                                debug_color: debug_color(
-                                    (draw.node.as_u64() << 32) ^ meshlet.index_start as u64,
-                                ),
+                                debug_color: if caster_debug {
+                                    if meshlet_casts_shadows {
+                                        [0.05, 0.9, 1.0, 1.0]
+                                    } else {
+                                        [1.0, 0.85, 0.1, 1.0]
+                                    }
+                                } else {
+                                    debug_color(
+                                        (draw.node.as_u64() << 32) ^ meshlet.index_start as u64,
+                                    )
+                                },
                                 mesh_blend: resolved_blend,
                                 skeleton_start,
                                 skeleton_count,
                                 custom_params_offset,
                                 custom_params_len,
+                                receive_shadows: draw.receive_shadows,
                             },
                         );
                         self.staged_instance_transforms.push(instance.transform);
@@ -988,7 +1014,8 @@ impl Gpu3D {
                             disable_hiz_occlusion: multi_instance
                                 || standard_params.alpha_mode == 2
                                 || resolved_mesh_blend_active(resolved_blend),
-                            casts_shadows: true,
+                            casts_shadows: meshlet_casts_shadows,
+                            receives_shadows: draw.receive_shadows,
                             mesh_blend: resolved_mesh_blend_active(resolved_blend),
                             mesh_blend_depth: resolved_mesh_blend_depth_receiver(resolved_blend),
                             blend_layers: draw.blend.blend_layers.bits(),
@@ -1061,6 +1088,7 @@ impl Gpu3D {
                 occlusion_query: None,
                 disable_hiz_occlusion: true,
                 casts_shadows: false,
+                receives_shadows: false,
                 mesh_blend: false,
                 mesh_blend_depth: false,
                 blend_layers: BitMask::ALL.bits(),
@@ -1107,6 +1135,7 @@ impl Gpu3D {
                 occlusion_query: None,
                 disable_hiz_occlusion: true,
                 casts_shadows: false,
+                receives_shadows: false,
                 mesh_blend: false,
                 mesh_blend_depth: false,
                 blend_layers: BitMask::ALL.bits(),

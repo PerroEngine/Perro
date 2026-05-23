@@ -170,6 +170,27 @@ fn sanitize_reserved_meta_identifier(wgsl: &str) -> String {
 
 #[inline]
 pub fn build_material_shader_with_prelude(prelude_wgsl: &str, material_wgsl: &str) -> String {
+    build_material_shader_with_prelude_inner(prelude_wgsl, material_wgsl, false)
+}
+
+#[inline]
+pub fn build_custom_material_shader_with_prelude(
+    prelude_wgsl: &str,
+    material_wgsl: &str,
+) -> String {
+    build_material_shader_with_prelude_inner(
+        prelude_wgsl,
+        material_wgsl,
+        std::env::var_os("PERRO_DISABLE_CUSTOM_MATERIAL_SHADOWS").is_none(),
+    )
+}
+
+#[inline]
+fn build_material_shader_with_prelude_inner(
+    prelude_wgsl: &str,
+    material_wgsl: &str,
+    apply_custom_shadows: bool,
+) -> String {
     let has_custom_vertex = material_wgsl.contains("shade_vertex(");
     let mut out = String::new();
     let sanitized_prelude = sanitize_reserved_meta_identifier(prelude_wgsl);
@@ -185,9 +206,15 @@ pub fn build_material_shader_with_prelude(prelude_wgsl: &str, material_wgsl: &st
             "\n@vertex\nfn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {\n    return perro_vs_main_base(v, inst);\n}\n",
         );
     }
-    out.push_str(
-        "\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    return shade_material(in);\n}\n",
-    );
+    if apply_custom_shadows {
+        out.push_str(
+            "\nfn perro_custom_shadow_factor(in: FragmentInput) -> f32 {\n    let material = decode_material_params(in.packed_material_params);\n    if !material.receive_shadows {\n        return 1.0;\n    }\n    let n = normalize(in.normal_ws);\n    var factor = ray_shadow_factor(in.world_pos, n, vec3<f32>(0.0, 1.0, 0.0));\n    let point_count = u32(scene.ambient_and_counts.y);\n    for (var i = 0u; i < point_count; i = i + 1u) {\n        let light = scene.point_lights[i];\n        let to_light = light.position_range.xyz - in.world_pos;\n        if dot(to_light, to_light) <= light.position_range.w * light.position_range.w {\n            factor = min(factor, point_shadow_factor(in.world_pos, n, i, to_light));\n        }\n    }\n    let spot_count = u32(scene.ambient_and_counts.z);\n    for (var i = 0u; i < spot_count; i = i + 1u) {\n        let light = scene.spot_lights[i];\n        let to_light = light.position_range.xyz - in.world_pos;\n        if dot(to_light, to_light) <= light.position_range.w * light.position_range.w {\n            factor = min(factor, spot_shadow_factor(in.world_pos, n, i));\n        }\n    }\n    return mix(1.0, factor, 0.65);\n}\n\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    let color = shade_material(in);\n    let shadow_vis = perro_custom_shadow_factor(in);\n    return vec4<f32>(color.rgb * shadow_vis, color.a);\n}\n",
+        );
+    } else {
+        out.push_str(
+            "\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    return shade_material(in);\n}\n",
+        );
+    }
     out
 }
 
@@ -295,6 +322,15 @@ mod tests {
                 let wgsl = build_material_shader_with_prelude(prelude, material);
                 naga::front::wgsl::parse_str(&wgsl).expect("3d material wgsl parses");
             }
+        }
+    }
+
+    #[test]
+    fn custom_material_shadow_wrapper_wgsl_parses() {
+        let material = "fn shade_material(in: FragmentInput) -> vec4<f32> { return vec4<f32>(in.normal_ws * 0.5 + vec3<f32>(0.5), 1.0); }";
+        for prelude in [regular::PRELUDE_RIGID_WGSL, regular::PRELUDE_SKINNED_WGSL] {
+            let wgsl = build_custom_material_shader_with_prelude(prelude, material);
+            naga::front::wgsl::parse_str(&wgsl).expect("custom shadow material wgsl parses");
         }
     }
 

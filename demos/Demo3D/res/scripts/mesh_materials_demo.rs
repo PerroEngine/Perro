@@ -47,6 +47,8 @@ methods!({
         }
         let meshes = query!(ctx.run, all(node_type[MeshInstance3D]), in_subtree(ctx.id)).len();
         let lights = query!(ctx.run, all(node_type[AmbientLight3D]), in_subtree(ctx.id)).len()
+            + query!(ctx.run, all(node_type[PointLight3D]), in_subtree(ctx.id)).len()
+            + query!(ctx.run, all(node_type[SpotLight3D]), in_subtree(ctx.id)).len()
             + query!(ctx.run, all(node_type[RayLight3D]), in_subtree(ctx.id)).len();
         let body = format!(
             "mesh samples {}\nlight rigs {}\nmirror set same runtime mesh\nall flip_x/y/z combos",

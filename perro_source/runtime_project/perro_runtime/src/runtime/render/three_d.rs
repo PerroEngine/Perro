@@ -533,6 +533,8 @@ impl Runtime {
                 LODOptions3D,
                 MeshBlendOptions3D,
                 (bool, bool, bool),
+                bool,
+                bool,
                 LocalMeshInstanceData,
             );
             let mesh_header = if effective_visible {
@@ -562,6 +564,8 @@ impl Runtime {
                                     noise_scale: mesh.blend.noise_scale,
                                 },
                                 (mesh.flip_x, mesh.flip_y, mesh.flip_z),
+                                mesh.cast_shadows,
+                                mesh.receive_shadows,
                             ))
                         }
                         SceneNodeData::MultiMeshInstance3D(mesh)
@@ -587,6 +591,8 @@ impl Runtime {
                                     noise_scale: mesh.blend.noise_scale,
                                 },
                                 (mesh.flip_x, mesh.flip_y, mesh.flip_z),
+                                mesh.cast_shadows,
+                                mesh.receive_shadows,
                             ))
                         }
                         _ => None,
@@ -594,13 +600,42 @@ impl Runtime {
             } else {
                 None
             };
-            let mesh_header =
-                mesh_header.and_then(|(mesh, skeleton, meshlet_override, lod, blend, flip)| {
-                    self.resolve_render_mesh_id(node, mesh)
-                        .map(|mesh| (mesh, skeleton, meshlet_override, lod, blend, flip))
-                });
+            let mesh_header = mesh_header.and_then(
+                |(
+                    mesh,
+                    skeleton,
+                    meshlet_override,
+                    lod,
+                    blend,
+                    flip,
+                    cast_shadows,
+                    receive_shadows,
+                )| {
+                    self.resolve_render_mesh_id(node, mesh).map(|mesh| {
+                        (
+                            mesh,
+                            skeleton,
+                            meshlet_override,
+                            lod,
+                            blend,
+                            flip,
+                            cast_shadows,
+                            receive_shadows,
+                        )
+                    })
+                },
+            );
             let mesh_data: Option<LocalMeshData> = mesh_header.and_then(
-                |(resolved_mesh, skeleton, meshlet_override, lod, blend, flip)| {
+                |(
+                    resolved_mesh,
+                    skeleton,
+                    meshlet_override,
+                    lod,
+                    blend,
+                    flip,
+                    cast_shadows,
+                    receive_shadows,
+                )| {
                     self.nodes
                         .get(node)
                         .and_then(|scene_node| match &scene_node.data {
@@ -612,6 +647,8 @@ impl Runtime {
                                 lod,
                                 blend,
                                 flip,
+                                cast_shadows,
+                                receive_shadows,
                                 LocalMeshInstanceData::Single,
                             )),
                             SceneNodeData::MultiMeshInstance3D(mesh) => Some((
@@ -622,6 +659,8 @@ impl Runtime {
                                 lod,
                                 blend,
                                 flip,
+                                cast_shadows,
+                                receive_shadows,
                                 LocalMeshInstanceData::Dense {
                                     instance_scale: mesh.instance_scale.max(0.0001),
                                     poses: {
@@ -684,6 +723,8 @@ impl Runtime {
                 lod,
                 blend,
                 flip,
+                cast_shadows,
+                receive_shadows,
                 local_instances,
             )) = mesh_data
                 && effective_visible
@@ -755,6 +796,8 @@ impl Runtime {
                     meshlet_override,
                     lod,
                     blend,
+                    cast_shadows,
+                    receive_shadows,
                 };
                 if self.render_3d.retained_mesh_draws.get(&node) != Some(&draw_state) {
                     let draw_command = match retained_instances {
@@ -772,6 +815,8 @@ impl Runtime {
                             meshlet_override,
                             lod,
                             blend,
+                            cast_shadows,
+                            receive_shadows,
                         },
                         crate::runtime::state::RetainedMeshInstanceState::Single(model) => {
                             Command3D::Draw {
@@ -783,6 +828,8 @@ impl Runtime {
                                 meshlet_override,
                                 lod,
                                 blend,
+                                cast_shadows,
+                                receive_shadows,
                             }
                         }
                         crate::runtime::state::RetainedMeshInstanceState::Matrices(
@@ -799,6 +846,8 @@ impl Runtime {
                             meshlet_override,
                             lod,
                             blend,
+                            cast_shadows,
+                            receive_shadows,
                         },
                         crate::runtime::state::RetainedMeshInstanceState::Matrices(
                             instance_mats,
@@ -811,6 +860,8 @@ impl Runtime {
                             meshlet_override,
                             lod,
                             blend,
+                            cast_shadows,
+                            receive_shadows,
                         },
                     };
                     self.queue_render_command(RenderCommand::ThreeD(Box::new(draw_command)));

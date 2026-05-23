@@ -43,7 +43,7 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
         let ray_dir = ray.direction.xyz;
         let l = -ray_dir * inverseSqrt(max(dot(ray_dir, ray_dir), 1.0e-8));
         var radiance = ray.color_intensity.xyz * ray.color_intensity.w;
-        if i == 0u {
+        if i == 0u && material.receive_shadows {
             radiance *= shadow_factor(in.world_pos, n, l);
         }
         light_rgb += radiance * lambert(n, l);
@@ -60,7 +60,8 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
             let l = to_light * inv_dist;
             let radiance = light.color_intensity.xyz * light.color_intensity.w;
             let attenuation = 1.0 / max(dist_sq, 1.0);
-            light_rgb += radiance * attenuation * lambert(n, l);
+            let shadow_vis = select(1.0, point_shadow_factor(in.world_pos, n, i, to_light), material.receive_shadows);
+            light_rgb += radiance * attenuation * shadow_vis * lambert(n, l);
         }
     }
 
@@ -80,7 +81,8 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
             let t = clamp((cos_theta - outer_cos) / max(inner_cos - outer_cos, 0.0001), 0.0, 1.0);
             let radiance = light.color_intensity.xyz * light.color_intensity.w * t;
             let attenuation = 1.0 / max(dist_sq, 1.0);
-            light_rgb += radiance * attenuation * lambert(n, l);
+            let shadow_vis = select(1.0, spot_shadow_factor(in.world_pos, n, i), material.receive_shadows);
+            light_rgb += radiance * attenuation * shadow_vis * lambert(n, l);
         }
     }
 
