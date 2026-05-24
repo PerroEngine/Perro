@@ -44,6 +44,18 @@ parent = @MeshMaterialsDemo
     [/AmbientLight3D]
 [/Ambient]
 
+[SunRay]
+parent = @MeshMaterialsDemo
+    [RayLight3D]
+        color = (1.0, 0.94, 0.82)
+        intensity = 1.15
+        cast_shadows = true
+        [Node3D]
+            rotation_deg = (-38.0, -34.0, 0.0)
+        [/Node3D]
+    [/RayLight3D]
+[/SunRay]
+
 [StaticShadowOrb]
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
@@ -66,8 +78,8 @@ parent = @MeshMaterialsDemo
 parent = @StaticShadowOrb
     [PointLight3D]
         color = (1.0, 0.82, 0.34)
-        intensity = 18.0
-        range = 16.0
+        intensity = 28.0
+        range = 18.0
         cast_shadows = true
     [/PointLight3D]
 [/StaticShadowPoint]
@@ -76,6 +88,7 @@ parent = @StaticShadowOrb
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
         mesh = "__cube__"
+        cast_shadows = true
         receive_shadows = true
         material = {
             type = "standard",
@@ -97,6 +110,7 @@ parent = @MeshMaterialsDemo
     [MeshInstance3D]
         mesh = "__cube__"
         cast_shadows = true
+        receive_shadows = true
         material = {
             type = "standard",
             base_color_factor = (0.95, 0.18, 0.12, 1.0),
@@ -117,6 +131,7 @@ parent = @MeshMaterialsDemo
     [MeshInstance3D]
         mesh = "__sphere__"
         cast_shadows = true
+        receive_shadows = true
         material = {
             type = "standard",
             base_color_factor = (0.08, 0.36, 1.0, 1.0),
@@ -137,6 +152,7 @@ parent = @MeshMaterialsDemo
     [MeshInstance3D]
         mesh = "__cube__"
         cast_shadows = true
+        receive_shadows = true
         material = {
             type = "toon",
             base_color_factor = (0.2, 0.9, 0.35, 1.0),
@@ -153,10 +169,53 @@ parent = @MeshMaterialsDemo
     [/MeshInstance3D]
 [/GreenCube]
 
+[TallShadowCaster]
+parent = @MeshMaterialsDemo
+    [MeshInstance3D]
+        mesh = "__cube__"
+        cast_shadows = true
+        receive_shadows = true
+        material = {
+            type = "standard",
+            base_color_factor = (0.88, 0.78, 0.48, 1.0),
+            roughness_factor = 0.62,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
+        [Node3D]
+            position = (-4.6, 1.25, 2.3)
+            scale = (0.55, 2.2, 0.55)
+        [/Node3D]
+    [/MeshInstance3D]
+[/TallShadowCaster]
+
+[ShadowReceiverWall]
+parent = @MeshMaterialsDemo
+    [MeshInstance3D]
+        mesh = "__cube__"
+        cast_shadows = false
+        receive_shadows = true
+        material = {
+            type = "standard",
+            base_color_factor = (0.48, 0.52, 0.58, 1.0),
+            roughness_factor = 0.9,
+            metallic_factor = 0.0,
+            alpha_mode = "OPAQUE",
+            double_sided = false
+        }
+        [Node3D]
+            position = (-5.8, 1.1, 0.3)
+            scale = (0.08, 2.4, 2.6)
+        [/Node3D]
+    [/MeshInstance3D]
+[/ShadowReceiverWall]
+
 [MirrorOriginal]
 parent = @MeshMaterialsDemo
     [MeshInstance3D]
         cast_shadows = true
+        receive_shadows = true
         material = {
             type = "standard",
             base_color_factor = (1.0, 0.72, 0.18, 1.0),

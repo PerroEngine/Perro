@@ -18,6 +18,18 @@ impl Gpu3D {
         camera: &Camera3DState,
         lighting: &Lighting3DState,
     ) {
+        if std::env::var_os("PERRO_DISABLE_SHADOWS").is_some() {
+            let zero = ShadowUniform::zeroed();
+            if self.last_shadow != Some(zero) {
+                queue.write_buffer(&self.shadow_buffer, 0, bytemuck::bytes_of(&zero));
+                self.last_shadow = Some(zero);
+            }
+            self.shadow_pass_enabled = false;
+            self.ray_shadow_enabled = false;
+            self.spot_shadow_count = 0;
+            self.point_shadow_count = 0;
+            return;
+        }
         let setup = build_shadow_setup(ShadowSetupArgs {
             camera,
             lighting,
@@ -97,8 +109,8 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
 
     let mut any_enabled = false;
     let mut ray_enabled = false;
-    if let Some((scene, light_view_proj, center, radius)) =
-        build_ray_shadow_scene(RayShadowSceneArgs {
+    if let Some((ray_scenes, light_view_proj, splits, center, radius)) =
+        build_ray_shadow_scenes(RayShadowSceneArgs {
             camera,
             lighting,
             draw_batches,
@@ -109,9 +121,16 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
             viewport_height,
         })
     {
-        scenes[0] = scene;
-        uniform.light_view_proj = light_view_proj.to_cols_array_2d();
-        uniform.ray_params = [1.0, 0.0, 0.0, 0.0];
+        for (index, scene) in ray_scenes
+            .into_iter()
+            .enumerate()
+            .take(MAX_SHADOW_RAY_CASCADES)
+        {
+            scenes[index] = scene;
+            uniform.ray_light_view_proj[index] = light_view_proj[index].to_cols_array_2d();
+        }
+        uniform.ray_splits = splits;
+        uniform.ray_params = [1.0, MAX_SHADOW_RAY_CASCADES as f32, splits[3], 0.0];
         focus_center = center;
         focus_radius = radius;
         any_enabled = true;
@@ -132,7 +151,7 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
         let Some(light_view_proj) = spot_light_view_proj(*spot) else {
             continue;
         };
-        let camera_index = MAX_SHADOW_RAY_LIGHTS + spot_count;
+        let camera_index = MAX_SHADOW_RAY_LIGHTS * MAX_SHADOW_RAY_CASCADES + spot_count;
         scenes[camera_index].view_proj = light_view_proj.to_cols_array_2d();
         uniform.spot_light_view_proj[spot_count] = scenes[camera_index].view_proj;
         uniform.spot_params[spot_count] = [1.0, light_index as f32, spot_count as f32, 0.0];
@@ -154,7 +173,10 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
         let matrices = point_light_view_proj(*point);
         let base_layer = point_count * POINT_SHADOW_FACE_COUNT;
         for (face, matrix) in matrices.iter().enumerate().take(POINT_SHADOW_FACE_COUNT) {
-            let camera_index = MAX_SHADOW_RAY_LIGHTS + MAX_SHADOW_SPOT_LIGHTS + base_layer + face;
+            let camera_index = MAX_SHADOW_RAY_LIGHTS * MAX_SHADOW_RAY_CASCADES
+                + MAX_SHADOW_SPOT_LIGHTS
+                + base_layer
+                + face;
             scenes[camera_index].view_proj = matrix.to_cols_array_2d();
             uniform.point_light_view_proj[base_layer + face] = scenes[camera_index].view_proj;
         }
@@ -169,7 +191,7 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
     }
 
     uniform.params0 = if any_enabled {
-        [1.0, 0.75, 0.00015, 0.035]
+        [1.0, 0.82, 0.00018, 0.045]
     } else {
         [0.0; 4]
     };
@@ -197,9 +219,15 @@ struct RayShadowSceneArgs<'a> {
     viewport_height: u32,
 }
 
-fn build_ray_shadow_scene(
+fn build_ray_shadow_scenes(
     args: RayShadowSceneArgs<'_>,
-) -> Option<(Scene3DUniform, Mat4, Vec3, f32)> {
+) -> Option<(
+    Vec<Scene3DUniform>,
+    [Mat4; MAX_SHADOW_RAY_CASCADES],
+    [f32; 4],
+    Vec3,
+    f32,
+)> {
     let RayShadowSceneArgs {
         camera,
         lighting,
@@ -257,23 +285,20 @@ fn build_ray_shadow_scene(
 
     let (batch_focus_center, batch_focus_radius, has_batch_bounds) =
         compute_shadow_focus_bounds(camera, draw_batches, staged_instances);
-    let mut frustum_corners =
-        camera_frustum_corners_world(camera, viewport_width, viewport_height)?;
-    let camera_pos = Vec3::from(camera.position);
-    let max_shadow_distance = 220.0f32;
-    for corner in &mut frustum_corners {
-        let to = *corner - camera_pos;
-        let d = to.length();
-        if d.is_finite() && d > max_shadow_distance && d > 1.0e-4 {
-            *corner = camera_pos + to * (max_shadow_distance / d);
-        }
-    }
-    let mut focus_center = frustum_corners
+    let cascade_splits = ray_cascade_splits(camera);
+    let mut full_corners = camera_frustum_slice_corners_world(
+        camera,
+        viewport_width,
+        viewport_height,
+        0.0,
+        cascade_splits[MAX_SHADOW_RAY_CASCADES - 1],
+    )?;
+    let mut focus_center = full_corners
         .iter()
         .copied()
         .fold(Vec3::ZERO, |acc, p| acc + p)
-        / (frustum_corners.len() as f32);
-    let mut focus_radius = frustum_corners
+        / (full_corners.len() as f32);
+    let mut focus_radius = full_corners
         .iter()
         .copied()
         .map(|p| (p - focus_center).length())
@@ -282,7 +307,7 @@ fn build_ray_shadow_scene(
     if has_batch_bounds {
         focus_center = batch_focus_center;
         focus_radius = batch_focus_radius.clamp(10.0, 600.0);
-        frustum_corners = stable_shadow_focus_points(focus_center, focus_radius);
+        full_corners = stable_shadow_focus_points(focus_center, focus_radius);
     }
     if fallback_focus_center.is_finite() && fallback_focus_radius.is_finite() {
         focus_center = fallback_focus_center.lerp(focus_center, 0.20);
@@ -296,39 +321,68 @@ fn build_ray_shadow_scene(
     } else {
         Vec3::Y
     };
-    let distance = (focus_radius * 3.0).max(80.0);
-    let mut eye = focus_center - dir * distance;
     let (right_axis, up_axis) = light_stable_axes(dir, up);
-    let mut view = Mat4::look_at_rh(eye, focus_center, up);
-    let (mut ls_min, mut ls_max) = light_space_bounds(&frustum_corners, view)?;
-    let span_x = (ls_max.x - ls_min.x).max(2.0);
-    let span_y = (ls_max.y - ls_min.y).max(2.0);
-    let wupt_x = (span_x / SHADOW_MAP_SIZE as f32).max(1.0e-6);
-    let wupt_y = (span_y / SHADOW_MAP_SIZE as f32).max(1.0e-6);
-    let center_ls_x = (ls_min.x + ls_max.x) * 0.5;
-    let center_ls_y = (ls_min.y + ls_max.y) * 0.5;
-    let center_delta = right_axis * ((center_ls_x / wupt_x).round() * wupt_x - center_ls_x)
-        + up_axis * ((center_ls_y / wupt_y).round() * wupt_y - center_ls_y);
-    focus_center += center_delta;
-    eye += center_delta;
-    view = Mat4::look_at_rh(eye, focus_center, up);
-    (ls_min, ls_max) = light_space_bounds(&frustum_corners, view)?;
-    let xy_pad = ((ls_max.x - ls_min.x).max(ls_max.y - ls_min.y) * 0.08).max(2.0);
-    ls_min.x -= xy_pad;
-    ls_max.x += xy_pad;
-    ls_min.y -= xy_pad;
-    ls_max.y += xy_pad;
-    let z_pad = (focus_radius * 0.45).max(12.0);
-    let near = (-ls_max.z - z_pad).max(0.1);
-    let far = (-ls_min.z + z_pad).max(near + 1.0);
-    let light_view_proj =
-        Mat4::orthographic_rh(ls_min.x, ls_max.x, ls_min.y, ls_max.y, near, far) * view;
-    if !light_view_proj.is_finite() {
-        return None;
+    let mut scenes = Vec::with_capacity(MAX_SHADOW_RAY_CASCADES);
+    let mut matrices = [Mat4::IDENTITY; MAX_SHADOW_RAY_CASCADES];
+    for cascade in 0..MAX_SHADOW_RAY_CASCADES {
+        let mut corners = camera_frustum_slice_corners_world(
+            camera,
+            viewport_width,
+            viewport_height,
+            if cascade == 0 {
+                0.0
+            } else {
+                cascade_splits[cascade - 1]
+            },
+            cascade_splits[cascade],
+        )?;
+        if has_batch_bounds {
+            corners.extend_from_slice(&full_corners);
+        }
+        let center =
+            corners.iter().copied().fold(Vec3::ZERO, |acc, p| acc + p) / (corners.len() as f32);
+        let radius = corners
+            .iter()
+            .copied()
+            .map(|p| (p - center).length())
+            .fold(0.0f32, f32::max)
+            .clamp(2.0, 600.0);
+        let distance = (radius * 3.0).max(80.0);
+        let mut eye = center - dir * distance;
+        let mut target = center;
+        let mut view = Mat4::look_at_rh(eye, target, up);
+        let (mut ls_min, mut ls_max) = light_space_bounds(&corners, view)?;
+        let span_x = (ls_max.x - ls_min.x).max(2.0);
+        let span_y = (ls_max.y - ls_min.y).max(2.0);
+        let wupt_x = (span_x / SHADOW_MAP_SIZE as f32).max(1.0e-6);
+        let wupt_y = (span_y / SHADOW_MAP_SIZE as f32).max(1.0e-6);
+        let center_ls_x = (ls_min.x + ls_max.x) * 0.5;
+        let center_ls_y = (ls_min.y + ls_max.y) * 0.5;
+        let center_delta = right_axis * ((center_ls_x / wupt_x).round() * wupt_x - center_ls_x)
+            + up_axis * ((center_ls_y / wupt_y).round() * wupt_y - center_ls_y);
+        eye += center_delta;
+        target += center_delta;
+        view = Mat4::look_at_rh(eye, target, up);
+        (ls_min, ls_max) = light_space_bounds(&corners, view)?;
+        let xy_pad = ((ls_max.x - ls_min.x).max(ls_max.y - ls_min.y) * 0.08).max(1.0);
+        ls_min.x -= xy_pad;
+        ls_max.x += xy_pad;
+        ls_min.y -= xy_pad;
+        ls_max.y += xy_pad;
+        let z_pad = (radius * 0.65).max(12.0);
+        let near = (-ls_max.z - z_pad).max(0.1);
+        let far = (-ls_min.z + z_pad).max(near + 1.0);
+        let light_view_proj =
+            Mat4::orthographic_rh(ls_min.x, ls_max.x, ls_min.y, ls_max.y, near, far) * view;
+        if !light_view_proj.is_finite() {
+            return None;
+        }
+        let mut scene = Scene3DUniform::zeroed();
+        scene.view_proj = light_view_proj.to_cols_array_2d();
+        scenes.push(scene);
+        matrices[cascade] = light_view_proj;
     }
-    let mut scene = Scene3DUniform::zeroed();
-    scene.view_proj = light_view_proj.to_cols_array_2d();
-    Some((scene, light_view_proj, focus_center, focus_radius))
+    Some((scenes, matrices, cascade_splits, focus_center, focus_radius))
 }
 
 fn spot_light_view_proj(spot: SpotLight3DState) -> Option<Mat4> {
@@ -356,6 +410,121 @@ fn spot_light_view_proj(spot: SpotLight3DState) -> Option<Mat4> {
     vp.is_finite().then_some(vp)
 }
 
+fn ray_cascade_splits(camera: &Camera3DState) -> [f32; MAX_SHADOW_RAY_CASCADES] {
+    let (near, far) = match camera.projection {
+        CameraProjectionState::Perspective { near, far, .. }
+        | CameraProjectionState::Orthographic { near, far, .. }
+        | CameraProjectionState::Frustum { near, far, .. } => {
+            let near = sanitize_near(near);
+            let far = sanitize_far(far, near).min(near + 220.0);
+            (near, far)
+        }
+    };
+    let lambda = 0.65f32;
+    let mut splits = [far; MAX_SHADOW_RAY_CASCADES];
+    for i in 1..=MAX_SHADOW_RAY_CASCADES {
+        let p = i as f32 / MAX_SHADOW_RAY_CASCADES as f32;
+        let log = near * (far / near).powf(p);
+        let uniform = near + (far - near) * p;
+        splits[i - 1] = (log * lambda + uniform * (1.0 - lambda)).min(far);
+    }
+    splits
+}
+
+fn camera_rotation(camera: &Camera3DState) -> Quat {
+    let rot = Quat::from_xyzw(
+        camera.rotation[0],
+        camera.rotation[1],
+        camera.rotation[2],
+        camera.rotation[3],
+    );
+    if rot.is_finite() && rot.length_squared() > 1.0e-6 {
+        rot.normalize()
+    } else {
+        Quat::IDENTITY
+    }
+}
+
+fn camera_frustum_slice_corners_world(
+    camera: &Camera3DState,
+    width: u32,
+    height: u32,
+    start_distance: f32,
+    end_distance: f32,
+) -> Option<Vec<Vec3>> {
+    let aspect = (width.max(1) as f32 / height.max(1) as f32).max(1.0e-6);
+    let pos = Vec3::from(camera.position);
+    let rot = camera_rotation(camera);
+    let right = rot * Vec3::X;
+    let up = rot * Vec3::Y;
+    let forward = rot * Vec3::NEG_Z;
+    let mut out = Vec::with_capacity(8);
+    match camera.projection {
+        CameraProjectionState::Perspective {
+            fov_y_degrees,
+            near,
+            far,
+        } => {
+            let near = sanitize_near(near);
+            let far = sanitize_far(far, near).min(near + 220.0);
+            let a = start_distance.max(near).min(far);
+            let b = end_distance.max(a + 1.0e-3).min(far);
+            let tan_y = (perspective_fov_y_radians(fov_y_degrees) * 0.5).tan();
+            for d in [a, b] {
+                let center = pos + forward * d;
+                let half_h = d * tan_y;
+                let half_w = half_h * aspect;
+                for y in [-1.0f32, 1.0] {
+                    for x in [-1.0f32, 1.0] {
+                        out.push(center + right * (x * half_w) + up * (y * half_h));
+                    }
+                }
+            }
+        }
+        CameraProjectionState::Orthographic { size, near, far } => {
+            let near = sanitize_near(near);
+            let far = sanitize_far(far, near).min(near + 220.0);
+            let a = start_distance.max(near).min(far);
+            let b = end_distance.max(a + 1.0e-3).min(far);
+            let half_h = (size.abs() * 0.5).max(1.0e-3);
+            let half_w = half_h * aspect;
+            for d in [a, b] {
+                let center = pos + forward * d;
+                for y in [-1.0f32, 1.0] {
+                    for x in [-1.0f32, 1.0] {
+                        out.push(center + right * (x * half_w) + up * (y * half_h));
+                    }
+                }
+            }
+        }
+        CameraProjectionState::Frustum {
+            left,
+            right: fr_right,
+            bottom,
+            top,
+            near,
+            far,
+        } => {
+            let near = sanitize_near(near);
+            let far = sanitize_far(far, near).min(near + 220.0);
+            let (left, fr_right) = sanitize_range(left, fr_right, -1.0, 1.0);
+            let (bottom, top) = sanitize_range(bottom, top, -1.0, 1.0);
+            let a = start_distance.max(near).min(far);
+            let b = end_distance.max(a + 1.0e-3).min(far);
+            for d in [a, b] {
+                let scale = d / near;
+                let center = pos + forward * d;
+                for y in [bottom * scale, top * scale] {
+                    for x in [left * scale, fr_right * scale] {
+                        out.push(center + right * x + up * y);
+                    }
+                }
+            }
+        }
+    }
+    out.iter().all(|p| p.is_finite()).then_some(out)
+}
+
 fn point_light_view_proj(point: PointLight3DState) -> [Mat4; POINT_SHADOW_FACE_COUNT] {
     let pos = Vec3::from(point.position);
     let proj = Mat4::perspective_rh(std::f32::consts::FRAC_PI_2, 1.0, 0.05, point.range.max(0.1));
@@ -368,34 +537,6 @@ fn point_light_view_proj(point: PointLight3DState) -> [Mat4; POINT_SHADOW_FACE_C
         (Vec3::NEG_Z, Vec3::NEG_Y),
     ];
     faces.map(|(dir, up)| proj * Mat4::look_at_rh(pos, pos + dir, up))
-}
-
-pub(super) fn camera_frustum_corners_world(
-    camera: &Camera3DState,
-    width: u32,
-    height: u32,
-) -> Option<Vec<Vec3>> {
-    let view_proj = compute_view_proj_mat(camera, width, height);
-    if !view_proj.is_finite() {
-        return None;
-    }
-    let inv = view_proj.inverse();
-    if !inv.is_finite() {
-        return None;
-    }
-    let mut corners = Vec::with_capacity(8);
-    for z in [-1.0f32, 1.0f32] {
-        for y in [-1.0f32, 1.0f32] {
-            for x in [-1.0f32, 1.0f32] {
-                let world_h = inv * Vec4::new(x, y, z, 1.0);
-                if !world_h.is_finite() || world_h.w.abs() <= 1.0e-6 {
-                    return None;
-                }
-                corners.push(world_h.truncate() / world_h.w);
-            }
-        }
-    }
-    Some(corners)
 }
 
 pub(super) fn light_space_bounds(points_world: &[Vec3], light_view: Mat4) -> Option<(Vec3, Vec3)> {
@@ -567,7 +708,7 @@ mod tests {
     }
 
     #[test]
-    fn ray_shadow_matrix_changes_with_light_dir_not_camera_yaw() {
+    fn ray_shadow_matrix_changes_with_light_dir_and_keeps_splits_stable() {
         let batches = [caster_batch()];
         let instances = [identity_instance()];
         let setup_a = build_shadow_setup(ShadowSetupArgs {
@@ -600,14 +741,36 @@ mod tests {
             viewport_width: 1280,
             viewport_height: 720,
         });
-        assert_eq!(
-            setup_a.uniform.light_view_proj,
-            setup_yaw.uniform.light_view_proj
-        );
+        assert_eq!(setup_a.uniform.ray_splits, setup_yaw.uniform.ray_splits);
         assert_ne!(
-            setup_a.uniform.light_view_proj,
-            setup_b.uniform.light_view_proj
+            setup_a.uniform.ray_light_view_proj[0],
+            setup_b.uniform.ray_light_view_proj[0]
         );
+    }
+
+    #[test]
+    fn ray_shadow_cascades_are_enabled_and_monotonic() {
+        let batches = [caster_batch()];
+        let instances = [identity_instance()];
+        let setup = build_shadow_setup(ShadowSetupArgs {
+            camera: &camera(Quat::IDENTITY),
+            lighting: &lighting_with_ray([-0.5, -1.0, -0.2]),
+            draw_batches: &batches,
+            staged_instances: &instances,
+            fallback_focus_center: Vec3::ZERO,
+            fallback_focus_radius: 64.0,
+            viewport_width: 1280,
+            viewport_height: 720,
+        });
+        assert!(setup.ray_enabled);
+        assert_eq!(setup.uniform.ray_params[1], MAX_SHADOW_RAY_CASCADES as f32);
+        assert!(setup.uniform.ray_splits[0] > 0.0);
+        assert!(setup.uniform.ray_splits[0] < setup.uniform.ray_splits[1]);
+        assert!(setup.uniform.ray_splits[1] < setup.uniform.ray_splits[2]);
+        assert!(setup.uniform.ray_splits[2] < setup.uniform.ray_splits[3]);
+        for matrix in setup.uniform.ray_light_view_proj {
+            assert_ne!(matrix, [[0.0; 4]; 4]);
+        }
     }
 
     #[test]

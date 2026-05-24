@@ -113,14 +113,15 @@ const MATERIAL_TEXTURE_NONE: u32 = u32::MAX;
 const PACKED_STANDARD_NORMAL_SCALE_MAX: f32 = 4.0;
 const PACKED_TOON_RIM_STRENGTH_MAX: f32 = 4.0;
 const PACKED_TOON_OUTLINE_WIDTH_MAX: f32 = 4.0;
-const SHADOW_MAP_SIZE: u32 = 4096;
+const SHADOW_MAP_SIZE: u32 = 2048;
 const SHADOW_SPOT_MAP_SIZE: u32 = 2048;
 const SHADOW_POINT_MAP_SIZE: u32 = 1024;
 const MAX_SHADOW_RAY_LIGHTS: usize = 1;
+const MAX_SHADOW_RAY_CASCADES: usize = 4;
 const MAX_SHADOW_SPOT_LIGHTS: usize = 4;
 const MAX_SHADOW_POINT_LIGHTS: usize = 4;
 const POINT_SHADOW_FACE_COUNT: usize = 6;
-const SHADOW_CAMERA_COUNT: usize = MAX_SHADOW_RAY_LIGHTS
+const SHADOW_CAMERA_COUNT: usize = MAX_SHADOW_RAY_LIGHTS * MAX_SHADOW_RAY_CASCADES
     + MAX_SHADOW_SPOT_LIGHTS
     + MAX_SHADOW_POINT_LIGHTS * POINT_SHADOW_FACE_COUNT;
 const SHADOW_DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -301,11 +302,12 @@ struct HizCullParamsGpu {
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
 struct ShadowUniform {
-    light_view_proj: [[f32; 4]; 4],
+    ray_light_view_proj: [[[f32; 4]; 4]; MAX_SHADOW_RAY_CASCADES],
     spot_light_view_proj: [[[f32; 4]; 4]; MAX_SHADOW_SPOT_LIGHTS],
     point_light_view_proj: [[[f32; 4]; 4]; MAX_SHADOW_POINT_LIGHTS * POINT_SHADOW_FACE_COUNT],
     params0: [f32; 4],    // enabled, strength, depth_bias, normal_bias
-    ray_params: [f32; 4], // enabled, reserved, reserved, reserved
+    ray_params: [f32; 4], // enabled, cascade_count, shadow_distance, reserved
+    ray_splits: [f32; 4],
     spot_params: [[f32; 4]; MAX_SHADOW_SPOT_LIGHTS], // enabled, light_index, layer, reserved
     point_params: [[f32; 4]; MAX_SHADOW_POINT_LIGHTS], // enabled, light_index, base_layer, range
 }
@@ -374,7 +376,8 @@ pub struct Gpu3D {
     shadow_buffer: wgpu::Buffer,
     shadow_bind_group: wgpu::BindGroup,
     _shadow_map_texture: wgpu::Texture,
-    shadow_map_view: wgpu::TextureView,
+    _shadow_map_view: wgpu::TextureView,
+    shadow_layer_views: Vec<wgpu::TextureView>,
     _spot_shadow_map_texture: wgpu::Texture,
     _spot_shadow_map_view: wgpu::TextureView,
     spot_shadow_layer_views: Vec<wgpu::TextureView>,

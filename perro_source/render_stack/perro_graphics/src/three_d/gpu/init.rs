@@ -28,7 +28,9 @@ impl Gpu3D {
             indirect_first_instance_enabled,
         } = config;
         let (gpu_occlusion_enabled, cpu_occlusion_enabled) = occlusion_flags(occlusion_culling);
-        let shadow_caster_debug_view = std::env::var_os("PERRO_DEBUG_SHADOW_CASTERS").is_some();
+        let shadow_caster_debug_view = std::env::var_os("PERRO_DEBUG_SHADOW_CASTERS").is_some()
+            || std::env::var_os("PERRO_SHADOW_DEBUG_CASTERS").is_some()
+            || std::env::var_os("PERRO_SHADOW_DEBUG_CASCADES").is_some();
         let disable_meshlet_shadows = std::env::var_os("PERRO_DISABLE_MESHLET_SHADOWS").is_some();
         let shader = create_mesh_shader_module_skinned(device);
         let shader_unlit = create_unlit_shader_module_skinned(device);
@@ -155,7 +157,7 @@ impl Gpu3D {
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Depth,
-                        view_dimension: wgpu::TextureViewDimension::D2,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
                         multisampled: false,
                     },
                     count: None,
@@ -307,8 +309,13 @@ impl Gpu3D {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let (shadow_map_texture, shadow_map_view) =
-            create_shadow_map_texture(device, SHADOW_MAP_SIZE);
+        let (shadow_map_texture, shadow_map_view, shadow_layer_views) =
+            create_shadow_map_array_texture(
+                device,
+                "perro_ray_shadow_map",
+                SHADOW_MAP_SIZE,
+                MAX_SHADOW_RAY_CASCADES as u32,
+            );
         let (spot_shadow_map_texture, spot_shadow_map_view, spot_shadow_layer_views) =
             create_shadow_map_array_texture(
                 device,
@@ -1309,7 +1316,8 @@ impl Gpu3D {
             shadow_buffer,
             shadow_bind_group,
             _shadow_map_texture: shadow_map_texture,
-            shadow_map_view,
+            _shadow_map_view: shadow_map_view,
+            shadow_layer_views,
             _spot_shadow_map_texture: spot_shadow_map_texture,
             _spot_shadow_map_view: spot_shadow_map_view,
             spot_shadow_layer_views,

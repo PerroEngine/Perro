@@ -161,28 +161,6 @@ pub(super) fn create_depth_prepass_texture(
     (texture, view)
 }
 
-pub(super) fn create_shadow_map_texture(
-    device: &wgpu::Device,
-    size: u32,
-) -> (wgpu::Texture, wgpu::TextureView) {
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("perro_shadow_map"),
-        size: wgpu::Extent3d {
-            width: size.max(1),
-            height: size.max(1),
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: SHADOW_DEPTH_FORMAT,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-        view_formats: &[],
-    });
-    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    (texture, view)
-}
-
 pub(super) fn create_shadow_map_array_texture(
     device: &wgpu::Device,
     label: &'static str,

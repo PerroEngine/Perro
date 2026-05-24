@@ -57,23 +57,25 @@ impl Gpu3D {
         }
         if self.shadow_pass_enabled && self.has_shadow_casters {
             if self.ray_shadow_enabled {
-                let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("perro_ray_shadow3d_pass"),
-                    color_attachments: &[],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &self.shadow_map_view,
-                        depth_ops: Some(wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(1.0),
-                            store: wgpu::StoreOp::Store,
+                for cascade in 0..MAX_SHADOW_RAY_CASCADES.min(self.shadow_layer_views.len()) {
+                    let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("perro_ray_shadow3d_pass"),
+                        color_attachments: &[],
+                        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                            view: &self.shadow_layer_views[cascade],
+                            depth_ops: Some(wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(1.0),
+                                store: wgpu::StoreOp::Store,
+                            }),
+                            stencil_ops: None,
                         }),
-                        stencil_ops: None,
-                    }),
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                    multiview_mask: None,
-                });
-                draw_shadow_batches(self, &mut shadow_pass, 0);
-                drop(shadow_pass);
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                        multiview_mask: None,
+                    });
+                    draw_shadow_batches(self, &mut shadow_pass, cascade);
+                    drop(shadow_pass);
+                }
             }
             for spot in 0..self
                 .spot_shadow_count
@@ -94,7 +96,11 @@ impl Gpu3D {
                     occlusion_query_set: None,
                     multiview_mask: None,
                 });
-                draw_shadow_batches(self, &mut shadow_pass, MAX_SHADOW_RAY_LIGHTS + spot);
+                draw_shadow_batches(
+                    self,
+                    &mut shadow_pass,
+                    MAX_SHADOW_RAY_LIGHTS * MAX_SHADOW_RAY_CASCADES + spot,
+                );
                 drop(shadow_pass);
             }
             let point_layers = self
@@ -120,7 +126,9 @@ impl Gpu3D {
                 draw_shadow_batches(
                     self,
                     &mut shadow_pass,
-                    MAX_SHADOW_RAY_LIGHTS + MAX_SHADOW_SPOT_LIGHTS + layer,
+                    MAX_SHADOW_RAY_LIGHTS * MAX_SHADOW_RAY_CASCADES
+                        + MAX_SHADOW_SPOT_LIGHTS
+                        + layer,
                 );
                 drop(shadow_pass);
             }
