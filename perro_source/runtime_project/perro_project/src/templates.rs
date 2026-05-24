@@ -413,6 +413,7 @@ target_sdk_version = 35
 winresource = "0.1.20"
 toml = "0.8.23"
 image = {{ version = "0.25.9", default-features = false, features = ["png", "jpeg", "gif", "bmp", "tga", "webp", "ico"] }}
+resvg = "0.47.0"
 
 [profile.release]
 opt-level = 3
@@ -499,8 +500,17 @@ fn embed_windows_icon() -> Result<(), String> {
     }
 
     fn convert_icon_to_ico(source: &Path, out_dir: &Path) -> Result<PathBuf, String> {
-        let mut image = image::open(source)
-            .map_err(|e| format!("failed to decode icon image `{}`: {e}", source.display()))?;
+        let ext = source
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        let mut image = if ext == "svg" {
+            decode_svg_icon(source)?
+        } else {
+            image::open(source)
+                .map_err(|e| format!("failed to decode icon image `{}`: {e}", source.display()))?
+        };
         let (w, h) = (image.width(), image.height());
         if w > 256 || h > 256 {
             image = image.resize(256, 256, image::imageops::FilterType::Lanczos3);
@@ -510,6 +520,102 @@ fn embed_windows_icon() -> Result<(), String> {
             .save_with_format(&out, image::ImageFormat::Ico)
             .map_err(|e| format!("failed to convert `{}` to ico: {e}", source.display()))?;
         Ok(out)
+    }
+
+    fn decode_svg_icon(source: &Path) -> Result<image::DynamicImage, String> {
+        let bytes = fs::read(source)
+            .map_err(|e| format!("failed to read icon image `{}`: {e}", source.display()))?;
+        let options = resvg::usvg::Options::default();
+        let tree = resvg::usvg::Tree::from_data(&bytes, &options)
+            .map_err(|e| format!("failed to decode icon image `{}`: {e}", source.display()))?;
+        let tree_size = tree.size();
+        let tree_width = tree_size.width().max(1.0);
+        let tree_height = tree_size.height().max(1.0);
+        let (width, height) = svg_icon_target_size(&bytes, tree_width, tree_height);
+        let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height)
+            .ok_or_else(|| format!("failed to allocate svg icon pixmap `{}`", source.display()))?;
+        let transform = resvg::tiny_skia::Transform::from_scale(
+            width as f32 / tree_width,
+            height as f32 / tree_height,
+        );
+        resvg::render(&tree, transform, &mut pixmap.as_mut());
+        let mut rgba = Vec::with_capacity((width as usize) * (height as usize) * 4);
+        for pixel in pixmap.pixels() {
+            rgba.extend_from_slice(&[pixel.red(), pixel.green(), pixel.blue(), pixel.alpha()]);
+        }
+        let image = image::RgbaImage::from_raw(width, height, rgba)
+            .ok_or_else(|| format!("failed to build svg icon image `{}`", source.display()))?;
+        Ok(image::DynamicImage::ImageRgba8(image))
+    }
+
+    fn svg_icon_target_size(bytes: &[u8], tree_width: f32, tree_height: f32) -> (u32, u32) {
+        svg_declared_size(bytes).unwrap_or_else(|| {
+            (
+                tree_width.round().clamp(1.0, 256.0) as u32,
+                tree_height.round().clamp(1.0, 256.0) as u32,
+            )
+        })
+    }
+
+    fn svg_declared_size(bytes: &[u8]) -> Option<(u32, u32)> {
+        let src = std::str::from_utf8(bytes).ok()?;
+        let tag = svg_start_tag(src)?;
+        if let (Some(width), Some(height)) = (svg_attr_number(tag, "width"), svg_attr_number(tag, "height")) {
+            return Some((width.min(256), height.min(256)));
+        }
+        if let Some((width, height)) = svg_viewbox_size(tag) {
+            return Some((width.min(256), height.min(256)));
+        }
+        Some((256, 256))
+    }
+
+    fn svg_start_tag(src: &str) -> Option<&str> {
+        let start = src.find("<svg")?;
+        let rest = &src[start..];
+        Some(&rest[..rest.find('>')?])
+    }
+
+    fn svg_attr_number(tag: &str, name: &str) -> Option<u32> {
+        parse_svg_number(svg_attr_value(tag, name)?)
+    }
+
+    fn svg_attr_value<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
+        let idx = tag.find(name)?;
+        let value = tag[idx + name.len()..].trim_start().strip_prefix('=')?.trim_start();
+        let quote = value.chars().next()?;
+        if quote == '"' || quote == '\'' {
+            let value = &value[quote.len_utf8()..];
+            return Some(&value[..value.find(quote)?]);
+        }
+        Some(&value[..value.find(|ch: char| ch.is_ascii_whitespace() || ch == '>').unwrap_or(value.len())])
+    }
+
+    fn svg_viewbox_size(tag: &str) -> Option<(u32, u32)> {
+        let value = svg_attr_value(tag, "viewBox").or_else(|| svg_attr_value(tag, "viewbox"))?;
+        let nums: Vec<f32> = value
+            .split(|ch: char| ch.is_ascii_whitespace() || ch == ',')
+            .filter(|part| !part.is_empty())
+            .filter_map(|part| part.parse::<f32>().ok())
+            .collect();
+        if nums.len() < 4 {
+            return None;
+        }
+        Some((size_component(nums[2])?, size_component(nums[3])?))
+    }
+
+    fn parse_svg_number(value: &str) -> Option<u32> {
+        let trimmed = value.trim();
+        let number_len = trimmed
+            .find(|ch: char| !(ch.is_ascii_digit() || ch == '.'))
+            .unwrap_or(trimmed.len());
+        if trimmed.get(number_len..)?.trim().starts_with('%') {
+            return None;
+        }
+        size_component(trimmed.get(..number_len)?.parse::<f32>().ok()?)
+    }
+
+    fn size_component(value: f32) -> Option<u32> {
+        (value.is_finite() && value > 0.0).then(|| value.round().max(1.0) as u32)
     }
 
     fn metadata_str(value: &Value, key: &str) -> Option<String> {
@@ -692,6 +798,7 @@ steamworks = ["perro_app/steamworks"]
 winresource = "0.1.20"
 toml = "0.8.23"
 image = { version = "0.25.9", default-features = false, features = ["png", "jpeg", "gif", "bmp", "tga", "webp", "ico"] }
+resvg = "0.47.0"
 
 [profile.dev]
 opt-level = 1

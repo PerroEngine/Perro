@@ -884,6 +884,7 @@ fn ensure_source_overrides_repairs_dev_runner_features() {
     assert!(repaired.contains("winresource = \"0.1.20\""));
     assert!(repaired.contains("toml = \"0.8.23\""));
     assert!(repaired.contains("image = { version = \"0.25.9\""));
+    assert!(repaired.contains("resvg = \"0.47.0\""));
     assert!(repaired.contains("[profile.dev.package.perro_physics]"));
     assert!(repaired.contains("debug-assertions = false"));
     assert!(repaired.contains("overflow-checks = false"));
@@ -891,6 +892,7 @@ fn ensure_source_overrides_repairs_dev_runner_features() {
     let build_rs = fs::read_to_string(root.join(".perro").join("dev_runner").join("build.rs"))
         .expect("read dev runner build script");
     assert!(build_rs.contains("embed_windows_icon"));
+    assert!(build_rs.contains("decode_svg_icon"));
 
     fs::remove_dir_all(&root).expect("cleanup");
 }

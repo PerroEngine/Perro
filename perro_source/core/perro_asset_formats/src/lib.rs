@@ -79,7 +79,7 @@ pub mod source_ext {
     pub const GLTF: &str = "gltf";
 
     pub const IMAGE: &[&str] = &[
-        "png", "jpg", "jpeg", "bmp", "gif", "ico", "tga", "webp", "rgba",
+        "png", "jpg", "jpeg", "bmp", "gif", "ico", "tga", "webp", "rgba", "svg",
     ];
     pub const AUDIO: &[&str] = &["mp3", "wav", "ogg", "flac", "aac", "m4a"];
     pub const MIDI: &[&str] = &["mid", "midi"];

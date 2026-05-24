@@ -7,6 +7,7 @@ edition = "2024"
 bytemuck = { version = "1.24.0", features = ["derive"] }
 gltf = "1.4.1"
 image = { version = "0.25.8", default-features = true }
+resvg = "0.47.0"
 
 perro_asset_formats.workspace = true
 perro_ids.workspace = true

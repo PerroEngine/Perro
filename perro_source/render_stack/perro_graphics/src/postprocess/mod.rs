@@ -3,7 +3,7 @@
 use crate::backend::{StaticShaderLookup, StaticTextureLookup};
 use crate::postprocess::shaders::{build_post_shader, create_builtin_shader_module};
 use bytemuck::{Pod, Zeroable};
-use perro_graphics_assets::decode_ptex;
+use perro_graphics_assets::{decode_image_rgba, decode_ptex};
 use perro_io::load_asset;
 use perro_render_bridge::{Camera3DState, CameraProjectionState};
 use perro_structs::{CustomPostParam, CustomPostParamValue, PostProcessEffect};
@@ -992,17 +992,11 @@ fn load_post_texture_rgba(
             if let Some(decoded) = decode_ptex(bytes) {
                 return Some(decoded);
             }
-            let image = image::load_from_memory(bytes).ok()?;
-            let rgba = image.to_rgba8();
-            let (width, height) = rgba.dimensions();
-            return Some((rgba.into_raw(), width.max(1), height.max(1)));
+            return decode_image_rgba(bytes);
         }
     }
     let bytes = load_asset(source).ok()?;
-    let image = image::load_from_memory(&bytes).ok()?;
-    let rgba = image.to_rgba8();
-    let (width, height) = rgba.dimensions();
-    Some((rgba.into_raw(), width.max(1), height.max(1)))
+    decode_image_rgba(&bytes)
 }
 
 fn flattened_lut_to_3d(

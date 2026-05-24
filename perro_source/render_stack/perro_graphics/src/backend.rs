@@ -15,9 +15,8 @@ use crate::{
     ui::renderer::UiRenderer,
 };
 use ahash::{AHashMap, AHashSet};
-use perro_graphics_assets::decode_ptex;
+use perro_graphics_assets::{decode_ptex, load_texture_rgba};
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
-use perro_io::load_asset;
 use perro_render_bridge::{
     CameraStreamCommand, CameraStreamState, Command2D, Command3D, Light2DState, Material3D,
     PointParticles3DState, PostProcessingCommand, RenderBridge, RenderCommand, RenderEvent,
@@ -365,11 +364,7 @@ impl PerroGraphics {
     }
 
     fn decode_texture_file(source: &str) -> Option<(Vec<u8>, u32, u32)> {
-        let bytes = load_asset(source).ok()?;
-        let image = image::load_from_memory(&bytes).ok()?;
-        let rgba = image.to_rgba8();
-        let (width, height) = rgba.dimensions();
-        Some((rgba.into_raw(), width, height))
+        load_texture_rgba(source)
     }
 
     #[cfg(all(not(target_arch = "wasm32"), not(test)))]

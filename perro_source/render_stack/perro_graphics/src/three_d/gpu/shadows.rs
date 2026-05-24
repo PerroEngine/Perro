@@ -109,30 +109,34 @@ pub(super) fn build_shadow_setup(args: ShadowSetupArgs<'_>) -> ShadowSetup {
 
     let mut any_enabled = false;
     let mut ray_enabled = false;
-    if let Some((ray_scenes, light_view_proj, splits, center, radius)) =
-        build_ray_shadow_scenes(RayShadowSceneArgs {
-            camera,
-            lighting,
-            draw_batches,
-            staged_instances,
-            fallback_focus_center,
-            fallback_focus_radius,
-            viewport_width,
-            viewport_height,
-        })
-    {
-        for (index, scene) in ray_scenes
+    if let Some(ray_setup) = build_ray_shadow_scenes(RayShadowSceneArgs {
+        camera,
+        lighting,
+        draw_batches,
+        staged_instances,
+        fallback_focus_center,
+        fallback_focus_radius,
+        viewport_width,
+        viewport_height,
+    }) {
+        for (index, scene) in ray_setup
+            .scenes
             .into_iter()
             .enumerate()
             .take(MAX_SHADOW_RAY_CASCADES)
         {
             scenes[index] = scene;
-            uniform.ray_light_view_proj[index] = light_view_proj[index].to_cols_array_2d();
+            uniform.ray_light_view_proj[index] = ray_setup.matrices[index].to_cols_array_2d();
         }
-        uniform.ray_splits = splits;
-        uniform.ray_params = [1.0, MAX_SHADOW_RAY_CASCADES as f32, splits[3], 0.0];
-        focus_center = center;
-        focus_radius = radius;
+        uniform.ray_splits = ray_setup.splits;
+        uniform.ray_params = [
+            1.0,
+            MAX_SHADOW_RAY_CASCADES as f32,
+            ray_setup.splits[3],
+            0.0,
+        ];
+        focus_center = ray_setup.focus_center;
+        focus_radius = ray_setup.focus_radius;
         any_enabled = true;
         ray_enabled = true;
     }
@@ -219,15 +223,15 @@ struct RayShadowSceneArgs<'a> {
     viewport_height: u32,
 }
 
-fn build_ray_shadow_scenes(
-    args: RayShadowSceneArgs<'_>,
-) -> Option<(
-    Vec<Scene3DUniform>,
-    [Mat4; MAX_SHADOW_RAY_CASCADES],
-    [f32; 4],
-    Vec3,
-    f32,
-)> {
+struct RayShadowScenes {
+    scenes: Vec<Scene3DUniform>,
+    matrices: [Mat4; MAX_SHADOW_RAY_CASCADES],
+    splits: [f32; 4],
+    focus_center: Vec3,
+    focus_radius: f32,
+}
+
+fn build_ray_shadow_scenes(args: RayShadowSceneArgs<'_>) -> Option<RayShadowScenes> {
     let RayShadowSceneArgs {
         camera,
         lighting,
@@ -382,7 +386,13 @@ fn build_ray_shadow_scenes(
         scenes.push(scene);
         matrices[cascade] = light_view_proj;
     }
-    Some((scenes, matrices, cascade_splits, focus_center, focus_radius))
+    Some(RayShadowScenes {
+        scenes,
+        matrices,
+        splits: cascade_splits,
+        focus_center,
+        focus_radius,
+    })
 }
 
 fn spot_light_view_proj(spot: SpotLight3DState) -> Option<Mat4> {

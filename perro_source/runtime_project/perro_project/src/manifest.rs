@@ -349,6 +349,10 @@ fn ensure_project_manifest_icon_build_support(path: &Path) -> std::io::Result<()
         build_deps_table.insert("image".to_string(), Value::Table(image));
         changed = true;
     }
+    if build_deps_table.get("resvg").and_then(Value::as_str) != Some("0.47.0") {
+        build_deps_table.insert("resvg".to_string(), Value::String("0.47.0".to_string()));
+        changed = true;
+    }
 
     if !changed {
         return Ok(());

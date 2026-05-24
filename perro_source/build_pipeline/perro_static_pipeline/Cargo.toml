@@ -10,6 +10,7 @@ perro_io.workspace = true
 perro_meshlets.workspace = true
 perro_scene.workspace = true
 perro_render_bridge.workspace = true
+perro_graphics_assets.workspace = true
 perro_animation.workspace = true
 perro_project.workspace = true
 perro_ids.workspace = true

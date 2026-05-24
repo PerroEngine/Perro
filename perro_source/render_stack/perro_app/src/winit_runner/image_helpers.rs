@@ -9,6 +9,10 @@ use perro_asset_formats::ptex::{
 #[cfg(not(target_arch = "wasm32"))]
 use perro_asset_formats::ptex::{MAGIC as PTEX_MAGIC, VERSION as PTEX_VERSION};
 #[cfg(not(target_arch = "wasm32"))]
+use perro_graphics_assets::{
+    decode_image_rgba as decode_source_image_rgba, decode_image_size as decode_source_image_size,
+};
+#[cfg(not(target_arch = "wasm32"))]
 use perro_io::decompress_zlib;
 #[cfg(not(target_arch = "wasm32"))]
 use std::{
@@ -79,8 +83,7 @@ fn decode_image_size(bytes: &[u8]) -> Option<(u32, u32)> {
     if let Some((width, height)) = decode_ptex_dimensions(bytes) {
         return Some((width.max(1), height.max(1)));
     }
-    let decoded = ::image::load_from_memory(bytes).ok()?;
-    Some((decoded.width().max(1), decoded.height().max(1)))
+    decode_source_image_size(bytes)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -88,10 +91,7 @@ fn decode_image_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
     if let Some(decoded) = decode_ptex_rgba(bytes) {
         return Some(decoded);
     }
-    let img = ::image::load_from_memory(bytes).ok()?;
-    let rgba = img.into_rgba8();
-    let (width, height) = rgba.dimensions();
-    Some((rgba.into_raw(), width, height))
+    decode_source_image_rgba(bytes)
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -234,5 +234,14 @@ mod tests {
         bytes.extend_from_slice(&compressed);
 
         assert_eq!(decode_image_size(&bytes), Some((1, 1)));
+    }
+
+    #[test]
+    fn decode_image_helpers_support_svg_icon_and_splash_size() {
+        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="3" height="2"><rect width="3" height="2" fill="red"/></svg>"#;
+        let (rgba, width, height) = decode_image_rgba(svg).expect("decode svg");
+        assert_eq!((width, height), (3, 2));
+        assert_eq!(rgba.len(), 3 * 2 * 4);
+        assert_eq!(decode_image_size(svg), Some((3, 2)));
     }
 }

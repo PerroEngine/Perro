@@ -11,6 +11,7 @@ use perro_asset_formats::{
     },
     source_ext,
 };
+use perro_graphics_assets::decode_image_rgba;
 use perro_io::{compress_zlib_best, walkdir::collect_file_paths};
 use rayon::prelude::*;
 use std::{
@@ -44,12 +45,8 @@ pub fn generate_static_textures(project_root: &Path) -> Result<(), StaticPipelin
         .into_par_iter()
         .map(|(res_path, full_path)| -> io::Result<(String, Vec<u8>)> {
             let file_bytes = fs::read(&full_path)?;
-            let image = image::load_from_memory(&file_bytes).map_err(|err| {
-                io::Error::other(format!("failed to decode image `{res_path}`: {err}"))
-            })?;
-            let rgba = image.to_rgba8();
-            let (width, height) = rgba.dimensions();
-            let raw_rgba = rgba.into_raw();
+            let (raw_rgba, width, height) = decode_image_rgba(&file_bytes)
+                .ok_or_else(|| io::Error::other(format!("failed to decode image `{res_path}`")))?;
             let (mut flags, packed_raw) = pack_texture_payload(&raw_rgba);
             let compressed = compress_zlib_best(&packed_raw)?;
             let payload = if compressed.len() < packed_raw.len() {
@@ -163,10 +160,49 @@ fn pack_texture_payload(raw_rgba: &[u8]) -> (u32, Vec<u8>) {
 
 #[cfg(test)]
 mod tests {
-    use super::PTEX_VERSION;
+    use super::{PTEX_VERSION, generate_static_textures};
+    use perro_graphics_assets::decode_ptex;
+    use std::{
+        fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     #[test]
     fn ptex_current_version_is_v1() {
         assert_eq!(PTEX_VERSION, 1);
+    }
+
+    #[test]
+    fn generate_static_textures_bakes_svg_to_ptex() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "perro_static_svg_texture_{}_{}",
+            std::process::id(),
+            unique
+        ));
+        fs::create_dir_all(root.join("res")).expect("create res");
+        fs::write(
+            root.join("res").join("icon.svg"),
+            br#"<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="red"/></svg>"#,
+        )
+        .expect("write svg");
+
+        generate_static_textures(&root).expect("generate textures");
+        let ptex = fs::read(
+            root.join(".perro")
+                .join("project")
+                .join("embedded")
+                .join("textures")
+                .join("texture_0.ptex"),
+        )
+        .expect("read ptex");
+        let (rgba, width, height) = decode_ptex(&ptex).expect("decode ptex");
+        assert_eq!((width, height), (2, 2));
+        assert_eq!(rgba.len(), 2 * 2 * 4);
+
+        let _ = fs::remove_dir_all(root);
     }
 }
