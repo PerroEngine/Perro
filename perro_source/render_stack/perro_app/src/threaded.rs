@@ -28,7 +28,7 @@ use winit::{
 };
 
 use crate::input::{GamepadInput, JoyConInput};
-use crate::winit_runner::image_helpers::load_image_size;
+use crate::winit_runner::image_helpers::load_image_sizes;
 
 const MIN_FRAME_RATE_CAP_FPS: f32 = 1.0;
 const MAX_FRAME_RATE_CAP_FPS: f32 = 1000.0;
@@ -1161,6 +1161,7 @@ pub struct ThreadedStartupSplash {
     pub source: Option<String>,
     pub source_hash: Option<u64>,
     pub image_size: Option<(u32, u32)>,
+    pub texture_size: Option<(u32, u32)>,
     pub virtual_size: [u32; 2],
 }
 
@@ -1179,13 +1180,14 @@ impl ThreadedStartupSplash {
                 source_hash = project.config.icon_hash;
             }
         }
-        let image_size = source
+        let image_sizes = source
             .as_deref()
-            .and_then(|s| load_image_size(project, s, source_hash));
+            .and_then(|s| load_image_sizes(project, s, source_hash));
         Self {
             source,
             source_hash,
-            image_size,
+            image_size: image_sizes.map(|sizes| sizes.display),
+            texture_size: image_sizes.map(|sizes| sizes.texture),
             virtual_size: [
                 project.config.virtual_width.max(1),
                 project.config.virtual_height.max(1),
@@ -1277,6 +1279,7 @@ impl ThreadedStartupSplashState {
         }
         if self.config.source.is_some() {
             let (image_w, image_h) = self.config.image_size.unwrap_or((512, 512));
+            let (texture_w, texture_h) = self.config.texture_size.unwrap_or((image_w, image_h));
             let scale = ((virtual_width * 0.44) / image_w as f32)
                 .min((virtual_height * 0.34) / image_h as f32)
                 .max(0.001);
@@ -1288,7 +1291,7 @@ impl ThreadedStartupSplashState {
                     tint: [1.0, 1.0, 1.0, alpha].into(),
                     z_index: 951,
                     uv_min: [0.0, 0.0],
-                    uv_max: [image_w as f32, image_h as f32],
+                    uv_max: [texture_w as f32, texture_h as f32],
                     size: [image_w as f32, image_h as f32],
                 },
             }));

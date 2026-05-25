@@ -2,7 +2,7 @@
 
 use crate::App;
 #[cfg(not(target_arch = "wasm32"))]
-use image_helpers::load_image_size;
+use image_helpers::load_image_sizes;
 #[cfg(not(target_arch = "wasm32"))]
 use image_helpers::load_project_window_icon;
 use perro_graphics::GraphicsBackend;
@@ -109,6 +109,7 @@ struct StartupSplashState {
     source: Option<String>,
     source_hash: Option<u64>,
     image_size: Option<(u32, u32)>,
+    texture_size: Option<(u32, u32)>,
     texture_requested: bool,
     texture_id: Option<TextureID>,
     ready_streak: u32,
@@ -123,7 +124,7 @@ impl StartupSplashState {
         #[cfg(target_arch = "wasm32")]
         let _ = project;
         #[cfg(target_arch = "wasm32")]
-        let splash = None::<(String, Option<u64>, Option<(u32, u32)>)>;
+        let splash = None::<(String, Option<u64>, Option<(u32, u32)>, Option<(u32, u32)>)>;
         #[cfg(not(target_arch = "wasm32"))]
         let splash = {
             let mut source = None::<String>;
@@ -141,24 +142,47 @@ impl StartupSplashState {
                     }
                 }
             }
-            let image_size = project.and_then(|p| {
+            let image_sizes = project.and_then(|p| {
                 source
                     .as_deref()
-                    .and_then(|s| load_image_size(p, s, source_hash))
+                    .and_then(|s| load_image_sizes(p, s, source_hash))
             });
-            source.map(|source| (source, source_hash, image_size))
+            source.map(|source| {
+                (
+                    source,
+                    source_hash,
+                    image_sizes.map(|sizes| sizes.display),
+                    image_sizes.map(|sizes| sizes.texture),
+                )
+            })
         };
-        let (active, source, source_hash, image_size, fade_started_at, first_frame_captured) =
-            if let Some((source, source_hash, image_size)) = splash {
-                (true, Some(source), source_hash, image_size, None, false)
-            } else {
-                (false, None, None, None, Some(now), true)
-            };
+        let (
+            active,
+            source,
+            source_hash,
+            image_size,
+            texture_size,
+            fade_started_at,
+            first_frame_captured,
+        ) = if let Some((source, source_hash, image_size, texture_size)) = splash {
+            (
+                true,
+                Some(source),
+                source_hash,
+                image_size,
+                texture_size,
+                None,
+                false,
+            )
+        } else {
+            (false, None, None, None, None, Some(now), true)
+        };
         Self {
             active,
             source,
             source_hash,
             image_size,
+            texture_size,
             texture_requested: false,
             texture_id: None,
             ready_streak: 0,
@@ -1349,6 +1373,10 @@ impl<B: GraphicsBackend> RunnerState<B> {
             return commands;
         };
         let (image_w, image_h) = self.startup_splash.image_size.unwrap_or((512, 512));
+        let (texture_w, texture_h) = self
+            .startup_splash
+            .texture_size
+            .unwrap_or((image_w, image_h));
         let max_w = virtual_width * STARTUP_SPLASH_MAX_WIDTH_FRAC;
         let max_h = virtual_height * STARTUP_SPLASH_MAX_HEIGHT_FRAC;
         let scale = (max_w / image_w as f32)
@@ -1364,7 +1392,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 tint: [1.0, 1.0, 1.0, alpha].into(),
                 z_index: STARTUP_SPLASH_IMAGE_Z,
                 uv_min: [0.0, 0.0],
-                uv_max: [image_w as f32, image_h as f32],
+                uv_max: [texture_w as f32, texture_h as f32],
                 size: [image_w as f32, image_h as f32],
             },
         }));

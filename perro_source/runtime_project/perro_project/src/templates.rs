@@ -511,6 +511,7 @@ fn embed_windows_icon() -> Result<(), String> {
             image::open(source)
                 .map_err(|e| format!("failed to decode icon image `{}`: {e}", source.display()))?
         };
+        image = trim_icon_alpha(image);
         let (w, h) = (image.width(), image.height());
         if w > 256 || h > 256 {
             image = image.resize(256, 256, image::imageops::FilterType::Lanczos3);
@@ -548,13 +549,52 @@ fn embed_windows_icon() -> Result<(), String> {
         Ok(image::DynamicImage::ImageRgba8(image))
     }
 
+    fn trim_icon_alpha(image: image::DynamicImage) -> image::DynamicImage {
+        let rgba = image.to_rgba8();
+        let (width, height) = rgba.dimensions();
+        let mut min_x = width;
+        let mut min_y = height;
+        let mut max_x = 0;
+        let mut max_y = 0;
+        let mut found = false;
+
+        for (x, y, pixel) in rgba.enumerate_pixels() {
+            if pixel[3] == 0 {
+                continue;
+            }
+            min_x = min_x.min(x);
+            min_y = min_y.min(y);
+            max_x = max_x.max(x);
+            max_y = max_y.max(y);
+            found = true;
+        }
+
+        if !found {
+            return image::DynamicImage::ImageRgba8(rgba);
+        }
+        if min_x == 0 && min_y == 0 && max_x + 1 == width && max_y + 1 == height {
+            return image::DynamicImage::ImageRgba8(rgba);
+        }
+
+        let trim_width = max_x - min_x + 1;
+        let trim_height = max_y - min_y + 1;
+        image::DynamicImage::ImageRgba8(
+            image::imageops::crop_imm(&rgba, min_x, min_y, trim_width, trim_height).to_image(),
+        )
+    }
+
     fn svg_icon_target_size(bytes: &[u8], tree_width: f32, tree_height: f32) -> (u32, u32) {
-        svg_declared_size(bytes).unwrap_or_else(|| {
+        const RASTER_SCALE: u32 = 4;
+        let (width, height) = svg_declared_size(bytes).unwrap_or_else(|| {
             (
                 tree_width.round().clamp(1.0, 256.0) as u32,
                 tree_height.round().clamp(1.0, 256.0) as u32,
             )
-        })
+        });
+        (
+            width.saturating_mul(RASTER_SCALE).max(1),
+            height.saturating_mul(RASTER_SCALE).max(1),
+        )
     }
 
     fn svg_declared_size(bytes: &[u8]) -> Option<(u32, u32)> {

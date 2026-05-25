@@ -5,6 +5,9 @@ use perro_asset_formats::ptex::{
 };
 use perro_io::{decompress_zlib, load_asset};
 
+const SVG_RASTER_SCALE: u32 = 4;
+const SVG_MAX_RASTER_DIM: u32 = 8192;
+
 pub fn load_texture_rgba(source: &str) -> Option<(Vec<u8>, u32, u32)> {
     let (path, fragment) = split_source_fragment(source);
     if (path.ends_with(".glb") || path.ends_with(".gltf"))
@@ -48,6 +51,13 @@ pub fn decode_image_size(bytes: &[u8]) -> Option<(u32, u32)> {
     Some((image.width().max(1), image.height().max(1)))
 }
 
+pub fn decode_image_logical_size(bytes: &[u8]) -> Option<(u32, u32)> {
+    if looks_like_svg(bytes) {
+        return svg_logical_size(bytes);
+    }
+    decode_image_size(bytes)
+}
+
 fn looks_like_svg(bytes: &[u8]) -> bool {
     let Ok(src) = std::str::from_utf8(bytes.get(..bytes.len().min(512)).unwrap_or(bytes)) else {
         return false;
@@ -87,6 +97,29 @@ fn decode_svg_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
 }
 
 fn svg_target_size(bytes: &[u8]) -> Option<(u32, u32)> {
+    let (width, height) = svg_logical_size(bytes)?;
+    Some(scaled_svg_raster_size(width, height))
+}
+
+fn scaled_svg_raster_size(width: u32, height: u32) -> (u32, u32) {
+    let scaled_width = (width as u64)
+        .saturating_mul(SVG_RASTER_SCALE as u64)
+        .max(1);
+    let scaled_height = (height as u64)
+        .saturating_mul(SVG_RASTER_SCALE as u64)
+        .max(1);
+    let max_dim = scaled_width.max(scaled_height);
+    if max_dim <= SVG_MAX_RASTER_DIM as u64 {
+        return (scaled_width as u32, scaled_height as u32);
+    }
+    let ratio = SVG_MAX_RASTER_DIM as f64 / max_dim as f64;
+    (
+        ((scaled_width as f64 * ratio).round() as u32).max(1),
+        ((scaled_height as f64 * ratio).round() as u32).max(1),
+    )
+}
+
+fn svg_logical_size(bytes: &[u8]) -> Option<(u32, u32)> {
     let src = std::str::from_utf8(bytes).ok()?;
     let tag = svg_start_tag(src)?;
     if let (Some(width), Some(height)) = (
@@ -289,29 +322,39 @@ fn parse_fragment_index(fragment: Option<&str>, key: &str) -> Option<u32> {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_image_rgba, decode_image_size};
+    use super::{decode_image_logical_size, decode_image_rgba, decode_image_size};
 
     #[test]
     fn decode_image_rgba_supports_svg_with_intrinsic_size() {
         let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="2" height="3"><rect width="2" height="3" fill="red"/></svg>"#;
         let (rgba, width, height) = decode_image_rgba(svg).expect("decode svg");
-        assert_eq!((width, height), (2, 3));
-        assert_eq!(rgba.len(), 2 * 3 * 4);
-        assert_eq!(decode_image_size(svg), Some((2, 3)));
+        assert_eq!((width, height), (8, 12));
+        assert_eq!(rgba.len(), 8 * 12 * 4);
+        assert_eq!(decode_image_size(svg), Some((8, 12)));
+        assert_eq!(decode_image_logical_size(svg), Some((2, 3)));
     }
 
     #[test]
     fn decode_image_rgba_supports_svg_viewbox_and_fallback_size() {
         let viewbox = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 5"><rect width="4" height="5" fill="red"/></svg>"#;
         let (_, width, height) = decode_image_rgba(viewbox).expect("decode viewbox svg");
-        assert_eq!((width, height), (4, 5));
+        assert_eq!((width, height), (16, 20));
 
         let percent = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 6 7"><rect width="6" height="7" fill="red"/></svg>"#;
         let (_, width, height) = decode_image_rgba(percent).expect("decode percent svg");
-        assert_eq!((width, height), (6, 7));
+        assert_eq!((width, height), (24, 28));
 
         let fallback = br#"<svg xmlns="http://www.w3.org/2000/svg"><rect width="4" height="5" fill="red"/></svg>"#;
         let (_, width, height) = decode_image_rgba(fallback).expect("decode fallback svg");
-        assert_eq!((width, height), (256, 256));
+        assert_eq!((width, height), (1024, 1024));
+    }
+
+    #[test]
+    fn decode_image_rgba_caps_large_svg_raster_size() {
+        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="2593" height="100"><rect width="2593" height="100" fill="red"/></svg>"#;
+        let (_, width, height) = decode_image_rgba(svg).expect("decode large svg");
+        assert_eq!((width, height), (8192, 316));
+        assert_eq!(decode_image_size(svg), Some((8192, 316)));
+        assert_eq!(decode_image_logical_size(svg), Some((2593, 100)));
     }
 }

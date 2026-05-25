@@ -36,6 +36,7 @@ fn startup_splash_blocks_input_only_until_first_frame_capture() {
         source: None,
         source_hash: None,
         image_size: None,
+        texture_size: None,
         texture_requested: false,
         texture_id: None,
         ready_streak: 0,
