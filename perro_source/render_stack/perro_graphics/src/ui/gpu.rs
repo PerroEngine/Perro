@@ -1,8 +1,13 @@
-use crate::{backend::StaticTextureLookup, resources::ResourceStore};
+use crate::{
+    backend::StaticTextureLookup,
+    resources::ResourceStore,
+    texture_mips::{build_rgba_levels_for_filter, sampler_descriptor, write_rgba_mip_chain},
+};
 use ahash::AHashMap;
 use bytemuck::{Pod, Zeroable};
 use epaint::{ClippedPrimitive, ImageData, Primitive, TextureId, textures::TexturesDelta};
 use perro_ids::TextureID;
+use perro_structs::TextureFilterMode;
 use std::borrow::Cow;
 
 #[path = "gpu/helpers.rs"]
@@ -65,6 +70,7 @@ pub struct GpuUi {
     texture_bind_group_layout: wgpu::BindGroupLayout,
     composite_bind_group_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
+    texture_filter: TextureFilterMode,
     font_texture: Option<UiTextureGpu>,
     image_textures: AHashMap<TextureID, UiTextureGpu>,
     supersample_target: Option<UiSupersampleTarget>,
@@ -91,7 +97,11 @@ pub struct UiPrepareInput<'a> {
 }
 
 impl GpuUi {
-    pub fn new(device: &wgpu::Device, output_format: wgpu::TextureFormat) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        output_format: wgpu::TextureFormat,
+        texture_filter: TextureFilterMode,
+    ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("perro_ui_epaint_shader"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(UI_SHADER)),
@@ -172,16 +182,11 @@ impl GpuUi {
                     },
                 ],
             });
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("perro_ui_sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
-            ..Default::default()
-        });
+        let sampler = device.create_sampler(&sampler_descriptor(
+            "perro_ui_sampler",
+            texture_filter,
+            wgpu::AddressMode::ClampToEdge,
+        ));
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("perro_ui_pipeline_layout"),
             bind_group_layouts: &[
@@ -308,6 +313,7 @@ impl GpuUi {
             texture_bind_group_layout,
             composite_bind_group_layout,
             sampler,
+            texture_filter,
             font_texture: None,
             image_textures: AHashMap::new(),
             supersample_target: None,
@@ -706,9 +712,9 @@ impl GpuUi {
         let Some(decoded) = resources.decoded_texture_data(texture_key) else {
             return false;
         };
-        let rgba = decoded.rgba.clone();
         let width = decoded.width;
         let height = decoded.height;
+        let mips = build_rgba_levels_for_filter(&decoded.rgba, width, height, self.texture_filter);
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("perro_ui_image_texture"),
             size: wgpu::Extent3d {
@@ -716,32 +722,14 @@ impl GpuUi {
                 height,
                 depth_or_array_layers: 1,
             },
-            mip_level_count: 1,
+            mip_level_count: mips.len() as u32,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &rgba,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(width.max(1) * 4),
-                rows_per_image: Some(height.max(1)),
-            },
-            wgpu::Extent3d {
-                width: width.max(1),
-                height: height.max(1),
-                depth_or_array_layers: 1,
-            },
-        );
+        write_rgba_mip_chain(queue, &texture, &mips);
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_ui_image_bg"),

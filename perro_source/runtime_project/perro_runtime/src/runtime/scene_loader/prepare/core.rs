@@ -41,7 +41,7 @@ use perro_nodes::{
     ray_light_3d::RayLight3D,
     skeleton_2d::{BoneAttachment2D, BoneCollider2D, IKTarget2D, PhysicsBoneChain2D, Skeleton2D},
     skeleton_3d::Skeleton3D,
-    sky_3d::{Sky3D, SkyStyle},
+    sky_3d::{Sky3D, SkyCloudMode, SkyStyle},
     spot_light_3d::SpotLight3D,
     sprite_2d::{AnimatedSprite, AnimatedSprite2D, Sprite2D},
     tilemap_2d::TileMap2D,

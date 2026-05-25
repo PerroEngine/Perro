@@ -1,5 +1,117 @@
 use super::*;
 
+const SKY_SHADER_DEFAULT: &str = "DEFAULT";
+const SKY_SHADER_VOLUMETRIC: &str = "VOLUMETRIC";
+const SKY_SHADER_WISPY: &str = "WISPY";
+
+pub(super) fn normalize_sky_shader_path(path: Option<&str>) -> Option<&str> {
+    let value = path?.trim();
+    if value.is_empty()
+        || value.eq_ignore_ascii_case(SKY_SHADER_DEFAULT)
+        || value.eq_ignore_ascii_case(SKY_SHADER_VOLUMETRIC)
+        || value.eq_ignore_ascii_case(SKY_SHADER_WISPY)
+    {
+        None
+    } else {
+        Some(value)
+    }
+}
+
+pub(super) fn sky_shader_pipeline_key(sky: &perro_render_bridge::Sky3DState) -> Option<String> {
+    let whole = normalize_sky_shader_path(sky.sky_shader.as_deref());
+    let clouds = normalize_sky_shader_path(sky.cloud_shader.as_deref());
+    let sun = normalize_sky_shader_path(sky.sun_shader.as_deref());
+    let moon = normalize_sky_shader_path(sky.moon_shader.as_deref());
+    if whole.is_none() && clouds.is_none() && sun.is_none() && moon.is_none() {
+        return None;
+    }
+    if let Some(whole) = whole {
+        return Some(format!("sky={whole}"));
+    }
+    Some(format!(
+        "clouds={}|sun={}|moon={}",
+        clouds.unwrap_or(SKY_SHADER_DEFAULT),
+        sun.unwrap_or(SKY_SHADER_DEFAULT),
+        moon.unwrap_or(SKY_SHADER_DEFAULT)
+    ))
+}
+
+impl Gpu3D {
+    pub(super) fn ensure_sky_pipeline(
+        &mut self,
+        device: &wgpu::Device,
+        sky: &perro_render_bridge::Sky3DState,
+        static_shader_lookup: Option<StaticShaderLookup>,
+    ) {
+        let Some(key) = sky_shader_pipeline_key(sky) else {
+            self.active_sky_pipeline_key = None;
+            return;
+        };
+        if self.custom_sky_pipelines.contains_key(&key) {
+            self.active_sky_pipeline_key = Some(key);
+            return;
+        }
+        let Some(wgsl) = build_sky_custom_source(sky, static_shader_lookup) else {
+            self.active_sky_pipeline_key = None;
+            return;
+        };
+        let shader = create_sky_shader_module_from_source(device, wgsl);
+        let pipeline = create_sky_pipeline(
+            device,
+            &self.sky_pipeline_layout,
+            &shader,
+            self.color_format,
+            self.sample_count,
+        );
+        self.custom_sky_pipelines.insert(key.clone(), pipeline);
+        self.active_sky_pipeline_key = Some(key);
+    }
+}
+
+fn build_sky_custom_source(
+    sky: &perro_render_bridge::Sky3DState,
+    static_shader_lookup: Option<StaticShaderLookup>,
+) -> Option<String> {
+    if let Some(path) = normalize_sky_shader_path(sky.sky_shader.as_deref()) {
+        return load_shader_source(path, static_shader_lookup);
+    }
+    let moon = match normalize_sky_shader_path(sky.moon_shader.as_deref()) {
+        Some(path) => load_shader_source(path, static_shader_lookup)?,
+        None => {
+            perro_macros::include_str_stripped!("three_d/shaders/sky3d_parts/moon.wgsl").to_string()
+        }
+    };
+    let sun = match normalize_sky_shader_path(sky.sun_shader.as_deref()) {
+        Some(path) => load_shader_source(path, static_shader_lookup)?,
+        None => {
+            perro_macros::include_str_stripped!("three_d/shaders/sky3d_parts/sun.wgsl").to_string()
+        }
+    };
+    let clouds = match normalize_sky_shader_path(sky.cloud_shader.as_deref()) {
+        Some(path) => load_shader_source(path, static_shader_lookup)?,
+        None => perro_macros::include_str_stripped!("three_d/shaders/sky3d_parts/clouds.wgsl")
+            .to_string(),
+    };
+    Some(build_sky_shader_with_parts(&moon, &sun, &clouds))
+}
+
+fn load_shader_source(
+    shader_path: &str,
+    static_shader_lookup: Option<StaticShaderLookup>,
+) -> Option<String> {
+    if let Some(lookup) = static_shader_lookup {
+        let shader_hash = perro_ids::parse_hashed_source_uri(shader_path)
+            .unwrap_or_else(|| perro_ids::string_to_u64(shader_path));
+        let src = lookup(shader_hash);
+        if !src.is_empty() {
+            return Some(src.to_string());
+        }
+    }
+    let bytes = load_asset(shader_path).ok()?;
+    let src = std::str::from_utf8(&bytes).ok()?;
+    Some(src.to_string())
+}
+
 pub(super) fn build_sky_uniform(
     camera: &Camera3DState,
     lighting: &Lighting3DState,
@@ -51,7 +163,7 @@ pub(super) fn build_sky_uniform(
             sky.cloud_wind_vector[0],
             sky.cloud_wind_vector[1],
             sky.style_blend.clamp(0.0, 1.0),
-            0.0,
+            sky.cloud_mode as f32,
         ],
     })
 }

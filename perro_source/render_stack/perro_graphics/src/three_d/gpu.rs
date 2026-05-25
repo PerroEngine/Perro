@@ -6,12 +6,13 @@ use super::{
         MAX_SPOT_LIGHTS,
     },
     shaders::{
-        build_custom_material_shader_with_prelude, create_depth_prepass_shader_module_rigid,
-        create_depth_prepass_shader_module_skinned, create_frustum_cull_shader_module,
-        create_hiz_depth_copy_shader_module, create_hiz_downsample_shader_module,
-        create_hiz_occlusion_cull_shader_module, create_mesh_shader_module_rigid,
-        create_mesh_shader_module_skinned, create_multimesh_shader_module,
-        create_sky_shader_module, create_toon_shader_module_rigid,
+        build_custom_material_shader_with_prelude, build_sky_shader_with_parts,
+        create_depth_prepass_shader_module_rigid, create_depth_prepass_shader_module_skinned,
+        create_frustum_cull_shader_module, create_hiz_depth_copy_shader_module,
+        create_hiz_downsample_shader_module, create_hiz_occlusion_cull_shader_module,
+        create_mesh_shader_module_rigid, create_mesh_shader_module_skinned,
+        create_multimesh_shader_module, create_sky_shader_module,
+        create_sky_shader_module_from_source, create_toon_shader_module_rigid,
         create_toon_shader_module_skinned, create_unlit_shader_module_rigid,
         create_unlit_shader_module_skinned,
     },
@@ -37,6 +38,7 @@ use perro_render_bridge::{
     SpotLight3DState, StandardMaterial3D,
 };
 use perro_structs::BitMask;
+use perro_structs::TextureFilterMode;
 use std::{
     borrow::Cow,
     cmp::Ordering,
@@ -66,7 +68,8 @@ use skinned_path::{
     create_pipeline_skinned, create_pipeline_skinned_blend, create_shadow_depth_pipeline_skinned,
 };
 use texture_cache::{
-    CachedMaterialTexture, create_cached_material_texture, create_external_material_texture,
+    CachedMaterialTexture, CachedMaterialTextureInput, create_cached_material_texture,
+    create_external_material_texture,
 };
 
 #[path = "gpu/asset_bridge.rs"]
@@ -322,7 +325,10 @@ pub struct Gpu3D {
     sky_bgl: wgpu::BindGroupLayout,
     material_pipeline_layout: wgpu::PipelineLayout,
     rigid_material_pipeline_layout: wgpu::PipelineLayout,
+    sky_pipeline_layout: wgpu::PipelineLayout,
     sky_pipeline: wgpu::RenderPipeline,
+    custom_sky_pipelines: AHashMap<String, wgpu::RenderPipeline>,
+    active_sky_pipeline_key: Option<String>,
     pipeline_rigid_culled: wgpu::RenderPipeline,
     pipeline_rigid_double_sided: wgpu::RenderPipeline,
     pipeline_rigid_blend_culled: wgpu::RenderPipeline,
@@ -409,6 +415,7 @@ pub struct Gpu3D {
     staged_custom_params_values_scratch: Vec<f32>,
     material_fallback_texture: Option<CachedMaterialTexture>,
     material_textures: AHashMap<u32, CachedMaterialTexture>,
+    texture_filter: TextureFilterMode,
     instance_transform_buffer: wgpu::Buffer,
     instance_transform_capacity: usize,
     staged_instance_transforms: Vec<TransformInstanceGpu>,
@@ -582,6 +589,7 @@ pub struct Gpu3DConfig {
     pub meshlet_debug_view: bool,
     pub occlusion_culling: OcclusionCullingMode,
     pub indirect_first_instance_enabled: bool,
+    pub texture_filter: TextureFilterMode,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]

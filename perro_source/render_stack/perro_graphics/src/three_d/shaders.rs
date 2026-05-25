@@ -259,15 +259,35 @@ pub fn create_sky_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
 }
 
 #[inline]
-fn build_sky_shader() -> String {
+pub fn create_sky_shader_module_from_source(
+    device: &wgpu::Device,
+    source: String,
+) -> wgpu::ShaderModule {
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_sky3d_custom"),
+        source: wgpu::ShaderSource::Wgsl(source.into()),
+    })
+}
+
+#[inline]
+pub fn build_sky_shader() -> String {
+    build_sky_shader_with_parts(
+        regular::SKY3D_MOON_WGSL,
+        regular::SKY3D_SUN_WGSL,
+        regular::SKY3D_CLOUDS_WGSL,
+    )
+}
+
+#[inline]
+pub fn build_sky_shader_with_parts(moon_wgsl: &str, sun_wgsl: &str, clouds_wgsl: &str) -> String {
     let mut out = String::new();
     out.push_str(regular::SKY3D_ATMO_WGSL);
     out.push('\n');
-    out.push_str(regular::SKY3D_MOON_WGSL);
+    out.push_str(moon_wgsl);
     out.push('\n');
-    out.push_str(regular::SKY3D_SUN_WGSL);
+    out.push_str(sun_wgsl);
     out.push('\n');
-    out.push_str(regular::SKY3D_CLOUDS_WGSL);
+    out.push_str(clouds_wgsl);
     out
 }
 

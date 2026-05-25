@@ -38,7 +38,8 @@ Demo table:
 | Lights           | `res://scenes/demos/lights.scn`           | shared camera              | Ambient, point, spot, emissive markers.             | [lights.md](lights.md)                     |
 | Water            | `res://scenes/demos/water.scn`            | `water_demo.rs`     | Rigid projectiles into one water body.              | [water.md](water.md)                       |
 | Animations       | `res://scenes/demos/animations.scn`       | shared camera              | `.panim` clips on `AnimationPlayer`.                | [animations.md](animations.md)             |
-| Sky              | `res://scenes/demos/sky.scn`              | shared camera              | `Sky3D` time, clouds, sun/moon/stars.               | [sky.md](sky.md)                           |
+| Sky Volumetric   | `res://scenes/demos/sky.scn`              | shared camera              | `Sky3D` huge cloud blobs, wind, sun/moon/stars.      | [sky.md](sky.md)                           |
+| Sky Wispy        | `res://scenes/demos/sky_wispy.scn`        | shared camera              | `Sky3D` thin secondary clouds, wind, sun/moon/stars. | [sky.md](sky.md)                           |
 | Mesh Blending    | `res://scenes/demos/mesh_blending.scn`    | shared camera              | Mesh blend flags/layers/distances.                  | [mesh_blending.md](mesh_blending.md)       |
 | MultiMesh        | `res://scenes/demos/multimesh.scn`        | shared camera              | Batched mesh instances.                             | [multimesh.md](multimesh.md)               |
 | Particles        | `res://scenes/demos/particles.scn`        | shared camera              | `ParticleEmitter3D` profiles.                       | [particles.md](particles.md)               |

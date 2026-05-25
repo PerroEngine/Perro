@@ -3438,6 +3438,7 @@ name = "perro_project"
 version = "0.1.0"
 dependencies = [
  "perro_input_api",
+ "perro_structs",
  "toml 0.8.23",
 ]
 

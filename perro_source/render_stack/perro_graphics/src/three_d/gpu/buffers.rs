@@ -36,10 +36,13 @@ impl Gpu3D {
             device,
             queue,
             &self.material_texture_bgl,
-            vec![255u8, 255, 255, 255],
-            1,
-            1,
-            "__fallback__".to_string(),
+            CachedMaterialTextureInput {
+                rgba: vec![255u8, 255, 255, 255],
+                width: 1,
+                height: 1,
+                source: "__fallback__".to_string(),
+                filter: self.texture_filter,
+            },
         );
         self.material_fallback_texture = Some(cached);
     }
@@ -98,10 +101,13 @@ impl Gpu3D {
             device,
             queue,
             &self.material_texture_bgl,
-            rgba,
-            width,
-            height,
-            source,
+            CachedMaterialTextureInput {
+                rgba,
+                width,
+                height,
+                source,
+                filter: self.texture_filter,
+            },
         );
         self.material_textures.insert(slot, cached);
     }

@@ -119,6 +119,7 @@ release_meshlets = false
 meshlet_debug_view = true
 occlusion_culling = "cpu"
 particle_sim_default = "gpu"
+texture_filter = "nearest"
 "#;
 
     let parsed = parse_project_toml(toml).expect("failed to parse project.toml");
@@ -130,6 +131,10 @@ particle_sim_default = "gpu"
     assert!(parsed.meshlet_debug_view);
     assert_eq!(parsed.occlusion_culling, OcclusionCulling::Cpu);
     assert_eq!(parsed.particle_sim_default, ParticleSimDefault::GpuCompute);
+    assert_eq!(
+        parsed.texture_filter,
+        perro_structs::TextureFilterMode::Nearest
+    );
     assert_eq!(parsed.physics_gravity, -9.81);
     assert_eq!(parsed.physics_coef, 1.0);
     assert!(parsed.localization.is_none());

@@ -312,7 +312,12 @@ impl Gpu3D {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            sky_pass.set_pipeline(&self.sky_pipeline);
+            let sky_pipeline = self
+                .active_sky_pipeline_key
+                .as_ref()
+                .and_then(|key| self.custom_sky_pipelines.get(key))
+                .unwrap_or(&self.sky_pipeline);
+            sky_pass.set_pipeline(sky_pipeline);
             sky_pass.set_bind_group(0, &self.sky_bind_group, &[]);
             sky_pass.draw(0..3, 0..1);
             drop(sky_pass);

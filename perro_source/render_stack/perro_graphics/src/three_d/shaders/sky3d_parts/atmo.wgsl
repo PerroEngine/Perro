@@ -7,7 +7,7 @@ struct SkyUniform {
     params0: vec4<f32>, // cloud_size, cloud_density, cloud_variance, time_of_day
     params1: vec4<f32>, // star_size, star_scatter, star_gleam, sky_angle
     params2: vec4<f32>, // sun_size, moon_size, day_weight, cloud_time_seconds
-    wind: vec4<f32>, // x,y cloud wind, z style_blend (0 toon, 1 realistic), w reserved
+    wind: vec4<f32>, // x,y cloud wind, z style_blend (0 toon, 1 realistic), w cloud_mode
 };
 
 @group(0) @binding(0)
@@ -317,19 +317,13 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     color = mix(color, color * vec3<f32>(1.03, 1.00, 1.06), purple_night * 0.32);
 
     let cloud_density = clamp(sky.params0.y, 0.0, 1.0);
-    let clouds_cutoff = mix(0.84, 0.52, cloud_density);
+    let clouds_cutoff = mix(0.78, 0.46, cloud_density);
     let clouds_weight = 0.0;
     color = mix(color, vec3<f32>(0.0),
         clamp((0.7 - clouds_cutoff) * clouds_weight, 0.0, 1.0));
 
     // ── Horizon ───────────────────────────────────────────────
-    var horizon_amount = 0.0;
-    let horizon_blur   = 0.075;
-    if (ray.y < 0.01) {
-        horizon_amount = clamp(abs(ray.y) / horizon_blur, 0.0, 1.0);
-        var h_color = mix(color, night_col, night_t * 0.9);
-        h_color = mix(h_color, vec3<f32>(0.0),
-            (1.0 - clouds_cutoff) * clouds_weight * 0.7);
-        color = mix(color, h_color, horizon_amount);
-    }
+    let horizon_amount = 1.0 - smoothstep(-0.08, 0.12, ray.y);
+    let horizon_haze = mix(color, day_col, 0.16);
+    color = mix(color, horizon_haze, horizon_amount * 0.18);
 

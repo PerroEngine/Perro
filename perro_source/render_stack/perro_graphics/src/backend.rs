@@ -1,7 +1,8 @@
 use crate::{
     gpu::{
         DIRTY_2D, DIRTY_3D, DIRTY_ACCESSIBILITY, DIRTY_CAMERA_2D, DIRTY_CAMERA_3D, DIRTY_LIGHTS_3D,
-        DIRTY_PARTICLES_3D, DIRTY_POSTFX, DIRTY_RESOURCES, Gpu, RenderFrame, RenderGpuTiming,
+        DIRTY_PARTICLES_3D, DIRTY_POSTFX, DIRTY_RESOURCES, Gpu, GpuConfig, RenderFrame,
+        RenderGpuTiming,
     },
     resources::{DecodedTextureRgba, ResourceStore},
     three_d::particles::renderer::Particles3DRenderer,
@@ -22,6 +23,7 @@ use perro_render_bridge::{
     PointParticles3DState, PostProcessingCommand, RenderBridge, RenderCommand, RenderEvent,
     ResourceCommand, Sprite2DCommand, VisualAccessibilityCommand, Water2DState, Water3DState,
 };
+use perro_structs::TextureFilterMode;
 use perro_structs::{PostProcessSet, VisualAccessibilitySettings};
 use std::sync::Arc;
 #[cfg(target_arch = "wasm32")]
@@ -296,6 +298,7 @@ pub struct PerroGraphics {
     dev_meshlets: bool,
     meshlet_debug_view: bool,
     occlusion_culling: OcclusionCullingMode,
+    texture_filter: TextureFilterMode,
     retained_draws_cache: Vec<Draw3DInstance>,
     retained_draws_cache_revision: u64,
     retained_draw_instances_cache: u32,
@@ -571,6 +574,7 @@ impl PerroGraphics {
             dev_meshlets: false,
             meshlet_debug_view: false,
             occlusion_culling: OcclusionCullingMode::Gpu,
+            texture_filter: TextureFilterMode::LinearMipmap,
             retained_draws_cache: Vec::new(),
             retained_draws_cache_revision: u64::MAX,
             retained_draw_instances_cache: 0,
@@ -654,6 +658,11 @@ impl PerroGraphics {
 
     pub fn with_occlusion_culling(mut self, mode: OcclusionCullingMode) -> Self {
         self.occlusion_culling = mode;
+        self
+    }
+
+    pub fn with_texture_filter(mut self, mode: TextureFilterMode) -> Self {
+        self.texture_filter = mode;
         self
     }
 
@@ -1214,23 +1223,17 @@ impl GraphicsBackend for PerroGraphics {
                 }
                 let slot = Arc::new(Mutex::new(None));
                 let slot_clone = slot.clone();
-                let smoothing_samples = self.smoothing_samples;
-                let vsync_enabled = self.vsync_enabled;
-                let meshlets_enabled = self.meshlets_enabled;
-                let dev_meshlets = self.dev_meshlets;
-                let meshlet_debug_view = self.meshlet_debug_view;
-                let occlusion_culling = self.occlusion_culling;
+                let cfg = GpuConfig {
+                    smoothing_samples: self.smoothing_samples,
+                    vsync_enabled: self.vsync_enabled,
+                    meshlets_enabled: self.meshlets_enabled,
+                    dev_meshlets: self.dev_meshlets,
+                    meshlet_debug_view: self.meshlet_debug_view,
+                    occlusion_culling: self.occlusion_culling,
+                    texture_filter: self.texture_filter,
+                };
                 wasm_bindgen_futures::spawn_local(async move {
-                    let gpu = Gpu::new_async(
-                        window,
-                        smoothing_samples,
-                        vsync_enabled,
-                        meshlets_enabled,
-                        dev_meshlets,
-                        meshlet_debug_view,
-                        occlusion_culling,
-                    )
-                    .await;
+                    let gpu = Gpu::new_async(window, cfg).await;
                     if let Ok(mut pending) = slot_clone.lock() {
                         *pending = gpu;
                     }
@@ -1241,15 +1244,16 @@ impl GraphicsBackend for PerroGraphics {
             }
             #[cfg(not(target_arch = "wasm32"))]
             {
-                let mut gpu = Gpu::new(
-                    window,
-                    self.smoothing_samples,
-                    self.vsync_enabled,
-                    self.meshlets_enabled,
-                    self.dev_meshlets,
-                    self.meshlet_debug_view,
-                    self.occlusion_culling,
-                );
+                let cfg = GpuConfig {
+                    smoothing_samples: self.smoothing_samples,
+                    vsync_enabled: self.vsync_enabled,
+                    meshlets_enabled: self.meshlets_enabled,
+                    dev_meshlets: self.dev_meshlets,
+                    meshlet_debug_view: self.meshlet_debug_view,
+                    occlusion_culling: self.occlusion_culling,
+                    texture_filter: self.texture_filter,
+                };
+                let mut gpu = Gpu::new(window, cfg);
                 if let Some(gpu_ref) = gpu.as_mut() {
                     let [vw, vh] = Gpu::virtual_size();
                     self.renderer_2d.set_virtual_viewport(vw, vh);

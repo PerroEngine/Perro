@@ -15,6 +15,7 @@ const PHYSICS_BONES_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/ph
 const PHYSICS_COLLISIONS_DEMO_SCENE_PATH: &ResPath =
     res_path!("res://scenes/demos/physics_collisions.scn");
 const SKY_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/sky.scn");
+const SKY_WISPY_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/sky_wispy.scn");
 const BLEND_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/mesh_blending.scn");
 const MULTIMESH_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/multimesh.scn");
 const PARTICLES_DEMO_SCENE_PATH: &ResPath = res_path!("res://scenes/demos/particles.scn");
@@ -50,6 +51,7 @@ enum DemoKind {
     PhysicsBones,
     PhysicsCollisions,
     Sky,
+    SkyWispy,
     MeshBlending,
     MultiMesh,
     Particles,
@@ -67,6 +69,7 @@ impl DemoKind {
             DemoKind::PhysicsBones => Some(PHYSICS_BONES_DEMO_SCENE_PATH),
             DemoKind::PhysicsCollisions => Some(PHYSICS_COLLISIONS_DEMO_SCENE_PATH),
             DemoKind::Sky => Some(SKY_DEMO_SCENE_PATH),
+            DemoKind::SkyWispy => Some(SKY_WISPY_DEMO_SCENE_PATH),
             DemoKind::MeshBlending => Some(BLEND_DEMO_SCENE_PATH),
             DemoKind::MultiMesh => Some(MULTIMESH_DEMO_SCENE_PATH),
             DemoKind::Particles => Some(PARTICLES_DEMO_SCENE_PATH),
@@ -115,6 +118,7 @@ struct DemoScenesState {
     pub physics_bones: PreloadedSceneID,
     pub physics_collisions: PreloadedSceneID,
     pub sky: PreloadedSceneID,
+    pub sky_wispy: PreloadedSceneID,
     pub blend: PreloadedSceneID,
     pub multimesh: PreloadedSceneID,
     pub particles: PreloadedSceneID,
@@ -136,6 +140,7 @@ impl Default for DemoScenesState {
             physics_bones: PreloadedSceneID::nil(),
             physics_collisions: PreloadedSceneID::nil(),
             sky: PreloadedSceneID::nil(),
+            sky_wispy: PreloadedSceneID::nil(),
             blend: PreloadedSceneID::nil(),
             multimesh: PreloadedSceneID::nil(),
             particles: PreloadedSceneID::nil(),
@@ -175,7 +180,7 @@ impl Default for DemoRefsState {
             info_overlay_root: NodeID::nil(),
             active_demo_root: NodeID::nil(),
             pause_sens_label: NodeID::nil(),
-            hub_buttons: vec![NodeID::nil(); 11],
+            hub_buttons: vec![NodeID::nil(); 12],
             pause_buttons: vec![NodeID::nil(); 5],
         }
     }
@@ -282,6 +287,8 @@ lifecycle!({
         let physics_collisions = scene_preload!(ctx.run, PHYSICS_COLLISIONS_DEMO_SCENE_PATH)
             .expect("preload physics collisions demo");
         let sky = scene_preload!(ctx.run, SKY_DEMO_SCENE_PATH).expect("preload sky demo");
+        let sky_wispy =
+            scene_preload!(ctx.run, SKY_WISPY_DEMO_SCENE_PATH).expect("preload sky wispy demo");
         let blend =
             scene_preload!(ctx.run, BLEND_DEMO_SCENE_PATH).expect("preload mesh blend demo");
         let multimesh =
@@ -305,6 +312,7 @@ lifecycle!({
                 physics_bones,
                 physics_collisions,
                 sky,
+                sky_wispy,
                 blend,
                 multimesh,
                 particles,
@@ -354,6 +362,12 @@ lifecycle!({
             ctx.id,
             signal!("demo_sky_click"),
             func!("on_demo_sky_click")
+        );
+        signal_connect!(
+            ctx.run,
+            ctx.id,
+            signal!("demo_sky_wispy_click"),
+            func!("on_demo_sky_wispy_click")
         );
         signal_connect!(
             ctx.run,
@@ -482,6 +496,10 @@ methods!({
         self.queue_load_demo(ctx, DemoKind::Sky);
     }
 
+    fn on_demo_sky_wispy_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
+        self.queue_load_demo(ctx, DemoKind::SkyWispy);
+    }
+
     fn on_demo_blend_click(&self, ctx: &mut ScriptContext<'_, API>, _button: NodeID) {
         self.queue_load_demo(ctx, DemoKind::MeshBlending);
     }
@@ -546,6 +564,7 @@ methods!({
             node_var(ctx, root, "demo_btn_physics_bones"),
             node_var(ctx, root, "demo_btn_physics_collisions"),
             node_var(ctx, root, "demo_btn_sky"),
+            node_var(ctx, root, "demo_btn_sky_wispy"),
             node_var(ctx, root, "demo_btn_blend"),
             node_var(ctx, root, "demo_btn_multimesh"),
             node_var(ctx, root, "demo_btn_particles"),
@@ -1543,6 +1562,7 @@ fn active_demo_name(demo: DemoKind) -> &'static str {
         DemoKind::PhysicsBones => "physics_bones",
         DemoKind::PhysicsCollisions => "physics_collisions",
         DemoKind::Sky => "sky",
+        DemoKind::SkyWispy => "sky_wispy",
         DemoKind::MeshBlending => "mesh_blending",
         DemoKind::MultiMesh => "multimesh",
         DemoKind::Particles => "particles",

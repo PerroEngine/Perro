@@ -1,5 +1,10 @@
 //! 3D material texture decode and GPU cache allocation.
 
+use crate::texture_mips::{
+    build_rgba_levels_for_filter_owned, sampler_descriptor, write_rgba_mip_chain,
+};
+use perro_structs::TextureFilterMode;
+
 const MATERIAL_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 
 pub(super) struct CachedMaterialTexture {
@@ -10,17 +15,23 @@ pub(super) struct CachedMaterialTexture {
     pub(super) bind_group: wgpu::BindGroup,
 }
 
+pub(super) struct CachedMaterialTextureInput {
+    pub(super) rgba: Vec<u8>,
+    pub(super) width: u32,
+    pub(super) height: u32,
+    pub(super) source: String,
+    pub(super) filter: TextureFilterMode,
+}
+
 pub(super) fn create_cached_material_texture(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     layout: &wgpu::BindGroupLayout,
-    rgba: Vec<u8>,
-    width: u32,
-    height: u32,
-    source: String,
+    input: CachedMaterialTextureInput,
 ) -> CachedMaterialTexture {
-    let width = width.max(1);
-    let height = height.max(1);
+    let width = input.width.max(1);
+    let height = input.height.max(1);
+    let mips = build_rgba_levels_for_filter_owned(input.rgba, width, height, input.filter);
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("perro_material_texture"),
         size: wgpu::Extent3d {
@@ -28,49 +39,23 @@ pub(super) fn create_cached_material_texture(
             height,
             depth_or_array_layers: 1,
         },
-        mip_level_count: 1,
+        mip_level_count: mips.len() as u32,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: MATERIAL_TEXTURE_FORMAT,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING
-            | wgpu::TextureUsages::COPY_DST
-            | wgpu::TextureUsages::RENDER_ATTACHMENT,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
-    queue.write_texture(
-        wgpu::TexelCopyTextureInfo {
-            texture: &texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        &rgba,
-        wgpu::TexelCopyBufferLayout {
-            offset: 0,
-            bytes_per_row: Some(4 * width),
-            rows_per_image: Some(height),
-        },
-        wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-    );
+    write_rgba_mip_chain(queue, &texture, &mips);
     let view = texture.create_view(&wgpu::TextureViewDescriptor {
         label: Some("perro_material_texture_view"),
         ..Default::default()
     });
-    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-        label: Some("perro_material_texture_sampler"),
-        address_mode_u: wgpu::AddressMode::Repeat,
-        address_mode_v: wgpu::AddressMode::Repeat,
-        address_mode_w: wgpu::AddressMode::Repeat,
-        mag_filter: wgpu::FilterMode::Linear,
-        min_filter: wgpu::FilterMode::Linear,
-        mipmap_filter: wgpu::MipmapFilterMode::Linear,
-        anisotropy_clamp: 16,
-        ..Default::default()
-    });
+    let sampler = device.create_sampler(&sampler_descriptor(
+        "perro_material_texture_sampler",
+        input.filter,
+        wgpu::AddressMode::Repeat,
+    ));
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("perro_material_texture_bg"),
         layout,
@@ -86,7 +71,7 @@ pub(super) fn create_cached_material_texture(
         ],
     });
     CachedMaterialTexture {
-        source,
+        source: input.source,
         _texture: Some(texture),
         _view: view,
         _sampler: sampler,

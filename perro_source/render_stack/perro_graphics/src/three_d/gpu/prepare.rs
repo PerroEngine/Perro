@@ -58,6 +58,11 @@ impl Gpu3D {
         let uniform = build_scene_uniform(&camera, lighting, width, height);
         let sky_uniform = build_sky_uniform(&camera, lighting, width, height);
         self.sky_enabled = sky_uniform.is_some();
+        if let Some(sky) = lighting.sky.as_ref() {
+            self.ensure_sky_pipeline(device, sky, static_shader_lookup);
+        } else {
+            self.active_sky_pipeline_key = None;
+        }
         match sky_uniform {
             Some(sky) => {
                 let cloud_time_seconds = sky.params2[3];

@@ -156,6 +156,7 @@ pub struct StaticProjectConfig {
     pub meshlet_debug_view: bool,
     pub occlusion_culling: OcclusionCulling,
     pub particle_sim_default: ParticleSimDefault,
+    pub texture_filter: perro_structs::TextureFilterMode,
     pub audio_listener_max_distance: f32,
     pub audio_propagation_tick_hz: f32,
     pub audio_energy_cutoff: f32,
@@ -204,6 +205,7 @@ impl StaticProjectConfig {
             meshlet_debug_view: false,
             occlusion_culling: OcclusionCulling::Gpu,
             particle_sim_default: ParticleSimDefault::Cpu,
+            texture_filter: perro_structs::TextureFilterMode::LinearMipmap,
             audio_listener_max_distance: 500.0,
             audio_propagation_tick_hz: 20.0,
             audio_energy_cutoff: 0.02,
@@ -280,6 +282,11 @@ impl StaticProjectConfig {
         self
     }
 
+    pub const fn with_texture_filter(mut self, mode: perro_structs::TextureFilterMode) -> Self {
+        self.texture_filter = mode;
+        self
+    }
+
     pub const fn with_audio_config(mut self, config: AudioConfig) -> Self {
         self.audio_listener_max_distance = config.listener_max_distance;
         self.audio_propagation_tick_hz = config.propagation_tick_hz;
@@ -352,6 +359,7 @@ impl StaticProjectConfig {
             meshlet_debug_view: self.meshlet_debug_view,
             occlusion_culling: self.occlusion_culling,
             particle_sim_default: self.particle_sim_default,
+            texture_filter: self.texture_filter,
             audio: AudioConfig {
                 listener_max_distance: self.audio_listener_max_distance,
                 propagation_tick_hz: self.audio_propagation_tick_hz,
@@ -407,6 +415,7 @@ pub struct ProjectConfig {
     pub meshlet_debug_view: bool,
     pub occlusion_culling: OcclusionCulling,
     pub particle_sim_default: ParticleSimDefault,
+    pub texture_filter: perro_structs::TextureFilterMode,
     pub audio: AudioConfig,
     pub localization: Option<LocalizationConfig>,
     pub input_map: perro_input_api::InputMap,
@@ -439,6 +448,7 @@ impl ProjectConfig {
             meshlet_debug_view: false,
             occlusion_culling: OcclusionCulling::Gpu,
             particle_sim_default: ParticleSimDefault::Cpu,
+            texture_filter: perro_structs::TextureFilterMode::LinearMipmap,
             audio: AudioConfig::default(),
             localization: None,
             input_map: perro_input_api::InputMap::new(),

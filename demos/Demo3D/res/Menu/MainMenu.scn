@@ -17,6 +17,7 @@ script_vars = {
     demo_btn_physics_bones = @demo_btn_physics_bones,
     demo_btn_physics_collisions = @demo_btn_physics_collisions,
     demo_btn_sky = @demo_btn_sky,
+    demo_btn_sky_wispy = @demo_btn_sky_wispy,
     demo_btn_blend = @demo_btn_blend,
     demo_btn_multimesh = @demo_btn_multimesh,
     demo_btn_particles = @demo_btn_particles,
@@ -265,7 +266,7 @@ parent = @demo_btn_physics_collisions
 [demo_btn_sky]
 parent = @hub_menu_col_right
     [UiButton]
-        size_ratio = (1.0, 0.135)
+        size_ratio = (1.0, 0.112)
         h_align = "fill"
         click_signals = ["demo_sky_click"]
         style = $button_style
@@ -278,18 +279,42 @@ parent = @hub_menu_col_right
 parent = @demo_btn_sky
     [UiLabel]
         size_ratio = (1.0, 1.0)
-        text = "Sky3D"
-        text_size_ratio = 0.24
+        text = "Sky3D Volumetric"
+        text_size_ratio = 0.22
         color = "#FFFFFF"
         input_enabled = false
         mouse_filter = "pass"
     [/UiLabel]
 [/demo_btn_sky_label]
 
+[demo_btn_sky_wispy]
+parent = @hub_menu_col_right
+    [UiButton]
+        size_ratio = (1.0, 0.112)
+        h_align = "fill"
+        click_signals = ["demo_sky_wispy_click"]
+        style = $button_style
+        hover = $var2
+        pressed = $var1
+    [/UiButton]
+[/demo_btn_sky_wispy]
+
+[demo_btn_sky_wispy_label]
+parent = @demo_btn_sky_wispy
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Sky3D Wispy"
+        text_size_ratio = 0.22
+        color = "#FFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/demo_btn_sky_wispy_label]
+
 [demo_btn_blend]
 parent = @hub_menu_col_right
     [UiButton]
-        size_ratio = (1.0, 0.135)
+        size_ratio = (1.0, 0.112)
         h_align = "fill"
         click_signals = ["demo_blend_click"]
         style = $button_style
@@ -313,7 +338,7 @@ parent = @demo_btn_blend
 [demo_btn_multimesh]
 parent = @hub_menu_col_right
     [UiButton]
-        size_ratio = (1.0, 0.135)
+        size_ratio = (1.0, 0.112)
         h_align = "fill"
         click_signals = ["demo_multimesh_click"]
         style = $button_style
@@ -337,7 +362,7 @@ parent = @demo_btn_multimesh
 [demo_btn_particles]
 parent = @hub_menu_col_right
     [UiButton]
-        size_ratio = (1.0, 0.135)
+        size_ratio = (1.0, 0.112)
         h_align = "fill"
         click_signals = ["demo_particles_click"]
         style = $button_style
@@ -361,7 +386,7 @@ parent = @demo_btn_particles
 [demo_btn_audio]
 parent = @hub_menu_col_right
     [UiButton]
-        size_ratio = (1.0, 0.135)
+        size_ratio = (1.0, 0.112)
         h_align = "fill"
         click_signals = ["demo_audio_click"]
         style = $button_style

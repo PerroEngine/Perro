@@ -37,6 +37,7 @@ meshlet_debug_view = false
 occlusion_culling = "gpu"
 
 particle_sim_default = "gpu"
+texture_filter = "linear_mipmap"
 
 [runtime]
 frame_rate_cap = "unlimited"
@@ -213,6 +214,11 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         "particle_sim_default",
         ParticleSimDefault::Cpu,
     )?;
+    let texture_filter = parse_texture_filter_with_default(
+        graphics_table,
+        "texture_filter",
+        perro_structs::TextureFilterMode::LinearMipmap,
+    )?;
     let localization = parse_localization(localization_table)?;
     let metadata = parse_metadata(metadata_table)?;
     let steam = parse_steam(steam_table)?;
@@ -243,6 +249,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         meshlet_debug_view,
         occlusion_culling,
         particle_sim_default,
+        texture_filter,
         audio,
         localization,
         input_map: perro_input_api::InputMap::new(),
@@ -743,6 +750,30 @@ fn parse_particle_sim_default_with_default(
             "must be one of \"cpu\", \"hybrid\", \"gpu\"".to_string(),
         )),
     }
+}
+
+fn parse_texture_filter_with_default(
+    table: &toml::map::Map<String, Value>,
+    key: &'static str,
+    default: perro_structs::TextureFilterMode,
+) -> Result<perro_structs::TextureFilterMode, ProjectError> {
+    let Some(value) = table.get(key) else {
+        return Ok(default);
+    };
+    let Some(raw) = value.as_str() else {
+        return Err(ProjectError::InvalidField(
+            "graphics.texture_filter",
+            "must be one of \"nearest\", \"linear\", \"linear_mipmap\", \"anisotropic\""
+                .to_string(),
+        ));
+    };
+    perro_structs::TextureFilterMode::parse(raw).ok_or_else(|| {
+        ProjectError::InvalidField(
+            "graphics.texture_filter",
+            "must be one of \"nearest\", \"linear\", \"linear_mipmap\", \"anisotropic\""
+                .to_string(),
+        )
+    })
 }
 
 fn parse_localization(

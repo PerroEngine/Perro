@@ -25,6 +25,7 @@ use perro_render_bridge::{
     CameraStreamSourceState, CameraStreamState, Light2DState, PointParticles3DState,
     Sprite2DCommand, Water2DState, Water3DState, WaterBodySampleState, WaterSampleState,
 };
+use perro_structs::TextureFilterMode;
 use perro_structs::VisualAccessibilitySettings;
 use std::sync::{Arc, mpsc};
 use std::time::Duration;
@@ -432,8 +433,20 @@ pub struct Gpu {
     dev_meshlets: bool,
     meshlet_debug_view: bool,
     occlusion_culling: OcclusionCullingMode,
+    texture_filter: TextureFilterMode,
     indirect_first_instance_enabled: bool,
     gpu_timer: Option<GpuTimestampTimer>,
+}
+
+#[derive(Clone, Copy)]
+pub struct GpuConfig {
+    pub smoothing_samples: u32,
+    pub vsync_enabled: bool,
+    pub meshlets_enabled: bool,
+    pub dev_meshlets: bool,
+    pub meshlet_debug_view: bool,
+    pub occlusion_culling: OcclusionCullingMode,
+    pub texture_filter: TextureFilterMode,
 }
 
 struct GpuCameraStreamTarget {
@@ -651,15 +664,7 @@ impl Gpu {
         true
     }
 
-    pub async fn new_async(
-        window: Arc<Window>,
-        smoothing_samples: u32,
-        vsync_enabled: bool,
-        meshlets_enabled: bool,
-        dev_meshlets: bool,
-        meshlet_debug_view: bool,
-        occlusion_culling: OcclusionCullingMode,
-    ) -> Option<Self> {
+    pub async fn new_async(window: Arc<Window>, cfg: GpuConfig) -> Option<Self> {
         let instance = wgpu::Instance::default();
         let surface = instance.create_surface(window.clone()).ok()?;
 
@@ -713,8 +718,8 @@ impl Gpu {
             .find(|f| f.is_srgb())
             .unwrap_or(caps.formats[0]);
         let render_format = linear_render_format(surface_format);
-        let present_mode = choose_present_mode(&caps.present_modes, vsync_enabled);
-        let max_frame_latency = choose_max_frame_latency(vsync_enabled);
+        let present_mode = choose_present_mode(&caps.present_modes, cfg.vsync_enabled);
+        let max_frame_latency = choose_max_frame_latency(cfg.vsync_enabled);
         let alpha_mode = if caps.alpha_modes.contains(&wgpu::CompositeAlphaMode::Opaque) {
             wgpu::CompositeAlphaMode::Opaque
         } else {
@@ -735,19 +740,19 @@ impl Gpu {
             desired_maximum_frame_latency: max_frame_latency,
         };
         eprintln!(
-            "[perro][gfx] vsync=({vsync_enabled}) present_mode=({present_mode:?}) max_frame_latency=({max_frame_latency}) present_caps=({:?})",
-            caps.present_modes
+            "[perro][gfx] vsync=({}) present_mode=({present_mode:?}) max_frame_latency=({max_frame_latency}) present_caps=({:?})",
+            cfg.vsync_enabled, caps.present_modes
         );
         surface.configure(&device, &config);
 
         let max_supported_sample_count = max_supported_msaa_sample_count(&adapter, render_format);
         let sample_count = clamp_supported_sample_count(
-            normalize_sample_count(smoothing_samples),
+            normalize_sample_count(cfg.smoothing_samples),
             max_supported_sample_count,
         );
-        let two_d = Gpu2D::new(&device, render_format, sample_count);
-        let late_overlay_2d = Gpu2D::new(&device, surface_format, 1);
-        let ui = Some(GpuUi::new(&device, surface_format));
+        let two_d = Gpu2D::new(&device, render_format, sample_count, cfg.texture_filter);
+        let late_overlay_2d = Gpu2D::new(&device, surface_format, 1, cfg.texture_filter);
+        let ui = Some(GpuUi::new(&device, surface_format, cfg.texture_filter));
         let three_d = Gpu3D::new(
             &device,
             &queue,
@@ -756,15 +761,16 @@ impl Gpu {
                 sample_count,
                 width,
                 height,
-                meshlets_enabled,
-                dev_meshlets,
-                meshlet_debug_view,
-                occlusion_culling,
+                meshlets_enabled: cfg.meshlets_enabled,
+                dev_meshlets: cfg.dev_meshlets,
+                meshlet_debug_view: cfg.meshlet_debug_view,
+                occlusion_culling: cfg.occlusion_culling,
                 indirect_first_instance_enabled,
+                texture_filter: cfg.texture_filter,
             },
         );
         let point_particles_3d = GpuPointParticles3D::new(&device, render_format, sample_count);
-        let camera_stream_2d = Gpu2D::new(&device, render_format, 1);
+        let camera_stream_2d = Gpu2D::new(&device, render_format, 1, cfg.texture_filter);
         let water = Some(GpuWater::new(
             &device,
             render_format,
@@ -821,34 +827,19 @@ impl Gpu {
             last_prepare_3d_draws_revision: u64::MAX,
             last_prepare_3d_width: width,
             last_prepare_3d_height: height,
-            meshlets_enabled,
-            dev_meshlets,
-            meshlet_debug_view,
-            occlusion_culling,
+            meshlets_enabled: cfg.meshlets_enabled,
+            dev_meshlets: cfg.dev_meshlets,
+            meshlet_debug_view: cfg.meshlet_debug_view,
+            occlusion_culling: cfg.occlusion_culling,
+            texture_filter: cfg.texture_filter,
             indirect_first_instance_enabled,
             gpu_timer,
         })
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn new(
-        window: Arc<Window>,
-        smoothing_samples: u32,
-        vsync_enabled: bool,
-        meshlets_enabled: bool,
-        dev_meshlets: bool,
-        meshlet_debug_view: bool,
-        occlusion_culling: OcclusionCullingMode,
-    ) -> Option<Self> {
-        pollster::block_on(Self::new_async(
-            window,
-            smoothing_samples,
-            vsync_enabled,
-            meshlets_enabled,
-            dev_meshlets,
-            meshlet_debug_view,
-            occlusion_culling,
-        ))
+    pub fn new(window: Arc<Window>, cfg: GpuConfig) -> Option<Self> {
+        pollster::block_on(Self::new_async(window, cfg))
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -1024,6 +1015,7 @@ impl Gpu {
                 &self.device,
                 self.render_format,
                 self.sample_count,
+                self.texture_filter,
             ));
         }
         for (node, stream) in camera_streams {
@@ -1057,7 +1049,11 @@ impl Gpu {
                     );
                 }
                 if self.ui.is_none() {
-                    self.ui = Some(GpuUi::new(&self.device, self.config.format));
+                    self.ui = Some(GpuUi::new(
+                        &self.device,
+                        self.config.format,
+                        self.texture_filter,
+                    ));
                 }
                 if let Some(ui) = self.ui.as_mut() {
                     ui.upsert_external_image_texture(&self.device, texture_id, view_ui, resolution);
@@ -1075,6 +1071,7 @@ impl Gpu {
                     &self.device,
                     self.render_format,
                     self.sample_count,
+                    self.texture_filter,
                 ));
             }
             if let Some(two_d) = self.two_d.as_mut() {
@@ -1116,6 +1113,7 @@ impl Gpu {
                         meshlet_debug_view: self.meshlet_debug_view,
                         occlusion_culling: self.occlusion_culling,
                         indirect_first_instance_enabled: self.indirect_first_instance_enabled,
+                        texture_filter: self.texture_filter,
                     },
                 ));
             }
@@ -1185,6 +1183,7 @@ impl Gpu {
                         meshlet_debug_view: self.meshlet_debug_view,
                         occlusion_culling: self.occlusion_culling,
                         indirect_first_instance_enabled: self.indirect_first_instance_enabled,
+                        texture_filter: self.texture_filter,
                     },
                 ));
             }
@@ -1454,7 +1453,12 @@ impl Gpu {
                     drop(_clear_depth);
                 }
                 if self.camera_stream_2d.is_none() {
-                    self.camera_stream_2d = Some(Gpu2D::new(&self.device, self.render_format, 1));
+                    self.camera_stream_2d = Some(Gpu2D::new(
+                        &self.device,
+                        self.render_format,
+                        1,
+                        self.texture_filter,
+                    ));
                 }
                 if let Some(stream_2d) = self.camera_stream_2d.as_mut() {
                     let camera_position = camera.position;
@@ -1504,6 +1508,7 @@ impl Gpu {
                                     occlusion_culling: self.occlusion_culling,
                                     indirect_first_instance_enabled: self
                                         .indirect_first_instance_enabled,
+                                    texture_filter: self.texture_filter,
                                 },
                             ));
                         }
@@ -1569,6 +1574,7 @@ impl Gpu {
                             meshlet_debug_view: self.meshlet_debug_view,
                             occlusion_culling: self.occlusion_culling,
                             indirect_first_instance_enabled: self.indirect_first_instance_enabled,
+                            texture_filter: self.texture_filter,
                         },
                     ));
                 }
@@ -1932,7 +1938,11 @@ impl Gpu {
             }
         } else {
             if self.ui.is_none() {
-                self.ui = Some(GpuUi::new(&self.device, self.config.format));
+                self.ui = Some(GpuUi::new(
+                    &self.device,
+                    self.config.format,
+                    self.texture_filter,
+                ));
             }
             if let (Some(ui), Some(output_view)) = (self.ui.as_mut(), swap_view.as_ref()) {
                 let viewport = [self.config.width.max(1), self.config.height.max(1)];
@@ -1957,7 +1967,12 @@ impl Gpu {
             || !late_overlay_point_lights_2d.is_empty()
         {
             if self.late_overlay_2d.is_none() {
-                self.late_overlay_2d = Some(Gpu2D::new(&self.device, self.config.format, 1));
+                self.late_overlay_2d = Some(Gpu2D::new(
+                    &self.device,
+                    self.config.format,
+                    1,
+                    self.texture_filter,
+                ));
             }
             if let (Some(late_overlay_2d), Some(output_view)) =
                 (self.late_overlay_2d.as_mut(), swap_view.as_ref())

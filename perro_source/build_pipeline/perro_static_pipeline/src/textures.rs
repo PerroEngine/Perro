@@ -200,8 +200,8 @@ mod tests {
         )
         .expect("read ptex");
         let (rgba, width, height) = decode_ptex(&ptex).expect("decode ptex");
-        assert_eq!((width, height), (2, 2));
-        assert_eq!(rgba.len(), 2 * 2 * 4);
+        assert_eq!((width, height), (8, 8));
+        assert_eq!(rgba.len(), 8 * 8 * 4);
 
         let _ = fs::remove_dir_all(root);
     }

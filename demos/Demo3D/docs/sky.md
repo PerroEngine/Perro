@@ -1,8 +1,9 @@
 # Sky Demo
 
-Scene:
+Scenes:
 
 - `res://scenes/demos/sky.scn`
+- `res://scenes/demos/sky_wispy.scn`
 
 Shows:
 
@@ -10,12 +11,15 @@ Shows:
 - day/evening/night gradients
 - sun and moon sizes
 - cloud settings
+- cloud shader mode (`VOLUMETRIC` or `WISPY`)
+- `DEFAULT` or custom cloud/sun/moon shaders
 - wind vector
 - star controls
 - scene light matching sky
 
 Why scene works this way:
 
+- Each scene has one `Sky3D` mode.
 - `Sky3D` sits at root so it affects whole scene.
 - Terrain and marker meshes give horizon/depth reference.
 - Time is unpaused with low scale so sky changes slowly.

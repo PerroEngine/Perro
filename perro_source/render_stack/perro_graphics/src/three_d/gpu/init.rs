@@ -26,6 +26,7 @@ impl Gpu3D {
             meshlet_debug_view,
             occlusion_culling,
             indirect_first_instance_enabled,
+            texture_filter,
         } = config;
         let (gpu_occlusion_enabled, cpu_occlusion_enabled) = occlusion_flags(occlusion_culling);
         let shadow_caster_debug_view = std::env::var_os("PERRO_DEBUG_SHADOW_CASTERS").is_some()
@@ -1266,7 +1267,10 @@ impl Gpu3D {
             sky_bgl,
             material_pipeline_layout: pipeline_layout,
             rigid_material_pipeline_layout: rigid_pipeline_layout,
+            sky_pipeline_layout,
             sky_pipeline,
+            custom_sky_pipelines: AHashMap::new(),
+            active_sky_pipeline_key: None,
             pipeline_rigid_culled,
             pipeline_rigid_double_sided,
             pipeline_rigid_blend_culled,
@@ -1349,6 +1353,7 @@ impl Gpu3D {
             staged_custom_params_values_scratch: Vec::new(),
             material_fallback_texture: None,
             material_textures: AHashMap::new(),
+            texture_filter,
             instance_transform_buffer,
             instance_transform_capacity,
             staged_instance_transforms: Vec::new(),

@@ -147,6 +147,7 @@ fn graphics_from_project_config(
         .with_meshlets_enabled(config.meshlets)
         .with_dev_meshlets(!release_mode && config.dev_meshlets)
         .with_meshlet_debug_view(config.meshlet_debug_view)
+        .with_texture_filter(config.texture_filter)
         .with_occlusion_culling(match occlusion_culling {
             OcclusionCulling::Cpu => OcclusionCullingMode::Cpu,
             OcclusionCulling::Gpu => OcclusionCullingMode::Gpu,

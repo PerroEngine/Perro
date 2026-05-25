@@ -269,7 +269,24 @@ fn apply_sky_3d_fields(node: &mut Sky3D, fields: &[SceneObjectField]) {
             }
             Some(NodeField::Sky3D(Sky3DField::SkyShader)) => {
                 if let Some(v) = as_str(value) {
-                    node.sky_shader = Some(Cow::Owned(v.to_string()));
+                    node.sky_shader = sky_shader_path(v);
+                }
+            }
+            Some(NodeField::Sky3D(Sky3DField::CloudShader)) => {
+                if let Some(v) = as_str(value) {
+                    let (mode, shader) = sky_cloud_shader(v);
+                    node.clouds.mode = mode;
+                    node.clouds.shader = shader;
+                }
+            }
+            Some(NodeField::Sky3D(Sky3DField::SunShader)) => {
+                if let Some(v) = as_str(value) {
+                    node.sun.shader = sky_shader_path(v);
+                }
+            }
+            Some(NodeField::Sky3D(Sky3DField::MoonShader)) => {
+                if let Some(v) = as_str(value) {
+                    node.moon.shader = sky_shader_path(v);
                 }
             }
             Some(NodeField::Sky3D(Sky3DField::Active)) => {
@@ -285,6 +302,25 @@ fn apply_sky_3d_fields(node: &mut Sky3D, fields: &[SceneObjectField]) {
             _ => {}
         }
     });
+}
+
+fn sky_cloud_shader(value: &str) -> (SkyCloudMode, Option<Cow<'static, str>>) {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "" | "default" | "volumetric" | "volume" => (SkyCloudMode::Volumetric, None),
+        "wispy" | "wisp" | "secondary" | "thin" | "streak" | "streaks" => {
+            (SkyCloudMode::Wispy, None)
+        }
+        _ => (SkyCloudMode::Volumetric, sky_shader_path(value)),
+    }
+}
+
+fn sky_shader_path(value: &str) -> Option<Cow<'static, str>> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("DEFAULT") {
+        None
+    } else {
+        Some(Cow::Owned(trimmed.to_string()))
+    }
 }
 
 fn apply_spot_light_3d_fields(node: &mut SpotLight3D, fields: &[SceneObjectField]) {

@@ -438,6 +438,9 @@ impl Gpu3D {
             color_format,
             sample_count,
         );
+        self.sky_pipeline_layout = sky_pipeline_layout;
+        self.custom_sky_pipelines.clear();
+        self.active_sky_pipeline_key = None;
         self.material_pipeline_layout = pipeline_layout;
         self.rigid_material_pipeline_layout = rigid_pipeline_layout;
         self.color_format = color_format;

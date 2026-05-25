@@ -286,7 +286,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     color = mix(color, color * vec3<f32>(1.03, 1.00, 1.06), purple_night * 0.32);
 
     let cloud_density = clamp(sky.params0.y, 0.0, 1.0);
-    let clouds_cutoff = mix(0.84, 0.52, cloud_density);
+    let clouds_cutoff = mix(0.78, 0.46, cloud_density);
     let clouds_weight = 0.0;
     color = mix(color, vec3<f32>(0.0),
         clamp((0.7 - clouds_cutoff) * clouds_weight, 0.0, 1.0));

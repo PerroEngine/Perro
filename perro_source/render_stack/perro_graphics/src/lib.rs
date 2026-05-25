@@ -2,6 +2,7 @@ mod backend;
 mod gpu;
 mod postprocess;
 mod resources;
+mod texture_mips;
 pub mod three_d;
 pub mod two_d;
 pub mod ui;

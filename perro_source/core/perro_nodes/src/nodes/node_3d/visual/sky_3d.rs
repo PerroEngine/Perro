@@ -17,21 +17,32 @@ impl SkyStyle {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum SkyCloudMode {
+    #[default]
+    Volumetric,
+    Wispy,
+}
+
 #[derive(Clone, Debug)]
 pub struct SkyClouds {
     pub size: f32,
     pub density: f32,
     pub variance: f32,
     pub wind_vector: [f32; 2],
+    pub mode: SkyCloudMode,
+    pub shader: Option<Cow<'static, str>>,
 }
 
 impl SkyClouds {
     pub const fn new() -> Self {
         Self {
             size: 0.72,
-            density: 0.58,
-            variance: 0.52,
+            density: 0.42,
+            variance: 0.38,
             wind_vector: [0.06, 0.015],
+            mode: SkyCloudMode::Volumetric,
+            shader: None,
         }
     }
 }
@@ -68,11 +79,15 @@ impl Default for SkyStars {
 #[derive(Clone, Debug)]
 pub struct SkySun {
     pub size: f32,
+    pub shader: Option<Cow<'static, str>>,
 }
 
 impl SkySun {
     pub const fn new() -> Self {
-        Self { size: 1.0 }
+        Self {
+            size: 1.0,
+            shader: None,
+        }
     }
 }
 
@@ -85,11 +100,15 @@ impl Default for SkySun {
 #[derive(Clone, Debug)]
 pub struct SkyMoon {
     pub size: f32,
+    pub shader: Option<Cow<'static, str>>,
 }
 
 impl SkyMoon {
     pub const fn new() -> Self {
-        Self { size: 0.6 }
+        Self {
+            size: 0.6,
+            shader: None,
+        }
     }
 }
 

@@ -29,6 +29,7 @@ Local reference:
 - [Docs Index](docs/index.md)
 - [WASM / Web Target](docs/WASM.md)
 - [ResPath](docs/resources/respath.md)
+- [`project.toml`](docs/project/project_toml.md)
 - [Feature Matrix](docs/project/feature_matrix.md)
 - [Performance + Flexibility Philosophy](docs/project/performance_philosophy.md)
 - [Perro CLI](docs/tools/perro_cli.md)

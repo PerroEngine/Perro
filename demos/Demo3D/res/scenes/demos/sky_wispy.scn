@@ -47,11 +47,11 @@ parent = @SkyDemo
             paused = false,
             scale = 0.08
         }
-        cloud_size = 0.74
-        cloud_density = 0.86
-        cloud_variance = 0.16
+        cloud_size = 0.55
+        cloud_density = 0.78
+        cloud_variance = 0.55
         wind_vector = (0.16, 0.12)
-        cloud_shader = "VOLUMETRIC"
+        cloud_shader = "WISPY"
         star_size = 1.0
         star_scatter = 0.28
         star_gleam = 0.45

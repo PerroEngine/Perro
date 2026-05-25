@@ -4,10 +4,12 @@ use super::shaders::{
 };
 use crate::backend::StaticTextureLookup;
 use crate::resources::ResourceStore;
+use crate::texture_mips::{build_rgba_levels_for_filter, sampler_descriptor, write_rgba_mip_chain};
 use ahash::AHashMap;
 use bytemuck::{Pod, Zeroable};
 use perro_ids::{NodeID, TextureID};
 use perro_render_bridge::{Light2DState, PointParticles2DState, Sprite2DCommand};
+use perro_structs::TextureFilterMode;
 use wgpu::util::DeviceExt;
 
 #[path = "gpu/helpers.rs"]
@@ -121,6 +123,7 @@ pub struct Gpu2D {
     stream_particle_eval_stack: Vec<f32>,
     sprite_batches: Vec<SpriteBatch>,
     sprite_textures: AHashMap<TextureID, CachedSpriteTexture>,
+    texture_filter: TextureFilterMode,
     last_camera: Option<Camera2DUniform>,
     last_sprite_prepare: Option<SpritePrepareKey>,
     sprite_perf: SpritePerfCounters,
@@ -143,6 +146,7 @@ impl Gpu2D {
         device: &wgpu::Device,
         color_format: wgpu::TextureFormat,
         sample_count: u32,
+        texture_filter: TextureFilterMode,
     ) -> Self {
         let rect_shader = create_rect_shader_module(device);
         let sprite_shader = create_sprite_shader_module(device);
@@ -317,6 +321,7 @@ impl Gpu2D {
             stream_particle_eval_stack: Vec::new(),
             sprite_batches: Vec::new(),
             sprite_textures: AHashMap::new(),
+            texture_filter,
             last_camera: None,
             last_sprite_prepare: None,
             sprite_perf: SpritePerfCounters::default(),
@@ -554,16 +559,11 @@ impl Gpu2D {
         width: u32,
         height: u32,
     ) {
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("perro_external_sprite_sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
-            ..Default::default()
-        });
+        let sampler = device.create_sampler(&sampler_descriptor(
+            "perro_external_sprite_sampler",
+            self.texture_filter,
+            wgpu::AddressMode::ClampToEdge,
+        ));
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_external_sprite_texture_bg"),
             layout: &self.texture_bgl,
@@ -680,9 +680,9 @@ impl Gpu2D {
         let Some(decoded) = resources.decoded_texture_data(texture_key) else {
             return false;
         };
-        let rgba = decoded.rgba.clone();
         let width = decoded.width;
         let height = decoded.height;
+        let mips = build_rgba_levels_for_filter(&decoded.rgba, width, height, self.texture_filter);
 
         let gpu_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("perro_sprite_texture"),
@@ -691,43 +691,20 @@ impl Gpu2D {
                 height,
                 depth_or_array_layers: 1,
             },
-            mip_level_count: 1,
+            mip_level_count: mips.len() as u32,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: SPRITE_TEXTURE_FORMAT,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &gpu_texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &rgba,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * width),
-                rows_per_image: Some(height),
-            },
-            wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-        );
+        write_rgba_mip_chain(queue, &gpu_texture, &mips);
         let view = gpu_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("perro_sprite_sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
-            ..Default::default()
-        });
+        let sampler = device.create_sampler(&sampler_descriptor(
+            "perro_sprite_sampler",
+            self.texture_filter,
+            wgpu::AddressMode::ClampToEdge,
+        ));
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_sprite_texture_bg"),
             layout: &self.texture_bgl,
