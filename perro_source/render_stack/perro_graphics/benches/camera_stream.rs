@@ -469,5 +469,6 @@ fn tiny_mesh() -> Mesh3D {
         ],
         indices: vec![0, 1, 2],
         surface_ranges: vec![],
+        blend_shapes: vec![],
     }
 }

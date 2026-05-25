@@ -22,6 +22,7 @@ Custom 3D materials are declared as:
 ```txt
 type = "custom"
 shader_path = "res://shaders/custom.wgsl"
+# optional: lighting = "raw" opts out of automatic standard lighting
 params = {
     glow = 1.25
     tint = (1.0, 0.2, 0.4, 1.0)
@@ -54,8 +55,8 @@ Custom material shaders are composed at runtime:
 
 ```wgsl
 @vertex
-fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
-    return perro_vs_main_base(v, inst); // or shade_vertex(...) if you define it
+fn vs_main(v: VertexInput, inst: InstanceInput, @builtin(vertex_index) vertex_index: u32, @builtin(instance_index) instance_index: u32) -> VertexOutput {
+    return perro_vs_main_base(v, inst, vertex_index, instance_index); // or shade_vertex(...) if you define it
 }
 
 @fragment
@@ -70,7 +71,7 @@ Your `.wgsl` must define:
 
 ```wgsl
 fn shade_material(in: FragmentInput) -> vec4<f32> {
-    // use in.color, in.pbr_params, in.emissive_factor, in.material_params
+    // use packed material fields and custom_f_param(...)
 }
 ```
 
@@ -88,8 +89,12 @@ You **do not** need to define `vs_main`, `fs_main`, bind groups, or scene struct
 
 Notes for custom shaders:
 
-- `in.material_params` packs: `alpha_mode`, `alpha_cutoff`, `double_sided`, and packed flags.
-- If you want alpha clipping or blending behavior, implement it in `shade_material`.
+- Custom shaders use standard lighting by default. The engine treats `shade_material(in)` as base color, then applies standard lighting.
+- Add `lighting = "raw"` to a custom material to opt out and return exact shader output.
+- `perro_lit_standard(in, base_color, roughness, metallic, ao, emissive)` applies the same standard material light path as built-in standard materials.
+- `perro_material_alpha(in, alpha)` applies alpha cutoff, opaque alpha, and mesh blend alpha.
+- If a shader calls `perro_lit_standard` itself, the engine does not wrap it a second time.
+- If a scene has no `Sky3D`, no `AmbientLight3D`, and no 3D lights, standard materials render black except for `emissive_factor`.
 - Use `custom_f_param(in, index)` to read custom params in fragment stage.
 - Use `custom_v_param(out, index)` inside `shade_vertex` for same params in vertex stage.
 - Legacy aliases `custom_param` and `custom_param_vertex` stay valid.
@@ -133,24 +138,39 @@ Passes run in array order. Built-in Sky3D only provides day/evening/night gradie
 
 - `world_pos`: world-space position of the fragment.
 - `normal_ws`: world-space normal.
-- `color`: base color (from the material preset).
-- `pbr_params`: a generic `vec4` for preset-specific params.
-  - Standard: `(roughness, metallic, occlusion_strength, normal_scale)`
-  - Unlit: `(0, 0, 0, 0)`
-  - Toon: `(band_count, rim_strength, outline_width, 0)`
-- `emissive_factor`: emissive RGB from the preset.
-- `material_params`: `(alpha_mode, alpha_cutoff, double_sided, flags)`
-  - `flags bit 0`: debug view
-  - `flags bit 1`: flat shading enabled
-  - `flags bit 2`: base color texture bound
+- `packed_color`: packed base color, decode with `unpack_rgba8`.
+- `packed_emissive`: packed emissive RGB, decode with `unpack_rgba8(...).xyz`.
+- `packed_pbr_params_0`: packed preset params, decode with `decode_standard_pbr_params` or `decode_toon_params`.
+- `packed_pbr_params_1`: packed secondary params; standard currently uses it for future data, mesh blend uses it for blend params.
+- `packed_material_params`: packed alpha, side, and flags, decode with `decode_material_params`.
 - `custom_range`: `(offset, length)` for the custom params block.
+- `uv`: mesh UV.
+
+Decoded material flags:
+
+- `alpha_mode`: `0` opaque, `1` mask, `2` blend.
+- `alpha_cutoff`: mask cutoff.
+- `double_sided`: double-sided normal handling.
+- `meshlet_debug_view`: debug output.
+- `flat_shading`: derive face normal in fragment shader.
+- `has_base_color_texture`: base color texture bound.
+- `mesh_blend`: screen blend alpha enabled.
+- `normal_blend`: contact normal blend enabled.
+- `mirrored_winding`: mirrored transform winding.
+- `receive_shadows`: receive shadows enabled.
+
+Packed preset params:
+
+- Standard: `decode_standard_pbr_params(in.packed_pbr_params_0, in.packed_pbr_params_1)` returns `(roughness, metallic, occlusion_strength, normal_scale)`.
+- Toon: `decode_toon_params(in.packed_pbr_params_0, in.packed_pbr_params_1)` returns `(band_count, rim_strength, outline_width)`.
 
 Example usage:
 
 ```wgsl
-let base = in.color.rgb;
-let roughness = in.pbr_params.x; // if using Standard preset
-let alpha_mode = u32(in.material_params.x + 0.5);
+let color = unpack_rgba8(in.packed_color);
+let pbr = decode_standard_pbr_params(in.packed_pbr_params_0, in.packed_pbr_params_1);
+let material = decode_material_params(in.packed_material_params);
+let alpha = perro_material_alpha(in, color.a);
 let glow = custom_f_param(in, 0u).x;
 ```
 
@@ -168,28 +188,62 @@ Custom param ordering:
 - `custom_f_param(in, 0u)` maps to the **first** entry in `CustomMaterial3D::params`.
 - Names are metadata only; ordering is what binds to indices.
 
-### Template Example (Complete File)
+### Default Lit Custom Example
 
 ```wgsl
 fn shade_material(in: FragmentInput) -> vec4<f32> {
-    let base = in.color.rgb;
-    let alpha_mode = u32(in.material_params.x + 0.5);
-    let alpha_cutoff = clamp(in.material_params.y, 0.0, 1.0);
-    var alpha = clamp(in.color.a, 0.0, 1.0);
-    if alpha_mode == 1u && alpha < alpha_cutoff {
-        discard;
-    }
-    if alpha_mode == 0u {
-        alpha = 1.0;
-    }
-
-    let glow = custom_f_param(in, 0u).x;
-    let tint = custom_f_param(in, 1u);
-
-    let color = base * tint.rgb + glow;
-    return vec4<f32>(color, alpha);
+    let color = unpack_rgba8(in.packed_color);
+    let tint = custom_f_param(in, 0u);
+    return vec4<f32>(color.rgb * tint.rgb, color.a * tint.a);
 }
 ```
+
+The engine lights this return value with standard lighting.
+
+### Raw Custom Example
+
+Use `lighting = "raw"` in the material:
+
+```txt
+type = "custom"
+shader_path = "res://shaders/custom.wgsl"
+lighting = "raw"
+```
+
+Then return final color directly:
+
+```wgsl
+fn shade_material(in: FragmentInput) -> vec4<f32> {
+    let color = unpack_rgba8(in.packed_color);
+    let glow = custom_f_param(in, 0u).x;
+    let alpha = perro_material_alpha(in, color.a);
+    return vec4<f32>(color.rgb + glow, alpha);
+}
+```
+
+### Manual Lit Custom Example
+
+```wgsl
+fn shade_material(in: FragmentInput) -> vec4<f32> {
+    let color = unpack_rgba8(in.packed_color);
+    let emissive = unpack_rgba8(in.packed_emissive).xyz;
+    let pbr = decode_standard_pbr_params(in.packed_pbr_params_0, in.packed_pbr_params_1);
+    let tint = custom_f_param(in, 0u);
+    return perro_lit_standard(
+        in,
+        vec4<f32>(color.rgb * tint.rgb, color.a * tint.a),
+        pbr.x,
+        pbr.y,
+        pbr.z,
+        emissive,
+    );
+}
+```
+
+This form is useful when the shader wants custom roughness, metallic, ao, or emissive values.
+The engine detects the helper call and skips automatic lighting.
+In a scene with no sky and no lights, lit custom output returns black unless `emissive` is non-zero.
+A material like `emissive_factor = (0.01, 0.08, 0.12)` stays visible because emissive is added after lighting.
 
 ### Current Limitations
 

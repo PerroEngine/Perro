@@ -109,6 +109,7 @@ fn grid_mesh(side: usize) -> Mesh3D {
             index_count: indices.len() as u32,
         }],
         indices,
+        blend_shapes: vec![],
     }
 }
 

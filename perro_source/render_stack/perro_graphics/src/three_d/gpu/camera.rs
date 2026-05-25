@@ -397,3 +397,22 @@ pub(super) fn build_scene_uniform(
 
     scene
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scene_uniform_no_sky_or_lights_has_no_ambient_or_light_counts() {
+        let scene = build_scene_uniform(
+            &Camera3DState::default(),
+            &Lighting3DState::default(),
+            1280,
+            720,
+        );
+
+        assert_eq!(scene.ambient_color, [1.0, 1.0, 1.0, 0.0]);
+        assert_eq!(scene.ambient_and_counts, [0.0, 0.0, 0.0, 0.0]);
+        assert_eq!(scene.ray_light.color_intensity[3], 0.0);
+    }
+}

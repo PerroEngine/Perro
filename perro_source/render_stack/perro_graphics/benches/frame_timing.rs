@@ -43,6 +43,7 @@ fn tiny_mesh() -> Mesh3D {
         ],
         indices: vec![0, 1, 2],
         surface_ranges: vec![],
+        blend_shapes: vec![],
     }
 }
 
@@ -101,6 +102,7 @@ fn draw_command(i: u32, mesh: MeshID, material: MaterialID) -> RenderCommand {
         node: NodeID::from_parts(i + 1, 0),
         model: model_3d(i),
         skeleton: None,
+        blend_shape_weights: Arc::from([]),
         meshlet_override: None,
         lod: LODOptions3D::default(),
         blend: MeshBlendOptions3D::default(),
@@ -117,6 +119,7 @@ fn draw_multi_command(count: u32, mesh: MeshID, material: MaterialID) -> RenderC
         node: NodeID::from_parts(1, 0),
         instance_mats: mats,
         skeleton: None,
+        blend_shape_weights: Arc::from([]),
         meshlet_override: None,
         lod: LODOptions3D::default(),
         blend: MeshBlendOptions3D::default(),
@@ -142,6 +145,7 @@ fn draw_multi_dense_command(count: u32, mesh: MeshID, material: MaterialID) -> R
         node_model: model_3d(0),
         instance_scale: 1.0,
         instances,
+        blend_shape_weights: Arc::from([]),
         meshlet_override: None,
         lod: LODOptions3D::default(),
         blend: MeshBlendOptions3D::default(),

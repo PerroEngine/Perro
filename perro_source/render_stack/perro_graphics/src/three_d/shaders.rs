@@ -174,19 +174,19 @@ pub fn build_material_shader_with_prelude(prelude_wgsl: &str, material_wgsl: &st
 pub fn build_custom_material_shader_with_prelude(
     prelude_wgsl: &str,
     material_wgsl: &str,
+    lighting: perro_render_bridge::CustomMaterialLighting3D,
 ) -> String {
-    build_material_shader_with_prelude_inner(
-        prelude_wgsl,
-        material_wgsl,
-        std::env::var_os("PERRO_DISABLE_CUSTOM_MATERIAL_SHADOWS").is_none(),
-    )
+    let uses_lit_helper = material_wgsl.contains("perro_lit_standard(");
+    let apply_standard_lighting =
+        lighting == perro_render_bridge::CustomMaterialLighting3D::Standard && !uses_lit_helper;
+    build_material_shader_with_prelude_inner(prelude_wgsl, material_wgsl, apply_standard_lighting)
 }
 
 #[inline]
 fn build_material_shader_with_prelude_inner(
     prelude_wgsl: &str,
     material_wgsl: &str,
-    apply_custom_shadows: bool,
+    apply_custom_standard_lighting: bool,
 ) -> String {
     let has_custom_vertex = material_wgsl.contains("shade_vertex(");
     let mut out = String::new();
@@ -203,9 +203,9 @@ fn build_material_shader_with_prelude_inner(
             "\n@vertex\nfn vs_main(v: VertexInput, inst: InstanceInput, @builtin(vertex_index) vertex_index: u32, @builtin(instance_index) instance_index: u32) -> VertexOutput {\n    return perro_vs_main_base(v, inst, vertex_index, instance_index);\n}\n",
         );
     }
-    if apply_custom_shadows {
+    if apply_custom_standard_lighting {
         out.push_str(
-            "\nfn perro_custom_shadow_factor(in: FragmentInput) -> f32 {\n    let material = decode_material_params(in.packed_material_params);\n    if !material.receive_shadows {\n        return 1.0;\n    }\n    let n = normalize(in.normal_ws);\n    var factor = ray_shadow_factor(in.world_pos, n, vec3<f32>(0.0, 1.0, 0.0));\n    let point_count = u32(scene.ambient_and_counts.y);\n    for (var i = 0u; i < point_count; i = i + 1u) {\n        let light = scene.point_lights[i];\n        let to_light = light.position_range.xyz - in.world_pos;\n        if dot(to_light, to_light) <= light.position_range.w * light.position_range.w {\n            factor = min(factor, point_shadow_factor(in.world_pos, n, i, to_light));\n        }\n    }\n    let spot_count = u32(scene.ambient_and_counts.z);\n    for (var i = 0u; i < spot_count; i = i + 1u) {\n        let light = scene.spot_lights[i];\n        let to_light = light.position_range.xyz - in.world_pos;\n        if dot(to_light, to_light) <= light.position_range.w * light.position_range.w {\n            factor = min(factor, spot_shadow_factor(in.world_pos, n, i));\n        }\n    }\n    return mix(1.0, factor, 0.65);\n}\n\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    let color = shade_material(in);\n    let shadow_vis = perro_custom_shadow_factor(in);\n    return vec4<f32>(color.rgb * shadow_vis, color.a);\n}\n",
+            "\n@fragment\nfn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {\n    let base = shade_material(in);\n    return perro_lit_standard(in, base, 0.5, 0.0, 1.0, vec3<f32>(0.0));\n}\n",
         );
     } else {
         out.push_str(
@@ -410,11 +410,51 @@ mod tests {
     }
 
     #[test]
-    fn custom_material_shadow_wrapper_wgsl_parses() {
+    fn custom_material_standard_lighting_wrapper_wgsl_parses() {
         let material = "fn shade_material(in: FragmentInput) -> vec4<f32> { return vec4<f32>(in.normal_ws * 0.5 + vec3<f32>(0.5), 1.0); }";
         for prelude in [regular::PRELUDE_RIGID_WGSL, regular::PRELUDE_SKINNED_WGSL] {
-            let wgsl = build_custom_material_shader_with_prelude(prelude, material);
-            naga::front::wgsl::parse_str(&wgsl).expect("custom shadow material wgsl parses");
+            let wgsl = build_custom_material_shader_with_prelude(
+                prelude,
+                material,
+                perro_render_bridge::CustomMaterialLighting3D::Standard,
+            );
+            assert!(wgsl.contains("perro_lit_standard(in, base"));
+            naga::front::wgsl::parse_str(&wgsl).expect("custom lit wrapper material wgsl parses");
+        }
+    }
+
+    #[test]
+    fn custom_material_raw_wrapper_wgsl_parses() {
+        let material = "fn shade_material(in: FragmentInput) -> vec4<f32> { return vec4<f32>(in.normal_ws * 0.5 + vec3<f32>(0.5), 1.0); }";
+        for prelude in [regular::PRELUDE_RIGID_WGSL, regular::PRELUDE_SKINNED_WGSL] {
+            let wgsl = build_custom_material_shader_with_prelude(
+                prelude,
+                material,
+                perro_render_bridge::CustomMaterialLighting3D::Raw,
+            );
+            assert!(!wgsl.contains("perro_lit_standard(in, base"));
+            naga::front::wgsl::parse_str(&wgsl).expect("custom raw material wgsl parses");
+        }
+    }
+
+    #[test]
+    fn custom_material_lit_helper_wgsl_parses() {
+        let material = r#"
+fn shade_material(in: FragmentInput) -> vec4<f32> {
+    let color = unpack_rgba8(in.packed_color);
+    let emissive = unpack_rgba8(in.packed_emissive).xyz;
+    let pbr = decode_standard_pbr_params(in.packed_pbr_params_0, in.packed_pbr_params_1);
+    return perro_lit_standard(in, color, pbr.x, pbr.y, pbr.z, emissive);
+}
+"#;
+        for prelude in [regular::PRELUDE_RIGID_WGSL, regular::PRELUDE_SKINNED_WGSL] {
+            let wgsl = build_custom_material_shader_with_prelude(
+                prelude,
+                material,
+                perro_render_bridge::CustomMaterialLighting3D::Standard,
+            );
+            assert!(!wgsl.contains("perro_lit_standard(in, base"));
+            naga::front::wgsl::parse_str(&wgsl).expect("custom lit material wgsl parses");
         }
     }
 

@@ -36,6 +36,7 @@ fn draw_command(i: u32) -> RenderCommand {
             [0.0, 0.0, 0.0, 1.0],
         ],
         skeleton: None,
+        blend_shape_weights: Arc::from([]),
         meshlet_override: None,
         lod: LODOptions3D::default(),
         blend: MeshBlendOptions3D::default(),

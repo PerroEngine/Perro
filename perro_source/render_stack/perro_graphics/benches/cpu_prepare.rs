@@ -73,6 +73,7 @@ fn draw_3d_command_with_blend(
             [0.0, 0.0, 0.0, 1.0],
         ],
         skeleton: None,
+        blend_shape_weights: Arc::from([]),
         meshlet_override: None,
         lod: LODOptions3D::default(),
         blend,
@@ -112,6 +113,7 @@ fn draw_3d_dense_command_with_blend(
         ],
         instance_scale: 1.0,
         instances,
+        blend_shape_weights: Arc::from([]),
         meshlet_override: None,
         lod: LODOptions3D::default(),
         blend,
@@ -230,6 +232,7 @@ fn tiny_mesh() -> Mesh3D {
         ],
         indices: vec![0, 1, 2],
         surface_ranges: vec![],
+        blend_shapes: vec![],
     }
 }
 

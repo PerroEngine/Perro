@@ -117,6 +117,8 @@ Custom material:
 ```txt
 type = "custom"
 shader_path = "res://shaders/custom.wgsl"
+# default: standard lighting wraps shader output
+# use lighting = "raw" to opt out
 
 params = {
     glow = 1.25
@@ -239,5 +241,6 @@ See [Performance + Flexibility Philosophy](../project/performance_philosophy.md)
 - glTF mesh refs use `res://path/to/model.glb:mesh[index]`.
 - a single `.glb` can provide both mesh and material refs for the same scene node.
 - texture slots are material-local/glTF texture indices, not global texture IDs.
+- custom materials use standard lighting by default; set `lighting = "raw"` for exact shader output.
 - custom material parameter order binds shader indices: `custom_f_param(in, 0u)` reads the first param.
 - custom param names are metadata for humans and tooling; order controls shader access.

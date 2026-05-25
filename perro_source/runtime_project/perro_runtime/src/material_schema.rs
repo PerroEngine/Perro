@@ -1,7 +1,7 @@
 use perro_io::load_asset;
 use perro_render_bridge::{
-    CustomMaterial3D, CustomMaterialParam3D, CustomMaterialParamValue3D, Material3D,
-    StandardMaterial3D, ToonMaterial3D, UnlitMaterial3D,
+    CustomMaterial3D, CustomMaterialLighting3D, CustomMaterialParam3D, CustomMaterialParamValue3D,
+    Material3D, StandardMaterial3D, ToonMaterial3D, UnlitMaterial3D,
 };
 use perro_scene::{Parser, SceneObjectField, SceneValue};
 
@@ -267,6 +267,7 @@ fn material_from_entries(entries: &[SceneObjectField], any: &mut bool) -> Materi
             let mut params = CustomMaterial3D {
                 shader_path: "".into(),
                 params: std::borrow::Cow::Borrowed(&[]),
+                lighting: CustomMaterialLighting3D::Standard,
             };
             apply_custom(entries, &mut params, any);
             Material3D::Custom(params)
@@ -396,6 +397,12 @@ fn apply_custom(entries: &[SceneObjectField], out: &mut CustomMaterial3D, any: &
                     *any = true;
                 }
             }
+            Some("lighting") => {
+                if let Some(lighting) = as_custom_lighting(value) {
+                    out.lighting = lighting;
+                    *any = true;
+                }
+            }
             _ => {}
         }
     }
@@ -463,6 +470,7 @@ fn canonical_custom_key(name: &str) -> Option<&'static str> {
         "type" | "Type" => None,
         "shader" | "shaderPath" | "shader_path" | "path" => Some("shaderPath"),
         "params" | "customParams" | "custom_params" => Some("params"),
+        "lighting" | "light" | "lit" => Some("lighting"),
         _ => None,
     }
 }
@@ -591,6 +599,29 @@ fn as_custom_param_value(value: &SceneValue) -> Option<CustomMaterialParamValue3
     value.as_const_param()
 }
 
+fn as_custom_lighting(value: &SceneValue) -> Option<CustomMaterialLighting3D> {
+    match value {
+        SceneValue::Str(v) => parse_custom_lighting_token(v.as_ref()),
+        SceneValue::Key(v) => parse_custom_lighting_token(v.as_ref()),
+        SceneValue::Bool(v) => Some(if *v {
+            CustomMaterialLighting3D::Standard
+        } else {
+            CustomMaterialLighting3D::Raw
+        }),
+        _ => None,
+    }
+}
+
+fn parse_custom_lighting_token(value: &str) -> Option<CustomMaterialLighting3D> {
+    match value {
+        "standard" | "Standard" | "lit" | "Lit" | "pbr" | "PBR" => {
+            Some(CustomMaterialLighting3D::Standard)
+        }
+        "raw" | "Raw" | "unlit" | "Unlit" | "none" | "None" => Some(CustomMaterialLighting3D::Raw),
+        _ => None,
+    }
+}
+
 fn as_custom_params(value: &SceneValue) -> Option<Vec<CustomMaterialParam3D>> {
     match value {
         SceneValue::Object(entries) => {
@@ -611,5 +642,47 @@ fn as_custom_params(value: &SceneValue) -> Option<Vec<CustomMaterialParam3D>> {
                 value: val,
             }]
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn material_from_text(text: &str) -> Material3D {
+        let value = Parser::new(text).parse_value_literal();
+        let SceneValue::Object(entries) = value else {
+            panic!("expected material object");
+        };
+        from_object(entries.as_ref()).expect("material parses")
+    }
+
+    #[test]
+    fn custom_material_defaults_to_standard_lighting() {
+        let material = material_from_text(
+            r#"{
+                type = "custom",
+                shader_path = "res://shaders/custom.wgsl",
+            }"#,
+        );
+        let Material3D::Custom(custom) = material else {
+            panic!("expected custom material");
+        };
+        assert_eq!(custom.lighting, CustomMaterialLighting3D::Standard);
+    }
+
+    #[test]
+    fn custom_material_accepts_raw_lighting_opt_out() {
+        let material = material_from_text(
+            r#"{
+                type = "custom",
+                shader_path = "res://shaders/custom.wgsl",
+                lighting = "raw",
+            }"#,
+        );
+        let Material3D::Custom(custom) = material else {
+            panic!("expected custom material");
+        };
+        assert_eq!(custom.lighting, CustomMaterialLighting3D::Raw);
     }
 }

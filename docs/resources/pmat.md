@@ -143,6 +143,8 @@ Custom materials define a shader path and optional custom parameters:
 ```txt
 type = "custom"
 shader_path = "res://shaders/custom.wgsl"
+# optional opt out of default standard lighting:
+# lighting = "raw"
 
 params = {
     glow = 1.25
@@ -191,6 +193,8 @@ material = {
 material = {
     type = "custom"
     shader_path = "res://shaders/custom.wgsl"
+    # optional opt out of default standard lighting:
+    # lighting = "raw"
     alpha_mode = "OPAQUE"
     double_sided = false
     params = {

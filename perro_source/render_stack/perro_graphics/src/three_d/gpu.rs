@@ -32,9 +32,9 @@ use perro_graphics_assets::{
 use perro_ids::MeshID;
 use perro_io::load_asset;
 use perro_render_bridge::{
-    Camera3DState, CameraProjectionState, LODOptions3D, Material3D, MaterialParamOverride3D,
-    MaterialParamOverrideValue3D, MeshBlendOptions3D, MeshSurfaceBinding3D, PointLight3DState,
-    SpotLight3DState, StandardMaterial3D,
+    Camera3DState, CameraProjectionState, CustomMaterialLighting3D, LODOptions3D, Material3D,
+    MaterialParamOverride3D, MaterialParamOverrideValue3D, MeshBlendOptions3D,
+    MeshSurfaceBinding3D, PointLight3DState, SpotLight3DState, StandardMaterial3D,
 };
 use perro_structs::BitMask;
 use perro_structs::TextureFilterMode;

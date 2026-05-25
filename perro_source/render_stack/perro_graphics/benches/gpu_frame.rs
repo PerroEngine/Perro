@@ -744,6 +744,7 @@ fn draw_command(i: u32, mesh: MeshID, material: MaterialID) -> RenderCommand {
         node: NodeID::from_parts(i + 1, 0),
         model: model_3d(i),
         skeleton: None,
+        blend_shape_weights: Arc::from([]),
         meshlet_override: None,
         lod: LODOptions3D::default(),
         blend: MeshBlendOptions3D::default(),
@@ -764,6 +765,7 @@ fn draw_overdraw_command(i: u32, mesh: MeshID, material: MaterialID) -> RenderCo
             [0.0, 0.0, 0.0, 1.0],
         ],
         skeleton: None,
+        blend_shape_weights: Arc::from([]),
         meshlet_override: None,
         lod: LODOptions3D::default(),
         blend: MeshBlendOptions3D::default(),
@@ -789,6 +791,7 @@ fn draw_overdraw_blend_command(
             [0.0, 0.0, 0.0, 1.0],
         ],
         skeleton: None,
+        blend_shape_weights: Arc::from([]),
         meshlet_override: None,
         lod: LODOptions3D::default(),
         blend,
@@ -865,6 +868,7 @@ fn draw_multi_dense_command(count: u32, mesh: MeshID, material: MaterialID) -> R
         node_model: identity_4(),
         instance_scale: 0.05,
         instances,
+        blend_shape_weights: Arc::from([]),
         meshlet_override: None,
         lod: LODOptions3D::default(),
         blend: MeshBlendOptions3D::default(),
@@ -934,6 +938,7 @@ fn tiny_mesh() -> Mesh3D {
         ],
         indices: vec![0, 1, 2],
         surface_ranges: vec![],
+        blend_shapes: vec![],
     }
 }
 
@@ -972,6 +977,7 @@ fn uv_sphere_mesh(slices: u32, stacks: u32) -> Mesh3D {
         vertices,
         indices,
         surface_ranges: vec![],
+        blend_shapes: vec![],
     }
 }
 

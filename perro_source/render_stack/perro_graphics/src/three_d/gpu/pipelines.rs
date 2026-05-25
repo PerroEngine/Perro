@@ -1,14 +1,29 @@
 use super::*;
 
+fn custom_pipeline_key(shader_path: &str, lighting: CustomMaterialLighting3D) -> String {
+    let suffix = match lighting {
+        CustomMaterialLighting3D::Standard => "#standard",
+        CustomMaterialLighting3D::Raw => "#raw",
+    };
+    let mut key = String::with_capacity(shader_path.len() + suffix.len());
+    key.push_str(shader_path);
+    key.push_str(suffix);
+    key
+}
+
 impl Gpu3D {
-    pub(super) fn custom_pipeline_token(&mut self, shader_path: &str) -> u32 {
-        if let Some(&token) = self.custom_pipeline_tokens.get(shader_path) {
+    pub(super) fn custom_pipeline_token(
+        &mut self,
+        shader_path: &str,
+        lighting: CustomMaterialLighting3D,
+    ) -> u32 {
+        let key = custom_pipeline_key(shader_path, lighting);
+        if let Some(&token) = self.custom_pipeline_tokens.get(&key) {
             return token;
         }
         let token = self.next_custom_pipeline_token;
         self.next_custom_pipeline_token = self.next_custom_pipeline_token.wrapping_add(1).max(1);
-        self.custom_pipeline_tokens
-            .insert(shader_path.to_string(), token);
+        self.custom_pipeline_tokens.insert(key, token);
         token
     }
 
@@ -17,9 +32,10 @@ impl Gpu3D {
         device: &wgpu::Device,
         path: RenderPath3D,
         shader_path: &str,
+        lighting: CustomMaterialLighting3D,
         static_shader_lookup: Option<StaticShaderLookup>,
     ) -> Option<u32> {
-        let token = self.custom_pipeline_token(shader_path);
+        let token = self.custom_pipeline_token(shader_path, lighting);
         if path == RenderPath3D::Rigid && self.custom_pipelines_rigid.contains_key(&token) {
             return Some(token);
         }
@@ -43,11 +59,13 @@ impl Gpu3D {
             build_custom_material_shader_with_prelude(
                 perro_macros::include_str_stripped!("shaders/prelude_rigid_3d.wgsl"),
                 src.as_ref(),
+                lighting,
             )
         } else {
             build_custom_material_shader_with_prelude(
                 perro_macros::include_str_stripped!("shaders/prelude_skinned_3d.wgsl"),
                 src.as_ref(),
+                lighting,
             )
         };
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -164,6 +182,7 @@ impl Gpu3D {
                     device,
                     render_path,
                     shader_path,
+                    custom.lighting,
                     static_shader_lookup,
                 ) {
                     MaterialPipelineKind::Custom(token)

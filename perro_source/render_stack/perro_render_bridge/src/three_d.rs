@@ -561,6 +561,13 @@ impl CustomMaterialParam3D {
 pub struct CustomMaterial3D {
     pub shader_path: Cow<'static, str>,
     pub params: Cow<'static, [CustomMaterialParam3D]>,
+    pub lighting: CustomMaterialLighting3D,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CustomMaterialLighting3D {
+    Standard,
+    Raw,
 }
 
 impl CustomMaterial3D {
@@ -569,6 +576,7 @@ impl CustomMaterial3D {
         Self {
             shader_path: shader_path.into(),
             params: Cow::Borrowed(&[]),
+            lighting: CustomMaterialLighting3D::Standard,
         }
     }
 
@@ -580,7 +588,14 @@ impl CustomMaterial3D {
         Self {
             shader_path: shader_path.into(),
             params: Cow::Owned(params),
+            lighting: CustomMaterialLighting3D::Standard,
         }
+    }
+
+    #[inline]
+    pub fn with_lighting(mut self, lighting: CustomMaterialLighting3D) -> Self {
+        self.lighting = lighting;
+        self
     }
 }
 
