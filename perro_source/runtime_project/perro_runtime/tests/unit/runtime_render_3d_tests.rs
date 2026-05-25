@@ -261,7 +261,12 @@ fn multimesh_blend_options_reach_dense_draw_command() {
     let mut multi = MultiMeshInstance3D::new();
     multi.mesh = MeshID::from_parts(8, 0);
     set_primary_material_multi(&mut multi, MaterialID::from_parts(10, 0));
-    multi.instances.push((Vector3::ZERO, Quaternion::IDENTITY));
+    multi
+        .instances
+        .push(perro_nodes::MultiMeshInstancePose::new(
+            Vector3::ZERO,
+            Quaternion::IDENTITY,
+        ));
     multi.blend.enabled = true;
     multi.blend.screen_blending = false;
     multi.blend.normal_blending = true;
@@ -334,7 +339,12 @@ fn multimesh_flip_xy_mirrors_node_model_about_local_origin() {
     let mut multi = MultiMeshInstance3D::new();
     multi.mesh = MeshID::from_parts(12, 0);
     set_primary_material_multi(&mut multi, MaterialID::from_parts(14, 0));
-    multi.instances.push((Vector3::ZERO, Quaternion::IDENTITY));
+    multi
+        .instances
+        .push(perro_nodes::MultiMeshInstancePose::new(
+            Vector3::ZERO,
+            Quaternion::IDENTITY,
+        ));
     multi.flip_x = true;
     multi.flip_y = true;
     multi.transform.position = Vector3::new(1.0, 2.0, 3.0);
@@ -493,6 +503,7 @@ fn mesh_instance_ready_waits_for_mesh_and_material_backend_ack() {
             vertices: Vec::new(),
             indices: Vec::new(),
             surface_ranges: Vec::new(),
+            blend_shapes: Vec::new(),
         }),
     });
     runtime.extract_render_3d_commands();
@@ -1058,8 +1069,8 @@ fn multi_mesh_instance_emits_draw_multi_with_instance_mats() {
 
     multi.instance_scale = 1.0;
     multi.instances = vec![
-        (Vector3::new(1.0, 0.0, 0.0), Quaternion::IDENTITY),
-        (Vector3::new(3.0, 0.0, 0.0), Quaternion::IDENTITY),
+        perro_nodes::MultiMeshInstancePose::new(Vector3::new(1.0, 0.0, 0.0), Quaternion::IDENTITY),
+        perro_nodes::MultiMeshInstancePose::new(Vector3::new(3.0, 0.0, 0.0), Quaternion::IDENTITY),
     ];
 
     let node = runtime
@@ -1502,7 +1513,10 @@ fn multi_mesh_instance_passes_meshlet_override_to_draw_command() {
     multi.mesh = MeshID::from_parts(430, 0);
     multi.meshlet_override = Some(true);
     set_primary_material_multi(&mut multi, MaterialID::from_parts(431, 0));
-    multi.instances = vec![(Vector3::new(0.0, 0.0, 0.0), Quaternion::IDENTITY)];
+    multi.instances = vec![perro_nodes::MultiMeshInstancePose::new(
+        Vector3::new(0.0, 0.0, 0.0),
+        Quaternion::IDENTITY,
+    )];
     let node = runtime
         .nodes
         .insert(SceneNode::new(SceneNodeData::MultiMeshInstance3D(multi)));

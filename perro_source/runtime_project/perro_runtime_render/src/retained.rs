@@ -671,6 +671,7 @@ pub struct RetainedMeshDrawState {
     pub surfaces: Arc<[MeshSurfaceBinding3D]>,
     pub instances: RetainedMeshInstanceState,
     pub skeleton: Option<SkeletonPalette>,
+    pub blend_shape_weights: Arc<[f32]>,
     pub meshlet_override: Option<bool>,
     pub lod: LODOptions3D,
     pub blend: MeshBlendOptions3D,

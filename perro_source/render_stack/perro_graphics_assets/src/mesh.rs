@@ -1,15 +1,20 @@
 use bytemuck::{Pod, Zeroable};
 use perro_asset_formats::pmesh::{
+    FLAG_HAS_BLEND_SHAPE_NORMALS as PMESH_FLAG_HAS_BLEND_SHAPE_NORMALS,
     FLAG_HAS_JOINTS as PMESH_FLAG_HAS_JOINTS, FLAG_HAS_NORMAL as PMESH_FLAG_HAS_NORMAL,
     FLAG_HAS_UV0 as PMESH_FLAG_HAS_UV0, FLAG_HAS_WEIGHTS as PMESH_FLAG_HAS_WEIGHTS,
     FLAG_PAYLOAD_RAW as PMESH_FLAG_PAYLOAD_RAW, FLAG_WEIGHTS_UNORM8 as PMESH_FLAG_WEIGHTS_UNORM8,
-    MAGIC as PMESH_MAGIC, VERSION as PMESH_VERSION,
+    MAGIC as PMESH_MAGIC, VERSION as PMESH_VERSION, VERSION_V1 as PMESH_VERSION_V1,
+    VERSION_V2 as PMESH_VERSION_V2,
 };
 use perro_io::{decompress_zlib, load_asset};
 use perro_meshlets::{
     DEFAULT_LOD_TARGET_RATIOS, LodSurfaceRange, LodVertex, pack_meshlets_from_positions,
 };
-use perro_render_bridge::{Mesh3D, MeshSurfaceRange, RuntimeMeshData, RuntimeMeshVertex};
+use perro_render_bridge::{
+    Mesh3D, MeshSurfaceRange, RuntimeMeshBlendShape, RuntimeMeshBlendShapeVertex, RuntimeMeshData,
+    RuntimeMeshVertex,
+};
 use perro_structs::Unorm8x4;
 use std::{borrow::Cow, collections::BTreeMap};
 
@@ -38,9 +43,22 @@ pub struct DecodedMesh {
     pub vertices: Vec<MeshVertex>,
     pub indices: Vec<u32>,
     pub surface_ranges: Vec<MeshRange>,
+    pub blend_shapes: Vec<MeshBlendShape>,
     pub meshlets: Vec<DecodedMeshlet>,
     pub lods: Vec<DecodedLod>,
     pub has_skinning: bool,
+}
+
+#[derive(Clone, Copy)]
+pub struct MeshBlendShapeVertex {
+    pub position_delta: [f32; 3],
+    pub normal_delta: [f32; 3],
+}
+
+#[derive(Clone)]
+pub struct MeshBlendShape {
+    pub vertices: Vec<MeshBlendShapeVertex>,
+    pub has_normal_deltas: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -195,6 +213,21 @@ pub fn load_mesh3d_from_source(
                 index_count: range.index_count,
             })
             .collect(),
+        blend_shapes: decoded
+            .blend_shapes
+            .into_iter()
+            .map(|shape| RuntimeMeshBlendShape {
+                vertices: shape
+                    .vertices
+                    .into_iter()
+                    .map(|v| RuntimeMeshBlendShapeVertex {
+                        position_delta: v.position_delta,
+                        normal_delta: v.normal_delta,
+                    })
+                    .collect(),
+                has_normal_deltas: shape.has_normal_deltas,
+            })
+            .collect(),
     })
 }
 
@@ -299,6 +332,22 @@ fn decode_runtime_mesh(mesh: &RuntimeMeshData) -> Option<DecodedMesh> {
         vertices,
         indices: mesh.indices.clone(),
         surface_ranges,
+        blend_shapes: mesh
+            .blend_shapes
+            .iter()
+            .filter(|shape| shape.vertices.len() == mesh.vertices.len())
+            .map(|shape| MeshBlendShape {
+                vertices: shape
+                    .vertices
+                    .iter()
+                    .map(|v| MeshBlendShapeVertex {
+                        position_delta: v.position_delta,
+                        normal_delta: v.normal_delta,
+                    })
+                    .collect(),
+                has_normal_deltas: shape.has_normal_deltas,
+            })
+            .collect(),
         meshlets: Vec::new(),
         lods: Vec::new(),
         has_skinning: mesh_vertices_have_skinning(&mesh.vertices),
@@ -558,7 +607,11 @@ pub fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
         return None;
     }
     let version = u32::from_le_bytes(bytes[5..9].try_into().ok()?);
-    if version != PMESH_VERSION {
+    if version != PMESH_VERSION && version != PMESH_VERSION_V1 && version != PMESH_VERSION_V2 {
+        return None;
+    }
+    let header_len = if version >= PMESH_VERSION_V2 { 41 } else { 37 };
+    if bytes.len() < header_len {
         return None;
     }
     let flags = u32::from_le_bytes(bytes[9..13].try_into().ok()?);
@@ -568,7 +621,12 @@ pub fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
     let meshlet_count = u32::from_le_bytes(bytes[25..29].try_into().ok()?) as usize;
     let lod_count = u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize;
     let raw_len = u32::from_le_bytes(bytes[33..37].try_into().ok()?) as usize;
-    let raw = decode_static_payload(flags, &bytes[37..])?;
+    let blend_shape_count = if version >= PMESH_VERSION_V2 {
+        u32::from_le_bytes(bytes[37..41].try_into().ok()?) as usize
+    } else {
+        0
+    };
+    let raw = decode_static_payload(flags, &bytes[header_len..])?;
     if raw.len() != raw_len {
         return None;
     }
@@ -578,6 +636,7 @@ pub fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
     let has_joints = (flags & PMESH_FLAG_HAS_JOINTS) != 0;
     let has_weights = (flags & PMESH_FLAG_HAS_WEIGHTS) != 0;
     let weights_unorm8 = (flags & PMESH_FLAG_WEIGHTS_UNORM8) != 0;
+    let has_blend_shape_normals = (flags & PMESH_FLAG_HAS_BLEND_SHAPE_NORMALS) != 0;
     let vertex_stride = 12
         + if has_normal { 12 } else { 0 }
         + if has_uv0 { 8 } else { 0 }
@@ -592,11 +651,16 @@ pub fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
     let surface_bytes = surface_count.checked_mul(8)?;
     let meshlet_bytes = meshlet_count.checked_mul(24)?;
     let lod_bytes = lod_count.checked_mul(24)?;
+    let blend_shape_stride = 12 + if has_blend_shape_normals { 12 } else { 0 };
+    let blend_shape_bytes = blend_shape_count
+        .checked_mul(vertex_count)?
+        .checked_mul(blend_shape_stride)?;
     let required = vertex_bytes
         .checked_add(index_bytes)?
         .checked_add(surface_bytes)?
         .checked_add(meshlet_bytes)?
-        .checked_add(lod_bytes)?;
+        .checked_add(lod_bytes)?
+        .checked_add(blend_shape_bytes)?;
     if raw.len() < required {
         return None;
     }
@@ -721,6 +785,38 @@ pub fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
             lods.push(lod);
         }
     }
+    let blend_shape_start = vertex_bytes + index_bytes + surface_bytes + meshlet_bytes + lod_bytes;
+    let mut blend_shapes = Vec::with_capacity(blend_shape_count);
+    for shape_idx in 0..blend_shape_count {
+        let shape_start = blend_shape_start + shape_idx * vertex_count * blend_shape_stride;
+        let mut shape_vertices = Vec::with_capacity(vertex_count);
+        for vertex_idx in 0..vertex_count {
+            let mut cursor = shape_start + vertex_idx * blend_shape_stride;
+            let position_delta = [
+                f32::from_le_bytes(raw[cursor..cursor + 4].try_into().ok()?),
+                f32::from_le_bytes(raw[cursor + 4..cursor + 8].try_into().ok()?),
+                f32::from_le_bytes(raw[cursor + 8..cursor + 12].try_into().ok()?),
+            ];
+            cursor += 12;
+            let normal_delta = if has_blend_shape_normals {
+                [
+                    f32::from_le_bytes(raw[cursor..cursor + 4].try_into().ok()?),
+                    f32::from_le_bytes(raw[cursor + 4..cursor + 8].try_into().ok()?),
+                    f32::from_le_bytes(raw[cursor + 8..cursor + 12].try_into().ok()?),
+                ]
+            } else {
+                [0.0; 3]
+            };
+            shape_vertices.push(MeshBlendShapeVertex {
+                position_delta,
+                normal_delta,
+            });
+        }
+        blend_shapes.push(MeshBlendShape {
+            vertices: shape_vertices,
+            has_normal_deltas: has_blend_shape_normals,
+        });
+    }
     if lods.is_empty() {
         lods.push(DecodedLod {
             index_start: 0,
@@ -736,6 +832,7 @@ pub fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
         vertices,
         indices,
         surface_ranges,
+        blend_shapes,
         meshlets,
         lods,
         has_skinning: has_joints || has_weights,
@@ -748,6 +845,7 @@ pub fn decode_gltf_mesh(bytes: &[u8], mesh_index: usize) -> Option<DecodedMesh> 
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
     let mut surface_ranges = Vec::new();
+    let mut blend_shapes: Vec<MeshBlendShape> = Vec::new();
     let mut has_skinning = false;
 
     for primitive in mesh.primitives() {
@@ -784,6 +882,33 @@ pub fn decode_gltf_mesh(bytes: &[u8], mesh_index: usize) -> Option<DecodedMesh> 
         if weights.is_empty() && !joints.is_empty() {
             weights = vec![[1.0, 0.0, 0.0, 0.0]; joints.len()];
         }
+        let primitive_vertex_count = positions.len();
+        let primitive_blend_shapes = reader
+            .read_morph_targets()
+            .map(|(positions, normals, _tangents)| {
+                let position_deltas: Vec<[f32; 3]> =
+                    positions.map(|iter| iter.collect()).unwrap_or_default();
+                let normal_deltas: Vec<[f32; 3]> =
+                    normals.map(|iter| iter.collect()).unwrap_or_default();
+                let has_normal_deltas = !normal_deltas.is_empty();
+                let vertices = (0..primitive_vertex_count)
+                    .map(|i| MeshBlendShapeVertex {
+                        position_delta: position_deltas.get(i).copied().unwrap_or([0.0; 3]),
+                        normal_delta: normal_deltas.get(i).copied().unwrap_or([0.0; 3]),
+                    })
+                    .collect::<Vec<_>>();
+                MeshBlendShape {
+                    vertices,
+                    has_normal_deltas,
+                }
+            })
+            .collect::<Vec<_>>();
+        append_primitive_blend_shapes(
+            &mut blend_shapes,
+            &primitive_blend_shapes,
+            vertices.len(),
+            primitive_vertex_count,
+        );
         let base_vertex = vertices.len() as u32;
         for (i, position) in positions.iter().copied().enumerate() {
             let joint = joints.get(i).copied().unwrap_or([0, 0, 0, 0]);
@@ -819,10 +944,54 @@ pub fn decode_gltf_mesh(bytes: &[u8], mesh_index: usize) -> Option<DecodedMesh> 
         vertices,
         indices,
         surface_ranges,
+        blend_shapes,
         meshlets: Vec::new(),
         lods: Vec::new(),
         has_skinning,
     })
+}
+
+fn append_primitive_blend_shapes(
+    mesh_blend_shapes: &mut Vec<MeshBlendShape>,
+    primitive_blend_shapes: &[MeshBlendShape],
+    base_vertex_count: usize,
+    primitive_vertex_count: usize,
+) {
+    for _ in mesh_blend_shapes.len()..primitive_blend_shapes.len() {
+        mesh_blend_shapes.push(MeshBlendShape {
+            vertices: vec![
+                MeshBlendShapeVertex {
+                    position_delta: [0.0; 3],
+                    normal_delta: [0.0; 3],
+                };
+                base_vertex_count
+            ],
+            has_normal_deltas: false,
+        });
+    }
+    for (idx, mesh_shape) in mesh_blend_shapes.iter_mut().enumerate() {
+        if let Some(primitive_shape) = primitive_blend_shapes.get(idx) {
+            mesh_shape.has_normal_deltas |= primitive_shape.has_normal_deltas;
+            for vertex_idx in 0..primitive_vertex_count {
+                mesh_shape.vertices.push(
+                    primitive_shape.vertices.get(vertex_idx).copied().unwrap_or(
+                        MeshBlendShapeVertex {
+                            position_delta: [0.0; 3],
+                            normal_delta: [0.0; 3],
+                        },
+                    ),
+                );
+            }
+        } else {
+            mesh_shape.vertices.extend(vec![
+                MeshBlendShapeVertex {
+                    position_delta: [0.0; 3],
+                    normal_delta: [0.0; 3],
+                };
+                primitive_vertex_count
+            ]);
+        }
+    }
 }
 
 fn decode_static_payload(flags: u32, payload: &[u8]) -> Option<Vec<u8>> {

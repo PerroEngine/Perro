@@ -70,6 +70,12 @@ var<storage, read> skeletons: array<mat4x4<f32>>;
 var<storage, read> custom_params_meta: array<u32>;
 @group(0) @binding(3)
 var<storage, read> custom_params_values: array<f32>;
+@group(0) @binding(4)
+var<storage, read> blend_shape_deltas: array<BlendShapeDelta>;
+@group(0) @binding(5)
+var<storage, read> blend_shape_weights: array<f32>;
+@group(0) @binding(6)
+var<storage, read> blend_shape_instances: array<BlendShapeInstance>;
 @group(1) @binding(0)
 var material_sampler: sampler;
 @group(1) @binding(1)
@@ -105,6 +111,16 @@ struct InstanceInput {
     @location(10) packed_emissive: u32,
     @location(11) packed_material_params: u32,
     @location(13) skeleton_params: vec4<u32>,
+};
+
+struct BlendShapeDelta {
+    position_delta: vec4<f32>,
+    normal_delta: vec4<f32>,
+};
+
+struct BlendShapeInstance {
+    weight_range: vec4<u32>,
+    shape_range: vec4<u32>,
 };
 
 struct VertexOutput {
@@ -311,15 +327,37 @@ fn transform_normal_ws(
     ) * det_sign);
 }
 
-fn perro_vs_main_base(v: VertexInput, inst: InstanceInput) -> VertexOutput {
-    var pos = v.pos;
-    var normal = v.normal;
+fn apply_blend_shapes(v: VertexInput, vertex_index: u32, instance_index: u32) -> VertexInput {
+    let blend_meta = blend_shape_instances[instance_index];
+    let weight_count = min(blend_meta.weight_range.y, blend_meta.shape_range.y);
+    if weight_count == 0u || blend_meta.shape_range.w == 0u || vertex_index < blend_meta.shape_range.z {
+        return v;
+    }
+    let local_vertex = vertex_index - blend_meta.shape_range.z;
+    if local_vertex >= blend_meta.shape_range.w {
+        return v;
+    }
+    var out_pos = v.pos;
+    var out_normal = v.normal;
+    for (var i = 0u; i < weight_count; i = i + 1u) {
+        let weight = clamp(blend_shape_weights[blend_meta.weight_range.x + i], 0.0, 1.0);
+        let delta = blend_shape_deltas[blend_meta.shape_range.x + i * blend_meta.shape_range.w + local_vertex];
+        out_pos = out_pos + delta.position_delta.xyz * weight;
+        out_normal = out_normal + delta.normal_delta.xyz * weight;
+    }
+    return VertexInput(out_pos, normalize(out_normal), v.joints, v.weights, v.uv);
+}
+
+fn perro_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_index: u32, instance_index: u32) -> VertexOutput {
+    let blended = apply_blend_shapes(v, vertex_index, instance_index);
+    var pos = blended.pos;
+    var normal = blended.normal;
     if inst.skeleton_params.y > 0u {
         let base = inst.skeleton_params.x;
-        let m0 = skeletons[base + v.joints.x] * v.weights.x;
-        let m1 = skeletons[base + v.joints.y] * v.weights.y;
-        let m2 = skeletons[base + v.joints.z] * v.weights.z;
-        let m3 = skeletons[base + v.joints.w] * v.weights.w;
+        let m0 = skeletons[base + blended.joints.x] * blended.weights.x;
+        let m1 = skeletons[base + blended.joints.y] * blended.weights.y;
+        let m2 = skeletons[base + blended.joints.z] * blended.weights.z;
+        let m3 = skeletons[base + blended.joints.w] * blended.weights.w;
         let skin = m0 + m1 + m2 + m3;
         pos = (skin * vec4<f32>(pos, 1.0)).xyz;
         normal = (skin * vec4<f32>(normal, 0.0)).xyz;
@@ -347,7 +385,7 @@ fn perro_vs_main_base(v: VertexInput, inst: InstanceInput) -> VertexOutput {
     out.packed_emissive = inst.packed_emissive;
     out.packed_material_params = inst.packed_material_params;
     out.custom_range = vec2<u32>(inst.skeleton_params.z, inst.skeleton_params.w);
-    out.uv = v.uv;
+    out.uv = blended.uv;
     return out;
 }
 

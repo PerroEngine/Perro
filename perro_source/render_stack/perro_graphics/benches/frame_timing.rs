@@ -130,6 +130,8 @@ fn draw_multi_dense_command(count: u32, mesh: MeshID, material: MaterialID) -> R
         .map(|i| DenseInstancePose3D {
             position: [(i % 256) as f32 * 2.0, 0.0, (i / 256) as f32 * 2.0],
             rotation: [0.0, 0.0, 0.0, 1.0],
+            has_blend_shape_weight_override: false,
+            blend_shape_weights: Arc::from([]),
         })
         .collect::<Vec<_>>()
         .into();
@@ -181,26 +183,13 @@ fn sky_command(paused: bool) -> RenderCommand {
             day_colors: Arc::from([[0.42, 0.7, 1.0], [0.1, 0.35, 0.8]]),
             evening_colors: Arc::from([[1.0, 0.45, 0.2], [0.25, 0.08, 0.3]]),
             night_colors: Arc::from([[0.02, 0.03, 0.08], [0.0, 0.0, 0.02]]),
-            sky_angle: 0.0,
+            horizon_colors: Arc::from([[0.55, 0.57, 0.60], [0.35, 0.36, 0.38]]),
             time: SkyTime3DState {
                 time_of_day: 0.5,
                 paused,
                 scale: 1.0,
             },
-            cloud_size: 0.7,
-            cloud_density: 0.5,
-            cloud_variance: 0.4,
-            cloud_wind_vector: [0.2, 0.05],
-            cloud_shader: None,
-            star_size: 0.7,
-            star_scatter: 0.5,
-            star_gleam: 0.4,
-            moon_size: 0.12,
-            moon_shader: None,
-            sun_size: 0.08,
-            sun_shader: None,
-            style_blend: 0.0,
-            sky_shader: None,
+            shaders: Arc::from([]),
         }),
     }))
 }

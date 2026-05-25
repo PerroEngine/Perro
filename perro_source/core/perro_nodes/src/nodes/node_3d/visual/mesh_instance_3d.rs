@@ -120,6 +120,7 @@ pub struct MeshInstance3D {
     pub meshlet_override: Option<bool>,
     pub lod: LODOptions,
     pub blend: MeshBlendOptions,
+    pub blend_shape_weights: Vec<f32>,
     pub cast_shadows: bool,
     pub receive_shadows: bool,
 }
@@ -137,6 +138,7 @@ impl MeshInstance3D {
             meshlet_override: None,
             lod: LODOptions::new(),
             blend: MeshBlendOptions::new(),
+            blend_shape_weights: Vec::new(),
             cast_shadows: true,
             receive_shadows: true,
         }

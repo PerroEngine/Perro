@@ -87,7 +87,53 @@ impl Gpu3D {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
+        });
+        let water_camera_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("perro_water_camera3d_bgl"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(
+                        std::num::NonZeroU64::new(std::mem::size_of::<Scene3DUniform>() as u64)
+                            .expect("camera uniform size must be non-zero"),
+                    ),
+                },
+                count: None,
+            }],
         });
         let rigid_camera_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("perro_camera3d_rigid_bgl"),
@@ -118,6 +164,36 @@ impl Gpu3D {
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
@@ -160,6 +236,26 @@ impl Gpu3D {
                         sample_type: wgpu::TextureSampleType::Depth,
                         view_dimension: wgpu::TextureViewDimension::D2,
                         multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
                     count: None,
                 },
@@ -371,6 +467,27 @@ impl Gpu3D {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let blend_shape_delta_capacity = 1usize;
+        let blend_shape_delta_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_blend_shape_deltas"),
+            size: std::mem::size_of::<BlendShapeDeltaGpu>() as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let blend_shape_weight_capacity = 1usize;
+        let blend_shape_weight_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_blend_shape_weights"),
+            size: std::mem::size_of::<f32>() as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let blend_shape_instance_meta_capacity = 1usize;
+        let blend_shape_instance_meta_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_blend_shape_instance_meta"),
+            size: std::mem::size_of::<BlendShapeInstanceMetaGpu>() as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
         let multimesh_draw_params_capacity = 256usize;
         let multimesh_draw_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("perro_multimesh_draw_params"),
@@ -399,7 +516,27 @@ impl Gpu3D {
                     binding: 3,
                     resource: custom_params_values_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: blend_shape_delta_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: blend_shape_weight_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: blend_shape_instance_meta_buffer.as_entire_binding(),
+                },
             ],
+        });
+        let water_camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_water_camera3d_bg"),
+            layout: &water_camera_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: camera_buffer.as_entire_binding(),
+            }],
         });
         let rigid_camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("perro_camera3d_rigid_bg"),
@@ -416,6 +553,18 @@ impl Gpu3D {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: custom_params_values_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: blend_shape_delta_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: blend_shape_weight_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: blend_shape_instance_meta_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -442,6 +591,18 @@ impl Gpu3D {
                             binding: 3,
                             resource: custom_params_values_buffer.as_entire_binding(),
                         },
+                        wgpu::BindGroupEntry {
+                            binding: 4,
+                            resource: blend_shape_delta_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 5,
+                            resource: blend_shape_weight_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 6,
+                            resource: blend_shape_instance_meta_buffer.as_entire_binding(),
+                        },
                     ],
                 })
             })
@@ -464,6 +625,18 @@ impl Gpu3D {
                         wgpu::BindGroupEntry {
                             binding: 2,
                             resource: custom_params_values_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: blend_shape_delta_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 4,
+                            resource: blend_shape_weight_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 5,
+                            resource: blend_shape_instance_meta_buffer.as_entire_binding(),
                         },
                     ],
                 })
@@ -1074,6 +1247,14 @@ impl Gpu3D {
                     binding: 2,
                     resource: wgpu::BindingResource::TextureView(&mesh_blend_depth_view),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: blend_shape_delta_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: blend_shape_weight_buffer.as_entire_binding(),
+                },
             ],
         });
         let mesh_blend_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1260,6 +1441,7 @@ impl Gpu3D {
         let mut gpu = Self {
             color_format,
             camera_bgl,
+            water_camera_bgl,
             rigid_camera_bgl,
             multimesh_bgl,
             material_texture_bgl,
@@ -1313,6 +1495,7 @@ impl Gpu3D {
             pipeline_multimesh_blend_double_sided,
             camera_buffer,
             camera_bind_group,
+            water_camera_bind_group,
             rigid_camera_bind_group,
             shadow_camera_buffers,
             shadow_camera_bind_groups,
@@ -1366,6 +1549,15 @@ impl Gpu3D {
             skinned_instance_meta_buffer,
             skinned_instance_meta_capacity,
             staged_skinned_instance_meta: Vec::new(),
+            blend_shape_delta_buffer,
+            blend_shape_delta_capacity,
+            blend_shape_deltas: Vec::new(),
+            blend_shape_weight_buffer,
+            blend_shape_weight_capacity,
+            staged_blend_shape_weights: Vec::new(),
+            blend_shape_instance_meta_buffer,
+            blend_shape_instance_meta_capacity,
+            staged_blend_shape_instance_meta: Vec::new(),
             multimesh_bind_group,
             multimesh_draw_params_buffer,
             multimesh_draw_params_capacity,
@@ -1415,7 +1607,7 @@ impl Gpu3D {
             shadow_focus_center: Vec3::ZERO,
             shadow_focus_radius: 64.0,
             last_sky: None,
-            last_sky_cloud_time_seconds: -1.0,
+            last_sky_time_seconds: -1.0,
             sky_enabled: false,
             mesh_vertices: vertices,
             rigid_mesh_vertices: rigid_vertices,

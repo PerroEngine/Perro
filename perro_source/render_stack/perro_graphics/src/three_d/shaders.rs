@@ -17,14 +17,7 @@ mod regular {
     pub const DEPTH_PREPASS_SKINNED_WGSL: &str =
         perro_macros::include_str_stripped!("shaders/depth_prepass_skinned.wgsl");
     pub const MULTIMESH_WGSL: &str = perro_macros::include_str_stripped!("shaders/multimesh.wgsl");
-    pub const SKY3D_ATMO_WGSL: &str =
-        perro_macros::include_str_stripped!("shaders/sky3d_parts/atmo.wgsl");
-    pub const SKY3D_MOON_WGSL: &str =
-        perro_macros::include_str_stripped!("shaders/sky3d_parts/moon.wgsl");
-    pub const SKY3D_SUN_WGSL: &str =
-        perro_macros::include_str_stripped!("shaders/sky3d_parts/sun.wgsl");
-    pub const SKY3D_CLOUDS_WGSL: &str =
-        perro_macros::include_str_stripped!("shaders/sky3d_parts/clouds.wgsl");
+    pub const SKY3D_WGSL: &str = perro_macros::include_str_stripped!("shaders/sky3d.wgsl");
 }
 
 mod culling {
@@ -161,6 +154,10 @@ fn sanitize_reserved_meta_identifier(wgsl: &str) -> String {
         "let meta = custom_params_meta",
         "let packed_meta = custom_params_meta",
     )
+    .replace(
+        "let meta = blend_shape_instances",
+        "let blend_meta = blend_shape_instances",
+    )
     .replace("let kind = meta & 0x3u;", "let kind = packed_meta & 0x3u;")
     .replace(
         "let value_offset = meta >> 2u;",
@@ -199,11 +196,11 @@ fn build_material_shader_with_prelude_inner(
     out.push_str(material_wgsl);
     if has_custom_vertex {
         out.push_str(
-            "\n@vertex\nfn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {\n    return shade_vertex(perro_vs_main_base(v, inst));\n}\n",
+            "\n@vertex\nfn vs_main(v: VertexInput, inst: InstanceInput, @builtin(vertex_index) vertex_index: u32, @builtin(instance_index) instance_index: u32) -> VertexOutput {\n    return shade_vertex(perro_vs_main_base(v, inst, vertex_index, instance_index));\n}\n",
         );
     } else {
         out.push_str(
-            "\n@vertex\nfn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {\n    return perro_vs_main_base(v, inst);\n}\n",
+            "\n@vertex\nfn vs_main(v: VertexInput, inst: InstanceInput, @builtin(vertex_index) vertex_index: u32, @builtin(instance_index) instance_index: u32) -> VertexOutput {\n    return perro_vs_main_base(v, inst, vertex_index, instance_index);\n}\n",
         );
     }
     if apply_custom_shadows {
@@ -271,24 +268,91 @@ pub fn create_sky_shader_module_from_source(
 
 #[inline]
 pub fn build_sky_shader() -> String {
-    build_sky_shader_with_parts(
-        regular::SKY3D_MOON_WGSL,
-        regular::SKY3D_SUN_WGSL,
-        regular::SKY3D_CLOUDS_WGSL,
+    regular::SKY3D_WGSL.replace(
+        "/*__PERRO_SKY_CUSTOM_STACK__*/",
+        "fn apply_custom_sky_stack(base: SkyFragment) -> vec4<f32> { return base.color; }",
     )
 }
 
 #[inline]
-pub fn build_sky_shader_with_parts(moon_wgsl: &str, sun_wgsl: &str, clouds_wgsl: &str) -> String {
+pub fn build_sky_shader_with_passes(
+    passes: &[(String, &[perro_structs::CustomPostParam])],
+) -> String {
+    let mut stack = String::new();
+    for (idx, (source, params)) in passes.iter().enumerate() {
+        let fn_name = format!("sky_shader_{idx}");
+        let renamed = source.replacen("fn sky_shader", &format!("fn {fn_name}"), 1);
+        stack.push('\n');
+        stack.push_str(&renamed);
+        stack.push('\n');
+        stack.push_str(&format!(
+            "fn apply_sky_shader_pass_{idx}(base: SkyFragment) -> vec4<f32> {{\n"
+        ));
+        stack.push_str("    let frag = SkyFragment(\n");
+        stack.push_str("        base.ray,\n");
+        stack.push_str("        base.uv,\n");
+        stack.push_str("        base.time_of_day,\n");
+        stack.push_str("        base.time_seconds,\n");
+        stack.push_str("        base.day_weight,\n");
+        stack.push_str("        base.evening_weight,\n");
+        stack.push_str("        base.night_weight,\n");
+        stack.push_str("        base.horizon_weight,\n");
+        stack.push_str("        base.color,\n");
+        stack.push_str(&encoded_sky_param_values(params));
+        stack.push_str("    );\n");
+        stack.push_str(&format!("    return {fn_name}(frag);\n"));
+        stack.push_str("}\n");
+        stack.push_str(&format!(
+            "fn sky_custom_pass_{idx}(base: SkyFragment) -> vec4<f32> {{ return apply_sky_shader_pass_{idx}(base); }}\n"
+        ));
+    }
+    if !passes.is_empty() {
+        stack.push_str("\nfn apply_custom_sky_stack(base: SkyFragment) -> vec4<f32> {\n");
+        stack.push_str("    var cur = base;\n");
+        for idx in 0..passes.len() {
+            stack.push_str(&format!("    cur.color = sky_custom_pass_{idx}(cur);\n"));
+        }
+        stack.push_str("    return cur.color;\n");
+        stack.push_str("}\n");
+    }
+    regular::SKY3D_WGSL.replace("/*__PERRO_SKY_CUSTOM_STACK__*/", &stack)
+}
+
+fn encoded_sky_param_values(params: &[perro_structs::CustomPostParam]) -> String {
     let mut out = String::new();
-    out.push_str(regular::SKY3D_ATMO_WGSL);
-    out.push('\n');
-    out.push_str(moon_wgsl);
-    out.push('\n');
-    out.push_str(sun_wgsl);
-    out.push('\n');
-    out.push_str(clouds_wgsl);
+    for i in 0..16 {
+        let v = params
+            .get(i)
+            .map(|param| encode_custom_param_value(&param.value))
+            .unwrap_or([0.0; 4]);
+        out.push_str(&format!(
+            "        vec4<f32>({x}, {y}, {z}, {w}),\n",
+            x = wgsl_f32(v[0]),
+            y = wgsl_f32(v[1]),
+            z = wgsl_f32(v[2]),
+            w = wgsl_f32(v[3])
+        ));
+    }
     out
+}
+
+fn encode_custom_param_value(value: &perro_structs::CustomPostParamValue) -> [f32; 4] {
+    match value {
+        perro_structs::CustomPostParamValue::F32(v) => [*v, 0.0, 0.0, 0.0],
+        perro_structs::CustomPostParamValue::I32(v) => [*v as f32, 0.0, 0.0, 0.0],
+        perro_structs::CustomPostParamValue::Bool(v) => [if *v { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0],
+        perro_structs::CustomPostParamValue::Vec2(v) => [v[0], v[1], 0.0, 0.0],
+        perro_structs::CustomPostParamValue::Vec3(v) => [v[0], v[1], v[2], 0.0],
+        perro_structs::CustomPostParamValue::Vec4(v) => *v,
+    }
+}
+
+fn wgsl_f32(v: f32) -> String {
+    if v.is_finite() {
+        format!("{v:?}")
+    } else {
+        "0.0".to_string()
+    }
 }
 
 #[inline]
@@ -363,5 +427,20 @@ mod tests {
     fn sky_wgsl_parses() {
         let wgsl = build_sky_shader();
         naga::front::wgsl::parse_str(&wgsl).expect("sky wgsl parses");
+    }
+
+    #[test]
+    fn custom_sky_wgsl_parses() {
+        let custom = r#"
+fn sky_shader(in: SkyFragment) -> vec4<f32> {
+    return vec4<f32>(in.color.rgb + custom_param(in, 0u).xxx, in.color.a);
+}
+"#
+        .to_string();
+        let params = vec![perro_structs::CustomPostParam::unnamed(
+            perro_structs::CustomPostParamValue::F32(0.1),
+        )];
+        let wgsl = build_sky_shader_with_passes(&[(custom, params.as_slice())]);
+        naga::front::wgsl::parse_str(&wgsl).expect("custom sky wgsl parses");
     }
 }

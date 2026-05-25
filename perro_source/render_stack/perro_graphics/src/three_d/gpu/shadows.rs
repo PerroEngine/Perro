@@ -248,29 +248,6 @@ fn build_ray_shadow_scenes(args: RayShadowSceneArgs<'_>) -> Option<RayShadowScen
         .flatten()
         .copied()
         .find(|light| light.cast_shadows && light.intensity > 1.0e-4);
-    let sky_shadow_dir = lighting.sky.as_ref().and_then(|sky| {
-        let (sun_body_dir, moon_body_dir) =
-            sun_moon_dirs_from_time(sky.time.time_of_day, sky.sky_angle);
-        let sun_dir = -sun_body_dir;
-        let moon_dir = -moon_body_dir;
-        let day_amt = day_weight_from_time(sky.time.time_of_day).powf(1.20);
-        let dusk_amt = evening_weight_from_time(sky.time.time_of_day) * (1.0 - day_amt * 0.55);
-        let night_amt = (1.0 - day_amt).clamp(0.0, 1.0);
-        let sun_intensity = (((day_amt * 1.35) + (dusk_amt * 0.22))
-            * sky.sun_size.max(0.1)
-            * horizon_visibility(sun_body_dir.y))
-        .max(0.0);
-        let moon_intensity =
-            ((night_amt * 0.18) * sky.moon_size.max(0.05) * horizon_visibility(moon_body_dir.y))
-                .max(0.0);
-        if sun_intensity > 1.0e-4 {
-            Some(sun_dir)
-        } else if moon_intensity > 1.0e-4 {
-            Some(moon_dir)
-        } else {
-            None
-        }
-    });
     let dir = if DEBUG_FORCE_WORLD_SUN_DIR {
         Vec3::new(
             DEBUG_WORLD_SUN_DIR[0],
@@ -281,7 +258,7 @@ fn build_ray_shadow_scenes(args: RayShadowSceneArgs<'_>) -> Option<RayShadowScen
     } else if let Some(ray) = explicit_shadow_ray {
         Vec3::from(ray.direction).normalize_or_zero()
     } else {
-        sky_shadow_dir?.normalize_or_zero()
+        return None;
     };
     if dir.length_squared() <= 1.0e-6 || !dir.is_finite() {
         return None;

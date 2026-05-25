@@ -3,27 +3,22 @@
 Scenes:
 
 - `res://scenes/demos/sky.scn`
-- `res://scenes/demos/sky_wispy.scn`
 
 Shows:
 
 - `Sky3D`
 - day/evening/night gradients
-- sun and moon sizes
-- cloud settings
-- cloud shader mode (`VOLUMETRIC` or `WISPY`)
-- `DEFAULT` or custom cloud/sun/moon shaders
-- wind vector
-- star controls
+- horizon colors
+- custom sky shader stack
 - scene light matching sky
 
 Why scene works this way:
 
-- Each scene has one `Sky3D` mode.
+- Each scene has one `Sky3D`.
 - `Sky3D` sits at root so it affects whole scene.
 - Terrain and marker meshes give horizon/depth reference.
 - Time is unpaused with low scale so sky changes slowly.
-- Separate sun light shows how sky visuals and scene lighting pair.
+- Separate ray light shows scene lighting stays explicit.
 
 Scene map:
 
@@ -32,7 +27,7 @@ Scene map:
 | `Sky`          | Main sky resource node.            |
 | `Terrain`      | Ground reference.                  |
 | `SkyMarkerA/B` | Objects for sky lighting contrast. |
-| `Sun`          | Directional scene light.           |
+| `Sun`          | Explicit directional scene light.  |
 | `Ambient`      | Base scene fill.                   |
 
 Controls:

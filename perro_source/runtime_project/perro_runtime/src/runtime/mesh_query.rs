@@ -662,12 +662,16 @@ impl Runtime {
                             Mat4::from_scale_rotation_translation(
                                 Vec3::splat(mesh.instance_scale.max(0.0001)),
                                 glam::Quat::from_xyzw(
-                                    instance.1.x,
-                                    instance.1.y,
-                                    instance.1.z,
-                                    instance.1.w,
+                                    instance.rotation.x,
+                                    instance.rotation.y,
+                                    instance.rotation.z,
+                                    instance.rotation.w,
                                 ),
-                                Vec3::new(instance.0.x, instance.0.y, instance.0.z),
+                                Vec3::new(
+                                    instance.position.x,
+                                    instance.position.y,
+                                    instance.position.z,
+                                ),
                             )
                         })
                         .collect()

@@ -89,6 +89,16 @@ fn create_multimesh_pipeline_with_depth_write(
                             shader_location: 6,
                             format: wgpu::VertexFormat::Uint32,
                         },
+                        wgpu::VertexAttribute {
+                            offset: 32,
+                            shader_location: 7,
+                            format: wgpu::VertexFormat::Uint32x4,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 48,
+                            shader_location: 8,
+                            format: wgpu::VertexFormat::Uint32x4,
+                        },
                     ],
                 },
             ],

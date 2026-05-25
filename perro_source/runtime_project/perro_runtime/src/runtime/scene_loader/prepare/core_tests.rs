@@ -3,7 +3,7 @@ mod tests {
     use super::*;
     use perro_nodes::SceneNodeData;
     use perro_scene::Parser;
-    use perro_structs::{BitMask, Color, Vector3};
+    use perro_structs::{BitMask, Color, CustomPostParamValue, Vector3};
 
     #[test]
     fn water_body_scene_fields_parse() {
@@ -121,6 +121,69 @@ mod tests {
                 assert!(node.water.debug);
             }
             other => panic!("expected WaterBody2D node, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn sky3d_horizon_and_shader_stack_parse() {
+        let scene = Parser::new(
+            r#"
+            $root = @sky
+            [sky]
+            [Sky3D]
+                day_colors = [(0.1, 0.2, 0.3), (0.4, 0.5, 0.6)]
+                evening_colors = [(0.7, 0.4, 0.2), (0.2, 0.1, 0.3)]
+                night_colors = [(0.0, 0.0, 0.1), (0.0, 0.0, 0.2)]
+                horizon_colors = [(0.6, 0.6, 0.6), (0.3, 0.3, 0.3)]
+                time = { time_of_day = 0.25 paused = true scale = 0.5 }
+                shaders = [
+                    { path = "res://shaders/sky.wgsl", params = [1.0, (1.0, 2.0, 3.0)] }
+                ]
+            [/Sky3D]
+            [/sky]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+        let sky = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "sky")
+            .expect("sky node");
+
+        match &sky.node.data {
+            SceneNodeData::Sky3D(node) => {
+                assert_eq!(node.horizon_colors.len(), 2);
+                assert_eq!(node.time.time_of_day, 0.25);
+                assert!(node.time.paused);
+                assert_eq!(node.shaders.len(), 1);
+                assert_eq!(node.shaders[0].path.as_ref(), "res://shaders/sky.wgsl");
+                assert_eq!(node.shaders[0].params.len(), 2);
+                assert_eq!(node.shaders[0].params[0].value, CustomPostParamValue::F32(1.0));
+                assert_eq!(
+                    node.shaders[0].params[1].value,
+                    CustomPostParamValue::Vec3([1.0, 2.0, 3.0])
+                );
+            }
+            other => panic!("expected Sky3D, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn sky3d_old_fields_do_not_resolve() {
+        for field in [
+            "cloud_size",
+            "cloud_shader",
+            "star_size",
+            "moon_size",
+            "sun_size",
+            "sky_shader",
+            "sky_angle",
+        ] {
+            assert!(resolve_node_field("Sky3D", field).is_none(), "{field}");
         }
     }
 
@@ -1294,8 +1357,8 @@ mod tests {
         match &batch.node.data {
             SceneNodeData::MultiMeshInstance3D(mesh) => {
                 assert_eq!(mesh.instances.len(), 24);
-                assert_eq!(mesh.instances[0].0, Vector3::new(-3.0, 0.5, -4.0));
-                assert_eq!(mesh.instances[23].0, Vector3::new(3.0, 3.5, -1.0));
+                assert_eq!(mesh.instances[0].position, Vector3::new(-3.0, 0.5, -4.0));
+                assert_eq!(mesh.instances[23].position, Vector3::new(3.0, 3.5, -1.0));
             }
             other => panic!("expected MultiMeshInstance3D node, got {other:?}"),
         }
@@ -1349,6 +1412,64 @@ mod tests {
             SceneNodeData::MultiMeshInstance3D(mesh) => {
                 assert_eq!(mesh.lod.min_lod, 2);
                 assert_eq!(mesh.lod.max_lod, 4);
+            }
+            other => panic!("expected MultiMeshInstance3D node, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn scene_loader_parses_blend_shape_weights_and_aliases() {
+        let scene = Parser::new(
+            r#"
+            $root = @Mesh
+            [Mesh]
+            [MeshInstance3D]
+                shape_key_weights = [-1.0, 0.5, 2.0]
+            [/MeshInstance3D]
+            [/Mesh]
+
+            [Batch]
+            [MultiMeshInstance3D]
+                morph_weights = [0.2, 1.5]
+                instances = [
+                    { position=[1.0, 0.0, 0.0] blend_shape_weights=[0.7, 0.4] },
+                    { position=[2.0, 0.0, 0.0] }
+                ]
+            [/MultiMeshInstance3D]
+            [/Batch]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+
+        let mesh = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "Mesh")
+            .expect("mesh node");
+        match &mesh.node.data {
+            SceneNodeData::MeshInstance3D(mesh) => {
+                assert_eq!(mesh.blend_shape_weights, vec![0.0, 0.5, 1.0]);
+            }
+            other => panic!("expected MeshInstance3D node, got {other:?}"),
+        }
+
+        let batch = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "Batch")
+            .expect("batch node");
+        match &batch.node.data {
+            SceneNodeData::MultiMeshInstance3D(mesh) => {
+                assert_eq!(mesh.blend_shape_weights, vec![0.2, 1.0]);
+                assert_eq!(
+                    mesh.instances[0].blend_shape_weights.as_deref(),
+                    Some([0.7, 0.4].as_slice())
+                );
+                assert!(mesh.instances[1].blend_shape_weights.is_none());
             }
             other => panic!("expected MultiMeshInstance3D node, got {other:?}"),
         }

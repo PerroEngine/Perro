@@ -1,120 +1,18 @@
-use perro_structs::{BitMask, Transform3D};
+use perro_structs::{BitMask, CustomPostParam, Transform3D};
 use std::borrow::Cow;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum SkyStyle {
-    #[default]
-    Toon,
-    Realistic,
-}
-
-impl SkyStyle {
-    pub const fn blend_factor(self) -> f32 {
-        match self {
-            Self::Toon => 0.0,
-            Self::Realistic => 1.0,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum SkyCloudMode {
-    #[default]
-    Volumetric,
-    Wispy,
-}
-
 #[derive(Clone, Debug)]
-pub struct SkyClouds {
-    pub size: f32,
-    pub density: f32,
-    pub variance: f32,
-    pub wind_vector: [f32; 2],
-    pub mode: SkyCloudMode,
-    pub shader: Option<Cow<'static, str>>,
+pub struct SkyShaderPass {
+    pub path: Cow<'static, str>,
+    pub params: Vec<CustomPostParam>,
 }
 
-impl SkyClouds {
-    pub const fn new() -> Self {
+impl SkyShaderPass {
+    pub fn new(path: impl Into<Cow<'static, str>>) -> Self {
         Self {
-            size: 0.72,
-            density: 0.42,
-            variance: 0.38,
-            wind_vector: [0.06, 0.015],
-            mode: SkyCloudMode::Volumetric,
-            shader: None,
+            path: path.into(),
+            params: Vec::new(),
         }
-    }
-}
-
-impl Default for SkyClouds {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct SkyStars {
-    pub size: f32,
-    pub scatter: f32,
-    pub gleam: f32,
-}
-
-impl SkyStars {
-    pub const fn new() -> Self {
-        Self {
-            size: 1.0,
-            scatter: 0.25,
-            gleam: 0.4,
-        }
-    }
-}
-
-impl Default for SkyStars {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct SkySun {
-    pub size: f32,
-    pub shader: Option<Cow<'static, str>>,
-}
-
-impl SkySun {
-    pub const fn new() -> Self {
-        Self {
-            size: 1.0,
-            shader: None,
-        }
-    }
-}
-
-impl Default for SkySun {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct SkyMoon {
-    pub size: f32,
-    pub shader: Option<Cow<'static, str>>,
-}
-
-impl SkyMoon {
-    pub const fn new() -> Self {
-        Self {
-            size: 0.6,
-            shader: None,
-        }
-    }
-}
-
-impl Default for SkyMoon {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -149,14 +47,9 @@ pub struct Sky3D {
     pub day_colors: Vec<[f32; 3]>,
     pub evening_colors: Vec<[f32; 3]>,
     pub night_colors: Vec<[f32; 3]>,
-    pub sky_angle: f32,
+    pub horizon_colors: Vec<[f32; 3]>,
     pub time: SkyTime,
-    pub clouds: SkyClouds,
-    pub stars: SkyStars,
-    pub sun: SkySun,
-    pub moon: SkyMoon,
-    pub style: SkyStyle,
-    pub sky_shader: Option<Cow<'static, str>>,
+    pub shaders: Vec<SkyShaderPass>,
     pub render_layers: BitMask,
 }
 
@@ -169,14 +62,9 @@ impl Sky3D {
             day_colors: vec![[0.06, 0.12, 0.25], [0.35, 0.55, 0.9], [0.8, 0.9, 1.0]],
             evening_colors: vec![[1.00, 0.62, 0.40], [0.95, 0.42, 0.58], [0.42, 0.20, 0.42]],
             night_colors: vec![[0.01, 0.02, 0.06], [0.04, 0.06, 0.15], [0.09, 0.12, 0.25]],
-            sky_angle: 0.0,
+            horizon_colors: vec![[0.55, 0.57, 0.60], [0.42, 0.43, 0.45], [0.30, 0.31, 0.33]],
             time: SkyTime::new(),
-            clouds: SkyClouds::new(),
-            stars: SkyStars::new(),
-            sun: SkySun::new(),
-            moon: SkyMoon::new(),
-            style: SkyStyle::Toon,
-            sky_shader: None,
+            shaders: Vec::new(),
             render_layers: BitMask::ALL,
         }
     }

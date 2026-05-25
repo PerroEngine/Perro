@@ -18,13 +18,16 @@ pub mod pawdio {
 pub mod pmesh {
     pub const EXTENSION: &str = "pmesh";
     pub const MAGIC: &[u8; 5] = b"PMESH";
-    pub const VERSION: u32 = 1;
+    pub const VERSION_V1: u32 = 1;
+    pub const VERSION_V2: u32 = 2;
+    pub const VERSION: u32 = VERSION_V2;
     pub const FLAG_HAS_NORMAL: u32 = 1 << 0;
     pub const FLAG_HAS_UV0: u32 = 1 << 1;
     pub const FLAG_HAS_JOINTS: u32 = 1 << 2;
     pub const FLAG_HAS_WEIGHTS: u32 = 1 << 3;
     pub const FLAG_INDEX_U16: u32 = 1 << 4;
     pub const FLAG_WEIGHTS_UNORM8: u32 = 1 << 5;
+    pub const FLAG_HAS_BLEND_SHAPE_NORMALS: u32 = 1 << 6;
     pub const FLAG_PAYLOAD_RAW: u32 = 1 << 31;
 }
 

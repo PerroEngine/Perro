@@ -167,9 +167,9 @@ fn apply_sky_3d_fields(node: &mut Sky3D, fields: &[SceneObjectField]) {
                     node.night_colors = colors;
                 }
             }
-            Some(NodeField::Sky3D(Sky3DField::SkyAngle)) => {
-                if let Some(v) = as_f32(value) {
-                    node.sky_angle = v;
+            Some(NodeField::Sky3D(Sky3DField::HorizonColors)) => {
+                if let Some(colors) = as_color_array(value) {
+                    node.horizon_colors = colors;
                 }
             }
             Some(NodeField::Sky3D(Sky3DField::Time)) => {
@@ -211,82 +211,9 @@ fn apply_sky_3d_fields(node: &mut Sky3D, fields: &[SceneObjectField]) {
                     node.time.scale = v;
                 }
             }
-            Some(NodeField::Sky3D(Sky3DField::CloudSize)) => {
-                if let Some(v) = as_f32(value) {
-                    node.clouds.size = v;
-                }
-            }
-            Some(NodeField::Sky3D(Sky3DField::CloudDensity)) => {
-                if let Some(v) = as_f32(value) {
-                    node.clouds.density = v;
-                }
-            }
-            Some(NodeField::Sky3D(Sky3DField::CloudVariance)) => {
-                if let Some(v) = as_f32(value) {
-                    node.clouds.variance = v;
-                }
-            }
-            Some(NodeField::Sky3D(Sky3DField::CloudWindVector)) => {
-                if let Some(v) = as_vec2(value) {
-                    node.clouds.wind_vector = [v.x, v.y];
-                } else if let Some(v) = as_vec3(value) {
-                    node.clouds.wind_vector = [v.x, v.y];
-                }
-            }
-            Some(NodeField::Sky3D(Sky3DField::StarSize)) => {
-                if let Some(v) = as_f32(value) {
-                    node.stars.size = v;
-                }
-            }
-            Some(NodeField::Sky3D(Sky3DField::StarScatter)) => {
-                if let Some(v) = as_f32(value) {
-                    node.stars.scatter = v;
-                }
-            }
-            Some(NodeField::Sky3D(Sky3DField::StarGleam)) => {
-                if let Some(v) = as_f32(value) {
-                    node.stars.gleam = v;
-                }
-            }
-            Some(NodeField::Sky3D(Sky3DField::MoonSize)) => {
-                if let Some(v) = as_f32(value) {
-                    node.moon.size = v;
-                }
-            }
-            Some(NodeField::Sky3D(Sky3DField::SunSize)) => {
-                if let Some(v) = as_f32(value) {
-                    node.sun.size = v;
-                }
-            }
-            Some(NodeField::Sky3D(Sky3DField::Style)) => {
-                if let Some(v) = as_str(value) {
-                    node.style = if v.eq_ignore_ascii_case("realistic") || v.eq_ignore_ascii_case("real") {
-                        SkyStyle::Realistic
-                    } else {
-                        SkyStyle::Toon
-                    };
-                }
-            }
-            Some(NodeField::Sky3D(Sky3DField::SkyShader)) => {
-                if let Some(v) = as_str(value) {
-                    node.sky_shader = sky_shader_path(v);
-                }
-            }
-            Some(NodeField::Sky3D(Sky3DField::CloudShader)) => {
-                if let Some(v) = as_str(value) {
-                    let (mode, shader) = sky_cloud_shader(v);
-                    node.clouds.mode = mode;
-                    node.clouds.shader = shader;
-                }
-            }
-            Some(NodeField::Sky3D(Sky3DField::SunShader)) => {
-                if let Some(v) = as_str(value) {
-                    node.sun.shader = sky_shader_path(v);
-                }
-            }
-            Some(NodeField::Sky3D(Sky3DField::MoonShader)) => {
-                if let Some(v) = as_str(value) {
-                    node.moon.shader = sky_shader_path(v);
+            Some(NodeField::Sky3D(Sky3DField::Shaders)) => {
+                if let Some(shaders) = as_sky_shaders(value) {
+                    node.shaders = shaders;
                 }
             }
             Some(NodeField::Sky3D(Sky3DField::Active)) => {
@@ -304,23 +231,44 @@ fn apply_sky_3d_fields(node: &mut Sky3D, fields: &[SceneObjectField]) {
     });
 }
 
-fn sky_cloud_shader(value: &str) -> (SkyCloudMode, Option<Cow<'static, str>>) {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "" | "default" | "volumetric" | "volume" => (SkyCloudMode::Volumetric, None),
-        "wispy" | "wisp" | "secondary" | "thin" | "streak" | "streaks" => {
-            (SkyCloudMode::Wispy, None)
+fn as_sky_shaders(value: &SceneValue) -> Option<Vec<SkyShaderPass>> {
+    match value {
+        SceneValue::Array(items) => {
+            let mut out = Vec::new();
+            for item in items.as_ref() {
+                out.push(sky_shader_pass_from(item)?);
+            }
+            Some(out)
         }
-        _ => (SkyCloudMode::Volumetric, sky_shader_path(value)),
+        _ => None,
     }
 }
 
-fn sky_shader_path(value: &str) -> Option<Cow<'static, str>> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("DEFAULT") {
-        None
-    } else {
-        Some(Cow::Owned(trimmed.to_string()))
+fn sky_shader_pass_from(value: &SceneValue) -> Option<SkyShaderPass> {
+    let SceneValue::Object(entries) = value else {
+        return None;
+    };
+    let mut path: Option<Cow<'static, str>> = None;
+    let mut params = Vec::new();
+    for (k, v) in entries.as_ref() {
+        match k.as_ref() {
+            "path" | "shader" | "shader_path" => {
+                if let Some(s) = as_str(v) {
+                    let s = s.trim();
+                    if !s.is_empty() {
+                        path = Some(Cow::Owned(s.to_string()));
+                    }
+                }
+            }
+            "params" => {
+                params = as_post_params(v)?;
+            }
+            _ => {}
+        }
     }
+    let mut pass = SkyShaderPass::new(path?);
+    pass.params = params;
+    Some(pass)
 }
 
 fn apply_spot_light_3d_fields(node: &mut SpotLight3D, fields: &[SceneObjectField]) {

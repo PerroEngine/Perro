@@ -65,25 +65,25 @@ impl Gpu3D {
         }
         match sky_uniform {
             Some(sky) => {
-                let cloud_time_seconds = sky.params2[3];
+                let time_seconds = sky.params1[0];
                 let mut static_sky = sky;
-                static_sky.params2[3] = 0.0;
+                static_sky.params1[0] = 0.0;
                 if self.last_sky != Some(static_sky) {
                     queue.write_buffer(&self.sky_buffer, 0, bytemuck::bytes_of(&sky));
                     self.last_sky = Some(static_sky);
-                    self.last_sky_cloud_time_seconds = cloud_time_seconds;
-                } else if self.last_sky_cloud_time_seconds != cloud_time_seconds {
+                    self.last_sky_time_seconds = time_seconds;
+                } else if self.last_sky_time_seconds != time_seconds {
                     queue.write_buffer(
                         &self.sky_buffer,
-                        SKY_PARAMS2_W_OFFSET,
-                        bytemuck::bytes_of(&cloud_time_seconds),
+                        SKY_PARAMS1_X_OFFSET,
+                        bytemuck::bytes_of(&time_seconds),
                     );
-                    self.last_sky_cloud_time_seconds = cloud_time_seconds;
+                    self.last_sky_time_seconds = time_seconds;
                 }
             }
             None => {
                 self.last_sky = None;
-                self.last_sky_cloud_time_seconds = -1.0;
+                self.last_sky_time_seconds = -1.0;
             }
         }
         let draws_unchanged = self.last_draws_revision == draws_revision;
@@ -463,6 +463,9 @@ impl Gpu3D {
         self.staged_rigid_instance_meta.reserve(draws.len());
         self.staged_skinned_instance_meta.clear();
         self.staged_skinned_instance_meta.reserve(draws.len());
+        self.staged_blend_shape_weights.clear();
+        self.staged_blend_shape_instance_meta.clear();
+        self.staged_blend_shape_instance_meta.reserve(draws.len());
         self.staged_skeletons.clear();
         self.staged_custom_params_meta_scratch.clear();
         self.staged_custom_params_values_scratch.clear();
@@ -652,11 +655,20 @@ impl Gpu3D {
                         });
                     let mirrored_winding = draw_model.determinant() < 0.0;
                     let instance_start = self.staged_multimesh_instances.len() as u32;
-                    for pose in dense.instances.iter().copied() {
+                    for pose in dense.instances.iter() {
+                        let weights = if pose.has_blend_shape_weight_override {
+                            pose.blend_shape_weights.as_ref()
+                        } else {
+                            draw.blend_shape_weights.as_ref()
+                        };
+                        let blend_shape_meta =
+                            self.stage_blend_shape_weight_range(&mesh_asset, weights);
                         self.staged_multimesh_instances.push(MultiMeshInstanceGpu {
                             position: pose.position,
                             rotation: pose.rotation,
                             draw_id: draw_param_index,
+                            weight_range: blend_shape_meta.weight_range,
+                            shape_range: blend_shape_meta.shape_range,
                         });
                     }
                     let instance_count = (self.staged_multimesh_instances.len() as u32)
@@ -856,6 +868,10 @@ impl Gpu3D {
                             self.staged_rigid_instance_meta.push(instance.rigid_meta);
                             self.staged_skinned_instance_meta
                                 .push(instance.skinned_meta);
+                            self.stage_blend_shape_instance(
+                                &mesh_asset,
+                                draw.blend_shape_weights.as_ref(),
+                            );
                         }
                         let instance_count = (self.staged_instance_transforms.len() as u32)
                             .saturating_sub(instance_start);
@@ -977,6 +993,10 @@ impl Gpu3D {
                         self.staged_rigid_instance_meta.push(instance.rigid_meta);
                         self.staged_skinned_instance_meta
                             .push(instance.skinned_meta);
+                        self.stage_blend_shape_instance(
+                            &mesh_asset,
+                            draw.blend_shape_weights.as_ref(),
+                        );
                     }
                     let instance_count = (self.staged_instance_transforms.len() as u32)
                         .saturating_sub(instance_start);
@@ -1045,6 +1065,7 @@ impl Gpu3D {
                 self.staged_rigid_instance_meta.push(instance.rigid_meta);
                 self.staged_skinned_instance_meta
                     .push(instance.skinned_meta);
+                self.stage_blend_shape_instance(&default_mesh, &[]);
             }
         }
         if !debug_edge_instances.is_empty() {
@@ -1055,6 +1076,7 @@ impl Gpu3D {
                 self.staged_rigid_instance_meta.push(instance.rigid_meta);
                 self.staged_skinned_instance_meta
                     .push(instance.skinned_meta);
+                self.stage_blend_shape_instance(&default_mesh, &[]);
             }
         }
         if let Some(instance_start) = debug_points_start
@@ -1203,6 +1225,14 @@ impl Gpu3D {
         self.ensure_instance_material_capacity(device, self.staged_instance_materials.len());
         self.ensure_rigid_instance_meta_capacity(device, self.staged_rigid_instance_meta.len());
         self.ensure_skinned_instance_meta_capacity(device, self.staged_skinned_instance_meta.len());
+        self.ensure_blend_shape_weight_capacity(
+            device,
+            self.staged_blend_shape_weights.len().max(1),
+        );
+        self.ensure_blend_shape_instance_meta_capacity(
+            device,
+            self.staged_blend_shape_instance_meta.len().max(1),
+        );
         if !self.staged_instance_transforms.is_empty() {
             queue.write_buffer(
                 &self.instance_transform_buffer,
@@ -1229,6 +1259,20 @@ impl Gpu3D {
                 &self.skinned_instance_meta_buffer,
                 0,
                 bytemuck::cast_slice(&self.staged_skinned_instance_meta),
+            );
+        }
+        if !self.staged_blend_shape_weights.is_empty() {
+            queue.write_buffer(
+                &self.blend_shape_weight_buffer,
+                0,
+                bytemuck::cast_slice(&self.staged_blend_shape_weights),
+            );
+        }
+        if !self.staged_blend_shape_instance_meta.is_empty() {
+            queue.write_buffer(
+                &self.blend_shape_instance_meta_buffer,
+                0,
+                bytemuck::cast_slice(&self.staged_blend_shape_instance_meta),
             );
         }
         self.ensure_skeleton_capacity(device, self.staged_skeletons.len().max(1));
@@ -1375,5 +1419,40 @@ impl Gpu3D {
         self.debug_point_instances_scratch = debug_point_instances;
         self.debug_edge_instances_scratch = debug_edge_instances;
         self.last_prepare_step_timing = step_timing;
+    }
+
+    fn stage_blend_shape_instance(
+        &mut self,
+        mesh: &MeshAssetRange,
+        weights: &[f32],
+    ) -> BlendShapeInstanceMetaGpu {
+        let meta = self.stage_blend_shape_weight_range(mesh, weights);
+        self.staged_blend_shape_instance_meta.push(meta);
+        meta
+    }
+
+    fn stage_blend_shape_weight_range(
+        &mut self,
+        mesh: &MeshAssetRange,
+        weights: &[f32],
+    ) -> BlendShapeInstanceMetaGpu {
+        let target_count = mesh.blend_shape_target_count;
+        let weight_count = weights.len().min(target_count as usize) as u32;
+        let weight_start = self.staged_blend_shape_weights.len() as u32;
+        self.staged_blend_shape_weights.extend(
+            weights
+                .iter()
+                .take(weight_count as usize)
+                .map(|weight| weight.clamp(0.0, 1.0)),
+        );
+        BlendShapeInstanceMetaGpu {
+            weight_range: [weight_start, weight_count, 0, 0],
+            shape_range: [
+                mesh.blend_shape_delta_start,
+                target_count,
+                mesh.blend_shape_vertex_start,
+                mesh.blend_shape_vertex_count,
+            ],
+        }
     }
 }

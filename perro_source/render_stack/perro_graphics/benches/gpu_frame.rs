@@ -449,9 +449,9 @@ fn setup_post(window: &Arc<Window>, effect: PostProcessEffect) -> PerroGraphics 
     graphics
 }
 
-fn setup_sky(window: &Arc<Window>, cloud_density: f32) -> PerroGraphics {
+fn setup_sky(window: &Arc<Window>, sky_variant: f32) -> PerroGraphics {
     let mut graphics = base_graphics(window);
-    graphics.submit(sky_command(cloud_density));
+    graphics.submit(sky_command(sky_variant));
     let _ = graphics.draw_frame_timed();
     graphics
 }
@@ -826,33 +826,20 @@ fn spot_light_3d_command(i: u32) -> RenderCommand {
     }))
 }
 
-fn sky_command(cloud_density: f32) -> RenderCommand {
+fn sky_command(_sky_variant: f32) -> RenderCommand {
     RenderCommand::ThreeD(Box::new(Command3D::SetSky {
         node: NodeID::from_parts(90_000, 0),
         sky: Box::new(Sky3DState {
             day_colors: Arc::from([[0.42, 0.7, 1.0], [0.1, 0.35, 0.8]]),
             evening_colors: Arc::from([[1.0, 0.45, 0.2], [0.25, 0.08, 0.3]]),
             night_colors: Arc::from([[0.02, 0.03, 0.08], [0.0, 0.0, 0.02]]),
-            sky_angle: 0.0,
+            horizon_colors: Arc::from([[0.55, 0.57, 0.60], [0.35, 0.36, 0.38]]),
             time: SkyTime3DState {
                 time_of_day: 0.5,
                 paused: true,
                 scale: 1.0,
             },
-            cloud_size: 0.7,
-            cloud_density,
-            cloud_variance: 0.4,
-            cloud_wind_vector: [0.2, 0.05],
-            cloud_shader: None,
-            star_size: 0.7,
-            star_scatter: 0.5,
-            star_gleam: 0.4,
-            moon_size: 0.12,
-            moon_shader: None,
-            sun_size: 0.08,
-            sun_shader: None,
-            style_blend: 1.0,
-            sky_shader: None,
+            shaders: Arc::from([]),
         }),
     }))
 }
@@ -866,6 +853,8 @@ fn draw_multi_dense_command(count: u32, mesh: MeshID, material: MaterialID) -> R
                 (i / 256) as f32 * 0.08 - 10.0,
             ],
             rotation: [0.0, 0.0, 0.0, 1.0],
+            has_blend_shape_weight_override: false,
+            blend_shape_weights: Arc::from([]),
         })
         .collect::<Vec<_>>()
         .into();

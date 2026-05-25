@@ -324,12 +324,6 @@ pub(super) fn build_scene_uniform(
         push_ray(d, [1.0, 0.98, 0.92], 1.0);
     }
 
-    let has_explicit_rays = lighting
-        .ray_lights
-        .iter()
-        .flatten()
-        .any(|ray| ray.intensity > 1.0e-4);
-
     // Prefer authored directional lights when present.
     if !DEBUG_FORCE_WORLD_SUN_DIR {
         for ray in lighting.ray_lights.iter().flatten() {
@@ -344,48 +338,6 @@ pub(super) fn build_scene_uniform(
             }
             push_ray(Vec3::from(ray.direction), ray.color, ray.intensity);
         }
-    }
-
-    // Only synthesize sky sun/moon directional lights when no explicit rays exist.
-    if !DEBUG_FORCE_WORLD_SUN_DIR
-        && !has_explicit_rays
-        && let Some(sky) = lighting.sky.as_ref()
-    {
-        let (sun_body_dir, moon_body_dir) =
-            sun_moon_dirs_from_time(sky.time.time_of_day, sky.sky_angle);
-        // Sky returns body position directions (origin -> sun/moon).
-        // Ray-light direction stores light travel direction (light -> world), so invert.
-        let sun_dir = -sun_body_dir;
-        let moon_dir = -moon_body_dir;
-        let day_amt = day_weight_from_time(sky.time.time_of_day).powf(1.20);
-        let dusk_amt = evening_weight_from_time(sky.time.time_of_day) * (1.0 - day_amt * 0.55);
-        let night_amt = (1.0 - day_amt).clamp(0.0, 1.0);
-
-        let day_col = sample_gradient(sky.day_colors.as_ref(), 0.58);
-        let eve_col = sample_gradient(sky.evening_colors.as_ref(), 0.52);
-        let night_col = sample_gradient(sky.night_colors.as_ref(), 0.62);
-
-        let sun_color = [
-            day_col[0] + (eve_col[0] - day_col[0]) * (dusk_amt * 0.90),
-            day_col[1] + (eve_col[1] - day_col[1]) * (dusk_amt * 0.90),
-            day_col[2] + (eve_col[2] - day_col[2]) * (dusk_amt * 0.90),
-        ];
-        let sun_visibility = horizon_visibility(sun_body_dir.y);
-        let sun_intensity =
-            (((day_amt * 1.35) + (dusk_amt * 0.22)) * sky.sun_size.max(0.1) * sun_visibility)
-                .max(0.0);
-
-        let moon_color = [
-            night_col[0] * 0.80,
-            night_col[1] * 0.88,
-            (night_col[2] * 1.05).max(0.0),
-        ];
-        let moon_visibility = horizon_visibility(moon_body_dir.y);
-        let moon_intensity =
-            ((night_amt * 0.18) * sky.moon_size.max(0.05) * moon_visibility).max(0.0);
-
-        push_ray(sun_dir, sun_color, sun_intensity);
-        push_ray(moon_dir, moon_color, moon_intensity);
     }
 
     scene.ambient_and_counts[0] = ray_count as f32;

@@ -23,8 +23,6 @@ struct DemoMainMenuRefsState {
     #[default = NodeID::nil()]
     pub demo_btn_sky: NodeID,
     #[default = NodeID::nil()]
-    pub demo_btn_sky_wispy: NodeID,
-    #[default = NodeID::nil()]
     pub demo_btn_blend: NodeID,
     #[default = NodeID::nil()]
     pub demo_btn_multimesh: NodeID,

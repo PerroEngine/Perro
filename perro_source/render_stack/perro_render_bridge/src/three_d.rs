@@ -1,6 +1,6 @@
 use super::*;
 use crate::two_d::{WaterBodyQueryState, WaterIdleModeState, WaterLinkState, WaterShapeState};
-use perro_structs::{AudioListenerOptions, BitMask, Color};
+use perro_structs::{AudioListenerOptions, BitMask, Color, CustomPostParam};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Camera3DState {
@@ -177,27 +177,19 @@ pub struct SkyTime3DState {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct SkyShaderPass3DState {
+    pub path: Cow<'static, str>,
+    pub params: Arc<[CustomPostParam]>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Sky3DState {
     pub day_colors: Arc<[[f32; 3]]>,
     pub evening_colors: Arc<[[f32; 3]]>,
     pub night_colors: Arc<[[f32; 3]]>,
-    pub sky_angle: f32,
+    pub horizon_colors: Arc<[[f32; 3]]>,
     pub time: SkyTime3DState,
-    pub cloud_size: f32,
-    pub cloud_density: f32,
-    pub cloud_variance: f32,
-    pub cloud_wind_vector: [f32; 2],
-    pub cloud_mode: u32,
-    pub cloud_shader: Option<Cow<'static, str>>,
-    pub star_size: f32,
-    pub star_scatter: f32,
-    pub star_gleam: f32,
-    pub moon_size: f32,
-    pub moon_shader: Option<Cow<'static, str>>,
-    pub sun_size: f32,
-    pub sun_shader: Option<Cow<'static, str>>,
-    pub style_blend: f32,
-    pub sky_shader: Option<Cow<'static, str>>,
+    pub shaders: Arc<[SkyShaderPass3DState]>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -682,6 +674,18 @@ pub struct RuntimeMeshVertex {
     pub weights: Unorm8x4,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RuntimeMeshBlendShapeVertex {
+    pub position_delta: [f32; 3],
+    pub normal_delta: [f32; 3],
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RuntimeMeshBlendShape {
+    pub vertices: Vec<RuntimeMeshBlendShapeVertex>,
+    pub has_normal_deltas: bool,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct MeshSurfaceRange {
     pub index_start: u32,
@@ -693,6 +697,7 @@ pub struct Mesh3D {
     pub vertices: Vec<RuntimeMeshVertex>,
     pub indices: Vec<u32>,
     pub surface_ranges: Vec<MeshSurfaceRange>,
+    pub blend_shapes: Vec<RuntimeMeshBlendShape>,
 }
 
 pub type RuntimeMeshDataSnapshot = Mesh3D;

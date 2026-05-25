@@ -643,6 +643,14 @@ impl Gpu3D {
     pub fn camera_bind_group_layout(&self) -> &wgpu::BindGroupLayout {
         &self.camera_bgl
     }
+
+    pub fn water_camera_bind_group(&self) -> &wgpu::BindGroup {
+        &self.water_camera_bind_group
+    }
+
+    pub fn water_camera_bind_group_layout(&self) -> &wgpu::BindGroupLayout {
+        &self.water_camera_bgl
+    }
 }
 
 fn mesh_blend_receiver_matches(

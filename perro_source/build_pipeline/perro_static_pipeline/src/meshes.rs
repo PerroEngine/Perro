@@ -6,11 +6,13 @@ use crate::{
 };
 use perro_asset_formats::{
     pmesh::{
-        EXTENSION as PMESH_EXTENSION, FLAG_HAS_JOINTS as PMESH_FLAG_HAS_JOINTS,
-        FLAG_HAS_NORMAL as PMESH_FLAG_HAS_NORMAL, FLAG_HAS_UV0 as PMESH_FLAG_HAS_UV0,
-        FLAG_HAS_WEIGHTS as PMESH_FLAG_HAS_WEIGHTS, FLAG_PAYLOAD_RAW as PMESH_FLAG_PAYLOAD_RAW,
+        EXTENSION as PMESH_EXTENSION,
+        FLAG_HAS_BLEND_SHAPE_NORMALS as PMESH_FLAG_HAS_BLEND_SHAPE_NORMALS,
+        FLAG_HAS_JOINTS as PMESH_FLAG_HAS_JOINTS, FLAG_HAS_NORMAL as PMESH_FLAG_HAS_NORMAL,
+        FLAG_HAS_UV0 as PMESH_FLAG_HAS_UV0, FLAG_HAS_WEIGHTS as PMESH_FLAG_HAS_WEIGHTS,
+        FLAG_PAYLOAD_RAW as PMESH_FLAG_PAYLOAD_RAW,
         FLAG_WEIGHTS_UNORM8 as PMESH_FLAG_WEIGHTS_UNORM8, MAGIC as PMESH_MAGIC,
-        VERSION as PMESH_VERSION,
+        VERSION as PMESH_VERSION, VERSION_V2 as PMESH_VERSION_V2,
     },
     source_ext,
 };
@@ -57,6 +59,18 @@ struct PackedLod {
     surface_count: u32,
     meshlet_start: u32,
     meshlet_count: u32,
+}
+
+#[derive(Clone, Copy)]
+struct PackedBlendShapeVertex {
+    position_delta: [f32; 3],
+    normal_delta: [f32; 3],
+}
+
+#[derive(Clone)]
+struct PackedBlendShape {
+    vertices: Vec<PackedBlendShapeVertex>,
+    has_normal_deltas: bool,
 }
 
 struct LodInput {
@@ -226,6 +240,7 @@ fn build_gltf_mesh_entries(
         let mut vertices = Vec::<PackedVertex>::new();
         let mut indices = Vec::<u32>::new();
         let mut surface_ranges = Vec::<PackedSurfaceRange>::new();
+        let mut blend_shapes = Vec::<PackedBlendShape>::new();
         let mut has_normals_any = false;
         let mut has_uv_any = false;
         let mut has_joints_any = false;
@@ -275,6 +290,34 @@ fn build_gltf_mesh_entries(
                 has_weights_any = true;
             }
 
+            let primitive_vertex_count = positions.len();
+            let primitive_blend_shapes = reader
+                .read_morph_targets()
+                .map(|(positions, normals, _tangents)| {
+                    let position_deltas: Vec<[f32; 3]> =
+                        positions.map(|iter| iter.collect()).unwrap_or_default();
+                    let normal_deltas: Vec<[f32; 3]> =
+                        normals.map(|iter| iter.collect()).unwrap_or_default();
+                    let has_normal_deltas = !normal_deltas.is_empty();
+                    let vertices = (0..primitive_vertex_count)
+                        .map(|index| PackedBlendShapeVertex {
+                            position_delta: position_deltas.get(index).copied().unwrap_or([0.0; 3]),
+                            normal_delta: normal_deltas.get(index).copied().unwrap_or([0.0; 3]),
+                        })
+                        .collect::<Vec<_>>();
+                    PackedBlendShape {
+                        vertices,
+                        has_normal_deltas,
+                    }
+                })
+                .collect::<Vec<_>>();
+            append_primitive_blend_shapes(
+                &mut blend_shapes,
+                &primitive_blend_shapes,
+                vertices.len(),
+                primitive_vertex_count,
+            );
+
             let base_vertex = vertices.len() as u32;
             for (index, position) in positions.iter().copied().enumerate() {
                 let normal = normals.get(index).copied().unwrap_or([0.0, 1.0, 0.0]);
@@ -310,7 +353,11 @@ fn build_gltf_mesh_entries(
         }
 
         let has_skinning = has_joints_any || has_weights_any;
-        let (vertices, indices) = dedup_vertices(vertices, indices);
+        let (vertices, indices) = if blend_shapes.is_empty() {
+            dedup_vertices(vertices, indices)
+        } else {
+            (vertices, indices)
+        };
         let (indices, surface_ranges, meshlets, lods) = if has_skinning {
             let (indices, surface_ranges, meshlets) = if bake_meshlets {
                 pack_meshlets_with_surfaces(&vertices, &indices, &surface_ranges)
@@ -328,6 +375,7 @@ fn build_gltf_mesh_entries(
             &surface_ranges,
             &meshlets,
             &lods,
+            &blend_shapes,
             PackedMeshLayoutFlags {
                 has_normals: has_normals_any,
                 has_uv0: has_uv_any,
@@ -364,6 +412,7 @@ fn encode_pmesh_tightest_layout(
     surface_ranges: &[PackedSurfaceRange],
     meshlets: &[PackedMeshlet],
     lods: &[PackedLod],
+    blend_shapes: &[PackedBlendShape],
     layout_flags: PackedMeshLayoutFlags,
 ) -> io::Result<Vec<u8>> {
     let baseline = encode_pmesh(
@@ -372,8 +421,12 @@ fn encode_pmesh_tightest_layout(
         surface_ranges,
         meshlets,
         lods,
+        blend_shapes,
         layout_flags,
     )?;
+    if !blend_shapes.is_empty() {
+        return Ok(baseline);
+    }
     let (reordered_vertices, reordered_indices) = reorder_vertices_by_first_use(vertices, indices);
     if reordered_vertices == vertices && reordered_indices == indices {
         return Ok(baseline);
@@ -385,6 +438,7 @@ fn encode_pmesh_tightest_layout(
         surface_ranges,
         meshlets,
         &remapped_lods,
+        blend_shapes,
         layout_flags,
     )?;
     if reordered.len() < baseline.len() {
@@ -463,6 +517,51 @@ fn dedup_vertices(vertices: Vec<PackedVertex>, indices: Vec<u32>) -> (Vec<Packed
     (deduped, remapped)
 }
 
+fn append_primitive_blend_shapes(
+    mesh_blend_shapes: &mut Vec<PackedBlendShape>,
+    primitive_blend_shapes: &[PackedBlendShape],
+    base_vertex_count: usize,
+    primitive_vertex_count: usize,
+) {
+    for _ in mesh_blend_shapes.len()..primitive_blend_shapes.len() {
+        mesh_blend_shapes.push(PackedBlendShape {
+            vertices: vec![
+                PackedBlendShapeVertex {
+                    position_delta: [0.0; 3],
+                    normal_delta: [0.0; 3],
+                };
+                base_vertex_count
+            ],
+            has_normal_deltas: false,
+        });
+    }
+    for (shape_index, mesh_shape) in mesh_blend_shapes.iter_mut().enumerate() {
+        if let Some(primitive_shape) = primitive_blend_shapes.get(shape_index) {
+            mesh_shape.has_normal_deltas |= primitive_shape.has_normal_deltas;
+            for vertex_index in 0..primitive_vertex_count {
+                mesh_shape.vertices.push(
+                    primitive_shape
+                        .vertices
+                        .get(vertex_index)
+                        .copied()
+                        .unwrap_or(PackedBlendShapeVertex {
+                            position_delta: [0.0; 3],
+                            normal_delta: [0.0; 3],
+                        }),
+                );
+            }
+        } else {
+            mesh_shape.vertices.extend(vec![
+                PackedBlendShapeVertex {
+                    position_delta: [0.0; 3],
+                    normal_delta: [0.0; 3],
+                };
+                primitive_vertex_count
+            ]);
+        }
+    }
+}
+
 #[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 struct PackedVertexKey {
     position: [u32; 3],
@@ -490,6 +589,7 @@ fn encode_pmesh(
     surface_ranges: &[PackedSurfaceRange],
     meshlets: &[PackedMeshlet],
     lods: &[PackedLod],
+    blend_shapes: &[PackedBlendShape],
     layout_flags: PackedMeshLayoutFlags,
 ) -> io::Result<Vec<u8>> {
     let PackedMeshLayoutFlags {
@@ -519,12 +619,20 @@ fn encode_pmesh(
         } else {
             0
         };
+    let has_blend_shape_normals = blend_shapes.iter().any(|shape| shape.has_normal_deltas);
+    let blend_shape_stride_bytes = (3 * std::mem::size_of::<f32>())
+        + if has_blend_shape_normals {
+            3 * std::mem::size_of::<f32>()
+        } else {
+            0
+        };
     let mut raw = Vec::<u8>::with_capacity(
         vertices.len() * vertex_stride_bytes
             + std::mem::size_of_val(indices)
             + surface_ranges.len() * (2 * std::mem::size_of::<u32>())
             + meshlets.len() * (2 * std::mem::size_of::<u32>() + 4 * std::mem::size_of::<f32>())
-            + lods.len() * (6 * std::mem::size_of::<u32>()),
+            + lods.len() * (6 * std::mem::size_of::<u32>())
+            + blend_shapes.len() * vertices.len() * blend_shape_stride_bytes,
     );
 
     for vertex in vertices {
@@ -573,6 +681,27 @@ fn encode_pmesh(
         raw.extend_from_slice(&lod.meshlet_start.to_le_bytes());
         raw.extend_from_slice(&lod.meshlet_count.to_le_bytes());
     }
+    for shape in blend_shapes {
+        for vertex_index in 0..vertices.len() {
+            let vertex =
+                shape
+                    .vertices
+                    .get(vertex_index)
+                    .copied()
+                    .unwrap_or(PackedBlendShapeVertex {
+                        position_delta: [0.0; 3],
+                        normal_delta: [0.0; 3],
+                    });
+            write_f32(&mut raw, vertex.position_delta[0]);
+            write_f32(&mut raw, vertex.position_delta[1]);
+            write_f32(&mut raw, vertex.position_delta[2]);
+            if has_blend_shape_normals {
+                write_f32(&mut raw, vertex.normal_delta[0]);
+                write_f32(&mut raw, vertex.normal_delta[1]);
+                write_f32(&mut raw, vertex.normal_delta[2]);
+            }
+        }
+    }
 
     let mut flags = 0u32;
     if has_normals {
@@ -588,6 +717,9 @@ fn encode_pmesh(
         flags |= PMESH_FLAG_HAS_WEIGHTS;
         flags |= PMESH_FLAG_WEIGHTS_UNORM8;
     }
+    if has_blend_shape_normals {
+        flags |= PMESH_FLAG_HAS_BLEND_SHAPE_NORMALS;
+    }
     let compressed = compress_zlib_best(&raw)?;
     let payload = if compressed.len() < raw.len() {
         compressed
@@ -595,9 +727,11 @@ fn encode_pmesh(
         flags |= PMESH_FLAG_PAYLOAD_RAW;
         raw.clone()
     };
-    let mut out = Vec::with_capacity(5 + 8 * std::mem::size_of::<u32>() + payload.len());
+    let version = PMESH_VERSION;
+    let header_u32s = if version >= PMESH_VERSION_V2 { 9 } else { 8 };
+    let mut out = Vec::with_capacity(5 + header_u32s * std::mem::size_of::<u32>() + payload.len());
     out.extend_from_slice(PMESH_MAGIC);
-    out.extend_from_slice(&PMESH_VERSION.to_le_bytes());
+    out.extend_from_slice(&version.to_le_bytes());
     out.extend_from_slice(&flags.to_le_bytes());
     out.extend_from_slice(&(vertices.len() as u32).to_le_bytes());
     out.extend_from_slice(&(indices.len() as u32).to_le_bytes());
@@ -605,6 +739,9 @@ fn encode_pmesh(
     out.extend_from_slice(&(meshlets.len() as u32).to_le_bytes());
     out.extend_from_slice(&(lods.len() as u32).to_le_bytes());
     out.extend_from_slice(&(raw.len() as u32).to_le_bytes());
+    if version >= PMESH_VERSION_V2 {
+        out.extend_from_slice(&(blend_shapes.len() as u32).to_le_bytes());
+    }
     out.extend_from_slice(&payload);
     Ok(out)
 }
@@ -875,9 +1012,10 @@ fn escape_str(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        PMESH_VERSION, PackedLod, PackedMeshLayoutFlags, PackedSurfaceRange, PackedVertex,
-        build_lod_sets, dedup_vertices, encode_pmesh, encode_pmesh_tightest_layout, pack_meshlets,
-        pack_meshlets_with_surfaces, reorder_vertices_by_first_use,
+        PMESH_VERSION, PMESH_VERSION_V2, PackedBlendShape, PackedBlendShapeVertex, PackedLod,
+        PackedMeshLayoutFlags, PackedSurfaceRange, PackedVertex, build_lod_sets, dedup_vertices,
+        encode_pmesh, encode_pmesh_tightest_layout, pack_meshlets, pack_meshlets_with_surfaces,
+        reorder_vertices_by_first_use,
     };
 
     fn test_vertices() -> Vec<PackedVertex> {
@@ -914,8 +1052,51 @@ mod tests {
     }
 
     #[test]
-    fn pmesh_current_version_is_v1() {
-        assert_eq!(PMESH_VERSION, 1);
+    fn pmesh_current_version_is_v2() {
+        assert_eq!(PMESH_VERSION, 2);
+    }
+
+    #[test]
+    fn pmesh_blend_shapes_emit_v2_header() {
+        let vertices = test_vertices();
+        let indices = vec![0, 1, 2];
+        let surfaces = vec![PackedSurfaceRange {
+            index_start: 0,
+            index_count: 3,
+        }];
+        let blend_shapes = vec![PackedBlendShape {
+            vertices: vertices
+                .iter()
+                .map(|_| PackedBlendShapeVertex {
+                    position_delta: [0.1, 0.0, 0.0],
+                    normal_delta: [0.0, 0.1, 0.0],
+                })
+                .collect(),
+            has_normal_deltas: true,
+        }];
+        let bytes = encode_pmesh(
+            &vertices,
+            &indices,
+            &surfaces,
+            &[],
+            &[],
+            &blend_shapes,
+            PackedMeshLayoutFlags {
+                has_normals: true,
+                has_uv0: true,
+                has_joints: false,
+                has_weights: false,
+            },
+        )
+        .expect("blend shape encode");
+        assert_eq!(
+            u32::from_le_bytes(bytes[5..9].try_into().expect("version")),
+            PMESH_VERSION_V2
+        );
+        assert_eq!(
+            u32::from_le_bytes(bytes[37..41].try_into().expect("shape count")),
+            1
+        );
     }
 
     #[test]
@@ -1042,6 +1223,7 @@ mod tests {
             &surfaces,
             &meshlets,
             &lods,
+            &[],
             full_layout,
         )
         .expect("baseline encode");
@@ -1051,6 +1233,7 @@ mod tests {
             &surfaces,
             &meshlets,
             &lods,
+            &[],
             full_layout,
         )
         .expect("tightest encode");

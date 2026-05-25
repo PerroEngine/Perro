@@ -211,6 +211,50 @@ impl Gpu3D {
         self.skinned_instance_meta_capacity = new_capacity;
     }
 
+    pub(super) fn ensure_blend_shape_weight_capacity(
+        &mut self,
+        device: &wgpu::Device,
+        needed: usize,
+    ) {
+        if needed <= self.blend_shape_weight_capacity {
+            return;
+        }
+        let mut new_capacity = self.blend_shape_weight_capacity.max(1);
+        while new_capacity < needed {
+            new_capacity *= 2;
+        }
+        self.blend_shape_weight_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_blend_shape_weights"),
+            size: (new_capacity * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.blend_shape_weight_capacity = new_capacity;
+        self.rebuild_camera_bind_groups(device);
+    }
+
+    pub(super) fn ensure_blend_shape_instance_meta_capacity(
+        &mut self,
+        device: &wgpu::Device,
+        needed: usize,
+    ) {
+        if needed <= self.blend_shape_instance_meta_capacity {
+            return;
+        }
+        let mut new_capacity = self.blend_shape_instance_meta_capacity.max(1);
+        while new_capacity < needed {
+            new_capacity *= 2;
+        }
+        self.blend_shape_instance_meta_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_blend_shape_instance_meta"),
+            size: (new_capacity * std::mem::size_of::<BlendShapeInstanceMetaGpu>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.blend_shape_instance_meta_capacity = new_capacity;
+        self.rebuild_camera_bind_groups(device);
+    }
+
     pub(super) fn ensure_multimesh_instance_capacity(
         &mut self,
         device: &wgpu::Device,
@@ -275,7 +319,27 @@ impl Gpu3D {
                     binding: 3,
                     resource: self.custom_params_values_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: self.blend_shape_delta_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: self.blend_shape_weight_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: self.blend_shape_instance_meta_buffer.as_entire_binding(),
+                },
             ],
+        });
+        self.water_camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("perro_water_camera3d_bg"),
+            layout: &self.water_camera_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: self.camera_buffer.as_entire_binding(),
+            }],
         });
         self.shadow_camera_bind_groups = self
             .shadow_camera_buffers
@@ -301,6 +365,18 @@ impl Gpu3D {
                             binding: 3,
                             resource: self.custom_params_values_buffer.as_entire_binding(),
                         },
+                        wgpu::BindGroupEntry {
+                            binding: 4,
+                            resource: self.blend_shape_delta_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 5,
+                            resource: self.blend_shape_weight_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 6,
+                            resource: self.blend_shape_instance_meta_buffer.as_entire_binding(),
+                        },
                     ],
                 })
             })
@@ -320,6 +396,18 @@ impl Gpu3D {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: self.custom_params_values_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: self.blend_shape_delta_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: self.blend_shape_weight_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: self.blend_shape_instance_meta_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -343,6 +431,18 @@ impl Gpu3D {
                             binding: 2,
                             resource: self.custom_params_values_buffer.as_entire_binding(),
                         },
+                        wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: self.blend_shape_delta_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 4,
+                            resource: self.blend_shape_weight_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 5,
+                            resource: self.blend_shape_instance_meta_buffer.as_entire_binding(),
+                        },
                     ],
                 })
             })
@@ -362,6 +462,14 @@ impl Gpu3D {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::TextureView(&self.mesh_blend_depth_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: self.blend_shape_delta_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: self.blend_shape_weight_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -798,6 +906,10 @@ impl Gpu3D {
                 lods: Arc::from([]),
                 bounds_center,
                 bounds_radius,
+                blend_shape_delta_start: 0,
+                blend_shape_target_count: 0,
+                blend_shape_vertex_start: 0,
+                blend_shape_vertex_count: 0,
             });
         }
         let revision = resources.mesh_revision(mesh_id);
@@ -846,6 +958,10 @@ impl Gpu3D {
             lods: Arc::from([]),
             bounds_center,
             bounds_radius,
+            blend_shape_delta_start: 0,
+            blend_shape_target_count: 0,
+            blend_shape_vertex_start: 0,
+            blend_shape_vertex_count: 0,
         })
     }
 
@@ -867,6 +983,7 @@ impl Gpu3D {
         let decoded_surface_ranges = decoded.surface_ranges.clone();
         let decoded_meshlets = decoded.meshlets.clone();
         let decoded_lods = decoded.lods.clone();
+        let decoded_blend_shapes = decoded.blend_shapes.clone();
         let surface_ranges = if decoded_surface_ranges.is_empty() {
             vec![MeshRange {
                 index_start,
@@ -929,6 +1046,46 @@ impl Gpu3D {
             bytemuck::cast_slice(&added_indices),
         );
 
+        let blend_shape_delta_start = self.blend_shape_deltas.len() as u32;
+        let blend_shape_target_count = decoded_blend_shapes.len() as u32;
+        let blend_shape_vertex_start = base_vertex;
+        let blend_shape_vertex_count = added_vertices.len() as u32;
+        if !decoded_blend_shapes.is_empty() {
+            let added_delta_count = decoded_blend_shapes.len() * added_vertices.len();
+            let old_delta_len = self.blend_shape_deltas.len();
+            self.ensure_blend_shape_delta_capacity(
+                device,
+                queue,
+                old_delta_len + added_delta_count,
+            );
+            self.blend_shape_deltas.reserve(added_delta_count);
+            for shape in &decoded_blend_shapes {
+                for vertex_index in 0..added_vertices.len() {
+                    let vertex = shape.vertices.get(vertex_index).copied();
+                    self.blend_shape_deltas.push(BlendShapeDeltaGpu {
+                        position_delta: vertex
+                            .map(|v| {
+                                [
+                                    v.position_delta[0],
+                                    v.position_delta[1],
+                                    v.position_delta[2],
+                                    0.0,
+                                ]
+                            })
+                            .unwrap_or([0.0; 4]),
+                        normal_delta: vertex
+                            .map(|v| [v.normal_delta[0], v.normal_delta[1], v.normal_delta[2], 0.0])
+                            .unwrap_or([0.0; 4]),
+                    });
+                }
+            }
+            queue.write_buffer(
+                &self.blend_shape_delta_buffer,
+                old_delta_len as u64 * std::mem::size_of::<BlendShapeDeltaGpu>() as u64,
+                bytemuck::cast_slice(&self.blend_shape_deltas[old_delta_len..]),
+            );
+        }
+
         let full = MeshRange {
             index_start,
             index_count,
@@ -969,7 +1126,52 @@ impl Gpu3D {
             lods: Arc::from(lods),
             bounds_center,
             bounds_radius,
+            blend_shape_delta_start,
+            blend_shape_target_count,
+            blend_shape_vertex_start,
+            blend_shape_vertex_count,
         })
+    }
+
+    pub(super) fn ensure_blend_shape_delta_capacity(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        needed: usize,
+    ) {
+        if needed <= self.blend_shape_delta_capacity {
+            return;
+        }
+        let mut cap = self.blend_shape_delta_capacity.max(1);
+        while cap < needed {
+            cap *= 2;
+        }
+        let old_buffer = self.blend_shape_delta_buffer.clone();
+        let old_size =
+            self.blend_shape_deltas.len() as u64 * std::mem::size_of::<BlendShapeDeltaGpu>() as u64;
+        self.blend_shape_delta_capacity = cap;
+        self.blend_shape_delta_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_blend_shape_deltas"),
+            size: (cap * std::mem::size_of::<BlendShapeDeltaGpu>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        if old_size > 0 {
+            let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("perro_blend_shape_delta_growth_copy"),
+            });
+            encoder.copy_buffer_to_buffer(
+                &old_buffer,
+                0,
+                &self.blend_shape_delta_buffer,
+                0,
+                old_size,
+            );
+            queue.submit(Some(encoder.finish()));
+        }
+        self.rebuild_camera_bind_groups(device);
     }
 
     pub(super) fn ensure_mesh_buffer_capacity(

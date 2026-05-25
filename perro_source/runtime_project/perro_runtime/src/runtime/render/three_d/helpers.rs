@@ -493,11 +493,11 @@ pub(crate) fn derived_particle_budget(spawn_rate: f32, lifetime_max: f32) -> u32
     budget.clamp(1, 1_000_000)
 }
 
-pub(super) fn dense_instance_signature(
-    instances: &[(perro_structs::Vector3, perro_structs::Quaternion)],
-) -> u64 {
+pub(super) fn dense_instance_signature(instances: &[perro_nodes::MultiMeshInstancePose]) -> u64 {
     let mut hash = 0xcbf29ce484222325u64 ^ instances.len() as u64;
-    for (position, rotation) in instances {
+    for instance in instances {
+        let position = instance.position;
+        let rotation = instance.rotation;
         hash = fnv_mix_u32(hash, position.x.to_bits());
         hash = fnv_mix_u32(hash, position.y.to_bits());
         hash = fnv_mix_u32(hash, position.z.to_bits());
@@ -505,6 +505,15 @@ pub(super) fn dense_instance_signature(
         hash = fnv_mix_u32(hash, rotation.y.to_bits());
         hash = fnv_mix_u32(hash, rotation.z.to_bits());
         hash = fnv_mix_u32(hash, rotation.w.to_bits());
+        match &instance.blend_shape_weights {
+            Some(weights) => {
+                hash = fnv_mix_u32(hash, weights.len() as u32);
+                for weight in weights {
+                    hash = fnv_mix_u32(hash, weight.to_bits());
+                }
+            }
+            None => hash = fnv_mix_u32(hash, u32::MAX),
+        }
     }
     hash
 }

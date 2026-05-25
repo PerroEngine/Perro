@@ -30,6 +30,7 @@ fn simple_runtime_mesh(scale: f32) -> RuntimeMeshData {
         ],
         indices: vec![0, 1, 2],
         surface_ranges: vec![],
+        blend_shapes: vec![],
     }
 }
 

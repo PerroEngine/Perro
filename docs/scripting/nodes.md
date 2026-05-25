@@ -2,12 +2,12 @@
 
 ## Page Map
 
-| Header | Link |
-| --- | --- |
-| Purpose | [Purpose](#purpose) |
-| Use Cases | [Use Cases](#use-cases) |
-| Example | [Example](#example) |
-| Reference | [Reference](#reference) |
+| Header        | Link                            |
+| ------------- | ------------------------------- |
+| Purpose       | [Purpose](#purpose)             |
+| Use Cases     | [Use Cases](#use-cases)         |
+| Example       | [Example](#example)             |
+| Reference     | [Reference](#reference)         |
 | 3D Mesh Flips | [3D Mesh Flips](#3d-mesh-flips) |
 
 ## Purpose
@@ -219,8 +219,12 @@ See [TileMap2D](tilemap.md).
 - Skinning only works if the mesh has proper vertex weights (`JOINTS_0/WEIGHTS_0`).
 - Shared-skeleton mesh reuse works when meshes follow the same rig contract: same joint order/indices and compatible weights.
 - Automatic retargeting between mismatched rigs is not implemented.
+- glTF morph targets import as blend shapes.
+- `blend_shape_weights` stores indexed blend shape weights in Blender-style `0.0..1.0`.
+- Aliases: `shape_key_weights`, `morph_weights`.
+- Overflow weights are ignored. Missing weights act as `0.0`.
 - Mesh LOD is automatic for authored meshes.
-- Dynamic/dev load builds LODs on load; static build packs LODs into `.pmesh` v1.
+- Dynamic/dev load builds LODs on load; static build packs render meshes into `.pmesh` v2.
 - Meshes with joints/weights skip LOD generation.
 - Surface/material slots stay stable across LODs.
 - Current switch distances are radius-scaled (`36x`, `54x`, `72x`, `108x`, `144x` mesh bounds radius).
@@ -244,6 +248,8 @@ See [TileMap2D](tilemap.md).
 - Use it for repeated static props, foliage, debris, or crowd-like non-skinned copies.
 - Supports same LOD clamp fields as `MeshInstance3D`.
 - Supports `flip_x`, `flip_y`, and `flip_z` on the whole multimesh node.
+- `blend_shape_weights` is the default blend shape weight array for every dense instance.
+- Per-instance `blend_shape_weights` inside `instances` overrides the node default for that instance.
 
 `Camera3D`
 
@@ -414,6 +420,67 @@ Behavior notes:
 - `MeshInstance3D` and `MultiMeshInstance3D` share the same field names.
 - For skinned meshes, flip mirrors the rendered skinned result at the mesh node level.
 - `CollisionShape3D` also accepts these fields, but mesh render flip does not affect collision shape flip.
+
+## 3D Blend Shapes
+
+Perro imports glTF morph targets as blend shapes.
+Weights use Blender-style `0.0..1.0` values.
+Weights are applied by array index.
+Overflow entries are ignored.
+Missing entries behave as `0.0`.
+Weights are clamped to `0.0..1.0`.
+Weights are not normalized across targets.
+
+Scene defaults:
+
+```text
+[Face]
+    [MeshInstance3D]
+        mesh = "res://characters/face.glb:mesh[0]"
+        blend_shape_weights = [0.0, 0.2, 0.1]
+    [/MeshInstance3D]
+[/Face]
+```
+
+Aliases:
+
+```text
+shape_key_weights = [0.0, 0.2, 0.1]
+morph_weights = [0.0, 0.2, 0.1]
+```
+
+MultiMesh defaults and per-instance overrides:
+
+```text
+[Crowd]
+    [MultiMeshInstance3D]
+        mesh = "res://characters/face.glb:mesh[0]"
+        blend_shape_weights = [0.25, 0.0, 0.5]
+        instances = [
+            { position = (0, 0, 0) },
+            { position = (2, 0, 0), blend_shape_weights = [1.0, 0.2] },
+        ]
+    [/MultiMeshInstance3D]
+[/Crowd]
+```
+
+Runtime mutation:
+
+```rust
+with_node_mut!(ctx.run, MeshInstance3D, face_id, |node| {
+    node.blend_shape_weights.resize(3, 0.0);
+    node.blend_shape_weights[1] = 0.75;
+});
+```
+
+Runtime MultiMesh mutation:
+
+```rust
+with_node_mut!(ctx.run, MultiMeshInstance3D, crowd_id, |node| {
+    node.blend_shape_weights = vec![0.2, 0.0];
+    node.instances[4].blend_shape_weights = Some(vec![1.0, 0.5]);
+});
+```
 
 3D physics layer/mask fields:
 

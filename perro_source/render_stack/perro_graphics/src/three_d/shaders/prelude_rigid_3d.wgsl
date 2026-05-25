@@ -68,6 +68,12 @@ var<uniform> scene: Scene3D;
 var<storage, read> custom_params_meta: array<u32>;
 @group(0) @binding(2)
 var<storage, read> custom_params_values: array<f32>;
+@group(0) @binding(3)
+var<storage, read> blend_shape_deltas: array<BlendShapeDelta>;
+@group(0) @binding(4)
+var<storage, read> blend_shape_weights: array<f32>;
+@group(0) @binding(5)
+var<storage, read> blend_shape_instances: array<BlendShapeInstance>;
 @group(1) @binding(0)
 var material_sampler: sampler;
 @group(1) @binding(1)
@@ -101,6 +107,16 @@ struct InstanceInput {
     @location(10) packed_emissive: u32,
     @location(11) packed_material_params: u32,
     @location(13) custom_params: vec2<u32>,
+};
+
+struct BlendShapeDelta {
+    position_delta: vec4<f32>,
+    normal_delta: vec4<f32>,
+};
+
+struct BlendShapeInstance {
+    weight_range: vec4<u32>,
+    shape_range: vec4<u32>,
 };
 
 struct VertexOutput {
@@ -307,8 +323,30 @@ fn transform_normal_ws(
     ) * det_sign);
 }
 
-fn perro_vs_main_base(v: VertexInput, inst: InstanceInput) -> VertexOutput {
-    let p = vec4<f32>(v.pos, 1.0);
+fn apply_blend_shapes(v: VertexInput, vertex_index: u32, instance_index: u32) -> VertexInput {
+    let blend_meta = blend_shape_instances[instance_index];
+    let weight_count = min(blend_meta.weight_range.y, blend_meta.shape_range.y);
+    if weight_count == 0u || blend_meta.shape_range.w == 0u || vertex_index < blend_meta.shape_range.z {
+        return v;
+    }
+    let local_vertex = vertex_index - blend_meta.shape_range.z;
+    if local_vertex >= blend_meta.shape_range.w {
+        return v;
+    }
+    var out_pos = v.pos;
+    var out_normal = v.normal;
+    for (var i = 0u; i < weight_count; i = i + 1u) {
+        let weight = clamp(blend_shape_weights[blend_meta.weight_range.x + i], 0.0, 1.0);
+        let delta = blend_shape_deltas[blend_meta.shape_range.x + i * blend_meta.shape_range.w + local_vertex];
+        out_pos = out_pos + delta.position_delta.xyz * weight;
+        out_normal = out_normal + delta.normal_delta.xyz * weight;
+    }
+    return VertexInput(out_pos, normalize(out_normal), v.uv);
+}
+
+fn perro_vs_main_base(v: VertexInput, inst: InstanceInput, vertex_index: u32, instance_index: u32) -> VertexOutput {
+    let blended = apply_blend_shapes(v, vertex_index, instance_index);
+    let p = vec4<f32>(blended.pos, 1.0);
     let world = vec4<f32>(
         dot(inst.model_row_0, p),
         dot(inst.model_row_1, p),
@@ -319,7 +357,7 @@ fn perro_vs_main_base(v: VertexInput, inst: InstanceInput) -> VertexOutput {
         inst.model_row_0.xyz,
         inst.model_row_1.xyz,
         inst.model_row_2.xyz,
-        v.normal,
+        blended.normal,
     );
     var out: VertexOutput;
     out.clip_pos = scene.view_proj * world;

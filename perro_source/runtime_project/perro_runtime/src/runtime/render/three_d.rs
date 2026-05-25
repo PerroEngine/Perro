@@ -15,8 +15,9 @@ use perro_render_bridge::{
     MaterialParamOverride3D, MeshBlendOptions3D, MeshSurfaceBinding3D, ParticlePath3D,
     ParticleProfile3D, ParticleRenderMode3D, ParticleSimulationMode3D, PointLight3DState,
     PointParticles3DState, RayLight3DState, RenderCommand, ResourceCommand, SkeletonPalette,
-    Sky3DState, SkyTime3DState, SpotLight3DState, Water3DState, WaterBodyQueryState,
-    WaterCoastlineShape3D, WaterIdleModeState, WaterImpact3D, WaterLinkState, WaterShapeState,
+    Sky3DState, SkyShaderPass3DState, SkyTime3DState, SpotLight3DState, Water3DState,
+    WaterBodyQueryState, WaterCoastlineShape3D, WaterIdleModeState, WaterImpact3D, WaterLinkState,
+    WaterShapeState,
 };
 use perro_resource_api::sub_apis::{MaterialAPI, MeshAPI};
 use perro_runtime_render::{material_3d_request, mesh_3d_request};
@@ -229,27 +230,21 @@ impl Runtime {
                         day_colors: Arc::from(sky.day_colors.as_ref()),
                         evening_colors: Arc::from(sky.evening_colors.as_ref()),
                         night_colors: Arc::from(sky.night_colors.as_ref()),
-                        sky_angle: sky.sky_angle,
+                        horizon_colors: Arc::from(sky.horizon_colors.as_ref()),
                         time: SkyTime3DState {
                             time_of_day: sky.time.time_of_day,
                             paused: sky.time.paused,
                             scale: sky.time.scale,
                         },
-                        cloud_size: sky.clouds.size,
-                        cloud_density: sky.clouds.density,
-                        cloud_variance: sky.clouds.variance,
-                        cloud_wind_vector: sky.clouds.wind_vector,
-                        cloud_mode: sky.clouds.mode as u32,
-                        cloud_shader: sky.clouds.shader.clone(),
-                        star_size: sky.stars.size,
-                        star_scatter: sky.stars.scatter,
-                        star_gleam: sky.stars.gleam,
-                        moon_size: sky.moon.size,
-                        moon_shader: sky.moon.shader.clone(),
-                        sun_size: sky.sun.size,
-                        sun_shader: sky.sun.shader.clone(),
-                        style_blend: sky.style.blend_factor(),
-                        sky_shader: sky.sky_shader.clone(),
+                        shaders: Arc::from(
+                            sky.shaders
+                                .iter()
+                                .map(|shader| SkyShaderPass3DState {
+                                    path: shader.path.clone(),
+                                    params: Arc::from(shader.params.as_ref()),
+                                })
+                                .collect::<Vec<_>>(),
+                        ),
                     })
                 }
                 _ => None,
@@ -539,6 +534,7 @@ impl Runtime {
                 (bool, bool, bool),
                 bool,
                 bool,
+                Arc<[f32]>,
                 LocalMeshInstanceData,
             );
             let mesh_header = if effective_visible {
@@ -570,6 +566,7 @@ impl Runtime {
                                 (mesh.flip_x, mesh.flip_y, mesh.flip_z),
                                 mesh.cast_shadows,
                                 mesh.receive_shadows,
+                                Arc::<[f32]>::from(mesh.blend_shape_weights.clone()),
                             ))
                         }
                         SceneNodeData::MultiMeshInstance3D(mesh)
@@ -597,6 +594,7 @@ impl Runtime {
                                 (mesh.flip_x, mesh.flip_y, mesh.flip_z),
                                 mesh.cast_shadows,
                                 mesh.receive_shadows,
+                                Arc::<[f32]>::from(mesh.blend_shape_weights.clone()),
                             ))
                         }
                         _ => None,
@@ -614,6 +612,7 @@ impl Runtime {
                     flip,
                     cast_shadows,
                     receive_shadows,
+                    blend_shape_weights,
                 )| {
                     self.resolve_render_mesh_id(node, mesh).map(|mesh| {
                         (
@@ -625,6 +624,7 @@ impl Runtime {
                             flip,
                             cast_shadows,
                             receive_shadows,
+                            blend_shape_weights,
                         )
                     })
                 },
@@ -639,6 +639,7 @@ impl Runtime {
                     flip,
                     cast_shadows,
                     receive_shadows,
+                    blend_shape_weights,
                 )| {
                     self.nodes
                         .get(node)
@@ -653,6 +654,7 @@ impl Runtime {
                                 flip,
                                 cast_shadows,
                                 receive_shadows,
+                                blend_shape_weights.clone(),
                                 LocalMeshInstanceData::Single,
                             )),
                             SceneNodeData::MultiMeshInstance3D(mesh) => Some((
@@ -665,6 +667,7 @@ impl Runtime {
                                 flip,
                                 cast_shadows,
                                 receive_shadows,
+                                blend_shape_weights.clone(),
                                 LocalMeshInstanceData::Dense {
                                     instance_scale: mesh.instance_scale.max(0.0001),
                                     poses: {
@@ -688,16 +691,24 @@ impl Runtime {
                                                 mesh.instances.iter().map(|instance| {
                                                     DenseInstancePose3D {
                                                         position: [
-                                                            instance.0.x,
-                                                            instance.0.y,
-                                                            instance.0.z,
+                                                            instance.position.x,
+                                                            instance.position.y,
+                                                            instance.position.z,
                                                         ],
                                                         rotation: [
-                                                            instance.1.x,
-                                                            instance.1.y,
-                                                            instance.1.z,
-                                                            instance.1.w,
+                                                            instance.rotation.x,
+                                                            instance.rotation.y,
+                                                            instance.rotation.z,
+                                                            instance.rotation.w,
                                                         ],
+                                                        has_blend_shape_weight_override: instance
+                                                            .blend_shape_weights
+                                                            .is_some(),
+                                                        blend_shape_weights: instance
+                                                            .blend_shape_weights
+                                                            .clone()
+                                                            .map(Arc::<[f32]>::from)
+                                                            .unwrap_or_else(|| Arc::from([])),
                                                     }
                                                 }),
                                             );
@@ -729,6 +740,7 @@ impl Runtime {
                 flip,
                 cast_shadows,
                 receive_shadows,
+                blend_shape_weights,
                 local_instances,
             )) = mesh_data
                 && effective_visible
@@ -802,6 +814,7 @@ impl Runtime {
                     blend,
                     cast_shadows,
                     receive_shadows,
+                    blend_shape_weights: blend_shape_weights.clone(),
                 };
                 if self.render_3d.retained_mesh_draws.get(&node) != Some(&draw_state) {
                     let draw_command = match retained_instances {
@@ -816,6 +829,7 @@ impl Runtime {
                             node_model,
                             instance_scale,
                             instances: poses,
+                            blend_shape_weights: blend_shape_weights.clone(),
                             meshlet_override,
                             lod,
                             blend,
@@ -829,6 +843,7 @@ impl Runtime {
                                 node,
                                 model,
                                 skeleton: skeleton_palette,
+                                blend_shape_weights: blend_shape_weights.clone(),
                                 meshlet_override,
                                 lod,
                                 blend,
@@ -847,6 +862,7 @@ impl Runtime {
                                 .copied()
                                 .unwrap_or(Mat4::IDENTITY.to_cols_array_2d()),
                             skeleton: skeleton_palette,
+                            blend_shape_weights: blend_shape_weights.clone(),
                             meshlet_override,
                             lod,
                             blend,
@@ -861,6 +877,7 @@ impl Runtime {
                             node,
                             instance_mats,
                             skeleton: skeleton_palette,
+                            blend_shape_weights: blend_shape_weights.clone(),
                             meshlet_override,
                             lod,
                             blend,

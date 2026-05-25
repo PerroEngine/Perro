@@ -1,39 +1,19 @@
 use super::*;
 
-const SKY_SHADER_DEFAULT: &str = "DEFAULT";
-const SKY_SHADER_VOLUMETRIC: &str = "VOLUMETRIC";
-const SKY_SHADER_WISPY: &str = "WISPY";
-
-pub(super) fn normalize_sky_shader_path(path: Option<&str>) -> Option<&str> {
-    let value = path?.trim();
-    if value.is_empty()
-        || value.eq_ignore_ascii_case(SKY_SHADER_DEFAULT)
-        || value.eq_ignore_ascii_case(SKY_SHADER_VOLUMETRIC)
-        || value.eq_ignore_ascii_case(SKY_SHADER_WISPY)
-    {
-        None
-    } else {
-        Some(value)
-    }
-}
-
 pub(super) fn sky_shader_pipeline_key(sky: &perro_render_bridge::Sky3DState) -> Option<String> {
-    let whole = normalize_sky_shader_path(sky.sky_shader.as_deref());
-    let clouds = normalize_sky_shader_path(sky.cloud_shader.as_deref());
-    let sun = normalize_sky_shader_path(sky.sun_shader.as_deref());
-    let moon = normalize_sky_shader_path(sky.moon_shader.as_deref());
-    if whole.is_none() && clouds.is_none() && sun.is_none() && moon.is_none() {
+    if sky.shaders.is_empty() {
         return None;
     }
-    if let Some(whole) = whole {
-        return Some(format!("sky={whole}"));
+    let mut key = String::new();
+    for shader in sky.shaders.iter() {
+        key.push_str(shader.path.as_ref());
+        key.push('#');
+        for param in shader.params.iter() {
+            key.push_str(&format!("{:?};", param.value));
+        }
+        key.push('|');
     }
-    Some(format!(
-        "clouds={}|sun={}|moon={}",
-        clouds.unwrap_or(SKY_SHADER_DEFAULT),
-        sun.unwrap_or(SKY_SHADER_DEFAULT),
-        moon.unwrap_or(SKY_SHADER_DEFAULT)
-    ))
+    Some(key)
 }
 
 impl Gpu3D {
@@ -72,27 +52,12 @@ fn build_sky_custom_source(
     sky: &perro_render_bridge::Sky3DState,
     static_shader_lookup: Option<StaticShaderLookup>,
 ) -> Option<String> {
-    if let Some(path) = normalize_sky_shader_path(sky.sky_shader.as_deref()) {
-        return load_shader_source(path, static_shader_lookup);
+    let mut passes = Vec::with_capacity(sky.shaders.len());
+    for shader in sky.shaders.iter() {
+        let source = load_shader_source(shader.path.as_ref(), static_shader_lookup)?;
+        passes.push((source, shader.params.as_ref()));
     }
-    let moon = match normalize_sky_shader_path(sky.moon_shader.as_deref()) {
-        Some(path) => load_shader_source(path, static_shader_lookup)?,
-        None => {
-            perro_macros::include_str_stripped!("three_d/shaders/sky3d_parts/moon.wgsl").to_string()
-        }
-    };
-    let sun = match normalize_sky_shader_path(sky.sun_shader.as_deref()) {
-        Some(path) => load_shader_source(path, static_shader_lookup)?,
-        None => {
-            perro_macros::include_str_stripped!("three_d/shaders/sky3d_parts/sun.wgsl").to_string()
-        }
-    };
-    let clouds = match normalize_sky_shader_path(sky.cloud_shader.as_deref()) {
-        Some(path) => load_shader_source(path, static_shader_lookup)?,
-        None => perro_macros::include_str_stripped!("three_d/shaders/sky3d_parts/clouds.wgsl")
-            .to_string(),
-    };
-    Some(build_sky_shader_with_parts(&moon, &sun, &clouds))
+    Some(super::super::shaders::build_sky_shader_with_passes(&passes))
 }
 
 fn load_shader_source(
@@ -130,6 +95,9 @@ pub(super) fn build_sky_uniform(
     let day_colors = gradient_triplet(sky.day_colors.as_ref());
     let evening_colors = gradient_triplet(sky.evening_colors.as_ref());
     let night_colors = gradient_triplet(sky.night_colors.as_ref());
+    let horizon_colors = gradient_triplet(sky.horizon_colors.as_ref());
+    let evening_t = evening_weight_from_time(sky.time.time_of_day);
+    let night_t = (1.0 - t_day).clamp(0.0, 1.0);
     Some(SkyUniform {
         inv_view_proj: inv,
         camera_pos: [
@@ -141,30 +109,14 @@ pub(super) fn build_sky_uniform(
         day_colors,
         evening_colors,
         night_colors,
+        horizon_colors,
         params0: [
-            sky.cloud_size.max(0.0),
-            sky.cloud_density.clamp(0.0, 1.0),
-            sky.cloud_variance.clamp(0.0, 1.0),
             sky.time.time_of_day.rem_euclid(1.0),
-        ],
-        params1: [
-            sky.star_size.max(0.0),
-            sky.star_scatter.clamp(0.0, 1.0),
-            sky.star_gleam.max(0.0),
-            sky.sky_angle,
-        ],
-        params2: [
-            sky.sun_size.max(0.0),
-            sky.moon_size.max(0.0),
             t_day,
-            lighting.sky_cloud_time_seconds.max(0.0),
+            evening_t,
+            night_t,
         ],
-        wind: [
-            sky.cloud_wind_vector[0],
-            sky.cloud_wind_vector[1],
-            sky.style_blend.clamp(0.0, 1.0),
-            sky.cloud_mode as f32,
-        ],
+        params1: [lighting.sky_time_seconds.max(0.0), 0.0, 0.0, 0.0],
     })
 }
 
@@ -199,19 +151,6 @@ pub(super) fn evening_weight_from_time(time_of_day: f32) -> f32 {
     let t = time_of_day.rem_euclid(1.0);
     let dist = ((t - 0.75 + 0.5).rem_euclid(1.0) - 0.5).abs();
     (1.0 - (dist / 0.23)).clamp(0.0, 1.0)
-}
-
-pub(super) fn horizon_visibility(y: f32) -> f32 {
-    let t = ((y + 0.08) / 0.16).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
-}
-
-pub(super) fn sun_moon_dirs_from_time(time_of_day: f32, sky_angle: f32) -> (Vec3, Vec3) {
-    let t = time_of_day.rem_euclid(1.0);
-    let theta = (t * std::f32::consts::TAU) - std::f32::consts::FRAC_PI_2 + sky_angle;
-    let sun = Vec3::new(theta.cos(), theta.sin(), -0.25).normalize_or_zero();
-    let moon = -sun;
-    (sun, moon)
 }
 
 pub(super) fn sample_gradient(colors: &[[f32; 3]], t: f32) -> [f32; 3] {

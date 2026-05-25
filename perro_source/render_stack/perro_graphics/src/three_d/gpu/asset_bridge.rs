@@ -171,6 +171,10 @@ mod tests {
             ]),
             bounds_center: [0.0, 0.0, 0.0],
             bounds_radius: 1.0,
+            blend_shape_delta_start: 0,
+            blend_shape_target_count: 0,
+            blend_shape_vertex_start: 0,
+            blend_shape_vertex_count: 0,
         }
     }
 

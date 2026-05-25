@@ -28,6 +28,7 @@ fn runtime_mesh_data_builds_query_surfaces() {
                 index_count: 3,
             },
         ],
+        blend_shapes: Vec::new(),
     };
 
     let query = build_query_mesh_from_runtime_mesh(&mesh).expect("query mesh");
@@ -53,10 +54,8 @@ fn batch_global_ray_query_preserves_order_and_surface_index() {
             vertex([0.0, 0.0, 1.0]),
         ],
         indices: vec![0, 1, 2],
-        surface_ranges: vec![perro_render_bridge::MeshSurfaceRange {
-            index_start: 0,
-            index_count: 3,
-        }],
+        surface_ranges: vec![],
+        blend_shapes: Vec::new(),
     };
     let query = build_query_mesh_from_runtime_mesh(&mesh).expect("query mesh");
     let rays = [

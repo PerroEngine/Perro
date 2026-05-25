@@ -91,6 +91,8 @@ fn draw_3d_dense_command_with_blend(
         .map(|i| DenseInstancePose3D {
             position: [(i % 2048) as f32 * 0.08, 0.0, (i / 2048) as f32 * 0.08],
             rotation: [0.0, 0.0, 0.0, 1.0],
+            has_blend_shape_weight_override: false,
+            blend_shape_weights: Arc::from([]),
         })
         .collect::<Vec<_>>()
         .into();

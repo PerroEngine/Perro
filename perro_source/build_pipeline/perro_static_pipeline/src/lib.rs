@@ -674,6 +674,7 @@ mod tests {
             vertices,
             indices,
             surface_ranges,
+            blend_shapes: Vec::new(),
         })
     }
 

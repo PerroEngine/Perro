@@ -17,13 +17,31 @@ impl DerefMut for MultiMeshInstance3D {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct MultiMeshInstancePose {
+    pub position: Vector3,
+    pub rotation: Quaternion,
+    pub blend_shape_weights: Option<Vec<f32>>,
+}
+
+impl MultiMeshInstancePose {
+    pub const fn new(position: Vector3, rotation: Quaternion) -> Self {
+        Self {
+            position,
+            rotation,
+            blend_shape_weights: None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct MultiMeshInstance3D {
     pub base: Node3D,
     pub mesh: MeshID,
     pub surfaces: Vec<MeshSurfaceBinding>,
-    pub instances: Vec<(Vector3, Quaternion)>,
+    pub instances: Vec<MultiMeshInstancePose>,
     pub instance_scale: f32,
+    pub blend_shape_weights: Vec<f32>,
     pub flip_x: bool,
     pub flip_y: bool,
     pub flip_z: bool,
@@ -45,6 +63,7 @@ impl MultiMeshInstance3D {
             surfaces: Vec::new(),
             instances: Vec::new(),
             instance_scale: 1.0,
+            blend_shape_weights: Vec::new(),
             flip_x: false,
             flip_y: false,
             flip_z: false,

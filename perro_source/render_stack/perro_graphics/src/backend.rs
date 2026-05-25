@@ -934,11 +934,13 @@ impl PerroGraphics {
                         node,
                         model,
                         skeleton,
+                        blend_shape_weights,
                         meshlet_override,
                         lod,
                         blend,
                         cast_shadows,
                         receive_shadows,
+                        ..
                     } => {
                         self.renderer_3d.queue_draw(
                             node,
@@ -946,6 +948,7 @@ impl PerroGraphics {
                             surfaces,
                             model,
                             skeleton,
+                            blend_shape_weights,
                             meshlet_override,
                             lod,
                             blend,
@@ -959,11 +962,13 @@ impl PerroGraphics {
                         node,
                         instance_mats,
                         skeleton,
+                        blend_shape_weights,
                         meshlet_override,
                         lod,
                         blend,
                         cast_shadows,
                         receive_shadows,
+                        ..
                     } => {
                         self.renderer_3d.queue_draw_multi(
                             node,
@@ -971,6 +976,7 @@ impl PerroGraphics {
                             surfaces,
                             instance_mats,
                             skeleton,
+                            blend_shape_weights,
                             meshlet_override,
                             lod,
                             blend,
@@ -985,11 +991,13 @@ impl PerroGraphics {
                         node_model,
                         instance_scale,
                         instances,
+                        blend_shape_weights,
                         meshlet_override,
                         lod,
                         blend,
                         cast_shadows,
                         receive_shadows,
+                        ..
                     } => {
                         self.renderer_3d.queue_draw_multi_dense(
                             node,
@@ -1000,6 +1008,7 @@ impl PerroGraphics {
                                 instance_scale,
                                 instances,
                             },
+                            blend_shape_weights,
                             meshlet_override,
                             lod,
                             blend,

@@ -15,8 +15,8 @@ use std::time::Instant;
 use web_time::Instant;
 
 const SKY_DAY_SECONDS: f32 = 1580.0;
-const SKY_CLOUD_TIME_SPEED_SCALE: f32 = 0.2;
-const SKY_CLOUD_TIME_UPDATE_EVERY_FRAMES: u32 = 3;
+const SKY_TIME_SPEED_SCALE: f32 = 0.2;
+const SKY_TIME_UPDATE_EVERY_FRAMES: u32 = 3;
 const PARALLEL_PREP_SORT_MIN: usize = 10_000;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -48,6 +48,7 @@ pub struct Draw3DInstance {
     pub kind: Draw3DKind,
     pub surfaces: Arc<[MeshSurfaceBinding3D]>,
     pub instance_mats: Arc<[[[f32; 4]; 4]]>,
+    pub blend_shape_weights: Arc<[f32]>,
     pub debug_color: Option<[f32; 4]>,
     pub skeleton: Option<SkeletonPalette>,
     pub dense_multimesh: Option<DenseMultiMeshDraw3D>,
@@ -68,7 +69,7 @@ pub struct Renderer3DStats {
 pub struct Lighting3DState {
     pub ambient_light: Option<AmbientLight3DState>,
     pub sky: Option<Sky3DState>,
-    pub sky_cloud_time_seconds: f32,
+    pub sky_time_seconds: f32,
     pub ray_lights: [Option<RayLight3DState>; MAX_RAY_LIGHTS],
     pub point_lights: [Option<PointLight3DState>; MAX_POINT_LIGHTS],
     pub spot_lights: [Option<SpotLight3DState>; MAX_SPOT_LIGHTS],
@@ -101,9 +102,9 @@ pub struct Renderer3D {
     camera: Camera3DState,
     draw_revision: u64,
     last_frame_time: Option<Instant>,
-    cloud_time_seconds: f32,
-    cloud_time_pending_seconds: f32,
-    cloud_time_pending_frames: u32,
+    sky_time_seconds: f32,
+    sky_time_pending_seconds: f32,
+    sky_time_pending_frames: u32,
 }
 
 impl Renderer3D {
@@ -127,6 +128,7 @@ impl Renderer3D {
         surfaces: Arc<[MeshSurfaceBinding3D]>,
         model: [[f32; 4]; 4],
         skeleton: Option<SkeletonPalette>,
+        blend_shape_weights: Arc<[f32]>,
         meshlet_override: Option<bool>,
         lod: LODOptions3D,
         blend: MeshBlendOptions3D,
@@ -138,6 +140,7 @@ impl Renderer3D {
             kind: Draw3DKind::Mesh(mesh),
             surfaces,
             instance_mats: Arc::from([model]),
+            blend_shape_weights,
             debug_color: None,
             skeleton,
             dense_multimesh: None,
@@ -157,6 +160,7 @@ impl Renderer3D {
         surfaces: Arc<[MeshSurfaceBinding3D]>,
         instance_mats: Arc<[[[f32; 4]; 4]]>,
         skeleton: Option<SkeletonPalette>,
+        blend_shape_weights: Arc<[f32]>,
         meshlet_override: Option<bool>,
         lod: LODOptions3D,
         blend: MeshBlendOptions3D,
@@ -168,6 +172,7 @@ impl Renderer3D {
             kind: Draw3DKind::Mesh(mesh),
             surfaces,
             instance_mats,
+            blend_shape_weights,
             debug_color: None,
             skeleton,
             dense_multimesh: None,
@@ -186,6 +191,7 @@ impl Renderer3D {
         mesh: MeshID,
         surfaces: Arc<[MeshSurfaceBinding3D]>,
         dense_draw: DenseMultiMeshDraw3D,
+        blend_shape_weights: Arc<[f32]>,
         meshlet_override: Option<bool>,
         lod: LODOptions3D,
         blend: MeshBlendOptions3D,
@@ -199,6 +205,7 @@ impl Renderer3D {
             // Dense path uploads compact pose data directly in GPU prepare.
             // Keep this empty to avoid N x matrix expansion in retained CPU state.
             instance_mats: Arc::from([]),
+            blend_shape_weights,
             debug_color: None,
             skeleton: None,
             dense_multimesh: Some(dense_draw),
@@ -225,6 +232,7 @@ impl Renderer3D {
             kind: Draw3DKind::CameraStreamQuad { texture, tint },
             surfaces: Arc::from([]),
             instance_mats: Arc::from([model.to_cols_array_2d()]),
+            blend_shape_weights: Arc::from([]),
             debug_color: None,
             skeleton: None,
             dense_multimesh: None,
@@ -254,6 +262,7 @@ impl Renderer3D {
             kind: Draw3DKind::DebugPointCube,
             surfaces: Arc::from([]),
             instance_mats: Arc::from([model]),
+            blend_shape_weights: Arc::from([]),
             debug_color: Some(color),
             skeleton: None,
             dense_multimesh: None,
@@ -293,6 +302,7 @@ impl Renderer3D {
             kind: Draw3DKind::DebugEdgeCylinder,
             surfaces: Arc::from([]),
             instance_mats: Arc::from([model]),
+            blend_shape_weights: Arc::from([]),
             debug_color: Some(color),
             skeleton: None,
             dense_multimesh: None,
@@ -381,13 +391,13 @@ impl Renderer3D {
             .unwrap_or(0.0);
         let dt = dt.max(0.0);
         self.last_frame_time = Some(now);
-        self.cloud_time_pending_seconds += dt;
-        self.cloud_time_pending_frames = self.cloud_time_pending_frames.wrapping_add(1);
-        if self.cloud_time_pending_frames >= SKY_CLOUD_TIME_UPDATE_EVERY_FRAMES {
-            let cloud_step = self.cloud_time_pending_seconds * SKY_CLOUD_TIME_SPEED_SCALE;
-            self.cloud_time_seconds = (self.cloud_time_seconds + cloud_step).rem_euclid(1.0e9);
-            self.cloud_time_pending_seconds = 0.0;
-            self.cloud_time_pending_frames = 0;
+        self.sky_time_pending_seconds += dt;
+        self.sky_time_pending_frames = self.sky_time_pending_frames.wrapping_add(1);
+        if self.sky_time_pending_frames >= SKY_TIME_UPDATE_EVERY_FRAMES {
+            let sky_step = self.sky_time_pending_seconds * SKY_TIME_SPEED_SCALE;
+            self.sky_time_seconds = (self.sky_time_seconds + sky_step).rem_euclid(1.0e9);
+            self.sky_time_pending_seconds = 0.0;
+            self.sky_time_pending_frames = 0;
         }
 
         let queued = std::mem::take(&mut self.queued_draws);
@@ -442,7 +452,7 @@ impl Renderer3D {
                 sky.time.time_of_day = (sky.time.time_of_day + scaled).rem_euclid(1.0);
             }
             lighting.sky = Some(sky.clone());
-            lighting.sky_cloud_time_seconds = self.cloud_time_seconds;
+            lighting.sky_time_seconds = self.sky_time_seconds;
         }
         self.rebuild_sorted_lights_if_dirty();
         for (slot, (_, light)) in lighting
@@ -760,9 +770,9 @@ impl Default for Renderer3D {
             },
             draw_revision: 0,
             last_frame_time: None,
-            cloud_time_seconds: 0.0,
-            cloud_time_pending_seconds: 0.0,
-            cloud_time_pending_frames: 0,
+            sky_time_seconds: 0.0,
+            sky_time_pending_seconds: 0.0,
+            sky_time_pending_frames: 0,
         }
     }
 }

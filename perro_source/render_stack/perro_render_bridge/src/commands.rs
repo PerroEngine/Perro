@@ -126,6 +126,7 @@ pub enum Command3D {
         node: NodeID,
         model: [[f32; 4]; 4],
         skeleton: Option<SkeletonPalette>,
+        blend_shape_weights: Arc<[f32]>,
         meshlet_override: Option<bool>,
         lod: LODOptions3D,
         blend: MeshBlendOptions3D,
@@ -138,6 +139,7 @@ pub enum Command3D {
         node: NodeID,
         instance_mats: Arc<[[[f32; 4]; 4]]>,
         skeleton: Option<SkeletonPalette>,
+        blend_shape_weights: Arc<[f32]>,
         meshlet_override: Option<bool>,
         lod: LODOptions3D,
         blend: MeshBlendOptions3D,
@@ -151,6 +153,7 @@ pub enum Command3D {
         node_model: [[f32; 4]; 4],
         instance_scale: f32,
         instances: Arc<[DenseInstancePose3D]>,
+        blend_shape_weights: Arc<[f32]>,
         meshlet_override: Option<bool>,
         lod: LODOptions3D,
         blend: MeshBlendOptions3D,
@@ -206,10 +209,12 @@ pub enum Command3D {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DenseInstancePose3D {
     pub position: [f32; 3],
     pub rotation: [f32; 4],
+    pub has_blend_shape_weight_override: bool,
+    pub blend_shape_weights: Arc<[f32]>,
 }
 
 #[derive(Debug, Clone)]

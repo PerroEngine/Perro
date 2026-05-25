@@ -2,31 +2,12 @@
 
 ## Page Map
 
-| Header | Link |
-| --- | --- |
-| Purpose | [Purpose](#purpose) |
+| Header    | Link                    |
+| --------- | ----------------------- |
+| Purpose   | [Purpose](#purpose)     |
 | Use Cases | [Use Cases](#use-cases) |
-| Example | [Example](#example) |
+| Example   | [Example](#example)     |
 | Reference | [Reference](#reference) |
-
-## Purpose
-
-Use `Shaders (WGSL)` when this feature, type group, file format, or workflow appears in game code or assets.
-
-## Use Cases
-
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
-
-## Example
-
-```rust
-lifecycle!({
-    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
-    }
-});
-```
 
 ## Reference
 
@@ -112,6 +93,39 @@ Notes for custom shaders:
 - Use `custom_f_param(in, index)` to read custom params in fragment stage.
 - Use `custom_v_param(out, index)` inside `shade_vertex` for same params in vertex stage.
 - Legacy aliases `custom_param` and `custom_param_vertex` stay valid.
+
+## Custom Sky3D Shaders
+
+See also: [`Sky3D`](sky3d.md) for full sky authoring docs.
+
+`Sky3D` shaders are ordered passes:
+
+```txt
+shaders = [
+    { path = "res://shaders/sky.wgsl", params = [0.5, (1.0, 0.8, 0.6)] }
+]
+```
+
+Each WGSL file defines one function:
+
+```wgsl
+fn sky_shader(in: SkyFragment) -> vec4<f32> {
+    return in.color;
+}
+```
+
+`SkyFragment` fields:
+
+- `ray`: normalized camera ray through skybox point.
+- `uv`: fullscreen sky uv.
+- `time_of_day`, `time_seconds`.
+- `day_weight`, `evening_weight`, `night_weight`.
+- `horizon_weight`.
+- `color`: current stack color.
+- `custom_param(in, index)`: custom pass params packed as `vec4<f32>`.
+- `custom_f_param(in, index)`: same alias as material fragment params.
+
+Passes run in array order. Built-in Sky3D only provides day/evening/night gradients and horizon color fade; clouds, stars, sun, and moon come from custom sky shaders if needed.
 
 ### FragmentInput Fields
 

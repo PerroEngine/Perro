@@ -712,6 +712,8 @@ pub(super) fn same_draw_except_model(a: &Draw3DInstance, b: &Draw3DInstance) -> 
         && a.kind == b.kind
         && a.surfaces == b.surfaces
         && a.skeleton == b.skeleton
+        && a.blend_shape_weights == b.blend_shape_weights
+        && a.dense_multimesh == b.dense_multimesh
         && a.meshlet_override == b.meshlet_override
         && a.lod == b.lod
         && a.blend == b.blend
@@ -800,6 +802,7 @@ mod tests {
                 .map(|_| glam::Mat4::IDENTITY.to_cols_array_2d())
                 .collect::<Vec<_>>()
                 .into(),
+            blend_shape_weights: Arc::from([]),
             debug_color: None,
             skeleton: None,
             dense_multimesh: None,

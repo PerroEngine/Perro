@@ -205,6 +205,9 @@ fn apply_mesh_instance_3d_fields(node: &mut MeshInstance3D, fields: &[SceneObjec
             "blend" | "mesh_blend" | "blending" => {
                 apply_mesh_blend_fields(&mut node.blend, value);
             }
+            "blend_shape_weights" | "shape_key_weights" | "morph_weights" => {
+                node.blend_shape_weights = parse_blend_shape_weights(value);
+            }
             "blend_enabled" => {
                 if let Some(v) = as_bool(value) {
                     node.blend.enabled = v;
@@ -270,6 +273,9 @@ fn apply_multi_mesh_instance_3d_fields(
                 if let Some(v) = as_f32(value) {
                     node.instance_scale = v.max(0.0001);
                 }
+            }
+            "blend_shape_weights" | "shape_key_weights" | "morph_weights" => {
+                node.blend_shape_weights = parse_blend_shape_weights(value);
             }
             "meshlets" | "use_meshlets" => {
                 if let Some(v) = as_bool(value) {
@@ -712,12 +718,12 @@ fn parse_color(value: &SceneValue) -> Option<perro_structs::Color> {
     }
 }
 
-fn parse_instance_posrot(items: &[SceneValue]) -> Vec<(perro_structs::Vector3, perro_structs::Quaternion)> {
+fn parse_instance_posrot(items: &[SceneValue]) -> Vec<perro_nodes::MultiMeshInstancePose> {
     let mut out = Vec::with_capacity(items.len());
     for item in items {
         match item {
             SceneValue::Vec3 { x, y, z } => {
-                out.push((
+                out.push(perro_nodes::MultiMeshInstancePose::new(
                     perro_structs::Vector3::new(*x, *y, *z),
                     perro_structs::Quaternion::IDENTITY,
                 ));
@@ -726,6 +732,7 @@ fn parse_instance_posrot(items: &[SceneValue]) -> Vec<(perro_structs::Vector3, p
                 let mut pos = perro_structs::Vector3::ZERO;
                 let mut rot = perro_structs::Quaternion::IDENTITY;
                 let mut rot_deg: Option<perro_structs::Vector3> = None;
+                let mut blend_shape_weights = None;
                 for (key, value) in entries.iter() {
                     match key.as_ref() {
                         "position" => {
@@ -743,13 +750,20 @@ fn parse_instance_posrot(items: &[SceneValue]) -> Vec<(perro_structs::Vector3, p
                                 rot_deg = Some(v);
                             }
                         }
+                        "blend_shape_weights" | "shape_key_weights" | "morph_weights" => {
+                            blend_shape_weights = Some(parse_blend_shape_weights(value));
+                        }
                         _ => {}
                     }
                 }
                 if let Some(deg) = rot_deg {
                     rot = quat_from_deg_xyz(deg);
                 }
-                out.push((pos, rot));
+                out.push(perro_nodes::MultiMeshInstancePose {
+                    position: pos,
+                    rotation: rot,
+                    blend_shape_weights,
+                });
             }
             _ => {}
         }
@@ -759,7 +773,7 @@ fn parse_instance_posrot(items: &[SceneValue]) -> Vec<(perro_structs::Vector3, p
 
 fn parse_instance_grid(
     value: &SceneValue,
-) -> Option<Vec<(perro_structs::Vector3, perro_structs::Quaternion)>> {
+) -> Option<Vec<perro_nodes::MultiMeshInstancePose>> {
     let SceneValue::Object(entries) = value else {
         return None;
     };
@@ -830,12 +844,23 @@ fn parse_instance_grid(
                     (x + z + y) as f32 * rotation_step_deg.y,
                     z as f32 * rotation_step_deg.z,
                 ));
-                out.push((pos, rot));
+                out.push(perro_nodes::MultiMeshInstancePose::new(pos, rot));
             }
         }
     }
 
     Some(out)
+}
+
+fn parse_blend_shape_weights(value: &SceneValue) -> Vec<f32> {
+    let SceneValue::Array(items) = value else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .filter_map(as_f32)
+        .map(|v| v.clamp(0.0, 1.0))
+        .collect()
 }
 
 #[inline]

@@ -47,6 +47,10 @@ var<uniform> scene: Scene3D;
 var<storage, read> multimesh_draws: array<MultiMeshDrawParam>;
 @group(0) @binding(2)
 var mesh_blend_depth_tex: texture_depth_2d;
+@group(0) @binding(3)
+var<storage, read> blend_shape_deltas: array<BlendShapeDelta>;
+@group(0) @binding(4)
+var<storage, read> blend_shape_weights: array<f32>;
 
 struct VertexInput {
     @location(0) pos: vec3<f32>,
@@ -57,6 +61,13 @@ struct InstanceInput {
     @location(4) position: vec3<f32>,
     @location(5) rotation: vec4<f32>,
     @location(6) draw_id: u32,
+    @location(7) weight_range: vec4<u32>,
+    @location(8) shape_range: vec4<u32>,
+};
+
+struct BlendShapeDelta {
+    position_delta: vec4<f32>,
+    normal_delta: vec4<f32>,
 };
 
 struct VertexOutput {
@@ -187,13 +198,34 @@ fn transform_normal_ws(
     ) * det_sign);
 }
 
+fn apply_blend_shapes(v: VertexInput, inst: InstanceInput, vertex_index: u32) -> VertexInput {
+    let weight_count = min(inst.weight_range.y, inst.shape_range.y);
+    if weight_count == 0u || inst.shape_range.w == 0u || vertex_index < inst.shape_range.z {
+        return v;
+    }
+    let local_vertex = vertex_index - inst.shape_range.z;
+    if local_vertex >= inst.shape_range.w {
+        return v;
+    }
+    var out_pos = v.pos;
+    var out_normal = v.normal;
+    for (var i = 0u; i < weight_count; i = i + 1u) {
+        let weight = clamp(blend_shape_weights[inst.weight_range.x + i], 0.0, 1.0);
+        let delta = blend_shape_deltas[inst.shape_range.x + i * inst.shape_range.w + local_vertex];
+        out_pos = out_pos + delta.position_delta.xyz * weight;
+        out_normal = out_normal + delta.normal_delta.xyz * weight;
+    }
+    return VertexInput(out_pos, normalize(out_normal));
+}
+
 @vertex
-fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
+fn vs_main(v: VertexInput, inst: InstanceInput, @builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     let draw = multimesh_draws[inst.draw_id];
     let scale = bitcast<f32>(draw.scale_bits);
     let rot = normalize(inst.rotation);
-    let local_pos = rotate_vec_by_quat(v.pos * scale, rot) + inst.position;
-    let local_nrm = rotate_vec_by_quat(v.normal, rot);
+    let blended = apply_blend_shapes(v, inst, vertex_index);
+    let local_pos = rotate_vec_by_quat(blended.pos * scale, rot) + inst.position;
+    let local_nrm = rotate_vec_by_quat(blended.normal, rot);
     let p = vec4<f32>(local_pos, 1.0);
     let world = vec4<f32>(
         dot(draw.model_row_0, p),

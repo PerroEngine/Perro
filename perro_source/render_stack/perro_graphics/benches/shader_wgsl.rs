@@ -12,10 +12,7 @@ const PRELUDE_SKINNED_3D_WGSL: &str =
 const MATERIAL_STANDARD_WGSL: &str = include_str!("../src/three_d/shaders/material_standard.wgsl");
 const MATERIAL_UNLIT_WGSL: &str = include_str!("../src/three_d/shaders/material_unlit.wgsl");
 const MATERIAL_TOON_WGSL: &str = include_str!("../src/three_d/shaders/material_toon.wgsl");
-const SKY3D_ATMO_WGSL: &str = include_str!("../src/three_d/shaders/sky3d_parts/atmo.wgsl");
-const SKY3D_MOON_WGSL: &str = include_str!("../src/three_d/shaders/sky3d_parts/moon.wgsl");
-const SKY3D_SUN_WGSL: &str = include_str!("../src/three_d/shaders/sky3d_parts/sun.wgsl");
-const SKY3D_CLOUDS_WGSL: &str = include_str!("../src/three_d/shaders/sky3d_parts/clouds.wgsl");
+const SKY3D_WGSL: &str = include_str!("../src/three_d/shaders/sky3d.wgsl");
 const FRUSTUM_CULL_WGSL: &str = include_str!("../src/three_d/shaders/frustum_cull.wgsl");
 const HIZ_OCCLUSION_CULL_WGSL: &str =
     include_str!("../src/three_d/shaders/hiz_occlusion_cull.wgsl");
@@ -53,15 +50,10 @@ fn parse_and_validate(wgsl: &str) -> usize {
 }
 
 fn build_sky_shader() -> String {
-    let mut out = String::new();
-    out.push_str(SKY3D_ATMO_WGSL);
-    out.push('\n');
-    out.push_str(SKY3D_MOON_WGSL);
-    out.push('\n');
-    out.push_str(SKY3D_SUN_WGSL);
-    out.push('\n');
-    out.push_str(SKY3D_CLOUDS_WGSL);
-    out
+    SKY3D_WGSL.replace(
+        "/*__PERRO_SKY_CUSTOM_STACK__*/",
+        "fn apply_custom_sky_stack(base: SkyFragment) -> vec4<f32> { return base.color; }",
+    )
 }
 
 fn post_prelude_literal() -> &'static str {

@@ -131,6 +131,7 @@ fn fill_camera_stream_draws_3d(draws: &[CameraStreamDraw3DState], out: &mut Vec<
             kind: Draw3DKind::Mesh(*mesh),
             surfaces: surfaces.clone(),
             instance_mats: Arc::from([*model]),
+            blend_shape_weights: Arc::from([]),
             debug_color: None,
             skeleton: skeleton.clone(),
             dense_multimesh: None,
@@ -154,6 +155,7 @@ fn fill_camera_stream_draws_3d(draws: &[CameraStreamDraw3DState], out: &mut Vec<
             kind: Draw3DKind::Mesh(*mesh),
             surfaces: surfaces.clone(),
             instance_mats: instance_mats.clone(),
+            blend_shape_weights: Arc::from([]),
             debug_color: None,
             skeleton: skeleton.clone(),
             dense_multimesh: None,
@@ -178,6 +180,7 @@ fn fill_camera_stream_draws_3d(draws: &[CameraStreamDraw3DState], out: &mut Vec<
             kind: Draw3DKind::Mesh(*mesh),
             surfaces: surfaces.clone(),
             instance_mats: Arc::from([]),
+            blend_shape_weights: Arc::from([]),
             debug_color: None,
             skeleton: None,
             dense_multimesh: Some(DenseMultiMeshDraw3D {
@@ -198,7 +201,7 @@ fn camera_stream_lighting_3d(lighting: &CameraStreamLighting3DState) -> Lighting
     Lighting3DState {
         ambient_light: lighting.ambient_light,
         sky: lighting.sky.clone(),
-        sky_cloud_time_seconds: 0.0,
+        sky_time_seconds: 0.0,
         ray_lights: lighting.ray_lights,
         point_lights: lighting.point_lights,
         spot_lights: lighting.spot_lights,
@@ -776,7 +779,7 @@ impl Gpu {
             render_format,
             sample_count,
             two_d.camera_bind_group_layout(),
-            three_d.camera_bind_group_layout(),
+            three_d.water_camera_bind_group_layout(),
             three_d.depth_prepass_view(),
         ));
         let msaa_color =
@@ -1129,7 +1132,7 @@ impl Gpu {
                     self.render_format,
                     self.sample_count,
                     two_d.camera_bind_group_layout(),
-                    three_d.camera_bind_group_layout(),
+                    three_d.water_camera_bind_group_layout(),
                     three_d.depth_prepass_view(),
                 ));
             }
@@ -1520,7 +1523,7 @@ impl Gpu {
                                 self.render_format,
                                 1,
                                 stream_2d.camera_bind_group_layout(),
-                                stream_3d_ref.camera_bind_group_layout(),
+                                stream_3d_ref.water_camera_bind_group_layout(),
                                 stream_3d_ref.depth_prepass_view(),
                             ));
                         }
@@ -1646,7 +1649,7 @@ impl Gpu {
                                 self.render_format,
                                 1,
                                 stream_2d_ref.camera_bind_group_layout(),
-                                stream_3d.camera_bind_group_layout(),
+                                stream_3d.water_camera_bind_group_layout(),
                                 stream_3d.depth_prepass_view(),
                             ));
                         }
@@ -1679,7 +1682,7 @@ impl Gpu {
                                 &mut encoder,
                                 render_view,
                                 stream_3d.depth_view(),
-                                stream_3d.camera_bind_group(),
+                                stream_3d.water_camera_bind_group(),
                                 false,
                             );
                         }
@@ -1755,7 +1758,7 @@ impl Gpu {
                     &mut encoder,
                     color_view,
                     three_d.depth_view(),
-                    three_d.camera_bind_group(),
+                    three_d.water_camera_bind_group(),
                     clear_water_depth,
                 );
             }

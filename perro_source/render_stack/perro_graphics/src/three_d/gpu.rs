@@ -6,15 +6,14 @@ use super::{
         MAX_SPOT_LIGHTS,
     },
     shaders::{
-        build_custom_material_shader_with_prelude, build_sky_shader_with_parts,
-        create_depth_prepass_shader_module_rigid, create_depth_prepass_shader_module_skinned,
-        create_frustum_cull_shader_module, create_hiz_depth_copy_shader_module,
-        create_hiz_downsample_shader_module, create_hiz_occlusion_cull_shader_module,
-        create_mesh_shader_module_rigid, create_mesh_shader_module_skinned,
-        create_multimesh_shader_module, create_sky_shader_module,
-        create_sky_shader_module_from_source, create_toon_shader_module_rigid,
-        create_toon_shader_module_skinned, create_unlit_shader_module_rigid,
-        create_unlit_shader_module_skinned,
+        build_custom_material_shader_with_prelude, create_depth_prepass_shader_module_rigid,
+        create_depth_prepass_shader_module_skinned, create_frustum_cull_shader_module,
+        create_hiz_depth_copy_shader_module, create_hiz_downsample_shader_module,
+        create_hiz_occlusion_cull_shader_module, create_mesh_shader_module_rigid,
+        create_mesh_shader_module_skinned, create_multimesh_shader_module,
+        create_sky_shader_module, create_sky_shader_module_from_source,
+        create_toon_shader_module_rigid, create_toon_shader_module_skinned,
+        create_unlit_shader_module_rigid, create_unlit_shader_module_skinned,
     },
 };
 use crate::backend::{
@@ -167,14 +166,12 @@ struct SkyUniform {
     day_colors: [[f32; 4]; 3],
     evening_colors: [[f32; 4]; 3],
     night_colors: [[f32; 4]; 3],
-    params0: [f32; 4], // cloud_size, cloud_density, cloud_variance, time_of_day
-    params1: [f32; 4], // star_size, star_scatter, star_gleam, sky_angle
-    params2: [f32; 4], // sun_size, moon_size, day_weight, cloud_time_seconds
-    wind: [f32; 4],    // x,y = cloud wind, z = style_blend (0 toon, 1 realistic), w = reserved
+    horizon_colors: [[f32; 4]; 3],
+    params0: [f32; 4], // time_of_day, day_weight, evening_weight, night_weight
+    params1: [f32; 4], // time_seconds, reserved
 }
 
-const SKY_PARAMS2_W_OFFSET: u64 =
-    std::mem::offset_of!(SkyUniform, params2) as u64 + (3 * std::mem::size_of::<f32>() as u64);
+const SKY_PARAMS1_X_OFFSET: u64 = std::mem::offset_of!(SkyUniform, params1) as u64;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable, PartialEq)]
@@ -245,6 +242,8 @@ struct MultiMeshInstanceGpu {
     position: [f32; 3],
     rotation: [f32; 4],
     draw_id: u32,
+    weight_range: [u32; 4],
+    shape_range: [u32; 4],
 }
 
 #[repr(C)]
@@ -257,6 +256,20 @@ struct MultiMeshDrawParamGpu {
     packed_emissive: u32,
     scale_bits: u32,
     packed_blend_params: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct BlendShapeDeltaGpu {
+    position_delta: [f32; 4],
+    normal_delta: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct BlendShapeInstanceMetaGpu {
+    weight_range: [u32; 4], // weight_start, weight_count, reserved, reserved
+    shape_range: [u32; 4],  // delta_start, target_count, vertex_start, vertex_count
 }
 
 #[repr(C)]
@@ -318,6 +331,7 @@ struct ShadowUniform {
 pub struct Gpu3D {
     color_format: wgpu::TextureFormat,
     camera_bgl: wgpu::BindGroupLayout,
+    water_camera_bgl: wgpu::BindGroupLayout,
     rigid_camera_bgl: wgpu::BindGroupLayout,
     multimesh_bgl: wgpu::BindGroupLayout,
     material_texture_bgl: wgpu::BindGroupLayout,
@@ -375,6 +389,7 @@ pub struct Gpu3D {
     next_custom_pipeline_token: u32,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+    water_camera_bind_group: wgpu::BindGroup,
     rigid_camera_bind_group: wgpu::BindGroup,
     shadow_camera_buffers: Vec<wgpu::Buffer>,
     shadow_camera_bind_groups: Vec<wgpu::BindGroup>,
@@ -428,6 +443,15 @@ pub struct Gpu3D {
     skinned_instance_meta_buffer: wgpu::Buffer,
     skinned_instance_meta_capacity: usize,
     staged_skinned_instance_meta: Vec<SkinnedInstanceMetaGpu>,
+    blend_shape_delta_buffer: wgpu::Buffer,
+    blend_shape_delta_capacity: usize,
+    blend_shape_deltas: Vec<BlendShapeDeltaGpu>,
+    blend_shape_weight_buffer: wgpu::Buffer,
+    blend_shape_weight_capacity: usize,
+    staged_blend_shape_weights: Vec<f32>,
+    blend_shape_instance_meta_buffer: wgpu::Buffer,
+    blend_shape_instance_meta_capacity: usize,
+    staged_blend_shape_instance_meta: Vec<BlendShapeInstanceMetaGpu>,
     multimesh_bind_group: wgpu::BindGroup,
     multimesh_draw_params_buffer: wgpu::Buffer,
     multimesh_draw_params_capacity: usize,
@@ -477,7 +501,7 @@ pub struct Gpu3D {
     shadow_focus_center: Vec3,
     shadow_focus_radius: f32,
     last_sky: Option<SkyUniform>,
-    last_sky_cloud_time_seconds: f32,
+    last_sky_time_seconds: f32,
     sky_enabled: bool,
     mesh_vertices: Vec<MeshVertex>,
     rigid_mesh_vertices: Vec<RigidMeshVertex>,
@@ -633,6 +657,10 @@ struct MeshAssetRange {
     lods: Arc<[MeshLodRange]>,
     bounds_center: [f32; 3],
     bounds_radius: f32,
+    blend_shape_delta_start: u32,
+    blend_shape_target_count: u32,
+    blend_shape_vertex_start: u32,
+    blend_shape_vertex_count: u32,
 }
 
 #[derive(Clone)]
@@ -738,7 +766,7 @@ mod tests {
     use perro_asset_formats::pmesh::{
         FLAG_HAS_JOINTS as PMESH_FLAG_HAS_JOINTS, FLAG_HAS_NORMAL as PMESH_FLAG_HAS_NORMAL,
         FLAG_HAS_UV0 as PMESH_FLAG_HAS_UV0, FLAG_HAS_WEIGHTS as PMESH_FLAG_HAS_WEIGHTS,
-        FLAG_WEIGHTS_UNORM8 as PMESH_FLAG_WEIGHTS_UNORM8, VERSION as PMESH_VERSION,
+        FLAG_WEIGHTS_UNORM8 as PMESH_FLAG_WEIGHTS_UNORM8, VERSION_V1 as PMESH_VERSION_V1,
     };
     use perro_graphics_assets::{MeshRange, decode_pmesh, decode_ptex};
     use perro_render_bridge::CameraProjectionState;
@@ -831,7 +859,7 @@ mod tests {
         let compressed = perro_io::compress_zlib_best(&raw).expect("compress pmesh payload");
         let mut bytes = Vec::new();
         bytes.extend_from_slice(b"PMESH");
-        bytes.extend_from_slice(&PMESH_VERSION.to_le_bytes());
+        bytes.extend_from_slice(&PMESH_VERSION_V1.to_le_bytes());
         let flags = PMESH_FLAG_HAS_NORMAL
             | PMESH_FLAG_HAS_UV0
             | PMESH_FLAG_HAS_JOINTS
@@ -865,15 +893,15 @@ mod tests {
     }
 
     #[test]
-    fn decode_pmesh_rejects_non_v1() {
-        for version in [2u32, 3, 4, 5, 6, 7, 8] {
+    fn decode_pmesh_rejects_unknown_versions() {
+        for version in [3u32, 4, 5, 6, 7, 8] {
             let mut bytes = Vec::new();
             bytes.extend_from_slice(b"PMESH");
             bytes.extend_from_slice(&version.to_le_bytes());
             bytes.resize(33, 0);
             assert!(
                 decode_pmesh(&bytes).is_none(),
-                "non-v1 pmesh version {version} must reject"
+                "unknown pmesh version {version} must reject"
             );
         }
     }

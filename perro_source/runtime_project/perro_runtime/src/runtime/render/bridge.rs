@@ -11,8 +11,8 @@ use perro_render_bridge::{
     CameraStreamSourceState, CameraStreamState, Command2D, Command3D, DenseInstancePose3D,
     LODOptions3D, Light2DState, MeshBlendOptions3D, PointLight2DState, PointLight3DState,
     PointParticles2DState, PointParticles3DState, RayLight2DState, RayLight3DState, RenderCommand,
-    RenderEvent, RenderRequestID, Sky3DState, SkyTime3DState, SpotLight2DState, SpotLight3DState,
-    Sprite2DCommand, Water2DState, Water3DState,
+    RenderEvent, RenderRequestID, Sky3DState, SkyShaderPass3DState, SkyTime3DState,
+    SpotLight2DState, SpotLight3DState, Sprite2DCommand, Water2DState, Water3DState,
 };
 use perro_runtime_render::{decode_3d_mesh_request_node, decode_render_request_node_from_event};
 use perro_structs::BitMask;
@@ -871,16 +871,24 @@ impl Runtime {
                                             .iter()
                                             .map(|instance| DenseInstancePose3D {
                                                 position: [
-                                                    instance.0.x,
-                                                    instance.0.y,
-                                                    instance.0.z,
+                                                    instance.position.x,
+                                                    instance.position.y,
+                                                    instance.position.z,
                                                 ],
                                                 rotation: [
-                                                    instance.1.x,
-                                                    instance.1.y,
-                                                    instance.1.z,
-                                                    instance.1.w,
+                                                    instance.rotation.x,
+                                                    instance.rotation.y,
+                                                    instance.rotation.z,
+                                                    instance.rotation.w,
                                                 ],
+                                                has_blend_shape_weight_override: instance
+                                                    .blend_shape_weights
+                                                    .is_some(),
+                                                blend_shape_weights: instance
+                                                    .blend_shape_weights
+                                                    .clone()
+                                                    .map(Arc::<[f32]>::from)
+                                                    .unwrap_or_else(|| Arc::from([])),
                                             })
                                             .collect::<Vec<_>>(),
                                     ),
@@ -1001,27 +1009,21 @@ impl Runtime {
                             day_colors: Arc::from(sky.day_colors.as_ref()),
                             evening_colors: Arc::from(sky.evening_colors.as_ref()),
                             night_colors: Arc::from(sky.night_colors.as_ref()),
-                            sky_angle: sky.sky_angle,
+                            horizon_colors: Arc::from(sky.horizon_colors.as_ref()),
                             time: SkyTime3DState {
                                 time_of_day: sky.time.time_of_day,
                                 paused: sky.time.paused,
                                 scale: sky.time.scale,
                             },
-                            cloud_size: sky.clouds.size,
-                            cloud_density: sky.clouds.density,
-                            cloud_variance: sky.clouds.variance,
-                            cloud_wind_vector: sky.clouds.wind_vector,
-                            cloud_mode: sky.clouds.mode as u32,
-                            cloud_shader: sky.clouds.shader.clone(),
-                            star_size: sky.stars.size,
-                            star_scatter: sky.stars.scatter,
-                            star_gleam: sky.stars.gleam,
-                            moon_size: sky.moon.size,
-                            moon_shader: sky.moon.shader.clone(),
-                            sun_size: sky.sun.size,
-                            sun_shader: sky.sun.shader.clone(),
-                            style_blend: sky.style.blend_factor(),
-                            sky_shader: sky.sky_shader.clone(),
+                            shaders: Arc::from(
+                                sky.shaders
+                                    .iter()
+                                    .map(|shader| SkyShaderPass3DState {
+                                        path: shader.path.clone(),
+                                        params: Arc::from(shader.params.as_ref()),
+                                    })
+                                    .collect::<Vec<_>>(),
+                            ),
                         }))
                     }
                     SceneNodeData::RayLight3D(light)

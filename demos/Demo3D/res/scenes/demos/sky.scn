@@ -41,24 +41,22 @@ parent = @SkyDemo
             (0.03, 0.05, 0.14),
             (0.08, 0.1, 0.22)
         ]
-        sky_angle = 0.0
+        horizon_colors = [
+            (0.66, 0.68, 0.70),
+            (0.47, 0.49, 0.52),
+            (0.30, 0.31, 0.34)
+        ]
         time = {
             time_of_day = 0.36,
             paused = false,
             scale = 0.08
         }
-        cloud_size = 0.74
-        cloud_density = 0.86
-        cloud_variance = 0.16
-        wind_vector = (0.16, 0.12)
-        cloud_shader = "VOLUMETRIC"
-        star_size = 1.0
-        star_scatter = 0.28
-        star_gleam = 0.45
-        moon_size = 0.58
-        moon_shader = "DEFAULT"
-        sun_size = 0.95
-        sun_shader = "DEFAULT"
+        shaders = [
+            {
+                path = "res://shaders/sky_horizon_band.wgsl",
+                params = [0.12, 0.32, (0.86, 0.88, 0.94)]
+            }
+        ]
         active = true
     [/Sky3D]
 [/Sky]
