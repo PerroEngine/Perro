@@ -68,13 +68,19 @@ impl Runtime {
             }
             _ => return false,
         };
-        if mesh.is_nil() || !self.resource_api.is_mesh_loaded(mesh) {
+        let only_nil_materials = surfaces
+            .iter()
+            .all(|surface| surface.material.is_none_or(|id| id.is_nil()));
+        if mesh.is_nil() {
+            return only_nil_materials && !self.render_3d.mesh_sources.contains_key(&node_id);
+        }
+        if !self.resource_api.is_mesh_loaded(mesh) {
             return false;
         }
         surfaces.iter().all(|surface| {
             surface
                 .material
-                .is_none_or(|id| !id.is_nil() && self.resource_api.is_material_loaded(id))
+                .is_none_or(|id| id.is_nil() || self.resource_api.is_material_loaded(id))
         })
     }
 

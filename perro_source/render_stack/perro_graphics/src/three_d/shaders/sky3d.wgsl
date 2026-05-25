@@ -95,7 +95,7 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VsOut {
 fn sky_base_color(ray: vec3<f32>) -> vec4<f32> {
     let top_t = clamp(pow(max(ray.y, 0.0), 0.45), 0.0, 1.0);
     let lower_t = clamp((-ray.y) / 0.65, 0.0, 1.0);
-    let horizon_weight = smoothstep(0.08, -0.18, ray.y);
+    let horizon_weight = smoothstep(0.0, 0.18, -ray.y);
 
     let day_col = gradient3(sky.day_colors, top_t);
     let evening_col = gradient3(sky.evening_colors, top_t);
@@ -118,7 +118,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let world_h = sky.inv_view_proj * ndc;
     let world = world_h.xyz / max(world_h.w, 1.0e-5);
     let ray = normalize(world - sky.camera_pos.xyz);
-    let horizon_weight = smoothstep(0.08, -0.18, ray.y);
+    let horizon_weight = smoothstep(0.0, 0.18, -ray.y);
     let base = SkyFragment(
         ray,
         in.uv,

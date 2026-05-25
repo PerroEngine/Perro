@@ -20,7 +20,7 @@ pub mod pmesh {
     pub const MAGIC: &[u8; 5] = b"PMESH";
     pub const VERSION_V1: u32 = 1;
     pub const VERSION_V2: u32 = 2;
-    pub const VERSION: u32 = VERSION_V2;
+    pub const VERSION: u32 = VERSION_V1;
     pub const FLAG_HAS_NORMAL: u32 = 1 << 0;
     pub const FLAG_HAS_UV0: u32 = 1 << 1;
     pub const FLAG_HAS_JOINTS: u32 = 1 << 2;

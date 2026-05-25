@@ -283,7 +283,7 @@ fn decode_collision_pmesh_trimesh(bytes: &[u8]) -> Option<TriMeshData> {
 }
 
 fn decode_render_pmesh_trimesh(bytes: &[u8]) -> Option<TriMeshData> {
-    if bytes.len() < 37 {
+    if bytes.len() < 41 {
         return None;
     }
     let flags = u32::from_le_bytes(bytes[9..13].try_into().ok()?);
@@ -293,7 +293,7 @@ fn decode_render_pmesh_trimesh(bytes: &[u8]) -> Option<TriMeshData> {
     let meshlet_count = u32::from_le_bytes(bytes[25..29].try_into().ok()?) as usize;
     let lod_count = u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize;
     let raw_len = u32::from_le_bytes(bytes[33..37].try_into().ok()?) as usize;
-    let raw = decode_pmesh_payload(flags, &bytes[37..])?;
+    let raw = decode_pmesh_payload(flags, &bytes[41..])?;
     if raw.len() != raw_len {
         return None;
     }

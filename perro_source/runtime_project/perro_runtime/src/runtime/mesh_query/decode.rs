@@ -155,7 +155,7 @@ pub(super) fn normalized_static_mesh_lookup_alias(source: &str) -> Option<String
 }
 
 pub(super) fn decode_pmesh_query(bytes: &[u8]) -> Option<QueryMeshData> {
-    if bytes.len() < 37 || &bytes[0..5] != b"PMESH" {
+    if bytes.len() < 41 || &bytes[0..5] != b"PMESH" {
         return None;
     }
     let version = u32::from_le_bytes(bytes[5..9].try_into().ok()?);
@@ -170,7 +170,7 @@ pub(super) fn decode_pmesh_query(bytes: &[u8]) -> Option<QueryMeshData> {
     let meshlet_count = u32::from_le_bytes(bytes[25..29].try_into().ok()?) as usize;
     let lod_count = u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize;
     let raw_len = u32::from_le_bytes(bytes[33..37].try_into().ok()?) as usize;
-    let payload_start = 37usize;
+    let payload_start = 41usize;
 
     let raw = decode_pmesh_payload(flags, &bytes[payload_start..])?;
     if raw.len() != raw_len {

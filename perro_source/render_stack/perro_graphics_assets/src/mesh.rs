@@ -4,8 +4,7 @@ use perro_asset_formats::pmesh::{
     FLAG_HAS_JOINTS as PMESH_FLAG_HAS_JOINTS, FLAG_HAS_NORMAL as PMESH_FLAG_HAS_NORMAL,
     FLAG_HAS_UV0 as PMESH_FLAG_HAS_UV0, FLAG_HAS_WEIGHTS as PMESH_FLAG_HAS_WEIGHTS,
     FLAG_PAYLOAD_RAW as PMESH_FLAG_PAYLOAD_RAW, FLAG_WEIGHTS_UNORM8 as PMESH_FLAG_WEIGHTS_UNORM8,
-    MAGIC as PMESH_MAGIC, VERSION as PMESH_VERSION, VERSION_V1 as PMESH_VERSION_V1,
-    VERSION_V2 as PMESH_VERSION_V2,
+    MAGIC as PMESH_MAGIC, VERSION as PMESH_VERSION, VERSION_V2 as PMESH_VERSION_V2,
 };
 use perro_io::{decompress_zlib, load_asset};
 use perro_meshlets::{
@@ -607,10 +606,10 @@ pub fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
         return None;
     }
     let version = u32::from_le_bytes(bytes[5..9].try_into().ok()?);
-    if version != PMESH_VERSION && version != PMESH_VERSION_V1 && version != PMESH_VERSION_V2 {
+    if version != PMESH_VERSION && version != PMESH_VERSION_V2 {
         return None;
     }
-    let header_len = if version >= PMESH_VERSION_V2 { 41 } else { 37 };
+    let header_len = 41;
     if bytes.len() < header_len {
         return None;
     }
@@ -621,11 +620,7 @@ pub fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
     let meshlet_count = u32::from_le_bytes(bytes[25..29].try_into().ok()?) as usize;
     let lod_count = u32::from_le_bytes(bytes[29..33].try_into().ok()?) as usize;
     let raw_len = u32::from_le_bytes(bytes[33..37].try_into().ok()?) as usize;
-    let blend_shape_count = if version >= PMESH_VERSION_V2 {
-        u32::from_le_bytes(bytes[37..41].try_into().ok()?) as usize
-    } else {
-        0
-    };
+    let blend_shape_count = u32::from_le_bytes(bytes[37..41].try_into().ok()?) as usize;
     let raw = decode_static_payload(flags, &bytes[header_len..])?;
     if raw.len() != raw_len {
         return None;

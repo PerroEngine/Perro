@@ -872,6 +872,7 @@ mod tests {
         bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.extend_from_slice(&0u32.to_le_bytes());
         bytes.extend_from_slice(&(raw.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
         bytes.extend_from_slice(&compressed);
 
         let decoded = decode_pmesh(&bytes).expect("decode v1 pmesh");

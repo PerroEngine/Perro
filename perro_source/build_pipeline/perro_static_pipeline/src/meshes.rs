@@ -12,7 +12,7 @@ use perro_asset_formats::{
         FLAG_HAS_UV0 as PMESH_FLAG_HAS_UV0, FLAG_HAS_WEIGHTS as PMESH_FLAG_HAS_WEIGHTS,
         FLAG_PAYLOAD_RAW as PMESH_FLAG_PAYLOAD_RAW,
         FLAG_WEIGHTS_UNORM8 as PMESH_FLAG_WEIGHTS_UNORM8, MAGIC as PMESH_MAGIC,
-        VERSION as PMESH_VERSION, VERSION_V2 as PMESH_VERSION_V2,
+        VERSION as PMESH_VERSION,
     },
     source_ext,
 };
@@ -728,7 +728,7 @@ fn encode_pmesh(
         raw.clone()
     };
     let version = PMESH_VERSION;
-    let header_u32s = if version >= PMESH_VERSION_V2 { 9 } else { 8 };
+    let header_u32s = 9;
     let mut out = Vec::with_capacity(5 + header_u32s * std::mem::size_of::<u32>() + payload.len());
     out.extend_from_slice(PMESH_MAGIC);
     out.extend_from_slice(&version.to_le_bytes());
@@ -739,9 +739,7 @@ fn encode_pmesh(
     out.extend_from_slice(&(meshlets.len() as u32).to_le_bytes());
     out.extend_from_slice(&(lods.len() as u32).to_le_bytes());
     out.extend_from_slice(&(raw.len() as u32).to_le_bytes());
-    if version >= PMESH_VERSION_V2 {
-        out.extend_from_slice(&(blend_shapes.len() as u32).to_le_bytes());
-    }
+    out.extend_from_slice(&(blend_shapes.len() as u32).to_le_bytes());
     out.extend_from_slice(&payload);
     Ok(out)
 }
@@ -1012,9 +1010,9 @@ fn escape_str(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        PMESH_VERSION, PMESH_VERSION_V2, PackedBlendShape, PackedBlendShapeVertex, PackedLod,
-        PackedMeshLayoutFlags, PackedSurfaceRange, PackedVertex, build_lod_sets, dedup_vertices,
-        encode_pmesh, encode_pmesh_tightest_layout, pack_meshlets, pack_meshlets_with_surfaces,
+        PMESH_VERSION, PackedBlendShape, PackedBlendShapeVertex, PackedLod, PackedMeshLayoutFlags,
+        PackedSurfaceRange, PackedVertex, build_lod_sets, dedup_vertices, encode_pmesh,
+        encode_pmesh_tightest_layout, pack_meshlets, pack_meshlets_with_surfaces,
         reorder_vertices_by_first_use,
     };
 
@@ -1052,12 +1050,12 @@ mod tests {
     }
 
     #[test]
-    fn pmesh_current_version_is_v2() {
-        assert_eq!(PMESH_VERSION, 2);
+    fn pmesh_current_version_is_v1() {
+        assert_eq!(PMESH_VERSION, 1);
     }
 
     #[test]
-    fn pmesh_blend_shapes_emit_v2_header() {
+    fn pmesh_blend_shapes_emit_current_header() {
         let vertices = test_vertices();
         let indices = vec![0, 1, 2];
         let surfaces = vec![PackedSurfaceRange {
@@ -1091,7 +1089,7 @@ mod tests {
         .expect("blend shape encode");
         assert_eq!(
             u32::from_le_bytes(bytes[5..9].try_into().expect("version")),
-            PMESH_VERSION_V2
+            PMESH_VERSION
         );
         assert_eq!(
             u32::from_le_bytes(bytes[37..41].try_into().expect("shape count")),

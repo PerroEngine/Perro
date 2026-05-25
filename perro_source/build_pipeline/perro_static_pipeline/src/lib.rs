@@ -607,7 +607,7 @@ mod tests {
     }
 
     fn decode_raw_pmesh_mesh(bytes: &[u8]) -> Option<Mesh3D> {
-        if bytes.len() < 37 || &bytes[0..5] != perro_asset_formats::pmesh::MAGIC {
+        if bytes.len() < 41 || &bytes[0..5] != perro_asset_formats::pmesh::MAGIC {
             return None;
         }
         let version = u32::from_le_bytes(bytes[5..9].try_into().ok()?);
@@ -622,7 +622,7 @@ mod tests {
         let index_count = u32::from_le_bytes(bytes[17..21].try_into().ok()?) as usize;
         let surface_count = u32::from_le_bytes(bytes[21..25].try_into().ok()?) as usize;
         let raw_len = u32::from_le_bytes(bytes[33..37].try_into().ok()?) as usize;
-        let raw = bytes.get(37..37 + raw_len)?;
+        let raw = bytes.get(41..41 + raw_len)?;
         let has_normal = flags & 1 != 0;
         let has_uv0 = flags & 2 != 0;
         let stride = 12 + if has_normal { 12 } else { 0 } + if has_uv0 { 8 } else { 0 };

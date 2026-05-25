@@ -527,6 +527,54 @@ fn mesh_instance_ready_waits_for_mesh_and_material_backend_ack() {
 }
 
 #[test]
+fn mesh_instance_ready_ignores_default_nil_mesh_and_material() {
+    let mut runtime = Runtime::new();
+    let node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MeshInstance3D(
+            MeshInstance3D::new(),
+        )));
+
+    assert!(NodeAPI::is_mesh_instance_ready(&mut runtime, node));
+}
+
+#[test]
+fn mesh_instance_ready_ignores_nil_surface_material() {
+    let mut runtime = Runtime::new();
+    let mesh_id = MeshAPI::create_mesh_data(
+        runtime.resource_api.as_ref(),
+        Mesh3D {
+            vertices: Vec::new(),
+            indices: Vec::new(),
+            surface_ranges: Vec::new(),
+            blend_shapes: Vec::new(),
+        },
+    );
+    let request = collect_commands(&mut runtime)
+        .into_iter()
+        .find_map(|command| match command {
+            RenderCommand::Resource(ResourceCommand::CreateRuntimeMesh { request, .. }) => {
+                Some(request)
+            }
+            _ => None,
+        })
+        .expect("expected runtime mesh create command");
+    runtime.apply_render_event(RenderEvent::MeshCreated {
+        request,
+        id: mesh_id,
+        mesh: None,
+    });
+    let mut mesh = MeshInstance3D::new();
+    mesh.mesh = mesh_id;
+    set_primary_material(&mut mesh, MaterialID::nil());
+    let node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+
+    assert!(NodeAPI::is_mesh_instance_ready(&mut runtime, node));
+}
+
+#[test]
 fn mesh_instance_can_request_mesh_and_material_in_separate_frames() {
     let mut runtime = Runtime::new();
     let inserted = runtime
