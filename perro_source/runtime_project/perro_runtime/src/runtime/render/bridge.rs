@@ -169,6 +169,12 @@ impl Runtime {
         if let Some(node) = decode_render_request_node_from_event(&event) {
             self.mark_needs_rerender(node);
         }
+        if matches!(
+            event,
+            RenderEvent::MeshCreated { .. } | RenderEvent::MaterialCreated { .. }
+        ) {
+            self.request_full_3d_scan_once();
+        }
         self.resource_api.apply_render_event(&event);
         self.render.apply_event(event);
     }

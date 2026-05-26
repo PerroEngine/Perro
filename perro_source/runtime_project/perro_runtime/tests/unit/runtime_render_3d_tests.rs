@@ -477,6 +477,61 @@ fn mesh_instance_emits_draw_after_mesh_created_and_inline_material_allocated() {
 }
 
 #[test]
+fn mesh_instance_redraws_when_script_assigned_pending_mesh_load_finishes() {
+    let mut runtime = Runtime::new();
+    let pending_mesh = MeshAPI::load_mesh(
+        runtime.resource_api.as_ref(),
+        "res://avatars/face/noses.glb:mesh[3]",
+    );
+    let mesh_request = collect_commands(&mut runtime)
+        .into_iter()
+        .find_map(|command| match command {
+            RenderCommand::Resource(ResourceCommand::CreateMesh { request, id, .. })
+                if id == pending_mesh =>
+            {
+                Some(request)
+            }
+            _ => None,
+        })
+        .expect("expected mesh create command");
+
+    let node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MeshInstance3D(
+            MeshInstance3D::new(),
+        )));
+    NodeAPI::with_node_mut::<MeshInstance3D, _, _>(&mut runtime, node, |mesh| {
+        mesh.mesh = pending_mesh;
+    });
+
+    runtime.extract_render_3d_commands();
+    assert!(collect_commands(&mut runtime).is_empty());
+
+    runtime.apply_render_event(RenderEvent::MeshCreated {
+        request: mesh_request,
+        id: pending_mesh,
+        mesh: Some(Mesh3D {
+            vertices: Vec::new(),
+            indices: Vec::new(),
+            surface_ranges: Vec::new(),
+            blend_shapes: Vec::new(),
+        }),
+    });
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command)
+            if matches!(
+                command.as_ref(),
+                Command3D::Draw { node: draw_node, mesh, .. }
+                    if *draw_node == node && *mesh == pending_mesh
+            )
+    )));
+}
+
+#[test]
 fn mesh_instance_ready_waits_for_mesh_and_material_backend_ack() {
     let mut runtime = Runtime::new();
     let node = runtime
