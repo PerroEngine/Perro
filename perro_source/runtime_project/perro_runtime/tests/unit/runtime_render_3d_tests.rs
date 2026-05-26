@@ -24,7 +24,7 @@ use perro_render_bridge::{
 };
 use perro_resource_api::sub_apis::{MaterialAPI, MeshAPI};
 use perro_runtime_api::sub_apis::{AnimPlayerAPI, NodeAPI};
-use perro_scene::{Node3DField, NodeField};
+use perro_scene::{Node3DField, NodeField, NodeType};
 use perro_structs::Transform3D;
 use perro_structs::{BitMask, Quaternion, Vector3};
 use std::borrow::Cow;
@@ -182,7 +182,7 @@ fn node3d_position_clip(xs: &[(u32, f32)]) -> AnimationClip {
         total_frames: xs.last().map(|(frame, _)| frame + 1).unwrap_or(0),
         objects: Cow::Owned(vec![AnimationObject {
             name: Cow::Borrowed("Tool"),
-            node_type: Cow::Borrowed("Node3D"),
+            node_type: NodeType::Node3D,
         }]),
         object_tracks: Cow::Owned(vec![AnimationObjectTrack {
             object: Cow::Borrowed("Tool"),

@@ -3,7 +3,9 @@ use perro_animation::{
     ANIMATION_TRANSFORM_MASK_SCALE, AnimationBoneSelector, AnimationEase, AnimationInterpolation,
     AnimationKeyMode, AnimationParam, AnimationTrackValue, parse_panim,
 };
-use perro_scene::{MeshInstance3DField, Node2DField, Node3DField, NodeField, Sprite2DField};
+use perro_scene::{
+    MeshInstance3DField, Node2DField, Node3DField, NodeField, NodeType, Sprite2DField,
+};
 
 #[test]
 fn parses_bare_object_declarations_and_at_object_refs() {
@@ -28,7 +30,7 @@ Hero = Node3D
 
     assert_eq!(clip.objects.len(), 1);
     assert_eq!(clip.objects[0].name.as_ref(), "Hero");
-    assert_eq!(clip.objects[0].node_type.as_ref(), "Node3D");
+    assert_eq!(clip.objects[0].node_type, NodeType::Node3D);
     assert_eq!(clip.object_tracks.len(), 1);
     assert_eq!(clip.object_tracks[0].object.as_ref(), "Hero");
 }

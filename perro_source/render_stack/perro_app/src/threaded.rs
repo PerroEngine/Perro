@@ -82,6 +82,8 @@ fn sim_frame_cap_interval(cap: RuntimeFrameRateCap) -> Option<Duration> {
 
 const STARTUP_SPLASH_FADE_DURATION: Duration = Duration::from_millis(320);
 const STARTUP_SPLASH_HOLD_DURATION: Duration = Duration::from_millis(2000);
+const STARTUP_SPLASH_MAX_WIDTH_FRAC: f32 = 0.44;
+const STARTUP_SPLASH_MAX_HEIGHT_FRAC: f32 = 0.34;
 const STARTUP_SPLASH_TEXTURE_REQUEST: RenderRequestID = RenderRequestID::new(0x5453_504C_4153_485F);
 const STARTUP_SPLASH_TEXTURE_ID: TextureID =
     TextureID::from_u64(string_to_u64("__threaded_startup_splash_tex__"));
@@ -1245,10 +1247,20 @@ impl ThreadedStartupSplashState {
         }
     }
 
-    fn commands(&mut self, now: Instant) -> Vec<RenderCommand> {
+    fn commands(&mut self, now: Instant, window_size: PhysicalSize<u32>) -> Vec<RenderCommand> {
         let alpha = self.alpha(now);
-        let virtual_width = self.config.virtual_size[0] as f32;
-        let virtual_height = self.config.virtual_size[1] as f32;
+        let fallback_width = self.config.virtual_size[0] as f32;
+        let fallback_height = self.config.virtual_size[1] as f32;
+        let window_width = if window_size.width > 0 {
+            window_size.width as f32
+        } else {
+            fallback_width
+        };
+        let window_height = if window_size.height > 0 {
+            window_size.height as f32
+        } else {
+            fallback_height
+        };
         let mut commands = Vec::with_capacity(4);
         commands.push(RenderCommand::TwoD(Command2D::SetCamera {
             camera: Camera2DState::default(),
@@ -1257,7 +1269,7 @@ impl ThreadedStartupSplashState {
             node: STARTUP_SPLASH_BG_NODE,
             rect: Rect2DCommand {
                 center: [0.0, 0.0],
-                size: [virtual_width, virtual_height],
+                size: [window_width, window_height],
                 color: [0.0, 0.0, 0.0, alpha].into(),
                 z_index: 950,
             },
@@ -1280,8 +1292,10 @@ impl ThreadedStartupSplashState {
         if self.config.source.is_some() {
             let (image_w, image_h) = self.config.image_size.unwrap_or((512, 512));
             let (texture_w, texture_h) = self.config.texture_size.unwrap_or((image_w, image_h));
-            let scale = ((virtual_width * 0.44) / image_w as f32)
-                .min((virtual_height * 0.34) / image_h as f32)
+            let max_w = window_width * STARTUP_SPLASH_MAX_WIDTH_FRAC;
+            let max_h = window_height * STARTUP_SPLASH_MAX_HEIGHT_FRAC;
+            let scale = (max_w / image_w as f32)
+                .min(max_h / image_h as f32)
                 .max(0.001);
             commands.push(RenderCommand::TwoD(Command2D::UpsertSprite {
                 node: STARTUP_SPLASH_IMAGE_NODE,
@@ -1394,7 +1408,12 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for ThreadedRunn
                     phase = "startup";
                     splash.update(now, had_snapshot);
                     if splash.active {
-                        overlay = splash.commands(now);
+                        let window_size = self
+                            .window
+                            .as_ref()
+                            .map(|window| window.inner_size())
+                            .unwrap_or_else(|| PhysicalSize::new(0, 0));
+                        overlay = splash.commands(now, window_size);
                     } else {
                         overlay.extend(ThreadedStartupSplashState::cleanup_commands());
                         self.startup_splash = None;

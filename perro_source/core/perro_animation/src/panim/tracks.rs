@@ -41,7 +41,7 @@ struct KeyDefaults {
 
 fn build_tracks_and_events(
     mut actions: Vec<FrameAction>,
-    _object_types: &HashMap<String, String>,
+    _object_types: &HashMap<String, NodeType>,
     default_interpolation: AnimationInterpolation,
     default_ease: AnimationEase,
 ) -> Result<(Vec<AnimationObjectTrack>, Vec<AnimationFrameEvent>), String> {

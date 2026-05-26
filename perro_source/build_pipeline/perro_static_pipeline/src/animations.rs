@@ -400,9 +400,9 @@ fn emit_static_animation_const(
     for object in clip.objects.as_ref() {
         let _ = writeln!(
             out,
-            "    AnimationObject {{ name: Cow::Borrowed(\"{}\"), node_type: Cow::Borrowed(\"{}\") }},",
+            "    AnimationObject {{ name: Cow::Borrowed(\"{}\"), node_type: NodeType::{} }},",
             escape_str(object.name.as_ref()),
-            escape_str(object.node_type.as_ref())
+            object.node_type.name()
         );
     }
     out.push_str("];\n\n");
@@ -979,6 +979,10 @@ fps = 24
             generated_src.contains("ANIMATION_HASH_0 => &CLIP_RES___ANIMATIONS_HERO_RUN_PANIM")
         );
         assert!(generated_src.contains("pub static CLIP_RES___ANIMATIONS_HERO_RUN_PANIM"));
+        assert!(generated_src.contains(
+            "AnimationObject { name: Cow::Borrowed(\"Hero\"), node_type: NodeType::Node3D }"
+        ));
+        assert!(!generated_src.contains("node_type: Cow::Borrowed(\"Node3D\")"));
         assert!(!generated_src.contains("parse_panim"));
         assert!(!generated_src.contains("include_str!"));
     }

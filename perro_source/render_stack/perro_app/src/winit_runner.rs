@@ -1320,18 +1320,24 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 | perro_runtime::RuntimeRenderResult::Material(_) => {}
             }
         }
-        let virtual_width = self
+        let fallback_width = self
             .app
             .runtime
             .project()
             .map(|project| project.config.virtual_width.max(1))
             .unwrap_or(1920) as f32;
-        let virtual_height = self
+        let fallback_height = self
             .app
             .runtime
             .project()
             .map(|project| project.config.virtual_height.max(1))
             .unwrap_or(1080) as f32;
+        let (window_width, window_height) = self
+            .window
+            .as_ref()
+            .map(|window| window.inner_size())
+            .map(|size| (size.width.max(1) as f32, size.height.max(1) as f32))
+            .unwrap_or((fallback_width, fallback_height));
 
         let mut commands = Vec::with_capacity(3);
         commands.push(RenderCommand::TwoD(Command2D::SetCamera {
@@ -1341,7 +1347,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             node: STARTUP_SPLASH_BG_NODE,
             rect: Rect2DCommand {
                 center: [0.0, 0.0],
-                size: [virtual_width, virtual_height],
+                size: [window_width, window_height],
                 color: [
                     STARTUP_SPLASH_BG_COLOR[0],
                     STARTUP_SPLASH_BG_COLOR[1],
@@ -1377,18 +1383,16 @@ impl<B: GraphicsBackend> RunnerState<B> {
             .startup_splash
             .texture_size
             .unwrap_or((image_w, image_h));
-        let max_w = virtual_width * STARTUP_SPLASH_MAX_WIDTH_FRAC;
-        let max_h = virtual_height * STARTUP_SPLASH_MAX_HEIGHT_FRAC;
+        let max_w = window_width * STARTUP_SPLASH_MAX_WIDTH_FRAC;
+        let max_h = window_height * STARTUP_SPLASH_MAX_HEIGHT_FRAC;
         let scale = (max_w / image_w as f32)
             .min(max_h / image_h as f32)
             .max(0.001);
-        let sx = scale;
-        let sy = scale;
         commands.push(RenderCommand::TwoD(Command2D::UpsertSprite {
             node: STARTUP_SPLASH_IMAGE_NODE,
             sprite: Sprite2DCommand {
                 texture: texture_id,
-                model: [[sx, 0.0, 0.0], [0.0, sy, 0.0], [0.0, 0.0, 1.0]],
+                model: [[scale, 0.0, 0.0], [0.0, scale, 0.0], [0.0, 0.0, 1.0]],
                 tint: [1.0, 1.0, 1.0, alpha].into(),
                 z_index: STARTUP_SPLASH_IMAGE_Z,
                 uv_min: [0.0, 0.0],

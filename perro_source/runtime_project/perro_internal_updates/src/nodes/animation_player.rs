@@ -181,7 +181,7 @@ pub(super) fn apply_frame_events<RT>(
     let object_type_map: HashMap<&str, &str> = clip
         .objects
         .iter()
-        .map(|o| (o.name.as_ref(), o.node_type.as_ref()))
+        .map(|o| (o.name.as_ref(), o.node_type.as_str()))
         .collect();
 
     for entry in clip

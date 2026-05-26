@@ -24,7 +24,7 @@ impl<'a> PanimParser<'a> {
         let mut default_interpolation = AnimationInterpolation::Linear;
         let mut default_ease = AnimationEase::Linear;
         let mut objects: Vec<AnimationObject> = Vec::new();
-        let mut object_types = HashMap::<String, String>::new();
+        let mut object_types = HashMap::<String, NodeType>::new();
         let mut frame_actions: Vec<FrameAction> = Vec::new();
         let mut max_frame = 0u32;
 
@@ -51,7 +51,7 @@ impl<'a> PanimParser<'a> {
                 let parsed_objects = self.parse_objects_block(line_no)?;
                 object_types.clear();
                 for obj in &parsed_objects {
-                    object_types.insert(obj.name.to_string(), obj.node_type.to_string());
+                    object_types.insert(obj.name.to_string(), obj.node_type);
                 }
                 objects = parsed_objects;
                 continue;
@@ -173,9 +173,12 @@ impl<'a> PanimParser<'a> {
             let ty_value = self.parse_value_with_vars(ty.trim(), line_no)?;
             let ty = as_text(&ty_value)
                 .ok_or_else(|| format!("line {}: object type must be text", line_no))?;
+            let node_type = ty
+                .parse::<NodeType>()
+                .map_err(|_| format!("line {}: unknown object type `{}`", line_no, ty))?;
             objects.push(AnimationObject {
                 name: name.to_string().into(),
-                node_type: ty.to_string().into(),
+                node_type,
             });
         }
 
@@ -190,7 +193,7 @@ impl<'a> PanimParser<'a> {
         start_line: usize,
         frame: u32,
         key_mode: AnimationKeyMode,
-        object_types: &HashMap<String, String>,
+        object_types: &HashMap<String, NodeType>,
     ) -> Result<Vec<FrameAction>, String> {
         let mut actions = Vec::new();
 
@@ -231,7 +234,7 @@ impl<'a> PanimParser<'a> {
         frame: u32,
         key_mode: AnimationKeyMode,
         header: &str,
-        object_types: &HashMap<String, String>,
+        object_types: &HashMap<String, NodeType>,
     ) -> Result<Vec<FrameAction>, String> {
         let object = header
             .strip_prefix('@')
@@ -244,6 +247,7 @@ impl<'a> PanimParser<'a> {
         let node_type = object_types
             .get(&object)
             .ok_or_else(|| format!("line {}: unknown object `@{}`", start_line, object))?;
+        let node_type_name = node_type.as_str();
         let mut actions = Vec::new();
         while let Some((line_no, line)) = self.next_line() {
             let line = strip_comment(line).trim();
@@ -280,13 +284,13 @@ impl<'a> PanimParser<'a> {
                 _ => {
                     let value = self.parse_value_with_vars(v, line_no)?;
                     if let Some(action) = parse_track_control_action(
-                        frame, &object, node_type, k, &value, line_no,
+                        frame, &object, node_type_name, k, &value, line_no,
                     )? {
                         actions.push(action);
                         continue;
                     }
                     actions.push(parse_object_field_action(
-                        frame, key_mode, &object, node_type, k, &value, line_no,
+                        frame, key_mode, &object, node_type_name, k, &value, line_no,
                     )?);
                 }
             }

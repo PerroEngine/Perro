@@ -1,4 +1,4 @@
-use perro_scene::{Node3DField, NodeField};
+use perro_scene::{Node3DField, NodeField, NodeType};
 use std::borrow::Cow;
 mod anim_tree;
 mod panim;
@@ -34,7 +34,7 @@ impl AnimationClip {
 #[derive(Clone, Debug, Default)]
 pub struct AnimationObject {
     pub name: Cow<'static, str>,
-    pub node_type: Cow<'static, str>,
+    pub node_type: NodeType,
 }
 
 #[derive(Clone, Debug)]
