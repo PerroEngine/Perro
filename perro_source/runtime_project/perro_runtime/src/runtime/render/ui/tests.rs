@@ -1,5 +1,5 @@
 use super::*;
-use perro_nodes::{SceneNode, SceneNodeData};
+use perro_nodes::{Node3D, SceneNode, SceneNodeData};
 use perro_render_bridge::RenderEvent;
 use perro_resource_api::sub_apis::TextureAPI;
 use perro_runtime_api::sub_apis::NodeAPI;
@@ -2268,6 +2268,40 @@ fn parent_visibility_toggle_restores_button_hover_without_resize() {
 }
 
 #[test]
+fn hidden_parent_clears_button_hover_state() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let parent = insert_panel(&mut runtime, [220.0, 120.0], Color::new(0.2, 0.2, 0.2, 1.0));
+    let button = insert_button(&mut runtime, [120.0, 40.0]);
+    attach_child(&mut runtime, parent, button);
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    runtime.set_mouse_position(400.0, 300.0);
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    assert_eq!(
+        runtime.render_ui.button_states.get(&button).copied(),
+        Some(UiButtonVisualState::Hover)
+    );
+    runtime.clear_dirty_flags();
+
+    let _ = runtime.with_node_mut::<UiPanel, _, _>(parent, |panel| {
+        panel.visible = false;
+    });
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+
+    assert_ne!(
+        runtime.render_ui.button_states.get(&button).copied(),
+        Some(UiButtonVisualState::Hover)
+    );
+}
+
+#[test]
 fn input_change_rechecks_retained_label_visibility() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);
@@ -2299,6 +2333,43 @@ fn input_change_rechecks_retained_label_visibility() {
         cmd,
         RenderCommand::Ui(UiCommand::RemoveNode { node }) if *node == button
     )));
+}
+
+#[test]
+fn non_ui_parent_visibility_change_removes_retained_ui_descendants() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let root = runtime.create::<Node3D>();
+    let button = insert_button(&mut runtime, [120.0, 40.0]);
+    let mut label = perro_ui::UiLabel::new();
+    label.layout.size = UiVector2::pixels(120.0, 30.0);
+    label.text = "New".into();
+    let label = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
+    attach_child(&mut runtime, root, button);
+    attach_child(&mut runtime, button, label);
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    let _ = runtime.with_node_mut::<Node3D, _, _>(root, |node| {
+        node.visible = false;
+    });
+    runtime.extract_render_ui_commands();
+
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::RemoveNode { node }) if *node == button
+    )));
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::RemoveNode { node }) if *node == label
+    )));
+    assert!(!runtime.render_ui.prev_visible.contains(&button));
+    assert!(!runtime.render_ui.prev_visible.contains(&label));
 }
 
 #[test]

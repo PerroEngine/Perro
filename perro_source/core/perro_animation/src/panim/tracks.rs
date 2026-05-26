@@ -25,13 +25,13 @@ struct TrackKey {
     transform3d_mask: u8,
 }
 
-const MASK_POS_2D: u8 = 1 << 0;
-const MASK_ROT_2D: u8 = 1 << 1;
-const MASK_SCALE_2D: u8 = 1 << 2;
+const MASK_POS_2D: u8 = ANIMATION_TRANSFORM_MASK_POSITION;
+const MASK_ROT_2D: u8 = ANIMATION_TRANSFORM_MASK_ROTATION;
+const MASK_SCALE_2D: u8 = ANIMATION_TRANSFORM_MASK_SCALE;
 
-const MASK_POS_3D: u8 = 1 << 0;
-const MASK_ROT_3D: u8 = 1 << 1;
-const MASK_SCALE_3D: u8 = 1 << 2;
+const MASK_POS_3D: u8 = ANIMATION_TRANSFORM_MASK_POSITION;
+const MASK_ROT_3D: u8 = ANIMATION_TRANSFORM_MASK_ROTATION;
+const MASK_SCALE_3D: u8 = ANIMATION_TRANSFORM_MASK_SCALE;
 
 #[derive(Clone, Copy)]
 struct KeyDefaults {
@@ -255,7 +255,11 @@ fn build_tracks_and_events(
     let mut object_tracks = Vec::<AnimationObjectTrack>::new();
     for ((object, _), track) in tracks_map {
         let mut keys = Vec::<AnimationObjectKey>::new();
+        let mut transform2d_mask = 0u8;
+        let mut transform3d_mask = 0u8;
         for (frame, key) in track.keys {
+            transform2d_mask |= key.transform2d_mask;
+            transform3d_mask |= key.transform3d_mask;
             keys.push(AnimationObjectKey {
                 frame,
                 mode: key.mode,
@@ -268,6 +272,8 @@ fn build_tracks_and_events(
             object: object.into(),
             field: track.field,
             bone_target: track.bone_target,
+            transform2d_mask,
+            transform3d_mask,
             interpolation: track.interpolation,
             ease: track.ease,
             keys: Cow::Owned(keys),

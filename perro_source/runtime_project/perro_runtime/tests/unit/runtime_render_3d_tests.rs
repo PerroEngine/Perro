@@ -188,6 +188,8 @@ fn node3d_position_clip(xs: &[(u32, f32)]) -> AnimationClip {
             object: Cow::Borrowed("Tool"),
             field: NodeField::Node3D(Node3DField::Position),
             bone_target: None,
+            transform2d_mask: 0,
+            transform3d_mask: perro_animation::ANIMATION_TRANSFORM_MASK_POSITION,
             interpolation: perro_animation::AnimationInterpolation::Step,
             ease: perro_animation::AnimationEase::Linear,
             keys: Cow::Owned(

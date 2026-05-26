@@ -1,6 +1,7 @@
 use perro_animation::{
-    AnimationBoneSelector, AnimationEase, AnimationInterpolation, AnimationKeyMode, AnimationParam,
-    AnimationTrackValue, parse_panim,
+    ANIMATION_TRANSFORM_MASK_POSITION, ANIMATION_TRANSFORM_MASK_ROTATION,
+    ANIMATION_TRANSFORM_MASK_SCALE, AnimationBoneSelector, AnimationEase, AnimationInterpolation,
+    AnimationKeyMode, AnimationParam, AnimationTrackValue, parse_panim,
 };
 use perro_scene::{MeshInstance3DField, Node2DField, Node3DField, NodeField, Sprite2DField};
 
@@ -749,6 +750,10 @@ Rig = Skeleton3D
             )
         })
         .expect("index bone track");
+    assert_eq!(
+        index_track.transform3d_mask,
+        ANIMATION_TRANSFORM_MASK_POSITION
+    );
     assert!(matches!(
         index_track.keys[0].value,
         AnimationTrackValue::Transform3D(_)
@@ -768,6 +773,10 @@ Rig = Skeleton3D
             )
         })
         .expect("named bone track");
+    assert_eq!(
+        name_track.transform3d_mask,
+        ANIMATION_TRANSFORM_MASK_ROTATION
+    );
     assert!(matches!(
         name_track.keys[0].value,
         AnimationTrackValue::Transform3D(_)
@@ -814,6 +823,7 @@ Rig = Skeleton3D
         .expect("bone track");
 
     assert_eq!(track.keys.len(), 2);
+    assert_eq!(track.transform3d_mask, ANIMATION_TRANSFORM_MASK_POSITION);
     assert_eq!(track.keys[0].interpolation, AnimationInterpolation::Step);
     assert_eq!(track.keys[1].interpolation, AnimationInterpolation::Step);
     assert_eq!(track.keys[0].ease, AnimationEase::EaseIn);
@@ -877,6 +887,12 @@ Rig = Skeleton2D
         .expect("skeleton2d bone track");
     assert_eq!(track.object.as_ref(), "Rig");
     assert!(track.bone_target.is_some());
+    assert_eq!(
+        track.transform2d_mask,
+        ANIMATION_TRANSFORM_MASK_POSITION
+            | ANIMATION_TRANSFORM_MASK_ROTATION
+            | ANIMATION_TRANSFORM_MASK_SCALE
+    );
     assert!(matches!(
         track.keys[0].value,
         AnimationTrackValue::Transform2D(_)

@@ -373,10 +373,12 @@ fn emit_static_animation_const(
         let field_expr = emit_node_field(track.field)?;
         let _ = writeln!(
             track_entries,
-            "    AnimationObjectTrack {{ object: Cow::Borrowed(\"{}\"), field: {}, bone_target: {}, interpolation: {}, ease: {}, keys: Cow::Borrowed({}) }},",
+            "    AnimationObjectTrack {{ object: Cow::Borrowed(\"{}\"), field: {}, bone_target: {}, transform2d_mask: {}, transform3d_mask: {}, interpolation: {}, ease: {}, keys: Cow::Borrowed({}) }},",
             escape_str(track.object.as_ref()),
             field_expr,
             emit_bone_target(&track.bone_target),
+            track.transform2d_mask,
+            track.transform3d_mask,
             emit_interpolation(track.interpolation),
             emit_ease(track.ease),
             if track.keys.is_empty() {

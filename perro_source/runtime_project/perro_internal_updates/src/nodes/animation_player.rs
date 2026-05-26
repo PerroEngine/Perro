@@ -1,7 +1,9 @@
 use crate::prelude::*;
 use perro_animation::{
-    AnimationBoneSelector, AnimationEase, AnimationEvent, AnimationEventScope,
-    AnimationInterpolation, AnimationObjectTrack, AnimationParam, AnimationTrackValue,
+    ANIMATION_TRANSFORM_MASK_POSITION, ANIMATION_TRANSFORM_MASK_ROTATION,
+    ANIMATION_TRANSFORM_MASK_SCALE, AnimationBoneSelector, AnimationEase, AnimationEvent,
+    AnimationEventScope, AnimationInterpolation, AnimationObjectTrack, AnimationParam,
+    AnimationTrackValue,
 };
 use perro_nodes::animation_player::{AnimationObjectBinding, AnimationPlaybackType};
 use perro_nodes::{
@@ -500,7 +502,7 @@ pub(super) fn apply_track<RT>(
     };
 
     if let Some(bone_target) = &track.bone_target {
-        apply_skeleton_bone_track(ctx, node_id, bone_target, &value);
+        apply_skeleton_bone_track(ctx, node_id, bone_target, track, &value);
         return;
     }
 
@@ -766,6 +768,7 @@ fn apply_skeleton_bone_track<RT>(
     ctx: &mut RuntimeWindow<'_, RT>,
     node_id: NodeID,
     bone_target: &perro_animation::AnimationBoneTarget,
+    track: &AnimationObjectTrack,
     value: &AnimationTrackValue,
 ) where
     RT: RuntimeAPI + ?Sized,
@@ -774,13 +777,13 @@ fn apply_skeleton_bone_track<RT>(
         AnimationTrackValue::Transform2D(pose) => {
             let pose = *pose;
             with_base_node_mut!(ctx, Skeleton2D, node_id, |skeleton| {
-                apply_bone_pose_2d(skeleton, bone_target, pose);
+                apply_bone_pose_2d(skeleton, bone_target, pose, track.transform2d_mask);
             })
         }
         AnimationTrackValue::Transform3D(pose) => {
             let pose = *pose;
             with_base_node_mut!(ctx, Skeleton3D, node_id, |skeleton| {
-                apply_bone_pose_3d(skeleton, bone_target, pose);
+                apply_bone_pose_3d(skeleton, bone_target, pose, track.transform3d_mask);
             })
         }
         _ => return,
@@ -794,6 +797,7 @@ fn apply_bone_pose_2d(
     skeleton: &mut Skeleton2D,
     bone_target: &perro_animation::AnimationBoneTarget,
     pose: Transform2D,
+    authored_mask: u8,
 ) -> bool {
     let bone = match &bone_target.selector {
         AnimationBoneSelector::Index(index) => skeleton.bones.get_mut(*index as usize),
@@ -803,7 +807,17 @@ fn apply_bone_pose_2d(
             .find(|bone| bone.name.as_ref() == name.as_ref()),
     };
     if let Some(bone) = bone {
-        bone.pose = pose;
+        let mut merged = bone.rest;
+        if authored_mask & ANIMATION_TRANSFORM_MASK_POSITION != 0 {
+            merged.position = pose.position;
+        }
+        if authored_mask & ANIMATION_TRANSFORM_MASK_ROTATION != 0 {
+            merged.rotation = bone.rest.rotation + pose.rotation;
+        }
+        if authored_mask & ANIMATION_TRANSFORM_MASK_SCALE != 0 {
+            merged.scale = pose.scale;
+        }
+        bone.pose = merged;
         return true;
     }
     false
@@ -813,6 +827,7 @@ fn apply_bone_pose_3d(
     skeleton: &mut Skeleton3D,
     bone_target: &perro_animation::AnimationBoneTarget,
     pose: Transform3D,
+    authored_mask: u8,
 ) -> bool {
     let bone = match &bone_target.selector {
         AnimationBoneSelector::Index(index) => skeleton.bones.get_mut(*index as usize),
@@ -822,7 +837,17 @@ fn apply_bone_pose_3d(
             .find(|bone| bone.name.as_ref() == name.as_ref()),
     };
     if let Some(bone) = bone {
-        bone.pose = pose;
+        let mut merged = bone.rest;
+        if authored_mask & ANIMATION_TRANSFORM_MASK_POSITION != 0 {
+            merged.position = pose.position;
+        }
+        if authored_mask & ANIMATION_TRANSFORM_MASK_ROTATION != 0 {
+            merged.rotation = (bone.rest.rotation * pose.rotation).normalized();
+        }
+        if authored_mask & ANIMATION_TRANSFORM_MASK_SCALE != 0 {
+            merged.scale = pose.scale;
+        }
+        bone.pose = merged;
         return true;
     }
     false
@@ -1184,8 +1209,54 @@ mod tests {
             selector: AnimationBoneSelector::Index(0),
         };
 
-        assert!(apply_bone_pose_3d(&mut skeleton, &target, pose));
+        assert!(apply_bone_pose_3d(
+            &mut skeleton,
+            &target,
+            pose,
+            ANIMATION_TRANSFORM_MASK_POSITION
+                | ANIMATION_TRANSFORM_MASK_ROTATION
+                | ANIMATION_TRANSFORM_MASK_SCALE
+        ));
         assert_eq!(skeleton.bones[0].rest, rest);
-        assert_eq!(skeleton.bones[0].pose, pose);
+        assert_eq!(skeleton.bones[0].pose.position, pose.position);
+        assert_eq!(skeleton.bones[0].pose.scale, pose.scale);
+        assert_eq!(
+            skeleton.bones[0].pose.rotation,
+            (rest.rotation * pose.rotation).normalized()
+        );
+    }
+
+    #[test]
+    fn bone_track_uses_rest_for_unauthored_channels_and_delta_rotation() {
+        let rest = Transform3D::new(
+            Vector3::new(1.0, 2.0, 3.0),
+            Quaternion::new(0.0, 0.0, 0.38268343, 0.9238795),
+            Vector3::new(2.0, 2.0, 2.0),
+        );
+        let delta = Quaternion::new(0.0, 0.0, 0.300706, 0.953717);
+        let pose = Transform3D::new(Vector3::ZERO, delta, Vector3::ZERO);
+        let mut skeleton = Skeleton3D::new();
+        skeleton.bones.push(Bone3D {
+            rest,
+            pose: rest,
+            ..Bone3D::new()
+        });
+        let target = perro_animation::AnimationBoneTarget {
+            selector: AnimationBoneSelector::Index(0),
+        };
+
+        assert!(apply_bone_pose_3d(
+            &mut skeleton,
+            &target,
+            pose,
+            ANIMATION_TRANSFORM_MASK_ROTATION
+        ));
+
+        assert_eq!(skeleton.bones[0].pose.position, rest.position);
+        assert_eq!(skeleton.bones[0].pose.scale, rest.scale);
+        assert_eq!(
+            skeleton.bones[0].pose.rotation,
+            (rest.rotation * delta).normalized()
+        );
     }
 }

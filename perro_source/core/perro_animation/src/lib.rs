@@ -42,6 +42,8 @@ pub struct AnimationObjectTrack {
     pub object: Cow<'static, str>,
     pub field: NodeField,
     pub bone_target: Option<AnimationBoneTarget>,
+    pub transform2d_mask: u8,
+    pub transform3d_mask: u8,
     pub interpolation: AnimationInterpolation,
     pub ease: AnimationEase,
     pub keys: Cow<'static, [AnimationObjectKey]>,
@@ -53,12 +55,18 @@ impl Default for AnimationObjectTrack {
             object: Cow::Borrowed(""),
             field: NodeField::Node3D(Node3DField::Visible),
             bone_target: None,
+            transform2d_mask: 0,
+            transform3d_mask: 0,
             interpolation: AnimationInterpolation::Linear,
             ease: AnimationEase::Linear,
             keys: Cow::Borrowed(&[]),
         }
     }
 }
+
+pub const ANIMATION_TRANSFORM_MASK_POSITION: u8 = 1 << 0;
+pub const ANIMATION_TRANSFORM_MASK_ROTATION: u8 = 1 << 1;
+pub const ANIMATION_TRANSFORM_MASK_SCALE: u8 = 1 << 2;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AnimationBoneTarget {

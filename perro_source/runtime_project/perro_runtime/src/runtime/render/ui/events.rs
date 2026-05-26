@@ -386,12 +386,28 @@ impl Runtime {
         let mut next_states = std::mem::take(&mut self.render_ui.button_states);
         next_states.retain(|node, _| self.nodes.get(*node).is_some());
         let mut events = Vec::new();
+        if self
+            .render_ui
+            .focused_ui_node
+            .is_some_and(|node| !self.is_effectively_visible_for_ui(node))
+        {
+            self.render_ui.focused_ui_node = None;
+            self.render_ui.focused_text_edit = None;
+        }
+        if self
+            .render_ui
+            .nav_pressed_button
+            .is_some_and(|node| !self.is_effectively_visible_for_ui(node))
+        {
+            self.render_ui.nav_pressed_button = None;
+        }
 
         for (node, scene_node) in self.nodes.iter() {
             let SceneNodeData::UiButton(button) = &scene_node.data else {
                 continue;
             };
-            let inactive = button_inactive(button);
+            let effectively_visible = self.is_effectively_visible_for_ui(node);
+            let inactive = button_inactive(button) || !effectively_visible;
             let focused_without_hover =
                 hovered.is_none() && self.render_ui.focused_ui_node == Some(node);
             let next = if inactive {

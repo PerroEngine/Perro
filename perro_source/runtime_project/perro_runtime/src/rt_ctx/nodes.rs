@@ -150,6 +150,7 @@ impl NodeAPI for Runtime {
             camera_2d_changed,
             camera_3d_changed,
             camera_3d_activated,
+            visibility_changed,
             value,
         ) = {
             let node = if let Some((index, generation)) = slot {
@@ -180,6 +181,7 @@ impl NodeAPI for Runtime {
             };
             let mut changed = false;
             let mut value = None;
+            let visible_before = Self::node_local_visible(&node.data);
             let result = node.with_typed_mut::<T, _>(|typed| {
                 let before = T::snapshot_transform(typed);
                 value = Some(f(typed));
@@ -187,6 +189,7 @@ impl NodeAPI for Runtime {
                 changed = before != after;
             });
             result?;
+            let visible_after = Self::node_local_visible(&node.data);
             let ui_after = track_ui.then(|| node.data.clone());
             let cam_2d_after = if track_camera_2d {
                 match &node.data {
@@ -211,6 +214,7 @@ impl NodeAPI for Runtime {
                 cam_2d_before != cam_2d_after,
                 cam_3d_before != cam_3d_after,
                 cam_3d_before != Some(true) && cam_3d_after == Some(true),
+                visible_before != visible_after,
                 value,
             )
         };
@@ -230,8 +234,12 @@ impl NodeAPI for Runtime {
         if camera_3d_activated {
             self.note_camera_3d_activated(id);
         }
+        let is_ui_node = ui_before.is_some();
         if let (Some(before), Some(after)) = (ui_before.as_ref(), ui_after.as_ref()) {
             self.mark_ui_data_change(id, before, after);
+        }
+        if visibility_changed && !is_ui_node {
+            self.mark_ui_visibility_dirty_subtree(id);
         }
         value
     }

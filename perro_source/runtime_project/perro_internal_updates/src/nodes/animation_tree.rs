@@ -19,6 +19,8 @@ struct PoseTrack {
     object: Cow<'static, str>,
     field: NodeField,
     bone_target: Option<perro_animation::AnimationBoneTarget>,
+    transform2d_mask: u8,
+    transform3d_mask: u8,
     value: AnimationTrackValue,
 }
 
@@ -278,6 +280,8 @@ fn sample_clip_pose(
                 object: track.object.clone(),
                 field: track.field,
                 bone_target: track.bone_target.clone(),
+                transform2d_mask: track.transform2d_mask,
+                transform3d_mask: track.transform3d_mask,
                 value,
             },
         );
@@ -315,6 +319,8 @@ fn blend_poses(poses: &[Pose], weights: &[f32], mask: &AnimationTreeMask) -> Pos
             }
             acc = Some(if let Some(mut prev) = acc {
                 prev.value = add_value(&prev.value, &scale_value(&track.value, w));
+                prev.transform2d_mask |= track.transform2d_mask;
+                prev.transform3d_mask |= track.transform3d_mask;
                 prev
             } else {
                 let mut first = track.clone();
@@ -339,6 +345,8 @@ fn add_pose_delta(base: &mut Pose, pose: &Pose, weight: f32, mask: &AnimationTre
         }
         if let Some(existing) = base.tracks.get_mut(key) {
             existing.value = add_value(&existing.value, &scale_value(&track.value, weight));
+            existing.transform2d_mask |= track.transform2d_mask;
+            existing.transform3d_mask |= track.transform3d_mask;
         } else {
             let mut next = track.clone();
             next.value = scale_value(&next.value, weight);
@@ -372,6 +380,8 @@ where
             object: track.object.clone(),
             field: track.field,
             bone_target: track.bone_target.clone(),
+            transform2d_mask: track.transform2d_mask,
+            transform3d_mask: track.transform3d_mask,
             interpolation: perro_animation::AnimationInterpolation::Step,
             ease: perro_animation::AnimationEase::Linear,
             keys: Cow::Owned(vec![key]),
