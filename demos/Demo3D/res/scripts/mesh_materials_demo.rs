@@ -95,6 +95,7 @@ fn mirror_sample_mesh() -> Mesh3D {
             index_start: 0,
             index_count: 0,
         }],
+        blend_shapes: Vec::new(),
     };
 
     add_box(&mut mesh, [-0.12, -0.95, -0.12], [0.12, 0.55, 0.12]);

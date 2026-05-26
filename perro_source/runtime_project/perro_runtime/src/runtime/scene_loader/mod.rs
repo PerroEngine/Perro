@@ -818,6 +818,7 @@ mod tests {
     use crate::runtime_project::RuntimeProject;
     use perro_nodes::NodeType;
     use perro_project::LocalizationConfig;
+    use perro_render_bridge::{RenderCommand, UiCommand};
     use perro_resource_api::sub_apis::{Locale, LocalizationAPI};
     use perro_scene::{Parser, Scene, SceneKey, SceneNodeData, SceneNodeEntry};
     use std::{borrow::Cow, fs};
@@ -1032,6 +1033,75 @@ mod tests {
                 .get(&tag)
                 .is_some_and(|nodes| nodes.contains(&merged.scene_root))
         );
+    }
+
+    #[test]
+    fn runtime_scene_load_marks_ui_dirty_for_same_frame_extract() {
+        let first_scene = Parser::new(
+            r##"
+            $root = @first
+
+            [first]
+            [Node]
+            [/Node]
+            [/first]
+
+            [first_panel]
+            parent = first
+            [UiPanel]
+                size_ratio = (0.25, 0.25)
+            [/UiPanel]
+            [/first_panel]
+            "##,
+        )
+        .parse_scene();
+        let second_scene = Parser::new(
+            r##"
+            $root = @second
+
+            [second]
+            [Node]
+            [/Node]
+            [/second]
+
+            [loaded_panel]
+            parent = second
+            [UiPanel]
+                size_ratio = (0.5, 0.5)
+            [/UiPanel]
+            [/loaded_panel]
+            "##,
+        )
+        .parse_scene();
+
+        let first = prepare_scene_with_loader_and_styles(&first_scene, &|_| unreachable!(), None)
+            .expect("prepare first");
+        let second = prepare_scene_with_loader_and_styles(&second_scene, &|_| unreachable!(), None)
+            .expect("prepare second");
+        let mut runtime = Runtime::new();
+        runtime.set_viewport_size(800, 600);
+
+        merge_prepared_scene(&mut runtime, first).expect("merge first");
+        runtime.extract_render_ui_commands();
+        runtime.drain_render_commands(&mut Vec::new());
+        runtime.clear_dirty_flags();
+
+        let merged = merge_prepared_scene(&mut runtime, second).expect("merge second");
+        runtime.extract_render_2d_commands();
+        runtime.extract_render_ui_commands();
+        let mut commands = Vec::new();
+        runtime.drain_render_commands(&mut commands);
+
+        let loaded_panel = runtime
+            .nodes
+            .get(merged.scene_root)
+            .and_then(|root| root.children_slice().first().copied())
+            .expect("loaded panel exists");
+        assert!(commands.iter().any(|cmd| matches!(
+            cmd,
+            RenderCommand::Ui(UiCommand::UpsertPanel { node, rect, .. })
+                if *node == loaded_panel && rect.size == [400.0, 300.0]
+        )));
     }
 
     #[test]

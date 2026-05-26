@@ -500,6 +500,12 @@ pub(super) fn merge_prepared_scene(
     runtime.mark_needs_rerender(engine_root);
     for node_id in key_to.values().copied() {
         runtime.mark_needs_rerender(node_id);
+        runtime.mark_ui_dirty(
+            node_id,
+            Runtime::UI_DIRTY_LAYOUT_SELF
+                | Runtime::UI_DIRTY_LAYOUT_PARENT
+                | Runtime::UI_DIRTY_COMMANDS,
+        );
     }
 
     let mut script_nodes = Vec::with_capacity(scripts.len());
