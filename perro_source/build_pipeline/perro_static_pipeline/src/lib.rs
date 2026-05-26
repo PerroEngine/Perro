@@ -169,6 +169,7 @@ pub fn write_static_mod_rs(project_root: &Path) -> Result<(), StaticPipelineErro
 #[cfg(test)]
 mod tests {
     use perro_animation::{AnimationClip, AnimationTreeAsset};
+    use perro_nodes::NodeType;
     use perro_render_bridge::{
         Material3D, Mesh3D, MeshSurfaceRange, ParticleProfile3D, RuntimeMeshVertex,
         StandardMaterial3D, TileSet2D, decode_tileset_2d_binary,
@@ -307,11 +308,7 @@ mod tests {
     }
 
     static SCENE_NODES: &[SceneNodeEntry] = &[SceneNodeEntry {
-        data: SceneNodeData {
-            ty: Cow::Borrowed("Sprite2D"),
-            fields: Cow::Borrowed(&[]),
-            base: None,
-        },
+        data: SceneNodeData::new(NodeType::Sprite2D, Cow::Borrowed(&[]), None),
         has_data_override: false,
         key: SceneKey::new(0),
         name: Some(Cow::Borrowed("Sprite")),

@@ -7,6 +7,7 @@ pub mod scene_doc;
 pub use lexer::*;
 pub use node_fields::*;
 pub use parser::*;
+pub use perro_nodes::NodeType;
 pub use scene::*;
 pub use scene_doc::*;
 

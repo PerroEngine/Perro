@@ -816,6 +816,7 @@ mod tests {
     use super::*;
     use crate::rs_ctx::RuntimeResourceApi;
     use crate::runtime_project::RuntimeProject;
+    use perro_nodes::NodeType;
     use perro_project::LocalizationConfig;
     use perro_resource_api::sub_apis::{Locale, LocalizationAPI};
     use perro_scene::{Parser, Scene, SceneKey, SceneNodeData, SceneNodeEntry};
@@ -828,11 +829,8 @@ mod tests {
     const HOME_KEY_NAMES: &[Cow<'static, str>] = &[Cow::Borrowed("home")];
     const DOCS_KEY_NAMES: &[Cow<'static, str>] = &[Cow::Borrowed("docs"), Cow::Borrowed("copy")];
     const EMPTY_KEY_NAMES: &[Cow<'static, str>] = &[];
-    const HOST_DATA: SceneNodeData = SceneNodeData {
-        ty: Cow::Borrowed("Node"),
-        fields: Cow::Borrowed(EMPTY_FIELDS),
-        base: None,
-    };
+    const HOST_DATA: SceneNodeData =
+        SceneNodeData::new(NodeType::Node, Cow::Borrowed(EMPTY_FIELDS), None);
     const HOST_NODES: &[SceneNodeEntry] = &[SceneNodeEntry {
         data: HOST_DATA,
         has_data_override: true,
@@ -851,11 +849,8 @@ mod tests {
         root: Some(SceneKey(0)),
         key_names: Cow::Borrowed(HOST_KEY_NAMES),
     };
-    const HOME_DATA: SceneNodeData = SceneNodeData {
-        ty: Cow::Borrowed("Node"),
-        fields: Cow::Borrowed(EMPTY_FIELDS),
-        base: None,
-    };
+    const HOME_DATA: SceneNodeData =
+        SceneNodeData::new(NodeType::Node, Cow::Borrowed(EMPTY_FIELDS), None);
     const HOME_NODES: &[SceneNodeEntry] = &[SceneNodeEntry {
         data: HOME_DATA,
         has_data_override: true,
@@ -875,16 +870,10 @@ mod tests {
         key_names: Cow::Borrowed(HOME_KEY_NAMES),
     };
     const DOCS_CHILD_KEYS: &[SceneKey] = &[SceneKey(1)];
-    const DOCS_ROOT_DATA: SceneNodeData = SceneNodeData {
-        ty: Cow::Borrowed("Node"),
-        fields: Cow::Borrowed(EMPTY_FIELDS),
-        base: None,
-    };
-    const DOCS_COPY_DATA: SceneNodeData = SceneNodeData {
-        ty: Cow::Borrowed("Node"),
-        fields: Cow::Borrowed(EMPTY_FIELDS),
-        base: None,
-    };
+    const DOCS_ROOT_DATA: SceneNodeData =
+        SceneNodeData::new(NodeType::Node, Cow::Borrowed(EMPTY_FIELDS), None);
+    const DOCS_COPY_DATA: SceneNodeData =
+        SceneNodeData::new(NodeType::Node, Cow::Borrowed(EMPTY_FIELDS), None);
     const DOCS_NODES: &[SceneNodeEntry] = &[
         SceneNodeEntry {
             data: DOCS_ROOT_DATA,

@@ -220,7 +220,7 @@ impl<'a> SceneDocWriter<'a> {
     fn write_data(&self, data: &SceneNodeData, out: &mut String, depth: usize) {
         indent(out, depth);
         out.push('[');
-        out.push_str(data.ty.as_ref());
+        out.push_str(data.type_name());
         if data.base_ref().is_none() && data.fields.is_empty() {
             out.push_str("/]\n");
             return;
@@ -238,7 +238,7 @@ impl<'a> SceneDocWriter<'a> {
         }
         indent(out, depth);
         out.push_str("[/");
-        out.push_str(data.ty.as_ref());
+        out.push_str(data.type_name());
         out.push_str("]\n");
     }
 

@@ -13,9 +13,10 @@ use perro_nodes::{
     AmbientLight2D, Area2D, Area3D, AudioEffectZone2D, AudioEffectZone3D, AudioMask2D, AudioMask3D,
     AudioPortal2D, AudioPortal3D, BallJoint3D, CameraStream, CameraStream2D, CameraStream3D,
     CollisionShape2D, CollisionShape3D, DistanceJoint2D, FixedJoint2D, FixedJoint3D, HingeJoint3D,
-    PhysicsForceEmitter2D, PhysicsForceEmitter3D, PhysicsForceProfile, PinJoint2D, PointLight2D,
-    RayLight2D, RigidBody2D, RigidBody3D, SceneNode, SceneNodeData, Shape2D, Shape3D, SpotLight2D,
-    StaticBody2D, StaticBody3D, Triangle2DKind, UiCameraStream, WaterBody2D, WaterBody3D,
+    NodeType, PhysicsForceEmitter2D, PhysicsForceEmitter3D, PhysicsForceProfile, PinJoint2D,
+    PointLight2D, RayLight2D, RigidBody2D, RigidBody3D, SceneNode, SceneNodeData, Shape2D,
+    Shape3D, SpotLight2D, StaticBody2D, StaticBody3D, Triangle2DKind, UiCameraStream, WaterBody2D,
+    WaterBody3D,
     WaterIdleMode, WaterShape, WaterSkyBias, WaterSurfaceParams,
     ambient_light_3d::AmbientLight3D,
     animation_player::AnimationPlayer,
@@ -1370,7 +1371,7 @@ fn merge_root_host_entry(
 }
 
 fn merge_scene_node_data(base: &SceneDefNodeData, local: &SceneDefNodeData) -> SceneDefNodeData {
-    if base.ty != local.ty {
+    if base.node_type != local.node_type {
         return local.clone();
     }
 
@@ -1378,7 +1379,7 @@ fn merge_scene_node_data(base: &SceneDefNodeData, local: &SceneDefNodeData) -> S
     let local_fields = flatten_scene_node_fields(local);
     let merged_fields = merge_scene_object_fields(&base_fields, &local_fields);
     SceneDefNodeData {
-        ty: local.ty.clone(),
+        node_type: local.node_type,
         fields: merged_fields,
         base: None,
     }
@@ -1571,8 +1572,8 @@ fn extract_locale_text_bindings(
     scratch: &mut ScenePrepareScratch,
 ) -> Vec<PendingLocaleTextBinding> {
     let mut out = Vec::new();
-    match data.ty.as_ref() {
-        "UiLabel" => {
+    match data.node_type {
+        NodeType::UiLabel => {
             let fields = scratch_flatten_scene_node_fields(data, scratch);
             push_locale_text_binding(
                 &mut out,
@@ -1581,7 +1582,7 @@ fn extract_locale_text_bindings(
                 crate::runtime::state::LocaleTextField::LabelText,
             );
         }
-        "UiTextBox" | "UiTextBlock" => {
+        NodeType::UiTextBox | NodeType::UiTextBlock => {
             let fields = scratch_flatten_scene_node_fields(data, scratch);
             push_locale_text_binding(
                 &mut out,
@@ -1637,12 +1638,12 @@ fn extract_joint_body_targets(
     scratch: &mut ScenePrepareScratch,
 ) -> Vec<(PendingJointBodyField, String)> {
     let mut out = Vec::new();
-    let Some((body_a_field, body_b_field)) = joint_body_fields_for(data.ty.as_ref()) else {
+    let Some((body_a_field, body_b_field)) = joint_body_fields_for(data.node_type) else {
         return out;
     };
     let fields = scratch_flatten_scene_node_fields(data, scratch);
     for (name, value) in fields {
-        let resolved = resolve_scene_node_field(data.ty.as_ref(), name);
+        let resolved = resolve_scene_node_field(data.type_name(), name);
         let field = if resolved == Some(body_a_field) {
             Some(PendingJointBodyField::BodyA)
         } else if resolved == Some(body_b_field) {
@@ -1659,29 +1660,29 @@ fn extract_joint_body_targets(
     out
 }
 
-fn joint_body_fields_for(ty: &str) -> Option<(NodeField, NodeField)> {
+fn joint_body_fields_for(ty: NodeType) -> Option<(NodeField, NodeField)> {
     match ty {
-        "PinJoint2D" => Some((
+        NodeType::PinJoint2D => Some((
             NodeField::PinJoint2D(Joint2DField::BodyA),
             NodeField::PinJoint2D(Joint2DField::BodyB),
         )),
-        "DistanceJoint2D" => Some((
+        NodeType::DistanceJoint2D => Some((
             NodeField::DistanceJoint2D(DistanceJoint2DField::Common(Joint2DField::BodyA)),
             NodeField::DistanceJoint2D(DistanceJoint2DField::Common(Joint2DField::BodyB)),
         )),
-        "FixedJoint2D" => Some((
+        NodeType::FixedJoint2D => Some((
             NodeField::FixedJoint2D(Joint2DField::BodyA),
             NodeField::FixedJoint2D(Joint2DField::BodyB),
         )),
-        "BallJoint3D" => Some((
+        NodeType::BallJoint3D => Some((
             NodeField::BallJoint3D(Joint3DField::BodyA),
             NodeField::BallJoint3D(Joint3DField::BodyB),
         )),
-        "HingeJoint3D" => Some((
+        NodeType::HingeJoint3D => Some((
             NodeField::HingeJoint3D(HingeJoint3DField::Common(Joint3DField::BodyA)),
             NodeField::HingeJoint3D(HingeJoint3DField::Common(Joint3DField::BodyB)),
         )),
-        "FixedJoint3D" => Some((
+        NodeType::FixedJoint3D => Some((
             NodeField::FixedJoint3D(Joint3DField::BodyA),
             NodeField::FixedJoint3D(Joint3DField::BodyB),
         )),
@@ -1693,131 +1694,131 @@ fn scene_node_data_from(
     data: &SceneDefNodeData,
     static_ui_style_lookup: Option<StaticUiStyleLookup>,
 ) -> Result<SceneNodeData, String> {
-    match data.ty.as_ref() {
-        "Node" => Ok(SceneNodeData::Node),
-        "Node2D" => Ok(SceneNodeData::Node2D(build_node_2d(data))),
-        "CameraStream2D" => Ok(SceneNodeData::CameraStream2D(build_camera_stream_2d(data))),
-        "Sprite2D" => Ok(SceneNodeData::Sprite2D(build_sprite_2d(data))),
-        "AnimatedSprite2D" => Ok(SceneNodeData::AnimatedSprite2D(build_animated_sprite_2d(
+    match data.node_type {
+        NodeType::Node => Ok(SceneNodeData::Node),
+        NodeType::Node2D => Ok(SceneNodeData::Node2D(build_node_2d(data))),
+        NodeType::CameraStream2D => {
+            Ok(SceneNodeData::CameraStream2D(build_camera_stream_2d(data)))
+        }
+        NodeType::Sprite2D => Ok(SceneNodeData::Sprite2D(build_sprite_2d(data))),
+        NodeType::AnimatedSprite2D => Ok(SceneNodeData::AnimatedSprite2D(build_animated_sprite_2d(
             data,
         ))),
-        "ParticleEmitter2D" => Ok(SceneNodeData::ParticleEmitter2D(build_particle_emitter_2d(
+        NodeType::ParticleEmitter2D => Ok(SceneNodeData::ParticleEmitter2D(build_particle_emitter_2d(
             data,
         ))),
-        "AmbientLight2D" => Ok(SceneNodeData::AmbientLight2D(build_ambient_light_2d(data))),
-        "RayLight2D" => Ok(SceneNodeData::RayLight2D(build_ray_light_2d(data))),
-        "PointLight2D" => Ok(SceneNodeData::PointLight2D(build_point_light_2d(data))),
-        "SpotLight2D" => Ok(SceneNodeData::SpotLight2D(build_spot_light_2d(data))),
-        "TileMap2D" => Ok(SceneNodeData::TileMap2D(build_tilemap_2d(data))),
-        "WaterBody2D" => Ok(SceneNodeData::WaterBody2D(build_water_body_2d(data))),
-        "Skeleton2D" => Ok(SceneNodeData::Skeleton2D(build_skeleton_2d(data))),
-        "Bone2D" => Err(
-            "unsupported scene node type `Bone2D`; use Skeleton2D.bones from .pskel2d".to_string(),
-        ),
-        "BoneAttachment2D" => Ok(SceneNodeData::BoneAttachment2D(build_bone_attachment_2d(
+        NodeType::AmbientLight2D => Ok(SceneNodeData::AmbientLight2D(build_ambient_light_2d(data))),
+        NodeType::RayLight2D => Ok(SceneNodeData::RayLight2D(build_ray_light_2d(data))),
+        NodeType::PointLight2D => Ok(SceneNodeData::PointLight2D(build_point_light_2d(data))),
+        NodeType::SpotLight2D => Ok(SceneNodeData::SpotLight2D(build_spot_light_2d(data))),
+        NodeType::TileMap2D => Ok(SceneNodeData::TileMap2D(build_tilemap_2d(data))),
+        NodeType::WaterBody2D => Ok(SceneNodeData::WaterBody2D(build_water_body_2d(data))),
+        NodeType::Skeleton2D => Ok(SceneNodeData::Skeleton2D(build_skeleton_2d(data))),
+        NodeType::BoneAttachment2D => Ok(SceneNodeData::BoneAttachment2D(build_bone_attachment_2d(
             data,
         ))),
-        "IKTarget2D" => Ok(SceneNodeData::IKTarget2D(build_ik_target_2d(data))),
-        "PhysicsBoneChain2D" => Ok(SceneNodeData::PhysicsBoneChain2D(
+        NodeType::IKTarget2D => Ok(SceneNodeData::IKTarget2D(build_ik_target_2d(data))),
+        NodeType::PhysicsBoneChain2D => Ok(SceneNodeData::PhysicsBoneChain2D(
             build_physics_bone_chain_2d(data),
         )),
-        "BoneCollider2D" => Ok(SceneNodeData::BoneCollider2D(build_bone_collider_2d(data))),
-        "Camera2D" => Ok(SceneNodeData::Camera2D(build_camera_2d(data))),
-        "CollisionShape2D" => Ok(SceneNodeData::CollisionShape2D(build_collision_shape_2d(
+        NodeType::BoneCollider2D => Ok(SceneNodeData::BoneCollider2D(build_bone_collider_2d(data))),
+        NodeType::Camera2D => Ok(SceneNodeData::Camera2D(build_camera_2d(data))),
+        NodeType::CollisionShape2D => Ok(SceneNodeData::CollisionShape2D(build_collision_shape_2d(
             data,
         ))),
-        "StaticBody2D" => Ok(SceneNodeData::StaticBody2D(build_static_body_2d(data))),
-        "Area2D" => Ok(SceneNodeData::Area2D(build_area_2d(data))),
-        "RigidBody2D" => Ok(SceneNodeData::RigidBody2D(build_rigid_body_2d(data))),
-        "PhysicsForceEmitter2D" => Ok(SceneNodeData::PhysicsForceEmitter2D(
+        NodeType::StaticBody2D => Ok(SceneNodeData::StaticBody2D(build_static_body_2d(data))),
+        NodeType::Area2D => Ok(SceneNodeData::Area2D(build_area_2d(data))),
+        NodeType::RigidBody2D => Ok(SceneNodeData::RigidBody2D(build_rigid_body_2d(data))),
+        NodeType::PhysicsForceEmitter2D => Ok(SceneNodeData::PhysicsForceEmitter2D(
             build_physics_force_emitter_2d(data),
         )),
-        "PinJoint2D" => Ok(SceneNodeData::PinJoint2D(build_pin_joint_2d(data))),
-        "DistanceJoint2D" => Ok(SceneNodeData::DistanceJoint2D(build_distance_joint_2d(
+        NodeType::PinJoint2D => Ok(SceneNodeData::PinJoint2D(build_pin_joint_2d(data))),
+        NodeType::DistanceJoint2D => Ok(SceneNodeData::DistanceJoint2D(build_distance_joint_2d(
             data,
         ))),
-        "FixedJoint2D" => Ok(SceneNodeData::FixedJoint2D(build_fixed_joint_2d(data))),
-        "AudioMask2D" => Ok(SceneNodeData::AudioMask2D(build_audio_mask_2d(data))),
-        "AudioEffectZone2D" => Ok(SceneNodeData::AudioEffectZone2D(
+        NodeType::FixedJoint2D => Ok(SceneNodeData::FixedJoint2D(build_fixed_joint_2d(data))),
+        NodeType::AudioMask2D => Ok(SceneNodeData::AudioMask2D(build_audio_mask_2d(data))),
+        NodeType::AudioEffectZone2D => Ok(SceneNodeData::AudioEffectZone2D(
             build_audio_effect_zone_2d(data),
         )),
-        "AudioPortal2D" => Ok(SceneNodeData::AudioPortal2D(build_audio_portal_2d(data))),
-        "Node3D" => Ok(SceneNodeData::Node3D(build_node_3d(data))),
-        "CameraStream3D" => Ok(SceneNodeData::CameraStream3D(build_camera_stream_3d(data))),
-        "MeshInstance3D" => Ok(SceneNodeData::MeshInstance3D(build_mesh_instance_3d(data))),
-        "MultiMeshInstance3D" => Ok(SceneNodeData::MultiMeshInstance3D(
+        NodeType::AudioPortal2D => Ok(SceneNodeData::AudioPortal2D(build_audio_portal_2d(data))),
+        NodeType::Node3D => Ok(SceneNodeData::Node3D(build_node_3d(data))),
+        NodeType::CameraStream3D => {
+            Ok(SceneNodeData::CameraStream3D(build_camera_stream_3d(data)))
+        }
+        NodeType::MeshInstance3D => Ok(SceneNodeData::MeshInstance3D(build_mesh_instance_3d(data))),
+        NodeType::MultiMeshInstance3D => Ok(SceneNodeData::MultiMeshInstance3D(
             build_multi_mesh_instance_3d(data),
         )),
-        "CollisionShape3D" => Ok(SceneNodeData::CollisionShape3D(build_collision_shape_3d(
+        NodeType::CollisionShape3D => Ok(SceneNodeData::CollisionShape3D(build_collision_shape_3d(
             data,
         ))),
-        "StaticBody3D" => Ok(SceneNodeData::StaticBody3D(build_static_body_3d(data))),
-        "Area3D" => Ok(SceneNodeData::Area3D(build_area_3d(data))),
-        "RigidBody3D" => Ok(SceneNodeData::RigidBody3D(build_rigid_body_3d(data))),
-        "PhysicsForceEmitter3D" => Ok(SceneNodeData::PhysicsForceEmitter3D(
+        NodeType::StaticBody3D => Ok(SceneNodeData::StaticBody3D(build_static_body_3d(data))),
+        NodeType::Area3D => Ok(SceneNodeData::Area3D(build_area_3d(data))),
+        NodeType::RigidBody3D => Ok(SceneNodeData::RigidBody3D(build_rigid_body_3d(data))),
+        NodeType::PhysicsForceEmitter3D => Ok(SceneNodeData::PhysicsForceEmitter3D(
             build_physics_force_emitter_3d(data),
         )),
-        "BallJoint3D" => Ok(SceneNodeData::BallJoint3D(build_ball_joint_3d(data))),
-        "HingeJoint3D" => Ok(SceneNodeData::HingeJoint3D(build_hinge_joint_3d(data))),
-        "FixedJoint3D" => Ok(SceneNodeData::FixedJoint3D(build_fixed_joint_3d(data))),
-        "AudioMask3D" => Ok(SceneNodeData::AudioMask3D(build_audio_mask_3d(data))),
-        "AudioEffectZone3D" => Ok(SceneNodeData::AudioEffectZone3D(
+        NodeType::BallJoint3D => Ok(SceneNodeData::BallJoint3D(build_ball_joint_3d(data))),
+        NodeType::HingeJoint3D => Ok(SceneNodeData::HingeJoint3D(build_hinge_joint_3d(data))),
+        NodeType::FixedJoint3D => Ok(SceneNodeData::FixedJoint3D(build_fixed_joint_3d(data))),
+        NodeType::AudioMask3D => Ok(SceneNodeData::AudioMask3D(build_audio_mask_3d(data))),
+        NodeType::AudioEffectZone3D => Ok(SceneNodeData::AudioEffectZone3D(
             build_audio_effect_zone_3d(data),
         )),
-        "AudioPortal3D" => Ok(SceneNodeData::AudioPortal3D(build_audio_portal_3d(data))),
-        "Skeleton3D" => Ok(SceneNodeData::Skeleton3D(build_skeleton_3d(data))),
-        "BoneAttachment3D" => Ok(SceneNodeData::BoneAttachment3D(build_bone_attachment_3d(
+        NodeType::AudioPortal3D => Ok(SceneNodeData::AudioPortal3D(build_audio_portal_3d(data))),
+        NodeType::Skeleton3D => Ok(SceneNodeData::Skeleton3D(build_skeleton_3d(data))),
+        NodeType::BoneAttachment3D => Ok(SceneNodeData::BoneAttachment3D(build_bone_attachment_3d(
             data,
         ))),
-        "IKTarget3D" => Ok(SceneNodeData::IKTarget3D(build_ik_target_3d(data))),
-        "PhysicsBoneChain3D" => Ok(SceneNodeData::PhysicsBoneChain3D(
+        NodeType::IKTarget3D => Ok(SceneNodeData::IKTarget3D(build_ik_target_3d(data))),
+        NodeType::PhysicsBoneChain3D => Ok(SceneNodeData::PhysicsBoneChain3D(
             build_physics_bone_chain_3d(data),
         )),
-        "BoneCollider3D" => Ok(SceneNodeData::BoneCollider3D(build_bone_collider_3d(data))),
-        "Camera3D" => Ok(SceneNodeData::Camera3D(build_camera_3d(data))),
-        "ParticleEmitter3D" => Ok(SceneNodeData::ParticleEmitter3D(build_particle_emitter_3d(
+        NodeType::BoneCollider3D => Ok(SceneNodeData::BoneCollider3D(build_bone_collider_3d(data))),
+        NodeType::Camera3D => Ok(SceneNodeData::Camera3D(build_camera_3d(data))),
+        NodeType::ParticleEmitter3D => Ok(SceneNodeData::ParticleEmitter3D(build_particle_emitter_3d(
             data,
         ))),
-        "WaterBody3D" => Ok(SceneNodeData::WaterBody3D(build_water_body_3d(data))),
-        "AnimationPlayer" => Ok(SceneNodeData::AnimationPlayer(build_animation_player(data))),
-        "AnimationTree" => Ok(SceneNodeData::AnimationTree(build_animation_tree(data))),
-        "AmbientLight3D" => Ok(SceneNodeData::AmbientLight3D(build_ambient_light_3d(data))),
-        "Sky3D" => Ok(SceneNodeData::Sky3D(build_sky_3d(data))),
-        "RayLight3D" => Ok(SceneNodeData::RayLight3D(build_ray_light_3d(data))),
-        "PointLight3D" => Ok(SceneNodeData::PointLight3D(build_point_light_3d(data))),
-        "SpotLight3D" => Ok(SceneNodeData::SpotLight3D(build_spot_light_3d(data))),
-        "UiBox" => Ok(SceneNodeData::UiBox(build_ui_box(data))),
-        "UiPanel" => Ok(SceneNodeData::UiPanel(build_ui_panel(
-            data,
-            static_ui_style_lookup,
-        ))),
-        "UiButton" => Ok(SceneNodeData::UiButton(build_ui_button(
+        NodeType::WaterBody3D => Ok(SceneNodeData::WaterBody3D(build_water_body_3d(data))),
+        NodeType::AnimationPlayer => Ok(SceneNodeData::AnimationPlayer(build_animation_player(data))),
+        NodeType::AnimationTree => Ok(SceneNodeData::AnimationTree(build_animation_tree(data))),
+        NodeType::AmbientLight3D => Ok(SceneNodeData::AmbientLight3D(build_ambient_light_3d(data))),
+        NodeType::Sky3D => Ok(SceneNodeData::Sky3D(build_sky_3d(data))),
+        NodeType::RayLight3D => Ok(SceneNodeData::RayLight3D(build_ray_light_3d(data))),
+        NodeType::PointLight3D => Ok(SceneNodeData::PointLight3D(build_point_light_3d(data))),
+        NodeType::SpotLight3D => Ok(SceneNodeData::SpotLight3D(build_spot_light_3d(data))),
+        NodeType::UiBox => Ok(SceneNodeData::UiBox(build_ui_box(data))),
+        NodeType::UiPanel => Ok(SceneNodeData::UiPanel(build_ui_panel(
             data,
             static_ui_style_lookup,
         ))),
-        "UiCameraStream" => Ok(SceneNodeData::UiCameraStream(build_ui_camera_stream(data))),
-        "UiImage" => Ok(SceneNodeData::UiImage(build_ui_image(data))),
-        "UiAnimatedImage" => Ok(SceneNodeData::UiAnimatedImage(build_ui_animated_image(
-            data,
-        ))),
-        "UiLabel" => Ok(SceneNodeData::UiLabel(build_ui_label(data))),
-        "UiTextBox" => Ok(SceneNodeData::UiTextBox(build_ui_text_box(
+        NodeType::UiButton => Ok(SceneNodeData::UiButton(build_ui_button(
             data,
             static_ui_style_lookup,
         ))),
-        "UiTextBlock" => Ok(SceneNodeData::UiTextBlock(build_ui_text_block(
+        NodeType::UiCameraStream => Ok(SceneNodeData::UiCameraStream(build_ui_camera_stream(data))),
+        NodeType::UiImage => Ok(SceneNodeData::UiImage(build_ui_image(data))),
+        NodeType::UiAnimatedImage => Ok(SceneNodeData::UiAnimatedImage(build_ui_animated_image(
+            data,
+        ))),
+        NodeType::UiLabel => Ok(SceneNodeData::UiLabel(build_ui_label(data))),
+        NodeType::UiTextBox => Ok(SceneNodeData::UiTextBox(build_ui_text_box(
             data,
             static_ui_style_lookup,
         ))),
-        "UiScrollContainer" | "UiScroll" => Ok(SceneNodeData::UiScrollContainer(
+        NodeType::UiTextBlock => Ok(SceneNodeData::UiTextBlock(build_ui_text_block(
+            data,
+            static_ui_style_lookup,
+        ))),
+        NodeType::UiScrollContainer => Ok(SceneNodeData::UiScrollContainer(
             build_ui_scroll_container(data),
         )),
-        "UiLayout" => Ok(SceneNodeData::UiLayout(build_ui_layout(data))),
-        "UiHLayout" | "UiHBox" => Ok(SceneNodeData::UiHLayout(build_ui_hlayout(data))),
-        "UiVLayout" | "UiVBox" => Ok(SceneNodeData::UiVLayout(build_ui_vlayout(data))),
-        "UiGrid" => Ok(SceneNodeData::UiGrid(build_ui_grid(data))),
-        "UiTreeList" => Ok(SceneNodeData::UiTreeList(build_ui_tree_list(data))),
-        other => Err(format!("unsupported scene node type `{other}`")),
+        NodeType::UiLayout => Ok(SceneNodeData::UiLayout(build_ui_layout(data))),
+        NodeType::UiHLayout => Ok(SceneNodeData::UiHLayout(build_ui_hlayout(data))),
+        NodeType::UiVLayout => Ok(SceneNodeData::UiVLayout(build_ui_vlayout(data))),
+        NodeType::UiGrid => Ok(SceneNodeData::UiGrid(build_ui_grid(data))),
+        NodeType::UiTreeList => Ok(SceneNodeData::UiTreeList(build_ui_tree_list(data))),
     }
 }
 
@@ -1872,3 +1873,4 @@ fn apply_camera_stream_fields(stream: &mut CameraStream, fields: &[SceneObjectFi
     stream.resolution.x = stream.resolution.x.clamp(1, 8192);
     stream.resolution.y = stream.resolution.y.clamp(1, 8192);
 }
+

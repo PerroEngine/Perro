@@ -1221,7 +1221,8 @@ mod tests {
 
     #[test]
     fn scene_loader_rejects_bone_2d_node() {
-        let scene = Parser::new(
+        let err = std::panic::catch_unwind(|| {
+            Parser::new(
             r#"
             $root = @Rig2D
             [Rig2D]
@@ -1241,16 +1242,16 @@ mod tests {
             [/Bone2D]
             [/UpperArm]
             "#,
-        )
-        .parse_scene();
-
-        let err = match prepare_scene_with_loader(&scene, &|path| {
-            Err(format!("unknown scene path `{path}`"))
-        }) {
-            Ok(_) => panic!("expected bone2d scene node rejection"),
-            Err(err) => err,
-        };
-        assert!(err.contains("unsupported scene node type `Bone2D`"));
+            )
+            .parse_scene()
+        })
+        .expect_err("expected bone2d scene node rejection");
+        let msg = err
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| err.downcast_ref::<&str>().copied())
+            .unwrap_or("");
+        assert!(msg.contains("unsupported scene node type `Bone2D`"));
     }
 
     #[test]

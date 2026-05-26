@@ -1,3 +1,4 @@
+use perro_nodes::NodeType;
 use perro_structs::ConstParamValue;
 use std::borrow::Cow;
 
@@ -727,7 +728,7 @@ pub struct SceneNodeEntry {
 
 #[derive(Debug, Clone)]
 pub struct SceneNodeData {
-    pub ty: Cow<'static, str>,
+    pub node_type: NodeType,
     pub fields: Cow<'static, [SceneObjectField]>,
     pub base: Option<SceneNodeDataBase>,
 }
@@ -739,6 +740,22 @@ pub enum SceneNodeDataBase {
 }
 
 impl SceneNodeData {
+    pub const fn new(
+        node_type: NodeType,
+        fields: Cow<'static, [SceneObjectField]>,
+        base: Option<SceneNodeDataBase>,
+    ) -> Self {
+        Self {
+            node_type,
+            fields,
+            base,
+        }
+    }
+
+    pub fn type_name(&self) -> &str {
+        self.node_type.name()
+    }
+
     pub fn base_ref(&self) -> Option<&SceneNodeData> {
         match &self.base {
             Some(SceneNodeDataBase::Borrowed(v)) => Some(*v),

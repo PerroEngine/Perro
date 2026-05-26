@@ -377,11 +377,7 @@ impl<'a> Parser<'a> {
         if self.current == Token::Slash {
             self.advance();
             self.expect(Token::RBracket);
-            return SceneNodeData {
-                ty: canonical_node_type_name(&ty),
-                fields: Cow::Owned(Vec::new()),
-                base: None,
-            };
+            return scene_node_data_from_parts(&ty, Cow::Owned(Vec::new()), None);
         }
         self.expect(Token::RBracket);
 
@@ -416,11 +412,7 @@ impl<'a> Parser<'a> {
         }
 
         normalize_node_fields_for_type(&ty, &mut fields);
-        SceneNodeData {
-            ty: canonical_node_type_name(&ty),
-            fields: Cow::Owned(fields),
-            base,
-        }
+        scene_node_data_from_parts(&ty, Cow::Owned(fields), base)
     }
 
     fn parse_tags(&mut self) -> Vec<String> {
@@ -633,11 +625,7 @@ impl<'a> Parser<'a> {
 
                     let (data, has_data_override) = if self.current == Token::Slash {
                         (
-                            SceneNodeData {
-                                ty: Cow::Borrowed("Node"),
-                                fields: Cow::Owned(Vec::new()),
-                                base: None,
-                            },
+                            SceneNodeData::new(NodeType::Node, Cow::Owned(Vec::new()), None),
                             false,
                         )
                     } else {
@@ -789,79 +777,24 @@ fn needs_var_prefetch(src: &str) -> bool {
     false
 }
 
-fn canonical_node_type_name(name: &str) -> Cow<'static, str> {
+fn canonical_node_type(name: &str) -> Option<NodeType> {
     match name {
-        "Node" => Cow::Borrowed("Node"),
-        "Node2D" => Cow::Borrowed("Node2D"),
-        "Sprite2D" => Cow::Borrowed("Sprite2D"),
-        "AnimatedSprite2D" => Cow::Borrowed("AnimatedSprite2D"),
-        "ParticleEmitter2D" => Cow::Borrowed("ParticleEmitter2D"),
-        "AmbientLight2D" => Cow::Borrowed("AmbientLight2D"),
-        "RayLight2D" => Cow::Borrowed("RayLight2D"),
-        "PointLight2D" => Cow::Borrowed("PointLight2D"),
-        "SpotLight2D" => Cow::Borrowed("SpotLight2D"),
-        "TileMap2D" => Cow::Borrowed("TileMap2D"),
-        "Skeleton2D" => Cow::Borrowed("Skeleton2D"),
-        "BoneAttachment2D" => Cow::Borrowed("BoneAttachment2D"),
-        "IKTarget2D" => Cow::Borrowed("IKTarget2D"),
-        "PhysicsBoneChain2D" => Cow::Borrowed("PhysicsBoneChain2D"),
-        "BoneCollider2D" => Cow::Borrowed("BoneCollider2D"),
-        "Camera2D" => Cow::Borrowed("Camera2D"),
-        "CollisionShape2D" => Cow::Borrowed("CollisionShape2D"),
-        "StaticBody2D" => Cow::Borrowed("StaticBody2D"),
-        "Area2D" => Cow::Borrowed("Area2D"),
-        "RigidBody2D" => Cow::Borrowed("RigidBody2D"),
-        "PinJoint2D" => Cow::Borrowed("PinJoint2D"),
-        "DistanceJoint2D" => Cow::Borrowed("DistanceJoint2D"),
-        "FixedJoint2D" => Cow::Borrowed("FixedJoint2D"),
-        "AudioMask2D" => Cow::Borrowed("AudioMask2D"),
-        "AudioEffectZone2D" => Cow::Borrowed("AudioEffectZone2D"),
-        "AudioPortal2D" => Cow::Borrowed("AudioPortal2D"),
-        "Node3D" => Cow::Borrowed("Node3D"),
-        "MeshInstance3D" => Cow::Borrowed("MeshInstance3D"),
-        "MultiMeshInstance3D" => Cow::Borrowed("MultiMeshInstance3D"),
-        "CollisionShape3D" => Cow::Borrowed("CollisionShape3D"),
-        "StaticBody3D" => Cow::Borrowed("StaticBody3D"),
-        "Area3D" => Cow::Borrowed("Area3D"),
-        "RigidBody3D" => Cow::Borrowed("RigidBody3D"),
-        "BallJoint3D" => Cow::Borrowed("BallJoint3D"),
-        "HingeJoint3D" => Cow::Borrowed("HingeJoint3D"),
-        "FixedJoint3D" => Cow::Borrowed("FixedJoint3D"),
-        "AudioMask3D" => Cow::Borrowed("AudioMask3D"),
-        "AudioEffectZone3D" => Cow::Borrowed("AudioEffectZone3D"),
-        "AudioPortal3D" => Cow::Borrowed("AudioPortal3D"),
-        "Skeleton3D" => Cow::Borrowed("Skeleton3D"),
-        "BoneAttachment3D" => Cow::Borrowed("BoneAttachment3D"),
-        "IKTarget3D" => Cow::Borrowed("IKTarget3D"),
-        "PhysicsBoneChain3D" => Cow::Borrowed("PhysicsBoneChain3D"),
-        "BoneCollider3D" => Cow::Borrowed("BoneCollider3D"),
-        "Camera3D" => Cow::Borrowed("Camera3D"),
-        "ParticleEmitter3D" => Cow::Borrowed("ParticleEmitter3D"),
-        "AnimationPlayer" => Cow::Borrowed("AnimationPlayer"),
-        "AnimationTree" => Cow::Borrowed("AnimationTree"),
-        "AmbientLight3D" => Cow::Borrowed("AmbientLight3D"),
-        "Sky3D" => Cow::Borrowed("Sky3D"),
-        "RayLight3D" => Cow::Borrowed("RayLight3D"),
-        "PointLight3D" => Cow::Borrowed("PointLight3D"),
-        "SpotLight3D" => Cow::Borrowed("SpotLight3D"),
-        "UiBox" => Cow::Borrowed("UiBox"),
-        "UiPanel" => Cow::Borrowed("UiPanel"),
-        "UiButton" => Cow::Borrowed("UiButton"),
-        "UiImage" => Cow::Borrowed("UiImage"),
-        "UiAnimatedImage" => Cow::Borrowed("UiAnimatedImage"),
-        "UiLabel" => Cow::Borrowed("UiLabel"),
-        "UiTextBox" => Cow::Borrowed("UiTextBox"),
-        "UiTextBlock" => Cow::Borrowed("UiTextBlock"),
-        "UiScrollContainer" => Cow::Borrowed("UiScrollContainer"),
-        "UiScroll" => Cow::Borrowed("UiScroll"),
-        "UiLayout" => Cow::Borrowed("UiLayout"),
-        "UiHLayout" => Cow::Borrowed("UiHLayout"),
-        "UiHBox" => Cow::Borrowed("UiHBox"),
-        "UiVLayout" => Cow::Borrowed("UiVLayout"),
-        "UiVBox" => Cow::Borrowed("UiVBox"),
-        "UiGrid" => Cow::Borrowed("UiGrid"),
-        "UiTreeList" => Cow::Borrowed("UiTreeList"),
-        other => Cow::Owned(other.to_string()),
+        "UiScroll" => Some(NodeType::UiScrollContainer),
+        "UiHBox" => Some(NodeType::UiHLayout),
+        "UiVBox" => Some(NodeType::UiVLayout),
+        other => NodeType::from_str(other).ok(),
+    }
+}
+
+fn scene_node_data_from_parts(
+    ty: &str,
+    fields: Cow<'static, [SceneObjectField]>,
+    base: Option<SceneNodeDataBase>,
+) -> SceneNodeData {
+    if let Some(node_type) = canonical_node_type(ty) {
+        SceneNodeData::new(node_type, fields, base)
+    } else {
+        panic!("unsupported scene node type `{ty}`");
     }
 }
 

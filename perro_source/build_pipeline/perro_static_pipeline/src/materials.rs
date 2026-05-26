@@ -1073,7 +1073,7 @@ fn material_literal_to_code(material: &MaterialLiteral) -> String {
                     rendered.push_str("CustomMaterialParam3D { name: ");
                     match &param.name {
                         Some(name) => {
-                            rendered.push_str(&format!("Some({:?}.into())", name));
+                            rendered.push_str(&format!("Some(Cow::Borrowed({:?}))", name));
                         }
                         None => rendered.push_str("None"),
                     }

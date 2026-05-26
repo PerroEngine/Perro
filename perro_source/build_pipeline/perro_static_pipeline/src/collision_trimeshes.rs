@@ -14,7 +14,7 @@ use perro_asset_formats::{
     source_ext,
 };
 use perro_io::{compress_zlib_best, decompress_zlib, walkdir::collect_file_paths};
-use perro_scene::{Parser, SceneNodeData, SceneValue};
+use perro_scene::{NodeType, Parser, SceneNodeData, SceneValue};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     fmt::Write as _,
@@ -145,7 +145,7 @@ fn collect_collision_sources_from_scene(scene: &perro_scene::Scene, out: &mut BT
 }
 
 fn collect_collision_sources_from_node_data(data: &SceneNodeData, out: &mut BTreeSet<String>) {
-    if data.ty.as_ref() != "CollisionShape3D" {
+    if data.node_type != NodeType::CollisionShape3D {
         if let Some(base) = &data.base {
             let base_ref = match base {
                 perro_scene::SceneNodeDataBase::Borrowed(v) => *v,

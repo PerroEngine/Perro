@@ -1350,11 +1350,11 @@ fn render_scene_entry_html(
         .unwrap_or_default();
     let node_attr = format!(
         " class=\"perro-node perro-node--{}\" data-perro-node=\"{}\"{}",
-        escape_html_attr(entry.data.ty.as_ref()),
-        escape_html_attr(entry.data.ty.as_ref()),
+        escape_html_attr(entry.data.type_name()),
+        escape_html_attr(entry.data.type_name()),
         name_attr
     );
-    match entry.data.ty.as_ref() {
+    match entry.data.type_name() {
         "UiLabel" => {
             let text = scene_field_str(&entry.data, "text")
                 .map(decode_scene_text_literal)

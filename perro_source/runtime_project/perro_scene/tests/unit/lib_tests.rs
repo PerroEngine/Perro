@@ -37,7 +37,7 @@ fn parse_basic_scene() {
 
     let player = find_node(&scene, "player");
     assert_eq!(player.parent.and_then(|k| scene.key_name(k)), Some("main"));
-    assert_eq!(player.data.ty.as_ref(), "Sprite2D");
+    assert_eq!(player.data.type_name(), "Sprite2D");
 }
 
 #[test]
@@ -299,7 +299,7 @@ fn parse_header_only_node_without_type_block_defaults_to_node() {
     let scene = Parser::new(src).parse_scene();
     let node = find_node(&scene, "relationship_manager");
 
-    assert_eq!(node.data.ty.as_ref(), "Node");
+    assert_eq!(node.data.type_name(), "Node");
     assert!(!node.has_data_override);
     assert_eq!(
         node.parent.and_then(|k| scene.key_name(k)),
@@ -329,7 +329,7 @@ fn parse_self_closing_type_block() {
     let node = find_node(&scene, "scene_root");
 
     assert!(node.has_data_override);
-    assert_eq!(node.data.ty.as_ref(), "Node2D");
+    assert_eq!(node.data.type_name(), "Node2D");
     assert!(node.data.fields.is_empty());
     assert!(node.data.base_ref().is_none());
 }

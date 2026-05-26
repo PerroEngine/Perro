@@ -490,6 +490,10 @@ macro_rules! define_scene_nodes {
                 }
             }
 
+            pub const fn name(&self) -> &'static str {
+                self.as_str()
+            }
+
             pub const fn parent_type(&self) -> Option<NodeType> {
                 match self {
                     $(NodeType::$base_variant => None,)*

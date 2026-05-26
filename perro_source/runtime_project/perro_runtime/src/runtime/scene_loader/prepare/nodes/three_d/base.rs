@@ -553,7 +553,10 @@ fn apply_bone_collider_3d_fields(node: &mut BoneCollider3D, fields: &[SceneObjec
 }
 
 fn extract_mesh_source(data: &SceneDefNodeData) -> Option<String> {
-    if data.ty != "MeshInstance3D" && data.ty != "MultiMeshInstance3D" {
+    if !matches!(
+        data.node_type,
+        NodeType::MeshInstance3D | NodeType::MultiMeshInstance3D
+    ) {
         return None;
     }
     data.fields.iter().find_map(|(name, value)| {
@@ -565,7 +568,10 @@ fn extract_mesh_source(data: &SceneDefNodeData) -> Option<String> {
 }
 
 fn extract_material_source(data: &SceneDefNodeData) -> Option<String> {
-    if data.ty != "MeshInstance3D" && data.ty != "MultiMeshInstance3D" {
+    if !matches!(
+        data.node_type,
+        NodeType::MeshInstance3D | NodeType::MultiMeshInstance3D
+    ) {
         return None;
     }
     data.fields.iter().find_map(|(name, value)| {
@@ -577,7 +583,10 @@ fn extract_material_source(data: &SceneDefNodeData) -> Option<String> {
 }
 
 fn extract_material_inline(data: &SceneDefNodeData) -> Option<Material3D> {
-    if data.ty != "MeshInstance3D" && data.ty != "MultiMeshInstance3D" {
+    if !matches!(
+        data.node_type,
+        NodeType::MeshInstance3D | NodeType::MultiMeshInstance3D
+    ) {
         return None;
     }
     data.fields.iter().find_map(|(name, value)| {
@@ -594,7 +603,10 @@ fn extract_material_inline(data: &SceneDefNodeData) -> Option<Material3D> {
 }
 
 fn extract_material_surfaces(data: &SceneDefNodeData) -> Vec<PendingSurfaceMaterial> {
-    if data.ty != "MeshInstance3D" && data.ty != "MultiMeshInstance3D" {
+    if !matches!(
+        data.node_type,
+        NodeType::MeshInstance3D | NodeType::MultiMeshInstance3D
+    ) {
         return Vec::new();
     }
     for (name, value) in data.fields.iter() {
@@ -870,7 +882,10 @@ fn quat_from_deg_xyz(deg: perro_structs::Vector3) -> perro_structs::Quaternion {
 }
 
 fn extract_model_source(data: &SceneDefNodeData) -> Option<String> {
-    if data.ty != "MeshInstance3D" && data.ty != "MultiMeshInstance3D" {
+    if !matches!(
+        data.node_type,
+        NodeType::MeshInstance3D | NodeType::MultiMeshInstance3D
+    ) {
         return None;
     }
     data.fields.iter().find_map(|(name, value)| {
@@ -882,11 +897,14 @@ fn extract_model_source(data: &SceneDefNodeData) -> Option<String> {
 }
 
 fn extract_skeleton_source(data: &SceneDefNodeData) -> Option<String> {
-    if data.ty != "Skeleton2D" && data.ty != "Skeleton3D" {
+    if !matches!(
+        data.node_type,
+        NodeType::Skeleton2D | NodeType::Skeleton3D
+    ) {
         return None;
     }
     data.fields.iter().find_map(|(name, value)| {
-        let resolved = resolve_node_field(data.ty.as_ref(), name);
+        let resolved = resolve_node_field(data.type_name(), name);
         (resolved == Some(NodeField::Skeleton2D(perro_scene::Skeleton2DField::Skeleton))
             || resolved == Some(NodeField::Skeleton3D(Skeleton3DField::Skeleton)))
         .then(|| as_asset_source(value))
@@ -895,7 +913,7 @@ fn extract_skeleton_source(data: &SceneDefNodeData) -> Option<String> {
 }
 
 fn extract_mesh_skeleton_target(data: &SceneDefNodeData) -> Result<Option<String>, String> {
-    if data.ty != "MeshInstance3D" {
+    if data.node_type != NodeType::MeshInstance3D {
         return Ok(None);
     }
     for (name, value) in data.fields.iter() {
@@ -911,11 +929,14 @@ fn extract_mesh_skeleton_target(data: &SceneDefNodeData) -> Result<Option<String
 fn extract_bone_attachment_skeleton_target(
     data: &SceneDefNodeData,
 ) -> Result<Option<String>, String> {
-    if data.ty != "BoneAttachment2D" && data.ty != "BoneAttachment3D" {
+    if !matches!(
+        data.node_type,
+        NodeType::BoneAttachment2D | NodeType::BoneAttachment3D
+    ) {
         return Ok(None);
     }
     for (name, value) in data.fields.iter() {
-        let resolved = resolve_node_field(data.ty.as_ref(), name);
+        let resolved = resolve_node_field(data.type_name(), name);
         if resolved
             == Some(NodeField::BoneAttachment2D(
                 BoneAttachment2DField::Skeleton,
@@ -925,22 +946,25 @@ fn extract_bone_attachment_skeleton_target(
                     BoneAttachment3DField::Skeleton,
                 ))
         {
-            return as_node_ref_source(value, &format!("{}.skeleton", data.ty));
+            return as_node_ref_source(value, &format!("{}.skeleton", data.type_name()));
         }
     }
     Ok(None)
 }
 
 fn extract_ik_target_skeleton_target(data: &SceneDefNodeData) -> Result<Option<String>, String> {
-    if data.ty != "IKTarget2D" && data.ty != "IKTarget3D" {
+    if !matches!(
+        data.node_type,
+        NodeType::IKTarget2D | NodeType::IKTarget3D
+    ) {
         return Ok(None);
     }
     for (name, value) in data.fields.iter() {
-        let resolved = resolve_node_field(data.ty.as_ref(), name);
+        let resolved = resolve_node_field(data.type_name(), name);
         if resolved == Some(NodeField::IKTarget2D(IKTarget2DField::Skeleton))
             || resolved == Some(NodeField::IKTarget3D(IKTarget3DField::Skeleton))
         {
-            return as_node_ref_source(value, &format!("{}.skeleton", data.ty));
+            return as_node_ref_source(value, &format!("{}.skeleton", data.type_name()));
         }
     }
     Ok(None)
@@ -949,11 +973,14 @@ fn extract_ik_target_skeleton_target(data: &SceneDefNodeData) -> Result<Option<S
 fn extract_physics_bone_chain_skeleton_target(
     data: &SceneDefNodeData,
 ) -> Result<Option<String>, String> {
-    if data.ty != "PhysicsBoneChain2D" && data.ty != "PhysicsBoneChain3D" {
+    if !matches!(
+        data.node_type,
+        NodeType::PhysicsBoneChain2D | NodeType::PhysicsBoneChain3D
+    ) {
         return Ok(None);
     }
     for (name, value) in data.fields.iter() {
-        let resolved = resolve_node_field(data.ty.as_ref(), name);
+        let resolved = resolve_node_field(data.type_name(), name);
         if resolved
             == Some(NodeField::PhysicsBoneChain2D(
                 PhysicsBoneChain2DField::Skeleton,
@@ -963,7 +990,7 @@ fn extract_physics_bone_chain_skeleton_target(
                     PhysicsBoneChain3DField::Skeleton,
                 ))
         {
-            return as_node_ref_source(value, &format!("{}.skeleton", data.ty));
+            return as_node_ref_source(value, &format!("{}.skeleton", data.type_name()));
         }
     }
     Ok(None)
@@ -978,3 +1005,4 @@ fn as_node_ref_source(value: &SceneValue, field: &str) -> Result<Option<String>,
         _ => Ok(None),
     }
 }
+

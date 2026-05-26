@@ -64,7 +64,7 @@ fn parse_animation_playback_type(value: &SceneValue) -> Option<perro_nodes::Anim
 }
 
 fn extract_animation_source(data: &SceneDefNodeData) -> Option<String> {
-    if data.ty != "AnimationPlayer" {
+    if data.node_type != NodeType::AnimationPlayer {
         return None;
     }
     data.fields.iter().find_map(|(name, value)| {
@@ -89,7 +89,7 @@ fn extract_animation_scene_bindings(data: &SceneDefNodeData) -> Vec<(String, Str
 }
 
 fn extract_animation_tree_source(data: &SceneDefNodeData) -> Option<String> {
-    if data.ty != "AnimationTree" {
+    if data.node_type != NodeType::AnimationTree {
         return None;
     }
     data.fields.iter().find_map(|(name, value)| {
@@ -101,7 +101,7 @@ fn extract_animation_tree_source(data: &SceneDefNodeData) -> Option<String> {
 }
 
 fn extract_animation_tree_animations(data: &SceneDefNodeData) -> AnimationTreeAnimationEntries {
-    if data.ty != "AnimationTree" {
+    if data.node_type != NodeType::AnimationTree {
         return Vec::new();
     }
     data.fields
@@ -204,3 +204,4 @@ fn parse_animation_bindings(value: &SceneValue) -> Option<Vec<(String, String)>>
 
     None
 }
+
