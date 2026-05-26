@@ -397,6 +397,45 @@ pub struct NestedState {
     }
 
     #[test]
+    fn transpiled_state_supports_array_mode_nested_script_vars() {
+        let source = r#"
+use perro_api::prelude::*;
+
+#[derive(Variant, Clone, Copy)]
+pub struct ActorRefs {
+    pub batter_agent_id: NodeID,
+    pub pitcher_agent_id: NodeID,
+    pub view_ref: NodeID,
+}
+
+impl Default for ActorRefs {
+    fn default() -> Self {
+        Self {
+            batter_agent_id: NodeID::nil(),
+            pitcher_agent_id: NodeID::nil(),
+            view_ref: NodeID::nil(),
+        }
+    }
+}
+
+#[State]
+pub struct ManagerState {
+    #[default = ActorRefs::default()]
+    pub actors: ActorRefs,
+}
+
+lifecycle!({});
+"#;
+
+        let transpiled = transpile_frontend_script(source, "all_variant_types.rs");
+        assert!(transpiled.contains("__perro_apply_nested_object"));
+        assert!(transpiled.contains(
+            "<ActorRefs as perro_api::variant::VariantSchema>::field_names()"
+        ));
+        assert_generated_script_compiles(source, &transpiled);
+    }
+
+    #[test]
     fn generated_state_all_variant_types_compiles() {
         let source = r#"
 use perro_api::prelude::*;
@@ -579,7 +618,7 @@ lifecycle!({});
         assert!(!transpiled.contains("std::any::TypeId::of"));
         assert!(transpiled.contains("perro_api::scripting::state_ref_unchecked::<AllVariantState>"));
         assert!(transpiled.contains("perro_api::scripting::state_mut_unchecked::<AllVariantState>"));
-        assert!(transpiled.contains("value.into_parse::<NestedCombo>()"));
+        assert!(transpiled.contains("value.clone().into_parse::<NestedCombo>()"));
         assert!(transpiled.contains("fn __perro_set_nested_var"));
         assert_generated_script_compiles(source, &transpiled);
     }

@@ -216,11 +216,12 @@ fn emit_static_scene_const(
                         &mut counter,
                         None,
                         None,
+                        true,
                     );
                     let _ = writeln!(
                         script_var_entries,
                         "    ({}, {}),",
-                        emit_field_name(name),
+                        emit_custom_field_name(name),
                         emitted
                     );
                 }
@@ -282,6 +283,7 @@ fn emit_node_data_consts(
                 counter,
                 Some(data.ty.as_ref()),
                 Some(name.as_ref()),
+                false,
             );
             let _ = writeln!(
                 field_entries,
@@ -345,6 +347,13 @@ fn emit_field_name(name: &SceneFieldName) -> String {
     }
 }
 
+fn emit_custom_field_name(name: &SceneFieldName) -> String {
+    format!(
+        "SceneFieldName::Custom(Cow::Borrowed(\"{}\"))",
+        escape_str(name.as_ref())
+    )
+}
+
 fn emit_value_with_consts(
     out: &mut String,
     scene_ident: &str,
@@ -352,6 +361,7 @@ fn emit_value_with_consts(
     counter: &mut usize,
     node_type: Option<&str>,
     field_name: Option<&str>,
+    force_custom_field_names: bool,
 ) -> String {
     match value {
         SceneValue::Bool(v) => format!("SceneValue::Bool({v})"),
@@ -390,13 +400,14 @@ fn emit_value_with_consts(
                     counter,
                     node_type,
                     Some(name.as_ref()),
+                    force_custom_field_names,
                 );
-                let _ = writeln!(
-                    object_entries,
-                    "    ({}, {}),",
-                    emit_field_name(name),
-                    nested
-                );
+                let emitted_name = if force_custom_field_names {
+                    emit_custom_field_name(name)
+                } else {
+                    emit_field_name(name)
+                };
+                let _ = writeln!(object_entries, "    ({}, {}),", emitted_name, nested);
             }
             out.push_str(&nested_consts);
             let _ = writeln!(out, "const {object_name}: &[SceneObjectField] = &[");
@@ -418,6 +429,7 @@ fn emit_value_with_consts(
                     counter,
                     node_type,
                     field_name,
+                    force_custom_field_names,
                 );
                 let _ = writeln!(array_entries, "    {},", nested);
             }
@@ -605,7 +617,10 @@ fn sanitize_ident(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{emit_static_node_type, emit_static_scene_value_str, resolve_scene_dlc_self_paths};
+    use super::{
+        emit_static_node_type, emit_static_scene_const, emit_static_scene_value_str,
+        resolve_scene_dlc_self_paths,
+    };
     use perro_nodes::NodeType;
     use perro_scene::Parser;
 
@@ -699,6 +714,42 @@ mod tests {
                 "res://models/course.glb:mesh[0]"
             ),
             "SceneValue::Str(Cow::Borrowed(\"res://models/course.glb:mesh[0]\"))"
+        );
+    }
+
+    #[test]
+    fn static_script_vars_emit_custom_field_names() {
+        let scene = Parser::new(
+            r#"
+            [manager]
+            script = "res://scripts/manager.rs"
+            script_vars = {
+                actors = { camera = @CameraNode },
+                runtime = { speed = 2.5 }
+            }
+            [CameraStream3D]
+                camera = @CameraNode
+            [/CameraStream3D]
+            [/manager]
+
+            [CameraNode]
+            [Node/]
+            [/CameraNode]
+            "#,
+        )
+        .parse_scene();
+
+        let emitted = emit_static_scene_const("res://main.scn", &scene).unwrap();
+
+        assert!(
+            emitted
+                .code
+                .contains("SceneFieldName::Custom(Cow::Borrowed(\"camera\")), SceneValue::Key")
+        );
+        assert!(
+            emitted
+                .code
+                .contains("SceneFieldName::Camera, SceneValue::Key")
         );
     }
 

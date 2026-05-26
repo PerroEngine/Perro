@@ -615,7 +615,7 @@ impl<'a> Parser<'a> {
                             }
                             "script_vars" => match v {
                                 SceneValue::Object(entries) => {
-                                    script_vars = entries.into_owned().into_iter().collect();
+                                    script_vars = custom_script_var_fields(entries.into_owned());
                                 }
                                 _ => panic!("script_vars must be an object"),
                             },
@@ -738,6 +738,34 @@ impl<'a> Parser<'a> {
             panic!("Expected end of value, got {:?}", self.current);
         }
         value
+    }
+}
+
+fn custom_script_var_fields(fields: Vec<SceneObjectField>) -> Vec<SceneObjectField> {
+    fields
+        .into_iter()
+        .map(|(name, value)| {
+            (
+                SceneFieldName::Custom(Cow::Owned(name.as_ref().to_string())),
+                custom_script_var_value(value),
+            )
+        })
+        .collect()
+}
+
+fn custom_script_var_value(value: SceneValue) -> SceneValue {
+    match value {
+        SceneValue::Object(fields) => {
+            SceneValue::Object(Cow::Owned(custom_script_var_fields(fields.into_owned())))
+        }
+        SceneValue::Array(items) => SceneValue::Array(Cow::Owned(
+            items
+                .into_owned()
+                .into_iter()
+                .map(custom_script_var_value)
+                .collect(),
+        )),
+        value => value,
     }
 }
 

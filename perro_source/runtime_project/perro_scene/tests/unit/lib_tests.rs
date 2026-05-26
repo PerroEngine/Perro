@@ -116,6 +116,36 @@ fn parse_script_vars_object() {
 }
 
 #[test]
+fn parse_script_vars_keep_custom_field_names() {
+    let src = r#"
+    [main]
+    script = "res://main.rs"
+    script_vars = { actors = { camera = @CameraNode } }
+    [Node/]
+    [/main]
+
+    [CameraNode]
+    [Node/]
+    [/CameraNode]
+    "#;
+
+    let scene = Parser::new(src).parse_scene();
+    let main = find_node(&scene, "main");
+
+    let actors = main
+        .script_vars
+        .iter()
+        .find(|(name, _)| matches!(name, SceneFieldName::Custom(name) if name.as_ref() == "actors"))
+        .expect("actors");
+    let SceneValue::Object(actor_fields) = &actors.1 else {
+        panic!("actors object");
+    };
+    assert!(actor_fields.iter().any(
+        |(name, _)| matches!(name, SceneFieldName::Custom(name) if name.as_ref() == "camera")
+    ));
+}
+
+#[test]
 fn node_refs_use_at_before_bare_scene_key() {
     let src = r#"
     $root = @scene_root
