@@ -32,6 +32,27 @@ use crate::runtime::render_3d::{
     water_shape_state as water_shape_state_3d,
 };
 
+fn is_ui_node_data(data: &SceneNodeData) -> bool {
+    matches!(
+        data,
+        SceneNodeData::UiBox(_)
+            | SceneNodeData::UiCameraStream(_)
+            | SceneNodeData::UiPanel(_)
+            | SceneNodeData::UiButton(_)
+            | SceneNodeData::UiImage(_)
+            | SceneNodeData::UiAnimatedImage(_)
+            | SceneNodeData::UiLabel(_)
+            | SceneNodeData::UiTextBox(_)
+            | SceneNodeData::UiTextBlock(_)
+            | SceneNodeData::UiScrollContainer(_)
+            | SceneNodeData::UiLayout(_)
+            | SceneNodeData::UiHLayout(_)
+            | SceneNodeData::UiVLayout(_)
+            | SceneNodeData::UiGrid(_)
+            | SceneNodeData::UiTreeList(_)
+    )
+}
+
 impl Runtime {
     pub(crate) const UI_DIRTY_TRANSFORM: u16 = crate::runtime::state::DirtyState::DIRTY_TRANSFORM;
     pub(crate) const UI_DIRTY_LAYOUT_SELF: u16 =
@@ -200,11 +221,24 @@ impl Runtime {
 
         let mut stack = vec![root_id];
         while let Some(id) = stack.pop() {
-            let Some(node) = self.nodes.get(id) else {
+            let Some((ui_dirty, children)) = self
+                .nodes
+                .get(id)
+                .map(|node| (is_ui_node_data(&node.data), node.children_slice().to_vec()))
+            else {
                 continue;
             };
             self.dirty.mark_rerender(id);
-            stack.extend(node.children_slice().iter().copied());
+            if ui_dirty {
+                self.dirty.mark_ui(
+                    id,
+                    Self::UI_DIRTY_LAYOUT_SELF
+                        | Self::UI_DIRTY_LAYOUT_PARENT
+                        | Self::UI_DIRTY_TRANSFORM
+                        | Self::UI_DIRTY_COMMANDS,
+                );
+            }
+            stack.extend(children);
         }
     }
 

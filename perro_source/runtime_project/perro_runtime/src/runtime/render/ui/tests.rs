@@ -2252,7 +2252,7 @@ fn parent_visibility_toggle_restores_button_hover_without_resize() {
     runtime.drain_render_commands(&mut Vec::new());
     runtime.clear_dirty_flags();
 
-    let _ = runtime.with_node_mut::<UiPanel, _, _>(parent, |panel| {
+    let _ = runtime.with_base_node_mut::<perro_ui::UiBox, _, _>(parent, |panel| {
         panel.visible = true;
     });
     runtime.set_mouse_position(400.0, 300.0);
@@ -2329,6 +2329,84 @@ fn parent_visibility_toggle_restores_all_ui_descendants_without_resize() {
     let _ = runtime.with_node_mut::<UiPanel, _, _>(parent, |panel| {
         panel.visible = true;
     });
+    runtime.extract_render_ui_commands();
+
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertButton { node: n, .. }) if *n == button
+    )));
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertLabel { node: n, .. }) if *n == label
+    )));
+}
+
+#[test]
+fn initially_hidden_parent_show_extracts_button_label_descendant() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut parent = UiPanel::new();
+    parent.layout.size = UiVector2::pixels(260.0, 120.0);
+    parent.visible = false;
+    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent));
+    let button = insert_button(&mut runtime, [120.0, 40.0]);
+    let mut label = perro_ui::UiLabel::new();
+    label.layout.size = UiVector2::pixels(120.0, 30.0);
+    label.text = "Play".into();
+    let label = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
+    attach_child(&mut runtime, parent, button);
+    attach_child(&mut runtime, button, label);
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    let _ = runtime.with_node_mut::<UiPanel, _, _>(parent, |panel| {
+        panel.visible = true;
+    });
+    runtime.extract_render_ui_commands();
+
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertButton { node: n, .. }) if *n == button
+    )));
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertLabel { node: n, .. }) if *n == label
+    )));
+}
+
+#[test]
+fn force_rerender_marks_ui_subtree_after_raw_visibility_change() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let parent = insert_panel(&mut runtime, [260.0, 120.0], Color::new(0.2, 0.2, 0.2, 1.0));
+    let button = insert_button(&mut runtime, [120.0, 40.0]);
+    let mut label = perro_ui::UiLabel::new();
+    label.layout.size = UiVector2::pixels(120.0, 30.0);
+    label.text = "Play".into();
+    let label = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
+    attach_child(&mut runtime, parent, button);
+    attach_child(&mut runtime, button, label);
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    set_panel_visible(&mut runtime, parent, false);
+    runtime.force_rerender(parent);
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    set_panel_visible(&mut runtime, parent, true);
+    runtime.force_rerender(parent);
     runtime.extract_render_ui_commands();
 
     let mut commands = Vec::new();
