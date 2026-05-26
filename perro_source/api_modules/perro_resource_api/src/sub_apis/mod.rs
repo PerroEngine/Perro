@@ -3,6 +3,7 @@ mod animation_tree;
 mod audio;
 mod csv_table;
 mod draw_2d;
+mod gltf;
 mod localization;
 mod material;
 mod mesh;
@@ -22,6 +23,7 @@ pub use audio::{
 };
 pub use csv_table::{CsvAPI, CsvModule};
 pub use draw_2d::{Draw2DAPI, Draw2DModule};
+pub use gltf::{GlbModule, GltfAPI, GltfInfo};
 pub use localization::{Locale, LocalizationAPI, LocalizationModule};
 pub use material::{MaterialAPI, MaterialModule, MaterialReserveArg};
 pub use mesh::{MeshAPI, MeshModule, MeshReserveArg};

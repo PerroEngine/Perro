@@ -1,9 +1,10 @@
 use crate::ResPathSource;
 use crate::sub_apis::{
     AnimationAPI, AnimationModule, AnimationTreeAPI, AnimationTreeModule, AudioAPI, AudioModule,
-    CsvAPI, CsvModule, Draw2DAPI, Draw2DModule, Locale, LocalizationAPI, LocalizationModule,
-    MaterialAPI, MaterialModule, MeshAPI, MeshModule, PostProcessingAPI, SceneDocAPI,
-    SceneDocModule, SkeletonAPI, SkeletonModule, TextureAPI, TextureModule, VisualAccessibilityAPI,
+    CsvAPI, CsvModule, Draw2DAPI, Draw2DModule, GlbModule, GltfAPI, Locale, LocalizationAPI,
+    LocalizationModule, MaterialAPI, MaterialModule, MeshAPI, MeshModule, PostProcessingAPI,
+    SceneDocAPI, SceneDocModule, SkeletonAPI, SkeletonModule, TextureAPI, TextureModule,
+    VisualAccessibilityAPI,
 };
 use perro_scene::{SceneDoc, SceneWrite};
 use perro_structs::{ColorBlindFilter, PostProcessEffect, PostProcessSet, Vector2};
@@ -16,6 +17,7 @@ pub trait ResourceAPI:
     + TextureAPI
     + MeshAPI
     + MaterialAPI
+    + GltfAPI
     + SkeletonAPI
     + AnimationAPI
     + AnimationTreeAPI
@@ -35,6 +37,7 @@ impl<T> ResourceAPI for T where
         + TextureAPI
         + MeshAPI
         + MaterialAPI
+        + GltfAPI
         + SkeletonAPI
         + AnimationAPI
         + AnimationTreeAPI
@@ -85,6 +88,11 @@ impl<'res, R: ResourceAPI + ?Sized> ResourceWindow<'res, R> {
     #[inline]
     pub fn Materials(&self) -> MaterialModule<'_, R> {
         MaterialModule::new(self.api)
+    }
+
+    #[inline]
+    pub fn Glbs(&self) -> GlbModule<'_, R> {
+        GlbModule::new(self.api)
     }
 
     #[inline]

@@ -4,6 +4,7 @@ mod audio;
 mod core;
 mod csv_table;
 mod draw_2d;
+mod gltf;
 mod localization;
 mod material;
 mod mesh;

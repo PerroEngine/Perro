@@ -171,7 +171,9 @@ impl Runtime {
         }
         if matches!(
             event,
-            RenderEvent::MeshCreated { .. } | RenderEvent::MaterialCreated { .. }
+            RenderEvent::MeshCreated { .. }
+                | RenderEvent::MaterialCreated { .. }
+                | RenderEvent::MaterialLoaded { .. }
         ) {
             self.request_full_3d_scan_once();
         }

@@ -22,6 +22,7 @@ For lifetime rules, auto load, auto drop, and ref-count behavior, see [Resource 
 | Audio | [audio](resource_modules/audio.md) | `ctx.res.Audio()` |
 | Csv | [csv](resource_modules/csv.md) | `ctx.res.Csv()` |
 | Draw 2D | [draw_2d](resource_modules/draw_2d.md) | `ctx.res.Draw2D()` |
+| GLBs | [glbs](resource_modules/glbs.md) | `ctx.res.Glbs()` |
 | Localization | [localization](resource_modules/localization.md) | `ctx.res.Localization()` |
 | Materials | [materials](resource_modules/materials.md) | `ctx.res.Materials()` |
 | Meshes | [meshes](resource_modules/meshes.md) | `ctx.res.Meshes()` |
