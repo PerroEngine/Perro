@@ -467,6 +467,11 @@ impl Gpu3D {
         self.staged_blend_shape_instance_meta.clear();
         self.staged_blend_shape_instance_meta.reserve(draws.len());
         self.staged_skeletons.clear();
+        self.staged_custom_params_meta.clear();
+        self.staged_custom_params_values.clear();
+        self.staged_custom_params_dedupe.clear();
+        self.custom_params_meta_uploaded = 0;
+        self.custom_params_values_uploaded = 0;
         self.staged_custom_params_meta_scratch.clear();
         self.staged_custom_params_values_scratch.clear();
         self.staged_custom_params_key_scratch.clear();
