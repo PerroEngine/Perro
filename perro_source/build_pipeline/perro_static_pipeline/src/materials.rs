@@ -327,13 +327,6 @@ impl From<&MaterialLiteral> for MaterialKey {
     }
 }
 
-fn material_from_runtime_value(value: &SceneValue) -> Option<MaterialLiteral> {
-    let SceneValue::Object(entries) = value else {
-        return None;
-    };
-    material_from_runtime_entries(entries.as_ref())
-}
-
 fn material_from_runtime_entries(entries: &[SceneObjectField]) -> Option<MaterialLiteral> {
     let mut any = false;
     let kind = material_type_from_first_runtime(entries);
@@ -367,17 +360,35 @@ fn material_from_runtime_entries(entries: &[SceneObjectField]) -> Option<Materia
 
 fn load_pmat_literal(source: &str) -> Option<MaterialLiteral> {
     if pmat_looks_like_object(source) {
-        if let Some(parsed) =
-            std::panic::catch_unwind(|| Parser::new(source).parse_value_literal()).ok()
-            && let Some(material) = material_from_runtime_value(&parsed)
+        if let Some(entries) = parse_pmat_object(source)
+            && let Some(material) = material_from_runtime_entries(entries.as_ref())
         {
             return Some(material);
         }
         return None;
     }
 
+    if let Some(entries) = parse_pmat_top_level_object(source)
+        && let Some(material) = material_from_runtime_entries(entries.as_ref())
+    {
+        return Some(material);
+    }
+
     let entries = parse_pmat_key_values(source)?;
     material_from_runtime_entries(&entries)
+}
+
+fn parse_pmat_object(text: &str) -> Option<Vec<SceneObjectField>> {
+    let value = std::panic::catch_unwind(|| Parser::new(text).parse_value_literal()).ok()?;
+    match value {
+        SceneValue::Object(entries) => Some(entries.into_owned()),
+        _ => None,
+    }
+}
+
+fn parse_pmat_top_level_object(text: &str) -> Option<Vec<SceneObjectField>> {
+    let wrapped = format!("{{\n{text}\n}}");
+    parse_pmat_object(&wrapped)
 }
 
 fn parse_pmat_key_values(text: &str) -> Option<Vec<SceneObjectField>> {
@@ -1199,9 +1210,12 @@ fn materials_from_gltf_file(
 
 #[cfg(test)]
 mod tests {
-    use super::{CustomMaterialLiteral, MaterialLiteral, material_literal_to_code};
+    use super::{
+        CustomMaterialLiteral, MaterialLiteral, load_pmat_literal, material_literal_to_code,
+    };
     use perro_render_bridge::{
-        CustomMaterialLighting3D, StandardMaterial3D, ToonMaterial3D, UnlitMaterial3D,
+        CustomMaterialLighting3D, CustomMaterialParamValue3D, StandardMaterial3D, ToonMaterial3D,
+        UnlitMaterial3D,
     };
 
     #[test]
@@ -1254,5 +1268,36 @@ mod tests {
             lighting: CustomMaterialLighting3D::Raw,
         }));
         assert!(code.contains("lighting: CustomMaterialLighting3D::Raw"));
+    }
+
+    #[test]
+    fn pmat_literal_accepts_unbraced_multiline_custom_params() {
+        let material = load_pmat_literal(
+            r#"
+type = "custom"
+shader_path = "res://shaders/rune_crystal.wgsl"
+lighting = "raw"
+params = {
+    tint = (1.0, 0.24, 0.18, 1.0)
+    glow = 0.9
+}
+"#,
+        )
+        .expect("material parses");
+
+        let MaterialLiteral::Custom(custom) = material else {
+            panic!("expected custom material");
+        };
+
+        assert_eq!(custom.shader_path, "res://shaders/rune_crystal.wgsl");
+        assert_eq!(custom.lighting, CustomMaterialLighting3D::Raw);
+        assert_eq!(custom.params.len(), 2);
+        assert_eq!(custom.params[0].name.as_deref(), Some("tint"));
+        assert_eq!(
+            custom.params[0].value,
+            CustomMaterialParamValue3D::Vec4([1.0, 0.24, 0.18, 1.0])
+        );
+        assert_eq!(custom.params[1].name.as_deref(), Some("glow"));
+        assert_eq!(custom.params[1].value, CustomMaterialParamValue3D::F32(0.9));
     }
 }

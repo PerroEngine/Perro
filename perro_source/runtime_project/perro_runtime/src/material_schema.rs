@@ -30,14 +30,18 @@ fn load_pmat(source: &str) -> Option<Material3D> {
     let bytes = load_asset(source).ok()?;
     let text = std::str::from_utf8(&bytes).ok()?;
     if pmat_looks_like_object(text) {
-        if let Some(value) =
-            std::panic::catch_unwind(|| Parser::new(text).parse_value_literal()).ok()
-            && let SceneValue::Object(entries) = value
+        if let Some(entries) = parse_pmat_object(text)
             && let Some(material) = from_object(entries.as_ref())
         {
             return Some(material);
         }
         return None;
+    }
+
+    if let Some(entries) = parse_pmat_top_level_object(text)
+        && let Some(material) = from_object(entries.as_ref())
+    {
+        return Some(material);
     }
 
     let entries = parse_pmat_key_values(text)?;
@@ -137,6 +141,19 @@ fn pmat_looks_like_object(text: &str) -> bool {
         .map(str::trim)
         .find(|line| !line.is_empty())
         .is_some_and(|line| line.starts_with('{'))
+}
+
+fn parse_pmat_object(text: &str) -> Option<Vec<SceneObjectField>> {
+    let value = std::panic::catch_unwind(|| Parser::new(text).parse_value_literal()).ok()?;
+    match value {
+        SceneValue::Object(entries) => Some(entries.into_owned()),
+        _ => None,
+    }
+}
+
+fn parse_pmat_top_level_object(text: &str) -> Option<Vec<SceneObjectField>> {
+    let wrapped = format!("{{\n{text}\n}}");
+    parse_pmat_object(&wrapped)
 }
 
 fn parse_pmat_key_values(text: &str) -> Option<Vec<SceneObjectField>> {
@@ -684,5 +701,40 @@ mod tests {
             panic!("expected custom material");
         };
         assert_eq!(custom.lighting, CustomMaterialLighting3D::Raw);
+    }
+
+    #[test]
+    fn pmat_accepts_unbraced_multiline_custom_params() {
+        let entries = parse_pmat_top_level_object(
+            r#"
+type = "custom"
+shader_path = "res://shaders/rune_crystal.wgsl"
+lighting = "raw"
+params = {
+    tint = (1.0, 0.24, 0.18, 1.0)
+    glow = 0.9
+}
+"#,
+        )
+        .expect("pmat entries parse");
+
+        let material = from_object(entries.as_ref()).expect("material parses");
+        let Material3D::Custom(custom) = material else {
+            panic!("expected custom material");
+        };
+
+        assert_eq!(
+            custom.shader_path.as_ref(),
+            "res://shaders/rune_crystal.wgsl"
+        );
+        assert_eq!(custom.lighting, CustomMaterialLighting3D::Raw);
+        assert_eq!(custom.params.len(), 2);
+        assert_eq!(custom.params[0].name.as_deref(), Some("tint"));
+        assert_eq!(
+            custom.params[0].value,
+            CustomMaterialParamValue3D::Vec4([1.0, 0.24, 0.18, 1.0])
+        );
+        assert_eq!(custom.params[1].name.as_deref(), Some("glow"));
+        assert_eq!(custom.params[1].value, CustomMaterialParamValue3D::F32(0.9));
     }
 }
