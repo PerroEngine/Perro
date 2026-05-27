@@ -92,6 +92,23 @@ impl UVector3 {
         )
     }
 
+    /// Returns a wrapping-negated copy.
+    #[inline]
+    pub fn negated(self) -> Self {
+        Self::new(
+            self.x.wrapping_neg(),
+            self.y.wrapping_neg(),
+            self.z.wrapping_neg(),
+        )
+    }
+
+    /// Wrapping-negates this vector in place.
+    #[inline]
+    pub fn negate(&mut self) -> &mut Self {
+        *self = self.negated();
+        self
+    }
+
     /// Returns a copy stepped toward `to` by at most `step` per component.
     #[inline]
     pub fn stepped(self, to: Self, step: u32) -> Self {
@@ -344,6 +361,17 @@ mod tests {
             v.clamp(UVector3::new(3, 1, 2), UVector3::new(5, 2, 6)),
             UVector3::new(3, 2, 4)
         );
+    }
+
+    #[test]
+    fn uvector3_negate_matches_negated() {
+        let mut v = UVector3::new(3, 0, 5);
+        assert_eq!(v.negated(), UVector3::new(u32::MAX - 2, 0, u32::MAX - 4));
+        assert_eq!(
+            v.negate(),
+            &mut UVector3::new(u32::MAX - 2, 0, u32::MAX - 4)
+        );
+        assert_eq!(v, UVector3::new(u32::MAX - 2, 0, u32::MAX - 4));
     }
 
     #[test]

@@ -42,6 +42,7 @@ Build and run:
 
 ```powershell
 perro check [--path <project_dir>]
+perro test [--path <project_dir>] [-- <cargo_test_args>]
 perro dev [--path <project_dir>] [--target native|web] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]
 perro build [--path <project_dir>] [--target native|web] [--profile] [--console]
 perro dlc --name <dlc_name> [--path <project_dir>]
@@ -63,6 +64,7 @@ Health and maintenance:
 
 ```powershell
 perro doctor [--path <project_dir>]
+perro test [--path <project_dir>] [-- <cargo_test_args>]
 perro format [--path <project_dir>]
 perro clippy [--path <project_dir>]
 perro clean [--path <project_dir>]
@@ -103,6 +105,7 @@ Use these commands for normal compile, run, export, and DLC package workflows.
 | Command | Main job | Output |
 | --- | --- | --- |
 | `check` | Compile project scripts only. | `.perro/scripts` build output |
+| `test` | Sync project scripts and run their Rust tests. | `cargo test` result |
 | `dev` | Compile scripts, build dev runner, run project. | running dev app |
 | `build` | Compile scripts, bake static assets, build release project. | `.output/` executable + packed assets |
 | `dlc` | Build one runtime-loadable DLC package. | `.output/dlc/<name>.dlc` |
@@ -123,6 +126,35 @@ What it does:
 4. Builds the scripts crate at `<project_dir>/.perro/scripts`.
 
 Use this when you only need script compilation/update.
+
+### `test`
+
+Command:
+
+```powershell
+perro test --path <project_dir> [-- <cargo_test_args>]
+```
+
+What it does:
+
+1. Syncs every `*.rs` file from `<project_dir>/res/**` into `<project_dir>/.perro/scripts/src` as generated `*.gen.rs`.
+2. Regenerates module exports and the runtime scripts registry in `.perro/scripts/src/lib.rs`.
+3. Refreshes source overrides in `.perro/scripts/Cargo.toml`.
+4. Runs `cargo test` from `<project_dir>/.perro/scripts`.
+5. Sets `CARGO_TARGET_DIR=<project_dir>/target` so script tests share the project build cache.
+6. Enables the generated scripts crate `steamworks` feature when project Steam support is enabled.
+
+Flags:
+
+- `-- <cargo_test_args>`: forwards remaining args to `cargo test`.
+
+Examples:
+
+```powershell
+perro test --path D:\GameProjects\MyGame
+perro test --path D:\GameProjects\MyGame -- --lib -- --nocapture
+perro test --path D:\GameProjects\MyGame -- player_state_tests
+```
 
 ### `dev`
 
@@ -461,7 +493,7 @@ perro import_anim res/models/hero.glb --output res/animations/run.panim --clip 1
 
 ## Health And Maintenance
 
-Use these commands to check references, format user scripts, lint user scripts, and remove build output.
+Use these commands to check references, run user script tests, format user scripts, lint user scripts, and remove build output.
 
 ### `doctor`
 

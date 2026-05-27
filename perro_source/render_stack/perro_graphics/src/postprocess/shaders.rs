@@ -21,6 +21,14 @@ const EFFECT_COLOR_GRADE_WGSL: &str =
 const EFFECT_LUT_WGSL: &str = perro_macros::include_str_stripped!("shaders/effects/lut.wgsl");
 
 pub fn create_builtin_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule {
+    let wgsl = build_builtin_post_shader();
+    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("perro_post_builtin"),
+        source: wgpu::ShaderSource::Wgsl(wgsl.into()),
+    })
+}
+
+fn build_builtin_post_shader() -> String {
     let mut wgsl = String::new();
     wgsl.push_str(PRELUDE_WGSL);
     wgsl.push_str(EFFECT_BLUR_WGSL);
@@ -36,10 +44,7 @@ pub fn create_builtin_shader_module(device: &wgpu::Device) -> wgpu::ShaderModule
     wgsl.push_str(EFFECT_COLOR_GRADE_WGSL);
     wgsl.push_str(EFFECT_LUT_WGSL);
     wgsl.push_str(BUILTIN_POST_BODY_WGSL);
-    device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("perro_post_builtin"),
-        source: wgpu::ShaderSource::Wgsl(wgsl.into()),
-    })
+    wgsl
 }
 
 pub fn build_post_shader(custom_wgsl: &str) -> String {
@@ -120,3 +125,14 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
 }
 
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builtin_post_wgsl_parses() {
+        let wgsl = build_builtin_post_shader();
+        naga::front::wgsl::parse_str(&wgsl).expect("builtin post wgsl parses");
+    }
+}

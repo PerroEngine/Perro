@@ -142,6 +142,19 @@ impl Quaternion {
         self.to_quat().dot(rhs.to_quat())
     }
 
+    /// Returns a negated copy.
+    #[inline]
+    pub fn negated(self) -> Self {
+        -self
+    }
+
+    /// Negates this quaternion in place.
+    #[inline]
+    pub fn negate(&mut self) -> &mut Self {
+        *self = self.negated();
+        self
+    }
+
     /// Rotates a `Vector3` by this quaternion.
     ///
     /// # Example
@@ -488,5 +501,18 @@ impl Neg for Quaternion {
     #[inline]
     fn neg(self) -> Self::Output {
         Self::new(-self.x, -self.y, -self.z, -self.w)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn quaternion_negate_matches_negated() {
+        let mut q = Quaternion::new(1.0, -2.0, 3.0, -4.0);
+        assert_eq!(q.negated(), Quaternion::new(-1.0, 2.0, -3.0, 4.0));
+        assert_eq!(q.negate(), &mut Quaternion::new(-1.0, 2.0, -3.0, 4.0));
+        assert_eq!(q, Quaternion::new(-1.0, 2.0, -3.0, 4.0));
     }
 }

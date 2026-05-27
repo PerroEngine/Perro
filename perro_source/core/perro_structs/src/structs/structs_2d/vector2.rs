@@ -158,6 +158,19 @@ impl Vector2 {
         Self::new(self.x.clamp(min.x, max.x), self.y.clamp(min.y, max.y))
     }
 
+    /// Returns a negated copy.
+    #[inline]
+    pub fn negated(self) -> Self {
+        -self
+    }
+
+    /// Negates this vector in place.
+    #[inline]
+    pub fn negate(&mut self) -> &mut Self {
+        *self = self.negated();
+        self
+    }
+
     /// 2D cross product (signed Z magnitude).
     #[inline]
     pub fn cross(self, rhs: Self) -> f32 {
@@ -497,6 +510,14 @@ mod tests {
         let s = std::f32::consts::FRAC_1_SQRT_2;
         assert!((v.x - s).abs() < 1e-5);
         assert!((v.y - s).abs() < 1e-5);
+    }
+
+    #[test]
+    fn vector2_negate_matches_negated() {
+        let mut v = Vector2::new(2.0, -3.0);
+        assert_eq!(v.negated(), Vector2::new(-2.0, 3.0));
+        assert_eq!(v.negate(), &mut Vector2::new(-2.0, 3.0));
+        assert_eq!(v, Vector2::new(-2.0, 3.0));
     }
 
     #[test]

@@ -8,6 +8,7 @@ mod install;
 mod profiling;
 mod project;
 mod scaffold;
+mod script_tests;
 mod vscode;
 
 use bench::bench_command;
@@ -23,6 +24,7 @@ use scaffold::{
     new_animation_command, new_command, new_dlc_command, new_panimtree_command, new_scene_command,
     new_script_command,
 };
+use script_tests::test_command;
 
 const DEFAULT_PROJECT_NAME: &str = "Perro Project";
 const COLOR_RESET: &str = "\x1b[0m";
@@ -66,6 +68,7 @@ fn main() {
             "clean" => clean_command(&args, &cwd),
             "install" => install_command(&args),
             "check" => scripts_command(&args, &cwd),
+            "test" => test_command(&args, &cwd),
             "build" => project_command(&args, &cwd),
             "dlc" => dlc_command(&args, &cwd),
             "dev" => dev_command(&args, &cwd),
@@ -92,6 +95,9 @@ fn print_usage() {
     eprintln!("Usage:");
     eprintln!(
         "  perro_cli check [--path <project_dir>]    # scripts-only compile (.perro/scripts)"
+    );
+    eprintln!(
+        "  perro_cli test [--path <project_dir>] [-- <cargo_test_args>]    # sync scripts + run cargo test for .perro/scripts"
     );
     eprintln!(
         "  perro_cli build [--path <project_dir>] [--target native|web|android] [--profile] [--console]    # full static project bundle + build"

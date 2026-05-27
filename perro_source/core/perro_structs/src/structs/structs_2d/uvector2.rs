@@ -83,6 +83,19 @@ impl UVector2 {
         Self::new(self.x.clamp(min.x, max.x), self.y.clamp(min.y, max.y))
     }
 
+    /// Returns a wrapping-negated copy.
+    #[inline]
+    pub fn negated(self) -> Self {
+        Self::new(self.x.wrapping_neg(), self.y.wrapping_neg())
+    }
+
+    /// Wrapping-negates this vector in place.
+    #[inline]
+    pub fn negate(&mut self) -> &mut Self {
+        *self = self.negated();
+        self
+    }
+
     /// Returns a copy stepped toward `to` by at most `step` per component.
     #[inline]
     pub fn stepped(self, to: Self, step: u32) -> Self {
@@ -321,6 +334,14 @@ mod tests {
             v.clamp(UVector2::new(4, 1), UVector2::new(6, 3)),
             UVector2::new(4, 3)
         );
+    }
+
+    #[test]
+    fn uvector2_negate_matches_negated() {
+        let mut v = UVector2::new(3, 0);
+        assert_eq!(v.negated(), UVector2::new(u32::MAX - 2, 0));
+        assert_eq!(v.negate(), &mut UVector2::new(u32::MAX - 2, 0));
+        assert_eq!(v, UVector2::new(u32::MAX - 2, 0));
     }
 
     #[test]

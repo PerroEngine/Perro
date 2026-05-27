@@ -86,6 +86,19 @@ impl IVector2 {
         Self::new(self.x.clamp(min.x, max.x), self.y.clamp(min.y, max.y))
     }
 
+    /// Returns a negated copy.
+    #[inline]
+    pub fn negated(self) -> Self {
+        Self::new(self.x.saturating_neg(), self.y.saturating_neg())
+    }
+
+    /// Negates this vector in place.
+    #[inline]
+    pub fn negate(&mut self) -> &mut Self {
+        *self = self.negated();
+        self
+    }
+
     /// Component-wise absolute value, saturating `i32::MIN` to `i32::MAX`.
     #[inline]
     pub fn abs(self) -> Self {
@@ -344,6 +357,18 @@ mod tests {
         );
         assert_eq!(v.abs(), IVector2::new(3, 4));
         assert_eq!(v.signum(), IVector2::new(-1, 1));
+    }
+
+    #[test]
+    fn ivector2_negate_matches_negated() {
+        let mut v = IVector2::new(3, -4);
+        assert_eq!(v.negated(), IVector2::new(-3, 4));
+        assert_eq!(v.negate(), &mut IVector2::new(-3, 4));
+        assert_eq!(v, IVector2::new(-3, 4));
+        assert_eq!(
+            IVector2::new(i32::MIN, 1).negated(),
+            IVector2::new(i32::MAX, -1)
+        );
     }
 
     #[test]

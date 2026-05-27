@@ -193,6 +193,19 @@ impl Vector3 {
         )
     }
 
+    /// Returns a negated copy.
+    #[inline]
+    pub fn negated(self) -> Self {
+        -self
+    }
+
+    /// Negates this vector in place.
+    #[inline]
+    pub fn negate(&mut self) -> &mut Self {
+        *self = self.negated();
+        self
+    }
+
     /// Cross product returns a vector perpendicular to both inputs
     #[inline]
     pub fn cross(self, rhs: Self) -> Self {
@@ -568,6 +581,14 @@ mod tests {
         assert!((v.x - s).abs() < 1e-5);
         assert!((v.y - s).abs() < 1e-5);
         assert!(v.z.abs() < 1e-5);
+    }
+
+    #[test]
+    fn vector3_negate_matches_negated() {
+        let mut v = Vector3::new(2.0, -3.0, 4.0);
+        assert_eq!(v.negated(), Vector3::new(-2.0, 3.0, -4.0));
+        assert_eq!(v.negate(), &mut Vector3::new(-2.0, 3.0, -4.0));
+        assert_eq!(v, Vector3::new(-2.0, 3.0, -4.0));
     }
 
     #[test]
