@@ -40,6 +40,7 @@ pub struct AnimationTreeInternalData {
     pub last_pose_hash: u64,
     pub slots: Vec<AnimationTreeSlotPlayback>,
     pub weights: Vec<AnimationTreeRuntimeWeight>,
+    pub applied_transforms: Vec<super::animation_player::AppliedAnimationTransform>,
 }
 
 #[derive(Clone, Debug, Default)]

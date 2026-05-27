@@ -51,7 +51,14 @@ pub fn internal_update<RT, R, IP>(
     let pose = with_node!(ctx, SelfNodeType, id, |tree| eval_tree_pose(
         tree, res, &asset
     ));
-    apply_pose(ctx, res, &pose);
+    let mut applied_transforms = with_node_mut!(ctx, SelfNodeType, id, |tree| {
+        std::mem::take(&mut tree.internal.applied_transforms)
+    })
+    .unwrap_or_default();
+    apply_pose(ctx, res, &pose, &mut applied_transforms);
+    let _ = with_node_mut!(ctx, SelfNodeType, id, |tree| {
+        tree.internal.applied_transforms = applied_transforms;
+    });
     fire_slot_events(ctx, res, id);
 }
 
@@ -363,8 +370,12 @@ fn invert_pose(pose: &mut Pose, mask: &AnimationTreeMask) {
     }
 }
 
-fn apply_pose<RT, R>(ctx: &mut RuntimeWindow<'_, RT>, res: &ResourceWindow<'_, R>, pose: &Pose)
-where
+fn apply_pose<RT, R>(
+    ctx: &mut RuntimeWindow<'_, RT>,
+    res: &ResourceWindow<'_, R>,
+    pose: &Pose,
+    applied_transforms: &mut Vec<perro_nodes::animation_player::AppliedAnimationTransform>,
+) where
     RT: RuntimeAPI + ?Sized,
     R: ResourceAPI + ?Sized,
 {
@@ -386,7 +397,14 @@ where
             ease: perro_animation::AnimationEase::Linear,
             keys: Cow::Owned(vec![key]),
         };
-        super::animation_player::apply_track(ctx, res, track.node, &anim_track, 0);
+        super::animation_player::apply_track(
+            ctx,
+            res,
+            track.node,
+            &anim_track,
+            0,
+            applied_transforms,
+        );
     }
 }
 

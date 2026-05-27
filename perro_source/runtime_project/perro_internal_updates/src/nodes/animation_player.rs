@@ -5,7 +5,10 @@ use perro_animation::{
     AnimationEventScope, AnimationInterpolation, AnimationObjectTrack, AnimationParam,
     AnimationTrackValue,
 };
-use perro_nodes::animation_player::{AnimationObjectBinding, AnimationPlaybackType};
+use perro_nodes::animation_player::{
+    AnimationObjectBinding, AnimationPlaybackType, AppliedAnimationTransform,
+    AppliedAnimationTransformKind,
+};
 use perro_nodes::{
     AmbientLight3D, AnimationPlayer, Camera3D, MeshInstance3D, Node2D, Node3D, PointLight3D,
     RayLight3D, Skeleton2D, Skeleton3D, SpotLight3D, Sprite2D,
@@ -62,7 +65,21 @@ pub fn internal_update<RT, R, IP>(
         return;
     }
 
-    apply_clip_frame(ctx, res, &clip, step.frame, &step.bindings);
+    let mut applied_transforms = with_node_mut!(ctx, SelfNodeType, id, |player| {
+        std::mem::take(&mut player.internal.applied_transforms)
+    })
+    .unwrap_or_default();
+    apply_clip_frame(
+        ctx,
+        res,
+        &clip,
+        step.frame,
+        &step.bindings,
+        &mut applied_transforms,
+    );
+    let _ = with_node_mut!(ctx, SelfNodeType, id, |player| {
+        player.internal.applied_transforms = applied_transforms;
+    });
 }
 
 pub fn internal_fixed_update<RT, R, IP>(
@@ -147,6 +164,7 @@ fn apply_clip_frame<RT>(
     clip: &Arc<perro_animation::AnimationClip>,
     frame: u32,
     bindings: &[AnimationObjectBinding],
+    applied_transforms: &mut Vec<AppliedAnimationTransform>,
 ) where
     RT: RuntimeAPI + ?Sized,
 {
@@ -155,7 +173,7 @@ fn apply_clip_frame<RT>(
             .iter()
             .filter(|b| b.object.as_ref() == track.object.as_ref())
         {
-            apply_track(ctx, res, binding.node, track, frame);
+            apply_track(ctx, res, binding.node, track, frame, applied_transforms);
         }
     }
 
@@ -494,6 +512,7 @@ pub(super) fn apply_track<RT>(
     node_id: NodeID,
     track: &AnimationObjectTrack,
     frame: u32,
+    applied_transforms: &mut Vec<AppliedAnimationTransform>,
 ) where
     RT: RuntimeAPI + ?Sized,
 {
@@ -512,7 +531,14 @@ pub(super) fn apply_track<RT>(
         | NodeField::Node2D(Node2DField::Scale) => {
             if let AnimationTrackValue::Transform2D(value) = value {
                 let _ = with_base_node_mut!(ctx, Node2D, node_id, |node| {
-                    node.transform = value;
+                    let previous = previous_transform_2d(applied_transforms, node_id);
+                    node.transform = apply_transform_offset_2d(
+                        node.transform,
+                        previous,
+                        value,
+                        track.transform2d_mask,
+                    );
+                    save_transform_2d(applied_transforms, node_id, value);
                 });
             }
         }
@@ -535,7 +561,14 @@ pub(super) fn apply_track<RT>(
         | NodeField::Node3D(Node3DField::Scale) => {
             if let AnimationTrackValue::Transform3D(value) = value {
                 let _ = with_base_node_mut!(ctx, Node3D, node_id, |node| {
-                    node.transform = value;
+                    let previous = previous_transform_3d(applied_transforms, node_id);
+                    node.transform = apply_transform_offset_3d(
+                        node.transform,
+                        previous,
+                        value,
+                        track.transform3d_mask,
+                    );
+                    save_transform_3d(applied_transforms, node_id, value);
                 });
             }
         }
@@ -761,6 +794,123 @@ pub(super) fn apply_track<RT>(
             }
         }
         _ => {}
+    }
+}
+
+fn previous_transform_2d(
+    applied_transforms: &[AppliedAnimationTransform],
+    node_id: NodeID,
+) -> Transform2D {
+    applied_transforms
+        .iter()
+        .find(|entry| entry.node == node_id && entry.kind == AppliedAnimationTransformKind::Node2D)
+        .map(|entry| entry.transform_2d)
+        .unwrap_or(Transform2D::IDENTITY)
+}
+
+fn previous_transform_3d(
+    applied_transforms: &[AppliedAnimationTransform],
+    node_id: NodeID,
+) -> Transform3D {
+    applied_transforms
+        .iter()
+        .find(|entry| entry.node == node_id && entry.kind == AppliedAnimationTransformKind::Node3D)
+        .map(|entry| entry.transform_3d)
+        .unwrap_or(Transform3D::IDENTITY)
+}
+
+fn save_transform_2d(
+    applied_transforms: &mut Vec<AppliedAnimationTransform>,
+    node_id: NodeID,
+    transform: Transform2D,
+) {
+    if let Some(entry) = applied_transforms
+        .iter_mut()
+        .find(|entry| entry.node == node_id && entry.kind == AppliedAnimationTransformKind::Node2D)
+    {
+        entry.transform_2d = transform;
+    } else {
+        applied_transforms.push(AppliedAnimationTransform {
+            node: node_id,
+            kind: AppliedAnimationTransformKind::Node2D,
+            transform_2d: transform,
+            transform_3d: Transform3D::IDENTITY,
+        });
+    }
+}
+
+fn save_transform_3d(
+    applied_transforms: &mut Vec<AppliedAnimationTransform>,
+    node_id: NodeID,
+    transform: Transform3D,
+) {
+    if let Some(entry) = applied_transforms
+        .iter_mut()
+        .find(|entry| entry.node == node_id && entry.kind == AppliedAnimationTransformKind::Node3D)
+    {
+        entry.transform_3d = transform;
+    } else {
+        applied_transforms.push(AppliedAnimationTransform {
+            node: node_id,
+            kind: AppliedAnimationTransformKind::Node3D,
+            transform_2d: Transform2D::IDENTITY,
+            transform_3d: transform,
+        });
+    }
+}
+
+fn apply_transform_offset_2d(
+    current: Transform2D,
+    previous: Transform2D,
+    next: Transform2D,
+    authored_mask: u8,
+) -> Transform2D {
+    let mut out = current;
+    if authored_mask & ANIMATION_TRANSFORM_MASK_POSITION != 0 {
+        out.position = current.position - previous.position + next.position;
+    }
+    if authored_mask & ANIMATION_TRANSFORM_MASK_ROTATION != 0 {
+        out.rotation = current.rotation - previous.rotation + next.rotation;
+    }
+    if authored_mask & ANIMATION_TRANSFORM_MASK_SCALE != 0 {
+        out.scale = Vector2::new(
+            scale_channel(current.scale.x, previous.scale.x, next.scale.x),
+            scale_channel(current.scale.y, previous.scale.y, next.scale.y),
+        );
+    }
+    out
+}
+
+fn apply_transform_offset_3d(
+    current: Transform3D,
+    previous: Transform3D,
+    next: Transform3D,
+    authored_mask: u8,
+) -> Transform3D {
+    let mut out = current;
+    if authored_mask & ANIMATION_TRANSFORM_MASK_POSITION != 0 {
+        out.position = current.position - previous.position + next.position;
+    }
+    if authored_mask & ANIMATION_TRANSFORM_MASK_ROTATION != 0 {
+        out.rotation =
+            (current.rotation * previous.rotation.inverse() * next.rotation).normalized();
+    }
+    if authored_mask & ANIMATION_TRANSFORM_MASK_SCALE != 0 {
+        out.scale = Vector3::new(
+            scale_channel(current.scale.x, previous.scale.x, next.scale.x),
+            scale_channel(current.scale.y, previous.scale.y, next.scale.y),
+            scale_channel(current.scale.z, previous.scale.z, next.scale.z),
+        );
+    }
+    out
+}
+
+#[inline]
+fn scale_channel(current: f32, previous: f32, next: f32) -> f32 {
+    if previous.abs() <= f32::EPSILON {
+        next
+    } else {
+        current / previous * next
     }
 }
 
@@ -1258,5 +1408,49 @@ mod tests {
             skeleton.bones[0].pose.rotation,
             (rest.rotation * delta).normalized()
         );
+    }
+
+    #[test]
+    fn node3d_animation_position_applies_as_local_offset() {
+        let current = Transform3D::new(
+            Vector3::new(0.0, 1.0, 0.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE,
+        );
+        let previous = Transform3D::IDENTITY;
+        let next = Transform3D::new(
+            Vector3::new(1.0, 1.0, 1.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE,
+        );
+
+        let out =
+            apply_transform_offset_3d(current, previous, next, ANIMATION_TRANSFORM_MASK_POSITION);
+
+        assert_eq!(out.position, Vector3::new(1.0, 2.0, 1.0));
+    }
+
+    #[test]
+    fn node3d_animation_position_replaces_previous_offset_not_base() {
+        let current = Transform3D::new(
+            Vector3::new(1.0, 2.0, 1.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE,
+        );
+        let previous = Transform3D::new(
+            Vector3::new(1.0, 1.0, 1.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE,
+        );
+        let next = Transform3D::new(
+            Vector3::new(2.0, 0.0, 0.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE,
+        );
+
+        let out =
+            apply_transform_offset_3d(current, previous, next, ANIMATION_TRANSFORM_MASK_POSITION);
+
+        assert_eq!(out.position, Vector3::new(2.0, 1.0, 0.0));
     }
 }

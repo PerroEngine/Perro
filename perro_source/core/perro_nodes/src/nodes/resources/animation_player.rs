@@ -1,5 +1,20 @@
 use perro_ids::AnimationID;
+use perro_structs::{Transform2D, Transform3D};
 use std::borrow::Cow;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AppliedAnimationTransformKind {
+    Node2D,
+    Node3D,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct AppliedAnimationTransform {
+    pub node: perro_ids::NodeID,
+    pub kind: AppliedAnimationTransformKind,
+    pub transform_2d: Transform2D,
+    pub transform_3d: Transform3D,
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct InternalAnimationData {
@@ -8,6 +23,7 @@ pub struct InternalAnimationData {
     pub last_binding_hash: u64,
     pub playback_frame: f32,
     pub boomerang_direction: f32,
+    pub applied_transforms: Vec<AppliedAnimationTransform>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -50,6 +66,7 @@ impl AnimationPlayer {
                 last_binding_hash: 0,
                 playback_frame: 0.0,
                 boomerang_direction: 1.0,
+                applied_transforms: Vec::new(),
             },
         }
     }
