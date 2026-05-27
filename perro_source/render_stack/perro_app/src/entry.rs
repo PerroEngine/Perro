@@ -215,14 +215,21 @@ pub fn run_dev_project_from_path(
     default_name: &str,
 ) -> Result<AppExitResult, RunProjectError> {
     let _ = perro_web::init_router();
+    eprintln!(
+        "perro dev runner: load project {}",
+        project_root.to_string_lossy()
+    );
     let project = RuntimeProject::from_project_dir_with_default_name(project_root, default_name)?;
+    eprintln!("perro dev runner: init graphics");
     let window_title = project.config.name.clone();
     let graphics = graphics_from_project_config(&project.config, false);
+    eprintln!("perro dev runner: init runtime");
     let app = create_dev_app(graphics, project);
     let fixed = app
         .runtime
         .project()
         .and_then(|p| p.config.target_fixed_update);
+    eprintln!("perro dev runner: enter event loop");
     WinitRunner::new()
         .run_with_timestep(app, &window_title, fixed)
         .map_err(RunProjectError::from)
@@ -233,11 +240,17 @@ pub fn run_threaded_dev_project_from_path(
     project_root: &Path,
     default_name: &str,
 ) -> Result<AppExitResult, RunProjectError> {
+    eprintln!(
+        "perro dev runner: load project {}",
+        project_root.to_string_lossy()
+    );
     let project = RuntimeProject::from_project_dir_with_default_name(project_root, default_name)?;
+    eprintln!("perro dev runner: init graphics");
     let window_title = project.config.name.clone();
     let fixed = project.config.target_fixed_update;
     let startup_splash = ThreadedStartupSplash::from_project(&project);
     let graphics = graphics_from_project_config(&project.config, false);
+    eprintln!("perro dev runner: enter event loop");
     ThreadedWinitRunner::new()
         .run_with_timestep_and_startup(
             graphics,

@@ -22,6 +22,7 @@ fn main() {
     let fallback_name =
         parse_flag_value(&args, "--name").unwrap_or_else(|| "Perro Project".to_string());
 
+    eprintln!("perro dev runner: start {}", root.to_string_lossy());
     let run_result = if env::var("PERRO_THREADED_RENDER").as_deref() == Ok("0") {
         entry::run_dev_project_from_path(&root, &fallback_name)
     } else {

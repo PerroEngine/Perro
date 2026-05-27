@@ -2587,14 +2587,14 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             let initial_size = window.inner_size();
             self.app
                 .resize_surface(initial_size.width, initial_size.height);
-            // Draw once before showing the window to avoid a white first-frame flash.
+            // Show before the first draw so a slow GPU/surface path cannot look like a launch hang.
+            window.set_visible(true);
             if self.startup_splash.active {
                 let splash_overlay = self.startup_splash_overlay_commands(1.0);
                 let _ = self.app.present_with_overlay_timed_no_ui(splash_overlay);
             } else {
                 self.app.present();
             }
-            window.set_visible(true);
             self.window = Some(window);
             self.set_mouse_mode(MouseMode::Visible);
             self.app
