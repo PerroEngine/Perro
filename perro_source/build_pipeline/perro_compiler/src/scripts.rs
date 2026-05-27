@@ -189,37 +189,70 @@ fn run_cargo_command_with_normalized_paths(
     project_root: &Path,
 ) -> Result<(), CompilerError> {
     let crate_dir = cmd.get_current_dir().map(Path::to_path_buf);
-    let output = cmd.output()?;
-    write_normalized_cargo_output(
-        io::stdout(),
-        project_root,
-        crate_dir.as_deref(),
-        &output.stdout,
-    )?;
-    write_normalized_cargo_output(
-        io::stderr(),
-        project_root,
-        crate_dir.as_deref(),
-        &output.stderr,
-    )?;
-    if !output.status.success() {
-        return Err(CompilerError::CargoFailed(output.status.code().unwrap_or(-1)));
+    let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+
+    let stdout_root = project_root.to_path_buf();
+    let stdout_crate_dir = crate_dir.clone();
+    let stdout_thread = thread::spawn(move || -> Result<(), CompilerError> {
+        if let Some(stream) = stdout {
+            stream_normalized_cargo_output(
+                io::stdout(),
+                &stdout_root,
+                stdout_crate_dir.as_deref(),
+                stream,
+            )?;
+        }
+        Ok(())
+    });
+
+    let stderr_root = project_root.to_path_buf();
+    let stderr_crate_dir = crate_dir;
+    let stderr_thread = thread::spawn(move || -> Result<(), CompilerError> {
+        if let Some(stream) = stderr {
+            stream_normalized_cargo_output(
+                io::stderr(),
+                &stderr_root,
+                stderr_crate_dir.as_deref(),
+                stream,
+            )?;
+        }
+        Ok(())
+    });
+
+    let status = child.wait()?;
+    stdout_thread
+        .join()
+        .map_err(|_| CompilerError::SceneParse("cargo stdout thread panic".to_string()))??;
+    stderr_thread
+        .join()
+        .map_err(|_| CompilerError::SceneParse("cargo stderr thread panic".to_string()))??;
+
+    if !status.success() {
+        return Err(CompilerError::CargoFailed(status.code().unwrap_or(-1)));
     }
     Ok(())
 }
 
-fn write_normalized_cargo_output<W: Write>(
+fn stream_normalized_cargo_output<W: Write, R: Read>(
     mut writer: W,
     project_root: &Path,
     crate_dir: Option<&Path>,
-    bytes: &[u8],
+    reader: R,
 ) -> Result<(), CompilerError> {
-    if bytes.is_empty() {
-        return Ok(());
+    let mut reader = BufReader::new(reader);
+    let mut line = String::new();
+    loop {
+        line.clear();
+        let read = reader.read_line(&mut line)?;
+        if read == 0 {
+            break;
+        }
+        let normalized = normalize_cargo_output_paths(project_root, crate_dir, &line);
+        writer.write_all(normalized.as_bytes())?;
+        writer.flush()?;
     }
-    let text = String::from_utf8_lossy(bytes);
-    let normalized = normalize_cargo_output_paths(project_root, crate_dir, &text);
-    writer.write_all(normalized.as_bytes())?;
     Ok(())
 }
 

@@ -8,9 +8,9 @@ use std::{
     env,
     fmt::{Display, Formatter},
     fs,
-    io::{self, Write},
+    io::{self, BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
     thread,
 };
 

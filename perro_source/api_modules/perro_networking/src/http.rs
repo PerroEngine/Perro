@@ -500,9 +500,12 @@ fn tls_config(mode: &HttpTLSMode) -> ureq::tls::TlsConfig {
     use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
 
     match mode {
-        HttpTLSMode::DefaultRustls => TlsConfig::builder().provider(TlsProvider::Rustls).build(),
+        HttpTLSMode::DefaultRustls => TlsConfig::builder()
+            .provider(TlsProvider::NativeTls)
+            .root_certs(RootCerts::PlatformVerifier)
+            .build(),
         HttpTLSMode::PlatformVerifier => TlsConfig::builder()
-            .provider(TlsProvider::Rustls)
+            .provider(TlsProvider::NativeTls)
             .root_certs(RootCerts::PlatformVerifier)
             .build(),
         HttpTLSMode::NativeTls => TlsConfig::builder()
