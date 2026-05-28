@@ -963,7 +963,7 @@ fn generate_set_var_match_fn(state_ty: &str, fields: &[ScriptField]) -> String {
         let ty = normalize_type(&field.ty);
         let schema_fields = variant_schema_field_names_expr(&ty);
         let assign_block = format!(
-            "if let Ok(v) = value.clone().into_parse::<{ty}>() {{\n                    state.{field_name} = v;\n                }} else {{\n                    let mut nested_root = perro_api::variant::DeriveVariant::to_variant(&state.{field_name});\n                    if __perro_apply_nested_object(\"{field_name}\", &mut nested_root, value, {schema_fields}) {{\n                        if let Ok(decoded) = nested_root.into_parse::<{ty}>() {{\n                            state.{field_name} = decoded;\n                        }}\n                    }}\n                }}",
+            "if let Ok(v) = value.clone().into_parse::<{ty}>() {{\n                    state.{field_name} = v;\n                }} else {{\n                    let mut nested_root = perro_api::variant::DeriveVariant::to_variant(&state.{field_name});\n                    if __perro_apply_nested_object(\"{field_name}\", &mut nested_root, value, {schema_fields})\n                        && let Ok(decoded) = nested_root.into_parse::<{ty}>()\n                    {{\n                        state.{field_name} = decoded;\n                    }}\n                }}",
             field_name = field.name
         );
         out.push_str(&format!(
