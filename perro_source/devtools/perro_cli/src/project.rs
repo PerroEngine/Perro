@@ -395,6 +395,8 @@ pub(crate) fn clippy_command(args: &[String], cwd: &Path) -> Result<(), String> 
         .arg("--")
         .arg("-D")
         .arg("warnings")
+        .arg("-A")
+        .arg("clippy::items-after-test-module")
         .env("CARGO_TARGET_DIR", target_dir)
         .current_dir(&scripts_crate)
         .status()
