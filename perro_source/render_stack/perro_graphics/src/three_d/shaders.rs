@@ -390,6 +390,15 @@ pub fn create_hiz_occlusion_cull_shader_module(device: &wgpu::Device) -> wgpu::S
 #[cfg(test)]
 mod tests {
     use super::*;
+    use naga::valid::{Capabilities, ValidationFlags, Validator};
+
+    fn parse_and_validate(wgsl: &str, label: &str) {
+        let module =
+            naga::front::wgsl::parse_str(wgsl).unwrap_or_else(|err| panic!("{label}: {err}"));
+        Validator::new(ValidationFlags::all(), Capabilities::empty())
+            .validate(&module)
+            .unwrap_or_else(|err| panic!("{label}: {err}"));
+    }
 
     #[test]
     fn three_d_material_wgsl_parses() {
@@ -455,6 +464,37 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
             );
             assert!(!wgsl.contains("perro_lit_standard(in, base"));
             naga::front::wgsl::parse_str(&wgsl).expect("custom lit material wgsl parses");
+        }
+    }
+
+    #[test]
+    fn custom_material_shade_vertex_wgsl_validates() {
+        let material = r#"
+fn shade_vertex(out: VertexOutput) -> VertexOutput {
+    let wobble = custom_v_param(out, 0u).x;
+    var next = out;
+    next.world_pos.y = next.world_pos.y + wobble;
+    next.clip_pos.y = next.clip_pos.y + wobble;
+    return next;
+}
+
+fn shade_material(in: FragmentInput) -> vec4<f32> {
+    let color = unpack_rgba8(in.packed_color);
+    return vec4<f32>(color.rgb, perro_material_alpha(in, color.a));
+}
+"#;
+        for prelude in [
+            regular::PRELUDE_WGSL,
+            regular::PRELUDE_RIGID_WGSL,
+            regular::PRELUDE_SKINNED_WGSL,
+        ] {
+            let wgsl = build_custom_material_shader_with_prelude(
+                prelude,
+                material,
+                perro_render_bridge::CustomMaterialLighting3D::Raw,
+            );
+            assert!(wgsl.contains("return shade_vertex(perro_vs_main_base"));
+            parse_and_validate(&wgsl, "custom shade_vertex material wgsl validates");
         }
     }
 
