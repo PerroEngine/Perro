@@ -169,6 +169,9 @@ impl Runtime {
         if let Some(node) = decode_render_request_node_from_event(&event) {
             self.mark_needs_rerender(node);
         }
+        if let RenderEvent::MaterialLoaded { id } = &event {
+            self.invalidate_3d_mesh_draws_using_material(*id);
+        }
         if matches!(
             event,
             RenderEvent::MeshCreated { .. }

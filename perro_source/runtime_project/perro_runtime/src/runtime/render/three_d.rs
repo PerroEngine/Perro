@@ -1379,6 +1379,43 @@ impl Runtime {
             })
     }
 
+    pub(crate) fn invalidate_3d_mesh_draws_using_material(&mut self, material: MaterialID) {
+        if material.is_nil() {
+            return;
+        }
+        let mut nodes = Vec::new();
+        for (node, scene_node) in self.nodes.iter() {
+            let uses_material = match &scene_node.data {
+                SceneNodeData::MeshInstance3D(mesh) => mesh
+                    .surfaces
+                    .iter()
+                    .any(|surface| surface.material == Some(material)),
+                SceneNodeData::MultiMeshInstance3D(mesh) => mesh
+                    .surfaces
+                    .iter()
+                    .any(|surface| surface.material == Some(material)),
+                _ => false,
+            };
+            if uses_material {
+                nodes.push(node);
+            }
+        }
+        for (node, draw) in self.render_3d.retained_mesh_draws.iter() {
+            if draw
+                .surfaces
+                .iter()
+                .any(|surface| surface.material == Some(material))
+                && !nodes.contains(node)
+            {
+                nodes.push(*node);
+            }
+        }
+        for node in nodes {
+            self.render_3d.retained_mesh_draws.remove(&node);
+            self.mark_needs_rerender(node);
+        }
+    }
+
     pub(crate) fn resolve_render_mesh_id(
         &mut self,
         node: NodeID,

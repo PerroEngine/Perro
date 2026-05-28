@@ -989,6 +989,44 @@ fn mesh_instance_keeps_retained_material_while_replacement_material_is_pending()
 }
 
 #[test]
+fn material_loaded_event_reemits_mesh_draw_using_material() {
+    let mut runtime = Runtime::new();
+    let mesh_id = MeshID::from_parts(61, 0);
+    let material_id = MaterialID::from_parts(62, 0);
+    let mut mesh = MeshInstance3D::new();
+    mesh.mesh = mesh_id;
+    set_primary_material(&mut mesh, material_id);
+    let node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::MeshInstance3D(mesh)));
+
+    runtime.extract_render_3d_commands();
+    let first = collect_commands(&mut runtime);
+    assert!(first.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command)
+            if matches!(command.as_ref(), Command3D::Draw { node: draw_node, .. } if *draw_node == node)
+    )));
+
+    runtime.apply_render_event(RenderEvent::MaterialLoaded { id: material_id });
+    runtime.extract_render_3d_commands();
+    let second = collect_commands(&mut runtime);
+    assert!(second.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command)
+            if matches!(
+                command.as_ref(),
+                Command3D::Draw { node: draw_node, surfaces, .. }
+                    if *draw_node == node
+                        && surfaces
+                            .first()
+                            .and_then(|surface| surface.material)
+                            .is_some_and(|material| material == material_id)
+            )
+    )));
+}
+
+#[test]
 fn animation_player_keeps_old_clip_while_replacement_clip_is_pending() {
     let mut runtime = Runtime::new();
     let target = runtime
