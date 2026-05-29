@@ -17,3 +17,7 @@ criterion = "0.5"
 [[bench]]
 name = "static_asset_load"
 harness = false
+
+[[bench]]
+name = "static_lookup_scale"
+harness = false
