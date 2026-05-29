@@ -23,7 +23,13 @@ fn main() {
         parse_flag_value(&args, "--name").unwrap_or_else(|| "Perro Project".to_string());
 
     eprintln!("perro dev runner: start {}", root.to_string_lossy());
-    match entry::run_dev_project_from_path(&root, &fallback_name) {
+    let run_result = if env::var("PERRO_THREADED_RENDER").as_deref() == Ok("0") {
+        entry::run_dev_project_from_path(&root, &fallback_name)
+    } else {
+        entry::run_threaded_dev_project_from_path(&root, &fallback_name)
+    };
+
+    match run_result {
         Ok(result) => match result.kind {
             AppExitKind::WindowClose => println!("perro exit: window close"),
             AppExitKind::EventLoopExit => println!("perro exit: event loop exit"),

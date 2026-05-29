@@ -23,6 +23,7 @@ pub struct App<B: GraphicsBackend> {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PresentTiming {
     pub gpu_present: Duration,
+    pub active: Duration,
     pub total: Duration,
     #[cfg(feature = "profile_heavy")]
     pub extract_2d: Duration,
@@ -544,7 +545,12 @@ impl<B: GraphicsBackend> App<B> {
             self.graphics.submit_many(overlay_commands);
             self.graphics.draw_frame_timed()
         };
-        let gpu_present = draw_frame_start.elapsed();
+        let draw_frame_duration = draw_frame_start.elapsed();
+        let gpu_present = draw_timing
+            .as_ref()
+            .map(|timing| timing.gpu_acquire + timing.gpu_submit_queue_main + timing.gpu_present)
+            .unwrap_or(draw_frame_duration);
+        let active = total_start.elapsed().saturating_sub(gpu_present);
         #[cfg(not(feature = "profile_heavy"))]
         let _ = &draw_timing;
         #[cfg(feature = "profile_heavy")]
@@ -566,6 +572,7 @@ impl<B: GraphicsBackend> App<B> {
 
         PresentTiming {
             gpu_present,
+            active,
             total: total_start.elapsed(),
             #[cfg(feature = "profile_heavy")]
             extract_2d,

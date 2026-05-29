@@ -77,7 +77,7 @@ fn sim_frame_cap_interval(cap: RuntimeFrameRateCap) -> Option<Duration> {
     match normalize_frame_rate_cap(cap) {
         RuntimeFrameRateCap::Unlimited => None,
         RuntimeFrameRateCap::Fps(fps) => Some(frame_interval_from_fps(fps)),
-        RuntimeFrameRateCap::RefreshRate => Some(frame_interval_from_fps(60.0)),
+        RuntimeFrameRateCap::RefreshRate => None,
     }
 }
 
@@ -149,7 +149,7 @@ struct RenderFrameTiming {
 #[derive(Clone, Copy, Debug, Default)]
 struct ThreadedPresentTiming {
     gpu_present: Duration,
-    total: Duration,
+    active: Duration,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -691,14 +691,17 @@ impl<B: GraphicsBackend> SnapshotPresenter<B> {
             self.graphics.submit_many(snapshot.commands.iter().cloned());
         }
         self.graphics.submit_many(overlay);
-        let present_start = Instant::now();
-        let _ = self.graphics.draw_frame_timed();
-        let gpu_present = present_start.elapsed();
+        let draw_timing = self.graphics.draw_frame_timed();
+        let gpu_present = draw_timing
+            .as_ref()
+            .map(|timing| timing.gpu_acquire + timing.gpu_submit_queue_main + timing.gpu_present)
+            .unwrap_or(Duration::ZERO);
+        let active = total_start.elapsed().saturating_sub(gpu_present);
         self.graphics.drain_events(&mut self.event_buffer);
         bridge.send_render_events(self.event_buffer.drain(..));
         ThreadedPresentTiming {
             gpu_present,
-            total: total_start.elapsed(),
+            active,
         }
     }
 }
@@ -917,6 +920,10 @@ impl<B: GraphicsBackend> ThreadedRunnerState<B> {
                 }
                 WindowRequest::SetFrameRateCap(cap) => {
                     self.frame_rate_cap = normalize_frame_rate_cap(cap);
+                    eprintln!(
+                        "[perro][runtime] frame_rate_cap=({:?})",
+                        self.frame_rate_cap
+                    );
                     self.next_frame_deadline = None;
                 }
             }
@@ -1081,7 +1088,7 @@ impl<B: GraphicsBackend> ThreadedRunnerState<B> {
             .map(|timing| timing.gpu_present)
             .unwrap_or(Duration::ZERO);
         let present_active_duration = present_timing
-            .map(|timing| timing.total.saturating_sub(timing.gpu_present))
+            .map(|timing| timing.active)
             .unwrap_or(Duration::ZERO);
         let work_active_duration = present_active_duration;
         let simulation_timing = self
@@ -1091,16 +1098,17 @@ impl<B: GraphicsBackend> ThreadedRunnerState<B> {
             .map(|snapshot| snapshot.timing)
             .unwrap_or_default();
         let simulation_duration = simulation_timing.simulation_time;
+        let active_frame_duration = simulation_duration.max(present_active_duration);
         let frame_end = Instant::now();
         self.last_frame_end = frame_end;
         if should_sample_timing {
             self.bridge.publish_render_timing(RenderFrameTiming {
                 graphics_time: present_active_duration,
-                frame_time: frame_delta,
-                fps: if frame_delta.is_zero() {
+                frame_time: active_frame_duration,
+                fps: if active_frame_duration.is_zero() {
                     0.0
                 } else {
-                    1.0 / frame_delta.as_secs_f32()
+                    1.0 / active_frame_duration.as_secs_f32()
                 },
                 active_refresh_rate: active_refresh_rate_hz(self.window.as_deref()),
             });
@@ -1384,6 +1392,10 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for ThreadedRunn
                 width: size.width,
                 height: size.height,
             });
+        eprintln!(
+            "[perro][runtime] active_refresh_rate=({:?})",
+            active_refresh_rate_hz(Some(window.as_ref()))
+        );
         self.window = Some(window);
     }
 
@@ -1583,6 +1595,7 @@ fn run_sim_loop(mut runtime: Runtime, bridge: SimBridge, config: SimThreadConfig
         for request in &window_requests {
             if let WindowRequest::SetFrameRateCap(cap) = request {
                 sim_frame_rate_cap = normalize_frame_rate_cap(*cap);
+                eprintln!("[perro][runtime] sim_frame_rate_cap=({sim_frame_rate_cap:?})");
             }
         }
         bridge.send_window_requests(&mut window_requests);

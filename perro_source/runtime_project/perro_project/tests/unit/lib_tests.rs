@@ -903,6 +903,55 @@ fn ensure_source_overrides_repairs_dev_runner_features() {
 }
 
 #[test]
+fn ensure_source_overrides_repairs_dev_runner_main() {
+    let root = unique_temp_dir("perro_dev_runner_main");
+    ensure_project_layout(&root).expect("layout");
+    ensure_project_scaffold(&root, "Dev Runner Main").expect("scaffold");
+
+    let main_rs = root
+        .join(".perro")
+        .join("dev_runner")
+        .join("src")
+        .join("main.rs");
+    fs::write(
+        &main_rs,
+        r#"use perro_app::{entry, winit_runner::AppExitKind};
+use perro_project::resolve_local_path;
+use std::{env, path::PathBuf, process};
+
+fn main() {
+    let root = PathBuf::from(".");
+    let fallback_name = "Perro Project".to_string();
+    match entry::run_dev_project_from_path(&root, &fallback_name) {
+        Ok(result) => match result.kind {
+            AppExitKind::WindowClose => println!("perro exit: window close"),
+            AppExitKind::EventLoopExit => println!("perro exit: event loop exit"),
+        },
+        Err(_) => process::exit(1),
+    }
+}
+"#,
+    )
+    .expect("write stale dev runner main");
+
+    ensure_source_overrides(&root).expect("overrides");
+    let repaired = fs::read_to_string(&main_rs).expect("read repaired dev runner main");
+    assert!(repaired.contains("run_threaded_dev_project_from_path"));
+    assert!(repaired.contains("PERRO_THREADED_RENDER"));
+
+    let before = fs::metadata(&main_rs)
+        .and_then(|meta| meta.modified())
+        .expect("main modified time before no-op");
+    ensure_source_overrides(&root).expect("overrides no-op");
+    let after = fs::metadata(&main_rs)
+        .and_then(|meta| meta.modified())
+        .expect("main modified time after no-op");
+    assert_eq!(before, after);
+
+    fs::remove_dir_all(&root).expect("cleanup");
+}
+
+#[test]
 fn ensure_source_overrides_recreates_missing_scripts_manifest() {
     let root = unique_temp_dir("perro_restore_scripts_manifest");
     ensure_project_layout(&root).expect("layout");

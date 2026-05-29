@@ -1238,6 +1238,10 @@ impl<B: GraphicsBackend> RunnerState<B> {
                 }
                 WindowRequest::SetFrameRateCap(cap) => {
                     self.frame_rate_cap = normalize_frame_rate_cap(cap);
+                    eprintln!(
+                        "[perro][runtime] frame_rate_cap=({:?})",
+                        self.frame_rate_cap
+                    );
                     self.next_frame_deadline = None;
                 }
             }
@@ -1608,11 +1612,11 @@ impl<B: GraphicsBackend> RunnerState<B> {
             .map(|timing| timing.gpu_present)
             .unwrap_or(Duration::ZERO);
         #[cfg(feature = "profile_heavy")]
-        let present_active_duration = present_timing.total.saturating_sub(present_wait_duration);
+        let present_active_duration = present_timing.active;
         #[cfg(not(feature = "profile_heavy"))]
         let present_active_duration = present_timing
             .as_ref()
-            .map(|timing| timing.total.saturating_sub(timing.gpu_present))
+            .map(|timing| timing.active)
             .unwrap_or(Duration::ZERO);
         let active_work_duration = work_duration.saturating_sub(present_wait_duration);
         let frame_end = Instant::now();
@@ -1621,11 +1625,11 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.app.set_frame_timing(
                 simulation_duration,
                 present_active_duration,
-                frame_delta,
-                if frame_delta.is_zero() {
+                active_work_duration,
+                if active_work_duration.is_zero() {
                     0.0
                 } else {
-                    1.0 / frame_delta.as_secs_f32()
+                    1.0 / active_work_duration.as_secs_f32()
                 },
             );
             #[cfg(feature = "profile_heavy")]
@@ -1959,11 +1963,11 @@ impl<B: GraphicsBackend> RunnerState<B> {
             .map(|timing| timing.gpu_present)
             .unwrap_or(Duration::ZERO);
         #[cfg(feature = "profile_heavy")]
-        let present_active_duration = present_timing.total.saturating_sub(present_wait_duration);
+        let present_active_duration = present_timing.active;
         #[cfg(not(feature = "profile_heavy"))]
         let present_active_duration = present_timing
             .as_ref()
-            .map(|timing| timing.total.saturating_sub(timing.gpu_present))
+            .map(|timing| timing.active)
             .unwrap_or(Duration::ZERO);
         let active_work_duration = work_duration.saturating_sub(present_wait_duration);
 
@@ -1974,11 +1978,11 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.app.set_frame_timing(
                 simulation_duration,
                 present_active_duration,
-                frame_delta,
-                if frame_delta.is_zero() {
+                active_work_duration,
+                if active_work_duration.is_zero() {
                     0.0
                 } else {
-                    1.0 / frame_delta.as_secs_f32()
+                    1.0 / active_work_duration.as_secs_f32()
                 },
             );
             #[cfg(feature = "profile_heavy")]
@@ -2609,6 +2613,10 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
             self.app
                 .runtime
                 .set_active_refresh_rate(active_refresh_rate_hz(self.window.as_deref()));
+            eprintln!(
+                "[perro][runtime] active_refresh_rate=({:?})",
+                active_refresh_rate_hz(self.window.as_deref())
+            );
             let now = Instant::now();
             self.last_frame_start = now;
             self.last_frame_end = now;
@@ -2892,13 +2900,13 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
         }
         let now = Instant::now();
         self.apply_frame_control_flow(event_loop, now);
-        if let Some(window) = &self.window
+        if self.window.is_some()
             && (self
                 .next_frame_deadline
                 .is_none_or(|deadline| deadline <= now)
                 || self.startup_splash.active)
         {
-            window.request_redraw();
+            self.step_frame(event_loop, now);
         }
     }
 }

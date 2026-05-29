@@ -8,7 +8,7 @@ use crate::{
     workspace_root,
 };
 use perro_compiler::{ScriptsBuildProfile, compile_scripts_with_profile};
-use perro_project::load_project_toml;
+use perro_project::{ensure_source_overrides, load_project_toml};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -47,6 +47,8 @@ pub(crate) fn mem_profile_command(args: &[String], cwd: &Path) -> Result<(), Str
         })?;
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
     update_project_vscode_linked_projects(&project_dir)?;
+    ensure_source_overrides(&project_dir)
+        .map_err(|err| format!("failed to refresh source overrides: {err}"))?;
 
     log_step("Building Scripts");
     compile_scripts_with_profile(&project_dir, ScriptsBuildProfile::Debug).map_err(|err| {
@@ -140,6 +142,8 @@ pub(crate) fn flamegraph_command(args: &[String], cwd: &Path) -> Result<(), Stri
     let flamegraph_output_path = profiling_dir.join("flamegraph.svg");
     update_workspace_vscode_linked_projects(&workspace_root(), &project_dir)?;
     update_project_vscode_linked_projects(&project_dir)?;
+    ensure_source_overrides(&project_dir)
+        .map_err(|err| format!("failed to refresh source overrides: {err}"))?;
 
     log_step("Building Scripts");
     compile_scripts_with_profile(&project_dir, ScriptsBuildProfile::Release).map_err(|err| {
