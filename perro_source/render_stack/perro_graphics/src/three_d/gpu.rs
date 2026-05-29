@@ -1096,6 +1096,66 @@ mod tests {
     }
 
     #[test]
+    fn meshlet_split_keeps_custom_shader_batch_state() {
+        let mut batches = Vec::new();
+        let material_kind = MaterialPipelineKind::Custom(77);
+        let common = |mesh: MeshRange, instance_start: u32| DrawBatchPush {
+            render_path: RenderPath3D::Rigid,
+            mesh,
+            instance_start,
+            instance_count: 1,
+            double_sided: false,
+            material_kind: material_kind.clone(),
+            alpha_mode: 0,
+            base_color_texture_slot: MATERIAL_TEXTURE_NONE,
+            local_bounds: ([0.0, 0.0, 0.0], 1.0),
+            occlusion_query: None,
+            disable_hiz_occlusion: false,
+            casts_shadows: true,
+            receives_shadows: true,
+            mesh_blend: false,
+            mesh_blend_depth: false,
+            blend_layers: BitMask::ALL.bits(),
+            blend_mask: BitMask::NONE.bits(),
+        };
+
+        push_draw_batch(
+            &mut batches,
+            common(
+                MeshRange {
+                    index_start: 0,
+                    index_count: 6,
+                    base_vertex: 4,
+                },
+                0,
+            ),
+        );
+        push_draw_batch(
+            &mut batches,
+            common(
+                MeshRange {
+                    index_start: 6,
+                    index_count: 9,
+                    base_vertex: 4,
+                },
+                1,
+            ),
+        );
+
+        assert_eq!(batches.len(), 2);
+        assert_eq!(batches[0].state_key, batches[1].state_key);
+        assert_eq!(batches[0].material_kind, batches[1].material_kind);
+        assert_eq!(batches[0].path, batches[1].path);
+        assert_eq!(batches[0].alpha_mode, batches[1].alpha_mode);
+        assert_eq!(
+            batches[0].base_color_texture_slot,
+            batches[1].base_color_texture_slot
+        );
+        assert_ne!(batches[0].mesh.index_start, batches[1].mesh.index_start);
+        assert_eq!(batches[0].mesh.base_vertex, batches[1].mesh.base_vertex);
+    }
+
+    #[test]
     fn compare_draw_batch_keys_sorts_opaque_before_alpha_and_overlay() {
         let opaque = test_batch(0, false, 0, false, 2, 0);
         let alpha = test_batch(1, false, 2, false, 1, 1);

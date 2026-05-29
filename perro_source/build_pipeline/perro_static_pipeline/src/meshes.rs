@@ -358,17 +358,13 @@ fn build_gltf_mesh_entries(
         } else {
             (vertices, indices)
         };
-        let (indices, surface_ranges, meshlets, lods) = if has_skinning {
-            let (indices, surface_ranges, meshlets) = if bake_meshlets {
-                pack_meshlets_with_surfaces(&vertices, &indices, &surface_ranges)
-            } else {
-                (indices, surface_ranges, Vec::new())
-            };
-            (indices, surface_ranges, meshlets, Vec::new())
-        } else {
-            let lod_inputs = build_lod_sets(&vertices, &indices, &surface_ranges);
-            pack_lod_sets(&vertices, &lod_inputs, bake_meshlets)
-        };
+        let (indices, surface_ranges, meshlets, lods) = pack_static_mesh_indices(
+            &vertices,
+            indices,
+            surface_ranges,
+            has_skinning,
+            bake_meshlets,
+        );
         let pmesh = encode_pmesh_tightest_layout(
             &vertices,
             &indices,
@@ -396,6 +392,31 @@ fn build_gltf_mesh_entries(
     }
 
     Ok(entries)
+}
+
+fn pack_static_mesh_indices(
+    vertices: &[PackedVertex],
+    indices: Vec<u32>,
+    surface_ranges: Vec<PackedSurfaceRange>,
+    has_skinning: bool,
+    bake_meshlets: bool,
+) -> (
+    Vec<u32>,
+    Vec<PackedSurfaceRange>,
+    Vec<PackedMeshlet>,
+    Vec<PackedLod>,
+) {
+    if has_skinning {
+        let (indices, surface_ranges, meshlets) = if bake_meshlets {
+            pack_meshlets_with_surfaces(vertices, &indices, &surface_ranges)
+        } else {
+            (indices, surface_ranges, Vec::new())
+        };
+        return (indices, surface_ranges, meshlets, Vec::new());
+    }
+
+    let lod_inputs = build_lod_sets(vertices, &indices, &surface_ranges);
+    pack_lod_sets(vertices, &lod_inputs, bake_meshlets)
 }
 
 #[derive(Clone, Copy)]
@@ -1013,7 +1034,7 @@ mod tests {
         PMESH_VERSION, PackedBlendShape, PackedBlendShapeVertex, PackedLod, PackedMeshLayoutFlags,
         PackedSurfaceRange, PackedVertex, build_lod_sets, dedup_vertices, encode_pmesh,
         encode_pmesh_tightest_layout, pack_meshlets, pack_meshlets_with_surfaces,
-        reorder_vertices_by_first_use,
+        pack_static_mesh_indices, reorder_vertices_by_first_use,
     };
 
     fn test_vertices() -> Vec<PackedVertex> {
@@ -1130,6 +1151,40 @@ mod tests {
         assert_eq!(packed_surfaces[0].index_count, 6);
         assert_eq!(packed_surfaces[1].index_start, 6);
         assert_eq!(packed_surfaces[1].index_count, 3);
+    }
+
+    #[test]
+    fn static_meshlet_bake_preserves_lod_geometry() {
+        let vertices = test_vertices();
+        let indices = vec![2, 1, 0, 0, 3, 2, 1, 2, 3];
+        let surfaces = vec![PackedSurfaceRange {
+            index_start: 0,
+            index_count: indices.len() as u32,
+        }];
+
+        let (plain_indices, plain_surfaces, plain_meshlets, plain_lods) =
+            pack_static_mesh_indices(&vertices, indices.clone(), surfaces.clone(), false, false);
+        let (meshlet_indices, meshlet_surfaces, meshlets, meshlet_lods) =
+            pack_static_mesh_indices(&vertices, indices, surfaces, false, true);
+
+        assert_eq!(plain_indices, meshlet_indices);
+        assert_eq!(plain_surfaces.len(), meshlet_surfaces.len());
+        for (plain, meshlet) in plain_surfaces.iter().zip(meshlet_surfaces.iter()) {
+            assert_eq!(plain.index_start, meshlet.index_start);
+            assert_eq!(plain.index_count, meshlet.index_count);
+        }
+        assert!(plain_meshlets.is_empty());
+        assert!(!meshlets.is_empty());
+        assert_eq!(plain_lods.len(), meshlet_lods.len());
+        for (plain, meshlet) in plain_lods.iter().zip(meshlet_lods.iter()) {
+            assert_eq!(plain.index_start, meshlet.index_start);
+            assert_eq!(plain.index_count, meshlet.index_count);
+            assert_eq!(plain.surface_start, meshlet.surface_start);
+            assert_eq!(plain.surface_count, meshlet.surface_count);
+            assert_eq!(plain.meshlet_start, 0);
+            assert_eq!(plain.meshlet_count, 0);
+            assert!(meshlet.meshlet_count > 0);
+        }
     }
 
     #[test]
@@ -1264,6 +1319,7 @@ mod tests {
         ];
         let lods = build_lod_sets(&vertices, &indices, &surfaces);
         assert!(!lods.is_empty());
+        assert!(lods.iter().all(|lod| !lod.indices.is_empty()));
         assert!(lods.iter().all(|lod| lod.surface_ranges.len() == 2));
     }
 }

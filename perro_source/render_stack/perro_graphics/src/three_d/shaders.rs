@@ -499,6 +499,41 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
     }
 
     #[test]
+    fn custom_material_shader_interface_has_no_meshlet_inputs() {
+        let material = r#"
+fn shade_vertex(out: VertexOutput) -> VertexOutput {
+    var next = out;
+    next.world_pos.x = next.world_pos.x + custom_v_param(out, 0u).x;
+    return next;
+}
+
+fn shade_material(in: FragmentInput) -> vec4<f32> {
+    return vec4<f32>(custom_f_param(in, 0u).xyz + in.uv.xyx, 1.0);
+}
+"#;
+        let vertex_entry = "fn vs_main(v: VertexInput, inst: InstanceInput, @builtin(vertex_index) vertex_index: u32, @builtin(instance_index) instance_index: u32) -> VertexOutput";
+        let fragment_entry = "fn fs_main(in: FragmentInput) -> @location(0) vec4<f32>";
+        for prelude in [
+            regular::PRELUDE_WGSL,
+            regular::PRELUDE_RIGID_WGSL,
+            regular::PRELUDE_SKINNED_WGSL,
+        ] {
+            let wgsl = build_custom_material_shader_with_prelude(
+                prelude,
+                material,
+                perro_render_bridge::CustomMaterialLighting3D::Raw,
+            );
+            assert!(wgsl.contains(vertex_entry));
+            assert!(wgsl.contains(fragment_entry));
+            assert!(wgsl.contains("return shade_vertex(perro_vs_main_base"));
+            assert!(wgsl.contains("return shade_material(in);"));
+            assert!(!wgsl.contains("@location(3) meshlet"));
+            assert!(!wgsl.contains("meshlet_index"));
+            parse_and_validate(&wgsl, "custom shader interface stays meshlet-free");
+        }
+    }
+
+    #[test]
     fn multimesh_wgsl_parses() {
         naga::front::wgsl::parse_str(regular::MULTIMESH_WGSL).expect("multimesh wgsl parses");
     }
