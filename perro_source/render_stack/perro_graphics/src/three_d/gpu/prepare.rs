@@ -882,6 +882,7 @@ impl Gpu3D {
                             .saturating_sub(instance_start);
                         if instance_count > 0 {
                             let multi_instance = instance_count > 1;
+                            let uses_custom_shader = material_kind.uses_custom_shader();
                             let mirrored_winding = instance_mats
                                 .iter()
                                 .any(|model| Mat4::from_cols_array_2d(model).determinant() < 0.0);
@@ -910,6 +911,7 @@ impl Gpu3D {
                                     local_bounds: occlusion_bounds,
                                     occlusion_query,
                                     disable_hiz_occlusion: multi_instance
+                                        || uses_custom_shader
                                         || standard_params.alpha_mode == 2
                                         || resolved_mesh_blend_active(resolved_blend),
                                     casts_shadows: draw.cast_shadows && !is_camera_stream_quad,
@@ -1018,6 +1020,7 @@ impl Gpu3D {
                     } else {
                         (meshlet.center, meshlet.radius.max(0.001))
                     };
+                    let uses_custom_shader = material_kind.uses_custom_shader();
                     push_draw_batch(
                         &mut self.draw_batches,
                         DrawBatchPush {
@@ -1042,6 +1045,7 @@ impl Gpu3D {
                             local_bounds: (occlusion_center, occlusion_radius),
                             occlusion_query,
                             disable_hiz_occlusion: multi_instance
+                                || uses_custom_shader
                                 || standard_params.alpha_mode == 2
                                 || resolved_mesh_blend_active(resolved_blend),
                             casts_shadows: meshlet_casts_shadows,

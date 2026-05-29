@@ -726,6 +726,13 @@ enum MaterialPipelineKind {
     Custom(u32),
 }
 
+impl MaterialPipelineKind {
+    #[inline]
+    fn uses_custom_shader(&self) -> bool {
+        matches!(self, MaterialPipelineKind::Custom(_))
+    }
+}
+
 struct CustomPipeline {
     pipeline_culled: wgpu::RenderPipeline,
     pipeline_double_sided: wgpu::RenderPipeline,

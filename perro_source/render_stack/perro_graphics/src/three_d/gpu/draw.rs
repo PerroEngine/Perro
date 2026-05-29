@@ -738,13 +738,23 @@ impl Gpu3D {
                 RenderBatchKind::MeshBlend => self.mesh_blend_batch_indices.push(index),
                 RenderBatchKind::Overlay => self.overlay_batch_indices.push(index),
             }
-            if !batch.draw_on_top && batch.casts_shadows && batch.alpha_mode == 0 {
+            let derived_depth_safe = !batch.material_kind.uses_custom_shader();
+            if derived_depth_safe
+                && !batch.draw_on_top
+                && batch.casts_shadows
+                && batch.alpha_mode == 0
+            {
                 self.shadow_batch_indices.push(index);
             }
-            if !batch.draw_on_top && batch.alpha_mode == 0 && !batch.mesh_blend {
+            if derived_depth_safe
+                && !batch.draw_on_top
+                && batch.alpha_mode == 0
+                && !batch.mesh_blend
+            {
                 self.depth_prepass_batch_indices.push(index);
             }
-            if !batch.draw_on_top
+            if derived_depth_safe
+                && !batch.draw_on_top
                 && batch.alpha_mode == 0
                 && !batch.mesh_blend
                 && batch.mesh_blend_depth
