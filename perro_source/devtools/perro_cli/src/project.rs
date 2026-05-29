@@ -205,6 +205,7 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
         return dev_android_command(args, cwd);
     }
     let profile_requested = args.iter().any(|a| a == "--profile");
+    let timings = args.iter().any(|a| a == "--timings");
     let ui_profile = args.iter().any(|a| a == "--ui-profile");
     let release = args.iter().any(|a| a == "--release");
     let csv_profile_name = parse_optional_flag_value(args, "--csv-profile")
@@ -258,6 +259,9 @@ pub(crate) fn dev_command(args: &[String], cwd: &Path) -> Result<(), String> {
     }
     build_cmd.current_dir(&dev_runner_dir);
     let mut features = Vec::new();
+    if timings {
+        features.push("timings");
+    }
     if profile {
         features.push("profile");
     }
@@ -752,6 +756,11 @@ fn build_android_command(args: &[String], cwd: &Path) -> Result<(), String> {
 }
 
 fn dev_android_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    if args.iter().any(|a| a == "--timings") {
+        return Err(
+            "`--timings` is not supported with `perro dev --target android` yet".to_string(),
+        );
+    }
     if args.iter().any(|a| a == "--ui-profile") {
         return Err(
             "`--ui-profile` is not supported with `perro dev --target android` yet".to_string(),
@@ -985,6 +994,9 @@ fn android_ndk_missing_error(sdk_root: &Path) -> String {
 }
 
 fn dev_web_command(args: &[String], cwd: &Path) -> Result<(), String> {
+    if args.iter().any(|a| a == "--timings") {
+        return Err("`--timings` is not supported with `perro dev --target web` yet".to_string());
+    }
     if args.iter().any(|a| a == "--ui-profile") {
         return Err(
             "`--ui-profile` is not supported with `perro dev --target web` yet".to_string(),

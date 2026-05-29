@@ -238,7 +238,7 @@ fn log_avg_sampled(
     let mut out = std::io::stdout().lock();
     let _ = writeln!(
         out,
-        "avg(sampled): update=({update_us}us) | render=({render_us}us) | total=({total_us}us) | idle=({idle_before_frame_us}us) | present_wait=({present_wait_us}us) | frame=({frame_us}us) | fps=({}.{:02})",
+        "timings: sim=({update_us}us) | gfx=({render_us}us) | work=({total_us}us) | idle=({idle_before_frame_us}us) | present_wait=({present_wait_us}us) | delta=({frame_us}us) | fps=({}.{:02})",
         fps_x100 / 100,
         fps_x100 % 100
     );
@@ -1098,17 +1098,19 @@ impl<B: GraphicsBackend> ThreadedRunnerState<B> {
             .map(|snapshot| snapshot.timing)
             .unwrap_or_default();
         let simulation_duration = simulation_timing.simulation_time;
-        let active_frame_duration = simulation_duration.max(present_active_duration);
+        let measured_frame_duration = work_active_duration
+            .saturating_add(idle_duration)
+            .saturating_add(present_wait_duration);
         let frame_end = Instant::now();
         self.last_frame_end = frame_end;
         if should_sample_timing {
             self.bridge.publish_render_timing(RenderFrameTiming {
                 graphics_time: present_active_duration,
-                frame_time: active_frame_duration,
-                fps: if active_frame_duration.is_zero() {
+                frame_time: measured_frame_duration,
+                fps: if measured_frame_duration.is_zero() {
                     0.0
                 } else {
-                    1.0 / active_frame_duration.as_secs_f32()
+                    1.0 / measured_frame_duration.as_secs_f32()
                 },
                 active_refresh_rate: active_refresh_rate_hz(self.window.as_deref()),
             });

@@ -3,14 +3,6 @@ use std::time::Duration;
 
 use crate::Runtime;
 
-fn work_fps(simulation: Duration, graphics: Duration, fallback: f32) -> f32 {
-    let active = simulation.max(graphics);
-    if active.is_zero() {
-        return fallback;
-    }
-    1.0 / active.as_secs_f32()
-}
-
 impl TimeAPI for Runtime {
     fn get_delta(&self) -> f32 {
         self.time.delta
@@ -37,7 +29,7 @@ impl TimeAPI for Runtime {
     }
 
     fn get_fps(&self) -> f32 {
-        work_fps(self.time.simulation, self.time.graphics, self.time.fps)
+        self.time.fps
     }
 
     fn get_draw_gpu_prepare_3d(&self) -> Duration {

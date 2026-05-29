@@ -871,6 +871,7 @@ fn ensure_source_overrides_repairs_dev_runner_features() {
     let manifest = root.join(".perro").join("dev_runner").join("Cargo.toml");
     let mut src = fs::read_to_string(&manifest).expect("read dev runner manifest");
     src = src
+        .replace("timings = [\"perro_app/fps\"]\n", "")
         .replace("ui_profile = [\"perro_app/ui_profile\"]\n", "")
         .replace("mem_profile = [\"perro_app/mem_profile\"]\n", "")
         .replace(
@@ -882,6 +883,7 @@ fn ensure_source_overrides_repairs_dev_runner_features() {
     ensure_source_overrides(&root).expect("overrides");
 
     let repaired = fs::read_to_string(&manifest).expect("read repaired dev runner manifest");
+    assert!(repaired.contains("timings = [\"perro_app/fps\"]"));
     assert!(repaired.contains("profile = [\"perro_app/profile\"]"));
     assert!(repaired.contains("ui_profile = [\"perro_app/ui_profile\"]"));
     assert!(repaired.contains("mem_profile = [\"perro_app/mem_profile\"]"));

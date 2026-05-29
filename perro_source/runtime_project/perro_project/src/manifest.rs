@@ -686,6 +686,13 @@ fn ensure_dev_runner_manifest_features(path: &Path) -> std::io::Result<()> {
 
     let mut changed = false;
 
+    if !features_table.contains_key("timings") {
+        features_table.insert(
+            "timings".to_string(),
+            Value::Array(vec![Value::String("perro_app/fps".to_string())]),
+        );
+        changed = true;
+    }
     if !features_table.contains_key("profile") {
         features_table.insert(
             "profile".to_string(),

@@ -829,6 +829,7 @@ perro_app = "0.1.0"
 perro_project = "0.1.0"
 
 [features]
+timings = ["perro_app/fps"]
 profile = ["perro_app/profile"]
 ui_profile = ["perro_app/ui_profile"]
 mem_profile = ["perro_app/mem_profile"]

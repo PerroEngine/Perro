@@ -43,7 +43,7 @@ Build and run:
 ```powershell
 perro check [--path <project_dir>]
 perro test [--path <project_dir>] [-- <cargo_test_args>]
-perro dev [--path <project_dir>] [--target native|web] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]
+perro dev [--path <project_dir>] [--target native|web] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]
 perro build [--path <project_dir>] [--target native|web] [--profile] [--console]
 perro dlc --name <dlc_name> [--path <project_dir>]
 ```
@@ -161,7 +161,7 @@ perro test --path D:\GameProjects\MyGame -- player_state_tests
 Command:
 
 ```powershell
-perro dev --path <project_dir> [--target native|web] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]
+perro dev --path <project_dir> [--target native|web] [--timings] [--profile] [--ui-profile] [--release] [--csv-profile [csv_name]] [--host <addr>] [--port <num>]
 ```
 
 What it does:
@@ -175,6 +175,7 @@ What it does:
 Flags:
 
 - `--target native|web`: selects native runner or browser wasm bundle. Default `native`.
+- `--timings`: prints lightweight native timing averages: sim, gfx, delta, fps.
 - `--profile`: enables profiling feature for the selected dev target.
 - `--ui-profile`: enables native dev runner `ui_profile` feature.
 - `--release`: builds release dev target.
@@ -185,6 +186,7 @@ Flags:
 Web target notes:
 
 - `--ui-profile` is not supported with `perro dev --target web` yet.
+- `--timings` is not supported with `perro dev --target web` yet.
 - `--csv-profile` is not supported with `perro dev --target web` yet.
 - web output dir: `<project_dir>/.output/web-dev/`
 - web path uses static embedded wasm runtime, not the native dynamic file-loading dev runner.

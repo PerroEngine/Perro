@@ -562,7 +562,7 @@ fn log_avg_sampled(
     let mut out = std::io::stdout().lock();
     let _ = writeln!(
         out,
-        "avg(sampled): update=({update_us}us) | render=({render_us}us) | total=({total_us}us) | idle=({idle_before_frame_us}us) | present_wait=({present_wait_us}us) | frame=({frame_us}us) | fps=({}.{:02})",
+        "timings: sim=({update_us}us) | gfx=({render_us}us) | work=({total_us}us) | idle=({idle_before_frame_us}us) | present_wait=({present_wait_us}us) | delta=({frame_us}us) | fps=({}.{:02})",
         fps_x100 / 100,
         fps_x100 % 100
     );
@@ -1619,17 +1619,20 @@ impl<B: GraphicsBackend> RunnerState<B> {
             .map(|timing| timing.active)
             .unwrap_or(Duration::ZERO);
         let active_work_duration = work_duration.saturating_sub(present_wait_duration);
+        let measured_frame_duration = active_work_duration
+            .saturating_add(idle_duration)
+            .saturating_add(present_wait_duration);
         let frame_end = Instant::now();
         self.last_frame_end = frame_end;
         if should_sample_timing {
             self.app.set_frame_timing(
                 simulation_duration,
                 present_active_duration,
-                active_work_duration,
-                if active_work_duration.is_zero() {
+                measured_frame_duration,
+                if measured_frame_duration.is_zero() {
                     0.0
                 } else {
-                    1.0 / active_work_duration.as_secs_f32()
+                    1.0 / measured_frame_duration.as_secs_f32()
                 },
             );
             #[cfg(feature = "profile_heavy")]
@@ -1970,6 +1973,9 @@ impl<B: GraphicsBackend> RunnerState<B> {
             .map(|timing| timing.active)
             .unwrap_or(Duration::ZERO);
         let active_work_duration = work_duration.saturating_sub(present_wait_duration);
+        let measured_frame_duration = active_work_duration
+            .saturating_add(idle_duration)
+            .saturating_add(present_wait_duration);
 
         let frame_end = Instant::now();
         self.last_frame_end = frame_end;
@@ -1978,11 +1984,11 @@ impl<B: GraphicsBackend> RunnerState<B> {
             self.app.set_frame_timing(
                 simulation_duration,
                 present_active_duration,
-                active_work_duration,
-                if active_work_duration.is_zero() {
+                measured_frame_duration,
+                if measured_frame_duration.is_zero() {
                     0.0
                 } else {
-                    1.0 / active_work_duration.as_secs_f32()
+                    1.0 / measured_frame_duration.as_secs_f32()
                 },
             );
             #[cfg(feature = "profile_heavy")]
