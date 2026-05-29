@@ -29,6 +29,10 @@ pub fn from_object(entries: &[SceneObjectField]) -> Option<Material3D> {
 fn load_pmat(source: &str) -> Option<Material3D> {
     let bytes = load_asset(source).ok()?;
     let text = std::str::from_utf8(&bytes).ok()?;
+    load_from_text(text)
+}
+
+pub fn load_from_text(text: &str) -> Option<Material3D> {
     if pmat_looks_like_object(text) {
         if let Some(entries) = parse_pmat_object(text)
             && let Some(material) = from_object(entries.as_ref())
@@ -285,6 +289,7 @@ fn material_from_entries(entries: &[SceneObjectField], any: &mut bool) -> Materi
                 shader_path: "".into(),
                 params: std::borrow::Cow::Borrowed(&[]),
                 lighting: CustomMaterialLighting3D::Standard,
+                surface: StandardMaterial3D::default(),
             };
             apply_custom(entries, &mut params, any);
             Material3D::Custom(params)
@@ -400,6 +405,7 @@ fn apply_toon(entries: &[SceneObjectField], out: &mut ToonMaterial3D, any: &mut 
 }
 
 fn apply_custom(entries: &[SceneObjectField], out: &mut CustomMaterial3D, any: &mut bool) {
+    apply_standard(entries, &mut out.surface, any);
     for (name, value) in entries {
         match canonical_custom_key(name) {
             Some("shaderPath") => {

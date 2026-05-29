@@ -390,7 +390,17 @@ pub fn create_hiz_occlusion_cull_shader_module(device: &wgpu::Device) -> wgpu::S
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bytemuck::{Pod, Zeroable};
     use naga::valid::{Capabilities, ValidationFlags, Validator};
+    use std::sync::mpsc;
+
+    #[repr(C)]
+    #[derive(Clone, Copy, Pod, Zeroable)]
+    struct TestVertex {
+        pos: [f32; 3],
+        normal: [f32; 3],
+        uv: [f32; 2],
+    }
 
     fn parse_and_validate(wgsl: &str, label: &str) {
         let module =
@@ -531,6 +541,298 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
             assert!(!wgsl.contains("meshlet_index"));
             parse_and_validate(&wgsl, "custom shader interface stays meshlet-free");
         }
+    }
+
+    #[test]
+    fn custom_material_shader_reads_same_vertex_payload_for_split_draws() {
+        let material = r#"
+fn shade_vertex(out: VertexOutput) -> VertexOutput {
+    var next = out;
+    next.uv = out.uv + vec2<f32>(0.125, 0.25);
+    next.normal_ws = normalize(out.normal_ws);
+    return next;
+}
+
+fn shade_material(in: FragmentInput) -> vec4<f32> {
+    return vec4<f32>(in.uv, in.normal_ws.z, 1.0);
+}
+"#;
+        let vertex_entry = "fn vs_main(v: VertexInput, inst: InstanceInput, @builtin(vertex_index) vertex_index: u32, @builtin(instance_index) instance_index: u32) -> VertexOutput";
+        for prelude in [
+            regular::PRELUDE_WGSL,
+            regular::PRELUDE_RIGID_WGSL,
+            regular::PRELUDE_SKINNED_WGSL,
+        ] {
+            let wgsl = build_custom_material_shader_with_prelude(
+                prelude,
+                material,
+                perro_render_bridge::CustomMaterialLighting3D::Raw,
+            );
+            assert!(wgsl.contains(vertex_entry));
+            assert!(wgsl.contains("@location(8) uv: vec2<f32>"));
+            assert!(wgsl.contains("return shade_vertex(perro_vs_main_base"));
+            assert!(!wgsl.contains("meshlet_index"));
+            parse_and_validate(&wgsl, "custom shader split draw payload validates");
+        }
+    }
+
+    #[test]
+    fn gpu_shader_readback_matches_full_and_split_mesh_draws() {
+        pollster::block_on(async {
+            let Some((device, queue)) = test_device().await else {
+                eprintln!("skip gpu readback test: no wgpu adapter");
+                return;
+            };
+
+            let full = render_uv_readback(&device, &queue, &[0..6]).await;
+            let split = render_uv_readback(&device, &queue, &[0..3, 3..6]).await;
+            assert_eq!(full, split);
+        });
+    }
+
+    async fn test_device() -> Option<(wgpu::Device, wgpu::Queue)> {
+        let instance = wgpu::Instance::default();
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::LowPower,
+                compatible_surface: None,
+                force_fallback_adapter: false,
+            })
+            .await
+            .ok()?;
+        adapter
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("perro_test_device"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                experimental_features: wgpu::ExperimentalFeatures::disabled(),
+                memory_hints: wgpu::MemoryHints::Performance,
+                trace: wgpu::Trace::default(),
+            })
+            .await
+            .ok()
+    }
+
+    async fn render_uv_readback(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        draw_ranges: &[std::ops::Range<u32>],
+    ) -> Vec<u8> {
+        const WIDTH: u32 = 4;
+        const HEIGHT: u32 = 4;
+        const BYTES_PER_PIXEL: u32 = 4;
+        const READBACK_BYTES_PER_ROW: u32 = 256;
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("perro_test_uv_readback_shader"),
+            source: wgpu::ShaderSource::Wgsl(
+                r#"
+struct VertexInput {
+    @location(0) pos: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) uv: vec2<f32>,
+};
+
+struct VertexOutput {
+    @builtin(position) clip_pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) normal_ws: vec3<f32>,
+};
+
+@vertex
+fn vs_main(v: VertexInput) -> VertexOutput {
+    var out: VertexOutput;
+    out.clip_pos = vec4<f32>(v.pos.xy, 0.0, 1.0);
+    out.uv = v.uv;
+    out.normal_ws = normalize(v.normal);
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    return vec4<f32>(in.uv, in.normal_ws.z * 0.5 + 0.5, 1.0);
+}
+"#
+                .into(),
+            ),
+        });
+        let vertices = [
+            TestVertex {
+                pos: [-1.0, -1.0, 0.0],
+                normal: [0.0, 0.0, 1.0],
+                uv: [0.0, 1.0],
+            },
+            TestVertex {
+                pos: [1.0, -1.0, 0.0],
+                normal: [0.0, 0.0, 1.0],
+                uv: [1.0, 1.0],
+            },
+            TestVertex {
+                pos: [1.0, 1.0, 0.0],
+                normal: [0.0, 0.0, 1.0],
+                uv: [1.0, 0.0],
+            },
+            TestVertex {
+                pos: [-1.0, 1.0, 0.0],
+                normal: [0.0, 0.0, 1.0],
+                uv: [0.0, 0.0],
+            },
+        ];
+        let indices = [0u16, 1, 2, 0, 2, 3];
+        let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_test_uv_vertices"),
+            size: std::mem::size_of_val(&vertices) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_test_uv_indices"),
+            size: std::mem::size_of_val(&indices) as u64,
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&vertex_buffer, 0, bytemuck::cast_slice(&vertices));
+        queue.write_buffer(&index_buffer, 0, bytemuck::cast_slice(&indices));
+
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("perro_test_uv_target"),
+            size: wgpu::Extent3d {
+                width: WIDTH,
+                height: HEIGHT,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let readback = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("perro_test_uv_readback"),
+            size: (READBACK_BYTES_PER_ROW * HEIGHT) as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("perro_test_uv_pipeline_layout"),
+            bind_group_layouts: &[],
+            immediate_size: 0,
+        });
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("perro_test_uv_pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<TestVertex>() as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x3,
+                            offset: 0,
+                            shader_location: 0,
+                        },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x3,
+                            offset: 12,
+                            shader_location: 1,
+                        },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x2,
+                            offset: 24,
+                            shader_location: 2,
+                        },
+                    ],
+                }],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("perro_test_uv_encoder"),
+        });
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("perro_test_uv_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&pipeline);
+            pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            for range in draw_ranges {
+                pass.draw_indexed(range.clone(), 0, 0..1);
+            }
+        }
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(READBACK_BYTES_PER_ROW),
+                    rows_per_image: Some(HEIGHT),
+                },
+            },
+            wgpu::Extent3d {
+                width: WIDTH,
+                height: HEIGHT,
+                depth_or_array_layers: 1,
+            },
+        );
+        queue.submit(Some(encoder.finish()));
+
+        let slice = readback.slice(..);
+        let (tx, rx) = mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        rx.recv()
+            .expect("readback callback")
+            .expect("map readback buffer");
+        let mapped = slice.get_mapped_range();
+        let mut pixels = Vec::with_capacity((WIDTH * HEIGHT * BYTES_PER_PIXEL) as usize);
+        for row in 0..HEIGHT as usize {
+            let start = row * READBACK_BYTES_PER_ROW as usize;
+            let end = start + (WIDTH * BYTES_PER_PIXEL) as usize;
+            pixels.extend_from_slice(&mapped[start..end]);
+        }
+        drop(mapped);
+        readback.unmap();
+        pixels
     }
 
     #[test]

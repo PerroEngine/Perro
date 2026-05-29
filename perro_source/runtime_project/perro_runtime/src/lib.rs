@@ -15,6 +15,8 @@ pub mod rt_ctx;
 pub use rt_ctx as api;
 
 pub use cns::node_arena::NodeArena;
+#[doc(hidden)]
+pub use material_schema::load_from_text as parse_material_text_for_static_parity;
 pub use perro_input_api::InputSnapshot as RuntimeInputApi;
 pub use perro_project::{bootstrap_project, create_new_project};
 pub use perro_runtime_api::sub_apis::{WindowMode, WindowRequest};

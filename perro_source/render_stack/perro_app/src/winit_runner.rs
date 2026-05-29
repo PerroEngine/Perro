@@ -44,6 +44,7 @@ const MAX_FIXED_STEPS_PER_FRAME: u32 = 2;
 const MAX_FRAME_DELTA_SECONDS: f32 = 0.250;
 const MIN_FRAME_RATE_CAP_FPS: f32 = 1.0;
 const MAX_FRAME_RATE_CAP_FPS: f32 = 1000.0;
+const HIGH_RATE_FRAME_INTERVAL: Duration = Duration::from_millis(8);
 const LOG_INTERVAL_SECONDS: f32 = 3.0;
 #[cfg(not(any(feature = "profile_heavy", feature = "ui_profile", feature = "fps")))]
 const LOG_TIMING_SAMPLE_STRIDE: u32 = 20;
@@ -902,6 +903,7 @@ impl<B: GraphicsBackend> RunnerState<B> {
             .project()
             .map(|project| project_frame_rate_cap(project.config.frame_rate_cap))
             .unwrap_or(RuntimeFrameRateCap::Unlimited);
+        eprintln!("[perro][runtime] frame_rate_cap=({frame_rate_cap:?})");
         Self {
             app,
             title: title.to_owned(),
@@ -1281,7 +1283,14 @@ impl<B: GraphicsBackend> RunnerState<B> {
         if let Some(deadline) = self.next_frame_deadline
             && deadline > now
         {
-            event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
+            if self
+                .frame_cap_interval()
+                .is_some_and(|interval| interval <= HIGH_RATE_FRAME_INTERVAL)
+            {
+                event_loop.set_control_flow(ControlFlow::Poll);
+            } else {
+                event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
+            }
         } else {
             event_loop.set_control_flow(ControlFlow::Poll);
         }

@@ -1044,9 +1044,15 @@ fn escape_str(input: &str) -> String {
 mod tests {
     use super::{
         PMESH_VERSION, PackedBlendShape, PackedBlendShapeVertex, PackedLod, PackedMeshLayoutFlags,
-        PackedSurfaceRange, PackedVertex, build_lod_sets, dedup_vertices, encode_pmesh,
-        encode_pmesh_tightest_layout, pack_meshlets, pack_meshlets_with_surfaces,
+        PackedSurfaceRange, PackedVertex, build_gltf_mesh_entries, build_lod_sets, dedup_vertices,
+        encode_pmesh, encode_pmesh_tightest_layout, pack_meshlets, pack_meshlets_with_surfaces,
         pack_static_mesh_indices, reorder_vertices_by_first_use,
+    };
+    use perro_graphics_assets::{DecodedMesh, decode_gltf_mesh, decode_pmesh};
+    use std::{
+        fs,
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
     };
 
     fn test_vertices() -> Vec<PackedVertex> {
@@ -1080,6 +1086,100 @@ mod tests {
                 weights: [1.0, 0.0, 0.0, 0.0].into(),
             },
         ]
+    }
+
+    fn push_f32(out: &mut Vec<u8>, value: f32) {
+        out.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn push_u16(out: &mut Vec<u8>, value: u16) {
+        out.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn pad4(out: &mut Vec<u8>, byte: u8) {
+        while !out.len().is_multiple_of(4) {
+            out.push(byte);
+        }
+    }
+
+    fn minimal_glb_with_uvs() -> Vec<u8> {
+        let mut bin = Vec::new();
+        for pos in [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ] {
+            for value in pos {
+                push_f32(&mut bin, value);
+            }
+        }
+        for normal in [[0.0, 0.0, 1.0]; 4] {
+            for value in normal {
+                push_f32(&mut bin, value);
+            }
+        }
+        for uv in [[0.0, 0.0], [0.75, 0.0], [0.75, 0.5], [0.0, 0.5]] {
+            for value in uv {
+                push_f32(&mut bin, value);
+            }
+        }
+        for index in [0u16, 1, 2, 0, 2, 3] {
+            push_u16(&mut bin, index);
+        }
+        pad4(&mut bin, 0);
+
+        let json = format!(
+            r#"{{"asset":{{"version":"2.0"}},"buffers":[{{"byteLength":{bin_len}}}],"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":48}},{{"buffer":0,"byteOffset":48,"byteLength":48}},{{"buffer":0,"byteOffset":96,"byteLength":32}},{{"buffer":0,"byteOffset":128,"byteLength":12}}],"accessors":[{{"bufferView":0,"componentType":5126,"count":4,"type":"VEC3","min":[0,0,0],"max":[1,1,0]}},{{"bufferView":1,"componentType":5126,"count":4,"type":"VEC3"}},{{"bufferView":2,"componentType":5126,"count":4,"type":"VEC2"}},{{"bufferView":3,"componentType":5123,"count":6,"type":"SCALAR"}}],"meshes":[{{"primitives":[{{"attributes":{{"POSITION":0,"NORMAL":1,"TEXCOORD_0":2}},"indices":3}}]}}]}}"#,
+            bin_len = bin.len()
+        );
+        let mut json_bytes = json.into_bytes();
+        pad4(&mut json_bytes, b' ');
+
+        let total_len = 12 + 8 + json_bytes.len() + 8 + bin.len();
+        let mut glb = Vec::with_capacity(total_len);
+        glb.extend_from_slice(b"glTF");
+        glb.extend_from_slice(&2u32.to_le_bytes());
+        glb.extend_from_slice(&(total_len as u32).to_le_bytes());
+        glb.extend_from_slice(&(json_bytes.len() as u32).to_le_bytes());
+        glb.extend_from_slice(b"JSON");
+        glb.extend_from_slice(&json_bytes);
+        glb.extend_from_slice(&(bin.len() as u32).to_le_bytes());
+        glb.extend_from_slice(b"BIN\0");
+        glb.extend_from_slice(&bin);
+        glb
+    }
+
+    fn unique_temp_path(name: &str) -> PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        std::env::temp_dir().join(format!("{name}_{stamp}.glb"))
+    }
+
+    fn primary_indices(mesh: &DecodedMesh) -> &[u32] {
+        if let Some(lod) = mesh.lods.first() {
+            let start = lod.index_start as usize;
+            let end = start.saturating_add(lod.index_count as usize);
+            &mesh.indices[start..end]
+        } else {
+            &mesh.indices
+        }
+    }
+
+    fn vertex_stream_signature(mesh: &DecodedMesh) -> Vec<([u32; 3], [u32; 3], [u32; 2])> {
+        primary_indices(mesh)
+            .iter()
+            .map(|&index| {
+                let vertex = mesh.vertices[index as usize];
+                (
+                    vertex.pos.map(f32::to_bits),
+                    vertex.normal.map(f32::to_bits),
+                    vertex.uv.map(f32::to_bits),
+                )
+            })
+            .collect()
     }
 
     #[test]
@@ -1128,6 +1228,34 @@ mod tests {
             u32::from_le_bytes(bytes[37..41].try_into().expect("shape count")),
             1
         );
+    }
+
+    #[test]
+    fn glb_input_and_pmesh_output_keep_topology_normals_and_uvs() {
+        let glb = minimal_glb_with_uvs();
+        let glb_mesh = decode_gltf_mesh(&glb, 0).expect("decode source glb mesh");
+        assert_eq!(primary_indices(&glb_mesh), &[0, 1, 2, 0, 2, 3]);
+
+        let path = unique_temp_path("perro_pmesh_parity");
+        fs::write(&path, &glb).expect("write temp glb");
+        for bake_meshlets in [false, true] {
+            let entries =
+                build_gltf_mesh_entries(&path, "res://mesh.glb", "mesh.glb", bake_meshlets)
+                    .expect("bake glb mesh");
+            assert_eq!(entries.len(), 1);
+            let pmesh = decode_pmesh(&entries[0].1).expect("decode baked pmesh render payload");
+            assert_eq!(
+                vertex_stream_signature(&pmesh),
+                vertex_stream_signature(&glb_mesh),
+                "bake_meshlets={bake_meshlets}"
+            );
+            if bake_meshlets {
+                assert!(!pmesh.meshlets.is_empty());
+            } else {
+                assert!(pmesh.meshlets.is_empty());
+            }
+        }
+        let _ = fs::remove_file(&path);
     }
 
     #[test]

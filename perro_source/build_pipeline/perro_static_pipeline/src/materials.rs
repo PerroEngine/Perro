@@ -147,6 +147,7 @@ struct CustomMaterialLiteral {
     shader_path: String,
     params: Vec<CustomParamLiteral>,
     lighting: CustomMaterialLighting3D,
+    surface: StandardMaterial3D,
 }
 
 #[derive(Clone)]
@@ -213,6 +214,7 @@ struct CustomMaterialKey {
     shader_path: String,
     params: Vec<CustomParamKey>,
     lighting: CustomMaterialLighting3D,
+    surface: StandardMaterialKey,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -234,32 +236,7 @@ enum CustomParamValueKey {
 impl From<&MaterialLiteral> for MaterialKey {
     fn from(value: &MaterialLiteral) -> Self {
         match value {
-            MaterialLiteral::Standard(v) => MaterialKey::Standard(StandardMaterialKey {
-                base_color_factor: [
-                    v.base_color_factor[0].to_bits(),
-                    v.base_color_factor[1].to_bits(),
-                    v.base_color_factor[2].to_bits(),
-                    v.base_color_factor[3].to_bits(),
-                ],
-                roughness_factor: v.roughness_factor.to_bits(),
-                metallic_factor: v.metallic_factor.to_bits(),
-                occlusion_strength: v.occlusion_strength.to_bits(),
-                emissive_factor: [
-                    v.emissive_factor[0].to_bits(),
-                    v.emissive_factor[1].to_bits(),
-                    v.emissive_factor[2].to_bits(),
-                ],
-                alpha_mode: v.alpha_mode,
-                alpha_cutoff: v.alpha_cutoff.to_bits(),
-                double_sided: v.double_sided,
-                flat_shading: v.flat_shading,
-                normal_scale: v.normal_scale.to_bits(),
-                base_color_texture: v.base_color_texture,
-                metallic_roughness_texture: v.metallic_roughness_texture,
-                normal_texture: v.normal_texture,
-                occlusion_texture: v.occlusion_texture,
-                emissive_texture: v.emissive_texture,
-            }),
+            MaterialLiteral::Standard(v) => MaterialKey::Standard(standard_material_key(v)),
             MaterialLiteral::Unlit(v) => MaterialKey::Unlit(UnlitMaterialKey {
                 base_color_factor: [
                     v.base_color_factor[0].to_bits(),
@@ -303,6 +280,7 @@ impl From<&MaterialLiteral> for MaterialKey {
             MaterialLiteral::Custom(v) => MaterialKey::Custom(CustomMaterialKey {
                 shader_path: v.shader_path.clone(),
                 lighting: v.lighting,
+                surface: standard_material_key(&v.surface),
                 params: v
                     .params
                     .iter()
@@ -336,6 +314,35 @@ impl From<&MaterialLiteral> for MaterialKey {
     }
 }
 
+fn standard_material_key(v: &StandardMaterial3D) -> StandardMaterialKey {
+    StandardMaterialKey {
+        base_color_factor: [
+            v.base_color_factor[0].to_bits(),
+            v.base_color_factor[1].to_bits(),
+            v.base_color_factor[2].to_bits(),
+            v.base_color_factor[3].to_bits(),
+        ],
+        roughness_factor: v.roughness_factor.to_bits(),
+        metallic_factor: v.metallic_factor.to_bits(),
+        occlusion_strength: v.occlusion_strength.to_bits(),
+        emissive_factor: [
+            v.emissive_factor[0].to_bits(),
+            v.emissive_factor[1].to_bits(),
+            v.emissive_factor[2].to_bits(),
+        ],
+        alpha_mode: v.alpha_mode,
+        alpha_cutoff: v.alpha_cutoff.to_bits(),
+        double_sided: v.double_sided,
+        flat_shading: v.flat_shading,
+        normal_scale: v.normal_scale.to_bits(),
+        base_color_texture: v.base_color_texture,
+        metallic_roughness_texture: v.metallic_roughness_texture,
+        normal_texture: v.normal_texture,
+        occlusion_texture: v.occlusion_texture,
+        emissive_texture: v.emissive_texture,
+    }
+}
+
 fn material_from_runtime_entries(entries: &[SceneObjectField]) -> Option<MaterialLiteral> {
     let mut any = false;
     let kind = material_type_from_first_runtime(entries);
@@ -360,6 +367,7 @@ fn material_from_runtime_entries(entries: &[SceneObjectField]) -> Option<Materia
                 shader_path: String::new(),
                 params: Vec::new(),
                 lighting: CustomMaterialLighting3D::Standard,
+                surface: StandardMaterial3D::default(),
             };
             apply_custom_runtime_entries(entries, &mut out, &mut any);
             any.then_some(MaterialLiteral::Custom(out))
@@ -629,6 +637,7 @@ fn apply_custom_runtime_entries(
     out: &mut CustomMaterialLiteral,
     any: &mut bool,
 ) {
+    apply_standard_runtime_entries(entries, &mut out.surface, any);
     for (name, value) in entries {
         match canonical_custom_key(name.as_ref()) {
             Some("shaderPath") => {
@@ -1105,12 +1114,89 @@ fn material_literal_to_code(material: &MaterialLiteral) -> String {
                 rendered
             };
             format!(
-                "Material3D::Custom(CustomMaterial3D {{ shader_path: Cow::Borrowed({:?}), params: {}, lighting: {} }})",
+                "Material3D::Custom(CustomMaterial3D {{ shader_path: Cow::Borrowed({:?}), params: {}, lighting: {}, surface: {} }})",
                 m.shader_path,
                 params,
-                custom_lighting_to_code(m.lighting)
+                custom_lighting_to_code(m.lighting),
+                standard_material_struct_to_code(&m.surface)
             )
         }
+    }
+}
+
+fn standard_material_struct_to_code(m: &StandardMaterial3D) -> String {
+    let d = StandardMaterial3D::default();
+    let mut fields = Vec::<String>::new();
+    if m.base_color_factor != d.base_color_factor {
+        fields.push(format!(
+            "base_color_factor: [{:.6}, {:.6}, {:.6}, {:.6}]",
+            m.base_color_factor[0],
+            m.base_color_factor[1],
+            m.base_color_factor[2],
+            m.base_color_factor[3]
+        ));
+    }
+    if m.roughness_factor != d.roughness_factor {
+        fields.push(format!("roughness_factor: {:.6}", m.roughness_factor));
+    }
+    if m.metallic_factor != d.metallic_factor {
+        fields.push(format!("metallic_factor: {:.6}", m.metallic_factor));
+    }
+    if m.occlusion_strength != d.occlusion_strength {
+        fields.push(format!("occlusion_strength: {:.6}", m.occlusion_strength));
+    }
+    if m.emissive_factor != d.emissive_factor {
+        fields.push(format!(
+            "emissive_factor: [{:.6}, {:.6}, {:.6}]",
+            m.emissive_factor[0], m.emissive_factor[1], m.emissive_factor[2]
+        ));
+    }
+    if m.alpha_mode != d.alpha_mode {
+        fields.push(format!("alpha_mode: {}", m.alpha_mode));
+    }
+    if m.alpha_cutoff != d.alpha_cutoff {
+        fields.push(format!("alpha_cutoff: {:.6}", m.alpha_cutoff));
+    }
+    if m.double_sided != d.double_sided {
+        fields.push(format!(
+            "double_sided: {}",
+            if m.double_sided { "true" } else { "false" }
+        ));
+    }
+    if m.flat_shading != d.flat_shading {
+        fields.push(format!(
+            "flat_shading: {}",
+            if m.flat_shading { "true" } else { "false" }
+        ));
+    }
+    if m.normal_scale != d.normal_scale {
+        fields.push(format!("normal_scale: {:.6}", m.normal_scale));
+    }
+    if m.base_color_texture != d.base_color_texture {
+        fields.push(format!("base_color_texture: {}", m.base_color_texture));
+    }
+    if m.metallic_roughness_texture != d.metallic_roughness_texture {
+        fields.push(format!(
+            "metallic_roughness_texture: {}",
+            m.metallic_roughness_texture
+        ));
+    }
+    if m.normal_texture != d.normal_texture {
+        fields.push(format!("normal_texture: {}", m.normal_texture));
+    }
+    if m.occlusion_texture != d.occlusion_texture {
+        fields.push(format!("occlusion_texture: {}", m.occlusion_texture));
+    }
+    if m.emissive_texture != d.emissive_texture {
+        fields.push(format!("emissive_texture: {}", m.emissive_texture));
+    }
+    if fields.is_empty() {
+        "StandardMaterial3D::const_default()".to_string()
+    } else {
+        format!(
+            "StandardMaterial3D {{ {}, ..StandardMaterial3D::const_default() }}",
+            fields.join(", ")
+        )
     }
 }
 
@@ -1220,12 +1306,15 @@ fn materials_from_gltf_file(
 #[cfg(test)]
 mod tests {
     use super::{
-        CustomMaterialLiteral, MaterialLiteral, load_pmat_literal, material_literal_to_code,
+        CustomMaterialLiteral, CustomParamLiteral, MaterialLiteral, load_pmat_literal,
+        material_literal_to_code,
     };
     use perro_render_bridge::{
-        CustomMaterialLighting3D, CustomMaterialParamValue3D, StandardMaterial3D, ToonMaterial3D,
+        CustomMaterial3D, CustomMaterialLighting3D, CustomMaterialParam3D,
+        CustomMaterialParamValue3D, Material3D, StandardMaterial3D, ToonMaterial3D,
         UnlitMaterial3D,
     };
+    use std::borrow::Cow;
 
     #[test]
     fn material_codegen_uses_default_ctor_for_default_standard() {
@@ -1275,8 +1364,15 @@ mod tests {
             shader_path: "res://shaders/custom.wgsl".to_string(),
             params: Vec::new(),
             lighting: CustomMaterialLighting3D::Raw,
+            surface: StandardMaterial3D {
+                alpha_mode: 2,
+                double_sided: true,
+                ..Default::default()
+            },
         }));
         assert!(code.contains("lighting: CustomMaterialLighting3D::Raw"));
+        assert!(code.contains("surface: StandardMaterial3D { alpha_mode: 2"));
+        assert!(code.contains("double_sided: true"));
     }
 
     #[test]
@@ -1308,5 +1404,94 @@ params = {
         );
         assert_eq!(custom.params[1].name.as_deref(), Some("glow"));
         assert_eq!(custom.params[1].value, CustomMaterialParamValue3D::F32(0.9));
+    }
+
+    #[test]
+    fn static_pmat_parse_matches_runtime_dynamic_parse() {
+        for source in [
+            r#"
+type = "standard"
+base_color_factor = (0.2, 0.4, 0.6, 0.8)
+roughness_factor = 0.35
+metallic_factor = 0.75
+alpha_mode = "blend"
+double_sided = true
+"#,
+            r#"
+{
+    type = "toon",
+    color = (0.9, 0.7, 0.1, 1.0),
+    alpha_mode = "mask",
+    band_count = 6,
+    rim_strength = 0.45,
+    outline_width = 0.02,
+}
+"#,
+            r#"
+type = "custom"
+shader_path = "res://shaders/rune_crystal.wgsl"
+lighting = "raw"
+alpha_mode = "blend"
+params = {
+    tint = (1.0, 0.24, 0.18, 1.0)
+    glow = 0.9
+    use_grid = true
+}
+"#,
+        ] {
+            let static_material =
+                literal_to_material(load_pmat_literal(source).expect("static material parses"));
+            let runtime_material = perro_runtime::parse_material_text_for_static_parity(source)
+                .expect("runtime material parses");
+            assert_eq!(static_material, runtime_material, "source:\n{source}");
+        }
+
+        let custom = perro_runtime::parse_material_text_for_static_parity(
+            r#"
+type = "custom"
+shader_path = "res://shaders/rune_crystal.wgsl"
+alpha_mode = "blend"
+alpha_cutoff = 0.25
+double_sided = true
+"#,
+        )
+        .expect("runtime material parses");
+        let params = custom.standard_params();
+        assert_eq!(params.alpha_mode, 2);
+        assert_eq!(params.alpha_cutoff, 0.25);
+        assert!(params.double_sided);
+    }
+
+    fn literal_to_material(literal: MaterialLiteral) -> Material3D {
+        match literal {
+            MaterialLiteral::Standard(material) => Material3D::Standard(material),
+            MaterialLiteral::Unlit(material) => Material3D::Unlit(material),
+            MaterialLiteral::Toon(material) => Material3D::Toon(material),
+            MaterialLiteral::Custom(material) => {
+                Material3D::Custom(custom_literal_to_material(material))
+            }
+        }
+    }
+
+    fn custom_literal_to_material(literal: CustomMaterialLiteral) -> CustomMaterial3D {
+        CustomMaterial3D {
+            shader_path: Cow::Owned(literal.shader_path),
+            params: Cow::Owned(
+                literal
+                    .params
+                    .into_iter()
+                    .map(custom_param_literal_to_material)
+                    .collect(),
+            ),
+            lighting: literal.lighting,
+            surface: literal.surface,
+        }
+    }
+
+    fn custom_param_literal_to_material(literal: CustomParamLiteral) -> CustomMaterialParam3D {
+        CustomMaterialParam3D {
+            name: literal.name.map(Cow::Owned),
+            value: literal.value,
+        }
     }
 }

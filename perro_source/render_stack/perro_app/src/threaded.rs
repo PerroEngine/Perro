@@ -32,6 +32,7 @@ use crate::winit_runner::image_helpers::load_image_sizes;
 
 const MIN_FRAME_RATE_CAP_FPS: f32 = 1.0;
 const MAX_FRAME_RATE_CAP_FPS: f32 = 1000.0;
+const HIGH_RATE_FRAME_INTERVAL: Duration = Duration::from_millis(8);
 
 fn normalize_frame_rate_cap(cap: RuntimeFrameRateCap) -> RuntimeFrameRateCap {
     match cap {
@@ -77,6 +78,21 @@ fn sim_frame_cap_interval(cap: RuntimeFrameRateCap) -> Option<Duration> {
         RuntimeFrameRateCap::Unlimited => None,
         RuntimeFrameRateCap::Fps(fps) => Some(frame_interval_from_fps(fps)),
         RuntimeFrameRateCap::RefreshRate => Some(frame_interval_from_fps(60.0)),
+    }
+}
+
+fn wait_until_sim_deadline(deadline: Instant, interval: Duration) {
+    loop {
+        let now = Instant::now();
+        if now >= deadline {
+            return;
+        }
+        let remaining = deadline.duration_since(now);
+        if interval > HIGH_RATE_FRAME_INTERVAL && remaining > Duration::from_millis(2) {
+            thread::sleep(remaining - Duration::from_millis(1));
+        } else {
+            std::hint::spin_loop();
+        }
     }
 }
 
@@ -566,7 +582,7 @@ impl Default for SimThreadConfig {
     fn default() -> Self {
         Self {
             fixed_timestep: None,
-            idle_sleep: Duration::from_millis(1),
+            idle_sleep: Duration::ZERO,
         }
     }
 }
@@ -944,7 +960,14 @@ impl<B: GraphicsBackend> ThreadedRunnerState<B> {
         if let Some(deadline) = self.next_frame_deadline
             && deadline > now
         {
-            event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
+            if self
+                .frame_cap_interval()
+                .is_some_and(|interval| interval <= HIGH_RATE_FRAME_INTERVAL)
+            {
+                event_loop.set_control_flow(ControlFlow::Poll);
+            } else {
+                event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
+            }
         } else {
             event_loop.set_control_flow(ControlFlow::Poll);
         }
@@ -1491,6 +1514,7 @@ fn run_sim_loop(mut runtime: Runtime, bridge: SimBridge, config: SimThreadConfig
         .project()
         .map(|project| project_frame_rate_cap(project.config.frame_rate_cap))
         .unwrap_or(RuntimeFrameRateCap::Unlimited);
+    eprintln!("[perro][runtime] frame_rate_cap=({sim_frame_rate_cap:?})");
     if runtime.project().is_some() {
         window_requests.push(WindowRequest::SetFrameRateCap(sim_frame_rate_cap));
         bridge.send_window_requests(&mut window_requests);
@@ -1594,10 +1618,7 @@ fn run_sim_loop(mut runtime: Runtime, bridge: SimBridge, config: SimThreadConfig
             let target = tick_start
                 .checked_add(interval)
                 .unwrap_or_else(Instant::now);
-            let now = Instant::now();
-            if target > now {
-                thread::sleep(target.duration_since(now));
-            }
+            wait_until_sim_deadline(target, interval);
         } else if !config.idle_sleep.is_zero() {
             thread::sleep(config.idle_sleep);
         }
@@ -1668,6 +1689,17 @@ mod tests {
         render.drain_window_requests(&mut out);
 
         assert_eq!(out, vec![WindowRequest::SetTitle("x".to_string())]);
+    }
+
+    #[test]
+    fn default_sim_config_does_not_sleep_when_uncapped() {
+        assert_eq!(SimThreadConfig::default().idle_sleep, Duration::ZERO);
+    }
+
+    #[test]
+    fn high_rate_caps_use_short_intervals() {
+        let interval = sim_frame_cap_interval(RuntimeFrameRateCap::Fps(300.0)).unwrap();
+        assert!(interval <= HIGH_RATE_FRAME_INTERVAL);
     }
 
     #[test]

@@ -325,17 +325,35 @@ pub(super) fn choose_present_mode(
 
     for mode in preferred {
         if modes.contains(mode) {
+            if !vsync_enabled
+                && matches!(
+                    mode,
+                    wgpu::PresentMode::AutoVsync
+                        | wgpu::PresentMode::Fifo
+                        | wgpu::PresentMode::FifoRelaxed
+                )
+            {
+                eprintln!(
+                    "[perro][gfx] vsync=false but surface only chose vsync present mode: ({mode:?})"
+                );
+            }
             return *mode;
         }
     }
-    modes.first().copied().unwrap_or(wgpu::PresentMode::Fifo)
+    let fallback = modes.first().copied().unwrap_or(wgpu::PresentMode::Fifo);
+    if !vsync_enabled {
+        eprintln!(
+            "[perro][gfx] vsync=false but no no-vsync present mode found; fallback=({fallback:?})"
+        );
+    }
+    fallback
 }
 
 pub(super) fn choose_max_frame_latency(_vsync_enabled: bool) -> u32 {
     #[cfg(target_arch = "wasm32")]
     let default = 1;
     #[cfg(not(target_arch = "wasm32"))]
-    let default = if _vsync_enabled { 3 } else { 1 };
+    let default = if _vsync_enabled { 3 } else { 8 };
     std::env::var("PERRO_FRAME_LATENCY")
         .ok()
         .and_then(|raw| raw.parse::<u32>().ok())

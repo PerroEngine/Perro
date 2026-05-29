@@ -562,6 +562,7 @@ pub struct CustomMaterial3D {
     pub shader_path: Cow<'static, str>,
     pub params: Cow<'static, [CustomMaterialParam3D]>,
     pub lighting: CustomMaterialLighting3D,
+    pub surface: StandardMaterial3D,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -577,6 +578,7 @@ impl CustomMaterial3D {
             shader_path: shader_path.into(),
             params: Cow::Borrowed(&[]),
             lighting: CustomMaterialLighting3D::Standard,
+            surface: StandardMaterial3D::default(),
         }
     }
 
@@ -589,12 +591,19 @@ impl CustomMaterial3D {
             shader_path: shader_path.into(),
             params: Cow::Owned(params),
             lighting: CustomMaterialLighting3D::Standard,
+            surface: StandardMaterial3D::default(),
         }
     }
 
     #[inline]
     pub fn with_lighting(mut self, lighting: CustomMaterialLighting3D) -> Self {
         self.lighting = lighting;
+        self
+    }
+
+    #[inline]
+    pub fn with_surface(mut self, surface: StandardMaterial3D) -> Self {
+        self.surface = surface;
         self
     }
 }
@@ -652,7 +661,7 @@ impl Material3D {
                 occlusion_strength: 1.0,
                 normal_scale: 1.0,
             },
-            Material3D::Custom(_) => StandardMaterial3D::default(),
+            Material3D::Custom(params) => params.surface,
         }
     }
 }
