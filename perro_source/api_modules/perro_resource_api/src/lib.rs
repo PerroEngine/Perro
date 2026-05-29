@@ -9,7 +9,10 @@ pub use perro_csv::{
 };
 #[doc(hidden)]
 pub use perro_ids::string_to_u64 as __perro_string_to_u64;
-pub use perro_render_bridge::{Material3D, Mesh3D, MeshSurfaceRange, RuntimeMeshVertex};
+pub use perro_render_bridge::{
+    CustomMaterial3D, CustomMaterialLighting3D, CustomMaterialParam3D, CustomMaterialParamValue3D,
+    Material3D, Mesh3D, MeshSurfaceRange, RuntimeMeshVertex,
+};
 pub use perro_scene::{Scene, SceneDoc, SceneWrite};
 pub use res_path::{ResPath, ResPathBuf, ResPathError, ResPathKind, ResPathSource};
 
@@ -52,7 +55,10 @@ pub mod prelude {
         AnimationID, AnimationTreeID, LightID, MaterialID, MeshID, NodeID, ScriptMemberID,
         SignalID, TagID, TextureID,
     };
-    pub use perro_render_bridge::{Material3D, Mesh3D, MeshSurfaceRange, RuntimeMeshVertex};
+    pub use perro_render_bridge::{
+        CustomMaterial3D, CustomMaterialLighting3D, CustomMaterialParam3D,
+        CustomMaterialParamValue3D, Material3D, Mesh3D, MeshSurfaceRange, RuntimeMeshVertex,
+    };
     pub use perro_scene::{Scene, SceneDoc, SceneWrite};
     pub use perro_structs::{Vector2, Vector3};
 }
