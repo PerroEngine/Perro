@@ -1,5 +1,6 @@
 use crate::{
     StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir, write_hash_const,
+    write_static_lookup_fn,
 };
 use perro_asset_formats::source_ext;
 use perro_io::walkdir::collect_file_paths;
@@ -81,17 +82,26 @@ pub fn generate_static_ui_styles(project_root: &Path) -> Result<(), StaticPipeli
     if !style_refs.is_empty() {
         out.push('\n');
     }
-    out.push_str("pub const fn lookup_ui_style(path_hash: u64) -> &'static UiStyle {\n");
-    out.push_str("    match path_hash {\n");
-    for (hash_index, (_, index)) in style_refs.iter().enumerate() {
-        let _ = writeln!(
-            out,
-            "        UI_STYLE_HASH_{hash_index} => &UI_STYLE_{index},"
-        );
-    }
-    out.push_str("        _ => &EMPTY_UI_STYLE,\n");
-    out.push_str("    }\n");
-    out.push_str("}\n");
+    let lookup_entries = style_refs
+        .iter()
+        .enumerate()
+        .map(|(hash_index, (path, index))| {
+            (
+                perro_ids::string_to_u64(path),
+                format!("UI_STYLE_HASH_{hash_index}"),
+                format!("&UI_STYLE_{index}"),
+            )
+        })
+        .collect::<Vec<_>>();
+    write_static_lookup_fn(
+        &mut out,
+        "lookup_ui_style",
+        "UI_STYLE_TABLE",
+        "UiStyleEntry",
+        "&'static UiStyle",
+        "&EMPTY_UI_STYLE",
+        &lookup_entries,
+    );
 
     fs::write(static_dir.join("ui_styles.rs"), out)?;
     Ok(())

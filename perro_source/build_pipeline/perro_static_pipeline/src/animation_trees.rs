@@ -1,5 +1,6 @@
 use crate::{
     StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir, write_hash_const,
+    write_static_lookup_fn,
 };
 use perro_asset_formats::source_ext;
 use perro_io::walkdir::collect_file_paths;
@@ -65,13 +66,25 @@ pub fn generate_static_animation_trees(project_root: &Path) -> Result<(), Static
     if !parsed.is_empty() {
         lookup.push('\n');
     }
-    lookup.push_str("pub const fn lookup_animation_tree(path_hash: u64) -> &'static AnimationTreeAsset {\n    match path_hash {\n");
+    let mut lookup_entries = Vec::with_capacity(parsed.len());
     for (index, item) in parsed.iter().enumerate() {
         src.push_str(&emit_tree(&item.lookup_key, &item.tree));
         let id = sanitize_ident(&item.lookup_key);
-        let _ = writeln!(lookup, "        ANIMATION_TREE_HASH_{index} => &TREE_{id},");
+        lookup_entries.push((
+            perro_ids::string_to_u64(&item.lookup_key),
+            format!("ANIMATION_TREE_HASH_{index}"),
+            format!("&TREE_{id}"),
+        ));
     }
-    lookup.push_str("        _ => &EMPTY_ANIMATION_TREE,\n    }\n}\n");
+    write_static_lookup_fn(
+        &mut lookup,
+        "lookup_animation_tree",
+        "ANIMATION_TREE_TABLE",
+        "AnimationTreeEntry",
+        "&'static AnimationTreeAsset",
+        "&EMPTY_ANIMATION_TREE",
+        &lookup_entries,
+    );
     src.push_str(&lookup);
     fs::write(static_dir.join("animation_trees.rs"), src)?;
     Ok(())

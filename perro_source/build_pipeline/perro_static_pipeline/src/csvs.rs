@@ -1,6 +1,6 @@
 use crate::{
     StaticPipelineError, asset_uri, ensure_unique_hashes, escape_rust_str, res_dir, static_dir,
-    write_hash_const,
+    write_hash_const, write_static_lookup_fn,
 };
 use perro_ids::string_to_u64;
 use std::{
@@ -78,14 +78,26 @@ pub fn generate_static_csvs(project_root: &Path) -> Result<(), StaticPipelineErr
         emit_csv_table(&mut out, table_index, table, &string_pool);
     }
 
-    out.push_str("pub const fn lookup_csv(path_hash: u64) -> &'static Csv {\n");
-    out.push_str("    match path_hash {\n");
-    for (table_index, _) in tables.iter().enumerate() {
-        let _ = writeln!(out, "        CSV_HASH_{table_index} => &CSV_{table_index},");
-    }
-    out.push_str("        _ => &EMPTY_CSV,\n");
-    out.push_str("    }\n");
-    out.push_str("}\n");
+    let lookup_entries = tables
+        .iter()
+        .enumerate()
+        .map(|(table_index, table)| {
+            (
+                string_to_u64(&table.asset_path),
+                format!("CSV_HASH_{table_index}"),
+                format!("&CSV_{table_index}"),
+            )
+        })
+        .collect::<Vec<_>>();
+    write_static_lookup_fn(
+        &mut out,
+        "lookup_csv",
+        "CSV_TABLE",
+        "CsvEntry",
+        "&'static Csv",
+        "&EMPTY_CSV",
+        &lookup_entries,
+    );
 
     fs::write(static_dir.join("csvs.rs"), out)?;
     Ok(())

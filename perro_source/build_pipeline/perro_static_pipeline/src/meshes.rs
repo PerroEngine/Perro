@@ -2,7 +2,7 @@
 
 use crate::{
     StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir,
-    write_hash_const,
+    write_hash_const, write_static_lookup_fn,
 };
 use perro_asset_formats::{
     pmesh::{
@@ -206,17 +206,29 @@ pub fn generate_static_meshes(
     if !mesh_refs.is_empty() {
         out.push('\n');
     }
-    out.push_str("pub const fn lookup_mesh(path_hash: u64) -> &'static [u8] {\n");
-    out.push_str("    match path_hash {\n");
-    for (hash_index, mesh_ref) in mesh_refs.iter().enumerate() {
-        let mesh_index = *static_index_by_embedded
-            .get(&mesh_ref.embedded_rel_path)
-            .expect("static mesh index missing for embedded rel path");
-        let _ = writeln!(out, "        MESH_HASH_{hash_index} => MESH_{mesh_index},");
-    }
-    out.push_str("        _ => EMPTY_MESH,\n");
-    out.push_str("    }\n");
-    out.push_str("}\n");
+    let lookup_entries = mesh_refs
+        .iter()
+        .enumerate()
+        .map(|(hash_index, mesh_ref)| {
+            let mesh_index = *static_index_by_embedded
+                .get(&mesh_ref.embedded_rel_path)
+                .expect("static mesh index missing for embedded rel path");
+            (
+                perro_ids::string_to_u64(&mesh_ref.lookup_key),
+                format!("MESH_HASH_{hash_index}"),
+                format!("MESH_{mesh_index}"),
+            )
+        })
+        .collect::<Vec<_>>();
+    write_static_lookup_fn(
+        &mut out,
+        "lookup_mesh",
+        "MESH_TABLE",
+        "MeshEntry",
+        "&'static [u8]",
+        "EMPTY_MESH",
+        &lookup_entries,
+    );
 
     fs::write(static_dir.join("meshes.rs"), out)?;
     Ok(())

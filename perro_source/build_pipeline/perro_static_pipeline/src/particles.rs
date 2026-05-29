@@ -1,5 +1,6 @@
 use crate::{
     StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir, write_hash_const,
+    write_static_lookup_fn,
 };
 use perro_asset_formats::source_ext;
 use perro_io::walkdir::collect_file_paths;
@@ -86,18 +87,26 @@ pub fn generate_static_particles(project_root: &Path) -> Result<(), StaticPipeli
     if !particle_refs.is_empty() {
         out.push('\n');
     }
-    out.push_str("pub const fn lookup_particle(path_hash: u64) -> &'static ParticleProfile3D {\n");
-    out.push_str("    match path_hash {\n");
-    for (hash_index, (_, index)) in particle_refs.iter().enumerate() {
-        let _ = writeln!(
-            out,
-            "        PARTICLE_HASH_{hash_index} => &PARTICLE_{},",
-            index,
-        );
-    }
-    out.push_str("        _ => &EMPTY_PARTICLE,\n");
-    out.push_str("    }\n");
-    out.push_str("}\n");
+    let lookup_entries = particle_refs
+        .iter()
+        .enumerate()
+        .map(|(hash_index, (path, index))| {
+            (
+                perro_ids::string_to_u64(path),
+                format!("PARTICLE_HASH_{hash_index}"),
+                format!("&PARTICLE_{index}"),
+            )
+        })
+        .collect::<Vec<_>>();
+    write_static_lookup_fn(
+        &mut out,
+        "lookup_particle",
+        "PARTICLE_TABLE",
+        "ParticleEntry",
+        "&'static ParticleProfile3D",
+        "&EMPTY_PARTICLE",
+        &lookup_entries,
+    );
 
     fs::write(static_dir.join("particles.rs"), out)?;
     Ok(())

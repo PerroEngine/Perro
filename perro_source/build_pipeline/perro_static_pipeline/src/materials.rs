@@ -1,5 +1,6 @@
 use crate::{
     StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir, write_hash_const,
+    write_static_lookup_fn,
 };
 use perro_asset_formats::source_ext;
 use perro_io::walkdir::collect_file_paths;
@@ -108,18 +109,26 @@ pub fn generate_static_materials(project_root: &Path) -> Result<(), StaticPipeli
     if !material_refs.is_empty() {
         out.push('\n');
     }
-    out.push_str("pub const fn lookup_material(path_hash: u64) -> &'static Material3D {\n");
-    out.push_str("    match path_hash {\n");
-    for (hash_index, (_, index)) in material_refs.iter().enumerate() {
-        let _ = writeln!(
-            out,
-            "        MATERIAL_HASH_{hash_index} => &MATERIAL_{},",
-            index,
-        );
-    }
-    out.push_str("        _ => &EMPTY_MATERIAL,\n");
-    out.push_str("    }\n");
-    out.push_str("}\n");
+    let lookup_entries = material_refs
+        .iter()
+        .enumerate()
+        .map(|(hash_index, (path, index))| {
+            (
+                perro_ids::string_to_u64(path),
+                format!("MATERIAL_HASH_{hash_index}"),
+                format!("&MATERIAL_{index}"),
+            )
+        })
+        .collect::<Vec<_>>();
+    write_static_lookup_fn(
+        &mut out,
+        "lookup_material",
+        "MATERIAL_TABLE",
+        "MaterialEntry",
+        "&'static Material3D",
+        "&EMPTY_MATERIAL",
+        &lookup_entries,
+    );
 
     fs::write(static_dir.join("materials.rs"), out)?;
     Ok(())

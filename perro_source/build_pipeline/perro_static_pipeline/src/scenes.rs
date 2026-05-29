@@ -1,6 +1,6 @@
 use crate::{
     StaticPipelineError, asset_prefix, asset_uri, ensure_unique_hashes, res_dir, static_dir,
-    strip_asset_prefix, write_hash_const,
+    strip_asset_prefix, write_hash_const, write_static_lookup_fn,
 };
 use perro_asset_formats::source_ext;
 use perro_io::walkdir::collect_file_paths;
@@ -70,15 +70,26 @@ pub fn generate_static_scenes(project_root: &Path) -> Result<(), StaticPipelineE
     if !scene_paths.is_empty() {
         lookup.push('\n');
     }
-    lookup.push_str("pub const fn lookup_scene(path_hash: u64) -> &'static Scene {\n");
-    lookup.push_str("    match path_hash {\n");
-    for (index, p) in scene_paths.iter().enumerate() {
-        let id = sanitize_ident(p);
-        let _ = writeln!(lookup, "        SCENE_HASH_{index} => &SCENE_{},", id,);
-    }
-    lookup.push_str("        _ => &EMPTY_SCENE,\n");
-    lookup.push_str("    }\n");
-    lookup.push_str("}\n");
+    let lookup_entries = scene_paths
+        .iter()
+        .enumerate()
+        .map(|(index, p)| {
+            (
+                perro_ids::string_to_u64(p),
+                format!("SCENE_HASH_{index}"),
+                format!("&SCENE_{}", sanitize_ident(p)),
+            )
+        })
+        .collect::<Vec<_>>();
+    write_static_lookup_fn(
+        &mut lookup,
+        "lookup_scene",
+        "SCENE_TABLE",
+        "SceneEntry",
+        "&'static Scene",
+        "&EMPTY_SCENE",
+        &lookup_entries,
+    );
 
     let mut shared_consts = String::new();
     if any_uses_empty_keys {

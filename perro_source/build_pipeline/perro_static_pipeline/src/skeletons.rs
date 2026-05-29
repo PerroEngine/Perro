@@ -1,6 +1,6 @@
 use crate::{
     StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir,
-    write_hash_const,
+    write_hash_const, write_static_lookup_fn,
 };
 use perro_asset_formats::{
     pskel::{
@@ -191,14 +191,26 @@ pub fn generate_static_skeletons(project_root: &Path) -> Result<(), StaticPipeli
     if !skeleton_refs.is_empty() {
         out.push('\n');
     }
-    out.push_str("pub const fn lookup_skeleton(path_hash: u64) -> &'static [u8] {\n");
-    out.push_str("    match path_hash {\n");
-    for (index, _) in skeleton_refs.iter().enumerate() {
-        let _ = writeln!(out, "        SKELETON_HASH_{index} => SKELETON_{index},");
-    }
-    out.push_str("        _ => EMPTY_SKELETON,\n");
-    out.push_str("    }\n");
-    out.push_str("}\n");
+    let lookup_entries = skeleton_refs
+        .iter()
+        .enumerate()
+        .map(|(index, skel_ref)| {
+            (
+                perro_ids::string_to_u64(&skel_ref.lookup_key),
+                format!("SKELETON_HASH_{index}"),
+                format!("SKELETON_{index}"),
+            )
+        })
+        .collect::<Vec<_>>();
+    write_static_lookup_fn(
+        &mut out,
+        "lookup_skeleton",
+        "SKELETON_TABLE",
+        "SkeletonEntry",
+        "&'static [u8]",
+        "EMPTY_SKELETON",
+        &lookup_entries,
+    );
 
     fs::write(static_dir.join("skeletons.rs"), out)?;
     Ok(())

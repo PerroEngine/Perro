@@ -1,5 +1,6 @@
 use crate::{
     StaticPipelineError, asset_uri, ensure_unique_hashes, res_dir, static_dir, write_hash_const,
+    write_static_lookup_fn,
 };
 use perro_animation::{
     AnimationBoneSelector, AnimationEase, AnimationEvent, AnimationEventScope,
@@ -82,20 +83,24 @@ pub fn generate_static_animations(project_root: &Path) -> Result<(), StaticPipel
     if !parsed.is_empty() {
         lookup.push('\n');
     }
-    lookup.push_str("pub const fn lookup_animation(path_hash: u64) -> &'static AnimationClip {\n");
-    lookup.push_str("    match path_hash {\n");
-
+    let mut lookup_entries = Vec::with_capacity(parsed.len());
     for (index, anim) in parsed.iter().enumerate() {
         src.push_str(&emit_static_animation_const(&anim.lookup_key, &anim.clip)?);
-        let _ = writeln!(
-            lookup,
-            "        ANIMATION_HASH_{index} => &CLIP_{},",
-            sanitize_ident(&anim.lookup_key)
-        );
+        lookup_entries.push((
+            perro_ids::string_to_u64(&anim.lookup_key),
+            format!("ANIMATION_HASH_{index}"),
+            format!("&CLIP_{}", sanitize_ident(&anim.lookup_key)),
+        ));
     }
-    lookup.push_str("        _ => &EMPTY_ANIMATION_CLIP,\n");
-    lookup.push_str("    }\n");
-    lookup.push_str("}\n");
+    write_static_lookup_fn(
+        &mut lookup,
+        "lookup_animation",
+        "ANIMATION_TABLE",
+        "AnimationEntry",
+        "&'static AnimationClip",
+        "&EMPTY_ANIMATION_CLIP",
+        &lookup_entries,
+    );
 
     src.push('\n');
     src.push_str(&lookup);

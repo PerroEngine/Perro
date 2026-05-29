@@ -2,7 +2,7 @@
 
 use crate::{
     StaticPipelineError, asset_prefix, ensure_unique_hashes, is_asset_uri, res_dir, static_dir,
-    strip_asset_prefix, write_hash_const,
+    strip_asset_prefix, write_hash_const, write_static_lookup_fn,
 };
 use perro_asset_formats::{
     pmesh::{
@@ -89,23 +89,32 @@ pub fn generate_static_collision_trimeshes(project_root: &Path) -> Result<(), St
     if !sources.is_empty() {
         out.push('\n');
     }
-    out.push_str("pub const fn lookup_collision_trimesh(path_hash: u64) -> &'static [u8] {\n");
-    out.push_str("    match path_hash {\n");
-    for (hash_index, source) in sources.iter().enumerate() {
-        let rel = file_by_source
-            .get(source)
-            .expect("collision trimesh rel path missing for source");
-        let idx = *rel_to_index
-            .get(rel)
-            .expect("collision trimesh index missing for rel path");
-        let _ = writeln!(
-            out,
-            "        COLLISION_TRIMESH_HASH_{hash_index} => COLLISION_TRIMESH_{idx},"
-        );
-    }
-    out.push_str("        _ => EMPTY_COLLISION_TRIMESH,\n");
-    out.push_str("    }\n");
-    out.push_str("}\n");
+    let lookup_entries = sources
+        .iter()
+        .enumerate()
+        .map(|(hash_index, source)| {
+            let rel = file_by_source
+                .get(source)
+                .expect("collision trimesh rel path missing for source");
+            let idx = *rel_to_index
+                .get(rel)
+                .expect("collision trimesh index missing for rel path");
+            (
+                perro_ids::string_to_u64(source),
+                format!("COLLISION_TRIMESH_HASH_{hash_index}"),
+                format!("COLLISION_TRIMESH_{idx}"),
+            )
+        })
+        .collect::<Vec<_>>();
+    write_static_lookup_fn(
+        &mut out,
+        "lookup_collision_trimesh",
+        "COLLISION_TRIMESH_TABLE",
+        "CollisionTrimeshEntry",
+        "&'static [u8]",
+        "EMPTY_COLLISION_TRIMESH",
+        &lookup_entries,
+    );
 
     fs::write(static_root.join("collision_trimeshes.rs"), out)?;
     Ok(())

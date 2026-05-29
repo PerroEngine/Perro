@@ -1,6 +1,6 @@
 use crate::{
     StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir,
-    write_hash_const,
+    write_hash_const, write_static_lookup_fn,
 };
 use perro_asset_formats::ptset::{
     EXTENSION as PTSET_EXTENSION, SOURCE_EXTENSION as PTSET_SOURCE_EXTENSION,
@@ -80,14 +80,26 @@ pub fn generate_static_tilesets(project_root: &Path) -> Result<(), StaticPipelin
     if !tilesets.is_empty() {
         out.push('\n');
     }
-    out.push_str("pub const fn lookup_tileset(path_hash: u64) -> &'static [u8] {\n");
-    out.push_str("    match path_hash {\n");
-    for (index, _) in tilesets.iter().enumerate() {
-        let _ = writeln!(out, "        TILESET_HASH_{index} => TILESET_{index},");
-    }
-    out.push_str("        _ => EMPTY_TILESET,\n");
-    out.push_str("    }\n");
-    out.push_str("}\n");
+    let lookup_entries = tilesets
+        .iter()
+        .enumerate()
+        .map(|(index, (path, _, _))| {
+            (
+                perro_ids::string_to_u64(path),
+                format!("TILESET_HASH_{index}"),
+                format!("TILESET_{index}"),
+            )
+        })
+        .collect::<Vec<_>>();
+    write_static_lookup_fn(
+        &mut out,
+        "lookup_tileset",
+        "TILESET_TABLE",
+        "TilesetEntry",
+        "&'static [u8]",
+        "EMPTY_TILESET",
+        &lookup_entries,
+    );
 
     fs::write(static_dir.join("tilesets.rs"), out)?;
     Ok(())

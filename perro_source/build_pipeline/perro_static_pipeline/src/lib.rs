@@ -141,6 +141,70 @@ pub(crate) fn write_hash_const(out: &mut String, name: &str, value: &str) {
     );
 }
 
+pub(crate) fn write_static_lookup_fn(
+    out: &mut String,
+    fn_name: &str,
+    table_name: &str,
+    entry_type: &str,
+    value_type: &str,
+    empty_expr: &str,
+    entries: &[(u64, String, String)],
+) {
+    const MATCH_LIMIT: usize = 8;
+
+    if entries.len() <= MATCH_LIMIT {
+        let _ = writeln!(
+            out,
+            "pub const fn {fn_name}(path_hash: u64) -> {value_type} {{"
+        );
+        out.push_str("    match path_hash {\n");
+        for (_, hash_name, value_expr) in entries {
+            let _ = writeln!(out, "        {hash_name} => {value_expr},");
+        }
+        let _ = writeln!(out, "        _ => {empty_expr},");
+        out.push_str("    }\n");
+        out.push_str("}\n");
+        return;
+    }
+
+    let _ = writeln!(
+        out,
+        "#[derive(Clone, Copy)]\nstruct {entry_type} {{ hash: u64, value: {value_type} }}\n"
+    );
+    let _ = writeln!(out, "static {table_name}: &[{entry_type}] = &[");
+    let mut sorted = entries
+        .iter()
+        .map(|(hash, hash_name, value_expr)| (*hash, hash_name, value_expr))
+        .collect::<Vec<_>>();
+    sorted.sort_by_key(|(hash, _, _)| *hash);
+    for (_, hash_name, value_expr) in sorted {
+        let _ = writeln!(
+            out,
+            "    {entry_type} {{ hash: {hash_name}, value: {value_expr} }},"
+        );
+    }
+    out.push_str("];\n\n");
+    let _ = writeln!(
+        out,
+        "pub const fn {fn_name}(path_hash: u64) -> {value_type} {{"
+    );
+    let _ = writeln!(out, "    let mut lo = 0usize;");
+    let _ = writeln!(out, "    let mut hi = {table_name}.len();");
+    out.push_str("    while lo < hi {\n");
+    out.push_str("        let mid = (lo + hi) / 2;\n");
+    let _ = writeln!(out, "        let entry = &{table_name}[mid];");
+    out.push_str("        if path_hash < entry.hash {\n");
+    out.push_str("            hi = mid;\n");
+    out.push_str("        } else if path_hash > entry.hash {\n");
+    out.push_str("            lo = mid + 1;\n");
+    out.push_str("        } else {\n");
+    out.push_str("            return entry.value;\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    let _ = writeln!(out, "    {empty_expr}");
+    out.push_str("}\n");
+}
+
 pub(crate) fn escape_rust_str(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for ch in input.chars() {

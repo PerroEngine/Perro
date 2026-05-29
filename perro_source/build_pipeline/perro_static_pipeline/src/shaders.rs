@@ -1,6 +1,6 @@
 use crate::{
     StaticPipelineError, asset_uri, embedded_dir, ensure_unique_hashes, res_dir, static_dir,
-    write_hash_const,
+    write_hash_const, write_static_lookup_fn,
 };
 use perro_asset_formats::source_ext;
 use perro_io::walkdir::collect_file_paths;
@@ -66,14 +66,26 @@ pub fn generate_static_shaders(project_root: &Path) -> Result<(), StaticPipeline
     if !shaders.is_empty() {
         out.push('\n');
     }
-    out.push_str("pub const fn lookup_shader(path_hash: u64) -> &'static str {\n");
-    out.push_str("    match path_hash {\n");
-    for (index, _) in shaders.iter().enumerate() {
-        let _ = writeln!(out, "        SHADER_HASH_{index} => SHADER_{index},");
-    }
-    out.push_str("        _ => EMPTY_SHADER,\n");
-    out.push_str("    }\n");
-    out.push_str("}\n");
+    let lookup_entries = shaders
+        .iter()
+        .enumerate()
+        .map(|(index, (res_path, _))| {
+            (
+                perro_ids::string_to_u64(res_path),
+                format!("SHADER_HASH_{index}"),
+                format!("SHADER_{index}"),
+            )
+        })
+        .collect::<Vec<_>>();
+    write_static_lookup_fn(
+        &mut out,
+        "lookup_shader",
+        "SHADER_TABLE",
+        "ShaderEntry",
+        "&'static str",
+        "EMPTY_SHADER",
+        &lookup_entries,
+    );
 
     fs::write(static_dir.join("shaders.rs"), out)?;
     Ok(())
