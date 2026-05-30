@@ -223,17 +223,25 @@ Think parent first, then node.
 - `translation_ratio = (0.0, 1.0)` => move up by one own height after size resolves.
 - `translation_ratio = (0.0, -0.5)` => move down by half own height after size resolves.
 
-Anchor chooses placement in the parent.
-Pivot shifts by node size.
+Anchor pins the matching node edge/corner/center to the parent anchor.
+Pivot chooses rotate/scale origin inside that already placed node.
+Pivot does not choose where the node is placed.
 Translation moves after layout by node size.
 Scene `position_ratio`, `position_percent`, and `position_pct` are ignored legacy fields.
 
 Common anchor results:
 
 - `anchor = "center"` + no translation => centered.
-- `anchor = "tr"` + no translation => top-right, inset by half node size.
-- `anchor = "bl"` + no translation => bottom-left, inset by half node size.
-- `anchor = "top"` + `translation_ratio = (0.0, -0.5)` => one half node height below top anchor.
+- `anchor = "tr"` + no translation => node top-right corner sits on parent top-right corner.
+- `anchor = "bl"` + no translation => node bottom-left corner sits on parent bottom-left corner.
+- `anchor = "b"` + no translation => node bottom edge sits on parent bottom edge.
+- `anchor = "top"` + `translation_ratio = (0.0, -0.5)` => move down by half node height after top edge placement.
+
+Pivot example:
+
+- `anchor = "b"` + `pivot_ratio = (0.5, 0.5)` + node height `100` => pivot is 50 above parent bottom.
+- `anchor = "b"` + `pivot_ratio = (0.5, 1.0)` + node height `100` => pivot is 100 above parent bottom.
+- In both cases, no translation means the node bottom edge stays on the parent bottom edge.
 
 ## Anchor Placement
 
@@ -303,6 +311,8 @@ Top-level UI nodes use the virtual viewport as parent.
 Children use parent UI rect as parent.
 
 `pivot_ratio = (0.5, 0.5)` means pivot at node center.
+Pivot affects rotation/scale origin, not final anchor placement.
+Anchor placement pins node edge/corner/center to the matching parent point before translation.
 `translation_ratio = (x, y)` offsets by own resolved size.
 Example: `translation_ratio = (0.0, 0.5)` moves node up by half own height.
 Example: `translation_ratio = (-1.0, 0.0)` moves node left by one own width.

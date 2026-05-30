@@ -181,15 +181,10 @@ impl UiLayoutData {
                 parent.size.y * 0.5 * anchor.y,
             );
         let inward_from_edge = Vector2::new(size.x * 0.5 * anchor.x, size.y * 0.5 * anchor.y);
-        let pivot = transform.pivot.resolve(Vector2::new(1.0, 1.0));
-        let pivot_offset = Vector2::new((0.5 - pivot.x) * size.x, (0.5 - pivot.y) * size.y);
         let position = transform.position.resolve_centered(parent.size);
 
         ComputedUiRect::new(
-            anchor_point - inward_from_edge
-                + position
-                + transform.translation_offset(size)
-                + pivot_offset,
+            anchor_point - inward_from_edge + position + transform.translation_offset(size),
             size,
         )
     }

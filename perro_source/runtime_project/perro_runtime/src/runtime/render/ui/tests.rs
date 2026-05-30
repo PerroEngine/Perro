@@ -243,6 +243,86 @@ fn ui_translation_ratio_moves_after_anchor_by_own_size() {
 }
 
 #[test]
+fn ui_bottom_anchor_keeps_edge_placed_while_pivot_moves_origin() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let node = insert_panel(&mut runtime, [100.0, 100.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    if let Some(scene_node) = runtime.nodes.get_mut(node)
+        && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
+    {
+        panel.layout.anchor = UiAnchor::Bottom;
+        panel.transform.pivot = UiVector2::ratio(0.5, 1.0);
+    }
+
+    runtime.extract_render_ui_commands();
+
+    let rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&node)
+        .copied()
+        .expect("computed rect");
+    assert_eq!(rect.center, Vector2::new(0.0, -250.0));
+    assert_eq!(rect.min().y, -300.0);
+    assert_eq!(rect.max().y, -200.0);
+
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertPanel { node: n, rect, .. })
+            if *n == node && rect.pivot == [0.5, 1.0]
+    )));
+}
+
+#[test]
+fn ui_pivot_changes_render_pivot_without_changing_anchor_layout() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let centered = insert_panel(&mut runtime, [100.0, 50.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    if let Some(scene_node) = runtime.nodes.get_mut(centered)
+        && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
+    {
+        panel.layout.anchor = UiAnchor::Bottom;
+        panel.transform.pivot = UiVector2::ratio(0.5, 0.5);
+    }
+
+    let top_pivot = insert_panel(&mut runtime, [100.0, 50.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    if let Some(scene_node) = runtime.nodes.get_mut(top_pivot)
+        && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
+    {
+        panel.layout.anchor = UiAnchor::Bottom;
+        panel.transform.pivot = UiVector2::ratio(0.5, 1.0);
+    }
+
+    runtime.extract_render_ui_commands();
+
+    let centered_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&centered)
+        .copied()
+        .expect("centered rect");
+    let top_pivot_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&top_pivot)
+        .copied()
+        .expect("top pivot rect");
+    assert_eq!(top_pivot_rect.center, centered_rect.center);
+
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertPanel { node, rect, .. })
+            if *node == top_pivot && rect.pivot == [0.5, 1.0]
+    )));
+}
+
+#[test]
 fn ui_center_and_right_anchor_translation_can_reach_same_parent_point() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);

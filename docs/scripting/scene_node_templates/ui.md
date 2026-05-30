@@ -43,11 +43,12 @@ lifecycle!({
 UI templates use ratio-only sizing.
 
 - `size_ratio` = size relative to parent.
-- `pivot_ratio = (0.5, 0.5)` = pivot at node center.
+- `pivot_ratio = (0.5, 0.5)` = rotate/scale origin at node center.
 - `translation_ratio` = move after layout by own resolved size.
 - `min_size_ratio` + `max_size_ratio` clamp relative to node base size at creation.
 - Example: `size_ratio = (0.5, 0.5)` => half parent size.
-- Example: `anchor = "tr"` => top-right inset by half node size.
+- Example: `anchor = "tr"` => node top-right corner sits on parent top-right corner.
+- Example: `anchor = "b"` => node bottom edge sits on parent bottom edge.
 - Example: `translation_ratio = (-0.2, -0.2)` => move left/down by 20% own size.
 - Example: `min_size_ratio = (1.0, 1.0)` => never shrink below creation size.
 - Example: `min_size_ratio = (0.8, 0.8)` + `max_size_ratio = (1.2, 1.2)` => allow ~20% shrink/grow band.
@@ -77,8 +78,12 @@ bl  b  br
 ```
 
 `translation_ratio = (x, y)` moves after anchor placement.
+`anchor` pins the matching node edge/corner/center to the parent anchor.
+`pivot_ratio` sets rotate/scale origin inside that placed node.
+`pivot_ratio` does not move anchor placement.
 Positive X moves right.
 Positive Y moves up.
+For `anchor = "b"` and node height `100`, pivot Y `0.5` is 50 above parent bottom, and pivot Y `1.0` is 100 above parent bottom.
 If node X size resolves to 25% parent width, `anchor = "c"` + `translation_ratio = (1, 0)` matches `anchor = "r"` + `translation_ratio = (-0.5, 0)`.
 If node Y size resolves to 25% parent height, `anchor = "c"` + `translation_ratio = (0, 1)` matches `anchor = "t"` + `translation_ratio = (0, -0.5)`.
 
