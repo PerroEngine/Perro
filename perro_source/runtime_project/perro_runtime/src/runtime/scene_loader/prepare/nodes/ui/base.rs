@@ -252,19 +252,9 @@ fn apply_ui_root_fields(node: &mut UiBox, fields: &[SceneObjectField]) {
                 node.layout.anchor = v;
             }
         }
-        // Absolute UI position unsupported.
-        // Use `position_ratio` or `position_percent`.
-        "position" => {}
-        "position_percent" | "position_pct" => {
-            if let Some(v) = as_vec2(value) {
-                node.transform.position = perro_ui::UiVector2::percent(v.x, v.y);
-            }
-        }
-        "position_ratio" => {
-            if let Some(v) = as_vec2(value) {
-                node.transform.position = perro_ui::UiVector2::ratio(v.x, v.y);
-            }
-        }
+        // Scene-authored UI position is intentionally unsupported.
+        // Anchor chooses the base placement; translation moves after layout.
+        "position" | "position_percent" | "position_pct" | "position_ratio" => {}
         // Intentionally ignore absolute UI `size` in scene parsing.
         // Use `size_ratio` or `size_percent` instead.
         "size" => {}

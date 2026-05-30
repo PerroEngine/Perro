@@ -43,10 +43,44 @@ lifecycle!({
 UI templates use ratio-only sizing.
 
 - `size_ratio` = size relative to parent.
+- `pivot_ratio = (0.5, 0.5)` = pivot at node center.
+- `translation_ratio` = move after layout by own resolved size.
 - `min_size_ratio` + `max_size_ratio` clamp relative to node base size at creation.
 - Example: `size_ratio = (0.5, 0.5)` => half parent size.
+- Example: `anchor = "tr"` => top-right inset by half node size.
+- Example: `translation_ratio = (-0.2, -0.2)` => move left/down by 20% own size.
 - Example: `min_size_ratio = (1.0, 1.0)` => never shrink below creation size.
 - Example: `min_size_ratio = (0.8, 0.8)` + `max_size_ratio = (1.2, 1.2)` => allow ~20% shrink/grow band.
+
+Root UI nodes resolve against the virtual viewport.
+Child UI nodes resolve against the closest UI ancestor.
+Non-UI wrappers do not define UI layout size.
+`visible = false` hides the UI subtree.
+Showing the parent makes descendants render on the next UI extract.
+`position_ratio`, `position_percent`, and `position_pct` are ignored legacy fields.
+
+Common mistakes:
+
+- Do not use `size`, `position`, `pivot`, or `translation` in scene UI.
+- Use `size_ratio`, `pivot_ratio`, and `translation_ratio`.
+- Do not use `position_ratio` for UI placement.
+- Use `anchor = "tl"` for top-left anchoring.
+- Do not call `force_rerender` after normal scene/runtime APIs.
+- Use `force_rerender` only after raw/manual data edits outside normal mutation APIs.
+
+Anchor map:
+
+```text
+tl  t  tr
+l   c  r
+bl  b  br
+```
+
+`translation_ratio = (x, y)` moves after anchor placement.
+Positive X moves right.
+Positive Y moves up.
+If node X size resolves to 25% parent width, `anchor = "c"` + `translation_ratio = (1, 0)` matches `anchor = "r"` + `translation_ratio = (-0.5, 0)`.
+If node Y size resolves to 25% parent height, `anchor = "c"` + `translation_ratio = (0, 1)` matches `anchor = "t"` + `translation_ratio = (0, -0.5)`.
 
 ```text
 [ui_box]
@@ -58,7 +92,6 @@ script = "res://path/to/script.rs"
         mouse_filter = "stop"
         clip_children = false
         anchor = "center"
-        position_ratio = (0.5, 0.5)
         size_ratio = (0.5, 0.5)
         pivot_ratio = (0.5, 0.5)
 
@@ -90,7 +123,6 @@ script = "res://path/to/script.rs"
             mouse_filter = "stop"
             clip_children = false
             anchor = "center"
-            position_ratio = (0.5, 0.5)
             size_ratio = (0.5, 0.5)
             pivot_ratio = (0.5, 0.5)
 
@@ -139,7 +171,6 @@ script = "res://path/to/script.rs"
             mouse_filter = "stop"
             clip_children = false
             anchor = "center"
-            position_ratio = (0.5, 0.5)
             size_ratio = (0.5, 0.5)
             pivot_ratio = (0.5, 0.5)
 
@@ -177,7 +208,6 @@ script = "res://path/to/script.rs"
             mouse_filter = "stop"
             clip_children = false
             anchor = "center"
-            position_ratio = (0.5, 0.5)
             size_ratio = (0.5, 0.5)
             pivot_ratio = (0.5, 0.5)
 
@@ -213,7 +243,6 @@ script = "res://path/to/script.rs"
             mouse_filter = "stop"
             clip_children = false
             anchor = "center"
-            position_ratio = (0.5, 0.5)
             size_ratio = (0.25, 0.25)
             pivot_ratio = (0.5, 0.5)
             scale = (1, 1)
@@ -264,7 +293,6 @@ script = "res://path/to/script.rs"
             mouse_filter = "stop"
             clip_children = false
             anchor = "center"
-            position_ratio = (0.5, 0.5)
             size_ratio = (0.5, 0.5)
             pivot_ratio = (0.5, 0.5)
 
@@ -313,7 +341,6 @@ script = "res://path/to/script.rs"
             mouse_filter = "stop"
             clip_children = false
             anchor = "center"
-            position_ratio = (0.5, 0.5)
             size_ratio = (0.5, 0.5)
             pivot_ratio = (0.5, 0.5)
 
@@ -347,7 +374,6 @@ script = "res://path/to/script.rs"
             mouse_filter = "stop"
             clip_children = false
             anchor = "center"
-            position_ratio = (0.5, 0.5)
             size_ratio = (0.5, 0.5)
             pivot_ratio = (0.5, 0.5)
 
@@ -380,7 +406,6 @@ script = "res://path/to/script.rs"
             mouse_filter = "stop"
             clip_children = false
             anchor = "center"
-            position_ratio = (0.5, 0.5)
             size_ratio = (0.5, 0.5)
             pivot_ratio = (0.5, 0.5)
 
@@ -413,7 +438,6 @@ script = "res://path/to/script.rs"
             mouse_filter = "stop"
             clip_children = false
             anchor = "center"
-            position_ratio = (0.5, 0.5)
             size_ratio = (0.5, 0.5)
             pivot_ratio = (0.5, 0.5)
 
@@ -445,7 +469,6 @@ script = "res://path/to/script.rs"
             mouse_filter = "stop"
             clip_children = false
             anchor = "center"
-            position_ratio = (0.5, 0.5)
             size_ratio = (0.5, 0.5)
             pivot_ratio = (0.5, 0.5)
 
@@ -477,7 +500,6 @@ script = "res://path/to/script.rs"
             mouse_filter = "stop"
             clip_children = false
             anchor = "center"
-            position_ratio = (0.5, 0.5)
             size_ratio = (0.5, 0.5)
             pivot_ratio = (0.5, 0.5)
 

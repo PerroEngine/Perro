@@ -2,7 +2,7 @@ use super::*;
 use perro_nodes::{Node3D, SceneNode, SceneNodeData};
 use perro_render_bridge::RenderEvent;
 use perro_resource_api::sub_apis::TextureAPI;
-use perro_runtime_api::sub_apis::NodeAPI;
+use perro_runtime_api::sub_apis::{NodeAPI, NodeCreationTemplate};
 use perro_structs::Color;
 use perro_ui::{
     UiAnchor, UiAnimatedImage, UiAnimatedImageFrameSet, UiGrid, UiHLayout, UiPanel,
@@ -174,6 +174,150 @@ fn viewport_resize_recomputes_percent_ui_rects() {
                 && rect.size == [600.0, 225.0]
                 && rect.center == [300.0, 337.5]
     )));
+}
+
+#[test]
+fn ui_panel_without_position_field_centers_in_parent() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let node = insert_panel(&mut runtime, [100.0, 50.0], Color::new(0.1, 0.2, 0.3, 1.0));
+
+    runtime.extract_render_ui_commands();
+
+    let rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&node)
+        .copied()
+        .expect("computed rect");
+    assert_eq!(rect.center, Vector2::ZERO);
+    assert_eq!(rect.size, Vector2::new(100.0, 50.0));
+}
+
+#[test]
+fn ui_bottom_anchor_places_rect_on_bottom_edge_without_position() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let node = insert_panel(&mut runtime, [100.0, 50.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    if let Some(scene_node) = runtime.nodes.get_mut(node)
+        && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
+    {
+        panel.layout.anchor = UiAnchor::Bottom;
+    }
+
+    runtime.extract_render_ui_commands();
+
+    let rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&node)
+        .copied()
+        .expect("computed rect");
+    assert_eq!(rect.center, Vector2::new(0.0, -275.0));
+    assert_eq!(rect.min().y, -300.0);
+}
+
+#[test]
+fn ui_translation_ratio_moves_after_anchor_by_own_size() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let node = insert_panel(&mut runtime, [100.0, 80.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    if let Some(scene_node) = runtime.nodes.get_mut(node)
+        && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
+    {
+        panel.transform.translation = Vector2::new(0.25, -0.5);
+    }
+
+    runtime.extract_render_ui_commands();
+
+    let rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&node)
+        .copied()
+        .expect("computed rect");
+    assert_eq!(rect.center, Vector2::new(25.0, -40.0));
+}
+
+#[test]
+fn ui_center_and_right_anchor_translation_can_reach_same_parent_point() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let center = insert_panel(&mut runtime, [200.0, 80.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    if let Some(scene_node) = runtime.nodes.get_mut(center)
+        && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
+    {
+        panel.layout.anchor = UiAnchor::Center;
+        panel.transform.translation = Vector2::new(1.0, 0.0);
+    }
+
+    let right = insert_panel(&mut runtime, [200.0, 80.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    if let Some(scene_node) = runtime.nodes.get_mut(right)
+        && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
+    {
+        panel.layout.anchor = UiAnchor::Right;
+        panel.transform.translation = Vector2::new(-0.5, 0.0);
+    }
+
+    runtime.extract_render_ui_commands();
+
+    let center_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&center)
+        .copied()
+        .expect("center rect");
+    let right_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&right)
+        .copied()
+        .expect("right rect");
+    assert_eq!(center_rect.center, Vector2::new(200.0, 0.0));
+    assert_eq!(right_rect.center, center_rect.center);
+}
+
+#[test]
+fn ui_center_and_top_anchor_translation_can_reach_same_parent_point() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let center = insert_panel(&mut runtime, [100.0, 150.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    if let Some(scene_node) = runtime.nodes.get_mut(center)
+        && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
+    {
+        panel.layout.anchor = UiAnchor::Center;
+        panel.transform.translation = Vector2::new(0.0, 1.0);
+    }
+
+    let top = insert_panel(&mut runtime, [100.0, 150.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    if let Some(scene_node) = runtime.nodes.get_mut(top)
+        && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
+    {
+        panel.layout.anchor = UiAnchor::Top;
+        panel.transform.translation = Vector2::new(0.0, -0.5);
+    }
+
+    runtime.extract_render_ui_commands();
+
+    let center_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&center)
+        .copied()
+        .expect("center rect");
+    let top_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&top)
+        .copied()
+        .expect("top rect");
+    assert_eq!(center_rect.center, Vector2::new(0.0, 150.0));
+    assert_eq!(top_rect.center, center_rect.center);
 }
 
 #[test]
@@ -428,6 +572,47 @@ fn ui_child_added_to_retained_layout_renders_without_resize() {
 
     runtime.extract_render_ui_commands();
     let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertPanel { node, rect, fill, .. })
+            if *node == child && rect.size == [80.0, 40.0] && *fill == rgba(0.7, 0.2, 0.1, 1.0)
+    )));
+}
+
+#[test]
+fn runtime_created_ui_child_under_hidden_parent_renders_when_shown() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let parent = runtime.create::<UiPanel>();
+    let _ = runtime.with_node_mut::<UiPanel, _, _>(parent, |panel| {
+        panel.layout.size = UiVector2::pixels(260.0, 120.0);
+        panel.visible = false;
+    });
+
+    let ids = runtime.create_nodes(&[NodeCreationTemplate::new::<UiPanel>()], parent);
+    let child = ids[0];
+    let _ = runtime.with_node_mut::<UiPanel, _, _>(child, |panel| {
+        panel.layout.size = UiVector2::pixels(80.0, 40.0);
+        panel.style.fill = Color::new(0.7, 0.2, 0.1, 1.0);
+    });
+
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    assert!(!commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertPanel { node, .. }) if *node == child
+    )));
+    runtime.clear_dirty_flags();
+
+    let _ = runtime.with_node_mut::<UiPanel, _, _>(parent, |panel| {
+        panel.visible = true;
+    });
+    runtime.extract_render_ui_commands();
+    commands.clear();
     runtime.drain_render_commands(&mut commands);
 
     assert!(commands.iter().any(|cmd| matches!(

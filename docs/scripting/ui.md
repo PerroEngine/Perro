@@ -141,8 +141,6 @@ UiBox
 Common fields live on `UiBox` data and all UI nodes inherit them:
 
 - `anchor`
-- `position_percent`
-- `position_ratio`
 - `size_percent`
 - `size_ratio`
 - `pivot_percent`
@@ -179,7 +177,7 @@ br bottom_right
 ```
 
 Default anchor is `center`.
-Default position is `position_ratio = (0.5, 0.5)`.
+Default `translation_ratio` is `(0.0, 0.0)`.
 Default `h_align` and `v_align` are `center`.
 Default label text align is `center`.
 Default `clip_children` is `false` (children may render outside parent bounds).
@@ -198,6 +196,72 @@ Both accept `color`, `distance`, `falloff`, `vector`, and `size`.
 `size = 1` matches the panel/button.
 `size = 2` doubles it.
 `size = 0.5` halves it.
+
+## Layout Mental Model
+
+UI layout always resolves from a parent rect.
+
+- Root UI node parent = virtual viewport.
+- Child UI node parent = closest UI ancestor.
+- Non-UI wrapper nodes do not create UI layout space.
+- `visible = false` hides the node and its UI descendants.
+- Showing the parent again makes descendants render on the next UI extract.
+- `create_node!`, `create_nodes!`, and `reparent!` mark UI layout/render dirty.
+
+Use `force_rerender!` only when code bypasses the normal mutation APIs and edits hidden/visible state directly.
+Normal `with_node_mut!`, `with_base_node_mut!`, `create_node!`, `create_nodes!`, and `reparent!` calls do not need it.
+
+## Ratio Guide
+
+Scene UI uses ratio/percent fields.
+Think parent first, then node.
+
+- `size_ratio = (0.5, 0.25)` => node size = 50% parent width and 25% parent height.
+- `pivot_ratio = (0.5, 0.5)` => pivot at node center.
+- `pivot_ratio = (0.0, 1.0)` => pivot at node top-left.
+- `translation_ratio = (1.0, 0.0)` => move right by one own width after size resolves.
+- `translation_ratio = (0.0, 1.0)` => move up by one own height after size resolves.
+- `translation_ratio = (0.0, -0.5)` => move down by half own height after size resolves.
+
+Anchor chooses placement in the parent.
+Pivot shifts by node size.
+Translation moves after layout by node size.
+Scene `position_ratio`, `position_percent`, and `position_pct` are ignored legacy fields.
+
+Common anchor results:
+
+- `anchor = "center"` + no translation => centered.
+- `anchor = "tr"` + no translation => top-right, inset by half node size.
+- `anchor = "bl"` + no translation => bottom-left, inset by half node size.
+- `anchor = "top"` + `translation_ratio = (0.0, -0.5)` => one half node height below top anchor.
+
+## Anchor Placement
+
+Use one of 9 anchors for base placement.
+Then use `translation_ratio = (x, y)` for fine movement after layout.
+`x > 0` moves right.
+`x < 0` moves left.
+`y > 0` moves up.
+`y < 0` moves down.
+
+```text
+tl  t  tr
+l   c  r
+bl  b  br
+```
+
+Example horizontal placement:
+
+- If node X size resolves to 25% parent width, `anchor = "c"` + `translation_ratio = (1.0, 0.0)` reaches midpoint between center and right edge.
+- `anchor = "r"` + `translation_ratio = (-0.5, 0.0)` reaches the same point.
+
+Example vertical placement:
+
+- If node Y size resolves to 25% parent height, `anchor = "c"` + `translation_ratio = (0.0, 1.0)` reaches midpoint between center and top edge.
+- `anchor = "t"` + `translation_ratio = (0.0, -0.5)` reaches the same point.
+
+These pairs match because `translation_ratio` moves by the node size.
+If resolved node size changes, translation values that hit the same parent-space point also change.
 
 ## `.uistyle` Resources
 
@@ -238,10 +302,10 @@ UI space uses center origin.
 Top-level UI nodes use the virtual viewport as parent.
 Children use parent UI rect as parent.
 
-`position_ratio = (0.5, 0.5)` means no offset from the anchor.
 `pivot_ratio = (0.5, 0.5)` means pivot at node center.
 `translation_ratio = (x, y)` offsets by own resolved size.
-Example: `translation_ratio = (0.0, 0.5)` moves node by half own height on Y.
+Example: `translation_ratio = (0.0, 0.5)` moves node up by half own height.
+Example: `translation_ratio = (-1.0, 0.0)` moves node left by one own width.
 `scale` multiplies final clamped size.
 `h_size` and `v_size` accept `fixed`, `fill`, or `fit_children`.
 `h_align` accepts `start`, `center`, `end`, or `fill`.
@@ -258,6 +322,7 @@ Layout spacing keys are ratio-based:
 Example: grid `size_ratio = (1, 1)` + `h_spacing = 0.25` => horizontal gap = 25% of container width.
 Absolute UI keys unsupported in scenes:
 `position`, `pivot`, `translation`, `size`, `min_size`, `max_size`, `min_w`, `min_h`, `max_w`, `max_h`, `font_size`.
+Legacy `position_ratio`, `position_percent`, and `position_pct` are accepted but ignored.
 Use ratio/percent keys + `text_size_ratio`.
 
 Example:
@@ -270,6 +335,89 @@ Example:
     padding = 12
 [/UiBox]
 [/menu]
+```
+
+Full-screen root + centered panel:
+
+```text
+[ui_root]
+[UiBox]
+    anchor = "center"
+    size_ratio = (1.0, 1.0)
+    pivot_ratio = (0.5, 0.5)
+[/UiBox]
+[/ui_root]
+
+[card]
+parent = @ui_root
+[UiPanel]
+    anchor = "center"
+    size_ratio = (0.45, 0.35)
+    pivot_ratio = (0.5, 0.5)
+    style = { fill = "#20242C" stroke = "#586070" radius = 0.12 }
+[/UiPanel]
+[/card]
+```
+
+Top-right HUD:
+
+```text
+[hud_stats]
+[UiPanel]
+    anchor = "tr"
+    size_ratio = (0.18, 0.10)
+    pivot_ratio = (0.5, 0.5)
+    translation_ratio = (-0.15, -0.15)
+    style = { fill = "#111827CC" stroke = "#93A4B8" radius = 0.15 }
+[/UiPanel]
+[/hud_stats]
+```
+
+Bottom-left button row:
+
+```text
+[quick_bar]
+[UiHLayout]
+    anchor = "bl"
+    size_ratio = (0.28, 0.08)
+    pivot_ratio = (0.5, 0.5)
+    translation_ratio = (0.15, 0.15)
+    h_spacing = 0.04
+[/UiHLayout]
+[/quick_bar]
+
+[slot_1]
+parent = @quick_bar
+[UiButton]
+    size_ratio = (0.22, 0.8)
+    style = { fill = "#263238" stroke = "#90A4AE" radius = 0.18 }
+[/UiButton]
+[/slot_1]
+```
+
+Spawn UI from script:
+
+```rust
+methods!({
+    fn spawn_toast(&self, ctx: &mut ScriptContext<'_, API>, parent: NodeID) {
+        let panel = create_node!(ctx.run, UiPanel);
+
+        let _ = with_node_mut!(ctx.run, UiPanel, panel, |node| {
+            node.base.layout.anchor = UiAnchor::Top;
+            node.base.layout.size = UiVector2::ratio(0.32, 0.08);
+            node.base.transform.translation = Vector2::new(0.0, -0.75);
+            node.style.fill = Color::new(0.05, 0.06, 0.08, 0.92);
+        });
+
+        let _ = reparent!(ctx.run, parent, panel);
+    }
+});
+```
+
+If low-level code edits UI data without `with_node_mut!`, force subtree extraction:
+
+```rust
+let _ = force_rerender!(ctx.run, ui_root);
 ```
 
 Button state example:

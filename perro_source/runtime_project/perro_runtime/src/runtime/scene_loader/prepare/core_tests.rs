@@ -989,7 +989,7 @@ mod tests {
                     other => panic!("expected percent x, got {other:?}"),
                 }
                 match button.transform.position.y {
-                    perro_ui::UiUnit::Percent(v) => assert_eq!(v, 25.0),
+                    perro_ui::UiUnit::Percent(v) => assert_eq!(v, 50.0),
                     other => panic!("expected percent y, got {other:?}"),
                 }
                 match button.transform.pivot.x {
@@ -1112,6 +1112,40 @@ mod tests {
                 assert_eq!(scroller.scroll, Vector2::new(12.0, 34.0));
             }
             other => panic!("expected UiScrollContainer scroller node, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn scene_loader_ignores_ui_position_ratio_and_uses_translation_ratio() {
+        let scene = Parser::new(
+            r#"
+            $root = @panel
+            [panel]
+            [UiPanel]
+                position_ratio = (0.5, 0.98)
+                position_percent = (20, 80)
+                translation_ratio = (0.25, -0.5)
+            [/UiPanel]
+            [/panel]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+        let panel = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "panel")
+            .expect("panel node");
+
+        match &panel.node.data {
+            SceneNodeData::UiPanel(panel) => {
+                assert_eq!(panel.transform.position, perro_ui::UiVector2::ratio(0.5, 0.5));
+                assert_eq!(panel.transform.translation, Vector2::new(0.25, -0.5));
+            }
+            other => panic!("expected UiPanel node, got {other:?}"),
         }
     }
 
