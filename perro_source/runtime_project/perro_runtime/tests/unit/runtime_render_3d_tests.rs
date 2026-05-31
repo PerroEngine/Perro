@@ -1389,6 +1389,35 @@ fn active_camera_3d_emits_set_camera_command() {
 }
 
 #[test]
+fn deactivating_last_camera_3d_resets_renderer_camera() {
+    let mut runtime = Runtime::new();
+    let mut camera = Camera3D::new();
+    camera.active = true;
+    camera.transform.position.x = 12.0;
+    let camera_node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Camera3D(camera)));
+
+    runtime.extract_render_3d_commands();
+    let _ = collect_commands(&mut runtime);
+
+    NodeAPI::with_node_mut::<Camera3D, _, _>(&mut runtime, camera_node, |camera| {
+        camera.active = false;
+    });
+    runtime.extract_render_3d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::ThreeD(command_3d)
+            if matches!(
+                command_3d.as_ref(),
+                Command3D::SetCamera { camera } if camera.position == [0.0, 0.0, 6.0]
+            )
+    )));
+}
+
+#[test]
 fn newly_activated_camera_3d_wins_over_higher_slot_old_camera() {
     let mut runtime = Runtime::new();
     let dummy = NodeAPI::create::<Node3D>(&mut runtime);

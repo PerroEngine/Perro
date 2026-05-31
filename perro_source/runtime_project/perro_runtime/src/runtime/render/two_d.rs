@@ -80,6 +80,14 @@ impl Runtime {
                 self.queue_render_command(RenderCommand::TwoD(Command2D::SetCamera {
                     camera: camera.clone(),
                 }));
+            } else {
+                let camera = Camera2DState::default();
+                self.resource_api.set_audio_listener_2d(
+                    camera.position,
+                    camera.rotation_radians,
+                    camera.audio_options.clone(),
+                );
+                self.queue_render_command(RenderCommand::TwoD(Command2D::SetCamera { camera }));
             }
             self.render_2d.last_camera = active_camera;
         }

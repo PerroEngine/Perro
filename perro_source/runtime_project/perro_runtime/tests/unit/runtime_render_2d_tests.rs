@@ -753,6 +753,34 @@ fn active_camera_2d_emits_set_camera_command() {
 }
 
 #[test]
+fn deactivating_last_camera_2d_resets_renderer_camera() {
+    let mut runtime = Runtime::new();
+    let mut camera = Camera2D::new();
+    camera.active = true;
+    camera.transform.position.x = 128.0;
+    let camera_node = runtime
+        .nodes
+        .insert(SceneNode::new(SceneNodeData::Camera2D(camera)));
+
+    runtime.extract_render_2d_commands();
+    let _ = collect_commands(&mut runtime);
+
+    runtime
+        .with_node_mut::<Camera2D, _, _>(camera_node, |camera| {
+            camera.active = false;
+        })
+        .expect("camera exists");
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::SetCamera { camera })
+            if camera.position == [0.0, 0.0] && camera.zoom == 1.0
+    )));
+}
+
+#[test]
 fn camera_2d_render_mask_filters_sprites() {
     let mut runtime = Runtime::new();
     let mut camera = Camera2D::new();

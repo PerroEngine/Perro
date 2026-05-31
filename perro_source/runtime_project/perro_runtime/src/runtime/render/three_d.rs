@@ -131,6 +131,16 @@ impl Runtime {
                 self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::SetCamera {
                     camera: camera.clone(),
                 })));
+            } else {
+                let camera = fallback_camera_3d_state();
+                self.resource_api.set_audio_listener_3d(
+                    camera.position,
+                    camera.rotation,
+                    camera.audio_options.clone(),
+                );
+                self.queue_render_command(RenderCommand::ThreeD(Box::new(Command3D::SetCamera {
+                    camera,
+                })));
             }
             self.render_3d.last_camera = active_camera;
         }
@@ -2013,6 +2023,21 @@ fn camera_projection_state(projection: &CameraProjection) -> CameraProjectionSta
             near: *near,
             far: *far,
         },
+    }
+}
+
+fn fallback_camera_3d_state() -> Camera3DState {
+    Camera3DState {
+        position: [0.0, 0.0, 6.0],
+        rotation: [0.0, 0.0, 0.0, 1.0],
+        projection: CameraProjectionState::Perspective {
+            fov_y_degrees: 60.0,
+            near: 0.1,
+            far: 1000.0,
+        },
+        render_mask: BitMask::NONE,
+        post_processing: Arc::from([]),
+        audio_options: perro_structs::AudioListenerOptions::new(),
     }
 }
 
