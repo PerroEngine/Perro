@@ -1714,8 +1714,37 @@ fn hlayout_ignores_invisible_child_space() {
         .computed_rects
         .get(&last)
         .expect("last rect exists");
-    assert_eq!(first_rect.center.x, 35.0);
-    assert_eq!(last_rect.center.x, -35.0);
+    assert_eq!(first_rect.center.x, -35.0);
+    assert_eq!(last_rect.center.x, 35.0);
+}
+
+#[test]
+fn vlayout_preserves_child_order() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut layout = UiVLayout::new();
+    layout.layout.size = UiVector2::pixels(200.0, 180.0);
+    layout.inner.spacing = 10.0 / 180.0;
+    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(layout));
+    let first = insert_panel(&mut runtime, [100.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    let second = insert_panel(&mut runtime, [100.0, 40.0], Color::new(0.2, 0.3, 0.4, 1.0));
+    attach_child(&mut runtime, parent, first);
+    attach_child(&mut runtime, parent, second);
+
+    runtime.extract_render_ui_commands();
+
+    let first_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&first)
+        .expect("first rect exists");
+    let second_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&second)
+        .expect("second rect exists");
+    assert!(first_rect.center.y > second_rect.center.y);
 }
 
 #[test]
@@ -1770,8 +1799,8 @@ fn grid_columns_auto_wrap_into_centered_rows() {
         .computed_rects
         .get(&children[3])
         .expect("fourth rect exists");
-    assert_eq!(first.center, Vector2::new(70.0, -25.0));
-    assert_eq!(fourth.center, Vector2::new(70.0, 25.0));
+    assert_eq!(first.center, Vector2::new(-70.0, 25.0));
+    assert_eq!(fourth.center, Vector2::new(-70.0, -25.0));
 }
 
 #[test]
@@ -1860,9 +1889,9 @@ fn grid_ignores_invisible_child_index() {
         .computed_rects
         .get(&fourth)
         .expect("fourth rect exists");
-    assert_eq!(first_rect.center, Vector2::new(70.0, 0.0));
+    assert_eq!(first_rect.center, Vector2::new(-70.0, 0.0));
     assert_eq!(third_rect.center, Vector2::ZERO);
-    assert_eq!(fourth_rect.center, Vector2::new(-70.0, 0.0));
+    assert_eq!(fourth_rect.center, Vector2::new(70.0, 0.0));
 }
 
 #[test]
