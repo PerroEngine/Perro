@@ -337,6 +337,10 @@ Layout spacing keys are ratio-based:
 `spacing`, `h_spacing` resolve against parent content width.
 `v_spacing` resolves against parent content height.
 Example: grid `size_ratio = (1, 1)` + `h_spacing = 0.25` => horizontal gap = 25% of container width.
+Layout `padding` is ratio-based:
+left/right resolve against own width.
+top/bottom resolve against own height.
+`padding = 0.5` uses half size on each side.
 Absolute UI keys unsupported in scenes:
 `position`, `pivot`, `translation`, `size`, `min_size`, `max_size`, `min_w`, `min_h`, `max_w`, `max_h`, `font_size`.
 Legacy `position_ratio`, `position_percent`, and `position_pct` are accepted but ignored.
@@ -349,7 +353,7 @@ Example:
 [UiBox]
     anchor = "tr"
     size_ratio = (0.15625, 0.185185)
-    padding = 12
+    padding = 0.08
 [/UiBox]
 [/menu]
 ```

@@ -203,7 +203,10 @@ pub(super) fn ui_v_spacing_amount(spacing_ratio: f32, container_height: f32) -> 
     spacing_ratio.max(0.0) * container_height.max(0.0)
 }
 
-pub(super) fn ui_padding_inset(rect: ComputedUiRect, padding: perro_ui::UiRect) -> perro_ui::UiRect {
+pub(super) fn ui_padding_inset(
+    rect: ComputedUiRect,
+    padding: perro_ui::UiRect,
+) -> perro_ui::UiRect {
     perro_ui::UiRect::new(
         padding.left.max(0.0) * rect.size.x,
         padding.top.max(0.0) * rect.size.y,

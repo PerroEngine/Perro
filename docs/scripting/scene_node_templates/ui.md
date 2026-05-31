@@ -46,12 +46,14 @@ UI templates use ratio-only sizing.
 - `pivot_ratio = (0.5, 0.5)` = rotate/scale origin at node center.
 - `translation_ratio` = move after layout by parent size.
 - `self_translation_ratio` = move after layout by own resolved size.
+- `padding` = inner child layout inset by own size ratio.
 - `min_size_ratio` + `max_size_ratio` clamp relative to node base size at creation.
 - Example: `size_ratio = (0.5, 0.5)` => half parent size.
 - Example: `anchor = "tr"` => node top-right corner sits on parent top-right corner.
 - Example: `anchor = "b"` => node bottom edge sits on parent bottom edge.
 - Example: `translation_ratio = (-0.2, -0.2)` => move left/down by 20% parent size.
 - Example: `self_translation_ratio = (-0.2, -0.2)` => move left/down by 20% own size.
+- Example: `padding = 0.1` => inset each side by 10% own width/height.
 - Example: `min_size_ratio = (1.0, 1.0)` => never shrink below creation size.
 - Example: `min_size_ratio = (0.8, 0.8)` + `max_size_ratio = (1.2, 1.2)` => allow ~20% shrink/grow band.
 

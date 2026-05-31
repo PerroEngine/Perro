@@ -1658,6 +1658,28 @@ fn default_hlayout_centers_child_group() {
 }
 
 #[test]
+fn layout_padding_uses_parent_rect_ratio() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut layout = UiHLayout::new();
+    layout.layout.size = UiVector2::pixels(300.0, 100.0);
+    layout.layout.padding = perro_ui::UiRect::new(0.1, 0.0, 0.0, 0.0);
+    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(layout));
+    let child = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    attach_child(&mut runtime, parent, child);
+
+    runtime.extract_render_ui_commands();
+
+    let child_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&child)
+        .expect("child rect exists");
+    assert_eq!(child_rect.center, Vector2::new(15.0, 0.0));
+}
+
+#[test]
 fn hlayout_ignores_invisible_child_space() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);
