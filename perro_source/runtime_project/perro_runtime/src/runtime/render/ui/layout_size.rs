@@ -7,7 +7,7 @@ impl Runtime {
         tree_rect: ComputedUiRect,
         computed: &mut AHashMap<NodeID, ComputedUiRect>,
     ) {
-        let content = tree_rect.inset(tree.base.layout.padding);
+        let content = tree_rect.inset(ui_padding_inset(tree_rect, tree.base.layout.padding));
         let rows = ui_tree_visible_rows(tree);
         if rows.is_empty() {
             return;
@@ -41,7 +41,7 @@ impl Runtime {
             let center = Vector2::new(
                 row_content.min().x + size.x * 0.5,
                 y - layout.margin.top - size.y * 0.5,
-            ) + ui_translation_offset(transform, size);
+            ) + ui_translation_offset(transform, row_content.size, size);
             computed.insert(row.node, ComputedUiRect::new(center, size));
             y -= size.y
                 + layout.margin.vertical()
@@ -208,9 +208,11 @@ impl Runtime {
         } else {
             self.absolute_children_content_size(children, available)
         };
+        let content = text.x.max(child_size.x);
+        let content_h = text.y.max(child_size.y);
         Vector2::new(
-            text.x.max(child_size.x) + ui.layout.padding.horizontal(),
-            text.y.max(child_size.y) + ui.layout.padding.vertical(),
+            fit_size_with_padding_ratio(content, ui.layout.padding.left, ui.layout.padding.right),
+            fit_size_with_padding_ratio(content_h, ui.layout.padding.top, ui.layout.padding.bottom),
         )
     }
 

@@ -3,7 +3,7 @@ mod tests {
     use super::*;
     use perro_nodes::SceneNodeData;
     use perro_scene::Parser;
-    use perro_structs::{BitMask, Color, CustomPostParamValue, Vector3};
+    use perro_structs::{BitMask, Color, CustomPostParamValue, Vector2, Vector3};
 
     #[test]
     fn water_body_scene_fields_parse() {
@@ -816,6 +816,40 @@ mod tests {
     }
 
     #[test]
+    fn ui_nodes_parse_absolute_pixel_size() {
+        let scene = Parser::new(
+            r#"
+            [button]
+            [UiButton]
+                size = (160, 48)
+                min_size = (120, 40)
+                max_width = 220
+                max_height = 80
+            [/UiButton]
+            [/button]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("scene prepare");
+        let button = prepared
+            .nodes
+            .iter()
+            .find(|pending| matches!(pending.node.data, SceneNodeData::UiButton(_)))
+            .expect("button node");
+        match &button.node.data {
+            SceneNodeData::UiButton(button) => {
+                assert_eq!(button.layout.size, perro_ui::UiVector2::pixels(160.0, 48.0));
+                assert_eq!(button.layout.min_size, Vector2::new(120.0, 40.0));
+                assert_eq!(button.layout.max_size, Vector2::new(220.0, 80.0));
+            }
+            other => panic!("expected UiButton node, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn scene_loader_builds_ui_nodes_from_scene_blocks() {
         let scene = Parser::new(
             r##"
@@ -834,7 +868,7 @@ mod tests {
                 h_size = "fill"
                 v_size = "fit_children"
                 pivot_ratio = (0, 0)
-                padding = (1, 2, 3, 4)
+                padding = (0.1, 0.2, 0.3, 0.4)
                 style = { fill = "#101820" stroke = "#A0A8B0" radius = 0.3 }
                 hover_fill = "#202830"
                 cursor_icon = "grab"
@@ -982,7 +1016,7 @@ mod tests {
                 assert_eq!(button.layout.v_size, perro_ui::UiSizeMode::FitChildren);
                 assert_eq!(
                     button.layout.padding,
-                    perro_ui::UiRect::new(1.0, 2.0, 3.0, 4.0)
+                    perro_ui::UiRect::new(0.1, 0.2, 0.3, 0.4)
                 );
                 match button.transform.position.x {
                     perro_ui::UiUnit::Percent(v) => assert_eq!(v, 50.0),
@@ -1116,7 +1150,7 @@ mod tests {
     }
 
     #[test]
-    fn scene_loader_ignores_ui_position_ratio_and_uses_translation_ratio() {
+    fn scene_loader_ignores_ui_position_ratio_and_uses_translation_ratios() {
         let scene = Parser::new(
             r#"
             $root = @panel
@@ -1125,6 +1159,7 @@ mod tests {
                 position_ratio = (0.5, 0.98)
                 position_percent = (20, 80)
                 translation_ratio = (0.25, -0.5)
+                self_translation_ratio = (1.0, 0.0)
             [/UiPanel]
             [/panel]
             "#,
@@ -1144,6 +1179,7 @@ mod tests {
             SceneNodeData::UiPanel(panel) => {
                 assert_eq!(panel.transform.position, perro_ui::UiVector2::ratio(0.5, 0.5));
                 assert_eq!(panel.transform.translation, Vector2::new(0.25, -0.5));
+                assert_eq!(panel.transform.self_translation, Vector2::new(1.0, 0.0));
             }
             other => panic!("expected UiPanel node, got {other:?}"),
         }

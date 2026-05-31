@@ -84,7 +84,10 @@ impl Runtime {
                     let parent_content = ui_parent
                         .and_then(|id| self.nodes.get(id))
                         .and_then(|parent| ui_root_from_data(&parent.data))
-                        .map(|parent| parent_layout_rect.inset(parent.layout.padding))
+                        .map(|parent| {
+                            parent_layout_rect
+                                .inset(ui_padding_inset(parent_layout_rect, parent.layout.padding))
+                        })
                         .unwrap_or(parent_layout_rect);
                     let parent_content = parent_content.inset(ui_root.layout.margin);
                     let size = self.resolve_ui_size(node, parent_content.size, None);
@@ -193,7 +196,10 @@ impl Runtime {
         let layout_children = self.ui_layout_children(parent);
         let content_rect = ui_scroll_content_rect(
             &parent_node.data,
-            parent_layout_rect.inset(parent_ui.layout.padding),
+            parent_layout_rect.inset(ui_padding_inset(
+                parent_layout_rect,
+                parent_ui.layout.padding,
+            )),
         );
         let layout_ctx = UiChildrenLayoutCtx {
             parent_layout_rect,

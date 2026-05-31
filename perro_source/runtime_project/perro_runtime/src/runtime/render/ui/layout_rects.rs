@@ -31,7 +31,7 @@ impl Runtime {
         let layout_children = self.ui_layout_children(parent);
         let content_rect = ui_scroll_content_rect(
             &parent_node.data,
-            parent_rect.inset(parent_ui.layout.padding),
+            parent_rect.inset(ui_padding_inset(parent_rect, parent_ui.layout.padding)),
         );
         let auto_rect = ui_auto_layout_from_data(&parent_node.data).and_then(|auto_layout| {
             match auto_layout.mode {
@@ -118,7 +118,7 @@ impl Runtime {
                     parent_layout.v_align,
                 );
                 let center = Vector2::new(x + layout.margin.left + size.x * 0.5, y)
-                    + ui_translation_offset(transform, size);
+                    + ui_translation_offset(transform, content.size, size);
                 return Some(ComputedUiRect::new(center, size));
             }
             x += size.x + layout.margin.horizontal() + spacing;
@@ -172,7 +172,7 @@ impl Runtime {
                 parent_layout.v_align,
             );
             let center = Vector2::new(x + layout.margin.left + size.x * 0.5, y)
-                + ui_translation_offset(transform, size);
+                + ui_translation_offset(transform, content.size, size);
             insert_scaled_ui_child_rect(
                 computed,
                 computed_scales,
@@ -227,7 +227,7 @@ impl Runtime {
                     parent_layout.h_align,
                 );
                 let center = Vector2::new(x, y - layout.margin.top - size.y * 0.5)
-                    + ui_translation_offset(transform, size);
+                    + ui_translation_offset(transform, content.size, size);
                 return Some(ComputedUiRect::new(center, size));
             }
             y -= size.y + layout.margin.vertical() + spacing;
@@ -281,7 +281,7 @@ impl Runtime {
                 parent_layout.h_align,
             );
             let center = Vector2::new(x, y - layout.margin.top - size.y * 0.5)
-                + ui_translation_offset(transform, size);
+                + ui_translation_offset(transform, content.size, size);
             insert_scaled_ui_child_rect(
                 computed,
                 computed_scales,
@@ -366,22 +366,23 @@ impl Runtime {
         let grid_top_y = align_v_top(max.y, content.size.y, used_height, parent_layout.v_align);
         let cell_min_x = grid_min_x + col as f32 * (cell_width + h_spacing);
         let cell_top_y = grid_top_y - row as f32 * (cell_height + v_spacing);
-        let center = Vector2::new(
-            align_h_center(
-                cell_min_x,
-                cell_width,
-                size.x,
-                layout.margin,
-                parent_layout.h_align,
-            ),
-            align_v_center(
-                cell_top_y,
-                cell_height,
-                size.y,
-                layout.margin,
-                parent_layout.v_align,
-            ),
-        ) + ui_translation_offset(transform, size);
+        let center =
+            Vector2::new(
+                align_h_center(
+                    cell_min_x,
+                    cell_width,
+                    size.x,
+                    layout.margin,
+                    parent_layout.h_align,
+                ),
+                align_v_center(
+                    cell_top_y,
+                    cell_height,
+                    size.y,
+                    layout.margin,
+                    parent_layout.v_align,
+                ),
+            ) + ui_translation_offset(transform, Vector2::new(cell_width, cell_height), size);
         Some(ComputedUiRect::new(center, size))
     }
 
@@ -455,22 +456,23 @@ impl Runtime {
             );
             let cell_min_x = grid_min_x + col as f32 * (cell_width + h_spacing);
             let cell_top_y = grid_top_y - row as f32 * (cell_height + v_spacing);
-            let center = Vector2::new(
-                align_h_center(
-                    cell_min_x,
-                    cell_width,
-                    size.x,
-                    layout.margin,
-                    parent_layout.h_align,
-                ),
-                align_v_center(
-                    cell_top_y,
-                    cell_height,
-                    size.y,
-                    layout.margin,
-                    parent_layout.v_align,
-                ),
-            ) + ui_translation_offset(transform, size);
+            let center =
+                Vector2::new(
+                    align_h_center(
+                        cell_min_x,
+                        cell_width,
+                        size.x,
+                        layout.margin,
+                        parent_layout.h_align,
+                    ),
+                    align_v_center(
+                        cell_top_y,
+                        cell_height,
+                        size.y,
+                        layout.margin,
+                        parent_layout.v_align,
+                    ),
+                ) + ui_translation_offset(transform, Vector2::new(cell_width, cell_height), size);
             insert_scaled_ui_child_rect(
                 computed,
                 computed_scales,

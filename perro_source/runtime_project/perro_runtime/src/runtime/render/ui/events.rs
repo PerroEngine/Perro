@@ -879,7 +879,7 @@ impl Runtime {
                 .get(&node)
                 .map(computed_rect_from_state)
         })?;
-        let content = rect.inset(scroller.layout.padding);
+        let content = rect.inset(ui_padding_inset(rect, scroller.layout.padding));
         let (_, content_min_y) = self.scroll_container_unscrolled_bounds(node, computed)?;
         Some((content.min().y - content_min_y).max(0.0))
     }

@@ -220,7 +220,7 @@ fn ui_bottom_anchor_places_rect_on_bottom_edge_without_position() {
 }
 
 #[test]
-fn ui_translation_ratio_moves_after_anchor_by_own_size() {
+fn ui_translation_ratio_moves_after_anchor_by_parent_size() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);
 
@@ -229,6 +229,29 @@ fn ui_translation_ratio_moves_after_anchor_by_own_size() {
         && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
     {
         panel.transform.translation = Vector2::new(0.25, -0.5);
+    }
+
+    runtime.extract_render_ui_commands();
+
+    let rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&node)
+        .copied()
+        .expect("computed rect");
+    assert_eq!(rect.center, Vector2::new(200.0, -300.0));
+}
+
+#[test]
+fn ui_self_translation_ratio_moves_after_anchor_by_own_size() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let node = insert_panel(&mut runtime, [100.0, 80.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    if let Some(scene_node) = runtime.nodes.get_mut(node)
+        && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
+    {
+        panel.transform.self_translation = Vector2::new(0.25, -0.5);
     }
 
     runtime.extract_render_ui_commands();
@@ -332,7 +355,7 @@ fn ui_center_and_right_anchor_translation_can_reach_same_parent_point() {
         && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
     {
         panel.layout.anchor = UiAnchor::Center;
-        panel.transform.translation = Vector2::new(1.0, 0.0);
+        panel.transform.translation = Vector2::new(0.25, 0.0);
     }
 
     let right = insert_panel(&mut runtime, [200.0, 80.0], Color::new(0.1, 0.2, 0.3, 1.0));
@@ -340,7 +363,7 @@ fn ui_center_and_right_anchor_translation_can_reach_same_parent_point() {
         && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
     {
         panel.layout.anchor = UiAnchor::Right;
-        panel.transform.translation = Vector2::new(-0.5, 0.0);
+        panel.transform.translation = Vector2::new(-0.125, 0.0);
     }
 
     runtime.extract_render_ui_commands();
@@ -371,7 +394,7 @@ fn ui_center_and_top_anchor_translation_can_reach_same_parent_point() {
         && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
     {
         panel.layout.anchor = UiAnchor::Center;
-        panel.transform.translation = Vector2::new(0.0, 1.0);
+        panel.transform.translation = Vector2::new(0.0, 0.25);
     }
 
     let top = insert_panel(&mut runtime, [100.0, 150.0], Color::new(0.1, 0.2, 0.3, 1.0));
@@ -379,7 +402,7 @@ fn ui_center_and_top_anchor_translation_can_reach_same_parent_point() {
         && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
     {
         panel.layout.anchor = UiAnchor::Top;
-        panel.transform.translation = Vector2::new(0.0, -0.5);
+        panel.transform.translation = Vector2::new(0.0, -0.125);
     }
 
     runtime.extract_render_ui_commands();
@@ -467,12 +490,12 @@ fn ui_reparent_marks_layout_dirty_without_resize() {
 
     let mut parent_a = UiPanel::new();
     parent_a.layout.size = UiVector2::pixels(200.0, 200.0);
-    parent_a.transform.translation.x = -0.5;
+    parent_a.transform.translation.x = -0.125;
     let parent_a = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent_a));
 
     let mut parent_b = UiPanel::new();
     parent_b.layout.size = UiVector2::pixels(200.0, 200.0);
-    parent_b.transform.translation.x = 0.5;
+    parent_b.transform.translation.x = 0.125;
     let parent_b = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent_b));
 
     let child = insert_panel(&mut runtime, [40.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
@@ -2754,6 +2777,65 @@ fn force_rerender_marks_ui_subtree_after_raw_visibility_change() {
     assert!(commands.iter().any(|cmd| matches!(
         cmd,
         RenderCommand::Ui(UiCommand::UpsertLabel { node: n, .. }) if *n == label
+    )));
+}
+
+#[test]
+fn initially_hidden_ui_subtree_inserts_after_force_visible() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let parent = insert_panel(&mut runtime, [260.0, 120.0], Color::new(0.2, 0.2, 0.2, 1.0));
+    let button = insert_button(&mut runtime, [120.0, 40.0]);
+    attach_child(&mut runtime, parent, button);
+    set_panel_visible(&mut runtime, parent, false);
+    runtime.force_rerender(parent);
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    set_panel_visible(&mut runtime, parent, true);
+    runtime.force_rerender(parent);
+    runtime.extract_render_ui_commands();
+
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertPanel { node: n, .. }) if *n == parent
+    )));
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertButton { node: n, .. }) if *n == button
+    )));
+}
+
+#[test]
+fn zero_size_visible_panel_upserts_after_expand() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let parent = insert_panel(&mut runtime, [0.0, 0.0], Color::new(0.0, 0.0, 0.0, 0.0));
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    let _ = runtime.with_node_mut::<UiPanel, _, _>(parent, |panel| {
+        panel.layout.size = UiVector2::ratio(0.5, 0.1);
+        panel.style.fill = Color::new(0.341, 0.780, 0.851, 1.0);
+        panel.style.stroke = Color::new(1.0, 1.0, 1.0, 1.0);
+        panel.style.stroke_width = 2.0;
+    });
+    runtime.force_rerender(parent);
+    runtime.extract_render_ui_commands();
+
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertPanel { node: n, rect, fill, .. })
+            if *n == parent && rect.size[0] > 300.0 && rect.size[1] > 50.0 && *fill == rgba(0.341, 0.780, 0.851, 1.0)
     )));
 }
 

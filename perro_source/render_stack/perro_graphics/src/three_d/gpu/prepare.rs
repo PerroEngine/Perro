@@ -7,6 +7,13 @@ use web_time::Instant;
 
 const PARALLEL_BATCH_SORT_MIN: usize = 10_000;
 
+fn builtin_flat_mesh_double_sided(source: &str) -> bool {
+    matches!(
+        source,
+        perro_builtin_meshes::PLANE_SOURCE | perro_builtin_meshes::QUAD_SOURCE
+    )
+}
+
 impl Gpu3D {
     pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, frame: Prepare3D<'_>) {
         let mut step_timing = Prepare3DStepTiming::default();
@@ -521,6 +528,7 @@ impl Gpu3D {
                 Draw3DKind::DebugPointCube => "__cube__",
                 Draw3DKind::DebugEdgeCylinder => "__cylinder__",
             };
+            let flat_builtin_double_sided = builtin_flat_mesh_double_sided(mesh_source);
             let mesh_asset = match draw.kind {
                 Draw3DKind::Mesh(mesh_id) => self
                     .resolve_mesh_range(
@@ -684,7 +692,9 @@ impl Gpu3D {
                             instance_start,
                             instance_count,
                             draw_param_index,
-                            double_sided: params.double_sided || mirrored_winding,
+                            double_sided: params.double_sided
+                                || mirrored_winding
+                                || flat_builtin_double_sided,
                             mesh_blend: resolved_mesh_blend_active(resolved_blend),
                         });
                     }
@@ -904,7 +914,8 @@ impl Gpu3D {
                                     instance_count,
                                     double_sided: standard_params.double_sided
                                         || self.meshlet_debug_view
-                                        || mirrored_winding,
+                                        || mirrored_winding
+                                        || flat_builtin_double_sided,
                                     material_kind,
                                     alpha_mode: standard_params.alpha_mode,
                                     base_color_texture_slot: standard_params.base_color_texture,
@@ -1038,7 +1049,8 @@ impl Gpu3D {
                             instance_count,
                             double_sided: standard_params.double_sided
                                 || self.meshlet_debug_view
-                                || mirrored_winding,
+                                || mirrored_winding
+                                || flat_builtin_double_sided,
                             material_kind: material_kind.clone(),
                             alpha_mode: standard_params.alpha_mode,
                             base_color_texture_slot: standard_params.base_color_texture,
@@ -1463,5 +1475,23 @@ impl Gpu3D {
                 mesh.blend_shape_vertex_count,
             ],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::builtin_flat_mesh_double_sided;
+
+    #[test]
+    fn flat_builtin_meshes_default_double_sided() {
+        assert!(builtin_flat_mesh_double_sided(
+            perro_builtin_meshes::PLANE_SOURCE
+        ));
+        assert!(builtin_flat_mesh_double_sided(
+            perro_builtin_meshes::QUAD_SOURCE
+        ));
+        assert!(!builtin_flat_mesh_double_sided(
+            perro_builtin_meshes::CUBE_SOURCE
+        ));
     }
 }

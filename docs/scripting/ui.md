@@ -147,6 +147,8 @@ Common fields live on `UiBox` data and all UI nodes inherit them:
 - `pivot_ratio`
 - `translation_percent`
 - `translation_ratio`
+- `self_translation_percent`
+- `self_translation_ratio`
 - `scale`
 - `h_size`
 - `v_size`
@@ -177,7 +179,7 @@ br bottom_right
 ```
 
 Default anchor is `center`.
-Default `translation_ratio` is `(0.0, 0.0)`.
+Default `translation_ratio` and `self_translation_ratio` are `(0.0, 0.0)`.
 Default `h_align` and `v_align` are `center`.
 Default label text align is `center`.
 Default `clip_children` is `false` (children may render outside parent bounds).
@@ -219,14 +221,17 @@ Think parent first, then node.
 - `size_ratio = (0.5, 0.25)` => node size = 50% parent width and 25% parent height.
 - `pivot_ratio = (0.5, 0.5)` => pivot at node center.
 - `pivot_ratio = (0.0, 1.0)` => pivot at node top-left.
-- `translation_ratio = (1.0, 0.0)` => move right by one own width after size resolves.
-- `translation_ratio = (0.0, 1.0)` => move up by one own height after size resolves.
-- `translation_ratio = (0.0, -0.5)` => move down by half own height after size resolves.
+- `translation_ratio = (1.0, 0.0)` => move right by one parent width after layout.
+- `translation_ratio = (0.0, 1.0)` => move up by one parent height after layout.
+- `translation_ratio = (0.0, -0.5)` => move down by half parent height after layout.
+- `self_translation_ratio = (1.0, 0.0)` => move right by one own width after size resolves.
+- `self_translation_ratio = (0.0, 1.0)` => move up by one own height after size resolves.
 
 Anchor pins the matching node edge/corner/center to the parent anchor.
 Pivot chooses rotate/scale origin inside that already placed node.
 Pivot does not choose where the node is placed.
-Translation moves after layout by node size.
+Translation moves after layout by parent size.
+Self translation moves after layout by node size.
 Scene `position_ratio`, `position_percent`, and `position_pct` are ignored legacy fields.
 
 Common anchor results:
@@ -235,7 +240,7 @@ Common anchor results:
 - `anchor = "tr"` + no translation => node top-right corner sits on parent top-right corner.
 - `anchor = "bl"` + no translation => node bottom-left corner sits on parent bottom-left corner.
 - `anchor = "b"` + no translation => node bottom edge sits on parent bottom edge.
-- `anchor = "top"` + `translation_ratio = (0.0, -0.5)` => move down by half node height after top edge placement.
+- `anchor = "top"` + `self_translation_ratio = (0.0, -0.5)` => move down by half node height after top edge placement.
 
 Pivot example:
 
@@ -246,7 +251,8 @@ Pivot example:
 ## Anchor Placement
 
 Use one of 9 anchors for base placement.
-Then use `translation_ratio = (x, y)` for fine movement after layout.
+Then use `translation_ratio = (x, y)` for parent-space movement after layout.
+Use `self_translation_ratio = (x, y)` for own-size movement after layout.
 `x > 0` moves right.
 `x < 0` moves left.
 `y > 0` moves up.
@@ -260,16 +266,16 @@ bl  b  br
 
 Example horizontal placement:
 
-- If node X size resolves to 25% parent width, `anchor = "c"` + `translation_ratio = (1.0, 0.0)` reaches midpoint between center and right edge.
-- `anchor = "r"` + `translation_ratio = (-0.5, 0.0)` reaches the same point.
+- `anchor = "c"` + `translation_ratio = (0.25, 0.0)` reaches midpoint between center and right edge.
+- `anchor = "r"` + `translation_ratio = (-0.125, 0.0)` reaches the same point.
 
 Example vertical placement:
 
-- If node Y size resolves to 25% parent height, `anchor = "c"` + `translation_ratio = (0.0, 1.0)` reaches midpoint between center and top edge.
-- `anchor = "t"` + `translation_ratio = (0.0, -0.5)` reaches the same point.
+- `anchor = "c"` + `translation_ratio = (0.0, 0.25)` reaches midpoint between center and top edge.
+- `anchor = "t"` + `translation_ratio = (0.0, -0.125)` reaches the same point.
 
-These pairs match because `translation_ratio` moves by the node size.
-If resolved node size changes, translation values that hit the same parent-space point also change.
+These pairs match because `translation_ratio` moves by the parent size.
+If resolved node size changes, translation values that hit the same parent-space point stay stable.
 
 ## `.uistyle` Resources
 
@@ -313,9 +319,10 @@ Children use parent UI rect as parent.
 `pivot_ratio = (0.5, 0.5)` means pivot at node center.
 Pivot affects rotation/scale origin, not final anchor placement.
 Anchor placement pins node edge/corner/center to the matching parent point before translation.
-`translation_ratio = (x, y)` offsets by own resolved size.
-Example: `translation_ratio = (0.0, 0.5)` moves node up by half own height.
-Example: `translation_ratio = (-1.0, 0.0)` moves node left by one own width.
+`translation_ratio = (x, y)` offsets by parent size.
+`self_translation_ratio = (x, y)` offsets by own resolved size.
+Example: `translation_ratio = (0.0, 0.5)` moves node up by half parent height.
+Example: `self_translation_ratio = (-1.0, 0.0)` moves node left by one own width.
 `scale` multiplies final clamped size.
 `h_size` and `v_size` accept `fixed`, `fill`, or `fit_children`.
 `h_align` accepts `start`, `center`, `end`, or `fill`.

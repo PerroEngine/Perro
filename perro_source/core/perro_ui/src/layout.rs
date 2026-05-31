@@ -63,6 +63,7 @@ pub struct UiTransform {
     pub position: UiVector2,
     pub pivot: UiVector2,
     pub translation: Vector2,
+    pub self_translation: Vector2,
     pub scale: Vector2,
     pub rotation: f32,
 }
@@ -73,6 +74,7 @@ impl UiTransform {
             position: UiVector2::percent(50.0, 50.0),
             pivot: UiVector2::percent(50.0, 50.0),
             translation: Vector2::ZERO,
+            self_translation: Vector2::ZERO,
             scale: Vector2::ONE,
             rotation: 0.0,
         }
@@ -82,10 +84,10 @@ impl UiTransform {
         self.position.resolve(parent_size) + self.translation
     }
 
-    pub fn translation_offset(&self, resolved_size: Vector2) -> Vector2 {
+    pub fn translation_offset(&self, parent_size: Vector2, resolved_size: Vector2) -> Vector2 {
         Vector2::new(
-            self.translation.x * resolved_size.x,
-            self.translation.y * resolved_size.y,
+            self.translation.x * parent_size.x + self.self_translation.x * resolved_size.x,
+            self.translation.y * parent_size.y + self.self_translation.y * resolved_size.y,
         )
     }
 
@@ -184,7 +186,9 @@ impl UiLayoutData {
         let position = transform.position.resolve_centered(parent.size);
 
         ComputedUiRect::new(
-            anchor_point - inward_from_edge + position + transform.translation_offset(size),
+            anchor_point - inward_from_edge
+                + position
+                + transform.translation_offset(parent.size, size),
             size,
         )
     }

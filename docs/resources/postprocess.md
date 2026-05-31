@@ -2,11 +2,11 @@
 
 ## Page Map
 
-| Header | Link |
-| --- | --- |
-| Purpose | [Purpose](#purpose) |
+| Header    | Link                    |
+| --------- | ----------------------- |
+| Purpose   | [Purpose](#purpose)     |
 | Use Cases | [Use Cases](#use-cases) |
-| Example | [Example](#example) |
+| Example   | [Example](#example)     |
 | Reference | [Reference](#reference) |
 
 ## Purpose
@@ -77,6 +77,7 @@ camera + global post-processing. See [Visual Accessibility](../scripting/context
 - `custom` (`shader`/`shader_path`, optional `params`)
 
 Runtime note:
+
 - Built-in effects do not read depth.
 - `custom` effects receive depth from `depth_tex` and can use it in `post_process`.
 
@@ -364,6 +365,7 @@ Use `type = "custom"` with `shader = "res://path/to/shader.wgsl"` in scenes, or
 `PostProcessEffect::Custom { shader_path, params }` in code. `params` is a `Vec<CustomPostParam>`.
 
 Performance notes:
+
 - Post uniforms are written with per-pass dynamic offsets (aligned uniform slots), so each pass
   reads its own params without uniform overwrite hazards.
 - LUT textures are cached by path and size after first use.

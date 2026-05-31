@@ -203,8 +203,26 @@ pub(super) fn ui_v_spacing_amount(spacing_ratio: f32, container_height: f32) -> 
     spacing_ratio.max(0.0) * container_height.max(0.0)
 }
 
-pub(super) fn ui_translation_offset(transform: &UiTransform, size: Vector2) -> Vector2 {
-    transform.translation_offset(size)
+pub(super) fn ui_padding_inset(rect: ComputedUiRect, padding: perro_ui::UiRect) -> perro_ui::UiRect {
+    perro_ui::UiRect::new(
+        padding.left.max(0.0) * rect.size.x,
+        padding.top.max(0.0) * rect.size.y,
+        padding.right.max(0.0) * rect.size.x,
+        padding.bottom.max(0.0) * rect.size.y,
+    )
+}
+
+pub(super) fn fit_size_with_padding_ratio(content_size: f32, start: f32, end: f32) -> f32 {
+    let ratio = (start.max(0.0) + end.max(0.0)).min(0.999);
+    content_size.max(0.0) / (1.0 - ratio)
+}
+
+pub(super) fn ui_translation_offset(
+    transform: &UiTransform,
+    parent_size: Vector2,
+    size: Vector2,
+) -> Vector2 {
+    transform.translation_offset(parent_size, size)
 }
 
 pub(super) fn safe_ui_scale(scale: Vector2) -> Vector2 {

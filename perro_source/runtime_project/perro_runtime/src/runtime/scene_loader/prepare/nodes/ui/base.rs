@@ -255,9 +255,11 @@ fn apply_ui_root_fields(node: &mut UiBox, fields: &[SceneObjectField]) {
         // Scene-authored UI position is intentionally unsupported.
         // Anchor chooses the base placement; translation moves after layout.
         "position" | "position_percent" | "position_pct" | "position_ratio" => {}
-        // Intentionally ignore absolute UI `size` in scene parsing.
-        // Use `size_ratio` or `size_percent` instead.
-        "size" => {}
+        "size" | "size_px" | "pixel_size" => {
+            if let Some(v) = as_vec2(value) {
+                node.layout.size = perro_ui::UiVector2::pixels(v.x.max(0.0), v.y.max(0.0));
+            }
+        }
         "size_percent" | "size_pct" => {
             if let Some(v) = as_vec2(value) {
                 node.layout.size = perro_ui::UiVector2::percent(v.x, v.y);
@@ -282,7 +284,8 @@ fn apply_ui_root_fields(node: &mut UiBox, fields: &[SceneObjectField]) {
             }
         }
         // Absolute translation unsupported for UI authoring.
-        // Use `translation_ratio` or `translation_percent`.
+        // Use `translation_ratio`, `translation_percent`, `self_translation_ratio`, or
+        // `self_translation_percent`.
         "translation" => {}
         "translation_percent" | "translation_pct" => {
             if let Some(v) = as_vec2(value) {
@@ -292,6 +295,17 @@ fn apply_ui_root_fields(node: &mut UiBox, fields: &[SceneObjectField]) {
         "translation_ratio" => {
             if let Some(v) = as_vec2(value) {
                 node.transform.translation = v;
+            }
+        }
+        "self_translation_percent" | "self_translation_pct" => {
+            if let Some(v) = as_vec2(value) {
+                node.transform.self_translation =
+                    perro_structs::Vector2::new(v.x * 0.01, v.y * 0.01);
+            }
+        }
+        "self_translation_ratio" => {
+            if let Some(v) = as_vec2(value) {
+                node.transform.self_translation = v;
             }
         }
         "scale" => {
@@ -329,10 +343,36 @@ fn apply_ui_root_fields(node: &mut UiBox, fields: &[SceneObjectField]) {
                 node.layout.v_align = v;
             }
         }
-        // Absolute min/max size unsupported.
-        // Use `min_size_ratio` / `max_size_ratio`.
-        "min_size" | "max_size" | "min_w" | "min_width" | "min_h" | "min_height" | "max_w"
-        | "max_width" | "max_h" | "max_height" => {}
+        "min_size" => {
+            if let Some(v) = as_vec2(value) {
+                node.layout.min_size = Vector2::new(v.x.max(0.0), v.y.max(0.0));
+            }
+        }
+        "max_size" => {
+            if let Some(v) = as_vec2(value) {
+                node.layout.max_size = Vector2::new(v.x.max(0.0), v.y.max(0.0));
+            }
+        }
+        "min_w" | "min_width" => {
+            if let Some(v) = as_f32(value) {
+                node.layout.min_size.x = v.max(0.0);
+            }
+        }
+        "min_h" | "min_height" => {
+            if let Some(v) = as_f32(value) {
+                node.layout.min_size.y = v.max(0.0);
+            }
+        }
+        "max_w" | "max_width" => {
+            if let Some(v) = as_f32(value) {
+                node.layout.max_size.x = v.max(0.0);
+            }
+        }
+        "max_h" | "max_height" => {
+            if let Some(v) = as_f32(value) {
+                node.layout.max_size.y = v.max(0.0);
+            }
+        }
         "min_size_scale" | "min_scale" | "min_size_ratio" => {
             if let Some(v) = as_vec2(value) {
                 node.layout.min_size_scale = v;
@@ -345,7 +385,12 @@ fn apply_ui_root_fields(node: &mut UiBox, fields: &[SceneObjectField]) {
         }
         "padding" => {
             if let Some(v) = as_ui_rect(value) {
-                node.layout.padding = v;
+                node.layout.padding = perro_ui::UiRect::new(
+                    v.left.clamp(0.0, 1.0),
+                    v.top.clamp(0.0, 1.0),
+                    v.right.clamp(0.0, 1.0),
+                    v.bottom.clamp(0.0, 1.0),
+                );
             }
         }
         "margin" => {
