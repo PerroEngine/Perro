@@ -119,7 +119,7 @@ pub(crate) fn load_mesh3d_from_source(
 
 pub(super) fn is_builtin_primitive_mesh_source(source: &str) -> bool {
     fn is_builtin_or_alias(source: &str) -> bool {
-        source == "__plane__" || perro_builtin_meshes::is_builtin_mesh_source(source)
+        perro_builtin_meshes::is_builtin_mesh_source(source)
     }
 
     let Some((base, selector)) = source.rsplit_once(':') else {

@@ -2,6 +2,7 @@
 
 pub const CUBE_SOURCE: &str = "__cube__";
 pub const QUAD_SOURCE: &str = "__quad__";
+pub const PLANE_SOURCE: &str = "__plane__";
 pub const TRIANGULAR_PYRAMID_SOURCE: &str = "__tri_pyr__";
 pub const SQUARE_PYRAMID_SOURCE: &str = "__sq_pyr__";
 pub const SPHERE_SOURCE: &str = "__sphere__";
@@ -13,6 +14,7 @@ pub const CAPSULE_SOURCE: &str = "__capsule__";
 pub const BUILTIN_MESH_SOURCES: &[&str] = &[
     CUBE_SOURCE,
     QUAD_SOURCE,
+    PLANE_SOURCE,
     TRIANGULAR_PYRAMID_SOURCE,
     SQUARE_PYRAMID_SOURCE,
     SPHERE_SOURCE,
@@ -48,6 +50,7 @@ pub fn build_builtin_mesh(source: &str) -> Option<BuiltinMesh> {
     let (vertices, indices) = match source {
         CUBE_SOURCE => cube(),
         QUAD_SOURCE => quad(),
+        PLANE_SOURCE => plane(),
         TRIANGULAR_PYRAMID_SOURCE => triangular_pyramid(),
         SQUARE_PYRAMID_SOURCE => square_pyramid(),
         SPHERE_SOURCE => sphere(ROUND_SEGMENTS, SPHERE_LATITUDE_BANDS),
@@ -82,6 +85,34 @@ fn quad() -> (Vec<BuiltinMeshVertex>, Vec<u16>) {
                 pos: [-0.5, 0.5, 0.0],
                 normal: [0.0, 0.0, 1.0],
                 uv: [0.0, 0.0],
+            },
+        ],
+        vec![0, 1, 2, 0, 2, 3],
+    )
+}
+
+fn plane() -> (Vec<BuiltinMeshVertex>, Vec<u16>) {
+    (
+        vec![
+            BuiltinMeshVertex {
+                pos: [-0.5, 0.0, -0.5],
+                normal: [0.0, 1.0, 0.0],
+                uv: [0.0, 1.0],
+            },
+            BuiltinMeshVertex {
+                pos: [-0.5, 0.0, 0.5],
+                normal: [0.0, 1.0, 0.0],
+                uv: [0.0, 0.0],
+            },
+            BuiltinMeshVertex {
+                pos: [0.5, 0.0, 0.5],
+                normal: [0.0, 1.0, 0.0],
+                uv: [1.0, 0.0],
+            },
+            BuiltinMeshVertex {
+                pos: [0.5, 0.0, -0.5],
+                normal: [0.0, 1.0, 0.0],
+                uv: [1.0, 1.0],
             },
         ],
         vec![0, 1, 2, 0, 2, 3],
