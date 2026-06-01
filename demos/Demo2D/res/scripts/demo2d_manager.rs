@@ -15,7 +15,6 @@ const PROFILING_OVERLAY_SCENE: &ResPath = res_path!("res://Menu/ProfilingOverlay
 const INFO_OVERLAY_SCENE: &ResPath = res_path!("res://Menu/InfoOverlay.scn");
 const DEMO_UI_ROOT_NODE_NAME: &str = "demo_ui_root";
 const CAMERA_NODE_NAME: &str = "Camera";
-const TOP_BAR_NODE_NAME: &str = "TopBar";
 const TRANSITION_FADE_PANEL_NODE_NAME: &str = "transition_fade_panel";
 const FADE_IN_SECONDS: f32 = 0.20;
 const FADE_OUT_SECONDS: f32 = 0.22;
@@ -58,7 +57,6 @@ struct DemoUiRefs {
     fade_panel: NodeID,
     profiling_overlay_root: NodeID,
     info_overlay_root: NodeID,
-    top_bar_root: NodeID,
 }
 
 #[derive(Variant, Clone, Copy, PartialEq, Eq, Default)]
@@ -300,8 +298,6 @@ methods!({
         } else {
             get_child!(ctx.run, fade_root, TRANSITION_FADE_PANEL_NODE_NAME).unwrap_or(NodeID::nil())
         };
-        let top_bar_root =
-            get_child!(ctx.run, scene_root, TOP_BAR_NODE_NAME).unwrap_or(NodeID::nil());
         with_state_mut!(ctx.run, Demo2DState, ctx.id, |state| {
             state.ui.main_menu_root = main_menu_root;
             state.ui.pause_menu_root = pause_menu_root;
@@ -309,7 +305,6 @@ methods!({
             state.ui.fade_panel = fade_panel;
             state.ui.profiling_overlay_root = profiling_overlay_root;
             state.ui.info_overlay_root = info_overlay_root;
-            state.ui.top_bar_root = top_bar_root;
         });
         self.apply_transition_fade(ctx, 0.0, false);
     }
@@ -519,12 +514,11 @@ methods!({
     }
 
     fn sync_ui(&self, ctx: &mut ScriptContext<'_, API>) {
-        let (menu, pause, top, profiling, info, active_demo, paused) =
+        let (menu, pause, profiling, info, active_demo, paused) =
             with_state!(ctx.run, Demo2DState, ctx.id, |state| {
                 (
                     state.ui.main_menu_root,
                     state.ui.pause_menu_root,
-                    state.ui.top_bar_root,
                     state.ui.profiling_overlay_root,
                     state.ui.info_overlay_root,
                     state.runtime.active_demo,
@@ -534,7 +528,6 @@ methods!({
         let in_hub = active_demo == DemoKind::None;
         set_ui_tree_visible(ctx, menu, in_hub);
         set_ui_tree_visible(ctx, pause, paused);
-        set_ui_tree_visible(ctx, top, !in_hub);
         set_ui_tree_visible(ctx, profiling, true);
         set_ui_tree_visible(ctx, info, true);
         self.sync_info_overlay(ctx);

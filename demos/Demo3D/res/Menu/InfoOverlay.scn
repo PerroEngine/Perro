@@ -8,7 +8,6 @@ script_vars = {
 }
     [UiPanel]
         anchor = "bottom"
-        position_ratio = (0.5, 0.5)
         size_ratio = (0.75, 0.095)
         style = {
             fill = "#071018B8",
@@ -16,7 +15,7 @@ script_vars = {
             stroke_width = 1.0,
             radius = 0.035
         }
-        padding = 8.0
+        padding = 0.04
         visible = true
         input_enabled = false
         mouse_filter = "pass"
@@ -24,8 +23,20 @@ script_vars = {
     [/UiPanel]
 [/info_overlay_root]
 
-[info_overlay_title]
+[info_overlay_row]
 parent = @info_overlay_root
+    [UiHLayout]
+        size_ratio = (0.96, 0.8)
+        spacing = 0.02
+        h_align = "fill"
+        v_align = "fill"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiHLayout]
+[/info_overlay_row]
+
+[info_overlay_title]
+parent = @info_overlay_row
     [UiLabel]
         size_ratio = (0.3, 1.0)
         text = "Demo"
@@ -37,11 +48,9 @@ parent = @info_overlay_root
 [/info_overlay_title]
 
 [info_overlay_body]
-parent = @info_overlay_root
+parent = @info_overlay_row
     [UiLabel]
-        anchor = "center"
-        position_ratio = (0.68, 0.5)
-        size_ratio = (0.56, 0.82)
+        size_ratio = (0.66, 1.0)
         text = ""
         text_size_ratio = 0.22
         color = "#D9E7FFFF"
@@ -49,4 +58,3 @@ parent = @info_overlay_root
         mouse_filter = "pass"
     [/UiLabel]
 [/info_overlay_body]
-

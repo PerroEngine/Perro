@@ -8,7 +8,6 @@ $var2 = { style: { fill: "#1B2C3CE8", stroke: "#B8D8FF", stroke_width: 1.0, radi
 [hub_menu_root]
     [UiPanel]
         anchor = "center"
-        position_ratio = (0.5, 0.5)
         size_ratio = (1.0, 1.0)
         style = {
             fill = "#070A0F90",
@@ -16,7 +15,7 @@ $var2 = { style: { fill: "#1B2C3CE8", stroke: "#B8D8FF", stroke_width: 1.0, radi
             stroke_width = 0.0,
             radius = 0.0
         }
-        padding = 16.0
+        padding = 0.0
     [/UiPanel]
 [/hub_menu_root]
 
@@ -24,7 +23,6 @@ $var2 = { style: { fill: "#1B2C3CE8", stroke: "#B8D8FF", stroke_width: 1.0, radi
 parent = @hub_menu_root
     [UiPanel]
         anchor = "center"
-        position_ratio = (0.5, 0.5)
         size_ratio = (0.95, 0.75)
         style = {
             fill = "#0B1018E8",
@@ -32,7 +30,7 @@ parent = @hub_menu_root
             stroke_width = 1.0,
             radius = 0.04
         }
-        padding = 14.0
+        padding = 0.025
     [/UiPanel]
 [/hub_menu_panel]
 
@@ -40,7 +38,6 @@ parent = @hub_menu_root
 parent = @hub_menu_panel
     [UiVLayout]
         anchor = "center"
-        position_ratio = (0.5, 0.5)
         size_ratio = (0.94, 0.92)
         spacing = 0.025
         h_align = "fill"
@@ -76,8 +73,8 @@ parent = @hub_menu_content
 parent = @hub_menu_content
     [UiHLayout]
         size_ratio = (1.0, 0.72)
-        spacing = 0.025
-        h_align = "fill"
+        h_spacing = 0.04
+        h_align = "center"
         v_align = "fill"
     [/UiHLayout]
 [/hub_menu_columns]
@@ -85,27 +82,27 @@ parent = @hub_menu_content
 [hub_menu_col_left]
 parent = @hub_menu_columns
     [UiVLayout]
-        size_ratio = (0.487, 1.0)
-        spacing = 0.035
-        h_align = "fill"
-        v_align = "fill"
+        size_ratio = (0.46, 1.0)
+        v_spacing = 0.03
+        h_align = "center"
+        v_align = "center"
     [/UiVLayout]
 [/hub_menu_col_left]
 
 [hub_menu_col_right]
 parent = @hub_menu_columns
     [UiVLayout]
-        size_ratio = (0.487, 1.0)
-        spacing = 0.035
-        h_align = "fill"
-        v_align = "fill"
+        size_ratio = (0.46, 1.0)
+        v_spacing = 0.03
+        h_align = "center"
+        v_align = "center"
     [/UiVLayout]
 [/hub_menu_col_right]
 
 [demo_btn_mesh]
 parent = @hub_menu_col_left
     [UiButton]
-        size_ratio = (1.0, 0.135)
+        size_ratio = (0.82, 0.13)
         click_signals = ["demo_mesh_click"]
         style = $button_style
         hover = $var2
@@ -128,7 +125,7 @@ parent = @demo_btn_mesh
 [demo_btn_lights]
 parent = @hub_menu_col_left
     [UiButton]
-        size_ratio = (1.0, 0.135)
+        size_ratio = (0.82, 0.13)
         click_signals = ["demo_lights_click"]
         style = $button_style
         hover = $var2
@@ -151,7 +148,7 @@ parent = @demo_btn_lights
 [demo_btn_water]
 parent = @hub_menu_col_left
     [UiButton]
-        size_ratio = (1.0, 0.135)
+        size_ratio = (0.82, 0.13)
         click_signals = ["demo_water_click"]
         style = $button_style
         hover = $var2
@@ -174,7 +171,7 @@ parent = @demo_btn_water
 [demo_btn_animations]
 parent = @hub_menu_col_left
     [UiButton]
-        size_ratio = (1.0, 0.135)
+        size_ratio = (0.82, 0.13)
         click_signals = ["demo_animations_click"]
         style = $button_style
         hover = $var2
@@ -197,7 +194,7 @@ parent = @demo_btn_animations
 [demo_btn_physics_bones]
 parent = @hub_menu_col_left
     [UiButton]
-        size_ratio = (1.0, 0.112)
+        size_ratio = (0.82, 0.13)
         click_signals = ["demo_physics_bones_click"]
         style = $button_style
         hover = $var2
@@ -220,7 +217,7 @@ parent = @demo_btn_physics_bones
 [demo_btn_physics_collisions]
 parent = @hub_menu_col_left
     [UiButton]
-        size_ratio = (1.0, 0.112)
+        size_ratio = (0.82, 0.13)
         click_signals = ["demo_physics_collisions_click"]
         style = $button_style
         hover = $var2
@@ -243,7 +240,7 @@ parent = @demo_btn_physics_collisions
 [demo_btn_sky]
 parent = @hub_menu_col_right
     [UiButton]
-        size_ratio = (1.0, 0.135)
+        size_ratio = (0.82, 0.13)
         click_signals = ["demo_sky_click"]
         style = $button_style
         hover = $var2
@@ -266,7 +263,7 @@ parent = @demo_btn_sky
 [demo_btn_blend]
 parent = @hub_menu_col_right
     [UiButton]
-        size_ratio = (1.0, 0.135)
+        size_ratio = (0.82, 0.13)
         click_signals = ["demo_blend_click"]
         style = $button_style
         hover = $var2
@@ -289,7 +286,7 @@ parent = @demo_btn_blend
 [demo_btn_multimesh]
 parent = @hub_menu_col_right
     [UiButton]
-        size_ratio = (1.0, 0.135)
+        size_ratio = (0.82, 0.13)
         click_signals = ["demo_multimesh_click"]
         style = $button_style
         hover = $var2
@@ -312,7 +309,7 @@ parent = @demo_btn_multimesh
 [demo_btn_particles]
 parent = @hub_menu_col_right
     [UiButton]
-        size_ratio = (1.0, 0.135)
+        size_ratio = (0.82, 0.13)
         click_signals = ["demo_particles_click"]
         style = $button_style
         hover = $var2
@@ -335,7 +332,7 @@ parent = @demo_btn_particles
 [demo_btn_audio]
 parent = @hub_menu_col_right
     [UiButton]
-        size_ratio = (1.0, 0.135)
+        size_ratio = (0.82, 0.13)
         click_signals = ["demo_audio_click"]
         style = $button_style
         hover = $var2

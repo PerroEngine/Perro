@@ -3,7 +3,38 @@ use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
-fn parse_project_toml_reads_virtual_resolution_string() {
+fn parse_project_toml_reads_aspect_ratio() {
+    let landscape = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+aspect_ratio = "16:9"
+"#;
+
+    let parsed = parse_project_toml(landscape).expect("failed to parse project.toml");
+    assert_eq!(parsed.virtual_width, 1920);
+    assert_eq!(parsed.virtual_height, 1080);
+
+    let portrait = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+aspect_ratio = "9:16"
+"#;
+
+    let parsed = parse_project_toml(portrait).expect("failed to parse project.toml");
+    assert_eq!(parsed.virtual_width, 1080);
+    assert_eq!(parsed.virtual_height, 1920);
+}
+
+#[test]
+fn parse_project_toml_defaults_to_wide_aspect_canvas() {
     let toml = r#"
 [project]
 name = "Game"
@@ -11,28 +42,47 @@ main_scene = "res://main.scn"
 icon = "res://icon.png"
 
 [graphics]
-virtual_resolution = "1280x720"
+vsync = true
 "#;
 
     let parsed = parse_project_toml(toml).expect("failed to parse project.toml");
-    assert_eq!(parsed.name, "Game");
-    assert_eq!(parsed.main_scene, "res://main.scn");
-    assert_eq!(parsed.icon, "res://icon.png");
-    assert_eq!(parsed.virtual_width, 1280);
-    assert_eq!(parsed.virtual_height, 720);
-    assert!(!parsed.vsync);
-    assert_eq!(parsed.frame_rate_cap, FrameRateCap::Unlimited);
-    assert!(parsed.msaa);
-    assert!(!parsed.meshlets);
-    assert!(!parsed.dev_meshlets);
-    assert!(parsed.release_meshlets);
-    assert!(!parsed.meshlet_debug_view);
-    assert_eq!(parsed.occlusion_culling, OcclusionCulling::Gpu);
-    assert_eq!(parsed.particle_sim_default, ParticleSimDefault::Cpu);
-    assert_eq!(parsed.physics_gravity, -9.81);
-    assert_eq!(parsed.physics_coef, 1.0);
-    assert!(parsed.localization.is_none());
-    assert_eq!(parsed.steam, SteamConfig::default());
+    assert_eq!(parsed.virtual_width, 1920);
+    assert_eq!(parsed.virtual_height, 1080);
+    assert!(parsed.vsync);
+}
+
+#[test]
+fn parse_project_toml_rejects_removed_virtual_resolution() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+aspect_ratio = "9:16"
+virtual_resolution = "1280x720"
+"#;
+
+    let err = parse_project_toml(toml).expect_err("expected parse failure");
+    assert!(err.to_string().contains("graphics.virtual_resolution"));
+}
+
+#[test]
+fn parse_project_toml_rejects_removed_split_virtual_dimensions() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+virtual_width = 1920
+virtual_height = 1080
+"#;
+
+    let err = parse_project_toml(toml).expect_err("expected parse failure");
+    assert!(err.to_string().contains("graphics.virtual_width"));
 }
 
 #[test]
@@ -45,7 +95,7 @@ main_scene = "res://main.scn"
 icon = "res://icon.png"
 
 [graphics]
-virtual_resolution = "1920x1080"
+aspect_ratio = "16:9"
 
 [runtime]
 frame_rate_cap = 144
@@ -62,7 +112,7 @@ main_scene = "res://main.scn"
 icon = "res://icon.png"
 
 [graphics]
-virtual_resolution = "1920x1080"
+aspect_ratio = "16:9"
 
 [runtime]
 frame_rate_cap = "refresh_rate"
@@ -70,35 +120,6 @@ frame_rate_cap = "refresh_rate"
     )
     .expect("refresh cap");
     assert_eq!(refresh.frame_rate_cap, FrameRateCap::RefreshRate);
-}
-
-#[test]
-fn parse_project_toml_reads_split_virtual_dimensions() {
-    let toml = r#"
-[project]
-name = "Game"
-main_scene = "res://main.scn"
-icon = "res://icon.png"
-
-[graphics]
-virtual_width = 1920
-virtual_height = 1080
-"#;
-
-    let parsed = parse_project_toml(toml).expect("failed to parse project.toml");
-    assert_eq!(parsed.virtual_width, 1920);
-    assert_eq!(parsed.virtual_height, 1080);
-    assert!(!parsed.vsync);
-    assert!(parsed.msaa);
-    assert!(!parsed.meshlets);
-    assert!(!parsed.dev_meshlets);
-    assert!(parsed.release_meshlets);
-    assert!(!parsed.meshlet_debug_view);
-    assert_eq!(parsed.occlusion_culling, OcclusionCulling::Gpu);
-    assert_eq!(parsed.particle_sim_default, ParticleSimDefault::Cpu);
-    assert_eq!(parsed.physics_gravity, -9.81);
-    assert_eq!(parsed.physics_coef, 1.0);
-    assert!(parsed.localization.is_none());
 }
 
 #[test]
@@ -110,7 +131,7 @@ main_scene = "res://main.scn"
 icon = "res://icon.png"
 
 [graphics]
-virtual_resolution = "1920x1080"
+aspect_ratio = "16:9"
 vsync = true
 msaa = false
 meshlets = true
@@ -149,7 +170,7 @@ main_scene = "res://main.scn"
 icon = "res://icon.png"
 
 [graphics]
-virtual_resolution = "1920x1080"
+aspect_ratio = "16:9"
 
 [physics]
 gravity = -4.905
@@ -170,7 +191,7 @@ main_scene = "res://main.scn"
 icon = "res://icon.png"
 
 [graphics]
-virtual_resolution = "1920x1080"
+aspect_ratio = "16:9"
 
 [steam]
 enabled = true
@@ -191,7 +212,7 @@ main_scene = "res://main.scn"
 icon = "res://icon.png"
 
 [graphics]
-virtual_resolution = "1920x1080"
+aspect_ratio = "16:9"
 
 [steam]
 enabled = true
@@ -210,7 +231,7 @@ main_scene = "res://main.scn"
 icon = "res://icon.png"
 
 [graphics]
-virtual_resolution = "1920x1080"
+aspect_ratio = "16:9"
 
 [steam]
 enabled = true
@@ -230,7 +251,7 @@ main_scene = "./main.scn"
 icon = "res://icon.png"
 
 [graphics]
-virtual_resolution = "1920x1080"
+aspect_ratio = "16:9"
 "#;
 
     let err = parse_project_toml(toml).expect_err("expected parse failure");
@@ -249,7 +270,7 @@ main_scene = "res://main.scn"
 icon = "res://icon.png"
 
 [graphics]
-virtual_resolution = "1920x1080"
+aspect_ratio = "16:9"
 "#;
 
     let gpu_compute = format!("{base}particle_sim_default = \"gpu_compute\"\n");
@@ -316,7 +337,7 @@ main_scene = "res://main.scn"
 icon = "res://icon.png"
 
 [graphics]
-virtual_resolution = "1920x1080"
+aspect_ratio = "16:9"
 
 [localization]
 default_locale = "JA"
@@ -344,7 +365,7 @@ main_scene = "res://main.scn"
 icon = "res://icon.png"
 
 [graphics]
-virtual_resolution = "1920x1080"
+aspect_ratio = "16:9"
 
 [localization]
 default_locale = "ES"
@@ -381,7 +402,7 @@ main_scene = "res://main.scn"
 icon = "res://icon.png"
 
 [graphics]
-virtual_resolution = "1920x1080"
+aspect_ratio = "16:9"
 "#,
     )
     .expect("write project.toml");
@@ -414,7 +435,7 @@ main_scene = "res://main.scn"
 icon = "res://icon.png"
 
 [graphics]
-virtual_resolution = "1920x1080"
+aspect_ratio = "16:9"
 
 [localization]
 default_locale = "en"
@@ -444,7 +465,7 @@ copyright = "Copyright (c) 2026 Perro Lab"
 trademark = "Perro Lab"
 
 [graphics]
-virtual_resolution = "1920x1080"
+aspect_ratio = "16:9"
 "#;
 
     let parsed = parse_project_toml(toml).expect("failed to parse project.toml");
@@ -475,7 +496,7 @@ description = "Ship fast"
 keywords = ["rust", "engine", "web"]
 
 [graphics]
-virtual_resolution = "1920x1080"
+aspect_ratio = "16:9"
 "#;
 
     let parsed = parse_project_toml(toml).expect("failed to parse project.toml");
@@ -524,7 +545,7 @@ main_scene = "res://main.scn"
 icon = "res://icon.png"
 
 [graphics]
-virtual_resolution = "1920x1080"
+aspect_ratio = "16:9"
 "#,
     )
     .expect("write project");
@@ -637,7 +658,7 @@ main_scene = "res://main.scn"
 icon = "res://icon.png"
 
 [graphics]
-virtual_resolution = "1920x1080"
+aspect_ratio = "16:9"
 "#,
     )
     .expect("write project");
@@ -708,7 +729,7 @@ main_scene = "res://main.scn"
 icon = "res://icon.png"
 
 [graphics]
-virtual_resolution = "1920x1080"
+aspect_ratio = "16:9"
 
 [steam]
 enabled = true
@@ -741,7 +762,7 @@ main_scene = "res://main.scn"
 icon = "res://icon.png"
 
 [graphics]
-virtual_resolution = "1920x1080"
+aspect_ratio = "16:9"
 
 [steam]
 enabled = true
@@ -758,7 +779,7 @@ main_scene = "res://main.scn"
 icon = "res://icon.png"
 
 [graphics]
-virtual_resolution = "1920x1080"
+aspect_ratio = "16:9"
 
 [steam]
 enabled = false
@@ -890,11 +911,21 @@ fn ensure_source_overrides_repairs_dev_runner_features() {
     assert!(repaired.contains("build = \"build.rs\""));
     assert!(repaired.contains("winresource = \"0.1.20\""));
     assert!(repaired.contains("toml = \"0.8.23\""));
-    assert!(repaired.contains("image = { version = \"0.25.9\""));
+    assert!(repaired.contains("[target.'cfg(target_os = \"windows\")'.build-dependencies.image]"));
+    assert!(repaired.contains("version = \"0.25.9\""));
     assert!(repaired.contains("resvg = \"0.47.0\""));
     assert!(repaired.contains("[profile.dev.package.perro_physics]"));
     assert!(repaired.contains("debug-assertions = false"));
     assert!(repaired.contains("overflow-checks = false"));
+
+    let before = fs::metadata(&manifest)
+        .and_then(|meta| meta.modified())
+        .expect("dev runner manifest modified time before no-op");
+    ensure_source_overrides(&root).expect("overrides no-op");
+    let after = fs::metadata(&manifest)
+        .and_then(|meta| meta.modified())
+        .expect("dev runner manifest modified time after no-op");
+    assert_eq!(before, after);
 
     let build_rs = fs::read_to_string(root.join(".perro").join("dev_runner").join("build.rs"))
         .expect("read dev runner build script");

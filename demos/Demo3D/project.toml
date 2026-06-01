@@ -15,7 +15,7 @@ startup_splash = "res://icon.png"
 # trademark = ""
 
 [graphics]
-virtual_resolution = "1920x1080"
+aspect_ratio = "16:9"
 vsync = false
 
 msaa = true

@@ -20,7 +20,6 @@ script_vars = {
 }
     [UiPanel]
         anchor = "center"
-        position_ratio = (0.5, 0.5)
         size_ratio = (1.0, 1.0)
         style = {
             fill = "#070A0F00",
@@ -29,7 +28,7 @@ script_vars = {
             radius = 0.0
         }
         visible = false
-        padding = 12.0
+        padding = 0.0
     [/UiPanel]
 [/pause_bg_panel]
 
@@ -37,7 +36,6 @@ script_vars = {
 parent = @pause_bg_panel
     [UiPanel]
         anchor = "center"
-        position_ratio = (0.5, 0.5)
         size_ratio = (0.42, 0.52)
         style = {
             fill = "#0B101800",
@@ -45,7 +43,7 @@ parent = @pause_bg_panel
             stroke_width = 1.0,
             radius = 0.04
         }
-        padding = 12.0
+        padding = 0.04
     [/UiPanel]
 [/pause_panel]
 
@@ -53,7 +51,6 @@ parent = @pause_bg_panel
 parent = @pause_panel
     [UiVLayout]
         anchor = "center"
-        position_ratio = (0.5, 0.5)
         size_ratio = (0.9, 0.9)
         spacing = 0.035
         h_align = "fill"
@@ -212,4 +209,3 @@ parent = @pause_btn_hub
         mouse_filter = "pass"
     [/UiLabel]
 [/pause_btn_hub_label]
-

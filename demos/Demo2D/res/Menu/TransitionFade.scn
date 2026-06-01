@@ -3,7 +3,6 @@ $root = @transition_fade_root
 [transition_fade_root]
     [UiPanel]
         anchor = "center"
-        position_ratio = (0.5, 0.5)
         size_ratio = (1.2, 1.2)
         style = {
             fill = "#00000000",
@@ -22,7 +21,6 @@ $root = @transition_fade_root
 parent = @transition_fade_root
     [UiPanel]
         anchor = "center"
-        position_ratio = (0.5, 0.5)
         size_ratio = (1.2, 1.2)
         style = {
             fill = "#00000000",
@@ -36,4 +34,3 @@ parent = @transition_fade_root
         z_index = 1001.0
     [/UiPanel]
 [/transition_fade_panel]
-

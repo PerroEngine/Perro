@@ -45,7 +45,7 @@ description = "My Game"
 keywords = ["game", "perro"]
 
 [graphics]
-virtual_resolution = "1920x1080"
+aspect_ratio = "16:9"
 vsync = false
 msaa = true
 meshlets = false
@@ -131,9 +131,7 @@ Empty string = none.
 
 | Field                  | Type   | Default           | Values                       |
 | ---------------------- | ------ | ----------------- | ---------------------------- |
-| `virtual_resolution`   | string | need              | `"WIDTHxHEIGHT"`             |
-| `virtual_width`        | int    | legacy            | use w/ `virtual_height`      |
-| `virtual_height`       | int    | legacy            | use w/ `virtual_width`       |
+| `aspect_ratio`         | string | `"16:9"`          | `"WIDTH:HEIGHT"`             |
 | `vsync`                | bool   | `false`           | `true` / `false`             |
 | `msaa`                 | bool   | `true`            | `true` / `false`             |
 | `meshlets`             | bool   | `false`           | master meshlet switch        |
@@ -144,7 +142,18 @@ Empty string = none.
 | `particle_sim_default` | string | `"cpu"`           | `"cpu"`, `"hybrid"`, `"gpu"` |
 | `texture_filter`       | string | `"linear_mipmap"` | see below                    |
 
-`virtual_resolution` wins over split width/height.
+`aspect_ratio` sets game shape.
+
+Runtime derives internal canvas from it:
+
+- `"16:9"` => `1920x1080`
+- `"9:16"` => `1080x1920`
+- `"4:3"` => `1440x1080`
+- `"3:4"` => `1080x1440`
+
+Window opens at 75% monitor size, fit to this aspect.
+
+Render surface uses native window resolution.
 
 WASM forces some graphics features off when platform lacks support.
 
@@ -291,5 +300,5 @@ keywords = ["game", "perro"]
 - Use `res://` for project asset refs.
 - Keep bools as `true` / `false`.
 - Keep invalid graphics strings out; parser errors hard.
-- Prefer `virtual_resolution = "1920x1080"` over split fields.
+- Prefer `aspect_ratio = "16:9"` over exact virtual size.
 - Put localization csv next to `project.toml`, not inside `res/`.

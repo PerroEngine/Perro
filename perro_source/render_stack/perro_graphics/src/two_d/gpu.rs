@@ -436,21 +436,18 @@ impl Gpu2D {
                     };
                     texture
                 };
-                if !sprite_intersects_screen(
-                    sprite,
-                    texture.width as f32,
-                    texture.height as f32,
-                    &camera,
-                ) {
+                let (sprite_size, uv_min, uv_max) =
+                    resolve_sprite_geometry(sprite, texture.width, texture.height);
+                if !sprite_intersects_screen(sprite, sprite_size[0], sprite_size[1], &camera) {
                     continue;
                 }
                 self.sprite_stage_instances.push(SpriteInstanceGpu {
                     transform_0: sprite.model[0],
                     transform_1: sprite.model[1],
                     transform_2: sprite.model[2],
-                    uv_min: sprite.uv_min,
-                    uv_max: sprite.uv_max,
-                    size: sprite.size,
+                    uv_min,
+                    uv_max,
+                    size: sprite_size,
                     z_index: sprite.z_index,
                     tint: color_to_unorm8(sprite.tint.into()),
                 });
@@ -813,10 +810,31 @@ fn sprite_batch_sort_key(
     (z_index, texture_key, original_order)
 }
 
+fn resolve_sprite_geometry(
+    sprite: &Sprite2DCommand,
+    texture_width: u32,
+    texture_height: u32,
+) -> ([f32; 2], [f32; 2], [f32; 2]) {
+    let texture_size = [texture_width.max(1) as f32, texture_height.max(1) as f32];
+    if sprite.size[0].is_finite()
+        && sprite.size[1].is_finite()
+        && sprite.size[0] > 0.0
+        && sprite.size[1] > 0.0
+    {
+        (sprite.size, sprite.uv_min, sprite.uv_max)
+    } else {
+        (texture_size, [0.0, 0.0], texture_size)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{SpriteBatchCandidate, sprite_batch_candidates_sorted, sprite_batch_sort_key};
+    use super::{
+        SpriteBatchCandidate, resolve_sprite_geometry, sprite_batch_candidates_sorted,
+        sprite_batch_sort_key,
+    };
     use perro_ids::TextureID;
+    use perro_render_bridge::Sprite2DCommand;
 
     #[test]
     fn sprite_sort_keeps_z_buckets_and_groups_textures() {
@@ -885,5 +903,30 @@ mod tests {
         ];
         assert!(sprite_batch_candidates_sorted(&sorted));
         assert!(!sprite_batch_candidates_sorted(&unsorted));
+    }
+
+    #[test]
+    fn sprite_size_falls_back_to_texture_dimensions() {
+        let sprite = Sprite2DCommand {
+            size: [0.0, 0.0],
+            uv_min: [0.0, 0.0],
+            uv_max: [1.0, 1.0],
+            ..Sprite2DCommand::default()
+        };
+        assert_eq!(
+            resolve_sprite_geometry(&sprite, 32, 64),
+            ([32.0, 64.0], [0.0, 0.0], [32.0, 64.0])
+        );
+
+        let sprite = Sprite2DCommand {
+            size: [16.0, 8.0],
+            uv_min: [4.0, 6.0],
+            uv_max: [20.0, 14.0],
+            ..Sprite2DCommand::default()
+        };
+        assert_eq!(
+            resolve_sprite_geometry(&sprite, 32, 64),
+            ([16.0, 8.0], [4.0, 6.0], [20.0, 14.0])
+        );
     }
 }

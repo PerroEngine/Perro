@@ -24,7 +24,7 @@ startup_splash = "res://icon.png"
 # keywords = ["rust", "game engine"]
 
 [graphics]
-virtual_resolution = "1920x1080"
+aspect_ratio = "16:9"
 vsync = false
 
 msaa = true
@@ -157,40 +157,12 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         .to_string();
     validate_res_path("project.startup_splash", &startup_splash)?;
 
-    let (virtual_width, virtual_height) = if let Some(raw) = graphics_table
-        .get("virtual_resolution")
-        .and_then(Value::as_str)
-    {
-        parse_resolution(raw)?
-    } else {
-        let w = graphics_table
-            .get("virtual_width")
-            .and_then(Value::as_integer)
-            .ok_or(ProjectError::MissingField("graphics.virtual_width"))?;
-        let h = graphics_table
-            .get("virtual_height")
-            .and_then(Value::as_integer)
-            .ok_or(ProjectError::MissingField("graphics.virtual_height"))?;
-        (
-            u32::try_from(w).map_err(|_| {
-                ProjectError::InvalidField(
-                    "graphics.virtual_width",
-                    "must be a positive integer".to_string(),
-                )
-            })?,
-            u32::try_from(h).map_err(|_| {
-                ProjectError::InvalidField(
-                    "graphics.virtual_height",
-                    "must be a positive integer".to_string(),
-                )
-            })?,
-        )
-    };
+    let (virtual_width, virtual_height) = parse_virtual_canvas(graphics_table)?;
 
     if virtual_width == 0 || virtual_height == 0 {
         return Err(ProjectError::InvalidField(
-            "graphics.virtual_resolution",
-            "resolution values must be greater than 0".to_string(),
+            "graphics.aspect_ratio",
+            "derived canvas values must be greater than 0".to_string(),
         ));
     }
 
@@ -988,25 +960,77 @@ pub fn normalize_route_href(path: &str) -> String {
     out
 }
 
-fn parse_resolution(raw: &str) -> Result<(u32, u32), ProjectError> {
+fn parse_virtual_canvas(
+    graphics_table: &toml::map::Map<String, Value>,
+) -> Result<(u32, u32), ProjectError> {
+    if graphics_table.contains_key("virtual_resolution") {
+        return Err(ProjectError::InvalidField(
+            "graphics.virtual_resolution",
+            "removed; use graphics.aspect_ratio".to_string(),
+        ));
+    }
+    if graphics_table.contains_key("virtual_width") || graphics_table.contains_key("virtual_height")
+    {
+        return Err(ProjectError::InvalidField(
+            "graphics.virtual_width",
+            "removed; use graphics.aspect_ratio".to_string(),
+        ));
+    }
+
+    if let Some(value) = graphics_table.get("aspect_ratio") {
+        let Some(raw) = value.as_str() else {
+            return Err(ProjectError::InvalidField(
+                "graphics.aspect_ratio",
+                "must be a string".to_string(),
+            ));
+        };
+        return virtual_canvas_from_aspect_ratio(raw);
+    }
+
+    virtual_canvas_from_aspect_ratio("16:9")
+}
+
+fn virtual_canvas_from_aspect_ratio(raw: &str) -> Result<(u32, u32), ProjectError> {
+    let (w, h) = parse_aspect_ratio(raw)?;
+    let (width, height) = if w >= h {
+        let height = 1080u32;
+        let width = ((height as f32) * (w as f32 / h as f32)).round() as u32;
+        (width.max(1), height)
+    } else {
+        let width = 1080u32;
+        let height = ((width as f32) * (h as f32 / w as f32)).round() as u32;
+        (width, height.max(1))
+    };
+    Ok((width, height))
+}
+
+fn parse_aspect_ratio(raw: &str) -> Result<(u32, u32), ProjectError> {
     let raw = raw.trim().to_ascii_lowercase();
-    let (w, h) = raw.split_once('x').ok_or(ProjectError::InvalidField(
-        "graphics.virtual_resolution",
-        "expected format `WIDTHxHEIGHT`, for example `1920x1080`".to_string(),
-    ))?;
+    let (w, h) = raw
+        .split_once(':')
+        .or_else(|| raw.split_once('x'))
+        .ok_or(ProjectError::InvalidField(
+            "graphics.aspect_ratio",
+            "expected format `WIDTH:HEIGHT`, for example `16:9`".to_string(),
+        ))?;
 
     let width = w.parse::<u32>().map_err(|_| {
         ProjectError::InvalidField(
-            "graphics.virtual_resolution",
+            "graphics.aspect_ratio",
             "invalid width component".to_string(),
         )
     })?;
     let height = h.parse::<u32>().map_err(|_| {
         ProjectError::InvalidField(
-            "graphics.virtual_resolution",
+            "graphics.aspect_ratio",
             "invalid height component".to_string(),
         )
     })?;
-
+    if width == 0 || height == 0 {
+        return Err(ProjectError::InvalidField(
+            "graphics.aspect_ratio",
+            "ratio values must be greater than 0".to_string(),
+        ));
+    }
     Ok((width, height))
 }

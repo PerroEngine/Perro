@@ -70,10 +70,7 @@ lifecycle!({
             let p = profiling!(ctx.run);
 
             with_state_mut!(ctx.run, DemoProfilingOverlayState, ctx.id, |state| {
-                let active = p.simulation_time.max(p.graphics_time);
-                let fps = if !active.is_zero() {
-                    1.0 / active.as_secs_f32()
-                } else if p.fps.is_finite() && p.fps > 0.0 {
+                let fps = if p.fps.is_finite() && p.fps > 0.0 {
                     p.fps
                 } else {
                     0.0

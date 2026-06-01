@@ -3037,11 +3037,11 @@ fn pick_monitor(_event_loop: &ActiveEventLoop) -> Option<MonitorHandle> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn fit_aspect(desired: PhysicalSize<u32>, max_width: u32, max_height: u32) -> PhysicalSize<u32> {
-    if desired.width <= max_width && desired.height <= max_height {
-        return desired;
-    }
-
+pub(crate) fn fit_aspect(
+    desired: PhysicalSize<u32>,
+    max_width: u32,
+    max_height: u32,
+) -> PhysicalSize<u32> {
     let scale = f32::min(
         max_width as f32 / desired.width as f32,
         max_height as f32 / desired.height as f32,

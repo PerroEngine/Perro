@@ -28,11 +28,12 @@ use winit::{
 };
 
 use crate::input::{GamepadInput, JoyConInput};
-use crate::winit_runner::image_helpers::load_image_sizes;
+use crate::winit_runner::{fit_aspect, image_helpers::load_image_sizes};
 
 const MIN_FRAME_RATE_CAP_FPS: f32 = 1.0;
 const MAX_FRAME_RATE_CAP_FPS: f32 = 1000.0;
 const HIGH_RATE_FRAME_INTERVAL: Duration = Duration::from_millis(8);
+const INITIAL_WINDOW_MONITOR_FRACTION: f32 = 0.75;
 
 fn normalize_frame_rate_cap(cap: RuntimeFrameRateCap) -> RuntimeFrameRateCap {
     match cap {
@@ -890,6 +891,35 @@ impl<B: GraphicsBackend> ThreadedRunnerState<B> {
         }
     }
 
+    fn window_attributes(&self, event_loop: &ActiveEventLoop) -> WindowAttributes {
+        let desired = self
+            .startup_splash
+            .as_ref()
+            .map(|splash| {
+                PhysicalSize::new(
+                    splash.config.virtual_size[0].max(1),
+                    splash.config.virtual_size[1].max(1),
+                )
+            })
+            .unwrap_or_else(|| PhysicalSize::new(1920, 1080));
+        let attrs = WindowAttributes::default().with_title(self.title.clone());
+        let Some(monitor) = event_loop
+            .primary_monitor()
+            .or_else(|| event_loop.available_monitors().next())
+        else {
+            return attrs.with_inner_size(Size::Physical(desired));
+        };
+        let max_width =
+            ((monitor.size().width as f32) * INITIAL_WINDOW_MONITOR_FRACTION).floor() as u32;
+        let max_height =
+            ((monitor.size().height as f32) * INITIAL_WINDOW_MONITOR_FRACTION).floor() as u32;
+        attrs.with_inner_size(Size::Physical(fit_aspect(
+            desired,
+            max_width.max(1),
+            max_height.max(1),
+        )))
+    }
+
     fn shutdown(&mut self) {
         self.bridge.request_stop();
         if let Some(sim) = self.sim.take() {
@@ -1372,11 +1402,7 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for ThreadedRunn
         }
         let window = Arc::new(
             event_loop
-                .create_window(
-                    WindowAttributes::default()
-                        .with_title(self.title.clone())
-                        .with_inner_size(Size::Physical(PhysicalSize::new(1280, 720))),
-                )
+                .create_window(self.window_attributes(event_loop))
                 .expect("failed to create winit window"),
         );
         window.set_ime_allowed(true);
@@ -1542,6 +1568,12 @@ fn run_sim_loop(mut runtime: Runtime, bridge: SimBridge, config: SimThreadConfig
             .min(0.250);
         last_tick = tick_start;
         let render_timing = bridge.read_render_timing();
+        let frame_delta = render_timing.frame_time.as_secs_f32();
+        let delta = if frame_delta.is_finite() && frame_delta > 0.0 {
+            frame_delta.min(0.250)
+        } else {
+            delta
+        };
         runtime.set_active_refresh_rate(render_timing.active_refresh_rate);
         let next_frame_id = frame_id.saturating_add(1);
         let should_sample_timing = should_sample_timing_frame(next_frame_id);

@@ -5,7 +5,7 @@ icon = "res://icon.png"
 startup_splash = "res://icon.png"
 
 [graphics]
-virtual_resolution = "1920x1080"
+aspect_ratio = "16:9"
 vsync = false
 msaa = true
 occlusion_culling = "off"

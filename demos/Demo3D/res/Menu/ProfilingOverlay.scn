@@ -10,7 +10,6 @@ script_vars = {
 }
     [UiPanel]
         anchor = "top"
-        position_ratio = (0.5, 0.5)
         size_ratio = (0.68, 0.07)
         style = {
             fill = "#071018B8",
@@ -18,7 +17,7 @@ script_vars = {
             stroke_width = 1.0,
             radius = 0.035
         }
-        padding = 8.0
+        padding = 0.04
         visible = false
         input_enabled = false
         mouse_filter = "pass"
@@ -29,7 +28,6 @@ script_vars = {
 parent = @profiling_overlay_root
     [UiHLayout]
         anchor = "center"
-        position_ratio = (0.5, 0.5)
         size_ratio = (0.96, 0.8)
         spacing = 0.02
         h_align = "fill"
@@ -84,4 +82,3 @@ parent = @profiling_overlay_row
         mouse_filter = "pass"
     [/UiLabel]
 [/profiling_overlay_gfx]
-

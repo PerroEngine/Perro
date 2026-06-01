@@ -70,7 +70,10 @@ fn ensure_dev_runner_source_sync(manifest_path: &Path, main_rs_path: &Path) -> s
     if let Some(parent) = main_rs_path.parent() {
         fs::create_dir_all(parent)?;
     }
-    write_if_changed(manifest_path, &default_dev_runner_crate_toml())?;
+    write_if_missing(
+        manifest_path.to_path_buf(),
+        &default_dev_runner_crate_toml(),
+    )?;
     write_if_changed(main_rs_path, &default_dev_runner_main_rs())?;
     Ok(())
 }
@@ -150,7 +153,7 @@ fn ensure_scripts_manifest_user_deps(
 
     let rendered = toml::to_string(&scripts_value)
         .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
-    fs::write(scripts_manifest, rendered)
+    write_if_changed(scripts_manifest, &rendered)
 }
 
 fn ensure_scripts_target_dir_config(path: &Path) -> std::io::Result<()> {
@@ -213,7 +216,7 @@ fn ensure_project_manifest_deps(path: &Path) -> std::io::Result<()> {
 
     let rendered = toml::to_string(&value)
         .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
-    fs::write(path, rendered)
+    write_if_changed(path, &rendered)
 }
 
 fn ensure_project_manifest_features(path: &Path) -> std::io::Result<()> {
@@ -270,7 +273,7 @@ fn ensure_project_manifest_features(path: &Path) -> std::io::Result<()> {
 
     let rendered = toml::to_string(&value)
         .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
-    fs::write(path, rendered)
+    write_if_changed(path, &rendered)
 }
 
 fn ensure_project_manifest_icon_build_support(path: &Path) -> std::io::Result<()> {
@@ -360,7 +363,7 @@ fn ensure_project_manifest_icon_build_support(path: &Path) -> std::io::Result<()
 
     let rendered = toml::to_string(&value)
         .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
-    fs::write(path, rendered)
+    write_if_changed(path, &rendered)
 }
 
 fn ensure_project_manifest_web_support(path: &Path) -> std::io::Result<()> {
@@ -455,7 +458,7 @@ fn ensure_project_manifest_web_support(path: &Path) -> std::io::Result<()> {
 
     let rendered = toml::to_string(&value)
         .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
-    fs::write(path, rendered)
+    write_if_changed(path, &rendered)
 }
 
 fn ensure_project_manifest_android_support(path: &Path) -> std::io::Result<()> {
@@ -539,7 +542,7 @@ fn ensure_project_manifest_android_support(path: &Path) -> std::io::Result<()> {
 
     let rendered = toml::to_string(&value)
         .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
-    fs::write(path, rendered)
+    write_if_changed(path, &rendered)
 }
 
 fn ensure_scripts_manifest_deps(path: &Path) -> std::io::Result<()> {
@@ -582,7 +585,7 @@ fn ensure_scripts_manifest_deps(path: &Path) -> std::io::Result<()> {
 
     let rendered = toml::to_string(&value)
         .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
-    fs::write(path, rendered)
+    write_if_changed(path, &rendered)
 }
 
 fn ensure_scripts_manifest_features(path: &Path) -> std::io::Result<()> {
@@ -618,7 +621,7 @@ fn ensure_scripts_manifest_features(path: &Path) -> std::io::Result<()> {
 
     let rendered = toml::to_string(&value)
         .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
-    fs::write(path, rendered)
+    write_if_changed(path, &rendered)
 }
 
 fn ensure_dev_runner_manifest_deps(path: &Path) -> std::io::Result<()> {
@@ -661,7 +664,7 @@ fn ensure_dev_runner_manifest_deps(path: &Path) -> std::io::Result<()> {
 
     let rendered = toml::to_string(&value)
         .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
-    fs::write(path, rendered)
+    write_if_changed(path, &rendered)
 }
 
 fn ensure_dev_runner_manifest_features(path: &Path) -> std::io::Result<()> {
@@ -728,7 +731,7 @@ fn ensure_dev_runner_manifest_features(path: &Path) -> std::io::Result<()> {
 
     let rendered = toml::to_string(&value)
         .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
-    fs::write(path, rendered)
+    write_if_changed(path, &rendered)
 }
 
 fn ensure_dev_runner_manifest_profile_debug(path: &Path) -> std::io::Result<()> {
@@ -805,7 +808,7 @@ fn ensure_dev_runner_manifest_profile_debug(path: &Path) -> std::io::Result<()> 
 
     let rendered = toml::to_string(&value)
         .map_err(|err| std::io::Error::other(format!("failed to render Cargo.toml: {err}")))?;
-    fs::write(path, rendered)
+    write_if_changed(path, &rendered)
 }
 
 fn ensure_dev_package_opt_level(
@@ -860,7 +863,7 @@ fn ensure_scripts_manifest_rust_analyzer_cfg(path: &Path) -> std::io::Result<()>
     out.push_str(
         "\n\n[lints.rust]\nunexpected_cfgs = { level = \"warn\", check-cfg = [\"cfg(rust_analyzer)\"] }\n",
     );
-    fs::write(path, out)
+    write_if_changed(path, &out)
 }
 
 fn ensure_patch_block_in_manifest(path: &Path) -> std::io::Result<()> {
@@ -879,7 +882,7 @@ fn ensure_patch_block_in_manifest(path: &Path) -> std::io::Result<()> {
     if src == out {
         return Ok(());
     }
-    fs::write(path, out)
+    write_if_changed(path, &out)
 }
 
 fn strip_patch_crates_io(src: &str) -> String {

@@ -5,7 +5,6 @@ script = "res://scripts/demo_fade_refs.rs"
 script_vars = { transition_fade_panel = @transition_fade_panel }
     [UiPanel]
         anchor = "center"
-        position_ratio = (0.5, 0.5)
         size_ratio = (1.2, 1.2)
         style = {
             fill = "#00000000",
@@ -24,7 +23,6 @@ script_vars = { transition_fade_panel = @transition_fade_panel }
 parent = @transition_fade_root
     [UiPanel]
         anchor = "center"
-        position_ratio = (0.5, 0.5)
         size_ratio = (1.2, 1.2)
         style = {
             fill = "#00000000",
@@ -38,4 +36,3 @@ parent = @transition_fade_root
         z_index = 1001.0
     [/UiPanel]
 [/transition_fade_panel]
-

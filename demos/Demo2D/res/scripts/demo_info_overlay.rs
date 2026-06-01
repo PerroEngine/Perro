@@ -15,8 +15,8 @@ struct DemoInfoOverlayState {
 
 lifecycle!({
     fn on_init(&self, ctx: &mut ScriptContext<'_, API>) {
-        let title = get_child!(ctx.run, ctx.id, TITLE_LABEL_NODE_NAME).unwrap_or(NodeID::nil());
-        let body = get_child!(ctx.run, ctx.id, BODY_LABEL_NODE_NAME).unwrap_or(NodeID::nil());
+        let title = find_descendant_by_name(ctx, ctx.id, TITLE_LABEL_NODE_NAME);
+        let body = find_descendant_by_name(ctx, ctx.id, BODY_LABEL_NODE_NAME);
         with_state_mut!(ctx.run, DemoInfoOverlayState, ctx.id, |state| {
             state.title_label = title;
             state.body_label = body;
@@ -46,4 +46,28 @@ fn set_label_text<API: ScriptAPI + ?Sized>(
     with_node_mut!(ctx.run, UiLabel, id, |label| {
         label.text = text.into();
     });
+}
+
+fn find_descendant_by_name<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    root: NodeID,
+    name: &str,
+) -> NodeID {
+    if root.is_nil() {
+        return NodeID::nil();
+    }
+    let mut stack = vec![root];
+    while let Some(id) = stack.pop() {
+        if let Some(child) = get_child!(ctx.run, id, name) {
+            return child;
+        }
+        if let Some(children) = get_node_children_ids!(ctx.run, id) {
+            for child in children {
+                if !child.is_nil() {
+                    stack.push(child);
+                }
+            }
+        }
+    }
+    NodeID::nil()
 }

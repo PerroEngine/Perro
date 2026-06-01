@@ -8,7 +8,6 @@ $var2 = { style: { fill: "#1B2C3CF0", stroke: "#B8D8FF", stroke_width: 1.0, radi
 [pause_bg_panel]
     [UiPanel]
         anchor = "center"
-        position_ratio = (0.5, 0.5)
         size_ratio = (1.0, 1.0)
         style = {
             fill = "#070A0F00",
@@ -17,7 +16,7 @@ $var2 = { style: { fill: "#1B2C3CF0", stroke: "#B8D8FF", stroke_width: 1.0, radi
             radius = 0.0
         }
         visible = false
-        padding = 12.0
+        padding = 0.0
     [/UiPanel]
 [/pause_bg_panel]
 
@@ -25,15 +24,14 @@ $var2 = { style: { fill: "#1B2C3CF0", stroke: "#B8D8FF", stroke_width: 1.0, radi
 parent = @pause_bg_panel
     [UiPanel]
         anchor = "center"
-        position_ratio = (0.5, 0.5)
-        size_ratio = (0.42, 0.46)
+        size_ratio = (0.42, 0.52)
         style = {
-            fill = "#0B101800",
-            stroke = "#D0E0EF00",
+            fill = "#0B1018D9",
+            stroke = "#D0E0EFFF",
             stroke_width = 1.0,
             radius = 0.04
         }
-        padding = 12.0
+        padding = 0.04
     [/UiPanel]
 [/pause_panel]
 
@@ -41,7 +39,6 @@ parent = @pause_bg_panel
 parent = @pause_panel
     [UiVLayout]
         anchor = "center"
-        position_ratio = (0.5, 0.5)
         size_ratio = (0.9, 0.9)
         spacing = 0.035
         h_align = "fill"
@@ -52,17 +49,20 @@ parent = @pause_panel
 [pause_title]
 parent = @pause_content
     [UiLabel]
-        size_ratio = (1.0, 0.18)
+        size_ratio = (1.0, 0.14)
         text = "Paused"
         text_size_ratio = 0.3
-        color = "#FFFFFF00"
+        color = "#FFFFFFFF"
+        input_enabled = false
+        mouse_filter = "pass"
     [/UiLabel]
 [/pause_title]
 
 [pause_btn_resume]
 parent = @pause_content
     [UiButton]
-        size_ratio = (1.0, 0.22)
+        size_ratio = (1.0, 0.18)
+        h_align = "fill"
         click_signals = ["pause_resume_click"]
         style = $button_style
         hover = $var2
@@ -85,7 +85,8 @@ parent = @pause_btn_resume
 [pause_btn_restart]
 parent = @pause_content
     [UiButton]
-        size_ratio = (1.0, 0.22)
+        size_ratio = (1.0, 0.18)
+        h_align = "fill"
         click_signals = ["pause_restart_click"]
         style = $button_style
         hover = $var2
@@ -108,7 +109,8 @@ parent = @pause_btn_restart
 [pause_btn_hub]
 parent = @pause_content
     [UiButton]
-        size_ratio = (1.0, 0.22)
+        size_ratio = (1.0, 0.18)
+        h_align = "fill"
         click_signals = ["pause_hub_click"]
         style = $button_style
         hover = $var2
@@ -127,4 +129,3 @@ parent = @pause_btn_hub
         mouse_filter = "pass"
     [/UiLabel]
 [/pause_btn_hub_label]
-

@@ -1,5 +1,7 @@
 use super::{MAX_FIXED_STEPS_PER_FRAME, StartupSplashState, plan_fixed_steps};
 use std::time::Instant;
+#[cfg(not(target_arch = "wasm32"))]
+use winit::dpi::PhysicalSize;
 
 #[test]
 fn fixed_step_plan_caps_large_delta() {
@@ -51,4 +53,20 @@ fn startup_splash_blocks_input_only_until_first_frame_capture() {
     splash.first_frame_captured = true;
 
     assert!(!splash.blocks_input());
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn fit_aspect_uses_monitor_fraction_box_without_distorting() {
+    let fitted = super::fit_aspect(PhysicalSize::new(1920, 1080), 1920, 1080);
+    assert_eq!(fitted, PhysicalSize::new(1920, 1080));
+
+    let fitted = super::fit_aspect(PhysicalSize::new(1920, 1080), 2880, 1620);
+    assert_eq!(fitted, PhysicalSize::new(2880, 1620));
+
+    let fitted = super::fit_aspect(PhysicalSize::new(1920, 1080), 1440, 810);
+    assert_eq!(fitted, PhysicalSize::new(1440, 810));
+
+    let fitted = super::fit_aspect(PhysicalSize::new(1080, 1920), 1440, 810);
+    assert_eq!(fitted, PhysicalSize::new(455, 810));
 }
