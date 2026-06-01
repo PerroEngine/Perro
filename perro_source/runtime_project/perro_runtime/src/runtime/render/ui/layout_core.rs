@@ -167,7 +167,12 @@ impl Runtime {
         let Some(parent_node) = self.nodes.get(parent) else {
             return out;
         };
-        let mut stack: Vec<NodeID> = parent_node.get_children_ids().iter().rev().copied().collect();
+        let mut stack: Vec<NodeID> = parent_node
+            .get_children_ids()
+            .iter()
+            .rev()
+            .copied()
+            .collect();
         while let Some(node_id) = stack.pop() {
             let Some(node) = self.nodes.get(node_id) else {
                 continue;

@@ -12,7 +12,6 @@ use perro_render_bridge::{
     CameraStreamCommand, RenderCommand, ResourceCommand, UiCommand, UiDepthEffectState,
     UiImageScaleState, UiRectState, UiTextAlignState,
 };
-use perro_runtime_api::sub_apis::SignalAPI;
 use perro_runtime_render::{UiDirtyMask, UiExtractionOptions, ui_image_texture_request};
 use perro_structs::{UVector2, Vector2};
 use perro_ui::{

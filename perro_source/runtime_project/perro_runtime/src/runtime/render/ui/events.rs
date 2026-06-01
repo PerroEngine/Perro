@@ -466,7 +466,7 @@ impl Runtime {
             let mut signals = std::mem::take(&mut self.render_ui.event_signal_scratch);
             let params = [Variant::from(node)];
             for signal in signals.iter().copied() {
-                let _ = SignalAPI::signal_emit(self, signal, &params);
+                self.queue_ui_signal(signal, &params);
             }
             signals.clear();
             self.render_ui.event_signal_scratch = signals;
@@ -495,12 +495,12 @@ impl Runtime {
         if let Some(text) = text {
             let params = [Variant::from(node), Variant::from(text)];
             for signal in signals.iter().copied() {
-                let _ = SignalAPI::signal_emit(self, signal, &params);
+                self.queue_ui_signal(signal, &params);
             }
         } else {
             let params = [Variant::from(node)];
             for signal in signals.iter().copied() {
-                let _ = SignalAPI::signal_emit(self, signal, &params);
+                self.queue_ui_signal(signal, &params);
             }
         }
         signals.clear();

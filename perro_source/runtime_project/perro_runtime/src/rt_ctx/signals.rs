@@ -178,6 +178,29 @@ impl SignalAPI for Runtime {
     }
 }
 
+impl Runtime {
+    pub(crate) fn queue_ui_signal(&mut self, signal: SignalID, params: &[Variant]) {
+        self.signal_runtime
+            .queued_ui_signals
+            .push((signal, Arc::from(params)));
+    }
+
+    pub(crate) fn flush_queued_ui_signals(&mut self) -> usize {
+        if self.signal_runtime.queued_ui_signals.is_empty() {
+            return 0;
+        }
+
+        let mut queued = std::mem::take(&mut self.signal_runtime.queued_ui_signals);
+        let mut calls = 0usize;
+        for (signal, params) in queued.iter() {
+            calls += SignalAPI::signal_emit(self, *signal, params.as_ref());
+        }
+        queued.clear();
+        self.signal_runtime.queued_ui_signals = queued;
+        calls
+    }
+}
+
 fn merged_signal_params_into<'a, 'scratch>(
     emit_params: &'a [Variant],
     connect_params: &'a [Variant],

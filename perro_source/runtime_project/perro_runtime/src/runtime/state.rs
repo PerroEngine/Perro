@@ -3,7 +3,7 @@ use crate::{
     runtime::{RuntimeScriptBehavior, RuntimeScriptCtor},
 };
 use ahash::{AHashMap, AHashSet};
-use perro_ids::{NodeID, TagID};
+use perro_ids::{NodeID, SignalID, TagID};
 use perro_nodes::Spatial;
 use perro_structs::{Transform2D, Transform3D};
 use std::{path::PathBuf, sync::Arc};
@@ -164,6 +164,7 @@ pub(crate) struct SignalRuntimeState {
     pub(crate) registry: SignalRegistry,
     pub(crate) emit_scratch: Vec<SignalConnection>,
     pub(crate) param_scratch: Vec<perro_variant::Variant>,
+    pub(crate) queued_ui_signals: Vec<(SignalID, Arc<[perro_variant::Variant]>)>,
 }
 
 impl SignalRuntimeState {
@@ -172,6 +173,7 @@ impl SignalRuntimeState {
             registry: SignalRegistry::new(),
             emit_scratch: Vec::new(),
             param_scratch: Vec::new(),
+            queued_ui_signals: Vec::new(),
         }
     }
 }

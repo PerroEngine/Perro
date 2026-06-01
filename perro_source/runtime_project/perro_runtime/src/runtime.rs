@@ -569,6 +569,7 @@ impl Runtime {
     #[inline]
     pub fn update(&mut self, delta_time: f32) {
         self.time.delta = delta_time;
+        self.flush_queued_ui_signals();
         self.process_pending_web_route_change();
         self.apply_loaded_skeleton_bones();
         #[cfg(feature = "steamworks")]
@@ -585,6 +586,7 @@ impl Runtime {
     pub fn update_timed(&mut self, delta_time: f32) -> RuntimeUpdateTiming {
         let total_start = Instant::now();
         self.time.delta = delta_time;
+        self.flush_queued_ui_signals();
         self.process_pending_web_route_change();
         self.apply_loaded_skeleton_bones();
         #[cfg(feature = "steamworks")]
