@@ -1,4 +1,6 @@
-use super::renderer::{UiDraw, UiImageDraw, UiLabelDraw, UiPanelDraw, UiTextEditDraw};
+use super::renderer::{
+    UiDraw, UiImageDraw, UiLabelDraw, UiNineSliceDraw, UiPanelDraw, UiTextEditDraw,
+};
 use ahash::AHashMap;
 use epaint::{
     AlphaFromCoverage, ClippedPrimitive, ClippedShape, Color32, CornerRadius, FontFamily, FontId,
@@ -93,6 +95,9 @@ impl EpaintUiPainter {
                     push_panel_shape(&button.panel, viewport, &mut self.shapes)
                 }
                 UiDraw::Image(image) => push_image_shape(image, viewport, &mut self.shapes),
+                UiDraw::NineSlice(image) => {
+                    push_nine_slice_shapes(image, viewport, &mut self.shapes)
+                }
                 UiDraw::Label(label) => {
                     push_label_shape(label, viewport, &mut self.fonts, &mut self.shapes)
                 }
@@ -165,9 +170,83 @@ fn ui_rect(draw: &UiDraw) -> UiRectState {
         UiDraw::Panel(panel) => panel.rect,
         UiDraw::Button(button) => button.panel.rect,
         UiDraw::Image(image) => image.rect,
+        UiDraw::NineSlice(image) => image.rect,
         UiDraw::Label(label) => label.rect,
         UiDraw::TextEdit(edit) => edit.panel.rect,
     }
+}
+
+fn push_nine_slice_shapes(
+    image: &UiNineSliceDraw,
+    viewport: [f32; 2],
+    out: &mut Vec<ClippedShape>,
+) {
+    if image.texture.is_nil() || !valid_rect(image.rect) || !valid_color(image.tint) {
+        return;
+    }
+    let (min, max) = image.rect.screen_min_max(viewport);
+    let outer = Rect::from_min_max(pos2(min[0], min[1]), pos2(max[0], max[1]));
+    if outer.width() <= 0.0 || outer.height() <= 0.0 {
+        return;
+    }
+    let [l, t, r, b] = clamp_nine_margins(image.margins, outer.width(), outer.height());
+    let [u0, v0] = image.uv_min;
+    let [u3, v3] = image.uv_max;
+    let uw = (u3 - u0).max(0.0);
+    let vh = (v3 - v0).max(0.0);
+    if uw <= 0.0 || vh <= 0.0 {
+        return;
+    }
+    let ul = l.min(uw);
+    let ur = r.min((uw - ul).max(0.0));
+    let vt = t.min(vh);
+    let vb = b.min((vh - vt).max(0.0));
+    let xs = [
+        outer.left(),
+        outer.left() + l,
+        outer.right() - r,
+        outer.right(),
+    ];
+    let ys = [
+        outer.top(),
+        outer.top() + t,
+        outer.bottom() - b,
+        outer.bottom(),
+    ];
+    let us = [u0, u0 + ul, u3 - ur, u3];
+    let vs = [v0, v0 + vt, v3 - vb, v3];
+    let mut mesh = Mesh::with_texture(TextureId::User(image.texture.as_u64()));
+    for y in 0..3 {
+        for x in 0..3 {
+            if xs[x + 1] <= xs[x] || ys[y + 1] <= ys[y] || us[x + 1] <= us[x] || vs[y + 1] <= vs[y]
+            {
+                continue;
+            }
+            mesh.add_rect_with_uv(
+                Rect::from_min_max(pos2(xs[x], ys[y]), pos2(xs[x + 1], ys[y + 1])),
+                Rect::from_min_max(pos2(us[x], vs[y]), pos2(us[x + 1], vs[y + 1])),
+                color32(image.tint),
+            );
+        }
+    }
+    out.push(ClippedShape {
+        clip_rect: clip_rect_from_state(image.clip_rect, viewport),
+        shape: Shape::Mesh(mesh.into()),
+    });
+}
+
+fn clamp_nine_margins(margins: [f32; 4], w: f32, h: f32) -> [f32; 4] {
+    let mut l = margins[0].max(0.0);
+    let mut t = margins[1].max(0.0);
+    let mut r = margins[2].max(0.0);
+    let mut b = margins[3].max(0.0);
+    let sx = (w / (l + r).max(w)).min(1.0);
+    let sy = (h / (t + b).max(h)).min(1.0);
+    l *= sx;
+    r *= sx;
+    t *= sy;
+    b *= sy;
+    [l, t, r, b]
 }
 
 fn push_image_shape(image: &UiImageDraw, viewport: [f32; 2], out: &mut Vec<ClippedShape>) {
@@ -560,8 +639,6 @@ fn push_text_shape(input: TextShapeInput<'_>, fonts: &mut Fonts, out: &mut Vec<C
     }
 
     let (min, max) = rect.screen_min_max(viewport);
-    let clip_rect =
-        Rect::from_min_max(pos2(min[0], min[1]), pos2(max[0], max[1])).intersect(clip_rect);
     let galley = fonts.with_pixels_per_point(UI_RASTER_SCALE).layout(
         text.to_string(),
         FontId::new(font_size, FontFamily::Proportional),
@@ -763,5 +840,42 @@ mod tests {
 
         effect.size = 0.5;
         assert_eq!(effect_size_expand(rect, effect), -12.5);
+    }
+
+    #[test]
+    fn label_text_clip_uses_parent_clip_not_own_rect() {
+        let mut fonts = Fonts::new(
+            UI_FONT_ATLAS_SIZE,
+            AlphaFromCoverage::default(),
+            FontDefinitions::default(),
+        );
+        fonts.begin_pass(UI_FONT_ATLAS_SIZE, AlphaFromCoverage::default());
+        let mut shapes = Vec::new();
+        push_text_shape(
+            TextShapeInput {
+                rect: UiRectState {
+                    center: [0.0, 0.0],
+                    size: [80.0, 20.0],
+                    pivot: [0.5, 0.5],
+                    rotation_radians: 0.0,
+                    z_index: 0,
+                },
+                viewport: [800.0, 600.0],
+                clip_rect: Rect::from_min_max(pos2(0.0, 0.0), pos2(800.0, 600.0)),
+                text: "alpha beta gamma delta epsilon",
+                font_size: 24.0,
+                color: perro_structs::Color::WHITE,
+                h_align: UiTextAlignState::Start,
+                v_align: UiTextAlignState::Start,
+            },
+            &mut fonts,
+            &mut shapes,
+        );
+
+        assert_eq!(shapes.len(), 1);
+        assert_eq!(
+            shapes[0].clip_rect,
+            Rect::from_min_max(pos2(0.0, 0.0), pos2(800.0, 600.0))
+        );
     }
 }

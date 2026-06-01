@@ -89,6 +89,72 @@ fn ui_animated_image_emits_current_frame_region() {
 }
 
 #[test]
+fn ui_image_button_emits_image_command_with_state_tint() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut button = perro_ui::UiImageButton::new();
+    button.texture = TextureID::from_parts(43, 0);
+    button.layout.size = UiVector2::pixels(64.0, 64.0);
+    button.tint = Color::new(0.1, 0.2, 0.3, 1.0);
+    button.hover_tint = Color::new(0.4, 0.5, 0.6, 1.0);
+    button.pressed_tint = Color::new(0.7, 0.8, 0.9, 1.0);
+    button.scale_mode = perro_ui::UiImageScaleMode::Fit;
+    let node = insert_ui_node(&mut runtime, SceneNodeData::UiImageButton(button));
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    runtime.begin_input_frame();
+    runtime.set_mouse_position(400.0, 300.0);
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertImage { node: n, tint, scale_mode, .. })
+            if *n == node
+                && *tint == Color::new(0.4, 0.5, 0.6, 1.0)
+                && *scale_mode == UiImageScaleState::Fit
+    )));
+}
+
+#[test]
+fn ui_nine_slice_emits_nine_slice_command() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut node_data = perro_ui::UiNineSlice::new();
+    node_data.texture = TextureID::from_parts(64, 0);
+    node_data.layout.size = UiVector2::pixels(120.0, 40.0);
+    node_data.texture_region = Some([1.0, 2.0, 30.0, 20.0]);
+    node_data.margins = [5.0, 6.0, 7.0, 8.0];
+    let node = insert_ui_node(&mut runtime, SceneNodeData::UiNineSlice(node_data));
+
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertNineSlice {
+            node: n,
+            texture,
+            uv_min,
+            uv_max,
+            margins,
+            ..
+        }) if *n == node
+            && *texture == TextureID::from_parts(64, 0)
+            && *uv_min == [1.0, 2.0]
+            && *uv_max == [31.0, 22.0]
+            && *margins == [5.0, 6.0, 7.0, 8.0]
+    )));
+}
+
+#[test]
 fn ui_image_keeps_retained_texture_while_replacement_texture_is_pending() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);
@@ -1542,6 +1608,25 @@ fn button_event_signals_include_named_and_custom_signals() {
             SignalID::from_string("fire_pressed"),
             SignalID::from_string("custom_a"),
             SignalID::from_string("custom_b"),
+        ]
+    );
+}
+
+#[test]
+fn image_button_event_signals_include_named_and_custom_signals() {
+    let mut runtime = Runtime::new();
+    let mut button = perro_ui::UiImageButton::new();
+    button
+        .click_signals
+        .push(SignalID::from_string("custom_click"));
+    let node = insert_ui_node(&mut runtime, SceneNodeData::UiImageButton(button));
+    runtime.nodes.get_mut(node).expect("image button").name = Cow::Borrowed("icon");
+
+    assert_eq!(
+        runtime.button_event_signals(node, "click"),
+        vec![
+            SignalID::from_string("icon_click"),
+            SignalID::from_string("custom_click"),
         ]
     );
 }

@@ -11,6 +11,7 @@ mod tests {
         ensure_project_layout, ensure_project_scaffold, ensure_project_toml,
         ensure_source_overrides, load_project_toml, load_routes_toml,
     };
+    use perro_scene::NodeType;
 
     fn assert_methods_emitted(transpiled: &str, expected_method_names: &[&str]) {
         assert!(
@@ -640,6 +641,7 @@ lifecycle!({});
         generate_embedded_entry_files(&root).expect("generate embedded main");
         generate_perro_assets(&root).expect("generate assets");
         assert_static_module_fixture_refs(&root);
+        assert_static_scene_fixture_node_types(&root);
         assert_generated_native_main_hides_windows_console(&root);
 
         assert_project_crate_checks(&root, ProjectBuildOptions::new(false, true));
@@ -932,6 +934,21 @@ rest_rot_deg = 0
         }
     }
 
+    fn assert_static_scene_fixture_node_types(root: &std::path::Path) {
+        let scenes = std::fs::read_to_string(
+            root.join(".perro")
+                .join("project")
+                .join("src")
+                .join("static")
+                .join("scenes.rs"),
+        )
+        .expect("read static scenes");
+        for node_type in NodeType::ALL {
+            let needle = format!("NodeType::{node_type}");
+            assert!(scenes.contains(&needle), "missing `{needle}` in static scene fixture");
+        }
+    }
+
     fn fixture_scene() -> &'static str {
         r#"$root = @main
 
@@ -994,6 +1011,469 @@ parent = $root
     skeleton = "res://rigs/root.pskel2d"
 [/Skeleton2D]
 [/skeleton]
+
+[node]
+parent = $root
+[Node]
+[/Node]
+[/node]
+
+[node2d]
+parent = $root
+[Node2D]
+[/Node2D]
+[/node2d]
+
+[camera2d]
+parent = $root
+[Camera2D]
+[/Camera2D]
+[/camera2d]
+
+[camera_stream_2d]
+parent = $root
+[CameraStream2D]
+[/CameraStream2D]
+[/camera_stream_2d]
+
+[button_2d]
+parent = $root
+[Button2D]
+    size = (32, 16)
+[/Button2D]
+[/button_2d]
+
+[image_button_2d]
+parent = $root
+[ImageButton2D]
+    texture = "res://textures/pixel.bmp"
+    size = (32, 16)
+[/ImageButton2D]
+[/image_button_2d]
+
+[nine_slice_2d]
+parent = $root
+[NineSlice2D]
+    texture = "res://textures/pixel.bmp"
+    size = (32, 16)
+    margins = (1, 1, 1, 1)
+[/NineSlice2D]
+[/nine_slice_2d]
+
+[animated_sprite_2d]
+parent = $root
+[AnimatedSprite2D]
+    texture = "res://textures/pixel.bmp"
+[/AnimatedSprite2D]
+[/animated_sprite_2d]
+
+[tile_map_2d]
+parent = $root
+[TileMap2D]
+    tileset = "res://tiles/fixture.ptileset"
+    width = 1
+    height = 1
+    tiles = [0]
+[/TileMap2D]
+[/tile_map_2d]
+
+[particles_2d]
+parent = $root
+[ParticleEmitter2D]
+    profile = "res://particles/spark.ppart"
+[/ParticleEmitter2D]
+[/particles_2d]
+
+[water_2d]
+parent = $root
+[WaterBody2D]
+[/WaterBody2D]
+[/water_2d]
+
+[ambient_light_2d]
+parent = $root
+[AmbientLight2D]
+[/AmbientLight2D]
+[/ambient_light_2d]
+
+[ray_light_2d]
+parent = $root
+[RayLight2D]
+[/RayLight2D]
+[/ray_light_2d]
+
+[point_light_2d]
+parent = $root
+[PointLight2D]
+[/PointLight2D]
+[/point_light_2d]
+
+[spot_light_2d]
+parent = $root
+[SpotLight2D]
+[/SpotLight2D]
+[/spot_light_2d]
+
+[bone_attachment_2d]
+parent = $root
+[BoneAttachment2D]
+[/BoneAttachment2D]
+[/bone_attachment_2d]
+
+[ik_target_2d]
+parent = $root
+[IKTarget2D]
+[/IKTarget2D]
+[/ik_target_2d]
+
+[physics_bone_chain_2d]
+parent = $root
+[PhysicsBoneChain2D]
+[/PhysicsBoneChain2D]
+[/physics_bone_chain_2d]
+
+[bone_collider_2d]
+parent = $root
+[BoneCollider2D]
+[/BoneCollider2D]
+[/bone_collider_2d]
+
+[collision_shape_2d]
+parent = $root
+[CollisionShape2D]
+[/CollisionShape2D]
+[/collision_shape_2d]
+
+[static_body_2d]
+parent = $root
+[StaticBody2D]
+[/StaticBody2D]
+[/static_body_2d]
+
+[area_2d]
+parent = $root
+[Area2D]
+[/Area2D]
+[/area_2d]
+
+[rigid_body_2d]
+parent = $root
+[RigidBody2D]
+[/RigidBody2D]
+[/rigid_body_2d]
+
+[force_2d]
+parent = $root
+[PhysicsForceEmitter2D]
+[/PhysicsForceEmitter2D]
+[/force_2d]
+
+[pin_joint_2d]
+parent = $root
+[PinJoint2D]
+[/PinJoint2D]
+[/pin_joint_2d]
+
+[distance_joint_2d]
+parent = $root
+[DistanceJoint2D]
+[/DistanceJoint2D]
+[/distance_joint_2d]
+
+[fixed_joint_2d]
+parent = $root
+[FixedJoint2D]
+[/FixedJoint2D]
+[/fixed_joint_2d]
+
+[audio_mask_2d]
+parent = $root
+[AudioMask2D]
+[/AudioMask2D]
+[/audio_mask_2d]
+
+[audio_zone_2d]
+parent = $root
+[AudioEffectZone2D]
+[/AudioEffectZone2D]
+[/audio_zone_2d]
+
+[audio_portal_2d]
+parent = $root
+[AudioPortal2D]
+[/AudioPortal2D]
+[/audio_portal_2d]
+
+[node3d]
+parent = $root
+[Node3D]
+[/Node3D]
+[/node3d]
+
+[camera3d]
+parent = $root
+[Camera3D]
+[/Camera3D]
+[/camera3d]
+
+[camera_stream_3d]
+parent = $root
+[CameraStream3D]
+[/CameraStream3D]
+[/camera_stream_3d]
+
+[multi_mesh]
+parent = $root
+[MultiMeshInstance3D]
+    mesh = "res://models/triangle.pmesh"
+[/MultiMeshInstance3D]
+[/multi_mesh]
+
+[water_3d]
+parent = $root
+[WaterBody3D]
+[/WaterBody3D]
+[/water_3d]
+
+[sky_3d]
+parent = $root
+[Sky3D]
+[/Sky3D]
+[/sky_3d]
+
+[ambient_light_3d]
+parent = $root
+[AmbientLight3D]
+[/AmbientLight3D]
+[/ambient_light_3d]
+
+[ray_light_3d]
+parent = $root
+[RayLight3D]
+[/RayLight3D]
+[/ray_light_3d]
+
+[point_light_3d]
+parent = $root
+[PointLight3D]
+[/PointLight3D]
+[/point_light_3d]
+
+[spot_light_3d]
+parent = $root
+[SpotLight3D]
+[/SpotLight3D]
+[/spot_light_3d]
+
+[skeleton_3d]
+parent = $root
+[Skeleton3D]
+[/Skeleton3D]
+[/skeleton_3d]
+
+[bone_attachment_3d]
+parent = $root
+[BoneAttachment3D]
+[/BoneAttachment3D]
+[/bone_attachment_3d]
+
+[ik_target_3d]
+parent = $root
+[IKTarget3D]
+[/IKTarget3D]
+[/ik_target_3d]
+
+[physics_bone_chain_3d]
+parent = $root
+[PhysicsBoneChain3D]
+[/PhysicsBoneChain3D]
+[/physics_bone_chain_3d]
+
+[bone_collider_3d]
+parent = $root
+[BoneCollider3D]
+[/BoneCollider3D]
+[/bone_collider_3d]
+
+[static_body_3d]
+parent = $root
+[StaticBody3D]
+[/StaticBody3D]
+[/static_body_3d]
+
+[area_3d]
+parent = $root
+[Area3D]
+[/Area3D]
+[/area_3d]
+
+[rigid_body_3d]
+parent = $root
+[RigidBody3D]
+[/RigidBody3D]
+[/rigid_body_3d]
+
+[force_3d]
+parent = $root
+[PhysicsForceEmitter3D]
+[/PhysicsForceEmitter3D]
+[/force_3d]
+
+[ball_joint_3d]
+parent = $root
+[BallJoint3D]
+[/BallJoint3D]
+[/ball_joint_3d]
+
+[hinge_joint_3d]
+parent = $root
+[HingeJoint3D]
+[/HingeJoint3D]
+[/hinge_joint_3d]
+
+[fixed_joint_3d]
+parent = $root
+[FixedJoint3D]
+[/FixedJoint3D]
+[/fixed_joint_3d]
+
+[audio_mask_3d]
+parent = $root
+[AudioMask3D]
+[/AudioMask3D]
+[/audio_mask_3d]
+
+[audio_zone_3d]
+parent = $root
+[AudioEffectZone3D]
+[/AudioEffectZone3D]
+[/audio_zone_3d]
+
+[audio_portal_3d]
+parent = $root
+[AudioPortal3D]
+[/AudioPortal3D]
+[/audio_portal_3d]
+
+[ui_box]
+parent = $root
+[UiBox]
+[/UiBox]
+[/ui_box]
+
+[ui_camera_stream]
+parent = $root
+[UiCameraStream]
+[/UiCameraStream]
+[/ui_camera_stream]
+
+[ui_panel]
+parent = $root
+[UiPanel]
+[/UiPanel]
+[/ui_panel]
+
+[ui_button]
+parent = $root
+[UiButton]
+[/UiButton]
+[/ui_button]
+
+[ui_image]
+parent = $root
+[UiImage]
+    texture = "res://textures/pixel.bmp"
+[/UiImage]
+[/ui_image]
+
+[ui_image_button]
+parent = $root
+[UiImageButton]
+    texture = "res://textures/pixel.bmp"
+[/UiImageButton]
+[/ui_image_button]
+
+[ui_nine_slice]
+parent = $root
+[UiNineSlice]
+    texture = "res://textures/pixel.bmp"
+    margins = (1, 1, 1, 1)
+[/UiNineSlice]
+[/ui_nine_slice]
+
+[ui_animated_image]
+parent = $root
+[UiAnimatedImage]
+    texture = "res://textures/pixel.bmp"
+[/UiAnimatedImage]
+[/ui_animated_image]
+
+[ui_label]
+parent = $root
+[UiLabel]
+    text = "Label"
+[/UiLabel]
+[/ui_label]
+
+[ui_text_box]
+parent = $root
+[UiTextBox]
+[/UiTextBox]
+[/ui_text_box]
+
+[ui_text_block]
+parent = $root
+[UiTextBlock]
+[/UiTextBlock]
+[/ui_text_block]
+
+[ui_scroll]
+parent = $root
+[UiScrollContainer]
+[/UiScrollContainer]
+[/ui_scroll]
+
+[ui_layout]
+parent = $root
+[UiLayout]
+[/UiLayout]
+[/ui_layout]
+
+[ui_h_layout]
+parent = $root
+[UiHLayout]
+[/UiHLayout]
+[/ui_h_layout]
+
+[ui_v_layout]
+parent = $root
+[UiVLayout]
+[/UiVLayout]
+[/ui_v_layout]
+
+[ui_grid]
+parent = $root
+[UiGrid]
+[/UiGrid]
+[/ui_grid]
+
+[ui_tree]
+parent = $root
+[UiTreeList]
+[/UiTreeList]
+[/ui_tree]
+
+[animation_player]
+parent = $root
+[AnimationPlayer]
+[/AnimationPlayer]
+[/animation_player]
+
+[animation_tree]
+parent = $root
+[AnimationTree]
+[/AnimationTree]
+[/animation_tree]
 
 "#
     }

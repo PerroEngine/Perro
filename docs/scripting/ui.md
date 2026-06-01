@@ -42,6 +42,8 @@ UiBox
 - UiPanel
 - UiButton
 - UiImage
+- UiImageButton
+- UiNineSlice
 - UiAnimatedImage
 - UiLabel
 - UiScrollContainer
@@ -80,6 +82,20 @@ UiBox
 - Drawn image node.
 - Holds `texture`, `texture_region`, `tint`, `scale_mode`, alignment, and `aspect_ratio`.
 - Use it for icon, portrait, inventory, and image-heavy UI.
+
+`UiImageButton`
+
+- Clickable image node.
+- Holds image fields plus button input, hover, pressed, and click signal fields.
+- `hover` and `pressed` can override layout / transform fields and `tint`.
+- Use it for icon buttons, irregular-looking buttons, HUD slots, and image-only controls.
+
+`UiNineSlice`
+
+- Scalable image panel.
+- Holds `texture`, `texture_region`, `margins`, and `tint`.
+- Keeps corners fixed, stretches edges, and stretches center.
+- Use it as a child/background for UI containers and buttons.
 
 `UiAnimatedImage`
 
@@ -488,6 +504,39 @@ Animated image example:
 [/coin_icon]
 ```
 
+Image button example:
+
+```text
+[play_icon]
+[UiImageButton]
+    texture = "res://ui/play.png"
+    size_ratio = (0.08, 0.08)
+    scale_mode = "fit"
+    click_signals = ["play_clicked"]
+    hover = { scale = (1.06, 1.06) tint = "#FFFFFFFF" }
+    pressed = { scale = (0.94, 0.94) tint = "#CCCCCCFF" }
+[/UiImageButton]
+[/play_icon]
+```
+
+Nine-slice example:
+
+```text
+[dialog_panel]
+[UiNineSlice]
+    texture = "res://ui/panel.png"
+    texture_region = (0, 0, 64, 64)
+    margins = (8, 8, 8, 8)
+    size_ratio = (0.45, 0.30)
+    tint = "#FFFFFFFF"
+[/UiNineSlice]
+[/dialog_panel]
+```
+
+`margins` are left, top, right, bottom pixels inside the source texture or region.
+Corners keep their source size.
+Edges and center stretch to fill the resolved UI rect.
+
 Old flat button color fields still work:
 
 ```text
@@ -496,7 +545,7 @@ hover_fill = "#3A5A40"
 pressed_fill = "#1B4332"
 ```
 
-`UiButton` emits these events:
+`UiButton` and `UiImageButton` emit these events:
 
 ```text
 hover_enter

@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
     use super::*;
+    use perro_ids::SignalID;
     use perro_nodes::SceneNodeData;
     use perro_scene::Parser;
     use perro_structs::{BitMask, Color, CustomPostParamValue, Vector2, Vector3};
@@ -2103,6 +2104,194 @@ mod tests {
         assert_eq!(cam3d.audio_options.effects[0].reverb_send, 0.7);
         assert_eq!(cam3d.audio_options.effects[0].echo, 0.1);
         assert_eq!(cam3d.audio_options.effects[0].dampening, 0.5);
+    }
+
+    #[test]
+    fn scene_loader_builds_ui_image_button_fields() {
+        let scene = Parser::new(
+            r##"
+            $root = @icon
+            [icon]
+            [UiImageButton]
+                texture = "res://ui/play.png"
+                size_ratio = (0.08, 0.12)
+                scale_mode = "fit"
+                tint = "#11223344"
+                hover_tint = "#55667788"
+                pressed_tint = "#99AABBCC"
+                texture_region = (1, 2, 16, 32)
+                click_signals = ["play_clicked"]
+                hover = { scale = (1.1, 1.1), tint = "#FFFFFFFF" }
+                pressed = { scale = (0.9, 0.9), tint = "#CCCCCCFF" }
+            [/UiImageButton]
+            [/icon]
+            "##,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+        let icon = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "icon")
+            .expect("icon node");
+        assert_eq!(icon.texture_source.as_deref(), Some("res://ui/play.png"));
+        match &icon.node.data {
+            SceneNodeData::UiImageButton(button) => {
+                assert_eq!(button.layout.size, perro_ui::UiVector2::ratio(0.08, 0.12));
+                assert_eq!(button.scale_mode, perro_ui::UiImageScaleMode::Fit);
+                assert_eq!(button.tint, Color::new(0.06666667, 0.13333334, 0.2, 0.26666668));
+                assert_eq!(button.hover_tint, Color::WHITE);
+                assert_eq!(
+                    button.pressed_tint,
+                    Color::new(0.8, 0.8, 0.8, 1.0)
+                );
+                assert_eq!(button.texture_region, Some([1.0, 2.0, 16.0, 32.0]));
+                assert_eq!(
+                    button.click_signals,
+                    vec![SignalID::from_string("play_clicked")]
+                );
+                assert!(button.hover_base.is_some());
+                assert!(button.pressed_base.is_some());
+            }
+            other => panic!("expected UiImageButton node, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn scene_loader_builds_2d_button_fields() {
+        let scene = Parser::new(
+            r##"
+            $root = @play
+            [play]
+            [Button2D]
+                position = (12, 34)
+                size = (96, 40)
+                fill = "#112233FF"
+                hover_fill = "#445566FF"
+                pressed_fill = "#778899FF"
+                click_signals = ["play_clicked"]
+            [/Button2D]
+            [/play]
+
+            [icon]
+            [ImageButton2D]
+                texture = "res://ui/icon.png"
+                size = (24, 18)
+                tint = "#FFFFFFFF"
+                hover_tint = "#CCCCCCFF"
+                pressed_tint = "#999999FF"
+                texture_region = (1, 2, 8, 9)
+            [/ImageButton2D]
+            [/icon]
+            "##,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+        let play = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "play")
+            .expect("play node");
+        match &play.node.data {
+            SceneNodeData::Button2D(button) => {
+                assert_eq!(button.transform.position, Vector2::new(12.0, 34.0));
+                assert_eq!(button.size, Vector2::new(96.0, 40.0));
+                assert_eq!(button.style.fill, Color::new(0.06666667, 0.13333334, 0.2, 1.0));
+                assert_eq!(button.hover_style.fill, Color::new(0.26666668, 0.33333334, 0.4, 1.0));
+                assert_eq!(button.pressed_style.fill, Color::new(0.46666667, 0.53333336, 0.6, 1.0));
+                assert_eq!(
+                    button.click_signals,
+                    vec![SignalID::from_string("play_clicked")]
+                );
+            }
+            other => panic!("expected Button2D node, got {other:?}"),
+        }
+
+        let icon = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "icon")
+            .expect("icon node");
+        assert_eq!(icon.texture_source.as_deref(), Some("res://ui/icon.png"));
+        match &icon.node.data {
+            SceneNodeData::ImageButton2D(button) => {
+                assert_eq!(button.size, Vector2::new(24.0, 18.0));
+                assert_eq!(button.hover_tint, Color::new(0.8, 0.8, 0.8, 1.0));
+                assert_eq!(button.pressed_tint, Color::new(0.6, 0.6, 0.6, 1.0));
+                assert_eq!(button.texture_region, Some([1.0, 2.0, 8.0, 9.0]));
+            }
+            other => panic!("expected ImageButton2D node, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn scene_loader_builds_nine_slice_fields() {
+        let scene = Parser::new(
+            r##"
+            $root = @panel
+            [panel]
+            [UiNineSlice]
+                texture = "res://ui/panel.png"
+                size_px = (120, 40)
+                margins = (4, 5, 6, 7)
+                texture_region = (1, 2, 30, 20)
+                tint = "#FFFFFFFF"
+            [/UiNineSlice]
+            [/panel]
+
+            [world]
+            [NineSlice2D]
+                texture = "res://ui/world_panel.png"
+                size = (90, 30)
+                margins = (3, 4, 5, 6)
+                texture_region = (2, 4, 20, 10)
+            [/NineSlice2D]
+            [/world]
+            "##,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+        let panel = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "panel")
+            .expect("panel node");
+        assert_eq!(panel.texture_source.as_deref(), Some("res://ui/panel.png"));
+        match &panel.node.data {
+            SceneNodeData::UiNineSlice(node) => {
+                assert_eq!(node.layout.size, perro_ui::UiVector2::pixels(120.0, 40.0));
+                assert_eq!(node.margins, [4.0, 5.0, 6.0, 7.0]);
+                assert_eq!(node.texture_region, Some([1.0, 2.0, 30.0, 20.0]));
+            }
+            other => panic!("expected UiNineSlice node, got {other:?}"),
+        }
+
+        let world = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "world")
+            .expect("world node");
+        assert_eq!(
+            world.texture_source.as_deref(),
+            Some("res://ui/world_panel.png")
+        );
+        match &world.node.data {
+            SceneNodeData::NineSlice2D(node) => {
+                assert_eq!(node.size, Vector2::new(90.0, 30.0));
+                assert_eq!(node.margins, [3.0, 4.0, 5.0, 6.0]);
+                assert_eq!(node.texture_region, Some([2.0, 4.0, 20.0, 10.0]));
+            }
+            other => panic!("expected NineSlice2D node, got {other:?}"),
+        }
     }
 
     #[test]

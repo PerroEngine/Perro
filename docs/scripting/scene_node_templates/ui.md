@@ -199,6 +199,51 @@ script = "res://path/to/script.rs"
     [/UiButton]
 [/ui_button]
 
+[ui_image_button]
+parent = @PARENTKEY
+script = "res://path/to/script.rs"
+    [UiImageButton]
+        texture = "res://ui/icon.png"
+        texture_region = (0, 0, 32, 32)
+        tint = (1, 1, 1, 1)
+        hover_tint = (1, 1, 1, 1)
+        pressed_tint = (0.8, 0.8, 0.8, 1)
+        scale_mode = "fit"
+        aspect_ratio = 0.0
+        disabled = false
+        cursor_icon = "pointer"
+        click_signals = []
+        hover = { scale = (1.06, 1.06) tint = (1, 1, 1, 1) }
+        pressed = { scale = (0.94, 0.94) tint = (0.8, 0.8, 0.8, 1) }
+        [UiBox]
+            visible = true
+            input_enabled = true
+            mouse_filter = "stop"
+            anchor = "center"
+            size_ratio = (0.1, 0.1)
+            pivot_ratio = (0.5, 0.5)
+        [/UiBox]
+    [/UiImageButton]
+[/ui_image_button]
+
+[ui_nine_slice]
+parent = @PARENTKEY
+script = "res://path/to/script.rs"
+    [UiNineSlice]
+        texture = "res://ui/panel.png"
+        texture_region = (0, 0, 64, 64)
+        margins = (8, 8, 8, 8)
+        tint = (1, 1, 1, 1)
+        [UiBox]
+            visible = true
+            input_enabled = true
+            mouse_filter = "ignore"
+            anchor = "center"
+            size_ratio = (0.2, 0.1)
+        [/UiBox]
+    [/UiNineSlice]
+[/ui_nine_slice]
+
 [ui_label]
 parent = @PARENTKEY
 script = "res://path/to/script.rs"

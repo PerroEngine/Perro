@@ -9,6 +9,9 @@ pub enum NodeField {
     Node3D(Node3DField),
     Camera2D(Camera2DField),
     CameraStream(CameraStreamField),
+    Button2D(Button2DField),
+    ImageButton2D(Button2DField),
+    NineSlice2D(Button2DField),
     Sprite2D(Sprite2DField),
     AnimatedSprite2D(AnimatedSprite2DField),
     ParticleEmitter2D(ParticleEmitter2DField),
@@ -56,6 +59,8 @@ pub enum NodeField {
     HingeJoint3D(HingeJoint3DField),
     FixedJoint3D(Joint3DField),
     UiImage(UiImageField),
+    UiImageButton(UiImageField),
+    UiNineSlice(UiImageField),
     UiAnimatedImage(UiAnimatedImageField),
 }
 
@@ -108,6 +113,13 @@ pub enum Sprite2DField {
     TextureRegion,
     FlipX,
     FlipY,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Button2DField {
+    Size,
+    Texture,
+    TextureRegion,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -674,6 +686,26 @@ fn resolve_scene_node_field_for_type(
             SceneFieldName::FlipY => Some(NodeField::Sprite2D(Sprite2DField::FlipY)),
             _ => None,
         },
+        NodeType::Button2D => match field {
+            SceneFieldName::Size => Some(NodeField::Button2D(Button2DField::Size)),
+            _ => None,
+        },
+        NodeType::ImageButton2D => match field {
+            SceneFieldName::Size => Some(NodeField::ImageButton2D(Button2DField::Size)),
+            SceneFieldName::Texture => Some(NodeField::ImageButton2D(Button2DField::Texture)),
+            SceneFieldName::TextureRegion => {
+                Some(NodeField::ImageButton2D(Button2DField::TextureRegion))
+            }
+            _ => None,
+        },
+        NodeType::NineSlice2D => match field {
+            SceneFieldName::Size => Some(NodeField::NineSlice2D(Button2DField::Size)),
+            SceneFieldName::Texture => Some(NodeField::NineSlice2D(Button2DField::Texture)),
+            SceneFieldName::TextureRegion => {
+                Some(NodeField::NineSlice2D(Button2DField::TextureRegion))
+            }
+            _ => None,
+        },
         NodeType::AnimatedSprite2D => match field {
             SceneFieldName::Texture => {
                 Some(NodeField::AnimatedSprite2D(AnimatedSprite2DField::Texture))
@@ -995,12 +1027,26 @@ fn resolve_scene_node_field_for_type(
                 .map(HingeJoint3DField::Common)
                 .map(NodeField::HingeJoint3D),
         },
-        NodeType::UiImage => match field {
+        NodeType::UiImage | NodeType::UiImageButton | NodeType::UiNineSlice => match field {
             SceneFieldName::Texture
             | SceneFieldName::Image
             | SceneFieldName::Source
-            | SceneFieldName::Src => Some(NodeField::UiImage(UiImageField::Texture)),
-            SceneFieldName::TextureRegion => Some(NodeField::UiImage(UiImageField::TextureRegion)),
+            | SceneFieldName::Src => Some(if matches!(node_type, NodeType::UiImageButton) {
+                NodeField::UiImageButton(UiImageField::Texture)
+            } else if matches!(node_type, NodeType::UiNineSlice) {
+                NodeField::UiNineSlice(UiImageField::Texture)
+            } else {
+                NodeField::UiImage(UiImageField::Texture)
+            }),
+            SceneFieldName::TextureRegion => {
+                Some(if matches!(node_type, NodeType::UiImageButton) {
+                    NodeField::UiImageButton(UiImageField::TextureRegion)
+                } else if matches!(node_type, NodeType::UiNineSlice) {
+                    NodeField::UiNineSlice(UiImageField::TextureRegion)
+                } else {
+                    NodeField::UiImage(UiImageField::TextureRegion)
+                })
+            }
             _ => None,
         },
         NodeType::UiAnimatedImage => match field {
@@ -1072,6 +1118,26 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
             }
             "flip_x" | "flip_h" | "mirror_x" => Some(NodeField::Sprite2D(Sprite2DField::FlipX)),
             "flip_y" | "flip_v" | "mirror_y" => Some(NodeField::Sprite2D(Sprite2DField::FlipY)),
+            _ => None,
+        },
+        NodeType::Button2D => match field {
+            "size" => Some(NodeField::Button2D(Button2DField::Size)),
+            _ => None,
+        },
+        NodeType::ImageButton2D => match field {
+            "size" => Some(NodeField::ImageButton2D(Button2DField::Size)),
+            "texture" => Some(NodeField::ImageButton2D(Button2DField::Texture)),
+            "texture_region" | "region" | "atlas_region" => {
+                Some(NodeField::ImageButton2D(Button2DField::TextureRegion))
+            }
+            _ => None,
+        },
+        NodeType::NineSlice2D => match field {
+            "size" => Some(NodeField::NineSlice2D(Button2DField::Size)),
+            "texture" => Some(NodeField::NineSlice2D(Button2DField::Texture)),
+            "texture_region" | "region" | "atlas_region" => {
+                Some(NodeField::NineSlice2D(Button2DField::TextureRegion))
+            }
             _ => None,
         },
         NodeType::AnimatedSprite2D => match field {
@@ -1556,12 +1622,24 @@ fn resolve_node_field_for_type(node_type: NodeType, field: &str) -> Option<NodeF
                 .map(HingeJoint3DField::Common)
                 .map(NodeField::HingeJoint3D),
         },
-        NodeType::UiImage => match field {
+        NodeType::UiImage | NodeType::UiImageButton | NodeType::UiNineSlice => match field {
             "texture" | "image" | "source" | "src" => {
-                Some(NodeField::UiImage(UiImageField::Texture))
+                Some(if matches!(node_type, NodeType::UiImageButton) {
+                    NodeField::UiImageButton(UiImageField::Texture)
+                } else if matches!(node_type, NodeType::UiNineSlice) {
+                    NodeField::UiNineSlice(UiImageField::Texture)
+                } else {
+                    NodeField::UiImage(UiImageField::Texture)
+                })
             }
             "texture_region" | "region" | "atlas_region" => {
-                Some(NodeField::UiImage(UiImageField::TextureRegion))
+                Some(if matches!(node_type, NodeType::UiImageButton) {
+                    NodeField::UiImageButton(UiImageField::TextureRegion)
+                } else if matches!(node_type, NodeType::UiNineSlice) {
+                    NodeField::UiNineSlice(UiImageField::TextureRegion)
+                } else {
+                    NodeField::UiImage(UiImageField::TextureRegion)
+                })
             }
             _ => None,
         },
@@ -2166,6 +2244,7 @@ mod tests {
             ("Sky3D", "shaders"),
             ("CollisionShape3D", "trimesh"),
             ("UiImage", "image"),
+            ("UiImageButton", "image"),
             ("UiAnimatedImage", "current_frame"),
         ] {
             let scene_field = SceneFieldName::from_name(field.to_string());

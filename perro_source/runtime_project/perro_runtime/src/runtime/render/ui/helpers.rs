@@ -39,6 +39,8 @@ pub(super) fn ui_root_from_data(data: &SceneNodeData) -> Option<&UiBox> {
         SceneNodeData::UiPanel(node) => Some(&node.base),
         SceneNodeData::UiButton(node) => Some(&node.base),
         SceneNodeData::UiImage(node) => Some(&node.base),
+        SceneNodeData::UiImageButton(node) => Some(&node.base),
+        SceneNodeData::UiNineSlice(node) => Some(&node.base),
         SceneNodeData::UiAnimatedImage(node) => Some(&node.base),
         SceneNodeData::UiLabel(node) => Some(&node.base),
         SceneNodeData::UiTextBox(node) => Some(&node.inner.base),
@@ -412,6 +414,42 @@ pub(super) fn ui_command_from_node(
                 aspect_ratio,
             })
         }
+        SceneNodeData::UiImageButton(image) => {
+            if image.texture.is_nil() {
+                return None;
+            }
+            let (uv_min, uv_max, aspect_ratio) =
+                ui_image_region_uv(image.texture_region, image.aspect_ratio);
+            Some(UiCommand::UpsertImage {
+                node,
+                rect,
+                clip_rect,
+                texture: image.texture,
+                tint: image_button_tint(image, button_state),
+                uv_min,
+                uv_max,
+                scale_mode: ui_image_scale_state(image.scale_mode),
+                h_align: text_align_state(image.h_align),
+                v_align: text_align_state(image.v_align),
+                aspect_ratio,
+            })
+        }
+        SceneNodeData::UiNineSlice(image) => {
+            if image.texture.is_nil() {
+                return None;
+            }
+            let (uv_min, uv_max, _) = ui_image_region_uv(image.texture_region, 0.0);
+            Some(UiCommand::UpsertNineSlice {
+                node,
+                rect,
+                clip_rect,
+                texture: image.texture,
+                tint: image.tint,
+                uv_min,
+                uv_max,
+                margins: image.margins,
+            })
+        }
         SceneNodeData::UiAnimatedImage(image) => {
             if image.texture.is_nil() {
                 return None;
@@ -475,8 +513,19 @@ pub(super) fn ui_rect_state_from_node(
     button_state: UiButtonVisualState,
     effective_z: i32,
 ) -> Option<UiRectState> {
-    if let SceneNodeData::UiButton(button) = data {
-        return Some(button_rect_state(button, rect, button_state, effective_z));
+    match data {
+        SceneNodeData::UiButton(button) => {
+            return Some(button_rect_state(button, rect, button_state, effective_z));
+        }
+        SceneNodeData::UiImageButton(button) => {
+            return Some(image_button_rect_state(
+                button,
+                rect,
+                button_state,
+                effective_z,
+            ));
+        }
+        _ => {}
     }
     let ui = ui_root_from_data(data)?;
     Some(UiRectState {
@@ -486,6 +535,43 @@ pub(super) fn ui_rect_state_from_node(
         rotation_radians: ui.transform.rotation,
         z_index: effective_z,
     })
+}
+
+pub(super) fn image_button_rect_state(
+    button: &perro_ui::UiImageButton,
+    base_rect: ComputedUiRect,
+    state: UiButtonVisualState,
+    effective_z: i32,
+) -> UiRectState {
+    let ui = image_button_state_base(button, state).unwrap_or(&button.base);
+    let state_has_size_override = match state {
+        UiButtonVisualState::Hover => button.hover_size_override,
+        UiButtonVisualState::Pressed => button.pressed_size_override,
+        UiButtonVisualState::Neutral => false,
+    };
+    let size = match state {
+        UiButtonVisualState::Neutral => base_rect.size,
+        UiButtonVisualState::Hover | UiButtonVisualState::Pressed => {
+            if state_has_size_override {
+                ui.transform
+                    .scale_size(ui.layout.size.resolve(base_rect.size))
+            } else {
+                base_rect.size
+            }
+        }
+    };
+    let center = if state == UiButtonVisualState::Neutral {
+        base_rect.center
+    } else {
+        base_rect.center + ui.transform.translation
+    };
+    UiRectState {
+        center: [center.x, center.y],
+        size: [size.x, size.y],
+        pivot: ui_pivot_state(&ui.transform),
+        rotation_radians: ui.transform.rotation,
+        z_index: effective_z,
+    }
 }
 
 pub(super) fn button_rect_state(
@@ -549,6 +635,7 @@ pub(super) fn ui_command_matches_node(
         | UiCommand::UpsertButton { node, .. }
         | UiCommand::UpsertLabel { node, .. }
         | UiCommand::UpsertImage { node, .. }
+        | UiCommand::UpsertNineSlice { node, .. }
         | UiCommand::UpsertTextEdit { node, .. }
         | UiCommand::RemoveNode { node } => *node,
         UiCommand::Clear => NodeID::nil(),
@@ -604,8 +691,54 @@ pub(super) fn button_inactive(button: &perro_ui::UiButton) -> bool {
     button.disabled || !button.input_enabled
 }
 
+pub(super) fn image_button_tint(
+    button: &perro_ui::UiImageButton,
+    state: UiButtonVisualState,
+) -> Color {
+    if image_button_inactive(button) {
+        return button.tint;
+    }
+    match state {
+        UiButtonVisualState::Neutral => button.tint,
+        UiButtonVisualState::Hover => button.hover_tint,
+        UiButtonVisualState::Pressed => button.pressed_tint,
+    }
+}
+
+pub(super) fn image_button_state_base(
+    button: &perro_ui::UiImageButton,
+    state: UiButtonVisualState,
+) -> Option<&perro_ui::UiBox> {
+    if image_button_inactive(button) {
+        return None;
+    }
+    match state {
+        UiButtonVisualState::Neutral => None,
+        UiButtonVisualState::Hover => button.hover_base.as_ref(),
+        UiButtonVisualState::Pressed => button.pressed_base.as_ref(),
+    }
+}
+
+pub(super) fn image_button_inactive(button: &perro_ui::UiImageButton) -> bool {
+    button.disabled || !button.input_enabled
+}
+
 pub(super) fn button_custom_event_signals<'a>(
     button: &'a perro_ui::UiButton,
+    event: &str,
+) -> &'a [SignalID] {
+    match event {
+        "hover_enter" => &button.hover_signals,
+        "hover_exit" => &button.hover_exit_signals,
+        "pressed" => &button.pressed_signals,
+        "released" => &button.released_signals,
+        "click" => &button.click_signals,
+        _ => &[],
+    }
+}
+
+pub(super) fn image_button_custom_event_signals<'a>(
+    button: &'a perro_ui::UiImageButton,
     event: &str,
 ) -> &'a [SignalID] {
     match event {

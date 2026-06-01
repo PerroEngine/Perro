@@ -13,7 +13,7 @@ use perro_render_bridge::{
     UiImageScaleState, UiRectState, UiTextAlignState,
 };
 use perro_runtime_render::{UiDirtyMask, UiExtractionOptions, ui_image_texture_request};
-use perro_structs::{UVector2, Vector2};
+use perro_structs::{Color, UVector2, Vector2};
 use perro_ui::{
     ComputedUiRect, UiBox, UiFontSizing, UiHorizontalAlign, UiImageScaleMode, UiLayoutData,
     UiLayoutMode, UiSizeMode, UiStyle, UiTextEdit, UiTransform, UiVerticalAlign,
@@ -107,6 +107,14 @@ impl Runtime {
                 buttons.push(node);
                 focusables.push(node);
             }
+            SceneNodeData::UiImageButton(button) => {
+                if !button.visible || button.disabled || !button.input_enabled {
+                    return;
+                }
+                buttons.push(node);
+                focusables.push(node);
+            }
+            SceneNodeData::UiNineSlice(_) => {}
             data => {
                 let Some(edit) = text_edit_ref(data) else {
                     return;
@@ -142,6 +150,8 @@ impl Runtime {
             .get(node)
             .and_then(|scene_node| match &scene_node.data {
                 SceneNodeData::UiImage(image) => Some(image.texture),
+                SceneNodeData::UiImageButton(image) => Some(image.texture),
+                SceneNodeData::UiNineSlice(image) => Some(image.texture),
                 SceneNodeData::UiAnimatedImage(image) => Some(image.texture),
                 _ => None,
             })?;
@@ -188,6 +198,14 @@ impl Runtime {
             .get(node)
             .is_some_and(|scene_node| match &scene_node.data {
                 SceneNodeData::UiImage(image) => {
+                    !image.texture.is_nil()
+                        && self.resource_api.is_texture_id_pending(image.texture)
+                }
+                SceneNodeData::UiImageButton(image) => {
+                    !image.texture.is_nil()
+                        && self.resource_api.is_texture_id_pending(image.texture)
+                }
+                SceneNodeData::UiNineSlice(image) => {
                     !image.texture.is_nil()
                         && self.resource_api.is_texture_id_pending(image.texture)
                 }
@@ -407,6 +425,8 @@ impl Runtime {
             {
                 match &mut scene_node.data {
                     SceneNodeData::UiImage(image) => image.texture = texture,
+                    SceneNodeData::UiImageButton(image) => image.texture = texture,
+                    SceneNodeData::UiNineSlice(image) => image.texture = texture,
                     SceneNodeData::UiAnimatedImage(image) => image.texture = texture,
                     _ => {}
                 }

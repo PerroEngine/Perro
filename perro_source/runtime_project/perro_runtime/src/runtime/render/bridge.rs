@@ -40,6 +40,8 @@ fn is_ui_node_data(data: &SceneNodeData) -> bool {
             | SceneNodeData::UiPanel(_)
             | SceneNodeData::UiButton(_)
             | SceneNodeData::UiImage(_)
+            | SceneNodeData::UiImageButton(_)
+            | SceneNodeData::UiNineSlice(_)
             | SceneNodeData::UiAnimatedImage(_)
             | SceneNodeData::UiLabel(_)
             | SceneNodeData::UiTextBox(_)

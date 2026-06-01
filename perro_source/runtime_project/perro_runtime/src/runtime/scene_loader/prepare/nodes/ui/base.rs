@@ -71,6 +71,26 @@ fn build_ui_image(data: &SceneDefNodeData) -> UiImage {
     node
 }
 
+fn build_ui_image_button(data: &SceneDefNodeData) -> UiImageButton {
+    let mut node = UiImageButton::new();
+    if let Some(base) = data.base_ref() {
+        apply_ui_root_data(&mut node.base, base);
+    }
+    apply_ui_root_fields(&mut node.base, &data.fields);
+    apply_ui_image_button_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_ui_nine_slice(data: &SceneDefNodeData) -> UiNineSlice {
+    let mut node = UiNineSlice::new();
+    if let Some(base) = data.base_ref() {
+        apply_ui_root_data(&mut node.base, base);
+    }
+    apply_ui_root_fields(&mut node.base, &data.fields);
+    apply_ui_nine_slice_fields(&mut node, &data.fields);
+    node
+}
+
 fn build_ui_camera_stream(data: &SceneDefNodeData) -> UiCameraStream {
     let mut node = UiCameraStream::new();
     if let Some(base) = data.base_ref() {
@@ -463,6 +483,90 @@ fn apply_ui_button_fields(
     apply_ui_button_state_fields(node, fields, "pressed", static_ui_style_lookup);
 }
 
+fn apply_ui_image_button_fields(node: &mut UiImageButton, fields: &[SceneObjectField]) {
+    apply_ui_input_mask_fields(&mut node.input_mask, fields);
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "disabled" => {
+            if let Some(v) = as_bool(value) {
+                node.disabled = v;
+            }
+        }
+        "hover_signals" | "hovered_signals" | "hover_enter_signals" => {
+            node.hover_signals = as_signal_ids(value);
+        }
+        "hover_exit_signals" | "unhover_signals" => {
+            node.hover_exit_signals = as_signal_ids(value);
+        }
+        "pressed_signals" | "press_signals" => {
+            node.pressed_signals = as_signal_ids(value);
+        }
+        "released_signals" | "release_signals" => {
+            node.released_signals = as_signal_ids(value);
+        }
+        "click_signals" | "clicked_signals" => {
+            node.click_signals = as_signal_ids(value);
+        }
+        "web" => {
+            node.web = parse_ui_button_web_action(value);
+        }
+        "cursor_icon" | "hover_cursor_icon" => {
+            if let Some(v) = as_cursor_icon(value) {
+                node.cursor_icon = v;
+            }
+        }
+        _ => {}
+    });
+    apply_ui_image_button_image_fields(node, fields, "");
+    node.hover_tint = node.tint;
+    node.pressed_tint = node.tint;
+    apply_ui_image_button_image_fields(node, fields, "hover_");
+    apply_ui_image_button_image_fields(node, fields, "pressed_");
+    apply_ui_image_button_state_fields(node, fields, "hover");
+    apply_ui_image_button_state_fields(node, fields, "pressed");
+}
+
+fn apply_ui_image_button_state_fields(
+    node: &mut UiImageButton,
+    fields: &[SceneObjectField],
+    state_name: &str,
+) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        if name != state_name {
+            return;
+        }
+        let SceneValue::Object(entries) = value else {
+            return;
+        };
+        let mut base = node.base.clone();
+        let size_override = ui_state_has_explicit_size_override(entries.as_ref());
+        apply_ui_root_fields(&mut base, entries.as_ref());
+        match state_name {
+            "hover" => {
+                if let Some(tint) = ui_state_tint(entries.as_ref()) {
+                    node.hover_tint = tint;
+                }
+                node.hover_base = Some(base);
+                node.hover_size_override = size_override;
+            }
+            "pressed" => {
+                if let Some(tint) = ui_state_tint(entries.as_ref()) {
+                    node.pressed_tint = tint;
+                }
+                node.pressed_base = Some(base);
+                node.pressed_size_override = size_override;
+            }
+            _ => {}
+        }
+    });
+}
+
+fn ui_state_tint(fields: &[SceneObjectField]) -> Option<Color> {
+    fields.iter().find_map(|(name, value)| match name.as_ref() {
+        "tint" | "color" | "modulate" => as_scene_color(value),
+        _ => None,
+    })
+}
+
 fn parse_ui_button_web_action(value: &SceneValue) -> Option<perro_ui::UiButtonWebAction> {
     let SceneValue::Object(fields) = value else {
         return None;
@@ -620,6 +724,76 @@ fn apply_ui_image_fields(node: &mut UiImage, fields: &[SceneObjectField]) {
             }
         }
         _ => {}
+    });
+}
+
+fn apply_ui_nine_slice_fields(node: &mut UiNineSlice, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "tint" | "color" | "modulate" => {
+            if let Some(v) = as_scene_color(value) {
+                node.tint = v;
+            }
+        }
+        "atlas_region" | "texture_region" | "region" => {
+            if let Some((x, y, w, h)) = value.as_vec4() && w > 0.0 && h > 0.0 {
+                node.texture_region = Some([x, y, w, h]);
+            }
+        }
+        "margins" | "slice" | "slices" => {
+            if let Some(v) = as_margins_4(value) {
+                node.margins = v;
+            }
+        }
+        _ => {}
+    });
+}
+
+fn apply_ui_image_button_image_fields(
+    node: &mut UiImageButton,
+    fields: &[SceneObjectField],
+    prefix: &str,
+) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        let Some(field) = name.strip_prefix(prefix) else {
+            return;
+        };
+        match field {
+            "tint" | "color" | "modulate" => {
+                if let Some(v) = as_scene_color(value) {
+                    match prefix {
+                        "hover_" => node.hover_tint = v,
+                        "pressed_" => node.pressed_tint = v,
+                        _ => node.tint = v,
+                    }
+                }
+            }
+            "scale_mode" | "image_scale" | "fit" => {
+                if let Some(v) = as_ui_image_scale_mode(value) {
+                    node.scale_mode = v;
+                }
+            }
+            "h_align" | "image_h_align" => {
+                if let Some(v) = as_ui_text_align(value) {
+                    node.h_align = v;
+                }
+            }
+            "v_align" | "image_v_align" => {
+                if let Some(v) = as_ui_text_align(value) {
+                    node.v_align = v;
+                }
+            }
+            "aspect_ratio" | "ratio" => {
+                if let Some(v) = as_f32(value) {
+                    node.aspect_ratio = v.max(0.0);
+                }
+            }
+            "atlas_region" | "texture_region" | "region" => {
+                if let Some(v) = as_vec4_array(value) {
+                    node.texture_region = Some(v);
+                }
+            }
+            _ => {}
+        }
     });
 }
 

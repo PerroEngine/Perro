@@ -2,19 +2,21 @@ use crate::{
     AmbientLight2D, AmbientLight3D, AnimatedSprite2D, AnimationPlayer, AnimationTree, Area2D,
     Area3D, AudioEffectZone2D, AudioEffectZone3D, AudioMask2D, AudioMask3D, AudioPortal2D,
     AudioPortal3D, BallJoint3D, BoneAttachment2D, BoneAttachment3D, BoneCollider2D, BoneCollider3D,
-    Camera2D, Camera3D, CameraStream2D, CameraStream3D, CollisionShape2D, CollisionShape3D,
-    DistanceJoint2D, FixedJoint2D, FixedJoint3D, HingeJoint3D, IKTarget2D, IKTarget3D,
-    MeshInstance3D, MultiMeshInstance3D, Node2D, Node3D, ParticleEmitter2D, ParticleEmitter3D,
-    PhysicsBoneChain2D, PhysicsBoneChain3D, PhysicsForceEmitter2D, PhysicsForceEmitter3D,
-    PinJoint2D, PointLight2D, PointLight3D, RayLight2D, RayLight3D, RigidBody2D, RigidBody3D,
-    Skeleton2D, Skeleton3D, Sky3D, SpotLight2D, SpotLight3D, Sprite2D, StaticBody2D, StaticBody3D,
-    TileMap2D, UiCameraStream, WaterBody2D, WaterBody3D,
+    Button2D, Camera2D, Camera3D, CameraStream2D, CameraStream3D, CollisionShape2D,
+    CollisionShape3D, DistanceJoint2D, FixedJoint2D, FixedJoint3D, HingeJoint3D, IKTarget2D,
+    IKTarget3D, ImageButton2D, MeshInstance3D, MultiMeshInstance3D, NineSlice2D, Node2D, Node3D,
+    ParticleEmitter2D, ParticleEmitter3D, PhysicsBoneChain2D, PhysicsBoneChain3D,
+    PhysicsForceEmitter2D, PhysicsForceEmitter3D, PinJoint2D, PointLight2D, PointLight3D,
+    RayLight2D, RayLight3D, RigidBody2D, RigidBody3D, Skeleton2D, Skeleton3D, Sky3D, SpotLight2D,
+    SpotLight3D, Sprite2D, StaticBody2D, StaticBody3D, TileMap2D, UiCameraStream, WaterBody2D,
+    WaterBody3D,
 };
 use perro_ids::{NodeID, NodeTag, TagID};
 use perro_structs::{Transform2D, Transform3D};
 use perro_ui::{
-    UiAnimatedImage, UiBox, UiButton, UiGrid, UiHLayout, UiImage, UiLabel, UiLayout, UiNodeBase,
-    UiPanel, UiScrollContainer, UiTextBlock, UiTextBox, UiTreeList, UiVLayout,
+    UiAnimatedImage, UiBox, UiButton, UiGrid, UiHLayout, UiImage, UiImageButton, UiLabel, UiLayout,
+    UiNineSlice, UiNodeBase, UiPanel, UiScrollContainer, UiTextBlock, UiTextBox, UiTreeList,
+    UiVLayout,
 };
 use std::borrow::Cow;
 
@@ -825,7 +827,10 @@ define_scene_nodes! {
 
         // visual
         CameraStream2D => (Node2D, CameraStream2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        Button2D => (Node2D, Button2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        ImageButton2D => (Node2D, ImageButton2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         Sprite2D => (Node2D, Sprite2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        NineSlice2D => (Node2D, NineSlice2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         AnimatedSprite2D => (Node2D, AnimatedSprite2D, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         TileMap2D => (Node2D, TileMap2D, Renderable::True, InternalUpdate::False, InternalFixedUpdate::True),
         ParticleEmitter2D => (Node2D, ParticleEmitter2D, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
@@ -911,6 +916,8 @@ define_scene_nodes! {
         UiPanel => (UiBox, UiPanel, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiButton => (UiBox, UiButton, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiImage => (UiBox, UiImage, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiImageButton => (UiBox, UiImageButton, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiNineSlice => (UiBox, UiNineSlice, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiAnimatedImage => (UiBox, UiAnimatedImage, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
         UiLabel => (UiBox, UiLabel, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiTextBox => (UiBox, UiTextBox, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),

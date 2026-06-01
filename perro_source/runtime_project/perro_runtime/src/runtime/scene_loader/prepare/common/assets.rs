@@ -10,10 +10,14 @@ fn as_asset_source(value: &SceneValue) -> Option<String> {
 fn extract_texture_source(data: &SceneDefNodeData) -> Option<String> {
     let texture_field = match data.node_type {
         NodeType::Sprite2D => NodeField::Sprite2D(Sprite2DField::Texture),
+        NodeType::ImageButton2D => NodeField::ImageButton2D(Button2DField::Texture),
+        NodeType::NineSlice2D => NodeField::NineSlice2D(Button2DField::Texture),
         NodeType::AnimatedSprite2D => {
             NodeField::AnimatedSprite2D(AnimatedSprite2DField::Texture)
         }
         NodeType::UiImage => NodeField::UiImage(UiImageField::Texture),
+        NodeType::UiImageButton => NodeField::UiImageButton(UiImageField::Texture),
+        NodeType::UiNineSlice => NodeField::UiNineSlice(UiImageField::Texture),
         NodeType::UiAnimatedImage => NodeField::UiAnimatedImage(UiAnimatedImageField::Texture),
         _ => return None,
     };

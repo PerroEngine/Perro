@@ -80,9 +80,147 @@ impl UiImage {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiNineSlice {
+    pub base: UiBox,
+    pub texture: TextureID,
+    pub texture_region: Option<[f32; 4]>,
+    pub margins: [f32; 4],
+    pub tint: Color,
+}
+
+impl UiNineSlice {
+    pub const fn new() -> Self {
+        Self {
+            base: UiBox::new(),
+            texture: TextureID::nil(),
+            texture_region: None,
+            margins: [8.0, 8.0, 8.0, 8.0],
+            tint: Color::WHITE,
+        }
+    }
+}
+
+impl Default for UiNineSlice {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Deref for UiNineSlice {
+    type Target = UiBox;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DerefMut for UiNineSlice {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
+}
+
+impl UiNodeBase for UiNineSlice {
+    fn ui_base(&self) -> &UiBox {
+        &self.base
+    }
+
+    fn ui_base_mut(&mut self) -> &mut UiBox {
+        &mut self.base
+    }
+}
+
 impl Default for UiImage {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiImageButton {
+    pub base: UiBox,
+    pub texture: TextureID,
+    pub texture_region: Option<[f32; 4]>,
+    pub tint: Color,
+    pub hover_tint: Color,
+    pub pressed_tint: Color,
+    pub scale_mode: UiImageScaleMode,
+    pub h_align: UiTextAlign,
+    pub v_align: UiTextAlign,
+    pub aspect_ratio: f32,
+    pub input_mask: UiInputMask,
+    pub cursor_icon: CursorIcon,
+    pub hover_base: Option<UiBox>,
+    pub pressed_base: Option<UiBox>,
+    pub hover_size_override: bool,
+    pub pressed_size_override: bool,
+    pub hover_signals: Vec<SignalID>,
+    pub hover_exit_signals: Vec<SignalID>,
+    pub pressed_signals: Vec<SignalID>,
+    pub released_signals: Vec<SignalID>,
+    pub click_signals: Vec<SignalID>,
+    pub web: Option<UiButtonWebAction>,
+    pub disabled: bool,
+}
+
+impl UiImageButton {
+    pub const fn new() -> Self {
+        Self {
+            base: UiBox::new(),
+            texture: TextureID::nil(),
+            texture_region: None,
+            tint: Color::WHITE,
+            hover_tint: Color::WHITE,
+            pressed_tint: Color::WHITE,
+            scale_mode: UiImageScaleMode::Stretch,
+            h_align: UiTextAlign::Center,
+            v_align: UiTextAlign::Center,
+            aspect_ratio: 0.0,
+            input_mask: UiInputMask::new(),
+            cursor_icon: CursorIcon::Pointer,
+            hover_base: None,
+            pressed_base: None,
+            hover_size_override: false,
+            pressed_size_override: false,
+            hover_signals: Vec::new(),
+            hover_exit_signals: Vec::new(),
+            pressed_signals: Vec::new(),
+            released_signals: Vec::new(),
+            click_signals: Vec::new(),
+            web: None,
+            disabled: false,
+        }
+    }
+}
+
+impl Default for UiImageButton {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Deref for UiImageButton {
+    type Target = UiBox;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DerefMut for UiImageButton {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
+}
+
+impl UiNodeBase for UiImageButton {
+    fn ui_base(&self) -> &UiBox {
+        &self.base
+    }
+
+    fn ui_base_mut(&mut self) -> &mut UiBox {
+        &mut self.base
     }
 }
 

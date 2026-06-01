@@ -29,6 +29,49 @@ pub struct Sprite2D {
     pub flip_y: bool,
 }
 
+#[derive(Clone, Debug)]
+pub struct NineSlice2D {
+    pub base: Node2D,
+    pub size: perro_structs::Vector2,
+    pub texture: TextureID,
+    pub texture_region: Option<[f32; 4]>,
+    pub margins: [f32; 4],
+    pub tint: perro_structs::Color,
+}
+
+impl NineSlice2D {
+    pub const fn new() -> Self {
+        Self {
+            base: Node2D::new(),
+            size: perro_structs::Vector2::new(128.0, 48.0),
+            texture: TextureID::nil(),
+            texture_region: None,
+            margins: [8.0, 8.0, 8.0, 8.0],
+            tint: perro_structs::Color::WHITE,
+        }
+    }
+}
+
+impl Default for NineSlice2D {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Deref for NineSlice2D {
+    type Target = Node2D;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DerefMut for NineSlice2D {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
+}
+
 impl Sprite2D {
     pub const fn new() -> Self {
         Self {

@@ -57,6 +57,27 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 - Holds a `TextureID` (not raw pixels). Use `Texture` module to load.
 - `texture_region` selects an atlas rect.
 
+`Button2D`
+
+- Clickable world-space rect.
+- Uses `Node2D` position, rotation, scale, z index, visibility, and render layers.
+- Holds `size`, normal/hover/pressed fills, disabled state, cursor icon, and button signal lists.
+- Hit testing uses the active 2D camera and world mouse position.
+
+`ImageButton2D`
+
+- Clickable world-space image.
+- Uses `Node2D` transform fields like `Button2D`.
+- Holds `texture`, `texture_region`, `size`, normal/hover/pressed tint, disabled state, cursor icon, and button signal lists.
+- Use it for sprite-like buttons, diegetic UI, and world-space interact prompts.
+
+`NineSlice2D`
+
+- Scalable world-space texture panel.
+- Uses `texture`, `texture_region`, `size`, `margins`, and `tint`.
+- Keeps corners fixed while stretching edges and center.
+- Use it as a frame, speech bubble, health bar, or child/background near `Button2D` nodes.
+
 `AnimatedSprite2D`
 
 - Renders a sprite sheet.
@@ -588,6 +609,9 @@ UI nodes inherit from `UiBox` in the node registry:
 - `UiPanel`
 - `UiButton`
 - `UiImage`
+- `UiImageButton`
+- `UiNineSlice`
+- `UiAnimatedImage`
 - `UiLabel`
 - `UiTextBox`
 - `UiTextBlock`
@@ -605,6 +629,9 @@ All UI nodes can have children.
 `UiPanel` draws a styled box.
 `UiButton` draws an interactive styled box and emits configured signals.
 `UiImage` draws a texture region with tint and scale mode.
+`UiImageButton` draws an interactive texture region and emits configured signals.
+`UiNineSlice` draws a scalable texture panel with fixed corners and stretched edges/center.
+`UiAnimatedImage` draws sprite-sheet animation in UI space.
 `UiLabel` draws text.
 `UiTextBox` edits one line of text.
 `UiTextBlock` edits multi-line text.

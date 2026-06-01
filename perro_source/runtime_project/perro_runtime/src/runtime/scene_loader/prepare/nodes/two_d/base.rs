@@ -32,6 +32,36 @@ fn build_sprite_2d(data: &SceneDefNodeData) -> Sprite2D {
     node
 }
 
+fn build_button_2d(data: &SceneDefNodeData) -> Button2D {
+    let mut node = Button2D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_2d_data(&mut node, base);
+    }
+    apply_node_2d_fields(&mut node, &data.fields);
+    apply_button_2d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_image_button_2d(data: &SceneDefNodeData) -> ImageButton2D {
+    let mut node = ImageButton2D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_2d_data(&mut node, base);
+    }
+    apply_node_2d_fields(&mut node, &data.fields);
+    apply_image_button_2d_fields(&mut node, &data.fields);
+    node
+}
+
+fn build_nine_slice_2d(data: &SceneDefNodeData) -> NineSlice2D {
+    let mut node = NineSlice2D::new();
+    if let Some(base) = data.base_ref() {
+        apply_node_2d_data(&mut node, base);
+    }
+    apply_node_2d_fields(&mut node, &data.fields);
+    apply_nine_slice_2d_fields(&mut node, &data.fields);
+    node
+}
+
 fn build_animated_sprite_2d(data: &SceneDefNodeData) -> AnimatedSprite2D {
     let mut node = AnimatedSprite2D::new();
     if let Some(base) = data.base_ref() {
@@ -646,6 +676,187 @@ fn apply_sprite_2d_fields(node: &mut Sprite2D, fields: &[SceneObjectField]) {
             _ => {}
         }
     });
+}
+
+struct Button2DCommonFields<'a> {
+    input_mask: &'a mut perro_ui::UiInputMask,
+    mouse_filter: &'a mut UiMouseFilter,
+    cursor_icon: &'a mut perro_ui::CursorIcon,
+    input_enabled: &'a mut bool,
+    disabled: &'a mut bool,
+    click_signals: &'a mut Vec<perro_ids::SignalID>,
+    hover_signals: &'a mut Vec<perro_ids::SignalID>,
+    hover_exit_signals: &'a mut Vec<perro_ids::SignalID>,
+    pressed_signals: &'a mut Vec<perro_ids::SignalID>,
+    released_signals: &'a mut Vec<perro_ids::SignalID>,
+    web: &'a mut Option<perro_ui::UiButtonWebAction>,
+}
+
+fn apply_button_2d_common(target: Button2DCommonFields<'_>, fields: &[SceneObjectField]) {
+    apply_ui_input_mask_fields(target.input_mask, fields);
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "input_enabled" => {
+            if let Some(v) = as_bool(value) {
+                *target.input_enabled = v;
+            }
+        }
+        "disabled" => {
+            if let Some(v) = as_bool(value) {
+                *target.disabled = v;
+            }
+        }
+        "mouse_filter" => {
+            if let Some(v) = as_ui_mouse_filter(value) {
+                *target.mouse_filter = v;
+            }
+        }
+        "cursor_icon" | "hover_cursor_icon" => {
+            if let Some(v) = as_cursor_icon(value) {
+                *target.cursor_icon = v;
+            }
+        }
+        "hover_signals" | "hovered_signals" | "hover_enter_signals" => {
+            *target.hover_signals = as_signal_ids(value);
+        }
+        "hover_exit_signals" | "unhover_signals" => {
+            *target.hover_exit_signals = as_signal_ids(value);
+        }
+        "pressed_signals" | "press_signals" => {
+            *target.pressed_signals = as_signal_ids(value);
+        }
+        "released_signals" | "release_signals" => {
+            *target.released_signals = as_signal_ids(value);
+        }
+        "click_signals" | "clicked_signals" => {
+            *target.click_signals = as_signal_ids(value);
+        }
+        "web" => {
+            *target.web = parse_ui_button_web_action(value);
+        }
+        _ => {}
+    });
+}
+
+fn apply_button_2d_fields(node: &mut Button2D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        if matches!(name, "size")
+            && let Some((x, y)) = value.as_vec2()
+        {
+            node.size = Vector2::new(x.max(0.0), y.max(0.0));
+        }
+    });
+    apply_button_2d_common(
+        Button2DCommonFields {
+            input_mask: &mut node.input_mask,
+            mouse_filter: &mut node.mouse_filter,
+            cursor_icon: &mut node.cursor_icon,
+            input_enabled: &mut node.input_enabled,
+            disabled: &mut node.disabled,
+            click_signals: &mut node.click_signals,
+            hover_signals: &mut node.hover_signals,
+            hover_exit_signals: &mut node.hover_exit_signals,
+            pressed_signals: &mut node.pressed_signals,
+            released_signals: &mut node.released_signals,
+            web: &mut node.web,
+        },
+        fields,
+    );
+    apply_ui_style_fields(&mut node.style, fields, "");
+    node.hover_style = node.style.clone();
+    node.pressed_style = node.style.clone();
+    apply_ui_style_fields(&mut node.hover_style, fields, "hover_");
+    apply_ui_style_fields(&mut node.pressed_style, fields, "pressed_");
+}
+
+fn apply_image_button_2d_fields(node: &mut ImageButton2D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "size" => {
+            if let Some((x, y)) = value.as_vec2() {
+                node.size = Vector2::new(x.max(0.0), y.max(0.0));
+            }
+        }
+        "texture_region" | "region" | "atlas_region" => {
+            if let Some((x, y, w, h)) = value.as_vec4()
+                && w > 0.0
+                && h > 0.0
+            {
+                node.texture_region = Some([x, y, w, h]);
+            }
+        }
+        "tint" | "color" | "modulate" => {
+            if let Some(v) = as_scene_color(value) {
+                node.tint = v;
+            }
+        }
+        _ => {}
+    });
+    apply_button_2d_common(
+        Button2DCommonFields {
+            input_mask: &mut node.input_mask,
+            mouse_filter: &mut node.mouse_filter,
+            cursor_icon: &mut node.cursor_icon,
+            input_enabled: &mut node.input_enabled,
+            disabled: &mut node.disabled,
+            click_signals: &mut node.click_signals,
+            hover_signals: &mut node.hover_signals,
+            hover_exit_signals: &mut node.hover_exit_signals,
+            pressed_signals: &mut node.pressed_signals,
+            released_signals: &mut node.released_signals,
+            web: &mut node.web,
+        },
+        fields,
+    );
+    node.hover_tint = node.tint;
+    node.pressed_tint = node.tint;
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "hover_tint" | "hover_color" | "hover_modulate" => {
+            if let Some(v) = as_scene_color(value) {
+                node.hover_tint = v;
+            }
+        }
+        "pressed_tint" | "pressed_color" | "pressed_modulate" => {
+            if let Some(v) = as_scene_color(value) {
+                node.pressed_tint = v;
+            }
+        }
+        _ => {}
+    });
+}
+
+fn apply_nine_slice_2d_fields(node: &mut NineSlice2D, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "size" => {
+            if let Some((x, y)) = value.as_vec2() {
+                node.size = Vector2::new(x.max(0.0), y.max(0.0));
+            }
+        }
+        "texture_region" | "region" | "atlas_region" => {
+            if let Some((x, y, w, h)) = value.as_vec4() && w > 0.0 && h > 0.0 {
+                node.texture_region = Some([x, y, w, h]);
+            }
+        }
+        "margins" | "slice" | "slices" => {
+            if let Some(v) = as_margins_4(value) {
+                node.margins = v;
+            }
+        }
+        "tint" | "color" | "modulate" => {
+            if let Some(v) = as_scene_color(value) {
+                node.tint = v;
+            }
+        }
+        _ => {}
+    });
+}
+
+fn as_margins_4(value: &SceneValue) -> Option<[f32; 4]> {
+    if let Some((x, y, z, w)) = value.as_vec4() {
+        return Some([x.max(0.0), y.max(0.0), z.max(0.0), w.max(0.0)]);
+    }
+    if let Some((x, y)) = value.as_vec2() {
+        return Some([x.max(0.0), y.max(0.0), x.max(0.0), y.max(0.0)]);
+    }
+    value.as_f32().map(|v| [v.max(0.0); 4])
 }
 
 fn apply_animated_sprite_2d_fields(node: &mut AnimatedSprite2D, fields: &[SceneObjectField]) {

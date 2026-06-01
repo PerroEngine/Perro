@@ -584,7 +584,8 @@ fn shade_material(in: FragmentInput) -> vec4<f32> {
                 return;
             };
 
-            let full = render_uv_readback(&device, &queue, &[0..6]).await;
+            let full_range = 0..6;
+            let full = render_uv_readback(&device, &queue, std::slice::from_ref(&full_range)).await;
             let split = render_uv_readback(&device, &queue, &[0..3, 3..6]).await;
             assert_eq!(full, split);
         });

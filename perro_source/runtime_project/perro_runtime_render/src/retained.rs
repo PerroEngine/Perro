@@ -133,6 +133,7 @@ pub struct Render2DState {
     pub tileset_load_rx: mpsc::Receiver<(u64, Option<perro_render_bridge::TileSet2D>)>,
     pub texture_sources: AHashMap<NodeID, String>,
     pub last_camera: Option<Camera2DState>,
+    pub last_button_pointer: Option<(Vector2, bool)>,
     pub removed_nodes: Vec<NodeID>,
     pub force_full_scan_once: bool,
 }
@@ -159,6 +160,7 @@ impl Render2DState {
             tileset_load_rx,
             texture_sources: AHashMap::default(),
             last_camera: None,
+            last_button_pointer: None,
             removed_nodes: Vec::new(),
             force_full_scan_once: false,
         }

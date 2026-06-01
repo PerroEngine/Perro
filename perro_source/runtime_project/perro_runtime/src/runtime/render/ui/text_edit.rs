@@ -182,6 +182,7 @@ pub(in crate::runtime::render_ui) fn ui_command_clip_rect(command: &UiCommand) -
         | UiCommand::UpsertButton { clip_rect, .. }
         | UiCommand::UpsertLabel { clip_rect, .. }
         | UiCommand::UpsertImage { clip_rect, .. }
+        | UiCommand::UpsertNineSlice { clip_rect, .. }
         | UiCommand::UpsertTextEdit { clip_rect, .. } => *clip_rect,
         UiCommand::RemoveNode { .. } | UiCommand::Clear => [0.0, 0.0, 1.0, 1.0],
     }

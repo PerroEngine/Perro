@@ -11,12 +11,12 @@ use perro_ids::{NodeID, string_to_u64};
 use perro_io::load_asset;
 use perro_nodes::{
     AmbientLight2D, Area2D, Area3D, AudioEffectZone2D, AudioEffectZone3D, AudioMask2D, AudioMask3D,
-    AudioPortal2D, AudioPortal3D, BallJoint3D, CameraStream, CameraStream2D, CameraStream3D,
-    CollisionShape2D, CollisionShape3D, DistanceJoint2D, FixedJoint2D, FixedJoint3D, HingeJoint3D,
-    NodeType, PhysicsForceEmitter2D, PhysicsForceEmitter3D, PhysicsForceProfile, PinJoint2D,
-    PointLight2D, RayLight2D, RigidBody2D, RigidBody3D, SceneNode, SceneNodeData, Shape2D,
-    Shape3D, SpotLight2D, StaticBody2D, StaticBody3D, Triangle2DKind, UiCameraStream, WaterBody2D,
-    WaterBody3D,
+    AudioPortal2D, AudioPortal3D, BallJoint3D, Button2D, CameraStream, CameraStream2D,
+    CameraStream3D, CollisionShape2D, CollisionShape3D, DistanceJoint2D, FixedJoint2D,
+    FixedJoint3D, HingeJoint3D, ImageButton2D, NineSlice2D, NodeType, PhysicsForceEmitter2D,
+    PhysicsForceEmitter3D, PhysicsForceProfile, PinJoint2D, PointLight2D, RayLight2D,
+    RigidBody2D, RigidBody3D, SceneNode, SceneNodeData, Shape2D, Shape3D, SpotLight2D,
+    StaticBody2D, StaticBody3D, Triangle2DKind, UiCameraStream, WaterBody2D, WaterBody3D,
     WaterIdleMode, WaterShape, WaterSkyBias, WaterSurfaceParams,
     ambient_light_3d::AmbientLight3D,
     animation_player::AnimationPlayer,
@@ -51,7 +51,7 @@ use perro_render_bridge::Material3D;
 use perro_scene::{
     AnimatedSprite2DField, AnimationPlayerField, AnimationTreeField, Area2DField, Area3DField,
     BoneAttachment2DField, BoneAttachment3DField, BoneCollider2DField, BoneCollider3DField,
-    Camera2DField, Camera3DField, CollisionShape2DField, CollisionShape3DField,
+    Button2DField, Camera2DField, Camera3DField, CollisionShape2DField, CollisionShape3DField,
     DistanceJoint2DField, HingeJoint3DField, IKTarget2DField, IKTarget3DField, Joint2DField,
     Joint3DField, Light2DField, Light3DField, MeshInstance3DField, NodeField, Parser,
     ParticleEmitter2DField, ParticleEmitter3DField, PhysicsBoneChain2DField,
@@ -69,8 +69,8 @@ use perro_structs::{
 };
 use perro_ui::{
     UiAnimatedImage, UiAnimatedImageFrameSet, UiBox, UiButton, UiGrid, UiHLayout, UiImage,
-    UiImageScaleMode, UiLabel, UiLayout, UiMouseFilter, UiPanel, UiScrollContainer, UiTextAlign,
-    UiTextBlock, UiTextBox, UiTreeList, UiVLayout,
+    UiImageButton, UiImageScaleMode, UiLabel, UiLayout, UiMouseFilter, UiNineSlice, UiPanel,
+    UiScrollContainer, UiTextAlign, UiTextBlock, UiTextBox, UiTreeList, UiVLayout,
 };
 use rayon::prelude::*;
 use std::borrow::Cow;
@@ -1700,7 +1700,10 @@ fn scene_node_data_from(
         NodeType::CameraStream2D => {
             Ok(SceneNodeData::CameraStream2D(build_camera_stream_2d(data)))
         }
+        NodeType::Button2D => Ok(SceneNodeData::Button2D(build_button_2d(data))),
+        NodeType::ImageButton2D => Ok(SceneNodeData::ImageButton2D(build_image_button_2d(data))),
         NodeType::Sprite2D => Ok(SceneNodeData::Sprite2D(build_sprite_2d(data))),
+        NodeType::NineSlice2D => Ok(SceneNodeData::NineSlice2D(build_nine_slice_2d(data))),
         NodeType::AnimatedSprite2D => Ok(SceneNodeData::AnimatedSprite2D(build_animated_sprite_2d(
             data,
         ))),
@@ -1799,6 +1802,8 @@ fn scene_node_data_from(
         ))),
         NodeType::UiCameraStream => Ok(SceneNodeData::UiCameraStream(build_ui_camera_stream(data))),
         NodeType::UiImage => Ok(SceneNodeData::UiImage(build_ui_image(data))),
+        NodeType::UiImageButton => Ok(SceneNodeData::UiImageButton(build_ui_image_button(data))),
+        NodeType::UiNineSlice => Ok(SceneNodeData::UiNineSlice(build_ui_nine_slice(data))),
         NodeType::UiAnimatedImage => Ok(SceneNodeData::UiAnimatedImage(build_ui_animated_image(
             data,
         ))),

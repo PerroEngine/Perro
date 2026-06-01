@@ -51,6 +51,17 @@ pub(crate) struct UiImageDraw {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub(crate) struct UiNineSliceDraw {
+    pub(crate) rect: UiRectState,
+    pub(crate) clip_rect: [f32; 4],
+    pub(crate) texture: TextureID,
+    pub(crate) tint: Color,
+    pub(crate) uv_min: [f32; 2],
+    pub(crate) uv_max: [f32; 2],
+    pub(crate) margins: [f32; 4],
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct UiTextEditDraw {
     pub(crate) panel: UiPanelDraw,
     pub(crate) text: Cow<'static, str>,
@@ -73,6 +84,7 @@ pub(crate) enum UiDraw {
     Panel(UiPanelDraw),
     Button(UiButtonDraw),
     Image(UiImageDraw),
+    NineSlice(UiNineSliceDraw),
     Label(UiLabelDraw),
     TextEdit(UiTextEditDraw),
 }
@@ -198,6 +210,27 @@ impl UiRenderer {
                     aspect_ratio,
                 }),
             ),
+            UiCommand::UpsertNineSlice {
+                node,
+                rect,
+                clip_rect,
+                texture,
+                tint,
+                uv_min,
+                uv_max,
+                margins,
+            } => self.upsert(
+                node,
+                UiDraw::NineSlice(UiNineSliceDraw {
+                    rect,
+                    clip_rect,
+                    texture,
+                    tint,
+                    uv_min,
+                    uv_max,
+                    margins,
+                }),
+            ),
             UiCommand::UpsertTextEdit {
                 node,
                 rect,
@@ -274,6 +307,7 @@ impl UiRenderer {
     pub fn image_textures(&self) -> impl Iterator<Item = TextureID> + '_ {
         self.nodes.values().filter_map(|draw| match draw {
             UiDraw::Image(image) => Some(image.texture),
+            UiDraw::NineSlice(image) => Some(image.texture),
             _ => None,
         })
     }

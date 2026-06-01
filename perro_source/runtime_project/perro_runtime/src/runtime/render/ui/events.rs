@@ -6,6 +6,14 @@ struct UiFocusCandidate {
     rect: ComputedUiRect,
 }
 
+struct UiButtonLikeHitData<'a> {
+    disabled: bool,
+    input_enabled: bool,
+    mouse_filter: perro_ui::UiMouseFilter,
+    input_mask: &'a perro_ui::UiInputMask,
+    corner_radius: f32,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum UiInputSource {
     Kbm,
@@ -403,11 +411,11 @@ impl Runtime {
         }
 
         for (node, scene_node) in self.nodes.iter() {
-            let SceneNodeData::UiButton(button) = &scene_node.data else {
+            let effectively_visible = self.is_effectively_visible_for_ui(node);
+            let Some(inactive) = ui_button_like_inactive(&scene_node.data) else {
                 continue;
             };
-            let effectively_visible = self.is_effectively_visible_for_ui(node);
-            let inactive = button_inactive(button) || !effectively_visible;
+            let inactive = inactive || !effectively_visible;
             let focused_without_hover =
                 hovered.is_none() && self.render_ui.focused_ui_node == Some(node);
             let next = if inactive {
@@ -439,6 +447,7 @@ impl Runtime {
                     .and_then(|node| self.nodes.get(node))
                     .and_then(|scene_node| match &scene_node.data {
                         SceneNodeData::UiButton(button) => Some(button.cursor_icon),
+                        SceneNodeData::UiImageButton(button) => Some(button.cursor_icon),
                         _ => None,
                     })
             })
@@ -477,10 +486,12 @@ impl Runtime {
         let Some(scene_node) = self.nodes.get(node) else {
             return;
         };
-        let SceneNodeData::UiButton(button) = &scene_node.data else {
-            return;
+        let web = match &scene_node.data {
+            SceneNodeData::UiButton(button) => button.web.as_ref(),
+            SceneNodeData::UiImageButton(button) => button.web.as_ref(),
+            _ => None,
         };
-        let Some(web) = button.web.as_ref() else {
+        let Some(web) = web else {
             return;
         };
         let _ = perro_web::push_route(web.href.as_ref());
@@ -512,13 +523,9 @@ impl Runtime {
         let Some(scene_node) = self.nodes.get(node) else {
             return;
         };
-        let SceneNodeData::UiButton(button) = &scene_node.data else {
+        let Some(custom) = ui_button_like_custom_event_signals(&scene_node.data, event) else {
             return;
         };
-        if button_inactive(button) {
-            return;
-        }
-        let custom = button_custom_event_signals(button, event);
         self.render_ui
             .event_signal_scratch
             .reserve(1 + custom.len());
@@ -573,18 +580,15 @@ impl Runtime {
         let Some(scene_node) = self.nodes.get(node) else {
             return Vec::new();
         };
-        let SceneNodeData::UiButton(button) = &scene_node.data else {
+        let Some(custom) = ui_button_like_custom_event_signals(&scene_node.data, event) else {
             return Vec::new();
         };
-        if button_inactive(button) {
-            return Vec::new();
-        }
-        let mut out = Vec::with_capacity(1 + button_custom_event_signals(button, event).len());
+        let mut out = Vec::with_capacity(1 + custom.len());
         let name = scene_node.name.as_ref();
         if !name.is_empty() {
             out.push(SignalID::from_string(&format!("{name}_{event}")));
         }
-        out.extend(button_custom_event_signals(button, event).iter().copied());
+        out.extend(custom.iter().copied());
         out
     }
 
@@ -617,20 +621,6 @@ impl Runtime {
             let Some(scene_node) = self.nodes.get(node) else {
                 continue;
             };
-            let SceneNodeData::UiButton(button) = &scene_node.data else {
-                continue;
-            };
-            if button.disabled
-                || !button.input_enabled
-                || !self.ui_input_mask_accepts(&button.input_mask, source)
-                || !self.is_effectively_visible_for_ui(node)
-                || !matches!(
-                    button.mouse_filter,
-                    perro_ui::UiMouseFilter::Stop | perro_ui::UiMouseFilter::Pass
-                )
-            {
-                continue;
-            }
             let base_rect = computed.get(&node).copied().or_else(|| {
                 self.render_ui
                     .retained_rects
@@ -646,13 +636,35 @@ impl Runtime {
                 .get(&node)
                 .copied()
                 .unwrap_or_default();
+            let Some(hit) = ui_button_like_hit_data(&scene_node.data, state) else {
+                continue;
+            };
+            if hit.disabled
+                || !hit.input_enabled
+                || !self.ui_input_mask_accepts(hit.input_mask, source)
+                || !self.is_effectively_visible_for_ui(node)
+                || !matches!(
+                    hit.mouse_filter,
+                    perro_ui::UiMouseFilter::Stop | perro_ui::UiMouseFilter::Pass
+                )
+            {
+                continue;
+            }
             let z = self.ui_effective_z(node);
             let hit_rect = if computed.contains_key(&node) {
-                computed_rect_from_state(&button_rect_state(button, base_rect, state, z))
+                match &scene_node.data {
+                    SceneNodeData::UiButton(button) => {
+                        computed_rect_from_state(&button_rect_state(button, base_rect, state, z))
+                    }
+                    SceneNodeData::UiImageButton(button) => computed_rect_from_state(
+                        &image_button_rect_state(button, base_rect, state, z),
+                    ),
+                    _ => base_rect,
+                }
             } else {
                 base_rect
             };
-            if !hit_rect.contains_rounded(point, button_style(button, state).corner_radius) {
+            if !hit_rect.contains_rounded(point, hit.corner_radius) {
                 continue;
             }
             match best {
@@ -1032,6 +1044,15 @@ impl Runtime {
                     return None;
                 }
             }
+            SceneNodeData::UiImageButton(button) => {
+                if button.disabled
+                    || !button.input_enabled
+                    || !button.visible
+                    || !self.ui_input_mask_accepts(&button.input_mask, source)
+                {
+                    return None;
+                }
+            }
             data => {
                 let edit = text_edit_ref(data)?;
                 if !edit.base.visible
@@ -1267,6 +1288,9 @@ impl Runtime {
                 .get(node)
                 .and_then(|scene_node| match &scene_node.data {
                     SceneNodeData::UiButton(button) if !button_inactive(button) => Some(node),
+                    SceneNodeData::UiImageButton(button) if !image_button_inactive(button) => {
+                        Some(node)
+                    }
                     _ => None,
                 })
         });
@@ -1291,6 +1315,10 @@ impl Runtime {
         match &scene_node.data {
             SceneNodeData::UiButton(button) => {
                 !button_inactive(button) && self.ui_input_mask_accepts(&button.input_mask, source)
+            }
+            SceneNodeData::UiImageButton(button) => {
+                !image_button_inactive(button)
+                    && self.ui_input_mask_accepts(&button.input_mask, source)
             }
             data => text_edit_ref(data)
                 .is_some_and(|edit| self.ui_input_mask_accepts(&edit.input_mask, source)),
@@ -1367,6 +1395,51 @@ fn compare_focus_visual_order(a: &UiFocusCandidate, b: &UiFocusCandidate) -> std
                 .unwrap_or(std::cmp::Ordering::Equal)
         })
         .then_with(|| a.node.as_u64().cmp(&b.node.as_u64()))
+}
+
+fn ui_button_like_inactive(data: &SceneNodeData) -> Option<bool> {
+    match data {
+        SceneNodeData::UiButton(button) => Some(button_inactive(button)),
+        SceneNodeData::UiImageButton(button) => Some(image_button_inactive(button)),
+        _ => None,
+    }
+}
+
+fn ui_button_like_custom_event_signals<'a>(
+    data: &'a SceneNodeData,
+    event: &str,
+) -> Option<&'a [SignalID]> {
+    match data {
+        SceneNodeData::UiButton(button) => {
+            (!button_inactive(button)).then_some(button_custom_event_signals(button, event))
+        }
+        SceneNodeData::UiImageButton(button) => (!image_button_inactive(button))
+            .then_some(image_button_custom_event_signals(button, event)),
+        _ => None,
+    }
+}
+
+fn ui_button_like_hit_data(
+    data: &SceneNodeData,
+    state: UiButtonVisualState,
+) -> Option<UiButtonLikeHitData<'_>> {
+    match data {
+        SceneNodeData::UiButton(button) => Some(UiButtonLikeHitData {
+            disabled: button.disabled,
+            input_enabled: button.input_enabled,
+            mouse_filter: button.mouse_filter,
+            input_mask: &button.input_mask,
+            corner_radius: button_style(button, state).corner_radius,
+        }),
+        SceneNodeData::UiImageButton(button) => Some(UiButtonLikeHitData {
+            disabled: button.disabled,
+            input_enabled: button.input_enabled,
+            mouse_filter: button.mouse_filter,
+            input_mask: &button.input_mask,
+            corner_radius: 0.0,
+        }),
+        _ => None,
+    }
 }
 
 fn stick_nav_direction(stick: Vector2, threshold: f32) -> Option<[i8; 2]> {

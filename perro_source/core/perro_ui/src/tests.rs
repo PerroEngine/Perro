@@ -179,6 +179,30 @@ fn ui_button_defaults_to_no_web_action() {
 }
 
 #[test]
+fn ui_image_button_defaults_to_image_click_target() {
+    let button = UiImageButton::new();
+
+    assert!(button.texture.is_nil());
+    assert_eq!(button.tint, Color::WHITE);
+    assert_eq!(button.hover_tint, Color::WHITE);
+    assert_eq!(button.pressed_tint, Color::WHITE);
+    assert_eq!(button.scale_mode, UiImageScaleMode::Stretch);
+    assert_eq!(button.cursor_icon, CursorIcon::Pointer);
+    assert!(button.web.is_none());
+    assert!(!button.disabled);
+}
+
+#[test]
+fn ui_nine_slice_defaults_to_texture_panel_parts() {
+    let node = UiNineSlice::new();
+
+    assert!(node.texture.is_nil());
+    assert_eq!(node.texture_region, None);
+    assert_eq!(node.margins, [8.0, 8.0, 8.0, 8.0]);
+    assert_eq!(node.tint, Color::WHITE);
+}
+
+#[test]
 fn right_anchor_offsets_size_inward() {
     let mut layout = UiLayoutData::new();
     let mut transform = UiTransform::new();

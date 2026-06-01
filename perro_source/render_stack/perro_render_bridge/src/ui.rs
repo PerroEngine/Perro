@@ -99,6 +99,16 @@ pub enum UiCommand {
         v_align: UiTextAlignState,
         aspect_ratio: f32,
     },
+    UpsertNineSlice {
+        node: NodeID,
+        rect: UiRectState,
+        clip_rect: [f32; 4],
+        texture: TextureID,
+        tint: Color,
+        uv_min: [f32; 2],
+        uv_max: [f32; 2],
+        margins: [f32; 4],
+    },
     UpsertTextEdit {
         node: NodeID,
         rect: UiRectState,

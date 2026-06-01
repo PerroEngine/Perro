@@ -269,6 +269,23 @@ pub(super) fn classify_ui_node_payload_change(
             }
             flags
         }
+        (SceneNodeData::UiImageButton(before), SceneNodeData::UiImageButton(after)) => {
+            let mut flags = 0;
+            if before.texture != after.texture
+                || before.texture_region != after.texture_region
+                || before.tint != after.tint
+                || before.hover_tint != after.hover_tint
+                || before.pressed_tint != after.pressed_tint
+                || before.scale_mode != after.scale_mode
+                || before.h_align != after.h_align
+                || before.v_align != after.v_align
+                || before.aspect_ratio != after.aspect_ratio
+                || before.disabled != after.disabled
+            {
+                flags |= Runtime::UI_DIRTY_COMMANDS;
+            }
+            flags
+        }
         (SceneNodeData::UiLabel(before), SceneNodeData::UiLabel(after)) => {
             let mut flags = 0;
             if before.text != after.text
@@ -379,6 +396,10 @@ pub(super) fn ui_base_from_data(data: &SceneNodeData) -> Option<&UiBox> {
         SceneNodeData::UiBox(root) => Some(root),
         SceneNodeData::UiPanel(node) => Some(&node.base),
         SceneNodeData::UiButton(node) => Some(&node.base),
+        SceneNodeData::UiImage(node) => Some(&node.base),
+        SceneNodeData::UiImageButton(node) => Some(&node.base),
+        SceneNodeData::UiNineSlice(node) => Some(&node.base),
+        SceneNodeData::UiAnimatedImage(node) => Some(&node.base),
         SceneNodeData::UiLabel(node) => Some(&node.base),
         SceneNodeData::UiTextBox(node) => Some(&node.inner.base),
         SceneNodeData::UiTextBlock(node) => Some(&node.inner.base),
