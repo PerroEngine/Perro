@@ -1718,13 +1718,8 @@ fn input_disabled_button_event_signals_empty() {
 fn button_click_signal_defers_script_mutation_until_after_ui_extraction() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);
-    let signal = SignalID::from_string("play_clicked");
     let button = insert_button_at(&mut runtime, [120.0, 40.0], 0.0, 0.0);
-    if let Some(scene_node) = runtime.nodes.get_mut(button)
-        && let SceneNodeData::UiButton(button) = &mut scene_node.data
-    {
-        button.clicked_signals.push(signal);
-    }
+    runtime.nodes.get_mut(button).expect("button").name = Cow::Borrowed("play");
 
     let calls = Arc::new(AtomicUsize::new(0));
     let script_id = runtime.create::<Node3D>();
@@ -1737,7 +1732,7 @@ fn button_click_signal_defers_script_mutation_until_after_ui_extraction() {
     );
     assert!(runtime.signal_connect(
         script_id,
-        signal,
+        SignalID::from_string("play_clicked"),
         ScriptMemberID::from_string("on_click"),
         &[]
     ));
