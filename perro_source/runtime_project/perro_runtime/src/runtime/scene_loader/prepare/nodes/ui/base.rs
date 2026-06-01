@@ -290,11 +290,9 @@ fn apply_ui_root_fields(node: &mut UiBox, fields: &[SceneObjectField]) {
         // Scene-authored UI position is intentionally unsupported.
         // Anchor chooses the base placement; translation moves after layout.
         "position" | "position_percent" | "position_pct" | "position_ratio" => {}
-        "size" | "size_px" | "pixel_size" => {
-            if let Some(v) = as_vec2(value) {
-                node.layout.size = perro_ui::UiVector2::pixels(v.x.max(0.0), v.y.max(0.0));
-            }
-        }
+        // Scene-authored UI size must be relative to parent layout.
+        // Use `size_ratio` or `size_percent`.
+        "size" | "size_px" | "pixel_size" => {}
         "size_percent" | "size_pct" => {
             if let Some(v) = as_vec2(value) {
                 node.layout.size = perro_ui::UiVector2::percent(v.x, v.y);
@@ -378,36 +376,10 @@ fn apply_ui_root_fields(node: &mut UiBox, fields: &[SceneObjectField]) {
                 node.layout.v_align = v;
             }
         }
-        "min_size" => {
-            if let Some(v) = as_vec2(value) {
-                node.layout.min_size = Vector2::new(v.x.max(0.0), v.y.max(0.0));
-            }
-        }
-        "max_size" => {
-            if let Some(v) = as_vec2(value) {
-                node.layout.max_size = Vector2::new(v.x.max(0.0), v.y.max(0.0));
-            }
-        }
-        "min_w" | "min_width" => {
-            if let Some(v) = as_f32(value) {
-                node.layout.min_size.x = v.max(0.0);
-            }
-        }
-        "min_h" | "min_height" => {
-            if let Some(v) = as_f32(value) {
-                node.layout.min_size.y = v.max(0.0);
-            }
-        }
-        "max_w" | "max_width" => {
-            if let Some(v) = as_f32(value) {
-                node.layout.max_size.x = v.max(0.0);
-            }
-        }
-        "max_h" | "max_height" => {
-            if let Some(v) = as_f32(value) {
-                node.layout.max_size.y = v.max(0.0);
-            }
-        }
+        // Absolute scene-authored UI size clamps unsupported.
+        // Use `min_size_ratio` and `max_size_ratio`.
+        "min_size" | "max_size" | "min_w" | "min_width" | "min_h" | "min_height" | "max_w"
+        | "max_width" | "max_h" | "max_height" => {}
         "min_size_scale" | "min_scale" | "min_size_ratio" => {
             if let Some(v) = as_vec2(value) {
                 node.layout.min_size_scale = v;

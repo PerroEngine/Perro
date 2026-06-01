@@ -5,8 +5,12 @@ use ahash::AHashMap;
 use epaint::{
     AlphaFromCoverage, ClippedPrimitive, ClippedShape, Color32, CornerRadius, FontFamily, FontId,
     Fonts, Galley, Mesh, Primitive, Rect, RectShape, Shape, Stroke, StrokeKind,
-    TessellationOptions, Tessellator, TextureId, emath::Rot2, pos2, text::FontDefinitions,
-    textures::TexturesDelta, vec2,
+    TessellationOptions, Tessellator, TextureId,
+    emath::{Align, Rot2},
+    pos2,
+    text::{FontDefinitions, LayoutJob},
+    textures::TexturesDelta,
+    vec2,
 };
 use perro_ids::NodeID;
 use perro_render_bridge::{UiDepthEffectState, UiImageScaleState, UiRectState, UiTextAlignState};
@@ -639,17 +643,23 @@ fn push_text_shape(input: TextShapeInput<'_>, fonts: &mut Fonts, out: &mut Vec<C
     }
 
     let (min, max) = rect.screen_min_max(viewport);
-    let galley = fonts.with_pixels_per_point(UI_RASTER_SCALE).layout(
+    let mut job = LayoutJob::simple(
         text.to_string(),
         FontId::new(font_size, FontFamily::Proportional),
         color32(color),
         rect.size[0].max(1.0),
     );
+    job.halign = match h_align {
+        UiTextAlignState::Start => Align::LEFT,
+        UiTextAlignState::Center => Align::Center,
+        UiTextAlignState::End => Align::RIGHT,
+    };
+    let galley = fonts.with_pixels_per_point(UI_RASTER_SCALE).layout_job(job);
     let text_size = galley.size();
     let x = match h_align {
         UiTextAlignState::Start => min[0],
-        UiTextAlignState::Center => min[0] + (rect.size[0] - text_size.x).max(0.0) * 0.5,
-        UiTextAlignState::End => max[0] - text_size.x,
+        UiTextAlignState::Center => min[0] + rect.size[0] * 0.5,
+        UiTextAlignState::End => max[0],
     };
     let y = match v_align {
         UiTextAlignState::Start => min[1],
@@ -877,5 +887,51 @@ mod tests {
             shapes[0].clip_rect,
             Rect::from_min_max(pos2(0.0, 0.0), pos2(800.0, 600.0))
         );
+    }
+
+    #[test]
+    fn label_text_h_align_sets_paragraph_align_and_anchor() {
+        let mut fonts = Fonts::new(
+            UI_FONT_ATLAS_SIZE,
+            AlphaFromCoverage::default(),
+            FontDefinitions::default(),
+        );
+        fonts.begin_pass(UI_FONT_ATLAS_SIZE, AlphaFromCoverage::default());
+        let rect = UiRectState {
+            center: [0.0, 0.0],
+            size: [100.0, 20.0],
+            pivot: [0.5, 0.5],
+            rotation_radians: 0.0,
+            z_index: 0,
+        };
+        let cases = [
+            (UiTextAlignState::Start, Align::LEFT, 350.0),
+            (UiTextAlignState::Center, Align::Center, 400.0),
+            (UiTextAlignState::End, Align::RIGHT, 450.0),
+        ];
+
+        for (h_align, expected_align, expected_x) in cases {
+            let mut shapes = Vec::new();
+            push_text_shape(
+                TextShapeInput {
+                    rect,
+                    viewport: [800.0, 600.0],
+                    clip_rect: Rect::from_min_max(pos2(0.0, 0.0), pos2(800.0, 600.0)),
+                    text: "seed\nfood",
+                    font_size: 16.0,
+                    color: perro_structs::Color::WHITE,
+                    h_align,
+                    v_align: UiTextAlignState::Start,
+                },
+                &mut fonts,
+                &mut shapes,
+            );
+
+            let Shape::Text(text_shape) = &shapes[0].shape else {
+                panic!("expected text shape");
+            };
+            assert_eq!(text_shape.galley.job.halign, expected_align);
+            assert!((text_shape.pos.x - expected_x).abs() < 1.0e-3);
+        }
     }
 }

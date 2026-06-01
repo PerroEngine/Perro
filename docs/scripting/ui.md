@@ -359,7 +359,7 @@ left/right resolve against own width.
 top/bottom resolve against own height.
 `padding = 0.5` uses half size on each side.
 Absolute UI keys unsupported in scenes:
-`position`, `pivot`, `translation`, `size`, `min_size`, `max_size`, `min_w`, `min_h`, `max_w`, `max_h`, `font_size`.
+`position`, `pivot`, `translation`, `size`, `size_px`, `pixel_size`, `min_size`, `max_size`, `min_w`, `min_width`, `min_h`, `min_height`, `max_w`, `max_width`, `max_h`, `max_height`, `font_size`.
 Legacy `position_ratio`, `position_percent`, and `position_pct` are accepted but ignored.
 Use ratio/percent keys + `text_size_ratio`.
 

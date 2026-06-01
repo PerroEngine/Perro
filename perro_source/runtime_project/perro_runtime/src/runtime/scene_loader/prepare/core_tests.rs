@@ -817,13 +817,18 @@ mod tests {
     }
 
     #[test]
-    fn ui_nodes_parse_absolute_pixel_size() {
+    fn ui_nodes_ignore_absolute_pixel_size() {
         let scene = Parser::new(
             r#"
             [button]
             [UiButton]
                 size = (160, 48)
+                size_px = (170, 50)
+                pixel_size = (180, 52)
                 min_size = (120, 40)
+                max_size = (240, 96)
+                min_width = 110
+                min_height = 32
                 max_width = 220
                 max_height = 80
             [/UiButton]
@@ -842,9 +847,12 @@ mod tests {
             .expect("button node");
         match &button.node.data {
             SceneNodeData::UiButton(button) => {
-                assert_eq!(button.layout.size, perro_ui::UiVector2::pixels(160.0, 48.0));
-                assert_eq!(button.layout.min_size, Vector2::new(120.0, 40.0));
-                assert_eq!(button.layout.max_size, Vector2::new(220.0, 80.0));
+                assert_eq!(button.layout.size, perro_ui::UiVector2::ZERO);
+                assert_eq!(button.layout.min_size, Vector2::ZERO);
+                assert_eq!(
+                    button.layout.max_size,
+                    perro_ui::UiLayoutData::NO_MAX_SIZE
+                );
             }
             other => panic!("expected UiButton node, got {other:?}"),
         }
@@ -2238,7 +2246,7 @@ mod tests {
             [panel]
             [UiNineSlice]
                 texture = "res://ui/panel.png"
-                size_px = (120, 40)
+                size_ratio = (0.3, 0.2)
                 margins = (4, 5, 6, 7)
                 texture_region = (1, 2, 30, 20)
                 tint = "#FFFFFFFF"
@@ -2268,7 +2276,7 @@ mod tests {
         assert_eq!(panel.texture_source.as_deref(), Some("res://ui/panel.png"));
         match &panel.node.data {
             SceneNodeData::UiNineSlice(node) => {
-                assert_eq!(node.layout.size, perro_ui::UiVector2::pixels(120.0, 40.0));
+                assert_eq!(node.layout.size, perro_ui::UiVector2::ratio(0.3, 0.2));
                 assert_eq!(node.margins, [4.0, 5.0, 6.0, 7.0]);
                 assert_eq!(node.texture_region, Some([1.0, 2.0, 30.0, 20.0]));
             }
