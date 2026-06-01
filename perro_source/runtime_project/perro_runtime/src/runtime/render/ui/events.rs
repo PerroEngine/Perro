@@ -534,7 +534,9 @@ impl Runtime {
             self.render_ui.event_signal_name_scratch.clear();
             self.render_ui.event_signal_name_scratch.push_str(name);
             self.render_ui.event_signal_name_scratch.push('_');
-            self.render_ui.event_signal_name_scratch.push_str(event);
+            self.render_ui
+                .event_signal_name_scratch
+                .push_str(button_named_event(event));
             self.render_ui
                 .event_signal_scratch
                 .push(SignalID::from_string(
@@ -586,7 +588,10 @@ impl Runtime {
         let mut out = Vec::with_capacity(1 + custom.len());
         let name = scene_node.name.as_ref();
         if !name.is_empty() {
-            out.push(SignalID::from_string(&format!("{name}_{event}")));
+            out.push(SignalID::from_string(&format!(
+                "{name}_{}",
+                button_named_event(event)
+            )));
         }
         out.extend(custom.iter().copied());
         out
@@ -1416,6 +1421,13 @@ fn ui_button_like_custom_event_signals<'a>(
         SceneNodeData::UiImageButton(button) => (!image_button_inactive(button))
             .then_some(image_button_custom_event_signals(button, event)),
         _ => None,
+    }
+}
+
+fn button_named_event(event: &str) -> &str {
+    match event {
+        "click" => "clicked",
+        other => other,
     }
 }
 

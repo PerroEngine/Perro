@@ -1623,7 +1623,7 @@ fn button_event_signals_include_named_and_custom_signals() {
     runtime.nodes.get_mut(named).expect("named button").name = Cow::Borrowed("play");
     assert_eq!(
         runtime.button_event_signals(named, "click"),
-        vec![SignalID::from_string("play_click")]
+        vec![SignalID::from_string("play_clicked")]
     );
 
     let mut button = perro_ui::UiButton::new();
@@ -1650,7 +1650,7 @@ fn image_button_event_signals_include_named_and_custom_signals() {
     let mut runtime = Runtime::new();
     let mut button = perro_ui::UiImageButton::new();
     button
-        .click_signals
+        .clicked_signals
         .push(SignalID::from_string("custom_click"));
     let node = insert_ui_node(&mut runtime, SceneNodeData::UiImageButton(button));
     runtime.nodes.get_mut(node).expect("image button").name = Cow::Borrowed("icon");
@@ -1658,7 +1658,7 @@ fn image_button_event_signals_include_named_and_custom_signals() {
     assert_eq!(
         runtime.button_event_signals(node, "click"),
         vec![
-            SignalID::from_string("icon_click"),
+            SignalID::from_string("icon_clicked"),
             SignalID::from_string("custom_click"),
         ]
     );
@@ -1679,7 +1679,7 @@ fn disabled_button_event_signals_empty() {
             .pressed_signals
             .push(SignalID::from_string("custom_press"));
         button
-            .click_signals
+            .clicked_signals
             .push(SignalID::from_string("custom_click"));
     }
     runtime.nodes.get_mut(node).expect("named button").name = Cow::Borrowed("play");
@@ -1704,7 +1704,7 @@ fn input_disabled_button_event_signals_empty() {
             .pressed_signals
             .push(SignalID::from_string("custom_press"));
         button
-            .click_signals
+            .clicked_signals
             .push(SignalID::from_string("custom_click"));
     }
     runtime.nodes.get_mut(node).expect("named button").name = Cow::Borrowed("play");
@@ -1723,7 +1723,7 @@ fn button_click_signal_defers_script_mutation_until_after_ui_extraction() {
     if let Some(scene_node) = runtime.nodes.get_mut(button)
         && let SceneNodeData::UiButton(button) = &mut scene_node.data
     {
-        button.click_signals.push(signal);
+        button.clicked_signals.push(signal);
     }
 
     let calls = Arc::new(AtomicUsize::new(0));

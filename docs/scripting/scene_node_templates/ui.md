@@ -157,11 +157,12 @@ script = "res://path/to/script.rs"
     [UiButton]
         disabled = false
         cursor_icon = "pointer"
+        # Extra signals only. Default ui_button_<event> signals still emit.
         hover_signals = []
         hover_exit_signals = []
         pressed_signals = []
         released_signals = []
-        click_signals = []
+        clicked_signals = []
         style = { fill = (0.18, 0.20, 0.24, 1.0) stroke = (0.32, 0.35, 0.40, 1.0) stroke_width = 1.0 radius = 0.2 shadow = { color = (0, 0, 0, 0) distance = 0 falloff = 0 vector = (0, -1) size = 1 } highlight = { color = (0, 0, 0, 0) distance = 0 falloff = 0 vector = (0, -1) size = 1 } }
         # Planned 1.0 alternative:
         # style = "res://ui/button.uistyle"
@@ -212,7 +213,8 @@ script = "res://path/to/script.rs"
         aspect_ratio = 0.0
         disabled = false
         cursor_icon = "pointer"
-        click_signals = []
+        # Extra signals only. Default ui_image_button_clicked still emits.
+        clicked_signals = []
         hover = { scale = (1.06, 1.06) tint = (1, 1, 1, 1) }
         pressed = { scale = (0.94, 0.94) tint = (0.8, 0.8, 0.8, 1) }
         [UiBox]

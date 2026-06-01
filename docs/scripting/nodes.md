@@ -63,14 +63,18 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 
 - Clickable world-space rect.
 - Uses `Node2D` position, rotation, scale, z index, visibility, and render layers.
-- Holds `size`, normal/hover/pressed fills, disabled state, cursor icon, and button signal lists.
+- Holds `size`, normal/hover/pressed fills, disabled state, cursor icon, and extra button signal lists.
+- Emits default `<node_name>_<event>` signals for hover enter, hover exit, pressed, released, and clicked.
+- `*_signals` fields add extra signals; they do not replace the default named signal.
 - Hit testing uses the active 2D camera and world mouse position.
 
 `ImageButton2D`
 
 - Clickable world-space image.
 - Uses `Node2D` transform fields like `Button2D`.
-- Holds `texture`, `texture_region`, `size`, normal/hover/pressed tint, disabled state, cursor icon, and button signal lists.
+- Holds `texture`, `texture_region`, `size`, normal/hover/pressed tint, disabled state, cursor icon, and extra button signal lists.
+- Emits the same default `<node_name>_<event>` signals as `Button2D`.
+- `*_signals` fields add extra signals; they do not replace the default named signal.
 - Use it for sprite-like buttons, diegetic UI, and world-space interact prompts.
 
 `NineSlice2D`
@@ -630,9 +634,9 @@ Each axis can be pixels or ratio, so `UiVector2::ratio(0.5, 0.5)` means parent c
 All UI nodes can have children.
 `UiBox` is the invisible generic container.
 `UiPanel` draws a styled box.
-`UiButton` draws an interactive styled box and emits configured signals.
+`UiButton` draws an interactive styled box and emits default named signals plus extra configured signals.
 `UiImage` draws a texture region with tint and scale mode.
-`UiImageButton` draws an interactive texture region and emits configured signals.
+`UiImageButton` draws an interactive texture region and emits default named signals plus extra configured signals.
 `UiNineSlice` draws a scalable texture panel with fixed corners and stretched edges/center.
 `UiAnimatedImage` draws sprite-sheet animation in UI space.
 `UiLabel` draws text.
@@ -642,6 +646,9 @@ All UI nodes can have children.
 `UiTreeList` adds hierarchical row placement from referenced UI node ids.
 
 See [UI Nodes](ui.md).
+
+Buttons emit default `<node_name>_<event>` signals.
+`hover_signals`, `hover_exit_signals`, `pressed_signals`, `released_signals`, and `clicked_signals` add extra signals on top of the default named signal.
 
 UI style resources:
 

@@ -76,7 +76,7 @@ UiBox
 - Holds normal, hover, and pressed styles.
 - `hover` and `pressed` can override layout / transform / style fields.
 - Add text, image, layouts, grids, or panels as children.
-- Emits `<node_name>_<event>` plus custom event signal lists.
+- Emits default `<node_name>_<event>` signals plus extra event signal lists.
 
 `UiImage`
 
@@ -87,8 +87,9 @@ UiBox
 `UiImageButton`
 
 - Clickable image node.
-- Holds image fields plus button input, hover, pressed, and click signal fields.
+- Holds image fields plus button input, hover, pressed, and extra click signal fields.
 - `hover` and `pressed` can override layout / transform fields and `tint`.
+- Emits default `<node_name>_<event>` signals plus extra event signal lists.
 - Use it for icon buttons, irregular-looking buttons, HUD slots, and image-only controls.
 
 `UiNineSlice`
@@ -464,8 +465,11 @@ Button state example:
 [play_button]
     [UiButton]
         size_ratio = (0.114583, 0.044444)
+        # Extra signals. Default signals still emit:
+        # play_button_pressed
+        # play_button_clicked
         pressed_signals = ["play_down"]
-        click_signals = ["play_clicked", "any_button_clicked"]
+        clicked_signals = ["play_clicked", "any_button_clicked"]
         style = {
             fill = "#344E41"
             stroke = "#A3B18A"
@@ -513,7 +517,8 @@ Image button example:
     texture = "res://ui/play.png"
     size_ratio = (0.08, 0.08)
     scale_mode = "fit"
-    click_signals = ["play_clicked"]
+    # Extra signal. Default play_icon_clicked still emits.
+    clicked_signals = ["play_clicked"]
     hover = { scale = (1.06, 1.06) tint = "#FFFFFFFF" }
     pressed = { scale = (0.94, 0.94) tint = "#CCCCCCFF" }
 [/UiImageButton]
@@ -546,34 +551,38 @@ hover_fill = "#3A5A40"
 pressed_fill = "#1B4332"
 ```
 
-`UiButton` and `UiImageButton` emit these events:
+`UiButton`, `UiImageButton`, `Button2D`, and `ImageButton2D` emit these events:
 
 ```text
 hover_enter
 hover_exit
 pressed
 released
-click
+clicked
 ```
 
-Each event always emits its named signal:
+Each event always emits its default named signal:
 
 ```text
 <button_node_name>_hover_enter
 <button_node_name>_hover_exit
 <button_node_name>_pressed
 <button_node_name>_released
-<button_node_name>_click
+<button_node_name>_clicked
 ```
 
-Custom signal fields add signals on top of named signals:
+This is the `NAME_ACTION` rule.
+Node `play_button` click emits `play_button_clicked` even when `clicked_signals` is empty.
+
+Custom signal fields are extra signals.
+They add signals on top of the default named signal:
 
 ```text
 hover_signals = ["play_hover"]
 hover_exit_signals = ["play_unhover"]
 pressed_signals = ["play_down"]
 released_signals = ["play_up"]
-click_signals = ["play_clicked", "any_button_clicked"]
+clicked_signals = ["play_clicked", "any_button_clicked"]
 ```
 
 All handlers receive `(button: NodeID)`.
@@ -648,10 +657,11 @@ Scene example:
 [play_button]
 [UiButton]
     size_ratio = (0.114583, 0.044444)
+    # Extra signals only. Default play_button_* signals still emit.
     hover_signals = ["menu_button_hover"]
     pressed_signals = ["play_down", "any_button_down"]
     released_signals = ["play_up"]
-    click_signals = ["play_clicked", "any_button_clicked"]
+    clicked_signals = ["play_clicked", "any_button_clicked"]
 [/UiButton]
 [/play_button]
 ```
@@ -665,7 +675,7 @@ lifecycle!({
         signal_connect!(ctx.run, ctx.id, signal!("play_button_hover_exit"), func!("on_button"));
         signal_connect!(ctx.run, ctx.id, signal!("play_button_pressed"), func!("on_button"));
         signal_connect!(ctx.run, ctx.id, signal!("play_button_released"), func!("on_button"));
-        signal_connect!(ctx.run, ctx.id, signal!("play_button_click"), func!("on_button"));
+        signal_connect!(ctx.run, ctx.id, signal!("play_button_clicked"), func!("on_button"));
 
         signal_connect!(ctx.run, ctx.id, signal!("menu_button_hover"), func!("on_button"));
         signal_connect!(ctx.run, ctx.id, signal!("play_down"), func!("on_button"));
@@ -688,8 +698,8 @@ Runtime add/remove custom emits:
 ```rust
 let _ = with_node_mut!(ctx.run, UiButton, play_button, |button| {
     let sig = signal!("debug_play_click");
-    if !button.click_signals.contains(&sig) {
-        button.click_signals.push(sig);
+    if !button.clicked_signals.contains(&sig) {
+        button.clicked_signals.push(sig);
     }
 
     button.pressed_signals.retain(|s| *s != signal!("old_press_signal"));

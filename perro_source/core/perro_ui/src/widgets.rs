@@ -159,7 +159,7 @@ pub struct UiImageButton {
     pub hover_exit_signals: Vec<SignalID>,
     pub pressed_signals: Vec<SignalID>,
     pub released_signals: Vec<SignalID>,
-    pub click_signals: Vec<SignalID>,
+    pub clicked_signals: Vec<SignalID>,
     pub web: Option<UiButtonWebAction>,
     pub disabled: bool,
 }
@@ -187,7 +187,7 @@ impl UiImageButton {
             hover_exit_signals: Vec::new(),
             pressed_signals: Vec::new(),
             released_signals: Vec::new(),
-            click_signals: Vec::new(),
+            clicked_signals: Vec::new(),
             web: None,
             disabled: false,
         }
@@ -731,7 +731,7 @@ pub struct UiButton {
     pub hover_exit_signals: Vec<SignalID>,
     pub pressed_signals: Vec<SignalID>,
     pub released_signals: Vec<SignalID>,
-    pub click_signals: Vec<SignalID>,
+    pub clicked_signals: Vec<SignalID>,
     pub web: Option<UiButtonWebAction>,
     pub disabled: bool,
 }
@@ -767,7 +767,7 @@ impl UiButton {
             hover_exit_signals: Vec::new(),
             pressed_signals: Vec::new(),
             released_signals: Vec::new(),
-            click_signals: Vec::new(),
+            clicked_signals: Vec::new(),
             web: None,
             disabled: false,
         }

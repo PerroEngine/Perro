@@ -1087,7 +1087,9 @@ impl Runtime {
             self.render_ui.event_signal_name_scratch.clear();
             self.render_ui.event_signal_name_scratch.push_str(name);
             self.render_ui.event_signal_name_scratch.push('_');
-            self.render_ui.event_signal_name_scratch.push_str(event);
+            self.render_ui
+                .event_signal_name_scratch
+                .push_str(button_2d_named_event(event));
             out.push(SignalID::from_string(
                 &self.render_ui.event_signal_name_scratch,
             ));
@@ -1561,7 +1563,7 @@ fn button_2d_custom_event_signals<'a>(
             "hover_exit" => &button.hover_exit_signals,
             "pressed" => &button.pressed_signals,
             "released" => &button.released_signals,
-            "click" => &button.click_signals,
+            "click" => &button.clicked_signals,
             _ => &[],
         }),
         SceneNodeData::ImageButton2D(button) => Some(match event {
@@ -1569,10 +1571,17 @@ fn button_2d_custom_event_signals<'a>(
             "hover_exit" => &button.hover_exit_signals,
             "pressed" => &button.pressed_signals,
             "released" => &button.released_signals,
-            "click" => &button.click_signals,
+            "click" => &button.clicked_signals,
             _ => &[],
         }),
         _ => None,
+    }
+}
+
+fn button_2d_named_event(event: &str) -> &str {
+    match event {
+        "click" => "clicked",
+        other => other,
     }
 }
 

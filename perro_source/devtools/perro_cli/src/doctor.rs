@@ -1785,7 +1785,7 @@ mod tests {
     #[test]
     fn resource_signal_fields_count_as_emits() {
         let text = r#"
-            click_signals = ["play_clicked", "any_button_clicked"]
+            clicked_signals = ["play_clicked", "any_button_clicked"]
             emit_signal = { name="step", params=[0] }
         "#;
 
@@ -1803,7 +1803,7 @@ mod tests {
         fs::create_dir_all(project.join("res")).unwrap();
         fs::write(
             project.join("res/ui.scn"),
-            r#"click_signals = ["play_clicked"]"#,
+            r#"clicked_signals = ["play_clicked"]"#,
         )
         .unwrap();
 

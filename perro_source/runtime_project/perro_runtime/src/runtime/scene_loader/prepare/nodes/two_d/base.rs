@@ -716,7 +716,7 @@ struct Button2DCommonFields<'a> {
     cursor_icon: &'a mut perro_ui::CursorIcon,
     input_enabled: &'a mut bool,
     disabled: &'a mut bool,
-    click_signals: &'a mut Vec<perro_ids::SignalID>,
+    clicked_signals: &'a mut Vec<perro_ids::SignalID>,
     hover_signals: &'a mut Vec<perro_ids::SignalID>,
     hover_exit_signals: &'a mut Vec<perro_ids::SignalID>,
     pressed_signals: &'a mut Vec<perro_ids::SignalID>,
@@ -759,8 +759,8 @@ fn apply_button_2d_common(target: Button2DCommonFields<'_>, fields: &[SceneObjec
         "released_signals" | "release_signals" => {
             *target.released_signals = as_signal_ids(value);
         }
-        "click_signals" | "clicked_signals" => {
-            *target.click_signals = as_signal_ids(value);
+        "clicked_signals" | "click_signals" => {
+            *target.clicked_signals = as_signal_ids(value);
         }
         "web" => {
             *target.web = parse_ui_button_web_action(value);
@@ -784,7 +784,7 @@ fn apply_button_2d_fields(node: &mut Button2D, fields: &[SceneObjectField]) {
             cursor_icon: &mut node.cursor_icon,
             input_enabled: &mut node.input_enabled,
             disabled: &mut node.disabled,
-            click_signals: &mut node.click_signals,
+            clicked_signals: &mut node.clicked_signals,
             hover_signals: &mut node.hover_signals,
             hover_exit_signals: &mut node.hover_exit_signals,
             pressed_signals: &mut node.pressed_signals,
@@ -829,7 +829,7 @@ fn apply_image_button_2d_fields(node: &mut ImageButton2D, fields: &[SceneObjectF
             cursor_icon: &mut node.cursor_icon,
             input_enabled: &mut node.input_enabled,
             disabled: &mut node.disabled,
-            click_signals: &mut node.click_signals,
+            clicked_signals: &mut node.clicked_signals,
             hover_signals: &mut node.hover_signals,
             hover_exit_signals: &mut node.hover_exit_signals,
             pressed_signals: &mut node.pressed_signals,

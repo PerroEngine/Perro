@@ -739,7 +739,7 @@ pub(super) fn button_custom_event_signals<'a>(
         "hover_exit" => &button.hover_exit_signals,
         "pressed" => &button.pressed_signals,
         "released" => &button.released_signals,
-        "click" => &button.click_signals,
+        "click" => &button.clicked_signals,
         _ => &[],
     }
 }
@@ -753,7 +753,7 @@ pub(super) fn image_button_custom_event_signals<'a>(
         "hover_exit" => &button.hover_exit_signals,
         "pressed" => &button.pressed_signals,
         "released" => &button.released_signals,
-        "click" => &button.click_signals,
+        "click" => &button.clicked_signals,
         _ => &[],
     }
 }

@@ -884,7 +884,7 @@ mod tests {
                 pressed_fill = "#303840"
                 hover_signals = ["ui_hover"]
                 pressed_signals = ["ui_down", "ui_press_any"]
-                click_signals = ["ui_click"]
+                clicked_signals = ["ui_click"]
                 hover = {
                     size_ratio = (0.65, 0.08666667)
                     scale = (1.1, 1.2)
@@ -1003,7 +1003,7 @@ mod tests {
                     ]
                 );
                 assert_eq!(
-                    button.click_signals,
+                    button.clicked_signals,
                     vec![perro_ids::SignalID::from_string("ui_click")]
                 );
                 let hover = button.hover_base.as_ref().expect("hover base");
@@ -2128,7 +2128,7 @@ mod tests {
                 hover_tint = "#55667788"
                 pressed_tint = "#99AABBCC"
                 texture_region = (1, 2, 16, 32)
-                click_signals = ["play_clicked"]
+                clicked_signals = ["play_clicked"]
                 hover = { scale = (1.1, 1.1), tint = "#FFFFFFFF" }
                 pressed = { scale = (0.9, 0.9), tint = "#CCCCCCFF" }
             [/UiImageButton]
@@ -2158,7 +2158,7 @@ mod tests {
                 );
                 assert_eq!(button.texture_region, Some([1.0, 2.0, 16.0, 32.0]));
                 assert_eq!(
-                    button.click_signals,
+                    button.clicked_signals,
                     vec![SignalID::from_string("play_clicked")]
                 );
                 assert!(button.hover_base.is_some());
@@ -2180,7 +2180,7 @@ mod tests {
                 fill = "#112233FF"
                 hover_fill = "#445566FF"
                 pressed_fill = "#778899FF"
-                click_signals = ["play_clicked"]
+                clicked_signals = ["play_clicked"]
             [/Button2D]
             [/play]
 
@@ -2214,7 +2214,7 @@ mod tests {
                 assert_eq!(button.hover_style.fill, Color::new(0.26666668, 0.33333334, 0.4, 1.0));
                 assert_eq!(button.pressed_style.fill, Color::new(0.46666667, 0.53333336, 0.6, 1.0));
                 assert_eq!(
-                    button.click_signals,
+                    button.clicked_signals,
                     vec![SignalID::from_string("play_clicked")]
                 );
             }

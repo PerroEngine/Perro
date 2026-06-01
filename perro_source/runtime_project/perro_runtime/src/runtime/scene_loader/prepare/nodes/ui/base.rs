@@ -447,8 +447,8 @@ fn apply_ui_button_fields(
         "released_signals" | "release_signals" => {
             node.released_signals = as_signal_ids(value);
         }
-        "click_signals" | "clicked_signals" => {
-            node.click_signals = as_signal_ids(value);
+        "clicked_signals" | "click_signals" => {
+            node.clicked_signals = as_signal_ids(value);
         }
         "web" => {
             node.web = parse_ui_button_web_action(value);
@@ -490,8 +490,8 @@ fn apply_ui_image_button_fields(node: &mut UiImageButton, fields: &[SceneObjectF
         "released_signals" | "release_signals" => {
             node.released_signals = as_signal_ids(value);
         }
-        "click_signals" | "clicked_signals" => {
-            node.click_signals = as_signal_ids(value);
+        "clicked_signals" | "click_signals" => {
+            node.clicked_signals = as_signal_ids(value);
         }
         "web" => {
             node.web = parse_ui_button_web_action(value);
