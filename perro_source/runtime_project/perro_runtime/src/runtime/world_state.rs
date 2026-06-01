@@ -1,6 +1,8 @@
 use super::Runtime;
 use perro_ids::NodeID;
-use perro_nodes::SceneNodeData;
+use perro_nodes::{Node2D, Node3D, SceneNodeData};
+use perro_structs::{Color, NodeModulate};
+use perro_ui::UiBox;
 
 impl Runtime {
     pub(crate) fn node_local_visible(data: &SceneNodeData) -> bool {
@@ -108,5 +110,85 @@ impl Runtime {
             hops += 1;
         }
         false
+    }
+
+    pub(crate) fn color_modulate(a: Color, b: Color) -> Color {
+        if a == Color::WHITE {
+            return b;
+        }
+        if b == Color::WHITE {
+            return a;
+        }
+        Color::from_rgba([a.r() * b.r(), a.g() * b.g(), a.b() * b.b(), a.a() * b.a()])
+    }
+
+    pub(crate) fn color_modulate_rgba(color: [f32; 4], modulate: Color) -> [f32; 4] {
+        if modulate == Color::WHITE {
+            return color;
+        }
+        [
+            color[0] * modulate.r(),
+            color[1] * modulate.g(),
+            color[2] * modulate.b(),
+            color[3] * modulate.a(),
+        ]
+    }
+
+    pub(crate) fn color_modulate_rgb(color: [f32; 3], modulate: Color) -> [f32; 3] {
+        if modulate == Color::WHITE {
+            return color;
+        }
+        [
+            color[0] * modulate.r(),
+            color[1] * modulate.g(),
+            color[2] * modulate.b(),
+        ]
+    }
+
+    pub(crate) fn effective_self_modulate(&self, node: NodeID) -> Color {
+        if node.is_nil() {
+            return Color::WHITE;
+        }
+        let mut chain = Vec::new();
+        let mut current = node;
+        let mut hops = 0usize;
+        let max_hops = self.nodes.len().saturating_add(1);
+        while hops < max_hops {
+            let Some(scene_node) = self.nodes.get(current) else {
+                break;
+            };
+            chain.push(current);
+            if scene_node.parent.is_nil() {
+                break;
+            }
+            current = scene_node.parent;
+            hops += 1;
+        }
+
+        let mut inherited = Color::WHITE;
+        for id in chain.iter().rev().copied() {
+            let Some(local) = self.local_node_modulate(id) else {
+                continue;
+            };
+            if id == node {
+                return Self::color_modulate(
+                    Self::color_modulate(inherited, local.modulate),
+                    local.self_modulate,
+                );
+            }
+            inherited = Self::color_modulate(
+                Self::color_modulate(inherited, local.modulate),
+                local.children_modulate,
+            );
+        }
+        inherited
+    }
+
+    fn local_node_modulate(&self, node: NodeID) -> Option<NodeModulate> {
+        let scene_node = self.nodes.get(node)?;
+        scene_node
+            .with_base_ref::<Node2D, _>(|node| node.modulate)
+            .or_else(|| scene_node.with_base_ref::<Node3D, _>(|node| node.modulate))
+            .or_else(|| scene_node.with_base_ref::<UiBox, _>(|node| node.modulate))
     }
 }

@@ -60,6 +60,7 @@ UiBox
 
 - Invisible UI container.
 - Holds `layout`, `visible`, `input_enabled`, and `mouse_filter`.
+- Holds `modulate`, `self_modulate`, and `children_modulate` RGBA multipliers like `Node2D`.
 - Can have UI children.
 - Use it to group children, move them together, or create a padded child area.
 

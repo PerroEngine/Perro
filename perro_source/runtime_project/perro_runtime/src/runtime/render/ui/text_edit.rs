@@ -9,6 +9,7 @@ pub(in crate::runtime::render_ui) fn text_edit_command(ctx: TextEditCommandCtx<'
                 clip_rect,
                 scale,
                 virtual_font_scale,
+                modulate,
             },
         edit,
         multiline,
@@ -23,14 +24,14 @@ pub(in crate::runtime::render_ui) fn text_edit_command(ctx: TextEditCommandCtx<'
         rect,
         clip_rect,
         fill: if focused {
-            focused_style.fill.to_rgba()
+            Runtime::color_modulate_rgba(focused_style.fill.to_rgba(), modulate)
         } else {
-            style.fill.to_rgba()
+            Runtime::color_modulate_rgba(style.fill.to_rgba(), modulate)
         },
         stroke: if focused {
-            focused_style.stroke.to_rgba()
+            Runtime::color_modulate_rgba(focused_style.stroke.to_rgba(), modulate)
         } else {
-            style.stroke.to_rgba()
+            Runtime::color_modulate_rgba(style.stroke.to_rgba(), modulate)
         },
         stroke_width: if focused {
             focused_style.stroke_width
@@ -60,10 +61,10 @@ pub(in crate::runtime::render_ui) fn text_edit_command(ctx: TextEditCommandCtx<'
         ),
         text: Cow::Owned(edit.text.to_string()),
         placeholder: Cow::Owned(edit.placeholder.to_string()),
-        color: edit.color,
-        placeholder_color: edit.placeholder_color,
-        selection_color: edit.selection_color,
-        caret_color: edit.caret_color,
+        color: Runtime::color_modulate(edit.color, modulate),
+        placeholder_color: Runtime::color_modulate(edit.placeholder_color, modulate),
+        selection_color: Runtime::color_modulate(edit.selection_color, modulate),
+        caret_color: Runtime::color_modulate(edit.caret_color, modulate),
         font_size: {
             let (base, node_scale) =
                 if let Some(px) = text_size_from_rect_ratio(rect.size, edit.text_size_ratio) {
@@ -125,14 +126,15 @@ pub(in crate::runtime::render_ui) fn panel_command(
     clip_rect: [f32; 4],
     scale: Vector2,
     style: &UiStyle,
+    modulate: Color,
 ) -> UiCommand {
     let style_scale = ui_style_scale(scale);
     UiCommand::UpsertPanel {
         node,
         rect,
         clip_rect,
-        fill: style.fill.to_rgba(),
-        stroke: style.stroke.to_rgba(),
+        fill: Runtime::color_modulate_rgba(style.fill.to_rgba(), modulate),
+        stroke: Runtime::color_modulate_rgba(style.stroke.to_rgba(), modulate),
         stroke_width: style.stroke_width * style_scale,
         corner_radius: style.corner_radius,
         shadow: ui_depth_effect_state(style.shadow, style_scale),

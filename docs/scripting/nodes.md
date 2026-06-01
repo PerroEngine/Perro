@@ -50,6 +50,8 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 - Base transform for 2D nodes (position, rotation, scale, z_index, visible).
 - `render_layers` uses [`BitMask`](bitmask.md). A renderable node draws when it does not intersect the active `Camera2D.render_mask`.
 - Default `render_layers` is all layers.
+- `modulate`, `self_modulate`, and `children_modulate` are RGBA multipliers. `modulate` affects self and descendants; `self_modulate` affects only self; `children_modulate` affects only descendants.
+- Effective draw color is parent child modulate * node modulate * node self modulate. All fields default to white.
 
 `Sprite2D`
 
@@ -219,6 +221,7 @@ See [TileMap2D](tilemap.md).
 - Base transform for 3D nodes (position, rotation, scale, visible).
 - `render_layers` uses [`BitMask`](bitmask.md). A renderable node draws when it does not intersect the active `Camera3D.render_mask`.
 - Default `render_layers` is all layers.
+- `modulate`, `self_modulate`, and `children_modulate` work like `Node2D`, multiplying rendered colors and material surface modulate.
 
 `MeshInstance3D`
 

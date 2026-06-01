@@ -252,6 +252,21 @@ fn apply_ui_root_fields(node: &mut UiBox, fields: &[SceneObjectField]) {
                 node.visible = v;
             }
         }
+        "modulate" | "tint" => {
+            if let Some(v) = as_scene_color(value) {
+                node.modulate.modulate = v;
+            }
+        }
+        "self_modulate" | "self_tint" | "self_color" => {
+            if let Some(v) = as_scene_color(value) {
+                node.modulate.self_modulate = v;
+            }
+        }
+        "children_modulate" | "child_modulate" | "children_tint" | "child_tint" => {
+            if let Some(v) = as_scene_color(value) {
+                node.modulate.children_modulate = v;
+            }
+        }
         "input_enabled" => {
             if let Some(v) = as_bool(value) {
                 node.input_enabled = v;

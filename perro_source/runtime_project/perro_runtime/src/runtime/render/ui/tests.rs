@@ -122,6 +122,39 @@ fn ui_image_button_emits_image_command_with_state_tint() {
 }
 
 #[test]
+fn ui_image_uses_inherited_ui_modulate() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut parent = UiPanel::new();
+    parent.layout.size = UiVector2::pixels(120.0, 80.0);
+    parent.modulate.children_modulate = Color::new(1.0, 0.5, 1.0, 1.0);
+    parent.modulate.self_modulate = Color::RED;
+    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(parent));
+
+    let mut image = perro_ui::UiImage::new();
+    image.texture = TextureID::from_parts(44, 0);
+    image.layout.size = UiVector2::pixels(32.0, 32.0);
+    image.tint = Color::new(0.5, 1.0, 1.0, 1.0);
+    let child = insert_ui_node(&mut runtime, SceneNodeData::UiImage(image));
+    attach_child(&mut runtime, parent, child);
+
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    let expected = Runtime::color_modulate(
+        Color::new(1.0, 0.5, 1.0, 1.0),
+        Color::new(0.5, 1.0, 1.0, 1.0),
+    );
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertImage { node: n, tint, .. })
+            if *n == child && *tint == expected
+    )));
+}
+
+#[test]
 fn ui_nine_slice_emits_nine_slice_command() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);

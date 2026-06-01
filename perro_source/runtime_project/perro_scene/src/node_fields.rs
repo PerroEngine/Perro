@@ -84,6 +84,9 @@ pub enum Node2DField {
     Rotation,
     Scale,
     Visible,
+    Modulate,
+    SelfModulate,
+    ChildrenModulate,
     ZIndex,
     RenderLayers,
 }
@@ -94,6 +97,9 @@ pub enum Node3DField {
     Rotation,
     Scale,
     Visible,
+    Modulate,
+    SelfModulate,
+    ChildrenModulate,
     RenderLayers,
 }
 
@@ -2059,6 +2065,13 @@ fn resolve_base_node_field(node_type: NodeType, field: &str) -> Option<NodeField
             "rotation" | "rotation_deg" => Some(NodeField::Node2D(Node2DField::Rotation)),
             "scale" => Some(NodeField::Node2D(Node2DField::Scale)),
             "visible" => Some(NodeField::Node2D(Node2DField::Visible)),
+            "modulate" | "tint" => Some(NodeField::Node2D(Node2DField::Modulate)),
+            "self_modulate" | "self_tint" | "self_color" => {
+                Some(NodeField::Node2D(Node2DField::SelfModulate))
+            }
+            "children_modulate" | "child_modulate" | "children_tint" | "child_tint" => {
+                Some(NodeField::Node2D(Node2DField::ChildrenModulate))
+            }
             "z_index" => Some(NodeField::Node2D(Node2DField::ZIndex)),
             "render_layers" => Some(NodeField::Node2D(Node2DField::RenderLayers)),
             _ => None,
@@ -2071,6 +2084,13 @@ fn resolve_base_node_field(node_type: NodeType, field: &str) -> Option<NodeField
             "rotation" | "rotation_deg" => Some(NodeField::Node3D(Node3DField::Rotation)),
             "scale" => Some(NodeField::Node3D(Node3DField::Scale)),
             "visible" => Some(NodeField::Node3D(Node3DField::Visible)),
+            "modulate" | "tint" => Some(NodeField::Node3D(Node3DField::Modulate)),
+            "self_modulate" | "self_tint" | "self_color" => {
+                Some(NodeField::Node3D(Node3DField::SelfModulate))
+            }
+            "children_modulate" | "child_modulate" | "children_tint" | "child_tint" => {
+                Some(NodeField::Node3D(Node3DField::ChildrenModulate))
+            }
             "render_layers" => Some(NodeField::Node3D(Node3DField::RenderLayers)),
             _ => None,
         };
@@ -2086,6 +2106,11 @@ fn resolve_base_scene_node_field(node_type: NodeType, field: &SceneFieldName) ->
             SceneFieldName::Rotation => Some(NodeField::Node2D(Node2DField::Rotation)),
             SceneFieldName::Scale => Some(NodeField::Node2D(Node2DField::Scale)),
             SceneFieldName::Visible => Some(NodeField::Node2D(Node2DField::Visible)),
+            SceneFieldName::Modulate => Some(NodeField::Node2D(Node2DField::Modulate)),
+            SceneFieldName::SelfModulate => Some(NodeField::Node2D(Node2DField::SelfModulate)),
+            SceneFieldName::ChildrenModulate => {
+                Some(NodeField::Node2D(Node2DField::ChildrenModulate))
+            }
             SceneFieldName::ZIndex => Some(NodeField::Node2D(Node2DField::ZIndex)),
             SceneFieldName::RenderLayers => Some(NodeField::Node2D(Node2DField::RenderLayers)),
             _ => None,
@@ -2098,6 +2123,11 @@ fn resolve_base_scene_node_field(node_type: NodeType, field: &SceneFieldName) ->
             SceneFieldName::Rotation => Some(NodeField::Node3D(Node3DField::Rotation)),
             SceneFieldName::Scale => Some(NodeField::Node3D(Node3DField::Scale)),
             SceneFieldName::Visible => Some(NodeField::Node3D(Node3DField::Visible)),
+            SceneFieldName::Modulate => Some(NodeField::Node3D(Node3DField::Modulate)),
+            SceneFieldName::SelfModulate => Some(NodeField::Node3D(Node3DField::SelfModulate)),
+            SceneFieldName::ChildrenModulate => {
+                Some(NodeField::Node3D(Node3DField::ChildrenModulate))
+            }
             SceneFieldName::RenderLayers => Some(NodeField::Node3D(Node3DField::RenderLayers)),
             _ => None,
         };

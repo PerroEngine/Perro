@@ -139,7 +139,7 @@ impl Runtime {
                         sprite.flip_y,
                         sprite.transform,
                         sprite.z_index,
-                        perro_structs::Color::WHITE,
+                        self.effective_self_modulate(node),
                         None,
                     )),
                     SceneNodeData::AnimatedSprite2D(sprite) => Some((
@@ -152,7 +152,7 @@ impl Runtime {
                         sprite.flip_y,
                         sprite.transform,
                         sprite.z_index,
-                        perro_structs::Color::WHITE,
+                        self.effective_self_modulate(node),
                         None,
                     )),
                     SceneNodeData::ImageButton2D(button) => Some((
@@ -165,13 +165,16 @@ impl Runtime {
                         false,
                         button.transform,
                         button.z_index,
-                        image_button_2d_tint(
-                            button,
-                            self.render_ui
-                                .button_states
-                                .get(&node)
-                                .copied()
-                                .unwrap_or_default(),
+                        Runtime::color_modulate(
+                            image_button_2d_tint(
+                                button,
+                                self.render_ui
+                                    .button_states
+                                    .get(&node)
+                                    .copied()
+                                    .unwrap_or_default(),
+                            ),
+                            self.effective_self_modulate(node),
                         ),
                         Some([button.size.x, button.size.y]),
                     )),
@@ -237,6 +240,7 @@ impl Runtime {
             if let Some((visible, local_transform, size, z_index, color)) = button_2d_data
                 && visible
             {
+                let color = Runtime::color_modulate(color, self.effective_self_modulate(node));
                 let transform = self
                     .get_render_global_transform_2d(node)
                     .unwrap_or(local_transform);
@@ -271,6 +275,8 @@ impl Runtime {
             if let Some((visible, stream, local_transform, z_index, tint)) = stream_data {
                 if visible {
                     if let Some(stream_state) = self.camera_stream_state(node, &stream) {
+                        let tint =
+                            Runtime::color_modulate(tint, self.effective_self_modulate(node));
                         let aspect =
                             camera_stream_aspect_ratio(stream.aspect_ratio, stream.resolution);
                         let model = self
@@ -343,6 +349,7 @@ impl Runtime {
                 && visible
                 && let Some(texture) = self.resolve_sprite_texture(node, texture)
             {
+                let tint = Runtime::color_modulate(tint, self.effective_self_modulate(node));
                 let model = self
                     .get_render_global_transform_2d(node)
                     .unwrap_or(local_transform)
@@ -397,6 +404,7 @@ impl Runtime {
                 if visible {
                     let profile =
                         resolve_particle_profile_2d(self, &emitter_profile).unwrap_or_default();
+                    let modulate = self.effective_self_modulate(node);
                     let lifetime_min = profile.lifetime_min.max(0.001);
                     let lifetime_max = profile.lifetime_max.max(lifetime_min);
                     if let Some(node_mut) = self.nodes.get_mut(node)
@@ -434,8 +442,8 @@ impl Runtime {
                                 size_min: profile.size_min.max(0.01),
                                 size_max: profile.size_max.max(profile.size_min.max(0.01)),
                                 force: profile.force,
-                                color_start: profile.color_start,
-                                color_end: profile.color_end,
+                                color_start: Runtime::color_modulate(profile.color_start, modulate),
+                                color_end: Runtime::color_modulate(profile.color_end, modulate),
                                 seed: emitter_seed,
                                 params: emitter_params,
                                 simulation_time: emitter_simulation_time,
@@ -474,6 +482,7 @@ impl Runtime {
                     let queries = self.collect_water_queries_2d(node);
                     let impacts = self.collect_water_impacts_2d(node, &water);
                     let links = self.collect_water_links_2d(node, &water);
+                    let modulate = self.effective_self_modulate(node);
                     self.queue_render_command(RenderCommand::TwoD(Command2D::UpsertWater {
                         node,
                         water: Box::new(Water2DState {
@@ -503,8 +512,11 @@ impl Runtime {
                             lod_min_resolution: water.lod.min_resolution,
                             collision_layers: water.collision_layers,
                             collision_mask: water.collision_mask,
-                            deep_color: water.optics.deep_color,
-                            shallow_color: water.optics.shallow_color,
+                            deep_color: Runtime::color_modulate(water.optics.deep_color, modulate),
+                            shallow_color: Runtime::color_modulate(
+                                water.optics.shallow_color,
+                                modulate,
+                            ),
                             shallow_depth: water.optics.shallow_depth,
                             sky_bias_ratio: water.optics.sky_bias.ratio(),
                             transparency: water.visual.transparency,
@@ -513,14 +525,17 @@ impl Runtime {
                             fresnel_power: water.visual.fresnel_power,
                             normal_strength: water.visual.normal_strength,
                             ripple_scale: water.visual.ripple_scale,
-                            foam_color: water.visual.foam_color,
+                            foam_color: Runtime::color_modulate(water.visual.foam_color, modulate),
                             foam_amount: water.visual.foam_amount,
                             crest_foam_threshold: water.visual.crest_foam_threshold,
                             caustic_strength: water.visual.caustic_strength,
                             refraction_strength: water.visual.refraction_strength,
                             scattering_strength: water.visual.scattering_strength,
                             distance_fog_strength: water.visual.distance_fog_strength,
-                            coastline_foam_color: water.coastline.foam_color,
+                            coastline_foam_color: Runtime::color_modulate(
+                                water.coastline.foam_color,
+                                modulate,
+                            ),
                             coastline_foam_strength: water.coastline.foam_strength,
                             coastline_foam_width: water.coastline.foam_width,
                             coastline_cutoff_softness: water.coastline.cutoff_softness,
@@ -553,6 +568,8 @@ impl Runtime {
             });
             if let Some((color, intensity)) = ambient_light_data {
                 if intensity > 0.0 {
+                    let color =
+                        Runtime::color_modulate_rgb(color, self.effective_self_modulate(node));
                     self.queue_render_command(RenderCommand::TwoD(Command2D::SetAmbientLight {
                         node,
                         light: AmbientLight2DState {
@@ -579,6 +596,8 @@ impl Runtime {
             });
             if let Some((local_transform, z_index, color, intensity)) = ray_light_data {
                 if intensity > 0.0 {
+                    let color =
+                        Runtime::color_modulate_rgb(color, self.effective_self_modulate(node));
                     let global = self
                         .get_render_global_transform_2d(node)
                         .unwrap_or(local_transform);
@@ -615,6 +634,8 @@ impl Runtime {
                 point_light_data
             {
                 if visible && intensity > 0.0 && range > 0.0 {
+                    let color =
+                        Runtime::color_modulate_rgb(color, self.effective_self_modulate(node));
                     let global = self
                         .get_render_global_transform_2d(node)
                         .unwrap_or(local_transform);
@@ -664,6 +685,8 @@ impl Runtime {
             )) = spot_light_data
             {
                 if intensity > 0.0 && range > 0.0 {
+                    let color =
+                        Runtime::color_modulate_rgb(color, self.effective_self_modulate(node));
                     let global = self
                         .get_render_global_transform_2d(node)
                         .unwrap_or(local_transform);
@@ -729,6 +752,7 @@ impl Runtime {
                             width,
                             height,
                             empty_tile,
+                            tint: self.effective_self_modulate(node),
                             tiles: &tiles,
                             tileset: &tileset,
                         });
@@ -1769,6 +1793,7 @@ pub(crate) struct TilemapSpriteBuild<'a> {
     pub height: u32,
     pub z_index: i32,
     pub empty_tile: i32,
+    pub tint: perro_structs::Color,
     pub base_model: [[f32; 3]; 3],
     pub tiles: &'a [i32],
     pub tileset: &'a ParsedTileset2D,
@@ -1795,7 +1820,7 @@ pub(crate) fn build_tilemap_sprites(build: TilemapSpriteBuild<'_>) -> Vec<Sprite
         out.push(Sprite2DCommand {
             texture: build.texture,
             model,
-            tint: perro_structs::Color::WHITE,
+            tint: build.tint,
             uv_min: [atlas_x, atlas_y],
             uv_max: [atlas_x + tw, atlas_y + th],
             size: [tw, th],

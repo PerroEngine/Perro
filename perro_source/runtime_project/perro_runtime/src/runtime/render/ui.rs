@@ -522,6 +522,7 @@ impl Runtime {
                             clip_rect,
                             scale,
                             virtual_font_scale,
+                            modulate: self.effective_self_modulate(node),
                         };
                         ui_command_matches_node(
                             command,
@@ -538,6 +539,7 @@ impl Runtime {
                     clip_rect,
                     scale,
                     virtual_font_scale,
+                    modulate: self.effective_self_modulate(node),
                 };
                 let Some(command) = ui_command_from_node(
                     &scene_node.data,

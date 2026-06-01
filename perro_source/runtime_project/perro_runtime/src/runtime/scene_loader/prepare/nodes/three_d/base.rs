@@ -144,6 +144,38 @@ fn apply_node_3d_fields(node: &mut Node3D, fields: &[SceneObjectField]) {
                     node.visible = v;
                 }
             }
+            SceneFieldName::Modulate => {
+                if let Some(v) = as_scene_color(value) {
+                    node.modulate.modulate = v;
+                }
+            }
+            SceneFieldName::Custom(name) if name == "tint" => {
+                if let Some(v) = as_scene_color(value) {
+                    node.modulate.modulate = v;
+                }
+            }
+            SceneFieldName::SelfModulate => {
+                if let Some(v) = as_scene_color(value) {
+                    node.modulate.self_modulate = v;
+                }
+            }
+            SceneFieldName::Custom(name) if name == "self_tint" || name == "self_color" => {
+                if let Some(v) = as_scene_color(value) {
+                    node.modulate.self_modulate = v;
+                }
+            }
+            SceneFieldName::ChildrenModulate => {
+                if let Some(v) = as_scene_color(value) {
+                    node.modulate.children_modulate = v;
+                }
+            }
+            SceneFieldName::Custom(name)
+                if name == "children_tint" || name == "child_tint" || name == "child_color" =>
+            {
+                if let Some(v) = as_scene_color(value) {
+                    node.modulate.children_modulate = v;
+                }
+            }
             SceneFieldName::RenderLayers => {
                 if let Some(v) = as_bitmask(value) {
                     node.render_layers = v;

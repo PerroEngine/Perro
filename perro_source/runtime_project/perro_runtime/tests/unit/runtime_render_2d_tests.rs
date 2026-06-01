@@ -16,7 +16,7 @@ use perro_render_bridge::{
 };
 use perro_resource_api::sub_apis::TextureAPI;
 use perro_runtime_api::sub_apis::{NodeAPI, NodeCreationTemplate};
-use perro_structs::{BitMask, Vector2};
+use perro_structs::{BitMask, Color, Vector2};
 use std::sync::Arc;
 
 use crate::runtime::state::UiButtonVisualState;
@@ -67,6 +67,47 @@ fn camera_stream_2d_emits_stream_and_sprite_commands() {
         RenderCommand::TwoD(Command2D::UpsertCameraStream { node, sprite, .. })
             if *node == stream && sprite.texture == Runtime::camera_stream_texture_id(stream)
     )));
+}
+
+#[test]
+fn sprite_2d_uses_inherited_node_modulate() {
+    let mut runtime = Runtime::new();
+    let parent = NodeAPI::create::<Node2D>(&mut runtime);
+    let child = NodeAPI::create::<Sprite2D>(&mut runtime);
+    let texture = TextureID::from_parts(401, 0);
+
+    if let Some(node) = runtime.nodes.get_mut(parent)
+        && let SceneNodeData::Node2D(data) = &mut node.data
+    {
+        data.modulate.children_modulate = Color::new(0.5, 1.0, 1.0, 1.0);
+        data.modulate.self_modulate = Color::RED;
+        node.add_child(child);
+    }
+    if let Some(node) = runtime.nodes.get_mut(child)
+        && let SceneNodeData::Sprite2D(data) = &mut node.data
+    {
+        data.texture = texture;
+        data.modulate.self_modulate = Color::new(1.0, 0.25, 1.0, 1.0);
+        node.parent = parent;
+    }
+
+    runtime.extract_render_2d_commands();
+    let commands = collect_commands(&mut runtime);
+    let sprite = commands
+        .iter()
+        .find_map(|command| match command {
+            RenderCommand::TwoD(Command2D::UpsertSprite { node, sprite }) if *node == child => {
+                Some(sprite)
+            }
+            _ => None,
+        })
+        .expect("sprite command");
+
+    let expected = Runtime::color_modulate(
+        Color::new(0.5, 1.0, 1.0, 1.0),
+        Color::new(1.0, 0.25, 1.0, 1.0),
+    );
+    assert_eq!(sprite.tint, expected);
 }
 
 #[test]
@@ -633,6 +674,45 @@ fn unchanged_sprite_skips_redundant_upsert() {
     runtime.extract_render_2d_commands();
     let second = collect_commands(&mut runtime);
     assert!(second.is_empty());
+}
+
+#[test]
+fn parent_modulate_change_reemits_child_sprite_with_effective_tint() {
+    let mut runtime = Runtime::new();
+    let parent = NodeAPI::create::<Node2D>(&mut runtime);
+    let child = NodeAPI::create::<Sprite2D>(&mut runtime);
+    let texture = TextureID::from_parts(402, 0);
+
+    if let Some(node) = runtime.nodes.get_mut(parent) {
+        node.add_child(child);
+    }
+    if let Some(node) = runtime.nodes.get_mut(child)
+        && let SceneNodeData::Sprite2D(sprite) = &mut node.data
+    {
+        sprite.texture = texture;
+        node.parent = parent;
+    }
+
+    runtime.extract_render_2d_commands();
+    let first = collect_commands(&mut runtime);
+    assert!(first.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::UpsertSprite { node, sprite })
+            if *node == child && sprite.tint == Color::WHITE
+    )));
+
+    runtime.clear_dirty_flags();
+    NodeAPI::with_base_node_mut::<Node2D, _, _>(&mut runtime, parent, |node| {
+        node.modulate.children_modulate = Color::new(0.25, 0.5, 1.0, 1.0);
+    });
+    runtime.extract_render_2d_commands();
+    let second = collect_commands(&mut runtime);
+
+    assert!(second.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::UpsertSprite { node, sprite })
+            if *node == child && sprite.tint == Color::new(0.25, 0.5, 1.0, 1.0)
+    )));
 }
 
 #[test]

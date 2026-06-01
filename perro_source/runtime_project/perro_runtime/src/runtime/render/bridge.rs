@@ -454,6 +454,7 @@ impl Runtime {
                         height,
                         z_index,
                         empty_tile,
+                        tint: self.effective_self_modulate(node),
                         base_model,
                         tiles: &tiles,
                         tileset: &tileset,
@@ -473,7 +474,7 @@ impl Runtime {
             out.push(Sprite2DCommand {
                 texture,
                 model,
-                tint: perro_structs::Color::WHITE,
+                tint: self.effective_self_modulate(node),
                 uv_min,
                 uv_max,
                 size,

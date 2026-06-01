@@ -46,6 +46,19 @@ fn mirror_matrix_3d(flip_x: bool, flip_y: bool, flip_z: bool) -> Mat4 {
     ))
 }
 
+fn modulated_mesh_surfaces(
+    mut surfaces: Vec<MeshSurfaceBinding>,
+    modulate: perro_structs::Color,
+) -> Vec<MeshSurfaceBinding> {
+    if modulate == perro_structs::Color::WHITE {
+        return surfaces;
+    }
+    for surface in &mut surfaces {
+        surface.modulate = Runtime::color_modulate(surface.modulate, modulate);
+    }
+    surfaces
+}
+
 #[path = "three_d/helpers.rs"]
 mod helpers;
 use helpers::*;
@@ -226,6 +239,9 @@ impl Runtime {
                 _ => None,
             });
             if let Some(light) = ambient_light_data {
+                let mut light = light;
+                light.color =
+                    Runtime::color_modulate_rgb(light.color, self.effective_self_modulate(node));
                 if self.render_3d.retained_ambient_lights.get(&node).copied() != Some(light) {
                     self.queue_render_command(RenderCommand::ThreeD(Box::new(
                         Command3D::SetAmbientLight { node, light },
@@ -292,6 +308,8 @@ impl Runtime {
             if let Some((visible, stream, local_transform, size, tint)) = stream_data {
                 if visible {
                     if let Some(stream_state) = self.camera_stream_state(node, &stream) {
+                        let tint =
+                            Runtime::color_modulate(tint, self.effective_self_modulate(node));
                         let model = self
                             .get_render_global_transform_3d(node)
                             .unwrap_or(local_transform)
@@ -345,6 +363,7 @@ impl Runtime {
                 let queries = self.collect_water_queries_3d(node);
                 let impacts = self.collect_water_impacts_3d(node, &water);
                 let links = self.collect_water_links_3d(node, &water);
+                let modulate = self.effective_self_modulate(node);
                 self.queue_render_command(RenderCommand::ThreeD(Box::new(
                     Command3D::UpsertWater {
                         node,
@@ -374,8 +393,11 @@ impl Runtime {
                             lod_min_resolution: water.lod.min_resolution,
                             collision_layers: water.collision_layers,
                             collision_mask: water.collision_mask,
-                            deep_color: water.optics.deep_color,
-                            shallow_color: water.optics.shallow_color,
+                            deep_color: Runtime::color_modulate(water.optics.deep_color, modulate),
+                            shallow_color: Runtime::color_modulate(
+                                water.optics.shallow_color,
+                                modulate,
+                            ),
                             shallow_depth: water.optics.shallow_depth,
                             sky_bias_ratio: water.optics.sky_bias.ratio(),
                             transparency: water.visual.transparency,
@@ -384,14 +406,17 @@ impl Runtime {
                             fresnel_power: water.visual.fresnel_power,
                             normal_strength: water.visual.normal_strength,
                             ripple_scale: water.visual.ripple_scale,
-                            foam_color: water.visual.foam_color,
+                            foam_color: Runtime::color_modulate(water.visual.foam_color, modulate),
                             foam_amount: water.visual.foam_amount,
                             crest_foam_threshold: water.visual.crest_foam_threshold,
                             caustic_strength: water.visual.caustic_strength,
                             refraction_strength: water.visual.refraction_strength,
                             scattering_strength: water.visual.scattering_strength,
                             distance_fog_strength: water.visual.distance_fog_strength,
-                            coastline_foam_color: water.coastline.foam_color,
+                            coastline_foam_color: Runtime::color_modulate(
+                                water.coastline.foam_color,
+                                modulate,
+                            ),
                             coastline_foam_strength: water.coastline.foam_strength,
                             coastline_foam_width: water.coastline.foam_width,
                             coastline_cutoff_softness: water.coastline.cutoff_softness,
@@ -426,6 +451,7 @@ impl Runtime {
                 _ => None,
             });
             if let Some((local_transform, color, intensity, cast_shadows)) = ray_light_data {
+                let color = Runtime::color_modulate_rgb(color, self.effective_self_modulate(node));
                 let global = self
                     .get_render_global_transform_3d(node)
                     .unwrap_or(local_transform);
@@ -463,6 +489,7 @@ impl Runtime {
             });
             if let Some((local_transform, color, intensity, range, cast_shadows)) = point_light_data
             {
+                let color = Runtime::color_modulate_rgb(color, self.effective_self_modulate(node));
                 let global = self
                     .get_render_global_transform_3d(node)
                     .unwrap_or(local_transform);
@@ -511,6 +538,7 @@ impl Runtime {
                 cast_shadows,
             )) = spot_light_data
             {
+                let color = Runtime::color_modulate_rgb(color, self.effective_self_modulate(node));
                 let global = self
                     .get_render_global_transform_3d(node)
                     .unwrap_or(local_transform);
@@ -657,12 +685,16 @@ impl Runtime {
                     receive_shadows,
                     blend_shape_weights,
                 )| {
+                    let effective_self_modulate = self.effective_self_modulate(node);
                     self.nodes
                         .get(node)
                         .and_then(|scene_node| match &scene_node.data {
                             SceneNodeData::MeshInstance3D(mesh) => Some((
                                 resolved_mesh,
-                                mesh.surfaces.clone(),
+                                modulated_mesh_surfaces(
+                                    mesh.surfaces.clone(),
+                                    effective_self_modulate,
+                                ),
                                 skeleton,
                                 meshlet_override,
                                 lod,
@@ -675,7 +707,10 @@ impl Runtime {
                             )),
                             SceneNodeData::MultiMeshInstance3D(mesh) => Some((
                                 resolved_mesh,
-                                mesh.surfaces.clone(),
+                                modulated_mesh_surfaces(
+                                    mesh.surfaces.clone(),
+                                    effective_self_modulate,
+                                ),
                                 skeleton,
                                 meshlet_override,
                                 lod,
@@ -1029,6 +1064,7 @@ impl Runtime {
                     .unwrap_or(perro_project::ParticleSimDefault::Cpu);
                 let sim_mode = resolve_particle_sim_mode(emitter_sim_mode, default_sim_mode);
                 let render_mode = resolve_particle_render_mode(emitter_render_mode);
+                let modulate = self.effective_self_modulate(node);
                 let particle_model = self
                     .get_render_global_transform_3d(node)
                     .unwrap_or(emitter_transform)
@@ -1056,8 +1092,8 @@ impl Runtime {
                             size_min: profile.size_min.max(0.01),
                             size_max: profile.size_max.max(profile.size_min.max(0.01)),
                             gravity: profile.force,
-                            color_start: profile.color_start,
-                            color_end: profile.color_end,
+                            color_start: Runtime::color_modulate(profile.color_start, modulate),
+                            color_end: Runtime::color_modulate(profile.color_end, modulate),
                             emissive: profile.emissive,
                             seed: emitter_seed,
                             params: emitter_params,

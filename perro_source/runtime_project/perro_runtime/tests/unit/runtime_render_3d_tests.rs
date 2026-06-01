@@ -26,7 +26,7 @@ use perro_resource_api::sub_apis::{MaterialAPI, MeshAPI};
 use perro_runtime_api::sub_apis::{AnimPlayerAPI, NodeAPI};
 use perro_scene::{Node3DField, NodeField, NodeType};
 use perro_structs::Transform3D;
-use perro_structs::{BitMask, Quaternion, Vector3};
+use perro_structs::{BitMask, Color, Quaternion, Vector3};
 use std::borrow::Cow;
 use std::sync::Arc;
 
@@ -474,6 +474,108 @@ fn mesh_instance_emits_draw_after_mesh_created_and_inline_material_allocated() {
         _ => false,
     });
     assert!(drew_expected);
+}
+
+#[test]
+fn node_3d_effective_modulate_inherits_to_child() {
+    let mut runtime = Runtime::new();
+    let parent = NodeAPI::create::<Node3D>(&mut runtime);
+    let child = NodeAPI::create::<MeshInstance3D>(&mut runtime);
+
+    if let Some(node) = runtime.nodes.get_mut(parent)
+        && let SceneNodeData::Node3D(data) = &mut node.data
+    {
+        data.modulate.children_modulate = Color::new(0.5, 1.0, 1.0, 1.0);
+        data.modulate.self_modulate = Color::RED;
+        node.add_child(child);
+    }
+    if let Some(node) = runtime.nodes.get_mut(child)
+        && let SceneNodeData::MeshInstance3D(data) = &mut node.data
+    {
+        data.modulate.self_modulate = Color::new(1.0, 0.25, 1.0, 1.0);
+        node.parent = parent;
+    }
+
+    let expected = Runtime::color_modulate(
+        Color::new(0.5, 1.0, 1.0, 1.0),
+        Color::new(1.0, 0.25, 1.0, 1.0),
+    );
+    assert_eq!(runtime.effective_self_modulate(child), expected);
+    assert_eq!(runtime.effective_self_modulate(parent), Color::RED);
+}
+
+#[test]
+fn effective_modulate_combines_deep_chain_roles() {
+    let mut runtime = Runtime::new();
+    let root = NodeAPI::create::<Node3D>(&mut runtime);
+    let mid = NodeAPI::create::<Node3D>(&mut runtime);
+    let leaf = NodeAPI::create::<MeshInstance3D>(&mut runtime);
+    let sibling = NodeAPI::create::<MeshInstance3D>(&mut runtime);
+
+    if let Some(node) = runtime.nodes.get_mut(root)
+        && let SceneNodeData::Node3D(data) = &mut node.data
+    {
+        data.modulate.modulate = Color::new(0.8, 1.0, 1.0, 1.0);
+        data.modulate.self_modulate = Color::new(1.0, 0.1, 0.1, 1.0);
+        data.modulate.children_modulate = Color::new(1.0, 0.7, 1.0, 1.0);
+        node.add_child(mid);
+    }
+    if let Some(node) = runtime.nodes.get_mut(mid)
+        && let SceneNodeData::Node3D(data) = &mut node.data
+    {
+        data.modulate.modulate = Color::new(1.0, 0.9, 1.0, 1.0);
+        data.modulate.self_modulate = Color::new(0.1, 1.0, 0.1, 1.0);
+        data.modulate.children_modulate = Color::new(1.0, 1.0, 0.6, 1.0);
+        node.parent = root;
+        node.add_child(leaf);
+        node.add_child(sibling);
+    }
+    if let Some(node) = runtime.nodes.get_mut(leaf)
+        && let SceneNodeData::MeshInstance3D(data) = &mut node.data
+    {
+        data.modulate.modulate = Color::new(1.0, 1.0, 0.5, 1.0);
+        data.modulate.self_modulate = Color::new(0.5, 1.0, 1.0, 1.0);
+        data.modulate.children_modulate = Color::RED;
+        node.parent = mid;
+    }
+    if let Some(node) = runtime.nodes.get_mut(sibling)
+        && let SceneNodeData::MeshInstance3D(data) = &mut node.data
+    {
+        data.modulate.self_modulate = Color::new(1.0, 0.5, 1.0, 1.0);
+        node.parent = mid;
+    }
+
+    assert_eq!(
+        runtime.effective_self_modulate(root),
+        Runtime::color_modulate(
+            Color::new(0.8, 1.0, 1.0, 1.0),
+            Color::new(1.0, 0.1, 0.1, 1.0)
+        )
+    );
+    let inherited_to_mid = Runtime::color_modulate(
+        Runtime::color_modulate(
+            Color::new(0.8, 1.0, 1.0, 1.0),
+            Color::new(1.0, 0.7, 1.0, 1.0),
+        ),
+        Color::new(1.0, 0.9, 1.0, 1.0),
+    );
+    assert_eq!(
+        runtime.effective_self_modulate(mid),
+        Runtime::color_modulate(inherited_to_mid, Color::new(0.1, 1.0, 0.1, 1.0))
+    );
+    let inherited_to_leaf =
+        Runtime::color_modulate(inherited_to_mid, Color::new(1.0, 1.0, 0.6, 1.0));
+    assert_eq!(
+        runtime.effective_self_modulate(leaf),
+        Runtime::color_modulate(
+            Runtime::color_modulate(inherited_to_leaf, Color::new(1.0, 1.0, 0.5, 1.0)),
+            Color::new(0.5, 1.0, 1.0, 1.0)
+        )
+    );
+    assert_eq!(
+        runtime.effective_self_modulate(sibling),
+        Runtime::color_modulate(inherited_to_leaf, Color::new(1.0, 0.5, 1.0, 1.0))
+    );
 }
 
 #[test]

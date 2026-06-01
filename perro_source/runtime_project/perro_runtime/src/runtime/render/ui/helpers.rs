@@ -22,6 +22,7 @@ pub(super) struct UiCommandCtx {
     pub(super) clip_rect: [f32; 4],
     pub(super) scale: Vector2,
     pub(super) virtual_font_scale: f32,
+    pub(super) modulate: Color,
 }
 
 #[derive(Clone, Copy)]
@@ -355,11 +356,17 @@ pub(super) fn ui_command_from_node(
         clip_rect,
         scale,
         virtual_font_scale,
+        modulate,
     } = command_ctx;
     match data {
-        SceneNodeData::UiPanel(panel) => {
-            Some(panel_command(node, rect, clip_rect, scale, &panel.style))
-        }
+        SceneNodeData::UiPanel(panel) => Some(panel_command(
+            node,
+            rect,
+            clip_rect,
+            scale,
+            &panel.style,
+            modulate,
+        )),
         SceneNodeData::UiButton(button) => {
             let style = button_style(button, button_state);
             let style_scale = ui_style_scale(scale);
@@ -367,8 +374,8 @@ pub(super) fn ui_command_from_node(
                 node,
                 rect,
                 clip_rect,
-                fill: style.fill.to_rgba(),
-                stroke: style.stroke.to_rgba(),
+                fill: Runtime::color_modulate_rgba(style.fill.to_rgba(), modulate),
+                stroke: Runtime::color_modulate_rgba(style.stroke.to_rgba(), modulate),
                 stroke_width: style.stroke_width * style_scale,
                 corner_radius: style.corner_radius,
                 shadow: ui_depth_effect_state(style.shadow, style_scale),
@@ -381,7 +388,7 @@ pub(super) fn ui_command_from_node(
             rect,
             clip_rect,
             text: Cow::Owned(label.text.to_string()),
-            color: label.color,
+            color: Runtime::color_modulate(label.color, modulate),
             font_size: {
                 let (base, node_scale) =
                     if let Some(px) = text_size_from_rect_ratio(rect.size, label.text_size_ratio) {
@@ -405,7 +412,7 @@ pub(super) fn ui_command_from_node(
                 rect,
                 clip_rect,
                 texture: image.texture,
-                tint: image.tint,
+                tint: Runtime::color_modulate(image.tint, modulate),
                 uv_min,
                 uv_max,
                 scale_mode: ui_image_scale_state(image.scale_mode),
@@ -425,7 +432,7 @@ pub(super) fn ui_command_from_node(
                 rect,
                 clip_rect,
                 texture: image.texture,
-                tint: image_button_tint(image, button_state),
+                tint: Runtime::color_modulate(image_button_tint(image, button_state), modulate),
                 uv_min,
                 uv_max,
                 scale_mode: ui_image_scale_state(image.scale_mode),
@@ -444,7 +451,7 @@ pub(super) fn ui_command_from_node(
                 rect,
                 clip_rect,
                 texture: image.texture,
-                tint: image.tint,
+                tint: Runtime::color_modulate(image.tint, modulate),
                 uv_min,
                 uv_max,
                 margins: image.margins,
@@ -461,7 +468,7 @@ pub(super) fn ui_command_from_node(
                 rect,
                 clip_rect,
                 texture: image.texture,
-                tint: image.tint,
+                tint: Runtime::color_modulate(image.tint, modulate),
                 uv_min,
                 uv_max,
                 scale_mode: ui_image_scale_state(image.scale_mode),
@@ -479,7 +486,7 @@ pub(super) fn ui_command_from_node(
                 rect,
                 clip_rect,
                 texture: Runtime::camera_stream_texture_id(node),
-                tint: stream.tint,
+                tint: Runtime::color_modulate(stream.tint, modulate),
                 uv_min: [0.0, 0.0],
                 uv_max: [1.0, 1.0],
                 scale_mode: ui_image_scale_state(stream.stream.aspect_mode),

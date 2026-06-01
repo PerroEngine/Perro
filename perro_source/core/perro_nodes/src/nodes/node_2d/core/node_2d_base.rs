@@ -1,4 +1,4 @@
-use perro_structs::{BitMask, Transform2D};
+use perro_structs::{BitMask, NodeModulate, Transform2D};
 use std::ops::{Deref, DerefMut};
 
 #[derive(Clone, Debug)]
@@ -7,6 +7,7 @@ pub struct Node2D {
     pub z_index: i32,
     pub visible: bool,
     pub render_layers: BitMask,
+    pub modulate: NodeModulate,
 }
 
 impl Node2D {
@@ -16,6 +17,7 @@ impl Node2D {
             visible: true,
             z_index: 0,
             render_layers: BitMask::ALL,
+            modulate: NodeModulate::WHITE,
         }
     }
 }

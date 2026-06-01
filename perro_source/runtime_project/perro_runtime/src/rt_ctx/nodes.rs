@@ -151,6 +151,7 @@ impl NodeAPI for Runtime {
             camera_3d_changed,
             camera_3d_activated,
             visibility_changed,
+            modulate_changed,
             value,
         ) = {
             let node = if let Some((index, generation)) = slot {
@@ -182,6 +183,9 @@ impl NodeAPI for Runtime {
             let mut changed = false;
             let mut value = None;
             let visible_before = Self::node_local_visible(&node.data);
+            let before_modulate_2d = node.with_base_ref::<Node2D, _>(|base| base.modulate);
+            let before_modulate_3d = node.with_base_ref::<Node3D, _>(|base| base.modulate);
+            let before_modulate_ui = node.with_base_ref::<UiBox, _>(|base| base.modulate);
             let result = node.with_typed_mut::<T, _>(|typed| {
                 let before = T::snapshot_transform(typed);
                 value = Some(f(typed));
@@ -190,6 +194,9 @@ impl NodeAPI for Runtime {
             });
             result?;
             let visible_after = Self::node_local_visible(&node.data);
+            let after_modulate_2d = node.with_base_ref::<Node2D, _>(|base| base.modulate);
+            let after_modulate_3d = node.with_base_ref::<Node3D, _>(|base| base.modulate);
+            let after_modulate_ui = node.with_base_ref::<UiBox, _>(|base| base.modulate);
             let ui_after = track_ui.then(|| node.data.clone());
             let cam_2d_after = if track_camera_2d {
                 match &node.data {
@@ -215,6 +222,9 @@ impl NodeAPI for Runtime {
                 cam_3d_before != cam_3d_after,
                 cam_3d_before != Some(true) && cam_3d_after == Some(true),
                 visible_before != visible_after,
+                before_modulate_2d != after_modulate_2d
+                    || before_modulate_3d != after_modulate_3d
+                    || before_modulate_ui != after_modulate_ui,
                 value,
             )
         };
@@ -240,6 +250,9 @@ impl NodeAPI for Runtime {
         }
         if visibility_changed && !is_ui_node {
             self.mark_ui_visibility_dirty_subtree(id);
+        }
+        if modulate_changed {
+            self.force_rerender(id);
         }
         value
     }
@@ -320,6 +333,7 @@ impl NodeAPI for Runtime {
             active_camera_2d_changed,
             active_camera_3d_changed,
             active_camera_3d_activated,
+            modulate_changed,
         ) = {
             let node = if let Some((index, generation)) = slot {
                 self.nodes.slot_get_mut_checked(index, generation)?
@@ -330,6 +344,9 @@ impl NodeAPI for Runtime {
             let before_3d = node.with_base_ref::<Node3D, _>(|base| base.transform);
             let before_vis_2d = node.with_base_ref::<Node2D, _>(|base| base.visible);
             let before_vis_3d = node.with_base_ref::<Node3D, _>(|base| base.visible);
+            let before_modulate_2d = node.with_base_ref::<Node2D, _>(|base| base.modulate);
+            let before_modulate_3d = node.with_base_ref::<Node3D, _>(|base| base.modulate);
+            let before_modulate_ui = node.with_base_ref::<UiBox, _>(|base| base.modulate);
             let before_camera_2d = match &node.data {
                 SceneNodeData::Camera2D(camera) if camera.active => Some(camera.transform),
                 _ => None,
@@ -344,6 +361,9 @@ impl NodeAPI for Runtime {
             let after_3d = node.with_base_ref::<Node3D, _>(|base| base.transform);
             let after_vis_2d = node.with_base_ref::<Node2D, _>(|base| base.visible);
             let after_vis_3d = node.with_base_ref::<Node3D, _>(|base| base.visible);
+            let after_modulate_2d = node.with_base_ref::<Node2D, _>(|base| base.modulate);
+            let after_modulate_3d = node.with_base_ref::<Node3D, _>(|base| base.modulate);
+            let after_modulate_ui = node.with_base_ref::<UiBox, _>(|base| base.modulate);
             let after_camera_2d = match &node.data {
                 SceneNodeData::Camera2D(camera) if camera.active => Some(camera.transform),
                 _ => None,
@@ -364,11 +384,17 @@ impl NodeAPI for Runtime {
                 before_camera_2d != after_camera_2d,
                 before_camera_3d != after_camera_3d,
                 before_camera_3d.is_none() && after_camera_3d.is_some(),
+                before_modulate_2d != after_modulate_2d
+                    || before_modulate_3d != after_modulate_3d
+                    || before_modulate_ui != after_modulate_ui,
             )
         };
 
         self.mark_needs_rerender(id);
         if vis_2d_changed || vis_3d_changed {
+            self.force_rerender(id);
+        }
+        if modulate_changed {
             self.force_rerender(id);
         }
         if transform_changed {

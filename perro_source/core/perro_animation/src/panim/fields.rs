@@ -107,7 +107,10 @@ fn parse_node_2d_action(
         Node2DField::Scale => Node2DAction::Scale(expect_vec2(value, key, line_no)?),
         Node2DField::Visible => Node2DAction::Visible(expect_bool(value, key, line_no)?),
         Node2DField::ZIndex => Node2DAction::ZIndex(expect_i32(value, key, line_no)?),
-        Node2DField::RenderLayers => {
+        Node2DField::RenderLayers
+        | Node2DField::Modulate
+        | Node2DField::SelfModulate
+        | Node2DField::ChildrenModulate => {
             return Err(format!(
                 "line {}: `{}` is valid but not animatable in `.panim`",
                 line_no, key
@@ -179,7 +182,10 @@ fn parse_node_3d_action(
         Node3DField::Rotation => Node3DAction::Rotation(expect_quat(value, key, line_no)?),
         Node3DField::Scale => Node3DAction::Scale(expect_vec3(value, key, line_no)?),
         Node3DField::Visible => Node3DAction::Visible(expect_bool(value, key, line_no)?),
-        Node3DField::RenderLayers => {
+        Node3DField::RenderLayers
+        | Node3DField::Modulate
+        | Node3DField::SelfModulate
+        | Node3DField::ChildrenModulate => {
             return Err(format!(
                 "line {}: `{}` is valid but not animatable in `.panim`",
                 line_no, key
