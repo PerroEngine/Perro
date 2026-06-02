@@ -18,9 +18,9 @@ struct VertexInput {
 };
 
 struct InstanceInput {
-    @location(2) transform_0: vec3<f32>,
-    @location(3) transform_1: vec3<f32>,
-    @location(4) transform_2: vec3<f32>,
+    @location(2) transform_0: vec2<f32>,
+    @location(3) transform_1: vec2<f32>,
+    @location(4) translation: vec2<f32>,
     @location(5) uv_min: vec2<f32>,
     @location(6) uv_max: vec2<f32>,
     @location(7) size: vec2<f32>,
@@ -34,21 +34,12 @@ struct VertexOutput {
     @location(1) tint: vec4<f32>,
 };
 
-fn mat3_to_mat4(t0: vec3<f32>, t1: vec3<f32>, t2: vec3<f32>) -> mat4x4<f32> {
-    return mat4x4<f32>(
-        vec4<f32>(t0.xy, 0.0, t0.z),
-        vec4<f32>(t1.xy, 0.0, t1.z),
-        vec4<f32>(0.0, 0.0, 1.0, 0.0),
-        vec4<f32>(t2.xy, 0.0, 1.0),
-    );
-}
-
 @vertex
 fn vs_main(v: VertexInput, inst: InstanceInput) -> VertexOutput {
-    let model = mat3_to_mat4(inst.transform_0, inst.transform_1, inst.transform_2);
     let tex_size = vec2<f32>(textureDimensions(tex_color));
-    let world = model * vec4<f32>(v.local_pos * inst.size, 0.0, 1.0);
-    let view = camera.view * world;
+    let local = v.local_pos * inst.size;
+    let world_xy = inst.transform_0 * local.x + inst.transform_1 * local.y + inst.translation;
+    let view = camera.view * vec4<f32>(world_xy, 0.0, 1.0);
     let ndc_xy = view.xy * camera.ndc_scale;
     let depth = 1.0 - f32(inst.z_index) * 0.001;
 

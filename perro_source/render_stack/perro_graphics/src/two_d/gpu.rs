@@ -37,9 +37,9 @@ struct SpriteVertex {
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct SpriteInstanceGpu {
-    transform_0: [f32; 3],
-    transform_1: [f32; 3],
-    transform_2: [f32; 3],
+    transform_0: [f32; 2],
+    transform_1: [f32; 2],
+    translation: [f32; 2],
     uv_min: [f32; 2],
     uv_max: [f32; 2],
     size: [f32; 2],
@@ -442,9 +442,9 @@ impl Gpu2D {
                     continue;
                 }
                 self.sprite_stage_instances.push(SpriteInstanceGpu {
-                    transform_0: sprite.model[0],
-                    transform_1: sprite.model[1],
-                    transform_2: sprite.model[2],
+                    transform_0: [sprite.model[0][0], sprite.model[0][1]],
+                    transform_1: [sprite.model[1][0], sprite.model[1][1]],
+                    translation: [sprite.model[2][0], sprite.model[2][1]],
                     uv_min,
                     uv_max,
                     size: sprite_size,

@@ -255,40 +255,40 @@ pub(super) fn create_sprite_pipeline(
                         wgpu::VertexAttribute {
                             offset: 0,
                             shader_location: 2,
-                            format: wgpu::VertexFormat::Float32x3,
+                            format: wgpu::VertexFormat::Float32x2,
                         },
                         wgpu::VertexAttribute {
-                            offset: 12,
+                            offset: 8,
                             shader_location: 3,
-                            format: wgpu::VertexFormat::Float32x3,
+                            format: wgpu::VertexFormat::Float32x2,
+                        },
+                        wgpu::VertexAttribute {
+                            offset: 16,
+                            shader_location: 4,
+                            format: wgpu::VertexFormat::Float32x2,
                         },
                         wgpu::VertexAttribute {
                             offset: 24,
-                            shader_location: 4,
-                            format: wgpu::VertexFormat::Float32x3,
-                        },
-                        wgpu::VertexAttribute {
-                            offset: 36,
                             shader_location: 5,
                             format: wgpu::VertexFormat::Float32x2,
                         },
                         wgpu::VertexAttribute {
-                            offset: 44,
+                            offset: 32,
                             shader_location: 6,
                             format: wgpu::VertexFormat::Float32x2,
                         },
                         wgpu::VertexAttribute {
-                            offset: 52,
+                            offset: 40,
                             shader_location: 7,
                             format: wgpu::VertexFormat::Float32x2,
                         },
                         wgpu::VertexAttribute {
-                            offset: 60,
+                            offset: 48,
                             shader_location: 8,
                             format: wgpu::VertexFormat::Sint32,
                         },
                         wgpu::VertexAttribute {
-                            offset: 64,
+                            offset: 52,
                             shader_location: 9,
                             format: wgpu::VertexFormat::Unorm8x4,
                         },

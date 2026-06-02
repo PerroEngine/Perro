@@ -30,6 +30,10 @@ fn rect_command(i: u32) -> RenderCommand {
 }
 
 fn sprite_command(i: u32, texture: TextureID) -> RenderCommand {
+    sprite_command_z(i, texture, 0)
+}
+
+fn sprite_command_z(i: u32, texture: TextureID, z_index: i32) -> RenderCommand {
     let x = (i % 256) as f32 * 4.0;
     let y = (i / 256) as f32 * 4.0;
     RenderCommand::TwoD(Command2D::UpsertSprite {
@@ -41,7 +45,7 @@ fn sprite_command(i: u32, texture: TextureID) -> RenderCommand {
             uv_min: [0.0, 0.0],
             uv_max: [1.0, 1.0],
             size: [16.0, 16.0],
-            z_index: i as i32,
+            z_index,
         },
     })
 }
@@ -317,7 +321,7 @@ fn bench_2d_rect_prepare(c: &mut Criterion) {
 }
 
 fn bench_2d_sprite_prepare(c: &mut Criterion) {
-    let mut group = c.benchmark_group("graphics_2d_sprite_prepare");
+    let mut group = c.benchmark_group("graphics_2d_sprite_prepare_same_z");
     for count in [1_000u32, 10_000, 100_000] {
         group.bench_with_input(BenchmarkId::from_parameter(count), &count, |b, &count| {
             let mut graphics = PerroGraphics::new();
@@ -332,6 +336,31 @@ fn bench_2d_sprite_prepare(c: &mut Criterion) {
                     graphics.submit_many(commands);
                     let timing = graphics.draw_frame_timed().expect("timing");
                     black_box(timing.prepare_cpu);
+                },
+                BatchSize::LargeInput,
+            );
+        });
+    }
+    group.finish();
+}
+
+fn bench_2d_sprite_prepare_unique_z(c: &mut Criterion) {
+    let mut group = c.benchmark_group("graphics_2d_sprite_prepare_unique_z");
+    for count in [1_000u32, 10_000, 100_000] {
+        group.bench_with_input(BenchmarkId::from_parameter(count), &count, |b, &count| {
+            let mut graphics = PerroGraphics::new();
+            let texture = create_texture(&mut graphics);
+            b.iter_batched(
+                || {
+                    (0..count)
+                        .map(|i| sprite_command_z(i, texture, i as i32))
+                        .collect::<Vec<_>>()
+                },
+                |commands| {
+                    graphics.submit_many(commands);
+                    let timing = graphics.draw_frame_timed().expect("timing");
+                    black_box(timing.prepare_cpu);
+                    black_box(timing.draw_calls_2d);
                 },
                 BatchSize::LargeInput,
             );
@@ -534,6 +563,7 @@ criterion_group!(
     benches,
     bench_2d_rect_prepare,
     bench_2d_sprite_prepare,
+    bench_2d_sprite_prepare_unique_z,
     bench_3d_draw_prepare,
     bench_3d_blend_prepare,
     bench_3d_blend_dense_prepare,

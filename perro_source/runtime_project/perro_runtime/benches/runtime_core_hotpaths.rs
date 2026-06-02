@@ -1,5 +1,5 @@
 use ahash::AHashMap;
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use perro_ids::{NodeID, TextureID};
 use perro_nodes::{
     AnimatedSprite, AnimatedSprite2D, Node2D, Node3D, SceneNode, SceneNodeData, Sprite2D,
@@ -135,6 +135,102 @@ fn bench_render_command_drain_hotloop(c: &mut Criterion) {
             black_box(len)
         })
     });
+}
+
+fn bench_extract_moving_sprite2d_nodes(c: &mut Criterion) {
+    let mut group = c.benchmark_group("runtime_core/extract_moving_sprite2d_nodes");
+    for count in [500usize, 2_000, 10_000] {
+        group.bench_with_input(
+            BenchmarkId::new("mutate_extract", count),
+            &count,
+            |b, &count| {
+                b.iter_batched(
+                    || {
+                        let mut runtime = Runtime::new();
+                        let templates = vec![NodeCreationTemplate::new::<Sprite2D>(); count];
+                        let ids = NodeAPI::create_nodes(&mut runtime, &templates, NodeID::nil());
+                        let texture = TextureID::from_parts(77, 0);
+                        for (i, &id) in ids.iter().enumerate() {
+                            let _ = NodeAPI::with_node_mut::<Sprite2D, _, _>(
+                                &mut runtime,
+                                id,
+                                |sprite| {
+                                    sprite.texture = texture;
+                                    sprite.transform.position.x = (i % 64) as f32;
+                                    sprite.transform.position.y = (i / 64) as f32;
+                                },
+                            );
+                        }
+                        runtime.extract_render_2d_commands();
+                        let mut commands = Vec::new();
+                        runtime.drain_render_commands(&mut commands);
+                        (runtime, ids, commands)
+                    },
+                    |(mut runtime, ids, mut commands)| {
+                        for (i, &id) in ids.iter().enumerate() {
+                            let _ = NodeAPI::with_node_mut::<Sprite2D, _, _>(
+                                &mut runtime,
+                                id,
+                                |sprite| {
+                                    sprite.transform.position.x += ((i % 3) as f32) * 0.25 + 0.1;
+                                },
+                            );
+                        }
+                        runtime.extract_render_2d_commands();
+                        runtime.drain_render_commands(&mut commands);
+                        black_box(commands.len())
+                    },
+                    criterion::BatchSize::LargeInput,
+                )
+            },
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("extract_only", count),
+            &count,
+            |b, &count| {
+                b.iter_batched(
+                    || {
+                        let mut runtime = Runtime::new();
+                        let templates = vec![NodeCreationTemplate::new::<Sprite2D>(); count];
+                        let ids = NodeAPI::create_nodes(&mut runtime, &templates, NodeID::nil());
+                        let texture = TextureID::from_parts(77, 0);
+                        for (i, &id) in ids.iter().enumerate() {
+                            let _ = NodeAPI::with_node_mut::<Sprite2D, _, _>(
+                                &mut runtime,
+                                id,
+                                |sprite| {
+                                    sprite.texture = texture;
+                                    sprite.transform.position.x = (i % 64) as f32;
+                                    sprite.transform.position.y = (i / 64) as f32;
+                                },
+                            );
+                        }
+                        runtime.extract_render_2d_commands();
+                        let mut commands = Vec::new();
+                        runtime.drain_render_commands(&mut commands);
+                        for (i, &id) in ids.iter().enumerate() {
+                            if let Some(node) = runtime.nodes.get_mut(id)
+                                && let perro_nodes::SceneNodeData::Sprite2D(sprite) = &mut node.data
+                            {
+                                sprite.transform.position.x += ((i % 3) as f32) * 0.25 + 0.1;
+                            }
+                            runtime.mark_needs_rerender(id);
+                            runtime.mark_transform_dirty_recursive(id);
+                        }
+                        (runtime, commands)
+                    },
+                    |(mut runtime, mut commands)| {
+                        runtime.extract_render_2d_commands();
+                        runtime.drain_render_commands(&mut commands);
+                        black_box(commands.len())
+                    },
+                    criterion::BatchSize::LargeInput,
+                )
+            },
+        );
+    }
+    group.finish();
 }
 
 fn bench_map_and_schedule_scans(c: &mut Criterion) {
@@ -333,6 +429,7 @@ fn benches(c: &mut Criterion) {
     bench_transform_dirty_propagate_and_refresh(c);
     bench_create_nodes_10k_batch_transform_and_render(c);
     bench_render_command_drain_hotloop(c);
+    bench_extract_moving_sprite2d_nodes(c);
     bench_map_and_schedule_scans(c);
     bench_trimesh_vertices_clone_vs_arc_share(c);
     bench_animated_sprite_2d_hotpaths(c);

@@ -101,17 +101,18 @@ impl Runtime {
             self.render_2d.last_camera = active_camera;
         }
 
-        let dirty_ids = self
-            .dirty
-            .dirty_indices()
-            .iter()
-            .filter_map(|&raw_index| self.nodes.slot_get(raw_index as usize).map(|(id, _)| id))
-            .collect::<Vec<_>>();
-        let all_ids = self.nodes.iter().map(|(id, _)| id).collect::<Vec<_>>();
         let nodes = &self.nodes;
-        let traversal_ids = self.render_2d.collect_traversal(
-            dirty_ids,
-            all_ids,
+        let mut dirty_ids = self.render_2d.take_dirty_ids_scratch();
+        dirty_ids.clear();
+        dirty_ids.extend(
+            self.dirty
+                .dirty_indices()
+                .iter()
+                .filter_map(|&raw_index| nodes.slot_get(raw_index as usize).map(|(id, _)| id)),
+        );
+        let traversal_ids = self.render_2d.collect_traversal_with_scratch(
+            &dirty_ids,
+            nodes.iter().map(|(id, _)| id),
             bootstrap_scan || camera_render_mask_changed || button_input_changed,
             |node, out| {
                 if let Some(node_ref) = nodes.get(node) {
@@ -119,6 +120,7 @@ impl Runtime {
                 }
             },
         );
+        self.render_2d.restore_dirty_ids_scratch(dirty_ids);
 
         let mut visible_now = self.render_2d.begin_visible_pass();
 

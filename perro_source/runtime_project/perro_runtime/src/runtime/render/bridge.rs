@@ -260,7 +260,14 @@ impl Runtime {
     }
 
     pub fn mark_transform_dirty_recursive(&mut self, root: NodeID) {
-        self.dirty.mark_transform_root(root);
+        let Some(node) = self.nodes.get(root) else {
+            return;
+        };
+        if node.children_slice().is_empty() {
+            self.dirty.mark_transform(root, node.spatial());
+        } else {
+            self.dirty.mark_transform_root(root);
+        }
     }
 
     pub fn clear_dirty_flags(&mut self) {

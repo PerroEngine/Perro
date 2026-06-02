@@ -196,13 +196,18 @@ fn main() {
                 redraw: redraw_2d,
             },
             BenchCase {
-                name: "sprites_10k",
+                name: "sprites_10k_same_z",
                 setup: |w| setup_sprites(w, 10_000),
                 redraw: redraw_2d,
             },
             BenchCase {
-                name: "sprites_100k",
+                name: "sprites_100k_same_z",
                 setup: |w| setup_sprites(w, 100_000),
+                redraw: redraw_2d,
+            },
+            BenchCase {
+                name: "sprites_10k_unique_z",
+                setup: |w| setup_sprites_unique_z(w, 10_000),
                 redraw: redraw_2d,
             },
             BenchCase {
@@ -395,6 +400,14 @@ fn setup_sprites(window: &Arc<Window>, count: u32) -> PerroGraphics {
     graphics
 }
 
+fn setup_sprites_unique_z(window: &Arc<Window>, count: u32) -> PerroGraphics {
+    let mut graphics = base_graphics(window);
+    let texture = create_texture(&mut graphics);
+    graphics.submit_many((0..count).map(|i| sprite_command_z(i, texture, i as i32)));
+    let _ = graphics.draw_frame_timed();
+    graphics
+}
+
 fn setup_water(window: &Arc<Window>, count: u32, resolution: u32, impacts: u32) -> PerroGraphics {
     let mut graphics = base_graphics(window);
     graphics.submit_many(
@@ -567,6 +580,10 @@ fn rect_command(i: u32) -> RenderCommand {
 }
 
 fn sprite_command(i: u32, texture: TextureID) -> RenderCommand {
+    sprite_command_z(i, texture, 0)
+}
+
+fn sprite_command_z(i: u32, texture: TextureID, z_index: i32) -> RenderCommand {
     let [x, y] = grid2(i, 12.0);
     RenderCommand::TwoD(Command2D::UpsertSprite {
         node: NodeID::from_parts(i + 1, 0),
@@ -577,7 +594,7 @@ fn sprite_command(i: u32, texture: TextureID) -> RenderCommand {
             uv_min: [0.0, 0.0],
             uv_max: [1.0, 1.0],
             size: [10.0, 10.0],
-            z_index: i as i32,
+            z_index,
         },
     })
 }
