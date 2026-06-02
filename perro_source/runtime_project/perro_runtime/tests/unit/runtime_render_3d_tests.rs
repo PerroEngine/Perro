@@ -1231,6 +1231,11 @@ fn mesh_under_invisible_parent_emits_remove_node() {
         RenderCommand::ThreeD(command_3d)
             if matches!(command_3d.as_ref(), Command3D::RemoveNode { node } if *node == child)
     )));
+    assert_eq!(runtime.scene_mesh_refs_cache.get(&mesh), Some(&vec![child]));
+    assert_eq!(
+        runtime.scene_material_refs_cache.get(&material),
+        Some(&vec![child])
+    );
 }
 
 #[test]

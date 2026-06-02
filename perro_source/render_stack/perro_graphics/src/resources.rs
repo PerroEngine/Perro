@@ -724,6 +724,14 @@ impl ResourceStore {
     }
 
     #[inline]
+    pub fn mesh_id_for_source(&self, source: &str) -> Option<MeshID> {
+        self.mesh_by_source
+            .get(source)
+            .copied()
+            .filter(|id| self.has_mesh(*id))
+    }
+
+    #[inline]
     pub fn has_texture_source(&self, source: &str) -> bool {
         self.texture_by_source
             .get(source)
@@ -777,6 +785,14 @@ impl ResourceStore {
     #[inline]
     pub fn has_material(&self, id: MaterialID) -> bool {
         self.materials.contains_parts(id.index(), id.generation())
+    }
+
+    #[inline]
+    pub fn material_id_for_source(&self, source: &str) -> Option<MaterialID> {
+        self.material_by_source
+            .get(source)
+            .copied()
+            .filter(|id| self.has_material(*id))
     }
 
     #[inline]

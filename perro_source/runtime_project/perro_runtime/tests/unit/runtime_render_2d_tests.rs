@@ -743,11 +743,17 @@ fn sprite_becoming_invisible_emits_remove_node() {
 
     runtime.extract_render_2d_commands();
     let second = collect_commands(&mut runtime);
-    assert_eq!(second.len(), 1);
-    assert!(matches!(
-        second[0],
-        RenderCommand::TwoD(Command2D::RemoveNode { node }) if node == expected_node
-    ));
+    assert!(second.iter().any(|command| matches!(
+        command,
+        RenderCommand::TwoD(Command2D::RemoveNode { node }) if *node == expected_node
+    )));
+    assert!(second.iter().any(|command| matches!(
+        command,
+        RenderCommand::Resource(ResourceCommand::SetSceneResourceRefs { textures, .. })
+            if textures.iter().any(|(texture, nodes)| {
+                *texture == TextureID::from_parts(7, 0) && nodes == &vec![expected_node]
+            })
+    )));
 }
 
 #[test]

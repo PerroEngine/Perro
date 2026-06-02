@@ -2,8 +2,9 @@
 
 use super::Runtime;
 use crate::render_result::RuntimeRenderResult;
+use ahash::AHashMap;
 use glam::Mat4;
-use perro_ids::{NodeID, TextureID};
+use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_nodes::{CameraProjection, CameraStream, SceneNodeData};
 use perro_render_bridge::{
     AmbientLight2DState, AmbientLight3DState, Camera2DState, Camera3DState, CameraProjectionState,
@@ -11,8 +12,9 @@ use perro_render_bridge::{
     CameraStreamSourceState, CameraStreamState, Command2D, Command3D, DenseInstancePose3D,
     LODOptions3D, Light2DState, MeshBlendOptions3D, PointLight2DState, PointLight3DState,
     PointParticles2DState, PointParticles3DState, RayLight2DState, RayLight3DState, RenderCommand,
-    RenderEvent, RenderRequestID, Sky3DState, SkyShaderPass3DState, SkyTime3DState,
-    SpotLight2DState, SpotLight3DState, Sprite2DCommand, Water2DState, Water3DState,
+    RenderEvent, RenderRequestID, ResourceCommand, Sky3DState, SkyShaderPass3DState,
+    SkyTime3DState, SpotLight2DState, SpotLight3DState, Sprite2DCommand, Water2DState,
+    Water3DState,
 };
 use perro_runtime_render::{decode_3d_mesh_request_node, decode_render_request_node_from_event};
 use perro_structs::BitMask;
@@ -31,6 +33,12 @@ use crate::runtime::render_3d::{
     water_idle_mode_state as water_idle_mode_state_3d, water_render_size as water_render_size_3d,
     water_shape_state as water_shape_state_3d,
 };
+
+type SceneResourceRefs = (
+    AHashMap<TextureID, Vec<NodeID>>,
+    AHashMap<MeshID, Vec<NodeID>>,
+    AHashMap<MaterialID, Vec<NodeID>>,
+);
 
 fn is_ui_node_data(data: &SceneNodeData) -> bool {
     matches!(
@@ -68,10 +76,152 @@ impl Runtime {
         self.render.queue_command(command);
     }
 
+    fn count_scene_resource_refs(&self) -> SceneResourceRefs {
+        let mut textures = AHashMap::<TextureID, Vec<NodeID>>::default();
+        let mut meshes = AHashMap::<MeshID, Vec<NodeID>>::default();
+        let mut materials = AHashMap::<MaterialID, Vec<NodeID>>::default();
+
+        fn add_ref<T: Eq + std::hash::Hash + Copy>(
+            refs: &mut AHashMap<T, Vec<NodeID>>,
+            id: T,
+            node: NodeID,
+        ) {
+            let nodes = refs.entry(id).or_default();
+            if !nodes.contains(&node) {
+                nodes.push(node);
+            }
+        }
+
+        for (node_id, node) in self.nodes.iter() {
+            match &node.data {
+                SceneNodeData::Sprite2D(sprite)
+                    if !self.render_2d.retained_sprites.contains_key(&node_id) =>
+                {
+                    if !sprite.texture.is_nil()
+                        && !self.resource_api.is_texture_id_pending(sprite.texture)
+                    {
+                        add_ref(&mut textures, sprite.texture, node_id);
+                    }
+                }
+                SceneNodeData::AnimatedSprite2D(sprite)
+                    if !self.render_2d.retained_sprites.contains_key(&node_id) =>
+                {
+                    if !sprite.texture.is_nil()
+                        && !self.resource_api.is_texture_id_pending(sprite.texture)
+                    {
+                        add_ref(&mut textures, sprite.texture, node_id);
+                    }
+                }
+                SceneNodeData::ImageButton2D(button)
+                    if !self.render_2d.retained_sprites.contains_key(&node_id) =>
+                {
+                    if !button.texture.is_nil()
+                        && !self.resource_api.is_texture_id_pending(button.texture)
+                    {
+                        add_ref(&mut textures, button.texture, node_id);
+                    }
+                }
+                SceneNodeData::NineSlice2D(nine)
+                    if !self.render_2d.retained_sprites.contains_key(&node_id) =>
+                {
+                    if !nine.texture.is_nil()
+                        && !self.resource_api.is_texture_id_pending(nine.texture)
+                    {
+                        add_ref(&mut textures, nine.texture, node_id);
+                    }
+                }
+                SceneNodeData::UiImage(image)
+                    if !self.render_ui.retained_commands.contains_key(&node_id) =>
+                {
+                    if !image.texture.is_nil()
+                        && !self.resource_api.is_texture_id_pending(image.texture)
+                    {
+                        add_ref(&mut textures, image.texture, node_id);
+                    }
+                }
+                SceneNodeData::UiAnimatedImage(image)
+                    if !self.render_ui.retained_commands.contains_key(&node_id) =>
+                {
+                    if !image.texture.is_nil()
+                        && !self.resource_api.is_texture_id_pending(image.texture)
+                    {
+                        add_ref(&mut textures, image.texture, node_id);
+                    }
+                }
+                SceneNodeData::UiImageButton(button)
+                    if !self.render_ui.retained_commands.contains_key(&node_id) =>
+                {
+                    if !button.texture.is_nil()
+                        && !self.resource_api.is_texture_id_pending(button.texture)
+                    {
+                        add_ref(&mut textures, button.texture, node_id);
+                    }
+                }
+                SceneNodeData::UiNineSlice(nine)
+                    if !self.render_ui.retained_commands.contains_key(&node_id) =>
+                {
+                    if !nine.texture.is_nil()
+                        && !self.resource_api.is_texture_id_pending(nine.texture)
+                    {
+                        add_ref(&mut textures, nine.texture, node_id);
+                    }
+                }
+                SceneNodeData::MeshInstance3D(mesh) => {
+                    if !self.render_3d.retained_mesh_draws.contains_key(&node_id) {
+                        if !mesh.mesh.is_nil() && !self.resource_api.is_mesh_id_pending(mesh.mesh) {
+                            add_ref(&mut meshes, mesh.mesh, node_id);
+                        }
+                        for material in mesh.surfaces.iter().filter_map(|surface| surface.material)
+                        {
+                            if !material.is_nil()
+                                && !self.resource_api.is_material_id_pending(material)
+                            {
+                                add_ref(&mut materials, material, node_id);
+                            }
+                        }
+                    }
+                }
+                SceneNodeData::MultiMeshInstance3D(mesh)
+                    if !self.render_3d.retained_mesh_draws.contains_key(&node_id) =>
+                {
+                    if !mesh.mesh.is_nil() && !self.resource_api.is_mesh_id_pending(mesh.mesh) {
+                        add_ref(&mut meshes, mesh.mesh, node_id);
+                    }
+                    for material in mesh.surfaces.iter().filter_map(|surface| surface.material) {
+                        if !material.is_nil()
+                            && !self.resource_api.is_material_id_pending(material)
+                        {
+                            add_ref(&mut materials, material, node_id);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        (textures, meshes, materials)
+    }
+
     pub fn drain_render_commands(&mut self, out: &mut Vec<RenderCommand>) {
         let mut queued_resource_commands = self.render.take_resource_queue_scratch();
         self.resource_api
             .drain_commands(&mut queued_resource_commands);
+        let (textures, meshes, materials) = self.count_scene_resource_refs();
+        if textures != self.scene_texture_refs_cache
+            || meshes != self.scene_mesh_refs_cache
+            || materials != self.scene_material_refs_cache
+        {
+            self.scene_texture_refs_cache = textures.clone();
+            self.scene_mesh_refs_cache = meshes.clone();
+            self.scene_material_refs_cache = materials.clone();
+            queued_resource_commands.push(RenderCommand::Resource(
+                ResourceCommand::SetSceneResourceRefs {
+                    textures: textures.into_iter().collect(),
+                    meshes: meshes.into_iter().collect(),
+                    materials: materials.into_iter().collect(),
+                },
+            ));
+        }
         if !queued_resource_commands.is_empty() {
             self.render.queue_commands(&mut queued_resource_commands);
         }

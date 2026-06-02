@@ -4,7 +4,7 @@ use crate::{
     runtime_project::{ProviderMode, RuntimeProject},
 };
 use ahash::AHashMap;
-use perro_ids::NodeID;
+use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_input_api::InputSnapshot;
 use perro_runtime_api::sub_apis::{PreloadedSceneID, WindowRequest};
 use perro_scene::Scene;
@@ -137,6 +137,9 @@ pub struct Runtime {
     schedules: ScriptSchedules,
     pub(crate) script_runtime: ScriptRuntimeState,
     render: RenderState,
+    scene_texture_refs_cache: AHashMap<TextureID, Vec<NodeID>>,
+    scene_mesh_refs_cache: AHashMap<MeshID, Vec<NodeID>>,
+    scene_material_refs_cache: AHashMap<MaterialID, Vec<NodeID>>,
     dirty: DirtyState,
     transforms: TransformRuntimeState,
     internal_updates: InternalUpdateState,
@@ -332,6 +335,9 @@ impl Runtime {
             script_runtime: ScriptRuntimeState::new(),
             project: None,
             render: RenderState::new(),
+            scene_texture_refs_cache: AHashMap::new(),
+            scene_mesh_refs_cache: AHashMap::new(),
+            scene_material_refs_cache: AHashMap::new(),
             dirty: DirtyState::new(),
             transforms: TransformRuntimeState::new(),
             internal_updates: InternalUpdateState::new(),

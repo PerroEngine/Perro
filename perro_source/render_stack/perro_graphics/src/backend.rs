@@ -321,6 +321,9 @@ pub struct PerroGraphics {
     used_texture_refs_cache: AHashMap<TextureID, u32>,
     used_mesh_refs_cache: AHashMap<MeshID, u32>,
     used_material_refs_cache: AHashMap<MaterialID, u32>,
+    scene_texture_refs_cache: AHashMap<TextureID, Vec<NodeID>>,
+    scene_mesh_refs_cache: AHashMap<MeshID, Vec<NodeID>>,
+    scene_material_refs_cache: AHashMap<MaterialID, Vec<NodeID>>,
     used_ref_draws_revision: u64,
     used_ref_sprites_revision: u64,
     global_post_processing: PostProcessSet,
@@ -597,6 +600,9 @@ impl PerroGraphics {
             used_texture_refs_cache: AHashMap::new(),
             used_mesh_refs_cache: AHashMap::new(),
             used_material_refs_cache: AHashMap::new(),
+            scene_texture_refs_cache: AHashMap::new(),
+            scene_mesh_refs_cache: AHashMap::new(),
+            scene_material_refs_cache: AHashMap::new(),
             used_ref_draws_revision: u64::MAX,
             used_ref_sprites_revision: u64::MAX,
             global_post_processing: PostProcessSet::new(),
@@ -825,6 +831,30 @@ impl PerroGraphics {
                             );
                         }
                         self.events.push(RenderEvent::MaterialLoaded { id });
+                    }
+                    ResourceCommand::SetSceneResourceRefs {
+                        textures,
+                        meshes,
+                        materials,
+                    } => {
+                        self.scene_texture_refs_cache.clear();
+                        self.scene_texture_refs_cache.extend(
+                            textures
+                                .into_iter()
+                                .filter(|(id, nodes)| !id.is_nil() && !nodes.is_empty()),
+                        );
+                        self.scene_mesh_refs_cache.clear();
+                        self.scene_mesh_refs_cache.extend(
+                            meshes
+                                .into_iter()
+                                .filter(|(id, nodes)| !id.is_nil() && !nodes.is_empty()),
+                        );
+                        self.scene_material_refs_cache.clear();
+                        self.scene_material_refs_cache.extend(
+                            materials
+                                .into_iter()
+                                .filter(|(id, nodes)| !id.is_nil() && !nodes.is_empty()),
+                        );
                     }
                     ResourceCommand::WriteMaterialData { id, material } => {
                         if self.resources.set_material_data(id, material) {
@@ -1657,14 +1687,26 @@ impl PerroGraphics {
             for (texture, count) in &self.used_texture_refs_cache {
                 self.resources.mark_texture_used_count(*texture, *count);
             }
+            for (texture, nodes) in &self.scene_texture_refs_cache {
+                self.resources
+                    .mark_texture_used_count(*texture, nodes.len().min(u32::MAX as usize) as u32);
+            }
             for texture in &ui_image_textures {
                 self.resources.mark_texture_used(*texture);
             }
             for (mesh, count) in &self.used_mesh_refs_cache {
                 self.resources.mark_mesh_used_count(*mesh, *count);
             }
+            for (mesh, nodes) in &self.scene_mesh_refs_cache {
+                self.resources
+                    .mark_mesh_used_count(*mesh, nodes.len().min(u32::MAX as usize) as u32);
+            }
             for (material, count) in &self.used_material_refs_cache {
                 self.resources.mark_material_used_count(*material, *count);
+            }
+            for (material, nodes) in &self.scene_material_refs_cache {
+                self.resources
+                    .mark_material_used_count(*material, nodes.len().min(u32::MAX as usize) as u32);
             }
         }
         self.frame_index = self.frame_index.wrapping_add(1);

@@ -442,6 +442,61 @@ fn draw_3d_updates_retained_state_per_node() {
 }
 
 #[test]
+fn scene_resource_refs_keep_unretained_mesh_and_material_alive_until_cleared() {
+    let mut graphics = PerroGraphics::new();
+    let texture_source = "__hidden_keep_texture__";
+    let mesh_source = "res://meshes/hidden_keep.glb";
+    let material_source = "res://materials/hidden_keep.pmat";
+    let texture = graphics.resources.create_texture(texture_source, false);
+    let mesh = graphics.resources.create_mesh(mesh_source, false);
+    let material =
+        graphics
+            .resources
+            .create_material(Material3D::default(), Some(material_source), false);
+
+    graphics.submit(RenderCommand::Resource(
+        ResourceCommand::SetSceneResourceRefs {
+            textures: vec![(texture, vec![NodeID::from_parts(699, 0)])],
+            meshes: vec![(mesh, vec![NodeID::from_parts(700, 0)])],
+            materials: vec![(material, vec![NodeID::from_parts(700, 0)])],
+        },
+    ));
+    graphics.draw_frame();
+
+    assert!(graphics.resources.has_texture(texture));
+    assert!(graphics.resources.has_mesh(mesh));
+    assert!(graphics.resources.has_material(material));
+
+    for _ in 0..crate::resources::ResourceStore::DEFAULT_ZERO_REF_TTL_FRAMES {
+        graphics
+            .resources
+            .gc_unused(crate::resources::ResourceStore::DEFAULT_ZERO_REF_TTL_FRAMES);
+    }
+
+    assert!(graphics.resources.has_texture(texture));
+    assert!(graphics.resources.has_mesh(mesh));
+    assert!(graphics.resources.has_material(material));
+
+    graphics.submit(RenderCommand::Resource(
+        ResourceCommand::SetSceneResourceRefs {
+            textures: Vec::new(),
+            meshes: Vec::new(),
+            materials: Vec::new(),
+        },
+    ));
+    graphics.draw_frame();
+    for _ in 0..crate::resources::ResourceStore::DEFAULT_ZERO_REF_TTL_FRAMES {
+        graphics
+            .resources
+            .gc_unused(crate::resources::ResourceStore::DEFAULT_ZERO_REF_TTL_FRAMES);
+    }
+
+    assert!(!graphics.resources.has_texture(texture));
+    assert!(!graphics.resources.has_mesh(mesh));
+    assert!(!graphics.resources.has_material(material));
+}
+
+#[test]
 fn draw_multi_3d_retains_all_instance_mats() {
     let mut graphics = PerroGraphics::new();
     let node = NodeID::from_parts(12, 0);

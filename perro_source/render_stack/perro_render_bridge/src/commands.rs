@@ -32,6 +32,11 @@ pub enum ResourceCommand {
         source: Option<String>,
         reserved: bool,
     },
+    SetSceneResourceRefs {
+        textures: Vec<(TextureID, Vec<NodeID>)>,
+        meshes: Vec<(MeshID, Vec<NodeID>)>,
+        materials: Vec<(MaterialID, Vec<NodeID>)>,
+    },
     WriteMaterialData {
         id: MaterialID,
         material: Material3D,
