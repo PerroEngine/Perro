@@ -64,6 +64,7 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 - Clickable world-space rect.
 - Uses `Node2D` position, rotation, scale, z index, visibility, and render layers.
 - Holds `size`, normal/hover/pressed fills, disabled state, cursor icon, and extra button signal lists.
+- Uses pointer cursor by default on hover. Set `cursor_icon` or `hover_cursor_icon` to override.
 - Emits default `<node_name>_<event>` signals for hover enter, hover exit, pressed, released, and clicked.
 - `*_signals` fields add extra signals; they do not replace the default named signal.
 - Hit testing uses the active 2D camera and world mouse position.
@@ -73,6 +74,7 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 - Clickable world-space image.
 - Uses `Node2D` transform fields like `Button2D`.
 - Holds `texture`, `texture_region`, `size`, normal/hover/pressed tint, disabled state, cursor icon, and extra button signal lists.
+- Uses pointer cursor by default on hover. Set `cursor_icon` or `hover_cursor_icon` to override.
 - Emits the same default `<node_name>_<event>` signals as `Button2D`.
 - `*_signals` fields add extra signals; they do not replace the default named signal.
 - Use it for sprite-like buttons, diegetic UI, and world-space interact prompts.

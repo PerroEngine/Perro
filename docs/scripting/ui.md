@@ -561,6 +561,11 @@ released
 clicked
 ```
 
+All button nodes use pointer cursor by default while hovered.
+Set `cursor_icon` or `hover_cursor_icon` to override it.
+Use `"pointer"` for hand pointer.
+`"hand"` is accepted as an alias.
+
 Each event always emits its default named signal:
 
 ```text

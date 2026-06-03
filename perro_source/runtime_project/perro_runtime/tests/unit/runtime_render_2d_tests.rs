@@ -891,6 +891,8 @@ fn image_button_2d_emits_world_sprite_command_with_state_tint() {
             if *node == button
                 && sprite.texture == TextureID::from_parts(44, 0)
                 && sprite.size == [96.0, 48.0]
+                && sprite.uv_min == [0.0, 0.0]
+                && sprite.uv_max == [0.0, 0.0]
                 && sprite.tint == perro_structs::Color::new(0.2, 0.4, 0.6, 1.0)
     )));
 }
@@ -919,6 +921,69 @@ fn button_2d_mouse_click_uses_world_hitbox() {
     assert_eq!(
         runtime.render_ui.button_states.get(&button).copied(),
         Some(UiButtonVisualState::Hover)
+    );
+}
+
+#[test]
+fn button_2d_hover_requests_default_pointer_cursor_and_unhover_restores_default() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let _button = NodeAPI::create::<Button2D>(&mut runtime);
+
+    runtime.begin_input_frame();
+    runtime.set_mouse_position(400.0, 300.0);
+    runtime.extract_render_2d_commands();
+
+    assert_eq!(
+        runtime.take_cursor_icon_request(),
+        Some(perro_ui::CursorIcon::Pointer)
+    );
+
+    runtime.begin_input_frame();
+    runtime.set_mouse_position(700.0, 500.0);
+    runtime.extract_render_2d_commands();
+
+    assert_eq!(
+        runtime.take_cursor_icon_request(),
+        Some(perro_ui::CursorIcon::Default)
+    );
+}
+
+#[test]
+fn image_button_2d_hover_uses_cursor_icon_override() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let button = NodeAPI::create::<ImageButton2D>(&mut runtime);
+    if let Some(node) = runtime.nodes.get_mut(button)
+        && let SceneNodeData::ImageButton2D(data) = &mut node.data
+    {
+        data.cursor_icon = perro_ui::CursorIcon::Grab;
+    }
+
+    runtime.begin_input_frame();
+    runtime.set_mouse_position(400.0, 300.0);
+    runtime.extract_render_2d_commands();
+
+    assert_eq!(
+        runtime.take_cursor_icon_request(),
+        Some(perro_ui::CursorIcon::Grab)
+    );
+}
+
+#[test]
+fn image_button_2d_cursor_survives_full_render_extraction() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let _button = NodeAPI::create::<ImageButton2D>(&mut runtime);
+
+    runtime.begin_input_frame();
+    runtime.set_mouse_position(400.0, 300.0);
+    let mut commands = Vec::new();
+    runtime.extract_render_snapshot_commands(&mut commands);
+
+    assert_eq!(
+        runtime.take_cursor_icon_request(),
+        Some(perro_ui::CursorIcon::Pointer)
     );
 }
 

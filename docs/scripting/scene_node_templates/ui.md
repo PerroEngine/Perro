@@ -156,6 +156,7 @@ parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [UiButton]
         disabled = false
+        # Default is "pointer"; override with any supported cursor icon.
         cursor_icon = "pointer"
         # Extra signals only. Default ui_button_<event> signals still emit.
         hover_signals = []
@@ -212,6 +213,7 @@ script = "res://path/to/script.rs"
         scale_mode = "fit"
         aspect_ratio = 0.0
         disabled = false
+        # Default is "pointer"; override with any supported cursor icon.
         cursor_icon = "pointer"
         # Extra signals only. Default ui_image_button_clicked still emits.
         clicked_signals = []

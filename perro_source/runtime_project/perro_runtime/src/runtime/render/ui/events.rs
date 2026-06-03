@@ -452,10 +452,7 @@ impl Runtime {
                     })
             })
             .unwrap_or(perro_ui::CursorIcon::Default);
-        if self.render_ui.cursor_icon != cursor_icon {
-            self.render_ui.cursor_icon = cursor_icon;
-            self.set_cursor_icon_request(cursor_icon);
-        }
+        self.set_render_cursor_icon_ui(cursor_icon);
         self.render_ui.last_ui_pointer = Some((
             self.input.mouse_position(),
             self.input.is_mouse_down(MouseButton::Left),

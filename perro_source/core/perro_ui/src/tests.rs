@@ -175,7 +175,10 @@ fn rounded_contains_keeps_center_and_edge_band() {
 
 #[test]
 fn ui_button_defaults_to_no_web_action() {
-    assert!(UiButton::new().web.is_none());
+    let button = UiButton::new();
+
+    assert_eq!(button.cursor_icon, CursorIcon::Pointer);
+    assert!(button.web.is_none());
 }
 
 #[test]

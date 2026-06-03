@@ -76,6 +76,34 @@ impl Runtime {
         self.cursor_icon_request = Some(icon);
     }
 
+    pub(crate) fn set_render_cursor_icon_2d(&mut self, icon: perro_ui::CursorIcon) {
+        if self.render_ui.cursor_icon_2d == icon {
+            return;
+        }
+        self.render_ui.cursor_icon_2d = icon;
+        self.apply_render_cursor_icon_request();
+    }
+
+    pub(crate) fn set_render_cursor_icon_ui(&mut self, icon: perro_ui::CursorIcon) {
+        if self.render_ui.cursor_icon_ui == icon {
+            return;
+        }
+        self.render_ui.cursor_icon_ui = icon;
+        self.apply_render_cursor_icon_request();
+    }
+
+    fn apply_render_cursor_icon_request(&mut self) {
+        let icon = if self.render_ui.cursor_icon_ui != perro_ui::CursorIcon::Default {
+            self.render_ui.cursor_icon_ui
+        } else {
+            self.render_ui.cursor_icon_2d
+        };
+        if self.render_ui.cursor_icon != icon {
+            self.render_ui.cursor_icon = icon;
+            self.set_cursor_icon_request(icon);
+        }
+    }
+
     #[inline]
     pub fn take_cursor_icon_request(&mut self) -> Option<perro_ui::CursorIcon> {
         self.cursor_icon_request.take()

@@ -952,6 +952,11 @@ impl Runtime {
             }
         }
         self.render_ui.button_states = next_states;
+        let cursor_icon = hovered
+            .and_then(|node| self.nodes.get(node))
+            .and_then(|scene_node| button_2d_cursor_icon(&scene_node.data))
+            .unwrap_or(perro_ui::CursorIcon::Default);
+        self.set_render_cursor_icon_2d(cursor_icon);
         self.render_2d.last_button_pointer = Some((
             self.input.mouse_position(),
             self.input.is_mouse_down(MouseButton::Left),
@@ -1514,6 +1519,14 @@ fn button_2d_inactive_from_data(data: &SceneNodeData) -> Option<bool> {
     match data {
         SceneNodeData::Button2D(button) => Some(button.disabled || !button.input_enabled),
         SceneNodeData::ImageButton2D(button) => Some(button.disabled || !button.input_enabled),
+        _ => None,
+    }
+}
+
+fn button_2d_cursor_icon(data: &SceneNodeData) -> Option<perro_ui::CursorIcon> {
+    match data {
+        SceneNodeData::Button2D(button) => Some(button.cursor_icon),
+        SceneNodeData::ImageButton2D(button) => Some(button.cursor_icon),
         _ => None,
     }
 }
@@ -2153,7 +2166,7 @@ fn parse_vec4_literal_2d(raw: &str) -> Option<[f32; 4]> {
 
 fn sprite_region_uv(region: Option<[f32; 4]>) -> ([f32; 2], [f32; 2], [f32; 2]) {
     let Some([x, y, w, h]) = region else {
-        return ([0.0, 0.0], [1.0, 1.0], [0.0, 0.0]);
+        return ([0.0, 0.0], [0.0, 0.0], [0.0, 0.0]);
     };
     if !(x.is_finite() && y.is_finite() && w.is_finite() && h.is_finite()) || w <= 0.0 || h <= 0.0 {
         return ([0.0, 0.0], [1.0, 1.0], [0.0, 0.0]);

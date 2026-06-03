@@ -188,8 +188,7 @@ impl Runtime {
                         add_ref(&mut meshes, mesh.mesh, node_id);
                     }
                     for material in mesh.surfaces.iter().filter_map(|surface| surface.material) {
-                        if !material.is_nil()
-                            && !self.resource_api.is_material_id_pending(material)
+                        if !material.is_nil() && !self.resource_api.is_material_id_pending(material)
                         {
                             add_ref(&mut materials, material, node_id);
                         }

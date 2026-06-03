@@ -145,3 +145,19 @@ impl DerefMut for ImageButton2D {
         &mut self.base
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use perro_ui::CursorIcon;
+
+    #[test]
+    fn button_2d_defaults_to_pointer_cursor() {
+        assert_eq!(Button2D::new().cursor_icon, CursorIcon::Pointer);
+    }
+
+    #[test]
+    fn image_button_2d_defaults_to_pointer_cursor() {
+        assert_eq!(ImageButton2D::new().cursor_icon, CursorIcon::Pointer);
+    }
+}
