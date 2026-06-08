@@ -136,7 +136,11 @@ impl Runtime {
                 .get(&node)
                 .cloned();
             let _dlc_self_context = push_dlc_self_context(mount.as_deref());
-            self.push_active_script(instance_index, node);
+            self.push_active_script_with_context(
+                instance_index,
+                node,
+                self.script_callback_context(),
+            );
             let mut run = RuntimeWindow::new(self);
             let mut sctx = ScriptContext {
                 run: &mut run,

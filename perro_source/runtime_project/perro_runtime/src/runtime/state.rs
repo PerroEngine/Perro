@@ -1,9 +1,11 @@
 use crate::{
     cns::{ScriptCollection, SignalConnection, SignalRegistry},
+    rs_ctx::RuntimeResourceApi,
     runtime::{RuntimeScriptBehavior, RuntimeScriptCtor},
 };
 use ahash::{AHashMap, AHashSet};
 use perro_ids::{NodeID, SignalID, TagID};
+use perro_input_api::InputSnapshot;
 use perro_nodes::Spatial;
 use perro_structs::{Transform2D, Transform3D};
 use std::{path::PathBuf, sync::Arc};
@@ -14,6 +16,7 @@ type DynamicScriptLibrary = ();
 
 pub(crate) struct ScriptRuntimeState {
     pub(crate) active_script_stack: Vec<(usize, NodeID)>,
+    pub(crate) active_callback_context: Option<ScriptCallbackContext>,
     pub(crate) last_node_lookup: Option<(NodeID, usize, u32)>,
     pub(crate) pending_start_scripts: Vec<NodeID>,
     pub(crate) pending_start_flags: Vec<Option<NodeID>>,
@@ -30,6 +33,7 @@ impl ScriptRuntimeState {
     pub(crate) fn new() -> Self {
         Self {
             active_script_stack: Vec::new(),
+            active_callback_context: None,
             last_node_lookup: None,
             pending_start_scripts: Vec::new(),
             pending_start_flags: Vec::new(),
@@ -176,6 +180,12 @@ impl SignalRuntimeState {
             queued_ui_signals: Vec::new(),
         }
     }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct ScriptCallbackContext {
+    pub(crate) resource_api: *const RuntimeResourceApi,
+    pub(crate) input: *const InputSnapshot,
 }
 
 pub(crate) struct NodeIndexState {

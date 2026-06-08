@@ -90,7 +90,7 @@ where
     F: FnOnce(&mut Runtime) -> V,
 {
     let instance_index = runtime.scripts.instance_index_for_id(id)?;
-    runtime.push_active_script(instance_index, id);
+    runtime.push_active_script_with_context(instance_index, id, runtime.script_callback_context());
     let value = f(runtime);
     runtime.pop_active_script(instance_index, id);
     Some(value)
@@ -102,8 +102,17 @@ impl Runtime {
     /// `with_state(ctx.id, ..)` and node self-lookups read only the stack top.
     /// Nested script calls push another frame and pop back to the parent frame
     /// when the callback returns.
+    /// Push active script frame and cache callback context for nested script calls.
     #[inline(always)]
-    pub(crate) fn push_active_script(&mut self, instance_index: usize, id: NodeID) {
+    pub(crate) fn push_active_script_with_context(
+        &mut self,
+        instance_index: usize,
+        id: NodeID,
+        context: crate::runtime::ScriptCallbackContext,
+    ) {
+        if self.script_runtime.active_script_stack.is_empty() {
+            self.script_runtime.active_callback_context = Some(context);
+        }
         self.script_runtime
             .active_script_stack
             .push((instance_index, id));
@@ -113,6 +122,24 @@ impl Runtime {
     pub(crate) fn pop_active_script(&mut self, instance_index: usize, id: NodeID) {
         let popped = self.script_runtime.active_script_stack.pop();
         debug_assert_eq!(popped, Some((instance_index, id)));
+        if self.script_runtime.active_script_stack.is_empty() {
+            self.script_runtime.active_callback_context = None;
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) fn current_script_callback_context(
+        &self,
+    ) -> Option<crate::runtime::ScriptCallbackContext> {
+        self.script_runtime.active_callback_context
+    }
+
+    #[inline(always)]
+    pub(crate) fn script_callback_context(&self) -> crate::runtime::ScriptCallbackContext {
+        crate::runtime::ScriptCallbackContext {
+            resource_api: self.resource_api.as_ref() as *const crate::RuntimeResourceApi,
+            input: std::ptr::addr_of!(self.input),
+        }
     }
 
     #[inline(always)]
@@ -173,7 +200,7 @@ impl Runtime {
             .get(&id)
             .cloned();
         let _dlc_self_context = push_dlc_self_context(mount.as_deref());
-        self.push_active_script(instance_index, id);
+        self.push_active_script_with_context(instance_index, id, self.script_callback_context());
         let mut run = RuntimeWindow::new(self);
         let mut sctx = ScriptContext {
             run: &mut run,
@@ -218,7 +245,7 @@ impl Runtime {
             .get(&id)
             .cloned();
         let _dlc_self_context = push_dlc_self_context(mount.as_deref());
-        self.push_active_script(instance_index, id);
+        self.push_active_script_with_context(instance_index, id, self.script_callback_context());
         let mut run = RuntimeWindow::new(self);
         let mut sctx = ScriptContext {
             run: &mut run,
@@ -262,7 +289,7 @@ impl Runtime {
             .script_instance_dlc_mounts
             .get(&id)
             .cloned();
-        self.push_active_script(instance_index, id);
+        self.push_active_script_with_context(instance_index, id, self.script_callback_context());
         let _dlc_self_context = push_dlc_self_context(mount.as_deref());
         let mut run = RuntimeWindow::new(self);
         let mut sctx = ScriptContext {
@@ -301,7 +328,7 @@ impl Runtime {
             .script_instance_dlc_mounts
             .get(&id)
             .cloned();
-        self.push_active_script(instance_index, id);
+        self.push_active_script_with_context(instance_index, id, self.script_callback_context());
         let _dlc_self_context = push_dlc_self_context(mount.as_deref());
         let mut run = RuntimeWindow::new(self);
         let mut sctx = ScriptContext {
@@ -429,15 +456,24 @@ impl ScriptAPI for Runtime {
             }
             None => return Variant::Null,
         };
-        let resource_api = self.resource_api.clone();
+        let active_context = self.current_script_callback_context();
+        let resource_api = active_context.is_none().then(|| self.resource_api.clone());
+        let context = active_context.unwrap_or_else(|| {
+            let resource_api = resource_api.as_ref().expect("resource api present");
+            crate::runtime::ScriptCallbackContext {
+                resource_api: resource_api.as_ref() as *const crate::RuntimeResourceApi,
+                input: std::ptr::addr_of!(self.input),
+            }
+        });
+        // SAFETY: Context pointers are set only while a script callback is on
+        // the stack, or from the fallback Arc/input owned by this runtime.
         let res: ResourceWindow<'_, crate::RuntimeResourceApi> =
-            ResourceWindow::new(resource_api.as_ref());
-        let input_ptr = std::ptr::addr_of!(self.input);
+            unsafe { ResourceWindow::new(&*context.resource_api) };
         // SAFETY: During callback dispatch, input is treated as immutable runtime state.
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
         let ipt: InputWindow<'_, perro_input_api::InputSnapshot> =
-            unsafe { InputWindow::new(&*input_ptr) };
-        self.push_active_script(instance_index, script_id);
+            unsafe { InputWindow::new(&*context.input) };
+        self.push_active_script_with_context(instance_index, script_id, context);
         let mount = self
             .script_runtime
             .script_instance_dlc_mounts
@@ -460,15 +496,19 @@ impl ScriptAPI for Runtime {
 #[cfg(test)]
 mod active_script_stack_tests {
     use super::*;
+    use perro_runtime_api::sub_apis::{ScriptAPI, SignalAPI};
+    use perro_scripting::{ScriptBehavior, ScriptFlags, ScriptLifecycle};
+    use std::any::Any;
 
     #[test]
     fn nested_active_script_pop_restores_parent_frame() {
         let mut runtime = Runtime::new();
         let parent = NodeID::new(1);
         let child = NodeID::new(2);
+        let context = runtime.script_callback_context();
 
-        runtime.push_active_script(10, parent);
-        runtime.push_active_script(20, child);
+        runtime.push_active_script_with_context(10, parent, context);
+        runtime.push_active_script_with_context(20, child, context);
         runtime.pop_active_script(20, child);
 
         assert_eq!(
@@ -478,5 +518,193 @@ mod active_script_stack_tests {
 
         runtime.pop_active_script(10, parent);
         assert!(runtime.script_runtime.active_script_stack.is_empty());
+    }
+
+    #[test]
+    fn active_callback_context_lives_until_outer_pop() {
+        let mut runtime = Runtime::new();
+        let parent = NodeID::new(1);
+        let child = NodeID::new(2);
+        let context = runtime.script_callback_context();
+
+        runtime.push_active_script_with_context(10, parent, context);
+        runtime.push_active_script_with_context(20, child, context);
+        runtime.pop_active_script(20, child);
+
+        assert!(runtime.current_script_callback_context().is_some());
+
+        runtime.pop_active_script(10, parent);
+        assert!(runtime.current_script_callback_context().is_none());
+    }
+
+    #[derive(Debug, Default)]
+    struct ChainState {
+        value: i64,
+    }
+
+    #[derive(Clone, Copy)]
+    struct ChainScript {
+        role: ChainRole,
+        a: NodeID,
+        b: NodeID,
+        c: NodeID,
+        d: NodeID,
+        signal: perro_ids::SignalID,
+    }
+
+    #[derive(Clone, Copy)]
+    enum ChainRole {
+        A,
+        B,
+        C,
+        D,
+    }
+
+    const GO: ScriptMemberID = ScriptMemberID(1);
+    const PING: ScriptMemberID = ScriptMemberID(2);
+
+    impl ScriptLifecycle<crate::RuntimeScriptApi> for ChainScript {}
+
+    impl ScriptBehavior<crate::RuntimeScriptApi> for ChainScript {
+        fn script_flags(&self) -> ScriptFlags {
+            ScriptFlags::new(ScriptFlags::NONE)
+        }
+
+        fn create_state(&self) -> Box<dyn Any> {
+            Box::<ChainState>::default()
+        }
+
+        fn get_var(&self, _state: &dyn Any, _var: ScriptMemberID) -> Variant {
+            Variant::Null
+        }
+
+        fn set_var(&self, _state: &mut dyn Any, _var: ScriptMemberID, _value: Variant) {}
+
+        fn call_method(
+            &self,
+            method: ScriptMemberID,
+            ctx: &mut ScriptContext<'_, crate::RuntimeScriptApi>,
+            _params: &[Variant],
+        ) -> Variant {
+            match (self.role, method) {
+                (ChainRole::A, GO) => {
+                    ctx.run
+                        .Scripts()
+                        .with_state_mut::<ChainState, _, _>(ctx.id, |state| {
+                            state.value = 1;
+                        });
+                    let _ = ctx.run.Scripts().call_method(self.b, GO, &[]);
+                    assert_eq!(
+                        ctx.run
+                            .Scripts()
+                            .with_state::<ChainState, _, _>(self.b, |state| state.value),
+                        10
+                    );
+                    assert_eq!(
+                        ctx.run
+                            .Scripts()
+                            .with_state::<ChainState, _, _>(self.c, |state| state.value),
+                        50
+                    );
+                    assert_eq!(
+                        ctx.run
+                            .Scripts()
+                            .with_state::<ChainState, _, _>(self.d, |state| state.value),
+                        100
+                    );
+                }
+                (ChainRole::B, GO) => {
+                    assert_eq!(
+                        ctx.run
+                            .Scripts()
+                            .with_state::<ChainState, _, _>(self.a, |state| state.value),
+                        1
+                    );
+                    ctx.run
+                        .Scripts()
+                        .with_state_mut::<ChainState, _, _>(ctx.id, |state| {
+                            state.value = 10;
+                        });
+                    assert_eq!(ctx.run.Signals().signal_emit(self.signal, &[]), 1);
+                    let _ = ctx.run.Scripts().call_method(self.c, GO, &[]);
+                }
+                (ChainRole::C, GO) => {
+                    assert_eq!(
+                        ctx.run
+                            .Scripts()
+                            .with_state::<ChainState, _, _>(self.b, |state| state.value),
+                        10
+                    );
+                    assert_eq!(
+                        ctx.run
+                            .Scripts()
+                            .with_state::<ChainState, _, _>(self.d, |state| state.value),
+                        100
+                    );
+                    ctx.run
+                        .Scripts()
+                        .with_state_mut::<ChainState, _, _>(ctx.id, |state| {
+                            state.value = 50;
+                        });
+                }
+                (ChainRole::D, PING) => {
+                    assert_eq!(
+                        ctx.run
+                            .Scripts()
+                            .with_state::<ChainState, _, _>(self.b, |state| state.value),
+                        10
+                    );
+                    ctx.run
+                        .Scripts()
+                        .with_state_mut::<ChainState, _, _>(ctx.id, |state| {
+                            state.value = 100;
+                        });
+                }
+                _ => {}
+            }
+            Variant::Null
+        }
+    }
+
+    #[test]
+    fn deep_script_chain_reads_latest_cross_script_state() {
+        let mut runtime = Runtime::new();
+        let a = NodeID::new(1);
+        let b = NodeID::new(2);
+        let c = NodeID::new(3);
+        let d = NodeID::new(4);
+        let signal = perro_ids::SignalID::from_u64(42);
+
+        for (id, role) in [
+            (a, ChainRole::A),
+            (b, ChainRole::B),
+            (c, ChainRole::C),
+            (d, ChainRole::D),
+        ] {
+            runtime.scripts.insert(
+                id,
+                Arc::new(ChainScript {
+                    role,
+                    a,
+                    b,
+                    c,
+                    d,
+                    signal,
+                }),
+                Box::<ChainState>::default(),
+            );
+        }
+        assert!(SignalAPI::signal_connect(
+            &mut runtime,
+            d,
+            signal,
+            PING,
+            &[]
+        ));
+
+        let out = ScriptAPI::call_method(&mut runtime, a, GO, &[]);
+        assert_eq!(out, Variant::Null);
+        assert!(runtime.script_runtime.active_script_stack.is_empty());
+        assert!(runtime.current_script_callback_context().is_none());
     }
 }

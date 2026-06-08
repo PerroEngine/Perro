@@ -93,15 +93,24 @@ impl SignalAPI for Runtime {
                 return 0;
             };
             let behavior = Arc::clone(&instance.behavior);
-            let resource_api = self.resource_api.clone();
+            let active_context = self.current_script_callback_context();
+            let resource_api = active_context.is_none().then(|| self.resource_api.clone());
+            let context = active_context.unwrap_or_else(|| {
+                let resource_api = resource_api.as_ref().expect("resource api present");
+                crate::runtime::ScriptCallbackContext {
+                    resource_api: resource_api.as_ref() as *const crate::RuntimeResourceApi,
+                    input: std::ptr::addr_of!(self.input),
+                }
+            });
+            // SAFETY: Context pointers are set only while a script callback is on
+            // the stack, or from the fallback Arc/input owned by this runtime.
             let res: ResourceWindow<'_, crate::RuntimeResourceApi> =
-                ResourceWindow::new(resource_api.as_ref());
-            let input_ptr = std::ptr::addr_of!(self.input);
+                unsafe { ResourceWindow::new(&*context.resource_api) };
             // SAFETY: During callback dispatch, input is treated as immutable runtime state.
             // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
             let ipt: InputWindow<'_, perro_input_api::InputSnapshot> =
-                unsafe { InputWindow::new(&*input_ptr) };
-            self.push_active_script(instance_index, connection.script_id);
+                unsafe { InputWindow::new(&*context.input) };
+            self.push_active_script_with_context(instance_index, connection.script_id, context);
             let mut param_scratch = std::mem::take(&mut self.signal_runtime.param_scratch);
             {
                 let mut run = RuntimeWindow::new(self);
@@ -127,14 +136,23 @@ impl SignalAPI for Runtime {
         self.signal_runtime
             .registry
             .copy_signal_connections(signal, &mut pending);
-        let resource_api = self.resource_api.clone();
+        let active_context = self.current_script_callback_context();
+        let resource_api = active_context.is_none().then(|| self.resource_api.clone());
+        let context = active_context.unwrap_or_else(|| {
+            let resource_api = resource_api.as_ref().expect("resource api present");
+            crate::runtime::ScriptCallbackContext {
+                resource_api: resource_api.as_ref() as *const crate::RuntimeResourceApi,
+                input: std::ptr::addr_of!(self.input),
+            }
+        });
+        // SAFETY: Context pointers are set only while a script callback is on
+        // the stack, or from the fallback Arc/input owned by this runtime.
         let res: ResourceWindow<'_, crate::RuntimeResourceApi> =
-            ResourceWindow::new(resource_api.as_ref());
-        let input_ptr = std::ptr::addr_of!(self.input);
+            unsafe { ResourceWindow::new(&*context.resource_api) };
         // SAFETY: During callback dispatch, input is treated as immutable runtime state.
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
         let ipt: InputWindow<'_, perro_input_api::InputSnapshot> =
-            unsafe { InputWindow::new(&*input_ptr) };
+            unsafe { InputWindow::new(&*context.input) };
         let mut param_scratch = std::mem::take(&mut self.signal_runtime.param_scratch);
 
         for connection in pending.iter() {
@@ -149,7 +167,7 @@ impl SignalAPI for Runtime {
                 Some(instance) => Arc::clone(&instance.behavior),
                 None => continue,
             };
-            self.push_active_script(instance_index, connection.script_id);
+            self.push_active_script_with_context(instance_index, connection.script_id, context);
             {
                 let mut run = RuntimeWindow::new(self);
                 let call_params =

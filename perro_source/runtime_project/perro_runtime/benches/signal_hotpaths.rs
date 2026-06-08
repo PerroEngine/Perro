@@ -1,6 +1,7 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use perro_ids::{NodeID, ScriptMemberID, SignalID};
 use perro_runtime::Runtime;
+use perro_runtime::api::scripts::{bench_insert_state_script, bench_with_active_script};
 use perro_runtime_api::sub_apis::SignalAPI;
 use perro_variant::Variant;
 
@@ -143,6 +144,50 @@ fn bench_signal_emit_release_matrix(c: &mut Criterion) {
                 calls += SignalAPI::signal_emit(&mut runtime, signal, &[]);
             }
             black_box(calls)
+        })
+    });
+
+    group.bench_function("active_hit_1_no_params", |b| {
+        let mut runtime = Runtime::new();
+        let owner = NodeID::new(1);
+        let target = NodeID::new(2);
+        bench_insert_state_script(&mut runtime, owner);
+        perro_runtime::api::signals::bench_insert_noop_signal_script(&mut runtime, target);
+        let signal = SignalID::from_string("active_single_no_params");
+        assert!(SignalAPI::signal_connect(
+            &mut runtime,
+            target,
+            signal,
+            method,
+            &[],
+        ));
+        b.iter(|| {
+            black_box(bench_with_active_script(&mut runtime, owner, |runtime| {
+                SignalAPI::signal_emit(runtime, signal, &[])
+            }))
+        })
+    });
+
+    group.bench_function("active_hit_4_emit_plus_connect_params", |b| {
+        let mut runtime = Runtime::new();
+        let owner = NodeID::new(1);
+        bench_insert_state_script(&mut runtime, owner);
+        let signal = SignalID::from_string("active_four_emit_connect_params");
+        for i in 0..4 {
+            let id = NodeID::new(i + 2);
+            perro_runtime::api::signals::bench_insert_noop_signal_script(&mut runtime, id);
+            assert!(SignalAPI::signal_connect(
+                &mut runtime,
+                id,
+                signal,
+                method,
+                &connect_params,
+            ));
+        }
+        b.iter(|| {
+            black_box(bench_with_active_script(&mut runtime, owner, |runtime| {
+                SignalAPI::signal_emit(runtime, signal, &emit_params)
+            }))
         })
     });
 

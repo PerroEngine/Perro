@@ -43,6 +43,7 @@ pub use scene_loader::{
     bench_prepare_and_merge_scene, bench_prepare_merge_extract_scene, bench_prepare_scene,
 };
 pub(crate) use state::CollisionDebugState;
+pub(crate) use state::ScriptCallbackContext;
 use state::{
     DirtyState, InternalUpdateState, NodeApiScratchState, NodeIndexState, Render2DState,
     Render3DState, RenderState, RenderUiState, ScriptRuntimeState, ScriptSchedules,
