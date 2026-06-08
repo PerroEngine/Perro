@@ -119,6 +119,9 @@ impl Runtime {
         });
 
         if flags.has_init() {
+            let Some(instance_index) = self.scripts.instance_index_for_id(node) else {
+                return Ok(());
+            };
             let resource_api = self.resource_api.clone();
             let res: ResourceWindow<'_, crate::RuntimeResourceApi> =
                 ResourceWindow::new(resource_api.as_ref());
@@ -133,6 +136,7 @@ impl Runtime {
                 .get(&node)
                 .cloned();
             let _dlc_self_context = push_dlc_self_context(mount.as_deref());
+            self.push_active_script(instance_index, node);
             let mut run = RuntimeWindow::new(self);
             let mut sctx = ScriptContext {
                 run: &mut run,
@@ -141,6 +145,7 @@ impl Runtime {
                 id: node,
             };
             behavior.on_init(&mut sctx);
+            self.pop_active_script(instance_index, node);
         }
         if flags.has_all_init() {
             self.queue_start_script(node);

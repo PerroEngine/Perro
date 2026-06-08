@@ -101,9 +101,7 @@ impl SignalAPI for Runtime {
             // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
             let ipt: InputWindow<'_, perro_input_api::InputSnapshot> =
                 unsafe { InputWindow::new(&*input_ptr) };
-            self.script_runtime
-                .active_script_stack
-                .push((instance_index, connection.script_id));
+            self.push_active_script(instance_index, connection.script_id);
             let mut param_scratch = std::mem::take(&mut self.signal_runtime.param_scratch);
             {
                 let mut run = RuntimeWindow::new(self);
@@ -119,7 +117,7 @@ impl SignalAPI for Runtime {
             }
             param_scratch.clear();
             self.signal_runtime.param_scratch = param_scratch;
-            let _ = self.script_runtime.active_script_stack.pop();
+            self.pop_active_script(instance_index, connection.script_id);
             calls = 1;
             return calls;
         }
@@ -151,9 +149,7 @@ impl SignalAPI for Runtime {
                 Some(instance) => Arc::clone(&instance.behavior),
                 None => continue,
             };
-            self.script_runtime
-                .active_script_stack
-                .push((instance_index, connection.script_id));
+            self.push_active_script(instance_index, connection.script_id);
             {
                 let mut run = RuntimeWindow::new(self);
                 let call_params =
@@ -167,7 +163,7 @@ impl SignalAPI for Runtime {
                 let _ = behavior.call_method(connection.method, &mut sctx, call_params);
             }
             param_scratch.clear();
-            let _ = self.script_runtime.active_script_stack.pop();
+            self.pop_active_script(instance_index, connection.script_id);
             calls += 1;
         }
 

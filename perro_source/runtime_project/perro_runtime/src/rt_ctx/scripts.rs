@@ -84,7 +84,37 @@ pub fn bench_insert_state_script(runtime: &mut Runtime, id: NodeID) {
     );
 }
 
+#[cfg(feature = "bench")]
+pub fn bench_with_active_script<V, F>(runtime: &mut Runtime, id: NodeID, f: F) -> Option<V>
+where
+    F: FnOnce(&mut Runtime) -> V,
+{
+    let instance_index = runtime.scripts.instance_index_for_id(id)?;
+    runtime.push_active_script(instance_index, id);
+    let value = f(runtime);
+    runtime.pop_active_script(instance_index, id);
+    Some(value)
+}
+
 impl Runtime {
+    /// Push active script frame for recursive script/runtime calls.
+    ///
+    /// `with_state(ctx.id, ..)` and node self-lookups read only the stack top.
+    /// Nested script calls push another frame and pop back to the parent frame
+    /// when the callback returns.
+    #[inline(always)]
+    pub(crate) fn push_active_script(&mut self, instance_index: usize, id: NodeID) {
+        self.script_runtime
+            .active_script_stack
+            .push((instance_index, id));
+    }
+
+    #[inline(always)]
+    pub(crate) fn pop_active_script(&mut self, instance_index: usize, id: NodeID) {
+        let popped = self.script_runtime.active_script_stack.pop();
+        debug_assert_eq!(popped, Some((instance_index, id)));
+    }
+
     #[inline(always)]
     pub(crate) fn queue_start_script(&mut self, id: NodeID) {
         let slot = id.index() as usize;
@@ -112,11 +142,18 @@ impl Runtime {
 
     #[inline(always)]
     pub(crate) fn call_start_script(&mut self, id: NodeID) {
-        let (behavior, flags) = match self.scripts.get_instance(id) {
-            Some(instance) => (
-                Arc::clone(&instance.behavior),
-                instance.behavior.script_flags(),
-            ),
+        let (instance_index, behavior, flags) = match self.scripts.instance_index_for_id(id) {
+            Some(instance_index) => match self
+                .scripts
+                .get_instance_scheduled_indexed(instance_index, id)
+            {
+                Some(instance) => (
+                    instance_index,
+                    Arc::clone(&instance.behavior),
+                    instance.behavior.script_flags(),
+                ),
+                None => return,
+            },
             None => return,
         };
         if !flags.has_all_init() {
@@ -136,6 +173,7 @@ impl Runtime {
             .get(&id)
             .cloned();
         let _dlc_self_context = push_dlc_self_context(mount.as_deref());
+        self.push_active_script(instance_index, id);
         let mut run = RuntimeWindow::new(self);
         let mut sctx = ScriptContext {
             run: &mut run,
@@ -144,15 +182,23 @@ impl Runtime {
             id,
         };
         behavior.on_all_init(&mut sctx);
+        self.pop_active_script(instance_index, id);
     }
 
     #[inline(always)]
     pub(crate) fn call_removal_script(&mut self, id: NodeID) {
-        let (behavior, flags) = match self.scripts.get_instance(id) {
-            Some(instance) => (
-                Arc::clone(&instance.behavior),
-                instance.behavior.script_flags(),
-            ),
+        let (instance_index, behavior, flags) = match self.scripts.instance_index_for_id(id) {
+            Some(instance_index) => match self
+                .scripts
+                .get_instance_scheduled_indexed(instance_index, id)
+            {
+                Some(instance) => (
+                    instance_index,
+                    Arc::clone(&instance.behavior),
+                    instance.behavior.script_flags(),
+                ),
+                None => return,
+            },
             None => return,
         };
         if !flags.has_removal() {
@@ -172,6 +218,7 @@ impl Runtime {
             .get(&id)
             .cloned();
         let _dlc_self_context = push_dlc_self_context(mount.as_deref());
+        self.push_active_script(instance_index, id);
         let mut run = RuntimeWindow::new(self);
         let mut sctx = ScriptContext {
             run: &mut run,
@@ -180,6 +227,7 @@ impl Runtime {
             id,
         };
         behavior.on_removal(&mut sctx);
+        self.pop_active_script(instance_index, id);
     }
 
     #[inline(always)]
@@ -214,9 +262,7 @@ impl Runtime {
             .script_instance_dlc_mounts
             .get(&id)
             .cloned();
-        self.script_runtime
-            .active_script_stack
-            .push((instance_index, id));
+        self.push_active_script(instance_index, id);
         let _dlc_self_context = push_dlc_self_context(mount.as_deref());
         let mut run = RuntimeWindow::new(self);
         let mut sctx = ScriptContext {
@@ -226,7 +272,7 @@ impl Runtime {
             id,
         };
         behavior.on_update(&mut sctx);
-        let _ = self.script_runtime.active_script_stack.pop();
+        self.pop_active_script(instance_index, id);
     }
 
     #[inline(always)]
@@ -255,9 +301,7 @@ impl Runtime {
             .script_instance_dlc_mounts
             .get(&id)
             .cloned();
-        self.script_runtime
-            .active_script_stack
-            .push((instance_index, id));
+        self.push_active_script(instance_index, id);
         let _dlc_self_context = push_dlc_self_context(mount.as_deref());
         let mut run = RuntimeWindow::new(self);
         let mut sctx = ScriptContext {
@@ -267,7 +311,7 @@ impl Runtime {
             id,
         };
         behavior.on_fixed_update(&mut sctx);
-        let _ = self.script_runtime.active_script_stack.pop();
+        self.pop_active_script(instance_index, id);
     }
 }
 
@@ -393,9 +437,7 @@ impl ScriptAPI for Runtime {
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
         let ipt: InputWindow<'_, perro_input_api::InputSnapshot> =
             unsafe { InputWindow::new(&*input_ptr) };
-        self.script_runtime
-            .active_script_stack
-            .push((instance_index, script_id));
+        self.push_active_script(instance_index, script_id);
         let mount = self
             .script_runtime
             .script_instance_dlc_mounts
@@ -410,7 +452,31 @@ impl ScriptAPI for Runtime {
             id: script_id,
         };
         let out = behavior.call_method(method, &mut sctx, params);
-        let _ = self.script_runtime.active_script_stack.pop();
+        self.pop_active_script(instance_index, script_id);
         out
+    }
+}
+
+#[cfg(test)]
+mod active_script_stack_tests {
+    use super::*;
+
+    #[test]
+    fn nested_active_script_pop_restores_parent_frame() {
+        let mut runtime = Runtime::new();
+        let parent = NodeID::new(1);
+        let child = NodeID::new(2);
+
+        runtime.push_active_script(10, parent);
+        runtime.push_active_script(20, child);
+        runtime.pop_active_script(20, child);
+
+        assert_eq!(
+            runtime.script_runtime.active_script_stack.last().copied(),
+            Some((10, parent))
+        );
+
+        runtime.pop_active_script(10, parent);
+        assert!(runtime.script_runtime.active_script_stack.is_empty());
     }
 }

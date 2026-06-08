@@ -1,6 +1,12 @@
 use perro_ids::NodeID;
 use perro_nodes::SceneNode;
 
+/// Generational node store used by runtime hot paths.
+///
+/// Slot 0 is always empty so `NodeID::nil()` and raw index 0 never alias a real
+/// node. Removing a node bumps its generation and adds the slot to the free
+/// list. Every public lookup checks both slot bounds and generation before it
+/// returns a node reference.
 pub struct NodeArena {
     nodes: Vec<Option<SceneNode>>,
     generations: Vec<u32>,
@@ -49,7 +55,7 @@ impl NodeArena {
         self.generations.reserve(additional);
     }
 
-    /// Insert a node, returns NodeID with index and generation
+    /// Insert a node and return its current slot/generation id.
     pub fn insert(&mut self, node: SceneNode) -> NodeID {
         // Reuse a previously freed slot in O(1).
         if let Some(index) = self.free_indices.pop() {
@@ -67,41 +73,21 @@ impl NodeArena {
         NodeID::from_parts(index as u32, 0)
     }
 
-    /// Get a node by ID, returns None if generation doesn't match
+    /// Get a node by id.
     pub fn get(&self, id: NodeID) -> Option<&SceneNode> {
-        if id.is_nil()
-            || id.index() == 0
-            || id.index() >= self.nodes.len() as u32
-            || self.generations[id.index() as usize] != id.generation()
-        {
-            return None;
-        }
-        self.nodes[id.index() as usize].as_ref()
+        let index = self.valid_slot(id)?;
+        self.nodes[index].as_ref()
     }
 
-    /// Get mutable reference to a node
+    /// Get mutable node ref by id.
     pub fn get_mut(&mut self, id: NodeID) -> Option<&mut SceneNode> {
-        if id.is_nil()
-            || id.index() == 0
-            || id.index() >= self.nodes.len() as u32
-            || self.generations[id.index() as usize] != id.generation()
-        {
-            return None;
-        }
-        self.nodes[id.index() as usize].as_mut()
+        let index = self.valid_slot(id)?;
+        self.nodes[index].as_mut()
     }
 
-    /// Remove a node, bumping the generation counter
+    /// Remove a node and invalidate old ids for that slot.
     pub fn remove(&mut self, id: NodeID) -> Option<SceneNode> {
-        if id.is_nil()
-            || id.index() == 0
-            || id.index() >= self.nodes.len() as u32
-            || self.generations[id.index() as usize] != id.generation()
-        {
-            return None;
-        }
-
-        let index = id.index() as usize;
+        let index = self.valid_slot(id)?;
         self.generations[index] = self.generations[index].wrapping_add(1);
         let removed = self.nodes[index].take();
         if removed.is_some() {
@@ -113,11 +99,8 @@ impl NodeArena {
 
     /// Check if a NodeID is still valid
     pub fn contains(&self, id: NodeID) -> bool {
-        !id.is_nil()
-            && id.index() != 0
-            && id.index() < self.nodes.len() as u32
-            && self.generations[id.index() as usize] == id.generation()
-            && self.nodes[id.index() as usize].is_some()
+        self.valid_slot(id)
+            .is_some_and(|index| self.nodes[index].is_some())
     }
 
     /// Iterator over all valid nodes
@@ -207,5 +190,18 @@ impl NodeArena {
             return None;
         }
         self.nodes[index].as_mut()
+    }
+
+    #[inline]
+    fn valid_slot(&self, id: NodeID) -> Option<usize> {
+        let index = id.index() as usize;
+        if id.is_nil()
+            || index == 0
+            || index >= self.nodes.len()
+            || self.generations[index] != id.generation()
+        {
+            return None;
+        }
+        Some(index)
     }
 }

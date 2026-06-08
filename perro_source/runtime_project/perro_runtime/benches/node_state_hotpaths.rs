@@ -2,7 +2,9 @@ use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_ma
 use perro_ids::{NodeID, ScriptMemberID, TagID};
 use perro_nodes::{Node2D, Node3D};
 use perro_runtime::Runtime;
-use perro_runtime::api::scripts::{BenchScriptState, bench_insert_state_script};
+use perro_runtime::api::scripts::{
+    BenchScriptState, bench_insert_state_script, bench_with_active_script,
+};
 use perro_runtime_api::sub_apis::{NodeAPI, NodeCreationTemplate, ScriptAPI};
 use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
 use perro_variant::Variant;
@@ -197,6 +199,53 @@ fn bench_node_api(c: &mut Criterion) {
         );
 
         group.bench_with_input(
+            BenchmarkId::new("with_node_read", count),
+            &count,
+            |b, &count| {
+                let (mut runtime, ids) = build_chain_3d(count);
+                b.iter(|| {
+                    let mut sum = 0.0f32;
+                    for &id in &ids {
+                        sum += NodeAPI::with_node::<Node3D, _>(&mut runtime, id, |node| {
+                            node.transform.position.x
+                        });
+                    }
+                    black_box(sum)
+                })
+            },
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("with_node_mut_noop", count),
+            &count,
+            |b, &count| {
+                let (mut runtime, ids) = build_chain_3d(count);
+                b.iter(|| {
+                    for &id in &ids {
+                        let _ = NodeAPI::with_node_mut::<Node3D, _, _>(&mut runtime, id, |_| {});
+                    }
+                    black_box(ids.len())
+                })
+            },
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("with_node_mut_transform", count),
+            &count,
+            |b, &count| {
+                let (mut runtime, ids) = build_chain_3d(count);
+                b.iter(|| {
+                    for (i, &id) in ids.iter().enumerate() {
+                        let _ = NodeAPI::with_node_mut::<Node3D, _, _>(&mut runtime, id, |node| {
+                            node.transform.position.x += (i % 3) as f32 * 0.001;
+                        });
+                    }
+                    black_box(runtime.dirty_node_count())
+                })
+            },
+        );
+
+        group.bench_with_input(
             BenchmarkId::new("with_base_node_mut_transform", count),
             &count,
             |b, &count| {
@@ -315,6 +364,68 @@ fn bench_script_state(c: &mut Criterion) {
                                 state.pos[0] += 0.25;
                             },
                         );
+                    }
+                    black_box(ids.len())
+                })
+            },
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("with_state_active_read", count),
+            &count,
+            |b, &count| {
+                let mut runtime = Runtime::new();
+                let ids: Vec<_> = (0..count)
+                    .map(|i| {
+                        let id = NodeID::new((i + 1) as u32);
+                        bench_insert_state_script(&mut runtime, id);
+                        id
+                    })
+                    .collect();
+                b.iter(|| {
+                    let mut sum = 0u64;
+                    for &id in &ids {
+                        sum = sum.wrapping_add(
+                            bench_with_active_script(&mut runtime, id, |runtime| {
+                                ScriptAPI::with_state::<BenchScriptState, _, _>(
+                                    runtime,
+                                    id,
+                                    |state| state.frame,
+                                )
+                            })
+                            .unwrap_or_default(),
+                        );
+                    }
+                    black_box(sum)
+                })
+            },
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("with_state_active_mut", count),
+            &count,
+            |b, &count| {
+                let mut runtime = Runtime::new();
+                let ids: Vec<_> = (0..count)
+                    .map(|i| {
+                        let id = NodeID::new((i + 1) as u32);
+                        bench_insert_state_script(&mut runtime, id);
+                        id
+                    })
+                    .collect();
+                b.iter(|| {
+                    for &id in &ids {
+                        let _ = bench_with_active_script(&mut runtime, id, |runtime| {
+                            ScriptAPI::with_state_mut::<BenchScriptState, _, _>(
+                                runtime,
+                                id,
+                                |state| {
+                                    state.frame = state.frame.wrapping_add(1);
+                                    state.hp += 1;
+                                    state.pos[0] += 0.25;
+                                },
+                            )
+                        });
                     }
                     black_box(ids.len())
                 })

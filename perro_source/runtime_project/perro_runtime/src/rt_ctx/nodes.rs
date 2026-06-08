@@ -310,19 +310,6 @@ impl NodeAPI for Runtime {
         }
 
         let slot = cached_slot_for(self, id);
-        if let Some((index, generation)) = slot {
-            let node = self.nodes.slot_get_checked(index, generation)?;
-            if !node.node_type().is_a(T::BASE_NODE_TYPE) {
-                return None;
-            }
-        } else if let Some(node) = self.nodes.get(id) {
-            if !node.node_type().is_a(T::BASE_NODE_TYPE) {
-                return None;
-            }
-        } else {
-            return None;
-        }
-
         let (
             value,
             transform_changed,
@@ -340,6 +327,9 @@ impl NodeAPI for Runtime {
             } else {
                 self.nodes.get_mut(id)?
             };
+            if !node.node_type().is_a(T::BASE_NODE_TYPE) {
+                return None;
+            }
             let before_2d = node.with_base_ref::<Node2D, _>(|base| base.transform);
             let before_3d = node.with_base_ref::<Node3D, _>(|base| base.transform);
             let before_vis_2d = node.with_base_ref::<Node2D, _>(|base| base.visible);

@@ -44,27 +44,15 @@ pub(super) fn cached_slot_for(
 
     if let Some((cached_id, cached_index, cached_generation)) =
         runtime.script_runtime.last_node_lookup
-        && cached_id == id
-        && runtime
-            .nodes
-            .slot_get_checked(cached_index, cached_generation)
-            .is_some()
     {
-        return Some((cached_index, cached_generation));
+        if cached_id == id {
+            return Some((cached_index, cached_generation));
+        }
     }
 
     let resolved = (id.index() as usize, id.generation());
-    if runtime
-        .nodes
-        .slot_get_checked(resolved.0, resolved.1)
-        .is_some()
-    {
-        runtime.script_runtime.last_node_lookup = Some((id, resolved.0, resolved.1));
-        return Some(resolved);
-    }
-
-    runtime.script_runtime.last_node_lookup = None;
-    None
+    runtime.script_runtime.last_node_lookup = Some((id, resolved.0, resolved.1));
+    Some(resolved)
 }
 
 impl Runtime {

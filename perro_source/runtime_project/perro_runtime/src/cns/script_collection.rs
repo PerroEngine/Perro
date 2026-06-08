@@ -5,10 +5,27 @@ use std::sync::Arc;
 
 pub(crate) struct ScriptInstance {
     pub(crate) behavior: Arc<dyn ScriptBehavior<crate::runtime::RuntimeScriptApi>>,
+    /// Cached concrete state type.
+    ///
+    /// `with_state*` compares this to `TypeId::of::<T>()` before using the
+    /// unchecked cast helpers. This keeps hot script state access to one type
+    /// id compare instead of `Any` downcast dispatch.
     pub(crate) state_type: TypeId,
     pub(crate) state: Box<dyn Any>,
 }
 
+/// Dense script instance store plus side indexes for hot runtime lookups.
+///
+/// Layout:
+/// - `instances[i]` owns behavior + state.
+/// - `ids[i]` owns the node id for the same instance index.
+/// - `index[node_id.index()]` maps a node slot to `i`, then full `NodeID`
+///   equality rejects stale generations.
+/// - `update` and `fixed` store instance indexes. Reverse arrays store each
+///   schedule position, so enable/disable/remove stay O(1) via swap-remove.
+///
+/// Removing an instance may move the last instance into the removed slot. All
+/// side indexes must be updated with the moved instance index in the same step.
 pub(crate) struct ScriptCollection {
     instances: Vec<ScriptInstance>,
     ids: Vec<NodeID>,
