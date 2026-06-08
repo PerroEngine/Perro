@@ -384,18 +384,17 @@ fn bench_script_state(c: &mut Criterion) {
                     .collect();
                 b.iter(|| {
                     let mut sum = 0u64;
-                    for &id in &ids {
-                        sum = sum.wrapping_add(
-                            bench_with_active_script(&mut runtime, id, |runtime| {
-                                ScriptAPI::with_state::<BenchScriptState, _, _>(
+                    let owner = ids[0];
+                    let _ = bench_with_active_script(&mut runtime, owner, |runtime| {
+                        for _ in 0..ids.len() {
+                            sum =
+                                sum.wrapping_add(ScriptAPI::with_state::<BenchScriptState, _, _>(
                                     runtime,
-                                    id,
+                                    owner,
                                     |state| state.frame,
-                                )
-                            })
-                            .unwrap_or_default(),
-                        );
-                    }
+                                ));
+                        }
+                    });
                     black_box(sum)
                 })
             },
@@ -403,6 +402,233 @@ fn bench_script_state(c: &mut Criterion) {
 
         group.bench_with_input(
             BenchmarkId::new("with_state_active_mut", count),
+            &count,
+            |b, &count| {
+                let mut runtime = Runtime::new();
+                let ids: Vec<_> = (0..count)
+                    .map(|i| {
+                        let id = NodeID::new((i + 1) as u32);
+                        bench_insert_state_script(&mut runtime, id);
+                        id
+                    })
+                    .collect();
+                b.iter(|| {
+                    let owner = ids[0];
+                    let _ = bench_with_active_script(&mut runtime, owner, |runtime| {
+                        for _ in 0..ids.len() {
+                            let _ = ScriptAPI::with_state_mut::<BenchScriptState, _, _>(
+                                runtime,
+                                owner,
+                                |state| {
+                                    state.frame = state.frame.wrapping_add(1);
+                                    state.hp += 1;
+                                    state.pos[0] += 0.25;
+                                },
+                            );
+                        }
+                    });
+                    black_box(ids.len())
+                })
+            },
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("with_state_cross_read", count),
+            &count,
+            |b, &count| {
+                let mut runtime = Runtime::new();
+                let owner = NodeID::new(1);
+                bench_insert_state_script(&mut runtime, owner);
+                let targets: Vec<_> = (0..count)
+                    .map(|i| {
+                        let id = NodeID::new((i + 2) as u32);
+                        bench_insert_state_script(&mut runtime, id);
+                        id
+                    })
+                    .collect();
+                b.iter(|| {
+                    let mut sum = 0u64;
+                    let _ = bench_with_active_script(&mut runtime, owner, |runtime| {
+                        for &id in &targets {
+                            sum =
+                                sum.wrapping_add(ScriptAPI::with_state::<BenchScriptState, _, _>(
+                                    runtime,
+                                    id,
+                                    |state| state.frame,
+                                ));
+                        }
+                    });
+                    black_box(sum)
+                })
+            },
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("with_state_cross_mut", count),
+            &count,
+            |b, &count| {
+                let mut runtime = Runtime::new();
+                let owner = NodeID::new(1);
+                bench_insert_state_script(&mut runtime, owner);
+                let targets: Vec<_> = (0..count)
+                    .map(|i| {
+                        let id = NodeID::new((i + 2) as u32);
+                        bench_insert_state_script(&mut runtime, id);
+                        id
+                    })
+                    .collect();
+                b.iter(|| {
+                    let _ = bench_with_active_script(&mut runtime, owner, |runtime| {
+                        for &id in &targets {
+                            let _ = ScriptAPI::with_state_mut::<BenchScriptState, _, _>(
+                                runtime,
+                                id,
+                                |state| {
+                                    state.frame = state.frame.wrapping_add(1);
+                                    state.hp += 1;
+                                    state.pos[0] += 0.25;
+                                },
+                            );
+                        }
+                    });
+                    black_box(targets.len())
+                })
+            },
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("get_set_var_cross", count),
+            &count,
+            |b, &count| {
+                let mut runtime = Runtime::new();
+                let owner = NodeID::new(1);
+                bench_insert_state_script(&mut runtime, owner);
+                let targets: Vec<_> = (0..count)
+                    .map(|i| {
+                        let id = NodeID::new((i + 2) as u32);
+                        bench_insert_state_script(&mut runtime, id);
+                        id
+                    })
+                    .collect();
+                let frame = ScriptMemberID(1);
+                b.iter(|| {
+                    let _ = bench_with_active_script(&mut runtime, owner, |runtime| {
+                        for (i, &id) in targets.iter().enumerate() {
+                            ScriptAPI::set_var(runtime, id, frame, Variant::from(i as i64));
+                            black_box(ScriptAPI::get_var(runtime, id, frame));
+                        }
+                    });
+                })
+            },
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("call_method_cross", count),
+            &count,
+            |b, &count| {
+                let mut runtime = Runtime::new();
+                let owner = NodeID::new(1);
+                bench_insert_state_script(&mut runtime, owner);
+                let targets: Vec<_> = (0..count)
+                    .map(|i| {
+                        let id = NodeID::new((i + 2) as u32);
+                        bench_insert_state_script(&mut runtime, id);
+                        id
+                    })
+                    .collect();
+                let method = ScriptMemberID(1);
+                b.iter(|| {
+                    let _ = bench_with_active_script(&mut runtime, owner, |runtime| {
+                        for &id in &targets {
+                            black_box(ScriptAPI::call_method(runtime, id, method, &[]));
+                        }
+                    });
+                })
+            },
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("call_method_self", count),
+            &count,
+            |b, &count| {
+                let mut runtime = Runtime::new();
+                let owner = NodeID::new(1);
+                bench_insert_state_script(&mut runtime, owner);
+                b.iter(|| {
+                    let _ = bench_with_active_script(&mut runtime, owner, |runtime| {
+                        for _ in 0..count {
+                            black_box(ScriptAPI::call_method(
+                                runtime,
+                                owner,
+                                ScriptMemberID(1),
+                                &[],
+                            ));
+                        }
+                    });
+                })
+            },
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("with_state_nested_self_mut", count),
+            &count,
+            |b, &count| {
+                let mut runtime = Runtime::new();
+                let owner = NodeID::new(1);
+                let child = NodeID::new(2);
+                bench_insert_state_script(&mut runtime, owner);
+                bench_insert_state_script(&mut runtime, child);
+                b.iter(|| {
+                    let _ = bench_with_active_script(&mut runtime, owner, |runtime| {
+                        for _ in 0..count {
+                            let _ = bench_with_active_script(runtime, child, |runtime| {
+                                ScriptAPI::with_state_mut::<BenchScriptState, _, _>(
+                                    runtime,
+                                    child,
+                                    |state| {
+                                        state.frame = state.frame.wrapping_add(1);
+                                        state.hp += 1;
+                                    },
+                                )
+                            });
+                        }
+                    });
+                    black_box(count)
+                })
+            },
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("with_state_nested_cross_mut", count),
+            &count,
+            |b, &count| {
+                let mut runtime = Runtime::new();
+                let owner = NodeID::new(1);
+                let child = NodeID::new(2);
+                bench_insert_state_script(&mut runtime, owner);
+                bench_insert_state_script(&mut runtime, child);
+                b.iter(|| {
+                    let _ = bench_with_active_script(&mut runtime, owner, |runtime| {
+                        for _ in 0..count {
+                            let _ = bench_with_active_script(runtime, child, |runtime| {
+                                ScriptAPI::with_state_mut::<BenchScriptState, _, _>(
+                                    runtime,
+                                    owner,
+                                    |state| {
+                                        state.frame = state.frame.wrapping_add(1);
+                                        state.hp += 1;
+                                    },
+                                )
+                            });
+                        }
+                    });
+                    black_box(count)
+                })
+            },
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("with_state_active_mut_old_model", count),
             &count,
             |b, &count| {
                 let mut runtime = Runtime::new();
