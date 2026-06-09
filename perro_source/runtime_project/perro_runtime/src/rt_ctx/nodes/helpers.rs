@@ -44,10 +44,9 @@ pub(super) fn cached_slot_for(
 
     if let Some((cached_id, cached_index, cached_generation)) =
         runtime.script_runtime.last_node_lookup
+        && cached_id == id
     {
-        if cached_id == id {
-            return Some((cached_index, cached_generation));
-        }
+        return Some((cached_index, cached_generation));
     }
 
     let resolved = (id.index() as usize, id.generation());

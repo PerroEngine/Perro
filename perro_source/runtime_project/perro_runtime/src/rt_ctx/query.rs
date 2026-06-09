@@ -489,37 +489,42 @@ fn first_in_candidates(
 
 fn matches_query(node: &SceneNode, plan: &QueryPlan) -> bool {
     let node_type = node.node_type();
-    if !plan.type_in_mask(node_type, plan.exact_type_mask) {
+    if !type_in_mask(node_type, plan.exact_type_mask) {
         return false;
     }
 
-    if !plan.type_in_mask(node_type, plan.base_type_mask) {
+    if !type_in_mask(node_type, plan.base_type_mask) {
         return false;
     }
 
     match &plan.optimized_expr {
-        Some(expr) => eval_expr(expr, node),
+        Some(expr) => eval_expr_with_type(expr, node, node_type),
         None => true,
     }
 }
 
+#[cfg(test)]
 fn eval_expr(expr: &QueryExpr, node: &SceneNode) -> bool {
+    eval_expr_with_type(expr, node, node.node_type())
+}
+
+fn eval_expr_with_type(expr: &QueryExpr, node: &SceneNode, node_type: NodeType) -> bool {
     match expr {
         QueryExpr::All(children) => children
             .iter()
-            .all(|child| eval_expr_in_context(child, node, TagClauseContext::All)),
+            .all(|child| eval_expr_in_context(child, node, node_type, TagClauseContext::All)),
         QueryExpr::Any(children) => children
             .iter()
-            .any(|child| eval_expr_in_context(child, node, TagClauseContext::Any)),
-        QueryExpr::Not(inner) => eval_not_expr(inner, node),
+            .any(|child| eval_expr_in_context(child, node, node_type, TagClauseContext::Any)),
+        QueryExpr::Not(inner) => eval_not_expr(inner, node, node_type),
         QueryExpr::Name(names) => names.iter().any(|name| node.get_name() == name),
         QueryExpr::Tags(tags) => tags.iter().any(|tag| node.has_tag(*tag)),
-        QueryExpr::IsType(types) => types.contains(&node.node_type()),
+        QueryExpr::IsType(types) => types.contains(&node_type),
         QueryExpr::BaseType(base_types) => base_types
             .iter()
-            .any(|base_type| node.node_type().is_a(*base_type)),
+            .any(|base_type| node_type.is_a(*base_type)),
         QueryExpr::IsTypeMask(mask) | QueryExpr::BaseTypeMask(mask) => {
-            type_in_mask(node.node_type(), *mask)
+            type_in_mask(node_type, *mask)
         }
         QueryExpr::Layers(mask) => {
             node_render_layers(node).is_some_and(|layers| layers.intersects(*mask))
@@ -541,20 +546,25 @@ enum TagClauseContext {
     All,
 }
 
-fn eval_expr_in_context(expr: &QueryExpr, node: &SceneNode, tag_ctx: TagClauseContext) -> bool {
+fn eval_expr_in_context(
+    expr: &QueryExpr,
+    node: &SceneNode,
+    node_type: NodeType,
+    tag_ctx: TagClauseContext,
+) -> bool {
     match expr {
         QueryExpr::Tags(tags) => match tag_ctx {
             TagClauseContext::Any => tags.iter().any(|tag| node.has_tag(*tag)),
             TagClauseContext::All => tags.iter().all(|tag| node.has_tag(*tag)),
         },
-        _ => eval_expr(expr, node),
+        _ => eval_expr_with_type(expr, node, node_type),
     }
 }
 
-fn eval_not_expr(expr: &QueryExpr, node: &SceneNode) -> bool {
+fn eval_not_expr(expr: &QueryExpr, node: &SceneNode, node_type: NodeType) -> bool {
     match expr {
         QueryExpr::Tags(tags) => !tags.iter().any(|tag| node.has_tag(*tag)),
-        _ => !eval_expr(expr, node),
+        _ => !eval_expr_with_type(expr, node, node_type),
     }
 }
 
@@ -570,9 +580,7 @@ impl QueryPlan {
         let optimized = expr.as_ref().map(optimize_expr);
         let exact_type_mask = allowed_type_mask(optimized.as_ref(), TypeFilterKind::Exact);
         let base_type_mask = allowed_type_mask(optimized.as_ref(), TypeFilterKind::Base);
-        let optimized_expr = optimized
-            .as_ref()
-            .and_then(strip_redundant_type_filters);
+        let optimized_expr = optimized.as_ref().and_then(strip_redundant_type_filters);
         let estimated_cost_per_node = optimized_expr.as_ref().map(expr_cost).unwrap_or(1);
         Self {
             optimized_expr,
@@ -580,11 +588,6 @@ impl QueryPlan {
             exact_type_mask,
             base_type_mask,
         }
-    }
-
-    #[inline]
-    fn type_in_mask(&self, node_type: NodeType, mask: QueryTypeMask) -> bool {
-        type_in_mask(node_type, mask)
     }
 }
 
