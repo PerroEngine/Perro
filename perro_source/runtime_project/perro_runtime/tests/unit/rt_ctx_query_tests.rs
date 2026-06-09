@@ -46,6 +46,33 @@ fn type_mask_predicates_eval_as_bit_tests() {
 }
 
 #[test]
+fn query_plan_strips_global_type_filters_from_eval_expr() {
+    let expr = QueryExpr::All(vec![
+        QueryExpr::IsType(vec![NodeType::MeshInstance3D]),
+        QueryExpr::BaseType(vec![NodeType::Node3D]),
+        QueryExpr::Name(vec!["enemy".to_string()]),
+    ]);
+    let plan = QueryPlan::from_query(&Some(expr));
+
+    assert!(plan.exact_type_mask.contains_type(NodeType::MeshInstance3D));
+    assert!(!plan.exact_type_mask.contains_type(NodeType::Node3D));
+    assert!(plan.base_type_mask.contains_type(NodeType::MeshInstance3D));
+    assert!(matches!(plan.optimized_expr, Some(QueryExpr::Name(_))));
+    assert_eq!(plan.estimated_cost_per_node, 5);
+}
+
+#[test]
+fn query_plan_keeps_mixed_any_type_filters_branch_local() {
+    let expr = QueryExpr::Any(vec![
+        QueryExpr::IsType(vec![NodeType::MeshInstance3D]),
+        QueryExpr::Name(vec!["enemy".to_string()]),
+    ]);
+    let plan = QueryPlan::from_query(&Some(expr));
+
+    assert!(matches!(plan.optimized_expr, Some(QueryExpr::Any(_))));
+}
+
+#[test]
 fn not_type_predicates_prune_by_complement_mask() {
     let expr = QueryExpr::Not(Box::new(QueryExpr::IsTypeMask(
         QueryTypeMask::NONE.with_type(NodeType::Node3D),

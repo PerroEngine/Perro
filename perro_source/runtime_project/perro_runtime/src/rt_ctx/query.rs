@@ -567,10 +567,13 @@ struct QueryPlan {
 
 impl QueryPlan {
     fn from_query(expr: &Option<QueryExpr>) -> Self {
-        let optimized_expr = expr.as_ref().map(optimize_expr);
+        let optimized = expr.as_ref().map(optimize_expr);
+        let exact_type_mask = allowed_type_mask(optimized.as_ref(), TypeFilterKind::Exact);
+        let base_type_mask = allowed_type_mask(optimized.as_ref(), TypeFilterKind::Base);
+        let optimized_expr = optimized
+            .as_ref()
+            .and_then(strip_redundant_type_filters);
         let estimated_cost_per_node = optimized_expr.as_ref().map(expr_cost).unwrap_or(1);
-        let exact_type_mask = allowed_type_mask(optimized_expr.as_ref(), TypeFilterKind::Exact);
-        let base_type_mask = allowed_type_mask(optimized_expr.as_ref(), TypeFilterKind::Base);
         Self {
             optimized_expr,
             estimated_cost_per_node,
@@ -583,6 +586,39 @@ impl QueryPlan {
     fn type_in_mask(&self, node_type: NodeType, mask: QueryTypeMask) -> bool {
         type_in_mask(node_type, mask)
     }
+}
+
+fn strip_redundant_type_filters(expr: &QueryExpr) -> Option<QueryExpr> {
+    if type_filter_only(expr) {
+        return None;
+    }
+
+    match expr {
+        QueryExpr::All(children) => {
+            let mut stripped = Vec::with_capacity(children.len());
+            for child in children {
+                if type_filter_only(child) {
+                    continue;
+                }
+                if let Some(child) = strip_redundant_type_filters(child) {
+                    stripped.push(child);
+                }
+            }
+            match stripped.len() {
+                0 => None,
+                1 => stripped.pop(),
+                _ => Some(QueryExpr::All(stripped)),
+            }
+        }
+        // Do not strip mixed `Any` branches. A type filter inside one branch is
+        // branch-local, not a global mask constraint.
+        _ => Some(expr.clone()),
+    }
+}
+
+fn type_filter_only(expr: &QueryExpr) -> bool {
+    type_mask_only(expr, TypeFilterKind::Exact).is_some()
+        || type_mask_only(expr, TypeFilterKind::Base).is_some()
 }
 
 #[inline]
