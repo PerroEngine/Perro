@@ -667,7 +667,7 @@ description = "Global desc"
 keywords = ["rust", "engine"]
 
 [graphics]
-virtual_resolution = "1280x720"
+aspect_ratio = "16:9"
 "#,
         )
         .expect("write project");
@@ -813,7 +813,7 @@ icon = "res://textures/pixel.bmp"
 startup_splash = "res://textures/pixel.bmp"
 
 [graphics]
-virtual_resolution = "320x180"
+aspect_ratio = "16:9"
 
 [localization]
 default_locale = "es"

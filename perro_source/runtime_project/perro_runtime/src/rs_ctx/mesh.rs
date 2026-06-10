@@ -71,7 +71,7 @@ impl MeshAPI for RuntimeResourceApi {
 
     fn is_mesh_loaded(&self, id: MeshID) -> bool {
         if id.is_nil() {
-            return false;
+            return true;
         }
         let canonical = self.canonical_mesh_id(id);
         let state = self.state.lock().expect("resource api mutex poisoned");
@@ -423,6 +423,14 @@ mod tests {
             RenderCommand::Resource(ResourceCommand::SetMaterialReserved { id, reserved: true })
                 if *id == material
         )));
+    }
+
+    #[test]
+    fn nil_mesh_id_is_loaded() {
+        let api = new_api();
+        let res = ResourceWindow::new(api.as_ref());
+
+        assert!(res.Meshes().is_loaded(perro_ids::MeshID::nil()));
     }
 
     #[test]
