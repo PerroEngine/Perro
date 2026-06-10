@@ -1,3 +1,8 @@
+//! Runtime scene loading API.
+//!
+//! Loads scenes immediately, preloads scenes into handles, and releases
+//! preloaded scene resources.
+
 use perro_ids::NodeID;
 use perro_resource_api::{ResPath, ResPathBuf};
 use std::borrow::Cow;

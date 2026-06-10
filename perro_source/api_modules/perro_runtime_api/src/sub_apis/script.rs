@@ -1,3 +1,8 @@
+//! Runtime script API.
+//!
+//! Attaches and detaches scripts, controls script schedules, accesses script
+//! vars/methods, and exposes typed state closures.
+
 use perro_ids::{NodeID, ScriptMemberID};
 use perro_resource_api::ResPathSource;
 use perro_variant::Variant;

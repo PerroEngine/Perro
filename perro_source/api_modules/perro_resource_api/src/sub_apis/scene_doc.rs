@@ -1,3 +1,7 @@
+//! Scene document resource API.
+//!
+//! Loads and saves editable scene documents.
+
 use crate::ResPathSource;
 use perro_scene::{Scene, SceneDoc, SceneWrite};
 

@@ -1,3 +1,7 @@
+//! Runtime time API.
+//!
+//! Exposes frame delta, fixed-step delta, elapsed clocks, and profiling data.
+
 use std::time::Duration;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

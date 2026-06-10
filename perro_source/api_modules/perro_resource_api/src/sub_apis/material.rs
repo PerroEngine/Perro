@@ -1,3 +1,7 @@
+//! Material resource API.
+//!
+//! Loads, reserves, creates, reads, writes, drops, and checks material resources.
+
 use crate::ResPathSource;
 use perro_ids::MaterialID;
 use perro_render_bridge::Material3D;

@@ -1,3 +1,7 @@
+//! Animation resource API.
+//!
+//! Loads, reserves, drops, and checks animation resources.
+
 use crate::ResPathSource;
 use perro_animation::AnimationClip;
 use perro_ids::AnimationID;

@@ -1,3 +1,11 @@
+//! Resource API domains.
+//!
+//! Each child module defines one script-facing resource domain. Traits describe
+//! the backing store contract, `*Module` wrappers provide method-call syntax
+//! through `ResourceWindow`, and exported macros provide compact script syntax.
+
+// ---- Resource domains ----
+
 mod animation;
 mod animation_tree;
 mod audio;
@@ -13,6 +21,8 @@ mod skeleton;
 mod texture;
 mod visual_accessibility;
 
+// ---- Animation + audio ----
+
 pub use animation::{AnimationAPI, AnimationModule};
 pub use animation_tree::{AnimationTreeAPI, AnimationTreeModule};
 pub use audio::{
@@ -21,14 +31,23 @@ pub use audio::{
     MidiModule, MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong, MidiSound, MidiSpatialPos,
     MidiSpatialPosition, Note, PannedAudio, SpatialAudioOptions, bus_id, program,
 };
+
+// ---- Data + draw resources ----
+
 pub use csv_table::{CsvAPI, CsvModule};
 pub use draw_2d::{Draw2DAPI, Draw2DModule};
 pub use gltf::{GlbModule, GltfAPI, GltfInfo};
 pub use localization::{Locale, LocalizationAPI, LocalizationModule};
+
+// ---- Render assets ----
+
 pub use material::{MaterialAPI, MaterialModule, MaterialReserveArg};
 pub use mesh::{MeshAPI, MeshModule, MeshReserveArg};
 pub use perro_ids::{AudioBusID, SoundFontID};
 pub use post_processing::PostProcessingAPI;
+
+// ---- Scene/accessibility ----
+
 pub use scene_doc::{IntoSceneDoc, SceneDocAPI, SceneDocModule};
 pub use skeleton::{SkeletonAPI, SkeletonModule};
 pub use texture::{TextureAPI, TextureModule, TextureReserveArg};

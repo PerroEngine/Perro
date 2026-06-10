@@ -1,5 +1,14 @@
+//! Public runtime scripting API.
+//!
+//! This crate exposes the runtime-side script surface: time, window requests,
+//! node access, node queries, scripts, signals, physics, animation, scene
+//! loading, and runtime audio. Scripts normally import [`prelude`] and receive a
+//! [`RuntimeWindow`] from the script context.
+
 pub mod api;
 pub mod sub_apis;
+
+// ---- Core engine re-exports ----
 
 pub use perro_ids;
 #[doc(hidden)]
@@ -8,10 +17,16 @@ pub use perro_nodes;
 pub use perro_structs;
 pub use perro_variant;
 
+// ---- Window facade ----
+
 pub use api::RuntimeWindow;
 
+/// Common imports for scripts that use runtime APIs.
 pub mod prelude {
+    // Facade traits and module accessors.
     pub use crate::api::{RuntimeAPI, RuntimeWindow};
+
+    // Runtime domain APIs.
     pub use crate::sub_apis::{
         AnimPlayerAPI, AnimPlayerModule, AttachedMidiTarget, FrameRateCap, IntoImpulseDirection,
         IntoNodeTag, IntoNodeTags, IntoPreloadedSceneID, IntoPreloadedSceneTarget,
@@ -26,6 +41,8 @@ pub mod prelude {
         SpatialAudioOptions, TimeAPI, TimeModule, WindowAPI, WindowMode, WindowModule,
         WindowRequest, program,
     };
+
+    // Convenience macros.
     pub use crate::{
         anim_player_bind, anim_player_clear_bindings, anim_player_pause, anim_player_play,
         anim_player_seek_frame, anim_player_set_clip, anim_player_set_speed, apply_force,
@@ -62,6 +79,8 @@ pub mod prelude {
         window_set_mode, window_set_size, window_set_title, with_base_node, with_base_node_mut,
         with_node, with_node_mut, with_state, with_state_mut,
     };
+
+    // Common id and variant helpers.
     pub use perro_ids::prelude::{
         AnimationID, AudioBusID, LightID, MaterialID, MeshID, NodeID, PreloadedSceneID,
         ScriptMemberID, SignalID, TagID, TextureID,

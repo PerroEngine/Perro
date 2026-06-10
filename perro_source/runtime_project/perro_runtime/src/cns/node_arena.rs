@@ -21,6 +21,12 @@ impl Default for NodeArena {
 }
 
 impl NodeArena {
+    // ---- Construction ----
+
+    /// Create an empty arena.
+    ///
+    /// Slot 0 is reserved as the nil sentinel, so the first inserted node uses
+    /// index 1.
     pub fn new() -> Self {
         // Reserve index 0 as invalid/nil sentinel so first real node ID is 1.
         let mut nodes = Vec::with_capacity(2);
@@ -35,6 +41,9 @@ impl NodeArena {
         }
     }
 
+    /// Create an empty arena with capacity for active nodes.
+    ///
+    /// The internal vectors reserve one extra slot for the nil sentinel.
     pub fn with_capacity(capacity: usize) -> Self {
         // +1 for reserved nil sentinel slot at index 0.
         let mut nodes = Vec::with_capacity(capacity.saturating_add(1));
@@ -49,6 +58,8 @@ impl NodeArena {
         }
     }
 
+    // ---- Allocation ----
+
     /// Reserve slots for additional node inserts.
     pub fn reserve(&mut self, additional: usize) {
         self.nodes.reserve(additional);
@@ -56,6 +67,8 @@ impl NodeArena {
     }
 
     /// Insert a node and return its current slot/generation id.
+    ///
+    /// Reuses a free slot when available. Otherwise appends a new slot.
     pub fn insert(&mut self, node: SceneNode) -> NodeID {
         // Reuse a previously freed slot in O(1).
         if let Some(index) = self.free_indices.pop() {
@@ -73,19 +86,32 @@ impl NodeArena {
         NodeID::from_parts(index as u32, 0)
     }
 
+    // ---- Checked lookup ----
+
     /// Get a node by id.
+    ///
+    /// Returns `None` for nil ids, stale generations, out-of-bounds slots, or
+    /// empty slots.
     pub fn get(&self, id: NodeID) -> Option<&SceneNode> {
         let index = self.valid_slot(id)?;
         self.nodes[index].as_ref()
     }
 
-    /// Get mutable node ref by id.
+    /// Get a mutable node by id.
+    ///
+    /// Returns `None` for nil ids, stale generations, out-of-bounds slots, or
+    /// empty slots.
     pub fn get_mut(&mut self, id: NodeID) -> Option<&mut SceneNode> {
         let index = self.valid_slot(id)?;
         self.nodes[index].as_mut()
     }
 
+    // ---- Removal ----
+
     /// Remove a node and invalidate old ids for that slot.
+    ///
+    /// Successful removal bumps the slot generation and pushes the slot onto
+    /// the free list for later reuse.
     pub fn remove(&mut self, id: NodeID) -> Option<SceneNode> {
         let index = self.valid_slot(id)?;
         self.generations[index] = self.generations[index].wrapping_add(1);
@@ -97,13 +123,15 @@ impl NodeArena {
         removed
     }
 
-    /// Check if a NodeID is still valid
+    /// Check if a [`NodeID`] currently points at a live node.
     pub fn contains(&self, id: NodeID) -> bool {
         self.valid_slot(id)
             .is_some_and(|index| self.nodes[index].is_some())
     }
 
-    /// Iterator over all valid nodes
+    // ---- Iteration ----
+
+    /// Iterate over all live nodes with their current ids.
     pub fn iter(&self) -> impl Iterator<Item = (NodeID, &SceneNode)> {
         self.nodes
             .iter()
@@ -115,7 +143,7 @@ impl NodeArena {
             })
     }
 
-    /// Mutable iterator
+    /// Iterate mutably over all live nodes with their current ids.
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (NodeID, &mut SceneNode)> {
         self.nodes
             .iter_mut()
@@ -128,7 +156,9 @@ impl NodeArena {
             })
     }
 
-    /// Clear all nodes
+    // ---- Whole-arena state ----
+
+    /// Clear all nodes and reset the arena to only the nil sentinel slot.
     pub fn clear(&mut self) {
         self.nodes.clear();
         self.generations.clear();
@@ -138,14 +168,17 @@ impl NodeArena {
         self.generations.push(0);
     }
 
-    /// Number of active nodes
+    /// Return the number of live nodes.
     pub fn len(&self) -> usize {
         self.active_len
     }
 
+    /// Return whether the arena contains no live nodes.
     pub fn is_empty(&self) -> bool {
         self.active_len == 0
     }
+
+    // ---- Raw slot fast paths ----
 
     /// Number of internal slots including the reserved nil slot at index 0.
     pub fn slot_count(&self) -> usize {
@@ -192,6 +225,9 @@ impl NodeArena {
         self.nodes[index].as_mut()
     }
 
+    // ---- Slot validation ----
+
+    /// Validate a public id and return its raw slot index.
     #[inline]
     fn valid_slot(&self, id: NodeID) -> Option<usize> {
         let index = id.index() as usize;

@@ -1,3 +1,7 @@
+//! Visual accessibility resource API.
+//!
+//! Enables or disables global visual accessibility filters.
+
 use perro_structs::ColorBlindFilter;
 
 pub trait VisualAccessibilityAPI {

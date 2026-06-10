@@ -1,3 +1,7 @@
+//! Animation tree resource API.
+//!
+//! Loads, drops, and checks animation tree resources.
+
 use crate::ResPathSource;
 use perro_animation::AnimationTreeAsset;
 use perro_ids::AnimationTreeID;

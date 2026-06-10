@@ -1,3 +1,7 @@
+//! Texture resource API.
+//!
+//! Loads, reserves, drops, and checks texture resources.
+
 use crate::ResPathSource;
 use perro_ids::TextureID;
 

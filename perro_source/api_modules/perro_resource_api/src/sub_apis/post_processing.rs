@@ -1,3 +1,7 @@
+//! Global post-processing resource API.
+//!
+//! Sets, adds, removes, and clears post-processing effects.
+
 use perro_structs::{PostProcessEffect, PostProcessSet};
 use std::borrow::Cow;
 

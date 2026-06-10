@@ -1,3 +1,7 @@
+//! Runtime animation tree API.
+//!
+//! Controls animation tree slots, node playback time, and blend weights.
+
 use perro_ids::{AnimationID, NodeID};
 use perro_nodes::animation_player::AnimationPlaybackType;
 

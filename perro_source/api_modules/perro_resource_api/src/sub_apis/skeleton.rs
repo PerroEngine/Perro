@@ -1,3 +1,7 @@
+//! Skeleton resource API.
+//!
+//! Loads skeleton bone data from resource paths.
+
 use crate::ResPathSource;
 use perro_nodes::{skeleton_2d::Bone2D, skeleton_3d::Bone3D};
 

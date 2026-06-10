@@ -8,41 +8,90 @@ use std::any::Any;
 #[allow(improper_ctypes_definitions)]
 pub type ScriptConstructor<API> = extern "C" fn() -> *mut dyn ScriptBehavior<API>;
 
-/// ScriptAPI groups the three API surfaces scripts depend on.
+/// API surface bundle used by script callbacks.
+///
+/// Runtime code supplies concrete types for the mutable runtime API, shared
+/// resource API, and frame input API. [`ScriptContext`] then passes window
+/// wrappers over those concrete APIs into lifecycle and method callbacks.
 pub trait ScriptAPI {
     type RT: RuntimeAPI + ?Sized;
     type RS: ResourceAPI + ?Sized;
     type IP: InputAPI + ?Sized;
 }
 
-/// ScriptContext is the context passed to script lifecycle methods, providing access to the runtime, resource, and input APIs, as well as the ID of the node the script is attached to.
+/// Callback-scoped script context.
+///
+/// The runtime builds this right before it calls a lifecycle method or exported
+/// script method. `run` is the only mutable engine surface and borrows the
+/// runtime for the callback duration. `res` and `ipt` are shared windows over
+/// resource and input state. None of these windows are stored on the script
+/// instance, so Rust borrow scopes end when the callback returns.
+///
+/// Script state is not borrowed through this struct. State access goes through
+/// closure APIs such as `with_state!` and `with_state_mut!`; those APIs borrow
+/// the boxed concrete state only for the closure body so references cannot
+/// escape the runtime's borrow.
 pub struct ScriptContext<'a, API: ScriptAPI + ?Sized> {
+    /// Mutable runtime operations for the current callback.
     pub run: &'a mut RuntimeWindow<'a, API::RT>,
+    /// Shared resource operations for the current callback.
     pub res: &'a ResourceWindow<'a, API::RS>,
+    /// Shared input snapshot operations for the current callback.
     pub ipt: &'a InputWindow<'a, API::IP>,
+    /// Node id this script instance is attached to.
     pub id: NodeID,
 }
 
+/// Optional lifecycle hooks implemented by scripts.
+///
+/// Generated script glue sets [`ScriptFlags`] for non-empty lifecycle methods so
+/// the runtime only schedules callbacks that exist.
 pub trait ScriptLifecycle<API: ScriptAPI + ?Sized> {
+    /// Called when this script instance is attached and state is created.
     fn on_init(&self, _ctx: &mut ScriptContext<'_, API>) {}
+    /// Called after all startup scripts for a loaded scene are attached.
     fn on_all_init(&self, _ctx: &mut ScriptContext<'_, API>) {}
+    /// Called during variable-rate update when scheduled.
     fn on_update(&self, _ctx: &mut ScriptContext<'_, API>) {}
+    /// Called during fixed-step update when scheduled.
     fn on_fixed_update(&self, _ctx: &mut ScriptContext<'_, API>) {}
+    /// Called before this script instance is detached or its node is removed.
     fn on_removal(&self, _ctx: &mut ScriptContext<'_, API>) {}
 }
 
+/// Behavior object shared by all instances of one script definition.
+///
+/// `ScriptBehavior` is intentionally separate from per-node state. The behavior
+/// object contains vtable dispatch and generated field/method glue; the runtime
+/// can put it in an `Arc` and cheaply clone handles for callback dispatch. Each
+/// attached node receives its own [`Any`] state object from
+/// [`ScriptBehavior::create_state`], so mutable game state stays per instance.
 pub trait ScriptBehavior<API: ScriptAPI + ?Sized>: ScriptLifecycle<API> {
+    /// Return lifecycle flags used to build update/fixed/removal schedules.
     fn script_flags(&self) -> ScriptFlags;
+
+    /// Create per-instance script state.
+    ///
+    /// The default state is `()`. Generated scripts override this for `#[derive(State)]`
+    /// or script-defined state structs.
     fn create_state(&self) -> Box<dyn Any> {
         Box::new(())
     }
+
+    /// Read a script variable from concrete state.
     fn get_var(&self, state: &dyn Any, var: ScriptMemberID) -> Variant;
+
+    /// Write a script variable into concrete state.
     fn set_var(&self, state: &mut dyn Any, var: ScriptMemberID, value: Variant);
+
+    /// Apply values injected from scene data before init callbacks run.
     fn apply_scene_injected_vars(&self, state: &mut dyn Any, vars: Vec<(ScriptMemberID, Variant)>) {
         for (var, value) in vars {
             self.set_var(state, var, value);
         }
     }
+
+    /// Call an exported script method through generated dispatch glue.
     fn call_method(
         &self,
         method: ScriptMemberID,
@@ -53,6 +102,10 @@ pub trait ScriptBehavior<API: ScriptAPI + ?Sized>: ScriptLifecycle<API> {
 
 /// Cast script state to a concrete type without a runtime type check.
 ///
+/// The runtime does not call this directly on untrusted state. It stores the
+/// state's `TypeId` beside the boxed value and checks that id before using this
+/// fast cast helper.
+///
 /// # Safety
 /// Caller must guarantee `state` points to a value of type `T`.
 #[inline(always)]
@@ -61,6 +114,9 @@ pub unsafe fn state_ref_unchecked<T: 'static>(state: &dyn Any) -> &T {
 }
 
 /// Mutably cast script state to a concrete type without a runtime type check.
+///
+/// The runtime uses this only after a `TypeId` match and only while holding a
+/// unique mutable borrow of the boxed state.
 ///
 /// # Safety
 /// Caller must guarantee `state` points to a value of type `T`, and no other
@@ -120,38 +176,50 @@ mod state_cast_tests {
 pub struct ScriptFlags(u8);
 
 impl ScriptFlags {
+    /// No lifecycle hooks.
     pub const NONE: u8 = 0;
+    /// `on_init` exists.
     pub const HAS_INIT: u8 = 1 << 0;
+    /// `on_update` exists.
     pub const HAS_UPDATE: u8 = 1 << 1;
+    /// `on_fixed_update` exists.
     pub const HAS_FIXED_UPDATE: u8 = 1 << 2;
+    /// `on_all_init` exists.
     pub const HAS_ALL_INIT: u8 = 1 << 3;
+    /// `on_removal` exists.
     pub const HAS_REMOVAL: u8 = 1 << 4;
 
+    /// Create flags from a bitmask built by generated script glue.
     #[inline(always)]
     pub const fn new(flags: u8) -> Self {
         ScriptFlags(flags)
     }
 
+    /// Return whether `on_init` exists.
     #[inline(always)]
     pub const fn has_init(self) -> bool {
         self.0 & Self::HAS_INIT != 0
     }
 
+    /// Return whether `on_update` exists.
     #[inline(always)]
     pub const fn has_update(self) -> bool {
         self.0 & Self::HAS_UPDATE != 0
     }
 
+    /// Return whether `on_fixed_update` exists.
     #[inline(always)]
     pub const fn has_fixed_update(self) -> bool {
         self.0 & Self::HAS_FIXED_UPDATE != 0
     }
 
+    /// Return whether `on_all_init` exists.
     #[inline(always)]
     pub const fn has_all_init(self) -> bool {
         self.0 & Self::HAS_ALL_INIT != 0
     }
 
+    /// Return whether `on_removal` exists.
     #[inline(always)]
     pub const fn has_removal(self) -> bool {
         self.0 & Self::HAS_REMOVAL != 0

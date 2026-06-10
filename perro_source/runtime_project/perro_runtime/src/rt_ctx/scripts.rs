@@ -267,6 +267,11 @@ impl Runtime {
     }
 
     #[inline(always)]
+    /// Call a scheduled update script with prebuilt resource/input windows.
+    ///
+    /// The behavior `Arc` is cloned before creating `RuntimeWindow`. That ends
+    /// the immutable borrow of `self.scripts`, so the callback can receive a
+    /// mutable runtime window while still holding a stable behavior handle.
     pub(crate) fn call_update_script_scheduled_with_context(
         &mut self,
         instance_index: usize,
@@ -303,6 +308,11 @@ impl Runtime {
     }
 
     #[inline(always)]
+    /// Call a scheduled fixed-update script with prebuilt resource/input windows.
+    ///
+    /// The `(instance_index, id)` pair comes from a schedule snapshot. The
+    /// collection revalidates it before dispatch so removed/reused slots do not
+    /// call stale script state.
     pub(crate) fn call_fixed_update_script_scheduled_with_context(
         &mut self,
         instance_index: usize,

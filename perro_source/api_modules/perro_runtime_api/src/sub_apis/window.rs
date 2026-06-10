@@ -1,3 +1,7 @@
+//! Runtime window API.
+//!
+//! Queues window title, size, mode, and frame-rate requests for the app layer.
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WindowMode {
     Windowed,

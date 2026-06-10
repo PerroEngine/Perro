@@ -1,3 +1,7 @@
+//! Draw2D resource API.
+//!
+//! Queues immediate 2D draw payloads through the resource layer.
+
 use super::TextureAPI;
 use perro_ids::TextureID;
 use perro_structs::{DrawShape2D, Vector2};

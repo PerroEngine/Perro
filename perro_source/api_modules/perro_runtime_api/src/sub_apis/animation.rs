@@ -1,3 +1,7 @@
+//! Runtime animation player API.
+//!
+//! Controls animation player nodes that already exist in the live scene.
+
 use perro_ids::{AnimationID, NodeID};
 
 pub trait AnimPlayerAPI {

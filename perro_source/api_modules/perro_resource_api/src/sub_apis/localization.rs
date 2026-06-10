@@ -1,3 +1,7 @@
+//! Localization resource API.
+//!
+//! Selects active locale and resolves localized strings.
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Locale {
     /// Chinese (中文)

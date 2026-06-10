@@ -1,3 +1,7 @@
+//! Runtime signal API.
+//!
+//! Connects script methods to named signals and emits signal payloads.
+
 use perro_ids::{NodeID, ScriptMemberID, SignalID};
 use perro_variant::Variant;
 

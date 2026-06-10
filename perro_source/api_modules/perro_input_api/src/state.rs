@@ -1,5 +1,9 @@
 use super::*;
 
+/// Keyboard button state for the current input frame.
+///
+/// `down` persists while a key is held. `pressed` and `released` are one-frame
+/// edges and are cleared by [`KeyboardState::begin_frame`].
 #[derive(Clone, Debug)]
 pub struct KeyboardState {
     down: Vec<u64>,
@@ -9,6 +13,9 @@ pub struct KeyboardState {
 }
 
 impl KeyboardState {
+    // ---- Lifecycle ----
+
+    /// Create an empty keyboard state with bit storage for every [`KeyCode`].
     pub fn new() -> Self {
         let words = KeyCode::COUNT.div_ceil(64);
         Self {
@@ -19,6 +26,7 @@ impl KeyboardState {
         }
     }
 
+    /// Clear one-frame edges and text input before new input events arrive.
     #[inline]
     pub fn begin_frame(&mut self) {
         self.pressed.fill(0);
@@ -26,6 +34,9 @@ impl KeyboardState {
         self.text_inputs.clear();
     }
 
+    // ---- Event input ----
+
+    /// Apply a key transition and update one-frame pressed/released edges.
     #[inline]
     pub fn set_key_state(&mut self, key: KeyCode, is_down: bool) {
         let idx = key.as_index();
@@ -44,21 +55,27 @@ impl KeyboardState {
         }
     }
 
+    // ---- Query ----
+
+    /// Return `true` while the key is held.
     #[inline]
     pub fn is_key_down(&self, key: KeyCode) -> bool {
         self.test(&self.down, key)
     }
 
+    /// Return `true` only on the frame the key changes from up to down.
     #[inline]
     pub fn is_key_pressed(&self, key: KeyCode) -> bool {
         self.test(&self.pressed, key)
     }
 
+    /// Return `true` only on the frame the key changes from down to up.
     #[inline]
     pub fn is_key_released(&self, key: KeyCode) -> bool {
         self.test(&self.released, key)
     }
 
+    /// Push text input received this frame.
     #[inline]
     pub fn push_text_input(&mut self, text: impl Into<String>) {
         let text = text.into();
@@ -67,10 +84,13 @@ impl KeyboardState {
         }
     }
 
+    /// Return text input chunks received during the current frame.
     #[inline]
     pub fn text_inputs(&self) -> &[String] {
         &self.text_inputs
     }
+
+    // ---- Bit helpers ----
 
     #[inline]
     fn test(&self, bits: &[u64], key: KeyCode) -> bool {
@@ -87,6 +107,10 @@ impl Default for KeyboardState {
     }
 }
 
+/// Mouse button, motion, wheel, position, viewport, and mode state.
+///
+/// Button edges are one-frame values. Mouse position is stored in window pixels
+/// and returned normalized to viewport space by [`MouseState::position`].
 #[derive(Clone, Debug)]
 pub struct MouseState {
     down: u8,
@@ -104,6 +128,9 @@ pub struct MouseState {
 }
 
 impl MouseState {
+    // ---- Lifecycle ----
+
+    /// Create empty mouse state with a 1x1 fallback viewport.
     pub fn new() -> Self {
         Self {
             down: 0,
@@ -121,6 +148,7 @@ impl MouseState {
         }
     }
 
+    /// Clear one-frame button edges, motion delta, and wheel delta.
     #[inline]
     pub fn begin_frame(&mut self) {
         self.pressed = 0;
@@ -130,12 +158,16 @@ impl MouseState {
         self.wheel_y = 0.0;
     }
 
+    /// Clear only accumulated mouse motion delta.
     #[inline]
     pub fn clear_delta(&mut self) {
         self.delta_x = 0.0;
         self.delta_y = 0.0;
     }
 
+    // ---- Event input ----
+
+    /// Apply a mouse button transition and update one-frame edges.
     #[inline]
     pub fn set_button_state(&mut self, button: MouseButton, is_down: bool) {
         let bit = button.bit();
@@ -152,65 +184,79 @@ impl MouseState {
         }
     }
 
+    /// Add relative mouse movement in pixels.
     #[inline]
     pub fn add_delta(&mut self, dx: f32, dy: f32) {
         self.delta_x += dx;
         self.delta_y += dy;
     }
 
+    /// Add scroll-wheel movement for this frame.
     #[inline]
     pub fn add_wheel(&mut self, dx: f32, dy: f32) {
         self.wheel_x += dx;
         self.wheel_y += dy;
     }
 
+    /// Set absolute mouse position in window pixels.
     #[inline]
     pub fn set_position(&mut self, x: f32, y: f32) {
         self.position_x = x;
         self.position_y = y;
     }
 
+    /// Set viewport size used for normalized mouse position.
     #[inline]
     pub fn set_viewport_size(&mut self, width: u32, height: u32) {
         self.viewport_width = (width.max(1)) as f32;
         self.viewport_height = (height.max(1)) as f32;
     }
 
+    /// Set current mouse mode reported to scripts.
     #[inline]
     pub fn set_mode(&mut self, mode: MouseMode) {
         self.mode = mode;
     }
 
+    // ---- Query ----
+
+    /// Return current mouse mode.
     #[inline]
     pub fn mode(&self) -> MouseMode {
         self.mode
     }
 
+    /// Return `true` while the button is held.
     #[inline]
     pub fn is_button_down(&self, button: MouseButton) -> bool {
         self.down & button.bit() != 0
     }
 
+    /// Return `true` only on the frame the button changes from up to down.
     #[inline]
     pub fn is_button_pressed(&self, button: MouseButton) -> bool {
         self.pressed & button.bit() != 0
     }
 
+    /// Return `true` only on the frame the button changes from down to up.
     #[inline]
     pub fn is_button_released(&self, button: MouseButton) -> bool {
         self.released & button.bit() != 0
     }
 
+    /// Return accumulated relative movement in pixels for this frame.
     #[inline]
     pub fn delta(&self) -> Vector2 {
         Vector2::new(self.delta_x, self.delta_y)
     }
 
+    /// Return accumulated wheel movement for this frame.
     #[inline]
     pub fn wheel(&self) -> Vector2 {
         Vector2::new(self.wheel_x, self.wheel_y)
     }
 
+    /// Return normalized viewport position where bottom-left is `(0, 0)`.
     #[inline]
     pub fn position(&self) -> Vector2 {
         let x = (self.position_x / self.viewport_width).clamp(0.0, 1.0);
@@ -218,6 +264,7 @@ impl MouseState {
         Vector2::new(x, y)
     }
 
+    /// Return viewport size in pixels.
     #[inline]
     pub fn viewport_size(&self) -> Vector2 {
         Vector2::new(self.viewport_width, self.viewport_height)

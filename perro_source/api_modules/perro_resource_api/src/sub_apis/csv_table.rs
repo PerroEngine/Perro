@@ -1,3 +1,7 @@
+//! CSV resource API.
+//!
+//! Loads and saves CSV tables through resource paths.
+
 use crate::ResPathSource;
 use perro_csv::{Csv, CsvBuf};
 

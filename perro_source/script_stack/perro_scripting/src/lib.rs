@@ -1,8 +1,17 @@
+//! Core scripting traits and context types.
+//!
+//! Generated and hand-written scripts implement [`ScriptBehavior`]. The runtime
+//! stores each behavior behind an `Arc<dyn ScriptBehavior<_>>` and creates one
+//! boxed state object per attached script instance. Lifecycle callbacks receive
+//! [`ScriptContext`], which exposes runtime, resource, and input windows for the
+//! duration of that callback.
+
 mod macros;
 pub mod script_trait;
 pub use perro_scripting_macros::{State, Variant};
 pub use script_trait::*;
 
+/// Common imports for generated and hand-written scripts.
 pub mod prelude {
     pub use crate::lifecycle;
     pub use crate::methods;

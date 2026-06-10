@@ -1,3 +1,9 @@
+//! Runtime node API.
+//!
+//! Creates, removes, reparents, tags, transforms, reads, writes, and queries
+//! live scene nodes. Query helpers live beside node access because they operate
+//! on the same runtime scene graph.
+
 use perro_ids::{IntoTagID, MaterialID, MeshID, NodeID, NodeTag, TagID};
 use perro_nodes::{
     Node2D, Node3D, NodeBaseDispatch, NodeType, NodeTypeDispatch, SceneNodeData, Skeleton3D, UiBox,

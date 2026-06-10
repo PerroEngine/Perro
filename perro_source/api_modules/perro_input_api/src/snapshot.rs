@@ -1,5 +1,11 @@
 use super::*;
 
+/// Complete input state visible to scripts for one frame.
+///
+/// `InputSnapshot` stores raw device state, derived action bits, player
+/// bindings, and script-issued commands. Script-facing APIs borrow it through
+/// [`InputWindow`]. Commands are queued through interior mutability and applied
+/// at the next [`InputSnapshot::begin_frame`] call.
 #[derive(Clone, Debug)]
 pub struct InputSnapshot {
     keyboard: KeyboardState,
@@ -19,6 +25,9 @@ pub struct InputSnapshot {
 }
 
 impl InputSnapshot {
+    // ---- Lifecycle ----
+
+    /// Create an empty snapshot with no devices, players, or actions.
     pub fn new() -> Self {
         Self {
             keyboard: KeyboardState::new(),
@@ -38,6 +47,10 @@ impl InputSnapshot {
         }
     }
 
+    /// Start a new frame.
+    ///
+    /// Applies queued script commands, clears one-frame device edges, clears
+    /// one-frame action edges, and refreshes persistent action-down bits.
     #[inline]
     pub fn begin_frame(&mut self) {
         self.apply_queued_commands();
@@ -57,103 +70,129 @@ impl InputSnapshot {
         self.refresh_all_action_down();
     }
 
+    // ---- Keyboard input ----
+
+    /// Apply a key transition and refresh affected actions.
     #[inline]
     pub fn set_key_state(&mut self, key: KeyCode, is_down: bool) {
         self.keyboard.set_key_state(key, is_down);
         self.refresh_key_actions(key);
     }
 
+    /// Add text input for this frame.
     #[inline]
     pub fn push_text_input(&mut self, text: impl Into<String>) {
         self.keyboard.push_text_input(text);
     }
 
+    /// Return text input chunks received during this frame.
     #[inline]
     pub fn text_inputs(&self) -> &[String] {
         self.keyboard.text_inputs()
     }
 
+    /// Return `true` while the key is held.
     #[inline]
     pub fn is_key_down(&self, key: KeyCode) -> bool {
         self.keyboard.is_key_down(key)
     }
 
+    /// Return `true` only on the frame the key changes from up to down.
     #[inline]
     pub fn is_key_pressed(&self, key: KeyCode) -> bool {
         self.keyboard.is_key_pressed(key)
     }
 
+    /// Return `true` only on the frame the key changes from down to up.
     #[inline]
     pub fn is_key_released(&self, key: KeyCode) -> bool {
         self.keyboard.is_key_released(key)
     }
 
+    // ---- Mouse input ----
+
+    /// Apply a mouse button transition and refresh affected actions.
     #[inline]
     pub fn set_mouse_button_state(&mut self, button: MouseButton, is_down: bool) {
         self.mouse.set_button_state(button, is_down);
         self.refresh_mouse_actions(button);
     }
 
+    /// Add relative mouse movement in pixels for this frame.
     #[inline]
     pub fn add_mouse_delta(&mut self, dx: f32, dy: f32) {
         self.mouse.add_delta(dx, dy);
     }
 
+    /// Clear relative mouse movement without starting a new frame.
     #[inline]
     pub fn clear_mouse_delta(&mut self) {
         self.mouse.clear_delta();
     }
 
+    /// Add mouse wheel movement for this frame.
     #[inline]
     pub fn add_mouse_wheel(&mut self, dx: f32, dy: f32) {
         self.mouse.add_wheel(dx, dy);
     }
 
+    /// Set absolute mouse position in window pixels.
     #[inline]
     pub fn set_mouse_position(&mut self, x: f32, y: f32) {
         self.mouse.set_position(x, y);
     }
 
+    /// Set current mouse mode without queuing an output command.
     #[inline]
     pub fn set_mouse_mode_state(&mut self, mode: MouseMode) {
         self.mouse.set_mode(mode);
     }
 
+    /// Return current mouse mode.
     #[inline]
     pub fn mouse_mode(&self) -> MouseMode {
         self.mouse.mode()
     }
 
+    /// Drain the last queued mouse mode request, if any.
     #[inline]
     pub fn take_mouse_mode_request(&mut self) -> Option<MouseMode> {
         self.pending_mouse_mode.take()
     }
 
+    /// Set viewport size used for normalized mouse position.
     #[inline]
     pub fn set_viewport_size(&mut self, width: u32, height: u32) {
         self.mouse.set_viewport_size(width, height);
     }
 
+    // ---- Read-only views ----
+
+    /// Return all gamepad states.
     #[inline]
     pub fn gamepads(&self) -> &[GamepadState] {
         &self.gamepads
     }
 
+    /// Return all Joy-Con states.
     #[inline]
     pub fn joycons(&self) -> &[JoyConState] {
         &self.joycons
     }
 
+    /// Return all player binding states.
     #[inline]
     pub fn players(&self) -> &[PlayerState] {
         &self.players
     }
 
+    /// Return the active input map.
     #[inline]
     pub fn input_map(&self) -> &InputMap {
         &self.input_map
     }
 
+    /// Replace the input map and rebuild all cached action state.
     #[inline]
     pub fn set_input_map(&mut self, input_map: InputMap) {
         self.input_map = input_map;
@@ -161,16 +200,21 @@ impl InputSnapshot {
         self.refresh_all_action_states();
     }
 
+    // ---- Mutable device slots ----
+
+    /// Find the first Joy-Con with a matching side.
     #[inline]
     pub fn joycon_side(&self, side: JoyConSide) -> Option<&JoyConState> {
         self.joycons.iter().find(|jc| jc.side() == side)
     }
 
+    /// Find the first mutable Joy-Con with a matching side.
     #[inline]
     pub fn joycon_side_mut(&mut self, side: JoyConSide) -> Option<&mut JoyConState> {
         self.joycons.iter_mut().find(|jc| jc.side() == side)
     }
 
+    /// Return a mutable gamepad slot, creating empty slots as needed.
     #[inline]
     pub fn gamepad_mut(&mut self, index: usize) -> &mut GamepadState {
         if self.gamepads.len() <= index {
@@ -179,6 +223,7 @@ impl InputSnapshot {
         &mut self.gamepads[index]
     }
 
+    /// Return a mutable Joy-Con slot, creating empty slots as needed.
     #[inline]
     pub fn joycon_mut(&mut self, index: usize) -> &mut JoyConState {
         if self.joycons.len() <= index {
@@ -193,6 +238,7 @@ impl InputSnapshot {
         &mut self.joycons[index]
     }
 
+    /// Return a mutable player slot, creating empty slots as needed.
     #[inline]
     pub fn player_mut(&mut self, index: usize) -> &mut PlayerState {
         if self.players.len() <= index {
@@ -201,11 +247,15 @@ impl InputSnapshot {
         &mut self.players[index]
     }
 
+    /// Bind a player slot to a device source.
     #[inline]
     pub fn bind_player(&mut self, index: usize, binding: PlayerBinding) {
         self.player_mut(index).set_binding(binding);
     }
 
+    // ---- Queued script commands ----
+
+    /// Apply and clear commands queued by [`InputWindow`].
     #[inline]
     pub fn apply_queued_commands(&mut self) {
         let mut pending = {
@@ -244,27 +294,36 @@ impl InputSnapshot {
         }
     }
 
+    // ---- Gamepad input ----
+
+    /// Apply a gamepad button transition and refresh affected actions.
     #[inline]
     pub fn set_gamepad_button_state(&mut self, index: usize, button: GamepadButton, is_down: bool) {
         self.gamepad_mut(index).set_button_state(button, is_down);
         self.refresh_gamepad_actions(button);
     }
 
+    /// Set a gamepad axis value.
     #[inline]
     pub fn set_gamepad_axis(&mut self, index: usize, axis: GamepadAxis, value: f32) {
         self.gamepad_mut(index).set_axis(axis, value);
     }
 
+    /// Set gamepad gyro data.
     #[inline]
     pub fn set_gamepad_gyro(&mut self, index: usize, x: f32, y: f32, z: f32) {
         self.gamepad_mut(index).set_gyro(x, y, z);
     }
 
+    /// Set gamepad accelerometer data.
     #[inline]
     pub fn set_gamepad_accel(&mut self, index: usize, x: f32, y: f32, z: f32) {
         self.gamepad_mut(index).set_accel(x, y, z);
     }
 
+    // ---- Joy-Con input ----
+
+    /// Apply a Joy-Con button transition and refresh affected actions.
     #[inline]
     pub fn set_joycon_button_state(&mut self, index: usize, button: JoyConButton, is_down: bool) {
         let state = self.joycon_mut(index);
@@ -272,6 +331,7 @@ impl InputSnapshot {
         self.refresh_joycon_actions(button);
     }
 
+    /// Set Joy-Con side and refresh all action state.
     #[inline]
     pub fn set_joycon_side(&mut self, index: usize, side: JoyConSide) {
         let state = self.joycon_mut(index);
@@ -279,83 +339,102 @@ impl InputSnapshot {
         self.refresh_all_action_states();
     }
 
+    /// Set Joy-Con connection state.
     #[inline]
     pub fn set_joycon_connected(&mut self, index: usize, connected: bool) {
         let state = self.joycon_mut(index);
         state.set_connected(connected);
     }
 
+    /// Set whether Joy-Con calibration is complete.
     #[inline]
     pub fn set_joycon_calibrated(&mut self, index: usize, calibrated: bool) {
         let state = self.joycon_mut(index);
         state.set_calibrated(calibrated);
     }
 
+    /// Set whether Joy-Con calibration is currently active.
     #[inline]
     pub fn set_joycon_calibration_in_progress(&mut self, index: usize, in_progress: bool) {
         let state = self.joycon_mut(index);
         state.set_calibration_in_progress(in_progress);
     }
 
+    /// Set Joy-Con calibration bias vector.
     #[inline]
     pub fn set_joycon_calibration_bias(&mut self, index: usize, x: f32, y: f32, z: f32) {
         let state = self.joycon_mut(index);
         state.set_calibration_bias(x, y, z);
     }
 
+    /// Set Joy-Con stick vector.
     #[inline]
     pub fn set_joycon_stick(&mut self, index: usize, x: f32, y: f32) {
         let state = self.joycon_mut(index);
         state.set_stick(x, y);
     }
 
+    /// Set Joy-Con gyro data.
     #[inline]
     pub fn set_joycon_gyro(&mut self, index: usize, x: f32, y: f32, z: f32) {
         let state = self.joycon_mut(index);
         state.set_gyro(x, y, z);
     }
 
+    /// Set Joy-Con accelerometer data.
     #[inline]
     pub fn set_joycon_accel(&mut self, index: usize, x: f32, y: f32, z: f32) {
         let state = self.joycon_mut(index);
         state.set_accel(x, y, z);
     }
 
+    // ---- Mouse queries ----
+
+    /// Return `true` while the mouse button is held.
     #[inline]
     pub fn is_mouse_down(&self, button: MouseButton) -> bool {
         self.mouse.is_button_down(button)
     }
 
+    /// Return `true` only on the frame the mouse button changes from up to down.
     #[inline]
     pub fn is_mouse_pressed(&self, button: MouseButton) -> bool {
         self.mouse.is_button_pressed(button)
     }
 
+    /// Return `true` only on the frame the mouse button changes from down to up.
     #[inline]
     pub fn is_mouse_released(&self, button: MouseButton) -> bool {
         self.mouse.is_button_released(button)
     }
 
+    /// Return accumulated relative mouse movement in pixels.
     #[inline]
     pub fn mouse_delta(&self) -> Vector2 {
         self.mouse.delta()
     }
 
+    /// Return accumulated mouse wheel movement.
     #[inline]
     pub fn mouse_wheel(&self) -> Vector2 {
         self.mouse.wheel()
     }
 
+    /// Return normalized viewport mouse position.
     #[inline]
     pub fn mouse_position(&self) -> Vector2 {
         self.mouse.position()
     }
 
+    /// Return viewport size in pixels.
     #[inline]
     pub fn viewport_size(&self) -> Vector2 {
         self.mouse.viewport_size()
     }
 
+    // ---- Output command drains ----
+
+    /// Drain Joy-Con calibration requests and clear request flags.
     #[inline]
     pub fn take_joycon_calibration_requests(&mut self) -> Vec<usize> {
         let mut out = Vec::new();
@@ -368,21 +447,27 @@ impl InputSnapshot {
         out
     }
 
+    /// Drain pending gamepad rumble requests.
     #[inline]
     pub fn take_gamepad_rumble_requests(&mut self) -> Vec<GamepadRumbleRequest> {
         std::mem::take(&mut self.pending_gamepad_rumble)
     }
 
+    /// Drain pending Joy-Con rumble requests.
     #[inline]
     pub fn take_joycon_rumble_requests(&mut self) -> Vec<JoyConRumbleRequest> {
         std::mem::take(&mut self.pending_joycon_rumble)
     }
 
+    /// Drain pending Joy-Con indicator requests.
     #[inline]
     pub fn take_joycon_indicator_requests(&mut self) -> Vec<JoyConIndicatorRequest> {
         std::mem::take(&mut self.pending_joycon_indicator)
     }
 
+    // ---- Action queries ----
+
+    /// Return `true` while any binding for the hashed action is held.
     #[inline]
     pub fn is_action_down_hash(&self, name_hash: u64) -> bool {
         self.input_map
@@ -390,6 +475,7 @@ impl InputSnapshot {
             .is_some_and(|index| test_bit(&self.action_down, index))
     }
 
+    /// Return `true` when any binding for the hashed action is pressed this frame.
     #[inline]
     pub fn is_action_pressed_hash(&self, name_hash: u64) -> bool {
         self.input_map
@@ -397,12 +483,15 @@ impl InputSnapshot {
             .is_some_and(|index| test_bit(&self.action_pressed, index))
     }
 
+    /// Return `true` when any binding for the hashed action is released this frame.
     #[inline]
     pub fn is_action_released_hash(&self, name_hash: u64) -> bool {
         self.input_map
             .action_index(name_hash)
             .is_some_and(|index| test_bit(&self.action_released, index))
     }
+
+    // ---- Action cache maintenance ----
 
     fn resize_action_bits(&mut self) {
         let words = self.input_map.action_count().div_ceil(64);
@@ -506,6 +595,8 @@ impl InputSnapshot {
     }
 }
 
+// ---- Bit helpers ----
+
 #[inline]
 fn test_bit(bits: &[u64], index: usize) -> bool {
     let word = index / 64;
@@ -532,39 +623,54 @@ impl Default for InputSnapshot {
     }
 }
 
+/// Input command queued by scripts and applied by the input backend.
 #[derive(Clone, Debug)]
 pub enum InputCommand {
+    /// Bind a player slot to a device source.
     BindPlayer {
         index: usize,
         binding: PlayerBinding,
     },
-    RequestJoyConCalibration {
-        index: usize,
-    },
-    SetMouseMode {
-        mode: MouseMode,
-    },
+    /// Request Joy-Con calibration for a slot.
+    RequestJoyConCalibration { index: usize },
+    /// Request mouse mode change.
+    SetMouseMode { mode: MouseMode },
+    /// Request gamepad rumble.
     SetGamepadRumble {
         index: usize,
         rumble: RumbleIntensity,
     },
+    /// Request Joy-Con rumble.
     SetJoyConRumble {
         index: usize,
         rumble: RumbleIntensity,
     },
+    /// Request Joy-Con player indicator change.
     SetJoyConIndicator {
         index: usize,
         indicator: PlayerIndicatorSlot,
     },
 }
 
+/// Read-only input contract used by [`InputWindow`].
+///
+/// Implementors expose device state and may optionally provide a command buffer
+/// for script-issued output requests.
 pub trait InputAPI {
+    /// Return keyboard state.
     fn keyboard(&self) -> &KeyboardState;
+    /// Return mouse state.
     fn mouse(&self) -> &MouseState;
+    /// Return gamepad states.
     fn gamepads(&self) -> &[GamepadState];
+    /// Return Joy-Con states.
     fn joycons(&self) -> &[JoyConState];
+    /// Return player binding states.
     fn players(&self) -> &[PlayerState];
+    /// Return input-map actions.
     fn input_map(&self) -> &InputMap;
+
+    /// Return `true` while any binding for the hashed action is held.
     fn action_down_hash(&self, name_hash: u64) -> bool {
         self.input_map().down_hash(
             name_hash,
@@ -574,6 +680,8 @@ pub trait InputAPI {
             self.joycons(),
         )
     }
+
+    /// Return `true` when any binding for the hashed action is pressed this frame.
     fn action_pressed_hash(&self, name_hash: u64) -> bool {
         self.input_map().pressed_hash(
             name_hash,
@@ -583,6 +691,8 @@ pub trait InputAPI {
             self.joycons(),
         )
     }
+
+    /// Return `true` when any binding for the hashed action is released this frame.
     fn action_released_hash(&self, name_hash: u64) -> bool {
         self.input_map().released_hash(
             name_hash,
@@ -592,6 +702,8 @@ pub trait InputAPI {
             self.joycons(),
         )
     }
+
+    /// Return a command buffer when scripts may queue output requests.
     #[inline]
     fn command_buffer(&self) -> Option<&RefCell<Vec<InputCommand>>> {
         None

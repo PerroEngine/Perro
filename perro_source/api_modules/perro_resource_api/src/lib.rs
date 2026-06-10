@@ -1,8 +1,20 @@
+//! Public resource scripting API.
+//!
+//! This crate exposes script access to loaded resources and asset documents:
+//! textures, audio, CSV tables, meshes, materials, GLTF metadata, skeletons,
+//! animations, animation trees, 2D draw data, localization, scene documents,
+//! viewport data, post-processing, and visual accessibility.
+
 pub mod api;
 pub mod res_path;
 pub mod sub_apis;
 
+// ---- Resource facade ----
+
 pub use api::ResourceWindow;
+
+// ---- Shared data types ----
+
 pub use perro_csv::{
     CSVQuery, CSVQueryResult, CSVQueryRow, Csv, CsvBuf, CsvCell, CsvCompare, CsvLogic, CsvOrder,
     CsvRow, CsvRowIndex,
@@ -16,9 +28,13 @@ pub use perro_render_bridge::{
 pub use perro_scene::{Scene, SceneDoc, SceneWrite};
 pub use res_path::{ResPath, ResPathBuf, ResPathError, ResPathKind, ResPathSource};
 
+/// Common imports for scripts that use resource APIs.
 pub mod prelude {
+    // Facade traits and module accessors.
     pub use crate::api::{ResourceAPI, ResourceWindow, ViewportAPI};
     pub use crate::res_path::{ResPath, ResPathBuf, ResPathError, ResPathKind, ResPathSource};
+
+    // Resource domain APIs.
     pub use crate::sub_apis::{
         AnimationAPI, AnimationModule, Audio, Audio2D, Audio2DModule, Audio3D, Audio3DModule,
         AudioAPI, AudioBusID, AudioDirection, AudioModule, AudioPan, AudioPlayConfig, CsvAPI,
@@ -30,6 +46,8 @@ pub mod prelude {
         SpatialAudioOptions, TextureAPI, TextureModule, TextureReserveArg, VisualAccessibilityAPI,
         program,
     };
+
+    // Convenience macros.
     pub use crate::{
         animation_count, animation_drop, animation_is_loaded, animation_load, animation_reserve,
         animation_tree_drop, animation_tree_is_loaded, audio_bus, audio_bus_pause,
@@ -47,6 +65,8 @@ pub mod prelude {
         skeleton_count, skeleton_load_bones, texture_count, texture_drop, texture_is_loaded,
         texture_load, texture_reserve,
     };
+
+    // Shared data types.
     pub use perro_csv::{
         CSVQuery, CSVQueryResult, CSVQueryRow, Csv, CsvBuf, CsvCell, CsvCompare, CsvLogic,
         CsvOrder, CsvRow, CsvRowIndex,

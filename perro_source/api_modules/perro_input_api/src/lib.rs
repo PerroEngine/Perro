@@ -1,3 +1,11 @@
+//! Public input scripting API.
+//!
+//! This crate exposes frame-stable input state to scripts. It keeps raw device
+//! state, input-map actions, player bindings, and queued output commands
+//! together behind [`InputWindow`].
+
+// ---- Device state modules ----
+
 mod frame;
 mod gamepad;
 mod input_map;
@@ -10,6 +18,8 @@ mod snapshot;
 mod state;
 mod types;
 mod window;
+
+// ---- Public device/state exports ----
 
 pub use frame::*;
 pub use gamepad::{GamepadAxis, GamepadButton, GamepadState};
@@ -28,6 +38,7 @@ pub use window::*;
 #[cfg(test)]
 mod tests;
 
+/// Common imports for scripts that use input APIs.
 pub mod prelude {
     pub use crate::{
         ActionModule, GamepadAxis, GamepadButton, GamepadIndex, GamepadModule, GamepadState,

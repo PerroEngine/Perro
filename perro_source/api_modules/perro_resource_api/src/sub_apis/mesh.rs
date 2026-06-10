@@ -1,3 +1,7 @@
+//! Mesh resource API.
+//!
+//! Loads, reserves, creates, reads, writes, drops, and checks mesh resources.
+
 use crate::ResPathSource;
 use perro_ids::MeshID;
 use perro_render_bridge::Mesh3D;

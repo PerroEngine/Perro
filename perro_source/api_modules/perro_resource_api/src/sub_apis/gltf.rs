@@ -1,3 +1,7 @@
+//! GLTF inspection API.
+//!
+//! Reads metadata from GLB/GLTF files without creating runtime scene nodes.
+
 use crate::ResPathSource;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

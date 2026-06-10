@@ -1,3 +1,8 @@
+//! Audio resource API.
+//!
+//! Loads audio and soundfonts, controls buses, and starts/stops sampled audio
+//! or MIDI playback.
+
 use crate::ResPathSource;
 use perro_ids::{AudioBusID, SoundFontID};
 pub use perro_pawdio::{

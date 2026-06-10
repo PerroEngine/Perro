@@ -1,3 +1,8 @@
+//! Runtime physics API.
+//!
+//! Controls global physics state and exposes raycasts, shape queries, force
+//! application, and launch/trajectory helpers.
+
 use perro_ids::NodeID;
 use perro_nodes::{PhysicsForceEmitter2D, PhysicsForceEmitter3D, Shape2D, Shape3D};
 use perro_structs::{BitMask, Quaternion, Vector2, Vector3};

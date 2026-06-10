@@ -1,3 +1,8 @@
+//! Runtime audio API.
+//!
+//! Plays audio and MIDI attached to scene nodes, including spatial options and
+//! per-source handles.
+
 use perro_ids::{AudioBusID, NodeID};
 pub use perro_pawdio::{
     MidiChannel, MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong, MidiSound, Note, program,
