@@ -36,3 +36,28 @@ pub fn kind_label(path: &str) -> &'static str {
         _ => "other",
     }
 }
+
+pub fn display_kind_label(path: &str) -> &'static str {
+    if path.ends_with('/') {
+        return "DIR";
+    }
+    let Some(ext) = Path::new(path).extension().and_then(|v| v.to_str()) else {
+        return "OTH";
+    };
+    match ext.to_ascii_lowercase().as_str() {
+        "scn" | "fur" => "SCN",
+        "rs" => "RS",
+        "png" | "jpg" | "jpeg" | "webp" | "bmp" | "tga" => "IMG",
+        "wav" | "ogg" | "mp3" | "flac" | "aac" | "m4a" | "mid" | "midi" | "sf2" => "AUD",
+        "panim" => "ANIM",
+        "panimtree" => "TREE",
+        "pmat" => "MAT",
+        "uistyle" => "STYLE",
+        "ppart" => "PART",
+        "ptileset" => "TILE",
+        "pskel2d" | "pskel3d" => "SKEL",
+        "glb" | "gltf" => "GLB",
+        "obj" | "fbx" | "pmesh" => "MESH",
+        _ => "OTH",
+    }
+}

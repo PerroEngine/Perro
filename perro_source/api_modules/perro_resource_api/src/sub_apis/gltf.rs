@@ -17,6 +17,18 @@ pub struct GltfInfo {
 
 pub trait GltfAPI {
     fn inspect_gltf(&self, source: &str) -> Option<GltfInfo>;
+    fn convert_gltf_animation_to_panim(
+        &self,
+        source: &str,
+        fps: f32,
+        animation_index: usize,
+        skeleton_object: &str,
+    ) -> Result<String, String>;
+    fn convert_gltf_material_to_pmat(
+        &self,
+        source: &str,
+        material_index: usize,
+    ) -> Result<String, String>;
 }
 
 pub struct GlbModule<'res, R: GltfAPI + ?Sized> {
@@ -66,6 +78,30 @@ impl<'res, R: GltfAPI + ?Sized> GlbModule<'res, R> {
     #[inline]
     pub fn texture_count<S: ResPathSource>(&self, source: S) -> Option<usize> {
         self.inspect(source).map(|info| info.texture_count)
+    }
+
+    pub fn animation_to_panim<S: ResPathSource>(
+        &self,
+        source: S,
+        fps: f32,
+        animation_index: usize,
+        skeleton_object: &str,
+    ) -> Result<String, String> {
+        self.api.convert_gltf_animation_to_panim(
+            source.as_res_path_str(),
+            fps,
+            animation_index,
+            skeleton_object,
+        )
+    }
+
+    pub fn material_to_pmat<S: ResPathSource>(
+        &self,
+        source: S,
+        material_index: usize,
+    ) -> Result<String, String> {
+        self.api
+            .convert_gltf_material_to_pmat(source.as_res_path_str(), material_index)
     }
 }
 
