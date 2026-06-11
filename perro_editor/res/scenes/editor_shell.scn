@@ -217,10 +217,11 @@ parent = @main_split
 [scene_tree_title]
 parent = @left_panel
     [UiLabel]
-        size_ratio = (1.0, 0.055)
+        size_ratio = (1.0, 0.04)
         text = "Scene"
-        text_size_ratio = 0.344
+        text_size_ratio = 0.30
         color = "#F3F4F6"
+        h_align = "start"
     [/UiLabel]
 [/scene_tree_title]
 
@@ -527,10 +528,11 @@ parent = @scene_row_11
 [file_title]
 parent = @left_panel
     [UiLabel]
-        size_ratio = (1.0, 0.055)
-        text = "Files"
-        text_size_ratio = 0.344
+        size_ratio = (1.0, 0.04)
+        text = "File System (res://)"
+        text_size_ratio = 0.25
         color = "#F3F4F6"
+        h_align = "start"
     [/UiLabel]
 [/file_title]
 
@@ -837,7 +839,7 @@ parent = @file_row_11
 [center_stack]
 parent = @main_split
     [UiVLayout]
-        size_ratio = (0.60, 1.0)
+        size_ratio = (0.58, 1.0)
         h_align = "fill"
         v_align = "fill"
         spacing = 0.004
@@ -1388,7 +1390,7 @@ parent = @editor_root
 [inspector_panel]
 parent = @main_split
     [UiVLayout]
-        size_ratio = (0.20, 1.0)
+        size_ratio = (0.205, 1.0)
         h_align = "fill"
         v_align = "start"
         spacing = 0.008
@@ -1443,13 +1445,71 @@ parent = @inspector_panel
 [inspector_pos]
 parent = @inspector_panel
     [UiLabel]
-        size_ratio = (1.0, 0.06)
-        text = "pos: -"
-        text_size_ratio = 0.23
+        size_ratio = (1.0, 0.035)
+        text = "position"
+        text_size_ratio = 0.22
         color = "#D1D5DB"
         h_align = "start"
     [/UiLabel]
 [/inspector_pos]
+
+[inspector_position_box]
+parent = @inspector_panel
+    [UiTextBox]
+        size_ratio = (1.0, 0.055)
+        text = "-"
+        text_size_ratio = 0.30
+        text_changed_signals = ["editor_inspector_position"]
+        style = { fill: "#111827", stroke: "#334155", stroke_width: 1.0, radius: 0.015 }
+        focused_style = { fill: "#0F172A", stroke: "#93C5FD", stroke_width: 1.0, radius: 0.015 }
+    [/UiTextBox]
+[/inspector_position_box]
+
+[inspector_rotation_label]
+parent = @inspector_panel
+    [UiLabel]
+        size_ratio = (1.0, 0.035)
+        text = "rotation"
+        text_size_ratio = 0.22
+        color = "#D1D5DB"
+        h_align = "start"
+    [/UiLabel]
+[/inspector_rotation_label]
+
+[inspector_rotation_box]
+parent = @inspector_panel
+    [UiTextBox]
+        size_ratio = (1.0, 0.055)
+        text = "-"
+        text_size_ratio = 0.30
+        text_changed_signals = ["editor_inspector_rotation"]
+        style = { fill: "#111827", stroke: "#334155", stroke_width: 1.0, radius: 0.015 }
+        focused_style = { fill: "#0F172A", stroke: "#93C5FD", stroke_width: 1.0, radius: 0.015 }
+    [/UiTextBox]
+[/inspector_rotation_box]
+
+[inspector_scale_label]
+parent = @inspector_panel
+    [UiLabel]
+        size_ratio = (1.0, 0.035)
+        text = "scale"
+        text_size_ratio = 0.22
+        color = "#D1D5DB"
+        h_align = "start"
+    [/UiLabel]
+[/inspector_scale_label]
+
+[inspector_scale_box]
+parent = @inspector_panel
+    [UiTextBox]
+        size_ratio = (1.0, 0.055)
+        text = "-"
+        text_size_ratio = 0.30
+        text_changed_signals = ["editor_inspector_scale"]
+        style = { fill: "#111827", stroke: "#334155", stroke_width: 1.0, radius: 0.015 }
+        focused_style = { fill: "#0F172A", stroke: "#93C5FD", stroke_width: 1.0, radius: 0.015 }
+    [/UiTextBox]
+[/inspector_scale_box]
 
 [inspector_script]
 parent = @inspector_panel

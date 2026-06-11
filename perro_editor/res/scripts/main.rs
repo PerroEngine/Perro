@@ -144,6 +144,9 @@ methods!({
             "mode_ui_button" => set_mode(ctx, "UI"),
             "mode_2d_button" => set_mode(ctx, "2D"),
             "mode_3d_button" => set_mode(ctx, "3D"),
+            "inspector_position_box" => edit_selected_transform(ctx, "position", "inspector_position_box"),
+            "inspector_rotation_box" => edit_selected_transform(ctx, "rotation", "inspector_rotation_box"),
+            "inspector_scale_box" => edit_selected_transform(ctx, "scale", "inspector_scale_box"),
             _ => {
                 if let Some(idx) = suffix_index(&name, "file_row_") {
                     open_file_slot(ctx, idx);
@@ -223,6 +226,9 @@ fn connect_editor_signals<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
             signal!("editor_add_type_next"),
             signal!("editor_add_node_cancel"),
             signal!("editor_viewport_click"),
+            signal!("editor_inspector_position"),
+            signal!("editor_inspector_rotation"),
+            signal!("editor_inspector_scale"),
         ],
         [func!("on_editor_signal")]
     );
@@ -2063,6 +2069,86 @@ fn set_scene_f32(data: &mut SceneNodeData, field: &str, value: f32) {
     data.fields.to_mut().push((name, SceneValue::F32(value)));
 }
 
+fn set_scene_vec3(data: &mut SceneNodeData, field: &str, value: Vector3) {
+    let name = SceneFieldName::from_name(field.to_string());
+    for (field_name, field_value) in data.fields.to_mut().iter_mut() {
+        if field_name.as_ref() == field {
+            *field_value = SceneValue::Vec3 {
+                x: value.x,
+                y: value.y,
+                z: value.z,
+            };
+            return;
+        }
+    }
+    data.fields.to_mut().push((
+        name,
+        SceneValue::Vec3 {
+            x: value.x,
+            y: value.y,
+            z: value.z,
+        },
+    ));
+}
+
+fn edit_selected_transform<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    field: &str,
+    text_box: &str,
+) {
+    let Some(text) = read_text_box(ctx, text_box) else {
+        return;
+    };
+    let Some(values) = parse_number_list(&text) else {
+        set_log(ctx, "inspector edit fail\nbad number list");
+        return;
+    };
+    let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let Some(key) = state.selected_key else {
+            return false;
+        };
+        if state.doc_text.is_empty() {
+            return false;
+        }
+        let mut doc = SceneDoc::parse(&state.doc_text);
+        let Some(node) = doc.scene.nodes.to_mut().iter_mut().find(|node| node.key.as_u32() == key) else {
+            return false;
+        };
+        match values.as_slice() {
+            [x] => set_scene_f32(&mut node.data, field, *x),
+            [x, y] => set_scene_vec2(&mut node.data, field, Vector2::new(*x, *y)),
+            [x, y, z] => set_scene_vec3(&mut node.data, field, Vector3::new(*x, *y, *z)),
+            _ => return false,
+        }
+        state.doc_text = doc.to_text();
+        state.dirty = true;
+        if let Some(path) = state.open_paths.get(state.active_open).cloned()
+            && !state.dirty_scene_paths.iter().any(|item| item == &path)
+        {
+            state.dirty_scene_paths.push(path);
+        }
+        true
+    })
+    .unwrap_or(false);
+    if changed {
+        rebuild_preview(ctx);
+        refresh_all(ctx);
+    }
+}
+
+fn parse_number_list(text: &str) -> Option<Vec<f32>> {
+    let values = text
+        .trim()
+        .trim_start_matches('(')
+        .trim_end_matches(')')
+        .split([',', ' '])
+        .filter(|part| !part.trim().is_empty())
+        .map(|part| part.trim().parse::<f32>())
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    (!values.is_empty() && values.len() <= 3).then_some(values)
+}
+
 fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
 
@@ -2144,7 +2230,9 @@ fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     set_label(ctx, "inspector_name", &format!("name: {}", view.inspector_name));
     set_label(ctx, "inspector_type", &format!("type: {}", view.inspector_type));
     set_label(ctx, "inspector_parent", &format!("parent: {}", view.inspector_parent));
-    set_label(ctx, "inspector_pos", &format!("pos: {}", view.inspector_pos));
+    set_text_box(ctx, "inspector_position_box", &view.inspector_pos);
+    set_text_box(ctx, "inspector_rotation_box", &view.inspector_rotation);
+    set_text_box(ctx, "inspector_scale_box", &view.inspector_scale);
     set_label(ctx, "inspector_script", &format!("script: {}", view.inspector_script));
     set_label(ctx, "inspector_vars", &format!("script vars: {}", view.inspector_vars));
 }
@@ -2165,6 +2253,8 @@ struct EditorView {
     inspector_type: String,
     inspector_parent: String,
     inspector_pos: String,
+    inspector_rotation: String,
+    inspector_scale: String,
     inspector_script: String,
     inspector_vars: String,
     viewport: String,
@@ -2185,6 +2275,8 @@ impl EditorView {
         let mut inspector_type = "-".to_string();
         let mut inspector_parent = "-".to_string();
         let mut inspector_pos = "-".to_string();
+        let mut inspector_rotation = "-".to_string();
+        let mut inspector_scale = "-".to_string();
         let mut inspector_script = "-".to_string();
         let mut inspector_vars = "-".to_string();
         let mut gizmo = editor_gizmos::GizmoView::default();
@@ -2213,6 +2305,8 @@ impl EditorView {
                     .map(|key| doc.scene.key_name_or_id(key).to_string())
                     .unwrap_or_else(|| "-".to_string());
                 inspector_pos = find_position_text(&node.data).unwrap_or_else(|| "-".to_string());
+                inspector_rotation = find_scene_value_text(&node.data, "rotation").unwrap_or_else(|| "-".to_string());
+                inspector_scale = find_scene_value_text(&node.data, "scale").unwrap_or_else(|| "-".to_string());
                 inspector_script = node
                     .script
                     .as_ref()
@@ -2268,6 +2362,8 @@ impl EditorView {
             inspector_type,
             inspector_parent,
             inspector_pos,
+            inspector_rotation,
+            inspector_scale,
             inspector_script,
             inspector_vars,
             viewport,
@@ -2385,16 +2481,21 @@ fn node_type_icon(node_type: perro_scene::NodeType) -> &'static str {
 }
 
 fn find_position_text(data: &SceneNodeData) -> Option<String> {
+    find_scene_value_text(data, "position")
+}
+
+fn find_scene_value_text(data: &SceneNodeData, field: &str) -> Option<String> {
     for (name, value) in data.fields.iter() {
-        if name.as_ref() == "position" {
+        if name.as_ref() == field {
             return match value {
+                SceneValue::F32(value) => Some(format!("{value:.2}")),
                 SceneValue::Vec2 { x, y } => Some(format!("({x:.2}, {y:.2})")),
                 SceneValue::Vec3 { x, y, z } => Some(format!("({x:.2}, {y:.2}, {z:.2})")),
                 _ => None,
             };
         }
     }
-    data.base_ref().and_then(find_position_text)
+    data.base_ref().and_then(|base| find_scene_value_text(base, field))
 }
 
 fn unique_node_name(doc: &SceneDoc, prefix: &str) -> String {
@@ -2509,6 +2610,17 @@ fn set_label<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, name: &s
         let text = text.to_string();
         let _ = with_node_mut!(ctx.run, UiLabel, id, |node| {
             node.set_text(text);
+        });
+    }
+}
+
+fn set_text_box<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, name: &str, text: &str) {
+    if let Some(id) = find_named(ctx, name) {
+        let text = text.to_string();
+        let _ = with_node_mut!(ctx.run, UiTextBox, id, |node| {
+            if node.text.as_ref() != text {
+                node.set_text(text);
+            }
         });
     }
 }
@@ -2706,8 +2818,11 @@ fn apply_scene_list_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
     };
     let _ = with_node_mut!(ctx.run, UiList, list_id, |list| {
         list.indent = 18.0;
-        list.v_spacing = 0.006;
+        list.v_spacing = 0.004;
     });
+    for idx in 0..MAX_NODES {
+        set_button_size(ctx, &format!("scene_row_{idx}"), (1.0, 0.062));
+    }
 }
 
 fn apply_file_tree_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
@@ -2715,9 +2830,20 @@ fn apply_file_tree_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
         return;
     };
     let _ = with_node_mut!(ctx.run, UiList, list_id, |list| {
-        list.indent = 16.0;
-        list.v_spacing = 0.006;
+        list.indent = 8.0;
+        list.v_spacing = 0.004;
     });
+    for idx in 0..MAX_FILES {
+        set_button_size(ctx, &format!("file_row_{idx}"), (1.0, 0.062));
+    }
+}
+
+fn set_button_size<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, name: &str, size: (f32, f32)) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiButton, id, |node| {
+            node.layout.size = UiVector2::ratio(size.0, size.1);
+        });
+    }
 }
 
 fn set_add_node_popup<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, visible: bool) {
