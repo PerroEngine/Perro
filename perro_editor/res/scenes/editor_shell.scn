@@ -906,10 +906,9 @@ parent = @scene_tab_1
 
 [viewport_panel]
 parent = @center_stack
-    [UiPanel]
+    [UiLayout]
         size_ratio = (1.0, 0.72)
-        style = { fill: "#151922", stroke: "#6B7280", stroke_width: 1.0, radius: 0.025 }
-    [/UiPanel]
+    [/UiLayout]
 [/viewport_panel]
 
 [viewport_grid]
@@ -957,7 +956,6 @@ parent = @viewport_panel
         resolution = (960, 540)
         aspect_mode = "fit"
         visible = false
-        style = { fill: "#111827", stroke: "#334155", stroke_width: 1.0, radius: 0.025 }
     [/UiCameraStream]
 [/viewport_stream_2d]
 
@@ -971,7 +969,6 @@ parent = @viewport_panel
         resolution = (960, 540)
         aspect_mode = "fit"
         visible = false
-        style = { fill: "#111827", stroke: "#334155", stroke_width: 1.0, radius: 0.025 }
     [/UiCameraStream]
 [/viewport_stream_3d]
 
