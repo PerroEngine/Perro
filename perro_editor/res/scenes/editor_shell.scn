@@ -203,10 +203,68 @@ parent = @root_stack
     [/UiHLayout]
 [/main_split]
 
+[activity_bar]
+parent = @main_split
+    [UiVLayout]
+        size_ratio = (0.035, 1.0)
+        h_align = "fill"
+        v_align = "start"
+        spacing = 0.006
+        padding = (0.008, 0.012)
+        style = $panel_dark
+    [/UiVLayout]
+[/activity_bar]
+
+[activity_scene_button]
+parent = @activity_bar
+    [UiButton]
+        size_ratio = (1.0, 0.07)
+        click_signals = ["editor_activity_scene"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/activity_scene_button]
+
+[activity_scene_label]
+parent = @activity_scene_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "SCN"
+        text_size_ratio = 0.24
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/activity_scene_label]
+
+[activity_anim_button]
+parent = @activity_bar
+    [UiButton]
+        size_ratio = (1.0, 0.07)
+        click_signals = ["editor_activity_anim"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/activity_anim_button]
+
+[activity_anim_label]
+parent = @activity_anim_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "ANM"
+        text_size_ratio = 0.24
+        color = "#FDBA74"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/activity_anim_label]
+
 [left_panel]
 parent = @main_split
     [UiVLayout]
-        size_ratio = (0.20, 1.0)
+        size_ratio = (0.18, 1.0)
         h_align = "fill"
         v_align = "fill"
         spacing = 0.006
@@ -839,7 +897,7 @@ parent = @file_row_11
 [center_stack]
 parent = @main_split
     [UiVLayout]
-        size_ratio = (0.58, 1.0)
+        size_ratio = (0.57, 1.0)
         h_align = "fill"
         v_align = "fill"
         spacing = 0.004
@@ -1371,6 +1429,108 @@ parent = @bottom_panel
     [/UiLabel]
 [/log_text]
 
+[anim_drawer]
+parent = @bottom_panel
+    [UiVLayout]
+        size_ratio = (1.0, 0.96)
+        h_align = "fill"
+        v_align = "fill"
+        spacing = 0.006
+        visible = false
+    [/UiVLayout]
+[/anim_drawer]
+
+[anim_drawer_header]
+parent = @anim_drawer
+    [UiHLayout]
+        size_ratio = (1.0, 0.24)
+        h_align = "fill"
+        v_align = "center"
+        spacing = 0.008
+    [/UiHLayout]
+[/anim_drawer_header]
+
+[anim_drawer_title]
+parent = @anim_drawer_header
+    [UiLabel]
+        size_ratio = (0.62, 1.0)
+        text = "Animation"
+        text_size_ratio = 0.28
+        color = "#F3F4F6"
+        h_align = "start"
+    [/UiLabel]
+[/anim_drawer_title]
+
+[anim_create_button]
+parent = @anim_drawer_header
+    [UiButton]
+        size_ratio = (0.18, 0.78)
+        click_signals = ["editor_anim_create"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/anim_create_button]
+
+[anim_create_label]
+parent = @anim_create_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Create .panim"
+        text_size_ratio = 0.22
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/anim_create_label]
+
+[anim_close_button]
+parent = @anim_drawer_header
+    [UiButton]
+        size_ratio = (0.08, 0.78)
+        click_signals = ["editor_anim_close"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/anim_close_button]
+
+[anim_close_label]
+parent = @anim_close_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Close"
+        text_size_ratio = 0.24
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/anim_close_label]
+
+[anim_status_text]
+parent = @anim_drawer
+    [UiLabel]
+        size_ratio = (1.0, 0.28)
+        text = "select AnimationPlayer"
+        text_size_ratio = 0.20
+        color = "#CBD5E1"
+        h_align = "start"
+        v_align = "start"
+    [/UiLabel]
+[/anim_status_text]
+
+[anim_tracks_text]
+parent = @anim_drawer
+    [UiLabel]
+        size_ratio = (1.0, 0.42)
+        text = "tracks"
+        text_size_ratio = 0.18
+        color = "#CBD5E1"
+        h_align = "start"
+        v_align = "start"
+    [/UiLabel]
+[/anim_tracks_text]
+
 [editor_camera_2d]
 parent = @editor_root
     [Camera2D]
@@ -1390,7 +1550,7 @@ parent = @editor_root
 [inspector_panel]
 parent = @main_split
     [UiVLayout]
-        size_ratio = (0.205, 1.0)
+        size_ratio = (0.195, 1.0)
         h_align = "fill"
         v_align = "start"
         spacing = 0.008

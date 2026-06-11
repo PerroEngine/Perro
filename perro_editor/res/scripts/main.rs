@@ -1,8 +1,9 @@
 use perro_api::prelude::*;
 use perro_api::scene::{
-    SceneDoc, SceneFieldName, SceneKey, SceneNodeData, SceneNodeEntry, SceneValue,
+    SceneDoc, SceneFieldName, SceneKey, SceneNodeData, SceneNodeEntry, SceneValue, SceneValueKey,
 };
 use std::borrow::Cow;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -67,6 +68,10 @@ struct EditorState {
     ui_canvas_x: f32,
     ui_canvas_y: f32,
     ui_canvas_zoom: f32,
+    activity_mode: String,
+    anim_drawer_open: bool,
+    active_anim_path: String,
+    active_anim_player_key: Option<u32>,
     log: String,
 }
 
@@ -80,6 +85,7 @@ lifecycle!({
             state.log = "project manager".to_string();
             state.ui_canvas_zoom = 1.0;
             state.cam2_zoom = 1.0;
+            state.activity_mode = "scene".to_string();
         });
         refresh_all(ctx);
         set_project_manager(ctx, true);
@@ -144,6 +150,10 @@ methods!({
             "mode_ui_button" => set_mode(ctx, "UI"),
             "mode_2d_button" => set_mode(ctx, "2D"),
             "mode_3d_button" => set_mode(ctx, "3D"),
+            "activity_scene_button" => set_activity_mode(ctx, "scene"),
+            "activity_anim_button" => set_activity_mode(ctx, "anim"),
+            "anim_create_button" => create_animation_for_selected_player(ctx),
+            "anim_close_button" => set_anim_drawer(ctx, false),
             "inspector_position_box" => edit_selected_transform(ctx, "position", "inspector_position_box"),
             "inspector_rotation_box" => edit_selected_transform(ctx, "rotation", "inspector_rotation_box"),
             "inspector_scale_box" => edit_selected_transform(ctx, "scale", "inspector_scale_box"),
@@ -184,6 +194,10 @@ fn connect_editor_signals<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
             signal!("editor_mode_ui"),
             signal!("editor_mode_2d"),
             signal!("editor_mode_3d"),
+            signal!("editor_activity_scene"),
+            signal!("editor_activity_anim"),
+            signal!("editor_anim_create"),
+            signal!("editor_anim_close"),
             signal!("editor_open_file_0"),
             signal!("editor_open_file_1"),
             signal!("editor_open_file_2"),
@@ -680,6 +694,10 @@ fn open_file_slot<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, idx
         set_log(ctx, &format!("folder\n{scene_path}"));
         return;
     }
+    if scene_path.ends_with(".panim") {
+        open_animation_path(ctx, &scene_path);
+        return;
+    }
     if !scene_path.ends_with(".scn") {
         set_log(ctx, &format!("{} file\n{}", editor_files::kind_label(&scene_path), editor_files::rel_label(&scene_path)));
         return;
@@ -735,6 +753,26 @@ fn open_scene_path<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, sc
     refresh_all(ctx);
 }
 
+fn open_animation_path<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, anim_path: &str) {
+    let root = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.project_root.clone()
+    });
+    let abs = res_to_abs(&root, anim_path);
+    match FileMod::load_string(&abs) {
+        Ok(_) => {
+            let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+                state.activity_mode = "anim".to_string();
+                state.anim_drawer_open = true;
+                state.active_anim_player_key = None;
+                state.active_anim_path = anim_path.to_string();
+                state.log = format!("open animation data\n{}", editor_files::rel_label(anim_path));
+            });
+            refresh_all(ctx);
+        }
+        Err(err) => set_log(ctx, &format!("open animation fail\n{anim_path}\n{err}")),
+    }
+}
+
 fn set_active_tab<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, idx: usize) {
     let path = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.open_paths.get(idx).cloned()
@@ -774,9 +812,39 @@ fn select_node_slot<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, i
     if let Some(key) = key {
         let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
             state.selected_key = Some(key);
+            if selected_node_type_name(&state.doc_text, key).as_deref() == Some("AnimationPlayer") {
+                state.activity_mode = "anim".to_string();
+                state.anim_drawer_open = true;
+                state.active_anim_player_key = Some(key);
+                if let Some(path) = selected_node_field_text(&state.doc_text, key, "animation") {
+                    state.active_anim_path = path;
+                }
+            } else {
+                state.active_anim_player_key = None;
+            }
         });
         refresh_all(ctx);
     }
+}
+
+fn set_activity_mode<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, mode: &str) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.activity_mode = mode.to_string();
+        if mode == "anim" {
+            state.anim_drawer_open = true;
+        }
+    });
+    refresh_all(ctx);
+}
+
+fn set_anim_drawer<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, visible: bool) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.anim_drawer_open = visible;
+        if visible {
+            state.activity_mode = "anim".to_string();
+        }
+    });
+    refresh_all(ctx);
 }
 
 fn add_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, node_type_name: &str) {
@@ -2028,6 +2096,31 @@ fn scene_field_str(data: &SceneNodeData, field: &str) -> Option<String> {
     scene_field(data, field)?.as_str().map(str::to_string)
 }
 
+fn selected_node_type_name(doc_text: &str, key: u32) -> Option<String> {
+    let doc = SceneDoc::parse(doc_text);
+    doc.scene
+        .nodes
+        .iter()
+        .find(|node| node.key.as_u32() == key)
+        .map(|node| node.data.type_name().to_string())
+}
+
+fn selected_node_field_text(doc_text: &str, key: u32, field: &str) -> Option<String> {
+    let doc = SceneDoc::parse(doc_text);
+    let node = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key)?;
+    scene_field_value_text(&node.data, field)
+}
+
+fn scene_field_value_text(data: &SceneNodeData, field: &str) -> Option<String> {
+    match scene_field(data, field)? {
+        SceneValue::Str(value) => Some(value.to_string()),
+        SceneValue::Key(key) => Some(key.to_string()),
+        SceneValue::F32(value) => Some(value.to_string()),
+        SceneValue::I32(value) => Some(value.to_string()),
+        _ => None,
+    }
+}
+
 fn scene_field_vec2(data: &SceneNodeData, field: &str) -> Option<Vector2> {
     scene_field(data, field)?
         .as_vec2()
@@ -2089,6 +2182,116 @@ fn set_scene_vec3(data: &mut SceneNodeData, field: &str, value: Vector3) {
             z: value.z,
         },
     ));
+}
+
+fn set_scene_string(data: &mut SceneNodeData, field: &str, value: String) {
+    let name = SceneFieldName::from_name(field.to_string());
+    for (field_name, field_value) in data.fields.to_mut().iter_mut() {
+        if field_name.as_ref() == field {
+            *field_value = SceneValue::Str(Cow::Owned(value));
+            return;
+        }
+    }
+    data.fields.to_mut().push((name, SceneValue::Str(Cow::Owned(value))));
+}
+
+fn set_scene_binding(data: &mut SceneNodeData, object: &str, node_name: &str) {
+    let fields = vec![(
+        SceneFieldName::from_name(object.to_string()),
+        SceneValue::Key(SceneValueKey::from(node_name.to_string())),
+    )];
+    let name = SceneFieldName::Bindings;
+    for (field_name, field_value) in data.fields.to_mut().iter_mut() {
+        if field_name.as_ref() == "bindings" {
+            *field_value = SceneValue::Object(Cow::Owned(fields));
+            return;
+        }
+    }
+    data.fields.to_mut().push((name, SceneValue::Object(Cow::Owned(fields))));
+}
+
+fn create_animation_for_selected_player<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let request = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let Some(key) = state.selected_key else {
+            state.log = "anim create fail\nselect AnimationPlayer".to_string();
+            return None;
+        };
+        let mut doc = SceneDoc::parse(&state.doc_text);
+        let Some(node_index) = doc.scene.nodes.iter().position(|node| node.key.as_u32() == key) else {
+            return None;
+        };
+        if doc.scene.nodes[node_index].data.type_name() != "AnimationPlayer" {
+            state.log = "anim create fail\nselected node not AnimationPlayer".to_string();
+            return None;
+        }
+        let player_name = doc.scene.key_name_or_id(doc.scene.nodes[node_index].key).to_string();
+        let target_key = doc.scene.nodes[node_index].parent.unwrap_or(doc.scene.nodes[node_index].key);
+        let target_name = doc.scene.key_name_or_id(target_key).to_string();
+        let anim_name = format!("{}_clip", sanitize_file_stem(&player_name));
+        let anim_path = unique_res_animation_path(&state.project_root, &anim_name);
+        let abs = res_to_abs(&state.project_root, &anim_path);
+        let text = default_animation_panim(&anim_name);
+        set_scene_string(&mut doc.scene.nodes.to_mut()[node_index].data, "animation", anim_path.clone());
+        set_scene_binding(&mut doc.scene.nodes.to_mut()[node_index].data, "Target", &target_name);
+        state.doc_text = doc.to_text();
+        state.dirty = true;
+        state.activity_mode = "anim".to_string();
+        state.anim_drawer_open = true;
+        state.active_anim_path = anim_path.clone();
+        state.active_anim_player_key = Some(key);
+        if let Some(path) = state.open_paths.get(state.active_open).cloned()
+            && !state.dirty_scene_paths.iter().any(|item| item == &path)
+        {
+            state.dirty_scene_paths.push(path);
+        }
+        Some((abs, text, anim_path))
+    })
+    .flatten();
+    let Some((abs, text, anim_path)) = request else {
+        refresh_all(ctx);
+        return;
+    };
+    if let Some(parent) = Path::new(&abs).parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    match FileMod::save_string(&abs, &text) {
+        Ok(()) => {
+            rebuild_preview(ctx);
+            let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+                if let Ok(paths) = scan_res_paths(Path::new(&state.project_root)) {
+                    state.file_paths = paths;
+                }
+                state.log = format!("create animation\n{}", editor_files::rel_label(&anim_path));
+            });
+            refresh_all(ctx);
+        }
+        Err(err) => set_log(ctx, &format!("anim write fail\n{anim_path}\n{err}")),
+    }
+}
+
+fn default_animation_panim(animation_name: &str) -> String {
+    format!(
+        "[Animation]\nname = \"{animation_name}\"\nfps = 60\ndefault_interp = \"interpolate\"\ndefault_ease = \"linear\"\n[/Animation]\n\n[Objects]\nTarget = Node3D\n[/Objects]\n\n[Frame0]\n@Target {{\n    position = (0, 0, 0)\n}}\n[/Frame0]\n\n[Frame30]\n@Target {{\n    position = (2, 0, 0)\n}}\n[/Frame30]\n"
+    )
+}
+
+fn sanitize_file_stem(text: &str) -> String {
+    let out = text
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' { ch } else { '_' })
+        .collect::<String>();
+    out.trim_matches('_').to_ascii_lowercase()
+}
+
+fn unique_res_animation_path(project_root: &str, stem: &str) -> String {
+    for idx in 0..1000 {
+        let suffix = if idx == 0 { String::new() } else { format!("_{idx}") };
+        let path = format!("res://animations/{stem}{suffix}.panim");
+        if !Path::new(&res_to_abs(project_root, &path)).exists() {
+            return path;
+        }
+    }
+    format!("res://animations/{stem}_x.panim")
 }
 
 fn edit_selected_transform<API: ScriptAPI + ?Sized>(
@@ -2160,6 +2363,23 @@ fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     set_label(ctx, "status_bar", &view.status);
     set_label(ctx, "log_text", &view.log);
     set_label(ctx, "viewport_label", &view.viewport);
+    set_button_fill(
+        ctx,
+        "activity_scene_button",
+        if view.activity_mode == "scene" { "#54657A" } else { "#3D4654" },
+    );
+    set_button_fill(
+        ctx,
+        "activity_anim_button",
+        if view.activity_mode == "anim" { "#54657A" } else { "#3D4654" },
+    );
+    set_ui_display(ctx, "log_title", !view.anim_drawer_open);
+    set_ui_display(ctx, "log_text", !view.anim_drawer_open);
+    set_ui_display(ctx, "anim_drawer", view.anim_drawer_open);
+    set_ui_display(ctx, "anim_create_button", view.anim_can_create);
+    set_label(ctx, "anim_drawer_title", &view.anim_title);
+    set_label(ctx, "anim_status_text", &view.anim_status);
+    set_label(ctx, "anim_tracks_text", &view.anim_tracks);
 
     for idx in 0..MAX_RECENT {
         let text = view
@@ -2261,6 +2481,12 @@ struct EditorView {
     status: String,
     log: String,
     viewport_mode: String,
+    activity_mode: String,
+    anim_drawer_open: bool,
+    anim_title: String,
+    anim_status: String,
+    anim_tracks: String,
+    anim_can_create: bool,
     gizmo: editor_gizmos::GizmoView,
     selected_ui_rect: Option<EditorUiRect>,
     node_picker_rows: Vec<String>,
@@ -2334,6 +2560,7 @@ impl EditorView {
             "Viewport  mode={}  cam=({:.1}, {:.1}, {:.1})",
             state.viewport_mode, state.cam_x, state.cam_y, state.cam_z
         );
+        let (anim_title, anim_status, anim_tracks, anim_can_create) = animation_drawer_text(state);
         let node_picker_rows = picker_rows(state.node_picker_offset);
         let page = (state.node_picker_offset / MAX_NODE_PICKER_ROWS) + 1;
         let page_count = perro_scene::NodeType::ALL
@@ -2370,12 +2597,91 @@ impl EditorView {
             status,
             log: state.log.clone(),
             viewport_mode: state.viewport_mode.clone(),
+            activity_mode: state.activity_mode.clone(),
+            anim_drawer_open: state.anim_drawer_open,
+            anim_title,
+            anim_status,
+            anim_tracks,
+            anim_can_create,
             gizmo,
             selected_ui_rect,
             node_picker_rows,
             node_picker_page: format!("page {page}/{page_count}"),
         }
     }
+}
+
+fn animation_drawer_text(state: &EditorState) -> (String, String, String, bool) {
+    let Some(key) = state.active_anim_player_key else {
+        if state.active_anim_path.is_empty() {
+            return (
+                "Animation".to_string(),
+                "select AnimationPlayer or open .panim".to_string(),
+                "no live binding".to_string(),
+                false,
+            );
+        }
+        return (
+            format!("Animation Data  {}", editor_files::rel_label(&state.active_anim_path)),
+            ".panim data view\nno scene binding until selected AnimationPlayer references it".to_string(),
+            panim_summary(&state.project_root, &state.active_anim_path),
+            false,
+        );
+    };
+    let doc = SceneDoc::parse(&state.doc_text);
+    let name = doc
+        .scene
+        .nodes
+        .iter()
+        .find(|node| node.key.as_u32() == key)
+        .map(|node| doc.scene.key_name_or_id(node.key).to_string())
+        .unwrap_or_else(|| "AnimationPlayer".to_string());
+    let path = if state.active_anim_path.is_empty() {
+        selected_node_field_text(&state.doc_text, key, "animation").unwrap_or_else(|| "-".to_string())
+    } else {
+        state.active_anim_path.clone()
+    };
+    (
+        format!("Animation Player  {name}"),
+        format!("player={name}\ncurrent animations:\n{path}\ncreate writes .panim + binds Target to parent node"),
+        if path == "-" {
+            "no clip bound".to_string()
+        } else {
+            panim_summary(&state.project_root, &path)
+        },
+        true,
+    )
+}
+
+fn panim_summary(project_root: &str, anim_path: &str) -> String {
+    if anim_path.is_empty() || anim_path == "-" {
+        return "no .panim".to_string();
+    }
+    let abs = res_to_abs(project_root, anim_path);
+    let Ok(text) = FileMod::load_string(&abs) else {
+        return "clip not readable".to_string();
+    };
+    let mut in_objects = false;
+    let mut objects = Vec::new();
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[Objects]" {
+            in_objects = true;
+            continue;
+        }
+        if trimmed == "[/Objects]" {
+            break;
+        }
+        if in_objects && trimmed.contains('=') {
+            objects.push(trimmed.to_string());
+        }
+        if objects.len() >= 6 {
+            break;
+        }
+    }
+    let objects = objects.join("\n");
+    let frame_count = text.lines().filter(|line| line.trim().starts_with("[Frame")).count();
+    format!("frames={frame_count}\nobjects:\n{}", if objects.is_empty() { "-" } else { &objects })
 }
 
 #[derive(Default)]
@@ -2711,6 +3017,15 @@ fn set_panel_display<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, 
         let _ = with_node_mut!(ctx.run, UiPanel, id, |node| {
             node.visible = visible;
             node.input_enabled = false;
+        });
+    }
+}
+
+fn set_ui_display<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, name: &str, visible: bool) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_base_node_mut!(ctx.run, UiBox, id, |node| {
+            node.visible = visible;
+            node.input_enabled = visible;
         });
     }
 }
