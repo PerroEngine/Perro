@@ -28,18 +28,18 @@ pub mod prelude {
 
     // Runtime domain APIs.
     pub use crate::sub_apis::{
-        AnimPlayerAPI, AnimPlayerModule, AttachedMidiTarget, FrameRateCap, IntoImpulseDirection,
-        IntoNodeTag, IntoNodeTags, IntoPreloadedSceneID, IntoPreloadedSceneTarget,
-        IntoSceneLoadSource, IntoScenePath, IntoScriptMemberID, MeshDataSurfaceHit3D,
-        MeshDataSurfaceRegion3D, MeshMaterialRegion3D, MeshQueryModule, MeshSurfaceHit3D,
-        MeshSurfaceRay3D, MidiChannel, MidiNoteHandle, MidiNoteOptions, MidiProgram, MidiSong,
-        MidiSound, NodeAPI, NodeCreationTemplate, NodeModule, NodeQuery, NodeQueryModule,
-        NodeQueryView, Note, PhysicsAPI, PhysicsBodyPrediction2D, PhysicsBodyPrediction3D,
-        PhysicsLaunchSolution2D, PhysicsLaunchSolution3D, PhysicsModule, PhysicsRayHit3D,
-        PreloadedSceneTarget, ProfilingSnapshot, QueryExpr, QueryScope, RuntimeMidiModule,
-        SceneAPI, SceneLoadSource, SceneModule, ScriptAPI, ScriptModule, SignalAPI, SignalModule,
-        SpatialAudioOptions, TimeAPI, TimeModule, WindowAPI, WindowMode, WindowModule,
-        WindowRequest, program,
+        AnimPlayerAPI, AnimPlayerModule, AttachedMidiTarget, CursorIcon, FrameRateCap,
+        IntoImpulseDirection, IntoNodeTag, IntoNodeTags, IntoPreloadedSceneID,
+        IntoPreloadedSceneTarget, IntoSceneLoadSource, IntoScenePath, IntoScriptMemberID,
+        MeshDataSurfaceHit3D, MeshDataSurfaceRegion3D, MeshMaterialRegion3D, MeshQueryModule,
+        MeshSurfaceHit3D, MeshSurfaceRay3D, MidiChannel, MidiNoteHandle, MidiNoteOptions,
+        MidiProgram, MidiSong, MidiSound, NodeAPI, NodeCreationTemplate, NodeModule, NodeQuery,
+        NodeQueryModule, NodeQueryView, Note, PhysicsAPI, PhysicsBodyPrediction2D,
+        PhysicsBodyPrediction3D, PhysicsLaunchSolution2D, PhysicsLaunchSolution3D, PhysicsModule,
+        PhysicsRayHit3D, PreloadedSceneTarget, ProfilingSnapshot, QueryExpr, QueryScope,
+        RuntimeMidiModule, SceneAPI, SceneLoadSource, SceneModule, ScriptAPI, ScriptModule,
+        SignalAPI, SignalModule, SpatialAudioOptions, TimeAPI, TimeModule, WindowAPI, WindowMode,
+        WindowModule, WindowRequest, program,
     };
 
     // Convenience macros.
@@ -75,9 +75,9 @@ pub mod prelude {
         signal_disconnect, signal_emit, simulation_time, tag_add, tag_remove, tag_set,
         to_global_point_2d, to_global_point_3d, to_global_transform_2d, to_global_transform_3d,
         to_local_point_2d, to_local_point_3d, to_local_transform_2d, to_local_transform_3d,
-        window_get_active_refresh_rate, window_set_frame_rate_cap, window_set_frame_rate_limit,
-        window_set_mode, window_set_size, window_set_title, with_base_node, with_base_node_mut,
-        with_node, with_node_mut, with_state, with_state_mut,
+        window_get_active_refresh_rate, window_set_cursor_icon, window_set_frame_rate_cap,
+        window_set_frame_rate_limit, window_set_mode, window_set_size, window_set_title,
+        with_base_node, with_base_node_mut, with_node, with_node_mut, with_state, with_state_mut,
     };
 
     // Common id and variant helpers.

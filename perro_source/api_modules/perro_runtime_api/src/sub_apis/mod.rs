@@ -61,4 +61,4 @@ pub use signal::{SignalAPI, SignalModule};
 // ---- Frame/window ----
 
 pub use time::{ProfilingSnapshot, TimeAPI, TimeModule};
-pub use window::{FrameRateCap, WindowAPI, WindowMode, WindowModule, WindowRequest};
+pub use window::{CursorIcon, FrameRateCap, WindowAPI, WindowMode, WindowModule, WindowRequest};

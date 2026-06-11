@@ -28,7 +28,7 @@ use winit::{
 };
 
 use crate::input::{GamepadInput, JoyConInput};
-use crate::winit_runner::{fit_aspect, image_helpers::load_image_sizes};
+use crate::winit_runner::{fit_aspect, image_helpers::load_image_sizes, map_cursor_icon};
 
 const MIN_FRAME_RATE_CAP_FPS: f32 = 1.0;
 const MAX_FRAME_RATE_CAP_FPS: f32 = 1000.0;
@@ -955,6 +955,9 @@ impl<B: GraphicsBackend> ThreadedRunnerState<B> {
                         self.frame_rate_cap
                     );
                     self.next_frame_deadline = None;
+                }
+                WindowRequest::SetCursorIcon(icon) => {
+                    window.set_cursor(map_cursor_icon(icon));
                 }
             }
         }

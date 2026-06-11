@@ -755,6 +755,44 @@ parent = @viewport_grid
     [/UiPanel]
 [/viewport_cell_2]
 
+[viewport_stream_2d]
+parent = @viewport_panel
+    [UiCameraStream]
+        anchor = "center"
+        size_ratio = (0.94, 0.82)
+        camera = @editor_camera_2d
+        resolution = (960, 540)
+        aspect_mode = "fit"
+        visible = false
+        style = { fill: "#111827", stroke: "#334155", stroke_width: 1.0, radius: 0.0 }
+    [/UiCameraStream]
+[/viewport_stream_2d]
+
+[viewport_stream_3d]
+parent = @viewport_panel
+    [UiCameraStream]
+        anchor = "center"
+        size_ratio = (0.94, 0.82)
+        camera = @editor_camera_3d
+        resolution = (960, 540)
+        aspect_mode = "fit"
+        visible = false
+        style = { fill: "#111827", stroke: "#334155", stroke_width: 1.0, radius: 0.0 }
+    [/UiCameraStream]
+[/viewport_stream_3d]
+
+[viewport_click_layer]
+parent = @viewport_panel
+    [UiButton]
+        anchor = "center"
+        size_ratio = (0.94, 0.82)
+        click_signals = ["editor_viewport_click"]
+        style = { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+        hover = { style: { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 } }
+        pressed = { style: { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 } }
+    [/UiButton]
+[/viewport_click_layer]
+
 [selected_outline]
 parent = @viewport_panel
     [UiPanel]
@@ -783,6 +821,98 @@ parent = @selected_outline
         style = { fill: "#22C55E", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
     [/UiPanel]
 [/gizmo_y]
+
+[resize_nw]
+parent = @selected_outline
+    [UiPanel]
+        anchor = "top_left"
+        size_ratio = (0.08, 0.08)
+        style = { fill: "#F8FAFC", stroke: "#0F172A", stroke_width: 1.0, radius: 0.0 }
+    [/UiPanel]
+[/resize_nw]
+
+[resize_n]
+parent = @selected_outline
+    [UiPanel]
+        anchor = "top"
+        size_ratio = (0.08, 0.08)
+        style = { fill: "#F8FAFC", stroke: "#0F172A", stroke_width: 1.0, radius: 0.0 }
+    [/UiPanel]
+[/resize_n]
+
+[resize_ne]
+parent = @selected_outline
+    [UiPanel]
+        anchor = "top_right"
+        size_ratio = (0.08, 0.08)
+        style = { fill: "#F8FAFC", stroke: "#0F172A", stroke_width: 1.0, radius: 0.0 }
+    [/UiPanel]
+[/resize_ne]
+
+[resize_w]
+parent = @selected_outline
+    [UiPanel]
+        anchor = "left"
+        size_ratio = (0.08, 0.08)
+        style = { fill: "#F8FAFC", stroke: "#0F172A", stroke_width: 1.0, radius: 0.0 }
+    [/UiPanel]
+[/resize_w]
+
+[resize_e]
+parent = @selected_outline
+    [UiPanel]
+        anchor = "right"
+        size_ratio = (0.08, 0.08)
+        style = { fill: "#F8FAFC", stroke: "#0F172A", stroke_width: 1.0, radius: 0.0 }
+    [/UiPanel]
+[/resize_e]
+
+[resize_sw]
+parent = @selected_outline
+    [UiPanel]
+        anchor = "bottom_left"
+        size_ratio = (0.08, 0.08)
+        style = { fill: "#F8FAFC", stroke: "#0F172A", stroke_width: 1.0, radius: 0.0 }
+    [/UiPanel]
+[/resize_sw]
+
+[resize_s]
+parent = @selected_outline
+    [UiPanel]
+        anchor = "bottom"
+        size_ratio = (0.08, 0.08)
+        style = { fill: "#F8FAFC", stroke: "#0F172A", stroke_width: 1.0, radius: 0.0 }
+    [/UiPanel]
+[/resize_s]
+
+[resize_se]
+parent = @selected_outline
+    [UiPanel]
+        anchor = "bottom_right"
+        size_ratio = (0.08, 0.08)
+        style = { fill: "#F8FAFC", stroke: "#0F172A", stroke_width: 1.0, radius: 0.0 }
+    [/UiPanel]
+[/resize_se]
+
+[camera2d_gizmo]
+parent = @viewport_panel
+    [UiPanel]
+        anchor = "center"
+        size_ratio = (0.52, 0.38)
+        visible = false
+        style = { fill: "#00000000", stroke: "#60A5FA", stroke_width: 2.0, radius: 0.0 }
+    [/UiPanel]
+[/camera2d_gizmo]
+
+[camera3d_gizmo]
+parent = @viewport_panel
+    [UiPanel]
+        anchor = "center"
+        size_ratio = (0.18, 0.14)
+        visible = false
+        style = { fill: "#00000000", stroke: "#FDBA74", stroke_width: 2.0, radius: 0.0 }
+    [/UiPanel]
+[/camera3d_gizmo]
 
 [viewport_label]
 parent = @viewport_panel
@@ -830,6 +960,22 @@ parent = @bottom_panel
         v_align = "start"
     [/UiLabel]
 [/log_text]
+
+[editor_camera_2d]
+parent = @editor_root
+    [Camera2D]
+        active = false
+        zoom = 1.0
+    [/Camera2D]
+[/editor_camera_2d]
+
+[editor_camera_3d]
+parent = @editor_root
+    [Camera3D]
+        active = false
+        position = (0.0, 2.0, 8.0)
+    [/Camera3D]
+[/editor_camera_3d]
 
 [inspector_panel]
 parent = @main_split

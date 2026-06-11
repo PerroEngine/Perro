@@ -2,6 +2,8 @@
 //!
 //! Queues window title, size, mode, and frame-rate requests for the app layer.
 
+pub use perro_ui::CursorIcon;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WindowMode {
     Windowed,
@@ -21,6 +23,7 @@ pub enum WindowRequest {
     SetSize { width: u32, height: u32 },
     SetMode(WindowMode),
     SetFrameRateCap(FrameRateCap),
+    SetCursorIcon(CursorIcon),
 }
 
 pub trait WindowAPI {
@@ -28,6 +31,7 @@ pub trait WindowAPI {
     fn set_window_size(&mut self, width: u32, height: u32);
     fn set_window_mode(&mut self, mode: WindowMode);
     fn set_frame_rate_cap(&mut self, cap: FrameRateCap);
+    fn set_cursor_icon(&mut self, icon: CursorIcon);
     fn get_active_refresh_rate(&mut self) -> Option<f32>;
 }
 
@@ -76,6 +80,10 @@ impl<'rt, R: WindowAPI + ?Sized> WindowModule<'rt, R> {
         self.set_frame_rate_cap(FrameRateCap::Unlimited);
     }
 
+    pub fn set_cursor_icon(&mut self, icon: CursorIcon) {
+        self.rt.set_cursor_icon(icon);
+    }
+
     pub fn get_active_refresh_rate(&mut self) -> Option<f32> {
         self.rt.get_active_refresh_rate()
     }
@@ -113,6 +121,13 @@ macro_rules! window_set_frame_rate_cap {
 macro_rules! window_set_frame_rate_limit {
     ($ctx:expr, $fps:expr) => {
         $ctx.Window().set_frame_rate_limit($fps)
+    };
+}
+
+#[macro_export]
+macro_rules! window_set_cursor_icon {
+    ($ctx:expr, $icon:expr) => {
+        $ctx.Window().set_cursor_icon($icon)
     };
 }
 

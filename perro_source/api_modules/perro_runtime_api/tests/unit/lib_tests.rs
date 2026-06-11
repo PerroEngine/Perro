@@ -56,6 +56,10 @@ impl WindowAPI for DummyRuntime {
         self.state = Box::new(cap);
     }
 
+    fn set_cursor_icon(&mut self, icon: CursorIcon) {
+        self.state = Box::new(icon);
+    }
+
     fn get_active_refresh_rate(&mut self) -> Option<f32> {
         Some(60.0)
     }

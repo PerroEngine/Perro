@@ -7,6 +7,9 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 mod editor_project;
+mod editor_file_watch;
+mod editor_gizmos;
+mod editor_scene_deps;
 
 type SelfNodeType = UiPanel;
 
@@ -16,6 +19,7 @@ const MAX_TABS: usize = 2;
 const MAX_RECENT: usize = 5;
 const MAX_NODE_PICKER_ROWS: usize = 12;
 const RECENT_PROJECTS_PATH: &str = "user://recent_projects.json";
+const FILE_WATCH_INTERVAL_FRAMES: u32 = 30;
 
 #[State]
 struct EditorState {
@@ -28,7 +32,18 @@ struct EditorState {
     open_paths: Vec<String>,
     active_open: usize,
     doc_text: String,
+    preview_scene_paths: Vec<String>,
+    preview_root: u64,
+    preview_node_ids: Vec<u64>,
+    preview_node_keys: Vec<u32>,
+    project_file_sigs: Vec<editor_file_watch::FileSig>,
+    dirty_scene_paths: Vec<String>,
+    file_watch_frame: u32,
     selected_key: Option<u32>,
+    ui_drag_key: Option<u32>,
+    ui_drag_mode: String,
+    ui_drag_last_x: f32,
+    ui_drag_last_y: f32,
     viewport_mode: String,
     dirty: bool,
     node_picker_offset: usize,
@@ -55,6 +70,10 @@ lifecycle!({
 
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
         update_freecam(ctx);
+        update_preview_pick(ctx);
+        update_ui_drag(ctx);
+        update_editor_cursor(ctx);
+        poll_project_diffs(ctx);
     }
 });
 
@@ -98,6 +117,7 @@ methods!({
             "add_node_next_button" => {
                 shift_node_picker(ctx, 1);
             }
+            "viewport_click_layer" => handle_viewport_click(ctx),
             "mode_ui_button" => set_mode(ctx, "UI"),
             "mode_2d_button" => set_mode(ctx, "2D"),
             "mode_3d_button" => set_mode(ctx, "3D"),
@@ -167,6 +187,7 @@ fn connect_editor_signals<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
     let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_add_type_prev"), func!("on_editor_signal"));
     let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_add_type_next"), func!("on_editor_signal"));
     let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_add_node_cancel"), func!("on_editor_signal"));
+    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_viewport_click"), func!("on_editor_signal"));
 }
 
 fn update_freecam<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
@@ -226,6 +247,7 @@ fn open_project<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     root: String,
 ) -> Result<(), String> {
+    clear_preview(ctx);
     let root_path = PathBuf::from(&root);
     validate_project_root(&root_path)?;
     let project_text = FileMod::load_string(root_path.join("project.toml").to_string_lossy().as_ref())
@@ -257,7 +279,18 @@ fn open_project<API: ScriptAPI + ?Sized>(
         state.open_paths.clear();
         state.active_open = 0;
         state.doc_text.clear();
+        state.preview_scene_paths.clear();
+        state.preview_root = 0;
+        state.preview_node_ids.clear();
+        state.preview_node_keys.clear();
+        state.project_file_sigs = editor_file_watch::scan_project(root_path.as_path());
+        state.dirty_scene_paths.clear();
+        state.file_watch_frame = 0;
         state.selected_key = None;
+        state.ui_drag_key = None;
+        state.ui_drag_mode.clear();
+        state.ui_drag_last_x = 0.0;
+        state.ui_drag_last_y = 0.0;
         state.dirty = false;
         state.log = log;
     });
@@ -424,8 +457,10 @@ fn open_file_slot<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, idx
         state.doc_text = doc.to_text();
         state.selected_key = first_key;
         state.dirty = false;
+        state.dirty_scene_paths.retain(|path| path != &scene_path);
         state.log = format!("open scene\n{scene_path}");
     });
+    rebuild_preview(ctx);
     refresh_all(ctx);
 }
 
@@ -508,10 +543,16 @@ fn add_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, node_type
         state.doc_text = doc.to_text();
         state.selected_key = Some(next_id);
         state.dirty = true;
+        if let Some(path) = state.open_paths.get(state.active_open).cloned()
+            && !state.dirty_scene_paths.iter().any(|item| item == &path)
+        {
+            state.dirty_scene_paths.push(path);
+        }
         state.log = format!("add node\n{name}: {}", node_type.name());
         msg = state.log.clone();
     });
     set_log(ctx, &msg);
+    rebuild_preview(ctx);
     refresh_all(ctx);
 }
 
@@ -590,8 +631,11 @@ fn save_active_scene<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) 
         Ok(_) => {
             let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
                 state.dirty = false;
+                state.dirty_scene_paths.retain(|item| item != &path);
+                state.project_file_sigs = editor_file_watch::scan_project(Path::new(&root));
                 state.log = format!("save scene\n{path}");
             });
+            rebuild_preview(ctx);
         }
         Err(err) => {
             let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
@@ -607,7 +651,1058 @@ fn set_mode<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, mode: &st
         state.viewport_mode = mode.to_string();
         state.log = format!("mode {mode}");
     });
+    apply_viewport_mode(ctx, mode);
     refresh_all(ctx);
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ViewportPointer {
+    uv: Vector2,
+    ndc: Vector2,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ViewportRay3D {
+    origin: Vector3,
+    direction: Vector3,
+}
+
+fn handle_viewport_click<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let Some(pointer) = viewport_pointer(ctx) else {
+        return;
+    };
+    let mode = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.viewport_mode.clone()
+    });
+    match mode.as_str() {
+        "UI" => {
+            let _ = pick_preview_ui(ctx);
+            set_log(
+                ctx,
+                &format!(
+                    "ui canvas click\nuv=({:.3}, {:.3}) ndc=({:.3}, {:.3})",
+                    pointer.uv.x, pointer.uv.y, pointer.ndc.x, pointer.ndc.y
+                ),
+            );
+        }
+        "2D" => {
+            if let Some(world) = stream_pointer_world_2d(ctx, pointer) {
+                set_log(
+                    ctx,
+                    &format!(
+                        "2d stream click\nuv=({:.3}, {:.3}) world=({:.2}, {:.2})",
+                        pointer.uv.x, pointer.uv.y, world.x, world.y
+                    ),
+                );
+            }
+        }
+        "3D" => {
+            if let Some(ray) = stream_pointer_ray_3d(ctx, pointer) {
+                set_log(
+                    ctx,
+                    &format!(
+                        "3d stream click\norigin=({:.2}, {:.2}, {:.2}) dir=({:.3}, {:.3}, {:.3})",
+                        ray.origin.x,
+                        ray.origin.y,
+                        ray.origin.z,
+                        ray.direction.x,
+                        ray.direction.y,
+                        ray.direction.z
+                    ),
+                );
+            }
+        }
+        _ => {}
+    }
+}
+
+fn viewport_pointer<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) -> Option<ViewportPointer> {
+    let mouse = mouse_position!(ctx.ipt);
+    let viewport = ctx.res.viewport_size();
+    if viewport.x <= 0.0 || viewport.y <= 0.0 {
+        return None;
+    }
+
+    let x = mouse.x;
+    let y = mouse.y;
+    let center_x = 0.5;
+    let center_y = 0.055 + 0.885 * 0.5;
+    let size_x = 0.60 * 0.94;
+    let size_y = 0.885 * 0.72 * 0.82;
+    let min_x = center_x - size_x * 0.5;
+    let max_x = center_x + size_x * 0.5;
+    let min_y = center_y - size_y * 0.5;
+    let max_y = center_y + size_y * 0.5;
+    if x < min_x || x > max_x || y < min_y || y > max_y {
+        return None;
+    }
+    let uv = Vector2::new((x - min_x) / size_x, (y - min_y) / size_y);
+    Some(ViewportPointer {
+        uv,
+        ndc: Vector2::new(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0),
+    })
+}
+
+fn stream_pointer_world_2d<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    pointer: ViewportPointer,
+) -> Option<Vector2> {
+    let camera = find_named(ctx, "editor_camera_2d")?;
+    let global = ctx.run.Nodes().get_global_transform_2d(camera)?;
+    let zoom = with_node!(ctx.run, Camera2D, camera, |node| node.zoom).max(0.0001);
+    let local = Vector2::new(pointer.ndc.x * 480.0 / zoom, pointer.ndc.y * 270.0 / zoom);
+    let sin = global.rotation.sin();
+    let cos = global.rotation.cos();
+    Some(Vector2::new(
+        global.position.x + local.x * cos - local.y * sin,
+        global.position.y + local.x * sin + local.y * cos,
+    ))
+}
+
+fn stream_pointer_ray_3d<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    pointer: ViewportPointer,
+) -> Option<ViewportRay3D> {
+    let camera = find_named(ctx, "editor_camera_3d")?;
+    let global = ctx.run.Nodes().get_global_transform_3d(camera)?;
+    let projection = with_node!(ctx.run, Camera3D, camera, |node| node.projection.clone());
+    let aspect = 16.0 / 9.0;
+    let local_dir = match projection {
+        CameraProjection::Perspective { fov_y_degrees, .. } => {
+            let tan_y = (fov_y_degrees.to_radians() * 0.5).tan();
+            Vector3::new(pointer.ndc.x * aspect * tan_y, pointer.ndc.y * tan_y, -1.0).normalized()
+        }
+        CameraProjection::Orthographic { .. } => Vector3::new(0.0, 0.0, -1.0),
+        CameraProjection::Frustum {
+            left,
+            right,
+            bottom,
+            top,
+            near,
+            ..
+        } => {
+            let x = left + (pointer.uv.x * (right - left));
+            let y = bottom + ((1.0 - pointer.uv.y) * (top - bottom));
+            Vector3::new(x, y, -near.max(0.001)).normalized()
+        }
+    };
+    let local_origin = match projection {
+        CameraProjection::Orthographic { size, .. } => {
+            Vector3::new(pointer.ndc.x * size * aspect * 0.5, pointer.ndc.y * size * 0.5, 0.0)
+        }
+        _ => Vector3::ZERO,
+    };
+    let origin_offset = global.rotation.rotate_vector3(local_origin);
+    Some(ViewportRay3D {
+        origin: global.position + origin_offset,
+        direction: global.rotation.rotate_vector3(local_dir).normalized(),
+    })
+}
+
+fn poll_project_diffs<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let action = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        if state.project_root.is_empty() {
+            return None;
+        }
+        state.file_watch_frame = state.file_watch_frame.wrapping_add(1);
+        if state.file_watch_frame % FILE_WATCH_INTERVAL_FRAMES != 0 {
+            return None;
+        }
+
+        let root = PathBuf::from(&state.project_root);
+        let next = editor_file_watch::scan_project(root.as_path());
+        let changed = editor_file_watch::changed_paths(&state.project_file_sigs, &next);
+        if changed.is_empty() {
+            state.project_file_sigs = next;
+            return None;
+        }
+        state.project_file_sigs = next;
+
+        let res_changed = changed.iter().any(|path| editor_file_watch::is_under_res(&root, path));
+        let changed_scenes = changed
+            .iter()
+            .filter_map(|path| editor_file_watch::abs_scene_to_res(&root, path))
+            .collect::<Vec<_>>();
+        Some((root, res_changed, changed_scenes))
+    })
+    .flatten();
+
+    let Some((root, res_changed, changed_scenes)) = action else {
+        return;
+    };
+
+    if res_changed
+        && let Ok(paths) = scan_res_paths(root.as_path())
+    {
+        let scene_paths = paths
+            .iter()
+            .filter(|path| path.ends_with(".scn"))
+            .cloned()
+            .collect::<Vec<_>>();
+        let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+            state.file_paths = paths;
+            state.scene_paths = scene_paths;
+        });
+    }
+
+    if changed_scenes.is_empty() {
+        refresh_all(ctx);
+        return;
+    }
+
+    let reload = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let active = state.open_paths.get(state.active_open).cloned();
+        let affects_preview = changed_scenes
+            .iter()
+            .any(|path| state.preview_scene_paths.iter().any(|item| item == path));
+        let affects_open = active
+            .as_ref()
+            .is_some_and(|path| changed_scenes.iter().any(|item| item == path));
+
+        if (affects_preview || affects_open) && state.dirty {
+            for path in changed_scenes.iter() {
+                if !state.dirty_scene_paths.iter().any(|item| item == path) {
+                    state.dirty_scene_paths.push(path.clone());
+                }
+            }
+            state.log = "external change pending".to_string();
+            return None;
+        }
+
+        if affects_open {
+            return active;
+        }
+        if affects_preview {
+            state.log = format!("reload preview deps\n{}", changed_scenes.join("\n"));
+            return Some(String::new());
+        }
+        state.log = format!("project file change\n{}", changed_scenes.join("\n"));
+        None
+    })
+    .flatten();
+
+    match reload {
+        Some(path) if path.is_empty() => {
+            rebuild_preview(ctx);
+            refresh_all(ctx);
+        }
+        Some(path) => {
+            reload_scene_path(ctx, &path);
+        }
+        None => refresh_all(ctx),
+    }
+}
+
+fn reload_scene_path<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, scene_path: &str) {
+    let root = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.project_root.clone()
+    });
+    let abs = res_to_abs(&root, scene_path);
+    let text = match FileMod::load_string(&abs) {
+        Ok(text) => text,
+        Err(err) => {
+            set_log(ctx, &format!("reload scene fail\n{scene_path}\n{err}"));
+            return;
+        }
+    };
+    let doc = SceneDoc::parse(&text);
+    let first_key = doc.scene.nodes.first().map(|node| node.key.as_u32());
+    let normalized = doc.to_text();
+    let same = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.doc_text == normalized
+    });
+    if same {
+        return;
+    }
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.doc_text = normalized;
+        state.selected_key = first_key;
+        state.dirty = false;
+        state.dirty_scene_paths.retain(|path| path != scene_path);
+        state.log = format!("reload scene\n{scene_path}");
+    });
+    rebuild_preview(ctx);
+    refresh_all(ctx);
+}
+
+fn rebuild_preview<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    clear_preview(ctx);
+    let (root, active, doc_text) = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        (
+            state.project_root.clone(),
+            state.open_paths.get(state.active_open).cloned(),
+            state.doc_text.clone(),
+        )
+    });
+    let Some(active) = active else {
+        return;
+    };
+    if root.is_empty() || doc_text.is_empty() {
+        return;
+    }
+
+    let deps = editor_scene_deps::collect_scene_deps(Path::new(&root), &active, &doc_text);
+    let mut log = None;
+    if let Some(err) = deps.error.clone() {
+        log = Some(format!("preview deps fail\n{err}"));
+    }
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.preview_scene_paths = deps.paths;
+        if let Some(log) = log {
+            state.log = log;
+        }
+    });
+    load_preview_scene(ctx, &active);
+}
+
+fn clear_preview<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let root = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let root = state.preview_root;
+        state.preview_root = 0;
+        state.preview_node_ids.clear();
+        state.preview_node_keys.clear();
+        root
+    })
+    .unwrap_or(0);
+    if root != 0 {
+        let _ = ctx.run.Nodes().remove_node(NodeID::from_u64(root));
+    }
+}
+
+fn load_preview_scene<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, path: &str) {
+    let root = match ctx.run.Scene().load(path.to_string()) {
+        Ok(root) => root,
+        Err(err) => {
+            set_log(ctx, &format!("preview load fail\n{path}\n{err}"));
+            return;
+        }
+    };
+    attach_preview_to_viewport(ctx, root);
+    disable_preview_runtime_input(ctx, root);
+
+    let doc_text = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.doc_text.clone()
+    });
+    let (node_ids, keys) = if doc_text.is_empty() {
+        (Vec::new(), Vec::new())
+    } else {
+        let doc = SceneDoc::parse(&doc_text);
+        let doc_keys = preview_doc_order(&doc);
+        let node_ids = preview_runtime_order(ctx, root, doc_keys.len());
+        (
+            node_ids.into_iter().map(NodeID::as_u64).collect::<Vec<_>>(),
+            doc_keys,
+        )
+    };
+
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.preview_root = root.as_u64();
+        state.preview_node_ids = node_ids;
+        state.preview_node_keys = keys;
+    });
+}
+
+fn attach_preview_to_viewport<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    root: NodeID,
+) {
+    let Some(panel) = find_named(ctx, "viewport_panel") else {
+        return;
+    };
+    if ctx.run.Nodes().with_base_node::<UiBox, _, _>(root, |_| ()).is_some() {
+        let _ = ctx.run.Nodes().reparent(panel, root);
+        let _ = with_base_node_mut!(ctx.run, UiBox, root, |node| {
+            node.layout.anchor = UiAnchor::Center;
+            node.layout.size = UiVector2::ratio(0.94, 0.82);
+            node.input_enabled = false;
+        });
+    }
+}
+
+fn preview_doc_order(doc: &SceneDoc) -> Vec<u32> {
+    let mut out = Vec::new();
+    if let Some(root) = doc.scene.root {
+        push_doc_order(doc, root.as_u32(), &mut out);
+    }
+    for node in doc.scene.nodes.iter() {
+        let key = node.key.as_u32();
+        if !out.contains(&key) {
+            push_doc_order(doc, key, &mut out);
+        }
+    }
+    out
+}
+
+fn push_doc_order(doc: &SceneDoc, key: u32, out: &mut Vec<u32>) {
+    if out.contains(&key) {
+        return;
+    }
+    out.push(key);
+    for child in doc
+        .scene
+        .nodes
+        .iter()
+        .filter(|child| child.parent.map(|parent| parent.as_u32()) == Some(key))
+    {
+        push_doc_order(doc, child.key.as_u32(), out);
+    }
+}
+
+fn preview_runtime_order<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    root: NodeID,
+    limit: usize,
+) -> Vec<NodeID> {
+    let mut out = Vec::new();
+    let mut stack = vec![root];
+    while let Some(id) = stack.pop() {
+        out.push(id);
+        if out.len() >= limit {
+            break;
+        }
+        let mut children = ctx.run.Nodes().get_children(id);
+        children.reverse();
+        stack.extend(children);
+    }
+    out
+}
+
+fn disable_preview_runtime_input<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    root: NodeID,
+) {
+    let mut stack = vec![root];
+    while let Some(id) = stack.pop() {
+        let _ = with_node_mut!(ctx.run, UiButton, id, |node| {
+            node.input_enabled = false;
+            node.disabled = true;
+        });
+        let _ = with_node_mut!(ctx.run, UiImageButton, id, |node| {
+            node.input_enabled = false;
+            node.disabled = true;
+        });
+        let _ = with_node_mut!(ctx.run, UiTextBox, id, |node| {
+            node.base.input_enabled = false;
+        });
+        let _ = with_node_mut!(ctx.run, UiTextBlock, id, |node| {
+            node.base.input_enabled = false;
+        });
+        let _ = with_node_mut!(ctx.run, UiScrollContainer, id, |node| {
+            node.input_enabled = false;
+        });
+        let _ = with_node_mut!(ctx.run, Button2D, id, |node| {
+            node.input_enabled = false;
+            node.disabled = true;
+        });
+        let _ = with_node_mut!(ctx.run, ImageButton2D, id, |node| {
+            node.input_enabled = false;
+            node.disabled = true;
+        });
+        let _ = with_node_mut!(ctx.run, Camera2D, id, |node| {
+            node.active = false;
+        });
+        let _ = with_node_mut!(ctx.run, Camera3D, id, |node| {
+            node.active = false;
+        });
+
+        stack.extend(ctx.run.Nodes().get_children(id));
+    }
+}
+
+fn update_preview_pick<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    if !mouse_pressed!(ctx.ipt, MouseButton::Left) {
+        return;
+    }
+    let mode = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.viewport_mode.clone()
+    });
+    if mode != "UI" {
+        return;
+    }
+    let pointer = viewport_pointer(ctx);
+    if let Some((handle, pointer)) = pointer.and_then(|pointer| pick_resize_handle(ctx, pointer).map(|handle| (handle, pointer))) {
+        let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+            if let Some(key) = state.selected_key {
+                state.ui_drag_key = Some(key);
+                state.ui_drag_mode = handle.to_string();
+                state.ui_drag_last_x = pointer.uv.x;
+                state.ui_drag_last_y = pointer.uv.y;
+                state.log = format!("resize node\n{handle}");
+            }
+        });
+        refresh_all(ctx);
+        return;
+    }
+    if let Some(pointer) = pointer
+        && pick_rotation_zone(ctx, pointer).is_some()
+    {
+        let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+            if let Some(key) = state.selected_key {
+                state.ui_drag_key = Some(key);
+                state.ui_drag_mode = "rotate".to_string();
+                state.ui_drag_last_x = pointer.uv.x;
+                state.ui_drag_last_y = pointer.uv.y;
+                state.log = "rotate node".to_string();
+            }
+        });
+        refresh_all(ctx);
+        return;
+    }
+    let Some(key) = pick_preview_ui(ctx) else {
+        return;
+    };
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.selected_key = Some(key);
+        state.ui_drag_key = Some(key);
+        state.ui_drag_mode = "move".to_string();
+        if let Some(pointer) = pointer {
+            state.ui_drag_last_x = pointer.uv.x;
+            state.ui_drag_last_y = pointer.uv.y;
+        }
+        state.log = format!("select node\nkey={key}");
+    });
+    refresh_all(ctx);
+}
+
+fn update_ui_drag<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    if mouse_released!(ctx.ipt, MouseButton::Left) {
+        let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+            state.ui_drag_key = None;
+            state.ui_drag_mode.clear();
+        });
+        return;
+    }
+    if !mouse_down!(ctx.ipt, MouseButton::Left) {
+        return;
+    }
+    let mode = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.viewport_mode.clone()
+    });
+    if mode != "UI" {
+        return;
+    }
+    let Some(pointer) = viewport_pointer(ctx) else {
+        return;
+    };
+    let drag = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let Some(key) = state.ui_drag_key else {
+            return None;
+        };
+        if state.ui_drag_mode.is_empty() {
+            return None;
+        }
+        let delta = Vector2::new(pointer.uv.x - state.ui_drag_last_x, state.ui_drag_last_y - pointer.uv.y);
+        let mode = state.ui_drag_mode.clone();
+        state.ui_drag_last_x = pointer.uv.x;
+        state.ui_drag_last_y = pointer.uv.y;
+        if delta.x.abs() < 0.0001 && delta.y.abs() < 0.0001 {
+            return None;
+        }
+        Some((key, mode, delta))
+    })
+    .flatten();
+    let Some((key, mode, root_delta)) = drag else {
+        return;
+    };
+    if mode == "move" {
+        move_doc_ui_node(ctx, key, root_delta);
+    } else if mode == "rotate" {
+        rotate_doc_ui_node(ctx, key, root_delta);
+    } else {
+        resize_doc_ui_node(ctx, key, &mode, root_delta);
+    }
+}
+
+fn update_editor_cursor<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let icon = editor_cursor_icon(ctx);
+    ctx.run.Window().set_cursor_icon(icon);
+}
+
+fn editor_cursor_icon<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) -> CursorIcon {
+    let drag = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.ui_drag_mode.clone()
+    });
+    if !drag.is_empty() {
+        return if drag == "move" {
+            CursorIcon::Grabbing
+        } else if drag == "rotate" {
+            CursorIcon::AllResize
+        } else {
+            resize_cursor_icon(&drag)
+        };
+    }
+
+    let mode = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.viewport_mode.clone()
+    });
+    if mode != "UI" {
+        return CursorIcon::Default;
+    }
+    let Some(pointer) = viewport_pointer(ctx) else {
+        return CursorIcon::Default;
+    };
+    if let Some(handle) = pick_resize_handle(ctx, pointer) {
+        return resize_cursor_icon(handle);
+    }
+    if pick_rotation_zone(ctx, pointer).is_some() {
+        return CursorIcon::AllResize;
+    }
+    if pick_preview_ui(ctx).is_some() {
+        return CursorIcon::Grab;
+    }
+    CursorIcon::Default
+}
+
+fn resize_cursor_icon(handle: &str) -> CursorIcon {
+    match handle {
+        "resize_n" => CursorIcon::NResize,
+        "resize_s" => CursorIcon::SResize,
+        "resize_e" => CursorIcon::EResize,
+        "resize_w" => CursorIcon::WResize,
+        "resize_ne" => CursorIcon::NeResize,
+        "resize_nw" => CursorIcon::NwResize,
+        "resize_se" => CursorIcon::SeResize,
+        "resize_sw" => CursorIcon::SwResize,
+        _ => CursorIcon::AllResize,
+    }
+}
+
+fn move_doc_ui_node<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    key: u32,
+    root_delta: Vector2,
+) {
+    let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        if state.doc_text.is_empty() {
+            return false;
+        }
+        let mut doc = SceneDoc::parse(&state.doc_text);
+        let Some(parent_rect) = doc_ui_parent_rect(&doc, key) else {
+            return false;
+        };
+        if parent_rect.size.x <= 0.0 || parent_rect.size.y <= 0.0 {
+            return false;
+        }
+        let delta = Vector2::new(root_delta.x / parent_rect.size.x, root_delta.y / parent_rect.size.y);
+        let Some(node) = doc.scene.nodes.to_mut().iter_mut().find(|node| node.key.as_u32() == key) else {
+            return false;
+        };
+        let current = scene_field_vec2(&node.data, "translation_ratio").unwrap_or(Vector2::ZERO);
+        set_scene_vec2(&mut node.data, "translation_ratio", current + delta);
+        state.doc_text = doc.to_text();
+        state.dirty = true;
+        if let Some(path) = state.open_paths.get(state.active_open).cloned()
+            && !state.dirty_scene_paths.iter().any(|item| item == &path)
+        {
+            state.dirty_scene_paths.push(path);
+        }
+        true
+    })
+    .unwrap_or(false);
+    if changed {
+        rebuild_preview(ctx);
+        refresh_all(ctx);
+    }
+}
+
+fn resize_doc_ui_node<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    key: u32,
+    handle: &str,
+    root_delta: Vector2,
+) {
+    let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        if state.doc_text.is_empty() {
+            return false;
+        }
+        let mut doc = SceneDoc::parse(&state.doc_text);
+        let Some(parent_rect) = doc_ui_parent_rect(&doc, key) else {
+            return false;
+        };
+        let Some(rect) = doc_ui_rect(&doc, key) else {
+            return false;
+        };
+        if parent_rect.size.x <= 0.0 || parent_rect.size.y <= 0.0 {
+            return false;
+        }
+
+        let mut min = rect.center - rect.size * 0.5;
+        let mut max = rect.center + rect.size * 0.5;
+        let (sx, sy) = resize_handle_sign(handle);
+        if sx < 0.0 {
+            min.x += root_delta.x;
+        } else if sx > 0.0 {
+            max.x += root_delta.x;
+        }
+        if sy < 0.0 {
+            min.y += root_delta.y;
+        } else if sy > 0.0 {
+            max.y += root_delta.y;
+        }
+        let min_size = Vector2::new(0.02, 0.02);
+        if max.x - min.x < min_size.x {
+            if sx < 0.0 {
+                min.x = max.x - min_size.x;
+            } else {
+                max.x = min.x + min_size.x;
+            }
+        }
+        if max.y - min.y < min_size.y {
+            if sy < 0.0 {
+                min.y = max.y - min_size.y;
+            } else {
+                max.y = min.y + min_size.y;
+            }
+        }
+        let new_size = max - min;
+        let new_center = min + new_size * 0.5;
+        let Some(node) = doc.scene.nodes.to_mut().iter_mut().find(|node| node.key.as_u32() == key) else {
+            return false;
+        };
+        let anchor_text = scene_field_str(&node.data, "anchor").unwrap_or_else(|| "center".to_string());
+        let anchor = scene_anchor_dir(&anchor_text);
+        let anchor_point = parent_rect.center
+            + Vector2::new(parent_rect.size.x * 0.5 * anchor.x, parent_rect.size.y * 0.5 * anchor.y);
+        let inward = Vector2::new(new_size.x * 0.5 * anchor.x, new_size.y * 0.5 * anchor.y);
+        let translation = Vector2::new(
+            (new_center.x - anchor_point.x + inward.x) / parent_rect.size.x,
+            (new_center.y - anchor_point.y + inward.y) / parent_rect.size.y,
+        );
+        let size_ratio = Vector2::new(new_size.x / parent_rect.size.x, new_size.y / parent_rect.size.y);
+        set_scene_vec2(&mut node.data, "size_ratio", size_ratio);
+        set_scene_vec2(&mut node.data, "translation_ratio", translation);
+        state.doc_text = doc.to_text();
+        state.dirty = true;
+        if let Some(path) = state.open_paths.get(state.active_open).cloned()
+            && !state.dirty_scene_paths.iter().any(|item| item == &path)
+        {
+            state.dirty_scene_paths.push(path);
+        }
+        true
+    })
+    .unwrap_or(false);
+    if changed {
+        rebuild_preview(ctx);
+        refresh_all(ctx);
+    }
+}
+
+fn rotate_doc_ui_node<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    key: u32,
+    root_delta: Vector2,
+) {
+    let (prev, curr) = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        (
+            Vector2::new(state.ui_drag_last_x - root_delta.x, 1.0 - state.ui_drag_last_y - root_delta.y),
+            Vector2::new(state.ui_drag_last_x, 1.0 - state.ui_drag_last_y),
+        )
+    });
+    let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        if state.doc_text.is_empty() {
+            return false;
+        }
+        let mut doc = SceneDoc::parse(&state.doc_text);
+        let Some(rect) = doc_ui_rect(&doc, key) else {
+            return false;
+        };
+        let prev_angle = (prev.y - rect.center.y).atan2(prev.x - rect.center.x);
+        let curr_angle = (curr.y - rect.center.y).atan2(curr.x - rect.center.x);
+        let delta = curr_angle - prev_angle;
+        if !delta.is_finite() || delta.abs() < 0.0001 {
+            return false;
+        }
+        let Some(node) = doc.scene.nodes.to_mut().iter_mut().find(|node| node.key.as_u32() == key) else {
+            return false;
+        };
+        let current = scene_field_f32(&node.data, "rotation").unwrap_or(0.0);
+        set_scene_f32(&mut node.data, "rotation", current + delta);
+        state.doc_text = doc.to_text();
+        state.dirty = true;
+        if let Some(path) = state.open_paths.get(state.active_open).cloned()
+            && !state.dirty_scene_paths.iter().any(|item| item == &path)
+        {
+            state.dirty_scene_paths.push(path);
+        }
+        true
+    })
+    .unwrap_or(false);
+    if changed {
+        rebuild_preview(ctx);
+        refresh_all(ctx);
+    }
+}
+
+fn pick_preview_ui<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) -> Option<u32> {
+    let pointer = viewport_pointer(ctx)?;
+    let doc_text = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.doc_text.clone()
+    });
+    if doc_text.is_empty() {
+        return None;
+    }
+    let doc = SceneDoc::parse(&doc_text);
+    let point = Vector2::new(pointer.uv.x, 1.0 - pointer.uv.y);
+    pick_doc_ui_node(&doc, point)
+}
+
+fn pick_resize_handle<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    pointer: ViewportPointer,
+) -> Option<&'static str> {
+    let (doc_text, selected) = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        (state.doc_text.clone(), state.selected_key)
+    });
+    let key = selected?;
+    let doc = SceneDoc::parse(&doc_text);
+    let rect = doc_ui_rect(&doc, key)?;
+    let point = Vector2::new(pointer.uv.x, 1.0 - pointer.uv.y);
+    resize_handles(rect)
+        .into_iter()
+        .find(|(_, center)| (point.x - center.x).abs() <= 0.018 && (point.y - center.y).abs() <= 0.018)
+        .map(|(name, _)| name)
+}
+
+fn pick_rotation_zone<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    pointer: ViewportPointer,
+) -> Option<&'static str> {
+    let (doc_text, selected) = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        (state.doc_text.clone(), state.selected_key)
+    });
+    let key = selected?;
+    let doc = SceneDoc::parse(&doc_text);
+    let rect = doc_ui_rect(&doc, key)?;
+    let point = Vector2::new(pointer.uv.x, 1.0 - pointer.uv.y);
+    let min = rect.center - rect.size * 0.5;
+    let max = rect.center + rect.size * 0.5;
+    let zones = [
+        ("rotate_nw", Vector2::new(min.x - 0.035, max.y + 0.035)),
+        ("rotate_ne", Vector2::new(max.x + 0.035, max.y + 0.035)),
+        ("rotate_sw", Vector2::new(min.x - 0.035, min.y - 0.035)),
+        ("rotate_se", Vector2::new(max.x + 0.035, min.y - 0.035)),
+    ];
+    zones
+        .into_iter()
+        .find(|(_, center)| (point.x - center.x).abs() <= 0.045 && (point.y - center.y).abs() <= 0.045)
+        .map(|(name, _)| name)
+}
+
+fn resize_handles(rect: EditorUiRect) -> [(&'static str, Vector2); 8] {
+    let min = rect.center - rect.size * 0.5;
+    let max = rect.center + rect.size * 0.5;
+    let mid_x = rect.center.x;
+    let mid_y = rect.center.y;
+    [
+        ("resize_nw", Vector2::new(min.x, max.y)),
+        ("resize_n", Vector2::new(mid_x, max.y)),
+        ("resize_ne", Vector2::new(max.x, max.y)),
+        ("resize_w", Vector2::new(min.x, mid_y)),
+        ("resize_e", Vector2::new(max.x, mid_y)),
+        ("resize_sw", Vector2::new(min.x, min.y)),
+        ("resize_s", Vector2::new(mid_x, min.y)),
+        ("resize_se", Vector2::new(max.x, min.y)),
+    ]
+}
+
+fn resize_handle_sign(handle: &str) -> (f32, f32) {
+    match handle {
+        "resize_nw" => (-1.0, 1.0),
+        "resize_n" => (0.0, 1.0),
+        "resize_ne" => (1.0, 1.0),
+        "resize_w" => (-1.0, 0.0),
+        "resize_e" => (1.0, 0.0),
+        "resize_sw" => (-1.0, -1.0),
+        "resize_s" => (0.0, -1.0),
+        "resize_se" => (1.0, -1.0),
+        _ => (0.0, 0.0),
+    }
+}
+
+#[derive(Clone, Copy)]
+struct EditorUiRect {
+    center: Vector2,
+    size: Vector2,
+    rotation: f32,
+}
+
+impl EditorUiRect {
+    fn contains(self, point: Vector2) -> bool {
+        let half = self.size * 0.5;
+        point.x >= self.center.x - half.x
+            && point.x <= self.center.x + half.x
+            && point.y >= self.center.y - half.y
+            && point.y <= self.center.y + half.y
+    }
+}
+
+fn pick_doc_ui_node(doc: &SceneDoc, point: Vector2) -> Option<u32> {
+    let root_rect = EditorUiRect {
+        center: Vector2::new(0.5, 0.5),
+        size: Vector2::ONE,
+        rotation: 0.0,
+    };
+    let mut hit = None;
+    if let Some(root) = doc.scene.root {
+        pick_doc_ui_node_inner(doc, root.as_u32(), root_rect, point, &mut hit);
+    }
+    for node in doc.scene.nodes.iter() {
+        if node.parent.is_none() && doc.scene.root.map(|root| root.as_u32()) != Some(node.key.as_u32()) {
+            pick_doc_ui_node_inner(doc, node.key.as_u32(), root_rect, point, &mut hit);
+        }
+    }
+    hit
+}
+
+fn pick_doc_ui_node_inner(
+    doc: &SceneDoc,
+    key: u32,
+    parent_rect: EditorUiRect,
+    point: Vector2,
+    hit: &mut Option<u32>,
+) {
+    let Some(node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
+        return;
+    };
+    let Some(rect) = editor_ui_rect(&node.data, parent_rect) else {
+        return;
+    };
+    if rect.contains(point) {
+        *hit = Some(key);
+    }
+    for child in doc
+        .scene
+        .nodes
+        .iter()
+        .filter(|child| child.parent.map(|parent| parent.as_u32()) == Some(key))
+    {
+        pick_doc_ui_node_inner(doc, child.key.as_u32(), rect, point, hit);
+    }
+}
+
+fn editor_ui_rect(data: &SceneNodeData, parent: EditorUiRect) -> Option<EditorUiRect> {
+    if !data.type_name().starts_with("Ui") {
+        return None;
+    }
+    if scene_field_bool(data, "visible") == Some(false) {
+        return None;
+    }
+    let anchor_text = scene_field_str(data, "anchor").unwrap_or_else(|| "center".to_string());
+    let anchor = scene_anchor_dir(&anchor_text);
+    let size_ratio = scene_field_vec2(data, "size_ratio").unwrap_or(Vector2::ZERO);
+    let translation = scene_field_vec2(data, "translation_ratio").unwrap_or(Vector2::ZERO);
+    let rotation = scene_field_f32(data, "rotation").unwrap_or(0.0);
+    let size = Vector2::new(parent.size.x * size_ratio.x, parent.size.y * size_ratio.y);
+    if size.x <= 0.0 || size.y <= 0.0 {
+        return None;
+    }
+    let anchor_point = parent.center + Vector2::new(parent.size.x * 0.5 * anchor.x, parent.size.y * 0.5 * anchor.y);
+    let inward = Vector2::new(size.x * 0.5 * anchor.x, size.y * 0.5 * anchor.y);
+    let offset = Vector2::new(parent.size.x * translation.x, parent.size.y * translation.y);
+    Some(EditorUiRect {
+        center: anchor_point - inward + offset,
+        size,
+        rotation,
+    })
+}
+
+fn doc_ui_parent_rect(doc: &SceneDoc, key: u32) -> Option<EditorUiRect> {
+    let root_rect = EditorUiRect {
+        center: Vector2::new(0.5, 0.5),
+        size: Vector2::ONE,
+        rotation: 0.0,
+    };
+    let node = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key)?;
+    let Some(parent) = node.parent else {
+        return Some(root_rect);
+    };
+    doc_ui_rect(doc, parent.as_u32()).or(Some(root_rect))
+}
+
+fn doc_ui_rect(doc: &SceneDoc, key: u32) -> Option<EditorUiRect> {
+    let root_rect = EditorUiRect {
+        center: Vector2::new(0.5, 0.5),
+        size: Vector2::ONE,
+        rotation: 0.0,
+    };
+    let node = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key)?;
+    let parent = node
+        .parent
+        .and_then(|parent| doc_ui_rect(doc, parent.as_u32()))
+        .unwrap_or(root_rect);
+    editor_ui_rect(&node.data, parent)
+}
+
+fn scene_anchor_dir(anchor: &str) -> Vector2 {
+    match anchor {
+        "left" => Vector2::new(-1.0, 0.0),
+        "right" => Vector2::new(1.0, 0.0),
+        "top" => Vector2::new(0.0, 1.0),
+        "bottom" => Vector2::new(0.0, -1.0),
+        "top_left" | "top-left" => Vector2::new(-1.0, 1.0),
+        "top_right" | "top-right" => Vector2::new(1.0, 1.0),
+        "bottom_left" | "bottom-left" => Vector2::new(-1.0, -1.0),
+        "bottom_right" | "bottom-right" => Vector2::new(1.0, -1.0),
+        _ => Vector2::ZERO,
+    }
+}
+
+fn scene_field(data: &SceneNodeData, field: &str) -> Option<SceneValue> {
+    for (name, value) in data.fields.iter() {
+        if name.as_ref() == field {
+            return Some(value.clone());
+        }
+    }
+    data.base_ref().and_then(|base| scene_field(base, field))
+}
+
+fn scene_field_bool(data: &SceneNodeData, field: &str) -> Option<bool> {
+    scene_field(data, field)?.as_bool()
+}
+
+fn scene_field_str(data: &SceneNodeData, field: &str) -> Option<String> {
+    scene_field(data, field)?.as_str().map(str::to_string)
+}
+
+fn scene_field_vec2(data: &SceneNodeData, field: &str) -> Option<Vector2> {
+    scene_field(data, field)?
+        .as_vec2()
+        .map(|(x, y)| Vector2::new(x, y))
+}
+
+fn scene_field_f32(data: &SceneNodeData, field: &str) -> Option<f32> {
+    scene_field(data, field)?.as_f32()
+}
+
+fn set_scene_vec2(data: &mut SceneNodeData, field: &str, value: Vector2) {
+    let name = SceneFieldName::from_name(field.to_string());
+    for (field_name, field_value) in data.fields.to_mut().iter_mut() {
+        if field_name.as_ref() == field {
+            *field_value = SceneValue::Vec2 {
+                x: value.x,
+                y: value.y,
+            };
+            return;
+        }
+    }
+    data.fields.to_mut().push((
+        name,
+        SceneValue::Vec2 {
+            x: value.x,
+            y: value.y,
+        },
+    ));
+}
+
+fn set_scene_f32(data: &mut SceneNodeData, field: &str, value: f32) {
+    let name = SceneFieldName::from_name(field.to_string());
+    for (field_name, field_value) in data.fields.to_mut().iter_mut() {
+        if field_name.as_ref() == field {
+            *field_value = SceneValue::F32(value);
+            return;
+        }
+    }
+    data.fields.to_mut().push((name, SceneValue::F32(value)));
 }
 
 fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
@@ -683,6 +1778,9 @@ fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         );
     }
     apply_scene_tree_layout(ctx, &view.scene_roots, &view.scene_branches);
+    apply_viewport_mode(ctx, &view.viewport_mode);
+    apply_editor_gizmos(ctx, &view.gizmo);
+    apply_selected_ui_overlay(ctx, view.selected_ui_rect);
 
     set_label(ctx, "inspector_name", &format!("name: {}", view.inspector_name));
     set_label(ctx, "inspector_type", &format!("type: {}", view.inspector_type));
@@ -715,6 +1813,9 @@ struct EditorView {
     viewport: String,
     status: String,
     log: String,
+    viewport_mode: String,
+    gizmo: editor_gizmos::GizmoView,
+    selected_ui_rect: Option<EditorUiRect>,
     node_picker_rows: Vec<String>,
     node_picker_page: String,
 }
@@ -731,10 +1832,14 @@ impl EditorView {
         let mut inspector_pos = "-".to_string();
         let mut inspector_script = "-".to_string();
         let mut inspector_vars = "-".to_string();
+        let mut gizmo = editor_gizmos::GizmoView::default();
+        let mut selected_ui_rect = None;
 
         if !state.doc_text.is_empty() {
             let doc = SceneDoc::parse(&state.doc_text);
             let tree = scene_tree_view(&doc, state.selected_key);
+            gizmo = editor_gizmos::gizmo_view(&doc, state.selected_key);
+            selected_ui_rect = state.selected_key.and_then(|key| doc_ui_rect(&doc, key));
             nodes = tree.labels;
             scene_roots = tree.roots;
             scene_branches = tree.branches;
@@ -818,6 +1923,9 @@ impl EditorView {
             viewport,
             status,
             log: state.log.clone(),
+            viewport_mode: state.viewport_mode.clone(),
+            gizmo,
+            selected_ui_rect,
             node_picker_rows,
             node_picker_page: format!("page {page}/{page_count}"),
         }
@@ -1037,6 +2145,92 @@ fn set_button_fill<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, na
     if let Some(id) = find_named(ctx, name) {
         let _ = with_node_mut!(ctx.run, UiButton, id, |node| {
             node.style.fill = color;
+        });
+    }
+}
+
+fn apply_viewport_mode<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, mode: &str) {
+    set_grid_visible(ctx, "viewport_grid", mode == "UI");
+    set_camera_stream_visible(ctx, "viewport_stream_2d", mode == "2D");
+    set_camera_stream_visible(ctx, "viewport_stream_3d", mode == "3D");
+}
+
+fn apply_editor_gizmos<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    gizmo: &editor_gizmos::GizmoView,
+) {
+    set_panel_visible(ctx, "selected_outline", gizmo.selected);
+    set_panel_visible(ctx, "camera2d_gizmo", gizmo.camera_2d);
+    set_panel_visible(ctx, "camera3d_gizmo", gizmo.camera_3d);
+    if gizmo.selected {
+        set_panel_size(ctx, "selected_outline", gizmo.outline_size);
+    }
+}
+
+fn apply_selected_ui_overlay<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    rect: Option<EditorUiRect>,
+) {
+    let Some(rect) = rect else {
+        set_resize_handles_visible(ctx, false);
+        return;
+    };
+    set_resize_handles_visible(ctx, true);
+    if let Some(id) = find_named(ctx, "selected_outline") {
+        let _ = with_node_mut!(ctx.run, UiPanel, id, |node| {
+            node.layout.size = UiVector2::ratio(rect.size.x * 0.94, rect.size.y * 0.82);
+            node.transform.translation = Vector2::new((rect.center.x - 0.5) * 0.94, (rect.center.y - 0.5) * 0.82);
+            node.transform.rotation = rect.rotation;
+        });
+    }
+}
+
+fn set_resize_handles_visible<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, visible: bool) {
+    for name in [
+        "resize_nw",
+        "resize_n",
+        "resize_ne",
+        "resize_w",
+        "resize_e",
+        "resize_sw",
+        "resize_s",
+        "resize_se",
+    ] {
+        set_panel_visible(ctx, name, visible);
+    }
+}
+
+fn set_panel_visible<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, name: &str, visible: bool) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiPanel, id, |node| {
+            node.visible = visible;
+            node.input_enabled = visible;
+        });
+    }
+}
+
+fn set_grid_visible<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, name: &str, visible: bool) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiGrid, id, |node| {
+            node.visible = visible;
+            node.input_enabled = visible;
+        });
+    }
+}
+
+fn set_camera_stream_visible<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, name: &str, visible: bool) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiCameraStream, id, |node| {
+            node.visible = visible;
+            node.input_enabled = visible;
+        });
+    }
+}
+
+fn set_panel_size<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, name: &str, size: (f32, f32)) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiPanel, id, |node| {
+            node.layout.size = UiVector2::ratio(size.0, size.1);
         });
     }
 }

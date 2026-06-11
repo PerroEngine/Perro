@@ -1,4 +1,4 @@
-use perro_runtime_api::sub_apis::{FrameRateCap, WindowAPI, WindowMode, WindowRequest};
+use perro_runtime_api::sub_apis::{CursorIcon, FrameRateCap, WindowAPI, WindowMode, WindowRequest};
 
 use crate::Runtime;
 
@@ -23,6 +23,11 @@ impl WindowAPI for Runtime {
     fn set_frame_rate_cap(&mut self, cap: FrameRateCap) {
         self.window_requests
             .push(WindowRequest::SetFrameRateCap(cap));
+    }
+
+    fn set_cursor_icon(&mut self, icon: CursorIcon) {
+        self.window_requests
+            .push(WindowRequest::SetCursorIcon(icon));
     }
 
     fn get_active_refresh_rate(&mut self) -> Option<f32> {
@@ -58,6 +63,7 @@ mod tests {
         runtime.set_window_size(800, 600);
         runtime.set_window_mode(WindowMode::BorderlessFullscreen);
         runtime.set_frame_rate_cap(FrameRateCap::Fps(120.0));
+        runtime.set_cursor_icon(CursorIcon::Move);
         runtime.set_active_refresh_rate(Some(144.0));
 
         let mut requests = Vec::new();
@@ -73,6 +79,7 @@ mod tests {
                 },
                 WindowRequest::SetMode(WindowMode::BorderlessFullscreen),
                 WindowRequest::SetFrameRateCap(FrameRateCap::Fps(120.0)),
+                WindowRequest::SetCursorIcon(CursorIcon::Move),
             ]
         );
         assert_eq!(runtime.get_active_refresh_rate(), Some(144.0));

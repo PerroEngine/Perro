@@ -64,7 +64,7 @@ const STARTUP_SPLASH_IMAGE_NODE: NodeID =
 const STARTUP_SPLASH_BG_Z: i32 = 950;
 const STARTUP_SPLASH_IMAGE_Z: i32 = 951;
 
-fn map_cursor_icon(icon: perro_ui::CursorIcon) -> WinitCursorIcon {
+pub(crate) fn map_cursor_icon(icon: perro_ui::CursorIcon) -> WinitCursorIcon {
     match icon {
         perro_ui::CursorIcon::Default => WinitCursorIcon::Default,
         perro_ui::CursorIcon::ContextMenu => WinitCursorIcon::ContextMenu,
@@ -1221,7 +1221,8 @@ impl<B: GraphicsBackend> RunnerState<B> {
             return;
         };
 
-        for request in self.window_requests.drain(..) {
+        let requests = std::mem::take(&mut self.window_requests);
+        for request in requests {
             match request {
                 WindowRequest::SetTitle(title) => window.set_title(&title),
                 WindowRequest::SetSize { width, height } => {
@@ -1243,6 +1244,9 @@ impl<B: GraphicsBackend> RunnerState<B> {
                         self.frame_rate_cap
                     );
                     self.next_frame_deadline = None;
+                }
+                WindowRequest::SetCursorIcon(icon) => {
+                    self.set_cursor_icon(icon);
                 }
             }
         }
