@@ -1463,6 +1463,12 @@ parent = $root
 [/UiList]
 [/ui_tree]
 
+[ui_list_indent]
+parent = $root
+[UiListIndent]
+[/UiListIndent]
+[/ui_list_indent]
+
 [animation_player]
 parent = $root
 [AnimationPlayer]

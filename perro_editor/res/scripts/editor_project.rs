@@ -13,7 +13,7 @@ pub fn create_project(parent_dir: &str, project_name: &str) -> Result<String, St
 
     let parent = parent.canonicalize().unwrap_or_else(|_| parent.to_path_buf());
     let project_root = parent.join(sanitize_project_dir_name(project_name));
-    perro_project::create_new_project(&project_root, project_name)
+    perro_api::project::create_new_project(&project_root, project_name)
         .map_err(|err| format!("failed to scaffold project: {err}"))?;
     Ok(project_root.to_string_lossy().to_string())
 }

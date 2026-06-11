@@ -10,6 +10,11 @@ mod editor_project;
 mod editor_file_watch;
 mod editor_gizmos;
 mod editor_scene_deps;
+mod editor_app;
+mod editor_files;
+mod editor_manager;
+mod editor_scene;
+mod editor_view;
 
 type SelfNodeType = UiPanel;
 
@@ -23,6 +28,7 @@ const FILE_WATCH_INTERVAL_FRAMES: u32 = 30;
 
 #[State]
 struct EditorState {
+    editor_shell_root: u64,
     project_root: String,
     project_name: String,
     create_parent_dir: String,
@@ -39,6 +45,7 @@ struct EditorState {
     project_file_sigs: Vec<editor_file_watch::FileSig>,
     dirty_scene_paths: Vec<String>,
     file_watch_frame: u32,
+    preview_serial: u64,
     selected_key: Option<u32>,
     ui_drag_key: Option<u32>,
     ui_drag_mode: String,
@@ -98,7 +105,12 @@ methods!({
                 create_project_from_manager(ctx);
             }
             "manager_close_button" => {
-                set_project_manager(ctx, false);
+                let has_editor = with_state!(ctx.run, EditorState, ctx.id, |state| {
+                    state.editor_shell_root != 0
+                });
+                if has_editor {
+                    set_project_manager(ctx, false);
+                }
             }
             "save_scene_button" => {
                 save_active_scene(ctx);
@@ -139,55 +151,62 @@ methods!({
 });
 
 fn connect_editor_signals<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_open_project"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_manager_browse"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_manager_choose_location"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_manager_create"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_manager_close"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_recent_0"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_recent_1"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_recent_2"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_recent_3"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_recent_4"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_save_scene"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_add_node"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_mode_ui"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_mode_2d"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_mode_3d"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_open_file_0"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_open_file_1"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_open_file_2"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_open_file_3"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_open_file_4"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_open_file_5"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_open_file_6"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_open_file_7"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_open_file_8"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_open_file_9"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_open_file_10"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_open_file_11"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_select_scene_0"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_select_scene_1"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_select_scene_2"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_select_scene_3"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_tab_0"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_tab_1"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_add_type_0"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_add_type_1"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_add_type_2"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_add_type_3"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_add_type_4"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_add_type_5"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_add_type_6"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_add_type_7"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_add_type_8"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_add_type_9"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_add_type_10"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_add_type_11"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_add_type_prev"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_add_type_next"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_add_node_cancel"), func!("on_editor_signal"));
-    let _ = signal_connect!(ctx.run, ctx.id, signal!("editor_viewport_click"), func!("on_editor_signal"));
+    let _ = signal_connect_many!(
+        ctx.run,
+        ctx.id,
+        [
+            signal!("editor_open_project"),
+            signal!("editor_manager_browse"),
+            signal!("editor_manager_choose_location"),
+            signal!("editor_manager_create"),
+            signal!("editor_manager_close"),
+            signal!("editor_recent_0"),
+            signal!("editor_recent_1"),
+            signal!("editor_recent_2"),
+            signal!("editor_recent_3"),
+            signal!("editor_recent_4"),
+            signal!("editor_save_scene"),
+            signal!("editor_add_node"),
+            signal!("editor_mode_ui"),
+            signal!("editor_mode_2d"),
+            signal!("editor_mode_3d"),
+            signal!("editor_open_file_0"),
+            signal!("editor_open_file_1"),
+            signal!("editor_open_file_2"),
+            signal!("editor_open_file_3"),
+            signal!("editor_open_file_4"),
+            signal!("editor_open_file_5"),
+            signal!("editor_open_file_6"),
+            signal!("editor_open_file_7"),
+            signal!("editor_open_file_8"),
+            signal!("editor_open_file_9"),
+            signal!("editor_open_file_10"),
+            signal!("editor_open_file_11"),
+            signal!("editor_select_scene_0"),
+            signal!("editor_select_scene_1"),
+            signal!("editor_select_scene_2"),
+            signal!("editor_select_scene_3"),
+            signal!("editor_tab_0"),
+            signal!("editor_tab_1"),
+            signal!("editor_add_type_0"),
+            signal!("editor_add_type_1"),
+            signal!("editor_add_type_2"),
+            signal!("editor_add_type_3"),
+            signal!("editor_add_type_4"),
+            signal!("editor_add_type_5"),
+            signal!("editor_add_type_6"),
+            signal!("editor_add_type_7"),
+            signal!("editor_add_type_8"),
+            signal!("editor_add_type_9"),
+            signal!("editor_add_type_10"),
+            signal!("editor_add_type_11"),
+            signal!("editor_add_type_prev"),
+            signal!("editor_add_type_next"),
+            signal!("editor_add_node_cancel"),
+            signal!("editor_viewport_click"),
+        ],
+        [func!("on_editor_signal")]
+    );
 }
 
 fn update_freecam<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
@@ -230,9 +249,14 @@ fn update_freecam<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let mut label = String::new();
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let speed = if key_down!(ctx.ipt, KeyCode::ControlLeft) { 18.0 } else { 7.0 };
-        state.cam_x += dx * speed * dt;
-        state.cam_y += dy * speed * dt;
-        state.cam_z += dz * speed * dt;
+        let rotation = Quaternion::from_euler_xyz(state.cam_pitch, state.cam_yaw, 0.0);
+        let right = rotation.rotate_vector3(Vector3::new(1.0, 0.0, 0.0));
+        let forward = rotation.rotate_vector3(Vector3::new(0.0, 0.0, -1.0));
+        let up = Vector3::new(0.0, 1.0, 0.0);
+        let movement = (right * dx) + (up * dy) + (forward * -dz);
+        state.cam_x += movement.x * speed * dt;
+        state.cam_y += movement.y * speed * dt;
+        state.cam_z += movement.z * speed * dt;
         state.cam_yaw += mouse.x * 0.0025;
         state.cam_pitch = (state.cam_pitch - mouse.y * 0.0025).clamp(-1.4, 1.4);
         label = format!(
@@ -240,7 +264,35 @@ fn update_freecam<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             state.viewport_mode, state.cam_x, state.cam_y, state.cam_z, state.cam_yaw, state.cam_pitch
         );
     });
+    apply_freecam(ctx);
     set_label(ctx, "viewport_label", &label);
+}
+
+fn reset_freecam(state: &mut EditorState) {
+    state.cam_x = 0.0;
+    state.cam_y = 3.0;
+    state.cam_z = 8.0;
+    state.cam_yaw = 0.0;
+    state.cam_pitch = -0.25;
+}
+
+fn apply_freecam<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let Some(camera) = find_named(ctx, "editor_camera_3d") else {
+        return;
+    };
+    let (pos, rot) = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        (
+            Vector3::new(state.cam_x, state.cam_y, state.cam_z),
+            Quaternion::from_euler_xyz(state.cam_pitch, state.cam_yaw, 0.0),
+        )
+    });
+    let _ = with_node_mut!(ctx.run, Camera3D, camera, |node| {
+        node.active = true;
+    });
+    let _ = ctx.run.Nodes().set_local_transform_3d(
+        camera,
+        Transform3D::new(pos, rot, Vector3::ONE),
+    );
 }
 
 fn open_project<API: ScriptAPI + ?Sized>(
@@ -265,11 +317,16 @@ fn open_project<API: ScriptAPI + ?Sized>(
         .filter(|path| path.ends_with(".scn"))
         .cloned()
         .collect::<Vec<_>>();
+    let initial_scene = editor_manager::project_main_scene(&project_text)
+        .filter(|path| scene_paths.iter().any(|scene| scene == path))
+        .or_else(|| scene_paths.first().cloned());
     let log = format!(
         "open project\nroot: {}\nscenes: {}",
         root_path.display(),
         scene_paths.len()
     );
+
+    load_editor_shell(ctx)?;
 
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         state.project_root = root_path.to_string_lossy().to_string();
@@ -286,6 +343,7 @@ fn open_project<API: ScriptAPI + ?Sized>(
         state.project_file_sigs = editor_file_watch::scan_project(root_path.as_path());
         state.dirty_scene_paths.clear();
         state.file_watch_frame = 0;
+        state.preview_serial = 0;
         state.selected_key = None;
         state.ui_drag_key = None;
         state.ui_drag_mode.clear();
@@ -298,17 +356,42 @@ fn open_project<API: ScriptAPI + ?Sized>(
     add_recent_project(ctx, root_path.to_string_lossy().as_ref());
     set_project_manager(ctx, false);
     refresh_all(ctx);
-    open_first_scene(ctx);
+    if let Some(scene) = initial_scene {
+        open_scene_path(ctx, &scene);
+    }
+    Ok(())
+}
+
+fn load_editor_shell<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) -> Result<(), String> {
+    let old = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let old = state.editor_shell_root;
+        state.editor_shell_root = 0;
+        old
+    })
+    .unwrap_or(0);
+    if old != 0 {
+        let _ = ctx.run.Nodes().remove_node(NodeID::from_u64(old));
+    }
+
+    let root = ctx
+        .run
+        .Scene()
+        .load(editor_app::EDITOR_SHELL_SCENE.to_string())
+        .map_err(|err| format!("editor shell load fail\n{err}"))?;
+    let _ = ctx.run.Nodes().reparent(ctx.id, root);
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.editor_shell_root = root.as_u64();
+    });
     Ok(())
 }
 
 fn open_project_dialog<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
-    if let Some(path) = FileMod::pick_folder("Open Perro Project") {
-        if let Err(err) = open_project(ctx, path.clone()) {
-            set_log(ctx, &format!("open project fail\n{path}\n{err}"));
-            refresh_recent_projects(ctx);
-            set_project_manager(ctx, true);
-        }
+    if let Some(path) = FileMod::pick_folder("Open Perro Project")
+        && let Err(err) = open_project(ctx, path.clone())
+    {
+        set_log(ctx, &format!("open project fail\n{path}\n{err}"));
+        refresh_recent_projects(ctx);
+        set_project_manager(ctx, true);
     }
 }
 
@@ -416,13 +499,13 @@ fn scan_res_paths(root: &Path) -> Result<Vec<String>, String> {
             Some(res_path)
         })
         .collect::<Vec<_>>();
-    out.sort();
+    out.sort_by_key(|path| editor_files::sort_key(path));
     Ok(out)
 }
 
 fn open_file_slot<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, idx: usize) {
-    let (root, res_path) = with_state!(ctx.run, EditorState, ctx.id, |state| {
-        (state.project_root.clone(), state.file_paths.get(idx).cloned())
+    let res_path = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.file_paths.get(idx).cloned()
     });
     let Some(scene_path) = res_path else {
         return;
@@ -432,10 +515,25 @@ fn open_file_slot<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, idx
         return;
     }
     if !scene_path.ends_with(".scn") {
-        set_log(ctx, &format!("file\n{scene_path}"));
+        set_log(ctx, &format!("{} file\n{}", editor_files::kind_label(&scene_path), editor_files::rel_label(&scene_path)));
         return;
     }
-    let abs = res_to_abs(&root, &scene_path);
+    open_scene_path(ctx, &scene_path);
+}
+
+fn open_scene_path<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, scene_path: &str) {
+    if scene_path.ends_with('/') {
+        set_log(ctx, &format!("folder\n{}", editor_files::rel_label(scene_path)));
+        return;
+    }
+    if !scene_path.ends_with(".scn") {
+        set_log(ctx, &format!("{} file\n{}", editor_files::kind_label(scene_path), editor_files::rel_label(scene_path)));
+        return;
+    }
+    let root = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.project_root.clone()
+    });
+    let abs = res_to_abs(&root, scene_path);
     let text = match FileMod::load_string(&abs) {
         Ok(text) => text,
         Err(err) => {
@@ -445,20 +543,25 @@ fn open_file_slot<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, idx
     };
     let doc = SceneDoc::parse(&text);
     let first_key = doc.scene.nodes.first().map(|node| node.key.as_u32());
+    let mode = editor_scene::root_viewport_mode(&doc);
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        if !state.open_paths.iter().any(|path| path == &scene_path) {
-            state.open_paths.push(scene_path.clone());
+        if !state.open_paths.iter().any(|path| path == scene_path) {
+            state.open_paths.push(scene_path.to_string());
         }
         state.active_open = state
             .open_paths
             .iter()
-            .position(|path| path == &scene_path)
+            .position(|path| path == scene_path)
             .unwrap_or(0);
         state.doc_text = doc.to_text();
         state.selected_key = first_key;
+        state.viewport_mode = mode.to_string();
+        if mode == "3D" {
+            reset_freecam(state);
+        }
         state.dirty = false;
-        state.dirty_scene_paths.retain(|path| path != &scene_path);
-        state.log = format!("open scene\n{scene_path}");
+        state.dirty_scene_paths.retain(|path| path != scene_path);
+        state.log = format!("open scene\n{}", editor_files::rel_label(scene_path));
     });
     rebuild_preview(ctx);
     refresh_all(ctx);
@@ -649,9 +752,13 @@ fn save_active_scene<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) 
 fn set_mode<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, mode: &str) {
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         state.viewport_mode = mode.to_string();
+        if mode == "3D" {
+            reset_freecam(state);
+        }
         state.log = format!("mode {mode}");
     });
     apply_viewport_mode(ctx, mode);
+    apply_freecam(ctx);
     refresh_all(ctx);
 }
 
@@ -907,6 +1014,7 @@ fn reload_scene_path<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, 
     };
     let doc = SceneDoc::parse(&text);
     let first_key = doc.scene.nodes.first().map(|node| node.key.as_u32());
+    let mode = editor_scene::root_viewport_mode(&doc);
     let normalized = doc.to_text();
     let same = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.doc_text == normalized
@@ -917,6 +1025,10 @@ fn reload_scene_path<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, 
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         state.doc_text = normalized;
         state.selected_key = first_key;
+        state.viewport_mode = mode.to_string();
+        if mode == "3D" {
+            reset_freecam(state);
+        }
         state.dirty = false;
         state.dirty_scene_paths.retain(|path| path != scene_path);
         state.log = format!("reload scene\n{scene_path}");
@@ -927,13 +1039,16 @@ fn reload_scene_path<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, 
 
 fn rebuild_preview<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     clear_preview(ctx);
-    let (root, active, doc_text) = with_state!(ctx.run, EditorState, ctx.id, |state| {
+    let (root, active, doc_text, serial) = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.preview_serial = state.preview_serial.wrapping_add(1);
         (
             state.project_root.clone(),
             state.open_paths.get(state.active_open).cloned(),
             state.doc_text.clone(),
+            state.preview_serial,
         )
-    });
+    })
+    .unwrap_or_else(|| (String::new(), None, String::new(), 0));
     let Some(active) = active else {
         return;
     };
@@ -952,7 +1067,7 @@ fn rebuild_preview<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             state.log = log;
         }
     });
-    load_preview_scene(ctx, &active);
+    load_preview_scene(ctx, &active, &doc_text, serial);
 }
 
 fn clear_preview<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
@@ -969,8 +1084,25 @@ fn clear_preview<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     }
 }
 
-fn load_preview_scene<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, path: &str) {
-    let root = match ctx.run.Scene().load(path.to_string()) {
+fn load_preview_scene<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    path: &str,
+    doc_text: &str,
+    serial: u64,
+) {
+    let project_root = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.project_root.clone()
+    });
+    let preview_text = rewrite_project_res_paths(&SceneDoc::parse(doc_text), &project_root).to_text();
+    let preview_path = PathBuf::from(&project_root)
+        .join(".perro")
+        .join(format!("editor_preview_{serial}.scn"));
+    if let Err(err) = FileMod::save_string(preview_path.to_string_lossy().as_ref(), &preview_text) {
+        set_log(ctx, &format!("preview write fail\n{path}\n{err}"));
+        return;
+    }
+
+    let root = match ctx.run.Scene().load(preview_path.to_string_lossy().to_string()) {
         Ok(root) => root,
         Err(err) => {
             set_log(ctx, &format!("preview load fail\n{path}\n{err}"));
@@ -987,6 +1119,7 @@ fn load_preview_scene<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>,
         (Vec::new(), Vec::new())
     } else {
         let doc = SceneDoc::parse(&doc_text);
+        add_preview_env(ctx, root, &doc);
         let doc_keys = preview_doc_order(&doc);
         let node_ids = preview_runtime_order(ctx, root, doc_keys.len());
         (
@@ -1000,6 +1133,25 @@ fn load_preview_scene<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>,
         state.preview_node_ids = node_ids;
         state.preview_node_keys = keys;
     });
+}
+
+fn add_preview_env<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    root: NodeID,
+    doc: &SceneDoc,
+) {
+    if !editor_scene::has_3d(doc) {
+        return;
+    }
+    if !editor_scene::has_type(doc, perro_scene::NodeType::AmbientLight3D) {
+        let light = create_node!(ctx.run, AmbientLight3D, "__editor_preview_ambient", tags![], root);
+        let _ = with_node_mut!(ctx.run, AmbientLight3D, light, |node| {
+            node.intensity = 0.35;
+        });
+    }
+    if !editor_scene::has_type(doc, perro_scene::NodeType::Sky3D) {
+        let _ = create_node!(ctx.run, Sky3D, "__editor_preview_sky", tags![], root);
+    }
 }
 
 fn attach_preview_to_viewport<API: ScriptAPI + ?Sized>(
@@ -1185,9 +1337,7 @@ fn update_ui_drag<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         return;
     };
     let drag = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        let Some(key) = state.ui_drag_key else {
-            return None;
-        };
+        let key = state.ui_drag_key?;
         if state.ui_drag_mode.is_empty() {
             return None;
         }
@@ -1706,7 +1856,7 @@ fn set_scene_f32(data: &mut SceneNodeData, field: &str, value: f32) {
 }
 
 fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
-    let view = with_state!(ctx.run, EditorState, ctx.id, |state| EditorView::from_state(state));
+    let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
 
     set_label(
         ctx,
@@ -1723,12 +1873,12 @@ fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             .get(idx)
             .cloned()
             .unwrap_or_else(|| "-".to_string());
-        set_label(ctx, &format!("manager_recent_{idx}_label"), &short_path(&text, 44));
+        set_label(ctx, &format!("manager_recent_{idx}_label"), &editor_view::short_path(&text, 44));
     }
     set_label(
         ctx,
         "create_location_label",
-        &format!("location: {}", short_path(&view.create_parent_dir, 34)),
+        &format!("location: {}", editor_view::short_path(&view.create_parent_dir, 34)),
     );
 
     set_label(ctx, "add_node_page_label", &view.node_picker_page);
@@ -1745,18 +1895,19 @@ fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         let text = view
             .file_paths
             .get(idx)
-            .cloned()
+            .map(|path| format!("{}  {}", editor_files::kind_label(path), editor_files::rel_label(path)))
             .unwrap_or_else(|| "-".to_string());
-        set_label(ctx, &format!("file_row_{idx}_label"), &short_path(&text, 28));
+        set_label(ctx, &format!("file_row_{idx}_label"), &editor_view::short_path(&text, 28));
     }
+    apply_file_tree_layout(ctx);
 
     for idx in 0..MAX_TABS {
         let text = view
             .open_paths
             .get(idx)
-            .cloned()
+            .map(|path| editor_files::rel_label(path))
             .unwrap_or_else(|| "-".to_string());
-        set_label(ctx, &format!("scene_tab_{idx}_label"), &short_path(&text, 24));
+        set_label(ctx, &format!("scene_tab_{idx}_label"), &editor_view::short_path(&text, 24));
         set_button_fill(
             ctx,
             &format!("scene_tab_{idx}"),
@@ -1777,7 +1928,7 @@ fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             if view.selected_row == Some(idx) { "#54657A" } else { "#39414E" },
         );
     }
-    apply_scene_tree_layout(ctx, &view.scene_roots, &view.scene_branches);
+    apply_scene_list_layout(ctx);
     apply_viewport_mode(ctx, &view.viewport_mode);
     apply_editor_gizmos(ctx, &view.gizmo);
     apply_selected_ui_overlay(ctx, view.selected_ui_rect);
@@ -1801,8 +1952,6 @@ struct EditorView {
     open_paths: Vec<String>,
     active_open: usize,
     nodes: Vec<String>,
-    scene_roots: Vec<usize>,
-    scene_branches: Vec<(usize, Vec<usize>)>,
     selected_row: Option<usize>,
     inspector_name: String,
     inspector_type: String,
@@ -1823,8 +1972,6 @@ struct EditorView {
 impl EditorView {
     fn from_state(state: &EditorState) -> Self {
         let mut nodes = Vec::new();
-        let mut scene_roots = Vec::new();
-        let mut scene_branches = Vec::new();
         let mut selected_row = None;
         let mut inspector_name = "-".to_string();
         let mut inspector_type = "-".to_string();
@@ -1841,8 +1988,6 @@ impl EditorView {
             gizmo = editor_gizmos::gizmo_view(&doc, state.selected_key);
             selected_ui_rect = state.selected_key.and_then(|key| doc_ui_rect(&doc, key));
             nodes = tree.labels;
-            scene_roots = tree.roots;
-            scene_branches = tree.branches;
             selected_row = tree.selected_row;
 
             if let Some(key) = state.selected_key.and_then(|raw| {
@@ -1851,26 +1996,25 @@ impl EditorView {
                     .iter()
                     .find(|node| node.key.as_u32() == raw)
                     .map(|node| node.key)
-            }) {
-                if let Some(node) = doc.scene.nodes.iter().find(|node| node.key == key) {
-                    inspector_name = doc.scene.key_name_or_id(node.key).to_string();
-                    inspector_type = node.data.type_name().to_string();
-                    inspector_parent = node
-                        .parent
-                        .map(|key| doc.scene.key_name_or_id(key).to_string())
-                        .unwrap_or_else(|| "-".to_string());
-                    inspector_pos = find_position_text(&node.data).unwrap_or_else(|| "-".to_string());
-                    inspector_script = node
-                        .script
-                        .as_ref()
-                        .map(|v| v.to_string())
-                        .unwrap_or_else(|| "-".to_string());
-                    inspector_vars = if node.script_vars.is_empty() {
-                        "-".to_string()
-                    } else {
-                        format!("{} fields", node.script_vars.len())
-                    };
-                }
+            }) && let Some(node) = doc.scene.nodes.iter().find(|node| node.key == key)
+            {
+                inspector_name = doc.scene.key_name_or_id(node.key).to_string();
+                inspector_type = node.data.type_name().to_string();
+                inspector_parent = node
+                    .parent
+                    .map(|key| doc.scene.key_name_or_id(key).to_string())
+                    .unwrap_or_else(|| "-".to_string());
+                inspector_pos = find_position_text(&node.data).unwrap_or_else(|| "-".to_string());
+                inspector_script = node
+                    .script
+                    .as_ref()
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "-".to_string());
+                inspector_vars = if node.script_vars.is_empty() {
+                    "-".to_string()
+                } else {
+                    format!("{} fields", node.script_vars.len())
+                };
             }
         }
 
@@ -1911,8 +2055,6 @@ impl EditorView {
             open_paths: state.open_paths.clone(),
             active_open: state.active_open,
             nodes,
-            scene_roots,
-            scene_branches,
             selected_row,
             inspector_name,
             inspector_type,
@@ -1936,8 +2078,6 @@ impl EditorView {
 struct SceneTreeRows {
     labels: Vec<String>,
     keys: Vec<u32>,
-    roots: Vec<usize>,
-    branches: Vec<(usize, Vec<usize>)>,
     selected_row: Option<usize>,
 }
 
@@ -1996,25 +2136,13 @@ fn push_scene_tree_row(
         node.data.type_name()
     ));
     out.keys.push(key);
-    if node.parent.is_none() || doc.scene.root.map(|root| root.as_u32()) == Some(key) {
-        out.roots.push(row);
-    }
-
-    let mut child_rows = Vec::new();
     for child in doc
         .scene
         .nodes
         .iter()
         .filter(|child| child.parent.map(|parent| parent.as_u32()) == Some(key))
     {
-        if let Some(child_row) =
-            push_scene_tree_row(doc, child.key.as_u32(), selected_key, visited, out)
-        {
-            child_rows.push(child_row);
-        }
-    }
-    if !child_rows.is_empty() {
-        out.branches.push((row, child_rows));
+        let _ = push_scene_tree_row(doc, child.key.as_u32(), selected_key, visited, out);
     }
     Some(row)
 }
@@ -2105,16 +2233,60 @@ fn res_to_abs(root: &str, res_path: &str) -> String {
         .to_string()
 }
 
-fn suffix_index(name: &str, prefix: &str) -> Option<usize> {
-    name.strip_prefix(prefix)?.parse::<usize>().ok()
+fn rewrite_project_res_paths(doc: &SceneDoc, project_root: &str) -> SceneDoc {
+    let mut doc = doc.clone();
+    for node in doc.scene.nodes.to_mut().iter_mut() {
+        if let Some(script) = node.script.as_mut()
+            && script.starts_with("res://")
+        {
+            *script = Cow::Owned(res_to_abs(project_root, script));
+        }
+        if let Some(root_of) = node.root_of.as_mut()
+            && root_of.starts_with("res://")
+        {
+            *root_of = Cow::Owned(res_to_abs(project_root, root_of));
+        }
+        rewrite_project_res_data(&mut node.data, project_root);
+        for (_, value) in node.script_vars.to_mut().iter_mut() {
+            rewrite_project_res_value(value, project_root);
+        }
+    }
+    doc
 }
 
-fn short_path(path: &str, max: usize) -> String {
-    if path.len() <= max {
-        path.to_string()
-    } else {
-        format!("...{}", &path[path.len().saturating_sub(max - 3)..])
+fn rewrite_project_res_data(data: &mut SceneNodeData, project_root: &str) {
+    for (_, value) in data.fields.to_mut().iter_mut() {
+        rewrite_project_res_value(value, project_root);
     }
+    if let Some(base) = data.base.as_mut() {
+        match base {
+            perro_scene::SceneNodeDataBase::Borrowed(_) => {}
+            perro_scene::SceneNodeDataBase::Owned(base) => rewrite_project_res_data(base, project_root),
+        }
+    }
+}
+
+fn rewrite_project_res_value(value: &mut SceneValue, project_root: &str) {
+    match value {
+        SceneValue::Str(path) if path.starts_with("res://") => {
+            *path = Cow::Owned(res_to_abs(project_root, path));
+        }
+        SceneValue::Object(fields) => {
+            for (_, value) in fields.to_mut().iter_mut() {
+                rewrite_project_res_value(value, project_root);
+            }
+        }
+        SceneValue::Array(values) => {
+            for value in values.to_mut().iter_mut() {
+                rewrite_project_res_value(value, project_root);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn suffix_index(name: &str, prefix: &str) -> Option<usize> {
+    name.strip_prefix(prefix)?.parse::<usize>().ok()
 }
 
 fn set_log<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, text: &str) {
@@ -2235,38 +2407,23 @@ fn set_panel_size<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, nam
     }
 }
 
-fn apply_scene_tree_layout<API: ScriptAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, API>,
-    roots: &[usize],
-    branches: &[(usize, Vec<usize>)],
-) {
-    let Some(tree_id) = find_named(ctx, "scene_rows") else {
+fn apply_scene_list_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let Some(list_id) = find_named(ctx, "scene_rows") else {
         return;
     };
-    let row_ids = (0..MAX_NODES)
-        .map(|idx| find_named(ctx, &format!("scene_row_{idx}")))
-        .collect::<Vec<_>>();
-    let root_ids = roots
-        .iter()
-        .filter_map(|idx| row_ids.get(*idx).and_then(|id| *id))
-        .collect::<Vec<_>>();
+    let _ = with_node_mut!(ctx.run, UiList, list_id, |list| {
+        list.indent = 18.0;
+        list.v_spacing = 0.006;
+    });
+}
 
-    let _ = with_node_mut!(ctx.run, UiList, tree_id, |tree| {
-        tree.roots = root_ids;
-        tree.branches.clear();
-        tree.collapsed.clear();
-        tree.indent = 18.0;
-        tree.v_spacing = 0.006;
-        for (parent_idx, child_indices) in branches {
-            let Some(Some(parent_id)) = row_ids.get(*parent_idx) else {
-                continue;
-            };
-            let children = child_indices
-                .iter()
-                .filter_map(|idx| row_ids.get(*idx).and_then(|id| *id))
-                .collect::<Vec<_>>();
-            tree.set_branch(*parent_id, children);
-        }
+fn apply_file_tree_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let Some(list_id) = find_named(ctx, "file_rows") else {
+        return;
+    };
+    let _ = with_node_mut!(ctx.run, UiList, list_id, |list| {
+        list.indent = 16.0;
+        list.v_spacing = 0.006;
     });
 }
 
@@ -2363,3 +2520,5 @@ fn parse_recent_projects(text: &str) -> Vec<String> {
 fn json_escape(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
 }
+
+

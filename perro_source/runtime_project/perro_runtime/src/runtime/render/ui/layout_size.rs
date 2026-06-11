@@ -1,15 +1,15 @@
 use super::*;
 
 impl Runtime {
-    pub(super) fn compute_ui_tree_rows(
+    pub(super) fn compute_ui_list_rows(
         &self,
         owner: NodeID,
-        tree: &perro_ui::UiList,
-        tree_rect: ComputedUiRect,
+        list: &perro_ui::UiList,
+        list_rect: ComputedUiRect,
         computed: &mut AHashMap<NodeID, ComputedUiRect>,
     ) {
-        let content = tree_rect.inset(ui_padding_inset(tree_rect, tree.base.layout.padding));
-        let rows = self.ui_list_visible_rows(owner, tree);
+        let content = list_rect.inset(ui_padding_inset(list_rect, list.base.layout.padding));
+        let rows = self.ui_list_rows(owner);
         if rows.is_empty() {
             return;
         }
@@ -24,7 +24,7 @@ impl Runtime {
             else {
                 continue;
             };
-            let indent = tree.indent * row.depth as f32;
+            let indent = list.indent * row.depth as f32;
             let row_content = ComputedUiRect::new(
                 Vector2::new(content.center.x + indent * 0.5, content.center.y),
                 Vector2::new((content.size.x - indent).max(0.0), content.size.y),
@@ -46,18 +46,11 @@ impl Runtime {
             computed.insert(row.node, ComputedUiRect::new(center, size));
             y -= size.y
                 + layout.margin.vertical()
-                + ui_v_spacing_amount(tree.v_spacing, content.size.y);
+                + ui_v_spacing_amount(list.v_spacing, content.size.y);
         }
     }
 
-    pub(super) fn ui_list_visible_rows(
-        &self,
-        owner: NodeID,
-        tree: &perro_ui::UiList,
-    ) -> Vec<UiTreeRow> {
-        if !tree.roots.is_empty() || !tree.branches.is_empty() {
-            return ui_tree_visible_rows(tree);
-        }
+    pub(super) fn ui_list_rows(&self, owner: NodeID) -> Vec<UiListRow> {
         let mut rows = Vec::new();
         let Some(owner_node) = self.nodes.get(owner) else {
             return rows;
@@ -68,7 +61,7 @@ impl Runtime {
         rows
     }
 
-    fn push_ui_list_child_rows(&self, node: NodeID, depth: u32, rows: &mut Vec<UiTreeRow>) {
+    fn push_ui_list_child_rows(&self, node: NodeID, depth: u32, rows: &mut Vec<UiListRow>) {
         let Some(scene_node) = self.nodes.get(node) else {
             return;
         };
@@ -78,32 +71,10 @@ impl Runtime {
             }
             return;
         }
-        rows.push(UiTreeRow { node, depth });
-    }
-
-    pub(super) fn ui_tree_owner(&self, child: NodeID) -> Option<NodeID> {
-        self.nodes.iter().find_map(|(id, node)| match &node.data {
-            SceneNodeData::UiList(tree) => ui_tree_contains(tree, child).then_some(id),
-            _ => None,
-        })
+        rows.push(UiListRow { node, depth });
     }
 
     pub(super) fn is_effectively_visible_for_ui(&self, node: NodeID) -> bool {
-        if let Some(tree) = self.ui_tree_owner(node) {
-            return self
-                .nodes
-                .get(node)
-                .is_some_and(|scene_node| Self::node_local_visible(&scene_node.data))
-                && self
-                    .nodes
-                    .get(tree)
-                    .and_then(|scene_node| match &scene_node.data {
-                        SceneNodeData::UiList(tree) => Some(ui_tree_visible_contains(tree, node)),
-                        _ => None,
-                    })
-                    .unwrap_or(false)
-                && self.is_effectively_visible(tree);
-        }
         self.is_effectively_visible(node)
     }
 
@@ -230,7 +201,7 @@ impl Runtime {
         let text = ui_text_measure(&scene_node.data);
         let children = scene_node.get_children_ids();
         let child_size = match &scene_node.data {
-            SceneNodeData::UiList(tree) => self.ui_tree_content_size(tree, available),
+            SceneNodeData::UiList(list) => self.ui_list_content_size(node, list, available),
             _ if ui_auto_layout_from_data(&scene_node.data).is_some() => self
                 .auto_layout_content_size(
                     children,
@@ -372,15 +343,16 @@ impl Runtime {
         size
     }
 
-    pub(super) fn ui_tree_content_size(
+    pub(super) fn ui_list_content_size(
         &self,
-        tree: &perro_ui::UiList,
+        owner: NodeID,
+        list: &perro_ui::UiList,
         available: Vector2,
     ) -> Vector2 {
         let mut width = 0.0_f32;
         let mut height = 0.0_f32;
         let mut count = 0_u32;
-        for row in ui_tree_visible_rows(tree) {
+        for row in self.ui_list_rows(owner) {
             let Some(layout) = self
                 .nodes
                 .get(row.node)
@@ -389,7 +361,7 @@ impl Runtime {
             else {
                 continue;
             };
-            let indent = tree.indent * row.depth as f32;
+            let indent = list.indent * row.depth as f32;
             let child_available = Vector2::new((available.x - indent).max(0.0), available.y);
             let child_size = self.resolve_ui_size(row.node, child_available, None);
             width = width.max(indent + child_size.x + layout.margin.horizontal());
@@ -397,7 +369,7 @@ impl Runtime {
             count += 1;
         }
         if count > 1 {
-            height += ui_v_spacing_amount(tree.v_spacing, available.y) * (count - 1) as f32;
+            height += ui_v_spacing_amount(list.v_spacing, available.y) * (count - 1) as f32;
         }
         Vector2::new(width, height)
     }

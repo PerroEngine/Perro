@@ -610,6 +610,15 @@ fn index_script_signal_uses(file: &Path, text: &str, index: &mut ScriptDoctorInd
             index.signal_connects.insert(signal);
         }
     }
+    for call in find_macro_calls_with_lines(text, "signal_connect_many") {
+        let args = split_top_level_args(&call.inner);
+        if args.len() < 3 {
+            continue;
+        }
+        for signal in extract_member_literals(args[2], &["signal"]) {
+            index.signal_connects.insert(signal);
+        }
+    }
 }
 
 fn collect_resource_signal_emits(
@@ -1245,6 +1254,23 @@ fn extract_member_literal(arg: &str, macro_names: &[&str]) -> Option<String> {
     parse_string_literal_value(arg)
 }
 
+fn extract_member_literals(arg: &str, macro_names: &[&str]) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Some(member) = extract_member_literal(arg, macro_names) {
+        out.push(member);
+    }
+    for macro_name in macro_names {
+        for call in find_macro_calls(arg, macro_name) {
+            if let Some(member) = parse_string_literal_value(call.trim()) {
+                out.push(member);
+            }
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
 fn parse_string_literal_value(input: &str) -> Option<String> {
     let input = input.trim();
     if input.starts_with('"') {
@@ -1854,6 +1880,31 @@ mod tests {
         let source = r#"
             fn ready(ctx: &mut ScriptContext<'_, API>) {
                 let _ = signal_connect!(ctx, ctx.id, signal!("future_button_click"), func!("on_click"));
+            }
+        "#;
+        let mut index = ScriptDoctorIndex::default();
+        index_script_signal_uses(&file, source, &mut index);
+        let mut report = ValidationReport::default();
+
+        validate_signal_emits(Path::new(""), &index, &mut report);
+
+        assert_eq!(report.errors, 0);
+        assert_eq!(report.warnings, 0);
+    }
+
+    #[test]
+    fn signal_connect_many_counts_as_connected() {
+        let file = PathBuf::from("res/scripts/main.rs");
+        let source = r#"
+            fn ready(ctx: &mut ScriptContext<'_, API>) {
+                let _ = signal_emit!(ctx, signal!("wired_a"));
+                let _ = signal_emit!(ctx, signal!("wired_b"));
+                let _ = signal_connect_many!(
+                    ctx,
+                    ctx.id,
+                    [signal!("wired_a"), signal!("wired_b")],
+                    [func!("on_signal")]
+                );
             }
         "#;
         let mut index = ScriptDoctorIndex::default();

@@ -1020,12 +1020,66 @@ fn script_macros_typecheck_and_forward() {
         method!("handle"),
         params!["button_a"]
     ));
+    assert_eq!(
+        signal_connect_many!(
+            &mut ctx,
+            id,
+            &[signal!("on_a"), signal!("on_b")],
+            [func!("handle_many")]
+        ),
+        2
+    );
+    assert_eq!(
+        signal_connect_many!(
+            &mut ctx,
+            id,
+            [signal!("on_c")],
+            &[func!("handle_c"), func!("handle_c_extra")],
+            params!["button_b"]
+        ),
+        2
+    );
+    assert_eq!(
+        ctx.Signals().signal_connect_many(
+            id,
+            vec![signal!("on_d"), signal!("on_e")],
+            vec![func!("handle_d"), func!("handle_e")],
+            &[]
+        ),
+        4
+    );
     assert!(signal_disconnect!(
         &mut ctx,
         id,
         signal!("on_test"),
         method!("handle")
     ));
+    assert_eq!(
+        signal_disconnect_many!(
+            &mut ctx,
+            id,
+            &[signal!("on_a"), signal!("on_b")],
+            [func!("handle_many")]
+        ),
+        2
+    );
+    assert_eq!(
+        signal_disconnect_many!(
+            &mut ctx,
+            id,
+            [signal!("on_c")],
+            &[func!("handle_c"), func!("handle_c_extra")]
+        ),
+        2
+    );
+    assert_eq!(
+        ctx.Signals().signal_disconnect_many(
+            id,
+            vec![signal!("on_d"), signal!("on_e")],
+            vec![func!("handle_d"), func!("handle_e")]
+        ),
+        4
+    );
     assert_eq!(
         signal_emit!(&mut ctx, signal!("on_test"), params![1_i32]),
         1

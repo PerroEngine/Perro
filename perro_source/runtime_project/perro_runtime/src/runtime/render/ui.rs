@@ -311,9 +311,6 @@ impl Runtime {
             |node, out| {
                 if let Some(node_ref) = nodes.get(node) {
                     out.extend(node_ref.get_children_ids().iter().copied());
-                    if let SceneNodeData::UiList(tree) = &node_ref.data {
-                        out.extend(ui_tree_all_nodes(tree));
-                    }
                 }
             },
         );

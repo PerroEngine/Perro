@@ -2477,88 +2477,26 @@ fn label_fill_mode_uses_parent_space_without_auto_layout_parent() {
 }
 
 #[test]
-fn ui_list_places_referenced_nodes_without_reparenting() {
+fn ui_list_places_direct_children_as_rows() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);
 
-    let mut tree = UiList::new();
-    tree.layout.size = UiVector2::pixels(300.0, 200.0);
-    tree.indent = 20.0;
-    tree.v_spacing = 4.0 / 200.0;
-    let tree_id = insert_ui_node(&mut runtime, SceneNodeData::UiList(tree));
+    let mut list = UiList::new();
+    list.layout.size = UiVector2::pixels(300.0, 200.0);
+    list.v_spacing = 4.0 / 200.0;
+    let list_id = insert_ui_node(&mut runtime, SceneNodeData::UiList(list));
 
     let root = insert_panel(&mut runtime, [100.0, 20.0], Color::new(0.1, 0.2, 0.3, 1.0));
     let child = insert_panel(&mut runtime, [80.0, 20.0], Color::new(0.2, 0.3, 0.4, 1.0));
+    attach_child(&mut runtime, list_id, root);
+    attach_child(&mut runtime, list_id, child);
 
-    let _ = runtime.with_node_mut::<UiList, _, _>(tree_id, |tree| {
-        tree.set_roots(vec![root]);
-        tree.set_branch(root, vec![child]);
-    });
     runtime.extract_render_ui_commands();
 
-    let root_rect = runtime
-        .render_ui
-        .computed_rects
-        .get(&root)
-        .expect("root rect exists");
-    let child_rect = runtime
-        .render_ui
-        .computed_rects
-        .get(&child)
-        .expect("child rect exists");
-
+    let root_rect = runtime.render_ui.computed_rects.get(&root).unwrap();
+    let child_rect = runtime.render_ui.computed_rects.get(&child).unwrap();
     assert_eq!(root_rect.center, Vector2::new(-100.0, 90.0));
-    assert_eq!(child_rect.center, Vector2::new(-90.0, 66.0));
-    assert!(
-        runtime
-            .nodes
-            .get(root)
-            .expect("root exists")
-            .parent
-            .is_nil()
-    );
-    assert!(
-        runtime
-            .nodes
-            .get(child)
-            .expect("child exists")
-            .parent
-            .is_nil()
-    );
-}
-
-#[test]
-fn ui_list_collapse_removes_hidden_branch_commands() {
-    let mut runtime = Runtime::new();
-    runtime.set_viewport_size(800, 600);
-
-    let mut tree = UiList::new();
-    tree.layout.size = UiVector2::pixels(300.0, 200.0);
-    let tree_id = insert_ui_node(&mut runtime, SceneNodeData::UiList(tree));
-
-    let root = insert_panel(&mut runtime, [100.0, 20.0], Color::new(0.1, 0.2, 0.3, 1.0));
-    let child = insert_panel(&mut runtime, [80.0, 20.0], Color::new(0.2, 0.3, 0.4, 1.0));
-    let _ = runtime.with_node_mut::<UiList, _, _>(tree_id, |tree| {
-        tree.set_roots(vec![root]);
-        tree.set_branch(root, vec![child]);
-    });
-
-    runtime.extract_render_ui_commands();
-    runtime.drain_render_commands(&mut Vec::new());
-    runtime.clear_dirty_flags();
-
-    let _ = runtime.with_node_mut::<UiList, _, _>(tree_id, |tree| {
-        tree.collapsed.push(root);
-    });
-    runtime.extract_render_ui_commands();
-
-    let mut commands = Vec::new();
-    runtime.drain_render_commands(&mut commands);
-    assert!(commands.iter().any(|cmd| matches!(
-        cmd,
-        RenderCommand::Ui(UiCommand::RemoveNode { node }) if *node == child
-    )));
-    assert!(!runtime.render_ui.prev_visible.contains(&child));
+    assert_eq!(child_rect.center, Vector2::new(-110.0, 66.0));
 }
 
 #[test]

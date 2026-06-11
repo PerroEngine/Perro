@@ -15,18 +15,6 @@ impl Runtime {
 
         let scene_node = self.nodes.get(node)?;
         let ui_root = ui_root_from_data(&scene_node.data)?;
-        if !matches!(scene_node.data, SceneNodeData::UiList(_))
-            && let Some(tree_parent) = self.ui_tree_owner(node)
-        {
-            self.compute_ui_rect(
-                tree_parent,
-                root_rect,
-                computed,
-                computed_scales,
-                auto_layout_computed,
-            )?;
-            return computed.get(&node).copied();
-        }
         let (ui_parent, parent_rect) = self.resolve_ui_parent_rect(
             scene_node.parent,
             root_rect,
@@ -101,8 +89,8 @@ impl Runtime {
             rect
         };
         computed.insert(node, rect);
-        if let SceneNodeData::UiList(tree) = &scene_node.data {
-            self.compute_ui_tree_rows(node, tree, rect, computed);
+        if let SceneNodeData::UiList(list) = &scene_node.data {
+            self.compute_ui_list_rows(node, list, rect, computed);
         }
         Some(rect)
     }

@@ -152,11 +152,7 @@ UiBox
 - Grandchildren of a row are not list rows.
 - `UiListIndent` does not render as a row.
 - Direct children of `UiListIndent` become rows at one deeper indent.
-- Supports script-fed `roots`, `branches`, and `collapsed` for virtual rows.
 - Uses `indent` and `v_spacing`.
-- `roots` are top-level row ids.
-- `branches` map a row id to child row ids.
-- `collapsed` hides child branches under a row id.
 
 `UiListIndent`
 
@@ -758,18 +754,24 @@ Connect to named and custom signals:
 ```rust
 lifecycle!({
     fn on_all_init(&self, ctx: &mut ScriptContext<'_, API>) {
-        signal_connect!(ctx.run, ctx.id, signal!("play_button_hover_enter"), func!("on_button"));
-        signal_connect!(ctx.run, ctx.id, signal!("play_button_hover_exit"), func!("on_button"));
-        signal_connect!(ctx.run, ctx.id, signal!("play_button_pressed"), func!("on_button"));
-        signal_connect!(ctx.run, ctx.id, signal!("play_button_released"), func!("on_button"));
-        signal_connect!(ctx.run, ctx.id, signal!("play_button_clicked"), func!("on_button"));
-
-        signal_connect!(ctx.run, ctx.id, signal!("menu_button_hover"), func!("on_button"));
-        signal_connect!(ctx.run, ctx.id, signal!("play_down"), func!("on_button"));
-        signal_connect!(ctx.run, ctx.id, signal!("any_button_down"), func!("on_button"));
-        signal_connect!(ctx.run, ctx.id, signal!("play_up"), func!("on_button"));
-        signal_connect!(ctx.run, ctx.id, signal!("play_clicked"), func!("on_button"));
-        signal_connect!(ctx.run, ctx.id, signal!("any_button_clicked"), func!("on_button"));
+        signal_connect_many!(
+            ctx.run,
+            ctx.id,
+            [
+                signal!("play_button_hover_enter"),
+                signal!("play_button_hover_exit"),
+                signal!("play_button_pressed"),
+                signal!("play_button_released"),
+                signal!("play_button_clicked"),
+                signal!("menu_button_hover"),
+                signal!("play_down"),
+                signal!("any_button_down"),
+                signal!("play_up"),
+                signal!("play_clicked"),
+                signal!("any_button_clicked"),
+            ],
+            [func!("on_button")]
+        );
     }
 });
 

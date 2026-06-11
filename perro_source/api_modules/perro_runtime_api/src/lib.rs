@@ -72,12 +72,13 @@ pub mod prelude {
         set_global_transform_3d, set_local_pos_2d, set_local_pos_3d, set_local_rot_2d,
         set_local_rot_3d, set_local_scale_2d, set_local_scale_3d, set_local_transform_2d,
         set_local_transform_3d, set_node_name, set_ui_rotation, set_var, signal_connect,
-        signal_disconnect, signal_emit, simulation_time, tag_add, tag_remove, tag_set,
-        to_global_point_2d, to_global_point_3d, to_global_transform_2d, to_global_transform_3d,
-        to_local_point_2d, to_local_point_3d, to_local_transform_2d, to_local_transform_3d,
-        window_get_active_refresh_rate, window_set_cursor_icon, window_set_frame_rate_cap,
-        window_set_frame_rate_limit, window_set_mode, window_set_size, window_set_title,
-        with_base_node, with_base_node_mut, with_node, with_node_mut, with_state, with_state_mut,
+        signal_connect_many, signal_disconnect, signal_disconnect_many, signal_emit,
+        simulation_time, tag_add, tag_remove, tag_set, to_global_point_2d, to_global_point_3d,
+        to_global_transform_2d, to_global_transform_3d, to_local_point_2d, to_local_point_3d,
+        to_local_transform_2d, to_local_transform_3d, window_get_active_refresh_rate,
+        window_set_cursor_icon, window_set_frame_rate_cap, window_set_frame_rate_limit,
+        window_set_mode, window_set_size, window_set_title, with_base_node, with_base_node_mut,
+        with_node, with_node_mut, with_state, with_state_mut,
     };
 
     // Common id and variant helpers.

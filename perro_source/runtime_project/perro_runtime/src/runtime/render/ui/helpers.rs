@@ -113,66 +113,9 @@ pub(super) fn ui_auto_layout_from_data(data: &SceneNodeData) -> Option<UiAutoLay
 }
 
 #[derive(Clone, Copy)]
-pub(super) struct UiTreeRow {
+pub(super) struct UiListRow {
     pub(super) node: NodeID,
     pub(super) depth: u32,
-}
-
-pub(super) fn ui_tree_visible_rows(tree: &perro_ui::UiList) -> Vec<UiTreeRow> {
-    let mut rows = Vec::new();
-    let mut stack = Vec::new();
-    let mut seen = Vec::new();
-    for &root in tree.roots.iter().rev() {
-        stack.push((root, 0_u32));
-    }
-    while let Some((node, depth)) = stack.pop() {
-        if seen.contains(&node) {
-            continue;
-        }
-        seen.push(node);
-        rows.push(UiTreeRow { node, depth });
-        if tree.is_collapsed(node) {
-            continue;
-        }
-        for &child in tree.children_of(node).iter().rev() {
-            stack.push((child, depth.saturating_add(1)));
-        }
-    }
-    rows
-}
-
-pub(super) fn ui_tree_contains(tree: &perro_ui::UiList, child: NodeID) -> bool {
-    tree.roots.contains(&child)
-        || tree
-            .branches
-            .iter()
-            .any(|branch| branch.children.contains(&child))
-}
-
-pub(super) fn ui_tree_visible_contains(tree: &perro_ui::UiList, child: NodeID) -> bool {
-    ui_tree_visible_rows(tree)
-        .into_iter()
-        .any(|row| row.node == child)
-}
-
-pub(super) fn ui_tree_all_nodes(tree: &perro_ui::UiList) -> Vec<NodeID> {
-    let mut nodes = Vec::new();
-    for &root in &tree.roots {
-        if !nodes.contains(&root) {
-            nodes.push(root);
-        }
-    }
-    for branch in &tree.branches {
-        if !nodes.contains(&branch.parent) {
-            nodes.push(branch.parent);
-        }
-        for &child in &branch.children {
-            if !nodes.contains(&child) {
-                nodes.push(child);
-            }
-        }
-    }
-    nodes
 }
 
 pub(super) fn ui_fill_width(

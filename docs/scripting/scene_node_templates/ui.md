@@ -549,7 +549,6 @@ script = "res://path/to/script.rs"
     [UiList]
         # direct UI children become list rows.
         # UiListIndent children render one indent level deeper.
-        # roots, branches, and collapsed can also be set from script with NodeID values.
         indent = 16.0
         v_spacing = 0.0
         [UiBox]

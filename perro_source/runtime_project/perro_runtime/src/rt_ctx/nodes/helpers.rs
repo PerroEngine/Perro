@@ -155,15 +155,10 @@ impl Runtime {
     pub(super) fn mark_ui_visibility_dirty_subtree(&mut self, root: perro_ids::NodeID) {
         let mut stack = vec![root];
         while let Some(id) = stack.pop() {
-            let Some((is_ui, children, tree_refs)) = self.nodes.get(id).map(|node| {
-                let tree_refs = match &node.data {
-                    SceneNodeData::UiList(tree) => ui_tree_all_nodes_flat(tree),
-                    _ => Vec::new(),
-                };
+            let Some((is_ui, children)) = self.nodes.get(id).map(|node| {
                 (
                     ui_base_from_data(&node.data).is_some(),
                     node.get_children_ids().to_vec(),
-                    tree_refs,
                 )
             }) else {
                 continue;
@@ -180,20 +175,8 @@ impl Runtime {
             }
 
             stack.extend(children);
-            stack.extend(tree_refs);
         }
     }
-}
-
-pub(super) fn ui_tree_all_nodes_flat(tree: &perro_ui::UiList) -> Vec<perro_ids::NodeID> {
-    let mut out = Vec::new();
-    out.extend(tree.roots.iter().copied());
-    for branch in &tree.branches {
-        out.extend(branch.children.iter().copied());
-    }
-    out.sort_unstable_by_key(|id| id.as_u64());
-    out.dedup();
-    out
 }
 
 pub(super) fn classify_ui_base_change(before: &UiBox, after: &UiBox) -> u16 {
@@ -335,11 +318,7 @@ pub(super) fn classify_ui_node_payload_change(
             Runtime::UI_DIRTY_LAYOUT_SELF | Runtime::UI_DIRTY_COMMANDS
         }
         (SceneNodeData::UiList(before), SceneNodeData::UiList(after))
-            if before.roots != after.roots
-                || before.branches != after.branches
-                || before.collapsed != after.collapsed
-                || before.indent != after.indent
-                || before.v_spacing != after.v_spacing =>
+            if before.indent != after.indent || before.v_spacing != after.v_spacing =>
         {
             Runtime::UI_DIRTY_LAYOUT_SELF | Runtime::UI_DIRTY_COMMANDS
         }

@@ -1,3 +1,2 @@
 # Optional script crate dependencies.
 [dependencies]
-perro_project = "0.1.0"
