@@ -19,7 +19,7 @@ mod editor_view;
 type SelfNodeType = UiPanel;
 
 const MAX_FILES: usize = 12;
-const MAX_NODES: usize = 4;
+const MAX_NODES: usize = 12;
 const MAX_TABS: usize = 2;
 const MAX_RECENT: usize = 5;
 const MAX_NODE_PICKER_ROWS: usize = 12;
@@ -40,6 +40,8 @@ struct EditorState {
     doc_text: String,
     preview_scene_paths: Vec<String>,
     preview_root: u64,
+    preview_camera_2d: u64,
+    preview_camera_3d: u64,
     preview_node_ids: Vec<u64>,
     preview_node_keys: Vec<u32>,
     project_file_sigs: Vec<editor_file_watch::FileSig>,
@@ -59,6 +61,9 @@ struct EditorState {
     cam_z: f32,
     cam_yaw: f32,
     cam_pitch: f32,
+    cam2_x: f32,
+    cam2_y: f32,
+    cam2_zoom: f32,
     log: String,
 }
 
@@ -186,6 +191,14 @@ fn connect_editor_signals<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
             signal!("editor_select_scene_1"),
             signal!("editor_select_scene_2"),
             signal!("editor_select_scene_3"),
+            signal!("editor_select_scene_4"),
+            signal!("editor_select_scene_5"),
+            signal!("editor_select_scene_6"),
+            signal!("editor_select_scene_7"),
+            signal!("editor_select_scene_8"),
+            signal!("editor_select_scene_9"),
+            signal!("editor_select_scene_10"),
+            signal!("editor_select_scene_11"),
             signal!("editor_tab_0"),
             signal!("editor_tab_1"),
             signal!("editor_add_type_0"),
@@ -213,6 +226,10 @@ fn update_freecam<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let mode = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.viewport_mode.clone()
     });
+    if mode == "2D" {
+        update_freecam_2d(ctx);
+        return;
+    }
     if mode != "3D" {
         return;
     }
@@ -268,6 +285,46 @@ fn update_freecam<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     set_label(ctx, "viewport_label", &label);
 }
 
+fn update_freecam_2d<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let dt = delta_time!(ctx.run).clamp(0.0, 1.0 / 30.0);
+    let mut dx = 0.0;
+    let mut dy = 0.0;
+    if key_down!(ctx.ipt, KeyCode::KeyA) {
+        dx -= 1.0;
+    }
+    if key_down!(ctx.ipt, KeyCode::KeyD) {
+        dx += 1.0;
+    }
+    if key_down!(ctx.ipt, KeyCode::KeyW) {
+        dy += 1.0;
+    }
+    if key_down!(ctx.ipt, KeyCode::KeyS) {
+        dy -= 1.0;
+    }
+    let zoom_dir = if key_down!(ctx.ipt, KeyCode::KeyE) {
+        1.0
+    } else if key_down!(ctx.ipt, KeyCode::KeyQ) {
+        -1.0
+    } else {
+        0.0
+    };
+    let mut label = String::new();
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let speed = 480.0 / state.cam2_zoom.max(0.001);
+        state.cam2_x += dx * speed * dt;
+        state.cam2_y += dy * speed * dt;
+        if zoom_dir != 0.0 {
+            state.cam2_zoom = (state.cam2_zoom * (1.0 + zoom_dir * 1.8 * dt)).clamp(0.05, 20.0);
+        }
+        label = format!(
+            "Viewport  mode={}  cam=({:.1}, {:.1}) zoom={:.2}",
+            state.viewport_mode, state.cam2_x, state.cam2_y, state.cam2_zoom
+        );
+    });
+    apply_freecam_2d(ctx);
+    set_label(ctx, "viewport_label", &label);
+}
+
 fn reset_freecam(state: &mut EditorState) {
     state.cam_x = 0.0;
     state.cam_y = 3.0;
@@ -276,8 +333,18 @@ fn reset_freecam(state: &mut EditorState) {
     state.cam_pitch = -0.25;
 }
 
+fn reset_freecam_2d(state: &mut EditorState) {
+    state.cam2_x = 0.0;
+    state.cam2_y = 0.0;
+    state.cam2_zoom = 1.0;
+}
+
 fn apply_freecam<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
-    let Some(camera) = find_named(ctx, "editor_camera_3d") else {
+    let camera = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        (state.preview_camera_3d != 0).then(|| NodeID::from_u64(state.preview_camera_3d))
+    })
+    .or_else(|| find_named(ctx, "editor_camera_3d"));
+    let Some(camera) = camera else {
         return;
     };
     let (pos, rot) = with_state!(ctx.run, EditorState, ctx.id, |state| {
@@ -293,6 +360,27 @@ fn apply_freecam<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         camera,
         Transform3D::new(pos, rot, Vector3::ONE),
     );
+}
+
+fn apply_freecam_2d<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let camera = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        (state.preview_camera_2d != 0).then(|| NodeID::from_u64(state.preview_camera_2d))
+    })
+    .or_else(|| find_named(ctx, "editor_camera_2d"));
+    let Some(camera) = camera else {
+        return;
+    };
+    let (pos, zoom) = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        (Vector2::new(state.cam2_x, state.cam2_y), state.cam2_zoom)
+    });
+    let _ = with_node_mut!(ctx.run, Camera2D, camera, |node| {
+        node.active = true;
+        node.zoom = zoom;
+    });
+    let _ = ctx
+        .run
+        .Nodes()
+        .set_local_transform_2d(camera, Transform2D::new(pos, 0.0, Vector2::ONE));
 }
 
 fn open_project<API: ScriptAPI + ?Sized>(
@@ -338,6 +426,8 @@ fn open_project<API: ScriptAPI + ?Sized>(
         state.doc_text.clear();
         state.preview_scene_paths.clear();
         state.preview_root = 0;
+        state.preview_camera_2d = 0;
+        state.preview_camera_3d = 0;
         state.preview_node_ids.clear();
         state.preview_node_keys.clear();
         state.project_file_sigs = editor_file_watch::scan_project(root_path.as_path());
@@ -349,6 +439,7 @@ fn open_project<API: ScriptAPI + ?Sized>(
         state.ui_drag_mode.clear();
         state.ui_drag_last_x = 0.0;
         state.ui_drag_last_y = 0.0;
+        reset_freecam_2d(state);
         state.dirty = false;
         state.log = log;
     });
@@ -499,7 +590,7 @@ fn scan_res_paths(root: &Path) -> Result<Vec<String>, String> {
             Some(res_path)
         })
         .collect::<Vec<_>>();
-    out.sort_by_key(|path| editor_files::sort_key(path));
+    out.sort_by_key(|path| editor_files::res_browser_sort_key(path));
     Ok(out)
 }
 
@@ -558,6 +649,8 @@ fn open_scene_path<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, sc
         state.viewport_mode = mode.to_string();
         if mode == "3D" {
             reset_freecam(state);
+        } else if mode == "2D" {
+            reset_freecam_2d(state);
         }
         state.dirty = false;
         state.dirty_scene_paths.retain(|path| path != scene_path);
@@ -754,11 +847,14 @@ fn set_mode<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, mode: &st
         state.viewport_mode = mode.to_string();
         if mode == "3D" {
             reset_freecam(state);
+        } else if mode == "2D" {
+            reset_freecam_2d(state);
         }
         state.log = format!("mode {mode}");
     });
     apply_viewport_mode(ctx, mode);
     apply_freecam(ctx);
+    apply_freecam_2d(ctx);
     refresh_all(ctx);
 }
 
@@ -854,7 +950,10 @@ fn stream_pointer_world_2d<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     pointer: ViewportPointer,
 ) -> Option<Vector2> {
-    let camera = find_named(ctx, "editor_camera_2d")?;
+    let camera = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        (state.preview_camera_2d != 0).then(|| NodeID::from_u64(state.preview_camera_2d))
+    })
+    .or_else(|| find_named(ctx, "editor_camera_2d"))?;
     let global = ctx.run.Nodes().get_global_transform_2d(camera)?;
     let zoom = with_node!(ctx.run, Camera2D, camera, |node| node.zoom).max(0.0001);
     let local = Vector2::new(pointer.ndc.x * 480.0 / zoom, pointer.ndc.y * 270.0 / zoom);
@@ -1028,6 +1127,8 @@ fn reload_scene_path<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, 
         state.viewport_mode = mode.to_string();
         if mode == "3D" {
             reset_freecam(state);
+        } else if mode == "2D" {
+            reset_freecam_2d(state);
         }
         state.dirty = false;
         state.dirty_scene_paths.retain(|path| path != scene_path);
@@ -1074,6 +1175,8 @@ fn clear_preview<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let root = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let root = state.preview_root;
         state.preview_root = 0;
+        state.preview_camera_2d = 0;
+        state.preview_camera_3d = 0;
         state.preview_node_ids.clear();
         state.preview_node_keys.clear();
         root
@@ -1115,16 +1218,45 @@ fn load_preview_scene<API: ScriptAPI + ?Sized>(
     let doc_text = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.doc_text.clone()
     });
-    let (node_ids, keys) = if doc_text.is_empty() {
-        (Vec::new(), Vec::new())
+    let (node_ids, keys, preview_camera_2d, preview_camera_3d) = if doc_text.is_empty() {
+        (Vec::new(), Vec::new(), 0, 0)
     } else {
         let doc = SceneDoc::parse(&doc_text);
         add_preview_env(ctx, root, &doc);
+        let preview_camera_2d = if editor_scene::has_2d(&doc) {
+            let name = format!("__editor_preview_camera_2d_{serial}");
+            let camera = create_node!(ctx.run, Camera2D, name, tags![], root);
+            set_viewport_stream_camera(ctx, "viewport_stream_2d", camera);
+            Some(camera)
+        } else {
+            None
+        };
+        let preview_camera_3d = if editor_scene::has_3d(&doc) {
+            let name = format!("__editor_preview_camera_3d_{serial}");
+            let camera = create_node!(ctx.run, Camera3D, name, tags![], root);
+            set_viewport_stream_camera(ctx, "viewport_stream_3d", camera);
+            Some(camera)
+        } else {
+            None
+        };
+        if let Some(camera) = preview_camera_2d {
+            let _ = with_node_mut!(ctx.run, Camera2D, camera, |node| {
+                node.active = true;
+                node.zoom = 1.0;
+            });
+        }
+        if let Some(camera) = preview_camera_3d {
+            let _ = with_node_mut!(ctx.run, Camera3D, camera, |node| {
+                node.active = true;
+            });
+        }
         let doc_keys = preview_doc_order(&doc);
         let node_ids = preview_runtime_order(ctx, root, doc_keys.len());
         (
             node_ids.into_iter().map(NodeID::as_u64).collect::<Vec<_>>(),
             doc_keys,
+            preview_camera_2d.map(NodeID::as_u64).unwrap_or(0),
+            preview_camera_3d.map(NodeID::as_u64).unwrap_or(0),
         )
     };
 
@@ -1132,7 +1264,11 @@ fn load_preview_scene<API: ScriptAPI + ?Sized>(
         state.preview_root = root.as_u64();
         state.preview_node_ids = node_ids;
         state.preview_node_keys = keys;
+        state.preview_camera_2d = preview_camera_2d;
+        state.preview_camera_3d = preview_camera_3d;
     });
+    apply_freecam(ctx);
+    apply_freecam_2d(ctx);
 }
 
 fn add_preview_env<API: ScriptAPI + ?Sized>(
@@ -1930,7 +2066,7 @@ fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     }
     apply_scene_list_layout(ctx);
     apply_viewport_mode(ctx, &view.viewport_mode);
-    apply_editor_gizmos(ctx, &view.gizmo);
+    apply_editor_gizmos(ctx, &view.gizmo, &view.viewport_mode);
     apply_selected_ui_overlay(ctx, view.selected_ui_rect);
 
     set_label(ctx, "inspector_name", &format!("name: {}", view.inspector_name));
@@ -2330,11 +2466,14 @@ fn apply_viewport_mode<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
 fn apply_editor_gizmos<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     gizmo: &editor_gizmos::GizmoView,
+    mode: &str,
 ) {
-    set_panel_visible(ctx, "selected_outline", gizmo.selected);
-    set_panel_visible(ctx, "camera2d_gizmo", gizmo.camera_2d);
-    set_panel_visible(ctx, "camera3d_gizmo", gizmo.camera_3d);
-    if gizmo.selected {
+    let show_2d = mode == "2D";
+    let show_3d = mode == "3D";
+    set_panel_visible(ctx, "selected_outline", gizmo.selected && !show_3d);
+    set_panel_visible(ctx, "camera2d_gizmo", gizmo.camera_2d && show_2d);
+    set_panel_visible(ctx, "camera3d_gizmo", gizmo.camera_3d && show_3d);
+    if gizmo.selected && !show_3d {
         set_panel_size(ctx, "selected_outline", gizmo.outline_size);
     }
 }
@@ -2395,6 +2534,14 @@ fn set_camera_stream_visible<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
         let _ = with_node_mut!(ctx.run, UiCameraStream, id, |node| {
             node.visible = visible;
             node.input_enabled = visible;
+        });
+    }
+}
+
+fn set_viewport_stream_camera<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, name: &str, camera: NodeID) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiCameraStream, id, |node| {
+            node.stream.camera = camera;
         });
     }
 }

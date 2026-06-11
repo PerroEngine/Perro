@@ -178,7 +178,7 @@ impl Runtime {
                 origin: listener_pos,
                 direction: Vector2::new(angle.cos(), angle.sin()),
                 max_distance: self.audio.config.max_ray_distance_2d,
-                mask: BitMask::ALL,
+                layers: BitMask::ALL,
             });
         }
         self.prepare_audio_raycast_2d();

@@ -13,7 +13,7 @@ pub enum AudioRaycastInput {
         origin: Vector2,
         direction: Vector2,
         max_distance: f32,
-        mask: BitMask,
+        layers: BitMask,
     },
     ThreeD {
         origin: Vector3,

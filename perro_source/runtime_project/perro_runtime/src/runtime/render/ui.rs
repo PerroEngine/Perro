@@ -317,6 +317,13 @@ impl Runtime {
         let traversal_ids = plan.traversal_ids;
         let mut command_ids = plan.command_ids;
         let mut command_seen = plan.command_seen;
+        for (node, scene_node) in self.nodes.iter() {
+            if matches!(scene_node.data, SceneNodeData::UiCameraStream(_))
+                && command_seen.insert(node)
+            {
+                command_ids.push(node);
+            }
+        }
         if let Some(timing) = timing.as_deref_mut() {
             timing.dirty_nodes = dirty_node_count.min(u32::MAX as usize) as u32;
             timing.affected_nodes = plan.affected_nodes;

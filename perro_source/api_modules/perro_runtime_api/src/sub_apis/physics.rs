@@ -9,6 +9,9 @@ use perro_structs::{BitMask, Quaternion, Vector2, Vector3};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PhysicsQueryFilter {
+    /// Hit layer membership filter. Default is all layers.
+    pub layers: BitMask,
+    /// Ignore layer filter. Matching collider layers are skipped.
     pub mask: BitMask,
     pub include_areas: bool,
     pub exclude_nodes: Vec<NodeID>,
@@ -17,7 +20,8 @@ pub struct PhysicsQueryFilter {
 impl Default for PhysicsQueryFilter {
     fn default() -> Self {
         Self {
-            mask: BitMask::ALL,
+            layers: BitMask::ALL,
+            mask: BitMask::NONE,
             include_areas: true,
             exclude_nodes: Vec::new(),
         }

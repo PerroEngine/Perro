@@ -94,7 +94,8 @@ if !camera.render_mask.intersects(sprite.render_layers) {
 ## Layers Versus Masks
 
 Layers tag where an object lives.
-Masks list layers an object ignores.
+Fields named `*_mask` or `mask` list layers the object ignores/excludes.
+Default mask values are empty (`BitMask::NONE`).
 
 Render:
 
@@ -143,13 +144,22 @@ Audio:
 - `BitMask::NONE` on an audio mask ignores nothing.
 - `BitMask::ALL` on an audio mask ignores all emitted spatial audio.
 
+Query filters:
+
+- `PhysicsQueryFilter.layers`: physics query hit-layer membership.
+- `PhysicsQueryFilter.mask`: physics query ignored-layer mask.
+- Default `PhysicsQueryFilter.layers` is `BitMask::ALL`.
+- Default `PhysicsQueryFilter.mask` is `BitMask::NONE`.
+- A raycast or shape cast hits a collider only when `filter.layers` intersects collider `collision_layers` and `filter.mask` does not.
+
 Common fields:
 
 - `render_mask`: camera ignored-layer filter.
 - `render_layers`: renderable node membership.
 - `collision_layers`: physics body/area tagged-layer membership.
 - `collision_mask`: physics body/area ignored-layer mask.
-- `PhysicsQueryFilter.mask`: physics query hit mask.
+- `PhysicsQueryFilter.layers`: physics query hit-layer membership.
+- `PhysicsQueryFilter.mask`: physics query ignored-layer mask.
 - `audio_layer`: emitted spatial audio tagged layers.
 - `audio_mask`: audio ignored-layer mask.
 

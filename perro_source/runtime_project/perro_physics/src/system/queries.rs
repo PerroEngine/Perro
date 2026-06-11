@@ -24,9 +24,12 @@ impl PhysicsSystem {
 
         let ray = r2::Ray::new(na2::Point2::new(origin.x, origin.y), dir);
         let excluded = filter.exclude_nodes.as_slice();
+        let layers = filter.layers.bits();
         let mask = filter.mask.bits();
         let predicate = |handle, collider: &r2::Collider| {
-            (collider.collision_groups().memberships.bits() & mask) != 0
+            let collider_layers = collider.collision_groups().memberships.bits();
+            (collider_layers & layers) != 0
+                && (collider_layers & mask) == 0
                 && world
                     .collider_owners
                     .get(&handle)
@@ -94,9 +97,12 @@ impl PhysicsSystem {
 
         let ray = r3::Ray::new(na3::Point3::new(origin.x, origin.y, origin.z), dir);
         let excluded = filter.exclude_nodes.as_slice();
+        let layers = filter.layers.bits();
         let mask = filter.mask.bits();
         let predicate = |handle, collider: &r3::Collider| {
-            (collider.collision_groups().memberships.bits() & mask) != 0
+            let collider_layers = collider.collision_groups().memberships.bits();
+            (collider_layers & layers) != 0
+                && (collider_layers & mask) == 0
                 && world
                     .collider_owners
                     .get(&handle)
@@ -147,9 +153,12 @@ impl PhysicsSystem {
         let shape_pos = na2::Isometry2::new(na2::Vector2::new(origin.x, origin.y), 0.0);
         let shape_vel = dir / dir_len * max_distance;
         let excluded = filter.exclude_nodes.as_slice();
+        let layers = filter.layers.bits();
         let mask = filter.mask.bits();
         let predicate = |handle, collider: &r2::Collider| {
-            (collider.collision_groups().memberships.bits() & mask) != 0
+            let collider_layers = collider.collision_groups().memberships.bits();
+            (collider_layers & layers) != 0
+                && (collider_layers & mask) == 0
                 && world
                     .collider_owners
                     .get(&handle)
@@ -201,9 +210,12 @@ impl PhysicsSystem {
         let shape_pos = na3::Isometry3::translation(origin.x, origin.y, origin.z);
         let shape_vel = dir / dir_len * max_distance;
         let excluded = filter.exclude_nodes.as_slice();
+        let layers = filter.layers.bits();
         let mask = filter.mask.bits();
         let predicate = |handle, collider: &r3::Collider| {
-            (collider.collision_groups().memberships.bits() & mask) != 0
+            let collider_layers = collider.collision_groups().memberships.bits();
+            (collider_layers & layers) != 0
+                && (collider_layers & mask) == 0
                 && world
                     .collider_owners
                     .get(&handle)

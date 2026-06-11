@@ -674,9 +674,10 @@ impl Runtime {
                 direction,
                 max_distance,
                 &PhysicsQueryFilter {
-                    mask: audio_layer,
+                    layers: audio_layer,
                     include_areas: false,
                     exclude_nodes: Vec::new(),
+                    ..PhysicsQueryFilter::default()
                 },
             )
             .and_then(|hit| self.physics_bounce_hit_2d(hit));
@@ -1158,9 +1159,10 @@ impl Runtime {
                     direction,
                     listener_distance,
                     &PhysicsQueryFilter {
-                        mask,
+                        layers: mask,
                         include_areas: false,
                         exclude_nodes: Vec::new(),
+                        ..PhysicsQueryFilter::default()
                     },
                 );
                 let blocked = block_hit.is_some_and(|hit| hit.distance <= listener_distance + 0.25);
@@ -1203,9 +1205,10 @@ impl Runtime {
                 direction,
                 hit.distance,
                 &PhysicsQueryFilter {
-                    mask,
+                    layers: mask,
                     include_areas: false,
                     exclude_nodes: Vec::new(),
+                    ..PhysicsQueryFilter::default()
                 },
             );
             let blocked = block_hit.is_some_and(|ray_hit| {

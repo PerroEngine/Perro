@@ -1,12 +1,12 @@
 use super::*;
 use crate::RuntimeScriptApi;
 use perro_ids::ScriptMemberID;
-use perro_nodes::{Node3D, SceneNode, SceneNodeData};
-use perro_render_bridge::RenderEvent;
+use perro_nodes::{Node3D, SceneNode, SceneNodeData, Sky3D, UiCameraStream, camera_3d::Camera3D};
+use perro_render_bridge::{CameraStreamCommand, CameraStreamSourceState, RenderEvent};
 use perro_resource_api::sub_apis::TextureAPI;
 use perro_runtime_api::sub_apis::{NodeAPI, NodeCreationTemplate, SignalAPI};
 use perro_scripting::{ScriptBehavior, ScriptContext, ScriptFlags, ScriptLifecycle};
-use perro_structs::Color;
+use perro_structs::{Color, Quaternion, Transform3D, Vector3};
 use perro_ui::{
     UiAnchor, UiAnimatedImage, UiAnimatedImageFrameSet, UiGrid, UiHLayout, UiLabel, UiList,
     UiListIndent, UiPanel, UiScrollContainer, UiVLayout, UiVector2,
@@ -38,6 +38,69 @@ fn collect_resource_texture_request(
             _ => None,
         })
         .expect("expected texture create request")
+}
+
+#[test]
+fn ui_camera_stream_refreshes_when_source_camera_moves() {
+    let mut runtime = Runtime::new();
+    let camera = NodeAPI::create::<Camera3D>(&mut runtime);
+    let stream = NodeAPI::create::<UiCameraStream>(&mut runtime);
+    if let Some(node) = runtime.nodes.get_mut(stream)
+        && let SceneNodeData::UiCameraStream(data) = &mut node.data
+    {
+        data.stream.camera = camera;
+        data.stream.resolution = [320, 180].into();
+    }
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+
+    if let Some(node) = runtime.nodes.get_mut(camera)
+        && let SceneNodeData::Camera3D(data) = &mut node.data
+    {
+        data.transform = Transform3D::new(
+            Vector3::new(4.0, 5.0, 6.0),
+            Quaternion::IDENTITY,
+            Vector3::ONE,
+        );
+    }
+    runtime.mark_transform_dirty_recursive(camera);
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+            if *node == stream
+                && matches!(&state.source, CameraStreamSourceState::ThreeD(camera) if camera.position == [4.0, 5.0, 6.0])
+    )));
+}
+
+#[test]
+fn ui_camera_stream_3d_captures_sky_from_source_camera() {
+    let mut runtime = Runtime::new();
+    let camera = NodeAPI::create::<Camera3D>(&mut runtime);
+    let _sky = NodeAPI::create::<Sky3D>(&mut runtime);
+    let stream = NodeAPI::create::<UiCameraStream>(&mut runtime);
+    if let Some(node) = runtime.nodes.get_mut(stream)
+        && let SceneNodeData::UiCameraStream(data) = &mut node.data
+    {
+        data.stream.camera = camera;
+        data.stream.resolution = [320, 180].into();
+    }
+
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::CameraStream(CameraStreamCommand::Upsert { node, state })
+            if *node == stream
+                && matches!(state.source, CameraStreamSourceState::ThreeD(_))
+                && state.lighting_3d.sky.is_some()
+    )));
 }
 
 #[test]

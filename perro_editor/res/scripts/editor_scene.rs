@@ -8,6 +8,13 @@ pub fn has_3d(doc: &SceneDoc) -> bool {
         .any(|node| node.data.node_type.is_a(perro_scene::NodeType::Node3D))
 }
 
+pub fn has_2d(doc: &SceneDoc) -> bool {
+    doc.scene
+        .nodes
+        .iter()
+        .any(|node| node.data.node_type.is_a(perro_scene::NodeType::Node2D))
+}
+
 pub fn has_type(doc: &SceneDoc, ty: perro_scene::NodeType) -> bool {
     doc.scene
         .nodes

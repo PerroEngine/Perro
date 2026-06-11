@@ -16,7 +16,7 @@ impl DerefMut for Camera3D {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Camera3D {
     pub base: Node3D,
     pub active: bool,
@@ -24,6 +24,12 @@ pub struct Camera3D {
     pub projection: CameraProjection,
     pub post_processing: PostProcessSet,
     pub audio_options: AudioListenerOptions,
+}
+
+impl Default for Camera3D {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -135,6 +141,16 @@ impl Camera3D {
         far: f32,
     ) {
         self.projection = CameraProjection::frustum(left, right, bottom, top, near, far);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_camera_3d_masks_no_render_layers() {
+        assert_eq!(Camera3D::default().render_mask, BitMask::NONE);
     }
 }
 

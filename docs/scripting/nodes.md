@@ -112,7 +112,7 @@ Rendering and resource loading are handled by the runtime and `ResourceWindow`.
 
 - Active 2D camera (position/rotation/zoom).
 - `render_mask` hides matching `render_layers` on 2D renderable nodes.
-- Default `render_mask` is no layers.
+- Default `render_mask` is no layers (`BitMask::NONE`), so the camera hides nothing.
 - Supports camera post-processing via `post_processing` (see "Camera Post-Processing" below).
 - Supports listener audio effects via `audio_options`; `audio_mask` ignores matching emitted `audio_layer`.
 
@@ -285,7 +285,7 @@ See [TileMap2D](tilemap.md).
 
 - Active 3D camera with projection settings.
 - `render_mask` hides matching `render_layers` on 3D renderable nodes.
-- Default `render_mask` is no layers.
+- Default `render_mask` is no layers (`BitMask::NONE`), so the camera hides nothing.
 - Supports camera post-processing via `post_processing` (see "Camera Post-Processing" below).
 - Supports listener audio effects via `audio_options`; `audio_mask` ignores matching emitted `audio_layer`.
 

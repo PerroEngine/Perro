@@ -332,6 +332,198 @@ parent = @scene_row_3
     [/UiLabel]
 [/scene_row_3_label]
 
+[scene_row_4]
+parent = @scene_rows
+    [UiButton]
+        size_ratio = (1.0, 0.075)
+        click_signals = ["editor_select_scene_4"]
+        style = $row
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/scene_row_4]
+
+[scene_row_4_label]
+parent = @scene_row_4
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "-"
+        text_size_ratio = 0.312
+        color = "#E5E7EB"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_row_4_label]
+
+[scene_row_5]
+parent = @scene_rows
+    [UiButton]
+        size_ratio = (1.0, 0.075)
+        click_signals = ["editor_select_scene_5"]
+        style = $row
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/scene_row_5]
+
+[scene_row_5_label]
+parent = @scene_row_5
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "-"
+        text_size_ratio = 0.312
+        color = "#E5E7EB"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_row_5_label]
+
+[scene_row_6]
+parent = @scene_rows
+    [UiButton]
+        size_ratio = (1.0, 0.075)
+        click_signals = ["editor_select_scene_6"]
+        style = $row
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/scene_row_6]
+
+[scene_row_6_label]
+parent = @scene_row_6
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "-"
+        text_size_ratio = 0.312
+        color = "#E5E7EB"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_row_6_label]
+
+[scene_row_7]
+parent = @scene_rows
+    [UiButton]
+        size_ratio = (1.0, 0.075)
+        click_signals = ["editor_select_scene_7"]
+        style = $row
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/scene_row_7]
+
+[scene_row_7_label]
+parent = @scene_row_7
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "-"
+        text_size_ratio = 0.312
+        color = "#E5E7EB"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_row_7_label]
+
+[scene_row_8]
+parent = @scene_rows
+    [UiButton]
+        size_ratio = (1.0, 0.075)
+        click_signals = ["editor_select_scene_8"]
+        style = $row
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/scene_row_8]
+
+[scene_row_8_label]
+parent = @scene_row_8
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "-"
+        text_size_ratio = 0.312
+        color = "#E5E7EB"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_row_8_label]
+
+[scene_row_9]
+parent = @scene_rows
+    [UiButton]
+        size_ratio = (1.0, 0.075)
+        click_signals = ["editor_select_scene_9"]
+        style = $row
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/scene_row_9]
+
+[scene_row_9_label]
+parent = @scene_row_9
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "-"
+        text_size_ratio = 0.312
+        color = "#E5E7EB"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_row_9_label]
+
+[scene_row_10]
+parent = @scene_rows
+    [UiButton]
+        size_ratio = (1.0, 0.075)
+        click_signals = ["editor_select_scene_10"]
+        style = $row
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/scene_row_10]
+
+[scene_row_10_label]
+parent = @scene_row_10
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "-"
+        text_size_ratio = 0.312
+        color = "#E5E7EB"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_row_10_label]
+
+[scene_row_11]
+parent = @scene_rows
+    [UiButton]
+        size_ratio = (1.0, 0.075)
+        click_signals = ["editor_select_scene_11"]
+        style = $row
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/scene_row_11]
+
+[scene_row_11_label]
+parent = @scene_row_11
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "-"
+        text_size_ratio = 0.312
+        color = "#E5E7EB"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_row_11_label]
+
 [file_title]
 parent = @left_panel
     [UiLabel]

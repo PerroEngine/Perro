@@ -396,7 +396,7 @@ impl Runtime {
                         origin: listener_pos,
                         direction,
                         max_distance: distance.min(self.audio.config.max_ray_distance_2d),
-                        mask: sound.options.audio_layer,
+                        layers: sound.options.audio_layer,
                     });
                 } else {
                     self.audio.scratch_sound_ray_results[index] = AudioRaycastResult::TwoD(None);

@@ -5,6 +5,13 @@ pub fn sort_key(path: &str) -> (u8, String) {
     ((!folder) as u8, rel_label(path).to_ascii_lowercase())
 }
 
+pub fn res_browser_sort_key(path: &str) -> (usize, u8, String) {
+    let label = rel_label(path);
+    let depth = label.matches('/').count();
+    let folder = path.ends_with('/');
+    (depth, (!folder) as u8, label.to_ascii_lowercase())
+}
+
 pub fn rel_label(path: &str) -> String {
     path.trim_start_matches("res://")
         .trim_end_matches('/')

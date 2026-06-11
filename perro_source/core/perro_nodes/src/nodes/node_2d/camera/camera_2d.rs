@@ -16,7 +16,7 @@ impl DerefMut for Camera2D {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Camera2D {
     pub base: Node2D,
     pub zoom: f32,
@@ -24,6 +24,12 @@ pub struct Camera2D {
     pub render_mask: BitMask,
     pub post_processing: PostProcessSet,
     pub audio_options: AudioListenerOptions,
+}
+
+impl Default for Camera2D {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Camera2D {
@@ -36,5 +42,15 @@ impl Camera2D {
             post_processing: PostProcessSet::new(),
             audio_options: AudioListenerOptions::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_camera_2d_masks_no_render_layers() {
+        assert_eq!(Camera2D::default().render_mask, BitMask::NONE);
     }
 }

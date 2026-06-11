@@ -1096,11 +1096,11 @@ fn physics_raycast_3d_filter_uses_collision_policy() {
             Vector3::new(0.0, 0.0, 1.0),
             10.0,
             &PhysicsQueryFilter {
-                mask: CollisionPolicy::layer(4),
+                layers: CollisionPolicy::layer(4),
                 ..PhysicsQueryFilter::default()
             },
         )
-        .expect("ray should skip layer 3 and hit layer 4");
+        .expect("ray should include layer 4");
 
     assert_eq!(hit.node, body_b);
 }
@@ -1169,13 +1169,29 @@ fn physics_raycast_2d_filters_areas_and_nodes() {
             Vector2::new(1.0, 0.0),
             10.0,
             &PhysicsQueryFilter {
-                mask: BitMask::from_bits(4),
+                layers: BitMask::from_bits(4),
                 include_areas: false,
                 exclude_nodes: Vec::new(),
+                ..PhysicsQueryFilter::default()
             },
         )
-        .expect("query mask should use collider layer without collider mask coupling");
+        .expect("query layers should include collider layer without collider mask coupling");
     assert_eq!(hit.node, static_body);
+
+    let hit = runtime.physics_raycast_2d(
+        Vector2::new(-5.0, 0.0),
+        Vector2::new(1.0, 0.0),
+        10.0,
+        &PhysicsQueryFilter {
+            mask: BitMask::from_bits(4),
+            include_areas: false,
+            ..PhysicsQueryFilter::default()
+        },
+    );
+    assert!(
+        hit.is_none(),
+        "query mask should skip matching collider layer"
+    );
 }
 
 #[test]

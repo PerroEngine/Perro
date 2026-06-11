@@ -22,9 +22,12 @@ impl PhysicsSystem {
         let world = self.world_2d.as_ref()?;
         let ray = r2::Ray::new(na2::Point2::new(origin.x, origin.y), dir);
         let excluded = filter.exclude_nodes.as_slice();
+        let layers = filter.layers.bits();
         let mask = filter.mask.bits();
         let predicate = |handle, collider: &r2::Collider| {
-            (collider.collision_groups().memberships.bits() & mask) != 0
+            let collider_layers = collider.collision_groups().memberships.bits();
+            (collider_layers & layers) != 0
+                && (collider_layers & mask) == 0
                 && world
                     .collider_owners
                     .get(&handle)
@@ -108,9 +111,9 @@ impl PhysicsSystem {
                 origin,
                 direction,
                 max_distance,
-                mask,
+                layers,
             } => AudioRaycastResult::TwoD(world_2d.and_then(|world| {
-                prepared_audio_raycast_2d_in_world(world, origin, direction, max_distance, mask)
+                prepared_audio_raycast_2d_in_world(world, origin, direction, max_distance, layers)
             })),
             AudioRaycastInput::ThreeD {
                 origin,
