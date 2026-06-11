@@ -64,6 +64,9 @@ struct EditorState {
     cam2_x: f32,
     cam2_y: f32,
     cam2_zoom: f32,
+    ui_canvas_x: f32,
+    ui_canvas_y: f32,
+    ui_canvas_zoom: f32,
     log: String,
 }
 
@@ -75,6 +78,8 @@ lifecycle!({
         let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
             state.recent_projects = recent;
             state.log = "project manager".to_string();
+            state.ui_canvas_zoom = 1.0;
+            state.cam2_zoom = 1.0;
         });
         refresh_all(ctx);
         set_project_manager(ctx, true);
@@ -82,6 +87,7 @@ lifecycle!({
 
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
         update_freecam(ctx);
+        update_ui_canvas(ctx);
         update_preview_pick(ctx);
         update_ui_drag(ctx);
         update_editor_cursor(ctx);
@@ -263,6 +269,7 @@ fn update_freecam<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         Vector2::ZERO
     };
 
+    let stream_id = find_named(ctx, "viewport_stream_3d").map(NodeID::as_u64).unwrap_or(0);
     let mut label = String::new();
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let speed = if key_down!(ctx.ipt, KeyCode::ControlLeft) { 18.0 } else { 7.0 };
@@ -277,8 +284,15 @@ fn update_freecam<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         state.cam_yaw += mouse.x * 0.0025;
         state.cam_pitch = (state.cam_pitch - mouse.y * 0.0025).clamp(-1.4, 1.4);
         label = format!(
-            "Viewport  mode={}  cam=({:.1}, {:.1}, {:.1}) yaw={:.2} pitch={:.2}",
-            state.viewport_mode, state.cam_x, state.cam_y, state.cam_z, state.cam_yaw, state.cam_pitch
+            "Viewport  mode={}  cam=({:.1}, {:.1}, {:.1}) yaw={:.2} pitch={:.2} stream={} cam_id={}",
+            state.viewport_mode,
+            state.cam_x,
+            state.cam_y,
+            state.cam_z,
+            state.cam_yaw,
+            state.cam_pitch,
+            stream_id,
+            state.preview_camera_3d
         );
     });
     apply_freecam(ctx);
@@ -301,6 +315,14 @@ fn update_freecam_2d<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) 
     if key_down!(ctx.ipt, KeyCode::KeyS) {
         dy -= 1.0;
     }
+    let wheel = viewport_pointer(ctx)
+        .map(|_| mouse_wheel!(ctx.ipt).y)
+        .unwrap_or(0.0);
+    let mouse = if mouse_down!(ctx.ipt, MouseButton::Middle) {
+        mouse_delta!(ctx.ipt)
+    } else {
+        Vector2::ZERO
+    };
     let zoom_dir = if key_down!(ctx.ipt, KeyCode::KeyE) {
         1.0
     } else if key_down!(ctx.ipt, KeyCode::KeyQ) {
@@ -308,20 +330,67 @@ fn update_freecam_2d<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) 
     } else {
         0.0
     };
+    let stream_id = find_named(ctx, "viewport_stream_2d").map(NodeID::as_u64).unwrap_or(0);
     let mut label = String::new();
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        if state.cam2_zoom <= 0.001 {
+            state.cam2_zoom = 1.0;
+        }
         let speed = 480.0 / state.cam2_zoom.max(0.001);
         state.cam2_x += dx * speed * dt;
         state.cam2_y += dy * speed * dt;
-        if zoom_dir != 0.0 {
-            state.cam2_zoom = (state.cam2_zoom * (1.0 + zoom_dir * 1.8 * dt)).clamp(0.05, 20.0);
+        state.cam2_x -= mouse.x / state.cam2_zoom.max(0.001);
+        state.cam2_y += mouse.y / state.cam2_zoom.max(0.001);
+        if zoom_dir != 0.0 || wheel.abs() > 0.001 {
+            let key_zoom = zoom_dir * 1.8 * dt;
+            let wheel_zoom = wheel * 0.12;
+            state.cam2_zoom = (state.cam2_zoom * (1.0 + key_zoom + wheel_zoom)).clamp(0.05, 40.0);
         }
         label = format!(
-            "Viewport  mode={}  cam=({:.1}, {:.1}) zoom={:.2}",
-            state.viewport_mode, state.cam2_x, state.cam2_y, state.cam2_zoom
+            "Viewport  mode={}  cam=({:.1}, {:.1}) zoom={:.2} stream={} cam_id={}",
+            state.viewport_mode,
+            state.cam2_x,
+            state.cam2_y,
+            state.cam2_zoom,
+            stream_id,
+            state.preview_camera_2d
         );
     });
     apply_freecam_2d(ctx);
+    apply_viewport_canvas(ctx);
+    set_label(ctx, "viewport_label", &label);
+}
+
+fn update_ui_canvas<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let mode = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.viewport_mode.clone()
+    });
+    if mode != "UI" {
+        return;
+    }
+    let inside = viewport_pointer(ctx).is_some();
+    let wheel = if inside { mouse_wheel!(ctx.ipt).y } else { 0.0 };
+    let mouse = if inside && mouse_down!(ctx.ipt, MouseButton::Middle) {
+        mouse_delta!(ctx.ipt)
+    } else {
+        Vector2::ZERO
+    };
+    let mut label = String::new();
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        if state.ui_canvas_zoom <= 0.001 {
+            state.ui_canvas_zoom = 1.0;
+        }
+        state.ui_canvas_x += mouse.x / 540.0;
+        state.ui_canvas_y += mouse.y / 300.0;
+        if wheel.abs() > 0.001 {
+            state.ui_canvas_zoom = (state.ui_canvas_zoom * (1.0 + wheel * 0.12)).clamp(0.25, 12.0);
+        }
+        label = format!(
+            "Viewport  mode={}  canvas=({:.2}, {:.2}) zoom={:.2}",
+            state.viewport_mode, state.ui_canvas_x, state.ui_canvas_y, state.ui_canvas_zoom
+        );
+    });
+    apply_viewport_canvas(ctx);
     set_label(ctx, "viewport_label", &label);
 }
 
@@ -969,7 +1038,10 @@ fn stream_pointer_ray_3d<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     pointer: ViewportPointer,
 ) -> Option<ViewportRay3D> {
-    let camera = find_named(ctx, "editor_camera_3d")?;
+    let camera = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        (state.preview_camera_3d != 0).then(|| NodeID::from_u64(state.preview_camera_3d))
+    })
+    .or_else(|| find_named(ctx, "editor_camera_3d"))?;
     let global = ctx.run.Nodes().get_global_transform_3d(camera)?;
     let projection = with_node!(ctx.run, Camera3D, camera, |node| node.projection.clone());
     let aspect = 16.0 / 9.0;
@@ -2461,6 +2533,8 @@ fn apply_viewport_mode<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
     set_grid_visible(ctx, "viewport_grid", mode == "UI");
     set_camera_stream_visible(ctx, "viewport_stream_2d", mode == "2D");
     set_camera_stream_visible(ctx, "viewport_stream_3d", mode == "3D");
+    set_panel_display(ctx, "viewport_canvas_overlay", mode == "UI" || mode == "2D");
+    apply_viewport_canvas(ctx);
 }
 
 fn apply_editor_gizmos<API: ScriptAPI + ?Sized>(
@@ -2520,6 +2594,15 @@ fn set_panel_visible<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, 
     }
 }
 
+fn set_panel_display<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, name: &str, visible: bool) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiPanel, id, |node| {
+            node.visible = visible;
+            node.input_enabled = false;
+        });
+    }
+}
+
 fn set_grid_visible<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, name: &str, visible: bool) {
     if let Some(id) = find_named(ctx, name) {
         let _ = with_node_mut!(ctx.run, UiGrid, id, |node| {
@@ -2550,6 +2633,69 @@ fn set_panel_size<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, nam
     if let Some(id) = find_named(ctx, name) {
         let _ = with_node_mut!(ctx.run, UiPanel, id, |node| {
             node.layout.size = UiVector2::ratio(size.0, size.1);
+        });
+    }
+}
+
+fn apply_viewport_canvas<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let (mode, pan_x, pan_y, zoom) = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        if state.viewport_mode == "2D" {
+            (
+                state.viewport_mode.clone(),
+                -state.cam2_x / 960.0,
+                state.cam2_y / 540.0,
+                state.cam2_zoom.max(0.05),
+            )
+        } else {
+            (
+                state.viewport_mode.clone(),
+                state.ui_canvas_x,
+                state.ui_canvas_y,
+                state.ui_canvas_zoom.max(0.25),
+            )
+        }
+    });
+    let show = mode == "UI" || mode == "2D";
+    set_panel_display(ctx, "viewport_canvas_overlay", show);
+    if !show {
+        return;
+    }
+
+    let spacing = if mode == "UI" {
+        (0.25 * zoom).clamp(0.04, 0.5)
+    } else {
+        (0.125 * zoom).clamp(0.03, 0.4)
+    };
+    for i in 0..9 {
+        let offset = (i as f32 - 4.0) * spacing;
+        set_canvas_line(ctx, &format!("canvas_v_{i}"), true, offset + pan_x, false);
+        set_canvas_line(ctx, &format!("canvas_h_{i}"), false, offset + pan_y, false);
+    }
+    set_canvas_line(ctx, "canvas_origin_x", false, pan_y, true);
+    set_canvas_line(ctx, "canvas_origin_y", true, pan_x, true);
+}
+
+fn set_canvas_line<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    vertical: bool,
+    offset: f32,
+    origin: bool,
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiPanel, id, |node| {
+            node.visible = offset.abs() <= 0.55 || origin;
+            node.input_enabled = false;
+            node.layout.size = if vertical {
+                UiVector2::ratio(if origin { 0.003 } else { 0.0015 }, 1.0)
+            } else {
+                UiVector2::ratio(1.0, if origin { 0.003 } else { 0.0015 })
+            };
+            node.transform.translation = if vertical {
+                Vector2::new(offset, 0.0)
+            } else {
+                Vector2::new(0.0, offset)
+            };
         });
     }
 }

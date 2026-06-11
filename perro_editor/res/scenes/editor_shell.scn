@@ -952,6 +952,7 @@ parent = @viewport_panel
     [UiCameraStream]
         anchor = "center"
         size_ratio = (0.94, 0.82)
+        z_index = 2
         camera = @editor_camera_2d
         resolution = (960, 540)
         aspect_mode = "fit"
@@ -965,6 +966,7 @@ parent = @viewport_panel
     [UiCameraStream]
         anchor = "center"
         size_ratio = (0.94, 0.82)
+        z_index = 2
         camera = @editor_camera_3d
         resolution = (960, 540)
         aspect_mode = "fit"
@@ -973,11 +975,224 @@ parent = @viewport_panel
     [/UiCameraStream]
 [/viewport_stream_3d]
 
+[viewport_canvas_overlay]
+parent = @viewport_panel
+    [UiPanel]
+        anchor = "center"
+        size_ratio = (0.94, 0.82)
+        z_index = 4
+        visible = false
+        input_enabled = false
+        style = { fill: "#00000000", stroke: "#475569", stroke_width: 1.0, radius: 0.025 }
+    [/UiPanel]
+[/viewport_canvas_overlay]
+
+[canvas_v_0]
+parent = @viewport_canvas_overlay
+    [UiPanel]
+        anchor = "center"
+        size_ratio = (0.0015, 1.0)
+        input_enabled = false
+        style = { fill: "#33415588", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+    [/UiPanel]
+[/canvas_v_0]
+
+[canvas_v_1]
+parent = @viewport_canvas_overlay
+    [UiPanel]
+        anchor = "center"
+        size_ratio = (0.0015, 1.0)
+        input_enabled = false
+        style = { fill: "#33415588", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+    [/UiPanel]
+[/canvas_v_1]
+
+[canvas_v_2]
+parent = @viewport_canvas_overlay
+    [UiPanel]
+        anchor = "center"
+        size_ratio = (0.0015, 1.0)
+        input_enabled = false
+        style = { fill: "#33415588", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+    [/UiPanel]
+[/canvas_v_2]
+
+[canvas_v_3]
+parent = @viewport_canvas_overlay
+    [UiPanel]
+        anchor = "center"
+        size_ratio = (0.0015, 1.0)
+        input_enabled = false
+        style = { fill: "#33415588", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+    [/UiPanel]
+[/canvas_v_3]
+
+[canvas_v_4]
+parent = @viewport_canvas_overlay
+    [UiPanel]
+        anchor = "center"
+        size_ratio = (0.0015, 1.0)
+        input_enabled = false
+        style = { fill: "#33415588", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+    [/UiPanel]
+[/canvas_v_4]
+
+[canvas_v_5]
+parent = @viewport_canvas_overlay
+    [UiPanel]
+        anchor = "center"
+        size_ratio = (0.0015, 1.0)
+        input_enabled = false
+        style = { fill: "#33415588", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+    [/UiPanel]
+[/canvas_v_5]
+
+[canvas_v_6]
+parent = @viewport_canvas_overlay
+    [UiPanel]
+        anchor = "center"
+        size_ratio = (0.0015, 1.0)
+        input_enabled = false
+        style = { fill: "#33415588", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+    [/UiPanel]
+[/canvas_v_6]
+
+[canvas_v_7]
+parent = @viewport_canvas_overlay
+    [UiPanel]
+        anchor = "center"
+        size_ratio = (0.0015, 1.0)
+        input_enabled = false
+        style = { fill: "#33415588", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+    [/UiPanel]
+[/canvas_v_7]
+
+[canvas_v_8]
+parent = @viewport_canvas_overlay
+    [UiPanel]
+        anchor = "center"
+        size_ratio = (0.0015, 1.0)
+        input_enabled = false
+        style = { fill: "#33415588", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+    [/UiPanel]
+[/canvas_v_8]
+
+[canvas_h_0]
+parent = @viewport_canvas_overlay
+    [UiPanel]
+        anchor = "center"
+        size_ratio = (1.0, 0.0015)
+        input_enabled = false
+        style = { fill: "#33415588", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+    [/UiPanel]
+[/canvas_h_0]
+
+[canvas_h_1]
+parent = @viewport_canvas_overlay
+    [UiPanel]
+        anchor = "center"
+        size_ratio = (1.0, 0.0015)
+        input_enabled = false
+        style = { fill: "#33415588", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+    [/UiPanel]
+[/canvas_h_1]
+
+[canvas_h_2]
+parent = @viewport_canvas_overlay
+    [UiPanel]
+        anchor = "center"
+        size_ratio = (1.0, 0.0015)
+        input_enabled = false
+        style = { fill: "#33415588", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+    [/UiPanel]
+[/canvas_h_2]
+
+[canvas_h_3]
+parent = @viewport_canvas_overlay
+    [UiPanel]
+        anchor = "center"
+        size_ratio = (1.0, 0.0015)
+        input_enabled = false
+        style = { fill: "#33415588", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+    [/UiPanel]
+[/canvas_h_3]
+
+[canvas_h_4]
+parent = @viewport_canvas_overlay
+    [UiPanel]
+        anchor = "center"
+        size_ratio = (1.0, 0.0015)
+        input_enabled = false
+        style = { fill: "#33415588", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+    [/UiPanel]
+[/canvas_h_4]
+
+[canvas_h_5]
+parent = @viewport_canvas_overlay
+    [UiPanel]
+        anchor = "center"
+        size_ratio = (1.0, 0.0015)
+        input_enabled = false
+        style = { fill: "#33415588", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+    [/UiPanel]
+[/canvas_h_5]
+
+[canvas_h_6]
+parent = @viewport_canvas_overlay
+    [UiPanel]
+        anchor = "center"
+        size_ratio = (1.0, 0.0015)
+        input_enabled = false
+        style = { fill: "#33415588", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+    [/UiPanel]
+[/canvas_h_6]
+
+[canvas_h_7]
+parent = @viewport_canvas_overlay
+    [UiPanel]
+        anchor = "center"
+        size_ratio = (1.0, 0.0015)
+        input_enabled = false
+        style = { fill: "#33415588", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+    [/UiPanel]
+[/canvas_h_7]
+
+[canvas_h_8]
+parent = @viewport_canvas_overlay
+    [UiPanel]
+        anchor = "center"
+        size_ratio = (1.0, 0.0015)
+        input_enabled = false
+        style = { fill: "#33415588", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+    [/UiPanel]
+[/canvas_h_8]
+
+[canvas_origin_x]
+parent = @viewport_canvas_overlay
+    [UiPanel]
+        anchor = "center"
+        size_ratio = (1.0, 0.003)
+        input_enabled = false
+        style = { fill: "#F8FAFCBB", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+    [/UiPanel]
+[/canvas_origin_x]
+
+[canvas_origin_y]
+parent = @viewport_canvas_overlay
+    [UiPanel]
+        anchor = "center"
+        size_ratio = (0.003, 1.0)
+        input_enabled = false
+        style = { fill: "#F8FAFCBB", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+    [/UiPanel]
+[/canvas_origin_y]
+
 [viewport_click_layer]
 parent = @viewport_panel
     [UiButton]
         anchor = "center"
         size_ratio = (0.94, 0.82)
+        z_index = 20
         click_signals = ["editor_viewport_click"]
         style = { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 0.025 }
         hover = { style: { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 0.025 } }
@@ -990,6 +1205,7 @@ parent = @viewport_panel
     [UiPanel]
         anchor = "center"
         size_ratio = (0.28, 0.24)
+        z_index = 30
         style = { fill: "#00000000", stroke: "#93C5FD", stroke_width: 3.0, radius: 0.025 }
     [/UiPanel]
 [/selected_outline]
@@ -1091,6 +1307,7 @@ parent = @viewport_panel
     [UiPanel]
         anchor = "center"
         size_ratio = (0.52, 0.38)
+        z_index = 30
         visible = false
         style = { fill: "#00000000", stroke: "#60A5FA", stroke_width: 2.0, radius: 0.025 }
     [/UiPanel]
@@ -1101,6 +1318,7 @@ parent = @viewport_panel
     [UiPanel]
         anchor = "center"
         size_ratio = (0.18, 0.14)
+        z_index = 30
         visible = false
         style = { fill: "#00000000", stroke: "#FDBA74", stroke_width: 2.0, radius: 0.025 }
     [/UiPanel]
@@ -1111,6 +1329,7 @@ parent = @viewport_panel
     [UiLabel]
         anchor = "tl"
         size_ratio = (0.56, 0.08)
+        z_index = 40
         text = "Viewport"
         text_size_ratio = 0.279
         color = "#CBD5E1"
