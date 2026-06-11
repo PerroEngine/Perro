@@ -51,7 +51,8 @@ UiBox
 - UiHLayout
 - UiVLayout
 - UiGrid
-- UiTreeList
+- UiList
+- UiListIndent
 ```
 
 ## Nodes
@@ -144,15 +145,96 @@ UiBox
 - Invisible grid layout container.
 - Uses `columns`, `h_spacing`, and `v_spacing`.
 
-`UiTreeList`
+`UiList`
 
-- Invisible tree layout container.
-- Places UI nodes by referenced `NodeID`.
-- Referenced rows do not need to be scene children.
-- Uses `roots`, `branches`, `collapsed`, `indent`, and `v_spacing`.
+- Invisible vertical list layout container.
+- Direct child UI nodes become rows and get list spacing.
+- Grandchildren of a row are not list rows.
+- `UiListIndent` does not render as a row.
+- Direct children of `UiListIndent` become rows at one deeper indent.
+- Supports script-fed `roots`, `branches`, and `collapsed` for virtual rows.
+- Uses `indent` and `v_spacing`.
 - `roots` are top-level row ids.
 - `branches` map a row id to child row ids.
 - `collapsed` hides child branches under a row id.
+
+`UiListIndent`
+
+- Invisible grouping marker inside `UiList`.
+- Its children render one indent level deeper.
+
+Normal list:
+
+```text
+[rows]
+    [UiList]
+        size_ratio = (1.0, 1.0)
+        v_spacing = 0.006
+    [/UiList]
+[/rows]
+
+[row_a]
+parent = @rows
+    [UiPanel]
+        size_ratio = (1.0, 0.08)
+    [/UiPanel]
+[/row_a]
+
+[row_a_label]
+parent = @row_a
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Row A child content"
+    [/UiLabel]
+[/row_a_label]
+
+[row_b]
+parent = @rows
+    [UiPanel]
+        size_ratio = (1.0, 0.08)
+    [/UiPanel]
+[/row_b]
+```
+
+Tree-like list:
+
+```text
+[scene_rows]
+    [UiList]
+        size_ratio = (1.0, 1.0)
+        indent = 18.0
+        v_spacing = 0.006
+    [/UiList]
+[/scene_rows]
+
+[node3d_row]
+parent = @scene_rows
+    [UiPanel]
+        size_ratio = (1.0, 0.075)
+    [/UiPanel]
+[/node3d_row]
+
+[node3d_label]
+parent = @node3d_row
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Node3D"
+    [/UiLabel]
+[/node3d_label]
+
+[node3d_children]
+parent = @scene_rows
+    [UiListIndent]
+    [/UiListIndent]
+[/node3d_children]
+
+[mesh_row]
+parent = @node3d_children
+    [UiPanel]
+        size_ratio = (1.0, 0.075)
+    [/UiPanel]
+[/mesh_row]
+```
 
 ## Layout Fields
 

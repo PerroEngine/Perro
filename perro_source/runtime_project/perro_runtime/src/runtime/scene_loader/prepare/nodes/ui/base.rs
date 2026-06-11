@@ -216,8 +216,8 @@ fn build_ui_grid(data: &SceneDefNodeData) -> UiGrid {
     node
 }
 
-fn build_ui_tree_list(data: &SceneDefNodeData) -> UiTreeList {
-    let mut node = UiTreeList::new();
+fn build_ui_list(data: &SceneDefNodeData) -> UiList {
+    let mut node = UiList::new();
     if let Some(base) = data.base_ref() {
         apply_ui_root_data(&mut node.base, base);
     }
@@ -235,6 +235,15 @@ fn build_ui_tree_list(data: &SceneDefNodeData) -> UiTreeList {
         }
         _ => {}
     });
+    node
+}
+
+fn build_ui_list_indent(data: &SceneDefNodeData) -> UiListIndent {
+    let mut node = UiListIndent::new();
+    if let Some(base) = data.base_ref() {
+        apply_ui_root_data(&mut node.base, base);
+    }
+    apply_ui_root_fields(&mut node.base, &data.fields);
     node
 }
 

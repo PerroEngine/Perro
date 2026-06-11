@@ -10,3 +10,6 @@ perro_ids.workspace = true
 perro_variant.workspace = true
 perro_io.workspace = true
 perro_resource_api.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rfd = "0.15"

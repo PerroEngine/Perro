@@ -3,12 +3,13 @@ use super::*;
 impl Runtime {
     pub(super) fn compute_ui_tree_rows(
         &self,
-        tree: &perro_ui::UiTreeList,
+        owner: NodeID,
+        tree: &perro_ui::UiList,
         tree_rect: ComputedUiRect,
         computed: &mut AHashMap<NodeID, ComputedUiRect>,
     ) {
         let content = tree_rect.inset(ui_padding_inset(tree_rect, tree.base.layout.padding));
-        let rows = ui_tree_visible_rows(tree);
+        let rows = self.ui_list_visible_rows(owner, tree);
         if rows.is_empty() {
             return;
         }
@@ -49,12 +50,41 @@ impl Runtime {
         }
     }
 
+    pub(super) fn ui_list_visible_rows(
+        &self,
+        owner: NodeID,
+        tree: &perro_ui::UiList,
+    ) -> Vec<UiTreeRow> {
+        if !tree.roots.is_empty() || !tree.branches.is_empty() {
+            return ui_tree_visible_rows(tree);
+        }
+        let mut rows = Vec::new();
+        let Some(owner_node) = self.nodes.get(owner) else {
+            return rows;
+        };
+        for child in owner_node.get_children_ids().iter().copied() {
+            self.push_ui_list_child_rows(child, 0, &mut rows);
+        }
+        rows
+    }
+
+    fn push_ui_list_child_rows(&self, node: NodeID, depth: u32, rows: &mut Vec<UiTreeRow>) {
+        let Some(scene_node) = self.nodes.get(node) else {
+            return;
+        };
+        if matches!(scene_node.data, SceneNodeData::UiListIndent(_)) {
+            for child in scene_node.get_children_ids().iter().copied() {
+                self.push_ui_list_child_rows(child, depth.saturating_add(1), rows);
+            }
+            return;
+        }
+        rows.push(UiTreeRow { node, depth });
+    }
+
     pub(super) fn ui_tree_owner(&self, child: NodeID) -> Option<NodeID> {
-        self.nodes.iter().find_map(|(id, node)| {
-            let SceneNodeData::UiTreeList(tree) = &node.data else {
-                return None;
-            };
-            ui_tree_contains(tree, child).then_some(id)
+        self.nodes.iter().find_map(|(id, node)| match &node.data {
+            SceneNodeData::UiList(tree) => ui_tree_contains(tree, child).then_some(id),
+            _ => None,
         })
     }
 
@@ -68,9 +98,7 @@ impl Runtime {
                     .nodes
                     .get(tree)
                     .and_then(|scene_node| match &scene_node.data {
-                        SceneNodeData::UiTreeList(tree) => {
-                            Some(ui_tree_visible_contains(tree, node))
-                        }
+                        SceneNodeData::UiList(tree) => Some(ui_tree_visible_contains(tree, node)),
                         _ => None,
                     })
                     .unwrap_or(false)
@@ -201,12 +229,15 @@ impl Runtime {
         };
         let text = ui_text_measure(&scene_node.data);
         let children = scene_node.get_children_ids();
-        let child_size = if let SceneNodeData::UiTreeList(tree) = &scene_node.data {
-            self.ui_tree_content_size(tree, available)
-        } else if let Some(auto) = ui_auto_layout_from_data(&scene_node.data) {
-            self.auto_layout_content_size(children, available, auto)
-        } else {
-            self.absolute_children_content_size(children, available)
+        let child_size = match &scene_node.data {
+            SceneNodeData::UiList(tree) => self.ui_tree_content_size(tree, available),
+            _ if ui_auto_layout_from_data(&scene_node.data).is_some() => self
+                .auto_layout_content_size(
+                    children,
+                    available,
+                    ui_auto_layout_from_data(&scene_node.data).unwrap(),
+                ),
+            _ => self.absolute_children_content_size(children, available),
         };
         let content = text.x.max(child_size.x);
         let content_h = text.y.max(child_size.y);
@@ -343,7 +374,7 @@ impl Runtime {
 
     pub(super) fn ui_tree_content_size(
         &self,
-        tree: &perro_ui::UiTreeList,
+        tree: &perro_ui::UiList,
         available: Vector2,
     ) -> Vector2 {
         let mut width = 0.0_f32;

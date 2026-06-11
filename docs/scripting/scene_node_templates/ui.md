@@ -543,11 +543,13 @@ script = "res://path/to/script.rs"
     [/UiGrid]
 [/ui_grid]
 
-[ui_tree_list]
+[ui_list]
 parent = @PARENTKEY
 script = "res://path/to/script.rs"
-    [UiTreeList]
-        # roots, branches, and collapsed are usually set from script with NodeID values.
+    [UiList]
+        # direct UI children become list rows.
+        # UiListIndent children render one indent level deeper.
+        # roots, branches, and collapsed can also be set from script with NodeID values.
         indent = 16.0
         v_spacing = 0.0
         [UiBox]
@@ -571,6 +573,13 @@ script = "res://path/to/script.rs"
             margin = 0
             z_index = 0
         [/UiBox]
-    [/UiTreeList]
-[/ui_tree_list]
+    [/UiList]
+[/ui_list]
+
+[ui_list_indent]
+parent = @ui_list
+    [UiListIndent]
+        size_ratio = (1.0, 1.0)
+    [/UiListIndent]
+[/ui_list_indent]
 ```

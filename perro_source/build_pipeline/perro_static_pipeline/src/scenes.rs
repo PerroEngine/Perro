@@ -527,7 +527,8 @@ fn is_static_ui_node(node_type: &str) -> bool {
             | "UiVLayout"
             | "UiVBox"
             | "UiGrid"
-            | "UiTreeList"
+            | "UiList"
+            | "UiListIndent"
     )
 }
 

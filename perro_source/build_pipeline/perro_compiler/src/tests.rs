@@ -1459,8 +1459,8 @@ parent = $root
 
 [ui_tree]
 parent = $root
-[UiTreeList]
-[/UiTreeList]
+[UiList]
+[/UiList]
 [/ui_tree]
 
 [animation_player]

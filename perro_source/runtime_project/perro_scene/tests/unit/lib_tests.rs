@@ -708,3 +708,68 @@ fn scene_doc_dedup_is_opt_in() {
     assert!(!text.contains("$var1 ="));
     assert_eq!(text.matches("material = {").count(), 3);
 }
+
+#[test]
+fn scene_doc_editor_add_node_preserves_script_data() {
+    use std::borrow::Cow;
+
+    let src = r#"
+$root = @root
+
+[root]
+script = "res://scripts/root.rs"
+script_vars = { target = @root, speed = 2.5 }
+    [Node3D]
+        position = (1, 2, 3)
+    [/Node3D]
+[/root]
+"#;
+
+    let mut doc = Parser::new(src).parse_scene_doc();
+    let new_key = SceneKey::new(doc.scene.key_names.len() as u32);
+    doc.scene
+        .key_names
+        .to_mut()
+        .push(Cow::Borrowed("EditorNode3D_1"));
+    doc.scene.nodes.to_mut().push(SceneNodeEntry {
+        data: SceneNodeData::new(
+            NodeType::Node3D,
+            Cow::Owned(vec![(
+                SceneFieldName::Position,
+                SceneValue::Vec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+            )]),
+            None,
+        ),
+        has_data_override: true,
+        key: new_key,
+        name: None,
+        tags: Cow::Owned(Vec::new()),
+        children: Cow::Owned(Vec::new()),
+        parent: doc.scene.root,
+        script: None,
+        clear_script: false,
+        root_of: None,
+        script_vars: Cow::Owned(Vec::new()),
+    });
+    doc.normalize_links();
+
+    let text = doc.to_text();
+    let reparsed = Parser::new(&text).parse_scene();
+    let root = find_node(&reparsed, "root");
+    let added = find_node(&reparsed, "EditorNode3D_1");
+
+    assert_eq!(root.script.as_deref(), Some("res://scripts/root.rs"));
+    assert!(
+        root.script_vars
+            .iter()
+            .any(|(name, value)| name.as_ref() == "target" && value.as_key() == Some("root"))
+    );
+    assert_eq!(
+        added.parent.and_then(|key| reparsed.key_name(key)),
+        Some("root")
+    );
+}

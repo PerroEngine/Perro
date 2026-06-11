@@ -51,7 +51,8 @@ pub(super) fn ui_root_from_data(data: &SceneNodeData) -> Option<&UiBox> {
         SceneNodeData::UiHLayout(node) => Some(&node.inner.base),
         SceneNodeData::UiVLayout(node) => Some(&node.inner.base),
         SceneNodeData::UiGrid(node) => Some(&node.base),
-        SceneNodeData::UiTreeList(node) => Some(&node.base),
+        SceneNodeData::UiList(node) => Some(&node.base),
+        SceneNodeData::UiListIndent(node) => Some(&node.base),
         _ => None,
     }
 }
@@ -117,7 +118,7 @@ pub(super) struct UiTreeRow {
     pub(super) depth: u32,
 }
 
-pub(super) fn ui_tree_visible_rows(tree: &perro_ui::UiTreeList) -> Vec<UiTreeRow> {
+pub(super) fn ui_tree_visible_rows(tree: &perro_ui::UiList) -> Vec<UiTreeRow> {
     let mut rows = Vec::new();
     let mut stack = Vec::new();
     let mut seen = Vec::new();
@@ -140,7 +141,7 @@ pub(super) fn ui_tree_visible_rows(tree: &perro_ui::UiTreeList) -> Vec<UiTreeRow
     rows
 }
 
-pub(super) fn ui_tree_contains(tree: &perro_ui::UiTreeList, child: NodeID) -> bool {
+pub(super) fn ui_tree_contains(tree: &perro_ui::UiList, child: NodeID) -> bool {
     tree.roots.contains(&child)
         || tree
             .branches
@@ -148,13 +149,13 @@ pub(super) fn ui_tree_contains(tree: &perro_ui::UiTreeList, child: NodeID) -> bo
             .any(|branch| branch.children.contains(&child))
 }
 
-pub(super) fn ui_tree_visible_contains(tree: &perro_ui::UiTreeList, child: NodeID) -> bool {
+pub(super) fn ui_tree_visible_contains(tree: &perro_ui::UiList, child: NodeID) -> bool {
     ui_tree_visible_rows(tree)
         .into_iter()
         .any(|row| row.node == child)
 }
 
-pub(super) fn ui_tree_all_nodes(tree: &perro_ui::UiTreeList) -> Vec<NodeID> {
+pub(super) fn ui_tree_all_nodes(tree: &perro_ui::UiList) -> Vec<NodeID> {
     let mut nodes = Vec::new();
     for &root in &tree.roots {
         if !nodes.contains(&root) {

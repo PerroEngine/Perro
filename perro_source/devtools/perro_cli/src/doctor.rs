@@ -405,6 +405,7 @@ fn is_reference_text_extension(ext: &std::ffi::OsStr) -> bool {
 
 #[derive(Default)]
 struct ScriptDoctorIndex {
+    state_types: HashSet<String>,
     state_fields: HashSet<String>,
     state_field_types: HashMap<String, String>,
     state_field_owners: HashMap<String, String>,
@@ -574,6 +575,7 @@ fn index_script_source(text: &str, index: &mut ScriptDoctorIndex) {
         }
     }
     for state_name in parse_state_struct_names(text) {
+        index.state_types.insert(state_name.clone());
         for field in parse_struct_fields(text, &state_name) {
             index
                 .state_field_types
@@ -1056,7 +1058,56 @@ fn validate_script_member_calls(
 ) {
     validate_var_member_calls(project_dir, file, text, "get_var", index, report);
     validate_var_member_calls(project_dir, file, text, "set_var", index, report);
+    validate_state_access_calls(project_dir, file, text, "with_state", index, report);
+    validate_state_access_calls(project_dir, file, text, "with_state_mut", index, report);
     validate_method_member_calls(project_dir, file, text, &index.methods, report);
+}
+
+fn validate_state_access_calls(
+    project_dir: &Path,
+    file: &Path,
+    text: &str,
+    macro_name: &str,
+    index: &ScriptDoctorIndex,
+    report: &mut ValidationReport,
+) {
+    for call in find_macro_calls_with_lines(text, macro_name) {
+        let args = split_top_level_args(&call.inner);
+        if args.len() < 2 {
+            continue;
+        }
+        let Some(state_type) = extract_state_type_arg(args[1]) else {
+            continue;
+        };
+        if !index.state_types.contains(&state_type) {
+            let source = format_source_location(project_dir, Some(file), Some(call.line));
+            report.warn(format!(
+                "script state missing: {source}`{macro_name}!` uses `{state_type}`, but no `#[State]` struct defines it"
+            ));
+        }
+    }
+}
+
+fn extract_state_type_arg(arg: &str) -> Option<String> {
+    let arg = arg.trim();
+    if arg.is_empty()
+        || arg.contains('<')
+        || arg.contains('>')
+        || arg.contains('(')
+        || arg.contains(')')
+        || arg.contains('{')
+        || arg.contains('}')
+        || arg.contains('[')
+        || arg.contains(']')
+    {
+        return None;
+    }
+    let name = arg.rsplit("::").next()?.trim();
+    if is_ident_for_doctor(name) {
+        Some(name.to_string())
+    } else {
+        None
+    }
 }
 
 fn validate_var_member_calls(
@@ -1685,6 +1736,39 @@ mod tests {
         assert!(report.messages.iter().any(|m| m.contains("missing_hp")));
         assert!(report.messages.iter().any(|m| m.contains("missing_flag")));
         assert!(report.messages.iter().any(|m| m.contains("missing_method")));
+    }
+
+    #[test]
+    fn script_state_access_checks_require_state_attribute() {
+        let file = PathBuf::from("res/scripts/main.rs");
+        let source = r#"
+            #[State]
+            struct PlayerState {
+                hp: i32,
+            }
+
+            struct HelperState {
+                hp: i32,
+            }
+
+            fn run(ctx: &mut ScriptContext<'_, API>) {
+                let _ = with_state!(ctx.run, PlayerState, ctx.id, |state| state.hp);
+                let _ = with_state!(ctx.run, crate::PlayerState, ctx.id, |state| state.hp);
+                let _ = with_state_mut!(ctx.run, HelperState, ctx.id, |state| state.hp += 1);
+            }
+        "#;
+        let mut index = ScriptDoctorIndex::default();
+        index_script_source(source, &mut index);
+        let mut report = ValidationReport::default();
+
+        validate_script_member_calls(Path::new(""), &file, source, &index, &mut report);
+
+        assert_eq!(report.errors, 0);
+        assert_eq!(report.warnings, 1);
+        assert!(report.messages[0].contains("script state missing"));
+        assert!(report.messages[0].contains("with_state_mut!"));
+        assert!(report.messages[0].contains("HelperState"));
+        assert!(!report.messages[0].contains("PlayerState"));
     }
 
     #[test]

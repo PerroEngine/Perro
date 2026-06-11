@@ -157,7 +157,7 @@ impl Runtime {
         while let Some(id) = stack.pop() {
             let Some((is_ui, children, tree_refs)) = self.nodes.get(id).map(|node| {
                 let tree_refs = match &node.data {
-                    SceneNodeData::UiTreeList(tree) => ui_tree_all_nodes_flat(tree),
+                    SceneNodeData::UiList(tree) => ui_tree_all_nodes_flat(tree),
                     _ => Vec::new(),
                 };
                 (
@@ -185,7 +185,7 @@ impl Runtime {
     }
 }
 
-pub(super) fn ui_tree_all_nodes_flat(tree: &perro_ui::UiTreeList) -> Vec<perro_ids::NodeID> {
+pub(super) fn ui_tree_all_nodes_flat(tree: &perro_ui::UiList) -> Vec<perro_ids::NodeID> {
     let mut out = Vec::new();
     out.extend(tree.roots.iter().copied());
     for branch in &tree.branches {
@@ -334,7 +334,7 @@ pub(super) fn classify_ui_node_payload_change(
         {
             Runtime::UI_DIRTY_LAYOUT_SELF | Runtime::UI_DIRTY_COMMANDS
         }
-        (SceneNodeData::UiTreeList(before), SceneNodeData::UiTreeList(after))
+        (SceneNodeData::UiList(before), SceneNodeData::UiList(after))
             if before.roots != after.roots
                 || before.branches != after.branches
                 || before.collapsed != after.collapsed
@@ -397,7 +397,8 @@ pub(super) fn ui_base_from_data(data: &SceneNodeData) -> Option<&UiBox> {
         SceneNodeData::UiHLayout(node) => Some(&node.inner.base),
         SceneNodeData::UiVLayout(node) => Some(&node.inner.base),
         SceneNodeData::UiGrid(node) => Some(&node.base),
-        SceneNodeData::UiTreeList(node) => Some(&node.base),
+        SceneNodeData::UiList(node) => Some(&node.base),
+        SceneNodeData::UiListIndent(node) => Some(&node.base),
         _ => None,
     }
 }

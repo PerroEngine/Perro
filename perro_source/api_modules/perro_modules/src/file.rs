@@ -1,5 +1,5 @@
 use std::{
-    io,
+    fs, io,
     path::{Path, PathBuf},
 };
 
@@ -44,6 +44,40 @@ pub fn exists<P: ResPathSource>(path: P) -> bool {
     }
 }
 
+pub fn is_dir<P: ResPathSource>(path: P) -> bool {
+    let path = path.as_res_path_str();
+    matches!(perro_io::resolve_path(path), perro_io::ResolvedPath::Disk(pb) if pb.is_dir())
+}
+
+pub fn is_file<P: ResPathSource>(path: P) -> bool {
+    let path = path.as_res_path_str();
+    matches!(perro_io::resolve_path(path), perro_io::ResolvedPath::Disk(pb) if pb.is_file())
+}
+
+pub fn read_dir<P: ResPathSource>(path: P) -> io::Result<Vec<String>> {
+    let path = path.as_res_path_str();
+    let root = disk_path(path)?;
+    let mut out = Vec::new();
+    for entry in fs::read_dir(root)? {
+        out.push(entry?.path().to_string_lossy().to_string());
+    }
+    out.sort();
+    Ok(out)
+}
+
+pub fn walk_dir<P: ResPathSource>(path: P) -> io::Result<Vec<String>> {
+    let path = path.as_res_path_str();
+    let root = disk_path(path)?;
+    let mut out = Vec::new();
+    walk_dir_inner(&root, &mut out)?;
+    out.sort();
+    Ok(out)
+}
+
+pub fn pick_folder(title: &str) -> Option<String> {
+    pick_folder_impl(title)
+}
+
 pub fn resolve_path_string<P: ResPathSource>(path: P) -> String {
     let path = path.as_res_path_str();
     match perro_io::resolve_path(path) {
@@ -73,4 +107,39 @@ fn validate_write_path(path: &str) -> io::Result<()> {
         io::ErrorKind::PermissionDenied,
         "writes are restricted to `user://` or absolute paths",
     ))
+}
+
+fn disk_path(path: &str) -> io::Result<PathBuf> {
+    match perro_io::resolve_path(path) {
+        perro_io::ResolvedPath::Disk(path) => Ok(path),
+        _ => Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "path does not resolve to disk",
+        )),
+    }
+}
+
+fn walk_dir_inner(path: &Path, out: &mut Vec<String>) -> io::Result<()> {
+    for entry in fs::read_dir(path)? {
+        let entry = entry?;
+        let path = entry.path();
+        out.push(path.to_string_lossy().to_string());
+        if path.is_dir() {
+            walk_dir_inner(&path, out)?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn pick_folder_impl(title: &str) -> Option<String> {
+    rfd::FileDialog::new()
+        .set_title(title)
+        .pick_folder()
+        .map(|path| path.to_string_lossy().to_string())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn pick_folder_impl(_: &str) -> Option<String> {
+    None
 }

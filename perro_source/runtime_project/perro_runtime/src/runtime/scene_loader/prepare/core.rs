@@ -70,7 +70,7 @@ use perro_structs::{
 use perro_ui::{
     UiAnimatedImage, UiAnimatedImageFrameSet, UiBox, UiButton, UiGrid, UiHLayout, UiImage,
     UiImageButton, UiImageScaleMode, UiLabel, UiLayout, UiMouseFilter, UiNineSlice, UiPanel,
-    UiScrollContainer, UiTextAlign, UiTextBlock, UiTextBox, UiTreeList, UiVLayout,
+    UiList, UiListIndent, UiScrollContainer, UiTextAlign, UiTextBlock, UiTextBox, UiVLayout,
 };
 use rayon::prelude::*;
 use std::borrow::Cow;
@@ -1823,7 +1823,8 @@ fn scene_node_data_from(
         NodeType::UiHLayout => Ok(SceneNodeData::UiHLayout(build_ui_hlayout(data))),
         NodeType::UiVLayout => Ok(SceneNodeData::UiVLayout(build_ui_vlayout(data))),
         NodeType::UiGrid => Ok(SceneNodeData::UiGrid(build_ui_grid(data))),
-        NodeType::UiTreeList => Ok(SceneNodeData::UiTreeList(build_ui_tree_list(data))),
+        NodeType::UiList => Ok(SceneNodeData::UiList(build_ui_list(data))),
+        NodeType::UiListIndent => Ok(SceneNodeData::UiListIndent(build_ui_list_indent(data))),
     }
 }
 

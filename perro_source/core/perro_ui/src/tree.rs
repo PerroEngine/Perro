@@ -13,7 +13,7 @@ impl UiTreeBranch {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct UiTreeList {
+pub struct UiList {
     pub base: UiBox,
     pub roots: Vec<NodeID>,
     pub branches: Vec<UiTreeBranch>,
@@ -22,7 +22,7 @@ pub struct UiTreeList {
     pub v_spacing: f32,
 }
 
-impl UiTreeList {
+impl UiList {
     pub const fn new() -> Self {
         let mut base = UiBox::new();
         base.layout.h_align = UiHorizontalAlign::Left;
@@ -66,13 +66,13 @@ impl UiTreeList {
     }
 }
 
-impl Default for UiTreeList {
+impl Default for UiList {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Deref for UiTreeList {
+impl Deref for UiList {
     type Target = UiBox;
 
     fn deref(&self) -> &Self::Target {
@@ -80,13 +80,57 @@ impl Deref for UiTreeList {
     }
 }
 
-impl DerefMut for UiTreeList {
+impl DerefMut for UiList {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.base
     }
 }
 
-impl UiNodeBase for UiTreeList {
+impl UiNodeBase for UiList {
+    fn ui_base(&self) -> &UiBox {
+        &self.base
+    }
+
+    fn ui_base_mut(&mut self) -> &mut UiBox {
+        &mut self.base
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiListIndent {
+    pub base: UiBox,
+}
+
+impl UiListIndent {
+    pub const fn new() -> Self {
+        let mut base = UiBox::new();
+        base.layout.h_align = UiHorizontalAlign::Left;
+        base.layout.v_align = UiVerticalAlign::Top;
+        Self { base }
+    }
+}
+
+impl Default for UiListIndent {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Deref for UiListIndent {
+    type Target = UiBox;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DerefMut for UiListIndent {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
+}
+
+impl UiNodeBase for UiListIndent {
     fn ui_base(&self) -> &UiBox {
         &self.base
     }
