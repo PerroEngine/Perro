@@ -18,7 +18,8 @@ use crate::scripts_ui_editor_ui_rs::*;
 use crate::scripts_ui_editor_view_rs as editor_view;
 use perro_api::prelude::*;
 use perro_api::scene::{
-    SceneDoc, SceneFieldName, SceneKey, SceneNodeData, SceneNodeEntry, SceneValue, SceneValueKey,
+    Parser, SceneDoc, SceneFieldName, SceneKey, SceneNodeData, SceneNodeEntry, SceneValue,
+    SceneValueKey,
 };
 use std::borrow::Cow;
 use std::fs;
@@ -387,6 +388,17 @@ pub fn edit_selected_transform<API: ScriptAPI + ?Sized>(
         else {
             return false;
         };
+        if field == "rotation_deg" {
+            node.data
+                .fields
+                .to_mut()
+                .retain(|(name, _)| name.as_ref() != "rotation");
+        } else if field == "rotation" {
+            node.data
+                .fields
+                .to_mut()
+                .retain(|(name, _)| name.as_ref() != "rotation_deg");
+        }
         match values.as_slice() {
             [x] => set_scene_f32(&mut node.data, field, *x),
             [x, y] => set_scene_vec2(&mut node.data, field, Vector2::new(*x, *y)),
@@ -408,6 +420,29 @@ pub fn edit_selected_transform<API: ScriptAPI + ?Sized>(
         rebuild_preview(ctx);
         refresh_all(ctx);
     }
+}
+
+pub fn edit_selected_rotation<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let field = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        if state.inspector_rotation_mode == "euler" {
+            "rotation_deg"
+        } else {
+            "rotation"
+        }
+    });
+    edit_selected_transform(ctx, field, "inspector_rotation_box");
+}
+
+pub fn set_inspector_rotation_mode<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    mode: &str,
+) {
+    let mode = if mode == "euler" { "euler" } else { "quat" };
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.inspector_rotation_mode = mode.to_string();
+        state.focused_inspector_box.clear();
+    });
+    refresh_all(ctx);
 }
 
 pub fn read_component_values<API: ScriptAPI + ?Sized>(
@@ -700,12 +735,12 @@ pub fn pick_selected_resource_field<API: ScriptAPI + ?Sized>(
             .find(|node| node.key.as_u32() == key)?;
         let rows = resource_field_rows(&node.data);
         let field = rows.get(idx)?.name.clone();
-        Some((state.project_root.clone(), field))
+        Some((state.project_root.clone(), node.data.node_type, field))
     });
-    let Some((root, field)) = pick else {
+    let Some((root, node_type, field)) = pick else {
         return;
     };
-    let filters = resource_dialog_filters(&field);
+    let filters = resource_dialog_filters(node_type, &field);
     let Some(abs) = FileMod::pick_file(&format!("Select {field}"), filters.as_slice()) else {
         return;
     };
@@ -749,17 +784,20 @@ pub fn pick_selected_resource_field<API: ScriptAPI + ?Sized>(
     }
 }
 
-pub fn resource_dialog_filters(field: &str) -> Vec<(&'static str, &'static [&'static str])> {
-    match field {
-        "texture" => vec![(
-            "Images",
-            &["png", "jpg", "jpeg", "webp", "bmp", "tga", "svg"],
-        )],
-        "mesh" => vec![("GLB", &["glb", "gltf"])],
-        "material" => vec![("Perro Material", &["pmat"])],
-        "animation" => vec![("Perro Animation", &["panim"])],
-        _ => vec![("Assets", &["*"])],
-    }
+pub fn resource_dialog_filters(
+    node_type: perro_scene::NodeType,
+    field: &str,
+) -> Vec<(&'static str, &'static [&'static str])> {
+    let Some(field) = perro_scene::scene_inspector_field(node_type, field) else {
+        return vec![("Assets", &["*"])];
+    };
+    let perro_scene::SceneInspectorValueKind::Asset(kind) = field.kind else {
+        return vec![("Assets", &["*"])];
+    };
+    perro_scene::scene_asset_filters(kind)
+        .iter()
+        .map(|filter| (filter.label, filter.extensions))
+        .collect()
 }
 
 pub fn parse_script_vars_text(text: &str) -> Result<Vec<(SceneFieldName, SceneValue)>, String> {
@@ -789,45 +827,8 @@ pub fn parse_script_var_value(text: &str) -> Result<SceneValue, String> {
     if text.is_empty() {
         return Err("missing value".to_string());
     }
-    if let Some(key) = text.strip_prefix('@') {
-        return Ok(SceneValue::Key(SceneValueKey::from(key.trim().to_string())));
-    }
-    if text.eq_ignore_ascii_case("true") {
-        return Ok(SceneValue::Bool(true));
-    }
-    if text.eq_ignore_ascii_case("false") {
-        return Ok(SceneValue::Bool(false));
-    }
-    if text.starts_with('"') && text.ends_with('"') && text.len() >= 2 {
-        return Ok(SceneValue::Str(Cow::Owned(
-            text[1..text.len() - 1].replace("\\\"", "\""),
-        )));
-    }
-    if text.starts_with('(') && text.ends_with(')') {
-        let values = parse_number_list(text).ok_or_else(|| "bad tuple".to_string())?;
-        return match values.as_slice() {
-            [x, y] => Ok(SceneValue::Vec2 { x: *x, y: *y }),
-            [x, y, z] => Ok(SceneValue::Vec3 {
-                x: *x,
-                y: *y,
-                z: *z,
-            }),
-            [x, y, z, w] => Ok(SceneValue::Vec4 {
-                x: *x,
-                y: *y,
-                z: *z,
-                w: *w,
-            }),
-            _ => Err("tuple needs 2-4 nums".to_string()),
-        };
-    }
-    if let Ok(value) = text.parse::<i32>() {
-        return Ok(SceneValue::I32(value));
-    }
-    if let Ok(value) = text.parse::<f32>() {
-        return Ok(SceneValue::F32(value));
-    }
-    Ok(SceneValue::Str(Cow::Owned(text.to_string())))
+    std::panic::catch_unwind(|| Parser::new(text).parse_value_literal())
+        .map_err(|_| "bad scene value".to_string())
 }
 
 pub fn parse_number_list(text: &str) -> Option<Vec<f32>> {

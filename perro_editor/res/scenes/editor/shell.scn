@@ -232,17 +232,17 @@ parent = @activity_bar
     [/UiButton]
 [/activity_scene_button]
 
-[activity_scene_label]
+[activity_scene_icon]
 parent = @activity_scene_button
-    [UiLabel]
-        size_ratio = (1.0, 1.0)
-        text = "SCN"
-        text_size_ratio = 0.24
-        color = "#F3F4F6"
+    [UiImage]
+        size_ratio = (0.74, 0.74)
+        texture = "res://icons/activity/scene.png"
+        scale_mode = "fit"
+        tint = "#FFFFFFFF"
         input_enabled = false
         mouse_filter = "pass"
-    [/UiLabel]
-[/activity_scene_label]
+    [/UiImage]
+[/activity_scene_icon]
 
 [activity_glb_button]
 parent = @activity_bar
@@ -255,17 +255,17 @@ parent = @activity_bar
     [/UiButton]
 [/activity_glb_button]
 
-[activity_glb_label]
+[activity_glb_icon]
 parent = @activity_glb_button
-    [UiLabel]
-        size_ratio = (1.0, 1.0)
-        text = "GLB"
-        text_size_ratio = 0.24
-        color = "#F3F4F6"
+    [UiImage]
+        size_ratio = (0.74, 0.74)
+        texture = "res://icons/activity/glb.png"
+        scale_mode = "fit"
+        tint = "#B8C1CCFF"
         input_enabled = false
         mouse_filter = "pass"
-    [/UiLabel]
-[/activity_glb_label]
+    [/UiImage]
+[/activity_glb_icon]
 
 [left_panel]
 parent = @main_split
@@ -1058,7 +1058,7 @@ parent = @file_row_11
 [center_stack]
 parent = @main_split
     [UiVLayout]
-        size_ratio = (0.74, 1.0)
+        size_ratio = (0.708, 1.0)
         h_align = "fill"
         v_align = "fill"
         spacing = 0.004
@@ -1321,7 +1321,7 @@ parent = @viewport_panel
         camera = @editor_camera_2d
         resolution = (960, 540)
         aspect_mode = "fit"
-        radius = 0.25
+        radius = 0.03
         visible = false
     [/UiCameraStream]
 [/viewport_stream_2d]
@@ -1335,7 +1335,7 @@ parent = @viewport_panel
         camera = @editor_camera_3d
         resolution = (960, 540)
         aspect_mode = "fit"
-        radius = 0.25
+        radius = 0.03
         visible = false
     [/UiCameraStream]
 [/viewport_stream_3d]
@@ -1999,7 +1999,7 @@ parent = @editor_root
 [inspector_panel]
 parent = @main_split
     [UiVLayout]
-        size_ratio = (0.118, 1.0)
+        size_ratio = (0.15, 1.0)
         h_align = "fill"
         v_align = "start"
         spacing = 0.005
@@ -2034,7 +2034,7 @@ parent = @inspector_panel
 [inspector_name_box]
 parent = @inspector_panel
     [UiTextBox]
-        size_ratio = (1.0, 0.044)
+        size_ratio = (1.0, 0.038)
         text = "-"
         text_size_ratio = 0.24
         focused_signals = ["editor_inspector_focus"]
@@ -2300,7 +2300,7 @@ parent = @inspector_panel
 parent = @inspector_panel
     [UiTextBox]
         visible = false
-        size_ratio = (1.0, 0.046)
+        size_ratio = (1.0, 0.038)
         text = "-"
         text_size_ratio = 0.30
         focused_signals = ["editor_inspector_focus"]
@@ -2313,7 +2313,7 @@ parent = @inspector_panel
 [inspector_position_row]
 parent = @inspector_panel
     [UiHLayout]
-        size_ratio = (1.0, 0.046)
+        size_ratio = (1.0, 0.038)
         h_align = "fill"
         v_align = "center"
         spacing = 0.006
@@ -2323,7 +2323,7 @@ parent = @inspector_panel
 [inspector_position_0_label]
 parent = @inspector_position_row
     [UiLabel]
-        size_ratio = (0.08, 1.0)
+        size_ratio = (0.045, 1.0)
         text = "x"
         text_size_ratio = 0.24
         color = "#94A3B8"
@@ -2333,7 +2333,7 @@ parent = @inspector_position_row
 [inspector_position_0_box]
 parent = @inspector_position_row
     [UiTextBox]
-        size_ratio = (0.17, 1.0)
+        size_ratio = (0.185, 1.0)
         text = "0"
         text_size_ratio = 0.26
         focused_signals = ["editor_inspector_focus"]
@@ -2346,7 +2346,7 @@ parent = @inspector_position_row
 [inspector_position_1_label]
 parent = @inspector_position_row
     [UiLabel]
-        size_ratio = (0.08, 1.0)
+        size_ratio = (0.045, 1.0)
         text = "y"
         text_size_ratio = 0.24
         color = "#94A3B8"
@@ -2356,7 +2356,7 @@ parent = @inspector_position_row
 [inspector_position_1_box]
 parent = @inspector_position_row
     [UiTextBox]
-        size_ratio = (0.17, 1.0)
+        size_ratio = (0.185, 1.0)
         text = "0"
         text_size_ratio = 0.26
         focused_signals = ["editor_inspector_focus"]
@@ -2369,7 +2369,7 @@ parent = @inspector_position_row
 [inspector_position_2_label]
 parent = @inspector_position_row
     [UiLabel]
-        size_ratio = (0.08, 1.0)
+        size_ratio = (0.045, 1.0)
         text = "z"
         text_size_ratio = 0.24
         color = "#94A3B8"
@@ -2379,7 +2379,7 @@ parent = @inspector_position_row
 [inspector_position_2_box]
 parent = @inspector_position_row
     [UiTextBox]
-        size_ratio = (0.17, 1.0)
+        size_ratio = (0.185, 1.0)
         text = "0"
         text_size_ratio = 0.26
         focused_signals = ["editor_inspector_focus"]
@@ -2392,7 +2392,7 @@ parent = @inspector_position_row
 [inspector_position_3_label]
 parent = @inspector_position_row
     [UiLabel]
-        size_ratio = (0.08, 1.0)
+        size_ratio = (0.045, 1.0)
         text = "w"
         text_size_ratio = 0.24
         color = "#94A3B8"
@@ -2402,7 +2402,7 @@ parent = @inspector_position_row
 [inspector_position_3_box]
 parent = @inspector_position_row
     [UiTextBox]
-        size_ratio = (0.17, 1.0)
+        size_ratio = (0.185, 1.0)
         text = "0"
         text_size_ratio = 0.26
         focused_signals = ["editor_inspector_focus"]
@@ -2428,7 +2428,7 @@ parent = @inspector_panel
 parent = @inspector_panel
     [UiTextBox]
         visible = false
-        size_ratio = (1.0, 0.046)
+        size_ratio = (1.0, 0.038)
         text = "-"
         text_size_ratio = 0.30
         focused_signals = ["editor_inspector_focus"]
@@ -2438,10 +2438,67 @@ parent = @inspector_panel
     [/UiTextBox]
 [/inspector_rotation_box]
 
+[inspector_rotation_mode_row]
+parent = @inspector_panel
+    [UiHLayout]
+        visible = false
+        size_ratio = (1.0, 0.038)
+        h_align = "fill"
+        v_align = "center"
+        spacing = 0.006
+    [/UiHLayout]
+[/inspector_rotation_mode_row]
+
+[inspector_rotation_quat_button]
+parent = @inspector_rotation_mode_row
+    [UiButton]
+        size_ratio = (0.50, 0.88)
+        click_signals = ["editor_inspector_rotation_quat"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_rotation_quat_button]
+
+[inspector_rotation_quat_label]
+parent = @inspector_rotation_quat_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Quat"
+        text_size_ratio = 0.24
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_rotation_quat_label]
+
+[inspector_rotation_euler_button]
+parent = @inspector_rotation_mode_row
+    [UiButton]
+        size_ratio = (0.50, 0.88)
+        click_signals = ["editor_inspector_rotation_euler"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_rotation_euler_button]
+
+[inspector_rotation_euler_label]
+parent = @inspector_rotation_euler_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Euler"
+        text_size_ratio = 0.24
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_rotation_euler_label]
+
 [inspector_rotation_row]
 parent = @inspector_panel
     [UiHLayout]
-        size_ratio = (1.0, 0.046)
+        size_ratio = (1.0, 0.038)
         h_align = "fill"
         v_align = "center"
         spacing = 0.006
@@ -2451,7 +2508,7 @@ parent = @inspector_panel
 [inspector_rotation_0_label]
 parent = @inspector_rotation_row
     [UiLabel]
-        size_ratio = (0.08, 1.0)
+        size_ratio = (0.045, 1.0)
         text = "x"
         text_size_ratio = 0.24
         color = "#94A3B8"
@@ -2461,7 +2518,7 @@ parent = @inspector_rotation_row
 [inspector_rotation_0_box]
 parent = @inspector_rotation_row
     [UiTextBox]
-        size_ratio = (0.17, 1.0)
+        size_ratio = (0.185, 1.0)
         text = "0"
         text_size_ratio = 0.26
         focused_signals = ["editor_inspector_focus"]
@@ -2474,7 +2531,7 @@ parent = @inspector_rotation_row
 [inspector_rotation_1_label]
 parent = @inspector_rotation_row
     [UiLabel]
-        size_ratio = (0.08, 1.0)
+        size_ratio = (0.045, 1.0)
         text = "y"
         text_size_ratio = 0.24
         color = "#94A3B8"
@@ -2484,7 +2541,7 @@ parent = @inspector_rotation_row
 [inspector_rotation_1_box]
 parent = @inspector_rotation_row
     [UiTextBox]
-        size_ratio = (0.17, 1.0)
+        size_ratio = (0.185, 1.0)
         text = "0"
         text_size_ratio = 0.26
         focused_signals = ["editor_inspector_focus"]
@@ -2497,7 +2554,7 @@ parent = @inspector_rotation_row
 [inspector_rotation_2_label]
 parent = @inspector_rotation_row
     [UiLabel]
-        size_ratio = (0.08, 1.0)
+        size_ratio = (0.045, 1.0)
         text = "z"
         text_size_ratio = 0.24
         color = "#94A3B8"
@@ -2507,7 +2564,7 @@ parent = @inspector_rotation_row
 [inspector_rotation_2_box]
 parent = @inspector_rotation_row
     [UiTextBox]
-        size_ratio = (0.17, 1.0)
+        size_ratio = (0.185, 1.0)
         text = "0"
         text_size_ratio = 0.26
         focused_signals = ["editor_inspector_focus"]
@@ -2520,7 +2577,7 @@ parent = @inspector_rotation_row
 [inspector_rotation_3_label]
 parent = @inspector_rotation_row
     [UiLabel]
-        size_ratio = (0.08, 1.0)
+        size_ratio = (0.045, 1.0)
         text = "w"
         text_size_ratio = 0.24
         color = "#94A3B8"
@@ -2530,7 +2587,7 @@ parent = @inspector_rotation_row
 [inspector_rotation_3_box]
 parent = @inspector_rotation_row
     [UiTextBox]
-        size_ratio = (0.17, 1.0)
+        size_ratio = (0.185, 1.0)
         text = "0"
         text_size_ratio = 0.26
         focused_signals = ["editor_inspector_focus"]
@@ -2556,7 +2613,7 @@ parent = @inspector_panel
 parent = @inspector_panel
     [UiTextBox]
         visible = false
-        size_ratio = (1.0, 0.046)
+        size_ratio = (1.0, 0.038)
         text = "-"
         text_size_ratio = 0.30
         focused_signals = ["editor_inspector_focus"]
@@ -2569,7 +2626,7 @@ parent = @inspector_panel
 [inspector_scale_row]
 parent = @inspector_panel
     [UiHLayout]
-        size_ratio = (1.0, 0.046)
+        size_ratio = (1.0, 0.038)
         h_align = "fill"
         v_align = "center"
         spacing = 0.006
@@ -2579,7 +2636,7 @@ parent = @inspector_panel
 [inspector_scale_0_label]
 parent = @inspector_scale_row
     [UiLabel]
-        size_ratio = (0.08, 1.0)
+        size_ratio = (0.045, 1.0)
         text = "x"
         text_size_ratio = 0.24
         color = "#94A3B8"
@@ -2589,7 +2646,7 @@ parent = @inspector_scale_row
 [inspector_scale_0_box]
 parent = @inspector_scale_row
     [UiTextBox]
-        size_ratio = (0.17, 1.0)
+        size_ratio = (0.185, 1.0)
         text = "1"
         text_size_ratio = 0.26
         focused_signals = ["editor_inspector_focus"]
@@ -2602,7 +2659,7 @@ parent = @inspector_scale_row
 [inspector_scale_1_label]
 parent = @inspector_scale_row
     [UiLabel]
-        size_ratio = (0.08, 1.0)
+        size_ratio = (0.045, 1.0)
         text = "y"
         text_size_ratio = 0.24
         color = "#94A3B8"
@@ -2612,7 +2669,7 @@ parent = @inspector_scale_row
 [inspector_scale_1_box]
 parent = @inspector_scale_row
     [UiTextBox]
-        size_ratio = (0.17, 1.0)
+        size_ratio = (0.185, 1.0)
         text = "1"
         text_size_ratio = 0.26
         focused_signals = ["editor_inspector_focus"]
@@ -2625,7 +2682,7 @@ parent = @inspector_scale_row
 [inspector_scale_2_label]
 parent = @inspector_scale_row
     [UiLabel]
-        size_ratio = (0.08, 1.0)
+        size_ratio = (0.045, 1.0)
         text = "z"
         text_size_ratio = 0.24
         color = "#94A3B8"
@@ -2635,7 +2692,7 @@ parent = @inspector_scale_row
 [inspector_scale_2_box]
 parent = @inspector_scale_row
     [UiTextBox]
-        size_ratio = (0.17, 1.0)
+        size_ratio = (0.185, 1.0)
         text = "1"
         text_size_ratio = 0.26
         focused_signals = ["editor_inspector_focus"]
@@ -2648,7 +2705,7 @@ parent = @inspector_scale_row
 [inspector_scale_3_label]
 parent = @inspector_scale_row
     [UiLabel]
-        size_ratio = (0.08, 1.0)
+        size_ratio = (0.045, 1.0)
         text = "w"
         text_size_ratio = 0.24
         color = "#94A3B8"
@@ -2658,7 +2715,7 @@ parent = @inspector_scale_row
 [inspector_scale_3_box]
 parent = @inspector_scale_row
     [UiTextBox]
-        size_ratio = (0.17, 1.0)
+        size_ratio = (0.185, 1.0)
         text = "1"
         text_size_ratio = 0.26
         focused_signals = ["editor_inspector_focus"]

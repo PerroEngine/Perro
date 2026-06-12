@@ -47,6 +47,16 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         "activity_glb_button",
         if glb_mode { "#478CBF" } else { "#2D323C" },
     );
+    set_image_tint(
+        ctx,
+        "activity_scene_icon",
+        if glb_mode { "#B8C1CCFF" } else { "#FFFFFFFF" },
+    );
+    set_image_tint(
+        ctx,
+        "activity_glb_icon",
+        if glb_mode { "#FFFFFFFF" } else { "#B8C1CCFF" },
+    );
     set_button_fill(
         ctx,
         "mode_ui_button",
@@ -243,6 +253,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     apply_viewport_mode(ctx, &view.viewport_mode);
     apply_editor_gizmos(ctx, &view.gizmo, &view.viewport_mode);
     apply_selected_ui_overlay(ctx, view.selected_ui_rect);
+    sync_selected_preview_gizmo(ctx);
 
     if take_inspector_layout_pass(ctx) {
         apply_inspector_static_layout(ctx);
@@ -289,6 +300,29 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         ctx,
         "inspector_rotation_label",
         &view.inspector.rotation_label,
+    );
+    set_ui_display(
+        ctx,
+        "inspector_rotation_mode_row",
+        view.inspector.rotation_mode_buttons,
+    );
+    set_button_fill(
+        ctx,
+        "inspector_rotation_quat_button",
+        if view.inspector.rotation_mode == "quat" {
+            "#478CBF"
+        } else {
+            "#2D323C"
+        },
+    );
+    set_button_fill(
+        ctx,
+        "inspector_rotation_euler_button",
+        if view.inspector.rotation_mode == "euler" {
+            "#478CBF"
+        } else {
+            "#2D323C"
+        },
     );
     set_text_box(
         ctx,
@@ -406,7 +440,7 @@ fn take_inspector_layout_pass<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
 }
 
 fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
-    set_ui_box_size(ctx, "inspector_panel", (0.118, 1.0));
+    set_ui_box_size(ctx, "inspector_panel", (0.15, 1.0));
     set_label_text_ratio(ctx, "inspector_title", 0.30);
     set_label_text_ratio(ctx, "inspector_name", 0.22);
     set_label_text_ratio(ctx, "inspector_type", 0.19);
@@ -421,10 +455,11 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
         "inspector_action_row",
         "asset_action_row",
         "inspector_position_row",
+        "inspector_rotation_mode_row",
         "inspector_rotation_row",
         "inspector_scale_row",
     ] {
-        set_ui_box_size(ctx, name, (1.0, 0.05));
+        set_ui_box_size(ctx, name, (1.0, 0.038));
     }
 
     for name in [
@@ -434,6 +469,12 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
         "inspector_visible_button",
     ] {
         set_button_size(ctx, name, (0.25, 0.90));
+    }
+    for name in [
+        "inspector_rotation_quat_button",
+        "inspector_rotation_euler_button",
+    ] {
+        set_button_size(ctx, name, (0.50, 0.88));
     }
 
     for idx in 0..MAX_SCRIPT_VARS {
@@ -526,6 +567,8 @@ pub struct InspectorViewData {
     rotation_label: String,
     rotation: Vec<String>,
     rotation_components: [&'static str; 4],
+    rotation_mode: String,
+    rotation_mode_buttons: bool,
     scale_label: String,
     scale: Vec<String>,
     script: String,
@@ -550,6 +593,8 @@ impl Default for InspectorViewData {
             rotation_label: "Rotation".to_string(),
             rotation: Vec::new(),
             rotation_components: ["x", "y", "z", "w"],
+            rotation_mode: "quat".to_string(),
+            rotation_mode_buttons: false,
             scale_label: "Scale".to_string(),
             scale: Vec::new(),
             script: "Script  -".to_string(),
@@ -570,7 +615,17 @@ impl InspectorViewData {
             .as_ref()
             .map(|value| value.as_ref())
             .unwrap_or("-");
-        let rotation = scene_value_components(&node.data, "rotation");
+        let is_3d = node.data.node_type.is_a(perro_scene::NodeType::Node3D);
+        let rotation_mode = if is_3d && state.inspector_rotation_mode == "euler" {
+            "euler"
+        } else {
+            "quat"
+        };
+        let rotation = if rotation_mode == "euler" {
+            scene_rotation_deg_components(&node.data)
+        } else {
+            scene_value_components(&node.data, "rotation")
+        };
 
         view.name = "Name".to_string();
         view.name_edit = doc.scene.key_name_or_id(node.key).to_string();
@@ -578,12 +633,21 @@ impl InspectorViewData {
         view.parent = format!("Path  {path}\nChildren  {child_count}");
         view.node_actions = true;
         view.pos = scene_value_components(&node.data, "position");
-        view.rotation_components = if rotation.len() == 1 {
+        view.rotation_label = if rotation_mode == "euler" {
+            "Rotation deg".to_string()
+        } else {
+            "Rotation".to_string()
+        };
+        view.rotation_components = if rotation_mode == "euler" {
+            ["x", "y", "z", ""]
+        } else if rotation.len() == 1 {
             ["r", "", "", ""]
         } else {
             ["x", "y", "z", "w"]
         };
         view.rotation = rotation;
+        view.rotation_mode = rotation_mode.to_string();
+        view.rotation_mode_buttons = is_3d;
         view.scale = scene_value_components(&node.data, "scale");
         view.script = format!("Script  {script}");
         view.vars_text = script_vars_edit_text(node.script_vars.as_ref());
@@ -857,19 +921,10 @@ pub fn script_vars_edit_text(fields: &[(SceneFieldName, SceneValue)]) -> String 
 }
 
 pub fn resource_field_rows(data: &SceneNodeData) -> Vec<ResourceFieldView> {
-    let type_name = data.type_name();
-    let mut rows = Vec::new();
-    if type_name == "Sprite2D" {
-        rows.push(resource_field_row(data, "texture"));
-    }
-    if type_name.contains("MeshInstance3D") {
-        rows.push(resource_field_row(data, "mesh"));
-        rows.push(resource_field_row(data, "material"));
-    }
-    if type_name == "AnimationPlayer" || type_name == "AnimationTree" {
-        rows.push(resource_field_row(data, "animation"));
-    }
-    rows.into_iter().flatten().collect()
+    perro_scene::scene_inspector_asset_fields(data.node_type)
+        .into_iter()
+        .filter_map(|field| resource_field_row(data, field.name))
+        .collect()
 }
 
 pub fn resource_field_row(data: &SceneNodeData, field: &str) -> Option<ResourceFieldView> {
@@ -1646,6 +1701,53 @@ pub fn scene_value_components(data: &SceneNodeData, field: &str) -> Vec<String> 
         .unwrap_or_default()
 }
 
+pub fn scene_rotation_deg_components(data: &SceneNodeData) -> Vec<String> {
+    if let Some(values) = scene_value_override_components(data, "rotation_deg") {
+        return values;
+    }
+    if let Some(values) = scene_value_override_components(data, "rotation")
+        && values.len() == 4
+    {
+        let parsed = values
+            .iter()
+            .filter_map(|value| value.parse::<f32>().ok())
+            .collect::<Vec<_>>();
+        if let [x, y, z, w] = parsed.as_slice() {
+            return quat_to_euler_deg_components(*x, *y, *z, *w);
+        }
+    }
+    vec!["0".to_string(), "0".to_string(), "0".to_string()]
+}
+
+pub fn quat_to_euler_deg_components(x: f32, y: f32, z: f32, w: f32) -> Vec<String> {
+    let len = (x * x + y * y + z * z + w * w).sqrt();
+    if len <= 0.0 {
+        return vec!["0".to_string(), "0".to_string(), "0".to_string()];
+    }
+    let x = x / len;
+    let y = y / len;
+    let z = z / len;
+    let w = w / len;
+    let sinr_cosp = 2.0 * (w * x + y * z);
+    let cosr_cosp = 1.0 - 2.0 * (x * x + y * y);
+    let roll = sinr_cosp.atan2(cosr_cosp);
+    let sinp = 2.0 * (w * y - z * x);
+    let pitch = if sinp.abs() >= 1.0 {
+        sinp.signum() * std::f32::consts::FRAC_PI_2
+    } else {
+        sinp.asin()
+    };
+    let siny_cosp = 2.0 * (w * z + x * y);
+    let cosy_cosp = 1.0 - 2.0 * (y * y + z * z);
+    let yaw = siny_cosp.atan2(cosy_cosp);
+    let to_deg = 180.0 / std::f32::consts::PI;
+    vec![
+        format_compact_f32(roll * to_deg),
+        format_compact_f32(pitch * to_deg),
+        format_compact_f32(yaw * to_deg),
+    ]
+}
+
 pub fn scene_value_override_components(data: &SceneNodeData, field: &str) -> Option<Vec<String>> {
     for (name, value) in data.fields.iter() {
         if name.as_ref() == field {
@@ -1937,6 +2039,21 @@ pub fn set_button_fill<API: ScriptAPI + ?Sized>(
     }
 }
 
+pub fn set_image_tint<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    tint: &str,
+) {
+    let Some(color) = Color::from_hex(tint) else {
+        return;
+    };
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiImage, id, |node| {
+            node.tint = color;
+        });
+    }
+}
+
 pub fn set_label_size_ratio<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     name: &str,
@@ -2015,7 +2132,7 @@ pub fn apply_editor_gizmos<API: ScriptAPI + ?Sized>(
     let show_3d = mode == "3D";
     set_panel_visible(ctx, "selected_outline", gizmo.selected && !show_3d);
     set_panel_visible(ctx, "camera2d_gizmo", gizmo.camera_2d && show_2d);
-    set_panel_visible(ctx, "camera3d_gizmo", gizmo.camera_3d && show_3d);
+    set_panel_visible(ctx, "camera3d_gizmo", false);
     if gizmo.selected && !show_3d {
         set_panel_size(ctx, "selected_outline", gizmo.outline_size);
     }
@@ -2294,7 +2411,7 @@ pub fn viewport_stream_size_ratio(window_aspect: f32) -> (f32, f32) {
     const MAIN_SPACING: f32 = 0.004;
     const SPLIT_CONTENT_W: f32 = 1.0 - (MAIN_PADDING * 2.0) - (MAIN_SPACING * 3.0);
     const SPLIT_CONTENT_H: f32 = 0.944 - (0.004 * 2.0);
-    const CENTER_W: f32 = 0.705;
+    const CENTER_W: f32 = 0.708;
     const VIEWPORT_PANEL_H: f32 = 0.828;
     const MAX_W: f32 = 0.98;
     const MAX_H: f32 = 0.92;
@@ -2315,7 +2432,7 @@ pub fn ui_canvas_size_ratio(window_aspect: f32, zoom: f32) -> (f32, f32) {
     const MAIN_SPACING: f32 = 0.004;
     const SPLIT_CONTENT_W: f32 = 1.0 - (MAIN_PADDING * 2.0) - (MAIN_SPACING * 3.0);
     const SPLIT_CONTENT_H: f32 = 0.944 - (0.004 * 2.0);
-    const CENTER_W: f32 = 0.705;
+    const CENTER_W: f32 = 0.708;
     const VIEWPORT_PANEL_H: f32 = 0.828;
     const BASE_W: f32 = 0.98;
     const ASPECT: f32 = 16.0 / 9.0;

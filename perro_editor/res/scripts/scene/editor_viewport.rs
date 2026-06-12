@@ -132,6 +132,14 @@ pub fn handle_viewport_click<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
         }
         "3D" => {
             if let Some(ray) = stream_pointer_ray_3d(ctx, pointer) {
+                if let Some(key) = pick_preview_3d(ctx, ray) {
+                    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+                        state.selected_key = Some(key);
+                        state.log = format!("select node\nkey={key}");
+                    });
+                    refresh_all(ctx);
+                    return;
+                }
                 if let Some(point) = ray_ground_point(ray) {
                     let place = if viewport_shift_down(ctx) {
                         snap_vec3(point, 1.0)
@@ -721,6 +729,10 @@ pub fn clear_preview<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) 
         state.preview_camera_3d = 0;
         state.preview_node_ids.clear();
         state.preview_node_keys.clear();
+        state.preview_pick_node_ids.clear();
+        state.preview_pick_node_keys.clear();
+        state.preview_selected_gizmo = 0;
+        state.preview_selected_gizmo_key = None;
         root
     })
     .unwrap_or(0);
@@ -765,8 +777,15 @@ pub fn load_preview_scene<API: ScriptAPI + ?Sized>(
     let doc_text = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.doc_text.clone()
     });
-    let (node_ids, keys, preview_camera_2d, preview_camera_3d) = if doc_text.is_empty() {
-        (Vec::new(), Vec::new(), 0, 0)
+    let (
+        node_ids,
+        keys,
+        pick_node_ids,
+        pick_node_keys,
+        preview_camera_2d,
+        preview_camera_3d,
+    ) = if doc_text.is_empty() {
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new(), 0, 0)
     } else {
         let doc = SceneDoc::parse(&doc_text);
         add_preview_env(ctx, root, &doc);
@@ -799,9 +818,17 @@ pub fn load_preview_scene<API: ScriptAPI + ?Sized>(
         }
         let doc_keys = preview_doc_order(&doc);
         let node_ids = preview_runtime_order(ctx, root, doc_keys.len());
+        let mut pick_node_ids = node_ids.clone();
+        let mut pick_node_keys = doc_keys.clone();
+        add_preview_node_gizmos(ctx, &doc, &node_ids, &doc_keys, &mut pick_node_ids, &mut pick_node_keys);
         (
             node_ids.into_iter().map(NodeID::as_u64).collect::<Vec<_>>(),
             doc_keys,
+            pick_node_ids
+                .into_iter()
+                .map(NodeID::as_u64)
+                .collect::<Vec<_>>(),
+            pick_node_keys,
             preview_camera_2d.map(NodeID::as_u64).unwrap_or(0),
             preview_camera_3d.map(NodeID::as_u64).unwrap_or(0),
         )
@@ -811,6 +838,8 @@ pub fn load_preview_scene<API: ScriptAPI + ?Sized>(
         state.preview_root = root.as_u64();
         state.preview_node_ids = node_ids;
         state.preview_node_keys = keys;
+        state.preview_pick_node_ids = pick_node_ids;
+        state.preview_pick_node_keys = pick_node_keys;
         state.preview_camera_2d = preview_camera_2d;
         state.preview_camera_3d = preview_camera_3d;
     });
@@ -840,6 +869,510 @@ pub fn add_preview_env<API: ScriptAPI + ?Sized>(
     }
     if !editor_scene::has_type(doc, perro_scene::NodeType::Sky3D) {
         let _ = create_node!(ctx.run, Sky3D, "__editor_preview_sky", tags![], root);
+    }
+}
+
+pub fn add_preview_node_gizmos<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    doc: &SceneDoc,
+    node_ids: &[NodeID],
+    keys: &[u32],
+    pick_node_ids: &mut Vec<NodeID>,
+    pick_node_keys: &mut Vec<u32>,
+) {
+    let camera_mat = editor_gizmo_material(ctx, [1.0, 0.68, 0.28, 1.0]);
+    let collision_mat = editor_gizmo_material(ctx, [0.12, 0.95, 0.95, 0.38]);
+    let collision_vertex_mat = editor_gizmo_material(ctx, [0.84, 1.0, 1.0, 1.0]);
+    for (&node_id, &key) in node_ids.iter().zip(keys.iter()) {
+        let Some(doc_node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
+            continue;
+        };
+        match doc_node.data.type_name() {
+            "Camera3D" => {
+                let mesh = create_editor_mesh_child(
+                    ctx,
+                    node_id,
+                    "__editor_camera3d_model",
+                    "res://editor_gizmos/camera.glb:mesh[0]",
+                    camera_mat,
+                    Transform3D::new(
+                        Vector3::ZERO,
+                        Quaternion::IDENTITY,
+                        Vector3::new(0.75, 0.75, 0.75),
+                    ),
+                );
+                if let Some(mesh) = mesh {
+                    pick_node_ids.push(mesh);
+                    pick_node_keys.push(key);
+                }
+            }
+            "CollisionShape3D" => {
+                let shape = preview_collision_shape_3d(ctx, node_id);
+                let _ = with_node_mut!(ctx.run, CollisionShape3D, node_id, |node| {
+                    node.debug = true;
+                });
+                if let Some(shape) = shape {
+                    add_collision_vertices_3d(ctx, node_id, collision_vertex_mat, &shape);
+                    let Some((source, transform)) = collision_shape_mesh(shape) else {
+                        continue;
+                    };
+                    let mesh = create_editor_mesh_child(
+                        ctx,
+                        node_id,
+                        "__editor_collision3d_fill",
+                        source,
+                        collision_mat,
+                        transform,
+                    );
+                    if let Some(mesh) = mesh {
+                        pick_node_ids.push(mesh);
+                        pick_node_keys.push(key);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+pub fn sync_selected_preview_gizmo<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let request = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        if state.viewport_mode != "3D" || state.preview_root == 0 {
+            let old = state.preview_selected_gizmo;
+            state.preview_selected_gizmo = 0;
+            state.preview_selected_gizmo_key = None;
+            return (old, None, Vec::new(), Vec::new());
+        }
+        let Some(key) = state.selected_key else {
+            let old = state.preview_selected_gizmo;
+            state.preview_selected_gizmo = 0;
+            state.preview_selected_gizmo_key = None;
+            return (old, None, Vec::new(), Vec::new());
+        };
+        if state.preview_selected_gizmo != 0 && state.preview_selected_gizmo_key == Some(key) {
+            return (0, None, Vec::new(), Vec::new());
+        }
+        let old = state.preview_selected_gizmo;
+        state.preview_selected_gizmo = 0;
+        state.preview_selected_gizmo_key = None;
+        (
+            old,
+            Some(key),
+            state.preview_node_ids.clone(),
+            state.preview_node_keys.clone(),
+        )
+    });
+    let Some((old, key, node_ids, keys)) = request else {
+        return;
+    };
+    if old != 0 {
+        let _ = ctx.run.Nodes().remove_node(NodeID::from_u64(old));
+    }
+    let Some(key) = key else {
+        return;
+    };
+    let Some(index) = keys.iter().position(|item| *item == key) else {
+        return;
+    };
+    let Some(parent) = node_ids.get(index).map(|id| NodeID::from_u64(*id)) else {
+        return;
+    };
+    let is_3d = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        selected_node_viewport_mode(&state.doc_text, key) == Some("3D")
+    });
+    if !is_3d {
+        return;
+    }
+    let root = create_node!(
+        ctx.run,
+        Node3D,
+        "__editor_selected_gizmo",
+        tags![],
+        parent
+    );
+    let red = editor_gizmo_material(ctx, [1.0, 0.16, 0.12, 1.0]);
+    let green = editor_gizmo_material(ctx, [0.12, 0.92, 0.24, 1.0]);
+    let blue = editor_gizmo_material(ctx, [0.22, 0.46, 1.0, 1.0]);
+    add_axis_gizmo_mesh(ctx, root, red, Vector3::new(0.72, 0.0, 0.0), Vector3::new(1.44, 0.04, 0.04), Quaternion::IDENTITY);
+    add_axis_gizmo_mesh(ctx, root, green, Vector3::new(0.0, 0.72, 0.0), Vector3::new(0.04, 1.44, 0.04), Quaternion::IDENTITY);
+    add_axis_gizmo_mesh(ctx, root, blue, Vector3::new(0.0, 0.0, 0.72), Vector3::new(0.04, 0.04, 1.44), Quaternion::IDENTITY);
+    add_axis_gizmo_mesh(ctx, root, red, Vector3::new(1.48, 0.0, 0.0), Vector3::new(0.16, 0.16, 0.16), Quaternion::IDENTITY);
+    add_axis_gizmo_mesh(ctx, root, green, Vector3::new(0.0, 1.48, 0.0), Vector3::new(0.16, 0.16, 0.16), Quaternion::IDENTITY);
+    add_axis_gizmo_mesh(ctx, root, blue, Vector3::new(0.0, 0.0, 1.48), Vector3::new(0.16, 0.16, 0.16), Quaternion::IDENTITY);
+    add_gizmo_ring(ctx, root, red, "yz");
+    add_gizmo_ring(ctx, root, green, "xz");
+    add_gizmo_ring(ctx, root, blue, "xy");
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.preview_selected_gizmo = root.as_u64();
+        state.preview_selected_gizmo_key = Some(key);
+    });
+}
+
+fn create_editor_mesh_child<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    parent: NodeID,
+    name: &str,
+    source: &str,
+    material: MaterialID,
+    transform: Transform3D,
+) -> Option<NodeID> {
+    let id = create_node!(ctx.run, MeshInstance3D, name.to_string(), tags![], parent);
+    let mesh = ctx.res.Meshes().load(source);
+    let _ = with_node_mut!(ctx.run, MeshInstance3D, id, |node| {
+        node.mesh = mesh;
+        node.set_material(material);
+        node.transform = transform;
+        node.cast_shadows = false;
+        node.receive_shadows = false;
+        node.meshlet_override = Some(false);
+    });
+    Some(id)
+}
+
+fn editor_gizmo_material<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    color: [f32; 4],
+) -> MaterialID {
+    let mut mat = Material3D::default();
+    if let Material3D::Standard(params) = &mut mat {
+        params.base_color_factor = color;
+        params.emissive_factor = [color[0] * 0.35, color[1] * 0.35, color[2] * 0.35];
+        params.alpha_mode = if color[3] < 0.99 { 2 } else { 0 };
+        params.double_sided = true;
+        params.roughness_factor = 0.85;
+        params.metallic_factor = 0.0;
+    }
+    ctx.res.Materials().create(mat)
+}
+
+fn preview_collision_shape_3d<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    id: NodeID,
+) -> Option<Shape3D> {
+    Some(with_node!(ctx.run, CollisionShape3D, id, |node| node.shape.clone()))
+}
+
+fn collision_shape_mesh(shape: Shape3D) -> Option<(&'static str, Transform3D)> {
+    let (source, scale) = match shape {
+        Shape3D::Cube { size } => ("__cube__", size),
+        Shape3D::Sphere { radius } => {
+            let d = radius.abs().max(0.0001) * 2.0;
+            ("__sphere__", Vector3::new(d, d, d))
+        }
+        Shape3D::Capsule { radius, half_height } => {
+            let d = radius.abs().max(0.0001) * 2.0;
+            ("__capsule__", Vector3::new(d, half_height.abs().max(0.0001) * 2.0 + d, d))
+        }
+        Shape3D::Cylinder { radius, half_height } => {
+            let d = radius.abs().max(0.0001) * 2.0;
+            ("__cylinder__", Vector3::new(d, half_height.abs().max(0.0001) * 2.0, d))
+        }
+        Shape3D::Cone { radius, half_height } => {
+            let d = radius.abs().max(0.0001) * 2.0;
+            ("__cone__", Vector3::new(d, half_height.abs().max(0.0001) * 2.0, d))
+        }
+        Shape3D::TriPrism { size } => ("__tri_prism__", size),
+        Shape3D::TriangularPyramid { size } => ("__tri_pyr__", size),
+        Shape3D::SquarePyramid { size } => ("__sq_pyr__", size),
+        Shape3D::TriMesh { .. } => return None,
+    };
+    Some((
+        source,
+        Transform3D::new(Vector3::ZERO, Quaternion::IDENTITY, scale),
+    ))
+}
+
+fn add_axis_gizmo_mesh<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    parent: NodeID,
+    material: MaterialID,
+    position: Vector3,
+    scale: Vector3,
+    rotation: Quaternion,
+) {
+    let _ = create_editor_mesh_child(
+        ctx,
+        parent,
+        "__editor_selected_axis",
+        "__cube__",
+        material,
+        Transform3D::new(position, rotation, scale),
+    );
+}
+
+fn add_collision_vertices_3d<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    parent: NodeID,
+    material: MaterialID,
+    shape: &Shape3D,
+) {
+    for point in collision_shape_vertex_points(shape) {
+        let _ = create_editor_mesh_child(
+            ctx,
+            parent,
+            "__editor_collision3d_vertex",
+            "__cube__",
+            material,
+            Transform3D::new(point, Quaternion::IDENTITY, Vector3::new(0.075, 0.075, 0.075)),
+        );
+    }
+}
+
+fn collision_shape_vertex_points(shape: &Shape3D) -> Vec<Vector3> {
+    match shape {
+        Shape3D::Cube { size } => {
+            let hx = size.x.abs() * 0.5;
+            let hy = size.y.abs() * 0.5;
+            let hz = size.z.abs() * 0.5;
+            vec![
+                Vector3::new(-hx, -hy, -hz),
+                Vector3::new(hx, -hy, -hz),
+                Vector3::new(hx, hy, -hz),
+                Vector3::new(-hx, hy, -hz),
+                Vector3::new(-hx, -hy, hz),
+                Vector3::new(hx, -hy, hz),
+                Vector3::new(hx, hy, hz),
+                Vector3::new(-hx, hy, hz),
+            ]
+        }
+        Shape3D::Sphere { radius } => {
+            let r = radius.abs();
+            vec![
+                Vector3::new(r, 0.0, 0.0),
+                Vector3::new(-r, 0.0, 0.0),
+                Vector3::new(0.0, r, 0.0),
+                Vector3::new(0.0, -r, 0.0),
+                Vector3::new(0.0, 0.0, r),
+                Vector3::new(0.0, 0.0, -r),
+            ]
+        }
+        Shape3D::Capsule {
+            radius,
+            half_height,
+        }
+        | Shape3D::Cylinder {
+            radius,
+            half_height,
+        }
+        | Shape3D::Cone {
+            radius,
+            half_height,
+        } => {
+            let r = radius.abs();
+            let h = half_height.abs();
+            vec![
+                Vector3::new(r, h, 0.0),
+                Vector3::new(-r, h, 0.0),
+                Vector3::new(0.0, h, r),
+                Vector3::new(0.0, h, -r),
+                Vector3::new(r, -h, 0.0),
+                Vector3::new(-r, -h, 0.0),
+                Vector3::new(0.0, -h, r),
+                Vector3::new(0.0, -h, -r),
+            ]
+        }
+        Shape3D::TriPrism { size } => {
+            let hx = size.x.abs() * 0.5;
+            let hy = size.y.abs() * 0.5;
+            let hz = size.z.abs() * 0.5;
+            vec![
+                Vector3::new(-hx, -hy, -hz),
+                Vector3::new(hx, -hy, -hz),
+                Vector3::new(0.0, hy, -hz),
+                Vector3::new(-hx, -hy, hz),
+                Vector3::new(hx, -hy, hz),
+                Vector3::new(0.0, hy, hz),
+            ]
+        }
+        Shape3D::TriangularPyramid { size } => {
+            let hx = size.x.abs() * 0.5;
+            let hy = size.y.abs() * 0.5;
+            let hz = size.z.abs() * 0.5;
+            vec![
+                Vector3::new(-hx, -hy, -hz),
+                Vector3::new(hx, -hy, -hz),
+                Vector3::new(0.0, -hy, hz),
+                Vector3::new(0.0, hy, 0.0),
+            ]
+        }
+        Shape3D::SquarePyramid { size } => {
+            let hx = size.x.abs() * 0.5;
+            let hy = size.y.abs() * 0.5;
+            let hz = size.z.abs() * 0.5;
+            vec![
+                Vector3::new(-hx, -hy, -hz),
+                Vector3::new(hx, -hy, -hz),
+                Vector3::new(hx, -hy, hz),
+                Vector3::new(-hx, -hy, hz),
+                Vector3::new(0.0, hy, 0.0),
+            ]
+        }
+        Shape3D::TriMesh { .. } => Vec::new(),
+    }
+}
+
+fn add_gizmo_ring<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    parent: NodeID,
+    material: MaterialID,
+    plane: &str,
+) {
+    let segments = 24;
+    let radius = 1.05;
+    let len = 2.0 * std::f32::consts::PI * radius / segments as f32;
+    for i in 0..segments {
+        let a = i as f32 / segments as f32 * std::f32::consts::TAU;
+        let (pos, rot) = match plane {
+            "xy" => (
+                Vector3::new(a.cos() * radius, a.sin() * radius, 0.0),
+                Quaternion::from_euler_xyz(0.0, 0.0, a + std::f32::consts::FRAC_PI_2),
+            ),
+            "xz" => (
+                Vector3::new(a.cos() * radius, 0.0, a.sin() * radius),
+                Quaternion::from_euler_xyz(0.0, -a, 0.0),
+            ),
+            _ => (
+                Vector3::new(0.0, a.cos() * radius, a.sin() * radius),
+                Quaternion::from_euler_xyz(a, 0.0, 0.0),
+            ),
+        };
+        add_axis_gizmo_mesh(
+            ctx,
+            parent,
+            material,
+            pos,
+            Vector3::new(len, 0.018, 0.018),
+            rot,
+        );
+    }
+}
+
+pub fn pick_preview_3d<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    ray: ViewportRay3D,
+) -> Option<u32> {
+    let (ids, keys) = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        (
+            state.preview_pick_node_ids.clone(),
+            state.preview_pick_node_keys.clone(),
+        )
+    });
+    let mut best: Option<(u32, f32)> = None;
+    for (raw_id, key) in ids.into_iter().zip(keys.into_iter()) {
+        let id = NodeID::from_u64(raw_id);
+        let Some(hit) =
+            mesh_instance_surface_on_global_ray_3d!(ctx.run, id, ray.origin, ray.direction, 100000.0)
+        else {
+            continue;
+        };
+        let replace = best
+            .map(|(_, distance)| hit.distance < distance)
+            .unwrap_or(true);
+        if replace {
+            best = Some((key, hit.distance));
+        }
+    }
+    best.map(|(key, _)| key)
+}
+
+pub fn draw_preview_2d_gizmos<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let (mode, ids, keys, doc_text) = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        (
+            state.viewport_mode.clone(),
+            state.preview_node_ids.clone(),
+            state.preview_node_keys.clone(),
+            state.doc_text.clone(),
+        )
+    });
+    if mode != "2D" || doc_text.is_empty() {
+        return;
+    }
+    let doc = SceneDoc::parse(&doc_text);
+    for (raw_id, key) in ids.into_iter().zip(keys.into_iter()) {
+        let Some(doc_node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
+            continue;
+        };
+        let id = NodeID::from_u64(raw_id);
+        match doc_node.data.type_name() {
+            "Camera2D" => {
+                let global = get_global_transform_2d!(ctx.run, id);
+                let (position, zoom) = with_node!(ctx.run, Camera2D, id, |node| {
+                    let global = global.unwrap_or(node.transform);
+                    (global.position, node.zoom.max(0.001))
+                });
+                let size = Vector2::new(960.0 / zoom, 540.0 / zoom);
+                ctx.res
+                    .Draw2D()
+                    .rect_stroke(position, size, [0.35, 0.65, 1.0, 1.0], 2.0);
+            }
+            "CollisionShape2D" => {
+                let global = get_global_transform_2d!(ctx.run, id);
+                let (position, scale, shape) = with_node!(ctx.run, CollisionShape2D, id, |node| {
+                    let global = global.unwrap_or(node.transform);
+                    (global.position, global.scale, node.shape)
+                });
+                draw_collision_shape_2d(ctx, position, scale, shape);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn draw_collision_shape_2d<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    center: Vector2,
+    scale: Vector2,
+    shape: Shape2D,
+) {
+    let fill = [0.12, 0.95, 0.95, 0.22];
+    let line = [0.12, 0.95, 0.95, 0.95];
+    match shape {
+        Shape2D::Quad { width, height } => {
+            let size = Vector2::new(width.abs() * scale.x.abs(), height.abs() * scale.y.abs());
+            ctx.res.Draw2D().rect(center, size, fill);
+            ctx.res.Draw2D().rect_stroke(center, size, line, 2.0);
+            let hx = size.x * 0.5;
+            let hy = size.y * 0.5;
+            for point in [
+                center + Vector2::new(-hx, -hy),
+                center + Vector2::new(hx, -hy),
+                center + Vector2::new(hx, hy),
+                center + Vector2::new(-hx, hy),
+            ] {
+                ctx.res.Draw2D().circle(point, 4.0, [0.84, 1.0, 1.0, 1.0]);
+            }
+        }
+        Shape2D::Circle { radius } => {
+            let r = radius.abs() * scale.x.abs().max(scale.y.abs());
+            ctx.res.Draw2D().circle(center, r, fill);
+            ctx.res.Draw2D().ring(center, r, line, 2.0);
+            for point in [
+                center + Vector2::new(r, 0.0),
+                center + Vector2::new(-r, 0.0),
+                center + Vector2::new(0.0, r),
+                center + Vector2::new(0.0, -r),
+            ] {
+                ctx.res.Draw2D().circle(point, 4.0, [0.84, 1.0, 1.0, 1.0]);
+            }
+        }
+        Shape2D::Triangle { width, height, .. } => {
+            let hw = width.abs() * scale.x.abs() * 0.5;
+            let hh = height.abs() * scale.y.abs() * 0.5;
+            let points = vec![
+                center + Vector2::new(-hw, -hh),
+                center + Vector2::new(hw, -hh),
+                center + Vector2::new(0.0, hh),
+            ];
+            ctx.res.Draw2D().polygon(points.clone(), fill, 1.0);
+            ctx.res.Draw2D().polyline(
+                vec![points[0], points[1], points[2], points[0]],
+                line,
+                2.0,
+            );
+            for point in points {
+                ctx.res.Draw2D().circle(point, 4.0, [0.84, 1.0, 1.0, 1.0]);
+            }
+        }
     }
 }
 

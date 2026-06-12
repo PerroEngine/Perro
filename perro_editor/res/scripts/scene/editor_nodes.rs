@@ -271,11 +271,11 @@ pub fn selected_node_asset_refs(node: &SceneNodeEntry) -> Vec<String> {
     {
         out.push(format!("script: {script}"));
     }
-    for field in ["animation", "mesh", "material", "texture"] {
-        if let Some(path) = scene_field_value_text(&node.data, field)
+    for field in perro_scene::scene_inspector_asset_fields(node.data.node_type) {
+        if let Some(path) = scene_field_value_text(&node.data, field.name)
             && path.starts_with("res://")
         {
-            out.push(format!("{field}: {path}"));
+            out.push(format!("{}: {path}", field.name));
         }
     }
     out
@@ -498,22 +498,18 @@ pub fn asset_binding_for_node(
     if path.ends_with(".scn") {
         return Some(("root_of", path.to_string()));
     }
-    if path.ends_with(".panim") && node_type == "AnimationPlayer" {
-        return Some(("animation", path.to_string()));
-    }
-    if (path.ends_with(".glb") || path.ends_with(".gltf")) && node_type.contains("MeshInstance3D") {
-        return Some(("mesh", format!("{path}:mesh[{glb_mesh_index}]")));
-    }
-    if (path.ends_with(".pmesh") || path.ends_with(".obj") || path.ends_with(".fbx"))
-        && node_type.contains("MeshInstance3D")
-    {
-        return Some(("mesh", path.to_string()));
-    }
-    if path.ends_with(".pmat") && node_type.contains("MeshInstance3D") {
-        return Some(("material", path.to_string()));
-    }
-    if editor_files::kind_label(path) == "image" && node_type == "Sprite2D" {
-        return Some(("texture", path.to_string()));
+    let node_type = perro_scene::NodeType::from_str(node_type).ok()?;
+    let path_kind = asset_kind_for_path(path)?;
+    for field in perro_scene::scene_inspector_asset_fields(node_type) {
+        let perro_scene::SceneInspectorValueKind::Asset(field_kind) = field.kind else {
+            continue;
+        };
+        if field_kind == path_kind
+            || (path_kind == perro_scene::SceneAssetKind::Model
+                && field_kind == perro_scene::SceneAssetKind::Mesh)
+        {
+            return Some((field.name, asset_field_value(path, field_kind, glb_mesh_index)));
+        }
     }
     None
 }
@@ -532,6 +528,9 @@ pub fn asset_node_template(
     if path.ends_with(".panim") {
         return Some(("AnimationPlayer", Some(("animation", path.to_string()))));
     }
+    if path.ends_with(".panimtree") {
+        return Some(("AnimationTree", Some(("tree", path.to_string()))));
+    }
     if path.ends_with(".glb") || path.ends_with(".gltf") {
         return Some((
             "MeshInstance3D",
@@ -544,10 +543,72 @@ pub fn asset_node_template(
     if path.ends_with(".pmat") {
         return Some(("MeshInstance3D", Some(("material", path.to_string()))));
     }
+    if path.ends_with(".ppart") {
+        return Some(("ParticleEmitter3D", Some(("profile", path.to_string()))));
+    }
+    if path.ends_with(".ptileset") {
+        return Some(("TileMap2D", Some(("tileset", path.to_string()))));
+    }
+    if path.ends_with(".pskel") || path.ends_with(".pskel2d") {
+        return Some(("Skeleton2D", Some(("skeleton", path.to_string()))));
+    }
+    if path.ends_with(".pskel3d") {
+        return Some(("Skeleton3D", Some(("skeleton", path.to_string()))));
+    }
+    if path.ends_with(".uistyle") {
+        return Some(("UiPanel", Some(("style", path.to_string()))));
+    }
     if editor_files::kind_label(path) == "image" {
         return Some(("Sprite2D", Some(("texture", path.to_string()))));
     }
     None
+}
+
+pub fn asset_kind_for_path(path: &str) -> Option<perro_scene::SceneAssetKind> {
+    if editor_files::kind_label(path) == "image" {
+        return Some(perro_scene::SceneAssetKind::Texture);
+    }
+    if path.ends_with(".glb") || path.ends_with(".gltf") {
+        return Some(perro_scene::SceneAssetKind::Model);
+    }
+    if path.ends_with(".pmesh") || path.ends_with(".obj") || path.ends_with(".fbx") {
+        return Some(perro_scene::SceneAssetKind::Mesh);
+    }
+    if path.ends_with(".pmat") {
+        return Some(perro_scene::SceneAssetKind::Material);
+    }
+    if path.ends_with(".panim") {
+        return Some(perro_scene::SceneAssetKind::Animation);
+    }
+    if path.ends_with(".panimtree") {
+        return Some(perro_scene::SceneAssetKind::AnimationTree);
+    }
+    if path.ends_with(".pskel") || path.ends_with(".pskel2d") || path.ends_with(".pskel3d") {
+        return Some(perro_scene::SceneAssetKind::Skeleton);
+    }
+    if path.ends_with(".ppart") {
+        return Some(perro_scene::SceneAssetKind::ParticleProfile);
+    }
+    if path.ends_with(".ptileset") {
+        return Some(perro_scene::SceneAssetKind::TileSet);
+    }
+    if path.ends_with(".uistyle") {
+        return Some(perro_scene::SceneAssetKind::UiStyle);
+    }
+    None
+}
+
+pub fn asset_field_value(
+    path: &str,
+    kind: perro_scene::SceneAssetKind,
+    glb_mesh_index: usize,
+) -> String {
+    match kind {
+        perro_scene::SceneAssetKind::Mesh if is_gltf_path(path) => {
+            format!("{path}:mesh[{glb_mesh_index}]")
+        }
+        _ => path.to_string(),
+    }
 }
 
 pub fn add_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, node_type_name: &str) {
@@ -1027,39 +1088,7 @@ pub fn node_type_search_text(node_type: perro_scene::NodeType) -> String {
 }
 
 pub fn default_fields(node_type: perro_scene::NodeType) -> Vec<(SceneFieldName, SceneValue)> {
-    let mut fields = Vec::new();
-    if node_type.is_a(perro_scene::NodeType::Node3D) {
-        fields.push((
-            SceneFieldName::Position,
-            SceneValue::Vec3 {
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-            },
-        ));
-    } else if node_type.is_a(perro_scene::NodeType::Node2D) {
-        fields.push((
-            SceneFieldName::Position,
-            SceneValue::Vec2 { x: 0.0, y: 0.0 },
-        ));
-    } else if node_type.is_a(perro_scene::NodeType::UiBox) {
-        fields.push((
-            SceneFieldName::Anchor,
-            SceneValue::Str(Cow::Borrowed("center")),
-        ));
-        fields.push((
-            SceneFieldName::SizeRatio,
-            SceneValue::Vec2 { x: 0.20, y: 0.12 },
-        ));
-    }
-
-    if node_type == perro_scene::NodeType::UiLabel || node_type == perro_scene::NodeType::UiButton {
-        fields.push((
-            SceneFieldName::Text,
-            SceneValue::Str(Cow::Borrowed("New Node")),
-        ));
-    }
-    fields
+    perro_scene::scene_default_fields(node_type)
 }
 
 pub fn save_active_scene<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {

@@ -48,6 +48,10 @@ pub struct EditorState {
     pub preview_camera_3d: u64,
     pub preview_node_ids: Vec<u64>,
     pub preview_node_keys: Vec<u32>,
+    pub preview_pick_node_ids: Vec<u64>,
+    pub preview_pick_node_keys: Vec<u32>,
+    pub preview_selected_gizmo: u64,
+    pub preview_selected_gizmo_key: Option<u32>,
     pub project_file_sigs: Vec<editor_file_watch::FileSig>,
     pub dirty_scene_paths: Vec<String>,
     pub file_watch_frame: u32,
@@ -93,6 +97,7 @@ pub struct EditorState {
     pub active_glb_mat_index: usize,
     pub active_glb_anim_index: usize,
     pub focused_inspector_box: String,
+    pub inspector_rotation_mode: String,
     pub inspector_layout_applied: bool,
     pub log: String,
 }
@@ -109,6 +114,7 @@ lifecycle!({
             state.cam2_zoom = 1.0;
             state.activity_mode = "scene".to_string();
             state.sidebar_mode = "scene".to_string();
+            state.inspector_rotation_mode = "quat".to_string();
             state.last_file_row_click_frame = 0;
             state.last_file_row_click_slot = None;
             state.last_scene_row_click_frame = 0;
@@ -121,6 +127,7 @@ lifecycle!({
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
         update_freecam(ctx);
         update_ui_canvas(ctx);
+        draw_preview_2d_gizmos(ctx);
         update_preview_pick(ctx);
         update_ui_drag(ctx);
         update_editor_cursor(ctx);
@@ -204,7 +211,7 @@ methods!({
                 edit_selected_transform(ctx, "position", "inspector_position_box")
             }
             "inspector_rotation_box" => {
-                edit_selected_transform(ctx, "rotation", "inspector_rotation_box")
+                edit_selected_rotation(ctx)
             }
             "inspector_scale_box" => edit_selected_transform(ctx, "scale", "inspector_scale_box"),
             "inspector_vars_box" => edit_selected_script_vars(ctx),
@@ -223,7 +230,11 @@ methods!({
                 } else if name.starts_with("inspector_position_") && name.ends_with("_box") {
                     edit_selected_transform(ctx, "position", "inspector_position_box");
                 } else if name.starts_with("inspector_rotation_") && name.ends_with("_box") {
-                    edit_selected_transform(ctx, "rotation", "inspector_rotation_box");
+                    edit_selected_rotation(ctx);
+                } else if name == "inspector_rotation_quat_button" {
+                    set_inspector_rotation_mode(ctx, "quat");
+                } else if name == "inspector_rotation_euler_button" {
+                    set_inspector_rotation_mode(ctx, "euler");
                 } else if name.starts_with("inspector_scale_") && name.ends_with("_box") {
                     edit_selected_transform(ctx, "scale", "inspector_scale_box");
                 } else if let Some(idx) = suffix_index(&name, "scene_row_") {
@@ -341,6 +352,8 @@ fn connect_editor_signals<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
             signal!("editor_viewport_click"),
             signal!("editor_inspector_position"),
             signal!("editor_inspector_rotation"),
+            signal!("editor_inspector_rotation_quat"),
+            signal!("editor_inspector_rotation_euler"),
             signal!("editor_inspector_scale"),
             signal!("editor_inspector_vars"),
             signal!("editor_inspector_position_0"),

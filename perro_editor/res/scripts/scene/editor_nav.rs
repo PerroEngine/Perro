@@ -480,7 +480,7 @@ pub fn commit_inspector_box<API: ScriptAPI + ?Sized>(
             edit_selected_transform(ctx, "position", "inspector_position_box")
         }
         "inspector_rotation_box" => {
-            edit_selected_transform(ctx, "rotation", "inspector_rotation_box")
+            edit_selected_rotation(ctx)
         }
         "inspector_scale_box" => edit_selected_transform(ctx, "scale", "inspector_scale_box"),
         "inspector_vars_box" => edit_selected_script_vars(ctx),
@@ -490,7 +490,11 @@ pub fn commit_inspector_box<API: ScriptAPI + ?Sized>(
             } else if name.starts_with("inspector_position_") && name.ends_with("_box") {
                 edit_selected_transform(ctx, "position", "inspector_position_box");
             } else if name.starts_with("inspector_rotation_") && name.ends_with("_box") {
-                edit_selected_transform(ctx, "rotation", "inspector_rotation_box");
+                edit_selected_rotation(ctx);
+            } else if name == "inspector_rotation_quat_button" {
+                set_inspector_rotation_mode(ctx, "quat");
+            } else if name == "inspector_rotation_euler_button" {
+                set_inspector_rotation_mode(ctx, "euler");
             } else if name.starts_with("inspector_scale_") && name.ends_with("_box") {
                 edit_selected_transform(ctx, "scale", "inspector_scale_box");
             } else {
