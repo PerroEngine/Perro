@@ -351,7 +351,9 @@ fn parse_default_value(
     if let Some((enum_ty, variant)) = value.split_once("::")
         && schema.enums.contains_key(enum_ty)
     {
-        return Some(SceneValue::Key(perro_api::scene::SceneValueKey::from(variant)));
+        return Some(SceneValue::Key(perro_api::scene::SceneValueKey::from(
+            variant.to_string(),
+        )));
     }
     if let Some(value) = parse_vec_default_value(schema, value, ty, depth) {
         return Some(value);
