@@ -932,7 +932,9 @@ fn prepare_scene_with_stack(
     static_ui_style_lookup: Option<StaticUiStyleLookup>,
 ) -> Result<PreparedScene, String> {
     if scene.nodes.iter().all(|entry| entry.root_of.is_none()) {
-        return prepare_scene_parallel(scene, static_ui_style_lookup);
+        let mut prepared = prepare_scene_parallel(scene, static_ui_style_lookup)?;
+        ensure_default_ray_light_3d(&mut prepared);
+        return Ok(prepared);
     }
 
     let mut prepared_nodes = Vec::with_capacity(scene.nodes.len());
@@ -960,11 +962,13 @@ fn prepare_scene_with_stack(
         push_entry_prepared(scene, entry, None, &key_map, &mut ctx)?;
     }
 
-    Ok(PreparedScene {
+    let mut prepared = PreparedScene {
         root_key: scene.root.map(|key| key.as_u32()),
         nodes: prepared_nodes,
         scripts,
-    })
+    };
+    ensure_default_ray_light_3d(&mut prepared);
+    Ok(prepared)
 }
 
 struct PreparedEntry {
@@ -987,11 +991,13 @@ fn prepare_scene_parallel(
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        return Ok(PreparedScene {
+        let mut prepared = PreparedScene {
             root_key: scene.root.map(|key| key.as_u32()),
             nodes,
             scripts: Vec::new(),
-        });
+        };
+        ensure_default_ray_light_3d(&mut prepared);
+        return Ok(prepared);
     }
 
     let entries = scene
@@ -1014,11 +1020,52 @@ fn prepare_scene_parallel(
         prepared_nodes.push(entry.node);
     }
 
-    Ok(PreparedScene {
+    let mut prepared = PreparedScene {
         root_key: scene.root.map(|key| key.as_u32()),
         nodes: prepared_nodes,
         scripts,
-    })
+    };
+    ensure_default_ray_light_3d(&mut prepared);
+    Ok(prepared)
+}
+
+fn ensure_default_ray_light_3d(prepared: &mut PreparedScene) {
+    if prepared
+        .nodes
+        .iter()
+        .any(|node| matches!(node.node.data, SceneNodeData::RayLight3D(_)))
+    {
+        return;
+    }
+    let key = prepared
+        .nodes
+        .iter()
+        .map(|node| node.key)
+        .max()
+        .unwrap_or(0)
+        .saturating_add(1);
+    let mut node = SceneNode::new(SceneNodeData::RayLight3D(RayLight3D::new()));
+    node.name = Cow::Borrowed("__perro_default_ray_light");
+    prepared.nodes.push(PendingNode {
+        key,
+        key_name: "__perro_default_ray_light".to_string(),
+        parent_key: None,
+        node,
+        animation_source: None,
+        animation_tree_source: None,
+        animation_tree_animations: Vec::new(),
+        texture_source: None,
+        mesh_source: None,
+        material_surfaces: Vec::new(),
+        skeleton_source: None,
+        mesh_skeleton_target: None,
+        bone_attachment_skeleton_target: None,
+        ik_target_skeleton_target: None,
+        physics_bone_chain_skeleton_target: None,
+        joint_body_links: Vec::new(),
+        animation_bindings: Vec::new(),
+        locale_text_bindings: Vec::new(),
+    });
 }
 
 fn prepare_entry_no_root(

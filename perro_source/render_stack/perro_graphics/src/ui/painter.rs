@@ -541,10 +541,6 @@ fn push_text_edit_shapes(
     }
     let clip_rect = Rect::from_min_max(content_min, content_max)
         .intersect(clip_rect_from_state(panel.clip_rect, viewport));
-    let draw_pos = pos2(
-        content_min.x - edit.scroll[0],
-        content_min.y - edit.scroll[1],
-    );
     let body = if edit.text.is_empty() {
         edit.placeholder.as_ref()
     } else {
@@ -573,6 +569,7 @@ fn push_text_edit_shapes(
     if edit.focused
         && let Some(galley) = edit_galley.as_deref()
     {
+        let draw_pos = text_edit_draw_pos(edit, content_min, content_max, galley);
         push_selection_shapes(edit, galley, clip_rect, draw_pos, out);
     }
     if !body.is_empty() && valid_color(color) {
@@ -582,6 +579,7 @@ fn push_text_edit_shapes(
             color32(color),
             wrap_width,
         );
+        let draw_pos = text_edit_draw_pos(edit, content_min, content_max, &galley);
         out.push(ClippedShape {
             clip_rect,
             shape: Shape::galley_with_override_text_color(draw_pos, galley, color32(color)),
@@ -592,8 +590,26 @@ fn push_text_edit_shapes(
         return;
     }
     if let Some(galley) = edit_galley.as_deref() {
+        let draw_pos = text_edit_draw_pos(edit, content_min, content_max, galley);
         push_caret_shape(edit, galley, clip_rect, draw_pos, out);
     }
+}
+
+fn text_edit_draw_pos(
+    edit: &UiTextEditDraw,
+    content_min: epaint::Pos2,
+    content_max: epaint::Pos2,
+    galley: &Galley,
+) -> epaint::Pos2 {
+    let center_y = if edit.multiline {
+        0.0
+    } else {
+        (content_max.y - content_min.y - galley.size().y).max(0.0) * 0.5
+    };
+    pos2(
+        content_min.x - edit.scroll[0],
+        content_min.y + center_y - edit.scroll[1],
+    )
 }
 
 fn push_selection_shapes(

@@ -126,6 +126,60 @@ mod tests {
     }
 
     #[test]
+    fn prepare_adds_default_ray_light_3d_when_missing() {
+        let scene = Parser::new(
+            r#"
+            $root = @root
+            [root]
+            [Node2D/]
+            [/root]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+
+        let lights = prepared
+            .nodes
+            .iter()
+            .filter(|pending| matches!(pending.node.data, SceneNodeData::RayLight3D(_)))
+            .collect::<Vec<_>>();
+        assert_eq!(lights.len(), 1);
+        assert_eq!(lights[0].key_name, "__perro_default_ray_light");
+    }
+
+    #[test]
+    fn prepare_keeps_existing_ray_light_3d_only() {
+        let scene = Parser::new(
+            r#"
+            $root = @root
+            [root]
+            [Node3D/]
+            [/root]
+
+            [sun]
+            [RayLight3D/]
+            [/sun]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+
+        let lights = prepared
+            .nodes
+            .iter()
+            .filter(|pending| matches!(pending.node.data, SceneNodeData::RayLight3D(_)))
+            .collect::<Vec<_>>();
+        assert_eq!(lights.len(), 1);
+        assert_eq!(lights[0].key_name, "sun");
+    }
+
+    #[test]
     fn sky3d_horizon_and_shader_stack_parse() {
         let scene = Parser::new(
             r#"

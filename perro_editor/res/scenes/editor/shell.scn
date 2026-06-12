@@ -270,7 +270,7 @@ parent = @activity_glb_button
 [left_panel]
 parent = @main_split
     [UiVLayout]
-        size_ratio = (0.108, 1.0)
+        size_ratio = (0.13, 1.0)
         h_align = "fill"
         v_align = "fill"
         spacing = 0.006
@@ -1058,7 +1058,7 @@ parent = @file_row_11
 [center_stack]
 parent = @main_split
     [UiVLayout]
-        size_ratio = (0.708, 1.0)
+        size_ratio = (0.65, 1.0)
         h_align = "fill"
         v_align = "fill"
         spacing = 0.004
@@ -1999,7 +1999,7 @@ parent = @editor_root
 [inspector_panel]
 parent = @main_split
     [UiVLayout]
-        size_ratio = (0.15, 1.0)
+        size_ratio = (0.18, 1.0)
         h_align = "fill"
         v_align = "start"
         spacing = 0.005
@@ -2019,7 +2019,7 @@ parent = @inspector_panel
 [inspector_content]
 parent = @inspector_scroll
     [UiVLayout]
-        size_ratio = (1.0, 2.25)
+        size_ratio = (1.0, 1.25)
         h_align = "fill"
         v_align = "start"
         spacing = 0.005
@@ -2053,7 +2053,7 @@ parent = @inspector_content
 [inspector_name_box]
 parent = @inspector_content
     [UiTextBox]
-        size_ratio = (1.0, 0.038)
+        size_ratio = (1.0, 0.026)
         text = "-"
         text_size_ratio = 0.24
         focused_signals = ["editor_inspector_focus"]
@@ -2319,9 +2319,9 @@ parent = @inspector_content
 parent = @inspector_content
     [UiTextBox]
         visible = false
-        size_ratio = (1.0, 0.038)
+        size_ratio = (1.0, 0.026)
         text = "-"
-        text_size_ratio = 0.30
+        text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = $field
@@ -2332,10 +2332,11 @@ parent = @inspector_content
 [inspector_position_row]
 parent = @inspector_content
     [UiHLayout]
-        size_ratio = (1.0, 0.038)
+        size_ratio = (1.0, 0.026)
         h_align = "fill"
         v_align = "center"
-        spacing = 0.006
+        spacing = 0.003
+        padding = (0.045, 0.0, 0.0, 0.0)
     [/UiHLayout]
 [/inspector_position_row]
 
@@ -2352,9 +2353,9 @@ parent = @inspector_position_row
 [inspector_position_0_box]
 parent = @inspector_position_row
     [UiTextBox]
-        size_ratio = (0.185, 1.0)
+        size_ratio = (0.185, 0.68)
         text = "0"
-        text_size_ratio = 0.26
+        text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = $field
@@ -2375,9 +2376,9 @@ parent = @inspector_position_row
 [inspector_position_1_box]
 parent = @inspector_position_row
     [UiTextBox]
-        size_ratio = (0.185, 1.0)
+        size_ratio = (0.185, 0.68)
         text = "0"
-        text_size_ratio = 0.26
+        text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = $field
@@ -2398,9 +2399,9 @@ parent = @inspector_position_row
 [inspector_position_2_box]
 parent = @inspector_position_row
     [UiTextBox]
-        size_ratio = (0.185, 1.0)
+        size_ratio = (0.185, 0.68)
         text = "0"
-        text_size_ratio = 0.26
+        text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = $field
@@ -2421,9 +2422,9 @@ parent = @inspector_position_row
 [inspector_position_3_box]
 parent = @inspector_position_row
     [UiTextBox]
-        size_ratio = (0.185, 1.0)
+        size_ratio = (0.185, 0.68)
         text = "0"
-        text_size_ratio = 0.26
+        text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = $field
@@ -2447,9 +2448,9 @@ parent = @inspector_content
 parent = @inspector_content
     [UiTextBox]
         visible = false
-        size_ratio = (1.0, 0.038)
+        size_ratio = (1.0, 0.026)
         text = "-"
-        text_size_ratio = 0.30
+        text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = $field
@@ -2517,10 +2518,11 @@ parent = @inspector_rotation_euler_button
 [inspector_rotation_row]
 parent = @inspector_content
     [UiHLayout]
-        size_ratio = (1.0, 0.038)
+        size_ratio = (1.0, 0.026)
         h_align = "fill"
         v_align = "center"
-        spacing = 0.006
+        spacing = 0.003
+        padding = (0.045, 0.0, 0.0, 0.0)
     [/UiHLayout]
 [/inspector_rotation_row]
 
@@ -2537,9 +2539,9 @@ parent = @inspector_rotation_row
 [inspector_rotation_0_box]
 parent = @inspector_rotation_row
     [UiTextBox]
-        size_ratio = (0.185, 1.0)
+        size_ratio = (0.185, 0.68)
         text = "0"
-        text_size_ratio = 0.26
+        text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = $field
@@ -2560,9 +2562,9 @@ parent = @inspector_rotation_row
 [inspector_rotation_1_box]
 parent = @inspector_rotation_row
     [UiTextBox]
-        size_ratio = (0.185, 1.0)
+        size_ratio = (0.185, 0.68)
         text = "0"
-        text_size_ratio = 0.26
+        text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = $field
@@ -2583,9 +2585,9 @@ parent = @inspector_rotation_row
 [inspector_rotation_2_box]
 parent = @inspector_rotation_row
     [UiTextBox]
-        size_ratio = (0.185, 1.0)
+        size_ratio = (0.185, 0.68)
         text = "0"
-        text_size_ratio = 0.26
+        text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = $field
@@ -2606,9 +2608,9 @@ parent = @inspector_rotation_row
 [inspector_rotation_3_box]
 parent = @inspector_rotation_row
     [UiTextBox]
-        size_ratio = (0.185, 1.0)
+        size_ratio = (0.185, 0.68)
         text = "0"
-        text_size_ratio = 0.26
+        text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = $field
@@ -2632,9 +2634,9 @@ parent = @inspector_content
 parent = @inspector_content
     [UiTextBox]
         visible = false
-        size_ratio = (1.0, 0.038)
+        size_ratio = (1.0, 0.026)
         text = "-"
-        text_size_ratio = 0.30
+        text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = $field
@@ -2645,10 +2647,11 @@ parent = @inspector_content
 [inspector_scale_row]
 parent = @inspector_content
     [UiHLayout]
-        size_ratio = (1.0, 0.038)
+        size_ratio = (1.0, 0.026)
         h_align = "fill"
         v_align = "center"
-        spacing = 0.006
+        spacing = 0.003
+        padding = (0.045, 0.0, 0.0, 0.0)
     [/UiHLayout]
 [/inspector_scale_row]
 
@@ -2665,9 +2668,9 @@ parent = @inspector_scale_row
 [inspector_scale_0_box]
 parent = @inspector_scale_row
     [UiTextBox]
-        size_ratio = (0.185, 1.0)
+        size_ratio = (0.185, 0.68)
         text = "1"
-        text_size_ratio = 0.26
+        text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = $field
@@ -2688,9 +2691,9 @@ parent = @inspector_scale_row
 [inspector_scale_1_box]
 parent = @inspector_scale_row
     [UiTextBox]
-        size_ratio = (0.185, 1.0)
+        size_ratio = (0.185, 0.68)
         text = "1"
-        text_size_ratio = 0.26
+        text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = $field
@@ -2711,9 +2714,9 @@ parent = @inspector_scale_row
 [inspector_scale_2_box]
 parent = @inspector_scale_row
     [UiTextBox]
-        size_ratio = (0.185, 1.0)
+        size_ratio = (0.185, 0.68)
         text = "1"
-        text_size_ratio = 0.26
+        text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = $field
@@ -2734,9 +2737,9 @@ parent = @inspector_scale_row
 [inspector_scale_3_box]
 parent = @inspector_scale_row
     [UiTextBox]
-        size_ratio = (0.185, 1.0)
+        size_ratio = (0.185, 0.68)
         text = "1"
-        text_size_ratio = 0.26
+        text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = $field
@@ -2787,10 +2790,11 @@ parent = @inspector_content
 [inspector_var_row_0]
 parent = @inspector_content
     [UiHLayout]
-        size_ratio = (1.0, 0.044)
+        size_ratio = (1.0, 0.030)
         h_align = "fill"
         v_align = "center"
-        spacing = 0.006
+        spacing = 0.003
+        padding = (0.035, 0.0, 0.0, 0.0)
     [/UiHLayout]
 [/inspector_var_row_0]
 
@@ -2808,9 +2812,9 @@ parent = @inspector_var_row_0
 [inspector_var_0_value]
 parent = @inspector_var_row_0
     [UiTextBox]
-        size_ratio = (0.50, 1.0)
+        size_ratio = (0.50, 0.70)
         text = ""
-        text_size_ratio = 0.22
+        text_size_ratio = 0.42
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = $field
@@ -2821,7 +2825,7 @@ parent = @inspector_var_row_0
 [inspector_var_0_check]
 parent = @inspector_var_row_0
     [UiCheckbox]
-        size_ratio = (0.10, 0.82)
+        size_ratio = (0.055, 0.50)
         click_signals = ["editor_inspector_var_pick_0"]
         style = { fill = "#00000000", stroke = "#8FA3B8", stroke_width = 1.5, corner_radius = 0.20 }
         hover = { fill = "#16202A", stroke = "#B8C7D8", stroke_width = 1.5, corner_radius = 0.20 }
@@ -2833,7 +2837,7 @@ parent = @inspector_var_row_0
 [inspector_var_0_pick_button]
 parent = @inspector_var_row_0
     [UiButton]
-        size_ratio = (0.50, 1.0)
+        size_ratio = (0.50, 0.70)
         click_signals = ["editor_inspector_var_pick_0"]
         style = $field
         hover = $btn_hot
@@ -2867,10 +2871,11 @@ parent = @inspector_var_row_0
 [inspector_var_row_1]
 parent = @inspector_content
     [UiHLayout]
-        size_ratio = (1.0, 0.044)
+        size_ratio = (1.0, 0.030)
         h_align = "fill"
         v_align = "center"
-        spacing = 0.006
+        spacing = 0.003
+        padding = (0.035, 0.0, 0.0, 0.0)
     [/UiHLayout]
 [/inspector_var_row_1]
 
@@ -2888,9 +2893,9 @@ parent = @inspector_var_row_1
 [inspector_var_1_value]
 parent = @inspector_var_row_1
     [UiTextBox]
-        size_ratio = (0.50, 1.0)
+        size_ratio = (0.50, 0.70)
         text = ""
-        text_size_ratio = 0.22
+        text_size_ratio = 0.42
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = $field
@@ -2901,7 +2906,7 @@ parent = @inspector_var_row_1
 [inspector_var_1_check]
 parent = @inspector_var_row_1
     [UiCheckbox]
-        size_ratio = (0.10, 0.82)
+        size_ratio = (0.055, 0.50)
         click_signals = ["editor_inspector_var_pick_1"]
         style = { fill = "#00000000", stroke = "#8FA3B8", stroke_width = 1.5, corner_radius = 0.20 }
         hover = { fill = "#16202A", stroke = "#B8C7D8", stroke_width = 1.5, corner_radius = 0.20 }
@@ -2913,7 +2918,7 @@ parent = @inspector_var_row_1
 [inspector_var_1_pick_button]
 parent = @inspector_var_row_1
     [UiButton]
-        size_ratio = (0.50, 1.0)
+        size_ratio = (0.50, 0.70)
         click_signals = ["editor_inspector_var_pick_1"]
         style = $field
         hover = $btn_hot
@@ -2947,10 +2952,11 @@ parent = @inspector_var_row_1
 [inspector_var_row_2]
 parent = @inspector_content
     [UiHLayout]
-        size_ratio = (1.0, 0.044)
+        size_ratio = (1.0, 0.030)
         h_align = "fill"
         v_align = "center"
-        spacing = 0.006
+        spacing = 0.003
+        padding = (0.035, 0.0, 0.0, 0.0)
     [/UiHLayout]
 [/inspector_var_row_2]
 
@@ -2968,9 +2974,9 @@ parent = @inspector_var_row_2
 [inspector_var_2_value]
 parent = @inspector_var_row_2
     [UiTextBox]
-        size_ratio = (0.50, 1.0)
+        size_ratio = (0.50, 0.70)
         text = ""
-        text_size_ratio = 0.22
+        text_size_ratio = 0.42
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = $field
@@ -2981,7 +2987,7 @@ parent = @inspector_var_row_2
 [inspector_var_2_check]
 parent = @inspector_var_row_2
     [UiCheckbox]
-        size_ratio = (0.10, 0.82)
+        size_ratio = (0.055, 0.50)
         click_signals = ["editor_inspector_var_pick_2"]
         style = { fill = "#00000000", stroke = "#8FA3B8", stroke_width = 1.5, corner_radius = 0.20 }
         hover = { fill = "#16202A", stroke = "#B8C7D8", stroke_width = 1.5, corner_radius = 0.20 }
@@ -2993,7 +2999,7 @@ parent = @inspector_var_row_2
 [inspector_var_2_pick_button]
 parent = @inspector_var_row_2
     [UiButton]
-        size_ratio = (0.50, 1.0)
+        size_ratio = (0.50, 0.70)
         click_signals = ["editor_inspector_var_pick_2"]
         style = $field
         hover = $btn_hot
@@ -3027,10 +3033,11 @@ parent = @inspector_var_row_2
 [inspector_var_row_3]
 parent = @inspector_content
     [UiHLayout]
-        size_ratio = (1.0, 0.044)
+        size_ratio = (1.0, 0.030)
         h_align = "fill"
         v_align = "center"
-        spacing = 0.006
+        spacing = 0.003
+        padding = (0.035, 0.0, 0.0, 0.0)
     [/UiHLayout]
 [/inspector_var_row_3]
 
@@ -3048,9 +3055,9 @@ parent = @inspector_var_row_3
 [inspector_var_3_value]
 parent = @inspector_var_row_3
     [UiTextBox]
-        size_ratio = (0.50, 1.0)
+        size_ratio = (0.50, 0.70)
         text = ""
-        text_size_ratio = 0.22
+        text_size_ratio = 0.42
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = $field
@@ -3061,7 +3068,7 @@ parent = @inspector_var_row_3
 [inspector_var_3_check]
 parent = @inspector_var_row_3
     [UiCheckbox]
-        size_ratio = (0.10, 0.82)
+        size_ratio = (0.055, 0.50)
         click_signals = ["editor_inspector_var_pick_3"]
         style = { fill = "#00000000", stroke = "#8FA3B8", stroke_width = 1.5, corner_radius = 0.20 }
         hover = { fill = "#16202A", stroke = "#B8C7D8", stroke_width = 1.5, corner_radius = 0.20 }
@@ -3073,7 +3080,7 @@ parent = @inspector_var_row_3
 [inspector_var_3_pick_button]
 parent = @inspector_var_row_3
     [UiButton]
-        size_ratio = (0.50, 1.0)
+        size_ratio = (0.50, 0.70)
         click_signals = ["editor_inspector_var_pick_3"]
         style = $field
         hover = $btn_hot
@@ -3107,10 +3114,11 @@ parent = @inspector_var_row_3
 [inspector_var_row_4]
 parent = @inspector_content
     [UiHLayout]
-        size_ratio = (1.0, 0.044)
+        size_ratio = (1.0, 0.030)
         h_align = "fill"
         v_align = "center"
-        spacing = 0.006
+        spacing = 0.003
+        padding = (0.035, 0.0, 0.0, 0.0)
     [/UiHLayout]
 [/inspector_var_row_4]
 
@@ -3128,9 +3136,9 @@ parent = @inspector_var_row_4
 [inspector_var_4_value]
 parent = @inspector_var_row_4
     [UiTextBox]
-        size_ratio = (0.50, 1.0)
+        size_ratio = (0.50, 0.70)
         text = ""
-        text_size_ratio = 0.22
+        text_size_ratio = 0.42
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = $field
@@ -3141,7 +3149,7 @@ parent = @inspector_var_row_4
 [inspector_var_4_check]
 parent = @inspector_var_row_4
     [UiCheckbox]
-        size_ratio = (0.10, 0.82)
+        size_ratio = (0.055, 0.50)
         click_signals = ["editor_inspector_var_pick_4"]
         style = { fill = "#00000000", stroke = "#8FA3B8", stroke_width = 1.5, corner_radius = 0.20 }
         hover = { fill = "#16202A", stroke = "#B8C7D8", stroke_width = 1.5, corner_radius = 0.20 }
@@ -3153,7 +3161,7 @@ parent = @inspector_var_row_4
 [inspector_var_4_pick_button]
 parent = @inspector_var_row_4
     [UiButton]
-        size_ratio = (0.50, 1.0)
+        size_ratio = (0.50, 0.70)
         click_signals = ["editor_inspector_var_pick_4"]
         style = $field
         hover = $btn_hot
@@ -3187,10 +3195,11 @@ parent = @inspector_var_row_4
 [inspector_var_row_5]
 parent = @inspector_content
     [UiHLayout]
-        size_ratio = (1.0, 0.044)
+        size_ratio = (1.0, 0.030)
         h_align = "fill"
         v_align = "center"
-        spacing = 0.006
+        spacing = 0.003
+        padding = (0.035, 0.0, 0.0, 0.0)
     [/UiHLayout]
 [/inspector_var_row_5]
 
@@ -3208,9 +3217,9 @@ parent = @inspector_var_row_5
 [inspector_var_5_value]
 parent = @inspector_var_row_5
     [UiTextBox]
-        size_ratio = (0.50, 1.0)
+        size_ratio = (0.50, 0.70)
         text = ""
-        text_size_ratio = 0.22
+        text_size_ratio = 0.42
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = $field
@@ -3221,7 +3230,7 @@ parent = @inspector_var_row_5
 [inspector_var_5_check]
 parent = @inspector_var_row_5
     [UiCheckbox]
-        size_ratio = (0.10, 0.82)
+        size_ratio = (0.055, 0.50)
         click_signals = ["editor_inspector_var_pick_5"]
         style = { fill = "#00000000", stroke = "#8FA3B8", stroke_width = 1.5, corner_radius = 0.20 }
         hover = { fill = "#16202A", stroke = "#B8C7D8", stroke_width = 1.5, corner_radius = 0.20 }
@@ -3233,7 +3242,7 @@ parent = @inspector_var_row_5
 [inspector_var_5_pick_button]
 parent = @inspector_var_row_5
     [UiButton]
-        size_ratio = (0.50, 1.0)
+        size_ratio = (0.50, 0.70)
         click_signals = ["editor_inspector_var_pick_5"]
         style = $field
         hover = $btn_hot
@@ -3267,10 +3276,11 @@ parent = @inspector_var_row_5
 [inspector_var_row_6]
 parent = @inspector_content
     [UiHLayout]
-        size_ratio = (1.0, 0.044)
+        size_ratio = (1.0, 0.030)
         h_align = "fill"
         v_align = "center"
-        spacing = 0.006
+        spacing = 0.003
+        padding = (0.035, 0.0, 0.0, 0.0)
     [/UiHLayout]
 [/inspector_var_row_6]
 
@@ -3288,9 +3298,9 @@ parent = @inspector_var_row_6
 [inspector_var_6_value]
 parent = @inspector_var_row_6
     [UiTextBox]
-        size_ratio = (0.50, 1.0)
+        size_ratio = (0.50, 0.70)
         text = ""
-        text_size_ratio = 0.22
+        text_size_ratio = 0.42
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = $field
@@ -3301,7 +3311,7 @@ parent = @inspector_var_row_6
 [inspector_var_6_check]
 parent = @inspector_var_row_6
     [UiCheckbox]
-        size_ratio = (0.10, 0.82)
+        size_ratio = (0.055, 0.50)
         click_signals = ["editor_inspector_var_pick_6"]
         style = { fill = "#00000000", stroke = "#8FA3B8", stroke_width = 1.5, corner_radius = 0.20 }
         hover = { fill = "#16202A", stroke = "#B8C7D8", stroke_width = 1.5, corner_radius = 0.20 }
@@ -3313,7 +3323,7 @@ parent = @inspector_var_row_6
 [inspector_var_6_pick_button]
 parent = @inspector_var_row_6
     [UiButton]
-        size_ratio = (0.50, 1.0)
+        size_ratio = (0.50, 0.70)
         click_signals = ["editor_inspector_var_pick_6"]
         style = $field
         hover = $btn_hot
@@ -3347,10 +3357,11 @@ parent = @inspector_var_row_6
 [inspector_var_row_7]
 parent = @inspector_content
     [UiHLayout]
-        size_ratio = (1.0, 0.044)
+        size_ratio = (1.0, 0.030)
         h_align = "fill"
         v_align = "center"
-        spacing = 0.006
+        spacing = 0.003
+        padding = (0.035, 0.0, 0.0, 0.0)
     [/UiHLayout]
 [/inspector_var_row_7]
 
@@ -3368,9 +3379,9 @@ parent = @inspector_var_row_7
 [inspector_var_7_value]
 parent = @inspector_var_row_7
     [UiTextBox]
-        size_ratio = (0.50, 1.0)
+        size_ratio = (0.50, 0.70)
         text = ""
-        text_size_ratio = 0.22
+        text_size_ratio = 0.42
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = $field
@@ -3381,7 +3392,7 @@ parent = @inspector_var_row_7
 [inspector_var_7_check]
 parent = @inspector_var_row_7
     [UiCheckbox]
-        size_ratio = (0.10, 0.82)
+        size_ratio = (0.055, 0.50)
         click_signals = ["editor_inspector_var_pick_7"]
         style = { fill = "#00000000", stroke = "#8FA3B8", stroke_width = 1.5, corner_radius = 0.20 }
         hover = { fill = "#16202A", stroke = "#B8C7D8", stroke_width = 1.5, corner_radius = 0.20 }
@@ -3393,7 +3404,7 @@ parent = @inspector_var_row_7
 [inspector_var_7_pick_button]
 parent = @inspector_var_row_7
     [UiButton]
-        size_ratio = (0.50, 1.0)
+        size_ratio = (0.50, 0.70)
         click_signals = ["editor_inspector_var_pick_7"]
         style = $field
         hover = $btn_hot
@@ -3430,7 +3441,8 @@ parent = @inspector_content
         size_ratio = (1.0, 0.046)
         h_align = "fill"
         v_align = "center"
-        spacing = 0.006
+        spacing = 0.003
+        padding = (0.035, 0.0, 0.0, 0.0)
     [/UiHLayout]
 [/inspector_resource_row_0]
 
@@ -3475,7 +3487,8 @@ parent = @inspector_content
         size_ratio = (1.0, 0.046)
         h_align = "fill"
         v_align = "center"
-        spacing = 0.006
+        spacing = 0.003
+        padding = (0.035, 0.0, 0.0, 0.0)
     [/UiHLayout]
 [/inspector_resource_row_1]
 
@@ -3520,7 +3533,8 @@ parent = @inspector_content
         size_ratio = (1.0, 0.046)
         h_align = "fill"
         v_align = "center"
-        spacing = 0.006
+        spacing = 0.003
+        padding = (0.035, 0.0, 0.0, 0.0)
     [/UiHLayout]
 [/inspector_resource_row_2]
 
@@ -3565,7 +3579,8 @@ parent = @inspector_content
         size_ratio = (1.0, 0.046)
         h_align = "fill"
         v_align = "center"
-        spacing = 0.006
+        spacing = 0.003
+        padding = (0.035, 0.0, 0.0, 0.0)
     [/UiHLayout]
 [/inspector_resource_row_3]
 
@@ -3625,6 +3640,7 @@ parent = @editor_root
         v_align = "start"
         spacing = 0.004
         padding = (0.018, 0.012)
+        z_index = 200
         visible = false
         style = $panel
     [/UiVLayout]
@@ -4055,6 +4071,7 @@ parent = @editor_root
         v_align = "start"
         spacing = 0.004
         padding = (0.018, 0.012)
+        z_index = 200
         visible = false
         style = $panel
     [/UiVLayout]

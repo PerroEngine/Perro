@@ -508,16 +508,21 @@ fn take_inspector_layout_pass<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
 }
 
 fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
-    set_ui_box_size(ctx, "inspector_panel", (0.15, 1.0));
-    set_label_text_ratio(ctx, "inspector_title", 0.30);
-    set_label_text_ratio(ctx, "inspector_name", 0.22);
-    set_label_text_ratio(ctx, "inspector_type", 0.19);
-    set_label_text_ratio(ctx, "inspector_parent", 0.18);
-    set_label_text_ratio(ctx, "inspector_script_top", 0.18);
-    set_label_text_ratio(ctx, "inspector_pos", 0.20);
-    set_label_text_ratio(ctx, "inspector_rotation_label", 0.20);
-    set_label_text_ratio(ctx, "inspector_scale_label", 0.20);
-    set_label_text_ratio(ctx, "inspector_vars", 0.20);
+    for name in ["add_node_popup", "inspector_pick_popup"] {
+        set_ui_box_z_index(ctx, name, 200);
+    }
+
+    set_ui_box_size(ctx, "inspector_panel", (0.18, 1.0));
+    set_ui_box_size(ctx, "inspector_content", (1.0, 1.25));
+    set_label_text_ratio(ctx, "inspector_title", 0.25);
+    set_label_text_ratio(ctx, "inspector_name", 0.19);
+    set_label_text_ratio(ctx, "inspector_type", 0.17);
+    set_label_text_ratio(ctx, "inspector_parent", 0.16);
+    set_label_text_ratio(ctx, "inspector_script_top", 0.16);
+    set_label_text_ratio(ctx, "inspector_pos", 0.18);
+    set_label_text_ratio(ctx, "inspector_rotation_label", 0.18);
+    set_label_text_ratio(ctx, "inspector_scale_label", 0.18);
+    set_label_text_ratio(ctx, "inspector_vars", 0.18);
 
     for name in [
         "inspector_action_row",
@@ -527,7 +532,15 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
         "inspector_rotation_row",
         "inspector_scale_row",
     ] {
-        set_ui_box_size(ctx, name, (1.0, 0.038));
+        set_ui_box_size(ctx, name, (1.0, 0.026));
+    }
+    for name in [
+        "inspector_position_row",
+        "inspector_rotation_row",
+        "inspector_scale_row",
+    ] {
+        set_ui_box_padding(ctx, name, UiRect::new(0.045, 0.0, 0.0, 0.0));
+        set_hlayout_spacing(ctx, name, 0.003);
     }
 
     for name in [
@@ -536,24 +549,65 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
         "inspector_open_ref_button",
         "inspector_visible_button",
     ] {
-        set_button_size(ctx, name, (0.25, 0.90));
+        set_button_size(ctx, name, (0.25, 0.70));
     }
     for name in [
         "inspector_rotation_quat_button",
         "inspector_rotation_euler_button",
     ] {
-        set_button_size(ctx, name, (0.50, 0.88));
+        set_button_size(ctx, name, (0.50, 0.70));
+    }
+
+    for name in [
+        "inspector_name_box",
+        "inspector_position_box",
+        "inspector_rotation_box",
+        "inspector_scale_box",
+    ] {
+        set_ui_box_size(ctx, name, (1.0, 0.026));
+        set_text_box_text_ratio(ctx, name, 0.44);
+        set_text_box_padding(ctx, name, 5.0, 1.0);
+    }
+
+    for prefix in [
+        "inspector_position",
+        "inspector_rotation",
+        "inspector_scale",
+    ] {
+        for idx in 0..4 {
+            let name = format!("{prefix}_{idx}_box");
+            set_ui_box_size(ctx, &name, (0.185, 0.68));
+            set_text_box_text_ratio(ctx, &name, 0.44);
+            set_text_box_padding(ctx, &name, 5.0, 1.0);
+        }
     }
 
     for idx in 0..MAX_SCRIPT_VARS {
-        set_ui_box_size(ctx, &format!("inspector_var_row_{idx}"), (1.0, 0.052));
-        set_label_text_ratio(ctx, &format!("inspector_var_{idx}_name"), 0.21);
-        set_label_text_ratio(ctx, &format!("inspector_var_{idx}_type"), 0.18);
+        set_ui_box_size(ctx, &format!("inspector_var_row_{idx}"), (1.0, 0.030));
+        set_ui_box_size(ctx, &format!("inspector_var_{idx}_value"), (0.50, 0.70));
+        set_text_box_text_ratio(ctx, &format!("inspector_var_{idx}_value"), 0.42);
+        set_text_box_padding(ctx, &format!("inspector_var_{idx}_value"), 5.0, 1.0);
+        set_ui_box_padding(
+            ctx,
+            &format!("inspector_var_row_{idx}"),
+            UiRect::new(0.035, 0.0, 0.0, 0.0),
+        );
+        set_hlayout_spacing(ctx, &format!("inspector_var_row_{idx}"), 0.003);
+        set_ui_box_size(ctx, &format!("inspector_var_{idx}_check"), (0.055, 0.50));
+        set_button_size(ctx, &format!("inspector_var_{idx}_pick_button"), (0.50, 0.70));
+        set_label_text_ratio(ctx, &format!("inspector_var_{idx}_name"), 0.18);
+        set_label_text_ratio(ctx, &format!("inspector_var_{idx}_type"), 0.16);
     }
     for idx in 0..MAX_RESOURCE_FIELDS {
-        set_ui_box_size(ctx, &format!("inspector_resource_row_{idx}"), (1.0, 0.052));
-        set_label_text_ratio(ctx, &format!("inspector_resource_{idx}_name"), 0.21);
-        set_label_text_ratio(ctx, &format!("inspector_resource_{idx}_button_label"), 0.19);
+        set_ui_box_size(ctx, &format!("inspector_resource_row_{idx}"), (1.0, 0.030));
+        set_ui_box_padding(
+            ctx,
+            &format!("inspector_resource_row_{idx}"),
+            UiRect::new(0.035, 0.0, 0.0, 0.0),
+        );
+        set_hlayout_spacing(ctx, &format!("inspector_resource_row_{idx}"), 0.003);
+        set_label_text_ratio(ctx, &format!("inspector_resource_{idx}_name"), 0.18);
+        set_label_text_ratio(ctx, &format!("inspector_resource_{idx}_button_label"), 0.16);
     }
 }
 
@@ -567,10 +621,10 @@ fn apply_inspector_dynamic_layout<API: ScriptAPI + ?Sized>(
         0.50
     };
     for name in ["asset_use_button", "asset_make_node_button"] {
-        set_button_size(ctx, name, (asset_button_w, 0.90));
+        set_button_size(ctx, name, (asset_button_w, 0.70));
     }
     for name in ["asset_glb_anim_button", "asset_glb_mat_button"] {
-        set_button_size(ctx, name, (0.25, 0.90));
+        set_button_size(ctx, name, (0.25, 0.70));
     }
 }
 
@@ -2353,6 +2407,67 @@ pub fn set_label_text_ratio<API: ScriptAPI + ?Sized>(
     }
 }
 
+pub fn set_text_box_text_ratio<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    ratio: f32,
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiTextBox, id, |node| {
+            node.text_size_ratio = ratio;
+        });
+    }
+}
+
+pub fn set_text_box_padding<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    x: f32,
+    y: f32,
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiTextBox, id, |node| {
+            node.padding = UiRect::symmetric(x, y);
+        });
+    }
+}
+
+pub fn set_ui_box_padding<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    padding: UiRect,
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_base_node_mut!(ctx.run, UiBox, id, |node| {
+            node.layout.padding = padding;
+        });
+    }
+}
+
+pub fn set_ui_box_z_index<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    z_index: i32,
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_base_node_mut!(ctx.run, UiBox, id, |node| {
+            node.layout.z_index = z_index;
+        });
+    }
+}
+
+pub fn set_hlayout_spacing<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    spacing: f32,
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiHLayout, id, |node| {
+            node.inner.spacing = spacing;
+        });
+    }
+}
+
 pub fn set_button_row_style<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     name: &str,
@@ -2686,7 +2801,7 @@ pub fn viewport_stream_size_ratio(window_aspect: f32) -> (f32, f32) {
     const MAIN_SPACING: f32 = 0.004;
     const SPLIT_CONTENT_W: f32 = 1.0 - (MAIN_PADDING * 2.0) - (MAIN_SPACING * 3.0);
     const SPLIT_CONTENT_H: f32 = 0.944 - (0.004 * 2.0);
-    const CENTER_W: f32 = 0.708;
+    const CENTER_W: f32 = 0.65;
     const VIEWPORT_PANEL_H: f32 = 0.828;
     const MAX_W: f32 = 0.98;
     const MAX_H: f32 = 0.92;
@@ -2707,7 +2822,7 @@ pub fn ui_canvas_size_ratio(window_aspect: f32, zoom: f32) -> (f32, f32) {
     const MAIN_SPACING: f32 = 0.004;
     const SPLIT_CONTENT_W: f32 = 1.0 - (MAIN_PADDING * 2.0) - (MAIN_SPACING * 3.0);
     const SPLIT_CONTENT_H: f32 = 0.944 - (0.004 * 2.0);
-    const CENTER_W: f32 = 0.708;
+    const CENTER_W: f32 = 0.65;
     const VIEWPORT_PANEL_H: f32 = 0.828;
     const BASE_W: f32 = 0.98;
     const ASPECT: f32 = 16.0 / 9.0;
@@ -2827,6 +2942,7 @@ pub fn set_add_node_popup<API: ScriptAPI + ?Sized>(
     });
     if let Some(id) = find_named(ctx, "add_node_popup") {
         let _ = with_node_mut!(ctx.run, UiVLayout, id, |node| {
+            node.layout.z_index = 200;
             node.visible = visible;
             node.input_enabled = visible;
         });
@@ -2850,12 +2966,14 @@ pub fn set_inspector_picker<API: ScriptAPI + ?Sized>(
     if let Some(id) = find_named(ctx, "inspector_pick_popup") {
         has_picker_popup = true;
         let _ = with_node_mut!(ctx.run, UiVLayout, id, |node| {
+            node.layout.z_index = 200;
             node.visible = visible;
             node.input_enabled = visible;
         });
     }
     if let Some(id) = find_named(ctx, "add_node_popup") {
         let _ = with_node_mut!(ctx.run, UiVLayout, id, |node| {
+            node.layout.z_index = 200;
             node.visible = visible && !has_picker_popup;
             node.input_enabled = visible && !has_picker_popup;
         });
