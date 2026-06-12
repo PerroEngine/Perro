@@ -87,7 +87,7 @@ pub fn update_freecam<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>)
         state.cam_yaw += mouse.x * 0.0025;
         state.cam_pitch = (state.cam_pitch - mouse.y * 0.0025).clamp(-1.4, 1.4);
         label = format!(
-            "Viewport  mode={}  cam=({:.1}, {:.1}, {:.1}) yaw={:.2} pitch={:.2} stream={} cam_id={}\nkeys: WASD move  Space/Shift up/down  MMB look  F frame  Alt+Click copy-place",
+            "Viewport  mode={}  cam=({:.1}, {:.1}, {:.1}) yaw={:.2} pitch={:.2} stream={} cam_id={}\nkeys: WASD move  Space/Shift up/down  MMB look  F frame  click select",
             state.viewport_mode,
             state.cam_x,
             state.cam_y,
@@ -280,6 +280,18 @@ pub fn update_editor_shortcuts<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
         cycle_sidebar_panel(ctx);
         return;
     }
+    if !ctrl && !alt && !shift && key_pressed!(ctx.ipt, KeyCode::F2) {
+        prepare_rename_selection(ctx);
+        return;
+    }
+    if ctrl && key_pressed!(ctx.ipt, KeyCode::KeyO) {
+        if with_state!(ctx.run, EditorState, ctx.id, |state| state.sidebar_mode == "files") {
+            open_active_file(ctx);
+        } else {
+            open_selected_node_asset_ref(ctx);
+        }
+        return;
+    }
     if ctrl && shift && key_pressed!(ctx.ipt, KeyCode::KeyN) {
         open_add_node_sibling_popup(ctx);
         return;
@@ -306,6 +318,14 @@ pub fn update_editor_shortcuts<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
     }
     if ctrl && key_pressed!(ctx.ipt, KeyCode::KeyW) {
         close_active_scene_tab(ctx);
+        return;
+    }
+    if ctrl && shift && key_pressed!(ctx.ipt, KeyCode::KeyC) {
+        if with_state!(ctx.run, EditorState, ctx.id, |state| state.sidebar_mode == "files") {
+            copy_active_asset_path(ctx);
+        } else {
+            copy_selected_node_path(ctx);
+        }
         return;
     }
     if ctrl && key_pressed!(ctx.ipt, KeyCode::KeyC) {
@@ -353,11 +373,19 @@ pub fn update_editor_shortcuts<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
         return;
     }
     if !ctrl && !alt && !shift && key_pressed!(ctx.ipt, KeyCode::ArrowLeft) {
-        collapse_selected_scene_node(ctx);
+        if with_state!(ctx.run, EditorState, ctx.id, |state| state.sidebar_mode == "files") {
+            collapse_selected_file(ctx);
+        } else {
+            collapse_selected_scene_node(ctx);
+        }
         return;
     }
     if !ctrl && !alt && !shift && key_pressed!(ctx.ipt, KeyCode::ArrowRight) {
-        expand_selected_scene_node(ctx);
+        if with_state!(ctx.run, EditorState, ctx.id, |state| state.sidebar_mode == "files") {
+            expand_selected_file(ctx);
+        } else {
+            expand_selected_scene_node(ctx);
+        }
         return;
     }
     if shift && key_pressed!(ctx.ipt, KeyCode::ArrowLeft) {
@@ -397,7 +425,13 @@ pub fn update_editor_shortcuts<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
         return;
     }
     if ctrl && key_pressed!(ctx.ipt, KeyCode::Enter) {
-        use_active_asset_on_selected_node(ctx);
+        if with_state!(ctx.run, EditorState, ctx.id, |state| {
+            state.active_asset_path.ends_with(".scn")
+        }) {
+            make_node_from_active_asset(ctx);
+        } else {
+            use_active_asset_on_selected_node(ctx);
+        }
         return;
     }
     if key_pressed!(ctx.ipt, KeyCode::Enter) {
@@ -441,11 +475,19 @@ pub fn update_editor_shortcuts<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
         return;
     }
     if ctrl && key_pressed!(ctx.ipt, KeyCode::KeyD) {
-        duplicate_selected_node(ctx);
+        if with_state!(ctx.run, EditorState, ctx.id, |state| state.sidebar_mode == "files") {
+            duplicate_active_asset(ctx);
+        } else {
+            duplicate_selected_node(ctx);
+        }
         return;
     }
     if key_pressed!(ctx.ipt, KeyCode::Delete) {
-        delete_selected_node(ctx);
+        if with_state!(ctx.run, EditorState, ctx.id, |state| state.sidebar_mode == "files") {
+            delete_active_asset(ctx);
+        } else {
+            delete_selected_node(ctx);
+        }
     }
 }
 
@@ -466,8 +508,16 @@ pub fn commit_focused_inspector_box<API: ScriptAPI + ?Sized>(
     let Some(name) = name else {
         return false;
     };
-    commit_inspector_box(ctx, &name);
-    true
+    if matches!(
+        name.as_str(),
+        "scene_filter_box" | "file_filter_box" | "add_node_search_box" | "inspector_pick_filter_box"
+    ) {
+        let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+            state.focused_inspector_box.clear();
+        });
+        return false;
+    }
+    commit_inspector_box(ctx, &name)
 }
 
 pub fn commit_inspector_box<API: ScriptAPI + ?Sized>(
@@ -475,7 +525,7 @@ pub fn commit_inspector_box<API: ScriptAPI + ?Sized>(
     name: &str,
 ) -> bool {
     match name {
-        "inspector_name_box" => rename_selected_node(ctx),
+        "inspector_name_box" => rename_inspector_selection(ctx),
         "inspector_position_box" => {
             edit_selected_transform(ctx, "position", "inspector_position_box")
         }
@@ -523,6 +573,9 @@ pub fn handle_editor_escape<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_,
             "none"
         }
     });
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.focused_inspector_box.clear();
+    });
     match action {
         "inspector_picker" => set_inspector_picker(ctx, false),
         "picker" => set_add_node_popup(ctx, false),
@@ -569,6 +622,29 @@ pub fn prepare_sidebar_find<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_,
             state.sidebar_mode = "scene".to_string();
             state.activity_mode = "scene".to_string();
             state.log = "find nodes\nuse scene search".to_string();
+        }
+    });
+    refresh_all(ctx);
+}
+
+pub fn prepare_rename_selection<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.focused_inspector_box = "inspector_name_box".to_string();
+        if state.sidebar_mode == "files" && !state.active_asset_path.is_empty() {
+            state.log = format!("rename asset\nedit name + Enter\n{}", state.active_asset_path);
+        } else if let Some(key) = state.selected_key {
+            let doc = SceneDoc::parse(&state.doc_text);
+            let name = doc
+                .scene
+                .nodes
+                .iter()
+                .find(|node| node.key.as_u32() == key)
+                .map(|node| doc.scene.key_name_or_id(node.key).to_string())
+                .unwrap_or_else(|| "selected".to_string());
+            state.log = format!("rename node\nedit name + Enter\n{name}");
+        } else {
+            state.focused_inspector_box.clear();
+            state.log = "rename fail\nselect node or asset".to_string();
         }
     });
     refresh_all(ctx);
@@ -926,10 +1002,18 @@ pub fn select_file_edge<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API
 
 pub fn nav_file_scope_parent<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        if state.sidebar_mode != "files" || state.file_scope.is_empty() {
+        if state.sidebar_mode != "files" {
             return false;
         }
-        let parent = parent_res_folder(&state.file_scope);
+        let active = if state.active_asset_path.is_empty() {
+            state.file_scope.clone()
+        } else {
+            state.active_asset_path.clone()
+        };
+        let parent = parent_res_folder(&active);
+        if active.ends_with('/') {
+            state.file_expanded_paths.retain(|path| path != &active);
+        }
         state.file_scope = parent.clone();
         state.active_asset_path = if parent.is_empty() {
             filtered_file_paths(state)
@@ -950,6 +1034,83 @@ pub fn nav_file_scope_parent<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
     .unwrap_or(false);
     if changed {
         refresh_all(ctx);
+    }
+}
+
+pub fn collapse_selected_file<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        if state.sidebar_mode != "files" {
+            return false;
+        }
+        let active = state.active_asset_path.clone();
+        if active.is_empty() {
+            return false;
+        }
+        if active.ends_with('/')
+            && state
+                .file_expanded_paths
+                .iter()
+                .any(|expanded| expanded == &active)
+            && active != "res://"
+        {
+            state.file_expanded_paths.retain(|path| {
+                path != &active && !path.starts_with(active.as_str())
+            });
+            state.log = format!("collapse folder\n{}", editor_files::rel_label(&active));
+            return true;
+        }
+        let parent = parent_res_folder(&active);
+        state.active_asset_path = if parent.is_empty() {
+            "res://".to_string()
+        } else {
+            parent.clone()
+        };
+        state.file_scope = parent;
+        state.log = format!("select folder\n{}", editor_files::rel_label(&state.active_asset_path));
+        true
+    })
+    .unwrap_or(false);
+    if changed {
+        refresh_all(ctx);
+    }
+}
+
+pub fn expand_selected_file<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let action = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        if state.sidebar_mode != "files" {
+            return None;
+        }
+        let active = state.active_asset_path.clone();
+        if active.is_empty() {
+            return None;
+        }
+        if !active.ends_with('/') {
+            return Some("open".to_string());
+        }
+        if !state
+            .file_expanded_paths
+            .iter()
+            .any(|expanded| expanded == &active)
+        {
+            reveal_file_path_in_tree(state, &active);
+            state.log = format!("expand folder\n{}", editor_files::rel_label(&active));
+            return Some("refresh".to_string());
+        }
+        let child = filtered_file_paths(state)
+            .into_iter()
+            .find(|path| parent_res_folder(path) == active);
+        if let Some(child) = child {
+            state.active_asset_path = child;
+            state.log = format!("select asset\n{}", editor_files::rel_label(&state.active_asset_path));
+            return Some("refresh".to_string());
+        }
+        None
+    })
+    .flatten();
+    match action.as_deref() {
+        Some("open") => open_active_file(ctx),
+        Some("refresh") => refresh_all(ctx),
+        _ => {}
     }
 }
 
@@ -1011,6 +1172,7 @@ pub fn reveal_active_scene_in_files<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCon
         state.activity_mode = "scene".to_string();
         state.active_asset_path = path.clone();
         state.file_scope = parent_res_folder(&path);
+        reveal_file_path_in_tree(state, &path);
         state.file_filter.clear();
         state.log = format!("reveal file\n{path}");
         true
@@ -1093,7 +1255,7 @@ pub fn update_freecam_2d<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, AP
             state.cam2_zoom = (state.cam2_zoom * (1.0 + key_zoom + wheel_zoom)).clamp(0.05, 40.0);
         }
         label = format!(
-            "Viewport  mode={}  cam=({:.1}, {:.1}) zoom={:.2} stream={} cam_id={}\nkeys: WASD pan  +/- zoom  F frame  Shift+Click snap  Alt+Click copy-place",
+            "Viewport  mode={}  cam=({:.1}, {:.1}) zoom={:.2} stream={} cam_id={}\nkeys: WASD pan  +/- zoom  F frame  click select",
             state.viewport_mode,
             state.cam2_x,
             state.cam2_y,

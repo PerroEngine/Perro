@@ -734,7 +734,7 @@ pub fn pick_selected_resource_field<API: ScriptAPI + ?Sized>(
             .nodes
             .iter()
             .find(|node| node.key.as_u32() == key)?;
-        let rows = resource_field_rows(&node.data);
+        let rows = resource_field_rows(node);
         let row = rows.get(idx)?;
         state.inspector_picker_open = true;
         state.inspector_picker_field = row.name.clone();
@@ -747,6 +747,57 @@ pub fn pick_selected_resource_field<API: ScriptAPI + ?Sized>(
         return;
     }
     set_inspector_picker(ctx, true);
+    refresh_all(ctx);
+}
+
+pub fn clear_selected_resource_field<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+) {
+    let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let Some(key) = state.selected_key else {
+            return false;
+        };
+        if state.doc_text.is_empty() {
+            return false;
+        }
+        let mut doc = SceneDoc::parse(&state.doc_text);
+        let Some(node) = doc
+            .scene
+            .nodes
+            .to_mut()
+            .iter_mut()
+            .find(|node| node.key.as_u32() == key)
+        else {
+            return false;
+        };
+        let rows = resource_field_rows(node);
+        let Some(row) = rows.get(idx) else {
+            return false;
+        };
+        if row.name == "script" {
+            node.script = None;
+            node.clear_script = true;
+        } else if row.name == "root_of" {
+            node.root_of = None;
+        } else {
+            set_scene_string(&mut node.data, &row.name, String::new());
+        }
+        doc.normalize_links();
+        state.doc_text = doc.to_text();
+        state.dirty = true;
+        if let Some(path) = state.open_paths.get(state.active_open).cloned()
+            && !state.dirty_scene_paths.iter().any(|item| item == &path)
+        {
+            state.dirty_scene_paths.push(path);
+        }
+        state.log = format!("clear ref\n{}", row.name);
+        true
+    })
+    .unwrap_or(false);
+    if changed {
+        rebuild_preview(ctx);
+    }
     refresh_all(ctx);
 }
 
@@ -838,6 +889,7 @@ pub fn update_inspector_picker_filter_from<API: ScriptAPI + ?Sized>(
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         state.inspector_picker_filter = text;
         state.inspector_picker_offset = 0;
+        state.focused_inspector_box = box_name.to_string();
     });
     refresh_all(ctx);
 }
@@ -919,6 +971,13 @@ pub fn choose_inspector_picker_row<API: ScriptAPI + ?Sized>(
             }
         } else if picker_kind == "node" {
             set_scene_key(&mut node.data, &field, value.clone());
+        } else if field == "script" {
+            node.script = Some(Cow::Owned(value.clone()));
+            node.clear_script = false;
+            state.active_asset_path = base_res_asset_path(&value);
+        } else if field == "root_of" {
+            node.root_of = Some(Cow::Owned(value.clone()));
+            state.active_asset_path = base_res_asset_path(&value);
         } else {
             set_scene_string(&mut node.data, &field, value.clone());
             state.active_asset_path = base_res_asset_path(&value);

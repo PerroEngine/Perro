@@ -1,21 +1,21 @@
 $root = @editor_root
-$bg = { fill: "#1B1D23", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
-$bar = { fill: "#24272E", stroke: "#121419", stroke_width: 1.0, radius: 0.018 }
-$panel = { fill: "#24272E", stroke: "#343842", stroke_width: 1.0, radius: 0.024 }
-$panel_dark = { fill: "#1F2229", stroke: "#343842", stroke_width: 1.0, radius: 0.024 }
-$inspector_panel = { fill: "#20242B", stroke: "#4A5568", stroke_width: 1.0, radius: 0.028 }
-$inspector_header = { fill: "#151A21", stroke: "#478CBF", stroke_width: 1.0, radius: 0.12 }
-$viewport = { fill: "#181A20", stroke: "#3B414D", stroke_width: 1.0, radius: 0.03 }
-$btn = { fill: "#2D323C", stroke: "#3B414D", stroke_width: 1.0, radius: 1.0 }
-$btn_hot = { style: { fill: "#38404C", stroke: "#566174", stroke_width: 1.0, radius: 1.0 } }
-$btn_down = { style: { fill: "#478CBF", stroke: "#6BB6E8", stroke_width: 1.0, radius: 1.0 } }
-$tab = { fill: "#2D323C", stroke: "#3B414D", stroke_width: 1.0, radius: 0.35 }
-$tab_hot = { style: { fill: "#38404C", stroke: "#566174", stroke_width: 1.0, radius: 0.35 } }
-$tab_down = { style: { fill: "#478CBF", stroke: "#6BB6E8", stroke_width: 1.0, radius: 0.35 } }
+$bg = { fill: "#20232A", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+$bar = { fill: "#2A2D35", stroke: "#151820", stroke_width: 1.0, radius: 0.006 }
+$panel = { fill: "#252932", stroke: "#383D48", stroke_width: 1.0, radius: 0.006 }
+$panel_dark = { fill: "#20242B", stroke: "#383D48", stroke_width: 1.0, radius: 0.006 }
+$inspector_panel = { fill: "#252932", stroke: "#383D48", stroke_width: 1.0, radius: 0.006 }
+$inspector_header = { fill: "#1F232B", stroke: "#383D48", stroke_width: 1.0, radius: 0.0 }
+$viewport = { fill: "#1B1E25", stroke: "#383D48", stroke_width: 1.0, radius: 0.006 }
+$btn = { fill: "#30343D", stroke: "#454B57", stroke_width: 1.0, radius: 0.045 }
+$btn_hot = { style: { fill: "#3A404B", stroke: "#596170", stroke_width: 1.0, radius: 0.045 } }
+$btn_down = { style: { fill: "#478CBF", stroke: "#6BB6E8", stroke_width: 1.0, radius: 0.045 } }
+$tab = { fill: "#30343D", stroke: "#454B57", stroke_width: 1.0, radius: 0.035 }
+$tab_hot = { style: { fill: "#3A404B", stroke: "#596170", stroke_width: 1.0, radius: 0.035 } }
+$tab_down = { style: { fill: "#478CBF", stroke: "#6BB6E8", stroke_width: 1.0, radius: 0.035 } }
 $row = { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
 $row_sel = { fill: "#478CBF", stroke: "#6BB6E8", stroke_width: 1.0, radius: 0.0 }
-$field = { fill: "#191B20", stroke: "#3B414D", stroke_width: 1.0, radius: 0.10 }
-$field_focus = { fill: "#191B20", stroke: "#6BB6E8", stroke_width: 1.0, radius: 0.10 }
+$field = { fill: "#1C2027", stroke: "#3D4450", stroke_width: 1.0, radius: 0.035 }
+$field_focus = { fill: "#1C2027", stroke: "#6BB6E8", stroke_width: 1.0, radius: 0.035 }
 
 [editor_root]
     [UiPanel]
@@ -204,8 +204,8 @@ parent = @root_stack
         size_ratio = (1.0, 0.944)
         h_align = "fill"
         v_align = "fill"
-        spacing = 0.004
-        padding = (0.004, 0.004)
+        spacing = 0.0025
+        padding = (0.0025, 0.003)
     [/UiHLayout]
 [/main_split]
 
@@ -270,10 +270,10 @@ parent = @activity_glb_button
 [left_panel]
 parent = @main_split
     [UiVLayout]
-        size_ratio = (0.13, 1.0)
+        size_ratio = (0.16, 1.0)
         h_align = "fill"
         v_align = "fill"
-        spacing = 0.006
+        spacing = 0.003
         style = $panel
     [/UiVLayout]
 [/left_panel]
@@ -281,23 +281,470 @@ parent = @main_split
 [scene_tree_title]
 parent = @left_panel
     [UiLabel]
-        size_ratio = (1.0, 0.04)
+        size_ratio = (1.0, 0.033)
         text = "Scene"
-        text_size_ratio = 0.24
+        text_size_ratio = 0.22
         color = "#F3F4F6"
         h_align = "start"
         style = $bar
     [/UiLabel]
 [/scene_tree_title]
 
+[scene_action_row]
+parent = @left_panel
+    [UiHLayout]
+        size_ratio = (1.0, 0.034)
+        h_align = "fill"
+        v_align = "center"
+        spacing = 0.004
+        padding = (0.010, 0.0)
+    [/UiHLayout]
+[/scene_action_row]
+
+[scene_add_child_button]
+parent = @scene_action_row
+    [UiButton]
+        size_ratio = (0.18, 0.88)
+        click_signals = ["editor_add_node"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/scene_add_child_button]
+
+[scene_add_child_label]
+parent = @scene_add_child_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "+ Child"
+        text_size_ratio = 0.22
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_add_child_label]
+
+[add_node_sibling_button]
+parent = @scene_action_row
+    [UiButton]
+        size_ratio = (0.18, 0.88)
+        click_signals = ["editor_add_node_sibling"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/add_node_sibling_button]
+
+[add_node_sibling_label]
+parent = @add_node_sibling_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "+ Sibling"
+        text_size_ratio = 0.20
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/add_node_sibling_label]
+
+[scene_duplicate_button]
+parent = @scene_action_row
+    [UiButton]
+        size_ratio = (0.15, 0.88)
+        click_signals = ["editor_inspector_duplicate"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/scene_duplicate_button]
+
+[scene_duplicate_label]
+parent = @scene_duplicate_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Dup"
+        text_size_ratio = 0.22
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_duplicate_label]
+
+[scene_copy_button]
+parent = @scene_action_row
+    [UiButton]
+        size_ratio = (0.15, 0.88)
+        click_signals = ["editor_scene_copy"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/scene_copy_button]
+
+[scene_copy_label]
+parent = @scene_copy_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Copy"
+        text_size_ratio = 0.20
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_copy_label]
+
+[scene_paste_button]
+parent = @scene_action_row
+    [UiButton]
+        size_ratio = (0.15, 0.88)
+        click_signals = ["editor_scene_paste"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/scene_paste_button]
+
+[scene_paste_label]
+parent = @scene_paste_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Paste"
+        text_size_ratio = 0.19
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_paste_label]
+
+[scene_delete_button]
+parent = @scene_action_row
+    [UiButton]
+        size_ratio = (0.15, 0.88)
+        click_signals = ["editor_inspector_delete"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/scene_delete_button]
+
+[scene_delete_label]
+parent = @scene_delete_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Del"
+        text_size_ratio = 0.22
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_delete_label]
+
+[scene_order_row]
+parent = @left_panel
+    [UiHLayout]
+        size_ratio = (1.0, 0.032)
+        h_align = "fill"
+        v_align = "center"
+        spacing = 0.004
+        padding = (0.010, 0.0)
+    [/UiHLayout]
+[/scene_order_row]
+
+[scene_move_up_button]
+parent = @scene_order_row
+    [UiButton]
+        size_ratio = (0.24, 0.86)
+        click_signals = ["editor_scene_move_up"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/scene_move_up_button]
+
+[scene_move_up_label]
+parent = @scene_move_up_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Up"
+        text_size_ratio = 0.22
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_move_up_label]
+
+[scene_move_down_button]
+parent = @scene_order_row
+    [UiButton]
+        size_ratio = (0.24, 0.86)
+        click_signals = ["editor_scene_move_down"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/scene_move_down_button]
+
+[scene_move_down_label]
+parent = @scene_move_down_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Down"
+        text_size_ratio = 0.20
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_move_down_label]
+
+[scene_reparent_out_button]
+parent = @scene_order_row
+    [UiButton]
+        size_ratio = (0.24, 0.86)
+        click_signals = ["editor_scene_reparent_out"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/scene_reparent_out_button]
+
+[scene_reparent_out_label]
+parent = @scene_reparent_out_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Out"
+        text_size_ratio = 0.22
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_reparent_out_label]
+
+[scene_reparent_in_button]
+parent = @scene_order_row
+    [UiButton]
+        size_ratio = (0.24, 0.86)
+        click_signals = ["editor_scene_reparent_in"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/scene_reparent_in_button]
+
+[scene_reparent_in_label]
+parent = @scene_reparent_in_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "In"
+        text_size_ratio = 0.22
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_reparent_in_label]
+
+[scene_tools_row]
+parent = @left_panel
+    [UiHLayout]
+        size_ratio = (1.0, 0.032)
+        h_align = "fill"
+        v_align = "center"
+        spacing = 0.004
+        padding = (0.010, 0.0)
+    [/UiHLayout]
+[/scene_tools_row]
+
+[scene_clear_button]
+parent = @scene_tools_row
+    [UiButton]
+        size_ratio = (0.13, 0.86)
+        click_signals = ["editor_scene_clear"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/scene_clear_button]
+
+[scene_clear_label]
+parent = @scene_clear_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Clear"
+        text_size_ratio = 0.20
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_clear_label]
+
+[scene_expand_all_button]
+parent = @scene_tools_row
+    [UiButton]
+        size_ratio = (0.12, 0.86)
+        click_signals = ["editor_scene_expand_all"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/scene_expand_all_button]
+
+[scene_expand_all_label]
+parent = @scene_expand_all_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "All"
+        text_size_ratio = 0.22
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_expand_all_label]
+
+[scene_collapse_all_button]
+parent = @scene_tools_row
+    [UiButton]
+        size_ratio = (0.13, 0.86)
+        click_signals = ["editor_scene_collapse_all"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/scene_collapse_all_button]
+
+[scene_collapse_all_label]
+parent = @scene_collapse_all_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Fold"
+        text_size_ratio = 0.20
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_collapse_all_label]
+
+[scene_copy_path_button]
+parent = @scene_tools_row
+    [UiButton]
+        size_ratio = (0.12, 0.86)
+        click_signals = ["editor_scene_copy_path"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/scene_copy_path_button]
+
+[scene_copy_path_label]
+parent = @scene_copy_path_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Path"
+        text_size_ratio = 0.20
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_copy_path_label]
+
+[scene_select_parent_button]
+parent = @scene_tools_row
+    [UiButton]
+        size_ratio = (0.12, 0.86)
+        click_signals = ["editor_scene_select_parent"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/scene_select_parent_button]
+
+[scene_select_parent_label]
+parent = @scene_select_parent_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Par"
+        text_size_ratio = 0.20
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_select_parent_label]
+
+[scene_select_child_button]
+parent = @scene_tools_row
+    [UiButton]
+        size_ratio = (0.12, 0.86)
+        click_signals = ["editor_scene_select_child"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/scene_select_child_button]
+
+[scene_select_child_label]
+parent = @scene_select_child_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Kid"
+        text_size_ratio = 0.20
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_select_child_label]
+
+[scene_select_prev_button]
+parent = @scene_tools_row
+    [UiButton]
+        size_ratio = (0.12, 0.86)
+        click_signals = ["editor_scene_select_prev"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/scene_select_prev_button]
+
+[scene_select_prev_label]
+parent = @scene_select_prev_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Prev"
+        text_size_ratio = 0.18
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_select_prev_label]
+
+[scene_select_next_button]
+parent = @scene_tools_row
+    [UiButton]
+        size_ratio = (0.12, 0.86)
+        click_signals = ["editor_scene_select_next"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/scene_select_next_button]
+
+[scene_select_next_label]
+parent = @scene_select_next_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Next"
+        text_size_ratio = 0.18
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/scene_select_next_label]
+
 [scene_filter_box]
 parent = @left_panel
     [UiTextBox]
-        size_ratio = (1.0, 0.044)
+        size_ratio = (1.0, 0.036)
         text = ""
-        placeholder = "Find node  @2d @3d @ui @mesh @anim"
+        placeholder = "Find node  @2d @3d @ui @script @res @hidden"
         placeholder_color = "#94A3B8"
-        text_size_ratio = 0.24
+        text_size_ratio = 0.22
         text_changed_signals = ["editor_scene_filter"]
         style = $field
         focused_style = $field_focus
@@ -307,11 +754,11 @@ parent = @left_panel
 [scene_rows]
 parent = @left_panel
     [UiVLayout]
-        size_ratio = (1.0, 0.378)
+        size_ratio = (1.0, 0.312)
         h_align = "fill"
         v_align = "start"
-        spacing = 0.002
-        padding = (0.018, 0.006)
+        spacing = 0.001
+        padding = (0.010, 0.004)
     [/UiVLayout]
 [/scene_rows]
 
@@ -606,9 +1053,9 @@ parent = @scene_row_11
 [file_title]
 parent = @left_panel
     [UiLabel]
-        size_ratio = (1.0, 0.04)
+        size_ratio = (1.0, 0.033)
         text = "FileSystem"
-        text_size_ratio = 0.24
+        text_size_ratio = 0.22
         color = "#F3F4F6"
         h_align = "start"
         style = $bar
@@ -618,12 +1065,12 @@ parent = @left_panel
 [file_action_row]
 parent = @left_panel
     [UiHLayout]
-        visible = false
-        size_ratio = (1.0, 0.0)
+        visible = true
+        size_ratio = (1.0, 0.034)
         h_align = "fill"
         v_align = "center"
-        spacing = 0.006
-        padding = (0.035, 0.0)
+        spacing = 0.004
+        padding = (0.010, 0.0)
     [/UiHLayout]
 [/file_action_row]
 
@@ -742,14 +1189,245 @@ parent = @file_new_folder_button
     [/UiLabel]
 [/file_new_folder_label]
 
+[file_tools_row]
+parent = @left_panel
+    [UiHLayout]
+        visible = true
+        size_ratio = (1.0, 0.032)
+        h_align = "fill"
+        v_align = "center"
+        spacing = 0.004
+        padding = (0.010, 0.0)
+    [/UiHLayout]
+[/file_tools_row]
+
+[file_refresh_button]
+parent = @file_tools_row
+    [UiButton]
+        size_ratio = (0.24, 0.86)
+        click_signals = ["editor_file_refresh"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/file_refresh_button]
+
+[file_refresh_label]
+parent = @file_refresh_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Rescan"
+        text_size_ratio = 0.18
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/file_refresh_label]
+
+[file_clear_button]
+parent = @file_tools_row
+    [UiButton]
+        size_ratio = (0.24, 0.86)
+        click_signals = ["editor_file_clear"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/file_clear_button]
+
+[file_clear_label]
+parent = @file_clear_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Clear"
+        text_size_ratio = 0.20
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/file_clear_label]
+
+[file_expand_all_button]
+parent = @file_tools_row
+    [UiButton]
+        size_ratio = (0.24, 0.86)
+        click_signals = ["editor_file_expand_all"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/file_expand_all_button]
+
+[file_expand_all_label]
+parent = @file_expand_all_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "All"
+        text_size_ratio = 0.22
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/file_expand_all_label]
+
+[file_collapse_all_button]
+parent = @file_tools_row
+    [UiButton]
+        size_ratio = (0.24, 0.86)
+        click_signals = ["editor_file_collapse_all"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/file_collapse_all_button]
+
+[file_collapse_all_label]
+parent = @file_collapse_all_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Fold"
+        text_size_ratio = 0.20
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/file_collapse_all_label]
+
+[file_ops_row]
+parent = @left_panel
+    [UiHLayout]
+        visible = true
+        size_ratio = (1.0, 0.032)
+        h_align = "fill"
+        v_align = "center"
+        spacing = 0.004
+        padding = (0.010, 0.0)
+    [/UiHLayout]
+[/file_ops_row]
+
+[file_open_button]
+parent = @file_ops_row
+    [UiButton]
+        size_ratio = (0.19, 0.86)
+        click_signals = ["editor_file_open"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/file_open_button]
+
+[file_open_label]
+parent = @file_open_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Open"
+        text_size_ratio = 0.18
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/file_open_label]
+
+[file_up_button]
+parent = @file_ops_row
+    [UiButton]
+        size_ratio = (0.19, 0.86)
+        click_signals = ["editor_file_up"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/file_up_button]
+
+[file_up_label]
+parent = @file_up_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Up"
+        text_size_ratio = 0.22
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/file_up_label]
+
+[file_duplicate_button]
+parent = @file_ops_row
+    [UiButton]
+        size_ratio = (0.19, 0.86)
+        click_signals = ["editor_file_duplicate"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/file_duplicate_button]
+
+[file_duplicate_label]
+parent = @file_duplicate_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Dup"
+        text_size_ratio = 0.22
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/file_duplicate_label]
+
+[file_delete_button]
+parent = @file_ops_row
+    [UiButton]
+        size_ratio = (0.19, 0.86)
+        click_signals = ["editor_file_delete"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/file_delete_button]
+
+[file_delete_label]
+parent = @file_delete_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Del"
+        text_size_ratio = 0.22
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/file_delete_label]
+
+[file_copy_path_button]
+parent = @file_ops_row
+    [UiButton]
+        size_ratio = (0.19, 0.86)
+        click_signals = ["editor_file_copy_path"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/file_copy_path_button]
+
+[file_copy_path_label]
+parent = @file_copy_path_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Path"
+        text_size_ratio = 0.20
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/file_copy_path_label]
+
 [file_filter_box]
 parent = @left_panel
     [UiTextBox]
-        size_ratio = (1.0, 0.044)
+        size_ratio = (1.0, 0.036)
         text = ""
         placeholder = "Find asset  @scene @script @glb @anim @mat @img"
         placeholder_color = "#94A3B8"
-        text_size_ratio = 0.26
+        text_size_ratio = 0.22
         text_changed_signals = ["editor_file_filter"]
         style = $field
         focused_style = $field_focus
@@ -759,11 +1437,11 @@ parent = @left_panel
 [file_rows]
 parent = @left_panel
     [UiVLayout]
-        size_ratio = (1.0, 0.40)
+        size_ratio = (1.0, 0.328)
         h_align = "fill"
         v_align = "start"
-        spacing = 0.002
-        padding = (0.018, 0.006)
+        spacing = 0.001
+        padding = (0.010, 0.004)
     [/UiVLayout]
 [/file_rows]
 
@@ -1058,10 +1736,10 @@ parent = @file_row_11
 [center_stack]
 parent = @main_split
     [UiVLayout]
-        size_ratio = (0.65, 1.0)
+        size_ratio = (0.596, 1.0)
         h_align = "fill"
         v_align = "fill"
-        spacing = 0.004
+        spacing = 0.003
     [/UiVLayout]
 [/center_stack]
 
@@ -1107,7 +1785,7 @@ parent = @scene_tab_0
         anchor = "right"
         size_ratio = (0.16, 0.70)
         click_signals = ["editor_tab_close_0"]
-        style = { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 1.0 }
+        style = { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 0.045 }
         hover = $btn_hot
         pressed = $btn_down
     [/UiButton]
@@ -1155,7 +1833,7 @@ parent = @scene_tab_1
         anchor = "right"
         size_ratio = (0.16, 0.70)
         click_signals = ["editor_tab_close_1"]
-        style = { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 1.0 }
+        style = { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 0.045 }
         hover = $btn_hot
         pressed = $btn_down
     [/UiButton]
@@ -1203,7 +1881,7 @@ parent = @scene_tab_2
         anchor = "right"
         size_ratio = (0.16, 0.70)
         click_signals = ["editor_tab_close_2"]
-        style = { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 1.0 }
+        style = { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 0.045 }
         hover = $btn_hot
         pressed = $btn_down
     [/UiButton]
@@ -1251,7 +1929,7 @@ parent = @scene_tab_3
         anchor = "right"
         size_ratio = (0.16, 0.70)
         click_signals = ["editor_tab_close_3"]
-        style = { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 1.0 }
+        style = { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 0.045 }
         hover = $btn_hot
         pressed = $btn_down
     [/UiButton]
@@ -1999,11 +2677,11 @@ parent = @editor_root
 [inspector_panel]
 parent = @main_split
     [UiVLayout]
-        size_ratio = (0.18, 1.0)
+        size_ratio = (0.20, 1.0)
         h_align = "fill"
         v_align = "start"
-        spacing = 0.005
-        padding = (0.018, 0.01)
+        spacing = 0.003
+        padding = (0.010, 0.006)
         style = $inspector_panel
     [/UiVLayout]
 [/inspector_panel]
@@ -2019,10 +2697,10 @@ parent = @inspector_panel
 [inspector_content]
 parent = @inspector_scroll
     [UiVLayout]
-        size_ratio = (1.0, 1.25)
+        size_ratio = (1.0, 1.12)
         h_align = "fill"
         v_align = "start"
-        spacing = 0.005
+        spacing = 0.003
         padding = (0.0, 0.0)
     [/UiVLayout]
 [/inspector_content]
@@ -2030,9 +2708,9 @@ parent = @inspector_scroll
 [inspector_title]
 parent = @inspector_content
     [UiLabel]
-        size_ratio = (1.0, 0.052)
+        size_ratio = (1.0, 0.040)
         text = "Node Inspector"
-        text_size_ratio = 0.30
+        text_size_ratio = 0.22
         color = "#F3F4F6"
         h_align = "start"
         style = $inspector_header
@@ -2042,7 +2720,7 @@ parent = @inspector_content
 [inspector_name]
 parent = @inspector_content
     [UiLabel]
-        size_ratio = (1.0, 0.034)
+        size_ratio = (1.0, 0.030)
         text = "name: -"
         text_size_ratio = 0.21
         color = "#D1D5DB"
@@ -2053,7 +2731,7 @@ parent = @inspector_content
 [inspector_name_box]
 parent = @inspector_content
     [UiTextBox]
-        size_ratio = (1.0, 0.026)
+        size_ratio = (1.0, 0.024)
         text = "-"
         text_size_ratio = 0.24
         focused_signals = ["editor_inspector_focus"]
@@ -2066,7 +2744,7 @@ parent = @inspector_content
 [inspector_script_top]
 parent = @inspector_content
     [UiLabel]
-        size_ratio = (1.0, 0.044)
+        size_ratio = (1.0, 0.034)
         text = "Script  -"
         text_size_ratio = 0.18
         color = "#D1D5DB"
@@ -2078,7 +2756,7 @@ parent = @inspector_content
 [inspector_type]
 parent = @inspector_content
     [UiLabel]
-        size_ratio = (1.0, 0.042)
+        size_ratio = (1.0, 0.032)
         text = "type: -"
         text_size_ratio = 0.20
         color = "#D1D5DB"
@@ -2089,7 +2767,7 @@ parent = @inspector_content
 [inspector_parent]
 parent = @inspector_content
     [UiLabel]
-        size_ratio = (1.0, 0.042)
+        size_ratio = (1.0, 0.032)
         text = "parent: -"
         text_size_ratio = 0.20
         color = "#D1D5DB"
@@ -2101,17 +2779,17 @@ parent = @inspector_content
 parent = @inspector_content
     [UiHLayout]
         visible = false
-        size_ratio = (1.0, 0.044)
+        size_ratio = (1.0, 0.024)
         h_align = "fill"
         v_align = "center"
-        spacing = 0.006
+        spacing = 0.003
     [/UiHLayout]
 [/inspector_action_row]
 
 [inspector_duplicate_button]
 parent = @inspector_action_row
     [UiButton]
-        size_ratio = (0.25, 0.86)
+        size_ratio = (0.16, 0.86)
         click_signals = ["editor_inspector_duplicate"]
         style = $btn
         hover = $btn_hot
@@ -2134,7 +2812,7 @@ parent = @inspector_duplicate_button
 [inspector_delete_button]
 parent = @inspector_action_row
     [UiButton]
-        size_ratio = (0.25, 0.86)
+        size_ratio = (0.16, 0.86)
         click_signals = ["editor_inspector_delete"]
         style = $btn
         hover = $btn_hot
@@ -2154,10 +2832,33 @@ parent = @inspector_delete_button
     [/UiLabel]
 [/inspector_delete_label]
 
+[inspector_reset_button]
+parent = @inspector_action_row
+    [UiButton]
+        size_ratio = (0.16, 0.86)
+        click_signals = ["editor_inspector_reset"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_reset_button]
+
+[inspector_reset_label]
+parent = @inspector_reset_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Reset"
+        text_size_ratio = 0.21
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_reset_label]
+
 [inspector_open_ref_button]
 parent = @inspector_action_row
     [UiButton]
-        size_ratio = (0.25, 0.86)
+        size_ratio = (0.16, 0.86)
         click_signals = ["editor_inspector_open_ref"]
         style = $btn
         hover = $btn_hot
@@ -2180,7 +2881,7 @@ parent = @inspector_open_ref_button
 [inspector_visible_button]
 parent = @inspector_action_row
     [UiButton]
-        size_ratio = (0.25, 0.86)
+        size_ratio = (0.16, 0.86)
         click_signals = ["editor_inspector_visible"]
         style = $btn
         hover = $btn_hot
@@ -2200,21 +2901,67 @@ parent = @inspector_visible_button
     [/UiLabel]
 [/inspector_visible_label]
 
+[inspector_clear_ref_button]
+parent = @inspector_action_row
+    [UiButton]
+        size_ratio = (0.16, 0.86)
+        click_signals = ["editor_inspector_clear_ref"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_clear_ref_button]
+
+[inspector_clear_ref_label]
+parent = @inspector_clear_ref_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "ClrRef"
+        text_size_ratio = 0.18
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_clear_ref_label]
+
 [asset_action_row]
 parent = @inspector_content
     [UiHLayout]
         visible = false
-        size_ratio = (1.0, 0.044)
+        size_ratio = (1.0, 0.024)
         h_align = "fill"
         v_align = "center"
-        spacing = 0.006
+        spacing = 0.003
     [/UiHLayout]
 [/asset_action_row]
+
+[asset_open_button]
+parent = @asset_action_row
+    [UiButton]
+        size_ratio = (0.20, 0.86)
+        click_signals = ["editor_asset_open"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/asset_open_button]
+
+[asset_open_label]
+parent = @asset_open_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Open"
+        text_size_ratio = 0.22
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/asset_open_label]
 
 [asset_use_button]
 parent = @asset_action_row
     [UiButton]
-        size_ratio = (0.25, 0.86)
+        size_ratio = (0.20, 0.86)
         click_signals = ["editor_asset_use"]
         style = $btn
         hover = $btn_hot
@@ -2237,7 +2984,7 @@ parent = @asset_use_button
 [asset_make_node_button]
 parent = @asset_action_row
     [UiButton]
-        size_ratio = (0.25, 0.86)
+        size_ratio = (0.20, 0.86)
         click_signals = ["editor_asset_make_node"]
         style = $btn
         hover = $btn_hot
@@ -2260,7 +3007,7 @@ parent = @asset_make_node_button
 [asset_glb_anim_button]
 parent = @asset_action_row
     [UiButton]
-        size_ratio = (0.25, 0.86)
+        size_ratio = (0.20, 0.86)
         click_signals = ["editor_asset_glb_anim"]
         style = $btn
         hover = $btn_hot
@@ -2283,7 +3030,7 @@ parent = @asset_glb_anim_button
 [asset_glb_mat_button]
 parent = @asset_action_row
     [UiButton]
-        size_ratio = (0.25, 0.86)
+        size_ratio = (0.20, 0.86)
         click_signals = ["editor_asset_glb_mat"]
         style = $btn
         hover = $btn_hot
@@ -2303,23 +3050,58 @@ parent = @asset_glb_mat_button
     [/UiLabel]
 [/asset_glb_mat_label]
 
+[asset_user_button]
+parent = @asset_action_row
+    [UiButton]
+        size_ratio = (0.20, 0.86)
+        click_signals = ["editor_asset_user"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/asset_user_button]
+
+[asset_user_label]
+parent = @asset_user_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "User"
+        text_size_ratio = 0.22
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/asset_user_label]
+
 [inspector_pos]
 parent = @inspector_content
+    [UiButton]
+        size_ratio = (1.0, 0.030)
+        click_signals = ["editor_inspector_position"]
+        style = $inspector_header
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_pos]
+
+[inspector_pos_label]
+parent = @inspector_pos
     [UiLabel]
-        size_ratio = (1.0, 0.036)
-        text = "Transform / Position"
+        size_ratio = (0.96, 1.0)
+        text = "v Transform"
         text_size_ratio = 0.20
         color = "#F3F4F6"
         h_align = "start"
-        style = $inspector_header
+        input_enabled = false
+        mouse_filter = "pass"
     [/UiLabel]
-[/inspector_pos]
+[/inspector_pos_label]
 
 [inspector_position_box]
 parent = @inspector_content
     [UiTextBox]
         visible = false
-        size_ratio = (1.0, 0.026)
+        size_ratio = (1.0, 0.024)
         text = "-"
         text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
@@ -2332,11 +3114,11 @@ parent = @inspector_content
 [inspector_position_row]
 parent = @inspector_content
     [UiHLayout]
-        size_ratio = (1.0, 0.026)
+        size_ratio = (1.0, 0.024)
         h_align = "fill"
         v_align = "center"
-        spacing = 0.003
-        padding = (0.045, 0.0, 0.0, 0.0)
+        spacing = 0.002
+        padding = (0.030, 0.0, 0.0, 0.0)
     [/UiHLayout]
 [/inspector_position_row]
 
@@ -2353,7 +3135,7 @@ parent = @inspector_position_row
 [inspector_position_0_box]
 parent = @inspector_position_row
     [UiTextBox]
-        size_ratio = (0.185, 0.68)
+        size_ratio = (0.185, 0.72)
         text = "0"
         text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
@@ -2376,7 +3158,7 @@ parent = @inspector_position_row
 [inspector_position_1_box]
 parent = @inspector_position_row
     [UiTextBox]
-        size_ratio = (0.185, 0.68)
+        size_ratio = (0.185, 0.72)
         text = "0"
         text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
@@ -2399,7 +3181,7 @@ parent = @inspector_position_row
 [inspector_position_2_box]
 parent = @inspector_position_row
     [UiTextBox]
-        size_ratio = (0.185, 0.68)
+        size_ratio = (0.185, 0.72)
         text = "0"
         text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
@@ -2422,7 +3204,7 @@ parent = @inspector_position_row
 [inspector_position_3_box]
 parent = @inspector_position_row
     [UiTextBox]
-        size_ratio = (0.185, 0.68)
+        size_ratio = (0.185, 0.72)
         text = "0"
         text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
@@ -2434,15 +3216,27 @@ parent = @inspector_position_row
 
 [inspector_rotation_label]
 parent = @inspector_content
-    [UiLabel]
+    [UiButton]
         size_ratio = (1.0, 0.036)
-        text = "Rotation"
+        click_signals = ["editor_inspector_rotation"]
+        style = $inspector_header
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_rotation_label]
+
+[inspector_rotation_header_label]
+parent = @inspector_rotation_label
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "v Rotation"
         text_size_ratio = 0.20
         color = "#F3F4F6"
         h_align = "start"
-        style = $inspector_header
+        input_enabled = false
+        mouse_filter = "pass"
     [/UiLabel]
-[/inspector_rotation_label]
+[/inspector_rotation_header_label]
 
 [inspector_rotation_box]
 parent = @inspector_content
@@ -2539,7 +3333,7 @@ parent = @inspector_rotation_row
 [inspector_rotation_0_box]
 parent = @inspector_rotation_row
     [UiTextBox]
-        size_ratio = (0.185, 0.68)
+        size_ratio = (0.185, 0.72)
         text = "0"
         text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
@@ -2562,7 +3356,7 @@ parent = @inspector_rotation_row
 [inspector_rotation_1_box]
 parent = @inspector_rotation_row
     [UiTextBox]
-        size_ratio = (0.185, 0.68)
+        size_ratio = (0.185, 0.72)
         text = "0"
         text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
@@ -2585,7 +3379,7 @@ parent = @inspector_rotation_row
 [inspector_rotation_2_box]
 parent = @inspector_rotation_row
     [UiTextBox]
-        size_ratio = (0.185, 0.68)
+        size_ratio = (0.185, 0.72)
         text = "0"
         text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
@@ -2608,7 +3402,7 @@ parent = @inspector_rotation_row
 [inspector_rotation_3_box]
 parent = @inspector_rotation_row
     [UiTextBox]
-        size_ratio = (0.185, 0.68)
+        size_ratio = (0.185, 0.72)
         text = "0"
         text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
@@ -2620,15 +3414,27 @@ parent = @inspector_rotation_row
 
 [inspector_scale_label]
 parent = @inspector_content
-    [UiLabel]
+    [UiButton]
         size_ratio = (1.0, 0.036)
-        text = "Scale"
+        click_signals = ["editor_inspector_scale"]
+        style = $inspector_header
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_scale_label]
+
+[inspector_scale_header_label]
+parent = @inspector_scale_label
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "v Scale"
         text_size_ratio = 0.20
         color = "#F3F4F6"
         h_align = "start"
-        style = $inspector_header
+        input_enabled = false
+        mouse_filter = "pass"
     [/UiLabel]
-[/inspector_scale_label]
+[/inspector_scale_header_label]
 
 [inspector_scale_box]
 parent = @inspector_content
@@ -2668,7 +3474,7 @@ parent = @inspector_scale_row
 [inspector_scale_0_box]
 parent = @inspector_scale_row
     [UiTextBox]
-        size_ratio = (0.185, 0.68)
+        size_ratio = (0.185, 0.72)
         text = "1"
         text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
@@ -2691,7 +3497,7 @@ parent = @inspector_scale_row
 [inspector_scale_1_box]
 parent = @inspector_scale_row
     [UiTextBox]
-        size_ratio = (0.185, 0.68)
+        size_ratio = (0.185, 0.72)
         text = "1"
         text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
@@ -2714,7 +3520,7 @@ parent = @inspector_scale_row
 [inspector_scale_2_box]
 parent = @inspector_scale_row
     [UiTextBox]
-        size_ratio = (0.185, 0.68)
+        size_ratio = (0.185, 0.72)
         text = "1"
         text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
@@ -2737,7 +3543,7 @@ parent = @inspector_scale_row
 [inspector_scale_3_box]
 parent = @inspector_scale_row
     [UiTextBox]
-        size_ratio = (0.185, 0.68)
+        size_ratio = (0.185, 0.72)
         text = "1"
         text_size_ratio = 0.44
         focused_signals = ["editor_inspector_focus"]
@@ -2749,28 +3555,52 @@ parent = @inspector_scale_row
 
 [inspector_script]
 parent = @inspector_content
-    [UiLabel]
+    [UiButton]
         size_ratio = (1.0, 0.046)
-        text = "script: -"
-        text_size_ratio = 0.18
-        color = "#D1D5DB"
-        h_align = "start"
-        v_align = "start"
-    [/UiLabel]
+        click_signals = ["editor_inspector_vars"]
+        style = $inspector_header
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
 [/inspector_script]
+
+[inspector_script_label]
+parent = @inspector_script
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "v References"
+        text_size_ratio = 0.18
+        color = "#F3F4F6"
+        h_align = "start"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_script_label]
 
 [inspector_vars]
 parent = @inspector_content
-    [UiLabel]
+    [UiButton]
         size_ratio = (1.0, 0.036)
-        text = "Script Vars"
+        click_signals = ["editor_inspector_vars"]
+        style = $inspector_header
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_vars]
+
+[inspector_vars_label]
+parent = @inspector_vars
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "v Script Variables"
         text_size_ratio = 0.20
         color = "#F3F4F6"
         h_align = "start"
-        v_align = "start"
-        style = $inspector_header
+        input_enabled = false
+        mouse_filter = "pass"
     [/UiLabel]
-[/inspector_vars]
+[/inspector_vars_label]
 
 [inspector_vars_box]
 parent = @inspector_content
@@ -3460,7 +4290,7 @@ parent = @inspector_resource_row_0
 [inspector_resource_0_button]
 parent = @inspector_resource_row_0
     [UiButton]
-        size_ratio = (0.70, 1.0)
+        size_ratio = (0.60, 1.0)
         click_signals = ["editor_inspector_resource_0"]
         style = $field
         hover = $btn_hot
@@ -3480,6 +4310,29 @@ parent = @inspector_resource_0_button
         mouse_filter = "pass"
     [/UiLabel]
 [/inspector_resource_0_button_label]
+
+[inspector_resource_0_clear_button]
+parent = @inspector_resource_row_0
+    [UiButton]
+        size_ratio = (0.08, 0.72)
+        click_signals = ["editor_inspector_resource_clear_0"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_resource_0_clear_button]
+
+[inspector_resource_0_clear_label]
+parent = @inspector_resource_0_clear_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "x"
+        text_size_ratio = 0.22
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_resource_0_clear_label]
 
 [inspector_resource_row_1]
 parent = @inspector_content
@@ -3506,7 +4359,7 @@ parent = @inspector_resource_row_1
 [inspector_resource_1_button]
 parent = @inspector_resource_row_1
     [UiButton]
-        size_ratio = (0.70, 1.0)
+        size_ratio = (0.60, 1.0)
         click_signals = ["editor_inspector_resource_1"]
         style = $field
         hover = $btn_hot
@@ -3526,6 +4379,29 @@ parent = @inspector_resource_1_button
         mouse_filter = "pass"
     [/UiLabel]
 [/inspector_resource_1_button_label]
+
+[inspector_resource_1_clear_button]
+parent = @inspector_resource_row_1
+    [UiButton]
+        size_ratio = (0.08, 0.72)
+        click_signals = ["editor_inspector_resource_clear_1"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_resource_1_clear_button]
+
+[inspector_resource_1_clear_label]
+parent = @inspector_resource_1_clear_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "x"
+        text_size_ratio = 0.22
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_resource_1_clear_label]
 
 [inspector_resource_row_2]
 parent = @inspector_content
@@ -3552,7 +4428,7 @@ parent = @inspector_resource_row_2
 [inspector_resource_2_button]
 parent = @inspector_resource_row_2
     [UiButton]
-        size_ratio = (0.70, 1.0)
+        size_ratio = (0.60, 1.0)
         click_signals = ["editor_inspector_resource_2"]
         style = $field
         hover = $btn_hot
@@ -3572,6 +4448,29 @@ parent = @inspector_resource_2_button
         mouse_filter = "pass"
     [/UiLabel]
 [/inspector_resource_2_button_label]
+
+[inspector_resource_2_clear_button]
+parent = @inspector_resource_row_2
+    [UiButton]
+        size_ratio = (0.08, 0.72)
+        click_signals = ["editor_inspector_resource_clear_2"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_resource_2_clear_button]
+
+[inspector_resource_2_clear_label]
+parent = @inspector_resource_2_clear_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "x"
+        text_size_ratio = 0.22
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_resource_2_clear_label]
 
 [inspector_resource_row_3]
 parent = @inspector_content
@@ -3598,7 +4497,7 @@ parent = @inspector_resource_row_3
 [inspector_resource_3_button]
 parent = @inspector_resource_row_3
     [UiButton]
-        size_ratio = (0.70, 1.0)
+        size_ratio = (0.60, 1.0)
         click_signals = ["editor_inspector_resource_3"]
         style = $field
         hover = $btn_hot
@@ -3618,6 +4517,29 @@ parent = @inspector_resource_3_button
         mouse_filter = "pass"
     [/UiLabel]
 [/inspector_resource_3_button_label]
+
+[inspector_resource_3_clear_button]
+parent = @inspector_resource_row_3
+    [UiButton]
+        size_ratio = (0.08, 0.72)
+        click_signals = ["editor_inspector_resource_clear_3"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_resource_3_clear_button]
+
+[inspector_resource_3_clear_label]
+parent = @inspector_resource_3_clear_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "x"
+        text_size_ratio = 0.22
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_resource_3_clear_label]
 
 [status_bar]
 parent = @root_stack
@@ -3667,6 +4589,8 @@ parent = @add_node_popup
         placeholder_color = "#94A3B8"
         text_size_ratio = 0.22
         text_changed_signals = ["editor_add_node_search"]
+        focused_signals = ["editor_inspector_focus"]
+        unfocused_signals = ["editor_add_node_search"]
         style = $field
         focused_style = $field_focus
     [/UiTextBox]
@@ -4098,6 +5022,8 @@ parent = @inspector_pick_popup
         placeholder_color = "#94A3B8"
         text_size_ratio = 0.22
         text_changed_signals = ["editor_inspector_pick_filter"]
+        focused_signals = ["editor_inspector_focus"]
+        unfocused_signals = ["editor_inspector_pick_filter"]
         style = $field
         focused_style = $field_focus
     [/UiTextBox]

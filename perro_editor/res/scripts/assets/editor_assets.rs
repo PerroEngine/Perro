@@ -63,6 +63,8 @@ pub fn open_project<API: ScriptAPI + ?Sized>(
         state.project_name = project_name;
         state.file_paths = file_paths;
         state.file_scope.clear();
+        state.file_expanded_paths.clear();
+        state.file_expanded_paths.push("res://".to_string());
         state.scene_paths = scene_paths;
         state.open_paths.clear();
         state.active_asset_path.clear();
@@ -301,6 +303,16 @@ pub fn refresh_project_assets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
             let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
                 state.file_paths = paths;
                 state.scene_paths = scene_paths;
+                state.file_expanded_paths.retain(|path| {
+                    path == "res://" || state.file_paths.iter().any(|file_path| file_path == path)
+                });
+                if !state
+                    .file_expanded_paths
+                    .iter()
+                    .any(|path| path == "res://")
+                {
+                    state.file_expanded_paths.push("res://".to_string());
+                }
                 state.project_file_sigs = editor_file_watch::scan_project(root_path.as_path());
                 state.log = format!("refresh project\nassets={count}");
             });
@@ -324,6 +336,7 @@ pub fn open_file_slot<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>,
     });
     if scene_path.ends_with('/') {
         let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+            toggle_file_folder_expanded(state, &scene_path);
             state.file_scope = scene_path.clone();
             state.file_filter.clear();
             state.active_asset_path = scene_path.clone();
@@ -368,6 +381,9 @@ pub fn click_or_open_file_slot<API: ScriptAPI + ?Sized>(
     let Some(scene_path) = res_path else {
         return;
     };
+    let was_selected = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.active_asset_path == scene_path
+    });
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         state.active_asset_path = scene_path.clone();
         state.sidebar_mode = "files".to_string();
@@ -380,7 +396,7 @@ pub fn click_or_open_file_slot<API: ScriptAPI + ?Sized>(
             && frame.wrapping_sub(state.last_file_row_click_frame) <= LIST_DOUBLE_CLICK_FRAMES;
         state.last_file_row_click_slot = Some(idx);
         state.last_file_row_click_frame = frame;
-        should_open
+        should_open || (was_selected && scene_path.ends_with('/'))
     })
     .unwrap_or(false);
     if should_open {
@@ -393,6 +409,85 @@ pub fn click_or_open_file_slot<API: ScriptAPI + ?Sized>(
             &format!("folder\n{}", editor_files::rel_label(&scene_path)),
         );
     }
+    refresh_all(ctx);
+}
+
+pub fn toggle_file_folder_expanded(state: &mut EditorState, path: &str) {
+    if path == "res://" {
+        if !state
+            .file_expanded_paths
+            .iter()
+            .any(|expanded| expanded == "res://")
+        {
+            state.file_expanded_paths.push("res://".to_string());
+        }
+        return;
+    }
+    if let Some(pos) = state
+        .file_expanded_paths
+        .iter()
+        .position(|expanded| expanded == path)
+    {
+        state.file_expanded_paths.remove(pos);
+        let prefix = path.to_string();
+        state
+            .file_expanded_paths
+            .retain(|expanded| !expanded.starts_with(&prefix));
+    } else {
+        state.file_expanded_paths.push(path.to_string());
+    }
+}
+
+pub fn clear_file_filter_and_scope<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.file_filter.clear();
+        state.file_scope.clear();
+        state.focused_inspector_box.clear();
+        if state.active_asset_path.ends_with('/') {
+            state.active_asset_path = "res://".to_string();
+        }
+        if !state
+            .file_expanded_paths
+            .iter()
+            .any(|path| path == "res://")
+        {
+            state.file_expanded_paths.push("res://".to_string());
+        }
+        state.log = "clear files filter".to_string();
+    });
+    refresh_all(ctx);
+}
+
+pub fn expand_file_tree_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.file_expanded_paths = state
+            .file_paths
+            .iter()
+            .filter(|path| path.ends_with('/'))
+            .cloned()
+            .collect();
+        if !state
+            .file_expanded_paths
+            .iter()
+            .any(|path| path == "res://")
+        {
+            state.file_expanded_paths.push("res://".to_string());
+        }
+        state.log = format!("expand files\n{} dirs", state.file_expanded_paths.len());
+    });
+    refresh_all(ctx);
+}
+
+pub fn collapse_file_tree_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.file_expanded_paths.clear();
+        state.file_expanded_paths.push("res://".to_string());
+        state.file_scope.clear();
+        if state.active_asset_path.ends_with('/') {
+            state.active_asset_path = "res://".to_string();
+        }
+        state.log = "fold files\nroot".to_string();
+    });
     refresh_all(ctx);
 }
 
@@ -794,6 +889,7 @@ pub fn create_quick_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
                 state.activity_mode = "scene".to_string();
                 state.active_asset_path = path.clone();
                 state.file_scope = parent_res_folder(&path);
+                reveal_file_path_in_tree(state, &path);
                 state.log = format!("new {kind}\n{path}");
             });
             if kind == "scene" {
@@ -836,12 +932,518 @@ pub fn create_quick_folder<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
                 state.activity_mode = "scene".to_string();
                 state.active_asset_path = path.clone();
                 state.file_scope = parent_res_folder(&path);
+                reveal_file_path_in_tree(state, &path);
                 state.log = format!("new folder\n{path}");
             });
             refresh_all(ctx);
         }
         Err(err) => set_log(ctx, &format!("new folder fail\n{path}\n{err}")),
     }
+}
+
+pub fn duplicate_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let request = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        if state.project_root.is_empty() || state.active_asset_path.is_empty() {
+            return None;
+        }
+        let source = state.active_asset_path.clone();
+        if source == "res://" {
+            return None;
+        }
+        let target = duplicate_res_target(&state.project_root, &source)?;
+        Some((state.project_root.clone(), source, target))
+    });
+    let Some((root, source, target)) = request else {
+        set_log(ctx, "dup asset fail\nselect asset");
+        return;
+    };
+    let source_abs = res_to_abs(&root, &source);
+    let target_abs = res_to_abs(&root, &target);
+    let result = if source.ends_with('/') {
+        copy_dir_recursive(Path::new(&source_abs), Path::new(&target_abs))
+    } else {
+        if let Some(parent) = Path::new(&target_abs).parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        fs::copy(&source_abs, &target_abs)
+            .map(|_| ())
+            .map_err(|err| err.to_string())
+    };
+    match result {
+        Ok(()) => {
+            let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+                if let Ok(paths) = scan_res_paths(Path::new(&state.project_root)) {
+                    state.file_paths = paths;
+                }
+                state.sidebar_mode = "files".to_string();
+                state.activity_mode = "scene".to_string();
+                state.active_asset_path = target.clone();
+                state.file_scope = parent_res_folder(&target);
+                reveal_file_path_in_tree(state, &target);
+                state.log = format!("dup asset\n{target}");
+            });
+            refresh_all(ctx);
+        }
+        Err(err) => set_log(ctx, &format!("dup asset fail\n{source}\n{err}")),
+    }
+}
+
+pub fn copy_active_asset_path<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        if state.active_asset_path.is_empty() {
+            state.log = "asset path fail\nselect asset".to_string();
+        } else {
+            state.log = format!("asset path\n{}", state.active_asset_path);
+        }
+        true
+    })
+    .unwrap_or(false);
+    if changed {
+        refresh_all(ctx);
+    }
+}
+
+pub fn open_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let path = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        if state.active_asset_path.is_empty() {
+            state.log = "open asset fail\nselect asset".to_string();
+            return None;
+        }
+        let path = state.active_asset_path.clone();
+        state.sidebar_mode = "files".to_string();
+        state.activity_mode = "scene".to_string();
+        state.file_scope = parent_res_folder(&path);
+        reveal_file_path_in_tree(state, &path);
+        Some(path)
+    })
+    .flatten();
+    let Some(path) = path else {
+        refresh_all(ctx);
+        return;
+    };
+    if path.ends_with('/') {
+        let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+            toggle_file_folder_expanded(state, &path);
+            state.file_scope = path.clone();
+            state.log = format!("folder\n{}", editor_files::rel_label(&path));
+        });
+        refresh_all(ctx);
+        return;
+    }
+    if path.ends_with(".panim") {
+        open_animation_path(ctx, &path);
+    } else if is_gltf_path(&path) {
+        open_gltf_path(ctx, &path);
+    } else if path.ends_with(".scn") {
+        open_scene_path(ctx, &path);
+    } else {
+        set_log(
+            ctx,
+            &format!(
+                "{} file\n{}",
+                editor_files::kind_label(&path),
+                editor_files::rel_label(&path)
+            ),
+        );
+        refresh_all(ctx);
+    }
+}
+
+pub fn duplicate_res_target(project_root: &str, source: &str) -> Option<String> {
+    let parent = parent_res_folder(source)
+        .strip_prefix("res://")
+        .map(|path| path.trim_matches('/').to_string())
+        .unwrap_or_default();
+    let rel = editor_files::rel_label(source);
+    let trimmed = rel.trim_end_matches('/');
+    let name = Path::new(trimmed).file_name()?.to_str()?;
+    if source.ends_with('/') {
+        let stem = sanitize_file_stem(&format!("{name}_copy"));
+        return Some(unique_res_folder_path(project_root, &parent, &stem));
+    }
+    let ext = Path::new(trimmed)
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("asset");
+    let stem = Path::new(trimmed)
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("asset");
+    Some(unique_res_path(
+        project_root,
+        &parent,
+        &sanitize_file_stem(&format!("{stem}_copy")),
+        ext,
+    ))
+}
+
+pub fn copy_dir_recursive(source: &Path, target: &Path) -> Result<(), String> {
+    fs::create_dir_all(target).map_err(|err| err.to_string())?;
+    for entry in fs::read_dir(source).map_err(|err| err.to_string())? {
+        let entry = entry.map_err(|err| err.to_string())?;
+        let from = entry.path();
+        let to = target.join(entry.file_name());
+        if from.is_dir() {
+            copy_dir_recursive(&from, &to)?;
+        } else {
+            fs::copy(&from, &to)
+                .map(|_| ())
+                .map_err(|err| err.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+pub fn delete_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let request = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        if state.project_root.is_empty() || state.active_asset_path.is_empty() {
+            return None;
+        }
+        let path = state.active_asset_path.clone();
+        if path == "res://" {
+            return None;
+        }
+        if state.dirty_scene_paths.iter().any(|dirty| dirty == &path) {
+            return Some((state.project_root.clone(), path, true));
+        }
+        Some((state.project_root.clone(), path, false))
+    });
+    let Some((root, path, dirty_blocked)) = request else {
+        set_log(ctx, "delete asset fail\nselect asset");
+        return;
+    };
+    if dirty_blocked {
+        set_log(ctx, &format!("delete asset blocked\nsave first\n{path}"));
+        return;
+    }
+    let abs = res_to_abs(&root, &path);
+    let result = if path.ends_with('/') {
+        fs::remove_dir_all(&abs).map_err(|err| err.to_string())
+    } else {
+        fs::remove_file(&abs).map_err(|err| err.to_string())
+    };
+    match result {
+        Ok(()) => {
+            let delete_state = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+                let removed_active_open = state
+                    .open_paths
+                    .get(state.active_open)
+                    .is_some_and(|open| open == &path);
+                state.open_paths.retain(|open| open != &path);
+                state.dirty_scene_paths.retain(|dirty| dirty != &path);
+                if state.active_open >= state.open_paths.len() {
+                    state.active_open = state.open_paths.len().saturating_sub(1);
+                }
+                if let Ok(paths) = scan_res_paths(Path::new(&state.project_root)) {
+                    state.file_paths = paths;
+                }
+                state.file_expanded_paths.retain(|expanded| {
+                    expanded == "res://"
+                        || state.file_paths.iter().any(|file_path| file_path == expanded)
+                });
+                state.active_asset_path = parent_res_folder(&path);
+                if state.active_asset_path.is_empty() {
+                    state.active_asset_path = "res://".to_string();
+                }
+                state.file_scope = parent_res_folder(&path);
+                if !state.active_asset_path.is_empty() {
+                    let reveal_path = state.active_asset_path.clone();
+                    reveal_file_path_in_tree(state, &reveal_path);
+                }
+                state.sidebar_mode = "files".to_string();
+                state.activity_mode = "scene".to_string();
+                state.log = format!("delete asset\n{path}");
+                if removed_active_open {
+                    if let Some(next) = state.open_paths.get(state.active_open).cloned() {
+                        return (Some(next), true);
+                    }
+                    state.doc_text.clear();
+                    state.selected_key = None;
+                    state.preview_scene_paths.clear();
+                    state.preview_root = 0;
+                    state.preview_node_ids.clear();
+                    state.preview_node_keys.clear();
+                    state.dirty = false;
+                }
+                (None, removed_active_open)
+            })
+            .unwrap_or((None, false));
+            if let Some(next) = delete_state.0 {
+                open_scene_path(ctx, &next);
+            } else if delete_state.1 {
+                clear_preview(ctx);
+                refresh_all(ctx);
+            } else {
+                refresh_all(ctx);
+            }
+        }
+        Err(err) => set_log(ctx, &format!("delete asset fail\n{path}\n{err}")),
+    }
+}
+
+pub fn rename_inspector_selection<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let rename_asset = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.sidebar_mode == "files" && !state.active_asset_path.is_empty()
+    });
+    if rename_asset {
+        rename_active_asset(ctx);
+    } else {
+        rename_selected_node(ctx);
+    }
+}
+
+pub fn rename_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let Some(raw_name) = read_text_box(ctx, "inspector_name_box") else {
+        return;
+    };
+    let request = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        if state.project_root.is_empty() || state.active_asset_path.is_empty() {
+            return None;
+        }
+        let source = state.active_asset_path.clone();
+        if source == "res://" || state.dirty_scene_paths.iter().any(|dirty| dirty == &source) {
+            return Some((state.project_root.clone(), source, String::new(), true));
+        }
+        let target = rename_res_target(&state.project_root, &source, &raw_name)?;
+        Some((state.project_root.clone(), source, target, false))
+    });
+    let Some((root, source, target, blocked)) = request else {
+        set_log(ctx, "rename asset fail\nbad name");
+        return;
+    };
+    if blocked {
+        set_log(ctx, &format!("rename asset blocked\nsave first\n{source}"));
+        return;
+    }
+    if source == target {
+        set_log(ctx, &format!("rename asset\nno change\n{source}"));
+        refresh_all(ctx);
+        return;
+    }
+    let source_abs = res_to_abs(&root, &source);
+    let target_abs = res_to_abs(&root, &target);
+    if Path::new(&target_abs).exists() {
+        set_log(ctx, &format!("rename asset fail\nexists\n{target}"));
+        return;
+    }
+    if let Some(parent) = Path::new(&target_abs).parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    match fs::rename(&source_abs, &target_abs) {
+        Ok(()) => {
+            let (next_open, scene_paths, dirty_paths) = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+                for item in state.open_paths.iter_mut() {
+                    if item == &source {
+                        *item = target.clone();
+                    }
+                }
+                for item in state.dirty_scene_paths.iter_mut() {
+                    if item == &source {
+                        *item = target.clone();
+                    }
+                }
+                let active_open_path = state.open_paths.get(state.active_open).cloned();
+                if !state.doc_text.is_empty() {
+                    let mut doc = SceneDoc::parse(&state.doc_text);
+                    if rewrite_asset_refs_in_doc(&mut doc, &source, &target) {
+                        state.doc_text = doc.to_text();
+                        if let Some(path) = active_open_path.clone()
+                            && !state.dirty_scene_paths.iter().any(|item| item == &path)
+                        {
+                            state.dirty_scene_paths.push(path);
+                        }
+                        state.dirty = true;
+                    }
+                }
+                if let Ok(paths) = scan_res_paths(Path::new(&state.project_root)) {
+                    state.file_paths = paths;
+                    state.scene_paths = state
+                        .file_paths
+                        .iter()
+                        .filter(|path| path.ends_with(".scn"))
+                        .cloned()
+                        .collect();
+                }
+                state.active_asset_path = target.clone();
+                state.file_scope = parent_res_folder(&target);
+                reveal_file_path_in_tree(state, &target);
+                state.log = format!("rename asset\n{source} -> {target}");
+                let next_open = state
+                    .open_paths
+                    .get(state.active_open)
+                    .filter(|open| *open == &target)
+                    .cloned();
+                (next_open, state.scene_paths.clone(), state.dirty_scene_paths.clone())
+            })
+            .unwrap_or((None, Vec::new(), Vec::new()));
+            let rewrite_count = rewrite_clean_scene_asset_refs(&root, &scene_paths, &dirty_paths, &source, &target);
+            if rewrite_count > 0 {
+                let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+                    state.project_file_sigs = editor_file_watch::scan_project(Path::new(&root));
+                    state.log = format!(
+                        "rename asset\n{source} -> {target}\nupd refs={rewrite_count}"
+                    );
+                });
+            }
+            if let Some(next) = next_open {
+                open_scene_path(ctx, &next);
+            } else {
+                refresh_all(ctx);
+            }
+        }
+        Err(err) => set_log(ctx, &format!("rename asset fail\n{source}\n{err}")),
+    }
+}
+
+pub fn rewrite_clean_scene_asset_refs(
+    root: &str,
+    scene_paths: &[String],
+    dirty_paths: &[String],
+    source: &str,
+    target: &str,
+) -> usize {
+    let mut changed = 0;
+    for path in scene_paths {
+        if dirty_paths.iter().any(|dirty| dirty == path) {
+            continue;
+        }
+        let abs = res_to_abs(root, path);
+        let Ok(text) = FileMod::load_string(&abs) else {
+            continue;
+        };
+        let mut doc = SceneDoc::parse(&text);
+        if !rewrite_asset_refs_in_doc(&mut doc, source, target) {
+            continue;
+        }
+        if FileMod::save_string(&abs, &doc.to_text()).is_ok() {
+            changed += 1;
+        }
+    }
+    changed
+}
+
+pub fn rewrite_asset_refs_in_doc(doc: &mut SceneDoc, source: &str, target: &str) -> bool {
+    let mut changed = false;
+    for node in doc.scene.nodes.to_mut().iter_mut() {
+        if let Some(root_of) = node.root_of.as_mut() {
+            if let Some(next) = renamed_asset_ref(root_of.as_ref(), source, target) {
+                *root_of = Cow::Owned(next);
+                changed = true;
+            }
+        }
+        if let Some(script) = node.script.as_mut() {
+            if let Some(next) = renamed_asset_ref(script.as_ref(), source, target) {
+                *script = Cow::Owned(next);
+                changed = true;
+            }
+        }
+        changed |= rewrite_asset_refs_in_data(&mut node.data, source, target);
+        for (_field, value) in node.script_vars.to_mut().iter_mut() {
+            changed |= rewrite_asset_refs_in_value(value, source, target);
+        }
+    }
+    changed
+}
+
+pub fn rewrite_asset_refs_in_data(data: &mut SceneNodeData, source: &str, target: &str) -> bool {
+    let mut changed = false;
+    for (_field, value) in data.fields.to_mut().iter_mut() {
+        changed |= rewrite_asset_refs_in_value(value, source, target);
+    }
+    if let Some(base) = data.base.as_mut() {
+        match base {
+            perro_scene::SceneNodeDataBase::Borrowed(_) => {}
+            perro_scene::SceneNodeDataBase::Owned(base) => {
+                changed |= rewrite_asset_refs_in_data(base, source, target);
+            }
+        }
+    }
+    changed
+}
+
+pub fn rewrite_asset_refs_in_value(value: &mut SceneValue, source: &str, target: &str) -> bool {
+    match value {
+        SceneValue::Str(path) => {
+            if let Some(next) = renamed_asset_ref(path.as_ref(), source, target) {
+                *path = Cow::Owned(next);
+                true
+            } else {
+                false
+            }
+        }
+        SceneValue::Object(fields) => fields
+            .to_mut()
+            .iter_mut()
+            .any(|(_field, value)| rewrite_asset_refs_in_value(value, source, target)),
+        SceneValue::Array(values) => values
+            .to_mut()
+            .iter_mut()
+            .any(|value| rewrite_asset_refs_in_value(value, source, target)),
+        _ => false,
+    }
+}
+
+pub fn renamed_asset_ref(path: &str, source: &str, target: &str) -> Option<String> {
+    if path == source {
+        return Some(target.to_string());
+    }
+    let base = base_res_asset_path(path);
+    if base == source && path.len() > source.len() {
+        return Some(format!("{target}{}", &path[source.len()..]));
+    }
+    None
+}
+
+pub fn rename_res_target(project_root: &str, source: &str, raw_name: &str) -> Option<String> {
+    let parent = parent_res_folder(source);
+    let parent_dir = parent
+        .strip_prefix("res://")
+        .map(|path| path.trim_matches('/').to_string())
+        .unwrap_or_default();
+    let rel = editor_files::rel_label(source);
+    let trimmed = rel.trim_end_matches('/');
+    let old_name = Path::new(trimmed).file_name()?.to_str()?;
+    let clean = raw_name.trim().trim_matches('/').trim_matches('\\');
+    if clean.is_empty() || clean.contains('/') || clean.contains('\\') {
+        return None;
+    }
+    if source.ends_with('/') {
+        let stem = sanitize_file_stem(clean);
+        if stem.is_empty() {
+            return None;
+        }
+        return Some(if parent_dir.is_empty() {
+            format!("res://{stem}/")
+        } else {
+            format!("res://{parent_dir}/{stem}/")
+        });
+    }
+    let old_ext = Path::new(old_name)
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("");
+    let clean_path = Path::new(clean);
+    let clean_ext = clean_path.extension().and_then(|value| value.to_str());
+    let stem = clean_path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .map(sanitize_file_stem)
+        .filter(|value| !value.is_empty())?;
+    let ext = clean_ext.unwrap_or(old_ext);
+    let file = if ext.is_empty() {
+        stem
+    } else {
+        format!("{stem}.{ext}")
+    };
+    let target = if parent_dir.is_empty() {
+        format!("res://{file}")
+    } else {
+        format!("res://{parent_dir}/{file}")
+    };
+    if Path::new(&res_to_abs(project_root, &target)).exists() && target != source {
+        return None;
+    }
+    Some(target)
 }
 
 pub fn attach_script_to_selected_node<API: ScriptAPI + ?Sized>(
@@ -1186,6 +1788,33 @@ pub fn quick_asset_dir(state: &EditorState, kind: &str) -> String {
         "anim" => "animations".to_string(),
         "mat" => "materials".to_string(),
         _ => "assets".to_string(),
+    }
+}
+
+pub fn reveal_file_path_in_tree(state: &mut EditorState, path: &str) {
+    if !state
+        .file_expanded_paths
+        .iter()
+        .any(|expanded| expanded == "res://")
+    {
+        state.file_expanded_paths.push("res://".to_string());
+    }
+    for folder in file_ancestor_folders(path) {
+        if !state
+            .file_expanded_paths
+            .iter()
+            .any(|expanded| expanded == &folder)
+        {
+            state.file_expanded_paths.push(folder);
+        }
+    }
+    if path.ends_with('/')
+        && !state
+            .file_expanded_paths
+            .iter()
+            .any(|expanded| expanded == path)
+    {
+        state.file_expanded_paths.push(path.to_string());
     }
 }
 

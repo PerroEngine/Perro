@@ -99,7 +99,15 @@ pub fn handle_viewport_click<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
     });
     match mode.as_str() {
         "UI" => {
-            let _ = pick_preview_ui(ctx);
+            if let Some(key) = pick_preview_ui(ctx) {
+                let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+                    state.selected_key = Some(key);
+                    state.log = format!("select node\nkey={key}");
+                });
+                refresh_all(ctx);
+                return;
+            }
+            deselect_viewport_node(ctx, "deselect\nui canvas");
             set_log(
                 ctx,
                 &format!(
@@ -110,17 +118,7 @@ pub fn handle_viewport_click<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
         }
         "2D" => {
             if let Some(world) = stream_pointer_world_2d(ctx, pointer) {
-                let place = if viewport_shift_down(ctx) {
-                    snap_vec2(world, 16.0)
-                } else {
-                    world
-                };
-                if viewport_alt_down(ctx) && duplicate_selected_node_at(ctx, Some(place), None) {
-                    return;
-                }
-                if place_selected_2d(ctx, world) {
-                    return;
-                }
+                deselect_viewport_node(ctx, "deselect\n2d empty");
                 set_log(
                     ctx,
                     &format!(
@@ -141,18 +139,7 @@ pub fn handle_viewport_click<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
                     return;
                 }
                 if let Some(point) = ray_ground_point(ray) {
-                    let place = if viewport_shift_down(ctx) {
-                        snap_vec3(point, 1.0)
-                    } else {
-                        point
-                    };
-                    if viewport_alt_down(ctx) && duplicate_selected_node_at(ctx, None, Some(place))
-                    {
-                        return;
-                    }
-                    if place_selected_3d(ctx, point) {
-                        return;
-                    }
+                    deselect_viewport_node(ctx, "deselect\n3d empty");
                 }
                 set_log(
                     ctx,
@@ -170,6 +157,19 @@ pub fn handle_viewport_click<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
         }
         _ => {}
     }
+}
+
+pub fn deselect_viewport_node<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    log: &str,
+) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.selected_key = None;
+        state.ui_drag_key = None;
+        state.ui_drag_mode.clear();
+        state.log = log.to_string();
+    });
+    refresh_all(ctx);
 }
 
 pub fn viewport_alt_down<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) -> bool {
@@ -1536,16 +1536,13 @@ pub fn update_preview_pick<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
         return;
     }
     let Some(key) = pick_preview_ui(ctx) else {
+        deselect_viewport_node(ctx, "deselect\nui empty");
         return;
     };
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         state.selected_key = Some(key);
-        state.ui_drag_key = Some(key);
-        state.ui_drag_mode = "move".to_string();
-        if let Some(pointer) = pointer {
-            state.ui_drag_last_x = pointer.uv.x;
-            state.ui_drag_last_y = pointer.uv.y;
-        }
+        state.ui_drag_key = None;
+        state.ui_drag_mode.clear();
         state.log = format!("select node\nkey={key}");
     });
     refresh_all(ctx);

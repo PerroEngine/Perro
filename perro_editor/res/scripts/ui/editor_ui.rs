@@ -120,17 +120,26 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     set_label(ctx, "glb_viewer_title", &view.glb_title);
     set_label(ctx, "glb_viewer_summary", &view.glb_summary);
     set_ui_display(ctx, "scene_tree_title", !glb_mode);
+    set_ui_display(ctx, "scene_action_row", !glb_mode);
+    set_ui_display(ctx, "scene_order_row", !glb_mode);
+    set_ui_display(ctx, "scene_tools_row", !glb_mode);
     set_ui_display(ctx, "scene_filter_box", !glb_mode);
     set_text_box(ctx, "scene_filter_box", &view.scene_filter);
     set_ui_display(ctx, "scene_rows", !glb_mode);
     set_ui_display(ctx, "file_title", true);
     set_label(ctx, "file_title", &view.file_title);
-    set_ui_display(ctx, "file_action_row", false);
+    set_ui_display(ctx, "file_action_row", true);
+    set_ui_display(ctx, "file_tools_row", true);
+    set_ui_display(ctx, "file_ops_row", true);
     set_ui_display(ctx, "file_filter_box", true);
     set_text_box(ctx, "file_filter_box", &view.file_filter);
     set_ui_display(ctx, "file_rows", true);
-    set_ui_box_size(ctx, "scene_rows", (1.0, if glb_mode { 0.0 } else { 0.39 }));
-    set_ui_box_size(ctx, "file_rows", (1.0, if glb_mode { 0.84 } else { 0.38 }));
+    set_ui_box_size(ctx, "scene_tools_row", (1.0, 0.032));
+    set_ui_box_size(ctx, "scene_rows", (1.0, if glb_mode { 0.0 } else { 0.312 }));
+    set_ui_box_size(ctx, "file_action_row", (1.0, 0.034));
+    set_ui_box_size(ctx, "file_tools_row", (1.0, 0.032));
+    set_ui_box_size(ctx, "file_ops_row", (1.0, 0.032));
+    set_ui_box_size(ctx, "file_rows", (1.0, if glb_mode { 0.776 } else { 0.296 }));
 
     for idx in 0..MAX_RECENT {
         let has_recent = view.recent_projects.get(idx).is_some();
@@ -174,17 +183,14 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             .get(idx)
             .map(|path| {
                 format!(
-                    "{}  {}",
-                    editor_files::display_kind_label(path),
-                    file_row_label(path, &view.file_scope)
+                    "{}{} {}",
+                    file_row_state_prefix(path, &view.open_paths, &view.dirty_scene_paths),
+                    file_row_icon(path, &view.file_expanded_paths),
+                    file_row_label_for_filter(path, !view.file_filter.is_empty()),
                 )
             })
             .unwrap_or_else(|| "-".to_string());
-        set_label(
-            ctx,
-            &format!("file_row_{idx}_label"),
-            &editor_view::short_path(&text, 32),
-        );
+        set_label(ctx, &format!("file_row_{idx}_label"), &text);
         set_ui_display(ctx, &format!("file_row_{idx}"), has_file);
         set_button_fill(
             ctx,
@@ -261,18 +267,46 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     apply_inspector_dynamic_layout(ctx, &view.inspector);
     set_label(ctx, "inspector_title", &view.inspector.title);
     set_label(ctx, "inspector_name", &view.inspector.name);
-    set_ui_display(ctx, "inspector_name_box", view.inspector.node_actions);
+    set_ui_display(
+        ctx,
+        "inspector_name_box",
+        view.inspector.node_actions || view.inspector.asset_selected,
+    );
     set_text_box(ctx, "inspector_name_box", &view.inspector.name_edit);
     set_label(ctx, "inspector_type", &view.inspector.kind);
     set_label(ctx, "inspector_parent", &view.inspector.parent);
     set_label(ctx, "inspector_script_top", &view.inspector.script);
+    set_ui_box_size(
+        ctx,
+        "inspector_script_top",
+        (
+            1.0,
+            if view.inspector.node_actions {
+                0.034
+            } else if view.inspector.script.len() > 80 {
+                0.12
+            } else {
+                0.034
+            },
+        ),
+    );
     set_ui_display(
         ctx,
         "inspector_script_top",
         view.inspector.node_actions || view.inspector.asset_actions,
     );
     set_ui_display(ctx, "inspector_action_row", view.inspector.node_actions);
-    set_ui_display(ctx, "asset_action_row", view.inspector.asset_actions);
+    set_label(
+        ctx,
+        "inspector_visible_label",
+        &view.inspector.visible_action_label,
+    );
+    set_ui_display(ctx, "asset_action_row", view.inspector.asset_selected);
+    set_ui_display(ctx, "asset_open_button", view.inspector.asset_selected);
+    set_ui_display(ctx, "asset_use_button", view.inspector.asset_use_action);
+    set_ui_display(ctx, "asset_make_node_button", view.inspector.asset_make_action);
+    set_ui_display(ctx, "asset_user_button", view.inspector.asset_actions);
+    set_label(ctx, "asset_make_node_label", &view.inspector.asset_make_label);
     set_ui_display(
         ctx,
         "asset_glb_anim_button",
@@ -283,7 +317,19 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         "asset_glb_mat_button",
         view.inspector.glb_asset_actions,
     );
-    set_label(ctx, "inspector_pos", &view.inspector.pos_label);
+    let transform_closed =
+        inspector_section_collapsed(&view.inspector.collapsed_sections, "transform");
+    let refs_closed = inspector_section_collapsed(&view.inspector.collapsed_sections, "refs");
+    let vars_closed = inspector_section_collapsed(&view.inspector.collapsed_sections, "vars");
+    set_label(
+        ctx,
+        "inspector_pos_label",
+        if transform_closed {
+            "> Transform"
+        } else {
+            &view.inspector.pos_label
+        },
+    );
     set_text_box(
         ctx,
         "inspector_position_box",
@@ -294,17 +340,22 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         "inspector_position",
         &["x", "y", "z", "w"],
         &view.inspector.pos,
-        view.inspector.node_actions,
+        view.inspector.node_actions && !transform_closed,
     );
     set_label(
         ctx,
-        "inspector_rotation_label",
+        "inspector_rotation_header_label",
         &view.inspector.rotation_label,
     );
     set_ui_display(
         ctx,
+        "inspector_rotation_label",
+        view.inspector.node_actions && !transform_closed,
+    );
+    set_ui_display(
+        ctx,
         "inspector_rotation_mode_row",
-        view.inspector.rotation_mode_buttons,
+        view.inspector.rotation_mode_buttons && !transform_closed,
     );
     set_button_fill(
         ctx,
@@ -334,20 +385,41 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         "inspector_rotation",
         &view.inspector.rotation_components,
         &view.inspector.rotation,
-        view.inspector.node_actions,
+        view.inspector.node_actions && !transform_closed,
     );
-    set_label(ctx, "inspector_scale_label", &view.inspector.scale_label);
+    set_label(ctx, "inspector_scale_header_label", &view.inspector.scale_label);
+    set_ui_display(
+        ctx,
+        "inspector_scale_label",
+        view.inspector.node_actions && !transform_closed,
+    );
     set_text_box(ctx, "inspector_scale_box", &view.inspector.scale.join(", "));
     apply_component_row(
         ctx,
         "inspector_scale",
         &["x", "y", "z", "w"],
         &view.inspector.scale,
-        view.inspector.node_actions,
+        view.inspector.node_actions && !transform_closed,
     );
-    set_label(ctx, "inspector_script", "");
-    set_ui_display(ctx, "inspector_script", false);
-    set_label(ctx, "inspector_vars", "Script Vars");
+    set_label(
+        ctx,
+        "inspector_script_label",
+        if refs_closed { "> References" } else { "v References" },
+    );
+    set_ui_display(
+        ctx,
+        "inspector_script",
+        view.inspector.node_actions && !view.inspector.resource_fields.is_empty(),
+    );
+    set_label(
+        ctx,
+        "inspector_vars_label",
+        if vars_closed {
+            "> Script Variables"
+        } else {
+            "v Script Variables"
+        },
+    );
     set_ui_display(
         ctx,
         "inspector_vars",
@@ -360,7 +432,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         set_ui_display(
             ctx,
             &format!("inspector_var_row_{idx}"),
-            view.inspector.node_actions && row.is_some(),
+            view.inspector.node_actions && row.is_some() && !vars_closed,
         );
         set_label(
             ctx,
@@ -384,18 +456,18 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         set_ui_display(
             ctx,
             &format!("inspector_var_{idx}_value"),
-            view.inspector.node_actions && row.is_some() && !picker_row && !bool_row,
+            view.inspector.node_actions && row.is_some() && !picker_row && !bool_row && !vars_closed,
         );
         let checkbox_name = format!("inspector_var_{idx}_check");
         set_ui_display(
             ctx,
             &checkbox_name,
-            view.inspector.node_actions && bool_row,
+            view.inspector.node_actions && bool_row && !vars_closed,
         );
         set_ui_display(
             ctx,
             &picker_button_name,
-            view.inspector.node_actions && picker_row,
+            view.inspector.node_actions && picker_row && !vars_closed,
         );
         set_label(
             ctx,
@@ -415,7 +487,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         set_ui_display(
             ctx,
             &format!("inspector_resource_row_{idx}"),
-            view.inspector.node_actions && row.is_some(),
+            view.inspector.node_actions && row.is_some() && !refs_closed,
         );
         set_label(
             ctx,
@@ -426,6 +498,12 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             ctx,
             &format!("inspector_resource_{idx}_button_label"),
             row.map(|item| item.value.as_str()).unwrap_or("Select"),
+        );
+        let has_value = row.is_some_and(|item| !item.value.starts_with("[Select"));
+        set_ui_display(
+            ctx,
+            &format!("inspector_resource_{idx}_clear_button"),
+            view.inspector.node_actions && has_value && !refs_closed,
         );
     }
 
@@ -495,6 +573,30 @@ pub fn apply_component_row<API: ScriptAPI + ?Sized>(
     }
 }
 
+pub fn toggle_inspector_section<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    section: &str,
+) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        if let Some(pos) = state
+            .inspector_collapsed_sections
+            .iter()
+            .position(|item| item == section)
+        {
+            state.inspector_collapsed_sections.remove(pos);
+            state.log = format!("inspector expand\n{section}");
+        } else {
+            state.inspector_collapsed_sections.push(section.to_string());
+            state.log = format!("inspector collapse\n{section}");
+        }
+    });
+    refresh_all(ctx);
+}
+
+pub fn inspector_section_collapsed(sections: &[String], section: &str) -> bool {
+    sections.iter().any(|item| item == section)
+}
+
 fn take_inspector_layout_pass<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) -> bool {
     with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         if state.inspector_layout_applied {
@@ -512,17 +614,18 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
         set_ui_box_z_index(ctx, name, 200);
     }
 
-    set_ui_box_size(ctx, "inspector_panel", (0.18, 1.0));
-    set_ui_box_size(ctx, "inspector_content", (1.0, 1.25));
-    set_label_text_ratio(ctx, "inspector_title", 0.25);
-    set_label_text_ratio(ctx, "inspector_name", 0.19);
-    set_label_text_ratio(ctx, "inspector_type", 0.17);
-    set_label_text_ratio(ctx, "inspector_parent", 0.16);
-    set_label_text_ratio(ctx, "inspector_script_top", 0.16);
-    set_label_text_ratio(ctx, "inspector_pos", 0.18);
-    set_label_text_ratio(ctx, "inspector_rotation_label", 0.18);
-    set_label_text_ratio(ctx, "inspector_scale_label", 0.18);
-    set_label_text_ratio(ctx, "inspector_vars", 0.18);
+    set_ui_box_size(ctx, "inspector_panel", (0.20, 1.0));
+    set_ui_box_size(ctx, "inspector_content", (1.0, 1.12));
+    set_label_text_ratio(ctx, "inspector_title", 0.22);
+    set_label_text_ratio(ctx, "inspector_name", 0.18);
+    set_label_text_ratio(ctx, "inspector_type", 0.16);
+    set_label_text_ratio(ctx, "inspector_parent", 0.15);
+    set_label_text_ratio(ctx, "inspector_script_top", 0.15);
+    set_label_text_ratio(ctx, "inspector_pos_label", 0.17);
+    set_label_text_ratio(ctx, "inspector_rotation_header_label", 0.17);
+    set_label_text_ratio(ctx, "inspector_scale_header_label", 0.17);
+    set_label_text_ratio(ctx, "inspector_script_label", 0.17);
+    set_label_text_ratio(ctx, "inspector_vars_label", 0.17);
 
     for name in [
         "inspector_action_row",
@@ -532,24 +635,26 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
         "inspector_rotation_row",
         "inspector_scale_row",
     ] {
-        set_ui_box_size(ctx, name, (1.0, 0.026));
+        set_ui_box_size(ctx, name, (1.0, 0.024));
     }
     for name in [
         "inspector_position_row",
         "inspector_rotation_row",
         "inspector_scale_row",
     ] {
-        set_ui_box_padding(ctx, name, UiRect::new(0.045, 0.0, 0.0, 0.0));
-        set_hlayout_spacing(ctx, name, 0.003);
+        set_ui_box_padding(ctx, name, UiRect::new(0.030, 0.0, 0.0, 0.0));
+        set_hlayout_spacing(ctx, name, 0.002);
     }
 
     for name in [
         "inspector_duplicate_button",
         "inspector_delete_button",
+        "inspector_reset_button",
         "inspector_open_ref_button",
         "inspector_visible_button",
+        "inspector_clear_ref_button",
     ] {
-        set_button_size(ctx, name, (0.25, 0.70));
+        set_button_size(ctx, name, (0.16, 0.70));
     }
     for name in [
         "inspector_rotation_quat_button",
@@ -564,9 +669,9 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
         "inspector_rotation_box",
         "inspector_scale_box",
     ] {
-        set_ui_box_size(ctx, name, (1.0, 0.026));
-        set_text_box_text_ratio(ctx, name, 0.44);
-        set_text_box_padding(ctx, name, 5.0, 1.0);
+        set_ui_box_size(ctx, name, (1.0, 0.024));
+        set_text_box_text_ratio(ctx, name, 0.42);
+        set_text_box_padding(ctx, name, 4.0, 1.0);
     }
 
     for prefix in [
@@ -576,38 +681,45 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
     ] {
         for idx in 0..4 {
             let name = format!("{prefix}_{idx}_box");
-            set_ui_box_size(ctx, &name, (0.185, 0.68));
-            set_text_box_text_ratio(ctx, &name, 0.44);
-            set_text_box_padding(ctx, &name, 5.0, 1.0);
+            set_ui_box_size(ctx, &name, (0.185, 0.72));
+            set_text_box_text_ratio(ctx, &name, 0.42);
+            set_text_box_padding(ctx, &name, 4.0, 1.0);
         }
     }
 
     for idx in 0..MAX_SCRIPT_VARS {
-        set_ui_box_size(ctx, &format!("inspector_var_row_{idx}"), (1.0, 0.030));
+        set_ui_box_size(ctx, &format!("inspector_var_row_{idx}"), (1.0, 0.027));
         set_ui_box_size(ctx, &format!("inspector_var_{idx}_value"), (0.50, 0.70));
         set_text_box_text_ratio(ctx, &format!("inspector_var_{idx}_value"), 0.42);
         set_text_box_padding(ctx, &format!("inspector_var_{idx}_value"), 5.0, 1.0);
         set_ui_box_padding(
             ctx,
             &format!("inspector_var_row_{idx}"),
-            UiRect::new(0.035, 0.0, 0.0, 0.0),
+            UiRect::new(0.025, 0.0, 0.0, 0.0),
         );
-        set_hlayout_spacing(ctx, &format!("inspector_var_row_{idx}"), 0.003);
+        set_hlayout_spacing(ctx, &format!("inspector_var_row_{idx}"), 0.002);
         set_ui_box_size(ctx, &format!("inspector_var_{idx}_check"), (0.055, 0.50));
         set_button_size(ctx, &format!("inspector_var_{idx}_pick_button"), (0.50, 0.70));
         set_label_text_ratio(ctx, &format!("inspector_var_{idx}_name"), 0.18);
         set_label_text_ratio(ctx, &format!("inspector_var_{idx}_type"), 0.16);
     }
     for idx in 0..MAX_RESOURCE_FIELDS {
-        set_ui_box_size(ctx, &format!("inspector_resource_row_{idx}"), (1.0, 0.030));
+        set_ui_box_size(ctx, &format!("inspector_resource_row_{idx}"), (1.0, 0.027));
         set_ui_box_padding(
             ctx,
             &format!("inspector_resource_row_{idx}"),
-            UiRect::new(0.035, 0.0, 0.0, 0.0),
+            UiRect::new(0.025, 0.0, 0.0, 0.0),
         );
-        set_hlayout_spacing(ctx, &format!("inspector_resource_row_{idx}"), 0.003);
+        set_hlayout_spacing(ctx, &format!("inspector_resource_row_{idx}"), 0.002);
+        set_button_size(ctx, &format!("inspector_resource_{idx}_button"), (0.60, 0.70));
+        set_button_size(
+            ctx,
+            &format!("inspector_resource_{idx}_clear_button"),
+            (0.08, 0.60),
+        );
         set_label_text_ratio(ctx, &format!("inspector_resource_{idx}_name"), 0.18);
         set_label_text_ratio(ctx, &format!("inspector_resource_{idx}_button_label"), 0.16);
+        set_label_text_ratio(ctx, &format!("inspector_resource_{idx}_clear_label"), 0.20);
     }
 }
 
@@ -616,15 +728,22 @@ fn apply_inspector_dynamic_layout<API: ScriptAPI + ?Sized>(
     inspector: &InspectorViewData,
 ) {
     let asset_button_w = if inspector.glb_asset_actions {
+        0.166
+    } else if inspector.asset_actions {
         0.25
     } else {
-        0.50
+        1.0
     };
-    for name in ["asset_use_button", "asset_make_node_button"] {
+    for name in [
+        "asset_open_button",
+        "asset_use_button",
+        "asset_make_node_button",
+        "asset_user_button",
+    ] {
         set_button_size(ctx, name, (asset_button_w, 0.70));
     }
     for name in ["asset_glb_anim_button", "asset_glb_mat_button"] {
-        set_button_size(ctx, name, (0.25, 0.70));
+        set_button_size(ctx, name, (0.166, 0.70));
     }
 }
 
@@ -637,6 +756,7 @@ pub struct EditorView {
     file_paths: Vec<String>,
     file_filter: String,
     file_scope: String,
+    file_expanded_paths: Vec<String>,
     file_title: String,
     active_asset_path: String,
     scene_paths: Vec<String>,
@@ -688,7 +808,11 @@ pub struct InspectorViewData {
     kind: String,
     parent: String,
     node_actions: bool,
+    asset_selected: bool,
     asset_actions: bool,
+    asset_use_action: bool,
+    asset_make_action: bool,
+    asset_make_label: String,
     glb_asset_actions: bool,
     pos_label: String,
     pos: Vec<String>,
@@ -700,9 +824,11 @@ pub struct InspectorViewData {
     scale_label: String,
     scale: Vec<String>,
     script: String,
+    visible_action_label: String,
     vars_text: String,
     script_vars: Vec<InspectorValueRow>,
     resource_fields: Vec<ResourceFieldView>,
+    collapsed_sections: Vec<String>,
 }
 
 impl Default for InspectorViewData {
@@ -714,9 +840,13 @@ impl Default for InspectorViewData {
             kind: "Select node or asset".to_string(),
             parent: String::new(),
             node_actions: false,
+            asset_selected: false,
             asset_actions: false,
+            asset_use_action: false,
+            asset_make_action: false,
+            asset_make_label: "Node".to_string(),
             glb_asset_actions: false,
-            pos_label: "Transform / Position".to_string(),
+            pos_label: "v Transform".to_string(),
             pos: Vec::new(),
             rotation_label: "Rotation".to_string(),
             rotation: Vec::new(),
@@ -726,9 +856,11 @@ impl Default for InspectorViewData {
             scale_label: "Scale".to_string(),
             scale: Vec::new(),
             script: "Script  -".to_string(),
+            visible_action_label: "Vis".to_string(),
             vars_text: String::new(),
             script_vars: Vec::new(),
             resource_fields: Vec::new(),
+            collapsed_sections: Vec::new(),
         }
     }
 }
@@ -762,7 +894,7 @@ impl InspectorViewData {
         view.node_actions = true;
         view.pos = scene_value_components(&node.data, "position");
         view.rotation_label = if rotation_mode == "euler" {
-            "Rotation deg".to_string()
+            "Rotation Degrees".to_string()
         } else {
             "Rotation".to_string()
         };
@@ -778,10 +910,16 @@ impl InspectorViewData {
         view.rotation_mode_buttons = is_3d;
         view.scale = scene_value_components(&node.data, "scale");
         view.script = format!("Script  {script}");
+        view.visible_action_label = if scene_field_bool(&node.data, "visible") == Some(false) {
+            "Show".to_string()
+        } else {
+            "Hide".to_string()
+        };
+        view.collapsed_sections = state.inspector_collapsed_sections.clone();
         let script_fields = inspector_script_var_fields_for_node(state, node);
         view.vars_text = script_vars_edit_text(&script_fields);
         view.script_vars = inspector_script_var_rows(&script_fields, &state.inspector_expanded_paths);
-        view.resource_fields = resource_field_rows(&node.data);
+        view.resource_fields = resource_field_rows(node);
         view.apply_asset_actions(state);
         view
     }
@@ -793,17 +931,31 @@ impl InspectorViewData {
         }
         let asset = asset_inspector_text(state);
         view.title = "Asset".to_string();
-        view.name = asset.name;
+        view.name = "Name".to_string();
+        view.name_edit = asset_edit_name(&state.active_asset_path);
         view.kind = asset.kind;
         view.parent = format!("{}\n{}", asset.path, asset.size);
-        view.script = format!("State  {}\n{}", asset.state, asset.detail);
+        view.script = format!(
+            "State  {}\n{}\nRefs\n{}\nActions\n{}",
+            asset.state, asset.detail, asset.refs, asset.actions
+        );
+        view.collapsed_sections = state.inspector_collapsed_sections.clone();
         view.apply_asset_actions(state);
         view
     }
 
     fn apply_asset_actions(&mut self, state: &EditorState) {
         let path = state.active_asset_path.as_str();
+        let kind = editor_files::kind_label(path);
+        self.asset_selected = !path.is_empty();
         self.asset_actions = !path.is_empty() && !path.ends_with('/') && !state.doc_text.is_empty();
+        self.asset_use_action = self.asset_actions && kind != "scene";
+        self.asset_make_action = self.asset_actions;
+        self.asset_make_label = if kind == "scene" {
+            "Instance".to_string()
+        } else {
+            "Node".to_string()
+        };
         self.glb_asset_actions = self.asset_actions && is_gltf_path(path);
     }
 }
@@ -831,7 +983,8 @@ impl EditorView {
             nodes = tree.labels;
             selected_row = tree.selected_row;
 
-            if let Some(key) = state.selected_key.and_then(|raw| {
+            if state.sidebar_mode != "files"
+                && let Some(key) = state.selected_key.and_then(|raw| {
                 doc.scene
                     .nodes
                     .iter()
@@ -897,6 +1050,7 @@ impl EditorView {
             file_paths: filtered_file_paths(state),
             file_filter: state.file_filter.clone(),
             file_scope: state.file_scope.clone(),
+            file_expanded_paths: state.file_expanded_paths.clone(),
             file_title: file_panel_title(state),
             active_asset_path: state.active_asset_path.clone(),
             scene_paths: state.scene_paths.clone(),
@@ -1005,7 +1159,7 @@ pub fn asset_inspector_text(state: &EditorState) -> AssetInspectorText {
     let detail = asset_detail_text(state, path, kind);
     let actions = match kind {
         "scene" => {
-            "Enter -> open scene\nCtrl+Shift+Enter -> instance scene\nCtrl+Shift+G -> find user\nCtrl+E -> reveal tab".to_string()
+            "Enter -> open scene\nCtrl+Enter / Ctrl+Shift+Enter -> instance scene\nCtrl+Shift+G -> find user\nCtrl+E -> reveal tab".to_string()
         }
         "mesh" if is_gltf_path(path) => {
             "Use -> bind ref\nNode -> mesh node\nCtrl+Shift+G -> find user\n[] -> mesh  Shift+[] -> mat\nAnim -> .panim\nMat -> .pmat".to_string()
@@ -1031,6 +1185,16 @@ pub fn asset_inspector_text(state: &EditorState) -> AssetInspectorText {
         detail,
         actions,
     }
+}
+
+pub fn asset_edit_name(path: &str) -> String {
+    let rel = editor_files::rel_label(path);
+    let trimmed = rel.trim_end_matches('/');
+    Path::new(trimmed)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("-")
+        .to_string()
 }
 
 pub fn asset_ref_text(state: &EditorState, path: &str, kind: &str) -> String {
@@ -1067,8 +1231,27 @@ fn inspector_var_button_label(row: &InspectorValueRow) -> String {
     row.value.clone()
 }
 
-pub fn resource_field_rows(data: &SceneNodeData) -> Vec<ResourceFieldView> {
-    perro_scene::scene_inspector_fields(data.node_type)
+pub fn resource_field_rows(node: &SceneNodeEntry) -> Vec<ResourceFieldView> {
+    let mut rows = Vec::new();
+    if let Some(script) = node.script.as_ref() {
+        rows.push(ResourceFieldView {
+            name: "script".to_string(),
+            value: if script.trim().is_empty() {
+                "[Select Script]".to_string()
+            } else {
+                editor_view::short_path(script, 22)
+            },
+            picker_kind: "asset".to_string(),
+        });
+    } else {
+        rows.push(ResourceFieldView {
+            name: "script".to_string(),
+            value: "[Select Script]".to_string(),
+            picker_kind: "asset".to_string(),
+        });
+    }
+    rows.extend(
+        perro_scene::scene_inspector_fields(node.data.node_type)
         .into_iter()
         .filter(|field| {
             matches!(
@@ -1077,8 +1260,9 @@ pub fn resource_field_rows(data: &SceneNodeData) -> Vec<ResourceFieldView> {
                     | perro_scene::SceneInspectorValueKind::NodeRef
             )
         })
-        .filter_map(|field| resource_field_row(data, &field))
-        .collect()
+        .filter_map(|field| resource_field_row(&node.data, &field)),
+    );
+    rows
 }
 
 pub fn resource_field_row(
@@ -1086,18 +1270,19 @@ pub fn resource_field_row(
     field: &perro_scene::SceneInspectorField,
 ) -> Option<ResourceFieldView> {
     let raw_value = scene_field_value_text(data, field.name);
+    let value_text = raw_value
+        .as_deref()
+        .filter(|value| !value.trim().is_empty());
     let picker_kind = match field.kind {
         perro_scene::SceneInspectorValueKind::NodeRef => "node",
         perro_scene::SceneInspectorValueKind::Asset(_) => "asset",
         _ => return None,
     };
     let value = match field.kind {
-        perro_scene::SceneInspectorValueKind::NodeRef => raw_value
-            .as_deref()
+        perro_scene::SceneInspectorValueKind::NodeRef => value_text
             .map(inspector_node_ref_label)
             .unwrap_or_else(|| "[Select Node]".to_string()),
-        perro_scene::SceneInspectorValueKind::Asset(kind) => raw_value
-            .as_deref()
+        perro_scene::SceneInspectorValueKind::Asset(kind) => value_text
             .map(|value| editor_view::short_path(value, 22))
             .unwrap_or_else(|| format!("[Select {}]", inspector_asset_kind_label(kind))),
         _ => return None,
@@ -1219,6 +1404,9 @@ fn inspector_asset_picker_entries(state: &EditorState) -> Vec<InspectorPickerEnt
 }
 
 fn inspector_picker_asset_kind(state: &EditorState) -> Option<perro_scene::SceneAssetKind> {
+    if state.inspector_picker_field == "script" {
+        return Some(perro_scene::SceneAssetKind::Script);
+    }
     let key = state.selected_key?;
     let doc = SceneDoc::parse(&state.doc_text);
     let node = doc
@@ -1698,19 +1886,18 @@ pub fn filtered_scene_tree_view(
         } else {
             " "
         };
-        let parent = node
-            .parent
-            .map(|key| doc.scene.key_name_or_id(key).to_string())
-            .unwrap_or_else(|| "-".to_string());
+        let path = scene_node_path(doc, node.key);
         out.labels.push(scene_row_label(
             prefix,
             0,
             &name,
             type_name,
+            node_type_icon(node.data.node_type),
             &scene_node_badges(node),
             scene_child_count(doc, key),
             false,
-            Some(&parent),
+            Some(key) == selected_key,
+            Some(&path),
         ));
         out.keys.push(key);
     }
@@ -1738,7 +1925,19 @@ pub fn scene_node_matches_filter(
         && filter
             .tags
             .iter()
-            .all(|tag| node_type_has_picker_tag(node.data.node_type, tag))
+            .all(|tag| scene_node_has_filter_tag(node, tag))
+}
+
+pub fn scene_node_has_filter_tag(node: &SceneNodeEntry, tag: &str) -> bool {
+    match tag {
+        "script" | "scr" => node.script.is_some(),
+        "res" | "resource" => selected_node_asset_refs(node)
+            .iter()
+            .any(|item| !item.starts_with("script:") && !item.starts_with("root_of:")),
+        "hidden" | "hide" | "hid" => scene_field_bool(&node.data, "visible") == Some(false),
+        "inst" | "instance" => node.root_of.is_some(),
+        _ => node_type_has_picker_tag(node.data.node_type, tag),
+    }
 }
 
 pub fn scene_child_count(doc: &SceneDoc, key: u32) -> usize {
@@ -1780,9 +1979,11 @@ pub fn push_scene_tree_row(
         depth,
         &doc.scene.key_name_or_id(node.key).to_string(),
         node.data.type_name(),
+        node_type_icon(node.data.node_type),
         &scene_node_badges(node),
         children,
         collapsed_keys.contains(&key),
+        Some(key) == selected_key,
         None,
     ));
     out.keys.push(key);
@@ -1813,28 +2014,36 @@ pub fn scene_row_label(
     depth: usize,
     name: &str,
     type_name: &str,
+    icon: &str,
     badges: &str,
     children: usize,
     collapsed: bool,
+    selected: bool,
     parent: Option<&str>,
 ) -> String {
-    let name = editor_view::short_path(name, 22);
-    let type_name = editor_view::short_path(type_name, 24);
+    let name = editor_view::short_path(name, 20);
+    let type_name = editor_view::short_path(type_name, 18);
     let fold = if children == 0 {
         " "
     } else if collapsed {
-        "+"
+        ">"
     } else {
-        "-"
+        "v"
     };
     let indent = "  ".repeat(depth.min(8));
+    let selected = if selected { "*" } else { " " };
     if let Some(parent) = parent {
         format!(
-            "{prefix}{indent}{fold} {name}  {type_name}{badges}  ch={children}  < {}",
+            "{selected}{prefix}{indent}{fold} {icon} {name}  [{type_name}]{badges}  {}",
             editor_view::short_path(parent, 14)
         )
     } else {
-        format!("{prefix}{indent}{fold} {name}  {type_name}{badges}  ch={children}")
+        let child_suffix = if children == 0 {
+            String::new()
+        } else {
+            format!("  {children}")
+        };
+        format!("{selected}{prefix}{indent}{fold} {icon} {name}  [{type_name}]{badges}{child_suffix}")
     }
 }
 
@@ -1858,7 +2067,7 @@ pub fn scene_node_badges(node: &SceneNodeEntry) -> String {
     if out.is_empty() {
         String::new()
     } else {
-        format!(" [{}]", out.join(" "))
+        format!(" {}", out.join(" "))
     }
 }
 
@@ -1873,28 +2082,101 @@ pub fn picker_rows(state: &EditorState, filter: &str, offset: usize) -> Vec<Stri
 
 pub fn filtered_file_paths(state: &EditorState) -> Vec<String> {
     let filter = NodePickerFilter::parse(&state.file_filter);
-    state
+    let mut paths = state
         .file_paths
         .iter()
         .filter(|path| {
             if state.activity_mode == "glb" && !is_gltf_path(path) {
                 return false;
             }
-            file_path_in_scope(path, &state.file_scope)
-                && (filter.is_empty() || file_path_matches_filter(path, &filter))
+            let visible = if filter.is_empty() && state.activity_mode != "glb" {
+                file_path_tree_visible(path, &state.file_expanded_paths)
+            } else {
+                true
+            };
+            visible && (filter.is_empty() || file_path_matches_filter(path, &filter))
         })
         .cloned()
-        .collect()
+        .collect::<Vec<_>>();
+    if filter.is_empty() && state.activity_mode != "glb" {
+        paths.insert(0, "res://".to_string());
+    }
+    paths
 }
 
-pub fn file_row_label(path: &str, scope: &str) -> String {
-    if scope.is_empty() {
-        return editor_files::rel_label(path);
+pub fn file_row_label(path: &str) -> String {
+    let depth = file_path_depth(path);
+    let name = file_base_name(path);
+    let label = format!("{}{}", "  ".repeat(depth.min(6)), name);
+    editor_view::short_path(&label, 30)
+}
+
+pub fn file_row_label_for_filter(path: &str, filtered: bool) -> String {
+    if filtered {
+        return editor_view::short_path(&editor_files::rel_label(path), 30);
     }
-    path.strip_prefix(scope)
-        .map(|rest| rest.trim_end_matches('/').to_string())
-        .filter(|label| !label.is_empty())
-        .unwrap_or_else(|| editor_files::rel_label(path))
+    file_row_label(path)
+}
+
+pub fn file_row_state_prefix(path: &str, open_paths: &[String], dirty_scene_paths: &[String]) -> &'static str {
+    let dirty = dirty_scene_paths.iter().any(|dirty| dirty == path);
+    let open = open_paths.iter().any(|open| open == path);
+    if dirty {
+        "* "
+    } else if open {
+        "> "
+    } else {
+        ""
+    }
+}
+
+pub fn file_row_icon(path: &str, expanded_paths: &[String]) -> &'static str {
+    if path.ends_with('/') {
+        if expanded_paths.iter().any(|item| item == path) {
+            "v"
+        } else {
+            ">"
+        }
+    } else {
+        editor_files::display_kind_label(path)
+    }
+}
+
+pub fn file_path_tree_visible(path: &str, expanded_paths: &[String]) -> bool {
+    let parent = parent_res_folder(path);
+    if parent.is_empty() {
+        return true;
+    }
+    file_ancestor_folders(path)
+        .into_iter()
+        .all(|folder| expanded_paths.iter().any(|item| item == &folder))
+}
+
+pub fn file_ancestor_folders(path: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cursor = parent_res_folder(path);
+    while !cursor.is_empty() {
+        out.push(cursor.clone());
+        cursor = parent_res_folder(&cursor);
+    }
+    out.reverse();
+    out
+}
+
+pub fn file_path_depth(path: &str) -> usize {
+    file_ancestor_folders(path).len()
+}
+
+pub fn file_base_name(path: &str) -> String {
+    let rel = editor_files::rel_label(path);
+    if rel.is_empty() {
+        return "res://".to_string();
+    }
+    rel.trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .unwrap_or(rel.as_str())
+        .to_string()
 }
 
 pub fn file_path_matches_filter(path: &str, filter: &NodePickerFilter) -> bool {
@@ -1931,24 +2213,35 @@ pub fn file_panel_title(state: &EditorState) -> String {
     if state.activity_mode == "glb" {
         return "GLB Files".to_string();
     }
-    if state.file_scope.is_empty() {
-        "FileSystem  res://".to_string()
-    } else {
+    if state.active_asset_path.ends_with('/') {
         format!(
             "FileSystem  {}",
-            editor_view::short_path(&state.file_scope, 24)
+            editor_view::short_path(&state.active_asset_path, 24)
         )
+    } else {
+        "FileSystem  res://".to_string()
     }
 }
 
 pub fn file_path_in_scope(path: &str, scope: &str) -> bool {
     if scope.is_empty() {
-        return true;
+        let rel = editor_files::rel_label(path);
+        if path.ends_with('/') {
+            return rel.trim_end_matches('/').matches('/').count() == 0;
+        }
+        return !rel.contains('/');
     }
     let Some(rest) = path.strip_prefix(scope) else {
         return false;
     };
     !rest.is_empty() && !rest.trim_end_matches('/').contains('/')
+}
+
+pub fn file_path_in_scope_or_descendant(path: &str, scope: &str) -> bool {
+    if scope.is_empty() {
+        return true;
+    }
+    path.strip_prefix(scope).is_some_and(|rest| !rest.is_empty())
 }
 
 pub fn parent_res_folder(path: &str) -> String {
@@ -2797,11 +3090,11 @@ pub fn viewport_window_aspect<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
 }
 
 pub fn viewport_stream_size_ratio(window_aspect: f32) -> (f32, f32) {
-    const MAIN_PADDING: f32 = 0.004;
-    const MAIN_SPACING: f32 = 0.004;
+    const MAIN_PADDING: f32 = 0.0025;
+    const MAIN_SPACING: f32 = 0.0025;
     const SPLIT_CONTENT_W: f32 = 1.0 - (MAIN_PADDING * 2.0) - (MAIN_SPACING * 3.0);
-    const SPLIT_CONTENT_H: f32 = 0.944 - (0.004 * 2.0);
-    const CENTER_W: f32 = 0.65;
+    const SPLIT_CONTENT_H: f32 = 0.944 - (0.003 * 2.0);
+    const CENTER_W: f32 = 0.596;
     const VIEWPORT_PANEL_H: f32 = 0.828;
     const MAX_W: f32 = 0.98;
     const MAX_H: f32 = 0.92;
@@ -2818,11 +3111,11 @@ pub fn viewport_stream_size_ratio(window_aspect: f32) -> (f32, f32) {
 }
 
 pub fn ui_canvas_size_ratio(window_aspect: f32, zoom: f32) -> (f32, f32) {
-    const MAIN_PADDING: f32 = 0.004;
-    const MAIN_SPACING: f32 = 0.004;
+    const MAIN_PADDING: f32 = 0.0025;
+    const MAIN_SPACING: f32 = 0.0025;
     const SPLIT_CONTENT_W: f32 = 1.0 - (MAIN_PADDING * 2.0) - (MAIN_SPACING * 3.0);
-    const SPLIT_CONTENT_H: f32 = 0.944 - (0.004 * 2.0);
-    const CENTER_W: f32 = 0.65;
+    const SPLIT_CONTENT_H: f32 = 0.944 - (0.003 * 2.0);
+    const CENTER_W: f32 = 0.596;
     const VIEWPORT_PANEL_H: f32 = 0.828;
     const BASE_W: f32 = 0.98;
     const ASPECT: f32 = 16.0 / 9.0;
@@ -2872,19 +3165,19 @@ pub fn apply_scene_list_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
         return;
     };
     let _ = with_node_mut!(ctx.run, UiList, list_id, |list| {
-        list.indent = 14.0;
-        list.v_spacing = 0.0015;
+        list.indent = 12.0;
+        list.v_spacing = 0.0008;
     });
     let _ = with_node_mut!(ctx.run, UiVLayout, list_id, |list| {
-        list.inner.spacing = 0.001;
+        list.inner.spacing = 0.0008;
     });
     for idx in 0..MAX_NODES {
         let row_name = format!("scene_row_{idx}");
         let row_label = format!("scene_row_{idx}_label");
-        set_button_size(ctx, &row_name, (1.0, 0.066));
-        set_button_row_style(ctx, &row_name, "#00000000", "#2B333D");
+        set_button_size(ctx, &row_name, (1.0, 0.053));
+        set_button_row_style(ctx, &row_name, "#00000000", "#333842");
         set_label_size_ratio(ctx, &row_label, (1.0, 1.0));
-        set_label_text_ratio(ctx, &row_label, 0.40);
+        set_label_text_ratio(ctx, &row_label, 0.35);
     }
 }
 
@@ -2893,19 +3186,19 @@ pub fn apply_file_tree_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
         return;
     };
     let _ = with_node_mut!(ctx.run, UiList, list_id, |list| {
-        list.indent = 12.0;
-        list.v_spacing = 0.0015;
+        list.indent = 11.0;
+        list.v_spacing = 0.0008;
     });
     let _ = with_node_mut!(ctx.run, UiVLayout, list_id, |list| {
-        list.inner.spacing = 0.001;
+        list.inner.spacing = 0.0008;
     });
     for idx in 0..MAX_FILES {
         let row_name = format!("file_row_{idx}");
         let row_label = format!("file_row_{idx}_label");
-        set_button_size(ctx, &row_name, (1.0, 0.064));
-        set_button_row_style(ctx, &row_name, "#00000000", "#2B333D");
+        set_button_size(ctx, &row_name, (1.0, 0.052));
+        set_button_row_style(ctx, &row_name, "#00000000", "#333842");
         set_label_size_ratio(ctx, &row_label, (1.0, 1.0));
-        set_label_text_ratio(ctx, &row_label, 0.38);
+        set_label_text_ratio(ctx, &row_label, 0.34);
     }
 }
 

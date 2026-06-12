@@ -5,11 +5,22 @@ pub fn sort_key(path: &str) -> (u8, String) {
     ((!folder) as u8, rel_label(path).to_ascii_lowercase())
 }
 
-pub fn res_browser_sort_key(path: &str) -> (usize, u8, String) {
-    let label = rel_label(path);
-    let depth = label.matches('/').count();
+pub fn res_browser_sort_key(path: &str) -> String {
+    let label = rel_label(path).to_ascii_lowercase();
     let folder = path.ends_with('/');
-    (depth, (!folder) as u8, label.to_ascii_lowercase())
+    let mut key = String::new();
+    for (idx, part) in label.split('/').filter(|part| !part.is_empty()).enumerate() {
+        if idx > 0 {
+            key.push('/');
+        }
+        key.push_str(part);
+        if folder && idx == label.trim_end_matches('/').matches('/').count() {
+            key.push_str("\0");
+        } else {
+            key.push_str("\x01");
+        }
+    }
+    key
 }
 
 pub fn rel_label(path: &str) -> String {

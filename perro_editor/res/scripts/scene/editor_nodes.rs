@@ -85,6 +85,9 @@ pub fn click_scene_node_slot<API: ScriptAPI + ?Sized>(
         return;
     };
 
+    let was_selected = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.selected_key == Some(key)
+    });
     let should_toggle = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let frame = state.file_watch_frame;
         let should_toggle = state
@@ -93,7 +96,7 @@ pub fn click_scene_node_slot<API: ScriptAPI + ?Sized>(
             && frame.wrapping_sub(state.last_scene_row_click_frame) <= LIST_DOUBLE_CLICK_FRAMES;
         state.last_scene_row_click_slot = Some(idx);
         state.last_scene_row_click_frame = frame;
-        should_toggle
+        should_toggle || was_selected
     })
     .unwrap_or(false);
 
@@ -164,8 +167,90 @@ pub fn update_scene_filter<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
     };
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         state.scene_filter = text;
+        state.focused_inspector_box = "scene_filter_box".to_string();
     });
     refresh_all(ctx);
+}
+
+pub fn clear_scene_filter<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.scene_filter.clear();
+        state.focused_inspector_box.clear();
+        state.log = "clear scene filter".to_string();
+    });
+    refresh_all(ctx);
+}
+
+pub fn expand_scene_tree_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.collapsed_scene_keys.clear();
+        state.log = "expand scene tree".to_string();
+    });
+    refresh_all(ctx);
+}
+
+pub fn collapse_scene_tree_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let doc = SceneDoc::parse(&state.doc_text);
+        let mut keys = doc
+            .scene
+            .nodes
+            .iter()
+            .filter(|node| scene_node_has_children(&doc, node.key.as_u32()))
+            .map(|node| node.key.as_u32())
+            .collect::<Vec<_>>();
+        if let Some(selected) = state.selected_key {
+            reveal_scene_key(&doc, selected, &mut keys);
+        }
+        state.collapsed_scene_keys = keys;
+        state.log = "fold scene tree".to_string();
+    });
+    refresh_all(ctx);
+}
+
+pub fn copy_selected_node_path<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let Some(key) = state.selected_key else {
+            state.log = "node path fail\nselect node".to_string();
+            return;
+        };
+        if state.doc_text.is_empty() {
+            state.log = "node path fail\nno open scene".to_string();
+            return;
+        }
+        let doc = SceneDoc::parse(&state.doc_text);
+        let Some(node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
+            state.log = "node path fail\nmissing node".to_string();
+            return;
+        };
+        state.log = format!("node path\n{}", scene_node_path(&doc, node.key));
+    });
+    refresh_all(ctx);
+}
+
+pub fn scene_node_has_children(doc: &SceneDoc, key: u32) -> bool {
+    doc.scene
+        .nodes
+        .iter()
+        .any(|node| node.parent.map(|parent| parent.as_u32()) == Some(key))
+}
+
+pub fn reveal_scene_key(doc: &SceneDoc, key: u32, collapsed_keys: &mut Vec<u32>) {
+    let mut cursor = Some(key);
+    while let Some(current) = cursor {
+        let parent = doc
+            .scene
+            .nodes
+            .iter()
+            .find(|node| node.key.as_u32() == current)
+            .and_then(|node| node.parent.map(|parent| parent.as_u32()));
+        if let Some(parent_key) = parent
+            && let Some(pos) = collapsed_keys.iter().position(|key| *key == parent_key)
+        {
+            collapsed_keys.remove(pos);
+        }
+        cursor = parent;
+    }
 }
 
 pub fn update_file_filter<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
@@ -174,6 +259,7 @@ pub fn update_file_filter<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
     };
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         state.file_filter = text;
+        state.focused_inspector_box = "file_filter_box".to_string();
     });
     refresh_all(ctx);
 }
@@ -210,7 +296,22 @@ pub fn open_selected_node_asset_ref<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCon
             .nodes
             .iter()
             .find(|node| node.key.as_u32() == key)?;
-        selected_node_asset_ref_path(node)
+        let refs = selected_node_asset_refs(node)
+            .into_iter()
+            .filter_map(|line| line.split_once(": ").map(|(_, path)| path.to_string()))
+            .collect::<Vec<_>>();
+        if refs.is_empty() {
+            return None;
+        }
+        let active = state.active_asset_path.as_str();
+        let next_idx = refs
+            .iter()
+            .position(|path| {
+                !active.is_empty() && base_res_asset_path(path) == base_res_asset_path(active)
+            })
+            .map(|idx| (idx + 1) % refs.len())
+            .unwrap_or(0);
+        refs.get(next_idx).cloned()
     });
     let Some(path) = path else {
         set_log(ctx, "open ref fail\nno asset ref");
@@ -230,15 +331,26 @@ pub fn select_node_using_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptC
             return false;
         }
         let doc = SceneDoc::parse(&state.doc_text);
-        let Some(node) = doc
+        let users = doc
             .scene
             .nodes
             .iter()
-            .find(|node| node_uses_asset_path(node, &state.active_asset_path))
-        else {
+            .filter(|node| node_uses_asset_path(node, &state.active_asset_path))
+            .collect::<Vec<_>>();
+        if users.is_empty() {
             state.log = format!("find user\nnone for {}", state.active_asset_path);
             return false;
         };
+        let next_idx = state
+            .selected_key
+            .and_then(|selected| {
+                users
+                    .iter()
+                    .position(|node| node.key.as_u32() == selected)
+                    .map(|idx| (idx + 1) % users.len())
+            })
+            .unwrap_or(0);
+        let node = users[next_idx];
         let key = node.key.as_u32();
         state.selected_key = Some(key);
         state.sidebar_mode = "scene".to_string();
@@ -248,7 +360,9 @@ pub fn select_node_using_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptC
             state.viewport_mode = mode.to_string();
         }
         state.log = format!(
-            "find user\n{}",
+            "find user {}/{}\n{}",
+            next_idx + 1,
+            users.len(),
             doc.scene.key_name_or_id(SceneKey::new(key))
         );
         true
@@ -302,6 +416,8 @@ pub fn open_asset_ref_path<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
         state.active_asset_path = base.clone();
         state.sidebar_mode = "files".to_string();
         state.activity_mode = "scene".to_string();
+        state.file_scope = parent_res_folder(&base);
+        reveal_file_path_in_tree(state, &base);
         state.log = format!("open ref\n{path}");
     });
     if base.ends_with(".panim") {
@@ -332,6 +448,10 @@ pub fn use_active_asset_on_selected_node<API: ScriptAPI + ?Sized>(
         let asset_path = state.active_asset_path.clone();
         if asset_path.is_empty() || asset_path.ends_with('/') {
             state.log = "use asset fail\nselect asset file".to_string();
+            return false;
+        }
+        if asset_path.ends_with(".scn") {
+            state.log = "use asset fail\ninstance scene instead".to_string();
             return false;
         }
         let Some(key) = state.selected_key else {
@@ -777,6 +897,7 @@ pub fn update_node_picker_filter<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         state.node_picker_filter = text;
         state.node_picker_offset = 0;
+        state.focused_inspector_box = "add_node_search_box".to_string();
     });
     refresh_all(ctx);
 }
@@ -1302,6 +1423,69 @@ pub fn toggle_selected_visible<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
             doc.scene.key_name_or_id(SceneKey::new(key)),
             !visible
         );
+        true
+    })
+    .unwrap_or(false);
+    if changed {
+        rebuild_preview(ctx);
+    }
+    refresh_all(ctx);
+}
+
+pub fn clear_selected_node_asset_refs<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let Some(key) = state.selected_key else {
+            state.log = "clear refs fail\nselect node".to_string();
+            return false;
+        };
+        if state.doc_text.is_empty() {
+            state.log = "clear refs fail\nno open scene".to_string();
+            return false;
+        }
+        let mut doc = SceneDoc::parse(&state.doc_text);
+        let Some(node) = doc
+            .scene
+            .nodes
+            .to_mut()
+            .iter_mut()
+            .find(|node| node.key.as_u32() == key)
+        else {
+            state.log = "clear refs fail\nmissing node".to_string();
+            return false;
+        };
+        let mut count = 0;
+        if node.script.is_some() {
+            node.script = None;
+            node.clear_script = true;
+            count += 1;
+        }
+        if node.root_of.is_some() {
+            node.root_of = None;
+            count += 1;
+        }
+        let asset_fields = perro_scene::scene_inspector_asset_fields(node.data.node_type)
+            .into_iter()
+            .map(|field| field.name.to_string())
+            .collect::<Vec<_>>();
+        let before = node.data.fields.len();
+        node.data
+            .fields
+            .to_mut()
+            .retain(|(field, _)| !asset_fields.iter().any(|name| field.as_ref() == name));
+        count += before.saturating_sub(node.data.fields.len());
+        if count == 0 {
+            state.log = "clear refs\nnone".to_string();
+            return false;
+        }
+        doc.normalize_links();
+        state.doc_text = doc.to_text();
+        state.dirty = true;
+        if let Some(path) = state.open_paths.get(state.active_open).cloned()
+            && !state.dirty_scene_paths.iter().any(|item| item == &path)
+        {
+            state.dirty_scene_paths.push(path);
+        }
+        state.log = format!("clear refs\nrm {count}");
         true
     })
     .unwrap_or(false);
