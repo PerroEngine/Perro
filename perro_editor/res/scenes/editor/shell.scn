@@ -2008,8 +2008,27 @@ parent = @main_split
     [/UiVLayout]
 [/inspector_panel]
 
-[inspector_title]
+[inspector_scroll]
 parent = @inspector_panel
+    [UiScroll]
+        size_ratio = (1.0, 1.0)
+        input_enabled = true
+    [/UiScroll]
+[/inspector_scroll]
+
+[inspector_content]
+parent = @inspector_scroll
+    [UiVLayout]
+        size_ratio = (1.0, 2.25)
+        h_align = "fill"
+        v_align = "start"
+        spacing = 0.005
+        padding = (0.0, 0.0)
+    [/UiVLayout]
+[/inspector_content]
+
+[inspector_title]
+parent = @inspector_content
     [UiLabel]
         size_ratio = (1.0, 0.052)
         text = "Node Inspector"
@@ -2021,7 +2040,7 @@ parent = @inspector_panel
 [/inspector_title]
 
 [inspector_name]
-parent = @inspector_panel
+parent = @inspector_content
     [UiLabel]
         size_ratio = (1.0, 0.034)
         text = "name: -"
@@ -2032,7 +2051,7 @@ parent = @inspector_panel
 [/inspector_name]
 
 [inspector_name_box]
-parent = @inspector_panel
+parent = @inspector_content
     [UiTextBox]
         size_ratio = (1.0, 0.038)
         text = "-"
@@ -2045,7 +2064,7 @@ parent = @inspector_panel
 [/inspector_name_box]
 
 [inspector_script_top]
-parent = @inspector_panel
+parent = @inspector_content
     [UiLabel]
         size_ratio = (1.0, 0.044)
         text = "Script  -"
@@ -2057,7 +2076,7 @@ parent = @inspector_panel
 [/inspector_script_top]
 
 [inspector_type]
-parent = @inspector_panel
+parent = @inspector_content
     [UiLabel]
         size_ratio = (1.0, 0.042)
         text = "type: -"
@@ -2068,7 +2087,7 @@ parent = @inspector_panel
 [/inspector_type]
 
 [inspector_parent]
-parent = @inspector_panel
+parent = @inspector_content
     [UiLabel]
         size_ratio = (1.0, 0.042)
         text = "parent: -"
@@ -2079,7 +2098,7 @@ parent = @inspector_panel
 [/inspector_parent]
 
 [inspector_action_row]
-parent = @inspector_panel
+parent = @inspector_content
     [UiHLayout]
         visible = false
         size_ratio = (1.0, 0.044)
@@ -2182,7 +2201,7 @@ parent = @inspector_visible_button
 [/inspector_visible_label]
 
 [asset_action_row]
-parent = @inspector_panel
+parent = @inspector_content
     [UiHLayout]
         visible = false
         size_ratio = (1.0, 0.044)
@@ -2285,7 +2304,7 @@ parent = @asset_glb_mat_button
 [/asset_glb_mat_label]
 
 [inspector_pos]
-parent = @inspector_panel
+parent = @inspector_content
     [UiLabel]
         size_ratio = (1.0, 0.036)
         text = "Transform / Position"
@@ -2297,7 +2316,7 @@ parent = @inspector_panel
 [/inspector_pos]
 
 [inspector_position_box]
-parent = @inspector_panel
+parent = @inspector_content
     [UiTextBox]
         visible = false
         size_ratio = (1.0, 0.038)
@@ -2311,7 +2330,7 @@ parent = @inspector_panel
 [/inspector_position_box]
 
 [inspector_position_row]
-parent = @inspector_panel
+parent = @inspector_content
     [UiHLayout]
         size_ratio = (1.0, 0.038)
         h_align = "fill"
@@ -2413,7 +2432,7 @@ parent = @inspector_position_row
 [/inspector_position_3_box]
 
 [inspector_rotation_label]
-parent = @inspector_panel
+parent = @inspector_content
     [UiLabel]
         size_ratio = (1.0, 0.036)
         text = "Rotation"
@@ -2425,7 +2444,7 @@ parent = @inspector_panel
 [/inspector_rotation_label]
 
 [inspector_rotation_box]
-parent = @inspector_panel
+parent = @inspector_content
     [UiTextBox]
         visible = false
         size_ratio = (1.0, 0.038)
@@ -2439,7 +2458,7 @@ parent = @inspector_panel
 [/inspector_rotation_box]
 
 [inspector_rotation_mode_row]
-parent = @inspector_panel
+parent = @inspector_content
     [UiHLayout]
         visible = false
         size_ratio = (1.0, 0.038)
@@ -2496,7 +2515,7 @@ parent = @inspector_rotation_euler_button
 [/inspector_rotation_euler_label]
 
 [inspector_rotation_row]
-parent = @inspector_panel
+parent = @inspector_content
     [UiHLayout]
         size_ratio = (1.0, 0.038)
         h_align = "fill"
@@ -2598,7 +2617,7 @@ parent = @inspector_rotation_row
 [/inspector_rotation_3_box]
 
 [inspector_scale_label]
-parent = @inspector_panel
+parent = @inspector_content
     [UiLabel]
         size_ratio = (1.0, 0.036)
         text = "Scale"
@@ -2610,7 +2629,7 @@ parent = @inspector_panel
 [/inspector_scale_label]
 
 [inspector_scale_box]
-parent = @inspector_panel
+parent = @inspector_content
     [UiTextBox]
         visible = false
         size_ratio = (1.0, 0.038)
@@ -2624,7 +2643,7 @@ parent = @inspector_panel
 [/inspector_scale_box]
 
 [inspector_scale_row]
-parent = @inspector_panel
+parent = @inspector_content
     [UiHLayout]
         size_ratio = (1.0, 0.038)
         h_align = "fill"
@@ -2726,7 +2745,7 @@ parent = @inspector_scale_row
 [/inspector_scale_3_box]
 
 [inspector_script]
-parent = @inspector_panel
+parent = @inspector_content
     [UiLabel]
         size_ratio = (1.0, 0.046)
         text = "script: -"
@@ -2738,7 +2757,7 @@ parent = @inspector_panel
 [/inspector_script]
 
 [inspector_vars]
-parent = @inspector_panel
+parent = @inspector_content
     [UiLabel]
         size_ratio = (1.0, 0.036)
         text = "Script Vars"
@@ -2751,7 +2770,7 @@ parent = @inspector_panel
 [/inspector_vars]
 
 [inspector_vars_box]
-parent = @inspector_panel
+parent = @inspector_content
     [UiTextBox]
         size_ratio = (1.0, 0.18)
         text = ""
@@ -2766,7 +2785,7 @@ parent = @inspector_panel
 [/inspector_vars_box]
 
 [inspector_var_row_0]
-parent = @inspector_panel
+parent = @inspector_content
     [UiHLayout]
         size_ratio = (1.0, 0.044)
         h_align = "fill"
@@ -2834,7 +2853,7 @@ parent = @inspector_var_row_0
 [/inspector_var_0_type]
 
 [inspector_var_row_1]
-parent = @inspector_panel
+parent = @inspector_content
     [UiHLayout]
         size_ratio = (1.0, 0.044)
         h_align = "fill"
@@ -2902,7 +2921,7 @@ parent = @inspector_var_row_1
 [/inspector_var_1_type]
 
 [inspector_var_row_2]
-parent = @inspector_panel
+parent = @inspector_content
     [UiHLayout]
         size_ratio = (1.0, 0.044)
         h_align = "fill"
@@ -2970,7 +2989,7 @@ parent = @inspector_var_row_2
 [/inspector_var_2_type]
 
 [inspector_var_row_3]
-parent = @inspector_panel
+parent = @inspector_content
     [UiHLayout]
         size_ratio = (1.0, 0.044)
         h_align = "fill"
@@ -3038,7 +3057,7 @@ parent = @inspector_var_row_3
 [/inspector_var_3_type]
 
 [inspector_var_row_4]
-parent = @inspector_panel
+parent = @inspector_content
     [UiHLayout]
         size_ratio = (1.0, 0.044)
         h_align = "fill"
@@ -3106,7 +3125,7 @@ parent = @inspector_var_row_4
 [/inspector_var_4_type]
 
 [inspector_var_row_5]
-parent = @inspector_panel
+parent = @inspector_content
     [UiHLayout]
         size_ratio = (1.0, 0.044)
         h_align = "fill"
@@ -3174,7 +3193,7 @@ parent = @inspector_var_row_5
 [/inspector_var_5_type]
 
 [inspector_var_row_6]
-parent = @inspector_panel
+parent = @inspector_content
     [UiHLayout]
         size_ratio = (1.0, 0.044)
         h_align = "fill"
@@ -3242,7 +3261,7 @@ parent = @inspector_var_row_6
 [/inspector_var_6_type]
 
 [inspector_var_row_7]
-parent = @inspector_panel
+parent = @inspector_content
     [UiHLayout]
         size_ratio = (1.0, 0.044)
         h_align = "fill"
@@ -3310,7 +3329,7 @@ parent = @inspector_var_row_7
 [/inspector_var_7_type]
 
 [inspector_resource_row_0]
-parent = @inspector_panel
+parent = @inspector_content
     [UiHLayout]
         size_ratio = (1.0, 0.046)
         h_align = "fill"
@@ -3355,7 +3374,7 @@ parent = @inspector_resource_0_button
 [/inspector_resource_0_button_label]
 
 [inspector_resource_row_1]
-parent = @inspector_panel
+parent = @inspector_content
     [UiHLayout]
         size_ratio = (1.0, 0.046)
         h_align = "fill"
@@ -3400,7 +3419,7 @@ parent = @inspector_resource_1_button
 [/inspector_resource_1_button_label]
 
 [inspector_resource_row_2]
-parent = @inspector_panel
+parent = @inspector_content
     [UiHLayout]
         size_ratio = (1.0, 0.046)
         h_align = "fill"
@@ -3445,7 +3464,7 @@ parent = @inspector_resource_2_button
 [/inspector_resource_2_button_label]
 
 [inspector_resource_row_3]
-parent = @inspector_panel
+parent = @inspector_content
     [UiHLayout]
         size_ratio = (1.0, 0.046)
         h_align = "fill"

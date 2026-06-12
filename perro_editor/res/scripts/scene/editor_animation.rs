@@ -776,6 +776,32 @@ pub fn pick_selected_script_var_ref<API: ScriptAPI + ?Sized>(
             }
             return Some(false);
         }
+        if row.kind == "Bool" {
+            let mut doc = SceneDoc::parse(&state.doc_text);
+            let node = doc
+                .scene
+                .nodes
+                .to_mut()
+                .iter_mut()
+                .find(|node| node.key.as_u32() == key)?;
+            let mut fields = inspector_script_var_fields_for_node(state, node);
+            let current = row.value == "true";
+            if !set_value_at_path(&mut fields, &row.path, SceneValue::Bool(!current)) {
+                return None;
+            }
+            if !write_script_var_override(node.script_vars.to_mut(), &fields, &row.path) {
+                return None;
+            }
+            state.doc_text = doc.to_text();
+            state.dirty = true;
+            if let Some(path) = state.open_paths.get(state.active_open).cloned()
+                && !state.dirty_scene_paths.iter().any(|item| item == &path)
+            {
+                state.dirty_scene_paths.push(path);
+            }
+            state.log = format!("toggle script var\n{}", row.name.trim());
+            return Some(false);
+        }
         if row.kind != "Node" {
             return None;
         }
@@ -790,6 +816,7 @@ pub fn pick_selected_script_var_ref<API: ScriptAPI + ?Sized>(
         return;
     };
     if !open_picker {
+        rebuild_preview(ctx);
         refresh_all(ctx);
         return;
     }

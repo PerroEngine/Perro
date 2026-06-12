@@ -378,7 +378,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             row.map(|item| item.value.as_str()).unwrap_or(""),
         );
         let picker_button_name = format!("inspector_var_{idx}_pick_button");
-        let picker_row = row.is_some_and(|item| item.kind == "Node" || item.expandable)
+        let picker_row = row.is_some_and(|item| item.kind == "Node" || item.kind == "Bool" || item.expandable)
             && find_named(ctx, &picker_button_name).is_some();
         set_ui_display(
             ctx,
@@ -393,7 +393,9 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         set_label(
             ctx,
             &format!("inspector_var_{idx}_pick_label"),
-            row.map(|item| item.value.as_str()).unwrap_or("Select"),
+            row.map(inspector_var_button_label)
+                .as_deref()
+                .unwrap_or("Select"),
         );
     }
     for idx in 0..MAX_RESOURCE_FIELDS {
@@ -993,6 +995,18 @@ pub fn script_vars_edit_text(fields: &[(SceneFieldName, SceneValue)]) -> String 
         .map(|(name, value)| format!("{} = {}", name.as_ref(), scene_value_edit_text(value)))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn inspector_var_button_label(row: &InspectorValueRow) -> String {
+    if row.kind == "Bool" {
+        if row.value == "true" {
+            "[x] true".to_string()
+        } else {
+            "[ ] false".to_string()
+        }
+    } else {
+        row.value.clone()
+    }
 }
 
 pub fn resource_field_rows(data: &SceneNodeData) -> Vec<ResourceFieldView> {

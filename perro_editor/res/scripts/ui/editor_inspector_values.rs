@@ -98,8 +98,13 @@ fn script_state_default_fields(
     let Some(struct_name) = parse_state_struct_name(&source) else {
         return Vec::new();
     };
-    let type_map = parse_script_type_map(&source);
-    script_struct_default_fields(&type_map, &struct_name, 0)
+    let schema = parse_script_schema(&source);
+    script_struct_default_fields(&schema, &struct_name, 0)
+}
+
+struct ScriptSchema {
+    structs: BTreeMap<String, Vec<RawScriptField>>,
+    enums: BTreeMap<String, String>,
 }
 
 struct RawScriptField {
@@ -139,15 +144,89 @@ fn parse_struct_name(line: &str) -> Option<String> {
     None
 }
 
-fn parse_script_type_map(source: &str) -> BTreeMap<String, Vec<RawScriptField>> {
-    let mut out = BTreeMap::new();
-    for line in source.lines() {
+fn parse_script_schema(source: &str) -> ScriptSchema {
+    let mut structs = BTreeMap::new();
+    let mut enums = BTreeMap::new();
+    let mut lines = source.lines().peekable();
+    while let Some(line) = lines.next() {
         if let Some(name) = parse_struct_name(strip_line_comment(line).trim()) {
             let fields = parse_script_struct_fields(source, &name);
-            out.insert(name, fields);
+            structs.insert(name, fields);
+        } else if let Some(name) = parse_enum_name(strip_line_comment(line).trim()) {
+            enums.insert(name, parse_enum_default(line, &mut lines));
         }
     }
-    out
+    ScriptSchema { structs, enums }
+}
+
+fn parse_enum_name(line: &str) -> Option<String> {
+    let mut parts = line.split_whitespace().peekable();
+    while let Some(part) = parts.next() {
+        if part == "enum" {
+            return parts
+                .next()
+                .map(|value| value.trim_matches('{').trim().to_string())
+                .filter(|value| !value.is_empty());
+        }
+    }
+    None
+}
+
+fn parse_enum_default<'a>(
+    first_line: &str,
+    lines: &mut std::iter::Peekable<std::str::Lines<'a>>,
+) -> String {
+    let mut first_variant = None;
+    let mut default_next = false;
+    let mut opened = first_line.contains('{');
+    let mut depth = if opened { brace_delta(first_line) } else { 0 };
+    while let Some(line) = lines.peek().copied() {
+        let line = strip_line_comment(line).trim();
+        if !opened {
+            opened = line.contains('{');
+            depth += brace_delta(line);
+            lines.next();
+            continue;
+        }
+        if line == "#[default]" {
+            default_next = true;
+            lines.next();
+            continue;
+        }
+        if depth == 1
+            && let Some(variant) = parse_enum_variant(line)
+        {
+            if first_variant.is_none() {
+                first_variant = Some(variant.clone());
+            }
+            if default_next {
+                lines.next();
+                return variant;
+            }
+        }
+        depth += brace_delta(line);
+        lines.next();
+        if depth <= 0 {
+            break;
+        }
+    }
+    first_variant.unwrap_or_else(|| "Default".to_string())
+}
+
+fn parse_enum_variant(line: &str) -> Option<String> {
+    let name = line
+        .trim()
+        .trim_end_matches(',')
+        .split(['(', '{', '='])
+        .next()?
+        .trim();
+    if name.is_empty() || name.starts_with("#[") {
+        return None;
+    }
+    name.chars()
+        .next()
+        .is_some_and(|ch| ch.is_ascii_alphabetic())
+        .then(|| name.to_string())
 }
 
 fn parse_script_struct_fields(source: &str, struct_name: &str) -> Vec<RawScriptField> {
@@ -216,14 +295,14 @@ fn parse_default_attr(line: &str) -> Option<String> {
 }
 
 fn script_struct_default_fields(
-    type_map: &BTreeMap<String, Vec<RawScriptField>>,
+    schema: &ScriptSchema,
     struct_name: &str,
     depth: usize,
 ) -> Vec<(SceneFieldName, SceneValue)> {
     if depth > MAX_INSPECTOR_DEPTH {
         return Vec::new();
     }
-    let Some(fields) = type_map.get(struct_name) else {
+    let Some(fields) = schema.structs.get(struct_name) else {
         return Vec::new();
     };
     fields
@@ -231,26 +310,26 @@ fn script_struct_default_fields(
         .map(|field| {
             (
                 SceneFieldName::Custom(Cow::Owned(field.name.clone())),
-                default_value_for_field(type_map, field, depth + 1),
+                default_value_for_field(schema, field, depth + 1),
             )
         })
         .collect()
 }
 
 fn default_value_for_field(
-    type_map: &BTreeMap<String, Vec<RawScriptField>>,
+    schema: &ScriptSchema,
     field: &RawScriptField,
     depth: usize,
 ) -> SceneValue {
     field
         .default_attr
         .as_deref()
-        .and_then(|value| parse_default_value(type_map, value, &field.ty, depth))
-        .unwrap_or_else(|| default_scene_value_for_type(type_map, &field.ty, depth))
+        .and_then(|value| parse_default_value(schema, value, &field.ty, depth))
+        .unwrap_or_else(|| default_scene_value_for_type(schema, &field.ty, depth))
 }
 
 fn parse_default_value(
-    type_map: &BTreeMap<String, Vec<RawScriptField>>,
+    schema: &ScriptSchema,
     value: &str,
     ty: &str,
     depth: usize,
@@ -264,12 +343,17 @@ fn parse_default_value(
         .strip_suffix("::default()")
         .map(|value| value.rsplit("::").next().unwrap_or(value))
     {
-        return Some(default_scene_value_for_type(type_map, inner, depth + 1));
+        return Some(default_scene_value_for_type(schema, inner, depth + 1));
     }
-    if matches!(value, "NodeID::nil()" | "perro_api::prelude::NodeID::nil()") {
+    if value.ends_with("ID::nil()") || matches!(value, "NodeID::nil()" | "perro_api::prelude::NodeID::nil()") {
         return Some(SceneValue::Key(perro_api::scene::SceneValueKey::from("null")));
     }
-    if let Some(value) = parse_vec_default_value(type_map, value, ty, depth) {
+    if let Some((enum_ty, variant)) = value.split_once("::")
+        && schema.enums.contains_key(enum_ty)
+    {
+        return Some(SceneValue::Key(perro_api::scene::SceneValueKey::from(variant)));
+    }
+    if let Some(value) = parse_vec_default_value(schema, value, ty, depth) {
         return Some(value);
     }
     if value.contains("::") || value.contains('{') || value.contains('[') {
@@ -279,7 +363,7 @@ fn parse_default_value(
 }
 
 fn parse_vec_default_value(
-    type_map: &BTreeMap<String, Vec<RawScriptField>>,
+    schema: &ScriptSchema,
     value: &str,
     ty: &str,
     depth: usize,
@@ -288,8 +372,8 @@ fn parse_vec_default_value(
     let content = value.strip_prefix("vec![")?.strip_suffix(']')?;
     if let Some((item, count)) = content.split_once(';') {
         let count = count.trim().parse::<usize>().ok()?.min(32);
-        let item = parse_default_value(type_map, item.trim(), &inner_ty, depth + 1)
-            .unwrap_or_else(|| default_scene_value_for_type(type_map, &inner_ty, depth + 1));
+        let item = parse_default_value(schema, item.trim(), &inner_ty, depth + 1)
+            .unwrap_or_else(|| default_scene_value_for_type(schema, &inner_ty, depth + 1));
         return Some(SceneValue::Array(Cow::Owned(vec![item; count])));
     }
     if content.trim().is_empty() {
@@ -298,8 +382,8 @@ fn parse_vec_default_value(
     let mut values = Vec::new();
     for item in content.split(',').map(str::trim).filter(|item| !item.is_empty()) {
         values.push(
-            parse_default_value(type_map, item, &inner_ty, depth + 1)
-                .unwrap_or_else(|| default_scene_value_for_type(type_map, &inner_ty, depth + 1)),
+            parse_default_value(schema, item, &inner_ty, depth + 1)
+                .unwrap_or_else(|| default_scene_value_for_type(schema, &inner_ty, depth + 1)),
         );
     }
     Some(SceneValue::Array(Cow::Owned(values)))
@@ -313,7 +397,7 @@ fn is_int_type(ty: &str) -> bool {
 }
 
 fn default_scene_value_for_type(
-    type_map: &BTreeMap<String, Vec<RawScriptField>>,
+    schema: &ScriptSchema,
     ty: &str,
     depth: usize,
 ) -> SceneValue {
@@ -340,15 +424,16 @@ fn default_scene_value_for_type(
                 w: 0.0,
             }
         }
-        "NodeID" | "perro_api::prelude::NodeID" => {
-            SceneValue::Key(perro_api::scene::SceneValueKey::from("null"))
-        }
+        _ if ty.ends_with("ID") => SceneValue::Key(perro_api::scene::SceneValueKey::from("null")),
         _ if ty.starts_with("Option<") => {
             SceneValue::Key(perro_api::scene::SceneValueKey::from("null"))
         }
         _ if ty.starts_with("Vec<") => SceneValue::Array(Cow::Owned(Vec::new())),
-        _ if type_map.contains_key(ty.as_str()) => {
-            SceneValue::Object(Cow::Owned(script_struct_default_fields(type_map, &ty, depth + 1)))
+        _ if schema.structs.contains_key(ty.as_str()) => {
+            SceneValue::Object(Cow::Owned(script_struct_default_fields(schema, &ty, depth + 1)))
+        }
+        _ if let Some(default_variant) = schema.enums.get(ty.as_str()) => {
+            SceneValue::Key(perro_api::scene::SceneValueKey::from(default_variant.clone()))
         }
         _ => SceneValue::Object(Cow::Owned(Vec::new())),
     }
