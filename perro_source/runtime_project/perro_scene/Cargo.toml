@@ -7,3 +7,4 @@ edition = "2024"
 perro_ids.workspace = true
 perro_nodes.workspace = true
 perro_structs.workspace = true
+perro_ui.workspace = true

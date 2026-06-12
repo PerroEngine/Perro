@@ -3559,6 +3559,7 @@ dependencies = [
  "perro_ids",
  "perro_nodes",
  "perro_structs",
+ "perro_ui",
 ]
 
 [[package]]

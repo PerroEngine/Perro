@@ -78,6 +78,10 @@ pub fn pick_folder(title: &str) -> Option<String> {
     pick_folder_impl(title)
 }
 
+pub fn pick_file(title: &str, filters: &[(&str, &[&str])]) -> Option<String> {
+    pick_file_impl(title, filters)
+}
+
 pub fn resolve_path_string<P: ResPathSource>(path: P) -> String {
     let path = path.as_res_path_str();
     match perro_io::resolve_path(path) {
@@ -139,7 +143,23 @@ fn pick_folder_impl(title: &str) -> Option<String> {
         .map(|path| path.to_string_lossy().to_string())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn pick_file_impl(title: &str, filters: &[(&str, &[&str])]) -> Option<String> {
+    let mut dialog = rfd::FileDialog::new().set_title(title);
+    for (name, exts) in filters {
+        dialog = dialog.add_filter(*name, exts);
+    }
+    dialog
+        .pick_file()
+        .map(|path| path.to_string_lossy().to_string())
+}
+
 #[cfg(target_arch = "wasm32")]
 fn pick_folder_impl(_: &str) -> Option<String> {
+    None
+}
+
+#[cfg(target_arch = "wasm32")]
+fn pick_file_impl(_: &str, _: &[(&str, &[&str])]) -> Option<String> {
     None
 }

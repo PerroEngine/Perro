@@ -1,6 +1,7 @@
 {
   "rust-analyzer.linkedProjects": [
-    "demos/Demo3D/.perro/scripts/Cargo.toml"
+    "demos/Demo3D/.perro/scripts/Cargo.toml",
+    ".perro/scripts/Cargo.toml"
   ],
   "rust-analyzer.vfs.extraIncludes": [
     "${workspaceFolder}/perro_editor/res/",

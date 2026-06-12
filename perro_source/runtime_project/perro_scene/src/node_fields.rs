@@ -1,7 +1,9 @@
-use perro_nodes::NodeType;
+use perro_nodes::{Node2D, Node3D, NodeType};
+use perro_structs::{BitMask, Color, Quaternion, Vector2, Vector3};
+use perro_ui::{UiBox, UiUnit, UiVector2};
 use std::str::FromStr;
 
-use crate::SceneFieldName;
+use crate::{SceneFieldName, SceneValue};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NodeField {
@@ -58,6 +60,7 @@ pub enum NodeField {
     BallJoint3D(Joint3DField),
     HingeJoint3D(HingeJoint3DField),
     FixedJoint3D(Joint3DField),
+    UiBox(UiBoxField),
     UiImage(UiImageField),
     UiImageButton(UiImageField),
     UiNineSlice(UiImageField),
@@ -101,6 +104,20 @@ pub enum Node3DField {
     SelfModulate,
     ChildrenModulate,
     RenderLayers,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UiBoxField {
+    Position,
+    Scale,
+    Rotation,
+    Visible,
+    Modulate,
+    SelfModulate,
+    ChildrenModulate,
+    InputEnabled,
+    ClipChildren,
+    ZIndex,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -614,6 +631,123 @@ pub fn resolve_scene_node_field(node_type_name: &str, field: &SceneFieldName) ->
     let node_type = NodeType::from_str(node_type_name).ok()?;
     resolve_scene_node_field_for_type(node_type, field)
         .or_else(|| resolve_node_field_for_type(node_type, field.as_ref()))
+}
+
+pub fn default_scene_field_value_by_name(node_type: NodeType, field: &str) -> Option<SceneValue> {
+    let field = SceneFieldName::from_borrowed(field)?;
+    default_scene_field_value(node_type, &field)
+}
+
+pub fn default_scene_field_value(node_type: NodeType, field: &SceneFieldName) -> Option<SceneValue> {
+    let resolved = resolve_scene_node_field_for_type(node_type, field)
+        .or_else(|| resolve_node_field_for_type(node_type, field.as_ref()))?;
+    default_node_field_value(resolved)
+}
+
+pub fn default_node_field_value(field: NodeField) -> Option<SceneValue> {
+    match field {
+        NodeField::Node2D(field) => default_node_2d_field_value(field),
+        NodeField::Node3D(field) => default_node_3d_field_value(field),
+        NodeField::UiBox(field) => default_ui_box_field_value(field),
+        _ => None,
+    }
+}
+
+fn default_node_2d_field_value(field: Node2DField) -> Option<SceneValue> {
+    let node = Node2D::new();
+    Some(match field {
+        Node2DField::Position => vec2_value(node.transform.position),
+        Node2DField::Rotation => SceneValue::F32(node.transform.rotation),
+        Node2DField::Scale => vec2_value(node.transform.scale),
+        Node2DField::Visible => SceneValue::Bool(node.visible),
+        Node2DField::Modulate => color_value(node.modulate.modulate),
+        Node2DField::SelfModulate => color_value(node.modulate.self_modulate),
+        Node2DField::ChildrenModulate => color_value(node.modulate.children_modulate),
+        Node2DField::ZIndex => SceneValue::I32(node.z_index),
+        Node2DField::RenderLayers => bit_mask_value(node.render_layers),
+    })
+}
+
+fn default_node_3d_field_value(field: Node3DField) -> Option<SceneValue> {
+    let node = Node3D::new();
+    Some(match field {
+        Node3DField::Position => vec3_value(node.transform.position),
+        Node3DField::Rotation => quat_value(node.transform.rotation),
+        Node3DField::Scale => vec3_value(node.transform.scale),
+        Node3DField::Visible => SceneValue::Bool(node.visible),
+        Node3DField::Modulate => color_value(node.modulate.modulate),
+        Node3DField::SelfModulate => color_value(node.modulate.self_modulate),
+        Node3DField::ChildrenModulate => color_value(node.modulate.children_modulate),
+        Node3DField::RenderLayers => bit_mask_value(node.render_layers),
+    })
+}
+
+fn default_ui_box_field_value(field: UiBoxField) -> Option<SceneValue> {
+    let node = UiBox::new();
+    Some(match field {
+        UiBoxField::Position => ui_vec2_ratio_value(node.transform.position),
+        UiBoxField::Scale => vec2_value(node.transform.scale),
+        UiBoxField::Rotation => SceneValue::F32(node.transform.rotation),
+        UiBoxField::Visible => SceneValue::Bool(node.visible),
+        UiBoxField::Modulate => color_value(node.modulate.modulate),
+        UiBoxField::SelfModulate => color_value(node.modulate.self_modulate),
+        UiBoxField::ChildrenModulate => color_value(node.modulate.children_modulate),
+        UiBoxField::InputEnabled => SceneValue::Bool(node.input_enabled),
+        UiBoxField::ClipChildren => SceneValue::Bool(node.clip_children),
+        UiBoxField::ZIndex => SceneValue::I32(node.layout.z_index),
+    })
+}
+
+fn vec2_value(value: Vector2) -> SceneValue {
+    SceneValue::Vec2 {
+        x: value.x,
+        y: value.y,
+    }
+}
+
+fn vec3_value(value: Vector3) -> SceneValue {
+    SceneValue::Vec3 {
+        x: value.x,
+        y: value.y,
+        z: value.z,
+    }
+}
+
+fn quat_value(value: Quaternion) -> SceneValue {
+    SceneValue::Vec4 {
+        x: value.x,
+        y: value.y,
+        z: value.z,
+        w: value.w,
+    }
+}
+
+fn color_value(value: Color) -> SceneValue {
+    let [r, g, b, a] = value.to_rgba();
+    SceneValue::Vec4 {
+        x: r,
+        y: g,
+        z: b,
+        w: a,
+    }
+}
+
+fn bit_mask_value(value: BitMask) -> SceneValue {
+    SceneValue::I32(value.bits() as i32)
+}
+
+fn ui_vec2_ratio_value(value: UiVector2) -> SceneValue {
+    vec2_value(Vector2::new(
+        ui_unit_ratio_value(value.x),
+        ui_unit_ratio_value(value.y),
+    ))
+}
+
+fn ui_unit_ratio_value(value: UiUnit) -> f32 {
+    match value {
+        UiUnit::Pixels(value) => value,
+        UiUnit::Percent(value) => value * 0.01,
+    }
 }
 
 fn resolve_scene_node_field_for_type(
@@ -2096,6 +2230,28 @@ fn resolve_base_node_field(node_type: NodeType, field: &str) -> Option<NodeField
         };
     }
 
+    if node_type.is_a(NodeType::UiBox) {
+        return match field {
+            "position" | "position_percent" | "position_pct" | "position_ratio" => {
+                Some(NodeField::UiBox(UiBoxField::Position))
+            }
+            "scale" => Some(NodeField::UiBox(UiBoxField::Scale)),
+            "rotation" | "rotation_deg" => Some(NodeField::UiBox(UiBoxField::Rotation)),
+            "visible" => Some(NodeField::UiBox(UiBoxField::Visible)),
+            "modulate" | "tint" => Some(NodeField::UiBox(UiBoxField::Modulate)),
+            "self_modulate" | "self_tint" | "self_color" => {
+                Some(NodeField::UiBox(UiBoxField::SelfModulate))
+            }
+            "children_modulate" | "child_modulate" | "children_tint" | "child_tint" => {
+                Some(NodeField::UiBox(UiBoxField::ChildrenModulate))
+            }
+            "input_enabled" => Some(NodeField::UiBox(UiBoxField::InputEnabled)),
+            "clip_children" => Some(NodeField::UiBox(UiBoxField::ClipChildren)),
+            "z_index" => Some(NodeField::UiBox(UiBoxField::ZIndex)),
+            _ => None,
+        };
+    }
+
     None
 }
 
@@ -2129,6 +2285,22 @@ fn resolve_base_scene_node_field(node_type: NodeType, field: &SceneFieldName) ->
                 Some(NodeField::Node3D(Node3DField::ChildrenModulate))
             }
             SceneFieldName::RenderLayers => Some(NodeField::Node3D(Node3DField::RenderLayers)),
+            _ => None,
+        };
+    }
+
+    if node_type.is_a(NodeType::UiBox) {
+        return match field {
+            SceneFieldName::Position => Some(NodeField::UiBox(UiBoxField::Position)),
+            SceneFieldName::Scale => Some(NodeField::UiBox(UiBoxField::Scale)),
+            SceneFieldName::Rotation => Some(NodeField::UiBox(UiBoxField::Rotation)),
+            SceneFieldName::Visible => Some(NodeField::UiBox(UiBoxField::Visible)),
+            SceneFieldName::Modulate => Some(NodeField::UiBox(UiBoxField::Modulate)),
+            SceneFieldName::SelfModulate => Some(NodeField::UiBox(UiBoxField::SelfModulate)),
+            SceneFieldName::ChildrenModulate => {
+                Some(NodeField::UiBox(UiBoxField::ChildrenModulate))
+            }
+            SceneFieldName::ZIndex => Some(NodeField::UiBox(UiBoxField::ZIndex)),
             _ => None,
         };
     }

@@ -1,0 +1,2361 @@
+use crate::scripts_editor_animation_rs::*;
+use crate::scripts_editor_app_rs as editor_app;
+use crate::scripts_editor_assets_rs::*;
+use crate::scripts_editor_file_watch_rs as editor_file_watch;
+use crate::scripts_editor_files_rs as editor_files;
+use crate::scripts_editor_gizmos_rs as editor_gizmos;
+use crate::scripts_editor_inspector_values_rs::*;
+use crate::scripts_editor_manager_rs as editor_manager;
+use crate::scripts_editor_nav_rs::*;
+use crate::scripts_editor_nodes_rs::*;
+use crate::scripts_editor_project_rs as editor_project;
+use crate::scripts_editor_scene_deps_rs as editor_scene_deps;
+use crate::scripts_editor_scene_rs as editor_scene;
+use crate::scripts_editor_view_rs as editor_view;
+use crate::scripts_editor_viewport_rs::*;
+use crate::scripts_main_rs::{
+    EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_NODE_PICKER_ROWS, MAX_NODES,
+    MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
+};
+use perro_api::prelude::*;
+use perro_api::scene::{
+    SceneDoc, SceneFieldName, SceneKey, SceneNodeData, SceneNodeEntry, SceneValue, SceneValueKey,
+};
+use std::borrow::Cow;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
+pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
+
+    set_label(
+        ctx,
+        "project_status",
+        &format!("{}  {}", view.project_name, view.project_root),
+    );
+    set_label(ctx, "status_bar", &view.status);
+    set_label(ctx, "log_text", &view.log);
+    set_label(ctx, "viewport_label", &view.viewport);
+    let glb_mode = view.activity_mode == "glb";
+    set_button_fill(
+        ctx,
+        "activity_scene_button",
+        if glb_mode { "#2D323C" } else { "#478CBF" },
+    );
+    set_button_fill(
+        ctx,
+        "activity_glb_button",
+        if glb_mode { "#478CBF" } else { "#2D323C" },
+    );
+    set_button_fill(
+        ctx,
+        "mode_ui_button",
+        if view.viewport_mode == "UI" { "#478CBF" } else { "#2D323C" },
+    );
+    set_button_fill(
+        ctx,
+        "mode_2d_button",
+        if view.viewport_mode == "2D" { "#478CBF" } else { "#2D323C" },
+    );
+    set_button_fill(
+        ctx,
+        "mode_3d_button",
+        if view.viewport_mode == "3D" { "#478CBF" } else { "#2D323C" },
+    );
+    set_ui_display(ctx, "bottom_tab_bar", true);
+    set_button_fill(
+        ctx,
+        "bottom_log_button",
+        if view.anim_drawer_open { "#2D323C" } else { "#478CBF" },
+    );
+    set_button_fill(
+        ctx,
+        "bottom_anim_button",
+        if view.anim_drawer_open { "#478CBF" } else { "#2D323C" },
+    );
+    set_ui_display(ctx, "log_title", false);
+    set_ui_display(ctx, "log_text", !view.anim_drawer_open);
+    set_ui_display(ctx, "anim_drawer", view.anim_drawer_open);
+    set_ui_display(ctx, "anim_create_button", view.anim_can_create);
+    set_ui_display(ctx, "anim_add_track_button", view.anim_can_add_track);
+    set_label(ctx, "anim_drawer_title", &view.anim_title);
+    set_label(ctx, "anim_status_text", &view.anim_status);
+    set_label(ctx, "anim_tracks_text", &view.anim_tracks);
+    set_ui_display(ctx, "left_panel", true);
+    set_ui_display(ctx, "inspector_panel", !glb_mode);
+    set_ui_display(ctx, "scene_tabs", !glb_mode);
+    set_ui_display(ctx, "viewport_panel", !glb_mode);
+    set_ui_display(ctx, "bottom_panel", !glb_mode);
+    set_ui_display(ctx, "glb_viewer_panel", glb_mode);
+    set_label(ctx, "glb_viewer_title", &view.glb_title);
+    set_label(ctx, "glb_viewer_summary", &view.glb_summary);
+    set_ui_display(ctx, "scene_tree_title", !glb_mode);
+    set_ui_display(ctx, "scene_filter_box", !glb_mode);
+    set_text_box(ctx, "scene_filter_box", &view.scene_filter);
+    set_ui_display(ctx, "scene_rows", !glb_mode);
+    set_ui_display(ctx, "file_title", true);
+    set_label(ctx, "file_title", &view.file_title);
+    set_ui_display(ctx, "file_action_row", false);
+    set_ui_display(ctx, "file_filter_box", true);
+    set_text_box(ctx, "file_filter_box", &view.file_filter);
+    set_ui_display(ctx, "file_rows", true);
+    set_ui_box_size(ctx, "scene_rows", (1.0, if glb_mode { 0.0 } else { 0.39 }));
+    set_ui_box_size(ctx, "file_rows", (1.0, if glb_mode { 0.84 } else { 0.38 }));
+
+    for idx in 0..MAX_RECENT {
+        let has_recent = view.recent_projects.get(idx).is_some();
+        let text = view
+            .recent_projects
+            .get(idx)
+            .cloned()
+            .unwrap_or_else(|| "-".to_string());
+        set_label(
+            ctx,
+            &format!("manager_recent_{idx}_label"),
+            &editor_view::short_path(&text, 44),
+        );
+        set_ui_display(ctx, &format!("manager_recent_{idx}"), has_recent);
+    }
+    set_label(
+        ctx,
+        "create_location_label",
+        &format!(
+            "location: {}",
+            editor_view::short_path(&view.create_parent_dir, 34)
+        ),
+    );
+
+    set_label(ctx, "add_node_page_label", &view.node_picker_page);
+    set_label(ctx, "add_node_parent_label", &view.node_picker_parent);
+    set_text_box(ctx, "add_node_search_box", &view.node_picker_filter);
+    for idx in 0..MAX_NODE_PICKER_ROWS {
+        let text = view
+            .node_picker_rows
+            .get(idx)
+            .cloned()
+            .unwrap_or_else(|| "-".to_string());
+        set_label(ctx, &format!("add_node_type_{idx}_label"), &text);
+    }
+
+    for idx in 0..MAX_FILES {
+        let has_file = view.file_paths.get(idx).is_some();
+        let text = view
+            .file_paths
+            .get(idx)
+            .map(|path| {
+                format!(
+                    "{}  {}",
+                    editor_files::display_kind_label(path),
+                    file_row_label(path, &view.file_scope)
+                )
+            })
+            .unwrap_or_else(|| "-".to_string());
+        set_label(
+            ctx,
+            &format!("file_row_{idx}_label"),
+            &editor_view::short_path(&text, 32),
+        );
+        set_ui_display(ctx, &format!("file_row_{idx}"), has_file);
+        set_button_fill(
+            ctx,
+            &format!("file_row_{idx}"),
+            if view.file_paths.get(idx) == Some(&view.active_asset_path) {
+                "#478CBF"
+            } else {
+                "#00000000"
+            },
+        );
+    }
+    apply_file_tree_layout(ctx);
+
+    for idx in 0..MAX_TABS {
+        let has_tab = view.open_paths.get(idx).is_some();
+        let text = view
+            .open_paths
+            .get(idx)
+            .map(|path| {
+                let mark = if view.dirty_scene_paths.iter().any(|dirty| dirty == path) {
+                    "* "
+                } else {
+                    ""
+                };
+                format!("{mark}{}", editor_files::rel_label(path))
+            })
+            .unwrap_or_else(|| "-".to_string());
+        set_label(
+            ctx,
+            &format!("scene_tab_{idx}_label"),
+            &editor_view::short_path(&text, 24),
+        );
+        set_ui_display(ctx, &format!("scene_tab_{idx}"), has_tab);
+        set_ui_display(
+            ctx,
+            &format!("scene_tab_close_{idx}"),
+            has_tab,
+        );
+        set_button_fill(
+            ctx,
+            &format!("scene_tab_{idx}"),
+            if idx == view.active_open {
+                "#478CBF"
+            } else {
+                "#2D323C"
+            },
+        );
+    }
+
+    for idx in 0..MAX_NODES {
+        let has_node = view.nodes.get(idx).is_some();
+        let text = view
+            .nodes
+            .get(idx)
+            .cloned()
+            .unwrap_or_else(|| "-".to_string());
+        set_label(ctx, &format!("scene_row_{idx}_label"), &text);
+        set_ui_display(ctx, &format!("scene_row_{idx}"), has_node);
+        set_button_fill(
+            ctx,
+            &format!("scene_row_{idx}"),
+            if view.selected_row == Some(idx) {
+                "#478CBF"
+            } else {
+                "#00000000"
+            },
+        );
+    }
+    apply_scene_list_layout(ctx);
+    apply_viewport_mode(ctx, &view.viewport_mode);
+    apply_editor_gizmos(ctx, &view.gizmo, &view.viewport_mode);
+    apply_selected_ui_overlay(ctx, view.selected_ui_rect);
+
+    set_label(ctx, "inspector_title", &view.inspector_title);
+    set_label(ctx, "inspector_name", &view.inspector_name);
+    set_ui_display(ctx, "inspector_name_box", view.inspector_node_actions);
+    set_text_box(ctx, "inspector_name_box", &view.inspector_name_edit);
+    set_label(ctx, "inspector_type", &view.inspector_type);
+    set_label(ctx, "inspector_parent", &view.inspector_parent);
+    set_label(ctx, "inspector_script_top", &view.inspector_script);
+    set_ui_display(ctx, "inspector_script_top", view.inspector_node_actions);
+    set_ui_display(ctx, "inspector_action_row", false);
+    set_ui_display(ctx, "asset_action_row", false);
+    set_ui_display(ctx, "asset_glb_anim_button", false);
+    set_ui_display(ctx, "asset_glb_mat_button", false);
+    set_label(ctx, "inspector_pos", &view.inspector_pos_label);
+    set_text_box(ctx, "inspector_position_box", &view.inspector_pos.join(", "));
+    apply_component_row(
+        ctx,
+        "inspector_position",
+        &["x", "y", "z", "w"],
+        &view.inspector_pos,
+        view.inspector_node_actions,
+    );
+    set_label(
+        ctx,
+        "inspector_rotation_label",
+        &view.inspector_rotation_label,
+    );
+    set_text_box(ctx, "inspector_rotation_box", &view.inspector_rotation.join(", "));
+    apply_component_row(
+        ctx,
+        "inspector_rotation",
+        &view.inspector_rotation_components,
+        &view.inspector_rotation,
+        view.inspector_node_actions,
+    );
+    set_label(ctx, "inspector_scale_label", &view.inspector_scale_label);
+    set_text_box(ctx, "inspector_scale_box", &view.inspector_scale.join(", "));
+    apply_component_row(
+        ctx,
+        "inspector_scale",
+        &["x", "y", "z", "w"],
+        &view.inspector_scale,
+        view.inspector_node_actions,
+    );
+    set_label(ctx, "inspector_script", "");
+    set_ui_display(ctx, "inspector_script", false);
+    set_label(ctx, "inspector_vars", "Script Vars");
+    set_ui_display(ctx, "inspector_vars", view.inspector_node_actions && !view.script_vars.is_empty());
+    set_ui_display(ctx, "inspector_vars_box", false);
+    set_text_box(ctx, "inspector_vars_box", &view.inspector_vars_text);
+    for idx in 0..MAX_SCRIPT_VARS {
+        let row = view.script_vars.get(idx);
+        set_ui_display(
+            ctx,
+            &format!("inspector_var_row_{idx}"),
+            view.inspector_node_actions && row.is_some(),
+        );
+        set_label(
+            ctx,
+            &format!("inspector_var_{idx}_name"),
+            row.map(|item| item.name.as_str()).unwrap_or("-"),
+        );
+        set_label(
+            ctx,
+            &format!("inspector_var_{idx}_type"),
+            row.map(|item| item.kind.as_str()).unwrap_or("-"),
+        );
+        set_text_box(
+            ctx,
+            &format!("inspector_var_{idx}_value"),
+            row.map(|item| item.value.as_str()).unwrap_or(""),
+        );
+    }
+    for idx in 0..MAX_RESOURCE_FIELDS {
+        let row = view.resource_fields.get(idx);
+        set_ui_display(
+            ctx,
+            &format!("inspector_resource_row_{idx}"),
+            view.inspector_node_actions && row.is_some(),
+        );
+        set_label(
+            ctx,
+            &format!("inspector_resource_{idx}_name"),
+            row.map(|item| item.name.as_str()).unwrap_or("-"),
+        );
+        set_label(
+            ctx,
+            &format!("inspector_resource_{idx}_button_label"),
+            row.map(|item| item.value.as_str()).unwrap_or("Select"),
+        );
+    }
+}
+
+pub const MAX_SCRIPT_VARS: usize = 8;
+pub const MAX_RESOURCE_FIELDS: usize = 4;
+
+pub fn apply_component_row<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    prefix: &str,
+    labels: &[&str],
+    values: &[String],
+    visible: bool,
+) {
+    let row_id = format!("{prefix}_row");
+    set_ui_display(ctx, &row_id, visible);
+    for idx in 0..4 {
+        let has_value = values.get(idx).is_some();
+        set_ui_display(ctx, &format!("{prefix}_{idx}_label"), visible && has_value);
+        set_ui_display(ctx, &format!("{prefix}_{idx}_box"), visible && has_value);
+        set_label(
+            ctx,
+            &format!("{prefix}_{idx}_label"),
+            labels.get(idx).copied().unwrap_or(""),
+        );
+        set_text_box(
+            ctx,
+            &format!("{prefix}_{idx}_box"),
+            values.get(idx).map(String::as_str).unwrap_or(""),
+        );
+    }
+}
+
+#[derive(Default)]
+pub struct EditorView {
+    project_root: String,
+    project_name: String,
+    create_parent_dir: String,
+    recent_projects: Vec<String>,
+    file_paths: Vec<String>,
+    file_filter: String,
+    file_scope: String,
+    file_title: String,
+    active_asset_path: String,
+    scene_paths: Vec<String>,
+    open_paths: Vec<String>,
+    dirty_scene_paths: Vec<String>,
+    active_open: usize,
+    nodes: Vec<String>,
+    selected_row: Option<usize>,
+    inspector_title: String,
+    inspector_name: String,
+    inspector_name_edit: String,
+    inspector_type: String,
+    inspector_parent: String,
+    inspector_node_actions: bool,
+    inspector_asset_actions: bool,
+    inspector_glb_asset_actions: bool,
+    inspector_pos_label: String,
+    inspector_pos: Vec<String>,
+    inspector_rotation_label: String,
+    inspector_rotation: Vec<String>,
+    inspector_rotation_components: [&'static str; 4],
+    inspector_scale_label: String,
+    inspector_scale: Vec<String>,
+    inspector_script: String,
+    inspector_vars_text: String,
+    script_vars: Vec<InspectorValueRow>,
+    resource_fields: Vec<ResourceFieldView>,
+    glb_title: String,
+    glb_summary: String,
+    viewport: String,
+    status: String,
+    log: String,
+    viewport_mode: String,
+    activity_mode: String,
+    sidebar_mode: String,
+    scene_filter: String,
+    anim_drawer_open: bool,
+    anim_title: String,
+    anim_status: String,
+    anim_tracks: String,
+    anim_can_create: bool,
+    anim_can_add_track: bool,
+    gizmo: editor_gizmos::GizmoView,
+    selected_ui_rect: Option<EditorUiRect>,
+    node_picker_rows: Vec<String>,
+    node_picker_page: String,
+    node_picker_filter: String,
+    node_picker_parent: String,
+}
+
+#[derive(Default, Clone)]
+pub struct ResourceFieldView {
+    pub name: String,
+    pub value: String,
+}
+
+impl EditorView {
+    fn from_state(state: &EditorState) -> Self {
+        let mut nodes = Vec::new();
+        let mut selected_row = None;
+        let inspector_title = "Inspector".to_string();
+        let mut inspector_name = "name: -".to_string();
+        let mut inspector_name_edit = "-".to_string();
+        let mut inspector_type = "type: -".to_string();
+        let mut inspector_parent = "parent: -".to_string();
+        let mut inspector_node_actions = false;
+        let inspector_asset_actions = false;
+        let inspector_glb_asset_actions = false;
+        let inspector_pos_label = "position".to_string();
+        let mut inspector_pos = Vec::new();
+        let inspector_rotation_label = "rotation".to_string();
+        let mut inspector_rotation = Vec::new();
+        let mut inspector_rotation_components = ["x", "y", "z", "w"];
+        let inspector_scale_label = "scale".to_string();
+        let mut inspector_scale = Vec::new();
+        let mut inspector_script = "script: -".to_string();
+        let mut inspector_vars_text = String::new();
+        let mut script_vars = Vec::new();
+        let mut resource_fields = Vec::new();
+        let mut gizmo = editor_gizmos::GizmoView::default();
+        let mut selected_ui_rect = None;
+        let mut glb_title = "GLB Viewer".to_string();
+        let mut glb_summary = "select .glb asset".to_string();
+
+        if !state.doc_text.is_empty() {
+            let doc = SceneDoc::parse(&state.doc_text);
+            let tree = scene_tree_view(
+                &doc,
+                state.selected_key,
+                &state.scene_filter,
+                &state.collapsed_scene_keys,
+            );
+            gizmo = editor_gizmos::gizmo_view(&doc, state.selected_key);
+            selected_ui_rect = state.selected_key.and_then(|key| doc_ui_rect(&doc, key));
+            nodes = tree.labels;
+            selected_row = tree.selected_row;
+
+            if let Some(key) = state.selected_key.and_then(|raw| {
+                doc.scene
+                    .nodes
+                    .iter()
+                    .find(|node| node.key.as_u32() == raw)
+                    .map(|node| node.key)
+            }) && let Some(node) = doc.scene.nodes.iter().find(|node| node.key == key)
+            {
+                inspector_name = "Name".to_string();
+                inspector_name_edit = doc.scene.key_name_or_id(node.key).to_string();
+                inspector_type = format!("Hierarchy  {}", node_hierarchy_text(node.data.node_type));
+                inspector_parent = format!(
+                    "Path  {}\nChildren  {}",
+                    scene_node_path(&doc, node.key),
+                    scene_child_count(&doc, node.key.as_u32())
+                );
+                inspector_pos = scene_value_components(&node.data, "position");
+                inspector_rotation = scene_value_components(&node.data, "rotation");
+                inspector_rotation_components = if inspector_rotation.len() == 1 {
+                    ["r", "", "", ""]
+                } else {
+                    ["x", "y", "z", "w"]
+                };
+                inspector_scale = scene_value_components(&node.data, "scale");
+                let script = node.script.as_ref().map(|v| v.as_ref()).unwrap_or("-");
+                inspector_script = format!("Script  {script}");
+                inspector_vars_text = script_vars_edit_text(node.script_vars.as_ref());
+                script_vars = inspector_script_var_rows(node.script_vars.as_ref());
+                resource_fields = resource_field_rows(&node.data);
+                inspector_node_actions = true;
+            }
+        }
+
+        if state.activity_mode == "glb" {
+            glb_title = if state.active_glb_path.is_empty() {
+                "GLB Viewer".to_string()
+            } else {
+                format!("GLB Viewer  {}", editor_files::rel_label(&state.active_glb_path))
+            };
+            glb_summary = if state.active_glb_summary.is_empty() {
+                "select .glb or .gltf from left list".to_string()
+            } else {
+                state.active_glb_summary.clone()
+            };
+        }
+
+        let status = editor_status_text(state);
+        let viewport = format!(
+            "Viewport  mode={}  cam=({:.1}, {:.1}, {:.1})",
+            state.viewport_mode, state.cam_x, state.cam_y, state.cam_z
+        );
+        let (anim_title, anim_status, anim_tracks, anim_can_create, anim_can_add_track) =
+            animation_drawer_text(state);
+        let node_picker_rows =
+            picker_rows(state, &state.node_picker_filter, state.node_picker_offset);
+        let page = (state.node_picker_offset / MAX_NODE_PICKER_ROWS) + 1;
+        let picker_count = picker_node_types(state, &state.node_picker_filter)
+            .len()
+            .max(1);
+        let page_count = picker_count.div_ceil(MAX_NODE_PICKER_ROWS);
+        let node_picker_parent = picker_parent_text(state);
+        Self {
+            project_root: state.project_root.clone(),
+            project_name: if state.project_name.is_empty() {
+                "No project".to_string()
+            } else {
+                state.project_name.clone()
+            },
+            create_parent_dir: if state.create_parent_dir.is_empty() {
+                "-".to_string()
+            } else {
+                state.create_parent_dir.clone()
+            },
+            recent_projects: state.recent_projects.clone(),
+            file_paths: filtered_file_paths(state),
+            file_filter: state.file_filter.clone(),
+            file_scope: state.file_scope.clone(),
+            file_title: file_panel_title(state),
+            active_asset_path: state.active_asset_path.clone(),
+            scene_paths: state.scene_paths.clone(),
+            open_paths: state.open_paths.clone(),
+            dirty_scene_paths: state.dirty_scene_paths.clone(),
+            active_open: state.active_open,
+            nodes,
+            selected_row,
+            inspector_title,
+            inspector_name,
+            inspector_name_edit,
+            inspector_type,
+            inspector_parent,
+            inspector_node_actions,
+            inspector_asset_actions,
+            inspector_glb_asset_actions,
+            inspector_pos_label,
+            inspector_pos,
+            inspector_rotation_label,
+            inspector_rotation,
+            inspector_rotation_components,
+            inspector_scale_label,
+            inspector_scale,
+            inspector_script,
+            inspector_vars_text,
+            script_vars,
+            resource_fields,
+            glb_title,
+            glb_summary,
+            viewport,
+            status,
+            log: state.log.clone(),
+            viewport_mode: state.viewport_mode.clone(),
+            activity_mode: state.activity_mode.clone(),
+            sidebar_mode: state.sidebar_mode.clone(),
+            scene_filter: state.scene_filter.clone(),
+            anim_drawer_open: state.anim_drawer_open,
+            anim_title,
+            anim_status,
+            anim_tracks,
+            anim_can_create,
+            anim_can_add_track,
+            gizmo,
+            selected_ui_rect,
+            node_picker_rows,
+            node_picker_page: format!("page {page}/{page_count}"),
+            node_picker_filter: state.node_picker_filter.clone(),
+            node_picker_parent,
+        }
+    }
+}
+
+pub struct AssetInspectorText {
+    name: String,
+    kind: String,
+    path: String,
+    size: String,
+    refs: String,
+    state: String,
+    detail: String,
+    actions: String,
+}
+
+pub fn editor_status_text(state: &EditorState) -> String {
+    if state.project_root.is_empty() {
+        return "ready | open project".to_string();
+    }
+    let node_count = if state.doc_text.is_empty() {
+        0
+    } else {
+        SceneDoc::parse(&state.doc_text).scene.nodes.len()
+    };
+    let file_count = filtered_file_paths(state).len();
+    let scope = if state.file_scope.is_empty() {
+        "res://".to_string()
+    } else {
+        editor_view::short_path(&state.file_scope, 22)
+    };
+    let filters = [
+        (!state.scene_filter.is_empty()).then_some("scene-filter"),
+        (!state.file_filter.is_empty()).then_some("file-filter"),
+        (!state.node_picker_filter.is_empty()).then_some("node-filter"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+    let filters = if filters.is_empty() {
+        "-".to_string()
+    } else {
+        filters.join(",")
+    };
+    format!(
+        "ready | {} | tabs={} dirty={} nodes={} files={} scope={} filters={} quick=CtrlAlt1-7",
+        state.project_name,
+        state.open_paths.len(),
+        state.dirty,
+        node_count,
+        file_count,
+        scope,
+        filters
+    )
+}
+
+pub fn asset_inspector_text(state: &EditorState) -> AssetInspectorText {
+    let path = state.active_asset_path.as_str();
+    let kind = editor_files::kind_label(path);
+    let rel = editor_files::rel_label(path);
+    let abs = res_to_abs(&state.project_root, path);
+    let size = if path.ends_with('/') {
+        "folder".to_string()
+    } else {
+        fs::metadata(&abs)
+            .map(|meta| format!("{} bytes", meta.len()))
+            .unwrap_or_else(|_| "missing".to_string())
+    };
+    let refs = asset_ref_text(state, path, kind);
+    let detail = asset_detail_text(state, path, kind);
+    let actions = match kind {
+        "scene" => {
+            "Enter -> open scene\nCtrl+Shift+Enter -> instance scene\nCtrl+Shift+G -> find user\nCtrl+E -> reveal tab".to_string()
+        }
+        "mesh" if is_gltf_path(path) => {
+            "Use -> bind ref\nNode -> mesh node\nCtrl+Shift+G -> find user\n[] -> mesh  Shift+[] -> mat\nAnim -> .panim\nMat -> .pmat".to_string()
+        }
+        "mesh" => "Ctrl+Enter -> use\nCtrl+Shift+Enter -> node\nCtrl+Shift+G -> find user".to_string(),
+        "resource" if path.ends_with(".panim") => {
+            "Ctrl+Enter -> bind clip\nCtrl+Shift+G -> find user\nNew Track -> bind node".to_string()
+        }
+        "folder" => "Enter -> scope folder\nBackspace -> parent\nEsc -> root/filter clear".to_string(),
+        _ => "Enter -> inspect\nCtrl+Enter -> use\nCtrl+Shift+Enter -> node\nCtrl+Shift+G -> find user".to_string(),
+    };
+    AssetInspectorText {
+        name: format!("name: {rel}"),
+        kind: format!("type: {kind}"),
+        path: format!("path: {path}"),
+        size,
+        refs,
+        state: if Path::new(&abs).exists() || path.ends_with('/') {
+            "ok".to_string()
+        } else {
+            "missing".to_string()
+        },
+        detail,
+        actions,
+    }
+}
+
+pub fn asset_ref_text(state: &EditorState, path: &str, kind: &str) -> String {
+    let users = asset_user_text(state, path);
+    if path.ends_with(".glb") || path.ends_with(".gltf") {
+        return format!(
+            "{}\n{}\n{}\n{}",
+            indexed_ref(path, "mesh", usize::MAX, state.active_glb_mesh_index),
+            indexed_ref(path, "mat", usize::MAX, state.active_glb_mat_index),
+            indexed_ref(path, "animation", usize::MAX, state.active_glb_anim_index),
+            users
+        );
+    }
+    match kind {
+        "scene" | "script" | "resource" | "mesh" | "image" | "audio" => {
+            format!("{path}\n{users}")
+        }
+        _ => users,
+    }
+}
+
+pub fn script_vars_edit_text(fields: &[(SceneFieldName, SceneValue)]) -> String {
+    if fields.is_empty() {
+        return String::new();
+    }
+    fields
+        .iter()
+        .map(|(name, value)| format!("{} = {}", name.as_ref(), scene_value_edit_text(value)))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+pub fn resource_field_rows(data: &SceneNodeData) -> Vec<ResourceFieldView> {
+    let type_name = data.type_name();
+    let mut rows = Vec::new();
+    if type_name == "Sprite2D" {
+        rows.push(resource_field_row(data, "texture"));
+    }
+    if type_name.contains("MeshInstance3D") {
+        rows.push(resource_field_row(data, "mesh"));
+        rows.push(resource_field_row(data, "material"));
+    }
+    if type_name == "AnimationPlayer" || type_name == "AnimationTree" {
+        rows.push(resource_field_row(data, "animation"));
+    }
+    rows.into_iter().flatten().collect()
+}
+
+pub fn resource_field_row(data: &SceneNodeData, field: &str) -> Option<ResourceFieldView> {
+    let value = scene_field_value_text(data, field).unwrap_or_else(|| "Select".to_string());
+    Some(ResourceFieldView {
+        name: field.to_string(),
+        value: editor_view::short_path(&value, 22),
+    })
+}
+
+pub fn node_hierarchy_text(node_type: perro_scene::NodeType) -> String {
+    let name = node_type.name();
+    if node_type.is_a(perro_scene::NodeType::UiBox) {
+        return format!("Node > UiBox > {name}");
+    }
+    if node_type.is_a(perro_scene::NodeType::Node3D) {
+        return format!("Node > Node3D > {name}");
+    }
+    if node_type.is_a(perro_scene::NodeType::Node2D) {
+        return format!("Node > Node2D > {name}");
+    }
+    format!("Node > {name}")
+}
+
+pub fn scene_value_kind(value: &SceneValue) -> &'static str {
+    match value {
+        SceneValue::Str(_) => "str",
+        SceneValue::Key(_) => "key",
+        SceneValue::Bool(_) => "bool",
+        SceneValue::F32(_) => "f32",
+        SceneValue::I32(_) => "i32",
+        SceneValue::Hashed(_) => "hash",
+        SceneValue::Vec2 { .. } => "vec2",
+        SceneValue::Vec3 { .. } => "vec3",
+        SceneValue::Vec4 { .. } => "quat",
+        SceneValue::Array(_) => "arr",
+        SceneValue::Object(_) => "obj",
+    }
+}
+
+pub fn scene_value_edit_text(value: &SceneValue) -> String {
+    match value {
+        SceneValue::Str(value) => format!("\"{}\"", value.replace('"', "\\\"")),
+        SceneValue::Key(key) => format!("@{}", key),
+        SceneValue::Bool(value) => value.to_string(),
+        SceneValue::F32(value) => format_compact_f32(*value),
+        SceneValue::I32(value) => value.to_string(),
+        SceneValue::Hashed(value) => value.to_string(),
+        SceneValue::Vec2 { x, y } => {
+            format!("({}, {})", format_compact_f32(*x), format_compact_f32(*y))
+        }
+        SceneValue::Vec3 { x, y, z } => format!(
+            "({}, {}, {})",
+            format_compact_f32(*x),
+            format_compact_f32(*y),
+            format_compact_f32(*z)
+        ),
+        SceneValue::Vec4 { x, y, z, w } => format!(
+            "({}, {}, {}, {})",
+            format_compact_f32(*x),
+            format_compact_f32(*y),
+            format_compact_f32(*z),
+            format_compact_f32(*w)
+        ),
+        SceneValue::Array(values) => {
+            let values = values
+                .iter()
+                .map(scene_value_edit_text)
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("[{values}]")
+        }
+        SceneValue::Object(fields) => {
+            let fields = fields
+                .iter()
+                .map(|(name, value)| format!("{} = {}", name.as_ref(), scene_value_edit_text(value)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{{ {fields} }}")
+        }
+    }
+}
+
+pub fn format_compact_f32(value: f32) -> String {
+    let text = format!("{value:.4}");
+    text.trim_end_matches('0').trim_end_matches('.').to_string()
+}
+
+pub fn asset_user_text(state: &EditorState, path: &str) -> String {
+    if state.doc_text.is_empty() || path.ends_with('/') {
+        return "users: -".to_string();
+    }
+    let doc = SceneDoc::parse(&state.doc_text);
+    let mut users = Vec::new();
+    for node in doc.scene.nodes.iter() {
+        if !node_uses_asset_path(node, path) {
+            continue;
+        }
+        users.push(format!(
+            "{} : {}",
+            doc.scene.key_name_or_id(node.key),
+            node.data.type_name()
+        ));
+        if users.len() >= 4 {
+            break;
+        }
+    }
+    let total = doc
+        .scene
+        .nodes
+        .iter()
+        .filter(|node| node_uses_asset_path(node, path))
+        .count();
+    if users.is_empty() {
+        "users: -".to_string()
+    } else if total > users.len() {
+        format!(
+            "users: {total}\n{}\n+{} more",
+            users.join("\n"),
+            total - users.len()
+        )
+    } else {
+        format!("users: {total}\n{}", users.join("\n"))
+    }
+}
+
+pub fn asset_detail_text(state: &EditorState, path: &str, kind: &str) -> String {
+    if path.ends_with(".glb") || path.ends_with(".gltf") {
+        return if state.active_glb_path == path && !state.active_glb_summary.is_empty() {
+            state.active_glb_summary.clone()
+        } else {
+            "GLB asset\nopen row -> inspect meshes/materials/animations".to_string()
+        };
+    }
+    if path.ends_with(".panim") {
+        return panim_summary(&state.project_root, path);
+    }
+    if kind == "script" || (kind == "resource" && !path.ends_with(".panim")) {
+        return text_asset_preview(&state.project_root, path);
+    }
+    if kind == "scene"
+        && !state.doc_text.is_empty()
+        && state.open_paths.get(state.active_open).map(String::as_str) == Some(path)
+    {
+        let doc = SceneDoc::parse(&state.doc_text);
+        return format!(
+            "nodes={}\nmode={}",
+            doc.scene.nodes.len(),
+            editor_scene::root_viewport_mode(&doc)
+        );
+    }
+    format!("{kind} asset")
+}
+
+pub fn text_asset_preview(project_root: &str, path: &str) -> String {
+    let abs = res_to_abs(project_root, path);
+    let Ok(text) = FileMod::load_string(&abs) else {
+        return "text preview\nnot readable".to_string();
+    };
+    let lines = text
+        .lines()
+        .take(8)
+        .map(|line| {
+            let line = line.trim_end();
+            let mut short = line.chars().take(72).collect::<String>();
+            if line.chars().count() > 72 {
+                short.push_str("...");
+                short
+            } else {
+                short
+            }
+        })
+        .collect::<Vec<_>>();
+    if lines.is_empty() {
+        "text preview\n(empty)".to_string()
+    } else {
+        format!("text preview\n{}", lines.join("\n"))
+    }
+}
+
+pub fn animation_drawer_text(state: &EditorState) -> (String, String, String, bool, bool) {
+    if !state.active_glb_path.is_empty() {
+        return (
+            format!(
+                "GLB Viewer  {}",
+                editor_files::rel_label(&state.active_glb_path)
+            ),
+            "container refs stay usable in scene fields".to_string(),
+            state.active_glb_summary.clone(),
+            false,
+            false,
+        );
+    }
+    let Some(key) = state.active_anim_player_key else {
+        if state.active_anim_path.is_empty() {
+            return (
+                "Animation".to_string(),
+                "select AnimationPlayer or open .panim".to_string(),
+                "no live binding".to_string(),
+                false,
+                false,
+            );
+        }
+        return (
+            format!(
+                "Animation Data  {}",
+                editor_files::rel_label(&state.active_anim_path)
+            ),
+            ".panim data view\nno scene binding until selected AnimationPlayer references it"
+                .to_string(),
+            panim_summary(&state.project_root, &state.active_anim_path),
+            false,
+            false,
+        );
+    };
+    let doc = SceneDoc::parse(&state.doc_text);
+    let name = doc
+        .scene
+        .nodes
+        .iter()
+        .find(|node| node.key.as_u32() == key)
+        .map(|node| doc.scene.key_name_or_id(node.key).to_string())
+        .unwrap_or_else(|| "AnimationPlayer".to_string());
+    let path = if state.active_anim_path.is_empty() {
+        selected_node_field_text(&state.doc_text, key, "animation")
+            .unwrap_or_else(|| "-".to_string())
+    } else {
+        state.active_anim_path.clone()
+    };
+    (
+        format!("Animation Player  {name}"),
+        format!(
+            "player={name}\ncurrent animations:\n{path}\ncreate writes .panim + binds Target to parent node"
+        ),
+        if path == "-" {
+            "no clip bound".to_string()
+        } else {
+            panim_summary(&state.project_root, &path)
+        },
+        true,
+        true,
+    )
+}
+
+pub fn gltf_summary(
+    path: &str,
+    mesh_count: usize,
+    material_count: usize,
+    animation_count: usize,
+    skeleton_count: usize,
+    texture_count: usize,
+    node_count: usize,
+    scene_count: usize,
+    mesh_index: usize,
+    mat_index: usize,
+    anim_index: usize,
+) -> String {
+    format!(
+        "GLB  {}\nselected:\nmesh = {}\nmat = {}\nanim = {}\nmeshes: {}\n{}\nmaterials: {}\n{}\nanimations: {}\n{}\nskins: {}\ntextures: {}\nnodes: {} scenes: {}\nkeys: [] mesh  Shift+[] mat  Ctrl+Shift+[] anim\nconvert:\n- anim -> perro_cli import_anim {} --output res/animations/<clip>.panim --clip {}\n- mesh -> static pipeline emits {}:mesh[index] pmesh entries\n- mat -> static pipeline emits {}:mat[index] pmat refs",
+        editor_files::rel_label(path),
+        indexed_ref(path, "mesh", mesh_count, mesh_index),
+        indexed_ref(path, "mat", material_count, mat_index),
+        indexed_ref(path, "animation", animation_count, anim_index),
+        mesh_count,
+        indexed_refs(path, "mesh", mesh_count),
+        material_count,
+        indexed_refs(path, "mat", material_count),
+        animation_count,
+        indexed_refs(path, "animation", animation_count),
+        skeleton_count,
+        texture_count,
+        node_count,
+        scene_count,
+        editor_files::rel_label(path),
+        anim_index,
+        path,
+        path
+    )
+}
+
+pub fn indexed_ref(path: &str, kind: &str, count: usize, index: usize) -> String {
+    if count == 0 {
+        "-".to_string()
+    } else {
+        format!("{path}:{kind}[{}]", index.min(count - 1))
+    }
+}
+
+pub fn indexed_refs(path: &str, kind: &str, count: usize) -> String {
+    if count == 0 {
+        return "-".to_string();
+    }
+    let shown = count.min(6);
+    let mut out = (0..shown)
+        .map(|idx| format!("{path}:{kind}[{idx}]"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if count > shown {
+        out.push_str(&format!("\n+{} more", count - shown));
+    }
+    out
+}
+
+pub fn panim_summary(project_root: &str, anim_path: &str) -> String {
+    if anim_path.is_empty() || anim_path == "-" {
+        return "no .panim".to_string();
+    }
+    let abs = res_to_abs(project_root, anim_path);
+    let Ok(text) = FileMod::load_string(&abs) else {
+        return "clip not readable".to_string();
+    };
+    let mut in_objects = false;
+    let mut objects = Vec::new();
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[Objects]" {
+            in_objects = true;
+            continue;
+        }
+        if trimmed == "[/Objects]" {
+            break;
+        }
+        if in_objects && trimmed.contains('=') {
+            objects.push(trimmed.to_string());
+        }
+        if objects.len() >= 6 {
+            break;
+        }
+    }
+    let objects = objects.join("\n");
+    let frame_count = text
+        .lines()
+        .filter(|line| line.trim().starts_with("[Frame"))
+        .count();
+    format!(
+        "frames={frame_count}\nobjects:\n{}",
+        if objects.is_empty() { "-" } else { &objects }
+    )
+}
+
+#[derive(Default)]
+pub struct SceneTreeRows {
+    pub labels: Vec<String>,
+    pub keys: Vec<u32>,
+    pub selected_row: Option<usize>,
+}
+
+pub fn scene_tree_view(
+    doc: &SceneDoc,
+    selected_key: Option<u32>,
+    filter: &str,
+    collapsed_keys: &[u32],
+) -> SceneTreeRows {
+    let filter = NodePickerFilter::parse(filter);
+    if !filter.is_empty() {
+        return filtered_scene_tree_view(doc, selected_key, &filter);
+    }
+    let mut out = SceneTreeRows::default();
+    let mut visited = Vec::new();
+    let mut roots = Vec::new();
+
+    if let Some(root) = doc.scene.root {
+        roots.push(root.as_u32());
+    }
+    for node in doc.scene.nodes.iter() {
+        let key = node.key.as_u32();
+        if node.parent.is_none() && !roots.contains(&key) {
+            roots.push(key);
+        }
+    }
+    for key in roots {
+        push_scene_tree_row(
+            doc,
+            key,
+            0,
+            selected_key,
+            collapsed_keys,
+            &mut visited,
+            &mut out,
+        );
+    }
+    for node in doc.scene.nodes.iter() {
+        let key = node.key.as_u32();
+        if !visited.contains(&key) {
+            push_scene_tree_row(
+                doc,
+                key,
+                0,
+                selected_key,
+                collapsed_keys,
+                &mut visited,
+                &mut out,
+            );
+        }
+    }
+    out
+}
+
+pub fn scene_node_path(doc: &SceneDoc, key: SceneKey) -> String {
+    let mut parts = Vec::new();
+    let mut cursor = Some(key);
+    let mut guard = 0;
+    while let Some(key) = cursor {
+        parts.push(doc.scene.key_name_or_id(key).to_string());
+        cursor = doc
+            .scene
+            .nodes
+            .iter()
+            .find(|node| node.key == key)
+            .and_then(|node| node.parent);
+        guard += 1;
+        if guard > doc.scene.nodes.len() {
+            break;
+        }
+    }
+    parts.reverse();
+    parts.join("/")
+}
+
+pub fn filtered_scene_tree_view(
+    doc: &SceneDoc,
+    selected_key: Option<u32>,
+    filter: &NodePickerFilter,
+) -> SceneTreeRows {
+    let mut out = SceneTreeRows::default();
+    for node in doc.scene.nodes.iter() {
+        if out.labels.len() >= MAX_NODES {
+            break;
+        }
+        let name = doc.scene.key_name_or_id(node.key).to_string();
+        let type_name = node.data.type_name();
+        if !scene_node_matches_filter(doc, node, &name, type_name, filter) {
+            continue;
+        }
+        let row = out.labels.len();
+        let key = node.key.as_u32();
+        let prefix = if Some(key) == selected_key {
+            out.selected_row = Some(row);
+            ">"
+        } else {
+            " "
+        };
+        let parent = node
+            .parent
+            .map(|key| doc.scene.key_name_or_id(key).to_string())
+            .unwrap_or_else(|| "-".to_string());
+        out.labels.push(scene_row_label(
+            prefix,
+            0,
+            &name,
+            type_name,
+            &scene_node_badges(node),
+            scene_child_count(doc, key),
+            false,
+            Some(&parent),
+        ));
+        out.keys.push(key);
+    }
+    out
+}
+
+pub fn scene_node_matches_filter(
+    doc: &SceneDoc,
+    node: &SceneNodeEntry,
+    name: &str,
+    type_name: &str,
+    filter: &NodePickerFilter,
+) -> bool {
+    let path = scene_node_path(doc, node.key);
+    let badges = scene_node_badges(node);
+    let hay = format!(
+        "{} {} {} {} {}",
+        name.to_ascii_lowercase(),
+        type_name.to_ascii_lowercase(),
+        path.to_ascii_lowercase(),
+        node_type_search_text(node.data.node_type),
+        badges.to_ascii_lowercase()
+    );
+    filter.text.iter().all(|needle| hay.contains(needle))
+        && filter
+            .tags
+            .iter()
+            .all(|tag| node_type_has_picker_tag(node.data.node_type, tag))
+}
+
+pub fn scene_child_count(doc: &SceneDoc, key: u32) -> usize {
+    doc.scene
+        .nodes
+        .iter()
+        .filter(|node| node.parent.map(|parent| parent.as_u32()) == Some(key))
+        .count()
+}
+
+pub fn push_scene_tree_row(
+    doc: &SceneDoc,
+    key: u32,
+    depth: usize,
+    selected_key: Option<u32>,
+    collapsed_keys: &[u32],
+    visited: &mut Vec<u32>,
+    out: &mut SceneTreeRows,
+) -> Option<usize> {
+    if out.labels.len() >= MAX_NODES || visited.contains(&key) {
+        return None;
+    }
+    let node = doc
+        .scene
+        .nodes
+        .iter()
+        .find(|node| node.key.as_u32() == key)?;
+    visited.push(key);
+    let row = out.labels.len();
+    let prefix = if Some(key) == selected_key {
+        out.selected_row = Some(row);
+        ">"
+    } else {
+        " "
+    };
+    let children = scene_child_count(doc, key);
+    out.labels.push(scene_row_label(
+        prefix,
+        depth,
+        &doc.scene.key_name_or_id(node.key).to_string(),
+        node.data.type_name(),
+        &scene_node_badges(node),
+        children,
+        collapsed_keys.contains(&key),
+        None,
+    ));
+    out.keys.push(key);
+    if children > 0 && collapsed_keys.contains(&key) {
+        return Some(row);
+    }
+    for child in doc
+        .scene
+        .nodes
+        .iter()
+        .filter(|child| child.parent.map(|parent| parent.as_u32()) == Some(key))
+    {
+        let _ = push_scene_tree_row(
+            doc,
+            child.key.as_u32(),
+            depth + 1,
+            selected_key,
+            collapsed_keys,
+            visited,
+            out,
+        );
+    }
+    Some(row)
+}
+
+pub fn scene_row_label(
+    prefix: &str,
+    depth: usize,
+    name: &str,
+    type_name: &str,
+    badges: &str,
+    children: usize,
+    collapsed: bool,
+    parent: Option<&str>,
+) -> String {
+    let name = editor_view::short_path(name, 22);
+    let type_name = editor_view::short_path(type_name, 24);
+    let fold = if children == 0 {
+        " "
+    } else if collapsed {
+        "+"
+    } else {
+        "-"
+    };
+    let indent = "  ".repeat(depth.min(8));
+    if let Some(parent) = parent {
+        format!(
+            "{prefix}{indent}{fold} {name}  {type_name}{badges}  ch={children}  < {}",
+            editor_view::short_path(parent, 14)
+        )
+    } else {
+        format!("{prefix}{indent}{fold} {name}  {type_name}{badges}  ch={children}")
+    }
+}
+
+pub fn scene_node_badges(node: &SceneNodeEntry) -> String {
+    let mut out = Vec::new();
+    if scene_field_bool(&node.data, "visible") == Some(false) {
+        out.push("hid");
+    }
+    if node.root_of.is_some() {
+        out.push("inst");
+    }
+    if node.script.is_some() {
+        out.push("scr");
+    }
+    if selected_node_asset_refs(node)
+        .iter()
+        .any(|item| !item.starts_with("script:") && !item.starts_with("root_of:"))
+    {
+        out.push("res");
+    }
+    if out.is_empty() {
+        String::new()
+    } else {
+        format!(" [{}]", out.join(" "))
+    }
+}
+
+pub fn picker_rows(state: &EditorState, filter: &str, offset: usize) -> Vec<String> {
+    picker_node_types(state, filter)
+        .into_iter()
+        .skip(offset)
+        .take(MAX_NODE_PICKER_ROWS)
+        .map(|node_type| picker_node_row(state, node_type))
+        .collect()
+}
+
+pub fn filtered_file_paths(state: &EditorState) -> Vec<String> {
+    let filter = NodePickerFilter::parse(&state.file_filter);
+    state
+        .file_paths
+        .iter()
+        .filter(|path| {
+            if state.activity_mode == "glb" && !is_gltf_path(path) {
+                return false;
+            }
+            file_path_in_scope(path, &state.file_scope)
+                && (filter.is_empty() || file_path_matches_filter(path, &filter))
+        })
+        .cloned()
+        .collect()
+}
+
+pub fn file_row_label(path: &str, scope: &str) -> String {
+    if scope.is_empty() {
+        return editor_files::rel_label(path);
+    }
+    path.strip_prefix(scope)
+        .map(|rest| rest.trim_end_matches('/').to_string())
+        .filter(|label| !label.is_empty())
+        .unwrap_or_else(|| editor_files::rel_label(path))
+}
+
+pub fn file_path_matches_filter(path: &str, filter: &NodePickerFilter) -> bool {
+    let hay = format!(
+        "{} {} {} {}",
+        path.to_ascii_lowercase(),
+        editor_files::rel_label(path).to_ascii_lowercase(),
+        editor_files::kind_label(path).to_ascii_lowercase(),
+        editor_files::display_kind_label(path).to_ascii_lowercase()
+    );
+    filter.text.iter().all(|needle| hay.contains(needle))
+        && filter.tags.iter().all(|tag| file_path_has_tag(path, tag))
+}
+
+pub fn file_path_has_tag(path: &str, tag: &str) -> bool {
+    let kind = editor_files::kind_label(path);
+    let badge = editor_files::display_kind_label(path).to_ascii_lowercase();
+    match tag {
+        "dir" | "folder" => path.ends_with('/'),
+        "scene" | "scn" => kind == "scene",
+        "script" | "rs" => kind == "script",
+        "img" | "image" => kind == "image",
+        "audio" | "aud" => kind == "audio",
+        "mesh" => kind == "mesh",
+        "glb" | "gltf" => badge == "glb",
+        "anim" | "panim" => path.ends_with(".panim"),
+        "mat" | "pmat" => path.ends_with(".pmat"),
+        "res" | "resource" => kind == "resource",
+        _ => badge.contains(tag) || kind.contains(tag) || path.to_ascii_lowercase().contains(tag),
+    }
+}
+
+pub fn file_panel_title(state: &EditorState) -> String {
+    if state.activity_mode == "glb" {
+        return "GLB Files".to_string();
+    }
+    if state.file_scope.is_empty() {
+        "FileSystem  res://".to_string()
+    } else {
+        format!(
+            "FileSystem  {}",
+            editor_view::short_path(&state.file_scope, 24)
+        )
+    }
+}
+
+pub fn file_path_in_scope(path: &str, scope: &str) -> bool {
+    if scope.is_empty() {
+        return true;
+    }
+    let Some(rest) = path.strip_prefix(scope) else {
+        return false;
+    };
+    !rest.is_empty() && !rest.trim_end_matches('/').contains('/')
+}
+
+pub fn parent_res_folder(path: &str) -> String {
+    let trimmed = path.trim_end_matches('/');
+    let Some((head, _tail)) = trimmed.rsplit_once('/') else {
+        return String::new();
+    };
+    if head == "res:" || head == "res://" {
+        String::new()
+    } else {
+        format!("{head}/")
+    }
+}
+
+pub fn picker_parent_text(state: &EditorState) -> String {
+    if state.doc_text.is_empty() {
+        return "target: -".to_string();
+    }
+    let doc = SceneDoc::parse(&state.doc_text);
+    let Some(key) = state
+        .selected_key
+        .or_else(|| doc.scene.root.map(|key| key.as_u32()))
+    else {
+        return "target: scene root".to_string();
+    };
+    let Some(node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
+        return "target: scene root".to_string();
+    };
+    if state.add_node_as_sibling {
+        let parent = node
+            .parent
+            .map(|key| doc.scene.key_name_or_id(key).to_string())
+            .unwrap_or_else(|| "scene root".to_string());
+        let kind = picker_parent_node_kind(state).unwrap_or("Root");
+        return format!(
+            "as sibling of {}  parent: {parent}  kind={kind}  Tab toggles",
+            doc.scene.key_name_or_id(node.key)
+        );
+    }
+    format!(
+        "as child of {} ({})  kind={}  Tab toggles",
+        doc.scene.key_name_or_id(node.key),
+        node.data.type_name(),
+        node_type_kind(node.data.node_type)
+    )
+}
+
+pub fn node_type_icon(node_type: perro_scene::NodeType) -> &'static str {
+    match node_type.name() {
+        "Sprite2D" => "[SPR]",
+        "Camera2D" | "Camera3D" => "[CAM]",
+        "MeshInstance3D" | "MultiMeshInstance3D" => "[MSH]",
+        "PointLight2D" | "SpotLight2D" | "RayLight2D" | "AmbientLight2D" | "PointLight3D"
+        | "SpotLight3D" | "RayLight3D" | "AmbientLight3D" => "[LGT]",
+        "AudioPlayer2D"
+        | "AudioStreamPlayer2D"
+        | "AudioArea2D"
+        | "AudioPlayer3D"
+        | "AudioStreamPlayer3D"
+        | "AudioArea3D" => "[AUD]",
+        "PhysicsBody2D" | "StaticBody2D" | "RigidBody2D" | "CharacterBody2D" | "Area2D"
+        | "CollisionShape2D" | "PhysicsBody3D" | "StaticBody3D" | "RigidBody3D"
+        | "CharacterBody3D" | "Area3D" | "CollisionShape3D" => "[PHY]",
+        _ if node_type.is_a(perro_scene::NodeType::UiBox) => "[UI]",
+        _ if node_type.is_a(perro_scene::NodeType::Node2D) => "[2D]",
+        _ if node_type.is_a(perro_scene::NodeType::Node3D) => "[3D]",
+        _ if node_type.name().ends_with("Resource") => "[RES]",
+        _ => "[NOD]",
+    }
+}
+
+pub fn find_position_text(data: &SceneNodeData) -> Option<String> {
+    find_scene_value_text(data, "position")
+}
+
+pub fn scene_value_components(data: &SceneNodeData, field: &str) -> Vec<String> {
+    scene_value_override_components(data, field)
+        .or_else(|| default_scene_value_components(data.node_type, field))
+        .unwrap_or_default()
+}
+
+pub fn scene_value_override_components(data: &SceneNodeData, field: &str) -> Option<Vec<String>> {
+    for (name, value) in data.fields.iter() {
+        if name.as_ref() == field {
+            return Some(match value {
+                SceneValue::F32(value) => vec![format_compact_f32(*value)],
+                SceneValue::Vec2 { x, y } => {
+                    vec![format_compact_f32(*x), format_compact_f32(*y)]
+                }
+                SceneValue::Vec3 { x, y, z } => vec![
+                    format_compact_f32(*x),
+                    format_compact_f32(*y),
+                    format_compact_f32(*z),
+                ],
+                SceneValue::Vec4 { x, y, z, w } => vec![
+                    format_compact_f32(*x),
+                    format_compact_f32(*y),
+                    format_compact_f32(*z),
+                    format_compact_f32(*w),
+                ],
+                _ => Vec::new(),
+            });
+        }
+    }
+    data.base_ref()
+        .and_then(|base| scene_value_override_components(base, field))
+}
+
+pub fn default_scene_value_components(
+    node_type: perro_scene::NodeType,
+    field: &str,
+) -> Option<Vec<String>> {
+    perro_scene::default_scene_field_value_by_name(node_type, field)
+        .map(|value| scene_value_components_from_value(&value))
+}
+
+pub fn scene_value_components_from_value(value: &SceneValue) -> Vec<String> {
+    match value {
+        SceneValue::F32(value) => vec![format_compact_f32(*value)],
+        SceneValue::I32(value) => vec![value.to_string()],
+        SceneValue::Vec2 { x, y } => {
+            vec![format_compact_f32(*x), format_compact_f32(*y)]
+        }
+        SceneValue::Vec3 { x, y, z } => vec![
+            format_compact_f32(*x),
+            format_compact_f32(*y),
+            format_compact_f32(*z),
+        ],
+        SceneValue::Vec4 { x, y, z, w } => vec![
+            format_compact_f32(*x),
+            format_compact_f32(*y),
+            format_compact_f32(*z),
+            format_compact_f32(*w),
+        ],
+        _ => Vec::new(),
+    }
+}
+
+pub fn find_vec2_value(data: &SceneNodeData, field: &str) -> Option<Vector2> {
+    for (name, value) in data.fields.iter() {
+        if name.as_ref() == field {
+            return match value {
+                SceneValue::Vec2 { x, y } => Some(Vector2::new(*x, *y)),
+                SceneValue::Vec3 { x, y, .. } => Some(Vector2::new(*x, *y)),
+                _ => None,
+            };
+        }
+    }
+    data.base_ref()
+        .and_then(|base| find_vec2_value(base, field))
+}
+
+pub fn find_vec3_value(data: &SceneNodeData, field: &str) -> Option<Vector3> {
+    for (name, value) in data.fields.iter() {
+        if name.as_ref() == field {
+            return match value {
+                SceneValue::Vec3 { x, y, z } => Some(Vector3::new(*x, *y, *z)),
+                SceneValue::Vec2 { x, y } => Some(Vector3::new(*x, *y, 0.0)),
+                _ => None,
+            };
+        }
+    }
+    data.base_ref()
+        .and_then(|base| find_vec3_value(base, field))
+}
+
+pub fn find_scene_value_text(data: &SceneNodeData, field: &str) -> Option<String> {
+    for (name, value) in data.fields.iter() {
+        if name.as_ref() == field {
+            return match value {
+                SceneValue::F32(value) => Some(format!("{value:.2}")),
+                SceneValue::Vec2 { x, y } => Some(format!("({x:.2}, {y:.2})")),
+                SceneValue::Vec3 { x, y, z } => Some(format!("({x:.2}, {y:.2}, {z:.2})")),
+                _ => None,
+            };
+        }
+    }
+    data.base_ref()
+        .and_then(|base| find_scene_value_text(base, field))
+}
+
+pub fn unique_node_name(doc: &SceneDoc, prefix: &str) -> String {
+    for idx in 1..1000 {
+        let name = format!("{prefix}_{idx}");
+        if !doc.scene.key_names.iter().any(|item| item.as_ref() == name) {
+            return name;
+        }
+    }
+    format!("{prefix}_x")
+}
+
+pub fn sanitize_node_name(text: &str) -> String {
+    let mut out = String::new();
+    for ch in text.trim().chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            out.push(ch);
+        } else if ch.is_whitespace() || ch == '-' || ch == '.' {
+            out.push('_');
+        }
+    }
+    if out.chars().next().is_some_and(|ch| ch.is_ascii_digit()) {
+        out.insert(0, '_');
+    }
+    out
+}
+
+pub fn parse_project_name(text: &str) -> Option<String> {
+    let mut in_project = false;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[project]" {
+            in_project = true;
+            continue;
+        }
+        if in_project && trimmed.starts_with('[') {
+            return None;
+        }
+        if in_project && trimmed.starts_with("name") {
+            let (_, value) = trimmed.split_once('=')?;
+            return Some(value.trim().trim_matches('"').to_string());
+        }
+    }
+    None
+}
+
+pub fn abs_to_res(root: &Path, path: &Path) -> Option<String> {
+    let rel = path.strip_prefix(root.join("res")).ok()?;
+    let rel = rel.to_string_lossy().replace('\\', "/");
+    Some(format!("res://{}", rel.trim_start_matches('/')))
+}
+
+pub fn res_to_abs(root: &str, res_path: &str) -> String {
+    let rel = res_path.trim_start_matches("res://");
+    Path::new(root)
+        .join("res")
+        .join(rel)
+        .to_string_lossy()
+        .to_string()
+}
+
+pub fn is_gltf_path(path: &str) -> bool {
+    path.ends_with(".glb") || path.ends_with(".gltf")
+}
+
+pub fn rewrite_project_res_paths(doc: &SceneDoc, project_root: &str) -> SceneDoc {
+    let mut doc = doc.clone();
+    for node in doc.scene.nodes.to_mut().iter_mut() {
+        node.script = None;
+        node.clear_script = true;
+        if let Some(root_of) = node.root_of.as_mut()
+            && root_of.starts_with("res://")
+        {
+            *root_of = Cow::Owned(res_to_abs(project_root, root_of));
+        }
+        rewrite_project_res_data(&mut node.data, project_root);
+        for (_, value) in node.script_vars.to_mut().iter_mut() {
+            rewrite_project_res_value(value, project_root);
+        }
+    }
+    doc
+}
+
+pub fn rewrite_project_res_data(data: &mut SceneNodeData, project_root: &str) {
+    for (_, value) in data.fields.to_mut().iter_mut() {
+        rewrite_project_res_value(value, project_root);
+    }
+    if let Some(base) = data.base.as_mut() {
+        match base {
+            perro_scene::SceneNodeDataBase::Borrowed(_) => {}
+            perro_scene::SceneNodeDataBase::Owned(base) => {
+                rewrite_project_res_data(base, project_root)
+            }
+        }
+    }
+}
+
+pub fn rewrite_project_res_value(value: &mut SceneValue, project_root: &str) {
+    match value {
+        SceneValue::Str(path) if path.starts_with("res://") => {
+            *path = Cow::Owned(res_to_abs(project_root, path));
+        }
+        SceneValue::Object(fields) => {
+            for (_, value) in fields.to_mut().iter_mut() {
+                rewrite_project_res_value(value, project_root);
+            }
+        }
+        SceneValue::Array(values) => {
+            for value in values.to_mut().iter_mut() {
+                rewrite_project_res_value(value, project_root);
+            }
+        }
+        _ => {}
+    }
+}
+
+pub fn suffix_index(name: &str, prefix: &str) -> Option<usize> {
+    name.strip_prefix(prefix)?.parse::<usize>().ok()
+}
+
+pub fn middle_index(name: &str, prefix: &str, suffix: &str) -> Option<usize> {
+    name.strip_prefix(prefix)?
+        .strip_suffix(suffix)?
+        .parse::<usize>()
+        .ok()
+}
+
+pub fn set_log<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, text: &str) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.log = text.to_string();
+    });
+    set_label(ctx, "log_text", text);
+}
+
+pub fn set_label<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    text: &str,
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let text = text.to_string();
+        let _ = with_node_mut!(ctx.run, UiLabel, id, |node| {
+            node.set_text(text);
+        });
+    }
+}
+
+pub fn set_text_box<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    text: &str,
+) {
+    let focused = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state.focused_inspector_box == name
+    });
+    if focused {
+        return;
+    }
+    if let Some(id) = find_named(ctx, name) {
+        let text = text.to_string();
+        let _ = with_node_mut!(ctx.run, UiTextBox, id, |node| {
+            if node.text.as_ref() != text {
+                node.set_text(text);
+            }
+        });
+    }
+}
+
+pub fn read_text_box<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+) -> Option<String> {
+    let id = find_named(ctx, name)?;
+    Some(with_node!(ctx.run, UiTextBox, id, |node| node
+        .text
+        .to_string()))
+}
+
+pub fn set_button_fill<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    fill: &str,
+) {
+    let Some(color) = Color::from_hex(fill) else {
+        return;
+    };
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiButton, id, |node| {
+            node.style.fill = color;
+        });
+    }
+}
+
+pub fn set_label_size_ratio<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    size: (f32, f32),
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiLabel, id, |node| {
+            node.layout.size = UiVector2::ratio(size.0, size.1);
+        });
+    }
+}
+
+pub fn set_label_text_ratio<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, name: &str, ratio: f32) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiLabel, id, |node| {
+            node.text_size_ratio = ratio;
+        });
+    }
+}
+
+pub fn set_button_row_style<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    hover: &str,
+    pressed: &str,
+) {
+    let Some(hover_color) = Color::from_hex(hover) else {
+        return;
+    };
+    let Some(pressed_color) = Color::from_hex(pressed) else {
+        return;
+    };
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiButton, id, |node| {
+            node.style.fill = hover_color;
+            node.style.stroke = hover_color;
+            node.style.stroke_width = 0.0;
+            node.style.corner_radius = 0.0;
+            node.hover_style.fill = hover_color;
+            node.hover_style.stroke = hover_color;
+            node.hover_style.stroke_width = 0.0;
+            node.hover_style.corner_radius = 0.0;
+            node.pressed_style.fill = pressed_color;
+            node.pressed_style.stroke = pressed_color;
+            node.pressed_style.stroke_width = 0.0;
+            node.pressed_style.corner_radius = 0.0;
+        });
+    }
+}
+
+pub fn apply_viewport_mode<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, mode: &str) {
+    let window_aspect = viewport_window_aspect(ctx);
+    let stream_size = viewport_stream_size_ratio(window_aspect);
+    set_grid_visible(ctx, "viewport_grid", false);
+    set_ui_center_size(ctx, "viewport_stream_2d", stream_size);
+    set_ui_center_size(ctx, "viewport_stream_3d", stream_size);
+    set_ui_center_size(ctx, "viewport_click_layer", stream_size);
+    set_camera_stream_visible(ctx, "viewport_stream_2d", mode == "2D");
+    set_camera_stream_visible(ctx, "viewport_stream_3d", mode == "3D");
+    set_panel_display(ctx, "viewport_canvas_overlay", mode == "UI" || mode == "2D");
+    set_panel_display(ctx, "canvas_origin_x", mode == "2D");
+    set_panel_display(ctx, "canvas_origin_y", mode == "2D");
+    apply_viewport_canvas(ctx);
+}
+
+pub fn apply_editor_gizmos<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    gizmo: &editor_gizmos::GizmoView,
+    mode: &str,
+) {
+    let show_2d = mode == "2D";
+    let show_3d = mode == "3D";
+    set_panel_visible(ctx, "selected_outline", gizmo.selected && !show_3d);
+    set_panel_visible(ctx, "camera2d_gizmo", gizmo.camera_2d && show_2d);
+    set_panel_visible(ctx, "camera3d_gizmo", gizmo.camera_3d && show_3d);
+    if gizmo.selected && !show_3d {
+        set_panel_size(ctx, "selected_outline", gizmo.outline_size);
+    }
+}
+
+pub fn apply_selected_ui_overlay<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    rect: Option<EditorUiRect>,
+) {
+    let Some(rect) = rect else {
+        set_resize_handles_visible(ctx, false);
+        return;
+    };
+    set_resize_handles_visible(ctx, true);
+    let window_aspect = viewport_window_aspect(ctx);
+    let (canvas_w, canvas_h) = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        if state.viewport_mode == "UI" {
+            let zoom = state.ui_canvas_zoom.max(0.25);
+            ui_canvas_size_ratio(window_aspect, zoom)
+        } else {
+            viewport_stream_size_ratio(window_aspect)
+        }
+    });
+    if let Some(id) = find_named(ctx, "selected_outline") {
+        let _ = with_node_mut!(ctx.run, UiPanel, id, |node| {
+            node.layout.anchor = UiAnchor::Center;
+            node.layout.size = UiVector2::ratio(rect.size.x * canvas_w, rect.size.y * canvas_h);
+            node.transform.position = UiVector2::percent(50.0, 50.0);
+            node.transform.pivot = UiVector2::percent(50.0, 50.0);
+            node.transform.translation =
+                Vector2::new((rect.center.x - 0.5) * canvas_w, (rect.center.y - 0.5) * canvas_h);
+            node.transform.self_translation = Vector2::ZERO;
+            node.transform.scale = Vector2::ONE;
+            node.transform.rotation = rect.rotation;
+        });
+    }
+}
+
+pub fn set_resize_handles_visible<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    visible: bool,
+) {
+    for name in [
+        "resize_nw",
+        "resize_n",
+        "resize_ne",
+        "resize_w",
+        "resize_e",
+        "resize_sw",
+        "resize_s",
+        "resize_se",
+    ] {
+        set_panel_visible(ctx, name, visible);
+    }
+}
+
+pub fn set_panel_visible<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    visible: bool,
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiPanel, id, |node| {
+            node.visible = visible;
+            node.input_enabled = visible;
+        });
+    }
+}
+
+pub fn set_panel_display<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    visible: bool,
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiPanel, id, |node| {
+            node.visible = visible;
+            node.input_enabled = false;
+        });
+    }
+}
+
+pub fn set_ui_display<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    visible: bool,
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_base_node_mut!(ctx.run, UiBox, id, |node| {
+            node.visible = visible;
+            node.input_enabled = visible;
+        });
+    }
+}
+
+pub fn set_ui_box_size<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    size: (f32, f32),
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_base_node_mut!(ctx.run, UiBox, id, |node| {
+            node.layout.size = UiVector2::ratio(size.0, size.1);
+        });
+    }
+}
+
+pub fn set_ui_center_size<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    size: (f32, f32),
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_base_node_mut!(ctx.run, UiBox, id, |node| {
+            node.layout.anchor = UiAnchor::Center;
+            node.layout.size = UiVector2::ratio(size.0, size.1);
+            node.transform.position = UiVector2::percent(50.0, 50.0);
+            node.transform.pivot = UiVector2::percent(50.0, 50.0);
+            node.transform.translation = Vector2::ZERO;
+            node.transform.self_translation = Vector2::ZERO;
+            node.transform.scale = Vector2::ONE;
+        });
+    }
+}
+
+pub fn set_grid_visible<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    visible: bool,
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiGrid, id, |node| {
+            node.visible = visible;
+            node.input_enabled = visible;
+        });
+    }
+}
+
+pub fn set_camera_stream_visible<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    visible: bool,
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiCameraStream, id, |node| {
+            node.visible = visible;
+            node.input_enabled = visible;
+        });
+    }
+}
+
+pub fn set_viewport_stream_camera<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    camera: NodeID,
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiCameraStream, id, |node| {
+            node.stream.camera = camera;
+        });
+    }
+}
+
+pub fn set_panel_size<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    size: (f32, f32),
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiPanel, id, |node| {
+            node.layout.size = UiVector2::ratio(size.0, size.1);
+        });
+    }
+}
+
+pub fn apply_viewport_canvas<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let (mode, pan_x, pan_y, zoom) = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        if state.viewport_mode == "2D" {
+            let zoom = state.cam2_zoom.max(0.05);
+            (
+                state.viewport_mode.clone(),
+                -state.cam2_x * zoom / 960.0,
+                state.cam2_y * zoom / 540.0,
+                zoom,
+            )
+        } else {
+            (
+                state.viewport_mode.clone(),
+                0.0,
+                0.0,
+                state.ui_canvas_zoom.max(0.25),
+            )
+        }
+    });
+    let show = mode == "UI" || mode == "2D";
+    set_panel_display(ctx, "viewport_canvas_overlay", show);
+    if !show {
+        return;
+    }
+
+    let window_aspect = viewport_window_aspect(ctx);
+    let (canvas_w, canvas_h) = if mode == "UI" {
+        ui_canvas_size_ratio(window_aspect, zoom)
+    } else {
+        viewport_stream_size_ratio(window_aspect)
+    };
+    set_ui_center_size(ctx, "viewport_canvas_overlay", (canvas_w, canvas_h));
+    apply_ui_preview_canvas_transform(ctx, &mode, zoom);
+
+    let spacing = if mode == "UI" { 0.25 } else { (0.125 * zoom).clamp(0.03, 0.4) };
+    for i in 0..9 {
+        let offset = (i as f32 - 4.0) * spacing;
+        set_canvas_line(
+            ctx,
+            &format!("canvas_v_{i}"),
+            true,
+            wrap_grid_offset(offset + pan_x, spacing),
+            false,
+        );
+        set_canvas_line(
+            ctx,
+            &format!("canvas_h_{i}"),
+            false,
+            wrap_grid_offset(offset + pan_y, spacing),
+            false,
+        );
+    }
+    set_panel_display(ctx, "canvas_origin_x", mode == "2D");
+    set_panel_display(ctx, "canvas_origin_y", mode == "2D");
+    if mode == "2D" {
+        set_canvas_line(ctx, "canvas_origin_x", false, pan_y, true);
+        set_canvas_line(ctx, "canvas_origin_y", true, pan_x, true);
+    }
+}
+
+pub fn apply_ui_preview_canvas_transform<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    mode: &str,
+    zoom: f32,
+) {
+    if mode != "UI" {
+        return;
+    }
+    let root = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        (state.preview_root != 0).then(|| NodeID::from_u64(state.preview_root))
+    });
+    let Some(root) = root else {
+        return;
+    };
+    let window_aspect = viewport_window_aspect(ctx);
+    let canvas_size = ui_canvas_size_ratio(window_aspect, 1.0);
+    let _ = with_base_node_mut!(ctx.run, UiBox, root, |node| {
+        node.layout.anchor = UiAnchor::Center;
+        node.layout.size = UiVector2::ratio(canvas_size.0, canvas_size.1);
+        node.transform.position = UiVector2::percent(50.0, 50.0);
+        node.transform.pivot = UiVector2::percent(50.0, 50.0);
+        node.transform.translation = Vector2::ZERO;
+        node.transform.self_translation = Vector2::ZERO;
+        node.transform.scale = Vector2::new(zoom, zoom);
+    });
+}
+
+pub fn viewport_window_aspect<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) -> f32 {
+    let viewport = ctx.res.viewport_size();
+    viewport.x / viewport.y.max(0.0001)
+}
+
+pub fn viewport_stream_size_ratio(window_aspect: f32) -> (f32, f32) {
+    const MAIN_PADDING: f32 = 0.004;
+    const MAIN_SPACING: f32 = 0.004;
+    const SPLIT_CONTENT_W: f32 = 1.0 - (MAIN_PADDING * 2.0) - (MAIN_SPACING * 3.0);
+    const SPLIT_CONTENT_H: f32 = 0.944 - (0.004 * 2.0);
+    const CENTER_W: f32 = 0.705;
+    const VIEWPORT_PANEL_H: f32 = 0.828;
+    const MAX_W: f32 = 0.98;
+    const MAX_H: f32 = 0.92;
+    const ASPECT: f32 = 16.0 / 9.0;
+
+    let panel_aspect = window_aspect * (SPLIT_CONTENT_W * CENTER_W) / (SPLIT_CONTENT_H * VIEWPORT_PANEL_H);
+    let h_for_w = MAX_W * panel_aspect / ASPECT;
+    if h_for_w <= MAX_H {
+        (MAX_W, h_for_w)
+    } else {
+        (MAX_H * ASPECT / panel_aspect, MAX_H)
+    }
+}
+
+pub fn ui_canvas_size_ratio(window_aspect: f32, zoom: f32) -> (f32, f32) {
+    const MAIN_PADDING: f32 = 0.004;
+    const MAIN_SPACING: f32 = 0.004;
+    const SPLIT_CONTENT_W: f32 = 1.0 - (MAIN_PADDING * 2.0) - (MAIN_SPACING * 3.0);
+    const SPLIT_CONTENT_H: f32 = 0.944 - (0.004 * 2.0);
+    const CENTER_W: f32 = 0.705;
+    const VIEWPORT_PANEL_H: f32 = 0.828;
+    const BASE_W: f32 = 0.98;
+    const ASPECT: f32 = 16.0 / 9.0;
+
+    let panel_aspect = window_aspect * (SPLIT_CONTENT_W * CENTER_W) / (SPLIT_CONTENT_H * VIEWPORT_PANEL_H);
+    let w = BASE_W * zoom.max(0.25);
+    (w, w * panel_aspect / ASPECT)
+}
+
+pub fn wrap_grid_offset(offset: f32, spacing: f32) -> f32 {
+    if spacing <= 0.0 {
+        return offset;
+    }
+    let half = spacing * 4.0;
+    let width = spacing * 9.0;
+    (offset + half).rem_euclid(width) - half
+}
+
+pub fn set_canvas_line<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    vertical: bool,
+    offset: f32,
+    origin: bool,
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiPanel, id, |node| {
+            node.visible = offset.abs() <= 0.55 || origin;
+            node.input_enabled = false;
+            node.layout.size = if vertical {
+                UiVector2::ratio(if origin { 0.003 } else { 0.0015 }, 1.0)
+            } else {
+                UiVector2::ratio(1.0, if origin { 0.003 } else { 0.0015 })
+            };
+            node.transform.translation = if vertical {
+                Vector2::new(offset, 0.0)
+            } else {
+                Vector2::new(0.0, offset)
+            };
+        });
+    }
+}
+
+pub fn apply_scene_list_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let Some(list_id) = find_named(ctx, "scene_rows") else {
+        return;
+    };
+    let _ = with_node_mut!(ctx.run, UiList, list_id, |list| {
+        list.indent = 14.0;
+        list.v_spacing = 0.0015;
+    });
+    let _ = with_node_mut!(ctx.run, UiVLayout, list_id, |list| {
+        list.inner.spacing = 0.001;
+    });
+    for idx in 0..MAX_NODES {
+        let row_name = format!("scene_row_{idx}");
+        let row_label = format!("scene_row_{idx}_label");
+        set_button_size(ctx, &row_name, (1.0, 0.066));
+        set_button_row_style(ctx, &row_name, "#00000000", "#2B333D");
+        set_label_size_ratio(ctx, &row_label, (1.0, 1.0));
+        set_label_text_ratio(ctx, &row_label, 0.40);
+    }
+}
+
+pub fn apply_file_tree_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let Some(list_id) = find_named(ctx, "file_rows") else {
+        return;
+    };
+    let _ = with_node_mut!(ctx.run, UiList, list_id, |list| {
+        list.indent = 12.0;
+        list.v_spacing = 0.0015;
+    });
+    let _ = with_node_mut!(ctx.run, UiVLayout, list_id, |list| {
+        list.inner.spacing = 0.001;
+    });
+    for idx in 0..MAX_FILES {
+        let row_name = format!("file_row_{idx}");
+        let row_label = format!("file_row_{idx}_label");
+        set_button_size(ctx, &row_name, (1.0, 0.064));
+        set_button_row_style(ctx, &row_name, "#00000000", "#2B333D");
+        set_label_size_ratio(ctx, &row_label, (1.0, 1.0));
+        set_label_text_ratio(ctx, &row_label, 0.38);
+    }
+}
+
+pub fn set_button_size<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    size: (f32, f32),
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiButton, id, |node| {
+            node.layout.size = UiVector2::ratio(size.0, size.1);
+        });
+    }
+}
+
+pub fn set_add_node_popup<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    visible: bool,
+) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.add_node_popup_open = visible;
+    });
+    if let Some(id) = find_named(ctx, "add_node_popup") {
+        let _ = with_node_mut!(ctx.run, UiVLayout, id, |node| {
+            node.visible = visible;
+            node.input_enabled = visible;
+        });
+    }
+}
+
+pub fn set_project_manager<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    visible: bool,
+) {
+    if let Some(id) = find_named(ctx, "project_manager") {
+        let _ = with_node_mut!(ctx.run, UiVLayout, id, |node| {
+            node.visible = visible;
+            node.input_enabled = visible;
+        });
+    }
+}
+
+pub fn find_named<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+) -> Option<NodeID> {
+    let mut stack = vec![ctx.id];
+    while let Some(id) = stack.pop() {
+        if get_node_name!(ctx.run, id).as_deref() == Some(name) {
+            return Some(id);
+        }
+        stack.extend(get_children!(ctx.run, id));
+    }
+    None
+}
+
+pub fn save_recent_projects(recent: &[String]) {
+    let list = recent
+        .iter()
+        .map(|item| format!("\"{}\"", json_escape(item)))
+        .collect::<Vec<_>>()
+        .join(",");
+    let text = format!("{{\"recent\":[{list}]}}");
+    let _ = FileMod::save_string(RECENT_PROJECTS_PATH, &text);
+}
+
+pub fn load_recent_projects() -> Vec<String> {
+    let text = FileMod::load_string(RECENT_PROJECTS_PATH).unwrap_or_default();
+    let mut out = Vec::new();
+    for path in parse_recent_projects(&text) {
+        if !out.iter().any(|item| item == &path) && validate_project_root(Path::new(&path)).is_ok()
+        {
+            out.push(path);
+        }
+    }
+    out.truncate(MAX_RECENT);
+    save_recent_projects(&out);
+    out
+}
+
+pub fn parse_recent_projects(text: &str) -> Vec<String> {
+    let Some(start) = text.find('[') else {
+        return Vec::new();
+    };
+    let Some(end) = text[start..].find(']') else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut item = String::new();
+    let mut in_string = false;
+    let mut escape = false;
+    for ch in text[start + 1..start + end].chars() {
+        if escape {
+            item.push(ch);
+            escape = false;
+            continue;
+        }
+        if ch == '\\' && in_string {
+            escape = true;
+            continue;
+        }
+        if ch == '"' {
+            if in_string {
+                if !item.is_empty() {
+                    out.push(item.clone());
+                }
+                item.clear();
+            }
+            in_string = !in_string;
+            continue;
+        }
+        if in_string {
+            item.push(ch);
+        }
+    }
+    out
+}
+
+pub fn json_escape(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
