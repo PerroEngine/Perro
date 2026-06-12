@@ -39,6 +39,7 @@ pub struct UiCameraStream {
     pub base: UiBox,
     pub stream: CameraStream,
     pub tint: Color,
+    pub corner_radius: f32,
 }
 
 impl UiCameraStream {
@@ -47,6 +48,7 @@ impl UiCameraStream {
             base: UiBox::new(),
             stream: CameraStream::new(),
             tint: Color::WHITE,
+            corner_radius: 0.0,
         }
     }
 }

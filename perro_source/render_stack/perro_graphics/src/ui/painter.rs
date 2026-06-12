@@ -5,7 +5,7 @@ use ahash::AHashMap;
 use epaint::{
     AlphaFromCoverage, ClippedPrimitive, ClippedShape, Color32, CornerRadius, FontFamily, FontId,
     Fonts, Galley, Mesh, Primitive, Rect, RectShape, Shape, Stroke, StrokeKind,
-    TessellationOptions, Tessellator, TextureId,
+    TessellationOptions, Tessellator, TextureId, Vertex,
     emath::{Align, Rot2},
     pos2,
     text::{FontDefinitions, LayoutJob},
@@ -268,11 +268,85 @@ fn push_image_shape(image: &UiImageDraw, viewport: [f32; 2], out: &mut Vec<Clipp
         pos2(image.uv_max[0], image.uv_max[1]),
     );
     let mut mesh = Mesh::with_texture(TextureId::User(image.texture.as_u64()));
-    mesh.add_rect_with_uv(rect, uv, color32(image.tint));
+    let radius = resolve_rect_corner_radius(rect, image.corner_radius);
+    if radius > 0.0 {
+        add_rounded_rect_with_uv(&mut mesh, rect, uv, radius, color32(image.tint));
+    } else {
+        mesh.add_rect_with_uv(rect, uv, color32(image.tint));
+    }
     out.push(ClippedShape {
         clip_rect: clip_rect_from_state(image.clip_rect, viewport),
         shape: Shape::Mesh(mesh.into()),
     });
+}
+
+fn add_rounded_rect_with_uv(mesh: &mut Mesh, rect: Rect, uv: Rect, radius: f32, color: Color32) {
+    let radius = radius.min(rect.width() * 0.5).min(rect.height() * 0.5);
+    if radius <= 0.0 {
+        mesh.add_rect_with_uv(rect, uv, color);
+        return;
+    }
+
+    let base = mesh.vertices.len() as u32;
+    let center = rect.center();
+    mesh.vertices.push(Vertex {
+        pos: center,
+        uv: rect_uv(rect, uv, center),
+        color,
+    });
+
+    let segments = 6;
+    for (corner, start, end) in [
+        (
+            pos2(rect.right() - radius, rect.top() + radius),
+            -90.0_f32,
+            0.0_f32,
+        ),
+        (
+            pos2(rect.right() - radius, rect.bottom() - radius),
+            0.0,
+            90.0,
+        ),
+        (
+            pos2(rect.left() + radius, rect.bottom() - radius),
+            90.0,
+            180.0,
+        ),
+        (
+            pos2(rect.left() + radius, rect.top() + radius),
+            180.0,
+            270.0,
+        ),
+    ] {
+        for step in 0..=segments {
+            let t = step as f32 / segments as f32;
+            let angle = (start + (end - start) * t).to_radians();
+            let pos = pos2(
+                corner.x + angle.cos() * radius,
+                corner.y + angle.sin() * radius,
+            );
+            mesh.vertices.push(Vertex {
+                pos,
+                uv: rect_uv(rect, uv, pos),
+                color,
+            });
+        }
+    }
+
+    let point_count = mesh.vertices.len() as u32 - base - 1;
+    for idx in 0..point_count {
+        mesh.indices.extend_from_slice(&[
+            base,
+            base + idx + 1,
+            base + ((idx + 1) % point_count) + 1,
+        ]);
+    }
+}
+
+fn rect_uv(rect: Rect, uv: Rect, pos: epaint::Pos2) -> epaint::Pos2 {
+    let x = ((pos.x - rect.left()) / rect.width().max(0.0001)).clamp(0.0, 1.0);
+    let y = ((pos.y - rect.top()) / rect.height().max(0.0001)).clamp(0.0, 1.0);
+    pos2(uv.left() + uv.width() * x, uv.top() + uv.height() * y)
 }
 
 fn resolve_image_rect(outer: Rect, image: &UiImageDraw) -> Rect {
@@ -603,12 +677,20 @@ fn screen_pivot(rect: UiRectState, viewport: [f32; 2]) -> epaint::Pos2 {
 }
 
 fn resolve_corner_radius(panel: &UiPanelDraw) -> f32 {
-    let ratio = if panel.corner_radius.is_finite() {
-        panel.corner_radius.clamp(0.0, 1.0)
+    let rect = Rect::from_center_size(
+        pos2(panel.rect.center[0], panel.rect.center[1]),
+        vec2(panel.rect.size[0], panel.rect.size[1]),
+    );
+    resolve_rect_corner_radius(rect, panel.corner_radius)
+}
+
+fn resolve_rect_corner_radius(rect: Rect, corner_radius: f32) -> f32 {
+    let ratio = if corner_radius.is_finite() {
+        corner_radius.clamp(0.0, 1.0)
     } else {
         1.0
     };
-    (panel.rect.size[0].min(panel.rect.size[1]).max(0.0) * 0.5 * ratio).min(u8::MAX as f32)
+    (rect.width().min(rect.height()).max(0.0) * 0.5 * ratio).min(u8::MAX as f32)
 }
 
 struct TextShapeInput<'a> {

@@ -1,18 +1,19 @@
 $root = @editor_root
-$bg = { fill: "#1B1D23", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
-$bar = { fill: "#24272E", stroke: "#121419", stroke_width: 1.0, radius: 0.0 }
-$panel = { fill: "#24272E", stroke: "#343842", stroke_width: 1.0, radius: 0.0 }
-$btn = { fill: "#2D323C", stroke: "#3B414D", stroke_width: 1.0, radius: 0.006 }
-$btn_hot = { style: { fill: "#38404C", stroke: "#566174", stroke_width: 1.0, radius: 0.006 } }
-$btn_down = { style: { fill: "#478CBF", stroke: "#6BB6E8", stroke_width: 1.0, radius: 0.006 } }
-$row = { fill: "#24272E", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
-$row_sel = { fill: "#478CBF", stroke: "#6BB6E8", stroke_width: 1.0, radius: 0.0 }
-$field = { fill: "#191B20", stroke: "#3B414D", stroke_width: 1.0, radius: 0.004 }
-$field_focus = { fill: "#191B20", stroke: "#6BB6E8", stroke_width: 1.0, radius: 0.004 }
+$bg = { fill: "#20242B", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+$bar = { fill: "#272D36", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+$panel = { fill: "#303742", stroke: "#4D5665", stroke_width: 1.0, radius: 0.025 }
+$panel_dark = { fill: "#252B34", stroke: "#4D5665", stroke_width: 1.0, radius: 0.025 }
+$btn = { fill: "#3D4654", stroke: "#00000000", stroke_width: 0.0, radius: 0.08 }
+$btn_hot = { style: { fill: "#4A5668", stroke: "#00000000", stroke_width: 0.0, radius: 0.08 } }
+$btn_down = { style: { fill: "#59677D", stroke: "#00000000", stroke_width: 0.0, radius: 0.08 } }
+$row = { fill: "#39414E", stroke: "#00000000", stroke_width: 0.0, radius: 0.04 }
+$row_sel = { fill: "#54657A", stroke: "#93C5FD", stroke_width: 1.0, radius: 0.04 }
+$field = { fill: "#242A33", stroke: "#404A58", stroke_width: 1.0, radius: 0.04 }
+$field_focus = { fill: "#242A33", stroke: "#93C5FD", stroke_width: 1.0, radius: 0.04 }
 
 [editor_root]
 
-script = "res://scripts/main.rs"
+script = "res://scripts/editor/main.rs"
     [UiPanel]
         anchor = "center"
         size_ratio = (1.0, 1.0)
@@ -24,11 +25,11 @@ script = "res://scripts/main.rs"
 parent = @editor_root
     [UiVLayout]
         anchor = "center"
-        size_ratio = (0.58, 0.72)
+        size_ratio = (0.44, 0.78)
         h_align = "fill"
         v_align = "start"
-        spacing = 0.006
-        padding = (0.014, 0.012)
+        spacing = 0.007
+        padding = (0.035, 0.025)
         visible = true
         style = $panel
     [/UiVLayout]
@@ -37,21 +38,20 @@ parent = @editor_root
 [project_manager_title]
 parent = @project_manager
     [UiLabel]
-        size_ratio = (1.0, 0.060)
-        text = "Perro Project Manager"
-        text_size_ratio = 0.34
+        size_ratio = (1.0, 0.08)
+        text = "Project Manager"
+        text_size_ratio = 0.344
         color = "#F3F4F6"
         h_align = "start"
-        style = $bar
     [/UiLabel]
 [/project_manager_title]
 
 [project_manager_recent_title]
 parent = @project_manager
     [UiLabel]
-        size_ratio = (1.0, 0.040)
+        size_ratio = (1.0, 0.052)
         text = "Recent Projects"
-        text_size_ratio = 0.30
+        text_size_ratio = 0.262
         color = "#CBD5E1"
         h_align = "start"
     [/UiLabel]
@@ -60,7 +60,7 @@ parent = @project_manager
 [manager_recent_0]
 parent = @project_manager
     [UiButton]
-        size_ratio = (1.0, 0.058)
+        size_ratio = (1.0, 0.074)
         click_signals = ["editor_recent_0"]
         style = $row
         hover = $btn_hot
@@ -73,7 +73,7 @@ parent = @manager_recent_0
     [UiLabel]
         size_ratio = (0.96, 1.0)
         text = "-"
-        text_size_ratio = 0.30
+        text_size_ratio = 0.246
         color = "#E5E7EB"
         h_align = "start"
         input_enabled = false
@@ -84,7 +84,7 @@ parent = @manager_recent_0
 [manager_recent_1]
 parent = @project_manager
     [UiButton]
-        size_ratio = (1.0, 0.058)
+        size_ratio = (1.0, 0.074)
         click_signals = ["editor_recent_1"]
         style = $row
         hover = $btn_hot
@@ -97,7 +97,7 @@ parent = @manager_recent_1
     [UiLabel]
         size_ratio = (0.96, 1.0)
         text = "-"
-        text_size_ratio = 0.30
+        text_size_ratio = 0.246
         color = "#E5E7EB"
         h_align = "start"
         input_enabled = false
@@ -108,7 +108,7 @@ parent = @manager_recent_1
 [manager_recent_2]
 parent = @project_manager
     [UiButton]
-        size_ratio = (1.0, 0.058)
+        size_ratio = (1.0, 0.074)
         click_signals = ["editor_recent_2"]
         style = $row
         hover = $btn_hot
@@ -121,7 +121,7 @@ parent = @manager_recent_2
     [UiLabel]
         size_ratio = (0.96, 1.0)
         text = "-"
-        text_size_ratio = 0.30
+        text_size_ratio = 0.246
         color = "#E5E7EB"
         h_align = "start"
         input_enabled = false
@@ -132,7 +132,7 @@ parent = @manager_recent_2
 [manager_recent_3]
 parent = @project_manager
     [UiButton]
-        size_ratio = (1.0, 0.058)
+        size_ratio = (1.0, 0.074)
         click_signals = ["editor_recent_3"]
         style = $row
         hover = $btn_hot
@@ -145,7 +145,7 @@ parent = @manager_recent_3
     [UiLabel]
         size_ratio = (0.96, 1.0)
         text = "-"
-        text_size_ratio = 0.30
+        text_size_ratio = 0.246
         color = "#E5E7EB"
         h_align = "start"
         input_enabled = false
@@ -156,7 +156,7 @@ parent = @manager_recent_3
 [manager_recent_4]
 parent = @project_manager
     [UiButton]
-        size_ratio = (1.0, 0.058)
+        size_ratio = (1.0, 0.074)
         click_signals = ["editor_recent_4"]
         style = $row
         hover = $btn_hot
@@ -169,7 +169,7 @@ parent = @manager_recent_4
     [UiLabel]
         size_ratio = (0.96, 1.0)
         text = "-"
-        text_size_ratio = 0.30
+        text_size_ratio = 0.246
         color = "#E5E7EB"
         h_align = "start"
         input_enabled = false
@@ -180,9 +180,9 @@ parent = @manager_recent_4
 [project_manager_create_title]
 parent = @project_manager
     [UiLabel]
-        size_ratio = (1.0, 0.040)
+        size_ratio = (1.0, 0.052)
         text = "Create Project"
-        text_size_ratio = 0.30
+        text_size_ratio = 0.262
         color = "#CBD5E1"
         h_align = "start"
     [/UiLabel]
@@ -191,10 +191,10 @@ parent = @project_manager
 [create_name_box]
 parent = @project_manager
     [UiTextBox]
-        size_ratio = (1.0, 0.060)
+        size_ratio = (1.0, 0.08)
         text = "NewGame"
         placeholder = "Project name"
-        text_size_ratio = 0.30
+        text_size_ratio = 0.262
         color = "#F3F4F6"
         placeholder_color = "#94A3B8"
         style = $field
@@ -205,7 +205,7 @@ parent = @project_manager
 [create_location_row]
 parent = @project_manager
     [UiHLayout]
-        size_ratio = (1.0, 0.062)
+        size_ratio = (1.0, 0.09)
         h_align = "fill"
         v_align = "center"
         spacing = 0.012
@@ -217,7 +217,7 @@ parent = @create_location_row
     [UiLabel]
         size_ratio = (0.66, 0.82)
         text = "location: -"
-        text_size_ratio = 0.26
+        text_size_ratio = 0.221
         color = "#CBD5E1"
         h_align = "start"
         style = $field
@@ -240,7 +240,7 @@ parent = @manager_choose_location_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
         text = "Pick"
-        text_size_ratio = 0.28
+        text_size_ratio = 0.279
         color = "#F3F4F6"
         input_enabled = false
         mouse_filter = "pass"
@@ -263,7 +263,7 @@ parent = @manager_create_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
         text = "Create"
-        text_size_ratio = 0.28
+        text_size_ratio = 0.254
         color = "#F3F4F6"
         input_enabled = false
         mouse_filter = "pass"
@@ -273,7 +273,7 @@ parent = @manager_create_button
 [project_manager_actions]
 parent = @project_manager
     [UiHLayout]
-        size_ratio = (1.0, 0.062)
+        size_ratio = (1.0, 0.085)
         h_align = "end"
         v_align = "center"
         spacing = 0.012
@@ -296,7 +296,7 @@ parent = @manager_browse_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
         text = "Browse"
-        text_size_ratio = 0.28
+        text_size_ratio = 0.279
         color = "#F3F4F6"
         input_enabled = false
         mouse_filter = "pass"
@@ -319,7 +319,7 @@ parent = @manager_close_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
         text = "Close"
-        text_size_ratio = 0.28
+        text_size_ratio = 0.279
         color = "#F3F4F6"
         input_enabled = false
         mouse_filter = "pass"

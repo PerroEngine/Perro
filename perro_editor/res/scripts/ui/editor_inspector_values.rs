@@ -1,8 +1,8 @@
-use crate::scripts_editor_animation_rs::*;
-use crate::scripts_editor_assets_rs::*;
-use crate::scripts_editor_ui_rs::*;
-use crate::scripts_editor_viewport_rs::*;
-use crate::scripts_main_rs::EditorState;
+use crate::scripts_assets_editor_assets_rs::*;
+use crate::scripts_editor_main_rs::EditorState;
+use crate::scripts_scene_editor_animation_rs::*;
+use crate::scripts_scene_editor_viewport_rs::*;
+use crate::scripts_ui_editor_ui_rs::*;
 use perro_api::prelude::*;
 use perro_api::scene::{SceneDoc, SceneFieldName, SceneValue};
 use std::borrow::Cow;
@@ -26,7 +26,9 @@ pub enum ValuePathStep {
     Index(usize),
 }
 
-pub fn inspector_script_var_rows(fields: &[(SceneFieldName, SceneValue)]) -> Vec<InspectorValueRow> {
+pub fn inspector_script_var_rows(
+    fields: &[(SceneFieldName, SceneValue)],
+) -> Vec<InspectorValueRow> {
     let mut rows = Vec::new();
     for (idx, (name, value)) in fields.iter().enumerate() {
         let mut path = vec![ValuePathStep::Root(idx)];

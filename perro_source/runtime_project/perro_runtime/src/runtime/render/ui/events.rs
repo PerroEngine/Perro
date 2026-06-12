@@ -342,7 +342,10 @@ impl Runtime {
                 continue;
             };
             let z = self.ui_effective_z(node);
-            if rect.contains(point) && z >= best_z {
+            if rect.contains(point)
+                && self.ui_point_in_effective_clip(node, computed, point)
+                && z >= best_z
+            {
                 best = Some(node);
                 best_z = z;
             }
@@ -1089,6 +1092,19 @@ impl Runtime {
         let clip = self.ui_effective_clip_rect_screen(node, computed, viewport);
         let visible = intersect_clip_rect(bounds, clip);
         visible[2] > visible[0] && visible[3] > visible[1]
+    }
+
+    fn ui_point_in_effective_clip(
+        &self,
+        node: NodeID,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+        point: Vector2,
+    ) -> bool {
+        let viewport = self.input.viewport_size();
+        let clip = self.ui_effective_clip_rect_screen(node, computed, viewport);
+        let screen_x = viewport.x * 0.5 + point.x;
+        let screen_y = viewport.y * 0.5 - point.y;
+        screen_x >= clip[0] && screen_x <= clip[2] && screen_y >= clip[1] && screen_y <= clip[3]
     }
 
     fn next_tab_focus(

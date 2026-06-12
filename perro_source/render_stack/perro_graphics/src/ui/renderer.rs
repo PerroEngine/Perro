@@ -48,6 +48,7 @@ pub(crate) struct UiImageDraw {
     pub(crate) h_align: UiTextAlignState,
     pub(crate) v_align: UiTextAlignState,
     pub(crate) aspect_ratio: f32,
+    pub(crate) corner_radius: f32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -195,6 +196,7 @@ impl UiRenderer {
                 h_align,
                 v_align,
                 aspect_ratio,
+                corner_radius,
             } => self.upsert(
                 node,
                 UiDraw::Image(UiImageDraw {
@@ -208,6 +210,7 @@ impl UiRenderer {
                     h_align,
                     v_align,
                     aspect_ratio,
+                    corner_radius,
                 }),
             ),
             UiCommand::UpsertNineSlice {

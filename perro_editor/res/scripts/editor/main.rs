@@ -7,30 +7,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-mod editor_animation;
-mod editor_app;
-mod editor_assets;
-mod editor_file_watch;
-mod editor_files;
-mod editor_gizmos;
-mod editor_inspector_values;
-mod editor_manager;
-mod editor_nav;
-mod editor_nodes;
-mod editor_project;
-mod editor_scene;
-mod editor_scene_deps;
-mod editor_ui;
-mod editor_view;
-mod editor_viewport;
-
-use editor_animation::*;
-use editor_assets::*;
-use editor_inspector_values::*;
-use editor_nav::*;
-use editor_nodes::*;
-use editor_ui::*;
-use editor_viewport::*;
+use crate::scripts_assets_editor_assets_rs::*;
+use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
+use crate::scripts_scene_editor_animation_rs::*;
+use crate::scripts_scene_editor_nav_rs::*;
+use crate::scripts_scene_editor_nodes_rs::*;
+use crate::scripts_scene_editor_viewport_rs::*;
+use crate::scripts_ui_editor_inspector_values_rs::*;
+use crate::scripts_ui_editor_ui_rs::*;
 
 type SelfNodeType = UiPanel;
 
@@ -109,6 +93,7 @@ pub struct EditorState {
     pub active_glb_mat_index: usize,
     pub active_glb_anim_index: usize,
     pub focused_inspector_box: String,
+    pub inspector_layout_applied: bool,
     pub log: String,
 }
 
@@ -119,16 +104,16 @@ lifecycle!({
         let recent = load_recent_projects();
         let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
             state.recent_projects = recent;
-                state.log = "project manager".to_string();
-                state.ui_canvas_zoom = 1.0;
-                state.cam2_zoom = 1.0;
-                state.activity_mode = "scene".to_string();
-                state.sidebar_mode = "scene".to_string();
-                state.last_file_row_click_frame = 0;
-                state.last_file_row_click_slot = None;
-                state.last_scene_row_click_frame = 0;
-                state.last_scene_row_click_slot = None;
-            });
+            state.log = "project manager".to_string();
+            state.ui_canvas_zoom = 1.0;
+            state.cam2_zoom = 1.0;
+            state.activity_mode = "scene".to_string();
+            state.sidebar_mode = "scene".to_string();
+            state.last_file_row_click_frame = 0;
+            state.last_file_row_click_slot = None;
+            state.last_scene_row_click_frame = 0;
+            state.last_scene_row_click_slot = None;
+        });
         refresh_all(ctx);
         set_project_manager(ctx, true);
     }

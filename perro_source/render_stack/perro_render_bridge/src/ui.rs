@@ -98,6 +98,7 @@ pub enum UiCommand {
         h_align: UiTextAlignState,
         v_align: UiTextAlignState,
         aspect_ratio: f32,
+        corner_radius: f32,
     },
     UpsertNineSlice {
         node: NodeID,

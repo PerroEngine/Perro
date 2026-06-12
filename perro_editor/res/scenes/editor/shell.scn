@@ -1,16 +1,21 @@
 $root = @editor_root
 $bg = { fill: "#1B1D23", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
-$bar = { fill: "#24272E", stroke: "#121419", stroke_width: 1.0, radius: 0.0 }
-$panel = { fill: "#24272E", stroke: "#343842", stroke_width: 1.0, radius: 0.0 }
-$panel_dark = { fill: "#1F2229", stroke: "#343842", stroke_width: 1.0, radius: 0.0 }
-$viewport = { fill: "#181A20", stroke: "#3B414D", stroke_width: 1.0, radius: 0.0 }
-$btn = { fill: "#2D323C", stroke: "#3B414D", stroke_width: 1.0, radius: 0.006 }
-$btn_hot = { style: { fill: "#38404C", stroke: "#566174", stroke_width: 1.0, radius: 0.006 } }
-$btn_down = { style: { fill: "#478CBF", stroke: "#6BB6E8", stroke_width: 1.0, radius: 0.006 } }
+$bar = { fill: "#24272E", stroke: "#121419", stroke_width: 1.0, radius: 0.018 }
+$panel = { fill: "#24272E", stroke: "#343842", stroke_width: 1.0, radius: 0.024 }
+$panel_dark = { fill: "#1F2229", stroke: "#343842", stroke_width: 1.0, radius: 0.024 }
+$inspector_panel = { fill: "#20242B", stroke: "#4A5568", stroke_width: 1.0, radius: 0.028 }
+$inspector_header = { fill: "#151A21", stroke: "#478CBF", stroke_width: 1.0, radius: 0.12 }
+$viewport = { fill: "#181A20", stroke: "#3B414D", stroke_width: 1.0, radius: 0.03 }
+$btn = { fill: "#2D323C", stroke: "#3B414D", stroke_width: 1.0, radius: 1.0 }
+$btn_hot = { style: { fill: "#38404C", stroke: "#566174", stroke_width: 1.0, radius: 1.0 } }
+$btn_down = { style: { fill: "#478CBF", stroke: "#6BB6E8", stroke_width: 1.0, radius: 1.0 } }
+$tab = { fill: "#2D323C", stroke: "#3B414D", stroke_width: 1.0, radius: 0.35 }
+$tab_hot = { style: { fill: "#38404C", stroke: "#566174", stroke_width: 1.0, radius: 0.35 } }
+$tab_down = { style: { fill: "#478CBF", stroke: "#6BB6E8", stroke_width: 1.0, radius: 0.35 } }
 $row = { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
 $row_sel = { fill: "#478CBF", stroke: "#6BB6E8", stroke_width: 1.0, radius: 0.0 }
-$field = { fill: "#191B20", stroke: "#3B414D", stroke_width: 1.0, radius: 0.004 }
-$field_focus = { fill: "#191B20", stroke: "#6BB6E8", stroke_width: 1.0, radius: 0.004 }
+$field = { fill: "#191B20", stroke: "#3B414D", stroke_width: 1.0, radius: 0.10 }
+$field_focus = { fill: "#191B20", stroke: "#6BB6E8", stroke_width: 1.0, radius: 0.10 }
 
 [editor_root]
     [UiPanel]
@@ -48,9 +53,9 @@ parent = @top_bar
     [UiButton]
         size_ratio = (0.058, 0.78)
         click_signals = ["editor_open_project"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = $tab
+        hover = $tab_hot
+        pressed = $tab_down
     [/UiButton]
 [/open_project_button]
 
@@ -1102,7 +1107,7 @@ parent = @scene_tab_0
         anchor = "right"
         size_ratio = (0.16, 0.70)
         click_signals = ["editor_tab_close_0"]
-        style = { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 0.04 }
+        style = { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 1.0 }
         hover = $btn_hot
         pressed = $btn_down
     [/UiButton]
@@ -1125,9 +1130,9 @@ parent = @scene_tabs
     [UiButton]
         size_ratio = (0.165, 0.86)
         click_signals = ["editor_tab_1"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = $tab
+        hover = $tab_hot
+        pressed = $tab_down
     [/UiButton]
 [/scene_tab_1]
 
@@ -1150,7 +1155,7 @@ parent = @scene_tab_1
         anchor = "right"
         size_ratio = (0.16, 0.70)
         click_signals = ["editor_tab_close_1"]
-        style = { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 0.04 }
+        style = { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 1.0 }
         hover = $btn_hot
         pressed = $btn_down
     [/UiButton]
@@ -1173,9 +1178,9 @@ parent = @scene_tabs
     [UiButton]
         size_ratio = (0.165, 0.86)
         click_signals = ["editor_tab_2"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = $tab
+        hover = $tab_hot
+        pressed = $tab_down
     [/UiButton]
 [/scene_tab_2]
 
@@ -1198,7 +1203,7 @@ parent = @scene_tab_2
         anchor = "right"
         size_ratio = (0.16, 0.70)
         click_signals = ["editor_tab_close_2"]
-        style = { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 0.04 }
+        style = { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 1.0 }
         hover = $btn_hot
         pressed = $btn_down
     [/UiButton]
@@ -1221,9 +1226,9 @@ parent = @scene_tabs
     [UiButton]
         size_ratio = (0.165, 0.86)
         click_signals = ["editor_tab_3"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = $tab
+        hover = $tab_hot
+        pressed = $tab_down
     [/UiButton]
 [/scene_tab_3]
 
@@ -1246,7 +1251,7 @@ parent = @scene_tab_3
         anchor = "right"
         size_ratio = (0.16, 0.70)
         click_signals = ["editor_tab_close_3"]
-        style = { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 0.04 }
+        style = { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 1.0 }
         hover = $btn_hot
         pressed = $btn_down
     [/UiButton]
@@ -1287,7 +1292,7 @@ parent = @viewport_panel
 parent = @viewport_grid
     [UiPanel]
         size_ratio = (1.0, 1.0)
-        style = { fill: "#20242C", stroke: "#2F3540", stroke_width: 1.0, radius: 0.0 }
+        style = { fill: "#20242C", stroke: "#2F3540", stroke_width: 1.0, radius: 0.03 }
     [/UiPanel]
 [/viewport_cell_0]
 
@@ -1295,7 +1300,7 @@ parent = @viewport_grid
 parent = @viewport_grid
     [UiPanel]
         size_ratio = (1.0, 1.0)
-        style = { fill: "#1A1D23", stroke: "#2F3540", stroke_width: 1.0, radius: 0.0 }
+        style = { fill: "#1A1D23", stroke: "#2F3540", stroke_width: 1.0, radius: 0.03 }
     [/UiPanel]
 [/viewport_cell_1]
 
@@ -1303,7 +1308,7 @@ parent = @viewport_grid
 parent = @viewport_grid
     [UiPanel]
         size_ratio = (1.0, 1.0)
-        style = { fill: "#20242C", stroke: "#2F3540", stroke_width: 1.0, radius: 0.0 }
+        style = { fill: "#20242C", stroke: "#2F3540", stroke_width: 1.0, radius: 0.03 }
     [/UiPanel]
 [/viewport_cell_2]
 
@@ -1316,6 +1321,7 @@ parent = @viewport_panel
         camera = @editor_camera_2d
         resolution = (960, 540)
         aspect_mode = "fit"
+        radius = 0.25
         visible = false
     [/UiCameraStream]
 [/viewport_stream_2d]
@@ -1329,6 +1335,7 @@ parent = @viewport_panel
         camera = @editor_camera_3d
         resolution = (960, 540)
         aspect_mode = "fit"
+        radius = 0.25
         visible = false
     [/UiCameraStream]
 [/viewport_stream_3d]
@@ -1341,7 +1348,7 @@ parent = @viewport_panel
         z_index = 4
         visible = false
         input_enabled = false
-        style = { fill: "#00000000", stroke: "#5B6574", stroke_width: 1.0, radius: 0.006 }
+        style = { fill: "#00000000", stroke: "#5B6574", stroke_width: 1.0, radius: 0.25 }
     [/UiPanel]
 [/viewport_canvas_overlay]
 
@@ -1552,9 +1559,9 @@ parent = @viewport_panel
         size_ratio = (0.98, 0.84)
         z_index = 20
         click_signals = ["editor_viewport_click"]
-        style = { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 0.025 }
-        hover = { style: { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 0.025 } }
-        pressed = { style: { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 0.025 } }
+        style = { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 0.25 }
+        hover = { style: { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 0.25 } }
+        pressed = { style: { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 0.25 } }
     [/UiButton]
 [/viewport_click_layer]
 
@@ -1992,24 +1999,24 @@ parent = @editor_root
 [inspector_panel]
 parent = @main_split
     [UiVLayout]
-        size_ratio = (0.108, 1.0)
+        size_ratio = (0.118, 1.0)
         h_align = "fill"
         v_align = "start"
-        spacing = 0.004
-        padding = (0.02, 0.008)
-        style = $panel
+        spacing = 0.005
+        padding = (0.018, 0.01)
+        style = $inspector_panel
     [/UiVLayout]
 [/inspector_panel]
 
 [inspector_title]
 parent = @inspector_panel
     [UiLabel]
-        size_ratio = (1.0, 0.045)
-        text = "Inspector"
-        text_size_ratio = 0.25
+        size_ratio = (1.0, 0.052)
+        text = "Node Inspector"
+        text_size_ratio = 0.30
         color = "#F3F4F6"
         h_align = "start"
-        style = $bar
+        style = $inspector_header
     [/UiLabel]
 [/inspector_title]
 
@@ -2280,12 +2287,12 @@ parent = @asset_glb_mat_button
 [inspector_pos]
 parent = @inspector_panel
     [UiLabel]
-        size_ratio = (1.0, 0.032)
+        size_ratio = (1.0, 0.036)
         text = "Transform / Position"
-        text_size_ratio = 0.18
+        text_size_ratio = 0.20
         color = "#F3F4F6"
         h_align = "start"
-        style = $bar
+        style = $inspector_header
     [/UiLabel]
 [/inspector_pos]
 
@@ -2408,12 +2415,12 @@ parent = @inspector_position_row
 [inspector_rotation_label]
 parent = @inspector_panel
     [UiLabel]
-        size_ratio = (1.0, 0.032)
-        text = "rotation"
-        text_size_ratio = 0.18
+        size_ratio = (1.0, 0.036)
+        text = "Rotation"
+        text_size_ratio = 0.20
         color = "#F3F4F6"
         h_align = "start"
-        style = $bar
+        style = $inspector_header
     [/UiLabel]
 [/inspector_rotation_label]
 
@@ -2536,12 +2543,12 @@ parent = @inspector_rotation_row
 [inspector_scale_label]
 parent = @inspector_panel
     [UiLabel]
-        size_ratio = (1.0, 0.032)
-        text = "scale"
-        text_size_ratio = 0.18
+        size_ratio = (1.0, 0.036)
+        text = "Scale"
+        text_size_ratio = 0.20
         color = "#F3F4F6"
         h_align = "start"
-        style = $bar
+        style = $inspector_header
     [/UiLabel]
 [/inspector_scale_label]
 
@@ -2676,13 +2683,13 @@ parent = @inspector_panel
 [inspector_vars]
 parent = @inspector_panel
     [UiLabel]
-        size_ratio = (1.0, 0.032)
+        size_ratio = (1.0, 0.036)
         text = "Script Vars"
-        text_size_ratio = 0.18
+        text_size_ratio = 0.20
         color = "#F3F4F6"
         h_align = "start"
         v_align = "start"
-        style = $bar
+        style = $inspector_header
     [/UiLabel]
 [/inspector_vars]
 

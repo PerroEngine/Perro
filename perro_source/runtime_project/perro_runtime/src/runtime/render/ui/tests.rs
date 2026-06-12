@@ -104,6 +104,32 @@ fn ui_camera_stream_3d_captures_sky_from_source_camera() {
 }
 
 #[test]
+fn ui_camera_stream_emits_image_corner_radius() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let camera = NodeAPI::create::<Camera3D>(&mut runtime);
+    let stream = NodeAPI::create::<UiCameraStream>(&mut runtime);
+    if let Some(node) = runtime.nodes.get_mut(stream)
+        && let SceneNodeData::UiCameraStream(data) = &mut node.data
+    {
+        data.layout.size = UiVector2::pixels(320.0, 180.0);
+        data.stream.camera = camera;
+        data.stream.resolution = [320, 180].into();
+        data.corner_radius = 0.25;
+    }
+
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    assert!(commands.iter().any(|command| matches!(
+        command,
+        RenderCommand::Ui(UiCommand::UpsertImage { node, corner_radius, .. })
+            if *node == stream && *corner_radius == 0.25
+    )));
+}
+
+#[test]
 fn unchanged_ui_skips_redundant_upsert() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);
@@ -1382,6 +1408,31 @@ fn mouse_click_moves_focus_between_text_button_and_empty_space() {
 
     click_mouse_and_extract(&mut runtime, 20.0, 20.0);
     assert_eq!(runtime.render_ui.focused_ui_node, None);
+}
+
+#[test]
+fn clipped_text_edit_hit_area_does_not_block_visible_text_edit() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let low = insert_text_box_at(&mut runtime, 0.0, 0.0);
+
+    let mut clip_parent = perro_ui::UiPanel::new();
+    clip_parent.layout.size = UiVector2::pixels(20.0, 20.0);
+    clip_parent.layout.z_index = 10;
+    clip_parent.clip_children = true;
+    let clip_parent = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(clip_parent));
+
+    let high = insert_text_box_at(&mut runtime, 0.0, 0.0);
+    attach_child(&mut runtime, clip_parent, high);
+
+    runtime.extract_render_ui_commands();
+    runtime.drain_render_commands(&mut Vec::new());
+    runtime.clear_dirty_flags();
+
+    click_mouse_and_extract(&mut runtime, 450.0, 300.0);
+
+    assert_eq!(runtime.render_ui.focused_ui_node, Some(low));
+    assert_eq!(runtime.render_ui.focused_text_edit, Some(low));
 }
 
 #[test]

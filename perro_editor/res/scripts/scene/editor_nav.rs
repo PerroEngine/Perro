@@ -1,22 +1,22 @@
-use crate::scripts_editor_animation_rs::*;
-use crate::scripts_editor_app_rs as editor_app;
-use crate::scripts_editor_assets_rs::*;
-use crate::scripts_editor_file_watch_rs as editor_file_watch;
-use crate::scripts_editor_files_rs as editor_files;
-use crate::scripts_editor_gizmos_rs as editor_gizmos;
-use crate::scripts_editor_inspector_values_rs::*;
-use crate::scripts_editor_manager_rs as editor_manager;
-use crate::scripts_editor_nodes_rs::*;
-use crate::scripts_editor_project_rs as editor_project;
-use crate::scripts_editor_scene_deps_rs as editor_scene_deps;
-use crate::scripts_editor_scene_rs as editor_scene;
-use crate::scripts_editor_ui_rs::*;
-use crate::scripts_editor_view_rs as editor_view;
-use crate::scripts_editor_viewport_rs::*;
-use crate::scripts_main_rs::{
+use crate::scripts_app_editor_app_rs as editor_app;
+use crate::scripts_app_editor_manager_rs as editor_manager;
+use crate::scripts_app_editor_project_rs as editor_project;
+use crate::scripts_assets_editor_assets_rs::*;
+use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
+use crate::scripts_assets_editor_files_rs as editor_files;
+use crate::scripts_editor_main_rs::{
     EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_NODE_PICKER_ROWS, MAX_NODES,
     MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
 };
+use crate::scripts_scene_editor_animation_rs::*;
+use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
+use crate::scripts_scene_editor_nodes_rs::*;
+use crate::scripts_scene_editor_scene_deps_rs as editor_scene_deps;
+use crate::scripts_scene_editor_scene_rs as editor_scene;
+use crate::scripts_scene_editor_viewport_rs::*;
+use crate::scripts_ui_editor_inspector_values_rs::*;
+use crate::scripts_ui_editor_ui_rs::*;
+use crate::scripts_ui_editor_view_rs as editor_view;
 use perro_api::prelude::*;
 use perro_api::scene::{
     SceneDoc, SceneFieldName, SceneKey, SceneNodeData, SceneNodeEntry, SceneValue, SceneValueKey,
@@ -449,7 +449,9 @@ pub fn update_editor_shortcuts<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
     }
 }
 
-pub fn editor_text_box_has_focus<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) -> bool {
+pub fn editor_text_box_has_focus<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+) -> bool {
     with_state!(ctx.run, EditorState, ctx.id, |state| {
         !state.focused_inspector_box.is_empty()
     })
@@ -474,8 +476,12 @@ pub fn commit_inspector_box<API: ScriptAPI + ?Sized>(
 ) -> bool {
     match name {
         "inspector_name_box" => rename_selected_node(ctx),
-        "inspector_position_box" => edit_selected_transform(ctx, "position", "inspector_position_box"),
-        "inspector_rotation_box" => edit_selected_transform(ctx, "rotation", "inspector_rotation_box"),
+        "inspector_position_box" => {
+            edit_selected_transform(ctx, "position", "inspector_position_box")
+        }
+        "inspector_rotation_box" => {
+            edit_selected_transform(ctx, "rotation", "inspector_rotation_box")
+        }
         "inspector_scale_box" => edit_selected_transform(ctx, "scale", "inspector_scale_box"),
         "inspector_vars_box" => edit_selected_script_vars(ctx),
         _ => {

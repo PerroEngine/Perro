@@ -104,6 +104,11 @@ fn build_ui_camera_stream(data: &SceneDefNodeData) -> UiCameraStream {
                 node.tint = v;
             }
         }
+        "corner_radius" | "radius" => {
+            if let Some(v) = as_ui_corner_radius(value) {
+                node.corner_radius = v;
+            }
+        }
         _ => {}
     });
     node

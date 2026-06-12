@@ -70,7 +70,11 @@ fn scan_inner(root: &Path, path: &Path, out: &mut Vec<FileSig>) {
             .map(|v| v.as_secs())
             .unwrap_or(0);
         let is_dir = meta.is_dir();
-        out.push(format!("{rel}|{}|{modified}|{}", meta.len(), if is_dir { 1 } else { 0 }));
+        out.push(format!(
+            "{rel}|{}|{modified}|{}",
+            meta.len(),
+            if is_dir { 1 } else { 0 }
+        ));
         if is_dir {
             scan_inner(root, &path, out);
         }

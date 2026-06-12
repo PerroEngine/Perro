@@ -638,7 +638,10 @@ pub fn default_scene_field_value_by_name(node_type: NodeType, field: &str) -> Op
     default_scene_field_value(node_type, &field)
 }
 
-pub fn default_scene_field_value(node_type: NodeType, field: &SceneFieldName) -> Option<SceneValue> {
+pub fn default_scene_field_value(
+    node_type: NodeType,
+    field: &SceneFieldName,
+) -> Option<SceneValue> {
     let resolved = resolve_scene_node_field_for_type(node_type, field)
         .or_else(|| resolve_node_field_for_type(node_type, field.as_ref()))?;
     default_node_field_value(resolved)

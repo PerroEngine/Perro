@@ -59,6 +59,9 @@ fn collect_inner(
 }
 
 fn res_to_abs(root: &Path, res_path: &str) -> std::path::PathBuf {
-    root.join("res")
-        .join(res_path.trim_start_matches("res://").replace('/', std::path::MAIN_SEPARATOR_STR))
+    root.join("res").join(
+        res_path
+            .trim_start_matches("res://")
+            .replace('/', std::path::MAIN_SEPARATOR_STR),
+    )
 }

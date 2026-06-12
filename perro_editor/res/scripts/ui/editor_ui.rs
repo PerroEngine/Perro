@@ -1,22 +1,22 @@
-use crate::scripts_editor_animation_rs::*;
-use crate::scripts_editor_app_rs as editor_app;
-use crate::scripts_editor_assets_rs::*;
-use crate::scripts_editor_file_watch_rs as editor_file_watch;
-use crate::scripts_editor_files_rs as editor_files;
-use crate::scripts_editor_gizmos_rs as editor_gizmos;
-use crate::scripts_editor_inspector_values_rs::*;
-use crate::scripts_editor_manager_rs as editor_manager;
-use crate::scripts_editor_nav_rs::*;
-use crate::scripts_editor_nodes_rs::*;
-use crate::scripts_editor_project_rs as editor_project;
-use crate::scripts_editor_scene_deps_rs as editor_scene_deps;
-use crate::scripts_editor_scene_rs as editor_scene;
-use crate::scripts_editor_view_rs as editor_view;
-use crate::scripts_editor_viewport_rs::*;
-use crate::scripts_main_rs::{
+use crate::scripts_app_editor_app_rs as editor_app;
+use crate::scripts_app_editor_manager_rs as editor_manager;
+use crate::scripts_app_editor_project_rs as editor_project;
+use crate::scripts_assets_editor_assets_rs::*;
+use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
+use crate::scripts_assets_editor_files_rs as editor_files;
+use crate::scripts_editor_main_rs::{
     EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_NODE_PICKER_ROWS, MAX_NODES,
     MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
 };
+use crate::scripts_scene_editor_animation_rs::*;
+use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
+use crate::scripts_scene_editor_nav_rs::*;
+use crate::scripts_scene_editor_nodes_rs::*;
+use crate::scripts_scene_editor_scene_deps_rs as editor_scene_deps;
+use crate::scripts_scene_editor_scene_rs as editor_scene;
+use crate::scripts_scene_editor_viewport_rs::*;
+use crate::scripts_ui_editor_inspector_values_rs::*;
+use crate::scripts_ui_editor_view_rs as editor_view;
 use perro_api::prelude::*;
 use perro_api::scene::{
     SceneDoc, SceneFieldName, SceneKey, SceneNodeData, SceneNodeEntry, SceneValue, SceneValueKey,
@@ -50,28 +50,48 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     set_button_fill(
         ctx,
         "mode_ui_button",
-        if view.viewport_mode == "UI" { "#478CBF" } else { "#2D323C" },
+        if view.viewport_mode == "UI" {
+            "#478CBF"
+        } else {
+            "#2D323C"
+        },
     );
     set_button_fill(
         ctx,
         "mode_2d_button",
-        if view.viewport_mode == "2D" { "#478CBF" } else { "#2D323C" },
+        if view.viewport_mode == "2D" {
+            "#478CBF"
+        } else {
+            "#2D323C"
+        },
     );
     set_button_fill(
         ctx,
         "mode_3d_button",
-        if view.viewport_mode == "3D" { "#478CBF" } else { "#2D323C" },
+        if view.viewport_mode == "3D" {
+            "#478CBF"
+        } else {
+            "#2D323C"
+        },
     );
     set_ui_display(ctx, "bottom_tab_bar", true);
     set_button_fill(
         ctx,
         "bottom_log_button",
-        if view.anim_drawer_open { "#2D323C" } else { "#478CBF" },
+        if view.anim_drawer_open {
+            "#2D323C"
+        } else {
+            "#478CBF"
+        },
     );
     set_button_fill(
         ctx,
         "bottom_anim_button",
-        if view.anim_drawer_open { "#478CBF" } else { "#2D323C" },
+        if view.anim_drawer_open {
+            "#478CBF"
+        } else {
+            "#2D323C"
+        },
     );
     set_ui_display(ctx, "log_title", false);
     set_ui_display(ctx, "log_text", !view.anim_drawer_open);
@@ -188,11 +208,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             &editor_view::short_path(&text, 24),
         );
         set_ui_display(ctx, &format!("scene_tab_{idx}"), has_tab);
-        set_ui_display(
-            ctx,
-            &format!("scene_tab_close_{idx}"),
-            has_tab,
-        );
+        set_ui_display(ctx, &format!("scene_tab_close_{idx}"), has_tab);
         set_button_fill(
             ctx,
             &format!("scene_tab_{idx}"),
@@ -228,61 +244,89 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     apply_editor_gizmos(ctx, &view.gizmo, &view.viewport_mode);
     apply_selected_ui_overlay(ctx, view.selected_ui_rect);
 
-    set_label(ctx, "inspector_title", &view.inspector_title);
-    set_label(ctx, "inspector_name", &view.inspector_name);
-    set_ui_display(ctx, "inspector_name_box", view.inspector_node_actions);
-    set_text_box(ctx, "inspector_name_box", &view.inspector_name_edit);
-    set_label(ctx, "inspector_type", &view.inspector_type);
-    set_label(ctx, "inspector_parent", &view.inspector_parent);
-    set_label(ctx, "inspector_script_top", &view.inspector_script);
-    set_ui_display(ctx, "inspector_script_top", view.inspector_node_actions);
-    set_ui_display(ctx, "inspector_action_row", false);
-    set_ui_display(ctx, "asset_action_row", false);
-    set_ui_display(ctx, "asset_glb_anim_button", false);
-    set_ui_display(ctx, "asset_glb_mat_button", false);
-    set_label(ctx, "inspector_pos", &view.inspector_pos_label);
-    set_text_box(ctx, "inspector_position_box", &view.inspector_pos.join(", "));
+    if take_inspector_layout_pass(ctx) {
+        apply_inspector_static_layout(ctx);
+    }
+    apply_inspector_dynamic_layout(ctx, &view.inspector);
+    set_label(ctx, "inspector_title", &view.inspector.title);
+    set_label(ctx, "inspector_name", &view.inspector.name);
+    set_ui_display(ctx, "inspector_name_box", view.inspector.node_actions);
+    set_text_box(ctx, "inspector_name_box", &view.inspector.name_edit);
+    set_label(ctx, "inspector_type", &view.inspector.kind);
+    set_label(ctx, "inspector_parent", &view.inspector.parent);
+    set_label(ctx, "inspector_script_top", &view.inspector.script);
+    set_ui_display(
+        ctx,
+        "inspector_script_top",
+        view.inspector.node_actions || view.inspector.asset_actions,
+    );
+    set_ui_display(ctx, "inspector_action_row", view.inspector.node_actions);
+    set_ui_display(ctx, "asset_action_row", view.inspector.asset_actions);
+    set_ui_display(
+        ctx,
+        "asset_glb_anim_button",
+        view.inspector.glb_asset_actions,
+    );
+    set_ui_display(
+        ctx,
+        "asset_glb_mat_button",
+        view.inspector.glb_asset_actions,
+    );
+    set_label(ctx, "inspector_pos", &view.inspector.pos_label);
+    set_text_box(
+        ctx,
+        "inspector_position_box",
+        &view.inspector.pos.join(", "),
+    );
     apply_component_row(
         ctx,
         "inspector_position",
         &["x", "y", "z", "w"],
-        &view.inspector_pos,
-        view.inspector_node_actions,
+        &view.inspector.pos,
+        view.inspector.node_actions,
     );
     set_label(
         ctx,
         "inspector_rotation_label",
-        &view.inspector_rotation_label,
+        &view.inspector.rotation_label,
     );
-    set_text_box(ctx, "inspector_rotation_box", &view.inspector_rotation.join(", "));
+    set_text_box(
+        ctx,
+        "inspector_rotation_box",
+        &view.inspector.rotation.join(", "),
+    );
     apply_component_row(
         ctx,
         "inspector_rotation",
-        &view.inspector_rotation_components,
-        &view.inspector_rotation,
-        view.inspector_node_actions,
+        &view.inspector.rotation_components,
+        &view.inspector.rotation,
+        view.inspector.node_actions,
     );
-    set_label(ctx, "inspector_scale_label", &view.inspector_scale_label);
-    set_text_box(ctx, "inspector_scale_box", &view.inspector_scale.join(", "));
+    set_label(ctx, "inspector_scale_label", &view.inspector.scale_label);
+    set_text_box(ctx, "inspector_scale_box", &view.inspector.scale.join(", "));
     apply_component_row(
         ctx,
         "inspector_scale",
         &["x", "y", "z", "w"],
-        &view.inspector_scale,
-        view.inspector_node_actions,
+        &view.inspector.scale,
+        view.inspector.node_actions,
     );
     set_label(ctx, "inspector_script", "");
     set_ui_display(ctx, "inspector_script", false);
     set_label(ctx, "inspector_vars", "Script Vars");
-    set_ui_display(ctx, "inspector_vars", view.inspector_node_actions && !view.script_vars.is_empty());
+    set_ui_display(
+        ctx,
+        "inspector_vars",
+        view.inspector.node_actions && !view.inspector.script_vars.is_empty(),
+    );
     set_ui_display(ctx, "inspector_vars_box", false);
-    set_text_box(ctx, "inspector_vars_box", &view.inspector_vars_text);
+    set_text_box(ctx, "inspector_vars_box", &view.inspector.vars_text);
     for idx in 0..MAX_SCRIPT_VARS {
-        let row = view.script_vars.get(idx);
+        let row = view.inspector.script_vars.get(idx);
         set_ui_display(
             ctx,
             &format!("inspector_var_row_{idx}"),
-            view.inspector_node_actions && row.is_some(),
+            view.inspector.node_actions && row.is_some(),
         );
         set_label(
             ctx,
@@ -301,11 +345,11 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         );
     }
     for idx in 0..MAX_RESOURCE_FIELDS {
-        let row = view.resource_fields.get(idx);
+        let row = view.inspector.resource_fields.get(idx);
         set_ui_display(
             ctx,
             &format!("inspector_resource_row_{idx}"),
-            view.inspector_node_actions && row.is_some(),
+            view.inspector.node_actions && row.is_some(),
         );
         set_label(
             ctx,
@@ -349,6 +393,78 @@ pub fn apply_component_row<API: ScriptAPI + ?Sized>(
     }
 }
 
+fn take_inspector_layout_pass<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) -> bool {
+    with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        if state.inspector_layout_applied {
+            false
+        } else {
+            state.inspector_layout_applied = true;
+            true
+        }
+    })
+    .unwrap_or(false)
+}
+
+fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    set_ui_box_size(ctx, "inspector_panel", (0.118, 1.0));
+    set_label_text_ratio(ctx, "inspector_title", 0.30);
+    set_label_text_ratio(ctx, "inspector_name", 0.22);
+    set_label_text_ratio(ctx, "inspector_type", 0.19);
+    set_label_text_ratio(ctx, "inspector_parent", 0.18);
+    set_label_text_ratio(ctx, "inspector_script_top", 0.18);
+    set_label_text_ratio(ctx, "inspector_pos", 0.20);
+    set_label_text_ratio(ctx, "inspector_rotation_label", 0.20);
+    set_label_text_ratio(ctx, "inspector_scale_label", 0.20);
+    set_label_text_ratio(ctx, "inspector_vars", 0.20);
+
+    for name in [
+        "inspector_action_row",
+        "asset_action_row",
+        "inspector_position_row",
+        "inspector_rotation_row",
+        "inspector_scale_row",
+    ] {
+        set_ui_box_size(ctx, name, (1.0, 0.05));
+    }
+
+    for name in [
+        "inspector_duplicate_button",
+        "inspector_delete_button",
+        "inspector_open_ref_button",
+        "inspector_visible_button",
+    ] {
+        set_button_size(ctx, name, (0.25, 0.90));
+    }
+
+    for idx in 0..MAX_SCRIPT_VARS {
+        set_ui_box_size(ctx, &format!("inspector_var_row_{idx}"), (1.0, 0.052));
+        set_label_text_ratio(ctx, &format!("inspector_var_{idx}_name"), 0.21);
+        set_label_text_ratio(ctx, &format!("inspector_var_{idx}_type"), 0.18);
+    }
+    for idx in 0..MAX_RESOURCE_FIELDS {
+        set_ui_box_size(ctx, &format!("inspector_resource_row_{idx}"), (1.0, 0.052));
+        set_label_text_ratio(ctx, &format!("inspector_resource_{idx}_name"), 0.21);
+        set_label_text_ratio(ctx, &format!("inspector_resource_{idx}_button_label"), 0.19);
+    }
+}
+
+fn apply_inspector_dynamic_layout<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    inspector: &InspectorViewData,
+) {
+    let asset_button_w = if inspector.glb_asset_actions {
+        0.25
+    } else {
+        0.50
+    };
+    for name in ["asset_use_button", "asset_make_node_button"] {
+        set_button_size(ctx, name, (asset_button_w, 0.90));
+    }
+    for name in ["asset_glb_anim_button", "asset_glb_mat_button"] {
+        set_button_size(ctx, name, (0.25, 0.90));
+    }
+}
+
 #[derive(Default)]
 pub struct EditorView {
     project_root: String,
@@ -366,25 +482,7 @@ pub struct EditorView {
     active_open: usize,
     nodes: Vec<String>,
     selected_row: Option<usize>,
-    inspector_title: String,
-    inspector_name: String,
-    inspector_name_edit: String,
-    inspector_type: String,
-    inspector_parent: String,
-    inspector_node_actions: bool,
-    inspector_asset_actions: bool,
-    inspector_glb_asset_actions: bool,
-    inspector_pos_label: String,
-    inspector_pos: Vec<String>,
-    inspector_rotation_label: String,
-    inspector_rotation: Vec<String>,
-    inspector_rotation_components: [&'static str; 4],
-    inspector_scale_label: String,
-    inspector_scale: Vec<String>,
-    inspector_script: String,
-    inspector_vars_text: String,
-    script_vars: Vec<InspectorValueRow>,
-    resource_fields: Vec<ResourceFieldView>,
+    inspector: InspectorViewData,
     glb_title: String,
     glb_summary: String,
     viewport: String,
@@ -414,29 +512,114 @@ pub struct ResourceFieldView {
     pub value: String,
 }
 
+pub struct InspectorViewData {
+    title: String,
+    name: String,
+    name_edit: String,
+    kind: String,
+    parent: String,
+    node_actions: bool,
+    asset_actions: bool,
+    glb_asset_actions: bool,
+    pos_label: String,
+    pos: Vec<String>,
+    rotation_label: String,
+    rotation: Vec<String>,
+    rotation_components: [&'static str; 4],
+    scale_label: String,
+    scale: Vec<String>,
+    script: String,
+    vars_text: String,
+    script_vars: Vec<InspectorValueRow>,
+    resource_fields: Vec<ResourceFieldView>,
+}
+
+impl Default for InspectorViewData {
+    fn default() -> Self {
+        Self {
+            title: "Inspector".to_string(),
+            name: "No selection".to_string(),
+            name_edit: "-".to_string(),
+            kind: "Select node or asset".to_string(),
+            parent: String::new(),
+            node_actions: false,
+            asset_actions: false,
+            glb_asset_actions: false,
+            pos_label: "Transform / Position".to_string(),
+            pos: Vec::new(),
+            rotation_label: "Rotation".to_string(),
+            rotation: Vec::new(),
+            rotation_components: ["x", "y", "z", "w"],
+            scale_label: "Scale".to_string(),
+            scale: Vec::new(),
+            script: "Script  -".to_string(),
+            vars_text: String::new(),
+            script_vars: Vec::new(),
+            resource_fields: Vec::new(),
+        }
+    }
+}
+
+impl InspectorViewData {
+    fn for_node(doc: &SceneDoc, node: &SceneNodeEntry, state: &EditorState) -> Self {
+        let mut view = Self::default();
+        let path = scene_node_path(doc, node.key);
+        let child_count = scene_child_count(doc, node.key.as_u32());
+        let script = node
+            .script
+            .as_ref()
+            .map(|value| value.as_ref())
+            .unwrap_or("-");
+        let rotation = scene_value_components(&node.data, "rotation");
+
+        view.name = "Name".to_string();
+        view.name_edit = doc.scene.key_name_or_id(node.key).to_string();
+        view.kind = format!("Type  {}", node_hierarchy_text(node.data.node_type));
+        view.parent = format!("Path  {path}\nChildren  {child_count}");
+        view.node_actions = true;
+        view.pos = scene_value_components(&node.data, "position");
+        view.rotation_components = if rotation.len() == 1 {
+            ["r", "", "", ""]
+        } else {
+            ["x", "y", "z", "w"]
+        };
+        view.rotation = rotation;
+        view.scale = scene_value_components(&node.data, "scale");
+        view.script = format!("Script  {script}");
+        view.vars_text = script_vars_edit_text(node.script_vars.as_ref());
+        view.script_vars = inspector_script_var_rows(node.script_vars.as_ref());
+        view.resource_fields = resource_field_rows(&node.data);
+        view.apply_asset_actions(state);
+        view
+    }
+
+    fn for_asset(state: &EditorState) -> Self {
+        let mut view = Self::default();
+        if state.active_asset_path.is_empty() {
+            return view;
+        }
+        let asset = asset_inspector_text(state);
+        view.title = "Asset".to_string();
+        view.name = asset.name;
+        view.kind = asset.kind;
+        view.parent = format!("{}\n{}", asset.path, asset.size);
+        view.script = format!("State  {}\n{}", asset.state, asset.detail);
+        view.apply_asset_actions(state);
+        view
+    }
+
+    fn apply_asset_actions(&mut self, state: &EditorState) {
+        let path = state.active_asset_path.as_str();
+        self.asset_actions = !path.is_empty() && !path.ends_with('/') && !state.doc_text.is_empty();
+        self.glb_asset_actions = self.asset_actions && is_gltf_path(path);
+    }
+}
+
 impl EditorView {
     fn from_state(state: &EditorState) -> Self {
         let mut nodes = Vec::new();
         let mut selected_row = None;
-        let inspector_title = "Inspector".to_string();
-        let mut inspector_name = "name: -".to_string();
-        let mut inspector_name_edit = "-".to_string();
-        let mut inspector_type = "type: -".to_string();
-        let mut inspector_parent = "parent: -".to_string();
-        let mut inspector_node_actions = false;
-        let inspector_asset_actions = false;
-        let inspector_glb_asset_actions = false;
-        let inspector_pos_label = "position".to_string();
-        let mut inspector_pos = Vec::new();
-        let inspector_rotation_label = "rotation".to_string();
-        let mut inspector_rotation = Vec::new();
-        let mut inspector_rotation_components = ["x", "y", "z", "w"];
-        let inspector_scale_label = "scale".to_string();
-        let mut inspector_scale = Vec::new();
-        let mut inspector_script = "script: -".to_string();
-        let mut inspector_vars_text = String::new();
-        let mut script_vars = Vec::new();
-        let mut resource_fields = Vec::new();
+        let mut inspector = InspectorViewData::for_asset(state);
         let mut gizmo = editor_gizmos::GizmoView::default();
         let mut selected_ui_rect = None;
         let mut glb_title = "GLB Viewer".to_string();
@@ -463,28 +646,7 @@ impl EditorView {
                     .map(|node| node.key)
             }) && let Some(node) = doc.scene.nodes.iter().find(|node| node.key == key)
             {
-                inspector_name = "Name".to_string();
-                inspector_name_edit = doc.scene.key_name_or_id(node.key).to_string();
-                inspector_type = format!("Hierarchy  {}", node_hierarchy_text(node.data.node_type));
-                inspector_parent = format!(
-                    "Path  {}\nChildren  {}",
-                    scene_node_path(&doc, node.key),
-                    scene_child_count(&doc, node.key.as_u32())
-                );
-                inspector_pos = scene_value_components(&node.data, "position");
-                inspector_rotation = scene_value_components(&node.data, "rotation");
-                inspector_rotation_components = if inspector_rotation.len() == 1 {
-                    ["r", "", "", ""]
-                } else {
-                    ["x", "y", "z", "w"]
-                };
-                inspector_scale = scene_value_components(&node.data, "scale");
-                let script = node.script.as_ref().map(|v| v.as_ref()).unwrap_or("-");
-                inspector_script = format!("Script  {script}");
-                inspector_vars_text = script_vars_edit_text(node.script_vars.as_ref());
-                script_vars = inspector_script_var_rows(node.script_vars.as_ref());
-                resource_fields = resource_field_rows(&node.data);
-                inspector_node_actions = true;
+                inspector = InspectorViewData::for_node(&doc, node, state);
             }
         }
 
@@ -492,7 +654,10 @@ impl EditorView {
             glb_title = if state.active_glb_path.is_empty() {
                 "GLB Viewer".to_string()
             } else {
-                format!("GLB Viewer  {}", editor_files::rel_label(&state.active_glb_path))
+                format!(
+                    "GLB Viewer  {}",
+                    editor_files::rel_label(&state.active_glb_path)
+                )
             };
             glb_summary = if state.active_glb_summary.is_empty() {
                 "select .glb or .gltf from left list".to_string()
@@ -540,25 +705,7 @@ impl EditorView {
             active_open: state.active_open,
             nodes,
             selected_row,
-            inspector_title,
-            inspector_name,
-            inspector_name_edit,
-            inspector_type,
-            inspector_parent,
-            inspector_node_actions,
-            inspector_asset_actions,
-            inspector_glb_asset_actions,
-            inspector_pos_label,
-            inspector_pos,
-            inspector_rotation_label,
-            inspector_rotation,
-            inspector_rotation_components,
-            inspector_scale_label,
-            inspector_scale,
-            inspector_script,
-            inspector_vars_text,
-            script_vars,
-            resource_fields,
+            inspector,
             glb_title,
             glb_summary,
             viewport,
@@ -798,7 +945,9 @@ pub fn scene_value_edit_text(value: &SceneValue) -> String {
         SceneValue::Object(fields) => {
             let fields = fields
                 .iter()
-                .map(|(name, value)| format!("{} = {}", name.as_ref(), scene_value_edit_text(value)))
+                .map(|(name, value)| {
+                    format!("{} = {}", name.as_ref(), scene_value_edit_text(value))
+                })
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("{{ {fields} }}")
@@ -1800,7 +1949,11 @@ pub fn set_label_size_ratio<API: ScriptAPI + ?Sized>(
     }
 }
 
-pub fn set_label_text_ratio<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, name: &str, ratio: f32) {
+pub fn set_label_text_ratio<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    ratio: f32,
+) {
     if let Some(id) = find_named(ctx, name) {
         let _ = with_node_mut!(ctx.run, UiLabel, id, |node| {
             node.text_size_ratio = ratio;
@@ -1892,8 +2045,10 @@ pub fn apply_selected_ui_overlay<API: ScriptAPI + ?Sized>(
             node.layout.size = UiVector2::ratio(rect.size.x * canvas_w, rect.size.y * canvas_h);
             node.transform.position = UiVector2::percent(50.0, 50.0);
             node.transform.pivot = UiVector2::percent(50.0, 50.0);
-            node.transform.translation =
-                Vector2::new((rect.center.x - 0.5) * canvas_w, (rect.center.y - 0.5) * canvas_h);
+            node.transform.translation = Vector2::new(
+                (rect.center.x - 0.5) * canvas_w,
+                (rect.center.y - 0.5) * canvas_h,
+            );
             node.transform.self_translation = Vector2::ZERO;
             node.transform.scale = Vector2::ONE;
             node.transform.rotation = rect.rotation;
@@ -2072,7 +2227,11 @@ pub fn apply_viewport_canvas<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
     set_ui_center_size(ctx, "viewport_canvas_overlay", (canvas_w, canvas_h));
     apply_ui_preview_canvas_transform(ctx, &mode, zoom);
 
-    let spacing = if mode == "UI" { 0.25 } else { (0.125 * zoom).clamp(0.03, 0.4) };
+    let spacing = if mode == "UI" {
+        0.25
+    } else {
+        (0.125 * zoom).clamp(0.03, 0.4)
+    };
     for i in 0..9 {
         let offset = (i as f32 - 4.0) * spacing;
         set_canvas_line(
@@ -2141,7 +2300,8 @@ pub fn viewport_stream_size_ratio(window_aspect: f32) -> (f32, f32) {
     const MAX_H: f32 = 0.92;
     const ASPECT: f32 = 16.0 / 9.0;
 
-    let panel_aspect = window_aspect * (SPLIT_CONTENT_W * CENTER_W) / (SPLIT_CONTENT_H * VIEWPORT_PANEL_H);
+    let panel_aspect =
+        window_aspect * (SPLIT_CONTENT_W * CENTER_W) / (SPLIT_CONTENT_H * VIEWPORT_PANEL_H);
     let h_for_w = MAX_W * panel_aspect / ASPECT;
     if h_for_w <= MAX_H {
         (MAX_W, h_for_w)
@@ -2160,7 +2320,8 @@ pub fn ui_canvas_size_ratio(window_aspect: f32, zoom: f32) -> (f32, f32) {
     const BASE_W: f32 = 0.98;
     const ASPECT: f32 = 16.0 / 9.0;
 
-    let panel_aspect = window_aspect * (SPLIT_CONTENT_W * CENTER_W) / (SPLIT_CONTENT_H * VIEWPORT_PANEL_H);
+    let panel_aspect =
+        window_aspect * (SPLIT_CONTENT_W * CENTER_W) / (SPLIT_CONTENT_H * VIEWPORT_PANEL_H);
     let w = BASE_W * zoom.max(0.25);
     (w, w * panel_aspect / ASPECT)
 }

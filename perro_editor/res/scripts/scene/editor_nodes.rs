@@ -1,21 +1,21 @@
-use crate::scripts_editor_animation_rs::*;
-use crate::scripts_editor_app_rs as editor_app;
-use crate::scripts_editor_assets_rs::*;
-use crate::scripts_editor_file_watch_rs as editor_file_watch;
-use crate::scripts_editor_files_rs as editor_files;
-use crate::scripts_editor_gizmos_rs as editor_gizmos;
-use crate::scripts_editor_manager_rs as editor_manager;
-use crate::scripts_editor_nav_rs::*;
-use crate::scripts_editor_project_rs as editor_project;
-use crate::scripts_editor_scene_deps_rs as editor_scene_deps;
-use crate::scripts_editor_scene_rs as editor_scene;
-use crate::scripts_editor_ui_rs::*;
-use crate::scripts_editor_view_rs as editor_view;
-use crate::scripts_editor_viewport_rs::*;
-use crate::scripts_main_rs::{
+use crate::scripts_app_editor_app_rs as editor_app;
+use crate::scripts_app_editor_manager_rs as editor_manager;
+use crate::scripts_app_editor_project_rs as editor_project;
+use crate::scripts_assets_editor_assets_rs::*;
+use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
+use crate::scripts_assets_editor_files_rs as editor_files;
+use crate::scripts_editor_main_rs::{
     EditorState, FILE_WATCH_INTERVAL_FRAMES, LIST_DOUBLE_CLICK_FRAMES, MAX_FILES,
     MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
 };
+use crate::scripts_scene_editor_animation_rs::*;
+use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
+use crate::scripts_scene_editor_nav_rs::*;
+use crate::scripts_scene_editor_scene_deps_rs as editor_scene_deps;
+use crate::scripts_scene_editor_scene_rs as editor_scene;
+use crate::scripts_scene_editor_viewport_rs::*;
+use crate::scripts_ui_editor_ui_rs::*;
+use crate::scripts_ui_editor_view_rs as editor_view;
 use perro_api::prelude::*;
 use perro_api::scene::{
     SceneDoc, SceneFieldName, SceneKey, SceneNodeData, SceneNodeEntry, SceneValue, SceneValueKey,
@@ -62,7 +62,10 @@ pub fn select_node_slot<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API
     }
 }
 
-pub fn click_scene_node_slot<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, idx: usize) {
+pub fn click_scene_node_slot<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+) {
     let Some(key) = with_state!(ctx.run, EditorState, ctx.id, |state| {
         if state.doc_text.is_empty() {
             None
@@ -78,8 +81,7 @@ pub fn click_scene_node_slot<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
             .get(idx)
             .copied()
         }
-    })
-    else {
+    }) else {
         return;
     };
 

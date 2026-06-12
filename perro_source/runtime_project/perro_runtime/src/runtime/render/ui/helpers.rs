@@ -363,6 +363,7 @@ pub(super) fn ui_command_from_node(
                 h_align: text_align_state(image.h_align),
                 v_align: text_align_state(image.v_align),
                 aspect_ratio,
+                corner_radius: 0.0,
             })
         }
         SceneNodeData::UiImageButton(image) => {
@@ -383,6 +384,7 @@ pub(super) fn ui_command_from_node(
                 h_align: text_align_state(image.h_align),
                 v_align: text_align_state(image.v_align),
                 aspect_ratio,
+                corner_radius: 0.0,
             })
         }
         SceneNodeData::UiNineSlice(image) => {
@@ -419,6 +421,7 @@ pub(super) fn ui_command_from_node(
                 h_align: text_align_state(image.h_align),
                 v_align: text_align_state(image.v_align),
                 aspect_ratio,
+                corner_radius: 0.0,
             })
         }
         SceneNodeData::UiCameraStream(stream) => {
@@ -440,6 +443,7 @@ pub(super) fn ui_command_from_node(
                     stream.stream.aspect_ratio,
                     stream.stream.resolution,
                 ),
+                corner_radius: stream.corner_radius,
             })
         }
         SceneNodeData::UiTextBox(text_box) => Some(text_edit_command(TextEditCommandCtx {
