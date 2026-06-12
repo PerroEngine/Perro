@@ -415,6 +415,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         );
     }
 
+    set_ui_display(ctx, "inspector_pick_popup", view.inspector_picker_open);
     set_label(ctx, "inspector_pick_title", &view.inspector_picker_title);
     set_text_box(ctx, "inspector_pick_filter_box", &view.inspector_picker_filter);
     set_label(ctx, "inspector_pick_page_label", &view.inspector_picker_page);
@@ -709,9 +710,9 @@ impl InspectorViewData {
         view.rotation_mode_buttons = is_3d;
         view.scale = scene_value_components(&node.data, "scale");
         view.script = format!("Script  {script}");
-        view.vars_text = script_vars_edit_text(node.script_vars.as_ref());
-        view.script_vars =
-            inspector_script_var_rows(node.script_vars.as_ref(), &state.inspector_expanded_paths);
+        let script_fields = inspector_script_var_fields_for_node(state, node);
+        view.vars_text = script_vars_edit_text(&script_fields);
+        view.script_vars = inspector_script_var_rows(&script_fields, &state.inspector_expanded_paths);
         view.resource_fields = resource_field_rows(&node.data);
         view.apply_asset_actions(state);
         view

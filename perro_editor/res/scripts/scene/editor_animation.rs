@@ -762,10 +762,7 @@ pub fn pick_selected_script_var_ref<API: ScriptAPI + ?Sized>(
             .nodes
             .iter()
             .find(|node| node.key.as_u32() == key)?;
-        let rows = inspector_script_var_rows(
-            node.script_vars.as_ref(),
-            &state.inspector_expanded_paths,
-        );
+        let rows = inspector_script_var_rows_for_node(state, node);
         let row = rows.get(idx)?;
         if row.expandable {
             if let Some(pos) = state
@@ -878,18 +875,19 @@ pub fn choose_inspector_picker_row<API: ScriptAPI + ?Sized>(
             let Ok(row_idx) = field.parse::<usize>() else {
                 return false;
             };
-            let rows = inspector_script_var_rows(
-                node.script_vars.as_ref(),
-                &state.inspector_expanded_paths,
-            );
+            let rows = inspector_script_var_rows_for_node(state, node);
             let Some(row) = rows.get(row_idx) else {
                 return false;
             };
+            let mut fields = inspector_script_var_fields_for_node(state, node);
             if !set_value_at_path(
-                node.script_vars.to_mut(),
+                &mut fields,
                 &row.path,
                 SceneValue::Key(SceneValueKey::from(value.clone())),
             ) {
+                return false;
+            }
+            if !write_script_var_override(node.script_vars.to_mut(), &fields, &row.path) {
                 return false;
             }
         } else if picker_kind == "node" {
