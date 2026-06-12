@@ -1379,6 +1379,13 @@ parent = $root
 [/UiButton]
 [/ui_button]
 
+[ui_checkbox]
+parent = $root
+[UiCheckbox]
+    checked = true
+[/UiCheckbox]
+[/ui_checkbox]
+
 [ui_image]
 parent = $root
 [UiImage]

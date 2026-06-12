@@ -684,13 +684,20 @@ fn push_node_fields(fields: &mut Vec<SceneInspectorField>, node_type: NodeType) 
             }
         }
         NodeType::UiAnimatedImage => animated_image_fields(fields, "Image"),
-        NodeType::UiPanel | NodeType::UiButton | NodeType::UiTextBox | NodeType::UiTextBlock => {
+        NodeType::UiPanel
+        | NodeType::UiButton
+        | NodeType::UiCheckbox
+        | NodeType::UiTextBox
+        | NodeType::UiTextBlock => {
             asset_field(fields, "Style", "style", SceneAssetKind::UiStyle);
-            if matches!(node_type, NodeType::UiButton) {
+            if matches!(node_type, NodeType::UiButton | NodeType::UiCheckbox) {
                 fields.push(
                     SceneInspectorField::new("Text", "text", SceneInspectorValueKind::String)
                         .with_default(SceneValue::Str(Cow::Borrowed("New Node"))),
                 );
+            }
+            if matches!(node_type, NodeType::UiCheckbox) {
+                push(fields, "State", "checked", SceneInspectorValueKind::Bool);
             }
             if matches!(node_type, NodeType::UiTextBox | NodeType::UiTextBlock) {
                 push(fields, "Text", "text", SceneInspectorValueKind::String);

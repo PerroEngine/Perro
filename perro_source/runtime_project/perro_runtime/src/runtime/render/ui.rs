@@ -107,6 +107,13 @@ impl Runtime {
                 buttons.push(node);
                 focusables.push(node);
             }
+            SceneNodeData::UiCheckbox(checkbox) => {
+                if !checkbox.visible || checkbox.disabled || !checkbox.input_enabled {
+                    return;
+                }
+                buttons.push(node);
+                focusables.push(node);
+            }
             SceneNodeData::UiImageButton(button) => {
                 if !button.visible || button.disabled || !button.input_enabled {
                     return;

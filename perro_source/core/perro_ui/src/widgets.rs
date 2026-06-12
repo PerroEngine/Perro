@@ -194,6 +194,61 @@ impl UiImageButton {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiCheckbox {
+    pub button: UiButton,
+    pub checked: bool,
+    pub checked_style: UiStyle,
+    pub checked_hover_style: UiStyle,
+    pub checked_pressed_style: UiStyle,
+}
+
+impl UiCheckbox {
+    pub fn new() -> Self {
+        let button = UiButton::new();
+        let checked_style = button.style.clone();
+        let checked_hover_style = button.hover_style.clone();
+        let checked_pressed_style = button.pressed_style.clone();
+        Self {
+            button,
+            checked: false,
+            checked_style,
+            checked_hover_style,
+            checked_pressed_style,
+        }
+    }
+}
+
+impl Default for UiCheckbox {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Deref for UiCheckbox {
+    type Target = UiButton;
+
+    fn deref(&self) -> &Self::Target {
+        &self.button
+    }
+}
+
+impl DerefMut for UiCheckbox {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.button
+    }
+}
+
+impl UiNodeBase for UiCheckbox {
+    fn ui_base(&self) -> &UiBox {
+        &self.button.base
+    }
+
+    fn ui_base_mut(&mut self) -> &mut UiBox {
+        &mut self.button.base
+    }
+}
+
 impl Default for UiImageButton {
     fn default() -> Self {
         Self::new()

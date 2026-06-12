@@ -2820,13 +2820,13 @@ parent = @inspector_var_row_0
 
 [inspector_var_0_pick_button]
 parent = @inspector_var_row_0
-    [UiButton]
+    [UiCheckbox]
         size_ratio = (0.50, 1.0)
         click_signals = ["editor_inspector_var_pick_0"]
         style = $field
         hover = $btn_hot
         pressed = $btn_down
-    [/UiButton]
+    [/UiCheckbox]
 [/inspector_var_0_pick_button]
 
 [inspector_var_0_pick_label]
@@ -2888,13 +2888,13 @@ parent = @inspector_var_row_1
 
 [inspector_var_1_pick_button]
 parent = @inspector_var_row_1
-    [UiButton]
+    [UiCheckbox]
         size_ratio = (0.50, 1.0)
         click_signals = ["editor_inspector_var_pick_1"]
         style = $field
         hover = $btn_hot
         pressed = $btn_down
-    [/UiButton]
+    [/UiCheckbox]
 [/inspector_var_1_pick_button]
 
 [inspector_var_1_pick_label]
@@ -2956,13 +2956,13 @@ parent = @inspector_var_row_2
 
 [inspector_var_2_pick_button]
 parent = @inspector_var_row_2
-    [UiButton]
+    [UiCheckbox]
         size_ratio = (0.50, 1.0)
         click_signals = ["editor_inspector_var_pick_2"]
         style = $field
         hover = $btn_hot
         pressed = $btn_down
-    [/UiButton]
+    [/UiCheckbox]
 [/inspector_var_2_pick_button]
 
 [inspector_var_2_pick_label]
@@ -3024,13 +3024,13 @@ parent = @inspector_var_row_3
 
 [inspector_var_3_pick_button]
 parent = @inspector_var_row_3
-    [UiButton]
+    [UiCheckbox]
         size_ratio = (0.50, 1.0)
         click_signals = ["editor_inspector_var_pick_3"]
         style = $field
         hover = $btn_hot
         pressed = $btn_down
-    [/UiButton]
+    [/UiCheckbox]
 [/inspector_var_3_pick_button]
 
 [inspector_var_3_pick_label]
@@ -3092,13 +3092,13 @@ parent = @inspector_var_row_4
 
 [inspector_var_4_pick_button]
 parent = @inspector_var_row_4
-    [UiButton]
+    [UiCheckbox]
         size_ratio = (0.50, 1.0)
         click_signals = ["editor_inspector_var_pick_4"]
         style = $field
         hover = $btn_hot
         pressed = $btn_down
-    [/UiButton]
+    [/UiCheckbox]
 [/inspector_var_4_pick_button]
 
 [inspector_var_4_pick_label]
@@ -3160,13 +3160,13 @@ parent = @inspector_var_row_5
 
 [inspector_var_5_pick_button]
 parent = @inspector_var_row_5
-    [UiButton]
+    [UiCheckbox]
         size_ratio = (0.50, 1.0)
         click_signals = ["editor_inspector_var_pick_5"]
         style = $field
         hover = $btn_hot
         pressed = $btn_down
-    [/UiButton]
+    [/UiCheckbox]
 [/inspector_var_5_pick_button]
 
 [inspector_var_5_pick_label]
@@ -3228,13 +3228,13 @@ parent = @inspector_var_row_6
 
 [inspector_var_6_pick_button]
 parent = @inspector_var_row_6
-    [UiButton]
+    [UiCheckbox]
         size_ratio = (0.50, 1.0)
         click_signals = ["editor_inspector_var_pick_6"]
         style = $field
         hover = $btn_hot
         pressed = $btn_down
-    [/UiButton]
+    [/UiCheckbox]
 [/inspector_var_6_pick_button]
 
 [inspector_var_6_pick_label]
@@ -3296,13 +3296,13 @@ parent = @inspector_var_row_7
 
 [inspector_var_7_pick_button]
 parent = @inspector_var_row_7
-    [UiButton]
+    [UiCheckbox]
         size_ratio = (0.50, 1.0)
         click_signals = ["editor_inspector_var_pick_7"]
         style = $field
         hover = $btn_hot
         pressed = $btn_down
-    [/UiButton]
+    [/UiCheckbox]
 [/inspector_var_7_pick_button]
 
 [inspector_var_7_pick_label]
@@ -4368,3 +4368,4 @@ parent = @inspector_pick_cancel_button
         mouse_filter = "pass"
     [/UiLabel]
 [/inspector_pick_cancel_label]
+

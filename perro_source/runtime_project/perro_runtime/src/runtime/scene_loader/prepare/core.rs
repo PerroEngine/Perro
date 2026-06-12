@@ -68,9 +68,10 @@ use perro_structs::{
     PostProcessSet, Quaternion, UVector2, Vector2, Vector3,
 };
 use perro_ui::{
-    UiAnimatedImage, UiAnimatedImageFrameSet, UiBox, UiButton, UiGrid, UiHLayout, UiImage,
-    UiImageButton, UiImageScaleMode, UiLabel, UiLayout, UiMouseFilter, UiNineSlice, UiPanel,
-    UiList, UiListIndent, UiScrollContainer, UiTextAlign, UiTextBlock, UiTextBox, UiVLayout,
+    UiAnimatedImage, UiAnimatedImageFrameSet, UiBox, UiButton, UiCheckbox, UiGrid, UiHLayout,
+    UiImage, UiImageButton, UiImageScaleMode, UiLabel, UiLayout, UiList, UiListIndent,
+    UiMouseFilter, UiNineSlice, UiPanel, UiScrollContainer, UiTextAlign, UiTextBlock, UiTextBox,
+    UiVLayout,
 };
 use rayon::prelude::*;
 use std::borrow::Cow;
@@ -1799,6 +1800,10 @@ fn scene_node_data_from(
             static_ui_style_lookup,
         ))),
         NodeType::UiButton => Ok(SceneNodeData::UiButton(build_ui_button(
+            data,
+            static_ui_style_lookup,
+        ))),
+        NodeType::UiCheckbox => Ok(SceneNodeData::UiCheckbox(build_ui_checkbox(
             data,
             static_ui_style_lookup,
         ))),

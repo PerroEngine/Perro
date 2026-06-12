@@ -51,6 +51,19 @@ fn build_ui_button(
     node
 }
 
+fn build_ui_checkbox(
+    data: &SceneDefNodeData,
+    static_ui_style_lookup: Option<StaticUiStyleLookup>,
+) -> UiCheckbox {
+    let mut node = UiCheckbox::new();
+    if let Some(base) = data.base_ref() {
+        apply_ui_root_data(&mut node.button.base, base);
+    }
+    apply_ui_root_fields(&mut node.button.base, &data.fields);
+    apply_ui_checkbox_fields(&mut node, &data.fields, static_ui_style_lookup);
+    node
+}
+
 fn build_ui_label(data: &SceneDefNodeData) -> UiLabel {
     let mut node = UiLabel::new();
     if let Some(base) = data.base_ref() {
@@ -482,6 +495,33 @@ fn apply_ui_button_fields(
     apply_ui_style_fields(&mut node.pressed_style, fields, "pressed_");
     apply_ui_button_state_fields(node, fields, "hover", static_ui_style_lookup);
     apply_ui_button_state_fields(node, fields, "pressed", static_ui_style_lookup);
+}
+
+fn apply_ui_checkbox_fields(
+    node: &mut UiCheckbox,
+    fields: &[SceneObjectField],
+    static_ui_style_lookup: Option<StaticUiStyleLookup>,
+) {
+    apply_ui_button_fields(&mut node.button, fields, static_ui_style_lookup);
+    SceneFieldIterRef::new(fields).for_each(|name, value| {
+        if matches!(name, "checked" | "value")
+            && let Some(v) = as_bool(value)
+        {
+            node.checked = v;
+        }
+    });
+    node.checked_style = node.button.style.clone();
+    node.checked_hover_style = node.button.hover_style.clone();
+    node.checked_pressed_style = node.button.pressed_style.clone();
+    apply_ui_style_fields(&mut node.checked_style, fields, "checked_");
+    apply_ui_style_fields(&mut node.checked_hover_style, fields, "checked_hover_");
+    apply_ui_style_fields(&mut node.checked_pressed_style, fields, "checked_pressed_");
+    apply_ui_style_object_fields(
+        &mut node.checked_style,
+        fields,
+        "checked_style",
+        static_ui_style_lookup,
+    );
 }
 
 fn apply_ui_image_button_fields(node: &mut UiImageButton, fields: &[SceneObjectField]) {

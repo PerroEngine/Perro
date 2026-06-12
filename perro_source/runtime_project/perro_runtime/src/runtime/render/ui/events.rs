@@ -450,6 +450,7 @@ impl Runtime {
                     .and_then(|node| self.nodes.get(node))
                     .and_then(|scene_node| match &scene_node.data {
                         SceneNodeData::UiButton(button) => Some(button.cursor_icon),
+                        SceneNodeData::UiCheckbox(checkbox) => Some(checkbox.cursor_icon),
                         SceneNodeData::UiImageButton(button) => Some(button.cursor_icon),
                         _ => None,
                     })
@@ -466,6 +467,7 @@ impl Runtime {
     pub(super) fn emit_button_events(&mut self, events: &[(NodeID, &'static str)]) {
         for &(node, event) in events {
             if event == "click" {
+                self.toggle_checkbox(node);
                 self.process_button_web_action(node);
             }
             self.collect_button_event_signals(node, event);
@@ -488,6 +490,7 @@ impl Runtime {
         };
         let web = match &scene_node.data {
             SceneNodeData::UiButton(button) => button.web.as_ref(),
+            SceneNodeData::UiCheckbox(checkbox) => checkbox.web.as_ref(),
             SceneNodeData::UiImageButton(button) => button.web.as_ref(),
             _ => None,
         };
@@ -495,6 +498,17 @@ impl Runtime {
             return;
         };
         let _ = perro_web::push_route(web.href.as_ref());
+    }
+
+    fn toggle_checkbox(&mut self, node: NodeID) {
+        let Some(scene_node) = self.nodes.get_mut(node) else {
+            return;
+        };
+        let SceneNodeData::UiCheckbox(checkbox) = &mut scene_node.data else {
+            return;
+        };
+        checkbox.checked = !checkbox.checked;
+        self.mark_ui_dirty(node, Runtime::UI_DIRTY_COMMANDS);
     }
 
     pub(super) fn emit_text_edit_event(&mut self, node: NodeID, event: &str, text: Option<&str>) {
@@ -661,6 +675,9 @@ impl Runtime {
                     SceneNodeData::UiButton(button) => {
                         computed_rect_from_state(&button_rect_state(button, base_rect, state, z))
                     }
+                    SceneNodeData::UiCheckbox(checkbox) => computed_rect_from_state(
+                        &button_rect_state(&checkbox.button, base_rect, state, z),
+                    ),
                     SceneNodeData::UiImageButton(button) => computed_rect_from_state(
                         &image_button_rect_state(button, base_rect, state, z),
                     ),
@@ -1049,6 +1066,15 @@ impl Runtime {
                     return None;
                 }
             }
+            SceneNodeData::UiCheckbox(checkbox) => {
+                if checkbox.disabled
+                    || !checkbox.input_enabled
+                    || !checkbox.visible
+                    || !self.ui_input_mask_accepts(&checkbox.input_mask, source)
+                {
+                    return None;
+                }
+            }
             SceneNodeData::UiImageButton(button) => {
                 if button.disabled
                     || !button.input_enabled
@@ -1306,6 +1332,9 @@ impl Runtime {
                 .get(node)
                 .and_then(|scene_node| match &scene_node.data {
                     SceneNodeData::UiButton(button) if !button_inactive(button) => Some(node),
+                    SceneNodeData::UiCheckbox(checkbox) if !checkbox_inactive(checkbox) => {
+                        Some(node)
+                    }
                     SceneNodeData::UiImageButton(button) if !image_button_inactive(button) => {
                         Some(node)
                     }
@@ -1333,6 +1362,10 @@ impl Runtime {
         match &scene_node.data {
             SceneNodeData::UiButton(button) => {
                 !button_inactive(button) && self.ui_input_mask_accepts(&button.input_mask, source)
+            }
+            SceneNodeData::UiCheckbox(checkbox) => {
+                !checkbox_inactive(checkbox)
+                    && self.ui_input_mask_accepts(&checkbox.input_mask, source)
             }
             SceneNodeData::UiImageButton(button) => {
                 !image_button_inactive(button)
@@ -1418,6 +1451,7 @@ fn compare_focus_visual_order(a: &UiFocusCandidate, b: &UiFocusCandidate) -> std
 fn ui_button_like_inactive(data: &SceneNodeData) -> Option<bool> {
     match data {
         SceneNodeData::UiButton(button) => Some(button_inactive(button)),
+        SceneNodeData::UiCheckbox(checkbox) => Some(checkbox_inactive(checkbox)),
         SceneNodeData::UiImageButton(button) => Some(image_button_inactive(button)),
         _ => None,
     }
@@ -1431,6 +1465,8 @@ fn ui_button_like_custom_event_signals<'a>(
         SceneNodeData::UiButton(button) => {
             (!button_inactive(button)).then_some(button_custom_event_signals(button, event))
         }
+        SceneNodeData::UiCheckbox(checkbox) => (!checkbox_inactive(checkbox))
+            .then_some(button_custom_event_signals(&checkbox.button, event)),
         SceneNodeData::UiImageButton(button) => (!image_button_inactive(button))
             .then_some(image_button_custom_event_signals(button, event)),
         _ => None,
@@ -1455,6 +1491,13 @@ fn ui_button_like_hit_data(
             mouse_filter: button.mouse_filter,
             input_mask: &button.input_mask,
             corner_radius: button_style(button, state).corner_radius,
+        }),
+        SceneNodeData::UiCheckbox(checkbox) => Some(UiButtonLikeHitData {
+            disabled: checkbox.disabled,
+            input_enabled: checkbox.input_enabled,
+            mouse_filter: checkbox.mouse_filter,
+            input_mask: &checkbox.input_mask,
+            corner_radius: checkbox_style(checkbox, state).corner_radius,
         }),
         SceneNodeData::UiImageButton(button) => Some(UiButtonLikeHitData {
             disabled: button.disabled,

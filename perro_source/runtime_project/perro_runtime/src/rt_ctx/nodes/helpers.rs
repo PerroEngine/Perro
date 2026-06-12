@@ -242,6 +242,21 @@ pub(super) fn classify_ui_node_payload_change(
             }
             flags
         }
+        (SceneNodeData::UiCheckbox(before), SceneNodeData::UiCheckbox(after)) => {
+            let mut flags = 0;
+            if before.button.style != after.button.style
+                || before.button.pressed_style != after.button.pressed_style
+                || before.button.hover_style != after.button.hover_style
+                || before.checked_style != after.checked_style
+                || before.checked_hover_style != after.checked_hover_style
+                || before.checked_pressed_style != after.checked_pressed_style
+                || before.button.disabled != after.button.disabled
+                || before.checked != after.checked
+            {
+                flags |= Runtime::UI_DIRTY_COMMANDS;
+            }
+            flags
+        }
         (SceneNodeData::UiImageButton(before), SceneNodeData::UiImageButton(after)) => {
             let mut flags = 0;
             if before.texture != after.texture
@@ -365,6 +380,7 @@ pub(super) fn ui_base_from_data(data: &SceneNodeData) -> Option<&UiBox> {
         SceneNodeData::UiBox(root) => Some(root),
         SceneNodeData::UiPanel(node) => Some(&node.base),
         SceneNodeData::UiButton(node) => Some(&node.base),
+        SceneNodeData::UiCheckbox(node) => Some(&node.button.base),
         SceneNodeData::UiImage(node) => Some(&node.base),
         SceneNodeData::UiImageButton(node) => Some(&node.base),
         SceneNodeData::UiNineSlice(node) => Some(&node.base),

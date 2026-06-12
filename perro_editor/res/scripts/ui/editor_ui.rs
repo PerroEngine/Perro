@@ -397,6 +397,11 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
                 .as_deref()
                 .unwrap_or("Select"),
         );
+        set_checkbox_checked(
+            ctx,
+            &picker_button_name,
+            row.is_some_and(|item| item.kind == "Bool" && item.value == "true"),
+        );
     }
     for idx in 0..MAX_RESOURCE_FIELDS {
         let row = view.inspector.resource_fields.get(idx);
@@ -2798,6 +2803,18 @@ pub fn set_button_size<API: ScriptAPI + ?Sized>(
     if let Some(id) = find_named(ctx, name) {
         let _ = with_node_mut!(ctx.run, UiButton, id, |node| {
             node.layout.size = UiVector2::ratio(size.0, size.1);
+        });
+    }
+}
+
+pub fn set_checkbox_checked<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    checked: bool,
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiCheckbox, id, |node| {
+            node.checked = checked;
         });
     }
 }

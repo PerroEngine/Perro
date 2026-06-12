@@ -47,6 +47,7 @@ fn is_ui_node_data(data: &SceneNodeData) -> bool {
             | SceneNodeData::UiCameraStream(_)
             | SceneNodeData::UiPanel(_)
             | SceneNodeData::UiButton(_)
+            | SceneNodeData::UiCheckbox(_)
             | SceneNodeData::UiImage(_)
             | SceneNodeData::UiImageButton(_)
             | SceneNodeData::UiNineSlice(_)
