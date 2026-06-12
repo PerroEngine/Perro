@@ -251,6 +251,7 @@ pub(super) fn classify_ui_node_payload_change(
                 || before.checked_hover_style != after.checked_hover_style
                 || before.checked_pressed_style != after.checked_pressed_style
                 || before.button.disabled != after.button.disabled
+                || before.dot_fill != after.dot_fill
                 || before.checked != after.checked
             {
                 flags |= Runtime::UI_DIRTY_COMMANDS;

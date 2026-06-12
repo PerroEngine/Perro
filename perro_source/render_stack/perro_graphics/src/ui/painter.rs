@@ -1,5 +1,5 @@
 use super::renderer::{
-    UiDraw, UiImageDraw, UiLabelDraw, UiNineSliceDraw, UiPanelDraw, UiTextEditDraw,
+    UiCheckboxDraw, UiDraw, UiImageDraw, UiLabelDraw, UiNineSliceDraw, UiPanelDraw, UiTextEditDraw,
 };
 use ahash::AHashMap;
 use epaint::{
@@ -98,6 +98,9 @@ impl EpaintUiPainter {
                 UiDraw::Button(button) => {
                     push_panel_shape(&button.panel, viewport, &mut self.shapes)
                 }
+                UiDraw::Checkbox(checkbox) => {
+                    push_checkbox_shapes(checkbox, viewport, &mut self.shapes)
+                }
                 UiDraw::Image(image) => push_image_shape(image, viewport, &mut self.shapes),
                 UiDraw::NineSlice(image) => {
                     push_nine_slice_shapes(image, viewport, &mut self.shapes)
@@ -173,11 +176,31 @@ fn ui_rect(draw: &UiDraw) -> UiRectState {
     match draw {
         UiDraw::Panel(panel) => panel.rect,
         UiDraw::Button(button) => button.panel.rect,
+        UiDraw::Checkbox(checkbox) => checkbox.panel.rect,
         UiDraw::Image(image) => image.rect,
         UiDraw::NineSlice(image) => image.rect,
         UiDraw::Label(label) => label.rect,
         UiDraw::TextEdit(edit) => edit.panel.rect,
     }
+}
+
+fn push_checkbox_shapes(
+    checkbox: &UiCheckboxDraw,
+    viewport: [f32; 2],
+    out: &mut Vec<ClippedShape>,
+) {
+    push_panel_shape(&checkbox.panel, viewport, out);
+    if !checkbox.checked || !valid_color(checkbox.dot_fill) {
+        return;
+    }
+    let (min, max) = checkbox.panel.rect.screen_min_max(viewport);
+    let rect = Rect::from_min_max(pos2(min[0], min[1]), pos2(max[0], max[1]));
+    let clip_rect = clip_rect_from_state(checkbox.panel.clip_rect, viewport);
+    let radius = rect.width().min(rect.height()) * 0.24;
+    out.push(ClippedShape {
+        clip_rect,
+        shape: Shape::circle_filled(rect.center(), radius.max(1.0), color32(checkbox.dot_fill)),
+    });
 }
 
 fn push_nine_slice_shapes(

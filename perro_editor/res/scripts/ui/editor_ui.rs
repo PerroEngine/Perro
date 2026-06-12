@@ -377,13 +377,20 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             &format!("inspector_var_{idx}_value"),
             row.map(|item| item.value.as_str()).unwrap_or(""),
         );
+        let bool_row = row.is_some_and(|item| item.kind == "Bool");
         let picker_button_name = format!("inspector_var_{idx}_pick_button");
-        let picker_row = row.is_some_and(|item| item.kind == "Node" || item.kind == "Bool" || item.expandable)
+        let picker_row = row.is_some_and(|item| item.kind == "Node" || item.expandable)
             && find_named(ctx, &picker_button_name).is_some();
         set_ui_display(
             ctx,
             &format!("inspector_var_{idx}_value"),
-            view.inspector.node_actions && row.is_some() && !picker_row,
+            view.inspector.node_actions && row.is_some() && !picker_row && !bool_row,
+        );
+        let checkbox_name = format!("inspector_var_{idx}_check");
+        set_ui_display(
+            ctx,
+            &checkbox_name,
+            view.inspector.node_actions && bool_row,
         );
         set_ui_display(
             ctx,
@@ -399,7 +406,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         );
         set_checkbox_checked(
             ctx,
-            &picker_button_name,
+            &checkbox_name,
             row.is_some_and(|item| item.kind == "Bool" && item.value == "true"),
         );
     }
@@ -1003,15 +1010,7 @@ pub fn script_vars_edit_text(fields: &[(SceneFieldName, SceneValue)]) -> String 
 }
 
 fn inspector_var_button_label(row: &InspectorValueRow) -> String {
-    if row.kind == "Bool" {
-        if row.value == "true" {
-            "[x] true".to_string()
-        } else {
-            "[ ] false".to_string()
-        }
-    } else {
-        row.value.clone()
-    }
+    row.value.clone()
 }
 
 pub fn resource_field_rows(data: &SceneNodeData) -> Vec<ResourceFieldView> {

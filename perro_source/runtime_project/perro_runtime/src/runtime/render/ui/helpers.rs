@@ -331,7 +331,7 @@ pub(super) fn ui_command_from_node(
         SceneNodeData::UiCheckbox(checkbox) => {
             let style = checkbox_style(checkbox, button_state);
             let style_scale = ui_style_scale(scale);
-            Some(UiCommand::UpsertButton {
+            Some(UiCommand::UpsertCheckbox {
                 node,
                 rect,
                 clip_rect,
@@ -341,6 +341,8 @@ pub(super) fn ui_command_from_node(
                 corner_radius: style.corner_radius,
                 shadow: ui_depth_effect_state(style.shadow, style_scale),
                 highlight: ui_depth_effect_state(style.highlight, style_scale),
+                checked: checkbox.checked,
+                dot_fill: Runtime::color_modulate_rgba(checkbox.dot_fill.to_rgba(), modulate),
                 disabled: checkbox.disabled,
             })
         }
@@ -613,6 +615,7 @@ pub(super) fn ui_command_matches_node(
     let node = match command {
         UiCommand::UpsertPanel { node, .. }
         | UiCommand::UpsertButton { node, .. }
+        | UiCommand::UpsertCheckbox { node, .. }
         | UiCommand::UpsertLabel { node, .. }
         | UiCommand::UpsertImage { node, .. }
         | UiCommand::UpsertNineSlice { node, .. }

@@ -201,6 +201,7 @@ pub struct UiCheckbox {
     pub checked_style: UiStyle,
     pub checked_hover_style: UiStyle,
     pub checked_pressed_style: UiStyle,
+    pub dot_fill: Color,
 }
 
 impl UiCheckbox {
@@ -215,6 +216,7 @@ impl UiCheckbox {
             checked_style,
             checked_hover_style,
             checked_pressed_style,
+            dot_fill: Color::WHITE,
         }
     }
 }

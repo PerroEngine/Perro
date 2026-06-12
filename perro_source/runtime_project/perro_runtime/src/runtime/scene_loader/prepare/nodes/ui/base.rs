@@ -509,6 +509,11 @@ fn apply_ui_checkbox_fields(
         {
             node.checked = v;
         }
+        if matches!(name, "dot_fill" | "dot_color" | "mark_color")
+            && let Some(v) = as_scene_color(value)
+        {
+            node.dot_fill = v;
+        }
     });
     node.checked_style = node.button.style.clone();
     node.checked_hover_style = node.button.hover_style.clone();

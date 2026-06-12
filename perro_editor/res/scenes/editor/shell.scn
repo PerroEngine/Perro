@@ -2818,15 +2818,27 @@ parent = @inspector_var_row_0
     [/UiTextBox]
 [/inspector_var_0_value]
 
-[inspector_var_0_pick_button]
+[inspector_var_0_check]
 parent = @inspector_var_row_0
     [UiCheckbox]
+        size_ratio = (0.10, 0.82)
+        click_signals = ["editor_inspector_var_pick_0"]
+        style = { fill = "#00000000", stroke = "#8FA3B8", stroke_width = 1.5, corner_radius = 0.20 }
+        hover = { fill = "#16202A", stroke = "#B8C7D8", stroke_width = 1.5, corner_radius = 0.20 }
+        pressed = { fill = "#223142", stroke = "#E5E7EB", stroke_width = 1.5, corner_radius = 0.20 }
+        dot_fill = "#7DD3FC"
+    [/UiCheckbox]
+[/inspector_var_0_check]
+
+[inspector_var_0_pick_button]
+parent = @inspector_var_row_0
+    [UiButton]
         size_ratio = (0.50, 1.0)
         click_signals = ["editor_inspector_var_pick_0"]
         style = $field
         hover = $btn_hot
         pressed = $btn_down
-    [/UiCheckbox]
+    [/UiButton]
 [/inspector_var_0_pick_button]
 
 [inspector_var_0_pick_label]
@@ -2886,15 +2898,27 @@ parent = @inspector_var_row_1
     [/UiTextBox]
 [/inspector_var_1_value]
 
-[inspector_var_1_pick_button]
+[inspector_var_1_check]
 parent = @inspector_var_row_1
     [UiCheckbox]
+        size_ratio = (0.10, 0.82)
+        click_signals = ["editor_inspector_var_pick_1"]
+        style = { fill = "#00000000", stroke = "#8FA3B8", stroke_width = 1.5, corner_radius = 0.20 }
+        hover = { fill = "#16202A", stroke = "#B8C7D8", stroke_width = 1.5, corner_radius = 0.20 }
+        pressed = { fill = "#223142", stroke = "#E5E7EB", stroke_width = 1.5, corner_radius = 0.20 }
+        dot_fill = "#7DD3FC"
+    [/UiCheckbox]
+[/inspector_var_1_check]
+
+[inspector_var_1_pick_button]
+parent = @inspector_var_row_1
+    [UiButton]
         size_ratio = (0.50, 1.0)
         click_signals = ["editor_inspector_var_pick_1"]
         style = $field
         hover = $btn_hot
         pressed = $btn_down
-    [/UiCheckbox]
+    [/UiButton]
 [/inspector_var_1_pick_button]
 
 [inspector_var_1_pick_label]
@@ -2954,15 +2978,27 @@ parent = @inspector_var_row_2
     [/UiTextBox]
 [/inspector_var_2_value]
 
-[inspector_var_2_pick_button]
+[inspector_var_2_check]
 parent = @inspector_var_row_2
     [UiCheckbox]
+        size_ratio = (0.10, 0.82)
+        click_signals = ["editor_inspector_var_pick_2"]
+        style = { fill = "#00000000", stroke = "#8FA3B8", stroke_width = 1.5, corner_radius = 0.20 }
+        hover = { fill = "#16202A", stroke = "#B8C7D8", stroke_width = 1.5, corner_radius = 0.20 }
+        pressed = { fill = "#223142", stroke = "#E5E7EB", stroke_width = 1.5, corner_radius = 0.20 }
+        dot_fill = "#7DD3FC"
+    [/UiCheckbox]
+[/inspector_var_2_check]
+
+[inspector_var_2_pick_button]
+parent = @inspector_var_row_2
+    [UiButton]
         size_ratio = (0.50, 1.0)
         click_signals = ["editor_inspector_var_pick_2"]
         style = $field
         hover = $btn_hot
         pressed = $btn_down
-    [/UiCheckbox]
+    [/UiButton]
 [/inspector_var_2_pick_button]
 
 [inspector_var_2_pick_label]
@@ -3022,15 +3058,27 @@ parent = @inspector_var_row_3
     [/UiTextBox]
 [/inspector_var_3_value]
 
-[inspector_var_3_pick_button]
+[inspector_var_3_check]
 parent = @inspector_var_row_3
     [UiCheckbox]
+        size_ratio = (0.10, 0.82)
+        click_signals = ["editor_inspector_var_pick_3"]
+        style = { fill = "#00000000", stroke = "#8FA3B8", stroke_width = 1.5, corner_radius = 0.20 }
+        hover = { fill = "#16202A", stroke = "#B8C7D8", stroke_width = 1.5, corner_radius = 0.20 }
+        pressed = { fill = "#223142", stroke = "#E5E7EB", stroke_width = 1.5, corner_radius = 0.20 }
+        dot_fill = "#7DD3FC"
+    [/UiCheckbox]
+[/inspector_var_3_check]
+
+[inspector_var_3_pick_button]
+parent = @inspector_var_row_3
+    [UiButton]
         size_ratio = (0.50, 1.0)
         click_signals = ["editor_inspector_var_pick_3"]
         style = $field
         hover = $btn_hot
         pressed = $btn_down
-    [/UiCheckbox]
+    [/UiButton]
 [/inspector_var_3_pick_button]
 
 [inspector_var_3_pick_label]
@@ -3090,15 +3138,27 @@ parent = @inspector_var_row_4
     [/UiTextBox]
 [/inspector_var_4_value]
 
-[inspector_var_4_pick_button]
+[inspector_var_4_check]
 parent = @inspector_var_row_4
     [UiCheckbox]
+        size_ratio = (0.10, 0.82)
+        click_signals = ["editor_inspector_var_pick_4"]
+        style = { fill = "#00000000", stroke = "#8FA3B8", stroke_width = 1.5, corner_radius = 0.20 }
+        hover = { fill = "#16202A", stroke = "#B8C7D8", stroke_width = 1.5, corner_radius = 0.20 }
+        pressed = { fill = "#223142", stroke = "#E5E7EB", stroke_width = 1.5, corner_radius = 0.20 }
+        dot_fill = "#7DD3FC"
+    [/UiCheckbox]
+[/inspector_var_4_check]
+
+[inspector_var_4_pick_button]
+parent = @inspector_var_row_4
+    [UiButton]
         size_ratio = (0.50, 1.0)
         click_signals = ["editor_inspector_var_pick_4"]
         style = $field
         hover = $btn_hot
         pressed = $btn_down
-    [/UiCheckbox]
+    [/UiButton]
 [/inspector_var_4_pick_button]
 
 [inspector_var_4_pick_label]
@@ -3158,15 +3218,27 @@ parent = @inspector_var_row_5
     [/UiTextBox]
 [/inspector_var_5_value]
 
-[inspector_var_5_pick_button]
+[inspector_var_5_check]
 parent = @inspector_var_row_5
     [UiCheckbox]
+        size_ratio = (0.10, 0.82)
+        click_signals = ["editor_inspector_var_pick_5"]
+        style = { fill = "#00000000", stroke = "#8FA3B8", stroke_width = 1.5, corner_radius = 0.20 }
+        hover = { fill = "#16202A", stroke = "#B8C7D8", stroke_width = 1.5, corner_radius = 0.20 }
+        pressed = { fill = "#223142", stroke = "#E5E7EB", stroke_width = 1.5, corner_radius = 0.20 }
+        dot_fill = "#7DD3FC"
+    [/UiCheckbox]
+[/inspector_var_5_check]
+
+[inspector_var_5_pick_button]
+parent = @inspector_var_row_5
+    [UiButton]
         size_ratio = (0.50, 1.0)
         click_signals = ["editor_inspector_var_pick_5"]
         style = $field
         hover = $btn_hot
         pressed = $btn_down
-    [/UiCheckbox]
+    [/UiButton]
 [/inspector_var_5_pick_button]
 
 [inspector_var_5_pick_label]
@@ -3226,15 +3298,27 @@ parent = @inspector_var_row_6
     [/UiTextBox]
 [/inspector_var_6_value]
 
-[inspector_var_6_pick_button]
+[inspector_var_6_check]
 parent = @inspector_var_row_6
     [UiCheckbox]
+        size_ratio = (0.10, 0.82)
+        click_signals = ["editor_inspector_var_pick_6"]
+        style = { fill = "#00000000", stroke = "#8FA3B8", stroke_width = 1.5, corner_radius = 0.20 }
+        hover = { fill = "#16202A", stroke = "#B8C7D8", stroke_width = 1.5, corner_radius = 0.20 }
+        pressed = { fill = "#223142", stroke = "#E5E7EB", stroke_width = 1.5, corner_radius = 0.20 }
+        dot_fill = "#7DD3FC"
+    [/UiCheckbox]
+[/inspector_var_6_check]
+
+[inspector_var_6_pick_button]
+parent = @inspector_var_row_6
+    [UiButton]
         size_ratio = (0.50, 1.0)
         click_signals = ["editor_inspector_var_pick_6"]
         style = $field
         hover = $btn_hot
         pressed = $btn_down
-    [/UiCheckbox]
+    [/UiButton]
 [/inspector_var_6_pick_button]
 
 [inspector_var_6_pick_label]
@@ -3294,15 +3378,27 @@ parent = @inspector_var_row_7
     [/UiTextBox]
 [/inspector_var_7_value]
 
-[inspector_var_7_pick_button]
+[inspector_var_7_check]
 parent = @inspector_var_row_7
     [UiCheckbox]
+        size_ratio = (0.10, 0.82)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = { fill = "#00000000", stroke = "#8FA3B8", stroke_width = 1.5, corner_radius = 0.20 }
+        hover = { fill = "#16202A", stroke = "#B8C7D8", stroke_width = 1.5, corner_radius = 0.20 }
+        pressed = { fill = "#223142", stroke = "#E5E7EB", stroke_width = 1.5, corner_radius = 0.20 }
+        dot_fill = "#7DD3FC"
+    [/UiCheckbox]
+[/inspector_var_7_check]
+
+[inspector_var_7_pick_button]
+parent = @inspector_var_row_7
+    [UiButton]
         size_ratio = (0.50, 1.0)
         click_signals = ["editor_inspector_var_pick_7"]
         style = $field
         hover = $btn_hot
         pressed = $btn_down
-    [/UiCheckbox]
+    [/UiButton]
 [/inspector_var_7_pick_button]
 
 [inspector_var_7_pick_label]

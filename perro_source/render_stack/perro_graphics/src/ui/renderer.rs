@@ -37,6 +37,14 @@ pub(crate) struct UiButtonDraw {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub(crate) struct UiCheckboxDraw {
+    pub(crate) panel: UiPanelDraw,
+    pub(crate) checked: bool,
+    pub(crate) dot_fill: Color,
+    pub(crate) disabled: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct UiImageDraw {
     pub(crate) rect: UiRectState,
     pub(crate) clip_rect: [f32; 4],
@@ -84,6 +92,7 @@ pub(crate) struct UiTextEditDraw {
 pub(crate) enum UiDraw {
     Panel(UiPanelDraw),
     Button(UiButtonDraw),
+    Checkbox(UiCheckboxDraw),
     Image(UiImageDraw),
     NineSlice(UiNineSliceDraw),
     Label(UiLabelDraw),
@@ -160,6 +169,37 @@ impl UiRenderer {
                         shadow,
                         highlight,
                     },
+                    disabled,
+                }),
+            ),
+            UiCommand::UpsertCheckbox {
+                node,
+                rect,
+                clip_rect,
+                fill,
+                stroke,
+                stroke_width,
+                corner_radius,
+                shadow,
+                highlight,
+                checked,
+                dot_fill,
+                disabled,
+            } => self.upsert(
+                node,
+                UiDraw::Checkbox(UiCheckboxDraw {
+                    panel: UiPanelDraw {
+                        rect,
+                        clip_rect,
+                        fill: fill.into(),
+                        stroke: stroke.into(),
+                        stroke_width,
+                        corner_radius,
+                        shadow,
+                        highlight,
+                    },
+                    checked,
+                    dot_fill: dot_fill.into(),
                     disabled,
                 }),
             ),
