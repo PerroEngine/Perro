@@ -34,11 +34,11 @@ pub use tilesets::generate_static_tilesets;
 pub use uistyles::generate_static_ui_styles;
 
 use std::{
+    cell::RefCell,
     collections::HashMap,
     fmt::Write as _,
     fs,
     path::{Path, PathBuf},
-    sync::{OnceLock, RwLock},
 };
 
 const PERRO_DIR: &str = ".perro";
@@ -56,19 +56,18 @@ pub struct StaticPipelineOverrides {
     pub asset_prefix: String,
 }
 
-fn overrides_cell() -> &'static RwLock<Option<StaticPipelineOverrides>> {
-    static CELL: OnceLock<RwLock<Option<StaticPipelineOverrides>>> = OnceLock::new();
-    CELL.get_or_init(|| RwLock::new(None))
+thread_local! {
+    static STATIC_PIPELINE_OVERRIDES: RefCell<Option<StaticPipelineOverrides>> = const { RefCell::new(None) };
 }
 
 fn current_overrides() -> Option<StaticPipelineOverrides> {
-    overrides_cell().read().ok().and_then(|v| v.clone())
+    STATIC_PIPELINE_OVERRIDES.with(|slot| slot.borrow().clone())
 }
 
 pub fn set_static_pipeline_overrides(overrides: Option<StaticPipelineOverrides>) {
-    if let Ok(mut slot) = overrides_cell().write() {
-        *slot = overrides;
-    }
+    STATIC_PIPELINE_OVERRIDES.with(|slot| {
+        *slot.borrow_mut() = overrides;
+    });
 }
 
 pub(crate) fn static_dir(project_root: &Path) -> PathBuf {

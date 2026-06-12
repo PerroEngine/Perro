@@ -9,6 +9,8 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
+type ParseResult<T> = Result<T, String>;
+
 pub struct Parser<'a> {
     src: &'a str,
     lexer: Lexer<'a>,
@@ -40,68 +42,74 @@ impl<'a> Parser<'a> {
         self.current = self.lexer.next_token();
     }
 
-    fn expect(&mut self, t: Token<'a>) {
+    fn expect(&mut self, t: Token<'a>) -> ParseResult<()> {
         if self.current != t {
-            panic!("Expected {:?}, got {:?}", t, self.current);
+            return Err(format!("Expected {:?}, got {:?}", t, self.current));
         }
         self.advance();
+        Ok(())
     }
 
-    fn expect_ident(&mut self) -> &'a str {
+    fn expect_ident(&mut self) -> ParseResult<&'a str> {
         match std::mem::replace(&mut self.current, Token::Eof) {
             Token::Ident(s) => {
                 self.advance();
-                s
+                Ok(s)
             }
-            other => panic!("Expected identifier, got {:?}", other),
+            other => Err(format!("Expected identifier, got {:?}", other)),
         }
     }
 
-    fn expect_scene_key(&mut self) -> Cow<'a, str> {
+    fn expect_scene_key(&mut self) -> ParseResult<Cow<'a, str>> {
         let mut at_count = 0;
         while self.current == Token::At {
             self.advance();
             at_count += 1;
         }
-        let ident = self.expect_ident();
+        let ident = self.expect_ident()?;
         if at_count == 0 {
-            return Cow::Borrowed(ident);
+            return Ok(Cow::Borrowed(ident));
         }
         let mut key = String::with_capacity(at_count + ident.len());
         key.extend(std::iter::repeat_n('@', at_count));
         key.push_str(ident);
-        Cow::Owned(key)
+        Ok(Cow::Owned(key))
     }
 
-    fn expect_node_ref_key(&mut self) -> String {
+    fn expect_node_ref_key(&mut self) -> ParseResult<String> {
         let mut at_count = 0;
         while self.current == Token::At {
             self.advance();
             at_count += 1;
         }
-        let ident = self.expect_ident();
+        let ident = self.expect_ident()?;
         if at_count == 0 {
-            return ident.to_string();
+            return Ok(ident.to_string());
         }
         let mut key = String::with_capacity(at_count + ident.len());
         key.extend(std::iter::repeat_n('@', at_count));
         key.push_str(ident);
-        key
+        Ok(key)
     }
 
-    fn collect_vars(self) -> HashMap<String, SceneValue> {
-        self.collect_var_entries().into_iter().collect()
+    fn try_collect_vars(mut self) -> ParseResult<HashMap<String, SceneValue>> {
+        Ok(self.try_collect_var_entries()?.into_iter().collect())
     }
 
     pub(crate) fn collect_var_entries(mut self) -> Vec<(String, SceneValue)> {
+        self.try_collect_var_entries()
+            .unwrap_or_else(|err| panic!("{err}"))
+    }
+
+    fn try_collect_var_entries(&mut self) -> ParseResult<Vec<(String, SceneValue)>> {
         let mut vars = Vec::new();
         while self.current != Token::Eof {
             if self.current == Token::Dollar {
                 self.advance();
-                let name = self.expect_ident().to_string();
+                let name = self.expect_ident()?.to_string();
                 if self.current == Token::Equals {
                     self.advance();
-                    let value = self.parse_value();
+                    let value = self.parse_value()?;
                     self.vars.insert(name.clone(), value.clone());
                     vars.push((name, value));
                 }
@@ -109,38 +117,38 @@ impl<'a> Parser<'a> {
             }
             self.advance();
         }
-        vars
+        Ok(vars)
     }
 
-    fn parse_value(&mut self) -> SceneValue {
+    fn parse_value(&mut self) -> ParseResult<SceneValue> {
         match &self.current {
             Token::Number(n) => {
                 let v = *n;
                 self.advance();
-                SceneValue::F32(v)
+                Ok(SceneValue::F32(v))
             }
 
             Token::String(s) => {
                 let v = s.clone();
                 self.advance();
-                SceneValue::Str(Cow::Owned(v))
+                Ok(SceneValue::Str(Cow::Owned(v)))
             }
 
             Token::Dollar => {
                 self.advance();
-                let name = self.expect_ident();
+                let name = self.expect_ident()?;
                 self.vars
                     .get(name)
                     .cloned()
-                    .unwrap_or_else(|| panic!("Unknown variable ${name}"))
+                    .ok_or_else(|| format!("Unknown variable ${name}"))
             }
 
             Token::Percent => {
                 self.advance();
-                let marker = self.expect_ident();
-                self.expect(Token::Colon);
+                let marker = self.expect_ident()?;
+                self.expect(Token::Colon)?;
                 if marker != "loc" {
-                    panic!("Unknown percent marker %{marker}:");
+                    return Err(format!("Unknown percent marker %{marker}:"));
                 }
                 let key = match std::mem::replace(&mut self.current, Token::Eof) {
                     Token::String(s) => {
@@ -151,15 +159,17 @@ impl<'a> Parser<'a> {
                         self.advance();
                         s.to_string()
                     }
-                    other => panic!("Expected locale key after %loc:, got {:?}", other),
+                    other => {
+                        return Err(format!("Expected locale key after %loc:, got {:?}", other));
+                    }
                 };
-                SceneValue::Str(Cow::Owned(format!("%loc:{key}")))
+                Ok(SceneValue::Str(Cow::Owned(format!("%loc:{key}"))))
             }
 
             Token::At => {
                 self.advance();
-                let key = self.expect_node_ref_key();
-                SceneValue::Key(SceneValueKey::from(key))
+                let key = self.expect_node_ref_key()?;
+                Ok(SceneValue::Key(SceneValueKey::from(key)))
             }
 
             Token::Ident(name) => {
@@ -168,7 +178,7 @@ impl<'a> Parser<'a> {
                 if matches!(key.as_str(), "only" | "without") && self.current == Token::LParen {
                     return self.parse_bitmask_call_key(key);
                 }
-                SceneValue::Key(SceneValueKey::from(key))
+                Ok(SceneValue::Key(SceneValueKey::from(key)))
             }
 
             Token::LParen => {
@@ -178,7 +188,7 @@ impl<'a> Parser<'a> {
                 loop {
                     if let Token::Number(n) = self.current {
                         if len >= nums.len() {
-                            panic!("Invalid vector length");
+                            return Err("Invalid vector length".to_string());
                         }
                         nums[len] = n;
                         len += 1;
@@ -190,9 +200,9 @@ impl<'a> Parser<'a> {
                     }
                     break;
                 }
-                self.expect(Token::RParen);
+                self.expect(Token::RParen)?;
 
-                match len {
+                Ok(match len {
                     2 => SceneValue::Vec2 {
                         x: nums[0],
                         y: nums[1],
@@ -208,18 +218,18 @@ impl<'a> Parser<'a> {
                         z: nums[2],
                         w: nums[3],
                     },
-                    _ => panic!("Invalid vector length"),
-                }
+                    _ => return Err("Invalid vector length".to_string()),
+                })
             }
 
             Token::True => {
                 self.advance();
-                SceneValue::Bool(true)
+                Ok(SceneValue::Bool(true))
             }
 
             Token::False => {
                 self.advance();
-                SceneValue::Bool(false)
+                Ok(SceneValue::Bool(false))
             }
 
             // inside parse_value(), in the Token::LBrace => { ... } arm
@@ -248,16 +258,21 @@ impl<'a> Parser<'a> {
                             self.advance();
                             out
                         }
-                        other => panic!("Expected object key, got {:?}", other),
+                        other => return Err(format!("Expected object key, got {:?}", other)),
                     };
 
                     // ACCEPT BOTH ':' AND '=' HERE
                     match &self.current {
                         Token::Colon | Token::Equals => self.advance(),
-                        other => panic!("Expected ':' or '=' after object key, got {:?}", other),
+                        other => {
+                            return Err(format!(
+                                "Expected ':' or '=' after object key, got {:?}",
+                                other
+                            ));
+                        }
                     }
 
-                    let value = self.parse_value();
+                    let value = self.parse_value()?;
                     entries.push((key, value));
 
                     match &self.current {
@@ -274,16 +289,21 @@ impl<'a> Parser<'a> {
 
                         Token::Ident(_) | Token::String(_) | Token::Number(_) => continue,
 
-                        other => panic!("Expected ',' or '}}' in object literal, got {:?}", other,),
+                        other => {
+                            return Err(format!(
+                                "Expected ',' or '}}' in object literal, got {:?}",
+                                other
+                            ));
+                        }
                     }
                 }
 
-                SceneValue::Object(Cow::Owned(
+                Ok(SceneValue::Object(Cow::Owned(
                     entries
                         .into_iter()
                         .map(|(k, v)| (SceneFieldName::from(k), v))
                         .collect(),
-                ))
+                )))
             }
             Token::LBracket => {
                 self.advance();
@@ -294,7 +314,7 @@ impl<'a> Parser<'a> {
                         break;
                     }
 
-                    let value = self.parse_value();
+                    let value = self.parse_value()?;
                     items.push(value);
 
                     match &self.current {
@@ -307,18 +327,23 @@ impl<'a> Parser<'a> {
                             break;
                         }
                         _ if self.lenient_separators => {}
-                        other => panic!("Expected ',' or ']' in array literal, got {:?}", other),
+                        other => {
+                            return Err(format!(
+                                "Expected ',' or ']' in array literal, got {:?}",
+                                other
+                            ));
+                        }
                     }
                 }
-                SceneValue::Array(Cow::Owned(items))
+                Ok(SceneValue::Array(Cow::Owned(items)))
             }
 
-            _ => panic!("Invalid value token {:?}", self.current),
+            _ => Err(format!("Invalid value token {:?}", self.current)),
         }
     }
 
-    fn parse_bitmask_call_key(&mut self, name: String) -> SceneValue {
-        self.expect(Token::LParen);
+    fn parse_bitmask_call_key(&mut self, name: String) -> ParseResult<SceneValue> {
+        self.expect(Token::LParen)?;
         let mut layers = Vec::new();
         let mut bracketed = false;
 
@@ -331,7 +356,7 @@ impl<'a> Parser<'a> {
             match self.current {
                 Token::Number(n) => {
                     if n.fract() != 0.0 || !(1.0..=32.0).contains(&n) {
-                        panic!("BitMask layer must be 1..=32");
+                        return Err("BitMask layer must be 1..=32".to_string());
                     }
                     layers.push(n as u8);
                     self.advance();
@@ -341,7 +366,7 @@ impl<'a> Parser<'a> {
                     break;
                 }
                 Token::RParen if !bracketed => break,
-                ref other => panic!("Expected BitMask layer, got {:?}", other),
+                ref other => return Err(format!("Expected BitMask layer, got {:?}", other)),
             }
 
             match self.current {
@@ -353,11 +378,16 @@ impl<'a> Parser<'a> {
                     break;
                 }
                 Token::RParen if !bracketed => break,
-                ref other => panic!("Expected ',' or ')' in BitMask call, got {:?}", other),
+                ref other => {
+                    return Err(format!(
+                        "Expected ',' or ')' in BitMask call, got {:?}",
+                        other
+                    ));
+                }
             }
         }
 
-        self.expect(Token::RParen);
+        self.expect(Token::RParen)?;
 
         let mut out = String::new();
         out.push_str(&name);
@@ -369,17 +399,17 @@ impl<'a> Parser<'a> {
             out.push_str(&layer.to_string());
         }
         out.push(')');
-        SceneValue::Key(SceneValueKey::from(out))
+        Ok(SceneValue::Key(SceneValueKey::from(out)))
     }
 
-    fn parse_type_block_after_lbracket(&mut self) -> SceneNodeData {
-        let ty = self.expect_ident().to_string();
+    fn parse_type_block_after_lbracket(&mut self) -> ParseResult<SceneNodeData> {
+        let ty = self.expect_ident()?.to_string();
         if self.current == Token::Slash {
             self.advance();
-            self.expect(Token::RBracket);
+            self.expect(Token::RBracket)?;
             return scene_node_data_from_parts(&ty, Cow::Owned(Vec::new()), None);
         }
-        self.expect(Token::RBracket);
+        self.expect(Token::RBracket)?;
 
         let mut fields = Vec::new();
         let mut base = None;
@@ -390,20 +420,22 @@ impl<'a> Parser<'a> {
                     self.advance();
                     if self.current == Token::Slash {
                         self.advance();
-                        let end = self.expect_ident();
-                        self.expect(Token::RBracket);
-                        assert_eq!(end, ty);
+                        let end = self.expect_ident()?;
+                        self.expect(Token::RBracket)?;
+                        if end != ty {
+                            return Err(format!("Expected closing tag `/{ty}`, got `/{end}`"));
+                        }
                         break;
                     } else {
-                        let nested = self.parse_type_block_after_lbracket();
+                        let nested = self.parse_type_block_after_lbracket()?;
                         base = Some(SceneNodeDataBase::Owned(Box::new(nested)));
                     }
                 }
 
                 Token::Ident(_) => {
-                    let key = self.expect_ident();
-                    self.expect(Token::Equals);
-                    let val = self.parse_value();
+                    let key = self.expect_ident()?;
+                    self.expect(Token::Equals)?;
+                    let val = self.parse_value()?;
                     fields.push((canonical_scene_field_name(key), val));
                 }
 
@@ -415,8 +447,8 @@ impl<'a> Parser<'a> {
         scene_node_data_from_parts(&ty, Cow::Owned(fields), base)
     }
 
-    fn parse_tags(&mut self) -> Vec<String> {
-        self.expect(Token::LBracket);
+    fn parse_tags(&mut self) -> ParseResult<Vec<String>> {
+        self.expect(Token::LBracket)?;
         let mut tags = Vec::new();
 
         loop {
@@ -435,20 +467,26 @@ impl<'a> Parser<'a> {
                 }
                 Token::Dollar => {
                     self.advance();
-                    let name = self.expect_ident().to_string();
+                    let name = self.expect_ident()?.to_string();
                     let resolved = self
                         .vars
                         .get(&name)
                         .cloned()
-                        .unwrap_or_else(|| panic!("Unknown variable ${name}"));
+                        .ok_or_else(|| format!("Unknown variable ${name}"))?;
                     match resolved {
                         SceneValue::Str(tag) => tags.push(tag.to_string()),
                         SceneValue::Key(key) => tags.push(key.to_string()),
-                        _ => panic!("tags variable ${name} must resolve to a string or key"),
+                        _ => {
+                            return Err(format!(
+                                "tags variable ${name} must resolve to a string or key"
+                            ));
+                        }
                     }
                 }
                 other => {
-                    panic!("tags entries must be strings, identifiers, or $vars; got {other:?}")
+                    return Err(format!(
+                        "tags entries must be strings, identifiers, or $vars; got {other:?}"
+                    ));
                 }
             }
 
@@ -460,27 +498,30 @@ impl<'a> Parser<'a> {
                 self.advance();
                 break;
             }
-            panic!("Expected ',' or ']' in tags list, got {:?}", self.current);
+            return Err(format!(
+                "Expected ',' or ']' in tags list, got {:?}",
+                self.current
+            ));
         }
 
-        tags
+        Ok(tags)
     }
 
-    fn skip_closing_tag_after_lbracket(&mut self) -> Cow<'a, str> {
-        self.expect(Token::Slash);
-        let name = self.expect_scene_key();
-        self.expect(Token::RBracket);
-        name
+    fn skip_closing_tag_after_lbracket(&mut self) -> ParseResult<Cow<'a, str>> {
+        self.expect(Token::Slash)?;
+        let name = self.expect_scene_key()?;
+        self.expect(Token::RBracket)?;
+        Ok(name)
     }
 
-    fn skip_node_body(&mut self, key: &str) {
+    fn skip_node_body(&mut self, key: &str) -> ParseResult<()> {
         loop {
             match self.current {
                 Token::Eof => break,
                 Token::LBracket => {
                     self.advance();
                     if self.current == Token::Slash {
-                        let end = self.skip_closing_tag_after_lbracket();
+                        let end = self.skip_closing_tag_after_lbracket()?;
                         if end.as_ref() == key {
                             break;
                         }
@@ -489,9 +530,10 @@ impl<'a> Parser<'a> {
                 _ => self.advance(),
             }
         }
+        Ok(())
     }
 
-    pub(crate) fn parse_scene_inner(mut self) -> Scene {
+    pub(crate) fn parse_scene_inner(mut self) -> ParseResult<Scene> {
         let mut nodes = Vec::new();
         let mut root_name = None::<String>;
         let mut key_names = Vec::<Cow<'static, str>>::new();
@@ -503,39 +545,41 @@ impl<'a> Parser<'a> {
             match self.current {
                 Token::Dollar => {
                     self.advance();
-                    let name = self.expect_ident();
-                    self.expect(Token::Equals);
+                    let name = self.expect_ident()?;
+                    self.expect(Token::Equals)?;
 
                     if name == "root" {
-                        match self.parse_value() {
+                        match self.parse_value()? {
                             SceneValue::Key(k) => {
                                 let key = k.to_string();
                                 root_name = Some(key.clone());
                                 self.vars.insert("root".to_string(), SceneValue::Key(k));
                             }
-                            _ => panic!("root must be a node ref like @Main"),
+                            _ => return Err("root must be a node ref like @Main".to_string()),
                         }
                     } else {
-                        let value = self.parse_value();
+                        let value = self.parse_value()?;
                         self.vars.insert(name.to_string(), value);
                     }
                 }
 
                 Token::At => {
-                    panic!("use `$root = @NodeKey`; @ only marks node refs");
+                    return Err("use `$root = @NodeKey`; @ only marks node refs".to_string());
                 }
 
                 Token::LBracket => {
                     self.advance();
                     if self.current == Token::Slash {
-                        let end = self.skip_closing_tag_after_lbracket();
+                        let end = self.skip_closing_tag_after_lbracket()?;
                         if self.lenient_separators {
                             continue;
                         }
-                        panic!("unexpected closing tag `/{end}` outside node block");
+                        return Err(format!(
+                            "unexpected closing tag `/{end}` outside node block"
+                        ));
                     }
-                    let key = self.expect_scene_key();
-                    self.expect(Token::RBracket);
+                    let key = self.expect_scene_key()?;
+                    self.expect(Token::RBracket)?;
                     let key_ref = key.as_ref();
                     let key_id = if let Some(key_id) = key_ids.get(key_ref) {
                         *key_id
@@ -547,10 +591,10 @@ impl<'a> Parser<'a> {
                     };
                     if !defined_keys.insert(key_id) {
                         if self.lenient_separators {
-                            self.skip_node_body(key_ref);
+                            self.skip_node_body(key_ref)?;
                             continue;
                         }
-                        panic!("duplicate scene key `{key_ref}`");
+                        return Err(format!("duplicate scene key `{key_ref}`"));
                     }
 
                     let mut name = None;
@@ -562,24 +606,28 @@ impl<'a> Parser<'a> {
                     let mut script_vars: Vec<SceneObjectField> = Vec::new();
 
                     while matches!(self.current, Token::Ident(_)) {
-                        let k = self.expect_ident();
-                        self.expect(Token::Equals);
+                        let k = self.expect_ident()?;
+                        self.expect(Token::Equals)?;
                         if k == "tags" {
-                            tags = self.parse_tags();
+                            tags = self.parse_tags()?;
                             continue;
                         }
-                        let v = self.parse_value();
+                        let v = self.parse_value()?;
                         match k {
                             "name" => {
                                 name = Some(match v {
                                     SceneValue::Str(s) => s.into_owned(),
-                                    _ => panic!("name must be a string"),
+                                    _ => return Err("name must be a string".to_string()),
                                 })
                             }
                             "parent" => {
                                 parent = Some(match v {
                                     SceneValue::Key(k) => k.0.into_owned(),
-                                    _ => panic!("parent must be a node ref like @Parent"),
+                                    _ => {
+                                        return Err(
+                                            "parent must be a node ref like @Parent".to_string()
+                                        );
+                                    }
                                 })
                             }
                             "script" => match v {
@@ -591,35 +639,35 @@ impl<'a> Parser<'a> {
                                     script = None;
                                     clear_script = true;
                                 }
-                                _ => panic!("script must be a string or null"),
+                                _ => return Err("script must be a string or null".to_string()),
                             },
                             "clear_script" => {
                                 clear_script = match v {
                                     SceneValue::Bool(v) => v,
-                                    _ => panic!("clear_script must be a bool"),
+                                    _ => return Err("clear_script must be a bool".to_string()),
                                 };
                             }
                             "root_of" => {
                                 root_of = Some(match v {
                                     SceneValue::Str(s) => s.into_owned(),
-                                    _ => panic!("root_of must be a string"),
+                                    _ => return Err("root_of must be a string".to_string()),
                                 })
                             }
                             "script_vars" => match v {
                                 SceneValue::Object(entries) => {
                                     script_vars = custom_script_var_fields(entries.into_owned());
                                 }
-                                _ => panic!("script_vars must be an object"),
+                                _ => return Err("script_vars must be an object".to_string()),
                             },
                             _ => {}
                         }
                     }
 
                     if self.current != Token::LBracket {
-                        panic!(
+                        return Err(format!(
                             "Expected node type block or closing tag for node `{key}`, got {:?}",
                             self.current
-                        );
+                        ));
                     }
                     self.advance();
 
@@ -629,20 +677,24 @@ impl<'a> Parser<'a> {
                             false,
                         )
                     } else {
-                        (self.parse_type_block_after_lbracket(), true)
+                        (self.parse_type_block_after_lbracket()?, true)
                     };
 
                     if has_data_override {
-                        self.expect(Token::LBracket);
-                        self.expect(Token::Slash);
-                        let end = self.expect_scene_key();
-                        self.expect(Token::RBracket);
-                        assert_eq!(end, key);
+                        self.expect(Token::LBracket)?;
+                        self.expect(Token::Slash)?;
+                        let end = self.expect_scene_key()?;
+                        self.expect(Token::RBracket)?;
+                        if end != key {
+                            return Err(format!("Expected closing tag `/{}`, got `/{}`", key, end));
+                        }
                     } else {
-                        self.expect(Token::Slash);
-                        let end = self.expect_scene_key();
-                        self.expect(Token::RBracket);
-                        assert_eq!(end, key);
+                        self.expect(Token::Slash)?;
+                        let end = self.expect_scene_key()?;
+                        self.expect(Token::RBracket)?;
+                        if end != key {
+                            return Err(format!("Expected closing tag `/{}`, got `/{}`", key, end));
+                        }
                     }
 
                     let name = name.or_else(|| Some(key_ref.to_string()));
@@ -674,36 +726,42 @@ impl<'a> Parser<'a> {
             let parent = if let Some(parent) = key_ids.get(parent_name.as_str()) {
                 *parent
             } else {
-                panic!(
+                return Err(format!(
                     "parent node key `{}` not found for child `{}`",
                     parent_name,
                     key_names
                         .get(nodes[idx].key.as_usize())
                         .map(|name| name.as_ref())
                         .unwrap_or("<unknown>")
-                );
+                ));
             };
             nodes[idx].parent = Some(parent);
         }
-        let root = root_name.map(|name| {
-            if let Some(root) = key_ids.get(name.as_str()) {
-                *root
-            } else {
-                panic!("scene root `{name}` not found in node list");
-            }
-        });
+        let root = if let Some(name) = root_name {
+            Some(
+                *key_ids
+                    .get(name.as_str())
+                    .ok_or_else(|| format!("scene root `{name}` not found in node list"))?,
+            )
+        } else {
+            None
+        };
 
-        Scene {
+        Ok(Scene {
             nodes: Cow::Owned(nodes),
             root,
             key_names: Cow::Owned(key_names),
-        }
+        })
     }
 
     pub fn parse_scene(self) -> Scene {
+        self.try_parse_scene().unwrap_or_else(|err| panic!("{err}"))
+    }
+
+    pub fn try_parse_scene(self) -> Result<Scene, String> {
         let mut parser = Parser::new(self.src);
         if needs_var_prefetch(self.src) {
-            parser.vars = Parser::new(self.src).collect_vars();
+            parser.vars = Parser::new(self.src).try_collect_vars()?;
         }
         parser.parse_scene_inner()
     }
@@ -711,9 +769,13 @@ impl<'a> Parser<'a> {
     pub(crate) fn parse_scene_lenient(self) -> Scene {
         let mut parser = Parser::new_lenient(self.src);
         if needs_var_prefetch(self.src) {
-            parser.vars = Parser::new_lenient(self.src).collect_vars();
+            parser.vars = Parser::new_lenient(self.src)
+                .try_collect_vars()
+                .unwrap_or_else(|err| panic!("{err}"));
         }
-        parser.parse_scene_inner()
+        parser
+            .parse_scene_inner()
+            .unwrap_or_else(|err| panic!("{err}"))
     }
 
     pub fn parse_scene_doc(self) -> crate::SceneDoc {
@@ -721,7 +783,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_value_literal(mut self) -> SceneValue {
-        let value = self.parse_value();
+        let value = self.parse_value().unwrap_or_else(|err| panic!("{err}"));
         if self.current != Token::Eof {
             panic!("Expected end of value, got {:?}", self.current);
         }
@@ -790,11 +852,11 @@ fn scene_node_data_from_parts(
     ty: &str,
     fields: Cow<'static, [SceneObjectField]>,
     base: Option<SceneNodeDataBase>,
-) -> SceneNodeData {
+) -> ParseResult<SceneNodeData> {
     if let Some(node_type) = canonical_node_type(ty) {
-        SceneNodeData::new(node_type, fields, base)
+        Ok(SceneNodeData::new(node_type, fields, base))
     } else {
-        panic!("unsupported scene node type `{ty}`");
+        Err(format!("unsupported scene node type `{ty}`"))
     }
 }
 
@@ -851,5 +913,14 @@ mod tests {
         let scene = Parser::new(src).parse_scene();
         let node = &scene.nodes[0];
         assert_eq!(node.root_of.as_deref(), Some("dlc://test/scenes/main.scn"));
+    }
+
+    #[test]
+    fn try_parse_scene_returns_parse_error() {
+        let err = match Parser::new("$root = main\n\n[main]\n").try_parse_scene() {
+            Ok(_) => panic!("expected parse error"),
+            Err(err) => err,
+        };
+        assert!(err.contains("Expected"));
     }
 }

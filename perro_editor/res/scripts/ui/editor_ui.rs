@@ -377,7 +377,9 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             &format!("inspector_var_{idx}_value"),
             row.map(|item| item.value.as_str()).unwrap_or(""),
         );
-        let picker_row = row.is_some_and(|item| item.kind == "key");
+        let picker_button_name = format!("inspector_var_{idx}_pick_button");
+        let picker_row = row.is_some_and(|item| item.kind == "Node" || item.expandable)
+            && find_named(ctx, &picker_button_name).is_some();
         set_ui_display(
             ctx,
             &format!("inspector_var_{idx}_value"),
@@ -385,7 +387,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         );
         set_ui_display(
             ctx,
-            &format!("inspector_var_{idx}_pick_button"),
+            &picker_button_name,
             view.inspector.node_actions && picker_row,
         );
         set_label(
@@ -429,6 +431,23 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             &format!("inspector_pick_row_{idx}"),
             view.inspector_picker_open && has_row,
         );
+    }
+    if view.inspector_picker_open {
+        set_label(ctx, "add_node_popup_title", &view.inspector_picker_title);
+        set_text_box(ctx, "add_node_search_box", &view.inspector_picker_filter);
+        set_label(ctx, "add_node_parent_label", "current scene");
+        set_label(ctx, "add_node_page_label", &view.inspector_picker_page);
+        for idx in 0..MAX_NODE_PICKER_ROWS {
+            let has_row = view.inspector_picker_rows.get(idx).is_some();
+            let text = view
+                .inspector_picker_rows
+                .get(idx)
+                .cloned()
+                .unwrap_or_else(|| "-".to_string());
+            set_label(ctx, &format!("add_node_type_{idx}_label"), &text);
+            set_ui_display(ctx, &format!("add_node_type_{idx}"), has_row);
+        }
+        set_label(ctx, "add_node_cancel_label", "Cancel");
     }
 }
 
@@ -691,7 +710,8 @@ impl InspectorViewData {
         view.scale = scene_value_components(&node.data, "scale");
         view.script = format!("Script  {script}");
         view.vars_text = script_vars_edit_text(node.script_vars.as_ref());
-        view.script_vars = inspector_script_var_rows(node.script_vars.as_ref());
+        view.script_vars =
+            inspector_script_var_rows(node.script_vars.as_ref(), &state.inspector_expanded_paths);
         view.resource_fields = resource_field_rows(&node.data);
         view.apply_asset_actions(state);
         view
@@ -992,17 +1012,44 @@ pub fn resource_field_row(
     data: &SceneNodeData,
     field: &perro_scene::SceneInspectorField,
 ) -> Option<ResourceFieldView> {
-    let value = scene_field_value_text(data, field.name).unwrap_or_else(|| "Select".to_string());
+    let raw_value = scene_field_value_text(data, field.name);
     let picker_kind = match field.kind {
         perro_scene::SceneInspectorValueKind::NodeRef => "node",
         perro_scene::SceneInspectorValueKind::Asset(_) => "asset",
         _ => return None,
     };
+    let value = match field.kind {
+        perro_scene::SceneInspectorValueKind::NodeRef => raw_value
+            .as_deref()
+            .map(inspector_node_ref_label)
+            .unwrap_or_else(|| "[Select Node]".to_string()),
+        perro_scene::SceneInspectorValueKind::Asset(kind) => raw_value
+            .as_deref()
+            .map(|value| editor_view::short_path(value, 22))
+            .unwrap_or_else(|| format!("[Select {}]", inspector_asset_kind_label(kind))),
+        _ => return None,
+    };
     Some(ResourceFieldView {
         name: field.name.to_string(),
-        value: editor_view::short_path(&value, 22),
+        value,
         picker_kind: picker_kind.to_string(),
     })
+}
+
+fn inspector_asset_kind_label(kind: perro_scene::SceneAssetKind) -> &'static str {
+    match kind {
+        perro_scene::SceneAssetKind::Scene => "Scene",
+        perro_scene::SceneAssetKind::Script => "Script",
+        perro_scene::SceneAssetKind::Texture => "Texture",
+        perro_scene::SceneAssetKind::Mesh | perro_scene::SceneAssetKind::Model => "Mesh",
+        perro_scene::SceneAssetKind::Material => "Material",
+        perro_scene::SceneAssetKind::Animation => "Animation",
+        perro_scene::SceneAssetKind::AnimationTree => "Animation Tree",
+        perro_scene::SceneAssetKind::Skeleton => "Skeleton",
+        perro_scene::SceneAssetKind::ParticleProfile => "Particle",
+        perro_scene::SceneAssetKind::TileSet => "Tile Set",
+        perro_scene::SceneAssetKind::UiStyle => "UI Style",
+    }
 }
 
 #[derive(Clone)]
@@ -1152,24 +1199,24 @@ pub fn node_hierarchy_text(node_type: perro_scene::NodeType) -> String {
 
 pub fn scene_value_kind(value: &SceneValue) -> &'static str {
     match value {
-        SceneValue::Str(_) => "str",
-        SceneValue::Key(_) => "key",
-        SceneValue::Bool(_) => "bool",
-        SceneValue::F32(_) => "f32",
-        SceneValue::I32(_) => "i32",
-        SceneValue::Hashed(_) => "hash",
-        SceneValue::Vec2 { .. } => "vec2",
-        SceneValue::Vec3 { .. } => "vec3",
-        SceneValue::Vec4 { .. } => "quat",
-        SceneValue::Array(_) => "arr",
-        SceneValue::Object(_) => "obj",
+        SceneValue::Str(_) => "String",
+        SceneValue::Key(_) => "Node",
+        SceneValue::Bool(_) => "Bool",
+        SceneValue::F32(_) => "Number",
+        SceneValue::I32(_) => "Number",
+        SceneValue::Hashed(_) => "Hash",
+        SceneValue::Vec2 { .. } => "Vec2",
+        SceneValue::Vec3 { .. } => "Vec3",
+        SceneValue::Vec4 { .. } => "Quat",
+        SceneValue::Array(_) => "Array",
+        SceneValue::Object(_) => "Object",
     }
 }
 
 pub fn scene_value_edit_text(value: &SceneValue) -> String {
     match value {
         SceneValue::Str(value) => format!("\"{}\"", value.replace('"', "\\\"")),
-        SceneValue::Key(key) => format!("@{}", key),
+        SceneValue::Key(key) => inspector_node_ref_label(key.as_ref()),
         SceneValue::Bool(value) => value.to_string(),
         SceneValue::F32(value) => format_compact_f32(*value),
         SceneValue::I32(value) => value.to_string(),
@@ -1208,6 +1255,14 @@ pub fn scene_value_edit_text(value: &SceneValue) -> String {
                 .join(", ");
             format!("{{ {fields} }}")
         }
+    }
+}
+
+pub fn inspector_node_ref_label(value: &str) -> String {
+    if value.trim().is_empty() {
+        "[Select Node]".to_string()
+    } else {
+        format!("Node {value}")
     }
 }
 
@@ -2760,11 +2815,21 @@ pub fn set_inspector_picker<API: ScriptAPI + ?Sized>(
             state.inspector_picker_filter.clear();
         }
     });
+    let mut has_picker_popup = false;
     if let Some(id) = find_named(ctx, "inspector_pick_popup") {
+        has_picker_popup = true;
         let _ = with_node_mut!(ctx.run, UiVLayout, id, |node| {
             node.visible = visible;
             node.input_enabled = visible;
         });
+    }
+    if let Some(id) = find_named(ctx, "add_node_popup") {
+        let _ = with_node_mut!(ctx.run, UiVLayout, id, |node| {
+            node.visible = visible && !has_picker_popup;
+            node.input_enabled = visible && !has_picker_popup;
+        });
+    } else if visible && !has_picker_popup {
+        set_log(ctx, "picker fail\nmissing popup");
     }
 }
 

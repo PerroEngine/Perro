@@ -144,16 +144,6 @@ impl Camera3D {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_camera_3d_masks_no_render_layers() {
-        assert_eq!(Camera3D::default().render_mask, BitMask::NONE);
-    }
-}
-
 fn sanitize_near_far(near: f32, far: f32) -> (f32, f32) {
     let near = if near.is_finite() {
         near.max(0.001)
@@ -179,4 +169,14 @@ fn sanitize_range(min: f32, max: f32, fallback_min: f32, fallback_max: f32) -> (
         std::mem::swap(&mut a, &mut b);
     }
     (a, b)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_camera_3d_masks_no_render_layers() {
+        assert_eq!(Camera3D::default().render_mask, BitMask::NONE);
+    }
 }

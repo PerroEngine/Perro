@@ -746,8 +746,8 @@ pub fn pick_selected_resource_field<API: ScriptAPI + ?Sized>(
     if pick.flatten().is_none() {
         return;
     }
-    refresh_all(ctx);
     set_inspector_picker(ctx, true);
+    refresh_all(ctx);
 }
 
 pub fn pick_selected_script_var_ref<API: ScriptAPI + ?Sized>(
@@ -762,9 +762,24 @@ pub fn pick_selected_script_var_ref<API: ScriptAPI + ?Sized>(
             .nodes
             .iter()
             .find(|node| node.key.as_u32() == key)?;
-        let rows = inspector_script_var_rows(node.script_vars.as_ref());
+        let rows = inspector_script_var_rows(
+            node.script_vars.as_ref(),
+            &state.inspector_expanded_paths,
+        );
         let row = rows.get(idx)?;
-        if row.kind != "key" {
+        if row.expandable {
+            if let Some(pos) = state
+                .inspector_expanded_paths
+                .iter()
+                .position(|item| item == &row.path_key)
+            {
+                state.inspector_expanded_paths.remove(pos);
+            } else {
+                state.inspector_expanded_paths.push(row.path_key.clone());
+            }
+            return Some(false);
+        }
+        if row.kind != "Node" {
             return None;
         }
         state.inspector_picker_open = true;
@@ -772,17 +787,28 @@ pub fn pick_selected_script_var_ref<API: ScriptAPI + ?Sized>(
         state.inspector_picker_kind = "script_node".to_string();
         state.inspector_picker_offset = 0;
         state.inspector_picker_filter.clear();
-        Some(())
+        Some(true)
     });
-    if pick.flatten().is_none() {
+    let Some(open_picker) = pick.flatten() else {
+        return;
+    };
+    if !open_picker {
+        refresh_all(ctx);
         return;
     }
-    refresh_all(ctx);
     set_inspector_picker(ctx, true);
+    refresh_all(ctx);
 }
 
 pub fn update_inspector_picker_filter<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
-    let Some(text) = read_text_box(ctx, "inspector_pick_filter_box") else {
+    update_inspector_picker_filter_from(ctx, "inspector_pick_filter_box");
+}
+
+pub fn update_inspector_picker_filter_from<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    box_name: &str,
+) {
+    let Some(text) = read_text_box(ctx, box_name) else {
         return;
     };
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
@@ -852,7 +878,10 @@ pub fn choose_inspector_picker_row<API: ScriptAPI + ?Sized>(
             let Ok(row_idx) = field.parse::<usize>() else {
                 return false;
             };
-            let rows = inspector_script_var_rows(node.script_vars.as_ref());
+            let rows = inspector_script_var_rows(
+                node.script_vars.as_ref(),
+                &state.inspector_expanded_paths,
+            );
             let Some(row) = rows.get(row_idx) else {
                 return false;
             };

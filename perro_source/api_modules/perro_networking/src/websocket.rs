@@ -46,6 +46,7 @@ pub struct WebSocketHostOptions {
     pub subprotocols: Vec<String>,
     pub require_subprotocol: bool,
     pub max_message_bytes: usize,
+    pub handshake_timeout_ms: u64,
 }
 
 impl WebSocketHostOptions {
@@ -71,6 +72,11 @@ impl WebSocketHostOptions {
         self.max_message_bytes = max_message_bytes.max(1);
         self
     }
+
+    pub fn handshake_timeout_ms(mut self, handshake_timeout_ms: u64) -> Self {
+        self.handshake_timeout_ms = handshake_timeout_ms.max(1);
+        self
+    }
 }
 
 impl Default for WebSocketHostOptions {
@@ -79,6 +85,7 @@ impl Default for WebSocketHostOptions {
             subprotocols: Vec::new(),
             require_subprotocol: false,
             max_message_bytes: 1024 * 1024,
+            handshake_timeout_ms: 3_000,
         }
     }
 }
@@ -223,6 +230,13 @@ impl WebSocketConnection {
         stream: TcpStream,
         options: WebSocketHostOptions,
     ) -> NetResult<Self> {
+        let handshake_timeout = Duration::from_millis(options.handshake_timeout_ms);
+        stream
+            .set_read_timeout(Some(handshake_timeout))
+            .map_err(|err| NetError::from_io(NetErrorKind::Handshake, err))?;
+        stream
+            .set_write_timeout(Some(handshake_timeout))
+            .map_err(|err| NetError::from_io(NetErrorKind::Handshake, err))?;
         stream
             .set_nonblocking(false)
             .map_err(|err| NetError::from_io(NetErrorKind::SetNonBlocking, err))?;
@@ -650,7 +664,7 @@ fn map_websocket_message(message: Message, max_bytes: usize) -> NetResult<WebSoc
 
     Ok(match message {
         Message::Text(text) => WebSocketMessage::Text(text.to_string()),
-        Message::Binary(bytes) => map_websocket_binary(bytes.as_ref())?,
+        Message::Binary(bytes) => map_websocket_binary(bytes.as_ref(), max_bytes)?,
         Message::Ping(bytes) => WebSocketMessage::Ping(bytes.to_vec()),
         Message::Pong(bytes) => WebSocketMessage::Pong(bytes.to_vec()),
         Message::Close(frame) => WebSocketMessage::Close {
@@ -669,10 +683,10 @@ fn map_websocket_message(message: Message, max_bytes: usize) -> NetResult<WebSoc
     })
 }
 
-fn map_websocket_binary(bytes: &[u8]) -> NetResult<WebSocketMessage> {
+fn map_websocket_binary(bytes: &[u8], max_bytes: usize) -> NetResult<WebSocketMessage> {
     if let Some(payload) = bytes.strip_prefix(WEBSOCKET_ZLIB_TEXT_PREFIX) {
         return Ok(WebSocketMessage::Text(utf8(
-            decompress_zlib(payload).map_err(|err| {
+            decompress_zlib_limited(payload, max_bytes).map_err(|err| {
                 NetError::new(
                     NetErrorKind::InvalidFrame,
                     format!("decompress websocket text: {err}"),
@@ -681,14 +695,14 @@ fn map_websocket_binary(bytes: &[u8]) -> NetResult<WebSocketMessage> {
         )?));
     }
     if let Some(payload) = bytes.strip_prefix(WEBSOCKET_ZLIB_BINARY_PREFIX) {
-        return Ok(WebSocketMessage::Binary(decompress_zlib(payload).map_err(
-            |err| {
+        return Ok(WebSocketMessage::Binary(
+            decompress_zlib_limited(payload, max_bytes).map_err(|err| {
                 NetError::new(
                     NetErrorKind::InvalidFrame,
                     format!("decompress websocket binary: {err}"),
                 )
-            },
-        )?));
+            })?,
+        ));
     }
     Ok(WebSocketMessage::Binary(bytes.to_vec()))
 }

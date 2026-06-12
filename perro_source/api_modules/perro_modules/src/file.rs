@@ -3,7 +3,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use perro_io::{ProjectRoot, load_asset, save_asset, set_project_root};
+use perro_io::{
+    ProjectRoot, load_asset, save_asset, set_project_root, validate_virtual_asset_path,
+};
 use perro_resource_api::ResPathSource;
 
 pub fn set_project_root_disk(root: &str, name: &str) {
@@ -34,6 +36,9 @@ pub fn save_string<P: ResPathSource>(path: P, data: &str) -> io::Result<()> {
 
 pub fn exists<P: ResPathSource>(path: P) -> bool {
     let path = path.as_res_path_str();
+    if validate_virtual_asset_path(path).is_err() {
+        return false;
+    }
     match perro_io::resolve_path(path) {
         perro_io::ResolvedPath::Disk(pb) => pb.exists(),
         perro_io::ResolvedPath::WebUserStorage(_)
@@ -46,11 +51,17 @@ pub fn exists<P: ResPathSource>(path: P) -> bool {
 
 pub fn is_dir<P: ResPathSource>(path: P) -> bool {
     let path = path.as_res_path_str();
+    if validate_virtual_asset_path(path).is_err() {
+        return false;
+    }
     matches!(perro_io::resolve_path(path), perro_io::ResolvedPath::Disk(pb) if pb.is_dir())
 }
 
 pub fn is_file<P: ResPathSource>(path: P) -> bool {
     let path = path.as_res_path_str();
+    if validate_virtual_asset_path(path).is_err() {
+        return false;
+    }
     matches!(perro_io::resolve_path(path), perro_io::ResolvedPath::Disk(pb) if pb.is_file())
 }
 
@@ -84,6 +95,9 @@ pub fn pick_file(title: &str, filters: &[(&str, &[&str])]) -> Option<String> {
 
 pub fn resolve_path_string<P: ResPathSource>(path: P) -> String {
     let path = path.as_res_path_str();
+    if let Err(err) = validate_virtual_asset_path(path) {
+        return format!("invalid://{err}");
+    }
     match perro_io::resolve_path(path) {
         perro_io::ResolvedPath::Disk(pb) => pb.to_string_lossy().to_string(),
         perro_io::ResolvedPath::WebUserStorage(key) => format!("webstorage://{key}"),
@@ -100,6 +114,7 @@ pub fn resolve_path_string<P: ResPathSource>(path: P) -> String {
 
 fn validate_write_path(path: &str) -> io::Result<()> {
     if path.starts_with("user://") {
+        validate_virtual_asset_path(path)?;
         return Ok(());
     }
 
@@ -114,6 +129,7 @@ fn validate_write_path(path: &str) -> io::Result<()> {
 }
 
 fn disk_path(path: &str) -> io::Result<PathBuf> {
+    validate_virtual_asset_path(path)?;
     match perro_io::resolve_path(path) {
         perro_io::ResolvedPath::Disk(path) => Ok(path),
         _ => Err(io::Error::new(

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::{self, Cursor, Read, Seek, SeekFrom};
+use std::ops::Range;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -7,9 +8,11 @@ use super::common::{
     FLAG_COMPRESSED, PERRO_ASSETS_COMPRESSED_MAGIC, PERRO_ASSETS_MAGIC, PerroAssetsEntryMeta,
     read_header, read_index_entry,
 };
-use super::compression::decompress_zlib;
+use super::compression::decompress_zlib_limited;
 
 pub type PerroAssetsEntry = PerroAssetsEntryMeta;
+
+const MAX_DECOMPRESSED_ARCHIVE_BYTES: usize = 1024 * 1024 * 1024;
 
 pub struct PerroAssetsArchive {
     data: Arc<[u8]>,
@@ -62,13 +65,13 @@ impl PerroAssetsArchive {
             .get(path)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "File not found"))?;
 
-        let start = entry.offset as usize;
-        let end = start + entry.size as usize;
-        let mut data_buf = self.data[start..end].to_vec();
+        let range = checked_entry_range(self.data.len(), entry)?;
+        let mut data_buf = self.data[range].to_vec();
 
         // Decompress if needed
         if entry.flags & FLAG_COMPRESSED != 0 {
-            let decompressed = decompress_zlib(&data_buf)?;
+            let expected_size = checked_decompressed_size(entry.original_size)?;
+            let decompressed = decompress_zlib_limited(&data_buf, expected_size)?;
 
             if decompressed.len() as u64 != entry.original_size {
                 return Err(io::Error::new(
@@ -99,9 +102,8 @@ impl PerroAssetsArchive {
             ));
         }
 
-        let start = entry.offset as usize;
-        let end = start + entry.size as usize;
-        Ok(&self.data[start..end])
+        let range = checked_entry_range(self.data.len(), entry)?;
+        Ok(&self.data[range])
     }
 
     /// Stream a file (only works for uncompressed files)
@@ -116,6 +118,8 @@ impl PerroAssetsArchive {
                 "Streaming compressed files not supported (use read_file)",
             ));
         }
+
+        checked_entry_range(self.data.len(), entry)?;
 
         Ok(PerroAssetsFile {
             data: self.data.clone(),
@@ -154,8 +158,9 @@ fn decode_archive_container(data: Vec<u8>) -> io::Result<Vec<u8>> {
         ));
     }
 
-    let original_size = u64::from_le_bytes(data[8..16].try_into().unwrap()) as usize;
-    let mut out = decompress_zlib(&data[16..])?;
+    let original_size =
+        checked_decompressed_size(u64::from_le_bytes(data[8..16].try_into().unwrap()))?;
+    let mut out = decompress_zlib_limited(&data[16..], original_size)?;
     if out.len() != original_size {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -169,6 +174,35 @@ fn decode_archive_container(data: Vec<u8>) -> io::Result<Vec<u8>> {
     Ok(std::mem::take(&mut out))
 }
 
+fn checked_decompressed_size(size: u64) -> io::Result<usize> {
+    let size = usize::try_from(size)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "archive entry too large"))?;
+    if size > MAX_DECOMPRESSED_ARCHIVE_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "archive entry exceeds decompression limit",
+        ));
+    }
+    Ok(size)
+}
+
+fn checked_entry_range(data_len: usize, entry: &PerroAssetsEntry) -> io::Result<Range<usize>> {
+    let start = usize::try_from(entry.offset)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "archive offset too large"))?;
+    let size = usize::try_from(entry.size)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "archive entry too large"))?;
+    let end = start
+        .checked_add(size)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "archive range overflow"))?;
+    if end > data_len {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "archive entry outside data bounds",
+        ));
+    }
+    Ok(start..end)
+}
+
 /// Streaming file handle (for uncompressed files only)
 pub struct PerroAssetsFile {
     data: Arc<[u8]>,
@@ -178,11 +212,13 @@ pub struct PerroAssetsFile {
 
 impl Read for PerroAssetsFile {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let start = self.entry.offset as usize;
-        let end = (self.entry.offset + self.entry.size) as usize;
-        let data = &self.data[start..end];
-
-        let remaining = &data[self.pos as usize..];
+        let range = checked_entry_range(self.data.len(), &self.entry)?;
+        let data = &self.data[range];
+        let pos = usize::try_from(self.pos)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "read offset too large"))?;
+        let remaining = data.get(pos..).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "read offset out of bounds")
+        })?;
         let amt = remaining.len().min(buf.len());
         buf[..amt].copy_from_slice(&remaining[..amt]);
         self.pos += amt as u64;

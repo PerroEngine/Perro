@@ -151,7 +151,7 @@ pub fn scene_inspector_asset_fields(node_type: NodeType) -> Vec<SceneInspectorFi
 pub fn scene_inspector_field(node_type: NodeType, name: &str) -> Option<SceneInspectorField> {
     scene_inspector_fields(node_type)
         .into_iter()
-        .find(|field| field.name == name || field.aliases.iter().any(|alias| *alias == name))
+        .find(|field| field.name == name || field.aliases.contains(&name))
 }
 
 fn push_base_fields(fields: &mut Vec<SceneInspectorField>, node_type: NodeType) {

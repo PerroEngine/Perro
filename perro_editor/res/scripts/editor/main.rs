@@ -31,6 +31,7 @@ pub const LIST_DOUBLE_CLICK_FRAMES: u32 = 18;
 #[State]
 pub struct EditorState {
     pub editor_shell_root: u64,
+    pub inspector_picker_root: u64,
     pub project_root: String,
     pub project_name: String,
     pub create_parent_dir: String,
@@ -77,6 +78,7 @@ pub struct EditorState {
     pub inspector_picker_kind: String,
     pub inspector_picker_offset: usize,
     pub inspector_picker_filter: String,
+    pub inspector_expanded_paths: Vec<String>,
     pub scene_filter: String,
     pub node_picker_offset: usize,
     pub node_picker_filter: String,
@@ -179,16 +181,30 @@ methods!({
                 save_active_scene(ctx);
             }
             "add_node_button" => open_add_node_popup(ctx),
-            "add_node_cancel_button" => set_add_node_popup(ctx, false),
+            "add_node_cancel_button" => {
+                if with_state!(ctx.run, EditorState, ctx.id, |state| state.inspector_picker_open) {
+                    set_inspector_picker(ctx, false);
+                } else {
+                    set_add_node_popup(ctx, false);
+                }
+            }
             "inspector_pick_cancel_button" => set_inspector_picker(ctx, false),
             "inspector_pick_prev_button" => shift_inspector_picker(ctx, -1),
             "inspector_pick_next_button" => shift_inspector_picker(ctx, 1),
             "inspector_pick_filter_box" => update_inspector_picker_filter(ctx),
             "add_node_prev_button" => {
-                shift_node_picker(ctx, -1);
+                if with_state!(ctx.run, EditorState, ctx.id, |state| state.inspector_picker_open) {
+                    shift_inspector_picker(ctx, -1);
+                } else {
+                    shift_node_picker(ctx, -1);
+                }
             }
             "add_node_next_button" => {
-                shift_node_picker(ctx, 1);
+                if with_state!(ctx.run, EditorState, ctx.id, |state| state.inspector_picker_open) {
+                    shift_inspector_picker(ctx, 1);
+                } else {
+                    shift_node_picker(ctx, 1);
+                }
             }
             "viewport_click_layer" => handle_viewport_click(ctx),
             "mode_ui_button" => set_mode(ctx, "UI"),
@@ -225,14 +241,24 @@ methods!({
             }
             "inspector_scale_box" => edit_selected_transform(ctx, "scale", "inspector_scale_box"),
             "inspector_vars_box" => edit_selected_script_vars(ctx),
-            "add_node_search_box" => update_node_picker_filter(ctx),
+            "add_node_search_box" => {
+                if with_state!(ctx.run, EditorState, ctx.id, |state| state.inspector_picker_open) {
+                    update_inspector_picker_filter_from(ctx, "add_node_search_box");
+                } else {
+                    update_node_picker_filter(ctx);
+                }
+            }
             _ => {
                 if let Some(idx) = suffix_index(&name, "file_row_") {
                     click_or_open_file_slot(ctx, idx);
                 } else if let Some(idx) = suffix_index(&name, "manager_recent_") {
                     open_recent_project(ctx, idx);
                 } else if let Some(idx) = suffix_index(&name, "add_node_type_") {
-                    add_node_from_picker(ctx, idx);
+                    if with_state!(ctx.run, EditorState, ctx.id, |state| state.inspector_picker_open) {
+                        choose_inspector_picker_row(ctx, idx);
+                    } else {
+                        add_node_from_picker(ctx, idx);
+                    }
                 } else if let Some(idx) = middle_index(&name, "inspector_var_", "_value") {
                     edit_selected_script_var_path(ctx, idx);
                 } else if let Some(idx) = middle_index(&name, "inspector_var_", "_pick_button") {

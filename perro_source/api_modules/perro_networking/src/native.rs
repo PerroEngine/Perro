@@ -4,10 +4,11 @@ use std::{
     net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs, UdpSocket},
     string::FromUtf8Error,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use perro_ids::SignalID;
-use perro_io::{compress_zlib_best, decompress_zlib};
+use perro_io::{compress_zlib_best, decompress_zlib_limited};
 use perro_variant::Variant;
 use tokio::task;
 use tungstenite::{

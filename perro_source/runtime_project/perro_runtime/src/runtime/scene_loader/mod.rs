@@ -7,7 +7,7 @@ use perro_io::{ProjectRoot, clear_dlc_mounts, set_project_root};
 #[cfg(not(target_arch = "wasm32"))]
 use perro_io::{
     data_local_dir, is_reserved_dlc_name, mount_dlc_archive, mount_dlc_disk, read_mounted_dlc_file,
-    register_dlc_static_binary_lookup,
+    register_dlc_static_binary_lookup, validate_asset_relative_path,
 };
 use perro_runtime_api::sub_apis::NodeAPI;
 use perro_runtime_api::sub_apis::PreloadedSceneID;
@@ -793,8 +793,14 @@ fn extract_dlc_archive_file_to_cache(
     virtual_path: &str,
     cache_root: &Path,
 ) -> Result<PathBuf, std::io::Error> {
+    validate_asset_relative_path(virtual_path)?;
     let bytes = read_mounted_dlc_file(dlc_name, virtual_path)?;
-    let target = cache_root.join(virtual_path.replace('/', "\\"));
+    let mut target = cache_root.to_path_buf();
+    for segment in virtual_path.split('/') {
+        if !segment.is_empty() {
+            target.push(segment);
+        }
+    }
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)?;
     }

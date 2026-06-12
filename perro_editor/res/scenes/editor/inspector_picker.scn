@@ -1,0 +1,427 @@
+$root = @inspector_pick_popup
+$panel = { fill: "#303742", stroke: "#4D5665", stroke_width: 1.0, radius: 0.025 }
+$bar = { fill: "#272D36", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+$row = { fill: "#39414E", stroke: "#00000000", stroke_width: 0.0, radius: 0.04 }
+$btn = { fill: "#3D4654", stroke: "#00000000", stroke_width: 0.0, radius: 0.08 }
+$btn_hot = { style: { fill: "#4A5668", stroke: "#00000000", stroke_width: 0.0, radius: 0.08 } }
+$btn_down = { style: { fill: "#59677D", stroke: "#00000000", stroke_width: 0.0, radius: 0.08 } }
+$field = { fill: "#242A33", stroke: "#404A58", stroke_width: 1.0, radius: 0.04 }
+$field_focus = { fill: "#242A33", stroke: "#93C5FD", stroke_width: 1.0, radius: 0.04 }
+
+[inspector_pick_popup]
+    [UiVLayout]
+        anchor = "center"
+        size_ratio = (0.30, 0.70)
+        h_align = "fill"
+        v_align = "start"
+        spacing = 0.004
+        padding = (0.018, 0.012)
+        visible = false
+        style = $panel
+    [/UiVLayout]
+[/inspector_pick_popup]
+
+[inspector_pick_title]
+parent = @inspector_pick_popup
+    [UiLabel]
+        size_ratio = (1.0, 0.052)
+        text = "Pick"
+        text_size_ratio = 0.26
+        color = "#F3F4F6"
+        h_align = "start"
+        style = $bar
+    [/UiLabel]
+[/inspector_pick_title]
+
+[inspector_pick_filter_box]
+parent = @inspector_pick_popup
+    [UiTextBox]
+        size_ratio = (1.0, 0.052)
+        text = ""
+        placeholder = "Filter"
+        placeholder_color = "#94A3B8"
+        text_size_ratio = 0.22
+        text_changed_signals = ["editor_inspector_pick_filter"]
+        style = $field
+        focused_style = $field_focus
+    [/UiTextBox]
+[/inspector_pick_filter_box]
+
+[inspector_pick_row_0]
+parent = @inspector_pick_popup
+    [UiButton]
+        size_ratio = (1.0, 0.050)
+        click_signals = ["editor_inspector_pick_0"]
+        style = $row
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_pick_row_0]
+
+[inspector_pick_row_0_label]
+parent = @inspector_pick_row_0
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "-"
+        text_size_ratio = 0.23
+        color = "#E5E7EB"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_pick_row_0_label]
+
+[inspector_pick_row_1]
+parent = @inspector_pick_popup
+    [UiButton]
+        size_ratio = (1.0, 0.050)
+        click_signals = ["editor_inspector_pick_1"]
+        style = $row
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_pick_row_1]
+
+[inspector_pick_row_1_label]
+parent = @inspector_pick_row_1
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "-"
+        text_size_ratio = 0.23
+        color = "#E5E7EB"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_pick_row_1_label]
+
+[inspector_pick_row_2]
+parent = @inspector_pick_popup
+    [UiButton]
+        size_ratio = (1.0, 0.050)
+        click_signals = ["editor_inspector_pick_2"]
+        style = $row
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_pick_row_2]
+
+[inspector_pick_row_2_label]
+parent = @inspector_pick_row_2
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "-"
+        text_size_ratio = 0.23
+        color = "#E5E7EB"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_pick_row_2_label]
+
+[inspector_pick_row_3]
+parent = @inspector_pick_popup
+    [UiButton]
+        size_ratio = (1.0, 0.050)
+        click_signals = ["editor_inspector_pick_3"]
+        style = $row
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_pick_row_3]
+
+[inspector_pick_row_3_label]
+parent = @inspector_pick_row_3
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "-"
+        text_size_ratio = 0.23
+        color = "#E5E7EB"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_pick_row_3_label]
+
+[inspector_pick_row_4]
+parent = @inspector_pick_popup
+    [UiButton]
+        size_ratio = (1.0, 0.050)
+        click_signals = ["editor_inspector_pick_4"]
+        style = $row
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_pick_row_4]
+
+[inspector_pick_row_4_label]
+parent = @inspector_pick_row_4
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "-"
+        text_size_ratio = 0.23
+        color = "#E5E7EB"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_pick_row_4_label]
+
+[inspector_pick_row_5]
+parent = @inspector_pick_popup
+    [UiButton]
+        size_ratio = (1.0, 0.050)
+        click_signals = ["editor_inspector_pick_5"]
+        style = $row
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_pick_row_5]
+
+[inspector_pick_row_5_label]
+parent = @inspector_pick_row_5
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "-"
+        text_size_ratio = 0.23
+        color = "#E5E7EB"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_pick_row_5_label]
+
+[inspector_pick_row_6]
+parent = @inspector_pick_popup
+    [UiButton]
+        size_ratio = (1.0, 0.050)
+        click_signals = ["editor_inspector_pick_6"]
+        style = $row
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_pick_row_6]
+
+[inspector_pick_row_6_label]
+parent = @inspector_pick_row_6
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "-"
+        text_size_ratio = 0.23
+        color = "#E5E7EB"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_pick_row_6_label]
+
+[inspector_pick_row_7]
+parent = @inspector_pick_popup
+    [UiButton]
+        size_ratio = (1.0, 0.050)
+        click_signals = ["editor_inspector_pick_7"]
+        style = $row
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_pick_row_7]
+
+[inspector_pick_row_7_label]
+parent = @inspector_pick_row_7
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "-"
+        text_size_ratio = 0.23
+        color = "#E5E7EB"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_pick_row_7_label]
+
+[inspector_pick_row_8]
+parent = @inspector_pick_popup
+    [UiButton]
+        size_ratio = (1.0, 0.050)
+        click_signals = ["editor_inspector_pick_8"]
+        style = $row
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_pick_row_8]
+
+[inspector_pick_row_8_label]
+parent = @inspector_pick_row_8
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "-"
+        text_size_ratio = 0.23
+        color = "#E5E7EB"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_pick_row_8_label]
+
+[inspector_pick_row_9]
+parent = @inspector_pick_popup
+    [UiButton]
+        size_ratio = (1.0, 0.050)
+        click_signals = ["editor_inspector_pick_9"]
+        style = $row
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_pick_row_9]
+
+[inspector_pick_row_9_label]
+parent = @inspector_pick_row_9
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "-"
+        text_size_ratio = 0.23
+        color = "#E5E7EB"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_pick_row_9_label]
+
+[inspector_pick_row_10]
+parent = @inspector_pick_popup
+    [UiButton]
+        size_ratio = (1.0, 0.050)
+        click_signals = ["editor_inspector_pick_10"]
+        style = $row
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_pick_row_10]
+
+[inspector_pick_row_10_label]
+parent = @inspector_pick_row_10
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "-"
+        text_size_ratio = 0.23
+        color = "#E5E7EB"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_pick_row_10_label]
+
+[inspector_pick_row_11]
+parent = @inspector_pick_popup
+    [UiButton]
+        size_ratio = (1.0, 0.050)
+        click_signals = ["editor_inspector_pick_11"]
+        style = $row
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_pick_row_11]
+
+[inspector_pick_row_11_label]
+parent = @inspector_pick_row_11
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "-"
+        text_size_ratio = 0.23
+        color = "#E5E7EB"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_pick_row_11_label]
+
+[inspector_pick_nav]
+parent = @inspector_pick_popup
+    [UiHLayout]
+        size_ratio = (1.0, 0.052)
+        h_align = "fill"
+        v_align = "center"
+        spacing = 0.008
+    [/UiHLayout]
+[/inspector_pick_nav]
+
+[inspector_pick_prev_button]
+parent = @inspector_pick_nav
+    [UiButton]
+        size_ratio = (0.28, 0.90)
+        click_signals = ["editor_inspector_pick_prev"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_pick_prev_button]
+
+[inspector_pick_prev_label]
+parent = @inspector_pick_prev_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Prev"
+        text_size_ratio = 0.23
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_pick_prev_label]
+
+[inspector_pick_page_label]
+parent = @inspector_pick_nav
+    [UiLabel]
+        size_ratio = (0.38, 1.0)
+        text = "page 1/1"
+        text_size_ratio = 0.22
+        color = "#CBD5E1"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_pick_page_label]
+
+[inspector_pick_next_button]
+parent = @inspector_pick_nav
+    [UiButton]
+        size_ratio = (0.28, 0.90)
+        click_signals = ["editor_inspector_pick_next"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_pick_next_button]
+
+[inspector_pick_next_label]
+parent = @inspector_pick_next_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Next"
+        text_size_ratio = 0.23
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_pick_next_label]
+
+[inspector_pick_cancel_button]
+parent = @inspector_pick_popup
+    [UiButton]
+        size_ratio = (1.0, 0.052)
+        click_signals = ["editor_inspector_pick_cancel"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/inspector_pick_cancel_button]
+
+[inspector_pick_cancel_label]
+parent = @inspector_pick_cancel_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Cancel"
+        text_size_ratio = 0.23
+        color = "#F3F4F6"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_pick_cancel_label]

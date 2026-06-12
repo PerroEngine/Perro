@@ -13,10 +13,12 @@ const MAX_INSPECTOR_DEPTH: usize = 4;
 #[derive(Clone)]
 pub struct InspectorValueRow {
     pub path: Vec<ValuePathStep>,
+    pub path_key: String,
     pub name: String,
     pub kind: String,
     pub value: String,
     pub editable: bool,
+    pub expandable: bool,
 }
 
 #[derive(Clone)]
@@ -28,6 +30,7 @@ pub enum ValuePathStep {
 
 pub fn inspector_script_var_rows(
     fields: &[(SceneFieldName, SceneValue)],
+    expanded_paths: &[String],
 ) -> Vec<InspectorValueRow> {
     let mut rows = Vec::new();
     for (idx, (name, value)) in fields.iter().enumerate() {
@@ -39,6 +42,7 @@ pub fn inspector_script_var_rows(
             &mut path,
             0,
             MAX_INSPECTOR_VALUE_ROWS,
+            expanded_paths,
         );
         if rows.len() >= MAX_INSPECTOR_VALUE_ROWS {
             break;
@@ -54,30 +58,43 @@ fn push_value_rows(
     path: &mut Vec<ValuePathStep>,
     depth: usize,
     max: usize,
+    expanded_paths: &[String],
 ) {
     if rows.len() >= max {
         return;
     }
     let composite = matches!(value, SceneValue::Array(_) | SceneValue::Object(_));
+    let path_key = value_path_key(path);
+    let expanded = composite && expanded_paths.iter().any(|item| item == &path_key);
     rows.push(InspectorValueRow {
         path: path.clone(),
+        path_key,
         name: format!("{}{}", "  ".repeat(depth), name),
         kind: scene_value_kind(value).to_string(),
         value: if composite {
-            scene_value_summary(value)
+            scene_value_summary(value, expanded)
         } else {
             scene_value_edit_text(value)
         },
         editable: !composite,
+        expandable: composite,
     });
-    if depth >= MAX_INSPECTOR_DEPTH {
+    if !expanded || depth >= MAX_INSPECTOR_DEPTH {
         return;
     }
     match value {
         SceneValue::Array(values) => {
             for (idx, item) in values.iter().enumerate() {
                 path.push(ValuePathStep::Index(idx));
-                push_value_rows(rows, &format!("[{idx}]"), item, path, depth + 1, max);
+                push_value_rows(
+                    rows,
+                    &format!("[{idx}]"),
+                    item,
+                    path,
+                    depth + 1,
+                    max,
+                    expanded_paths,
+                );
                 path.pop();
                 if rows.len() >= max {
                     break;
@@ -87,7 +104,15 @@ fn push_value_rows(
         SceneValue::Object(fields) => {
             for (field, item) in fields.iter() {
                 path.push(ValuePathStep::Field(field.as_ref().to_string()));
-                push_value_rows(rows, field.as_ref(), item, path, depth + 1, max);
+                push_value_rows(
+                    rows,
+                    field.as_ref(),
+                    item,
+                    path,
+                    depth + 1,
+                    max,
+                    expanded_paths,
+                );
                 path.pop();
                 if rows.len() >= max {
                     break;
@@ -98,12 +123,30 @@ fn push_value_rows(
     }
 }
 
-pub fn scene_value_summary(value: &SceneValue) -> String {
+pub fn scene_value_summary(value: &SceneValue, expanded: bool) -> String {
+    let marker = if expanded { "v" } else { ">" };
     match value {
-        SceneValue::Array(values) => format!("{} item(s)", values.len()),
-        SceneValue::Object(fields) => format!("{} field(s)", fields.len()),
+        SceneValue::Array(values) if values.is_empty() => format!("{marker} Array []"),
+        SceneValue::Array(values) => format!("{marker} Array [{}]", values.len()),
+        SceneValue::Object(fields) if fields.is_empty() => format!("{marker} Object {{}}"),
+        SceneValue::Object(fields) => format!("{marker} Object [{}]", fields.len()),
         _ => scene_value_edit_text(value),
     }
+}
+
+pub fn value_path_key(path: &[ValuePathStep]) -> String {
+    let mut out = String::new();
+    for step in path {
+        match step {
+            ValuePathStep::Root(idx) => out.push_str(&format!("r{idx}")),
+            ValuePathStep::Field(name) => {
+                out.push('.');
+                out.push_str(name);
+            }
+            ValuePathStep::Index(idx) => out.push_str(&format!("[{idx}]")),
+        }
+    }
+    out
 }
 
 pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
@@ -118,7 +161,10 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
             .nodes
             .iter()
             .find(|node| node.key.as_u32() == key)?;
-        Some(inspector_script_var_rows(node.script_vars.as_ref()))
+        Some(inspector_script_var_rows(
+            node.script_vars.as_ref(),
+            &state.inspector_expanded_paths,
+        ))
     });
     let Some(rows) = rows else {
         return;

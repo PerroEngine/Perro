@@ -818,7 +818,9 @@ pub(super) fn load_runtime_scene_from_disk(
         .map_err(|err| format!("scene `{path}` is not valid UTF-8: {err}"))?;
     #[cfg(feature = "profile")]
     let parse_start = Instant::now();
-    let mut scene = Parser::new(source).parse_scene();
+    let mut scene = Parser::new(source)
+        .try_parse_scene()
+        .map_err(|err| format!("failed to parse scene `{path}`: {err}"))?;
     if let Some(mount_name) = parse_dlc_mount_name(path) {
         resolve_scene_dlc_self_paths(&mut scene, &mount_name);
     }

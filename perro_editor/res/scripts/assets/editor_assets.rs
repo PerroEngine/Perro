@@ -112,14 +112,19 @@ pub fn open_project<API: ScriptAPI + ?Sized>(
 pub fn load_editor_shell<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
 ) -> Result<(), String> {
-    let old = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+    let (old, old_picker) = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let old = state.editor_shell_root;
+        let old_picker = state.inspector_picker_root;
         state.editor_shell_root = 0;
-        old
+        state.inspector_picker_root = 0;
+        (old, old_picker)
     })
-    .unwrap_or(0);
+    .unwrap_or((0, 0));
     if old != 0 {
         let _ = ctx.run.Nodes().remove_node(NodeID::from_u64(old));
+    }
+    if old_picker != 0 {
+        let _ = ctx.run.Nodes().remove_node(NodeID::from_u64(old_picker));
     }
 
     let root = ctx
@@ -128,8 +133,15 @@ pub fn load_editor_shell<API: ScriptAPI + ?Sized>(
         .load(editor_app::EDITOR_SHELL_SCENE.to_string())
         .map_err(|err| format!("editor shell load fail\n{err}"))?;
     let _ = ctx.run.Nodes().reparent(ctx.id, root);
+    let picker_root = ctx
+        .run
+        .Scene()
+        .load(editor_app::INSPECTOR_PICKER_SCENE.to_string())
+        .map_err(|err| format!("inspector picker load fail\n{err}"))?;
+    let _ = ctx.run.Nodes().reparent(ctx.id, picker_root);
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         state.editor_shell_root = root.as_u64();
+        state.inspector_picker_root = picker_root.as_u64();
     });
     Ok(())
 }
@@ -444,6 +456,7 @@ pub fn open_scene_path<API: ScriptAPI + ?Sized>(
         state.doc_text = doc.to_text();
         state.selected_key = first_key;
         state.collapsed_scene_keys.clear();
+        state.inspector_expanded_paths.clear();
         state.viewport_mode = mode.to_string();
         if mode == "3D" {
             reset_freecam(state);

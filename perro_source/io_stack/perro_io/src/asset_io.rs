@@ -3,7 +3,7 @@ use std::{
     collections::HashMap,
     fs::{self, File},
     io::{self, Read, Seek, Write},
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     sync::{Arc, LazyLock, RwLock},
 };
 
@@ -112,6 +112,7 @@ pub fn mounted_dlc_names() -> Vec<String> {
 }
 
 pub fn read_mounted_dlc_file(name: &str, virtual_path: &str) -> io::Result<Vec<u8>> {
+    validate_asset_relative_path(virtual_path)?;
     let key = name.to_ascii_lowercase();
     if let Some(archive) = DLC_ARCHIVES.read().unwrap().get(&key) {
         archive.read_file(virtual_path)
@@ -228,8 +229,74 @@ fn user_storage_key(app_name: &str, relative_path: &str) -> String {
     format!("perro:user:{app_name}:data:{relative_path}")
 }
 
+pub fn validate_virtual_asset_path(path: &str) -> io::Result<()> {
+    if let Some(stripped) = path.strip_prefix("user://") {
+        return validate_asset_relative_path(stripped);
+    }
+
+    if let Some(stripped) = path.strip_prefix("res://") {
+        return validate_asset_relative_path(stripped);
+    }
+
+    if let Some(rest) = path.strip_prefix("dlc://") {
+        let (mount_raw, rel_raw) = rest.split_once('/').unwrap_or((rest, ""));
+        validate_dlc_mount_name(mount_raw)?;
+        return validate_asset_relative_path(rel_raw.trim_start_matches('/'));
+    }
+
+    let path_buf = Path::new(path);
+    if path_buf.is_absolute() {
+        return Ok(());
+    }
+    validate_asset_relative_path(path)
+}
+
+pub fn validate_asset_relative_path(path: &str) -> io::Result<()> {
+    if path.contains('\\') {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "asset paths must use `/` separators",
+        ));
+    }
+    if Path::new(path).is_absolute() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "asset path must be relative",
+        ));
+    }
+    for component in Path::new(path).components() {
+        match component {
+            Component::Normal(_) => {}
+            Component::CurDir
+            | Component::ParentDir
+            | Component::RootDir
+            | Component::Prefix(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "asset path escapes root",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_dlc_mount_name(name: &str) -> io::Result<()> {
+    if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\\']) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid dlc mount name",
+        ));
+    }
+    Ok(())
+}
+
 /// Resolve virtual path (res://foo/bar.png or user://save.dat) to actual location
 pub fn resolve_path(path: &str) -> ResolvedPath {
+    if validate_virtual_asset_path(path).is_err() {
+        return ResolvedPath::Disk(PathBuf::from(path));
+    }
+
     let project_root_opt = PROJECT_ROOT.read().unwrap().clone();
 
     // Handle user:// paths (always disk)
@@ -319,6 +386,7 @@ pub fn resolve_path(path: &str) -> ResolvedPath {
 
 /// Load an asset fully into memory
 pub fn load_asset(path: &str) -> io::Result<Vec<u8>> {
+    validate_virtual_asset_path(path)?;
     match resolve_path(path) {
         ResolvedPath::Disk(pb) => fs::read(pb),
         ResolvedPath::WebUserStorage(key) => load_web_user_asset(&key),
@@ -346,6 +414,7 @@ pub fn load_asset(path: &str) -> io::Result<Vec<u8>> {
 
 /// Stream an asset (for large files)
 pub fn stream_asset(path: &str) -> io::Result<Box<dyn ReadSeek>> {
+    validate_virtual_asset_path(path)?;
     match resolve_path(path) {
         ResolvedPath::Disk(pb) => {
             let file = File::open(pb)?;
@@ -383,6 +452,7 @@ pub fn stream_asset(path: &str) -> io::Result<Box<dyn ReadSeek>> {
 
 /// Save an asset (disk only)
 pub fn save_asset(path: &str, data: &[u8]) -> io::Result<()> {
+    validate_virtual_asset_path(path)?;
     match resolve_path(path) {
         ResolvedPath::Disk(pb) => {
             if let Some(parent) = pb.parent() {
@@ -568,6 +638,15 @@ mod tests {
             super::user_storage_key("My_Cool_Game", "save/slot1.dat"),
             "perro:user:My_Cool_Game:data:save/slot1.dat"
         );
+    }
+
+    #[test]
+    fn virtual_asset_paths_reject_root_escape() {
+        assert!(validate_virtual_asset_path("user://../save.dat").is_err());
+        assert!(validate_virtual_asset_path("res://../secret.txt").is_err());
+        assert!(validate_virtual_asset_path("dlc://Expansion/../secret.txt").is_err());
+        assert!(validate_virtual_asset_path("user://save/slot1.dat").is_ok());
+        assert!(validate_virtual_asset_path("dlc://Expansion/scenes/main.scn").is_ok());
     }
 
     fn static_lookup(path_hash: u64) -> &'static [u8] {
