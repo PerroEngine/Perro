@@ -2287,6 +2287,19 @@ pub fn set_scene_string(data: &mut SceneNodeData, field: &str, value: String) {
         .push((name, SceneValue::Str(Cow::Owned(value))));
 }
 
+pub fn set_scene_key(data: &mut SceneNodeData, field: &str, value: String) {
+    let name = SceneFieldName::from_name(field.to_string());
+    for (field_name, field_value) in data.fields.to_mut().iter_mut() {
+        if field_name.as_ref() == field {
+            *field_value = SceneValue::Key(SceneValueKey::from(value));
+            return;
+        }
+    }
+    data.fields
+        .to_mut()
+        .push((name, SceneValue::Key(SceneValueKey::from(value))));
+}
+
 pub fn set_scene_binding(data: &mut SceneNodeData, object: &str, node_name: &str) {
     let name = SceneFieldName::Bindings;
     for (field_name, field_value) in data.fields.to_mut().iter_mut() {

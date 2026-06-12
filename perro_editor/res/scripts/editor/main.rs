@@ -23,6 +23,7 @@ pub const MAX_NODES: usize = 12;
 pub const MAX_TABS: usize = 4;
 pub const MAX_RECENT: usize = 5;
 pub const MAX_NODE_PICKER_ROWS: usize = 12;
+pub const MAX_INSPECTOR_PICKER_ROWS: usize = 12;
 pub const RECENT_PROJECTS_PATH: &str = "user://recent_projects.json";
 pub const FILE_WATCH_INTERVAL_FRAMES: u32 = 30;
 pub const LIST_DOUBLE_CLICK_FRAMES: u32 = 18;
@@ -71,6 +72,11 @@ pub struct EditorState {
     pub dirty: bool,
     pub add_node_popup_open: bool,
     pub add_node_as_sibling: bool,
+    pub inspector_picker_open: bool,
+    pub inspector_picker_field: String,
+    pub inspector_picker_kind: String,
+    pub inspector_picker_offset: usize,
+    pub inspector_picker_filter: String,
     pub scene_filter: String,
     pub node_picker_offset: usize,
     pub node_picker_filter: String,
@@ -174,6 +180,10 @@ methods!({
             }
             "add_node_button" => open_add_node_popup(ctx),
             "add_node_cancel_button" => set_add_node_popup(ctx, false),
+            "inspector_pick_cancel_button" => set_inspector_picker(ctx, false),
+            "inspector_pick_prev_button" => shift_inspector_picker(ctx, -1),
+            "inspector_pick_next_button" => shift_inspector_picker(ctx, 1),
+            "inspector_pick_filter_box" => update_inspector_picker_filter(ctx),
             "add_node_prev_button" => {
                 shift_node_picker(ctx, -1);
             }
@@ -225,8 +235,12 @@ methods!({
                     add_node_from_picker(ctx, idx);
                 } else if let Some(idx) = middle_index(&name, "inspector_var_", "_value") {
                     edit_selected_script_var_path(ctx, idx);
+                } else if let Some(idx) = middle_index(&name, "inspector_var_", "_pick_button") {
+                    pick_selected_script_var_ref(ctx, idx);
                 } else if let Some(idx) = middle_index(&name, "inspector_resource_", "_button") {
                     pick_selected_resource_field(ctx, idx);
+                } else if let Some(idx) = suffix_index(&name, "inspector_pick_row_") {
+                    choose_inspector_picker_row(ctx, idx);
                 } else if name.starts_with("inspector_position_") && name.ends_with("_box") {
                     edit_selected_transform(ctx, "position", "inspector_position_box");
                 } else if name.starts_with("inspector_rotation_") && name.ends_with("_box") {
@@ -376,10 +390,34 @@ fn connect_editor_signals<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
             signal!("editor_inspector_var_5"),
             signal!("editor_inspector_var_6"),
             signal!("editor_inspector_var_7"),
+            signal!("editor_inspector_var_pick_0"),
+            signal!("editor_inspector_var_pick_1"),
+            signal!("editor_inspector_var_pick_2"),
+            signal!("editor_inspector_var_pick_3"),
+            signal!("editor_inspector_var_pick_4"),
+            signal!("editor_inspector_var_pick_5"),
+            signal!("editor_inspector_var_pick_6"),
+            signal!("editor_inspector_var_pick_7"),
             signal!("editor_inspector_resource_0"),
             signal!("editor_inspector_resource_1"),
             signal!("editor_inspector_resource_2"),
             signal!("editor_inspector_resource_3"),
+            signal!("editor_inspector_pick_0"),
+            signal!("editor_inspector_pick_1"),
+            signal!("editor_inspector_pick_2"),
+            signal!("editor_inspector_pick_3"),
+            signal!("editor_inspector_pick_4"),
+            signal!("editor_inspector_pick_5"),
+            signal!("editor_inspector_pick_6"),
+            signal!("editor_inspector_pick_7"),
+            signal!("editor_inspector_pick_8"),
+            signal!("editor_inspector_pick_9"),
+            signal!("editor_inspector_pick_10"),
+            signal!("editor_inspector_pick_11"),
+            signal!("editor_inspector_pick_prev"),
+            signal!("editor_inspector_pick_next"),
+            signal!("editor_inspector_pick_cancel"),
+            signal!("editor_inspector_pick_filter"),
             signal!("editor_inspector_commit"),
         ],
         [func!("on_editor_signal")]

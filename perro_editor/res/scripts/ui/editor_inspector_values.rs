@@ -174,7 +174,7 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
     }
 }
 
-fn set_value_at_path(
+pub fn set_value_at_path(
     fields: &mut Vec<(SceneFieldName, SceneValue)>,
     path: &[ValuePathStep],
     value: SceneValue,

@@ -507,7 +507,9 @@ pub fn commit_inspector_box<API: ScriptAPI + ?Sized>(
 
 pub fn handle_editor_escape<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let action = with_state!(ctx.run, EditorState, ctx.id, |state| {
-        if state.add_node_popup_open {
+        if state.inspector_picker_open {
+            "inspector_picker"
+        } else if state.add_node_popup_open {
             "picker"
         } else if state.anim_drawer_open {
             "anim"
@@ -522,6 +524,7 @@ pub fn handle_editor_escape<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_,
         }
     });
     match action {
+        "inspector_picker" => set_inspector_picker(ctx, false),
         "picker" => set_add_node_popup(ctx, false),
         "anim" => set_anim_drawer(ctx, false),
         "files" => {

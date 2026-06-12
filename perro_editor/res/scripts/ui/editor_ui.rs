@@ -5,8 +5,8 @@ use crate::scripts_assets_editor_assets_rs::*;
 use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
-    EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_NODE_PICKER_ROWS, MAX_NODES,
-    MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
+    EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_INSPECTOR_PICKER_ROWS,
+    MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
 };
 use crate::scripts_scene_editor_animation_rs::*;
 use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
@@ -377,6 +377,22 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             &format!("inspector_var_{idx}_value"),
             row.map(|item| item.value.as_str()).unwrap_or(""),
         );
+        let picker_row = row.is_some_and(|item| item.kind == "key");
+        set_ui_display(
+            ctx,
+            &format!("inspector_var_{idx}_value"),
+            view.inspector.node_actions && row.is_some() && !picker_row,
+        );
+        set_ui_display(
+            ctx,
+            &format!("inspector_var_{idx}_pick_button"),
+            view.inspector.node_actions && picker_row,
+        );
+        set_label(
+            ctx,
+            &format!("inspector_var_{idx}_pick_label"),
+            row.map(|item| item.value.as_str()).unwrap_or("Select"),
+        );
     }
     for idx in 0..MAX_RESOURCE_FIELDS {
         let row = view.inspector.resource_fields.get(idx);
@@ -394,6 +410,24 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             ctx,
             &format!("inspector_resource_{idx}_button_label"),
             row.map(|item| item.value.as_str()).unwrap_or("Select"),
+        );
+    }
+
+    set_label(ctx, "inspector_pick_title", &view.inspector_picker_title);
+    set_text_box(ctx, "inspector_pick_filter_box", &view.inspector_picker_filter);
+    set_label(ctx, "inspector_pick_page_label", &view.inspector_picker_page);
+    for idx in 0..MAX_INSPECTOR_PICKER_ROWS {
+        let has_row = view.inspector_picker_rows.get(idx).is_some();
+        let text = view
+            .inspector_picker_rows
+            .get(idx)
+            .cloned()
+            .unwrap_or_else(|| "-".to_string());
+        set_label(ctx, &format!("inspector_pick_row_{idx}_label"), &text);
+        set_ui_display(
+            ctx,
+            &format!("inspector_pick_row_{idx}"),
+            view.inspector_picker_open && has_row,
         );
     }
 }
@@ -545,12 +579,18 @@ pub struct EditorView {
     node_picker_page: String,
     node_picker_filter: String,
     node_picker_parent: String,
+    inspector_picker_open: bool,
+    inspector_picker_title: String,
+    inspector_picker_rows: Vec<String>,
+    inspector_picker_page: String,
+    inspector_picker_filter: String,
 }
 
 #[derive(Default, Clone)]
 pub struct ResourceFieldView {
     pub name: String,
     pub value: String,
+    pub picker_kind: String,
 }
 
 pub struct InspectorViewData {
@@ -745,6 +785,13 @@ impl EditorView {
             .max(1);
         let page_count = picker_count.div_ceil(MAX_NODE_PICKER_ROWS);
         let node_picker_parent = picker_parent_text(state);
+        let inspector_picker_rows = inspector_picker_rows(state);
+        let inspector_picker_count = inspector_picker_entries(state).len().max(1);
+        let inspector_picker_page =
+            (state.inspector_picker_offset / MAX_INSPECTOR_PICKER_ROWS) + 1;
+        let inspector_picker_page_count =
+            inspector_picker_count.div_ceil(MAX_INSPECTOR_PICKER_ROWS);
+        let inspector_picker_title = inspector_picker_title(state);
         Self {
             project_root: state.project_root.clone(),
             project_name: if state.project_name.is_empty() {
@@ -791,6 +838,13 @@ impl EditorView {
             node_picker_page: format!("page {page}/{page_count}"),
             node_picker_filter: state.node_picker_filter.clone(),
             node_picker_parent,
+            inspector_picker_open: state.inspector_picker_open,
+            inspector_picker_title,
+            inspector_picker_rows,
+            inspector_picker_page: format!(
+                "page {inspector_picker_page}/{inspector_picker_page_count}"
+            ),
+            inspector_picker_filter: state.inspector_picker_filter.clone(),
         }
     }
 }
@@ -921,18 +975,165 @@ pub fn script_vars_edit_text(fields: &[(SceneFieldName, SceneValue)]) -> String 
 }
 
 pub fn resource_field_rows(data: &SceneNodeData) -> Vec<ResourceFieldView> {
-    perro_scene::scene_inspector_asset_fields(data.node_type)
+    perro_scene::scene_inspector_fields(data.node_type)
         .into_iter()
-        .filter_map(|field| resource_field_row(data, field.name))
+        .filter(|field| {
+            matches!(
+                field.kind,
+                perro_scene::SceneInspectorValueKind::Asset(_)
+                    | perro_scene::SceneInspectorValueKind::NodeRef
+            )
+        })
+        .filter_map(|field| resource_field_row(data, &field))
         .collect()
 }
 
-pub fn resource_field_row(data: &SceneNodeData, field: &str) -> Option<ResourceFieldView> {
-    let value = scene_field_value_text(data, field).unwrap_or_else(|| "Select".to_string());
+pub fn resource_field_row(
+    data: &SceneNodeData,
+    field: &perro_scene::SceneInspectorField,
+) -> Option<ResourceFieldView> {
+    let value = scene_field_value_text(data, field.name).unwrap_or_else(|| "Select".to_string());
+    let picker_kind = match field.kind {
+        perro_scene::SceneInspectorValueKind::NodeRef => "node",
+        perro_scene::SceneInspectorValueKind::Asset(_) => "asset",
+        _ => return None,
+    };
     Some(ResourceFieldView {
-        name: field.to_string(),
+        name: field.name.to_string(),
         value: editor_view::short_path(&value, 22),
+        picker_kind: picker_kind.to_string(),
     })
+}
+
+#[derive(Clone)]
+pub struct InspectorPickerEntry {
+    pub value: String,
+    pub label: String,
+}
+
+pub fn inspector_picker_entries(state: &EditorState) -> Vec<InspectorPickerEntry> {
+    match state.inspector_picker_kind.as_str() {
+        "node" | "script_node" => inspector_node_picker_entries(state),
+        "asset" => inspector_asset_picker_entries(state),
+        _ => Vec::new(),
+    }
+}
+
+pub fn inspector_picker_rows(state: &EditorState) -> Vec<String> {
+    inspector_picker_entries(state)
+        .into_iter()
+        .skip(state.inspector_picker_offset)
+        .take(MAX_INSPECTOR_PICKER_ROWS)
+        .map(|entry| entry.label)
+        .collect()
+}
+
+pub fn inspector_picker_title(state: &EditorState) -> String {
+    if state.inspector_picker_field.is_empty() {
+        return "Pick".to_string();
+    }
+    match state.inspector_picker_kind.as_str() {
+        "node" => format!("Pick Node  {}", state.inspector_picker_field),
+        "script_node" => "Pick Node  script var".to_string(),
+        "asset" => format!("Pick Asset  {}", state.inspector_picker_field),
+        _ => "Pick".to_string(),
+    }
+}
+
+fn inspector_node_picker_entries(state: &EditorState) -> Vec<InspectorPickerEntry> {
+    if state.doc_text.is_empty() {
+        return Vec::new();
+    }
+    let filter = NodePickerFilter::parse(&state.inspector_picker_filter);
+    let doc = SceneDoc::parse(&state.doc_text);
+    doc.scene
+        .nodes
+        .iter()
+        .filter_map(|node| {
+            let name = doc.scene.key_name_or_id(node.key).to_string();
+            let path = scene_node_path(&doc, node.key);
+            let hay = format!(
+                "{} {} {}",
+                name.to_ascii_lowercase(),
+                path.to_ascii_lowercase(),
+                node.data.type_name().to_ascii_lowercase()
+            );
+            if !filter.text.iter().all(|needle| hay.contains(needle)) {
+                return None;
+            }
+            let label = format!(
+                "{} {}  {}",
+                node_type_icon(node.data.node_type),
+                editor_view::short_path(&path, 26),
+                node.data.type_name()
+            );
+            Some(InspectorPickerEntry { value: name, label })
+        })
+        .collect()
+}
+
+fn inspector_asset_picker_entries(state: &EditorState) -> Vec<InspectorPickerEntry> {
+    let Some(kind) = inspector_picker_asset_kind(state) else {
+        return Vec::new();
+    };
+    let filter = NodePickerFilter::parse(&state.inspector_picker_filter);
+    let filters = perro_scene::scene_asset_filters(kind);
+    state
+        .file_paths
+        .iter()
+        .filter(|path| {
+            !path.ends_with('/')
+                && inspector_asset_path_matches(path, filters)
+                && (filter.is_empty() || file_path_matches_filter(path, &filter))
+        })
+        .map(|path| {
+            let value = inspector_asset_picker_value(path, kind, state.active_glb_mesh_index);
+            let label = format!(
+                "{}  {}",
+                editor_files::display_kind_label(path),
+                editor_view::short_path(&value, 34)
+            );
+            InspectorPickerEntry { value, label }
+        })
+        .collect()
+}
+
+fn inspector_picker_asset_kind(state: &EditorState) -> Option<perro_scene::SceneAssetKind> {
+    let key = state.selected_key?;
+    let doc = SceneDoc::parse(&state.doc_text);
+    let node = doc
+        .scene
+        .nodes
+        .iter()
+        .find(|node| node.key.as_u32() == key)?;
+    let field = perro_scene::scene_inspector_field(node.data.node_type, &state.inspector_picker_field)?;
+    match field.kind {
+        perro_scene::SceneInspectorValueKind::Asset(kind) => Some(kind),
+        _ => None,
+    }
+}
+
+fn inspector_asset_path_matches(path: &str, filters: &[perro_scene::SceneAssetFilter]) -> bool {
+    let ext = path
+        .rsplit_once('.')
+        .map(|(_, ext)| ext.to_ascii_lowercase())
+        .unwrap_or_default();
+    filters
+        .iter()
+        .any(|filter| filter.extensions.iter().any(|item| *item == ext))
+}
+
+fn inspector_asset_picker_value(
+    path: &str,
+    kind: perro_scene::SceneAssetKind,
+    glb_mesh_index: usize,
+) -> String {
+    match kind {
+        perro_scene::SceneAssetKind::Mesh if is_gltf_path(path) => {
+            format!("{path}:mesh[{glb_mesh_index}]")
+        }
+        _ => path.to_string(),
+    }
 }
 
 pub fn node_hierarchy_text(node_type: perro_scene::NodeType) -> String {
@@ -2539,6 +2740,27 @@ pub fn set_add_node_popup<API: ScriptAPI + ?Sized>(
         state.add_node_popup_open = visible;
     });
     if let Some(id) = find_named(ctx, "add_node_popup") {
+        let _ = with_node_mut!(ctx.run, UiVLayout, id, |node| {
+            node.visible = visible;
+            node.input_enabled = visible;
+        });
+    }
+}
+
+pub fn set_inspector_picker<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    visible: bool,
+) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.inspector_picker_open = visible;
+        if !visible {
+            state.inspector_picker_field.clear();
+            state.inspector_picker_kind.clear();
+            state.inspector_picker_offset = 0;
+            state.inspector_picker_filter.clear();
+        }
+    });
+    if let Some(id) = find_named(ctx, "inspector_pick_popup") {
         let _ = with_node_mut!(ctx.run, UiVLayout, id, |node| {
             node.visible = visible;
             node.input_enabled = visible;

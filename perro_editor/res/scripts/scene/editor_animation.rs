@@ -5,8 +5,8 @@ use crate::scripts_assets_editor_assets_rs::*;
 use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
-    EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_NODE_PICKER_ROWS, MAX_NODES,
-    MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
+    EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_INSPECTOR_PICKER_ROWS,
+    MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
 };
 use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
 use crate::scripts_scene_editor_nav_rs::*;
@@ -14,6 +14,7 @@ use crate::scripts_scene_editor_nodes_rs::*;
 use crate::scripts_scene_editor_scene_deps_rs as editor_scene_deps;
 use crate::scripts_scene_editor_scene_rs as editor_scene;
 use crate::scripts_scene_editor_viewport_rs::*;
+use crate::scripts_ui_editor_inspector_values_rs::*;
 use crate::scripts_ui_editor_ui_rs::*;
 use crate::scripts_ui_editor_view_rs as editor_view;
 use perro_api::prelude::*;
@@ -725,7 +726,7 @@ pub fn pick_selected_resource_field<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     idx: usize,
 ) {
-    let pick = with_state!(ctx.run, EditorState, ctx.id, |state| {
+    let pick = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let key = state.selected_key?;
         let doc = SceneDoc::parse(&state.doc_text);
         let node = doc
@@ -734,23 +735,105 @@ pub fn pick_selected_resource_field<API: ScriptAPI + ?Sized>(
             .iter()
             .find(|node| node.key.as_u32() == key)?;
         let rows = resource_field_rows(&node.data);
-        let field = rows.get(idx)?.name.clone();
-        Some((state.project_root.clone(), node.data.node_type, field))
+        let row = rows.get(idx)?;
+        state.inspector_picker_open = true;
+        state.inspector_picker_field = row.name.clone();
+        state.inspector_picker_kind = row.picker_kind.clone();
+        state.inspector_picker_offset = 0;
+        state.inspector_picker_filter.clear();
+        Some(())
     });
-    let Some((root, node_type, field)) = pick else {
+    if pick.flatten().is_none() {
         return;
-    };
-    let filters = resource_dialog_filters(node_type, &field);
-    let Some(abs) = FileMod::pick_file(&format!("Select {field}"), filters.as_slice()) else {
-        return;
-    };
-    let Some(mut res_path) = abs_to_res(Path::new(&root), Path::new(&abs)) else {
-        set_log(ctx, "select resource fail\nfile must be under project res/");
-        return;
-    };
-    if field == "mesh" && is_gltf_path(&res_path) {
-        res_path = format!("{res_path}:mesh[0]");
     }
+    refresh_all(ctx);
+    set_inspector_picker(ctx, true);
+}
+
+pub fn pick_selected_script_var_ref<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+) {
+    let pick = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let key = state.selected_key?;
+        let doc = SceneDoc::parse(&state.doc_text);
+        let node = doc
+            .scene
+            .nodes
+            .iter()
+            .find(|node| node.key.as_u32() == key)?;
+        let rows = inspector_script_var_rows(node.script_vars.as_ref());
+        let row = rows.get(idx)?;
+        if row.kind != "key" {
+            return None;
+        }
+        state.inspector_picker_open = true;
+        state.inspector_picker_field = idx.to_string();
+        state.inspector_picker_kind = "script_node".to_string();
+        state.inspector_picker_offset = 0;
+        state.inspector_picker_filter.clear();
+        Some(())
+    });
+    if pick.flatten().is_none() {
+        return;
+    }
+    refresh_all(ctx);
+    set_inspector_picker(ctx, true);
+}
+
+pub fn update_inspector_picker_filter<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let Some(text) = read_text_box(ctx, "inspector_pick_filter_box") else {
+        return;
+    };
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.inspector_picker_filter = text;
+        state.inspector_picker_offset = 0;
+    });
+    refresh_all(ctx);
+}
+
+pub fn shift_inspector_picker<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    delta: isize,
+) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let count = inspector_picker_entries(state).len();
+        if count == 0 {
+            state.inspector_picker_offset = 0;
+            return;
+        }
+        let max = count.saturating_sub(1);
+        let next = if delta < 0 {
+            state
+                .inspector_picker_offset
+                .saturating_sub(MAX_INSPECTOR_PICKER_ROWS)
+        } else {
+            state
+                .inspector_picker_offset
+                .saturating_add(MAX_INSPECTOR_PICKER_ROWS)
+                .min(max)
+        };
+        state.inspector_picker_offset = next - (next % MAX_INSPECTOR_PICKER_ROWS);
+    });
+    refresh_all(ctx);
+}
+
+pub fn choose_inspector_picker_row<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+) {
+    let pick = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        let entry_idx = state.inspector_picker_offset + idx;
+        let entry = inspector_picker_entries(state).get(entry_idx).cloned()?;
+        Some((
+            state.inspector_picker_field.clone(),
+            state.inspector_picker_kind.clone(),
+            entry.value,
+        ))
+    });
+    let Some((field, picker_kind, value)) = pick else {
+        return;
+    };
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let Some(key) = state.selected_key else {
             return false;
@@ -765,20 +848,45 @@ pub fn pick_selected_resource_field<API: ScriptAPI + ?Sized>(
         else {
             return false;
         };
-        set_scene_string(&mut node.data, &field, res_path.clone());
+        if picker_kind == "script_node" {
+            let Ok(row_idx) = field.parse::<usize>() else {
+                return false;
+            };
+            let rows = inspector_script_var_rows(node.script_vars.as_ref());
+            let Some(row) = rows.get(row_idx) else {
+                return false;
+            };
+            if !set_value_at_path(
+                node.script_vars.to_mut(),
+                &row.path,
+                SceneValue::Key(SceneValueKey::from(value.clone())),
+            ) {
+                return false;
+            }
+        } else if picker_kind == "node" {
+            set_scene_key(&mut node.data, &field, value.clone());
+        } else {
+            set_scene_string(&mut node.data, &field, value.clone());
+            state.active_asset_path = base_res_asset_path(&value);
+        }
         state.doc_text = doc.to_text();
-        state.active_asset_path = res_path.clone();
         state.dirty = true;
+        state.inspector_picker_open = false;
+        state.inspector_picker_field.clear();
+        state.inspector_picker_kind.clear();
+        state.inspector_picker_offset = 0;
+        state.inspector_picker_filter.clear();
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
         {
             state.dirty_scene_paths.push(path);
         }
-        state.log = format!("set {field}\n{res_path}");
+        state.log = format!("set {field}\n{value}");
         true
     })
     .unwrap_or(false);
     if changed {
+        set_inspector_picker(ctx, false);
         rebuild_preview(ctx);
         refresh_all(ctx);
     }
