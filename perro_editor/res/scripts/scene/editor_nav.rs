@@ -537,6 +537,8 @@ pub fn commit_inspector_box<API: ScriptAPI + ?Sized>(
         _ => {
             if let Some(idx) = middle_index(name, "inspector_var_", "_value") {
                 edit_selected_script_var_path(ctx, idx);
+            } else if let Some(idx) = inspector_var_component_row(name) {
+                edit_selected_script_var_path(ctx, idx);
             } else if name.starts_with("inspector_position_") && name.ends_with("_box") {
                 edit_selected_transform(ctx, "position", "inspector_position_box");
             } else if name.starts_with("inspector_rotation_") && name.ends_with("_box") {

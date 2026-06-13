@@ -104,6 +104,38 @@ methods!({
     }
 
     #[test]
+    fn transpiles_state_fields_with_expose_marker() {
+        let source = r#"
+use perro_api::prelude::*;
+
+#[State]
+pub struct PlayerState {
+    #[default(100.0)]
+    #[expose]
+    health: f32,
+
+    #[default(240.0)]
+    #[expose]
+    speed: f32,
+
+    velocity: Vector2,
+    grounded: bool,
+}
+
+lifecycle!({
+    fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {}
+});
+"#;
+
+        let transpiled = transpile_frontend_script(source, "res://tests/player.rs");
+        assert!(transpiled.contains("Box::new(<PlayerState as Default>::default())"));
+        assert!(transpiled.contains("const __PERRO_VAR_HEALTH: ScriptMemberID = var!(\"health\");"));
+        assert!(transpiled.contains("const __PERRO_VAR_SPEED: ScriptMemberID = var!(\"speed\");"));
+        assert!(transpiled.contains("const __PERRO_VAR_VELOCITY: ScriptMemberID = var!(\"velocity\");"));
+        assert!(transpiled.contains("const __PERRO_VAR_GROUNDED: ScriptMemberID = var!(\"grounded\");"));
+    }
+
+    #[test]
     fn transpiles_ai_methods_into_call_method_arms() {
         let source = r#"
 use perro_api::prelude::*;

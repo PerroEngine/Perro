@@ -1101,7 +1101,7 @@ pub fn node_type_rank(node_type: perro_scene::NodeType) -> u8 {
         "MeshInstance3D" => 4,
         "Camera3D" => 5,
         "AnimationPlayer" => 6,
-        "UiPanel" | "UiButton" | "UiCheckbox" | "UiLabel" => 7,
+        "UiPanel" | "UiButton" | "UiCheckbox" | "UiColorPicker" | "UiLabel" => 7,
         _ if node_type.is_a(perro_scene::NodeType::Node2D) => 20,
         _ if node_type.is_a(perro_scene::NodeType::Node3D) => 30,
         _ if node_type.is_a(perro_scene::NodeType::UiBox) => 40,
@@ -1186,7 +1186,9 @@ pub fn node_type_search_text(node_type: perro_scene::NodeType) -> String {
         "MeshInstance3D" => " mesh model glb gltf pmesh 3d visual",
         "AnimationPlayer" => " anim animation clip panim timeline",
         "Camera2D" | "Camera3D" => " camera view viewport",
-        "UiPanel" | "UiButton" | "UiCheckbox" | "UiLabel" => " ui control hud menu",
+        "UiPanel" | "UiButton" | "UiCheckbox" | "UiColorPicker" | "UiLabel" => {
+            " ui control hud menu color picker"
+        }
         "PointLight2D" | "SpotLight2D" | "RayLight2D" | "AmbientLight2D" | "PointLight3D"
         | "SpotLight3D" | "RayLight3D" | "AmbientLight3D" => " light lamp glow shadow",
         "AudioPlayer2D"
@@ -1540,10 +1542,10 @@ pub fn duplicate_selected_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
                 continue;
             };
             node.key = SceneKey::new(new_key);
-            if let Some(parent) = node.parent {
-                if let Some(new_parent) = mapped_scene_key(&map, parent.as_u32()) {
-                    node.parent = Some(SceneKey::new(new_parent));
-                }
+            if let Some(parent) = node.parent
+                && let Some(new_parent) = mapped_scene_key(&map, parent.as_u32())
+            {
+                node.parent = Some(SceneKey::new(new_parent));
             }
             if old_key == key {
                 offset_duplicated_node(&mut node.data);
@@ -1653,10 +1655,10 @@ pub fn paste_copied_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, AP
             if old_key == source_key {
                 node.parent = root_parent;
                 offset_duplicated_node(&mut node.data);
-            } else if let Some(parent) = node.parent {
-                if let Some(new_parent) = mapped_scene_key(&map, parent.as_u32()) {
-                    node.parent = Some(SceneKey::new(new_parent));
-                }
+            } else if let Some(parent) = node.parent
+                && let Some(new_parent) = mapped_scene_key(&map, parent.as_u32())
+            {
+                node.parent = Some(SceneKey::new(new_parent));
             }
             node.children = Cow::Owned(Vec::new());
             doc.scene.nodes.to_mut().push(node);

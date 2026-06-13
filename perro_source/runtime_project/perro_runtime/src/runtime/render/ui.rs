@@ -114,6 +114,13 @@ impl Runtime {
                 buttons.push(node);
                 focusables.push(node);
             }
+            SceneNodeData::UiColorPicker(picker) => {
+                if !picker.visible || picker.disabled || !picker.input_enabled {
+                    return;
+                }
+                buttons.push(node);
+                focusables.push(node);
+            }
             SceneNodeData::UiImageButton(button) => {
                 if !button.visible || button.disabled || !button.input_enabled {
                     return;

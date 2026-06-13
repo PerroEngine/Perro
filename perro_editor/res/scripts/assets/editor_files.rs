@@ -15,9 +15,9 @@ pub fn res_browser_sort_key(path: &str) -> String {
         }
         key.push_str(part);
         if folder && idx == label.trim_end_matches('/').matches('/').count() {
-            key.push_str("\0");
+            key.push('\0');
         } else {
-            key.push_str("\x01");
+            key.push('\x01');
         }
     }
     key

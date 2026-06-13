@@ -3,6 +3,9 @@ use crate::scripts_editor_main_rs::EditorState;
 use crate::scripts_scene_editor_animation_rs::*;
 use crate::scripts_scene_editor_viewport_rs::*;
 use crate::scripts_ui_editor_ui_rs::*;
+use crate::scripts_ui_editor_ui_rs::{
+    inspector_scene_value_fields_for_node, inspector_value_fields_for_node,
+};
 use perro_api::prelude::*;
 use perro_api::scene::{Parser, SceneDoc, SceneFieldName, SceneValue};
 use std::borrow::Cow;
@@ -19,6 +22,8 @@ pub struct InspectorValueRow {
     pub name: String,
     pub kind: String,
     pub value: String,
+    pub components: Vec<String>,
+    pub color_preview: Option<String>,
     pub editable: bool,
     pub expandable: bool,
 }
@@ -30,27 +35,58 @@ pub enum ValuePathStep {
     Index(usize),
 }
 
+struct ValueRowContext<'a> {
+    max: usize,
+    expanded_paths: &'a [String],
+    color_paths: &'a [String],
+}
+
 pub fn inspector_script_var_rows(
     fields: &[(SceneFieldName, SceneValue)],
     expanded_paths: &[String],
 ) -> Vec<InspectorValueRow> {
+    inspector_script_var_rows_with_color_paths(fields, expanded_paths, &[])
+}
+
+pub fn inspector_script_var_rows_with_color_paths(
+    fields: &[(SceneFieldName, SceneValue)],
+    expanded_paths: &[String],
+    color_paths: &[String],
+) -> Vec<InspectorValueRow> {
     let mut rows = Vec::new();
+    let ctx = ValueRowContext {
+        max: MAX_INSPECTOR_VALUE_ROWS,
+        expanded_paths,
+        color_paths,
+    };
     for (idx, (name, value)) in fields.iter().enumerate() {
         let mut path = vec![ValuePathStep::Root(idx)];
-        push_value_rows(
-            &mut rows,
-            name.as_ref(),
-            value,
-            &mut path,
-            0,
-            MAX_INSPECTOR_VALUE_ROWS,
-            expanded_paths,
-        );
+        push_value_rows(&mut rows, name.as_ref(), value, &mut path, 0, &ctx);
         if rows.len() >= MAX_INSPECTOR_VALUE_ROWS {
             break;
         }
     }
     rows
+}
+
+pub fn script_state_color_path_keys(
+    state: &EditorState,
+    node: &perro_api::scene::SceneNodeEntry,
+    fields: &[(SceneFieldName, SceneValue)],
+) -> Vec<String> {
+    let Some(script_path) = node.script.as_ref() else {
+        return Vec::new();
+    };
+    let Some(script_vars_root) = fields
+        .iter()
+        .position(|(name, _)| name.as_ref() == "script_vars")
+    else {
+        return Vec::new();
+    };
+    script_state_color_field_names(&state.project_root, script_path.as_ref())
+        .into_iter()
+        .map(|name| format!("r{script_vars_root}.{name}"))
+        .collect()
 }
 
 pub fn inspector_script_var_rows_for_node(
@@ -81,8 +117,6 @@ fn merge_script_var_overrides(
     for (name, value) in overrides {
         if let Some((_, existing)) = fields.iter_mut().find(|(field, _)| field == name) {
             *existing = value.clone();
-        } else {
-            fields.push((name.clone(), value.clone()));
         }
     }
 }
@@ -99,7 +133,26 @@ fn script_state_default_fields(
         return Vec::new();
     };
     let schema = parse_script_schema(&source);
-    script_struct_default_fields(&schema, &struct_name, 0)
+    script_struct_default_fields_with_expose(&schema, &struct_name, 0, true)
+}
+
+fn script_state_color_field_names(project_root: &str, script_path: &str) -> Vec<String> {
+    let abs = res_to_abs(project_root, script_path);
+    let Ok(source) = fs::read_to_string(abs) else {
+        return Vec::new();
+    };
+    let Some(struct_name) = parse_state_struct_name(&source) else {
+        return Vec::new();
+    };
+    let schema = parse_script_schema(&source);
+    schema
+        .structs
+        .get(&struct_name)
+        .into_iter()
+        .flat_map(|fields| fields.iter())
+        .filter(|field| field.exposed && is_color_type(&field.ty))
+        .map(|field| field.name.clone())
+        .collect()
 }
 
 struct ScriptSchema {
@@ -111,6 +164,7 @@ struct RawScriptField {
     name: String,
     ty: String,
     default_attr: Option<String>,
+    exposed: bool,
 }
 
 fn parse_state_struct_name(source: &str) -> Option<String> {
@@ -231,16 +285,16 @@ fn parse_enum_variant(line: &str) -> Option<String> {
 
 fn parse_script_struct_fields(source: &str, struct_name: &str) -> Vec<RawScriptField> {
     let lines = source.lines().collect::<Vec<_>>();
-    let Some(mut idx) = lines
-        .iter()
-        .position(|line| parse_struct_name(strip_line_comment(line).trim()) == Some(struct_name.to_string()))
-    else {
+    let Some(mut idx) = lines.iter().position(|line| {
+        parse_struct_name(strip_line_comment(line).trim()) == Some(struct_name.to_string())
+    }) else {
         return Vec::new();
     };
     let mut fields = Vec::new();
     let mut depth = 0_i32;
     let mut opened = false;
     let mut pending_default = None;
+    let mut pending_expose = false;
     while idx < lines.len() {
         let line = strip_line_comment(lines[idx]).trim();
         if !opened {
@@ -252,10 +306,18 @@ fn parse_script_struct_fields(source: &str, struct_name: &str) -> Vec<RawScriptF
             continue;
         }
         if depth == 1 {
-            if let Some(default_value) = parse_default_attr(line) {
+            if is_expose_attr(line) {
+                pending_expose = true;
+            } else if let Some(default_value) = parse_default_attr(line) {
                 pending_default = Some(default_value);
-            } else if let Some(field) = parse_script_field_line(line, pending_default.take()) {
+            } else if line.starts_with("#[") {
+            } else if let Some(field) =
+                parse_script_field_line(line, pending_default.take(), pending_expose)
+            {
                 fields.push(field);
+                pending_expose = false;
+            } else if !line.is_empty() {
+                pending_expose = false;
             }
         }
         depth += brace_delta(line);
@@ -267,15 +329,16 @@ fn parse_script_struct_fields(source: &str, struct_name: &str) -> Vec<RawScriptF
     fields
 }
 
-fn parse_script_field_line(line: &str, default_attr: Option<String>) -> Option<RawScriptField> {
+fn parse_script_field_line(
+    line: &str,
+    default_attr: Option<String>,
+    exposed: bool,
+) -> Option<RawScriptField> {
     let trimmed = line.trim().trim_end_matches(',').trim();
     if trimmed.is_empty() || trimmed.starts_with("#[") || trimmed.starts_with("///") {
         return None;
     }
-    let without_vis = trimmed
-        .strip_prefix("pub ")
-        .unwrap_or(trimmed)
-        .trim_start();
+    let without_vis = trimmed.strip_prefix("pub ").unwrap_or(trimmed).trim_start();
     let (name, ty) = without_vis.split_once(':')?;
     let name = name.trim();
     if name.is_empty() {
@@ -285,19 +348,38 @@ fn parse_script_field_line(line: &str, default_attr: Option<String>) -> Option<R
         name: name.to_string(),
         ty: ty.trim().to_string(),
         default_attr,
+        exposed,
     })
 }
 
 fn parse_default_attr(line: &str) -> Option<String> {
     let inner = line.strip_prefix("#[default")?.strip_suffix(']')?.trim();
-    let value = inner.strip_prefix('=')?.trim();
-    Some(value.to_string())
+    if let Some(value) = inner.strip_prefix('=') {
+        return Some(value.trim().to_string());
+    }
+    if let Some(value) = inner.strip_prefix('(').and_then(|value| value.strip_suffix(')')) {
+        return Some(value.trim().to_string());
+    }
+    None
+}
+
+fn is_expose_attr(line: &str) -> bool {
+    matches!(line.trim(), "#[expose]" | "#[Expose]")
 }
 
 fn script_struct_default_fields(
     schema: &ScriptSchema,
     struct_name: &str,
     depth: usize,
+) -> Vec<(SceneFieldName, SceneValue)> {
+    script_struct_default_fields_with_expose(schema, struct_name, depth, false)
+}
+
+fn script_struct_default_fields_with_expose(
+    schema: &ScriptSchema,
+    struct_name: &str,
+    depth: usize,
+    require_expose: bool,
 ) -> Vec<(SceneFieldName, SceneValue)> {
     if depth > MAX_INSPECTOR_DEPTH {
         return Vec::new();
@@ -307,6 +389,7 @@ fn script_struct_default_fields(
     };
     fields
         .iter()
+        .filter(|field| !require_expose || field.exposed)
         .map(|field| {
             (
                 SceneFieldName::Custom(Cow::Owned(field.name.clone())),
@@ -345,8 +428,12 @@ fn parse_default_value(
     {
         return Some(default_scene_value_for_type(schema, inner, depth + 1));
     }
-    if value.ends_with("ID::nil()") || matches!(value, "NodeID::nil()" | "perro_api::prelude::NodeID::nil()") {
-        return Some(SceneValue::Key(perro_api::scene::SceneValueKey::from("null")));
+    if value.ends_with("ID::nil()")
+        || matches!(value, "NodeID::nil()" | "perro_api::prelude::NodeID::nil()")
+    {
+        return Some(SceneValue::Key(perro_api::scene::SceneValueKey::from(
+            "null",
+        )));
     }
     if let Some((enum_ty, variant)) = value.split_once("::")
         && schema.enums.contains_key(enum_ty)
@@ -382,7 +469,11 @@ fn parse_vec_default_value(
         return Some(SceneValue::Array(Cow::Owned(Vec::new())));
     }
     let mut values = Vec::new();
-    for item in content.split(',').map(str::trim).filter(|item| !item.is_empty()) {
+    for item in content
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+    {
         values.push(
             parse_default_value(schema, item, &inner_ty, depth + 1)
                 .unwrap_or_else(|| default_scene_value_for_type(schema, &inner_ty, depth + 1)),
@@ -398,17 +489,20 @@ fn is_int_type(ty: &str) -> bool {
     )
 }
 
-fn default_scene_value_for_type(
-    schema: &ScriptSchema,
-    ty: &str,
-    depth: usize,
-) -> SceneValue {
+fn is_color_type(ty: &str) -> bool {
+    matches!(
+        normalized_type(ty).as_str(),
+        "Color" | "perro_api::prelude::Color"
+    )
+}
+
+fn default_scene_value_for_type(schema: &ScriptSchema, ty: &str, depth: usize) -> SceneValue {
     let ty = normalized_type(ty);
     match ty.as_str() {
         "bool" => SceneValue::Bool(false),
         "f32" | "f64" => SceneValue::F32(0.0),
-        "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "u8" | "u16" | "u32" | "u64"
-        | "u128" | "usize" => SceneValue::I32(0),
+        "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "u8" | "u16" | "u32" | "u64" | "u128"
+        | "usize" => SceneValue::I32(0),
         "String" | "Arc<str>" | "std::sync::Arc<str>" | "Cow<'static,str>" => {
             SceneValue::Str(Cow::Borrowed(""))
         }
@@ -431,12 +525,12 @@ fn default_scene_value_for_type(
             SceneValue::Key(perro_api::scene::SceneValueKey::from("null"))
         }
         _ if ty.starts_with("Vec<") => SceneValue::Array(Cow::Owned(Vec::new())),
-        _ if schema.structs.contains_key(ty.as_str()) => {
-            SceneValue::Object(Cow::Owned(script_struct_default_fields(schema, &ty, depth + 1)))
-        }
-        _ if let Some(default_variant) = schema.enums.get(ty.as_str()) => {
-            SceneValue::Key(perro_api::scene::SceneValueKey::from(default_variant.clone()))
-        }
+        _ if schema.structs.contains_key(ty.as_str()) => SceneValue::Object(Cow::Owned(
+            script_struct_default_fields(schema, &ty, depth + 1),
+        )),
+        _ if let Some(default_variant) = schema.enums.get(ty.as_str()) => SceneValue::Key(
+            perro_api::scene::SceneValueKey::from(default_variant.clone()),
+        ),
         _ => SceneValue::Object(Cow::Owned(Vec::new())),
     }
 }
@@ -468,25 +562,31 @@ fn push_value_rows(
     value: &SceneValue,
     path: &mut Vec<ValuePathStep>,
     depth: usize,
-    max: usize,
-    expanded_paths: &[String],
+    ctx: &ValueRowContext<'_>,
 ) {
-    if rows.len() >= max {
+    if rows.len() >= ctx.max {
         return;
     }
     let composite = matches!(value, SceneValue::Array(_) | SceneValue::Object(_));
     let path_key = value_path_key(path);
-    let expanded = composite && expanded_paths.iter().any(|item| item == &path_key);
+    let expanded = composite && ctx.expanded_paths.iter().any(|item| item == &path_key);
+    let color_preview = color_preview_for_value(name, value, &path_key, ctx.color_paths);
     rows.push(InspectorValueRow {
         path: path.clone(),
         path_key,
         name: format!("{}{}", "  ".repeat(depth), name),
-        kind: scene_value_kind(value).to_string(),
+        kind: if color_preview.is_some() {
+            "Color".to_string()
+        } else {
+            scene_value_kind(value).to_string()
+        },
         value: if composite {
             scene_value_summary(value, expanded)
         } else {
             scene_value_edit_text(value)
         },
+        components: scene_value_component_texts(value),
+        color_preview,
         editable: !composite,
         expandable: composite,
     });
@@ -503,11 +603,10 @@ fn push_value_rows(
                     item,
                     path,
                     depth + 1,
-                    max,
-                    expanded_paths,
+                    ctx,
                 );
                 path.pop();
-                if rows.len() >= max {
+                if rows.len() >= ctx.max {
                     break;
                 }
             }
@@ -521,11 +620,10 @@ fn push_value_rows(
                     item,
                     path,
                     depth + 1,
-                    max,
-                    expanded_paths,
+                    ctx,
                 );
                 path.pop();
-                if rows.len() >= max {
+                if rows.len() >= ctx.max {
                     break;
                 }
             }
@@ -543,6 +641,57 @@ pub fn scene_value_summary(value: &SceneValue, expanded: bool) -> String {
         SceneValue::Object(fields) => format!("{marker} Object [{}]", fields.len()),
         _ => scene_value_edit_text(value),
     }
+}
+
+pub fn scene_value_component_texts(value: &SceneValue) -> Vec<String> {
+    match value {
+        SceneValue::Vec2 { .. } | SceneValue::Vec3 { .. } | SceneValue::Vec4 { .. } => {
+            scene_value_components_from_value(value)
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn color_preview_for_value(
+    name: &str,
+    value: &SceneValue,
+    path_key: &str,
+    color_paths: &[String],
+) -> Option<String> {
+    if !field_name_looks_like_color(name) && !color_paths.iter().any(|item| item == path_key) {
+        return None;
+    }
+    let SceneValue::Vec4 { x, y, z, w } = value else {
+        return None;
+    };
+    let color = Color::new(*x, *y, *z, *w);
+    Some(color.to_hex_rgba())
+}
+
+fn field_name_looks_like_color(name: &str) -> bool {
+    let name = name.trim().trim_start_matches('>').trim();
+    let Some(last) = name.split('.').next_back() else {
+        return false;
+    };
+    let name = last.to_ascii_lowercase();
+    matches!(
+        name.as_str(),
+        "color"
+            | "tint"
+            | "modulate"
+            | "self_modulate"
+            | "children_modulate"
+            | "child_modulate"
+            | "hover_tint"
+            | "hover_color"
+            | "hover_modulate"
+            | "pressed_tint"
+            | "pressed_color"
+            | "pressed_modulate"
+    ) || name.ends_with("_color")
+        || name.ends_with("_colors")
+        || name.ends_with("_tint")
+        || name.ends_with("_modulate")
 }
 
 pub fn value_path_key(path: &[ValuePathStep]) -> String {
@@ -572,7 +721,15 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
             .nodes
             .iter()
             .find(|node| node.key.as_u32() == key)?;
-        Some(inspector_script_var_rows_for_node(state, node))
+        let scene_fields = inspector_scene_value_fields_for_node(node);
+        let script_fields = inspector_script_var_fields_for_node(state, node);
+        let fields = inspector_value_fields_for_node(&scene_fields, &script_fields);
+        let color_paths = script_state_color_path_keys(state, node, &fields);
+        Some(inspector_script_var_rows_with_color_paths(
+            &fields,
+            &state.inspector_expanded_paths,
+            &color_paths,
+        ))
     });
     let Some(rows) = rows else {
         return;
@@ -584,8 +741,27 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
         set_log(ctx, "script var edit fail\ncontainer row");
         return;
     }
-    let Some(text) = read_text_box(ctx, &format!("inspector_var_{idx}_value")) else {
-        return;
+    let text = if row.kind == "Color" {
+        let Some(text) = read_color_picker_value(ctx, &format!("inspector_var_{idx}_color_swatch"))
+        else {
+            return;
+        };
+        text
+    } else if row.components.is_empty() {
+        let Some(text) = read_text_box(ctx, &format!("inspector_var_{idx}_value")) else {
+            return;
+        };
+        text
+    } else {
+        let mut values = Vec::new();
+        for component in 0..row.components.len() {
+            let Some(text) = read_text_box(ctx, &format!("inspector_var_{idx}_{component}_box"))
+            else {
+                return;
+            };
+            values.push(text);
+        }
+        format!("({})", values.join(", "))
     };
     let value = match parse_script_var_value(text.trim()) {
         Ok(value) => value,
@@ -608,11 +784,22 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
         else {
             return false;
         };
-        let mut fields = inspector_script_var_fields_for_node(state, node);
+        let scene_fields = inspector_scene_value_fields_for_node(node);
+        let script_fields = inspector_script_var_fields_for_node(state, node);
+        let mut fields = inspector_value_fields_for_node(&scene_fields, &script_fields);
         if !set_value_at_path(&mut fields, &row.path, value) {
             return false;
         }
-        if !write_script_var_override(node.script_vars.to_mut(), &fields, &row.path) {
+        let Some(root_name) = root_field_name(&fields, &row.path) else {
+            return false;
+        };
+        if root_name == "script_vars" {
+            let Some(SceneValue::Object(script_fields)) = root_field_value(&fields, &row.path)
+            else {
+                return false;
+            };
+            *node.script_vars.to_mut() = script_fields.to_vec();
+        } else if !write_scene_field_override(node.data.fields.to_mut(), &fields, &row.path) {
             return false;
         }
         state.doc_text = doc.to_text();
@@ -633,7 +820,7 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
 }
 
 pub fn set_value_at_path(
-    fields: &mut Vec<(SceneFieldName, SceneValue)>,
+    fields: &mut [(SceneFieldName, SceneValue)],
     path: &[ValuePathStep],
     value: SceneValue,
 ) -> bool {
@@ -647,6 +834,45 @@ pub fn set_value_at_path(
 }
 
 pub fn write_script_var_override(
+    overrides: &mut Vec<(SceneFieldName, SceneValue)>,
+    fields: &[(SceneFieldName, SceneValue)],
+    path: &[ValuePathStep],
+) -> bool {
+    let Some(ValuePathStep::Root(idx)) = path.first() else {
+        return false;
+    };
+    let Some((name, value)) = fields.get(*idx).cloned() else {
+        return false;
+    };
+    if let Some((_, existing)) = overrides.iter_mut().find(|(field, _)| field == &name) {
+        *existing = value;
+    } else {
+        overrides.push((name, value));
+    }
+    true
+}
+
+pub fn root_field_name<'a>(
+    fields: &'a [(SceneFieldName, SceneValue)],
+    path: &[ValuePathStep],
+) -> Option<&'a str> {
+    let Some(ValuePathStep::Root(idx)) = path.first() else {
+        return None;
+    };
+    fields.get(*idx).map(|(name, _)| name.as_ref())
+}
+
+pub fn root_field_value<'a>(
+    fields: &'a [(SceneFieldName, SceneValue)],
+    path: &[ValuePathStep],
+) -> Option<&'a SceneValue> {
+    let Some(ValuePathStep::Root(idx)) = path.first() else {
+        return None;
+    };
+    fields.get(*idx).map(|(_, value)| value)
+}
+
+pub fn write_scene_field_override(
     overrides: &mut Vec<(SceneFieldName, SceneValue)>,
     fields: &[(SceneFieldName, SceneValue)],
     path: &[ValuePathStep],

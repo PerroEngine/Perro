@@ -2,71 +2,124 @@
 
 ## Page Map
 
-| Header    | Link                    |
-| --------- | ----------------------- |
-| Purpose   | [Purpose](#purpose)     |
-| Use Cases | [Use Cases](#use-cases) |
-| Example   | [Example](#example)     |
-| Reference | [Reference](#reference) |
+| Header        | Link                            |
+| ------------- | ------------------------------- |
+| Purpose       | [Purpose](#purpose)             |
+| State Struct  | [State Struct](#state-struct)   |
+| Editor Expose | [Editor Expose](#editor-expose) |
+| Defaults      | [Defaults](#defaults)           |
+| Runtime Vars  | [Runtime Vars](#runtime-vars)   |
+| Custom Types  | [Custom Types](#custom-types)   |
 
 ## Purpose
 
-Use `Script State` when this feature, type group, file format, or workflow appears in game code or assets.
+Script state stores per-node data for one script instance.
 
-## Use Cases
+Each node with that script gets its own state value. Use state for mutable gameplay data, scene overrides, and values other scripts need to read or write.
 
-Use the types, APIs, file formats, and workflows in this doc when the feature matches the game system you are building. Prefer `ctx.run` for runtime state, `ctx.res` for resource/data access, and `ctx.ipt` for input state.
+## State Struct
 
-## Example
+Use `#[State]` on one struct in the script.
+
+```rust
+use perro_api::prelude::*;
+
+#[State]
+pub struct PlayerState {
+    #[default(100.0)]
+    #[expose]
+    health: f32,
+
+    #[default(240.0)]
+    #[expose]
+    speed: f32,
+
+    velocity: Vector2,
+    grounded: bool,
+    jump_buffer_timer: f32,
+}
+```
+
+`#[State]` generates `Default` for the struct.
+
+Fields without `#[default(...)]` use `Default::default()`.
+
+## Editor Expose
+
+`#[expose]` is an editor marker.
+
+The engine state path ignores it.
+
+The Perro editor reads the source text under `#[State]` and shows only fields with `#[expose]` in the inspector.
+
+Use it for values you want to tune in the editor without recompiling, and for scene refs like `NodeID` that are easier to wire from the inspector.
+
+```text
+script = "res://scripts/player.rs"
+script_vars = {
+    health = 75.0,
+    speed = 300.0
+}
+```
+
+Fields without `#[expose]` stay hidden from the editor inspector.
+
+Use this for internal values like velocity, timers, cached refs, and state flags.
+
+## Defaults
+
+Use `#[default(...)]` to set the initial value.
+
+```rust
+#[State]
+pub struct SpinnerState {
+    #[default(6.0)]
+    #[expose]
+    turn_speed: f32,
+
+    #[expose]
+    target: NodeID,
+
+    #[default(false)]
+    paused: bool,
+}
+```
+
+Both `#[default(expr)]` and `#[default = expr]` are accepted.
+
+`#[expose]` can appear before or after `#[default(...)]`.
+
+Scene `script_vars` override defaults after state creation.
+
+## Runtime Vars
+
+Inside the same script, use typed state access.
 
 ```rust
 lifecycle!({
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let dt = delta_time!(ctx.run);
-        let _ = dt;
+        with_state_mut!(ctx.run, ctx.id, PlayerState, |state| {
+            state.jump_buffer_timer -= delta_time!(ctx.run);
+        });
     }
 });
 ```
 
-## Reference
-
-# Script State
-
-`#[State]` is for variables registered per script instance.
-
-Each node with that script gets its own state instance, and those fields are what runtime/script APIs can read/write (`with_state!`, `with_state_mut!`, `get_var!`, `set_var!`).
-
-## What Goes In `#[State]`
-
-- Per-instance mutable gameplay data
-- Values you want exposed/accessible through script runtime APIs
-- Data that must differ per node/script instance
-
-## What Can Stay Outside State
-
-You can keep normal Rust items outside state:
-
-- `const` values
-- `structs`
-- `enums`
-
-## Example
+Other scripts and runtime systems can use state variables.
 
 ```rust
-const SPEED: f32 = 6.0;
-
-#[State]
-pub struct PlayerState {
-    #[default = 100]
-    health: i32,
-}
+let health = get_var!(ctx.run, player_id, "health");
+set_var!(ctx.run, player_id, "speed", variant!(320.0_f32));
 ```
 
-If you need cross-script/runtime member access, put that value in `#[State]`.
+`get_var!`, `set_var!`, and `script_vars` are runtime paths.
 
-## Custom Types And Variant Conversion
+They do not require `#[expose]`.
 
-Custom structs/enums used by script APIs must support Variant conversion.
+## Custom Types
+
+Custom structs/enums used through script variable APIs must support Variant conversion.
+
 Derive `Variant` on those types.
 
 ```rust
@@ -79,22 +132,12 @@ pub struct OrbitGoal {
 
 #[State]
 pub struct SpinnerState {
-    #[default = OrbitGoal { axis: Vector3::new(0.0, 1.0, 0.0) }]
-    pub orbit_goal: OrbitGoal,
+    #[default(OrbitGoal { axis: Vector3::new(0.0, 1.0, 0.0) })]
+    #[expose]
+    orbit_goal: OrbitGoal,
 }
 ```
 
-This applies to both:
-
-- custom types stored in `#[State]`
-- custom typed params/returns used in `methods!` (runtime/cross-script dispatch path)
-
-If a custom type used there does not derive `Variant`, script compilation fails.
+This also applies to custom typed params/returns used in `methods!`.
 
 See [Variant](variant.md) for accessors, `parse::<T>()`, and `into_parse::<T>()`.
-
-Scene side:
-
-```text
-script_vars = { orbit_goal: { axis: (0.0, 0.0, 1.0) } }
-```

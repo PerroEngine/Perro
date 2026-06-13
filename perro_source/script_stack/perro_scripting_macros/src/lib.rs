@@ -851,6 +851,9 @@ fn take_default_expr(field: &mut Field) -> Result<Option<Expr>> {
     let mut retained = Vec::with_capacity(field.attrs.len());
 
     for attr in field.attrs.drain(..) {
+        if attr.path().is_ident("expose") {
+            continue;
+        }
         if !attr.path().is_ident("default") {
             retained.push(attr);
             continue;

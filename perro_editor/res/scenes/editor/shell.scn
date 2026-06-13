@@ -3097,6 +3097,28 @@ parent = @inspector_pos
     [/UiLabel]
 [/inspector_pos_label]
 
+[inspector_position_label]
+parent = @inspector_content
+    [UiPanel]
+        size_ratio = (1.0, 0.026)
+        input_enabled = false
+        style = { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+    [/UiPanel]
+[/inspector_position_label]
+
+[inspector_position_header_label]
+parent = @inspector_position_label
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text = "Position"
+        text_size_ratio = 0.18
+        color = "#CBD5E1"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_position_header_label]
+
 [inspector_position_box]
 parent = @inspector_content
     [UiTextBox]
@@ -3216,13 +3238,11 @@ parent = @inspector_position_row
 
 [inspector_rotation_label]
 parent = @inspector_content
-    [UiButton]
-        size_ratio = (1.0, 0.036)
-        click_signals = ["editor_inspector_rotation"]
-        style = $inspector_header
-        hover = $btn_hot
-        pressed = $btn_down
-    [/UiButton]
+    [UiPanel]
+        size_ratio = (1.0, 0.026)
+        input_enabled = false
+        style = { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+    [/UiPanel]
 [/inspector_rotation_label]
 
 [inspector_rotation_header_label]
@@ -3230,8 +3250,8 @@ parent = @inspector_rotation_label
     [UiLabel]
         size_ratio = (0.96, 1.0)
         text = "Rotation"
-        text_size_ratio = 0.20
-        color = "#F3F4F6"
+        text_size_ratio = 0.18
+        color = "#CBD5E1"
         h_align = "start"
         input_enabled = false
         mouse_filter = "pass"
@@ -3414,13 +3434,11 @@ parent = @inspector_rotation_row
 
 [inspector_scale_label]
 parent = @inspector_content
-    [UiButton]
-        size_ratio = (1.0, 0.036)
-        click_signals = ["editor_inspector_scale"]
-        style = $inspector_header
-        hover = $btn_hot
-        pressed = $btn_down
-    [/UiButton]
+    [UiPanel]
+        size_ratio = (1.0, 0.026)
+        input_enabled = false
+        style = { fill: "#00000000", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+    [/UiPanel]
 [/inspector_scale_label]
 
 [inspector_scale_header_label]
@@ -3428,8 +3446,8 @@ parent = @inspector_scale_label
     [UiLabel]
         size_ratio = (0.96, 1.0)
         text = "Scale"
-        text_size_ratio = 0.20
-        color = "#F3F4F6"
+        text_size_ratio = 0.18
+        color = "#CBD5E1"
         h_align = "start"
         input_enabled = false
         mouse_filter = "pass"

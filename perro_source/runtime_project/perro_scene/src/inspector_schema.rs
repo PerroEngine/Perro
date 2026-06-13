@@ -125,8 +125,8 @@ pub fn scene_asset_filters(kind: SceneAssetKind) -> &'static [SceneAssetFilter] 
 
 pub fn scene_inspector_fields(node_type: NodeType) -> Vec<SceneInspectorField> {
     let mut fields = Vec::new();
-    push_base_fields(&mut fields, node_type);
     push_node_fields(&mut fields, node_type);
+    push_base_fields(&mut fields, node_type);
     fields
 }
 
@@ -687,6 +687,7 @@ fn push_node_fields(fields: &mut Vec<SceneInspectorField>, node_type: NodeType) 
         NodeType::UiPanel
         | NodeType::UiButton
         | NodeType::UiCheckbox
+        | NodeType::UiColorPicker
         | NodeType::UiTextBox
         | NodeType::UiTextBlock => {
             asset_field(fields, "Style", "style", SceneAssetKind::UiStyle);
@@ -698,6 +699,10 @@ fn push_node_fields(fields: &mut Vec<SceneInspectorField>, node_type: NodeType) 
             }
             if matches!(node_type, NodeType::UiCheckbox) {
                 push(fields, "State", "checked", SceneInspectorValueKind::Bool);
+            }
+            if matches!(node_type, NodeType::UiColorPicker) {
+                push(fields, "State", "color", SceneInspectorValueKind::Vec4);
+                push(fields, "State", "popup_open", SceneInspectorValueKind::Bool);
             }
             if matches!(node_type, NodeType::UiTextBox | NodeType::UiTextBlock) {
                 push(fields, "Text", "text", SceneInspectorValueKind::String);
@@ -914,7 +919,6 @@ fn light_fields(fields: &mut Vec<SceneInspectorField>, node_type: NodeType) {
 
 fn mesh_fields(fields: &mut Vec<SceneInspectorField>, node_type: NodeType) {
     asset_field(fields, "Mesh", "mesh", SceneAssetKind::Mesh);
-    asset_field(fields, "Mesh", "model", SceneAssetKind::Model);
     asset_field(fields, "Material", "material", SceneAssetKind::Material);
     push(
         fields,

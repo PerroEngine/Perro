@@ -74,6 +74,19 @@ fn build_ui_checkbox(
     node
 }
 
+fn build_ui_color_picker(
+    data: &SceneDefNodeData,
+    static_ui_style_lookup: Option<StaticUiStyleLookup>,
+) -> UiColorPicker {
+    let mut node = UiColorPicker::new();
+    if let Some(base) = data.base_ref() {
+        apply_ui_root_data(&mut node.button.base, base);
+    }
+    apply_ui_root_fields(&mut node.button.base, &data.fields);
+    apply_ui_color_picker_fields(&mut node, &data.fields, static_ui_style_lookup);
+    node
+}
+
 fn build_ui_label(data: &SceneDefNodeData) -> UiLabel {
     let mut node = UiLabel::new();
     if let Some(base) = data.base_ref() {
@@ -537,6 +550,41 @@ fn apply_ui_checkbox_fields(
         "checked_style",
         static_ui_style_lookup,
     );
+}
+
+fn apply_ui_color_picker_fields(
+    node: &mut UiColorPicker,
+    fields: &[SceneObjectField],
+    static_ui_style_lookup: Option<StaticUiStyleLookup>,
+) {
+    apply_ui_button_fields(&mut node.button, fields, static_ui_style_lookup);
+    apply_ui_style_object_fields(&mut node.popup_style, fields, "popup_style", static_ui_style_lookup);
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "color" | "value" | "tint" => {
+            if let Some(v) = as_scene_color(value) {
+                node.color = v;
+            }
+        }
+        "popup_open" | "open" => {
+            if let Some(v) = as_bool(value) {
+                node.popup_open = v;
+            }
+        }
+        "popup_size" => {
+            if let Some(v) = as_vec2(value) {
+                node.popup_size = [v.x.max(32.0), v.y.max(32.0)];
+            }
+        }
+        "wheel_radius" => {
+            if let Some(v) = as_f32(value) {
+                node.wheel_radius = v.max(8.0);
+            }
+        }
+        "color_changed_signals" | "changed_signals" | "value_changed_signals" => {
+            node.color_changed_signals = as_signal_ids(value);
+        }
+        _ => {}
+    });
 }
 
 fn apply_ui_shape_fields(node: &mut UiShape, fields: &[SceneObjectField]) {

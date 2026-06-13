@@ -1,6 +1,6 @@
 use super::renderer::{
-    UiCheckboxDraw, UiDraw, UiImageDraw, UiLabelDraw, UiNineSliceDraw, UiPanelDraw, UiShapeDraw,
-    UiTextEditDraw,
+    UiCheckboxDraw, UiColorPickerDraw, UiDraw, UiImageDraw, UiLabelDraw, UiNineSliceDraw,
+    UiPanelDraw, UiShapeDraw, UiTextEditDraw,
 };
 use ahash::AHashMap;
 use epaint::{
@@ -105,6 +105,9 @@ impl EpaintUiPainter {
                 UiDraw::Checkbox(checkbox) => {
                     push_checkbox_shapes(checkbox, viewport, &mut self.shapes)
                 }
+                UiDraw::ColorPicker(picker) => {
+                    push_color_picker_shapes(picker, viewport, &mut self.shapes)
+                }
                 UiDraw::Image(image) => push_image_shape(image, viewport, &mut self.shapes),
                 UiDraw::NineSlice(image) => {
                     push_nine_slice_shapes(image, viewport, &mut self.shapes)
@@ -182,6 +185,7 @@ fn ui_rect(draw: &UiDraw) -> UiRectState {
         UiDraw::Shape(shape) => shape.rect,
         UiDraw::Button(button) => button.panel.rect,
         UiDraw::Checkbox(checkbox) => checkbox.panel.rect,
+        UiDraw::ColorPicker(picker) => picker.panel.rect,
         UiDraw::Image(image) => image.rect,
         UiDraw::NineSlice(image) => image.rect,
         UiDraw::Label(label) => label.rect,
@@ -245,6 +249,112 @@ fn push_checkbox_shapes(
         clip_rect,
         shape: Shape::circle_filled(rect.center(), radius.max(1.0), color32(checkbox.dot_fill)),
     });
+}
+
+fn push_color_picker_shapes(
+    picker: &UiColorPickerDraw,
+    viewport: [f32; 2],
+    out: &mut Vec<ClippedShape>,
+) {
+    push_panel_shape(&picker.panel, viewport, out);
+    if !picker.popup_open {
+        return;
+    }
+
+    let mut popup = picker.popup_panel.clone();
+    popup.rect = color_picker_popup_rect(picker.panel.rect, picker.popup_size, viewport);
+    popup.clip_rect = [0.0, 0.0, 1.0, 1.0];
+    push_panel_shape(&popup, viewport, out);
+
+    let (min, max) = popup.rect.screen_min_max(viewport);
+    let clip_rect = clip_rect_from_state(popup.clip_rect, viewport);
+    let center = pos2((min[0] + max[0]) * 0.5, min[1] + picker.wheel_radius + 18.0);
+    let radius = picker
+        .wheel_radius
+        .min((max[0] - min[0]).abs() * 0.42)
+        .min((max[1] - min[1]).abs() * 0.36)
+        .max(8.0);
+    push_color_wheel(center, radius, clip_rect, out);
+
+    let swatch = Rect::from_min_max(
+        pos2(min[0] + 14.0, max[1] - 42.0),
+        pos2(max[0] - 14.0, max[1] - 14.0),
+    );
+    out.push(ClippedShape {
+        clip_rect,
+        shape: Shape::Rect(RectShape::new(
+            swatch,
+            CornerRadius::same(4),
+            color32(picker.color),
+            Stroke::new(1.0, Color32::from_white_alpha(180)),
+            StrokeKind::Inside,
+        )),
+    });
+}
+
+fn color_picker_popup_rect(button: UiRectState, size: [f32; 2], viewport: [f32; 2]) -> UiRectState {
+    let (min, max) = button.screen_min_max(viewport);
+    let width = size[0].max(32.0);
+    let height = size[1].max(32.0);
+    let gap = 8.0;
+    let mut screen_x = min[0] + width * 0.5;
+    let mut screen_y = max[1] + gap + height * 0.5;
+    screen_x = screen_x.clamp(width * 0.5, viewport[0] - width * 0.5);
+    screen_y = screen_y.clamp(height * 0.5, viewport[1] - height * 0.5);
+    UiRectState {
+        center: [screen_x - viewport[0] * 0.5, viewport[1] * 0.5 - screen_y],
+        size: [width, height],
+        pivot: [0.5, 0.5],
+        rotation_radians: 0.0,
+        z_index: button.z_index.saturating_add(100),
+    }
+}
+
+fn push_color_wheel(
+    center: epaint::Pos2,
+    radius: f32,
+    clip_rect: Rect,
+    out: &mut Vec<ClippedShape>,
+) {
+    let steps = 48;
+    for idx in 0..steps {
+        let a0 = idx as f32 / steps as f32 * std::f32::consts::TAU;
+        let a1 = (idx + 1) as f32 / steps as f32 * std::f32::consts::TAU;
+        let p0 = center + vec2(a0.cos() * radius, a0.sin() * radius);
+        let p1 = center + vec2(a1.cos() * radius, a1.sin() * radius);
+        let color = hsv_color(idx as f32 / steps as f32, 1.0, 1.0);
+        out.push(ClippedShape {
+            clip_rect,
+            shape: Shape::convex_polygon(vec![center, p0, p1], color32(color), Stroke::NONE),
+        });
+    }
+    out.push(ClippedShape {
+        clip_rect,
+        shape: Shape::Circle(CircleShape {
+            center,
+            radius: radius * 0.42,
+            fill: Color32::from_white_alpha(210),
+            stroke: Stroke::new(1.0, Color32::from_black_alpha(80)),
+        }),
+    });
+}
+
+fn hsv_color(h: f32, s: f32, v: f32) -> perro_structs::Color {
+    let h = h.rem_euclid(1.0) * 6.0;
+    let i = h.floor();
+    let f = h - i;
+    let p = v * (1.0 - s);
+    let q = v * (1.0 - f * s);
+    let t = v * (1.0 - (1.0 - f) * s);
+    let (r, g, b) = match i as i32 {
+        0 => (v, t, p),
+        1 => (q, v, p),
+        2 => (p, v, t),
+        3 => (p, q, v),
+        4 => (t, p, v),
+        _ => (v, p, q),
+    };
+    perro_structs::Color::new(r, g, b, 1.0)
 }
 
 fn push_nine_slice_shapes(

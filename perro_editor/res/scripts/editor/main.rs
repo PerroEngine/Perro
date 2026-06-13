@@ -266,8 +266,6 @@ methods!({
             "asset_user_button" => select_node_using_active_asset(ctx),
             "inspector_name_box" => rename_inspector_selection(ctx),
             "inspector_pos" => toggle_inspector_section(ctx, "transform"),
-            "inspector_rotation_label" => toggle_inspector_section(ctx, "transform"),
-            "inspector_scale_label" => toggle_inspector_section(ctx, "transform"),
             "inspector_script" => toggle_inspector_section(ctx, "refs"),
             "inspector_vars" => toggle_inspector_section(ctx, "vars"),
             "inspector_position_box" => {
@@ -297,6 +295,8 @@ methods!({
                         add_node_from_picker(ctx, idx);
                     }
                 } else if let Some(idx) = middle_index(&name, "inspector_var_", "_value") {
+                    edit_selected_script_var_path(ctx, idx);
+                } else if let Some(idx) = inspector_var_component_row(&name) {
                     edit_selected_script_var_path(ctx, idx);
                 } else if let Some(idx) = middle_index(&name, "inspector_var_", "_pick_button") {
                     pick_selected_script_var_ref(ctx, idx);

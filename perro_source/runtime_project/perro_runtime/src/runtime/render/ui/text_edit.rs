@@ -184,6 +184,7 @@ pub(in crate::runtime::render_ui) fn ui_command_clip_rect(command: &UiCommand) -
         | UiCommand::UpsertShape { clip_rect, .. }
         | UiCommand::UpsertButton { clip_rect, .. }
         | UiCommand::UpsertCheckbox { clip_rect, .. }
+        | UiCommand::UpsertColorPicker { clip_rect, .. }
         | UiCommand::UpsertLabel { clip_rect, .. }
         | UiCommand::UpsertImage { clip_rect, .. }
         | UiCommand::UpsertNineSlice { clip_rect, .. }

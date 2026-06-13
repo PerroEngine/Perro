@@ -139,7 +139,11 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     set_ui_box_size(ctx, "file_action_row", (1.0, 0.034));
     set_ui_box_size(ctx, "file_tools_row", (1.0, 0.032));
     set_ui_box_size(ctx, "file_ops_row", (1.0, 0.032));
-    set_ui_box_size(ctx, "file_rows", (1.0, if glb_mode { 0.776 } else { 0.296 }));
+    set_ui_box_size(
+        ctx,
+        "file_rows",
+        (1.0, if glb_mode { 0.776 } else { 0.296 }),
+    );
 
     for idx in 0..MAX_RECENT {
         let has_recent = view.recent_projects.get(idx).is_some();
@@ -178,6 +182,9 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
 
     for idx in 0..MAX_FILES {
         let has_file = view.file_paths.get(idx).is_some();
+        if has_file {
+            ensure_tree_row_affordances(ctx, &format!("file_row_{idx}"), "#8FB9E8");
+        }
         let text = view
             .file_paths
             .get(idx)
@@ -189,6 +196,14 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
                 )
             })
             .unwrap_or_else(|| "-".to_string());
+        set_label(
+            ctx,
+            &format!("file_row_{idx}_icon"),
+            view.file_paths
+                .get(idx)
+                .map(|path| file_icon(path))
+                .unwrap_or(""),
+        );
         set_label(ctx, &format!("file_row_{idx}_label"), &text);
         set_ui_display(ctx, &format!("file_row_{idx}"), has_file);
         set_row_state(
@@ -237,11 +252,19 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
 
     for idx in 0..MAX_NODES {
         let has_node = view.nodes.get(idx).is_some();
+        if has_node {
+            ensure_tree_row_affordances(ctx, &format!("scene_row_{idx}"), "#A7D36F");
+        }
         let text = view
             .nodes
             .get(idx)
             .cloned()
             .unwrap_or_else(|| "-".to_string());
+        set_label(
+            ctx,
+            &format!("scene_row_{idx}_icon"),
+            view.node_icons.get(idx).copied().unwrap_or(""),
+        );
         set_label(ctx, &format!("scene_row_{idx}_label"), &text);
         set_ui_display(ctx, &format!("scene_row_{idx}"), has_node);
         set_row_state(
@@ -303,9 +326,17 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     set_ui_display(ctx, "asset_action_row", view.inspector.asset_selected);
     set_ui_display(ctx, "asset_open_button", view.inspector.asset_selected);
     set_ui_display(ctx, "asset_use_button", view.inspector.asset_use_action);
-    set_ui_display(ctx, "asset_make_node_button", view.inspector.asset_make_action);
+    set_ui_display(
+        ctx,
+        "asset_make_node_button",
+        view.inspector.asset_make_action,
+    );
     set_ui_display(ctx, "asset_user_button", view.inspector.asset_actions);
-    set_label(ctx, "asset_make_node_label", &view.inspector.asset_make_label);
+    set_label(
+        ctx,
+        "asset_make_node_label",
+        &view.inspector.asset_make_label,
+    );
     set_ui_display(
         ctx,
         "asset_glb_anim_button",
@@ -332,6 +363,12 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         "inspector_position_box",
         &view.inspector.pos.join(", "),
     );
+    set_ui_display(
+        ctx,
+        "inspector_position_label",
+        view.inspector.node_actions && !transform_closed,
+    );
+    set_label(ctx, "inspector_position_header_label", "Position");
     apply_component_row(
         ctx,
         "inspector_position",
@@ -395,14 +432,24 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         view.inspector.node_actions && !transform_closed,
     );
     set_label(ctx, "inspector_script_label", "References");
-    set_row_state(ctx, "inspector_script", false, inspector_disclosure(refs_closed));
+    set_row_state(
+        ctx,
+        "inspector_script",
+        false,
+        inspector_disclosure(refs_closed),
+    );
     set_ui_display(
         ctx,
         "inspector_script",
         view.inspector.node_actions && !view.inspector.resource_fields.is_empty(),
     );
-    set_label(ctx, "inspector_vars_label", "Script Variables");
-    set_row_state(ctx, "inspector_vars", false, inspector_disclosure(vars_closed));
+    set_label(ctx, "inspector_vars_label", "Scene Values");
+    set_row_state(
+        ctx,
+        "inspector_vars",
+        false,
+        inspector_disclosure(vars_closed),
+    );
     set_ui_display(
         ctx,
         "inspector_vars",
@@ -412,6 +459,8 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     set_text_box(ctx, "inspector_vars_box", &view.inspector.vars_text);
     for idx in 0..MAX_SCRIPT_VARS {
         let row = view.inspector.script_vars.get(idx);
+        ensure_inspector_value_component_boxes(ctx, idx);
+        ensure_inspector_color_swatch(ctx, idx);
         set_ui_display(
             ctx,
             &format!("inspector_var_row_{idx}"),
@@ -432,14 +481,44 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             &format!("inspector_var_{idx}_value"),
             row.map(|item| item.value.as_str()).unwrap_or(""),
         );
+        for component in 0..4 {
+            let box_name = format!("inspector_var_{idx}_{component}_box");
+            let component_value = row.and_then(|item| item.components.get(component));
+            set_text_box(ctx, &box_name, component_value.map(String::as_str).unwrap_or(""));
+            set_ui_display(
+                ctx,
+                &box_name,
+                view.inspector.node_actions
+                    && row.is_some_and(|item| item.components.get(component).is_some())
+                    && row.is_none_or(|item| item.kind != "Color")
+                    && !vars_closed,
+            );
+        }
+        let swatch_name = format!("inspector_var_{idx}_color_swatch");
+        let color_preview = row.and_then(|item| item.color_preview.as_deref());
+        set_ui_display(
+            ctx,
+            &swatch_name,
+            view.inspector.node_actions && color_preview.is_some() && !vars_closed,
+        );
+        if let Some(color) = color_preview {
+            set_color_picker_value(ctx, &swatch_name, color);
+        }
         let bool_row = row.is_some_and(|item| item.kind == "Bool");
         let picker_button_name = format!("inspector_var_{idx}_pick_button");
         let picker_row = row.is_some_and(|item| item.kind == "Node" || item.expandable)
             && find_named(ctx, &picker_button_name).is_some();
+        let component_row =
+            row.is_some_and(|item| !item.components.is_empty() || item.kind == "Color");
         set_ui_display(
             ctx,
             &format!("inspector_var_{idx}_value"),
-            view.inspector.node_actions && row.is_some() && !picker_row && !bool_row && !vars_closed,
+            view.inspector.node_actions
+                && row.is_some()
+                && !picker_row
+                && !bool_row
+                && !component_row
+                && !vars_closed,
         );
         let checkbox_name = format!("inspector_var_{idx}_check");
         set_ui_display(
@@ -492,8 +571,16 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
 
     set_ui_display(ctx, "inspector_pick_popup", view.inspector_picker_open);
     set_label(ctx, "inspector_pick_title", &view.inspector_picker_title);
-    set_text_box(ctx, "inspector_pick_filter_box", &view.inspector_picker_filter);
-    set_label(ctx, "inspector_pick_page_label", &view.inspector_picker_page);
+    set_text_box(
+        ctx,
+        "inspector_pick_filter_box",
+        &view.inspector_picker_filter,
+    );
+    set_label(
+        ctx,
+        "inspector_pick_page_label",
+        &view.inspector_picker_page,
+    );
     for idx in 0..MAX_INSPECTOR_PICKER_ROWS {
         let has_row = view.inspector_picker_rows.get(idx).is_some();
         let text = view
@@ -620,11 +707,12 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
     set_label_text_ratio(ctx, "inspector_type", 0.16);
     set_label_text_ratio(ctx, "inspector_parent", 0.15);
     set_label_text_ratio(ctx, "inspector_script_top", 0.15);
-    set_label_text_ratio(ctx, "inspector_pos_label", 0.17);
-    set_label_text_ratio(ctx, "inspector_rotation_header_label", 0.17);
-    set_label_text_ratio(ctx, "inspector_scale_header_label", 0.17);
-    set_label_text_ratio(ctx, "inspector_script_label", 0.17);
-    set_label_text_ratio(ctx, "inspector_vars_label", 0.17);
+    set_label_text_ratio(ctx, "inspector_pos_label", 0.19);
+    set_label_text_ratio(ctx, "inspector_position_header_label", 0.18);
+    set_label_text_ratio(ctx, "inspector_rotation_header_label", 0.19);
+    set_label_text_ratio(ctx, "inspector_scale_header_label", 0.19);
+    set_label_text_ratio(ctx, "inspector_script_label", 0.19);
+    set_label_text_ratio(ctx, "inspector_vars_label", 0.19);
 
     for name in [
         "inspector_action_row",
@@ -653,13 +741,13 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
         "inspector_visible_button",
         "inspector_clear_ref_button",
     ] {
-        set_button_size(ctx, name, (0.16, 0.70));
+        set_button_size(ctx, name, (0.135, 0.62));
     }
     for name in [
         "inspector_rotation_quat_button",
         "inspector_rotation_euler_button",
     ] {
-        set_button_size(ctx, name, (0.50, 0.70));
+        set_button_size(ctx, name, (0.42, 0.62));
     }
 
     for name in [
@@ -698,8 +786,12 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
         );
         set_hlayout_spacing(ctx, &format!("inspector_var_row_{idx}"), 0.002);
         set_ui_box_size(ctx, &format!("inspector_var_{idx}_check"), (0.055, 0.50));
-        set_button_size(ctx, &format!("inspector_var_{idx}_pick_button"), (0.50, 0.70));
-        set_label_text_ratio(ctx, &format!("inspector_var_{idx}_name"), 0.18);
+        set_button_size(
+            ctx,
+            &format!("inspector_var_{idx}_pick_button"),
+            (0.42, 0.62),
+        );
+        set_label_text_ratio(ctx, &format!("inspector_var_{idx}_name"), 0.23);
         set_label_text_ratio(ctx, &format!("inspector_var_{idx}_type"), 0.16);
     }
     for idx in 0..MAX_RESOURCE_FIELDS {
@@ -710,13 +802,17 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
             UiRect::new(0.025, 0.0, 0.0, 0.0),
         );
         set_hlayout_spacing(ctx, &format!("inspector_resource_row_{idx}"), 0.002);
-        set_button_size(ctx, &format!("inspector_resource_{idx}_button"), (0.60, 0.70));
+        set_button_size(
+            ctx,
+            &format!("inspector_resource_{idx}_button"),
+            (0.52, 0.62),
+        );
         set_button_size(
             ctx,
             &format!("inspector_resource_{idx}_clear_button"),
-            (0.08, 0.60),
+            (0.07, 0.54),
         );
-        set_label_text_ratio(ctx, &format!("inspector_resource_{idx}_name"), 0.18);
+        set_label_text_ratio(ctx, &format!("inspector_resource_{idx}_name"), 0.22);
         set_label_text_ratio(ctx, &format!("inspector_resource_{idx}_button_label"), 0.16);
         set_label_text_ratio(ctx, &format!("inspector_resource_{idx}_clear_label"), 0.20);
     }
@@ -739,10 +835,10 @@ fn apply_inspector_dynamic_layout<API: ScriptAPI + ?Sized>(
         "asset_make_node_button",
         "asset_user_button",
     ] {
-        set_button_size(ctx, name, (asset_button_w, 0.70));
+        set_button_size(ctx, name, (asset_button_w, 0.62));
     }
     for name in ["asset_glb_anim_button", "asset_glb_mat_button"] {
-        set_button_size(ctx, name, (0.166, 0.70));
+        set_button_size(ctx, name, (0.166, 0.62));
     }
 }
 
@@ -763,6 +859,7 @@ pub struct EditorView {
     dirty_scene_paths: Vec<String>,
     active_open: usize,
     nodes: Vec<String>,
+    node_icons: Vec<&'static str>,
     scene_disclosures: Vec<RowIndicator>,
     selected_row: Option<usize>,
     inspector: InspectorViewData,
@@ -916,9 +1013,16 @@ impl InspectorViewData {
             "Hide".to_string()
         };
         view.collapsed_sections = state.inspector_collapsed_sections.clone();
+        let scene_fields = inspector_scene_value_fields_for_node(node);
         let script_fields = inspector_script_var_fields_for_node(state, node);
-        view.vars_text = script_vars_edit_text(&script_fields);
-        view.script_vars = inspector_script_var_rows(&script_fields, &state.inspector_expanded_paths);
+        let value_fields = inspector_value_fields_for_node(&scene_fields, &script_fields);
+        let color_paths = script_state_color_path_keys(state, node, &value_fields);
+        view.vars_text = script_vars_edit_text(&value_fields);
+        view.script_vars = inspector_script_var_rows_with_color_paths(
+            &value_fields,
+            &state.inspector_expanded_paths,
+            &color_paths,
+        );
         view.resource_fields = resource_field_rows(node);
         view.apply_asset_actions(state);
         view
@@ -963,6 +1067,7 @@ impl InspectorViewData {
 impl EditorView {
     fn from_state(state: &EditorState) -> Self {
         let mut nodes = Vec::new();
+        let mut node_icons = Vec::new();
         let mut scene_disclosures = Vec::new();
         let mut selected_row = None;
         let mut inspector = InspectorViewData::for_asset(state);
@@ -982,17 +1087,19 @@ impl EditorView {
             gizmo = editor_gizmos::gizmo_view(&doc, state.selected_key);
             selected_ui_rect = state.selected_key.and_then(|key| doc_ui_rect(&doc, key));
             nodes = tree.labels;
+            node_icons = tree.icons;
             scene_disclosures = tree.disclosures;
             selected_row = tree.selected_row;
 
             if state.sidebar_mode != "files"
                 && let Some(key) = state.selected_key.and_then(|raw| {
-                doc.scene
-                    .nodes
-                    .iter()
-                    .find(|node| node.key.as_u32() == raw)
-                    .map(|node| node.key)
-            }) && let Some(node) = doc.scene.nodes.iter().find(|node| node.key == key)
+                    doc.scene
+                        .nodes
+                        .iter()
+                        .find(|node| node.key.as_u32() == raw)
+                        .map(|node| node.key)
+                })
+                && let Some(node) = doc.scene.nodes.iter().find(|node| node.key == key)
             {
                 inspector = InspectorViewData::for_node(&doc, node, state);
             }
@@ -1031,8 +1138,7 @@ impl EditorView {
         let node_picker_parent = picker_parent_text(state);
         let inspector_picker_rows = inspector_picker_rows(state);
         let inspector_picker_count = inspector_picker_entries(state).len().max(1);
-        let inspector_picker_page =
-            (state.inspector_picker_offset / MAX_INSPECTOR_PICKER_ROWS) + 1;
+        let inspector_picker_page = (state.inspector_picker_offset / MAX_INSPECTOR_PICKER_ROWS) + 1;
         let inspector_picker_page_count =
             inspector_picker_count.div_ceil(MAX_INSPECTOR_PICKER_ROWS);
         let inspector_picker_title = inspector_picker_title(state);
@@ -1060,6 +1166,7 @@ impl EditorView {
             dirty_scene_paths: state.dirty_scene_paths.clone(),
             active_open: state.active_open,
             nodes,
+            node_icons,
             scene_disclosures,
             selected_row,
             inspector,
@@ -1230,6 +1337,49 @@ pub fn script_vars_edit_text(fields: &[(SceneFieldName, SceneValue)]) -> String 
         .join("\n")
 }
 
+pub fn inspector_scene_value_fields_for_node(
+    node: &SceneNodeEntry,
+) -> Vec<(SceneFieldName, SceneValue)> {
+    perro_scene::scene_inspector_fields(node.data.node_type)
+        .into_iter()
+        .filter(inspector_generic_scene_field)
+        .filter_map(|field| {
+            let value = scene_field_value(&node.data, field.name)
+                .cloned()
+                .or(field.default)
+                .or_else(|| {
+                    perro_scene::default_scene_field_value_by_name(node.data.node_type, field.name)
+                })?;
+            Some((SceneFieldName::from_name(field.name.to_string()), value))
+        })
+        .collect()
+}
+
+pub fn inspector_generic_scene_field(field: &perro_scene::SceneInspectorField) -> bool {
+    if matches!(
+        field.kind,
+        perro_scene::SceneInspectorValueKind::Asset(_) | perro_scene::SceneInspectorValueKind::NodeRef
+    ) {
+        return false;
+    }
+    !matches!(field.name, "position" | "rotation" | "scale" | "model")
+}
+
+pub fn inspector_value_fields_for_node(
+    scene_fields: &[(SceneFieldName, SceneValue)],
+    script_fields: &[(SceneFieldName, SceneValue)],
+) -> Vec<(SceneFieldName, SceneValue)> {
+    let mut out = Vec::new();
+    if !script_fields.is_empty() {
+        out.push((
+            SceneFieldName::from_name("script_vars".to_string()),
+            SceneValue::Object(Cow::Owned(script_fields.to_vec())),
+        ));
+    }
+    out.extend_from_slice(scene_fields);
+    out
+}
+
 fn inspector_var_button_label(row: &InspectorValueRow) -> String {
     row.value.clone()
 }
@@ -1255,15 +1405,15 @@ pub fn resource_field_rows(node: &SceneNodeEntry) -> Vec<ResourceFieldView> {
     }
     rows.extend(
         perro_scene::scene_inspector_fields(node.data.node_type)
-        .into_iter()
-        .filter(|field| {
-            matches!(
-                field.kind,
-                perro_scene::SceneInspectorValueKind::Asset(_)
-                    | perro_scene::SceneInspectorValueKind::NodeRef
-            )
-        })
-        .filter_map(|field| resource_field_row(&node.data, &field)),
+            .into_iter()
+            .filter(|field| {
+                matches!(
+                    field.kind,
+                    perro_scene::SceneInspectorValueKind::Asset(_)
+                        | perro_scene::SceneInspectorValueKind::NodeRef
+                )
+            })
+            .filter_map(|field| resource_field_row(&node.data, &field)),
     );
     rows
 }
@@ -1417,7 +1567,8 @@ fn inspector_picker_asset_kind(state: &EditorState) -> Option<perro_scene::Scene
         .nodes
         .iter()
         .find(|node| node.key.as_u32() == key)?;
-    let field = perro_scene::scene_inspector_field(node.data.node_type, &state.inspector_picker_field)?;
+    let field =
+        perro_scene::scene_inspector_field(node.data.node_type, &state.inspector_picker_field)?;
     match field.kind {
         perro_scene::SceneInspectorValueKind::Asset(kind) => Some(kind),
         _ => None,
@@ -1691,6 +1842,7 @@ pub fn animation_drawer_text(state: &EditorState) -> (String, String, String, bo
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn gltf_summary(
     path: &str,
     mesh_count: usize,
@@ -1790,6 +1942,7 @@ pub fn panim_summary(project_root: &str, anim_path: &str) -> String {
 #[derive(Default)]
 pub struct SceneTreeRows {
     pub labels: Vec<String>,
+    pub icons: Vec<&'static str>,
     pub disclosures: Vec<RowIndicator>,
     pub keys: Vec<u32>,
     pub selected_row: Option<usize>,
@@ -1893,11 +2046,11 @@ pub fn filtered_scene_tree_view(
             0,
             &name,
             type_name,
-            node_type_icon(node.data.node_type),
             &scene_node_badges(node),
             children,
             Some(&path),
         ));
+        out.icons.push(node_type_icon(node.data.node_type));
         out.disclosures.push(scene_row_disclosure(children, false));
         out.keys.push(key);
     }
@@ -1974,14 +2127,15 @@ pub fn push_scene_tree_row(
     let collapsed = collapsed_keys.contains(&key);
     out.labels.push(scene_row_label(
         depth,
-        &doc.scene.key_name_or_id(node.key).to_string(),
+        doc.scene.key_name_or_id(node.key).as_ref(),
         node.data.type_name(),
-        node_type_icon(node.data.node_type),
         &scene_node_badges(node),
         children,
         None,
     ));
-    out.disclosures.push(scene_row_disclosure(children, collapsed));
+    out.icons.push(node_type_icon(node.data.node_type));
+    out.disclosures
+        .push(scene_row_disclosure(children, collapsed));
     out.keys.push(key);
     if children > 0 && collapsed {
         return Some(row);
@@ -2009,7 +2163,6 @@ pub fn scene_row_label(
     depth: usize,
     name: &str,
     type_name: &str,
-    icon: &str,
     badges: &str,
     children: usize,
     parent: Option<&str>,
@@ -2019,7 +2172,7 @@ pub fn scene_row_label(
     let indent = "  ".repeat(depth.min(8));
     if let Some(parent) = parent {
         format!(
-            "{indent}  {icon} {name}  [{type_name}]{badges}  {}",
+            "{indent}     {name}  [{type_name}]{badges}  {}",
             editor_view::short_path(parent, 14)
         )
     } else {
@@ -2028,7 +2181,7 @@ pub fn scene_row_label(
         } else {
             format!("  {children}")
         };
-        format!("{indent}  {icon} {name}  [{type_name}]{badges}{child_suffix}")
+        format!("{indent}     {name}  [{type_name}]{badges}{child_suffix}")
     }
 }
 
@@ -2113,13 +2266,44 @@ pub fn file_row_label_for_filter(path: &str, filtered: bool) -> String {
     file_row_label(path)
 }
 
-pub fn file_row_state_prefix(path: &str, open_paths: &[String], dirty_scene_paths: &[String]) -> &'static str {
-    let dirty = dirty_scene_paths.iter().any(|dirty| dirty == path);
-    if dirty {
-        "* "
-    } else {
-        ""
+pub fn file_icon(path: &str) -> &'static str {
+    match editor_files::kind_label(path) {
+        "folder" => "[DIR]",
+        "scene" => "[SCN]",
+        "script" => "[RS]",
+        "image" => "[IMG]",
+        "audio" => "[AUD]",
+        "mesh" => "[MSH]",
+        "resource" if path.ends_with(".panim") => "[ANI]",
+        "resource" if path.ends_with(".panimtree") => "[ATR]",
+        "resource" if path.ends_with(".pmat") => "[MAT]",
+        "resource" if path.ends_with(".uistyle") => "[STY]",
+        "resource" if path.ends_with(".ppart") => "[PRT]",
+        "resource" if path.ends_with(".ptileset") => "[TIL]",
+        "resource" if path.ends_with(".pskel2d") || path.ends_with(".pskel3d") => "[SKL]",
+        "resource" => "[RES]",
+        _ => "[OTH]",
     }
+}
+
+pub fn scene_field_value<'a>(data: &'a SceneNodeData, field: &str) -> Option<&'a SceneValue> {
+    data.fields
+        .iter()
+        .find(|(name, _)| name.as_ref() == field)
+        .map(|(_, value)| value)
+        .or_else(|| {
+            data.base_ref()
+                .and_then(|base| scene_field_value(base, field))
+        })
+}
+
+pub fn file_row_state_prefix(
+    path: &str,
+    open_paths: &[String],
+    dirty_scene_paths: &[String],
+) -> &'static str {
+    let dirty = dirty_scene_paths.iter().any(|dirty| dirty == path);
+    if dirty { "* " } else { "" }
 }
 
 pub fn file_row_disclosure(path: &str, expanded_paths: &[String]) -> RowIndicator {
@@ -2233,7 +2417,8 @@ pub fn file_path_in_scope_or_descendant(path: &str, scope: &str) -> bool {
     if scope.is_empty() {
         return true;
     }
-    path.strip_prefix(scope).is_some_and(|rest| !rest.is_empty())
+    path.strip_prefix(scope)
+        .is_some_and(|rest| !rest.is_empty())
 }
 
 pub fn parent_res_folder(path: &str) -> String {
@@ -2587,6 +2772,16 @@ pub fn middle_index(name: &str, prefix: &str, suffix: &str) -> Option<usize> {
         .ok()
 }
 
+pub fn inspector_var_component_row(name: &str) -> Option<usize> {
+    let rest = name.strip_prefix("inspector_var_")?;
+    let (row, component) = rest.split_once('_')?;
+    let component = component.strip_suffix("_box")?;
+    if !matches!(component, "0" | "1" | "2" | "3") {
+        return None;
+    }
+    row.parse::<usize>().ok()
+}
+
 pub fn set_log<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, text: &str) {
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         state.log = text.to_string();
@@ -2651,6 +2846,51 @@ pub fn set_button_fill<API: ScriptAPI + ?Sized>(
             node.style.fill = color;
         });
     }
+}
+
+pub fn set_panel_fill<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    fill: &str,
+) {
+    let Some(color) = Color::from_hex(fill) else {
+        return;
+    };
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiPanel, id, |node| {
+            node.style.fill = color;
+        });
+    }
+}
+
+pub fn set_color_picker_value<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    fill: &str,
+) {
+    let Some(color) = Color::from_hex(fill) else {
+        return;
+    };
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiColorPicker, id, |node| {
+            node.color = color;
+        });
+    }
+}
+
+pub fn read_color_picker_value<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+) -> Option<String> {
+    let id = find_named(ctx, name)?;
+    let [r, g, b, a] = with_node!(ctx.run, UiColorPicker, id, |node| node.color.to_rgba());
+    Some(format!(
+        "({}, {}, {}, {})",
+        format_compact_f32(r),
+        format_compact_f32(g),
+        format_compact_f32(b),
+        format_compact_f32(a)
+    ))
 }
 
 pub fn set_image_tint<API: ScriptAPI + ?Sized>(
@@ -2766,7 +3006,7 @@ pub fn set_button_row_style<API: ScriptAPI + ?Sized>(
         return;
     };
     if let Some(id) = find_named(ctx, name) {
-        if with_node_mut!(ctx.run, UiButton, id, |node| {
+        let _ = with_node_mut!(ctx.run, UiButton, id, |node| {
             node.style.fill = hover_color;
             node.style.stroke = hover_color;
             node.style.stroke_width = 0.0;
@@ -2779,11 +3019,7 @@ pub fn set_button_row_style<API: ScriptAPI + ?Sized>(
             node.pressed_style.stroke = pressed_color;
             node.pressed_style.stroke_width = 0.0;
             node.pressed_style.corner_radius = 0.0;
-        })
-        .is_some()
-        {
-            return;
-        }
+        });
     }
 }
 
@@ -2795,6 +3031,126 @@ pub fn set_row_state<API: ScriptAPI + ?Sized>(
 ) {
     set_button_fill(ctx, name, if selected { "#478CBF" } else { "#00000000" });
     set_indicator_shape(ctx, &format!("{name}_indicator"), indicator);
+}
+
+pub fn ensure_tree_row_affordances<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    row_name: &str,
+    icon_color: &str,
+) {
+    let Some(row_id) = find_named(ctx, row_name) else {
+        return;
+    };
+    let indicator_name = format!("{row_name}_indicator");
+    if find_named(ctx, &indicator_name).is_none() {
+        let id = create_node!(ctx.run, UiShape, indicator_name, tags![], row_id);
+        let _ = with_node_mut!(ctx.run, UiShape, id, |node| {
+            node.kind = UiShapeKind::Triangle;
+            node.fill = Color::from_hex("#AAB4C3").unwrap_or(Color::WHITE);
+            node.stroke = Color::from_hex("#00000000").unwrap_or(Color::TRANSPARENT);
+            node.stroke_width = 0.0;
+            node.visible = false;
+            node.input_enabled = false;
+            node.mouse_filter = UiMouseFilter::Pass;
+            node.layout.anchor = UiAnchor::Left;
+            node.layout.size = UiVector2::ratio(0.025, 0.40);
+            node.transform.position = UiVector2::percent(2.0, 50.0);
+            node.transform.pivot = UiVector2::percent(50.0, 50.0);
+        });
+    }
+
+    let icon_name = format!("{row_name}_icon");
+    if find_named(ctx, &icon_name).is_none() {
+        let id = create_node!(ctx.run, UiLabel, icon_name, tags![], row_id);
+        let _ = with_node_mut!(ctx.run, UiLabel, id, |node| {
+            node.color = Color::from_hex(icon_color).unwrap_or(Color::WHITE);
+            node.text_size_ratio = 0.28;
+            node.h_align = UiTextAlign::Center;
+            node.v_align = UiTextAlign::Center;
+            node.input_enabled = false;
+            node.mouse_filter = UiMouseFilter::Pass;
+            node.layout.anchor = UiAnchor::Left;
+            node.layout.size = UiVector2::ratio(0.14, 1.0);
+            node.transform.position = UiVector2::percent(8.0, 50.0);
+            node.transform.pivot = UiVector2::percent(50.0, 50.0);
+        });
+    }
+}
+
+pub fn ensure_inspector_value_component_boxes<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+) {
+    let Some(row_id) = find_named(ctx, &format!("inspector_var_row_{idx}")) else {
+        return;
+    };
+    for component in 0..4 {
+        let name = format!("inspector_var_{idx}_{component}_box");
+        if find_named(ctx, &name).is_some() {
+            continue;
+        }
+        let id = create_node!(ctx.run, UiTextBox, name, tags![], row_id);
+        let _ = with_node_mut!(ctx.run, UiTextBox, id, |node| {
+            node.base.visible = false;
+            node.base.input_enabled = false;
+            node.base.layout.size = UiVector2::ratio(0.10, 0.62);
+            node.text_size_ratio = 0.42;
+            node.padding = UiRect::symmetric(4.0, 1.0);
+            node.style.fill = Color::from_hex("#111827DD").unwrap_or(node.style.fill);
+            node.style.stroke = Color::from_hex("#334155FF").unwrap_or(node.style.stroke);
+            node.focused_style.stroke =
+                Color::from_hex("#478CBFFF").unwrap_or(node.focused_style.stroke);
+            node.text_changed_signals = vec![match idx {
+                0 => signal!("editor_inspector_var_0"),
+                1 => signal!("editor_inspector_var_1"),
+                2 => signal!("editor_inspector_var_2"),
+                3 => signal!("editor_inspector_var_3"),
+                4 => signal!("editor_inspector_var_4"),
+                5 => signal!("editor_inspector_var_5"),
+                6 => signal!("editor_inspector_var_6"),
+                _ => signal!("editor_inspector_var_7"),
+            }];
+            node.focused_signals = vec![signal!("editor_inspector_focus")];
+        });
+    }
+}
+
+pub fn ensure_inspector_color_swatch<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+) {
+    let Some(row_id) = find_named(ctx, &format!("inspector_var_row_{idx}")) else {
+        return;
+    };
+    let name = format!("inspector_var_{idx}_color_swatch");
+    if find_named(ctx, &name).is_some() {
+        return;
+    }
+    let id = create_node!(ctx.run, UiColorPicker, name, tags![], row_id);
+    let _ = with_node_mut!(ctx.run, UiColorPicker, id, |node| {
+        node.button.base.visible = false;
+        node.button.base.input_enabled = true;
+        node.button.base.mouse_filter = UiMouseFilter::Pass;
+        node.button.base.layout.size = UiVector2::ratio(0.065, 0.62);
+        node.button.style.stroke = Color::from_hex("#D1D5DBFF").unwrap_or(node.button.style.stroke);
+        node.button.style.stroke_width = 1.0;
+        node.button.hover_style.stroke =
+            Color::from_hex("#FFFFFFFF").unwrap_or(node.button.hover_style.stroke);
+        node.button.hover_style.stroke_width = 1.0;
+        node.button.pressed_style.stroke =
+            Color::from_hex("#94A3B8FF").unwrap_or(node.button.pressed_style.stroke);
+        node.button.pressed_style.stroke_width = 1.0;
+        node.color_changed_signals = vec![match idx {
+            0 => signal!("editor_inspector_var_0"),
+            1 => signal!("editor_inspector_var_1"),
+            2 => signal!("editor_inspector_var_2"),
+            3 => signal!("editor_inspector_var_3"),
+            4 => signal!("editor_inspector_var_4"),
+            5 => signal!("editor_inspector_var_5"),
+            6 => signal!("editor_inspector_var_6"),
+            _ => signal!("editor_inspector_var_7"),
+        }];
+    });
 }
 
 pub fn set_indicator_shape<API: ScriptAPI + ?Sized>(
@@ -3045,9 +3401,10 @@ pub fn apply_viewport_canvas<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
     let (canvas_w, canvas_h) = if mode == "UI" {
         ui_canvas_size_ratio(window_aspect, zoom)
     } else {
-        viewport_stream_size_ratio(window_aspect)
+        (1.0, 1.0)
     };
     set_ui_center_size(ctx, "viewport_canvas_overlay", (canvas_w, canvas_h));
+    apply_canvas_overlay_style(ctx, &mode);
     apply_ui_preview_canvas_transform(ctx, &mode, zoom);
 
     let spacing = if mode == "UI" {
@@ -3077,6 +3434,32 @@ pub fn apply_viewport_canvas<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
     if mode == "2D" {
         set_canvas_line(ctx, "canvas_origin_x", false, pan_y, true);
         set_canvas_line(ctx, "canvas_origin_y", true, pan_x, true);
+    }
+}
+
+pub fn apply_canvas_overlay_style<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    mode: &str,
+) {
+    if let Some(id) = find_named(ctx, "viewport_canvas_overlay") {
+        let _ = with_node_mut!(ctx.run, UiPanel, id, |node| {
+            node.style.fill = Color::from_hex("#00000000").unwrap_or(node.style.fill);
+            node.style.stroke = if mode == "UI" {
+                Color::from_hex("#DDE6F0EE").unwrap_or(node.style.stroke)
+            } else {
+                Color::from_hex("#5B6574AA").unwrap_or(node.style.stroke)
+            };
+            node.style.stroke_width = if mode == "UI" { 2.0 } else { 1.0 };
+            node.style.corner_radius = 0.0;
+            node.clip_children = false;
+        });
+    }
+    if let Some(id) = find_named(ctx, "viewport_click_layer") {
+        let _ = with_node_mut!(ctx.run, UiButton, id, |node| {
+            node.style.corner_radius = 0.0;
+            node.hover_style.corner_radius = 0.0;
+            node.pressed_style.corner_radius = 0.0;
+        });
     }
 }
 
@@ -3231,13 +3614,9 @@ pub fn set_button_size<API: ScriptAPI + ?Sized>(
     size: (f32, f32),
 ) {
     if let Some(id) = find_named(ctx, name) {
-        if with_node_mut!(ctx.run, UiButton, id, |node| {
+        let _ = with_node_mut!(ctx.run, UiButton, id, |node| {
             node.layout.size = UiVector2::ratio(size.0, size.1);
-        })
-        .is_some()
-        {
-            return;
-        }
+        });
     }
 }
 

@@ -790,9 +790,7 @@ pub fn close_scene_tab<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
         if idx >= state.open_paths.len() {
             return None;
         }
-        let Some(target) = state.open_paths.get(idx).cloned() else {
-            return None;
-        };
+        let target = state.open_paths.get(idx).cloned()?;
         if state.dirty_scene_paths.iter().any(|path| path == &target) {
             state.log = format!("close blocked\nsave first\n{target}");
             return None;
@@ -1325,17 +1323,17 @@ pub fn rewrite_clean_scene_asset_refs(
 pub fn rewrite_asset_refs_in_doc(doc: &mut SceneDoc, source: &str, target: &str) -> bool {
     let mut changed = false;
     for node in doc.scene.nodes.to_mut().iter_mut() {
-        if let Some(root_of) = node.root_of.as_mut() {
-            if let Some(next) = renamed_asset_ref(root_of.as_ref(), source, target) {
-                *root_of = Cow::Owned(next);
-                changed = true;
-            }
+        if let Some(root_of) = node.root_of.as_mut()
+            && let Some(next) = renamed_asset_ref(root_of.as_ref(), source, target)
+        {
+            *root_of = Cow::Owned(next);
+            changed = true;
         }
-        if let Some(script) = node.script.as_mut() {
-            if let Some(next) = renamed_asset_ref(script.as_ref(), source, target) {
-                *script = Cow::Owned(next);
-                changed = true;
-            }
+        if let Some(script) = node.script.as_mut()
+            && let Some(next) = renamed_asset_ref(script.as_ref(), source, target)
+        {
+            *script = Cow::Owned(next);
+            changed = true;
         }
         changed |= rewrite_asset_refs_in_data(&mut node.data, source, target);
         for (_field, value) in node.script_vars.to_mut().iter_mut() {

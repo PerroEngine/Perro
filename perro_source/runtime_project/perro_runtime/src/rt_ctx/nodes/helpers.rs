@@ -258,6 +258,19 @@ pub(super) fn classify_ui_node_payload_change(
             }
             flags
         }
+        (SceneNodeData::UiColorPicker(before), SceneNodeData::UiColorPicker(after)) => {
+            let mut flags = 0;
+            if before.button.style != after.button.style
+                || before.button.pressed_style != after.button.pressed_style
+                || before.button.hover_style != after.button.hover_style
+                || before.button.disabled != after.button.disabled
+                || before.color != after.color
+                || before.popup_open != after.popup_open
+            {
+                flags |= Runtime::UI_DIRTY_COMMANDS;
+            }
+            flags
+        }
         (SceneNodeData::UiImageButton(before), SceneNodeData::UiImageButton(after)) => {
             let mut flags = 0;
             if before.texture != after.texture
@@ -382,6 +395,7 @@ pub(super) fn ui_base_from_data(data: &SceneNodeData) -> Option<&UiBox> {
         SceneNodeData::UiPanel(node) => Some(&node.base),
         SceneNodeData::UiButton(node) => Some(&node.base),
         SceneNodeData::UiCheckbox(node) => Some(&node.button.base),
+        SceneNodeData::UiColorPicker(node) => Some(&node.button.base),
         SceneNodeData::UiImage(node) => Some(&node.base),
         SceneNodeData::UiImageButton(node) => Some(&node.base),
         SceneNodeData::UiNineSlice(node) => Some(&node.base),

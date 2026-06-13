@@ -68,8 +68,8 @@ use perro_structs::{
     PostProcessSet, Quaternion, UVector2, Vector2, Vector3,
 };
 use perro_ui::{
-    UiAnimatedImage, UiAnimatedImageFrameSet, UiBox, UiButton, UiCheckbox, UiGrid, UiHLayout,
-    UiImage, UiImageButton, UiImageScaleMode, UiLabel, UiLayout, UiList, UiListIndent,
+    UiAnimatedImage, UiAnimatedImageFrameSet, UiBox, UiButton, UiCheckbox, UiColorPicker, UiGrid,
+    UiHLayout, UiImage, UiImageButton, UiImageScaleMode, UiLabel, UiLayout, UiList, UiListIndent,
     UiMouseFilter, UiNineSlice, UiPanel, UiScrollContainer, UiShape, UiShapeKind, UiTextAlign,
     UiTextBlock, UiTextBox, UiVLayout,
 };
@@ -1859,6 +1859,10 @@ fn scene_node_data_from(
         ))),
         NodeType::UiShape => Ok(SceneNodeData::UiShape(build_ui_shape(data))),
         NodeType::UiCheckbox => Ok(SceneNodeData::UiCheckbox(build_ui_checkbox(
+            data,
+            static_ui_style_lookup,
+        ))),
+        NodeType::UiColorPicker => Ok(SceneNodeData::UiColorPicker(build_ui_color_picker(
             data,
             static_ui_style_lookup,
         ))),

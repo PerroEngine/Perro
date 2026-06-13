@@ -251,6 +251,65 @@ impl UiNodeBase for UiCheckbox {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiColorPicker {
+    pub button: UiButton,
+    pub color: Color,
+    pub popup_open: bool,
+    pub popup_style: UiStyle,
+    pub popup_size: [f32; 2],
+    pub wheel_radius: f32,
+    pub color_changed_signals: Vec<SignalID>,
+}
+
+impl UiColorPicker {
+    pub fn new() -> Self {
+        let mut button = UiButton::new();
+        button.style.fill = Color::WHITE;
+        button.hover_style.fill = Color::LIGHT_GRAY;
+        button.pressed_style.fill = Color::GRAY;
+        Self {
+            button,
+            color: Color::WHITE,
+            popup_open: false,
+            popup_style: UiStyle::panel(),
+            popup_size: [180.0, 220.0],
+            wheel_radius: 72.0,
+            color_changed_signals: Vec::new(),
+        }
+    }
+}
+
+impl Default for UiColorPicker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Deref for UiColorPicker {
+    type Target = UiButton;
+
+    fn deref(&self) -> &Self::Target {
+        &self.button
+    }
+}
+
+impl DerefMut for UiColorPicker {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.button
+    }
+}
+
+impl UiNodeBase for UiColorPicker {
+    fn ui_base(&self) -> &UiBox {
+        &self.button.base
+    }
+
+    fn ui_base_mut(&mut self) -> &mut UiBox {
+        &mut self.button.base
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum UiShapeKind {
     #[default]

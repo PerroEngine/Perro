@@ -72,7 +72,7 @@ pub trait ScriptBehavior<API: ScriptAPI + ?Sized>: ScriptLifecycle<API> {
 
     /// Create per-instance script state.
     ///
-    /// The default state is `()`. Generated scripts override this for `#[derive(State)]`
+    /// The default state is `()`. Generated scripts override this for `#[State]`
     /// or script-defined state structs.
     fn create_state(&self) -> Box<dyn Any> {
         Box::new(())

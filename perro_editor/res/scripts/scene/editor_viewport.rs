@@ -107,7 +107,6 @@ pub fn handle_viewport_click<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
                 refresh_all(ctx);
                 return;
             }
-            deselect_viewport_node(ctx, "deselect\nui canvas");
             set_log(
                 ctx,
                 &format!(
@@ -118,7 +117,6 @@ pub fn handle_viewport_click<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
         }
         "2D" => {
             if let Some(world) = stream_pointer_world_2d(ctx, pointer) {
-                deselect_viewport_node(ctx, "deselect\n2d empty");
                 set_log(
                     ctx,
                     &format!(
@@ -138,9 +136,7 @@ pub fn handle_viewport_click<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
                     refresh_all(ctx);
                     return;
                 }
-                if let Some(point) = ray_ground_point(ray) {
-                    deselect_viewport_node(ctx, "deselect\n3d empty");
-                }
+                let _ = ray_ground_point(ray);
                 set_log(
                     ctx,
                     &format!(
@@ -1258,7 +1254,7 @@ pub fn pick_preview_3d<API: ScriptAPI + ?Sized>(
         )
     });
     let mut best: Option<(u32, f32)> = None;
-    for (raw_id, key) in ids.into_iter().zip(keys.into_iter()) {
+    for (raw_id, key) in ids.into_iter().zip(keys) {
         let id = NodeID::from_u64(raw_id);
         let Some(hit) =
             mesh_instance_surface_on_global_ray_3d!(ctx.run, id, ray.origin, ray.direction, 100000.0)
@@ -1288,7 +1284,7 @@ pub fn draw_preview_2d_gizmos<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
         return;
     }
     let doc = SceneDoc::parse(&doc_text);
-    for (raw_id, key) in ids.into_iter().zip(keys.into_iter()) {
+    for (raw_id, key) in ids.into_iter().zip(keys) {
         let Some(doc_node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
             continue;
         };

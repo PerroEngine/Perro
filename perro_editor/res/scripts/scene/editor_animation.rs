@@ -35,14 +35,11 @@ pub fn create_animation_for_selected_player<API: ScriptAPI + ?Sized>(
             return None;
         };
         let mut doc = SceneDoc::parse(&state.doc_text);
-        let Some(node_index) = doc
+        let node_index = doc
             .scene
             .nodes
             .iter()
-            .position(|node| node.key.as_u32() == key)
-        else {
-            return None;
-        };
+            .position(|node| node.key.as_u32() == key)?;
         if doc.scene.nodes[node_index].data.type_name() != "AnimationPlayer" {
             state.log = "anim create fail\nselected node not AnimationPlayer".to_string();
             return None;
@@ -227,7 +224,7 @@ pub fn unique_panim_object_name(node_name: &str, anim_path: &str, project_root: 
     let existing = if anim_path.is_empty() || anim_path == "-" {
         String::new()
     } else {
-        FileMod::load_string(&res_to_abs(project_root, anim_path)).unwrap_or_default()
+        FileMod::load_string(res_to_abs(project_root, anim_path)).unwrap_or_default()
     };
     if !panim_has_object(&existing, &base) {
         return base;
@@ -603,16 +600,23 @@ pub fn rename_selected_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_,
             state.log = "rename fail\nbad key".to_string();
             return false;
         }
-        let current = doc.scene.key_name_or_id(SceneKey::new(key)).to_string();
-        let next = if current == requested {
-            requested.clone()
-        } else {
-            unique_node_name(&doc, &requested)
-        };
+        let scene_key = SceneKey::new(key);
+        let current = doc.scene.key_name_or_id(scene_key).to_string();
+        let next = unique_renamed_node_name(&doc, scene_key, &requested);
         if current == next {
             return false;
         }
         doc.scene.key_names.to_mut()[idx] = Cow::Owned(next.clone());
+        if let Some(node) = doc
+            .scene
+            .nodes
+            .to_mut()
+            .iter_mut()
+            .find(|node| node.key == scene_key)
+        {
+            node.name = None;
+        }
+        let refs = rewrite_node_refs_in_doc(&mut doc, &current, &next);
         state.doc_text = doc.to_text();
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
@@ -620,13 +624,291 @@ pub fn rename_selected_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_,
         {
             state.dirty_scene_paths.push(path);
         }
-        state.log = format!("rename node\n{current} -> {next}");
+        state.log = format!("rename node\n{current} -> {next}\nrefs={refs}");
         true
     })
     .unwrap_or(false);
     if changed {
         rebuild_preview(ctx);
         refresh_all(ctx);
+    }
+}
+
+pub fn unique_renamed_node_name(doc: &SceneDoc, key: SceneKey, requested: &str) -> String {
+    let name_free = |name: &str| {
+        doc.scene
+            .key_names
+            .iter()
+            .enumerate()
+            .all(|(idx, item)| idx == key.as_usize() || item.as_ref() != name)
+    };
+    if name_free(requested) {
+        return requested.to_string();
+    }
+    for idx in 1..1000 {
+        let name = format!("{requested}{idx}");
+        if name_free(&name) {
+            return name;
+        }
+    }
+    format!("{requested}_x")
+}
+
+pub fn rewrite_node_refs_in_doc(doc: &mut SceneDoc, old_name: &str, new_name: &str) -> usize {
+    let mut changed = 0;
+    for node in doc.scene.nodes.to_mut().iter_mut() {
+        changed += rewrite_node_refs_in_data(&mut node.data, old_name, new_name);
+        for (_field, value) in node.script_vars.to_mut().iter_mut() {
+            changed += rewrite_node_refs_in_value(value, old_name, new_name);
+        }
+    }
+    changed
+}
+
+pub fn rewrite_node_refs_in_data(
+    data: &mut SceneNodeData,
+    old_name: &str,
+    new_name: &str,
+) -> usize {
+    let mut changed = 0;
+    for (_field, value) in data.fields.to_mut().iter_mut() {
+        changed += rewrite_node_refs_in_value(value, old_name, new_name);
+    }
+    if let Some(base) = data.base.as_mut() {
+        match base {
+            perro_scene::SceneNodeDataBase::Borrowed(_) => {}
+            perro_scene::SceneNodeDataBase::Owned(base) => {
+                changed += rewrite_node_refs_in_data(base, old_name, new_name);
+            }
+        }
+    }
+    changed
+}
+
+pub fn rewrite_node_refs_in_value(value: &mut SceneValue, old_name: &str, new_name: &str) -> usize {
+    match value {
+        SceneValue::Key(key) if key.as_ref() == old_name => {
+            *key = SceneValueKey::from(new_name.to_string());
+            1
+        }
+        SceneValue::Key(key) if key.as_ref() == format!("@{old_name}") => {
+            *key = SceneValueKey::from(format!("@{new_name}"));
+            1
+        }
+        SceneValue::Object(fields) => fields
+            .to_mut()
+            .iter_mut()
+            .map(|(_field, value)| rewrite_node_refs_in_value(value, old_name, new_name))
+            .sum(),
+        SceneValue::Array(values) => values
+            .to_mut()
+            .iter_mut()
+            .map(|value| rewrite_node_refs_in_value(value, old_name, new_name))
+            .sum(),
+        _ => 0,
+    }
+}
+
+#[cfg(test)]
+mod node_rename_tests {
+    use super::*;
+
+    #[test]
+    fn rename_key_drops_display_name_override_and_rewrites_refs() {
+        let mut doc = rename_test_doc();
+        let key = SceneKey::new(1);
+        let next = unique_renamed_node_name(&doc, key, "MainCam");
+        doc.scene.key_names.to_mut()[key.as_usize()] = Cow::Owned(next.clone());
+        doc.scene
+            .nodes
+            .to_mut()
+            .iter_mut()
+            .find(|node| node.key == key)
+            .expect("camera node")
+            .name = None;
+
+        let refs = rewrite_node_refs_in_doc(&mut doc, "Camera", &next);
+
+        assert_eq!(refs, 5);
+        assert_eq!(doc.scene.key_name(key), Some("MainCam"));
+        assert!(
+            doc.scene
+                .nodes
+                .iter()
+                .find(|node| node.key == key)
+                .expect("camera node")
+                .name
+                .is_none()
+        );
+        assert_eq!(count_doc_key_refs(&doc, "Camera"), 0);
+        assert_eq!(count_doc_key_refs(&doc, "MainCam"), 5);
+        assert_eq!(count_doc_key_refs(&doc, "Other"), 1);
+    }
+
+    #[test]
+    fn rename_conflict_uses_plain_numeric_suffix() {
+        let mut doc = rename_test_doc();
+        doc.scene.key_names.to_mut()[2] = Cow::Borrowed("MainCam");
+        doc.scene.key_names.to_mut()[3] = Cow::Borrowed("MainCam1");
+        let key = SceneKey::new(1);
+
+        assert_eq!(unique_renamed_node_name(&doc, key, "MainCam"), "MainCam2");
+    }
+
+    #[test]
+    fn value_rewrite_handles_deep_arrays_objects_and_at_prefixed_keys() {
+        let mut value = SceneValue::Object(Cow::Owned(vec![
+            (
+                SceneFieldName::from_name("plain".to_string()),
+                SceneValue::Key(SceneValueKey::from("Camera")),
+            ),
+            (
+                SceneFieldName::from_name("escaped".to_string()),
+                SceneValue::Key(SceneValueKey::from("@Camera")),
+            ),
+            (
+                SceneFieldName::from_name("nested".to_string()),
+                SceneValue::Array(Cow::Owned(vec![
+                    SceneValue::Key(SceneValueKey::from("Camera")),
+                    SceneValue::Object(Cow::Owned(vec![
+                        (
+                            SceneFieldName::from_name("deep".to_string()),
+                            SceneValue::Key(SceneValueKey::from("Camera")),
+                        ),
+                        (
+                            SceneFieldName::from_name("keep".to_string()),
+                            SceneValue::Key(SceneValueKey::from("Other")),
+                        ),
+                    ])),
+                ])),
+            ),
+        ]));
+
+        let refs = rewrite_node_refs_in_value(&mut value, "Camera", "MainCam");
+
+        assert_eq!(refs, 4);
+        assert_eq!(count_value_key_refs(&value, "Camera"), 0);
+        assert_eq!(count_value_key_refs(&value, "MainCam"), 3);
+        assert_eq!(count_value_key_refs(&value, "@MainCam"), 1);
+        assert_eq!(count_value_key_refs(&value, "Other"), 1);
+    }
+
+    fn rename_test_doc() -> SceneDoc {
+        SceneDoc::from_scene(perro_scene::Scene {
+            root: Some(SceneKey::new(0)),
+            key_names: Cow::Owned(vec![
+                Cow::Borrowed("Root"),
+                Cow::Borrowed("Camera"),
+                Cow::Borrowed("Stream"),
+                Cow::Borrowed("Other"),
+            ]),
+            nodes: Cow::Owned(vec![
+                test_node(SceneKey::new(0), None, vec![], vec![]),
+                test_node(
+                    SceneKey::new(1),
+                    Some("Old Display Name"),
+                    vec![],
+                    vec![],
+                ),
+                test_node(
+                    SceneKey::new(2),
+                    None,
+                    vec![(
+                        SceneFieldName::Camera,
+                        SceneValue::Key(SceneValueKey::from("Camera")),
+                    )],
+                    vec![
+                        (
+                            SceneFieldName::from_name("direct".to_string()),
+                            SceneValue::Key(SceneValueKey::from("Camera")),
+                        ),
+                        (
+                            SceneFieldName::from_name("nested".to_string()),
+                            SceneValue::Object(Cow::Owned(vec![
+                                (
+                                    SceneFieldName::from_name("target".to_string()),
+                                    SceneValue::Key(SceneValueKey::from("Camera")),
+                                ),
+                                (
+                                    SceneFieldName::from_name("keep".to_string()),
+                                    SceneValue::Key(SceneValueKey::from("Other")),
+                                ),
+                            ])),
+                        ),
+                        (
+                            SceneFieldName::from_name("arr".to_string()),
+                            SceneValue::Array(Cow::Owned(vec![
+                                SceneValue::Key(SceneValueKey::from("Camera")),
+                                SceneValue::Object(Cow::Owned(vec![(
+                                    SceneFieldName::from_name("deep".to_string()),
+                                    SceneValue::Key(SceneValueKey::from("Camera")),
+                                )])),
+                            ])),
+                        ),
+                    ],
+                ),
+                test_node(SceneKey::new(3), None, vec![], vec![]),
+            ]),
+        })
+    }
+
+    fn test_node(
+        key: SceneKey,
+        name: Option<&'static str>,
+        data_fields: Vec<(SceneFieldName, SceneValue)>,
+        script_vars: Vec<(SceneFieldName, SceneValue)>,
+    ) -> SceneNodeEntry {
+        SceneNodeEntry {
+            data: SceneNodeData::new(
+                perro_scene::NodeType::Node,
+                Cow::Owned(data_fields),
+                None,
+            ),
+            has_data_override: true,
+            key,
+            name: name.map(Cow::Borrowed),
+            tags: Cow::Borrowed(&[]),
+            children: Cow::Borrowed(&[]),
+            parent: None,
+            script: None,
+            clear_script: false,
+            root_of: None,
+            script_vars: Cow::Owned(script_vars),
+        }
+    }
+
+    fn count_doc_key_refs(doc: &SceneDoc, name: &str) -> usize {
+        doc.scene
+            .nodes
+            .iter()
+            .map(|node| {
+                node.data
+                    .fields
+                    .iter()
+                    .map(|(_, value)| count_value_key_refs(value, name))
+                    .sum::<usize>()
+                    + node
+                        .script_vars
+                        .iter()
+                        .map(|(_, value)| count_value_key_refs(value, name))
+                        .sum::<usize>()
+            })
+            .sum()
+    }
+
+    fn count_value_key_refs(value: &SceneValue, name: &str) -> usize {
+        match value {
+            SceneValue::Key(key) => usize::from(key.as_ref() == name),
+            SceneValue::Object(fields) => fields
+                .iter()
+                .map(|(_, value)| count_value_key_refs(value, name))
+                .sum(),
+            SceneValue::Array(values) => values
+                .iter()
+                .map(|value| count_value_key_refs(value, name))
+                .sum(),
+            _ => 0,
+        }
     }
 }
 
