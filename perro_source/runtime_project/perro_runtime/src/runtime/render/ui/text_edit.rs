@@ -181,6 +181,7 @@ pub(in crate::runtime::render_ui) fn intersect_clip_rect(a: [f32; 4], b: [f32; 4
 pub(in crate::runtime::render_ui) fn ui_command_clip_rect(command: &UiCommand) -> [f32; 4] {
     match command {
         UiCommand::UpsertPanel { clip_rect, .. }
+        | UiCommand::UpsertShape { clip_rect, .. }
         | UiCommand::UpsertButton { clip_rect, .. }
         | UiCommand::UpsertCheckbox { clip_rect, .. }
         | UiCommand::UpsertLabel { clip_rect, .. }

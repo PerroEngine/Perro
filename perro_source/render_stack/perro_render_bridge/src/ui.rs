@@ -1,4 +1,5 @@
 use super::*;
+pub use perro_ui::UiShapeKind;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct UiRectState {
@@ -75,6 +76,15 @@ pub enum UiCommand {
         shadow: UiDepthEffectState,
         highlight: UiDepthEffectState,
         disabled: bool,
+    },
+    UpsertShape {
+        node: NodeID,
+        rect: UiRectState,
+        clip_rect: [f32; 4],
+        kind: UiShapeKind,
+        fill: [f32; 4],
+        stroke: [f32; 4],
+        stroke_width: f32,
     },
     UpsertCheckbox {
         node: NodeID,

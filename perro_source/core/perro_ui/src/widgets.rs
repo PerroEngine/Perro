@@ -251,6 +251,65 @@ impl UiNodeBase for UiCheckbox {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum UiShapeKind {
+    #[default]
+    Rect,
+    Circle,
+    Triangle,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiShape {
+    pub base: UiBox,
+    pub kind: UiShapeKind,
+    pub fill: Color,
+    pub stroke: Color,
+    pub stroke_width: f32,
+}
+
+impl UiShape {
+    pub const fn new() -> Self {
+        Self {
+            base: UiBox::new(),
+            kind: UiShapeKind::Rect,
+            fill: Color::WHITE,
+            stroke: Color::TRANSPARENT,
+            stroke_width: 0.0,
+        }
+    }
+}
+
+impl Default for UiShape {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Deref for UiShape {
+    type Target = UiBox;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DerefMut for UiShape {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
+}
+
+impl UiNodeBase for UiShape {
+    fn ui_base(&self) -> &UiBox {
+        &self.base
+    }
+
+    fn ui_base_mut(&mut self) -> &mut UiBox {
+        &mut self.base
+    }
+}
+
 impl Default for UiImageButton {
     fn default() -> Self {
         Self::new()

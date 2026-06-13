@@ -1379,6 +1379,13 @@ parent = $root
 [/UiButton]
 [/ui_button]
 
+[ui_shape]
+parent = $root
+[UiShape]
+    shape = "triangle"
+[/UiShape]
+[/ui_shape]
+
 [ui_checkbox]
 parent = $root
 [UiCheckbox]

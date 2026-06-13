@@ -38,6 +38,7 @@ pub(super) fn ui_root_from_data(data: &SceneNodeData) -> Option<&UiBox> {
         SceneNodeData::UiBox(root) => Some(root),
         SceneNodeData::UiCameraStream(node) => Some(&node.base),
         SceneNodeData::UiPanel(node) => Some(&node.base),
+        SceneNodeData::UiShape(node) => Some(&node.base),
         SceneNodeData::UiButton(node) => Some(&node.base),
         SceneNodeData::UiCheckbox(node) => Some(&node.button.base),
         SceneNodeData::UiImage(node) => Some(&node.base),
@@ -312,6 +313,15 @@ pub(super) fn ui_command_from_node(
             &panel.style,
             modulate,
         )),
+        SceneNodeData::UiShape(shape) => Some(UiCommand::UpsertShape {
+            node,
+            rect,
+            clip_rect,
+            kind: shape.kind,
+            fill: Runtime::color_modulate_rgba(shape.fill.to_rgba(), modulate),
+            stroke: Runtime::color_modulate_rgba(shape.stroke.to_rgba(), modulate),
+            stroke_width: shape.stroke_width * ui_style_scale(scale),
+        }),
         SceneNodeData::UiButton(button) => {
             let style = button_style(button, button_state);
             let style_scale = ui_style_scale(scale);
@@ -614,6 +624,7 @@ pub(super) fn ui_command_matches_node(
 ) -> bool {
     let node = match command {
         UiCommand::UpsertPanel { node, .. }
+        | UiCommand::UpsertShape { node, .. }
         | UiCommand::UpsertButton { node, .. }
         | UiCommand::UpsertCheckbox { node, .. }
         | UiCommand::UpsertLabel { node, .. }

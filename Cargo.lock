@@ -3468,6 +3468,7 @@ dependencies = [
  "perro_ids",
  "perro_particle_math",
  "perro_structs",
+ "perro_ui",
 ]
 
 [[package]]

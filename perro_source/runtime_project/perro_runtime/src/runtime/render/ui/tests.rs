@@ -9,7 +9,7 @@ use perro_scripting::{ScriptBehavior, ScriptContext, ScriptFlags, ScriptLifecycl
 use perro_structs::{Color, Quaternion, Transform3D, Vector3};
 use perro_ui::{
     UiAnchor, UiAnimatedImage, UiAnimatedImageFrameSet, UiGrid, UiHLayout, UiLabel, UiList,
-    UiListIndent, UiPanel, UiScrollContainer, UiVLayout, UiVector2,
+    UiListIndent, UiPanel, UiScrollContainer, UiShape, UiShapeKind, UiVLayout, UiVector2,
 };
 use std::any::Any;
 use std::sync::{
@@ -1148,6 +1148,39 @@ fn button_hover_requests_cursor_icon_and_unhover_restores_default() {
         runtime.take_cursor_icon_request(),
         Some(perro_ui::CursorIcon::Default)
     );
+}
+
+#[test]
+fn ui_shape_emits_triangle_draw_command() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+    let mut shape = UiShape::new();
+    shape.layout.size = UiVector2::pixels(18.0, 18.0);
+    shape.kind = UiShapeKind::Triangle;
+    shape.fill = Color::new(0.2, 0.3, 0.4, 1.0);
+    shape.stroke = Color::new(0.9, 0.2, 0.1, 1.0);
+    shape.stroke_width = 2.0;
+    let node = insert_ui_node(&mut runtime, SceneNodeData::UiShape(shape));
+
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertShape {
+            node: n,
+            kind,
+            fill,
+            stroke,
+            stroke_width,
+            ..
+        }) if *n == node
+            && *kind == UiShapeKind::Triangle
+            && *fill == rgba(0.2, 0.3, 0.4, 1.0)
+            && *stroke == rgba(0.9, 0.2, 0.1, 1.0)
+            && *stroke_width == 2.0
+    )));
 }
 
 #[test]

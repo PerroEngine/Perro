@@ -1,10 +1,11 @@
 use super::renderer::{
-    UiCheckboxDraw, UiDraw, UiImageDraw, UiLabelDraw, UiNineSliceDraw, UiPanelDraw, UiTextEditDraw,
+    UiCheckboxDraw, UiDraw, UiImageDraw, UiLabelDraw, UiNineSliceDraw, UiPanelDraw, UiShapeDraw,
+    UiTextEditDraw,
 };
 use ahash::AHashMap;
 use epaint::{
-    AlphaFromCoverage, ClippedPrimitive, ClippedShape, Color32, CornerRadius, FontFamily, FontId,
-    Fonts, Galley, Mesh, Primitive, Rect, RectShape, Shape, Stroke, StrokeKind,
+    AlphaFromCoverage, CircleShape, ClippedPrimitive, ClippedShape, Color32, CornerRadius,
+    FontFamily, FontId, Fonts, Galley, Mesh, Primitive, Rect, RectShape, Shape, Stroke, StrokeKind,
     TessellationOptions, Tessellator, TextureId, Vertex,
     emath::{Align, Rot2},
     pos2,
@@ -13,7 +14,9 @@ use epaint::{
     vec2,
 };
 use perro_ids::NodeID;
-use perro_render_bridge::{UiDepthEffectState, UiImageScaleState, UiRectState, UiTextAlignState};
+use perro_render_bridge::{
+    UiDepthEffectState, UiImageScaleState, UiRectState, UiShapeKind, UiTextAlignState,
+};
 
 const UI_RASTER_SCALE: f32 = 2.0;
 const UI_FONT_ATLAS_SIZE: usize = 4096;
@@ -95,6 +98,7 @@ impl EpaintUiPainter {
             let shape_start = self.shapes.len();
             match draw {
                 UiDraw::Panel(panel) => push_panel_shape(panel, viewport, &mut self.shapes),
+                UiDraw::Shape(shape) => push_ui_shape(shape, viewport, &mut self.shapes),
                 UiDraw::Button(button) => {
                     push_panel_shape(&button.panel, viewport, &mut self.shapes)
                 }
@@ -175,6 +179,7 @@ fn font_texture_size(fonts: &Fonts) -> [u32; 2] {
 fn ui_rect(draw: &UiDraw) -> UiRectState {
     match draw {
         UiDraw::Panel(panel) => panel.rect,
+        UiDraw::Shape(shape) => shape.rect,
         UiDraw::Button(button) => button.panel.rect,
         UiDraw::Checkbox(checkbox) => checkbox.panel.rect,
         UiDraw::Image(image) => image.rect,
@@ -182,6 +187,45 @@ fn ui_rect(draw: &UiDraw) -> UiRectState {
         UiDraw::Label(label) => label.rect,
         UiDraw::TextEdit(edit) => edit.panel.rect,
     }
+}
+
+fn push_ui_shape(shape: &UiShapeDraw, viewport: [f32; 2], out: &mut Vec<ClippedShape>) {
+    if !valid_rect(shape.rect) {
+        return;
+    }
+    let (min, max) = shape.rect.screen_min_max(viewport);
+    let rect = Rect::from_min_max(pos2(min[0], min[1]), pos2(max[0], max[1]));
+    let clip_rect = clip_rect_from_state(shape.clip_rect, viewport);
+    let fill = color32(shape.fill);
+    let stroke = Stroke::new(shape.stroke_width.max(0.0), color32(shape.stroke));
+    let draw_shape = match shape.kind {
+        UiShapeKind::Rect => Shape::Rect(RectShape::new(
+            rect,
+            CornerRadius::ZERO,
+            fill,
+            stroke,
+            StrokeKind::Inside,
+        )),
+        UiShapeKind::Circle => Shape::Circle(CircleShape {
+            center: rect.center(),
+            radius: rect.width().min(rect.height()) * 0.5,
+            fill,
+            stroke,
+        }),
+        UiShapeKind::Triangle => Shape::convex_polygon(
+            vec![
+                rect.left_top(),
+                rect.left_bottom(),
+                pos2(rect.right(), rect.center().y),
+            ],
+            fill,
+            stroke,
+        ),
+    };
+    out.push(ClippedShape {
+        clip_rect,
+        shape: draw_shape,
+    });
 }
 
 fn push_checkbox_shapes(

@@ -70,8 +70,8 @@ use perro_structs::{
 use perro_ui::{
     UiAnimatedImage, UiAnimatedImageFrameSet, UiBox, UiButton, UiCheckbox, UiGrid, UiHLayout,
     UiImage, UiImageButton, UiImageScaleMode, UiLabel, UiLayout, UiList, UiListIndent,
-    UiMouseFilter, UiNineSlice, UiPanel, UiScrollContainer, UiTextAlign, UiTextBlock, UiTextBox,
-    UiVLayout,
+    UiMouseFilter, UiNineSlice, UiPanel, UiScrollContainer, UiShape, UiShapeKind, UiTextAlign,
+    UiTextBlock, UiTextBox, UiVLayout,
 };
 use rayon::prelude::*;
 use std::borrow::Cow;
@@ -1030,6 +1030,13 @@ fn prepare_scene_parallel(
 }
 
 fn ensure_default_ray_light_3d(prepared: &mut PreparedScene) {
+    if !prepared
+        .nodes
+        .iter()
+        .any(|node| node.node.node_type().is_a(NodeType::Node3D))
+    {
+        return;
+    }
     if prepared
         .nodes
         .iter()
@@ -1850,6 +1857,7 @@ fn scene_node_data_from(
             data,
             static_ui_style_lookup,
         ))),
+        NodeType::UiShape => Ok(SceneNodeData::UiShape(build_ui_shape(data))),
         NodeType::UiCheckbox => Ok(SceneNodeData::UiCheckbox(build_ui_checkbox(
             data,
             static_ui_style_lookup,

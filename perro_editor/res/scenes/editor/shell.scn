@@ -3088,7 +3088,7 @@ parent = @inspector_content
 parent = @inspector_pos
     [UiLabel]
         size_ratio = (0.96, 1.0)
-        text = "v Transform"
+        text = "Transform"
         text_size_ratio = 0.20
         color = "#F3F4F6"
         h_align = "start"
@@ -3229,7 +3229,7 @@ parent = @inspector_content
 parent = @inspector_rotation_label
     [UiLabel]
         size_ratio = (0.96, 1.0)
-        text = "v Rotation"
+        text = "Rotation"
         text_size_ratio = 0.20
         color = "#F3F4F6"
         h_align = "start"
@@ -3427,7 +3427,7 @@ parent = @inspector_content
 parent = @inspector_scale_label
     [UiLabel]
         size_ratio = (0.96, 1.0)
-        text = "v Scale"
+        text = "Scale"
         text_size_ratio = 0.20
         color = "#F3F4F6"
         h_align = "start"
@@ -3568,7 +3568,7 @@ parent = @inspector_content
 parent = @inspector_script
     [UiLabel]
         size_ratio = (0.96, 1.0)
-        text = "v References"
+        text = "References"
         text_size_ratio = 0.18
         color = "#F3F4F6"
         h_align = "start"
@@ -3593,7 +3593,7 @@ parent = @inspector_content
 parent = @inspector_vars
     [UiLabel]
         size_ratio = (0.96, 1.0)
-        text = "v Script Variables"
+        text = "Script Variables"
         text_size_ratio = 0.20
         color = "#F3F4F6"
         h_align = "start"

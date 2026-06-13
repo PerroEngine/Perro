@@ -8,3 +8,4 @@ perro_ids.workspace = true
 perro_asset_formats.workspace = true
 perro_particle_math.workspace = true
 perro_structs.workspace = true
+perro_ui.workspace = true

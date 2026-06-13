@@ -51,6 +51,16 @@ fn build_ui_button(
     node
 }
 
+fn build_ui_shape(data: &SceneDefNodeData) -> UiShape {
+    let mut node = UiShape::new();
+    if let Some(base) = data.base_ref() {
+        apply_ui_root_data(&mut node.base, base);
+    }
+    apply_ui_root_fields(&mut node.base, &data.fields);
+    apply_ui_shape_fields(&mut node, &data.fields);
+    node
+}
+
 fn build_ui_checkbox(
     data: &SceneDefNodeData,
     static_ui_style_lookup: Option<StaticUiStyleLookup>,
@@ -527,6 +537,36 @@ fn apply_ui_checkbox_fields(
         "checked_style",
         static_ui_style_lookup,
     );
+}
+
+fn apply_ui_shape_fields(node: &mut UiShape, fields: &[SceneObjectField]) {
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "shape" | "kind" => {
+            if let Some(v) = as_str(value) {
+                node.kind = match v {
+                    "circle" => UiShapeKind::Circle,
+                    "triangle" => UiShapeKind::Triangle,
+                    _ => UiShapeKind::Rect,
+                };
+            }
+        }
+        "fill" | "color" => {
+            if let Some(v) = as_scene_color(value) {
+                node.fill = v;
+            }
+        }
+        "stroke" | "stroke_color" => {
+            if let Some(v) = as_scene_color(value) {
+                node.stroke = v;
+            }
+        }
+        "stroke_width" => {
+            if let Some(v) = as_f32(value) {
+                node.stroke_width = v.max(0.0);
+            }
+        }
+        _ => {}
+    });
 }
 
 fn apply_ui_image_button_fields(node: &mut UiImageButton, fields: &[SceneObjectField]) {

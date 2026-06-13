@@ -70,6 +70,7 @@ impl Runtime {
             SceneNodeData::UiBox(node) => node.visible,
             SceneNodeData::UiCameraStream(node) => node.visible,
             SceneNodeData::UiPanel(node) => node.visible,
+            SceneNodeData::UiShape(node) => node.visible,
             SceneNodeData::UiButton(node) => node.visible,
             SceneNodeData::UiCheckbox(node) => node.visible,
             SceneNodeData::UiImage(node) => node.visible,

@@ -183,23 +183,22 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             .get(idx)
             .map(|path| {
                 format!(
-                    "{}{} {}",
+                    "{}{}",
                     file_row_state_prefix(path, &view.open_paths, &view.dirty_scene_paths),
-                    file_row_icon(path, &view.file_expanded_paths),
                     file_row_label_for_filter(path, !view.file_filter.is_empty()),
                 )
             })
             .unwrap_or_else(|| "-".to_string());
         set_label(ctx, &format!("file_row_{idx}_label"), &text);
         set_ui_display(ctx, &format!("file_row_{idx}"), has_file);
-        set_button_fill(
+        set_row_state(
             ctx,
             &format!("file_row_{idx}"),
-            if view.file_paths.get(idx) == Some(&view.active_asset_path) {
-                "#478CBF"
-            } else {
-                "#00000000"
-            },
+            view.file_paths.get(idx) == Some(&view.active_asset_path),
+            view.file_paths
+                .get(idx)
+                .map(|path| file_row_disclosure(path, &view.file_expanded_paths))
+                .unwrap_or(RowIndicator::None),
         );
     }
     apply_file_tree_layout(ctx);
@@ -245,14 +244,14 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             .unwrap_or_else(|| "-".to_string());
         set_label(ctx, &format!("scene_row_{idx}_label"), &text);
         set_ui_display(ctx, &format!("scene_row_{idx}"), has_node);
-        set_button_fill(
+        set_row_state(
             ctx,
             &format!("scene_row_{idx}"),
-            if view.selected_row == Some(idx) {
-                "#478CBF"
-            } else {
-                "#00000000"
-            },
+            view.selected_row == Some(idx),
+            view.scene_disclosures
+                .get(idx)
+                .copied()
+                .unwrap_or(RowIndicator::None),
         );
     }
     apply_scene_list_layout(ctx);
@@ -321,14 +320,12 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         inspector_section_collapsed(&view.inspector.collapsed_sections, "transform");
     let refs_closed = inspector_section_collapsed(&view.inspector.collapsed_sections, "refs");
     let vars_closed = inspector_section_collapsed(&view.inspector.collapsed_sections, "vars");
-    set_label(
+    set_label(ctx, "inspector_pos_label", "Transform");
+    set_row_state(
         ctx,
-        "inspector_pos_label",
-        if transform_closed {
-            "> Transform"
-        } else {
-            &view.inspector.pos_label
-        },
+        "inspector_pos",
+        false,
+        inspector_disclosure(transform_closed),
     );
     set_text_box(
         ctx,
@@ -342,11 +339,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         &view.inspector.pos,
         view.inspector.node_actions && !transform_closed,
     );
-    set_label(
-        ctx,
-        "inspector_rotation_header_label",
-        &view.inspector.rotation_label,
-    );
+    set_label(ctx, "inspector_rotation_header_label", "Rotation");
     set_ui_display(
         ctx,
         "inspector_rotation_label",
@@ -387,7 +380,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         &view.inspector.rotation,
         view.inspector.node_actions && !transform_closed,
     );
-    set_label(ctx, "inspector_scale_header_label", &view.inspector.scale_label);
+    set_label(ctx, "inspector_scale_header_label", "Scale");
     set_ui_display(
         ctx,
         "inspector_scale_label",
@@ -401,25 +394,15 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         &view.inspector.scale,
         view.inspector.node_actions && !transform_closed,
     );
-    set_label(
-        ctx,
-        "inspector_script_label",
-        if refs_closed { "> References" } else { "v References" },
-    );
+    set_label(ctx, "inspector_script_label", "References");
+    set_row_state(ctx, "inspector_script", false, inspector_disclosure(refs_closed));
     set_ui_display(
         ctx,
         "inspector_script",
         view.inspector.node_actions && !view.inspector.resource_fields.is_empty(),
     );
-    set_label(
-        ctx,
-        "inspector_vars_label",
-        if vars_closed {
-            "> Script Variables"
-        } else {
-            "v Script Variables"
-        },
-    );
+    set_label(ctx, "inspector_vars_label", "Script Variables");
+    set_row_state(ctx, "inspector_vars", false, inspector_disclosure(vars_closed));
     set_ui_display(
         ctx,
         "inspector_vars",
@@ -597,6 +580,22 @@ pub fn inspector_section_collapsed(sections: &[String], section: &str) -> bool {
     sections.iter().any(|item| item == section)
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RowIndicator {
+    #[default]
+    None,
+    Collapsed,
+    Expanded,
+}
+
+pub fn inspector_disclosure(collapsed: bool) -> RowIndicator {
+    if collapsed {
+        RowIndicator::Collapsed
+    } else {
+        RowIndicator::Expanded
+    }
+}
+
 fn take_inspector_layout_pass<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) -> bool {
     with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         if state.inspector_layout_applied {
@@ -764,6 +763,7 @@ pub struct EditorView {
     dirty_scene_paths: Vec<String>,
     active_open: usize,
     nodes: Vec<String>,
+    scene_disclosures: Vec<RowIndicator>,
     selected_row: Option<usize>,
     inspector: InspectorViewData,
     glb_title: String,
@@ -846,7 +846,7 @@ impl Default for InspectorViewData {
             asset_make_action: false,
             asset_make_label: "Node".to_string(),
             glb_asset_actions: false,
-            pos_label: "v Transform".to_string(),
+            pos_label: "Transform".to_string(),
             pos: Vec::new(),
             rotation_label: "Rotation".to_string(),
             rotation: Vec::new(),
@@ -963,6 +963,7 @@ impl InspectorViewData {
 impl EditorView {
     fn from_state(state: &EditorState) -> Self {
         let mut nodes = Vec::new();
+        let mut scene_disclosures = Vec::new();
         let mut selected_row = None;
         let mut inspector = InspectorViewData::for_asset(state);
         let mut gizmo = editor_gizmos::GizmoView::default();
@@ -981,6 +982,7 @@ impl EditorView {
             gizmo = editor_gizmos::gizmo_view(&doc, state.selected_key);
             selected_ui_rect = state.selected_key.and_then(|key| doc_ui_rect(&doc, key));
             nodes = tree.labels;
+            scene_disclosures = tree.disclosures;
             selected_row = tree.selected_row;
 
             if state.sidebar_mode != "files"
@@ -1058,6 +1060,7 @@ impl EditorView {
             dirty_scene_paths: state.dirty_scene_paths.clone(),
             active_open: state.active_open,
             nodes,
+            scene_disclosures,
             selected_row,
             inspector,
             glb_title,
@@ -1787,6 +1790,7 @@ pub fn panim_summary(project_root: &str, anim_path: &str) -> String {
 #[derive(Default)]
 pub struct SceneTreeRows {
     pub labels: Vec<String>,
+    pub disclosures: Vec<RowIndicator>,
     pub keys: Vec<u32>,
     pub selected_row: Option<usize>,
 }
@@ -1880,25 +1884,21 @@ pub fn filtered_scene_tree_view(
         }
         let row = out.labels.len();
         let key = node.key.as_u32();
-        let prefix = if Some(key) == selected_key {
+        if Some(key) == selected_key {
             out.selected_row = Some(row);
-            ">"
-        } else {
-            " "
-        };
+        }
         let path = scene_node_path(doc, node.key);
+        let children = scene_child_count(doc, key);
         out.labels.push(scene_row_label(
-            prefix,
             0,
             &name,
             type_name,
             node_type_icon(node.data.node_type),
             &scene_node_badges(node),
-            scene_child_count(doc, key),
-            false,
-            Some(key) == selected_key,
+            children,
             Some(&path),
         ));
+        out.disclosures.push(scene_row_disclosure(children, false));
         out.keys.push(key);
     }
     out
@@ -1967,27 +1967,23 @@ pub fn push_scene_tree_row(
         .find(|node| node.key.as_u32() == key)?;
     visited.push(key);
     let row = out.labels.len();
-    let prefix = if Some(key) == selected_key {
+    if Some(key) == selected_key {
         out.selected_row = Some(row);
-        ">"
-    } else {
-        " "
-    };
+    }
     let children = scene_child_count(doc, key);
+    let collapsed = collapsed_keys.contains(&key);
     out.labels.push(scene_row_label(
-        prefix,
         depth,
         &doc.scene.key_name_or_id(node.key).to_string(),
         node.data.type_name(),
         node_type_icon(node.data.node_type),
         &scene_node_badges(node),
         children,
-        collapsed_keys.contains(&key),
-        Some(key) == selected_key,
         None,
     ));
+    out.disclosures.push(scene_row_disclosure(children, collapsed));
     out.keys.push(key);
-    if children > 0 && collapsed_keys.contains(&key) {
+    if children > 0 && collapsed {
         return Some(row);
     }
     for child in doc
@@ -2010,31 +2006,20 @@ pub fn push_scene_tree_row(
 }
 
 pub fn scene_row_label(
-    prefix: &str,
     depth: usize,
     name: &str,
     type_name: &str,
     icon: &str,
     badges: &str,
     children: usize,
-    collapsed: bool,
-    selected: bool,
     parent: Option<&str>,
 ) -> String {
     let name = editor_view::short_path(name, 20);
     let type_name = editor_view::short_path(type_name, 18);
-    let fold = if children == 0 {
-        " "
-    } else if collapsed {
-        ">"
-    } else {
-        "v"
-    };
     let indent = "  ".repeat(depth.min(8));
-    let selected = if selected { "*" } else { " " };
     if let Some(parent) = parent {
         format!(
-            "{selected}{prefix}{indent}{fold} {icon} {name}  [{type_name}]{badges}  {}",
+            "{indent}  {icon} {name}  [{type_name}]{badges}  {}",
             editor_view::short_path(parent, 14)
         )
     } else {
@@ -2043,7 +2028,17 @@ pub fn scene_row_label(
         } else {
             format!("  {children}")
         };
-        format!("{selected}{prefix}{indent}{fold} {icon} {name}  [{type_name}]{badges}{child_suffix}")
+        format!("{indent}  {icon} {name}  [{type_name}]{badges}{child_suffix}")
+    }
+}
+
+pub fn scene_row_disclosure(children: usize, collapsed: bool) -> RowIndicator {
+    if children == 0 {
+        RowIndicator::None
+    } else if collapsed {
+        RowIndicator::Collapsed
+    } else {
+        RowIndicator::Expanded
     }
 }
 
@@ -2120,25 +2115,22 @@ pub fn file_row_label_for_filter(path: &str, filtered: bool) -> String {
 
 pub fn file_row_state_prefix(path: &str, open_paths: &[String], dirty_scene_paths: &[String]) -> &'static str {
     let dirty = dirty_scene_paths.iter().any(|dirty| dirty == path);
-    let open = open_paths.iter().any(|open| open == path);
     if dirty {
         "* "
-    } else if open {
-        "> "
     } else {
         ""
     }
 }
 
-pub fn file_row_icon(path: &str, expanded_paths: &[String]) -> &'static str {
+pub fn file_row_disclosure(path: &str, expanded_paths: &[String]) -> RowIndicator {
     if path.ends_with('/') {
         if expanded_paths.iter().any(|item| item == path) {
-            "v"
+            RowIndicator::Expanded
         } else {
-            ">"
+            RowIndicator::Collapsed
         }
     } else {
-        editor_files::display_kind_label(path)
+        RowIndicator::None
     }
 }
 
@@ -2774,7 +2766,7 @@ pub fn set_button_row_style<API: ScriptAPI + ?Sized>(
         return;
     };
     if let Some(id) = find_named(ctx, name) {
-        let _ = with_node_mut!(ctx.run, UiButton, id, |node| {
+        if with_node_mut!(ctx.run, UiButton, id, |node| {
             node.style.fill = hover_color;
             node.style.stroke = hover_color;
             node.style.stroke_width = 0.0;
@@ -2787,8 +2779,39 @@ pub fn set_button_row_style<API: ScriptAPI + ?Sized>(
             node.pressed_style.stroke = pressed_color;
             node.pressed_style.stroke_width = 0.0;
             node.pressed_style.corner_radius = 0.0;
-        });
+        })
+        .is_some()
+        {
+            return;
+        }
     }
+}
+
+pub fn set_row_state<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    selected: bool,
+    indicator: RowIndicator,
+) {
+    set_button_fill(ctx, name, if selected { "#478CBF" } else { "#00000000" });
+    set_indicator_shape(ctx, &format!("{name}_indicator"), indicator);
+}
+
+pub fn set_indicator_shape<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    indicator: RowIndicator,
+) {
+    let Some(id) = find_named(ctx, name) else {
+        return;
+    };
+    let _ = with_node_mut!(ctx.run, UiShape, id, |node| {
+        node.visible = indicator != RowIndicator::None;
+        node.transform.rotation = match indicator {
+            RowIndicator::Expanded => std::f32::consts::FRAC_PI_2,
+            RowIndicator::Collapsed | RowIndicator::None => 0.0,
+        };
+    });
 }
 
 pub fn apply_viewport_mode<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, mode: &str) {
@@ -3208,9 +3231,13 @@ pub fn set_button_size<API: ScriptAPI + ?Sized>(
     size: (f32, f32),
 ) {
     if let Some(id) = find_named(ctx, name) {
-        let _ = with_node_mut!(ctx.run, UiButton, id, |node| {
+        if with_node_mut!(ctx.run, UiButton, id, |node| {
             node.layout.size = UiVector2::ratio(size.0, size.1);
-        });
+        })
+        .is_some()
+        {
+            return;
+        }
     }
 }
 

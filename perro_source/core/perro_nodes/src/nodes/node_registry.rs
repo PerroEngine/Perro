@@ -16,7 +16,7 @@ use perro_structs::{Transform2D, Transform3D};
 use perro_ui::{
     UiAnimatedImage, UiBox, UiButton, UiCheckbox, UiGrid, UiHLayout, UiImage, UiImageButton,
     UiLabel, UiLayout, UiList, UiListIndent, UiNineSlice, UiNodeBase, UiPanel, UiScrollContainer,
-    UiTextBlock, UiTextBox, UiVLayout,
+    UiShape, UiTextBlock, UiTextBox, UiVLayout,
 };
 use std::borrow::Cow;
 
@@ -915,6 +915,7 @@ define_scene_nodes! {
         UiCameraStream => (UiBox, UiCameraStream, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiPanel => (UiBox, UiPanel, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiButton => (UiBox, UiButton, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiShape => (UiBox, UiShape, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiCheckbox => (UiBox, UiCheckbox, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiImage => (UiBox, UiImage, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
         UiImageButton => (UiBox, UiImageButton, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),

@@ -2,7 +2,7 @@ use super::painter::{EpaintUiPainter, UiPaintFrame, UiPainter};
 use ahash::AHashMap;
 use perro_ids::{NodeID, TextureID};
 use perro_render_bridge::{
-    UiCommand, UiDepthEffectState, UiImageScaleState, UiRectState, UiTextAlignState,
+    UiCommand, UiDepthEffectState, UiImageScaleState, UiRectState, UiShapeKind, UiTextAlignState,
 };
 use perro_structs::Color;
 use std::borrow::Cow;
@@ -34,6 +34,16 @@ pub(crate) struct UiLabelDraw {
 pub(crate) struct UiButtonDraw {
     pub(crate) panel: UiPanelDraw,
     pub(crate) disabled: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct UiShapeDraw {
+    pub(crate) rect: UiRectState,
+    pub(crate) clip_rect: [f32; 4],
+    pub(crate) kind: UiShapeKind,
+    pub(crate) fill: Color,
+    pub(crate) stroke: Color,
+    pub(crate) stroke_width: f32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -91,6 +101,7 @@ pub(crate) struct UiTextEditDraw {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum UiDraw {
     Panel(UiPanelDraw),
+    Shape(UiShapeDraw),
     Button(UiButtonDraw),
     Checkbox(UiCheckboxDraw),
     Image(UiImageDraw),
@@ -170,6 +181,25 @@ impl UiRenderer {
                         highlight,
                     },
                     disabled,
+                }),
+            ),
+            UiCommand::UpsertShape {
+                node,
+                rect,
+                clip_rect,
+                kind,
+                fill,
+                stroke,
+                stroke_width,
+            } => self.upsert(
+                node,
+                UiDraw::Shape(UiShapeDraw {
+                    rect,
+                    clip_rect,
+                    kind,
+                    fill: fill.into(),
+                    stroke: stroke.into(),
+                    stroke_width,
                 }),
             ),
             UiCommand::UpsertCheckbox {

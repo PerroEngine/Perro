@@ -131,7 +131,7 @@ mod tests {
             r#"
             $root = @root
             [root]
-            [Node2D/]
+            [Node3D/]
             [/root]
             "#,
         )
@@ -148,6 +148,30 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(lights.len(), 1);
         assert_eq!(lights[0].key_name, "__perro_default_ray_light");
+    }
+
+    #[test]
+    fn prepare_skips_default_ray_light_3d_for_2d_scene() {
+        let scene = Parser::new(
+            r#"
+            $root = @root
+            [root]
+            [Node2D/]
+            [/root]
+            "#,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+
+        let lights = prepared
+            .nodes
+            .iter()
+            .filter(|pending| matches!(pending.node.data, SceneNodeData::RayLight3D(_)))
+            .collect::<Vec<_>>();
+        assert!(lights.is_empty());
     }
 
     #[test]
@@ -2219,6 +2243,45 @@ mod tests {
                 assert!(button.pressed_base.is_some());
             }
             other => panic!("expected UiImageButton node, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn scene_loader_builds_ui_shape_fields() {
+        let scene = Parser::new(
+            r##"
+            $root = @shape
+            [shape]
+            [UiShape]
+                shape = "triangle"
+                fill = "#336699FF"
+                stroke = "#CCDDEEFF"
+                stroke_width = 2.5
+            [/UiShape]
+            [/shape]
+            "##,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+        let shape = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "shape")
+            .expect("shape node");
+        match &shape.node.data {
+            SceneNodeData::UiShape(shape) => {
+                assert_eq!(shape.kind, perro_ui::UiShapeKind::Triangle);
+                assert_eq!(shape.fill, Color::new(0.2, 0.4, 0.6, 1.0));
+                assert_eq!(
+                    shape.stroke,
+                    Color::new(0.8, 0.8666667, 0.93333334, 1.0)
+                );
+                assert_eq!(shape.stroke_width, 2.5);
+            }
+            other => panic!("expected UiShape node, got {other:?}"),
         }
     }
 
