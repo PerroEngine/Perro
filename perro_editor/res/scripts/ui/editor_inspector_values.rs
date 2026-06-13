@@ -8,6 +8,7 @@ use perro_api::scene::{Parser, SceneDoc, SceneFieldName, SceneValue};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fs;
+use std::path::Path;
 
 const MAX_INSPECTOR_DEPTH: usize = 4;
 
@@ -101,7 +102,7 @@ pub fn script_state_node_path_keys(
     let Some(struct_name) = parse_state_struct_name(&source) else {
         return Vec::new();
     };
-    let schema = parse_script_schema(&source);
+    let schema = parse_project_script_schema(&state.project_root, &source);
     let mut out = Vec::new();
     collect_script_node_path_keys(
         &schema,
@@ -130,7 +131,7 @@ pub fn script_state_enum_path_options(
     let Some(struct_name) = parse_state_struct_name(&source) else {
         return BTreeMap::new();
     };
-    let schema = parse_script_schema(&source);
+    let schema = parse_project_script_schema(&state.project_root, &source);
     let mut out = BTreeMap::new();
     collect_script_enum_path_options(
         &schema,
@@ -164,13 +165,19 @@ pub fn inspector_script_var_fields_for_node(
     state: &EditorState,
     node: &perro_api::scene::SceneNodeEntry,
 ) -> Vec<(SceneFieldName, SceneValue)> {
-    let mut fields = node
-        .script
-        .as_ref()
-        .map(|path| script_state_default_fields(&state.project_root, path.as_ref()))
-        .unwrap_or_default();
+    let mut fields = inspector_script_var_default_fields_for_node(state, node);
     merge_script_var_overrides(&mut fields, node.script_vars.as_ref());
     fields
+}
+
+pub fn inspector_script_var_default_fields_for_node(
+    state: &EditorState,
+    node: &perro_api::scene::SceneNodeEntry,
+) -> Vec<(SceneFieldName, SceneValue)> {
+    node.script
+        .as_ref()
+        .map(|path| script_state_default_fields(&state.project_root, path.as_ref()))
+        .unwrap_or_default()
 }
 
 fn merge_script_var_overrides(
@@ -214,7 +221,7 @@ fn script_state_default_fields(
     let Some(struct_name) = parse_state_struct_name(&source) else {
         return Vec::new();
     };
-    let schema = parse_script_schema(&source);
+    let schema = parse_project_script_schema(project_root, &source);
     script_struct_default_fields_with_expose(&schema, &struct_name, 0, true)
 }
 
@@ -226,7 +233,7 @@ fn script_state_color_field_names(project_root: &str, script_path: &str) -> Vec<
     let Some(struct_name) = parse_state_struct_name(&source) else {
         return Vec::new();
     };
-    let schema = parse_script_schema(&source);
+    let schema = parse_project_script_schema(project_root, &source);
     schema
         .structs
         .get(&struct_name)
@@ -399,6 +406,39 @@ fn parse_script_schema(source: &str) -> ScriptSchema {
         }
     }
     ScriptSchema { structs, enums }
+}
+
+fn parse_project_script_schema(project_root: &str, source: &str) -> ScriptSchema {
+    let mut schema = parse_script_schema(source);
+    let res_dir = Path::new(project_root).join("res");
+    merge_script_schema_dir(&mut schema, &res_dir);
+    schema
+}
+
+fn merge_script_schema_dir(schema: &mut ScriptSchema, dir: &Path) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            merge_script_schema_dir(schema, &path);
+            continue;
+        }
+        if path.extension().and_then(|value| value.to_str()) != Some("rs") {
+            continue;
+        }
+        let Ok(source) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let other = parse_script_schema(&source);
+        for (name, fields) in other.structs {
+            schema.structs.entry(name).or_insert(fields);
+        }
+        for (name, info) in other.enums {
+            schema.enums.entry(name).or_insert(info);
+        }
+    }
 }
 
 fn parse_enum_name(line: &str) -> Option<String> {
@@ -654,8 +694,8 @@ fn parse_default_value(
             "null",
         )));
     }
-    if let Some((enum_ty, variant)) = value.split_once("::")
-        && schema.enums.contains_key(enum_ty)
+    if let Some((enum_ty, variant)) = value.rsplit_once("::")
+        && script_enum_type_name(schema, enum_ty).is_some()
     {
         return Some(SceneValue::Key(perro_api::scene::SceneValueKey::from(
             variant.to_string(),
@@ -1053,11 +1093,12 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
         else {
             return false;
         };
+        let defaults = inspector_script_var_default_fields_for_node(state, node);
         let mut fields = inspector_script_var_fields_for_node(state, node);
         if !set_value_at_path(&mut fields, &row.path, value) {
             return false;
         }
-        if !write_script_var_override(node.script_vars.to_mut(), &fields, &row.path) {
+        if !write_script_var_override(node.script_vars.to_mut(), &defaults, &fields, &row.path) {
             return false;
         }
         state.doc_text = doc.to_text();
@@ -1093,6 +1134,7 @@ pub fn set_value_at_path(
 
 pub fn write_script_var_override(
     overrides: &mut Vec<(SceneFieldName, SceneValue)>,
+    defaults: &[(SceneFieldName, SceneValue)],
     fields: &[(SceneFieldName, SceneValue)],
     path: &[ValuePathStep],
 ) -> bool {
@@ -1102,12 +1144,105 @@ pub fn write_script_var_override(
     let Some((name, value)) = fields.get(*idx).cloned() else {
         return false;
     };
-    if let Some((_, existing)) = overrides.iter_mut().find(|(field, _)| field == &name) {
-        *existing = value;
+    let default = defaults
+        .iter()
+        .find(|(field, _)| field == &name)
+        .map(|(_, value)| value);
+    let pruned = prune_default_script_value(&value, default);
+    if let Some(value) = pruned {
+        if let Some((_, existing)) = overrides.iter_mut().find(|(field, _)| field == &name) {
+            *existing = value;
+        } else {
+            overrides.push((name, value));
+        }
     } else {
-        overrides.push((name, value));
+        overrides.retain(|(field, _)| field != &name);
     }
     true
+}
+
+fn prune_default_script_value(value: &SceneValue, default: Option<&SceneValue>) -> Option<SceneValue> {
+    if default.is_some_and(|default| scene_values_equal(default, value)) {
+        return None;
+    }
+    match (value, default) {
+        (SceneValue::Object(fields), Some(SceneValue::Object(default_fields))) => {
+            let mut out = Vec::new();
+            for (name, value) in fields.iter() {
+                let default = default_fields
+                    .iter()
+                    .find(|(field, _)| field == name)
+                    .map(|(_, value)| value);
+                if let Some(value) = prune_default_script_value(value, default) {
+                    out.push((name.clone(), value));
+                }
+            }
+            (!out.is_empty()).then(|| SceneValue::Object(Cow::Owned(out)))
+        }
+        (SceneValue::Array(values), _) if values.is_empty() => None,
+        (SceneValue::Bool(false), None) => None,
+        (SceneValue::F32(value), None) if *value == 0.0 => None,
+        (SceneValue::I32(0), None) => None,
+        (SceneValue::Key(key), None)
+            if matches!(key.as_ref().trim().trim_start_matches('@'), "" | "null" | "none" | "-") =>
+        {
+            None
+        }
+        _ => Some(value.clone()),
+    }
+}
+
+fn scene_values_equal(a: &SceneValue, b: &SceneValue) -> bool {
+    match (a, b) {
+        (SceneValue::Bool(a), SceneValue::Bool(b)) => a == b,
+        (SceneValue::I32(a), SceneValue::I32(b)) => a == b,
+        (SceneValue::F32(a), SceneValue::F32(b)) => a == b,
+        (SceneValue::Vec2 { x: ax, y: ay }, SceneValue::Vec2 { x: bx, y: by }) => {
+            ax == bx && ay == by
+        }
+        (
+            SceneValue::Vec3 {
+                x: ax,
+                y: ay,
+                z: az,
+            },
+            SceneValue::Vec3 {
+                x: bx,
+                y: by,
+                z: bz,
+            },
+        ) => ax == bx && ay == by && az == bz,
+        (
+            SceneValue::Vec4 {
+                x: ax,
+                y: ay,
+                z: az,
+                w: aw,
+            },
+            SceneValue::Vec4 {
+                x: bx,
+                y: by,
+                z: bz,
+                w: bw,
+            },
+        ) => ax == bx && ay == by && az == bz && aw == bw,
+        (SceneValue::Str(a), SceneValue::Str(b)) => a.as_ref() == b.as_ref(),
+        (SceneValue::Hashed(a), SceneValue::Hashed(b)) => a == b,
+        (SceneValue::Key(a), SceneValue::Key(b)) => a.as_ref() == b.as_ref(),
+        (SceneValue::Array(a), SceneValue::Array(b)) => {
+            a.len() == b.len()
+                && a.iter()
+                    .zip(b.iter())
+                    .all(|(a, b)| scene_values_equal(a, b))
+        }
+        (SceneValue::Object(a), SceneValue::Object(b)) => {
+            a.len() == b.len()
+                && a.iter().zip(b.iter()).all(|((a_name, a_value), (b_name, b_value))| {
+                    a_name == b_name && scene_values_equal(a_value, b_value)
+                })
+        }
+        _ => false,
+    }
 }
 
 pub fn root_field_name<'a>(

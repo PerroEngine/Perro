@@ -747,12 +747,6 @@ fn apply_inspector_dynamic_layout<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     inspector: &InspectorViewData,
 ) {
-    let extra_rows = inspector.script_vars.len().saturating_sub(8) as f32;
-    set_ui_node_size(
-        ctx,
-        "inspector_content",
-        (1.0, 1.12 + extra_rows * 0.030),
-    );
     let asset_button_w = if inspector.glb_asset_actions {
         0.25
     } else if inspector.asset_actions {

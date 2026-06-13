@@ -1038,12 +1038,14 @@ pub fn pick_selected_script_var_ref<API: ScriptAPI + ?Sized>(
                 .to_mut()
                 .iter_mut()
                 .find(|node| node.key.as_u32() == key)?;
+            let defaults = inspector_script_var_default_fields_for_node(state, node);
             let mut fields = inspector_script_var_fields_for_node(state, node);
             let current = row.value == "true";
             if !set_value_at_path(&mut fields, &row.path, SceneValue::Bool(!current)) {
                 return None;
             }
-            if !write_script_var_override(node.script_vars.to_mut(), &fields, &row.path) {
+            if !write_script_var_override(node.script_vars.to_mut(), &defaults, &fields, &row.path)
+            {
                 return None;
             }
             state.doc_text = doc.to_text();
@@ -1169,6 +1171,7 @@ pub fn choose_inspector_picker_row<API: ScriptAPI + ?Sized>(
             let Some(row) = rows.get(row_idx) else {
                 return false;
             };
+            let defaults = inspector_script_var_default_fields_for_node(state, node);
             let mut fields = inspector_script_var_fields_for_node(state, node);
             if !set_value_at_path(
                 &mut fields,
@@ -1177,7 +1180,8 @@ pub fn choose_inspector_picker_row<API: ScriptAPI + ?Sized>(
             ) {
                 return false;
             }
-            if !write_script_var_override(node.script_vars.to_mut(), &fields, &row.path) {
+            if !write_script_var_override(node.script_vars.to_mut(), &defaults, &fields, &row.path)
+            {
                 return false;
             }
         } else if picker_kind == "node" {

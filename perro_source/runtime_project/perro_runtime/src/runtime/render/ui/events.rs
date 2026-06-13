@@ -1071,7 +1071,12 @@ impl Runtime {
         let mut min_y = f32::INFINITY;
         let mut max_y = f32::NEG_INFINITY;
         let mut found = false;
+        let mut nodes = Vec::new();
+        let mut seen = ahash::AHashSet::default();
         for child in self.ui_layout_children(node) {
+            self.collect_ui_subtree_nodes(child, &mut nodes, &mut seen);
+        }
+        for child in nodes {
             let Some(rect) = computed.get(&child).copied().or_else(|| {
                 self.render_ui
                     .retained_rects
