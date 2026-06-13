@@ -150,7 +150,7 @@ fn write_dlc_pack_lib(
     src.push_str(
         "    if data_out.is_null() || len_out.is_null() {\n        return false;\n    }\n",
     );
-    src.push_str("    unsafe {\n        *data_out = bytes.as_ptr();\n        *len_out = bytes.len();\n    }\n");
+    src.push_str("    // SAFETY: Null checks above ensure output ptrs are writable for this call.\n    unsafe {\n        *data_out = bytes.as_ptr();\n        *len_out = bytes.len();\n    }\n");
     src.push_str("    true\n}\n\n");
     src.push_str(
         "fn write_str_out(text: &'static str, data_out: *mut *const u8, len_out: *mut usize) -> bool {\n",
@@ -207,7 +207,7 @@ fn write_dlc_pack_lib(
         "    if data_out.is_null() || len_out.is_null() {\n        return false;\n    }\n",
     );
     src.push_str(
-        "    let Some(bytes) = perro_dlc_pack_lookup_typed(path_hash) else {\n        return false;\n    };\n    unsafe {\n        *data_out = bytes.as_ptr();\n        *len_out = bytes.len();\n    }\n    true\n}\n\n",
+        "    let Some(bytes) = perro_dlc_pack_lookup_typed(path_hash) else {\n        return false;\n    };\n    // SAFETY: Null checks above ensure output ptrs are writable for this call.\n    unsafe {\n        *data_out = bytes.as_ptr();\n        *len_out = bytes.len();\n    }\n    true\n}\n\n",
     );
     src.push_str(
         "#[unsafe(no_mangle)]\npub extern \"C\" fn perro_dlc_pack_has(path_hash: u64) -> bool {\n    perro_dlc_pack_lookup_typed(path_hash).is_some()\n}\n\n",

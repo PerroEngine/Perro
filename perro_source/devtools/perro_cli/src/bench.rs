@@ -203,6 +203,7 @@ fn behavior_from_ctor(
 ) -> Box<dyn ScriptBehavior<perro_runtime::RuntimeScriptApi>> {{
     let raw = ctor();
     assert!(!raw.is_null(), "script constructor returned null");
+    // SAFETY: Script ctor returns Box::into_raw pointer for expected trait object.
     unsafe {{ Box::from_raw(raw) }}
 }}
 

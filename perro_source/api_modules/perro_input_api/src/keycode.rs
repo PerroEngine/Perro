@@ -222,7 +222,7 @@ impl KeyCode {
     #[inline]
     pub fn from_index(index: usize) -> Option<Self> {
         if index < Self::COUNT {
-            // KeyCode is repr(u16) and variants are contiguous from 0 to COUNT - 1.
+            // SAFETY: KeyCode is repr(u16) and variants are contiguous from 0 to COUNT - 1.
             Some(unsafe { std::mem::transmute::<u16, Self>(index as u16) })
         } else {
             None

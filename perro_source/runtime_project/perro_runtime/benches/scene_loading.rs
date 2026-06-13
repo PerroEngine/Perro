@@ -12,14 +12,18 @@ struct CountingAllocator;
 static ALLOCS: AtomicUsize = AtomicUsize::new(0);
 static ALLOC_BYTES: AtomicUsize = AtomicUsize::new(0);
 
+// SAFETY: Wrapper delegates allocation contract to System and only records atomics.
 unsafe impl GlobalAlloc for CountingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         ALLOCS.fetch_add(1, Ordering::Relaxed);
         ALLOC_BYTES.fetch_add(layout.size(), Ordering::Relaxed);
+        // SAFETY: Forward same layout to System allocator.
         unsafe { System.alloc(layout) }
     }
 
+    // SAFETY: Caller must pass ptr/layout pair from this allocator.
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        // SAFETY: Forward original allocation ptr/layout to System allocator.
         unsafe { System.dealloc(ptr, layout) }
     }
 }

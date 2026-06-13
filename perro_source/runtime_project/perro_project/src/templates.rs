@@ -966,6 +966,7 @@ pub static PERRO_ENGINE_DETECT: [u8; 89] =
 
 
 fn keep_perro_engine_marker() {
+    // SAFETY: Reads stay within static marker bounds and use valid static pointers.
     unsafe {
         std::hint::black_box(std::ptr::read_volatile(PERRO_ENGINE_DETECT.as_ptr()));
         std::hint::black_box(std::ptr::read_volatile(

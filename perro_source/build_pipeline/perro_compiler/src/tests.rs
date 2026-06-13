@@ -1425,6 +1425,18 @@ parent = $root
 [/UiCheckbox]
 [/ui_checkbox]
 
+[ui_dropdown]
+parent = $root
+[UiDropdown]
+[/UiDropdown]
+[/ui_dropdown]
+
+[ui_color_picker]
+parent = $root
+[UiColorPicker]
+[/UiColorPicker]
+[/ui_color_picker]
+
 [ui_image]
 parent = $root
 [UiImage]

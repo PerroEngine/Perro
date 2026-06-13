@@ -2249,6 +2249,7 @@ fn parent_ui_scale_scales_child_label_font() {
     let mut label = perro_ui::UiLabel::new().with_text("Scaled");
     label.layout.size = UiVector2::pixels(200.0, 40.0);
     label.font_size = 20.0;
+    label.text_size_ratio = 0.0;
     let child = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
     attach_child(&mut runtime, parent, child);
 
@@ -2274,6 +2275,7 @@ fn label_relative_font_size_scales_with_virtual_resolution() {
     let mut label = perro_ui::UiLabel::new().with_text("Scaled");
     label.layout.size = perro_ui::UiVector2::pixels(200.0, 40.0);
     label.font_size = 20.0;
+    label.text_size_ratio = 0.0;
     label.font_sizing.relative_to_virtual = true;
     let node = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
 

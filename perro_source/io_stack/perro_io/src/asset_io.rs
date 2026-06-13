@@ -511,6 +511,8 @@ fn load_dlc_static_binary(dlc: &str, path: &str) -> io::Result<Vec<u8>> {
         .ok_or_else(|| io::Error::other(format!("dlc static binary lookup not loaded: {dlc}")))?;
     let mut ptr = std::ptr::null();
     let mut len = 0usize;
+    // SAFETY: Lookup fn comes from registered static DLC code. It writes a pointer/len
+    // pair to immutable static bytes for the requested path hash.
     let found = unsafe { lookup(perro_ids::string_to_u64(path), &mut ptr, &mut len) };
     if !found || ptr.is_null() || len == 0 {
         return Err(io::Error::new(
@@ -518,6 +520,8 @@ fn load_dlc_static_binary(dlc: &str, path: &str) -> io::Result<Vec<u8>> {
             format!("dlc static binary not found: {path}"),
         ));
     }
+    // SAFETY: Successful lookup guarantees ptr is non-null and len bytes remain valid
+    // for the duration of this call; copy immediately into an owned Vec.
     let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
     Ok(bytes.to_vec())
 }
@@ -672,6 +676,7 @@ mod tests {
         if data_out.is_null() || len_out.is_null() {
             return false;
         }
+        // SAFETY: Test lookup validates out pointers and returns static byte storage.
         unsafe {
             *data_out = b"dlc-static-ptex".as_ptr();
             *len_out = b"dlc-static-ptex".len();

@@ -56,17 +56,20 @@ pub struct ResPath(str);
 impl ResPath {
     pub const fn new(path: &'static str) -> &'static Self {
         validate_const(path);
+        // SAFETY: validate_const rejects paths outside ResPath grammar.
         unsafe { Self::new_unchecked(path) }
     }
 
     pub fn try_new(path: &str) -> Result<&Self, ResPathError> {
         validate(path)?;
+        // SAFETY: validate rejects paths outside ResPath grammar.
         Ok(unsafe { Self::new_unchecked_borrowed(path) })
     }
 
     pub fn intern(path: &str) -> Result<&'static Self, ResPathError> {
         validate(path)?;
         let path: &'static str = Box::leak(path.to_owned().into_boxed_str());
+        // SAFETY: validate rejects paths outside ResPath grammar and leaked str is static.
         Ok(unsafe { Self::new_unchecked(path) })
     }
 
@@ -74,6 +77,7 @@ impl ResPath {
     ///
     /// Caller must pass a valid resource path.
     pub const unsafe fn new_unchecked(path: &'static str) -> &'static Self {
+        // SAFETY: ResPath is repr(transparent) over str; caller upholds path validity.
         unsafe { &*(path as *const str as *const Self) }
     }
 
@@ -81,6 +85,7 @@ impl ResPath {
     ///
     /// Caller must pass a valid resource path.
     pub unsafe fn new_unchecked_borrowed(path: &str) -> &Self {
+        // SAFETY: ResPath is repr(transparent) over str; caller upholds path validity.
         unsafe { &*(path as *const str as *const Self) }
     }
 
@@ -169,6 +174,7 @@ impl ResPathBuf {
     }
 
     pub fn as_res_path(&self) -> &ResPath {
+        // SAFETY: ResPathBuf constructors validate owned and borrowed storage.
         unsafe { ResPath::new_unchecked_borrowed(&self.0) }
     }
 

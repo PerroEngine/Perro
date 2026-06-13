@@ -786,6 +786,7 @@ static PERRO_ASSETS: &[u8] = include_bytes!(\"../embedded/assets.perro\");\n\n\
 pub static PERRO_ENGINE_DETECT: [u8; 89] =\n\
     *b\"PERRO_ENGINE_DETECT:v1;engine=Perro Engine;format=.perro;site=https://www.perroengine.com\";\n\n\
 pub fn keep_perro_engine_marker() {{\n\
+    // SAFETY: Reads stay within static marker bounds and use valid static pointers.\n\
     unsafe {{\n\
         std::hint::black_box(std::ptr::read_volatile(PERRO_ENGINE_DETECT.as_ptr()));\n\
         std::hint::black_box(std::ptr::read_volatile(\n\

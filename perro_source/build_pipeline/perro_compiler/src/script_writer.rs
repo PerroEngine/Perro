@@ -92,7 +92,9 @@ pub unsafe extern \"C\" fn perro_scripts_set_project_root(\n\
     if root_ptr.is_null() || name_ptr.is_null() {\n\
         return false;\n\
     }\n\
+    // SAFETY: Caller contract + null checks ensure ptr/len pairs cover valid byte slices.\n\
     let root_bytes = unsafe { std::slice::from_raw_parts(root_ptr, root_len) };\n\
+    // SAFETY: Caller contract + null checks ensure ptr/len pairs cover valid byte slices.\n\
     let name_bytes = unsafe { std::slice::from_raw_parts(name_ptr, name_len) };\n\
     let Ok(root) = std::str::from_utf8(root_bytes) else {\n\
         return false;\n\
@@ -127,6 +129,7 @@ pub unsafe extern \"C\" fn perro_script_registry_get(\n\
     let Some((path_hash, ctor)) = SCRIPT_REGISTRY.get(index) else {\n\
         return false;\n\
     };\n\
+    // SAFETY: Null checks above ensure output ptrs are writable for this call.\n\
     unsafe {\n\
         *path_hash_out = *path_hash;\n\
         *ctor_out = *ctor;\n\

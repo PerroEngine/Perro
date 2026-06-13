@@ -110,6 +110,7 @@ pub trait ScriptBehavior<API: ScriptAPI + ?Sized>: ScriptLifecycle<API> {
 /// Caller must guarantee `state` points to a value of type `T`.
 #[inline(always)]
 pub unsafe fn state_ref_unchecked<T: 'static>(state: &dyn Any) -> &T {
+    // SAFETY: Caller verifies the erased state is exactly T before using this unchecked cast.
     unsafe { &*(state as *const dyn Any as *const T) }
 }
 
@@ -123,6 +124,7 @@ pub unsafe fn state_ref_unchecked<T: 'static>(state: &dyn Any) -> &T {
 /// references alias the returned mutable reference.
 #[inline(always)]
 pub unsafe fn state_mut_unchecked<T: 'static>(state: &mut dyn Any) -> &mut T {
+    // SAFETY: Caller verifies type identity and unique mutable access to the erased state.
     unsafe { &mut *(state as *mut dyn Any as *mut T) }
 }
 
