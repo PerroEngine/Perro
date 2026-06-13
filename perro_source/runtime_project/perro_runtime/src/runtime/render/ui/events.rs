@@ -574,14 +574,16 @@ impl Runtime {
             let SceneNodeData::UiColorPicker(picker) = &mut scene_node.data else {
                 continue;
             };
-            if picker.color == color {
-                continue;
-            }
+            let changed = picker.color != color;
             let signals = picker.color_changed_signals.clone();
             picker.color = color;
+            picker.popup_open = false;
             self.sync_color_picker_internal_nodes(node);
             if command_seen.insert(node) {
                 command_ids.push(node);
+            }
+            if !changed {
+                continue;
             }
             let params = [
                 Variant::from(node),

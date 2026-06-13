@@ -317,26 +317,8 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         "inspector_script_top",
         view.inspector.node_actions || view.inspector.asset_actions,
     );
-    set_ui_display(ctx, "inspector_action_row", view.inspector.node_actions);
-    set_label(
-        ctx,
-        "inspector_visible_label",
-        &view.inspector.visible_action_label,
-    );
     set_ui_display(ctx, "asset_action_row", view.inspector.asset_selected);
-    set_ui_display(ctx, "asset_open_button", view.inspector.asset_selected);
     set_ui_display(ctx, "asset_use_button", view.inspector.asset_use_action);
-    set_ui_display(
-        ctx,
-        "asset_make_node_button",
-        view.inspector.asset_make_action,
-    );
-    set_ui_display(ctx, "asset_user_button", view.inspector.asset_actions);
-    set_label(
-        ctx,
-        "asset_make_node_label",
-        &view.inspector.asset_make_label,
-    );
     set_ui_display(
         ctx,
         "asset_glb_anim_button",
@@ -349,7 +331,6 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     );
     let transform_closed =
         inspector_section_collapsed(&view.inspector.collapsed_sections, "transform");
-    let refs_closed = inspector_section_collapsed(&view.inspector.collapsed_sections, "refs");
     let vars_closed = inspector_section_collapsed(&view.inspector.collapsed_sections, "vars");
     set_label(ctx, "inspector_pos_label", "Transform");
     set_row_state(
@@ -430,18 +411,6 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         &["x", "y", "z", "w"],
         &view.inspector.scale,
         view.inspector.node_actions && !transform_closed,
-    );
-    set_label(ctx, "inspector_script_label", "References");
-    set_row_state(
-        ctx,
-        "inspector_script",
-        false,
-        inspector_disclosure(refs_closed),
-    );
-    set_ui_display(
-        ctx,
-        "inspector_script",
-        view.inspector.node_actions && !view.inspector.resource_fields.is_empty(),
     );
     set_label(ctx, "inspector_vars_label", "Scene Values");
     set_row_state(
@@ -544,31 +513,6 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             row.is_some_and(|item| item.kind == "Bool" && item.value == "true"),
         );
     }
-    for idx in 0..MAX_RESOURCE_FIELDS {
-        let row = view.inspector.resource_fields.get(idx);
-        set_ui_display(
-            ctx,
-            &format!("inspector_resource_row_{idx}"),
-            view.inspector.node_actions && row.is_some() && !refs_closed,
-        );
-        set_label(
-            ctx,
-            &format!("inspector_resource_{idx}_name"),
-            row.map(|item| item.name.as_str()).unwrap_or("-"),
-        );
-        set_label(
-            ctx,
-            &format!("inspector_resource_{idx}_button_label"),
-            row.map(|item| item.value.as_str()).unwrap_or("Select"),
-        );
-        let has_value = row.is_some_and(|item| !item.value.starts_with("[Select"));
-        set_ui_display(
-            ctx,
-            &format!("inspector_resource_{idx}_clear_button"),
-            view.inspector.node_actions && has_value && !refs_closed,
-        );
-    }
-
     set_ui_display(ctx, "inspector_pick_popup", view.inspector_picker_open);
     set_label(ctx, "inspector_pick_title", &view.inspector_picker_title);
     set_text_box(
@@ -615,7 +559,6 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
 }
 
 pub const MAX_SCRIPT_VARS: usize = 8;
-pub const MAX_RESOURCE_FIELDS: usize = 4;
 
 pub fn apply_component_row<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
@@ -702,20 +645,18 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
 
     set_ui_box_size(ctx, "inspector_panel", (0.20, 1.0));
     set_ui_box_size(ctx, "inspector_content", (1.0, 1.12));
-    set_label_text_ratio(ctx, "inspector_title", 0.22);
-    set_label_text_ratio(ctx, "inspector_name", 0.18);
-    set_label_text_ratio(ctx, "inspector_type", 0.16);
-    set_label_text_ratio(ctx, "inspector_parent", 0.15);
-    set_label_text_ratio(ctx, "inspector_script_top", 0.15);
-    set_label_text_ratio(ctx, "inspector_pos_label", 0.19);
-    set_label_text_ratio(ctx, "inspector_position_header_label", 0.18);
-    set_label_text_ratio(ctx, "inspector_rotation_header_label", 0.19);
-    set_label_text_ratio(ctx, "inspector_scale_header_label", 0.19);
-    set_label_text_ratio(ctx, "inspector_script_label", 0.19);
-    set_label_text_ratio(ctx, "inspector_vars_label", 0.19);
+    set_label_text_ratio(ctx, "inspector_title", 0.34);
+    set_label_text_ratio(ctx, "inspector_name", 0.30);
+    set_label_text_ratio(ctx, "inspector_type", 0.28);
+    set_label_text_ratio(ctx, "inspector_parent", 0.27);
+    set_label_text_ratio(ctx, "inspector_script_top", 0.27);
+    set_label_text_ratio(ctx, "inspector_pos_label", 0.31);
+    set_label_text_ratio(ctx, "inspector_position_header_label", 0.30);
+    set_label_text_ratio(ctx, "inspector_rotation_header_label", 0.31);
+    set_label_text_ratio(ctx, "inspector_scale_header_label", 0.31);
+    set_label_text_ratio(ctx, "inspector_vars_label", 0.31);
 
     for name in [
-        "inspector_action_row",
         "asset_action_row",
         "inspector_position_row",
         "inspector_rotation_mode_row",
@@ -734,16 +675,6 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
     }
 
     for name in [
-        "inspector_duplicate_button",
-        "inspector_delete_button",
-        "inspector_reset_button",
-        "inspector_open_ref_button",
-        "inspector_visible_button",
-        "inspector_clear_ref_button",
-    ] {
-        set_button_size(ctx, name, (0.135, 0.62));
-    }
-    for name in [
         "inspector_rotation_quat_button",
         "inspector_rotation_euler_button",
     ] {
@@ -757,7 +688,7 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
         "inspector_scale_box",
     ] {
         set_ui_box_size(ctx, name, (1.0, 0.024));
-        set_text_box_text_ratio(ctx, name, 0.42);
+        set_text_box_text_ratio(ctx, name, 0.62);
         set_text_box_padding(ctx, name, 4.0, 1.0);
     }
 
@@ -769,7 +700,7 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
         for idx in 0..4 {
             let name = format!("{prefix}_{idx}_box");
             set_ui_box_size(ctx, &name, (0.185, 0.72));
-            set_text_box_text_ratio(ctx, &name, 0.42);
+            set_text_box_text_ratio(ctx, &name, 0.62);
             set_text_box_padding(ctx, &name, 4.0, 1.0);
         }
     }
@@ -777,7 +708,7 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
     for idx in 0..MAX_SCRIPT_VARS {
         set_ui_box_size(ctx, &format!("inspector_var_row_{idx}"), (1.0, 0.027));
         set_ui_box_size(ctx, &format!("inspector_var_{idx}_value"), (0.50, 0.70));
-        set_text_box_text_ratio(ctx, &format!("inspector_var_{idx}_value"), 0.42);
+        set_text_box_text_ratio(ctx, &format!("inspector_var_{idx}_value"), 0.62);
         set_text_box_padding(ctx, &format!("inspector_var_{idx}_value"), 5.0, 1.0);
         set_ui_box_padding(
             ctx,
@@ -791,30 +722,8 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
             &format!("inspector_var_{idx}_pick_button"),
             (0.42, 0.62),
         );
-        set_label_text_ratio(ctx, &format!("inspector_var_{idx}_name"), 0.23);
-        set_label_text_ratio(ctx, &format!("inspector_var_{idx}_type"), 0.16);
-    }
-    for idx in 0..MAX_RESOURCE_FIELDS {
-        set_ui_box_size(ctx, &format!("inspector_resource_row_{idx}"), (1.0, 0.027));
-        set_ui_box_padding(
-            ctx,
-            &format!("inspector_resource_row_{idx}"),
-            UiRect::new(0.025, 0.0, 0.0, 0.0),
-        );
-        set_hlayout_spacing(ctx, &format!("inspector_resource_row_{idx}"), 0.002);
-        set_button_size(
-            ctx,
-            &format!("inspector_resource_{idx}_button"),
-            (0.52, 0.62),
-        );
-        set_button_size(
-            ctx,
-            &format!("inspector_resource_{idx}_clear_button"),
-            (0.07, 0.54),
-        );
-        set_label_text_ratio(ctx, &format!("inspector_resource_{idx}_name"), 0.22);
-        set_label_text_ratio(ctx, &format!("inspector_resource_{idx}_button_label"), 0.16);
-        set_label_text_ratio(ctx, &format!("inspector_resource_{idx}_clear_label"), 0.20);
+        set_label_text_ratio(ctx, &format!("inspector_var_{idx}_name"), 0.35);
+        set_label_text_ratio(ctx, &format!("inspector_var_{idx}_type"), 0.28);
     }
 }
 
@@ -823,22 +732,17 @@ fn apply_inspector_dynamic_layout<API: ScriptAPI + ?Sized>(
     inspector: &InspectorViewData,
 ) {
     let asset_button_w = if inspector.glb_asset_actions {
-        0.166
-    } else if inspector.asset_actions {
         0.25
+    } else if inspector.asset_actions {
+        0.50
     } else {
         1.0
     };
-    for name in [
-        "asset_open_button",
-        "asset_use_button",
-        "asset_make_node_button",
-        "asset_user_button",
-    ] {
+    for name in ["asset_use_button"] {
         set_button_size(ctx, name, (asset_button_w, 0.62));
     }
     for name in ["asset_glb_anim_button", "asset_glb_mat_button"] {
-        set_button_size(ctx, name, (0.166, 0.62));
+        set_button_size(ctx, name, (0.25, 0.62));
     }
 }
 
@@ -891,13 +795,6 @@ pub struct EditorView {
     inspector_picker_filter: String,
 }
 
-#[derive(Default, Clone)]
-pub struct ResourceFieldView {
-    pub name: String,
-    pub value: String,
-    pub picker_kind: String,
-}
-
 pub struct InspectorViewData {
     title: String,
     name: String,
@@ -908,8 +805,6 @@ pub struct InspectorViewData {
     asset_selected: bool,
     asset_actions: bool,
     asset_use_action: bool,
-    asset_make_action: bool,
-    asset_make_label: String,
     glb_asset_actions: bool,
     pos_label: String,
     pos: Vec<String>,
@@ -921,10 +816,8 @@ pub struct InspectorViewData {
     scale_label: String,
     scale: Vec<String>,
     script: String,
-    visible_action_label: String,
     vars_text: String,
     script_vars: Vec<InspectorValueRow>,
-    resource_fields: Vec<ResourceFieldView>,
     collapsed_sections: Vec<String>,
 }
 
@@ -940,8 +833,6 @@ impl Default for InspectorViewData {
             asset_selected: false,
             asset_actions: false,
             asset_use_action: false,
-            asset_make_action: false,
-            asset_make_label: "Node".to_string(),
             glb_asset_actions: false,
             pos_label: "Transform".to_string(),
             pos: Vec::new(),
@@ -953,10 +844,8 @@ impl Default for InspectorViewData {
             scale_label: "Scale".to_string(),
             scale: Vec::new(),
             script: "Script  -".to_string(),
-            visible_action_label: "Vis".to_string(),
             vars_text: String::new(),
             script_vars: Vec::new(),
-            resource_fields: Vec::new(),
             collapsed_sections: Vec::new(),
         }
     }
@@ -1007,11 +896,6 @@ impl InspectorViewData {
         view.rotation_mode_buttons = is_3d;
         view.scale = scene_value_components(&node.data, "scale");
         view.script = format!("Script  {script}");
-        view.visible_action_label = if scene_field_bool(&node.data, "visible") == Some(false) {
-            "Show".to_string()
-        } else {
-            "Hide".to_string()
-        };
         view.collapsed_sections = state.inspector_collapsed_sections.clone();
         let scene_fields = inspector_scene_value_fields_for_node(node);
         let script_fields = inspector_script_var_fields_for_node(state, node);
@@ -1023,7 +907,6 @@ impl InspectorViewData {
             &state.inspector_expanded_paths,
             &color_paths,
         );
-        view.resource_fields = resource_field_rows(node);
         view.apply_asset_actions(state);
         view
     }
@@ -1039,10 +922,7 @@ impl InspectorViewData {
         view.name_edit = asset_edit_name(&state.active_asset_path);
         view.kind = asset.kind;
         view.parent = format!("{}\n{}", asset.path, asset.size);
-        view.script = format!(
-            "State  {}\n{}\nRefs\n{}\nActions\n{}",
-            asset.state, asset.detail, asset.refs, asset.actions
-        );
+        view.script = format!("State  {}\n{}\n{}", asset.state, asset.detail, asset.actions);
         view.collapsed_sections = state.inspector_collapsed_sections.clone();
         view.apply_asset_actions(state);
         view
@@ -1054,12 +934,6 @@ impl InspectorViewData {
         self.asset_selected = !path.is_empty();
         self.asset_actions = !path.is_empty() && !path.ends_with('/') && !state.doc_text.is_empty();
         self.asset_use_action = self.asset_actions && kind != "scene";
-        self.asset_make_action = self.asset_actions;
-        self.asset_make_label = if kind == "scene" {
-            "Instance".to_string()
-        } else {
-            "Node".to_string()
-        };
         self.glb_asset_actions = self.asset_actions && is_gltf_path(path);
     }
 }
@@ -1382,85 +1256,6 @@ pub fn inspector_value_fields_for_node(
 
 fn inspector_var_button_label(row: &InspectorValueRow) -> String {
     row.value.clone()
-}
-
-pub fn resource_field_rows(node: &SceneNodeEntry) -> Vec<ResourceFieldView> {
-    let mut rows = Vec::new();
-    if let Some(script) = node.script.as_ref() {
-        rows.push(ResourceFieldView {
-            name: "script".to_string(),
-            value: if script.trim().is_empty() {
-                "[Select Script]".to_string()
-            } else {
-                editor_view::short_path(script, 22)
-            },
-            picker_kind: "asset".to_string(),
-        });
-    } else {
-        rows.push(ResourceFieldView {
-            name: "script".to_string(),
-            value: "[Select Script]".to_string(),
-            picker_kind: "asset".to_string(),
-        });
-    }
-    rows.extend(
-        perro_scene::scene_inspector_fields(node.data.node_type)
-            .into_iter()
-            .filter(|field| {
-                matches!(
-                    field.kind,
-                    perro_scene::SceneInspectorValueKind::Asset(_)
-                        | perro_scene::SceneInspectorValueKind::NodeRef
-                )
-            })
-            .filter_map(|field| resource_field_row(&node.data, &field)),
-    );
-    rows
-}
-
-pub fn resource_field_row(
-    data: &SceneNodeData,
-    field: &perro_scene::SceneInspectorField,
-) -> Option<ResourceFieldView> {
-    let raw_value = scene_field_value_text(data, field.name);
-    let value_text = raw_value
-        .as_deref()
-        .filter(|value| !value.trim().is_empty());
-    let picker_kind = match field.kind {
-        perro_scene::SceneInspectorValueKind::NodeRef => "node",
-        perro_scene::SceneInspectorValueKind::Asset(_) => "asset",
-        _ => return None,
-    };
-    let value = match field.kind {
-        perro_scene::SceneInspectorValueKind::NodeRef => value_text
-            .map(inspector_node_ref_label)
-            .unwrap_or_else(|| "[Select Node]".to_string()),
-        perro_scene::SceneInspectorValueKind::Asset(kind) => value_text
-            .map(|value| editor_view::short_path(value, 22))
-            .unwrap_or_else(|| format!("[Select {}]", inspector_asset_kind_label(kind))),
-        _ => return None,
-    };
-    Some(ResourceFieldView {
-        name: field.name.to_string(),
-        value,
-        picker_kind: picker_kind.to_string(),
-    })
-}
-
-fn inspector_asset_kind_label(kind: perro_scene::SceneAssetKind) -> &'static str {
-    match kind {
-        perro_scene::SceneAssetKind::Scene => "Scene",
-        perro_scene::SceneAssetKind::Script => "Script",
-        perro_scene::SceneAssetKind::Texture => "Texture",
-        perro_scene::SceneAssetKind::Mesh | perro_scene::SceneAssetKind::Model => "Mesh",
-        perro_scene::SceneAssetKind::Material => "Material",
-        perro_scene::SceneAssetKind::Animation => "Animation",
-        perro_scene::SceneAssetKind::AnimationTree => "Animation Tree",
-        perro_scene::SceneAssetKind::Skeleton => "Skeleton",
-        perro_scene::SceneAssetKind::ParticleProfile => "Particle",
-        perro_scene::SceneAssetKind::TileSet => "Tile Set",
-        perro_scene::SceneAssetKind::UiStyle => "UI Style",
-    }
 }
 
 #[derive(Clone)]
@@ -3064,7 +2859,7 @@ pub fn ensure_tree_row_affordances<API: ScriptAPI + ?Sized>(
         let id = create_node!(ctx.run, UiLabel, icon_name, tags![], row_id);
         let _ = with_node_mut!(ctx.run, UiLabel, id, |node| {
             node.color = Color::from_hex(icon_color).unwrap_or(Color::WHITE);
-            node.text_size_ratio = 0.28;
+            node.text_size_ratio = 0.42;
             node.h_align = UiTextAlign::Center;
             node.v_align = UiTextAlign::Center;
             node.input_enabled = false;
@@ -3094,7 +2889,7 @@ pub fn ensure_inspector_value_component_boxes<API: ScriptAPI + ?Sized>(
             node.base.visible = false;
             node.base.input_enabled = false;
             node.base.layout.size = UiVector2::ratio(0.10, 0.62);
-            node.text_size_ratio = 0.42;
+            node.text_size_ratio = 0.62;
             node.padding = UiRect::symmetric(4.0, 1.0);
             node.style.fill = Color::from_hex("#111827DD").unwrap_or(node.style.fill);
             node.style.stroke = Color::from_hex("#334155FF").unwrap_or(node.style.stroke);
@@ -3583,7 +3378,7 @@ pub fn apply_scene_list_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
         set_button_size(ctx, &row_name, (1.0, 0.053));
         set_button_row_style(ctx, &row_name, "#00000000", "#333842");
         set_label_size_ratio(ctx, &row_label, (1.0, 1.0));
-        set_label_text_ratio(ctx, &row_label, 0.35);
+        set_label_text_ratio(ctx, &row_label, 0.50);
     }
 }
 
@@ -3604,7 +3399,7 @@ pub fn apply_file_tree_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
         set_button_size(ctx, &row_name, (1.0, 0.052));
         set_button_row_style(ctx, &row_name, "#00000000", "#333842");
         set_label_size_ratio(ctx, &row_label, (1.0, 1.0));
-        set_label_text_ratio(ctx, &row_label, 0.34);
+        set_label_text_ratio(ctx, &row_label, 0.49);
     }
 }
 

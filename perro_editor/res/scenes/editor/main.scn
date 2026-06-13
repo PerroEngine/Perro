@@ -40,7 +40,7 @@ parent = @project_manager
     [UiLabel]
         size_ratio = (1.0, 0.08)
         text = "Project Manager"
-        text_size_ratio = 0.344
+        text_size_ratio = 0.494
         color = "#F3F4F6"
         h_align = "start"
     [/UiLabel]
@@ -51,7 +51,7 @@ parent = @project_manager
     [UiLabel]
         size_ratio = (1.0, 0.052)
         text = "Recent Projects"
-        text_size_ratio = 0.262
+        text_size_ratio = 0.377
         color = "#CBD5E1"
         h_align = "start"
     [/UiLabel]
@@ -73,7 +73,7 @@ parent = @manager_recent_0
     [UiLabel]
         size_ratio = (0.96, 1.0)
         text = "-"
-        text_size_ratio = 0.246
+        text_size_ratio = 0.354
         color = "#E5E7EB"
         h_align = "start"
         input_enabled = false
@@ -97,7 +97,7 @@ parent = @manager_recent_1
     [UiLabel]
         size_ratio = (0.96, 1.0)
         text = "-"
-        text_size_ratio = 0.246
+        text_size_ratio = 0.354
         color = "#E5E7EB"
         h_align = "start"
         input_enabled = false
@@ -121,7 +121,7 @@ parent = @manager_recent_2
     [UiLabel]
         size_ratio = (0.96, 1.0)
         text = "-"
-        text_size_ratio = 0.246
+        text_size_ratio = 0.354
         color = "#E5E7EB"
         h_align = "start"
         input_enabled = false
@@ -145,7 +145,7 @@ parent = @manager_recent_3
     [UiLabel]
         size_ratio = (0.96, 1.0)
         text = "-"
-        text_size_ratio = 0.246
+        text_size_ratio = 0.354
         color = "#E5E7EB"
         h_align = "start"
         input_enabled = false
@@ -169,7 +169,7 @@ parent = @manager_recent_4
     [UiLabel]
         size_ratio = (0.96, 1.0)
         text = "-"
-        text_size_ratio = 0.246
+        text_size_ratio = 0.354
         color = "#E5E7EB"
         h_align = "start"
         input_enabled = false
@@ -182,7 +182,7 @@ parent = @project_manager
     [UiLabel]
         size_ratio = (1.0, 0.052)
         text = "Create Project"
-        text_size_ratio = 0.262
+        text_size_ratio = 0.377
         color = "#CBD5E1"
         h_align = "start"
     [/UiLabel]
@@ -194,7 +194,7 @@ parent = @project_manager
         size_ratio = (1.0, 0.08)
         text = "NewGame"
         placeholder = "Project name"
-        text_size_ratio = 0.262
+        text_size_ratio = 0.377
         color = "#F3F4F6"
         placeholder_color = "#94A3B8"
         style = $field
@@ -217,7 +217,7 @@ parent = @create_location_row
     [UiLabel]
         size_ratio = (0.66, 0.82)
         text = "location: -"
-        text_size_ratio = 0.221
+        text_size_ratio = 0.317
         color = "#CBD5E1"
         h_align = "start"
         style = $field
@@ -240,7 +240,7 @@ parent = @manager_choose_location_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
         text = "Pick"
-        text_size_ratio = 0.279
+        text_size_ratio = 0.401
         color = "#F3F4F6"
         input_enabled = false
         mouse_filter = "pass"
@@ -263,7 +263,7 @@ parent = @manager_create_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
         text = "Create"
-        text_size_ratio = 0.254
+        text_size_ratio = 0.366
         color = "#F3F4F6"
         input_enabled = false
         mouse_filter = "pass"
@@ -296,7 +296,7 @@ parent = @manager_browse_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
         text = "Browse"
-        text_size_ratio = 0.279
+        text_size_ratio = 0.401
         color = "#F3F4F6"
         input_enabled = false
         mouse_filter = "pass"
@@ -319,7 +319,7 @@ parent = @manager_close_button
     [UiLabel]
         size_ratio = (1.0, 1.0)
         text = "Close"
-        text_size_ratio = 0.279
+        text_size_ratio = 0.401
         color = "#F3F4F6"
         input_enabled = false
         mouse_filter = "pass"

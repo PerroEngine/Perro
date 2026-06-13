@@ -236,8 +236,6 @@ methods!({
             "anim_create_button" => create_animation_for_selected_player(ctx),
             "anim_add_track_button" => add_track_for_selected_node(ctx),
             "anim_close_button" => set_anim_drawer(ctx, false),
-            "inspector_duplicate_button" => duplicate_selected_node(ctx),
-            "inspector_delete_button" => delete_selected_node(ctx),
             "scene_duplicate_button" => duplicate_selected_node(ctx),
             "scene_copy_button" => copy_selected_node(ctx),
             "scene_paste_button" => paste_copied_node(ctx),
@@ -254,19 +252,11 @@ methods!({
             "scene_select_child_button" => select_related_node(ctx, "child"),
             "scene_select_prev_button" => select_related_node(ctx, "prev"),
             "scene_select_next_button" => select_related_node(ctx, "next"),
-            "inspector_reset_button" => reset_selected_transform(ctx),
-            "inspector_open_ref_button" => open_selected_node_asset_ref(ctx),
-            "inspector_visible_button" => toggle_selected_visible(ctx),
-            "inspector_clear_ref_button" => clear_selected_node_asset_refs(ctx),
-            "asset_open_button" => open_active_asset(ctx),
             "asset_use_button" => use_active_asset_on_selected_node(ctx),
-            "asset_make_node_button" => make_node_from_active_asset(ctx),
             "asset_glb_anim_button" => export_selected_glb_animation(ctx),
             "asset_glb_mat_button" => export_selected_glb_material(ctx),
-            "asset_user_button" => select_node_using_active_asset(ctx),
             "inspector_name_box" => rename_inspector_selection(ctx),
             "inspector_pos" => toggle_inspector_section(ctx, "transform"),
-            "inspector_script" => toggle_inspector_section(ctx, "refs"),
             "inspector_vars" => toggle_inspector_section(ctx, "vars"),
             "inspector_position_box" => {
                 edit_selected_transform(ctx, "position", "inspector_position_box")
@@ -304,12 +294,6 @@ methods!({
                     edit_selected_script_var_path(ctx, idx);
                 } else if let Some(idx) = middle_index(&name, "inspector_var_", "_pick_button") {
                     pick_selected_script_var_ref(ctx, idx);
-                } else if let Some(idx) =
-                    middle_index(&name, "inspector_resource_", "_clear_button")
-                {
-                    clear_selected_resource_field(ctx, idx);
-                } else if let Some(idx) = middle_index(&name, "inspector_resource_", "_button") {
-                    pick_selected_resource_field(ctx, idx);
                 } else if let Some(idx) = suffix_index(&name, "inspector_pick_row_") {
                     choose_inspector_picker_row(ctx, idx);
                 } else if name.starts_with("inspector_position_") && name.ends_with("_box") {
@@ -388,7 +372,6 @@ fn connect_editor_signals<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
             signal!("editor_anim_add_track"),
             signal!("editor_anim_close"),
             signal!("editor_inspector_duplicate"),
-            signal!("editor_inspector_delete"),
             signal!("editor_scene_copy"),
             signal!("editor_scene_paste"),
             signal!("editor_scene_move_up"),
@@ -403,16 +386,9 @@ fn connect_editor_signals<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
             signal!("editor_scene_select_child"),
             signal!("editor_scene_select_prev"),
             signal!("editor_scene_select_next"),
-            signal!("editor_inspector_reset"),
-            signal!("editor_inspector_open_ref"),
-            signal!("editor_inspector_visible"),
-            signal!("editor_inspector_clear_ref"),
-            signal!("editor_asset_open"),
             signal!("editor_asset_use"),
-            signal!("editor_asset_make_node"),
             signal!("editor_asset_glb_anim"),
             signal!("editor_asset_glb_mat"),
-            signal!("editor_asset_user"),
             signal!("editor_inspector_rename"),
             signal!("editor_open_file_0"),
             signal!("editor_open_file_1"),
@@ -497,14 +473,6 @@ fn connect_editor_signals<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
             signal!("editor_inspector_var_pick_5"),
             signal!("editor_inspector_var_pick_6"),
             signal!("editor_inspector_var_pick_7"),
-            signal!("editor_inspector_resource_0"),
-            signal!("editor_inspector_resource_1"),
-            signal!("editor_inspector_resource_2"),
-            signal!("editor_inspector_resource_3"),
-            signal!("editor_inspector_resource_clear_0"),
-            signal!("editor_inspector_resource_clear_1"),
-            signal!("editor_inspector_resource_clear_2"),
-            signal!("editor_inspector_resource_clear_3"),
             signal!("editor_inspector_pick_0"),
             signal!("editor_inspector_pick_1"),
             signal!("editor_inspector_pick_2"),

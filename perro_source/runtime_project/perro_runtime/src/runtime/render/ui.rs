@@ -719,8 +719,8 @@ impl Runtime {
     fn insert_color_picker_text_box(&mut self, popup_id: NodeID, name: &'static str) -> NodeID {
         let mut text_box = UiTextBox::new();
         text_box.inner.base.layout.z_index = 102;
-        text_box.inner.font_size = 13.0;
-        text_box.inner.text_size_ratio = 0.5;
+        text_box.inner.font_size = 15.0;
+        text_box.inner.text_size_ratio = 0.58;
         text_box.inner.padding = perro_ui::UiRect::symmetric(6.0, 3.0);
         self.insert_color_picker_internal_node(popup_id, name, SceneNodeData::UiTextBox(text_box))
     }
@@ -804,9 +804,9 @@ impl Runtime {
         let rgba = color_to_rgba_text(color);
         let hsv = color_to_hsv_text(color);
         let hex = color_to_hex_text(color);
-        self.sync_color_picker_text_box(ids.2, popup_open, popup_size, 72.0, &rgba);
-        self.sync_color_picker_text_box(ids.3, popup_open, popup_size, 108.0, &hsv);
-        self.sync_color_picker_text_box(ids.4, popup_open, popup_size, 144.0, &hex);
+        self.sync_color_picker_text_box(ids.2, popup_open, popup_size, 58.0, &rgba);
+        self.sync_color_picker_text_box(ids.3, popup_open, popup_size, 94.0, &hsv);
+        self.sync_color_picker_text_box(ids.4, popup_open, popup_size, 130.0, &hex);
 
         self.mark_ui_dirty(
             picker_id,
@@ -837,7 +837,7 @@ impl Runtime {
         {
             text_box.inner.base.visible = visible;
             text_box.inner.base.layout.size =
-                UiVector2::pixels((popup_size[0] - 24.0).max(48.0), 28.0);
+                UiVector2::pixels((popup_size[0] - 24.0).max(48.0), 30.0);
             text_box.inner.base.transform.position =
                 UiVector2::pixels(0.0, popup_size[1] * 0.5 - y_from_top);
             if self.render_ui.focused_text_edit != Some(node_id) {
@@ -986,7 +986,7 @@ fn color_picker_wheel_render_node(picker_id: NodeID) -> NodeID {
 fn color_picker_wheel_rect(popup_rect: ComputedUiRect, wheel_radius: f32) -> ComputedUiRect {
     let radius = wheel_radius.max(8.0);
     ComputedUiRect::new(
-        Vector2::new(popup_rect.center.x, popup_rect.max().y - radius - 14.0),
+        Vector2::new(popup_rect.center.x, popup_rect.min().y + radius + 16.0),
         Vector2::new(radius * 2.0, radius * 2.0),
     )
 }
