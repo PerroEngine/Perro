@@ -3636,6 +3636,7 @@ version = "0.1.0"
 dependencies = [
  "perro_ids",
  "perro_structs",
+ "perro_variant",
 ]
 
 [[package]]

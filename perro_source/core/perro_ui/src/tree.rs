@@ -2,14 +2,14 @@ use super::*;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiList {
-    pub base: UiBox,
+    pub base: UiNode,
     pub indent: f32,
     pub v_spacing: f32,
 }
 
 impl UiList {
     pub const fn new() -> Self {
-        let mut base = UiBox::new();
+        let mut base = UiNode::new();
         base.layout.h_align = UiHorizontalAlign::Left;
         base.layout.v_align = UiVerticalAlign::Top;
         Self {
@@ -27,7 +27,7 @@ impl Default for UiList {
 }
 
 impl Deref for UiList {
-    type Target = UiBox;
+    type Target = UiNode;
 
     fn deref(&self) -> &Self::Target {
         &self.base
@@ -41,23 +41,23 @@ impl DerefMut for UiList {
 }
 
 impl UiNodeBase for UiList {
-    fn ui_base(&self) -> &UiBox {
+    fn ui_base(&self) -> &UiNode {
         &self.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiBox {
+    fn ui_base_mut(&mut self) -> &mut UiNode {
         &mut self.base
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiListIndent {
-    pub base: UiBox,
+    pub base: UiNode,
 }
 
 impl UiListIndent {
     pub const fn new() -> Self {
-        let mut base = UiBox::new();
+        let mut base = UiNode::new();
         base.layout.h_align = UiHorizontalAlign::Left;
         base.layout.v_align = UiVerticalAlign::Top;
         Self { base }
@@ -71,7 +71,7 @@ impl Default for UiListIndent {
 }
 
 impl Deref for UiListIndent {
-    type Target = UiBox;
+    type Target = UiNode;
 
     fn deref(&self) -> &Self::Target {
         &self.base
@@ -85,11 +85,11 @@ impl DerefMut for UiListIndent {
 }
 
 impl UiNodeBase for UiListIndent {
-    fn ui_base(&self) -> &UiBox {
+    fn ui_base(&self) -> &UiNode {
         &self.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiBox {
+    fn ui_base_mut(&mut self) -> &mut UiNode {
         &mut self.base
     }
 }

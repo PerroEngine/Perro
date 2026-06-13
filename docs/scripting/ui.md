@@ -33,12 +33,12 @@ lifecycle!({
 # UI Nodes
 
 UI nodes are data-only scene nodes backed by `perro_ui`.
-They use `UiBox` as their base node type.
+They use `UiNode` as their base node type.
 
 ## Tree
 
 ```text
-UiBox
+UiNode
 - UiPanel
 - UiButton
 - UiImage
@@ -57,7 +57,7 @@ UiBox
 
 ## Nodes
 
-`UiBox`
+`UiNode`
 
 - Invisible UI container.
 - Holds `layout`, `visible`, `input_enabled`, and `mouse_filter`.
@@ -234,7 +234,7 @@ parent = @node3d_children
 
 ## Layout Fields
 
-Common fields live on `UiBox` data and all UI nodes inherit them:
+Common fields live on `UiNode` data and all UI nodes inherit them:
 
 - `anchor`
 - `size_percent`
@@ -446,11 +446,11 @@ Example:
 
 ```text
 [menu]
-[UiBox]
+[UiNode]
     anchor = "tr"
     size_ratio = (0.15625, 0.185185)
     padding = 0.08
-[/UiBox]
+[/UiNode]
 [/menu]
 ```
 
@@ -458,11 +458,11 @@ Full-screen root + centered panel:
 
 ```text
 [ui_root]
-[UiBox]
+[UiNode]
     anchor = "center"
     size_ratio = (1.0, 1.0)
     pivot_ratio = (0.5, 0.5)
-[/UiBox]
+[/UiNode]
 [/ui_root]
 
 [card]

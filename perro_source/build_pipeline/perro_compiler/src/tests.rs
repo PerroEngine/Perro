@@ -1387,11 +1387,11 @@ parent = $root
 [/AudioPortal3D]
 [/audio_portal_3d]
 
-[ui_box]
+[ui_node]
 parent = $root
-[UiBox]
-[/UiBox]
-[/ui_box]
+[UiNode]
+[/UiNode]
+[/ui_node]
 
 [ui_camera_stream]
 parent = $root

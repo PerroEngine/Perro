@@ -2,7 +2,7 @@ use super::Runtime;
 use perro_ids::NodeID;
 use perro_nodes::{Node2D, Node3D, SceneNodeData};
 use perro_structs::{Color, NodeModulate};
-use perro_ui::UiBox;
+use perro_ui::UiNode;
 
 impl Runtime {
     pub(crate) fn node_local_visible(data: &SceneNodeData) -> bool {
@@ -67,11 +67,12 @@ impl Runtime {
             SceneNodeData::AudioMask3D(node) => node.visible,
             SceneNodeData::AudioEffectZone3D(node) => node.visible,
             SceneNodeData::AudioPortal3D(node) => node.visible,
-            SceneNodeData::UiBox(node) => node.visible,
+            SceneNodeData::UiNode(node) => node.visible,
             SceneNodeData::UiCameraStream(node) => node.visible,
             SceneNodeData::UiPanel(node) => node.visible,
             SceneNodeData::UiShape(node) => node.visible,
             SceneNodeData::UiButton(node) => node.visible,
+            SceneNodeData::UiDropdown(node) => node.visible,
             SceneNodeData::UiCheckbox(node) => node.visible,
             SceneNodeData::UiColorPicker(node) => node.visible,
             SceneNodeData::UiImage(node) => node.visible,
@@ -193,6 +194,6 @@ impl Runtime {
         scene_node
             .with_base_ref::<Node2D, _>(|node| node.modulate)
             .or_else(|| scene_node.with_base_ref::<Node3D, _>(|node| node.modulate))
-            .or_else(|| scene_node.with_base_ref::<UiBox, _>(|node| node.modulate))
+            .or_else(|| scene_node.with_base_ref::<UiNode, _>(|node| node.modulate))
     }
 }

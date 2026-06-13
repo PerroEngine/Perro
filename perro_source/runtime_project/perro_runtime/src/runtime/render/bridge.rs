@@ -43,7 +43,7 @@ type SceneResourceRefs = (
 fn is_ui_node_data(data: &SceneNodeData) -> bool {
     matches!(
         data,
-        SceneNodeData::UiBox(_)
+        SceneNodeData::UiNode(_)
             | SceneNodeData::UiCameraStream(_)
             | SceneNodeData::UiPanel(_)
             | SceneNodeData::UiButton(_)

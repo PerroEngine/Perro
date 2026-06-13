@@ -35,8 +35,8 @@ fn default_layout_aligns_children_to_center() {
 }
 
 #[test]
-fn ui_box_defaults_to_no_child_clipping() {
-    let base = UiBox::new();
+fn ui_node_defaults_to_no_child_clipping() {
+    let base = UiNode::new();
     assert!(!base.clip_children);
 }
 

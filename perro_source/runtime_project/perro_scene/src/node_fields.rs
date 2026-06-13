@@ -1,6 +1,6 @@
 use perro_nodes::{Node2D, Node3D, NodeType};
 use perro_structs::{BitMask, Color, Quaternion, Vector2, Vector3};
-use perro_ui::{UiBox, UiUnit, UiVector2};
+use perro_ui::{UiNode, UiUnit, UiVector2};
 use std::str::FromStr;
 
 use crate::{SceneFieldName, SceneValue};
@@ -60,7 +60,7 @@ pub enum NodeField {
     BallJoint3D(Joint3DField),
     HingeJoint3D(HingeJoint3DField),
     FixedJoint3D(Joint3DField),
-    UiBox(UiBoxField),
+    UiNode(UiNodeField),
     UiImage(UiImageField),
     UiImageButton(UiImageField),
     UiNineSlice(UiImageField),
@@ -107,7 +107,7 @@ pub enum Node3DField {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum UiBoxField {
+pub enum UiNodeField {
     Position,
     Scale,
     Rotation,
@@ -651,7 +651,7 @@ pub fn default_node_field_value(field: NodeField) -> Option<SceneValue> {
     match field {
         NodeField::Node2D(field) => default_node_2d_field_value(field),
         NodeField::Node3D(field) => default_node_3d_field_value(field),
-        NodeField::UiBox(field) => default_ui_box_field_value(field),
+        NodeField::UiNode(field) => default_ui_node_field_value(field),
         _ => None,
     }
 }
@@ -685,19 +685,19 @@ fn default_node_3d_field_value(field: Node3DField) -> Option<SceneValue> {
     })
 }
 
-fn default_ui_box_field_value(field: UiBoxField) -> Option<SceneValue> {
-    let node = UiBox::new();
+fn default_ui_node_field_value(field: UiNodeField) -> Option<SceneValue> {
+    let node = UiNode::new();
     Some(match field {
-        UiBoxField::Position => ui_vec2_ratio_value(node.transform.position),
-        UiBoxField::Scale => vec2_value(node.transform.scale),
-        UiBoxField::Rotation => SceneValue::F32(node.transform.rotation),
-        UiBoxField::Visible => SceneValue::Bool(node.visible),
-        UiBoxField::Modulate => color_value(node.modulate.modulate),
-        UiBoxField::SelfModulate => color_value(node.modulate.self_modulate),
-        UiBoxField::ChildrenModulate => color_value(node.modulate.children_modulate),
-        UiBoxField::InputEnabled => SceneValue::Bool(node.input_enabled),
-        UiBoxField::ClipChildren => SceneValue::Bool(node.clip_children),
-        UiBoxField::ZIndex => SceneValue::I32(node.layout.z_index),
+        UiNodeField::Position => ui_vec2_ratio_value(node.transform.position),
+        UiNodeField::Scale => vec2_value(node.transform.scale),
+        UiNodeField::Rotation => SceneValue::F32(node.transform.rotation),
+        UiNodeField::Visible => SceneValue::Bool(node.visible),
+        UiNodeField::Modulate => color_value(node.modulate.modulate),
+        UiNodeField::SelfModulate => color_value(node.modulate.self_modulate),
+        UiNodeField::ChildrenModulate => color_value(node.modulate.children_modulate),
+        UiNodeField::InputEnabled => SceneValue::Bool(node.input_enabled),
+        UiNodeField::ClipChildren => SceneValue::Bool(node.clip_children),
+        UiNodeField::ZIndex => SceneValue::I32(node.layout.z_index),
     })
 }
 
@@ -2233,24 +2233,24 @@ fn resolve_base_node_field(node_type: NodeType, field: &str) -> Option<NodeField
         };
     }
 
-    if node_type.is_a(NodeType::UiBox) {
+    if node_type.is_a(NodeType::UiNode) {
         return match field {
             "position" | "position_percent" | "position_pct" | "position_ratio" => {
-                Some(NodeField::UiBox(UiBoxField::Position))
+                Some(NodeField::UiNode(UiNodeField::Position))
             }
-            "scale" => Some(NodeField::UiBox(UiBoxField::Scale)),
-            "rotation" | "rotation_deg" => Some(NodeField::UiBox(UiBoxField::Rotation)),
-            "visible" => Some(NodeField::UiBox(UiBoxField::Visible)),
-            "modulate" | "tint" => Some(NodeField::UiBox(UiBoxField::Modulate)),
+            "scale" => Some(NodeField::UiNode(UiNodeField::Scale)),
+            "rotation" | "rotation_deg" => Some(NodeField::UiNode(UiNodeField::Rotation)),
+            "visible" => Some(NodeField::UiNode(UiNodeField::Visible)),
+            "modulate" | "tint" => Some(NodeField::UiNode(UiNodeField::Modulate)),
             "self_modulate" | "self_tint" | "self_color" => {
-                Some(NodeField::UiBox(UiBoxField::SelfModulate))
+                Some(NodeField::UiNode(UiNodeField::SelfModulate))
             }
             "children_modulate" | "child_modulate" | "children_tint" | "child_tint" => {
-                Some(NodeField::UiBox(UiBoxField::ChildrenModulate))
+                Some(NodeField::UiNode(UiNodeField::ChildrenModulate))
             }
-            "input_enabled" => Some(NodeField::UiBox(UiBoxField::InputEnabled)),
-            "clip_children" => Some(NodeField::UiBox(UiBoxField::ClipChildren)),
-            "z_index" => Some(NodeField::UiBox(UiBoxField::ZIndex)),
+            "input_enabled" => Some(NodeField::UiNode(UiNodeField::InputEnabled)),
+            "clip_children" => Some(NodeField::UiNode(UiNodeField::ClipChildren)),
+            "z_index" => Some(NodeField::UiNode(UiNodeField::ZIndex)),
             _ => None,
         };
     }
@@ -2292,18 +2292,18 @@ fn resolve_base_scene_node_field(node_type: NodeType, field: &SceneFieldName) ->
         };
     }
 
-    if node_type.is_a(NodeType::UiBox) {
+    if node_type.is_a(NodeType::UiNode) {
         return match field {
-            SceneFieldName::Position => Some(NodeField::UiBox(UiBoxField::Position)),
-            SceneFieldName::Scale => Some(NodeField::UiBox(UiBoxField::Scale)),
-            SceneFieldName::Rotation => Some(NodeField::UiBox(UiBoxField::Rotation)),
-            SceneFieldName::Visible => Some(NodeField::UiBox(UiBoxField::Visible)),
-            SceneFieldName::Modulate => Some(NodeField::UiBox(UiBoxField::Modulate)),
-            SceneFieldName::SelfModulate => Some(NodeField::UiBox(UiBoxField::SelfModulate)),
+            SceneFieldName::Position => Some(NodeField::UiNode(UiNodeField::Position)),
+            SceneFieldName::Scale => Some(NodeField::UiNode(UiNodeField::Scale)),
+            SceneFieldName::Rotation => Some(NodeField::UiNode(UiNodeField::Rotation)),
+            SceneFieldName::Visible => Some(NodeField::UiNode(UiNodeField::Visible)),
+            SceneFieldName::Modulate => Some(NodeField::UiNode(UiNodeField::Modulate)),
+            SceneFieldName::SelfModulate => Some(NodeField::UiNode(UiNodeField::SelfModulate)),
             SceneFieldName::ChildrenModulate => {
-                Some(NodeField::UiBox(UiBoxField::ChildrenModulate))
+                Some(NodeField::UiNode(UiNodeField::ChildrenModulate))
             }
-            SceneFieldName::ZIndex => Some(NodeField::UiBox(UiBoxField::ZIndex)),
+            SceneFieldName::ZIndex => Some(NodeField::UiNode(UiNodeField::ZIndex)),
             _ => None,
         };
     }

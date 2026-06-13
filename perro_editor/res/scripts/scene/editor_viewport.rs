@@ -1382,12 +1382,12 @@ pub fn attach_preview_to_viewport<API: ScriptAPI + ?Sized>(
     if ctx
         .run
         .Nodes()
-        .with_base_node::<UiBox, _, _>(root, |_| ())
+        .with_base_node::<UiNode, _, _>(root, |_| ())
         .is_some()
     {
         let _ = ctx.run.Nodes().reparent(panel, root);
         let canvas_size = ui_canvas_size_ratio(viewport_window_aspect(ctx), 1.0);
-        let _ = with_base_node_mut!(ctx.run, UiBox, root, |node| {
+        let _ = with_base_node_mut!(ctx.run, UiNode, root, |node| {
             node.layout.anchor = UiAnchor::Center;
             node.layout.size = UiVector2::ratio(canvas_size.0, canvas_size.1);
             node.transform.position = UiVector2::percent(50.0, 50.0);
@@ -2149,7 +2149,7 @@ pub fn selected_node_viewport_mode(doc_text: &str, key: u32) -> Option<&'static 
 }
 
 pub fn viewport_mode_for_node_type(node_type: perro_scene::NodeType) -> Option<&'static str> {
-    if node_type.is_a(perro_scene::NodeType::UiBox) {
+    if node_type.is_a(perro_scene::NodeType::UiNode) {
         Some("UI")
     } else if node_type.is_a(perro_scene::NodeType::Node3D) {
         Some("3D")

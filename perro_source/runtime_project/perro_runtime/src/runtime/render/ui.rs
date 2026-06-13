@@ -15,9 +15,9 @@ use perro_render_bridge::{
 use perro_runtime_render::{UiDirtyMask, UiExtractionOptions, ui_image_texture_request};
 use perro_structs::{Color, UVector2, Vector2};
 use perro_ui::{
-    ComputedUiRect, UiAnchor, UiBox, UiButton, UiFontSizing, UiHorizontalAlign, UiImageScaleMode,
-    UiLayoutData, UiLayoutMode, UiPanel, UiSizeMode, UiStyle, UiTextBox, UiTextEdit, UiTransform,
-    UiVector2, UiVerticalAlign,
+    ComputedUiRect, UiAnchor, UiButton, UiFontSizing, UiHorizontalAlign, UiImageScaleMode,
+    UiLayoutData, UiLayoutMode, UiNode, UiPanel, UiSizeMode, UiStyle, UiTextBox, UiTextEdit,
+    UiTransform, UiVector2, UiVerticalAlign,
 };
 use perro_variant::Variant;
 use std::borrow::Cow;
@@ -103,6 +103,13 @@ impl Runtime {
         match &scene_node.data {
             SceneNodeData::UiButton(button) => {
                 if !button.visible || button.disabled || !button.input_enabled {
+                    return;
+                }
+                buttons.push(node);
+                focusables.push(node);
+            }
+            SceneNodeData::UiDropdown(dropdown) => {
+                if !dropdown.visible || dropdown.disabled || !dropdown.input_enabled {
                     return;
                 }
                 buttons.push(node);
@@ -262,6 +269,7 @@ impl Runtime {
         }
         let mut timing = timing;
         self.ensure_color_picker_internal_nodes();
+        self.ensure_dropdown_internal_nodes();
 
         self.propagate_pending_transform_dirty();
         self.refresh_dirty_global_transforms();
@@ -616,6 +624,214 @@ impl Runtime {
 }
 
 impl Runtime {
+    fn ensure_dropdown_internal_nodes(&mut self) {
+        let dropdown_ids = self
+            .nodes
+            .iter()
+            .filter_map(|(id, node)| {
+                matches!(node.data, SceneNodeData::UiDropdown(_)).then_some(id)
+            })
+            .collect::<Vec<_>>();
+        for dropdown_id in dropdown_ids {
+            self.ensure_dropdown_internal_nodes_for(dropdown_id);
+            self.sync_dropdown_internal_nodes(dropdown_id);
+        }
+    }
+
+    fn ensure_dropdown_internal_nodes_for(&mut self, dropdown_id: NodeID) {
+        let Some((label_id, mut option_buttons, mut option_labels, option_count)) = self
+            .nodes
+            .get(dropdown_id)
+            .and_then(|node| match &node.data {
+                SceneNodeData::UiDropdown(dropdown) => Some((
+                    dropdown.internal_label,
+                    dropdown.internal_option_buttons.clone(),
+                    dropdown.internal_option_labels.clone(),
+                    dropdown.options.len(),
+                )),
+                _ => None,
+            })
+        else {
+            return;
+        };
+
+        let mut label_id = label_id;
+        if !self.dropdown_internal_valid(label_id, dropdown_id, "label") {
+            label_id = self.insert_dropdown_label(dropdown_id, "__perro_dropdown_label");
+        }
+        for id in option_buttons.iter().copied().skip(option_count) {
+            if let Some(node) = self.nodes.get_mut(id)
+                && let SceneNodeData::UiButton(button) = &mut node.data
+            {
+                button.base.visible = false;
+            }
+        }
+        for id in option_labels.iter().copied().skip(option_count) {
+            if let Some(node) = self.nodes.get_mut(id)
+                && let SceneNodeData::UiLabel(label) = &mut node.data
+            {
+                label.base.visible = false;
+            }
+        }
+        option_buttons.resize(option_count, NodeID::nil());
+        option_labels.resize(option_count, NodeID::nil());
+        for idx in 0..option_count {
+            if !self.dropdown_internal_valid(option_buttons[idx], dropdown_id, "button") {
+                option_buttons[idx] = self.insert_dropdown_option_button(dropdown_id, idx);
+            }
+            if !self.dropdown_internal_valid(option_labels[idx], option_buttons[idx], "label") {
+                option_labels[idx] = self
+                    .insert_dropdown_label(option_buttons[idx], "__perro_dropdown_option_label");
+            }
+        }
+
+        if let Some(node) = self.nodes.get_mut(dropdown_id)
+            && let SceneNodeData::UiDropdown(dropdown) = &mut node.data
+        {
+            dropdown.internal_label = label_id;
+            dropdown.internal_option_buttons = option_buttons;
+            dropdown.internal_option_labels = option_labels;
+        }
+    }
+
+    fn dropdown_internal_valid(&self, id: NodeID, parent: NodeID, kind: &str) -> bool {
+        if id.is_nil() {
+            return false;
+        }
+        self.nodes.get(id).is_some_and(|node| {
+            node.parent == parent
+                && match kind {
+                    "button" => matches!(node.data, SceneNodeData::UiButton(_)),
+                    "label" => matches!(node.data, SceneNodeData::UiLabel(_)),
+                    _ => false,
+                }
+        })
+    }
+
+    fn insert_dropdown_option_button(&mut self, dropdown_id: NodeID, idx: usize) -> NodeID {
+        let mut button = UiButton::new();
+        button.base.layout.z_index = 100;
+        button.base.clip_children = false;
+        self.insert_color_picker_internal_node(
+            dropdown_id,
+            Box::leak(format!("__perro_dropdown_option_{idx}").into_boxed_str()),
+            SceneNodeData::UiButton(button),
+        )
+    }
+
+    fn insert_dropdown_label(&mut self, parent_id: NodeID, name: &'static str) -> NodeID {
+        let mut label = perro_ui::UiLabel::new();
+        label.base.layout.z_index = 101;
+        label.base.input_enabled = false;
+        label.base.mouse_filter = perro_ui::UiMouseFilter::Pass;
+        label.base.layout.size = UiVector2::percent(100.0, 100.0);
+        label.text_size_ratio = 0.55;
+        label.base.layout.padding = perro_ui::UiRect::symmetric(6.0, 2.0);
+        label.h_align = perro_ui::UiTextAlign::Start;
+        self.insert_color_picker_internal_node(parent_id, name, SceneNodeData::UiLabel(label))
+    }
+
+    fn sync_dropdown_internal_nodes(&mut self, dropdown_id: NodeID) {
+        let Some(snapshot) = self
+            .nodes
+            .get(dropdown_id)
+            .and_then(|node| match &node.data {
+                SceneNodeData::UiDropdown(dropdown) => Some((
+                    dropdown.selected_label().to_string(),
+                    dropdown.open,
+                    dropdown.button.base.layout.size,
+                    dropdown.button.base.visible,
+                    dropdown.popup_width,
+                    dropdown.option_height,
+                    dropdown.option_style.clone(),
+                    dropdown.option_hover_style.clone(),
+                    dropdown.option_pressed_style.clone(),
+                    dropdown
+                        .options
+                        .iter()
+                        .map(|option| option.label.to_string())
+                        .collect::<Vec<_>>(),
+                    dropdown.internal_label,
+                    dropdown.internal_option_buttons.clone(),
+                    dropdown.internal_option_labels.clone(),
+                )),
+                _ => None,
+            })
+        else {
+            return;
+        };
+        let (
+            selected,
+            open,
+            base_size,
+            base_visible,
+            popup_width,
+            option_height,
+            option_style,
+            option_hover_style,
+            option_pressed_style,
+            labels,
+            label_id,
+            option_buttons,
+            option_labels,
+        ) = snapshot;
+        if let Some(node) = self.nodes.get_mut(label_id)
+            && let SceneNodeData::UiLabel(label) = &mut node.data
+        {
+            label.base.visible = base_visible;
+            label.set_text(selected);
+        }
+        let width = if popup_width > 0.0 {
+            popup_width
+        } else {
+            100.0
+        };
+        for (idx, button_id) in option_buttons.iter().copied().enumerate() {
+            if let Some(node) = self.nodes.get_mut(button_id)
+                && let SceneNodeData::UiButton(button) = &mut node.data
+            {
+                button.base.visible = open && base_visible;
+                button.base.layout.size = if popup_width > 0.0 {
+                    UiVector2::pixels(width, option_height)
+                } else {
+                    UiVector2::new(base_size.x, perro_ui::UiUnit::Pixels(option_height))
+                };
+                button.base.transform.position =
+                    UiVector2::pixels(0.0, option_height * (idx + 1) as f32);
+                button.base.layout.anchor = UiAnchor::Top;
+                button.base.layout.z_index = 100 + idx as i32;
+                button.style = option_style.clone();
+                button.hover_style = option_hover_style.clone();
+                button.pressed_style = option_pressed_style.clone();
+            }
+            if let Some(node) = self
+                .nodes
+                .get_mut(option_labels.get(idx).copied().unwrap_or_default())
+                && let SceneNodeData::UiLabel(label) = &mut node.data
+            {
+                label.base.visible = open && base_visible;
+                label.set_text(labels.get(idx).cloned().unwrap_or_default());
+            }
+        }
+        self.mark_ui_dirty(
+            dropdown_id,
+            Self::UI_DIRTY_LAYOUT_SELF | Self::UI_DIRTY_COMMANDS,
+        );
+        let mut dirty_ids = vec![label_id];
+        dirty_ids.extend(option_buttons);
+        dirty_ids.extend(option_labels);
+        for id in dirty_ids {
+            if !id.is_nil() {
+                self.mark_ui_dirty(
+                    id,
+                    Self::UI_DIRTY_LAYOUT_SELF
+                        | Self::UI_DIRTY_LAYOUT_PARENT
+                        | Self::UI_DIRTY_COMMANDS,
+                );
+            }
+        }
+    }
+
     fn ensure_color_picker_internal_nodes(&mut self) {
         let picker_ids = self
             .nodes

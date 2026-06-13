@@ -7,7 +7,7 @@ Fallback keys:
 - `node.png`: base `Node`
 - `node_2d.png`: any `Node2D`
 - `node_3d.png`: any `Node3D`
-- `ui_box.png`: any `UiBox`
+- `ui_node.png`: any `UiNode`
 - `resource.png`: resource nodes
 
 Exact keys:

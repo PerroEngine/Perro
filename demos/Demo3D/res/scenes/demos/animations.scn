@@ -71,12 +71,12 @@ parent = @AnimationDemo
         size = 0.045
         horizontal_alignment = center
         vertical_alignment = center
-        [UiBox]
+        [UiNode]
             position = (0.5, 0.06)
             anchor = top_left
             pivot = center
             size = (0.6, 0.06)
-        [/UiBox]
+        [/UiNode]
     [/UiLabel]
 [/ClipNote]
 

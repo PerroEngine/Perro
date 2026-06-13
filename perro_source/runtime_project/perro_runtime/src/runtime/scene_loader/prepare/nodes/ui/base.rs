@@ -1,8 +1,8 @@
 mod style;
 use style::*;
 
-fn build_ui_box(data: &SceneDefNodeData) -> UiBox {
-    let mut node = UiBox::new();
+fn build_ui_node(data: &SceneDefNodeData) -> UiNode {
+    let mut node = UiNode::new();
     apply_ui_root_data(&mut node, data);
     node
 }
@@ -48,6 +48,19 @@ fn build_ui_button(
     }
     apply_ui_root_fields(&mut node.base, &data.fields);
     apply_ui_button_fields(&mut node, &data.fields, static_ui_style_lookup);
+    node
+}
+
+fn build_ui_dropdown(
+    data: &SceneDefNodeData,
+    static_ui_style_lookup: Option<StaticUiStyleLookup>,
+) -> UiDropdown {
+    let mut node = UiDropdown::new();
+    if let Some(base) = data.base_ref() {
+        apply_ui_root_data(&mut node.button.base, base);
+    }
+    apply_ui_root_fields(&mut node.button.base, &data.fields);
+    apply_ui_dropdown_fields(&mut node, &data.fields, static_ui_style_lookup);
     node
 }
 
@@ -288,14 +301,14 @@ fn build_ui_list_indent(data: &SceneDefNodeData) -> UiListIndent {
     node
 }
 
-fn apply_ui_root_data(target: &mut UiBox, data: &SceneDefNodeData) {
+fn apply_ui_root_data(target: &mut UiNode, data: &SceneDefNodeData) {
     if let Some(base) = data.base_ref() {
         apply_ui_root_data(target, base);
     }
     apply_ui_root_fields(target, &data.fields);
 }
 
-fn apply_ui_root_fields(node: &mut UiBox, fields: &[SceneObjectField]) {
+fn apply_ui_root_fields(node: &mut UiNode, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {
         "visible" => {
             if let Some(v) = as_bool(value) {
@@ -587,6 +600,62 @@ fn apply_ui_color_picker_fields(
     });
 }
 
+fn apply_ui_dropdown_fields(
+    node: &mut UiDropdown,
+    fields: &[SceneObjectField],
+    static_ui_style_lookup: Option<StaticUiStyleLookup>,
+) {
+    apply_ui_button_fields(&mut node.button, fields, static_ui_style_lookup);
+    apply_ui_style_object_fields(&mut node.popup_style, fields, "popup_style", static_ui_style_lookup);
+    apply_ui_style_object_fields(&mut node.option_style, fields, "option_style", static_ui_style_lookup);
+    node.option_hover_style = node.option_style.clone();
+    node.option_pressed_style = node.option_style.clone();
+    apply_ui_style_object_fields(
+        &mut node.option_hover_style,
+        fields,
+        "option_hover_style",
+        static_ui_style_lookup,
+    );
+    apply_ui_style_object_fields(
+        &mut node.option_pressed_style,
+        fields,
+        "option_pressed_style",
+        static_ui_style_lookup,
+    );
+    SceneFieldIterRef::new(fields).for_each(|name, value| match name {
+        "options" | "items" => {
+            node.options = as_dropdown_options(value);
+        }
+        "selected" | "selected_index" | "index" => {
+            if let Some(v) = as_i32(value) {
+                node.selected_index = v.max(0) as usize;
+            }
+        }
+        "open" | "popup_open" => {
+            if let Some(v) = as_bool(value) {
+                node.open = v;
+            }
+        }
+        "option_height" | "item_height" => {
+            if let Some(v) = as_f32(value) {
+                node.option_height = v.max(8.0);
+            }
+        }
+        "popup_width" => {
+            if let Some(v) = as_f32(value) {
+                node.popup_width = v.max(0.0);
+            }
+        }
+        "selected_signals" | "changed_signals" | "value_changed_signals" => {
+            node.selected_signals = as_signal_ids(value);
+        }
+        _ => {}
+    });
+    if node.selected_index >= node.options.len() {
+        node.selected_index = 0;
+    }
+}
+
 fn apply_ui_shape_fields(node: &mut UiShape, fields: &[SceneObjectField]) {
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {
         "shape" | "kind" => {
@@ -713,6 +782,66 @@ fn parse_ui_button_web_action(value: &SceneValue) -> Option<perro_ui::UiButtonWe
     Some(perro_ui::UiButtonWebAction {
         href: std::borrow::Cow::Owned(href),
     })
+}
+
+fn as_dropdown_options(value: &SceneValue) -> Vec<perro_ui::UiDropdownOption> {
+    let SceneValue::Array(items) = value else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .filter_map(|item| match item {
+            SceneValue::Object(fields) => {
+                let label = fields
+                    .iter()
+                    .find_map(|(name, value)| {
+                        matches!(name.as_ref(), "label" | "name" | "text")
+                            .then(|| as_str(value))
+                            .flatten()
+                    })?
+                    .to_string();
+                let variant = fields
+                    .iter()
+                    .find_map(|(name, value)| {
+                        matches!(name.as_ref(), "value" | "val")
+                            .then(|| scene_value_to_variant(value))
+                            .flatten()
+                    })
+                    .unwrap_or_else(|| perro_variant::Variant::from(label.as_str()));
+                Some(perro_ui::UiDropdownOption::new(label, variant))
+            }
+            _ => {
+                let label = scene_value_label(item)?;
+                let variant = scene_value_to_variant(item)
+                    .unwrap_or_else(|| perro_variant::Variant::from(label.as_str()));
+                Some(perro_ui::UiDropdownOption::new(label, variant))
+            }
+        })
+        .collect()
+}
+
+fn scene_value_label(value: &SceneValue) -> Option<String> {
+    match value {
+        SceneValue::Str(value) => Some(value.to_string()),
+        SceneValue::Key(value) => Some(value.to_string()),
+        SceneValue::Bool(value) => Some(value.to_string()),
+        SceneValue::F32(value) => Some(value.to_string()),
+        SceneValue::I32(value) => Some(value.to_string()),
+        SceneValue::Hashed(value) => Some(value.to_string()),
+        _ => None,
+    }
+}
+
+fn scene_value_to_variant(value: &SceneValue) -> Option<perro_variant::Variant> {
+    match value {
+        SceneValue::Str(value) => Some(perro_variant::Variant::from(value.as_ref())),
+        SceneValue::Key(value) => Some(perro_variant::Variant::from(value.as_ref())),
+        SceneValue::Bool(value) => Some(perro_variant::Variant::from(*value)),
+        SceneValue::F32(value) => Some(perro_variant::Variant::from(*value)),
+        SceneValue::I32(value) => Some(perro_variant::Variant::from(*value)),
+        SceneValue::Hashed(value) => Some(perro_variant::Variant::from(*value as i64)),
+        _ => None,
+    }
 }
 
 fn apply_ui_input_mask_fields(mask: &mut perro_ui::UiInputMask, fields: &[SceneObjectField]) {

@@ -1074,7 +1074,7 @@ pub fn node_type_kind(node_type: perro_scene::NodeType) -> &'static str {
         "2D"
     } else if node_type.is_a(perro_scene::NodeType::Node3D) {
         "3D"
-    } else if node_type.is_a(perro_scene::NodeType::UiBox) {
+    } else if node_type.is_a(perro_scene::NodeType::UiNode) {
         "UI"
     } else {
         "Node"
@@ -1085,7 +1085,7 @@ pub fn parent_node_rank(kind: Option<&str>, node_type: perro_scene::NodeType) ->
     match kind {
         Some("2D") if node_type.is_a(perro_scene::NodeType::Node2D) => 0,
         Some("3D") if node_type.is_a(perro_scene::NodeType::Node3D) => 0,
-        Some("UI") if node_type.is_a(perro_scene::NodeType::UiBox) => 0,
+        Some("UI") if node_type.is_a(perro_scene::NodeType::UiNode) => 0,
         Some("Node") => 0,
         Some(_) => 1,
         None => 0,
@@ -1101,10 +1101,10 @@ pub fn node_type_rank(node_type: perro_scene::NodeType) -> u8 {
         "MeshInstance3D" => 4,
         "Camera3D" => 5,
         "AnimationPlayer" => 6,
-        "UiPanel" | "UiButton" | "UiCheckbox" | "UiColorPicker" | "UiLabel" => 7,
+        "UiPanel" | "UiButton" | "UiDropdown" | "UiCheckbox" | "UiColorPicker" | "UiLabel" => 7,
         _ if node_type.is_a(perro_scene::NodeType::Node2D) => 20,
         _ if node_type.is_a(perro_scene::NodeType::Node3D) => 30,
-        _ if node_type.is_a(perro_scene::NodeType::UiBox) => 40,
+        _ if node_type.is_a(perro_scene::NodeType::UiNode) => 40,
         _ => 90,
     }
 }
@@ -1154,7 +1154,7 @@ pub fn node_type_has_picker_tag(node_type: perro_scene::NodeType, tag: &str) -> 
     match tag {
         "2d" => node_type.is_a(perro_scene::NodeType::Node2D),
         "3d" => node_type.is_a(perro_scene::NodeType::Node3D),
-        "ui" => node_type.is_a(perro_scene::NodeType::UiBox),
+        "ui" => node_type.is_a(perro_scene::NodeType::UiNode),
         "mesh" => {
             node_type.name().contains("Mesh") || node_type_search_text(node_type).contains("mesh")
         }
@@ -1175,7 +1175,7 @@ pub fn viewport_node_rank(state: &EditorState, node_type: perro_scene::NodeType)
     match state.viewport_mode.as_str() {
         "2D" if node_type.is_a(perro_scene::NodeType::Node2D) => 0,
         "3D" if node_type.is_a(perro_scene::NodeType::Node3D) => 0,
-        "UI" if node_type.is_a(perro_scene::NodeType::UiBox) => 0,
+        "UI" if node_type.is_a(perro_scene::NodeType::UiNode) => 0,
         _ => 1,
     }
 }
@@ -1186,7 +1186,7 @@ pub fn node_type_search_text(node_type: perro_scene::NodeType) -> String {
         "MeshInstance3D" => " mesh model glb gltf pmesh 3d visual",
         "AnimationPlayer" => " anim animation clip panim timeline",
         "Camera2D" | "Camera3D" => " camera view viewport",
-        "UiPanel" | "UiButton" | "UiCheckbox" | "UiColorPicker" | "UiLabel" => {
+        "UiPanel" | "UiButton" | "UiDropdown" | "UiCheckbox" | "UiColorPicker" | "UiLabel" => {
             " ui control hud menu color picker"
         }
         "PointLight2D" | "SpotLight2D" | "RayLight2D" | "AmbientLight2D" | "PointLight3D"

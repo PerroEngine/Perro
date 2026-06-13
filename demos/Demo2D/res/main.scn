@@ -9,12 +9,12 @@ script = "res://scripts/demo2d_manager.rs"
 
 [demo_ui_root]
 parent = @Demo2D
-    [UiBox]
+    [UiNode]
         anchor = "center"
         size_ratio = (1.0, 1.0)
         input_enabled = false
         mouse_filter = "pass"
-    [/UiBox]
+    [/UiNode]
 [/demo_ui_root]
 
 [Camera]

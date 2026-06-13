@@ -2908,7 +2908,7 @@ fn parent_visibility_toggle_restores_button_hover_without_resize() {
     runtime.drain_render_commands(&mut Vec::new());
     runtime.clear_dirty_flags();
 
-    let _ = runtime.with_base_node_mut::<perro_ui::UiBox, _, _>(parent, |panel| {
+    let _ = runtime.with_base_node_mut::<perro_ui::UiNode, _, _>(parent, |panel| {
         panel.visible = true;
     });
     runtime.set_mouse_position(400.0, 300.0);
@@ -3212,9 +3212,9 @@ fn menu_like_nested_layout_restores_all_buttons_and_labels_after_show() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);
 
-    let mut root = perro_ui::UiBox::new();
+    let mut root = perro_ui::UiNode::new();
     root.layout.size = UiVector2::ratio(1.0, 1.0);
-    let root = insert_ui_node(&mut runtime, SceneNodeData::UiBox(root));
+    let root = insert_ui_node(&mut runtime, SceneNodeData::UiNode(root));
 
     let mut content = UiVLayout::new();
     content.layout.size = UiVector2::ratio(0.92, 0.92);
@@ -3250,14 +3250,14 @@ fn menu_like_nested_layout_restores_all_buttons_and_labels_after_show() {
     runtime.drain_render_commands(&mut Vec::new());
     runtime.clear_dirty_flags();
 
-    let _ = runtime.with_node_mut::<perro_ui::UiBox, _, _>(root, |ui| {
+    let _ = runtime.with_node_mut::<perro_ui::UiNode, _, _>(root, |ui| {
         ui.visible = false;
     });
     runtime.extract_render_ui_commands();
     runtime.drain_render_commands(&mut Vec::new());
     runtime.clear_dirty_flags();
 
-    let _ = runtime.with_node_mut::<perro_ui::UiBox, _, _>(root, |ui| {
+    let _ = runtime.with_node_mut::<perro_ui::UiNode, _, _>(root, |ui| {
         ui.visible = true;
     });
     runtime.extract_render_ui_commands();

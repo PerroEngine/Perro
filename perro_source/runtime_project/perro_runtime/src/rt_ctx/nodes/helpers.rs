@@ -58,8 +58,8 @@ impl Runtime {
     pub(super) fn mark_ui_base_change(
         &mut self,
         id: perro_ids::NodeID,
-        before: &UiBox,
-        after: &UiBox,
+        before: &UiNode,
+        after: &UiNode,
     ) {
         let flags = classify_ui_base_change(before, after);
         if flags != 0 {
@@ -179,7 +179,7 @@ impl Runtime {
     }
 }
 
-pub(super) fn classify_ui_base_change(before: &UiBox, after: &UiBox) -> u16 {
+pub(super) fn classify_ui_base_change(before: &UiNode, after: &UiNode) -> u16 {
     let mut flags = 0;
     if before.transform != after.transform {
         flags |= Runtime::UI_DIRTY_TRANSFORM | Runtime::UI_DIRTY_COMMANDS;
@@ -237,6 +237,20 @@ pub(super) fn classify_ui_node_payload_change(
                 || before.pressed_style != after.pressed_style
                 || before.hover_style != after.hover_style
                 || before.disabled != after.disabled
+            {
+                flags |= Runtime::UI_DIRTY_COMMANDS;
+            }
+            flags
+        }
+        (SceneNodeData::UiDropdown(before), SceneNodeData::UiDropdown(after)) => {
+            let mut flags = 0;
+            if before.button.style != after.button.style
+                || before.button.pressed_style != after.button.pressed_style
+                || before.button.hover_style != after.button.hover_style
+                || before.button.disabled != after.button.disabled
+                || before.options != after.options
+                || before.selected_index != after.selected_index
+                || before.open != after.open
             {
                 flags |= Runtime::UI_DIRTY_COMMANDS;
             }
@@ -389,11 +403,12 @@ pub(super) fn classify_text_edit_change(
     flags
 }
 
-pub(super) fn ui_base_from_data(data: &SceneNodeData) -> Option<&UiBox> {
+pub(super) fn ui_base_from_data(data: &SceneNodeData) -> Option<&UiNode> {
     match data {
-        SceneNodeData::UiBox(root) => Some(root),
+        SceneNodeData::UiNode(root) => Some(root),
         SceneNodeData::UiPanel(node) => Some(&node.base),
         SceneNodeData::UiButton(node) => Some(&node.base),
+        SceneNodeData::UiDropdown(node) => Some(&node.button.base),
         SceneNodeData::UiCheckbox(node) => Some(&node.button.base),
         SceneNodeData::UiColorPicker(node) => Some(&node.button.base),
         SceneNodeData::UiImage(node) => Some(&node.base),

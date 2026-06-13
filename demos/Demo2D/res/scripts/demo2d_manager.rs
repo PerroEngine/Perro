@@ -1145,7 +1145,7 @@ fn set_ui_tree_visible<API: ScriptAPI + ?Sized>(
     }
     let mut stack = vec![root];
     while let Some(id) = stack.pop() {
-        let _ = with_base_node_mut!(ctx.run, UiBox, id, |node| {
+        let _ = with_base_node_mut!(ctx.run, UiNode, id, |node| {
             node.visible = visible;
         });
         let _ = with_node_mut!(ctx.run, UiButton, id, |node| {

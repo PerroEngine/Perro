@@ -489,7 +489,7 @@ pub fn reset_selected_transform<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext
             set_scene_vec2(&mut node.data, "position", Vector2::ZERO);
             set_scene_f32(&mut node.data, "rotation", 0.0);
             set_scene_vec2(&mut node.data, "scale", Vector2::ONE);
-        } else if node.data.node_type.is_a(perro_scene::NodeType::UiBox) {
+        } else if node.data.node_type.is_a(perro_scene::NodeType::UiNode) {
             set_scene_vec2(&mut node.data, "translation_ratio", Vector2::ZERO);
             set_scene_f32(&mut node.data, "rotation", 0.0);
         } else {
@@ -551,7 +551,7 @@ pub fn nudge_selected_node<API: ScriptAPI + ?Sized>(
                 "nudge 3d\npos=({:.2}, {:.2}, {:.2})",
                 next.x, next.y, next.z
             );
-        } else if node.data.node_type.is_a(perro_scene::NodeType::UiBox) {
+        } else if node.data.node_type.is_a(perro_scene::NodeType::UiNode) {
             let step = if fine { 0.002 } else { 0.01 };
             let current =
                 scene_field_vec2(&node.data, "translation_ratio").unwrap_or(Vector2::ZERO);
@@ -1057,7 +1057,15 @@ pub fn pick_selected_script_var_ref<API: ScriptAPI + ?Sized>(
             return Some(false);
         }
         if row.kind != "Node" {
-            return None;
+            if row.enum_options.is_empty() {
+                return None;
+            }
+            state.inspector_picker_open = true;
+            state.inspector_picker_field = idx.to_string();
+            state.inspector_picker_kind = "script_enum".to_string();
+            state.inspector_picker_offset = 0;
+            state.inspector_picker_filter.clear();
+            return Some(true);
         }
         state.inspector_picker_open = true;
         state.inspector_picker_field = idx.to_string();
@@ -1153,7 +1161,7 @@ pub fn choose_inspector_picker_row<API: ScriptAPI + ?Sized>(
         else {
             return false;
         };
-        if picker_kind == "script_node" {
+        if picker_kind == "script_node" || picker_kind == "script_enum" {
             let Ok(row_idx) = field.parse::<usize>() else {
                 return false;
             };

@@ -6,7 +6,7 @@
 
 use perro_ids::{IntoTagID, MaterialID, MeshID, NodeID, NodeTag, TagID};
 use perro_nodes::{
-    Node2D, Node3D, NodeBaseDispatch, NodeType, NodeTypeDispatch, SceneNodeData, Skeleton3D, UiBox,
+    Node2D, Node3D, NodeBaseDispatch, NodeType, NodeTypeDispatch, SceneNodeData, Skeleton3D, UiNode,
 };
 use perro_structs::{
     BitMask, IntoBitMaskLayer, Quaternion, Transform2D, Transform3D, Vector2, Vector3,
@@ -716,9 +716,9 @@ pub trait NodeAPI {
         })
     }
 
-    /// Sets UI rotation in radians. Works on `UiBox` and descendants.
+    /// Sets UI rotation in radians. Works on `UiNode` and descendants.
     fn set_ui_rotation(&mut self, node_id: NodeID, rotation: f32) -> bool {
-        self.with_base_node_mut::<UiBox, _, _>(node_id, |node| {
+        self.with_base_node_mut::<UiNode, _, _>(node_id, |node| {
             node.transform.rotation = rotation;
         })
         .is_some()

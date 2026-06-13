@@ -201,7 +201,7 @@ impl Default for UiLayoutData {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct UiBox {
+pub struct UiNode {
     pub transform: UiTransform,
     pub layout: UiLayoutData,
     pub visible: bool,
@@ -211,7 +211,7 @@ pub struct UiBox {
     pub clip_children: bool,
 }
 
-impl UiBox {
+impl UiNode {
     pub const fn new() -> Self {
         Self {
             transform: UiTransform::new(),
@@ -225,15 +225,15 @@ impl UiBox {
     }
 }
 
-impl Default for UiBox {
+impl Default for UiNode {
     fn default() -> Self {
         Self::new()
     }
 }
 
 pub trait UiNodeBase {
-    fn ui_base(&self) -> &UiBox;
-    fn ui_base_mut(&mut self) -> &mut UiBox;
+    fn ui_base(&self) -> &UiNode;
+    fn ui_base_mut(&mut self) -> &mut UiNode;
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]

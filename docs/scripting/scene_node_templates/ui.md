@@ -37,7 +37,7 @@ lifecycle!({
 ## UI Templates
 
 `UiHBox` and `UiVBox` also work as aliases for `UiHLayout` and `UiVLayout`.
-`hover` and `pressed` on `UiButton` accept any `UiBox` field plus style fields.
+`hover` and `pressed` on `UiButton` accept any `UiNode` field plus style fields.
 `.uistyle` resources let `style`, `hover.style`, `pressed.style`, and `focused_style` use `res://path/to/style.uistyle`.
 
 UI templates use ratio-only sizing.
@@ -93,10 +93,10 @@ For `anchor = "b"` and node height `100`, pivot Y `0.5` is 50 above parent botto
 `anchor = "c"` + `translation_ratio = (0, 0.25)` matches `anchor = "t"` + `translation_ratio = (0, -0.125)`.
 
 ```text
-[ui_box]
+[ui_node]
 parent = @PARENTKEY
 script = "res://path/to/script.rs"
-    [UiBox]
+    [UiNode]
         visible = true
         input_enabled = true
         mouse_filter = "stop"
@@ -116,8 +116,8 @@ script = "res://path/to/script.rs"
         padding = 0
         margin = 0
         z_index = 0
-    [/UiBox]
-[/ui_box]
+    [/UiNode]
+[/ui_node]
 
 [ui_panel]
 parent = @PARENTKEY
@@ -127,7 +127,7 @@ script = "res://path/to/script.rs"
         stroke = (0.22, 0.24, 0.28, 1.0)
         stroke_width = 1.0
         radius = 0.2
-        [UiBox]
+        [UiNode]
             visible = true
             input_enabled = true
             mouse_filter = "stop"
@@ -147,7 +147,7 @@ script = "res://path/to/script.rs"
             padding = 0
             margin = 0
             z_index = 0
-        [/UiBox]
+        [/UiNode]
     [/UiPanel]
 [/ui_panel]
 
@@ -177,7 +177,7 @@ script = "res://path/to/script.rs"
             # Planned 1.0 alternative:
             # style = "res://ui/button_down.uistyle"
         }
-        [UiBox]
+        [UiNode]
             visible = true
             input_enabled = true
             mouse_filter = "stop"
@@ -197,7 +197,7 @@ script = "res://path/to/script.rs"
             padding = 0
             margin = 0
             z_index = 0
-        [/UiBox]
+        [/UiNode]
     [/UiButton]
 [/ui_button]
 
@@ -219,14 +219,14 @@ script = "res://path/to/script.rs"
         clicked_signals = []
         hover = { scale = (1.06, 1.06) tint = (1, 1, 1, 1) }
         pressed = { scale = (0.94, 0.94) tint = (0.8, 0.8, 0.8, 1) }
-        [UiBox]
+        [UiNode]
             visible = true
             input_enabled = true
             mouse_filter = "stop"
             anchor = "center"
             size_ratio = (0.1, 0.1)
             pivot_ratio = (0.5, 0.5)
-        [/UiBox]
+        [/UiNode]
     [/UiImageButton]
 [/ui_image_button]
 
@@ -238,13 +238,13 @@ script = "res://path/to/script.rs"
         texture_region = (0, 0, 64, 64)
         margins = (8, 8, 8, 8)
         tint = (1, 1, 1, 1)
-        [UiBox]
+        [UiNode]
             visible = true
             input_enabled = true
             mouse_filter = "ignore"
             anchor = "center"
             size_ratio = (0.2, 0.1)
-        [/UiBox]
+        [/UiNode]
     [/UiNineSlice]
 [/ui_nine_slice]
 
@@ -260,7 +260,7 @@ script = "res://path/to/script.rs"
         font_max_scale = inf
         text_h_align = "center"
         text_v_align = "center"
-        [UiBox]
+        [UiNode]
             visible = true
             input_enabled = true
             mouse_filter = "stop"
@@ -280,7 +280,7 @@ script = "res://path/to/script.rs"
             padding = 0
             margin = 0
             z_index = 0
-        [/UiBox]
+        [/UiNode]
     [/UiLabel]
 [/ui_label]
 
@@ -295,7 +295,7 @@ script = "res://path/to/script.rs"
         enabled = true
         tint = (1, 1, 1, 1)
         post_processing = []
-        [UiBox]
+        [UiNode]
             visible = true
             input_enabled = true
             mouse_filter = "stop"
@@ -314,7 +314,7 @@ script = "res://path/to/script.rs"
             padding = 0
             margin = 0
             z_index = 0
-        [/UiBox]
+        [/UiNode]
     [/UiCameraStream]
 [/ui_camera_stream]
 
@@ -344,7 +344,7 @@ script = "res://path/to/script.rs"
         # Planned 1.0 alternatives:
         # style = "res://ui/text_box.uistyle"
         # focused_style = "res://ui/text_box_focus.uistyle"
-        [UiBox]
+        [UiNode]
             visible = true
             input_enabled = true
             mouse_filter = "stop"
@@ -364,7 +364,7 @@ script = "res://path/to/script.rs"
             padding = 0
             margin = 0
             z_index = 0
-        [/UiBox]
+        [/UiNode]
     [/UiTextBox]
 [/ui_text_box]
 
@@ -391,7 +391,7 @@ script = "res://path/to/script.rs"
         text_changed_signals = []
         style = { fill = (0.11, 0.12, 0.14, 0.92) stroke = (0.22, 0.24, 0.28, 1.0) stroke_width = 1.0 radius = 0.2 }
         focused_style = { fill = (0.10, 0.11, 0.13, 0.96) stroke = (0.45, 0.58, 0.85, 1.0) stroke_width = 1.0 radius = 0.2 }
-        [UiBox]
+        [UiNode]
             visible = true
             input_enabled = true
             mouse_filter = "stop"
@@ -411,7 +411,7 @@ script = "res://path/to/script.rs"
             padding = 0
             margin = 0
             z_index = 0
-        [/UiBox]
+        [/UiNode]
     [/UiTextBlock]
 [/ui_text_block]
 
@@ -424,7 +424,7 @@ script = "res://path/to/script.rs"
         h_spacing = 0.0
         v_spacing = 0.0
         columns = 1
-        [UiBox]
+        [UiNode]
             visible = true
             input_enabled = true
             mouse_filter = "stop"
@@ -444,7 +444,7 @@ script = "res://path/to/script.rs"
             padding = 0
             margin = 0
             z_index = 0
-        [/UiBox]
+        [/UiNode]
     [/UiLayout]
 [/ui_layout]
 
@@ -456,7 +456,7 @@ script = "res://path/to/script.rs"
         h_spacing = 0.0
         v_spacing = 0.0
         columns = 1
-        [UiBox]
+        [UiNode]
             visible = true
             input_enabled = true
             mouse_filter = "stop"
@@ -476,7 +476,7 @@ script = "res://path/to/script.rs"
             padding = 0
             margin = 0
             z_index = 0
-        [/UiBox]
+        [/UiNode]
     [/UiHLayout]
 [/ui_hlayout]
 
@@ -488,7 +488,7 @@ script = "res://path/to/script.rs"
         h_spacing = 0.0
         v_spacing = 0.0
         columns = 1
-        [UiBox]
+        [UiNode]
             visible = true
             input_enabled = true
             mouse_filter = "stop"
@@ -508,7 +508,7 @@ script = "res://path/to/script.rs"
             padding = 0
             margin = 0
             z_index = 0
-        [/UiBox]
+        [/UiNode]
     [/UiVLayout]
 [/ui_vlayout]
 
@@ -519,7 +519,7 @@ script = "res://path/to/script.rs"
         columns = 1
         h_spacing = 0.0
         v_spacing = 0.0
-        [UiBox]
+        [UiNode]
             visible = true
             input_enabled = true
             mouse_filter = "stop"
@@ -539,7 +539,7 @@ script = "res://path/to/script.rs"
             padding = 0
             margin = 0
             z_index = 0
-        [/UiBox]
+        [/UiNode]
     [/UiGrid]
 [/ui_grid]
 
@@ -551,7 +551,7 @@ script = "res://path/to/script.rs"
         # UiListIndent children render one indent level deeper.
         indent = 16.0
         v_spacing = 0.0
-        [UiBox]
+        [UiNode]
             visible = true
             input_enabled = true
             mouse_filter = "stop"
@@ -571,7 +571,7 @@ script = "res://path/to/script.rs"
             padding = 0
             margin = 0
             z_index = 0
-        [/UiBox]
+        [/UiNode]
     [/UiList]
 [/ui_list]
 

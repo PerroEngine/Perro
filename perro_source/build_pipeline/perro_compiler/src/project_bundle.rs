@@ -1444,7 +1444,7 @@ fn render_scene_children_html(
 fn is_static_web_container(ty: &str) -> bool {
     matches!(
         ty,
-        "UiBox"
+        "UiNode"
             | "UiPanel"
             | "UiLayout"
             | "UiHLayout"

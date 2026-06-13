@@ -844,6 +844,7 @@ fn canonical_node_type(name: &str) -> Option<NodeType> {
         "UiScroll" => Some(NodeType::UiScrollContainer),
         "UiHBox" => Some(NodeType::UiHLayout),
         "UiVBox" => Some(NodeType::UiVLayout),
+        "UiDropDown" => Some(NodeType::UiDropdown),
         other => NodeType::from_str(other).ok(),
     }
 }
@@ -868,7 +869,7 @@ fn normalize_node_fields_for_type(ty: &str, fields: &mut [SceneObjectField]) {
     let Ok(node_type) = NodeType::from_str(ty) else {
         return;
     };
-    let is_2d = node_type.is_a(NodeType::Node2D) || node_type.is_a(NodeType::UiBox);
+    let is_2d = node_type.is_a(NodeType::Node2D) || node_type.is_a(NodeType::UiNode);
     let is_3d = node_type.is_a(NodeType::Node3D);
     if !is_2d && !is_3d {
         return;

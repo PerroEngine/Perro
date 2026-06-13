@@ -68,8 +68,8 @@ use perro_structs::{
     PostProcessSet, Quaternion, UVector2, Vector2, Vector3,
 };
 use perro_ui::{
-    UiAnimatedImage, UiAnimatedImageFrameSet, UiBox, UiButton, UiCheckbox, UiColorPicker,
-    UiGrid, UiHLayout, UiImage, UiImageButton, UiImageScaleMode, UiLabel, UiLayout,
+    UiAnimatedImage, UiAnimatedImageFrameSet, UiNode, UiButton, UiCheckbox, UiColorPicker,
+    UiDropdown, UiGrid, UiHLayout, UiImage, UiImageButton, UiImageScaleMode, UiLabel, UiLayout,
     UiList, UiListIndent, UiMouseFilter, UiNineSlice, UiPanel, UiScrollContainer, UiShape,
     UiShapeKind, UiTextAlign, UiTextBlock, UiTextBox, UiVLayout,
 };
@@ -1848,12 +1848,16 @@ fn scene_node_data_from(
         NodeType::RayLight3D => Ok(SceneNodeData::RayLight3D(build_ray_light_3d(data))),
         NodeType::PointLight3D => Ok(SceneNodeData::PointLight3D(build_point_light_3d(data))),
         NodeType::SpotLight3D => Ok(SceneNodeData::SpotLight3D(build_spot_light_3d(data))),
-        NodeType::UiBox => Ok(SceneNodeData::UiBox(build_ui_box(data))),
+        NodeType::UiNode => Ok(SceneNodeData::UiNode(build_ui_node(data))),
         NodeType::UiPanel => Ok(SceneNodeData::UiPanel(build_ui_panel(
             data,
             static_ui_style_lookup,
         ))),
         NodeType::UiButton => Ok(SceneNodeData::UiButton(build_ui_button(
+            data,
+            static_ui_style_lookup,
+        ))),
+        NodeType::UiDropdown => Ok(SceneNodeData::UiDropdown(build_ui_dropdown(
             data,
             static_ui_style_lookup,
         ))),

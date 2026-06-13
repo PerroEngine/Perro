@@ -41,6 +41,21 @@ fn parse_basic_scene() {
 }
 
 #[test]
+fn parse_ui_node_type_block() {
+    let src = r#"
+    [ui]
+    [UiNode]
+    [/UiNode]
+    [/ui]
+    "#;
+
+    let scene = Parser::new(src).parse_scene();
+    let ui = find_node(&scene, "ui");
+    assert_eq!(ui.data.node_type, NodeType::UiNode);
+    assert_eq!(ui.data.type_name(), "UiNode");
+}
+
+#[test]
 fn parse_object_literal() {
     let src = r#"
     $root = @main

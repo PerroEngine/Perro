@@ -14,9 +14,9 @@ use crate::{
 use perro_ids::{NodeID, NodeTag, TagID};
 use perro_structs::{Transform2D, Transform3D};
 use perro_ui::{
-    UiAnimatedImage, UiBox, UiButton, UiCheckbox, UiColorPicker, UiGrid, UiHLayout, UiImage,
-    UiImageButton, UiLabel, UiLayout, UiList, UiListIndent, UiNineSlice, UiNodeBase, UiPanel,
-    UiScrollContainer, UiShape, UiTextBlock, UiTextBox, UiVLayout,
+    UiAnimatedImage, UiButton, UiCheckbox, UiColorPicker, UiDropdown, UiGrid, UiHLayout, UiImage,
+    UiImageButton, UiLabel, UiLayout, UiList, UiListIndent, UiNineSlice, UiNode, UiNodeBase,
+    UiPanel, UiScrollContainer, UiShape, UiTextBlock, UiTextBox, UiVLayout,
 };
 use std::borrow::Cow;
 
@@ -93,7 +93,7 @@ macro_rules! __node3d_base_expr {
 
 #[macro_export]
 macro_rules! __ui_base_expr {
-    (UiBox, None, $inner:ident, $f:ident) => {
+    (UiNode, None, $inner:ident, $f:ident) => {
         Some($f($inner))
     };
     ($_variant:ident, None, $inner:ident, $_f:ident) => {{
@@ -107,7 +107,7 @@ macro_rules! __ui_base_expr {
 
 #[macro_export]
 macro_rules! __ui_base_mut_expr {
-    (UiBox, None, $inner:ident, $f:ident) => {
+    (UiNode, None, $inner:ident, $f:ident) => {
         Some($f($inner))
     };
     ($_variant:ident, None, $inner:ident, $_f:ident) => {{
@@ -175,7 +175,7 @@ macro_rules! __impl_exact_node_base_dispatch_3d {
 
 #[macro_export]
 macro_rules! __impl_exact_node_base_dispatch_ui {
-    (UiBox, $ty_ui:ty, $variant_ui:ident) => {};
+    (UiNode, $ty_ui:ty, $variant_ui:ident) => {};
     ($variant:ident, $ty_ui:ty, $variant_ui:ident) => {
         impl NodeBaseDispatch for $ty_ui {
             const BASE_NODE_TYPE: NodeType = NodeType::$variant_ui;
@@ -770,8 +770,8 @@ macro_rules! define_scene_nodes {
             }
         }
 
-        impl NodeBaseDispatch for UiBox {
-            const BASE_NODE_TYPE: NodeType = NodeType::UiBox;
+        impl NodeBaseDispatch for UiNode {
+            const BASE_NODE_TYPE: NodeType = NodeType::UiNode;
 
             fn with_base_ref<R>(data: &SceneNodeData, f: impl FnOnce(&Self) -> R) -> Option<R> {
                 match data {
@@ -909,31 +909,32 @@ define_scene_nodes! {
     }
     ui: {
         // core
-        UiBox => (None, UiBox, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        UiNode => (None, UiNode, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
 
         // visual
-        UiCameraStream => (UiBox, UiCameraStream, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiPanel => (UiBox, UiPanel, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiButton => (UiBox, UiButton, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiColorPicker => (UiBox, UiColorPicker, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiShape => (UiBox, UiShape, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiCheckbox => (UiBox, UiCheckbox, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiImage => (UiBox, UiImage, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiImageButton => (UiBox, UiImageButton, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiNineSlice => (UiBox, UiNineSlice, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiAnimatedImage => (UiBox, UiAnimatedImage, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
-        UiLabel => (UiBox, UiLabel, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiTextBox => (UiBox, UiTextBox, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
-        UiTextBlock => (UiBox, UiTextBlock, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiCameraStream => (UiNode, UiCameraStream, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiPanel => (UiNode, UiPanel, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiButton => (UiNode, UiButton, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiDropdown => (UiNode, UiDropdown, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiColorPicker => (UiNode, UiColorPicker, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiShape => (UiNode, UiShape, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiCheckbox => (UiNode, UiCheckbox, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiImage => (UiNode, UiImage, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiImageButton => (UiNode, UiImageButton, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiNineSlice => (UiNode, UiNineSlice, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiAnimatedImage => (UiNode, UiAnimatedImage, Renderable::True, InternalUpdate::True, InternalFixedUpdate::False),
+        UiLabel => (UiNode, UiLabel, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiTextBox => (UiNode, UiTextBox, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
+        UiTextBlock => (UiNode, UiTextBlock, Renderable::True, InternalUpdate::False, InternalFixedUpdate::False),
 
         // layout
-        UiScrollContainer => (UiBox, UiScrollContainer, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        UiLayout => (UiBox, UiLayout, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        UiHLayout => (UiBox, UiHLayout, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        UiVLayout => (UiBox, UiVLayout, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        UiGrid => (UiBox, UiGrid, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        UiList => (UiBox, UiList, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
-        UiListIndent => (UiBox, UiListIndent, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False)
+        UiScrollContainer => (UiNode, UiScrollContainer, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        UiLayout => (UiNode, UiLayout, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        UiHLayout => (UiNode, UiHLayout, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        UiVLayout => (UiNode, UiVLayout, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        UiGrid => (UiNode, UiGrid, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        UiList => (UiNode, UiList, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False),
+        UiListIndent => (UiNode, UiListIndent, Renderable::False, InternalUpdate::False, InternalFixedUpdate::False)
     }
     resource: {
         // animation

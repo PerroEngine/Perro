@@ -461,6 +461,7 @@ impl Runtime {
                     .and_then(|node| self.nodes.get(node))
                     .and_then(|scene_node| match &scene_node.data {
                         SceneNodeData::UiButton(button) => Some(button.cursor_icon),
+                        SceneNodeData::UiDropdown(dropdown) => Some(dropdown.cursor_icon),
                         SceneNodeData::UiCheckbox(checkbox) => Some(checkbox.cursor_icon),
                         SceneNodeData::UiImageButton(button) => Some(button.cursor_icon),
                         _ => None,
@@ -480,6 +481,7 @@ impl Runtime {
             if event == "click" {
                 self.toggle_checkbox(node);
                 self.toggle_color_picker_from_child(node);
+                self.process_dropdown_click(node);
                 self.process_button_web_action(node);
             }
             self.collect_button_event_signals(node, event);
@@ -502,6 +504,7 @@ impl Runtime {
         };
         let web = match &scene_node.data {
             SceneNodeData::UiButton(button) => button.web.as_ref(),
+            SceneNodeData::UiDropdown(dropdown) => dropdown.web.as_ref(),
             SceneNodeData::UiCheckbox(checkbox) => checkbox.web.as_ref(),
             SceneNodeData::UiImageButton(button) => button.web.as_ref(),
             _ => None,
@@ -521,6 +524,56 @@ impl Runtime {
         };
         checkbox.checked = !checkbox.checked;
         self.mark_ui_dirty(node, Runtime::UI_DIRTY_COMMANDS);
+    }
+
+    fn process_dropdown_click(&mut self, node: NodeID) {
+        if let Some((dropdown_id, option_idx)) = self.dropdown_parent_for_option(node) {
+            let Some(scene_node) = self.nodes.get_mut(dropdown_id) else {
+                return;
+            };
+            let SceneNodeData::UiDropdown(dropdown) = &mut scene_node.data else {
+                return;
+            };
+            if option_idx >= dropdown.options.len() {
+                return;
+            }
+            dropdown.selected_index = option_idx;
+            dropdown.open = false;
+            let value = dropdown.options[option_idx].value.clone();
+            let signals = dropdown.selected_signals.clone();
+            self.sync_dropdown_internal_nodes(dropdown_id);
+            let params = [
+                Variant::from(dropdown_id),
+                Variant::from(option_idx as i32),
+                value,
+            ];
+            for signal in signals {
+                self.queue_ui_signal(signal, &params);
+            }
+            return;
+        }
+
+        let Some(scene_node) = self.nodes.get_mut(node) else {
+            return;
+        };
+        let SceneNodeData::UiDropdown(dropdown) = &mut scene_node.data else {
+            return;
+        };
+        dropdown.open = !dropdown.open;
+        self.sync_dropdown_internal_nodes(node);
+    }
+
+    fn dropdown_parent_for_option(&self, option_id: NodeID) -> Option<(NodeID, usize)> {
+        self.nodes.iter().find_map(|(id, scene_node)| {
+            let SceneNodeData::UiDropdown(dropdown) = &scene_node.data else {
+                return None;
+            };
+            dropdown
+                .internal_option_buttons
+                .iter()
+                .position(|item| *item == option_id)
+                .map(|idx| (id, idx))
+        })
     }
 
     fn toggle_color_picker_from_child(&mut self, node: NodeID) {
@@ -1538,6 +1591,7 @@ fn compare_focus_visual_order(a: &UiFocusCandidate, b: &UiFocusCandidate) -> std
 fn ui_button_like_inactive(data: &SceneNodeData) -> Option<bool> {
     match data {
         SceneNodeData::UiButton(button) => Some(button_inactive(button)),
+        SceneNodeData::UiDropdown(dropdown) => Some(button_inactive(&dropdown.button)),
         SceneNodeData::UiCheckbox(checkbox) => Some(checkbox_inactive(checkbox)),
         SceneNodeData::UiImageButton(button) => Some(image_button_inactive(button)),
         _ => None,
@@ -1552,6 +1606,8 @@ fn ui_button_like_custom_event_signals<'a>(
         SceneNodeData::UiButton(button) => {
             (!button_inactive(button)).then_some(button_custom_event_signals(button, event))
         }
+        SceneNodeData::UiDropdown(dropdown) => (!button_inactive(&dropdown.button))
+            .then_some(button_custom_event_signals(&dropdown.button, event)),
         SceneNodeData::UiCheckbox(checkbox) => (!checkbox_inactive(checkbox))
             .then_some(button_custom_event_signals(&checkbox.button, event)),
         SceneNodeData::UiImageButton(button) => (!image_button_inactive(button))
@@ -1578,6 +1634,13 @@ fn ui_button_like_hit_data(
             mouse_filter: button.mouse_filter,
             input_mask: &button.input_mask,
             corner_radius: button_style(button, state).corner_radius,
+        }),
+        SceneNodeData::UiDropdown(dropdown) => Some(UiButtonLikeHitData {
+            disabled: dropdown.disabled,
+            input_enabled: dropdown.input_enabled,
+            mouse_filter: dropdown.mouse_filter,
+            input_mask: &dropdown.input_mask,
+            corner_radius: button_style(&dropdown.button, state).corner_radius,
         }),
         SceneNodeData::UiCheckbox(checkbox) => Some(UiButtonLikeHitData {
             disabled: checkbox.disabled,

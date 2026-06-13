@@ -612,9 +612,9 @@ parent = @AudioWall
 
 ## UI Nodes
 
-UI nodes inherit from `UiBox` in the node registry:
+UI nodes inherit from `UiNode` in the node registry:
 
-- `UiBox`
+- `UiNode`
 - `UiPanel`
 - `UiButton`
 - `UiImage`
@@ -635,7 +635,7 @@ UI positions and sizes resolve against the parent UI rect.
 Root UI nodes use the virtual viewport as parent.
 Each axis can be pixels or ratio, so `UiVector2::ratio(0.5, 0.5)` means parent center.
 All UI nodes can have children.
-`UiBox` is the invisible generic container.
+`UiNode` is the invisible generic container.
 `UiPanel` draws a styled box.
 `UiButton` draws an interactive styled box and emits default named signals plus extra configured signals.
 `UiImage` draws a texture region with tint and scale mode.

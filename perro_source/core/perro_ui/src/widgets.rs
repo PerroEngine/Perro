@@ -2,14 +2,14 @@ use super::*;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiPanel {
-    pub base: UiBox,
+    pub base: UiNode,
     pub style: UiStyle,
 }
 
 impl UiPanel {
     pub const fn new() -> Self {
         Self {
-            base: UiBox::new(),
+            base: UiNode::new(),
             style: UiStyle::panel(),
         }
     }
@@ -22,7 +22,7 @@ impl Default for UiPanel {
 }
 
 impl Deref for UiPanel {
-    type Target = UiBox;
+    type Target = UiNode;
 
     fn deref(&self) -> &Self::Target {
         &self.base
@@ -36,11 +36,11 @@ impl DerefMut for UiPanel {
 }
 
 impl UiNodeBase for UiPanel {
-    fn ui_base(&self) -> &UiBox {
+    fn ui_base(&self) -> &UiNode {
         &self.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiBox {
+    fn ui_base_mut(&mut self) -> &mut UiNode {
         &mut self.base
     }
 }
@@ -55,7 +55,7 @@ pub enum UiImageScaleMode {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiImage {
-    pub base: UiBox,
+    pub base: UiNode,
     pub texture: TextureID,
     pub texture_region: Option<[f32; 4]>,
     pub tint: Color,
@@ -68,7 +68,7 @@ pub struct UiImage {
 impl UiImage {
     pub const fn new() -> Self {
         Self {
-            base: UiBox::new(),
+            base: UiNode::new(),
             texture: TextureID::nil(),
             texture_region: None,
             tint: Color::WHITE,
@@ -82,7 +82,7 @@ impl UiImage {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiNineSlice {
-    pub base: UiBox,
+    pub base: UiNode,
     pub texture: TextureID,
     pub texture_region: Option<[f32; 4]>,
     pub margins: [f32; 4],
@@ -92,7 +92,7 @@ pub struct UiNineSlice {
 impl UiNineSlice {
     pub const fn new() -> Self {
         Self {
-            base: UiBox::new(),
+            base: UiNode::new(),
             texture: TextureID::nil(),
             texture_region: None,
             margins: [8.0, 8.0, 8.0, 8.0],
@@ -108,7 +108,7 @@ impl Default for UiNineSlice {
 }
 
 impl Deref for UiNineSlice {
-    type Target = UiBox;
+    type Target = UiNode;
 
     fn deref(&self) -> &Self::Target {
         &self.base
@@ -122,11 +122,11 @@ impl DerefMut for UiNineSlice {
 }
 
 impl UiNodeBase for UiNineSlice {
-    fn ui_base(&self) -> &UiBox {
+    fn ui_base(&self) -> &UiNode {
         &self.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiBox {
+    fn ui_base_mut(&mut self) -> &mut UiNode {
         &mut self.base
     }
 }
@@ -139,7 +139,7 @@ impl Default for UiImage {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiImageButton {
-    pub base: UiBox,
+    pub base: UiNode,
     pub texture: TextureID,
     pub texture_region: Option<[f32; 4]>,
     pub tint: Color,
@@ -151,8 +151,8 @@ pub struct UiImageButton {
     pub aspect_ratio: f32,
     pub input_mask: UiInputMask,
     pub cursor_icon: CursorIcon,
-    pub hover_base: Option<UiBox>,
-    pub pressed_base: Option<UiBox>,
+    pub hover_base: Option<UiNode>,
+    pub pressed_base: Option<UiNode>,
     pub hover_size_override: bool,
     pub pressed_size_override: bool,
     pub hover_signals: Vec<SignalID>,
@@ -167,7 +167,7 @@ pub struct UiImageButton {
 impl UiImageButton {
     pub const fn new() -> Self {
         Self {
-            base: UiBox::new(),
+            base: UiNode::new(),
             texture: TextureID::nil(),
             texture_region: None,
             tint: Color::WHITE,
@@ -242,11 +242,11 @@ impl DerefMut for UiCheckbox {
 }
 
 impl UiNodeBase for UiCheckbox {
-    fn ui_base(&self) -> &UiBox {
+    fn ui_base(&self) -> &UiNode {
         &self.button.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiBox {
+    fn ui_base_mut(&mut self) -> &mut UiNode {
         &mut self.button.base
     }
 }
@@ -315,11 +315,116 @@ impl DerefMut for UiColorPicker {
 }
 
 impl UiNodeBase for UiColorPicker {
-    fn ui_base(&self) -> &UiBox {
+    fn ui_base(&self) -> &UiNode {
         &self.button.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiBox {
+    fn ui_base_mut(&mut self) -> &mut UiNode {
+        &mut self.button.base
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiDropdownOption {
+    pub label: Cow<'static, str>,
+    pub value: perro_variant::Variant,
+}
+
+impl UiDropdownOption {
+    pub fn new(label: impl Into<Cow<'static, str>>, value: perro_variant::Variant) -> Self {
+        Self {
+            label: label.into(),
+            value,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiDropdown {
+    pub button: UiButton,
+    pub options: Vec<UiDropdownOption>,
+    pub selected_index: usize,
+    pub open: bool,
+    pub popup_style: UiStyle,
+    pub option_style: UiStyle,
+    pub option_hover_style: UiStyle,
+    pub option_pressed_style: UiStyle,
+    pub option_height: f32,
+    pub popup_width: f32,
+    pub internal_label: NodeID,
+    pub internal_option_buttons: Vec<NodeID>,
+    pub internal_option_labels: Vec<NodeID>,
+    pub selected_signals: Vec<SignalID>,
+}
+
+impl UiDropdown {
+    pub fn new() -> Self {
+        Self {
+            button: UiButton::new(),
+            options: Vec::new(),
+            selected_index: 0,
+            open: false,
+            popup_style: UiStyle::panel(),
+            option_style: UiStyle::button(),
+            option_hover_style: UiStyle {
+                fill: Color::new(0.24, 0.27, 0.32, 1.0),
+                stroke: Color::new(0.42, 0.46, 0.54, 1.0),
+                stroke_width: 1.0,
+                corner_radius: 0.2,
+                shadow: UiDepthEffect::none(),
+                highlight: UiDepthEffect::none(),
+            },
+            option_pressed_style: UiStyle {
+                fill: Color::new(0.12, 0.14, 0.18, 1.0),
+                stroke: Color::new(0.42, 0.46, 0.54, 1.0),
+                stroke_width: 1.0,
+                corner_radius: 0.2,
+                shadow: UiDepthEffect::none(),
+                highlight: UiDepthEffect::none(),
+            },
+            option_height: 28.0,
+            popup_width: 0.0,
+            internal_label: NodeID::nil(),
+            internal_option_buttons: Vec::new(),
+            internal_option_labels: Vec::new(),
+            selected_signals: Vec::new(),
+        }
+    }
+
+    pub fn selected_label(&self) -> Cow<'static, str> {
+        self.options
+            .get(self.selected_index)
+            .map(|option| option.label.clone())
+            .unwrap_or_else(|| Cow::Borrowed(""))
+    }
+}
+
+impl Default for UiDropdown {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Deref for UiDropdown {
+    type Target = UiButton;
+
+    fn deref(&self) -> &Self::Target {
+        &self.button
+    }
+}
+
+impl DerefMut for UiDropdown {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.button
+    }
+}
+
+impl UiNodeBase for UiDropdown {
+    fn ui_base(&self) -> &UiNode {
+        &self.button.base
+    }
+
+    fn ui_base_mut(&mut self) -> &mut UiNode {
         &mut self.button.base
     }
 }
@@ -334,7 +439,7 @@ pub enum UiShapeKind {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiShape {
-    pub base: UiBox,
+    pub base: UiNode,
     pub kind: UiShapeKind,
     pub fill: Color,
     pub stroke: Color,
@@ -344,7 +449,7 @@ pub struct UiShape {
 impl UiShape {
     pub const fn new() -> Self {
         Self {
-            base: UiBox::new(),
+            base: UiNode::new(),
             kind: UiShapeKind::Rect,
             fill: Color::WHITE,
             stroke: Color::TRANSPARENT,
@@ -360,7 +465,7 @@ impl Default for UiShape {
 }
 
 impl Deref for UiShape {
-    type Target = UiBox;
+    type Target = UiNode;
 
     fn deref(&self) -> &Self::Target {
         &self.base
@@ -374,11 +479,11 @@ impl DerefMut for UiShape {
 }
 
 impl UiNodeBase for UiShape {
-    fn ui_base(&self) -> &UiBox {
+    fn ui_base(&self) -> &UiNode {
         &self.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiBox {
+    fn ui_base_mut(&mut self) -> &mut UiNode {
         &mut self.base
     }
 }
@@ -390,7 +495,7 @@ impl Default for UiImageButton {
 }
 
 impl Deref for UiImageButton {
-    type Target = UiBox;
+    type Target = UiNode;
 
     fn deref(&self) -> &Self::Target {
         &self.base
@@ -404,17 +509,17 @@ impl DerefMut for UiImageButton {
 }
 
 impl UiNodeBase for UiImageButton {
-    fn ui_base(&self) -> &UiBox {
+    fn ui_base(&self) -> &UiNode {
         &self.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiBox {
+    fn ui_base_mut(&mut self) -> &mut UiNode {
         &mut self.base
     }
 }
 
 impl Deref for UiImage {
-    type Target = UiBox;
+    type Target = UiNode;
 
     fn deref(&self) -> &Self::Target {
         &self.base
@@ -428,11 +533,11 @@ impl DerefMut for UiImage {
 }
 
 impl UiNodeBase for UiImage {
-    fn ui_base(&self) -> &UiBox {
+    fn ui_base(&self) -> &UiNode {
         &self.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiBox {
+    fn ui_base_mut(&mut self) -> &mut UiNode {
         &mut self.base
     }
 }
@@ -486,7 +591,7 @@ impl UiAnimatedImageFrameSet {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiAnimatedImage {
-    pub base: UiBox,
+    pub base: UiNode,
     pub texture: TextureID,
     pub animations: Vec<UiAnimatedImageFrameSet>,
     pub current_animation: Cow<'static, str>,
@@ -505,7 +610,7 @@ pub struct UiAnimatedImage {
 impl UiAnimatedImage {
     pub const fn new() -> Self {
         Self {
-            base: UiBox::new(),
+            base: UiNode::new(),
             texture: TextureID::nil(),
             animations: Vec::new(),
             current_animation: Cow::Borrowed("default"),
@@ -542,7 +647,7 @@ impl Default for UiAnimatedImage {
 }
 
 impl Deref for UiAnimatedImage {
-    type Target = UiBox;
+    type Target = UiNode;
 
     fn deref(&self) -> &Self::Target {
         &self.base
@@ -556,18 +661,18 @@ impl DerefMut for UiAnimatedImage {
 }
 
 impl UiNodeBase for UiAnimatedImage {
-    fn ui_base(&self) -> &UiBox {
+    fn ui_base(&self) -> &UiNode {
         &self.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiBox {
+    fn ui_base_mut(&mut self) -> &mut UiNode {
         &mut self.base
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiLabel {
-    pub base: UiBox,
+    pub base: UiNode,
     pub text: Cow<'static, str>,
     pub color: Color,
     pub font_size: f32,
@@ -580,7 +685,7 @@ pub struct UiLabel {
 impl UiLabel {
     pub const fn new() -> Self {
         Self {
-            base: UiBox::new(),
+            base: UiNode::new(),
             text: Cow::Borrowed(""),
             color: Color::WHITE,
             font_size: 20.0,
@@ -614,7 +719,7 @@ impl Default for UiLabel {
 }
 
 impl Deref for UiLabel {
-    type Target = UiBox;
+    type Target = UiNode;
 
     fn deref(&self) -> &Self::Target {
         &self.base
@@ -628,11 +733,11 @@ impl DerefMut for UiLabel {
 }
 
 impl UiNodeBase for UiLabel {
-    fn ui_base(&self) -> &UiBox {
+    fn ui_base(&self) -> &UiNode {
         &self.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiBox {
+    fn ui_base_mut(&mut self) -> &mut UiNode {
         &mut self.base
     }
 }
@@ -679,7 +784,7 @@ impl Default for UiInputMask {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiTextEdit {
-    pub base: UiBox,
+    pub base: UiNode,
     pub style: UiStyle,
     pub focused_style: UiStyle,
     pub input_mask: UiInputMask,
@@ -709,7 +814,7 @@ pub struct UiTextEdit {
 impl UiTextEdit {
     pub const fn new(multiline: bool) -> Self {
         Self {
-            base: UiBox::new(),
+            base: UiNode::new(),
             style: UiStyle::panel(),
             focused_style: UiStyle {
                 fill: Color::new(0.10, 0.11, 0.13, 0.96),
@@ -796,11 +901,11 @@ impl Default for UiFontSizing {
 }
 
 impl UiNodeBase for UiTextEdit {
-    fn ui_base(&self) -> &UiBox {
+    fn ui_base(&self) -> &UiNode {
         &self.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiBox {
+    fn ui_base_mut(&mut self) -> &mut UiNode {
         &mut self.base
     }
 }
@@ -839,11 +944,11 @@ impl DerefMut for UiTextBox {
 }
 
 impl UiNodeBase for UiTextBox {
-    fn ui_base(&self) -> &UiBox {
+    fn ui_base(&self) -> &UiNode {
         &self.inner.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiBox {
+    fn ui_base_mut(&mut self) -> &mut UiNode {
         &mut self.inner.base
     }
 }
@@ -882,11 +987,11 @@ impl DerefMut for UiTextBlock {
 }
 
 impl UiNodeBase for UiTextBlock {
-    fn ui_base(&self) -> &UiBox {
+    fn ui_base(&self) -> &UiNode {
         &self.inner.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiBox {
+    fn ui_base_mut(&mut self) -> &mut UiNode {
         &mut self.inner.base
     }
 }
@@ -906,14 +1011,14 @@ pub struct UiButtonWebAction {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiButton {
-    pub base: UiBox,
+    pub base: UiNode,
     pub style: UiStyle,
     pub hover_style: UiStyle,
     pub pressed_style: UiStyle,
     pub input_mask: UiInputMask,
     pub cursor_icon: CursorIcon,
-    pub hover_base: Option<UiBox>,
-    pub pressed_base: Option<UiBox>,
+    pub hover_base: Option<UiNode>,
+    pub pressed_base: Option<UiNode>,
     pub hover_size_override: bool,
     pub pressed_size_override: bool,
     pub hover_signals: Vec<SignalID>,
@@ -928,7 +1033,7 @@ pub struct UiButton {
 impl UiButton {
     pub const fn new() -> Self {
         Self {
-            base: UiBox::new(),
+            base: UiNode::new(),
             style: UiStyle::button(),
             hover_style: UiStyle {
                 fill: Color::new(0.24, 0.27, 0.32, 1.0),
@@ -970,7 +1075,7 @@ impl Default for UiButton {
 }
 
 impl Deref for UiButton {
-    type Target = UiBox;
+    type Target = UiNode;
 
     fn deref(&self) -> &Self::Target {
         &self.base
@@ -984,18 +1089,18 @@ impl DerefMut for UiButton {
 }
 
 impl UiNodeBase for UiButton {
-    fn ui_base(&self) -> &UiBox {
+    fn ui_base(&self) -> &UiNode {
         &self.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiBox {
+    fn ui_base_mut(&mut self) -> &mut UiNode {
         &mut self.base
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiLayoutContainer {
-    pub base: UiBox,
+    pub base: UiNode,
     pub mode: UiLayoutMode,
     pub spacing: f32,
     pub h_spacing: f32,
@@ -1006,7 +1111,7 @@ pub struct UiLayoutContainer {
 impl UiLayoutContainer {
     pub const fn new(mode: UiLayoutMode) -> Self {
         Self {
-            base: UiBox::new(),
+            base: UiNode::new(),
             mode,
             spacing: 0.0,
             h_spacing: 0.0,
@@ -1040,13 +1145,13 @@ impl Default for UiLayoutContainer {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiScrollContainer {
-    pub base: UiBox,
+    pub base: UiNode,
     pub scroll: Vector2,
 }
 
 impl UiScrollContainer {
     pub const fn new() -> Self {
-        let mut base = UiBox::new();
+        let mut base = UiNode::new();
         base.clip_children = true;
         Self {
             base,
@@ -1062,7 +1167,7 @@ impl Default for UiScrollContainer {
 }
 
 impl Deref for UiScrollContainer {
-    type Target = UiBox;
+    type Target = UiNode;
 
     fn deref(&self) -> &Self::Target {
         &self.base
@@ -1076,18 +1181,18 @@ impl DerefMut for UiScrollContainer {
 }
 
 impl UiNodeBase for UiScrollContainer {
-    fn ui_base(&self) -> &UiBox {
+    fn ui_base(&self) -> &UiNode {
         &self.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiBox {
+    fn ui_base_mut(&mut self) -> &mut UiNode {
         &mut self.base
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiFixedLayoutContainer {
-    pub base: UiBox,
+    pub base: UiNode,
     pub spacing: f32,
     pub h_spacing: f32,
     pub v_spacing: f32,
@@ -1097,7 +1202,7 @@ pub struct UiFixedLayoutContainer {
 impl UiFixedLayoutContainer {
     pub const fn new() -> Self {
         let mut value = Self {
-            base: UiBox::new(),
+            base: UiNode::new(),
             spacing: 0.0,
             h_spacing: 0.0,
             v_spacing: 0.0,
@@ -1134,7 +1239,7 @@ impl Default for UiLayout {
 }
 
 impl Deref for UiLayout {
-    type Target = UiBox;
+    type Target = UiNode;
 
     fn deref(&self) -> &Self::Target {
         &self.inner.base
@@ -1148,11 +1253,11 @@ impl DerefMut for UiLayout {
 }
 
 impl UiNodeBase for UiLayout {
-    fn ui_base(&self) -> &UiBox {
+    fn ui_base(&self) -> &UiNode {
         &self.inner.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiBox {
+    fn ui_base_mut(&mut self) -> &mut UiNode {
         &mut self.inner.base
     }
 }
@@ -1181,7 +1286,7 @@ impl Default for UiHLayout {
 }
 
 impl Deref for UiHLayout {
-    type Target = UiBox;
+    type Target = UiNode;
 
     fn deref(&self) -> &Self::Target {
         &self.inner.base
@@ -1195,11 +1300,11 @@ impl DerefMut for UiHLayout {
 }
 
 impl UiNodeBase for UiHLayout {
-    fn ui_base(&self) -> &UiBox {
+    fn ui_base(&self) -> &UiNode {
         &self.inner.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiBox {
+    fn ui_base_mut(&mut self) -> &mut UiNode {
         &mut self.inner.base
     }
 }
@@ -1230,7 +1335,7 @@ impl Default for UiVLayout {
 }
 
 impl Deref for UiVLayout {
-    type Target = UiBox;
+    type Target = UiNode;
 
     fn deref(&self) -> &Self::Target {
         &self.inner.base
@@ -1244,11 +1349,11 @@ impl DerefMut for UiVLayout {
 }
 
 impl UiNodeBase for UiVLayout {
-    fn ui_base(&self) -> &UiBox {
+    fn ui_base(&self) -> &UiNode {
         &self.inner.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiBox {
+    fn ui_base_mut(&mut self) -> &mut UiNode {
         &mut self.inner.base
     }
 }
@@ -1258,7 +1363,7 @@ pub type UiVBox = UiVLayout;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiGrid {
-    pub base: UiBox,
+    pub base: UiNode,
     pub columns: u32,
     pub h_spacing: f32,
     pub v_spacing: f32,
@@ -1267,7 +1372,7 @@ pub struct UiGrid {
 impl UiGrid {
     pub const fn new() -> Self {
         Self {
-            base: UiBox::new(),
+            base: UiNode::new(),
             columns: 1,
             h_spacing: 0.0,
             v_spacing: 0.0,
@@ -1282,7 +1387,7 @@ impl Default for UiGrid {
 }
 
 impl Deref for UiGrid {
-    type Target = UiBox;
+    type Target = UiNode;
 
     fn deref(&self) -> &Self::Target {
         &self.base
@@ -1296,11 +1401,11 @@ impl DerefMut for UiGrid {
 }
 
 impl UiNodeBase for UiGrid {
-    fn ui_base(&self) -> &UiBox {
+    fn ui_base(&self) -> &UiNode {
         &self.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiBox {
+    fn ui_base_mut(&mut self) -> &mut UiNode {
         &mut self.base
     }
 }

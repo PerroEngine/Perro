@@ -41,22 +41,25 @@ pub fn update_freecam<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>)
     let mut dx = 0.0;
     let mut dy = 0.0;
     let mut dz = 0.0;
-    if key_down!(ctx.ipt, KeyCode::KeyW) {
+    let text_focus = editor_text_box_has_focus(ctx);
+    if !text_focus && key_down!(ctx.ipt, KeyCode::KeyW) {
         dz -= 1.0;
     }
-    if key_down!(ctx.ipt, KeyCode::KeyS) {
+    if !text_focus && key_down!(ctx.ipt, KeyCode::KeyS) {
         dz += 1.0;
     }
-    if key_down!(ctx.ipt, KeyCode::KeyA) {
+    if !text_focus && key_down!(ctx.ipt, KeyCode::KeyA) {
         dx -= 1.0;
     }
-    if key_down!(ctx.ipt, KeyCode::KeyD) {
+    if !text_focus && key_down!(ctx.ipt, KeyCode::KeyD) {
         dx += 1.0;
     }
-    if key_down!(ctx.ipt, KeyCode::Space) {
+    if !text_focus && key_down!(ctx.ipt, KeyCode::Space) {
         dy += 1.0;
     }
-    if key_down!(ctx.ipt, KeyCode::ShiftLeft) || key_down!(ctx.ipt, KeyCode::ShiftRight) {
+    if !text_focus
+        && (key_down!(ctx.ipt, KeyCode::ShiftLeft) || key_down!(ctx.ipt, KeyCode::ShiftRight))
+    {
         dy -= 1.0;
     }
 
@@ -84,8 +87,8 @@ pub fn update_freecam<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>)
         state.cam_x += movement.x * speed * dt;
         state.cam_y += movement.y * speed * dt;
         state.cam_z += movement.z * speed * dt;
-        state.cam_yaw += mouse.x * 0.0025;
-        state.cam_pitch = (state.cam_pitch - mouse.y * 0.0025).clamp(-1.4, 1.4);
+        state.cam_yaw -= mouse.x * 0.0025;
+        state.cam_pitch = (state.cam_pitch + mouse.y * 0.0025).clamp(-1.4, 1.4);
         label = format!(
             "Viewport  mode={}  cam=({:.1}, {:.1}, {:.1}) yaw={:.2} pitch={:.2} stream={} cam_id={}\nkeys: WASD move  Space/Shift up/down  MMB look  F frame  click select",
             state.viewport_mode,
@@ -1215,16 +1218,17 @@ pub fn update_freecam_2d<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, AP
     let dt = delta_time!(ctx.run).clamp(0.0, 1.0 / 30.0);
     let mut dx = 0.0;
     let mut dy = 0.0;
-    if key_down!(ctx.ipt, KeyCode::KeyA) {
+    let text_focus = editor_text_box_has_focus(ctx);
+    if !text_focus && key_down!(ctx.ipt, KeyCode::KeyA) {
         dx -= 1.0;
     }
-    if key_down!(ctx.ipt, KeyCode::KeyD) {
+    if !text_focus && key_down!(ctx.ipt, KeyCode::KeyD) {
         dx += 1.0;
     }
-    if key_down!(ctx.ipt, KeyCode::KeyW) {
+    if !text_focus && key_down!(ctx.ipt, KeyCode::KeyW) {
         dy += 1.0;
     }
-    if key_down!(ctx.ipt, KeyCode::KeyS) {
+    if !text_focus && key_down!(ctx.ipt, KeyCode::KeyS) {
         dy -= 1.0;
     }
     let wheel = viewport_pointer(ctx)

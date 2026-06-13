@@ -334,6 +334,7 @@ fn emit_static_node_type(ty: &str) -> Result<NodeType, StaticPipelineError> {
         "UiScrollContainer" | "UiScroll" => Ok(NodeType::UiScrollContainer),
         "UiHLayout" | "UiHBox" => Ok(NodeType::UiHLayout),
         "UiVLayout" | "UiVBox" => Ok(NodeType::UiVLayout),
+        "UiDropDown" => Ok(NodeType::UiDropdown),
         canonical => canonical.parse::<NodeType>().map_err(|_| {
             StaticPipelineError::SceneParse(format!("unsupported static node type `{canonical}`"))
         }),
@@ -507,9 +508,11 @@ fn is_static_rgb_color_field(field_name: &str) -> bool {
 fn is_static_ui_node(node_type: &str) -> bool {
     matches!(
         node_type,
-        "UiBox"
+        "UiNode"
             | "UiPanel"
             | "UiButton"
+            | "UiDropdown"
+            | "UiDropDown"
             | "UiShape"
             | "UiImage"
             | "UiImageButton"

@@ -3,7 +3,7 @@ use std::ops::{Deref, DerefMut};
 use crate::{Node2D, Node3D};
 use perro_ids::NodeID;
 use perro_structs::{Color, PostProcessSet, UVector2};
-use perro_ui::{UiBox, UiImageScaleMode, UiNodeBase};
+use perro_ui::{UiImageScaleMode, UiNode, UiNodeBase};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CameraStream {
@@ -36,7 +36,7 @@ impl Default for CameraStream {
 
 #[derive(Clone, Debug)]
 pub struct UiCameraStream {
-    pub base: UiBox,
+    pub base: UiNode,
     pub stream: CameraStream,
     pub tint: Color,
     pub corner_radius: f32,
@@ -45,7 +45,7 @@ pub struct UiCameraStream {
 impl UiCameraStream {
     pub fn new() -> Self {
         Self {
-            base: UiBox::new(),
+            base: UiNode::new(),
             stream: CameraStream::new(),
             tint: Color::WHITE,
             corner_radius: 0.0,
@@ -60,7 +60,7 @@ impl Default for UiCameraStream {
 }
 
 impl Deref for UiCameraStream {
-    type Target = UiBox;
+    type Target = UiNode;
 
     fn deref(&self) -> &Self::Target {
         &self.base
@@ -74,11 +74,11 @@ impl DerefMut for UiCameraStream {
 }
 
 impl UiNodeBase for UiCameraStream {
-    fn ui_base(&self) -> &UiBox {
+    fn ui_base(&self) -> &UiNode {
         &self.base
     }
 
-    fn ui_base_mut(&mut self) -> &mut UiBox {
+    fn ui_base_mut(&mut self) -> &mut UiNode {
         &mut self.base
     }
 }

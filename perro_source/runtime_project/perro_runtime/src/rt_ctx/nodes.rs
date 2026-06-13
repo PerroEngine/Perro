@@ -6,7 +6,7 @@
 use perro_ids::{IntoTagID, MaterialID, NodeID, TagID};
 use perro_nodes::{
     Node2D, Node3D, NodeBaseDispatch, NodeType, NodeTypeDispatch, Renderable, SceneNode,
-    SceneNodeData, UiBox,
+    SceneNodeData, UiNode,
 };
 use perro_runtime_api::sub_apis::{
     IntoNodeTag, IntoNodeTags, MeshDataSurfaceHit3D, MeshDataSurfaceRegion3D, MeshMaterialRegion3D,
@@ -160,7 +160,7 @@ impl NodeAPI for Runtime {
                 self.nodes.get_mut(id)?
             };
 
-            let track_ui = T::NODE_TYPE.is_a(NodeType::UiBox);
+            let track_ui = T::NODE_TYPE.is_a(NodeType::UiNode);
             let track_camera_2d = T::NODE_TYPE == NodeType::Camera2D;
             let track_camera_3d = T::NODE_TYPE == NodeType::Camera3D;
             let ui_before = track_ui.then(|| node.data.clone());
@@ -185,7 +185,7 @@ impl NodeAPI for Runtime {
             let visible_before = Self::node_local_visible(&node.data);
             let before_modulate_2d = node.with_base_ref::<Node2D, _>(|base| base.modulate);
             let before_modulate_3d = node.with_base_ref::<Node3D, _>(|base| base.modulate);
-            let before_modulate_ui = node.with_base_ref::<UiBox, _>(|base| base.modulate);
+            let before_modulate_ui = node.with_base_ref::<UiNode, _>(|base| base.modulate);
             let result = node.with_typed_mut::<T, _>(|typed| {
                 let before = T::snapshot_transform(typed);
                 value = Some(f(typed));
@@ -196,7 +196,7 @@ impl NodeAPI for Runtime {
             let visible_after = Self::node_local_visible(&node.data);
             let after_modulate_2d = node.with_base_ref::<Node2D, _>(|base| base.modulate);
             let after_modulate_3d = node.with_base_ref::<Node3D, _>(|base| base.modulate);
-            let after_modulate_ui = node.with_base_ref::<UiBox, _>(|base| base.modulate);
+            let after_modulate_ui = node.with_base_ref::<UiNode, _>(|base| base.modulate);
             let ui_after = track_ui.then(|| node.data.clone());
             let cam_2d_after = if track_camera_2d {
                 match &node.data {
@@ -336,7 +336,7 @@ impl NodeAPI for Runtime {
             let before_vis_3d = node.with_base_ref::<Node3D, _>(|base| base.visible);
             let before_modulate_2d = node.with_base_ref::<Node2D, _>(|base| base.modulate);
             let before_modulate_3d = node.with_base_ref::<Node3D, _>(|base| base.modulate);
-            let before_modulate_ui = node.with_base_ref::<UiBox, _>(|base| base.modulate);
+            let before_modulate_ui = node.with_base_ref::<UiNode, _>(|base| base.modulate);
             let before_camera_2d = match &node.data {
                 SceneNodeData::Camera2D(camera) if camera.active => Some(camera.transform),
                 _ => None,
@@ -345,7 +345,7 @@ impl NodeAPI for Runtime {
                 SceneNodeData::Camera3D(camera) if camera.active => Some(camera.transform),
                 _ => None,
             };
-            let ui_before = node.with_base_ref::<UiBox, _>(Clone::clone);
+            let ui_before = node.with_base_ref::<UiNode, _>(Clone::clone);
             let value = node.with_base_mut::<T, _>(f)?;
             let after_2d = node.with_base_ref::<Node2D, _>(|base| base.transform);
             let after_3d = node.with_base_ref::<Node3D, _>(|base| base.transform);
@@ -353,7 +353,7 @@ impl NodeAPI for Runtime {
             let after_vis_3d = node.with_base_ref::<Node3D, _>(|base| base.visible);
             let after_modulate_2d = node.with_base_ref::<Node2D, _>(|base| base.modulate);
             let after_modulate_3d = node.with_base_ref::<Node3D, _>(|base| base.modulate);
-            let after_modulate_ui = node.with_base_ref::<UiBox, _>(|base| base.modulate);
+            let after_modulate_ui = node.with_base_ref::<UiNode, _>(|base| base.modulate);
             let after_camera_2d = match &node.data {
                 SceneNodeData::Camera2D(camera) if camera.active => Some(camera.transform),
                 _ => None,
@@ -362,7 +362,7 @@ impl NodeAPI for Runtime {
                 SceneNodeData::Camera3D(camera) if camera.active => Some(camera.transform),
                 _ => None,
             };
-            let ui_after = node.with_base_ref::<UiBox, _>(Clone::clone);
+            let ui_after = node.with_base_ref::<UiNode, _>(Clone::clone);
             let changed = before_2d != after_2d || before_3d != after_3d;
             (
                 value,

@@ -241,7 +241,7 @@ fn push_base_fields(fields: &mut Vec<SceneInspectorField>, node_type: NodeType) 
             "render_layers",
             SceneInspectorValueKind::BitMask,
         );
-    } else if node_type.is_a(NodeType::UiBox) {
+    } else if node_type.is_a(NodeType::UiNode) {
         fields.push(
             SceneInspectorField::new("Layout", "anchor", SceneInspectorValueKind::String)
                 .with_default(SceneValue::Str(Cow::Borrowed("center"))),
@@ -686,16 +686,29 @@ fn push_node_fields(fields: &mut Vec<SceneInspectorField>, node_type: NodeType) 
         NodeType::UiAnimatedImage => animated_image_fields(fields, "Image"),
         NodeType::UiPanel
         | NodeType::UiButton
+        | NodeType::UiDropdown
         | NodeType::UiCheckbox
         | NodeType::UiColorPicker
         | NodeType::UiTextBox
         | NodeType::UiTextBlock => {
             asset_field(fields, "Style", "style", SceneAssetKind::UiStyle);
-            if matches!(node_type, NodeType::UiButton | NodeType::UiCheckbox) {
+            if matches!(
+                node_type,
+                NodeType::UiButton | NodeType::UiDropdown | NodeType::UiCheckbox
+            ) {
                 fields.push(
                     SceneInspectorField::new("Text", "text", SceneInspectorValueKind::String)
                         .with_default(SceneValue::Str(Cow::Borrowed("New Node"))),
                 );
+            }
+            if matches!(node_type, NodeType::UiDropdown) {
+                push(
+                    fields,
+                    "State",
+                    "selected_index",
+                    SceneInspectorValueKind::I32,
+                );
+                push(fields, "State", "open", SceneInspectorValueKind::Bool);
             }
             if matches!(node_type, NodeType::UiCheckbox) {
                 push(fields, "State", "checked", SceneInspectorValueKind::Bool);

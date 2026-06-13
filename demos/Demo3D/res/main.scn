@@ -9,10 +9,10 @@ script_vars = { demo_ui_root = @demo_ui_root }
 [/main]
 
 [demo_ui_root]
-    [UiBox]
+    [UiNode]
         anchor = "center"
         size_ratio = (1.0, 1.0)
         input_enabled = false
         mouse_filter = "pass"
-    [/UiBox]
+    [/UiNode]
 [/demo_ui_root]

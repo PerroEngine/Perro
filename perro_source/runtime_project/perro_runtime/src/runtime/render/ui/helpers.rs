@@ -33,13 +33,14 @@ pub(super) struct TextEditCommandCtx<'a> {
     pub(super) focused: bool,
 }
 
-pub(super) fn ui_root_from_data(data: &SceneNodeData) -> Option<&UiBox> {
+pub(super) fn ui_root_from_data(data: &SceneNodeData) -> Option<&UiNode> {
     match data {
-        SceneNodeData::UiBox(root) => Some(root),
+        SceneNodeData::UiNode(root) => Some(root),
         SceneNodeData::UiCameraStream(node) => Some(&node.base),
         SceneNodeData::UiPanel(node) => Some(&node.base),
         SceneNodeData::UiShape(node) => Some(&node.base),
         SceneNodeData::UiButton(node) => Some(&node.base),
+        SceneNodeData::UiDropdown(node) => Some(&node.button.base),
         SceneNodeData::UiCheckbox(node) => Some(&node.button.base),
         SceneNodeData::UiColorPicker(node) => Some(&node.button.base),
         SceneNodeData::UiImage(node) => Some(&node.base),
@@ -339,6 +340,22 @@ pub(super) fn ui_command_from_node(
                 disabled: button.disabled,
             })
         }
+        SceneNodeData::UiDropdown(dropdown) => {
+            let style = button_style(&dropdown.button, button_state);
+            let style_scale = ui_style_scale(scale);
+            Some(UiCommand::UpsertButton {
+                node,
+                rect,
+                clip_rect,
+                fill: Runtime::color_modulate_rgba(style.fill.to_rgba(), modulate),
+                stroke: Runtime::color_modulate_rgba(style.stroke.to_rgba(), modulate),
+                stroke_width: style.stroke_width * style_scale,
+                corner_radius: style.corner_radius,
+                shadow: ui_depth_effect_state(style.shadow, style_scale),
+                highlight: ui_depth_effect_state(style.highlight, style_scale),
+                disabled: dropdown.disabled,
+            })
+        }
         SceneNodeData::UiCheckbox(checkbox) => {
             let style = checkbox_style(checkbox, button_state);
             let style_scale = ui_style_scale(scale);
@@ -502,6 +519,14 @@ pub(super) fn ui_rect_state_from_node(
     match data {
         SceneNodeData::UiButton(button) => {
             return Some(button_rect_state(button, rect, button_state, effective_z));
+        }
+        SceneNodeData::UiDropdown(dropdown) => {
+            return Some(button_rect_state(
+                &dropdown.button,
+                rect,
+                button_state,
+                effective_z,
+            ));
         }
         SceneNodeData::UiCheckbox(checkbox) => {
             return Some(button_rect_state(
@@ -681,7 +706,7 @@ pub(super) fn button_style(button: &perro_ui::UiButton, state: UiButtonVisualSta
 pub(super) fn button_state_base(
     button: &perro_ui::UiButton,
     state: UiButtonVisualState,
-) -> Option<&perro_ui::UiBox> {
+) -> Option<&perro_ui::UiNode> {
     if button_inactive(button) {
         return None;
     }
@@ -738,7 +763,7 @@ pub(super) fn image_button_tint(
 pub(super) fn image_button_state_base(
     button: &perro_ui::UiImageButton,
     state: UiButtonVisualState,
-) -> Option<&perro_ui::UiBox> {
+) -> Option<&perro_ui::UiNode> {
     if image_button_inactive(button) {
         return None;
     }
