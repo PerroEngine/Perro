@@ -7,7 +7,7 @@ use perro_ids::{NodeID, SignalID, TextureID};
 #[cfg(test)]
 use perro_input_api::GamepadAxis;
 use perro_input_api::{GamepadButton, JoyConButton, KeyCode, MouseButton, PlayerBinding};
-use perro_nodes::SceneNodeData;
+use perro_nodes::{SceneNode, SceneNodeData};
 use perro_render_bridge::{
     CameraStreamCommand, RenderCommand, ResourceCommand, UiCommand, UiDepthEffectState,
     UiImageScaleState, UiRectState, UiTextAlignState,
@@ -15,8 +15,9 @@ use perro_render_bridge::{
 use perro_runtime_render::{UiDirtyMask, UiExtractionOptions, ui_image_texture_request};
 use perro_structs::{Color, UVector2, Vector2};
 use perro_ui::{
-    ComputedUiRect, UiBox, UiFontSizing, UiHorizontalAlign, UiImageScaleMode, UiLayoutData,
-    UiLayoutMode, UiSizeMode, UiStyle, UiTextEdit, UiTransform, UiVerticalAlign,
+    ComputedUiRect, UiAnchor, UiBox, UiButton, UiFontSizing, UiHorizontalAlign, UiImageScaleMode,
+    UiLayoutData, UiLayoutMode, UiPanel, UiSizeMode, UiStyle, UiTextBox, UiTextEdit, UiTransform,
+    UiVector2, UiVerticalAlign,
 };
 use perro_variant::Variant;
 use std::borrow::Cow;
@@ -114,13 +115,7 @@ impl Runtime {
                 buttons.push(node);
                 focusables.push(node);
             }
-            SceneNodeData::UiColorPicker(picker) => {
-                if !picker.visible || picker.disabled || !picker.input_enabled {
-                    return;
-                }
-                buttons.push(node);
-                focusables.push(node);
-            }
+            SceneNodeData::UiColorPicker(_) => {}
             SceneNodeData::UiImageButton(button) => {
                 if !button.visible || button.disabled || !button.input_enabled {
                     return;
@@ -266,6 +261,7 @@ impl Runtime {
             return;
         }
         let mut timing = timing;
+        self.ensure_color_picker_internal_nodes();
 
         self.propagate_pending_transform_dirty();
         self.refresh_dirty_global_transforms();
@@ -582,6 +578,7 @@ impl Runtime {
             self.render_ui.retained_rects.insert(node, rect_state);
             visible_now.insert(node);
         }
+        self.emit_color_picker_wheel_commands(&computed, viewport);
         for node in self
             .render_ui
             .prev_visible
@@ -616,6 +613,507 @@ impl Runtime {
             timing.total = total_start.expect("ui timing total start exists").elapsed();
         }
     }
+}
+
+impl Runtime {
+    fn ensure_color_picker_internal_nodes(&mut self) {
+        let picker_ids = self
+            .nodes
+            .iter()
+            .filter_map(|(id, node)| {
+                matches!(node.data, SceneNodeData::UiColorPicker(_)).then_some(id)
+            })
+            .collect::<Vec<_>>();
+        for picker_id in picker_ids {
+            self.ensure_color_picker_internal_nodes_for(picker_id);
+            self.sync_color_picker_internal_nodes(picker_id);
+        }
+    }
+
+    fn ensure_color_picker_internal_nodes_for(&mut self, picker_id: NodeID) {
+        let Some(snapshot) = self.nodes.get(picker_id).and_then(|node| match &node.data {
+            SceneNodeData::UiColorPicker(picker) => Some((
+                picker.internal_swatch_button,
+                picker.internal_popup_panel,
+                picker.internal_rgba_box,
+                picker.internal_hsv_box,
+                picker.internal_hex_box,
+            )),
+            _ => None,
+        }) else {
+            return;
+        };
+
+        let mut ids = snapshot;
+        if !self.color_picker_internal_valid(ids.0, picker_id, false) {
+            ids.0 = self.insert_color_picker_swatch(picker_id);
+        }
+        if !self.color_picker_internal_valid(ids.1, picker_id, false) {
+            ids.1 = self.insert_color_picker_popup(picker_id);
+        }
+        if !self.color_picker_internal_valid(ids.2, ids.1, true) {
+            ids.2 = self.insert_color_picker_text_box(ids.1, "__perro_color_rgba");
+        }
+        if !self.color_picker_internal_valid(ids.3, ids.1, true) {
+            ids.3 = self.insert_color_picker_text_box(ids.1, "__perro_color_hsv");
+        }
+        if !self.color_picker_internal_valid(ids.4, ids.1, true) {
+            ids.4 = self.insert_color_picker_text_box(ids.1, "__perro_color_hex");
+        }
+
+        if let Some(node) = self.nodes.get_mut(picker_id)
+            && let SceneNodeData::UiColorPicker(picker) = &mut node.data
+        {
+            picker.internal_swatch_button = ids.0;
+            picker.internal_popup_panel = ids.1;
+            picker.internal_rgba_box = ids.2;
+            picker.internal_hsv_box = ids.3;
+            picker.internal_hex_box = ids.4;
+        }
+    }
+
+    fn color_picker_internal_valid(&self, id: NodeID, parent: NodeID, nested: bool) -> bool {
+        if id.is_nil() {
+            return false;
+        }
+        self.nodes.get(id).is_some_and(|node| {
+            node.parent == parent
+                && if nested {
+                    matches!(node.data, SceneNodeData::UiTextBox(_))
+                } else {
+                    matches!(
+                        node.data,
+                        SceneNodeData::UiButton(_) | SceneNodeData::UiPanel(_)
+                    )
+                }
+        })
+    }
+
+    fn insert_color_picker_swatch(&mut self, picker_id: NodeID) -> NodeID {
+        let mut button = UiButton::new();
+        button.base.layout.size = UiVector2::percent(100.0, 100.0);
+        button.base.layout.z_index = 1;
+        button.base.clip_children = false;
+        button.style.corner_radius = 0.15;
+        button.hover_style.corner_radius = 0.15;
+        button.pressed_style.corner_radius = 0.15;
+        self.insert_color_picker_internal_node(
+            picker_id,
+            "__perro_color_picker_swatch",
+            SceneNodeData::UiButton(button),
+        )
+    }
+
+    fn insert_color_picker_popup(&mut self, picker_id: NodeID) -> NodeID {
+        let mut panel = UiPanel::new();
+        panel.base.layout.anchor = UiAnchor::Bottom;
+        panel.base.layout.z_index = 100;
+        panel.base.clip_children = false;
+        self.insert_color_picker_internal_node(
+            picker_id,
+            "__perro_color_picker_popup",
+            SceneNodeData::UiPanel(panel),
+        )
+    }
+
+    fn insert_color_picker_text_box(&mut self, popup_id: NodeID, name: &'static str) -> NodeID {
+        let mut text_box = UiTextBox::new();
+        text_box.inner.base.layout.z_index = 102;
+        text_box.inner.font_size = 13.0;
+        text_box.inner.text_size_ratio = 0.5;
+        text_box.inner.padding = perro_ui::UiRect::symmetric(6.0, 3.0);
+        self.insert_color_picker_internal_node(popup_id, name, SceneNodeData::UiTextBox(text_box))
+    }
+
+    fn insert_color_picker_internal_node(
+        &mut self,
+        parent_id: NodeID,
+        name: &'static str,
+        data: SceneNodeData,
+    ) -> NodeID {
+        let mut node = SceneNode::new(data);
+        node.set_name(name);
+        node.parent = parent_id;
+        let id = self.nodes.insert(node);
+        if let Some(inserted) = self.nodes.get_mut(id) {
+            inserted.id = id;
+        }
+        if let Some(parent) = self.nodes.get_mut(parent_id)
+            && !parent.children.contains(&id)
+        {
+            parent.children.push(id);
+        }
+        if let Some(node) = self.nodes.get(id) {
+            self.register_internal_node_schedules(id, node.node_type());
+        }
+        self.mark_needs_rerender(id);
+        self.mark_ui_dirty(
+            id,
+            Self::UI_DIRTY_LAYOUT_SELF | Self::UI_DIRTY_LAYOUT_PARENT | Self::UI_DIRTY_COMMANDS,
+        );
+        self.mark_ui_dirty(
+            parent_id,
+            Self::UI_DIRTY_LAYOUT_SELF | Self::UI_DIRTY_LAYOUT_PARENT | Self::UI_DIRTY_COMMANDS,
+        );
+        id
+    }
+
+    fn sync_color_picker_internal_nodes(&mut self, picker_id: NodeID) {
+        let Some((color, popup_open, popup_style, popup_size, ids)) =
+            self.nodes.get(picker_id).and_then(|node| match &node.data {
+                SceneNodeData::UiColorPicker(picker) => Some((
+                    picker.color,
+                    picker.popup_open,
+                    picker.popup_style.clone(),
+                    picker.popup_size,
+                    (
+                        picker.internal_swatch_button,
+                        picker.internal_popup_panel,
+                        picker.internal_rgba_box,
+                        picker.internal_hsv_box,
+                        picker.internal_hex_box,
+                    ),
+                )),
+                _ => None,
+            })
+        else {
+            return;
+        };
+
+        if let Some(node) = self.nodes.get_mut(ids.0)
+            && let SceneNodeData::UiButton(button) = &mut node.data
+        {
+            button.base.visible = true;
+            button.style.fill = color;
+            button.hover_style.fill = color;
+            button.pressed_style.fill = Color::new(
+                (color.r() * 0.8).clamp(0.0, 1.0),
+                (color.g() * 0.8).clamp(0.0, 1.0),
+                (color.b() * 0.8).clamp(0.0, 1.0),
+                color.a(),
+            );
+        }
+        if let Some(node) = self.nodes.get_mut(ids.1)
+            && let SceneNodeData::UiPanel(panel) = &mut node.data
+        {
+            panel.base.visible = popup_open;
+            panel.base.layout.size = UiVector2::pixels(popup_size[0], popup_size[1]);
+            panel.base.transform.position = UiVector2::pixels(0.0, -popup_size[1] - 8.0);
+            panel.style = popup_style;
+        }
+        let rgba = color_to_rgba_text(color);
+        let hsv = color_to_hsv_text(color);
+        let hex = color_to_hex_text(color);
+        self.sync_color_picker_text_box(ids.2, popup_open, popup_size, 72.0, &rgba);
+        self.sync_color_picker_text_box(ids.3, popup_open, popup_size, 108.0, &hsv);
+        self.sync_color_picker_text_box(ids.4, popup_open, popup_size, 144.0, &hex);
+
+        self.mark_ui_dirty(
+            picker_id,
+            Self::UI_DIRTY_LAYOUT_SELF | Self::UI_DIRTY_COMMANDS,
+        );
+        for id in [ids.0, ids.1, ids.2, ids.3, ids.4] {
+            if !id.is_nil() {
+                self.mark_ui_dirty(
+                    id,
+                    Self::UI_DIRTY_LAYOUT_SELF
+                        | Self::UI_DIRTY_LAYOUT_PARENT
+                        | Self::UI_DIRTY_COMMANDS,
+                );
+            }
+        }
+    }
+
+    fn sync_color_picker_text_box(
+        &mut self,
+        node_id: NodeID,
+        visible: bool,
+        popup_size: [f32; 2],
+        y_from_top: f32,
+        text: &str,
+    ) {
+        if let Some(node) = self.nodes.get_mut(node_id)
+            && let SceneNodeData::UiTextBox(text_box) = &mut node.data
+        {
+            text_box.inner.base.visible = visible;
+            text_box.inner.base.layout.size =
+                UiVector2::pixels((popup_size[0] - 24.0).max(48.0), 28.0);
+            text_box.inner.base.transform.position =
+                UiVector2::pixels(0.0, popup_size[1] * 0.5 - y_from_top);
+            if self.render_ui.focused_text_edit != Some(node_id) {
+                text_box.inner.set_text(text.to_string());
+            }
+        }
+    }
+
+    fn emit_color_picker_wheel_commands(
+        &mut self,
+        computed: &AHashMap<NodeID, ComputedUiRect>,
+        viewport: Vector2,
+    ) {
+        let pickers = self
+            .nodes
+            .iter()
+            .filter_map(|(id, node)| {
+                let SceneNodeData::UiColorPicker(picker) = &node.data else {
+                    return None;
+                };
+                Some((
+                    id,
+                    picker.popup_open,
+                    picker.wheel_radius,
+                    picker.internal_popup_panel,
+                ))
+            })
+            .collect::<Vec<_>>();
+        for (picker_id, popup_open, wheel_radius, popup_id) in pickers {
+            let wheel_node = color_picker_wheel_render_node(picker_id);
+            if !popup_open {
+                self.queue_render_command(RenderCommand::Ui(UiCommand::RemoveNode {
+                    node: wheel_node,
+                }));
+                continue;
+            }
+            let Some(popup_rect) = computed.get(&popup_id).copied().or_else(|| {
+                self.render_ui
+                    .retained_rects
+                    .get(&popup_id)
+                    .copied()
+                    .map(|rect| computed_rect_from_state(&rect))
+            }) else {
+                continue;
+            };
+            let rect = color_picker_wheel_rect(popup_rect, wheel_radius);
+            let rect_state = UiRectState {
+                center: [rect.center.x, rect.center.y],
+                size: [rect.size.x, rect.size.y],
+                pivot: [0.5, 0.5],
+                rotation_radians: 0.0,
+                z_index: self.ui_effective_z(popup_id).saturating_add(1),
+            };
+            self.queue_render_command(RenderCommand::Ui(UiCommand::UpsertColorWheel {
+                node: wheel_node,
+                rect: rect_state,
+                clip_rect: self.ui_effective_clip_rect_screen(popup_id, computed, viewport),
+            }));
+        }
+    }
+
+    fn color_picker_parent_for_swatch(&self, swatch_id: NodeID) -> Option<NodeID> {
+        self.nodes.iter().find_map(|(id, node)| match &node.data {
+            SceneNodeData::UiColorPicker(picker) if picker.internal_swatch_button == swatch_id => {
+                Some(id)
+            }
+            _ => None,
+        })
+    }
+
+    fn process_color_picker_text_edit(
+        &mut self,
+        text_node: NodeID,
+        text: &str,
+        command_ids: &mut Vec<NodeID>,
+        command_seen: &mut ahash::AHashSet<NodeID>,
+    ) {
+        let Some((picker_id, field, alpha)) = self.nodes.iter().find_map(|(id, node)| {
+            let SceneNodeData::UiColorPicker(picker) = &node.data else {
+                return None;
+            };
+            if picker.internal_rgba_box == text_node {
+                Some((id, ColorPickerTextField::Rgba, picker.color.a()))
+            } else if picker.internal_hsv_box == text_node {
+                Some((id, ColorPickerTextField::Hsv, picker.color.a()))
+            } else if picker.internal_hex_box == text_node {
+                Some((id, ColorPickerTextField::Hex, picker.color.a()))
+            } else {
+                None
+            }
+        }) else {
+            return;
+        };
+        let Some(color) = parse_color_picker_text(field, text, alpha) else {
+            return;
+        };
+        let Some(scene_node) = self.nodes.get_mut(picker_id) else {
+            return;
+        };
+        let SceneNodeData::UiColorPicker(picker) = &mut scene_node.data else {
+            return;
+        };
+        if picker.color == color {
+            return;
+        }
+        let signals = picker.color_changed_signals.clone();
+        picker.color = color;
+        self.sync_color_picker_internal_nodes(picker_id);
+        if command_seen.insert(picker_id) {
+            command_ids.push(picker_id);
+        }
+        let params = [
+            Variant::from(picker_id),
+            Variant::from(color.r()),
+            Variant::from(color.g()),
+            Variant::from(color.b()),
+            Variant::from(color.a()),
+        ];
+        for signal in signals {
+            self.queue_ui_signal(signal, &params);
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ColorPickerTextField {
+    Rgba,
+    Hsv,
+    Hex,
+}
+
+fn color_to_rgba_text(color: Color) -> String {
+    format!(
+        "{:.3}, {:.3}, {:.3}, {:.3}",
+        color.r(),
+        color.g(),
+        color.b(),
+        color.a()
+    )
+}
+
+fn color_picker_wheel_render_node(picker_id: NodeID) -> NodeID {
+    NodeID::from_u64(0xC010_0000_0000_0000 ^ picker_id.as_u64())
+}
+
+fn color_picker_wheel_rect(popup_rect: ComputedUiRect, wheel_radius: f32) -> ComputedUiRect {
+    let radius = wheel_radius.max(8.0);
+    ComputedUiRect::new(
+        Vector2::new(popup_rect.center.x, popup_rect.max().y - radius - 14.0),
+        Vector2::new(radius * 2.0, radius * 2.0),
+    )
+}
+
+fn color_to_hsv_text(color: Color) -> String {
+    let (h, s, v) = rgb_to_hsv(color);
+    format!("{:.1}, {:.3}, {:.3}", h * 360.0, s, v)
+}
+
+fn color_to_hex_text(color: Color) -> String {
+    let [r, g, b, a] = color.to_rgba();
+    format!(
+        "#{:02X}{:02X}{:02X}{:02X}",
+        (r.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (g.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (b.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (a.clamp(0.0, 1.0) * 255.0).round() as u8
+    )
+}
+
+fn rgb_to_hsv(color: Color) -> (f32, f32, f32) {
+    let r = color.r();
+    let g = color.g();
+    let b = color.b();
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let delta = max - min;
+    let h = if delta <= f32::EPSILON {
+        0.0
+    } else if max == r {
+        ((g - b) / delta).rem_euclid(6.0) / 6.0
+    } else if max == g {
+        (((b - r) / delta) + 2.0) / 6.0
+    } else {
+        (((r - g) / delta) + 4.0) / 6.0
+    };
+    let s = if max <= f32::EPSILON {
+        0.0
+    } else {
+        delta / max
+    };
+    (h, s, max)
+}
+
+fn parse_color_picker_text(field: ColorPickerTextField, text: &str, alpha: f32) -> Option<Color> {
+    match field {
+        ColorPickerTextField::Rgba => {
+            let vals = parse_float_list(text);
+            if vals.len() < 3 {
+                return None;
+            }
+            Some(Color::new(
+                vals[0].clamp(0.0, 1.0),
+                vals[1].clamp(0.0, 1.0),
+                vals[2].clamp(0.0, 1.0),
+                vals.get(3).copied().unwrap_or(alpha).clamp(0.0, 1.0),
+            ))
+        }
+        ColorPickerTextField::Hsv => {
+            let vals = parse_float_list(text);
+            if vals.len() < 3 {
+                return None;
+            }
+            Some(hsv_to_color(
+                (vals[0] / 360.0).rem_euclid(1.0),
+                vals[1].clamp(0.0, 1.0),
+                vals[2].clamp(0.0, 1.0),
+                vals.get(3).copied().unwrap_or(alpha).clamp(0.0, 1.0),
+            ))
+        }
+        ColorPickerTextField::Hex => parse_hex_color(text, alpha),
+    }
+}
+
+fn parse_float_list(text: &str) -> Vec<f32> {
+    text.split(|ch: char| ch == ',' || ch.is_whitespace())
+        .filter_map(|part| {
+            let part = part.trim();
+            (!part.is_empty())
+                .then(|| part.parse::<f32>().ok())
+                .flatten()
+        })
+        .collect()
+}
+
+fn parse_hex_color(text: &str, alpha: f32) -> Option<Color> {
+    let hex = text.trim().trim_start_matches('#');
+    let expanded;
+    let hex = match hex.len() {
+        3 => {
+            expanded = hex.chars().flat_map(|ch| [ch, ch]).collect::<String>();
+            expanded.as_str()
+        }
+        4 => {
+            expanded = hex.chars().flat_map(|ch| [ch, ch]).collect::<String>();
+            expanded.as_str()
+        }
+        6 | 8 => hex,
+        _ => return None,
+    };
+    let r = u8::from_str_radix(&hex[0..2], 16).ok()? as f32 / 255.0;
+    let g = u8::from_str_radix(&hex[2..4], 16).ok()? as f32 / 255.0;
+    let b = u8::from_str_radix(&hex[4..6], 16).ok()? as f32 / 255.0;
+    let a = if hex.len() >= 8 {
+        u8::from_str_radix(&hex[6..8], 16).ok()? as f32 / 255.0
+    } else {
+        alpha
+    };
+    Some(Color::new(r, g, b, a))
+}
+
+fn hsv_to_color(h: f32, s: f32, v: f32, a: f32) -> Color {
+    let h = h.rem_euclid(1.0) * 6.0;
+    let i = h.floor();
+    let f = h - i;
+    let p = v * (1.0 - s);
+    let q = v * (1.0 - f * s);
+    let t = v * (1.0 - (1.0 - f) * s);
+    let (r, g, b) = match i as i32 {
+        0 => (v, t, p),
+        1 => (q, v, p),
+        2 => (p, v, t),
+        3 => (p, q, v),
+        4 => (t, p, v),
+        _ => (v, p, q),
+    };
+    Color::new(r, g, b, a)
 }
 
 #[path = "ui/events.rs"]

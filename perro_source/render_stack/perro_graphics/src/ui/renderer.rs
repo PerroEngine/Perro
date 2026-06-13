@@ -47,21 +47,16 @@ pub(crate) struct UiShapeDraw {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub(crate) struct UiColorWheelDraw {
+    pub(crate) rect: UiRectState,
+    pub(crate) clip_rect: [f32; 4],
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct UiCheckboxDraw {
     pub(crate) panel: UiPanelDraw,
     pub(crate) checked: bool,
     pub(crate) dot_fill: Color,
-    pub(crate) disabled: bool,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct UiColorPickerDraw {
-    pub(crate) panel: UiPanelDraw,
-    pub(crate) color: Color,
-    pub(crate) popup_open: bool,
-    pub(crate) popup_panel: UiPanelDraw,
-    pub(crate) popup_size: [f32; 2],
-    pub(crate) wheel_radius: f32,
     pub(crate) disabled: bool,
 }
 
@@ -113,9 +108,9 @@ pub(crate) struct UiTextEditDraw {
 pub(crate) enum UiDraw {
     Panel(UiPanelDraw),
     Shape(UiShapeDraw),
+    ColorWheel(UiColorWheelDraw),
     Button(UiButtonDraw),
     Checkbox(UiCheckboxDraw),
-    ColorPicker(UiColorPickerDraw),
     Image(UiImageDraw),
     NineSlice(UiNineSliceDraw),
     Label(UiLabelDraw),
@@ -214,6 +209,14 @@ impl UiRenderer {
                     stroke_width,
                 }),
             ),
+            UiCommand::UpsertColorWheel {
+                node,
+                rect,
+                clip_rect,
+            } => self.upsert(
+                node,
+                UiDraw::ColorWheel(UiColorWheelDraw { rect, clip_rect }),
+            ),
             UiCommand::UpsertCheckbox {
                 node,
                 rect,
@@ -242,55 +245,6 @@ impl UiRenderer {
                     },
                     checked,
                     dot_fill: dot_fill.into(),
-                    disabled,
-                }),
-            ),
-            UiCommand::UpsertColorPicker {
-                node,
-                rect,
-                clip_rect,
-                fill,
-                stroke,
-                stroke_width,
-                corner_radius,
-                shadow,
-                highlight,
-                color,
-                popup_open,
-                popup_fill,
-                popup_stroke,
-                popup_stroke_width,
-                popup_corner_radius,
-                popup_size,
-                wheel_radius,
-                disabled,
-            } => self.upsert(
-                node,
-                UiDraw::ColorPicker(UiColorPickerDraw {
-                    panel: UiPanelDraw {
-                        rect,
-                        clip_rect,
-                        fill: fill.into(),
-                        stroke: stroke.into(),
-                        stroke_width,
-                        corner_radius,
-                        shadow,
-                        highlight,
-                    },
-                    color,
-                    popup_open,
-                    popup_panel: UiPanelDraw {
-                        rect,
-                        clip_rect,
-                        fill: popup_fill.into(),
-                        stroke: popup_stroke.into(),
-                        stroke_width: popup_stroke_width,
-                        corner_radius: popup_corner_radius,
-                        shadow: UiDepthEffectState::none(),
-                        highlight: UiDepthEffectState::none(),
-                    },
-                    popup_size,
-                    wheel_radius,
                     disabled,
                 }),
             ),

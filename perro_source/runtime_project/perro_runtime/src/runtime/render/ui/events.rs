@@ -205,6 +205,9 @@ impl Runtime {
             self.mark_ui_dirty(focused, Runtime::UI_DIRTY_COMMANDS | Runtime::UI_DIRTY_TEXT);
         }
         if text_changed {
+            if let Some(text) = changed_text.as_deref() {
+                self.process_color_picker_text_edit(focused, text, command_ids, command_seen);
+            }
             self.emit_text_edit_event(focused, "text_changed", changed_text.as_deref());
         }
     }
@@ -459,7 +462,6 @@ impl Runtime {
                     .and_then(|scene_node| match &scene_node.data {
                         SceneNodeData::UiButton(button) => Some(button.cursor_icon),
                         SceneNodeData::UiCheckbox(checkbox) => Some(checkbox.cursor_icon),
-                        SceneNodeData::UiColorPicker(picker) => Some(picker.cursor_icon),
                         SceneNodeData::UiImageButton(button) => Some(button.cursor_icon),
                         _ => None,
                     })
@@ -477,7 +479,7 @@ impl Runtime {
         for &(node, event) in events {
             if event == "click" {
                 self.toggle_checkbox(node);
-                self.toggle_color_picker(node);
+                self.toggle_color_picker_from_child(node);
                 self.process_button_web_action(node);
             }
             self.collect_button_event_signals(node, event);
@@ -501,7 +503,6 @@ impl Runtime {
         let web = match &scene_node.data {
             SceneNodeData::UiButton(button) => button.web.as_ref(),
             SceneNodeData::UiCheckbox(checkbox) => checkbox.web.as_ref(),
-            SceneNodeData::UiColorPicker(picker) => picker.web.as_ref(),
             SceneNodeData::UiImageButton(button) => button.web.as_ref(),
             _ => None,
         };
@@ -522,15 +523,18 @@ impl Runtime {
         self.mark_ui_dirty(node, Runtime::UI_DIRTY_COMMANDS);
     }
 
-    fn toggle_color_picker(&mut self, node: NodeID) {
-        let Some(scene_node) = self.nodes.get_mut(node) else {
+    fn toggle_color_picker_from_child(&mut self, node: NodeID) {
+        let Some(parent) = self.color_picker_parent_for_swatch(node) else {
+            return;
+        };
+        let Some(scene_node) = self.nodes.get_mut(parent) else {
             return;
         };
         let SceneNodeData::UiColorPicker(picker) = &mut scene_node.data else {
             return;
         };
         picker.popup_open = !picker.popup_open;
-        self.mark_ui_dirty(node, Runtime::UI_DIRTY_COMMANDS);
+        self.sync_color_picker_internal_nodes(parent);
     }
 
     fn process_color_picker_popup_input(
@@ -540,7 +544,6 @@ impl Runtime {
         command_ids: &mut Vec<NodeID>,
         command_seen: &mut ahash::AHashSet<NodeID>,
     ) {
-        let viewport = self.input.viewport_size();
         let mut updates = Vec::new();
         for (node, scene_node) in self.nodes.iter() {
             let SceneNodeData::UiColorPicker(picker) = &scene_node.data else {
@@ -549,15 +552,17 @@ impl Runtime {
             if !picker.popup_open || button_inactive(&picker.button) {
                 continue;
             }
-            let Some(rect) = computed.get(&node).copied().or_else(|| {
+            let popup_id = picker.internal_popup_panel;
+            let Some(popup_rect) = computed.get(&popup_id).copied().or_else(|| {
                 self.render_ui
                     .retained_rects
-                    .get(&node)
+                    .get(&popup_id)
                     .map(computed_rect_from_state)
             }) else {
                 continue;
             };
-            let Some(color) = color_picker_color_at_point(rect, picker, viewport, point) else {
+            let rect = color_picker_wheel_rect(popup_rect, picker.wheel_radius);
+            let Some(color) = color_picker_color_at_point(rect, picker.color.a(), point) else {
                 continue;
             };
             updates.push((node, color));
@@ -574,7 +579,7 @@ impl Runtime {
             }
             let signals = picker.color_changed_signals.clone();
             picker.color = color;
-            self.mark_ui_dirty(node, Runtime::UI_DIRTY_COMMANDS);
+            self.sync_color_picker_internal_nodes(node);
             if command_seen.insert(node) {
                 command_ids.push(node);
             }
@@ -1155,15 +1160,6 @@ impl Runtime {
                     return None;
                 }
             }
-            SceneNodeData::UiColorPicker(picker) => {
-                if picker.disabled
-                    || !picker.input_enabled
-                    || !picker.visible
-                    || !self.ui_input_mask_accepts(&picker.input_mask, source)
-                {
-                    return None;
-                }
-            }
             SceneNodeData::UiImageButton(button) => {
                 if button.disabled
                     || !button.input_enabled
@@ -1424,9 +1420,6 @@ impl Runtime {
                     SceneNodeData::UiCheckbox(checkbox) if !checkbox_inactive(checkbox) => {
                         Some(node)
                     }
-                    SceneNodeData::UiColorPicker(picker) if !button_inactive(&picker.button) => {
-                        Some(node)
-                    }
                     SceneNodeData::UiImageButton(button) if !image_button_inactive(button) => {
                         Some(node)
                     }
@@ -1458,10 +1451,6 @@ impl Runtime {
             SceneNodeData::UiCheckbox(checkbox) => {
                 !checkbox_inactive(checkbox)
                     && self.ui_input_mask_accepts(&checkbox.input_mask, source)
-            }
-            SceneNodeData::UiColorPicker(picker) => {
-                !button_inactive(&picker.button)
-                    && self.ui_input_mask_accepts(&picker.input_mask, source)
             }
             SceneNodeData::UiImageButton(button) => {
                 !image_button_inactive(button)
@@ -1548,7 +1537,6 @@ fn ui_button_like_inactive(data: &SceneNodeData) -> Option<bool> {
     match data {
         SceneNodeData::UiButton(button) => Some(button_inactive(button)),
         SceneNodeData::UiCheckbox(checkbox) => Some(checkbox_inactive(checkbox)),
-        SceneNodeData::UiColorPicker(picker) => Some(button_inactive(&picker.button)),
         SceneNodeData::UiImageButton(button) => Some(image_button_inactive(button)),
         _ => None,
     }
@@ -1564,8 +1552,6 @@ fn ui_button_like_custom_event_signals<'a>(
         }
         SceneNodeData::UiCheckbox(checkbox) => (!checkbox_inactive(checkbox))
             .then_some(button_custom_event_signals(&checkbox.button, event)),
-        SceneNodeData::UiColorPicker(picker) => (!button_inactive(&picker.button))
-            .then_some(button_custom_event_signals(&picker.button, event)),
         SceneNodeData::UiImageButton(button) => (!image_button_inactive(button))
             .then_some(image_button_custom_event_signals(button, event)),
         _ => None,
@@ -1598,13 +1584,6 @@ fn ui_button_like_hit_data(
             input_mask: &checkbox.input_mask,
             corner_radius: checkbox_style(checkbox, state).corner_radius,
         }),
-        SceneNodeData::UiColorPicker(picker) => Some(UiButtonLikeHitData {
-            disabled: picker.disabled,
-            input_enabled: picker.input_enabled,
-            mouse_filter: picker.mouse_filter,
-            input_mask: &picker.input_mask,
-            corner_radius: button_style(&picker.button, state).corner_radius,
-        }),
         SceneNodeData::UiImageButton(button) => Some(UiButtonLikeHitData {
             disabled: button.disabled,
             input_enabled: button.input_enabled,
@@ -1617,47 +1596,19 @@ fn ui_button_like_hit_data(
 }
 
 fn color_picker_color_at_point(
-    button_rect: ComputedUiRect,
-    picker: &perro_ui::UiColorPicker,
-    viewport: Vector2,
+    wheel_rect: ComputedUiRect,
+    alpha: f32,
     point: Vector2,
 ) -> Option<Color> {
-    let popup = color_picker_popup_rect(button_rect, picker.popup_size, viewport);
-    let wheel_center = Vector2::new(popup.center.x, popup.max().y - picker.wheel_radius - 18.0);
-    let delta = point - wheel_center;
-    let radius = picker
-        .wheel_radius
-        .min(popup.size.x.abs() * 0.42)
-        .min(popup.size.y.abs() * 0.36)
-        .max(8.0);
+    let delta = point - wheel_rect.center;
+    let radius = wheel_rect.size.x.min(wheel_rect.size.y).abs() * 0.5;
     let distance = (delta.x * delta.x + delta.y * delta.y).sqrt();
     if distance > radius {
         return None;
     }
     let hue = delta.y.atan2(delta.x).rem_euclid(std::f32::consts::TAU) / std::f32::consts::TAU;
     let saturation = (distance / radius).clamp(0.0, 1.0);
-    Some(hsv_color(hue, saturation, 1.0, picker.color.a()))
-}
-
-fn color_picker_popup_rect(
-    button_rect: ComputedUiRect,
-    size: [f32; 2],
-    viewport: Vector2,
-) -> ComputedUiRect {
-    let min = button_rect.min();
-    let width = size[0].max(32.0);
-    let height = size[1].max(32.0);
-    let gap = 8.0;
-    let button_screen_min_x = viewport.x * 0.5 + min.x;
-    let button_screen_bottom_y = viewport.y * 0.5 - min.y;
-    let mut screen_x = button_screen_min_x + width * 0.5;
-    let mut screen_y = button_screen_bottom_y + gap + height * 0.5;
-    screen_x = screen_x.clamp(width * 0.5, viewport.x - width * 0.5);
-    screen_y = screen_y.clamp(height * 0.5, viewport.y - height * 0.5);
-    ComputedUiRect::new(
-        Vector2::new(screen_x - viewport.x * 0.5, viewport.y * 0.5 - screen_y),
-        Vector2::new(width, height),
-    )
+    Some(hsv_color(hue, saturation, 1.0, alpha))
 }
 
 fn hsv_color(h: f32, s: f32, v: f32, a: f32) -> Color {

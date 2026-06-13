@@ -3632,6 +3632,14 @@ pub fn set_checkbox_checked<API: ScriptAPI + ?Sized>(
     }
 }
 
+pub fn read_checkbox_checked<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+) -> Option<bool> {
+    let id = find_named(ctx, name)?;
+    Some(with_node!(ctx.run, UiCheckbox, id, |node| node.checked))
+}
+
 pub fn set_add_node_popup<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     visible: bool,

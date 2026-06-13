@@ -259,6 +259,11 @@ pub struct UiColorPicker {
     pub popup_style: UiStyle,
     pub popup_size: [f32; 2],
     pub wheel_radius: f32,
+    pub internal_swatch_button: NodeID,
+    pub internal_popup_panel: NodeID,
+    pub internal_rgba_box: NodeID,
+    pub internal_hsv_box: NodeID,
+    pub internal_hex_box: NodeID,
     pub color_changed_signals: Vec<SignalID>,
 }
 
@@ -275,6 +280,11 @@ impl UiColorPicker {
             popup_style: UiStyle::panel(),
             popup_size: [180.0, 220.0],
             wheel_radius: 72.0,
+            internal_swatch_button: NodeID::nil(),
+            internal_popup_panel: NodeID::nil(),
+            internal_rgba_box: NodeID::nil(),
+            internal_hsv_box: NodeID::nil(),
+            internal_hex_box: NodeID::nil(),
             color_changed_signals: Vec::new(),
         }
     }

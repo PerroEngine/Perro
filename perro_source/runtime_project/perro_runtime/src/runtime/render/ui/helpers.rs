@@ -357,37 +357,7 @@ pub(super) fn ui_command_from_node(
                 disabled: checkbox.disabled,
             })
         }
-        SceneNodeData::UiColorPicker(picker) => {
-            let mut style = button_style(&picker.button, button_state).clone();
-            style.fill = picker.color;
-            let style_scale = ui_style_scale(scale);
-            Some(UiCommand::UpsertColorPicker {
-                node,
-                rect,
-                clip_rect,
-                fill: Runtime::color_modulate_rgba(style.fill.to_rgba(), modulate),
-                stroke: Runtime::color_modulate_rgba(style.stroke.to_rgba(), modulate),
-                stroke_width: style.stroke_width * style_scale,
-                corner_radius: style.corner_radius,
-                shadow: ui_depth_effect_state(style.shadow, style_scale),
-                highlight: ui_depth_effect_state(style.highlight, style_scale),
-                color: Runtime::color_modulate(picker.color, modulate),
-                popup_open: picker.popup_open,
-                popup_fill: Runtime::color_modulate_rgba(
-                    picker.popup_style.fill.to_rgba(),
-                    modulate,
-                ),
-                popup_stroke: Runtime::color_modulate_rgba(
-                    picker.popup_style.stroke.to_rgba(),
-                    modulate,
-                ),
-                popup_stroke_width: picker.popup_style.stroke_width * style_scale,
-                popup_corner_radius: picker.popup_style.corner_radius,
-                popup_size: picker.popup_size,
-                wheel_radius: picker.wheel_radius,
-                disabled: picker.disabled,
-            })
-        }
+        SceneNodeData::UiColorPicker(_) => None,
         SceneNodeData::UiLabel(label) => Some(UiCommand::UpsertLabel {
             node,
             rect,
@@ -665,9 +635,9 @@ pub(super) fn ui_command_matches_node(
     let node = match command {
         UiCommand::UpsertPanel { node, .. }
         | UiCommand::UpsertShape { node, .. }
+        | UiCommand::UpsertColorWheel { node, .. }
         | UiCommand::UpsertButton { node, .. }
         | UiCommand::UpsertCheckbox { node, .. }
-        | UiCommand::UpsertColorPicker { node, .. }
         | UiCommand::UpsertLabel { node, .. }
         | UiCommand::UpsertImage { node, .. }
         | UiCommand::UpsertNineSlice { node, .. }

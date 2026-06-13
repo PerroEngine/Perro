@@ -111,7 +111,7 @@ pub fn inspector_script_var_fields_for_node(
 }
 
 fn merge_script_var_overrides(
-    fields: &mut Vec<(SceneFieldName, SceneValue)>,
+    fields: &mut [(SceneFieldName, SceneValue)],
     overrides: &[(SceneFieldName, SceneValue)],
 ) {
     for (name, value) in overrides {
@@ -747,6 +747,12 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
             return;
         };
         text
+    } else if row.kind == "Bool" {
+        let Some(checked) = read_checkbox_checked(ctx, &format!("inspector_var_{idx}_check"))
+        else {
+            return;
+        };
+        checked.to_string()
     } else if row.components.is_empty() {
         let Some(text) = read_text_box(ctx, &format!("inspector_var_{idx}_value")) else {
             return;

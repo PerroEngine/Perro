@@ -1,5 +1,5 @@
 use super::renderer::{
-    UiCheckboxDraw, UiColorPickerDraw, UiDraw, UiImageDraw, UiLabelDraw, UiNineSliceDraw,
+    UiCheckboxDraw, UiColorWheelDraw, UiDraw, UiImageDraw, UiLabelDraw, UiNineSliceDraw,
     UiPanelDraw, UiShapeDraw, UiTextEditDraw,
 };
 use ahash::AHashMap;
@@ -99,14 +99,14 @@ impl EpaintUiPainter {
             match draw {
                 UiDraw::Panel(panel) => push_panel_shape(panel, viewport, &mut self.shapes),
                 UiDraw::Shape(shape) => push_ui_shape(shape, viewport, &mut self.shapes),
+                UiDraw::ColorWheel(wheel) => {
+                    push_color_wheel_shape(wheel, viewport, &mut self.shapes)
+                }
                 UiDraw::Button(button) => {
                     push_panel_shape(&button.panel, viewport, &mut self.shapes)
                 }
                 UiDraw::Checkbox(checkbox) => {
                     push_checkbox_shapes(checkbox, viewport, &mut self.shapes)
-                }
-                UiDraw::ColorPicker(picker) => {
-                    push_color_picker_shapes(picker, viewport, &mut self.shapes)
                 }
                 UiDraw::Image(image) => push_image_shape(image, viewport, &mut self.shapes),
                 UiDraw::NineSlice(image) => {
@@ -183,9 +183,9 @@ fn ui_rect(draw: &UiDraw) -> UiRectState {
     match draw {
         UiDraw::Panel(panel) => panel.rect,
         UiDraw::Shape(shape) => shape.rect,
+        UiDraw::ColorWheel(wheel) => wheel.rect,
         UiDraw::Button(button) => button.panel.rect,
         UiDraw::Checkbox(checkbox) => checkbox.panel.rect,
-        UiDraw::ColorPicker(picker) => picker.panel.rect,
         UiDraw::Image(image) => image.rect,
         UiDraw::NineSlice(image) => image.rect,
         UiDraw::Label(label) => label.rect,
@@ -232,6 +232,25 @@ fn push_ui_shape(shape: &UiShapeDraw, viewport: [f32; 2], out: &mut Vec<ClippedS
     });
 }
 
+fn push_color_wheel_shape(
+    wheel: &UiColorWheelDraw,
+    viewport: [f32; 2],
+    out: &mut Vec<ClippedShape>,
+) {
+    if !valid_rect(wheel.rect) {
+        return;
+    }
+    let (min, max) = wheel.rect.screen_min_max(viewport);
+    let rect = Rect::from_min_max(pos2(min[0], min[1]), pos2(max[0], max[1]));
+    let clip_rect = clip_rect_from_state(wheel.clip_rect, viewport);
+    push_color_wheel(
+        rect.center(),
+        rect.width().min(rect.height()) * 0.5,
+        clip_rect,
+        out,
+    );
+}
+
 fn push_checkbox_shapes(
     checkbox: &UiCheckboxDraw,
     viewport: [f32; 2],
@@ -249,65 +268,6 @@ fn push_checkbox_shapes(
         clip_rect,
         shape: Shape::circle_filled(rect.center(), radius.max(1.0), color32(checkbox.dot_fill)),
     });
-}
-
-fn push_color_picker_shapes(
-    picker: &UiColorPickerDraw,
-    viewport: [f32; 2],
-    out: &mut Vec<ClippedShape>,
-) {
-    push_panel_shape(&picker.panel, viewport, out);
-    if !picker.popup_open {
-        return;
-    }
-
-    let mut popup = picker.popup_panel.clone();
-    popup.rect = color_picker_popup_rect(picker.panel.rect, picker.popup_size, viewport);
-    popup.clip_rect = [0.0, 0.0, 1.0, 1.0];
-    push_panel_shape(&popup, viewport, out);
-
-    let (min, max) = popup.rect.screen_min_max(viewport);
-    let clip_rect = clip_rect_from_state(popup.clip_rect, viewport);
-    let center = pos2((min[0] + max[0]) * 0.5, min[1] + picker.wheel_radius + 18.0);
-    let radius = picker
-        .wheel_radius
-        .min((max[0] - min[0]).abs() * 0.42)
-        .min((max[1] - min[1]).abs() * 0.36)
-        .max(8.0);
-    push_color_wheel(center, radius, clip_rect, out);
-
-    let swatch = Rect::from_min_max(
-        pos2(min[0] + 14.0, max[1] - 42.0),
-        pos2(max[0] - 14.0, max[1] - 14.0),
-    );
-    out.push(ClippedShape {
-        clip_rect,
-        shape: Shape::Rect(RectShape::new(
-            swatch,
-            CornerRadius::same(4),
-            color32(picker.color),
-            Stroke::new(1.0, Color32::from_white_alpha(180)),
-            StrokeKind::Inside,
-        )),
-    });
-}
-
-fn color_picker_popup_rect(button: UiRectState, size: [f32; 2], viewport: [f32; 2]) -> UiRectState {
-    let (min, max) = button.screen_min_max(viewport);
-    let width = size[0].max(32.0);
-    let height = size[1].max(32.0);
-    let gap = 8.0;
-    let mut screen_x = min[0] + width * 0.5;
-    let mut screen_y = max[1] + gap + height * 0.5;
-    screen_x = screen_x.clamp(width * 0.5, viewport[0] - width * 0.5);
-    screen_y = screen_y.clamp(height * 0.5, viewport[1] - height * 0.5);
-    UiRectState {
-        center: [screen_x - viewport[0] * 0.5, viewport[1] * 0.5 - screen_y],
-        size: [width, height],
-        pivot: [0.5, 0.5],
-        rotation_radians: 0.0,
-        z_index: button.z_index.saturating_add(100),
-    }
 }
 
 fn push_color_wheel(
