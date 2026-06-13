@@ -38,13 +38,21 @@ struct ValueRowContext<'a> {
     color_paths: &'a [String],
     node_paths: &'a [String],
     enum_options: &'a BTreeMap<String, Vec<String>>,
+    warnings: &'a BTreeMap<String, String>,
 }
 
 pub fn inspector_script_var_rows(
     fields: &[(SceneFieldName, SceneValue)],
     expanded_paths: &[String],
 ) -> Vec<InspectorValueRow> {
-    inspector_script_var_rows_with_color_paths(fields, expanded_paths, &[], &[], &BTreeMap::new())
+    inspector_script_var_rows_with_color_paths(
+        fields,
+        expanded_paths,
+        &[],
+        &[],
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+    )
 }
 
 pub fn inspector_script_var_rows_with_color_paths(
@@ -53,6 +61,7 @@ pub fn inspector_script_var_rows_with_color_paths(
     color_paths: &[String],
     node_paths: &[String],
     enum_options: &BTreeMap<String, Vec<String>>,
+    warnings: &BTreeMap<String, String>,
 ) -> Vec<InspectorValueRow> {
     let mut rows = Vec::new();
     let ctx = ValueRowContext {
@@ -60,6 +69,7 @@ pub fn inspector_script_var_rows_with_color_paths(
         color_paths,
         node_paths,
         enum_options,
+        warnings,
     };
     for (idx, (name, value)) in fields.iter().enumerate() {
         let mut path = vec![ValuePathStep::Root(idx)];
@@ -102,7 +112,7 @@ pub fn script_state_node_path_keys(
     let Some(struct_name) = parse_state_struct_name(&source) else {
         return Vec::new();
     };
-    let schema = parse_project_script_schema(&state.project_root, &source);
+    let schema = parse_project_script_schema(&state.project_root, script_path.as_ref(), &source);
     let mut out = Vec::new();
     collect_script_node_path_keys(
         &schema,
@@ -131,7 +141,7 @@ pub fn script_state_enum_path_options(
     let Some(struct_name) = parse_state_struct_name(&source) else {
         return BTreeMap::new();
     };
-    let schema = parse_project_script_schema(&state.project_root, &source);
+    let schema = parse_project_script_schema(&state.project_root, script_path.as_ref(), &source);
     let mut out = BTreeMap::new();
     collect_script_enum_path_options(
         &schema,
@@ -152,12 +162,14 @@ pub fn inspector_script_var_rows_for_node(
     let fields = inspector_script_var_fields_for_node(state, node);
     let node_paths = script_state_node_path_keys(state, node, &fields);
     let enum_options = script_state_enum_path_options(state, node, &fields);
+    let warnings = script_state_schema_warnings(state, node, &fields);
     inspector_script_var_rows_with_color_paths(
         &fields,
         &state.inspector_expanded_paths,
         &[],
         &node_paths,
         &enum_options,
+        &warnings,
     )
 }
 
@@ -221,7 +233,7 @@ fn script_state_default_fields(
     let Some(struct_name) = parse_state_struct_name(&source) else {
         return Vec::new();
     };
-    let schema = parse_project_script_schema(project_root, &source);
+    let schema = parse_project_script_schema(project_root, script_path, &source);
     script_struct_default_fields_with_expose(&schema, &struct_name, 0, true)
 }
 
@@ -233,10 +245,9 @@ fn script_state_color_field_names(project_root: &str, script_path: &str) -> Vec<
     let Some(struct_name) = parse_state_struct_name(&source) else {
         return Vec::new();
     };
-    let schema = parse_project_script_schema(project_root, &source);
+    let schema = parse_project_script_schema(project_root, script_path, &source);
     schema
-        .structs
-        .get(&struct_name)
+        .struct_fields(&struct_name)
         .into_iter()
         .flat_map(|fields| fields.iter())
         .filter(|field| field.exposed && is_color_type(&field.ty))
@@ -256,7 +267,7 @@ fn collect_script_node_path_keys(
     if depth > MAX_INSPECTOR_DEPTH {
         return;
     }
-    let Some(fields) = schema.structs.get(struct_name) else {
+    let Some(fields) = schema.struct_fields(struct_name) else {
         return;
     };
     for field in fields
@@ -276,12 +287,12 @@ fn collect_script_node_path_keys(
         };
         if is_node_ref_type(&field.ty) {
             out.push(key);
-        } else if let Some(nested) = script_struct_type_name(schema, &field.ty)
+        } else if let TypeResolution::Found(nested) = resolve_script_struct(schema, &field.ty)
             && let Some((_, SceneValue::Object(nested_values))) = values.get(idx)
         {
             collect_script_node_path_keys(
                 schema,
-                &nested,
+                &nested.name,
                 false,
                 nested_values.as_ref(),
                 key,
@@ -304,7 +315,7 @@ fn collect_script_enum_path_options(
     if depth > MAX_INSPECTOR_DEPTH {
         return;
     }
-    let Some(fields) = schema.structs.get(struct_name) else {
+    let Some(fields) = schema.struct_fields(struct_name) else {
         return;
     };
     for field in fields
@@ -322,16 +333,14 @@ fn collect_script_enum_path_options(
         } else {
             format!("{prefix}.{}", field.name)
         };
-        if let Some(enum_name) = script_enum_type_name(schema, &field.ty) {
-            if let Some(info) = schema.enums.get(&enum_name) {
-                out.insert(key, info.variants.clone());
-            }
-        } else if let Some(nested) = script_struct_type_name(schema, &field.ty)
+        if let TypeResolution::Found(info) = resolve_script_enum(schema, &field.ty) {
+            out.insert(key, info.variants.clone());
+        } else if let TypeResolution::Found(nested) = resolve_script_struct(schema, &field.ty)
             && let Some((_, SceneValue::Object(nested_values))) = values.get(idx)
         {
             collect_script_enum_path_options(
                 schema,
-                &nested,
+                &nested.name,
                 false,
                 nested_values.as_ref(),
                 key,
@@ -342,21 +351,226 @@ fn collect_script_enum_path_options(
     }
 }
 
-struct ScriptSchema {
-    structs: BTreeMap<String, Vec<RawScriptField>>,
-    enums: BTreeMap<String, ScriptEnum>,
+pub fn script_state_schema_warnings(
+    state: &EditorState,
+    node: &perro_api::scene::SceneNodeEntry,
+    fields: &[(SceneFieldName, SceneValue)],
+) -> BTreeMap<String, String> {
+    let Some(script_path) = node.script.as_ref() else {
+        return BTreeMap::new();
+    };
+    let abs = res_to_abs(&state.project_root, script_path.as_ref());
+    let Ok(source) = fs::read_to_string(abs) else {
+        return BTreeMap::new();
+    };
+    let Some(struct_name) = parse_state_struct_name(&source) else {
+        return BTreeMap::new();
+    };
+    let schema = parse_project_script_schema(&state.project_root, script_path.as_ref(), &source);
+    let mut out = BTreeMap::new();
+    collect_script_schema_warnings(
+        &schema,
+        &struct_name,
+        true,
+        fields,
+        String::new(),
+        0,
+        &mut out,
+    );
+    out
 }
 
+fn collect_script_schema_warnings(
+    schema: &ScriptSchema,
+    struct_name: &str,
+    require_expose: bool,
+    values: &[(SceneFieldName, SceneValue)],
+    prefix: String,
+    depth: usize,
+    out: &mut BTreeMap<String, String>,
+) {
+    if depth > MAX_INSPECTOR_DEPTH {
+        return;
+    }
+    let Some(fields) = schema.struct_fields(struct_name) else {
+        return;
+    };
+    for field in fields
+        .iter()
+        .filter(|field| !require_expose || field.exposed)
+    {
+        let Some(idx) = values
+            .iter()
+            .position(|(name, _)| name.as_ref() == field.name)
+        else {
+            continue;
+        };
+        let key = if prefix.is_empty() {
+            format!("r{idx}")
+        } else {
+            format!("{prefix}.{}", field.name)
+        };
+        match resolve_script_struct(schema, &field.ty) {
+            TypeResolution::Found(def) => {
+                if !def.has_variant {
+                    out.insert(
+                        key.clone(),
+                        format!("warn missing Variant derive\n{}", def.display_name()),
+                    );
+                }
+                if let Some((_, SceneValue::Object(nested_values))) = values.get(idx) {
+                    collect_script_schema_warnings(
+                        schema,
+                        &def.name,
+                        false,
+                        nested_values.as_ref(),
+                        key,
+                        depth + 1,
+                        out,
+                    );
+                }
+                continue;
+            }
+            TypeResolution::Ambiguous(name, origins) => {
+                out.insert(
+                    key.clone(),
+                    format!("warn ambiguous type\n{name}: {}", origins.join(" + ")),
+                );
+                continue;
+            }
+            TypeResolution::Missing => {}
+        }
+        match resolve_script_enum(schema, &field.ty) {
+            TypeResolution::Found(def) => {
+                if !def.has_variant {
+                    out.insert(
+                        key,
+                        format!("warn missing Variant derive\n{}", def.display_name()),
+                    );
+                }
+            }
+            TypeResolution::Ambiguous(name, origins) => {
+                out.insert(
+                    key,
+                    format!("warn ambiguous enum\n{name}: {}", origins.join(" + ")),
+                );
+            }
+            TypeResolution::Missing => {}
+        }
+    }
+}
+
+struct ScriptSchema {
+    root_module: String,
+    imports: ScriptImports,
+    structs: BTreeMap<String, Vec<ScriptStruct>>,
+    enums: BTreeMap<String, Vec<ScriptEnum>>,
+}
+
+#[derive(Default)]
+struct ScriptImports {
+    named: BTreeMap<String, String>,
+    globs: Vec<String>,
+    script_modules_glob: bool,
+}
+
+#[derive(Clone)]
+struct ScriptStruct {
+    name: String,
+    module: String,
+    short_module: String,
+    origin: String,
+    has_variant: bool,
+    fields: Vec<RawScriptField>,
+}
+
+#[derive(Clone)]
 struct ScriptEnum {
+    name: String,
+    module: String,
+    short_module: String,
+    origin: String,
+    has_variant: bool,
     default: String,
     variants: Vec<String>,
 }
 
+#[derive(Clone)]
 struct RawScriptField {
     name: String,
     ty: String,
     default_attr: Option<String>,
     exposed: bool,
+}
+
+trait ScriptTypeDef {
+    fn name(&self) -> &str;
+    fn module(&self) -> &str;
+    fn short_module(&self) -> &str;
+    fn origin(&self) -> &str;
+}
+
+impl ScriptTypeDef for ScriptStruct {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn module(&self) -> &str {
+        &self.module
+    }
+
+    fn short_module(&self) -> &str {
+        &self.short_module
+    }
+
+    fn origin(&self) -> &str {
+        &self.origin
+    }
+}
+
+impl ScriptTypeDef for ScriptEnum {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn module(&self) -> &str {
+        &self.module
+    }
+
+    fn short_module(&self) -> &str {
+        &self.short_module
+    }
+
+    fn origin(&self) -> &str {
+        &self.origin
+    }
+}
+
+impl ScriptStruct {
+    fn display_name(&self) -> String {
+        format!("{} @ {}", self.name, self.origin)
+    }
+}
+
+impl ScriptEnum {
+    fn display_name(&self) -> String {
+        format!("{} @ {}", self.name, self.origin)
+    }
+}
+
+impl ScriptSchema {
+    fn struct_fields(&self, struct_name: &str) -> Option<&[RawScriptField]> {
+        self.structs
+            .get(struct_name)
+            .and_then(|defs| defs.first())
+            .map(|def| def.fields.as_slice())
+    }
+}
+
+enum TypeResolution<'a, T> {
+    Found(&'a T),
+    Ambiguous(String, Vec<String>),
+    Missing,
 }
 
 fn parse_state_struct_name(source: &str) -> Option<String> {
@@ -393,36 +607,82 @@ fn parse_struct_name(line: &str) -> Option<String> {
     None
 }
 
-fn parse_script_schema(source: &str) -> ScriptSchema {
+fn parse_script_schema(
+    source: &str,
+    module: &str,
+    short_module: &str,
+    origin: &str,
+    root_module: &str,
+) -> ScriptSchema {
     let mut structs = BTreeMap::new();
     let mut enums = BTreeMap::new();
+    let mut pending_derives = Vec::<String>::new();
     let mut lines = source.lines().peekable();
     while let Some(line) = lines.next() {
-        if let Some(name) = parse_struct_name(strip_line_comment(line).trim()) {
+        let clean = strip_line_comment(line).trim();
+        let (attrs, rest) = split_leading_attrs(clean);
+        for attr in attrs {
+            if attr.starts_with("#[derive") {
+                pending_derives.push(attr.to_string());
+            }
+        }
+        let has_variant = pending_derives.iter().any(|attr| attr_has_variant_derive(attr));
+        if let Some(name) = parse_struct_name(rest) {
             let fields = parse_script_struct_fields(source, &name);
-            structs.insert(name, fields);
-        } else if let Some(name) = parse_enum_name(strip_line_comment(line).trim()) {
-            enums.insert(name, parse_enum_info(line, &mut lines));
+            structs.entry(name.clone()).or_insert_with(Vec::new).push(ScriptStruct {
+                name,
+                module: module.to_string(),
+                short_module: short_module.to_string(),
+                origin: origin.to_string(),
+                has_variant,
+                fields,
+            });
+            pending_derives.clear();
+        } else if let Some(name) = parse_enum_name(rest) {
+            let mut info = parse_enum_info(line, &mut lines);
+            info.name = name.clone();
+            info.module = module.to_string();
+            info.short_module = short_module.to_string();
+            info.origin = origin.to_string();
+            info.has_variant = has_variant;
+            enums.entry(name).or_insert_with(Vec::new).push(info);
+            pending_derives.clear();
+        } else if !rest.is_empty() && !rest.starts_with("#[") {
+            pending_derives.clear();
         }
     }
-    ScriptSchema { structs, enums }
+    ScriptSchema {
+        root_module: root_module.to_string(),
+        imports: parse_script_imports(source),
+        structs,
+        enums,
+    }
 }
 
-fn parse_project_script_schema(project_root: &str, source: &str) -> ScriptSchema {
-    let mut schema = parse_script_schema(source);
+fn parse_project_script_schema(project_root: &str, script_path: &str, source: &str) -> ScriptSchema {
+    let root_module = module_name_from_script_path(script_path);
+    let root_short_module = module_short_name_from_script_path(script_path);
+    let mut schema = parse_script_schema(
+        source,
+        &root_module,
+        &root_short_module,
+        script_path,
+        &root_module,
+    );
     let res_dir = Path::new(project_root).join("res");
-    merge_script_schema_dir(&mut schema, &res_dir);
+    let skip_rel = script_path.trim_start_matches("res://");
+    merge_script_schema_dir(&mut schema, &res_dir, &res_dir, skip_rel);
     schema
 }
 
-fn merge_script_schema_dir(schema: &mut ScriptSchema, dir: &Path) {
+fn merge_script_schema_dir(schema: &mut ScriptSchema, dir: &Path, res_dir: &Path, skip_rel: &str) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            merge_script_schema_dir(schema, &path);
+            merge_script_schema_dir(schema, &path, res_dir, skip_rel);
             continue;
         }
         if path.extension().and_then(|value| value.to_str()) != Some("rs") {
@@ -431,14 +691,92 @@ fn merge_script_schema_dir(schema: &mut ScriptSchema, dir: &Path) {
         let Ok(source) = fs::read_to_string(&path) else {
             continue;
         };
-        let other = parse_script_schema(&source);
-        for (name, fields) in other.structs {
-            schema.structs.entry(name).or_insert(fields);
+        let rel = path
+            .strip_prefix(res_dir)
+            .ok()
+            .map(|value| value.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_else(|| path.to_string_lossy().replace('\\', "/"));
+        if rel == skip_rel {
+            continue;
         }
-        for (name, info) in other.enums {
-            schema.enums.entry(name).or_insert(info);
+        let module = module_name_from_rel(&rel);
+        let short_module = module_short_name_from_rel(&rel);
+        let origin = format!("res://{rel}");
+        let other = parse_script_schema(&source, &module, &short_module, &origin, &schema.root_module);
+        for (name, mut defs) in other.structs {
+            schema
+                .structs
+                .entry(name)
+                .or_insert_with(Vec::new)
+                .append(&mut defs);
+        }
+        for (name, mut defs) in other.enums {
+            schema
+                .enums
+                .entry(name)
+                .or_insert_with(Vec::new)
+                .append(&mut defs);
         }
     }
+}
+
+fn attr_has_variant_derive(attr: &str) -> bool {
+    let Some(inner) = attr
+        .trim()
+        .strip_prefix("#[derive")
+        .and_then(|value| value.strip_suffix(']'))
+    else {
+        return false;
+    };
+    inner
+        .trim()
+        .trim_start_matches('(')
+        .trim_end_matches(')')
+        .split(',')
+        .map(str::trim)
+        .any(|item| matches!(item, "Variant" | "DeriveVariant"))
+}
+
+fn parse_script_imports(source: &str) -> ScriptImports {
+    let mut imports = ScriptImports::default();
+    for line in source.lines() {
+        let line = strip_line_comment(line).trim();
+        let Some(mut rest) = line.strip_prefix("use ") else {
+            continue;
+        };
+        rest = rest.trim_end_matches(';').trim();
+        if rest == "crate::script_modules::*" {
+            imports.script_modules_glob = true;
+            continue;
+        }
+        if let Some(module) = rest
+            .strip_prefix("crate::")
+            .and_then(|value| value.strip_suffix("::*"))
+        {
+            imports.globs.push(module.to_string());
+            continue;
+        }
+        if let Some(inner) = rest
+            .strip_prefix("crate::")
+            .and_then(|value| value.strip_suffix('}'))
+            .and_then(|value| value.split_once("::{").map(|(module, names)| (module, names)))
+        {
+            let (module, names) = inner;
+            for name in names.split(',').map(str::trim).filter(|name| !name.is_empty()) {
+                let name = name.split_once(" as ").map(|(_, alias)| alias).unwrap_or(name);
+                imports.named.insert(name.to_string(), module.to_string());
+            }
+            continue;
+        }
+        if let Some((module, name)) = rest
+            .strip_prefix("crate::")
+            .and_then(|value| value.rsplit_once("::"))
+        {
+            let name = name.split_once(" as ").map(|(_, alias)| alias).unwrap_or(name);
+            imports.named.insert(name.to_string(), module.to_string());
+        }
+    }
+    imports
 }
 
 fn parse_enum_name(line: &str) -> Option<String> {
@@ -498,7 +836,15 @@ fn parse_enum_info<'a>(
     let default = default_variant
         .or(first_variant)
         .unwrap_or_else(|| "Default".to_string());
-    ScriptEnum { default, variants }
+    ScriptEnum {
+        name: String::new(),
+        module: String::new(),
+        short_module: String::new(),
+        origin: String::new(),
+        has_variant: false,
+        default,
+        variants,
+    }
 }
 
 fn parse_enum_variant(line: &str) -> Option<String> {
@@ -643,7 +989,7 @@ fn script_struct_default_fields_with_expose(
     if depth > MAX_INSPECTOR_DEPTH {
         return Vec::new();
     }
-    let Some(fields) = schema.structs.get(struct_name) else {
+    let Some(fields) = schema.struct_fields(struct_name) else {
         return Vec::new();
     };
     fields
@@ -762,21 +1108,139 @@ fn is_node_ref_type(ty: &str) -> bool {
 }
 
 fn script_struct_type_name(schema: &ScriptSchema, ty: &str) -> Option<String> {
-    let ty = normalized_type(ty);
-    let direct = last_type_segment(&ty).to_string();
-    if schema.structs.contains_key(&direct) {
-        return Some(direct);
+    if let TypeResolution::Found(def) = resolve_script_struct(schema, ty) {
+        return Some(def.name.clone());
     }
     None
 }
 
 fn script_enum_type_name(schema: &ScriptSchema, ty: &str) -> Option<String> {
-    let ty = normalized_type(ty);
-    let direct = last_type_segment(&ty).to_string();
-    if schema.enums.contains_key(&direct) {
-        return Some(direct);
+    if let TypeResolution::Found(def) = resolve_script_enum(schema, ty) {
+        return Some(def.name.clone());
     }
     None
+}
+
+fn resolve_script_struct<'a>(
+    schema: &'a ScriptSchema,
+    ty: &str,
+) -> TypeResolution<'a, ScriptStruct> {
+    resolve_script_type(schema, ty, &schema.structs)
+}
+
+fn resolve_script_enum<'a>(schema: &'a ScriptSchema, ty: &str) -> TypeResolution<'a, ScriptEnum> {
+    resolve_script_type(schema, ty, &schema.enums)
+}
+
+fn resolve_script_type<'a, T: ScriptTypeDef>(
+    schema: &'a ScriptSchema,
+    ty: &str,
+    defs_by_name: &'a BTreeMap<String, Vec<T>>,
+) -> TypeResolution<'a, T> {
+    let ty = normalized_type(ty);
+    let ty = generic_inner(ty.as_str(), "Option").unwrap_or(ty);
+    if ty.starts_with("Vec<") {
+        return TypeResolution::Missing;
+    }
+    let name = last_type_segment(&ty).to_string();
+    if ty.contains("::") {
+        if let Some(module) = module_from_qualified_type(&ty) {
+            return resolve_defs_in_module(defs_by_name, &name, &module);
+        }
+    }
+    if let TypeResolution::Found(found) =
+        resolve_defs_in_module(defs_by_name, &name, &schema.root_module)
+    {
+        return TypeResolution::Found(found);
+    }
+    if let Some(module) = schema.imports.named.get(&name)
+        && let TypeResolution::Found(found) = resolve_defs_in_module(defs_by_name, &name, module)
+    {
+        return TypeResolution::Found(found);
+    }
+    for module in &schema.imports.globs {
+        if let TypeResolution::Found(found) = resolve_defs_in_module(defs_by_name, &name, module) {
+            return TypeResolution::Found(found);
+        }
+    }
+    resolve_defs_global(defs_by_name, &name)
+}
+
+fn resolve_defs_in_module<'a, T: ScriptTypeDef>(
+    defs_by_name: &'a BTreeMap<String, Vec<T>>,
+    name: &str,
+    module: &str,
+) -> TypeResolution<'a, T> {
+    let matches = defs_by_name
+        .get(name)
+        .into_iter()
+        .flat_map(|defs| defs.iter())
+        .filter(|def| def.module() == module || def.short_module() == module)
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [] => TypeResolution::Missing,
+        [only] => TypeResolution::Found(*only),
+        many => TypeResolution::Ambiguous(
+            name.to_string(),
+            many.iter().map(|def| def.origin().to_string()).collect(),
+        ),
+    }
+}
+
+fn resolve_defs_global<'a, T: ScriptTypeDef>(
+    defs_by_name: &'a BTreeMap<String, Vec<T>>,
+    name: &str,
+) -> TypeResolution<'a, T> {
+    let Some(defs) = defs_by_name.get(name) else {
+        return TypeResolution::Missing;
+    };
+    match defs.as_slice() {
+        [] => TypeResolution::Missing,
+        [only] => TypeResolution::Found(only),
+        many => TypeResolution::Ambiguous(
+            name.to_string(),
+            many.iter().map(|def| def.origin().to_string()).collect(),
+        ),
+    }
+}
+
+fn module_from_qualified_type(ty: &str) -> Option<String> {
+    let rest = ty.strip_prefix("crate::")?;
+    let (module, _name) = rest.rsplit_once("::")?;
+    Some(module.to_string())
+}
+
+fn module_name_from_script_path(path: &str) -> String {
+    module_name_from_rel(path.trim_start_matches("res://"))
+}
+
+fn module_short_name_from_script_path(path: &str) -> String {
+    module_short_name_from_rel(path.trim_start_matches("res://"))
+}
+
+fn module_name_from_rel(rel: &str) -> String {
+    let mut out = String::with_capacity(rel.len());
+    for ch in rel.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+        } else {
+            out.push('_');
+        }
+    }
+    let trimmed = out.trim_matches('_');
+    let mut name = if trimmed.is_empty() {
+        "script".to_string()
+    } else {
+        trimmed.to_string()
+    };
+    if name.chars().next().is_some_and(|ch| ch.is_ascii_digit()) {
+        name.insert(0, '_');
+    }
+    name
+}
+
+fn module_short_name_from_rel(rel: &str) -> String {
+    module_name_from_rel(rel.strip_suffix(".rs").unwrap_or(rel))
 }
 
 fn last_type_segment(ty: &str) -> &str {
@@ -812,15 +1276,15 @@ fn default_scene_value_for_type(schema: &ScriptSchema, ty: &str, depth: usize) -
             SceneValue::Key(perro_api::scene::SceneValueKey::from("null"))
         }
         _ if ty.starts_with("Vec<") => SceneValue::Array(Cow::Owned(Vec::new())),
-        _ if let Some(struct_name) = script_struct_type_name(schema, &ty) => SceneValue::Object(
-            Cow::Owned(script_struct_default_fields(schema, &struct_name, depth + 1)),
-        ),
-        _ if let Some(enum_name) = script_enum_type_name(schema, &ty) => {
-            let default_variant = schema
-                .enums
-                .get(&enum_name)
-                .map(|item| item.default.clone())
-                .unwrap_or_default();
+        _ if let TypeResolution::Found(def) = resolve_script_struct(schema, &ty) => {
+            SceneValue::Object(Cow::Owned(script_struct_default_fields(
+                schema,
+                &def.name,
+                depth + 1,
+            )))
+        }
+        _ if let TypeResolution::Found(def) = resolve_script_enum(schema, &ty) => {
+            let default_variant = def.default.clone();
             SceneValue::Key(perro_api::scene::SceneValueKey::from(default_variant))
         }
         _ => SceneValue::Object(Cow::Owned(Vec::new())),
@@ -865,6 +1329,7 @@ fn push_value_rows(
         .get(&path_key)
         .cloned()
         .unwrap_or_default();
+    let warning = ctx.warnings.get(&path_key).cloned();
     let kind = if color_preview.is_some() {
         "Color"
     } else if !enum_options.is_empty() {
@@ -878,7 +1343,7 @@ fn push_value_rows(
     };
     rows.push(InspectorValueRow {
         path: path.clone(),
-        path_key,
+        path_key: path_key.clone(),
         name: format!("{}{}", "  ".repeat(depth), name),
         kind: kind.to_string(),
         value: if composite {
@@ -892,6 +1357,25 @@ fn push_value_rows(
         editable: !composite,
         expandable: composite,
     });
+    if let Some(warning) = warning {
+        let mut lines = warning.lines();
+        rows.push(InspectorValueRow {
+            path: path.clone(),
+            path_key: format!("{path_key}.warn"),
+            name: format!(
+                "{}! {}",
+                "  ".repeat(depth + 1),
+                lines.next().unwrap_or("warn")
+            ),
+            kind: "Warn".to_string(),
+            value: lines.collect::<Vec<_>>().join(" "),
+            components: Vec::new(),
+            color_preview: None,
+            enum_options: Vec::new(),
+            editable: false,
+            expandable: false,
+        });
+    }
     if !expanded || depth >= MAX_INSPECTOR_DEPTH {
         return;
     }
@@ -1021,12 +1505,14 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
         let color_paths = script_state_color_path_keys(state, node, &fields);
         let node_paths = script_state_node_path_keys(state, node, &fields);
         let enum_options = script_state_enum_path_options(state, node, &fields);
+        let warnings = script_state_schema_warnings(state, node, &fields);
         Some(inspector_script_var_rows_with_color_paths(
             &fields,
             &state.inspector_expanded_paths,
             &color_paths,
             &node_paths,
             &enum_options,
+            &warnings,
         ))
     });
     let Some(rows) = rows else {
@@ -1049,7 +1535,7 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
         let Some(text) = read_dropdown_value(ctx, &format!("inspector_var_{idx}_dropdown")) else {
             return;
         };
-        text
+        format!("\"{}\"", text.replace('"', "\\\""))
     } else if row.kind == "Bool" {
         let Some(checked) = read_checkbox_checked(ctx, &format!("inspector_var_{idx}_check"))
         else {

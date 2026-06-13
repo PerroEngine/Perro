@@ -917,6 +917,7 @@ impl InspectorViewData {
         let color_paths = script_state_color_path_keys(state, node, &script_fields);
         let node_paths = script_state_node_path_keys(state, node, &script_fields);
         let enum_options = script_state_enum_path_options(state, node, &script_fields);
+        let warnings = script_state_schema_warnings(state, node, &script_fields);
         view.vars_text = script_vars_edit_text(&script_fields);
         view.script_vars = inspector_script_var_rows_with_color_paths(
             &script_fields,
@@ -924,6 +925,7 @@ impl InspectorViewData {
             &color_paths,
             &node_paths,
             &enum_options,
+            &warnings,
         );
         view.apply_asset_actions(state);
         view

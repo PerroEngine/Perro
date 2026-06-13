@@ -114,6 +114,17 @@ fn sample_profile() -> BotProfile {
 }
 
 #[test]
+fn derived_enum_decodes_unit_variant_from_string() {
+    let value = VariantValue::from("Idle");
+    assert_eq!(value.parse::<BotState>(), Ok(BotState::Idle));
+    assert_eq!(
+        VariantValue::from("Idle").into_parse::<CompactBotState>(),
+        Ok(CompactBotState::Idle)
+    );
+    assert!(VariantValue::from("Charging").parse::<BotState>().is_err());
+}
+
+#[test]
 fn custom_struct_roundtrip_variant_codec() {
     let value = sample_profile();
     let encoded = <BotProfile as DeriveVariant>::to_variant(&value);

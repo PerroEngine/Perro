@@ -366,6 +366,8 @@ fn derive_state_field_enum(
     }
     let mut from_arms = Vec::new();
     let mut from_owned_arms = Vec::new();
+    let mut from_unit_string_arms = Vec::new();
+    let mut from_owned_unit_string_arms = Vec::new();
     let mut to_arms = Vec::new();
     let mut into_arms = Vec::new();
     let mut codec_hints = Vec::new();
@@ -389,6 +391,12 @@ fn derive_state_field_enum(
             Fields::Unit => {
                 let numeric_tag = unit_tag;
                 unit_tag = unit_tag.wrapping_add(1);
+                from_unit_string_arms.push(quote! {
+                    #variant_name => Some(Self::#variant_ident),
+                });
+                from_owned_unit_string_arms.push(quote! {
+                    #variant_name => Some(Self::#variant_ident),
+                });
                 match options.enum_tag_mode {
                     EnumTagMode::String => {
                         from_arms.push(quote! {
@@ -765,6 +773,12 @@ fn derive_state_field_enum(
                 fn __perro_hint_use_derive_variant<T: ::perro_api::variant::DeriveVariant>() {}
                 #(#codec_hints)*
                 #null_default_ref
+                if let Some(tag) = value.as_str() {
+                    return match tag {
+                        #(#from_unit_string_arms)*
+                        _ => None,
+                    };
+                }
                 let obj = value.as_object()?;
                 #tag_read
                 match tag {
@@ -777,6 +791,12 @@ fn derive_state_field_enum(
                 fn __perro_hint_use_derive_variant<T: ::perro_api::variant::DeriveVariant>() {}
                 #(#codec_hints)*
                 #null_default_owned
+                if let ::perro_api::variant::Variant::String(tag) = &value {
+                    return match tag.as_ref() {
+                        #(#from_owned_unit_string_arms)*
+                        _ => None,
+                    };
+                }
                 let mut obj = match value {
                     ::perro_api::variant::Variant::Object(obj) => obj,
                     _ => return None,
