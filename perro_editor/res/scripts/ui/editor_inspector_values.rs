@@ -121,6 +121,7 @@ pub fn script_state_node_path_keys(
         fields,
         String::new(),
         0,
+        None,
         &mut out,
     );
     out
@@ -150,6 +151,7 @@ pub fn script_state_enum_path_options(
         fields,
         String::new(),
         0,
+        None,
         &mut out,
     );
     out
@@ -262,14 +264,16 @@ fn collect_script_node_path_keys(
     values: &[(SceneFieldName, SceneValue)],
     prefix: String,
     depth: usize,
+    override_fields: Option<&[RawScriptField]>,
     out: &mut Vec<String>,
 ) {
     if depth > MAX_INSPECTOR_DEPTH {
         return;
     }
-    let Some(fields) = schema.struct_fields(struct_name) else {
+    let Some(schema_fields) = schema.struct_fields(struct_name) else {
         return;
     };
+    let fields = override_fields.unwrap_or(schema_fields);
     for field in fields
         .iter()
         .filter(|field| !require_expose || field.exposed)
@@ -290,13 +294,15 @@ fn collect_script_node_path_keys(
         } else if let TypeResolution::Found(nested) = resolve_script_struct(schema, &field.ty)
             && let Some((_, SceneValue::Object(nested_values))) = values.get(idx)
         {
+            let nested_fields = resolved_struct_fields(&nested);
             collect_script_node_path_keys(
                 schema,
-                &nested.name,
+                &nested.def.name,
                 false,
                 nested_values.as_ref(),
                 key,
                 depth + 1,
+                Some(&nested_fields),
                 out,
             );
         }
@@ -310,14 +316,16 @@ fn collect_script_enum_path_options(
     values: &[(SceneFieldName, SceneValue)],
     prefix: String,
     depth: usize,
+    override_fields: Option<&[RawScriptField]>,
     out: &mut BTreeMap<String, Vec<String>>,
 ) {
     if depth > MAX_INSPECTOR_DEPTH {
         return;
     }
-    let Some(fields) = schema.struct_fields(struct_name) else {
+    let Some(schema_fields) = schema.struct_fields(struct_name) else {
         return;
     };
+    let fields = override_fields.unwrap_or(schema_fields);
     for field in fields
         .iter()
         .filter(|field| !require_expose || field.exposed)
@@ -334,17 +342,19 @@ fn collect_script_enum_path_options(
             format!("{prefix}.{}", field.name)
         };
         if let TypeResolution::Found(info) = resolve_script_enum(schema, &field.ty) {
-            out.insert(key, info.variants.clone());
+            out.insert(key, info.def.variants.clone());
         } else if let TypeResolution::Found(nested) = resolve_script_struct(schema, &field.ty)
             && let Some((_, SceneValue::Object(nested_values))) = values.get(idx)
         {
+            let nested_fields = resolved_struct_fields(&nested);
             collect_script_enum_path_options(
                 schema,
-                &nested.name,
+                &nested.def.name,
                 false,
                 nested_values.as_ref(),
                 key,
                 depth + 1,
+                Some(&nested_fields),
                 out,
             );
         }
@@ -375,6 +385,7 @@ pub fn script_state_schema_warnings(
         fields,
         String::new(),
         0,
+        None,
         &mut out,
     );
     out
@@ -387,14 +398,16 @@ fn collect_script_schema_warnings(
     values: &[(SceneFieldName, SceneValue)],
     prefix: String,
     depth: usize,
+    override_fields: Option<&[RawScriptField]>,
     out: &mut BTreeMap<String, String>,
 ) {
     if depth > MAX_INSPECTOR_DEPTH {
         return;
     }
-    let Some(fields) = schema.struct_fields(struct_name) else {
+    let Some(schema_fields) = schema.struct_fields(struct_name) else {
         return;
     };
+    let fields = override_fields.unwrap_or(schema_fields);
     for field in fields
         .iter()
         .filter(|field| !require_expose || field.exposed)
@@ -411,21 +424,23 @@ fn collect_script_schema_warnings(
             format!("{prefix}.{}", field.name)
         };
         match resolve_script_struct(schema, &field.ty) {
-            TypeResolution::Found(def) => {
-                if !def.has_variant {
+            TypeResolution::Found(resolved) => {
+                if !resolved.def.has_variant {
                     out.insert(
                         key.clone(),
-                        format!("warn missing Variant derive\n{}", def.display_name()),
+                        format!("warn missing Variant derive\n{}", resolved.def.display_name()),
                     );
                 }
                 if let Some((_, SceneValue::Object(nested_values))) = values.get(idx) {
+                    let nested_fields = resolved_struct_fields(&resolved);
                     collect_script_schema_warnings(
                         schema,
-                        &def.name,
+                        &resolved.def.name,
                         false,
                         nested_values.as_ref(),
                         key,
                         depth + 1,
+                        Some(&nested_fields),
                         out,
                     );
                 }
@@ -441,11 +456,11 @@ fn collect_script_schema_warnings(
             TypeResolution::Missing => {}
         }
         match resolve_script_enum(schema, &field.ty) {
-            TypeResolution::Found(def) => {
-                if !def.has_variant {
+            TypeResolution::Found(resolved) => {
+                if !resolved.def.has_variant {
                     out.insert(
                         key,
-                        format!("warn missing Variant derive\n{}", def.display_name()),
+                        format!("warn missing Variant derive\n{}", resolved.def.display_name()),
                     );
                 }
             }
@@ -477,6 +492,7 @@ struct ScriptImports {
 #[derive(Clone)]
 struct ScriptStruct {
     name: String,
+    generic_params: Vec<String>,
     module: String,
     short_module: String,
     origin: String,
@@ -487,6 +503,7 @@ struct ScriptStruct {
 #[derive(Clone)]
 struct ScriptEnum {
     name: String,
+    generic_params: Vec<String>,
     module: String,
     short_module: String,
     origin: String,
@@ -568,9 +585,19 @@ impl ScriptSchema {
 }
 
 enum TypeResolution<'a, T> {
-    Found(&'a T),
+    Found(ResolvedScriptType<'a, T>),
     Ambiguous(String, Vec<String>),
     Missing,
+}
+
+struct ResolvedScriptType<'a, T> {
+    def: &'a T,
+    type_args: Vec<String>,
+}
+
+struct StructHeader {
+    name: String,
+    generic_params: Vec<String>,
 }
 
 fn parse_state_struct_name(source: &str) -> Option<String> {
@@ -580,28 +607,43 @@ fn parse_state_struct_name(source: &str) -> Option<String> {
         let (attrs, rest) = split_leading_attrs(line);
         if attrs.iter().any(|attr| is_state_attr(attr)) {
             saw_state_attr = true;
-            if let Some(name) = parse_struct_name(rest) {
-                return Some(name);
+            if let Some(header) = parse_struct_header(rest) {
+                return Some(header.name);
             }
         }
         if saw_state_attr {
             if rest.is_empty() {
                 continue;
             }
-            return parse_struct_name(rest);
+            return parse_struct_header(rest).map(|header| header.name);
         }
     }
     None
 }
 
 fn parse_struct_name(line: &str) -> Option<String> {
+    parse_struct_header(line).map(|header| header.name)
+}
+
+fn parse_struct_header(line: &str) -> Option<StructHeader> {
     let mut parts = line.split_whitespace().peekable();
     while let Some(part) = parts.next() {
         if part == "struct" {
-            return parts
+            let raw = parts.next()?.trim_matches(['{', '(', ';']).trim();
+            let name = raw
+                .split('<')
                 .next()
-                .map(|value| value.trim_matches('{').trim().to_string())
-                .filter(|value| !value.is_empty());
+                .unwrap_or(raw)
+                .trim()
+                .to_string();
+            if name.is_empty() {
+                return None;
+            }
+            let generic_params = parse_generic_params(raw);
+            return Some(StructHeader {
+                name,
+                generic_params,
+            });
         }
     }
     None
@@ -627,10 +669,12 @@ fn parse_script_schema(
             }
         }
         let has_variant = pending_derives.iter().any(|attr| attr_has_variant_derive(attr));
-        if let Some(name) = parse_struct_name(rest) {
+        if let Some(header) = parse_struct_header(rest) {
+            let name = header.name;
             let fields = parse_script_struct_fields(source, &name);
             structs.entry(name.clone()).or_insert_with(Vec::new).push(ScriptStruct {
                 name,
+                generic_params: header.generic_params,
                 module: module.to_string(),
                 short_module: short_module.to_string(),
                 origin: origin.to_string(),
@@ -638,9 +682,11 @@ fn parse_script_schema(
                 fields,
             });
             pending_derives.clear();
-        } else if let Some(name) = parse_enum_name(rest) {
+        } else if let Some(header) = parse_enum_header(rest) {
+            let name = header.name;
             let mut info = parse_enum_info(line, &mut lines);
             info.name = name.clone();
+            info.generic_params = header.generic_params;
             info.module = module.to_string();
             info.short_module = short_module.to_string();
             info.origin = origin.to_string();
@@ -780,16 +826,56 @@ fn parse_script_imports(source: &str) -> ScriptImports {
 }
 
 fn parse_enum_name(line: &str) -> Option<String> {
+    parse_enum_header(line).map(|header| header.name)
+}
+
+fn parse_enum_header(line: &str) -> Option<StructHeader> {
     let mut parts = line.split_whitespace().peekable();
     while let Some(part) = parts.next() {
         if part == "enum" {
-            return parts
+            let raw = parts.next()?.trim_matches(['{', ';']).trim();
+            let name = raw
+                .split('<')
                 .next()
-                .map(|value| value.trim_matches('{').trim().to_string())
-                .filter(|value| !value.is_empty());
+                .unwrap_or(raw)
+                .trim()
+                .to_string();
+            if name.is_empty() {
+                return None;
+            }
+            let generic_params = parse_generic_params(raw);
+            return Some(StructHeader {
+                name,
+                generic_params,
+            });
         }
     }
     None
+}
+
+fn parse_generic_params(raw: &str) -> Vec<String> {
+    let Some(inner) = raw
+        .split_once('<')
+        .and_then(|(_, rest)| rest.rsplit_once('>').map(|(inner, _)| inner))
+    else {
+        return Vec::new();
+    };
+    split_top_level_csv(inner)
+        .into_iter()
+        .filter_map(|param| {
+            let name = param
+                .split([':', '=', ' '])
+                .next()
+                .unwrap_or("")
+                .trim();
+            (!name.is_empty()
+                && name
+                    .chars()
+                    .next()
+                    .is_some_and(|ch| ch.is_ascii_alphabetic() || ch == '_'))
+            .then(|| name.to_string())
+        })
+        .collect()
 }
 
 fn parse_enum_info<'a>(
@@ -838,6 +924,7 @@ fn parse_enum_info<'a>(
         .unwrap_or_else(|| "Default".to_string());
     ScriptEnum {
         name: String::new(),
+        generic_params: Vec::new(),
         module: String::new(),
         short_module: String::new(),
         origin: String::new(),
@@ -870,6 +957,9 @@ fn parse_script_struct_fields(source: &str, struct_name: &str) -> Vec<RawScriptF
     }) else {
         return Vec::new();
     };
+    if let Some(fields) = parse_tuple_struct_fields(&lines, idx, struct_name) {
+        return fields;
+    }
     let mut fields = Vec::new();
     let mut depth = 0_i32;
     let mut opened = false;
@@ -914,6 +1004,89 @@ fn parse_script_struct_fields(source: &str, struct_name: &str) -> Vec<RawScriptF
     fields
 }
 
+fn parse_tuple_struct_fields(
+    lines: &[&str],
+    start_idx: usize,
+    struct_name: &str,
+) -> Option<Vec<RawScriptField>> {
+    let mut content = String::new();
+    let mut saw_open = false;
+    let mut depth = 0_i32;
+    let mut idx = start_idx;
+    while idx < lines.len() {
+        let line = strip_line_comment(lines[idx]);
+        if !saw_open {
+            let start = line.find("struct")?;
+            let after_struct = &line[start + "struct".len()..];
+            let name_pos = after_struct.find(struct_name)?;
+            let after_name = &after_struct[name_pos + struct_name.len()..];
+            if after_name.trim_start().starts_with('{') {
+                return None;
+            }
+            let Some(open_pos) = after_name.find('(') else {
+                return None;
+            };
+            saw_open = true;
+            let rest = &after_name[open_pos + 1..];
+            depth = 1;
+            content.push_str(rest);
+        } else {
+            content.push('\n');
+            content.push_str(line);
+        }
+        let mut closed = false;
+        let mut end_at = content.len();
+        for (pos, ch) in content.char_indices() {
+            match ch {
+                '(' | '<' | '[' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth <= 0 {
+                        end_at = pos;
+                        closed = true;
+                        break;
+                    }
+                }
+                '>' | ']' => depth -= 1,
+                _ => {}
+            }
+        }
+        if closed {
+            content.truncate(end_at);
+            break;
+        }
+        idx += 1;
+    }
+    if !saw_open {
+        return None;
+    }
+    let fields = split_top_level_csv(&content)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(idx, ty)| {
+            let ty = ty.trim();
+            if ty.is_empty() {
+                return None;
+            }
+            let ty = ty
+                .strip_prefix("pub ")
+                .or_else(|| {
+                    ty.strip_prefix("pub(")
+                        .and_then(|rest| rest.split_once(')').map(|(_, after)| after.trim()))
+                })
+                .unwrap_or(ty)
+                .trim();
+            Some(RawScriptField {
+                name: idx.to_string(),
+                ty: ty.to_string(),
+                default_attr: None,
+                exposed: true,
+            })
+        })
+        .collect::<Vec<_>>();
+    Some(fields)
+}
+
 fn parse_script_field_line(
     line: &str,
     default_attr: Option<String>,
@@ -935,6 +1108,31 @@ fn parse_script_field_line(
         default_attr,
         exposed,
     })
+}
+
+fn split_top_level_csv(value: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    let mut angle = 0_i32;
+    let mut paren = 0_i32;
+    let mut bracket = 0_i32;
+    for (idx, ch) in value.char_indices() {
+        match ch {
+            '<' => angle += 1,
+            '>' => angle -= 1,
+            '(' => paren += 1,
+            ')' => paren -= 1,
+            '[' => bracket += 1,
+            ']' => bracket -= 1,
+            ',' if angle == 0 && paren == 0 && bracket == 0 => {
+                out.push(value[start..idx].trim().to_string());
+                start = idx + 1;
+            }
+            _ => {}
+        }
+    }
+    out.push(value[start..].trim().to_string());
+    out
 }
 
 fn parse_default_attr(line: &str) -> Option<String> {
@@ -992,6 +1190,15 @@ fn script_struct_default_fields_with_expose(
     let Some(fields) = schema.struct_fields(struct_name) else {
         return Vec::new();
     };
+    script_struct_default_fields_from_fields(schema, fields, depth, require_expose)
+}
+
+fn script_struct_default_fields_from_fields(
+    schema: &ScriptSchema,
+    fields: &[RawScriptField],
+    depth: usize,
+    require_expose: bool,
+) -> Vec<(SceneFieldName, SceneValue)> {
     fields
         .iter()
         .filter(|field| !require_expose || field.exposed)
@@ -1109,14 +1316,14 @@ fn is_node_ref_type(ty: &str) -> bool {
 
 fn script_struct_type_name(schema: &ScriptSchema, ty: &str) -> Option<String> {
     if let TypeResolution::Found(def) = resolve_script_struct(schema, ty) {
-        return Some(def.name.clone());
+        return Some(def.def.name.clone());
     }
     None
 }
 
 fn script_enum_type_name(schema: &ScriptSchema, ty: &str) -> Option<String> {
     if let TypeResolution::Found(def) = resolve_script_enum(schema, ty) {
-        return Some(def.name.clone());
+        return Some(def.def.name.clone());
     }
     None
 }
@@ -1142,34 +1349,38 @@ fn resolve_script_type<'a, T: ScriptTypeDef>(
     if ty.starts_with("Vec<") {
         return TypeResolution::Missing;
     }
-    let name = last_type_segment(&ty).to_string();
+    let (name, type_args) = type_name_and_args(&ty);
     if ty.contains("::") {
         if let Some(module) = module_from_qualified_type(&ty) {
-            return resolve_defs_in_module(defs_by_name, &name, &module);
+            return resolve_defs_in_module(defs_by_name, &name, &module, &type_args);
         }
     }
     if let TypeResolution::Found(found) =
-        resolve_defs_in_module(defs_by_name, &name, &schema.root_module)
+        resolve_defs_in_module(defs_by_name, &name, &schema.root_module, &type_args)
     {
         return TypeResolution::Found(found);
     }
     if let Some(module) = schema.imports.named.get(&name)
-        && let TypeResolution::Found(found) = resolve_defs_in_module(defs_by_name, &name, module)
+        && let TypeResolution::Found(found) =
+            resolve_defs_in_module(defs_by_name, &name, module, &type_args)
     {
         return TypeResolution::Found(found);
     }
     for module in &schema.imports.globs {
-        if let TypeResolution::Found(found) = resolve_defs_in_module(defs_by_name, &name, module) {
+        if let TypeResolution::Found(found) =
+            resolve_defs_in_module(defs_by_name, &name, module, &type_args)
+        {
             return TypeResolution::Found(found);
         }
     }
-    resolve_defs_global(defs_by_name, &name)
+    resolve_defs_global(defs_by_name, &name, &type_args)
 }
 
 fn resolve_defs_in_module<'a, T: ScriptTypeDef>(
     defs_by_name: &'a BTreeMap<String, Vec<T>>,
     name: &str,
     module: &str,
+    type_args: &[String],
 ) -> TypeResolution<'a, T> {
     let matches = defs_by_name
         .get(name)
@@ -1179,7 +1390,10 @@ fn resolve_defs_in_module<'a, T: ScriptTypeDef>(
         .collect::<Vec<_>>();
     match matches.as_slice() {
         [] => TypeResolution::Missing,
-        [only] => TypeResolution::Found(*only),
+        [only] => TypeResolution::Found(ResolvedScriptType {
+            def: *only,
+            type_args: type_args.to_vec(),
+        }),
         many => TypeResolution::Ambiguous(
             name.to_string(),
             many.iter().map(|def| def.origin().to_string()).collect(),
@@ -1190,18 +1404,86 @@ fn resolve_defs_in_module<'a, T: ScriptTypeDef>(
 fn resolve_defs_global<'a, T: ScriptTypeDef>(
     defs_by_name: &'a BTreeMap<String, Vec<T>>,
     name: &str,
+    type_args: &[String],
 ) -> TypeResolution<'a, T> {
     let Some(defs) = defs_by_name.get(name) else {
         return TypeResolution::Missing;
     };
     match defs.as_slice() {
         [] => TypeResolution::Missing,
-        [only] => TypeResolution::Found(only),
+        [only] => TypeResolution::Found(ResolvedScriptType {
+            def: only,
+            type_args: type_args.to_vec(),
+        }),
         many => TypeResolution::Ambiguous(
             name.to_string(),
             many.iter().map(|def| def.origin().to_string()).collect(),
         ),
     }
+}
+
+fn type_name_and_args(ty: &str) -> (String, Vec<String>) {
+    let name_part = ty.split('<').next().unwrap_or(ty);
+    let name = last_type_segment(name_part).to_string();
+    let args = ty
+        .split_once('<')
+        .and_then(|(_, rest)| rest.rsplit_once('>').map(|(inner, _)| inner))
+        .map(split_top_level_csv)
+        .unwrap_or_default();
+    (name, args)
+}
+
+fn resolved_struct_fields(resolved: &ResolvedScriptType<'_, ScriptStruct>) -> Vec<RawScriptField> {
+    if resolved.def.generic_params.is_empty() || resolved.type_args.is_empty() {
+        return resolved.def.fields.clone();
+    }
+    resolved
+        .def
+        .fields
+        .iter()
+        .map(|field| RawScriptField {
+            name: field.name.clone(),
+            ty: substitute_generic_type(
+                &field.ty,
+                &resolved.def.generic_params,
+                &resolved.type_args,
+            ),
+            default_attr: field.default_attr.clone(),
+            exposed: field.exposed,
+        })
+        .collect()
+}
+
+fn substitute_generic_type(ty: &str, params: &[String], args: &[String]) -> String {
+    if params.is_empty() || args.is_empty() {
+        return ty.to_string();
+    }
+    let mut out = String::new();
+    let mut token = String::new();
+    for ch in ty.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            token.push(ch);
+            continue;
+        }
+        push_substituted_token(&mut out, &mut token, params, args);
+        out.push(ch);
+    }
+    push_substituted_token(&mut out, &mut token, params, args);
+    out
+}
+
+fn push_substituted_token(out: &mut String, token: &mut String, params: &[String], args: &[String]) {
+    if token.is_empty() {
+        return;
+    }
+    if let Some(idx) = params.iter().position(|param| param == token)
+        && let Some(arg) = args.get(idx)
+    {
+        out.push_str(arg);
+    } else {
+        out.push_str(token);
+    }
+    token.clear();
 }
 
 fn module_from_qualified_type(ty: &str) -> Option<String> {
@@ -1277,14 +1559,16 @@ fn default_scene_value_for_type(schema: &ScriptSchema, ty: &str, depth: usize) -
         }
         _ if ty.starts_with("Vec<") => SceneValue::Array(Cow::Owned(Vec::new())),
         _ if let TypeResolution::Found(def) = resolve_script_struct(schema, &ty) => {
-            SceneValue::Object(Cow::Owned(script_struct_default_fields(
+            let fields = resolved_struct_fields(&def);
+            SceneValue::Object(Cow::Owned(script_struct_default_fields_from_fields(
                 schema,
-                &def.name,
+                &fields,
                 depth + 1,
+                false,
             )))
         }
         _ if let TypeResolution::Found(def) = resolve_script_enum(schema, &ty) => {
-            let default_variant = def.default.clone();
+            let default_variant = def.def.default.clone();
             SceneValue::Key(perro_api::scene::SceneValueKey::from(default_variant))
         }
         _ => SceneValue::Object(Cow::Owned(Vec::new())),
