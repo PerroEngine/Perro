@@ -916,6 +916,9 @@ impl InspectorViewData {
         if state.active_asset_path.is_empty() {
             return view;
         }
+        if state.active_asset_path.ends_with(".scn") {
+            return view;
+        }
         let asset = asset_inspector_text(state);
         view.title = "Asset".to_string();
         view.name = "Name".to_string();
@@ -1142,9 +1145,7 @@ pub fn asset_inspector_text(state: &EditorState) -> AssetInspectorText {
     let refs = asset_ref_text(state, path, kind);
     let detail = asset_detail_text(state, path, kind);
     let actions = match kind {
-        "scene" => {
-            "Enter -> open scene\nCtrl+Enter / Ctrl+Shift+Enter -> instance scene\nCtrl+Shift+G -> find user\nCtrl+E -> reveal tab".to_string()
-        }
+        "scene" => String::new(),
         "mesh" if is_gltf_path(path) => {
             "Use -> bind ref\nNode -> mesh node\nCtrl+Shift+G -> find user\n[] -> mesh  Shift+[] -> mat\nAnim -> .panim\nMat -> .pmat".to_string()
         }

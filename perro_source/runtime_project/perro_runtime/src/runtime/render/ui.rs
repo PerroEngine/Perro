@@ -635,8 +635,8 @@ impl Runtime {
             SceneNodeData::UiColorPicker(picker) => Some((
                 picker.internal_swatch_button,
                 picker.internal_popup_panel,
-                picker.internal_rgba_box,
-                picker.internal_hsv_box,
+                picker.internal_rgba_boxes,
+                picker.internal_hsv_boxes,
                 picker.internal_hex_box,
             )),
             _ => None,
@@ -651,11 +651,30 @@ impl Runtime {
         if !self.color_picker_internal_valid(ids.1, picker_id, false) {
             ids.1 = self.insert_color_picker_popup(picker_id);
         }
-        if !self.color_picker_internal_valid(ids.2, ids.1, true) {
-            ids.2 = self.insert_color_picker_text_box(ids.1, "__perro_color_rgba");
+        for idx in 0..ids.2.len() {
+            if !self.color_picker_internal_valid(ids.2[idx], ids.1, true) {
+                ids.2[idx] = self.insert_color_picker_text_box(
+                    ids.1,
+                    [
+                        "__perro_color_rgba_r",
+                        "__perro_color_rgba_g",
+                        "__perro_color_rgba_b",
+                        "__perro_color_rgba_a",
+                    ][idx],
+                );
+            }
         }
-        if !self.color_picker_internal_valid(ids.3, ids.1, true) {
-            ids.3 = self.insert_color_picker_text_box(ids.1, "__perro_color_hsv");
+        for idx in 0..ids.3.len() {
+            if !self.color_picker_internal_valid(ids.3[idx], ids.1, true) {
+                ids.3[idx] = self.insert_color_picker_text_box(
+                    ids.1,
+                    [
+                        "__perro_color_hsv_h",
+                        "__perro_color_hsv_s",
+                        "__perro_color_hsv_v",
+                    ][idx],
+                );
+            }
         }
         if !self.color_picker_internal_valid(ids.4, ids.1, true) {
             ids.4 = self.insert_color_picker_text_box(ids.1, "__perro_color_hex");
@@ -666,8 +685,8 @@ impl Runtime {
         {
             picker.internal_swatch_button = ids.0;
             picker.internal_popup_panel = ids.1;
-            picker.internal_rgba_box = ids.2;
-            picker.internal_hsv_box = ids.3;
+            picker.internal_rgba_boxes = ids.2;
+            picker.internal_hsv_boxes = ids.3;
             picker.internal_hex_box = ids.4;
         }
     }
@@ -771,6 +790,8 @@ impl Runtime {
                         picker.internal_popup_panel,
                         picker.internal_rgba_box,
                         picker.internal_hsv_box,
+                        picker.internal_rgba_boxes,
+                        picker.internal_hsv_boxes,
                         picker.internal_hex_box,
                     ),
                 )),
@@ -801,18 +822,43 @@ impl Runtime {
             panel.base.transform.position = UiVector2::pixels(0.0, -popup_size[1] - 8.0);
             panel.style = popup_style;
         }
-        let rgba = color_to_rgba_text(color);
-        let hsv = color_to_hsv_text(color);
+        let rgba = color_to_rgba_components(color);
+        let hsv = color_to_hsv_components(color);
         let hex = color_to_hex_text(color);
-        self.sync_color_picker_text_box(ids.2, popup_open, popup_size, 58.0, &rgba);
-        self.sync_color_picker_text_box(ids.3, popup_open, popup_size, 94.0, &hsv);
-        self.sync_color_picker_text_box(ids.4, popup_open, popup_size, 130.0, &hex);
+        self.sync_color_picker_legacy_text_box(ids.2, false);
+        self.sync_color_picker_legacy_text_box(ids.3, false);
+        for (idx, text) in rgba.iter().enumerate() {
+            self.sync_color_picker_component_box(
+                ids.4[idx],
+                popup_open,
+                popup_size,
+                198.0,
+                idx,
+                rgba.len(),
+                text,
+            );
+        }
+        for (idx, text) in hsv.iter().enumerate() {
+            self.sync_color_picker_component_box(
+                ids.5[idx],
+                popup_open,
+                popup_size,
+                236.0,
+                idx,
+                hsv.len(),
+                text,
+            );
+        }
+        self.sync_color_picker_text_box(ids.6, popup_open, popup_size, 274.0, &hex);
 
         self.mark_ui_dirty(
             picker_id,
             Self::UI_DIRTY_LAYOUT_SELF | Self::UI_DIRTY_COMMANDS,
         );
-        for id in [ids.0, ids.1, ids.2, ids.3, ids.4] {
+        let mut dirty_ids = vec![ids.0, ids.1, ids.2, ids.3, ids.6];
+        dirty_ids.extend(ids.4);
+        dirty_ids.extend(ids.5);
+        for id in dirty_ids {
             if !id.is_nil() {
                 self.mark_ui_dirty(
                     id,
@@ -820,6 +866,42 @@ impl Runtime {
                         | Self::UI_DIRTY_LAYOUT_PARENT
                         | Self::UI_DIRTY_COMMANDS,
                 );
+            }
+        }
+    }
+
+    fn sync_color_picker_legacy_text_box(&mut self, node_id: NodeID, visible: bool) {
+        if let Some(node) = self.nodes.get_mut(node_id)
+            && let SceneNodeData::UiTextBox(text_box) = &mut node.data
+        {
+            text_box.inner.base.visible = visible;
+        }
+    }
+
+    fn sync_color_picker_component_box(
+        &mut self,
+        node_id: NodeID,
+        visible: bool,
+        popup_size: [f32; 2],
+        y_from_top: f32,
+        col: usize,
+        cols: usize,
+        text: &str,
+    ) {
+        if let Some(node) = self.nodes.get_mut(node_id)
+            && let SceneNodeData::UiTextBox(text_box) = &mut node.data
+        {
+            let gap = 6.0;
+            let total_gap = gap * cols.saturating_sub(1) as f32;
+            let width = ((popup_size[0] - 24.0 - total_gap) / cols.max(1) as f32).max(36.0);
+            let left = -popup_size[0] * 0.5 + 12.0 + width * 0.5;
+            let x = left + col as f32 * (width + gap);
+            text_box.inner.base.visible = visible;
+            text_box.inner.base.layout.size = UiVector2::pixels(width, 30.0);
+            text_box.inner.base.transform.position =
+                UiVector2::pixels(x, popup_size[1] * 0.5 - y_from_top);
+            if self.render_ui.focused_text_edit != Some(node_id) {
+                text_box.inner.set_text(text.to_string());
             }
         }
     }
@@ -915,23 +997,31 @@ impl Runtime {
         command_ids: &mut Vec<NodeID>,
         command_seen: &mut ahash::AHashSet<NodeID>,
     ) {
-        let Some((picker_id, field, alpha)) = self.nodes.iter().find_map(|(id, node)| {
+        let Some((picker_id, field, current)) = self.nodes.iter().find_map(|(id, node)| {
             let SceneNodeData::UiColorPicker(picker) = &node.data else {
                 return None;
             };
-            if picker.internal_rgba_box == text_node {
-                Some((id, ColorPickerTextField::Rgba, picker.color.a()))
-            } else if picker.internal_hsv_box == text_node {
-                Some((id, ColorPickerTextField::Hsv, picker.color.a()))
+            if let Some(idx) = picker
+                .internal_rgba_boxes
+                .iter()
+                .position(|box_id| *box_id == text_node)
+            {
+                Some((id, ColorPickerTextField::Rgba(idx), picker.color))
+            } else if let Some(idx) = picker
+                .internal_hsv_boxes
+                .iter()
+                .position(|box_id| *box_id == text_node)
+            {
+                Some((id, ColorPickerTextField::Hsv(idx), picker.color))
             } else if picker.internal_hex_box == text_node {
-                Some((id, ColorPickerTextField::Hex, picker.color.a()))
+                Some((id, ColorPickerTextField::Hex, picker.color))
             } else {
                 None
             }
         }) else {
             return;
         };
-        let Some(color) = parse_color_picker_text(field, text, alpha) else {
+        let Some(color) = parse_color_picker_text(field, text, current) else {
             return;
         };
         let Some(scene_node) = self.nodes.get_mut(picker_id) else {
@@ -964,19 +1054,18 @@ impl Runtime {
 
 #[derive(Clone, Copy)]
 enum ColorPickerTextField {
-    Rgba,
-    Hsv,
+    Rgba(usize),
+    Hsv(usize),
     Hex,
 }
 
-fn color_to_rgba_text(color: Color) -> String {
-    format!(
-        "{:.3}, {:.3}, {:.3}, {:.3}",
-        color.r(),
-        color.g(),
-        color.b(),
-        color.a()
-    )
+fn color_to_rgba_components(color: Color) -> [String; 4] {
+    [
+        format!("{:.3}", color.r()),
+        format!("{:.3}", color.g()),
+        format!("{:.3}", color.b()),
+        format!("{:.3}", color.a()),
+    ]
 }
 
 fn color_picker_wheel_render_node(picker_id: NodeID) -> NodeID {
@@ -991,9 +1080,13 @@ fn color_picker_wheel_rect(popup_rect: ComputedUiRect, wheel_radius: f32) -> Com
     )
 }
 
-fn color_to_hsv_text(color: Color) -> String {
+fn color_to_hsv_components(color: Color) -> [String; 3] {
     let (h, s, v) = rgb_to_hsv(color);
-    format!("{:.1}, {:.3}, {:.3}", h * 360.0, s, v)
+    [
+        format!("{:.1}", h * 360.0),
+        format!("{:.3}", s),
+        format!("{:.3}", v),
+    ]
 }
 
 fn color_to_hex_text(color: Color) -> String {
@@ -1031,45 +1124,36 @@ fn rgb_to_hsv(color: Color) -> (f32, f32, f32) {
     (h, s, max)
 }
 
-fn parse_color_picker_text(field: ColorPickerTextField, text: &str, alpha: f32) -> Option<Color> {
+fn parse_color_picker_text(
+    field: ColorPickerTextField,
+    text: &str,
+    current: Color,
+) -> Option<Color> {
     match field {
-        ColorPickerTextField::Rgba => {
-            let vals = parse_float_list(text);
-            if vals.len() < 3 {
-                return None;
-            }
-            Some(Color::new(
-                vals[0].clamp(0.0, 1.0),
-                vals[1].clamp(0.0, 1.0),
-                vals[2].clamp(0.0, 1.0),
-                vals.get(3).copied().unwrap_or(alpha).clamp(0.0, 1.0),
-            ))
+        ColorPickerTextField::Rgba(idx) => {
+            let val = text.trim().parse::<f32>().ok()?.clamp(0.0, 1.0);
+            let mut rgba = current.to_rgba();
+            rgba[idx.min(3)] = val;
+            Some(Color::new(rgba[0], rgba[1], rgba[2], rgba[3]))
         }
-        ColorPickerTextField::Hsv => {
-            let vals = parse_float_list(text);
-            if vals.len() < 3 {
-                return None;
-            }
+        ColorPickerTextField::Hsv(idx) => {
+            let val = text.trim().parse::<f32>().ok()?;
+            let (h, s, v) = rgb_to_hsv(current);
+            let mut hsv = [h * 360.0, s, v];
+            hsv[idx.min(2)] = if idx == 0 {
+                val.rem_euclid(360.0)
+            } else {
+                val.clamp(0.0, 1.0)
+            };
             Some(hsv_to_color(
-                (vals[0] / 360.0).rem_euclid(1.0),
-                vals[1].clamp(0.0, 1.0),
-                vals[2].clamp(0.0, 1.0),
-                vals.get(3).copied().unwrap_or(alpha).clamp(0.0, 1.0),
+                (hsv[0] / 360.0).rem_euclid(1.0),
+                hsv[1].clamp(0.0, 1.0),
+                hsv[2].clamp(0.0, 1.0),
+                current.a(),
             ))
         }
-        ColorPickerTextField::Hex => parse_hex_color(text, alpha),
+        ColorPickerTextField::Hex => parse_hex_color(text, current.a()),
     }
-}
-
-fn parse_float_list(text: &str) -> Vec<f32> {
-    text.split(|ch: char| ch == ',' || ch.is_whitespace())
-        .filter_map(|part| {
-            let part = part.trim();
-            (!part.is_empty())
-                .then(|| part.parse::<f32>().ok())
-                .flatten()
-        })
-        .collect()
 }
 
 fn parse_hex_color(text: &str, alpha: f32) -> Option<Color> {

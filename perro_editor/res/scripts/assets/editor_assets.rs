@@ -388,6 +388,10 @@ pub fn click_or_open_file_slot<API: ScriptAPI + ?Sized>(
         state.active_asset_path = scene_path.clone();
         state.sidebar_mode = "files".to_string();
     });
+    if scene_path.ends_with(".scn") {
+        open_scene_path(ctx, &scene_path);
+        return;
+    }
     let should_open = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let frame = state.file_watch_frame;
         let should_open = state
@@ -548,6 +552,8 @@ pub fn open_scene_path<API: ScriptAPI + ?Sized>(
             .iter()
             .position(|path| path == scene_path)
             .unwrap_or(0);
+        state.activity_mode = "scene".to_string();
+        state.sidebar_mode = "scene".to_string();
         state.doc_text = doc.to_text();
         state.selected_key = first_key;
         state.collapsed_scene_keys.clear();
@@ -720,12 +726,7 @@ pub fn set_active_tab<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>,
     let Some(path) = path else {
         return;
     };
-    let slot = with_state!(ctx.run, EditorState, ctx.id, |state| {
-        state.file_paths.iter().position(|item| item == &path)
-    });
-    if let Some(slot) = slot {
-        open_file_slot(ctx, slot);
-    }
+    open_scene_path(ctx, &path);
 }
 
 pub fn cycle_scene_tab<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, dir: isize) {

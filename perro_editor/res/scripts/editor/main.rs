@@ -226,7 +226,6 @@ methods!({
             "file_new_folder_button" => create_quick_folder(ctx),
             "file_refresh_button" => refresh_project_assets(ctx),
             "file_clear_button" => clear_file_filter_and_scope(ctx),
-            "file_open_button" => open_active_file(ctx),
             "file_up_button" => nav_file_scope_parent(ctx),
             "file_expand_all_button" => expand_file_tree_all(ctx),
             "file_collapse_all_button" => collapse_file_tree_all(ctx),
@@ -308,10 +307,10 @@ methods!({
                     edit_selected_transform(ctx, "scale", "inspector_scale_box");
                 } else if let Some(idx) = suffix_index(&name, "scene_row_") {
                     click_scene_node_slot(ctx, idx);
-                } else if let Some(idx) = suffix_index(&name, "scene_tab_") {
-                    set_active_tab(ctx, idx);
                 } else if let Some(idx) = suffix_index(&name, "scene_tab_close_") {
                     close_scene_tab(ctx, idx);
+                } else if let Some(idx) = suffix_index(&name, "scene_tab_") {
+                    set_active_tab(ctx, idx);
                 }
             }
         }
@@ -361,7 +360,6 @@ fn connect_editor_signals<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
             signal!("editor_file_new_folder"),
             signal!("editor_file_refresh"),
             signal!("editor_file_clear"),
-            signal!("editor_file_open"),
             signal!("editor_file_up"),
             signal!("editor_file_expand_all"),
             signal!("editor_file_collapse_all"),

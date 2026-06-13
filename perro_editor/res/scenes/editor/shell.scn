@@ -1305,29 +1305,6 @@ parent = @left_panel
     [/UiHLayout]
 [/file_ops_row]
 
-[file_open_button]
-parent = @file_ops_row
-    [UiButton]
-        size_ratio = (0.19, 0.86)
-        click_signals = ["editor_file_open"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
-    [/UiButton]
-[/file_open_button]
-
-[file_open_label]
-parent = @file_open_button
-    [UiLabel]
-        size_ratio = (1.0, 1.0)
-        text = "Open"
-        text_size_ratio = 0.259
-        color = "#F3F4F6"
-        input_enabled = false
-        mouse_filter = "pass"
-    [/UiLabel]
-[/file_open_label]
-
 [file_up_button]
 parent = @file_ops_row
     [UiButton]
