@@ -2,8 +2,8 @@ use proc_macro::TokenStream;
 use quote::ToTokens;
 use quote::quote;
 use syn::{
-    Data, DeriveInput, Expr, Field, Fields, ItemStruct, LitStr, Meta, Result, Variant,
-    parse::Parse, parse_macro_input, parse_quote,
+    Data, DeriveInput, Expr, Field, Fields, GenericParam, Generics, ItemStruct, LitStr, Meta,
+    Result, Variant, parse::Parse, parse_macro_input, parse_quote,
 };
 
 struct EmptyAttrArgs;
@@ -91,7 +91,7 @@ fn derive_variant_like(input: TokenStream) -> TokenStream {
         Err(err) => return err.into_compile_error().into(),
     };
     let ident = input.ident;
-    let generics = input.generics;
+    let generics = add_derive_variant_bounds(input.generics);
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     match input.data {
@@ -111,13 +111,22 @@ fn derive_variant_like(input: TokenStream) -> TokenStream {
             data_enum.variants.into_iter().collect(),
             options,
         ),
-        _ => syn::Error::new_spanned(
-            ident,
-            "`Variant` derive only supports structs with named fields or enums",
-        )
-        .into_compile_error()
-        .into(),
+        _ => syn::Error::new_spanned(ident, "`Variant` derive only supports structs or enums")
+            .into_compile_error()
+            .into(),
     }
+}
+
+fn add_derive_variant_bounds(mut generics: Generics) -> Generics {
+    for param in generics.params.iter_mut() {
+        let GenericParam::Type(type_param) = param else {
+            continue;
+        };
+        type_param
+            .bounds
+            .push(parse_quote!(::perro_api::variant::DeriveVariant));
+    }
+    generics
 }
 
 fn parse_variant_derive_options(input: &DeriveInput) -> Result<VariantDeriveOptions> {
@@ -175,75 +184,123 @@ fn derive_state_field_struct(
     fields: Fields,
     options: VariantDeriveOptions,
 ) -> TokenStream {
-    let Fields::Named(fields) = fields else {
-        return syn::Error::new_spanned(
-            ident,
-            "`Variant` derive on structs only supports named fields",
-        )
-        .into_compile_error()
-        .into();
-    };
-
     let mut from_fields = Vec::new();
     let mut from_owned_fields = Vec::new();
     let mut to_fields = Vec::new();
     let mut into_fields = Vec::new();
-    let mut field_idents = Vec::new();
+    let mut named_field_idents = Vec::new();
+    let mut tuple_field_idents = Vec::new();
     let mut schema_fields = Vec::new();
     let mut codec_hints = Vec::new();
+    let mut struct_is_tuple = false;
+    let mut struct_is_unit = false;
 
-    for field in fields.named {
-        let Some(field_ident) = field.ident else {
-            continue;
-        };
-        let field_ty = field.ty;
-        let field_key = field_ident.to_string();
-        let field_key_arc = shared_arc_str(&field_key);
-        field_idents.push(field_ident.clone());
-        schema_fields.push(field_key.clone());
-        codec_hints.push(quote! {
-            __perro_hint_use_derive_variant::<#field_ty>();
-        });
+    match fields {
+        Fields::Named(fields) => {
+            for field in fields.named {
+                let Some(field_ident) = field.ident else {
+                    continue;
+                };
+                let field_ty = field.ty;
+                let field_key = field_ident.to_string();
+                let field_key_arc = shared_arc_str(&field_key);
+                named_field_idents.push(field_ident.clone());
+                schema_fields.push(field_key.clone());
+                codec_hints.push(quote! {
+                    __perro_hint_use_derive_variant::<#field_ty>();
+                });
 
-        match options.struct_mode {
-            StructMode::Object => {
-                from_fields.push(quote! {
-                    #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_variant(obj.get(#field_key)?)?
-                });
-                from_owned_fields.push(quote! {
-                    #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_owned_variant(obj.remove(#field_key)?)?
-                });
-                to_fields.push(quote! {
-                    out.insert(#field_key_arc, ::perro_api::variant::DeriveVariant::to_variant(&self.#field_ident));
-                });
-                into_fields.push(quote! {
-                    out.insert(#field_key_arc, ::perro_api::variant::DeriveVariant::into_variant(#field_ident));
-                });
+                match options.struct_mode {
+                    StructMode::Object => {
+                        from_fields.push(quote! {
+                            #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_variant(obj.get(#field_key)?)?
+                        });
+                        from_owned_fields.push(quote! {
+                            #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_owned_variant(obj.remove(#field_key)?)?
+                        });
+                        to_fields.push(quote! {
+                            out.insert(#field_key_arc, ::perro_api::variant::DeriveVariant::to_variant(&self.#field_ident));
+                        });
+                        into_fields.push(quote! {
+                            out.insert(#field_key_arc, ::perro_api::variant::DeriveVariant::into_variant(#field_ident));
+                        });
+                    }
+                    StructMode::Array => {
+                        let idx = syn::Index::from(from_fields.len());
+                        from_fields.push(quote! {
+                            #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_variant(data.get(#idx)?)?
+                        });
+                        from_owned_fields.push(quote! {
+                            #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_owned_variant(data.next()?)?
+                        });
+                        to_fields.push(quote! {
+                            out.push(::perro_api::variant::DeriveVariant::to_variant(&self.#field_ident));
+                        });
+                        into_fields.push(quote! {
+                            out.push(::perro_api::variant::DeriveVariant::into_variant(#field_ident));
+                        });
+                    }
+                }
             }
-            StructMode::Array => {
-                let idx = syn::Index::from(from_fields.len());
-                from_fields.push(quote! {
-                    #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_variant(data.get(#idx)?)?
+        }
+        Fields::Unnamed(fields) => {
+            struct_is_tuple = true;
+            for (field_idx, field) in fields.unnamed.into_iter().enumerate() {
+                let field_ty = field.ty;
+                let field_key = field_idx.to_string();
+                let field_key_arc = shared_arc_str(&field_key);
+                let tuple_idx = syn::Index::from(field_idx);
+                let binding = syn::Ident::new(
+                    &format!("__perro_f{field_idx}"),
+                    proc_macro2::Span::call_site(),
+                );
+                tuple_field_idents.push(binding.clone());
+                schema_fields.push(field_key.clone());
+                codec_hints.push(quote! {
+                    __perro_hint_use_derive_variant::<#field_ty>();
                 });
-                from_owned_fields.push(quote! {
-                    #field_ident: <#field_ty as ::perro_api::variant::DeriveVariant>::from_owned_variant(data.next()?)?
-                });
-                to_fields.push(quote! {
-                    out.push(::perro_api::variant::DeriveVariant::to_variant(&self.#field_ident));
-                });
-                into_fields.push(quote! {
-                    out.push(::perro_api::variant::DeriveVariant::into_variant(#field_ident));
-                });
+
+                match options.struct_mode {
+                    StructMode::Object => {
+                        from_fields.push(quote! {
+                            <#field_ty as ::perro_api::variant::DeriveVariant>::from_variant(obj.get(#field_key)?)?
+                        });
+                        from_owned_fields.push(quote! {
+                            <#field_ty as ::perro_api::variant::DeriveVariant>::from_owned_variant(obj.remove(#field_key)?)?
+                        });
+                        to_fields.push(quote! {
+                            out.insert(#field_key_arc, ::perro_api::variant::DeriveVariant::to_variant(&self.#tuple_idx));
+                        });
+                        into_fields.push(quote! {
+                            out.insert(#field_key_arc, ::perro_api::variant::DeriveVariant::into_variant(#binding));
+                        });
+                    }
+                    StructMode::Array => {
+                        from_fields.push(quote! {
+                            <#field_ty as ::perro_api::variant::DeriveVariant>::from_variant(data.get(#tuple_idx)?)?
+                        });
+                        from_owned_fields.push(quote! {
+                            <#field_ty as ::perro_api::variant::DeriveVariant>::from_owned_variant(data.next()?)?
+                        });
+                        to_fields.push(quote! {
+                            out.push(::perro_api::variant::DeriveVariant::to_variant(&self.#tuple_idx));
+                        });
+                        into_fields.push(quote! {
+                            out.push(::perro_api::variant::DeriveVariant::into_variant(#binding));
+                        });
+                    }
+                }
             }
+        }
+        Fields::Unit => {
+            struct_is_unit = true;
         }
     }
 
     let from_body = match options.struct_mode {
         StructMode::Object => quote! {
             let obj = value.as_object()?;
-            Some(Self {
-                #(#from_fields,)*
-            })
+            Some(Self( #(#from_fields),* ))
         },
         StructMode::Array => {
             let expected_len = from_fields.len();
@@ -252,9 +309,7 @@ fn derive_state_field_struct(
                 if data.len() != #expected_len {
                     return None;
                 }
-                Some(Self {
-                    #(#from_fields,)*
-                })
+                Some(Self( #(#from_fields),* ))
             }
         }
     };
@@ -264,9 +319,7 @@ fn derive_state_field_struct(
                 ::perro_api::variant::Variant::Object(obj) => obj,
                 _ => return None,
             };
-            Some(Self {
-                #(#from_owned_fields,)*
-            })
+            Some(Self( #(#from_owned_fields),* ))
         },
         StructMode::Array => {
             let expected_len = from_fields.len();
@@ -279,9 +332,92 @@ fn derive_state_field_struct(
                     return None;
                 }
                 let mut data = data.into_iter();
+                Some(Self( #(#from_owned_fields),* ))
+            }
+        }
+    };
+    let from_body = if struct_is_unit {
+        match options.struct_mode {
+            StructMode::Object => quote! {
+                if !matches!(value, ::perro_api::variant::Variant::Object(obj) if obj.is_empty()) {
+                    return None;
+                }
+                Some(Self)
+            },
+            StructMode::Array => quote! {
+                if !matches!(value, ::perro_api::variant::Variant::Array(data) if data.is_empty()) {
+                    return None;
+                }
+                Some(Self)
+            },
+        }
+    } else if struct_is_tuple {
+        from_body
+    } else {
+        match options.struct_mode {
+            StructMode::Object => quote! {
+                let obj = value.as_object()?;
+                Some(Self {
+                    #(#from_fields,)*
+                })
+            },
+            StructMode::Array => {
+                let expected_len = from_fields.len();
+                quote! {
+                    let data = value.as_array()?;
+                    if data.len() != #expected_len {
+                        return None;
+                    }
+                    Some(Self {
+                        #(#from_fields,)*
+                    })
+                }
+            }
+        }
+    };
+    let from_owned_body = if struct_is_unit {
+        match options.struct_mode {
+            StructMode::Object => quote! {
+                if !matches!(value, ::perro_api::variant::Variant::Object(obj) if obj.is_empty()) {
+                    return None;
+                }
+                Some(Self)
+            },
+            StructMode::Array => quote! {
+                if !matches!(value, ::perro_api::variant::Variant::Array(data) if data.is_empty()) {
+                    return None;
+                }
+                Some(Self)
+            },
+        }
+    } else if struct_is_tuple {
+        from_owned_body
+    } else {
+        match options.struct_mode {
+            StructMode::Object => quote! {
+                let mut obj = match value {
+                    ::perro_api::variant::Variant::Object(obj) => obj,
+                    _ => return None,
+                };
                 Some(Self {
                     #(#from_owned_fields,)*
                 })
+            },
+            StructMode::Array => {
+                let expected_len = from_fields.len();
+                quote! {
+                    let data = match value {
+                        ::perro_api::variant::Variant::Array(data) => data,
+                        _ => return None,
+                    };
+                    if data.len() != #expected_len {
+                        return None;
+                    }
+                    let mut data = data.into_iter();
+                    Some(Self {
+                        #(#from_owned_fields,)*
+                    })
+                }
             }
         }
     };
@@ -301,17 +437,46 @@ fn derive_state_field_struct(
     };
     let into_body = match options.struct_mode {
         StructMode::Object => quote! {
-            let Self { #(#field_idents),* } = self;
+            let Self { #(#named_field_idents),* } = self;
             let mut out = ::std::collections::BTreeMap::<::std::sync::Arc<str>, ::perro_api::variant::Variant>::new();
             #(#into_fields)*
             ::perro_api::variant::Variant::Object(out)
         },
         StructMode::Array => quote! {
-            let Self { #(#field_idents),* } = self;
+            let Self { #(#named_field_idents),* } = self;
             let mut out = ::std::vec::Vec::<::perro_api::variant::Variant>::with_capacity(#field_count);
             #(#into_fields)*
             ::perro_api::variant::Variant::Array(out)
         },
+    };
+    let into_body = if struct_is_unit {
+        match options.struct_mode {
+            StructMode::Object => quote! {
+                let mut out = ::std::collections::BTreeMap::<::std::sync::Arc<str>, ::perro_api::variant::Variant>::new();
+                ::perro_api::variant::Variant::Object(out)
+            },
+            StructMode::Array => quote! {
+                let mut out = ::std::vec::Vec::<::perro_api::variant::Variant>::with_capacity(#field_count);
+                ::perro_api::variant::Variant::Array(out)
+            },
+        }
+    } else if struct_is_tuple {
+        match options.struct_mode {
+            StructMode::Object => quote! {
+                let Self( #(#tuple_field_idents),* ) = self;
+                let mut out = ::std::collections::BTreeMap::<::std::sync::Arc<str>, ::perro_api::variant::Variant>::new();
+                #(#into_fields)*
+                ::perro_api::variant::Variant::Object(out)
+            },
+            StructMode::Array => quote! {
+                let Self( #(#tuple_field_idents),* ) = self;
+                let mut out = ::std::vec::Vec::<::perro_api::variant::Variant>::with_capacity(#field_count);
+                #(#into_fields)*
+                ::perro_api::variant::Variant::Array(out)
+            },
+        }
+    } else {
+        into_body
     };
 
     let expanded = quote! {

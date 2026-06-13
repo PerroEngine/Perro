@@ -88,6 +88,28 @@ enum DefaultBotState {
     Charging,
 }
 
+#[derive(Debug, Clone, PartialEq, Variant)]
+struct TuplePair(i32, String);
+
+#[derive(Debug, Clone, PartialEq, Variant)]
+#[variant(mode = "object")]
+struct TupleObject(i32, bool);
+
+#[derive(Debug, Clone, PartialEq, Variant)]
+struct GenericBox<T> {
+    value: T,
+    items: Vec<T>,
+}
+
+#[derive(Debug, Clone, PartialEq, Variant)]
+struct GenericTuple<T>(T, Vec<T>);
+
+#[derive(Debug, Clone, PartialEq, Variant)]
+enum GenericEnum<T> {
+    Empty,
+    One(T),
+}
+
 fn sample_profile() -> BotProfile {
     let mut overrides = BTreeMap::<Arc<str>, i32>::new();
     overrides.insert(Arc::<str>::from("aggression"), 7);
@@ -111,6 +133,42 @@ fn sample_profile() -> BotProfile {
             z: 3.0,
         }),
     }
+}
+
+#[test]
+fn tuple_struct_roundtrip_variant_codec() {
+    let value = TuplePair(7, "seven".to_string());
+    let encoded = VariantValue::from(value.clone());
+    let arr = encoded.as_array().expect("tuple struct uses array mode");
+    assert_eq!(arr.len(), 2);
+    assert_eq!(arr[0].as_i32(), Some(7));
+    assert_eq!(arr[1].as_str(), Some("seven"));
+    assert_eq!(encoded.parse::<TuplePair>(), Ok(value));
+
+    let value = TupleObject(5, true);
+    let encoded = VariantValue::from(value.clone());
+    let obj = encoded.as_object().expect("object mode tuple struct");
+    assert_eq!(obj.get("0").and_then(|v| v.as_i32()), Some(5));
+    assert_eq!(obj.get("1").and_then(|v| v.as_bool()), Some(true));
+    assert_eq!(encoded.parse::<TupleObject>(), Ok(value));
+}
+
+#[test]
+fn generic_struct_and_enum_roundtrip_variant_codec() {
+    let named = GenericBox {
+        value: 3_i32,
+        items: vec![1, 2, 3],
+    };
+    let encoded = VariantValue::from(named.clone());
+    assert_eq!(encoded.parse::<GenericBox<i32>>(), Ok(named));
+
+    let tuple = GenericTuple("root".to_string(), vec!["a".to_string(), "b".to_string()]);
+    let encoded = VariantValue::from(tuple.clone());
+    assert_eq!(encoded.into_parse::<GenericTuple<String>>(), Ok(tuple));
+
+    let item = GenericEnum::One(TuplePair(9, "nine".to_string()));
+    let encoded = VariantValue::from(item.clone());
+    assert_eq!(encoded.parse::<GenericEnum<TuplePair>>(), Ok(item));
 }
 
 #[test]
