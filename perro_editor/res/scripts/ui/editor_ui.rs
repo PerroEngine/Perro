@@ -431,6 +431,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         let row = view.inspector.script_vars.get(idx);
         ensure_inspector_value_component_boxes(ctx, idx);
         ensure_inspector_color_swatch(ctx, idx);
+        ensure_inspector_bitmask_grid(ctx, idx);
         set_ui_display(
             ctx,
             &format!("inspector_var_row_{idx}"),
@@ -475,6 +476,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             set_color_picker_value(ctx, &swatch_name, color);
         }
         let bool_row = row.is_some_and(|item| item.kind == "Bool");
+        let bitmask_row = row.is_some_and(|item| item.kind == "BitMask");
         let enum_row = row.is_some_and(|item| !item.enum_options.is_empty());
         let dropdown_name = format!("inspector_var_{idx}_dropdown");
         ensure_inspector_enum_dropdown(ctx, idx);
@@ -492,6 +494,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
                 && !picker_row
                 && !enum_row
                 && !bool_row
+                && !bitmask_row
                 && !component_row
                 && !vars_closed,
         );
@@ -511,6 +514,22 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             &checkbox_name,
             view.inspector.node_actions && bool_row && !vars_closed,
         );
+        set_ui_display(
+            ctx,
+            &format!("inspector_var_{idx}_bitmask_grid"),
+            view.inspector.node_actions && bitmask_row && !vars_closed,
+        );
+        if bitmask_row {
+            set_ui_node_size(ctx, &format!("inspector_var_row_{idx}"), (0.985, 0.074));
+            set_ui_node_size(ctx, &format!("inspector_var_row_{idx}_inner"), (1.0, 1.0));
+        } else {
+            set_ui_node_size(ctx, &format!("inspector_var_row_{idx}"), (0.985, 0.031));
+        }
+        if let Some(row) = row
+            && bitmask_row
+        {
+            update_inspector_bitmask_grid(ctx, idx, scene_value_bitmask_from_text(&row.value));
+        }
         set_ui_display(
             ctx,
             &picker_button_name,
@@ -3307,6 +3326,109 @@ pub fn ensure_inspector_enum_dropdown<API: ScriptAPI + ?Sized>(
         node.option_pressed_style = node.button.pressed_style.clone();
         node.option_height = 24.0;
     });
+}
+
+pub fn ensure_inspector_bitmask_grid<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+) {
+    let Some(row_id) = inspector_value_row_inner(ctx, idx) else {
+        return;
+    };
+    let grid_name = format!("inspector_var_{idx}_bitmask_grid");
+    if find_named(ctx, &grid_name).is_some() {
+        return;
+    }
+    let grid_id = create_node!(ctx.run, UiVLayout, grid_name, tags![], row_id);
+    let _ = with_node_mut!(ctx.run, UiVLayout, grid_id, |node| {
+        node.visible = false;
+        node.layout.size = UiVector2::ratio(0.50, 0.92);
+        node.inner.spacing = 0.001;
+    });
+    for row in 0..2 {
+        let row_id = create_node!(
+            ctx.run,
+            UiHLayout,
+            format!("inspector_var_{idx}_bitmask_row_{row}"),
+            tags![],
+            grid_id
+        );
+        let _ = with_node_mut!(ctx.run, UiHLayout, row_id, |node| {
+            node.layout.size = UiVector2::ratio(1.0, 0.48);
+            node.inner.spacing = 0.001;
+        });
+        for col in 0..16 {
+            let bit = row * 16 + col + 1;
+            create_inspector_bit_button(ctx, row_id, idx, bit, &bit.to_string());
+        }
+    }
+    create_inspector_bit_button(ctx, grid_id, idx, 0, "none");
+    create_inspector_bit_button(ctx, grid_id, idx, 33, "all");
+}
+
+fn create_inspector_bit_button<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    parent: NodeID,
+    idx: usize,
+    bit: usize,
+    label: &str,
+) {
+    let name = if bit == 0 {
+        format!("inspector_var_{idx}_bit_none")
+    } else if bit == 33 {
+        format!("inspector_var_{idx}_bit_all")
+    } else {
+        format!("inspector_var_{idx}_bit_{bit}")
+    };
+    let id = create_node!(ctx.run, UiButton, name.clone(), tags![], parent);
+    let _ = with_node_mut!(ctx.run, UiButton, id, |node| {
+        node.base.layout.size = if bit == 0 || bit == 33 {
+            UiVector2::ratio(0.14, 0.42)
+        } else {
+            UiVector2::ratio(0.058, 0.94)
+        };
+        node.clicked_signals = vec![signal!("editor_inspector_var_pick_7")];
+        node.style.fill = Color::from_hex("#111827DD").unwrap_or(node.style.fill);
+        node.style.stroke = Color::from_hex("#334155FF").unwrap_or(node.style.stroke);
+        node.hover_style.fill = Color::from_hex("#223142").unwrap_or(node.hover_style.fill);
+        node.pressed_style.fill = Color::from_hex("#334155").unwrap_or(node.pressed_style.fill);
+    });
+    let label_id = create_node!(
+        ctx.run,
+        UiLabel,
+        format!("{name}_label"),
+        tags![],
+        id
+    );
+    let _ = with_node_mut!(ctx.run, UiLabel, label_id, |node| {
+        node.layout.size = UiVector2::ratio(1.0, 1.0);
+        node.text = Cow::Owned(label.to_string());
+        node.text_size_ratio = if bit == 0 || bit == 33 { 0.30 } else { 0.34 };
+        node.color = Color::from_hex("#94A3B8").unwrap_or(node.color);
+        node.h_align = UiTextAlign::Center;
+        node.v_align = UiTextAlign::Center;
+        node.input_enabled = false;
+        node.mouse_filter = UiMouseFilter::Pass;
+    });
+}
+
+fn update_inspector_bitmask_grid<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+    mask: u32,
+) {
+    for bit in 1..=32 {
+        let on = mask & (1_u32 << (bit - 1)) != 0;
+        let Some(id) = find_named(ctx, &format!("inspector_var_{idx}_bit_{bit}")) else {
+            continue;
+        };
+        let _ = with_node_mut!(ctx.run, UiButton, id, |node| {
+            node.style.fill = Color::from_hex(if on { "#2563EBFF" } else { "#111827DD" })
+                .unwrap_or(node.style.fill);
+            node.style.stroke = Color::from_hex(if on { "#93C5FDFF" } else { "#334155FF" })
+                .unwrap_or(node.style.stroke);
+        });
+    }
 }
 
 pub fn set_indicator_shape<API: ScriptAPI + ?Sized>(

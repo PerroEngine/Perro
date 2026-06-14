@@ -2146,6 +2146,122 @@ pub fn mutate_selected_inspector_array<API: ScriptAPI + ?Sized>(
     }
 }
 
+pub fn toggle_selected_inspector_bitmask_bit<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+    bit: usize,
+) {
+    let Some(mask) = current_inspector_bitmask(ctx, idx) else {
+        return;
+    };
+    if !(1..=32).contains(&bit) {
+        return;
+    }
+    let next = mask ^ (1_u32 << (bit - 1));
+    write_selected_inspector_bitmask(ctx, idx, next);
+}
+
+pub fn set_selected_inspector_bitmask_all<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+    all: bool,
+) {
+    write_selected_inspector_bitmask(ctx, idx, if all { u32::MAX } else { 0 });
+}
+
+fn current_inspector_bitmask<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+) -> Option<u32> {
+    with_state!(ctx.run, EditorState, ctx.id, |state| {
+        let key = state.selected_key?;
+        let doc = SceneDoc::parse(&state.doc_text);
+        let node = doc
+            .scene
+            .nodes
+            .iter()
+            .find(|node| node.key.as_u32() == key)?;
+        let row = inspector_value_rows_for_node(state, node).get(idx)?.clone();
+        if row.kind != "BitMask" {
+            return None;
+        }
+        Some(scene_value_bitmask_from_text(&row.value))
+    })
+}
+
+fn write_selected_inspector_bitmask<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+    value: u32,
+) {
+    let row = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        let key = state.selected_key?;
+        let doc = SceneDoc::parse(&state.doc_text);
+        let node = doc
+            .scene
+            .nodes
+            .iter()
+            .find(|node| node.key.as_u32() == key)?;
+        inspector_value_rows_for_node(state, node).get(idx).cloned()
+    });
+    let Some(row) = row else {
+        return;
+    };
+    let scene_value = SceneValue::I32(value as i32);
+    let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let Some(key) = state.selected_key else {
+            return false;
+        };
+        let mut doc = SceneDoc::parse(&state.doc_text);
+        let Some(node) = doc
+            .scene
+            .nodes
+            .to_mut()
+            .iter_mut()
+            .find(|node| node.key.as_u32() == key)
+        else {
+            return false;
+        };
+        if row.source == "script" {
+            let defaults = inspector_script_var_default_fields_for_node(state, node);
+            let mut fields = inspector_script_var_fields_for_node(state, node);
+            if !set_value_at_path(&mut fields, &row.path, scene_value) {
+                return false;
+            }
+            if !write_script_var_override(node.script_vars.to_mut(), &defaults, &fields, &row.path)
+            {
+                return false;
+            }
+        } else {
+            let mut fields = inspector_scene_value_fields_for_node(node);
+            if !set_value_at_path(&mut fields, &row.path, scene_value) {
+                return false;
+            }
+            if !write_scene_field_override(node.data.fields.to_mut(), &fields, &row.path) {
+                return false;
+            }
+        }
+        state.doc_text = doc.to_text();
+        state.dirty = true;
+        if let Some(path) = state.open_paths.get(state.active_open).cloned()
+            && !state.dirty_scene_paths.iter().any(|item| item == &path)
+        {
+            state.dirty_scene_paths.push(path);
+        }
+        state.log = format!("bitmask edit\n{}", row.name.trim());
+        true
+    })
+    .unwrap_or(false);
+    if changed {
+        rebuild_preview(ctx);
+        refresh_all(ctx);
+    }
+}
+
+pub fn scene_value_bitmask_from_text(value: &str) -> u32 {
+    value.trim().parse::<i32>().map(|value| value as u32).unwrap_or(0)
+}
+
 pub fn set_value_at_path(
     fields: &mut [(SceneFieldName, SceneValue)],
     path: &[ValuePathStep],

@@ -297,6 +297,12 @@ methods!({
                     mutate_selected_inspector_array(ctx, idx, true);
                 } else if let Some(idx) = middle_index(&name, "inspector_var_", "_remove_button") {
                     mutate_selected_inspector_array(ctx, idx, false);
+                } else if let Some((idx, bit)) = inspector_var_bit_button(&name) {
+                    toggle_selected_inspector_bitmask_bit(ctx, idx, bit);
+                } else if let Some(idx) = middle_index(&name, "inspector_var_", "_bit_all") {
+                    set_selected_inspector_bitmask_all(ctx, idx, true);
+                } else if let Some(idx) = middle_index(&name, "inspector_var_", "_bit_none") {
+                    set_selected_inspector_bitmask_all(ctx, idx, false);
                 } else if let Some(idx) = middle_index(&name, "inspector_var_", "_dropdown") {
                     edit_selected_script_var_path(ctx, idx);
                 } else if let Some(idx) = suffix_index(&name, "inspector_pick_row_") {
@@ -331,6 +337,14 @@ methods!({
         });
     }
 });
+
+fn inspector_var_bit_button(name: &str) -> Option<(usize, usize)> {
+    let rest = name.strip_prefix("inspector_var_")?;
+    let (idx, bit) = rest.split_once("_bit_")?;
+    let idx = idx.parse().ok()?;
+    let bit = bit.parse().ok()?;
+    Some((idx, bit))
+}
 
 fn connect_editor_signals<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let _ = signal_connect_many!(
