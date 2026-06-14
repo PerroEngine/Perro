@@ -528,6 +528,9 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             &checkbox_name,
             row.is_some_and(|item| item.kind == "Bool" && item.value == "true"),
         );
+        if let Some(row) = row {
+            apply_inspector_value_row_panel(ctx, idx, row.depth, &row.source);
+        }
         let add_name = format!("inspector_var_{idx}_add_button");
         let remove_name = format!("inspector_var_{idx}_remove_button");
         set_ui_display(
@@ -734,16 +737,12 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
 
     let mut idx = 0;
     while find_named(ctx, &format!("inspector_var_row_{idx}")).is_some() {
-        set_ui_node_size(ctx, &format!("inspector_var_row_{idx}"), (1.0, 0.027));
+        set_ui_node_size(ctx, &format!("inspector_var_row_{idx}"), (0.985, 0.031));
+        set_ui_node_size(ctx, &format!("inspector_var_row_{idx}_inner"), (1.0, 1.0));
         set_ui_node_size(ctx, &format!("inspector_var_{idx}_value"), (0.50, 0.70));
         set_text_box_text_ratio(ctx, &format!("inspector_var_{idx}_value"), 0.62);
         set_text_box_padding(ctx, &format!("inspector_var_{idx}_value"), 5.0, 1.0);
-        set_ui_node_padding(
-            ctx,
-            &format!("inspector_var_row_{idx}"),
-            UiRect::new(0.025, 0.0, 0.0, 0.0),
-        );
-        set_hlayout_spacing(ctx, &format!("inspector_var_row_{idx}"), 0.002);
+        set_hlayout_spacing(ctx, &format!("inspector_var_row_{idx}_inner"), 0.002);
         set_ui_node_size(ctx, &format!("inspector_var_{idx}_check"), (0.055, 0.50));
         set_button_size(
             ctx,
@@ -2965,7 +2964,7 @@ pub fn ensure_inspector_value_component_boxes<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     idx: usize,
 ) {
-    let Some(row_id) = find_named(ctx, &format!("inspector_var_row_{idx}")) else {
+    let Some(row_id) = inspector_value_row_inner(ctx, idx) else {
         return;
     };
     for component in 0..4 {
@@ -3010,11 +3009,26 @@ pub fn ensure_inspector_value_row<API: ScriptAPI + ?Sized>(
     let Some(content_id) = find_named(ctx, "inspector_content") else {
         return;
     };
-    let row_id = create_node!(ctx.run, UiHLayout, row_name, tags![], content_id);
+    let panel_id = create_node!(ctx.run, UiPanel, row_name, tags![], content_id);
+    let _ = with_node_mut!(ctx.run, UiPanel, panel_id, |node| {
+        node.base.visible = false;
+        node.base.layout.size = UiVector2::ratio(0.985, 0.031);
+        node.base.layout.padding = UiRect::symmetric(0.004, 0.001);
+        node.base.layout.h_align = UiHorizontalAlign::Fill;
+        node.style.fill = Color::from_hex("#111827CC").unwrap_or(node.style.fill);
+        node.style.stroke = Color::from_hex("#243244FF").unwrap_or(node.style.stroke);
+        node.style.stroke_width = 1.0;
+        node.style.corner_radius = 0.15;
+    });
+    let row_id = create_node!(
+        ctx.run,
+        UiHLayout,
+        format!("inspector_var_row_{idx}_inner"),
+        tags![],
+        panel_id
+    );
     let _ = with_node_mut!(ctx.run, UiHLayout, row_id, |node| {
-        node.visible = false;
-        node.layout.size = UiVector2::ratio(1.0, 0.027);
-        node.layout.padding = UiRect::new(0.025, 0.0, 0.0, 0.0);
+        node.layout.size = UiVector2::ratio(1.0, 1.0);
         node.layout.h_align = UiHorizontalAlign::Fill;
         node.layout.v_align = UiVerticalAlign::Center;
         node.inner.spacing = 0.002;
@@ -3170,6 +3184,42 @@ fn create_inspector_value_icon_button<API: ScriptAPI + ?Sized>(
     });
 }
 
+fn inspector_value_row_inner<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+) -> Option<NodeID> {
+    if let Some(id) = find_named(ctx, &format!("inspector_var_row_{idx}_inner")) {
+        Some(id)
+    } else {
+        find_named(ctx, &format!("inspector_var_row_{idx}"))
+    }
+}
+
+fn apply_inspector_value_row_panel<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+    depth: usize,
+    source: &str,
+) {
+    let Some(id) = find_named(ctx, &format!("inspector_var_row_{idx}")) else {
+        return;
+    };
+    let palette = [
+        ("#101826D9", "#233147FF"),
+        ("#132033D9", "#2D415CFF"),
+        ("#17283DD9", "#38516FFF"),
+        ("#1B3045D9", "#436180FF"),
+    ];
+    let (fill, stroke) = palette[depth.min(palette.len() - 1)];
+    let script_stroke = if source == "script" { "#4B5563FF" } else { stroke };
+    let _ = with_node_mut!(ctx.run, UiPanel, id, |node| {
+        node.style.fill = Color::from_hex(fill).unwrap_or(node.style.fill);
+        node.style.stroke = Color::from_hex(script_stroke).unwrap_or(node.style.stroke);
+        node.style.stroke_width = 1.0;
+        node.style.corner_radius = 0.15;
+    });
+}
+
 pub fn hide_inspector_value_rows_from<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     start: usize,
@@ -3185,7 +3235,7 @@ pub fn ensure_inspector_color_swatch<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     idx: usize,
 ) {
-    let Some(row_id) = find_named(ctx, &format!("inspector_var_row_{idx}")) else {
+    let Some(row_id) = inspector_value_row_inner(ctx, idx) else {
         return;
     };
     let name = format!("inspector_var_{idx}_color_swatch");
@@ -3223,7 +3273,7 @@ pub fn ensure_inspector_enum_dropdown<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     idx: usize,
 ) {
-    let Some(row_id) = find_named(ctx, &format!("inspector_var_row_{idx}")) else {
+    let Some(row_id) = inspector_value_row_inner(ctx, idx) else {
         return;
     };
     let name = format!("inspector_var_{idx}_dropdown");

@@ -15,6 +15,7 @@ const MAX_INSPECTOR_DEPTH: usize = 4;
 #[derive(Clone)]
 pub struct InspectorValueRow {
     pub source: String,
+    pub depth: usize,
     pub path: Vec<ValuePathStep>,
     pub path_key: String,
     pub name: String,
@@ -1799,6 +1800,7 @@ fn push_value_rows(
     };
     rows.push(InspectorValueRow {
         source: source.to_string(),
+        depth,
         path: path.clone(),
         path_key: path_key.clone(),
         name: format!("{}{}", "  ".repeat(depth), name),
@@ -1820,6 +1822,7 @@ fn push_value_rows(
         let mut lines = warning.lines();
         rows.push(InspectorValueRow {
             source: source.to_string(),
+            depth: depth + 1,
             path: path.clone(),
             path_key: format!("{path_key}.warn"),
             name: format!(
