@@ -479,7 +479,8 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         let dropdown_name = format!("inspector_var_{idx}_dropdown");
         ensure_inspector_enum_dropdown(ctx, idx);
         let picker_button_name = format!("inspector_var_{idx}_pick_button");
-        let picker_row = row.is_some_and(|item| item.kind == "Node" || item.expandable)
+        let picker_row = row
+            .is_some_and(|item| item.kind == "Node" || item.kind.starts_with("Asset(") || item.expandable)
             && find_named(ctx, &picker_button_name).is_some();
         let component_row =
             row.is_some_and(|item| !item.components.is_empty() || item.kind == "Color");
@@ -526,6 +527,18 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             ctx,
             &checkbox_name,
             row.is_some_and(|item| item.kind == "Bool" && item.value == "true"),
+        );
+        let add_name = format!("inspector_var_{idx}_add_button");
+        let remove_name = format!("inspector_var_{idx}_remove_button");
+        set_ui_display(
+            ctx,
+            &add_name,
+            view.inspector.node_actions && row.is_some_and(|item| item.addable) && !vars_closed,
+        );
+        set_ui_display(
+            ctx,
+            &remove_name,
+            view.inspector.node_actions && row.is_some_and(|item| item.removable) && !vars_closed,
         );
     }
     hide_inspector_value_rows_from(ctx, view.inspector.script_vars.len());
@@ -914,19 +927,8 @@ impl InspectorViewData {
         view.script = format!("Script  {script}");
         view.collapsed_sections = state.inspector_collapsed_sections.clone();
         let script_fields = inspector_script_var_fields_for_node(state, node);
-        let color_paths = script_state_color_path_keys(state, node, &script_fields);
-        let node_paths = script_state_node_path_keys(state, node, &script_fields);
-        let enum_options = script_state_enum_path_options(state, node, &script_fields);
-        let warnings = script_state_schema_warnings(state, node, &script_fields);
         view.vars_text = script_vars_edit_text(&script_fields);
-        view.script_vars = inspector_script_var_rows_with_color_paths(
-            &script_fields,
-            &state.inspector_expanded_paths,
-            &color_paths,
-            &node_paths,
-            &enum_options,
-            &warnings,
-        );
+        view.script_vars = inspector_value_rows_for_node(state, node);
         view.apply_asset_actions(state);
         view
     }
@@ -1244,20 +1246,15 @@ pub fn inspector_scene_value_fields_for_node(
                 .or(field.default)
                 .or_else(|| {
                     perro_scene::default_scene_field_value_by_name(node.data.node_type, field.name)
-                })?;
+                })
+                .or_else(|| Some(field.ty.default_value()))?;
             Some((SceneFieldName::from_name(field.name.to_string()), value))
         })
         .collect()
 }
 
 pub fn inspector_generic_scene_field(field: &perro_scene::SceneInspectorField) -> bool {
-    if matches!(
-        field.ty,
-        perro_scene::NodeFieldType::Asset(_) | perro_scene::NodeFieldType::NodeRef
-    ) {
-        return false;
-    }
-    !matches!(field.name, "position" | "rotation" | "scale" | "model")
+    !matches!(field.name, "position" | "rotation" | "scale" | "model" | "material")
 }
 
 pub fn inspector_value_fields_for_node(
@@ -1287,9 +1284,9 @@ pub struct InspectorPickerEntry {
 
 pub fn inspector_picker_entries(state: &EditorState) -> Vec<InspectorPickerEntry> {
     match state.inspector_picker_kind.as_str() {
-        "node" | "script_node" => inspector_node_picker_entries(state),
-        "script_enum" => inspector_enum_picker_entries(state),
-        "asset" => inspector_asset_picker_entries(state),
+        "node" | "script_node" | "value_node" => inspector_node_picker_entries(state),
+        "script_enum" | "value_enum" => inspector_enum_picker_entries(state),
+        "asset" | "value_asset" => inspector_asset_picker_entries(state),
         _ => Vec::new(),
     }
 }
@@ -1309,8 +1306,9 @@ pub fn inspector_picker_title(state: &EditorState) -> String {
     }
     match state.inspector_picker_kind.as_str() {
         "node" => format!("Pick Node  {}", state.inspector_picker_field),
-        "script_node" => "Pick Node  script var".to_string(),
-        "script_enum" => "Pick Enum  script var".to_string(),
+        "script_node" | "value_node" => "Pick Node".to_string(),
+        "script_enum" | "value_enum" => "Pick Enum".to_string(),
+        "value_asset" => "Pick Asset".to_string(),
         "asset" => format!("Pick Asset  {}", state.inspector_picker_field),
         _ => "Pick".to_string(),
     }
@@ -1332,10 +1330,12 @@ fn inspector_enum_picker_entries(state: &EditorState) -> Vec<InspectorPickerEntr
     else {
         return Vec::new();
     };
-    let Some(row) = inspector_script_var_rows_for_node(state, node)
-        .get(row_idx)
-        .cloned()
-    else {
+    let rows = if state.inspector_picker_kind == "value_enum" {
+        inspector_value_rows_for_node(state, node)
+    } else {
+        inspector_script_var_rows_for_node(state, node)
+    };
+    let Some(row) = rows.get(row_idx).cloned() else {
         return Vec::new();
     };
     let filter = state.inspector_picker_filter.to_ascii_lowercase();
@@ -1408,6 +1408,18 @@ fn inspector_asset_picker_entries(state: &EditorState) -> Vec<InspectorPickerEnt
 }
 
 fn inspector_picker_asset_kind(state: &EditorState) -> Option<perro_scene::SceneAssetKind> {
+    if state.inspector_picker_kind == "value_asset" {
+        let row_idx = state.inspector_picker_field.parse::<usize>().ok()?;
+        let key = state.selected_key?;
+        let doc = SceneDoc::parse(&state.doc_text);
+        let node = doc
+            .scene
+            .nodes
+            .iter()
+            .find(|node| node.key.as_u32() == key)?;
+        let row = inspector_value_rows_for_node(state, node).get(row_idx)?.clone();
+        return asset_kind_from_row_kind(&row.kind);
+    }
     if state.inspector_picker_field == "script" {
         return Some(perro_scene::SceneAssetKind::Script);
     }
@@ -1422,6 +1434,25 @@ fn inspector_picker_asset_kind(state: &EditorState) -> Option<perro_scene::Scene
         perro_scene::scene_inspector_field(node.data.node_type, &state.inspector_picker_field)?;
     match field.ty {
         perro_scene::NodeFieldType::Asset(kind) => Some(kind),
+        _ => None,
+    }
+}
+
+fn asset_kind_from_row_kind(kind: &str) -> Option<perro_scene::SceneAssetKind> {
+    let name = kind.strip_prefix("Asset(")?.strip_suffix(')')?;
+    match name {
+        "Scene" => Some(perro_scene::SceneAssetKind::Scene),
+        "Script" => Some(perro_scene::SceneAssetKind::Script),
+        "Texture" => Some(perro_scene::SceneAssetKind::Texture),
+        "Mesh" => Some(perro_scene::SceneAssetKind::Mesh),
+        "Model" => Some(perro_scene::SceneAssetKind::Model),
+        "Material" => Some(perro_scene::SceneAssetKind::Material),
+        "Animation" => Some(perro_scene::SceneAssetKind::Animation),
+        "AnimationTree" => Some(perro_scene::SceneAssetKind::AnimationTree),
+        "Skeleton" => Some(perro_scene::SceneAssetKind::Skeleton),
+        "ParticleProfile" => Some(perro_scene::SceneAssetKind::ParticleProfile),
+        "TileSet" => Some(perro_scene::SceneAssetKind::TileSet),
+        "UiStyle" => Some(perro_scene::SceneAssetKind::UiStyle),
         _ => None,
     }
 }
@@ -3091,6 +3122,51 @@ pub fn ensure_inspector_value_row<API: ScriptAPI + ?Sized>(
         node.layout.size = UiVector2::ratio(0.16, 1.0);
         node.text_size_ratio = 0.28;
         node.color = Color::from_hex("#94A3B8").unwrap_or(node.color);
+    });
+
+    create_inspector_value_icon_button(ctx, row_id, idx, "add_button", "+");
+    create_inspector_value_icon_button(ctx, row_id, idx, "remove_button", "x");
+}
+
+fn create_inspector_value_icon_button<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    row_id: NodeID,
+    idx: usize,
+    suffix: &str,
+    label: &str,
+) {
+    let button_id = create_node!(
+        ctx.run,
+        UiButton,
+        format!("inspector_var_{idx}_{suffix}"),
+        tags![],
+        row_id
+    );
+    let _ = with_node_mut!(ctx.run, UiButton, button_id, |node| {
+        node.base.visible = false;
+        node.base.layout.size = UiVector2::ratio(0.045, 0.62);
+        node.clicked_signals = vec![signal!("editor_inspector_var_pick_7")];
+        node.style.fill = Color::from_hex("#111827DD").unwrap_or(node.style.fill);
+        node.style.stroke = Color::from_hex("#334155FF").unwrap_or(node.style.stroke);
+        node.hover_style.fill = Color::from_hex("#223142").unwrap_or(node.hover_style.fill);
+        node.pressed_style.fill = Color::from_hex("#334155").unwrap_or(node.pressed_style.fill);
+    });
+    let label_id = create_node!(
+        ctx.run,
+        UiLabel,
+        format!("inspector_var_{idx}_{suffix}_label"),
+        tags![],
+        button_id
+    );
+    let _ = with_node_mut!(ctx.run, UiLabel, label_id, |node| {
+        node.layout.size = UiVector2::ratio(1.0, 1.0);
+        node.text = Cow::Owned(label.to_string());
+        node.text_size_ratio = 0.38;
+        node.color = Color::from_hex("#E5E7EB").unwrap_or(node.color);
+        node.h_align = UiTextAlign::Center;
+        node.v_align = UiTextAlign::Center;
+        node.input_enabled = false;
+        node.mouse_filter = UiMouseFilter::Pass;
     });
 }
 

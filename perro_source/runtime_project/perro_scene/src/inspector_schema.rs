@@ -1006,7 +1006,6 @@ fn light_fields(fields: &mut Vec<SceneInspectorField>, node_type: NodeType) {
 
 fn mesh_fields(fields: &mut Vec<SceneInspectorField>, node_type: NodeType) {
     asset_field(fields, "Mesh", "mesh", SceneAssetKind::Mesh);
-    asset_field(fields, "Material", "material", SceneAssetKind::Material);
     push(
         fields,
         "Material",

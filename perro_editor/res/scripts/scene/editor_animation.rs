@@ -1016,7 +1016,7 @@ pub fn pick_selected_script_var_ref<API: ScriptAPI + ?Sized>(
             .nodes
             .iter()
             .find(|node| node.key.as_u32() == key)?;
-        let rows = inspector_script_var_rows_for_node(state, node);
+        let rows = inspector_value_rows_for_node(state, node);
         let row = rows.get(idx)?;
         if row.expandable {
             if let Some(pos) = state
@@ -1038,15 +1038,29 @@ pub fn pick_selected_script_var_ref<API: ScriptAPI + ?Sized>(
                 .to_mut()
                 .iter_mut()
                 .find(|node| node.key.as_u32() == key)?;
-            let defaults = inspector_script_var_default_fields_for_node(state, node);
-            let mut fields = inspector_script_var_fields_for_node(state, node);
             let current = row.value == "true";
-            if !set_value_at_path(&mut fields, &row.path, SceneValue::Bool(!current)) {
-                return None;
-            }
-            if !write_script_var_override(node.script_vars.to_mut(), &defaults, &fields, &row.path)
-            {
-                return None;
+            if row.source == "script" {
+                let defaults = inspector_script_var_default_fields_for_node(state, node);
+                let mut fields = inspector_script_var_fields_for_node(state, node);
+                if !set_value_at_path(&mut fields, &row.path, SceneValue::Bool(!current)) {
+                    return None;
+                }
+                if !write_script_var_override(
+                    node.script_vars.to_mut(),
+                    &defaults,
+                    &fields,
+                    &row.path,
+                ) {
+                    return None;
+                }
+            } else {
+                let mut fields = inspector_scene_value_fields_for_node(node);
+                if !set_value_at_path(&mut fields, &row.path, SceneValue::Bool(!current)) {
+                    return None;
+                }
+                if !write_scene_field_override(node.data.fields.to_mut(), &fields, &row.path) {
+                    return None;
+                }
             }
             state.doc_text = doc.to_text();
             state.dirty = true;
@@ -1058,20 +1072,28 @@ pub fn pick_selected_script_var_ref<API: ScriptAPI + ?Sized>(
             state.log = format!("toggle script var\n{}", row.name.trim());
             return Some(false);
         }
+        if row.kind.starts_with("Asset(") {
+            state.inspector_picker_open = true;
+            state.inspector_picker_field = idx.to_string();
+            state.inspector_picker_kind = "value_asset".to_string();
+            state.inspector_picker_offset = 0;
+            state.inspector_picker_filter.clear();
+            return Some(true);
+        }
         if row.kind != "Node" {
             if row.enum_options.is_empty() {
                 return None;
             }
             state.inspector_picker_open = true;
             state.inspector_picker_field = idx.to_string();
-            state.inspector_picker_kind = "script_enum".to_string();
+            state.inspector_picker_kind = "value_enum".to_string();
             state.inspector_picker_offset = 0;
             state.inspector_picker_filter.clear();
             return Some(true);
         }
         state.inspector_picker_open = true;
         state.inspector_picker_field = idx.to_string();
-        state.inspector_picker_kind = "script_node".to_string();
+        state.inspector_picker_kind = "value_node".to_string();
         state.inspector_picker_offset = 0;
         state.inspector_picker_filter.clear();
         Some(true)
@@ -1163,26 +1185,50 @@ pub fn choose_inspector_picker_row<API: ScriptAPI + ?Sized>(
         else {
             return false;
         };
-        if picker_kind == "script_node" || picker_kind == "script_enum" {
+        if matches!(
+            picker_kind.as_str(),
+            "script_node" | "script_enum" | "value_node" | "value_enum" | "value_asset"
+        ) {
             let Ok(row_idx) = field.parse::<usize>() else {
                 return false;
             };
-            let rows = inspector_script_var_rows_for_node(state, node);
+            let rows = if picker_kind.starts_with("value_") {
+                inspector_value_rows_for_node(state, node)
+            } else {
+                inspector_script_var_rows_for_node(state, node)
+            };
             let Some(row) = rows.get(row_idx) else {
                 return false;
             };
-            let defaults = inspector_script_var_default_fields_for_node(state, node);
-            let mut fields = inspector_script_var_fields_for_node(state, node);
-            if !set_value_at_path(
-                &mut fields,
-                &row.path,
-                SceneValue::Key(SceneValueKey::from(value.clone())),
-            ) {
-                return false;
-            }
-            if !write_script_var_override(node.script_vars.to_mut(), &defaults, &fields, &row.path)
-            {
-                return false;
+            let scene_value = if picker_kind == "value_asset" {
+                SceneValue::Str(Cow::Owned(value.clone()))
+            } else if picker_kind == "value_enum" || picker_kind == "script_enum" {
+                SceneValue::Key(SceneValueKey::from(value.clone()))
+            } else {
+                SceneValue::Key(SceneValueKey::from(value.clone()))
+            };
+            if row.source == "script" {
+                let defaults = inspector_script_var_default_fields_for_node(state, node);
+                let mut fields = inspector_script_var_fields_for_node(state, node);
+                if !set_value_at_path(&mut fields, &row.path, scene_value) {
+                    return false;
+                }
+                if !write_script_var_override(
+                    node.script_vars.to_mut(),
+                    &defaults,
+                    &fields,
+                    &row.path,
+                ) {
+                    return false;
+                }
+            } else {
+                let mut fields = inspector_scene_value_fields_for_node(node);
+                if !set_value_at_path(&mut fields, &row.path, scene_value) {
+                    return false;
+                }
+                if !write_scene_field_override(node.data.fields.to_mut(), &fields, &row.path) {
+                    return false;
+                }
             }
         } else if picker_kind == "node" {
             set_scene_key(&mut node.data, &field, value.clone());

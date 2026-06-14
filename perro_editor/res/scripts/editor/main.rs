@@ -293,6 +293,10 @@ methods!({
                     edit_selected_script_var_path(ctx, idx);
                 } else if let Some(idx) = middle_index(&name, "inspector_var_", "_pick_button") {
                     pick_selected_script_var_ref(ctx, idx);
+                } else if let Some(idx) = middle_index(&name, "inspector_var_", "_add_button") {
+                    mutate_selected_inspector_array(ctx, idx, true);
+                } else if let Some(idx) = middle_index(&name, "inspector_var_", "_remove_button") {
+                    mutate_selected_inspector_array(ctx, idx, false);
                 } else if let Some(idx) = middle_index(&name, "inspector_var_", "_dropdown") {
                     edit_selected_script_var_path(ctx, idx);
                 } else if let Some(idx) = suffix_index(&name, "inspector_pick_row_") {
