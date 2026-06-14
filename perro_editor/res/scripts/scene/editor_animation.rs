@@ -545,7 +545,17 @@ pub fn reset_selected_transform<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext
     })
     .unwrap_or(false);
     if changed {
-        rebuild_preview(ctx);
+        let mode = with_state!(ctx.run, EditorState, ctx.id, |state| {
+            state.viewport_mode.clone()
+        });
+        let fields: &[&str] = if mode == "3D" || mode == "2D" {
+            &["position", "rotation", "scale"]
+        } else {
+            &["translation_ratio", "rotation"]
+        };
+        if !sync_selected_preview_doc_fields(ctx, fields) {
+            rebuild_preview(ctx);
+        }
         refresh_all(ctx);
     }
 }
@@ -610,7 +620,17 @@ pub fn nudge_selected_node<API: ScriptAPI + ?Sized>(
     })
     .unwrap_or(false);
     if changed {
-        rebuild_preview(ctx);
+        let mode = with_state!(ctx.run, EditorState, ctx.id, |state| {
+            state.viewport_mode.clone()
+        });
+        let field = if mode == "UI" {
+            "translation_ratio"
+        } else {
+            "position"
+        };
+        if !sync_selected_preview_doc_fields(ctx, &[field]) {
+            rebuild_preview(ctx);
+        }
         refresh_all(ctx);
     }
 }

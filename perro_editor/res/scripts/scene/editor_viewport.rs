@@ -1019,6 +1019,20 @@ pub fn sync_preview_doc_field_for_key<API: ScriptAPI + ?Sized>(
     sync_preview_field_for_key(ctx, key, field, &value)
 }
 
+pub fn sync_selected_preview_doc_fields<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    fields: &[&str],
+) -> bool {
+    let Some(key) = with_state!(ctx.run, EditorState, ctx.id, |state| state.selected_key) else {
+        return false;
+    };
+    let mut synced = true;
+    for field in fields {
+        synced &= sync_preview_doc_field_for_key(ctx, key, field);
+    }
+    synced
+}
+
 fn scene_value_bitmask_from_value(value: &SceneValue) -> Option<BitMask> {
     match value {
         SceneValue::I32(value) => Some(BitMask::from_bits(*value as u32)),
