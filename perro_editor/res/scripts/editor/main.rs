@@ -23,36 +23,96 @@ type SelfNodeType = UiPanel;
 struct CachedSceneDoc {
     text: String,
     doc: SceneDoc,
+    node_indices: Vec<(u32, usize)>,
 }
 
-static ACTIVE_SCENE_DOC_CACHE: OnceLock<Mutex<Option<CachedSceneDoc>>> = OnceLock::new();
+static ACTIVE_SCENE_DOC_CACHE: OnceLock<Mutex<Vec<CachedSceneDoc>>> = OnceLock::new();
+
+const SCENE_DOC_CACHE_LIMIT: usize = MAX_SCENE_UNDO + 8;
 
 pub fn cached_scene_doc(text: &str) -> SceneDoc {
-    let cache = ACTIVE_SCENE_DOC_CACHE.get_or_init(|| Mutex::new(None));
+    let cache = ACTIVE_SCENE_DOC_CACHE.get_or_init(|| Mutex::new(Vec::new()));
     let Ok(mut guard) = cache.lock() else {
         return SceneDoc::parse(text);
     };
-    if let Some(cached) = guard.as_ref()
-        && cached.text == text
+    if let Some(idx) = guard.iter().position(|cached| cached.text == text)
     {
-        return cached.doc.clone();
+        let cached = guard.remove(idx);
+        let doc = cached.doc.clone();
+        guard.push(cached);
+        return doc;
     }
     let doc = SceneDoc::parse(text);
-    *guard = Some(CachedSceneDoc {
-        text: text.to_string(),
-        doc: doc.clone(),
-    });
+    guard.push(CachedSceneDoc::new(text.to_string(), doc.clone()));
+    if guard.len() > SCENE_DOC_CACHE_LIMIT {
+        guard.remove(0);
+    }
     doc
 }
 
 pub fn store_scene_doc_cache(text: &str, doc: &SceneDoc) {
-    let cache = ACTIVE_SCENE_DOC_CACHE.get_or_init(|| Mutex::new(None));
+    let cache = ACTIVE_SCENE_DOC_CACHE.get_or_init(|| Mutex::new(Vec::new()));
     if let Ok(mut guard) = cache.lock() {
-        *guard = Some(CachedSceneDoc {
-            text: text.to_string(),
-            doc: doc.clone(),
-        });
+        if let Some(idx) = guard.iter().position(|cached| cached.text == text) {
+            guard.remove(idx);
+        }
+        guard.push(CachedSceneDoc::new(text.to_string(), doc.clone()));
+        if guard.len() > SCENE_DOC_CACHE_LIMIT {
+            guard.remove(0);
+        }
     }
+}
+
+impl CachedSceneDoc {
+    fn new(text: String, doc: SceneDoc) -> Self {
+        let mut node_indices = doc
+            .scene
+            .nodes
+            .iter()
+            .enumerate()
+            .map(|(idx, node)| (node.key.as_u32(), idx))
+            .collect::<Vec<_>>();
+        node_indices.sort_by_key(|(key, _)| *key);
+        Self {
+            text,
+            doc,
+            node_indices,
+        }
+    }
+
+    fn node(&self, key: u32) -> Option<SceneNodeEntry> {
+        self.node_indices
+            .binary_search_by_key(&key, |(item_key, _)| *item_key)
+            .ok()
+            .and_then(|pos| self.doc.scene.nodes.get(self.node_indices[pos].1))
+            .cloned()
+    }
+}
+
+pub fn cached_scene_node(text: &str, key: u32) -> Option<SceneNodeEntry> {
+    let cache = ACTIVE_SCENE_DOC_CACHE.get_or_init(|| Mutex::new(Vec::new()));
+    let Ok(mut guard) = cache.lock() else {
+        return SceneDoc::parse(text)
+            .scene
+            .nodes
+            .iter()
+            .find(|node| node.key.as_u32() == key)
+            .cloned();
+    };
+    if let Some(idx) = guard.iter().position(|cached| cached.text == text) {
+        let cached = guard.remove(idx);
+        let node = cached.node(key);
+        guard.push(cached);
+        return node;
+    }
+    let doc = SceneDoc::parse(text);
+    let cached = CachedSceneDoc::new(text.to_string(), doc);
+    let node = cached.node(key);
+    guard.push(cached);
+    if guard.len() > SCENE_DOC_CACHE_LIMIT {
+        guard.remove(0);
+    }
+    node
 }
 
 pub fn set_state_scene_doc(state: &mut EditorState, doc: &SceneDoc) {
@@ -98,7 +158,8 @@ pub fn undo_scene_doc(state: &mut EditorState) -> bool {
         state.scene_redo_stack.push(state.doc_text.clone());
     }
     state.doc_text = prev;
-    store_scene_doc_cache(&state.doc_text, &SceneDoc::parse(&state.doc_text));
+    let doc = cached_scene_doc(&state.doc_text);
+    store_scene_doc_cache(&state.doc_text, &doc);
     state.dirty = true;
     mark_active_scene_dirty(state);
     state.log = format!("undo\n{} left", state.scene_undo_stack.len());
@@ -112,7 +173,8 @@ pub fn redo_scene_doc(state: &mut EditorState) -> bool {
     };
     push_scene_undo_snapshot(state);
     state.doc_text = next;
-    store_scene_doc_cache(&state.doc_text, &SceneDoc::parse(&state.doc_text));
+    let doc = cached_scene_doc(&state.doc_text);
+    store_scene_doc_cache(&state.doc_text, &doc);
     state.dirty = true;
     mark_active_scene_dirty(state);
     state.log = format!("redo\n{} left", state.scene_redo_stack.len());
@@ -128,9 +190,9 @@ fn mark_active_scene_dirty(state: &mut EditorState) {
 }
 
 pub fn clear_scene_doc_cache() {
-    let cache = ACTIVE_SCENE_DOC_CACHE.get_or_init(|| Mutex::new(None));
+    let cache = ACTIVE_SCENE_DOC_CACHE.get_or_init(|| Mutex::new(Vec::new()));
     if let Ok(mut guard) = cache.lock() {
-        *guard = None;
+        guard.clear();
     }
 }
 
@@ -142,6 +204,7 @@ pub const MAX_NODE_PICKER_ROWS: usize = 12;
 pub const MAX_INSPECTOR_PICKER_ROWS: usize = 12;
 pub const RECENT_PROJECTS_PATH: &str = "user://recent_projects.json";
 pub const FILE_WATCH_INTERVAL_FRAMES: u32 = 30;
+pub const FILE_WATCH_FULL_SCAN_FRAMES: u32 = 300;
 pub const LIST_DOUBLE_CLICK_FRAMES: u32 = 18;
 pub const MAX_SCENE_UNDO: usize = 64;
 
@@ -177,6 +240,7 @@ pub struct EditorState {
     pub preview_selected_gizmo: u64,
     pub preview_selected_gizmo_key: Option<u32>,
     pub project_file_sigs: Vec<editor_file_watch::FileSig>,
+    pub project_dir_sig: String,
     pub dirty_scene_paths: Vec<String>,
     pub file_watch_frame: u32,
     pub last_file_row_click_frame: u32,

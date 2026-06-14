@@ -5,9 +5,10 @@ use crate::scripts_assets_editor_assets_rs::*;
 use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
-    cached_scene_doc, set_state_scene_doc, set_state_scene_doc_loaded, EditorState,
-    FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS,
-    RECENT_PROJECTS_PATH,
+    cached_scene_doc, cached_scene_node, set_state_scene_doc, set_state_scene_doc_loaded,
+    EditorState,
+    FILE_WATCH_FULL_SCAN_FRAMES, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_NODE_PICKER_ROWS,
+    MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
 };
 use crate::scripts_scene_editor_animation_rs::*;
 use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
@@ -57,7 +58,7 @@ pub fn zoom_active_viewport<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_,
         }
     });
     apply_freecam_2d(ctx);
-    refresh_all(ctx);
+    refresh_status(ctx);
 }
 
 pub fn reset_active_viewport_zoom<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
@@ -76,7 +77,7 @@ pub fn reset_active_viewport_zoom<API: ScriptAPI + ?Sized>(ctx: &mut ScriptConte
     });
     apply_freecam_2d(ctx);
     apply_viewport_canvas(ctx);
-    refresh_all(ctx);
+    refresh_status(ctx);
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -305,7 +306,16 @@ pub fn place_selected_2d<API: ScriptAPI + ?Sized>(
     })
     .unwrap_or(false);
     if changed {
-        rebuild_preview(ctx);
+        if !sync_selected_preview_field(
+            ctx,
+            "position",
+            &SceneValue::Vec2 {
+                x: world.x,
+                y: world.y,
+            },
+        ) {
+            rebuild_preview(ctx);
+        }
         refresh_all(ctx);
     }
     changed
@@ -360,7 +370,17 @@ pub fn place_selected_3d<API: ScriptAPI + ?Sized>(
     })
     .unwrap_or(false);
     if changed {
-        rebuild_preview(ctx);
+        if !sync_selected_preview_field(
+            ctx,
+            "position",
+            &SceneValue::Vec3 {
+                x: point.x,
+                y: point.y,
+                z: point.z,
+            },
+        ) {
+            rebuild_preview(ctx);
+        }
         refresh_all(ctx);
     }
     changed
@@ -560,6 +580,12 @@ pub fn poll_project_diffs<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
         }
 
         let root = PathBuf::from(&state.project_root);
+        let dir_sig = editor_file_watch::scan_dir_token(root.as_path());
+        let force_full_scan = state.file_watch_frame % FILE_WATCH_FULL_SCAN_FRAMES == 0;
+        if !force_full_scan && state.project_dir_sig == dir_sig {
+            return None;
+        }
+        state.project_dir_sig = dir_sig;
         let next = editor_file_watch::scan_project(root.as_path());
         let changed = editor_file_watch::changed_paths(&state.project_file_sigs, &next);
         if changed.is_empty() {
@@ -614,7 +640,11 @@ pub fn poll_project_diffs<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
     }
 
     if changed_scenes.is_empty() {
-        refresh_all(ctx);
+        if res_changed {
+            refresh_all(ctx);
+        } else {
+            refresh_status(ctx);
+        }
         return;
     }
 
@@ -657,7 +687,13 @@ pub fn poll_project_diffs<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
         Some(path) => {
             reload_scene_path(ctx, &path);
         }
-        None => refresh_all(ctx),
+        None => {
+            if res_changed {
+                refresh_all(ctx);
+            } else {
+                refresh_status(ctx);
+            }
+        }
     }
 }
 
@@ -775,15 +811,21 @@ pub fn sync_selected_preview_field<API: ScriptAPI + ?Sized>(
     field: &str,
     value: &SceneValue,
 ) -> bool {
-    let Some((key, node_type)) = with_state!(ctx.run, EditorState, ctx.id, |state| {
-        let key = state.selected_key?;
-        let doc = cached_scene_doc(&state.doc_text);
-        let node = doc
-            .scene
-            .nodes
-            .iter()
-            .find(|node| node.key.as_u32() == key)?;
-        Some((key, node.data.node_type))
+    let Some(key) = with_state!(ctx.run, EditorState, ctx.id, |state| state.selected_key) else {
+        return false;
+    };
+    sync_preview_field_for_key(ctx, key, field, value)
+}
+
+pub fn sync_preview_field_for_key<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    key: u32,
+    field: &str,
+    value: &SceneValue,
+) -> bool {
+    let Some(node_type) = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        let node = cached_scene_node(&state.doc_text, key)?;
+        Some(node.data.node_type)
     }) else {
         return false;
     };
@@ -856,6 +898,28 @@ pub fn sync_selected_preview_field<API: ScriptAPI + ?Sized>(
                     return false;
                 };
                 return ctx.run.Nodes().set_local_scale_2d(id, Vector2::new(*x, *y));
+            }
+        }
+        "translation_ratio" => {
+            let SceneValue::Vec2 { x, y } = value else {
+                return false;
+            };
+            if node_type.is_a(perro_scene::NodeType::UiNode) {
+                return with_base_node_mut!(ctx.run, UiNode, id, |node| {
+                    node.transform.translation = Vector2::new(*x, *y)
+                })
+                .is_some();
+            }
+        }
+        "size_ratio" => {
+            let SceneValue::Vec2 { x, y } = value else {
+                return false;
+            };
+            if node_type.is_a(perro_scene::NodeType::UiNode) {
+                return with_base_node_mut!(ctx.run, UiNode, id, |node| {
+                    node.layout.size = UiVector2::ratio(*x, *y)
+                })
+                .is_some();
             }
         }
         "visible" => {
@@ -944,6 +1008,22 @@ pub fn sync_selected_preview_field<API: ScriptAPI + ?Sized>(
         _ => {}
     }
     false
+}
+
+pub fn sync_preview_doc_field_for_key<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    key: u32,
+    field: &str,
+) -> bool {
+    let value = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        cached_scene_node(&state.doc_text, key)
+            .as_ref()
+            .and_then(|node| scene_field(&node.data, field))
+    });
+    let Some(value) = value else {
+        return false;
+    };
+    sync_preview_field_for_key(ctx, key, field, &value)
 }
 
 fn scene_value_bitmask_from_value(value: &SceneValue) -> Option<BitMask> {
@@ -2098,7 +2178,9 @@ pub fn move_doc_ui_node<API: ScriptAPI + ?Sized>(
     })
     .unwrap_or(false);
     if changed {
-        rebuild_preview(ctx);
+        if !sync_preview_doc_field_for_key(ctx, key, "translation_ratio") {
+            rebuild_preview(ctx);
+        }
         refresh_all(ctx);
     }
 }
@@ -2203,7 +2285,11 @@ pub fn resize_doc_ui_node<API: ScriptAPI + ?Sized>(
     })
     .unwrap_or(false);
     if changed {
-        rebuild_preview(ctx);
+        let synced = sync_preview_doc_field_for_key(ctx, key, "size_ratio")
+            & sync_preview_doc_field_for_key(ctx, key, "translation_ratio");
+        if !synced {
+            rebuild_preview(ctx);
+        }
         refresh_all(ctx);
     }
 }
@@ -2269,7 +2355,9 @@ pub fn rotate_doc_ui_node<API: ScriptAPI + ?Sized>(
     })
     .unwrap_or(false);
     if changed {
-        rebuild_preview(ctx);
+        if !sync_preview_doc_field_for_key(ctx, key, "rotation") {
+            rebuild_preview(ctx);
+        }
         refresh_all(ctx);
     }
 }
@@ -2560,12 +2648,7 @@ pub fn viewport_mode_for_node_type(node_type: perro_scene::NodeType) -> Option<&
 }
 
 pub fn selected_node_field_text(doc_text: &str, key: u32, field: &str) -> Option<String> {
-    let doc = cached_scene_doc(doc_text);
-    let node = doc
-        .scene
-        .nodes
-        .iter()
-        .find(|node| node.key.as_u32() == key)?;
+    let node = cached_scene_node(doc_text, key)?;
     scene_field_value_text(&node.data, field)
 }
 

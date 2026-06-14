@@ -618,6 +618,19 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     }
 }
 
+pub fn refresh_status<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
+    set_label(
+        ctx,
+        "project_status",
+        &format!("{}  {}", view.project_name, view.project_root),
+    );
+    set_label(ctx, "status_bar", &view.status);
+    set_label(ctx, "log_text", &view.log);
+    set_label(ctx, "viewport_label", &view.viewport);
+    apply_script_reload_popup(ctx, view.script_schema_reloading);
+}
+
 pub fn apply_component_row<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     prefix: &str,
@@ -2024,6 +2037,7 @@ impl SceneDocIndex {
         for (idx, node) in doc.scene.nodes.iter().enumerate() {
             node_indices.push((node.key.as_u32(), idx));
         }
+        node_indices.sort_by_key(|(key, _)| *key);
 
         let mut children = vec![Vec::new(); doc.scene.nodes.len()];
         let mut roots = Vec::new();
@@ -2033,10 +2047,10 @@ impl SceneDocIndex {
         for node in doc.scene.nodes.iter() {
             let key = node.key.as_u32();
             if let Some(parent) = node.parent {
-                if let Some(parent_idx) = node_indices
-                    .iter()
-                    .find_map(|(item_key, idx)| (*item_key == parent.as_u32()).then_some(*idx))
+                if let Ok(pos) =
+                    node_indices.binary_search_by_key(&parent.as_u32(), |(item_key, _)| *item_key)
                 {
+                    let parent_idx = node_indices[pos].1;
                     children[parent_idx].push(key);
                 }
             } else if !roots.contains(&key) {
@@ -2053,19 +2067,20 @@ impl SceneDocIndex {
 
     pub fn node<'a>(&self, doc: &'a SceneDoc, key: u32) -> Option<&'a SceneNodeEntry> {
         self.node_indices
-            .iter()
-            .find_map(|(item_key, idx)| (*item_key == key).then_some(*idx))
+            .binary_search_by_key(&key, |(item_key, _)| *item_key)
+            .ok()
+            .map(|pos| self.node_indices[pos].1)
             .and_then(|idx| doc.scene.nodes.get(idx))
     }
 
     pub fn child_keys(&self, key: u32) -> &[u32] {
-        let Some(idx) = self
+        let Ok(pos) = self
             .node_indices
-            .iter()
-            .find_map(|(item_key, idx)| (*item_key == key).then_some(*idx))
+            .binary_search_by_key(&key, |(item_key, _)| *item_key)
         else {
             return &[];
         };
+        let idx = self.node_indices[pos].1;
         self.children.get(idx).map(Vec::as_slice).unwrap_or(&[])
     }
 

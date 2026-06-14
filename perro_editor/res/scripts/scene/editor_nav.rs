@@ -5,8 +5,9 @@ use crate::scripts_assets_editor_assets_rs::*;
 use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
-    cached_scene_doc, redo_scene_doc, undo_scene_doc, EditorState, FILE_WATCH_INTERVAL_FRAMES,
-    MAX_FILES, MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
+    cached_scene_doc, cached_scene_node, redo_scene_doc, undo_scene_doc, EditorState,
+    FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS,
+    RECENT_PROJECTS_PATH,
 };
 use crate::scripts_scene_editor_animation_rs::*;
 use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
@@ -678,11 +679,8 @@ pub fn prepare_rename_selection<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext
             state.log = format!("rename asset\nedit name + Enter\n{}", state.active_asset_path);
         } else if let Some(key) = state.selected_key {
             let doc = cached_scene_doc(&state.doc_text);
-            let name = doc
-                .scene
-                .nodes
-                .iter()
-                .find(|node| node.key.as_u32() == key)
+            let name = cached_scene_node(&state.doc_text, key)
+                .as_ref()
                 .map(|node| doc.scene.key_name_or_id(node.key).to_string())
                 .unwrap_or_else(|| "selected".to_string());
             state.log = format!("rename node\nedit name + Enter\n{name}");
@@ -873,7 +871,7 @@ pub fn select_related_node<API: ScriptAPI + ?Sized>(
             return false;
         }
         let doc = cached_scene_doc(&state.doc_text);
-        let Some(node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
+        let Some(node) = cached_scene_node(&state.doc_text, key) else {
             return false;
         };
         let next = match relation {
@@ -1411,7 +1409,7 @@ pub fn frame_selected_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
             return false;
         }
         let doc = cached_scene_doc(&state.doc_text);
-        let Some(node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
+        let Some(node) = cached_scene_node(&state.doc_text, key) else {
             state.log = "frame fail\nmissing node".to_string();
             return false;
         };

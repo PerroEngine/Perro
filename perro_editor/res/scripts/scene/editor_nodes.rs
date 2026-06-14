@@ -5,7 +5,7 @@ use crate::scripts_assets_editor_assets_rs::*;
 use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
-    cached_scene_doc, set_state_scene_doc, EditorState, FILE_WATCH_INTERVAL_FRAMES,
+    cached_scene_doc, cached_scene_node, set_state_scene_doc, EditorState, FILE_WATCH_INTERVAL_FRAMES,
     LIST_DOUBLE_CLICK_FRAMES, MAX_FILES,
     MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
 };
@@ -330,7 +330,7 @@ pub fn copy_selected_node_path<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
             return;
         }
         let doc = cached_scene_doc(&state.doc_text);
-        let Some(node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
+        let Some(node) = cached_scene_node(&state.doc_text, key) else {
             state.log = "node path fail\nmissing node".to_string();
             return;
         };
@@ -1365,6 +1365,7 @@ pub fn save_active_scene_to_disk<API: ScriptAPI + ?Sized>(
                 state.dirty = false;
                 state.dirty_scene_paths.retain(|item| item != &path);
                 state.project_file_sigs = editor_file_watch::scan_project(Path::new(&root));
+                state.project_dir_sig = editor_file_watch::scan_dir_token(Path::new(&root));
                 if !quiet {
                     state.log = format!("save scene\n{path}");
                 }
@@ -1434,6 +1435,7 @@ pub fn save_all_scenes<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
             .map(|path| state.dirty_scene_paths.iter().any(|dirty| dirty == path))
             .unwrap_or(false);
         state.project_file_sigs = editor_file_watch::scan_project(Path::new(&root));
+        state.project_dir_sig = editor_file_watch::scan_dir_token(Path::new(&root));
         state.log = if failed.is_empty() {
             format!("save all\n{} scene(s)", saved.len())
         } else {
@@ -1463,7 +1465,7 @@ pub fn delete_selected_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_,
             state.log = "delete node fail\nroot node".to_string();
             return false;
         }
-        let Some(target) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
+        let Some(target) = cached_scene_node(&state.doc_text, key) else {
             state.log = "delete node fail\nmissing node".to_string();
             return false;
         };
@@ -1700,7 +1702,7 @@ pub fn copy_selected_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
             return false;
         }
         let doc = cached_scene_doc(&state.doc_text);
-        let Some(node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
+        let Some(node) = cached_scene_node(&state.doc_text, key) else {
             state.log = "copy node fail\nmissing node".to_string();
             return false;
         };

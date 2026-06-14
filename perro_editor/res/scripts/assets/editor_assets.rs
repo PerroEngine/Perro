@@ -83,6 +83,7 @@ pub fn open_project<API: ScriptAPI + ?Sized>(
         state.preview_node_ids.clear();
         state.preview_node_keys.clear();
         state.project_file_sigs = editor_file_watch::scan_project(root_path.as_path());
+        state.project_dir_sig = editor_file_watch::scan_dir_token(root_path.as_path());
         state.dirty_scene_paths.clear();
         state.file_watch_frame = 0;
         state.preview_serial = 0;
@@ -325,6 +326,7 @@ pub fn refresh_project_assets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
                     state.file_expanded_paths.push("res://".to_string());
                 }
                 state.project_file_sigs = editor_file_watch::scan_project(root_path.as_path());
+                state.project_dir_sig = editor_file_watch::scan_dir_token(root_path.as_path());
                 state.log = format!("refresh project\nassets={count}");
             });
             rebuild_preview(ctx);
@@ -1299,6 +1301,7 @@ pub fn rename_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
             if rewrite_count > 0 {
                 let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
                     state.project_file_sigs = editor_file_watch::scan_project(Path::new(&root));
+                    state.project_dir_sig = editor_file_watch::scan_dir_token(Path::new(&root));
                     state.log =
                         format!("rename asset\n{source} -> {target}\nupd refs={rewrite_count}");
                 });

@@ -1,6 +1,7 @@
 use crate::scripts_app_editor_app_rs as editor_app;
 use crate::scripts_ui_editor_ui_rs::{find_named, set_ui_display};
 use perro_api::prelude::*;
+use std::sync::{Mutex, OnceLock};
 
 type SelfNodeType = UiPanel;
 
@@ -12,18 +13,26 @@ pub struct InspectorValueRowState {
 lifecycle!({});
 methods!({});
 
+#[derive(Clone, Default)]
+struct InspectorRowNames {
+    row: String,
+    inner: String,
+    children: String,
+    quat_mode: String,
+}
+
+static INSPECTOR_ROW_NAMES: OnceLock<Mutex<Vec<InspectorRowNames>>> = OnceLock::new();
+
 pub fn ensure_inspector_value_row<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     idx: usize,
 ) {
-    let row_name = format!("inspector_var_row_{idx}");
-    if find_named(ctx, &row_name).is_some() {
-        if find_named(ctx, &format!("inspector_var_{idx}_quat_mode")).is_some() {
+    let names = inspector_row_names(idx);
+    if let Some(row_id) = find_named(ctx, &names.row) {
+        if find_named(ctx, &names.quat_mode).is_some() {
             return;
         }
-        if let Some(row_id) = find_named(ctx, &row_name) {
-            let _ = ctx.run.Nodes().remove_node(row_id);
-        }
+        let _ = ctx.run.Nodes().remove_node(row_id);
     }
     let Some(content_id) = find_named(ctx, "inspector_content") else {
         return;
@@ -43,10 +52,11 @@ pub fn inspector_value_row_inner<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     idx: usize,
 ) -> Option<NodeID> {
-    if let Some(id) = find_named(ctx, &format!("inspector_var_row_{idx}_inner")) {
+    let names = inspector_row_names(idx);
+    if let Some(id) = find_named(ctx, &names.inner) {
         Some(id)
     } else {
-        find_named(ctx, &format!("inspector_var_row_{idx}"))
+        find_named(ctx, &names.row)
     }
 }
 
@@ -54,7 +64,7 @@ pub fn inspector_value_row_children<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     idx: usize,
 ) -> Option<NodeID> {
-    find_named(ctx, &format!("inspector_var_row_{idx}_children"))
+    find_named(ctx, &inspector_row_names(idx).children)
 }
 
 pub fn place_inspector_value_row<API: ScriptAPI + ?Sized>(
@@ -62,7 +72,7 @@ pub fn place_inspector_value_row<API: ScriptAPI + ?Sized>(
     idx: usize,
     parent_idx: Option<usize>,
 ) {
-    let Some(row_id) = find_named(ctx, &format!("inspector_var_row_{idx}")) else {
+    let Some(row_id) = find_named(ctx, &inspector_row_names(idx).row) else {
         return;
     };
     let parent_id = parent_idx
@@ -84,7 +94,7 @@ pub fn apply_inspector_value_row_panel<API: ScriptAPI + ?Sized>(
     source: &str,
     has_children: bool,
 ) {
-    let Some(id) = find_named(ctx, &format!("inspector_var_row_{idx}")) else {
+    let Some(id) = find_named(ctx, &inspector_row_names(idx).row) else {
         return;
     };
     let palette = [
@@ -125,9 +135,34 @@ pub fn hide_inspector_value_rows_from<API: ScriptAPI + ?Sized>(
     start: usize,
 ) {
     let mut idx = start;
-    while find_named(ctx, &format!("inspector_var_row_{idx}")).is_some() {
-        set_ui_display(ctx, &format!("inspector_var_row_{idx}"), false);
+    loop {
+        let row_name = inspector_row_names(idx).row;
+        if find_named(ctx, &row_name).is_none() {
+            break;
+        }
+        set_ui_display(ctx, &row_name, false);
         idx += 1;
+    }
+}
+
+fn inspector_row_names(idx: usize) -> InspectorRowNames {
+    let cache = INSPECTOR_ROW_NAMES.get_or_init(|| Mutex::new(Vec::new()));
+    let Ok(mut guard) = cache.lock() else {
+        return build_inspector_row_names(idx);
+    };
+    while guard.len() <= idx {
+        let next = guard.len();
+        guard.push(build_inspector_row_names(next));
+    }
+    guard[idx].clone()
+}
+
+fn build_inspector_row_names(idx: usize) -> InspectorRowNames {
+    InspectorRowNames {
+        row: format!("inspector_var_row_{idx}"),
+        inner: format!("inspector_var_row_{idx}_inner"),
+        children: format!("inspector_var_row_{idx}_children"),
+        quat_mode: format!("inspector_var_{idx}_quat_mode"),
     }
 }
 
