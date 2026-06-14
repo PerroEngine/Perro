@@ -204,7 +204,6 @@ pub const MAX_NODE_PICKER_ROWS: usize = 12;
 pub const MAX_INSPECTOR_PICKER_ROWS: usize = 12;
 pub const RECENT_PROJECTS_PATH: &str = "user://recent_projects.json";
 pub const FILE_WATCH_INTERVAL_FRAMES: u32 = 30;
-pub const FILE_WATCH_FULL_SCAN_FRAMES: u32 = 300;
 pub const LIST_DOUBLE_CLICK_FRAMES: u32 = 18;
 pub const MAX_SCENE_UNDO: usize = 64;
 
@@ -240,7 +239,6 @@ pub struct EditorState {
     pub preview_selected_gizmo: u64,
     pub preview_selected_gizmo_key: Option<u32>,
     pub project_file_sigs: Vec<editor_file_watch::FileSig>,
-    pub project_dir_sig: String,
     pub dirty_scene_paths: Vec<String>,
     pub file_watch_frame: u32,
     pub last_file_row_click_frame: u32,

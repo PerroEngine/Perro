@@ -5,7 +5,7 @@ use crate::scripts_assets_editor_assets_rs::*;
 use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
-    cached_scene_doc, EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES,
+    cached_scene_doc, cached_scene_node, EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES,
     MAX_INSPECTOR_PICKER_ROWS, MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS,
     RECENT_PROJECTS_PATH,
 };
@@ -1059,16 +1059,10 @@ impl EditorView {
             selected_row = tree.selected_row;
 
             if state.sidebar_mode != "files"
-                && let Some(key) = state.selected_key.and_then(|raw| {
-                    doc.scene
-                        .nodes
-                        .iter()
-                        .find(|node| node.key.as_u32() == raw)
-                        .map(|node| node.key)
-                })
-                && let Some(node) = doc.scene.nodes.iter().find(|node| node.key == key)
+                && let Some(key) = state.selected_key
+                && let Some(node) = cached_scene_node(&state.doc_text, key)
             {
-                inspector = InspectorViewData::for_node(&doc, node, state);
+                inspector = InspectorViewData::for_node(&doc, &node, state);
             }
         }
 
@@ -1518,13 +1512,13 @@ fn inspector_enum_picker_entries(state: &EditorState) -> Vec<InspectorPickerEntr
         return Vec::new();
     };
     let doc = cached_scene_doc(&state.doc_text);
-    let Some(node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
+    let Some(node) = cached_scene_node(&state.doc_text, key) else {
         return Vec::new();
     };
     let rows = if state.inspector_picker_kind == "value_enum" {
-        inspector_display_rows_for_node(state, node)
+        inspector_display_rows_for_node(state, &node)
     } else {
-        inspector_script_var_rows_for_node(state, node)
+        inspector_script_var_rows_for_node(state, &node)
     };
     let Some(row) = rows.get(row_idx).cloned() else {
         return Vec::new();
@@ -2608,7 +2602,7 @@ pub fn picker_parent_text(state: &EditorState) -> String {
     else {
         return "target: scene root".to_string();
     };
-    let Some(node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
+    let Some(node) = cached_scene_node(&state.doc_text, key) else {
         return "target: scene root".to_string();
     };
     if state.add_node_as_sibling {

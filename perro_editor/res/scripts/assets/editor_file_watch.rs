@@ -7,16 +7,11 @@ pub type FileSig = String;
 
 pub fn scan_project(root: &Path) -> Vec<FileSig> {
     let mut out = Vec::new();
-    scan_inner(root, root, &mut out);
+    for path in watched_roots(root) {
+        scan_inner(root, &path, &mut out);
+    }
     out.sort();
     out
-}
-
-pub fn scan_dir_token(root: &Path) -> String {
-    let mut out = Vec::new();
-    scan_dir_token_inner(root, root, &mut out);
-    out.sort();
-    out.join("\n")
 }
 
 pub fn changed_paths(before: &[FileSig], after: &[FileSig]) -> Vec<String> {
@@ -88,32 +83,12 @@ fn scan_inner(root: &Path, path: &Path, out: &mut Vec<FileSig>) {
     }
 }
 
-fn scan_dir_token_inner(root: &Path, path: &Path, out: &mut Vec<String>) {
-    let Ok(read_dir) = fs::read_dir(path) else {
-        return;
-    };
-    for entry in read_dir.flatten() {
-        let path = entry.path();
-        let name = path.file_name().and_then(|v| v.to_str()).unwrap_or("");
-        if name == ".git" || name == "target" {
-            continue;
-        }
-        let Ok(meta) = entry.metadata() else {
-            continue;
-        };
-        if !meta.is_dir() {
-            continue;
-        }
-        let rel = rel_path(root, &path);
-        let modified = meta
-            .modified()
-            .ok()
-            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-            .map(|v| v.as_secs())
-            .unwrap_or(0);
-        out.push(format!("{rel}|{}|{modified}", meta.len()));
-        scan_dir_token_inner(root, &path, out);
-    }
+fn watched_roots(root: &Path) -> Vec<PathBuf> {
+    ["res", "scripts", "src"]
+        .iter()
+        .map(|name| root.join(name))
+        .filter(|path| path.exists())
+        .collect()
 }
 
 fn sig_path(sig: &str) -> Option<&str> {

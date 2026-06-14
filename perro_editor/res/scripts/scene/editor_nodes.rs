@@ -1365,7 +1365,6 @@ pub fn save_active_scene_to_disk<API: ScriptAPI + ?Sized>(
                 state.dirty = false;
                 state.dirty_scene_paths.retain(|item| item != &path);
                 state.project_file_sigs = editor_file_watch::scan_project(Path::new(&root));
-                state.project_dir_sig = editor_file_watch::scan_dir_token(Path::new(&root));
                 if !quiet {
                     state.log = format!("save scene\n{path}");
                 }
@@ -1435,7 +1434,6 @@ pub fn save_all_scenes<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
             .map(|path| state.dirty_scene_paths.iter().any(|dirty| dirty == path))
             .unwrap_or(false);
         state.project_file_sigs = editor_file_watch::scan_project(Path::new(&root));
-        state.project_dir_sig = editor_file_watch::scan_dir_token(Path::new(&root));
         state.log = if failed.is_empty() {
             format!("save all\n{} scene(s)", saved.len())
         } else {

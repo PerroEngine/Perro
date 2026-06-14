@@ -4,8 +4,8 @@ use crate::scripts_app_editor_project_rs as editor_project;
 use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
-    cached_scene_doc, clear_scene_doc_cache, set_state_scene_doc, set_state_scene_doc_loaded,
-    EditorState,
+    cached_scene_doc, cached_scene_node, clear_scene_doc_cache, set_state_scene_doc,
+    set_state_scene_doc_loaded, EditorState,
     FILE_WATCH_INTERVAL_FRAMES, LIST_DOUBLE_CLICK_FRAMES, MAX_FILES, MAX_NODE_PICKER_ROWS,
     MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
 };
@@ -83,7 +83,6 @@ pub fn open_project<API: ScriptAPI + ?Sized>(
         state.preview_node_ids.clear();
         state.preview_node_keys.clear();
         state.project_file_sigs = editor_file_watch::scan_project(root_path.as_path());
-        state.project_dir_sig = editor_file_watch::scan_dir_token(root_path.as_path());
         state.dirty_scene_paths.clear();
         state.file_watch_frame = 0;
         state.preview_serial = 0;
@@ -326,7 +325,6 @@ pub fn refresh_project_assets<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
                     state.file_expanded_paths.push("res://".to_string());
                 }
                 state.project_file_sigs = editor_file_watch::scan_project(root_path.as_path());
-                state.project_dir_sig = editor_file_watch::scan_dir_token(root_path.as_path());
                 state.log = format!("refresh project\nassets={count}");
             });
             rebuild_preview(ctx);
@@ -1301,7 +1299,6 @@ pub fn rename_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
             if rewrite_count > 0 {
                 let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
                     state.project_file_sigs = editor_file_watch::scan_project(Path::new(&root));
-                    state.project_dir_sig = editor_file_watch::scan_dir_token(Path::new(&root));
                     state.log =
                         format!("rename asset\n{source} -> {target}\nupd refs={rewrite_count}");
                 });
@@ -1850,7 +1847,7 @@ pub fn quick_asset_stem(state: &EditorState, kind: &str) -> String {
         && let Some(key) = state.selected_key
     {
         let doc = cached_scene_doc(&state.doc_text);
-        if let Some(node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) {
+        if let Some(node) = cached_scene_node(&state.doc_text, key) {
             let name = sanitize_file_stem(&doc.scene.key_name_or_id(node.key));
             if !name.is_empty() {
                 return match kind {

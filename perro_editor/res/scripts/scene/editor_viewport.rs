@@ -6,9 +6,8 @@ use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
     cached_scene_doc, cached_scene_node, set_state_scene_doc, set_state_scene_doc_loaded,
-    EditorState,
-    FILE_WATCH_FULL_SCAN_FRAMES, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_NODE_PICKER_ROWS,
-    MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
+    EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_NODE_PICKER_ROWS, MAX_NODES,
+    MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
 };
 use crate::scripts_scene_editor_animation_rs::*;
 use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
@@ -580,12 +579,6 @@ pub fn poll_project_diffs<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
         }
 
         let root = PathBuf::from(&state.project_root);
-        let dir_sig = editor_file_watch::scan_dir_token(root.as_path());
-        let force_full_scan = state.file_watch_frame % FILE_WATCH_FULL_SCAN_FRAMES == 0;
-        if !force_full_scan && state.project_dir_sig == dir_sig {
-            return None;
-        }
-        state.project_dir_sig = dir_sig;
         let next = editor_file_watch::scan_project(root.as_path());
         let changed = editor_file_watch::changed_paths(&state.project_file_sigs, &next);
         if changed.is_empty() {
@@ -1293,8 +1286,9 @@ pub fn add_preview_node_gizmos<API: ScriptAPI + ?Sized>(
     let camera_mat = editor_gizmo_material(ctx, [1.0, 0.68, 0.28, 1.0]);
     let collision_mat = editor_gizmo_material(ctx, [0.12, 0.95, 0.95, 0.38]);
     let collision_vertex_mat = editor_gizmo_material(ctx, [0.84, 1.0, 1.0, 1.0]);
+    let index = SceneDocIndex::new(doc);
     for (&node_id, &key) in node_ids.iter().zip(keys.iter()) {
-        let Some(doc_node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
+        let Some(doc_node) = index.node(doc, key) else {
             continue;
         };
         match doc_node.data.type_name() {
@@ -1762,8 +1756,9 @@ pub fn draw_preview_2d_gizmos<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
         return;
     }
     let doc = cached_scene_doc(&doc_text);
+    let index = SceneDocIndex::new(&doc);
     for (raw_id, key) in ids.into_iter().zip(keys) {
-        let Some(doc_node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
+        let Some(doc_node) = index.node(&doc, key) else {
             continue;
         };
         let id = NodeID::from_u64(raw_id);
