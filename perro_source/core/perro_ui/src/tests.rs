@@ -41,6 +41,30 @@ fn ui_node_defaults_to_no_child_clipping() {
 }
 
 #[test]
+fn tree_list_flattens_open_roots_and_skips_closed_children() {
+    let mut tree = UiTreeList::new();
+    tree.items.push(UiTreeListItem::new("root"));
+    tree.items.push(UiTreeListItem::new("child").child(0));
+    tree.items.push(UiTreeListItem::new("leaf").child(1));
+
+    let open = tree.visible_items();
+    assert_eq!(
+        open.iter().map(|item| item.index).collect::<Vec<_>>(),
+        vec![0, 1, 2]
+    );
+    assert_eq!(
+        open.iter().map(|item| item.depth).collect::<Vec<_>>(),
+        vec![0, 1, 2]
+    );
+
+    tree.items[0].open = false;
+    let closed = tree.visible_items();
+    assert_eq!(closed.len(), 1);
+    assert_eq!(closed[0].index, 0);
+    assert!(closed[0].has_children);
+}
+
+#[test]
 fn label_text_align_defaults_to_center() {
     let label = UiLabel::new();
 

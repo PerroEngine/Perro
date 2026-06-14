@@ -55,8 +55,34 @@ pub(super) fn ui_root_from_data(data: &SceneNodeData) -> Option<&UiNode> {
         SceneNodeData::UiHLayout(node) => Some(&node.inner.base),
         SceneNodeData::UiVLayout(node) => Some(&node.inner.base),
         SceneNodeData::UiGrid(node) => Some(&node.base),
-        SceneNodeData::UiList(node) => Some(&node.base),
-        SceneNodeData::UiListIndent(node) => Some(&node.base),
+        SceneNodeData::UiTreeList(node) => Some(&node.base),
+        _ => None,
+    }
+}
+
+pub(super) fn ui_root_mut_from_data(data: &mut SceneNodeData) -> Option<&mut UiNode> {
+    match data {
+        SceneNodeData::UiNode(root) => Some(root),
+        SceneNodeData::UiCameraStream(node) => Some(&mut node.base),
+        SceneNodeData::UiPanel(node) => Some(&mut node.base),
+        SceneNodeData::UiShape(node) => Some(&mut node.base),
+        SceneNodeData::UiButton(node) => Some(&mut node.base),
+        SceneNodeData::UiDropdown(node) => Some(&mut node.button.base),
+        SceneNodeData::UiCheckbox(node) => Some(&mut node.button.base),
+        SceneNodeData::UiColorPicker(node) => Some(&mut node.button.base),
+        SceneNodeData::UiImage(node) => Some(&mut node.base),
+        SceneNodeData::UiImageButton(node) => Some(&mut node.base),
+        SceneNodeData::UiNineSlice(node) => Some(&mut node.base),
+        SceneNodeData::UiAnimatedImage(node) => Some(&mut node.base),
+        SceneNodeData::UiLabel(node) => Some(&mut node.base),
+        SceneNodeData::UiTextBox(node) => Some(&mut node.inner.base),
+        SceneNodeData::UiTextBlock(node) => Some(&mut node.inner.base),
+        SceneNodeData::UiScrollContainer(node) => Some(&mut node.base),
+        SceneNodeData::UiLayout(node) => Some(&mut node.inner.base),
+        SceneNodeData::UiHLayout(node) => Some(&mut node.inner.base),
+        SceneNodeData::UiVLayout(node) => Some(&mut node.inner.base),
+        SceneNodeData::UiGrid(node) => Some(&mut node.base),
+        SceneNodeData::UiTreeList(node) => Some(&mut node.base),
         _ => None,
     }
 }
@@ -117,9 +143,11 @@ pub(super) fn ui_auto_layout_from_data(data: &SceneNodeData) -> Option<UiAutoLay
 }
 
 #[derive(Clone, Copy)]
-pub(super) struct UiListRow {
-    pub(super) node: NodeID,
+pub(super) struct UiTreeListRow {
+    pub(super) index: usize,
     pub(super) depth: u32,
+    pub(super) has_children: bool,
+    pub(super) last_child: bool,
 }
 
 pub(super) fn ui_fill_width(

@@ -1,77 +1,16 @@
 use super::*;
 
 impl Runtime {
-    pub(super) fn compute_ui_list_rows(
-        &self,
-        owner: NodeID,
-        list: &perro_ui::UiList,
-        list_rect: ComputedUiRect,
-        computed: &mut AHashMap<NodeID, ComputedUiRect>,
-    ) {
-        let content = list_rect.inset(ui_padding_inset(list_rect, list.base.layout.padding));
-        let rows = self.ui_list_rows(owner);
-        if rows.is_empty() {
-            return;
-        }
-        let max = content.max();
-        let mut y = max.y;
-        for row in rows {
-            let Some((layout, transform)) = self
-                .nodes
-                .get(row.node)
-                .and_then(|node| ui_root_from_data(&node.data))
-                .and_then(|ui| ui.visible.then_some((&ui.layout, &ui.transform)))
-            else {
-                continue;
-            };
-            let indent = list.indent * row.depth as f32;
-            let row_content = ComputedUiRect::new(
-                Vector2::new(content.center.x + indent * 0.5, content.center.y),
-                Vector2::new((content.size.x - indent).max(0.0), content.size.y),
-            )
-            .inset(layout.margin);
-            let fill_size = Vector2::new(
-                if layout.h_size == UiSizeMode::Fill {
-                    row_content.size.x
-                } else {
-                    0.0
-                },
-                0.0,
-            );
-            let size = self.resolve_ui_size(row.node, row_content.size, Some(fill_size));
-            let center = Vector2::new(
-                row_content.min().x + size.x * 0.5,
-                y - layout.margin.top - size.y * 0.5,
-            ) + ui_translation_offset(transform, row_content.size, size);
-            computed.insert(row.node, ComputedUiRect::new(center, size));
-            y -= size.y
-                + layout.margin.vertical()
-                + ui_v_spacing_amount(list.v_spacing, content.size.y);
-        }
-    }
-
-    pub(super) fn ui_list_rows(&self, owner: NodeID) -> Vec<UiListRow> {
-        let mut rows = Vec::new();
-        let Some(owner_node) = self.nodes.get(owner) else {
-            return rows;
-        };
-        for child in owner_node.get_children_ids().iter().copied() {
-            self.push_ui_list_child_rows(child, 0, &mut rows);
-        }
-        rows
-    }
-
-    fn push_ui_list_child_rows(&self, node: NodeID, depth: u32, rows: &mut Vec<UiListRow>) {
-        let Some(scene_node) = self.nodes.get(node) else {
-            return;
-        };
-        if matches!(scene_node.data, SceneNodeData::UiListIndent(_)) {
-            for child in scene_node.get_children_ids().iter().copied() {
-                self.push_ui_list_child_rows(child, depth.saturating_add(1), rows);
-            }
-            return;
-        }
-        rows.push(UiListRow { node, depth });
+    pub(super) fn ui_tree_list_rows(&self, list: &perro_ui::UiTreeList) -> Vec<UiTreeListRow> {
+        list.visible_items()
+            .into_iter()
+            .map(|item| UiTreeListRow {
+                index: item.index,
+                depth: item.depth,
+                has_children: item.has_children,
+                last_child: item.last_child,
+            })
+            .collect()
     }
 
     pub(super) fn is_effectively_visible_for_ui(&self, node: NodeID) -> bool {
@@ -201,7 +140,7 @@ impl Runtime {
         let text = ui_text_measure(&scene_node.data);
         let children = scene_node.get_children_ids();
         let child_size = match &scene_node.data {
-            SceneNodeData::UiList(list) => self.ui_list_content_size(node, list, available),
+            SceneNodeData::UiTreeList(list) => self.ui_tree_list_content_size(list, available),
             _ if ui_auto_layout_from_data(&scene_node.data).is_some() => self
                 .auto_layout_content_size(
                     children,
@@ -343,34 +282,25 @@ impl Runtime {
         size
     }
 
-    pub(super) fn ui_list_content_size(
+    pub(super) fn ui_tree_list_content_size(
         &self,
-        owner: NodeID,
-        list: &perro_ui::UiList,
+        list: &perro_ui::UiTreeList,
         available: Vector2,
     ) -> Vector2 {
-        let mut width = 0.0_f32;
-        let mut height = 0.0_f32;
-        let mut count = 0_u32;
-        for row in self.ui_list_rows(owner) {
-            let Some(layout) = self
-                .nodes
-                .get(row.node)
-                .and_then(|node| ui_root_from_data(&node.data))
-                .and_then(|ui| ui.visible.then_some(&ui.layout))
-            else {
-                continue;
-            };
-            let indent = list.indent * row.depth as f32;
-            let child_available = Vector2::new((available.x - indent).max(0.0), available.y);
-            let child_size = self.resolve_ui_size(row.node, child_available, None);
-            width = width.max(indent + child_size.x + layout.margin.horizontal());
-            height += child_size.y + layout.margin.vertical();
-            count += 1;
+        let rows = self.ui_tree_list_rows(list);
+        if rows.is_empty() {
+            return Vector2::ZERO;
         }
-        if count > 1 {
-            height += ui_v_spacing_amount(list.v_spacing, available.y) * (count - 1) as f32;
-        }
+        let max_depth = rows.iter().fold(0, |max_depth, row| {
+            let _ = (row.index, row.has_children, row.last_child);
+            max_depth.max(row.depth)
+        });
+        let height = rows.len() as f32 * list.row_height
+            + rows.len().saturating_sub(1) as f32
+                * ui_v_spacing_amount(list.v_spacing, available.y);
+        let width = available
+            .x
+            .max(list.indent * max_depth as f32 + list.toggle_size + list.icon_size + 96.0);
         Vector2::new(width, height)
     }
 

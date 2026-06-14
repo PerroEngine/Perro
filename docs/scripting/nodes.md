@@ -628,8 +628,7 @@ UI nodes inherit from `UiNode` in the node registry:
 - `UiHLayout`
 - `UiVLayout`
 - `UiGrid`
-- `UiList`
-- `UiListIndent`
+- `UiTreeList`
 
 UI positions and sizes resolve against the parent UI rect.
 Root UI nodes use the virtual viewport as parent.
@@ -646,8 +645,7 @@ All UI nodes can have children.
 `UiTextBox` edits one line of text.
 `UiTextBlock` edits multi-line text.
 `UiLayout`, `UiHLayout`, `UiVLayout`, and `UiGrid` add automatic child placement.
-`UiList` lays out direct child UI nodes as vertical rows.
-`UiListIndent` groups child rows one indent level deeper.
+`UiTreeList` renders nested data rows from node-owned item data.
 
 See [UI Nodes](ui.md).
 

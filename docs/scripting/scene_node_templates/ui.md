@@ -543,14 +543,19 @@ script = "res://path/to/script.rs"
     [/UiGrid]
 [/ui_grid]
 
-[ui_list]
-parent = @PARENTKEY
-script = "res://path/to/script.rs"
-    [UiList]
-        # direct UI children become list rows.
-        # UiListIndent children render one indent level deeper.
-        indent = 16.0
+[ui_tree_list]
+parent = $root
+    [UiTreeList]
+        indent = 18.0
+        row_height = 24.0
         v_spacing = 0.0
+        icon_size = 16.0
+        toggle_size = 12.0
+        selected_index = -1
+        items = [
+            { id = "root", label = "Root", open = true },
+            { id = "child", label = "Child", parent = 0 },
+        ]
         [UiNode]
             visible = true
             input_enabled = true
@@ -564,21 +569,15 @@ script = "res://path/to/script.rs"
             rotation = 0.0
             h_size = "fixed"
             v_size = "fixed"
-            h_align = "left"
-            v_align = "top"
+            h_align = "center"
+            v_align = "center"
             min_size_ratio = (1.0, 1.0)
             max_size_ratio = (inf, inf)
             padding = 0
             margin = 0
             z_index = 0
         [/UiNode]
-    [/UiList]
-[/ui_list]
+    [/UiTreeList]
+[/ui_tree_list]
 
-[ui_list_indent]
-parent = @ui_list
-    [UiListIndent]
-        size_ratio = (1.0, 1.0)
-    [/UiListIndent]
-[/ui_list_indent]
 ```

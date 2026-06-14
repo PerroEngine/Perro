@@ -61,8 +61,7 @@ fn is_ui_node_data(data: &SceneNodeData) -> bool {
             | SceneNodeData::UiHLayout(_)
             | SceneNodeData::UiVLayout(_)
             | SceneNodeData::UiGrid(_)
-            | SceneNodeData::UiList(_)
-            | SceneNodeData::UiListIndent(_)
+            | SceneNodeData::UiTreeList(_)
     )
 }
 

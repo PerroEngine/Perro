@@ -196,6 +196,59 @@ pub fn click_scene_node_slot<API: ScriptAPI + ?Sized>(
     }
 }
 
+pub fn toggle_scene_node_slot<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+) {
+    let Some(key) = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        if state.doc_text.is_empty() {
+            None
+        } else {
+            let doc = cached_scene_doc(&state.doc_text);
+            scene_tree_view(
+                &doc,
+                state.selected_key,
+                &state.scene_filter,
+                &state.collapsed_scene_keys,
+            )
+            .keys
+            .get(idx)
+            .copied()
+        }
+    }) else {
+        return;
+    };
+    let has_children = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        if state.doc_text.is_empty() {
+            false
+        } else {
+            let doc = cached_scene_doc(&state.doc_text);
+            scene_child_count(&doc, key) > 0
+        }
+    });
+    if !has_children {
+        return;
+    }
+    let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        if let Some(pos) = state
+            .collapsed_scene_keys
+            .iter()
+            .position(|collapsed| *collapsed == key)
+        {
+            state.collapsed_scene_keys.remove(pos);
+            state.log = "expand node".to_string();
+            return true;
+        }
+        state.collapsed_scene_keys.push(key);
+        state.log = "collapse node".to_string();
+        true
+    })
+    .unwrap_or(false);
+    if changed {
+        refresh_all(ctx);
+    }
+}
+
 pub fn set_activity_mode<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, mode: &str) {
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         if mode == "scene" {

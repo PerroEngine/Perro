@@ -89,9 +89,6 @@ impl Runtime {
             rect
         };
         computed.insert(node, rect);
-        if let SceneNodeData::UiList(list) = &scene_node.data {
-            self.compute_ui_list_rows(node, list, rect, computed);
-        }
         Some(rect)
     }
 

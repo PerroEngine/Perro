@@ -330,9 +330,7 @@ methods!({
                 }
             }
             _ => {
-                if let Some(idx) = suffix_index(&name, "file_row_") {
-                    click_or_open_file_slot(ctx, idx);
-                } else if let Some(idx) = suffix_index(&name, "manager_recent_") {
+                if let Some(idx) = suffix_index(&name, "manager_recent_") {
                     open_recent_project(ctx, idx);
                 } else if let Some(idx) = suffix_index(&name, "add_node_type_") {
                     if with_state!(ctx.run, EditorState, ctx.id, |state| state
@@ -382,8 +380,6 @@ methods!({
                     set_inspector_rotation_mode(ctx, "euler");
                 } else if name.starts_with("inspector_scale_") && name.ends_with("_box") {
                     edit_selected_transform(ctx, "scale", "inspector_scale_box");
-                } else if let Some(idx) = suffix_index(&name, "scene_row_") {
-                    click_scene_node_slot(ctx, idx);
                 } else if let Some(idx) = suffix_index(&name, "scene_tab_close_") {
                     close_scene_tab(ctx, idx);
                 } else if let Some(idx) = suffix_index(&name, "scene_tab_") {
@@ -400,6 +396,69 @@ methods!({
         let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
             state.focused_inspector_box = name;
         });
+    }
+
+    fn on_editor_scene_tree_selected(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+        _tree: NodeID,
+        idx: i32,
+        _value: Variant,
+    ) {
+        if idx >= 0 {
+            click_scene_node_slot(ctx, idx as usize);
+        }
+    }
+
+    fn on_editor_scene_tree_toggled(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+        _tree: NodeID,
+        idx: i32,
+        _open: bool,
+        _value: Variant,
+    ) {
+        if idx >= 0 {
+            toggle_scene_node_slot(ctx, idx as usize);
+        }
+    }
+
+    fn on_editor_file_tree_selected(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+        _tree: NodeID,
+        idx: i32,
+        _value: Variant,
+    ) {
+        if idx >= 0 {
+            click_or_open_file_slot(ctx, idx as usize);
+        }
+    }
+
+    fn on_editor_file_tree_toggled(
+        &self,
+        ctx: &mut ScriptContext<'_, API>,
+        _tree: NodeID,
+        idx: i32,
+        _open: bool,
+        _value: Variant,
+    ) {
+        if idx < 0 {
+            return;
+        }
+        let Some(path) = with_state!(ctx.run, EditorState, ctx.id, |state| {
+            filtered_file_paths(state).get(idx as usize).cloned()
+        }) else {
+            return;
+        };
+        let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+            toggle_file_folder_expanded(state, &path);
+            true
+        })
+        .unwrap_or(false);
+        if changed {
+            refresh_all(ctx);
+        }
     }
 });
 
@@ -473,30 +532,6 @@ fn connect_editor_signals<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
             signal!("editor_asset_glb_anim"),
             signal!("editor_asset_glb_mat"),
             signal!("editor_inspector_rename"),
-            signal!("editor_open_file_0"),
-            signal!("editor_open_file_1"),
-            signal!("editor_open_file_2"),
-            signal!("editor_open_file_3"),
-            signal!("editor_open_file_4"),
-            signal!("editor_open_file_5"),
-            signal!("editor_open_file_6"),
-            signal!("editor_open_file_7"),
-            signal!("editor_open_file_8"),
-            signal!("editor_open_file_9"),
-            signal!("editor_open_file_10"),
-            signal!("editor_open_file_11"),
-            signal!("editor_select_scene_0"),
-            signal!("editor_select_scene_1"),
-            signal!("editor_select_scene_2"),
-            signal!("editor_select_scene_3"),
-            signal!("editor_select_scene_4"),
-            signal!("editor_select_scene_5"),
-            signal!("editor_select_scene_6"),
-            signal!("editor_select_scene_7"),
-            signal!("editor_select_scene_8"),
-            signal!("editor_select_scene_9"),
-            signal!("editor_select_scene_10"),
-            signal!("editor_select_scene_11"),
             signal!("editor_tab_0"),
             signal!("editor_tab_1"),
             signal!("editor_tab_2"),
@@ -581,5 +616,29 @@ fn connect_editor_signals<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
         ctx.id,
         [signal!("editor_inspector_focus")],
         [func!("on_editor_inspector_focus")]
+    );
+    let _ = signal_connect!(
+        ctx.run,
+        ctx.id,
+        signal!("editor_scene_tree_selected"),
+        func!("on_editor_scene_tree_selected")
+    );
+    let _ = signal_connect!(
+        ctx.run,
+        ctx.id,
+        signal!("editor_scene_tree_toggled"),
+        func!("on_editor_scene_tree_toggled")
+    );
+    let _ = signal_connect!(
+        ctx.run,
+        ctx.id,
+        signal!("editor_file_tree_selected"),
+        func!("on_editor_file_tree_selected")
+    );
+    let _ = signal_connect!(
+        ctx.run,
+        ctx.id,
+        signal!("editor_file_tree_toggled"),
+        func!("on_editor_file_tree_toggled")
     );
 }

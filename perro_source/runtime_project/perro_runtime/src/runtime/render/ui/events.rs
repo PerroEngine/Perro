@@ -481,6 +481,7 @@ impl Runtime {
             if event == "click" {
                 self.toggle_checkbox(node);
                 self.toggle_color_picker_from_child(node);
+                self.process_tree_list_click(node);
                 self.process_dropdown_click(node);
                 self.process_button_web_action(node);
             }
@@ -524,6 +525,75 @@ impl Runtime {
         };
         checkbox.checked = !checkbox.checked;
         self.mark_ui_dirty(node, Runtime::UI_DIRTY_COMMANDS);
+    }
+
+    fn process_tree_list_click(&mut self, node: NodeID) {
+        let Some((tree_id, row_idx, toggle)) = self.tree_list_parent_for_internal(node) else {
+            return;
+        };
+        let Some(scene_node) = self.nodes.get_mut(tree_id) else {
+            return;
+        };
+        let SceneNodeData::UiTreeList(tree) = &mut scene_node.data else {
+            return;
+        };
+        let visible = tree.visible_items();
+        let Some(row) = visible.get(row_idx).copied() else {
+            return;
+        };
+        let Some(item) = tree.items.get_mut(row.index) else {
+            return;
+        };
+        if (toggle || (row.has_children && tree.selected_index == Some(row.index)))
+            && row.has_children
+        {
+            item.open = !item.open;
+            let signals = tree.toggled_signals.clone();
+            let params = [
+                Variant::from(tree_id),
+                Variant::from(row.index as i32),
+                Variant::from(item.open),
+                item.value.clone(),
+            ];
+            self.sync_tree_list_internal_nodes(tree_id);
+            for signal in signals {
+                self.queue_ui_signal(signal, &params);
+            }
+            return;
+        }
+        if item.selectable {
+            tree.selected_index = Some(row.index);
+            let signals = tree.selected_signals.clone();
+            let value = item.value.clone();
+            let params = [
+                Variant::from(tree_id),
+                Variant::from(row.index as i32),
+                value,
+            ];
+            self.sync_tree_list_internal_nodes(tree_id);
+            for signal in signals {
+                self.queue_ui_signal(signal, &params);
+            }
+        }
+    }
+
+    fn tree_list_parent_for_internal(&self, internal_id: NodeID) -> Option<(NodeID, usize, bool)> {
+        self.nodes.iter().find_map(|(id, scene_node)| {
+            let SceneNodeData::UiTreeList(tree) = &scene_node.data else {
+                return None;
+            };
+            if let Some(idx) = tree
+                .internal_toggles
+                .iter()
+                .position(|item| *item == internal_id)
+            {
+                return Some((id, idx, true));
+            }
+            tree.internal_rows
+                .iter()
+                .position(|item| *item == internal_id)
+                .map(|idx| (id, idx, false))
+        })
     }
 
     fn process_dropdown_click(&mut self, node: NodeID) {

@@ -8,8 +8,8 @@ use perro_runtime_api::sub_apis::{NodeAPI, NodeCreationTemplate, SignalAPI};
 use perro_scripting::{ScriptBehavior, ScriptContext, ScriptFlags, ScriptLifecycle};
 use perro_structs::{Color, Quaternion, Transform3D, Vector3};
 use perro_ui::{
-    UiAnchor, UiAnimatedImage, UiAnimatedImageFrameSet, UiGrid, UiHLayout, UiLabel, UiList,
-    UiListIndent, UiPanel, UiScrollContainer, UiShape, UiShapeKind, UiVLayout, UiVector2,
+    UiAnchor, UiAnimatedImage, UiAnimatedImageFrameSet, UiGrid, UiHLayout, UiLabel, UiPanel,
+    UiScrollContainer, UiShape, UiShapeKind, UiVLayout, UiVector2,
 };
 use std::any::Any;
 use std::sync::{
@@ -2623,66 +2623,6 @@ fn label_fill_mode_uses_parent_space_without_auto_layout_parent() {
 
     assert_eq!(label_rect.center, parent_rect.center);
     assert_eq!(label_rect.size, parent_rect.size);
-}
-
-#[test]
-fn ui_list_places_direct_children_as_rows() {
-    let mut runtime = Runtime::new();
-    runtime.set_viewport_size(800, 600);
-
-    let mut list = UiList::new();
-    list.layout.size = UiVector2::pixels(300.0, 200.0);
-    list.v_spacing = 4.0 / 200.0;
-    let list_id = insert_ui_node(&mut runtime, SceneNodeData::UiList(list));
-
-    let root = insert_panel(&mut runtime, [100.0, 20.0], Color::new(0.1, 0.2, 0.3, 1.0));
-    let child = insert_panel(&mut runtime, [80.0, 20.0], Color::new(0.2, 0.3, 0.4, 1.0));
-    attach_child(&mut runtime, list_id, root);
-    attach_child(&mut runtime, list_id, child);
-
-    runtime.extract_render_ui_commands();
-
-    let root_rect = runtime.render_ui.computed_rects.get(&root).unwrap();
-    let child_rect = runtime.render_ui.computed_rects.get(&child).unwrap();
-    assert_eq!(root_rect.center, Vector2::new(-100.0, 90.0));
-    assert_eq!(child_rect.center, Vector2::new(-110.0, 66.0));
-}
-
-#[test]
-fn ui_list_indents_only_indent_group_direct_children() {
-    let mut runtime = Runtime::new();
-    runtime.set_viewport_size(800, 600);
-
-    let mut list = UiList::new();
-    list.layout.size = UiVector2::pixels(300.0, 200.0);
-    list.indent = 20.0;
-    list.v_spacing = 4.0 / 200.0;
-    let list_id = insert_ui_node(&mut runtime, SceneNodeData::UiList(list));
-
-    let root_row = insert_panel(&mut runtime, [100.0, 20.0], Color::new(0.1, 0.2, 0.3, 1.0));
-    attach_child(&mut runtime, list_id, root_row);
-
-    let indent_id = insert_ui_node(
-        &mut runtime,
-        SceneNodeData::UiListIndent(UiListIndent::new()),
-    );
-    attach_child(&mut runtime, list_id, indent_id);
-
-    let child_row = insert_panel(&mut runtime, [80.0, 20.0], Color::new(0.2, 0.3, 0.4, 1.0));
-    attach_child(&mut runtime, indent_id, child_row);
-
-    let label = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(UiLabel::new()));
-    attach_child(&mut runtime, root_row, label);
-
-    runtime.extract_render_ui_commands();
-
-    let root_rect = runtime.render_ui.computed_rects.get(&root_row).unwrap();
-    let child_rect = runtime.render_ui.computed_rects.get(&child_row).unwrap();
-    let label_rect = runtime.render_ui.computed_rects.get(&label).unwrap();
-
-    assert_eq!(root_rect.center.x, -100.0);
-    assert_eq!(child_rect.center.x, -90.0);
-    assert_eq!(label_rect.center.x, root_rect.center.x);
 }
 
 #[test]

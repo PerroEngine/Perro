@@ -270,8 +270,8 @@ fn build_ui_grid(data: &SceneDefNodeData) -> UiGrid {
     node
 }
 
-fn build_ui_list(data: &SceneDefNodeData) -> UiList {
-    let mut node = UiList::new();
+fn build_ui_tree_list(data: &SceneDefNodeData) -> UiTreeList {
+    let mut node = UiTreeList::new();
     if let Some(base) = data.base_ref() {
         apply_ui_root_data(&mut node.base, base);
     }
@@ -282,22 +282,64 @@ fn build_ui_list(data: &SceneDefNodeData) -> UiList {
                 node.indent = v.max(0.0);
             }
         }
+        "row_height" | "height" => {
+            if let Some(v) = as_f32(value) {
+                node.row_height = v.max(1.0);
+            }
+        }
+        "icon_size" => {
+            if let Some(v) = as_f32(value) {
+                node.icon_size = v.max(0.0);
+            }
+        }
+        "toggle_size" => {
+            if let Some(v) = as_f32(value) {
+                node.toggle_size = v.max(0.0);
+            }
+        }
+        "line_width" => {
+            if let Some(v) = as_f32(value) {
+                node.line_width = v.max(0.0);
+            }
+        }
         "v_spacing" | "vertical_spacing" | "spacing" => {
             if let Some(v) = as_f32(value) {
                 node.v_spacing = v.max(0.0);
             }
         }
+        "line_color" => {
+            if let Some(v) = as_scene_color(value) {
+                node.line_color = v;
+            }
+        }
+        "triangle_color" => {
+            if let Some(v) = as_scene_color(value) {
+                node.triangle_color = v;
+            }
+        }
+        "text_color" => {
+            if let Some(v) = as_scene_color(value) {
+                node.text_color = v;
+            }
+        }
+        "selected_index" => {
+            if let Some(v) = as_i32(value)
+                && v >= 0
+            {
+                node.selected_index = Some(v as usize);
+            }
+        }
+        "items" => {
+            node.items = as_tree_list_items(value);
+        }
+        "selected_signals" | "changed_signals" | "value_changed_signals" => {
+            node.selected_signals = as_signal_ids(value);
+        }
+        "toggled_signals" | "toggle_signals" => {
+            node.toggled_signals = as_signal_ids(value);
+        }
         _ => {}
     });
-    node
-}
-
-fn build_ui_list_indent(data: &SceneDefNodeData) -> UiListIndent {
-    let mut node = UiListIndent::new();
-    if let Some(base) = data.base_ref() {
-        apply_ui_root_data(&mut node.base, base);
-    }
-    apply_ui_root_fields(&mut node.base, &data.fields);
     node
 }
 
@@ -815,6 +857,79 @@ fn as_dropdown_options(value: &SceneValue) -> Vec<perro_ui::UiDropdownOption> {
                 let variant = scene_value_to_variant(item)
                     .unwrap_or_else(|| perro_variant::Variant::from(label.as_str()));
                 Some(perro_ui::UiDropdownOption::new(label, variant))
+            }
+        })
+        .collect()
+}
+
+fn as_tree_list_items(value: &SceneValue) -> Vec<UiTreeListItem> {
+    let SceneValue::Array(items) = value else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, item)| match item {
+            SceneValue::Object(fields) => {
+                let label = fields
+                    .iter()
+                    .find_map(|(name, value)| {
+                        matches!(name.as_ref(), "label" | "name" | "text")
+                            .then(|| as_str(value))
+                            .flatten()
+                    })
+                    .unwrap_or("")
+                    .to_string();
+                let id = fields
+                    .iter()
+                    .find_map(|(name, value)| {
+                        matches!(name.as_ref(), "id" | "key")
+                            .then(|| as_str(value))
+                            .flatten()
+                    })
+                    .map(str::to_string)
+                    .unwrap_or_else(|| label.clone());
+                let parent = fields.iter().find_map(|(name, value)| {
+                    matches!(name.as_ref(), "parent" | "parent_index")
+                        .then(|| as_i32(value))
+                        .flatten()
+                        .and_then(|v| (v >= 0).then_some(v as usize))
+                });
+                let open = fields
+                    .iter()
+                    .find_map(|(name, value)| {
+                        matches!(name.as_ref(), "open" | "expanded")
+                            .then(|| as_bool(value))
+                            .flatten()
+                    })
+                    .unwrap_or(true);
+                let selectable = fields
+                    .iter()
+                    .find_map(|(name, value)| {
+                        matches!(name.as_ref(), "selectable")
+                            .then(|| as_bool(value))
+                            .flatten()
+                    })
+                    .unwrap_or(true);
+                let value = fields
+                    .iter()
+                    .find_map(|(name, value)| {
+                        matches!(name.as_ref(), "value" | "val")
+                            .then(|| scene_value_to_variant(value))
+                            .flatten()
+                    })
+                    .unwrap_or_else(|| perro_variant::Variant::from(id.as_str()));
+                let mut out = UiTreeListItem::new(label)
+                    .with_id(id)
+                    .with_value(value);
+                out.parent = parent.filter(|parent| *parent < idx);
+                out.open = open;
+                out.selectable = selectable;
+                Some(out)
+            }
+            _ => {
+                let label = scene_value_label(item)?;
+                Some(UiTreeListItem::new(label))
             }
         })
         .collect()

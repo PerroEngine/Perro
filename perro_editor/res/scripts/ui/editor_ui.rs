@@ -23,7 +23,6 @@ use crate::scripts_ui_inspector_value_row_rs::{
     apply_inspector_value_row_panel, ensure_inspector_value_row, hide_inspector_value_rows_from,
     inspector_value_row_inner, place_inspector_value_row,
 };
-use crate::scripts_ui_tree_row_affordance_rs::ensure_tree_row_affordances;
 use perro_api::prelude::*;
 use perro_api::scene::{
     SceneDoc, SceneFieldName, SceneKey, SceneNodeData, SceneNodeEntry, SceneValue, SceneValueKey,
@@ -189,43 +188,8 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         set_label(ctx, &format!("add_node_type_{idx}_label"), &text);
     }
 
-    for idx in 0..MAX_FILES {
-        let has_file = view.file_paths.get(idx).is_some();
-        if has_file {
-            ensure_tree_row_affordances(ctx, &format!("file_row_{idx}"), "#8FB9E8");
-        }
-        let text = view
-            .file_paths
-            .get(idx)
-            .map(|path| {
-                format!(
-                    "{}{}",
-                    file_row_state_prefix(path, &view.open_paths, &view.dirty_scene_paths),
-                    file_row_label_for_filter(path, !view.file_filter.is_empty()),
-                )
-            })
-            .unwrap_or_else(|| "-".to_string());
-        set_label(
-            ctx,
-            &format!("file_row_{idx}_icon"),
-            view.file_paths
-                .get(idx)
-                .map(|path| file_icon(path))
-                .unwrap_or(""),
-        );
-        set_label(ctx, &format!("file_row_{idx}_label"), &text);
-        set_ui_display(ctx, &format!("file_row_{idx}"), has_file);
-        set_row_state(
-            ctx,
-            &format!("file_row_{idx}"),
-            view.file_paths.get(idx) == Some(&view.active_asset_path),
-            view.file_paths
-                .get(idx)
-                .map(|path| file_row_disclosure(path, &view.file_expanded_paths))
-                .unwrap_or(RowIndicator::None),
-        );
-    }
     apply_file_tree_layout(ctx);
+    set_file_tree_list(ctx, &view);
 
     for idx in 0..MAX_TABS {
         let has_tab = view.open_paths.get(idx).is_some();
@@ -259,34 +223,8 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         );
     }
 
-    for idx in 0..MAX_NODES {
-        let has_node = view.nodes.get(idx).is_some();
-        if has_node {
-            ensure_tree_row_affordances(ctx, &format!("scene_row_{idx}"), "#A7D36F");
-        }
-        let text = view
-            .nodes
-            .get(idx)
-            .cloned()
-            .unwrap_or_else(|| "-".to_string());
-        set_label(
-            ctx,
-            &format!("scene_row_{idx}_icon"),
-            view.node_icons.get(idx).copied().unwrap_or(""),
-        );
-        set_label(ctx, &format!("scene_row_{idx}_label"), &text);
-        set_ui_display(ctx, &format!("scene_row_{idx}"), has_node);
-        set_row_state(
-            ctx,
-            &format!("scene_row_{idx}"),
-            view.selected_row == Some(idx),
-            view.scene_disclosures
-                .get(idx)
-                .copied()
-                .unwrap_or(RowIndicator::None),
-        );
-    }
     apply_scene_list_layout(ctx);
+    set_scene_tree_list(ctx, &view);
     apply_viewport_mode(ctx, &view.viewport_mode);
     apply_editor_gizmos(ctx, &view.gizmo, &view.viewport_mode);
     apply_selected_ui_overlay(ctx, view.selected_ui_rect);
@@ -889,6 +827,7 @@ pub struct EditorView {
     nodes: Vec<String>,
     node_icons: Vec<&'static str>,
     scene_disclosures: Vec<RowIndicator>,
+    scene_depths: Vec<usize>,
     selected_row: Option<usize>,
     inspector: InspectorViewData,
     glb_title: String,
@@ -1074,6 +1013,7 @@ impl EditorView {
         let mut nodes = Vec::new();
         let mut node_icons = Vec::new();
         let mut scene_disclosures = Vec::new();
+        let mut scene_depths = Vec::new();
         let mut selected_row = None;
         let mut inspector = InspectorViewData::for_asset(state);
         let mut gizmo = editor_gizmos::GizmoView::default();
@@ -1094,6 +1034,7 @@ impl EditorView {
             nodes = tree.labels;
             node_icons = tree.icons;
             scene_disclosures = tree.disclosures;
+            scene_depths = tree.depths;
             selected_row = tree.selected_row;
 
             if state.sidebar_mode != "files"
@@ -1173,6 +1114,7 @@ impl EditorView {
             nodes,
             node_icons,
             scene_disclosures,
+            scene_depths,
             selected_row,
             inspector,
             glb_title,
@@ -2058,6 +2000,7 @@ pub struct SceneTreeRows {
     pub icons: Vec<&'static str>,
     pub disclosures: Vec<RowIndicator>,
     pub keys: Vec<u32>,
+    pub depths: Vec<usize>,
     pub selected_row: Option<usize>,
 }
 
@@ -2166,6 +2109,7 @@ pub fn filtered_scene_tree_view(
         out.icons.push(node_type_icon(node.data.node_type));
         out.disclosures.push(scene_row_disclosure(children, false));
         out.keys.push(key);
+        out.depths.push(0);
     }
     out
 }
@@ -2250,6 +2194,7 @@ pub fn push_scene_tree_row(
     out.disclosures
         .push(scene_row_disclosure(children, collapsed));
     out.keys.push(key);
+    out.depths.push(depth);
     if children > 0 && collapsed {
         return Some(row);
     }
@@ -3641,42 +3586,168 @@ pub fn apply_scene_list_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
     let Some(list_id) = find_named(ctx, "scene_rows") else {
         return;
     };
-    let _ = with_node_mut!(ctx.run, UiList, list_id, |list| {
-        list.indent = 12.0;
-        list.v_spacing = 0.0008;
+    let _ = with_node_mut!(ctx.run, UiTreeList, list_id, |tree| {
+        tree.indent = 12.0;
+        tree.v_spacing = 0.0008;
+        tree.row_height = 23.0;
     });
-    let _ = with_node_mut!(ctx.run, UiVLayout, list_id, |list| {
-        list.inner.spacing = 0.0008;
-    });
-    for idx in 0..MAX_NODES {
-        let row_name = format!("scene_row_{idx}");
-        let row_label = format!("scene_row_{idx}_label");
-        set_button_size(ctx, &row_name, (1.0, 0.053));
-        set_button_row_style(ctx, &row_name, "#00000000", "#333842");
-        set_label_size_ratio(ctx, &row_label, (1.0, 1.0));
-        set_label_text_ratio(ctx, &row_label, 0.50);
+}
+
+pub fn set_scene_tree_list<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    view: &EditorView,
+) {
+    let Some(list_id) = find_named(ctx, "scene_rows") else {
+        return;
+    };
+    let mut parents = Vec::<usize>::new();
+    let mut items = Vec::new();
+    for (idx, label) in view.nodes.iter().enumerate() {
+        let depth = view.scene_depths.get(idx).copied().unwrap_or(0);
+        while parents.len() > depth {
+            parents.pop();
+        }
+        let mut item = UiTreeListItem::new(label.trim_start().to_string())
+            .with_id(format!("scene:{idx}"))
+            .with_value(variant!(idx as i32))
+            .with_icon(editor_tree_icon_texture(
+                ctx,
+                view.node_icons.get(idx).copied().unwrap_or(""),
+            ));
+        item.parent = parents.last().copied();
+        item.open = !matches!(
+            view.scene_disclosures.get(idx).copied().unwrap_or(RowIndicator::None),
+            RowIndicator::Collapsed
+        );
+        item.selectable = true;
+        items.push(item);
+        if !matches!(
+            view.scene_disclosures.get(idx).copied().unwrap_or(RowIndicator::None),
+            RowIndicator::None
+        ) {
+            parents.push(idx);
+        }
     }
+    let _ = with_node_mut!(ctx.run, UiTreeList, list_id, |tree| {
+        tree.items = items;
+        tree.selected_index = view.selected_row;
+        tree.indent = 12.0;
+        tree.row_height = 23.0;
+        tree.v_spacing = 0.0008;
+        tree.icon_size = 13.0;
+        tree.toggle_size = 10.0;
+        tree.line_color = Color::from_hex("#3A4250FF").unwrap_or(tree.line_color);
+        tree.triangle_color = Color::from_hex("#A7D36FFF").unwrap_or(tree.triangle_color);
+        tree.text_color = Color::from_hex("#E5E7EBFF").unwrap_or(tree.text_color);
+        tree.row_style.fill = Color::TRANSPARENT;
+        tree.row_style.stroke = Color::TRANSPARENT;
+        tree.row_hover_style.fill = Color::from_hex("#202838FF").unwrap_or(tree.row_hover_style.fill);
+        tree.selected_style.fill = Color::from_hex("#25476CFF").unwrap_or(tree.selected_style.fill);
+        tree.selected_signals = vec![signal!("editor_scene_tree_selected")];
+        tree.toggled_signals = vec![signal!("editor_scene_tree_toggled")];
+    });
 }
 
 pub fn apply_file_tree_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let Some(list_id) = find_named(ctx, "file_rows") else {
         return;
     };
-    let _ = with_node_mut!(ctx.run, UiList, list_id, |list| {
-        list.indent = 11.0;
-        list.v_spacing = 0.0008;
+    let _ = with_node_mut!(ctx.run, UiTreeList, list_id, |tree| {
+        tree.indent = 11.0;
+        tree.v_spacing = 0.0008;
+        tree.row_height = 22.0;
     });
-    let _ = with_node_mut!(ctx.run, UiVLayout, list_id, |list| {
-        list.inner.spacing = 0.0008;
-    });
-    for idx in 0..MAX_FILES {
-        let row_name = format!("file_row_{idx}");
-        let row_label = format!("file_row_{idx}_label");
-        set_button_size(ctx, &row_name, (1.0, 0.052));
-        set_button_row_style(ctx, &row_name, "#00000000", "#333842");
-        set_label_size_ratio(ctx, &row_label, (1.0, 1.0));
-        set_label_text_ratio(ctx, &row_label, 0.49);
+}
+
+pub fn set_file_tree_list<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, view: &EditorView) {
+    let Some(list_id) = find_named(ctx, "file_rows") else {
+        return;
+    };
+    let mut parents = Vec::<usize>::new();
+    let mut items = Vec::new();
+    for (idx, path) in view.file_paths.iter().enumerate() {
+        let has_root = view.file_paths.first().is_some_and(|root| root == "res://");
+        let depth = if path == "res://" || !view.file_filter.is_empty() {
+            0
+        } else if has_root {
+            file_path_depth(path) + 1
+        } else {
+            file_path_depth(path)
+        };
+        while parents.len() > depth {
+            parents.pop();
+        }
+        let label = format!(
+            "{}{}",
+            file_row_state_prefix(path, &view.open_paths, &view.dirty_scene_paths),
+            file_row_label_for_filter(path, !view.file_filter.is_empty()),
+        );
+        let mut item = UiTreeListItem::new(label)
+            .with_id(format!("file:{idx}"))
+            .with_value(variant!(idx as i32))
+            .with_icon(editor_tree_icon_texture(ctx, file_icon(path)));
+        item.parent = parents.last().copied();
+        item.open = !matches!(
+            file_row_disclosure(path, &view.file_expanded_paths),
+            RowIndicator::Collapsed
+        );
+        item.selectable = true;
+        items.push(item);
+        if path.ends_with('/') {
+            parents.push(idx);
+        }
     }
+    let selected_index = view
+        .file_paths
+        .iter()
+        .position(|path| path == &view.active_asset_path);
+    let _ = with_node_mut!(ctx.run, UiTreeList, list_id, |tree| {
+        tree.items = items;
+        tree.selected_index = selected_index;
+        tree.indent = 11.0;
+        tree.row_height = 22.0;
+        tree.v_spacing = 0.0008;
+        tree.icon_size = 13.0;
+        tree.toggle_size = 10.0;
+        tree.line_color = Color::from_hex("#3A4250FF").unwrap_or(tree.line_color);
+        tree.triangle_color = Color::from_hex("#8FB9E8FF").unwrap_or(tree.triangle_color);
+        tree.text_color = Color::from_hex("#D1D5DBFF").unwrap_or(tree.text_color);
+        tree.row_style.fill = Color::TRANSPARENT;
+        tree.row_style.stroke = Color::TRANSPARENT;
+        tree.row_hover_style.fill = Color::from_hex("#202838FF").unwrap_or(tree.row_hover_style.fill);
+        tree.selected_style.fill = Color::from_hex("#25476CFF").unwrap_or(tree.selected_style.fill);
+        tree.selected_signals = vec![signal!("editor_file_tree_selected")];
+        tree.toggled_signals = vec![signal!("editor_file_tree_toggled")];
+    });
+}
+
+fn editor_tree_icon_texture<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    icon: &str,
+) -> TextureID {
+    let path = match icon {
+        "[DIR]" => "res://icons/nodes/node.png",
+        "[SCN]" => "res://icons/activity/scene.png",
+        "[RS]" => "res://icons/nodes/resource.png",
+        "[IMG]" => "res://icons/nodes/resource.png",
+        "[AUD]" => "res://icons/nodes/audio.png",
+        "[MSH]" => "res://icons/nodes/mesh_3d.png",
+        "[ANI]" | "[ATR]" | "[MAT]" | "[STY]" | "[PRT]" | "[TIL]" | "[SKL]" | "[RES]" => {
+            "res://icons/nodes/resource.png"
+        }
+        "Node2D" => "res://icons/nodes/node_2d.png",
+        "Node3D" => "res://icons/nodes/node_3d.png",
+        "Ui" => "res://icons/nodes/ui_node.png",
+        "Sprite2D" => "res://icons/nodes/sprite_2d.png",
+        "Mesh3D" => "res://icons/nodes/mesh_3d.png",
+        "Camera" => "res://icons/nodes/camera.png",
+        "Light" => "res://icons/nodes/light.png",
+        "Physics" => "res://icons/nodes/physics.png",
+        "Audio" => "res://icons/nodes/audio.png",
+        "Resource" => "res://icons/nodes/resource.png",
+        _ => "res://icons/nodes/node.png",
+    };
+    texture_load!(ctx.res, path)
 }
 
 pub fn set_button_size<API: ScriptAPI + ?Sized>(

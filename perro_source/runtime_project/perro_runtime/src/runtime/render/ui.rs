@@ -273,6 +273,7 @@ impl Runtime {
         }
         let mut timing = timing;
         self.ensure_color_picker_internal_nodes();
+        self.ensure_tree_list_internal_nodes();
         self.ensure_dropdown_internal_nodes();
 
         self.propagate_pending_transform_dirty();
@@ -628,6 +629,374 @@ impl Runtime {
 }
 
 impl Runtime {
+    fn ensure_tree_list_internal_nodes(&mut self) {
+        let tree_ids = self
+            .nodes
+            .iter()
+            .filter_map(|(id, node)| {
+                matches!(node.data, SceneNodeData::UiTreeList(_)).then_some(id)
+            })
+            .collect::<Vec<_>>();
+        for tree_id in tree_ids {
+            self.ensure_tree_list_internal_nodes_for(tree_id);
+            self.sync_tree_list_internal_nodes(tree_id);
+        }
+    }
+
+    fn ensure_tree_list_internal_nodes_for(&mut self, tree_id: NodeID) {
+        let Some((mut rows, mut toggles, mut icons, mut labels, mut lines, row_count)) =
+            self.nodes.get(tree_id).and_then(|node| match &node.data {
+                SceneNodeData::UiTreeList(tree) => Some((
+                    tree.internal_rows.clone(),
+                    tree.internal_toggles.clone(),
+                    tree.internal_icons.clone(),
+                    tree.internal_labels.clone(),
+                    tree.internal_lines.clone(),
+                    tree.visible_items().len(),
+                )),
+                _ => None,
+            })
+        else {
+            return;
+        };
+
+        for id in rows.iter().copied().skip(row_count) {
+            self.hide_tree_list_internal_node(id);
+        }
+        for id in toggles.iter().copied().skip(row_count) {
+            self.hide_tree_list_internal_node(id);
+        }
+        for id in icons.iter().copied().skip(row_count) {
+            self.hide_tree_list_internal_node(id);
+        }
+        for id in labels.iter().copied().skip(row_count) {
+            self.hide_tree_list_internal_node(id);
+        }
+        for pair in lines.iter().copied().skip(row_count) {
+            self.hide_tree_list_internal_node(pair[0]);
+            self.hide_tree_list_internal_node(pair[1]);
+        }
+
+        rows.resize(row_count, NodeID::nil());
+        toggles.resize(row_count, NodeID::nil());
+        icons.resize(row_count, NodeID::nil());
+        labels.resize(row_count, NodeID::nil());
+        lines.resize(row_count, [NodeID::nil(); 2]);
+
+        for idx in 0..row_count {
+            if !self.tree_list_internal_valid(rows[idx], tree_id, "button") {
+                rows[idx] = self.insert_tree_list_row(tree_id, idx);
+            }
+            if !self.tree_list_internal_valid(toggles[idx], rows[idx], "shape") {
+                toggles[idx] = self.insert_tree_list_toggle(rows[idx], idx);
+            }
+            if !self.tree_list_internal_valid(icons[idx], rows[idx], "image") {
+                icons[idx] = self.insert_tree_list_icon(rows[idx], idx);
+            }
+            if !self.tree_list_internal_valid(labels[idx], rows[idx], "label") {
+                labels[idx] = self.insert_tree_list_label(rows[idx], idx);
+            }
+            for line_idx in 0..2 {
+                if !self.tree_list_internal_valid(lines[idx][line_idx], rows[idx], "panel") {
+                    lines[idx][line_idx] = self.insert_tree_list_line(rows[idx], idx, line_idx);
+                }
+            }
+        }
+
+        if let Some(node) = self.nodes.get_mut(tree_id)
+            && let SceneNodeData::UiTreeList(tree) = &mut node.data
+        {
+            tree.internal_rows = rows;
+            tree.internal_toggles = toggles;
+            tree.internal_icons = icons;
+            tree.internal_labels = labels;
+            tree.internal_lines = lines;
+        }
+    }
+
+    fn hide_tree_list_internal_node(&mut self, id: NodeID) {
+        if let Some(node) = self.nodes.get_mut(id)
+            && let Some(ui) = ui_root_mut_from_data(&mut node.data)
+        {
+            ui.visible = false;
+        }
+    }
+
+    fn tree_list_internal_valid(&self, id: NodeID, parent: NodeID, kind: &str) -> bool {
+        if id.is_nil() {
+            return false;
+        }
+        self.nodes.get(id).is_some_and(|node| {
+            node.parent == parent
+                && match kind {
+                    "button" => matches!(node.data, SceneNodeData::UiButton(_)),
+                    "shape" => matches!(node.data, SceneNodeData::UiShape(_)),
+                    "image" => matches!(node.data, SceneNodeData::UiImage(_)),
+                    "label" => matches!(node.data, SceneNodeData::UiLabel(_)),
+                    "panel" => matches!(node.data, SceneNodeData::UiPanel(_)),
+                    _ => false,
+                }
+        })
+    }
+
+    fn insert_tree_list_row(&mut self, tree_id: NodeID, idx: usize) -> NodeID {
+        let mut button = UiButton::new();
+        button.base.layout.anchor = UiAnchor::Top;
+        button.base.layout.z_index = 1;
+        button.base.clip_children = false;
+        button.style.fill = Color::TRANSPARENT;
+        button.style.stroke = Color::TRANSPARENT;
+        button.hover_style.fill = Color::new(0.18, 0.22, 0.30, 1.0);
+        button.pressed_style.fill = Color::new(0.12, 0.16, 0.24, 1.0);
+        self.insert_color_picker_internal_node(
+            tree_id,
+            Box::leak(format!("__perro_tree_list_row_{idx}").into_boxed_str()),
+            SceneNodeData::UiButton(button),
+        )
+    }
+
+    fn insert_tree_list_toggle(&mut self, row_id: NodeID, idx: usize) -> NodeID {
+        let mut shape = perro_ui::UiShape::new();
+        shape.base.layout.z_index = 3;
+        shape.base.input_enabled = false;
+        shape.base.mouse_filter = perro_ui::UiMouseFilter::Pass;
+        shape.kind = perro_ui::UiShapeKind::Triangle;
+        self.insert_color_picker_internal_node(
+            row_id,
+            Box::leak(format!("__perro_tree_list_toggle_{idx}").into_boxed_str()),
+            SceneNodeData::UiShape(shape),
+        )
+    }
+
+    fn insert_tree_list_icon(&mut self, row_id: NodeID, idx: usize) -> NodeID {
+        let mut image = perro_ui::UiImage::new();
+        image.base.layout.z_index = 3;
+        image.base.input_enabled = false;
+        image.base.mouse_filter = perro_ui::UiMouseFilter::Pass;
+        self.insert_color_picker_internal_node(
+            row_id,
+            Box::leak(format!("__perro_tree_list_icon_{idx}").into_boxed_str()),
+            SceneNodeData::UiImage(image),
+        )
+    }
+
+    fn insert_tree_list_label(&mut self, row_id: NodeID, idx: usize) -> NodeID {
+        let mut label = perro_ui::UiLabel::new();
+        label.base.layout.z_index = 3;
+        label.base.input_enabled = false;
+        label.base.mouse_filter = perro_ui::UiMouseFilter::Pass;
+        label.h_align = perro_ui::UiTextAlign::Start;
+        label.v_align = perro_ui::UiTextAlign::Center;
+        label.text_size_ratio = 0.56;
+        self.insert_color_picker_internal_node(
+            row_id,
+            Box::leak(format!("__perro_tree_list_label_{idx}").into_boxed_str()),
+            SceneNodeData::UiLabel(label),
+        )
+    }
+
+    fn insert_tree_list_line(&mut self, row_id: NodeID, idx: usize, line_idx: usize) -> NodeID {
+        let mut panel = UiPanel::new();
+        panel.base.layout.z_index = 2;
+        panel.base.input_enabled = false;
+        panel.base.mouse_filter = perro_ui::UiMouseFilter::Pass;
+        panel.style.stroke_width = 0.0;
+        self.insert_color_picker_internal_node(
+            row_id,
+            Box::leak(format!("__perro_tree_list_line_{idx}_{line_idx}").into_boxed_str()),
+            SceneNodeData::UiPanel(panel),
+        )
+    }
+
+    fn sync_tree_list_internal_nodes(&mut self, tree_id: NodeID) {
+        let Some(snapshot) = self.nodes.get(tree_id).and_then(|node| match &node.data {
+            SceneNodeData::UiTreeList(tree) => Some((
+                tree.visible,
+                tree.visible_items(),
+                tree.items.clone(),
+                tree.selected_index,
+                tree.indent,
+                tree.row_height,
+                tree.v_spacing,
+                tree.icon_size,
+                tree.toggle_size,
+                tree.line_width,
+                tree.line_color,
+                tree.triangle_color,
+                tree.text_color,
+                tree.row_style.clone(),
+                tree.row_hover_style.clone(),
+                tree.row_pressed_style.clone(),
+                tree.selected_style.clone(),
+                tree.internal_rows.clone(),
+                tree.internal_toggles.clone(),
+                tree.internal_icons.clone(),
+                tree.internal_labels.clone(),
+                tree.internal_lines.clone(),
+            )),
+            _ => None,
+        }) else {
+            return;
+        };
+        let (
+            visible,
+            rows,
+            items,
+            selected_index,
+            indent,
+            row_height,
+            v_spacing,
+            icon_size,
+            toggle_size,
+            line_width,
+            line_color,
+            triangle_color,
+            text_color,
+            row_style,
+            row_hover_style,
+            row_pressed_style,
+            selected_style,
+            internal_rows,
+            internal_toggles,
+            internal_icons,
+            internal_labels,
+            internal_lines,
+        ) = snapshot;
+        let spacing = ui_v_spacing_amount(v_spacing, row_height);
+        for (visible_idx, row) in rows.iter().enumerate() {
+            let Some(item) = items.get(row.index) else {
+                continue;
+            };
+            let y = (row_height + spacing) * visible_idx as f32;
+            let x = indent * row.depth as f32;
+            if let Some(node) = self.nodes.get_mut(internal_rows[visible_idx])
+                && let SceneNodeData::UiButton(button) = &mut node.data
+            {
+                button.base.visible = visible;
+                button.base.layout.size = UiVector2::new(
+                    perro_ui::UiUnit::Percent(100.0),
+                    perro_ui::UiUnit::Pixels(row_height),
+                );
+                button.base.transform.position = UiVector2::pixels(0.0, y);
+                button.base.layout.anchor = UiAnchor::Top;
+                button.style = if selected_index == Some(row.index) {
+                    selected_style.clone()
+                } else {
+                    row_style.clone()
+                };
+                button.hover_style = row_hover_style.clone();
+                button.pressed_style = row_pressed_style.clone();
+                button.disabled = !item.selectable;
+            }
+            if let Some(node) = self.nodes.get_mut(internal_toggles[visible_idx])
+                && let SceneNodeData::UiShape(shape) = &mut node.data
+            {
+                shape.base.visible = visible && row.has_children;
+                shape.base.layout.size = UiVector2::pixels(toggle_size, toggle_size);
+                shape.base.transform.position = UiVector2::pixels(x + toggle_size * 0.5, 0.0);
+                shape.fill = triangle_color;
+                shape.stroke = Color::TRANSPARENT;
+                shape.base.transform.rotation = if item.open { 90.0 } else { 0.0 };
+            }
+            if let Some(node) = self.nodes.get_mut(internal_icons[visible_idx])
+                && let SceneNodeData::UiImage(image) = &mut node.data
+            {
+                image.base.visible = visible && !item.icon.is_nil();
+                image.base.layout.size = UiVector2::pixels(icon_size, icon_size);
+                image.base.transform.position =
+                    UiVector2::pixels(x + toggle_size + icon_size * 0.5 + 3.0, 0.0);
+                image.texture = item.icon;
+            }
+            if let Some(node) = self.nodes.get_mut(internal_labels[visible_idx])
+                && let SceneNodeData::UiLabel(label) = &mut node.data
+            {
+                let icon_width = if item.icon.is_nil() {
+                    0.0
+                } else {
+                    icon_size + 4.0
+                };
+                label.base.visible = visible;
+                label.base.layout.size = UiVector2::new(
+                    perro_ui::UiUnit::Percent(100.0),
+                    perro_ui::UiUnit::Pixels(row_height),
+                );
+                label.base.transform.position =
+                    UiVector2::pixels(x + toggle_size + icon_width + 8.0, 0.0);
+                label.color = text_color;
+                label.set_text(item.label.to_string());
+            }
+            if let Some(pair) = internal_lines.get(visible_idx).copied() {
+                self.sync_tree_list_line(
+                    pair[0],
+                    visible,
+                    row.last_child,
+                    x,
+                    row_height,
+                    line_width,
+                    line_color,
+                    true,
+                );
+                self.sync_tree_list_line(
+                    pair[1],
+                    visible,
+                    row.last_child,
+                    x,
+                    row_height,
+                    line_width,
+                    line_color,
+                    false,
+                );
+            }
+        }
+        self.mark_ui_dirty(
+            tree_id,
+            Self::UI_DIRTY_LAYOUT_SELF | Self::UI_DIRTY_COMMANDS,
+        );
+        for id in internal_rows
+            .into_iter()
+            .chain(internal_toggles)
+            .chain(internal_icons)
+            .chain(internal_labels)
+            .chain(internal_lines.into_iter().flat_map(|pair| pair.into_iter()))
+        {
+            if !id.is_nil() {
+                self.mark_ui_dirty(
+                    id,
+                    Self::UI_DIRTY_LAYOUT_SELF
+                        | Self::UI_DIRTY_LAYOUT_PARENT
+                        | Self::UI_DIRTY_COMMANDS,
+                );
+            }
+        }
+    }
+
+    fn sync_tree_list_line(
+        &mut self,
+        id: NodeID,
+        visible: bool,
+        last_child: bool,
+        x: f32,
+        row_height: f32,
+        line_width: f32,
+        line_color: Color,
+        vertical: bool,
+    ) {
+        if let Some(node) = self.nodes.get_mut(id)
+            && let SceneNodeData::UiPanel(panel) = &mut node.data
+        {
+            panel.base.visible = visible && line_width > 0.0;
+            panel.style.fill = line_color;
+            if vertical {
+                panel.base.visible = panel.base.visible && !last_child;
+                panel.base.layout.size = UiVector2::pixels(line_width, row_height);
+                panel.base.transform.position = UiVector2::pixels(x + 5.0, 0.0);
+            } else {
+                panel.base.layout.size = UiVector2::pixels(8.0, line_width);
+                panel.base.transform.position = UiVector2::pixels(x + 9.0, 0.0);
+            }
+        }
+    }
+
     fn ensure_dropdown_internal_nodes(&mut self) {
         let dropdown_ids = self
             .nodes

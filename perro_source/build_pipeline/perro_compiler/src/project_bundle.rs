@@ -1455,8 +1455,7 @@ fn is_static_web_container(ty: &str) -> bool {
             | "UiGrid"
             | "UiScrollContainer"
             | "UiScroll"
-            | "UiList"
-            | "UiListIndent"
+            | "UiTreeList"
     )
 }
 

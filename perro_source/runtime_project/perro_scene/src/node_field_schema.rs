@@ -588,15 +588,30 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
         | NodeType::UiHLayout
         | NodeType::UiVLayout
         | NodeType::UiGrid
-        | NodeType::UiList => {
+        | NodeType::UiTreeList => {
             push(fields, "Layout", "spacing", NodeFieldType::F32);
             push(fields, "Layout", "h_spacing", NodeFieldType::F32);
             push(fields, "Layout", "v_spacing", NodeFieldType::F32);
             if matches!(node_type, NodeType::UiGrid | NodeType::UiLayout) {
                 push(fields, "Layout", "columns", NodeFieldType::U32);
             }
-            if matches!(node_type, NodeType::UiList) {
+            if matches!(node_type, NodeType::UiTreeList) {
                 push(fields, "Layout", "indent", NodeFieldType::F32);
+            }
+            if matches!(node_type, NodeType::UiTreeList) {
+                push(fields, "Layout", "row_height", NodeFieldType::F32);
+                push(fields, "Layout", "icon_size", NodeFieldType::F32);
+                push(fields, "Layout", "toggle_size", NodeFieldType::F32);
+                push(
+                    fields,
+                    "Tree",
+                    "items",
+                    NodeFieldType::array(NodeFieldType::object(Vec::new())),
+                );
+                push(fields, "Tree", "selected_index", NodeFieldType::I32);
+                push(fields, "Tree", "line_color", NodeFieldType::Color);
+                push(fields, "Tree", "triangle_color", NodeFieldType::Color);
+                push(fields, "Tree", "text_color", NodeFieldType::Color);
             }
         }
         NodeType::AudioEffectZone2D | NodeType::AudioEffectZone3D => {

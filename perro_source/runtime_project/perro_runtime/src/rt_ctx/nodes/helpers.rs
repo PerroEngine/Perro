@@ -360,10 +360,16 @@ pub(super) fn classify_ui_node_payload_change(
         {
             Runtime::UI_DIRTY_LAYOUT_SELF | Runtime::UI_DIRTY_COMMANDS
         }
-        (SceneNodeData::UiList(before), SceneNodeData::UiList(after))
-            if before.indent != after.indent || before.v_spacing != after.v_spacing =>
+        (SceneNodeData::UiTreeList(before), SceneNodeData::UiTreeList(after))
+            if before.items != after.items
+                || before.selected_index != after.selected_index
+                || before.indent != after.indent
+                || before.row_height != after.row_height
+                || before.v_spacing != after.v_spacing =>
         {
-            Runtime::UI_DIRTY_LAYOUT_SELF | Runtime::UI_DIRTY_COMMANDS
+            Runtime::UI_DIRTY_LAYOUT_SELF
+                | Runtime::UI_DIRTY_LAYOUT_PARENT
+                | Runtime::UI_DIRTY_COMMANDS
         }
         _ => 0,
     }
@@ -422,8 +428,7 @@ pub(super) fn ui_base_from_data(data: &SceneNodeData) -> Option<&UiNode> {
         SceneNodeData::UiHLayout(node) => Some(&node.inner.base),
         SceneNodeData::UiVLayout(node) => Some(&node.inner.base),
         SceneNodeData::UiGrid(node) => Some(&node.base),
-        SceneNodeData::UiList(node) => Some(&node.base),
-        SceneNodeData::UiListIndent(node) => Some(&node.base),
+        SceneNodeData::UiTreeList(node) => Some(&node.base),
         _ => None,
     }
 }
