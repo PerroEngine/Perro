@@ -755,6 +755,150 @@ pub fn clear_preview<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) 
     }
 }
 
+pub fn preview_node_for_key<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    key: u32,
+) -> Option<NodeID> {
+    with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state
+            .preview_node_keys
+            .iter()
+            .position(|item| *item == key)
+            .and_then(|idx| state.preview_node_ids.get(idx).copied())
+            .map(NodeID::from_u64)
+    })
+}
+
+pub fn sync_selected_preview_field<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    field: &str,
+    value: &SceneValue,
+) -> bool {
+    let Some((key, node_type)) = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        let key = state.selected_key?;
+        let doc = cached_scene_doc(&state.doc_text);
+        let node = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key)?;
+        Some((key, node.data.node_type))
+    }) else {
+        return false;
+    };
+    let Some(id) = preview_node_for_key(ctx, key) else {
+        return false;
+    };
+    match field {
+        "position" => {
+            if node_type.is_a(perro_scene::NodeType::Node3D) {
+                let SceneValue::Vec3 { x, y, z } = value else {
+                    return false;
+                };
+                return ctx
+                    .run
+                    .Nodes()
+                    .set_local_pos_3d(id, Vector3::new(*x, *y, *z));
+            }
+            if node_type.is_a(perro_scene::NodeType::Node2D) {
+                let SceneValue::Vec2 { x, y } = value else {
+                    return false;
+                };
+                return ctx.run.Nodes().set_local_pos_2d(id, Vector2::new(*x, *y));
+            }
+        }
+        "rotation" => {
+            if node_type.is_a(perro_scene::NodeType::Node3D) {
+                let SceneValue::Vec4 { x, y, z, w } = value else {
+                    return false;
+                };
+                return ctx
+                    .run
+                    .Nodes()
+                    .set_local_rot_3d(id, Quaternion::new(*x, *y, *z, *w));
+            }
+            if node_type.is_a(perro_scene::NodeType::Node2D)
+                || node_type.is_a(perro_scene::NodeType::UiNode)
+            {
+                let SceneValue::F32(value) = value else {
+                    return false;
+                };
+                if node_type.is_a(perro_scene::NodeType::UiNode) {
+                    return ctx.run.Nodes().set_ui_rotation(id, *value);
+                }
+                return ctx.run.Nodes().set_local_rot_2d(id, *value);
+            }
+        }
+        "rotation_deg" => {
+            let SceneValue::Vec3 { x, y, z } = value else {
+                return false;
+            };
+            return ctx.run.Nodes().set_local_rot_3d(
+                id,
+                Quaternion::from_euler_xyz(x.to_radians(), y.to_radians(), z.to_radians()),
+            );
+        }
+        "scale" => {
+            if node_type.is_a(perro_scene::NodeType::Node3D) {
+                let SceneValue::Vec3 { x, y, z } = value else {
+                    return false;
+                };
+                return ctx
+                    .run
+                    .Nodes()
+                    .set_local_scale_3d(id, Vector3::new(*x, *y, *z));
+            }
+            if node_type.is_a(perro_scene::NodeType::Node2D)
+                || node_type.is_a(perro_scene::NodeType::UiNode)
+            {
+                let SceneValue::Vec2 { x, y } = value else {
+                    return false;
+                };
+                return ctx.run.Nodes().set_local_scale_2d(id, Vector2::new(*x, *y));
+            }
+        }
+        "visible" => {
+            let SceneValue::Bool(value) = value else {
+                return false;
+            };
+            if node_type.is_a(perro_scene::NodeType::Node3D) {
+                return with_base_node_mut!(ctx.run, Node3D, id, |node| node.visible = *value)
+                    .is_some();
+            }
+            if node_type.is_a(perro_scene::NodeType::Node2D) {
+                return with_base_node_mut!(ctx.run, Node2D, id, |node| node.visible = *value)
+                    .is_some();
+            }
+            if node_type.is_a(perro_scene::NodeType::UiNode) {
+                return with_base_node_mut!(ctx.run, UiNode, id, |node| node.visible = *value)
+                    .is_some();
+            }
+        }
+        "modulate" => {
+            let SceneValue::Vec4 { x, y, z, w } = value else {
+                return false;
+            };
+            let color = Color::new(*x, *y, *z, *w);
+            if node_type.is_a(perro_scene::NodeType::Node3D) {
+                return with_base_node_mut!(ctx.run, Node3D, id, |node| {
+                    node.modulate.modulate = color
+                })
+                .is_some();
+            }
+            if node_type.is_a(perro_scene::NodeType::Node2D) {
+                return with_base_node_mut!(ctx.run, Node2D, id, |node| {
+                    node.modulate.modulate = color
+                })
+                .is_some();
+            }
+            if node_type.is_a(perro_scene::NodeType::UiNode) {
+                return with_base_node_mut!(ctx.run, UiNode, id, |node| {
+                    node.modulate.modulate = color
+                })
+                .is_some();
+            }
+        }
+        _ => {}
+    }
+    false
+}
+
 pub fn load_preview_scene<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     path: &str,

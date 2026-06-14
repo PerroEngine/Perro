@@ -146,6 +146,15 @@ pub fn scene_node_fields(node_type: NodeType) -> Vec<SceneNodeField> {
     let mut fields = Vec::new();
     push_node_fields(&mut fields, node_type);
     push_base_fields(&mut fields, node_type);
+    let mut seen = Vec::new();
+    fields.retain(|field| {
+        if seen.contains(&field.name) {
+            false
+        } else {
+            seen.push(field.name);
+            true
+        }
+    });
     fields
 }
 

@@ -13,7 +13,12 @@ pub fn ensure_inspector_value_row<API: ScriptAPI + ?Sized>(
 ) {
     let row_name = format!("inspector_var_row_{idx}");
     if find_named(ctx, &row_name).is_some() {
-        return;
+        if find_named(ctx, &format!("inspector_var_{idx}_quat_mode")).is_some() {
+            return;
+        }
+        if let Some(row_id) = find_named(ctx, &row_name) {
+            let _ = ctx.run.Nodes().remove_node(row_id);
+        }
     }
     let Some(content_id) = find_named(ctx, "inspector_content") else {
         return;
@@ -84,7 +89,9 @@ pub fn apply_inspector_value_row_panel<API: ScriptAPI + ?Sized>(
         ("#252E3BE6", "#48566CFF"),
     ];
     let group_depth = depth.saturating_sub(1);
-    let (fill, stroke) = if depth > 0 && !has_children {
+    let (fill, stroke) = if has_children {
+        ("#00000000", "#00000000")
+    } else if depth > 0 {
         ("#00000000", "#00000000")
     } else if source == "section" {
         ("#0B1220E6", "#334155FF")
@@ -153,6 +160,11 @@ fn value_row_instance_name(name: &str, idx: usize) -> Option<String> {
         "inspector_value_remove_button" => format!("inspector_var_{idx}_remove_button"),
         "inspector_value_remove_label" => format!("inspector_var_{idx}_remove_button_label"),
         "inspector_value_color_swatch" => format!("inspector_var_{idx}_color_swatch"),
+        "inspector_value_quat_button" => format!("inspector_var_{idx}_quat_button"),
+        "inspector_value_quat_label" => format!("inspector_var_{idx}_quat_label"),
+        "inspector_value_euler_button" => format!("inspector_var_{idx}_euler_button"),
+        "inspector_value_euler_label" => format!("inspector_var_{idx}_euler_label"),
+        "inspector_value_quat_mode" => format!("inspector_var_{idx}_quat_mode"),
         "inspector_value_dropdown" => format!("inspector_var_{idx}_dropdown"),
         _ => {
             if let Some(component) = name

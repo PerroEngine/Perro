@@ -449,6 +449,9 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             row.map(|item| item.name.as_str()).unwrap_or("-"),
         );
         let bitmask_row = row.is_some_and(|item| item.kind == "BitMask");
+        let component_row =
+            row.is_some_and(|item| !item.components.is_empty() || item.kind == "Color");
+        let section_row = row.is_some_and(|item| item.source == "section");
         set_label(
             ctx,
             &format!("inspector_var_{idx}_type"),
@@ -457,7 +460,11 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         set_ui_display(
             ctx,
             &format!("inspector_var_{idx}_type"),
-            view.inspector.node_actions && !bitmask_row && !vars_closed,
+            view.inspector.node_actions
+                && !bitmask_row
+                && !component_row
+                && !section_row
+                && !vars_closed,
         );
         set_text_box(
             ctx,
@@ -480,6 +487,14 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
                     && row.is_none_or(|item| item.kind != "Color")
                     && !vars_closed,
             );
+            set_text_box_interactive(
+                ctx,
+                &box_name,
+                view.inspector.node_actions
+                    && row.is_some_and(|item| item.components.get(component).is_some())
+                    && row.is_none_or(|item| item.kind != "Color")
+                    && !vars_closed,
+            );
         }
         let swatch_name = format!("inspector_var_{idx}_color_swatch");
         let color_preview = row.and_then(|item| item.color_preview.as_deref());
@@ -493,15 +508,34 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         }
         let bool_row = row.is_some_and(|item| item.kind == "Bool");
         let enum_row = row.is_some_and(|item| !item.enum_options.is_empty());
-        let section_row = row.is_some_and(|item| item.source == "section");
         let dropdown_name = format!("inspector_var_{idx}_dropdown");
         let picker_button_name = format!("inspector_var_{idx}_pick_button");
         let picker_row = row.is_some_and(|item| {
             item.source != "section"
                 && (item.kind == "Node" || item.kind.starts_with("Asset(") || item.expandable)
         }) && find_named(ctx, &picker_button_name).is_some();
-        let component_row =
-            row.is_some_and(|item| !item.components.is_empty() || item.kind == "Color");
+        let quat_row = row.is_some_and(|item| item.kind == "Quat");
+        for name in [
+            format!("inspector_var_{idx}_quat_button"),
+            format!("inspector_var_{idx}_euler_button"),
+        ] {
+            set_ui_display(ctx, &name, false);
+        }
+        let quat_mode_name = format!("inspector_var_{idx}_quat_mode");
+        set_ui_display(
+            ctx,
+            &quat_mode_name,
+            view.inspector.node_actions && quat_row && !vars_closed,
+        );
+        if quat_row {
+            let options = vec!["Quat".to_string(), "Euler".to_string()];
+            let selected = if view.inspector.rotation_mode == "euler" {
+                "Euler"
+            } else {
+                "Quat"
+            };
+            set_dropdown_options(ctx, &quat_mode_name, &options, selected);
+        }
         set_ui_display(
             ctx,
             &format!("inspector_var_{idx}_value"),
@@ -571,6 +605,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
                 .zip(row_base_heights.get(idx))
                 .is_some_and(|(total, base)| *total > *base);
             apply_inspector_value_row_panel(ctx, idx, row.depth, &row.source, has_children);
+            apply_inspector_value_row_text_layout(ctx, idx, row);
         }
         let add_name = format!("inspector_var_{idx}_add_button");
         let remove_name = format!("inspector_var_{idx}_remove_button");
@@ -799,6 +834,16 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
             ctx,
             &format!("inspector_var_{idx}_pick_button"),
             (0.42, 0.62),
+        );
+        set_button_size(
+            ctx,
+            &format!("inspector_var_{idx}_quat_button"),
+            (0.075, 0.62),
+        );
+        set_button_size(
+            ctx,
+            &format!("inspector_var_{idx}_euler_button"),
+            (0.075, 0.62),
         );
         set_label_text_ratio(ctx, &format!("inspector_var_{idx}_name"), 0.35);
         set_label_text_ratio(ctx, &format!("inspector_var_{idx}_type"), 0.28);
@@ -1369,14 +1414,41 @@ fn inspector_row_base_heights(rows: &[InspectorValueRow]) -> Vec<f32> {
     rows.iter()
         .map(|row| {
             if row.kind == "BitMask" {
-                0.115
+                0.100
+            } else if row.kind == "Color" {
+                0.044
+            } else if !row.components.is_empty() {
+                0.040
             } else if row.source == "section" {
-                0.024
+                0.030
             } else {
-                0.031
+                0.027
             }
         })
         .collect()
+}
+
+fn apply_inspector_value_row_text_layout<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+    row: &InspectorValueRow,
+) {
+    let name_ratio = if row.source == "section" {
+        0.38
+    } else if row.kind == "BitMask" {
+        0.13
+    } else if !row.components.is_empty() || row.kind == "Color" {
+        0.24
+    } else {
+        0.35
+    };
+    set_label_text_ratio(ctx, &format!("inspector_var_{idx}_name"), name_ratio);
+    for component in 0..4 {
+        let box_name = format!("inspector_var_{idx}_{component}_box");
+        set_ui_node_size(&mut *ctx, &box_name, (0.15, 0.72));
+        set_text_box_text_ratio(&mut *ctx, &box_name, 0.50);
+        set_text_box_padding(&mut *ctx, &box_name, 3.0, 1.0);
+    }
 }
 
 fn inspector_row_subtree_heights(rows: &[InspectorValueRow], base_heights: &[f32]) -> Vec<f32> {
@@ -2937,6 +3009,19 @@ pub fn read_text_box<API: ScriptAPI + ?Sized>(
     Some(with_node!(ctx.run, UiTextBox, id, |node| node
         .text
         .to_string()))
+}
+
+pub fn set_text_box_interactive<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    interactive: bool,
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiTextBox, id, |node| {
+            node.base.input_enabled = interactive;
+            node.editable = interactive;
+        });
+    }
 }
 
 pub fn set_button_fill<API: ScriptAPI + ?Sized>(

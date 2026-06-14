@@ -554,6 +554,12 @@ pub fn commit_inspector_box<API: ScriptAPI + ?Sized>(
                 set_inspector_rotation_mode(ctx, "quat");
             } else if name == "inspector_rotation_euler_button" {
                 set_inspector_rotation_mode(ctx, "euler");
+            } else if middle_index(name, "inspector_var_", "_quat_button").is_some() {
+                set_inspector_rotation_mode(ctx, "quat");
+            } else if middle_index(name, "inspector_var_", "_euler_button").is_some() {
+                set_inspector_rotation_mode(ctx, "euler");
+            } else if let Some(idx) = middle_index(name, "inspector_var_", "_quat_mode") {
+                set_inspector_quat_mode_from_dropdown(ctx, idx);
             } else if name.starts_with("inspector_scale_") && name.ends_with("_box") {
                 edit_selected_transform(ctx, "scale", "inspector_scale_box");
             } else {

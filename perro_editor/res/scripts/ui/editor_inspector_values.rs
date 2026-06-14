@@ -52,6 +52,7 @@ struct ValueRowContext<'a> {
     enum_options: &'a BTreeMap<String, Vec<String>>,
     default_children: &'a BTreeMap<String, SceneValue>,
     warnings: &'a BTreeMap<String, String>,
+    quat_mode: &'a str,
 }
 
 #[derive(Default)]
@@ -89,6 +90,7 @@ pub fn inspector_script_var_rows(
         &BTreeMap::new(),
         &BTreeMap::new(),
         &BTreeMap::new(),
+        "quat",
     )
 }
 
@@ -101,6 +103,7 @@ pub fn inspector_script_var_rows_with_color_paths(
     enum_options: &BTreeMap<String, Vec<String>>,
     default_children: &BTreeMap<String, SceneValue>,
     warnings: &BTreeMap<String, String>,
+    quat_mode: &str,
 ) -> Vec<InspectorValueRow> {
     let mut rows = Vec::new();
     let color_paths = prefixed_path_list("script", color_paths);
@@ -117,6 +120,7 @@ pub fn inspector_script_var_rows_with_color_paths(
         enum_options: &enum_options,
         default_children: &default_children,
         warnings: &warnings,
+        quat_mode,
     };
     for (idx, (name, value)) in fields.iter().enumerate() {
         let mut path = vec![ValuePathStep::Root(idx)];
@@ -245,6 +249,7 @@ pub fn inspector_script_var_rows_for_node(
         &meta.enum_options,
         &meta.default_children,
         &meta.warnings,
+        &state.inspector_rotation_mode,
     )
 }
 
@@ -263,30 +268,106 @@ pub fn inspector_display_rows_for_node(
     node: &perro_api::scene::SceneNodeEntry,
 ) -> Vec<InspectorValueRow> {
     let scene_fields = inspector_scene_value_fields_for_node(node);
-    let mut rows = inspector_scene_value_rows_for_node(state, node, &scene_fields);
+    let mut rows = grouped_scene_value_rows_for_node(state, node, &scene_fields);
     let script_rows = inspector_script_var_rows_for_node(state, node);
     if !script_rows.is_empty() {
-        rows.push(InspectorValueRow {
-            source: "section".to_string(),
-            depth: 0,
-            path: Vec::new(),
-            path_key: "section:script".to_string(),
-            name: "Script".to_string(),
-            kind: String::new(),
-            value: String::new(),
-            components: Vec::new(),
-            color_preview: None,
-            enum_options: Vec::new(),
-            default_child: None,
-            editable: false,
-            expandable: false,
-            addable: false,
-            removable: false,
-        });
-        rows.extend(script_rows);
+        rows.push(inspector_section_row("section:script", "Script"));
+        rows.extend(script_rows.into_iter().map(indent_inspector_row));
     }
     rows
 }
+
+fn grouped_scene_value_rows_for_node(
+    state: &EditorState,
+    node: &perro_api::scene::SceneNodeEntry,
+    fields: &[(SceneFieldName, SceneValue)],
+) -> Vec<InspectorValueRow> {
+    let flat = inspector_scene_value_rows_for_node(state, node, fields);
+    let owners = inspector_field_owner_map(node.data.node_type);
+    let chain = inspector_node_type_chain(node.data.node_type);
+    let mut grouped: BTreeMap<String, Vec<InspectorValueRow>> = BTreeMap::new();
+    for row in flat {
+        let owner = owners
+            .get(row.name.trim())
+            .copied()
+            .unwrap_or_else(|| node.data.type_name());
+        grouped.entry(owner.to_string()).or_default().push(indent_inspector_row(row));
+    }
+    let mut rows = Vec::new();
+    for ty in chain {
+        let name = ty.name();
+        let Some(group_rows) = grouped.remove(name) else {
+            continue;
+        };
+        rows.push(inspector_section_row(&format!("section:{name}"), name));
+        rows.extend(group_rows);
+    }
+    for (name, group_rows) in grouped {
+        rows.push(inspector_section_row(&format!("section:{name}"), &name));
+        rows.extend(group_rows);
+    }
+    rows
+}
+
+fn inspector_node_type_chain(node_type: perro_scene::NodeType) -> Vec<perro_scene::NodeType> {
+    let mut chain = Vec::new();
+    let mut cursor = Some(node_type);
+    while let Some(ty) = cursor {
+        chain.push(ty);
+        cursor = ty.parent_type();
+    }
+    chain.reverse();
+    chain
+}
+
+fn inspector_field_owner_map(node_type: perro_scene::NodeType) -> BTreeMap<&'static str, &'static str> {
+    let mut out = BTreeMap::new();
+    for ty in inspector_node_type_chain(node_type) {
+        let parent_names = ty
+            .parent_type()
+            .map(|parent| {
+                perro_scene::scene_node_fields(parent)
+                    .into_iter()
+                    .map(|field| field.name)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        for field in perro_scene::scene_node_fields(ty) {
+            if parent_names.iter().any(|name| *name == field.name) {
+                continue;
+            }
+            out.entry(field.name).or_insert(ty.name());
+        }
+    }
+    out
+}
+
+fn inspector_section_row(path_key: &str, name: &str) -> InspectorValueRow {
+    InspectorValueRow {
+        source: "section".to_string(),
+        depth: 0,
+        path: Vec::new(),
+        path_key: path_key.to_string(),
+        name: name.to_string(),
+        kind: String::new(),
+        value: String::new(),
+        components: Vec::new(),
+        color_preview: None,
+        enum_options: Vec::new(),
+        default_child: None,
+        editable: false,
+        expandable: false,
+        addable: false,
+        removable: false,
+    }
+}
+
+fn indent_inspector_row(mut row: InspectorValueRow) -> InspectorValueRow {
+    row.depth += 1;
+    row.name = format!("  {}", row.name);
+    row
+}
+
 
 fn inspector_scene_value_rows_for_node(
     state: &EditorState,
@@ -325,6 +406,7 @@ fn inspector_scene_value_rows_for_node(
         enum_options: &BTreeMap::new(),
         default_children: &default_children,
         warnings: &BTreeMap::new(),
+        quat_mode: &state.inspector_rotation_mode,
     };
     let mut rows = Vec::new();
     for (idx, (name, value)) in fields.iter().enumerate() {
@@ -2089,6 +2171,7 @@ fn script_type_label(schema: &ScriptSchema, ty: &str) -> String {
         "Vector2" | "perro_api::prelude::Vector2" => "Vec2".to_string(),
         "Vector3" | "perro_api::prelude::Vector3" => "Vec3".to_string(),
         "Vector4" | "perro_api::prelude::Vector4" => "Vec4".to_string(),
+        "Quaternion" | "perro_api::prelude::Quaternion" => "Quat".to_string(),
         "Color" | "perro_api::prelude::Color" => "Color".to_string(),
         _ if is_node_ref_type(&ty) => "Node".to_string(),
         _ if let TypeResolution::Found(def) = resolve_script_enum(schema, &ty) => {
@@ -2116,6 +2199,12 @@ fn default_scene_value_for_type(schema: &ScriptSchema, ty: &str, depth: usize) -
             x: 0.0,
             y: 0.0,
             z: 0.0,
+        },
+        "Quaternion" | "perro_api::prelude::Quaternion" => SceneValue::Vec4 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            w: 1.0,
         },
         "Vector4" | "perro_api::prelude::Vector4" | "Color" | "perro_api::prelude::Color" => {
             SceneValue::Vec4 {
@@ -2197,19 +2286,20 @@ fn push_value_rows(
     } else {
         scene_value_kind(value)
     };
+    let components = scene_value_component_texts_for_kind(value, kind, ctx.quat_mode);
     rows.push(InspectorValueRow {
         source: source.to_string(),
         depth,
         path: path.clone(),
         path_key: path_key.clone(),
-        name: format!("{}{}", "  ".repeat(depth), name),
+        name: name.to_string(),
         kind: kind.to_string(),
         value: if composite {
             scene_value_summary(value, expanded)
         } else {
             scene_value_edit_text(value)
         },
-        components: scene_value_component_texts(value),
+        components,
         color_preview,
         enum_options,
         default_child: ctx.default_children.get(&path_key).cloned(),
@@ -2290,6 +2380,23 @@ pub fn scene_value_component_texts(value: &SceneValue) -> Vec<String> {
         }
         _ => Vec::new(),
     }
+}
+
+pub fn scene_value_component_texts_for_kind(
+    value: &SceneValue,
+    kind: &str,
+    quat_mode: &str,
+) -> Vec<String> {
+    if kind == "Color" {
+        return Vec::new();
+    }
+    if kind == "Quat"
+        && quat_mode == "euler"
+        && let SceneValue::Vec4 { x, y, z, w } = value
+    {
+        return quat_to_euler_deg_components(*x, *y, *z, *w);
+    }
+    scene_value_component_texts(value)
 }
 
 fn color_preview_for_value(
@@ -2395,6 +2502,46 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
             return;
         };
         text
+    } else if row.kind == "Quat" {
+        let mut values = Vec::new();
+        for component in 0..row.components.len() {
+            let Some(text) = read_text_box(ctx, &format!("inspector_var_{idx}_{component}_box"))
+            else {
+                return;
+            };
+            let Ok(value) = text.trim().parse::<f32>() else {
+                set_log(ctx, "script var parse fail\nbad quat component");
+                return;
+            };
+            values.push(value);
+        }
+        let euler = with_state!(ctx.run, EditorState, ctx.id, |state| {
+            state.inspector_rotation_mode == "euler"
+        });
+        if euler {
+            let [x, y, z] = values.as_slice() else {
+                set_log(ctx, "script var parse fail\nbad euler component count");
+                return;
+            };
+            let quat =
+                Quaternion::from_euler_xyz(x.to_radians(), y.to_radians(), z.to_radians());
+            format!(
+                "({}, {}, {}, {})",
+                format_compact_f32(quat.x),
+                format_compact_f32(quat.y),
+                format_compact_f32(quat.z),
+                format_compact_f32(quat.w)
+            )
+        } else {
+            format!(
+                "({})",
+                values
+                    .iter()
+                    .map(|value| format_compact_f32(*value))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        }
     } else {
         let mut values = Vec::new();
         for component in 0..row.components.len() {
@@ -2412,6 +2559,12 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
             set_log(ctx, &format!("script var parse fail\n{err}"));
             return;
         }
+    };
+    let value_for_preview = value.clone();
+    let preview_field = if row.source == "scene" && row.path.len() == 1 {
+        Some(row.name.trim().to_string())
+    } else {
+        None
     };
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let Some(key) = state.selected_key else {
@@ -2458,7 +2611,12 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
     })
     .unwrap_or(false);
     if changed {
-        rebuild_preview(ctx);
+        if preview_field
+            .as_deref()
+            .is_none_or(|field| !sync_selected_preview_field(ctx, field, &value_for_preview))
+        {
+            rebuild_preview(ctx);
+        }
         refresh_all(ctx);
     }
 }

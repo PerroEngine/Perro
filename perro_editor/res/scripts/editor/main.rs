@@ -356,6 +356,12 @@ methods!({
                     mutate_selected_inspector_array(ctx, idx, true);
                 } else if let Some(idx) = middle_index(&name, "inspector_var_", "_remove_button") {
                     mutate_selected_inspector_array(ctx, idx, false);
+                } else if middle_index(&name, "inspector_var_", "_quat_button").is_some() {
+                    set_inspector_rotation_mode(ctx, "quat");
+                } else if middle_index(&name, "inspector_var_", "_euler_button").is_some() {
+                    set_inspector_rotation_mode(ctx, "euler");
+                } else if let Some(idx) = middle_index(&name, "inspector_var_", "_quat_mode") {
+                    set_inspector_quat_mode_from_dropdown(ctx, idx);
                 } else if let Some(idx) = middle_index(&name, "inspector_var_", "_bit_all") {
                     set_selected_inspector_bitmask_all(ctx, idx, true);
                 } else if let Some(idx) = middle_index(&name, "inspector_var_", "_bit_none") {

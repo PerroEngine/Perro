@@ -1449,6 +1449,7 @@ pub fn delete_selected_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_,
 }
 
 pub fn toggle_selected_visible<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let mut next_visible: Option<bool> = None;
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let Some(key) = state.selected_key else {
             state.log = "visible fail\nselect node".to_string();
@@ -1470,7 +1471,9 @@ pub fn toggle_selected_visible<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
             return false;
         };
         let visible = scene_field_bool(&node.data, "visible").unwrap_or(true);
-        set_scene_bool(&mut node.data, "visible", !visible);
+        let next = !visible;
+        next_visible = Some(next);
+        set_scene_bool(&mut node.data, "visible", next);
         set_state_scene_doc(state, &doc);
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
@@ -1487,7 +1490,11 @@ pub fn toggle_selected_visible<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
     })
     .unwrap_or(false);
     if changed {
-        rebuild_preview(ctx);
+        if next_visible.is_none_or(|value| {
+            !sync_selected_preview_field(ctx, "visible", &SceneValue::Bool(value))
+        }) {
+            rebuild_preview(ctx);
+        }
     }
     refresh_all(ctx);
 }

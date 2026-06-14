@@ -175,7 +175,7 @@ parent = @inspector_value_remove_button
 [inspector_value_color_swatch]
 parent = @inspector_value_row_inner
     [UiColorPicker]
-        size_ratio = (0.065, 0.62)
+        size_ratio = (0.34, 0.62)
         visible = false
         input_enabled = true
         mouse_filter = "pass"
@@ -185,6 +185,74 @@ parent = @inspector_value_row_inner
         pressed = { style: { fill: "#334155", stroke: "#94A3B8FF", stroke_width: 1.0, radius: 0.2 } }
     [/UiColorPicker]
 [/inspector_value_color_swatch]
+
+[inspector_value_quat_button]
+parent = @inspector_value_row_inner
+    [UiButton]
+        size_ratio = (0.075, 0.62)
+        visible = false
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $button
+        hover = $button_hot
+        pressed = $button_down
+    [/UiButton]
+[/inspector_value_quat_button]
+
+[inspector_value_quat_label]
+parent = @inspector_value_quat_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Q"
+        text_size_ratio = 0.34
+        color = "#E5E7EB"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_value_quat_label]
+
+[inspector_value_euler_button]
+parent = @inspector_value_row_inner
+    [UiButton]
+        size_ratio = (0.075, 0.62)
+        visible = false
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $button
+        hover = $button_hot
+        pressed = $button_down
+    [/UiButton]
+[/inspector_value_euler_button]
+
+[inspector_value_euler_label]
+parent = @inspector_value_euler_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "E"
+        text_size_ratio = 0.34
+        color = "#E5E7EB"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_value_euler_label]
+
+[inspector_value_quat_mode]
+parent = @inspector_value_row_inner
+    [UiDropdown]
+        size_ratio = (0.16, 0.62)
+        visible = false
+        selected_signals = ["editor_inspector_var_7"]
+        option_height = 24.0
+        style = $button
+        hover = $button_hot
+        pressed = $button_down
+        option_style = $button
+        option_hover_style = $button_hot
+        option_pressed_style = $button_down
+    [/UiDropdown]
+[/inspector_value_quat_mode]
 
 [inspector_value_dropdown]
 parent = @inspector_value_row_inner
@@ -207,7 +275,9 @@ parent = @inspector_value_row_inner
     [UiTextBox]
         size_ratio = (0.10, 0.62)
         visible = false
-        input_enabled = false
+        input_enabled = true
+        placeholder = "x"
+        placeholder_color = "#64748B"
         text_size_ratio = 0.62
         padding = (4.0, 1.0)
         text_changed_signals = ["editor_inspector_var_7"]
@@ -222,7 +292,9 @@ parent = @inspector_value_row_inner
     [UiTextBox]
         size_ratio = (0.10, 0.62)
         visible = false
-        input_enabled = false
+        input_enabled = true
+        placeholder = "y"
+        placeholder_color = "#64748B"
         text_size_ratio = 0.62
         padding = (4.0, 1.0)
         text_changed_signals = ["editor_inspector_var_7"]
@@ -237,7 +309,9 @@ parent = @inspector_value_row_inner
     [UiTextBox]
         size_ratio = (0.10, 0.62)
         visible = false
-        input_enabled = false
+        input_enabled = true
+        placeholder = "z"
+        placeholder_color = "#64748B"
         text_size_ratio = 0.62
         padding = (4.0, 1.0)
         text_changed_signals = ["editor_inspector_var_7"]
@@ -252,7 +326,9 @@ parent = @inspector_value_row_inner
     [UiTextBox]
         size_ratio = (0.10, 0.62)
         visible = false
-        input_enabled = false
+        input_enabled = true
+        placeholder = "w"
+        placeholder_color = "#64748B"
         text_size_ratio = 0.62
         padding = (4.0, 1.0)
         text_changed_signals = ["editor_inspector_var_7"]

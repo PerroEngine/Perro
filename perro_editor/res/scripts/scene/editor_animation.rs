@@ -370,6 +370,22 @@ pub fn edit_selected_transform<API: ScriptAPI + ?Sized>(
         set_log(ctx, "inspector edit fail\nbad number list");
         return;
     };
+    let preview_value = match values.as_slice() {
+        [x] => Some(SceneValue::F32(*x)),
+        [x, y] => Some(SceneValue::Vec2 { x: *x, y: *y }),
+        [x, y, z] => Some(SceneValue::Vec3 {
+            x: *x,
+            y: *y,
+            z: *z,
+        }),
+        [x, y, z, w] => Some(SceneValue::Vec4 {
+            x: *x,
+            y: *y,
+            z: *z,
+            w: *w,
+        }),
+        _ => None,
+    };
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let Some(key) = state.selected_key else {
             return false;
@@ -416,7 +432,12 @@ pub fn edit_selected_transform<API: ScriptAPI + ?Sized>(
     })
     .unwrap_or(false);
     if changed {
-        rebuild_preview(ctx);
+        if preview_value
+            .as_ref()
+            .is_none_or(|value| !sync_selected_preview_field(ctx, field, value))
+        {
+            rebuild_preview(ctx);
+        }
         refresh_all(ctx);
     }
 }
@@ -442,6 +463,21 @@ pub fn set_inspector_rotation_mode<API: ScriptAPI + ?Sized>(
         state.focused_inspector_box.clear();
     });
     refresh_all(ctx);
+}
+
+pub fn set_inspector_quat_mode_from_dropdown<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+) {
+    let Some(value) = read_dropdown_value(ctx, &format!("inspector_var_{idx}_quat_mode")) else {
+        return;
+    };
+    let mode = if value.eq_ignore_ascii_case("euler") {
+        "euler"
+    } else {
+        "quat"
+    };
+    set_inspector_rotation_mode(ctx, mode);
 }
 
 pub fn read_component_values<API: ScriptAPI + ?Sized>(
