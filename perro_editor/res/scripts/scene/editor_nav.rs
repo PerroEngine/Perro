@@ -5,8 +5,8 @@ use crate::scripts_assets_editor_assets_rs::*;
 use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
-    cached_scene_doc, EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_NODE_PICKER_ROWS,
-    MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
+    cached_scene_doc, redo_scene_doc, undo_scene_doc, EditorState, FILE_WATCH_INTERVAL_FRAMES,
+    MAX_FILES, MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
 };
 use crate::scripts_scene_editor_animation_rs::*;
 use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
@@ -123,6 +123,19 @@ pub fn update_editor_shortcuts<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
     let picker_open = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.add_node_popup_open
     });
+    if !picker_open
+        && ctrl
+        && !alt
+        && (key_pressed!(ctx.ipt, KeyCode::KeyY)
+            || (shift && key_pressed!(ctx.ipt, KeyCode::KeyZ)))
+    {
+        redo_active_scene(ctx);
+        return;
+    }
+    if !picker_open && ctrl && !alt && !shift && key_pressed!(ctx.ipt, KeyCode::KeyZ) {
+        undo_active_scene(ctx);
+        return;
+    }
     if picker_open && key_pressed!(ctx.ipt, KeyCode::ArrowUp) {
         nudge_node_picker(ctx, -1);
         return;
@@ -492,6 +505,22 @@ pub fn update_editor_shortcuts<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
             delete_selected_node(ctx);
         }
     }
+}
+
+pub fn undo_active_scene<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let changed = with_state_mut!(ctx.run, EditorState, ctx.id, undo_scene_doc).unwrap_or(false);
+    if changed {
+        rebuild_preview(ctx);
+    }
+    refresh_all(ctx);
+}
+
+pub fn redo_active_scene<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let changed = with_state_mut!(ctx.run, EditorState, ctx.id, redo_scene_doc).unwrap_or(false);
+    if changed {
+        rebuild_preview(ctx);
+    }
+    refresh_all(ctx);
 }
 
 pub fn editor_text_box_has_focus<API: ScriptAPI + ?Sized>(

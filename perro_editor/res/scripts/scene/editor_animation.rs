@@ -1239,8 +1239,6 @@ pub fn choose_inspector_picker_row<API: ScriptAPI + ?Sized>(
             };
             let scene_value = if picker_kind == "value_asset" {
                 SceneValue::Str(Cow::Owned(value.clone()))
-            } else if picker_kind == "value_enum" || picker_kind == "script_enum" {
-                SceneValue::Key(SceneValueKey::from(value.clone()))
             } else {
                 SceneValue::Key(SceneValueKey::from(value.clone()))
             };

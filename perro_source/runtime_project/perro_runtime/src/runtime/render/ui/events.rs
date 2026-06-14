@@ -544,9 +544,7 @@ impl Runtime {
         let Some(item) = tree.items.get_mut(row.index) else {
             return;
         };
-        if (toggle || (row.has_children && tree.selected_index == Some(row.index)))
-            && row.has_children
-        {
+        if (tree.selected_index == Some(row.index) || toggle) && row.has_children {
             item.open = !item.open;
             let signals = tree.toggled_signals.clone();
             let params = [

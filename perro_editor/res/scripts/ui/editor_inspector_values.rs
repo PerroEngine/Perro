@@ -94,6 +94,7 @@ pub fn inspector_script_var_rows(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn inspector_script_var_rows_with_color_paths(
     fields: &[(SceneFieldName, SceneValue)],
     expanded_paths: &[String],
@@ -338,7 +339,7 @@ fn inspector_field_owner_map(
             })
             .unwrap_or_default();
         for field in perro_scene::scene_node_fields(ty) {
-            if parent_names.iter().any(|name| *name == field.name) {
+            if parent_names.contains(&field.name) {
                 continue;
             }
             out.entry(field.name).or_insert(ty.name());
@@ -420,6 +421,7 @@ fn inspector_scene_value_rows_for_node(
     rows
 }
 
+#[allow(clippy::too_many_arguments)]
 fn collect_node_field_type_paths(
     source: &str,
     ty: &perro_scene::NodeFieldType,
@@ -672,6 +674,7 @@ fn script_state_color_field_names(project_root: &str, script_path: &str) -> Vec<
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn collect_script_inspector_meta(
     schema: &ScriptSchema,
     struct_name: &str,
@@ -800,6 +803,7 @@ fn collect_script_value_meta(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn collect_script_node_path_keys(
     schema: &ScriptSchema,
     struct_name: &str,
@@ -852,6 +856,7 @@ fn collect_script_node_path_keys(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn collect_script_enum_path_options(
     schema: &ScriptSchema,
     struct_name: &str,
@@ -934,6 +939,7 @@ pub fn script_state_schema_warnings(
     out
 }
 
+#[allow(clippy::too_many_arguments)]
 fn collect_script_schema_warnings(
     schema: &ScriptSchema,
     struct_name: &str,
@@ -1309,18 +1315,10 @@ fn merge_script_schema_dir(schema: &mut ScriptSchema, dir: &Path, res_dir: &Path
             continue;
         };
         for (name, mut defs) in other.structs {
-            schema
-                .structs
-                .entry(name)
-                .or_insert_with(Vec::new)
-                .append(&mut defs);
+            schema.structs.entry(name).or_default().append(&mut defs);
         }
         for (name, mut defs) in other.enums {
-            schema
-                .enums
-                .entry(name)
-                .or_insert_with(Vec::new)
-                .append(&mut defs);
+            schema.enums.entry(name).or_default().append(&mut defs);
         }
     }
 }
@@ -1418,11 +1416,7 @@ fn parse_script_imports(source: &str) -> ScriptImports {
         if let Some(inner) = rest
             .strip_prefix("crate::")
             .and_then(|value| value.strip_suffix('}'))
-            .and_then(|value| {
-                value
-                    .split_once("::{")
-                    .map(|(module, names)| (module, names))
-            })
+            .and_then(|value| value.split_once("::{"))
         {
             let (module, names) = inner;
             for name in names
@@ -1641,9 +1635,7 @@ fn parse_tuple_struct_fields(
             if after_name.trim_start().starts_with('{') {
                 return None;
             }
-            let Some(open_pos) = after_name.find('(') else {
-                return None;
-            };
+            let open_pos = after_name.find('(')?;
             saw_open = true;
             let rest = &after_name[open_pos + 1..];
             depth = 1;
@@ -1968,10 +1960,10 @@ fn resolve_script_type<'a, T: ScriptTypeDef>(
         return TypeResolution::Missing;
     }
     let (name, type_args) = type_name_and_args(&ty);
-    if ty.contains("::") {
-        if let Some(module) = module_from_qualified_type(&ty) {
-            return resolve_defs_in_module(defs_by_name, &name, &module, &type_args);
-        }
+    if ty.contains("::")
+        && let Some(module) = module_from_qualified_type(&ty)
+    {
+        return resolve_defs_in_module(defs_by_name, &name, &module, &type_args);
     }
     if let TypeResolution::Found(found) =
         resolve_defs_in_module(defs_by_name, &name, &schema.root_module, &type_args)
@@ -3182,7 +3174,7 @@ fn prune_default_script_value(
                     out.push((name.clone(), value));
                 }
             }
-            (!out.is_empty()).then(|| SceneValue::Object(Cow::Owned(out)))
+            (!out.is_empty()).then_some(SceneValue::Object(Cow::Owned(out)))
         }
         (SceneValue::Array(values), _) if values.is_empty() => None,
         (SceneValue::Bool(false), None) => None,

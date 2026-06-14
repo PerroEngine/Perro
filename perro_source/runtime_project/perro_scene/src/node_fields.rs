@@ -912,6 +912,7 @@ fn default_physics_force_emitter_3d_field_value(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn default_physics_force_emitter_field_value(
     field: PhysicsForceEmitterField,
     enabled: bool,

@@ -32,10 +32,10 @@ pub fn cached_scene_doc(text: &str) -> SceneDoc {
     let Ok(mut guard) = cache.lock() else {
         return SceneDoc::parse(text);
     };
-    if let Some(cached) = guard.as_ref() {
-        if cached.text == text {
-            return cached.doc.clone();
-        }
+    if let Some(cached) = guard.as_ref()
+        && cached.text == text
+    {
+        return cached.doc.clone();
     }
     let doc = SceneDoc::parse(text);
     *guard = Some(CachedSceneDoc {
@@ -56,8 +56,75 @@ pub fn store_scene_doc_cache(text: &str, doc: &SceneDoc) {
 }
 
 pub fn set_state_scene_doc(state: &mut EditorState, doc: &SceneDoc) {
-    state.doc_text = doc.to_text();
+    let next = doc.to_text();
+    if state.doc_text != next {
+        push_scene_undo_snapshot(state);
+        state.scene_redo_stack.clear();
+        state.doc_text = next;
+    }
     store_scene_doc_cache(&state.doc_text, doc);
+}
+
+pub fn set_state_scene_doc_loaded(state: &mut EditorState, doc: &SceneDoc) {
+    state.doc_text = doc.to_text();
+    state.scene_undo_stack.clear();
+    state.scene_redo_stack.clear();
+    store_scene_doc_cache(&state.doc_text, doc);
+}
+
+fn push_scene_undo_snapshot(state: &mut EditorState) {
+    if state.doc_text.is_empty() {
+        return;
+    }
+    if state
+        .scene_undo_stack
+        .last()
+        .is_some_and(|item| item == &state.doc_text)
+    {
+        return;
+    }
+    state.scene_undo_stack.push(state.doc_text.clone());
+    if state.scene_undo_stack.len() > MAX_SCENE_UNDO {
+        state.scene_undo_stack.remove(0);
+    }
+}
+
+pub fn undo_scene_doc(state: &mut EditorState) -> bool {
+    let Some(prev) = state.scene_undo_stack.pop() else {
+        state.log = "undo\nempty".to_string();
+        return false;
+    };
+    if !state.doc_text.is_empty() {
+        state.scene_redo_stack.push(state.doc_text.clone());
+    }
+    state.doc_text = prev;
+    store_scene_doc_cache(&state.doc_text, &SceneDoc::parse(&state.doc_text));
+    state.dirty = true;
+    mark_active_scene_dirty(state);
+    state.log = format!("undo\n{} left", state.scene_undo_stack.len());
+    true
+}
+
+pub fn redo_scene_doc(state: &mut EditorState) -> bool {
+    let Some(next) = state.scene_redo_stack.pop() else {
+        state.log = "redo\nempty".to_string();
+        return false;
+    };
+    push_scene_undo_snapshot(state);
+    state.doc_text = next;
+    store_scene_doc_cache(&state.doc_text, &SceneDoc::parse(&state.doc_text));
+    state.dirty = true;
+    mark_active_scene_dirty(state);
+    state.log = format!("redo\n{} left", state.scene_redo_stack.len());
+    true
+}
+
+fn mark_active_scene_dirty(state: &mut EditorState) {
+    if let Some(path) = state.open_paths.get(state.active_open).cloned()
+        && !state.dirty_scene_paths.iter().any(|item| item == &path)
+    {
+        state.dirty_scene_paths.push(path);
+    }
 }
 
 pub fn clear_scene_doc_cache() {
@@ -76,11 +143,14 @@ pub const MAX_INSPECTOR_PICKER_ROWS: usize = 12;
 pub const RECENT_PROJECTS_PATH: &str = "user://recent_projects.json";
 pub const FILE_WATCH_INTERVAL_FRAMES: u32 = 30;
 pub const LIST_DOUBLE_CLICK_FRAMES: u32 = 18;
+pub const MAX_SCENE_UNDO: usize = 64;
 
 #[State]
 pub struct EditorState {
     pub editor_shell_root: u64,
     pub inspector_picker_root: u64,
+    pub editor_name_cache_names: Vec<String>,
+    pub editor_name_cache_ids: Vec<u64>,
     pub project_root: String,
     pub project_name: String,
     pub create_parent_dir: String,
@@ -94,6 +164,8 @@ pub struct EditorState {
     pub active_asset_path: String,
     pub active_open: usize,
     pub doc_text: String,
+    pub scene_undo_stack: Vec<String>,
+    pub scene_redo_stack: Vec<String>,
     pub preview_scene_paths: Vec<String>,
     pub preview_root: u64,
     pub preview_camera_2d: u64,

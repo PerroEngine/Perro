@@ -8,7 +8,7 @@ use perro_runtime_api::sub_apis::{NodeAPI, NodeCreationTemplate, SignalAPI};
 use perro_scripting::{ScriptBehavior, ScriptContext, ScriptFlags, ScriptLifecycle};
 use perro_structs::{Color, Quaternion, Transform3D, Vector3};
 use perro_ui::{
-    UiAnchor, UiAnimatedImage, UiAnimatedImageFrameSet, UiGrid, UiHLayout, UiLabel, UiPanel,
+    UiAnchor, UiAnimatedImage, UiAnimatedImageFrameSet, UiGrid, UiHLayout, UiPanel,
     UiScrollContainer, UiShape, UiShapeKind, UiVLayout, UiVector2,
 };
 use std::any::Any;

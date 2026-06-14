@@ -5,8 +5,9 @@ use crate::scripts_assets_editor_assets_rs::*;
 use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
-    EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_NODE_PICKER_ROWS, MAX_NODES,
-    MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, cached_scene_doc, set_state_scene_doc,
+    cached_scene_doc, set_state_scene_doc, set_state_scene_doc_loaded, EditorState,
+    FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS,
+    RECENT_PROJECTS_PATH,
 };
 use crate::scripts_scene_editor_animation_rs::*;
 use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
@@ -686,7 +687,7 @@ pub fn reload_scene_path<API: ScriptAPI + ?Sized>(
         return;
     }
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        state.doc_text = normalized;
+        set_state_scene_doc_loaded(state, &doc);
         state.selected_key = first_key;
         state.viewport_mode = mode.to_string();
         if mode == "3D" {

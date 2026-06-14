@@ -800,9 +800,7 @@ fn apply_inspector_dynamic_layout<API: ScriptAPI + ?Sized>(
     } else {
         1.0
     };
-    for name in ["asset_use_button"] {
-        set_button_size(ctx, name, (asset_button_w, 0.62));
-    }
+    set_button_size(ctx, "asset_use_button", (asset_button_w, 0.62));
     for name in ["asset_glb_anim_button", "asset_glb_mat_button"] {
         set_button_size(ctx, name, (0.25, 0.62));
     }
@@ -3629,8 +3627,12 @@ pub fn set_scene_tree_list<API: ScriptAPI + ?Sized>(
         }
     }
     let _ = with_node_mut!(ctx.run, UiTreeList, list_id, |tree| {
-        tree.items = items;
-        tree.selected_index = view.selected_row;
+        if tree.items != items {
+            tree.items = items;
+        }
+        if tree.selected_index != view.selected_row {
+            tree.selected_index = view.selected_row;
+        }
         tree.indent = 12.0;
         tree.row_height = 23.0;
         tree.v_spacing = 0.0008;
@@ -3702,8 +3704,12 @@ pub fn set_file_tree_list<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
         .iter()
         .position(|path| path == &view.active_asset_path);
     let _ = with_node_mut!(ctx.run, UiTreeList, list_id, |tree| {
-        tree.items = items;
-        tree.selected_index = selected_index;
+        if tree.items != items {
+            tree.items = items;
+        }
+        if tree.selected_index != selected_index {
+            tree.selected_index = selected_index;
+        }
         tree.indent = 11.0;
         tree.row_height = 22.0;
         tree.v_spacing = 0.0008;
@@ -3892,9 +3898,49 @@ pub fn find_named<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     name: &str,
 ) -> Option<NodeID> {
+    let cached = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        state
+            .editor_name_cache_names
+            .iter()
+            .position(|cached_name| cached_name == name)
+            .and_then(|idx| state.editor_name_cache_ids.get(idx).copied())
+    });
+    if let Some(raw) = cached {
+        let id = NodeID::from_u64(raw);
+        if get_node_name!(ctx.run, id).as_deref() == Some(name) {
+            return Some(id);
+        }
+        let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+            if let Some(idx) = state
+                .editor_name_cache_ids
+                .iter()
+                .position(|cached_id| *cached_id == raw)
+            {
+                state.editor_name_cache_ids.remove(idx);
+                if idx < state.editor_name_cache_names.len() {
+                    state.editor_name_cache_names.remove(idx);
+                }
+            }
+        });
+    }
+
     let mut stack = vec![ctx.id];
     while let Some(id) = stack.pop() {
         if get_node_name!(ctx.run, id).as_deref() == Some(name) {
+            let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+                if let Some(idx) = state
+                    .editor_name_cache_names
+                    .iter_mut()
+                    .position(|cached_name| cached_name == name)
+                {
+                    if let Some(cached_id) = state.editor_name_cache_ids.get_mut(idx) {
+                        *cached_id = id.as_u64();
+                    }
+                } else {
+                    state.editor_name_cache_names.push(name.to_string());
+                    state.editor_name_cache_ids.push(id.as_u64());
+                }
+            });
             return Some(id);
         }
         stack.extend(get_children!(ctx.run, id));

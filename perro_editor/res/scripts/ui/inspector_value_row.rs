@@ -4,6 +4,11 @@ use perro_api::prelude::*;
 
 type SelfNodeType = UiPanel;
 
+#[State]
+pub struct InspectorValueRowState {
+    pub ready: bool,
+}
+
 lifecycle!({});
 methods!({});
 

@@ -696,9 +696,9 @@ impl Runtime {
             if !self.tree_list_internal_valid(labels[idx], rows[idx], "label") {
                 labels[idx] = self.insert_tree_list_label(rows[idx], idx);
             }
-            for line_idx in 0..2 {
-                if !self.tree_list_internal_valid(lines[idx][line_idx], rows[idx], "panel") {
-                    lines[idx][line_idx] = self.insert_tree_list_line(rows[idx], idx, line_idx);
+            for (line_idx, line) in lines[idx].iter_mut().enumerate() {
+                if !self.tree_list_internal_valid(*line, rows[idx], "panel") {
+                    *line = self.insert_tree_list_line(rows[idx], idx, line_idx);
                 }
             }
         }
@@ -970,6 +970,7 @@ impl Runtime {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn sync_tree_list_line(
         &mut self,
         id: NodeID,

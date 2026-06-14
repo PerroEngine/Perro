@@ -1542,12 +1542,11 @@ pub fn toggle_selected_visible<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
         true
     })
     .unwrap_or(false);
-    if changed {
-        if next_visible.is_none_or(|value| {
-            !sync_selected_preview_field(ctx, "visible", &SceneValue::Bool(value))
-        }) {
-            rebuild_preview(ctx);
-        }
+    if changed
+        && next_visible
+            .is_none_or(|value| !sync_selected_preview_field(ctx, "visible", &SceneValue::Bool(value)))
+    {
+        rebuild_preview(ctx);
     }
     refresh_all(ctx);
 }

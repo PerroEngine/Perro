@@ -4,7 +4,8 @@ use crate::scripts_app_editor_project_rs as editor_project;
 use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
-    cached_scene_doc, clear_scene_doc_cache, set_state_scene_doc, EditorState,
+    cached_scene_doc, clear_scene_doc_cache, set_state_scene_doc, set_state_scene_doc_loaded,
+    EditorState,
     FILE_WATCH_INTERVAL_FRAMES, LIST_DOUBLE_CLICK_FRAMES, MAX_FILES, MAX_NODE_PICKER_ROWS,
     MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
 };
@@ -73,6 +74,8 @@ pub fn open_project<API: ScriptAPI + ?Sized>(
         state.active_asset_path.clear();
         state.active_open = 0;
         state.doc_text.clear();
+        state.scene_undo_stack.clear();
+        state.scene_redo_stack.clear();
         state.preview_scene_paths.clear();
         state.preview_root = 0;
         state.preview_camera_2d = 0;
@@ -123,6 +126,8 @@ pub fn load_editor_shell<API: ScriptAPI + ?Sized>(
         let old_picker = state.inspector_picker_root;
         state.editor_shell_root = 0;
         state.inspector_picker_root = 0;
+        state.editor_name_cache_names.clear();
+        state.editor_name_cache_ids.clear();
         (old, old_picker)
     })
     .unwrap_or((0, 0));
@@ -148,6 +153,8 @@ pub fn load_editor_shell<API: ScriptAPI + ?Sized>(
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         state.editor_shell_root = root.as_u64();
         state.inspector_picker_root = picker_root.as_u64();
+        state.editor_name_cache_names.clear();
+        state.editor_name_cache_ids.clear();
     });
     Ok(())
 }
@@ -558,7 +565,7 @@ pub fn open_scene_path<API: ScriptAPI + ?Sized>(
             .unwrap_or(0);
         state.activity_mode = "scene".to_string();
         state.sidebar_mode = "scene".to_string();
-        set_state_scene_doc(state, &doc);
+        set_state_scene_doc_loaded(state, &doc);
         state.selected_key = first_key;
         state.collapsed_scene_keys.clear();
         state.inspector_expanded_paths.clear();
