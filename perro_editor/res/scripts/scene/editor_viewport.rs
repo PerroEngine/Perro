@@ -5,8 +5,8 @@ use crate::scripts_assets_editor_assets_rs::*;
 use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
-    EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_NODE_PICKER_ROWS, MAX_NODES,
-    MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
+    cached_scene_doc, set_state_scene_doc, EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES,
+    MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
 };
 use crate::scripts_scene_editor_animation_rs::*;
 use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
@@ -188,7 +188,7 @@ pub fn duplicate_selected_node_at<API: ScriptAPI + ?Sized>(
         if state.doc_text.is_empty() {
             return false;
         }
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let subtree_keys = collect_scene_subtree_keys(&doc, key);
         if subtree_keys.is_empty() {
             return false;
@@ -242,7 +242,7 @@ pub fn duplicate_selected_node_at<API: ScriptAPI + ?Sized>(
             doc.scene.nodes.to_mut().push(node);
         }
         doc.normalize_links();
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.selected_key = mapped_scene_key(&map, key);
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
@@ -274,7 +274,7 @@ pub fn place_selected_2d<API: ScriptAPI + ?Sized>(
         if state.doc_text.is_empty() {
             return false;
         }
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let Some(node) = doc
             .scene
             .nodes
@@ -288,7 +288,7 @@ pub fn place_selected_2d<API: ScriptAPI + ?Sized>(
             return false;
         }
         set_scene_vec2(&mut node.data, "position", world);
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -323,7 +323,7 @@ pub fn place_selected_3d<API: ScriptAPI + ?Sized>(
         if state.doc_text.is_empty() {
             return false;
         }
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let Some(node) = doc
             .scene
             .nodes
@@ -337,7 +337,7 @@ pub fn place_selected_3d<API: ScriptAPI + ?Sized>(
             return false;
         }
         set_scene_vec3(&mut node.data, "position", point);
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -1740,7 +1740,7 @@ pub fn move_doc_ui_node<API: ScriptAPI + ?Sized>(
         if state.doc_text.is_empty() {
             return false;
         }
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let Some(parent_rect) = doc_ui_parent_rect(&doc, key) else {
             return false;
         };
@@ -1772,7 +1772,7 @@ pub fn move_doc_ui_node<API: ScriptAPI + ?Sized>(
         } else {
             "move ui".to_string()
         };
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -1799,7 +1799,7 @@ pub fn resize_doc_ui_node<API: ScriptAPI + ?Sized>(
         if state.doc_text.is_empty() {
             return false;
         }
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let Some(parent_rect) = doc_ui_parent_rect(&doc, key) else {
             return false;
         };
@@ -1877,7 +1877,7 @@ pub fn resize_doc_ui_node<API: ScriptAPI + ?Sized>(
         } else {
             "resize ui".to_string()
         };
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -1912,7 +1912,7 @@ pub fn rotate_doc_ui_node<API: ScriptAPI + ?Sized>(
         if state.doc_text.is_empty() {
             return false;
         }
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let Some(rect) = doc_ui_rect(&doc, key) else {
             return false;
         };
@@ -1943,7 +1943,7 @@ pub fn rotate_doc_ui_node<API: ScriptAPI + ?Sized>(
         } else {
             "rotate ui".to_string()
         };
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)

@@ -6,6 +6,7 @@ use std::borrow::Cow;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::{Mutex, OnceLock};
 
 use crate::scripts_assets_editor_assets_rs::*;
 use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
@@ -17,6 +18,54 @@ use crate::scripts_ui_editor_inspector_values_rs::*;
 use crate::scripts_ui_editor_ui_rs::*;
 
 type SelfNodeType = UiPanel;
+
+#[derive(Clone)]
+struct CachedSceneDoc {
+    text: String,
+    doc: SceneDoc,
+}
+
+static ACTIVE_SCENE_DOC_CACHE: OnceLock<Mutex<Option<CachedSceneDoc>>> = OnceLock::new();
+
+pub fn cached_scene_doc(text: &str) -> SceneDoc {
+    let cache = ACTIVE_SCENE_DOC_CACHE.get_or_init(|| Mutex::new(None));
+    let Ok(mut guard) = cache.lock() else {
+        return SceneDoc::parse(text);
+    };
+    if let Some(cached) = guard.as_ref() {
+        if cached.text == text {
+            return cached.doc.clone();
+        }
+    }
+    let doc = SceneDoc::parse(text);
+    *guard = Some(CachedSceneDoc {
+        text: text.to_string(),
+        doc: doc.clone(),
+    });
+    doc
+}
+
+pub fn store_scene_doc_cache(text: &str, doc: &SceneDoc) {
+    let cache = ACTIVE_SCENE_DOC_CACHE.get_or_init(|| Mutex::new(None));
+    if let Ok(mut guard) = cache.lock() {
+        *guard = Some(CachedSceneDoc {
+            text: text.to_string(),
+            doc: doc.clone(),
+        });
+    }
+}
+
+pub fn set_state_scene_doc(state: &mut EditorState, doc: &SceneDoc) {
+    state.doc_text = doc.to_text();
+    store_scene_doc_cache(&state.doc_text, doc);
+}
+
+pub fn clear_scene_doc_cache() {
+    let cache = ACTIVE_SCENE_DOC_CACHE.get_or_init(|| Mutex::new(None));
+    if let Ok(mut guard) = cache.lock() {
+        *guard = None;
+    }
+}
 
 pub const MAX_FILES: usize = 12;
 pub const MAX_NODES: usize = 12;

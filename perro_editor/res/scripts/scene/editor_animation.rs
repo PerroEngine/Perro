@@ -5,8 +5,9 @@ use crate::scripts_assets_editor_assets_rs::*;
 use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
-    EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_INSPECTOR_PICKER_ROWS,
-    MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
+    cached_scene_doc, set_state_scene_doc, EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES,
+    MAX_INSPECTOR_PICKER_ROWS, MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS,
+    RECENT_PROJECTS_PATH,
 };
 use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
 use crate::scripts_scene_editor_nav_rs::*;
@@ -34,7 +35,7 @@ pub fn create_animation_for_selected_player<API: ScriptAPI + ?Sized>(
             state.log = "anim create fail\nselect AnimationPlayer".to_string();
             return None;
         };
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let node_index = doc
             .scene
             .nodes
@@ -66,7 +67,7 @@ pub fn create_animation_for_selected_player<API: ScriptAPI + ?Sized>(
             "Target",
             &target_name,
         );
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.dirty = true;
         state.activity_mode = "scene".to_string();
         state.anim_drawer_open = true;
@@ -112,7 +113,7 @@ pub fn add_track_for_selected_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCont
             state.log = "track add fail\nselect target node".to_string();
             return None;
         };
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let Some(player_index) = doc
             .scene
             .nodes
@@ -162,7 +163,7 @@ pub fn add_track_for_selected_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCont
             &object_name,
             &target_name,
         );
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.dirty = true;
         state.activity_mode = "scene".to_string();
         state.anim_drawer_open = true;
@@ -376,7 +377,7 @@ pub fn edit_selected_transform<API: ScriptAPI + ?Sized>(
         if state.doc_text.is_empty() {
             return false;
         }
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let Some(node) = doc
             .scene
             .nodes
@@ -404,7 +405,7 @@ pub fn edit_selected_transform<API: ScriptAPI + ?Sized>(
             [x, y, z, w] => set_scene_vec4(&mut node.data, field, *x, *y, *z, *w),
             _ => return false,
         }
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -471,7 +472,7 @@ pub fn reset_selected_transform<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext
         if state.doc_text.is_empty() {
             return false;
         }
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let Some(node) = doc
             .scene
             .nodes
@@ -496,7 +497,7 @@ pub fn reset_selected_transform<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext
             state.log = "reset xform skip\nselect spatial/ui node".to_string();
             return false;
         }
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -526,7 +527,7 @@ pub fn nudge_selected_node<API: ScriptAPI + ?Sized>(
         if state.doc_text.is_empty() {
             return false;
         }
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let Some(node) = doc
             .scene
             .nodes
@@ -562,7 +563,7 @@ pub fn nudge_selected_node<API: ScriptAPI + ?Sized>(
             state.log = "nudge skip\nselect spatial/ui node".to_string();
             return false;
         }
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -594,7 +595,7 @@ pub fn rename_selected_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_,
         if state.doc_text.is_empty() {
             return false;
         }
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let idx = key as usize;
         if idx >= doc.scene.key_names.len() {
             state.log = "rename fail\nbad key".to_string();
@@ -617,7 +618,7 @@ pub fn rename_selected_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_,
             node.name = None;
         }
         let refs = rewrite_node_refs_in_doc(&mut doc, &current, &next);
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -927,7 +928,7 @@ pub fn edit_selected_script_vars<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
         let Some(key) = state.selected_key else {
             return false;
         };
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let Some(node) = doc
             .scene
             .nodes
@@ -938,7 +939,7 @@ pub fn edit_selected_script_vars<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
             return false;
         };
         node.script_vars = Cow::Owned(vars);
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -973,7 +974,7 @@ pub fn edit_selected_script_var_row<API: ScriptAPI + ?Sized>(
         let Some(key) = state.selected_key else {
             return false;
         };
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let Some(node) = doc
             .scene
             .nodes
@@ -987,7 +988,7 @@ pub fn edit_selected_script_var_row<API: ScriptAPI + ?Sized>(
             return false;
         };
         *field_value = value;
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -1010,7 +1011,7 @@ pub fn pick_selected_script_var_ref<API: ScriptAPI + ?Sized>(
 ) {
     let pick = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let key = state.selected_key?;
-        let doc = SceneDoc::parse(&state.doc_text);
+        let doc = cached_scene_doc(&state.doc_text);
         let node = doc
             .scene
             .nodes
@@ -1031,7 +1032,7 @@ pub fn pick_selected_script_var_ref<API: ScriptAPI + ?Sized>(
             return Some(false);
         }
         if row.kind == "Bool" {
-            let mut doc = SceneDoc::parse(&state.doc_text);
+            let mut doc = cached_scene_doc(&state.doc_text);
             let node = doc
                 .scene
                 .nodes
@@ -1062,7 +1063,7 @@ pub fn pick_selected_script_var_ref<API: ScriptAPI + ?Sized>(
                     return None;
                 }
             }
-            state.doc_text = doc.to_text();
+            set_state_scene_doc(state, &doc);
             state.dirty = true;
             if let Some(path) = state.open_paths.get(state.active_open).cloned()
                 && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -1175,7 +1176,7 @@ pub fn choose_inspector_picker_row<API: ScriptAPI + ?Sized>(
         let Some(key) = state.selected_key else {
             return false;
         };
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let Some(node) = doc
             .scene
             .nodes
@@ -1243,7 +1244,7 @@ pub fn choose_inspector_picker_row<API: ScriptAPI + ?Sized>(
             set_scene_string(&mut node.data, &field, value.clone());
             state.active_asset_path = base_res_asset_path(&value);
         }
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.dirty = true;
         state.inspector_picker_open = false;
         state.inspector_picker_field.clear();

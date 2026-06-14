@@ -1,5 +1,5 @@
 use crate::scripts_assets_editor_assets_rs::*;
-use crate::scripts_editor_main_rs::EditorState;
+use crate::scripts_editor_main_rs::{cached_scene_doc, set_state_scene_doc, EditorState};
 use crate::scripts_scene_editor_animation_rs::*;
 use crate::scripts_scene_editor_viewport_rs::*;
 use crate::scripts_ui_editor_ui_rs::*;
@@ -2355,7 +2355,7 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
 ) {
     let rows = with_state!(ctx.run, EditorState, ctx.id, |state| {
         let key = state.selected_key?;
-        let doc = SceneDoc::parse(&state.doc_text);
+        let doc = cached_scene_doc(&state.doc_text);
         let node = doc
             .scene
             .nodes
@@ -2417,7 +2417,7 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
         let Some(key) = state.selected_key else {
             return false;
         };
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let Some(node) = doc
             .scene
             .nodes
@@ -2446,7 +2446,7 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
                 return false;
             }
         }
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -2470,7 +2470,7 @@ pub fn mutate_selected_inspector_array<API: ScriptAPI + ?Sized>(
 ) {
     let row = with_state!(ctx.run, EditorState, ctx.id, |state| {
         let key = state.selected_key?;
-        let doc = SceneDoc::parse(&state.doc_text);
+        let doc = cached_scene_doc(&state.doc_text);
         let node = doc
             .scene
             .nodes
@@ -2487,7 +2487,7 @@ pub fn mutate_selected_inspector_array<API: ScriptAPI + ?Sized>(
         let Some(key) = state.selected_key else {
             return false;
         };
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let Some(node) = doc
             .scene
             .nodes
@@ -2526,7 +2526,7 @@ pub fn mutate_selected_inspector_array<API: ScriptAPI + ?Sized>(
                 return false;
             }
         }
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -2589,7 +2589,7 @@ fn current_inspector_bitmask<API: ScriptAPI + ?Sized>(
 ) -> Option<u32> {
     with_state!(ctx.run, EditorState, ctx.id, |state| {
         let key = state.selected_key?;
-        let doc = SceneDoc::parse(&state.doc_text);
+        let doc = cached_scene_doc(&state.doc_text);
         let node = doc
             .scene
             .nodes
@@ -2612,7 +2612,7 @@ fn write_selected_inspector_bitmask<API: ScriptAPI + ?Sized>(
 ) {
     let row = with_state!(ctx.run, EditorState, ctx.id, |state| {
         let key = state.selected_key?;
-        let doc = SceneDoc::parse(&state.doc_text);
+        let doc = cached_scene_doc(&state.doc_text);
         let node = doc
             .scene
             .nodes
@@ -2630,7 +2630,7 @@ fn write_selected_inspector_bitmask<API: ScriptAPI + ?Sized>(
         let Some(key) = state.selected_key else {
             return false;
         };
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let Some(node) = doc
             .scene
             .nodes
@@ -2659,7 +2659,7 @@ fn write_selected_inspector_bitmask<API: ScriptAPI + ?Sized>(
                 return false;
             }
         }
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)

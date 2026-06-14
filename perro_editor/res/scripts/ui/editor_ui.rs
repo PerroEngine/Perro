@@ -5,8 +5,9 @@ use crate::scripts_assets_editor_assets_rs::*;
 use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
-    EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_INSPECTOR_PICKER_ROWS,
-    MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
+    cached_scene_doc, EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES,
+    MAX_INSPECTOR_PICKER_ROWS, MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS,
+    RECENT_PROJECTS_PATH,
 };
 use crate::scripts_scene_editor_animation_rs::*;
 use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
@@ -1036,7 +1037,7 @@ impl EditorView {
         let mut glb_summary = "select .glb asset".to_string();
 
         if !state.doc_text.is_empty() {
-            let doc = SceneDoc::parse(&state.doc_text);
+            let doc = cached_scene_doc(&state.doc_text);
             let tree = scene_tree_view(
                 &doc,
                 state.selected_key,
@@ -1180,7 +1181,7 @@ pub fn editor_status_text(state: &EditorState) -> String {
     let node_count = if state.doc_text.is_empty() {
         0
     } else {
-        SceneDoc::parse(&state.doc_text).scene.nodes.len()
+        cached_scene_doc(&state.doc_text).scene.nodes.len()
     };
     let file_count = filtered_file_paths(state).len();
     let scope = if state.file_scope.is_empty() {
@@ -1481,7 +1482,7 @@ fn inspector_enum_picker_entries(state: &EditorState) -> Vec<InspectorPickerEntr
     let Some(key) = state.selected_key else {
         return Vec::new();
     };
-    let doc = SceneDoc::parse(&state.doc_text);
+    let doc = cached_scene_doc(&state.doc_text);
     let Some(node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
         return Vec::new();
     };
@@ -1509,7 +1510,7 @@ fn inspector_node_picker_entries(state: &EditorState) -> Vec<InspectorPickerEntr
         return Vec::new();
     }
     let filter = NodePickerFilter::parse(&state.inspector_picker_filter);
-    let doc = SceneDoc::parse(&state.doc_text);
+    let doc = cached_scene_doc(&state.doc_text);
     doc.scene
         .nodes
         .iter()
@@ -1566,7 +1567,7 @@ fn inspector_picker_asset_kind(state: &EditorState) -> Option<perro_scene::Scene
     if state.inspector_picker_kind == "value_asset" {
         let row_idx = state.inspector_picker_field.parse::<usize>().ok()?;
         let key = state.selected_key?;
-        let doc = SceneDoc::parse(&state.doc_text);
+        let doc = cached_scene_doc(&state.doc_text);
         let node = doc
             .scene
             .nodes
@@ -1581,7 +1582,7 @@ fn inspector_picker_asset_kind(state: &EditorState) -> Option<perro_scene::Scene
         return Some(perro_scene::SceneAssetKind::Script);
     }
     let key = state.selected_key?;
-    let doc = SceneDoc::parse(&state.doc_text);
+    let doc = cached_scene_doc(&state.doc_text);
     let node = doc
         .scene
         .nodes
@@ -1730,7 +1731,7 @@ pub fn asset_user_text(state: &EditorState, path: &str) -> String {
     if state.doc_text.is_empty() || path.ends_with('/') {
         return "users: -".to_string();
     }
-    let doc = SceneDoc::parse(&state.doc_text);
+    let doc = cached_scene_doc(&state.doc_text);
     let mut users = Vec::new();
     for node in doc.scene.nodes.iter() {
         if !node_uses_asset_path(node, path) {
@@ -1782,7 +1783,7 @@ pub fn asset_detail_text(state: &EditorState, path: &str, kind: &str) -> String 
         && !state.doc_text.is_empty()
         && state.open_paths.get(state.active_open).map(String::as_str) == Some(path)
     {
-        let doc = SceneDoc::parse(&state.doc_text);
+        let doc = cached_scene_doc(&state.doc_text);
         return format!(
             "nodes={}\nmode={}",
             doc.scene.nodes.len(),
@@ -1853,7 +1854,7 @@ pub fn animation_drawer_text(state: &EditorState) -> (String, String, String, bo
             false,
         );
     };
-    let doc = SceneDoc::parse(&state.doc_text);
+    let doc = cached_scene_doc(&state.doc_text);
     let name = doc
         .scene
         .nodes
@@ -2477,7 +2478,7 @@ pub fn picker_parent_text(state: &EditorState) -> String {
     if state.doc_text.is_empty() {
         return "target: -".to_string();
     }
-    let doc = SceneDoc::parse(&state.doc_text);
+    let doc = cached_scene_doc(&state.doc_text);
     let Some(key) = state
         .selected_key
         .or_else(|| doc.scene.root.map(|key| key.as_u32()))

@@ -5,7 +5,8 @@ use crate::scripts_assets_editor_assets_rs::*;
 use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
-    EditorState, FILE_WATCH_INTERVAL_FRAMES, LIST_DOUBLE_CLICK_FRAMES, MAX_FILES,
+    cached_scene_doc, set_state_scene_doc, EditorState, FILE_WATCH_INTERVAL_FRAMES,
+    LIST_DOUBLE_CLICK_FRAMES, MAX_FILES,
     MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
 };
 use crate::scripts_scene_editor_animation_rs::*;
@@ -86,7 +87,7 @@ pub fn select_node_slot<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API
         if state.doc_text.is_empty() {
             None
         } else {
-            let doc = SceneDoc::parse(&state.doc_text);
+            let doc = cached_scene_doc(&state.doc_text);
             scene_tree_view(
                 &doc,
                 state.selected_key,
@@ -127,7 +128,7 @@ pub fn click_scene_node_slot<API: ScriptAPI + ?Sized>(
         if state.doc_text.is_empty() {
             None
         } else {
-            let doc = SceneDoc::parse(&state.doc_text);
+            let doc = cached_scene_doc(&state.doc_text);
             scene_tree_view(
                 &doc,
                 state.selected_key,
@@ -167,7 +168,7 @@ pub fn click_scene_node_slot<API: ScriptAPI + ?Sized>(
         if state.doc_text.is_empty() {
             false
         } else {
-            let doc = SceneDoc::parse(&state.doc_text);
+            let doc = cached_scene_doc(&state.doc_text);
             scene_child_count(&doc, key) > 0
         }
     });
@@ -248,7 +249,7 @@ pub fn expand_scene_tree_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_
 
 pub fn collapse_scene_tree_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-        let doc = SceneDoc::parse(&state.doc_text);
+        let doc = cached_scene_doc(&state.doc_text);
         let mut keys = doc
             .scene
             .nodes
@@ -275,7 +276,7 @@ pub fn copy_selected_node_path<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
             state.log = "node path fail\nno open scene".to_string();
             return;
         }
-        let doc = SceneDoc::parse(&state.doc_text);
+        let doc = cached_scene_doc(&state.doc_text);
         let Some(node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
             state.log = "node path fail\nmissing node".to_string();
             return;
@@ -347,7 +348,7 @@ pub fn open_selected_node_asset_ref<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCon
         if state.doc_text.is_empty() {
             return None;
         }
-        let doc = SceneDoc::parse(&state.doc_text);
+        let doc = cached_scene_doc(&state.doc_text);
         let node = doc
             .scene
             .nodes
@@ -387,7 +388,7 @@ pub fn select_node_using_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptC
             state.log = "find user fail\nopen scene".to_string();
             return false;
         }
-        let doc = SceneDoc::parse(&state.doc_text);
+        let doc = cached_scene_doc(&state.doc_text);
         let users = doc
             .scene
             .nodes
@@ -519,7 +520,7 @@ pub fn use_active_asset_on_selected_node<API: ScriptAPI + ?Sized>(
             state.log = "use asset fail\nno open scene".to_string();
             return false;
         }
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let Some(node) = doc
             .scene
             .nodes
@@ -555,7 +556,7 @@ pub fn use_active_asset_on_selected_node<API: ScriptAPI + ?Sized>(
             }
         }
         doc.normalize_links();
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -595,7 +596,7 @@ pub fn make_node_from_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCont
             state.log = format!("make node fail\nbad type {node_type_name}");
             return false;
         };
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let next_id = doc.scene.key_names.len() as u32;
         let key = SceneKey::new(next_id);
         let rel = editor_files::rel_label(&asset_path);
@@ -640,7 +641,7 @@ pub fn make_node_from_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCont
             script_vars: Cow::Owned(Vec::new()),
         });
         doc.normalize_links();
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.selected_key = Some(next_id);
         if let Some(mode) = viewport_mode_for_node_type(node_type) {
             state.viewport_mode = mode.to_string();
@@ -799,7 +800,7 @@ pub fn add_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, node_
         if state.doc_text.is_empty() {
             return;
         }
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let next_id = doc.scene.key_names.len() as u32;
         let key = SceneKey::new(next_id);
         let name = unique_node_name(&doc, node_type.name());
@@ -853,7 +854,7 @@ pub fn add_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, node_
         doc.scene.key_names.to_mut().push(Cow::Owned(name.clone()));
         doc.scene.nodes.to_mut().push(node);
         doc.normalize_links();
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.selected_key = Some(next_id);
         state.add_node_as_sibling = false;
         push_recent_node_type(state, node_type.name());
@@ -1117,7 +1118,7 @@ pub fn picker_parent_node_kind(state: &EditorState) -> Option<&'static str> {
     if state.doc_text.is_empty() {
         return None;
     }
-    let doc = SceneDoc::parse(&state.doc_text);
+    let doc = cached_scene_doc(&state.doc_text);
     let key = add_node_parent(&doc, state.selected_key, state.add_node_as_sibling)?;
     doc.scene
         .nodes
@@ -1404,7 +1405,7 @@ pub fn delete_selected_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_,
             state.log = "delete node fail\nno open scene".to_string();
             return false;
         }
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         if doc.scene.root.map(|root| root.as_u32()) == Some(key) {
             state.log = "delete node fail\nroot node".to_string();
             return false;
@@ -1420,7 +1421,7 @@ pub fn delete_selected_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_,
             .to_mut()
             .retain(|node| !removed_keys.contains(&node.key.as_u32()));
         doc.normalize_links();
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.selected_key = parent_key
             .filter(|parent| {
                 doc.scene
@@ -1457,7 +1458,7 @@ pub fn toggle_selected_visible<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
             state.log = "visible fail\nno open scene".to_string();
             return false;
         }
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let Some(node) = doc
             .scene
             .nodes
@@ -1470,7 +1471,7 @@ pub fn toggle_selected_visible<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
         };
         let visible = scene_field_bool(&node.data, "visible").unwrap_or(true);
         set_scene_bool(&mut node.data, "visible", !visible);
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -1501,7 +1502,7 @@ pub fn clear_selected_node_asset_refs<API: ScriptAPI + ?Sized>(ctx: &mut ScriptC
             state.log = "clear refs fail\nno open scene".to_string();
             return false;
         }
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let Some(node) = doc
             .scene
             .nodes
@@ -1537,7 +1538,7 @@ pub fn clear_selected_node_asset_refs<API: ScriptAPI + ?Sized>(ctx: &mut ScriptC
             return false;
         }
         doc.normalize_links();
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -1564,7 +1565,7 @@ pub fn duplicate_selected_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
             state.log = "duplicate node fail\nno open scene".to_string();
             return false;
         }
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let subtree_keys = collect_scene_subtree_keys(&doc, key);
         if subtree_keys.is_empty() {
             state.log = "duplicate node fail\nmissing node".to_string();
@@ -1611,7 +1612,7 @@ pub fn duplicate_selected_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
             doc.scene.nodes.to_mut().push(node);
         }
         doc.normalize_links();
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.selected_key = mapped_scene_key(&map, key);
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
@@ -1639,7 +1640,7 @@ pub fn copy_selected_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
             state.log = "copy node fail\nno open scene".to_string();
             return false;
         }
-        let doc = SceneDoc::parse(&state.doc_text);
+        let doc = cached_scene_doc(&state.doc_text);
         let Some(node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
             state.log = "copy node fail\nmissing node".to_string();
             return false;
@@ -1664,7 +1665,7 @@ pub fn paste_copied_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, AP
             state.log = "paste node fail\nno open scene".to_string();
             return false;
         }
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         if !doc
             .scene
             .nodes
@@ -1721,7 +1722,7 @@ pub fn paste_copied_node<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, AP
             doc.scene.nodes.to_mut().push(node);
         }
         doc.normalize_links();
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.selected_key = mapped_scene_key(&map, source_key);
         if let Some(key) = state.selected_key
             && let Some(mode) = selected_node_viewport_mode(&state.doc_text, key)
@@ -1757,7 +1758,7 @@ pub fn move_selected_node_order<API: ScriptAPI + ?Sized>(
             state.log = "move node fail\nno open scene".to_string();
             return false;
         }
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let Some(index) = doc
             .scene
             .nodes
@@ -1788,7 +1789,7 @@ pub fn move_selected_node_order<API: ScriptAPI + ?Sized>(
         let other_index = siblings[next_pos];
         doc.scene.nodes.to_mut().swap(index, other_index);
         doc.normalize_links();
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -1822,7 +1823,7 @@ pub fn reparent_selected_node<API: ScriptAPI + ?Sized>(
             state.log = "reparent fail\nno open scene".to_string();
             return false;
         }
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         if doc.scene.root.map(|root| root.as_u32()) == Some(key) {
             state.log = "reparent fail\nroot node".to_string();
             return false;
@@ -1870,7 +1871,7 @@ pub fn reparent_selected_node<API: ScriptAPI + ?Sized>(
         }
         doc.scene.nodes.to_mut()[index].parent = next_parent.map(SceneKey::new);
         doc.normalize_links();
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)

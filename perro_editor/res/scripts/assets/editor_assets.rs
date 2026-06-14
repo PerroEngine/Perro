@@ -4,8 +4,9 @@ use crate::scripts_app_editor_project_rs as editor_project;
 use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
-    EditorState, FILE_WATCH_INTERVAL_FRAMES, LIST_DOUBLE_CLICK_FRAMES, MAX_FILES,
-    MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
+    cached_scene_doc, clear_scene_doc_cache, set_state_scene_doc, EditorState,
+    FILE_WATCH_INTERVAL_FRAMES, LIST_DOUBLE_CLICK_FRAMES, MAX_FILES, MAX_NODE_PICKER_ROWS,
+    MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
 };
 use crate::scripts_scene_editor_animation_rs::*;
 use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
@@ -29,6 +30,7 @@ pub fn open_project<API: ScriptAPI + ?Sized>(
     root: String,
 ) -> Result<(), String> {
     clear_preview(ctx);
+    clear_scene_doc_cache();
     let root_path = PathBuf::from(&root);
     validate_project_root(&root_path)?;
     let project_text =
@@ -556,7 +558,7 @@ pub fn open_scene_path<API: ScriptAPI + ?Sized>(
             .unwrap_or(0);
         state.activity_mode = "scene".to_string();
         state.sidebar_mode = "scene".to_string();
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.selected_key = first_key;
         state.collapsed_scene_keys.clear();
         state.inspector_expanded_paths.clear();
@@ -1249,9 +1251,9 @@ pub fn rename_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
                     }
                     let active_open_path = state.open_paths.get(state.active_open).cloned();
                     if !state.doc_text.is_empty() {
-                        let mut doc = SceneDoc::parse(&state.doc_text);
+                        let mut doc = cached_scene_doc(&state.doc_text);
                         if rewrite_asset_refs_in_doc(&mut doc, &source, &target) {
-                            state.doc_text = doc.to_text();
+                            set_state_scene_doc(state, &doc);
                             if let Some(path) = active_open_path.clone()
                                 && !state.dirty_scene_paths.iter().any(|item| item == &path)
                             {
@@ -1468,7 +1470,7 @@ pub fn attach_script_to_selected_node<API: ScriptAPI + ?Sized>(
             state.log = format!("new script\n{script_path}");
             return false;
         }
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let Some(node) = doc
             .scene
             .nodes
@@ -1481,7 +1483,7 @@ pub fn attach_script_to_selected_node<API: ScriptAPI + ?Sized>(
         };
         node.script = Some(Cow::Owned(script_path.to_string()));
         doc.normalize_links();
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -1513,7 +1515,7 @@ pub fn attach_material_to_selected_node<API: ScriptAPI + ?Sized>(
             state.log = format!("new mat\n{material_path}");
             return false;
         }
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let Some(node) = doc
             .scene
             .nodes
@@ -1530,7 +1532,7 @@ pub fn attach_material_to_selected_node<API: ScriptAPI + ?Sized>(
         }
         set_scene_string(&mut node.data, "material", material_path.to_string());
         doc.normalize_links();
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -1560,7 +1562,7 @@ pub fn attach_animation_to_selected_player<API: ScriptAPI + ?Sized>(
         if state.doc_text.is_empty() {
             return false;
         }
-        let mut doc = SceneDoc::parse(&state.doc_text);
+        let mut doc = cached_scene_doc(&state.doc_text);
         let Some(node) = doc
             .scene
             .nodes
@@ -1575,7 +1577,7 @@ pub fn attach_animation_to_selected_player<API: ScriptAPI + ?Sized>(
         }
         set_scene_string(&mut node.data, "animation", anim_path.to_string());
         doc.normalize_links();
-        state.doc_text = doc.to_text();
+        set_state_scene_doc(state, &doc);
         state.dirty = true;
         if let Some(path) = state.open_paths.get(state.active_open).cloned()
             && !state.dirty_scene_paths.iter().any(|item| item == &path)
@@ -1837,7 +1839,7 @@ pub fn quick_asset_stem(state: &EditorState, kind: &str) -> String {
     if !state.doc_text.is_empty()
         && let Some(key) = state.selected_key
     {
-        let doc = SceneDoc::parse(&state.doc_text);
+        let doc = cached_scene_doc(&state.doc_text);
         if let Some(node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) {
             let name = sanitize_file_stem(&doc.scene.key_name_or_id(node.key));
             if !name.is_empty() {
