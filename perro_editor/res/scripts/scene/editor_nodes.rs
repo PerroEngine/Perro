@@ -621,7 +621,7 @@ pub fn asset_binding_for_node(
     let node_type = perro_scene::NodeType::from_str(node_type).ok()?;
     let path_kind = asset_kind_for_path(path)?;
     for field in perro_scene::scene_inspector_asset_fields(node_type) {
-        let perro_scene::SceneInspectorValueKind::Asset(field_kind) = field.kind else {
+        let perro_scene::NodeFieldType::Asset(field_kind) = field.ty else {
             continue;
         };
         if field_kind == path_kind

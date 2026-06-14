@@ -1252,8 +1252,8 @@ pub fn inspector_scene_value_fields_for_node(
 
 pub fn inspector_generic_scene_field(field: &perro_scene::SceneInspectorField) -> bool {
     if matches!(
-        field.kind,
-        perro_scene::SceneInspectorValueKind::Asset(_) | perro_scene::SceneInspectorValueKind::NodeRef
+        field.ty,
+        perro_scene::NodeFieldType::Asset(_) | perro_scene::NodeFieldType::NodeRef
     ) {
         return false;
     }
@@ -1420,8 +1420,8 @@ fn inspector_picker_asset_kind(state: &EditorState) -> Option<perro_scene::Scene
         .find(|node| node.key.as_u32() == key)?;
     let field =
         perro_scene::scene_inspector_field(node.data.node_type, &state.inspector_picker_field)?;
-    match field.kind {
-        perro_scene::SceneInspectorValueKind::Asset(kind) => Some(kind),
+    match field.ty {
+        perro_scene::NodeFieldType::Asset(kind) => Some(kind),
         _ => None,
     }
 }

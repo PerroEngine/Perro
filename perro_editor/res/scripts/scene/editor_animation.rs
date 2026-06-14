@@ -1227,7 +1227,7 @@ pub fn resource_dialog_filters(
     let Some(field) = perro_scene::scene_inspector_field(node_type, field) else {
         return vec![("Assets", &["*"])];
     };
-    let perro_scene::SceneInspectorValueKind::Asset(kind) = field.kind else {
+    let perro_scene::NodeFieldType::Asset(kind) = field.ty else {
         return vec![("Assets", &["*"])];
     };
     perro_scene::scene_asset_filters(kind)
