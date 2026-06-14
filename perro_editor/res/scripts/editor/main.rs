@@ -35,8 +35,7 @@ pub fn cached_scene_doc(text: &str) -> SceneDoc {
     let Ok(mut guard) = cache.lock() else {
         return SceneDoc::parse(text);
     };
-    if let Some(idx) = guard.iter().position(|cached| cached.text == text)
-    {
+    if let Some(idx) = guard.iter().position(|cached| cached.text == text) {
         let cached = guard.remove(idx);
         let doc = cached.doc.clone();
         guard.push(cached);

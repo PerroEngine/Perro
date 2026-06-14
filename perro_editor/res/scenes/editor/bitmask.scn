@@ -1,7 +1,4 @@
 $root = @bitmask_root
-$btn = { fill: "#111827DD", stroke: "#334155FF", stroke_width: 1.0, radius: 0.08 }
-$btn_hot = { style: { fill: "#223142", stroke: "#334155FF", stroke_width: 1.0, radius: 0.08 } }
-$btn_down = { style: { fill: "#334155", stroke: "#334155FF", stroke_width: 1.0, radius: 0.08 } }
 
 [bitmask_root]
     [UiVLayout]
@@ -48,7 +45,7 @@ parent = @bitmask_root
 [bitmask_actions]
 parent = @bitmask_root
     [UiHLayout]
-        size_ratio = (1.0, 0.20)
+        size_ratio = (1.0, 0.2)
         spacing = 0.01
     [/UiHLayout]
 [/bitmask_actions]
@@ -56,11 +53,16 @@ parent = @bitmask_root
 [bitmask_none]
 parent = @bitmask_actions
     [UiButton]
-        size_ratio = (0.40, 0.86)
+        size_ratio = (0.4, 0.86)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_none]
 
@@ -69,7 +71,7 @@ parent = @bitmask_none
     [UiLabel]
         size_ratio = (1.0, 1.0)
         text = "none"
-        text_size_ratio = 0.30
+        text_size_ratio = 0.3
         color = "#94A3B8"
         h_align = "center"
         v_align = "center"
@@ -81,11 +83,16 @@ parent = @bitmask_none
 [bitmask_all]
 parent = @bitmask_actions
     [UiButton]
-        size_ratio = (0.40, 0.86)
+        size_ratio = (0.4, 0.86)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_all]
 
@@ -94,7 +101,7 @@ parent = @bitmask_all
     [UiLabel]
         size_ratio = (1.0, 1.0)
         text = "all"
-        text_size_ratio = 0.30
+        text_size_ratio = 0.3
         color = "#94A3B8"
         h_align = "center"
         v_align = "center"
@@ -106,11 +113,16 @@ parent = @bitmask_all
 [bitmask_bit_1]
 parent = @bitmask_row_0
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_1]
 
@@ -131,11 +143,16 @@ parent = @bitmask_bit_1
 [bitmask_bit_2]
 parent = @bitmask_row_0
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_2]
 
@@ -156,11 +173,16 @@ parent = @bitmask_bit_2
 [bitmask_bit_3]
 parent = @bitmask_row_0
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_3]
 
@@ -181,11 +203,16 @@ parent = @bitmask_bit_3
 [bitmask_bit_4]
 parent = @bitmask_row_0
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_4]
 
@@ -206,11 +233,16 @@ parent = @bitmask_bit_4
 [bitmask_bit_5]
 parent = @bitmask_row_0
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_5]
 
@@ -231,11 +263,16 @@ parent = @bitmask_bit_5
 [bitmask_bit_6]
 parent = @bitmask_row_0
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_6]
 
@@ -256,11 +293,16 @@ parent = @bitmask_bit_6
 [bitmask_bit_7]
 parent = @bitmask_row_0
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_7]
 
@@ -281,11 +323,16 @@ parent = @bitmask_bit_7
 [bitmask_bit_8]
 parent = @bitmask_row_0
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_8]
 
@@ -306,11 +353,16 @@ parent = @bitmask_bit_8
 [bitmask_bit_9]
 parent = @bitmask_row_1
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_9]
 
@@ -331,11 +383,16 @@ parent = @bitmask_bit_9
 [bitmask_bit_10]
 parent = @bitmask_row_1
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_10]
 
@@ -356,11 +413,16 @@ parent = @bitmask_bit_10
 [bitmask_bit_11]
 parent = @bitmask_row_1
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_11]
 
@@ -381,11 +443,16 @@ parent = @bitmask_bit_11
 [bitmask_bit_12]
 parent = @bitmask_row_1
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_12]
 
@@ -406,11 +473,16 @@ parent = @bitmask_bit_12
 [bitmask_bit_13]
 parent = @bitmask_row_1
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_13]
 
@@ -431,11 +503,16 @@ parent = @bitmask_bit_13
 [bitmask_bit_14]
 parent = @bitmask_row_1
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_14]
 
@@ -456,11 +533,16 @@ parent = @bitmask_bit_14
 [bitmask_bit_15]
 parent = @bitmask_row_1
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_15]
 
@@ -481,11 +563,16 @@ parent = @bitmask_bit_15
 [bitmask_bit_16]
 parent = @bitmask_row_1
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_16]
 
@@ -506,11 +593,16 @@ parent = @bitmask_bit_16
 [bitmask_bit_17]
 parent = @bitmask_row_2
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_17]
 
@@ -531,11 +623,16 @@ parent = @bitmask_bit_17
 [bitmask_bit_18]
 parent = @bitmask_row_2
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_18]
 
@@ -556,11 +653,16 @@ parent = @bitmask_bit_18
 [bitmask_bit_19]
 parent = @bitmask_row_2
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_19]
 
@@ -581,11 +683,16 @@ parent = @bitmask_bit_19
 [bitmask_bit_20]
 parent = @bitmask_row_2
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_20]
 
@@ -606,11 +713,16 @@ parent = @bitmask_bit_20
 [bitmask_bit_21]
 parent = @bitmask_row_2
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_21]
 
@@ -631,11 +743,16 @@ parent = @bitmask_bit_21
 [bitmask_bit_22]
 parent = @bitmask_row_2
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_22]
 
@@ -656,11 +773,16 @@ parent = @bitmask_bit_22
 [bitmask_bit_23]
 parent = @bitmask_row_2
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_23]
 
@@ -681,11 +803,16 @@ parent = @bitmask_bit_23
 [bitmask_bit_24]
 parent = @bitmask_row_2
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_24]
 
@@ -706,11 +833,16 @@ parent = @bitmask_bit_24
 [bitmask_bit_25]
 parent = @bitmask_row_3
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_25]
 
@@ -731,11 +863,16 @@ parent = @bitmask_bit_25
 [bitmask_bit_26]
 parent = @bitmask_row_3
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_26]
 
@@ -756,11 +893,16 @@ parent = @bitmask_bit_26
 [bitmask_bit_27]
 parent = @bitmask_row_3
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_27]
 
@@ -781,11 +923,16 @@ parent = @bitmask_bit_27
 [bitmask_bit_28]
 parent = @bitmask_row_3
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_28]
 
@@ -806,11 +953,16 @@ parent = @bitmask_bit_28
 [bitmask_bit_29]
 parent = @bitmask_row_3
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_29]
 
@@ -831,11 +983,16 @@ parent = @bitmask_bit_29
 [bitmask_bit_30]
 parent = @bitmask_row_3
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_30]
 
@@ -856,11 +1013,16 @@ parent = @bitmask_bit_30
 [bitmask_bit_31]
 parent = @bitmask_row_3
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_31]
 
@@ -881,11 +1043,16 @@ parent = @bitmask_bit_31
 [bitmask_bit_32]
 parent = @bitmask_row_3
     [UiButton]
-        size_ratio = (0.120, 0.92)
+        size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#111827DD",
+            stroke = "#334155FF",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_32]
 
@@ -902,3 +1069,4 @@ parent = @bitmask_bit_32
         mouse_filter = "pass"
     [/UiLabel]
 [/bitmask_bit_32_label]
+

@@ -1,22 +1,16 @@
 $root = @editor_root
-$bg = { fill: "#1B1D23", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
-$bar = { fill: "#24272E", stroke: "#121419", stroke_width: 1.0, radius: 0.0 }
-$panel = { fill: "#24272E", stroke: "#343842", stroke_width: 1.0, radius: 0.0 }
-$btn = { fill: "#2D323C", stroke: "#3B414D", stroke_width: 1.0, radius: 0.006 }
-$btn_hot = { style: { fill: "#38404C", stroke: "#566174", stroke_width: 1.0, radius: 0.006 } }
-$btn_down = { style: { fill: "#478CBF", stroke: "#6BB6E8", stroke_width: 1.0, radius: 0.006 } }
-$row = { fill: "#24272E", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
-$row_sel = { fill: "#478CBF", stroke: "#6BB6E8", stroke_width: 1.0, radius: 0.0 }
-$field = { fill: "#191B20", stroke: "#3B414D", stroke_width: 1.0, radius: 0.004 }
-$field_focus = { fill: "#191B20", stroke: "#6BB6E8", stroke_width: 1.0, radius: 0.004 }
 
 [editor_root]
-
 script = "res://scripts/editor/main.rs"
     [UiPanel]
         anchor = "center"
         size_ratio = (1.0, 1.0)
-        style = $bg
+        style = {
+            fill = "#1B1D23",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.0
+        }
     [/UiPanel]
 [/editor_root]
 
@@ -29,27 +23,36 @@ parent = @editor_root
         v_align = "start"
         spacing = 0.006
         padding = (0.014, 0.012)
-        visible = true
-        style = $panel
+        style = {
+            fill = "#24272E",
+            stroke = "#343842",
+            stroke_width = 1.0,
+            radius = 0.0
+        }
     [/UiVLayout]
 [/project_manager]
 
 [project_manager_title]
 parent = @project_manager
     [UiLabel]
-        size_ratio = (1.0, 0.060)
+        size_ratio = (1.0, 0.06)
         text = "Perro Project Manager"
         text_size_ratio = 0.489
         color = "#F3F4F6"
         h_align = "start"
-        style = $bar
+        style = {
+            fill = "#24272E",
+            stroke = "#121419",
+            stroke_width = 1.0,
+            radius = 0.0
+        }
     [/UiLabel]
 [/project_manager_title]
 
 [project_manager_recent_title]
 parent = @project_manager
     [UiLabel]
-        size_ratio = (1.0, 0.040)
+        size_ratio = (1.0, 0.04)
         text = "Recent Projects"
         text_size_ratio = 0.431
         color = "#CBD5E1"
@@ -62,9 +65,14 @@ parent = @project_manager
     [UiButton]
         size_ratio = (1.0, 0.058)
         click_signals = ["editor_recent_0"]
-        style = $row
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#24272E",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.0
+        }
+        hover = { style = { fill = "#38404C", stroke = "#566174", stroke_width = 1.0, radius = 0.006 } }
+        pressed = { style = { fill = "#478CBF", stroke = "#6BB6E8", stroke_width = 1.0, radius = 0.006 } }
     [/UiButton]
 [/manager_recent_0]
 
@@ -86,9 +94,14 @@ parent = @project_manager
     [UiButton]
         size_ratio = (1.0, 0.058)
         click_signals = ["editor_recent_1"]
-        style = $row
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#24272E",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.0
+        }
+        hover = { style = { fill = "#38404C", stroke = "#566174", stroke_width = 1.0, radius = 0.006 } }
+        pressed = { style = { fill = "#478CBF", stroke = "#6BB6E8", stroke_width = 1.0, radius = 0.006 } }
     [/UiButton]
 [/manager_recent_1]
 
@@ -110,9 +123,14 @@ parent = @project_manager
     [UiButton]
         size_ratio = (1.0, 0.058)
         click_signals = ["editor_recent_2"]
-        style = $row
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#24272E",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.0
+        }
+        hover = { style = { fill = "#38404C", stroke = "#566174", stroke_width = 1.0, radius = 0.006 } }
+        pressed = { style = { fill = "#478CBF", stroke = "#6BB6E8", stroke_width = 1.0, radius = 0.006 } }
     [/UiButton]
 [/manager_recent_2]
 
@@ -134,9 +152,14 @@ parent = @project_manager
     [UiButton]
         size_ratio = (1.0, 0.058)
         click_signals = ["editor_recent_3"]
-        style = $row
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#24272E",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.0
+        }
+        hover = { style = { fill = "#38404C", stroke = "#566174", stroke_width = 1.0, radius = 0.006 } }
+        pressed = { style = { fill = "#478CBF", stroke = "#6BB6E8", stroke_width = 1.0, radius = 0.006 } }
     [/UiButton]
 [/manager_recent_3]
 
@@ -158,9 +181,14 @@ parent = @project_manager
     [UiButton]
         size_ratio = (1.0, 0.058)
         click_signals = ["editor_recent_4"]
-        style = $row
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#24272E",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.0
+        }
+        hover = { style = { fill = "#38404C", stroke = "#566174", stroke_width = 1.0, radius = 0.006 } }
+        pressed = { style = { fill = "#478CBF", stroke = "#6BB6E8", stroke_width = 1.0, radius = 0.006 } }
     [/UiButton]
 [/manager_recent_4]
 
@@ -180,7 +208,7 @@ parent = @manager_recent_4
 [project_manager_create_title]
 parent = @project_manager
     [UiLabel]
-        size_ratio = (1.0, 0.040)
+        size_ratio = (1.0, 0.04)
         text = "Create Project"
         text_size_ratio = 0.431
         color = "#CBD5E1"
@@ -191,14 +219,24 @@ parent = @project_manager
 [create_name_box]
 parent = @project_manager
     [UiTextBox]
-        size_ratio = (1.0, 0.060)
+        size_ratio = (1.0, 0.06)
         text = "NewGame"
         placeholder = "Project name"
         text_size_ratio = 0.431
         color = "#F3F4F6"
         placeholder_color = "#94A3B8"
-        style = $field
-        focused_style = $field_focus
+        style = {
+            fill = "#191B20",
+            stroke = "#3B414D",
+            stroke_width = 1.0,
+            radius = 0.004
+        }
+        focused_style = {
+            fill = "#191B20",
+            stroke = "#6BB6E8",
+            stroke_width = 1.0,
+            radius = 0.004
+        }
     [/UiTextBox]
 [/create_name_box]
 
@@ -220,7 +258,12 @@ parent = @create_location_row
         text_size_ratio = 0.374
         color = "#CBD5E1"
         h_align = "start"
-        style = $field
+        style = {
+            fill = "#191B20",
+            stroke = "#3B414D",
+            stroke_width = 1.0,
+            radius = 0.004
+        }
     [/UiLabel]
 [/create_location_label]
 
@@ -229,9 +272,14 @@ parent = @create_location_row
     [UiButton]
         size_ratio = (0.16, 0.82)
         click_signals = ["editor_manager_choose_location"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#2D323C",
+            stroke = "#3B414D",
+            stroke_width = 1.0,
+            radius = 0.006
+        }
+        hover = { style = { fill = "#38404C", stroke = "#566174", stroke_width = 1.0, radius = 0.006 } }
+        pressed = { style = { fill = "#478CBF", stroke = "#6BB6E8", stroke_width = 1.0, radius = 0.006 } }
     [/UiButton]
 [/manager_choose_location_button]
 
@@ -252,9 +300,14 @@ parent = @create_location_row
     [UiButton]
         size_ratio = (0.16, 0.82)
         click_signals = ["editor_manager_create"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#2D323C",
+            stroke = "#3B414D",
+            stroke_width = 1.0,
+            radius = 0.006
+        }
+        hover = { style = { fill = "#38404C", stroke = "#566174", stroke_width = 1.0, radius = 0.006 } }
+        pressed = { style = { fill = "#478CBF", stroke = "#6BB6E8", stroke_width = 1.0, radius = 0.006 } }
     [/UiButton]
 [/manager_create_button]
 
@@ -285,9 +338,14 @@ parent = @project_manager_actions
     [UiButton]
         size_ratio = (0.34, 0.82)
         click_signals = ["editor_manager_browse"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#2D323C",
+            stroke = "#3B414D",
+            stroke_width = 1.0,
+            radius = 0.006
+        }
+        hover = { style = { fill = "#38404C", stroke = "#566174", stroke_width = 1.0, radius = 0.006 } }
+        pressed = { style = { fill = "#478CBF", stroke = "#6BB6E8", stroke_width = 1.0, radius = 0.006 } }
     [/UiButton]
 [/manager_browse_button]
 
@@ -308,9 +366,14 @@ parent = @project_manager_actions
     [UiButton]
         size_ratio = (0.26, 0.82)
         click_signals = ["editor_manager_close"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#2D323C",
+            stroke = "#3B414D",
+            stroke_width = 1.0,
+            radius = 0.006
+        }
+        hover = { style = { fill = "#38404C", stroke = "#566174", stroke_width = 1.0, radius = 0.006 } }
+        pressed = { style = { fill = "#478CBF", stroke = "#6BB6E8", stroke_width = 1.0, radius = 0.006 } }
     [/UiButton]
 [/manager_close_button]
 
@@ -325,6 +388,4 @@ parent = @manager_close_button
         mouse_filter = "pass"
     [/UiLabel]
 [/manager_close_label]
-
-
 

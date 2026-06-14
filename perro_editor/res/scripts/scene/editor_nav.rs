@@ -5,9 +5,9 @@ use crate::scripts_assets_editor_assets_rs::*;
 use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
-    cached_scene_doc, cached_scene_node, redo_scene_doc, undo_scene_doc, EditorState,
-    FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS,
-    RECENT_PROJECTS_PATH,
+    EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_NODE_PICKER_ROWS, MAX_NODES,
+    MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, cached_scene_doc, cached_scene_node,
+    redo_scene_doc, undo_scene_doc,
 };
 use crate::scripts_scene_editor_animation_rs::*;
 use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
@@ -127,8 +127,7 @@ pub fn update_editor_shortcuts<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
     if !picker_open
         && ctrl
         && !alt
-        && (key_pressed!(ctx.ipt, KeyCode::KeyY)
-            || (shift && key_pressed!(ctx.ipt, KeyCode::KeyZ)))
+        && (key_pressed!(ctx.ipt, KeyCode::KeyY) || (shift && key_pressed!(ctx.ipt, KeyCode::KeyZ)))
     {
         redo_active_scene(ctx);
         return;
@@ -302,7 +301,9 @@ pub fn update_editor_shortcuts<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
         return;
     }
     if ctrl && key_pressed!(ctx.ipt, KeyCode::KeyO) {
-        if with_state!(ctx.run, EditorState, ctx.id, |state| state.sidebar_mode == "files") {
+        if with_state!(ctx.run, EditorState, ctx.id, |state| state.sidebar_mode
+            == "files")
+        {
             open_active_file(ctx);
         } else {
             open_selected_node_asset_ref(ctx);
@@ -338,7 +339,9 @@ pub fn update_editor_shortcuts<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
         return;
     }
     if ctrl && shift && key_pressed!(ctx.ipt, KeyCode::KeyC) {
-        if with_state!(ctx.run, EditorState, ctx.id, |state| state.sidebar_mode == "files") {
+        if with_state!(ctx.run, EditorState, ctx.id, |state| state.sidebar_mode
+            == "files")
+        {
             copy_active_asset_path(ctx);
         } else {
             copy_selected_node_path(ctx);
@@ -390,7 +393,9 @@ pub fn update_editor_shortcuts<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
         return;
     }
     if !ctrl && !alt && !shift && key_pressed!(ctx.ipt, KeyCode::ArrowLeft) {
-        if with_state!(ctx.run, EditorState, ctx.id, |state| state.sidebar_mode == "files") {
+        if with_state!(ctx.run, EditorState, ctx.id, |state| state.sidebar_mode
+            == "files")
+        {
             collapse_selected_file(ctx);
         } else {
             collapse_selected_scene_node(ctx);
@@ -398,7 +403,9 @@ pub fn update_editor_shortcuts<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
         return;
     }
     if !ctrl && !alt && !shift && key_pressed!(ctx.ipt, KeyCode::ArrowRight) {
-        if with_state!(ctx.run, EditorState, ctx.id, |state| state.sidebar_mode == "files") {
+        if with_state!(ctx.run, EditorState, ctx.id, |state| state.sidebar_mode
+            == "files")
+        {
             expand_selected_file(ctx);
         } else {
             expand_selected_scene_node(ctx);
@@ -492,7 +499,9 @@ pub fn update_editor_shortcuts<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
         return;
     }
     if ctrl && key_pressed!(ctx.ipt, KeyCode::KeyD) {
-        if with_state!(ctx.run, EditorState, ctx.id, |state| state.sidebar_mode == "files") {
+        if with_state!(ctx.run, EditorState, ctx.id, |state| state.sidebar_mode
+            == "files")
+        {
             duplicate_active_asset(ctx);
         } else {
             duplicate_selected_node(ctx);
@@ -500,7 +509,9 @@ pub fn update_editor_shortcuts<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
         return;
     }
     if key_pressed!(ctx.ipt, KeyCode::Delete) {
-        if with_state!(ctx.run, EditorState, ctx.id, |state| state.sidebar_mode == "files") {
+        if with_state!(ctx.run, EditorState, ctx.id, |state| state.sidebar_mode
+            == "files")
+        {
             delete_active_asset(ctx);
         } else {
             delete_selected_node(ctx);
@@ -543,7 +554,10 @@ pub fn commit_focused_inspector_box<API: ScriptAPI + ?Sized>(
     };
     if matches!(
         name.as_str(),
-        "scene_filter_box" | "file_filter_box" | "add_node_search_box" | "inspector_pick_filter_box"
+        "scene_filter_box"
+            | "file_filter_box"
+            | "add_node_search_box"
+            | "inspector_pick_filter_box"
     ) {
         let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
             state.focused_inspector_box.clear();
@@ -562,9 +576,7 @@ pub fn commit_inspector_box<API: ScriptAPI + ?Sized>(
         "inspector_position_box" => {
             edit_selected_transform(ctx, "position", "inspector_position_box")
         }
-        "inspector_rotation_box" => {
-            edit_selected_rotation(ctx)
-        }
+        "inspector_rotation_box" => edit_selected_rotation(ctx),
         "inspector_scale_box" => edit_selected_transform(ctx, "scale", "inspector_scale_box"),
         "inspector_vars_box" => edit_selected_script_vars(ctx),
         _ => {
@@ -676,7 +688,10 @@ pub fn prepare_rename_selection<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         state.focused_inspector_box = "inspector_name_box".to_string();
         if state.sidebar_mode == "files" && !state.active_asset_path.is_empty() {
-            state.log = format!("rename asset\nedit name + Enter\n{}", state.active_asset_path);
+            state.log = format!(
+                "rename asset\nedit name + Enter\n{}",
+                state.active_asset_path
+            );
         } else if let Some(key) = state.selected_key {
             let doc = cached_scene_doc(&state.doc_text);
             let name = cached_scene_node(&state.doc_text, key)
@@ -1095,9 +1110,9 @@ pub fn collapse_selected_file<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
                 .any(|expanded| expanded == &active)
             && active != "res://"
         {
-            state.file_expanded_paths.retain(|path| {
-                path != &active && !path.starts_with(active.as_str())
-            });
+            state
+                .file_expanded_paths
+                .retain(|path| path != &active && !path.starts_with(active.as_str()));
             state.log = format!("collapse folder\n{}", editor_files::rel_label(&active));
             return true;
         }
@@ -1108,7 +1123,10 @@ pub fn collapse_selected_file<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
             parent.clone()
         };
         state.file_scope = parent;
-        state.log = format!("select folder\n{}", editor_files::rel_label(&state.active_asset_path));
+        state.log = format!(
+            "select folder\n{}",
+            editor_files::rel_label(&state.active_asset_path)
+        );
         true
     })
     .unwrap_or(false);
@@ -1143,7 +1161,10 @@ pub fn expand_selected_file<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_,
             .find(|path| parent_res_folder(path) == active);
         if let Some(child) = child {
             state.active_asset_path = child;
-            state.log = format!("select asset\n{}", editor_files::rel_label(&state.active_asset_path));
+            state.log = format!(
+                "select asset\n{}",
+                editor_files::rel_label(&state.active_asset_path)
+            );
             return Some("refresh".to_string());
         }
         None

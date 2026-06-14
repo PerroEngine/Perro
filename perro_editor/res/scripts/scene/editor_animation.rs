@@ -5,9 +5,9 @@ use crate::scripts_assets_editor_assets_rs::*;
 use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
-    cached_scene_doc, set_state_scene_doc, EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES,
-    MAX_INSPECTOR_PICKER_ROWS, MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS,
-    RECENT_PROJECTS_PATH,
+    EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_INSPECTOR_PICKER_ROWS,
+    MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, cached_scene_doc,
+    set_state_scene_doc,
 };
 use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
 use crate::scripts_scene_editor_nav_rs::*;
@@ -861,12 +861,7 @@ mod node_rename_tests {
             ]),
             nodes: Cow::Owned(vec![
                 test_node(SceneKey::new(0), None, vec![], vec![]),
-                test_node(
-                    SceneKey::new(1),
-                    Some("Old Display Name"),
-                    vec![],
-                    vec![],
-                ),
+                test_node(SceneKey::new(1), Some("Old Display Name"), vec![], vec![]),
                 test_node(
                     SceneKey::new(2),
                     None,
@@ -916,11 +911,7 @@ mod node_rename_tests {
         script_vars: Vec<(SceneFieldName, SceneValue)>,
     ) -> SceneNodeEntry {
         SceneNodeEntry {
-            data: SceneNodeData::new(
-                perro_scene::NodeType::Node,
-                Cow::Owned(data_fields),
-                None,
-            ),
+            data: SceneNodeData::new(perro_scene::NodeType::Node, Cow::Owned(data_fields), None),
             has_data_override: true,
             key,
             name: name.map(Cow::Borrowed),

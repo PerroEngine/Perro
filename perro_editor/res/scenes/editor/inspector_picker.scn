@@ -1,23 +1,20 @@
 $root = @inspector_pick_popup
-$panel = { fill: "#303742", stroke: "#4D5665", stroke_width: 1.0, radius: 0.025 }
-$bar = { fill: "#272D36", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
-$row = { fill: "#39414E", stroke: "#00000000", stroke_width: 0.0, radius: 0.04 }
-$btn = { fill: "#3D4654", stroke: "#00000000", stroke_width: 0.0, radius: 0.08 }
-$btn_hot = { style: { fill: "#4A5668", stroke: "#00000000", stroke_width: 0.0, radius: 0.08 } }
-$btn_down = { style: { fill: "#59677D", stroke: "#00000000", stroke_width: 0.0, radius: 0.08 } }
-$field = { fill: "#242A33", stroke: "#404A58", stroke_width: 1.0, radius: 0.04 }
-$field_focus = { fill: "#242A33", stroke: "#93C5FD", stroke_width: 1.0, radius: 0.04 }
 
 [inspector_pick_popup]
     [UiVLayout]
         anchor = "center"
-        size_ratio = (0.30, 0.70)
+        size_ratio = (0.3, 0.7)
         h_align = "fill"
         v_align = "start"
         spacing = 0.004
         padding = (0.018, 0.012)
         visible = false
-        style = $panel
+        style = {
+            fill = "#303742",
+            stroke = "#4D5665",
+            stroke_width = 1.0,
+            radius = 0.025
+        }
     [/UiVLayout]
 [/inspector_pick_popup]
 
@@ -29,7 +26,12 @@ parent = @inspector_pick_popup
         text_size_ratio = 0.26
         color = "#F3F4F6"
         h_align = "start"
-        style = $bar
+        style = {
+            fill = "#272D36",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.0
+        }
     [/UiLabel]
 [/inspector_pick_title]
 
@@ -42,19 +44,34 @@ parent = @inspector_pick_popup
         placeholder_color = "#94A3B8"
         text_size_ratio = 0.22
         text_changed_signals = ["editor_inspector_pick_filter"]
-        style = $field
-        focused_style = $field_focus
+        style = {
+            fill = "#242A33",
+            stroke = "#404A58",
+            stroke_width = 1.0,
+            radius = 0.04
+        }
+        focused_style = {
+            fill = "#242A33",
+            stroke = "#93C5FD",
+            stroke_width = 1.0,
+            radius = 0.04
+        }
     [/UiTextBox]
 [/inspector_pick_filter_box]
 
 [inspector_pick_row_0]
 parent = @inspector_pick_popup
     [UiButton]
-        size_ratio = (1.0, 0.050)
+        size_ratio = (1.0, 0.05)
         click_signals = ["editor_inspector_pick_0"]
-        style = $row
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#39414E",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.04
+        }
+        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_row_0]
 
@@ -74,11 +91,16 @@ parent = @inspector_pick_row_0
 [inspector_pick_row_1]
 parent = @inspector_pick_popup
     [UiButton]
-        size_ratio = (1.0, 0.050)
+        size_ratio = (1.0, 0.05)
         click_signals = ["editor_inspector_pick_1"]
-        style = $row
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#39414E",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.04
+        }
+        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_row_1]
 
@@ -98,11 +120,16 @@ parent = @inspector_pick_row_1
 [inspector_pick_row_2]
 parent = @inspector_pick_popup
     [UiButton]
-        size_ratio = (1.0, 0.050)
+        size_ratio = (1.0, 0.05)
         click_signals = ["editor_inspector_pick_2"]
-        style = $row
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#39414E",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.04
+        }
+        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_row_2]
 
@@ -122,11 +149,16 @@ parent = @inspector_pick_row_2
 [inspector_pick_row_3]
 parent = @inspector_pick_popup
     [UiButton]
-        size_ratio = (1.0, 0.050)
+        size_ratio = (1.0, 0.05)
         click_signals = ["editor_inspector_pick_3"]
-        style = $row
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#39414E",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.04
+        }
+        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_row_3]
 
@@ -146,11 +178,16 @@ parent = @inspector_pick_row_3
 [inspector_pick_row_4]
 parent = @inspector_pick_popup
     [UiButton]
-        size_ratio = (1.0, 0.050)
+        size_ratio = (1.0, 0.05)
         click_signals = ["editor_inspector_pick_4"]
-        style = $row
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#39414E",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.04
+        }
+        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_row_4]
 
@@ -170,11 +207,16 @@ parent = @inspector_pick_row_4
 [inspector_pick_row_5]
 parent = @inspector_pick_popup
     [UiButton]
-        size_ratio = (1.0, 0.050)
+        size_ratio = (1.0, 0.05)
         click_signals = ["editor_inspector_pick_5"]
-        style = $row
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#39414E",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.04
+        }
+        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_row_5]
 
@@ -194,11 +236,16 @@ parent = @inspector_pick_row_5
 [inspector_pick_row_6]
 parent = @inspector_pick_popup
     [UiButton]
-        size_ratio = (1.0, 0.050)
+        size_ratio = (1.0, 0.05)
         click_signals = ["editor_inspector_pick_6"]
-        style = $row
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#39414E",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.04
+        }
+        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_row_6]
 
@@ -218,11 +265,16 @@ parent = @inspector_pick_row_6
 [inspector_pick_row_7]
 parent = @inspector_pick_popup
     [UiButton]
-        size_ratio = (1.0, 0.050)
+        size_ratio = (1.0, 0.05)
         click_signals = ["editor_inspector_pick_7"]
-        style = $row
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#39414E",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.04
+        }
+        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_row_7]
 
@@ -242,11 +294,16 @@ parent = @inspector_pick_row_7
 [inspector_pick_row_8]
 parent = @inspector_pick_popup
     [UiButton]
-        size_ratio = (1.0, 0.050)
+        size_ratio = (1.0, 0.05)
         click_signals = ["editor_inspector_pick_8"]
-        style = $row
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#39414E",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.04
+        }
+        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_row_8]
 
@@ -266,11 +323,16 @@ parent = @inspector_pick_row_8
 [inspector_pick_row_9]
 parent = @inspector_pick_popup
     [UiButton]
-        size_ratio = (1.0, 0.050)
+        size_ratio = (1.0, 0.05)
         click_signals = ["editor_inspector_pick_9"]
-        style = $row
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#39414E",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.04
+        }
+        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_row_9]
 
@@ -290,11 +352,16 @@ parent = @inspector_pick_row_9
 [inspector_pick_row_10]
 parent = @inspector_pick_popup
     [UiButton]
-        size_ratio = (1.0, 0.050)
+        size_ratio = (1.0, 0.05)
         click_signals = ["editor_inspector_pick_10"]
-        style = $row
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#39414E",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.04
+        }
+        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_row_10]
 
@@ -314,11 +381,16 @@ parent = @inspector_pick_row_10
 [inspector_pick_row_11]
 parent = @inspector_pick_popup
     [UiButton]
-        size_ratio = (1.0, 0.050)
+        size_ratio = (1.0, 0.05)
         click_signals = ["editor_inspector_pick_11"]
-        style = $row
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#39414E",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.04
+        }
+        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_row_11]
 
@@ -348,11 +420,16 @@ parent = @inspector_pick_popup
 [inspector_pick_prev_button]
 parent = @inspector_pick_nav
     [UiButton]
-        size_ratio = (0.28, 0.90)
+        size_ratio = (0.28, 0.9)
         click_signals = ["editor_inspector_pick_prev"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#3D4654",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_prev_button]
 
@@ -383,11 +460,16 @@ parent = @inspector_pick_nav
 [inspector_pick_next_button]
 parent = @inspector_pick_nav
     [UiButton]
-        size_ratio = (0.28, 0.90)
+        size_ratio = (0.28, 0.9)
         click_signals = ["editor_inspector_pick_next"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#3D4654",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_next_button]
 
@@ -408,9 +490,14 @@ parent = @inspector_pick_popup
     [UiButton]
         size_ratio = (1.0, 0.052)
         click_signals = ["editor_inspector_pick_cancel"]
-        style = $btn
-        hover = $btn_hot
-        pressed = $btn_down
+        style = {
+            fill = "#3D4654",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.08
+        }
+        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_cancel_button]
 
@@ -425,3 +512,4 @@ parent = @inspector_pick_cancel_button
         mouse_filter = "pass"
     [/UiLabel]
 [/inspector_pick_cancel_label]
+

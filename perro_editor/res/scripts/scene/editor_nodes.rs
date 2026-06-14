@@ -5,9 +5,9 @@ use crate::scripts_assets_editor_assets_rs::*;
 use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
-    cached_scene_doc, cached_scene_node, set_state_scene_doc, EditorState, FILE_WATCH_INTERVAL_FRAMES,
-    LIST_DOUBLE_CLICK_FRAMES, MAX_FILES,
-    MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
+    EditorState, FILE_WATCH_INTERVAL_FRAMES, LIST_DOUBLE_CLICK_FRAMES, MAX_FILES,
+    MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, cached_scene_doc,
+    cached_scene_node, set_state_scene_doc,
 };
 use crate::scripts_scene_editor_animation_rs::*;
 use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
@@ -739,7 +739,10 @@ pub fn asset_binding_for_node(
             || (path_kind == perro_scene::SceneAssetKind::Model
                 && field_kind == perro_scene::SceneAssetKind::Mesh)
         {
-            return Some((field.name, asset_field_value(path, field_kind, glb_mesh_index)));
+            return Some((
+                field.name,
+                asset_field_value(path, field_kind, glb_mesh_index),
+            ));
         }
     }
     None
@@ -1543,8 +1546,9 @@ pub fn toggle_selected_visible<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<
     })
     .unwrap_or(false);
     if changed
-        && next_visible
-            .is_none_or(|value| !sync_selected_preview_field(ctx, "visible", &SceneValue::Bool(value)))
+        && next_visible.is_none_or(|value| {
+            !sync_selected_preview_field(ctx, "visible", &SceneValue::Bool(value))
+        })
     {
         rebuild_preview(ctx);
     }

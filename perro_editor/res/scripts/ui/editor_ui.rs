@@ -5,9 +5,9 @@ use crate::scripts_assets_editor_assets_rs::*;
 use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
-    cached_scene_doc, cached_scene_node, EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES,
-    MAX_INSPECTOR_PICKER_ROWS, MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS,
-    RECENT_PROJECTS_PATH,
+    EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_INSPECTOR_PICKER_ROWS,
+    MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, cached_scene_doc,
+    cached_scene_node,
 };
 use crate::scripts_scene_editor_animation_rs::*;
 use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
@@ -3716,13 +3716,19 @@ pub fn set_scene_tree_list<API: ScriptAPI + ?Sized>(
             ));
         item.parent = parents.last().copied();
         item.open = !matches!(
-            view.scene_disclosures.get(idx).copied().unwrap_or(RowIndicator::None),
+            view.scene_disclosures
+                .get(idx)
+                .copied()
+                .unwrap_or(RowIndicator::None),
             RowIndicator::Collapsed
         );
         item.selectable = true;
         items.push(item);
         if !matches!(
-            view.scene_disclosures.get(idx).copied().unwrap_or(RowIndicator::None),
+            view.scene_disclosures
+                .get(idx)
+                .copied()
+                .unwrap_or(RowIndicator::None),
             RowIndicator::None
         ) {
             parents.push(idx);
@@ -3745,7 +3751,8 @@ pub fn set_scene_tree_list<API: ScriptAPI + ?Sized>(
         tree.text_color = Color::from_hex("#E5E7EBFF").unwrap_or(tree.text_color);
         tree.row_style.fill = Color::TRANSPARENT;
         tree.row_style.stroke = Color::TRANSPARENT;
-        tree.row_hover_style.fill = Color::from_hex("#202838FF").unwrap_or(tree.row_hover_style.fill);
+        tree.row_hover_style.fill =
+            Color::from_hex("#202838FF").unwrap_or(tree.row_hover_style.fill);
         tree.selected_style.fill = Color::from_hex("#25476CFF").unwrap_or(tree.selected_style.fill);
         tree.selected_signals = vec![signal!("editor_scene_tree_selected")];
         tree.toggled_signals = vec![signal!("editor_scene_tree_toggled")];
@@ -3763,7 +3770,10 @@ pub fn apply_file_tree_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
     });
 }
 
-pub fn set_file_tree_list<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, view: &EditorView) {
+pub fn set_file_tree_list<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    view: &EditorView,
+) {
     let Some(list_id) = find_named(ctx, "file_rows") else {
         return;
     };
@@ -3822,7 +3832,8 @@ pub fn set_file_tree_list<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
         tree.text_color = Color::from_hex("#D1D5DBFF").unwrap_or(tree.text_color);
         tree.row_style.fill = Color::TRANSPARENT;
         tree.row_style.stroke = Color::TRANSPARENT;
-        tree.row_hover_style.fill = Color::from_hex("#202838FF").unwrap_or(tree.row_hover_style.fill);
+        tree.row_hover_style.fill =
+            Color::from_hex("#202838FF").unwrap_or(tree.row_hover_style.fill);
         tree.selected_style.fill = Color::from_hex("#25476CFF").unwrap_or(tree.selected_style.fill);
         tree.selected_signals = vec![signal!("editor_file_tree_selected")];
         tree.toggled_signals = vec![signal!("editor_file_tree_toggled")];

@@ -53,7 +53,12 @@ fn rename_bitmask_instance<API: ScriptAPI + ?Sized>(
         if let Some(children) = ctx.run.Nodes().get_node_children_ids(id) {
             stack.extend(children);
         }
-        let Some(name) = ctx.run.Nodes().get_node_name(id).map(|name| name.to_string()) else {
+        let Some(name) = ctx
+            .run
+            .Nodes()
+            .get_node_name(id)
+            .map(|name| name.to_string())
+        else {
             continue;
         };
         let next = match bitmask_instance_name(&name, idx) {

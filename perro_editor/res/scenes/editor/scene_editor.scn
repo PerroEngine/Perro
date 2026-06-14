@@ -4,6 +4,12 @@ $root = @scene_editor_root
     [UiPanel]
         anchor = "center"
         size_ratio = (1.0, 1.0)
-        style = { fill: "#20242B", stroke: "#00000000", stroke_width: 0.0, radius: 0.0 }
+        style = {
+            fill = "#20242B",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.0
+        }
     [/UiPanel]
 [/scene_editor_root]
+
