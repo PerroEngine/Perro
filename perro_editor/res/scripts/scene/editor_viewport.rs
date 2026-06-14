@@ -5,8 +5,8 @@ use crate::scripts_assets_editor_assets_rs::*;
 use crate::scripts_assets_editor_file_watch_rs as editor_file_watch;
 use crate::scripts_assets_editor_files_rs as editor_files;
 use crate::scripts_editor_main_rs::{
-    cached_scene_doc, set_state_scene_doc, EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES,
-    MAX_NODE_PICKER_ROWS, MAX_NODES, MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH,
+    EditorState, FILE_WATCH_INTERVAL_FRAMES, MAX_FILES, MAX_NODE_PICKER_ROWS, MAX_NODES,
+    MAX_RECENT, MAX_TABS, RECENT_PROJECTS_PATH, cached_scene_doc, set_state_scene_doc,
 };
 use crate::scripts_scene_editor_animation_rs::*;
 use crate::scripts_scene_editor_gizmos_rs as editor_gizmos;
@@ -777,7 +777,11 @@ pub fn sync_selected_preview_field<API: ScriptAPI + ?Sized>(
     let Some((key, node_type)) = with_state!(ctx.run, EditorState, ctx.id, |state| {
         let key = state.selected_key?;
         let doc = cached_scene_doc(&state.doc_text);
-        let node = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key)?;
+        let node = doc
+            .scene
+            .nodes
+            .iter()
+            .find(|node| node.key.as_u32() == key)?;
         Some((key, node.data.node_type))
     }) else {
         return false;
@@ -870,6 +874,23 @@ pub fn sync_selected_preview_field<API: ScriptAPI + ?Sized>(
                     .is_some();
             }
         }
+        "render_layers" => {
+            let Some(mask) = scene_value_bitmask_from_value(value) else {
+                return false;
+            };
+            if node_type.is_a(perro_scene::NodeType::Node3D) {
+                return with_base_node_mut!(ctx.run, Node3D, id, |node| {
+                    node.render_layers = mask
+                })
+                .is_some();
+            }
+            if node_type.is_a(perro_scene::NodeType::Node2D) {
+                return with_base_node_mut!(ctx.run, Node2D, id, |node| {
+                    node.render_layers = mask
+                })
+                .is_some();
+            }
+        }
         "modulate" => {
             let SceneValue::Vec4 { x, y, z, w } = value else {
                 return false;
@@ -894,9 +915,171 @@ pub fn sync_selected_preview_field<API: ScriptAPI + ?Sized>(
                 .is_some();
             }
         }
+        "color" => {
+            let SceneValue::Vec4 { x, y, z, .. } = value else {
+                return false;
+            };
+            let color = [*x, *y, *z];
+            if set_preview_light_color(ctx, id, node_type, color) {
+                return true;
+            }
+        }
+        "intensity" => {
+            let SceneValue::F32(value) = value else {
+                return false;
+            };
+            if set_preview_light_intensity(ctx, id, node_type, *value) {
+                return true;
+            }
+        }
+        "active" => {
+            let SceneValue::Bool(value) = value else {
+                return false;
+            };
+            if set_preview_active(ctx, id, node_type, *value) {
+                return true;
+            }
+        }
         _ => {}
     }
     false
+}
+
+fn scene_value_bitmask_from_value(value: &SceneValue) -> Option<BitMask> {
+    match value {
+        SceneValue::I32(value) => Some(BitMask::from_bits(*value as u32)),
+        SceneValue::Key(value) => {
+            crate::scripts_ui_editor_inspector_values_rs::parse_bitmask_scene_text_public(
+                value.as_ref(),
+            )
+            .map(BitMask::from_bits)
+        }
+        _ => None,
+    }
+}
+
+fn set_preview_light_color<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    id: NodeID,
+    node_type: perro_scene::NodeType,
+    color: [f32; 3],
+) -> bool {
+    match node_type {
+        perro_scene::NodeType::AmbientLight2D => {
+            with_node_mut!(ctx.run, AmbientLight2D, id, |node| node.color = color).is_some()
+        }
+        perro_scene::NodeType::RayLight2D => {
+            with_node_mut!(ctx.run, RayLight2D, id, |node| node.color = color).is_some()
+        }
+        perro_scene::NodeType::PointLight2D => {
+            with_node_mut!(ctx.run, PointLight2D, id, |node| node.color = color).is_some()
+        }
+        perro_scene::NodeType::SpotLight2D => {
+            with_node_mut!(ctx.run, SpotLight2D, id, |node| node.color = color).is_some()
+        }
+        perro_scene::NodeType::AmbientLight3D => {
+            with_node_mut!(ctx.run, AmbientLight3D, id, |node| node.color = color).is_some()
+        }
+        perro_scene::NodeType::RayLight3D => {
+            with_node_mut!(ctx.run, RayLight3D, id, |node| node.color = color).is_some()
+        }
+        perro_scene::NodeType::PointLight3D => {
+            with_node_mut!(ctx.run, PointLight3D, id, |node| node.color = color).is_some()
+        }
+        perro_scene::NodeType::SpotLight3D => {
+            with_node_mut!(ctx.run, SpotLight3D, id, |node| node.color = color).is_some()
+        }
+        _ => false,
+    }
+}
+
+fn set_preview_light_intensity<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    id: NodeID,
+    node_type: perro_scene::NodeType,
+    intensity: f32,
+) -> bool {
+    match node_type {
+        perro_scene::NodeType::AmbientLight2D => {
+            with_node_mut!(ctx.run, AmbientLight2D, id, |node| node.intensity =
+                intensity)
+            .is_some()
+        }
+        perro_scene::NodeType::RayLight2D => {
+            with_node_mut!(ctx.run, RayLight2D, id, |node| node.intensity = intensity).is_some()
+        }
+        perro_scene::NodeType::PointLight2D => {
+            with_node_mut!(ctx.run, PointLight2D, id, |node| node.intensity = intensity).is_some()
+        }
+        perro_scene::NodeType::SpotLight2D => {
+            with_node_mut!(ctx.run, SpotLight2D, id, |node| node.intensity = intensity).is_some()
+        }
+        perro_scene::NodeType::AmbientLight3D => {
+            with_node_mut!(ctx.run, AmbientLight3D, id, |node| node.intensity =
+                intensity)
+            .is_some()
+        }
+        perro_scene::NodeType::RayLight3D => {
+            with_node_mut!(ctx.run, RayLight3D, id, |node| node.intensity = intensity).is_some()
+        }
+        perro_scene::NodeType::PointLight3D => {
+            with_node_mut!(ctx.run, PointLight3D, id, |node| node.intensity = intensity).is_some()
+        }
+        perro_scene::NodeType::SpotLight3D => {
+            with_node_mut!(ctx.run, SpotLight3D, id, |node| node.intensity = intensity).is_some()
+        }
+        _ => false,
+    }
+}
+
+fn set_preview_active<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    id: NodeID,
+    node_type: perro_scene::NodeType,
+    active: bool,
+) -> bool {
+    match node_type {
+        perro_scene::NodeType::Camera2D => {
+            with_node_mut!(ctx.run, Camera2D, id, |node| node.active = active).is_some()
+        }
+        perro_scene::NodeType::Camera3D => {
+            with_node_mut!(ctx.run, Camera3D, id, |node| node.active = active).is_some()
+        }
+        perro_scene::NodeType::AmbientLight2D => {
+            with_node_mut!(ctx.run, AmbientLight2D, id, |node| node.active = active).is_some()
+        }
+        perro_scene::NodeType::RayLight2D => {
+            with_node_mut!(ctx.run, RayLight2D, id, |node| node.active = active).is_some()
+        }
+        perro_scene::NodeType::PointLight2D => {
+            with_node_mut!(ctx.run, PointLight2D, id, |node| node.active = active).is_some()
+        }
+        perro_scene::NodeType::SpotLight2D => {
+            with_node_mut!(ctx.run, SpotLight2D, id, |node| node.active = active).is_some()
+        }
+        perro_scene::NodeType::AmbientLight3D => {
+            with_node_mut!(ctx.run, AmbientLight3D, id, |node| node.active = active).is_some()
+        }
+        perro_scene::NodeType::RayLight3D => {
+            with_node_mut!(ctx.run, RayLight3D, id, |node| node.active = active).is_some()
+        }
+        perro_scene::NodeType::PointLight3D => {
+            with_node_mut!(ctx.run, PointLight3D, id, |node| node.active = active).is_some()
+        }
+        perro_scene::NodeType::SpotLight3D => {
+            with_node_mut!(ctx.run, SpotLight3D, id, |node| node.active = active).is_some()
+        }
+        perro_scene::NodeType::Sky3D => {
+            with_node_mut!(ctx.run, Sky3D, id, |node| node.active = active).is_some()
+        }
+        perro_scene::NodeType::ParticleEmitter2D => {
+            with_node_mut!(ctx.run, ParticleEmitter2D, id, |node| node.active = active).is_some()
+        }
+        perro_scene::NodeType::ParticleEmitter3D => {
+            with_node_mut!(ctx.run, ParticleEmitter3D, id, |node| node.active = active).is_some()
+        }
+        _ => false,
+    }
 }
 
 pub fn load_preview_scene<API: ScriptAPI + ?Sized>(
@@ -908,21 +1091,8 @@ pub fn load_preview_scene<API: ScriptAPI + ?Sized>(
     let project_root = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.project_root.clone()
     });
-    let preview_text =
-        rewrite_project_res_paths(&SceneDoc::parse(doc_text), &project_root).to_text();
-    let preview_path = PathBuf::from(&project_root)
-        .join(".perro")
-        .join(format!("editor_preview_{serial}.scn"));
-    if let Err(err) = FileMod::save_string(preview_path.to_string_lossy().as_ref(), &preview_text) {
-        set_log(ctx, &format!("preview write fail\n{path}\n{err}"));
-        return;
-    }
-
-    let root = match ctx
-        .run
-        .Scene()
-        .load(preview_path.to_string_lossy().to_string())
-    {
+    let preview_doc = rewrite_project_res_paths(&cached_scene_doc(doc_text), &project_root);
+    let root = match ctx.run.Scene().load_doc(preview_doc.into_scene()) {
         Ok(root) => root,
         Err(err) => {
             set_log(ctx, &format!("preview load fail\n{path}\n{err}"));
@@ -939,7 +1109,7 @@ pub fn load_preview_scene<API: ScriptAPI + ?Sized>(
         if doc_text.is_empty() {
             (Vec::new(), Vec::new(), Vec::new(), Vec::new(), 0, 0)
         } else {
-            let doc = SceneDoc::parse(&doc_text);
+            let doc = cached_scene_doc(&doc_text);
             add_preview_env(ctx, root, &doc);
             let preview_camera_2d = if editor_scene::has_2d(&doc) {
                 let name = format!("__editor_preview_camera_2d_{serial}");
@@ -1510,7 +1680,7 @@ pub fn draw_preview_2d_gizmos<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
     if mode != "2D" || doc_text.is_empty() {
         return;
     }
-    let doc = SceneDoc::parse(&doc_text);
+    let doc = cached_scene_doc(&doc_text);
     for (raw_id, key) in ids.into_iter().zip(keys) {
         let Some(doc_node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
             continue;
@@ -2111,7 +2281,7 @@ pub fn pick_preview_ui<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>
     if doc_text.is_empty() {
         return None;
     }
-    let doc = SceneDoc::parse(&doc_text);
+    let doc = cached_scene_doc(&doc_text);
     let point = Vector2::new(pointer.uv.x, 1.0 - pointer.uv.y);
     pick_doc_ui_node(&doc, point)
 }
@@ -2124,7 +2294,7 @@ pub fn pick_resize_handle<API: ScriptAPI + ?Sized>(
         (state.doc_text.clone(), state.selected_key)
     });
     let key = selected?;
-    let doc = SceneDoc::parse(&doc_text);
+    let doc = cached_scene_doc(&doc_text);
     let rect = doc_ui_rect(&doc, key)?;
     let point = Vector2::new(pointer.uv.x, 1.0 - pointer.uv.y);
     resize_handles(rect)
@@ -2143,7 +2313,7 @@ pub fn pick_rotation_zone<API: ScriptAPI + ?Sized>(
         (state.doc_text.clone(), state.selected_key)
     });
     let key = selected?;
-    let doc = SceneDoc::parse(&doc_text);
+    let doc = cached_scene_doc(&doc_text);
     let rect = doc_ui_rect(&doc, key)?;
     let point = Vector2::new(pointer.uv.x, 1.0 - pointer.uv.y);
     let min = rect.center - rect.size * 0.5;
@@ -2353,7 +2523,7 @@ pub fn scene_field_str(data: &SceneNodeData, field: &str) -> Option<String> {
 }
 
 pub fn selected_node_type_name(doc_text: &str, key: u32) -> Option<String> {
-    let doc = SceneDoc::parse(doc_text);
+    let doc = cached_scene_doc(doc_text);
     doc.scene
         .nodes
         .iter()
@@ -2362,7 +2532,7 @@ pub fn selected_node_type_name(doc_text: &str, key: u32) -> Option<String> {
 }
 
 pub fn selected_node_viewport_mode(doc_text: &str, key: u32) -> Option<&'static str> {
-    let doc = SceneDoc::parse(doc_text);
+    let doc = cached_scene_doc(doc_text);
     let node_type = doc
         .scene
         .nodes
@@ -2386,7 +2556,7 @@ pub fn viewport_mode_for_node_type(node_type: perro_scene::NodeType) -> Option<&
 }
 
 pub fn selected_node_field_text(doc_text: &str, key: u32, field: &str) -> Option<String> {
-    let doc = SceneDoc::parse(doc_text);
+    let doc = cached_scene_doc(doc_text);
     let node = doc
         .scene
         .nodes

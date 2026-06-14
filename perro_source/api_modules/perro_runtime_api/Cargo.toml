@@ -8,6 +8,7 @@ perro_ids.workspace = true
 perro_resource_api.workspace = true
 perro_variant.workspace = true
 perro_nodes.workspace = true
+perro_scene.workspace = true
 perro_structs.workspace = true
 perro_pawdio.workspace = true
 perro_ui.workspace = true

@@ -89,9 +89,7 @@ pub fn apply_inspector_value_row_panel<API: ScriptAPI + ?Sized>(
         ("#252E3BE6", "#48566CFF"),
     ];
     let group_depth = depth.saturating_sub(1);
-    let (fill, stroke) = if has_children {
-        ("#00000000", "#00000000")
-    } else if depth > 0 {
+    let (fill, stroke) = if depth > 0 && !has_children {
         ("#00000000", "#00000000")
     } else if source == "section" {
         ("#0B1220E6", "#334155FF")
@@ -107,7 +105,13 @@ pub fn apply_inspector_value_row_panel<API: ScriptAPI + ?Sized>(
         node.style.fill = Color::from_hex(fill).unwrap_or(node.style.fill);
         node.style.stroke = Color::from_hex(script_stroke).unwrap_or(node.style.stroke);
         node.style.stroke_width = if depth > 0 && !has_children { 0.0 } else { 1.0 };
-        node.style.corner_radius = if depth == 0 { 0.16 } else { 0.05 };
+        node.style.corner_radius = if depth == 0 {
+            0.16
+        } else if has_children {
+            0.10
+        } else {
+            0.05
+        };
     });
 }
 

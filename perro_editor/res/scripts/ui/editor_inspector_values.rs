@@ -1,5 +1,5 @@
 use crate::scripts_assets_editor_assets_rs::*;
-use crate::scripts_editor_main_rs::{cached_scene_doc, set_state_scene_doc, EditorState};
+use crate::scripts_editor_main_rs::{EditorState, cached_scene_doc, set_state_scene_doc};
 use crate::scripts_scene_editor_animation_rs::*;
 use crate::scripts_scene_editor_viewport_rs::*;
 use crate::scripts_ui_editor_ui_rs::*;
@@ -9,7 +9,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::UNIX_EPOCH;
 
 const MAX_INSPECTOR_DEPTH: usize = 4;
@@ -291,7 +291,10 @@ fn grouped_scene_value_rows_for_node(
             .get(row.name.trim())
             .copied()
             .unwrap_or_else(|| node.data.type_name());
-        grouped.entry(owner.to_string()).or_default().push(indent_inspector_row(row));
+        grouped
+            .entry(owner.to_string())
+            .or_default()
+            .push(indent_inspector_row(row));
     }
     let mut rows = Vec::new();
     for ty in chain {
@@ -320,7 +323,9 @@ fn inspector_node_type_chain(node_type: perro_scene::NodeType) -> Vec<perro_scen
     chain
 }
 
-fn inspector_field_owner_map(node_type: perro_scene::NodeType) -> BTreeMap<&'static str, &'static str> {
+fn inspector_field_owner_map(
+    node_type: perro_scene::NodeType,
+) -> BTreeMap<&'static str, &'static str> {
     let mut out = BTreeMap::new();
     for ty in inspector_node_type_chain(node_type) {
         let parent_names = ty
@@ -367,7 +372,6 @@ fn indent_inspector_row(mut row: InspectorValueRow) -> InspectorValueRow {
     row.name = format!("  {}", row.name);
     row
 }
-
 
 fn inspector_scene_value_rows_for_node(
     state: &EditorState,
@@ -1919,10 +1923,7 @@ fn is_int_type(ty: &str) -> bool {
 }
 
 fn is_color_type(ty: &str) -> bool {
-    matches!(
-        normalized_type(ty).as_str(),
-        "Color" | "perro_api::prelude::Color"
-    )
+    last_type_segment(&normalized_type(ty)) == "Color"
 }
 
 fn is_node_ref_type(ty: &str) -> bool {
@@ -2294,7 +2295,9 @@ fn push_value_rows(
         path_key: path_key.clone(),
         name: name.to_string(),
         kind: kind.to_string(),
-        value: if composite {
+        value: if !enum_options.is_empty() {
+            scene_value_enum_text(value)
+        } else if composite {
             scene_value_summary(value, expanded)
         } else {
             scene_value_edit_text(value)
@@ -2359,6 +2362,14 @@ fn push_value_rows(
             }
         }
         _ => {}
+    }
+}
+
+fn scene_value_enum_text(value: &SceneValue) -> String {
+    match value {
+        SceneValue::Key(value) => value.as_ref().to_string(),
+        SceneValue::Str(value) => value.as_ref().to_string(),
+        _ => scene_value_edit_text(value),
     }
 }
 
@@ -2490,7 +2501,7 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
         let Some(text) = read_dropdown_value(ctx, &format!("inspector_var_{idx}_dropdown")) else {
             return;
         };
-        format!("\"{}\"", text.replace('"', "\\\""))
+        text
     } else if row.kind == "Bool" {
         let Some(checked) = read_checkbox_checked(ctx, &format!("inspector_var_{idx}_check"))
         else {
@@ -2523,8 +2534,7 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
                 set_log(ctx, "script var parse fail\nbad euler component count");
                 return;
             };
-            let quat =
-                Quaternion::from_euler_xyz(x.to_radians(), y.to_radians(), z.to_radians());
+            let quat = Quaternion::from_euler_xyz(x.to_radians(), y.to_radians(), z.to_radians());
             format!(
                 "({}, {}, {}, {})",
                 format_compact_f32(quat.x),
@@ -2561,6 +2571,23 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
         }
     };
     let value_for_preview = value.clone();
+    let script_preview = if row.source == "script" {
+        with_state!(ctx.run, EditorState, ctx.id, |state| {
+            let key = state.selected_key?;
+            let doc = cached_scene_doc(&state.doc_text);
+            let node = doc
+                .scene
+                .nodes
+                .iter()
+                .find(|node| node.key.as_u32() == key)?;
+            let fields = inspector_script_var_fields_for_node(state, node);
+            let member = script_member_path_for_row(&fields, &row.path)?;
+            let variant = scene_value_to_preview_variant(&value_for_preview, &doc, state);
+            Some((key, member, variant))
+        })
+    } else {
+        None
+    };
     let preview_field = if row.source == "scene" && row.path.len() == 1 {
         Some(row.name.trim().to_string())
     } else {
@@ -2611,14 +2638,114 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
     })
     .unwrap_or(false);
     if changed {
-        if preview_field
-            .as_deref()
-            .is_none_or(|field| !sync_selected_preview_field(ctx, field, &value_for_preview))
-        {
+        let preview_synced = if let Some((key, member, variant)) = script_preview {
+            preview_node_for_key(ctx, key)
+                .map(|id| {
+                    ctx.run.Scripts().set_var(id, member, variant);
+                    true
+                })
+                .unwrap_or(false)
+        } else {
+            preview_field
+                .as_deref()
+                .is_some_and(|field| sync_selected_preview_field(ctx, field, &value_for_preview))
+        };
+        if !preview_synced {
             rebuild_preview(ctx);
         }
         refresh_all(ctx);
     }
+}
+
+fn script_member_path_for_row(
+    fields: &[(SceneFieldName, SceneValue)],
+    path: &[ValuePathStep],
+) -> Option<String> {
+    let Some(ValuePathStep::Root(idx)) = path.first() else {
+        return None;
+    };
+    let mut out = fields.get(*idx)?.0.as_ref().to_string();
+    for step in &path[1..] {
+        match step {
+            ValuePathStep::Field(name) => {
+                out.push('.');
+                out.push_str(name);
+            }
+            ValuePathStep::Index(_) => return None,
+            ValuePathStep::Root(_) => return None,
+        }
+    }
+    Some(out)
+}
+
+fn scene_value_to_preview_variant(
+    value: &SceneValue,
+    doc: &SceneDoc,
+    state: &EditorState,
+) -> perro_api::variant::Variant {
+    match value {
+        SceneValue::Bool(value) => perro_api::variant::Variant::from(*value),
+        SceneValue::I32(value) => perro_api::variant::Variant::from(*value),
+        SceneValue::F32(value) => perro_api::variant::Variant::from(*value),
+        SceneValue::Vec2 { x, y } => perro_api::variant::Variant::from(Vector2::new(*x, *y)),
+        SceneValue::Vec3 { x, y, z } => perro_api::variant::Variant::from(Vector3::new(*x, *y, *z)),
+        SceneValue::Vec4 { x, y, z, w } => perro_api::variant::Variant::Array(vec![
+            perro_api::variant::Variant::from(*x),
+            perro_api::variant::Variant::from(*y),
+            perro_api::variant::Variant::from(*z),
+            perro_api::variant::Variant::from(*w),
+        ]),
+        SceneValue::Str(value) => perro_api::variant::Variant::from(value.to_string()),
+        SceneValue::Hashed(value) => perro_api::variant::Variant::from(*value),
+        SceneValue::Key(value) => {
+            let raw = value.as_ref();
+            if let Some(id) = preview_node_ref(raw, doc, state) {
+                perro_api::variant::Variant::from(id)
+            } else {
+                perro_api::variant::Variant::from(raw.to_string())
+            }
+        }
+        SceneValue::Array(values) => perro_api::variant::Variant::Array(
+            values
+                .iter()
+                .map(|value| scene_value_to_preview_variant(value, doc, state))
+                .collect(),
+        ),
+        SceneValue::Object(values) => {
+            let mut out = BTreeMap::new();
+            for (name, value) in values.iter() {
+                out.insert(
+                    Arc::<str>::from(name.as_ref()),
+                    scene_value_to_preview_variant(value, doc, state),
+                );
+            }
+            perro_api::variant::Variant::Object(out)
+        }
+    }
+}
+
+fn preview_node_ref(raw: &str, doc: &SceneDoc, state: &EditorState) -> Option<NodeID> {
+    let raw = raw.trim();
+    if matches!(raw, "" | "null" | "none" | "-") {
+        return None;
+    }
+    let key = raw
+        .strip_prefix('#')
+        .and_then(|value| value.parse::<u32>().ok())
+        .or_else(|| {
+            let name = raw.trim_start_matches('@');
+            doc.scene
+                .key_names
+                .iter()
+                .position(|item| item.as_ref() == name)
+                .map(|idx| idx as u32)
+        })?;
+    state
+        .preview_node_keys
+        .iter()
+        .position(|item| *item == key)
+        .and_then(|idx| state.preview_node_ids.get(idx).copied())
+        .map(NodeID::from_u64)
 }
 
 pub fn mutate_selected_inspector_array<API: ScriptAPI + ?Sized>(
@@ -2784,6 +2911,7 @@ fn write_selected_inspector_bitmask<API: ScriptAPI + ?Sized>(
         return;
     };
     let scene_value = SceneValue::Key(SceneValueKey::from(bitmask_scene_text(value)));
+    let value_for_preview = scene_value.clone();
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let Some(key) = state.selected_key else {
             return false;
@@ -2829,9 +2957,23 @@ fn write_selected_inspector_bitmask<API: ScriptAPI + ?Sized>(
     })
     .unwrap_or(false);
     if changed {
-        rebuild_preview(ctx);
+        crate::scripts_ui_bitmask_rs::update_inspector_bitmask_grid(ctx, idx, value);
+        if !sync_bitmask_preview(ctx, &row, &value_for_preview) {
+            rebuild_preview(ctx);
+        }
         refresh_all(ctx);
     }
+}
+
+fn sync_bitmask_preview<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    row: &InspectorValueRow,
+    value: &SceneValue,
+) -> bool {
+    if row.source == "scene" && row.path.len() == 1 {
+        return sync_selected_preview_field(ctx, row.name.trim(), value);
+    }
+    false
 }
 
 pub fn scene_value_bitmask_from_text(value: &str) -> u32 {
@@ -2849,6 +2991,15 @@ fn bitmask_scene_text(bits: u32) -> String {
         return "none".to_string();
     }
     let layers = bitmask_layers(mask);
+    let off_count = 32_usize.saturating_sub(layers.len());
+    if off_count > 0 && off_count <= 4 {
+        let off = (1..=32)
+            .filter(|layer| !mask.intersects(BitMask::layer(*layer)))
+            .map(|layer| layer.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return format!("without({off})");
+    }
     format!(
         "only({})",
         layers
@@ -2887,6 +3038,10 @@ fn parse_bitmask_scene_text(value: &str) -> Option<u32> {
         "without" | "WITHOUT" => Some(BitMask::without(&layers).bits()),
         _ => None,
     }
+}
+
+pub fn parse_bitmask_scene_text_public(value: &str) -> Option<u32> {
+    parse_bitmask_scene_text(value)
 }
 
 fn bitmask_layers(mask: BitMask) -> Vec<u8> {

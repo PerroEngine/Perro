@@ -1,10 +1,15 @@
 use crate::Runtime;
 use perro_ids::NodeID;
 use perro_runtime_api::sub_apis::{PreloadedSceneID, SceneAPI};
+use perro_scene::Scene;
 
 impl SceneAPI for Runtime {
     fn scene_load(&mut self, path: &str) -> Result<NodeID, String> {
         self.load_scene_at_runtime(path)
+    }
+
+    fn scene_load_doc(&mut self, scene: Scene) -> Result<NodeID, String> {
+        self.load_scene_doc_at_runtime(scene)
     }
 
     fn scene_load_hashed(&mut self, path_hash: u64, path: &str) -> Result<NodeID, String> {

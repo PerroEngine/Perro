@@ -264,6 +264,15 @@ impl Runtime {
         self.load_scene_at_runtime_hashed(Self::source_hash(path), path)
     }
 
+    pub(crate) fn load_scene_doc_at_runtime(&mut self, scene: Scene) -> Result<NodeID, String> {
+        let prepared = self.prepare_scene_with_project_styles(&scene, &|import_path| {
+            self.resolve_scene_by_path(import_path)
+        })?;
+        let merged = merge_prepared_scene(self, prepared)?;
+        self.attach_scene_scripts(merged.script_nodes)?;
+        Ok(merged.scene_root)
+    }
+
     pub(crate) fn load_scene_at_runtime_hashed(
         &mut self,
         path_hash: u64,

@@ -5,6 +5,7 @@
 
 use perro_ids::NodeID;
 use perro_resource_api::{ResPath, ResPathBuf};
+use perro_scene::{Scene, SceneDoc};
 use std::borrow::Cow;
 
 pub type PreloadedSceneID = perro_ids::PreloadedSceneID;
@@ -217,6 +218,9 @@ impl IntoPreloadedSceneTarget for &Cow<'static, str> {
 
 pub trait SceneAPI {
     fn scene_load(&mut self, path: &str) -> Result<NodeID, String>;
+    fn scene_load_doc(&mut self, _scene: Scene) -> Result<NodeID, String> {
+        Err("scene doc loading is not supported by this runtime".to_string())
+    }
     fn scene_load_hashed(&mut self, path_hash: u64, path: &str) -> Result<NodeID, String> {
         let _ = path_hash;
         self.scene_load(path)
@@ -265,6 +269,14 @@ impl<'rt, R: SceneAPI + ?Sized> SceneModule<'rt, R> {
 
     pub fn load_hashed(&mut self, path_hash: u64, path: &str) -> Result<NodeID, String> {
         self.rt.scene_load_hashed(path_hash, path)
+    }
+
+    pub fn load_doc<D: Into<Scene>>(&mut self, doc: D) -> Result<NodeID, String> {
+        self.rt.scene_load_doc(doc.into())
+    }
+
+    pub fn load_scene_doc(&mut self, doc: SceneDoc) -> Result<NodeID, String> {
+        self.rt.scene_load_doc(doc.into_scene())
     }
 
     pub fn preload<P: IntoScenePath>(&mut self, path: P) -> Result<PreloadedSceneID, String> {

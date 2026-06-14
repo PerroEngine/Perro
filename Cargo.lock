@@ -3536,6 +3536,7 @@ dependencies = [
  "perro_nodes",
  "perro_pawdio",
  "perro_resource_api",
+ "perro_scene",
  "perro_structs",
  "perro_ui",
  "perro_variant",
