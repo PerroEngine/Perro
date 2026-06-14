@@ -1128,7 +1128,7 @@ pub fn pick_selected_script_var_ref<API: ScriptAPI + ?Sized>(
             state.inspector_picker_filter.clear();
             return Some(true);
         }
-        if row.kind != "Node" {
+        if !row.kind.starts_with("Node") {
             if row.enum_options.is_empty() {
                 return None;
             }

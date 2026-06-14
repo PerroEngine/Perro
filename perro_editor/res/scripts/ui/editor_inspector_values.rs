@@ -469,7 +469,7 @@ fn collect_node_field_type_paths(
     kind_overrides.insert(key.clone(), label);
     match ty {
         perro_scene::NodeFieldType::Color => color_paths.push(key),
-        perro_scene::NodeFieldType::NodeRef => node_paths.push(key),
+        perro_scene::NodeFieldType::NodeRef(_) => node_paths.push(key),
         perro_scene::NodeFieldType::Array(item_ty) => {
             default_children.insert(key, item_ty.default_value());
             if let SceneValue::Array(values) = value {
@@ -528,7 +528,7 @@ fn node_field_type_label(ty: &perro_scene::NodeFieldType) -> String {
         perro_scene::NodeFieldType::Quat => "Quat".to_string(),
         perro_scene::NodeFieldType::Color => "Color".to_string(),
         perro_scene::NodeFieldType::String => "String".to_string(),
-        perro_scene::NodeFieldType::NodeRef => "Node".to_string(),
+        perro_scene::NodeFieldType::NodeRef(hint) => hint.label(),
         perro_scene::NodeFieldType::BitMask => "BitMask".to_string(),
         perro_scene::NodeFieldType::Asset(kind) => format!("Asset({kind:?})"),
         perro_scene::NodeFieldType::Array(item) => {
@@ -751,7 +751,15 @@ fn collect_script_inspector_meta(
             format!("{prefix}.{}", field.name)
         };
         if let Some((_, value)) = values.get(idx) {
-            collect_script_value_meta(schema, &field.ty, value, key, depth, meta);
+            collect_script_value_meta(
+                schema,
+                &field.ty,
+                &field.node_ref_attr,
+                value,
+                key,
+                depth,
+                meta,
+            );
         }
     }
 }
@@ -759,6 +767,7 @@ fn collect_script_inspector_meta(
 fn collect_script_value_meta(
     schema: &ScriptSchema,
     ty: &str,
+    node_ref_attr: &[String],
     value: &SceneValue,
     key: String,
     depth: usize,
@@ -768,8 +777,10 @@ fn collect_script_value_meta(
         return;
     }
     let path_key = key.clone();
-    meta.kind_overrides
-        .insert(path_key.clone(), script_type_label(schema, ty));
+    meta.kind_overrides.insert(
+        path_key.clone(),
+        script_type_label_with_node_ref(schema, ty, node_ref_attr),
+    );
     if is_color_type(ty) {
         meta.color_paths.push(key.clone());
     }
@@ -836,6 +847,7 @@ fn collect_script_value_meta(
                 collect_script_value_meta(
                     schema,
                     &inner_ty,
+                    node_ref_attr,
                     item,
                     format!("{key}[{idx}]"),
                     depth + 1,
@@ -1116,6 +1128,7 @@ struct RawScriptField {
     name: String,
     ty: String,
     default_attr: Option<String>,
+    node_ref_attr: Vec<String>,
     exposed: bool,
 }
 
@@ -1620,6 +1633,7 @@ fn parse_script_struct_fields(source: &str, struct_name: &str) -> Vec<RawScriptF
     let mut opened = false;
     let mut pending_default = None;
     let mut pending_expose = false;
+    let mut pending_node_ref = Vec::new();
     while idx < lines.len() {
         let line = strip_line_comment(lines[idx]).trim();
         if !opened {
@@ -1639,15 +1653,24 @@ fn parse_script_struct_fields(source: &str, struct_name: &str) -> Vec<RawScriptF
                 if let Some(default_value) = parse_default_attr(attr) {
                     pending_default = Some(default_value);
                 }
+                if let Some(node_ref) = parse_node_ref_attr(attr) {
+                    pending_node_ref = node_ref;
+                }
             }
             if rest.is_empty() {
             } else if let Some(field) =
-                parse_script_field_line(rest, pending_default.take(), pending_expose)
+                parse_script_field_line(
+                    rest,
+                    pending_default.take(),
+                    std::mem::take(&mut pending_node_ref),
+                    pending_expose,
+                )
             {
                 fields.push(field);
                 pending_expose = false;
             } else if !rest.is_empty() {
                 pending_expose = false;
+                pending_node_ref.clear();
             }
         }
         depth += brace_delta(line);
@@ -1733,6 +1756,7 @@ fn parse_tuple_struct_fields(
                 name: idx.to_string(),
                 ty: ty.to_string(),
                 default_attr: None,
+                node_ref_attr: Vec::new(),
                 exposed: true,
             })
         })
@@ -1743,6 +1767,7 @@ fn parse_tuple_struct_fields(
 fn parse_script_field_line(
     line: &str,
     default_attr: Option<String>,
+    node_ref_attr: Vec<String>,
     exposed: bool,
 ) -> Option<RawScriptField> {
     let trimmed = line.trim().trim_end_matches(',').trim();
@@ -1759,6 +1784,7 @@ fn parse_script_field_line(
         name: name.to_string(),
         ty: ty.trim().to_string(),
         default_attr,
+        node_ref_attr,
         exposed,
     })
 }
@@ -1800,6 +1826,18 @@ fn parse_default_attr(line: &str) -> Option<String> {
         return Some(value.trim().to_string());
     }
     None
+}
+
+fn parse_node_ref_attr(line: &str) -> Option<Vec<String>> {
+    let inner = line.strip_prefix("#[node_ref")?.strip_suffix(']')?.trim();
+    let inner = inner.strip_prefix('(')?.strip_suffix(')')?;
+    Some(
+        split_top_level_csv(inner)
+            .into_iter()
+            .map(|item| item.trim().trim_matches('"').to_string())
+            .filter(|item| !item.is_empty())
+            .collect(),
+    )
 }
 
 fn is_expose_attr(line: &str) -> bool {
@@ -2102,6 +2140,7 @@ fn resolved_struct_fields(resolved: &ResolvedScriptType<'_, ScriptStruct>) -> Ve
                 &resolved.type_args,
             ),
             default_attr: field.default_attr.clone(),
+            node_ref_attr: field.node_ref_attr.clone(),
             exposed: field.exposed,
         })
         .collect()
@@ -2218,6 +2257,37 @@ fn script_type_label(schema: &ScriptSchema, ty: &str) -> String {
         }
         _ => "Unknown".to_string(),
     }
+}
+
+fn script_type_label_with_node_ref(
+    schema: &ScriptSchema,
+    ty: &str,
+    node_ref_attr: &[String],
+) -> String {
+    let ty = normalized_type(ty);
+    if let Some(inner) = generic_inner(ty.as_str(), "Option") {
+        if is_node_ref_type(&inner) {
+            return node_ref_attr_label(node_ref_attr);
+        }
+        return script_type_label_with_node_ref(schema, &inner, node_ref_attr);
+    }
+    if let Some(inner) = generic_inner(ty.as_str(), "Vec") {
+        return format!(
+            "Array({})",
+            script_type_label_with_node_ref(schema, &inner, node_ref_attr)
+        );
+    }
+    if is_node_ref_type(&ty) {
+        return node_ref_attr_label(node_ref_attr);
+    }
+    script_type_label(schema, &ty)
+}
+
+fn node_ref_attr_label(node_ref_attr: &[String]) -> String {
+    if node_ref_attr.is_empty() {
+        return "Node".to_string();
+    }
+    format!("Node({})", node_ref_attr.join("|"))
 }
 
 fn default_scene_value_for_type(schema: &ScriptSchema, ty: &str, depth: usize) -> SceneValue {

@@ -1,3 +1,4 @@
+use crate::doctor::validate_project_and_print;
 use crate::install::normalize_powershell_path;
 use crate::profiling::ensure_profiling_output_dir;
 use crate::scaffold::validate_dlc_name;
@@ -389,6 +390,10 @@ pub(crate) fn clippy_command(args: &[String], cwd: &Path) -> Result<(), String> 
         .map_err(|err| format!("failed to refresh source overrides: {err}"))?;
     sync_scripts(&project_dir).map_err(|err| format!("failed to sync scripts: {err}"))?;
     log_done("User Scripts Synced");
+
+    log_step("Running Project Doctor");
+    validate_project_and_print(&project_dir)?;
+    log_done("Project Doctor Clean");
 
     log_step("Running Clippy For User Scripts");
     let scripts_crate = project_dir.join(".perro").join("scripts");

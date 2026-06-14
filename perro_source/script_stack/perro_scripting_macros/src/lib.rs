@@ -47,12 +47,12 @@ pub fn State(attr: TokenStream, item: TokenStream) -> TokenStream {
     expanded.into()
 }
 
-#[proc_macro_derive(Variant, attributes(variant))]
+#[proc_macro_derive(Variant, attributes(variant, node_ref))]
 pub fn derive_variant(input: TokenStream) -> TokenStream {
     derive_variant_like(input)
 }
 
-#[proc_macro_derive(DeriveVariant, attributes(variant))]
+#[proc_macro_derive(DeriveVariant, attributes(variant, node_ref))]
 pub fn derive_variant_codec(input: TokenStream) -> TokenStream {
     derive_variant_like(input)
 }
@@ -1036,7 +1036,7 @@ fn take_default_expr(field: &mut Field) -> Result<Option<Expr>> {
     let mut retained = Vec::with_capacity(field.attrs.len());
 
     for attr in field.attrs.drain(..) {
-        if attr.path().is_ident("expose") {
+        if attr.path().is_ident("expose") || attr.path().is_ident("node_ref") {
             continue;
         }
         if !attr.path().is_ident("default") {

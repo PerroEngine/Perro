@@ -460,7 +460,9 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         let picker_button_name = format!("inspector_var_{idx}_pick_button");
         let picker_row = row.is_some_and(|item| {
             item.source != "section"
-                && (item.kind == "Node" || item.kind.starts_with("Asset(") || item.expandable)
+                && (item.kind.starts_with("Node")
+                    || item.kind.starts_with("Asset(")
+                    || item.expandable)
         }) && find_named(ctx, &picker_button_name).is_some();
         let quat_row = row.is_some_and(|item| item.kind == "Quat");
         for name in [
@@ -1540,10 +1542,14 @@ fn inspector_node_picker_entries(state: &EditorState) -> Vec<InspectorPickerEntr
     }
     let filter = NodePickerFilter::parse(&state.inspector_picker_filter);
     let doc = cached_scene_doc(&state.doc_text);
+    let allowed = inspector_picker_node_ref_types(state);
     doc.scene
         .nodes
         .iter()
         .filter_map(|node| {
+            if !node_ref_type_allows(&allowed, node.data.node_type) {
+                return None;
+            }
             let name = doc.scene.key_name_or_id(node.key).to_string();
             let path = scene_node_path(&doc, node.key);
             let hay = format!(
@@ -1564,6 +1570,52 @@ fn inspector_node_picker_entries(state: &EditorState) -> Vec<InspectorPickerEntr
             Some(InspectorPickerEntry { value: name, label })
         })
         .collect()
+}
+
+fn inspector_picker_node_ref_types(state: &EditorState) -> Vec<String> {
+    let Ok(row_idx) = state.inspector_picker_field.parse::<usize>() else {
+        return Vec::new();
+    };
+    let Some(key) = state.selected_key else {
+        return Vec::new();
+    };
+    let doc = cached_scene_doc(&state.doc_text);
+    let Some(node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
+        return Vec::new();
+    };
+    let rows = if state.inspector_picker_kind.starts_with("value_") {
+        inspector_display_rows_for_node(state, node)
+    } else {
+        inspector_script_var_rows_for_node(state, node)
+    };
+    rows.get(row_idx)
+        .and_then(|row| node_ref_types_from_kind(&row.kind))
+        .unwrap_or_default()
+}
+
+fn node_ref_types_from_kind(kind: &str) -> Option<Vec<String>> {
+    let inner = kind.strip_prefix("Node(")?.strip_suffix(')')?;
+    Some(
+        inner
+            .split('|')
+            .map(str::trim)
+            .filter(|item| !item.is_empty())
+            .map(str::to_string)
+            .collect(),
+    )
+}
+
+fn node_ref_type_allows(allowed: &[String], node_type: perro_scene::NodeType) -> bool {
+    allowed.is_empty()
+        || allowed.iter().any(|name| {
+            node_type_from_hint_name(name)
+                .is_some_and(|allowed_type| node_type.is_a(allowed_type))
+        })
+}
+
+fn node_type_from_hint_name(name: &str) -> Option<perro_scene::NodeType> {
+    use std::str::FromStr;
+    perro_scene::NodeType::from_str(name).ok()
 }
 
 fn inspector_asset_picker_entries(state: &EditorState) -> Vec<InspectorPickerEntry> {

@@ -4,6 +4,53 @@ use perro_nodes::NodeType;
 
 use crate::{SceneFieldName, SceneObjectField, SceneValue, default_scene_field_value_by_name};
 
+const CAMERA_REF_TYPES: &[NodeType] = &[NodeType::Camera2D, NodeType::Camera3D];
+const SKELETON_2D_REF_TYPES: &[NodeType] = &[NodeType::Skeleton2D];
+const SKELETON_3D_REF_TYPES: &[NodeType] = &[NodeType::Skeleton3D];
+const BODY_2D_REF_TYPES: &[NodeType] = &[
+    NodeType::StaticBody2D,
+    NodeType::RigidBody2D,
+    NodeType::Area2D,
+];
+const BODY_3D_REF_TYPES: &[NodeType] = &[
+    NodeType::StaticBody3D,
+    NodeType::RigidBody3D,
+    NodeType::Area3D,
+];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NodeRefHint {
+    pub allowed: &'static [NodeType],
+}
+
+impl NodeRefHint {
+    pub const fn any() -> Self {
+        Self { allowed: &[] }
+    }
+
+    pub const fn many(allowed: &'static [NodeType]) -> Self {
+        Self { allowed }
+    }
+
+    pub fn allows(&self, node_type: NodeType) -> bool {
+        self.allowed.is_empty() || self.allowed.iter().any(|allowed| node_type.is_a(*allowed))
+    }
+
+    pub fn label(&self) -> String {
+        if self.allowed.is_empty() {
+            return "Node".to_string();
+        }
+        format!(
+            "Node({})",
+            self.allowed
+                .iter()
+                .map(|node_type| node_type.name())
+                .collect::<Vec<_>>()
+                .join("|")
+        )
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum NodeFieldType {
     Bool,
@@ -16,7 +63,7 @@ pub enum NodeFieldType {
     Quat,
     Color,
     String,
-    NodeRef,
+    NodeRef(NodeRefHint),
     BitMask,
     Object(Vec<NodeFieldDef>),
     Array(Box<NodeFieldType>),
@@ -51,7 +98,7 @@ impl NodeFieldType {
                 w: 0.0,
             },
             Self::String => SceneValue::Str(Cow::Borrowed("")),
-            Self::NodeRef => SceneValue::Key(crate::SceneValueKey::from("null")),
+            Self::NodeRef(_) => SceneValue::Key(crate::SceneValueKey::from("null")),
             Self::Asset(_) => SceneValue::Str(Cow::Borrowed("")),
             Self::Array(_) => SceneValue::Array(Cow::Owned(Vec::new())),
             Self::Object(fields) => SceneValue::Object(Cow::Owned(
@@ -338,7 +385,12 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
             push(fields, "Camera", "active", NodeFieldType::Bool);
         }
         NodeType::CameraStream2D | NodeType::CameraStream3D | NodeType::UiCameraStream => {
-            push(fields, "Camera Stream", "camera", NodeFieldType::NodeRef);
+            push(
+                fields,
+                "Camera Stream",
+                "camera",
+                NodeFieldType::NodeRef(NodeRefHint::many(CAMERA_REF_TYPES)),
+            );
             push(fields, "Camera Stream", "resolution", NodeFieldType::Vec2);
             push(fields, "Camera Stream", "aspect_ratio", NodeFieldType::F32);
             push(
@@ -404,11 +456,29 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
             asset_field(fields, "Skeleton", "skeleton", SceneAssetKind::Skeleton);
         }
         NodeType::BoneAttachment2D | NodeType::BoneAttachment3D => {
-            push(fields, "Skeleton", "skeleton", NodeFieldType::NodeRef);
+            push(
+                fields,
+                "Skeleton",
+                "skeleton",
+                NodeFieldType::NodeRef(NodeRefHint::many(if node_type.is_3d() {
+                    SKELETON_3D_REF_TYPES
+                } else {
+                    SKELETON_2D_REF_TYPES
+                })),
+            );
             push(fields, "Skeleton", "bone_index", NodeFieldType::I32);
         }
         NodeType::IKTarget2D | NodeType::IKTarget3D => {
-            push(fields, "IK", "skeleton", NodeFieldType::NodeRef);
+            push(
+                fields,
+                "IK",
+                "skeleton",
+                NodeFieldType::NodeRef(NodeRefHint::many(if node_type.is_3d() {
+                    SKELETON_3D_REF_TYPES
+                } else {
+                    SKELETON_2D_REF_TYPES
+                })),
+            );
             push(fields, "IK", "bone_index", NodeFieldType::I32);
             push(fields, "IK", "chain_length", NodeFieldType::U32);
             push(fields, "IK", "iterations", NodeFieldType::U32);
@@ -418,7 +488,16 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
             push(fields, "IK", "solver", NodeFieldType::String);
         }
         NodeType::PhysicsBoneChain2D | NodeType::PhysicsBoneChain3D => {
-            push(fields, "Physics Bone", "skeleton", NodeFieldType::NodeRef);
+            push(
+                fields,
+                "Physics Bone",
+                "skeleton",
+                NodeFieldType::NodeRef(NodeRefHint::many(if node_type.is_3d() {
+                    SKELETON_3D_REF_TYPES
+                } else {
+                    SKELETON_2D_REF_TYPES
+                })),
+            );
             push(fields, "Physics Bone", "bone_index", NodeFieldType::I32);
             push(fields, "Physics Bone", "chain_length", NodeFieldType::U32);
             push(fields, "Physics Bone", "enabled", NodeFieldType::Bool);
@@ -632,7 +711,7 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
                 fields,
                 "Audio",
                 "targets",
-                NodeFieldType::array(NodeFieldType::NodeRef),
+                NodeFieldType::array(NodeFieldType::NodeRef(NodeRefHint::any())),
             );
         }
         _ => {}
@@ -747,7 +826,12 @@ fn mesh_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
         "surfaces",
         NodeFieldType::array(NodeFieldType::Asset(SceneAssetKind::Material)),
     );
-    push(fields, "Mesh", "skeleton", NodeFieldType::NodeRef);
+    push(
+        fields,
+        "Mesh",
+        "skeleton",
+        NodeFieldType::NodeRef(NodeRefHint::many(SKELETON_3D_REF_TYPES)),
+    );
     push(
         fields,
         "Mesh",
@@ -875,8 +959,23 @@ fn physics_body_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
 }
 
 fn joint_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
-    push(fields, "Joint", "body_a", NodeFieldType::NodeRef);
-    push(fields, "Joint", "body_b", NodeFieldType::NodeRef);
+    let body_types = if node_type.is_3d() {
+        BODY_3D_REF_TYPES
+    } else {
+        BODY_2D_REF_TYPES
+    };
+    push(
+        fields,
+        "Joint",
+        "body_a",
+        NodeFieldType::NodeRef(NodeRefHint::many(body_types)),
+    );
+    push(
+        fields,
+        "Joint",
+        "body_b",
+        NodeFieldType::NodeRef(NodeRefHint::many(body_types)),
+    );
     let vec_kind = if node_type.is_3d() {
         NodeFieldType::Vec3
     } else {
@@ -926,4 +1025,27 @@ fn sky_fields(fields: &mut Vec<SceneNodeField>) {
     push(fields, "Sky", "shaders", NodeFieldType::object(Vec::new()));
     push(fields, "Sky", "active", NodeFieldType::Bool);
     push(fields, "Sky", "render_layers", NodeFieldType::BitMask);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn node_ref_hints_cover_camera_streams_and_skeletons() {
+        let stream = scene_node_field(NodeType::UiCameraStream, "camera").unwrap();
+        let NodeFieldType::NodeRef(stream_hint) = stream.ty else {
+            panic!("camera must be node ref");
+        };
+        assert!(stream_hint.allows(NodeType::Camera2D));
+        assert!(stream_hint.allows(NodeType::Camera3D));
+        assert!(!stream_hint.allows(NodeType::MeshInstance3D));
+
+        let mesh = scene_node_field(NodeType::MeshInstance3D, "skeleton").unwrap();
+        let NodeFieldType::NodeRef(mesh_hint) = mesh.ty else {
+            panic!("skeleton must be node ref");
+        };
+        assert!(mesh_hint.allows(NodeType::Skeleton3D));
+        assert!(!mesh_hint.allows(NodeType::Skeleton2D));
+    }
 }

@@ -1,9 +1,14 @@
 use crate::project::{collect_rs_files_recursive, scripts_command};
 use crate::{COLOR_RESET, COLOR_YELLOW, log_done, parse_flag_value, resolve_local_path};
 use perro_project::{ProjectConfig, load_project_toml};
+use perro_scene::{
+    NodeFieldType, NodeRefHint, NodeType, Parser, SceneDoc, SceneNodeData, SceneObjectField,
+    SceneValue,
+};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 pub(crate) fn doctor_command(args: &[String], cwd: &Path) -> Result<(), String> {
     scripts_command(args, cwd).map_err(|err| format!("check failed: {err}"))?;
@@ -12,12 +17,17 @@ pub(crate) fn doctor_command(args: &[String], cwd: &Path) -> Result<(), String> 
         .map(|p| resolve_local_path(&p, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
     let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
-    let report = validate_project(&project_dir)?;
+    validate_project_and_print(&project_dir)?;
+    log_done("Project Valid");
+    Ok(())
+}
+
+pub(crate) fn validate_project_and_print(project_dir: &Path) -> Result<(), String> {
+    let report = validate_project(project_dir)?;
     report.print();
     if report.errors > 0 {
         return Err(format!("validation failed: {} issue(s)", report.errors));
     }
-    log_done("Project Valid");
     Ok(())
 }
 
@@ -409,6 +419,7 @@ struct ScriptDoctorIndex {
     state_fields: HashSet<String>,
     state_field_types: HashMap<String, String>,
     state_field_owners: HashMap<String, String>,
+    state_field_defs: HashMap<String, DoctorField>,
     custom_type_fields: HashMap<String, Vec<DoctorField>>,
     methods: HashSet<String>,
     signal_emits: HashMap<String, Vec<SignalUse>>,
@@ -419,6 +430,7 @@ struct ScriptDoctorIndex {
 struct DoctorField {
     name: String,
     ty: String,
+    node_ref_types: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -464,6 +476,7 @@ fn validate_script_warnings(
     }
 
     validate_signal_emits(project_dir, &index, report);
+    validate_node_ref_type_warnings(project_dir, &index, report)?;
 
     Ok(())
 }
@@ -515,6 +528,232 @@ fn resolve_script_virtual_ref_path(
         return Some(project_dir.join("dlcs").join(dlc).join(rel));
     }
     None
+}
+
+fn validate_node_ref_type_warnings(
+    project_dir: &Path,
+    index: &ScriptDoctorIndex,
+    report: &mut ValidationReport,
+) -> Result<(), String> {
+    let mut files = Vec::new();
+    collect_scene_files_recursive(&project_dir.join("res"), &mut files)?;
+    collect_scene_files_recursive(&project_dir.join("dlcs"), &mut files)?;
+    for file in files {
+        let text = fs::read_to_string(&file)
+            .map_err(|err| format!("failed to read scene {}: {err}", file.display()))?;
+        let Ok(scene) = Parser::new(&text).try_parse_scene() else {
+            continue;
+        };
+        let doc = SceneDoc::from_scene(scene);
+        validate_scene_doc_node_refs(project_dir, &file, &doc, index, report);
+    }
+    Ok(())
+}
+
+fn collect_scene_files_recursive(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+    if !dir.exists() {
+        return Ok(());
+    }
+    let entries = fs::read_dir(dir)
+        .map_err(|err| format!("failed to read directory {}: {err}", dir.display()))?;
+    for entry in entries {
+        let entry = entry
+            .map_err(|err| format!("failed to read directory entry in {}: {err}", dir.display()))?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_scene_files_recursive(&path, out)?;
+        } else if path.extension().is_some_and(|ext| ext == "scn") {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn validate_scene_doc_node_refs(
+    project_dir: &Path,
+    file: &Path,
+    doc: &SceneDoc,
+    index: &ScriptDoctorIndex,
+    report: &mut ValidationReport,
+) {
+    let node_types = doc
+        .scene
+        .nodes
+        .iter()
+        .map(|node| {
+            (
+                doc.scene.key_name_or_id(node.key).to_string(),
+                node.data.node_type,
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    for node in doc.scene.nodes.iter() {
+        let node_name = doc.scene.key_name_or_id(node.key).to_string();
+        let mut ctx = NodeRefValidationCtx {
+            project_dir,
+            file,
+            node_types: &node_types,
+            report,
+        };
+        validate_builtin_node_ref_fields(&mut ctx, &node_name, &node.data);
+        validate_script_var_node_ref_fields(&mut ctx, &node_name, node.script_vars.as_ref(), index);
+    }
+}
+
+struct NodeRefValidationCtx<'a> {
+    project_dir: &'a Path,
+    file: &'a Path,
+    node_types: &'a HashMap<String, NodeType>,
+    report: &'a mut ValidationReport,
+}
+
+fn validate_builtin_node_ref_fields(
+    ctx: &mut NodeRefValidationCtx<'_>,
+    node_name: &str,
+    data: &SceneNodeData,
+) {
+    for (field_name, value) in data.fields.iter() {
+        let Some(field) = perro_scene::scene_node_field(data.node_type, field_name.as_ref()) else {
+            continue;
+        };
+        validate_scene_value_node_ref_hint(
+            ctx,
+            &format!("{node_name}.{}", field.name),
+            value,
+            &field.ty,
+        );
+    }
+    if let Some(base) = data.base_ref() {
+        validate_builtin_node_ref_fields(ctx, node_name, base);
+    }
+}
+
+fn validate_scene_value_node_ref_hint(
+    ctx: &mut NodeRefValidationCtx<'_>,
+    label: &str,
+    value: &SceneValue,
+    ty: &NodeFieldType,
+) {
+    match (ty, value) {
+        (NodeFieldType::NodeRef(hint), SceneValue::Key(key)) => {
+            validate_one_node_ref_hint(ctx, label, key.as_ref(), *hint);
+        }
+        (NodeFieldType::Array(item_ty), SceneValue::Array(items)) => {
+            for (idx, item) in items.iter().enumerate() {
+                validate_scene_value_node_ref_hint(ctx, &format!("{label}[{idx}]"), item, item_ty);
+            }
+        }
+        (NodeFieldType::Object(fields), SceneValue::Object(values)) => {
+            for field in fields {
+                let Some((_, item)) = values.iter().find(|(name, _)| name.as_ref() == field.name)
+                else {
+                    continue;
+                };
+                validate_scene_value_node_ref_hint(
+                    ctx,
+                    &format!("{label}.{}", field.name),
+                    item,
+                    &field.ty,
+                );
+            }
+        }
+        _ => {}
+    }
+}
+
+fn validate_script_var_node_ref_fields(
+    ctx: &mut NodeRefValidationCtx<'_>,
+    node_name: &str,
+    fields: &[SceneObjectField],
+    index: &ScriptDoctorIndex,
+) {
+    for (name, value) in fields {
+        let Some(field) = index.state_field_defs.get(name.as_ref()) else {
+            continue;
+        };
+        validate_script_value_node_ref_hint(
+            ctx,
+            &format!("{node_name}.script_vars.{}", name.as_ref()),
+            value,
+            field,
+            index,
+        );
+    }
+}
+
+fn validate_script_value_node_ref_hint(
+    ctx: &mut NodeRefValidationCtx<'_>,
+    label: &str,
+    value: &SceneValue,
+    field: &DoctorField,
+    index: &ScriptDoctorIndex,
+) {
+    if is_node_id_type_for_doctor(&field.ty)
+        && let SceneValue::Key(key) = value
+    {
+        let hint = doctor_node_ref_hint(&field.node_ref_types);
+        validate_one_node_ref_hint(ctx, label, key.as_ref(), hint);
+        return;
+    }
+    if let SceneValue::Object(values) = value
+        && let Some(nested) = index.custom_type_fields.get(&field.ty)
+    {
+        for (name, item) in values.iter() {
+            let Some(nested_field) = nested.iter().find(|field| field.name == name.as_ref()) else {
+                continue;
+            };
+            validate_script_value_node_ref_hint(
+                ctx,
+                &format!("{label}.{}", name.as_ref()),
+                item,
+                nested_field,
+                index,
+            );
+        }
+    }
+}
+
+fn validate_one_node_ref_hint(
+    ctx: &mut NodeRefValidationCtx<'_>,
+    label: &str,
+    raw_ref: &str,
+    hint: NodeRefHint,
+) {
+    if hint.allowed.is_empty() {
+        return;
+    }
+    let target = raw_ref.trim().trim_start_matches('@');
+    if matches!(target, "" | "null" | "none" | "-") {
+        return;
+    }
+    let Some(target_type) = ctx.node_types.get(target).copied() else {
+        return;
+    };
+    if hint.allows(target_type) {
+        return;
+    }
+    let source = format_source_location(ctx.project_dir, Some(ctx.file), None);
+    ctx.report.warn(format!(
+        "node ref type mismatch: {source}{label} wants {}, got {} @{}",
+        hint.label(),
+        target_type.name(),
+        target
+    ));
+}
+
+fn doctor_node_ref_hint(types: &[String]) -> NodeRefHint {
+    let allowed = types
+        .iter()
+        .filter_map(|ty| NodeType::from_str(ty).ok())
+        .collect::<Vec<_>>();
+    if allowed.is_empty() {
+        return NodeRefHint::any();
+    }
+    NodeRefHint::many(Box::leak(allowed.into_boxed_slice()))
+}
+
+fn is_node_id_type_for_doctor(ty: &str) -> bool {
+    ty == "NodeID"
 }
 
 fn extract_aggressive_virtual_refs(text: &str) -> Vec<TextRef> {
@@ -583,6 +822,9 @@ fn index_script_source(text: &str, index: &mut ScriptDoctorIndex) {
             index
                 .state_field_owners
                 .insert(field.name.clone(), state_name.clone());
+            index
+                .state_field_defs
+                .insert(field.name.clone(), field.clone());
             index.state_fields.insert(field.name);
         }
     }
@@ -814,22 +1056,36 @@ fn parse_struct_fields(text: &str, struct_name: &str) -> Vec<DoctorField> {
     let mut fields = Vec::new();
     let mut depth = 0_i32;
     let mut opened = false;
+    let mut pending_node_ref_types = Vec::new();
     for line in lines.iter().skip(start) {
         let line = strip_line_comment_for_doctor(line);
         if !opened {
             if let Some(pos) = line.find('{') {
                 opened = true;
                 depth = 1;
-                if let Some(field) = parse_field_for_doctor(&line[pos + 1..]) {
+                if let Some(field) = parse_field_for_doctor(
+                    &line[pos + 1..],
+                    std::mem::take(&mut pending_node_ref_types),
+                ) {
                     fields.push(field);
                 }
                 depth += brace_delta_for_doctor(&line[pos + 1..]);
             }
         } else {
             if depth == 1
-                && let Some(field) = parse_field_for_doctor(line)
+                && let Some(types) = parse_node_ref_attr_for_doctor(line.trim())
+            {
+                pending_node_ref_types = types;
+                depth += brace_delta_for_doctor(line);
+                continue;
+            }
+            if depth == 1
+                && let Some(field) =
+                    parse_field_for_doctor(line, std::mem::take(&mut pending_node_ref_types))
             {
                 fields.push(field);
+            } else if depth == 1 && !line.trim().is_empty() && !line.trim().starts_with("#[") {
+                pending_node_ref_types.clear();
             }
             depth += brace_delta_for_doctor(line);
         }
@@ -865,7 +1121,7 @@ fn parse_enum_fields(text: &str, enum_name: &str) -> Vec<DoctorField> {
         } else {
             if variant_field_depth > 0 {
                 if variant_field_depth == 1
-                    && let Some(field) = parse_field_for_doctor(line)
+                    && let Some(field) = parse_field_for_doctor(line, Vec::new())
                 {
                     fields.push(field);
                 }
@@ -880,7 +1136,7 @@ fn parse_enum_fields(text: &str, enum_name: &str) -> Vec<DoctorField> {
                     fields.extend(parse_enum_line_fields(line));
                 } else {
                     variant_field_depth = 1;
-                    if let Some(field) = parse_field_for_doctor(&line[pos + 1..]) {
+                    if let Some(field) = parse_field_for_doctor(&line[pos + 1..], Vec::new()) {
                         fields.push(field);
                     }
                 }
@@ -905,11 +1161,11 @@ fn parse_enum_line_fields(line: &str) -> Vec<DoctorField> {
     };
     split_top_level_args(&line[open + 1..close])
         .into_iter()
-        .filter_map(parse_field_for_doctor)
+        .filter_map(|field| parse_field_for_doctor(field, Vec::new()))
         .collect()
 }
 
-fn parse_field_for_doctor(line: &str) -> Option<DoctorField> {
+fn parse_field_for_doctor(line: &str, node_ref_types: Vec<String>) -> Option<DoctorField> {
     let trimmed = line.trim().trim_end_matches(',').trim();
     if trimmed.is_empty()
         || trimmed.starts_with("#[")
@@ -929,10 +1185,27 @@ fn parse_field_for_doctor(line: &str) -> Option<DoctorField> {
         Some(DoctorField {
             name: name.to_string(),
             ty: normalize_type_name_for_doctor(ty),
+            node_ref_types,
         })
     } else {
         None
     }
+}
+
+fn parse_node_ref_attr_for_doctor(line: &str) -> Option<Vec<String>> {
+    let inner = line
+        .trim()
+        .strip_prefix("#[node_ref")?
+        .strip_suffix(']')?
+        .trim();
+    let inner = inner.strip_prefix('(')?.strip_suffix(')')?;
+    Some(
+        split_top_level_args(inner)
+            .into_iter()
+            .map(|item| item.trim().trim_matches('"').to_string())
+            .filter(|item| !item.is_empty())
+            .collect(),
+    )
 }
 
 fn normalize_type_name_for_doctor(input: &str) -> String {
@@ -1949,5 +2222,66 @@ mod tests {
         assert_eq!(report.warnings, 1);
         assert!(report.messages[0].contains("signal: play_clicked"));
         assert!(report.messages[0].contains("res://ui.scn:1"));
+    }
+
+    #[test]
+    fn node_ref_type_hints_warn_for_script_vars_and_builtin_fields() {
+        let project = temp_project();
+        fs::create_dir_all(project.join("res/scripts")).unwrap();
+        fs::write(
+            project.join("res/scripts/player.rs"),
+            r#"
+            use perro_api::prelude::*;
+
+            #[State]
+            pub struct PlayerState {
+                #[expose]
+                #[node_ref(Camera3D)]
+                camera: NodeID,
+            }
+            "#,
+        )
+        .unwrap();
+        fs::write(
+            project.join("res/main.scn"),
+            r#"
+            $root = @Player
+
+            [Player]
+            script = "res://scripts/player.rs"
+            script_vars = { camera = @Mesh }
+            [Node3D/]
+            [/Player]
+
+            [Stream]
+            [UiCameraStream]
+                camera = @Mesh
+            [/UiCameraStream]
+            [/Stream]
+
+            [Mesh]
+            [MeshInstance3D/]
+            [/Mesh]
+            "#,
+        )
+        .unwrap();
+
+        let mut report = ValidationReport::default();
+        validate_script_warnings(&project, &mut report).unwrap();
+
+        assert_eq!(report.errors, 0);
+        assert_eq!(report.warnings, 2);
+        assert!(
+            report
+                .messages
+                .iter()
+                .any(|msg| msg.contains("Player.script_vars.camera wants Node(Camera3D)"))
+        );
+        assert!(
+            report
+                .messages
+                .iter()
+                .any(|msg| msg.contains("Stream.camera wants Node(Camera2D|Camera3D)"))
+        );
     }
 }

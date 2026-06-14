@@ -7,6 +7,7 @@
 | Purpose       | [Purpose](#purpose)             |
 | State Struct  | [State Struct](#state-struct)   |
 | Editor Expose | [Editor Expose](#editor-expose) |
+| Node Ref Hints | [Node Ref Hints](#node-ref-hints) |
 | Defaults      | [Defaults](#defaults)           |
 | Runtime Vars  | [Runtime Vars](#runtime-vars)   |
 | Custom Types  | [Custom Types](#custom-types)   |
@@ -65,6 +66,60 @@ script_vars = {
 Fields without `#[expose]` stay hidden from the editor inspector.
 
 Use this for internal values like velocity, timers, cached refs, and state flags.
+
+## Node Ref Hints
+
+Use `#[node_ref(...)]` on `NodeID` fields to tell editor and doctor which node types are expected.
+
+Runtime type stays `NodeID`.
+
+The hint only affects inspector pick lists and doctor/clippy warnings.
+
+```rust
+#[derive(Clone, Copy, Variant)]
+pub struct RigRefs {
+    #[node_ref(Skeleton3D)]
+    pub skeleton: NodeID,
+}
+
+#[State]
+pub struct PlayerState {
+    #[expose]
+    #[node_ref(Camera2D, Camera3D)]
+    camera: NodeID,
+
+    #[expose]
+    #[node_ref(Node3D)]
+    aim_target: NodeID,
+
+    #[expose]
+    rig: RigRefs,
+}
+```
+
+Scene overrides still use normal node refs.
+
+```text
+script_vars = {
+    camera = @MainCamera,
+    aim_target = @AimMarker,
+    rig = { skeleton = @HeroSkeleton }
+}
+```
+
+Inspector filters node picker by hint.
+
+Doctor warns when scene ref target does not match.
+
+Built-in scene node fields use same hint model.
+
+Examples:
+
+- `CameraStream*.camera` accepts `Camera2D` or `Camera3D`.
+- `UiCameraStream.camera` accepts `Camera2D` or `Camera3D`.
+- `MeshInstance3D.skeleton` accepts `Skeleton3D`.
+- 2D skeleton helper fields accept `Skeleton2D`.
+- 3D skeleton helper fields accept `Skeleton3D`.
 
 ## Defaults
 
