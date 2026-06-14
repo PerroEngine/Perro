@@ -2157,7 +2157,12 @@ pub fn toggle_selected_inspector_bitmask_bit<API: ScriptAPI + ?Sized>(
     if !(1..=32).contains(&bit) {
         return;
     }
-    let next = mask ^ (1_u32 << (bit - 1));
+    let layer = BitMask::layer(bit as u8);
+    let next = if BitMask::from_bits(mask).intersects(layer) {
+        BitMask::from_bits(mask).popped(bit as u8).bits()
+    } else {
+        BitMask::from_bits(mask).pushed(bit as u8).bits()
+    };
     write_selected_inspector_bitmask(ctx, idx, next);
 }
 
@@ -2166,7 +2171,15 @@ pub fn set_selected_inspector_bitmask_all<API: ScriptAPI + ?Sized>(
     idx: usize,
     all: bool,
 ) {
-    write_selected_inspector_bitmask(ctx, idx, if all { u32::MAX } else { 0 });
+    write_selected_inspector_bitmask(
+        ctx,
+        idx,
+        if all {
+            BitMask::ALL.bits()
+        } else {
+            BitMask::NONE.bits()
+        },
+    );
 }
 
 fn current_inspector_bitmask<API: ScriptAPI + ?Sized>(
@@ -2207,7 +2220,7 @@ fn write_selected_inspector_bitmask<API: ScriptAPI + ?Sized>(
     let Some(row) = row else {
         return;
     };
-    let scene_value = SceneValue::I32(value as i32);
+    let scene_value = SceneValue::Key(SceneValueKey::from(bitmask_scene_text(value)));
     let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         let Some(key) = state.selected_key else {
             return false;
@@ -2259,7 +2272,64 @@ fn write_selected_inspector_bitmask<API: ScriptAPI + ?Sized>(
 }
 
 pub fn scene_value_bitmask_from_text(value: &str) -> u32 {
-    value.trim().parse::<i32>().map(|value| value as u32).unwrap_or(0)
+    parse_bitmask_scene_text(value)
+        .or_else(|| value.trim().parse::<i32>().ok().map(|value| value as u32))
+        .unwrap_or(0)
+}
+
+fn bitmask_scene_text(bits: u32) -> String {
+    let mask = BitMask::from_bits(bits);
+    if mask == BitMask::ALL {
+        return "all".to_string();
+    }
+    if mask == BitMask::NONE {
+        return "none".to_string();
+    }
+    let layers = bitmask_layers(mask);
+    format!(
+        "only({})",
+        layers
+            .iter()
+            .map(u8::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+}
+
+fn parse_bitmask_scene_text(value: &str) -> Option<u32> {
+    let raw = value.trim().trim_matches('"');
+    match raw {
+        "all" | "ALL" => return Some(BitMask::ALL.bits()),
+        "none" | "NONE" => return Some(BitMask::NONE.bits()),
+        _ => {}
+    }
+    let (op, rest) = raw.split_once('(')?;
+    let args = rest.strip_suffix(')')?.trim();
+    let args = args
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .unwrap_or(args);
+    let mut layers = Vec::new();
+    if !args.is_empty() {
+        for arg in args.split(',') {
+            let layer = arg.trim().parse::<u8>().ok()?;
+            if !(1..=32).contains(&layer) {
+                return None;
+            }
+            layers.push(layer);
+        }
+    }
+    match op {
+        "only" | "ONLY" => BitMask::try_from_layers(layers).map(BitMask::bits),
+        "without" | "WITHOUT" => Some(BitMask::without(&layers).bits()),
+        _ => None,
+    }
+}
+
+fn bitmask_layers(mask: BitMask) -> Vec<u8> {
+    (1..=32)
+        .filter(|layer| mask.intersects(BitMask::layer(*layer)))
+        .collect()
 }
 
 pub fn set_value_at_path(
