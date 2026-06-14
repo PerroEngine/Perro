@@ -17,8 +17,19 @@ script = "res://scripts/ui/inspector_value_row.rs"
     [/UiPanel]
 [/inspector_value_row]
 
-[inspector_value_row_inner]
+[inspector_value_row_stack]
 parent = @inspector_value_row
+    [UiVLayout]
+        size_ratio = (1.0, 1.0)
+        h_align = "fill"
+        v_align = "start"
+        spacing = 0.0
+        padding = (0.0, 0.0)
+    [/UiVLayout]
+[/inspector_value_row_stack]
+
+[inspector_value_row_inner]
+parent = @inspector_value_row_stack
     [UiHLayout]
         size_ratio = (1.0, 1.0)
         h_align = "fill"
@@ -26,6 +37,18 @@ parent = @inspector_value_row
         spacing = 0.002
     [/UiHLayout]
 [/inspector_value_row_inner]
+
+[inspector_value_row_children]
+parent = @inspector_value_row_stack
+    [UiVLayout]
+        size_ratio = (1.0, 0.0)
+        h_align = "fill"
+        v_align = "start"
+        spacing = 0.0
+        padding = (0.0, 0.0)
+        visible = false
+    [/UiVLayout]
+[/inspector_value_row_children]
 
 [inspector_value_name]
 parent = @inspector_value_row_inner

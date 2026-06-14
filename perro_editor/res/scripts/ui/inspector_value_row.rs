@@ -40,32 +40,67 @@ pub fn inspector_value_row_inner<API: ScriptAPI + ?Sized>(
     }
 }
 
+pub fn inspector_value_row_children<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+) -> Option<NodeID> {
+    find_named(ctx, &format!("inspector_var_row_{idx}_children"))
+}
+
+pub fn place_inspector_value_row<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+    parent_idx: Option<usize>,
+) {
+    let Some(row_id) = find_named(ctx, &format!("inspector_var_row_{idx}")) else {
+        return;
+    };
+    let parent_id = parent_idx
+        .and_then(|idx| inspector_value_row_children(ctx, idx))
+        .or_else(|| find_named(ctx, "inspector_content"));
+    let Some(parent_id) = parent_id else {
+        return;
+    };
+    if ctx.run.Nodes().get_node_parent_id(row_id) == Some(parent_id) {
+        return;
+    }
+    let _ = ctx.run.Nodes().reparent(parent_id, row_id);
+}
+
 pub fn apply_inspector_value_row_panel<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     idx: usize,
     depth: usize,
     source: &str,
+    has_children: bool,
 ) {
     let Some(id) = find_named(ctx, &format!("inspector_var_row_{idx}")) else {
         return;
     };
     let palette = [
-        ("#101826D9", "#233147FF"),
-        ("#132033D9", "#2D415CFF"),
-        ("#17283DD9", "#38516FFF"),
-        ("#1B3045D9", "#436180FF"),
+        ("#151A22E6", "#2B3442FF"),
+        ("#1A202AE6", "#343F50FF"),
+        ("#202733E6", "#3E4B5FFF"),
+        ("#252E3BE6", "#48566CFF"),
     ];
-    let (fill, stroke) = if source == "section" {
+    let group_depth = depth.saturating_sub(1);
+    let (fill, stroke) = if depth > 0 && !has_children {
+        ("#00000000", "#00000000")
+    } else if source == "section" {
         ("#0B1220E6", "#334155FF")
     } else {
-        palette[depth.min(palette.len() - 1)]
+        palette[group_depth.min(palette.len() - 1)]
     };
-    let script_stroke = if source == "script" { "#4B5563FF" } else { stroke };
+    let script_stroke = if source == "script" && depth == 0 {
+        "#4B5563FF"
+    } else {
+        stroke
+    };
     let _ = with_node_mut!(ctx.run, UiPanel, id, |node| {
         node.style.fill = Color::from_hex(fill).unwrap_or(node.style.fill);
         node.style.stroke = Color::from_hex(script_stroke).unwrap_or(node.style.stroke);
-        node.style.stroke_width = 1.0;
-        node.style.corner_radius = 0.15;
+        node.style.stroke_width = if depth > 0 && !has_children { 0.0 } else { 1.0 };
+        node.style.corner_radius = if depth == 0 { 0.16 } else { 0.05 };
     });
 }
 
@@ -104,7 +139,9 @@ fn rename_value_row<API: ScriptAPI + ?Sized>(
 fn value_row_instance_name(name: &str, idx: usize) -> Option<String> {
     let next = match name {
         "inspector_value_row" => format!("inspector_var_row_{idx}"),
+        "inspector_value_row_stack" => format!("inspector_var_row_{idx}_stack"),
         "inspector_value_row_inner" => format!("inspector_var_row_{idx}_inner"),
+        "inspector_value_row_children" => format!("inspector_var_row_{idx}_children"),
         "inspector_value_name" => format!("inspector_var_{idx}_name"),
         "inspector_value_box" => format!("inspector_var_{idx}_value"),
         "inspector_value_check" => format!("inspector_var_{idx}_check"),
