@@ -24,6 +24,63 @@ use std::borrow::Cow;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EditorAssetFilter {
+    pub label: &'static str,
+    pub extensions: &'static [&'static str],
+}
+
+pub fn editor_asset_filters(kind: perro_scene::SceneAssetKind) -> &'static [EditorAssetFilter] {
+    match kind {
+        perro_scene::SceneAssetKind::Scene => &[EditorAssetFilter {
+            label: "Scenes",
+            extensions: &["scn"],
+        }],
+        perro_scene::SceneAssetKind::Script => &[EditorAssetFilter {
+            label: "Rust Scripts",
+            extensions: &["rs"],
+        }],
+        perro_scene::SceneAssetKind::Texture => &[EditorAssetFilter {
+            label: "Images",
+            extensions: &["png", "jpg", "jpeg", "webp", "bmp", "tga", "svg"],
+        }],
+        perro_scene::SceneAssetKind::Mesh | perro_scene::SceneAssetKind::Model => {
+            &[EditorAssetFilter {
+                label: "Meshes",
+                extensions: &["glb", "gltf", "pmesh", "obj", "fbx"],
+            }]
+        }
+        perro_scene::SceneAssetKind::Material => &[EditorAssetFilter {
+            label: "Perro Materials",
+            extensions: &["pmat"],
+        }],
+        perro_scene::SceneAssetKind::Animation => &[EditorAssetFilter {
+            label: "Perro Animations",
+            extensions: &["panim"],
+        }],
+        perro_scene::SceneAssetKind::AnimationTree => &[EditorAssetFilter {
+            label: "Perro Animation Trees",
+            extensions: &["panimtree"],
+        }],
+        perro_scene::SceneAssetKind::Skeleton => &[EditorAssetFilter {
+            label: "Perro Skeletons",
+            extensions: &["pskel", "pskel2d", "pskel3d"],
+        }],
+        perro_scene::SceneAssetKind::ParticleProfile => &[EditorAssetFilter {
+            label: "Perro Particles",
+            extensions: &["ppart"],
+        }],
+        perro_scene::SceneAssetKind::TileSet => &[EditorAssetFilter {
+            label: "Perro Tile Sets",
+            extensions: &["ptileset"],
+        }],
+        perro_scene::SceneAssetKind::UiStyle => &[EditorAssetFilter {
+            label: "Perro UI Styles",
+            extensions: &["uistyle"],
+        }],
+    }
+}
 pub fn select_node_slot<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, idx: usize) {
     let key = with_state!(ctx.run, EditorState, ctx.id, |state| {
         if state.doc_text.is_empty() {
@@ -385,7 +442,7 @@ pub fn selected_node_asset_refs(node: &SceneNodeEntry) -> Vec<String> {
     {
         out.push(format!("script: {script}"));
     }
-    for field in perro_scene::scene_inspector_asset_fields(node.data.node_type) {
+    for field in perro_scene::scene_node_asset_fields(node.data.node_type) {
         if let Some(path) = scene_field_value_text(&node.data, field.name)
             && path.starts_with("res://")
         {
@@ -620,7 +677,7 @@ pub fn asset_binding_for_node(
     }
     let node_type = perro_scene::NodeType::from_str(node_type).ok()?;
     let path_kind = asset_kind_for_path(path)?;
-    for field in perro_scene::scene_inspector_asset_fields(node_type) {
+    for field in perro_scene::scene_node_asset_fields(node_type) {
         let perro_scene::NodeFieldType::Asset(field_kind) = field.ty else {
             continue;
         };
@@ -1465,7 +1522,7 @@ pub fn clear_selected_node_asset_refs<API: ScriptAPI + ?Sized>(ctx: &mut ScriptC
             node.root_of = None;
             count += 1;
         }
-        let asset_fields = perro_scene::scene_inspector_asset_fields(node.data.node_type)
+        let asset_fields = perro_scene::scene_node_asset_fields(node.data.node_type)
             .into_iter()
             .map(|field| field.name.to_string())
             .collect::<Vec<_>>();

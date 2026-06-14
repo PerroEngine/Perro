@@ -1,0 +1,240 @@
+$root = @inspector_value_row
+$panel = { fill: "#101826D9", stroke: "#233147FF", stroke_width: 1.0, radius: 0.15 }
+$field = { fill: "#111827DD", stroke: "#334155FF", stroke_width: 1.0, radius: 0.2 }
+$field_focus = { fill: "#111827DD", stroke: "#478CBFFF", stroke_width: 1.0, radius: 0.2 }
+$button = { fill: "#111827DD", stroke: "#334155FF", stroke_width: 1.0, radius: 0.2 }
+$button_hot = { style: { fill: "#223142", stroke: "#334155FF", stroke_width: 1.0, radius: 0.2 } }
+$button_down = { style: { fill: "#334155", stroke: "#334155FF", stroke_width: 1.0, radius: 0.2 } }
+
+[inspector_value_row]
+script = "res://scripts/ui/inspector_value_row.rs"
+    [UiPanel]
+        size_ratio = (0.985, 0.031)
+        padding = (0.004, 0.001)
+        h_align = "fill"
+        visible = false
+        style = $panel
+    [/UiPanel]
+[/inspector_value_row]
+
+[inspector_value_row_inner]
+parent = @inspector_value_row
+    [UiHLayout]
+        size_ratio = (1.0, 1.0)
+        h_align = "fill"
+        v_align = "center"
+        spacing = 0.002
+    [/UiHLayout]
+[/inspector_value_row_inner]
+
+[inspector_value_name]
+parent = @inspector_value_row_inner
+    [UiLabel]
+        size_ratio = (0.34, 1.0)
+        text_size_ratio = 0.35
+        color = "#CBD5E1"
+        h_align = "start"
+    [/UiLabel]
+[/inspector_value_name]
+
+[inspector_value_box]
+parent = @inspector_value_row_inner
+    [UiTextBox]
+        size_ratio = (0.50, 0.70)
+        text_size_ratio = 0.62
+        padding = (5.0, 1.0)
+        text_changed_signals = ["editor_inspector_var_7"]
+        focused_signals = ["editor_inspector_focus"]
+        unfocused_signals = ["editor_inspector_commit"]
+        style = $field
+        focused_style = $field_focus
+    [/UiTextBox]
+[/inspector_value_box]
+
+[inspector_value_check]
+parent = @inspector_value_row_inner
+    [UiCheckbox]
+        size_ratio = (0.055, 0.50)
+        visible = false
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = { fill: "#00000000", stroke: "#8FA3B8", stroke_width: 1.5, radius: 0.1 }
+        hover = { style: { fill: "#16202A", stroke: "#B8C7D8", stroke_width: 1.5, radius: 0.1 } }
+        pressed = { style: { fill: "#223142", stroke: "#E5E7EB", stroke_width: 1.5, radius: 0.1 } }
+        dot_fill = "#7DD3FC"
+    [/UiCheckbox]
+[/inspector_value_check]
+
+[inspector_value_pick_button]
+parent = @inspector_value_row_inner
+    [UiButton]
+        size_ratio = (0.42, 0.62)
+        visible = false
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $button
+        hover = $button_hot
+        pressed = $button_down
+    [/UiButton]
+[/inspector_value_pick_button]
+
+[inspector_value_pick_label]
+parent = @inspector_value_pick_button
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text_size_ratio = 0.316
+        color = "#E5E7EB"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_value_pick_label]
+
+[inspector_value_type]
+parent = @inspector_value_row_inner
+    [UiLabel]
+        size_ratio = (0.16, 1.0)
+        text_size_ratio = 0.28
+        color = "#94A3B8"
+    [/UiLabel]
+[/inspector_value_type]
+
+[inspector_value_add_button]
+parent = @inspector_value_row_inner
+    [UiButton]
+        size_ratio = (0.045, 0.62)
+        visible = false
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $button
+        hover = $button_hot
+        pressed = $button_down
+    [/UiButton]
+[/inspector_value_add_button]
+
+[inspector_value_add_label]
+parent = @inspector_value_add_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "+"
+        text_size_ratio = 0.38
+        color = "#E5E7EB"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_value_add_label]
+
+[inspector_value_remove_button]
+parent = @inspector_value_row_inner
+    [UiButton]
+        size_ratio = (0.045, 0.62)
+        visible = false
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $button
+        hover = $button_hot
+        pressed = $button_down
+    [/UiButton]
+[/inspector_value_remove_button]
+
+[inspector_value_remove_label]
+parent = @inspector_value_remove_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "x"
+        text_size_ratio = 0.38
+        color = "#E5E7EB"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_value_remove_label]
+
+[inspector_value_color_swatch]
+parent = @inspector_value_row_inner
+    [UiColorPicker]
+        size_ratio = (0.065, 0.62)
+        visible = false
+        input_enabled = true
+        mouse_filter = "pass"
+        color_changed_signals = ["editor_inspector_var_7"]
+        style = { fill: "#111827DD", stroke: "#D1D5DBFF", stroke_width: 1.0, radius: 0.2 }
+        hover = { style: { fill: "#223142", stroke: "#FFFFFFFF", stroke_width: 1.0, radius: 0.2 } }
+        pressed = { style: { fill: "#334155", stroke: "#94A3B8FF", stroke_width: 1.0, radius: 0.2 } }
+    [/UiColorPicker]
+[/inspector_value_color_swatch]
+
+[inspector_value_dropdown]
+parent = @inspector_value_row_inner
+    [UiDropdown]
+        size_ratio = (0.42, 0.62)
+        visible = false
+        selected_signals = ["editor_inspector_var_7"]
+        option_height = 24.0
+        style = $button
+        hover = $button_hot
+        pressed = $button_down
+        option_style = $button
+        option_hover_style = $button_hot
+        option_pressed_style = $button_down
+    [/UiDropdown]
+[/inspector_value_dropdown]
+
+[inspector_value_0_box]
+parent = @inspector_value_row_inner
+    [UiTextBox]
+        size_ratio = (0.10, 0.62)
+        visible = false
+        input_enabled = false
+        text_size_ratio = 0.62
+        padding = (4.0, 1.0)
+        text_changed_signals = ["editor_inspector_var_7"]
+        focused_signals = ["editor_inspector_focus"]
+        style = $field
+        focused_style = $field_focus
+    [/UiTextBox]
+[/inspector_value_0_box]
+
+[inspector_value_1_box]
+parent = @inspector_value_row_inner
+    [UiTextBox]
+        size_ratio = (0.10, 0.62)
+        visible = false
+        input_enabled = false
+        text_size_ratio = 0.62
+        padding = (4.0, 1.0)
+        text_changed_signals = ["editor_inspector_var_7"]
+        focused_signals = ["editor_inspector_focus"]
+        style = $field
+        focused_style = $field_focus
+    [/UiTextBox]
+[/inspector_value_1_box]
+
+[inspector_value_2_box]
+parent = @inspector_value_row_inner
+    [UiTextBox]
+        size_ratio = (0.10, 0.62)
+        visible = false
+        input_enabled = false
+        text_size_ratio = 0.62
+        padding = (4.0, 1.0)
+        text_changed_signals = ["editor_inspector_var_7"]
+        focused_signals = ["editor_inspector_focus"]
+        style = $field
+        focused_style = $field_focus
+    [/UiTextBox]
+[/inspector_value_2_box]
+
+[inspector_value_3_box]
+parent = @inspector_value_row_inner
+    [UiTextBox]
+        size_ratio = (0.10, 0.62)
+        visible = false
+        input_enabled = false
+        text_size_ratio = 0.62
+        padding = (4.0, 1.0)
+        text_changed_signals = ["editor_inspector_var_7"]
+        focused_signals = ["editor_inspector_focus"]
+        style = $field
+        focused_style = $field_focus
+    [/UiTextBox]
+[/inspector_value_3_box]

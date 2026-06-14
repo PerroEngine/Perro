@@ -223,6 +223,35 @@ pub fn inspector_value_rows_for_node(
     rows
 }
 
+pub fn inspector_display_rows_for_node(
+    state: &EditorState,
+    node: &perro_api::scene::SceneNodeEntry,
+) -> Vec<InspectorValueRow> {
+    let scene_fields = inspector_scene_value_fields_for_node(node);
+    let mut rows = inspector_scene_value_rows_for_node(state, node, &scene_fields);
+    let script_rows = inspector_script_var_rows_for_node(state, node);
+    if !script_rows.is_empty() {
+        rows.push(InspectorValueRow {
+            source: "section".to_string(),
+            depth: 0,
+            path: Vec::new(),
+            path_key: "section:script".to_string(),
+            name: "Script".to_string(),
+            kind: String::new(),
+            value: String::new(),
+            components: Vec::new(),
+            color_preview: None,
+            enum_options: Vec::new(),
+            editable: false,
+            expandable: false,
+            addable: false,
+            removable: false,
+        });
+        rows.extend(script_rows);
+    }
+    rows
+}
+
 fn inspector_scene_value_rows_for_node(
     state: &EditorState,
     node: &perro_api::scene::SceneNodeEntry,
@@ -231,7 +260,7 @@ fn inspector_scene_value_rows_for_node(
     let mut kind_overrides = BTreeMap::new();
     let mut color_paths = Vec::new();
     let mut node_paths = Vec::new();
-    let schema_fields = perro_scene::scene_inspector_fields(node.data.node_type);
+    let schema_fields = perro_scene::scene_node_fields(node.data.node_type);
     for (idx, (name, value)) in fields.iter().enumerate() {
         let Some(schema_field) = schema_fields
             .iter()
@@ -1968,7 +1997,7 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
             .nodes
             .iter()
             .find(|node| node.key.as_u32() == key)?;
-        Some(inspector_value_rows_for_node(state, node))
+        Some(inspector_display_rows_for_node(state, node))
     });
     let Some(rows) = rows else {
         return;
@@ -2082,7 +2111,7 @@ pub fn mutate_selected_inspector_array<API: ScriptAPI + ?Sized>(
             .nodes
             .iter()
             .find(|node| node.key.as_u32() == key)?;
-        inspector_value_rows_for_node(state, node).get(idx).cloned()
+        inspector_display_rows_for_node(state, node).get(idx).cloned()
     });
     let Some(row) = row else {
         return;
@@ -2194,7 +2223,7 @@ fn current_inspector_bitmask<API: ScriptAPI + ?Sized>(
             .nodes
             .iter()
             .find(|node| node.key.as_u32() == key)?;
-        let row = inspector_value_rows_for_node(state, node).get(idx)?.clone();
+        let row = inspector_display_rows_for_node(state, node).get(idx)?.clone();
         if row.kind != "BitMask" {
             return None;
         }
@@ -2215,7 +2244,7 @@ fn write_selected_inspector_bitmask<API: ScriptAPI + ?Sized>(
             .nodes
             .iter()
             .find(|node| node.key.as_u32() == key)?;
-        inspector_value_rows_for_node(state, node).get(idx).cloned()
+        inspector_display_rows_for_node(state, node).get(idx).cloned()
     });
     let Some(row) = row else {
         return;

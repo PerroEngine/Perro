@@ -992,7 +992,9 @@ fn ensure_source_overrides_recreates_missing_scripts_manifest() {
     ensure_project_scaffold(&root, "Restore Scripts Manifest").expect("scaffold");
 
     let manifest = root.join(".perro").join("scripts").join("Cargo.toml");
+    let scripts_src = root.join(".perro").join("scripts").join("src");
     fs::remove_file(&manifest).expect("rm scripts manifest");
+    fs::remove_dir_all(&scripts_src).expect("rm scripts src");
 
     ensure_source_overrides(&root).expect("overrides");
 
@@ -1001,6 +1003,10 @@ fn ensure_source_overrides_recreates_missing_scripts_manifest() {
     assert!(repaired.contains("crate-type = [\"cdylib\", \"rlib\"]"));
     assert!(repaired.contains("perro_api = \"0.1.0\""));
     assert!(repaired.contains("perro_runtime = \"0.1.0\""));
+    let repaired_lib =
+        fs::read_to_string(scripts_src.join("lib.rs")).expect("read repaired scripts lib");
+    assert!(repaired_lib.contains("SCRIPT_REGISTRY"));
+    assert!(repaired_lib.contains("perro_scripts_init"));
 
     fs::remove_dir_all(&root).expect("cleanup");
 }

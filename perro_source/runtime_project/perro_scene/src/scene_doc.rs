@@ -1,4 +1,8 @@
-use crate::{Parser, Scene, SceneKey, SceneNodeData, SceneNodeEntry, SceneObjectField, SceneValue};
+use crate::{
+    Parser, Scene, SceneKey, SceneNodeData, SceneNodeEntry, SceneObjectField, SceneValue,
+    default_scene_field_value,
+};
+use perro_structs::BitMask;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 
@@ -221,12 +225,17 @@ impl<'a> SceneDocWriter<'a> {
         indent(out, depth);
         out.push('[');
         out.push_str(data.type_name());
-        if data.base_ref().is_none() && data.fields.is_empty() {
+        let fields = data
+            .fields
+            .iter()
+            .filter(|(name, value)| !scene_field_matches_default(data, name, value))
+            .collect::<Vec<_>>();
+        if data.base_ref().is_none() && fields.is_empty() {
             out.push_str("/]\n");
             return;
         }
         out.push_str("]\n");
-        for (name, value) in data.fields.iter() {
+        for (name, value) in fields {
             indent(out, depth + 1);
             out.push_str(name.as_ref());
             out.push_str(" = ");
@@ -450,6 +459,87 @@ impl<'a> SceneDocWriter<'a> {
                 out.push(']');
             }
         }
+    }
+}
+
+fn scene_field_matches_default(
+    data: &SceneNodeData,
+    name: &crate::SceneFieldName,
+    value: &SceneValue,
+) -> bool {
+    default_scene_field_value(data.node_type, name)
+        .as_ref()
+        .is_some_and(|default| scene_values_match(default, value))
+}
+
+fn scene_values_match(default: &SceneValue, value: &SceneValue) -> bool {
+    if default == value {
+        return true;
+    }
+    match (default, value) {
+        (SceneValue::F32(a), SceneValue::I32(b)) => (*a - *b as f32).abs() <= f32::EPSILON,
+        (SceneValue::I32(a), SceneValue::F32(b)) => (*a as f32 - *b).abs() <= f32::EPSILON,
+        (SceneValue::Str(a), SceneValue::Key(b)) | (SceneValue::Key(b), SceneValue::Str(a)) => {
+            a.as_ref() == b.as_ref()
+        }
+        _ => scene_value_bitmask(default)
+            .zip(scene_value_bitmask(value))
+            .is_some_and(|(a, b)| a == b),
+    }
+}
+
+fn scene_value_bitmask(value: &SceneValue) -> Option<BitMask> {
+    match value {
+        SceneValue::I32(v) => Some(BitMask::from_bits(*v as u32)),
+        SceneValue::F32(v) if v.fract() == 0.0 && *v >= 0.0 => Some(BitMask::from_bits(*v as u32)),
+        SceneValue::Key(v) => parse_bitmask_text(v.as_ref()),
+        SceneValue::Str(v) => parse_bitmask_text(v.as_ref()),
+        SceneValue::Array(items) => {
+            let mut mask = BitMask::NONE;
+            for item in items.iter() {
+                let layer = match item {
+                    SceneValue::I32(v) => *v,
+                    SceneValue::F32(v) if v.fract() == 0.0 => *v as i32,
+                    _ => return None,
+                };
+                let layer = u8::try_from(layer).ok()?;
+                mask = mask.union(BitMask::try_layer(layer)?);
+            }
+            Some(mask)
+        }
+        _ => None,
+    }
+}
+
+fn parse_bitmask_text(raw: &str) -> Option<BitMask> {
+    match raw {
+        "all" | "ALL" => Some(BitMask::ALL),
+        "none" | "NONE" => Some(BitMask::NONE),
+        _ => parse_bitmask_call(raw),
+    }
+}
+
+fn parse_bitmask_call(raw: &str) -> Option<BitMask> {
+    let (op, rest) = raw.split_once('(')?;
+    let args = rest.strip_suffix(')')?.trim();
+    let args = args
+        .strip_prefix('[')
+        .and_then(|v| v.strip_suffix(']'))
+        .unwrap_or(args);
+    let mut layers = Vec::new();
+    if !args.trim().is_empty() {
+        for arg in args.split(',') {
+            let layer = arg.trim().parse::<u8>().ok()?;
+            if !(1..=32).contains(&layer) {
+                return None;
+            }
+            layers.push(layer);
+        }
+    }
+    match op {
+        "only" | "ONLY" => BitMask::try_from_layers(layers),
+        "without" | "WITHOUT" => Some(BitMask::without(&layers)),
+        _ => None,
     }
 }
 

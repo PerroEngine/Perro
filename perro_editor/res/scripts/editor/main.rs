@@ -297,12 +297,12 @@ methods!({
                     mutate_selected_inspector_array(ctx, idx, true);
                 } else if let Some(idx) = middle_index(&name, "inspector_var_", "_remove_button") {
                     mutate_selected_inspector_array(ctx, idx, false);
-                } else if let Some((idx, bit)) = inspector_var_bit_button(&name) {
-                    toggle_selected_inspector_bitmask_bit(ctx, idx, bit);
                 } else if let Some(idx) = middle_index(&name, "inspector_var_", "_bit_all") {
                     set_selected_inspector_bitmask_all(ctx, idx, true);
                 } else if let Some(idx) = middle_index(&name, "inspector_var_", "_bit_none") {
                     set_selected_inspector_bitmask_all(ctx, idx, false);
+                } else if let Some((idx, bit)) = inspector_var_bit_button(&name) {
+                    toggle_selected_inspector_bitmask_bit(ctx, idx, bit);
                 } else if let Some(idx) = middle_index(&name, "inspector_var_", "_dropdown") {
                     edit_selected_script_var_path(ctx, idx);
                 } else if let Some(idx) = suffix_index(&name, "inspector_pick_row_") {

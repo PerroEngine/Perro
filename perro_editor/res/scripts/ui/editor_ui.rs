@@ -15,8 +15,14 @@ use crate::scripts_scene_editor_nodes_rs::*;
 use crate::scripts_scene_editor_scene_deps_rs as editor_scene_deps;
 use crate::scripts_scene_editor_scene_rs as editor_scene;
 use crate::scripts_scene_editor_viewport_rs::*;
+use crate::scripts_ui_bitmask_rs::{ensure_inspector_bitmask_grid, update_inspector_bitmask_grid};
 use crate::scripts_ui_editor_inspector_values_rs::*;
 use crate::scripts_ui_editor_view_rs as editor_view;
+use crate::scripts_ui_inspector_value_row_rs::{
+    apply_inspector_value_row_panel, ensure_inspector_value_row, hide_inspector_value_rows_from,
+    inspector_value_row_inner,
+};
+use crate::scripts_ui_tree_row_affordance_rs::ensure_tree_row_affordances;
 use perro_api::prelude::*;
 use perro_api::scene::{
     SceneDoc, SceneFieldName, SceneKey, SceneNodeData, SceneNodeEntry, SceneValue, SceneValueKey,
@@ -332,6 +338,8 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let transform_closed =
         inspector_section_collapsed(&view.inspector.collapsed_sections, "transform");
     let vars_closed = inspector_section_collapsed(&view.inspector.collapsed_sections, "vars");
+    let show_transform = false;
+    let show_transform_body = false;
     set_label(ctx, "inspector_pos_label", "Transform");
     set_row_state(
         ctx,
@@ -339,6 +347,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         false,
         inspector_disclosure(transform_closed),
     );
+    set_ui_display(ctx, "inspector_pos", show_transform);
     set_text_box(
         ctx,
         "inspector_position_box",
@@ -347,7 +356,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     set_ui_display(
         ctx,
         "inspector_position_label",
-        view.inspector.node_actions && !transform_closed,
+        show_transform_body,
     );
     set_label(ctx, "inspector_position_header_label", "Position");
     apply_component_row(
@@ -355,18 +364,18 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         "inspector_position",
         &["x", "y", "z", "w"],
         &view.inspector.pos,
-        view.inspector.node_actions && !transform_closed,
+        show_transform_body,
     );
     set_label(ctx, "inspector_rotation_header_label", "Rotation");
     set_ui_display(
         ctx,
         "inspector_rotation_label",
-        view.inspector.node_actions && !transform_closed,
+        show_transform_body,
     );
     set_ui_display(
         ctx,
         "inspector_rotation_mode_row",
-        view.inspector.rotation_mode_buttons && !transform_closed,
+        view.inspector.rotation_mode_buttons && show_transform_body,
     );
     set_button_fill(
         ctx,
@@ -396,13 +405,13 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         "inspector_rotation",
         &view.inspector.rotation_components,
         &view.inspector.rotation,
-        view.inspector.node_actions && !transform_closed,
+        show_transform_body,
     );
     set_label(ctx, "inspector_scale_header_label", "Scale");
     set_ui_display(
         ctx,
         "inspector_scale_label",
-        view.inspector.node_actions && !transform_closed,
+        show_transform_body,
     );
     set_text_box(ctx, "inspector_scale_box", &view.inspector.scale.join(", "));
     apply_component_row(
@@ -410,9 +419,9 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         "inspector_scale",
         &["x", "y", "z", "w"],
         &view.inspector.scale,
-        view.inspector.node_actions && !transform_closed,
+        show_transform_body,
     );
-    set_label(ctx, "inspector_vars_label", "Script");
+    set_label(ctx, "inspector_vars_label", "Fields");
     set_row_state(
         ctx,
         "inspector_vars",
@@ -429,9 +438,9 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     for idx in 0..view.inspector.script_vars.len() {
         ensure_inspector_value_row(ctx, idx);
         let row = view.inspector.script_vars.get(idx);
-        ensure_inspector_value_component_boxes(ctx, idx);
-        ensure_inspector_color_swatch(ctx, idx);
-        ensure_inspector_bitmask_grid(ctx, idx);
+        if let Some(row_id) = inspector_value_row_inner(ctx, idx) {
+            ensure_inspector_bitmask_grid(ctx, idx, row_id);
+        }
         set_ui_display(
             ctx,
             &format!("inspector_var_row_{idx}"),
@@ -442,10 +451,16 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             &format!("inspector_var_{idx}_name"),
             row.map(|item| item.name.as_str()).unwrap_or("-"),
         );
+        let bitmask_row = row.is_some_and(|item| item.kind == "BitMask");
         set_label(
             ctx,
             &format!("inspector_var_{idx}_type"),
             row.map(|item| item.kind.as_str()).unwrap_or("-"),
+        );
+        set_ui_display(
+            ctx,
+            &format!("inspector_var_{idx}_type"),
+            view.inspector.node_actions && !bitmask_row && !vars_closed,
         );
         set_text_box(
             ctx,
@@ -476,13 +491,15 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             set_color_picker_value(ctx, &swatch_name, color);
         }
         let bool_row = row.is_some_and(|item| item.kind == "Bool");
-        let bitmask_row = row.is_some_and(|item| item.kind == "BitMask");
         let enum_row = row.is_some_and(|item| !item.enum_options.is_empty());
+        let section_row = row.is_some_and(|item| item.source == "section");
         let dropdown_name = format!("inspector_var_{idx}_dropdown");
-        ensure_inspector_enum_dropdown(ctx, idx);
         let picker_button_name = format!("inspector_var_{idx}_pick_button");
         let picker_row = row
-            .is_some_and(|item| item.kind == "Node" || item.kind.starts_with("Asset(") || item.expandable)
+            .is_some_and(|item| {
+                item.source != "section"
+                    && (item.kind == "Node" || item.kind.starts_with("Asset(") || item.expandable)
+            })
             && find_named(ctx, &picker_button_name).is_some();
         let component_row =
             row.is_some_and(|item| !item.components.is_empty() || item.kind == "Color");
@@ -491,6 +508,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             &format!("inspector_var_{idx}_value"),
             view.inspector.node_actions
                 && row.is_some()
+                && !section_row
                 && !picker_row
                 && !enum_row
                 && !bool_row
@@ -520,7 +538,10 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             view.inspector.node_actions && bitmask_row && !vars_closed,
         );
         if bitmask_row {
-            set_ui_node_size(ctx, &format!("inspector_var_row_{idx}"), (0.985, 0.074));
+            set_ui_node_size(ctx, &format!("inspector_var_row_{idx}"), (0.985, 0.115));
+            set_ui_node_size(ctx, &format!("inspector_var_row_{idx}_inner"), (1.0, 1.0));
+        } else if section_row {
+            set_ui_node_size(ctx, &format!("inspector_var_row_{idx}"), (0.985, 0.024));
             set_ui_node_size(ctx, &format!("inspector_var_row_{idx}_inner"), (1.0, 1.0));
         } else {
             set_ui_node_size(ctx, &format!("inspector_var_row_{idx}"), (0.985, 0.031));
@@ -555,12 +576,16 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         set_ui_display(
             ctx,
             &add_name,
-            view.inspector.node_actions && row.is_some_and(|item| item.addable) && !vars_closed,
+            view.inspector.node_actions
+                && row.is_some_and(|item| item.source != "section" && item.addable)
+                && !vars_closed,
         );
         set_ui_display(
             ctx,
             &remove_name,
-            view.inspector.node_actions && row.is_some_and(|item| item.removable) && !vars_closed,
+            view.inspector.node_actions
+                && row.is_some_and(|item| item.source != "section" && item.removable)
+                && !vars_closed,
         );
     }
     hide_inspector_value_rows_from(ctx, view.inspector.script_vars.len());
@@ -862,6 +887,7 @@ pub struct InspectorViewData {
     rotation_mode_buttons: bool,
     scale_label: String,
     scale: Vec<String>,
+    transform_fields: Vec<&'static str>,
     script: String,
     vars_text: String,
     script_vars: Vec<InspectorValueRow>,
@@ -890,6 +916,7 @@ impl Default for InspectorViewData {
             rotation_mode_buttons: false,
             scale_label: "Scale".to_string(),
             scale: Vec::new(),
+            transform_fields: Vec::new(),
             script: "Script  -".to_string(),
             vars_text: String::new(),
             script_vars: Vec::new(),
@@ -909,6 +936,10 @@ impl InspectorViewData {
             .map(|value| value.as_ref())
             .unwrap_or("-");
         let is_3d = node.data.node_type.is_a(perro_scene::NodeType::Node3D);
+        let transform_fields = scene_node_transform_fields(node.data.node_type);
+        let has_position = transform_fields.contains(&"position");
+        let has_rotation = transform_fields.contains(&"rotation");
+        let has_scale = transform_fields.contains(&"scale");
         let rotation_mode = if is_3d && state.inspector_rotation_mode == "euler" {
             "euler"
         } else {
@@ -925,6 +956,7 @@ impl InspectorViewData {
         view.kind = format!("Type  {}", node_hierarchy_text(node.data.node_type));
         view.parent = format!("Path  {path}\nChildren  {child_count}");
         view.node_actions = true;
+        view.transform_fields = transform_fields;
         view.pos = scene_value_components(&node.data, "position");
         view.rotation_label = if rotation_mode == "euler" {
             "Rotation Degrees".to_string()
@@ -940,13 +972,13 @@ impl InspectorViewData {
         };
         view.rotation = rotation;
         view.rotation_mode = rotation_mode.to_string();
-        view.rotation_mode_buttons = is_3d;
+        view.rotation_mode_buttons = is_3d && has_rotation;
         view.scale = scene_value_components(&node.data, "scale");
         view.script = format!("Script  {script}");
         view.collapsed_sections = state.inspector_collapsed_sections.clone();
         let script_fields = inspector_script_var_fields_for_node(state, node);
         view.vars_text = script_vars_edit_text(&script_fields);
-        view.script_vars = inspector_value_rows_for_node(state, node);
+        view.script_vars = inspector_display_rows_for_node(state, node);
         view.apply_asset_actions(state);
         view
     }
@@ -1255,7 +1287,7 @@ pub fn script_vars_edit_text(fields: &[(SceneFieldName, SceneValue)]) -> String 
 pub fn inspector_scene_value_fields_for_node(
     node: &SceneNodeEntry,
 ) -> Vec<(SceneFieldName, SceneValue)> {
-    perro_scene::scene_inspector_fields(node.data.node_type)
+    perro_scene::scene_node_fields(node.data.node_type)
         .into_iter()
         .filter(inspector_generic_scene_field)
         .filter_map(|field| {
@@ -1271,8 +1303,19 @@ pub fn inspector_scene_value_fields_for_node(
         .collect()
 }
 
-pub fn inspector_generic_scene_field(field: &perro_scene::SceneInspectorField) -> bool {
-    !matches!(field.name, "position" | "rotation" | "scale" | "model" | "material")
+fn scene_node_transform_fields(node_type: perro_scene::NodeType) -> Vec<&'static str> {
+    perro_scene::scene_node_fields(node_type)
+        .into_iter()
+        .filter_map(|field| match field.name {
+            "position" | "rotation" | "scale" => Some(field.name),
+            _ => None,
+        })
+        .collect()
+}
+
+pub fn inspector_generic_scene_field(field: &perro_scene::SceneNodeField) -> bool {
+    let _ = field;
+    true
 }
 
 pub fn inspector_value_fields_for_node(
@@ -1349,7 +1392,7 @@ fn inspector_enum_picker_entries(state: &EditorState) -> Vec<InspectorPickerEntr
         return Vec::new();
     };
     let rows = if state.inspector_picker_kind == "value_enum" {
-        inspector_value_rows_for_node(state, node)
+        inspector_display_rows_for_node(state, node)
     } else {
         inspector_script_var_rows_for_node(state, node)
     };
@@ -1404,7 +1447,7 @@ fn inspector_asset_picker_entries(state: &EditorState) -> Vec<InspectorPickerEnt
         return Vec::new();
     };
     let filter = NodePickerFilter::parse(&state.inspector_picker_filter);
-    let filters = perro_scene::scene_asset_filters(kind);
+    let filters = editor_asset_filters(kind);
     state
         .file_paths
         .iter()
@@ -1435,7 +1478,9 @@ fn inspector_picker_asset_kind(state: &EditorState) -> Option<perro_scene::Scene
             .nodes
             .iter()
             .find(|node| node.key.as_u32() == key)?;
-        let row = inspector_value_rows_for_node(state, node).get(row_idx)?.clone();
+        let row = inspector_display_rows_for_node(state, node)
+            .get(row_idx)?
+            .clone();
         return asset_kind_from_row_kind(&row.kind);
     }
     if state.inspector_picker_field == "script" {
@@ -1449,7 +1494,7 @@ fn inspector_picker_asset_kind(state: &EditorState) -> Option<perro_scene::Scene
         .iter()
         .find(|node| node.key.as_u32() == key)?;
     let field =
-        perro_scene::scene_inspector_field(node.data.node_type, &state.inspector_picker_field)?;
+        perro_scene::scene_node_field(node.data.node_type, &state.inspector_picker_field)?;
     match field.ty {
         perro_scene::NodeFieldType::Asset(kind) => Some(kind),
         _ => None,
@@ -1475,7 +1520,7 @@ fn asset_kind_from_row_kind(kind: &str) -> Option<perro_scene::SceneAssetKind> {
     }
 }
 
-fn inspector_asset_path_matches(path: &str, filters: &[perro_scene::SceneAssetFilter]) -> bool {
+fn inspector_asset_path_matches(path: &str, filters: &[EditorAssetFilter]) -> bool {
     let ext = path
         .rsplit_once('.')
         .map(|(_, ext)| ext.to_ascii_lowercase())
@@ -2933,502 +2978,6 @@ pub fn set_row_state<API: ScriptAPI + ?Sized>(
 ) {
     set_button_fill(ctx, name, if selected { "#478CBF" } else { "#00000000" });
     set_indicator_shape(ctx, &format!("{name}_indicator"), indicator);
-}
-
-pub fn ensure_tree_row_affordances<API: ScriptAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, API>,
-    row_name: &str,
-    icon_color: &str,
-) {
-    let Some(row_id) = find_named(ctx, row_name) else {
-        return;
-    };
-    let indicator_name = format!("{row_name}_indicator");
-    if find_named(ctx, &indicator_name).is_none() {
-        let id = create_node!(ctx.run, UiShape, indicator_name, tags![], row_id);
-        let _ = with_node_mut!(ctx.run, UiShape, id, |node| {
-            node.kind = UiShapeKind::Triangle;
-            node.fill = Color::from_hex("#AAB4C3").unwrap_or(Color::WHITE);
-            node.stroke = Color::from_hex("#00000000").unwrap_or(Color::TRANSPARENT);
-            node.stroke_width = 0.0;
-            node.visible = false;
-            node.input_enabled = false;
-            node.mouse_filter = UiMouseFilter::Pass;
-            node.layout.anchor = UiAnchor::Left;
-            node.layout.size = UiVector2::ratio(0.025, 0.40);
-            node.transform.position = UiVector2::percent(2.0, 50.0);
-            node.transform.pivot = UiVector2::percent(50.0, 50.0);
-        });
-    }
-
-    let icon_name = format!("{row_name}_icon");
-    if find_named(ctx, &icon_name).is_none() {
-        let id = create_node!(ctx.run, UiLabel, icon_name, tags![], row_id);
-        let _ = with_node_mut!(ctx.run, UiLabel, id, |node| {
-            node.color = Color::from_hex(icon_color).unwrap_or(Color::WHITE);
-            node.text_size_ratio = 0.42;
-            node.h_align = UiTextAlign::Center;
-            node.v_align = UiTextAlign::Center;
-            node.input_enabled = false;
-            node.mouse_filter = UiMouseFilter::Pass;
-            node.layout.anchor = UiAnchor::Left;
-            node.layout.size = UiVector2::ratio(0.14, 1.0);
-            node.transform.position = UiVector2::percent(8.0, 50.0);
-            node.transform.pivot = UiVector2::percent(50.0, 50.0);
-        });
-    }
-}
-
-pub fn ensure_inspector_value_component_boxes<API: ScriptAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, API>,
-    idx: usize,
-) {
-    let Some(row_id) = inspector_value_row_inner(ctx, idx) else {
-        return;
-    };
-    for component in 0..4 {
-        let name = format!("inspector_var_{idx}_{component}_box");
-        if find_named(ctx, &name).is_some() {
-            continue;
-        }
-        let id = create_node!(ctx.run, UiTextBox, name, tags![], row_id);
-        let _ = with_node_mut!(ctx.run, UiTextBox, id, |node| {
-            node.base.visible = false;
-            node.base.input_enabled = false;
-            node.base.layout.size = UiVector2::ratio(0.10, 0.62);
-            node.text_size_ratio = 0.62;
-            node.padding = UiRect::symmetric(4.0, 1.0);
-            node.style.fill = Color::from_hex("#111827DD").unwrap_or(node.style.fill);
-            node.style.stroke = Color::from_hex("#334155FF").unwrap_or(node.style.stroke);
-            node.focused_style.stroke =
-                Color::from_hex("#478CBFFF").unwrap_or(node.focused_style.stroke);
-            node.text_changed_signals = vec![match idx {
-                0 => signal!("editor_inspector_var_0"),
-                1 => signal!("editor_inspector_var_1"),
-                2 => signal!("editor_inspector_var_2"),
-                3 => signal!("editor_inspector_var_3"),
-                4 => signal!("editor_inspector_var_4"),
-                5 => signal!("editor_inspector_var_5"),
-                6 => signal!("editor_inspector_var_6"),
-                _ => signal!("editor_inspector_var_7"),
-            }];
-            node.focused_signals = vec![signal!("editor_inspector_focus")];
-        });
-    }
-}
-
-pub fn ensure_inspector_value_row<API: ScriptAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, API>,
-    idx: usize,
-) {
-    let row_name = format!("inspector_var_row_{idx}");
-    if find_named(ctx, &row_name).is_some() {
-        return;
-    }
-    let Some(content_id) = find_named(ctx, "inspector_content") else {
-        return;
-    };
-    let panel_id = create_node!(ctx.run, UiPanel, row_name, tags![], content_id);
-    let _ = with_node_mut!(ctx.run, UiPanel, panel_id, |node| {
-        node.base.visible = false;
-        node.base.layout.size = UiVector2::ratio(0.985, 0.031);
-        node.base.layout.padding = UiRect::symmetric(0.004, 0.001);
-        node.base.layout.h_align = UiHorizontalAlign::Fill;
-        node.style.fill = Color::from_hex("#111827CC").unwrap_or(node.style.fill);
-        node.style.stroke = Color::from_hex("#243244FF").unwrap_or(node.style.stroke);
-        node.style.stroke_width = 1.0;
-        node.style.corner_radius = 0.15;
-    });
-    let row_id = create_node!(
-        ctx.run,
-        UiHLayout,
-        format!("inspector_var_row_{idx}_inner"),
-        tags![],
-        panel_id
-    );
-    let _ = with_node_mut!(ctx.run, UiHLayout, row_id, |node| {
-        node.layout.size = UiVector2::ratio(1.0, 1.0);
-        node.layout.h_align = UiHorizontalAlign::Fill;
-        node.layout.v_align = UiVerticalAlign::Center;
-        node.inner.spacing = 0.002;
-    });
-
-    let name_id = create_node!(
-        ctx.run,
-        UiLabel,
-        format!("inspector_var_{idx}_name"),
-        tags![],
-        row_id
-    );
-    let _ = with_node_mut!(ctx.run, UiLabel, name_id, |node| {
-        node.layout.size = UiVector2::ratio(0.34, 1.0);
-        node.text_size_ratio = 0.35;
-        node.color = Color::from_hex("#CBD5E1").unwrap_or(node.color);
-        node.h_align = UiTextAlign::Start;
-    });
-
-    let value_id = create_node!(
-        ctx.run,
-        UiTextBox,
-        format!("inspector_var_{idx}_value"),
-        tags![],
-        row_id
-    );
-    let _ = with_node_mut!(ctx.run, UiTextBox, value_id, |node| {
-        node.base.layout.size = UiVector2::ratio(0.50, 0.70);
-        node.text_size_ratio = 0.62;
-        node.padding = UiRect::symmetric(5.0, 1.0);
-        node.style.fill = Color::from_hex("#111827DD").unwrap_or(node.style.fill);
-        node.style.stroke = Color::from_hex("#334155FF").unwrap_or(node.style.stroke);
-        node.focused_style.stroke =
-            Color::from_hex("#478CBFFF").unwrap_or(node.focused_style.stroke);
-        node.text_changed_signals = vec![signal!("editor_inspector_var_7")];
-        node.focused_signals = vec![signal!("editor_inspector_focus")];
-        node.unfocused_signals = vec![signal!("editor_inspector_commit")];
-    });
-
-    let check_id = create_node!(
-        ctx.run,
-        UiCheckbox,
-        format!("inspector_var_{idx}_check"),
-        tags![],
-        row_id
-    );
-    let _ = with_node_mut!(ctx.run, UiCheckbox, check_id, |node| {
-        node.base.visible = false;
-        node.base.layout.size = UiVector2::ratio(0.055, 0.50);
-        node.clicked_signals = vec![signal!("editor_inspector_var_pick_7")];
-        node.style.fill = Color::from_hex("#00000000").unwrap_or(node.style.fill);
-        node.style.stroke = Color::from_hex("#8FA3B8").unwrap_or(node.style.stroke);
-        node.style.stroke_width = 1.5;
-        node.hover_style.fill = Color::from_hex("#16202A").unwrap_or(node.hover_style.fill);
-        node.hover_style.stroke = Color::from_hex("#B8C7D8").unwrap_or(node.hover_style.stroke);
-        node.hover_style.stroke_width = 1.5;
-        node.pressed_style.fill = Color::from_hex("#223142").unwrap_or(node.pressed_style.fill);
-        node.pressed_style.stroke =
-            Color::from_hex("#E5E7EB").unwrap_or(node.pressed_style.stroke);
-        node.pressed_style.stroke_width = 1.5;
-        node.dot_fill = Color::from_hex("#7DD3FC").unwrap_or(node.dot_fill);
-    });
-
-    let button_id = create_node!(
-        ctx.run,
-        UiButton,
-        format!("inspector_var_{idx}_pick_button"),
-        tags![],
-        row_id
-    );
-    let _ = with_node_mut!(ctx.run, UiButton, button_id, |node| {
-        node.base.visible = false;
-        node.base.layout.size = UiVector2::ratio(0.42, 0.62);
-        node.clicked_signals = vec![signal!("editor_inspector_var_pick_7")];
-        node.style.fill = Color::from_hex("#111827DD").unwrap_or(node.style.fill);
-        node.style.stroke = Color::from_hex("#334155FF").unwrap_or(node.style.stroke);
-        node.hover_style.fill = Color::from_hex("#223142").unwrap_or(node.hover_style.fill);
-        node.pressed_style.fill = Color::from_hex("#334155").unwrap_or(node.pressed_style.fill);
-    });
-
-    let pick_label_id = create_node!(
-        ctx.run,
-        UiLabel,
-        format!("inspector_var_{idx}_pick_label"),
-        tags![],
-        button_id
-    );
-    let _ = with_node_mut!(ctx.run, UiLabel, pick_label_id, |node| {
-        node.layout.size = UiVector2::ratio(0.96, 1.0);
-        node.text_size_ratio = 0.316;
-        node.color = Color::from_hex("#E5E7EB").unwrap_or(node.color);
-        node.h_align = UiTextAlign::Start;
-        node.input_enabled = false;
-        node.mouse_filter = UiMouseFilter::Pass;
-    });
-
-    let type_id = create_node!(
-        ctx.run,
-        UiLabel,
-        format!("inspector_var_{idx}_type"),
-        tags![],
-        row_id
-    );
-    let _ = with_node_mut!(ctx.run, UiLabel, type_id, |node| {
-        node.layout.size = UiVector2::ratio(0.16, 1.0);
-        node.text_size_ratio = 0.28;
-        node.color = Color::from_hex("#94A3B8").unwrap_or(node.color);
-    });
-
-    create_inspector_value_icon_button(ctx, row_id, idx, "add_button", "+");
-    create_inspector_value_icon_button(ctx, row_id, idx, "remove_button", "x");
-}
-
-fn create_inspector_value_icon_button<API: ScriptAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, API>,
-    row_id: NodeID,
-    idx: usize,
-    suffix: &str,
-    label: &str,
-) {
-    let button_id = create_node!(
-        ctx.run,
-        UiButton,
-        format!("inspector_var_{idx}_{suffix}"),
-        tags![],
-        row_id
-    );
-    let _ = with_node_mut!(ctx.run, UiButton, button_id, |node| {
-        node.base.visible = false;
-        node.base.layout.size = UiVector2::ratio(0.045, 0.62);
-        node.clicked_signals = vec![signal!("editor_inspector_var_pick_7")];
-        node.style.fill = Color::from_hex("#111827DD").unwrap_or(node.style.fill);
-        node.style.stroke = Color::from_hex("#334155FF").unwrap_or(node.style.stroke);
-        node.hover_style.fill = Color::from_hex("#223142").unwrap_or(node.hover_style.fill);
-        node.pressed_style.fill = Color::from_hex("#334155").unwrap_or(node.pressed_style.fill);
-    });
-    let label_id = create_node!(
-        ctx.run,
-        UiLabel,
-        format!("inspector_var_{idx}_{suffix}_label"),
-        tags![],
-        button_id
-    );
-    let _ = with_node_mut!(ctx.run, UiLabel, label_id, |node| {
-        node.layout.size = UiVector2::ratio(1.0, 1.0);
-        node.text = Cow::Owned(label.to_string());
-        node.text_size_ratio = 0.38;
-        node.color = Color::from_hex("#E5E7EB").unwrap_or(node.color);
-        node.h_align = UiTextAlign::Center;
-        node.v_align = UiTextAlign::Center;
-        node.input_enabled = false;
-        node.mouse_filter = UiMouseFilter::Pass;
-    });
-}
-
-fn inspector_value_row_inner<API: ScriptAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, API>,
-    idx: usize,
-) -> Option<NodeID> {
-    if let Some(id) = find_named(ctx, &format!("inspector_var_row_{idx}_inner")) {
-        Some(id)
-    } else {
-        find_named(ctx, &format!("inspector_var_row_{idx}"))
-    }
-}
-
-fn apply_inspector_value_row_panel<API: ScriptAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, API>,
-    idx: usize,
-    depth: usize,
-    source: &str,
-) {
-    let Some(id) = find_named(ctx, &format!("inspector_var_row_{idx}")) else {
-        return;
-    };
-    let palette = [
-        ("#101826D9", "#233147FF"),
-        ("#132033D9", "#2D415CFF"),
-        ("#17283DD9", "#38516FFF"),
-        ("#1B3045D9", "#436180FF"),
-    ];
-    let (fill, stroke) = palette[depth.min(palette.len() - 1)];
-    let script_stroke = if source == "script" { "#4B5563FF" } else { stroke };
-    let _ = with_node_mut!(ctx.run, UiPanel, id, |node| {
-        node.style.fill = Color::from_hex(fill).unwrap_or(node.style.fill);
-        node.style.stroke = Color::from_hex(script_stroke).unwrap_or(node.style.stroke);
-        node.style.stroke_width = 1.0;
-        node.style.corner_radius = 0.15;
-    });
-}
-
-pub fn hide_inspector_value_rows_from<API: ScriptAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, API>,
-    start: usize,
-) {
-    let mut idx = start;
-    while find_named(ctx, &format!("inspector_var_row_{idx}")).is_some() {
-        set_ui_display(ctx, &format!("inspector_var_row_{idx}"), false);
-        idx += 1;
-    }
-}
-
-pub fn ensure_inspector_color_swatch<API: ScriptAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, API>,
-    idx: usize,
-) {
-    let Some(row_id) = inspector_value_row_inner(ctx, idx) else {
-        return;
-    };
-    let name = format!("inspector_var_{idx}_color_swatch");
-    if find_named(ctx, &name).is_some() {
-        return;
-    }
-    let id = create_node!(ctx.run, UiColorPicker, name, tags![], row_id);
-    let _ = with_node_mut!(ctx.run, UiColorPicker, id, |node| {
-        node.button.base.visible = false;
-        node.button.base.input_enabled = true;
-        node.button.base.mouse_filter = UiMouseFilter::Pass;
-        node.button.base.layout.size = UiVector2::ratio(0.065, 0.62);
-        node.button.style.stroke = Color::from_hex("#D1D5DBFF").unwrap_or(node.button.style.stroke);
-        node.button.style.stroke_width = 1.0;
-        node.button.hover_style.stroke =
-            Color::from_hex("#FFFFFFFF").unwrap_or(node.button.hover_style.stroke);
-        node.button.hover_style.stroke_width = 1.0;
-        node.button.pressed_style.stroke =
-            Color::from_hex("#94A3B8FF").unwrap_or(node.button.pressed_style.stroke);
-        node.button.pressed_style.stroke_width = 1.0;
-        node.color_changed_signals = vec![match idx {
-            0 => signal!("editor_inspector_var_0"),
-            1 => signal!("editor_inspector_var_1"),
-            2 => signal!("editor_inspector_var_2"),
-            3 => signal!("editor_inspector_var_3"),
-            4 => signal!("editor_inspector_var_4"),
-            5 => signal!("editor_inspector_var_5"),
-            6 => signal!("editor_inspector_var_6"),
-            _ => signal!("editor_inspector_var_7"),
-        }];
-    });
-}
-
-pub fn ensure_inspector_enum_dropdown<API: ScriptAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, API>,
-    idx: usize,
-) {
-    let Some(row_id) = inspector_value_row_inner(ctx, idx) else {
-        return;
-    };
-    let name = format!("inspector_var_{idx}_dropdown");
-    if find_named(ctx, &name).is_some() {
-        return;
-    }
-    let id = create_node!(ctx.run, UiDropdown, name, tags![], row_id);
-    let _ = with_node_mut!(ctx.run, UiDropdown, id, |node| {
-        node.button.base.visible = false;
-        node.button.base.layout.size = UiVector2::ratio(0.42, 0.62);
-        node.button.clicked_signals.clear();
-        node.selected_signals = vec![match idx {
-            0 => signal!("editor_inspector_var_0"),
-            1 => signal!("editor_inspector_var_1"),
-            2 => signal!("editor_inspector_var_2"),
-            3 => signal!("editor_inspector_var_3"),
-            4 => signal!("editor_inspector_var_4"),
-            5 => signal!("editor_inspector_var_5"),
-            6 => signal!("editor_inspector_var_6"),
-            _ => signal!("editor_inspector_var_7"),
-        }];
-        node.button.style.fill = Color::from_hex("#111827DD").unwrap_or(node.button.style.fill);
-        node.button.style.stroke =
-            Color::from_hex("#334155FF").unwrap_or(node.button.style.stroke);
-        node.button.hover_style.fill =
-            Color::from_hex("#223142").unwrap_or(node.button.hover_style.fill);
-        node.button.pressed_style.fill =
-            Color::from_hex("#334155").unwrap_or(node.button.pressed_style.fill);
-        node.option_style = node.button.style.clone();
-        node.option_hover_style = node.button.hover_style.clone();
-        node.option_pressed_style = node.button.pressed_style.clone();
-        node.option_height = 24.0;
-    });
-}
-
-pub fn ensure_inspector_bitmask_grid<API: ScriptAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, API>,
-    idx: usize,
-) {
-    let Some(row_id) = inspector_value_row_inner(ctx, idx) else {
-        return;
-    };
-    let grid_name = format!("inspector_var_{idx}_bitmask_grid");
-    if find_named(ctx, &grid_name).is_some() {
-        return;
-    }
-    let grid_id = create_node!(ctx.run, UiVLayout, grid_name, tags![], row_id);
-    let _ = with_node_mut!(ctx.run, UiVLayout, grid_id, |node| {
-        node.visible = false;
-        node.layout.size = UiVector2::ratio(0.50, 0.92);
-        node.inner.spacing = 0.001;
-    });
-    for row in 0..2 {
-        let row_id = create_node!(
-            ctx.run,
-            UiHLayout,
-            format!("inspector_var_{idx}_bitmask_row_{row}"),
-            tags![],
-            grid_id
-        );
-        let _ = with_node_mut!(ctx.run, UiHLayout, row_id, |node| {
-            node.layout.size = UiVector2::ratio(1.0, 0.48);
-            node.inner.spacing = 0.001;
-        });
-        for col in 0..16 {
-            let bit = row * 16 + col + 1;
-            create_inspector_bit_button(ctx, row_id, idx, bit, &bit.to_string());
-        }
-    }
-    create_inspector_bit_button(ctx, grid_id, idx, 0, "none");
-    create_inspector_bit_button(ctx, grid_id, idx, 33, "all");
-}
-
-fn create_inspector_bit_button<API: ScriptAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, API>,
-    parent: NodeID,
-    idx: usize,
-    bit: usize,
-    label: &str,
-) {
-    let name = if bit == 0 {
-        format!("inspector_var_{idx}_bit_none")
-    } else if bit == 33 {
-        format!("inspector_var_{idx}_bit_all")
-    } else {
-        format!("inspector_var_{idx}_bit_{bit}")
-    };
-    let id = create_node!(ctx.run, UiButton, name.clone(), tags![], parent);
-    let _ = with_node_mut!(ctx.run, UiButton, id, |node| {
-        node.base.layout.size = if bit == 0 || bit == 33 {
-            UiVector2::ratio(0.14, 0.42)
-        } else {
-            UiVector2::ratio(0.058, 0.94)
-        };
-        node.clicked_signals = vec![signal!("editor_inspector_var_pick_7")];
-        node.style.fill = Color::from_hex("#111827DD").unwrap_or(node.style.fill);
-        node.style.stroke = Color::from_hex("#334155FF").unwrap_or(node.style.stroke);
-        node.hover_style.fill = Color::from_hex("#223142").unwrap_or(node.hover_style.fill);
-        node.pressed_style.fill = Color::from_hex("#334155").unwrap_or(node.pressed_style.fill);
-    });
-    let label_id = create_node!(
-        ctx.run,
-        UiLabel,
-        format!("{name}_label"),
-        tags![],
-        id
-    );
-    let _ = with_node_mut!(ctx.run, UiLabel, label_id, |node| {
-        node.layout.size = UiVector2::ratio(1.0, 1.0);
-        node.text = Cow::Owned(label.to_string());
-        node.text_size_ratio = if bit == 0 || bit == 33 { 0.30 } else { 0.34 };
-        node.color = Color::from_hex("#94A3B8").unwrap_or(node.color);
-        node.h_align = UiTextAlign::Center;
-        node.v_align = UiTextAlign::Center;
-        node.input_enabled = false;
-        node.mouse_filter = UiMouseFilter::Pass;
-    });
-}
-
-fn update_inspector_bitmask_grid<API: ScriptAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, API>,
-    idx: usize,
-    mask: u32,
-) {
-    for bit in 1..=32 {
-        let on = mask & (1_u32 << (bit - 1)) != 0;
-        let Some(id) = find_named(ctx, &format!("inspector_var_{idx}_bit_{bit}")) else {
-            continue;
-        };
-        let _ = with_node_mut!(ctx.run, UiButton, id, |node| {
-            node.style.fill = Color::from_hex(if on { "#2563EBFF" } else { "#111827DD" })
-                .unwrap_or(node.style.fill);
-            node.style.stroke = Color::from_hex(if on { "#93C5FDFF" } else { "#334155FF" })
-                .unwrap_or(node.style.stroke);
-        });
-    }
 }
 
 pub fn set_indicator_shape<API: ScriptAPI + ?Sized>(

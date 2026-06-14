@@ -31,9 +31,15 @@ pub fn ensure_source_overrides(project_root: &Path) -> std::io::Result<()> {
         .join("scripts")
         .join(".cargo")
         .join("config.toml");
+    let scripts_lib = project_root
+        .join(".perro")
+        .join("scripts")
+        .join("src")
+        .join("lib.rs");
     ensure_project_build_script(&project_build_script)?;
     ensure_project_target_dir_config(&project_cargo_config)?;
     ensure_scripts_crate_sync(&scripts_manifest)?;
+    ensure_scripts_lib(&scripts_lib)?;
     ensure_project_manifest_deps(&project_manifest)?;
     ensure_project_manifest_icon_build_support(&project_manifest)?;
     ensure_project_manifest_features(&project_manifest)?;
@@ -61,6 +67,13 @@ fn ensure_scripts_crate_sync(path: &Path) -> std::io::Result<()> {
         fs::create_dir_all(parent)?;
     }
     write_if_changed(path, &default_scripts_crate_toml())
+}
+
+fn ensure_scripts_lib(path: &Path) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    write_if_missing(path.to_path_buf(), &default_scripts_lib_rs())
 }
 
 fn ensure_dev_runner_source_sync(manifest_path: &Path, main_rs_path: &Path) -> std::io::Result<()> {

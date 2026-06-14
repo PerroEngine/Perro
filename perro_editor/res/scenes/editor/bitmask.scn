@@ -1,0 +1,904 @@
+$root = @bitmask_root
+$btn = { fill: "#111827DD", stroke: "#334155FF", stroke_width: 1.0, radius: 0.08 }
+$btn_hot = { style: { fill: "#223142", stroke: "#334155FF", stroke_width: 1.0, radius: 0.08 } }
+$btn_down = { style: { fill: "#334155", stroke: "#334155FF", stroke_width: 1.0, radius: 0.08 } }
+
+[bitmask_root]
+    [UiVLayout]
+        size_ratio = (0.62, 0.98)
+        h_align = "fill"
+        v_align = "start"
+        spacing = 0.002
+        visible = false
+    [/UiVLayout]
+[/bitmask_root]
+
+[bitmask_row_0]
+parent = @bitmask_root
+    [UiHLayout]
+        size_ratio = (1.0, 0.19)
+        spacing = 0.001
+    [/UiHLayout]
+[/bitmask_row_0]
+
+[bitmask_row_1]
+parent = @bitmask_root
+    [UiHLayout]
+        size_ratio = (1.0, 0.19)
+        spacing = 0.001
+    [/UiHLayout]
+[/bitmask_row_1]
+
+[bitmask_row_2]
+parent = @bitmask_root
+    [UiHLayout]
+        size_ratio = (1.0, 0.19)
+        spacing = 0.001
+    [/UiHLayout]
+[/bitmask_row_2]
+
+[bitmask_row_3]
+parent = @bitmask_root
+    [UiHLayout]
+        size_ratio = (1.0, 0.19)
+        spacing = 0.001
+    [/UiHLayout]
+[/bitmask_row_3]
+
+[bitmask_actions]
+parent = @bitmask_root
+    [UiHLayout]
+        size_ratio = (1.0, 0.20)
+        spacing = 0.01
+    [/UiHLayout]
+[/bitmask_actions]
+
+[bitmask_none]
+parent = @bitmask_actions
+    [UiButton]
+        size_ratio = (0.40, 0.86)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_none]
+
+[bitmask_none_label]
+parent = @bitmask_none
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "none"
+        text_size_ratio = 0.30
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_none_label]
+
+[bitmask_all]
+parent = @bitmask_actions
+    [UiButton]
+        size_ratio = (0.40, 0.86)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_all]
+
+[bitmask_all_label]
+parent = @bitmask_all
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "all"
+        text_size_ratio = 0.30
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_all_label]
+
+[bitmask_bit_1]
+parent = @bitmask_row_0
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_1]
+
+[bitmask_bit_1_label]
+parent = @bitmask_bit_1
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "1"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_1_label]
+
+[bitmask_bit_2]
+parent = @bitmask_row_0
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_2]
+
+[bitmask_bit_2_label]
+parent = @bitmask_bit_2
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "2"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_2_label]
+
+[bitmask_bit_3]
+parent = @bitmask_row_0
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_3]
+
+[bitmask_bit_3_label]
+parent = @bitmask_bit_3
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "3"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_3_label]
+
+[bitmask_bit_4]
+parent = @bitmask_row_0
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_4]
+
+[bitmask_bit_4_label]
+parent = @bitmask_bit_4
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "4"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_4_label]
+
+[bitmask_bit_5]
+parent = @bitmask_row_0
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_5]
+
+[bitmask_bit_5_label]
+parent = @bitmask_bit_5
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "5"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_5_label]
+
+[bitmask_bit_6]
+parent = @bitmask_row_0
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_6]
+
+[bitmask_bit_6_label]
+parent = @bitmask_bit_6
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "6"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_6_label]
+
+[bitmask_bit_7]
+parent = @bitmask_row_0
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_7]
+
+[bitmask_bit_7_label]
+parent = @bitmask_bit_7
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "7"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_7_label]
+
+[bitmask_bit_8]
+parent = @bitmask_row_0
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_8]
+
+[bitmask_bit_8_label]
+parent = @bitmask_bit_8
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "8"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_8_label]
+
+[bitmask_bit_9]
+parent = @bitmask_row_1
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_9]
+
+[bitmask_bit_9_label]
+parent = @bitmask_bit_9
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "9"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_9_label]
+
+[bitmask_bit_10]
+parent = @bitmask_row_1
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_10]
+
+[bitmask_bit_10_label]
+parent = @bitmask_bit_10
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "10"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_10_label]
+
+[bitmask_bit_11]
+parent = @bitmask_row_1
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_11]
+
+[bitmask_bit_11_label]
+parent = @bitmask_bit_11
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "11"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_11_label]
+
+[bitmask_bit_12]
+parent = @bitmask_row_1
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_12]
+
+[bitmask_bit_12_label]
+parent = @bitmask_bit_12
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "12"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_12_label]
+
+[bitmask_bit_13]
+parent = @bitmask_row_1
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_13]
+
+[bitmask_bit_13_label]
+parent = @bitmask_bit_13
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "13"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_13_label]
+
+[bitmask_bit_14]
+parent = @bitmask_row_1
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_14]
+
+[bitmask_bit_14_label]
+parent = @bitmask_bit_14
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "14"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_14_label]
+
+[bitmask_bit_15]
+parent = @bitmask_row_1
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_15]
+
+[bitmask_bit_15_label]
+parent = @bitmask_bit_15
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "15"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_15_label]
+
+[bitmask_bit_16]
+parent = @bitmask_row_1
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_16]
+
+[bitmask_bit_16_label]
+parent = @bitmask_bit_16
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "16"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_16_label]
+
+[bitmask_bit_17]
+parent = @bitmask_row_2
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_17]
+
+[bitmask_bit_17_label]
+parent = @bitmask_bit_17
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "17"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_17_label]
+
+[bitmask_bit_18]
+parent = @bitmask_row_2
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_18]
+
+[bitmask_bit_18_label]
+parent = @bitmask_bit_18
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "18"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_18_label]
+
+[bitmask_bit_19]
+parent = @bitmask_row_2
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_19]
+
+[bitmask_bit_19_label]
+parent = @bitmask_bit_19
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "19"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_19_label]
+
+[bitmask_bit_20]
+parent = @bitmask_row_2
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_20]
+
+[bitmask_bit_20_label]
+parent = @bitmask_bit_20
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "20"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_20_label]
+
+[bitmask_bit_21]
+parent = @bitmask_row_2
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_21]
+
+[bitmask_bit_21_label]
+parent = @bitmask_bit_21
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "21"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_21_label]
+
+[bitmask_bit_22]
+parent = @bitmask_row_2
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_22]
+
+[bitmask_bit_22_label]
+parent = @bitmask_bit_22
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "22"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_22_label]
+
+[bitmask_bit_23]
+parent = @bitmask_row_2
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_23]
+
+[bitmask_bit_23_label]
+parent = @bitmask_bit_23
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "23"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_23_label]
+
+[bitmask_bit_24]
+parent = @bitmask_row_2
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_24]
+
+[bitmask_bit_24_label]
+parent = @bitmask_bit_24
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "24"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_24_label]
+
+[bitmask_bit_25]
+parent = @bitmask_row_3
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_25]
+
+[bitmask_bit_25_label]
+parent = @bitmask_bit_25
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "25"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_25_label]
+
+[bitmask_bit_26]
+parent = @bitmask_row_3
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_26]
+
+[bitmask_bit_26_label]
+parent = @bitmask_bit_26
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "26"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_26_label]
+
+[bitmask_bit_27]
+parent = @bitmask_row_3
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_27]
+
+[bitmask_bit_27_label]
+parent = @bitmask_bit_27
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "27"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_27_label]
+
+[bitmask_bit_28]
+parent = @bitmask_row_3
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_28]
+
+[bitmask_bit_28_label]
+parent = @bitmask_bit_28
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "28"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_28_label]
+
+[bitmask_bit_29]
+parent = @bitmask_row_3
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_29]
+
+[bitmask_bit_29_label]
+parent = @bitmask_bit_29
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "29"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_29_label]
+
+[bitmask_bit_30]
+parent = @bitmask_row_3
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_30]
+
+[bitmask_bit_30_label]
+parent = @bitmask_bit_30
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "30"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_30_label]
+
+[bitmask_bit_31]
+parent = @bitmask_row_3
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_31]
+
+[bitmask_bit_31_label]
+parent = @bitmask_bit_31
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "31"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_31_label]
+
+[bitmask_bit_32]
+parent = @bitmask_row_3
+    [UiButton]
+        size_ratio = (0.120, 0.92)
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = $btn
+        hover = $btn_hot
+        pressed = $btn_down
+    [/UiButton]
+[/bitmask_bit_32]
+
+[bitmask_bit_32_label]
+parent = @bitmask_bit_32
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "32"
+        text_size_ratio = 0.24
+        color = "#94A3B8"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/bitmask_bit_32_label]

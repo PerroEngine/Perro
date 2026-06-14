@@ -1,4 +1,8 @@
-use perro_nodes::{Node2D, Node3D, NodeType};
+use perro_nodes::{
+    Area2D, Area3D, Camera2D, Camera3D, MeshBlendOptions, MeshInstance3D, Node2D, Node3D, NodeType,
+    PhysicsForceEmitter2D, PhysicsForceEmitter3D, RigidBody2D, RigidBody3D, StaticBody2D,
+    StaticBody3D,
+};
 use perro_structs::{BitMask, Color, Quaternion, Vector2, Vector3};
 use perro_ui::{UiNode, UiUnit, UiVector2};
 use std::str::FromStr;
@@ -652,6 +656,21 @@ pub fn default_node_field_value(field: NodeField) -> Option<SceneValue> {
         NodeField::Node2D(field) => default_node_2d_field_value(field),
         NodeField::Node3D(field) => default_node_3d_field_value(field),
         NodeField::UiNode(field) => default_ui_node_field_value(field),
+        NodeField::Camera2D(field) => default_camera_2d_field_value(field),
+        NodeField::Camera3D(field) => default_camera_3d_field_value(field),
+        NodeField::MeshInstance3D(field) => default_mesh_instance_3d_field_value(field),
+        NodeField::StaticBody2D(field) => default_static_body_2d_field_value(field),
+        NodeField::StaticBody3D(field) => default_static_body_3d_field_value(field),
+        NodeField::RigidBody2D(field) => default_rigid_body_2d_field_value(field),
+        NodeField::RigidBody3D(field) => default_rigid_body_3d_field_value(field),
+        NodeField::Area2D(field) => default_area_2d_field_value(field),
+        NodeField::Area3D(field) => default_area_3d_field_value(field),
+        NodeField::PhysicsForceEmitter2D(field) => {
+            default_physics_force_emitter_2d_field_value(field)
+        }
+        NodeField::PhysicsForceEmitter3D(field) => {
+            default_physics_force_emitter_3d_field_value(field)
+        }
         _ => None,
     }
 }
@@ -701,6 +720,227 @@ fn default_ui_node_field_value(field: UiNodeField) -> Option<SceneValue> {
     })
 }
 
+fn default_camera_2d_field_value(field: Camera2DField) -> Option<SceneValue> {
+    let node = Camera2D::new();
+    Some(match field {
+        Camera2DField::Zoom => SceneValue::F32(node.zoom),
+        Camera2DField::RenderMask => bit_mask_value(node.render_mask),
+        Camera2DField::PostProcessing => SceneValue::Object(Default::default()),
+        Camera2DField::AudioOptions => SceneValue::Object(Default::default()),
+        Camera2DField::AudioMask => bit_mask_value(BitMask::NONE),
+        Camera2DField::Active => SceneValue::Bool(node.active),
+    })
+}
+
+fn default_camera_3d_field_value(field: Camera3DField) -> Option<SceneValue> {
+    let node = Camera3D::new();
+    Some(match field {
+        Camera3DField::Zoom => SceneValue::F32(1.0),
+        Camera3DField::RenderMask => bit_mask_value(node.render_mask),
+        Camera3DField::Projection => SceneValue::Key("perspective".to_string().into()),
+        Camera3DField::PerspectiveFovYDegrees => SceneValue::F32(60.0),
+        Camera3DField::PerspectiveNear => SceneValue::F32(0.1),
+        Camera3DField::PerspectiveFar => SceneValue::F32(1_000_000.0),
+        Camera3DField::OrthographicSize => SceneValue::F32(10.0),
+        Camera3DField::OrthographicNear => SceneValue::F32(0.1),
+        Camera3DField::OrthographicFar => SceneValue::F32(1_000_000.0),
+        Camera3DField::FrustumLeft => SceneValue::F32(-1.0),
+        Camera3DField::FrustumRight => SceneValue::F32(1.0),
+        Camera3DField::FrustumBottom => SceneValue::F32(-1.0),
+        Camera3DField::FrustumTop => SceneValue::F32(1.0),
+        Camera3DField::FrustumNear => SceneValue::F32(0.1),
+        Camera3DField::FrustumFar => SceneValue::F32(1_000_000.0),
+        Camera3DField::PostProcessing => SceneValue::Object(Default::default()),
+        Camera3DField::AudioOptions => SceneValue::Object(Default::default()),
+        Camera3DField::AudioMask => bit_mask_value(BitMask::NONE),
+        Camera3DField::Active => SceneValue::Bool(node.active),
+    })
+}
+
+fn default_mesh_instance_3d_field_value(field: MeshInstance3DField) -> Option<SceneValue> {
+    let node = MeshInstance3D::new();
+    Some(match field {
+        MeshInstance3DField::Mesh | MeshInstance3DField::Material | MeshInstance3DField::Model => {
+            SceneValue::Str(Default::default())
+        }
+        MeshInstance3DField::Surfaces | MeshInstance3DField::BlendShapeWeights => {
+            SceneValue::Array(Default::default())
+        }
+        MeshInstance3DField::Skeleton => SceneValue::Key("null".to_string().into()),
+        MeshInstance3DField::FlipX => SceneValue::Bool(node.flip_x),
+        MeshInstance3DField::FlipY => SceneValue::Bool(node.flip_y),
+        MeshInstance3DField::FlipZ => SceneValue::Bool(node.flip_z),
+        MeshInstance3DField::InstanceGrid => SceneValue::Object(Default::default()),
+        MeshInstance3DField::Meshlets => SceneValue::Bool(false),
+        MeshInstance3DField::MinLod => SceneValue::I32(node.lod.min_lod as i32),
+        MeshInstance3DField::MaxLod => SceneValue::I32(node.lod.max_lod as i32),
+        MeshInstance3DField::CastShadows => SceneValue::Bool(node.cast_shadows),
+        MeshInstance3DField::ReceiveShadows => SceneValue::Bool(node.receive_shadows),
+        MeshInstance3DField::Blend => mesh_blend_value(MeshBlendOptions::new()),
+        MeshInstance3DField::BlendEnabled => SceneValue::Bool(node.blend.enabled),
+        MeshInstance3DField::BlendScreen => SceneValue::Bool(node.blend.screen_blending),
+        MeshInstance3DField::BlendNormals => SceneValue::Bool(node.blend.normal_blending),
+        MeshInstance3DField::BlendLayers => bit_mask_value(node.blend.blend_layers),
+        MeshInstance3DField::BlendMask => bit_mask_value(node.blend.blend_mask),
+        MeshInstance3DField::BlendDistance => SceneValue::F32(node.blend.distance),
+        MeshInstance3DField::BlendMinDistance => SceneValue::F32(node.blend.min_distance),
+    })
+}
+
+fn default_static_body_2d_field_value(field: StaticBody2DField) -> Option<SceneValue> {
+    let node = StaticBody2D::new();
+    Some(match field {
+        StaticBody2DField::Enabled => SceneValue::Bool(node.enabled),
+        StaticBody2DField::CollisionLayers => bit_mask_value(node.collision_layers),
+        StaticBody2DField::CollisionMask => bit_mask_value(node.collision_mask),
+        StaticBody2DField::Friction => SceneValue::F32(node.friction),
+        StaticBody2DField::Restitution => SceneValue::F32(node.restitution),
+        StaticBody2DField::Density => SceneValue::F32(node.density),
+    })
+}
+
+fn default_static_body_3d_field_value(field: StaticBody3DField) -> Option<SceneValue> {
+    let node = StaticBody3D::new();
+    Some(match field {
+        StaticBody3DField::Enabled => SceneValue::Bool(node.enabled),
+        StaticBody3DField::CollisionLayers => bit_mask_value(node.collision_layers),
+        StaticBody3DField::CollisionMask => bit_mask_value(node.collision_mask),
+        StaticBody3DField::Friction => SceneValue::F32(node.friction),
+        StaticBody3DField::Restitution => SceneValue::F32(node.restitution),
+        StaticBody3DField::Density => SceneValue::F32(node.density),
+    })
+}
+
+fn default_rigid_body_2d_field_value(field: RigidBody2DField) -> Option<SceneValue> {
+    let node = RigidBody2D::new();
+    Some(match field {
+        RigidBody2DField::Enabled => SceneValue::Bool(node.enabled),
+        RigidBody2DField::CollisionLayers => bit_mask_value(node.collision_layers),
+        RigidBody2DField::CollisionMask => bit_mask_value(node.collision_mask),
+        RigidBody2DField::ContinuousCollisionDetection => {
+            SceneValue::Bool(node.continuous_collision_detection)
+        }
+        RigidBody2DField::Mass => SceneValue::F32(node.mass),
+        RigidBody2DField::LinearVelocity => vec2_value(node.linear_velocity),
+        RigidBody2DField::AngularVelocity => SceneValue::F32(node.angular_velocity),
+        RigidBody2DField::GravityScale => SceneValue::F32(node.gravity_scale),
+        RigidBody2DField::LinearDamping => SceneValue::F32(node.linear_damping),
+        RigidBody2DField::AngularDamping => SceneValue::F32(node.angular_damping),
+        RigidBody2DField::CanSleep => SceneValue::Bool(node.can_sleep),
+        RigidBody2DField::LockRotation => SceneValue::Bool(node.lock_rotation),
+        RigidBody2DField::Friction => SceneValue::F32(node.friction),
+        RigidBody2DField::Restitution => SceneValue::F32(node.restitution),
+        RigidBody2DField::Density => SceneValue::F32(node.density),
+    })
+}
+
+fn default_rigid_body_3d_field_value(field: RigidBody3DField) -> Option<SceneValue> {
+    let node = RigidBody3D::new();
+    Some(match field {
+        RigidBody3DField::Enabled => SceneValue::Bool(node.enabled),
+        RigidBody3DField::CollisionLayers => bit_mask_value(node.collision_layers),
+        RigidBody3DField::CollisionMask => bit_mask_value(node.collision_mask),
+        RigidBody3DField::ContinuousCollisionDetection => {
+            SceneValue::Bool(node.continuous_collision_detection)
+        }
+        RigidBody3DField::Mass => SceneValue::F32(node.mass),
+        RigidBody3DField::LinearVelocity => vec3_value(node.linear_velocity),
+        RigidBody3DField::AngularVelocity => vec3_value(node.angular_velocity),
+        RigidBody3DField::GravityScale => SceneValue::F32(node.gravity_scale),
+        RigidBody3DField::LinearDamping => SceneValue::F32(node.linear_damping),
+        RigidBody3DField::AngularDamping => SceneValue::F32(node.angular_damping),
+        RigidBody3DField::CanSleep => SceneValue::Bool(node.can_sleep),
+        RigidBody3DField::Friction => SceneValue::F32(node.friction),
+        RigidBody3DField::Restitution => SceneValue::F32(node.restitution),
+        RigidBody3DField::Density => SceneValue::F32(node.density),
+    })
+}
+
+fn default_area_2d_field_value(field: Area2DField) -> Option<SceneValue> {
+    let node = Area2D::new();
+    Some(match field {
+        Area2DField::Enabled => SceneValue::Bool(node.enabled),
+        Area2DField::CollisionLayers => bit_mask_value(node.collision_layers),
+        Area2DField::CollisionMask => bit_mask_value(node.collision_mask),
+    })
+}
+
+fn default_area_3d_field_value(field: Area3DField) -> Option<SceneValue> {
+    let node = Area3D::new();
+    Some(match field {
+        Area3DField::Enabled => SceneValue::Bool(node.enabled),
+        Area3DField::CollisionLayers => bit_mask_value(node.collision_layers),
+        Area3DField::CollisionMask => bit_mask_value(node.collision_mask),
+    })
+}
+
+fn default_physics_force_emitter_2d_field_value(
+    field: PhysicsForceEmitterField,
+) -> Option<SceneValue> {
+    let node = PhysicsForceEmitter2D::new();
+    default_physics_force_emitter_field_value(
+        field,
+        node.enabled,
+        node.radius,
+        node.strength,
+        node.duration,
+        node.pulse,
+        node.falloff,
+        node.affect_bodies,
+        node.affect_water,
+        node.collision_layers,
+        node.collision_mask,
+    )
+}
+
+fn default_physics_force_emitter_3d_field_value(
+    field: PhysicsForceEmitterField,
+) -> Option<SceneValue> {
+    let node = PhysicsForceEmitter3D::new();
+    default_physics_force_emitter_field_value(
+        field,
+        node.enabled,
+        node.radius,
+        node.strength,
+        node.duration,
+        node.pulse,
+        node.falloff,
+        node.affect_bodies,
+        node.affect_water,
+        node.collision_layers,
+        node.collision_mask,
+    )
+}
+
+fn default_physics_force_emitter_field_value(
+    field: PhysicsForceEmitterField,
+    enabled: bool,
+    radius: f32,
+    strength: f32,
+    duration: f32,
+    pulse: bool,
+    falloff: f32,
+    affect_bodies: bool,
+    affect_water: bool,
+    collision_layers: BitMask,
+    collision_mask: BitMask,
+) -> Option<SceneValue> {
+    Some(match field {
+        PhysicsForceEmitterField::Enabled => SceneValue::Bool(enabled),
+        PhysicsForceEmitterField::Profile => SceneValue::Object(Default::default()),
+        PhysicsForceEmitterField::Radius => SceneValue::F32(radius),
+        PhysicsForceEmitterField::Strength => SceneValue::F32(strength),
+        PhysicsForceEmitterField::Duration => SceneValue::F32(duration),
+        PhysicsForceEmitterField::Pulse => SceneValue::Bool(pulse),
+        PhysicsForceEmitterField::Falloff => SceneValue::F32(falloff),
+        PhysicsForceEmitterField::AffectBodies => SceneValue::Bool(affect_bodies),
+        PhysicsForceEmitterField::AffectWater => SceneValue::Bool(affect_water),
+        PhysicsForceEmitterField::CollisionLayers => bit_mask_value(collision_layers),
+        PhysicsForceEmitterField::CollisionMask => bit_mask_value(collision_mask),
+        PhysicsForceEmitterField::Vectors => SceneValue::Array(Default::default()),
+    })
+}
+
 fn vec2_value(value: Vector2) -> SceneValue {
     SceneValue::Vec2 {
         x: value.x,
@@ -737,6 +977,33 @@ fn color_value(value: Color) -> SceneValue {
 
 fn bit_mask_value(value: BitMask) -> SceneValue {
     SceneValue::I32(value.bits() as i32)
+}
+
+fn mesh_blend_value(value: MeshBlendOptions) -> SceneValue {
+    SceneValue::Object(std::borrow::Cow::Owned(vec![
+        (SceneFieldName::Enabled, SceneValue::Bool(value.enabled)),
+        (
+            SceneFieldName::BlendScreen,
+            SceneValue::Bool(value.screen_blending),
+        ),
+        (
+            SceneFieldName::BlendNormals,
+            SceneValue::Bool(value.normal_blending),
+        ),
+        (
+            SceneFieldName::BlendLayers,
+            bit_mask_value(value.blend_layers),
+        ),
+        (SceneFieldName::BlendMask, bit_mask_value(value.blend_mask)),
+        (
+            SceneFieldName::BlendDistance,
+            SceneValue::F32(value.distance),
+        ),
+        (
+            SceneFieldName::BlendMinDistance,
+            SceneValue::F32(value.min_distance),
+        ),
+    ]))
 }
 
 fn ui_vec2_ratio_value(value: UiVector2) -> SceneValue {
@@ -2459,5 +2726,29 @@ mod tests {
                 "{node_type}.{field}"
             );
         }
+    }
+
+    #[test]
+    fn scene_field_defaults_cover_masks_and_mesh_surface_state() {
+        assert_eq!(
+            default_scene_field_value_by_name(NodeType::MeshInstance3D, "render_layers"),
+            Some(SceneValue::I32(BitMask::ALL.bits() as i32))
+        );
+        assert_eq!(
+            default_scene_field_value_by_name(NodeType::Camera3D, "render_mask"),
+            Some(SceneValue::I32(BitMask::NONE.bits() as i32))
+        );
+        assert_eq!(
+            default_scene_field_value_by_name(NodeType::RigidBody3D, "collision_layers"),
+            Some(SceneValue::I32(BitMask::ALL.bits() as i32))
+        );
+        assert_eq!(
+            default_scene_field_value_by_name(NodeType::RigidBody3D, "collision_mask"),
+            Some(SceneValue::I32(BitMask::NONE.bits() as i32))
+        );
+        assert_eq!(
+            default_scene_field_value_by_name(NodeType::MeshInstance3D, "surfaces"),
+            Some(SceneValue::Array(Default::default()))
+        );
     }
 }

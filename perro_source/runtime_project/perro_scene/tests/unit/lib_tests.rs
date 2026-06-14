@@ -448,7 +448,7 @@ fn scene_doc_writes_node_data_indented_under_node() {
     assert!(text.contains(
         "[camera_stream_3d]\nparent = @PARENTKEY\nscript = \"res://path/to/script.rs\"\n    [CameraStream3D]\n        camera = @CameraNode"
     ));
-    assert!(text.contains("        [Node3D]\n            position = (0.0, 0.0, 0.0)"));
+    assert!(text.contains("        [Node3D/]"));
     assert!(text.contains("    [/CameraStream3D]\n[/camera_stream_3d]"));
     assert_eq!(Parser::new(&text).parse_scene().nodes.len(), 3);
 }
@@ -621,6 +621,40 @@ fn scene_doc_writes_valid_scene_and_syncs_children() {
             .iter()
             .any(|node| reparsed.key_name(node.key) == Some("child"))
     );
+}
+
+#[test]
+fn scene_doc_omits_default_scene_fields() {
+    let src = r#"
+    [mesh]
+    [MeshInstance3D]
+        position = (0, 0, 0)
+        scale = (1, 1, 1)
+        render_layers = all
+        surfaces = []
+        cast_shadows = true
+        receive_shadows = true
+    [/MeshInstance3D]
+    [/mesh]
+
+    [body]
+    [RigidBody3D]
+        collision_layers = all
+        collision_mask = none
+        mass = 1.0
+    [/RigidBody3D]
+    [/body]
+    "#;
+
+    let text = Parser::new(src).parse_scene_doc().to_text();
+
+    assert!(text.contains("    [MeshInstance3D/]"));
+    assert!(text.contains("    [RigidBody3D/]"));
+    assert!(!text.contains("render_layers"));
+    assert!(!text.contains("surfaces"));
+    assert!(!text.contains("collision_layers"));
+    assert!(!text.contains("collision_mask"));
+    assert!(!text.contains("mass"));
 }
 
 #[test]

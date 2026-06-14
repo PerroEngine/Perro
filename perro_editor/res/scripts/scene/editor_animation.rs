@@ -1016,7 +1016,7 @@ pub fn pick_selected_script_var_ref<API: ScriptAPI + ?Sized>(
             .nodes
             .iter()
             .find(|node| node.key.as_u32() == key)?;
-        let rows = inspector_value_rows_for_node(state, node);
+        let rows = inspector_display_rows_for_node(state, node);
         let row = rows.get(idx)?;
         if row.expandable {
             if let Some(pos) = state
@@ -1193,7 +1193,7 @@ pub fn choose_inspector_picker_row<API: ScriptAPI + ?Sized>(
                 return false;
             };
             let rows = if picker_kind.starts_with("value_") {
-                inspector_value_rows_for_node(state, node)
+                inspector_display_rows_for_node(state, node)
             } else {
                 inspector_script_var_rows_for_node(state, node)
             };
@@ -1270,13 +1270,13 @@ pub fn resource_dialog_filters(
     node_type: perro_scene::NodeType,
     field: &str,
 ) -> Vec<(&'static str, &'static [&'static str])> {
-    let Some(field) = perro_scene::scene_inspector_field(node_type, field) else {
+    let Some(field) = perro_scene::scene_node_field(node_type, field) else {
         return vec![("Assets", &["*"])];
     };
     let perro_scene::NodeFieldType::Asset(kind) = field.ty else {
         return vec![("Assets", &["*"])];
     };
-    perro_scene::scene_asset_filters(kind)
+    editor_asset_filters(kind)
         .iter()
         .map(|filter| (filter.label, filter.extensions))
         .collect()

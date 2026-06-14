@@ -554,7 +554,7 @@ impl From<String> for SceneValueKey {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SceneValue {
     Bool(bool),
     I32(i32),
