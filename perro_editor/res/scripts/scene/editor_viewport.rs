@@ -2382,6 +2382,7 @@ impl EditorUiRect {
 }
 
 pub fn pick_doc_ui_node(doc: &SceneDoc, point: Vector2) -> Option<u32> {
+    let index = SceneDocIndex::new(doc);
     let root_rect = EditorUiRect {
         center: Vector2::new(0.5, 0.5),
         size: Vector2::ONE,
@@ -2389,13 +2390,13 @@ pub fn pick_doc_ui_node(doc: &SceneDoc, point: Vector2) -> Option<u32> {
     };
     let mut hit = None;
     if let Some(root) = doc.scene.root {
-        pick_doc_ui_node_inner(doc, root.as_u32(), root_rect, point, &mut hit);
+        pick_doc_ui_node_inner(doc, &index, root.as_u32(), root_rect, point, &mut hit);
     }
     for node in doc.scene.nodes.iter() {
         if node.parent.is_none()
             && doc.scene.root.map(|root| root.as_u32()) != Some(node.key.as_u32())
         {
-            pick_doc_ui_node_inner(doc, node.key.as_u32(), root_rect, point, &mut hit);
+            pick_doc_ui_node_inner(doc, &index, node.key.as_u32(), root_rect, point, &mut hit);
         }
     }
     hit
@@ -2403,12 +2404,13 @@ pub fn pick_doc_ui_node(doc: &SceneDoc, point: Vector2) -> Option<u32> {
 
 pub fn pick_doc_ui_node_inner(
     doc: &SceneDoc,
+    index: &SceneDocIndex,
     key: u32,
     parent_rect: EditorUiRect,
     point: Vector2,
     hit: &mut Option<u32>,
 ) {
-    let Some(node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
+    let Some(node) = index.node(doc, key) else {
         return;
     };
     let Some(rect) = editor_ui_rect(&node.data, parent_rect) else {
@@ -2417,13 +2419,8 @@ pub fn pick_doc_ui_node_inner(
     if rect.contains(point) {
         *hit = Some(key);
     }
-    for child in doc
-        .scene
-        .nodes
-        .iter()
-        .filter(|child| child.parent.map(|parent| parent.as_u32()) == Some(key))
-    {
-        pick_doc_ui_node_inner(doc, child.key.as_u32(), rect, point, hit);
+    for child_key in index.child_keys(key).iter().copied() {
+        pick_doc_ui_node_inner(doc, index, child_key, rect, point, hit);
     }
 }
 
@@ -2458,36 +2455,42 @@ pub fn editor_ui_rect(data: &SceneNodeData, parent: EditorUiRect) -> Option<Edit
 }
 
 pub fn doc_ui_parent_rect(doc: &SceneDoc, key: u32) -> Option<EditorUiRect> {
+    let index = SceneDocIndex::new(doc);
+    doc_ui_parent_rect_indexed(doc, &index, key)
+}
+
+fn doc_ui_parent_rect_indexed(
+    doc: &SceneDoc,
+    index: &SceneDocIndex,
+    key: u32,
+) -> Option<EditorUiRect> {
     let root_rect = EditorUiRect {
         center: Vector2::new(0.5, 0.5),
         size: Vector2::ONE,
         rotation: 0.0,
     };
-    let node = doc
-        .scene
-        .nodes
-        .iter()
-        .find(|node| node.key.as_u32() == key)?;
+    let node = index.node(doc, key)?;
     let Some(parent) = node.parent else {
         return Some(root_rect);
     };
-    doc_ui_rect(doc, parent.as_u32()).or(Some(root_rect))
+    doc_ui_rect_indexed(doc, index, parent.as_u32()).or(Some(root_rect))
 }
 
 pub fn doc_ui_rect(doc: &SceneDoc, key: u32) -> Option<EditorUiRect> {
+    let index = SceneDocIndex::new(doc);
+    doc_ui_rect_indexed(doc, &index, key)
+}
+
+fn doc_ui_rect_indexed(doc: &SceneDoc, index: &SceneDocIndex, key: u32) -> Option<EditorUiRect> {
     let root_rect = EditorUiRect {
         center: Vector2::new(0.5, 0.5),
         size: Vector2::ONE,
         rotation: 0.0,
     };
-    let node = doc
-        .scene
-        .nodes
-        .iter()
-        .find(|node| node.key.as_u32() == key)?;
+    let node = index.node(doc, key)?;
     let parent = node
         .parent
-        .and_then(|parent| doc_ui_rect(doc, parent.as_u32()))
+        .and_then(|parent| doc_ui_rect_indexed(doc, index, parent.as_u32()))
         .unwrap_or(root_rect);
     editor_ui_rect(&node.data, parent)
 }

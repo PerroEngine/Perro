@@ -420,7 +420,7 @@ parent = @scene_paste_button
 parent = @scene_action_row
     [UiButton]
         size_ratio = (0.15, 0.88)
-        click_signals = ["editor_inspector_delete"]
+        click_signals = ["editor_scene_delete"]
         style = $btn
         hover = $btn_hot
         pressed = $btn_down

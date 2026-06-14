@@ -588,6 +588,7 @@ fn connect_editor_signals<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
             signal!("editor_inspector_duplicate"),
             signal!("editor_scene_copy"),
             signal!("editor_scene_paste"),
+            signal!("editor_scene_delete"),
             signal!("editor_scene_move_up"),
             signal!("editor_scene_move_down"),
             signal!("editor_scene_reparent_out"),

@@ -31,6 +31,16 @@ use std::borrow::Cow;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::{Mutex, OnceLock};
+
+#[derive(Clone)]
+struct CachedFilteredFiles {
+    key: String,
+    paths: Vec<String>,
+}
+
+static FILTERED_FILE_CACHE: OnceLock<Mutex<Option<CachedFilteredFiles>>> = OnceLock::new();
+static EDITOR_TREE_ICON_CACHE: OnceLock<Mutex<Vec<(String, TextureID)>>> = OnceLock::new();
 
 pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
@@ -2002,6 +2012,88 @@ pub struct SceneTreeRows {
     pub selected_row: Option<usize>,
 }
 
+pub struct SceneDocIndex {
+    node_indices: Vec<(u32, usize)>,
+    children: Vec<Vec<u32>>,
+    roots: Vec<u32>,
+}
+
+impl SceneDocIndex {
+    pub fn new(doc: &SceneDoc) -> Self {
+        let mut node_indices = Vec::with_capacity(doc.scene.nodes.len());
+        for (idx, node) in doc.scene.nodes.iter().enumerate() {
+            node_indices.push((node.key.as_u32(), idx));
+        }
+
+        let mut children = vec![Vec::new(); doc.scene.nodes.len()];
+        let mut roots = Vec::new();
+        if let Some(root) = doc.scene.root {
+            roots.push(root.as_u32());
+        }
+        for node in doc.scene.nodes.iter() {
+            let key = node.key.as_u32();
+            if let Some(parent) = node.parent {
+                if let Some(parent_idx) = node_indices
+                    .iter()
+                    .find_map(|(item_key, idx)| (*item_key == parent.as_u32()).then_some(*idx))
+                {
+                    children[parent_idx].push(key);
+                }
+            } else if !roots.contains(&key) {
+                roots.push(key);
+            }
+        }
+
+        Self {
+            node_indices,
+            children,
+            roots,
+        }
+    }
+
+    pub fn node<'a>(&self, doc: &'a SceneDoc, key: u32) -> Option<&'a SceneNodeEntry> {
+        self.node_indices
+            .iter()
+            .find_map(|(item_key, idx)| (*item_key == key).then_some(*idx))
+            .and_then(|idx| doc.scene.nodes.get(idx))
+    }
+
+    pub fn child_keys(&self, key: u32) -> &[u32] {
+        let Some(idx) = self
+            .node_indices
+            .iter()
+            .find_map(|(item_key, idx)| (*item_key == key).then_some(*idx))
+        else {
+            return &[];
+        };
+        self.children.get(idx).map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    pub fn child_count(&self, key: u32) -> usize {
+        self.child_keys(key).len()
+    }
+
+    pub fn roots(&self) -> &[u32] {
+        &self.roots
+    }
+
+    pub fn path(&self, doc: &SceneDoc, key: SceneKey) -> String {
+        let mut parts = Vec::new();
+        let mut cursor = Some(key);
+        let mut guard = 0;
+        while let Some(key) = cursor {
+            parts.push(doc.scene.key_name_or_id(key).to_string());
+            cursor = self.node(doc, key.as_u32()).and_then(|node| node.parent);
+            guard += 1;
+            if guard > doc.scene.nodes.len() {
+                break;
+            }
+        }
+        parts.reverse();
+        parts.join("/")
+    }
+}
+
 pub fn scene_tree_view(
     doc: &SceneDoc,
     selected_key: Option<u32>,
@@ -2009,25 +2101,16 @@ pub fn scene_tree_view(
     collapsed_keys: &[u32],
 ) -> SceneTreeRows {
     let filter = NodePickerFilter::parse(filter);
+    let index = SceneDocIndex::new(doc);
     if !filter.is_empty() {
-        return filtered_scene_tree_view(doc, selected_key, &filter);
+        return filtered_scene_tree_view_indexed(doc, &index, selected_key, &filter);
     }
     let mut out = SceneTreeRows::default();
     let mut visited = Vec::new();
-    let mut roots = Vec::new();
-
-    if let Some(root) = doc.scene.root {
-        roots.push(root.as_u32());
-    }
-    for node in doc.scene.nodes.iter() {
-        let key = node.key.as_u32();
-        if node.parent.is_none() && !roots.contains(&key) {
-            roots.push(key);
-        }
-    }
-    for key in roots {
+    for key in index.roots().iter().copied() {
         push_scene_tree_row(
             doc,
+            &index,
             key,
             0,
             selected_key,
@@ -2041,6 +2124,7 @@ pub fn scene_tree_view(
         if !visited.contains(&key) {
             push_scene_tree_row(
                 doc,
+                &index,
                 key,
                 0,
                 selected_key,
@@ -2054,28 +2138,21 @@ pub fn scene_tree_view(
 }
 
 pub fn scene_node_path(doc: &SceneDoc, key: SceneKey) -> String {
-    let mut parts = Vec::new();
-    let mut cursor = Some(key);
-    let mut guard = 0;
-    while let Some(key) = cursor {
-        parts.push(doc.scene.key_name_or_id(key).to_string());
-        cursor = doc
-            .scene
-            .nodes
-            .iter()
-            .find(|node| node.key == key)
-            .and_then(|node| node.parent);
-        guard += 1;
-        if guard > doc.scene.nodes.len() {
-            break;
-        }
-    }
-    parts.reverse();
-    parts.join("/")
+    SceneDocIndex::new(doc).path(doc, key)
 }
 
 pub fn filtered_scene_tree_view(
     doc: &SceneDoc,
+    selected_key: Option<u32>,
+    filter: &NodePickerFilter,
+) -> SceneTreeRows {
+    let index = SceneDocIndex::new(doc);
+    filtered_scene_tree_view_indexed(doc, &index, selected_key, filter)
+}
+
+fn filtered_scene_tree_view_indexed(
+    doc: &SceneDoc,
+    index: &SceneDocIndex,
     selected_key: Option<u32>,
     filter: &NodePickerFilter,
 ) -> SceneTreeRows {
@@ -2094,8 +2171,8 @@ pub fn filtered_scene_tree_view(
         if Some(key) == selected_key {
             out.selected_row = Some(row);
         }
-        let path = scene_node_path(doc, node.key);
-        let children = scene_child_count(doc, key);
+        let path = index.path(doc, node.key);
+        let children = index.child_count(key);
         out.labels.push(scene_row_label(
             0,
             &name,
@@ -2149,15 +2226,13 @@ pub fn scene_node_has_filter_tag(node: &SceneNodeEntry, tag: &str) -> bool {
 }
 
 pub fn scene_child_count(doc: &SceneDoc, key: u32) -> usize {
-    doc.scene
-        .nodes
-        .iter()
-        .filter(|node| node.parent.map(|parent| parent.as_u32()) == Some(key))
-        .count()
+    SceneDocIndex::new(doc).child_count(key)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn push_scene_tree_row(
     doc: &SceneDoc,
+    index: &SceneDocIndex,
     key: u32,
     depth: usize,
     selected_key: Option<u32>,
@@ -2168,17 +2243,13 @@ pub fn push_scene_tree_row(
     if out.labels.len() >= MAX_NODES || visited.contains(&key) {
         return None;
     }
-    let node = doc
-        .scene
-        .nodes
-        .iter()
-        .find(|node| node.key.as_u32() == key)?;
+    let node = index.node(doc, key)?;
     visited.push(key);
     let row = out.labels.len();
     if Some(key) == selected_key {
         out.selected_row = Some(row);
     }
-    let children = scene_child_count(doc, key);
+    let children = index.child_count(key);
     let collapsed = collapsed_keys.contains(&key);
     out.labels.push(scene_row_label(
         depth,
@@ -2196,15 +2267,11 @@ pub fn push_scene_tree_row(
     if children > 0 && collapsed {
         return Some(row);
     }
-    for child in doc
-        .scene
-        .nodes
-        .iter()
-        .filter(|child| child.parent.map(|parent| parent.as_u32()) == Some(key))
-    {
+    for child_key in index.child_keys(key).iter().copied() {
         let _ = push_scene_tree_row(
             doc,
-            child.key.as_u32(),
+            index,
+            child_key,
             depth + 1,
             selected_key,
             collapsed_keys,
@@ -2285,6 +2352,15 @@ pub fn picker_rows(state: &EditorState, filter: &str, offset: usize) -> Vec<Stri
 }
 
 pub fn filtered_file_paths(state: &EditorState) -> Vec<String> {
+    let cache_key = filtered_file_cache_key(state);
+    let cache = FILTERED_FILE_CACHE.get_or_init(|| Mutex::new(None));
+    if let Ok(cache) = cache.lock()
+        && let Some(cached) = cache.as_ref()
+        && cached.key == cache_key
+    {
+        return cached.paths.clone();
+    }
+
     let filter = NodePickerFilter::parse(&state.file_filter);
     let mut paths = state
         .file_paths
@@ -2305,7 +2381,24 @@ pub fn filtered_file_paths(state: &EditorState) -> Vec<String> {
     if filter.is_empty() && state.activity_mode != "glb" {
         paths.insert(0, "res://".to_string());
     }
+    if let Ok(mut cache) = cache.lock() {
+        *cache = Some(CachedFilteredFiles {
+            key: cache_key,
+            paths: paths.clone(),
+        });
+    }
     paths
+}
+
+fn filtered_file_cache_key(state: &EditorState) -> String {
+    format!(
+        "{}\n{}\n{}\n{}\n{}",
+        state.activity_mode,
+        state.file_filter,
+        state.file_scope,
+        state.file_expanded_paths.join("\n"),
+        state.file_paths.join("\n")
+    )
 }
 
 pub fn file_row_label(path: &str) -> String {
@@ -3753,7 +3846,24 @@ fn editor_tree_icon_texture<API: ScriptAPI + ?Sized>(
         "Resource" => "res://icons/nodes/resource.png",
         _ => "res://icons/nodes/node.png",
     };
-    texture_load!(ctx.res, path)
+    let cache = EDITOR_TREE_ICON_CACHE.get_or_init(|| Mutex::new(Vec::new()));
+    if let Ok(cache) = cache.lock()
+        && let Some((_, texture)) = cache.iter().find(|(cached_path, _)| cached_path == path)
+    {
+        return *texture;
+    }
+    let texture = texture_load!(ctx.res, path);
+    if let Ok(mut cache) = cache.lock() {
+        if let Some((_, cached_texture)) = cache
+            .iter_mut()
+            .find(|(cached_path, _)| cached_path == path)
+        {
+            *cached_texture = texture;
+        } else {
+            cache.push((path.to_string(), texture));
+        }
+    }
+    texture
 }
 
 pub fn set_button_size<API: ScriptAPI + ?Sized>(

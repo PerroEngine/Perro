@@ -17,6 +17,13 @@ const MAX_INSPECTOR_DEPTH: usize = 4;
 static SCRIPT_SCHEMA_CACHE: OnceLock<Mutex<BTreeMap<String, CachedScriptSchema>>> = OnceLock::new();
 static SCRIPT_FILE_SCHEMA_CACHE: OnceLock<Mutex<BTreeMap<String, CachedScriptFileSchema>>> =
     OnceLock::new();
+static INSPECTOR_ROW_CACHE: OnceLock<Mutex<Option<CachedInspectorRows>>> = OnceLock::new();
+
+#[derive(Clone)]
+struct CachedInspectorRows {
+    key: String,
+    rows: Vec<InspectorValueRow>,
+}
 
 #[derive(Clone)]
 pub struct InspectorValueRow {
@@ -268,6 +275,14 @@ pub fn inspector_display_rows_for_node(
     state: &EditorState,
     node: &perro_api::scene::SceneNodeEntry,
 ) -> Vec<InspectorValueRow> {
+    let cache_key = inspector_row_cache_key(state, node);
+    let cache = INSPECTOR_ROW_CACHE.get_or_init(|| Mutex::new(None));
+    if let Ok(cache) = cache.lock()
+        && let Some(cached) = cache.as_ref()
+        && cached.key == cache_key
+    {
+        return cached.rows.clone();
+    }
     let scene_fields = inspector_scene_value_fields_for_node(node);
     let mut rows = grouped_scene_value_rows_for_node(state, node, &scene_fields);
     let script_rows = inspector_script_var_rows_for_node(state, node);
@@ -275,7 +290,24 @@ pub fn inspector_display_rows_for_node(
         rows.push(inspector_section_row("section:script", "Script"));
         rows.extend(script_rows.into_iter().map(indent_inspector_row));
     }
+    if let Ok(mut cache) = cache.lock() {
+        *cache = Some(CachedInspectorRows {
+            key: cache_key,
+            rows: rows.clone(),
+        });
+    }
     rows
+}
+
+fn inspector_row_cache_key(state: &EditorState, node: &perro_api::scene::SceneNodeEntry) -> String {
+    format!(
+        "{}\n{}\n{}\n{}\n{}",
+        node.key.as_u32(),
+        state.inspector_expanded_paths.join("\n"),
+        state.inspector_rotation_mode,
+        state.inspector_collapsed_sections.join("\n"),
+        state.doc_text
+    )
 }
 
 fn grouped_scene_value_rows_for_node(
@@ -580,6 +612,7 @@ fn script_schema_for_node(
 }
 
 pub fn clear_script_schema_cache() {
+    clear_inspector_row_cache();
     let Some(cache) = SCRIPT_SCHEMA_CACHE.get() else {
         clear_script_file_schema_cache();
         return;
@@ -591,6 +624,7 @@ pub fn clear_script_schema_cache() {
 }
 
 pub fn invalidate_script_schema_cache_paths(project_root: &str, changed_paths: &[String]) {
+    clear_inspector_row_cache();
     clear_merged_script_schema_cache();
     let Some(cache) = SCRIPT_FILE_SCHEMA_CACHE.get() else {
         return;
@@ -603,6 +637,15 @@ pub fn invalidate_script_schema_cache_paths(project_root: &str, changed_paths: &
             let abs = changed_script_abs_path(project_root, path);
             cache.remove(&abs);
         }
+    }
+}
+
+fn clear_inspector_row_cache() {
+    let Some(cache) = INSPECTOR_ROW_CACHE.get() else {
+        return;
+    };
+    if let Ok(mut cache) = cache.lock() {
+        *cache = None;
     }
 }
 
