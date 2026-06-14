@@ -7,8 +7,9 @@ pub type FileSig = String;
 
 pub fn scan_project(root: &Path) -> Vec<FileSig> {
     let mut out = Vec::new();
-    for path in watched_roots(root) {
-        scan_inner(root, &path, &mut out);
+    scan_watch_path(root, &root.join("res"), &mut out);
+    for file in watched_root_files() {
+        scan_watch_path(root, &root.join(file), &mut out);
     }
     out.sort();
     out
@@ -65,30 +66,50 @@ fn scan_inner(root: &Path, path: &Path, out: &mut Vec<FileSig>) {
             continue;
         };
         let rel = rel_path(root, &path);
-        let modified = meta
-            .modified()
-            .ok()
-            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-            .map(|v| v.as_secs())
-            .unwrap_or(0);
         let is_dir = meta.is_dir();
-        out.push(format!(
-            "{rel}|{}|{modified}|{}",
-            meta.len(),
-            if is_dir { 1 } else { 0 }
-        ));
+        out.push(sig_for_meta(&rel, &meta, is_dir));
         if is_dir {
             scan_inner(root, &path, out);
         }
     }
 }
 
-fn watched_roots(root: &Path) -> Vec<PathBuf> {
-    ["res", "scripts", "src"]
-        .iter()
-        .map(|name| root.join(name))
-        .filter(|path| path.exists())
-        .collect()
+fn scan_watch_path(root: &Path, path: &Path, out: &mut Vec<FileSig>) {
+    let rel = rel_path(root, path);
+    let Ok(meta) = fs::metadata(path) else {
+        out.push(format!("{rel}|missing|0|0"));
+        return;
+    };
+    let is_dir = meta.is_dir();
+    out.push(sig_for_meta(&rel, &meta, is_dir));
+    if is_dir {
+        scan_inner(root, path, out);
+    }
+}
+
+fn sig_for_meta(rel: &str, meta: &fs::Metadata, is_dir: bool) -> String {
+    let modified = meta
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|v| v.as_secs())
+        .unwrap_or(0);
+    format!(
+        "{rel}|{}|{modified}|{}",
+        meta.len(),
+        if is_dir { 1 } else { 0 }
+    )
+}
+
+fn watched_root_files() -> &'static [&'static str] {
+    &[
+        "project.toml",
+        "input_map.toml",
+        "locale.csv",
+        "localization.csv",
+        "translation.csv",
+        "translations.csv",
+    ]
 }
 
 fn sig_path(sig: &str) -> Option<&str> {
