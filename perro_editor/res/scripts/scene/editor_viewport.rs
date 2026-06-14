@@ -574,13 +574,31 @@ pub fn poll_project_diffs<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
             .iter()
             .filter_map(|path| editor_file_watch::abs_scene_to_res(&root, path))
             .collect::<Vec<_>>();
-        Some((root, res_changed, changed_scenes))
+        let changed_scripts = changed
+            .iter()
+            .filter(|path| {
+                editor_file_watch::is_under_res(&root, path)
+                    && path.replace('\\', "/").ends_with(".rs")
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        if !changed_scripts.is_empty() {
+            state.script_schema_reload_frames = 8;
+        }
+        Some((root, res_changed, changed_scenes, changed_scripts))
     })
     .flatten();
 
-    let Some((root, res_changed, changed_scenes)) = action else {
+    let Some((root, res_changed, changed_scenes, changed_scripts)) = action else {
         return;
     };
+
+    if !changed_scripts.is_empty() {
+        crate::scripts_ui_editor_inspector_values_rs::invalidate_script_schema_cache_paths(
+            root.to_string_lossy().as_ref(),
+            &changed_scripts,
+        );
+    }
 
     if res_changed && let Ok(paths) = scan_res_paths(root.as_path()) {
         let scene_paths = paths
@@ -773,62 +791,63 @@ pub fn load_preview_scene<API: ScriptAPI + ?Sized>(
     let doc_text = with_state!(ctx.run, EditorState, ctx.id, |state| {
         state.doc_text.clone()
     });
-    let (
-        node_ids,
-        keys,
-        pick_node_ids,
-        pick_node_keys,
-        preview_camera_2d,
-        preview_camera_3d,
-    ) = if doc_text.is_empty() {
-        (Vec::new(), Vec::new(), Vec::new(), Vec::new(), 0, 0)
-    } else {
-        let doc = SceneDoc::parse(&doc_text);
-        add_preview_env(ctx, root, &doc);
-        let preview_camera_2d = if editor_scene::has_2d(&doc) {
-            let name = format!("__editor_preview_camera_2d_{serial}");
-            let camera = create_node!(ctx.run, Camera2D, name, tags![], root);
-            set_viewport_stream_camera(ctx, "viewport_stream_2d", camera);
-            Some(camera)
+    let (node_ids, keys, pick_node_ids, pick_node_keys, preview_camera_2d, preview_camera_3d) =
+        if doc_text.is_empty() {
+            (Vec::new(), Vec::new(), Vec::new(), Vec::new(), 0, 0)
         } else {
-            None
+            let doc = SceneDoc::parse(&doc_text);
+            add_preview_env(ctx, root, &doc);
+            let preview_camera_2d = if editor_scene::has_2d(&doc) {
+                let name = format!("__editor_preview_camera_2d_{serial}");
+                let camera = create_node!(ctx.run, Camera2D, name, tags![], root);
+                set_viewport_stream_camera(ctx, "viewport_stream_2d", camera);
+                Some(camera)
+            } else {
+                None
+            };
+            let preview_camera_3d = if editor_scene::has_3d(&doc) {
+                let name = format!("__editor_preview_camera_3d_{serial}");
+                let camera = create_node!(ctx.run, Camera3D, name, tags![], root);
+                set_viewport_stream_camera(ctx, "viewport_stream_3d", camera);
+                Some(camera)
+            } else {
+                None
+            };
+            if let Some(camera) = preview_camera_2d {
+                let _ = with_node_mut!(ctx.run, Camera2D, camera, |node| {
+                    node.active = false;
+                    node.zoom = 1.0;
+                });
+            }
+            if let Some(camera) = preview_camera_3d {
+                let _ = with_node_mut!(ctx.run, Camera3D, camera, |node| {
+                    node.active = false;
+                });
+            }
+            let doc_keys = preview_doc_order(&doc);
+            let node_ids = preview_runtime_order(ctx, root, doc_keys.len());
+            let mut pick_node_ids = node_ids.clone();
+            let mut pick_node_keys = doc_keys.clone();
+            add_preview_node_gizmos(
+                ctx,
+                &doc,
+                &node_ids,
+                &doc_keys,
+                &mut pick_node_ids,
+                &mut pick_node_keys,
+            );
+            (
+                node_ids.into_iter().map(NodeID::as_u64).collect::<Vec<_>>(),
+                doc_keys,
+                pick_node_ids
+                    .into_iter()
+                    .map(NodeID::as_u64)
+                    .collect::<Vec<_>>(),
+                pick_node_keys,
+                preview_camera_2d.map(NodeID::as_u64).unwrap_or(0),
+                preview_camera_3d.map(NodeID::as_u64).unwrap_or(0),
+            )
         };
-        let preview_camera_3d = if editor_scene::has_3d(&doc) {
-            let name = format!("__editor_preview_camera_3d_{serial}");
-            let camera = create_node!(ctx.run, Camera3D, name, tags![], root);
-            set_viewport_stream_camera(ctx, "viewport_stream_3d", camera);
-            Some(camera)
-        } else {
-            None
-        };
-        if let Some(camera) = preview_camera_2d {
-            let _ = with_node_mut!(ctx.run, Camera2D, camera, |node| {
-                node.active = false;
-                node.zoom = 1.0;
-            });
-        }
-        if let Some(camera) = preview_camera_3d {
-            let _ = with_node_mut!(ctx.run, Camera3D, camera, |node| {
-                node.active = false;
-            });
-        }
-        let doc_keys = preview_doc_order(&doc);
-        let node_ids = preview_runtime_order(ctx, root, doc_keys.len());
-        let mut pick_node_ids = node_ids.clone();
-        let mut pick_node_keys = doc_keys.clone();
-        add_preview_node_gizmos(ctx, &doc, &node_ids, &doc_keys, &mut pick_node_ids, &mut pick_node_keys);
-        (
-            node_ids.into_iter().map(NodeID::as_u64).collect::<Vec<_>>(),
-            doc_keys,
-            pick_node_ids
-                .into_iter()
-                .map(NodeID::as_u64)
-                .collect::<Vec<_>>(),
-            pick_node_keys,
-            preview_camera_2d.map(NodeID::as_u64).unwrap_or(0),
-            preview_camera_3d.map(NodeID::as_u64).unwrap_or(0),
-        )
-    };
 
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         state.preview_root = root.as_u64();
@@ -979,22 +998,58 @@ pub fn sync_selected_preview_gizmo<API: ScriptAPI + ?Sized>(ctx: &mut ScriptCont
     if !is_3d {
         return;
     }
-    let root = create_node!(
-        ctx.run,
-        Node3D,
-        "__editor_selected_gizmo",
-        tags![],
-        parent
-    );
+    let root = create_node!(ctx.run, Node3D, "__editor_selected_gizmo", tags![], parent);
     let red = editor_gizmo_material(ctx, [1.0, 0.16, 0.12, 1.0]);
     let green = editor_gizmo_material(ctx, [0.12, 0.92, 0.24, 1.0]);
     let blue = editor_gizmo_material(ctx, [0.22, 0.46, 1.0, 1.0]);
-    add_axis_gizmo_mesh(ctx, root, red, Vector3::new(0.72, 0.0, 0.0), Vector3::new(1.44, 0.04, 0.04), Quaternion::IDENTITY);
-    add_axis_gizmo_mesh(ctx, root, green, Vector3::new(0.0, 0.72, 0.0), Vector3::new(0.04, 1.44, 0.04), Quaternion::IDENTITY);
-    add_axis_gizmo_mesh(ctx, root, blue, Vector3::new(0.0, 0.0, 0.72), Vector3::new(0.04, 0.04, 1.44), Quaternion::IDENTITY);
-    add_axis_gizmo_mesh(ctx, root, red, Vector3::new(1.48, 0.0, 0.0), Vector3::new(0.16, 0.16, 0.16), Quaternion::IDENTITY);
-    add_axis_gizmo_mesh(ctx, root, green, Vector3::new(0.0, 1.48, 0.0), Vector3::new(0.16, 0.16, 0.16), Quaternion::IDENTITY);
-    add_axis_gizmo_mesh(ctx, root, blue, Vector3::new(0.0, 0.0, 1.48), Vector3::new(0.16, 0.16, 0.16), Quaternion::IDENTITY);
+    add_axis_gizmo_mesh(
+        ctx,
+        root,
+        red,
+        Vector3::new(0.72, 0.0, 0.0),
+        Vector3::new(1.44, 0.04, 0.04),
+        Quaternion::IDENTITY,
+    );
+    add_axis_gizmo_mesh(
+        ctx,
+        root,
+        green,
+        Vector3::new(0.0, 0.72, 0.0),
+        Vector3::new(0.04, 1.44, 0.04),
+        Quaternion::IDENTITY,
+    );
+    add_axis_gizmo_mesh(
+        ctx,
+        root,
+        blue,
+        Vector3::new(0.0, 0.0, 0.72),
+        Vector3::new(0.04, 0.04, 1.44),
+        Quaternion::IDENTITY,
+    );
+    add_axis_gizmo_mesh(
+        ctx,
+        root,
+        red,
+        Vector3::new(1.48, 0.0, 0.0),
+        Vector3::new(0.16, 0.16, 0.16),
+        Quaternion::IDENTITY,
+    );
+    add_axis_gizmo_mesh(
+        ctx,
+        root,
+        green,
+        Vector3::new(0.0, 1.48, 0.0),
+        Vector3::new(0.16, 0.16, 0.16),
+        Quaternion::IDENTITY,
+    );
+    add_axis_gizmo_mesh(
+        ctx,
+        root,
+        blue,
+        Vector3::new(0.0, 0.0, 1.48),
+        Vector3::new(0.16, 0.16, 0.16),
+        Quaternion::IDENTITY,
+    );
     add_gizmo_ring(ctx, root, red, "yz");
     add_gizmo_ring(ctx, root, green, "xz");
     add_gizmo_ring(ctx, root, blue, "xy");
@@ -1045,7 +1100,9 @@ fn preview_collision_shape_3d<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     id: NodeID,
 ) -> Option<Shape3D> {
-    Some(with_node!(ctx.run, CollisionShape3D, id, |node| node.shape.clone()))
+    Some(with_node!(ctx.run, CollisionShape3D, id, |node| node
+        .shape
+        .clone()))
 }
 
 fn collision_shape_mesh(shape: Shape3D) -> Option<(&'static str, Transform3D)> {
@@ -1055,17 +1112,35 @@ fn collision_shape_mesh(shape: Shape3D) -> Option<(&'static str, Transform3D)> {
             let d = radius.abs().max(0.0001) * 2.0;
             ("__sphere__", Vector3::new(d, d, d))
         }
-        Shape3D::Capsule { radius, half_height } => {
+        Shape3D::Capsule {
+            radius,
+            half_height,
+        } => {
             let d = radius.abs().max(0.0001) * 2.0;
-            ("__capsule__", Vector3::new(d, half_height.abs().max(0.0001) * 2.0 + d, d))
+            (
+                "__capsule__",
+                Vector3::new(d, half_height.abs().max(0.0001) * 2.0 + d, d),
+            )
         }
-        Shape3D::Cylinder { radius, half_height } => {
+        Shape3D::Cylinder {
+            radius,
+            half_height,
+        } => {
             let d = radius.abs().max(0.0001) * 2.0;
-            ("__cylinder__", Vector3::new(d, half_height.abs().max(0.0001) * 2.0, d))
+            (
+                "__cylinder__",
+                Vector3::new(d, half_height.abs().max(0.0001) * 2.0, d),
+            )
         }
-        Shape3D::Cone { radius, half_height } => {
+        Shape3D::Cone {
+            radius,
+            half_height,
+        } => {
             let d = radius.abs().max(0.0001) * 2.0;
-            ("__cone__", Vector3::new(d, half_height.abs().max(0.0001) * 2.0, d))
+            (
+                "__cone__",
+                Vector3::new(d, half_height.abs().max(0.0001) * 2.0, d),
+            )
         }
         Shape3D::TriPrism { size } => ("__tri_prism__", size),
         Shape3D::TriangularPyramid { size } => ("__tri_pyr__", size),
@@ -1109,7 +1184,11 @@ fn add_collision_vertices_3d<API: ScriptAPI + ?Sized>(
             "__editor_collision3d_vertex",
             "__cube__",
             material,
-            Transform3D::new(point, Quaternion::IDENTITY, Vector3::new(0.075, 0.075, 0.075)),
+            Transform3D::new(
+                point,
+                Quaternion::IDENTITY,
+                Vector3::new(0.075, 0.075, 0.075),
+            ),
         );
     }
 }
@@ -1256,9 +1335,13 @@ pub fn pick_preview_3d<API: ScriptAPI + ?Sized>(
     let mut best: Option<(u32, f32)> = None;
     for (raw_id, key) in ids.into_iter().zip(keys) {
         let id = NodeID::from_u64(raw_id);
-        let Some(hit) =
-            mesh_instance_surface_on_global_ray_3d!(ctx.run, id, ray.origin, ray.direction, 100000.0)
-        else {
+        let Some(hit) = mesh_instance_surface_on_global_ray_3d!(
+            ctx.run,
+            id,
+            ray.origin,
+            ray.direction,
+            100000.0
+        ) else {
             continue;
         };
         let replace = best
@@ -1360,11 +1443,9 @@ fn draw_collision_shape_2d<API: ScriptAPI + ?Sized>(
                 center + Vector2::new(0.0, hh),
             ];
             ctx.res.Draw2D().polygon(points.clone(), fill, 1.0);
-            ctx.res.Draw2D().polyline(
-                vec![points[0], points[1], points[2], points[0]],
-                line,
-                2.0,
-            );
+            ctx.res
+                .Draw2D()
+                .polyline(vec![points[0], points[1], points[2], points[0]], line, 2.0);
             for point in points {
                 ctx.res.Draw2D().circle(point, 4.0, [0.84, 1.0, 1.0, 1.0]);
             }

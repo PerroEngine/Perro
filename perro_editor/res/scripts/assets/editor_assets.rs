@@ -56,6 +56,7 @@ pub fn open_project<API: ScriptAPI + ?Sized>(
         scene_paths.len()
     );
 
+    crate::scripts_ui_editor_inspector_values_rs::clear_script_schema_cache();
     load_editor_shell(ctx)?;
 
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
@@ -99,6 +100,7 @@ pub fn open_project<API: ScriptAPI + ?Sized>(
         state.active_anim_player_key = None;
         state.active_glb_path.clear();
         state.active_glb_summary.clear();
+        state.script_schema_reload_frames = 0;
         state.log = log;
     });
 
@@ -1138,7 +1140,10 @@ pub fn delete_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
                 }
                 state.file_expanded_paths.retain(|expanded| {
                     expanded == "res://"
-                        || state.file_paths.iter().any(|file_path| file_path == expanded)
+                        || state
+                            .file_paths
+                            .iter()
+                            .any(|file_path| file_path == expanded)
                 });
                 state.active_asset_path = parent_res_folder(&path);
                 if state.active_asset_path.is_empty() {
@@ -1230,58 +1235,63 @@ pub fn rename_active_asset<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, 
     }
     match fs::rename(&source_abs, &target_abs) {
         Ok(()) => {
-            let (next_open, scene_paths, dirty_paths) = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-                for item in state.open_paths.iter_mut() {
-                    if item == &source {
-                        *item = target.clone();
-                    }
-                }
-                for item in state.dirty_scene_paths.iter_mut() {
-                    if item == &source {
-                        *item = target.clone();
-                    }
-                }
-                let active_open_path = state.open_paths.get(state.active_open).cloned();
-                if !state.doc_text.is_empty() {
-                    let mut doc = SceneDoc::parse(&state.doc_text);
-                    if rewrite_asset_refs_in_doc(&mut doc, &source, &target) {
-                        state.doc_text = doc.to_text();
-                        if let Some(path) = active_open_path.clone()
-                            && !state.dirty_scene_paths.iter().any(|item| item == &path)
-                        {
-                            state.dirty_scene_paths.push(path);
+            let (next_open, scene_paths, dirty_paths) =
+                with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+                    for item in state.open_paths.iter_mut() {
+                        if item == &source {
+                            *item = target.clone();
                         }
-                        state.dirty = true;
                     }
-                }
-                if let Ok(paths) = scan_res_paths(Path::new(&state.project_root)) {
-                    state.file_paths = paths;
-                    state.scene_paths = state
-                        .file_paths
-                        .iter()
-                        .filter(|path| path.ends_with(".scn"))
-                        .cloned()
-                        .collect();
-                }
-                state.active_asset_path = target.clone();
-                state.file_scope = parent_res_folder(&target);
-                reveal_file_path_in_tree(state, &target);
-                state.log = format!("rename asset\n{source} -> {target}");
-                let next_open = state
-                    .open_paths
-                    .get(state.active_open)
-                    .filter(|open| *open == &target)
-                    .cloned();
-                (next_open, state.scene_paths.clone(), state.dirty_scene_paths.clone())
-            })
-            .unwrap_or((None, Vec::new(), Vec::new()));
-            let rewrite_count = rewrite_clean_scene_asset_refs(&root, &scene_paths, &dirty_paths, &source, &target);
+                    for item in state.dirty_scene_paths.iter_mut() {
+                        if item == &source {
+                            *item = target.clone();
+                        }
+                    }
+                    let active_open_path = state.open_paths.get(state.active_open).cloned();
+                    if !state.doc_text.is_empty() {
+                        let mut doc = SceneDoc::parse(&state.doc_text);
+                        if rewrite_asset_refs_in_doc(&mut doc, &source, &target) {
+                            state.doc_text = doc.to_text();
+                            if let Some(path) = active_open_path.clone()
+                                && !state.dirty_scene_paths.iter().any(|item| item == &path)
+                            {
+                                state.dirty_scene_paths.push(path);
+                            }
+                            state.dirty = true;
+                        }
+                    }
+                    if let Ok(paths) = scan_res_paths(Path::new(&state.project_root)) {
+                        state.file_paths = paths;
+                        state.scene_paths = state
+                            .file_paths
+                            .iter()
+                            .filter(|path| path.ends_with(".scn"))
+                            .cloned()
+                            .collect();
+                    }
+                    state.active_asset_path = target.clone();
+                    state.file_scope = parent_res_folder(&target);
+                    reveal_file_path_in_tree(state, &target);
+                    state.log = format!("rename asset\n{source} -> {target}");
+                    let next_open = state
+                        .open_paths
+                        .get(state.active_open)
+                        .filter(|open| *open == &target)
+                        .cloned();
+                    (
+                        next_open,
+                        state.scene_paths.clone(),
+                        state.dirty_scene_paths.clone(),
+                    )
+                })
+                .unwrap_or((None, Vec::new(), Vec::new()));
+            let rewrite_count =
+                rewrite_clean_scene_asset_refs(&root, &scene_paths, &dirty_paths, &source, &target);
             if rewrite_count > 0 {
                 let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
                     state.project_file_sigs = editor_file_watch::scan_project(Path::new(&root));
-                    state.log = format!(
-                        "rename asset\n{source} -> {target}\nupd refs={rewrite_count}"
-                    );
+                    state.log =
+                        format!("rename asset\n{source} -> {target}\nupd refs={rewrite_count}");
                 });
             }
             if let Some(next) = next_open {

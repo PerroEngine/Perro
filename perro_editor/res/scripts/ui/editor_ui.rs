@@ -20,7 +20,7 @@ use crate::scripts_ui_editor_inspector_values_rs::*;
 use crate::scripts_ui_editor_view_rs as editor_view;
 use crate::scripts_ui_inspector_value_row_rs::{
     apply_inspector_value_row_panel, ensure_inspector_value_row, hide_inspector_value_rows_from,
-    inspector_value_row_inner,
+    inspector_value_row_inner, place_inspector_value_row,
 };
 use crate::scripts_ui_tree_row_affordance_rs::ensure_tree_row_affordances;
 use perro_api::prelude::*;
@@ -31,6 +31,7 @@ use std::borrow::Cow;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+
 pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
 
@@ -41,6 +42,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     );
     set_label(ctx, "status_bar", &view.status);
     set_label(ctx, "log_text", &view.log);
+    apply_script_reload_popup(ctx, view.script_schema_reloading);
     set_label(ctx, "viewport_label", &view.viewport);
     let glb_mode = view.activity_mode == "glb";
     set_button_fill(
@@ -353,11 +355,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         "inspector_position_box",
         &view.inspector.pos.join(", "),
     );
-    set_ui_display(
-        ctx,
-        "inspector_position_label",
-        show_transform_body,
-    );
+    set_ui_display(ctx, "inspector_position_label", show_transform_body);
     set_label(ctx, "inspector_position_header_label", "Position");
     apply_component_row(
         ctx,
@@ -367,11 +365,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         show_transform_body,
     );
     set_label(ctx, "inspector_rotation_header_label", "Rotation");
-    set_ui_display(
-        ctx,
-        "inspector_rotation_label",
-        show_transform_body,
-    );
+    set_ui_display(ctx, "inspector_rotation_label", show_transform_body);
     set_ui_display(
         ctx,
         "inspector_rotation_mode_row",
@@ -408,11 +402,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         show_transform_body,
     );
     set_label(ctx, "inspector_scale_header_label", "Scale");
-    set_ui_display(
-        ctx,
-        "inspector_scale_label",
-        show_transform_body,
-    );
+    set_ui_display(ctx, "inspector_scale_label", show_transform_body);
     set_text_box(ctx, "inspector_scale_box", &view.inspector.scale.join(", "));
     apply_component_row(
         ctx,
@@ -435,9 +425,15 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     );
     set_ui_display(ctx, "inspector_vars_box", false);
     set_text_box(ctx, "inspector_vars_box", &view.inspector.vars_text);
+    let row_parents = inspector_row_parent_indices(&view.inspector.script_vars);
+    let row_base_heights = inspector_row_base_heights(&view.inspector.script_vars);
+    let row_subtree_heights =
+        inspector_row_subtree_heights(&view.inspector.script_vars, &row_base_heights);
     for idx in 0..view.inspector.script_vars.len() {
         ensure_inspector_value_row(ctx, idx);
         let row = view.inspector.script_vars.get(idx);
+        let parent_idx = row_parents.get(idx).copied().flatten();
+        place_inspector_value_row(ctx, idx, parent_idx);
         if let Some(row_id) = inspector_value_row_inner(ctx, idx) {
             ensure_inspector_bitmask_grid(ctx, idx, row_id);
         }
@@ -470,7 +466,11 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         for component in 0..4 {
             let box_name = format!("inspector_var_{idx}_{component}_box");
             let component_value = row.and_then(|item| item.components.get(component));
-            set_text_box(ctx, &box_name, component_value.map(String::as_str).unwrap_or(""));
+            set_text_box(
+                ctx,
+                &box_name,
+                component_value.map(String::as_str).unwrap_or(""),
+            );
             set_ui_display(
                 ctx,
                 &box_name,
@@ -495,12 +495,10 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         let section_row = row.is_some_and(|item| item.source == "section");
         let dropdown_name = format!("inspector_var_{idx}_dropdown");
         let picker_button_name = format!("inspector_var_{idx}_pick_button");
-        let picker_row = row
-            .is_some_and(|item| {
-                item.source != "section"
-                    && (item.kind == "Node" || item.kind.starts_with("Asset(") || item.expandable)
-            })
-            && find_named(ctx, &picker_button_name).is_some();
+        let picker_row = row.is_some_and(|item| {
+            item.source != "section"
+                && (item.kind == "Node" || item.kind.starts_with("Asset(") || item.expandable)
+        }) && find_named(ctx, &picker_button_name).is_some();
         let component_row =
             row.is_some_and(|item| !item.components.is_empty() || item.kind == "Color");
         set_ui_display(
@@ -537,15 +535,13 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             &format!("inspector_var_{idx}_bitmask_grid"),
             view.inspector.node_actions && bitmask_row && !vars_closed,
         );
-        if bitmask_row {
-            set_ui_node_size(ctx, &format!("inspector_var_row_{idx}"), (0.985, 0.115));
-            set_ui_node_size(ctx, &format!("inspector_var_row_{idx}_inner"), (1.0, 1.0));
-        } else if section_row {
-            set_ui_node_size(ctx, &format!("inspector_var_row_{idx}"), (0.985, 0.024));
-            set_ui_node_size(ctx, &format!("inspector_var_row_{idx}_inner"), (1.0, 1.0));
-        } else {
-            set_ui_node_size(ctx, &format!("inspector_var_row_{idx}"), (0.985, 0.031));
-        }
+        apply_inspector_row_tree_layout(
+            ctx,
+            idx,
+            parent_idx,
+            &row_base_heights,
+            &row_subtree_heights,
+        );
         if let Some(row) = row
             && bitmask_row
         {
@@ -569,7 +565,11 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             row.is_some_and(|item| item.kind == "Bool" && item.value == "true"),
         );
         if let Some(row) = row {
-            apply_inspector_value_row_panel(ctx, idx, row.depth, &row.source);
+            let has_children = row_subtree_heights
+                .get(idx)
+                .zip(row_base_heights.get(idx))
+                .is_some_and(|(total, base)| *total > *base);
+            apply_inspector_value_row_panel(ctx, idx, row.depth, &row.source, has_children);
         }
         let add_name = format!("inspector_var_{idx}_add_button");
         let remove_name = format!("inspector_var_{idx}_remove_button");
@@ -782,7 +782,13 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
     let mut idx = 0;
     while find_named(ctx, &format!("inspector_var_row_{idx}")).is_some() {
         set_ui_node_size(ctx, &format!("inspector_var_row_{idx}"), (0.985, 0.031));
+        set_ui_node_size(ctx, &format!("inspector_var_row_{idx}_stack"), (1.0, 1.0));
         set_ui_node_size(ctx, &format!("inspector_var_row_{idx}_inner"), (1.0, 1.0));
+        set_ui_node_size(
+            ctx,
+            &format!("inspector_var_row_{idx}_children"),
+            (1.0, 0.0),
+        );
         set_ui_node_size(ctx, &format!("inspector_var_{idx}_value"), (0.50, 0.70));
         set_text_box_text_ratio(ctx, &format!("inspector_var_{idx}_value"), 0.62);
         set_text_box_padding(ctx, &format!("inspector_var_{idx}_value"), 5.0, 1.0);
@@ -865,6 +871,7 @@ pub struct EditorView {
     inspector_picker_rows: Vec<String>,
     inspector_picker_page: String,
     inspector_picker_filter: String,
+    script_schema_reloading: bool,
 }
 
 pub struct InspectorViewData {
@@ -997,7 +1004,10 @@ impl InspectorViewData {
         view.name_edit = asset_edit_name(&state.active_asset_path);
         view.kind = asset.kind;
         view.parent = format!("{}\n{}", asset.path, asset.size);
-        view.script = format!("State  {}\n{}\n{}", asset.state, asset.detail, asset.actions);
+        view.script = format!(
+            "State  {}\n{}\n{}",
+            asset.state, asset.detail, asset.actions
+        );
         view.collapsed_sections = state.inspector_collapsed_sections.clone();
         view.apply_asset_actions(state);
         view
@@ -1147,6 +1157,7 @@ impl EditorView {
                 "page {inspector_picker_page}/{inspector_picker_page_count}"
             ),
             inspector_picker_filter: state.inspector_picker_filter.clone(),
+            script_schema_reloading: state.script_schema_reload_frames > 0,
         }
     }
 }
@@ -1337,6 +1348,94 @@ fn inspector_var_button_label(row: &InspectorValueRow) -> String {
     row.value.clone()
 }
 
+fn inspector_row_parent_indices(rows: &[InspectorValueRow]) -> Vec<Option<usize>> {
+    let mut stack: Vec<usize> = Vec::new();
+    let mut out = Vec::with_capacity(rows.len());
+    for (idx, row) in rows.iter().enumerate() {
+        while stack
+            .last()
+            .is_some_and(|parent| rows[*parent].depth >= row.depth)
+        {
+            stack.pop();
+        }
+        out.push(stack.last().copied());
+        stack.push(idx);
+    }
+    out
+}
+
+fn inspector_row_base_heights(rows: &[InspectorValueRow]) -> Vec<f32> {
+    rows.iter()
+        .map(|row| {
+            if row.kind == "BitMask" {
+                0.115
+            } else if row.source == "section" {
+                0.024
+            } else {
+                0.031
+            }
+        })
+        .collect()
+}
+
+fn inspector_row_subtree_heights(rows: &[InspectorValueRow], base_heights: &[f32]) -> Vec<f32> {
+    let mut out = base_heights.to_vec();
+    for idx in (0..rows.len()).rev() {
+        let depth = rows[idx].depth;
+        let mut next = idx + 1;
+        while next < rows.len() && rows[next].depth > depth {
+            if rows[next].depth == depth + 1 {
+                out[idx] += out[next];
+            }
+            next += 1;
+        }
+    }
+    out
+}
+
+fn apply_inspector_row_tree_layout<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+    parent_idx: Option<usize>,
+    base_heights: &[f32],
+    subtree_heights: &[f32],
+) {
+    let base = base_heights.get(idx).copied().unwrap_or(0.031);
+    let total = subtree_heights.get(idx).copied().unwrap_or(base).max(base);
+    let child_total = (total - base).max(0.0);
+    let parent_child_total = parent_idx
+        .and_then(|parent| {
+            let parent_base = base_heights.get(parent).copied()?;
+            let parent_total = subtree_heights.get(parent).copied()?;
+            Some((parent_total - parent_base).max(0.0))
+        })
+        .unwrap_or(1.0)
+        .max(0.0001);
+    let root_h = if parent_idx.is_some() {
+        total / parent_child_total
+    } else {
+        total
+    };
+    let row_w = if parent_idx.is_some() { 1.0 } else { 0.985 };
+    set_ui_node_size(ctx, &format!("inspector_var_row_{idx}"), (row_w, root_h));
+    set_ui_node_size(ctx, &format!("inspector_var_row_{idx}_stack"), (1.0, 1.0));
+    set_ui_node_size(
+        ctx,
+        &format!("inspector_var_row_{idx}_inner"),
+        (1.0, base / total),
+    );
+    set_ui_node_size(
+        ctx,
+        &format!("inspector_var_row_{idx}_children"),
+        (1.0, child_total / total),
+    );
+    set_ui_display(
+        ctx,
+        &format!("inspector_var_row_{idx}_children"),
+        child_total > 0.0,
+    );
+}
+
 #[derive(Clone)]
 pub struct InspectorPickerEntry {
     pub value: String,
@@ -1383,12 +1482,7 @@ fn inspector_enum_picker_entries(state: &EditorState) -> Vec<InspectorPickerEntr
         return Vec::new();
     };
     let doc = SceneDoc::parse(&state.doc_text);
-    let Some(node) = doc
-        .scene
-        .nodes
-        .iter()
-        .find(|node| node.key.as_u32() == key)
-    else {
+    let Some(node) = doc.scene.nodes.iter().find(|node| node.key.as_u32() == key) else {
         return Vec::new();
     };
     let rows = if state.inspector_picker_kind == "value_enum" {
@@ -1493,8 +1587,7 @@ fn inspector_picker_asset_kind(state: &EditorState) -> Option<perro_scene::Scene
         .nodes
         .iter()
         .find(|node| node.key.as_u32() == key)?;
-    let field =
-        perro_scene::scene_node_field(node.data.node_type, &state.inspector_picker_field)?;
+    let field = perro_scene::scene_node_field(node.data.node_type, &state.inspector_picker_field)?;
     match field.ty {
         perro_scene::NodeFieldType::Asset(kind) => Some(kind),
         _ => None,
@@ -2736,6 +2829,71 @@ pub fn set_log<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, text: 
     set_label(ctx, "log_text", text);
 }
 
+pub fn tick_script_schema_reload<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        if state.script_schema_reload_frames == 0 {
+            return false;
+        }
+        state.script_schema_reload_frames = state.script_schema_reload_frames.saturating_sub(1);
+        true
+    })
+    .unwrap_or(false);
+    if changed {
+        let visible = with_state!(ctx.run, EditorState, ctx.id, |state| {
+            state.script_schema_reload_frames > 0
+        });
+        apply_script_reload_popup(ctx, visible);
+    }
+}
+
+pub fn apply_script_reload_popup<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    visible: bool,
+) {
+    ensure_script_reload_popup(ctx);
+    set_panel_display(ctx, "script_reload_popup", visible);
+    set_ui_display(ctx, "script_reload_popup_label", visible);
+}
+
+fn ensure_script_reload_popup<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    if find_named(ctx, "script_reload_popup").is_some() {
+        return;
+    }
+    let panel = ctx.run.Nodes().create::<UiPanel>();
+    let label = ctx.run.Nodes().create::<UiLabel>();
+    let _ = ctx.run.Nodes().set_node_name(panel, "script_reload_popup");
+    let _ = ctx
+        .run
+        .Nodes()
+        .set_node_name(label, "script_reload_popup_label");
+    let _ = ctx.run.Nodes().reparent(ctx.id, panel);
+    let _ = ctx.run.Nodes().reparent(panel, label);
+    let _ = with_node_mut!(ctx.run, UiPanel, panel, |node| {
+        node.layout.anchor = UiAnchor::Center;
+        node.layout.size = UiVector2::ratio(0.16, 0.052);
+        node.layout.z_index = 500;
+        node.transform.position = UiVector2::percent(50.0, 50.0);
+        node.transform.pivot = UiVector2::percent(50.0, 50.0);
+        node.style.fill = Color::from_hex("#101826F2").unwrap_or(node.style.fill);
+        node.style.stroke = Color::from_hex("#6BA7DFFF").unwrap_or(node.style.stroke);
+        node.style.stroke_width = 1.0;
+        node.style.corner_radius = 0.06;
+        node.visible = false;
+        node.input_enabled = false;
+    });
+    let _ = with_node_mut!(ctx.run, UiLabel, label, |node| {
+        node.layout.anchor = UiAnchor::Center;
+        node.layout.size = UiVector2::ratio(1.0, 1.0);
+        node.transform.position = UiVector2::percent(50.0, 50.0);
+        node.transform.pivot = UiVector2::percent(50.0, 50.0);
+        node.text = Cow::Borrowed("Reloading scripts");
+        node.text_size_ratio = 0.36;
+        node.color = Color::from_hex("#DDEBFFFF").unwrap_or(node.color);
+        node.visible = false;
+        node.input_enabled = false;
+    });
+}
+
 pub fn set_label<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     name: &str,
@@ -3478,13 +3636,23 @@ pub fn set_dropdown_options<API: ScriptAPI + ?Sized>(
             .iter()
             .position(|item| item == selected)
             .unwrap_or_default();
-        let options = options
+        let next_options = options
             .iter()
             .map(|item| UiDropdownOption::new(item.clone(), variant!(item.clone())))
             .collect::<Vec<_>>();
         let _ = with_node_mut!(ctx.run, UiDropdown, id, |node| {
-            node.options = options;
-            node.selected_index = selected_index;
+            let same_options = node.options.len() == next_options.len()
+                && node
+                    .options
+                    .iter()
+                    .zip(next_options.iter())
+                    .all(|(a, b)| a.label == b.label && a.value == b.value);
+            if !same_options && !node.open {
+                node.options = next_options;
+            }
+            if !node.open && node.selected_index != selected_index {
+                node.selected_index = selected_index;
+            }
         });
     }
 }

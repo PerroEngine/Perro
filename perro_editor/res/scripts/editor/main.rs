@@ -109,6 +109,7 @@ pub struct EditorState {
     pub focused_inspector_box: String,
     pub inspector_rotation_mode: String,
     pub inspector_layout_applied: bool,
+    pub script_schema_reload_frames: u32,
     pub log: String,
 }
 
@@ -143,6 +144,7 @@ lifecycle!({
         update_editor_cursor(ctx);
         update_editor_shortcuts(ctx);
         poll_project_diffs(ctx);
+        tick_script_schema_reload(ctx);
     }
 });
 
@@ -185,7 +187,9 @@ methods!({
             "add_node_button" | "scene_add_child_button" => open_add_node_popup(ctx),
             "add_node_sibling_button" => open_add_node_sibling_popup(ctx),
             "add_node_cancel_button" => {
-                if with_state!(ctx.run, EditorState, ctx.id, |state| state.inspector_picker_open) {
+                if with_state!(ctx.run, EditorState, ctx.id, |state| state
+                    .inspector_picker_open)
+                {
                     set_inspector_picker(ctx, false);
                 } else {
                     set_add_node_popup(ctx, false);
@@ -196,14 +200,18 @@ methods!({
             "inspector_pick_next_button" => shift_inspector_picker(ctx, 1),
             "inspector_pick_filter_box" => update_inspector_picker_filter(ctx),
             "add_node_prev_button" => {
-                if with_state!(ctx.run, EditorState, ctx.id, |state| state.inspector_picker_open) {
+                if with_state!(ctx.run, EditorState, ctx.id, |state| state
+                    .inspector_picker_open)
+                {
                     shift_inspector_picker(ctx, -1);
                 } else {
                     shift_node_picker(ctx, -1);
                 }
             }
             "add_node_next_button" => {
-                if with_state!(ctx.run, EditorState, ctx.id, |state| state.inspector_picker_open) {
+                if with_state!(ctx.run, EditorState, ctx.id, |state| state
+                    .inspector_picker_open)
+                {
                     shift_inspector_picker(ctx, 1);
                 } else {
                     shift_node_picker(ctx, 1);
@@ -260,13 +268,13 @@ methods!({
             "inspector_position_box" => {
                 edit_selected_transform(ctx, "position", "inspector_position_box")
             }
-            "inspector_rotation_box" => {
-                edit_selected_rotation(ctx)
-            }
+            "inspector_rotation_box" => edit_selected_rotation(ctx),
             "inspector_scale_box" => edit_selected_transform(ctx, "scale", "inspector_scale_box"),
             "inspector_vars_box" => edit_selected_script_vars(ctx),
             "add_node_search_box" => {
-                if with_state!(ctx.run, EditorState, ctx.id, |state| state.inspector_picker_open) {
+                if with_state!(ctx.run, EditorState, ctx.id, |state| state
+                    .inspector_picker_open)
+                {
                     update_inspector_picker_filter_from(ctx, "add_node_search_box");
                 } else {
                     update_node_picker_filter(ctx);
@@ -278,7 +286,9 @@ methods!({
                 } else if let Some(idx) = suffix_index(&name, "manager_recent_") {
                     open_recent_project(ctx, idx);
                 } else if let Some(idx) = suffix_index(&name, "add_node_type_") {
-                    if with_state!(ctx.run, EditorState, ctx.id, |state| state.inspector_picker_open) {
+                    if with_state!(ctx.run, EditorState, ctx.id, |state| state
+                        .inspector_picker_open)
+                    {
                         choose_inspector_picker_row(ctx, idx);
                     } else {
                         add_node_from_picker(ctx, idx);
