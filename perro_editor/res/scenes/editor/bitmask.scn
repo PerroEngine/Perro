@@ -56,13 +56,13 @@ parent = @bitmask_actions
         size_ratio = (0.4, 0.86)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_none]
 
@@ -72,7 +72,7 @@ parent = @bitmask_none
         size_ratio = (1.0, 1.0)
         text = "none"
         text_size_ratio = 0.3
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -86,13 +86,13 @@ parent = @bitmask_actions
         size_ratio = (0.4, 0.86)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_all]
 
@@ -102,7 +102,7 @@ parent = @bitmask_all
         size_ratio = (1.0, 1.0)
         text = "all"
         text_size_ratio = 0.3
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -116,13 +116,13 @@ parent = @bitmask_row_0
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_1]
 
@@ -132,7 +132,7 @@ parent = @bitmask_bit_1
         size_ratio = (1.0, 1.0)
         text = "1"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -146,13 +146,13 @@ parent = @bitmask_row_0
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_2]
 
@@ -162,7 +162,7 @@ parent = @bitmask_bit_2
         size_ratio = (1.0, 1.0)
         text = "2"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -176,13 +176,13 @@ parent = @bitmask_row_0
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_3]
 
@@ -192,7 +192,7 @@ parent = @bitmask_bit_3
         size_ratio = (1.0, 1.0)
         text = "3"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -206,13 +206,13 @@ parent = @bitmask_row_0
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_4]
 
@@ -222,7 +222,7 @@ parent = @bitmask_bit_4
         size_ratio = (1.0, 1.0)
         text = "4"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -236,13 +236,13 @@ parent = @bitmask_row_0
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_5]
 
@@ -252,7 +252,7 @@ parent = @bitmask_bit_5
         size_ratio = (1.0, 1.0)
         text = "5"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -266,13 +266,13 @@ parent = @bitmask_row_0
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_6]
 
@@ -282,7 +282,7 @@ parent = @bitmask_bit_6
         size_ratio = (1.0, 1.0)
         text = "6"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -296,13 +296,13 @@ parent = @bitmask_row_0
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_7]
 
@@ -312,7 +312,7 @@ parent = @bitmask_bit_7
         size_ratio = (1.0, 1.0)
         text = "7"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -326,13 +326,13 @@ parent = @bitmask_row_0
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_8]
 
@@ -342,7 +342,7 @@ parent = @bitmask_bit_8
         size_ratio = (1.0, 1.0)
         text = "8"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -356,13 +356,13 @@ parent = @bitmask_row_1
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_9]
 
@@ -372,7 +372,7 @@ parent = @bitmask_bit_9
         size_ratio = (1.0, 1.0)
         text = "9"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -386,13 +386,13 @@ parent = @bitmask_row_1
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_10]
 
@@ -402,7 +402,7 @@ parent = @bitmask_bit_10
         size_ratio = (1.0, 1.0)
         text = "10"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -416,13 +416,13 @@ parent = @bitmask_row_1
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_11]
 
@@ -432,7 +432,7 @@ parent = @bitmask_bit_11
         size_ratio = (1.0, 1.0)
         text = "11"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -446,13 +446,13 @@ parent = @bitmask_row_1
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_12]
 
@@ -462,7 +462,7 @@ parent = @bitmask_bit_12
         size_ratio = (1.0, 1.0)
         text = "12"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -476,13 +476,13 @@ parent = @bitmask_row_1
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_13]
 
@@ -492,7 +492,7 @@ parent = @bitmask_bit_13
         size_ratio = (1.0, 1.0)
         text = "13"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -506,13 +506,13 @@ parent = @bitmask_row_1
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_14]
 
@@ -522,7 +522,7 @@ parent = @bitmask_bit_14
         size_ratio = (1.0, 1.0)
         text = "14"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -536,13 +536,13 @@ parent = @bitmask_row_1
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_15]
 
@@ -552,7 +552,7 @@ parent = @bitmask_bit_15
         size_ratio = (1.0, 1.0)
         text = "15"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -566,13 +566,13 @@ parent = @bitmask_row_1
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_16]
 
@@ -582,7 +582,7 @@ parent = @bitmask_bit_16
         size_ratio = (1.0, 1.0)
         text = "16"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -596,13 +596,13 @@ parent = @bitmask_row_2
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_17]
 
@@ -612,7 +612,7 @@ parent = @bitmask_bit_17
         size_ratio = (1.0, 1.0)
         text = "17"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -626,13 +626,13 @@ parent = @bitmask_row_2
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_18]
 
@@ -642,7 +642,7 @@ parent = @bitmask_bit_18
         size_ratio = (1.0, 1.0)
         text = "18"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -656,13 +656,13 @@ parent = @bitmask_row_2
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_19]
 
@@ -672,7 +672,7 @@ parent = @bitmask_bit_19
         size_ratio = (1.0, 1.0)
         text = "19"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -686,13 +686,13 @@ parent = @bitmask_row_2
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_20]
 
@@ -702,7 +702,7 @@ parent = @bitmask_bit_20
         size_ratio = (1.0, 1.0)
         text = "20"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -716,13 +716,13 @@ parent = @bitmask_row_2
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_21]
 
@@ -732,7 +732,7 @@ parent = @bitmask_bit_21
         size_ratio = (1.0, 1.0)
         text = "21"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -746,13 +746,13 @@ parent = @bitmask_row_2
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_22]
 
@@ -762,7 +762,7 @@ parent = @bitmask_bit_22
         size_ratio = (1.0, 1.0)
         text = "22"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -776,13 +776,13 @@ parent = @bitmask_row_2
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_23]
 
@@ -792,7 +792,7 @@ parent = @bitmask_bit_23
         size_ratio = (1.0, 1.0)
         text = "23"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -806,13 +806,13 @@ parent = @bitmask_row_2
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_24]
 
@@ -822,7 +822,7 @@ parent = @bitmask_bit_24
         size_ratio = (1.0, 1.0)
         text = "24"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -836,13 +836,13 @@ parent = @bitmask_row_3
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_25]
 
@@ -852,7 +852,7 @@ parent = @bitmask_bit_25
         size_ratio = (1.0, 1.0)
         text = "25"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -866,13 +866,13 @@ parent = @bitmask_row_3
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_26]
 
@@ -882,7 +882,7 @@ parent = @bitmask_bit_26
         size_ratio = (1.0, 1.0)
         text = "26"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -896,13 +896,13 @@ parent = @bitmask_row_3
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_27]
 
@@ -912,7 +912,7 @@ parent = @bitmask_bit_27
         size_ratio = (1.0, 1.0)
         text = "27"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -926,13 +926,13 @@ parent = @bitmask_row_3
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_28]
 
@@ -942,7 +942,7 @@ parent = @bitmask_bit_28
         size_ratio = (1.0, 1.0)
         text = "28"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -956,13 +956,13 @@ parent = @bitmask_row_3
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_29]
 
@@ -972,7 +972,7 @@ parent = @bitmask_bit_29
         size_ratio = (1.0, 1.0)
         text = "29"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -986,13 +986,13 @@ parent = @bitmask_row_3
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_30]
 
@@ -1002,7 +1002,7 @@ parent = @bitmask_bit_30
         size_ratio = (1.0, 1.0)
         text = "30"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -1016,13 +1016,13 @@ parent = @bitmask_row_3
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_31]
 
@@ -1032,7 +1032,7 @@ parent = @bitmask_bit_31
         size_ratio = (1.0, 1.0)
         text = "31"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false
@@ -1046,13 +1046,13 @@ parent = @bitmask_row_3
         size_ratio = (0.12, 0.92)
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
-            fill = "#111827DD",
-            stroke = "#334155FF",
+            fill = "#2A2F36",
+            stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#223142", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
-        pressed = { style = { fill = "#334155", stroke = "#334155FF", stroke_width = 1.0, radius = 0.08 } }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.08 } }
     [/UiButton]
 [/bitmask_bit_32]
 
@@ -1062,7 +1062,7 @@ parent = @bitmask_bit_32
         size_ratio = (1.0, 1.0)
         text = "32"
         text_size_ratio = 0.24
-        color = "#94A3B8"
+        color = "#A7AFB9"
         h_align = "center"
         v_align = "center"
         input_enabled = false

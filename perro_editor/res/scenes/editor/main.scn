@@ -6,7 +6,7 @@ script = "res://scripts/editor/main.rs"
         anchor = "center"
         size_ratio = (1.0, 1.0)
         style = {
-            fill = "#20242B",
+            fill = "#23272D",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.0
@@ -24,8 +24,8 @@ parent = @editor_root
         spacing = 0.007
         padding = (0.035, 0.025)
         style = {
-            fill = "#303742",
-            stroke = "#4D5665",
+            fill = "#2A2F36",
+            stroke = "#4A525D",
             stroke_width = 1.0,
             radius = 0.025
         }
@@ -38,7 +38,7 @@ parent = @project_manager
         size_ratio = (1.0, 0.08)
         text = "Project Manager"
         text_size_ratio = 0.494
-        color = "#F3F4F6"
+        color = "#D7DBE0"
         h_align = "start"
     [/UiLabel]
 [/project_manager_title]
@@ -49,7 +49,7 @@ parent = @project_manager
         size_ratio = (1.0, 0.052)
         text = "Recent Projects"
         text_size_ratio = 0.377
-        color = "#CBD5E1"
+        color = "#A7AFB9"
         h_align = "start"
     [/UiLabel]
 [/project_manager_recent_title]
@@ -60,13 +60,13 @@ parent = @project_manager
         size_ratio = (1.0, 0.074)
         click_signals = ["editor_recent_0"]
         style = {
-            fill = "#39414E",
+            fill = "#323842",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.04
         }
-        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
-        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        hover = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/manager_recent_0]
 
@@ -76,7 +76,7 @@ parent = @manager_recent_0
         size_ratio = (0.96, 1.0)
         text = "-"
         text_size_ratio = 0.354
-        color = "#E5E7EB"
+        color = "#D7DBE0"
         h_align = "start"
         input_enabled = false
         mouse_filter = "pass"
@@ -89,13 +89,13 @@ parent = @project_manager
         size_ratio = (1.0, 0.074)
         click_signals = ["editor_recent_1"]
         style = {
-            fill = "#39414E",
+            fill = "#323842",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.04
         }
-        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
-        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        hover = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/manager_recent_1]
 
@@ -105,7 +105,7 @@ parent = @manager_recent_1
         size_ratio = (0.96, 1.0)
         text = "-"
         text_size_ratio = 0.354
-        color = "#E5E7EB"
+        color = "#D7DBE0"
         h_align = "start"
         input_enabled = false
         mouse_filter = "pass"
@@ -118,13 +118,13 @@ parent = @project_manager
         size_ratio = (1.0, 0.074)
         click_signals = ["editor_recent_2"]
         style = {
-            fill = "#39414E",
+            fill = "#323842",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.04
         }
-        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
-        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        hover = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/manager_recent_2]
 
@@ -134,7 +134,7 @@ parent = @manager_recent_2
         size_ratio = (0.96, 1.0)
         text = "-"
         text_size_ratio = 0.354
-        color = "#E5E7EB"
+        color = "#D7DBE0"
         h_align = "start"
         input_enabled = false
         mouse_filter = "pass"
@@ -147,13 +147,13 @@ parent = @project_manager
         size_ratio = (1.0, 0.074)
         click_signals = ["editor_recent_3"]
         style = {
-            fill = "#39414E",
+            fill = "#323842",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.04
         }
-        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
-        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        hover = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/manager_recent_3]
 
@@ -163,7 +163,7 @@ parent = @manager_recent_3
         size_ratio = (0.96, 1.0)
         text = "-"
         text_size_ratio = 0.354
-        color = "#E5E7EB"
+        color = "#D7DBE0"
         h_align = "start"
         input_enabled = false
         mouse_filter = "pass"
@@ -176,13 +176,13 @@ parent = @project_manager
         size_ratio = (1.0, 0.074)
         click_signals = ["editor_recent_4"]
         style = {
-            fill = "#39414E",
+            fill = "#323842",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.04
         }
-        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
-        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        hover = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/manager_recent_4]
 
@@ -192,7 +192,7 @@ parent = @manager_recent_4
         size_ratio = (0.96, 1.0)
         text = "-"
         text_size_ratio = 0.354
-        color = "#E5E7EB"
+        color = "#D7DBE0"
         h_align = "start"
         input_enabled = false
         mouse_filter = "pass"
@@ -205,7 +205,7 @@ parent = @project_manager
         size_ratio = (1.0, 0.052)
         text = "Create Project"
         text_size_ratio = 0.377
-        color = "#CBD5E1"
+        color = "#A7AFB9"
         h_align = "start"
     [/UiLabel]
 [/project_manager_create_title]
@@ -217,17 +217,17 @@ parent = @project_manager
         text = "NewGame"
         placeholder = "Project name"
         text_size_ratio = 0.377
-        color = "#F3F4F6"
-        placeholder_color = "#94A3B8"
+        color = "#D7DBE0"
+        placeholder_color = "#A7AFB9"
         style = {
-            fill = "#242A33",
-            stroke = "#404A58",
+            fill = "#2A2F36",
+            stroke = "#4A525D",
             stroke_width = 1.0,
             radius = 0.04
         }
         focused_style = {
-            fill = "#242A33",
-            stroke = "#93C5FD",
+            fill = "#2A2F36",
+            stroke = "#5A91DD",
             stroke_width = 1.0,
             radius = 0.04
         }
@@ -250,11 +250,11 @@ parent = @create_location_row
         size_ratio = (0.66, 0.82)
         text = "location: -"
         text_size_ratio = 0.317
-        color = "#CBD5E1"
+        color = "#A7AFB9"
         h_align = "start"
         style = {
-            fill = "#242A33",
-            stroke = "#404A58",
+            fill = "#2A2F36",
+            stroke = "#4A525D",
             stroke_width = 1.0,
             radius = 0.04
         }
@@ -267,13 +267,13 @@ parent = @create_location_row
         size_ratio = (0.16, 0.82)
         click_signals = ["editor_manager_choose_location"]
         style = {
-            fill = "#3D4654",
+            fill = "#4A525D",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
-        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        hover = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/manager_choose_location_button]
 
@@ -283,7 +283,7 @@ parent = @manager_choose_location_button
         size_ratio = (1.0, 1.0)
         text = "Pick"
         text_size_ratio = 0.401
-        color = "#F3F4F6"
+        color = "#D7DBE0"
         input_enabled = false
         mouse_filter = "pass"
     [/UiLabel]
@@ -295,13 +295,13 @@ parent = @create_location_row
         size_ratio = (0.16, 0.82)
         click_signals = ["editor_manager_create"]
         style = {
-            fill = "#3D4654",
-            stroke = "#00000000",
+            fill = "#D98B3A",
+            stroke = "#D98B3A",
             stroke_width = 0.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
-        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        hover = { style = { fill = "#E59A4B", stroke = "#E59A4B", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#F2A85C", stroke = "#F2A85C", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/manager_create_button]
 
@@ -311,7 +311,7 @@ parent = @manager_create_button
         size_ratio = (1.0, 1.0)
         text = "Create"
         text_size_ratio = 0.366
-        color = "#F3F4F6"
+        color = "#D7DBE0"
         input_enabled = false
         mouse_filter = "pass"
     [/UiLabel]
@@ -333,13 +333,13 @@ parent = @project_manager_actions
         size_ratio = (0.34, 0.82)
         click_signals = ["editor_manager_browse"]
         style = {
-            fill = "#3D4654",
+            fill = "#4A525D",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
-        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        hover = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/manager_browse_button]
 
@@ -349,7 +349,7 @@ parent = @manager_browse_button
         size_ratio = (1.0, 1.0)
         text = "Browse"
         text_size_ratio = 0.401
-        color = "#F3F4F6"
+        color = "#D7DBE0"
         input_enabled = false
         mouse_filter = "pass"
     [/UiLabel]
@@ -361,13 +361,13 @@ parent = @project_manager_actions
         size_ratio = (0.26, 0.82)
         click_signals = ["editor_manager_close"]
         style = {
-            fill = "#3D4654",
+            fill = "#4A525D",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
-        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        hover = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/manager_close_button]
 
@@ -377,7 +377,7 @@ parent = @manager_close_button
         size_ratio = (1.0, 1.0)
         text = "Close"
         text_size_ratio = 0.401
-        color = "#F3F4F6"
+        color = "#D7DBE0"
         input_enabled = false
         mouse_filter = "pass"
     [/UiLabel]

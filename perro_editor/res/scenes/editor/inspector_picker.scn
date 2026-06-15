@@ -10,8 +10,8 @@ $root = @inspector_pick_popup
         padding = (0.018, 0.012)
         visible = false
         style = {
-            fill = "#303742",
-            stroke = "#4D5665",
+            fill = "#2A2F36",
+            stroke = "#4A525D",
             stroke_width = 1.0,
             radius = 0.025
         }
@@ -24,10 +24,10 @@ parent = @inspector_pick_popup
         size_ratio = (1.0, 0.052)
         text = "Pick"
         text_size_ratio = 0.26
-        color = "#F3F4F6"
+        color = "#D7DBE0"
         h_align = "start"
         style = {
-            fill = "#272D36",
+            fill = "#2A2F36",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.0
@@ -41,18 +41,18 @@ parent = @inspector_pick_popup
         size_ratio = (1.0, 0.052)
         text = ""
         placeholder = "Filter"
-        placeholder_color = "#94A3B8"
+        placeholder_color = "#A7AFB9"
         text_size_ratio = 0.22
         text_changed_signals = ["editor_inspector_pick_filter"]
         style = {
-            fill = "#242A33",
-            stroke = "#404A58",
+            fill = "#2A2F36",
+            stroke = "#4A525D",
             stroke_width = 1.0,
             radius = 0.04
         }
         focused_style = {
-            fill = "#242A33",
-            stroke = "#93C5FD",
+            fill = "#2A2F36",
+            stroke = "#5A91DD",
             stroke_width = 1.0,
             radius = 0.04
         }
@@ -65,13 +65,13 @@ parent = @inspector_pick_popup
         size_ratio = (1.0, 0.05)
         click_signals = ["editor_inspector_pick_0"]
         style = {
-            fill = "#39414E",
+            fill = "#323842",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.04
         }
-        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
-        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        hover = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_row_0]
 
@@ -81,7 +81,7 @@ parent = @inspector_pick_row_0
         size_ratio = (0.96, 1.0)
         text = "-"
         text_size_ratio = 0.23
-        color = "#E5E7EB"
+        color = "#D7DBE0"
         h_align = "start"
         input_enabled = false
         mouse_filter = "pass"
@@ -94,13 +94,13 @@ parent = @inspector_pick_popup
         size_ratio = (1.0, 0.05)
         click_signals = ["editor_inspector_pick_1"]
         style = {
-            fill = "#39414E",
+            fill = "#323842",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.04
         }
-        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
-        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        hover = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_row_1]
 
@@ -110,7 +110,7 @@ parent = @inspector_pick_row_1
         size_ratio = (0.96, 1.0)
         text = "-"
         text_size_ratio = 0.23
-        color = "#E5E7EB"
+        color = "#D7DBE0"
         h_align = "start"
         input_enabled = false
         mouse_filter = "pass"
@@ -123,13 +123,13 @@ parent = @inspector_pick_popup
         size_ratio = (1.0, 0.05)
         click_signals = ["editor_inspector_pick_2"]
         style = {
-            fill = "#39414E",
+            fill = "#323842",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.04
         }
-        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
-        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        hover = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_row_2]
 
@@ -139,7 +139,7 @@ parent = @inspector_pick_row_2
         size_ratio = (0.96, 1.0)
         text = "-"
         text_size_ratio = 0.23
-        color = "#E5E7EB"
+        color = "#D7DBE0"
         h_align = "start"
         input_enabled = false
         mouse_filter = "pass"
@@ -152,13 +152,13 @@ parent = @inspector_pick_popup
         size_ratio = (1.0, 0.05)
         click_signals = ["editor_inspector_pick_3"]
         style = {
-            fill = "#39414E",
+            fill = "#323842",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.04
         }
-        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
-        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        hover = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_row_3]
 
@@ -168,7 +168,7 @@ parent = @inspector_pick_row_3
         size_ratio = (0.96, 1.0)
         text = "-"
         text_size_ratio = 0.23
-        color = "#E5E7EB"
+        color = "#D7DBE0"
         h_align = "start"
         input_enabled = false
         mouse_filter = "pass"
@@ -181,13 +181,13 @@ parent = @inspector_pick_popup
         size_ratio = (1.0, 0.05)
         click_signals = ["editor_inspector_pick_4"]
         style = {
-            fill = "#39414E",
+            fill = "#323842",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.04
         }
-        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
-        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        hover = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_row_4]
 
@@ -197,7 +197,7 @@ parent = @inspector_pick_row_4
         size_ratio = (0.96, 1.0)
         text = "-"
         text_size_ratio = 0.23
-        color = "#E5E7EB"
+        color = "#D7DBE0"
         h_align = "start"
         input_enabled = false
         mouse_filter = "pass"
@@ -210,13 +210,13 @@ parent = @inspector_pick_popup
         size_ratio = (1.0, 0.05)
         click_signals = ["editor_inspector_pick_5"]
         style = {
-            fill = "#39414E",
+            fill = "#323842",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.04
         }
-        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
-        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        hover = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_row_5]
 
@@ -226,7 +226,7 @@ parent = @inspector_pick_row_5
         size_ratio = (0.96, 1.0)
         text = "-"
         text_size_ratio = 0.23
-        color = "#E5E7EB"
+        color = "#D7DBE0"
         h_align = "start"
         input_enabled = false
         mouse_filter = "pass"
@@ -239,13 +239,13 @@ parent = @inspector_pick_popup
         size_ratio = (1.0, 0.05)
         click_signals = ["editor_inspector_pick_6"]
         style = {
-            fill = "#39414E",
+            fill = "#323842",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.04
         }
-        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
-        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        hover = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_row_6]
 
@@ -255,7 +255,7 @@ parent = @inspector_pick_row_6
         size_ratio = (0.96, 1.0)
         text = "-"
         text_size_ratio = 0.23
-        color = "#E5E7EB"
+        color = "#D7DBE0"
         h_align = "start"
         input_enabled = false
         mouse_filter = "pass"
@@ -268,13 +268,13 @@ parent = @inspector_pick_popup
         size_ratio = (1.0, 0.05)
         click_signals = ["editor_inspector_pick_7"]
         style = {
-            fill = "#39414E",
+            fill = "#323842",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.04
         }
-        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
-        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        hover = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_row_7]
 
@@ -284,7 +284,7 @@ parent = @inspector_pick_row_7
         size_ratio = (0.96, 1.0)
         text = "-"
         text_size_ratio = 0.23
-        color = "#E5E7EB"
+        color = "#D7DBE0"
         h_align = "start"
         input_enabled = false
         mouse_filter = "pass"
@@ -297,13 +297,13 @@ parent = @inspector_pick_popup
         size_ratio = (1.0, 0.05)
         click_signals = ["editor_inspector_pick_8"]
         style = {
-            fill = "#39414E",
+            fill = "#323842",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.04
         }
-        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
-        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        hover = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_row_8]
 
@@ -313,7 +313,7 @@ parent = @inspector_pick_row_8
         size_ratio = (0.96, 1.0)
         text = "-"
         text_size_ratio = 0.23
-        color = "#E5E7EB"
+        color = "#D7DBE0"
         h_align = "start"
         input_enabled = false
         mouse_filter = "pass"
@@ -326,13 +326,13 @@ parent = @inspector_pick_popup
         size_ratio = (1.0, 0.05)
         click_signals = ["editor_inspector_pick_9"]
         style = {
-            fill = "#39414E",
+            fill = "#323842",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.04
         }
-        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
-        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        hover = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_row_9]
 
@@ -342,7 +342,7 @@ parent = @inspector_pick_row_9
         size_ratio = (0.96, 1.0)
         text = "-"
         text_size_ratio = 0.23
-        color = "#E5E7EB"
+        color = "#D7DBE0"
         h_align = "start"
         input_enabled = false
         mouse_filter = "pass"
@@ -355,13 +355,13 @@ parent = @inspector_pick_popup
         size_ratio = (1.0, 0.05)
         click_signals = ["editor_inspector_pick_10"]
         style = {
-            fill = "#39414E",
+            fill = "#323842",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.04
         }
-        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
-        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        hover = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_row_10]
 
@@ -371,7 +371,7 @@ parent = @inspector_pick_row_10
         size_ratio = (0.96, 1.0)
         text = "-"
         text_size_ratio = 0.23
-        color = "#E5E7EB"
+        color = "#D7DBE0"
         h_align = "start"
         input_enabled = false
         mouse_filter = "pass"
@@ -384,13 +384,13 @@ parent = @inspector_pick_popup
         size_ratio = (1.0, 0.05)
         click_signals = ["editor_inspector_pick_11"]
         style = {
-            fill = "#39414E",
+            fill = "#323842",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.04
         }
-        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
-        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        hover = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_row_11]
 
@@ -400,7 +400,7 @@ parent = @inspector_pick_row_11
         size_ratio = (0.96, 1.0)
         text = "-"
         text_size_ratio = 0.23
-        color = "#E5E7EB"
+        color = "#D7DBE0"
         h_align = "start"
         input_enabled = false
         mouse_filter = "pass"
@@ -423,13 +423,13 @@ parent = @inspector_pick_nav
         size_ratio = (0.28, 0.9)
         click_signals = ["editor_inspector_pick_prev"]
         style = {
-            fill = "#3D4654",
+            fill = "#4A525D",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
-        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        hover = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_prev_button]
 
@@ -439,7 +439,7 @@ parent = @inspector_pick_prev_button
         size_ratio = (1.0, 1.0)
         text = "Prev"
         text_size_ratio = 0.23
-        color = "#F3F4F6"
+        color = "#D7DBE0"
         input_enabled = false
         mouse_filter = "pass"
     [/UiLabel]
@@ -451,7 +451,7 @@ parent = @inspector_pick_nav
         size_ratio = (0.38, 1.0)
         text = "page 1/1"
         text_size_ratio = 0.22
-        color = "#CBD5E1"
+        color = "#A7AFB9"
         input_enabled = false
         mouse_filter = "pass"
     [/UiLabel]
@@ -463,13 +463,13 @@ parent = @inspector_pick_nav
         size_ratio = (0.28, 0.9)
         click_signals = ["editor_inspector_pick_next"]
         style = {
-            fill = "#3D4654",
+            fill = "#4A525D",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
-        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        hover = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_next_button]
 
@@ -479,7 +479,7 @@ parent = @inspector_pick_next_button
         size_ratio = (1.0, 1.0)
         text = "Next"
         text_size_ratio = 0.23
-        color = "#F3F4F6"
+        color = "#D7DBE0"
         input_enabled = false
         mouse_filter = "pass"
     [/UiLabel]
@@ -491,13 +491,13 @@ parent = @inspector_pick_popup
         size_ratio = (1.0, 0.052)
         click_signals = ["editor_inspector_pick_cancel"]
         style = {
-            fill = "#3D4654",
+            fill = "#4A525D",
             stroke = "#00000000",
             stroke_width = 0.0,
             radius = 0.08
         }
-        hover = { style = { fill = "#4A5668", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
-        pressed = { style = { fill = "#59677D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        hover = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
+        pressed = { style = { fill = "#4A525D", stroke = "#00000000", stroke_width = 0.0, radius = 0.08 } }
     [/UiButton]
 [/inspector_pick_cancel_button]
 
@@ -507,7 +507,7 @@ parent = @inspector_pick_cancel_button
         size_ratio = (1.0, 1.0)
         text = "Cancel"
         text_size_ratio = 0.23
-        color = "#F3F4F6"
+        color = "#D7DBE0"
         input_enabled = false
         mouse_filter = "pass"
     [/UiLabel]
