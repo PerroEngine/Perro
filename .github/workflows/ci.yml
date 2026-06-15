@@ -22,14 +22,22 @@ jobs:
         run: cargo fmt --all -- --check
 
   test:
-    name: Test
+    name: Test (${{ matrix.os }})
     needs: fmt
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libdbus-1-dev libudev-dev pkg-config
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libdbus-1-dev libudev-dev libwayland-dev libxkbcommon-dev pkg-config
 
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -40,14 +48,22 @@ jobs:
         run: cargo test --workspace
 
   clippy:
-    name: Clippy
+    name: Clippy (${{ matrix.os }})
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libdbus-1-dev libudev-dev pkg-config
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libdbus-1-dev libudev-dev libwayland-dev libxkbcommon-dev pkg-config
 
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@stable
