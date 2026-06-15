@@ -43,17 +43,17 @@ impl EditorTab {
 
     pub fn accent_fill(self) -> &'static str {
         match self {
-            Self::Scene => "#5A6A41",
-            Self::Script => "#3B5877",
-            Self::AnimTree => "#5B4F76",
+            Self::Scene => "#2A2F36",
+            Self::Script => "#2A2F36",
+            Self::AnimTree => "#2A2F36",
         }
     }
 
     pub fn accent_text(self) -> &'static str {
         match self {
-            Self::Scene => "#A9F081",
-            Self::Script => "#84C8FF",
-            Self::AnimTree => "#D0B7FF",
+            Self::Scene => "#5EA868",
+            Self::Script => "#5A91DD",
+            Self::AnimTree => "#A7AFB9",
         }
     }
 

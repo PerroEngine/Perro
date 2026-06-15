@@ -58,48 +58,48 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     set_button_fill(
         ctx,
         "activity_scene_button",
-        if glb_mode { "#2D323C" } else { "#478CBF" },
+        if glb_mode { "#2A2F36" } else { "#4D84D1" },
     );
     set_button_fill(
         ctx,
         "activity_glb_button",
-        if glb_mode { "#478CBF" } else { "#2D323C" },
+        if glb_mode { "#4D84D1" } else { "#2A2F36" },
     );
     set_image_tint(
         ctx,
         "activity_scene_icon",
-        if glb_mode { "#B8C1CCFF" } else { "#FFFFFFFF" },
+        if glb_mode { "#A7AFB9" } else { "#D7DBE0" },
     );
     set_image_tint(
         ctx,
         "activity_glb_icon",
-        if glb_mode { "#FFFFFFFF" } else { "#B8C1CCFF" },
+        if glb_mode { "#D7DBE0" } else { "#A7AFB9" },
     );
     set_button_fill(
         ctx,
         "mode_ui_button",
         if view.viewport_mode == "UI" {
-            "#478CBF"
+            "#4D84D1"
         } else {
-            "#2D323C"
+            "#2A2F36"
         },
     );
     set_button_fill(
         ctx,
         "mode_2d_button",
         if view.viewport_mode == "2D" {
-            "#478CBF"
+            "#4D84D1"
         } else {
-            "#2D323C"
+            "#2A2F36"
         },
     );
     set_button_fill(
         ctx,
         "mode_3d_button",
         if view.viewport_mode == "3D" {
-            "#478CBF"
+            "#4D84D1"
         } else {
-            "#2D323C"
+            "#2A2F36"
         },
     );
     set_ui_display(ctx, "bottom_tab_bar", true);
@@ -107,18 +107,18 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         ctx,
         "bottom_log_button",
         if view.anim_drawer_open {
-            "#2D323C"
+            "#2A2F36"
         } else {
-            "#478CBF"
+            "#4D84D1"
         },
     );
     set_button_fill(
         ctx,
         "bottom_anim_button",
         if view.anim_drawer_open {
-            "#478CBF"
+            "#4D84D1"
         } else {
-            "#2D323C"
+            "#2A2F36"
         },
     );
     set_ui_display(ctx, "log_title", false);
@@ -226,9 +226,9 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             ctx,
             &format!("scene_tab_{idx}"),
             if idx == view.active_open {
-                "#478CBF"
+                "#4D84D1"
             } else {
-                "#2D323C"
+                "#2A2F36"
             },
         );
     }
@@ -325,18 +325,18 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         ctx,
         "inspector_rotation_quat_button",
         if view.inspector.rotation_mode == "quat" {
-            "#478CBF"
+            "#4D84D1"
         } else {
-            "#2D323C"
+            "#2A2F36"
         },
     );
     set_button_fill(
         ctx,
         "inspector_rotation_euler_button",
         if view.inspector.rotation_mode == "euler" {
-            "#478CBF"
+            "#4D84D1"
         } else {
-            "#2D323C"
+            "#2A2F36"
         },
     );
     set_text_box(
@@ -3102,8 +3102,8 @@ fn ensure_script_reload_popup<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
         node.layout.z_index = 500;
         node.transform.position = UiVector2::percent(50.0, 50.0);
         node.transform.pivot = UiVector2::percent(50.0, 50.0);
-        node.style.fill = Color::from_hex("#101826F2").unwrap_or(node.style.fill);
-        node.style.stroke = Color::from_hex("#6BA7DFFF").unwrap_or(node.style.stroke);
+        node.style.fill = Color::from_hex("#23272DF2").unwrap_or(node.style.fill);
+        node.style.stroke = Color::from_hex("#6BA0EA").unwrap_or(node.style.stroke);
         node.style.stroke_width = 1.0;
         node.style.corner_radius = 0.06;
         node.visible = false;
@@ -3116,7 +3116,7 @@ fn ensure_script_reload_popup<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
         node.transform.pivot = UiVector2::percent(50.0, 50.0);
         node.text = Cow::Borrowed("Reloading scripts");
         node.text_size_ratio = 0.36;
-        node.color = Color::from_hex("#DDEBFFFF").unwrap_or(node.color);
+        node.color = Color::from_hex("#D7DBE0").unwrap_or(node.color);
         node.visible = false;
         node.input_enabled = false;
     });
@@ -3387,7 +3387,7 @@ pub fn set_row_state<API: ScriptAPI + ?Sized>(
     selected: bool,
     indicator: RowIndicator,
 ) {
-    set_button_fill(ctx, name, if selected { "#478CBF" } else { "#00000000" });
+    set_button_fill(ctx, name, if selected { "#4D84D1" } else { "#00000000" });
     set_indicator_shape(ctx, &format!("{name}_indicator"), indicator);
 }
 
@@ -3683,9 +3683,9 @@ pub fn apply_canvas_overlay_style<API: ScriptAPI + ?Sized>(
         let _ = with_node_mut!(ctx.run, UiPanel, id, |node| {
             node.style.fill = Color::from_hex("#00000000").unwrap_or(node.style.fill);
             node.style.stroke = if mode == "UI" {
-                Color::from_hex("#DDE6F0EE").unwrap_or(node.style.stroke)
+                Color::from_hex("#D7DBE0EE").unwrap_or(node.style.stroke)
             } else {
-                Color::from_hex("#5B6574AA").unwrap_or(node.style.stroke)
+                Color::from_hex("#6E7680AA").unwrap_or(node.style.stroke)
             };
             node.style.stroke_width = if mode == "UI" { 2.0 } else { 1.0 };
             node.style.corner_radius = 0.0;
@@ -3868,14 +3868,14 @@ pub fn set_scene_tree_list<API: ScriptAPI + ?Sized>(
         tree.v_spacing = 0.0008;
         tree.icon_size = 13.0;
         tree.toggle_size = 10.0;
-        tree.line_color = Color::from_hex("#3A4250FF").unwrap_or(tree.line_color);
-        tree.triangle_color = Color::from_hex("#A7D36FFF").unwrap_or(tree.triangle_color);
-        tree.text_color = Color::from_hex("#E5E7EBFF").unwrap_or(tree.text_color);
+        tree.line_color = Color::from_hex("#343A43").unwrap_or(tree.line_color);
+        tree.triangle_color = Color::from_hex("#5EA868").unwrap_or(tree.triangle_color);
+        tree.text_color = Color::from_hex("#D7DBE0").unwrap_or(tree.text_color);
         tree.row_style.fill = Color::TRANSPARENT;
         tree.row_style.stroke = Color::TRANSPARENT;
         tree.row_hover_style.fill =
-            Color::from_hex("#202838FF").unwrap_or(tree.row_hover_style.fill);
-        tree.selected_style.fill = Color::from_hex("#25476CFF").unwrap_or(tree.selected_style.fill);
+            Color::from_hex("#323842").unwrap_or(tree.row_hover_style.fill);
+        tree.selected_style.fill = Color::from_hex("#4D84D1").unwrap_or(tree.selected_style.fill);
         tree.selected_signals = vec![signal!("editor_scene_tree_selected")];
         tree.toggled_signals = vec![signal!("editor_scene_tree_toggled")];
     });
@@ -3949,14 +3949,14 @@ pub fn set_file_tree_list<API: ScriptAPI + ?Sized>(
         tree.v_spacing = 0.0008;
         tree.icon_size = 13.0;
         tree.toggle_size = 10.0;
-        tree.line_color = Color::from_hex("#3A4250FF").unwrap_or(tree.line_color);
-        tree.triangle_color = Color::from_hex("#8FB9E8FF").unwrap_or(tree.triangle_color);
-        tree.text_color = Color::from_hex("#D1D5DBFF").unwrap_or(tree.text_color);
+        tree.line_color = Color::from_hex("#343A43").unwrap_or(tree.line_color);
+        tree.triangle_color = Color::from_hex("#5A91DD").unwrap_or(tree.triangle_color);
+        tree.text_color = Color::from_hex("#D7DBE0").unwrap_or(tree.text_color);
         tree.row_style.fill = Color::TRANSPARENT;
         tree.row_style.stroke = Color::TRANSPARENT;
         tree.row_hover_style.fill =
-            Color::from_hex("#202838FF").unwrap_or(tree.row_hover_style.fill);
-        tree.selected_style.fill = Color::from_hex("#25476CFF").unwrap_or(tree.selected_style.fill);
+            Color::from_hex("#323842").unwrap_or(tree.row_hover_style.fill);
+        tree.selected_style.fill = Color::from_hex("#4D84D1").unwrap_or(tree.selected_style.fill);
         tree.selected_signals = vec![signal!("editor_file_tree_selected")];
         tree.toggled_signals = vec![signal!("editor_file_tree_toggled")];
     });

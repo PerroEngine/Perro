@@ -104,22 +104,22 @@ pub fn apply_inspector_value_row_panel<API: ScriptAPI + ?Sized>(
         return;
     };
     let palette = [
-        ("#0B1E3ACC", "#2563EBFF"),
-        ("#23123ACC", "#7C3AEDFF"),
-        ("#321017CC", "#DC2626FF"),
-        ("#2F1A0BCC", "#EA580CFF"),
-        ("#2C250BCC", "#CA8A04FF"),
-        ("#0B2818CC", "#16A34AFF"),
+        ("#23272D", "#4D84D1"),
+        ("#2A2F36", "#4A525D"),
+        ("#2A2F36", "#D95F5F"),
+        ("#2A2F36", "#D98B3A"),
+        ("#2A2F36", "#D9A24A"),
+        ("#2A2F36", "#5EA868"),
     ];
     let group_depth = depth.saturating_sub(1);
     let (fill, stroke) = palette[group_depth % palette.len()];
     let (fill, stroke) = if source == "section" {
-        ("#101827CC", "#334155FF")
+        ("#23272D", "#343A43")
     } else {
         (fill, stroke)
     };
     let script_stroke = if source == "script" && depth == 0 {
-        "#4B5563FF"
+        "#4A525D"
     } else {
         stroke
     };
