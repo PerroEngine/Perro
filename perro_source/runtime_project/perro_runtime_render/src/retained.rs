@@ -76,6 +76,7 @@ pub fn decode_render_request_node_from_event(event: &RenderEvent) -> Option<Node
 
 fn collect_tree_traversal<I, A, F>(
     traversal_ids: &mut Vec<NodeID>,
+    child_scratch: &mut Vec<NodeID>,
     seed_ids: I,
     all_ids: A,
     include_all: bool,
@@ -89,6 +90,7 @@ fn collect_tree_traversal<I, A, F>(
     collect_tree_traversal_with_seen(
         traversal_ids,
         &mut seen,
+        child_scratch,
         seed_ids,
         all_ids,
         include_all,
@@ -99,6 +101,7 @@ fn collect_tree_traversal<I, A, F>(
 fn collect_tree_traversal_with_seen<I, A, F>(
     traversal_ids: &mut Vec<NodeID>,
     seen: &mut AHashSet<NodeID>,
+    child_scratch: &mut Vec<NodeID>,
     seed_ids: I,
     all_ids: A,
     include_all: bool,
@@ -123,14 +126,14 @@ fn collect_tree_traversal_with_seen<I, A, F>(
         }
     }
 
-    let mut child_scratch = Vec::new();
+    child_scratch.clear();
     let mut traversal_cursor = 0usize;
     while traversal_cursor < traversal_ids.len() {
         let node = traversal_ids[traversal_cursor];
         traversal_cursor += 1;
         child_scratch.clear();
-        children_of(node, &mut child_scratch);
-        for child in child_scratch.drain(..) {
+        children_of(node, child_scratch);
+        for child in child_scratch.iter().copied() {
             if seen.insert(child) {
                 traversal_ids.push(child);
             }
@@ -141,6 +144,7 @@ fn collect_tree_traversal_with_seen<I, A, F>(
 pub struct Render2DState {
     pub traversal_ids: Vec<NodeID>,
     pub traversal_seen: AHashSet<NodeID>,
+    pub traversal_child_scratch: Vec<NodeID>,
     pub dirty_ids_scratch: Vec<NodeID>,
     pub visible_now: AHashSet<NodeID>,
     pub prev_visible: AHashSet<NodeID>,
@@ -172,6 +176,7 @@ impl Render2DState {
         Self {
             traversal_ids: Vec::new(),
             traversal_seen: AHashSet::default(),
+            traversal_child_scratch: Vec::new(),
             dirty_ids_scratch: Vec::new(),
             visible_now: AHashSet::default(),
             prev_visible: AHashSet::default(),
@@ -217,15 +222,19 @@ impl Render2DState {
         self.force_full_scan_once = false;
         let mut traversal_ids = std::mem::take(&mut self.traversal_ids);
         let mut seen = std::mem::take(&mut self.traversal_seen);
+        let mut child_scratch = std::mem::take(&mut self.traversal_child_scratch);
         collect_tree_traversal_with_seen(
             &mut traversal_ids,
             &mut seen,
+            &mut child_scratch,
             dirty_ids,
             all_ids,
             include_all,
             children_of,
         );
+        child_scratch.clear();
         seen.clear();
+        self.traversal_child_scratch = child_scratch;
         self.traversal_seen = seen;
         traversal_ids
     }
@@ -254,15 +263,19 @@ impl Render2DState {
         self.force_full_scan_once = false;
         let mut traversal_ids = std::mem::take(&mut self.traversal_ids);
         let mut seen = std::mem::take(&mut self.traversal_seen);
+        let mut child_scratch = std::mem::take(&mut self.traversal_child_scratch);
         collect_tree_traversal_with_seen(
             &mut traversal_ids,
             &mut seen,
+            &mut child_scratch,
             dirty_ids.iter().copied(),
             all_ids,
             include_all,
             children_of,
         );
+        child_scratch.clear();
         seen.clear();
+        self.traversal_child_scratch = child_scratch;
         self.traversal_seen = seen;
         traversal_ids
     }
@@ -583,6 +596,7 @@ pub struct UiSizeClampBaseline {
 
 pub struct Render3DState {
     pub traversal_ids: Vec<NodeID>,
+    pub traversal_child_scratch: Vec<NodeID>,
     pub dirty_ids_scratch: Vec<NodeID>,
     pub all_ids_scratch: Vec<NodeID>,
     pub visible_now: AHashSet<NodeID>,
@@ -625,6 +639,7 @@ impl Render3DState {
         let (particle_path_load_tx, particle_path_load_rx) = mpsc::channel();
         Self {
             traversal_ids: Vec::new(),
+            traversal_child_scratch: Vec::new(),
             dirty_ids_scratch: Vec::new(),
             all_ids_scratch: Vec::new(),
             visible_now: AHashSet::default(),
@@ -686,13 +701,17 @@ impl Render3DState {
         let include_all = self.force_full_scan_once || bootstrap_scan;
         self.force_full_scan_once = false;
         let mut traversal_ids = std::mem::take(&mut self.traversal_ids);
+        let mut child_scratch = std::mem::take(&mut self.traversal_child_scratch);
         collect_tree_traversal(
             &mut traversal_ids,
+            &mut child_scratch,
             dirty_ids,
             all_ids,
             include_all,
             children_of,
         );
+        child_scratch.clear();
+        self.traversal_child_scratch = child_scratch;
         traversal_ids
     }
 

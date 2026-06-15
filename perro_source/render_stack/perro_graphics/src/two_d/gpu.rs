@@ -418,26 +418,36 @@ impl Gpu2D {
             self.sprite_stage_instances.reserve(sprites.len());
             self.sprite_batches.reserve(sprites.len());
             self.sprite_batch_candidates.reserve(sprites.len());
+            let mut last_sprite_texture = None;
+            let mut candidates_sorted = true;
+            let mut last_candidate_key = None;
             for sprite in sprites {
-                let texture = if let Some(texture) = self.sprite_textures.get(&sprite.texture) {
-                    texture
-                } else {
-                    if !self.ensure_sprite_texture(
-                        device,
-                        queue,
-                        resources,
-                        sprite.texture,
-                        static_texture_lookup,
-                    ) {
-                        continue;
+                let (texture_width, texture_height) = match last_sprite_texture {
+                    Some((texture_id, width, height)) if texture_id == sprite.texture => {
+                        (width, height)
                     }
-                    let Some(texture) = self.sprite_textures.get(&sprite.texture) else {
-                        continue;
-                    };
-                    texture
+                    _ => {
+                        if !self.sprite_textures.contains_key(&sprite.texture)
+                            && !self.ensure_sprite_texture(
+                                device,
+                                queue,
+                                resources,
+                                sprite.texture,
+                                static_texture_lookup,
+                            )
+                        {
+                            continue;
+                        }
+                        let Some(texture) = self.sprite_textures.get(&sprite.texture) else {
+                            continue;
+                        };
+                        let dims = (texture.width, texture.height);
+                        last_sprite_texture = Some((sprite.texture, dims.0, dims.1));
+                        dims
+                    }
                 };
                 let (sprite_size, uv_min, uv_max) =
-                    resolve_sprite_geometry(sprite, texture.width, texture.height);
+                    resolve_sprite_geometry(sprite, texture_width, texture_height);
                 if !sprite_intersects_screen(sprite, sprite_size[0], sprite_size[1], &camera) {
                     continue;
                 }
@@ -451,16 +461,22 @@ impl Gpu2D {
                     z_index: sprite.z_index,
                     tint: color_to_unorm8(sprite.tint.into()),
                 });
+                let original_order = self.sprite_batch_candidates.len();
+                let texture_key = sprite.texture.as_u64();
+                let candidate_key =
+                    sprite_batch_sort_key(sprite.z_index, texture_key, original_order);
+                if last_candidate_key.is_some_and(|last| last > candidate_key) {
+                    candidates_sorted = false;
+                }
+                last_candidate_key = Some(candidate_key);
                 self.sprite_batch_candidates.push(SpriteBatchCandidate {
                     texture: sprite.texture,
-                    texture_key: sprite.texture.as_u64(),
+                    texture_key,
                     z_index: sprite.z_index,
-                    original_order: self.sprite_batch_candidates.len(),
+                    original_order,
                     instance_index: self.sprite_stage_instances.len() - 1,
                 });
             }
-            let candidates_sorted =
-                sprite_batch_candidates_sorted(self.sprite_batch_candidates.as_slice());
             self.sprite_perf = SpritePerfCounters::default();
             if candidates_sorted {
                 std::mem::swap(&mut self.sprite_instances, &mut self.sprite_stage_instances);
@@ -794,6 +810,7 @@ fn sort_sprite_batch_candidates(candidates: &mut [SpriteBatchCandidate]) {
     });
 }
 
+#[cfg(test)]
 fn sprite_batch_candidates_sorted(candidates: &[SpriteBatchCandidate]) -> bool {
     candidates.windows(2).all(|pair| {
         sprite_batch_sort_key(pair[0].z_index, pair[0].texture_key, pair[0].original_order)

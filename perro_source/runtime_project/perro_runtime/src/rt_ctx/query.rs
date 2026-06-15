@@ -249,7 +249,10 @@ fn candidate_ids_for_any(
     }
 
     indexed.sort_by_key(|candidates| candidates.ids.len());
-    let mut ids = Vec::new();
+    let total_candidates = indexed.iter().fold(0usize, |sum, candidates| {
+        sum.saturating_add(candidates.ids.len())
+    });
+    let mut ids = Vec::with_capacity(total_candidates.min(slot_count));
     let bit_words = slot_count.max(1).div_ceil(64);
     let mut marks = vec![0u64; bit_words];
     for candidates in &indexed {
@@ -280,6 +283,7 @@ fn tag_intersection_candidates(
 
     let mut out = Vec::new();
     if let Some(seed) = sets.first().copied() {
+        out.reserve(seed.len());
         'outer: for &id in seed {
             for set in sets.iter().skip(1) {
                 if !set.contains(&id) {
@@ -309,7 +313,10 @@ fn tag_union_candidates(
     }
     sets.sort_by_key(|set| set.len());
 
-    let mut out = Vec::new();
+    let total_candidates = sets
+        .iter()
+        .fold(0usize, |sum, set| sum.saturating_add(set.len()));
+    let mut out = Vec::with_capacity(total_candidates.min(slot_count));
     let bit_words = slot_count.max(1).div_ceil(64);
     let mut marks = vec![0u64; bit_words];
     for set in sets {
