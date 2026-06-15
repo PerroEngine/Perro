@@ -129,6 +129,21 @@ impl JoyConSink for RenderThreadBridge {
 
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 mod backend {
+    // Public PC Joy-Con backend provenance:
+    //
+    // This backend exists for PC input and Perro's abstract input API. Tiernan
+    // DeFranco first built this path as a standalone C++ research test project
+    // in Summer 2025, then ported it to Rust and Perro. It maps raw Bluetooth
+    // HID reports and BLE GATT notifications from Joy-Con devices into
+    // perro_input_api controls. Public open source projects, including
+    // JoyconPython, helped explain control reads and mappings.
+    //
+    // This code does not use Nintendo SDK code, private Nintendo internals, or
+    // NDA material; Tiernan does not have access to those materials at the time
+    // this PC backend was written. If that access exists later, Tiernan will not
+    // use it to update this public backend. Switch / Switch 2 builds will use a
+    // separate private implementation that calls the official SDK directly.
+
     use super::*;
     use btleplug::api::{Central, CharPropFlags, Manager as _, Peripheral as _, ScanFilter};
     use btleplug::platform::Manager;

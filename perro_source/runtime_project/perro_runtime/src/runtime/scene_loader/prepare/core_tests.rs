@@ -1025,6 +1025,7 @@ mod tests {
                 focused_signals = ["entry_focus"]
                 unfocused_signals = ["entry_unfocus"]
                 text_changed_signals = ["entry_text"]
+                input_type = "f32"
             [/UiTextBox]
             [/entry]
 
@@ -1217,6 +1218,10 @@ mod tests {
                 assert_eq!(
                     text_box.inner.text_changed_signals,
                     vec![perro_ids::SignalID::from_string("entry_text")]
+                );
+                assert_eq!(
+                    text_box.inner.input_type,
+                    perro_ui::UiTextInputType::SignedFloat
                 );
             }
             other => panic!("expected UiTextBox entry node, got {other:?}"),

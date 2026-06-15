@@ -1,3 +1,17 @@
+//! Public Joy-Con input API state for PC input and Perro's abstract controls.
+//!
+//! Tiernan DeFranco first built this path as a standalone C++ research test
+//! project in Summer 2025, then moved it into Rust and Perro. The public PC path
+//! comes from reading Bluetooth HID and BLE GATT raw bytes from Joy-Con devices,
+//! then mapping those bytes into Perro controls. Public open source projects,
+//! including JoyconPython, helped explain control reads and mappings.
+//!
+//! This code does not use Nintendo SDK code, private Nintendo internals, or NDA
+//! material; Tiernan does not have access to those materials at the time this PC
+//! backend was written. If that access exists later, Tiernan will not use it to
+//! update this public backend. Switch / Switch 2 builds will use a separate
+//! private implementation that calls the official SDK directly.
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum JoyConSide {
     LJoyCon,

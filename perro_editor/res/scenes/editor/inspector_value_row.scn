@@ -8,18 +8,35 @@ script = "res://scripts/ui/inspector_value_row.rs"
         h_align = "fill"
         visible = false
         style = {
-            fill = "#101826D9",
-            stroke = "#233147FF",
-            stroke_width = 1.0,
-            radius = 0.15
+            fill = "#00000000",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.0
         }
     [/UiPanel]
 [/inspector_value_row]
+
+[inspector_value_row_header]
+parent = @inspector_value_row
+    [UiPanel]
+        anchor = "top"
+        size_ratio = (1.0, 1.0)
+        input_enabled = false
+        mouse_filter = "pass"
+        style = {
+            fill = "#101826D9",
+            stroke = "#233147FF",
+            stroke_width = 1.0,
+            radius = 0.12
+        }
+    [/UiPanel]
+[/inspector_value_row_header]
 
 [inspector_value_row_stack]
 parent = @inspector_value_row
     [UiVLayout]
         size_ratio = (1.0, 1.0)
+        z_index = 1.0
         h_align = "fill"
         v_align = "start"
         spacing = 0.0
@@ -65,7 +82,6 @@ parent = @inspector_value_row_inner
         size_ratio = (0.5, 0.7)
         text_size_ratio = 0.62
         padding = (5.0, 1.0)
-        text_changed_signals = ["editor_inspector_var_7"]
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = {
@@ -342,8 +358,8 @@ parent = @inspector_value_row_inner
         placeholder_color = "#64748B"
         text_size_ratio = 0.62
         padding = (4.0, 1.0)
-        text_changed_signals = ["editor_inspector_var_7"]
         focused_signals = ["editor_inspector_focus"]
+        unfocused_signals = ["editor_inspector_commit"]
         style = {
             fill = "#111827DD",
             stroke = "#334155FF",
@@ -368,8 +384,8 @@ parent = @inspector_value_row_inner
         placeholder_color = "#64748B"
         text_size_ratio = 0.62
         padding = (4.0, 1.0)
-        text_changed_signals = ["editor_inspector_var_7"]
         focused_signals = ["editor_inspector_focus"]
+        unfocused_signals = ["editor_inspector_commit"]
         style = {
             fill = "#111827DD",
             stroke = "#334155FF",
@@ -394,8 +410,8 @@ parent = @inspector_value_row_inner
         placeholder_color = "#64748B"
         text_size_ratio = 0.62
         padding = (4.0, 1.0)
-        text_changed_signals = ["editor_inspector_var_7"]
         focused_signals = ["editor_inspector_focus"]
+        unfocused_signals = ["editor_inspector_commit"]
         style = {
             fill = "#111827DD",
             stroke = "#334155FF",
@@ -420,8 +436,8 @@ parent = @inspector_value_row_inner
         placeholder_color = "#64748B"
         text_size_ratio = 0.62
         padding = (4.0, 1.0)
-        text_changed_signals = ["editor_inspector_var_7"]
         focused_signals = ["editor_inspector_focus"]
+        unfocused_signals = ["editor_inspector_commit"]
         style = {
             fill = "#111827DD",
             stroke = "#334155FF",
@@ -436,4 +452,3 @@ parent = @inspector_value_row_inner
         }
     [/UiTextBox]
 [/inspector_value_3_box]
-

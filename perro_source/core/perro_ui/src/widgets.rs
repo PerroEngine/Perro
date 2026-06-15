@@ -350,7 +350,6 @@ pub struct UiDropdown {
     pub option_hover_style: UiStyle,
     pub option_pressed_style: UiStyle,
     pub option_height: f32,
-    pub popup_width: f32,
     pub internal_label: NodeID,
     pub internal_option_buttons: Vec<NodeID>,
     pub internal_option_labels: Vec<NodeID>,
@@ -383,7 +382,6 @@ impl UiDropdown {
                 highlight: UiDepthEffect::none(),
             },
             option_height: 28.0,
-            popup_width: 0.0,
             internal_label: NodeID::nil(),
             internal_option_buttons: Vec::new(),
             internal_option_labels: Vec::new(),
@@ -807,8 +805,20 @@ pub struct UiTextEdit {
     pub v_scroll: f32,
     pub caret: usize,
     pub anchor: usize,
+    pub input_type: UiTextInputType,
     pub editable: bool,
     pub multiline: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum UiTextInputType {
+    #[default]
+    Any,
+    Letters,
+    SignedInteger,
+    UnsignedInteger,
+    SignedFloat,
+    UnsignedFloat,
 }
 
 impl UiTextEdit {
@@ -844,6 +854,7 @@ impl UiTextEdit {
             v_scroll: 0.0,
             caret: 0,
             anchor: 0,
+            input_type: UiTextInputType::Any,
             editable: true,
             multiline,
         }

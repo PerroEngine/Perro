@@ -683,11 +683,6 @@ fn apply_ui_dropdown_fields(
                 node.option_height = v.max(8.0);
             }
         }
-        "popup_width" => {
-            if let Some(v) = as_f32(value) {
-                node.popup_width = v.max(0.0);
-            }
-        }
         "selected_signals" | "changed_signals" | "value_changed_signals" => {
             node.selected_signals = as_signal_ids(value);
         }
@@ -1404,6 +1399,11 @@ fn apply_ui_text_edit_fields(
                 node.editable = v;
             }
         }
+        "input_type" | "text_input_type" => {
+            if let Some(v) = as_str(value).and_then(as_text_input_type) {
+                node.input_type = v;
+            }
+        }
         "hover_signals" | "hovered_signals" | "hover_enter_signals" => {
             node.hover_signals = as_signal_ids(value);
         }
@@ -1430,6 +1430,22 @@ fn apply_ui_text_edit_fields(
         "focused_style",
         static_ui_style_lookup,
     );
+}
+
+fn as_text_input_type(value: &str) -> Option<perro_ui::UiTextInputType> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "any" | "text" => Some(perro_ui::UiTextInputType::Any),
+        "letters" | "alpha" => Some(perro_ui::UiTextInputType::Letters),
+        "i32" | "int" | "integer" | "signed_integer" => {
+            Some(perro_ui::UiTextInputType::SignedInteger)
+        }
+        "u32" | "uint" | "unsigned_integer" => Some(perro_ui::UiTextInputType::UnsignedInteger),
+        "f32" | "float" | "number" | "signed_float" => Some(perro_ui::UiTextInputType::SignedFloat),
+        "uf32" | "unsigned_float" | "positive_float" => {
+            Some(perro_ui::UiTextInputType::UnsignedFloat)
+        }
+        _ => None,
+    }
 }
 
 fn decode_scene_text_literal(text: &str) -> String {

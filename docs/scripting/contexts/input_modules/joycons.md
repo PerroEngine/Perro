@@ -17,6 +17,22 @@
 
 This input module belongs to `ctx.ipt` and documents joycons calls.
 
+## Provenance
+
+Joy-Con support here exists for PC input and for Perro's abstract input API.
+
+Tiernan DeFranco, lead developer of Perro, built the first version as a standalone C++ research test project in Summer 2025, then ported it to Rust and Perro.
+
+This code comes from reading Bluetooth HID and BLE GATT raw bytes from Joy-Con devices on PC, then mapping those bytes into Perro controls.
+
+Public open source projects, including JoyconPython, helped explain control reads and mappings.
+
+This code does not use Nintendo SDK code, private Nintendo internals, or NDA material. Tiernan does not have access to those materials at the time this PC backend was written.
+
+If Tiernan later gains private Nintendo SDK access through Perro or other ventures, he will not use that access to update this public PC backend.
+
+Nintendo Switch or Switch 2 game builds will use a separate private implementation that calls the official SDK directly. That implementation is not part of this open source PC Joy-Con backend.
+
 ## Context
 
 - Script context path: `ctx.ipt`

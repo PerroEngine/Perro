@@ -313,6 +313,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         &view.inspector.pos,
         show_transform_body,
     );
+    set_component_row_input_type(ctx, "inspector_position", UiTextInputType::SignedFloat);
     set_label(ctx, "inspector_rotation_header_label", "Rotation");
     set_ui_display(ctx, "inspector_rotation_label", show_transform_body);
     set_ui_display(
@@ -350,6 +351,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         &view.inspector.rotation,
         show_transform_body,
     );
+    set_component_row_input_type(ctx, "inspector_rotation", UiTextInputType::SignedFloat);
     set_label(ctx, "inspector_scale_header_label", "Scale");
     set_ui_display(ctx, "inspector_scale_label", show_transform_body);
     set_text_box(ctx, "inspector_scale_box", &view.inspector.scale.join(", "));
@@ -360,6 +362,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         &view.inspector.scale,
         show_transform_body,
     );
+    set_component_row_input_type(ctx, "inspector_scale", UiTextInputType::SignedFloat);
     set_label(ctx, "inspector_vars_label", "Fields");
     set_row_state(
         ctx,
@@ -419,6 +422,12 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             &format!("inspector_var_{idx}_value"),
             row.map(|item| item.value.as_str()).unwrap_or(""),
         );
+        set_text_box_input_type(
+            ctx,
+            &format!("inspector_var_{idx}_value"),
+            row.map(inspector_row_input_type)
+                .unwrap_or(UiTextInputType::Any),
+        );
         for component in 0..4 {
             let box_name = format!("inspector_var_{idx}_{component}_box");
             let component_value = row.and_then(|item| item.components.get(component));
@@ -426,6 +435,12 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
                 ctx,
                 &box_name,
                 component_value.map(String::as_str).unwrap_or(""),
+            );
+            set_text_box_input_type(
+                ctx,
+                &box_name,
+                row.map(inspector_row_component_input_type)
+                    .unwrap_or(UiTextInputType::Any),
             );
             set_ui_display(
                 ctx,
@@ -620,6 +635,34 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     }
 }
 
+fn set_component_row_input_type<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    prefix: &str,
+    input_type: UiTextInputType,
+) {
+    for idx in 0..4 {
+        set_text_box_input_type(ctx, &format!("{prefix}_{idx}_box"), input_type);
+    }
+}
+
+fn inspector_row_input_type(row: &InspectorValueRow) -> UiTextInputType {
+    match row.kind.as_str() {
+        "F32" => UiTextInputType::SignedFloat,
+        "I32" => UiTextInputType::SignedInteger,
+        "U32" | "BitMask" => UiTextInputType::UnsignedInteger,
+        _ => UiTextInputType::Any,
+    }
+}
+
+fn inspector_row_component_input_type(row: &InspectorValueRow) -> UiTextInputType {
+    match row.kind.as_str() {
+        "Vec2" | "Vec3" | "Vec4" | "Quat" | "F32" => UiTextInputType::SignedFloat,
+        "I32" => UiTextInputType::SignedInteger,
+        "U32" | "BitMask" => UiTextInputType::UnsignedInteger,
+        _ => UiTextInputType::Any,
+    }
+}
+
 pub fn refresh_status<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let view = with_state!(ctx.run, EditorState, ctx.id, EditorView::from_state);
     set_label(
@@ -781,6 +824,11 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
     let mut idx = 0;
     while find_named(ctx, &format!("inspector_var_row_{idx}")).is_some() {
         set_ui_node_size(ctx, &format!("inspector_var_row_{idx}"), (0.985, 0.031));
+        set_ui_node_size(
+            ctx,
+            &format!("inspector_var_row_{idx}_header"),
+            (1.0, 1.0),
+        );
         set_ui_node_size(ctx, &format!("inspector_var_row_{idx}_stack"), (1.0, 1.0));
         set_ui_node_size(ctx, &format!("inspector_var_row_{idx}_inner"), (1.0, 1.0));
         set_ui_node_size(
@@ -1458,6 +1506,11 @@ fn apply_inspector_row_tree_layout<API: ScriptAPI + ?Sized>(
     );
     set_ui_node_size(
         ctx,
+        &format!("inspector_var_row_{idx}_header"),
+        (1.0, 1.0),
+    );
+    set_ui_node_size(
+        ctx,
         &format!("inspector_var_row_{idx}_children"),
         (1.0, child_total / total),
     );
@@ -1805,7 +1858,12 @@ pub fn inspector_node_ref_label(value: &str) -> String {
 
 pub fn format_compact_f32(value: f32) -> String {
     let text = format!("{value:.4}");
-    text.trim_end_matches('0').trim_end_matches('.').to_string()
+    let text = text.trim_end_matches('0').trim_end_matches('.');
+    if text.is_empty() || text == "-" {
+        "0".to_string()
+    } else {
+        text.to_string()
+    }
 }
 
 pub fn asset_user_text(state: &EditorState, path: &str) -> String {
@@ -3117,6 +3175,18 @@ pub fn set_text_box_interactive<API: ScriptAPI + ?Sized>(
         let _ = with_node_mut!(ctx.run, UiTextBox, id, |node| {
             node.base.input_enabled = interactive;
             node.editable = interactive;
+        });
+    }
+}
+
+pub fn set_text_box_input_type<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    input_type: UiTextInputType,
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiTextBox, id, |node| {
+            node.input_type = input_type;
         });
     }
 }

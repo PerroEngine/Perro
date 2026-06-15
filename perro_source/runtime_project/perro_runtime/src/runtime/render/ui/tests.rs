@@ -1267,6 +1267,34 @@ fn text_box_focus_accepts_committed_text_and_backspace() {
 }
 
 #[test]
+fn text_box_input_type_filters_text() {
+    let mut edit = perro_ui::UiTextEdit::new(false);
+    edit.input_type = perro_ui::UiTextInputType::SignedFloat;
+    assert!(insert_text_input(&mut edit, "a-1.2.3b"));
+    assert_eq!(edit.text.as_ref(), "-1.23");
+
+    edit.set_text("");
+    edit.input_type = perro_ui::UiTextInputType::UnsignedFloat;
+    assert!(insert_text_input(&mut edit, "-1.5x"));
+    assert_eq!(edit.text.as_ref(), "1.5");
+
+    edit.set_text("");
+    edit.input_type = perro_ui::UiTextInputType::SignedInteger;
+    assert!(insert_text_input(&mut edit, "x-12.7"));
+    assert_eq!(edit.text.as_ref(), "-127");
+
+    edit.set_text("");
+    edit.input_type = perro_ui::UiTextInputType::UnsignedInteger;
+    assert!(insert_text_input(&mut edit, "-12.7"));
+    assert_eq!(edit.text.as_ref(), "127");
+
+    edit.set_text("");
+    edit.input_type = perro_ui::UiTextInputType::Letters;
+    assert!(insert_text_input(&mut edit, "abc123_D"));
+    assert_eq!(edit.text.as_ref(), "abcD");
+}
+
+#[test]
 fn text_box_ctrl_shortcut_does_not_insert_key_text() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);
@@ -3217,6 +3245,91 @@ fn menu_like_nested_layout_restores_all_buttons_and_labels_after_show() {
             RenderCommand::Ui(UiCommand::UpsertLabel { node: n, .. }) if *n == label
         )));
     }
+}
+
+#[test]
+fn tree_list_rows_expand_down_from_top_and_hide_closed_children() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(400, 300);
+
+    let mut tree = perro_ui::UiTreeList::new();
+    tree.layout.anchor = perro_ui::UiAnchor::Top;
+    tree.layout.size = UiVector2::pixels(200.0, 160.0);
+    tree.row_height = 20.0;
+    tree.items.push(perro_ui::UiTreeListItem::new("ROOT"));
+    tree.items
+        .push(perro_ui::UiTreeListItem::new("child").child(0));
+    tree.items
+        .push(perro_ui::UiTreeListItem::new("leaf").child(1));
+    let tree_id = insert_ui_node(&mut runtime, SceneNodeData::UiTreeList(tree));
+
+    runtime.extract_render_ui_commands();
+    let rows = runtime
+        .nodes
+        .get(tree_id)
+        .and_then(|node| match &node.data {
+            SceneNodeData::UiTreeList(tree) => Some(tree.internal_rows.clone()),
+            _ => None,
+        })
+        .expect("tree rows");
+    let y0 = runtime.render_ui.computed_rects[&rows[0]].center.y;
+    let y1 = runtime.render_ui.computed_rects[&rows[1]].center.y;
+    let y2 = runtime.render_ui.computed_rects[&rows[2]].center.y;
+    assert!(y0 > y1);
+    assert!(y1 > y2);
+
+    if let Some(scene_node) = runtime.nodes.get_mut(tree_id)
+        && let SceneNodeData::UiTreeList(tree) = &mut scene_node.data
+    {
+        tree.items[0].open = false;
+    }
+    runtime.mark_needs_rerender(tree_id);
+    runtime.extract_render_ui_commands();
+    let row_count = runtime
+        .nodes
+        .get(tree_id)
+        .and_then(|node| match &node.data {
+            SceneNodeData::UiTreeList(tree) => Some(tree.internal_rows.len()),
+            _ => None,
+        })
+        .expect("tree row count");
+    assert_eq!(row_count, 1);
+}
+
+#[test]
+fn dropdown_options_match_button_width() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(400, 300);
+
+    let mut dropdown = perro_ui::UiDropdown::new();
+    dropdown.layout.size = UiVector2::pixels(180.0, 32.0);
+    dropdown.open = true;
+    dropdown.options.push(perro_ui::UiDropdownOption::new(
+        "One",
+        perro_variant::Variant::from(1_i32),
+    ));
+    dropdown.options.push(perro_ui::UiDropdownOption::new(
+        "Two",
+        perro_variant::Variant::from(2_i32),
+    ));
+    let dropdown_id = insert_ui_node(&mut runtime, SceneNodeData::UiDropdown(dropdown));
+
+    runtime.extract_render_ui_commands();
+    let (button_width, option_id) = runtime
+        .nodes
+        .get(dropdown_id)
+        .and_then(|node| match &node.data {
+            SceneNodeData::UiDropdown(dropdown) => Some((
+                runtime.render_ui.computed_rects[&dropdown_id].size.x,
+                dropdown.internal_option_buttons[0],
+            )),
+            _ => None,
+        })
+        .expect("dropdown option");
+    let option_width = runtime.render_ui.computed_rects[&option_id].size.x;
+
+    assert_eq!(button_width, 180.0);
+    assert_eq!(option_width, button_width);
 }
 
 fn insert_panel(runtime: &mut Runtime, size: [f32; 2], fill: Color) -> NodeID {

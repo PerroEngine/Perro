@@ -16,6 +16,7 @@ methods!({});
 #[derive(Clone, Default)]
 struct InspectorRowNames {
     row: String,
+    header: String,
     inner: String,
     children: String,
     quat_mode: String,
@@ -29,7 +30,8 @@ pub fn ensure_inspector_value_row<API: ScriptAPI + ?Sized>(
 ) {
     let names = inspector_row_names(idx);
     if let Some(row_id) = find_named(ctx, &names.row) {
-        if find_named(ctx, &names.quat_mode).is_some() {
+        if find_named(ctx, &names.header).is_some() && find_named(ctx, &names.quat_mode).is_some()
+        {
             return;
         }
         let _ = ctx.run.Nodes().remove_node(row_id);
@@ -94,39 +96,44 @@ pub fn apply_inspector_value_row_panel<API: ScriptAPI + ?Sized>(
     source: &str,
     has_children: bool,
 ) {
-    let Some(id) = find_named(ctx, &inspector_row_names(idx).row) else {
+    let names = inspector_row_names(idx);
+    let Some(row_id) = find_named(ctx, &names.row) else {
+        return;
+    };
+    let Some(header_id) = find_named(ctx, &names.header) else {
         return;
     };
     let palette = [
-        ("#151A22E6", "#2B3442FF"),
-        ("#1A202AE6", "#343F50FF"),
-        ("#202733E6", "#3E4B5FFF"),
-        ("#252E3BE6", "#48566CFF"),
+        ("#0B1E3ACC", "#2563EBFF"),
+        ("#23123ACC", "#7C3AEDFF"),
+        ("#321017CC", "#DC2626FF"),
+        ("#2F1A0BCC", "#EA580CFF"),
+        ("#2C250BCC", "#CA8A04FF"),
+        ("#0B2818CC", "#16A34AFF"),
     ];
     let group_depth = depth.saturating_sub(1);
-    let (fill, stroke) = if depth > 0 && !has_children {
-        ("#00000000", "#00000000")
-    } else if source == "section" {
-        ("#0B1220E6", "#334155FF")
+    let (fill, stroke) = palette[group_depth % palette.len()];
+    let (fill, stroke) = if source == "section" {
+        ("#101827CC", "#334155FF")
     } else {
-        palette[group_depth.min(palette.len() - 1)]
+        (fill, stroke)
     };
     let script_stroke = if source == "script" && depth == 0 {
         "#4B5563FF"
     } else {
         stroke
     };
-    let _ = with_node_mut!(ctx.run, UiPanel, id, |node| {
+    let _ = with_node_mut!(ctx.run, UiPanel, row_id, |node| {
+        node.style.fill = Color::TRANSPARENT;
+        node.style.stroke = Color::TRANSPARENT;
+        node.style.stroke_width = 0.0;
+        node.style.corner_radius = 0.0;
+    });
+    let _ = with_node_mut!(ctx.run, UiPanel, header_id, |node| {
         node.style.fill = Color::from_hex(fill).unwrap_or(node.style.fill);
         node.style.stroke = Color::from_hex(script_stroke).unwrap_or(node.style.stroke);
-        node.style.stroke_width = if depth > 0 && !has_children { 0.0 } else { 1.0 };
-        node.style.corner_radius = if depth == 0 {
-            0.16
-        } else if has_children {
-            0.10
-        } else {
-            0.05
-        };
+        node.style.stroke_width = 1.0;
+        node.style.corner_radius = 0.1;
     });
 }
 
@@ -160,6 +167,7 @@ fn inspector_row_names(idx: usize) -> InspectorRowNames {
 fn build_inspector_row_names(idx: usize) -> InspectorRowNames {
     InspectorRowNames {
         row: format!("inspector_var_row_{idx}"),
+        header: format!("inspector_var_row_{idx}_header"),
         inner: format!("inspector_var_row_{idx}_inner"),
         children: format!("inspector_var_row_{idx}_children"),
         quat_mode: format!("inspector_var_{idx}_quat_mode"),
@@ -195,6 +203,7 @@ fn rename_value_row<API: ScriptAPI + ?Sized>(
 fn value_row_instance_name(name: &str, idx: usize) -> Option<String> {
     let next = match name {
         "inspector_value_row" => format!("inspector_var_row_{idx}"),
+        "inspector_value_row_header" => format!("inspector_var_row_{idx}_header"),
         "inspector_value_row_stack" => format!("inspector_var_row_{idx}_stack"),
         "inspector_value_row_inner" => format!("inspector_var_row_{idx}_inner"),
         "inspector_value_row_children" => format!("inspector_var_row_{idx}_children"),

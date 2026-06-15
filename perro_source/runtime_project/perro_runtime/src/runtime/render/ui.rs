@@ -867,7 +867,7 @@ impl Runtime {
             let Some(item) = items.get(row.index) else {
                 continue;
             };
-            let y = (row_height + spacing) * visible_idx as f32;
+            let y = -((row_height + spacing) * visible_idx as f32);
             let x = indent * row.depth as f32;
             if let Some(node) = self.nodes.get_mut(internal_rows[visible_idx])
                 && let SceneNodeData::UiButton(button) = &mut node.data
@@ -1113,9 +1113,7 @@ impl Runtime {
                 SceneNodeData::UiDropdown(dropdown) => Some((
                     dropdown.selected_label().to_string(),
                     dropdown.open,
-                    dropdown.button.base.layout.size,
                     dropdown.button.base.visible,
-                    dropdown.popup_width,
                     dropdown.option_height,
                     dropdown.option_style.clone(),
                     dropdown.option_hover_style.clone(),
@@ -1137,9 +1135,7 @@ impl Runtime {
         let (
             selected,
             open,
-            base_size,
             base_visible,
-            popup_width,
             option_height,
             option_style,
             option_hover_style,
@@ -1155,21 +1151,15 @@ impl Runtime {
             label.base.visible = base_visible;
             label.set_text(selected);
         }
-        let width = if popup_width > 0.0 {
-            popup_width
-        } else {
-            100.0
-        };
         for (idx, button_id) in option_buttons.iter().copied().enumerate() {
             if let Some(node) = self.nodes.get_mut(button_id)
                 && let SceneNodeData::UiButton(button) = &mut node.data
             {
                 button.base.visible = open && base_visible;
-                button.base.layout.size = if popup_width > 0.0 {
-                    UiVector2::pixels(width, option_height)
-                } else {
-                    UiVector2::new(base_size.x, perro_ui::UiUnit::Pixels(option_height))
-                };
+                button.base.layout.size = UiVector2::new(
+                    perro_ui::UiUnit::Percent(100.0),
+                    perro_ui::UiUnit::Pixels(option_height),
+                );
                 button.base.transform.position =
                     UiVector2::pixels(0.0, option_height * (idx + 1) as f32);
                 button.base.layout.anchor = UiAnchor::Top;

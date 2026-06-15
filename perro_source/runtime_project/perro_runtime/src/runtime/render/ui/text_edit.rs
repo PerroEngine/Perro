@@ -249,6 +249,7 @@ pub(in crate::runtime::render_ui) fn insert_text_input(edit: &mut UiTextEdit, te
         return false;
     }
     let filtered = normalize_text_input(text, edit.multiline);
+    let filtered = filter_text_input(edit, &filtered);
     if filtered.is_empty() {
         return false;
     }
@@ -540,6 +541,84 @@ pub(in crate::runtime::render_ui) fn normalize_text_input(text: &str, multiline:
     } else {
         text.replace(['\r', '\n', '\t'], " ")
     }
+}
+
+pub(in crate::runtime::render_ui) fn filter_text_input(edit: &UiTextEdit, text: &str) -> String {
+    match edit.input_type {
+        perro_ui::UiTextInputType::Any => text.to_string(),
+        perro_ui::UiTextInputType::Letters => {
+            text.chars().filter(|ch| ch.is_alphabetic()).collect()
+        }
+        perro_ui::UiTextInputType::SignedInteger => {
+            filter_numeric_text_input(edit, text, true, false)
+        }
+        perro_ui::UiTextInputType::UnsignedInteger => {
+            filter_numeric_text_input(edit, text, false, false)
+        }
+        perro_ui::UiTextInputType::SignedFloat => filter_numeric_text_input(edit, text, true, true),
+        perro_ui::UiTextInputType::UnsignedFloat => {
+            filter_numeric_text_input(edit, text, false, true)
+        }
+    }
+}
+
+fn filter_numeric_text_input(
+    edit: &UiTextEdit,
+    text: &str,
+    allow_sign: bool,
+    allow_decimal: bool,
+) -> String {
+    let (start, end) = selection_range(edit);
+    let current = edit.text.as_ref();
+    let prefix = &current[..start];
+    let suffix = &current[end..];
+    let mut accepted = String::new();
+    for ch in text.chars() {
+        if !matches!(ch, '0'..='9' | '-' | '.') {
+            continue;
+        }
+        let mut next =
+            String::with_capacity(prefix.len() + accepted.len() + ch.len_utf8() + suffix.len());
+        next.push_str(prefix);
+        next.push_str(&accepted);
+        next.push(ch);
+        next.push_str(suffix);
+        if numeric_text_allowed(&next, allow_sign, allow_decimal) {
+            accepted.push(ch);
+        }
+    }
+    accepted
+}
+
+fn numeric_text_allowed(text: &str, allow_sign: bool, allow_decimal: bool) -> bool {
+    if text.is_empty() {
+        return true;
+    }
+    let mut chars = text.chars();
+    if chars.next() == Some('-') {
+        if !allow_sign {
+            return false;
+        }
+        if text.len() == 1 {
+            return true;
+        }
+    }
+    let body = text.strip_prefix('-').unwrap_or(text);
+    if body.is_empty() {
+        return true;
+    }
+    if allow_decimal {
+        let mut dot_seen = false;
+        for ch in body.chars() {
+            match ch {
+                '0'..='9' => {}
+                '.' if !dot_seen => dot_seen = true,
+                _ => return false,
+            }
+        }
+        return true;
+    }
+    body.chars().all(|ch| ch.is_ascii_digit())
 }
 
 pub(in crate::runtime::render_ui) fn index_at_col(
