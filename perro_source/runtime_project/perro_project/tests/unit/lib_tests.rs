@@ -162,6 +162,45 @@ texture_filter = "nearest"
 }
 
 #[test]
+fn parse_project_toml_ui_pixel_snapping_defaults_true() {
+    let toml = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+aspect_ratio = "16:9"
+"#;
+
+    let parsed = parse_project_toml(toml).expect("failed to parse project.toml");
+    assert!(parsed.rendering.ui.pixel_snapping);
+}
+
+#[test]
+fn parse_project_toml_reads_ui_pixel_snapping() {
+    let enabled = r#"
+[project]
+name = "Game"
+main_scene = "res://main.scn"
+icon = "res://icon.png"
+
+[graphics]
+aspect_ratio = "16:9"
+
+[rendering.ui]
+pixel_snapping = true
+"#;
+    let disabled = enabled.replace("pixel_snapping = true", "pixel_snapping = false");
+
+    let parsed = parse_project_toml(enabled).expect("enabled pixel snap");
+    assert!(parsed.rendering.ui.pixel_snapping);
+
+    let parsed = parse_project_toml(&disabled).expect("disabled pixel snap");
+    assert!(!parsed.rendering.ui.pixel_snapping);
+}
+
+#[test]
 fn parse_project_toml_reads_physics_config() {
     let toml = r#"
 [project]

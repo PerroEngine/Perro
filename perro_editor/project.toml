@@ -19,6 +19,9 @@ occlusion_culling = "gpu"
 
 particle_sim_default = "gpu"
 
+[rendering.ui]
+pixel_snapping = true
+
 [runtime]
 frame_rate_cap = "refresh_rate"
 target_fixed_update = 60

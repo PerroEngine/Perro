@@ -13,6 +13,9 @@ pub(super) struct UiChildrenLayoutCtx {
     pub(super) parent_layout_rect: ComputedUiRect,
     pub(super) content: ComputedUiRect,
     pub(super) parent_scale: Vector2,
+    pub(super) viewport: Vector2,
+    pub(super) snap: bool,
+    pub(super) snap_scale: f32,
 }
 
 #[derive(Clone, Copy)]
@@ -225,17 +228,20 @@ pub(super) fn scale_ui_rect_from_parent(
 pub(super) fn insert_scaled_ui_child_rect(
     computed: &mut AHashMap<NodeID, ComputedUiRect>,
     computed_scales: &mut AHashMap<NodeID, Vector2>,
-    parent_rect: ComputedUiRect,
-    parent_scale: Vector2,
+    layout_ctx: UiChildrenLayoutCtx,
     child: NodeID,
     rect: ComputedUiRect,
     child_scale: Vector2,
 ) {
-    computed.insert(
-        child,
-        scale_ui_rect_from_parent(rect, parent_rect, parent_scale),
-    );
-    computed_scales.insert(child, parent_scale * child_scale);
+    let rect =
+        scale_ui_rect_from_parent(rect, layout_ctx.parent_layout_rect, layout_ctx.parent_scale);
+    let rect = if layout_ctx.snap {
+        snap_computed_ui_rect(rect, layout_ctx.viewport, layout_ctx.snap_scale)
+    } else {
+        rect
+    };
+    computed.insert(child, rect);
+    computed_scales.insert(child, layout_ctx.parent_scale * child_scale);
 }
 
 pub(super) fn ui_text_measure(data: &SceneNodeData) -> Vector2 {
@@ -670,6 +676,38 @@ pub(super) fn computed_rect_from_state(rect: &UiRectState) -> ComputedUiRect {
     ComputedUiRect::new(
         Vector2::new(rect.center[0], rect.center[1]),
         Vector2::new(rect.size[0], rect.size[1]),
+    )
+}
+
+pub(super) fn snap_to_physical_pixels(value: f32, scale_factor: f32) -> f32 {
+    let scale = if scale_factor.is_finite() && scale_factor > 0.0 {
+        scale_factor
+    } else {
+        1.0
+    };
+    (value * scale).round() / scale
+}
+
+pub(super) fn snap_computed_ui_rect(
+    rect: ComputedUiRect,
+    viewport: Vector2,
+    scale_factor: f32,
+) -> ComputedUiRect {
+    let min = rect.min();
+    let screen_min_x = viewport.x * 0.5 + min.x;
+    let screen_min_y = viewport.y * 0.5 - rect.max().y;
+    let snapped_min_x = snap_to_physical_pixels(screen_min_x, scale_factor);
+    let snapped_min_y = snap_to_physical_pixels(screen_min_y, scale_factor);
+    let snapped_w = snap_to_physical_pixels(rect.size.x, scale_factor).max(0.0);
+    let snapped_h = snap_to_physical_pixels(rect.size.y, scale_factor).max(0.0);
+    let screen_center_x = snapped_min_x + snapped_w * 0.5;
+    let screen_center_y = snapped_min_y + snapped_h * 0.5;
+    ComputedUiRect::new(
+        Vector2::new(
+            screen_center_x - viewport.x * 0.5,
+            viewport.y * 0.5 - screen_center_y,
+        ),
+        Vector2::new(snapped_w, snapped_h),
     )
 }
 

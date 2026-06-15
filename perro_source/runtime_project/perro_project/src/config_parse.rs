@@ -39,6 +39,9 @@ occlusion_culling = "gpu"
 particle_sim_default = "gpu"
 texture_filter = "linear_mipmap"
 
+[rendering.ui]
+pixel_snapping = true
+
 [runtime]
 frame_rate_cap = "unlimited"
 target_fixed_update = 60
@@ -129,6 +132,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
     let steam_table = value.get("steam").and_then(Value::as_table);
     let audio_table = value.get("audio").and_then(Value::as_table);
     let web_table = value.get("web").and_then(Value::as_table);
+    let rendering_table = value.get("rendering").and_then(Value::as_table);
 
     let name = project_table
         .get("name")
@@ -196,6 +200,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
     let steam = parse_steam(steam_table)?;
     let audio = parse_audio(audio_table)?;
     let web = parse_web(web_table)?;
+    let rendering = parse_rendering(rendering_table)?;
 
     Ok(ProjectConfig {
         name,
@@ -222,6 +227,7 @@ pub fn parse_project_toml(contents: &str) -> Result<ProjectConfig, ProjectError>
         occlusion_culling,
         particle_sim_default,
         texture_filter,
+        rendering,
         audio,
         localization,
         input_map: perro_input_api::InputMap::new(),
@@ -288,6 +294,31 @@ pub fn parse_input_map_toml(contents: &str) -> Result<perro_input_api::InputMap,
         actions.push(perro_input_api::InputAction::new(action_name, bindings));
     }
     Ok(perro_input_api::InputMap::from_actions(actions))
+}
+
+fn parse_rendering(
+    table: Option<&toml::map::Map<String, Value>>,
+) -> Result<RenderingConfig, ProjectError> {
+    let Some(table) = table else {
+        return Ok(RenderingConfig::default());
+    };
+    let ui = parse_rendering_ui(table.get("ui").and_then(Value::as_table))?;
+    Ok(RenderingConfig { ui })
+}
+
+fn parse_rendering_ui(
+    table: Option<&toml::map::Map<String, Value>>,
+) -> Result<RenderUiConfig, ProjectError> {
+    let Some(table) = table else {
+        return Ok(RenderUiConfig::default());
+    };
+    let pixel_snapping = match table.get("pixel_snapping") {
+        Some(value) => value.as_bool().ok_or_else(|| {
+            ProjectError::InvalidField("rendering.ui.pixel_snapping", "must be a boolean".to_string())
+        })?,
+        None => true,
+    };
+    Ok(RenderUiConfig { pixel_snapping })
 }
 
 fn parse_input_map_binding_list(

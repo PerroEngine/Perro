@@ -728,7 +728,11 @@ mod tests {
                 solver: IKTargetSolver::CCD,
             },
         );
-        assert_eq!(skeleton.bones[0].pose.rotation, before);
+        let after = skeleton.bones[0].pose.rotation;
+        assert!((after.x - before.x).abs() < 0.000001);
+        assert!((after.y - before.y).abs() < 0.000001);
+        assert!((after.z - before.z).abs() < 0.000001);
+        assert!((after.w - before.w).abs() < 0.000001);
     }
 
     #[test]

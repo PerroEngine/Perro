@@ -2544,8 +2544,7 @@ fn min_size_ratio_one_locks_spawn_floor() {
         .copied()
         .expect("top rect");
 
-    assert!((rect.size.x - 1228.8).abs() < 1.0e-3);
-    assert!((rect.size.y - 64.8).abs() < 1.0e-3);
+    assert_eq!(rect.size, Vector2::new(1229.0, 65.0));
 }
 
 #[test]
@@ -3281,6 +3280,24 @@ fn set_panel_visible(runtime: &mut Runtime, node: NodeID, visible: bool) {
     {
         panel.visible = visible;
     }
+}
+
+#[test]
+fn snap_computed_ui_rect_rounds_screen_space_rect() {
+    let rect = ComputedUiRect::new(Vector2::new(-19.3, 198.2), Vector2::new(136.6, 42.2));
+
+    let snapped = snap_computed_ui_rect(rect, Vector2::new(800.0, 600.0), 1.0);
+    let min = snapped.min();
+    let screen_min = Vector2::new(400.0 + min.x, 300.0 - snapped.max().y);
+
+    assert_eq!(screen_min, Vector2::new(312.0, 81.0));
+    assert_eq!(snapped.size, Vector2::new(137.0, 42.0));
+}
+
+#[test]
+fn snap_to_physical_pixels_respects_scale_factor() {
+    assert_eq!(snap_to_physical_pixels(10.25, 2.0), 10.5);
+    assert_eq!(snap_to_physical_pixels(10.2, 2.0), 10.0);
 }
 
 fn insert_ui_node(runtime: &mut Runtime, data: SceneNodeData) -> NodeID {

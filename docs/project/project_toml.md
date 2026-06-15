@@ -6,6 +6,7 @@
 - [Full Example](#full-example)
 - [Tables](#tables)
 - [Graphics](#graphics)
+- [Rendering UI](#rendering-ui)
 - [Texture Filter](#texture-filter)
 - [Runtime](#runtime)
 - [Physics](#physics)
@@ -56,6 +57,9 @@ occlusion_culling = "gpu"
 particle_sim_default = "gpu"
 texture_filter = "linear_mipmap"
 
+[rendering.ui]
+pixel_snapping = true
+
 [runtime]
 frame_rate_cap = "unlimited"
 target_fixed_update = 60
@@ -94,6 +98,7 @@ app_id = 480
 | ------------------------ | ---- | ----------------------------------- |
 | `[project]`              | yes  | name + entry assets                 |
 | `[graphics]`             | yes  | render defaults                     |
+| `[rendering.ui]`         | no   | UI render defaults                  |
 | `[runtime]`              | no   | frame timing                        |
 | `[physics]`              | no   | world physics defaults              |
 | `[audio]`                | no   | audio propagation defaults          |
@@ -156,6 +161,16 @@ Window opens at 75% monitor size, fit to this aspect.
 Render surface uses native window resolution.
 
 WASM forces some graphics features off when platform lacks support.
+
+## Rendering UI
+
+| Field            | Type | Default | Note                         |
+| ---------------- | ---- | ------- | ---------------------------- |
+| `pixel_snapping` | bool | `true`  | round final computed UI rects |
+
+When enabled, UI computed rects round to physical pixels after float layout solve.
+
+Child layout then reads rounded parent rects.
 
 ## Texture Filter
 

@@ -1,6 +1,16 @@
 use super::*;
 
 impl Runtime {
+    pub(super) fn ui_pixel_snapping_enabled(&self) -> bool {
+        self.project()
+            .map(|project| project.config.rendering.ui.pixel_snapping)
+            .unwrap_or(false)
+    }
+
+    pub(super) fn ui_pixel_snap_scale_factor(&self) -> f32 {
+        1.0
+    }
+
     pub(super) fn compute_ui_rect(
         &self,
         node: NodeID,
@@ -49,9 +59,9 @@ impl Runtime {
                 if auto_layout_computed.insert(ui_parent_id) {
                     self.compute_ui_auto_children_rects(
                         ui_parent_id,
-                        parent_rect,
                         parent_scale,
                         parent_layout_rect,
+                        root_rect.size,
                         computed,
                         computed_scales,
                     );
@@ -86,6 +96,11 @@ impl Runtime {
             let rect =
                 scale_ui_rect_from_parent(child_layout_rect, parent_layout_rect, parent_scale);
             computed_scales.insert(node, parent_scale * ui_root.transform.scale);
+            rect
+        };
+        let rect = if self.ui_pixel_snapping_enabled() {
+            snap_computed_ui_rect(rect, root_rect.size, self.ui_pixel_snap_scale_factor())
+        } else {
             rect
         };
         computed.insert(node, rect);
@@ -174,9 +189,9 @@ impl Runtime {
     pub(super) fn compute_ui_auto_children_rects(
         &self,
         parent: NodeID,
-        _parent_rect: ComputedUiRect,
         parent_scale: Vector2,
         parent_layout_rect: ComputedUiRect,
+        viewport: Vector2,
         computed: &mut AHashMap<NodeID, ComputedUiRect>,
         computed_scales: &mut AHashMap<NodeID, Vector2>,
     ) -> Option<()> {
@@ -195,6 +210,9 @@ impl Runtime {
             parent_layout_rect,
             content: content_rect,
             parent_scale,
+            viewport,
+            snap: self.ui_pixel_snapping_enabled(),
+            snap_scale: self.ui_pixel_snap_scale_factor(),
         };
         match auto_layout.mode {
             UiLayoutMode::H => self.compute_ui_h_children_rects(

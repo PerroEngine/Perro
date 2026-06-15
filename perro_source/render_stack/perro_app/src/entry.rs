@@ -356,6 +356,7 @@ pub struct StaticEmbeddedGraphicsConfig {
     pub meshlet_debug_view: bool,
     pub occlusion_culling: OcclusionCulling,
     pub particle_sim_default: ParticleSimDefault,
+    pub ui_pixel_snapping: bool,
 }
 
 pub struct StaticEmbeddedRuntimeConfig {
@@ -426,6 +427,7 @@ pub fn run_static_embedded_project(
     .with_meshlet_debug_view(input.graphics.meshlet_debug_view)
     .with_occlusion_culling(input.graphics.occlusion_culling)
     .with_particle_sim_default(input.graphics.particle_sim_default)
+    .with_ui_pixel_snapping(input.graphics.ui_pixel_snapping)
     .with_metadata(
         input.metadata.description,
         input.metadata.company,
@@ -505,6 +507,7 @@ pub fn run_static_embedded_project_android(
     .with_meshlet_debug_view(input.graphics.meshlet_debug_view)
     .with_occlusion_culling(input.graphics.occlusion_culling)
     .with_particle_sim_default(input.graphics.particle_sim_default)
+    .with_ui_pixel_snapping(input.graphics.ui_pixel_snapping)
     .with_metadata(
         input.metadata.description,
         input.metadata.company,
@@ -592,6 +595,7 @@ pub fn run_static_embedded_project_web(input: StaticEmbeddedProject<'_>) -> Resu
         .with_meshlet_debug_view(input.graphics.meshlet_debug_view)
         .with_occlusion_culling(input.graphics.occlusion_culling)
         .with_particle_sim_default(input.graphics.particle_sim_default)
+        .with_ui_pixel_snapping(input.graphics.ui_pixel_snapping)
         .with_metadata(
             input.metadata.description,
             input.metadata.company,

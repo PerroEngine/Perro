@@ -1031,6 +1031,7 @@ fn project_root() -> std::path::PathBuf {
               meshlet_debug_view: false,
               occlusion_culling: perro_app::entry::OcclusionCulling::Gpu,
               particle_sim_default: perro_app::entry::ParticleSimDefault::Cpu,
+              ui_pixel_snapping: true,
           },
           runtime: perro_app::entry::StaticEmbeddedRuntimeConfig {
               target_fixed_update: Some(60.0),

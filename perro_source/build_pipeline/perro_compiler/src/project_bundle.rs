@@ -491,6 +491,7 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         meshlet_debug_view: {meshlet_debug_view},\n\
         occlusion_culling: {occlusion_culling},\n\
         particle_sim_default: {particle_sim_default},\n\
+        ui_pixel_snapping: {ui_pixel_snapping},\n\
   }},\n\
   runtime: perro_app::entry::StaticEmbeddedRuntimeConfig {{\n\
         target_fixed_update: {target_fixed_update},\n\
@@ -549,6 +550,7 @@ perro_app::entry::run_static_embedded_project(perro_app::entry::StaticEmbeddedPr
         meshlet_debug_view = cfg.meshlet_debug_view,
         occlusion_culling = emit_occlusion_culling_expr(cfg.occlusion_culling),
         particle_sim_default = emit_particle_sim_default_expr(cfg.particle_sim_default),
+        ui_pixel_snapping = cfg.rendering.ui.pixel_snapping,
         target_fixed_update = emit_optional_f32(cfg.target_fixed_update),
         frame_rate_cap = emit_frame_rate_cap_expr(cfg.frame_rate_cap),
         physics_gravity = emit_f32(cfg.physics_gravity),
@@ -595,6 +597,7 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
         meshlet_debug_view: {meshlet_debug_view},\n\
         occlusion_culling: {occlusion_culling},\n\
         particle_sim_default: {particle_sim_default},\n\
+        ui_pixel_snapping: {ui_pixel_snapping},\n\
   }},\n\
   runtime: perro_app::entry::StaticEmbeddedRuntimeConfig {{\n\
         target_fixed_update: {target_fixed_update},\n\
@@ -652,6 +655,7 @@ perro_app::entry::run_static_embedded_project_web(perro_app::entry::StaticEmbedd
         meshlet_debug_view = cfg.meshlet_debug_view,
         occlusion_culling = emit_occlusion_culling_expr(cfg.occlusion_culling),
         particle_sim_default = emit_particle_sim_default_expr(cfg.particle_sim_default),
+        ui_pixel_snapping = cfg.rendering.ui.pixel_snapping,
         target_fixed_update = emit_optional_f32(cfg.target_fixed_update),
         frame_rate_cap = emit_frame_rate_cap_expr(cfg.frame_rate_cap),
         physics_gravity = emit_f32(cfg.physics_gravity),
@@ -697,6 +701,7 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
         meshlet_debug_view: {meshlet_debug_view},\n\
         occlusion_culling: {occlusion_culling},\n\
         particle_sim_default: {particle_sim_default},\n\
+        ui_pixel_snapping: {ui_pixel_snapping},\n\
   }},\n\
   runtime: perro_app::entry::StaticEmbeddedRuntimeConfig {{\n\
         target_fixed_update: {target_fixed_update},\n\
@@ -755,6 +760,7 @@ perro_app::entry::run_static_embedded_project_android(app, perro_app::entry::Sta
         meshlet_debug_view = cfg.meshlet_debug_view,
         occlusion_culling = emit_occlusion_culling_expr(cfg.occlusion_culling),
         particle_sim_default = emit_particle_sim_default_expr(cfg.particle_sim_default),
+        ui_pixel_snapping = cfg.rendering.ui.pixel_snapping,
         target_fixed_update = emit_optional_f32(cfg.target_fixed_update),
         frame_rate_cap = emit_frame_rate_cap_expr(cfg.frame_rate_cap),
         physics_gravity = emit_f32(cfg.physics_gravity),

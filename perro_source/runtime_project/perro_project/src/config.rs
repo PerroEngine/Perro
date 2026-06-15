@@ -116,6 +116,24 @@ pub struct ProjectWebConfig {
     pub keywords: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RenderUiConfig {
+    pub pixel_snapping: bool,
+}
+
+impl Default for RenderUiConfig {
+    fn default() -> Self {
+        Self {
+            pixel_snapping: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RenderingConfig {
+    pub ui: RenderUiConfig,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectRoute {
     pub href: String,
@@ -157,6 +175,7 @@ pub struct StaticProjectConfig {
     pub occlusion_culling: OcclusionCulling,
     pub particle_sim_default: ParticleSimDefault,
     pub texture_filter: perro_structs::TextureFilterMode,
+    pub rendering_ui_pixel_snapping: bool,
     pub audio_listener_max_distance: f32,
     pub audio_propagation_tick_hz: f32,
     pub audio_energy_cutoff: f32,
@@ -206,6 +225,7 @@ impl StaticProjectConfig {
             occlusion_culling: OcclusionCulling::Gpu,
             particle_sim_default: ParticleSimDefault::Cpu,
             texture_filter: perro_structs::TextureFilterMode::LinearMipmap,
+            rendering_ui_pixel_snapping: true,
             audio_listener_max_distance: 500.0,
             audio_propagation_tick_hz: 20.0,
             audio_energy_cutoff: 0.02,
@@ -287,6 +307,11 @@ impl StaticProjectConfig {
         self
     }
 
+    pub const fn with_ui_pixel_snapping(mut self, enabled: bool) -> Self {
+        self.rendering_ui_pixel_snapping = enabled;
+        self
+    }
+
     pub const fn with_audio_config(mut self, config: AudioConfig) -> Self {
         self.audio_listener_max_distance = config.listener_max_distance;
         self.audio_propagation_tick_hz = config.propagation_tick_hz;
@@ -360,6 +385,11 @@ impl StaticProjectConfig {
             occlusion_culling: self.occlusion_culling,
             particle_sim_default: self.particle_sim_default,
             texture_filter: self.texture_filter,
+            rendering: RenderingConfig {
+                ui: RenderUiConfig {
+                    pixel_snapping: self.rendering_ui_pixel_snapping,
+                },
+            },
             audio: AudioConfig {
                 listener_max_distance: self.audio_listener_max_distance,
                 propagation_tick_hz: self.audio_propagation_tick_hz,
@@ -416,6 +446,7 @@ pub struct ProjectConfig {
     pub occlusion_culling: OcclusionCulling,
     pub particle_sim_default: ParticleSimDefault,
     pub texture_filter: perro_structs::TextureFilterMode,
+    pub rendering: RenderingConfig,
     pub audio: AudioConfig,
     pub localization: Option<LocalizationConfig>,
     pub input_map: perro_input_api::InputMap,
@@ -449,6 +480,7 @@ impl ProjectConfig {
             occlusion_culling: OcclusionCulling::Gpu,
             particle_sim_default: ParticleSimDefault::Cpu,
             texture_filter: perro_structs::TextureFilterMode::LinearMipmap,
+            rendering: RenderingConfig::default(),
             audio: AudioConfig::default(),
             localization: None,
             input_map: perro_input_api::InputMap::new(),

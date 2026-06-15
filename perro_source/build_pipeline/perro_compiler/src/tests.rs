@@ -1695,11 +1695,14 @@ perro_runtime = {{ path = "{perro_runtime}" }}
             ),
         )
         .expect("write temp Cargo.toml");
+        std::fs::copy(workspace_root.join("Cargo.lock"), tmp.join("Cargo.lock"))
+            .expect("copy workspace Cargo.lock");
 
         let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
         let output = std::process::Command::new(cargo)
             .arg("check")
             .arg("--quiet")
+            .arg("--offline")
             .current_dir(&tmp)
             .output()
             .expect("run cargo check");

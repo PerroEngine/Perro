@@ -135,11 +135,7 @@ impl Runtime {
         computed: &mut AHashMap<NodeID, ComputedUiRect>,
         computed_scales: &mut AHashMap<NodeID, Vector2>,
     ) {
-        let UiChildrenLayoutCtx {
-            parent_layout_rect,
-            content,
-            parent_scale,
-        } = layout_ctx;
+        let UiChildrenLayoutCtx { content, .. } = layout_ctx;
         let spacing = ui_h_spacing_amount(spacing, content.size.x);
         let fill_width = self.h_fill_width(children, content.size.x, spacing);
         let used_width = self.h_used_width(children, content.size, spacing, fill_width);
@@ -176,8 +172,7 @@ impl Runtime {
             insert_scaled_ui_child_rect(
                 computed,
                 computed_scales,
-                parent_layout_rect,
-                parent_scale,
+                layout_ctx,
                 sibling,
                 ComputedUiRect::new(center, size),
                 transform.scale,
@@ -244,11 +239,7 @@ impl Runtime {
         computed: &mut AHashMap<NodeID, ComputedUiRect>,
         computed_scales: &mut AHashMap<NodeID, Vector2>,
     ) {
-        let UiChildrenLayoutCtx {
-            parent_layout_rect,
-            content,
-            parent_scale,
-        } = layout_ctx;
+        let UiChildrenLayoutCtx { content, .. } = layout_ctx;
         let spacing = ui_v_spacing_amount(spacing, content.size.y);
         let fill_height = self.v_fill_height(children, content.size.y, spacing);
         let used_height = self.v_used_height(children, content.size, spacing, fill_height);
@@ -285,8 +276,7 @@ impl Runtime {
             insert_scaled_ui_child_rect(
                 computed,
                 computed_scales,
-                parent_layout_rect,
-                parent_scale,
+                layout_ctx,
                 sibling,
                 ComputedUiRect::new(center, size),
                 transform.scale,
@@ -395,11 +385,7 @@ impl Runtime {
         computed: &mut AHashMap<NodeID, ComputedUiRect>,
         computed_scales: &mut AHashMap<NodeID, Vector2>,
     ) {
-        let UiChildrenLayoutCtx {
-            parent_layout_rect,
-            content,
-            parent_scale,
-        } = layout_ctx;
+        let UiChildrenLayoutCtx { content, .. } = layout_ctx;
         let columns = auto.columns.max(1) as usize;
         let mut ui_count = 0_usize;
         let mut cell_width = 0.0_f32;
@@ -476,8 +462,7 @@ impl Runtime {
             insert_scaled_ui_child_rect(
                 computed,
                 computed_scales,
-                parent_layout_rect,
-                parent_scale,
+                layout_ctx,
                 child,
                 ComputedUiRect::new(center, size),
                 transform.scale,
