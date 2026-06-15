@@ -97,8 +97,7 @@ impl Runtime {
         let sync_world_start = Instant::now();
         self.sync_world_2d(&bodies_2d);
         self.sync_world_3d(&bodies_3d);
-        self.sync_joints_2d(&joints_2d);
-        self.sync_joints_3d(&joints_3d);
+        self.sync_joints_parallel(&joints_2d, &joints_3d);
         let sync_world = sync_world_start.elapsed();
 
         if self.physics.paused {
@@ -121,15 +120,11 @@ impl Runtime {
         self.queue_physics_force_emitters_3d();
         self.queue_water_forces_2d();
         self.queue_water_forces_3d();
-        self.apply_pending_forces_2d();
-        self.apply_pending_forces_3d();
-        self.apply_pending_impulses_2d();
-        self.apply_pending_impulses_3d();
+        self.apply_pending_forces_and_impulses_parallel();
         let apply_forces_impulses = apply_forces_impulses_start.elapsed();
 
         let step_start = Instant::now();
-        self.step_world_2d();
-        self.step_world_3d();
+        self.step_worlds_parallel();
         let step = step_start.elapsed();
 
         let sync_nodes_start = Instant::now();
@@ -811,40 +806,18 @@ impl Runtime {
         }
     }
 
-    fn sync_joints_2d(&mut self, joints: &[JointDesc2D]) {
-        self.physics.sync_joints_2d(joints);
+    fn sync_joints_parallel(&mut self, joints_2d: &[JointDesc2D], joints_3d: &[JointDesc3D]) {
+        self.physics.sync_joints_parallel(joints_2d, joints_3d);
     }
 
-    fn sync_joints_3d(&mut self, joints: &[JointDesc3D]) {
-        self.physics.sync_joints_3d(joints);
-    }
-
-    fn step_world_2d(&mut self) {
+    fn step_worlds_parallel(&mut self) {
         self.physics
-            .step_world_2d(self.physics_gravity(), self.time.fixed_delta);
+            .step_worlds_parallel(self.physics_gravity(), self.time.fixed_delta);
     }
 
-    fn step_world_3d(&mut self) {
+    fn apply_pending_forces_and_impulses_parallel(&mut self) {
         self.physics
-            .step_world_3d(self.physics_gravity(), self.time.fixed_delta);
-    }
-
-    fn apply_pending_impulses_2d(&mut self) {
-        self.physics.apply_pending_impulses_2d(self.physics_coef());
-    }
-
-    fn apply_pending_forces_2d(&mut self) {
-        self.physics
-            .apply_pending_forces_2d(self.physics_coef(), self.time.fixed_delta);
-    }
-
-    fn apply_pending_impulses_3d(&mut self) {
-        self.physics.apply_pending_impulses_3d(self.physics_coef());
-    }
-
-    fn apply_pending_forces_3d(&mut self) {
-        self.physics
-            .apply_pending_forces_3d(self.physics_coef(), self.time.fixed_delta);
+            .apply_pending_forces_and_impulses_parallel(self.physics_coef(), self.time.fixed_delta);
     }
 
     fn queue_physics_force_emitters_2d(&mut self) {

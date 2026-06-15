@@ -25,7 +25,7 @@ use web_time::Instant;
 
 const PARALLEL_AUDIO_RAY_THRESHOLD: usize = 128;
 const LISTENER_FIELD_SOUND_THRESHOLD_2D: usize = 64;
-const LISTENER_FIELD_SOUND_THRESHOLD_3D: usize = 128;
+const LISTENER_FIELD_SOUND_THRESHOLD_3D: usize = 64;
 const LISTENER_FIELD_RAYS_2D: usize = 64;
 const LISTENER_FIELD_RAYS_3D: usize = 96;
 const AUDIO_BOUNCE_RAYS_2D: usize = 8;

@@ -6,7 +6,7 @@ use perro_nodes::{
 use perro_structs::Vector2;
 use rayon::prelude::*;
 
-const WATER_FORCE_PAR_BODY_THRESHOLD: usize = 1024;
+const WATER_FORCE_PAR_BODY_THRESHOLD: usize = 512;
 
 #[derive(Clone, Copy)]
 struct Body2 {
@@ -260,9 +260,56 @@ fn bench_linked_water_physics(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_linked_water_parallel_threshold(c: &mut Criterion) {
+    let mut group = c.benchmark_group("runtime_linked_water_parallel_threshold");
+    for (body_count, water_count) in [(256usize, 16usize), (512, 16), (1_000, 16), (2_000, 32)] {
+        group.bench_with_input(
+            BenchmarkId::new(format!("{body_count}_bodies"), "serial"),
+            &(body_count, water_count),
+            |b, &(body_count, water_count)| {
+                let bodies = crossing_bodies(body_count, water_count);
+                let waters = LinkedWaterIndex::new(linked_waters(water_count, 128));
+                let sample = Some(WaterPhysicsSample {
+                    height: 0.75,
+                    velocity: Vector2::new(0.1, 0.0),
+                    foam: 0.2,
+                });
+                b.iter(|| {
+                    let total_force = bodies
+                        .iter()
+                        .map(|body| linked_water_force(*body, &waters, sample))
+                        .sum::<f32>();
+                    black_box(total_force)
+                });
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new(format!("{body_count}_bodies"), "parallel"),
+            &(body_count, water_count),
+            |b, &(body_count, water_count)| {
+                let bodies = crossing_bodies(body_count, water_count);
+                let waters = LinkedWaterIndex::new(linked_waters(water_count, 128));
+                let sample = Some(WaterPhysicsSample {
+                    height: 0.75,
+                    velocity: Vector2::new(0.1, 0.0),
+                    foam: 0.2,
+                });
+                b.iter(|| {
+                    let total_force = bodies
+                        .par_iter()
+                        .map(|body| linked_water_force(*body, &waters, sample))
+                        .sum::<f32>();
+                    black_box(total_force)
+                });
+            },
+        );
+    }
+    group.finish();
+}
+
 criterion_group! {
     name = benches;
     config = Criterion::default().sample_size(10);
-    targets = bench_water_physics, bench_linked_water_physics
+    targets = bench_water_physics, bench_linked_water_physics, bench_linked_water_parallel_threshold
 }
 criterion_main!(benches);

@@ -25,6 +25,7 @@ use perro_render_bridge::{
 };
 use perro_structs::TextureFilterMode;
 use perro_structs::{PostProcessSet, VisualAccessibilitySettings};
+use rayon::prelude::*;
 use std::sync::Arc;
 #[cfg(target_arch = "wasm32")]
 use std::sync::Mutex;
@@ -42,6 +43,8 @@ pub type StaticMeshLookup = fn(path_hash: u64) -> &'static [u8];
 pub type StaticShaderLookup = fn(path_hash: u64) -> &'static str;
 const GC_INTERVAL_FRAMES: u32 = 60;
 const GC_MAX_DROPS_PER_KIND: usize = 64;
+const PARALLEL_COMMAND_SUMMARY_MIN: usize = 10_000;
+const PARALLEL_RENDER_PREPARE_MIN: usize = 4_096;
 
 #[cfg(not(target_arch = "wasm32"))]
 fn asset_ready_log_enabled() -> bool {
@@ -170,7 +173,8 @@ struct FrameState {
 }
 
 #[derive(Default)]
-struct CommandBucketCounts {
+struct CommandSummary {
+    dirty_bits: u32,
     rects_2d: usize,
     sprites_2d: usize,
     draws_3d: usize,
@@ -223,24 +227,78 @@ fn draw_instance_count(draw: &Draw3DInstance) -> u32 {
     }
 }
 
-fn count_command_buckets(commands: &[RenderCommand]) -> CommandBucketCounts {
-    let mut counts = CommandBucketCounts::default();
+#[inline]
+fn command_dirty_bits(command: &RenderCommand) -> u32 {
+    match command {
+        RenderCommand::TwoD(cmd_2d) => {
+            let mut bits = DIRTY_2D;
+            if matches!(cmd_2d, Command2D::SetCamera { .. }) {
+                bits |= DIRTY_CAMERA_2D;
+            }
+            bits
+        }
+        RenderCommand::ThreeD(cmd_3d) => match &**cmd_3d {
+            Command3D::UpsertCameraStream { .. }
+            | Command3D::Draw { .. }
+            | Command3D::DrawMulti { .. }
+            | Command3D::DrawMultiDense { .. }
+            | Command3D::DrawDebugPoint3D { .. }
+            | Command3D::DrawDebugLine3D { .. }
+            | Command3D::RemoveNode { .. }
+            | Command3D::UpsertWater { .. } => DIRTY_3D,
+            Command3D::SetCamera { .. } => DIRTY_CAMERA_3D,
+            Command3D::SetAmbientLight { .. }
+            | Command3D::SetSky { .. }
+            | Command3D::SetRayLight { .. }
+            | Command3D::SetPointLight { .. }
+            | Command3D::SetSpotLight { .. } => DIRTY_LIGHTS_3D,
+            Command3D::UpsertPointParticles { .. } => DIRTY_PARTICLES_3D,
+        },
+        RenderCommand::Resource(_) | RenderCommand::CameraStream(_) => DIRTY_RESOURCES,
+        RenderCommand::Ui(_) => DIRTY_2D,
+        RenderCommand::PostProcessing(_) => DIRTY_POSTFX,
+        RenderCommand::VisualAccessibility(_) => DIRTY_ACCESSIBILITY,
+    }
+}
+
+fn summarize_command_chunk(commands: &[RenderCommand]) -> CommandSummary {
+    let mut summary = CommandSummary::default();
     for command in commands {
+        summary.dirty_bits |= command_dirty_bits(command);
         match command {
-            RenderCommand::TwoD(Command2D::UpsertRect { .. }) => counts.rects_2d += 1,
+            RenderCommand::TwoD(Command2D::UpsertRect { .. }) => summary.rects_2d += 1,
             RenderCommand::TwoD(
                 Command2D::UpsertSprite { .. } | Command2D::UpsertCameraStream { .. },
-            ) => counts.sprites_2d += 1,
+            ) => summary.sprites_2d += 1,
             RenderCommand::ThreeD(cmd) => match &**cmd {
                 Command3D::Draw { .. }
                 | Command3D::DrawMulti { .. }
-                | Command3D::DrawMultiDense { .. } => counts.draws_3d += 1,
+                | Command3D::DrawMultiDense { .. } => summary.draws_3d += 1,
                 _ => {}
             },
             _ => {}
         }
     }
-    counts
+    summary
+}
+
+fn merge_command_summary(mut a: CommandSummary, b: CommandSummary) -> CommandSummary {
+    a.dirty_bits |= b.dirty_bits;
+    a.rects_2d += b.rects_2d;
+    a.sprites_2d += b.sprites_2d;
+    a.draws_3d += b.draws_3d;
+    a
+}
+
+fn summarize_commands(commands: &[RenderCommand]) -> CommandSummary {
+    if commands.len() < PARALLEL_COMMAND_SUMMARY_MIN {
+        return summarize_command_chunk(commands);
+    }
+
+    commands
+        .par_chunks(1024)
+        .map(summarize_command_chunk)
+        .reduce(CommandSummary::default, merge_command_summary)
 }
 
 #[inline]
@@ -1390,19 +1448,15 @@ impl GraphicsBackend for PerroGraphics {
 }
 
 impl PerroGraphics {
-    fn reserve_command_buckets(&mut self, commands: &[RenderCommand]) {
-        if commands.len() < 10_000 {
-            return;
+    fn reserve_command_buckets(&mut self, summary: &CommandSummary) {
+        if summary.rects_2d > 0 {
+            self.renderer_2d.reserve_queued_rects(summary.rects_2d);
         }
-        let counts = count_command_buckets(commands);
-        if counts.rects_2d > 0 {
-            self.renderer_2d.reserve_queued_rects(counts.rects_2d);
+        if summary.sprites_2d > 0 {
+            self.renderer_2d.reserve_queued_sprites(summary.sprites_2d);
         }
-        if counts.sprites_2d > 0 {
-            self.renderer_2d.reserve_queued_sprites(counts.sprites_2d);
-        }
-        if counts.draws_3d > 0 {
-            self.renderer_3d.reserve_queued_draws(counts.draws_3d);
+        if summary.draws_3d > 0 {
+            self.renderer_3d.reserve_queued_draws(summary.draws_3d);
         }
     }
 
@@ -1465,46 +1519,11 @@ impl PerroGraphics {
         let mut pending = std::mem::take(&mut self.frame.scratch_commands);
         pending.clear();
         std::mem::swap(&mut pending, &mut self.frame.pending_commands);
-        let mut frame_dirty_bits = 0u32;
-        for command in &pending {
-            match command {
-                RenderCommand::TwoD(cmd_2d) => {
-                    frame_dirty_bits |= DIRTY_2D;
-                    if matches!(cmd_2d, Command2D::SetCamera { .. }) {
-                        frame_dirty_bits |= DIRTY_CAMERA_2D;
-                    }
-                    if matches!(cmd_2d, Command2D::UpsertWater { .. }) {
-                        frame_dirty_bits |= DIRTY_2D;
-                    }
-                }
-                RenderCommand::ThreeD(cmd_3d) => match &**cmd_3d {
-                    Command3D::UpsertCameraStream { .. }
-                    | Command3D::Draw { .. }
-                    | Command3D::DrawMulti { .. }
-                    | Command3D::DrawMultiDense { .. }
-                    | Command3D::DrawDebugPoint3D { .. }
-                    | Command3D::DrawDebugLine3D { .. }
-                    | Command3D::RemoveNode { .. } => frame_dirty_bits |= DIRTY_3D,
-                    Command3D::SetCamera { .. } => frame_dirty_bits |= DIRTY_CAMERA_3D,
-                    Command3D::SetAmbientLight { .. }
-                    | Command3D::SetSky { .. }
-                    | Command3D::SetRayLight { .. }
-                    | Command3D::SetPointLight { .. }
-                    | Command3D::SetSpotLight { .. } => frame_dirty_bits |= DIRTY_LIGHTS_3D,
-                    Command3D::UpsertPointParticles { .. } => {
-                        frame_dirty_bits |= DIRTY_PARTICLES_3D
-                    }
-                    Command3D::UpsertWater { .. } => frame_dirty_bits |= DIRTY_3D,
-                },
-                RenderCommand::Resource(_) => frame_dirty_bits |= DIRTY_RESOURCES,
-                RenderCommand::CameraStream(_) => frame_dirty_bits |= DIRTY_RESOURCES,
-                RenderCommand::Ui(_) => frame_dirty_bits |= DIRTY_2D,
-                RenderCommand::PostProcessing(_) => frame_dirty_bits |= DIRTY_POSTFX,
-                RenderCommand::VisualAccessibility(_) => frame_dirty_bits |= DIRTY_ACCESSIBILITY,
-            }
-        }
+        let pending_command_count = pending.len();
+        let command_summary = summarize_commands(&pending);
+        let frame_dirty_bits = command_summary.dirty_bits;
         let process_start = Instant::now();
-        self.reserve_command_buckets(&pending);
+        self.reserve_command_buckets(&command_summary);
         let mut camera_commands = std::mem::take(&mut self.frame.scratch_camera_commands);
         camera_commands.clear();
         let mut write = 0usize;
@@ -1533,12 +1552,37 @@ impl PerroGraphics {
         self.frame.scratch_late_overlay_commands = late_overlay_pending;
         let process_commands = process_start.elapsed();
         let prepare_start = Instant::now();
-        let (camera_2d, _stats, upload) = self.renderer_2d.prepare_frame(&self.resources);
+        let (
+            (camera_2d, _stats, upload),
+            (late_overlay_camera_2d, _late_overlay_stats, late_overlay_upload),
+            (camera_3d, _stats_3d, lighting_3d),
+        ) = if pending_command_count >= PARALLEL_RENDER_PREPARE_MIN {
+            let resources = &self.resources;
+            let renderer_2d = &mut self.renderer_2d;
+            let late_overlay_2d = &mut self.late_overlay_2d;
+            let renderer_3d = &mut self.renderer_3d;
+            let particles_3d = &mut self.particles_3d;
+            let ((main_2d, late_overlay), main_3d) = rayon::join(
+                || {
+                    let main_2d = renderer_2d.prepare_frame(resources);
+                    let late_overlay = late_overlay_2d.prepare_frame(resources);
+                    (main_2d, late_overlay)
+                },
+                || {
+                    let main_3d = renderer_3d.prepare_frame(resources);
+                    particles_3d.prepare_frame();
+                    main_3d
+                },
+            );
+            (main_2d, late_overlay, main_3d)
+        } else {
+            let main_2d = self.renderer_2d.prepare_frame(&self.resources);
+            let late_overlay = self.late_overlay_2d.prepare_frame(&self.resources);
+            let main_3d = self.renderer_3d.prepare_frame(&self.resources);
+            self.particles_3d.prepare_frame();
+            (main_2d, late_overlay, main_3d)
+        };
         let camera_2d_state = self.renderer_2d.camera();
-        let (late_overlay_camera_2d, _late_overlay_stats, late_overlay_upload) =
-            self.late_overlay_2d.prepare_frame(&self.resources);
-        let (camera_3d, _stats_3d, lighting_3d) = self.renderer_3d.prepare_frame(&self.resources);
-        self.particles_3d.prepare_frame();
         let draws_revision = self.renderer_3d.draw_revision();
         if draws_revision != self.retained_draws_cache_revision {
             self.retained_draws_cache.clear();

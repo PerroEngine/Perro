@@ -2,8 +2,9 @@ use criterion::{BatchSize, Criterion, black_box, criterion_group, criterion_main
 use perro_ids::NodeID;
 use perro_nodes::{Shape2D, Shape3D};
 use perro_physics::{
-    BodyDesc2D, BodyDesc3D, BodyKind, PhysicsAssetContext, PhysicsProviderMode, PhysicsSystem,
-    RigidProps2D, RigidProps3D, ShapeDesc2D, ShapeDesc3D, ShapeKind2D, ShapeKind3D,
+    BodyDesc2D, BodyDesc3D, BodyKind, JointDesc2D, JointDesc3D, JointKind2D, JointKind3D,
+    PhysicsAssetContext, PhysicsProviderMode, PhysicsSystem, RigidProps2D, RigidProps3D,
+    ShapeDesc2D, ShapeDesc3D, ShapeKind2D, ShapeKind3D,
 };
 use perro_structs::{BitMask, Quaternion, Transform2D, Transform3D, Vector2, Vector3};
 
@@ -163,6 +164,45 @@ fn system_3d(count: u32) -> PhysicsSystem {
     system
 }
 
+fn mixed_system(count: u32) -> PhysicsSystem {
+    let mut system = PhysicsSystem::new();
+    system.sync_world_2d(&bodies_2d(count), |_, _| {});
+    system.sync_world_3d(&bodies_3d(count), asset_context(), |_, _| {});
+    system
+}
+
+fn joints_2d(count: u32) -> Vec<JointDesc2D> {
+    (0..count)
+        .map(|i| JointDesc2D {
+            id: NodeID::new(10_000 + i),
+            body_a: NodeID::new(1),
+            body_b: NodeID::new(i + 2),
+            anchor_a: Vector2::ZERO,
+            anchor_b: Vector2::ZERO,
+            enabled: true,
+            collide_connected: false,
+            kind: JointKind2D::Pin,
+            signature: i as u64 + 1,
+        })
+        .collect()
+}
+
+fn joints_3d(count: u32) -> Vec<JointDesc3D> {
+    (0..count)
+        .map(|i| JointDesc3D {
+            id: NodeID::new(20_000 + i),
+            body_a: NodeID::new(1),
+            body_b: NodeID::new(i + 2),
+            anchor_a: Vector3::ZERO,
+            anchor_b: Vector3::ZERO,
+            enabled: true,
+            collide_connected: false,
+            kind: JointKind3D::Ball,
+            signature: i as u64 + 1,
+        })
+        .collect()
+}
+
 fn bench_rapier_step_2d(c: &mut Criterion) {
     c.bench_function("rapier_core/step_2d_512", |b| {
         b.iter_batched(
@@ -199,6 +239,62 @@ fn bench_rapier_step_3d(c: &mut Criterion) {
             BatchSize::LargeInput,
         )
     });
+}
+
+fn bench_rapier_mixed_step(c: &mut Criterion) {
+    let mut group = c.benchmark_group("rapier_core/mixed_step_512_each");
+    group.bench_function("serial", |b| {
+        b.iter_batched(
+            || (system_2d(512), system_3d(512)),
+            |(mut system_2d, mut system_3d)| {
+                for i in 0..512 {
+                    let id = NodeID::new(i + 2);
+                    system_2d.queue_force_2d(id, Vector2::new(0.4, 0.1));
+                    system_2d.queue_impulse_2d(id, Vector2::new(0.02, 0.01));
+                    system_3d.queue_force_3d(id, Vector3::new(0.4, 0.1, -0.2));
+                    system_3d.queue_impulse_3d(id, Vector3::new(0.02, 0.01, 0.03));
+                }
+                system_2d.apply_pending_forces_2d(1.0, DT);
+                system_2d.apply_pending_impulses_2d(1.0);
+                system_3d.apply_pending_forces_3d(1.0, DT);
+                system_3d.apply_pending_impulses_3d(1.0);
+                system_2d.step_world_2d(-9.81, DT);
+                system_3d.step_world_3d(-9.81, DT);
+                black_box(
+                    system_2d.world_2d.as_ref().unwrap().bodies.len()
+                        + system_3d.world_3d.as_ref().unwrap().bodies.len(),
+                )
+            },
+            BatchSize::LargeInput,
+        )
+    });
+    group.bench_function("parallel", |b| {
+        b.iter_batched(
+            || {
+                let mut system = PhysicsSystem::new();
+                system.sync_world_2d(&bodies_2d(512), |_, _| {});
+                system.sync_world_3d(&bodies_3d(512), asset_context(), |_, _| {});
+                system
+            },
+            |mut system| {
+                for i in 0..512 {
+                    let id = NodeID::new(i + 2);
+                    system.queue_force_2d(id, Vector2::new(0.4, 0.1));
+                    system.queue_impulse_2d(id, Vector2::new(0.02, 0.01));
+                    system.queue_force_3d(id, Vector3::new(0.4, 0.1, -0.2));
+                    system.queue_impulse_3d(id, Vector3::new(0.02, 0.01, 0.03));
+                }
+                system.apply_pending_forces_and_impulses_parallel(1.0, DT);
+                system.step_worlds_parallel(-9.81, DT);
+                black_box(
+                    system.world_2d.as_ref().unwrap().bodies.len()
+                        + system.world_3d.as_ref().unwrap().bodies.len(),
+                )
+            },
+            BatchSize::LargeInput,
+        )
+    });
+    group.finish();
 }
 
 fn bench_apply_pending_hot(c: &mut Criterion) {
@@ -242,9 +338,43 @@ fn bench_apply_pending_hot(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_mixed_joint_sync(c: &mut Criterion) {
+    let joints_2d = joints_2d(512);
+    let joints_3d = joints_3d(512);
+    let mut group = c.benchmark_group("rapier_core/mixed_joint_sync_512_each");
+    group.bench_function("serial", |b| {
+        b.iter_batched(
+            || mixed_system(512),
+            |mut system| {
+                system.sync_joints_2d(&joints_2d);
+                system.sync_joints_3d(&joints_3d);
+                black_box(
+                    system.world_2d.as_ref().unwrap().joint_map.len()
+                        + system.world_3d.as_ref().unwrap().joint_map.len(),
+                )
+            },
+            BatchSize::LargeInput,
+        )
+    });
+    group.bench_function("parallel", |b| {
+        b.iter_batched(
+            || mixed_system(512),
+            |mut system| {
+                system.sync_joints_parallel(&joints_2d, &joints_3d);
+                black_box(
+                    system.world_2d.as_ref().unwrap().joint_map.len()
+                        + system.world_3d.as_ref().unwrap().joint_map.len(),
+                )
+            },
+            BatchSize::LargeInput,
+        )
+    });
+    group.finish();
+}
+
 criterion_group! {
     name = rapier_core;
     config = Criterion::default().sample_size(10);
-    targets = bench_rapier_step_2d, bench_rapier_step_3d, bench_apply_pending_hot
+    targets = bench_rapier_step_2d, bench_rapier_step_3d, bench_rapier_mixed_step, bench_apply_pending_hot, bench_mixed_joint_sync
 }
 criterion_main!(rapier_core);

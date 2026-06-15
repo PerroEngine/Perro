@@ -175,6 +175,51 @@ fn runtime_with_rigid_bodies_3d(count: u32) -> (Runtime, Vec<NodeID>) {
     (runtime, bodies)
 }
 
+fn runtime_with_rigid_bodies_2d_3d(count_each: u32) -> (Runtime, Vec<NodeID>, Vec<NodeID>) {
+    let mut runtime = Runtime::new();
+    let mut bodies_2d = Vec::with_capacity(count_each as usize);
+    let mut bodies_3d = Vec::with_capacity(count_each as usize);
+    for i in 0..count_each {
+        let body = NodeAPI::create::<perro_nodes::RigidBody2D>(&mut runtime);
+        let shape = NodeAPI::create::<perro_nodes::CollisionShape2D>(&mut runtime);
+        assert!(NodeAPI::reparent(&mut runtime, body, shape));
+        let _ =
+            NodeAPI::with_node_mut::<perro_nodes::RigidBody2D, _, _>(&mut runtime, body, |node| {
+                node.transform = Transform2D::new(
+                    Vector2::new((i % 64) as f32 - 32.0, 2.0 + (i / 64) as f32 * 1.25),
+                    0.0,
+                    Vector2::ONE,
+                );
+                node.can_sleep = false;
+                node.continuous_collision_detection = false;
+                node.linear_velocity = Vector2::new((i % 7) as f32 * 0.05, 0.0);
+            });
+        bodies_2d.push(body);
+
+        let body = NodeAPI::create::<perro_nodes::RigidBody3D>(&mut runtime);
+        let shape = NodeAPI::create::<perro_nodes::CollisionShape3D>(&mut runtime);
+        assert!(NodeAPI::reparent(&mut runtime, body, shape));
+        let _ =
+            NodeAPI::with_node_mut::<perro_nodes::RigidBody3D, _, _>(&mut runtime, body, |node| {
+                node.transform = Transform3D::new(
+                    Vector3::new(
+                        (i % 16) as f32 - 8.0,
+                        2.0 + (i / 256) as f32 * 1.25,
+                        ((i / 16) % 16) as f32 - 8.0,
+                    ),
+                    Quaternion::IDENTITY,
+                    Vector3::ONE,
+                );
+                node.can_sleep = false;
+                node.continuous_collision_detection = false;
+                node.linear_velocity =
+                    Vector3::new((i % 7) as f32 * 0.05, 0.0, (i % 5) as f32 * -0.03);
+            });
+        bodies_3d.push(body);
+    }
+    (runtime, bodies_2d, bodies_3d)
+}
+
 fn bench_runtime_force_impulse_queue_2d(c: &mut Criterion) {
     c.bench_function("physics/runtime_force_impulse_queue_2d_4096", |b| {
         let (mut runtime, bodies) = runtime_with_rigid_bodies_2d(4096);
@@ -283,6 +328,40 @@ fn bench_runtime_fixed_step_forces(c: &mut Criterion) {
             || runtime_with_rigid_bodies_3d(512),
             |(mut runtime, bodies)| {
                 for &body in &bodies {
+                    black_box(PhysicsAPI::apply_force_3d(
+                        &mut runtime,
+                        body,
+                        Vector3::new(0.4, 0.1, -0.2),
+                    ));
+                    black_box(PhysicsAPI::apply_impulse_3d(
+                        &mut runtime,
+                        body,
+                        Vector3::new(0.02, 0.01, 0.03),
+                    ));
+                }
+                runtime.fixed_update(DT);
+                black_box(runtime.nodes.len())
+            },
+            criterion::BatchSize::LargeInput,
+        )
+    });
+    group.bench_function("fixed_step_2d3d_512_each", |b| {
+        b.iter_batched(
+            || runtime_with_rigid_bodies_2d_3d(512),
+            |(mut runtime, bodies_2d, bodies_3d)| {
+                for &body in &bodies_2d {
+                    black_box(PhysicsAPI::apply_force_2d(
+                        &mut runtime,
+                        body,
+                        Vector2::new(0.4, 0.1),
+                    ));
+                    black_box(PhysicsAPI::apply_impulse_2d(
+                        &mut runtime,
+                        body,
+                        Vector2::new(0.02, 0.01),
+                    ));
+                }
+                for &body in &bodies_3d {
                     black_box(PhysicsAPI::apply_force_3d(
                         &mut runtime,
                         body,

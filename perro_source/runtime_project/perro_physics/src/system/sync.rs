@@ -351,128 +351,172 @@ impl PhysicsSystem {
     }
 
     pub fn sync_joints_2d(&mut self, joints: &[crate::JointDesc2D]) {
-        let mut stale = std::mem::take(&mut self.stale_joint_ids_2d);
-        stale.clear();
-        let next_epoch = self.joint_sync_epoch_2d.wrapping_add(1);
-        let reset_epochs = next_epoch == 0;
-        self.joint_sync_epoch_2d = if reset_epochs { 1 } else { next_epoch };
-        let sync_epoch = self.joint_sync_epoch_2d;
-
-        let Some(world) = self.world_2d.as_mut() else {
-            self.stale_joint_ids_2d = stale;
-            return;
-        };
-        if reset_epochs {
-            for state in world.joint_map.values_mut() {
-                state.sync_epoch = 0;
-            }
-        }
-        for joint in joints {
-            if !joint.enabled || joint.body_a.is_nil() || joint.body_b.is_nil() {
-                remove_joint_2d(world, joint.id);
-                continue;
-            }
-            let Some(body_a) = world.body_map.get(&joint.body_a).map(|state| state.handle) else {
-                remove_joint_2d(world, joint.id);
-                continue;
-            };
-            let Some(body_b) = world.body_map.get(&joint.body_b).map(|state| state.handle) else {
-                remove_joint_2d(world, joint.id);
-                continue;
-            };
-            if let Some(state) = world.joint_map.get_mut(&joint.id)
-                && state.signature == joint.signature
-            {
-                state.sync_epoch = sync_epoch;
-                continue;
-            }
-            remove_joint_2d(world, joint.id);
-            let data = build_joint_2d(joint);
-            let handle = world.impulse_joints.insert(body_a, body_b, data, true);
-            world.joint_map.insert(
-                joint.id,
-                crate::JointState2D {
-                    handle,
-                    signature: joint.signature,
-                    sync_epoch,
-                },
-            );
-        }
-
-        stale.extend(world.joint_map.keys().copied().filter(|id| {
-            world
-                .joint_map
-                .get(id)
-                .is_some_and(|state| state.sync_epoch != sync_epoch)
-        }));
-        for id in stale.iter().copied() {
-            remove_joint_2d(world, id);
-        }
-        stale.clear();
-        self.stale_joint_ids_2d = stale;
+        sync_joints_2d_parts(
+            &mut self.world_2d,
+            &mut self.stale_joint_ids_2d,
+            &mut self.joint_sync_epoch_2d,
+            joints,
+        );
     }
 
     pub fn sync_joints_3d(&mut self, joints: &[crate::JointDesc3D]) {
-        let mut stale = std::mem::take(&mut self.stale_joint_ids_3d);
-        stale.clear();
-        let next_epoch = self.joint_sync_epoch_3d.wrapping_add(1);
-        let reset_epochs = next_epoch == 0;
-        self.joint_sync_epoch_3d = if reset_epochs { 1 } else { next_epoch };
-        let sync_epoch = self.joint_sync_epoch_3d;
-
-        let Some(world) = self.world_3d.as_mut() else {
-            self.stale_joint_ids_3d = stale;
-            return;
-        };
-        if reset_epochs {
-            for state in world.joint_map.values_mut() {
-                state.sync_epoch = 0;
-            }
-        }
-        for joint in joints {
-            if !joint.enabled || joint.body_a.is_nil() || joint.body_b.is_nil() {
-                remove_joint_3d(world, joint.id);
-                continue;
-            }
-            let Some(body_a) = world.body_map.get(&joint.body_a).map(|state| state.handle) else {
-                remove_joint_3d(world, joint.id);
-                continue;
-            };
-            let Some(body_b) = world.body_map.get(&joint.body_b).map(|state| state.handle) else {
-                remove_joint_3d(world, joint.id);
-                continue;
-            };
-            if let Some(state) = world.joint_map.get_mut(&joint.id)
-                && state.signature == joint.signature
-            {
-                state.sync_epoch = sync_epoch;
-                continue;
-            }
-            remove_joint_3d(world, joint.id);
-            let data = build_joint_3d(joint);
-            let handle = world.impulse_joints.insert(body_a, body_b, data, true);
-            world.joint_map.insert(
-                joint.id,
-                crate::JointState3D {
-                    handle,
-                    signature: joint.signature,
-                    sync_epoch,
-                },
-            );
-        }
-
-        stale.extend(world.joint_map.keys().copied().filter(|id| {
-            world
-                .joint_map
-                .get(id)
-                .is_some_and(|state| state.sync_epoch != sync_epoch)
-        }));
-        for id in stale.iter().copied() {
-            remove_joint_3d(world, id);
-        }
-        stale.clear();
-        self.stale_joint_ids_3d = stale;
+        sync_joints_3d_parts(
+            &mut self.world_3d,
+            &mut self.stale_joint_ids_3d,
+            &mut self.joint_sync_epoch_3d,
+            joints,
+        );
     }
+
+    pub fn sync_joints_parallel(
+        &mut self,
+        joints_2d: &[crate::JointDesc2D],
+        joints_3d: &[crate::JointDesc3D],
+    ) {
+        if self.world_2d.is_none() || self.world_3d.is_none() {
+            self.sync_joints_2d(joints_2d);
+            self.sync_joints_3d(joints_3d);
+            return;
+        }
+        let world_2d = &mut self.world_2d;
+        let stale_2d = &mut self.stale_joint_ids_2d;
+        let epoch_2d = &mut self.joint_sync_epoch_2d;
+        let world_3d = &mut self.world_3d;
+        let stale_3d = &mut self.stale_joint_ids_3d;
+        let epoch_3d = &mut self.joint_sync_epoch_3d;
+        rayon::join(
+            || sync_joints_2d_parts(world_2d, stale_2d, epoch_2d, joints_2d),
+            || sync_joints_3d_parts(world_3d, stale_3d, epoch_3d, joints_3d),
+        );
+    }
+}
+
+fn sync_joints_2d_parts(
+    world: &mut Option<PhysicsWorld2D>,
+    stale: &mut Vec<NodeID>,
+    joint_sync_epoch: &mut u64,
+    joints: &[crate::JointDesc2D],
+) {
+    stale.clear();
+    let next_epoch = joint_sync_epoch.wrapping_add(1);
+    let reset_epochs = next_epoch == 0;
+    *joint_sync_epoch = if reset_epochs { 1 } else { next_epoch };
+    let sync_epoch = *joint_sync_epoch;
+
+    let Some(world) = world.as_mut() else {
+        return;
+    };
+    if reset_epochs {
+        for state in world.joint_map.values_mut() {
+            state.sync_epoch = 0;
+        }
+    }
+    for joint in joints {
+        if !joint.enabled || joint.body_a.is_nil() || joint.body_b.is_nil() {
+            remove_joint_2d(world, joint.id);
+            continue;
+        }
+        let Some(body_a) = world.body_map.get(&joint.body_a).map(|state| state.handle) else {
+            remove_joint_2d(world, joint.id);
+            continue;
+        };
+        let Some(body_b) = world.body_map.get(&joint.body_b).map(|state| state.handle) else {
+            remove_joint_2d(world, joint.id);
+            continue;
+        };
+        if let Some(state) = world.joint_map.get_mut(&joint.id)
+            && state.signature == joint.signature
+        {
+            state.sync_epoch = sync_epoch;
+            continue;
+        }
+        remove_joint_2d(world, joint.id);
+        let data = build_joint_2d(joint);
+        let handle = world.impulse_joints.insert(body_a, body_b, data, true);
+        world.joint_map.insert(
+            joint.id,
+            crate::JointState2D {
+                handle,
+                signature: joint.signature,
+                sync_epoch,
+            },
+        );
+    }
+
+    stale.extend(world.joint_map.keys().copied().filter(|id| {
+        world
+            .joint_map
+            .get(id)
+            .is_some_and(|state| state.sync_epoch != sync_epoch)
+    }));
+    for id in stale.iter().copied() {
+        remove_joint_2d(world, id);
+    }
+    stale.clear();
+}
+
+fn sync_joints_3d_parts(
+    world: &mut Option<PhysicsWorld3D>,
+    stale: &mut Vec<NodeID>,
+    joint_sync_epoch: &mut u64,
+    joints: &[crate::JointDesc3D],
+) {
+    stale.clear();
+    let next_epoch = joint_sync_epoch.wrapping_add(1);
+    let reset_epochs = next_epoch == 0;
+    *joint_sync_epoch = if reset_epochs { 1 } else { next_epoch };
+    let sync_epoch = *joint_sync_epoch;
+
+    let Some(world) = world.as_mut() else {
+        return;
+    };
+    if reset_epochs {
+        for state in world.joint_map.values_mut() {
+            state.sync_epoch = 0;
+        }
+    }
+    for joint in joints {
+        if !joint.enabled || joint.body_a.is_nil() || joint.body_b.is_nil() {
+            remove_joint_3d(world, joint.id);
+            continue;
+        }
+        let Some(body_a) = world.body_map.get(&joint.body_a).map(|state| state.handle) else {
+            remove_joint_3d(world, joint.id);
+            continue;
+        };
+        let Some(body_b) = world.body_map.get(&joint.body_b).map(|state| state.handle) else {
+            remove_joint_3d(world, joint.id);
+            continue;
+        };
+        if let Some(state) = world.joint_map.get_mut(&joint.id)
+            && state.signature == joint.signature
+        {
+            state.sync_epoch = sync_epoch;
+            continue;
+        }
+        remove_joint_3d(world, joint.id);
+        let data = build_joint_3d(joint);
+        let handle = world.impulse_joints.insert(body_a, body_b, data, true);
+        world.joint_map.insert(
+            joint.id,
+            crate::JointState3D {
+                handle,
+                signature: joint.signature,
+                sync_epoch,
+            },
+        );
+    }
+
+    stale.extend(world.joint_map.keys().copied().filter(|id| {
+        world
+            .joint_map
+            .get(id)
+            .is_some_and(|state| state.sync_epoch != sync_epoch)
+    }));
+    for id in stale.iter().copied() {
+        remove_joint_3d(world, id);
+    }
+    stale.clear();
 }
 
 #[cfg(test)]
@@ -588,5 +632,39 @@ mod tests {
             Some(1)
         );
         assert!(system.stale_joint_ids_3d.capacity() >= stale_capacity);
+    }
+
+    #[test]
+    fn parallel_joint_sync_matches_serial() {
+        let bodies_2d = [body_2d(1), body_2d(2), body_2d(3)];
+        let bodies_3d = [body_3d(1), body_3d(2), body_3d(3)];
+        let joints_2d = [joint_2d(10, 1, 2), joint_2d(11, 2, 3)];
+        let joints_3d = [joint_3d(20, 1, 2), joint_3d(21, 2, 3)];
+
+        let mut serial = PhysicsSystem::new();
+        serial.sync_world_2d(&bodies_2d, |_, _| {});
+        serial.sync_world_3d(&bodies_3d, asset_context(), |_, _| {});
+        serial.sync_joints_2d(&joints_2d);
+        serial.sync_joints_3d(&joints_3d);
+
+        let mut parallel = PhysicsSystem::new();
+        parallel.sync_world_2d(&bodies_2d, |_, _| {});
+        parallel.sync_world_3d(&bodies_3d, asset_context(), |_, _| {});
+        parallel.sync_joints_parallel(&joints_2d, &joints_3d);
+
+        assert_eq!(
+            parallel
+                .world_2d
+                .as_ref()
+                .map(|world| world.joint_map.len()),
+            serial.world_2d.as_ref().map(|world| world.joint_map.len())
+        );
+        assert_eq!(
+            parallel
+                .world_3d
+                .as_ref()
+                .map(|world| world.joint_map.len()),
+            serial.world_3d.as_ref().map(|world| world.joint_map.len())
+        );
     }
 }

@@ -3,7 +3,7 @@ use glam::{Mat3, Mat4, Vec3};
 use perro_ids::NodeID;
 use perro_nodes::{Shape2D, Shape3D, WaterShape, water_physics_sample_or_idle};
 use perro_structs::{BitMask, Vector2, Vector3};
-pub(super) const WATER_FORCE_PAR_BODY_THRESHOLD: usize = 1024;
+pub(super) const WATER_FORCE_PAR_BODY_THRESHOLD: usize = 512;
 pub(super) const WATER_WAVE_FOLLOW_DT: f32 = 1.0 / 60.0;
 pub(super) const WATER_BODY_SAMPLE_TTL: f32 = 0.20;
 pub(super) const WATER_QUERY_LOCAL_EPS: f32 = 0.35;
