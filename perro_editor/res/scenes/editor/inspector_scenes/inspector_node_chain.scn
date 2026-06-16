@@ -1,0 +1,113 @@
+$root = @inspector_node_chain
+
+[inspector_node_chain]
+    [UiHLayout]
+        size_ratio = (1.0, 1.0)
+        h_align = "center"
+        v_align = "center"
+        spacing = 0.002
+        padding = (0.0, 0.0)
+    [/UiHLayout]
+[/inspector_node_chain]
+
+[inspector_chain_chip_0]
+parent = @inspector_node_chain
+    [UiPanel]
+        size_ratio = (0.16, 0.96)
+        style = {
+            fill = "#23272D",
+            stroke = "#F2F4F7",
+            stroke_width = 1.0,
+            radius = 0.5
+        }
+    [/UiPanel]
+[/inspector_chain_chip_0]
+
+[inspector_chain_label_0]
+parent = @inspector_chain_chip_0
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Node"
+        text_size_ratio = 0.42
+        color = "#F2F4F7"
+        h_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_chain_label_0]
+
+[inspector_chain_sep_0]
+parent = @inspector_node_chain
+    [UiLabel]
+        size_ratio = (0.030, 0.96)
+        text = ">"
+        text_size_ratio = 0.42
+        color = "#6BA0EA"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_chain_sep_0]
+
+[inspector_chain_chip_1]
+parent = @inspector_node_chain
+    [UiPanel]
+        size_ratio = (0.19, 0.96)
+        style = {
+            fill = "#2F261F",
+            stroke = "#E59A4E",
+            stroke_width = 1.0,
+            radius = 0.5
+        }
+    [/UiPanel]
+[/inspector_chain_chip_1]
+
+[inspector_chain_label_1]
+parent = @inspector_chain_chip_1
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Node2D"
+        text_size_ratio = 0.40
+        color = "#F0B36A"
+        h_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_chain_label_1]
+
+[inspector_chain_sep_1]
+parent = @inspector_node_chain
+    [UiLabel]
+        size_ratio = (0.030, 0.96)
+        text = ">"
+        text_size_ratio = 0.42
+        color = "#6BA0EA"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_chain_sep_1]
+
+[inspector_chain_chip_2]
+parent = @inspector_node_chain
+    [UiPanel]
+        size_ratio = (0.24, 0.96)
+        style = {
+            fill = "#33291C",
+            stroke = "#D9852E",
+            stroke_width = 1.0,
+            radius = 0.5
+        }
+    [/UiPanel]
+[/inspector_chain_chip_2]
+
+[inspector_chain_label_2]
+parent = @inspector_chain_chip_2
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Sprite2D"
+        text_size_ratio = 0.38
+        color = "#E8A24A"
+        h_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_chain_label_2]

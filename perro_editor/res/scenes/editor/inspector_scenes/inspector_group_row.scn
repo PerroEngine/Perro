@@ -1,0 +1,119 @@
+$root = @inspector_value_row
+
+[inspector_value_row]
+script = "res://scripts/ui/inspector_scenes/custom_struct_row.rs"
+    [UiPanel]
+        size_ratio = (0.95, 0.031)
+        padding = (0.002, 0.001)
+        h_align = "fill"
+        visible = false
+        style = {
+            fill = "#1F242BCC",
+            stroke = "#4D84D1",
+            stroke_width = 1.0,
+            radius = 0.06
+        }
+    [/UiPanel]
+[/inspector_value_row]
+
+[inspector_value_row_header]
+parent = @inspector_value_row
+    [UiPanel]
+        anchor = "top"
+        size_ratio = (1.0, 1.0)
+        input_enabled = false
+        mouse_filter = "pass"
+        style = {
+            fill = "#1F242B",
+            stroke = "#4D84D1",
+            stroke_width = 1.0,
+            radius = 0.08
+        }
+    [/UiPanel]
+[/inspector_value_row_header]
+
+[inspector_value_row_stack]
+parent = @inspector_value_row
+    [UiVLayout]
+        size_ratio = (1.0, 1.0)
+        z_index = 1.0
+        h_align = "fill"
+        v_align = "start"
+        spacing = 0.002
+        padding = (0.0, 0.0)
+    [/UiVLayout]
+[/inspector_value_row_stack]
+
+[inspector_value_row_inner]
+parent = @inspector_value_row_stack
+    [UiHLayout]
+        size_ratio = (1.0, 1.0)
+        h_align = "center"
+        v_align = "center"
+        spacing = 0.0
+    [/UiHLayout]
+[/inspector_value_row_inner]
+
+[inspector_value_section_panel]
+parent = @inspector_value_row_inner
+    [UiPanel]
+        size_ratio = (1.0, 0.86)
+        z_index = 1.0
+        style = {
+            fill = "#26303B",
+            stroke = "#4D84D1",
+            stroke_width = 1.0,
+            radius = 0.10
+        }
+    [/UiPanel]
+[/inspector_value_section_panel]
+
+[inspector_value_row_children]
+parent = @inspector_value_row_stack
+    [UiVLayout]
+        size_ratio = (1.0, 0.0)
+        h_align = "fill"
+        v_align = "start"
+        spacing = 0.002
+        padding = (0.0, 0.0)
+        visible = false
+    [/UiVLayout]
+[/inspector_value_row_children]
+
+[inspector_value_name]
+parent = @inspector_value_section_panel
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        z_index = 2.0
+        text_size_ratio = 0.38
+        color = "#D7DBE0"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_value_name]
+
+[inspector_value_type]
+parent = @inspector_value_row_inner
+    [UiLabel]
+        size_ratio = (0.0, 1.0)
+        visible = false
+    [/UiLabel]
+[/inspector_value_type]
+
+[inspector_value_box]
+parent = @inspector_value_row_inner
+    [UiTextBox]
+        size_ratio = (0.0, 0.0)
+        visible = false
+    [/UiTextBox]
+[/inspector_value_box]
+
+[inspector_value_check]
+parent = @inspector_value_row_inner
+    [UiCheckbox]
+        size_ratio = (0.0, 0.0)
+        visible = false
+    [/UiCheckbox]
+[/inspector_value_check]

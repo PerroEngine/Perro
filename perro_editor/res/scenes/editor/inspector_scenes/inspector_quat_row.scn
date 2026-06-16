@@ -300,7 +300,7 @@ parent = @inspector_value_euler_button
 [inspector_value_quat_mode]
 parent = @inspector_value_row_inner
     [UiDropdown]
-        size_ratio = (0.16, 0.62)
+        size_ratio = (0.115, 0.64)
         visible = false
         selected_signals = ["editor_inspector_var_7"]
         option_height = 24.0

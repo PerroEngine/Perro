@@ -295,7 +295,15 @@ pub fn inspector_display_rows_for_node(
         node.script.as_deref(),
     )));
     if !script_rows.is_empty() {
-        rows.extend(script_rows.into_iter().map(indent_inspector_row));
+        rows.push(inspector_subsection_row(
+            "section:script:exposed_fields",
+            "Exposed Fields",
+        ));
+        rows.extend(script_rows.into_iter().map(|row| {
+            let mut row = indent_inspector_row(row);
+            row.depth += 1;
+            row
+        }));
     }
     let scene_fields = inspector_scene_value_fields_for_node(node);
     rows.extend(grouped_scene_value_rows_for_node(
@@ -524,34 +532,9 @@ fn node_extra_rows(
     state: &EditorState,
     node: &perro_api::scene::SceneNodeEntry,
 ) -> Vec<InspectorValueRow> {
-    let mut rows = vec![inspector_node_name_row(state, node)];
-    rows.extend(inspector_tag_rows(state, node));
+    let mut rows = inspector_tag_rows(state, node);
     rows.push(inspector_custom_icon_row(node));
     rows
-}
-
-fn inspector_node_name_row(
-    state: &EditorState,
-    node: &perro_api::scene::SceneNodeEntry,
-) -> InspectorValueRow {
-    let doc = cached_scene_doc(&state.doc_text);
-    InspectorValueRow {
-        source: "node_name".to_string(),
-        depth: 0,
-        path: Vec::new(),
-        path_key: "node_name:r0".to_string(),
-        name: "Name".to_string(),
-        kind: "String".to_string(),
-        value: doc.scene.key_name_or_id(node.key).to_string(),
-        components: Vec::new(),
-        color_preview: None,
-        enum_options: Vec::new(),
-        default_child: None,
-        editable: true,
-        expandable: false,
-        addable: false,
-        removable: false,
-    }
 }
 
 fn inspector_tag_rows(
@@ -611,7 +594,7 @@ fn inspector_script_path_row(script: Option<&str>) -> InspectorValueRow {
         depth: 0,
         path: Vec::new(),
         path_key: "script:path".to_string(),
-        name: "File".to_string(),
+        name: "file".to_string(),
         kind: "Asset(Script)".to_string(),
         value: script.unwrap_or("Add Script").to_string(),
         components: Vec::new(),

@@ -249,6 +249,67 @@ pub fn toggle_scene_node_slot<API: ScriptAPI + ?Sized>(
     }
 }
 
+pub fn set_scene_node_slot_open<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+    open: bool,
+) {
+    let Some(key) = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        if state.doc_text.is_empty() {
+            None
+        } else {
+            let doc = cached_scene_doc(&state.doc_text);
+            scene_tree_view(
+                &doc,
+                state.selected_key,
+                &state.scene_filter,
+                &state.collapsed_scene_keys,
+            )
+            .keys
+            .get(idx)
+            .copied()
+        }
+    }) else {
+        return;
+    };
+    let has_children = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        if state.doc_text.is_empty() {
+            false
+        } else {
+            let doc = cached_scene_doc(&state.doc_text);
+            scene_child_count(&doc, key) > 0
+        }
+    });
+    if !has_children {
+        return;
+    }
+    let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let collapsed = !open;
+        if collapsed {
+            if state.collapsed_scene_keys.contains(&key) {
+                return false;
+            }
+            state.collapsed_scene_keys.push(key);
+            state.log = "collapse node".to_string();
+            return true;
+        }
+        if let Some(pos) = state
+            .collapsed_scene_keys
+            .iter()
+            .position(|collapsed_key| *collapsed_key == key)
+        {
+            state.collapsed_scene_keys.remove(pos);
+            state.log = "expand node".to_string();
+            return true;
+        }
+        false
+    })
+    .unwrap_or(false);
+    if changed {
+        refresh_all(ctx);
+    }
+}
+
 pub fn set_activity_mode<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, mode: &str) {
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         if mode == "scene" {

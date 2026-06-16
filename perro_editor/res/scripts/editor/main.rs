@@ -261,9 +261,6 @@ pub struct EditorState {
     pub inspector_picker_kind: String,
     pub inspector_picker_offset: usize,
     pub inspector_picker_filter: String,
-    pub inspector_filter: String,
-    pub inspector_tab: String,
-    pub inspector_favorite_paths: Vec<String>,
     pub inspector_expanded_paths: Vec<String>,
     pub inspector_collapsed_sections: Vec<String>,
     pub scene_filter: String,
@@ -413,12 +410,6 @@ methods!({
             "bottom_anim_button" => set_anim_drawer(ctx, true),
             "scene_filter_box" => update_scene_filter(ctx),
             "file_filter_box" => update_file_filter(ctx),
-            "inspector_filter_box" => update_inspector_filter(ctx),
-            "inspector_tab_all_button" => set_inspector_tab(ctx, "All"),
-            "inspector_tab_node_button" => set_inspector_tab(ctx, "Node"),
-            "inspector_tab_transform_button" => set_inspector_tab(ctx, "Transform"),
-            "inspector_tab_script_button" => set_inspector_tab(ctx, "Script"),
-            "inspector_tab_groups_button" => set_inspector_tab(ctx, "Groups"),
             "file_new_scene_button" => create_quick_asset(ctx, "scene"),
             "file_new_script_button" => create_quick_asset(ctx, "script"),
             "file_new_anim_button" => create_quick_asset(ctx, "anim"),
@@ -499,9 +490,6 @@ methods!({
                     mutate_selected_inspector_array(ctx, idx, false);
                 } else if let Some(idx) = middle_index(&name, "inspector_var_", "_default_button") {
                     reset_selected_inspector_value(ctx, idx);
-                } else if let Some(idx) = middle_index(&name, "inspector_var_", "_favorite_button")
-                {
-                    toggle_inspector_favorite(ctx, idx);
                 } else if middle_index(&name, "inspector_var_", "_quat_button").is_some() {
                     set_inspector_rotation_mode(ctx, "quat");
                 } else if middle_index(&name, "inspector_var_", "_euler_button").is_some() {
@@ -563,11 +551,11 @@ methods!({
         ctx: &mut ScriptContext<'_, API>,
         _tree: NodeID,
         idx: i32,
-        _open: bool,
+        open: bool,
         _value: Variant,
     ) {
         if idx >= 0 {
-            toggle_scene_node_slot(ctx, idx as usize);
+            set_scene_node_slot_open(ctx, idx as usize, open);
         }
     }
 
@@ -588,7 +576,7 @@ methods!({
         ctx: &mut ScriptContext<'_, API>,
         _tree: NodeID,
         idx: i32,
-        _open: bool,
+        open: bool,
         _value: Variant,
     ) {
         if idx < 0 {
@@ -600,8 +588,7 @@ methods!({
             return;
         };
         let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
-            toggle_file_folder_expanded(state, &path);
-            true
+            set_file_folder_expanded(state, &path, open)
         })
         .unwrap_or(false);
         if changed {
@@ -645,12 +632,6 @@ fn connect_editor_signals<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, A
             signal!("editor_bottom_anim"),
             signal!("editor_scene_filter"),
             signal!("editor_file_filter"),
-            signal!("editor_inspector_filter"),
-            signal!("editor_inspector_tab_all"),
-            signal!("editor_inspector_tab_node"),
-            signal!("editor_inspector_tab_transform"),
-            signal!("editor_inspector_tab_script"),
-            signal!("editor_inspector_tab_groups"),
             signal!("editor_file_new_scene"),
             signal!("editor_file_new_script"),
             signal!("editor_file_new_anim"),

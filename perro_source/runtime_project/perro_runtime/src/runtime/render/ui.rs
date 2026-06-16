@@ -677,11 +677,21 @@ impl Runtime {
             self.hide_tree_list_internal_node(pair[1]);
         }
 
-        rows.resize(row_count, NodeID::nil());
-        toggles.resize(row_count, NodeID::nil());
-        icons.resize(row_count, NodeID::nil());
-        labels.resize(row_count, NodeID::nil());
-        lines.resize(row_count, [NodeID::nil(); 2]);
+        if rows.len() < row_count {
+            rows.resize(row_count, NodeID::nil());
+        }
+        if toggles.len() < row_count {
+            toggles.resize(row_count, NodeID::nil());
+        }
+        if icons.len() < row_count {
+            icons.resize(row_count, NodeID::nil());
+        }
+        if labels.len() < row_count {
+            labels.resize(row_count, NodeID::nil());
+        }
+        if lines.len() < row_count {
+            lines.resize(row_count, [NodeID::nil(); 2]);
+        }
 
         for idx in 0..row_count {
             if !self.tree_list_internal_valid(rows[idx], tree_id, "button") {
@@ -757,6 +767,7 @@ impl Runtime {
 
     fn insert_tree_list_toggle(&mut self, row_id: NodeID, idx: usize) -> NodeID {
         let mut shape = perro_ui::UiShape::new();
+        shape.base.layout.anchor = UiAnchor::Left;
         shape.base.layout.z_index = 3;
         shape.base.input_enabled = false;
         shape.base.mouse_filter = perro_ui::UiMouseFilter::Pass;
@@ -770,6 +781,7 @@ impl Runtime {
 
     fn insert_tree_list_icon(&mut self, row_id: NodeID, idx: usize) -> NodeID {
         let mut image = perro_ui::UiImage::new();
+        image.base.layout.anchor = UiAnchor::Left;
         image.base.layout.z_index = 3;
         image.base.input_enabled = false;
         image.base.mouse_filter = perro_ui::UiMouseFilter::Pass;
@@ -782,6 +794,7 @@ impl Runtime {
 
     fn insert_tree_list_label(&mut self, row_id: NodeID, idx: usize) -> NodeID {
         let mut label = perro_ui::UiLabel::new();
+        label.base.layout.anchor = UiAnchor::Left;
         label.base.layout.z_index = 3;
         label.base.input_enabled = false;
         label.base.mouse_filter = perro_ui::UiMouseFilter::Pass;
@@ -797,6 +810,7 @@ impl Runtime {
 
     fn insert_tree_list_line(&mut self, row_id: NodeID, idx: usize, line_idx: usize) -> NodeID {
         let mut panel = UiPanel::new();
+        panel.base.layout.anchor = UiAnchor::Left;
         panel.base.layout.z_index = 2;
         panel.base.input_enabled = false;
         panel.base.mouse_filter = perro_ui::UiMouseFilter::Pass;
@@ -809,6 +823,7 @@ impl Runtime {
     }
 
     fn sync_tree_list_internal_nodes(&mut self, tree_id: NodeID) {
+        self.ensure_tree_list_internal_nodes_for(tree_id);
         let Some(snapshot) = self.nodes.get(tree_id).and_then(|node| match &node.data {
             SceneNodeData::UiTreeList(tree) => Some((
                 tree.visible,
@@ -896,7 +911,11 @@ impl Runtime {
                 shape.base.transform.position = UiVector2::pixels(x + toggle_size * 0.5, 0.0);
                 shape.fill = triangle_color;
                 shape.stroke = Color::TRANSPARENT;
-                shape.base.transform.rotation = if item.open { 90.0 } else { 0.0 };
+                shape.base.transform.rotation = if item.open {
+                    std::f32::consts::FRAC_PI_2
+                } else {
+                    0.0
+                };
             }
             if let Some(node) = self.nodes.get_mut(internal_icons[visible_idx])
                 && let SceneNodeData::UiImage(image) = &mut node.data
@@ -947,6 +966,22 @@ impl Runtime {
                     false,
                 );
             }
+        }
+        for id in internal_rows.iter().copied().skip(rows.len()) {
+            self.hide_tree_list_internal_node(id);
+        }
+        for id in internal_toggles.iter().copied().skip(rows.len()) {
+            self.hide_tree_list_internal_node(id);
+        }
+        for id in internal_icons.iter().copied().skip(rows.len()) {
+            self.hide_tree_list_internal_node(id);
+        }
+        for id in internal_labels.iter().copied().skip(rows.len()) {
+            self.hide_tree_list_internal_node(id);
+        }
+        for pair in internal_lines.iter().copied().skip(rows.len()) {
+            self.hide_tree_list_internal_node(pair[0]);
+            self.hide_tree_list_internal_node(pair[1]);
         }
         self.mark_ui_dirty(
             tree_id,

@@ -26,6 +26,7 @@ struct InspectorRowNames {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum InspectorRowTemplate {
+    Section,
     Generic,
     Vec2,
     Vec3,
@@ -55,7 +56,8 @@ pub fn ensure_inspector_value_row<API: ScriptAPI + ?Sized>(
     if let Some(row_id) = find_named(ctx, &names.row) {
         if inspector_cached_row_template(idx) == Some(template)
             && find_named(ctx, &names.header).is_some()
-            && find_named(ctx, &names.quat_mode).is_some()
+            && (template == InspectorRowTemplate::Section
+                || find_named(ctx, &names.quat_mode).is_some())
         {
             return;
         }
@@ -74,7 +76,6 @@ pub fn ensure_inspector_value_row<API: ScriptAPI + ?Sized>(
     let _ = ctx.run.Nodes().reparent(content_id, root_id);
     rename_value_row(ctx, root_id, idx);
     ensure_inspector_default_button(ctx, idx);
-    ensure_inspector_favorite_button(ctx, idx);
     set_cached_row_template(idx, Some(template));
 }
 
@@ -140,49 +141,6 @@ fn ensure_inspector_default_button<API: ScriptAPI + ?Sized>(
     });
 }
 
-fn ensure_inspector_favorite_button<API: ScriptAPI + ?Sized>(
-    ctx: &mut ScriptContext<'_, API>,
-    idx: usize,
-) {
-    let button_name = format!("inspector_var_{idx}_favorite_button");
-    if find_named(ctx, &button_name).is_some() {
-        return;
-    }
-    let Some(parent) = inspector_value_row_inner(ctx, idx) else {
-        return;
-    };
-    let button = ctx.run.Nodes().create::<UiButton>();
-    let label = ctx.run.Nodes().create::<UiLabel>();
-    let _ = ctx.run.Nodes().set_node_name(button, button_name);
-    let _ = ctx
-        .run
-        .Nodes()
-        .set_node_name(label, format!("inspector_var_{idx}_favorite_label"));
-    let _ = ctx.run.Nodes().reparent(parent, button);
-    let _ = ctx.run.Nodes().reparent(button, label);
-    let _ = with_node_mut!(ctx.run, UiButton, button, |node| {
-        node.layout.size = UiVector2::ratio(0.028, 0.48);
-        node.visible = false;
-        node.clicked_signals = vec![SignalID::from_string("editor_inspector_var_7")];
-        node.style.fill = Color::from_hex("#00000000").unwrap_or(node.style.fill);
-        node.style.stroke = Color::from_hex("#4A525D").unwrap_or(node.style.stroke);
-        node.style.stroke_width = 1.0;
-        node.style.corner_radius = 0.5;
-        node.hover_style.fill = Color::from_hex("#2C3440").unwrap_or(node.hover_style.fill);
-        node.hover_style.stroke = Color::from_hex("#7FA7E6").unwrap_or(node.hover_style.stroke);
-        node.pressed_style.fill = Color::from_hex("#27364D").unwrap_or(node.pressed_style.fill);
-        node.pressed_style.stroke = Color::from_hex("#6BA0EA").unwrap_or(node.pressed_style.stroke);
-    });
-    let _ = with_node_mut!(ctx.run, UiLabel, label, |node| {
-        node.layout.size = UiVector2::ratio(1.0, 1.0);
-        node.text = Cow::Borrowed("*");
-        node.text_size_ratio = 0.42;
-        node.color = Color::from_hex("#A7AFB9").unwrap_or(node.color);
-        node.input_enabled = false;
-        node.mouse_filter = UiMouseFilter::Pass;
-    });
-}
-
 pub fn place_inspector_value_row<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     idx: usize,
@@ -219,8 +177,10 @@ pub fn apply_inspector_value_row_panel<API: ScriptAPI + ?Sized>(
         return;
     };
     let nested = depth > 1 || has_children;
-    let (fill, stroke, stroke_width, radius) = if source == "section" {
-        ("#1F242B", "#4D84D1", 1.0, 0.06)
+    let (fill, stroke, stroke_width, radius) = if source == "section" && depth == 0 {
+        ("#1F242BCC", "#4D84D1", 1.0, 0.08)
+    } else if source == "section" {
+        ("#20262EB0", "#343A43", 1.0, 0.07)
     } else if changed {
         ("#26303B", "#6BA0EA", 1.0, 0.06)
     } else if nested {
@@ -240,6 +200,23 @@ pub fn apply_inspector_value_row_panel<API: ScriptAPI + ?Sized>(
         node.style.stroke_width = 0.0;
         node.style.corner_radius = 0.0;
     });
+    if source == "section" {
+        let panel_name = format!("inspector_var_{idx}_section_panel");
+        if let Some(panel_id) = find_named(ctx, &panel_name) {
+            let (panel_w, panel_h, panel_fill, panel_stroke, panel_radius) = if depth == 0 {
+                (1.0, 0.86, "#26303B", "#4D84D1", 0.10)
+            } else {
+                (1.0, 0.78, "#262B32", "#46515F", 0.08)
+            };
+            let _ = with_node_mut!(ctx.run, UiPanel, panel_id, |node| {
+                node.layout.size = UiVector2::ratio(panel_w, panel_h);
+                node.style.fill = Color::from_hex(panel_fill).unwrap_or(node.style.fill);
+                node.style.stroke = Color::from_hex(panel_stroke).unwrap_or(node.style.stroke);
+                node.style.stroke_width = 1.0;
+                node.style.corner_radius = panel_radius;
+            });
+        }
+    }
 }
 
 pub fn hide_inspector_value_rows_from<API: ScriptAPI + ?Sized>(
@@ -292,6 +269,7 @@ fn inspector_row_template(row: Option<&InspectorValueRow>) -> InspectorRowTempla
         return InspectorRowTemplate::Generic;
     };
     match row.kind.as_str() {
+        _ if row.source == "section" => InspectorRowTemplate::Section,
         "Vec2" | "IVec2" | "UVec2" | "UnitVector2" => InspectorRowTemplate::Vec2,
         "Vec3" | "IVec3" | "UVec3" | "UnitVector3" => InspectorRowTemplate::Vec3,
         "Quat" => InspectorRowTemplate::Quat,
@@ -309,6 +287,7 @@ fn inspector_row_template(row: Option<&InspectorValueRow>) -> InspectorRowTempla
 
 fn inspector_row_scene(template: InspectorRowTemplate) -> &'static str {
     match template {
+        InspectorRowTemplate::Section => editor_app::INSPECTOR_GROUP_ROW_SCENE,
         InspectorRowTemplate::Generic => editor_app::INSPECTOR_VALUE_ROW_SCENE,
         InspectorRowTemplate::Vec2 => editor_app::INSPECTOR_VEC2_ROW_SCENE,
         InspectorRowTemplate::Vec3 => editor_app::INSPECTOR_VEC3_ROW_SCENE,
@@ -460,6 +439,7 @@ fn value_row_instance_name(name: &str, idx: usize) -> Option<String> {
         "inspector_value_row_stack" => format!("inspector_var_row_{idx}_stack"),
         "inspector_value_row_inner" => format!("inspector_var_row_{idx}_inner"),
         "inspector_value_row_children" => format!("inspector_var_row_{idx}_children"),
+        "inspector_value_section_panel" => format!("inspector_var_{idx}_section_panel"),
         "inspector_value_name" => format!("inspector_var_{idx}_name"),
         "inspector_value_box" => format!("inspector_var_{idx}_value"),
         "inspector_value_check" => format!("inspector_var_{idx}_check"),

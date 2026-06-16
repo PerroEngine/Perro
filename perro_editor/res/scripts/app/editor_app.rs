@@ -1,6 +1,10 @@
 pub const EDITOR_SHELL_SCENE: &str = "res://scenes/editor/shell.scn";
 pub const INSPECTOR_PICKER_SCENE: &str = "res://scenes/editor/inspector_picker.scn";
 pub const INSPECTOR_BITMASK_SCENE: &str = "res://scenes/editor/bitmask.scn";
+pub const INSPECTOR_NODE_CHAIN_SCENE: &str =
+    "res://scenes/editor/inspector_scenes/inspector_node_chain.scn";
+pub const INSPECTOR_GROUP_ROW_SCENE: &str =
+    "res://scenes/editor/inspector_scenes/inspector_group_row.scn";
 pub const INSPECTOR_VALUE_ROW_SCENE: &str =
     "res://scenes/editor/inspector_scenes/inspector_value_row.scn";
 pub const INSPECTOR_VEC2_ROW_SCENE: &str =

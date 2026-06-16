@@ -452,6 +452,41 @@ pub fn toggle_file_folder_expanded(state: &mut EditorState, path: &str) {
     }
 }
 
+pub fn set_file_folder_expanded(state: &mut EditorState, path: &str, open: bool) -> bool {
+    if path == "res://" {
+        if open
+            && !state
+                .file_expanded_paths
+                .iter()
+                .any(|expanded| expanded == "res://")
+        {
+            state.file_expanded_paths.push("res://".to_string());
+            return true;
+        }
+        return false;
+    }
+    let Some(pos) = state
+        .file_expanded_paths
+        .iter()
+        .position(|expanded| expanded == path)
+    else {
+        if open {
+            state.file_expanded_paths.push(path.to_string());
+            return true;
+        }
+        return false;
+    };
+    if open {
+        return false;
+    }
+    state.file_expanded_paths.remove(pos);
+    let prefix = path.to_string();
+    state
+        .file_expanded_paths
+        .retain(|expanded| !expanded.starts_with(&prefix));
+    true
+}
+
 pub fn clear_file_filter_and_scope<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
         state.file_filter.clear();

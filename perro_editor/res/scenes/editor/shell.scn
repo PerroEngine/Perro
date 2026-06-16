@@ -1370,7 +1370,7 @@ parent = @left_panel
 [center_stack]
 parent = @main_split
     [UiVLayout]
-        size_ratio = (0.596, 1.0)
+        size_ratio = (0.595, 1.0)
         h_align = "fill"
         v_align = "fill"
         spacing = 0.003
@@ -2614,11 +2614,11 @@ parent = @editor_root
 [inspector_panel]
 parent = @main_split
     [UiVLayout]
-        size_ratio = (0.248, 1.0)
+        size_ratio = (0.22, 1.0)
         h_align = "fill"
         v_align = "start"
         spacing = 0.003
-        padding = (0.01, 0.006)
+        padding = (0.006, 0.006)
         style = {
             fill = "#2A2F36",
             stroke = "#343A43",
@@ -2641,7 +2641,7 @@ parent = @inspector_scroll
         size_ratio = (1.0, 1.12)
         h_align = "center"
         v_align = "start"
-        spacing = 0.003
+        spacing = 0.004
         padding = (0.0, 0.0)
     [/UiVLayout]
 [/inspector_content]
@@ -2649,35 +2649,24 @@ parent = @inspector_scroll
 [inspector_title]
 parent = @inspector_content
     [UiLabel]
-        size_ratio = (1.0, 0.04)
-        text = "Node Inspector"
+        size_ratio = (0.95, 0.034)
+        text = "Name"
         text_size_ratio = 0.316
         color = "#D7DBE0"
-        h_align = "start"
+        h_align = "center"
         style = {
-            fill = "#23272D",
-            stroke = "#343A43",
+            fill = "#26303B",
+            stroke = "#4D84D1",
             stroke_width = 1.0,
-            radius = 0.0
+            radius = 0.08
         }
     [/UiLabel]
 [/inspector_title]
 
-[inspector_name]
-parent = @inspector_content
-    [UiLabel]
-        size_ratio = (1.0, 0.03)
-        text = "name: -"
-        text_size_ratio = 0.301
-        color = "#D7DBE0"
-        h_align = "start"
-    [/UiLabel]
-[/inspector_name]
-
 [inspector_name_box]
 parent = @inspector_content
     [UiTextBox]
-        size_ratio = (1.0, 0.024)
+        size_ratio = (0.95, 0.027)
         text = "-"
         text_size_ratio = 0.345
         focused_signals = ["editor_inspector_focus"]
@@ -2697,159 +2686,44 @@ parent = @inspector_content
     [/UiTextBox]
 [/inspector_name_box]
 
-[inspector_filter_box]
+[inspector_name]
 parent = @inspector_content
-    [UiTextBox]
-        size_ratio = (1.0, 0.03)
-        text = ""
-        placeholder = "Find property"
-        placeholder_color = "#A7AFB9"
-        text_size_ratio = 0.316
-        text_changed_signals = ["editor_inspector_filter"]
+    [UiLabel]
+        size_ratio = (0.95, 0.034)
+        text = "Type"
+        text_size_ratio = 0.301
+        color = "#D7DBE0"
+        h_align = "center"
         style = {
-            fill = "#23272D",
-            stroke = "#343A43",
+            fill = "#26303B",
+            stroke = "#4D84D1",
             stroke_width = 1.0,
-            radius = 0.035
+            radius = 0.08
         }
-        focused_style = {
-            fill = "#23272D",
-            stroke = "#6BA0EA",
-            stroke_width = 1.0,
-            radius = 0.035
-        }
-    [/UiTextBox]
-[/inspector_filter_box]
+    [/UiLabel]
+[/inspector_name]
 
-[inspector_tab_row]
+[inspector_node_chain_mount]
 parent = @inspector_content
-    [UiHLayout]
-        size_ratio = (1.0, 0.03)
-        h_align = "fill"
-        v_align = "center"
-        spacing = 0.002
-    [/UiHLayout]
-[/inspector_tab_row]
-
-[inspector_tab_all_button]
-parent = @inspector_tab_row
-    [UiButton]
-        size_ratio = (0.17, 0.86)
-        click_signals = ["editor_inspector_tab_all"]
-        style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 }
-        hover = { style = { fill = "#323842", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 } }
-        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 } }
-    [/UiButton]
-[/inspector_tab_all_button]
-
-[inspector_tab_all_label]
-parent = @inspector_tab_all_button
-    [UiLabel]
-        size_ratio = (1.0, 1.0)
-        text = "All"
-        text_size_ratio = 0.34
-        color = "#D7DBE0"
-        input_enabled = false
-        mouse_filter = "pass"
-    [/UiLabel]
-[/inspector_tab_all_label]
-
-[inspector_tab_node_button]
-parent = @inspector_tab_row
-    [UiButton]
-        size_ratio = (0.18, 0.86)
-        click_signals = ["editor_inspector_tab_node"]
-        style = { fill = "#2A2F36", stroke = "#343A43", stroke_width = 1.0, radius = 0.045 }
-        hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 } }
-        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 } }
-    [/UiButton]
-[/inspector_tab_node_button]
-
-[inspector_tab_node_label]
-parent = @inspector_tab_node_button
-    [UiLabel]
-        size_ratio = (1.0, 1.0)
-        text = "Node"
-        text_size_ratio = 0.32
-        color = "#D7DBE0"
-        input_enabled = false
-        mouse_filter = "pass"
-    [/UiLabel]
-[/inspector_tab_node_label]
-
-[inspector_tab_transform_button]
-parent = @inspector_tab_row
-    [UiButton]
-        size_ratio = (0.24, 0.86)
-        click_signals = ["editor_inspector_tab_transform"]
-        style = { fill = "#2A2F36", stroke = "#343A43", stroke_width = 1.0, radius = 0.045 }
-        hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 } }
-        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 } }
-    [/UiButton]
-[/inspector_tab_transform_button]
-
-[inspector_tab_transform_label]
-parent = @inspector_tab_transform_button
-    [UiLabel]
-        size_ratio = (1.0, 1.0)
-        text = "Xform"
-        text_size_ratio = 0.29
-        color = "#D7DBE0"
-        input_enabled = false
-        mouse_filter = "pass"
-    [/UiLabel]
-[/inspector_tab_transform_label]
-
-[inspector_tab_script_button]
-parent = @inspector_tab_row
-    [UiButton]
-        size_ratio = (0.2, 0.86)
-        click_signals = ["editor_inspector_tab_script"]
-        style = { fill = "#2A2F36", stroke = "#343A43", stroke_width = 1.0, radius = 0.045 }
-        hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 } }
-        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 } }
-    [/UiButton]
-[/inspector_tab_script_button]
-
-[inspector_tab_script_label]
-parent = @inspector_tab_script_button
-    [UiLabel]
-        size_ratio = (1.0, 1.0)
-        text = "Script"
-        text_size_ratio = 0.29
-        color = "#D7DBE0"
-        input_enabled = false
-        mouse_filter = "pass"
-    [/UiLabel]
-[/inspector_tab_script_label]
-
-[inspector_tab_groups_button]
-parent = @inspector_tab_row
-    [UiButton]
-        size_ratio = (0.21, 0.86)
-        click_signals = ["editor_inspector_tab_groups"]
-        style = { fill = "#2A2F36", stroke = "#343A43", stroke_width = 1.0, radius = 0.045 }
-        hover = { style = { fill = "#323842", stroke = "#4A525D", stroke_width = 1.0, radius = 0.045 } }
-        pressed = { style = { fill = "#4D84D1", stroke = "#6BA0EA", stroke_width = 1.0, radius = 0.045 } }
-    [/UiButton]
-[/inspector_tab_groups_button]
-
-[inspector_tab_groups_label]
-parent = @inspector_tab_groups_button
-    [UiLabel]
-        size_ratio = (1.0, 1.0)
-        text = "Groups"
-        text_size_ratio = 0.27
-        color = "#D7DBE0"
-        input_enabled = false
-        mouse_filter = "pass"
-    [/UiLabel]
-[/inspector_tab_groups_label]
+    [UiPanel]
+        size_ratio = (0.95, 0.024)
+        visible = false
+        padding = (0.0, 0.0)
+        h_align = "center"
+        style = {
+            fill = "#00000000",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.0
+        }
+    [/UiPanel]
+[/inspector_node_chain_mount]
 
 [inspector_script_top]
 parent = @inspector_content
     [UiLabel]
-        size_ratio = (1.0, 0.034)
+        size_ratio = (0.95, 0.0)
+        visible = false
         text = "Script  -"
         text_size_ratio = 0.259
         color = "#D7DBE0"
@@ -2861,7 +2735,8 @@ parent = @inspector_content
 [inspector_type]
 parent = @inspector_content
     [UiLabel]
-        size_ratio = (1.0, 0.032)
+        size_ratio = (1.0, 0.0)
+        visible = false
         text = "type: -"
         text_size_ratio = 0.288
         color = "#D7DBE0"
@@ -2872,7 +2747,8 @@ parent = @inspector_content
 [inspector_parent]
 parent = @inspector_content
     [UiLabel]
-        size_ratio = (1.0, 0.032)
+        size_ratio = (1.0, 0.0)
+        visible = false
         text = "parent: -"
         text_size_ratio = 0.288
         color = "#D7DBE0"
@@ -2884,7 +2760,7 @@ parent = @inspector_content
 parent = @inspector_content
     [UiHLayout]
         visible = false
-        size_ratio = (1.0, 0.024)
+        size_ratio = (0.95, 0.027)
         h_align = "fill"
         v_align = "center"
         spacing = 0.003
@@ -2981,7 +2857,7 @@ parent = @inspector_content
         size_ratio = (1.0, 0.03)
         click_signals = ["editor_inspector_position"]
         style = {
-            fill = "#23272D",
+            fill = "#26303B",
             stroke = "#343A43",
             stroke_width = 1.0,
             radius = 0.0
@@ -3059,7 +2935,7 @@ parent = @inspector_content
 parent = @inspector_content
     [UiHLayout]
         size_ratio = (1.0, 0.024)
-        h_align = "fill"
+        h_align = "center"
         v_align = "center"
         spacing = 0.002
         padding = (0.03, 0.0, 0.0, 0.0)
@@ -4726,7 +4602,8 @@ parent = @add_node_popup
 [add_node_parent_label]
 parent = @add_node_popup
     [UiLabel]
-        size_ratio = (1.0, 0.034)
+        size_ratio = (0.95, 0.0)
+        visible = false
         text = "parent: -"
         text_size_ratio = 0.259
         color = "#A7AFB9"
