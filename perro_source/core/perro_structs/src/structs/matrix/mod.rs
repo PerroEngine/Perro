@@ -16,6 +16,9 @@ mod x86;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Matrix<const ROWS: usize, const COLS: usize, T = f32>(pub [[T; COLS]; ROWS]);
 
+/// Row-major square const-size matrix.
+pub type SqMatrix<const SZ: usize, T = f32> = Matrix<SZ, SZ, T>;
+
 /// Fast 2x2 f32 matrix backed by glam.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Matrix2(pub Mat2);

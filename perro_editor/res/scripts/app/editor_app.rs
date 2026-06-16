@@ -13,6 +13,8 @@ pub const INSPECTOR_CUSTOM_STRUCT_ROW_SCENE: &str =
     "res://scenes/editor/inspector_scenes/inspector_custom_struct_row.scn";
 pub const INSPECTOR_ARRAY_ROW_SCENE: &str =
     "res://scenes/editor/inspector_scenes/inspector_array_row.scn";
+pub const INSPECTOR_MATRIX_ROW_SCENE: &str =
+    "res://scenes/editor/inspector_scenes/inspector_array_row.scn";
 pub const INSPECTOR_ENUM_ROW_SCENE: &str =
     "res://scenes/editor/inspector_scenes/inspector_enum_row.scn";
 pub const INSPECTOR_BOOL_ROW_SCENE: &str =

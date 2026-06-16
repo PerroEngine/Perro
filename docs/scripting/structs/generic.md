@@ -23,6 +23,7 @@
 | `CollisionPolicy`                                                          | `layers: BitMask`, `mask: BitMask`; mask means ignored layers.      | Physics node config and collision compatibility checks. |
 | `Vector4`, `IVector4`, `UVector4`                                          | Four `x/y/z/w` lanes; float, signed int, or unsigned int.            | Generic four-value data, not rotation-specific like `Quaternion`. |
 | `Matrix<ROWS, COLS, T>`                                                     | Row-major matrices.                                                  | Packed math data, scene/resource values, and dynamic data. |
+| `SqMatrix<SZ, T>`                                                           | Alias for `Matrix<SZ, SZ, T>`.                                       | Square matrix shorthand when rows and columns match.     |
 | `Matrix2`, `Matrix3`, `Matrix4`                                            | Glam-backed fast `f32` matrices.                                     | Hot matrix ops and transform conversion.                  |
 | `AudioMaterial`, `AudioEffect`, `AudioInteraction`, `AudioListenerOptions` | `f32` tuning fields plus `BitMask` and effect lists.                | Built-in audio node/resource/listener config.           |
 | `PostProcessEffect`, `PostProcessEntry`, `PostProcessSet`                  | enum effects plus named/unnamed effect entries.                     | Render effect stacks and resource API config.           |
@@ -42,7 +43,8 @@ These engine structs can be passed through `Variant` with `Variant::from(value)`
 | `UVector2`, `UVector3`, `UVector4`    | `as_uvec2()`, `as_uvec3()`, `as_uvec4()` | `{ x, y }`, `{ x, y, z }`, `{ x, y, z, w }` | `UVec2`, `UVec3`, `UVec4`                 | Unsigned integer lanes.                   |
 | `UnitVector2`, `UnitVector3`, `UnitVector4` | `as_unit_vec2()`, `as_unit_vec3()`, `as_unit_vec4()` | `{ x, y }`, `{ x, y, z }`, `{ x, y, z, w }` | `UnitVector2`, `UnitVector3`, `UnitVector4` | Each lane clamps to `0.0..=1.0` and stores as `u8`. |
 | `Matrix2`, `Matrix3`, `Matrix4` | `as_matrix2()`, `as_matrix3()`, `as_matrix4()` | Row arrays like `[[1.0, 0.0], [0.0, 1.0]]` or flat row-major arrays. | `Matrix2`, `Matrix3`, `Matrix4` | Fast glam-backed values. |
-| `Matrix<2, 2>`, `Matrix<3, 3>`, `Matrix<4, 4>` | `as_matrix2x2()`, `as_matrix3x3()`, `as_matrix4x4()` | Row arrays, flat row-major arrays, or `{ rows: [...] }`. | `Matrix2`, `Matrix3`, `Matrix4` | Decode through glam-backed storage for square `f32` matrices. |
+| `Matrix<ROWS, COLS, T>`, `SqMatrix<SZ, T>` | `parse::<T>()`, `into_parse::<T>()`, `matrix_shape()` | Row arrays, flat row-major arrays, or `{ rows: [...] }`. | Matrix grid | Any const size; `matrix_shape()` returns rows, cols, and `cell_type`; cells must support Variant when crossing runtime state/method boundaries. |
+| `Matrix<2, 2>`, `Matrix<3, 3>`, `Matrix<4, 4>`, `SqMatrix<2>`, `SqMatrix<3>`, `SqMatrix<4>` | `as_matrix2x2()`, `as_matrix3x3()`, `as_matrix4x4()` | Row arrays, flat row-major arrays, or `{ rows: [...] }`. | `Matrix2`, `Matrix3`, `Matrix4` | `f32` square matrices use glam-backed fast Variant storage. |
 
 `UnitVector*` means vector of unit-range values, not a length-normalized direction vector.
 
@@ -51,6 +53,8 @@ These engine structs can be passed through `Variant` with `Variant::from(value)`
 Perro has one row-major generic matrix plus glam-backed square wrappers.
 
 Use `Matrix<ROWS, COLS, T>` when row-major storage matters.
+
+Use `SqMatrix<SZ, T>` when row and column count match.
 
 `T` can be any element type.
 
@@ -67,6 +71,7 @@ Common use:
 | `Matrix<2, 2>` | Small 2D math values and compact dynamic data. |
 | `Matrix<3, 3>` | 2D transform math, normal basis, and row-major scene data. |
 | `Matrix<4, 4>` | 3D transform/projection math and packed resource data. |
+| `SqMatrix<5, u8>` | 5x5 compact unsigned byte matrix shorthand. |
 | `Matrix2`/`Matrix3`/`Matrix4` | Hot math ops; backed by `glam::Mat2`, `glam::Mat3`, `glam::Mat4`. |
 
 Common APIs:

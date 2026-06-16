@@ -714,6 +714,31 @@ fn collect_node_field_type_paths(
                 }
             }
         }
+        perro_scene::NodeFieldType::Matrix { rows, cols, item } => {
+            if let SceneValue::Array(row_values) = value {
+                for (row_idx, row_value) in row_values.iter().take(*rows).enumerate() {
+                    let SceneValue::Array(col_values) = row_value else {
+                        continue;
+                    };
+                    for (col_idx, cell) in col_values.iter().take(*cols).enumerate() {
+                        path.push(ValuePathStep::Index(row_idx));
+                        path.push(ValuePathStep::Index(col_idx));
+                        collect_node_field_type_paths(
+                            source,
+                            item,
+                            cell,
+                            path,
+                            kind_overrides,
+                            color_paths,
+                            node_paths,
+                            default_children,
+                        );
+                        path.pop();
+                        path.pop();
+                    }
+                }
+            }
+        }
         perro_scene::NodeFieldType::Object(fields) => {
             if let SceneValue::Object(values) = value {
                 for field in fields {
@@ -764,6 +789,9 @@ pub fn node_field_type_label(ty: &perro_scene::NodeFieldType) -> String {
         perro_scene::NodeFieldType::Asset(kind) => format!("Asset({kind:?})"),
         perro_scene::NodeFieldType::Array(item) => {
             format!("Array({})", node_field_type_label(item))
+        }
+        perro_scene::NodeFieldType::Matrix { rows, cols, item } => {
+            format!("Matrix({rows}x{cols},{})", node_field_type_label(item))
         }
         perro_scene::NodeFieldType::Object(_) => "Object".to_string(),
         perro_scene::NodeFieldType::Unknown => "Unknown".to_string(),
@@ -2470,6 +2498,9 @@ fn script_type_label(schema: &ScriptSchema, ty: &str) -> String {
     if let Some(inner) = generic_inner(ty.as_str(), "Vec") {
         return format!("Array({})", script_type_label(schema, &inner));
     }
+    if let Some((rows, cols, item_ty)) = matrix_type_info(&ty) {
+        return format!("Matrix({rows}x{cols},{})", script_type_label(schema, &item_ty));
+    }
     match ty.as_str() {
         "bool" => "Bool".to_string(),
         "f32" | "f64" => "F32".to_string(),
@@ -2547,6 +2578,11 @@ fn node_ref_attr_label(node_ref_attr: &[String]) -> String {
 
 fn default_scene_value_for_type(schema: &ScriptSchema, ty: &str, depth: usize) -> SceneValue {
     let ty = normalized_type(ty);
+    if let Some((rows, cols, item_ty)) = matrix_type_info(&ty) {
+        let item = default_scene_value_for_type(schema, &item_ty, depth + 1);
+        let row = SceneValue::Array(Cow::Owned(vec![item; cols]));
+        return SceneValue::Array(Cow::Owned(vec![row; rows]));
+    }
     match ty.as_str() {
         "bool" => SceneValue::Bool(false),
         "f32" | "f64" | "Unit" | "perro_api::prelude::Unit" => SceneValue::F32(0.0),
@@ -2639,6 +2675,42 @@ fn default_scene_value_for_type(schema: &ScriptSchema, ty: &str, depth: usize) -
 
 fn normalized_type(ty: &str) -> String {
     ty.chars().filter(|ch| !ch.is_whitespace()).collect()
+}
+
+fn matrix_type_info(ty: &str) -> Option<(usize, usize, String)> {
+    let ty = ty.trim_start_matches("perro_api::prelude::");
+    let owned;
+    let ty = if ty.starts_with("Matrix::<") {
+        owned = ty.replacen("Matrix::", "Matrix", 1);
+        owned.as_str()
+    } else {
+        ty
+    };
+    match ty {
+        "Matrix2" => return Some((2, 2, "f32".to_string())),
+        "Matrix3" => return Some((3, 3, "f32".to_string())),
+        "Matrix4" => return Some((4, 4, "f32".to_string())),
+        _ => {}
+    }
+    let (name, args) = type_name_and_args(ty);
+    if name == "SqMatrix" && (1..=2).contains(&args.len()) {
+        let size = args[0].parse::<usize>().ok()?.clamp(1, 32);
+        return Some((
+            size,
+            size,
+            args.get(1).cloned().unwrap_or_else(|| "f32".to_string()),
+        ));
+    }
+    if name != "Matrix" || !(2..=3).contains(&args.len()) {
+        return None;
+    }
+    let rows = args[0].parse::<usize>().ok()?.clamp(1, 32);
+    let cols = args[1].parse::<usize>().ok()?.clamp(1, 32);
+    Some((
+        rows,
+        cols,
+        args.get(2).cloned().unwrap_or_else(|| "f32".to_string()),
+    ))
 }
 
 fn coerce_scene_value_to_type(value: SceneValue, ty: &str) -> SceneValue {
@@ -2913,7 +2985,12 @@ fn push_value_rows(
     } else {
         scene_value_kind(value)
     };
-    let components = scene_value_component_texts_for_kind(value, kind, ctx.quat_mode);
+    let matrix = matrix_kind_shape(kind).is_some() && matches!(value, SceneValue::Array(_));
+    let components = if matrix {
+        matrix_cell_texts(value, kind).into_iter().flatten().collect()
+    } else {
+        scene_value_component_texts_for_kind(value, kind, ctx.quat_mode)
+    };
     rows.push(InspectorValueRow {
         source: source.to_string(),
         depth,
@@ -2921,7 +2998,9 @@ fn push_value_rows(
         path_key: path_key.clone(),
         name: name.to_string(),
         kind: kind.to_string(),
-        value: if !enum_options.is_empty() {
+        value: if matrix {
+            scene_value_matrix_summary(value, kind)
+        } else if !enum_options.is_empty() {
             scene_value_enum_text(value)
         } else if composite {
             scene_value_summary(value, expanded)
@@ -2932,9 +3011,9 @@ fn push_value_rows(
         color_preview,
         enum_options,
         default_child: ctx.default_children.get(&path_key).cloned(),
-        editable: !composite,
-        expandable: composite,
-        addable: matches!(value, SceneValue::Array(_)),
+        editable: matrix || !composite,
+        expandable: composite && !matrix,
+        addable: matches!(value, SceneValue::Array(_)) && !matrix,
         removable: matches!(path.last(), Some(ValuePathStep::Index(_))),
     });
     if let Some(warning) = warning {
@@ -2999,6 +3078,52 @@ fn push_value_rows(
         }
         _ => {}
     }
+}
+
+pub fn matrix_kind_shape(kind: &str) -> Option<(usize, usize)> {
+    let inner = kind.strip_prefix("Matrix(")?.strip_suffix(')')?;
+    let dims = inner.split(',').next().unwrap_or(inner);
+    let (rows, cols) = dims.split_once('x')?;
+    Some((rows.parse().ok()?, cols.parse().ok()?))
+}
+
+fn scene_value_matrix_summary(value: &SceneValue, kind: &str) -> String {
+    if let Some((rows, cols)) = matrix_kind_shape(kind) {
+        return format!("Matrix {rows}x{cols}");
+    }
+    match value {
+        SceneValue::Array(rows) => {
+            let cols = rows
+                .iter()
+                .find_map(|row| match row {
+                    SceneValue::Array(cols) => Some(cols.len()),
+                    _ => None,
+                })
+                .unwrap_or(0);
+            format!("Matrix {}x{cols}", rows.len())
+        }
+        _ => scene_value_edit_text(value),
+    }
+}
+
+pub fn matrix_cell_texts(value: &SceneValue, kind: &str) -> Vec<Vec<String>> {
+    let Some((rows, cols)) = matrix_kind_shape(kind) else {
+        return Vec::new();
+    };
+    let mut out = vec![vec![String::new(); cols]; rows];
+    let SceneValue::Array(row_values) = value else {
+        return out;
+    };
+    for (r, row_value) in row_values.iter().take(rows).enumerate() {
+        let SceneValue::Array(col_values) = row_value else {
+            out[r][0] = scene_value_edit_text(row_value);
+            continue;
+        };
+        for (c, cell) in col_values.iter().take(cols).enumerate() {
+            out[r][c] = scene_value_edit_text(cell);
+        }
+    }
+    out
 }
 
 fn empty_array_add_row(
@@ -3179,7 +3304,20 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
         set_log(ctx, "script var edit fail\ncontainer row");
         return;
     }
-    let text = if row.kind == "Color" {
+    let matrix_value = if row.kind.starts_with("Matrix(") {
+        match read_matrix_grid_value(ctx, idx, &row) {
+            Some(value) => Some(value),
+            None => {
+                set_log(ctx, "matrix parse fail\nbad cell");
+                return;
+            }
+        }
+    } else {
+        None
+    };
+    let text = if matrix_value.is_some() {
+        String::new()
+    } else if row.kind == "Color" {
         let Some(text) = read_color_picker_value(ctx, &format!("inspector_var_{idx}_color_swatch"))
         else {
             return;
@@ -3304,11 +3442,15 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
         }
         return;
     }
-    let value = match parse_script_var_value(text.trim()) {
-        Ok(value) => value,
-        Err(err) => {
-            set_log(ctx, &format!("script var parse fail\n{err}"));
-            return;
+    let value = if let Some(value) = matrix_value {
+        value
+    } else {
+        match parse_script_var_value(text.trim()) {
+            Ok(value) => value,
+            Err(err) => {
+                set_log(ctx, &format!("script var parse fail\n{err}"));
+                return;
+            }
         }
     };
     let value = coerce_scene_value_to_kind(value, &row.kind);
@@ -3405,6 +3547,24 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
         }
         refresh_all(ctx);
     }
+}
+
+fn read_matrix_grid_value<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+    row: &InspectorValueRow,
+) -> Option<SceneValue> {
+    let (rows, cols) = matrix_kind_shape(&row.kind)?;
+    let mut out = Vec::with_capacity(rows);
+    for r in 0..rows {
+        let mut row_values = Vec::with_capacity(cols);
+        for c in 0..cols {
+            let text = read_text_box(ctx, &format!("inspector_var_{idx}_matrix_{r}_{c}_box"))?;
+            row_values.push(parse_script_var_value(text.trim()).ok()?);
+        }
+        out.push(SceneValue::Array(Cow::Owned(row_values)));
+    }
+    Some(SceneValue::Array(Cow::Owned(out)))
 }
 
 fn script_member_path_for_row(

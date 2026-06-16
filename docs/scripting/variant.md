@@ -61,7 +61,7 @@ Wrong stored type returns `None`.
 | bytes          | `as_bytes()`                                                                                                                                                                      |
 | any id enum    | `as_id()`                                                                                                                                                                         |
 | ids            | `as_node()`, `as_texture()`, `as_material()`, `as_mesh()`, `as_animation()`, `as_light()`, `as_signal()`, `as_audio_bus()`, `as_tag()`, `as_preloaded_scene()` |
-| math           | `as_vec2()`, `as_vec3()`, `as_vec4()`, `as_ivec2()`, `as_ivec3()`, `as_ivec4()`, `as_uvec2()`, `as_uvec3()`, `as_uvec4()`, `as_unit_vec2()`, `as_unit_vec3()`, `as_unit_vec4()`, `as_matrix2()`, `as_matrix3()`, `as_matrix4()`, `as_matrix2x2()`, `as_matrix3x3()`, `as_matrix4x4()` |
+| math           | `as_vec2()`, `as_vec3()`, `as_vec4()`, `as_ivec2()`, `as_ivec3()`, `as_ivec4()`, `as_uvec2()`, `as_uvec3()`, `as_uvec4()`, `as_unit_vec2()`, `as_unit_vec3()`, `as_unit_vec4()`, `as_matrix2()`, `as_matrix3()`, `as_matrix4()`, `as_matrix2x2()`, `as_matrix3x3()`, `as_matrix4x4()`, `matrix_shape()` |
 | transforms     | `as_transform2d()`, `as_transform3d()`                                                                                                                                            |
 | quaternions    | `as_quat()`                                                                                                                                                                       |
 | engine structs | `as_post_process_set()`, `as_visual_accessibility_settings()`                                                                                                                     |
@@ -110,7 +110,17 @@ Matrix variants store row-major data.
 
 `Matrix2`/`Matrix3`/`Matrix4` decode through `as_matrix*()`.
 
-`Matrix<2, 2>`/`Matrix<3, 3>`/`Matrix<4, 4>` decode through `as_matrix*x*()` or `parse::<T>()`.
+`Matrix<ROWS, COLS, T>` and `SqMatrix<SZ, T>` decode through `parse::<T>()` or `into_parse::<T>()`.
+
+Use `matrix_shape()` when you do not know row and column count yet.
+
+It returns `MatrixShape { rows, cols, cell_type }`.
+
+After shape check, branch to the typed matrix you expect.
+
+Matrix cell type must support Variant only when the matrix crosses a Variant boundary.
+
+Local-only matrices can store any `T`.
 
 Accepted matrix parse shapes:
 
@@ -127,6 +137,13 @@ let flat = Variant::Array(vec![
 
 let matrix = rows.parse::<Matrix<2, 2>>().unwrap();
 let same = flat.parse::<Matrix2>().unwrap();
+
+let shape = rows.matrix_shape().unwrap();
+let dynamic = match (shape.rows, shape.cols, shape.cell_type) {
+    (2, 3, MatrixCellType::F32) => rows.parse::<Matrix<2, 3, f32>>().ok().map(|m| m.to_variant()),
+    (5, 5, MatrixCellType::U8) => rows.parse::<SqMatrix<5, u8>>().ok().map(|m| m.to_variant()),
+    _ => None,
+};
 ```
 
 ## Custom Types

@@ -21,7 +21,8 @@ use crate::scripts_ui_editor_inspector_values_rs::*;
 use crate::scripts_ui_editor_view_rs as editor_view;
 use crate::scripts_ui_inspector_value_row_rs::{
     apply_inspector_value_row_panel, clear_inspector_value_rows, ensure_inspector_value_row,
-    hide_inspector_value_rows_from, inspector_value_row_inner, place_inspector_value_row,
+    ensure_inspector_matrix_grid, hide_inspector_value_rows_from, inspector_value_row_inner,
+    place_inspector_value_row,
 };
 use perro_api::prelude::*;
 use perro_api::scene::{
@@ -401,6 +402,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         if let Some(row_id) = inspector_value_row_inner(ctx, idx) {
             ensure_inspector_bitmask_grid(ctx, idx, row_id);
         }
+        ensure_inspector_matrix_grid(ctx, idx, row);
         set_ui_display(
             ctx,
             &format!("inspector_var_row_{idx}"),
@@ -414,8 +416,11 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
                 .unwrap_or("-"),
         );
         let bitmask_row = row.is_some_and(|item| item.kind == "BitMask");
-        let component_row =
-            row.is_some_and(|item| !item.components.is_empty() || item.kind == "Color");
+        let matrix_row = row.is_some_and(|item| item.kind.starts_with("Matrix("));
+        let component_row = row.is_some_and(|item| {
+            (!item.components.is_empty() && !item.kind.starts_with("Matrix("))
+                || item.kind == "Color"
+        });
         let section_row = row.is_some_and(|item| item.source == "section");
         let empty_row =
             row.is_some_and(|item| item.kind == "EmptyArrayAdd" || item.kind == "EmptyObject");
@@ -456,6 +461,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
                 &box_name,
                 view.inspector.node_actions
                     && row.is_some_and(|item| item.components.get(component).is_some())
+                    && row.is_none_or(|item| !item.kind.starts_with("Matrix("))
                     && row.is_none_or(|item| item.kind != "Color")
                     && !vars_closed,
             );
@@ -464,6 +470,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
                 &label_name,
                 view.inspector.node_actions
                     && row.is_some_and(|item| item.components.get(component).is_some())
+                    && row.is_none_or(|item| !item.kind.starts_with("Matrix("))
                     && row.is_none_or(|item| item.kind != "Color")
                     && !vars_closed,
             );
@@ -472,8 +479,42 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
                 &box_name,
                 view.inspector.node_actions
                     && row.is_some_and(|item| item.components.get(component).is_some())
+                    && row.is_none_or(|item| !item.kind.starts_with("Matrix("))
                     && row.is_none_or(|item| item.kind != "Color")
                     && !vars_closed,
+            );
+        }
+        if let Some(row) = row
+            && matrix_row
+        {
+            let (rows, cols) = matrix_kind_shape(&row.kind).unwrap_or((0, 0));
+            for r in 0..rows {
+                for c in 0..cols {
+                    let cell_idx = r * cols + c;
+                    let name = format!("inspector_var_{idx}_matrix_{r}_{c}_box");
+                    set_text_box(
+                        ctx,
+                        &name,
+                        row.components.get(cell_idx).map(String::as_str).unwrap_or(""),
+                    );
+                    set_text_box_input_type(ctx, &name, inspector_row_component_input_type(row));
+                    set_text_box_interactive(
+                        ctx,
+                        &name,
+                        view.inspector.node_actions && row.editable && !vars_closed,
+                    );
+                }
+            }
+            set_ui_display(
+                ctx,
+                &format!("inspector_var_{idx}_matrix_grid"),
+                view.inspector.node_actions && !vars_closed,
+            );
+        } else {
+            set_ui_display(
+                ctx,
+                &format!("inspector_var_{idx}_matrix_grid"),
+                false,
             );
         }
         let swatch_name = format!("inspector_var_{idx}_color_swatch");
@@ -528,6 +569,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
                 && !enum_row
                 && !bool_row
                 && !bitmask_row
+                && !matrix_row
                 && !component_row
                 && !vars_closed,
         );
@@ -1893,6 +1935,8 @@ fn inspector_row_base_heights(rows: &[InspectorValueRow]) -> Vec<f32> {
         .map(|row| {
             if row.kind == "BitMask" {
                 0.100
+            } else if let Some((rows, _)) = matrix_kind_shape(&row.kind) {
+                (0.034 * rows as f32).max(0.050)
             } else if row.kind == "Color" {
                 0.044
             } else if !row.components.is_empty() {
@@ -1919,6 +1963,8 @@ fn apply_inspector_value_row_text_layout<API: ScriptAPI + ?Sized>(
         0.72
     } else if row.kind == "BitMask" {
         0.13
+    } else if row.kind.starts_with("Matrix(") {
+        0.23
     } else if !row.components.is_empty() || row.kind == "Color" {
         0.34
     } else {

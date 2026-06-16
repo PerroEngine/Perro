@@ -6,7 +6,8 @@ use perro_ids::{
 };
 use perro_structs::{
     ColorBlindFilter, IVector2, IVector3, Matrix, Matrix3, PostProcessEffect, PostProcessSet,
-    UVector2, UVector3, UnitVector4, Vector2, Vector3, Vector4, VisualAccessibilitySettings,
+    SqMatrix, UVector2, UVector3, UnitVector4, Vector2, Vector3, Vector4,
+    VisualAccessibilitySettings,
 };
 
 use super::*;
@@ -351,6 +352,70 @@ fn test_matrix_variant_parse_from_rows_flat_and_object() {
         Variant::Object(object).parse::<Matrix<4, 4>>(),
         Ok(expected)
     );
+}
+
+#[test]
+fn test_sq_matrix_u8_parse_and_variant() {
+    let value = Variant::Array(vec![
+        Variant::Array(vec![Variant::from(1_u8), Variant::from(2_u8)]),
+        Variant::Array(vec![Variant::from(3_u8), Variant::from(4_u8)]),
+    ]);
+    let expected = SqMatrix::<2, u8>::new([[1, 2], [3, 4]]);
+
+    assert_eq!(value.parse::<SqMatrix<2, u8>>(), Ok(expected));
+    assert_eq!(expected.to_variant(), value);
+}
+
+#[test]
+fn test_sq_matrix_f32_maps_to_fast_matrix_variants() {
+    let m2 = SqMatrix::<2>::new([[1.0, 2.0], [3.0, 4.0]]);
+    let m3 = SqMatrix::<3>::identity();
+    let m4 = SqMatrix::<4>::identity();
+
+    assert!(m2.to_variant().as_matrix2().is_some());
+    assert!(m3.to_variant().as_matrix3().is_some());
+    assert!(m4.to_variant().as_matrix4().is_some());
+
+    assert_eq!(m2.to_variant().parse::<SqMatrix<2>>(), Ok(m2));
+    assert_eq!(m3.to_variant().parse::<SqMatrix<3>>(), Ok(m3));
+    assert_eq!(m4.to_variant().parse::<SqMatrix<4>>(), Ok(m4));
+}
+
+#[test]
+fn test_matrix_any_size_f32_parse_and_shape() {
+    let matrix = Matrix::<2, 3>::new([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]);
+    let variant = matrix.to_variant();
+
+    assert_eq!(
+        variant.matrix_shape(),
+        Some(MatrixShape::new(2, 3, MatrixCellType::F32))
+    );
+    assert_eq!(variant.parse::<Matrix<2, 3>>(), Ok(matrix));
+
+    let square = SqMatrix::<5>::default();
+    let variant = square.to_variant();
+    assert_eq!(
+        variant.matrix_shape(),
+        Some(MatrixShape::new(5, 5, MatrixCellType::F32))
+    );
+    assert_eq!(variant.parse::<SqMatrix<5>>(), Ok(square));
+}
+
+#[test]
+fn test_nested_sq_matrix_parse_and_shape() {
+    let inner = SqMatrix::<2>::new([[1.0, 2.0], [3.0, 4.0]]);
+    let matrix = SqMatrix::<2, SqMatrix<2>>::new([[inner, inner], [inner, inner]]);
+    let variant = matrix.to_variant();
+
+    assert_eq!(
+        variant.matrix_shape(),
+        Some(MatrixShape::new(
+            2,
+            2,
+            MatrixCellType::Matrix(Box::new(MatrixShape::new(2, 2, MatrixCellType::F32)))
+        ))
+    );
+    assert_eq!(variant.parse::<SqMatrix<2, SqMatrix<2>>>(), Ok(matrix));
 }
 
 #[test]

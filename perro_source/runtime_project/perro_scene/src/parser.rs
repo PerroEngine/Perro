@@ -899,6 +899,7 @@ fn euler_xyz_radians_to_quat_value(x: f32, y: f32, z: f32) -> SceneValue {
 #[cfg(test)]
 mod tests {
     use super::Parser;
+    use crate::SceneValue;
 
     #[test]
     fn parser_keeps_script_path_string() {
@@ -923,5 +924,20 @@ mod tests {
             Err(err) => err,
         };
         assert!(err.contains("Expected"));
+    }
+
+    #[test]
+    fn parser_accepts_matrix_array_literal() {
+        let value = Parser::new("[[1, 2, 3], [4, 5, 6]]").parse_value_literal();
+        let SceneValue::Array(rows) = value else {
+            panic!("expected matrix rows");
+        };
+        assert_eq!(rows.len(), 2);
+        for row in rows.iter() {
+            let SceneValue::Array(cols) = row else {
+                panic!("expected matrix cols");
+            };
+            assert_eq!(cols.len(), 3);
+        }
     }
 }

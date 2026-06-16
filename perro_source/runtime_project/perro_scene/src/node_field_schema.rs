@@ -73,6 +73,11 @@ pub enum NodeFieldType {
     BitMask,
     Object(Vec<NodeFieldDef>),
     Array(Box<NodeFieldType>),
+    Matrix {
+        rows: usize,
+        cols: usize,
+        item: Box<NodeFieldType>,
+    },
     Asset(SceneAssetKind),
     Unknown,
 }
@@ -84,6 +89,14 @@ impl NodeFieldType {
 
     pub fn array(item: NodeFieldType) -> Self {
         Self::Array(Box::new(item))
+    }
+
+    pub fn matrix(rows: usize, cols: usize, item: NodeFieldType) -> Self {
+        Self::Matrix {
+            rows,
+            cols,
+            item: Box::new(item),
+        }
     }
 
     pub fn default_value(&self) -> SceneValue {
@@ -123,6 +136,11 @@ impl NodeFieldType {
             Self::NodeRef(_) => SceneValue::Key(crate::SceneValueKey::from("null")),
             Self::Asset(_) => SceneValue::Str(Cow::Borrowed("")),
             Self::Array(_) => SceneValue::Array(Cow::Owned(Vec::new())),
+            Self::Matrix { rows, cols, item } => {
+                let value = item.default_value();
+                let row = SceneValue::Array(Cow::Owned(vec![value; *cols]));
+                SceneValue::Array(Cow::Owned(vec![row; *rows]))
+            }
             Self::Object(fields) => SceneValue::Object(Cow::Owned(
                 fields
                     .iter()

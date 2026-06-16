@@ -164,6 +164,66 @@ pub enum VariantKind {
     Object,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct MatrixShape {
+    pub rows: usize,
+    pub cols: usize,
+    pub cell_type: MatrixCellType,
+}
+
+impl MatrixShape {
+    #[inline]
+    pub fn new(rows: usize, cols: usize, cell_type: MatrixCellType) -> Self {
+        Self {
+            rows,
+            cols,
+            cell_type,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum MatrixCellType {
+    Null,
+    Bool,
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+    F32,
+    F64,
+    String,
+    Bytes,
+    ID,
+    Vector2,
+    Vector3,
+    Vector4,
+    IVector2,
+    IVector3,
+    IVector4,
+    UVector2,
+    UVector3,
+    UVector4,
+    UnitVector2,
+    UnitVector3,
+    UnitVector4,
+    Matrix(Box<MatrixShape>),
+    Transform2D,
+    Transform3D,
+    Quaternion,
+    PostProcessSet,
+    VisualAccessibilitySettings,
+    Array,
+    Object,
+    Mixed,
+}
+
 impl VariantKind {
     #[inline]
     pub const fn as_str(self) -> &'static str {
@@ -258,6 +318,14 @@ pub trait DeriveVariant: Sized {
 pub trait VariantSchema {
     fn field_names() -> &'static [&'static str] {
         &[]
+    }
+}
+
+pub trait VariantMatrixCell: Sized {
+    fn from_matrix_cell_variant(value: &Variant) -> Option<Self>;
+    fn to_matrix_cell_variant(&self) -> Variant;
+    fn as_matrix_cell_f32(&self) -> Option<f32> {
+        None
     }
 }
 
@@ -974,45 +1042,99 @@ impl DeriveVariant for Matrix4 {
     }
 }
 
-impl DeriveVariant for Matrix<2, 2, f32> {
+impl<const ROWS: usize, const COLS: usize, T> DeriveVariant for Matrix<ROWS, COLS, T>
+where
+    T: VariantMatrixCell,
+{
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
-        value
-            .as_matrix2x2()
-            .or_else(|| parse_matrix_rows::<2>(value).map(Self::new))
+        parse_matrix_rows_generic(value)
+            .or_else(|| parse_matrix_rows_generic(&Variant::from_json_value(value.to_json_value())))
     }
 
     #[inline]
     fn to_variant(&self) -> Variant {
-        Variant::from(*self)
+        matrix_to_fast_variant(self).unwrap_or_else(|| matrix_to_variant_array(self))
     }
 }
 
-impl DeriveVariant for Matrix<3, 3, f32> {
+macro_rules! impl_variant_matrix_cell {
+    ($($ty:ty),* $(,)?) => {
+        $(
+            impl VariantMatrixCell for $ty {
+                #[inline]
+                fn from_matrix_cell_variant(value: &Variant) -> Option<Self> {
+                    <Self as DeriveVariant>::from_variant(value)
+                }
+
+                #[inline]
+                fn to_matrix_cell_variant(&self) -> Variant {
+                    <Self as DeriveVariant>::to_variant(self)
+                }
+            }
+        )*
+    };
+}
+
+impl_variant_matrix_cell!(
+    bool,
+    i8,
+    i16,
+    i32,
+    i64,
+    i128,
+    isize,
+    u8,
+    u16,
+    u32,
+    u64,
+    u128,
+    usize,
+    f64,
+    String,
+    Vector2,
+    Vector3,
+    Vector4,
+    IVector2,
+    IVector3,
+    IVector4,
+    UVector2,
+    UVector3,
+    UVector4,
+    UnitVector2,
+    UnitVector3,
+    UnitVector4,
+);
+
+impl VariantMatrixCell for f32 {
     #[inline]
-    fn from_variant(value: &Variant) -> Option<Self> {
-        value
-            .as_matrix3x3()
-            .or_else(|| parse_matrix_rows::<3>(value).map(Self::new))
+    fn from_matrix_cell_variant(value: &Variant) -> Option<Self> {
+        value.as_number()?.as_f64_lossy().map(|value| value as f32)
     }
 
     #[inline]
-    fn to_variant(&self) -> Variant {
-        Variant::from(*self)
+    fn to_matrix_cell_variant(&self) -> Variant {
+        <Self as DeriveVariant>::to_variant(self)
+    }
+
+    #[inline]
+    fn as_matrix_cell_f32(&self) -> Option<f32> {
+        Some(*self)
     }
 }
 
-impl DeriveVariant for Matrix<4, 4, f32> {
+impl<const ROWS: usize, const COLS: usize, T> VariantMatrixCell for Matrix<ROWS, COLS, T>
+where
+    T: VariantMatrixCell,
+{
     #[inline]
-    fn from_variant(value: &Variant) -> Option<Self> {
-        value
-            .as_matrix4x4()
-            .or_else(|| parse_matrix_rows::<4>(value).map(Self::new))
+    fn from_matrix_cell_variant(value: &Variant) -> Option<Self> {
+        <Self as DeriveVariant>::from_variant(value)
     }
 
     #[inline]
-    fn to_variant(&self) -> Variant {
-        Variant::from(*self)
+    fn to_matrix_cell_variant(&self) -> Variant {
+        <Self as DeriveVariant>::to_variant(self)
     }
 }
 
@@ -1609,6 +1731,47 @@ impl Variant {
     }
 
     #[inline]
+    pub fn matrix_shape(&self) -> Option<MatrixShape> {
+        match self {
+            Variant::EngineStruct(EngineStruct::Matrix2(_)) => {
+                Some(MatrixShape::new(2, 2, MatrixCellType::F32))
+            }
+            Variant::EngineStruct(EngineStruct::Matrix3(_)) => {
+                Some(MatrixShape::new(3, 3, MatrixCellType::F32))
+            }
+            Variant::EngineStruct(EngineStruct::Matrix4(_)) => {
+                Some(MatrixShape::new(4, 4, MatrixCellType::F32))
+            }
+            Variant::Object(obj) => obj.get("rows")?.matrix_shape(),
+            Variant::Array(rows) => {
+                let first_row = rows.first()?.as_array()?;
+                let cols = first_row.len();
+                let mut cell_type = first_row
+                    .first()
+                    .and_then(matrix_cell_type_for_variant)
+                    .unwrap_or(MatrixCellType::Null);
+
+                for row in rows {
+                    let row = row.as_array()?;
+                    if row.len() != cols {
+                        return None;
+                    }
+
+                    for cell in row {
+                        let next_type = matrix_cell_type_for_variant(cell)?;
+                        if cell_type != next_type {
+                            cell_type = MatrixCellType::Mixed;
+                        }
+                    }
+                }
+
+                Some(MatrixShape::new(rows.len(), cols, cell_type))
+            }
+            _ => None,
+        }
+    }
+
+    #[inline]
     pub fn as_transform2d(&self) -> Option<Transform2D> {
         match self {
             Variant::EngineStruct(EngineStruct::Transform2D(t)) => Some(*t),
@@ -1679,6 +1842,65 @@ impl Variant {
             _ => None,
         }
     }
+}
+
+fn matrix_cell_type_for_variant(value: &Variant) -> Option<MatrixCellType> {
+    Some(match value {
+        Variant::Null => MatrixCellType::Null,
+        Variant::Bool(_) => MatrixCellType::Bool,
+        Variant::Number(Number::I8(_)) => MatrixCellType::I8,
+        Variant::Number(Number::I16(_)) => MatrixCellType::I16,
+        Variant::Number(Number::I32(_)) => MatrixCellType::I32,
+        Variant::Number(Number::I64(_)) => MatrixCellType::I64,
+        Variant::Number(Number::I128(_)) => MatrixCellType::I128,
+        Variant::Number(Number::U8(_)) => MatrixCellType::U8,
+        Variant::Number(Number::U16(_)) => MatrixCellType::U16,
+        Variant::Number(Number::U32(_)) => MatrixCellType::U32,
+        Variant::Number(Number::U64(_)) => MatrixCellType::U64,
+        Variant::Number(Number::U128(_)) => MatrixCellType::U128,
+        Variant::Number(Number::F32(_)) => MatrixCellType::F32,
+        Variant::Number(Number::F64(_)) => MatrixCellType::F64,
+        Variant::String(_) => MatrixCellType::String,
+        Variant::Bytes(_) => MatrixCellType::Bytes,
+        Variant::ID(_) => MatrixCellType::ID,
+        Variant::EngineStruct(EngineStruct::Vector2(_)) => MatrixCellType::Vector2,
+        Variant::EngineStruct(EngineStruct::Vector3(_)) => MatrixCellType::Vector3,
+        Variant::EngineStruct(EngineStruct::Vector4(_)) => MatrixCellType::Vector4,
+        Variant::EngineStruct(EngineStruct::IVector2(_)) => MatrixCellType::IVector2,
+        Variant::EngineStruct(EngineStruct::IVector3(_)) => MatrixCellType::IVector3,
+        Variant::EngineStruct(EngineStruct::IVector4(_)) => MatrixCellType::IVector4,
+        Variant::EngineStruct(EngineStruct::UVector2(_)) => MatrixCellType::UVector2,
+        Variant::EngineStruct(EngineStruct::UVector3(_)) => MatrixCellType::UVector3,
+        Variant::EngineStruct(EngineStruct::UVector4(_)) => MatrixCellType::UVector4,
+        Variant::EngineStruct(EngineStruct::UnitVector2(_)) => MatrixCellType::UnitVector2,
+        Variant::EngineStruct(EngineStruct::UnitVector3(_)) => MatrixCellType::UnitVector3,
+        Variant::EngineStruct(EngineStruct::UnitVector4(_)) => MatrixCellType::UnitVector4,
+        Variant::EngineStruct(EngineStruct::Matrix2(_)) => {
+            MatrixCellType::Matrix(Box::new(MatrixShape::new(2, 2, MatrixCellType::F32)))
+        }
+        Variant::EngineStruct(EngineStruct::Matrix3(_)) => {
+            MatrixCellType::Matrix(Box::new(MatrixShape::new(3, 3, MatrixCellType::F32)))
+        }
+        Variant::EngineStruct(EngineStruct::Matrix4(_)) => {
+            MatrixCellType::Matrix(Box::new(MatrixShape::new(4, 4, MatrixCellType::F32)))
+        }
+        Variant::EngineStruct(EngineStruct::Transform2D(_)) => MatrixCellType::Transform2D,
+        Variant::EngineStruct(EngineStruct::Transform3D(_)) => MatrixCellType::Transform3D,
+        Variant::EngineStruct(EngineStruct::Quaternion(_)) => MatrixCellType::Quaternion,
+        Variant::EngineStruct(EngineStruct::PostProcessSet(_)) => MatrixCellType::PostProcessSet,
+        Variant::EngineStruct(EngineStruct::VisualAccessibilitySettings(_)) => {
+            MatrixCellType::VisualAccessibilitySettings
+        }
+        Variant::Array(_) => value
+            .matrix_shape()
+            .map(|shape| MatrixCellType::Matrix(Box::new(shape)))
+            .unwrap_or(MatrixCellType::Array),
+        Variant::Object(obj) => obj
+            .get("rows")
+            .and_then(Variant::matrix_shape)
+            .map(|shape| MatrixCellType::Matrix(Box::new(shape)))
+            .unwrap_or(MatrixCellType::Object),
+    })
 }
 
 // -------------------- From impls (ergonomic construction) --------------------
@@ -2568,6 +2790,118 @@ fn parse_matrix_rows<const N: usize>(value: &Variant) -> Option<[[f32; N]; N]> {
     }
 
     None
+}
+
+fn parse_matrix_rows_generic<const ROWS: usize, const COLS: usize, T>(
+    value: &Variant,
+) -> Option<Matrix<ROWS, COLS, T>>
+where
+    T: VariantMatrixCell,
+{
+    if let Variant::Object(obj) = value
+        && let Some(rows) = obj.get("rows")
+    {
+        return parse_matrix_rows_generic(rows);
+    }
+
+    let values = value.as_array()?;
+    let mut rows = Vec::with_capacity(ROWS);
+    if values.len() == ROWS {
+        for row in values {
+            let cols = row.as_array()?;
+            if cols.len() != COLS {
+                return None;
+            }
+            let row = cols
+                .iter()
+                .map(T::from_matrix_cell_variant)
+                .collect::<Option<Vec<_>>>()?
+                .try_into()
+                .ok()?;
+            rows.push(row);
+        }
+    } else if values.len() == ROWS * COLS {
+        for row in 0..ROWS {
+            let start = row * COLS;
+            let row = values[start..start + COLS]
+                .iter()
+                .map(T::from_matrix_cell_variant)
+                .collect::<Option<Vec<_>>>()?
+                .try_into()
+                .ok()?;
+            rows.push(row);
+        }
+    } else {
+        return None;
+    }
+
+    Some(Matrix::new(rows.try_into().ok()?))
+}
+
+fn matrix_to_fast_variant<const ROWS: usize, const COLS: usize, T>(
+    matrix: &Matrix<ROWS, COLS, T>,
+) -> Option<Variant>
+where
+    T: VariantMatrixCell,
+{
+    if ROWS != COLS {
+        return None;
+    }
+    let values = matrix_to_f32_values(matrix)?;
+    match ROWS {
+        2 => Some(Variant::from(Matrix2::from_rows([
+            [values[0], values[1]],
+            [values[2], values[3]],
+        ]))),
+        3 => Some(Variant::from(Matrix3::from_rows([
+            [values[0], values[1], values[2]],
+            [values[3], values[4], values[5]],
+            [values[6], values[7], values[8]],
+        ]))),
+        4 => Some(Variant::from(Matrix4::from_rows([
+            [values[0], values[1], values[2], values[3]],
+            [values[4], values[5], values[6], values[7]],
+            [values[8], values[9], values[10], values[11]],
+            [values[12], values[13], values[14], values[15]],
+        ]))),
+        _ => None,
+    }
+}
+
+fn matrix_to_f32_values<const ROWS: usize, const COLS: usize, T>(
+    matrix: &Matrix<ROWS, COLS, T>,
+) -> Option<Vec<f32>>
+where
+    T: VariantMatrixCell,
+{
+    let mut out = Vec::with_capacity(ROWS * COLS);
+    for row in matrix.rows() {
+        for cell in row {
+            out.push(cell.as_matrix_cell_f32()?);
+        }
+    }
+    Some(out)
+}
+
+fn matrix_to_variant_array<const ROWS: usize, const COLS: usize, T>(
+    matrix: &Matrix<ROWS, COLS, T>,
+) -> Variant
+where
+    T: VariantMatrixCell,
+{
+    Variant::Array(
+        matrix
+            .rows()
+            .iter()
+            .map(|row| {
+                Variant::Array(
+                    row.iter()
+                        .map(VariantMatrixCell::to_matrix_cell_variant)
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect(),
+    )
 }
 
 fn matrix_rows_to_json<const N: usize>(rows: [[f32; N]; N]) -> JsonValue {

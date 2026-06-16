@@ -32,6 +32,7 @@ enum InspectorRowTemplate {
     Quat,
     CustomStruct,
     Array,
+    Matrix,
     Enum,
     Bool,
     Color,
@@ -299,6 +300,7 @@ fn inspector_row_template(row: Option<&InspectorValueRow>) -> InspectorRowTempla
         "Color" => InspectorRowTemplate::Color,
         kind if kind.starts_with("Node") => InspectorRowTemplate::NodeRef,
         kind if kind.starts_with("Asset(") => InspectorRowTemplate::AssetRef,
+        kind if kind.starts_with("Matrix(") => InspectorRowTemplate::Matrix,
         _ if row.addable => InspectorRowTemplate::Array,
         _ if row.expandable => InspectorRowTemplate::CustomStruct,
         _ => InspectorRowTemplate::Generic,
@@ -313,12 +315,97 @@ fn inspector_row_scene(template: InspectorRowTemplate) -> &'static str {
         InspectorRowTemplate::Quat => editor_app::INSPECTOR_QUAT_ROW_SCENE,
         InspectorRowTemplate::CustomStruct => editor_app::INSPECTOR_CUSTOM_STRUCT_ROW_SCENE,
         InspectorRowTemplate::Array => editor_app::INSPECTOR_ARRAY_ROW_SCENE,
+        InspectorRowTemplate::Matrix => editor_app::INSPECTOR_MATRIX_ROW_SCENE,
         InspectorRowTemplate::Enum => editor_app::INSPECTOR_ENUM_ROW_SCENE,
         InspectorRowTemplate::Bool => editor_app::INSPECTOR_BOOL_ROW_SCENE,
         InspectorRowTemplate::Color => editor_app::INSPECTOR_COLOR_ROW_SCENE,
         InspectorRowTemplate::NodeRef => editor_app::INSPECTOR_NODE_REF_ROW_SCENE,
         InspectorRowTemplate::AssetRef => editor_app::INSPECTOR_ASSET_REF_ROW_SCENE,
     }
+}
+
+pub fn ensure_inspector_matrix_grid<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+    row: Option<&InspectorValueRow>,
+) {
+    let grid_name = format!("inspector_var_{idx}_matrix_grid");
+    let Some(row) = row else {
+        if let Some(id) = find_named(ctx, &grid_name) {
+            let _ = ctx.run.Nodes().remove_node(id);
+        }
+        return;
+    };
+    let Some((rows, cols)) = matrix_kind_shape(&row.kind) else {
+        if let Some(id) = find_named(ctx, &grid_name) {
+            let _ = ctx.run.Nodes().remove_node(id);
+        }
+        return;
+    };
+    let expected = rows.saturating_mul(cols);
+    if let Some(grid_id) = find_named(ctx, &grid_name) {
+        let child_count = ctx
+            .run
+            .Nodes()
+            .get_node_children_ids(grid_id)
+            .map(|children| children.len())
+            .unwrap_or(0);
+        if child_count == expected {
+            let _ = with_node_mut!(ctx.run, UiGrid, grid_id, |node| {
+                node.columns = cols as u32;
+            });
+            return;
+        }
+        let _ = ctx.run.Nodes().remove_node(grid_id);
+    }
+    let Some(parent) = inspector_value_row_inner(ctx, idx) else {
+        return;
+    };
+    let grid = ctx.run.Nodes().create::<UiGrid>();
+    let _ = ctx.run.Nodes().set_node_name(grid, grid_name);
+    let _ = ctx.run.Nodes().reparent(parent, grid);
+    let _ = with_node_mut!(ctx.run, UiGrid, grid, |node| {
+        node.layout.size = UiVector2::ratio(0.52, 0.92);
+        node.columns = cols as u32;
+        node.h_spacing = 3.0;
+        node.v_spacing = 3.0;
+        node.input_enabled = false;
+        node.mouse_filter = UiMouseFilter::Pass;
+    });
+    for r in 0..rows {
+        for c in 0..cols {
+            let cell = ctx.run.Nodes().create::<UiTextBox>();
+            let _ = ctx
+                .run
+                .Nodes()
+                .set_node_name(cell, format!("inspector_var_{idx}_matrix_{r}_{c}_box"));
+            let _ = ctx.run.Nodes().reparent(grid, cell);
+            let _ = with_node_mut!(ctx.run, UiTextBox, cell, |node| {
+                node.base.layout.size = UiVector2::ratio(1.0, 1.0);
+                node.text_size_ratio = 0.54;
+                node.padding = UiRect::new(4.0, 1.0, 4.0, 1.0);
+                node.focused_signals = vec![SignalID::from_string("editor_inspector_focus")];
+                node.unfocused_signals = vec![SignalID::from_string("editor_inspector_commit")];
+                node.style.fill = Color::from_hex("#2A2F36").unwrap_or(node.style.fill);
+                node.style.stroke = Color::from_hex("#343A43").unwrap_or(node.style.stroke);
+                node.style.stroke_width = 1.0;
+                node.style.corner_radius = 0.12;
+                node.focused_style.fill =
+                    Color::from_hex("#2A2F36").unwrap_or(node.focused_style.fill);
+                node.focused_style.stroke =
+                    Color::from_hex("#4D84D1").unwrap_or(node.focused_style.stroke);
+                node.focused_style.stroke_width = 1.0;
+                node.focused_style.corner_radius = 0.12;
+            });
+        }
+    }
+}
+
+fn matrix_kind_shape(kind: &str) -> Option<(usize, usize)> {
+    let inner = kind.strip_prefix("Matrix(")?.strip_suffix(')')?;
+    let dims = inner.split(',').next().unwrap_or(inner);
+    let (rows, cols) = dims.split_once('x')?;
+    Some((rows.parse().ok()?, cols.parse().ok()?))
 }
 
 fn inspector_cached_row_template(idx: usize) -> Option<InspectorRowTemplate> {
