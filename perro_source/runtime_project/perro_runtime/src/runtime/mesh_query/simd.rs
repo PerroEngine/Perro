@@ -10,14 +10,18 @@ pub(super) fn aabb_distance2(p: Vec3, min: Vec3, max: Vec3) -> f32 {
 
     #[cfg(target_arch = "aarch64")]
     {
-        return aarch64::aabb_distance2(p, min, max);
+        aarch64::aabb_distance2(p, min, max)
     }
 
     #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
     {
-        return wasm32::aabb_distance2(p, min, max);
+        wasm32::aabb_distance2(p, min, max)
     }
 
+    #[cfg(not(any(
+        target_arch = "aarch64",
+        all(target_arch = "wasm32", target_feature = "simd128")
+    )))]
     scalar_aabb_distance2(p, min, max)
 }
 
@@ -37,14 +41,18 @@ pub(super) fn ray_aabb_tmin(
 
     #[cfg(target_arch = "aarch64")]
     {
-        return aarch64::ray_aabb_tmin(origin, dir, min, max, max_t);
+        aarch64::ray_aabb_tmin(origin, dir, min, max, max_t)
     }
 
     #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
     {
-        return wasm32::ray_aabb_tmin(origin, dir, min, max, max_t);
+        wasm32::ray_aabb_tmin(origin, dir, min, max, max_t)
     }
 
+    #[cfg(not(any(
+        target_arch = "aarch64",
+        all(target_arch = "wasm32", target_feature = "simd128")
+    )))]
     scalar_ray_aabb_tmin(origin, dir, min, max, max_t)
 }
 
