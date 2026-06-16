@@ -1,7 +1,7 @@
 $root = @inspector_value_row
 
 [inspector_value_row]
-script = "res://scripts/ui/inspector_value_row.rs"
+script = "res://scripts/ui/inspector_scenes/enum_row.rs"
     [UiPanel]
         size_ratio = (0.985, 0.031)
         padding = (0.004, 0.001)
@@ -357,7 +357,7 @@ parent = @inspector_value_row_inner
         placeholder = "x"
         placeholder_color = "#6E7680"
         text_size_ratio = 0.62
-        padding = (4.0, 1.0)
+        padding = (13.0, 1.0, 4.0, 1.0)
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = {
@@ -375,6 +375,20 @@ parent = @inspector_value_row_inner
     [/UiTextBox]
 [/inspector_value_0_box]
 
+[inspector_value_0_label]
+parent = @inspector_value_0_box
+    [UiLabel]
+        size_ratio = (0.28, 1.0)
+        text = "X"
+        text_size_ratio = 0.52
+        color = "#D95F5F"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_value_0_label]
+
 [inspector_value_1_box]
 parent = @inspector_value_row_inner
     [UiTextBox]
@@ -383,7 +397,7 @@ parent = @inspector_value_row_inner
         placeholder = "y"
         placeholder_color = "#6E7680"
         text_size_ratio = 0.62
-        padding = (4.0, 1.0)
+        padding = (13.0, 1.0, 4.0, 1.0)
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = {
@@ -401,6 +415,20 @@ parent = @inspector_value_row_inner
     [/UiTextBox]
 [/inspector_value_1_box]
 
+[inspector_value_1_label]
+parent = @inspector_value_1_box
+    [UiLabel]
+        size_ratio = (0.28, 1.0)
+        text = "Y"
+        text_size_ratio = 0.52
+        color = "#5EA868"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_value_1_label]
+
 [inspector_value_2_box]
 parent = @inspector_value_row_inner
     [UiTextBox]
@@ -409,7 +437,7 @@ parent = @inspector_value_row_inner
         placeholder = "z"
         placeholder_color = "#6E7680"
         text_size_ratio = 0.62
-        padding = (4.0, 1.0)
+        padding = (13.0, 1.0, 4.0, 1.0)
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = {
@@ -427,6 +455,20 @@ parent = @inspector_value_row_inner
     [/UiTextBox]
 [/inspector_value_2_box]
 
+[inspector_value_2_label]
+parent = @inspector_value_2_box
+    [UiLabel]
+        size_ratio = (0.28, 1.0)
+        text = "Z"
+        text_size_ratio = 0.52
+        color = "#4D84D1"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_value_2_label]
+
 [inspector_value_3_box]
 parent = @inspector_value_row_inner
     [UiTextBox]
@@ -435,7 +477,7 @@ parent = @inspector_value_row_inner
         placeholder = "w"
         placeholder_color = "#6E7680"
         text_size_ratio = 0.62
-        padding = (4.0, 1.0)
+        padding = (13.0, 1.0, 4.0, 1.0)
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = {
@@ -452,3 +494,17 @@ parent = @inspector_value_row_inner
         }
     [/UiTextBox]
 [/inspector_value_3_box]
+
+[inspector_value_3_label]
+parent = @inspector_value_3_box
+    [UiLabel]
+        size_ratio = (0.28, 1.0)
+        text = "W"
+        text_size_ratio = 0.52
+        color = "#D9A24A"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_value_3_label]

@@ -417,7 +417,8 @@ fn sectioned_group_rows(
 }
 
 fn scene_row_subsection(owner: &str, section: &str, leaf: &str) -> Option<String> {
-    if section.is_empty() || owner == leaf || owner == "Node" {
+    let _ = leaf;
+    if section.is_empty() || owner == "Node" {
         return None;
     }
     Some(section.to_string())
@@ -3521,6 +3522,110 @@ pub fn mutate_selected_inspector_array<API: ScriptAPI + ?Sized>(
         rebuild_preview(ctx);
         refresh_all(ctx);
     }
+}
+
+pub fn reset_selected_inspector_value<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+) {
+    let row = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        let key = state.selected_key?;
+        let doc = cached_scene_doc(&state.doc_text);
+        let node = doc
+            .scene
+            .nodes
+            .iter()
+            .find(|node| node.key.as_u32() == key)?;
+        inspector_display_rows_for_node(state, node).get(idx).cloned()
+    });
+    let Some(row) = row else {
+        return;
+    };
+    let changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        let Some(key) = state.selected_key else {
+            return false;
+        };
+        let mut doc = cached_scene_doc(&state.doc_text);
+        let Some(node) = doc
+            .scene
+            .nodes
+            .to_mut()
+            .iter_mut()
+            .find(|node| node.key.as_u32() == key)
+        else {
+            return false;
+        };
+        match row.source.as_str() {
+            "script" => {
+                let defaults = inspector_script_var_default_fields_for_node(state, node);
+                let mut fields = inspector_script_var_fields_for_node(state, node);
+                let Some(default_value) = value_at_path_in_fields(&defaults, &row.path).cloned()
+                else {
+                    return false;
+                };
+                if !set_value_at_path(&mut fields, &row.path, default_value) {
+                    return false;
+                }
+                if !write_script_var_override(node.script_vars.to_mut(), &defaults, &fields, &row.path)
+                {
+                    return false;
+                }
+            }
+            "scene" => {
+                let Some(ValuePathStep::Root(root_idx)) = row.path.first() else {
+                    return false;
+                };
+                let fields = inspector_scene_value_fields_for_node(node);
+                let Some((field_name, _)) = fields.get(*root_idx) else {
+                    return false;
+                };
+                node.data.fields.to_mut().retain(|(field, _)| field != field_name);
+            }
+            "tags" => {
+                node.tags.to_mut().clear();
+            }
+            _ => return false,
+        }
+        set_state_scene_doc(state, &doc);
+        state.dirty = true;
+        if let Some(path) = state.open_paths.get(state.active_open).cloned()
+            && !state.dirty_scene_paths.iter().any(|item| item == &path)
+        {
+            state.dirty_scene_paths.push(path);
+        }
+        state.log = format!("reset inspector\n{}", row.name.trim());
+        true
+    })
+    .unwrap_or(false);
+    if changed {
+        rebuild_preview(ctx);
+        refresh_all(ctx);
+    }
+}
+
+fn value_at_path_in_fields<'a>(
+    fields: &'a [(SceneFieldName, SceneValue)],
+    path: &[ValuePathStep],
+) -> Option<&'a SceneValue> {
+    let Some(ValuePathStep::Root(idx)) = path.first() else {
+        return None;
+    };
+    let mut value = fields.get(*idx).map(|(_, value)| value)?;
+    for step in &path[1..] {
+        match (value, step) {
+            (SceneValue::Object(fields), ValuePathStep::Field(name)) => {
+                value = fields
+                    .iter()
+                    .find(|(field, _)| field.as_ref() == name)
+                    .map(|(_, value)| value)?;
+            }
+            (SceneValue::Array(values), ValuePathStep::Index(idx)) => {
+                value = values.get(*idx)?;
+            }
+            _ => return None,
+        }
+    }
+    Some(value)
 }
 
 pub fn toggle_selected_inspector_bitmask_bit<API: ScriptAPI + ?Sized>(

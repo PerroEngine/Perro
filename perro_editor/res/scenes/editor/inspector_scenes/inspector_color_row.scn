@@ -1,0 +1,510 @@
+$root = @inspector_value_row
+
+[inspector_value_row]
+script = "res://scripts/ui/inspector_scenes/color_row.rs"
+    [UiPanel]
+        size_ratio = (0.985, 0.031)
+        padding = (0.004, 0.001)
+        h_align = "fill"
+        visible = false
+        style = {
+            fill = "#00000000",
+            stroke = "#00000000",
+            stroke_width = 0.0,
+            radius = 0.0
+        }
+    [/UiPanel]
+[/inspector_value_row]
+
+[inspector_value_row_header]
+parent = @inspector_value_row
+    [UiPanel]
+        anchor = "top"
+        size_ratio = (1.0, 1.0)
+        input_enabled = false
+        mouse_filter = "pass"
+        style = {
+            fill = "#23272D",
+            stroke = "#343A43",
+            stroke_width = 1.0,
+            radius = 0.12
+        }
+    [/UiPanel]
+[/inspector_value_row_header]
+
+[inspector_value_row_stack]
+parent = @inspector_value_row
+    [UiVLayout]
+        size_ratio = (1.0, 1.0)
+        z_index = 1.0
+        h_align = "fill"
+        v_align = "start"
+        spacing = 0.0
+        padding = (0.0, 0.0)
+    [/UiVLayout]
+[/inspector_value_row_stack]
+
+[inspector_value_row_inner]
+parent = @inspector_value_row_stack
+    [UiHLayout]
+        size_ratio = (1.0, 1.0)
+        h_align = "fill"
+        v_align = "center"
+        spacing = 0.002
+    [/UiHLayout]
+[/inspector_value_row_inner]
+
+[inspector_value_row_children]
+parent = @inspector_value_row_stack
+    [UiVLayout]
+        size_ratio = (1.0, 0.0)
+        h_align = "fill"
+        v_align = "start"
+        spacing = 0.0
+        padding = (0.0, 0.0)
+        visible = false
+    [/UiVLayout]
+[/inspector_value_row_children]
+
+[inspector_value_name]
+parent = @inspector_value_row_inner
+    [UiLabel]
+        size_ratio = (0.34, 1.0)
+        text_size_ratio = 0.35
+        color = "#A7AFB9"
+        h_align = "start"
+    [/UiLabel]
+[/inspector_value_name]
+
+[inspector_value_box]
+parent = @inspector_value_row_inner
+    [UiTextBox]
+        size_ratio = (0.5, 0.7)
+        text_size_ratio = 0.62
+        padding = (5.0, 1.0)
+        focused_signals = ["editor_inspector_focus"]
+        unfocused_signals = ["editor_inspector_commit"]
+        style = {
+            fill = "#2A2F36",
+            stroke = "#343A43",
+            stroke_width = 1.0,
+            radius = 0.2
+        }
+        focused_style = {
+            fill = "#2A2F36",
+            stroke = "#4D84D1",
+            stroke_width = 1.0,
+            radius = 0.2
+        }
+    [/UiTextBox]
+[/inspector_value_box]
+
+[inspector_value_check]
+parent = @inspector_value_row_inner
+    [UiCheckbox]
+        size_ratio = (0.055, 0.5)
+        visible = false
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = {
+            fill = "#00000000",
+            stroke = "#A7AFB9",
+            stroke_width = 1.5,
+            radius = 0.1
+        }
+        hover = { style = { fill = "#23272D", stroke = "#A7AFB9", stroke_width = 1.5, radius = 0.1 } }
+        pressed = { style = { fill = "#323842", stroke = "#D7DBE0", stroke_width = 1.5, radius = 0.1 } }
+        dot_fill = "#5A91DD"
+    [/UiCheckbox]
+[/inspector_value_check]
+
+[inspector_value_pick_button]
+parent = @inspector_value_row_inner
+    [UiButton]
+        size_ratio = (0.42, 0.62)
+        visible = false
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = {
+            fill = "#2A2F36",
+            stroke = "#343A43",
+            stroke_width = 1.0,
+            radius = 0.2
+        }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.2 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.2 } }
+    [/UiButton]
+[/inspector_value_pick_button]
+
+[inspector_value_pick_label]
+parent = @inspector_value_pick_button
+    [UiLabel]
+        size_ratio = (0.96, 1.0)
+        text_size_ratio = 0.316
+        color = "#D7DBE0"
+        h_align = "start"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_value_pick_label]
+
+[inspector_value_type]
+parent = @inspector_value_row_inner
+    [UiLabel]
+        size_ratio = (0.16, 1.0)
+        text_size_ratio = 0.28
+        color = "#A7AFB9"
+    [/UiLabel]
+[/inspector_value_type]
+
+[inspector_value_add_button]
+parent = @inspector_value_row_inner
+    [UiButton]
+        size_ratio = (0.045, 0.62)
+        visible = false
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = {
+            fill = "#2A2F36",
+            stroke = "#343A43",
+            stroke_width = 1.0,
+            radius = 0.2
+        }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.2 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.2 } }
+    [/UiButton]
+[/inspector_value_add_button]
+
+[inspector_value_add_label]
+parent = @inspector_value_add_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "+"
+        text_size_ratio = 0.38
+        color = "#D7DBE0"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_value_add_label]
+
+[inspector_value_remove_button]
+parent = @inspector_value_row_inner
+    [UiButton]
+        size_ratio = (0.045, 0.62)
+        visible = false
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = {
+            fill = "#2A2F36",
+            stroke = "#343A43",
+            stroke_width = 1.0,
+            radius = 0.2
+        }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.2 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.2 } }
+    [/UiButton]
+[/inspector_value_remove_button]
+
+[inspector_value_remove_label]
+parent = @inspector_value_remove_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "x"
+        text_size_ratio = 0.38
+        color = "#D7DBE0"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_value_remove_label]
+
+[inspector_value_color_swatch]
+parent = @inspector_value_row_inner
+    [UiColorPicker]
+        size_ratio = (0.34, 0.62)
+        visible = false
+        mouse_filter = "pass"
+        color_changed_signals = ["editor_inspector_var_7"]
+        style = {
+            fill = "#2A2F36",
+            stroke = "#D7DBE0",
+            stroke_width = 1.0,
+            radius = 0.2
+        }
+        hover = { style = { fill = "#323842", stroke = "#D7DBE0", stroke_width = 1.0, radius = 0.2 } }
+        pressed = { style = { fill = "#343A43", stroke = "#A7AFB9", stroke_width = 1.0, radius = 0.2 } }
+    [/UiColorPicker]
+[/inspector_value_color_swatch]
+
+[inspector_value_quat_button]
+parent = @inspector_value_row_inner
+    [UiButton]
+        size_ratio = (0.075, 0.62)
+        visible = false
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = {
+            fill = "#2A2F36",
+            stroke = "#343A43",
+            stroke_width = 1.0,
+            radius = 0.2
+        }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.2 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.2 } }
+    [/UiButton]
+[/inspector_value_quat_button]
+
+[inspector_value_quat_label]
+parent = @inspector_value_quat_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "Q"
+        text_size_ratio = 0.34
+        color = "#D7DBE0"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_value_quat_label]
+
+[inspector_value_euler_button]
+parent = @inspector_value_row_inner
+    [UiButton]
+        size_ratio = (0.075, 0.62)
+        visible = false
+        click_signals = ["editor_inspector_var_pick_7"]
+        style = {
+            fill = "#2A2F36",
+            stroke = "#343A43",
+            stroke_width = 1.0,
+            radius = 0.2
+        }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.2 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.2 } }
+    [/UiButton]
+[/inspector_value_euler_button]
+
+[inspector_value_euler_label]
+parent = @inspector_value_euler_button
+    [UiLabel]
+        size_ratio = (1.0, 1.0)
+        text = "E"
+        text_size_ratio = 0.34
+        color = "#D7DBE0"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_value_euler_label]
+
+[inspector_value_quat_mode]
+parent = @inspector_value_row_inner
+    [UiDropdown]
+        size_ratio = (0.16, 0.62)
+        visible = false
+        selected_signals = ["editor_inspector_var_7"]
+        option_height = 24.0
+        style = {
+            fill = "#2A2F36",
+            stroke = "#343A43",
+            stroke_width = 1.0,
+            radius = 0.2
+        }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.2 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.2 } }
+        option_style = {
+            fill = "#2A2F36",
+            stroke = "#343A43",
+            stroke_width = 1.0,
+            radius = 0.2
+        }
+        option_hover_style = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.2 } }
+        option_pressed_style = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.2 } }
+    [/UiDropdown]
+[/inspector_value_quat_mode]
+
+[inspector_value_dropdown]
+parent = @inspector_value_row_inner
+    [UiDropdown]
+        size_ratio = (0.42, 0.62)
+        visible = false
+        selected_signals = ["editor_inspector_var_7"]
+        option_height = 24.0
+        style = {
+            fill = "#2A2F36",
+            stroke = "#343A43",
+            stroke_width = 1.0,
+            radius = 0.2
+        }
+        hover = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.2 } }
+        pressed = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.2 } }
+        option_style = {
+            fill = "#2A2F36",
+            stroke = "#343A43",
+            stroke_width = 1.0,
+            radius = 0.2
+        }
+        option_hover_style = { style = { fill = "#323842", stroke = "#343A43", stroke_width = 1.0, radius = 0.2 } }
+        option_pressed_style = { style = { fill = "#343A43", stroke = "#343A43", stroke_width = 1.0, radius = 0.2 } }
+    [/UiDropdown]
+[/inspector_value_dropdown]
+
+[inspector_value_0_box]
+parent = @inspector_value_row_inner
+    [UiTextBox]
+        size_ratio = (0.1, 0.62)
+        visible = false
+        placeholder = "x"
+        placeholder_color = "#6E7680"
+        text_size_ratio = 0.62
+        padding = (13.0, 1.0, 4.0, 1.0)
+        focused_signals = ["editor_inspector_focus"]
+        unfocused_signals = ["editor_inspector_commit"]
+        style = {
+            fill = "#2A2F36",
+            stroke = "#343A43",
+            stroke_width = 1.0,
+            radius = 0.2
+        }
+        focused_style = {
+            fill = "#2A2F36",
+            stroke = "#4D84D1",
+            stroke_width = 1.0,
+            radius = 0.2
+        }
+    [/UiTextBox]
+[/inspector_value_0_box]
+
+[inspector_value_0_label]
+parent = @inspector_value_0_box
+    [UiLabel]
+        size_ratio = (0.28, 1.0)
+        text = "X"
+        text_size_ratio = 0.52
+        color = "#D95F5F"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_value_0_label]
+
+[inspector_value_1_box]
+parent = @inspector_value_row_inner
+    [UiTextBox]
+        size_ratio = (0.1, 0.62)
+        visible = false
+        placeholder = "y"
+        placeholder_color = "#6E7680"
+        text_size_ratio = 0.62
+        padding = (13.0, 1.0, 4.0, 1.0)
+        focused_signals = ["editor_inspector_focus"]
+        unfocused_signals = ["editor_inspector_commit"]
+        style = {
+            fill = "#2A2F36",
+            stroke = "#343A43",
+            stroke_width = 1.0,
+            radius = 0.2
+        }
+        focused_style = {
+            fill = "#2A2F36",
+            stroke = "#4D84D1",
+            stroke_width = 1.0,
+            radius = 0.2
+        }
+    [/UiTextBox]
+[/inspector_value_1_box]
+
+[inspector_value_1_label]
+parent = @inspector_value_1_box
+    [UiLabel]
+        size_ratio = (0.28, 1.0)
+        text = "Y"
+        text_size_ratio = 0.52
+        color = "#5EA868"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_value_1_label]
+
+[inspector_value_2_box]
+parent = @inspector_value_row_inner
+    [UiTextBox]
+        size_ratio = (0.1, 0.62)
+        visible = false
+        placeholder = "z"
+        placeholder_color = "#6E7680"
+        text_size_ratio = 0.62
+        padding = (13.0, 1.0, 4.0, 1.0)
+        focused_signals = ["editor_inspector_focus"]
+        unfocused_signals = ["editor_inspector_commit"]
+        style = {
+            fill = "#2A2F36",
+            stroke = "#343A43",
+            stroke_width = 1.0,
+            radius = 0.2
+        }
+        focused_style = {
+            fill = "#2A2F36",
+            stroke = "#4D84D1",
+            stroke_width = 1.0,
+            radius = 0.2
+        }
+    [/UiTextBox]
+[/inspector_value_2_box]
+
+[inspector_value_2_label]
+parent = @inspector_value_2_box
+    [UiLabel]
+        size_ratio = (0.28, 1.0)
+        text = "Z"
+        text_size_ratio = 0.52
+        color = "#4D84D1"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_value_2_label]
+
+[inspector_value_3_box]
+parent = @inspector_value_row_inner
+    [UiTextBox]
+        size_ratio = (0.1, 0.62)
+        visible = false
+        placeholder = "w"
+        placeholder_color = "#6E7680"
+        text_size_ratio = 0.62
+        padding = (13.0, 1.0, 4.0, 1.0)
+        focused_signals = ["editor_inspector_focus"]
+        unfocused_signals = ["editor_inspector_commit"]
+        style = {
+            fill = "#2A2F36",
+            stroke = "#343A43",
+            stroke_width = 1.0,
+            radius = 0.2
+        }
+        focused_style = {
+            fill = "#2A2F36",
+            stroke = "#4D84D1",
+            stroke_width = 1.0,
+            radius = 0.2
+        }
+    [/UiTextBox]
+[/inspector_value_3_box]
+
+[inspector_value_3_label]
+parent = @inspector_value_3_box
+    [UiLabel]
+        size_ratio = (0.28, 1.0)
+        text = "W"
+        text_size_ratio = 0.52
+        color = "#D9A24A"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
+    [/UiLabel]
+[/inspector_value_3_label]

@@ -2918,12 +2918,16 @@ parent = @inspector_content
 [/inspector_position_row]
 
 [inspector_position_0_label]
-parent = @inspector_position_row
+parent = @inspector_position_0_box
     [UiLabel]
-        size_ratio = (0.045, 1.0)
-        text = "x"
-        text_size_ratio = 0.345
-        color = "#A7AFB9"
+        size_ratio = (0.28, 1.0)
+        text = "X"
+        text_size_ratio = 0.52
+        color = "#D95F5F"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
     [/UiLabel]
 [/inspector_position_0_label]
 
@@ -2951,12 +2955,16 @@ parent = @inspector_position_row
 [/inspector_position_0_box]
 
 [inspector_position_1_label]
-parent = @inspector_position_row
+parent = @inspector_position_1_box
     [UiLabel]
-        size_ratio = (0.045, 1.0)
-        text = "y"
-        text_size_ratio = 0.345
-        color = "#A7AFB9"
+        size_ratio = (0.28, 1.0)
+        text = "Y"
+        text_size_ratio = 0.52
+        color = "#5EA868"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
     [/UiLabel]
 [/inspector_position_1_label]
 
@@ -2984,12 +2992,16 @@ parent = @inspector_position_row
 [/inspector_position_1_box]
 
 [inspector_position_2_label]
-parent = @inspector_position_row
+parent = @inspector_position_2_box
     [UiLabel]
-        size_ratio = (0.045, 1.0)
-        text = "z"
-        text_size_ratio = 0.345
-        color = "#A7AFB9"
+        size_ratio = (0.28, 1.0)
+        text = "Z"
+        text_size_ratio = 0.52
+        color = "#4D84D1"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
     [/UiLabel]
 [/inspector_position_2_label]
 
@@ -3017,12 +3029,16 @@ parent = @inspector_position_row
 [/inspector_position_2_box]
 
 [inspector_position_3_label]
-parent = @inspector_position_row
+parent = @inspector_position_3_box
     [UiLabel]
-        size_ratio = (0.045, 1.0)
-        text = "w"
-        text_size_ratio = 0.345
-        color = "#A7AFB9"
+        size_ratio = (0.28, 1.0)
+        text = "W"
+        text_size_ratio = 0.52
+        color = "#D9A24A"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
     [/UiLabel]
 [/inspector_position_3_label]
 
@@ -3179,12 +3195,16 @@ parent = @inspector_content
 [/inspector_rotation_row]
 
 [inspector_rotation_0_label]
-parent = @inspector_rotation_row
+parent = @inspector_rotation_0_box
     [UiLabel]
-        size_ratio = (0.045, 1.0)
-        text = "x"
-        text_size_ratio = 0.345
-        color = "#A7AFB9"
+        size_ratio = (0.28, 1.0)
+        text = "X"
+        text_size_ratio = 0.52
+        color = "#D95F5F"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
     [/UiLabel]
 [/inspector_rotation_0_label]
 
@@ -3212,12 +3232,16 @@ parent = @inspector_rotation_row
 [/inspector_rotation_0_box]
 
 [inspector_rotation_1_label]
-parent = @inspector_rotation_row
+parent = @inspector_rotation_1_box
     [UiLabel]
-        size_ratio = (0.045, 1.0)
-        text = "y"
-        text_size_ratio = 0.345
-        color = "#A7AFB9"
+        size_ratio = (0.28, 1.0)
+        text = "Y"
+        text_size_ratio = 0.52
+        color = "#5EA868"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
     [/UiLabel]
 [/inspector_rotation_1_label]
 
@@ -3245,12 +3269,16 @@ parent = @inspector_rotation_row
 [/inspector_rotation_1_box]
 
 [inspector_rotation_2_label]
-parent = @inspector_rotation_row
+parent = @inspector_rotation_2_box
     [UiLabel]
-        size_ratio = (0.045, 1.0)
-        text = "z"
-        text_size_ratio = 0.345
-        color = "#A7AFB9"
+        size_ratio = (0.28, 1.0)
+        text = "Z"
+        text_size_ratio = 0.52
+        color = "#4D84D1"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
     [/UiLabel]
 [/inspector_rotation_2_label]
 
@@ -3278,12 +3306,16 @@ parent = @inspector_rotation_row
 [/inspector_rotation_2_box]
 
 [inspector_rotation_3_label]
-parent = @inspector_rotation_row
+parent = @inspector_rotation_3_box
     [UiLabel]
-        size_ratio = (0.045, 1.0)
-        text = "w"
-        text_size_ratio = 0.345
-        color = "#A7AFB9"
+        size_ratio = (0.28, 1.0)
+        text = "W"
+        text_size_ratio = 0.52
+        color = "#D9A24A"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
     [/UiLabel]
 [/inspector_rotation_3_label]
 
@@ -3373,12 +3405,16 @@ parent = @inspector_content
 [/inspector_scale_row]
 
 [inspector_scale_0_label]
-parent = @inspector_scale_row
+parent = @inspector_scale_0_box
     [UiLabel]
-        size_ratio = (0.045, 1.0)
-        text = "x"
-        text_size_ratio = 0.345
-        color = "#A7AFB9"
+        size_ratio = (0.28, 1.0)
+        text = "X"
+        text_size_ratio = 0.52
+        color = "#D95F5F"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
     [/UiLabel]
 [/inspector_scale_0_label]
 
@@ -3406,12 +3442,16 @@ parent = @inspector_scale_row
 [/inspector_scale_0_box]
 
 [inspector_scale_1_label]
-parent = @inspector_scale_row
+parent = @inspector_scale_1_box
     [UiLabel]
-        size_ratio = (0.045, 1.0)
-        text = "y"
-        text_size_ratio = 0.345
-        color = "#A7AFB9"
+        size_ratio = (0.28, 1.0)
+        text = "Y"
+        text_size_ratio = 0.52
+        color = "#5EA868"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
     [/UiLabel]
 [/inspector_scale_1_label]
 
@@ -3439,12 +3479,16 @@ parent = @inspector_scale_row
 [/inspector_scale_1_box]
 
 [inspector_scale_2_label]
-parent = @inspector_scale_row
+parent = @inspector_scale_2_box
     [UiLabel]
-        size_ratio = (0.045, 1.0)
-        text = "z"
-        text_size_ratio = 0.345
-        color = "#A7AFB9"
+        size_ratio = (0.28, 1.0)
+        text = "Z"
+        text_size_ratio = 0.52
+        color = "#4D84D1"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
     [/UiLabel]
 [/inspector_scale_2_label]
 
@@ -3472,12 +3516,16 @@ parent = @inspector_scale_row
 [/inspector_scale_2_box]
 
 [inspector_scale_3_label]
-parent = @inspector_scale_row
+parent = @inspector_scale_3_box
     [UiLabel]
-        size_ratio = (0.045, 1.0)
-        text = "w"
-        text_size_ratio = 0.345
-        color = "#A7AFB9"
+        size_ratio = (0.28, 1.0)
+        text = "W"
+        text_size_ratio = 0.52
+        color = "#D9A24A"
+        h_align = "center"
+        v_align = "center"
+        input_enabled = false
+        mouse_filter = "pass"
     [/UiLabel]
 [/inspector_scale_3_label]
 

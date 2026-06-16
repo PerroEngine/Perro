@@ -291,6 +291,7 @@ pub struct EditorState {
     pub focused_inspector_box: String,
     pub inspector_rotation_mode: String,
     pub inspector_layout_applied: bool,
+    pub inspector_selected_key: Option<u32>,
     pub script_schema_reload_frames: u32,
     pub log: String,
 }
@@ -487,6 +488,8 @@ methods!({
                     mutate_selected_inspector_array(ctx, idx, true);
                 } else if let Some(idx) = middle_index(&name, "inspector_var_", "_remove_button") {
                     mutate_selected_inspector_array(ctx, idx, false);
+                } else if let Some(idx) = middle_index(&name, "inspector_var_", "_default_button") {
+                    reset_selected_inspector_value(ctx, idx);
                 } else if middle_index(&name, "inspector_var_", "_quat_button").is_some() {
                     set_inspector_rotation_mode(ctx, "quat");
                 } else if middle_index(&name, "inspector_var_", "_euler_button").is_some() {

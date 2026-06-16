@@ -20,8 +20,8 @@ use crate::scripts_ui_bitmask_rs::{ensure_inspector_bitmask_grid, update_inspect
 use crate::scripts_ui_editor_inspector_values_rs::*;
 use crate::scripts_ui_editor_view_rs as editor_view;
 use crate::scripts_ui_inspector_value_row_rs::{
-    apply_inspector_value_row_panel, ensure_inspector_value_row, hide_inspector_value_rows_from,
-    inspector_value_row_inner, place_inspector_value_row,
+    apply_inspector_value_row_panel, clear_inspector_value_rows, ensure_inspector_value_row,
+    hide_inspector_value_rows_from, inspector_value_row_inner, place_inspector_value_row,
 };
 use perro_api::prelude::*;
 use perro_api::scene::{
@@ -242,6 +242,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
 
     if take_inspector_layout_pass(ctx) {
         apply_inspector_static_layout(ctx);
+        remove_legacy_transform_rows(ctx);
     }
     apply_inspector_dynamic_layout(ctx, &view.inspector);
     set_label(ctx, "inspector_title", &view.inspector.title);
@@ -381,9 +382,24 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     let row_base_heights = inspector_row_base_heights(&view.inspector.script_vars);
     let row_subtree_heights =
         inspector_row_subtree_heights(&view.inspector.script_vars, &row_base_heights);
+    let selected_key_changed = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        if state.inspector_selected_key == state.selected_key {
+            false
+        } else {
+            state.inspector_selected_key = state.selected_key;
+            state.focused_inspector_box.clear();
+            state.inspector_picker_open = false;
+            state.inspector_expanded_paths.clear();
+            true
+        }
+    })
+    .unwrap_or(false);
+    if selected_key_changed {
+        clear_inspector_value_rows(ctx);
+    }
     for idx in 0..view.inspector.script_vars.len() {
-        ensure_inspector_value_row(ctx, idx);
         let row = view.inspector.script_vars.get(idx);
+        ensure_inspector_value_row(ctx, idx, row);
         let parent_idx = row_parents.get(idx).copied().flatten();
         place_inspector_value_row(ctx, idx, parent_idx);
         if let Some(row_id) = inspector_value_row_inner(ctx, idx) {
@@ -432,6 +448,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         );
         for component in 0..4 {
             let box_name = format!("inspector_var_{idx}_{component}_box");
+            let label_name = format!("inspector_var_{idx}_{component}_label");
             let component_value = row.and_then(|item| item.components.get(component));
             set_text_box(
                 ctx,
@@ -447,6 +464,14 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             set_ui_display(
                 ctx,
                 &box_name,
+                view.inspector.node_actions
+                    && row.is_some_and(|item| item.components.get(component).is_some())
+                    && row.is_none_or(|item| item.kind != "Color")
+                    && !vars_closed,
+            );
+            set_ui_display(
+                ctx,
+                &label_name,
                 view.inspector.node_actions
                     && row.is_some_and(|item| item.components.get(component).is_some())
                     && row.is_none_or(|item| item.kind != "Color")
@@ -596,6 +621,15 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
                 && row.is_some_and(|item| item.source != "section" && item.removable)
                 && !vars_closed,
         );
+        let show_default_button =
+            view.inspector.node_actions
+                && !vars_closed
+                && row.is_some_and(|item| inspector_row_has_override(ctx, item));
+        set_ui_display(
+            ctx,
+            &format!("inspector_var_{idx}_default_button"),
+            show_default_button,
+        );
     }
     hide_inspector_value_rows_from(ctx, view.inspector.script_vars.len());
     set_ui_display(ctx, "inspector_pick_popup", view.inspector_picker_open);
@@ -703,7 +737,7 @@ pub fn apply_component_row<API: ScriptAPI + ?Sized>(
         set_label(
             ctx,
             &format!("{prefix}_{idx}_label"),
-            labels.get(idx).copied().unwrap_or(""),
+            &labels.get(idx).copied().unwrap_or("").to_ascii_uppercase(),
         );
         set_text_box(
             ctx,
@@ -828,7 +862,9 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
             let name = format!("{prefix}_{idx}_box");
             set_ui_node_size(ctx, &name, (0.185, 0.72));
             set_text_box_text_ratio(ctx, &name, 0.62);
-            set_text_box_padding(ctx, &name, 4.0, 1.0);
+            set_text_box_padding_rect(ctx, &name, UiRect::new(13.0, 1.0, 4.0, 1.0));
+            set_label_size_ratio(ctx, &format!("{prefix}_{idx}_label"), (0.28, 1.0));
+            set_label_text_ratio(ctx, &format!("{prefix}_{idx}_label"), 0.52);
         }
     }
 
@@ -870,6 +906,26 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
         set_label_text_ratio(ctx, &format!("inspector_var_{idx}_name"), 0.35);
         set_label_text_ratio(ctx, &format!("inspector_var_{idx}_type"), 0.28);
         idx += 1;
+    }
+}
+
+fn remove_legacy_transform_rows<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    for name in [
+        "inspector_pos",
+        "inspector_position_label",
+        "inspector_position_box",
+        "inspector_position_row",
+        "inspector_rotation_label",
+        "inspector_rotation_box",
+        "inspector_rotation_mode_row",
+        "inspector_rotation_row",
+        "inspector_scale_label",
+        "inspector_scale_box",
+        "inspector_scale_row",
+    ] {
+        if let Some(id) = find_named(ctx, name) {
+            let _ = ctx.run.Nodes().remove_node(id);
+        }
     }
 }
 
@@ -1412,7 +1468,58 @@ pub fn inspector_value_fields_for_node(
 }
 
 fn inspector_var_button_label(row: &InspectorValueRow) -> String {
+    let value = row.value.trim();
+    if row.kind.starts_with("Node") && matches!(value, "" | "null" | "none" | "-") {
+        return if row.kind == "Node" {
+            "Assign Node".to_string()
+        } else {
+            format!("Assign {}", row.kind.trim_start_matches("Node"))
+        };
+    }
+    if row.kind.starts_with("Asset(") && matches!(value, "" | "null" | "none" | "-") {
+        let asset_ty = row
+            .kind
+            .strip_prefix("Asset(")
+            .and_then(|value| value.strip_suffix(')'))
+            .unwrap_or("Asset");
+        return format!("Assign {asset_ty}");
+    }
     row.value.clone()
+}
+
+fn inspector_row_has_override<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    row: &InspectorValueRow,
+) -> bool {
+    let Some(ValuePathStep::Root(root_idx)) = row.path.first() else {
+        return false;
+    };
+    with_state!(ctx.run, EditorState, ctx.id, |state| {
+        let Some(key) = state.selected_key else {
+            return false;
+        };
+        let Some(node) = cached_scene_node(&state.doc_text, key) else {
+            return false;
+        };
+        match row.source.as_str() {
+            "script" => {
+                let defaults = inspector_script_var_default_fields_for_node(state, &node);
+                let Some((name, _)) = defaults.get(*root_idx) else {
+                    return false;
+                };
+                node.script_vars.iter().any(|(field, _)| field == name)
+            }
+            "scene" => {
+                let fields = inspector_scene_value_fields_for_node(&node);
+                let Some((name, _)) = fields.get(*root_idx) else {
+                    return false;
+                };
+                node.data.fields.iter().any(|(field, _)| field == name)
+            }
+            "tags" => !node.tags.is_empty(),
+            _ => false,
+        }
+    })
 }
 
 fn inspector_row_display_name(row: &InspectorValueRow) -> String {
@@ -1487,16 +1594,27 @@ fn apply_inspector_value_row_text_layout<API: ScriptAPI + ?Sized>(
     } else if row.kind == "BitMask" {
         0.13
     } else if !row.components.is_empty() || row.kind == "Color" {
-        0.24
+        0.34
     } else {
         0.35
     };
     set_label_text_ratio(ctx, &format!("inspector_var_{idx}_name"), name_ratio);
+    set_label_size_ratio(ctx, &format!("inspector_var_{idx}_name"), (name_ratio, 1.0));
+    let box_w = match row.components.len() {
+        2 => 0.245,
+        3 => 0.195,
+        4 => 0.138,
+        _ => 0.15,
+    };
     for component in 0..4 {
         let box_name = format!("inspector_var_{idx}_{component}_box");
-        set_ui_node_size(&mut *ctx, &box_name, (0.15, 0.72));
-        set_text_box_text_ratio(&mut *ctx, &box_name, 0.50);
-        set_text_box_padding(&mut *ctx, &box_name, 3.0, 1.0);
+        let label_name = format!("inspector_var_{idx}_{component}_label");
+        set_ui_node_size(&mut *ctx, &box_name, (box_w, 0.72));
+        set_text_box_text_ratio(&mut *ctx, &box_name, 0.56);
+        set_text_box_padding_rect(&mut *ctx, &box_name, UiRect::new(13.0, 1.0, 4.0, 1.0));
+        set_label_size_ratio(&mut *ctx, &label_name, (0.28, 1.0));
+        set_label_text_ratio(&mut *ctx, &label_name, 0.52);
+        set_axis_label_overlay(&mut *ctx, &label_name);
     }
 }
 
@@ -3358,6 +3476,24 @@ pub fn set_label_text_ratio<API: ScriptAPI + ?Sized>(
     }
 }
 
+pub fn set_axis_label_overlay<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiLabel, id, |node| {
+            node.layout.anchor = UiAnchor::Center;
+            node.layout.size = UiVector2::ratio(0.28, 1.0);
+            node.layout.z_index = 10;
+            node.transform.translation = Vector2::new(0.14, 0.5);
+            node.h_align = UiTextAlign::Center;
+            node.v_align = UiTextAlign::Center;
+            node.input_enabled = false;
+            node.mouse_filter = UiMouseFilter::Pass;
+        });
+    }
+}
+
 pub fn set_text_box_text_ratio<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     name: &str,
@@ -3379,6 +3515,18 @@ pub fn set_text_box_padding<API: ScriptAPI + ?Sized>(
     if let Some(id) = find_named(ctx, name) {
         let _ = with_node_mut!(ctx.run, UiTextBox, id, |node| {
             node.padding = UiRect::symmetric(x, y);
+        });
+    }
+}
+
+pub fn set_text_box_padding_rect<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    padding: UiRect,
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiTextBox, id, |node| {
+            node.padding = padding;
         });
     }
 }
