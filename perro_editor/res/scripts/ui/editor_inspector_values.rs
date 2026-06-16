@@ -303,12 +303,30 @@ pub fn inspector_display_rows_for_node(
         node,
         &scene_fields,
     ));
+    rows = add_inspector_section_counts(rows);
     rows = apply_collapsed_inspector_sections(rows, &state.inspector_collapsed_sections);
     if let Ok(mut cache) = cache.lock() {
         *cache = Some(CachedInspectorRows {
             key: cache_key,
             rows: rows.clone(),
         });
+    }
+    rows
+}
+
+fn add_inspector_section_counts(mut rows: Vec<InspectorValueRow>) -> Vec<InspectorValueRow> {
+    for idx in 0..rows.len() {
+        if rows[idx].source != "section" {
+            continue;
+        }
+        let depth = rows[idx].depth;
+        let count = rows
+            .iter()
+            .skip(idx + 1)
+            .take_while(|row| row.depth > depth)
+            .filter(|row| row.source != "section")
+            .count();
+        rows[idx].value = count.to_string();
     }
     rows
 }
@@ -372,10 +390,11 @@ fn grouped_scene_value_rows_for_node(
             .or_default()
             .push((section, indent_inspector_row(row)));
     }
-    grouped
-        .entry("Node".to_string())
-        .or_default()
-        .extend(node_extra_rows(state, node).into_iter().map(|row| (None, indent_inspector_row(row))));
+    grouped.entry("Node".to_string()).or_default().extend(
+        node_extra_rows(state, node)
+            .into_iter()
+            .map(|row| (None, indent_inspector_row(row))),
+    );
     let mut rows = Vec::new();
     for ty in chain {
         let name = ty.name();
@@ -546,10 +565,7 @@ fn inspector_tag_rows(
         .collect::<Vec<_>>();
     let value = SceneValue::Array(Cow::Owned(values));
     let mut default_children = BTreeMap::new();
-    default_children.insert(
-        "tags:r0".to_string(),
-        SceneValue::Str(Cow::Borrowed("tag")),
-    );
+    default_children.insert("tags:r0".to_string(), SceneValue::Str(Cow::Borrowed("tag")));
     let kind_overrides = BTreeMap::new();
     let enum_options = BTreeMap::new();
     let warnings = BTreeMap::new();
@@ -1874,14 +1890,12 @@ fn parse_script_struct_fields(source: &str, struct_name: &str) -> Vec<RawScriptF
                 }
             }
             if rest.is_empty() {
-            } else if let Some(field) =
-                parse_script_field_line(
-                    rest,
-                    pending_default.take(),
-                    std::mem::take(&mut pending_node_ref),
-                    pending_expose,
-                )
-            {
+            } else if let Some(field) = parse_script_field_line(
+                rest,
+                pending_default.take(),
+                std::mem::take(&mut pending_node_ref),
+                pending_expose,
+            ) {
                 fields.push(field);
                 pending_expose = false;
             } else if !rest.is_empty() {
@@ -2483,9 +2497,7 @@ fn script_type_label(schema: &ScriptSchema, ty: &str) -> String {
         "UVector4" | "UVec4" | "perro_api::prelude::UVector4" | "perro_api::prelude::UVec4" => {
             "UVec4".to_string()
         }
-        "Unit" | "perro_api::prelude::Unit" => {
-            "Unit".to_string()
-        }
+        "Unit" | "perro_api::prelude::Unit" => "Unit".to_string(),
         "UnitVector2" | "perro_api::prelude::UnitVector2" => "UnitVector2".to_string(),
         "UnitVector3" | "perro_api::prelude::UnitVector3" => "UnitVector3".to_string(),
         "UnitVector4" | "perro_api::prelude::UnitVector4" => "UnitVector4".to_string(),
@@ -2556,7 +2568,12 @@ fn default_scene_value_for_type(schema: &ScriptSchema, ty: &str, depth: usize) -
             SceneValue::IVec3 { x: 0, y: 0, z: 0 }
         }
         "IVector4" | "IVec4" | "perro_api::prelude::IVector4" | "perro_api::prelude::IVec4" => {
-            SceneValue::IVec4 { x: 0, y: 0, z: 0, w: 0 }
+            SceneValue::IVec4 {
+                x: 0,
+                y: 0,
+                z: 0,
+                w: 0,
+            }
         }
         "UVector2" | "UVec2" | "perro_api::prelude::UVector2" | "perro_api::prelude::UVec2" => {
             SceneValue::UVec2 { x: 0, y: 0 }
@@ -2565,7 +2582,12 @@ fn default_scene_value_for_type(schema: &ScriptSchema, ty: &str, depth: usize) -
             SceneValue::UVec3 { x: 0, y: 0, z: 0 }
         }
         "UVector4" | "UVec4" | "perro_api::prelude::UVector4" | "perro_api::prelude::UVec4" => {
-            SceneValue::UVec4 { x: 0, y: 0, z: 0, w: 0 }
+            SceneValue::UVec4 {
+                x: 0,
+                y: 0,
+                z: 0,
+                w: 0,
+            }
         }
         "UnitVector2" | "perro_api::prelude::UnitVector2" => SceneValue::Vec2 { x: 0.0, y: 0.0 },
         "UnitVector3" | "perro_api::prelude::UnitVector3" => SceneValue::Vec3 {
@@ -2651,10 +2673,10 @@ fn coerce_scene_value_to_type(value: SceneValue, ty: &str) -> SceneValue {
 pub fn coerce_scene_value_to_kind(value: SceneValue, kind: &str) -> SceneValue {
     match kind {
         "Unit" => SceneValue::F32(scene_value_as_unit(value).unwrap_or(0.0)),
-        "UnitVector2" => scene_value_as_unit_vec2(value).map_or(
-            SceneValue::Vec2 { x: 0.0, y: 0.0 },
-            |(x, y)| SceneValue::Vec2 { x, y },
-        ),
+        "UnitVector2" => scene_value_as_unit_vec2(value)
+            .map_or(SceneValue::Vec2 { x: 0.0, y: 0.0 }, |(x, y)| {
+                SceneValue::Vec2 { x, y }
+            }),
         "UnitVector3" => scene_value_as_unit_vec3(value).map_or(
             SceneValue::Vec3 {
                 x: 0.0,
@@ -2672,13 +2694,14 @@ pub fn coerce_scene_value_to_kind(value: SceneValue, kind: &str) -> SceneValue {
             },
             |(x, y, z, w)| SceneValue::Vec4 { x, y, z, w },
         ),
-        "IVec2" => scene_value_as_ivec2(value).map_or(SceneValue::IVec2 { x: 0, y: 0 }, |(x, y)| {
-            SceneValue::IVec2 { x, y }
-        }),
-        "IVec3" => scene_value_as_ivec3(value).map_or(
-            SceneValue::IVec3 { x: 0, y: 0, z: 0 },
-            |(x, y, z)| SceneValue::IVec3 { x, y, z },
-        ),
+        "IVec2" => scene_value_as_ivec2(value)
+            .map_or(SceneValue::IVec2 { x: 0, y: 0 }, |(x, y)| {
+                SceneValue::IVec2 { x, y }
+            }),
+        "IVec3" => scene_value_as_ivec3(value)
+            .map_or(SceneValue::IVec3 { x: 0, y: 0, z: 0 }, |(x, y, z)| {
+                SceneValue::IVec3 { x, y, z }
+            }),
         "IVec4" => scene_value_as_ivec4(value).map_or(
             SceneValue::IVec4 {
                 x: 0,
@@ -2688,13 +2711,14 @@ pub fn coerce_scene_value_to_kind(value: SceneValue, kind: &str) -> SceneValue {
             },
             |(x, y, z, w)| SceneValue::IVec4 { x, y, z, w },
         ),
-        "UVec2" => scene_value_as_uvec2(value).map_or(SceneValue::UVec2 { x: 0, y: 0 }, |(x, y)| {
-            SceneValue::UVec2 { x, y }
-        }),
-        "UVec3" => scene_value_as_uvec3(value).map_or(
-            SceneValue::UVec3 { x: 0, y: 0, z: 0 },
-            |(x, y, z)| SceneValue::UVec3 { x, y, z },
-        ),
+        "UVec2" => scene_value_as_uvec2(value)
+            .map_or(SceneValue::UVec2 { x: 0, y: 0 }, |(x, y)| {
+                SceneValue::UVec2 { x, y }
+            }),
+        "UVec3" => scene_value_as_uvec3(value)
+            .map_or(SceneValue::UVec3 { x: 0, y: 0, z: 0 }, |(x, y, z)| {
+                SceneValue::UVec3 { x, y, z }
+            }),
         "UVec4" => scene_value_as_uvec4(value).map_or(
             SceneValue::UVec4 {
                 x: 0,
@@ -2728,12 +2752,16 @@ fn scene_value_as_unit_vec2(value: SceneValue) -> Option<(f32, f32)> {
 fn scene_value_as_unit_vec3(value: SceneValue) -> Option<(f32, f32, f32)> {
     match value {
         SceneValue::Vec3 { x, y, z } => Some((clamp_unit(x), clamp_unit(y), clamp_unit(z))),
-        SceneValue::IVec3 { x, y, z } => {
-            Some((clamp_unit(x as f32), clamp_unit(y as f32), clamp_unit(z as f32)))
-        }
-        SceneValue::UVec3 { x, y, z } => {
-            Some((clamp_unit(x as f32), clamp_unit(y as f32), clamp_unit(z as f32)))
-        }
+        SceneValue::IVec3 { x, y, z } => Some((
+            clamp_unit(x as f32),
+            clamp_unit(y as f32),
+            clamp_unit(z as f32),
+        )),
+        SceneValue::UVec3 { x, y, z } => Some((
+            clamp_unit(x as f32),
+            clamp_unit(y as f32),
+            clamp_unit(z as f32),
+        )),
         _ => None,
     }
 }
@@ -2951,8 +2979,18 @@ fn push_value_rows(
                 );
                 path.pop();
             }
+            rows.push(empty_array_add_row(
+                source,
+                path,
+                depth + 1,
+                ctx.default_children.get(&path_key).cloned(),
+            ));
         }
         SceneValue::Object(fields) => {
+            if fields.is_empty() {
+                rows.push(empty_object_row(source, path, depth + 1));
+                return;
+            }
             for (field, item) in fields.iter() {
                 path.push(ValuePathStep::Field(field.as_ref().to_string()));
                 push_value_rows(rows, source, field.as_ref(), item, path, depth + 1, ctx);
@@ -2960,6 +2998,53 @@ fn push_value_rows(
             }
         }
         _ => {}
+    }
+}
+
+fn empty_array_add_row(
+    source: &str,
+    path: &[ValuePathStep],
+    depth: usize,
+    default_child: Option<SceneValue>,
+) -> InspectorValueRow {
+    let path_key = format!("{}:{}.empty_add", source, value_path_key(path));
+    InspectorValueRow {
+        source: source.to_string(),
+        depth,
+        path: path.to_vec(),
+        path_key,
+        name: "[  +  ]".to_string(),
+        kind: "EmptyArrayAdd".to_string(),
+        value: "Empty array".to_string(),
+        components: Vec::new(),
+        color_preview: None,
+        enum_options: Vec::new(),
+        default_child,
+        editable: false,
+        expandable: false,
+        addable: true,
+        removable: false,
+    }
+}
+
+fn empty_object_row(source: &str, path: &[ValuePathStep], depth: usize) -> InspectorValueRow {
+    let path_key = format!("{}:{}.empty_object", source, value_path_key(path));
+    InspectorValueRow {
+        source: source.to_string(),
+        depth,
+        path: path.to_vec(),
+        path_key,
+        name: "{ }".to_string(),
+        kind: "EmptyObject".to_string(),
+        value: "Empty object".to_string(),
+        components: Vec::new(),
+        color_preview: None,
+        enum_options: Vec::new(),
+        default_child: None,
+        editable: false,
+        expandable: false,
+        addable: false,
+        removable: false,
     }
 }
 
@@ -2974,8 +3059,7 @@ fn scene_value_enum_text(value: &SceneValue) -> String {
 pub fn scene_value_summary(value: &SceneValue, expanded: bool) -> String {
     let marker = if expanded { "v" } else { ">" };
     match value {
-        SceneValue::Array(values) if values.is_empty() => format!("{marker} Array []"),
-        SceneValue::Array(values) => format!("{marker} Array [{}]", values.len()),
+        SceneValue::Array(values) => format!("{marker} [ size: {} ]  [ + ]", values.len()),
         SceneValue::Object(fields) if fields.is_empty() => format!("{marker} Object {{}}"),
         SceneValue::Object(fields) => format!("{marker} Object [{}]", fields.len()),
         _ => scene_value_edit_text(value),
@@ -2992,9 +3076,7 @@ pub fn scene_value_component_texts(value: &SceneValue) -> Vec<String> {
         | SceneValue::IVec4 { .. }
         | SceneValue::UVec2 { .. }
         | SceneValue::UVec3 { .. }
-        | SceneValue::UVec4 { .. } => {
-            scene_value_components_from_value(value)
-        }
+        | SceneValue::UVec4 { .. } => scene_value_components_from_value(value),
         _ => Vec::new(),
     }
 }
@@ -3085,7 +3167,7 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
             .nodes
             .iter()
             .find(|node| node.key.as_u32() == key)?;
-        Some(inspector_display_rows_for_node(state, node))
+        Some(inspector_visible_rows_for_node(state, node))
     });
     let Some(rows) = rows else {
         return;
@@ -3443,7 +3525,7 @@ pub fn mutate_selected_inspector_array<API: ScriptAPI + ?Sized>(
             .nodes
             .iter()
             .find(|node| node.key.as_u32() == key)?;
-        inspector_display_rows_for_node(state, node)
+        inspector_visible_rows_for_node(state, node)
             .get(idx)
             .cloned()
     });
@@ -3536,7 +3618,9 @@ pub fn reset_selected_inspector_value<API: ScriptAPI + ?Sized>(
             .nodes
             .iter()
             .find(|node| node.key.as_u32() == key)?;
-        inspector_display_rows_for_node(state, node).get(idx).cloned()
+        inspector_visible_rows_for_node(state, node)
+            .get(idx)
+            .cloned()
     });
     let Some(row) = row else {
         return;
@@ -3566,8 +3650,12 @@ pub fn reset_selected_inspector_value<API: ScriptAPI + ?Sized>(
                 if !set_value_at_path(&mut fields, &row.path, default_value) {
                     return false;
                 }
-                if !write_script_var_override(node.script_vars.to_mut(), &defaults, &fields, &row.path)
-                {
+                if !write_script_var_override(
+                    node.script_vars.to_mut(),
+                    &defaults,
+                    &fields,
+                    &row.path,
+                ) {
                     return false;
                 }
             }
@@ -3579,7 +3667,10 @@ pub fn reset_selected_inspector_value<API: ScriptAPI + ?Sized>(
                 let Some((field_name, _)) = fields.get(*root_idx) else {
                     return false;
                 };
-                node.data.fields.to_mut().retain(|(field, _)| field != field_name);
+                node.data
+                    .fields
+                    .to_mut()
+                    .retain(|(field, _)| field != field_name);
             }
             "tags" => {
                 node.tags.to_mut().clear();
@@ -3603,7 +3694,7 @@ pub fn reset_selected_inspector_value<API: ScriptAPI + ?Sized>(
     }
 }
 
-fn value_at_path_in_fields<'a>(
+pub fn value_at_path_in_fields<'a>(
     fields: &'a [(SceneFieldName, SceneValue)],
     path: &[ValuePathStep],
 ) -> Option<&'a SceneValue> {
@@ -3676,7 +3767,7 @@ fn current_inspector_bitmask<API: ScriptAPI + ?Sized>(
             .nodes
             .iter()
             .find(|node| node.key.as_u32() == key)?;
-        let row = inspector_display_rows_for_node(state, node)
+        let row = inspector_visible_rows_for_node(state, node)
             .get(idx)?
             .clone();
         if row.kind != "BitMask" {
@@ -3699,7 +3790,7 @@ fn write_selected_inspector_bitmask<API: ScriptAPI + ?Sized>(
             .nodes
             .iter()
             .find(|node| node.key.as_u32() == key)?;
-        inspector_display_rows_for_node(state, node)
+        inspector_visible_rows_for_node(state, node)
             .get(idx)
             .cloned()
     });
@@ -4025,7 +4116,7 @@ fn prune_default_script_value(
     }
 }
 
-fn scene_values_equal(a: &SceneValue, b: &SceneValue) -> bool {
+pub fn scene_values_equal(a: &SceneValue, b: &SceneValue) -> bool {
     match (a, b) {
         (SceneValue::Bool(a), SceneValue::Bool(b)) => a == b,
         (SceneValue::I32(a), SceneValue::I32(b)) => a == b,
@@ -4196,10 +4287,7 @@ pub fn node_custom_icon_path(node: &perro_api::scene::SceneNodeEntry) -> Option<
         .filter(|value| !value.trim().is_empty())
 }
 
-pub fn write_node_custom_icon(
-    node: &mut perro_api::scene::SceneNodeEntry,
-    value: Option<&str>,
-) {
+pub fn write_node_custom_icon(node: &mut perro_api::scene::SceneNodeEntry, value: Option<&str>) {
     let fields = node.data.fields.to_mut();
     fields.retain(|(name, _)| name.as_ref() != "custom_icon");
     let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {

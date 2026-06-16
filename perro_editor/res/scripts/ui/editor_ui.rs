@@ -253,6 +253,10 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         view.inspector.node_actions || view.inspector.asset_selected,
     );
     set_text_box(ctx, "inspector_name_box", &view.inspector.name_edit);
+    set_ui_display(ctx, "inspector_filter_box", view.inspector.node_actions);
+    set_text_box(ctx, "inspector_filter_box", &view.inspector.filter);
+    set_ui_display(ctx, "inspector_tab_row", view.inspector.node_actions);
+    apply_inspector_tab_buttons(ctx, &view.inspector.tab);
     set_label(ctx, "inspector_type", &view.inspector.kind);
     set_label(ctx, "inspector_parent", &view.inspector.parent);
     set_label(ctx, "inspector_script_top", &view.inspector.script);
@@ -270,11 +274,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             },
         ),
     );
-    set_ui_display(
-        ctx,
-        "inspector_script_top",
-        view.inspector.asset_actions,
-    );
+    set_ui_display(ctx, "inspector_script_top", view.inspector.asset_actions);
     set_ui_display(ctx, "asset_action_row", view.inspector.asset_selected);
     set_ui_display(ctx, "asset_use_button", view.inspector.asset_use_action);
     set_ui_display(
@@ -371,11 +371,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         false,
         inspector_disclosure(vars_closed),
     );
-    set_ui_display(
-        ctx,
-        "inspector_vars",
-        false,
-    );
+    set_ui_display(ctx, "inspector_vars", false);
     set_ui_display(ctx, "inspector_vars_box", false);
     set_text_box(ctx, "inspector_vars_box", &view.inspector.vars_text);
     let row_parents = inspector_row_parent_indices(&view.inspector.script_vars);
@@ -421,20 +417,14 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         let component_row =
             row.is_some_and(|item| !item.components.is_empty() || item.kind == "Color");
         let section_row = row.is_some_and(|item| item.source == "section");
+        let empty_row =
+            row.is_some_and(|item| item.kind == "EmptyArrayAdd" || item.kind == "EmptyObject");
         set_label(
             ctx,
             &format!("inspector_var_{idx}_type"),
             row.map(|item| item.kind.as_str()).unwrap_or("-"),
         );
-        set_ui_display(
-            ctx,
-            &format!("inspector_var_{idx}_type"),
-            view.inspector.node_actions
-                && !bitmask_row
-                && !component_row
-                && !section_row
-                && !vars_closed,
-        );
+        set_ui_display(ctx, &format!("inspector_var_{idx}_type"), false);
         set_text_box(
             ctx,
             &format!("inspector_var_{idx}_value"),
@@ -533,6 +523,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             view.inspector.node_actions
                 && row.is_some()
                 && !section_row
+                && !empty_row
                 && !picker_row
                 && !enum_row
                 && !bool_row
@@ -543,9 +534,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         set_text_box_interactive(
             ctx,
             &format!("inspector_var_{idx}_value"),
-            view.inspector.node_actions
-                && row.is_some_and(|item| item.editable)
-                && !vars_closed,
+            view.inspector.node_actions && row.is_some_and(|item| item.editable) && !vars_closed,
         );
         set_ui_display(
             ctx,
@@ -602,7 +591,15 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
                 .get(idx)
                 .zip(row_base_heights.get(idx))
                 .is_some_and(|(total, base)| *total > *base);
-            apply_inspector_value_row_panel(ctx, idx, row.depth, &row.source, has_children);
+            let changed_row = inspector_row_has_override(ctx, row);
+            apply_inspector_value_row_panel(
+                ctx,
+                idx,
+                row.depth,
+                &row.source,
+                has_children,
+                changed_row,
+            );
             apply_inspector_value_row_text_layout(ctx, idx, row);
         }
         let add_name = format!("inspector_var_{idx}_add_button");
@@ -621,14 +618,31 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
                 && row.is_some_and(|item| item.source != "section" && item.removable)
                 && !vars_closed,
         );
-        let show_default_button =
-            view.inspector.node_actions
-                && !vars_closed
-                && row.is_some_and(|item| inspector_row_has_override(ctx, item));
+        let show_default_button = view.inspector.node_actions
+            && !vars_closed
+            && row.is_some_and(|item| inspector_row_has_override(ctx, item));
         set_ui_display(
             ctx,
             &format!("inspector_var_{idx}_default_button"),
             show_default_button,
+        );
+        let favorite = row.is_some_and(|item| inspector_row_is_favorite(&view.inspector, item));
+        set_ui_display(
+            ctx,
+            &format!("inspector_var_{idx}_favorite_button"),
+            view.inspector.node_actions
+                && row.is_some_and(|item| item.source != "section")
+                && !vars_closed,
+        );
+        set_label(
+            ctx,
+            &format!("inspector_var_{idx}_favorite_label"),
+            if favorite { "*" } else { "+" },
+        );
+        set_label_color(
+            ctx,
+            &format!("inspector_var_{idx}_favorite_label"),
+            if favorite { "#F0C96D" } else { "#A7AFB9" },
         );
     }
     hide_inspector_value_rows_from(ctx, view.inspector.script_vars.len());
@@ -699,9 +713,7 @@ fn inspector_row_input_type(row: &InspectorValueRow) -> UiTextInputType {
 fn inspector_row_component_input_type(row: &InspectorValueRow) -> UiTextInputType {
     match row.kind.as_str() {
         "Vec2" | "Vec3" | "Vec4" | "Quat" | "F32" | "Unit" | "UnitVector2" | "UnitVector3"
-        | "UnitVector4" => {
-            UiTextInputType::SignedFloat
-        }
+        | "UnitVector4" => UiTextInputType::SignedFloat,
         "I32" | "IVec2" | "IVec3" | "IVec4" => UiTextInputType::SignedInteger,
         "U32" | "UVec2" | "UVec3" | "UVec4" | "BitMask" => UiTextInputType::UnsignedInteger,
         _ => UiTextInputType::Any,
@@ -871,11 +883,7 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
     let mut idx = 0;
     while find_named(ctx, &format!("inspector_var_row_{idx}")).is_some() {
         set_ui_node_size(ctx, &format!("inspector_var_row_{idx}"), (0.985, 0.031));
-        set_ui_node_size(
-            ctx,
-            &format!("inspector_var_row_{idx}_header"),
-            (1.0, 1.0),
-        );
+        set_ui_node_size(ctx, &format!("inspector_var_row_{idx}_header"), (1.0, 1.0));
         set_ui_node_size(ctx, &format!("inspector_var_row_{idx}_stack"), (1.0, 1.0));
         set_ui_node_size(ctx, &format!("inspector_var_row_{idx}_inner"), (1.0, 1.0));
         set_ui_node_size(
@@ -1020,6 +1028,9 @@ pub struct InspectorViewData {
     transform_fields: Vec<&'static str>,
     script: String,
     vars_text: String,
+    filter: String,
+    tab: String,
+    favorites: Vec<String>,
     script_vars: Vec<InspectorValueRow>,
     collapsed_sections: Vec<String>,
 }
@@ -1049,6 +1060,9 @@ impl Default for InspectorViewData {
             transform_fields: Vec::new(),
             script: "Script  -".to_string(),
             vars_text: String::new(),
+            filter: String::new(),
+            tab: "All".to_string(),
+            favorites: Vec::new(),
             script_vars: Vec::new(),
             collapsed_sections: Vec::new(),
         }
@@ -1106,9 +1120,12 @@ impl InspectorViewData {
         view.scale = scene_value_components(&node.data, "scale");
         view.script = format!("Script  {script}");
         view.collapsed_sections = state.inspector_collapsed_sections.clone();
+        view.filter = state.inspector_filter.clone();
+        view.tab = inspector_tab(state);
+        view.favorites = state.inspector_favorite_paths.clone();
         let script_fields = inspector_script_var_fields_for_node(state, node);
         view.vars_text = script_vars_edit_text(&script_fields);
-        view.script_vars = inspector_display_rows_for_node(state, node);
+        view.script_vars = inspector_visible_rows_for_node(state, node);
         view.apply_asset_actions(state);
         view
     }
@@ -1132,6 +1149,9 @@ impl InspectorViewData {
             asset.state, asset.detail, asset.actions
         );
         view.collapsed_sections = state.inspector_collapsed_sections.clone();
+        view.filter = state.inspector_filter.clone();
+        view.tab = inspector_tab(state);
+        view.favorites = state.inspector_favorite_paths.clone();
         view.apply_asset_actions(state);
         view
     }
@@ -1144,6 +1164,274 @@ impl InspectorViewData {
         self.asset_use_action = self.asset_actions && kind != "scene";
         self.glb_asset_actions = self.asset_actions && is_gltf_path(path);
     }
+}
+
+pub fn update_inspector_filter<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
+    let Some(text) = read_text_box(ctx, "inspector_filter_box") else {
+        return;
+    };
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.inspector_filter = text;
+        state.focused_inspector_box = "inspector_filter_box".to_string();
+    });
+    refresh_all(ctx);
+}
+
+pub fn set_inspector_tab<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>, tab: &str) {
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        state.inspector_tab = tab.to_string();
+        state.log = format!("inspector tab\n{tab}");
+    });
+    refresh_all(ctx);
+}
+
+fn inspector_tab(state: &EditorState) -> String {
+    match state.inspector_tab.as_str() {
+        "Node" | "Transform" | "Script" | "Groups" => state.inspector_tab.clone(),
+        _ => "All".to_string(),
+    }
+}
+
+pub fn inspector_visible_rows_for_node(
+    state: &EditorState,
+    node: &perro_api::scene::SceneNodeEntry,
+) -> Vec<InspectorValueRow> {
+    let tab = inspector_tab(state);
+    with_favorite_rows(
+        state,
+        filter_inspector_rows(
+            filter_inspector_rows_by_tab(inspector_display_rows_for_node(state, node), &tab),
+            &state.inspector_filter,
+        ),
+    )
+}
+
+pub fn toggle_inspector_favorite<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+) {
+    let row = with_state!(ctx.run, EditorState, ctx.id, |state| {
+        let key = state.selected_key?;
+        let node = cached_scene_node(&state.doc_text, key)?;
+        inspector_visible_rows_for_node(state, &node)
+            .get(idx)
+            .cloned()
+    });
+    let Some(row) = row else {
+        return;
+    };
+    let path_key = row.path_key.clone();
+    let _ = with_state_mut!(ctx.run, EditorState, ctx.id, |state| {
+        if let Some(pos) = state
+            .inspector_favorite_paths
+            .iter()
+            .position(|item| item == &path_key)
+        {
+            state.inspector_favorite_paths.remove(pos);
+            state.log = format!("unpin prop\n{}", row.name.trim());
+        } else {
+            state.inspector_favorite_paths.push(path_key);
+            state.log = format!("pin prop\n{}", row.name.trim());
+        }
+    });
+    refresh_all(ctx);
+}
+
+fn with_favorite_rows(state: &EditorState, rows: Vec<InspectorValueRow>) -> Vec<InspectorValueRow> {
+    if state.inspector_favorite_paths.is_empty() {
+        return rows;
+    }
+    let mut favorites = rows
+        .iter()
+        .filter(|row| {
+            row.source != "section"
+                && state
+                    .inspector_favorite_paths
+                    .iter()
+                    .any(|path| path == &row.path_key)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    if favorites.is_empty() {
+        return rows;
+    }
+    for row in &mut favorites {
+        row.depth = 1;
+    }
+    let mut out = vec![InspectorValueRow {
+        source: "section".to_string(),
+        depth: 0,
+        path: Vec::new(),
+        path_key: "section:favorites".to_string(),
+        name: "Favorites".to_string(),
+        kind: String::new(),
+        value: favorites.len().to_string(),
+        components: Vec::new(),
+        color_preview: None,
+        enum_options: Vec::new(),
+        default_child: None,
+        editable: false,
+        expandable: false,
+        addable: false,
+        removable: false,
+    }];
+    out.extend(favorites);
+    out.extend(rows);
+    out
+}
+
+fn inspector_row_is_favorite(inspector: &InspectorViewData, row: &InspectorValueRow) -> bool {
+    inspector.favorites.iter().any(|path| path == &row.path_key)
+}
+
+fn apply_inspector_tab_buttons<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    active: &str,
+) {
+    for (name, tab) in [
+        ("inspector_tab_all_button", "All"),
+        ("inspector_tab_node_button", "Node"),
+        ("inspector_tab_transform_button", "Transform"),
+        ("inspector_tab_script_button", "Script"),
+        ("inspector_tab_groups_button", "Groups"),
+    ] {
+        let selected = active == tab;
+        set_button_fill(ctx, name, if selected { "#4D84D1" } else { "#2A2F36" });
+        set_button_stroke(ctx, name, if selected { "#6BA0EA" } else { "#343A43" });
+    }
+}
+
+fn filter_inspector_rows_by_tab(rows: Vec<InspectorValueRow>, tab: &str) -> Vec<InspectorValueRow> {
+    if tab == "All" {
+        return rows;
+    }
+    let matches = rows
+        .iter()
+        .map(|row| inspector_row_matches_tab(row, tab))
+        .collect::<Vec<_>>();
+    keep_inspector_matches(rows, &matches)
+}
+
+fn filter_inspector_rows(rows: Vec<InspectorValueRow>, filter: &str) -> Vec<InspectorValueRow> {
+    let query = filter.trim().to_lowercase();
+    if query.is_empty() {
+        return rows;
+    }
+
+    let matches = rows
+        .iter()
+        .map(|row| inspector_row_matches_filter(row, &query))
+        .collect::<Vec<_>>();
+    keep_inspector_matches(rows, &matches)
+}
+
+fn keep_inspector_matches(
+    rows: Vec<InspectorValueRow>,
+    matches: &[bool],
+) -> Vec<InspectorValueRow> {
+    let mut keep = vec![false; rows.len()];
+
+    for idx in 0..rows.len() {
+        if !matches[idx] {
+            continue;
+        }
+        keep[idx] = true;
+
+        let mut depth = rows[idx].depth;
+        for parent_idx in (0..idx).rev() {
+            if rows[parent_idx].depth < depth {
+                keep[parent_idx] = true;
+                depth = rows[parent_idx].depth;
+                if depth == 0 {
+                    break;
+                }
+            }
+        }
+
+        if rows[idx].expandable || rows[idx].source == "section" {
+            for child_idx in idx + 1..rows.len() {
+                if rows[child_idx].depth <= rows[idx].depth {
+                    break;
+                }
+                keep[child_idx] = true;
+            }
+        }
+    }
+
+    let mut out = rows
+        .into_iter()
+        .enumerate()
+        .filter_map(|(idx, row)| keep[idx].then_some(row))
+        .collect::<Vec<_>>();
+    out = add_visible_section_counts(out);
+    out
+}
+
+fn inspector_row_matches_tab(row: &InspectorValueRow, tab: &str) -> bool {
+    let name = row.name.trim().to_lowercase();
+    let path = row.path_key.to_lowercase();
+    match tab {
+        "Script" => row.source == "script" || path.contains("section:script"),
+        "Groups" => row.source == "tags" || name.contains("group") || path.contains("tags"),
+        "Transform" => {
+            matches!(name.as_str(), "position" | "rotation" | "scale")
+                || path.contains(":position")
+                || path.contains(":rotation")
+                || path.contains(":scale")
+        }
+        "Node" => {
+            (row.source == "scene" || row.source == "tags")
+                && !inspector_row_matches_tab(row, "Transform")
+                && !inspector_row_matches_tab(row, "Groups")
+        }
+        _ => true,
+    }
+}
+
+fn inspector_row_matches_filter(row: &InspectorValueRow, query: &str) -> bool {
+    query
+        .split_whitespace()
+        .all(|token| inspector_row_matches_filter_token(row, token))
+}
+
+fn inspector_row_matches_filter_token(row: &InspectorValueRow, token: &str) -> bool {
+    match token {
+        "@script" => row.source == "script" || row.path_key.contains("section:script"),
+        "@scene" | "@node" => row.source == "scene" || row.source == "tags",
+        "@vec" => row.kind.contains("Vec") || !row.components.is_empty(),
+        "@color" => row.kind == "Color" || row.color_preview.is_some(),
+        "@empty" => row.kind == "EmptyArrayAdd" || row.kind == "EmptyObject",
+        "@array" => row.addable || row.kind == "EmptyArrayAdd" || row.value.contains("size:"),
+        "@group" | "@groups" => row.source == "tags" || row.path_key.contains("tags"),
+        _ => {
+            row.name.to_lowercase().contains(token)
+                || row.value.to_lowercase().contains(token)
+                || row.kind.to_lowercase().contains(token)
+                || row.source.to_lowercase().contains(token)
+                || row.path_key.to_lowercase().contains(token)
+                || row
+                    .components
+                    .iter()
+                    .any(|component| component.to_lowercase().contains(token))
+        }
+    }
+}
+
+fn add_visible_section_counts(mut rows: Vec<InspectorValueRow>) -> Vec<InspectorValueRow> {
+    for idx in 0..rows.len() {
+        if rows[idx].source != "section" {
+            continue;
+        }
+        let depth = rows[idx].depth;
+        let count = rows
+            .iter()
+            .skip(idx + 1)
+            .take_while(|row| row.depth > depth)
+            .filter(|row| row.source != "section")
+            .count();
+        rows[idx].value = count.to_string();
+    }
+    rows
 }
 
 impl EditorView {
@@ -1418,16 +1706,27 @@ pub fn script_vars_edit_text(fields: &[(SceneFieldName, SceneValue)]) -> String 
 pub fn inspector_scene_value_fields_for_node(
     node: &SceneNodeEntry,
 ) -> Vec<(SceneFieldName, SceneValue)> {
-    perro_scene::scene_node_fields(node.data.node_type)
+    inspector_scene_default_value_fields_for_type(node.data.node_type)
+        .into_iter()
+        .map(|(name, default)| {
+            let value = scene_field_value(&node.data, name.as_ref())
+                .cloned()
+                .unwrap_or(default);
+            (name, value)
+        })
+        .collect()
+}
+
+pub fn inspector_scene_default_value_fields_for_type(
+    node_type: perro_scene::NodeType,
+) -> Vec<(SceneFieldName, SceneValue)> {
+    perro_scene::scene_node_fields(node_type)
         .into_iter()
         .filter(inspector_generic_scene_field)
         .filter_map(|field| {
-            let value = scene_field_value(&node.data, field.name)
-                .cloned()
-                .or(field.default)
-                .or_else(|| {
-                    perro_scene::default_scene_field_value_by_name(node.data.node_type, field.name)
-                })
+            let value = field
+                .default
+                .or_else(|| perro_scene::default_scene_field_value_by_name(node_type, field.name))
                 .or_else(|| Some(field.ty.default_value()))?;
             Some((
                 SceneFieldName::from_name(field.name.to_string()),
@@ -1504,17 +1803,37 @@ fn inspector_row_has_override<API: ScriptAPI + ?Sized>(
         match row.source.as_str() {
             "script" => {
                 let defaults = inspector_script_var_default_fields_for_node(state, &node);
+                let fields = inspector_script_var_fields_for_node(state, &node);
                 let Some((name, _)) = defaults.get(*root_idx) else {
                     return false;
                 };
-                node.script_vars.iter().any(|(field, _)| field == name)
+                if !node.script_vars.iter().any(|(field, _)| field == name) {
+                    return false;
+                }
+                let Some(current) = value_at_path_in_fields(&fields, &row.path) else {
+                    return false;
+                };
+                let Some(default) = value_at_path_in_fields(&defaults, &row.path) else {
+                    return true;
+                };
+                !scene_values_equal(current, default)
             }
             "scene" => {
                 let fields = inspector_scene_value_fields_for_node(&node);
+                let defaults = inspector_scene_default_value_fields_for_type(node.data.node_type);
                 let Some((name, _)) = fields.get(*root_idx) else {
                     return false;
                 };
-                node.data.fields.iter().any(|(field, _)| field == name)
+                if !node.data.fields.iter().any(|(field, _)| field == name) {
+                    return false;
+                }
+                let Some(current) = value_at_path_in_fields(&fields, &row.path) else {
+                    return false;
+                };
+                let Some(default) = value_at_path_in_fields(&defaults, &row.path) else {
+                    return true;
+                };
+                !scene_values_equal(current, default)
             }
             "tags" => !node.tags.is_empty(),
             _ => false,
@@ -1526,6 +1845,9 @@ fn inspector_row_display_name(row: &InspectorValueRow) -> String {
     let indent = row.name.chars().take_while(|ch| ch.is_whitespace()).count();
     let label = row.name.trim();
     if row.source == "section" {
+        if !row.value.trim().is_empty() {
+            return format!("{}{}  {}", " ".repeat(indent), label, row.value.trim());
+        }
         return format!("{}{}", " ".repeat(indent), label);
     }
     format!("{}{}", " ".repeat(indent), title_case_label(label))
@@ -1576,9 +1898,11 @@ fn inspector_row_base_heights(rows: &[InspectorValueRow]) -> Vec<f32> {
             } else if !row.components.is_empty() {
                 0.040
             } else if row.source == "section" {
-                0.030
+                0.034
+            } else if row.kind == "EmptyArrayAdd" || row.kind == "EmptyObject" {
+                0.032
             } else {
-                0.027
+                0.030
             }
         })
         .collect()
@@ -1590,7 +1914,9 @@ fn apply_inspector_value_row_text_layout<API: ScriptAPI + ?Sized>(
     row: &InspectorValueRow,
 ) {
     let name_ratio = if row.source == "section" {
-        0.38
+        0.72
+    } else if row.kind == "EmptyArrayAdd" || row.kind == "EmptyObject" {
+        0.72
     } else if row.kind == "BitMask" {
         0.13
     } else if !row.components.is_empty() || row.kind == "Color" {
@@ -1600,6 +1926,13 @@ fn apply_inspector_value_row_text_layout<API: ScriptAPI + ?Sized>(
     };
     set_label_text_ratio(ctx, &format!("inspector_var_{idx}_name"), name_ratio);
     set_label_size_ratio(ctx, &format!("inspector_var_{idx}_name"), (name_ratio, 1.0));
+    if row.kind == "EmptyArrayAdd" || row.kind == "EmptyObject" {
+        set_label_color(ctx, &format!("inspector_var_{idx}_name"), "#A7AFB9");
+    } else if row.source == "section" {
+        set_label_color(ctx, &format!("inspector_var_{idx}_name"), "#D7DBE0");
+    } else {
+        set_label_color(ctx, &format!("inspector_var_{idx}_name"), "#A7AFB9");
+    }
     let box_w = match row.components.len() {
         2 => 0.245,
         3 => 0.195,
@@ -1664,11 +1997,7 @@ fn apply_inspector_row_tree_layout<API: ScriptAPI + ?Sized>(
         &format!("inspector_var_row_{idx}_inner"),
         (1.0, base / total),
     );
-    set_ui_node_size(
-        ctx,
-        &format!("inspector_var_row_{idx}_header"),
-        (1.0, 1.0),
-    );
+    set_ui_node_size(ctx, &format!("inspector_var_row_{idx}_header"), (1.0, 1.0));
     set_ui_node_size(
         ctx,
         &format!("inspector_var_row_{idx}_children"),
@@ -1731,7 +2060,7 @@ fn inspector_enum_picker_entries(state: &EditorState) -> Vec<InspectorPickerEntr
         return Vec::new();
     };
     let rows = if state.inspector_picker_kind == "value_enum" {
-        inspector_display_rows_for_node(state, &node)
+        inspector_visible_rows_for_node(state, &node)
     } else {
         inspector_script_var_rows_for_node(state, &node)
     };
@@ -1797,7 +2126,7 @@ fn inspector_picker_node_ref_types(state: &EditorState) -> Vec<String> {
         return Vec::new();
     };
     let rows = if state.inspector_picker_kind.starts_with("value_") {
-        inspector_display_rows_for_node(state, node)
+        inspector_visible_rows_for_node(state, node)
     } else {
         inspector_script_var_rows_for_node(state, node)
     };
@@ -1821,8 +2150,7 @@ fn node_ref_types_from_kind(kind: &str) -> Option<Vec<String>> {
 fn node_ref_type_allows(allowed: &[String], node_type: perro_scene::NodeType) -> bool {
     allowed.is_empty()
         || allowed.iter().any(|name| {
-            node_type_from_hint_name(name)
-                .is_some_and(|allowed_type| node_type.is_a(allowed_type))
+            node_type_from_hint_name(name).is_some_and(|allowed_type| node_type.is_a(allowed_type))
         })
 }
 
@@ -1867,7 +2195,7 @@ fn inspector_picker_asset_kind(state: &EditorState) -> Option<perro_scene::Scene
             .nodes
             .iter()
             .find(|node| node.key.as_u32() == key)?;
-        let row = inspector_display_rows_for_node(state, node)
+        let row = inspector_visible_rows_for_node(state, node)
             .get(row_idx)?
             .clone();
         return asset_kind_from_row_kind(&row.kind);
@@ -3476,6 +3804,21 @@ pub fn set_label_text_ratio<API: ScriptAPI + ?Sized>(
     }
 }
 
+pub fn set_label_color<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    color: &str,
+) {
+    let Some(color) = Color::from_hex(color) else {
+        return;
+    };
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiLabel, id, |node| {
+            node.color = color;
+        });
+    }
+}
+
 pub fn set_axis_label_overlay<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     name: &str,
@@ -3593,6 +3936,21 @@ pub fn set_button_row_style<API: ScriptAPI + ?Sized>(
             node.pressed_style.stroke = pressed_color;
             node.pressed_style.stroke_width = 0.0;
             node.pressed_style.corner_radius = 0.0;
+        });
+    }
+}
+
+pub fn set_button_stroke<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    color: &str,
+) {
+    let Some(color) = Color::from_hex(color) else {
+        return;
+    };
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiButton, id, |node| {
+            node.style.stroke = color;
         });
     }
 }
@@ -3949,25 +4307,8 @@ pub fn viewport_window_aspect<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
     viewport.x / viewport.y.max(0.0001)
 }
 
-pub fn viewport_stream_size_ratio(window_aspect: f32) -> (f32, f32) {
-    const MAIN_PADDING: f32 = 0.0025;
-    const MAIN_SPACING: f32 = 0.0025;
-    const SPLIT_CONTENT_W: f32 = 1.0 - (MAIN_PADDING * 2.0) - (MAIN_SPACING * 3.0);
-    const SPLIT_CONTENT_H: f32 = 0.944 - (0.003 * 2.0);
-    const CENTER_W: f32 = 0.596;
-    const VIEWPORT_PANEL_H: f32 = 0.828;
-    const MAX_W: f32 = 0.98;
-    const MAX_H: f32 = 0.92;
-    const ASPECT: f32 = 16.0 / 9.0;
-
-    let panel_aspect =
-        window_aspect * (SPLIT_CONTENT_W * CENTER_W) / (SPLIT_CONTENT_H * VIEWPORT_PANEL_H);
-    let h_for_w = MAX_W * panel_aspect / ASPECT;
-    if h_for_w <= MAX_H {
-        (MAX_W, h_for_w)
-    } else {
-        (MAX_H * ASPECT / panel_aspect, MAX_H)
-    }
+pub fn viewport_stream_size_ratio(_window_aspect: f32) -> (f32, f32) {
+    (0.99, 0.99)
 }
 
 pub fn ui_canvas_size_ratio(window_aspect: f32, zoom: f32) -> (f32, f32) {
@@ -4079,19 +4420,26 @@ pub fn set_scene_tree_list<API: ScriptAPI + ?Sized>(
         if tree.selected_index != view.selected_row {
             tree.selected_index = view.selected_row;
         }
-        tree.indent = 12.0;
-        tree.row_height = 23.0;
-        tree.v_spacing = 0.0008;
-        tree.icon_size = 13.0;
-        tree.toggle_size = 10.0;
-        tree.line_color = Color::from_hex("#343A43").unwrap_or(tree.line_color);
-        tree.triangle_color = Color::from_hex("#5EA868").unwrap_or(tree.triangle_color);
+        tree.indent = 13.0;
+        tree.row_height = 24.0;
+        tree.v_spacing = 0.0012;
+        tree.icon_size = 14.0;
+        tree.toggle_size = 11.0;
+        tree.line_color = Color::from_hex("#3A414C").unwrap_or(tree.line_color);
+        tree.triangle_color = Color::from_hex("#7FA7E6").unwrap_or(tree.triangle_color);
         tree.text_color = Color::from_hex("#D7DBE0").unwrap_or(tree.text_color);
         tree.row_style.fill = Color::TRANSPARENT;
         tree.row_style.stroke = Color::TRANSPARENT;
-        tree.row_hover_style.fill =
-            Color::from_hex("#323842").unwrap_or(tree.row_hover_style.fill);
-        tree.selected_style.fill = Color::from_hex("#4D84D1").unwrap_or(tree.selected_style.fill);
+        tree.row_hover_style.fill = Color::from_hex("#303741").unwrap_or(tree.row_hover_style.fill);
+        tree.row_hover_style.stroke =
+            Color::from_hex("#46515F").unwrap_or(tree.row_hover_style.stroke);
+        tree.row_hover_style.stroke_width = 1.0;
+        tree.row_hover_style.corner_radius = 0.08;
+        tree.selected_style.fill = Color::from_hex("#27364D").unwrap_or(tree.selected_style.fill);
+        tree.selected_style.stroke =
+            Color::from_hex("#6BA0EA").unwrap_or(tree.selected_style.stroke);
+        tree.selected_style.stroke_width = 1.0;
+        tree.selected_style.corner_radius = 0.08;
         tree.selected_signals = vec![signal!("editor_scene_tree_selected")];
         tree.toggled_signals = vec![signal!("editor_scene_tree_toggled")];
     });
@@ -4102,9 +4450,9 @@ pub fn apply_file_tree_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
         return;
     };
     let _ = with_node_mut!(ctx.run, UiTreeList, list_id, |tree| {
-        tree.indent = 11.0;
-        tree.v_spacing = 0.0008;
-        tree.row_height = 22.0;
+        tree.indent = 12.0;
+        tree.v_spacing = 0.0012;
+        tree.row_height = 23.0;
     });
 }
 
@@ -4160,19 +4508,26 @@ pub fn set_file_tree_list<API: ScriptAPI + ?Sized>(
         if tree.selected_index != selected_index {
             tree.selected_index = selected_index;
         }
-        tree.indent = 11.0;
-        tree.row_height = 22.0;
-        tree.v_spacing = 0.0008;
-        tree.icon_size = 13.0;
-        tree.toggle_size = 10.0;
-        tree.line_color = Color::from_hex("#343A43").unwrap_or(tree.line_color);
-        tree.triangle_color = Color::from_hex("#5A91DD").unwrap_or(tree.triangle_color);
+        tree.indent = 12.0;
+        tree.row_height = 23.0;
+        tree.v_spacing = 0.0012;
+        tree.icon_size = 14.0;
+        tree.toggle_size = 11.0;
+        tree.line_color = Color::from_hex("#3A414C").unwrap_or(tree.line_color);
+        tree.triangle_color = Color::from_hex("#7FA7E6").unwrap_or(tree.triangle_color);
         tree.text_color = Color::from_hex("#D7DBE0").unwrap_or(tree.text_color);
         tree.row_style.fill = Color::TRANSPARENT;
         tree.row_style.stroke = Color::TRANSPARENT;
-        tree.row_hover_style.fill =
-            Color::from_hex("#323842").unwrap_or(tree.row_hover_style.fill);
-        tree.selected_style.fill = Color::from_hex("#4D84D1").unwrap_or(tree.selected_style.fill);
+        tree.row_hover_style.fill = Color::from_hex("#303741").unwrap_or(tree.row_hover_style.fill);
+        tree.row_hover_style.stroke =
+            Color::from_hex("#46515F").unwrap_or(tree.row_hover_style.stroke);
+        tree.row_hover_style.stroke_width = 1.0;
+        tree.row_hover_style.corner_radius = 0.08;
+        tree.selected_style.fill = Color::from_hex("#27364D").unwrap_or(tree.selected_style.fill);
+        tree.selected_style.stroke =
+            Color::from_hex("#6BA0EA").unwrap_or(tree.selected_style.stroke);
+        tree.selected_style.stroke_width = 1.0;
+        tree.selected_style.corner_radius = 0.08;
         tree.selected_signals = vec![signal!("editor_file_tree_selected")];
         tree.toggled_signals = vec![signal!("editor_file_tree_toggled")];
     });

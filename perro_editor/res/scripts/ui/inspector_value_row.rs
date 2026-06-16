@@ -73,6 +73,7 @@ pub fn ensure_inspector_value_row<API: ScriptAPI + ?Sized>(
     let _ = ctx.run.Nodes().reparent(content_id, root_id);
     rename_value_row(ctx, root_id, idx);
     ensure_inspector_default_button(ctx, idx);
+    ensure_inspector_favorite_button(ctx, idx);
     set_cached_row_template(idx, Some(template));
 }
 
@@ -116,23 +117,66 @@ fn ensure_inspector_default_button<API: ScriptAPI + ?Sized>(
     let _ = ctx.run.Nodes().reparent(parent, button);
     let _ = ctx.run.Nodes().reparent(button, label);
     let _ = with_node_mut!(ctx.run, UiButton, button, |node| {
-        node.layout.size = UiVector2::ratio(0.045, 0.62);
+        node.layout.size = UiVector2::ratio(0.028, 0.48);
         node.visible = false;
         node.clicked_signals = vec![SignalID::from_string("editor_inspector_var_7")];
-        node.style.fill = Color::from_hex("#3A3020").unwrap_or(node.style.fill);
+        node.style.fill = Color::from_hex("#00000000").unwrap_or(node.style.fill);
         node.style.stroke = Color::from_hex("#D9A24A").unwrap_or(node.style.stroke);
         node.style.stroke_width = 1.0;
-        node.style.corner_radius = 0.2;
-        node.hover_style.fill = Color::from_hex("#4A3A24").unwrap_or(node.hover_style.fill);
+        node.style.corner_radius = 0.5;
+        node.hover_style.fill = Color::from_hex("#3A3020").unwrap_or(node.hover_style.fill);
         node.hover_style.stroke = Color::from_hex("#D9A24A").unwrap_or(node.hover_style.stroke);
-        node.pressed_style.fill = Color::from_hex("#5A4328").unwrap_or(node.pressed_style.fill);
+        node.pressed_style.fill = Color::from_hex("#4A3A24").unwrap_or(node.pressed_style.fill);
         node.pressed_style.stroke = Color::from_hex("#E2B45E").unwrap_or(node.pressed_style.stroke);
     });
     let _ = with_node_mut!(ctx.run, UiLabel, label, |node| {
         node.layout.size = UiVector2::ratio(1.0, 1.0);
-        node.text = Cow::Borrowed("!");
-        node.text_size_ratio = 0.48;
+        node.text = Cow::Borrowed("R");
+        node.text_size_ratio = 0.42;
         node.color = Color::from_hex("#F0C96D").unwrap_or(node.color);
+        node.input_enabled = false;
+        node.mouse_filter = UiMouseFilter::Pass;
+    });
+}
+
+fn ensure_inspector_favorite_button<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    idx: usize,
+) {
+    let button_name = format!("inspector_var_{idx}_favorite_button");
+    if find_named(ctx, &button_name).is_some() {
+        return;
+    }
+    let Some(parent) = inspector_value_row_inner(ctx, idx) else {
+        return;
+    };
+    let button = ctx.run.Nodes().create::<UiButton>();
+    let label = ctx.run.Nodes().create::<UiLabel>();
+    let _ = ctx.run.Nodes().set_node_name(button, button_name);
+    let _ = ctx
+        .run
+        .Nodes()
+        .set_node_name(label, format!("inspector_var_{idx}_favorite_label"));
+    let _ = ctx.run.Nodes().reparent(parent, button);
+    let _ = ctx.run.Nodes().reparent(button, label);
+    let _ = with_node_mut!(ctx.run, UiButton, button, |node| {
+        node.layout.size = UiVector2::ratio(0.028, 0.48);
+        node.visible = false;
+        node.clicked_signals = vec![SignalID::from_string("editor_inspector_var_7")];
+        node.style.fill = Color::from_hex("#00000000").unwrap_or(node.style.fill);
+        node.style.stroke = Color::from_hex("#4A525D").unwrap_or(node.style.stroke);
+        node.style.stroke_width = 1.0;
+        node.style.corner_radius = 0.5;
+        node.hover_style.fill = Color::from_hex("#2C3440").unwrap_or(node.hover_style.fill);
+        node.hover_style.stroke = Color::from_hex("#7FA7E6").unwrap_or(node.hover_style.stroke);
+        node.pressed_style.fill = Color::from_hex("#27364D").unwrap_or(node.pressed_style.fill);
+        node.pressed_style.stroke = Color::from_hex("#6BA0EA").unwrap_or(node.pressed_style.stroke);
+    });
+    let _ = with_node_mut!(ctx.run, UiLabel, label, |node| {
+        node.layout.size = UiVector2::ratio(1.0, 1.0);
+        node.text = Cow::Borrowed("*");
+        node.text_size_ratio = 0.42;
+        node.color = Color::from_hex("#A7AFB9").unwrap_or(node.color);
         node.input_enabled = false;
         node.mouse_filter = UiMouseFilter::Pass;
     });
@@ -164,6 +208,7 @@ pub fn apply_inspector_value_row_panel<API: ScriptAPI + ?Sized>(
     depth: usize,
     source: &str,
     has_children: bool,
+    changed: bool,
 ) {
     let names = inspector_row_names(idx);
     let Some(row_id) = find_named(ctx, &names.row) else {
@@ -172,31 +217,21 @@ pub fn apply_inspector_value_row_panel<API: ScriptAPI + ?Sized>(
     let Some(header_id) = find_named(ctx, &names.header) else {
         return;
     };
-    let palette = [
-        ("#23272D", "#4D84D1"),
-        ("#2A2F36", "#4A525D"),
-        ("#2A2F36", "#D95F5F"),
-        ("#2A2F36", "#D98B3A"),
-        ("#2A2F36", "#D9A24A"),
-        ("#2A2F36", "#5EA868"),
-    ];
-    let group_depth = depth.saturating_sub(1);
-    let (fill, stroke) = palette[group_depth % palette.len()];
-    let (fill, stroke) = if source == "section" {
-        ("#23272D", "#343A43")
+    let nested = depth > 1 || has_children;
+    let (fill, stroke, stroke_width, radius) = if source == "section" {
+        ("#1F242B", "#4D84D1", 1.0, 0.06)
+    } else if changed {
+        ("#26303B", "#6BA0EA", 1.0, 0.06)
+    } else if nested {
+        ("#262B32", "#343A43", 1.0, 0.06)
     } else {
-        (fill, stroke)
-    };
-    let script_stroke = if source == "script" && depth == 0 {
-        "#4A525D"
-    } else {
-        stroke
+        ("#252A31", "#2F3540", 1.0, 0.05)
     };
     let _ = with_node_mut!(ctx.run, UiPanel, row_id, |node| {
         node.style.fill = Color::from_hex(fill).unwrap_or(node.style.fill);
-        node.style.stroke = Color::from_hex(script_stroke).unwrap_or(node.style.stroke);
-        node.style.stroke_width = 1.0;
-        node.style.corner_radius = 0.1;
+        node.style.stroke = Color::from_hex(stroke).unwrap_or(node.style.stroke);
+        node.style.stroke_width = stroke_width;
+        node.style.corner_radius = radius;
     });
     let _ = with_node_mut!(ctx.run, UiPanel, header_id, |node| {
         node.style.fill = Color::TRANSPARENT;

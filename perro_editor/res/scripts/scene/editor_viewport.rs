@@ -463,12 +463,12 @@ pub fn viewport_stream_rect_ratio(window_aspect: f32) -> (f32, f32, f32, f32) {
     const TOP_BAR_H: f32 = 0.034;
     const ROOT_SPACING: f32 = 0.0;
     const MAIN_SPLIT_H: f32 = 0.944;
-    const MAIN_PADDING: f32 = 0.004;
-    const MAIN_SPACING: f32 = 0.004;
+    const MAIN_PADDING: f32 = 0.0025;
+    const MAIN_SPACING: f32 = 0.0025;
     const ACTIVITY_W: f32 = 0.024;
     const LEFT_W: f32 = 0.132;
-    const CENTER_W: f32 = 0.705;
-    const VIEWPORT_PANEL_H: f32 = 0.828;
+    const CENTER_W: f32 = 0.596;
+    const VIEWPORT_PANEL_H: f32 = 0.85;
     const SCENE_TABS_H: f32 = 0.042;
     const CENTER_STACK_SPACING: f32 = 0.004;
 
