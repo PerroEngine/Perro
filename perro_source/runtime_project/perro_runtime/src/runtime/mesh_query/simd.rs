@@ -57,6 +57,10 @@ pub(super) fn ray_aabb_tmin(
 }
 
 #[inline]
+#[cfg(not(any(
+    target_arch = "aarch64",
+    all(target_arch = "wasm32", target_feature = "simd128")
+)))]
 fn scalar_aabb_distance2(p: Vec3, min: Vec3, max: Vec3) -> f32 {
     let dx = if p.x < min.x {
         min.x - p.x
@@ -83,6 +87,10 @@ fn scalar_aabb_distance2(p: Vec3, min: Vec3, max: Vec3) -> f32 {
 }
 
 #[inline]
+#[cfg(not(any(
+    target_arch = "aarch64",
+    all(target_arch = "wasm32", target_feature = "simd128")
+)))]
 fn scalar_ray_aabb_tmin(origin: Vec3, dir: Vec3, min: Vec3, max: Vec3, max_t: f32) -> Option<f32> {
     let inv_x = if dir.x.abs() > 1e-8 {
         1.0 / dir.x

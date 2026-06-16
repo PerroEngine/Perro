@@ -604,6 +604,292 @@ fn bench_matrix_huge_parallel_pack(c: &mut Criterion) {
     group.finish();
 }
 
+fn matrix_api_for_each_sum<const ROWS: usize, const COLS: usize>(
+    matrix: &Matrix<ROWS, COLS>,
+) -> f32 {
+    let mut sum = 0.0;
+    matrix.for_each(|row, col, value| {
+        sum += *value + row as f32 * 0.001 + col as f32 * 0.002;
+    });
+    sum
+}
+
+fn matrix_unchecked_sum<const ROWS: usize, const COLS: usize>(matrix: &Matrix<ROWS, COLS>) -> f32 {
+    let mut sum = 0.0;
+    for row in 0..ROWS {
+        for col in 0..COLS {
+            // SAFETY: row/col come from matrix bounds.
+            let value = unsafe { *matrix.get_unchecked(row, col) };
+            sum += value + row as f32 * 0.001 + col as f32 * 0.002;
+        }
+    }
+    sum
+}
+
+fn matrix_slice_sum<const ROWS: usize, const COLS: usize>(matrix: &Matrix<ROWS, COLS>) -> f32 {
+    matrix
+        .as_slice()
+        .iter()
+        .enumerate()
+        .map(|(index, value)| *value + index as f32 * 0.0001)
+        .sum()
+}
+
+fn matrix_api_zip_update<const ROWS: usize, const COLS: usize>(
+    out: &mut Matrix<ROWS, COLS>,
+    rhs: &Matrix<ROWS, COLS>,
+) {
+    out.zip_each_mut(rhs, |row, col, left, right| {
+        *left = *left * 0.5 + *right + row as f32 * 0.001 + col as f32 * 0.002;
+    });
+}
+
+fn matrix_unchecked_zip_update<const ROWS: usize, const COLS: usize>(
+    out: &mut Matrix<ROWS, COLS>,
+    rhs: &Matrix<ROWS, COLS>,
+) {
+    for row in 0..ROWS {
+        for col in 0..COLS {
+            // SAFETY: row/col come from matrix bounds.
+            unsafe {
+                let left = *out.get_unchecked(row, col);
+                let right = *rhs.get_unchecked(row, col);
+                *out.get_unchecked_mut(row, col) =
+                    left * 0.5 + right + row as f32 * 0.001 + col as f32 * 0.002;
+            }
+        }
+    }
+}
+
+fn matrix_api_map<const ROWS: usize, const COLS: usize>(
+    matrix: Matrix<ROWS, COLS>,
+) -> Matrix<ROWS, COLS> {
+    matrix.map_cells(|row, col, value| value + row as f32 * 0.001 + col as f32 * 0.002)
+}
+
+fn matrix_unchecked_map<const ROWS: usize, const COLS: usize>(
+    matrix: Matrix<ROWS, COLS>,
+) -> Matrix<ROWS, COLS> {
+    Matrix::<ROWS, COLS>::new(std::array::from_fn(|row| {
+        std::array::from_fn(|col| {
+            // SAFETY: array::from_fn indexes are in matrix bounds.
+            unsafe { *matrix.get_unchecked(row, col) + row as f32 * 0.001 + col as f32 * 0.002 }
+        })
+    }))
+}
+
+fn matrix_api_neighbor_sum<const ROWS: usize, const COLS: usize>(
+    matrix: &Matrix<ROWS, COLS>,
+) -> f32 {
+    let mut sum = 0.0;
+    matrix.for_positions(|row, col| {
+        matrix.for_neighbors_8(row, col, |next_row, next_col, value| {
+            sum += *value + next_row as f32 * 0.001 + next_col as f32 * 0.002;
+        });
+    });
+    sum
+}
+
+fn matrix_unchecked_neighbor_sum<const ROWS: usize, const COLS: usize>(
+    matrix: &Matrix<ROWS, COLS>,
+) -> f32 {
+    let mut sum = 0.0;
+    for row in 0..ROWS {
+        for col in 0..COLS {
+            let row_start = row.saturating_sub(1);
+            let row_end = (row + 1).min(ROWS - 1);
+            let col_start = col.saturating_sub(1);
+            let col_end = (col + 1).min(COLS - 1);
+            for next_row in row_start..=row_end {
+                for next_col in col_start..=col_end {
+                    if next_row != row || next_col != col {
+                        // SAFETY: ranges clamp to matrix bounds.
+                        let value = unsafe { *matrix.get_unchecked(next_row, next_col) };
+                        sum += value + next_row as f32 * 0.001 + next_col as f32 * 0.002;
+                    }
+                }
+            }
+        }
+    }
+    sum
+}
+
+fn matrix_api_neighbor_count<const ROWS: usize, const COLS: usize>(
+    matrix: &Matrix<ROWS, COLS>,
+) -> usize {
+    let mut count = 0;
+    matrix.for_positions(|row, col| {
+        count += matrix.count_neighbors_4(row, col, |_, _, value| *value > 2.0);
+    });
+    count
+}
+
+fn matrix_unchecked_neighbor_count<const ROWS: usize, const COLS: usize>(
+    matrix: &Matrix<ROWS, COLS>,
+) -> usize {
+    let mut count = 0;
+    for row in 0..ROWS {
+        for col in 0..COLS {
+            for (next_row, next_col) in [
+                (row.wrapping_sub(1), col),
+                (row, col.wrapping_sub(1)),
+                (row, col + 1),
+                (row + 1, col),
+            ] {
+                if Matrix::<ROWS, COLS>::in_bounds(next_row, next_col) {
+                    // SAFETY: in_bounds checked above.
+                    if unsafe { *matrix.get_unchecked(next_row, next_col) } > 2.0 {
+                        count += 1;
+                    }
+                }
+            }
+        }
+    }
+    count
+}
+
+fn bench_matrix_api_vs_unchecked_helpers(c: &mut Criterion) {
+    let matrices = make_matrices::<20, 20>(HUGE_N);
+    let rhs = make_matrices::<20, 20>(HUGE_N);
+    let mut group = c.benchmark_group("perro_structs/matrix_api_vs_unchecked_helpers");
+
+    group.bench_function("for_each_api", |bench| {
+        bench.iter(|| {
+            let mut sum = 0.0;
+            for matrix in black_box(&matrices) {
+                sum += matrix_api_for_each_sum(matrix);
+            }
+            black_box(sum)
+        })
+    });
+
+    group.bench_function("unchecked_get", |bench| {
+        bench.iter(|| {
+            let mut sum = 0.0;
+            for matrix in black_box(&matrices) {
+                sum += matrix_unchecked_sum(matrix);
+            }
+            black_box(sum)
+        })
+    });
+
+    group.bench_function("as_slice_iter", |bench| {
+        bench.iter(|| {
+            let mut sum = 0.0;
+            for matrix in black_box(&matrices) {
+                sum += matrix_slice_sum(matrix);
+            }
+            black_box(sum)
+        })
+    });
+
+    group.bench_function("zip_each_mut_api", |bench| {
+        bench.iter(|| {
+            let mut acc = Matrix::<20, 20>::default();
+            for (&lhs, rhs) in black_box(matrices.iter().zip(&rhs)) {
+                let mut out = lhs;
+                matrix_api_zip_update(&mut out, rhs);
+                acc += out;
+            }
+            black_box(acc)
+        })
+    });
+
+    group.bench_function("zip_each_mut_unchecked", |bench| {
+        bench.iter(|| {
+            let mut acc = Matrix::<20, 20>::default();
+            for (&lhs, rhs) in black_box(matrices.iter().zip(&rhs)) {
+                let mut out = lhs;
+                matrix_unchecked_zip_update(&mut out, rhs);
+                acc += out;
+            }
+            black_box(acc)
+        })
+    });
+
+    group.bench_function("map_cells_api", |bench| {
+        bench.iter(|| {
+            let mut acc = Matrix::<20, 20>::default();
+            for &matrix in black_box(&matrices) {
+                acc += matrix_api_map(matrix);
+            }
+            black_box(acc)
+        })
+    });
+
+    group.bench_function("map_cells_unchecked", |bench| {
+        bench.iter(|| {
+            let mut acc = Matrix::<20, 20>::default();
+            for &matrix in black_box(&matrices) {
+                acc += matrix_unchecked_map(matrix);
+            }
+            black_box(acc)
+        })
+    });
+
+    group.bench_function("copy_from_api", |bench| {
+        bench.iter(|| {
+            let mut out = Matrix::<20, 20>::default();
+            for matrix in black_box(&matrices) {
+                out.copy_from(matrix);
+            }
+            black_box(out)
+        })
+    });
+
+    group.bench_function("copy_from_slice_raw", |bench| {
+        bench.iter(|| {
+            let mut out = Matrix::<20, 20>::default();
+            for matrix in black_box(&matrices) {
+                out.as_mut_slice().copy_from_slice(matrix.as_slice());
+            }
+            black_box(out)
+        })
+    });
+
+    group.bench_function("neighbors_8_api", |bench| {
+        bench.iter(|| {
+            let mut sum = 0.0;
+            for matrix in black_box(&matrices) {
+                sum += matrix_api_neighbor_sum(matrix);
+            }
+            black_box(sum)
+        })
+    });
+
+    group.bench_function("neighbors_8_unchecked", |bench| {
+        bench.iter(|| {
+            let mut sum = 0.0;
+            for matrix in black_box(&matrices) {
+                sum += matrix_unchecked_neighbor_sum(matrix);
+            }
+            black_box(sum)
+        })
+    });
+
+    group.bench_function("count_neighbors_4_api", |bench| {
+        bench.iter(|| {
+            let mut count = 0;
+            for matrix in black_box(&matrices) {
+                count += matrix_api_neighbor_count(matrix);
+            }
+            black_box(count)
+        })
+    });
+
+    group.bench_function("count_neighbors_4_unchecked", |bench| {
+        bench.iter(|| {
+            let mut count = 0;
+            for matrix in black_box(&matrices) {
+                count += matrix_unchecked_neighbor_count(matrix);
+            }
+            black_box(count)
+        })
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_vector2_bulk_ops,
@@ -619,6 +905,7 @@ criterion_group!(
     bench_matrix_huge_ops,
     bench_matrix_huge_pack,
     bench_matrix_huge_parallel_ops,
-    bench_matrix_huge_parallel_pack
+    bench_matrix_huge_parallel_pack,
+    bench_matrix_api_vs_unchecked_helpers
 );
 criterion_main!(benches);

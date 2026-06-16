@@ -181,6 +181,35 @@ impl<const ROWS: usize, const COLS: usize, T> Matrix<ROWS, COLS, T> {
     }
 
     #[inline]
+    pub fn into_rows(self) -> [[T; COLS]; ROWS] {
+        self.0
+    }
+
+    #[inline]
+    pub fn to_rows(&self) -> [[T; COLS]; ROWS]
+    where
+        T: Copy,
+    {
+        self.0
+    }
+
+    #[inline]
+    pub fn into_cols(self) -> [[T; ROWS]; COLS]
+    where
+        T: Copy + Default,
+    {
+        self.transposed().0
+    }
+
+    #[inline]
+    pub fn to_cols(&self) -> [[T; ROWS]; COLS]
+    where
+        T: Copy + Default,
+    {
+        (*self).into_cols()
+    }
+
+    #[inline]
     pub const fn row(&self, row: usize) -> &[T; COLS] {
         &self.0[row]
     }
@@ -193,6 +222,31 @@ impl<const ROWS: usize, const COLS: usize, T> Matrix<ROWS, COLS, T> {
     #[inline]
     pub const fn flat_len() -> usize {
         ROWS * COLS
+    }
+
+    #[inline]
+    pub const fn rows_len() -> usize {
+        ROWS
+    }
+
+    #[inline]
+    pub const fn cols_len() -> usize {
+        COLS
+    }
+
+    #[inline]
+    pub const fn shape() -> (usize, usize) {
+        (ROWS, COLS)
+    }
+
+    #[inline]
+    pub const fn cell_count() -> usize {
+        ROWS * COLS
+    }
+
+    #[inline]
+    pub const fn is_square() -> bool {
+        ROWS == COLS
     }
 
     #[inline]
@@ -249,12 +303,520 @@ impl<const ROWS: usize, const COLS: usize, T> Matrix<ROWS, COLS, T> {
     }
 
     #[inline]
+    /// Gets a cell without bounds checks.
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure `row < ROWS` and `col < COLS`.
+    pub unsafe fn get_unchecked(&self, row: usize, col: usize) -> &T {
+        debug_assert!(Self::in_bounds(row, col));
+        // SAFETY: caller must ensure row < ROWS and col < COLS.
+        unsafe { self.0.get_unchecked(row).get_unchecked(col) }
+    }
+
+    #[inline]
+    /// Gets a mutable cell without bounds checks.
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure `row < ROWS` and `col < COLS`.
+    pub unsafe fn get_unchecked_mut(&mut self, row: usize, col: usize) -> &mut T {
+        debug_assert!(Self::in_bounds(row, col));
+        // SAFETY: caller must ensure row < ROWS and col < COLS.
+        unsafe { self.0.get_unchecked_mut(row).get_unchecked_mut(col) }
+    }
+
+    #[inline]
+    /// Gets a flat cell without bounds checks.
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure `index < ROWS * COLS`.
+    pub unsafe fn get_flat_unchecked(&self, index: usize) -> &T {
+        debug_assert!(index < Self::flat_len());
+        // SAFETY: caller must ensure index < ROWS * COLS.
+        unsafe { self.as_slice().get_unchecked(index) }
+    }
+
+    #[inline]
+    /// Gets a mutable flat cell without bounds checks.
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure `index < ROWS * COLS`.
+    pub unsafe fn get_flat_unchecked_mut(&mut self, index: usize) -> &mut T {
+        debug_assert!(index < Self::flat_len());
+        // SAFETY: caller must ensure index < ROWS * COLS.
+        unsafe { self.as_mut_slice().get_unchecked_mut(index) }
+    }
+
+    #[inline]
     pub fn set(&mut self, row: usize, col: usize, value: T) -> bool {
         let Some(slot) = self.get_mut(row, col) else {
             return false;
         };
         *slot = value;
         true
+    }
+
+    #[inline]
+    pub fn iter(&self) -> std::slice::Iter<'_, T> {
+        self.as_slice().iter()
+    }
+
+    #[inline]
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, T> {
+        self.as_mut_slice().iter_mut()
+    }
+
+    #[inline]
+    pub fn rows_iter(&self) -> std::slice::Iter<'_, [T; COLS]> {
+        self.0.iter()
+    }
+
+    #[inline]
+    pub fn rows_iter_mut(&mut self) -> std::slice::IterMut<'_, [T; COLS]> {
+        self.0.iter_mut()
+    }
+
+    #[inline]
+    pub fn row_iter(&self, row: usize) -> Option<std::slice::Iter<'_, T>> {
+        self.0.get(row).map(|row| row.iter())
+    }
+
+    #[inline]
+    pub fn row_iter_mut(&mut self, row: usize) -> Option<std::slice::IterMut<'_, T>> {
+        self.0.get_mut(row).map(|row| row.iter_mut())
+    }
+
+    #[inline]
+    pub fn col_iter(&self, col: usize) -> Option<impl Iterator<Item = &T>> {
+        (col < COLS).then(|| self.0.iter().map(move |row| &row[col]))
+    }
+
+    #[inline]
+    pub fn col_iter_mut(&mut self, col: usize) -> Option<impl Iterator<Item = &mut T>> {
+        (col < COLS).then(|| self.0.iter_mut().map(move |row| &mut row[col]))
+    }
+
+    #[inline]
+    pub fn cells(&self) -> impl Iterator<Item = (usize, usize, &T)> {
+        self.as_slice()
+            .iter()
+            .enumerate()
+            .map(|(index, value)| (index / COLS, index % COLS, value))
+    }
+
+    #[inline]
+    pub fn cells_mut(&mut self) -> impl Iterator<Item = (usize, usize, &mut T)> {
+        self.as_mut_slice()
+            .iter_mut()
+            .enumerate()
+            .map(|(index, value)| (index / COLS, index % COLS, value))
+    }
+
+    #[inline]
+    pub fn for_positions(&self, mut f: impl FnMut(usize, usize)) {
+        for row in 0..ROWS {
+            for col in 0..COLS {
+                f(row, col);
+            }
+        }
+    }
+
+    #[inline]
+    pub fn for_each(&self, mut f: impl FnMut(usize, usize, &T)) {
+        for row in 0..ROWS {
+            for col in 0..COLS {
+                // SAFETY: row/col come from matrix bounds.
+                f(row, col, unsafe { self.get_unchecked(row, col) });
+            }
+        }
+    }
+
+    #[inline]
+    pub fn for_each_mut(&mut self, mut f: impl FnMut(usize, usize, &mut T)) -> &mut Self {
+        for row in 0..ROWS {
+            for col in 0..COLS {
+                // SAFETY: row/col come from matrix bounds.
+                f(row, col, unsafe { self.get_unchecked_mut(row, col) });
+            }
+        }
+        self
+    }
+
+    #[inline]
+    pub fn zip_each<U>(
+        &self,
+        rhs: &Matrix<ROWS, COLS, U>,
+        mut f: impl FnMut(usize, usize, &T, &U),
+    ) {
+        for row in 0..ROWS {
+            for col in 0..COLS {
+                // SAFETY: row/col come from matrix bounds for both same-shape matrices.
+                f(row, col, unsafe { self.get_unchecked(row, col) }, unsafe {
+                    rhs.get_unchecked(row, col)
+                });
+            }
+        }
+    }
+
+    #[inline]
+    pub fn zip_each_mut<U>(
+        &mut self,
+        rhs: &Matrix<ROWS, COLS, U>,
+        mut f: impl FnMut(usize, usize, &mut T, &U),
+    ) -> &mut Self {
+        for row in 0..ROWS {
+            for col in 0..COLS {
+                // SAFETY: row/col come from matrix bounds for both same-shape matrices.
+                f(
+                    row,
+                    col,
+                    unsafe { self.get_unchecked_mut(row, col) },
+                    unsafe { rhs.get_unchecked(row, col) },
+                );
+            }
+        }
+        self
+    }
+
+    #[inline]
+    pub fn for_neighbors_4(
+        &self,
+        row: usize,
+        col: usize,
+        mut f: impl FnMut(usize, usize, &T),
+    ) -> bool {
+        if !Self::in_bounds(row, col) {
+            return false;
+        }
+        if row > 0 {
+            // SAFETY: branch keeps neighbor inside matrix bounds.
+            f(row - 1, col, unsafe { self.get_unchecked(row - 1, col) });
+        }
+        if col > 0 {
+            // SAFETY: branch keeps neighbor inside matrix bounds.
+            f(row, col - 1, unsafe { self.get_unchecked(row, col - 1) });
+        }
+        if col + 1 < COLS {
+            // SAFETY: branch keeps neighbor inside matrix bounds.
+            f(row, col + 1, unsafe { self.get_unchecked(row, col + 1) });
+        }
+        if row + 1 < ROWS {
+            // SAFETY: branch keeps neighbor inside matrix bounds.
+            f(row + 1, col, unsafe { self.get_unchecked(row + 1, col) });
+        }
+        true
+    }
+
+    #[inline]
+    pub fn for_neighbors_8(
+        &self,
+        row: usize,
+        col: usize,
+        mut f: impl FnMut(usize, usize, &T),
+    ) -> bool {
+        if !Self::in_bounds(row, col) {
+            return false;
+        }
+        let row_start = row.saturating_sub(1);
+        let row_end = (row + 1).min(ROWS - 1);
+        let col_start = col.saturating_sub(1);
+        let col_end = (col + 1).min(COLS - 1);
+        for next_row in row_start..=row_end {
+            for next_col in col_start..=col_end {
+                if next_row != row || next_col != col {
+                    // SAFETY: row/col ranges clamp to matrix bounds.
+                    f(next_row, next_col, unsafe {
+                        self.get_unchecked(next_row, next_col)
+                    });
+                }
+            }
+        }
+        true
+    }
+
+    #[inline]
+    pub fn count_neighbors_4(
+        &self,
+        row: usize,
+        col: usize,
+        mut f: impl FnMut(usize, usize, &T) -> bool,
+    ) -> usize {
+        if !Self::in_bounds(row, col) {
+            return 0;
+        }
+        let mut count = 0;
+        if row > 0 {
+            // SAFETY: branch keeps neighbor inside matrix bounds.
+            if f(row - 1, col, unsafe { self.get_unchecked(row - 1, col) }) {
+                count += 1;
+            }
+        }
+        if col > 0 {
+            // SAFETY: branch keeps neighbor inside matrix bounds.
+            if f(row, col - 1, unsafe { self.get_unchecked(row, col - 1) }) {
+                count += 1;
+            }
+        }
+        if col + 1 < COLS {
+            // SAFETY: branch keeps neighbor inside matrix bounds.
+            if f(row, col + 1, unsafe { self.get_unchecked(row, col + 1) }) {
+                count += 1;
+            }
+        }
+        if row + 1 < ROWS {
+            // SAFETY: branch keeps neighbor inside matrix bounds.
+            if f(row + 1, col, unsafe { self.get_unchecked(row + 1, col) }) {
+                count += 1;
+            }
+        }
+        count
+    }
+
+    #[inline]
+    pub fn count_neighbors_8(
+        &self,
+        row: usize,
+        col: usize,
+        mut f: impl FnMut(usize, usize, &T) -> bool,
+    ) -> usize {
+        if !Self::in_bounds(row, col) {
+            return 0;
+        }
+        let mut count = 0;
+        let row_start = row.saturating_sub(1);
+        let row_end = (row + 1).min(ROWS - 1);
+        let col_start = col.saturating_sub(1);
+        let col_end = (col + 1).min(COLS - 1);
+        for next_row in row_start..=row_end {
+            for next_col in col_start..=col_end {
+                if next_row != row || next_col != col {
+                    // SAFETY: row/col ranges clamp to matrix bounds.
+                    if f(next_row, next_col, unsafe {
+                        self.get_unchecked(next_row, next_col)
+                    }) {
+                        count += 1;
+                    }
+                }
+            }
+        }
+        count
+    }
+
+    #[inline]
+    pub fn any_cell(&self, mut f: impl FnMut(usize, usize, &T) -> bool) -> bool {
+        self.cells().any(|(row, col, value)| f(row, col, value))
+    }
+
+    #[inline]
+    pub fn all_cells(&self, mut f: impl FnMut(usize, usize, &T) -> bool) -> bool {
+        self.cells().all(|(row, col, value)| f(row, col, value))
+    }
+
+    #[inline]
+    pub fn count_cells(&self, mut f: impl FnMut(usize, usize, &T) -> bool) -> usize {
+        self.cells()
+            .filter(|(row, col, value)| f(*row, *col, value))
+            .count()
+    }
+
+    #[inline]
+    pub fn find_cell(&self, mut f: impl FnMut(usize, usize, &T) -> bool) -> Option<(usize, usize)> {
+        self.cells()
+            .find(|(row, col, value)| f(*row, *col, value))
+            .map(|(row, col, _)| (row, col))
+    }
+
+    #[inline]
+    pub fn fill(&mut self, value: T) -> &mut Self
+    where
+        T: Copy,
+    {
+        self.as_mut_slice().fill(value);
+        self
+    }
+
+    #[inline]
+    pub fn fill_with(&mut self, mut f: impl FnMut(usize, usize) -> T) -> &mut Self {
+        for (row, col, value) in self.cells_mut() {
+            *value = f(row, col);
+        }
+        self
+    }
+
+    #[inline]
+    pub fn copy_from_slice(&mut self, slice: &[T]) -> bool
+    where
+        T: Copy,
+    {
+        if slice.len() != Self::flat_len() {
+            return false;
+        }
+        self.as_mut_slice().copy_from_slice(slice);
+        true
+    }
+
+    #[inline]
+    pub fn copy_to_slice(&self, out: &mut [T]) -> Option<usize>
+    where
+        T: Copy,
+    {
+        self.write_flat(out)
+    }
+
+    #[inline]
+    pub fn copy_from(&mut self, src: &Self) -> &mut Self
+    where
+        T: Copy,
+    {
+        self.as_mut_slice().copy_from_slice(src.as_slice());
+        self
+    }
+
+    #[inline]
+    pub fn clone_from_matrix(&mut self, src: &Self) -> &mut Self
+    where
+        T: Clone,
+    {
+        self.as_mut_slice().clone_from_slice(src.as_slice());
+        self
+    }
+
+    #[inline]
+    pub fn swap_cells(&mut self, a: (usize, usize), b: (usize, usize)) -> bool {
+        let Some(a_index) = Self::flat_index(a.0, a.1) else {
+            return false;
+        };
+        let Some(b_index) = Self::flat_index(b.0, b.1) else {
+            return false;
+        };
+        self.as_mut_slice().swap(a_index, b_index);
+        true
+    }
+
+    #[inline]
+    pub fn swap_flat(&mut self, a: usize, b: usize) -> bool {
+        if a >= Self::flat_len() || b >= Self::flat_len() {
+            return false;
+        }
+        self.as_mut_slice().swap(a, b);
+        true
+    }
+
+    #[inline]
+    pub fn to_vec(&self) -> Vec<T>
+    where
+        T: Copy,
+    {
+        self.as_slice().to_vec()
+    }
+
+    #[inline]
+    pub fn into_vec(self) -> Vec<T> {
+        self.0.into_iter().flatten().collect()
+    }
+
+    #[inline]
+    pub fn sum(&self) -> T
+    where
+        T: Copy + Default + Add<Output = T>,
+    {
+        self.as_slice()
+            .iter()
+            .copied()
+            .fold(T::default(), |sum, value| sum + value)
+    }
+
+    #[inline]
+    pub fn product(&self) -> T
+    where
+        T: Copy + From<u8> + Mul<Output = T>,
+    {
+        self.as_slice()
+            .iter()
+            .copied()
+            .fold(T::from(1), |product, value| product * value)
+    }
+
+    #[inline]
+    pub fn fold_cells<U>(&self, init: U, mut f: impl FnMut(U, usize, usize, &T) -> U) -> U {
+        self.cells()
+            .fold(init, |acc, (row, col, value)| f(acc, row, col, value))
+    }
+
+    #[inline]
+    pub fn min_cell(&self) -> Option<(usize, usize, T)>
+    where
+        T: Copy + PartialOrd,
+    {
+        self.cells()
+            .filter_map(|(row, col, value)| value.partial_cmp(value).map(|_| (row, col, *value)))
+            .min_by(|(_, _, a), (_, _, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+    }
+
+    #[inline]
+    pub fn max_cell(&self) -> Option<(usize, usize, T)>
+    where
+        T: Copy + PartialOrd,
+    {
+        self.cells()
+            .filter_map(|(row, col, value)| value.partial_cmp(value).map(|_| (row, col, *value)))
+            .max_by(|(_, _, a), (_, _, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+    }
+
+    #[inline]
+    pub fn map_cells<U>(self, mut f: impl FnMut(usize, usize, T) -> U) -> Matrix<ROWS, COLS, U>
+    where
+        T: Copy,
+    {
+        Matrix(std::array::from_fn(|row| {
+            std::array::from_fn(|col| {
+                // SAFETY: array::from_fn indexes are in matrix bounds.
+                f(row, col, unsafe { *self.get_unchecked(row, col) })
+            })
+        }))
+    }
+
+    #[inline]
+    pub fn resize<const NEW_ROWS: usize, const NEW_COLS: usize>(
+        self,
+        fill: T,
+    ) -> Matrix<NEW_ROWS, NEW_COLS, T>
+    where
+        T: Copy,
+    {
+        self.resize_with(|_, _| fill)
+    }
+
+    #[inline]
+    pub fn resize_default<const NEW_ROWS: usize, const NEW_COLS: usize>(
+        self,
+    ) -> Matrix<NEW_ROWS, NEW_COLS, T>
+    where
+        T: Copy + Default,
+    {
+        self.resize_with(|_, _| T::default())
+    }
+
+    #[inline]
+    pub fn resize_with<const NEW_ROWS: usize, const NEW_COLS: usize>(
+        self,
+        mut fill: impl FnMut(usize, usize) -> T,
+    ) -> Matrix<NEW_ROWS, NEW_COLS, T>
+    where
+        T: Copy,
+    {
+        Matrix(std::array::from_fn(|row| {
+            std::array::from_fn(|col| {
+                if row < ROWS && col < COLS {
+                    self.0[row][col]
+                } else {
+                    fill(row, col)
+                }
+            })
+        }))
     }
 
     #[inline]
@@ -269,6 +831,9 @@ impl<const ROWS: usize, const COLS: usize, T> Matrix<ROWS, COLS, T> {
         unsafe { std::slice::from_raw_parts_mut(self.0.as_mut_ptr().cast(), ROWS * COLS) }
     }
 
+    /// Build from row-major flat slice.
+    ///
+    /// Returns `None` when `slice.len() != ROWS * COLS`.
     #[inline]
     pub fn from_slice(slice: &[T]) -> Option<Self>
     where
@@ -285,6 +850,79 @@ impl<const ROWS: usize, const COLS: usize, T> Matrix<ROWS, COLS, T> {
             }
         }
         Some(Self(rows))
+    }
+
+    /// Build from row-major flat vec.
+    ///
+    /// Extra tail values are ignored.
+    /// Returns `None` when vec is too short.
+    #[inline]
+    pub fn from_vec(values: Vec<T>) -> Option<Self>
+    where
+        T: Copy + Default,
+    {
+        Self::from_vec_offset(values, 0)
+    }
+
+    /// Build from row-major flat vec starting at `offset`.
+    ///
+    /// Reads `ROWS * COLS` values from `offset`.
+    /// Extra tail values are ignored.
+    /// Returns `None` when the window is out of range.
+    #[inline]
+    pub fn from_vec_offset(values: Vec<T>, offset: usize) -> Option<Self>
+    where
+        T: Copy + Default,
+    {
+        let end = offset.checked_add(Self::flat_len())?;
+        if values.len() < end {
+            return None;
+        }
+        Self::from_slice(&values[offset..end])
+    }
+
+    /// Build from row vecs.
+    ///
+    /// Each inner vec supplies one row.
+    /// Extra rows and extra tail columns are ignored.
+    /// Returns `None` when any required row or column is missing.
+    #[inline]
+    pub fn from_vec_rows(rows: Vec<Vec<T>>) -> Option<Self>
+    where
+        T: Copy + Default,
+    {
+        Self::from_vec_rows_offset(rows, 0, 0)
+    }
+
+    /// Build from row vecs starting at `row_offset` and `col_offset`.
+    ///
+    /// Reads `ROWS` rows and `COLS` columns from the row/column window.
+    /// Extra rows and extra tail columns are ignored.
+    /// Returns `None` when the window is out of range.
+    #[inline]
+    pub fn from_vec_rows_offset(
+        rows: Vec<Vec<T>>,
+        row_offset: usize,
+        col_offset: usize,
+    ) -> Option<Self>
+    where
+        T: Copy + Default,
+    {
+        let row_end = row_offset.checked_add(ROWS)?;
+        let col_end = col_offset.checked_add(COLS)?;
+        if rows.len() < row_end {
+            return None;
+        }
+
+        let mut out = [[T::default(); COLS]; ROWS];
+        for row in 0..ROWS {
+            let src = &rows[row_offset + row];
+            if src.len() < col_end {
+                return None;
+            }
+            out[row].copy_from_slice(&src[col_offset..col_end]);
+        }
+        Some(Self(out))
     }
 
     #[inline]
@@ -2169,12 +2807,23 @@ mod tests {
         let mut matrix = Matrix::<2, 3, i32>::new([[1, 2, 3], [4, 5, 6]]);
 
         assert_eq!(Matrix::<2, 3, i32>::flat_len(), 6);
+        assert_eq!(Matrix::<2, 3, i32>::rows_len(), 2);
+        assert_eq!(Matrix::<2, 3, i32>::cols_len(), 3);
+        assert_eq!(Matrix::<2, 3, i32>::shape(), (2, 3));
+        assert_eq!(Matrix::<2, 3, i32>::cell_count(), 6);
+        assert!(!Matrix::<2, 3, i32>::is_square());
+        assert!(Matrix::<3, 3, i32>::is_square());
         assert_eq!(Matrix::<2, 3, i32>::flat_index(1, 2), Some(5));
         assert_eq!(Matrix::<2, 3, i32>::flat_index(2, 0), None);
         assert_eq!(Matrix::<2, 3, i32>::row_col(4), Some((1, 1)));
         assert_eq!(Matrix::<2, 3, i32>::row_col(6), None);
         assert_eq!(matrix.get(1, 2), Some(&6));
         assert_eq!(matrix.get_flat(3), Some(&4));
+        // SAFETY: indexes checked above and inside matrix bounds.
+        unsafe {
+            assert_eq!(*matrix.get_unchecked(1, 2), 6);
+            assert_eq!(*matrix.get_flat_unchecked(3), 4);
+        }
         assert_eq!(matrix.find_position(&5), Some((1, 1)));
         assert_eq!(matrix.find_flat_index(&5), Some(4));
 
@@ -2184,6 +2833,453 @@ mod tests {
 
         *matrix.get_flat_mut(5).unwrap() = 60;
         assert_eq!(matrix[(1, 2)], 60);
+
+        // SAFETY: indexes are inside matrix bounds.
+        unsafe {
+            *matrix.get_unchecked_mut(0, 0) = 10;
+            *matrix.get_flat_unchecked_mut(4) = 50;
+        }
+        assert_eq!(matrix[(0, 0)], 10);
+        assert_eq!(matrix[(1, 1)], 50);
+    }
+
+    #[test]
+    fn matrix_cell_walk_helpers_use_row_major_order() {
+        let mut matrix = Matrix::<2, 3, i32>::new([[1, 2, 3], [4, 5, 6]]);
+        let mut seen = Vec::new();
+        let mut positions = Vec::new();
+
+        matrix.for_positions(|row, col| positions.push((row, col)));
+        matrix.for_each(|row, col, value| seen.push((row, col, *value)));
+        matrix.for_each_mut(|row, col, value| *value += (row * 10 + col) as i32);
+
+        assert_eq!(
+            positions,
+            vec![(0, 0), (0, 1), (0, 2), (1, 0), (1, 1), (1, 2)]
+        );
+        assert_eq!(
+            seen,
+            vec![
+                (0, 0, 1),
+                (0, 1, 2),
+                (0, 2, 3),
+                (1, 0, 4),
+                (1, 1, 5),
+                (1, 2, 6)
+            ]
+        );
+        assert_eq!(matrix, Matrix::<2, 3, i32>::new([[1, 3, 5], [14, 16, 18]]));
+    }
+
+    #[test]
+    fn matrix_zip_helpers_pair_cells_by_position() {
+        let mut matrix = Matrix::<2, 3, i32>::new([[1, 2, 3], [4, 5, 6]]);
+        let rhs = Matrix::<2, 3, i32>::new([[10, 20, 30], [40, 50, 60]]);
+        let mut seen = Vec::new();
+
+        matrix.zip_each(&rhs, |row, col, left, right| {
+            seen.push((row, col, *left, *right));
+        });
+        matrix.zip_each_mut(&rhs, |row, col, left, right| {
+            *left += *right + (row + col) as i32;
+        });
+
+        assert_eq!(
+            seen,
+            vec![
+                (0, 0, 1, 10),
+                (0, 1, 2, 20),
+                (0, 2, 3, 30),
+                (1, 0, 4, 40),
+                (1, 1, 5, 50),
+                (1, 2, 6, 60)
+            ]
+        );
+        assert_eq!(
+            matrix,
+            Matrix::<2, 3, i32>::new([[11, 23, 35], [45, 57, 69]])
+        );
+    }
+
+    #[test]
+    fn matrix_neighbor_helpers_walk_bounds_checked_cells() {
+        let matrix = Matrix::<3, 3, i32>::new([[1, 2, 3], [4, 5, 6], [7, 8, 9]]);
+        let mut four = Vec::new();
+        let mut eight = Vec::new();
+        let mut corner = Vec::new();
+
+        assert!(matrix.for_neighbors_4(1, 1, |row, col, value| {
+            four.push((row, col, *value));
+        }));
+        assert!(matrix.for_neighbors_8(1, 1, |row, col, value| {
+            eight.push((row, col, *value));
+        }));
+        assert!(matrix.for_neighbors_8(0, 0, |row, col, value| {
+            corner.push((row, col, *value));
+        }));
+
+        assert_eq!(four, vec![(0, 1, 2), (1, 0, 4), (1, 2, 6), (2, 1, 8)]);
+        assert_eq!(
+            eight,
+            vec![
+                (0, 0, 1),
+                (0, 1, 2),
+                (0, 2, 3),
+                (1, 0, 4),
+                (1, 2, 6),
+                (2, 0, 7),
+                (2, 1, 8),
+                (2, 2, 9)
+            ]
+        );
+        assert_eq!(corner, vec![(0, 1, 2), (1, 0, 4), (1, 1, 5)]);
+        assert_eq!(
+            matrix.count_neighbors_4(1, 1, |_, _, value| *value % 2 == 0),
+            4
+        );
+        assert_eq!(matrix.count_neighbors_8(0, 0, |_, _, value| *value > 3), 2);
+        assert!(!matrix.for_neighbors_4(9, 9, |_, _, _| unreachable!()));
+        assert_eq!(matrix.count_neighbors_8(9, 9, |_, _, _| true), 0);
+    }
+
+    #[test]
+    fn matrix_api_cell_helpers_match_unchecked_reference_loops() {
+        let matrix = Matrix::<3, 4, i32>::new([[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]]);
+        let rhs = Matrix::<3, 4, i32>::new([[2, 4, 6, 8], [10, 12, 14, 16], [18, 20, 22, 24]]);
+
+        let mut api_positions = Vec::new();
+        matrix.for_positions(|row, col| api_positions.push((row, col)));
+        let mut unchecked_positions = Vec::new();
+        for row in 0..Matrix::<3, 4, i32>::rows_len() {
+            for col in 0..Matrix::<3, 4, i32>::cols_len() {
+                unchecked_positions.push((row, col));
+            }
+        }
+        assert_eq!(api_positions, unchecked_positions);
+
+        let mut api_cells = Vec::new();
+        matrix.for_each(|row, col, value| api_cells.push((row, col, *value)));
+        let mut unchecked_cells = Vec::new();
+        for (row, col) in unchecked_positions.iter().copied() {
+            // SAFETY: row/col come from in-bounds loop ranges above.
+            unchecked_cells.push((row, col, unsafe { *matrix.get_unchecked(row, col) }));
+        }
+        assert_eq!(api_cells, unchecked_cells);
+
+        let mut api_zip = Vec::new();
+        matrix.zip_each(&rhs, |row, col, left, right| {
+            api_zip.push((row, col, *left, *right));
+        });
+        let mut unchecked_zip = Vec::new();
+        for (row, col) in unchecked_positions.iter().copied() {
+            // SAFETY: row/col come from in-bounds loop ranges above.
+            unchecked_zip.push((
+                row,
+                col,
+                unsafe { *matrix.get_unchecked(row, col) },
+                unsafe { *rhs.get_unchecked(row, col) },
+            ));
+        }
+        assert_eq!(api_zip, unchecked_zip);
+
+        let api_map = matrix.map_cells(|row, col, value| value + (row * 10 + col) as i32);
+        let unchecked_map = Matrix::<3, 4, i32>::new(std::array::from_fn(|row| {
+            std::array::from_fn(|col| {
+                // SAFETY: array::from_fn indexes are in matrix bounds.
+                unsafe { *matrix.get_unchecked(row, col) + (row * 10 + col) as i32 }
+            })
+        }));
+        assert_eq!(api_map, unchecked_map);
+
+        let mut api_mut = matrix;
+        api_mut.for_each_mut(|row, col, value| *value += (row * 3 + col) as i32);
+        let mut unchecked_mut = matrix;
+        for row in 0..Matrix::<3, 4, i32>::rows_len() {
+            for col in 0..Matrix::<3, 4, i32>::cols_len() {
+                // SAFETY: row/col come from in-bounds loop ranges above.
+                unsafe {
+                    *unchecked_mut.get_unchecked_mut(row, col) += (row * 3 + col) as i32;
+                }
+            }
+        }
+        assert_eq!(api_mut, unchecked_mut);
+
+        let mut api_zip_mut = matrix;
+        api_zip_mut.zip_each_mut(&rhs, |row, col, left, right| {
+            *left = *left * 2 + *right + (row + col) as i32;
+        });
+        let mut unchecked_zip_mut = matrix;
+        for row in 0..Matrix::<3, 4, i32>::rows_len() {
+            for col in 0..Matrix::<3, 4, i32>::cols_len() {
+                // SAFETY: row/col come from in-bounds loop ranges above.
+                unsafe {
+                    let current = *unchecked_zip_mut.get_unchecked(row, col);
+                    *unchecked_zip_mut.get_unchecked_mut(row, col) =
+                        current * 2 + *rhs.get_unchecked(row, col) + (row + col) as i32;
+                }
+            }
+        }
+        assert_eq!(api_zip_mut, unchecked_zip_mut);
+
+        let mut api_copy = Matrix::<3, 4, i32>::default();
+        api_copy.copy_from(&matrix);
+        let mut unchecked_copy = Matrix::<3, 4, i32>::default();
+        unchecked_copy
+            .as_mut_slice()
+            .copy_from_slice(matrix.as_slice());
+        assert_eq!(api_copy, unchecked_copy);
+
+        let mut slice_matrix = matrix;
+        slice_matrix.as_mut_slice()[5] = 99;
+        // SAFETY: flat index 5 is inside 3x4 matrix bounds.
+        unsafe {
+            assert_eq!(*slice_matrix.get_flat_unchecked(5), 99);
+        }
+    }
+
+    #[test]
+    fn matrix_neighbor_helpers_match_unchecked_reference_loops() {
+        let matrix = Matrix::<4, 5, i32>::new(std::array::from_fn(|row| {
+            std::array::from_fn(|col| (row * 10 + col) as i32)
+        }));
+
+        for row in 0..Matrix::<4, 5, i32>::rows_len() {
+            for col in 0..Matrix::<4, 5, i32>::cols_len() {
+                let mut api_4 = Vec::new();
+                let mut api_8 = Vec::new();
+                assert!(
+                    matrix.for_neighbors_4(row, col, |next_row, next_col, value| {
+                        api_4.push((next_row, next_col, *value));
+                    })
+                );
+                assert!(
+                    matrix.for_neighbors_8(row, col, |next_row, next_col, value| {
+                        api_8.push((next_row, next_col, *value));
+                    })
+                );
+
+                let mut unchecked_4 = Vec::new();
+                for (next_row, next_col) in [
+                    (row.wrapping_sub(1), col),
+                    (row, col.wrapping_sub(1)),
+                    (row, col + 1),
+                    (row + 1, col),
+                ] {
+                    if Matrix::<4, 5, i32>::in_bounds(next_row, next_col) {
+                        // SAFETY: in_bounds checked above.
+                        unchecked_4.push((next_row, next_col, unsafe {
+                            *matrix.get_unchecked(next_row, next_col)
+                        }));
+                    }
+                }
+
+                let mut unchecked_8 = Vec::new();
+                let row_start = row.saturating_sub(1);
+                let row_end = (row + 1).min(Matrix::<4, 5, i32>::rows_len() - 1);
+                let col_start = col.saturating_sub(1);
+                let col_end = (col + 1).min(Matrix::<4, 5, i32>::cols_len() - 1);
+                for next_row in row_start..=row_end {
+                    for next_col in col_start..=col_end {
+                        if next_row != row || next_col != col {
+                            // SAFETY: ranges clamp to matrix bounds.
+                            unchecked_8.push((next_row, next_col, unsafe {
+                                *matrix.get_unchecked(next_row, next_col)
+                            }));
+                        }
+                    }
+                }
+
+                assert_eq!(api_4, unchecked_4);
+                assert_eq!(api_8, unchecked_8);
+                assert_eq!(
+                    matrix.count_neighbors_4(row, col, |_, _, value| *value % 2 == 0),
+                    unchecked_4
+                        .iter()
+                        .filter(|(_, _, value)| value % 2 == 0)
+                        .count()
+                );
+                assert_eq!(
+                    matrix.count_neighbors_8(row, col, |_, _, value| *value > 11),
+                    unchecked_8
+                        .iter()
+                        .filter(|(_, _, value)| *value > 11)
+                        .count()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn matrix_row_col_iter_helpers_cover_checked_access() {
+        let mut matrix = Matrix::<2, 3, i32>::new([[1, 2, 3], [4, 5, 6]]);
+
+        assert_eq!(
+            matrix.rows_iter().copied().collect::<Vec<_>>(),
+            vec![[1, 2, 3], [4, 5, 6]]
+        );
+        assert_eq!(
+            matrix.row_iter(1).unwrap().copied().collect::<Vec<_>>(),
+            vec![4, 5, 6]
+        );
+        assert!(matrix.row_iter(2).is_none());
+        assert_eq!(
+            matrix.col_iter(1).unwrap().copied().collect::<Vec<_>>(),
+            vec![2, 5]
+        );
+        assert!(matrix.col_iter(3).is_none());
+
+        matrix
+            .row_iter_mut(0)
+            .unwrap()
+            .for_each(|value| *value += 10);
+        matrix
+            .col_iter_mut(2)
+            .unwrap()
+            .for_each(|value| *value *= 2);
+        matrix.rows_iter_mut().for_each(|row| row[0] *= -1);
+
+        assert_eq!(
+            matrix,
+            Matrix::<2, 3, i32>::new([[-11, 12, 26], [-4, 5, 12]])
+        );
+    }
+
+    #[test]
+    fn matrix_map_and_resize_helpers_preserve_expected_cells() {
+        let matrix = Matrix::<2, 3, i32>::new([[1, 2, 3], [4, 5, 6]]);
+
+        assert_eq!(
+            matrix.map_cells(|row, col, value| value + (row + col) as i32),
+            Matrix::<2, 3, i32>::new([[1, 3, 5], [5, 7, 9]])
+        );
+        assert_eq!(
+            matrix.resize::<3, 2>(0),
+            Matrix::<3, 2, i32>::new([[1, 2], [4, 5], [0, 0]])
+        );
+        assert_eq!(
+            matrix.resize_with::<3, 4>(|row, col| (row * 10 + col) as i32),
+            Matrix::<3, 4, i32>::new([[1, 2, 3, 3], [4, 5, 6, 13], [20, 21, 22, 23]])
+        );
+        assert_eq!(
+            matrix.resize_default::<1, 4>(),
+            Matrix::<1, 4, i32>::new([[1, 2, 3, 0]])
+        );
+    }
+
+    #[test]
+    fn matrix_iter_query_and_fill_helpers_stay_flat_and_no_alloc() {
+        let mut matrix = Matrix::<2, 3, i32>::new([[1, 2, 3], [4, 5, 6]]);
+
+        assert_eq!(matrix.iter().copied().sum::<i32>(), 21);
+        assert_eq!(
+            matrix.cells().collect::<Vec<_>>(),
+            vec![
+                (0, 0, &1),
+                (0, 1, &2),
+                (0, 2, &3),
+                (1, 0, &4),
+                (1, 1, &5),
+                (1, 2, &6)
+            ]
+        );
+        assert!(matrix.any_cell(|_, _, value| *value == 4));
+        assert!(matrix.all_cells(|_, _, value| *value > 0));
+        assert_eq!(matrix.count_cells(|_, _, value| *value % 2 == 0), 3);
+        assert_eq!(
+            matrix.find_cell(|row, _, value| row == 1 && *value == 5),
+            Some((1, 1))
+        );
+
+        matrix.fill(7);
+        assert_eq!(matrix, Matrix::<2, 3, i32>::new([[7, 7, 7], [7, 7, 7]]));
+
+        matrix.fill_with(|row, col| (row * 10 + col) as i32);
+        assert_eq!(matrix, Matrix::<2, 3, i32>::new([[0, 1, 2], [10, 11, 12]]));
+
+        assert!(!matrix.copy_from_slice(&[1, 2, 3]));
+        assert!(matrix.copy_from_slice(&[1, 2, 3, 4, 5, 6]));
+        assert_eq!(matrix.as_slice(), &[1, 2, 3, 4, 5, 6]);
+
+        matrix.iter_mut().for_each(|value| *value *= 2);
+        assert_eq!(matrix, Matrix::<2, 3, i32>::new([[2, 4, 6], [8, 10, 12]]));
+    }
+
+    #[test]
+    fn matrix_bulk_copy_and_swap_helpers_use_flat_storage() {
+        let mut matrix = Matrix::<2, 3, i32>::default();
+        let src = Matrix::<2, 3, i32>::new([[1, 2, 3], [4, 5, 6]]);
+        let mut out = [0; 6];
+
+        matrix.clone_from_matrix(&src);
+        assert_eq!(matrix, src);
+        matrix.fill(0).copy_from(&src);
+        assert_eq!(matrix, src);
+        assert_eq!(matrix.copy_to_slice(&mut out), Some(6));
+        assert_eq!(out, [1, 2, 3, 4, 5, 6]);
+        assert_eq!(matrix.copy_to_slice(&mut out[..5]), None);
+
+        assert!(matrix.swap_cells((0, 1), (1, 2)));
+        assert_eq!(matrix, Matrix::<2, 3, i32>::new([[1, 6, 3], [4, 5, 2]]));
+        assert!(!matrix.swap_cells((2, 0), (0, 0)));
+
+        assert!(matrix.swap_flat(0, 5));
+        assert_eq!(matrix, Matrix::<2, 3, i32>::new([[2, 6, 3], [4, 5, 1]]));
+        assert!(!matrix.swap_flat(0, 6));
+    }
+
+    #[test]
+    fn matrix_from_vec_rows_uses_row_windows() {
+        let matrix = Matrix::<2, 3, i32>::new([[1, 2, 3], [4, 5, 6]]);
+
+        assert_eq!(
+            Matrix::<2, 3, i32>::from_vec_rows(vec![
+                vec![1, 2, 3, 9],
+                vec![4, 5, 6, 9],
+                vec![7, 8, 9, 9]
+            ]),
+            Some(matrix)
+        );
+        assert_eq!(
+            Matrix::<2, 3, i32>::from_vec_rows_offset(
+                vec![vec![0, 0, 0, 0], vec![0, 1, 2, 3], vec![0, 4, 5, 6]],
+                1,
+                1
+            ),
+            Some(matrix)
+        );
+        assert_eq!(
+            Matrix::<2, 3, i32>::from_vec_rows(vec![vec![1, 2, 3], vec![4, 5]]),
+            None
+        );
+    }
+
+    #[test]
+    fn matrix_aggregate_and_conversion_helpers_use_flat_order() {
+        let matrix = Matrix::<2, 3, i32>::new([[1, 2, 3], [4, 5, 6]]);
+
+        assert_eq!(matrix.sum(), 21);
+        assert_eq!(matrix.product(), 720);
+        assert_eq!(matrix.min_cell(), Some((0, 0, 1)));
+        assert_eq!(matrix.max_cell(), Some((1, 2, 6)));
+        assert_eq!(
+            matrix.fold_cells(Vec::new(), |mut out, row, col, value| {
+                out.push((row, col, *value));
+                out
+            }),
+            vec![
+                (0, 0, 1),
+                (0, 1, 2),
+                (0, 2, 3),
+                (1, 0, 4),
+                (1, 1, 5),
+                (1, 2, 6)
+            ]
+        );
+        assert_eq!(matrix.to_rows(), [[1, 2, 3], [4, 5, 6]]);
+        assert_eq!(matrix.to_cols(), [[1, 4], [2, 5], [3, 6]]);
+        assert_eq!(matrix.into_rows(), [[1, 2, 3], [4, 5, 6]]);
+        assert_eq!(matrix.to_vec(), vec![1, 2, 3, 4, 5, 6]);
+        assert_eq!(matrix.into_vec(), vec![1, 2, 3, 4, 5, 6]);
     }
 
     #[test]
@@ -2598,6 +3694,16 @@ mod tests {
         assert_eq!(matrix.write_flat(&mut packed), Some(8));
         assert_eq!(packed, [1, 2, 3, 4, 5, 6, 7, 8]);
         assert_eq!(Matrix::<2, 4, u16>::from_slice(&packed), Some(matrix));
+        assert_eq!(Matrix::<2, 4, u16>::from_vec(packed.to_vec()), Some(matrix));
+        assert_eq!(
+            Matrix::<2, 4, u16>::from_vec(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
+            Some(matrix)
+        );
+        assert_eq!(
+            Matrix::<2, 4, u16>::from_vec_offset(vec![0, 1, 2, 3, 4, 5, 6, 7, 8], 1),
+            Some(matrix)
+        );
+        assert_eq!(Matrix::<2, 4, u16>::from_vec(vec![1, 2, 3]), None);
     }
 
     #[test]

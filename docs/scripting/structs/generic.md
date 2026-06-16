@@ -80,14 +80,25 @@ Common APIs:
 | ------ | --------- | --- |
 | Constructor | `Matrix::<R, C>::new(rows)` | Build row-major matrix. |
 | Constructor | `Matrix::<N, N>::identity()` | Build square identity. |
-| Accessor | `rows()`, `row(i)`, `as_slice()` | Read row-major data. |
+| Shape | `rows_len()`, `cols_len()`, `shape()`, `cell_count()`, `flat_len()`, `is_square()` | Read compile-time matrix shape as values. |
+| Accessor | `rows()`, `rows_mut()`, `row(i)`, `row_mut(i)`, `as_slice()`, `as_mut_slice()` | Read/write row-major storage. |
 | Position | `flat_index(row, col)`, `row_col(index)`, `in_bounds(row, col)` | Convert between `row,col` and flat row-major index. |
-| Accessor | `get(row, col)`, `get_mut(row, col)`, `get_flat(index)`, `set(row, col, value)` | Safe checked element access. |
+| Accessor | `get(row, col)`, `get_mut(row, col)`, `get_flat(index)`, `get_flat_mut(index)`, `set(row, col, value)` | Safe checked element access. |
+| Iter | `iter()`, `iter_mut()`, `cells()`, `cells_mut()`, `for_each(fn)`, `for_each_mut(fn)` | Walk cells in row-major order without alloc. |
+| Row/col iter | `rows_iter()`, `rows_iter_mut()`, `row_iter(row)`, `row_iter_mut(row)`, `col_iter(col)`, `col_iter_mut(col)` | Read/write rows or columns with checked iterator setup. |
+| Query | `any_cell(fn)`, `all_cells(fn)`, `count_cells(fn)`, `find_cell(fn)` | Query cells without building temporary arrays. |
 | Search | `find_position(value)`, `find_flat_index(value)` | Find first matching element. |
-| Pack | `flat_len()`, `write_flat(out)`, `from_slice(input)` | Copy any `T: Copy` row-major data without alloc. |
+| Fill/copy | `fill(value)`, `fill_with(fn)`, `copy_from_slice(input)`, `copy_to_slice(out)`, `clone_from_matrix(src)` | Reuse matrix storage and avoid temporary Vecs. |
+| Swap | `swap_cells((r, c), (r, c))`, `swap_flat(a, b)` | Swap values with checked indices. |
+| Pack | `write_flat(out)`, `from_slice(input)`, `from_vec(input)`, `from_vec_offset(input, offset)` | Copy row-major data. Vec input may contain extra tail values. |
+| Pack rows | `from_vec_rows(rows)`, `from_vec_rows_offset(rows, row_offset, col_offset)` | Build from row vecs. Extra rows/columns are ignored. |
 | Pack f32 | `packed_len()`, `write_packed(out)`, `read_packed(input)` | Copy row-major `f32` data without alloc. |
 | Bytes | `as_bytes()` | View packed `f32` bytes for upload/cache keys. |
-| Math | `+`, `-`, `+=`, `-=`, scalar `*`, scalar `/`, matrix `*` | Uses SIMD/glam internally where useful and supported. |
+| Convert rows/cols | `into_rows()`, `to_rows()`, `into_cols()`, `to_cols()` | Convert to fixed arrays. `to_*` copies, `into_*` consumes. |
+| Convert vec | `to_vec()`, `into_vec()` | Build row-major Vec when dynamic storage is required. |
+| Resize/map | `resize::<R, C>(fill)`, `resize_default::<R, C>()`, `resize_with::<R, C>(fn)`, `map_cells(fn)` | Build resized or mapped matrices. |
+| Aggregate | `sum()`, `product()`, `fold_cells(init, fn)`, `min_cell()`, `max_cell()` | Reduce matrix values without temporary collections. |
+| Math | `+`, `-`, `+=`, `-=`, scalar `*`, scalar `/`, matrix `*` | Uses engine-optimized paths where useful and supported. |
 | Integer math | `<< u32`, `>> u32`, `<<= u32`, `>>= u32` | Element-wise bit shifts for integer matrices. |
 | Compat aliases | `add_fast`, `sub_fast`, `scale_fast`, `add_f32`, `sub_f32`, `scale_f32`, `mul_f32` | Kept for older code; normal operators are preferred. |
 | Convert | `to_glam()`, `from_glam(mat)` | Bridge generic square matrices to glam. |
@@ -133,6 +144,147 @@ let variant = Variant::from(c);
 let parsed = variant.parse::<Matrix<4, 4>>().unwrap();
 ```
 
+Grid shape and checked access:
+
+```rust
+let mut tiles = Matrix::<3, 4, u8>::new([
+    [0, 0, 1, 1],
+    [0, 2, 2, 1],
+    [3, 3, 0, 0],
+]);
+
+assert_eq!(Matrix::<3, 4, u8>::shape(), (3, 4));
+assert_eq!(Matrix::<3, 4, u8>::cell_count(), 12);
+assert!(!Matrix::<3, 4, u8>::is_square());
+
+let flat = Matrix::<3, 4, u8>::flat_index(1, 2).unwrap();
+assert_eq!(flat, 6);
+assert_eq!(Matrix::<3, 4, u8>::row_col(flat), Some((1, 2)));
+
+assert_eq!(tiles.get(1, 2), Some(&2));
+assert!(tiles.set(0, 2, 4));
+assert_eq!(tiles.get_flat(2), Some(&4));
+```
+
+Iteration and queries:
+
+```rust
+let mut damage = Matrix::<2, 3, i32>::new([
+    [0, 4, 0],
+    [2, 0, 8],
+]);
+
+let total_damage: i32 = damage.iter().copied().sum();
+assert_eq!(total_damage, 14);
+
+let cells: Vec<(usize, usize, i32)> =
+    damage.cells().map(|(row, col, value)| (row, col, *value)).collect();
+assert_eq!(cells[5], (1, 2, 8));
+
+damage.for_each_mut(|_, _, value| {
+    *value = (*value - 1).max(0);
+});
+
+assert!(damage.any_cell(|_, _, value| *value > 0));
+assert!(damage.all_cells(|_, _, value| *value >= 0));
+assert_eq!(damage.count_cells(|_, _, value| *value > 0), 3);
+assert_eq!(damage.find_cell(|_, _, value| *value >= 7), Some((1, 2)));
+```
+
+Row and column iteration:
+
+```rust
+let mut spawn_weights = Matrix::<3, 3, i32>::new([
+    [1, 1, 1],
+    [2, 2, 2],
+    [3, 3, 3],
+]);
+
+let middle_row: Vec<i32> = spawn_weights.row_iter(1).unwrap().copied().collect();
+let right_col: Vec<i32> = spawn_weights.col_iter(2).unwrap().copied().collect();
+
+assert_eq!(middle_row, vec![2, 2, 2]);
+assert_eq!(right_col, vec![1, 2, 3]);
+
+spawn_weights.row_iter_mut(0).unwrap().for_each(|value| *value += 1);
+spawn_weights.col_iter_mut(2).unwrap().for_each(|value| *value *= 2);
+
+assert_eq!(spawn_weights.to_rows(), [[2, 2, 4], [2, 2, 4], [3, 3, 6]]);
+```
+
+Fill, copy, and swap:
+
+```rust
+let mut costs = Matrix::<2, 3, u16>::default();
+
+costs.fill(1);
+costs.fill_with(|row, col| (row * 10 + col) as u16);
+assert_eq!(costs.to_rows(), [[0, 1, 2], [10, 11, 12]]);
+
+assert!(costs.copy_from_slice(&[5, 5, 2, 9, 9, 1]));
+
+let mut out = [0; 6];
+assert_eq!(costs.copy_to_slice(&mut out), Some(6));
+assert_eq!(out, [5, 5, 2, 9, 9, 1]);
+
+let flat = Matrix::<2, 3, u16>::from_vec(vec![7, 8, 9, 10, 11, 12, 99]).unwrap();
+assert_eq!(flat.to_rows(), [[7, 8, 9], [10, 11, 12]]);
+
+let offset = Matrix::<2, 3, u16>::from_vec_offset(vec![0, 7, 8, 9, 10, 11, 12], 1).unwrap();
+assert_eq!(offset.to_rows(), [[7, 8, 9], [10, 11, 12]]);
+
+let rows = Matrix::<2, 3, u16>::from_vec_rows(vec![
+    vec![7, 8, 9, 99],
+    vec![10, 11, 12, 99],
+])
+.unwrap();
+assert_eq!(rows.to_rows(), [[7, 8, 9], [10, 11, 12]]);
+
+let row_window = Matrix::<2, 3, u16>::from_vec_rows_offset(
+    vec![vec![0, 0, 0, 0], vec![0, 7, 8, 9], vec![0, 10, 11, 12]],
+    1,
+    1,
+)
+.unwrap();
+assert_eq!(row_window.to_rows(), [[7, 8, 9], [10, 11, 12]]);
+
+let imported = Matrix::<2, 3, u16>::new([[7, 8, 9], [10, 11, 12]]);
+costs.clone_from_matrix(&imported);
+
+assert!(costs.swap_cells((0, 0), (1, 2)));
+assert!(costs.swap_flat(1, 4));
+```
+
+Convert, resize, map, aggregate:
+
+```rust
+let threat = Matrix::<2, 3, i32>::new([
+    [1, 0, 3],
+    [4, 2, 0],
+]);
+
+assert_eq!(threat.to_rows(), [[1, 0, 3], [4, 2, 0]]);
+assert_eq!(threat.to_cols(), [[1, 4], [0, 2], [3, 0]]);
+assert_eq!(threat.to_vec(), vec![1, 0, 3, 4, 2, 0]);
+
+let small = threat.resize::<1, 2>(0);
+let large = threat.resize_with::<3, 4>(|_, _| -1);
+let scaled = threat.map_cells(|_, _, value| value * 2);
+
+assert_eq!(small.to_rows(), [[1, 0]]);
+assert_eq!(large.to_rows(), [[1, 0, 3, -1], [4, 2, 0, -1], [-1, -1, -1, -1]]);
+assert_eq!(scaled.to_rows(), [[2, 0, 6], [8, 4, 0]]);
+
+assert_eq!(threat.sum(), 10);
+assert_eq!(threat.min_cell(), Some((0, 1, 0)));
+assert_eq!(threat.max_cell(), Some((1, 0, 4)));
+
+let diagonal_threat = threat.fold_cells(0, |sum, row, col, value| {
+    if row == col { sum + *value } else { sum }
+});
+assert_eq!(diagonal_threat, 3);
+```
+
 Variant forms:
 
 ```rust
@@ -153,7 +305,7 @@ let flat = Variant::Array(vec![
 
 ## Color
 
-`Color` stores four `Unit` channels internally, not four `f32` fields.
+`Color` stores four `Unit` channels, not four `f32` fields.
 
 Use `Color` when an API or resource needs RGBA color as typed data. The float constructors take channel values in the `0.0..=1.0` range, clamp out-of-range values, and round to bytes for storage.
 
@@ -300,7 +452,7 @@ assert_eq!(packed.to_le_u32(), 0xFF00_80FF);
 
 Audio structs document propagation, occlusion, material response, and listener data used by built-in audio systems.
 
-These values usually sit inside audio nodes, audio resources, or listener options. They may be script-facing in some paths and mostly internal in others.
+These values usually sit inside audio nodes, audio resources, or listener options. Some scripts build them directly; other code reads them through node/resource APIs.
 
 Signatures:
 
