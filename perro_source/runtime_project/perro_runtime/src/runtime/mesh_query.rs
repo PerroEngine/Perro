@@ -70,6 +70,7 @@ type QueryMeshCache = AHashMap<u64, Arc<QueryMeshData>>;
 
 mod accel;
 mod decode;
+mod simd;
 use accel::*;
 use decode::*;
 

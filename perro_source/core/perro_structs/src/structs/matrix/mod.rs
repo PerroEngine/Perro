@@ -303,8 +303,8 @@ impl<const ROWS: usize, const COLS: usize, T> Matrix<ROWS, COLS, T> {
         T: Copy + Default,
     {
         let mut out = [T::default(); ROWS];
-        for r in 0..ROWS {
-            out[r] = self.0[r][col];
+        for (r, out_item) in out.iter_mut().enumerate() {
+            *out_item = self.0[r][col];
         }
         out
     }
@@ -315,9 +315,9 @@ impl<const ROWS: usize, const COLS: usize, T> Matrix<ROWS, COLS, T> {
         T: Copy + Default,
     {
         let mut out = [[T::default(); ROWS]; COLS];
-        for r in 0..ROWS {
-            for c in 0..COLS {
-                out[c][r] = self.0[r][c];
+        for (r, row) in self.0.iter().enumerate() {
+            for (c, value) in row.iter().enumerate() {
+                out[c][r] = *value;
             }
         }
         Matrix(out)
@@ -345,13 +345,13 @@ impl<const ROWS: usize, const COLS: usize, T> Matrix<ROWS, COLS, T> {
         T: Copy + Default + Add<Output = T> + Mul<Output = T>,
     {
         let mut out = [[T::default(); K]; ROWS];
-        for r in 0..ROWS {
-            for k in 0..K {
+        for (r, out_row) in out.iter_mut().enumerate() {
+            for (k, out_item) in out_row.iter_mut().enumerate() {
                 let mut sum = T::default();
                 for c in 0..COLS {
                     sum = sum + self.0[r][c] * rhs.0[c][k];
                 }
-                out[r][k] = sum;
+                *out_item = sum;
             }
         }
         Matrix(out)
@@ -385,8 +385,8 @@ impl<const N: usize> Matrix<N, N, f32> {
     #[inline]
     pub fn identity() -> Self {
         let mut rows = [[0.0; N]; N];
-        for i in 0..N {
-            rows[i][i] = 1.0;
+        for (i, row) in rows.iter_mut().enumerate() {
+            row[i] = 1.0;
         }
         Self(rows)
     }
@@ -408,8 +408,8 @@ impl<const N: usize> Matrix<N, N, f32> {
         for pivot in 0..N {
             let mut best = pivot;
             let mut best_abs = rows[pivot][pivot].abs();
-            for r in (pivot + 1)..N {
-                let abs = rows[r][pivot].abs();
+            for (r, row) in rows.iter().enumerate().skip(pivot + 1) {
+                let abs = row[pivot].abs();
                 if abs > best_abs {
                     best = r;
                     best_abs = abs;
@@ -425,11 +425,12 @@ impl<const N: usize> Matrix<N, N, f32> {
 
             let pivot_value = rows[pivot][pivot];
             det *= pivot_value;
-            for r in (pivot + 1)..N {
-                let factor = rows[r][pivot] / pivot_value;
-                rows[r][pivot] = 0.0;
-                for c in (pivot + 1)..N {
-                    rows[r][c] -= factor * rows[pivot][c];
+            let pivot_row = rows[pivot];
+            for row in rows.iter_mut().skip(pivot + 1) {
+                let factor = row[pivot] / pivot_value;
+                row[pivot] = 0.0;
+                for (c, item) in row.iter_mut().enumerate().skip(pivot + 1) {
+                    *item -= factor * pivot_row[c];
                 }
             }
         }
@@ -474,8 +475,8 @@ impl<const N: usize> Matrix<N, N, f32> {
         for pivot in 0..N {
             let mut best = pivot;
             let mut best_abs = lhs[pivot][pivot].abs();
-            for r in (pivot + 1)..N {
-                let abs = lhs[r][pivot].abs();
+            for (r, row) in lhs.iter().enumerate().skip(pivot + 1) {
+                let abs = row[pivot].abs();
                 if abs > best_abs {
                     best = r;
                     best_abs = abs;
@@ -632,10 +633,10 @@ impl<const ROWS: usize, const COLS: usize> Matrix<ROWS, COLS, f32> {
 
         let rhs_t = rhs.transposed();
         let mut out = [[0.0; K]; ROWS];
-        for r in 0..ROWS {
+        for (r, out_row) in out.iter_mut().enumerate() {
             let lhs_row = self.row(r);
-            for k in 0..K {
-                out[r][k] = simd_dot_f32(lhs_row, rhs_t.row(k));
+            for (k, out_item) in out_row.iter_mut().enumerate() {
+                *out_item = simd_dot_f32(lhs_row, rhs_t.row(k));
             }
         }
         Matrix(out)
@@ -2458,8 +2459,8 @@ mod tests {
                 scalar_scale_assign_generic(&mut scalar, 1.25);
                 assert_eq!(simd, scalar);
 
-                let lhs_i32: Vec<i32> = (0..len).map(|i| i as i32 - 8).collect();
-                let rhs_i32: Vec<i32> = (0..len).map(|i| 16 - i as i32).collect();
+                let lhs_i32: Vec<i32> = (0..len).map(|i| i - 8).collect();
+                let rhs_i32: Vec<i32> = (0..len).map(|i| 16 - i).collect();
 
                 let mut simd = lhs_i32.clone();
                 let mut scalar = lhs_i32.clone();
@@ -2477,7 +2478,7 @@ mod tests {
 
         if std::is_x86_feature_detected!("sse4.1") {
             for len in 0..19 {
-                let lhs: Vec<i32> = (0..len).map(|i| i as i32 - 8).collect();
+                let lhs: Vec<i32> = (0..len).map(|i| i - 8).collect();
                 let mut simd = lhs.clone();
                 let mut scalar = lhs.clone();
                 assert!(x86::try_scale_assign_i32(&mut simd, 3));

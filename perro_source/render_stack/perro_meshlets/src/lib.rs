@@ -1,3 +1,4 @@
+use glam::{Vec2, Vec3A};
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 
@@ -686,83 +687,52 @@ fn tri_degenerate(tri: [u32; 3]) -> bool {
 }
 
 fn sub3(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+    (Vec3A::from(a) - Vec3A::from(b)).to_array()
 }
 
 fn cross3(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
+    Vec3A::from(a).cross(Vec3A::from(b)).to_array()
 }
 
 fn dot3(a: [f32; 3], b: [f32; 3]) -> f32 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+    Vec3A::from(a).dot(Vec3A::from(b))
 }
 
 fn normalize3(v: [f32; 3]) -> Option<[f32; 3]> {
-    let len_sq = dot3(v, v);
+    let v = Vec3A::from(v);
+    let len_sq = v.length_squared();
     if !len_sq.is_finite() || len_sq <= 1.0e-12 {
         return None;
     }
-    let inv = len_sq.sqrt().recip();
-    Some([v[0] * inv, v[1] * inv, v[2] * inv])
+    Some((v * len_sq.sqrt().recip()).to_array())
 }
 
 fn dist2_2(a: [f32; 2], b: [f32; 2]) -> f32 {
-    let dx = a[0] - b[0];
-    let dy = a[1] - b[1];
-    dx * dx + dy * dy
+    Vec2::from(a).distance_squared(Vec2::from(b))
 }
 
 fn dist2_3(a: [f32; 3], b: [f32; 3]) -> f32 {
-    let dx = a[0] - b[0];
-    let dy = a[1] - b[1];
-    let dz = a[2] - b[2];
-    dx * dx + dy * dy + dz * dz
+    Vec3A::from(a).distance_squared(Vec3A::from(b))
 }
 
 fn meshlet_bounds(positions: &[[f32; 3]], indices: &[u32]) -> Option<([f32; 3], f32)> {
-    let mut minx = f32::INFINITY;
-    let mut miny = f32::INFINITY;
-    let mut minz = f32::INFINITY;
-    let mut maxx = f32::NEG_INFINITY;
-    let mut maxy = f32::NEG_INFINITY;
-    let mut maxz = f32::NEG_INFINITY;
+    let mut min = Vec3A::splat(f32::INFINITY);
+    let mut max = Vec3A::splat(f32::NEG_INFINITY);
     for &idx in indices {
-        let p = positions.get(idx as usize)?;
-        minx = minx.min(p[0]);
-        miny = miny.min(p[1]);
-        minz = minz.min(p[2]);
-        maxx = maxx.max(p[0]);
-        maxy = maxy.max(p[1]);
-        maxz = maxz.max(p[2]);
+        let p = Vec3A::from(*positions.get(idx as usize)?);
+        min = min.min(p);
+        max = max.max(p);
     }
-    if !(minx.is_finite()
-        && miny.is_finite()
-        && minz.is_finite()
-        && maxx.is_finite()
-        && maxy.is_finite()
-        && maxz.is_finite())
-    {
+    if !(min.is_finite() && max.is_finite()) {
         return None;
     }
-    let cx = (minx + maxx) * 0.5;
-    let cy = (miny + maxy) * 0.5;
-    let cz = (minz + maxz) * 0.5;
+    let center = (min + max) * 0.5;
     let mut radius_sq = 0.0f32;
     for &idx in indices {
-        let p = positions.get(idx as usize)?;
-        let dx = p[0] - cx;
-        let dy = p[1] - cy;
-        let dz = p[2] - cz;
-        let d2 = dx * dx + dy * dy + dz * dz;
-        if d2 > radius_sq {
-            radius_sq = d2;
-        }
+        let p = Vec3A::from(*positions.get(idx as usize)?);
+        radius_sq = radius_sq.max(p.distance_squared(center));
     }
-    Some(([cx, cy, cz], radius_sq.sqrt()))
+    Some((center.to_array(), radius_sq.sqrt()))
 }
 
 #[inline]

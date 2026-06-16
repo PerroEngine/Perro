@@ -591,28 +591,7 @@ pub(super) fn should_parallel_regions(
 
 #[inline]
 pub(super) fn aabb_distance2(p: Vec3, min: Vec3, max: Vec3) -> f32 {
-    let dx = if p.x < min.x {
-        min.x - p.x
-    } else if p.x > max.x {
-        p.x - max.x
-    } else {
-        0.0
-    };
-    let dy = if p.y < min.y {
-        min.y - p.y
-    } else if p.y > max.y {
-        p.y - max.y
-    } else {
-        0.0
-    };
-    let dz = if p.z < min.z {
-        min.z - p.z
-    } else if p.z > max.z {
-        p.z - max.z
-    } else {
-        0.0
-    };
-    dx * dx + dy * dy + dz * dz
+    simd::aabb_distance2(p, min, max)
 }
 
 #[inline]
@@ -623,51 +602,7 @@ pub(super) fn ray_aabb_tmin(
     max: Vec3,
     max_t: f32,
 ) -> Option<f32> {
-    let inv_x = if dir.x.abs() > 1e-8 {
-        1.0 / dir.x
-    } else {
-        f32::INFINITY
-    };
-    let inv_y = if dir.y.abs() > 1e-8 {
-        1.0 / dir.y
-    } else {
-        f32::INFINITY
-    };
-    let inv_z = if dir.z.abs() > 1e-8 {
-        1.0 / dir.z
-    } else {
-        f32::INFINITY
-    };
-
-    let mut t1 = (min.x - origin.x) * inv_x;
-    let mut t2 = (max.x - origin.x) * inv_x;
-    if t1 > t2 {
-        std::mem::swap(&mut t1, &mut t2);
-    }
-    let mut tmin = t1;
-    let mut tmax = t2;
-
-    t1 = (min.y - origin.y) * inv_y;
-    t2 = (max.y - origin.y) * inv_y;
-    if t1 > t2 {
-        std::mem::swap(&mut t1, &mut t2);
-    }
-    tmin = tmin.max(t1);
-    tmax = tmax.min(t2);
-
-    t1 = (min.z - origin.z) * inv_z;
-    t2 = (max.z - origin.z) * inv_z;
-    if t1 > t2 {
-        std::mem::swap(&mut t1, &mut t2);
-    }
-    tmin = tmin.max(t1);
-    tmax = tmax.min(t2);
-
-    if tmax < 0.0 || tmin > tmax || tmin > max_t {
-        None
-    } else {
-        Some(tmin.max(0.0))
-    }
+    simd::ray_aabb_tmin(origin, dir, min, max, max_t)
 }
 
 pub(super) fn build_query_mesh_data(
