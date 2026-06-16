@@ -1542,6 +1542,30 @@ fn remap_scene_value_keys(
             z: *z,
             w: *w,
         },
+        SceneValue::IVec2 { x, y } => SceneValue::IVec2 { x: *x, y: *y },
+        SceneValue::IVec3 { x, y, z } => SceneValue::IVec3 {
+            x: *x,
+            y: *y,
+            z: *z,
+        },
+        SceneValue::IVec4 { x, y, z, w } => SceneValue::IVec4 {
+            x: *x,
+            y: *y,
+            z: *z,
+            w: *w,
+        },
+        SceneValue::UVec2 { x, y } => SceneValue::UVec2 { x: *x, y: *y },
+        SceneValue::UVec3 { x, y, z } => SceneValue::UVec3 {
+            x: *x,
+            y: *y,
+            z: *z,
+        },
+        SceneValue::UVec4 { x, y, z, w } => SceneValue::UVec4 {
+            x: *x,
+            y: *y,
+            z: *z,
+            w: *w,
+        },
         SceneValue::Str(v) => SceneValue::Str(v.clone()),
         SceneValue::Hashed(v) => SceneValue::Hashed(*v),
         SceneValue::Key(v) => scene_key_by_name(scene, v.as_ref())

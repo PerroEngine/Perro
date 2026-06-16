@@ -61,7 +61,7 @@ Wrong stored type returns `None`.
 | bytes          | `as_bytes()`                                                                                                                                                                      |
 | any id enum    | `as_id()`                                                                                                                                                                         |
 | ids            | `as_node()`, `as_texture()`, `as_material()`, `as_mesh()`, `as_animation()`, `as_light()`, `as_signal()`, `as_audio_bus()`, `as_tag()`, `as_preloaded_scene()` |
-| math           | `as_vec2()`, `as_vec3()`, `as_ivec2()`, `as_ivec3()`, `as_uvec2()`, `as_uvec3()`                                                                                                  |
+| math           | `as_vec2()`, `as_vec3()`, `as_vec4()`, `as_ivec2()`, `as_ivec3()`, `as_ivec4()`, `as_uvec2()`, `as_uvec3()`, `as_uvec4()`, `as_unit_vec2()`, `as_unit_vec3()`, `as_unit_vec4()`, `as_matrix2()`, `as_matrix3()`, `as_matrix4()`, `as_matrix2x2()`, `as_matrix3x3()`, `as_matrix4x4()` |
 | transforms     | `as_transform2d()`, `as_transform3d()`                                                                                                                                            |
 | quaternions    | `as_quat()`                                                                                                                                                                       |
 | engine structs | `as_post_process_set()`, `as_visual_accessibility_settings()`                                                                                                                     |
@@ -105,6 +105,29 @@ match value.get_kind() {
 `get_kind()` tells broad storage kind.
 
 Use exact `as_*` accessor to know which ID/math/number subtype is stored.
+
+Matrix variants store row-major data.
+
+`Matrix2`/`Matrix3`/`Matrix4` decode through `as_matrix*()`.
+
+`Matrix<2, 2>`/`Matrix<3, 3>`/`Matrix<4, 4>` decode through `as_matrix*x*()` or `parse::<T>()`.
+
+Accepted matrix parse shapes:
+
+```rust
+let rows = Variant::Array(vec![
+    Variant::Array(vec![1.0_f32.into(), 0.0_f32.into()]),
+    Variant::Array(vec![0.0_f32.into(), 1.0_f32.into()]),
+]);
+
+let flat = Variant::Array(vec![
+    1.0_f32.into(), 0.0_f32.into(),
+    0.0_f32.into(), 1.0_f32.into(),
+]);
+
+let matrix = rows.parse::<Matrix<2, 2>>().unwrap();
+let same = flat.parse::<Matrix2>().unwrap();
+```
 
 ## Custom Types
 

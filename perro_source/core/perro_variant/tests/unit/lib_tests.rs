@@ -5,8 +5,8 @@ use perro_ids::{
     TagID, TextureID,
 };
 use perro_structs::{
-    ColorBlindFilter, IVector2, IVector3, PostProcessEffect, PostProcessSet, UVector2, UVector3,
-    Vector2, Vector3, VisualAccessibilitySettings,
+    ColorBlindFilter, IVector2, IVector3, Matrix, Matrix3, PostProcessEffect, PostProcessSet,
+    UVector2, UVector3, UnitVector4, Vector2, Vector3, Vector4, VisualAccessibilitySettings,
 };
 
 use super::*;
@@ -251,6 +251,106 @@ fn test_variant_as_uvec3() {
     let vec = UVector3::new(1, 2, 3);
     let v = Variant::from(vec);
     assert_eq!(v.as_uvec3(), Some(vec));
+}
+
+#[test]
+fn test_variant_as_unit_vec4() {
+    let vec = UnitVector4::new([1.0, 0.5, -1.0, 2.0]);
+    let v = Variant::from(vec);
+    assert_eq!(v.as_unit_vec4(), Some(vec));
+    assert_eq!(v.as_unit_vec4().unwrap().to_u8(), [255, 128, 0, 255]);
+}
+
+#[test]
+fn test_unit_vec4_parse_and_json() {
+    let from_vec = Variant::from(Vector4::new(1.0, 0.5, -1.0, 2.0))
+        .parse::<UnitVector4>()
+        .unwrap();
+    assert_eq!(from_vec.to_u8(), [255, 128, 0, 255]);
+
+    let from_array = Variant::Array(vec![
+        Variant::from(1.0_f32),
+        Variant::from(0.5_f32),
+        Variant::from(-1.0_f32),
+        Variant::from(2.0_f32),
+    ])
+    .parse::<UnitVector4>()
+    .unwrap();
+    assert_eq!(from_array.to_u8(), [255, 128, 0, 255]);
+
+    let json = Variant::from(from_array).to_json_value();
+    assert_eq!(json["x"].as_f64(), Some(1.0));
+    assert!(json["y"].as_f64().unwrap() > 0.5);
+    assert_eq!(json["z"].as_f64(), Some(0.0));
+    assert_eq!(json["w"].as_f64(), Some(1.0));
+}
+
+#[test]
+fn test_matrix_variant_accessors_parse_and_json() {
+    let rows = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]];
+    let matrix = Matrix::<3, 3>::new(rows);
+    let variant = Variant::from(matrix);
+
+    assert_eq!(variant.as_matrix3x3(), Some(matrix));
+    assert_eq!(variant.as_matrix3().unwrap().to_rows(), rows);
+    assert_eq!(variant.parse::<Matrix<3, 3>>(), Ok(matrix));
+    assert_eq!(variant.parse::<Matrix3>().unwrap().to_rows(), rows);
+
+    let json = variant.to_json_value();
+    assert_eq!(json[0][1].as_f64(), Some(2.0));
+    assert_eq!(json[2][2].as_f64(), Some(9.0));
+}
+
+#[test]
+fn test_matrix_variant_parse_from_rows_flat_and_object() {
+    let row_array = Variant::Array(vec![
+        Variant::Array(vec![
+            Variant::from(1.0_f32),
+            Variant::from(2.0_f32),
+            Variant::from(3.0_f32),
+            Variant::from(4.0_f32),
+        ]),
+        Variant::Array(vec![
+            Variant::from(5.0_f32),
+            Variant::from(6.0_f32),
+            Variant::from(7.0_f32),
+            Variant::from(8.0_f32),
+        ]),
+        Variant::Array(vec![
+            Variant::from(9.0_f32),
+            Variant::from(10.0_f32),
+            Variant::from(11.0_f32),
+            Variant::from(12.0_f32),
+        ]),
+        Variant::Array(vec![
+            Variant::from(13.0_f32),
+            Variant::from(14.0_f32),
+            Variant::from(15.0_f32),
+            Variant::from(16.0_f32),
+        ]),
+    ]);
+    let expected = Matrix::<4, 4>::new([
+        [1.0, 2.0, 3.0, 4.0],
+        [5.0, 6.0, 7.0, 8.0],
+        [9.0, 10.0, 11.0, 12.0],
+        [13.0, 14.0, 15.0, 16.0],
+    ]);
+
+    assert_eq!(row_array.parse::<Matrix<4, 4>>(), Ok(expected));
+
+    let flat = Variant::Array(
+        (1..=16)
+            .map(|v| Variant::from(v as f32))
+            .collect::<Vec<_>>(),
+    );
+    assert_eq!(flat.parse::<Matrix<4, 4>>(), Ok(expected));
+
+    let mut object = BTreeMap::new();
+    object.insert(Arc::from("rows"), row_array);
+    assert_eq!(
+        Variant::Object(object).parse::<Matrix<4, 4>>(),
+        Ok(expected)
+    );
 }
 
 #[test]

@@ -5,6 +5,8 @@
 | Header                | Link                                            |
 | --------------------- | ----------------------------------------------- |
 | Struct Table          | [Struct Table](#struct-table)                   |
+| Variant Support       | [Variant Support](#variant-support)             |
+| Matrix Structs        | [Matrix Structs](#matrix-structs)               |
 | Color                 | [Color](#color)                                 |
 | Masks And Collision   | [Masks And Collision](#masks-and-collision)     |
 | Audio Structs         | [Audio Structs](#audio-structs)                 |
@@ -16,19 +18,137 @@
 
 | Type                                                                       | Shape / stored data                                                 | Where it appears / why documented                       |
 | -------------------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------- |
-| `Color`                                                                    | `r/g/b/a: Unorm8`; input/output commonly `[f32; 4]` in `0.0..=1.0`. | Script APIs, UI/style values, tint/modulate fields.     |
+| `Color`                                                                    | `r/g/b/a: Unit`; input/output commonly `[f32; 4]` in `0.0..=1.0`.   | Script APIs, UI/style values, tint/modulate fields.     |
 | `BitMask`                                                                  | `u32` bit field; public layers use `1..=32`.                        | Collision, input, audio, and custom category filters.   |
 | `CollisionPolicy`                                                          | `layers: BitMask`, `mask: BitMask`; mask means ignored layers.      | Physics node config and collision compatibility checks. |
+| `Vector4`, `IVector4`, `UVector4`                                          | Four `x/y/z/w` lanes; float, signed int, or unsigned int.            | Generic four-value data, not rotation-specific like `Quaternion`. |
+| `Matrix<ROWS, COLS, T>`                                                     | Row-major matrices.                                                  | Packed math data, scene/resource values, and dynamic data. |
+| `Matrix2`, `Matrix3`, `Matrix4`                                            | Glam-backed fast `f32` matrices.                                     | Hot matrix ops and transform conversion.                  |
 | `AudioMaterial`, `AudioEffect`, `AudioInteraction`, `AudioListenerOptions` | `f32` tuning fields plus `BitMask` and effect lists.                | Built-in audio node/resource/listener config.           |
 | `PostProcessEffect`, `PostProcessEntry`, `PostProcessSet`                  | enum effects plus named/unnamed effect entries.                     | Render effect stacks and resource API config.           |
 | `ColorBlindFilter`, `ColorBlindSetting`, `VisualAccessibilitySettings`     | enum filter plus `strength: f32` and optional setting.              | Display accessibility state and resource API config.    |
 | `ConstParamValue`                                                          | enum: `F32`, `I32`, `Bool`, `Vec2`, `Vec3`, `Vec4`.                 | Shader/material/post-process constant values.           |
 | `IKTargetParams`, `IKTargetSolver`                                         | IK target fields plus solver enum.                                  | Built-in skeletal IK node config.                       |
-| `Unorm8`, `Unorm8x4`                                                       | compact normalized `u8` or `[u8; 4]`.                               | Packed normalized color/weight data.                    |
+| `Unit`, `UnitVector2`, `UnitVector3`, `UnitVector4`                        | Values clamped to `0.0..=1.0`; scalar and vector components store as `u8`. | Unit controls + packed color/weight data.              |
+
+## Variant Support
+
+These engine structs can be passed through `Variant` with `Variant::from(value)` and decoded with `parse::<T>()` or the listed `as_*` accessor.
+
+| Type                                  | Accessor                         | JSON/object shape          | Scene/editor type                         | Notes                                      |
+| ------------------------------------- | -------------------------------- | -------------------------- | ----------------------------------------- | ------------------------------------------ |
+| `Vector2`, `Vector3`, `Vector4`       | `as_vec2()`, `as_vec3()`, `as_vec4()` | `{ x, y }`, `{ x, y, z }`, `{ x, y, z, w }` | `Vec2`, `Vec3`, `Vec4`                    | Float lanes.                               |
+| `IVector2`, `IVector3`, `IVector4`    | `as_ivec2()`, `as_ivec3()`, `as_ivec4()` | `{ x, y }`, `{ x, y, z }`, `{ x, y, z, w }` | `IVec2`, `IVec3`, `IVec4`                 | Signed integer lanes.                     |
+| `UVector2`, `UVector3`, `UVector4`    | `as_uvec2()`, `as_uvec3()`, `as_uvec4()` | `{ x, y }`, `{ x, y, z }`, `{ x, y, z, w }` | `UVec2`, `UVec3`, `UVec4`                 | Unsigned integer lanes.                   |
+| `UnitVector2`, `UnitVector3`, `UnitVector4` | `as_unit_vec2()`, `as_unit_vec3()`, `as_unit_vec4()` | `{ x, y }`, `{ x, y, z }`, `{ x, y, z, w }` | `UnitVector2`, `UnitVector3`, `UnitVector4` | Each lane clamps to `0.0..=1.0` and stores as `u8`. |
+| `Matrix2`, `Matrix3`, `Matrix4` | `as_matrix2()`, `as_matrix3()`, `as_matrix4()` | Row arrays like `[[1.0, 0.0], [0.0, 1.0]]` or flat row-major arrays. | `Matrix2`, `Matrix3`, `Matrix4` | Fast glam-backed values. |
+| `Matrix<2, 2>`, `Matrix<3, 3>`, `Matrix<4, 4>` | `as_matrix2x2()`, `as_matrix3x3()`, `as_matrix4x4()` | Row arrays, flat row-major arrays, or `{ rows: [...] }`. | `Matrix2`, `Matrix3`, `Matrix4` | Decode through glam-backed storage for square `f32` matrices. |
+
+`UnitVector*` means vector of unit-range values, not a length-normalized direction vector.
+
+## Matrix Structs
+
+Perro has one row-major generic matrix plus glam-backed square wrappers.
+
+Use `Matrix<ROWS, COLS, T>` when row-major storage matters.
+
+`T` can be any element type.
+
+Use `Matrix2`, `Matrix3`, and `Matrix4` when you want glam-backed fast math.
+
+Row-major means `rows[row][col]`.
+
+Variant and JSON row arrays also use row-major order.
+
+Common use:
+
+| Type | Use |
+| ---- | --- |
+| `Matrix<2, 2>` | Small 2D math values and compact dynamic data. |
+| `Matrix<3, 3>` | 2D transform math, normal basis, and row-major scene data. |
+| `Matrix<4, 4>` | 3D transform/projection math and packed resource data. |
+| `Matrix2`/`Matrix3`/`Matrix4` | Hot math ops; backed by `glam::Mat2`, `glam::Mat3`, `glam::Mat4`. |
+
+Common APIs:
+
+| Access | Signature | Use |
+| ------ | --------- | --- |
+| Constructor | `Matrix::<R, C>::new(rows)` | Build row-major matrix. |
+| Constructor | `Matrix::<N, N>::identity()` | Build square identity. |
+| Accessor | `rows()`, `row(i)`, `as_slice()` | Read row-major data. |
+| Position | `flat_index(row, col)`, `row_col(index)`, `in_bounds(row, col)` | Convert between `row,col` and flat row-major index. |
+| Accessor | `get(row, col)`, `get_mut(row, col)`, `get_flat(index)`, `set(row, col, value)` | Safe checked element access. |
+| Search | `find_position(value)`, `find_flat_index(value)` | Find first matching element. |
+| Pack | `flat_len()`, `write_flat(out)`, `from_slice(input)` | Copy any `T: Copy` row-major data without alloc. |
+| Pack f32 | `packed_len()`, `write_packed(out)`, `read_packed(input)` | Copy row-major `f32` data without alloc. |
+| Bytes | `as_bytes()` | View packed `f32` bytes for upload/cache keys. |
+| Math | `+`, `-`, `+=`, `-=`, scalar `*`, scalar `/`, matrix `*` | Uses SIMD/glam internally where useful and supported. |
+| Integer math | `<< u32`, `>> u32`, `<<= u32`, `>>= u32` | Element-wise bit shifts for integer matrices. |
+| Compat aliases | `add_fast`, `sub_fast`, `scale_fast`, `add_f32`, `sub_f32`, `scale_f32`, `mul_f32` | Kept for older code; normal operators are preferred. |
+| Convert | `to_glam()`, `from_glam(mat)` | Bridge generic square matrices to glam. |
+| Fast convert | `Matrix3::from_rows(rows)`, `to_rows()` | Bridge row-major data to glam-backed values. |
+
+SIMD coverage:
+
+| Element type | SIMD ops |
+| ------------ | -------- |
+| `f32` | add, sub, scale |
+| `f64` | add, sub, scale |
+| `i8`, `u8` | add, sub |
+| `i16`, `u16` | add, sub, scale |
+| `i32`, `u32` | add, sub, scale |
+| `i64`, `u64` | add, sub |
+| `i128`, `u128`, `isize`, `usize` | scalar fast path |
+
+Other engine math structs already use vectorized paths through `glam` where possible.
+
+`Vector2`, `Vector3`, `Vector4`, `Quaternion`, `Transform2D`, and `Transform3D` route hot float math through glam-backed values.
+
+Example:
+
+```rust
+let a = Matrix::<4, 4>::identity();
+let b = Matrix::<4, 4>::new([
+    [1.0, 0.0, 0.0, 4.0],
+    [0.0, 1.0, 0.0, 5.0],
+    [0.0, 0.0, 1.0, 6.0],
+    [0.0, 0.0, 0.0, 1.0],
+]);
+
+let c = (a * b) * 0.5;
+
+let index = Matrix::<4, 4>::flat_index(1, 2).unwrap();
+let row_col = Matrix::<4, 4>::row_col(index).unwrap();
+let value = c.get(row_col.0, row_col.1).copied().unwrap_or_default();
+
+let mut packed = [0.0; 16];
+c.write_packed(&mut packed).unwrap();
+
+let variant = Variant::from(c);
+let parsed = variant.parse::<Matrix<4, 4>>().unwrap();
+```
+
+Variant forms:
+
+```rust
+let rows = Variant::from(Matrix::<3, 3>::identity());
+
+let same = Variant::Array(vec![
+    Variant::Array(vec![1.0_f32.into(), 0.0_f32.into(), 0.0_f32.into()]),
+    Variant::Array(vec![0.0_f32.into(), 1.0_f32.into(), 0.0_f32.into()]),
+    Variant::Array(vec![0.0_f32.into(), 0.0_f32.into(), 1.0_f32.into()]),
+]);
+
+let flat = Variant::Array(vec![
+    1.0_f32.into(), 0.0_f32.into(), 0.0_f32.into(),
+    0.0_f32.into(), 1.0_f32.into(), 0.0_f32.into(),
+    0.0_f32.into(), 0.0_f32.into(), 1.0_f32.into(),
+]);
+```
 
 ## Color
 
-`Color` stores four `Unorm8` channels internally, not four `f32` fields.
+`Color` stores four `Unit` channels internally, not four `f32` fields.
 
 Use `Color` when an API or resource needs RGBA color as typed data. The float constructors take channel values in the `0.0..=1.0` range, clamp out-of-range values, and round to bytes for storage.
 
@@ -36,10 +156,10 @@ Signature:
 
 ```rust
 pub struct Color {
-    pub r: Unorm8,
-    pub g: Unorm8,
-    pub b: Unorm8,
-    pub a: Unorm8,
+    pub r: Unit,
+    pub g: Unit,
+    pub b: Unit,
+    pub a: Unit,
 }
 ```
 
@@ -47,7 +167,7 @@ Storage:
 
 | Public input/output                                     | Internal storage                           | Edge behavior                                                       |
 | ------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------- |
-| `f32` channels use `0.0..=1.0`.                         | Each channel stores `u8` through `Unorm8`. | Values below `0.0` clamp to `0`; values above `1.0` clamp to `255`. |
+| `f32` channels use `0.0..=1.0`.                         | Each channel stores `u8` through `Unit`. | Values below `0.0` clamp to `0`; values above `1.0` clamp to `255`. |
 | Hex strings use `RGB`, `RGBA`, `RRGGBB`, or `RRGGBBAA`. | Hex parse stores exact bytes.              | Invalid length or digit returns `None`.                             |
 | Float slice output uses `[f32; 4]`.                     | Bytes convert back to normalized floats.   | Round trip through bytes can quantize.                              |
 
@@ -55,21 +175,21 @@ Common APIs:
 
 | Access      | Signature                                                  | Params                                                              | Returns         | Use when                                                             | Why / edge behavior                                |
 | ----------- | ---------------------------------------------------------- | ------------------------------------------------------------------- | --------------- | -------------------------------------------------------------------- | -------------------------------------------------- |
-| Constructor | `pub const fn new(r: f32, g: f32, b: f32, a: f32) -> Self` | `r/g/b/a`: normalized `f32` channels.                               | `Color`         | Build explicit RGBA.                                                 | Clamps to `0.0..=1.0`, rounds, stores as `Unorm8`. |
+| Constructor | `pub const fn new(r: f32, g: f32, b: f32, a: f32) -> Self` | `r/g/b/a`: normalized `f32` channels.                               | `Color`         | Build explicit RGBA.                                                 | Clamps to `0.0..=1.0`, rounds, stores as `Unit`. |
 | Constructor | `pub const fn rgb(r: f32, g: f32, b: f32) -> Self`         | `r/g/b`: normalized `f32` channels.                                 | `Color`         | Build opaque color.                                                  | Sets alpha to `1.0`.                               |
 | Constructor | `pub const fn from_rgba(v: [f32; 4]) -> Self`              | `[r, g, b, a]` normalized floats.                                   | `Color`         | Convert from array data.                                             | Same clamp/round/storage as `new`.                 |
 | Constructor | `pub const fn from_float_slice(v: [f32; 4]) -> Self`       | Normalized RGBA floats.                                             | `Color`         | Convert from float slice/array data.                                 | Alias of `from_rgba`.                              |
 | Constructor | `pub const fn from_rgba_u8(v: [u8; 4]) -> Self`            | Exact byte channels.                                                | `Color`         | Preserve imported byte color.                                        | Stores exact channel bytes.                        |
-| Constructor | `pub const fn from_unorm8x4(v: Unorm8x4) -> Self`          | Packed normalized bytes.                                            | `Color`         | Convert from compact normalized color.                               | Uses exact stored bytes.                           |
-| Constructor | `pub const fn from_unorm_slice(v: Unorm8x4) -> Self`       | Packed normalized bytes.                                            | `Color`         | Convert from APIs that name packed normalized data as a slice value. | Alias of `from_unorm8x4`.                          |
+| Constructor | `pub const fn from_unit_vector4(v: UnitVector4) -> Self`          | Packed normalized bytes.                                            | `Color`         | Convert from compact normalized color.                               | Uses exact stored bytes.                           |
+| Constructor | `pub const fn from_unit_slice(v: UnitVector4) -> Self`       | Packed normalized bytes.                                            | `Color`         | Convert from APIs that name packed normalized data as a slice value. | Alias of `from_unit_vector4`.                          |
 | Parser      | `pub fn from_hex(hex: &str) -> Option<Self>`               | `"#RGB"`, `"#RGBA"`, `"#RRGGBB"`, `"#RRGGBBAA"`, with optional `#`. | `Option<Color>` | Parse author-facing color text.                                      | Returns `None` for bad length or bad hex digit.    |
 | Accessor    | `pub const fn r(self) -> f32` and `g/b/a`                  | none                                                                | `f32`           | Read one normalized channel.                                         | Converts stored byte to `0.0..=1.0`.               |
 | Accessor    | `pub const fn to_rgba(self) -> [f32; 4]`                   | none                                                                | `[f32; 4]`      | Feed APIs that expect float RGBA arrays.                             | Converts stored bytes to normalized floats.        |
 | Accessor    | `pub const fn to_rgb(self) -> [f32; 3]`                    | none                                                                | `[f32; 3]`      | Feed RGB-only APIs.                                                  | Drops alpha.                                       |
 | Accessor    | `pub const fn to_float_slice(self) -> [f32; 4]`            | none                                                                | `[f32; 4]`      | Feed float-slice/array APIs.                                         | Alias of `to_rgba`.                                |
 | Accessor    | `pub const fn to_rgba_u8(self) -> [u8; 4]`                 | none                                                                | `[u8; 4]`       | Save or compare exact stored bytes.                                  | No float conversion loss.                          |
-| Accessor    | `pub const fn to_unorm8x4(self) -> Unorm8x4`               | none                                                                | `Unorm8x4`      | Pass compact normalized bytes.                                       | Uses exact stored bytes.                           |
-| Accessor    | `pub const fn to_unorm_slice(self) -> Unorm8x4`            | none                                                                | `Unorm8x4`      | Feed APIs that name packed normalized data as a slice value.         | Alias of `to_unorm8x4`.                            |
+| Accessor    | `pub const fn to_unit_vector4(self) -> UnitVector4`               | none                                                                | `UnitVector4`      | Pass compact normalized bytes.                                       | Uses exact stored bytes.                           |
+| Accessor    | `pub const fn to_unit_slice(self) -> UnitVector4`            | none                                                                | `UnitVector4`      | Feed APIs that name packed normalized data as a slice value.         | Alias of `to_unit_vector4`.                            |
 | Formatter   | `pub fn to_hex_rgb(self) -> String`                        | none                                                                | `String`        | Save/debug opaque color text.                                        | Alpha omitted.                                     |
 | Formatter   | `pub fn to_hex_rgba(self) -> String`                       | none                                                                | `String`        | Save/debug full color text.                                          | Alpha included.                                    |
 
@@ -81,7 +201,7 @@ Example:
 
 ```rust
 let exact = Color::from_rgba_u8([0x33, 0x66, 0x99, 0xCC]);
-let from_packed = Color::from_unorm8x4(Unorm8x4::from_u8([0x33, 0x66, 0x99, 0xCC]));
+let from_packed = Color::from_unit_vector4(UnitVector4::from_u8([0x33, 0x66, 0x99, 0xCC]));
 let accent = Color::new(0.2, 0.4, 0.6, 0.8);
 let clamped = Color::new(1.5, 0.5, -1.0, 2.0);
 
@@ -90,7 +210,7 @@ assert_eq!(from_packed.to_rgba_u8(), [0x33, 0x66, 0x99, 0xCC]);
 assert_eq!(clamped.to_rgba_u8(), [255, 128, 0, 255]);
 
 let rgba: [f32; 4] = accent.to_float_slice();
-let packed: Unorm8x4 = accent.to_unorm_slice();
+let packed: UnitVector4 = accent.to_unit_slice();
 ```
 
 ## Masks And Collision
@@ -138,18 +258,26 @@ let hit_wall = player_policy.can_collide(wall_policy);
 let has_enemy = enemy_layers.intersects(BitMask::layer(2));
 ```
 
-## `Unorm8` And `Unorm8x4`
+## `Unit` And `UnitVector4`
 
-Use `Unorm8` and `Unorm8x4` when normalized floats need compact byte storage.
+Use `Unit` when one normalized float needs compact byte storage.
+
+Use `UnitVector2` or `UnitVector3` when each component is a `0.0..=1.0` unit value.
+
+`UnitVector2` and `UnitVector3` are not length-normalized direction vectors. They are vectors of unit-range values.
+
+Use `UnitVector4` when four normalized floats need packed byte storage.
 
 | Access      | Signature                                            | Params                  | Returns    | Use when                                     | Why / edge behavior                      |
 | ----------- | ---------------------------------------------------- | ----------------------- | ---------- | -------------------------------------------- | ---------------------------------------- |
-| Constructor | `pub const fn Unorm8::new(v: f32) -> Self`           | Normalized `f32`.       | `Unorm8`   | Pack one normalized value.                   | Clamps to `0.0..=1.0`, rounds to `u8`.   |
-| Constructor | `pub const fn Unorm8::from_u8(v: u8) -> Self`        | Exact byte.             | `Unorm8`   | Keep imported byte value exact.              | No clamp needed.                         |
+| Constructor | `pub const fn Unit::new(v: f32) -> Self`            | Normalized `f32`.       | `Unit`    | Pack one normalized value.                   | Clamps to `0.0..=1.0`, rounds to `u8`.   |
+| Constructor | `pub const fn Unit::from_u8(v: u8) -> Self`         | Exact byte.             | `Unit`    | Keep imported byte value exact.              | No clamp needed.                         |
 | Accessor    | `pub const fn to_u8(self) -> u8`                     | none                    | `u8`       | Save exact byte.                             | No conversion loss.                      |
 | Accessor    | `pub const fn to_f32(self) -> f32`                   | none                    | `f32`      | Feed normalized float APIs.                  | Returns `byte / 255.0`.                  |
-| Constructor | `pub const fn Unorm8x4::new(v: [f32; 4]) -> Self`    | Four normalized floats. | `Unorm8x4` | Pack RGBA-like data.                         | Clamps and rounds each channel.          |
-| Constructor | `pub const fn Unorm8x4::from_u8(v: [u8; 4]) -> Self` | Exact bytes.            | `Unorm8x4` | Keep byte data exact.                        | No clamp needed.                         |
+| Constructor | `pub const fn UnitVector2::new(x: f32, y: f32) -> Self` | Unit-range components. | `UnitVector2` | Store two unit values.                   | Clamps each component to `0.0..=1.0`.    |
+| Constructor | `pub const fn UnitVector3::new(x: f32, y: f32, z: f32) -> Self` | Unit-range components. | `UnitVector3` | Store three unit values.              | Clamps each component to `0.0..=1.0`.    |
+| Constructor | `pub const fn UnitVector4::new(v: [f32; 4]) -> Self`    | Four normalized floats. | `UnitVector4` | Pack RGBA-like data.                         | Clamps and rounds each channel.          |
+| Constructor | `pub const fn UnitVector4::from_u8(v: [u8; 4]) -> Self` | Exact bytes.            | `UnitVector4` | Keep byte data exact.                        | No clamp needed.                         |
 | Accessor    | `pub const fn to_u8(self) -> [u8; 4]`                | none                    | `[u8; 4]`  | Save exact packed bytes.                     | No conversion loss.                      |
 | Accessor    | `pub const fn to_f32(self) -> [f32; 4]`              | none                    | `[f32; 4]` | Feed normalized float APIs.                  | Converts each byte to `byte / 255.0`.    |
 | Accessor    | `pub const fn to_le_u32(self) -> u32`                | none                    | `u32`      | Pack four bytes into one little-endian word. | Byte order follows `u32::from_le_bytes`. |
@@ -157,7 +285,7 @@ Use `Unorm8` and `Unorm8x4` when normalized floats need compact byte storage.
 Example:
 
 ```rust
-let packed = Unorm8x4::new([1.0, 0.5, -1.0, 2.0]);
+let packed = UnitVector4::new([1.0, 0.5, -1.0, 2.0]);
 
 assert_eq!(packed.to_u8(), [255, 128, 0, 255]);
 assert_eq!(packed.to_le_u32(), 0xFF00_80FF);

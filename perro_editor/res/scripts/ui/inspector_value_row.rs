@@ -124,16 +124,16 @@ pub fn apply_inspector_value_row_panel<API: ScriptAPI + ?Sized>(
         stroke
     };
     let _ = with_node_mut!(ctx.run, UiPanel, row_id, |node| {
-        node.style.fill = Color::TRANSPARENT;
-        node.style.stroke = Color::TRANSPARENT;
-        node.style.stroke_width = 0.0;
-        node.style.corner_radius = 0.0;
-    });
-    let _ = with_node_mut!(ctx.run, UiPanel, header_id, |node| {
         node.style.fill = Color::from_hex(fill).unwrap_or(node.style.fill);
         node.style.stroke = Color::from_hex(script_stroke).unwrap_or(node.style.stroke);
         node.style.stroke_width = 1.0;
         node.style.corner_radius = 0.1;
+    });
+    let _ = with_node_mut!(ctx.run, UiPanel, header_id, |node| {
+        node.style.fill = Color::TRANSPARENT;
+        node.style.stroke = Color::TRANSPARENT;
+        node.style.stroke_width = 0.0;
+        node.style.corner_radius = 0.0;
     });
 }
 

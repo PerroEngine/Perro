@@ -529,7 +529,7 @@ mod tests {
     }
 
     fn parse_ui_style(style: &'static UiStyle) -> usize {
-        style.fill.to_unorm8x4().to_le_u32() as usize
+        style.fill.to_unit_vector4().to_le_u32() as usize
     }
 
     fn parse_particle(particle: &'static ParticleProfile3D) -> usize {
@@ -714,7 +714,7 @@ mod tests {
                 normal,
                 uv,
                 joints: [0, 0, 0, 0],
-                weights: perro_structs::Unorm8x4::new([1.0, 0.0, 0.0, 0.0]),
+                weights: perro_structs::UnitVector4::new([1.0, 0.0, 0.0, 0.0]),
             });
         }
         let mut indices = Vec::with_capacity(index_count);

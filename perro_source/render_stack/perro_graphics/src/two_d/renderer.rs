@@ -8,7 +8,7 @@ use perro_render_bridge::{
     PointLight2DState, PointParticles2DState, RayLight2DState, Rect2DCommand, SpotLight2DState,
     Sprite2DCommand, TileMap2DCommand, Water2DState,
 };
-use perro_structs::{DrawShape2D, Unorm8x4};
+use perro_structs::{DrawShape2D, UnitVector4};
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -1007,7 +1007,7 @@ fn hash01(seed: u32) -> f32 {
 
 #[inline]
 fn color_to_unorm8(color: [f32; 4]) -> [u8; 4] {
-    Unorm8x4::new(color).to_u8()
+    UnitVector4::new(color).to_u8()
 }
 
 fn retained_rect_instance(rect: Rect2DCommand) -> Option<RectInstanceGpu> {

@@ -1,4 +1,4 @@
-use crate::{Quaternion, Vector3};
+use crate::{Matrix4, Quaternion, Vector3};
 use glam::{Mat3, Mat4, Quat, Vec3};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -82,6 +82,18 @@ impl Transform3D {
             scale: scale.into(),
             rotation: rotation.into(),
         }
+    }
+
+    /// Convert to a fast perro matrix backed by glam.
+    #[inline]
+    pub fn to_matrix4(&self) -> Matrix4 {
+        Matrix4(self.to_mat4())
+    }
+
+    /// Create from a fast perro matrix backed by glam.
+    #[inline]
+    pub fn from_matrix4(matrix: Matrix4) -> Self {
+        Self::from_mat4(matrix.0)
     }
 
     /// Create a transform looking at a target

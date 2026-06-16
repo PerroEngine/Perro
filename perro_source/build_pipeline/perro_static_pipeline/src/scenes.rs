@@ -382,6 +382,24 @@ fn emit_value_with_consts(
         SceneValue::Vec4 { x, y, z, w } => {
             format!("SceneValue::Vec4 {{ x: {x:?}, y: {y:?}, z: {z:?}, w: {w:?} }}")
         }
+        SceneValue::IVec2 { x, y } => {
+            format!("SceneValue::IVec2 {{ x: {x}, y: {y} }}")
+        }
+        SceneValue::IVec3 { x, y, z } => {
+            format!("SceneValue::IVec3 {{ x: {x}, y: {y}, z: {z} }}")
+        }
+        SceneValue::IVec4 { x, y, z, w } => {
+            format!("SceneValue::IVec4 {{ x: {x}, y: {y}, z: {z}, w: {w} }}")
+        }
+        SceneValue::UVec2 { x, y } => {
+            format!("SceneValue::UVec2 {{ x: {x}, y: {y} }}")
+        }
+        SceneValue::UVec3 { x, y, z } => {
+            format!("SceneValue::UVec3 {{ x: {x}, y: {y}, z: {z} }}")
+        }
+        SceneValue::UVec4 { x, y, z, w } => {
+            format!("SceneValue::UVec4 {{ x: {x}, y: {y}, z: {z}, w: {w} }}")
+        }
         SceneValue::Str(s) => {
             emit_static_scene_value_str(node_type, field_name, s.as_ref()).to_string()
         }

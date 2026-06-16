@@ -9,6 +9,7 @@ glam = "0.31.0"
 perro_ids.workspace = true
 [dev-dependencies]
 criterion = "0.5"
+rayon = "1.10"
 
 [[bench]]
 name = "math_hotpaths"

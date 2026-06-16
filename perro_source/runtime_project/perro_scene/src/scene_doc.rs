@@ -292,6 +292,12 @@ impl<'a> SceneDocWriter<'a> {
                 out.push_str(&fmt_f32(*w));
                 out.push(')');
             }
+            SceneValue::IVec2 { x, y } => write_int_vec(out, &[*x, *y]),
+            SceneValue::IVec3 { x, y, z } => write_int_vec(out, &[*x, *y, *z]),
+            SceneValue::IVec4 { x, y, z, w } => write_int_vec(out, &[*x, *y, *z, *w]),
+            SceneValue::UVec2 { x, y } => write_uint_vec(out, &[*x, *y]),
+            SceneValue::UVec3 { x, y, z } => write_uint_vec(out, &[*x, *y, *z]),
+            SceneValue::UVec4 { x, y, z, w } => write_uint_vec(out, &[*x, *y, *z, *w]),
             SceneValue::Str(v) => write_str(v, out),
             SceneValue::Hashed(v) => out.push_str(&v.to_string()),
             SceneValue::Key(v) => self.write_key_value(v.as_ref(), out),
@@ -433,6 +439,12 @@ impl<'a> SceneDocWriter<'a> {
                 out.push_str(&fmt_f32(*w));
                 out.push(')');
             }
+            SceneValue::IVec2 { x, y } => write_int_vec(out, &[*x, *y]),
+            SceneValue::IVec3 { x, y, z } => write_int_vec(out, &[*x, *y, *z]),
+            SceneValue::IVec4 { x, y, z, w } => write_int_vec(out, &[*x, *y, *z, *w]),
+            SceneValue::UVec2 { x, y } => write_uint_vec(out, &[*x, *y]),
+            SceneValue::UVec3 { x, y, z } => write_uint_vec(out, &[*x, *y, *z]),
+            SceneValue::UVec4 { x, y, z, w } => write_uint_vec(out, &[*x, *y, *z, *w]),
             SceneValue::Str(v) => write_str(v, out),
             SceneValue::Hashed(v) => out.push_str(&v.to_string()),
             SceneValue::Key(v) => self.write_key_value(v.as_ref(), out),
@@ -665,6 +677,12 @@ fn write_value_plain(value: &SceneValue, out: &mut String) {
             out.push_str(&fmt_f32(*w));
             out.push(')');
         }
+        SceneValue::IVec2 { x, y } => write_int_vec(out, &[*x, *y]),
+        SceneValue::IVec3 { x, y, z } => write_int_vec(out, &[*x, *y, *z]),
+        SceneValue::IVec4 { x, y, z, w } => write_int_vec(out, &[*x, *y, *z, *w]),
+        SceneValue::UVec2 { x, y } => write_uint_vec(out, &[*x, *y]),
+        SceneValue::UVec3 { x, y, z } => write_uint_vec(out, &[*x, *y, *z]),
+        SceneValue::UVec4 { x, y, z, w } => write_uint_vec(out, &[*x, *y, *z, *w]),
         SceneValue::Str(v) => write_str(v, out),
         SceneValue::Hashed(v) => out.push_str(&v.to_string()),
         SceneValue::Key(v) => write_key_value(v.as_ref(), out),
@@ -691,6 +709,28 @@ fn write_value_plain(value: &SceneValue, out: &mut String) {
             out.push(']');
         }
     }
+}
+
+fn write_int_vec(out: &mut String, values: &[i32]) {
+    out.push('(');
+    for (idx, value) in values.iter().enumerate() {
+        if idx > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&value.to_string());
+    }
+    out.push(')');
+}
+
+fn write_uint_vec(out: &mut String, values: &[u32]) {
+    out.push('(');
+    for (idx, value) in values.iter().enumerate() {
+        if idx > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&value.to_string());
+    }
+    out.push(')');
 }
 
 fn write_str(value: &str, out: &mut String) {

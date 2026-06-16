@@ -1,12 +1,12 @@
-use super::{Unorm8, Unorm8x4};
+use super::{Unit, UnitVector4};
 use std::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct Color {
-    pub r: Unorm8,
-    pub g: Unorm8,
-    pub b: Unorm8,
-    pub a: Unorm8,
+    pub r: Unit,
+    pub g: Unit,
+    pub b: Unit,
+    pub a: Unit,
 }
 
 impl Color {
@@ -48,10 +48,10 @@ impl Color {
     #[inline]
     pub const fn new(r: f32, g: f32, b: f32, a: f32) -> Self {
         Self {
-            r: Unorm8::new(r),
-            g: Unorm8::new(g),
-            b: Unorm8::new(b),
-            a: Unorm8::new(a),
+            r: Unit::new(r),
+            g: Unit::new(g),
+            b: Unit::new(b),
+            a: Unit::new(a),
         }
     }
 
@@ -63,21 +63,21 @@ impl Color {
     #[inline]
     pub const fn from_rgba_u8(v: [u8; 4]) -> Self {
         Self {
-            r: Unorm8::from_u8(v[0]),
-            g: Unorm8::from_u8(v[1]),
-            b: Unorm8::from_u8(v[2]),
-            a: Unorm8::from_u8(v[3]),
+            r: Unit::from_u8(v[0]),
+            g: Unit::from_u8(v[1]),
+            b: Unit::from_u8(v[2]),
+            a: Unit::from_u8(v[3]),
         }
     }
 
     #[inline]
-    pub const fn from_unorm8x4(v: Unorm8x4) -> Self {
+    pub const fn from_unit_vector4(v: UnitVector4) -> Self {
         Self::from_rgba_u8(v.to_u8())
     }
 
     #[inline]
-    pub const fn from_unorm_slice(v: Unorm8x4) -> Self {
-        Self::from_unorm8x4(v)
+    pub const fn from_unit_slice(v: UnitVector4) -> Self {
+        Self::from_unit_vector4(v)
     }
 
     #[inline]
@@ -178,13 +178,13 @@ impl Color {
     }
 
     #[inline]
-    pub const fn to_unorm8x4(self) -> Unorm8x4 {
-        Unorm8x4::from_u8(self.to_rgba_u8())
+    pub const fn to_unit_vector4(self) -> UnitVector4 {
+        UnitVector4::from_u8(self.to_rgba_u8())
     }
 
     #[inline]
-    pub const fn to_unorm_slice(self) -> Unorm8x4 {
-        self.to_unorm8x4()
+    pub const fn to_unit_slice(self) -> UnitVector4 {
+        self.to_unit_vector4()
     }
 
     #[inline]
@@ -225,17 +225,17 @@ impl From<[f32; 4]> for Color {
     }
 }
 
-impl From<Unorm8x4> for Color {
+impl From<UnitVector4> for Color {
     #[inline(always)]
-    fn from(value: Unorm8x4) -> Self {
-        Self::from_unorm8x4(value)
+    fn from(value: UnitVector4) -> Self {
+        Self::from_unit_vector4(value)
     }
 }
 
-impl From<Color> for Unorm8x4 {
+impl From<Color> for UnitVector4 {
     #[inline(always)]
     fn from(value: Color) -> Self {
-        value.to_unorm8x4()
+        value.to_unit_vector4()
     }
 }
 
@@ -278,12 +278,12 @@ mod tests {
     }
 
     #[test]
-    fn color_converts_from_unorm8x4() {
-        let packed = Unorm8x4::from_u8([0x33, 0x66, 0x99, 0xCC]);
-        let color = Color::from_unorm8x4(packed);
+    fn color_converts_from_unit_vector4() {
+        let packed = UnitVector4::from_u8([0x33, 0x66, 0x99, 0xCC]);
+        let color = Color::from_unit_vector4(packed);
 
         assert_eq!(color.to_rgba_u8(), [0x33, 0x66, 0x99, 0xCC]);
-        assert_eq!(Color::from_unorm_slice(packed), color);
-        assert_eq!(Unorm8x4::from(color).to_u8(), packed.to_u8());
+        assert_eq!(Color::from_unit_slice(packed), color);
+        assert_eq!(UnitVector4::from(color).to_u8(), packed.to_u8());
     }
 }

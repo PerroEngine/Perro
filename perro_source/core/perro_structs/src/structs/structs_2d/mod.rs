@@ -7,6 +7,9 @@ pub use uvector2::*;
 pub mod ivector2;
 pub use ivector2::*;
 
+pub mod unit_vector2;
+pub use unit_vector2::*;
+
 pub mod transform_2d;
 pub use transform_2d::*;
 

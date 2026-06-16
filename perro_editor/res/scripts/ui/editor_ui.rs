@@ -272,7 +272,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     set_ui_display(
         ctx,
         "inspector_script_top",
-        view.inspector.node_actions || view.inspector.asset_actions,
+        view.inspector.asset_actions,
     );
     set_ui_display(ctx, "asset_action_row", view.inspector.asset_selected);
     set_ui_display(ctx, "asset_use_button", view.inspector.asset_use_action);
@@ -288,7 +288,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     );
     let transform_closed =
         inspector_section_collapsed(&view.inspector.collapsed_sections, "transform");
-    let vars_closed = inspector_section_collapsed(&view.inspector.collapsed_sections, "vars");
+    let vars_closed = false;
     let show_transform = false;
     let show_transform_body = false;
     set_label(ctx, "inspector_pos_label", "Transform");
@@ -373,7 +373,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     set_ui_display(
         ctx,
         "inspector_vars",
-        view.inspector.node_actions && !view.inspector.script_vars.is_empty(),
+        false,
     );
     set_ui_display(ctx, "inspector_vars_box", false);
     set_text_box(ctx, "inspector_vars_box", &view.inspector.vars_text);
@@ -397,7 +397,9 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         set_label(
             ctx,
             &format!("inspector_var_{idx}_name"),
-            row.map(|item| item.name.as_str()).unwrap_or("-"),
+            row.map(inspector_row_display_name)
+                .as_deref()
+                .unwrap_or("-"),
         );
         let bitmask_row = row.is_some_and(|item| item.kind == "BitMask");
         let component_row =
@@ -474,10 +476,9 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
         let dropdown_name = format!("inspector_var_{idx}_dropdown");
         let picker_button_name = format!("inspector_var_{idx}_pick_button");
         let picker_row = row.is_some_and(|item| {
-            item.source != "section"
-                && (item.kind.starts_with("Node")
-                    || item.kind.starts_with("Asset(")
-                    || item.expandable)
+            item.expandable
+                || (item.source != "section"
+                    && (item.kind.starts_with("Node") || item.kind.starts_with("Asset(")))
         }) && find_named(ctx, &picker_button_name).is_some();
         let quat_row = row.is_some_and(|item| item.kind == "Quat");
         for name in [
@@ -512,6 +513,13 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
                 && !bool_row
                 && !bitmask_row
                 && !component_row
+                && !vars_closed,
+        );
+        set_text_box_interactive(
+            ctx,
+            &format!("inspector_var_{idx}_value"),
+            view.inspector.node_actions
+                && row.is_some_and(|item| item.editable)
                 && !vars_closed,
         );
         set_ui_display(
@@ -647,7 +655,7 @@ fn set_component_row_input_type<API: ScriptAPI + ?Sized>(
 
 fn inspector_row_input_type(row: &InspectorValueRow) -> UiTextInputType {
     match row.kind.as_str() {
-        "F32" => UiTextInputType::SignedFloat,
+        "F32" | "Unit" => UiTextInputType::SignedFloat,
         "I32" => UiTextInputType::SignedInteger,
         "U32" | "BitMask" => UiTextInputType::UnsignedInteger,
         _ => UiTextInputType::Any,
@@ -656,9 +664,12 @@ fn inspector_row_input_type(row: &InspectorValueRow) -> UiTextInputType {
 
 fn inspector_row_component_input_type(row: &InspectorValueRow) -> UiTextInputType {
     match row.kind.as_str() {
-        "Vec2" | "Vec3" | "Vec4" | "Quat" | "F32" => UiTextInputType::SignedFloat,
-        "I32" => UiTextInputType::SignedInteger,
-        "U32" | "BitMask" => UiTextInputType::UnsignedInteger,
+        "Vec2" | "Vec3" | "Vec4" | "Quat" | "F32" | "Unit" | "UnitVector2" | "UnitVector3"
+        | "UnitVector4" => {
+            UiTextInputType::SignedFloat
+        }
+        "I32" | "IVec2" | "IVec3" | "IVec4" => UiTextInputType::SignedInteger,
+        "U32" | "UVec2" | "UVec3" | "UVec4" | "BitMask" => UiTextInputType::UnsignedInteger,
         _ => UiTextInputType::Any,
     }
 }
@@ -896,7 +907,7 @@ pub struct EditorView {
     dirty_scene_paths: Vec<String>,
     active_open: usize,
     nodes: Vec<String>,
-    node_icons: Vec<&'static str>,
+    node_icons: Vec<String>,
     scene_disclosures: Vec<RowIndicator>,
     scene_depths: Vec<usize>,
     selected_row: Option<usize>,
@@ -1362,7 +1373,10 @@ pub fn inspector_scene_value_fields_for_node(
                     perro_scene::default_scene_field_value_by_name(node.data.node_type, field.name)
                 })
                 .or_else(|| Some(field.ty.default_value()))?;
-            Some((SceneFieldName::from_name(field.name.to_string()), value))
+            Some((
+                SceneFieldName::from_name(field.name.to_string()),
+                coerce_scene_value_to_kind(value, &node_field_type_label(&field.ty)),
+            ))
         })
         .collect()
 }
@@ -1399,6 +1413,34 @@ pub fn inspector_value_fields_for_node(
 
 fn inspector_var_button_label(row: &InspectorValueRow) -> String {
     row.value.clone()
+}
+
+fn inspector_row_display_name(row: &InspectorValueRow) -> String {
+    let indent = row.name.chars().take_while(|ch| ch.is_whitespace()).count();
+    let label = row.name.trim();
+    if row.source == "section" {
+        return format!("{}{}", " ".repeat(indent), label);
+    }
+    format!("{}{}", " ".repeat(indent), title_case_label(label))
+}
+
+fn title_case_label(label: &str) -> String {
+    label
+        .replace('_', " ")
+        .split_whitespace()
+        .map(|word| {
+            let mut chars = word.chars();
+            let Some(first) = chars.next() else {
+                return String::new();
+            };
+            format!(
+                "{}{}",
+                first.to_uppercase().collect::<String>(),
+                chars.as_str()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn inspector_row_parent_indices(rows: &[InspectorValueRow]) -> Vec<Option<usize>> {
@@ -1796,6 +1838,12 @@ pub fn scene_value_kind(value: &SceneValue) -> &'static str {
         SceneValue::Vec2 { .. } => "Vec2",
         SceneValue::Vec3 { .. } => "Vec3",
         SceneValue::Vec4 { .. } => "Quat",
+        SceneValue::IVec2 { .. } => "IVec2",
+        SceneValue::IVec3 { .. } => "IVec3",
+        SceneValue::IVec4 { .. } => "IVec4",
+        SceneValue::UVec2 { .. } => "UVec2",
+        SceneValue::UVec3 { .. } => "UVec3",
+        SceneValue::UVec4 { .. } => "UVec4",
         SceneValue::Array(_) => "Array",
         SceneValue::Object(_) => "Object",
     }
@@ -1825,6 +1873,12 @@ pub fn scene_value_edit_text(value: &SceneValue) -> String {
             format_compact_f32(*z),
             format_compact_f32(*w)
         ),
+        SceneValue::IVec2 { x, y } => format!("({x}, {y})"),
+        SceneValue::IVec3 { x, y, z } => format!("({x}, {y}, {z})"),
+        SceneValue::IVec4 { x, y, z, w } => format!("({x}, {y}, {z}, {w})"),
+        SceneValue::UVec2 { x, y } => format!("({x}, {y})"),
+        SceneValue::UVec3 { x, y, z } => format!("({x}, {y}, {z})"),
+        SceneValue::UVec4 { x, y, z, w } => format!("({x}, {y}, {z}, {w})"),
         SceneValue::Array(values) => {
             let values = values
                 .iter()
@@ -2122,7 +2176,7 @@ pub fn panim_summary(project_root: &str, anim_path: &str) -> String {
 #[derive(Default)]
 pub struct SceneTreeRows {
     pub labels: Vec<String>,
-    pub icons: Vec<&'static str>,
+    pub icons: Vec<String>,
     pub disclosures: Vec<RowIndicator>,
     pub keys: Vec<u32>,
     pub depths: Vec<usize>,
@@ -2300,7 +2354,7 @@ fn filtered_scene_tree_view_indexed(
             children,
             Some(&path),
         ));
-        out.icons.push(node_type_icon(node.data.node_type));
+        out.icons.push(scene_node_icon(node));
         out.disclosures.push(scene_row_disclosure(children, false));
         out.keys.push(key);
         out.depths.push(0);
@@ -2378,7 +2432,7 @@ pub fn push_scene_tree_row(
         children,
         None,
     ));
-    out.icons.push(node_type_icon(node.data.node_type));
+    out.icons.push(scene_node_icon(node));
     out.disclosures
         .push(scene_row_disclosure(children, collapsed));
     out.keys.push(key);
@@ -2758,6 +2812,10 @@ pub fn node_type_icon(node_type: perro_scene::NodeType) -> &'static str {
     }
 }
 
+pub fn scene_node_icon(node: &SceneNodeEntry) -> String {
+    node_custom_icon_path(node).unwrap_or_else(|| node_type_icon(node.data.node_type).to_string())
+}
+
 pub fn find_position_text(data: &SceneNodeData) -> Option<String> {
     find_scene_value_text(data, "position")
 }
@@ -2868,6 +2926,16 @@ pub fn scene_value_components_from_value(value: &SceneValue) -> Vec<String> {
             format_compact_f32(*z),
             format_compact_f32(*w),
         ],
+        SceneValue::IVec2 { x, y } => vec![x.to_string(), y.to_string()],
+        SceneValue::IVec3 { x, y, z } => vec![x.to_string(), y.to_string(), z.to_string()],
+        SceneValue::IVec4 { x, y, z, w } => {
+            vec![x.to_string(), y.to_string(), z.to_string(), w.to_string()]
+        }
+        SceneValue::UVec2 { x, y } => vec![x.to_string(), y.to_string()],
+        SceneValue::UVec3 { x, y, z } => vec![x.to_string(), y.to_string(), z.to_string()],
+        SceneValue::UVec4 { x, y, z, w } => {
+            vec![x.to_string(), y.to_string(), z.to_string(), w.to_string()]
+        }
         _ => Vec::new(),
     }
 }
@@ -3834,7 +3902,7 @@ pub fn set_scene_tree_list<API: ScriptAPI + ?Sized>(
             .with_value(variant!(idx as i32))
             .with_icon(editor_tree_icon_texture(
                 ctx,
-                view.node_icons.get(idx).copied().unwrap_or(""),
+                view.node_icons.get(idx).map(String::as_str).unwrap_or(""),
             ));
         item.parent = parents.last().copied();
         item.open = !matches!(
@@ -3966,27 +4034,31 @@ fn editor_tree_icon_texture<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     icon: &str,
 ) -> TextureID {
-    let path = match icon {
-        "[DIR]" => "res://icons/nodes/node.png",
-        "[SCN]" => "res://icons/activity/scene.png",
-        "[RS]" => "res://icons/nodes/resource.png",
-        "[IMG]" => "res://icons/nodes/resource.png",
-        "[AUD]" => "res://icons/nodes/audio.png",
-        "[MSH]" => "res://icons/nodes/mesh_3d.png",
-        "[ANI]" | "[ATR]" | "[MAT]" | "[STY]" | "[PRT]" | "[TIL]" | "[SKL]" | "[RES]" => {
-            "res://icons/nodes/resource.png"
+    let path = if icon.starts_with("res://") {
+        icon
+    } else {
+        match icon {
+            "[DIR]" => "res://icons/nodes/node.png",
+            "[SCN]" => "res://icons/activity/scene.png",
+            "[RS]" => "res://icons/nodes/resource.png",
+            "[IMG]" => "res://icons/nodes/resource.png",
+            "[AUD]" => "res://icons/nodes/audio.png",
+            "[MSH]" => "res://icons/nodes/mesh_3d.png",
+            "[ANI]" | "[ATR]" | "[MAT]" | "[STY]" | "[PRT]" | "[TIL]" | "[SKL]" | "[RES]" => {
+                "res://icons/nodes/resource.png"
+            }
+            "Node2D" => "res://icons/nodes/node_2d.png",
+            "Node3D" => "res://icons/nodes/node_3d.png",
+            "Ui" => "res://icons/nodes/ui_node.png",
+            "Sprite2D" => "res://icons/nodes/sprite_2d.png",
+            "Mesh3D" => "res://icons/nodes/mesh_3d.png",
+            "Camera" => "res://icons/nodes/camera.png",
+            "Light" => "res://icons/nodes/light.png",
+            "Physics" => "res://icons/nodes/physics.png",
+            "Audio" => "res://icons/nodes/audio.png",
+            "Resource" => "res://icons/nodes/resource.png",
+            _ => "res://icons/nodes/node.png",
         }
-        "Node2D" => "res://icons/nodes/node_2d.png",
-        "Node3D" => "res://icons/nodes/node_3d.png",
-        "Ui" => "res://icons/nodes/ui_node.png",
-        "Sprite2D" => "res://icons/nodes/sprite_2d.png",
-        "Mesh3D" => "res://icons/nodes/mesh_3d.png",
-        "Camera" => "res://icons/nodes/camera.png",
-        "Light" => "res://icons/nodes/light.png",
-        "Physics" => "res://icons/nodes/physics.png",
-        "Audio" => "res://icons/nodes/audio.png",
-        "Resource" => "res://icons/nodes/resource.png",
-        _ => "res://icons/nodes/node.png",
     };
     let cache = EDITOR_TREE_ICON_CACHE.get_or_init(|| Mutex::new(Vec::new()));
     if let Ok(cache) = cache.lock()

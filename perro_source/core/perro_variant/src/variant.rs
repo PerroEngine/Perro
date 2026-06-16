@@ -69,6 +69,23 @@ impl Number {
     }
 
     #[inline]
+    pub fn as_u64_lossy(&self) -> Option<u64> {
+        match *self {
+            Number::I8(v) => u64::try_from(v).ok(),
+            Number::I16(v) => u64::try_from(v).ok(),
+            Number::I32(v) => u64::try_from(v).ok(),
+            Number::I64(v) => u64::try_from(v).ok(),
+            Number::I128(v) => u64::try_from(v).ok(),
+            Number::U8(v) => Some(v as u64),
+            Number::U16(v) => Some(v as u64),
+            Number::U32(v) => Some(v as u64),
+            Number::U64(v) => Some(v),
+            Number::U128(v) => u64::try_from(v).ok(),
+            Number::F32(_) | Number::F64(_) => None,
+        }
+    }
+
+    #[inline]
     pub fn as_f64_lossy(&self) -> Option<f64> {
         match *self {
             Number::I8(v) => Some(v as f64),
@@ -200,10 +217,19 @@ impl IDs {
 pub enum EngineStruct {
     Vector2(Vector2),
     Vector3(Vector3),
+    Vector4(Vector4),
     IVector2(IVector2),
     IVector3(IVector3),
+    IVector4(IVector4),
     UVector2(UVector2),
     UVector3(UVector3),
+    UVector4(UVector4),
+    UnitVector2(UnitVector2),
+    UnitVector3(UnitVector3),
+    UnitVector4(UnitVector4),
+    Matrix2(Matrix2),
+    Matrix3(Matrix3),
+    Matrix4(Matrix4),
     Transform2D(Transform2D),
     Transform3D(Transform3D),
     Quaternion(Quaternion),
@@ -487,6 +513,24 @@ impl DeriveVariant for f32 {
     }
 }
 
+impl DeriveVariant for Unit {
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        value.as_f32().map(Self::new).or_else(|| {
+            value
+                .as_number()
+                .and_then(|value| value.as_u64_lossy())
+                .and_then(|value| u8::try_from(value).ok())
+                .map(Self::from_u8)
+        })
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::from(self.to_f32())
+    }
+}
+
 impl DeriveVariant for f64 {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
@@ -661,6 +705,36 @@ impl DeriveVariant for Vector3 {
     }
 }
 
+impl DeriveVariant for Vector4 {
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        if let Some(v) = value.as_vec4() {
+            return Some(v);
+        }
+        if let Variant::Array(values) = value
+            && values.len() == 4
+        {
+            return Some(Self::new(
+                values[0].as_f32()?,
+                values[1].as_f32()?,
+                values[2].as_f32()?,
+                values[3].as_f32()?,
+            ));
+        }
+        let obj = value.as_object()?;
+        let x = obj.get("x")?.as_f32()?;
+        let y = obj.get("y")?.as_f32()?;
+        let z = obj.get("z")?.as_f32()?;
+        let w = obj.get("w")?.as_f32()?;
+        Some(Vector4::new(x, y, z, w))
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::from(*self)
+    }
+}
+
 impl DeriveVariant for IVector2 {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
@@ -705,6 +779,26 @@ impl DeriveVariant for IVector3 {
     }
 }
 
+impl DeriveVariant for IVector4 {
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        if let Some(v) = value.as_ivec4() {
+            return Some(v);
+        }
+        let obj = value.as_object()?;
+        let x = i32::try_from(obj.get("x")?.as_number()?.as_i64_lossy()?).ok()?;
+        let y = i32::try_from(obj.get("y")?.as_number()?.as_i64_lossy()?).ok()?;
+        let z = i32::try_from(obj.get("z")?.as_number()?.as_i64_lossy()?).ok()?;
+        let w = i32::try_from(obj.get("w")?.as_number()?.as_i64_lossy()?).ok()?;
+        Some(IVector4::new(x, y, z, w))
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::from(*self)
+    }
+}
+
 impl DeriveVariant for UVector2 {
     #[inline]
     fn from_variant(value: &Variant) -> Option<Self> {
@@ -734,6 +828,186 @@ impl DeriveVariant for UVector3 {
         let y = variant_to_u32(obj.get("y")?)?;
         let z = variant_to_u32(obj.get("z")?)?;
         Some(UVector3::new(x, y, z))
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::from(*self)
+    }
+}
+
+impl DeriveVariant for UVector4 {
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        if let Some(v) = value.as_uvec4() {
+            return Some(v);
+        }
+        let obj = value.as_object()?;
+        let x = variant_to_u32(obj.get("x")?)?;
+        let y = variant_to_u32(obj.get("y")?)?;
+        let z = variant_to_u32(obj.get("z")?)?;
+        let w = variant_to_u32(obj.get("w")?)?;
+        Some(UVector4::new(x, y, z, w))
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::from(*self)
+    }
+}
+
+impl DeriveVariant for UnitVector2 {
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        if let Some(v) = value.as_unit_vec2() {
+            return Some(v);
+        }
+        if let Some(v) = value.as_vec2() {
+            return Some(Self::from(v));
+        }
+        let obj = value.as_object()?;
+        let x = obj.get("x")?.as_f32()?;
+        let y = obj.get("y")?.as_f32()?;
+        Some(Self::new(x, y))
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::from(*self)
+    }
+}
+
+impl DeriveVariant for UnitVector3 {
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        if let Some(v) = value.as_unit_vec3() {
+            return Some(v);
+        }
+        if let Some(v) = value.as_vec3() {
+            return Some(Self::from(v));
+        }
+        let obj = value.as_object()?;
+        let x = obj.get("x")?.as_f32()?;
+        let y = obj.get("y")?.as_f32()?;
+        let z = obj.get("z")?.as_f32()?;
+        Some(Self::new(x, y, z))
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::from(*self)
+    }
+}
+
+impl DeriveVariant for UnitVector4 {
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        if let Some(v) = value.as_unit_vec4() {
+            return Some(v);
+        }
+        if let Some(v) = value.as_vec4() {
+            return Some(Self::new(v.to_array()));
+        }
+        if let Variant::Array(values) = value
+            && values.len() == 4
+        {
+            return Some(Self::new([
+                values[0].as_f32()?,
+                values[1].as_f32()?,
+                values[2].as_f32()?,
+                values[3].as_f32()?,
+            ]));
+        }
+        let obj = value.as_object()?;
+        let x = obj.get("x")?.as_f32()?;
+        let y = obj.get("y")?.as_f32()?;
+        let z = obj.get("z")?.as_f32()?;
+        let w = obj.get("w")?.as_f32()?;
+        Some(Self::new([x, y, z, w]))
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::from(*self)
+    }
+}
+
+impl DeriveVariant for Matrix2 {
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        value
+            .as_matrix2()
+            .or_else(|| parse_matrix_rows::<2>(value).map(Self::from_rows))
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::from(*self)
+    }
+}
+
+impl DeriveVariant for Matrix3 {
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        value
+            .as_matrix3()
+            .or_else(|| parse_matrix_rows::<3>(value).map(Self::from_rows))
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::from(*self)
+    }
+}
+
+impl DeriveVariant for Matrix4 {
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        value
+            .as_matrix4()
+            .or_else(|| parse_matrix_rows::<4>(value).map(Self::from_rows))
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::from(*self)
+    }
+}
+
+impl DeriveVariant for Matrix<2, 2, f32> {
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        value
+            .as_matrix2x2()
+            .or_else(|| parse_matrix_rows::<2>(value).map(Self::new))
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::from(*self)
+    }
+}
+
+impl DeriveVariant for Matrix<3, 3, f32> {
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        value
+            .as_matrix3x3()
+            .or_else(|| parse_matrix_rows::<3>(value).map(Self::new))
+    }
+
+    #[inline]
+    fn to_variant(&self) -> Variant {
+        Variant::from(*self)
+    }
+}
+
+impl DeriveVariant for Matrix<4, 4, f32> {
+    #[inline]
+    fn from_variant(value: &Variant) -> Option<Self> {
+        value
+            .as_matrix4x4()
+            .or_else(|| parse_matrix_rows::<4>(value).map(Self::new))
     }
 
     #[inline]
@@ -1216,6 +1490,14 @@ impl Variant {
     }
 
     #[inline]
+    pub fn as_vec4(&self) -> Option<Vector4> {
+        match self {
+            Variant::EngineStruct(EngineStruct::Vector4(v)) => Some(*v),
+            _ => None,
+        }
+    }
+
+    #[inline]
     pub fn as_ivec2(&self) -> Option<IVector2> {
         match self {
             Variant::EngineStruct(EngineStruct::IVector2(v)) => Some(*v),
@@ -1227,6 +1509,14 @@ impl Variant {
     pub fn as_ivec3(&self) -> Option<IVector3> {
         match self {
             Variant::EngineStruct(EngineStruct::IVector3(v)) => Some(*v),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_ivec4(&self) -> Option<IVector4> {
+        match self {
+            Variant::EngineStruct(EngineStruct::IVector4(v)) => Some(*v),
             _ => None,
         }
     }
@@ -1245,6 +1535,77 @@ impl Variant {
             Variant::EngineStruct(EngineStruct::UVector3(v)) => Some(*v),
             _ => None,
         }
+    }
+
+    #[inline]
+    pub fn as_uvec4(&self) -> Option<UVector4> {
+        match self {
+            Variant::EngineStruct(EngineStruct::UVector4(v)) => Some(*v),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_unit_vec2(&self) -> Option<UnitVector2> {
+        match self {
+            Variant::EngineStruct(EngineStruct::UnitVector2(v)) => Some(*v),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_unit_vec3(&self) -> Option<UnitVector3> {
+        match self {
+            Variant::EngineStruct(EngineStruct::UnitVector3(v)) => Some(*v),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_unit_vec4(&self) -> Option<UnitVector4> {
+        match self {
+            Variant::EngineStruct(EngineStruct::UnitVector4(v)) => Some(*v),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_matrix2(&self) -> Option<Matrix2> {
+        match self {
+            Variant::EngineStruct(EngineStruct::Matrix2(v)) => Some(*v),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_matrix3(&self) -> Option<Matrix3> {
+        match self {
+            Variant::EngineStruct(EngineStruct::Matrix3(v)) => Some(*v),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_matrix4(&self) -> Option<Matrix4> {
+        match self {
+            Variant::EngineStruct(EngineStruct::Matrix4(v)) => Some(*v),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_matrix2x2(&self) -> Option<Matrix<2, 2, f32>> {
+        self.as_matrix2().map(Matrix::<2, 2>::from)
+    }
+
+    #[inline]
+    pub fn as_matrix3x3(&self) -> Option<Matrix<3, 3, f32>> {
+        self.as_matrix3().map(Matrix::<3, 3>::from)
+    }
+
+    #[inline]
+    pub fn as_matrix4x4(&self) -> Option<Matrix<4, 4, f32>> {
+        self.as_matrix4().map(Matrix::<4, 4>::from)
     }
 
     #[inline]
@@ -1528,6 +1889,12 @@ impl From<Vector3> for Variant {
         Variant::EngineStruct(EngineStruct::Vector3(v))
     }
 }
+impl From<Vector4> for Variant {
+    #[inline]
+    fn from(v: Vector4) -> Self {
+        Variant::EngineStruct(EngineStruct::Vector4(v))
+    }
+}
 impl From<IVector2> for Variant {
     #[inline]
     fn from(v: IVector2) -> Self {
@@ -1540,6 +1907,12 @@ impl From<IVector3> for Variant {
         Variant::EngineStruct(EngineStruct::IVector3(v))
     }
 }
+impl From<IVector4> for Variant {
+    #[inline]
+    fn from(v: IVector4) -> Self {
+        Variant::EngineStruct(EngineStruct::IVector4(v))
+    }
+}
 impl From<UVector2> for Variant {
     #[inline]
     fn from(v: UVector2) -> Self {
@@ -1550,6 +1923,66 @@ impl From<UVector3> for Variant {
     #[inline]
     fn from(v: UVector3) -> Self {
         Variant::EngineStruct(EngineStruct::UVector3(v))
+    }
+}
+impl From<UVector4> for Variant {
+    #[inline]
+    fn from(v: UVector4) -> Self {
+        Variant::EngineStruct(EngineStruct::UVector4(v))
+    }
+}
+impl From<UnitVector2> for Variant {
+    #[inline]
+    fn from(v: UnitVector2) -> Self {
+        Variant::EngineStruct(EngineStruct::UnitVector2(v))
+    }
+}
+impl From<UnitVector3> for Variant {
+    #[inline]
+    fn from(v: UnitVector3) -> Self {
+        Variant::EngineStruct(EngineStruct::UnitVector3(v))
+    }
+}
+impl From<UnitVector4> for Variant {
+    #[inline]
+    fn from(v: UnitVector4) -> Self {
+        Variant::EngineStruct(EngineStruct::UnitVector4(v))
+    }
+}
+impl From<Matrix2> for Variant {
+    #[inline]
+    fn from(v: Matrix2) -> Self {
+        Variant::EngineStruct(EngineStruct::Matrix2(v))
+    }
+}
+impl From<Matrix3> for Variant {
+    #[inline]
+    fn from(v: Matrix3) -> Self {
+        Variant::EngineStruct(EngineStruct::Matrix3(v))
+    }
+}
+impl From<Matrix4> for Variant {
+    #[inline]
+    fn from(v: Matrix4) -> Self {
+        Variant::EngineStruct(EngineStruct::Matrix4(v))
+    }
+}
+impl From<Matrix<2, 2, f32>> for Variant {
+    #[inline]
+    fn from(v: Matrix<2, 2, f32>) -> Self {
+        Variant::from(Matrix2::from(v))
+    }
+}
+impl From<Matrix<3, 3, f32>> for Variant {
+    #[inline]
+    fn from(v: Matrix<3, 3, f32>) -> Self {
+        Variant::from(Matrix3::from(v))
+    }
+}
+impl From<Matrix<4, 4, f32>> for Variant {
+    #[inline]
+    fn from(v: Matrix<4, 4, f32>) -> Self {
+        Variant::from(Matrix4::from(v))
     }
 }
 impl From<Transform2D> for Variant {
@@ -1653,6 +2086,14 @@ impl Variant {
                 map.insert("z".to_string(), float_to_json(v.z as f64));
                 JsonValue::Object(map)
             }
+            Variant::EngineStruct(EngineStruct::Vector4(v)) => {
+                let mut map = JsonMap::new();
+                map.insert("x".to_string(), float_to_json(v.x as f64));
+                map.insert("y".to_string(), float_to_json(v.y as f64));
+                map.insert("z".to_string(), float_to_json(v.z as f64));
+                map.insert("w".to_string(), float_to_json(v.w as f64));
+                JsonValue::Object(map)
+            }
             Variant::EngineStruct(EngineStruct::IVector2(v)) => {
                 let mut map = JsonMap::new();
                 map.insert("x".to_string(), JsonValue::Number(JsonNumber::from(v.x)));
@@ -1664,6 +2105,14 @@ impl Variant {
                 map.insert("x".to_string(), JsonValue::Number(JsonNumber::from(v.x)));
                 map.insert("y".to_string(), JsonValue::Number(JsonNumber::from(v.y)));
                 map.insert("z".to_string(), JsonValue::Number(JsonNumber::from(v.z)));
+                JsonValue::Object(map)
+            }
+            Variant::EngineStruct(EngineStruct::IVector4(v)) => {
+                let mut map = JsonMap::new();
+                map.insert("x".to_string(), JsonValue::Number(JsonNumber::from(v.x)));
+                map.insert("y".to_string(), JsonValue::Number(JsonNumber::from(v.y)));
+                map.insert("z".to_string(), JsonValue::Number(JsonNumber::from(v.z)));
+                map.insert("w".to_string(), JsonValue::Number(JsonNumber::from(v.w)));
                 JsonValue::Object(map)
             }
             Variant::EngineStruct(EngineStruct::UVector2(v)) => {
@@ -1679,6 +2128,38 @@ impl Variant {
                 map.insert("z".to_string(), JsonValue::Number(JsonNumber::from(v.z)));
                 JsonValue::Object(map)
             }
+            Variant::EngineStruct(EngineStruct::UVector4(v)) => {
+                let mut map = JsonMap::new();
+                map.insert("x".to_string(), JsonValue::Number(JsonNumber::from(v.x)));
+                map.insert("y".to_string(), JsonValue::Number(JsonNumber::from(v.y)));
+                map.insert("z".to_string(), JsonValue::Number(JsonNumber::from(v.z)));
+                map.insert("w".to_string(), JsonValue::Number(JsonNumber::from(v.w)));
+                JsonValue::Object(map)
+            }
+            Variant::EngineStruct(EngineStruct::UnitVector2(v)) => {
+                let mut map = JsonMap::new();
+                map.insert("x".to_string(), float_to_json(v.x.to_f32() as f64));
+                map.insert("y".to_string(), float_to_json(v.y.to_f32() as f64));
+                JsonValue::Object(map)
+            }
+            Variant::EngineStruct(EngineStruct::UnitVector3(v)) => {
+                let mut map = JsonMap::new();
+                map.insert("x".to_string(), float_to_json(v.x.to_f32() as f64));
+                map.insert("y".to_string(), float_to_json(v.y.to_f32() as f64));
+                map.insert("z".to_string(), float_to_json(v.z.to_f32() as f64));
+                JsonValue::Object(map)
+            }
+            Variant::EngineStruct(EngineStruct::UnitVector4(v)) => {
+                let mut map = JsonMap::new();
+                map.insert("x".to_string(), float_to_json(v.x.to_f32() as f64));
+                map.insert("y".to_string(), float_to_json(v.y.to_f32() as f64));
+                map.insert("z".to_string(), float_to_json(v.z.to_f32() as f64));
+                map.insert("w".to_string(), float_to_json(v.w.to_f32() as f64));
+                JsonValue::Object(map)
+            }
+            Variant::EngineStruct(EngineStruct::Matrix2(v)) => matrix_rows_to_json(v.to_rows()),
+            Variant::EngineStruct(EngineStruct::Matrix3(v)) => matrix_rows_to_json(v.to_rows()),
+            Variant::EngineStruct(EngineStruct::Matrix4(v)) => matrix_rows_to_json(v.to_rows()),
             Variant::EngineStruct(EngineStruct::Transform2D(v)) => {
                 let mut position = JsonMap::new();
                 position.insert("x".to_string(), float_to_json(v.position.x as f64));
@@ -2053,6 +2534,48 @@ fn parse_u64_id_string(s: &str) -> Option<u64> {
     } else {
         compact.parse::<u64>().ok()
     }
+}
+
+fn parse_matrix_rows<const N: usize>(value: &Variant) -> Option<[[f32; N]; N]> {
+    if let Variant::Object(obj) = value
+        && let Some(rows) = obj.get("rows")
+    {
+        return parse_matrix_rows::<N>(rows);
+    }
+
+    let values = value.as_array()?;
+    let mut rows = [[0.0; N]; N];
+    if values.len() == N {
+        for row in 0..N {
+            let cols = values[row].as_array()?;
+            if cols.len() != N {
+                return None;
+            }
+            for col in 0..N {
+                rows[row][col] = cols[col].as_f32()?;
+            }
+        }
+        return Some(rows);
+    }
+
+    if values.len() == N * N {
+        for row in 0..N {
+            for col in 0..N {
+                rows[row][col] = values[row * N + col].as_f32()?;
+            }
+        }
+        return Some(rows);
+    }
+
+    None
+}
+
+fn matrix_rows_to_json<const N: usize>(rows: [[f32; N]; N]) -> JsonValue {
+    JsonValue::Array(
+        rows.into_iter()
+            .map(|row| JsonValue::Array(row.into_iter().map(|v| float_to_json(v as f64)).collect()))
+            .collect(),
+    )
 }
 
 fn variant_to_u32(value: &Variant) -> Option<u32> {

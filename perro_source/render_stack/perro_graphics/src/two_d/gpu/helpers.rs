@@ -441,5 +441,5 @@ pub(super) fn create_point_light_pipeline(
 
 #[inline]
 pub(super) fn color_to_unorm8(color: [f32; 4]) -> [u8; 4] {
-    perro_structs::Unorm8x4::new(color).to_u8()
+    perro_structs::UnitVector4::new(color).to_u8()
 }

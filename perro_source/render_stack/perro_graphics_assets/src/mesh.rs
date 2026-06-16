@@ -14,7 +14,7 @@ use perro_render_bridge::{
     Mesh3D, MeshSurfaceRange, RuntimeMeshBlendShape, RuntimeMeshBlendShapeVertex, RuntimeMeshData,
     RuntimeMeshVertex,
 };
-use perro_structs::Unorm8x4;
+use perro_structs::UnitVector4;
 use std::{borrow::Cow, collections::BTreeMap};
 
 pub type StaticMeshBytesLookup = fn(path_hash: u64) -> &'static [u8];
@@ -28,7 +28,7 @@ pub struct MeshVertex {
     pub normal: [f32; 3],
     pub uv: [f32; 2],
     pub joints: [u16; 4],
-    pub weights: Unorm8x4,
+    pub weights: UnitVector4,
 }
 
 #[derive(Clone, Copy)]
@@ -413,7 +413,7 @@ fn build_dynamic_lods(mut decoded: DecodedMesh, build_meshlets_for_lods: bool) -
 fn mesh_vertices_have_skinning(vertices: &[RuntimeMeshVertex]) -> bool {
     vertices.iter().any(|vertex| {
         vertex.joints.iter().any(|&joint| joint != 0)
-            || vertex.weights != perro_structs::Unorm8x4::new([1.0, 0.0, 0.0, 0.0])
+            || vertex.weights != perro_structs::UnitVector4::new([1.0, 0.0, 0.0, 0.0])
     })
 }
 
@@ -706,7 +706,7 @@ pub fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
         let weights = if has_weights {
             if weights_unorm8 {
                 let bytes: [u8; 4] = raw[cursor..cursor + 4].try_into().ok()?;
-                Unorm8x4::from_u8(bytes)
+                UnitVector4::from_u8(bytes)
             } else {
                 let weights = [
                     f32::from_le_bytes(raw[cursor..cursor + 4].try_into().ok()?),
@@ -717,7 +717,7 @@ pub fn decode_pmesh(bytes: &[u8]) -> Option<DecodedMesh> {
                 quantize_skin_weights(weights)
             }
         } else {
-            Unorm8x4::from_u8([255, 0, 0, 0])
+            UnitVector4::from_u8([255, 0, 0, 0])
         };
         vertices.push(MeshVertex {
             pos,
@@ -997,7 +997,7 @@ fn decode_static_payload(flags: u32, payload: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
-fn quantize_skin_weights(weights: [f32; 4]) -> Unorm8x4 {
+fn quantize_skin_weights(weights: [f32; 4]) -> UnitVector4 {
     let mut normalized = [0.0; 4];
     let mut sum = 0.0f32;
     for (dst, src) in normalized.iter_mut().zip(weights) {
@@ -1012,7 +1012,7 @@ fn quantize_skin_weights(weights: [f32; 4]) -> Unorm8x4 {
     } else {
         normalized = [1.0, 0.0, 0.0, 0.0];
     }
-    let mut bytes = Unorm8x4::new(normalized).to_u8();
+    let mut bytes = UnitVector4::new(normalized).to_u8();
     let total = bytes.iter().map(|&v| v as i32).sum::<i32>();
     let delta = 255 - total;
     if delta != 0 {
@@ -1025,5 +1025,5 @@ fn quantize_skin_weights(weights: [f32; 4]) -> Unorm8x4 {
         let fixed = (bytes[max_idx] as i32 + delta).clamp(0, 255) as u8;
         bytes[max_idx] = fixed;
     }
-    Unorm8x4::from_u8(bytes)
+    UnitVector4::from_u8(bytes)
 }

@@ -144,5 +144,5 @@ fn create_multimesh_pipeline_with_depth_write(
 
 #[inline]
 pub(super) fn pack_unorm4x8(v: [f32; 4]) -> u32 {
-    perro_structs::Unorm8x4::new(v).to_le_u32()
+    perro_structs::UnitVector4::new(v).to_le_u32()
 }

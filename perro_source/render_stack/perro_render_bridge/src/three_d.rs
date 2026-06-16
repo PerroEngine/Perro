@@ -695,7 +695,7 @@ pub struct RuntimeMeshVertex {
     pub normal: [f32; 3],
     pub uv: [f32; 2],
     pub joints: [u16; 4],
-    pub weights: Unorm8x4,
+    pub weights: UnitVector4,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

@@ -6,7 +6,7 @@ use perro_nodes::animation_tree::AnimationTreeAnimation;
 use perro_nodes::{SceneNode, SceneNodeData};
 use perro_resource_api::ResourceWindow;
 use perro_scene::SceneValue;
-use perro_structs::{Vector2, Vector3};
+use perro_structs::{IVector2, IVector3, IVector4, UVector2, UVector3, UVector4, Vector2, Vector3};
 use perro_variant::Variant;
 use std::sync::Arc;
 use std::{borrow::Cow, collections::BTreeMap, collections::HashMap};
@@ -551,6 +551,12 @@ fn scene_value_to_variant(
         SceneValue::F32(v) => Variant::from(*v),
         SceneValue::Vec2 { x, y } => Variant::from(Vector2::new(*x, *y)),
         SceneValue::Vec3 { x, y, z } => Variant::from(Vector3::new(*x, *y, *z)),
+        SceneValue::IVec2 { x, y } => Variant::from(IVector2::new(*x, *y)),
+        SceneValue::IVec3 { x, y, z } => Variant::from(IVector3::new(*x, *y, *z)),
+        SceneValue::IVec4 { x, y, z, w } => Variant::from(IVector4::new(*x, *y, *z, *w)),
+        SceneValue::UVec2 { x, y } => Variant::from(UVector2::new(*x, *y)),
+        SceneValue::UVec3 { x, y, z } => Variant::from(UVector3::new(*x, *y, *z)),
+        SceneValue::UVec4 { x, y, z, w } => Variant::from(UVector4::new(*x, *y, *z, *w)),
         SceneValue::Vec4 { x, y, z, w } => Variant::Array(vec![
             Variant::from(*x),
             Variant::from(*y),

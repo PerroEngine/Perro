@@ -18,7 +18,7 @@ use perro_asset_formats::{
 };
 use perro_io::{compress_zlib_best, walkdir::collect_file_paths};
 use perro_meshlets::{DEFAULT_LOD_TARGET_RATIOS, LodSurfaceRange, LodVertex};
-use perro_structs::Unorm8x4;
+use perro_structs::UnitVector4;
 use rayon::prelude::*;
 use std::{
     collections::BTreeMap,
@@ -34,7 +34,7 @@ struct PackedVertex {
     normal: [f32; 3],
     uv: [f32; 2],
     joints: [u16; 4],
-    weights: Unorm8x4,
+    weights: UnitVector4,
 }
 
 #[derive(Clone, Copy)]
@@ -995,7 +995,7 @@ fn write_u16(out: &mut Vec<u8>, value: u16) {
     out.extend_from_slice(&value.to_le_bytes());
 }
 
-fn quantize_skin_weights(weights: [f32; 4]) -> Unorm8x4 {
+fn quantize_skin_weights(weights: [f32; 4]) -> UnitVector4 {
     let mut normalized = [0.0; 4];
     let mut sum = 0.0f32;
     for (dst, src) in normalized.iter_mut().zip(weights) {
@@ -1010,7 +1010,7 @@ fn quantize_skin_weights(weights: [f32; 4]) -> Unorm8x4 {
     } else {
         normalized = [1.0, 0.0, 0.0, 0.0];
     }
-    let mut bytes = Unorm8x4::new(normalized).to_u8();
+    let mut bytes = UnitVector4::new(normalized).to_u8();
     let total = bytes.iter().map(|&v| v as i32).sum::<i32>();
     let delta = 255 - total;
     if delta != 0 {
@@ -1022,7 +1022,7 @@ fn quantize_skin_weights(weights: [f32; 4]) -> Unorm8x4 {
         }
         bytes[max_idx] = (bytes[max_idx] as i32 + delta).clamp(0, 255) as u8;
     }
-    Unorm8x4::from_u8(bytes)
+    UnitVector4::from_u8(bytes)
 }
 
 fn escape_str(input: &str) -> String {

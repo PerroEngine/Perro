@@ -562,6 +562,12 @@ pub enum SceneValue {
     Vec2 { x: f32, y: f32 },
     Vec3 { x: f32, y: f32, z: f32 },
     Vec4 { x: f32, y: f32, z: f32, w: f32 },
+    IVec2 { x: i32, y: i32 },
+    IVec3 { x: i32, y: i32, z: i32 },
+    IVec4 { x: i32, y: i32, z: i32, w: i32 },
+    UVec2 { x: u32, y: u32 },
+    UVec3 { x: u32, y: u32, z: u32 },
+    UVec4 { x: u32, y: u32, z: u32, w: u32 },
     Str(Cow<'static, str>),
     Hashed(u64),
     Key(SceneValueKey),
@@ -609,6 +615,48 @@ impl SceneValue {
     pub fn as_vec4(&self) -> Option<(f32, f32, f32, f32)> {
         match self {
             Self::Vec4 { x, y, z, w } => Some((*x, *y, *z, *w)),
+            _ => None,
+        }
+    }
+
+    pub fn as_ivec2(&self) -> Option<(i32, i32)> {
+        match self {
+            Self::IVec2 { x, y } => Some((*x, *y)),
+            _ => None,
+        }
+    }
+
+    pub fn as_ivec3(&self) -> Option<(i32, i32, i32)> {
+        match self {
+            Self::IVec3 { x, y, z } => Some((*x, *y, *z)),
+            _ => None,
+        }
+    }
+
+    pub fn as_ivec4(&self) -> Option<(i32, i32, i32, i32)> {
+        match self {
+            Self::IVec4 { x, y, z, w } => Some((*x, *y, *z, *w)),
+            _ => None,
+        }
+    }
+
+    pub fn as_uvec2(&self) -> Option<(u32, u32)> {
+        match self {
+            Self::UVec2 { x, y } => Some((*x, *y)),
+            _ => None,
+        }
+    }
+
+    pub fn as_uvec3(&self) -> Option<(u32, u32, u32)> {
+        match self {
+            Self::UVec3 { x, y, z } => Some((*x, *y, *z)),
+            _ => None,
+        }
+    }
+
+    pub fn as_uvec4(&self) -> Option<(u32, u32, u32, u32)> {
+        match self {
+            Self::UVec4 { x, y, z, w } => Some((*x, *y, *z, *w)),
             _ => None,
         }
     }

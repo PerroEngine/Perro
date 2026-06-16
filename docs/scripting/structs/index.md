@@ -21,7 +21,7 @@ This section replaces the old math-only page because the exported structs are no
 | --------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | 2D structs      | [2D Structs](2d.md)           | Work with 2D positions, sizes, transforms, draw shapes, and 2D-facing API params.                                         |
 | 3D structs      | [3D Structs](3d.md)           | Work with 3D positions, rotations, transforms, rays, and 3D-facing API params.                                            |
-| Generic structs | [Generic Structs](generic.md) | Work with color, masks, audio material data, post-processing, accessibility, constants, IK, and packed normalized values. |
+| Generic structs | [Generic Structs](generic.md) | Work with matrix values, color, masks, audio material data, post-processing, accessibility, constants, IK, and packed normalized values. |
 
 ## Use Cases
 
@@ -34,6 +34,8 @@ Use `Vector2`/`Transform2D` for 2D node movement.
 Use `IVector2`/`IVector3` for signed grid/chunk coordinates.
 
 Use `Vector3`/`Quaternion`/`Transform3D` for 3D placement and aiming.
+
+Use `Matrix<2, 2>`/`Matrix<3, 3>`/`Matrix<4, 4>` for row-major math data and `Matrix2`/`Matrix3`/`Matrix4` for glam-backed fast operations.
 
 Use generic structs for shared data that is not tied to one spatial dimension.
 

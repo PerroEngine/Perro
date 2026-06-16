@@ -150,7 +150,7 @@ fn add_quad(mesh: &mut Mesh3D, positions: [[f32; 3]; 4], normal: [f32; 3]) {
             normal,
             uv: [0.0, 0.0],
             joints: [0, 0, 0, 0],
-            weights: Unorm8x4::ZERO,
+            weights: UnitVector4::ZERO,
         });
     }
     mesh.indices

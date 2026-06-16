@@ -1,4 +1,4 @@
-use crate::Vector2;
+use crate::{Matrix3, Vector2};
 use glam::{Mat3, Vec3};
 
 /// A 2D transformation consisting of position, rotation, and scale.
@@ -58,6 +58,18 @@ impl Transform2D {
             scale,
             rotation,
         }
+    }
+
+    /// Convert to a fast perro matrix backed by glam.
+    #[inline]
+    pub fn to_matrix3(&self) -> Matrix3 {
+        Matrix3(self.to_mat3())
+    }
+
+    /// Create from a fast perro matrix backed by glam.
+    #[inline]
+    pub fn from_matrix3(matrix: Matrix3) -> Self {
+        Self::from_mat3(matrix.0)
     }
 }
 

@@ -1066,6 +1066,18 @@ pub fn pick_selected_script_var_ref<API: ScriptAPI + ?Sized>(
             .find(|node| node.key.as_u32() == key)?;
         let rows = inspector_display_rows_for_node(state, node);
         let row = rows.get(idx)?;
+        if row.source == "section" {
+            if let Some(pos) = state
+                .inspector_collapsed_sections
+                .iter()
+                .position(|item| item == &row.path_key)
+            {
+                state.inspector_collapsed_sections.remove(pos);
+            } else {
+                state.inspector_collapsed_sections.push(row.path_key.clone());
+            }
+            return Some(false);
+        }
         if row.expandable {
             if let Some(pos) = state
                 .inspector_expanded_paths
@@ -1077,6 +1089,14 @@ pub fn pick_selected_script_var_ref<API: ScriptAPI + ?Sized>(
                 state.inspector_expanded_paths.push(row.path_key.clone());
             }
             return Some(false);
+        }
+        if row.source == "script_path" {
+            state.inspector_picker_open = true;
+            state.inspector_picker_field = "script".to_string();
+            state.inspector_picker_kind = "asset".to_string();
+            state.inspector_picker_offset = 0;
+            state.inspector_picker_filter.clear();
+            return Some(true);
         }
         if row.kind == "Bool" {
             let mut doc = cached_scene_doc(&state.doc_text);
@@ -1253,7 +1273,12 @@ pub fn choose_inspector_picker_row<API: ScriptAPI + ?Sized>(
             } else {
                 SceneValue::Key(SceneValueKey::from(value.clone()))
             };
-            if row.source == "script" {
+            if row.source == "custom_icon" {
+                crate::scripts_ui_editor_inspector_values_rs::write_node_custom_icon(
+                    node,
+                    Some(&value),
+                );
+            } else if row.source == "script" {
                 let defaults = inspector_script_var_default_fields_for_node(state, node);
                 let mut fields = inspector_script_var_fields_for_node(state, node);
                 if !set_value_at_path(&mut fields, &row.path, scene_value) {
