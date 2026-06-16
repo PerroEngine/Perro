@@ -495,7 +495,7 @@ pub fn compile_dlc_bundle(project_root: &Path, dlc_name: &str) -> Result<PathBuf
     })?;
     rel_files.sort();
     for rel in rel_files {
-        archive_entries.push((format!("res/{rel}"), dlc_root.join(rel.replace('/', "\\"))));
+        archive_entries.push((format!("res/{rel}"), dlc_root.join(dlc_rel_to_path(&rel))));
     }
 
     let package_file = package_root.join(format!("{dlc_name}.dlc"));
@@ -507,4 +507,10 @@ pub fn compile_dlc_bundle(project_root: &Path, dlc_name: &str) -> Result<PathBuf
         fs::remove_dir_all(&staging)?;
     }
     Ok(package_file)
+}
+
+fn dlc_rel_to_path(rel: &str) -> PathBuf {
+    rel.split('/')
+        .filter(|part| !part.is_empty())
+        .collect::<PathBuf>()
 }

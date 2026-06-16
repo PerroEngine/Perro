@@ -1153,5 +1153,9 @@ fn generated_script_rel(rel: &str) -> String {
 
 #[allow(dead_code)]
 fn rel_to_path(base: &Path, rel: &str) -> PathBuf {
-    base.join(rel.replace('/', "\\"))
+    base.join(
+        rel.split('/')
+            .filter(|part| !part.is_empty())
+            .collect::<PathBuf>(),
+    )
 }

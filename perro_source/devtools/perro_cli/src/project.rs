@@ -1144,7 +1144,7 @@ fn handle_http_connection(mut stream: TcpStream, root: &Path) -> Result<(), Stri
     let rel = raw_path.split('?').next().unwrap_or("/");
     let rel = rel.trim_start_matches('/');
     let rel = if rel.is_empty() { "index.html" } else { rel };
-    let path = root.join(rel.replace('/', "\\"));
+    let path = root.join(rel_to_path(rel));
     let path = if path.is_dir() {
         path.join("index.html")
     } else {
@@ -1161,6 +1161,12 @@ fn handle_http_connection(mut stream: TcpStream, root: &Path) -> Result<(), Stri
     let body =
         fs::read(&path).map_err(|err| format!("failed to read {}: {err}", path.display()))?;
     write_http_response(&mut stream, "200 OK", content_type_for_path(&path), &body)
+}
+
+fn rel_to_path(rel: &str) -> PathBuf {
+    rel.split('/')
+        .filter(|part| !part.is_empty())
+        .collect::<PathBuf>()
 }
 
 fn write_http_response(
@@ -1202,7 +1208,7 @@ fn content_type_for_path(path: &Path) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{bind_web_dev_listener, format_key_value_resource};
+    use super::{bind_web_dev_listener, format_key_value_resource, rel_to_path};
     use std::net::TcpListener;
 
     #[test]
@@ -1233,6 +1239,17 @@ tint = (1.0, 0.2, 0.4, 1.0)
             text,
             "type = \"custom\"\nshader_path = \"res://shaders/custom.wgsl\"\nparams = {\n    glow = 1.25\n    tint = (1.0, 0.2, 0.4, 1.0)\n}\n"
         );
+    }
+
+    #[test]
+    fn rel_to_path_splits_url_slashes_into_components() {
+        let path = rel_to_path("assets/pages/index.html");
+        let parts = path
+            .iter()
+            .map(|part| part.to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+
+        assert_eq!(parts, ["assets", "pages", "index.html"]);
     }
 
     #[test]
