@@ -520,6 +520,22 @@ impl<const ROWS: usize, const COLS: usize, T> Matrix<ROWS, COLS, T> {
         if !Self::in_bounds(row, col) {
             return false;
         }
+        if row > 0 && row + 1 < ROWS && col > 0 && col + 1 < COLS {
+            let center = row * COLS + col;
+            let cells = self.as_slice();
+            // SAFETY: interior branch proves all 8 flat neighbor indexes are in bounds.
+            unsafe {
+                f(row - 1, col - 1, cells.get_unchecked(center - COLS - 1));
+                f(row - 1, col, cells.get_unchecked(center - COLS));
+                f(row - 1, col + 1, cells.get_unchecked(center - COLS + 1));
+                f(row, col - 1, cells.get_unchecked(center - 1));
+                f(row, col + 1, cells.get_unchecked(center + 1));
+                f(row + 1, col - 1, cells.get_unchecked(center + COLS - 1));
+                f(row + 1, col, cells.get_unchecked(center + COLS));
+                f(row + 1, col + 1, cells.get_unchecked(center + COLS + 1));
+            }
+            return true;
+        }
         let row_start = row.saturating_sub(1);
         let row_end = (row + 1).min(ROWS - 1);
         let col_start = col.saturating_sub(1);
@@ -584,6 +600,39 @@ impl<const ROWS: usize, const COLS: usize, T> Matrix<ROWS, COLS, T> {
     ) -> usize {
         if !Self::in_bounds(row, col) {
             return 0;
+        }
+        if row > 0 && row + 1 < ROWS && col > 0 && col + 1 < COLS {
+            let center = row * COLS + col;
+            let cells = self.as_slice();
+            let mut count = 0;
+            // SAFETY: interior branch proves all 8 flat neighbor indexes are in bounds.
+            unsafe {
+                if f(row - 1, col - 1, cells.get_unchecked(center - COLS - 1)) {
+                    count += 1;
+                }
+                if f(row - 1, col, cells.get_unchecked(center - COLS)) {
+                    count += 1;
+                }
+                if f(row - 1, col + 1, cells.get_unchecked(center - COLS + 1)) {
+                    count += 1;
+                }
+                if f(row, col - 1, cells.get_unchecked(center - 1)) {
+                    count += 1;
+                }
+                if f(row, col + 1, cells.get_unchecked(center + 1)) {
+                    count += 1;
+                }
+                if f(row + 1, col - 1, cells.get_unchecked(center + COLS - 1)) {
+                    count += 1;
+                }
+                if f(row + 1, col, cells.get_unchecked(center + COLS)) {
+                    count += 1;
+                }
+                if f(row + 1, col + 1, cells.get_unchecked(center + COLS + 1)) {
+                    count += 1;
+                }
+            }
+            return count;
         }
         let mut count = 0;
         let row_start = row.saturating_sub(1);

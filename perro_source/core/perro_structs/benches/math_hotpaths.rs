@@ -724,6 +724,16 @@ fn matrix_api_neighbor_count<const ROWS: usize, const COLS: usize>(
     count
 }
 
+fn matrix_api_neighbor_count_8<const ROWS: usize, const COLS: usize>(
+    matrix: &Matrix<ROWS, COLS>,
+) -> usize {
+    let mut count = 0;
+    matrix.for_positions(|row, col| {
+        count += matrix.count_neighbors_8(row, col, |_, _, value| *value > 2.0);
+    });
+    count
+}
+
 fn matrix_unchecked_neighbor_count<const ROWS: usize, const COLS: usize>(
     matrix: &Matrix<ROWS, COLS>,
 ) -> usize {
@@ -740,6 +750,31 @@ fn matrix_unchecked_neighbor_count<const ROWS: usize, const COLS: usize>(
                     // SAFETY: in_bounds checked above.
                     if unsafe { *matrix.get_unchecked(next_row, next_col) } > 2.0 {
                         count += 1;
+                    }
+                }
+            }
+        }
+    }
+    count
+}
+
+fn matrix_unchecked_neighbor_count_8<const ROWS: usize, const COLS: usize>(
+    matrix: &Matrix<ROWS, COLS>,
+) -> usize {
+    let mut count = 0;
+    for row in 0..ROWS {
+        for col in 0..COLS {
+            let row_start = row.saturating_sub(1);
+            let row_end = (row + 1).min(ROWS - 1);
+            let col_start = col.saturating_sub(1);
+            let col_end = (col + 1).min(COLS - 1);
+            for next_row in row_start..=row_end {
+                for next_col in col_start..=col_end {
+                    if next_row != row || next_col != col {
+                        // SAFETY: ranges clamp to matrix bounds.
+                        if unsafe { *matrix.get_unchecked(next_row, next_col) } > 2.0 {
+                            count += 1;
+                        }
                     }
                 }
             }
@@ -882,6 +917,26 @@ fn bench_matrix_api_vs_unchecked_helpers(c: &mut Criterion) {
             let mut count = 0;
             for matrix in black_box(&matrices) {
                 count += matrix_unchecked_neighbor_count(matrix);
+            }
+            black_box(count)
+        })
+    });
+
+    group.bench_function("count_neighbors_8_api", |bench| {
+        bench.iter(|| {
+            let mut count = 0;
+            for matrix in black_box(&matrices) {
+                count += matrix_api_neighbor_count_8(matrix);
+            }
+            black_box(count)
+        })
+    });
+
+    group.bench_function("count_neighbors_8_unchecked", |bench| {
+        bench.iter(|| {
+            let mut count = 0;
+            for matrix in black_box(&matrices) {
+                count += matrix_unchecked_neighbor_count_8(matrix);
             }
             black_box(count)
         })
