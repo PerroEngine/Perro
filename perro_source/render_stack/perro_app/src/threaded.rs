@@ -24,13 +24,13 @@ use winit::{
     event::{DeviceEvent, ElementState, MouseScrollDelta, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{ModifiersState, PhysicalKey},
-    window::{Fullscreen, WindowAttributes},
+    window::{Fullscreen, Icon, WindowAttributes},
 };
 
 use crate::input::{GamepadInput, JoyConInput};
 use crate::winit_runner::{
     fit_aspect,
-    image_helpers::{builtin_perro_logo_sizes, load_image_sizes},
+    image_helpers::{PreloadedStartupSplash, preload_project_images},
     map_cursor_icon,
 };
 
@@ -760,6 +760,7 @@ impl ThreadedWinitRunner {
             sim,
             title.to_string(),
             None,
+            None,
         );
         event_loop
             .run_app(&mut state)
@@ -780,6 +781,7 @@ impl ThreadedWinitRunner {
         runtime_factory: F,
         fixed_timestep: Option<f32>,
         startup_splash: Option<ThreadedStartupSplash>,
+        window_icon: Option<Icon>,
     ) -> Result<crate::winit_runner::AppExitResult, crate::winit_runner::AppExitError>
     where
         B: GraphicsBackend + 'static,
@@ -803,6 +805,7 @@ impl ThreadedWinitRunner {
             sim,
             title.to_string(),
             startup_splash,
+            window_icon,
         );
         event_loop
             .run_app(&mut state)
@@ -836,6 +839,7 @@ struct ThreadedRunnerState<B: GraphicsBackend> {
     gamepad_input: GamepadInput,
     joycon_input: JoyConInput,
     startup_splash: Option<ThreadedStartupSplashState>,
+    window_icon: Option<Icon>,
     last_frame_start: Instant,
     last_frame_end: Instant,
     frame_rate_cap: RuntimeFrameRateCap,
@@ -861,6 +865,7 @@ impl<B: GraphicsBackend> ThreadedRunnerState<B> {
         sim: SimThread,
         title: String,
         startup_splash: Option<ThreadedStartupSplash>,
+        window_icon: Option<Icon>,
     ) -> Self {
         let now = Instant::now();
         Self {
@@ -876,6 +881,7 @@ impl<B: GraphicsBackend> ThreadedRunnerState<B> {
             gamepad_input: GamepadInput::new(),
             joycon_input: JoyConInput::new(),
             startup_splash: startup_splash.map(ThreadedStartupSplashState::new),
+            window_icon,
             last_frame_start: now,
             last_frame_end: now,
             frame_rate_cap: RuntimeFrameRateCap::Unlimited,
@@ -895,7 +901,7 @@ impl<B: GraphicsBackend> ThreadedRunnerState<B> {
         }
     }
 
-    fn window_attributes(&self, event_loop: &ActiveEventLoop) -> WindowAttributes {
+    fn window_attributes(&mut self, event_loop: &ActiveEventLoop) -> WindowAttributes {
         let desired = self
             .startup_splash
             .as_ref()
@@ -906,7 +912,10 @@ impl<B: GraphicsBackend> ThreadedRunnerState<B> {
                 )
             })
             .unwrap_or_else(|| PhysicalSize::new(1920, 1080));
-        let attrs = WindowAttributes::default().with_title(self.title.clone());
+        let mut attrs = WindowAttributes::default().with_title(self.title.clone());
+        if let Some(icon) = self.window_icon.take() {
+            attrs = attrs.with_window_icon(Some(icon));
+        }
         let Some(monitor) = event_loop
             .primary_monitor()
             .or_else(|| event_loop.available_monitors().next())
@@ -1239,32 +1248,19 @@ pub struct ThreadedStartupSplash {
 
 impl ThreadedStartupSplash {
     pub fn from_project(project: &perro_runtime::RuntimeProject) -> Self {
-        let mut source = None::<String>;
-        let mut source_hash = None::<u64>;
-        let splash = project.config.startup_splash.trim();
-        if !splash.is_empty() {
-            source = Some(splash.to_string());
-            source_hash = project.config.startup_splash_hash;
-        } else {
-            let icon = project.config.icon.trim();
-            if !icon.is_empty() {
-                source = Some(icon.to_string());
-                source_hash = project.config.icon_hash;
-            }
-        }
-        let image_sizes = source
-            .as_deref()
-            .and_then(|s| load_image_sizes(project, s, source_hash));
-        if image_sizes.is_none() {
-            source = Some(perro_api::builtin_assets::PERRO_LOGO_SVG_SOURCE.to_string());
-            source_hash = None;
-        }
-        let image_sizes = image_sizes.or_else(builtin_perro_logo_sizes);
+        let preload = preload_project_images(Some(project));
+        Self::from_preloaded(project, preload.startup_splash)
+    }
+
+    pub(crate) fn from_preloaded(
+        project: &perro_runtime::RuntimeProject,
+        preload: Option<PreloadedStartupSplash>,
+    ) -> Self {
         Self {
-            source,
-            source_hash,
-            image_size: image_sizes.map(|sizes| sizes.display),
-            texture_size: image_sizes.map(|sizes| sizes.texture),
+            source: preload.as_ref().map(|splash| splash.source.clone()),
+            source_hash: preload.as_ref().and_then(|splash| splash.source_hash),
+            image_size: preload.as_ref().and_then(|splash| splash.image_size),
+            texture_size: preload.as_ref().and_then(|splash| splash.texture_size),
             virtual_size: [
                 project.config.virtual_width.max(1),
                 project.config.virtual_height.max(1),

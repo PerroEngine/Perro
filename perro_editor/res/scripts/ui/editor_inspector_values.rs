@@ -12,7 +12,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::UNIX_EPOCH;
 
-const MAX_INSPECTOR_DEPTH: usize = 4;
+const MAX_INSPECTOR_DEPTH: usize = 32;
 
 static SCRIPT_SCHEMA_CACHE: OnceLock<Mutex<BTreeMap<String, CachedScriptSchema>>> = OnceLock::new();
 static SCRIPT_FILE_SCHEMA_CACHE: OnceLock<Mutex<BTreeMap<String, CachedScriptFileSchema>>> =
@@ -37,6 +37,7 @@ pub struct InspectorValueRow {
     pub components: Vec<String>,
     pub color_preview: Option<String>,
     pub enum_options: Vec<String>,
+    pub enum_values: Vec<(String, SceneValue)>,
     pub default_child: Option<SceneValue>,
     pub editable: bool,
     pub expandable: bool,
@@ -57,6 +58,7 @@ struct ValueRowContext<'a> {
     node_paths: &'a [String],
     kind_overrides: &'a BTreeMap<String, String>,
     enum_options: &'a BTreeMap<String, Vec<String>>,
+    enum_values: &'a BTreeMap<String, Vec<(String, SceneValue)>>,
     default_children: &'a BTreeMap<String, SceneValue>,
     warnings: &'a BTreeMap<String, String>,
     quat_mode: &'a str,
@@ -68,6 +70,7 @@ struct ScriptInspectorMeta {
     color_paths: Vec<String>,
     node_paths: Vec<String>,
     enum_options: BTreeMap<String, Vec<String>>,
+    enum_values: BTreeMap<String, Vec<(String, SceneValue)>>,
     default_children: BTreeMap<String, SceneValue>,
     warnings: BTreeMap<String, String>,
 }
@@ -102,6 +105,7 @@ pub fn inspector_script_var_rows(
         &BTreeMap::new(),
         &BTreeMap::new(),
         &BTreeMap::new(),
+        &BTreeMap::new(),
         "quat",
     )
 }
@@ -114,6 +118,7 @@ pub fn inspector_script_var_rows_with_color_paths(
     node_paths: &[String],
     kind_overrides: &BTreeMap<String, String>,
     enum_options: &BTreeMap<String, Vec<String>>,
+    enum_values: &BTreeMap<String, Vec<(String, SceneValue)>>,
     default_children: &BTreeMap<String, SceneValue>,
     warnings: &BTreeMap<String, String>,
     quat_mode: &str,
@@ -123,6 +128,7 @@ pub fn inspector_script_var_rows_with_color_paths(
     let node_paths = prefixed_path_list("script", node_paths);
     let kind_overrides = prefixed_path_map("script", kind_overrides);
     let enum_options = prefixed_path_map("script", enum_options);
+    let enum_values = prefixed_path_map("script", enum_values);
     let default_children = prefixed_path_map("script", default_children);
     let warnings = prefixed_path_map("script", warnings);
     let ctx = ValueRowContext {
@@ -131,6 +137,7 @@ pub fn inspector_script_var_rows_with_color_paths(
         node_paths: &node_paths,
         kind_overrides: &kind_overrides,
         enum_options: &enum_options,
+        enum_values: &enum_values,
         default_children: &default_children,
         warnings: &warnings,
         quat_mode,
@@ -260,6 +267,7 @@ pub fn inspector_script_var_rows_for_node(
         &meta.node_paths,
         &meta.kind_overrides,
         &meta.enum_options,
+        &meta.enum_values,
         &meta.default_children,
         &meta.warnings,
         &state.inspector_rotation_mode,
@@ -500,6 +508,7 @@ fn inspector_section_row(path_key: &str, name: &str) -> InspectorValueRow {
         components: Vec::new(),
         color_preview: None,
         enum_options: Vec::new(),
+        enum_values: Vec::new(),
         default_child: None,
         editable: false,
         expandable: true,
@@ -520,6 +529,7 @@ fn inspector_subsection_row(path_key: &str, name: &str) -> InspectorValueRow {
         components: Vec::new(),
         color_preview: None,
         enum_options: Vec::new(),
+        enum_values: Vec::new(),
         default_child: None,
         editable: false,
         expandable: true,
@@ -551,6 +561,7 @@ fn inspector_tag_rows(
     default_children.insert("tags:r0".to_string(), SceneValue::Str(Cow::Borrowed("tag")));
     let kind_overrides = BTreeMap::new();
     let enum_options = BTreeMap::new();
+    let enum_values = BTreeMap::new();
     let warnings = BTreeMap::new();
     let ctx = ValueRowContext {
         expanded_paths: &state.inspector_expanded_paths,
@@ -558,6 +569,7 @@ fn inspector_tag_rows(
         node_paths: &[],
         kind_overrides: &kind_overrides,
         enum_options: &enum_options,
+        enum_values: &enum_values,
         default_children: &default_children,
         warnings: &warnings,
         quat_mode: &state.inspector_rotation_mode,
@@ -580,6 +592,7 @@ fn inspector_custom_icon_row(node: &perro_api::scene::SceneNodeEntry) -> Inspect
         components: Vec::new(),
         color_preview: None,
         enum_options: Vec::new(),
+        enum_values: Vec::new(),
         default_child: None,
         editable: false,
         expandable: false,
@@ -600,6 +613,7 @@ fn inspector_script_path_row(script: Option<&str>) -> InspectorValueRow {
         components: Vec::new(),
         color_preview: None,
         enum_options: Vec::new(),
+        enum_values: Vec::new(),
         default_child: None,
         editable: false,
         expandable: false,
@@ -622,6 +636,8 @@ fn inspector_scene_value_rows_for_node(
     let mut kind_overrides = BTreeMap::new();
     let mut color_paths = Vec::new();
     let mut node_paths = Vec::new();
+    let mut enum_options = BTreeMap::new();
+    let mut enum_values = BTreeMap::new();
     let mut default_children = BTreeMap::new();
     let schema_fields = perro_scene::scene_node_fields(node.data.node_type);
     for (idx, (name, value)) in fields.iter().enumerate() {
@@ -640,6 +656,8 @@ fn inspector_scene_value_rows_for_node(
             &mut kind_overrides,
             &mut color_paths,
             &mut node_paths,
+            &mut enum_options,
+            &mut enum_values,
             &mut default_children,
         );
     }
@@ -648,7 +666,8 @@ fn inspector_scene_value_rows_for_node(
         color_paths: &color_paths,
         node_paths: &node_paths,
         kind_overrides: &kind_overrides,
-        enum_options: &BTreeMap::new(),
+        enum_options: &enum_options,
+        enum_values: &enum_values,
         default_children: &default_children,
         warnings: &BTreeMap::new(),
         quat_mode: &state.inspector_rotation_mode,
@@ -658,7 +677,52 @@ fn inspector_scene_value_rows_for_node(
         let mut path = vec![ValuePathStep::Root(idx)];
         push_value_rows(&mut rows, "scene", name.as_ref(), value, &mut path, 0, &ctx);
     }
-    rows
+    filter_scene_enum_submenu_rows(node.data.node_type, fields, rows)
+}
+
+fn filter_scene_enum_submenu_rows(
+    node_type: perro_scene::NodeType,
+    fields: &[(SceneFieldName, SceneValue)],
+    rows: Vec<InspectorValueRow>,
+) -> Vec<InspectorValueRow> {
+    let schema_fields = perro_scene::scene_node_fields(node_type);
+    let mut hidden = Vec::<String>::new();
+    for schema_field in &schema_fields {
+        let perro_scene::NodeFieldType::EnumSubmenu(variants) = &schema_field.ty else {
+            continue;
+        };
+        let active = fields
+            .iter()
+            .find(|(name, _)| name.as_ref() == schema_field.name)
+            .and_then(|(_, value)| scene_value_enum_variant_name(value))
+            .or_else(|| variants.first().map(|variant| variant.name.to_string()));
+        let active = active.as_deref().unwrap_or("");
+        for variant in *variants {
+            if variant.name == active {
+                continue;
+            }
+            hidden.extend(variant.fields.iter().map(|field| field.to_string()));
+        }
+    }
+    if hidden.is_empty() {
+        return rows;
+    }
+    let mut out = Vec::new();
+    let mut skip_depth = None;
+    for row in rows {
+        if let Some(depth) = skip_depth {
+            if row.depth > depth {
+                continue;
+            }
+            skip_depth = None;
+        }
+        if row.source == "scene" && hidden.iter().any(|field| field == row.name.trim()) {
+            skip_depth = Some(row.depth);
+            continue;
+        }
+        out.push(row);
+    }
+    out
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -670,6 +734,8 @@ fn collect_node_field_type_paths(
     kind_overrides: &mut BTreeMap<String, String>,
     color_paths: &mut Vec<String>,
     node_paths: &mut Vec<String>,
+    enum_options: &mut BTreeMap<String, Vec<String>>,
+    enum_values: &mut BTreeMap<String, Vec<(String, SceneValue)>>,
     default_children: &mut BTreeMap<String, SceneValue>,
 ) {
     let key = format!("{source}:{}", value_path_key(path));
@@ -677,6 +743,45 @@ fn collect_node_field_type_paths(
     kind_overrides.insert(key.clone(), label);
     match ty {
         perro_scene::NodeFieldType::Color => color_paths.push(key),
+        perro_scene::NodeFieldType::Enum(options) => {
+            enum_options.insert(
+                key.clone(),
+                options.iter().map(|item| item.to_string()).collect(),
+            );
+            enum_values.insert(
+                key,
+                options
+                    .iter()
+                    .map(|item| {
+                        (
+                            item.to_string(),
+                            SceneValue::Key(SceneValueKey::from(item.to_string())),
+                        )
+                    })
+                    .collect(),
+            );
+        }
+        perro_scene::NodeFieldType::EnumSubmenu(variants) => {
+            enum_options.insert(
+                key.clone(),
+                variants
+                    .iter()
+                    .map(|variant| variant.name.to_string())
+                    .collect(),
+            );
+            enum_values.insert(
+                key,
+                variants
+                    .iter()
+                    .map(|variant| {
+                        (
+                            variant.name.to_string(),
+                            SceneValue::Key(SceneValueKey::from(variant.name.to_string())),
+                        )
+                    })
+                    .collect(),
+            );
+        }
         perro_scene::NodeFieldType::NodeRef(_) => node_paths.push(key),
         perro_scene::NodeFieldType::Array(item_ty) => {
             default_children.insert(key, item_ty.default_value());
@@ -691,6 +796,8 @@ fn collect_node_field_type_paths(
                         kind_overrides,
                         color_paths,
                         node_paths,
+                        enum_options,
+                        enum_values,
                         default_children,
                     );
                     path.pop();
@@ -714,6 +821,8 @@ fn collect_node_field_type_paths(
                             kind_overrides,
                             color_paths,
                             node_paths,
+                            enum_options,
+                            enum_values,
                             default_children,
                         );
                         path.pop();
@@ -739,6 +848,8 @@ fn collect_node_field_type_paths(
                         kind_overrides,
                         color_paths,
                         node_paths,
+                        enum_options,
+                        enum_values,
                         default_children,
                     );
                     path.pop();
@@ -767,6 +878,12 @@ pub fn node_field_type_label(ty: &perro_scene::NodeFieldType) -> String {
         perro_scene::NodeFieldType::Quat => "Quat".to_string(),
         perro_scene::NodeFieldType::Color => "Color".to_string(),
         perro_scene::NodeFieldType::String => "String".to_string(),
+        perro_scene::NodeFieldType::Enum(options) => {
+            format!("Enum({})", options.first().copied().unwrap_or(""))
+        }
+        perro_scene::NodeFieldType::EnumSubmenu(variants) => {
+            format!("Enum({})", variants.first().map(|v| v.name).unwrap_or(""))
+        }
         perro_scene::NodeFieldType::NodeRef(hint) => hint.label(),
         perro_scene::NodeFieldType::BitMask => "BitMask".to_string(),
         perro_scene::NodeFieldType::Asset(kind) => format!("Asset({kind:?})"),
@@ -1033,13 +1150,31 @@ fn collect_script_value_meta(
     match resolve_script_enum(schema, ty) {
         TypeResolution::Found(info) => {
             meta.enum_options
-                .insert(key.clone(), info.def.variants.clone());
+                .insert(key.clone(), info.def.variant_options());
+            meta.enum_values.insert(
+                key.clone(),
+                resolved_enum_variants(&info)
+                    .iter()
+                    .map(|variant| {
+                        (
+                            variant.name.clone(),
+                            default_scene_value_for_enum_variant(
+                                schema,
+                                &info,
+                                &variant.name,
+                                depth + 1,
+                            ),
+                        )
+                    })
+                    .collect(),
+            );
             if !info.def.has_variant {
                 meta.warnings.insert(
                     key.clone(),
                     format!("warn missing Variant derive\n{}", info.def.display_name()),
                 );
             }
+            collect_script_enum_payload_meta(schema, &info, value, key.clone(), depth + 1, meta);
         }
         TypeResolution::Ambiguous(name, origins) => {
             meta.warnings.insert(
@@ -1099,6 +1234,84 @@ fn collect_script_value_meta(
             }
         }
     }
+}
+
+fn collect_script_enum_payload_meta(
+    schema: &ScriptSchema,
+    resolved: &ResolvedScriptType<'_, ScriptEnum>,
+    value: &SceneValue,
+    key: String,
+    depth: usize,
+    meta: &mut ScriptInspectorMeta,
+) {
+    if depth > MAX_INSPECTOR_DEPTH {
+        return;
+    }
+    let Some(variant_name) = scene_value_enum_variant_name(value) else {
+        return;
+    };
+    let variants = resolved_enum_variants(resolved);
+    let Some(variant) = variants.iter().find(|variant| variant.name == variant_name) else {
+        return;
+    };
+    match (&variant.payload, value) {
+        (ScriptEnumPayload::Tuple(fields), SceneValue::Object(values)) => {
+            let Some(SceneValue::Array(data)) = object_field_value(values.as_ref(), "__data")
+            else {
+                return;
+            };
+            meta.kind_overrides
+                .insert(format!("{key}.__data"), "Array(EnumPayload)".to_string());
+            for (idx, field) in fields.iter().enumerate() {
+                let Some(item) = data.get(idx) else {
+                    continue;
+                };
+                collect_script_value_meta(
+                    schema,
+                    &field.ty,
+                    &field.node_ref_attr,
+                    item,
+                    format!("{key}.__data[{idx}]"),
+                    depth + 1,
+                    meta,
+                );
+            }
+        }
+        (ScriptEnumPayload::Struct(fields), SceneValue::Object(values)) => {
+            let Some(SceneValue::Object(data)) = object_field_value(values.as_ref(), "__data")
+            else {
+                return;
+            };
+            meta.kind_overrides
+                .insert(format!("{key}.__data"), "Object".to_string());
+            for field in fields {
+                let Some((_, item)) = data.iter().find(|(name, _)| name.as_ref() == field.name)
+                else {
+                    continue;
+                };
+                collect_script_value_meta(
+                    schema,
+                    &field.ty,
+                    &field.node_ref_attr,
+                    item,
+                    format!("{key}.__data.{}", field.name),
+                    depth + 1,
+                    meta,
+                );
+            }
+        }
+        _ => {}
+    }
+}
+
+fn object_field_value<'a>(
+    values: &'a [(SceneFieldName, SceneValue)],
+    name: &str,
+) -> Option<&'a SceneValue> {
+    values
+        .iter()
+        .find(|(field, _)| field.as_ref() == name)
+        .map(|(_, value)| value)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1188,7 +1401,7 @@ fn collect_script_enum_path_options(
             format!("{prefix}.{}", field.name)
         };
         if let TypeResolution::Found(info) = resolve_script_enum(schema, &field.ty) {
-            out.insert(key, info.def.variants.clone());
+            out.insert(key, info.def.variant_options());
         } else if let TypeResolution::Found(nested) = resolve_script_struct(schema, &field.ty)
             && let Some((_, SceneValue::Object(nested_values))) = values.get(idx)
         {
@@ -1363,7 +1576,20 @@ struct ScriptEnum {
     origin: String,
     has_variant: bool,
     default: String,
-    variants: Vec<String>,
+    variants: Vec<ScriptEnumVariant>,
+}
+
+#[derive(Clone)]
+struct ScriptEnumVariant {
+    name: String,
+    payload: ScriptEnumPayload,
+}
+
+#[derive(Clone)]
+enum ScriptEnumPayload {
+    Unit,
+    Tuple(Vec<RawScriptField>),
+    Struct(Vec<RawScriptField>),
 }
 
 #[derive(Clone)]
@@ -1427,6 +1653,13 @@ impl ScriptStruct {
 impl ScriptEnum {
     fn display_name(&self) -> String {
         format!("{} @ {}", self.name, self.origin)
+    }
+
+    fn variant_options(&self) -> Vec<String> {
+        self.variants
+            .iter()
+            .map(|variant| variant.name.clone())
+            .collect()
     }
 }
 
@@ -1796,39 +2029,18 @@ fn parse_enum_info<'a>(
     let mut first_variant = None;
     let mut default_variant = None;
     let mut variants = Vec::new();
-    let mut default_next = false;
-    let mut opened = first_line.contains('{');
-    let mut depth = if opened { brace_delta(first_line) } else { 0 };
-    while let Some(line) = lines.peek().copied() {
-        let line = strip_line_comment(line).trim();
-        if !opened {
-            opened = line.contains('{');
-            depth += brace_delta(line);
-            lines.next();
+    let body = collect_enum_body(first_line, lines);
+    for entry in split_top_level_csv(&body) {
+        let Some((variant, is_default)) = parse_enum_variant_entry(&entry) else {
             continue;
+        };
+        if first_variant.is_none() {
+            first_variant = Some(variant.name.clone());
         }
-        if line == "#[default]" {
-            default_next = true;
-            lines.next();
-            continue;
+        if is_default {
+            default_variant = Some(variant.name.clone());
         }
-        if depth == 1
-            && let Some(variant) = parse_enum_variant(line)
-        {
-            if first_variant.is_none() {
-                first_variant = Some(variant.clone());
-            }
-            variants.push(variant.clone());
-            if default_next {
-                default_variant = Some(variant);
-                default_next = false;
-            }
-        }
-        depth += brace_delta(line);
-        lines.next();
-        if depth <= 0 {
-            break;
-        }
+        variants.push(variant);
     }
     let default = default_variant
         .or(first_variant)
@@ -1845,20 +2057,140 @@ fn parse_enum_info<'a>(
     }
 }
 
-fn parse_enum_variant(line: &str) -> Option<String> {
-    let name = line
-        .trim()
-        .trim_end_matches(',')
-        .split(['(', '{', '='])
-        .next()?
-        .trim();
+fn collect_enum_body<'a>(
+    first_line: &str,
+    lines: &mut std::iter::Peekable<std::str::Lines<'a>>,
+) -> String {
+    let mut body = String::new();
+    let mut opened = false;
+    let mut depth = 0_i32;
+    let mut line = strip_line_comment(first_line);
+    loop {
+        if !opened {
+            if let Some(pos) = line.find('{') {
+                opened = true;
+                line = &line[pos + 1..];
+            } else if let Some(next) = lines.next() {
+                line = strip_line_comment(next);
+                continue;
+            } else {
+                break;
+            }
+        }
+        for ch in line.chars() {
+            match ch {
+                '{' => {
+                    depth += 1;
+                    body.push(ch);
+                }
+                '}' if depth == 0 => return body,
+                '}' => {
+                    depth -= 1;
+                    body.push(ch);
+                }
+                _ => body.push(ch),
+            }
+        }
+        body.push('\n');
+        let Some(next) = lines.next() else {
+            break;
+        };
+        line = strip_line_comment(next);
+    }
+    body
+}
+
+fn parse_enum_variant_entry(entry: &str) -> Option<(ScriptEnumVariant, bool)> {
+    let entry = entry.trim().trim_end_matches(',').trim();
+    if entry.is_empty() {
+        return None;
+    }
+    let (attrs, rest) = split_leading_attrs(entry);
+    let is_default = attrs.iter().any(|attr| matches!(attr.trim(), "#[default]"));
+    let rest = rest.trim();
+    if rest.is_empty() || rest.starts_with("#[") {
+        return None;
+    }
+    let name = rest.split(['(', '{', '=']).next()?.trim();
     if name.is_empty() || name.starts_with("#[") {
         return None;
     }
-    name.chars()
+    if !name
+        .chars()
         .next()
         .is_some_and(|ch| ch.is_ascii_alphabetic())
-        .then(|| name.to_string())
+    {
+        return None;
+    }
+    let after_name = rest[name.len()..].trim();
+    let payload = if after_name.starts_with('(') {
+        let inner = balanced_inner(after_name, '(', ')')?;
+        ScriptEnumPayload::Tuple(parse_tuple_payload_fields(inner))
+    } else if after_name.starts_with('{') {
+        let inner = balanced_inner(after_name, '{', '}')?;
+        ScriptEnumPayload::Struct(parse_struct_payload_fields(inner))
+    } else {
+        ScriptEnumPayload::Unit
+    };
+    Some((
+        ScriptEnumVariant {
+            name: name.to_string(),
+            payload,
+        },
+        is_default,
+    ))
+}
+
+fn balanced_inner(value: &str, open: char, close: char) -> Option<&str> {
+    let mut depth = 0_i32;
+    let mut start = None;
+    for (idx, ch) in value.char_indices() {
+        if ch == open {
+            if depth == 0 {
+                start = Some(idx + ch.len_utf8());
+            }
+            depth += 1;
+        } else if ch == close {
+            depth -= 1;
+            if depth == 0 {
+                return start.map(|start| &value[start..idx]);
+            }
+        }
+    }
+    None
+}
+
+fn parse_tuple_payload_fields(inner: &str) -> Vec<RawScriptField> {
+    split_top_level_csv(inner)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(idx, ty)| {
+            let ty = strip_field_visibility(ty.trim()).trim();
+            (!ty.is_empty()).then(|| RawScriptField {
+                name: idx.to_string(),
+                ty: ty.to_string(),
+                default_attr: None,
+                node_ref_attr: Vec::new(),
+                exposed: true,
+            })
+        })
+        .collect()
+}
+
+fn parse_struct_payload_fields(inner: &str) -> Vec<RawScriptField> {
+    split_top_level_csv(inner)
+        .into_iter()
+        .filter_map(|field| parse_script_field_line(&field, None, Vec::new(), true))
+        .collect()
+}
+
+fn strip_field_visibility(ty: &str) -> &str {
+    ty.strip_prefix("pub ")
+        .or_else(|| {
+            ty.strip_prefix("pub(")
+                .and_then(|rest| rest.split_once(')').map(|(_, after)| after.trim()))
+        })
+        .unwrap_or(ty)
 }
 
 fn parse_script_struct_fields(source: &str, struct_name: &str) -> Vec<RawScriptField> {
@@ -2183,11 +2515,14 @@ fn parse_default_value(
         )));
     }
     if let Some((enum_ty, variant)) = value.rsplit_once("::")
-        && script_enum_type_name(schema, enum_ty).is_some()
+        && let TypeResolution::Found(def) = resolve_script_enum(schema, enum_ty)
     {
-        return Some(SceneValue::Key(perro_api::scene::SceneValueKey::from(
-            variant.to_string(),
-        )));
+        return Some(default_scene_value_for_enum_variant(
+            schema,
+            &def,
+            variant,
+            depth + 1,
+        ));
     }
     if let Some(value) = parse_vec_default_value(schema, value, ty, depth) {
         return Some(value);
@@ -2390,6 +2725,58 @@ fn resolved_struct_fields(resolved: &ResolvedScriptType<'_, ScriptStruct>) -> Ve
         .collect()
 }
 
+fn resolved_enum_variants(resolved: &ResolvedScriptType<'_, ScriptEnum>) -> Vec<ScriptEnumVariant> {
+    if resolved.def.generic_params.is_empty() || resolved.type_args.is_empty() {
+        return resolved.def.variants.clone();
+    }
+    resolved
+        .def
+        .variants
+        .iter()
+        .map(|variant| ScriptEnumVariant {
+            name: variant.name.clone(),
+            payload: substitute_enum_payload(
+                &variant.payload,
+                &resolved.def.generic_params,
+                &resolved.type_args,
+            ),
+        })
+        .collect()
+}
+
+fn substitute_enum_payload(
+    payload: &ScriptEnumPayload,
+    params: &[String],
+    args: &[String],
+) -> ScriptEnumPayload {
+    match payload {
+        ScriptEnumPayload::Unit => ScriptEnumPayload::Unit,
+        ScriptEnumPayload::Tuple(fields) => {
+            ScriptEnumPayload::Tuple(substitute_generic_fields(fields, params, args))
+        }
+        ScriptEnumPayload::Struct(fields) => {
+            ScriptEnumPayload::Struct(substitute_generic_fields(fields, params, args))
+        }
+    }
+}
+
+fn substitute_generic_fields(
+    fields: &[RawScriptField],
+    params: &[String],
+    args: &[String],
+) -> Vec<RawScriptField> {
+    fields
+        .iter()
+        .map(|field| RawScriptField {
+            name: field.name.clone(),
+            ty: substitute_generic_type(&field.ty, params, args),
+            default_attr: field.default_attr.clone(),
+            node_ref_attr: field.node_ref_attr.clone(),
+            exposed: field.exposed,
+        })
+        .collect()
+}
+
 fn substitute_generic_type(ty: &str, params: &[String], args: &[String]) -> String {
     if params.is_empty() || args.is_empty() {
         return ty.to_string();
@@ -2482,7 +2869,10 @@ fn script_type_label(schema: &ScriptSchema, ty: &str) -> String {
         return format!("Array({})", script_type_label(schema, &inner));
     }
     if let Some((rows, cols, item_ty)) = matrix_type_info(&ty) {
-        return format!("Matrix({rows}x{cols},{})", script_type_label(schema, &item_ty));
+        return format!(
+            "Matrix({rows}x{cols},{})",
+            script_type_label(schema, &item_ty)
+        );
     }
     match ty.as_str() {
         "bool" => "Bool".to_string(),
@@ -2560,6 +2950,9 @@ fn node_ref_attr_label(node_ref_attr: &[String]) -> String {
 }
 
 fn default_scene_value_for_type(schema: &ScriptSchema, ty: &str, depth: usize) -> SceneValue {
+    if depth > MAX_INSPECTOR_DEPTH {
+        return SceneValue::Object(Cow::Owned(Vec::new()));
+    }
     let ty = normalized_type(ty);
     if let Some((rows, cols, item_ty)) = matrix_type_info(&ty) {
         let item = default_scene_value_for_type(schema, &item_ty, depth + 1);
@@ -2649,10 +3042,57 @@ fn default_scene_value_for_type(schema: &ScriptSchema, ty: &str, depth: usize) -
             )))
         }
         _ if let TypeResolution::Found(def) = resolve_script_enum(schema, &ty) => {
-            let default_variant = def.def.default.clone();
-            SceneValue::Key(perro_api::scene::SceneValueKey::from(default_variant))
+            default_scene_value_for_enum_variant(schema, &def, &def.def.default, depth + 1)
         }
         _ => SceneValue::Object(Cow::Owned(Vec::new())),
+    }
+}
+
+fn default_scene_value_for_enum_variant(
+    schema: &ScriptSchema,
+    resolved: &ResolvedScriptType<'_, ScriptEnum>,
+    variant_name: &str,
+    depth: usize,
+) -> SceneValue {
+    if depth > MAX_INSPECTOR_DEPTH {
+        return SceneValue::Key(SceneValueKey::from(variant_name.to_string()));
+    }
+    let variants = resolved_enum_variants(resolved);
+    let Some(variant) = variants.iter().find(|variant| variant.name == variant_name) else {
+        return SceneValue::Key(SceneValueKey::from(variant_name.to_string()));
+    };
+    match &variant.payload {
+        ScriptEnumPayload::Unit => SceneValue::Key(SceneValueKey::from(variant.name.clone())),
+        ScriptEnumPayload::Tuple(fields) => SceneValue::Object(Cow::Owned(vec![
+            (
+                SceneFieldName::from_name("__variant".to_string()),
+                SceneValue::Str(Cow::Owned(variant.name.clone())),
+            ),
+            (
+                SceneFieldName::from_name("__data".to_string()),
+                SceneValue::Array(Cow::Owned(
+                    fields
+                        .iter()
+                        .map(|field| default_value_for_field(schema, field, depth + 1))
+                        .collect(),
+                )),
+            ),
+        ])),
+        ScriptEnumPayload::Struct(fields) => SceneValue::Object(Cow::Owned(vec![
+            (
+                SceneFieldName::from_name("__variant".to_string()),
+                SceneValue::Str(Cow::Owned(variant.name.clone())),
+            ),
+            (
+                SceneFieldName::from_name("__data".to_string()),
+                SceneValue::Object(Cow::Owned(script_struct_default_fields_from_fields(
+                    schema,
+                    fields,
+                    depth + 1,
+                    false,
+                ))),
+            ),
+        ])),
     }
 }
 
@@ -2954,6 +3394,8 @@ fn push_value_rows(
     let expanded = composite && ctx.expanded_paths.iter().any(|item| item == &path_key);
     let color_preview = color_preview_for_value(name, value, &path_key, ctx.color_paths);
     let enum_options = ctx.enum_options.get(&path_key).cloned().unwrap_or_default();
+    let enum_values = ctx.enum_values.get(&path_key).cloned().unwrap_or_default();
+    let enum_row = !enum_options.is_empty();
     let warning = ctx.warnings.get(&path_key).cloned();
     let kind = if color_preview.is_some() {
         "Color"
@@ -2970,7 +3412,10 @@ fn push_value_rows(
     };
     let matrix = matrix_kind_shape(kind).is_some() && matches!(value, SceneValue::Array(_));
     let components = if matrix {
-        matrix_cell_texts(value, kind).into_iter().flatten().collect()
+        matrix_cell_texts(value, kind)
+            .into_iter()
+            .flatten()
+            .collect()
     } else {
         scene_value_component_texts_for_kind(value, kind, ctx.quat_mode)
     };
@@ -2983,7 +3428,7 @@ fn push_value_rows(
         kind: kind.to_string(),
         value: if matrix {
             scene_value_matrix_summary(value, kind)
-        } else if !enum_options.is_empty() {
+        } else if enum_row {
             scene_value_enum_text(value)
         } else if composite {
             scene_value_summary(value, expanded)
@@ -2993,6 +3438,7 @@ fn push_value_rows(
         components,
         color_preview,
         enum_options,
+        enum_values,
         default_child: ctx.default_children.get(&path_key).cloned(),
         editable: matrix || !composite,
         expandable: composite && !matrix,
@@ -3016,6 +3462,7 @@ fn push_value_rows(
             components: Vec::new(),
             color_preview: None,
             enum_options: Vec::new(),
+            enum_values: Vec::new(),
             default_child: None,
             editable: false,
             expandable: false,
@@ -3049,6 +3496,10 @@ fn push_value_rows(
             ));
         }
         SceneValue::Object(fields) => {
+            if enum_row {
+                push_enum_payload_rows(rows, source, fields.as_ref(), path, depth + 1, ctx);
+                return;
+            }
             if fields.is_empty() {
                 rows.push(empty_object_row(source, path, depth + 1));
                 return;
@@ -3127,6 +3578,7 @@ fn empty_array_add_row(
         components: Vec::new(),
         color_preview: None,
         enum_options: Vec::new(),
+        enum_values: Vec::new(),
         default_child,
         editable: false,
         expandable: false,
@@ -3148,6 +3600,7 @@ fn empty_object_row(source: &str, path: &[ValuePathStep], depth: usize) -> Inspe
         components: Vec::new(),
         color_preview: None,
         enum_options: Vec::new(),
+        enum_values: Vec::new(),
         default_child: None,
         editable: false,
         expandable: false,
@@ -3157,11 +3610,62 @@ fn empty_object_row(source: &str, path: &[ValuePathStep], depth: usize) -> Inspe
 }
 
 fn scene_value_enum_text(value: &SceneValue) -> String {
+    if let Some(name) = scene_value_enum_variant_name(value) {
+        return name;
+    }
     match value {
         SceneValue::Key(value) => value.as_ref().to_string(),
         SceneValue::Str(value) => value.as_ref().to_string(),
         _ => scene_value_edit_text(value),
     }
+}
+
+fn scene_value_enum_variant_name(value: &SceneValue) -> Option<String> {
+    match value {
+        SceneValue::Key(value) => Some(value.as_ref().to_string()),
+        SceneValue::Str(value) => Some(value.as_ref().to_string()),
+        SceneValue::Object(fields) => fields
+            .iter()
+            .find(|(name, _)| name.as_ref() == "__variant")
+            .and_then(|(_, value)| match value {
+                SceneValue::Key(value) => Some(value.as_ref().to_string()),
+                SceneValue::Str(value) => Some(value.as_ref().to_string()),
+                _ => None,
+            }),
+        _ => None,
+    }
+}
+
+fn push_enum_payload_rows(
+    rows: &mut Vec<InspectorValueRow>,
+    source: &str,
+    fields: &[(SceneFieldName, SceneValue)],
+    path: &mut Vec<ValuePathStep>,
+    depth: usize,
+    ctx: &ValueRowContext<'_>,
+) {
+    let Some(data) = object_field_value(fields, "__data") else {
+        return;
+    };
+    path.push(ValuePathStep::Field("__data".to_string()));
+    match data {
+        SceneValue::Array(values) => {
+            for (idx, item) in values.iter().enumerate() {
+                path.push(ValuePathStep::Index(idx));
+                push_value_rows(rows, source, &format!("[{idx}]"), item, path, depth, ctx);
+                path.pop();
+            }
+        }
+        SceneValue::Object(values) => {
+            for (field, item) in values.iter() {
+                path.push(ValuePathStep::Field(field.as_ref().to_string()));
+                push_value_rows(rows, source, field.as_ref(), item, path, depth, ctx);
+                path.pop();
+            }
+        }
+        _ => {}
+    }
+    path.pop();
 }
 
 pub fn scene_value_summary(value: &SceneValue, expanded: bool) -> String {
@@ -3427,6 +3931,12 @@ pub fn edit_selected_script_var_path<API: ScriptAPI + ?Sized>(
     }
     let value = if let Some(value) = matrix_value {
         value
+    } else if !row.enum_options.is_empty() {
+        row.enum_values
+            .iter()
+            .find(|(name, _)| name == text.trim())
+            .map(|(_, value)| value.clone())
+            .unwrap_or_else(|| SceneValue::Key(SceneValueKey::from(text.trim().to_string())))
     } else {
         match parse_script_var_value(text.trim()) {
             Ok(value) => value,

@@ -35,8 +35,8 @@ pub fn update_inspector_bitmask_grid<API: ScriptAPI + ?Sized>(
             continue;
         };
         let _ = with_node_mut!(ctx.run, UiButton, id, |node| {
-            node.style.fill = Color::from_hex(if on { "#4D84D1" } else { "#2A2F36" })
-                .unwrap_or(node.style.fill);
+            node.style.fill =
+                Color::from_hex(if on { "#4D84D1" } else { "#2A2F36" }).unwrap_or(node.style.fill);
             node.style.stroke = Color::from_hex(if on { "#5A91DD" } else { "#343A43" })
                 .unwrap_or(node.style.stroke);
         });

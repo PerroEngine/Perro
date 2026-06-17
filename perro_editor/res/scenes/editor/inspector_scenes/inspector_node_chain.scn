@@ -39,7 +39,7 @@ parent = @inspector_chain_chip_0
 [inspector_chain_sep_0]
 parent = @inspector_node_chain
     [UiLabel]
-        size_ratio = (0.030, 0.96)
+        size_ratio = (0.03, 0.96)
         text = ">"
         text_size_ratio = 0.42
         color = "#6BA0EA"
@@ -66,7 +66,7 @@ parent = @inspector_chain_chip_1
     [UiLabel]
         size_ratio = (1.0, 1.0)
         text = "Node2D"
-        text_size_ratio = 0.40
+        text_size_ratio = 0.4
         color = "#F0B36A"
         h_align = "center"
         input_enabled = false
@@ -77,7 +77,7 @@ parent = @inspector_chain_chip_1
 [inspector_chain_sep_1]
 parent = @inspector_node_chain
     [UiLabel]
-        size_ratio = (0.030, 0.96)
+        size_ratio = (0.03, 0.96)
         text = ">"
         text_size_ratio = 0.42
         color = "#6BA0EA"

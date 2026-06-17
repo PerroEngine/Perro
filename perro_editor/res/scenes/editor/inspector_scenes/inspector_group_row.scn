@@ -63,7 +63,7 @@ parent = @inspector_value_row_inner
             fill = "#26303B",
             stroke = "#4D84D1",
             stroke_width = 1.0,
-            radius = 0.10
+            radius = 0.1
         }
     [/UiPanel]
 [/inspector_value_section_panel]

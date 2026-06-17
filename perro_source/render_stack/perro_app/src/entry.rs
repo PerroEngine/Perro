@@ -1,6 +1,8 @@
 use crate::App;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::threaded::{ThreadedStartupSplash, ThreadedWinitRunner};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::winit_runner::image_helpers::{preload_project_images, spawn_preload_project_images};
 use crate::winit_runner::{AppExitError, AppExitResult, WinitRunner};
 use perro_graphics::{GraphicsBackend, OcclusionCullingMode, PerroGraphics};
 pub use perro_runtime::{FrameRateCap, OcclusionCulling, ParticleSimDefault};
@@ -220,6 +222,7 @@ pub fn run_dev_project_from_path(
         project_root.to_string_lossy()
     );
     let project = RuntimeProject::from_project_dir_with_default_name(project_root, default_name)?;
+    let preload = spawn_preload_project_images(project.clone());
     eprintln!("perro dev runner: init graphics");
     let window_title = project.config.name.clone();
     let graphics = graphics_from_project_config(&project.config, false);
@@ -229,9 +232,12 @@ pub fn run_dev_project_from_path(
         .runtime
         .project()
         .and_then(|p| p.config.target_fixed_update);
+    let preloaded_images = preload
+        .join()
+        .unwrap_or_else(|_| preload_project_images(app.runtime.project()));
     eprintln!("perro dev runner: enter event loop");
     WinitRunner::new()
-        .run_with_timestep(app, &window_title, fixed)
+        .run_with_timestep_and_preload(app, &window_title, fixed, Some(preloaded_images))
         .map_err(RunProjectError::from)
 }
 
@@ -245,10 +251,15 @@ pub fn run_threaded_dev_project_from_path(
         project_root.to_string_lossy()
     );
     let project = RuntimeProject::from_project_dir_with_default_name(project_root, default_name)?;
+    let preload = spawn_preload_project_images(project.clone());
     eprintln!("perro dev runner: init graphics");
     let window_title = project.config.name.clone();
     let fixed = project.config.target_fixed_update;
-    let startup_splash = ThreadedStartupSplash::from_project(&project);
+    let preloaded_images = preload
+        .join()
+        .unwrap_or_else(|_| preload_project_images(Some(&project)));
+    let startup_splash =
+        ThreadedStartupSplash::from_preloaded(&project, preloaded_images.startup_splash.clone());
     let graphics = graphics_from_project_config(&project.config, false);
     eprintln!("perro dev runner: enter event loop");
     ThreadedWinitRunner::new()
@@ -258,6 +269,7 @@ pub fn run_threaded_dev_project_from_path(
             move || Runtime::from_project(project, ProviderMode::Dynamic),
             fixed,
             Some(startup_splash),
+            preloaded_images.window_icon,
         )
         .map_err(RunProjectError::from)
 }
@@ -288,7 +300,9 @@ pub fn run_threaded_static_project_from_path(
     let project = RuntimeProject::from_project_dir_with_default_name(project_root, default_name)?;
     let window_title = project.config.name.clone();
     let fixed = project.config.target_fixed_update;
-    let startup_splash = ThreadedStartupSplash::from_project(&project);
+    let preloaded_images = preload_project_images(Some(&project));
+    let startup_splash =
+        ThreadedStartupSplash::from_preloaded(&project, preloaded_images.startup_splash.clone());
     let graphics = graphics_from_project_config(&project.config, true);
     ThreadedWinitRunner::new()
         .run_with_timestep_and_startup(
@@ -297,6 +311,7 @@ pub fn run_threaded_static_project_from_path(
             move || Runtime::from_project(project, ProviderMode::Static),
             fixed,
             Some(startup_splash),
+            preloaded_images.window_icon,
         )
         .map_err(RunProjectError::from)
 }

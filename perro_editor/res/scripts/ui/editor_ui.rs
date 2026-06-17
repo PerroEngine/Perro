@@ -20,8 +20,8 @@ use crate::scripts_ui_bitmask_rs::{ensure_inspector_bitmask_grid, update_inspect
 use crate::scripts_ui_editor_inspector_values_rs::*;
 use crate::scripts_ui_editor_view_rs as editor_view;
 use crate::scripts_ui_inspector_value_row_rs::{
-    apply_inspector_value_row_panel, clear_inspector_value_rows, ensure_inspector_value_row,
-    ensure_inspector_matrix_grid, hide_inspector_value_rows_from, inspector_value_row_inner,
+    apply_inspector_value_row_panel, clear_inspector_value_rows, ensure_inspector_matrix_grid,
+    ensure_inspector_value_row, hide_inspector_value_rows_from, inspector_value_row_inner,
     place_inspector_value_row,
 };
 use perro_api::prelude::*;
@@ -258,11 +258,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
     set_label(ctx, "inspector_type", &view.inspector.kind);
     set_label(ctx, "inspector_parent", &view.inspector.parent);
     set_label(ctx, "inspector_script_top", &view.inspector.script);
-    set_ui_node_size(
-        ctx,
-        "inspector_script_top",
-        (0.95, 0.0),
-    );
+    set_ui_node_size(ctx, "inspector_script_top", (0.95, 0.0));
     set_ui_display(ctx, "inspector_script_top", false);
     set_ui_display(ctx, "inspector_type", false);
     set_ui_display(ctx, "inspector_parent", false);
@@ -485,7 +481,10 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
                     set_text_box(
                         ctx,
                         &name,
-                        row.components.get(cell_idx).map(String::as_str).unwrap_or(""),
+                        row.components
+                            .get(cell_idx)
+                            .map(String::as_str)
+                            .unwrap_or(""),
                     );
                     set_text_box_input_type(ctx, &name, inspector_row_component_input_type(row));
                     set_text_box_interactive(
@@ -501,11 +500,7 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
                 view.inspector.node_actions && !vars_closed,
             );
         } else {
-            set_ui_display(
-                ctx,
-                &format!("inspector_var_{idx}_matrix_grid"),
-                false,
-            );
+            set_ui_display(ctx, &format!("inspector_var_{idx}_matrix_grid"), false);
         }
         let swatch_name = format!("inspector_var_{idx}_color_swatch");
         let color_preview = row.and_then(|item| item.color_preview.as_deref());
@@ -882,7 +877,10 @@ fn ensure_inspector_node_chain<API: ScriptAPI + ?Sized>(
     }
 }
 
-fn inspector_chain_chip_colors(parts: &[String], idx: usize) -> (&'static str, &'static str, &'static str) {
+fn inspector_chain_chip_colors(
+    parts: &[String],
+    idx: usize,
+) -> (&'static str, &'static str, &'static str) {
     let label = parts.get(idx).map(String::as_str).unwrap_or_default();
     let family = parts.get(1).map(String::as_str).unwrap_or_default();
     if label == "Node" {
@@ -1603,21 +1601,68 @@ pub fn inspector_value_fields_for_node(
 fn inspector_var_button_label(row: &InspectorValueRow) -> String {
     let value = row.value.trim();
     if row.kind.starts_with("Node") && matches!(value, "" | "null" | "none" | "-") {
-        return if row.kind == "Node" {
-            "Assign Node".to_string()
-        } else {
-            format!("Assign {}", row.kind.trim_start_matches("Node"))
-        };
+        return node_ref_button_label(&row.kind);
     }
     if row.kind.starts_with("Asset(") && matches!(value, "" | "null" | "none" | "-") {
-        let asset_ty = row
-            .kind
-            .strip_prefix("Asset(")
-            .and_then(|value| value.strip_suffix(')'))
-            .unwrap_or("Asset");
+        let asset_ty = asset_ref_assign_label(&row.kind);
         return format!("Assign {asset_ty}");
     }
     row.value.clone()
+}
+
+fn node_ref_button_label(kind: &str) -> String {
+    format!("Assign {}", node_ref_assign_label(kind))
+}
+
+fn node_ref_assign_label(kind: &str) -> String {
+    let Some(refs) = node_ref_names_from_kind(kind) else {
+        return "Node".to_string();
+    };
+    if refs.is_empty() {
+        return "Node".to_string();
+    }
+    if refs.len() == 1 {
+        return refs[0].clone();
+    }
+    node_ref_group_label(&refs).unwrap_or_else(|| "Node".to_string())
+}
+
+fn node_ref_names_from_kind(kind: &str) -> Option<Vec<String>> {
+    let inner = kind.strip_prefix("Node(")?.strip_suffix(')')?;
+    Some(
+        inner
+            .split('|')
+            .map(str::trim)
+            .filter(|item| !item.is_empty())
+            .map(str::to_string)
+            .collect(),
+    )
+}
+
+fn node_ref_group_label(refs: &[String]) -> Option<String> {
+    let bases = refs
+        .iter()
+        .map(|item| item.as_str())
+        .map(|item| {
+            item.strip_suffix("2D")
+                .or_else(|| item.strip_suffix("3D"))
+                .unwrap_or(item)
+        })
+        .collect::<Vec<_>>();
+    if let Some(first) = bases.first()
+        && bases.iter().all(|item| item == first)
+    {
+        return Some((*first).to_string());
+    }
+    None
+}
+
+fn asset_ref_assign_label(kind: &str) -> &str {
+    kind.strip_prefix("Asset(")
+        .and_then(|value| value.strip_suffix(')'))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("Asset")
 }
 
 fn inspector_row_has_override<API: ScriptAPI + ?Sized>(
@@ -1750,7 +1795,11 @@ fn apply_inspector_value_row_text_layout<API: ScriptAPI + ?Sized>(
     row: &InspectorValueRow,
 ) {
     let (name_ratio, name_text_ratio) = if row.source == "section" {
-        if row.depth == 0 { (0.96, 0.38) } else { (0.96, 0.36) }
+        if row.depth == 0 {
+            (0.96, 0.38)
+        } else {
+            (0.96, 0.36)
+        }
     } else if row.kind == "EmptyArrayAdd" || row.kind == "EmptyObject" {
         (0.62, 0.62)
     } else if row.kind == "BitMask" {
@@ -1771,8 +1820,6 @@ fn apply_inspector_value_row_text_layout<API: ScriptAPI + ?Sized>(
         set_label_color(ctx, &format!("inspector_var_{idx}_name"), "#A7AFB9");
     } else if row.source == "section" && row.depth == 0 {
         set_label_color(ctx, &format!("inspector_var_{idx}_name"), "#D7DBE0");
-    } else if row.source == "section" {
-        set_label_color(ctx, &format!("inspector_var_{idx}_name"), "#A7AFB9");
     } else {
         set_label_color(ctx, &format!("inspector_var_{idx}_name"), "#A7AFB9");
     }
@@ -1815,7 +1862,11 @@ fn inspector_row_subtree_heights(rows: &[InspectorValueRow], base_heights: &[f32
             next += 1;
         }
         if child_count > 0 {
-            out[idx] += if rows[idx].source == "section" { 0.014 } else { 0.008 };
+            out[idx] += if rows[idx].source == "section" {
+                0.014
+            } else {
+                0.008
+            };
         }
     }
     out
@@ -1865,16 +1916,16 @@ fn apply_inspector_row_tree_layout<API: ScriptAPI + ?Sized>(
     set_vlayout_spacing_padding(
         ctx,
         &children_name,
-        if row.is_some_and(|row| row.source == "section") { 0.002 } else { 0.001 },
+        if row.is_some_and(|row| row.source == "section") {
+            0.002
+        } else {
+            0.001
+        },
         0.0,
         0.0,
         0.0,
     );
-    set_ui_display(
-        ctx,
-        &children_name,
-        child_total > 0.0,
-    );
+    set_ui_display(ctx, &children_name, child_total > 0.0);
 }
 
 #[derive(Clone)]
@@ -1907,12 +1958,26 @@ pub fn inspector_picker_title(state: &EditorState) -> String {
     }
     match state.inspector_picker_kind.as_str() {
         "node" => format!("Pick Node  {}", state.inspector_picker_field),
-        "script_node" | "value_node" => "Pick Node".to_string(),
+        "script_node" | "value_node" => inspector_node_picker_title(state),
         "script_enum" | "value_enum" => "Pick Enum".to_string(),
-        "value_asset" => "Pick Asset".to_string(),
-        "asset" => format!("Pick Asset  {}", state.inspector_picker_field),
+        "value_asset" | "asset" => inspector_asset_picker_title(state),
         _ => "Pick".to_string(),
     }
+}
+
+fn inspector_node_picker_title(state: &EditorState) -> String {
+    let refs = inspector_picker_node_ref_types(state);
+    if refs.is_empty() {
+        return "Select Node".to_string();
+    }
+    format!("Select a\n{}", refs.join(", "))
+}
+
+fn inspector_asset_picker_title(state: &EditorState) -> String {
+    let Some(kind) = inspector_picker_asset_kind(state) else {
+        return "Select Asset".to_string();
+    };
+    format!("Select a\n{kind:?}")
 }
 
 fn inspector_enum_picker_entries(state: &EditorState) -> Vec<InspectorPickerEntry> {

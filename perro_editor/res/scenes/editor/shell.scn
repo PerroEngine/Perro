@@ -3623,7 +3623,7 @@ parent = @inspector_content
     [UiTextBox]
         size_ratio = (0.95, 0.18)
         text = ""
-        placeholder = "speed = 3.0\\npath = @Node\\nname = \"value\""
+        placeholder = "speed = 3.0\\\\\\\\npath = @Node\\\\\\\\nname = \"value\""
         placeholder_color = "#A7AFB9"
         text_size_ratio = 0.288
         focused_signals = ["editor_inspector_focus"]
@@ -4552,7 +4552,7 @@ parent = @root_stack
 parent = @editor_root
     [UiVLayout]
         anchor = "center"
-        size_ratio = (0.30, 0.72)
+        size_ratio = (0.3, 0.72)
         h_align = "fill"
         v_align = "start"
         spacing = 0.004

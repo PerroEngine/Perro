@@ -17,6 +17,50 @@ const BODY_3D_REF_TYPES: &[NodeType] = &[
     NodeType::RigidBody3D,
     NodeType::Area3D,
 ];
+const CAMERA_STREAM_ASPECT_MODE_OPTIONS: &[&str] = &["fit", "stretch", "cover"];
+const IK_SOLVER_OPTIONS: &[&str] = &["ccd", "fabrik"];
+const ANIMATION_PLAYBACK_OPTIONS: &[&str] = &["once", "loop", "boomerang"];
+const UI_ANCHOR_OPTIONS: &[&str] = &[
+    "center",
+    "left",
+    "right",
+    "top",
+    "bottom",
+    "top_left",
+    "top_right",
+    "bottom_left",
+    "bottom_right",
+];
+const UI_TEXT_ALIGN_OPTIONS: &[&str] = &["start", "center", "end"];
+const PARTICLE_SIM_MODE_2D_OPTIONS: &[&str] = &["default", "cpu"];
+const PARTICLE_SIM_MODE_3D_OPTIONS: &[&str] = &["default", "cpu", "hybrid", "gpu"];
+const PARTICLE_RENDER_MODE_3D_OPTIONS: &[&str] = &["point", "billboard"];
+const WATER_IDLE_MODE_OPTIONS: &[&str] = &["calm", "sine", "chop", "storm", "river"];
+const CAMERA_PROJECTION_SUBMENUS: &[NodeFieldEnumVariant] = &[
+    NodeFieldEnumVariant::new(
+        "perspective",
+        &[
+            "perspective_fov_y_degrees",
+            "perspective_near",
+            "perspective_far",
+        ],
+    ),
+    NodeFieldEnumVariant::new(
+        "orthographic",
+        &["orthographic_size", "orthographic_near", "orthographic_far"],
+    ),
+    NodeFieldEnumVariant::new(
+        "frustum",
+        &[
+            "frustum_left",
+            "frustum_right",
+            "frustum_bottom",
+            "frustum_top",
+            "frustum_near",
+            "frustum_far",
+        ],
+    ),
+];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NodeRefHint {
@@ -69,6 +113,8 @@ pub enum NodeFieldType {
     Quat,
     Color,
     String,
+    Enum(&'static [&'static str]),
+    EnumSubmenu(&'static [NodeFieldEnumVariant]),
     NodeRef(NodeRefHint),
     BitMask,
     Object(Vec<NodeFieldDef>),
@@ -85,6 +131,14 @@ pub enum NodeFieldType {
 impl NodeFieldType {
     pub fn object(fields: Vec<NodeFieldDef>) -> Self {
         Self::Object(fields)
+    }
+
+    pub const fn enumeration(options: &'static [&'static str]) -> Self {
+        Self::Enum(options)
+    }
+
+    pub const fn enum_submenu(variants: &'static [NodeFieldEnumVariant]) -> Self {
+        Self::EnumSubmenu(variants)
     }
 
     pub fn array(item: NodeFieldType) -> Self {
@@ -133,6 +187,10 @@ impl NodeFieldType {
                 w: 0.0,
             },
             Self::String => SceneValue::Str(Cow::Borrowed("")),
+            Self::Enum(options) => SceneValue::Key(options.first().copied().unwrap_or("").into()),
+            Self::EnumSubmenu(variants) => {
+                SceneValue::Key(variants.first().map(|v| v.name).unwrap_or("").into())
+            }
             Self::NodeRef(_) => SceneValue::Key(crate::SceneValueKey::from("null")),
             Self::Asset(_) => SceneValue::Str(Cow::Borrowed("")),
             Self::Array(_) => SceneValue::Array(Cow::Owned(Vec::new())),
@@ -179,6 +237,18 @@ impl NodeFieldDef {
     pub fn with_default(mut self, default: SceneValue) -> Self {
         self.default = Some(default);
         self
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NodeFieldEnumVariant {
+    pub name: &'static str,
+    pub fields: &'static [&'static str],
+}
+
+impl NodeFieldEnumVariant {
+    pub const fn new(name: &'static str, fields: &'static [&'static str]) -> Self {
+        Self { name, fields }
     }
 }
 
@@ -346,8 +416,12 @@ fn push_base_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
         );
     } else if node_type.is_a(NodeType::UiNode) {
         fields.push(
-            SceneNodeField::new("Layout", "anchor", NodeFieldType::String)
-                .with_default(SceneValue::Str(Cow::Borrowed("center"))),
+            SceneNodeField::new(
+                "Layout",
+                "anchor",
+                NodeFieldType::enumeration(UI_ANCHOR_OPTIONS),
+            )
+            .with_default(SceneValue::Str(Cow::Borrowed("center"))),
         );
         fields.push(
             SceneNodeField::new("Layout", "size_ratio", NodeFieldType::Vec2)
@@ -399,7 +473,12 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
             push(fields, "Camera", "active", NodeFieldType::Bool);
         }
         NodeType::Camera3D => {
-            push(fields, "Camera", "projection", NodeFieldType::String);
+            push(
+                fields,
+                "Camera",
+                "projection",
+                NodeFieldType::enum_submenu(CAMERA_PROJECTION_SUBMENUS),
+            );
             push(
                 fields,
                 "Camera",
@@ -437,7 +516,7 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
                 fields,
                 "Camera Stream",
                 "aspect_mode",
-                NodeFieldType::String,
+                NodeFieldType::enumeration(CAMERA_STREAM_ASPECT_MODE_OPTIONS),
             );
             push(
                 fields,
@@ -525,7 +604,12 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
             push(fields, "IK", "tolerance", NodeFieldType::F32);
             push(fields, "IK", "weight", NodeFieldType::F32);
             push(fields, "IK", "match_rotation", NodeFieldType::Bool);
-            push(fields, "IK", "solver", NodeFieldType::String);
+            push(
+                fields,
+                "IK",
+                "solver",
+                NodeFieldType::enumeration(IK_SOLVER_OPTIONS),
+            );
         }
         NodeType::PhysicsBoneChain2D | NodeType::PhysicsBoneChain3D => {
             push(
@@ -629,7 +713,12 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
             );
             push(fields, "Animation", "speed", NodeFieldType::F32);
             push(fields, "Animation", "paused", NodeFieldType::Bool);
-            push(fields, "Animation", "playback", NodeFieldType::String);
+            push(
+                fields,
+                "Animation",
+                "playback",
+                NodeFieldType::enumeration(ANIMATION_PLAYBACK_OPTIONS),
+            );
         }
         NodeType::AnimationTree => {
             asset_field(fields, "Animation", "tree", SceneAssetKind::AnimationTree);
@@ -697,8 +786,18 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
             );
             push(fields, "Text", "color", NodeFieldType::Color);
             push(fields, "Text", "text_size_ratio", NodeFieldType::F32);
-            push(fields, "Text", "h_align", NodeFieldType::String);
-            push(fields, "Text", "v_align", NodeFieldType::String);
+            push(
+                fields,
+                "Text",
+                "h_align",
+                NodeFieldType::enumeration(UI_TEXT_ALIGN_OPTIONS),
+            );
+            push(
+                fields,
+                "Text",
+                "v_align",
+                NodeFieldType::enumeration(UI_TEXT_ALIGN_OPTIONS),
+            );
         }
         NodeType::UiScrollContainer => {
             push(fields, "Scroll", "scroll", NodeFieldType::Vec2);
@@ -831,9 +930,23 @@ fn particle_fields(fields: &mut Vec<SceneNodeField>, section: &'static str, is_3
     push(fields, section, "seed", NodeFieldType::U32);
     push(fields, section, "params", NodeFieldType::object(Vec::new()));
     asset_field(fields, section, "profile", SceneAssetKind::ParticleProfile);
-    push(fields, section, "sim_mode", NodeFieldType::String);
+    push(
+        fields,
+        section,
+        "sim_mode",
+        NodeFieldType::enumeration(if is_3d {
+            PARTICLE_SIM_MODE_3D_OPTIONS
+        } else {
+            PARTICLE_SIM_MODE_2D_OPTIONS
+        }),
+    );
     if is_3d {
-        push(fields, section, "render_mode", NodeFieldType::String);
+        push(
+            fields,
+            section,
+            "render_mode",
+            NodeFieldType::enumeration(PARTICLE_RENDER_MODE_3D_OPTIONS),
+        );
     }
 }
 
@@ -912,7 +1025,12 @@ fn water_fields(fields: &mut Vec<SceneNodeField>) {
     push(fields, "Water", "depth", NodeFieldType::F32);
     push(fields, "Water", "flow", NodeFieldType::Vec2);
     push(fields, "Water", "wind", NodeFieldType::Vec2);
-    push(fields, "Water", "idle_mode", NodeFieldType::String);
+    push(
+        fields,
+        "Water",
+        "idle_mode",
+        NodeFieldType::enumeration(WATER_IDLE_MODE_OPTIONS),
+    );
     push(fields, "Water", "wave_speed", NodeFieldType::F32);
     push(fields, "Water", "wave_scale", NodeFieldType::F32);
     push(fields, "Water", "wave_length", NodeFieldType::F32);
@@ -1087,5 +1205,25 @@ mod tests {
         };
         assert!(mesh_hint.allows(NodeType::Skeleton3D));
         assert!(!mesh_hint.allows(NodeType::Skeleton2D));
+    }
+
+    #[test]
+    fn camera_projection_field_exposes_enum_options() {
+        let field = scene_node_field(NodeType::Camera3D, "projection").unwrap();
+        let NodeFieldType::EnumSubmenu(options) = field.ty else {
+            panic!("projection must be enum submenu");
+        };
+        assert_eq!(
+            options.iter().map(|v| v.name).collect::<Vec<_>>(),
+            ["perspective", "orthographic", "frustum"],
+        );
+        assert_eq!(
+            options[0].fields,
+            [
+                "perspective_fov_y_degrees",
+                "perspective_near",
+                "perspective_far"
+            ],
+        );
     }
 }

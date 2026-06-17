@@ -8,10 +8,13 @@ use perro_asset_formats::ptex::{
 };
 #[cfg(not(target_arch = "wasm32"))]
 use perro_asset_formats::ptex::{MAGIC as PTEX_MAGIC, VERSION as PTEX_VERSION};
+#[cfg(all(test, not(target_arch = "wasm32")))]
+use perro_graphics_assets::decode_image_rgba as decode_source_image_rgba;
 #[cfg(not(target_arch = "wasm32"))]
 use perro_graphics_assets::{
     decode_image_logical_size as decode_source_image_logical_size,
-    decode_image_rgba as decode_source_image_rgba, decode_image_size as decode_source_image_size,
+    decode_image_rgba_max_size as decode_source_image_rgba_max_size,
+    decode_image_size as decode_source_image_size,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use perro_io::decompress_zlib;
@@ -19,15 +22,65 @@ use perro_io::decompress_zlib;
 use std::{
     fs,
     path::{Path, PathBuf},
+    thread::{self, JoinHandle},
 };
 #[cfg(not(target_arch = "wasm32"))]
 use winit::window::Icon;
 
 #[cfg(not(target_arch = "wasm32"))]
-pub(super) fn load_project_window_icon(project: &perro_runtime::RuntimeProject) -> Option<Icon> {
-    let bytes = load_project_icon_bytes(project)?;
-    let (rgba, width, height) = decode_image_rgba(&bytes)?;
-    Icon::from_rgba(rgba, width, height).ok()
+const WINDOW_ICON_MAX_DIM: u32 = 256;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) struct PreloadedProjectImages {
+    pub window_icon: Option<Icon>,
+    pub startup_splash: Option<PreloadedStartupSplash>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Debug)]
+pub(crate) struct PreloadedStartupSplash {
+    pub source: String,
+    pub source_hash: Option<u64>,
+    pub image_size: Option<(u32, u32)>,
+    pub texture_size: Option<(u32, u32)>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+struct LoadedProjectImage {
+    source: String,
+    source_hash: Option<u64>,
+    bytes: Vec<u8>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn preload_project_images(
+    project: Option<&perro_runtime::RuntimeProject>,
+) -> PreloadedProjectImages {
+    let Some(project) = project else {
+        return PreloadedProjectImages {
+            window_icon: None,
+            startup_splash: preload_builtin_startup_splash(),
+        };
+    };
+
+    let icon = preload_project_icon(project);
+    let splash = preload_project_startup_splash(project, icon.as_ref());
+    let window_icon = icon
+        .as_ref()
+        .and_then(|image| decode_image_rgba_max_size(&image.bytes, WINDOW_ICON_MAX_DIM))
+        .and_then(|(rgba, width, height)| Icon::from_rgba(rgba, width, height).ok());
+
+    PreloadedProjectImages {
+        window_icon,
+        startup_splash: splash,
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn spawn_preload_project_images(
+    project: perro_runtime::RuntimeProject,
+) -> JoinHandle<PreloadedProjectImages> {
+    thread::spawn(move || preload_project_images(Some(&project)))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -38,6 +91,74 @@ fn load_project_icon_bytes(project: &perro_runtime::RuntimeProject) -> Option<Ve
         project.config.icon_hash,
     )
     .or_else(|| Some(perro_api::builtin_assets::PERRO_LOGO_SVG.to_vec()))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn preload_project_icon(project: &perro_runtime::RuntimeProject) -> Option<LoadedProjectImage> {
+    let source = project.config.icon.trim();
+    let source_hash = project.config.icon_hash;
+    let bytes = load_project_icon_bytes(project)?;
+    let source = if source.is_empty() {
+        perro_api::builtin_assets::PERRO_LOGO_SVG_SOURCE.to_string()
+    } else {
+        source.to_string()
+    };
+    Some(LoadedProjectImage {
+        source,
+        source_hash,
+        bytes,
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn preload_project_startup_splash(
+    project: &perro_runtime::RuntimeProject,
+    icon: Option<&LoadedProjectImage>,
+) -> Option<PreloadedStartupSplash> {
+    let splash_source = project.config.startup_splash.trim();
+    if !splash_source.is_empty() {
+        let bytes =
+            load_project_image_bytes(project, splash_source, project.config.startup_splash_hash)?;
+        return Some(preloaded_startup_splash_from_bytes(
+            splash_source.to_string(),
+            project.config.startup_splash_hash,
+            &bytes,
+        ));
+    }
+
+    if let Some(icon) = icon {
+        return Some(preloaded_startup_splash_from_bytes(
+            icon.source.clone(),
+            icon.source_hash,
+            &icon.bytes,
+        ));
+    }
+
+    preload_builtin_startup_splash()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn preload_builtin_startup_splash() -> Option<PreloadedStartupSplash> {
+    let bytes = perro_api::builtin_assets::PERRO_LOGO_SVG;
+    Some(preloaded_startup_splash_from_bytes(
+        perro_api::builtin_assets::PERRO_LOGO_SVG_SOURCE.to_string(),
+        None,
+        bytes,
+    ))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn preloaded_startup_splash_from_bytes(
+    source: String,
+    source_hash: Option<u64>,
+    bytes: &[u8],
+) -> PreloadedStartupSplash {
+    PreloadedStartupSplash {
+        source,
+        source_hash,
+        image_size: decode_image_logical_size(bytes),
+        texture_size: decode_image_size(bytes),
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -71,35 +192,6 @@ fn load_project_image_bytes(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn builtin_perro_logo_sizes() -> Option<LoadedImageSizes> {
-    let bytes = perro_api::builtin_assets::PERRO_LOGO_SVG;
-    Some(LoadedImageSizes {
-        display: decode_image_logical_size(bytes)?,
-        texture: decode_image_size(bytes)?,
-    })
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-#[derive(Clone, Copy)]
-pub(crate) struct LoadedImageSizes {
-    pub display: (u32, u32),
-    pub texture: (u32, u32),
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn load_image_sizes(
-    project: &perro_runtime::RuntimeProject,
-    source: &str,
-    source_hash: Option<u64>,
-) -> Option<LoadedImageSizes> {
-    let bytes = load_project_image_bytes(project, source, source_hash)?;
-    Some(LoadedImageSizes {
-        display: decode_image_logical_size(&bytes)?,
-        texture: decode_image_size(&bytes)?,
-    })
-}
-
-#[cfg(not(target_arch = "wasm32"))]
 fn decode_image_size(bytes: &[u8]) -> Option<(u32, u32)> {
     if let Some((width, height)) = decode_ptex_dimensions(bytes) {
         return Some((width.max(1), height.max(1)));
@@ -115,12 +207,20 @@ fn decode_image_logical_size(bytes: &[u8]) -> Option<(u32, u32)> {
     decode_source_image_logical_size(bytes)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 fn decode_image_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
     if let Some(decoded) = decode_ptex_rgba(bytes) {
         return Some(decoded);
     }
     decode_source_image_rgba(bytes)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn decode_image_rgba_max_size(bytes: &[u8], max_dim: u32) -> Option<(Vec<u8>, u32, u32)> {
+    if let Some(decoded) = decode_ptex_rgba(bytes) {
+        return Some(decoded);
+    }
+    decode_source_image_rgba_max_size(bytes, max_dim)
 }
 
 #[cfg(not(target_arch = "wasm32"))]

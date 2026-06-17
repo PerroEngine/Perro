@@ -2,7 +2,7 @@
 
 use crate::App;
 #[cfg(not(target_arch = "wasm32"))]
-use image_helpers::load_project_window_icon;
+use image_helpers::{PreloadedProjectImages, preload_project_images};
 use perro_graphics::GraphicsBackend;
 use perro_ids::TextureID;
 use perro_input_api::MouseMode;
@@ -523,6 +523,17 @@ impl WinitRunner {
         title: &str,
         fixed_timestep: Option<f32>,
     ) -> Result<AppExitResult, AppExitError> {
+        self.run_with_timestep_and_preload(app, title, fixed_timestep, None)
+    }
+
+    pub(crate) fn run_with_timestep_and_preload<B: GraphicsBackend + 'static>(
+        self,
+        app: App<B>,
+        title: &str,
+        fixed_timestep: Option<f32>,
+        #[cfg(not(target_arch = "wasm32"))] preloaded_images: Option<PreloadedProjectImages>,
+        #[cfg(target_arch = "wasm32")] _preloaded_images: Option<()>,
+    ) -> Result<AppExitResult, AppExitError> {
         let event_loop = EventLoop::new().map_err(|err| AppExitError {
             message: format!("failed to create winit event loop: {err}"),
         })?;
@@ -534,7 +545,7 @@ impl WinitRunner {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let mut state = RunnerState::new(app, title, fixed_timestep);
+            let mut state = RunnerState::new(app, title, fixed_timestep, preloaded_images);
             event_loop.run_app(&mut state).map_err(|err| AppExitError {
                 message: format!("winit event loop failed: {err}"),
             })?;
@@ -558,7 +569,7 @@ impl WinitRunner {
         let event_loop = builder.build().map_err(|err| AppExitError {
             message: format!("failed to create android winit event loop: {err}"),
         })?;
-        let mut state = RunnerState::new(app, title, fixed_timestep);
+        let mut state = RunnerState::new(app, title, fixed_timestep, None);
         event_loop.run_app(&mut state).map_err(|err| AppExitError {
             message: format!("winit event loop failed: {err}"),
         })?;
@@ -770,14 +781,28 @@ struct RunnerState<B: GraphicsBackend> {
     cursor_icon: perro_ui::CursorIcon,
     window_requests: Vec<WindowRequest>,
     cursor_inside_window: bool,
+    #[cfg(not(target_arch = "wasm32"))]
+    preloaded_images: PreloadedProjectImages,
     startup_splash: StartupSplashState,
     exit_result: Option<AppExitResult>,
 }
 
 impl<B: GraphicsBackend> RunnerState<B> {
-    fn new(app: App<B>, title: &str, fixed_timestep: Option<f32>) -> Self {
+    fn new(
+        app: App<B>,
+        title: &str,
+        fixed_timestep: Option<f32>,
+        #[cfg(not(target_arch = "wasm32"))] preloaded_images: Option<PreloadedProjectImages>,
+    ) -> Self {
         let now = Instant::now();
-        let startup_splash = StartupSplashState::from_project(app.runtime.project(), now);
+        #[cfg(not(target_arch = "wasm32"))]
+        let preloaded_images =
+            preloaded_images.unwrap_or_else(|| preload_project_images(app.runtime.project()));
+        #[cfg(not(target_arch = "wasm32"))]
+        let startup_splash =
+            StartupSplashState::from_preloaded(preloaded_images.startup_splash.clone(), now);
+        #[cfg(target_arch = "wasm32")]
+        let startup_splash = StartupSplashState::from_preloaded(now);
         let normalized_fixed_timestep = normalize_fixed_timestep_seconds(fixed_timestep);
         let frame_rate_cap = app
             .runtime
@@ -979,6 +1004,8 @@ impl<B: GraphicsBackend> RunnerState<B> {
             cursor_icon: perro_ui::CursorIcon::Default,
             window_requests: Vec::new(),
             cursor_inside_window: false,
+            #[cfg(not(target_arch = "wasm32"))]
+            preloaded_images,
             startup_splash,
             exit_result: None,
         }
@@ -2478,7 +2505,13 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         event_loop.set_control_flow(ControlFlow::Poll);
         if self.window.is_none() {
-            let attrs = window_attributes(event_loop, self.app.runtime.project(), &self.title);
+            let attrs = window_attributes(
+                event_loop,
+                self.app.runtime.project(),
+                &self.title,
+                #[cfg(not(target_arch = "wasm32"))]
+                self.preloaded_images.window_icon.take(),
+            );
             let window = Arc::new(
                 event_loop
                     .create_window(attrs)
@@ -2812,6 +2845,7 @@ fn window_attributes(
     event_loop: &ActiveEventLoop,
     project: Option<&perro_runtime::RuntimeProject>,
     fallback_title: &str,
+    #[cfg(not(target_arch = "wasm32"))] window_icon: Option<winit::window::Icon>,
 ) -> WindowAttributes {
     #[cfg(target_arch = "wasm32")]
     let _ = event_loop;
@@ -2833,7 +2867,7 @@ fn window_attributes(
     };
 
     #[cfg(not(target_arch = "wasm32"))]
-    if let Some(icon) = load_project_window_icon(project) {
+    if let Some(icon) = window_icon {
         attrs = attrs.with_window_icon(Some(icon));
     }
 

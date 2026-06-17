@@ -1074,7 +1074,9 @@ pub fn pick_selected_script_var_ref<API: ScriptAPI + ?Sized>(
             {
                 state.inspector_collapsed_sections.remove(pos);
             } else {
-                state.inspector_collapsed_sections.push(row.path_key.clone());
+                state
+                    .inspector_collapsed_sections
+                    .push(row.path_key.clone());
             }
             return Some(false);
         }

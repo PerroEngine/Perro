@@ -7,6 +7,6 @@ pub use mesh::{
     load_mesh3d_from_source, validate_mesh_source,
 };
 pub use texture::{
-    decode_gltf_texture, decode_image_logical_size, decode_image_rgba, decode_image_size,
-    decode_ptex, gltf_texture_source_from_mesh_source, load_texture_rgba,
+    decode_gltf_texture, decode_image_logical_size, decode_image_rgba, decode_image_rgba_max_size,
+    decode_image_size, decode_ptex, gltf_texture_source_from_mesh_source, load_texture_rgba,
 };

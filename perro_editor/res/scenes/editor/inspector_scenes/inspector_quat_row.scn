@@ -370,7 +370,7 @@ parent = @inspector_value_row_inner
 [inspector_value_0_box]
 parent = @inspector_value_components
     [UiTextBox]
-        size_ratio = (0.20, 0.72)
+        size_ratio = (0.2, 0.72)
         visible = false
         placeholder = "x"
         placeholder_color = "#6E7680"
@@ -414,7 +414,7 @@ parent = @inspector_value_0_box
 [inspector_value_1_box]
 parent = @inspector_value_components
     [UiTextBox]
-        size_ratio = (0.20, 0.72)
+        size_ratio = (0.2, 0.72)
         visible = false
         placeholder = "y"
         placeholder_color = "#6E7680"
@@ -458,7 +458,7 @@ parent = @inspector_value_1_box
 [inspector_value_2_box]
 parent = @inspector_value_components
     [UiTextBox]
-        size_ratio = (0.20, 0.72)
+        size_ratio = (0.2, 0.72)
         visible = false
         placeholder = "z"
         placeholder_color = "#6E7680"
@@ -502,7 +502,7 @@ parent = @inspector_value_2_box
 [inspector_value_3_box]
 parent = @inspector_value_components
     [UiTextBox]
-        size_ratio = (0.20, 0.72)
+        size_ratio = (0.2, 0.72)
         visible = false
         placeholder = "w"
         placeholder_color = "#6E7680"
