@@ -3,9 +3,9 @@ $root = @inspector_value_row
 [inspector_value_row]
 script = "res://scripts/ui/inspector_scenes/vec2_row.rs"
     [UiPanel]
-        size_ratio = (0.985, 0.031)
-        padding = (0.004, 0.001)
-        h_align = "fill"
+        size_ratio = (0.95, 0.031)
+        padding = (0.0, 0.001)
+        h_align = "center"
         visible = false
         style = {
             fill = "#00000000",
@@ -48,9 +48,10 @@ parent = @inspector_value_row
 parent = @inspector_value_row_stack
     [UiHLayout]
         size_ratio = (1.0, 1.0)
-        h_align = "fill"
+        h_align = "start"
         v_align = "center"
-        spacing = 0.002
+        spacing = "fill"
+        padding = (0.018, 0.0)
     [/UiHLayout]
 [/inspector_value_row_inner]
 
@@ -58,7 +59,7 @@ parent = @inspector_value_row_stack
 parent = @inspector_value_row_stack
     [UiVLayout]
         size_ratio = (1.0, 0.0)
-        h_align = "fill"
+        h_align = "center"
         v_align = "start"
         spacing = 0.0
         padding = (0.0, 0.0)
@@ -76,11 +77,23 @@ parent = @inspector_value_row_inner
     [/UiLabel]
 [/inspector_value_name]
 
+[inspector_value_components]
+parent = @inspector_value_row_inner
+    [UiHLayout]
+        size_ratio = (0.5, 1.0)
+        h_align = "center"
+        v_align = "center"
+        spacing = "fill"
+        translation_ratio = (-0.15, 0.0)
+    [/UiHLayout]
+[/inspector_value_components]
+
 [inspector_value_box]
 parent = @inspector_value_row_inner
     [UiTextBox]
         size_ratio = (0.5, 0.7)
         text_size_ratio = 0.62
+        h_align = "center"
         padding = (5.0, 1.0)
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
@@ -103,6 +116,7 @@ parent = @inspector_value_row_inner
 parent = @inspector_value_row_inner
     [UiCheckbox]
         size_ratio = (0.055, 0.5)
+        translation_ratio = (-0.235, 0.0)
         visible = false
         click_signals = ["editor_inspector_var_pick_7"]
         style = {
@@ -221,6 +235,7 @@ parent = @inspector_value_remove_button
 parent = @inspector_value_row_inner
     [UiColorPicker]
         size_ratio = (0.34, 0.62)
+        translation_ratio = (-0.082, 0.0)
         visible = false
         mouse_filter = "pass"
         color_changed_signals = ["editor_inspector_var_7"]
@@ -350,14 +365,15 @@ parent = @inspector_value_row_inner
 [/inspector_value_dropdown]
 
 [inspector_value_0_box]
-parent = @inspector_value_row_inner
+parent = @inspector_value_components
     [UiTextBox]
-        size_ratio = (0.1, 0.62)
+        size_ratio = (0.42, 0.72)
         visible = false
         placeholder = "x"
         placeholder_color = "#6E7680"
         text_size_ratio = 0.62
-        padding = (13.0, 1.0, 4.0, 1.0)
+        h_align = "center"
+        padding = (4.0, 1.0)
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = {
@@ -378,9 +394,9 @@ parent = @inspector_value_row_inner
 [inspector_value_0_label]
 parent = @inspector_value_0_box
     [UiLabel]
-        anchor = "center"
+        anchor = "left"
         size_ratio = (0.28, 1.0)
-        translation_ratio = (0.14, 0.5)
+        translation_ratio = (0.0, 0.0)
         z_index = 10.0
         text = "X"
         text_size_ratio = 0.52
@@ -393,14 +409,15 @@ parent = @inspector_value_0_box
 [/inspector_value_0_label]
 
 [inspector_value_1_box]
-parent = @inspector_value_row_inner
+parent = @inspector_value_components
     [UiTextBox]
-        size_ratio = (0.1, 0.62)
+        size_ratio = (0.42, 0.72)
         visible = false
         placeholder = "y"
         placeholder_color = "#6E7680"
         text_size_ratio = 0.62
-        padding = (13.0, 1.0, 4.0, 1.0)
+        h_align = "center"
+        padding = (4.0, 1.0)
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = {
@@ -421,9 +438,9 @@ parent = @inspector_value_row_inner
 [inspector_value_1_label]
 parent = @inspector_value_1_box
     [UiLabel]
-        anchor = "center"
+        anchor = "left"
         size_ratio = (0.28, 1.0)
-        translation_ratio = (0.14, 0.5)
+        translation_ratio = (0.0, 0.0)
         z_index = 10.0
         text = "Y"
         text_size_ratio = 0.52
@@ -436,14 +453,15 @@ parent = @inspector_value_1_box
 [/inspector_value_1_label]
 
 [inspector_value_2_box]
-parent = @inspector_value_row_inner
+parent = @inspector_value_components
     [UiTextBox]
-        size_ratio = (0.1, 0.62)
+        size_ratio = (0.42, 0.72)
         visible = false
         placeholder = "z"
         placeholder_color = "#6E7680"
         text_size_ratio = 0.62
-        padding = (13.0, 1.0, 4.0, 1.0)
+        h_align = "center"
+        padding = (4.0, 1.0)
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = {
@@ -464,9 +482,9 @@ parent = @inspector_value_row_inner
 [inspector_value_2_label]
 parent = @inspector_value_2_box
     [UiLabel]
-        anchor = "center"
+        anchor = "left"
         size_ratio = (0.28, 1.0)
-        translation_ratio = (0.14, 0.5)
+        translation_ratio = (0.0, 0.0)
         z_index = 10.0
         text = "Z"
         text_size_ratio = 0.52
@@ -479,14 +497,15 @@ parent = @inspector_value_2_box
 [/inspector_value_2_label]
 
 [inspector_value_3_box]
-parent = @inspector_value_row_inner
+parent = @inspector_value_components
     [UiTextBox]
-        size_ratio = (0.1, 0.62)
+        size_ratio = (0.42, 0.72)
         visible = false
         placeholder = "w"
         placeholder_color = "#6E7680"
         text_size_ratio = 0.62
-        padding = (13.0, 1.0, 4.0, 1.0)
+        h_align = "center"
+        padding = (4.0, 1.0)
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = {
@@ -507,9 +526,9 @@ parent = @inspector_value_row_inner
 [inspector_value_3_label]
 parent = @inspector_value_3_box
     [UiLabel]
-        anchor = "center"
+        anchor = "left"
         size_ratio = (0.28, 1.0)
-        translation_ratio = (0.14, 0.5)
+        translation_ratio = (0.0, 0.0)
         z_index = 10.0
         text = "W"
         text_size_ratio = 0.52

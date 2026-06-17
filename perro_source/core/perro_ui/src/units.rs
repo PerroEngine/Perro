@@ -211,6 +211,13 @@ pub enum UiLayoutMode {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum UiLayoutSpacingMode {
+    #[default]
+    Fixed,
+    Fill,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum UiAnchor {
     #[default]
     Center,

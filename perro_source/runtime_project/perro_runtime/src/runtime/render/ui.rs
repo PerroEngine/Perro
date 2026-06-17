@@ -16,8 +16,8 @@ use perro_runtime_render::{UiDirtyMask, UiExtractionOptions, ui_image_texture_re
 use perro_structs::{Color, UVector2, Vector2};
 use perro_ui::{
     ComputedUiRect, UiAnchor, UiButton, UiFontSizing, UiHorizontalAlign, UiImageScaleMode,
-    UiLayoutData, UiLayoutMode, UiNode, UiPanel, UiSizeMode, UiStyle, UiTextBox, UiTextEdit,
-    UiTransform, UiVector2, UiVerticalAlign,
+    UiLayoutData, UiLayoutMode, UiLayoutSpacingMode, UiNode, UiPanel, UiSizeMode, UiStyle,
+    UiTextBox, UiTextEdit, UiTransform, UiVector2, UiVerticalAlign,
 };
 use perro_variant::Variant;
 use std::borrow::Cow;

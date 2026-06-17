@@ -715,14 +715,32 @@ fn text_edit_draw_pos(
     content_max: epaint::Pos2,
     galley: &Galley,
 ) -> epaint::Pos2 {
-    let center_y = if edit.multiline {
-        0.0
-    } else {
-        (content_max.y - content_min.y - galley.size().y).max(0.0) * 0.5
+    let content_size = content_max - content_min;
+    let x_offset = match edit.h_align {
+        UiTextAlignState::Start => 0.0,
+        UiTextAlignState::Center => (content_size.x - galley.size().x).max(0.0) * 0.5,
+        UiTextAlignState::End => (content_size.x - galley.size().x).max(0.0),
+    };
+    let y_offset = match edit.v_align {
+        UiTextAlignState::Start => 0.0,
+        UiTextAlignState::Center => {
+            if edit.multiline {
+                0.0
+            } else {
+                (content_size.y - galley.size().y).max(0.0) * 0.5
+            }
+        }
+        UiTextAlignState::End => {
+            if edit.multiline {
+                0.0
+            } else {
+                (content_size.y - galley.size().y).max(0.0)
+            }
+        }
     };
     pos2(
-        content_min.x - edit.scroll[0],
-        content_min.y + center_y - edit.scroll[1],
+        content_min.x + x_offset - edit.scroll[0],
+        content_min.y + y_offset - edit.scroll[1],
     )
 }
 

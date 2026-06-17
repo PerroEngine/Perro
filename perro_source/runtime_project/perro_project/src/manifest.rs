@@ -342,6 +342,10 @@ fn ensure_project_manifest_icon_build_support(path: &Path) -> std::io::Result<()
         );
         changed = true;
     }
+    if !build_deps_table.contains_key("perro_api") {
+        build_deps_table.insert("perro_api".to_string(), Value::String("0.1.0".to_string()));
+        changed = true;
+    }
     if build_deps_table.get("toml").and_then(Value::as_str) != Some("0.8.23") {
         build_deps_table.insert("toml".to_string(), Value::String("0.8.23".to_string()));
         changed = true;

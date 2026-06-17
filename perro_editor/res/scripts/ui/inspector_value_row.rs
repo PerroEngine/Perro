@@ -106,7 +106,7 @@ fn ensure_inspector_default_button<API: ScriptAPI + ?Sized>(
     if find_named(ctx, &button_name).is_some() {
         return;
     }
-    let Some(parent) = inspector_value_row_inner(ctx, idx) else {
+    let Some(parent) = find_named(ctx, &inspector_row_names(idx).row) else {
         return;
     };
     let button = ctx.run.Nodes().create::<UiButton>();
@@ -119,7 +119,10 @@ fn ensure_inspector_default_button<API: ScriptAPI + ?Sized>(
     let _ = ctx.run.Nodes().reparent(parent, button);
     let _ = ctx.run.Nodes().reparent(button, label);
     let _ = with_node_mut!(ctx.run, UiButton, button, |node| {
+        node.layout.anchor = UiAnchor::Right;
         node.layout.size = UiVector2::ratio(0.028, 0.48);
+        node.transform.translation = Vector2::new(-0.018, 0.0);
+        node.layout.z_index = 4;
         node.visible = false;
         node.clicked_signals = vec![SignalID::from_string("editor_inspector_var_7")];
         node.style.fill = Color::from_hex("#00000000").unwrap_or(node.style.fill);
@@ -439,6 +442,7 @@ fn value_row_instance_name(name: &str, idx: usize) -> Option<String> {
         "inspector_value_row_stack" => format!("inspector_var_row_{idx}_stack"),
         "inspector_value_row_inner" => format!("inspector_var_row_{idx}_inner"),
         "inspector_value_row_children" => format!("inspector_var_row_{idx}_children"),
+        "inspector_value_components" => format!("inspector_var_{idx}_components"),
         "inspector_value_section_panel" => format!("inspector_var_{idx}_section_panel"),
         "inspector_value_name" => format!("inspector_var_{idx}_name"),
         "inspector_value_box" => format!("inspector_var_{idx}_value"),

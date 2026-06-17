@@ -1,7 +1,7 @@
 # Perro Engine
 
-<div align="center">
-  <img src="icon.png" alt="Perro Logo" width="200"/>
+<div align="center" style="margin-bottom: 16px;">
+  <img src="perro.svg" alt="Perro Logo" width="300"/>
 </div>
 
 **Perro** is an experimental, open-source game engine written in **Rust**. With a focus on performance and simplicity without sacrificing either.

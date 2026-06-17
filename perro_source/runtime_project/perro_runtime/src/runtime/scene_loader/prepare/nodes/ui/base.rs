@@ -256,13 +256,30 @@ fn build_ui_grid(data: &SceneDefNodeData) -> UiGrid {
             }
         }
         "h_spacing" | "horizontal_spacing" => {
-            if let Some(v) = as_f32(value) {
+            if let Some(mode) = as_ui_layout_spacing_mode(value) {
+                node.h_spacing_mode = mode;
+            } else if let Some(v) = as_f32(value) {
                 node.h_spacing = v;
+                node.h_spacing_mode = perro_ui::UiLayoutSpacingMode::Fixed;
             }
         }
         "v_spacing" | "vertical_spacing" => {
-            if let Some(v) = as_f32(value) {
+            if let Some(mode) = as_ui_layout_spacing_mode(value) {
+                node.v_spacing_mode = mode;
+            } else if let Some(v) = as_f32(value) {
                 node.v_spacing = v;
+                node.v_spacing_mode = perro_ui::UiLayoutSpacingMode::Fixed;
+            }
+        }
+        "spacing" => {
+            if let Some(mode) = as_ui_layout_spacing_mode(value) {
+                node.h_spacing_mode = mode;
+                node.v_spacing_mode = mode;
+            } else if let Some(v) = as_f32(value) {
+                node.h_spacing = v;
+                node.v_spacing = v;
+                node.h_spacing_mode = perro_ui::UiLayoutSpacingMode::Fixed;
+                node.v_spacing_mode = perro_ui::UiLayoutSpacingMode::Fixed;
             }
         }
         _ => {}
@@ -1389,6 +1406,16 @@ fn apply_ui_text_edit_fields(
                 node.font_sizing.max_scale = v;
             }
         }
+        "h_align" | "text_h_align" => {
+            if let Some(v) = as_ui_text_align(value) {
+                node.h_align = v;
+            }
+        }
+        "v_align" | "text_v_align" => {
+            if let Some(v) = as_ui_text_align(value) {
+                node.v_align = v;
+            }
+        }
         "text_padding" | "content_padding" => {
             if let Some(v) = as_ui_rect(value) {
                 node.padding = v;
@@ -1536,18 +1563,27 @@ fn apply_ui_container_fields(
             }
         }
         "spacing" => {
-            if let Some(v) = as_f32(value) {
+            if let Some(mode) = as_ui_layout_spacing_mode(value) {
+                node.spacing_mode = mode;
+            } else if let Some(v) = as_f32(value) {
                 node.spacing = v;
+                node.spacing_mode = perro_ui::UiLayoutSpacingMode::Fixed;
             }
         }
         "h_spacing" | "horizontal_spacing" => {
-            if let Some(v) = as_f32(value) {
+            if let Some(mode) = as_ui_layout_spacing_mode(value) {
+                node.h_spacing_mode = mode;
+            } else if let Some(v) = as_f32(value) {
                 node.h_spacing = v;
+                node.h_spacing_mode = perro_ui::UiLayoutSpacingMode::Fixed;
             }
         }
         "v_spacing" | "vertical_spacing" => {
-            if let Some(v) = as_f32(value) {
+            if let Some(mode) = as_ui_layout_spacing_mode(value) {
+                node.v_spacing_mode = mode;
+            } else if let Some(v) = as_f32(value) {
                 node.v_spacing = v;
+                node.v_spacing_mode = perro_ui::UiLayoutSpacingMode::Fixed;
             }
         }
         "columns" => {
@@ -1567,18 +1603,27 @@ fn apply_ui_fixed_container_fields(
 ) {
     SceneFieldIterRef::new(fields).for_each(|name, value| match name {
         "spacing" => {
-            if let Some(v) = as_f32(value) {
+            if let Some(mode) = as_ui_layout_spacing_mode(value) {
+                node.spacing_mode = mode;
+            } else if let Some(v) = as_f32(value) {
                 node.spacing = v;
+                node.spacing_mode = perro_ui::UiLayoutSpacingMode::Fixed;
             }
         }
         "h_spacing" | "horizontal_spacing" => {
-            if let Some(v) = as_f32(value) {
+            if let Some(mode) = as_ui_layout_spacing_mode(value) {
+                node.h_spacing_mode = mode;
+            } else if let Some(v) = as_f32(value) {
                 node.h_spacing = v;
+                node.h_spacing_mode = perro_ui::UiLayoutSpacingMode::Fixed;
             }
         }
         "v_spacing" | "vertical_spacing" => {
-            if let Some(v) = as_f32(value) {
+            if let Some(mode) = as_ui_layout_spacing_mode(value) {
+                node.v_spacing_mode = mode;
+            } else if let Some(v) = as_f32(value) {
                 node.v_spacing = v;
+                node.v_spacing_mode = perro_ui::UiLayoutSpacingMode::Fixed;
             }
         }
         "columns" => {

@@ -41,6 +41,7 @@ impl Runtime {
                     child,
                     content_rect,
                     auto_layout.h_spacing,
+                    auto_layout.h_spacing_mode,
                 ),
                 UiLayoutMode::V => self.compute_ui_v_child_rect(
                     &parent_ui.layout,
@@ -48,6 +49,7 @@ impl Runtime {
                     child,
                     content_rect,
                     auto_layout.v_spacing,
+                    auto_layout.v_spacing_mode,
                 ),
                 UiLayoutMode::Grid => self.compute_ui_grid_child_rect(
                     &parent_ui.layout,
@@ -84,8 +86,9 @@ impl Runtime {
         child: NodeID,
         content: ComputedUiRect,
         spacing: f32,
+        spacing_mode: UiLayoutSpacingMode,
     ) -> Option<ComputedUiRect> {
-        let spacing = ui_h_spacing_amount(spacing, content.size.x);
+        let spacing = self.h_layout_spacing(children, content.size, spacing, spacing_mode);
         let fill_width = self.h_fill_width(children, content.size.x, spacing);
         let used_width = self.h_used_width(children, content.size, spacing, fill_width);
         let min = content.min();
@@ -131,12 +134,12 @@ impl Runtime {
         parent_layout: &UiLayoutData,
         children: &[NodeID],
         layout_ctx: UiChildrenLayoutCtx,
-        spacing: f32,
+        spacing: UiAxisLayoutSpacing,
         computed: &mut AHashMap<NodeID, ComputedUiRect>,
         computed_scales: &mut AHashMap<NodeID, Vector2>,
     ) {
         let UiChildrenLayoutCtx { content, .. } = layout_ctx;
-        let spacing = ui_h_spacing_amount(spacing, content.size.x);
+        let spacing = self.h_layout_spacing(children, content.size, spacing.amount, spacing.mode);
         let fill_width = self.h_fill_width(children, content.size.x, spacing);
         let used_width = self.h_used_width(children, content.size, spacing, fill_width);
         let min = content.min();
@@ -188,8 +191,9 @@ impl Runtime {
         child: NodeID,
         content: ComputedUiRect,
         spacing: f32,
+        spacing_mode: UiLayoutSpacingMode,
     ) -> Option<ComputedUiRect> {
-        let spacing = ui_v_spacing_amount(spacing, content.size.y);
+        let spacing = self.v_layout_spacing(children, content.size, spacing, spacing_mode);
         let fill_height = self.v_fill_height(children, content.size.y, spacing);
         let used_height = self.v_used_height(children, content.size, spacing, fill_height);
         let min = content.min();
@@ -235,12 +239,12 @@ impl Runtime {
         parent_layout: &UiLayoutData,
         children: &[NodeID],
         layout_ctx: UiChildrenLayoutCtx,
-        spacing: f32,
+        spacing: UiAxisLayoutSpacing,
         computed: &mut AHashMap<NodeID, ComputedUiRect>,
         computed_scales: &mut AHashMap<NodeID, Vector2>,
     ) {
         let UiChildrenLayoutCtx { content, .. } = layout_ctx;
-        let spacing = ui_v_spacing_amount(spacing, content.size.y);
+        let spacing = self.v_layout_spacing(children, content.size, spacing.amount, spacing.mode);
         let fill_height = self.v_fill_height(children, content.size.y, spacing);
         let used_height = self.v_used_height(children, content.size, spacing, fill_height);
         let min = content.min();
@@ -330,8 +334,20 @@ impl Runtime {
             ui_index += 1;
         }
         let index = child_index?;
-        let h_spacing = ui_h_spacing_amount(auto.h_spacing, content.size.x);
-        let v_spacing = ui_v_spacing_amount(auto.v_spacing, content.size.y);
+        let h_spacing = self.grid_h_spacing(
+            content.size.x,
+            cell_width,
+            used_columns,
+            auto.h_spacing,
+            auto.h_spacing_mode,
+        );
+        let v_spacing = self.grid_v_spacing(
+            content.size.y,
+            cell_height,
+            row_count,
+            auto.v_spacing,
+            auto.v_spacing_mode,
+        );
         let used_width = cell_width * used_columns as f32 + h_spacing * (used_columns - 1) as f32;
         let used_height = cell_height * row_count as f32 + v_spacing * (row_count - 1) as f32;
         let (layout, transform) = self
@@ -410,8 +426,20 @@ impl Runtime {
 
         let used_columns = columns.min(ui_count);
         let row_count = ui_count.div_ceil(columns);
-        let h_spacing = ui_h_spacing_amount(auto.h_spacing, content.size.x);
-        let v_spacing = ui_v_spacing_amount(auto.v_spacing, content.size.y);
+        let h_spacing = self.grid_h_spacing(
+            content.size.x,
+            cell_width,
+            used_columns,
+            auto.h_spacing,
+            auto.h_spacing_mode,
+        );
+        let v_spacing = self.grid_v_spacing(
+            content.size.y,
+            cell_height,
+            row_count,
+            auto.v_spacing,
+            auto.v_spacing_mode,
+        );
         let used_width = cell_width * used_columns as f32 + h_spacing * (used_columns - 1) as f32;
         let used_height = cell_height * row_count as f32 + v_spacing * (row_count - 1) as f32;
         let min = content.min();
@@ -469,5 +497,91 @@ impl Runtime {
             );
             index += 1;
         }
+    }
+
+    fn h_layout_spacing(
+        &self,
+        children: &[NodeID],
+        available: Vector2,
+        spacing: f32,
+        spacing_mode: UiLayoutSpacingMode,
+    ) -> f32 {
+        if spacing_mode != UiLayoutSpacingMode::Fill {
+            return ui_h_spacing_amount(spacing, available.x);
+        }
+        let fill_width = self.h_fill_width(children, available.x, 0.0);
+        let used_width = self.h_used_width(children, available, 0.0, fill_width);
+        fill_spacing_amount(
+            available.x,
+            used_width,
+            self.visible_ui_child_count(children),
+        )
+    }
+
+    fn v_layout_spacing(
+        &self,
+        children: &[NodeID],
+        available: Vector2,
+        spacing: f32,
+        spacing_mode: UiLayoutSpacingMode,
+    ) -> f32 {
+        if spacing_mode != UiLayoutSpacingMode::Fill {
+            return ui_v_spacing_amount(spacing, available.y);
+        }
+        let fill_height = self.v_fill_height(children, available.y, 0.0);
+        let used_height = self.v_used_height(children, available, 0.0, fill_height);
+        fill_spacing_amount(
+            available.y,
+            used_height,
+            self.visible_ui_child_count(children),
+        )
+    }
+
+    fn grid_h_spacing(
+        &self,
+        width: f32,
+        cell_width: f32,
+        used_columns: usize,
+        spacing: f32,
+        spacing_mode: UiLayoutSpacingMode,
+    ) -> f32 {
+        if spacing_mode != UiLayoutSpacingMode::Fill {
+            return ui_h_spacing_amount(spacing, width);
+        }
+        fill_spacing_amount(width, cell_width * used_columns as f32, used_columns)
+    }
+
+    fn grid_v_spacing(
+        &self,
+        height: f32,
+        cell_height: f32,
+        row_count: usize,
+        spacing: f32,
+        spacing_mode: UiLayoutSpacingMode,
+    ) -> f32 {
+        if spacing_mode != UiLayoutSpacingMode::Fill {
+            return ui_v_spacing_amount(spacing, height);
+        }
+        fill_spacing_amount(height, cell_height * row_count as f32, row_count)
+    }
+
+    fn visible_ui_child_count(&self, children: &[NodeID]) -> usize {
+        children
+            .iter()
+            .filter(|&&node| {
+                self.nodes
+                    .get(node)
+                    .and_then(|node| ui_root_from_data(&node.data))
+                    .is_some_and(|ui| ui.visible)
+            })
+            .count()
+    }
+}
+
+fn fill_spacing_amount(axis: f32, used: f32, count: usize) -> f32 {
+    if count <= 1 {
+        0.0
+    } else {
+        ((axis - used) / (count - 1) as f32).max(0.0)
     }
 }

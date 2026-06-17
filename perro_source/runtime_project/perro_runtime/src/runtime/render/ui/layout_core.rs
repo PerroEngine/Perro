@@ -219,7 +219,10 @@ impl Runtime {
                 &parent_ui.layout,
                 &layout_children,
                 layout_ctx,
-                auto_layout.h_spacing,
+                UiAxisLayoutSpacing {
+                    amount: auto_layout.h_spacing,
+                    mode: auto_layout.h_spacing_mode,
+                },
                 computed,
                 computed_scales,
             ),
@@ -227,7 +230,10 @@ impl Runtime {
                 &parent_ui.layout,
                 &layout_children,
                 layout_ctx,
-                auto_layout.v_spacing,
+                UiAxisLayoutSpacing {
+                    amount: auto_layout.v_spacing,
+                    mode: auto_layout.v_spacing_mode,
+                },
                 computed,
                 computed_scales,
             ),

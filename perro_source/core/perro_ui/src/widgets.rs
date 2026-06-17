@@ -800,6 +800,8 @@ pub struct UiTextEdit {
     pub font_size: f32,
     pub text_size_ratio: f32,
     pub font_sizing: UiFontSizing,
+    pub h_align: UiTextAlign,
+    pub v_align: UiTextAlign,
     pub padding: UiRect,
     pub h_scroll: f32,
     pub v_scroll: f32,
@@ -849,6 +851,8 @@ impl UiTextEdit {
             font_size: 20.0,
             text_size_ratio: 0.68,
             font_sizing: UiFontSizing::new(),
+            h_align: UiTextAlign::Start,
+            v_align: UiTextAlign::Center,
             padding: UiRect::symmetric(8.0, 6.0),
             h_scroll: 0.0,
             v_scroll: 0.0,
@@ -1116,6 +1120,9 @@ pub struct UiLayoutContainer {
     pub spacing: f32,
     pub h_spacing: f32,
     pub v_spacing: f32,
+    pub spacing_mode: UiLayoutSpacingMode,
+    pub h_spacing_mode: UiLayoutSpacingMode,
+    pub v_spacing_mode: UiLayoutSpacingMode,
     pub columns: u32,
 }
 
@@ -1127,6 +1134,9 @@ impl UiLayoutContainer {
             spacing: 0.0,
             h_spacing: 0.0,
             v_spacing: 0.0,
+            spacing_mode: UiLayoutSpacingMode::Fixed,
+            h_spacing_mode: UiLayoutSpacingMode::Fixed,
+            v_spacing_mode: UiLayoutSpacingMode::Fixed,
             columns: 1,
         }
     }
@@ -1207,6 +1217,9 @@ pub struct UiFixedLayoutContainer {
     pub spacing: f32,
     pub h_spacing: f32,
     pub v_spacing: f32,
+    pub spacing_mode: UiLayoutSpacingMode,
+    pub h_spacing_mode: UiLayoutSpacingMode,
+    pub v_spacing_mode: UiLayoutSpacingMode,
     pub columns: u32,
 }
 
@@ -1217,6 +1230,9 @@ impl UiFixedLayoutContainer {
             spacing: 0.0,
             h_spacing: 0.0,
             v_spacing: 0.0,
+            spacing_mode: UiLayoutSpacingMode::Fixed,
+            h_spacing_mode: UiLayoutSpacingMode::Fixed,
+            v_spacing_mode: UiLayoutSpacingMode::Fixed,
             columns: 1,
         };
         value.base.layout.v_align = UiVerticalAlign::Center;
@@ -1378,6 +1394,8 @@ pub struct UiGrid {
     pub columns: u32,
     pub h_spacing: f32,
     pub v_spacing: f32,
+    pub h_spacing_mode: UiLayoutSpacingMode,
+    pub v_spacing_mode: UiLayoutSpacingMode,
 }
 
 impl UiGrid {
@@ -1387,6 +1405,8 @@ impl UiGrid {
             columns: 1,
             h_spacing: 0.0,
             v_spacing: 0.0,
+            h_spacing_mode: UiLayoutSpacingMode::Fixed,
+            v_spacing_mode: UiLayoutSpacingMode::Fixed,
         }
     }
 }

@@ -1370,7 +1370,7 @@ parent = @left_panel
 [center_stack]
 parent = @main_split
     [UiVLayout]
-        size_ratio = (0.595, 1.0)
+        size_ratio = (0.565, 1.0)
         h_align = "fill"
         v_align = "fill"
         spacing = 0.003
@@ -2614,7 +2614,7 @@ parent = @editor_root
 [inspector_panel]
 parent = @main_split
     [UiVLayout]
-        size_ratio = (0.22, 1.0)
+        size_ratio = (0.25, 1.0)
         h_align = "fill"
         v_align = "start"
         spacing = 0.003
@@ -2854,7 +2854,7 @@ parent = @asset_glb_mat_button
 [inspector_pos]
 parent = @inspector_content
     [UiButton]
-        size_ratio = (1.0, 0.03)
+        size_ratio = (0.95, 0.03)
         click_signals = ["editor_inspector_position"]
         style = {
             fill = "#26303B",
@@ -2883,7 +2883,7 @@ parent = @inspector_pos
 [inspector_position_label]
 parent = @inspector_content
     [UiPanel]
-        size_ratio = (1.0, 0.026)
+        size_ratio = (0.95, 0.026)
         input_enabled = false
         style = {
             fill = "#00000000",
@@ -2911,7 +2911,7 @@ parent = @inspector_position_label
 parent = @inspector_content
     [UiTextBox]
         visible = false
-        size_ratio = (1.0, 0.024)
+        size_ratio = (0.95, 0.024)
         text = "-"
         text_size_ratio = 0.632
         focused_signals = ["editor_inspector_focus"]
@@ -2934,11 +2934,11 @@ parent = @inspector_content
 [inspector_position_row]
 parent = @inspector_content
     [UiHLayout]
-        size_ratio = (1.0, 0.024)
+        size_ratio = (0.95, 0.024)
         h_align = "center"
         v_align = "center"
-        spacing = 0.002
-        padding = (0.03, 0.0, 0.0, 0.0)
+        spacing = 0.006
+        padding = (0.0, 0.0)
     [/UiHLayout]
 [/inspector_position_row]
 
@@ -2959,9 +2959,10 @@ parent = @inspector_position_0_box
 [inspector_position_0_box]
 parent = @inspector_position_row
     [UiTextBox]
-        size_ratio = (0.185, 0.72)
+        size_ratio = (0.26, 0.72)
         text = "0"
         text_size_ratio = 0.632
+        h_align = "center"
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = {
@@ -2996,9 +2997,10 @@ parent = @inspector_position_1_box
 [inspector_position_1_box]
 parent = @inspector_position_row
     [UiTextBox]
-        size_ratio = (0.185, 0.72)
+        size_ratio = (0.26, 0.72)
         text = "0"
         text_size_ratio = 0.632
+        h_align = "center"
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = {
@@ -3033,9 +3035,10 @@ parent = @inspector_position_2_box
 [inspector_position_2_box]
 parent = @inspector_position_row
     [UiTextBox]
-        size_ratio = (0.185, 0.72)
+        size_ratio = (0.26, 0.72)
         text = "0"
         text_size_ratio = 0.632
+        h_align = "center"
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = {
@@ -3070,9 +3073,10 @@ parent = @inspector_position_3_box
 [inspector_position_3_box]
 parent = @inspector_position_row
     [UiTextBox]
-        size_ratio = (0.185, 0.72)
+        size_ratio = (0.26, 0.72)
         text = "0"
         text_size_ratio = 0.632
+        h_align = "center"
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = {
@@ -3093,7 +3097,7 @@ parent = @inspector_position_row
 [inspector_rotation_label]
 parent = @inspector_content
     [UiPanel]
-        size_ratio = (1.0, 0.026)
+        size_ratio = (0.95, 0.026)
         input_enabled = false
         style = {
             fill = "#00000000",
@@ -3121,7 +3125,7 @@ parent = @inspector_rotation_label
 parent = @inspector_content
     [UiTextBox]
         visible = false
-        size_ratio = (1.0, 0.026)
+        size_ratio = (0.95, 0.026)
         text = "-"
         text_size_ratio = 0.632
         focused_signals = ["editor_inspector_focus"]
@@ -3145,8 +3149,8 @@ parent = @inspector_content
 parent = @inspector_content
     [UiHLayout]
         visible = false
-        size_ratio = (1.0, 0.038)
-        h_align = "fill"
+        size_ratio = (0.95, 0.038)
+        h_align = "center"
         v_align = "center"
         spacing = 0.006
     [/UiHLayout]
@@ -3211,11 +3215,11 @@ parent = @inspector_rotation_euler_button
 [inspector_rotation_row]
 parent = @inspector_content
     [UiHLayout]
-        size_ratio = (1.0, 0.026)
-        h_align = "fill"
+        size_ratio = (0.95, 0.026)
+        h_align = "center"
         v_align = "center"
-        spacing = 0.003
-        padding = (0.045, 0.0, 0.0, 0.0)
+        spacing = 0.006
+        padding = (0.0, 0.0)
     [/UiHLayout]
 [/inspector_rotation_row]
 
@@ -3236,9 +3240,10 @@ parent = @inspector_rotation_0_box
 [inspector_rotation_0_box]
 parent = @inspector_rotation_row
     [UiTextBox]
-        size_ratio = (0.185, 0.72)
+        size_ratio = (0.26, 0.72)
         text = "0"
         text_size_ratio = 0.632
+        h_align = "center"
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = {
@@ -3273,9 +3278,10 @@ parent = @inspector_rotation_1_box
 [inspector_rotation_1_box]
 parent = @inspector_rotation_row
     [UiTextBox]
-        size_ratio = (0.185, 0.72)
+        size_ratio = (0.26, 0.72)
         text = "0"
         text_size_ratio = 0.632
+        h_align = "center"
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = {
@@ -3310,9 +3316,10 @@ parent = @inspector_rotation_2_box
 [inspector_rotation_2_box]
 parent = @inspector_rotation_row
     [UiTextBox]
-        size_ratio = (0.185, 0.72)
+        size_ratio = (0.26, 0.72)
         text = "0"
         text_size_ratio = 0.632
+        h_align = "center"
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = {
@@ -3347,9 +3354,10 @@ parent = @inspector_rotation_3_box
 [inspector_rotation_3_box]
 parent = @inspector_rotation_row
     [UiTextBox]
-        size_ratio = (0.185, 0.72)
+        size_ratio = (0.26, 0.72)
         text = "0"
         text_size_ratio = 0.632
+        h_align = "center"
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = {
@@ -3370,7 +3378,7 @@ parent = @inspector_rotation_row
 [inspector_scale_label]
 parent = @inspector_content
     [UiPanel]
-        size_ratio = (1.0, 0.026)
+        size_ratio = (0.95, 0.026)
         input_enabled = false
         style = {
             fill = "#00000000",
@@ -3398,7 +3406,7 @@ parent = @inspector_scale_label
 parent = @inspector_content
     [UiTextBox]
         visible = false
-        size_ratio = (1.0, 0.026)
+        size_ratio = (0.95, 0.026)
         text = "-"
         text_size_ratio = 0.632
         focused_signals = ["editor_inspector_focus"]
@@ -3421,11 +3429,11 @@ parent = @inspector_content
 [inspector_scale_row]
 parent = @inspector_content
     [UiHLayout]
-        size_ratio = (1.0, 0.026)
-        h_align = "fill"
+        size_ratio = (0.95, 0.026)
+        h_align = "center"
         v_align = "center"
-        spacing = 0.003
-        padding = (0.045, 0.0, 0.0, 0.0)
+        spacing = 0.006
+        padding = (0.0, 0.0)
     [/UiHLayout]
 [/inspector_scale_row]
 
@@ -3446,9 +3454,10 @@ parent = @inspector_scale_0_box
 [inspector_scale_0_box]
 parent = @inspector_scale_row
     [UiTextBox]
-        size_ratio = (0.185, 0.72)
+        size_ratio = (0.26, 0.72)
         text = "1"
         text_size_ratio = 0.632
+        h_align = "center"
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = {
@@ -3483,9 +3492,10 @@ parent = @inspector_scale_1_box
 [inspector_scale_1_box]
 parent = @inspector_scale_row
     [UiTextBox]
-        size_ratio = (0.185, 0.72)
+        size_ratio = (0.26, 0.72)
         text = "1"
         text_size_ratio = 0.632
+        h_align = "center"
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = {
@@ -3520,9 +3530,10 @@ parent = @inspector_scale_2_box
 [inspector_scale_2_box]
 parent = @inspector_scale_row
     [UiTextBox]
-        size_ratio = (0.185, 0.72)
+        size_ratio = (0.26, 0.72)
         text = "1"
         text_size_ratio = 0.632
+        h_align = "center"
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = {
@@ -3557,9 +3568,10 @@ parent = @inspector_scale_3_box
 [inspector_scale_3_box]
 parent = @inspector_scale_row
     [UiTextBox]
-        size_ratio = (0.185, 0.72)
+        size_ratio = (0.26, 0.72)
         text = "1"
         text_size_ratio = 0.632
+        h_align = "center"
         focused_signals = ["editor_inspector_focus"]
         unfocused_signals = ["editor_inspector_commit"]
         style = {
@@ -3580,7 +3592,7 @@ parent = @inspector_scale_row
 [inspector_vars]
 parent = @inspector_content
     [UiButton]
-        size_ratio = (1.0, 0.036)
+        size_ratio = (0.95, 0.036)
         click_signals = ["editor_inspector_vars"]
         style = {
             fill = "#23272D",
@@ -3609,7 +3621,7 @@ parent = @inspector_vars
 [inspector_vars_box]
 parent = @inspector_content
     [UiTextBox]
-        size_ratio = (1.0, 0.18)
+        size_ratio = (0.95, 0.18)
         text = ""
         placeholder = "speed = 3.0\\npath = @Node\\nname = \"value\""
         placeholder_color = "#A7AFB9"
@@ -3634,11 +3646,11 @@ parent = @inspector_content
 [inspector_var_row_0]
 parent = @inspector_content
     [UiHLayout]
-        size_ratio = (1.0, 0.03)
-        h_align = "fill"
+        size_ratio = (0.95, 0.03)
+        h_align = "center"
         v_align = "center"
         spacing = 0.003
-        padding = (0.035, 0.0, 0.0, 0.0)
+        padding = (0.0, 0.0)
     [/UiHLayout]
 [/inspector_var_row_0]
 
@@ -3745,11 +3757,11 @@ parent = @inspector_var_row_0
 [inspector_var_row_1]
 parent = @inspector_content
     [UiHLayout]
-        size_ratio = (1.0, 0.03)
-        h_align = "fill"
+        size_ratio = (0.95, 0.03)
+        h_align = "center"
         v_align = "center"
         spacing = 0.003
-        padding = (0.035, 0.0, 0.0, 0.0)
+        padding = (0.0, 0.0)
     [/UiHLayout]
 [/inspector_var_row_1]
 
@@ -3856,11 +3868,11 @@ parent = @inspector_var_row_1
 [inspector_var_row_2]
 parent = @inspector_content
     [UiHLayout]
-        size_ratio = (1.0, 0.03)
-        h_align = "fill"
+        size_ratio = (0.95, 0.03)
+        h_align = "center"
         v_align = "center"
         spacing = 0.003
-        padding = (0.035, 0.0, 0.0, 0.0)
+        padding = (0.0, 0.0)
     [/UiHLayout]
 [/inspector_var_row_2]
 
@@ -3967,11 +3979,11 @@ parent = @inspector_var_row_2
 [inspector_var_row_3]
 parent = @inspector_content
     [UiHLayout]
-        size_ratio = (1.0, 0.03)
-        h_align = "fill"
+        size_ratio = (0.95, 0.03)
+        h_align = "center"
         v_align = "center"
         spacing = 0.003
-        padding = (0.035, 0.0, 0.0, 0.0)
+        padding = (0.0, 0.0)
     [/UiHLayout]
 [/inspector_var_row_3]
 
@@ -4078,11 +4090,11 @@ parent = @inspector_var_row_3
 [inspector_var_row_4]
 parent = @inspector_content
     [UiHLayout]
-        size_ratio = (1.0, 0.03)
-        h_align = "fill"
+        size_ratio = (0.95, 0.03)
+        h_align = "center"
         v_align = "center"
         spacing = 0.003
-        padding = (0.035, 0.0, 0.0, 0.0)
+        padding = (0.0, 0.0)
     [/UiHLayout]
 [/inspector_var_row_4]
 
@@ -4189,11 +4201,11 @@ parent = @inspector_var_row_4
 [inspector_var_row_5]
 parent = @inspector_content
     [UiHLayout]
-        size_ratio = (1.0, 0.03)
-        h_align = "fill"
+        size_ratio = (0.95, 0.03)
+        h_align = "center"
         v_align = "center"
         spacing = 0.003
-        padding = (0.035, 0.0, 0.0, 0.0)
+        padding = (0.0, 0.0)
     [/UiHLayout]
 [/inspector_var_row_5]
 
@@ -4300,11 +4312,11 @@ parent = @inspector_var_row_5
 [inspector_var_row_6]
 parent = @inspector_content
     [UiHLayout]
-        size_ratio = (1.0, 0.03)
-        h_align = "fill"
+        size_ratio = (0.95, 0.03)
+        h_align = "center"
         v_align = "center"
         spacing = 0.003
-        padding = (0.035, 0.0, 0.0, 0.0)
+        padding = (0.0, 0.0)
     [/UiHLayout]
 [/inspector_var_row_6]
 
@@ -4411,11 +4423,11 @@ parent = @inspector_var_row_6
 [inspector_var_row_7]
 parent = @inspector_content
     [UiHLayout]
-        size_ratio = (1.0, 0.03)
-        h_align = "fill"
+        size_ratio = (0.95, 0.03)
+        h_align = "center"
         v_align = "center"
         spacing = 0.003
-        padding = (0.035, 0.0, 0.0, 0.0)
+        padding = (0.0, 0.0)
     [/UiHLayout]
 [/inspector_var_row_7]
 
@@ -4540,7 +4552,7 @@ parent = @root_stack
 parent = @editor_root
     [UiVLayout]
         anchor = "center"
-        size_ratio = (0.26, 0.72)
+        size_ratio = (0.30, 0.72)
         h_align = "fill"
         v_align = "start"
         spacing = 0.004

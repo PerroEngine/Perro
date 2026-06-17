@@ -1,3 +1,4 @@
+pub mod builtin_assets;
 pub use perro_csv as csv;
 pub use perro_ids as ids;
 pub use perro_input_api as input;

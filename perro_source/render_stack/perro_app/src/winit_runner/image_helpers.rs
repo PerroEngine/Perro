@@ -37,6 +37,7 @@ fn load_project_icon_bytes(project: &perro_runtime::RuntimeProject) -> Option<Ve
         project.config.icon.trim(),
         project.config.icon_hash,
     )
+    .or_else(|| Some(perro_api::builtin_assets::PERRO_LOGO_SVG.to_vec()))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -67,6 +68,15 @@ fn load_project_image_bytes(
         }
     }
     None
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn builtin_perro_logo_sizes() -> Option<LoadedImageSizes> {
+    let bytes = perro_api::builtin_assets::PERRO_LOGO_SVG;
+    Some(LoadedImageSizes {
+        display: decode_image_logical_size(bytes)?,
+        texture: decode_image_size(bytes)?,
+    })
 }
 
 #[cfg(not(target_arch = "wasm32"))]

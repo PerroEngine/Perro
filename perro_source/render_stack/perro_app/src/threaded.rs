@@ -28,7 +28,11 @@ use winit::{
 };
 
 use crate::input::{GamepadInput, JoyConInput};
-use crate::winit_runner::{fit_aspect, image_helpers::load_image_sizes, map_cursor_icon};
+use crate::winit_runner::{
+    fit_aspect,
+    image_helpers::{builtin_perro_logo_sizes, load_image_sizes},
+    map_cursor_icon,
+};
 
 const MIN_FRAME_RATE_CAP_FPS: f32 = 1.0;
 const MAX_FRAME_RATE_CAP_FPS: f32 = 1000.0;
@@ -1251,6 +1255,11 @@ impl ThreadedStartupSplash {
         let image_sizes = source
             .as_deref()
             .and_then(|s| load_image_sizes(project, s, source_hash));
+        if image_sizes.is_none() {
+            source = Some(perro_api::builtin_assets::PERRO_LOGO_SVG_SOURCE.to_string());
+            source_hash = None;
+        }
+        let image_sizes = image_sizes.or_else(builtin_perro_logo_sizes);
         Self {
             source,
             source_hash,

@@ -411,6 +411,7 @@ target_sdk_version = 35
 
 [target.'cfg(target_os = "windows")'.build-dependencies]
 winresource = "0.1.20"
+perro_api = "0.1.0"
 toml = "0.8.23"
 image = {{ version = "0.25.9", default-features = false, features = ["png", "jpeg", "gif", "bmp", "tga", "webp", "ico"] }}
 resvg = "0.47.0"
@@ -497,6 +498,13 @@ fn embed_windows_icon() -> Result<(), String> {
             .trim_start_matches("res://")
             .trim_start_matches('/');
         project_root.join("res").join(rel)
+    }
+
+    fn builtin_icon_source_path(out_dir: &Path) -> Result<PathBuf, String> {
+        let out = out_dir.join("perro_builtin_logo.svg");
+        fs::write(&out, perro_api::builtin_assets::PERRO_LOGO_SVG)
+            .map_err(|e| format!("failed to write builtin perro icon `{}`: {e}", out.display()))?;
+        Ok(out)
     }
 
     fn convert_icon_to_ico(source: &Path, out_dir: &Path) -> Result<PathBuf, String> {
@@ -724,13 +732,16 @@ fn embed_windows_icon() -> Result<(), String> {
         .map_err(|e| format!("failed to resolve project root from manifest dir: {e}"))?;
     let project_toml = project_root.join("project.toml");
     let icon_res = load_icon_res_path(&project_toml)?;
-    let icon_source = resolve_res_icon_path(&project_root, &icon_res);
+    let mut icon_source = resolve_res_icon_path(&project_root, &icon_res);
+    let out_dir = PathBuf::from(
+        env::var("OUT_DIR").map_err(|e| format!("OUT_DIR missing: {e}"))?,
+    );
 
     println!("cargo:rerun-if-changed={}", project_toml.display());
     println!("cargo:rerun-if-changed={}", icon_source.display());
 
     if !icon_source.exists() {
-        return Err(format!("icon file not found: {}", icon_source.display()));
+        icon_source = builtin_icon_source_path(&out_dir)?;
     }
 
     let ext = icon_source
@@ -742,9 +753,6 @@ fn embed_windows_icon() -> Result<(), String> {
     let icon_for_resource = if ext == "ico" {
         icon_source
     } else {
-        let out_dir = PathBuf::from(
-            env::var("OUT_DIR").map_err(|e| format!("OUT_DIR missing: {e}"))?,
-        );
         convert_icon_to_ico(&icon_source, &out_dir)?
     };
 
@@ -837,6 +845,7 @@ steamworks = ["perro_app/steamworks"]
 
 [target.'cfg(target_os = "windows")'.build-dependencies]
 winresource = "0.1.20"
+perro_api = "0.1.0"
 toml = "0.8.23"
 image = { version = "0.25.9", default-features = false, features = ["png", "jpeg", "gif", "bmp", "tga", "webp", "ico"] }
 resvg = "0.47.0"

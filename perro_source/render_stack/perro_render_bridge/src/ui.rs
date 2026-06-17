@@ -156,6 +156,8 @@ pub enum UiCommand {
         selection_color: Color,
         caret_color: Color,
         font_size: f32,
+        h_align: UiTextAlignState,
+        v_align: UiTextAlignState,
         padding: [f32; 4],
         scroll: [f32; 2],
         caret: usize,

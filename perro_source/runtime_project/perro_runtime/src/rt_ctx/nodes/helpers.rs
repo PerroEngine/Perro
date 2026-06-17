@@ -397,6 +397,8 @@ pub(super) fn classify_text_edit_change(
         || before.placeholder_color != after.placeholder_color
         || before.selection_color != after.selection_color
         || before.caret_color != after.caret_color
+        || before.h_align != after.h_align
+        || before.v_align != after.v_align
         || before.padding != after.padding
         || before.h_scroll != after.h_scroll
         || before.v_scroll != after.v_scroll

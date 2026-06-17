@@ -546,7 +546,6 @@ pub fn refresh_all<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'_, API>) {
             } else {
                 "Quat"
             };
-            set_ui_node_size(ctx, &quat_mode_name, (0.115, 0.64));
             set_dropdown_options(ctx, &quat_mode_name, &options, selected);
         }
         set_ui_display(
@@ -906,9 +905,10 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
         set_ui_node_z_index(ctx, name, 200);
     }
 
-    set_ui_node_size(ctx, "center_stack", (0.595, 1.0));
-    set_ui_node_size(ctx, "inspector_panel", (0.22, 1.0));
+    set_ui_node_size(ctx, "center_stack", (0.565, 1.0));
+    set_ui_node_size(ctx, "inspector_panel", (0.25, 1.0));
     set_ui_node_size(ctx, "inspector_content", (1.0, 1.0));
+    set_vlayout_h_align(ctx, "inspector_content", UiHorizontalAlign::Center);
     set_vlayout_spacing_padding(ctx, "inspector_content", 0.004, 0.0, 0.0, 0.0);
     set_ui_node_size(ctx, "inspector_node_chain_mount", (0.95, 0.024));
     set_ui_node_size(ctx, "inspector_title", (0.95, 0.034));
@@ -940,7 +940,7 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
         "inspector_rotation_row",
         "inspector_scale_row",
     ] {
-        set_ui_node_padding(ctx, name, UiRect::new(0.030, 0.0, 0.0, 0.0));
+        set_ui_node_padding(ctx, name, UiRect::symmetric(0.0, 0.0));
         set_hlayout_spacing(ctx, name, 0.002);
     }
 
@@ -969,9 +969,9 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
     ] {
         for idx in 0..4 {
             let name = format!("{prefix}_{idx}_box");
-            set_ui_node_size(ctx, &name, (0.185, 0.66));
             set_text_box_text_ratio(ctx, &name, 0.54);
-            set_text_box_padding_rect(ctx, &name, UiRect::new(13.0, 1.0, 4.0, 1.0));
+            set_text_box_padding(ctx, &name, 4.0, 1.0);
+            set_text_box_h_align(ctx, &name, UiTextAlign::Center);
             set_label_size_ratio(ctx, &format!("{prefix}_{idx}_label"), (0.28, 1.0));
             set_label_text_ratio(ctx, &format!("{prefix}_{idx}_label"), 0.46);
         }
@@ -979,7 +979,12 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
 
     let mut idx = 0;
     while find_named(ctx, &format!("inspector_var_row_{idx}")).is_some() {
-        set_ui_node_size(ctx, &format!("inspector_var_row_{idx}"), (0.985, 0.026));
+        set_ui_node_size(ctx, &format!("inspector_var_row_{idx}"), (0.95, 0.026));
+        set_ui_node_h_align(
+            ctx,
+            &format!("inspector_var_row_{idx}"),
+            UiHorizontalAlign::Center,
+        );
         set_ui_node_size(ctx, &format!("inspector_var_row_{idx}_header"), (1.0, 1.0));
         set_ui_node_size(ctx, &format!("inspector_var_row_{idx}_stack"), (1.0, 1.0));
         set_ui_node_size(ctx, &format!("inspector_var_row_{idx}_inner"), (1.0, 1.0));
@@ -991,6 +996,11 @@ fn apply_inspector_static_layout<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContex
         set_ui_node_size(ctx, &format!("inspector_var_{idx}_value"), (0.50, 0.62));
         set_text_box_text_ratio(ctx, &format!("inspector_var_{idx}_value"), 0.54);
         set_text_box_padding(ctx, &format!("inspector_var_{idx}_value"), 5.0, 1.0);
+        set_text_box_h_align(
+            ctx,
+            &format!("inspector_var_{idx}_value"),
+            UiTextAlign::Center,
+        );
         set_hlayout_spacing(ctx, &format!("inspector_var_row_{idx}_inner"), 0.002);
         set_ui_node_size(ctx, &format!("inspector_var_{idx}_check"), (0.050, 0.44));
         set_button_size(
@@ -1288,8 +1298,7 @@ impl EditorView {
             scene_depths = tree.depths;
             selected_row = tree.selected_row;
 
-            if state.sidebar_mode != "files"
-                && let Some(key) = state.selected_key
+            if let Some(key) = state.selected_key
                 && let Some(node) = cached_scene_node(&state.doc_text, key)
             {
                 inspector = InspectorViewData::for_node(&doc, &node, state);
@@ -1767,18 +1776,25 @@ fn apply_inspector_value_row_text_layout<API: ScriptAPI + ?Sized>(
     } else {
         set_label_color(ctx, &format!("inspector_var_{idx}_name"), "#A7AFB9");
     }
-    let box_w = match row.components.len() {
-        2 => 0.235,
-        3 => 0.178,
-        4 => 0.112,
-        _ => 0.15,
+    let box_w = if row.kind == "Quat" && row.components.len() == 3 {
+        0.28
+    } else if row.kind == "Quat" {
+        0.20
+    } else {
+        match row.components.len() {
+            2 => 0.42,
+            3 => 0.28,
+            4 => 0.20,
+            _ => 0.28,
+        }
     };
     for component in 0..4 {
         let box_name = format!("inspector_var_{idx}_{component}_box");
         let label_name = format!("inspector_var_{idx}_{component}_label");
-        set_ui_node_size(&mut *ctx, &box_name, (box_w, 0.64));
+        set_ui_node_size(&mut *ctx, &box_name, (box_w, 0.72));
         set_text_box_text_ratio(&mut *ctx, &box_name, 0.50);
-        set_text_box_padding_rect(&mut *ctx, &box_name, UiRect::new(13.0, 1.0, 4.0, 1.0));
+        set_text_box_padding(&mut *ctx, &box_name, 4.0, 1.0);
+        set_text_box_h_align(&mut *ctx, &box_name, UiTextAlign::Center);
         set_label_size_ratio(&mut *ctx, &label_name, (0.28, 1.0));
         set_label_text_ratio(&mut *ctx, &label_name, 0.46);
         set_axis_label_overlay(&mut *ctx, &label_name);
@@ -1829,8 +1845,13 @@ fn apply_inspector_row_tree_layout<API: ScriptAPI + ?Sized>(
     } else {
         total
     };
-    let row_w = if parent_idx.is_some() { 0.985 } else { 0.95 };
+    let row_w = 0.95;
     set_ui_node_size(ctx, &format!("inspector_var_row_{idx}"), (row_w, root_h));
+    set_ui_node_h_align(
+        ctx,
+        &format!("inspector_var_row_{idx}"),
+        UiHorizontalAlign::Center,
+    );
     set_ui_node_size(ctx, &format!("inspector_var_row_{idx}_stack"), (1.0, 1.0));
     set_ui_node_size(
         ctx,
@@ -1838,13 +1859,8 @@ fn apply_inspector_row_tree_layout<API: ScriptAPI + ?Sized>(
         (1.0, base / total),
     );
     set_ui_node_size(ctx, &format!("inspector_var_row_{idx}_header"), (1.0, 1.0));
-    let child_w = if row.is_some_and(|row| row.source == "section") {
-        0.94
-    } else {
-        0.97
-    };
     let children_name = format!("inspector_var_row_{idx}_children");
-    set_ui_node_size(ctx, &children_name, (child_w, child_total / total));
+    set_ui_node_size(ctx, &children_name, (1.0, child_total / total));
     set_vlayout_h_align(ctx, &children_name, UiHorizontalAlign::Center);
     set_vlayout_spacing_padding(
         ctx,
@@ -3746,6 +3762,18 @@ pub fn set_text_box_padding<API: ScriptAPI + ?Sized>(
     }
 }
 
+pub fn set_text_box_h_align<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    align: UiTextAlign,
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_node_mut!(ctx.run, UiTextBox, id, |node| {
+            node.h_align = align;
+        });
+    }
+}
+
 pub fn set_text_box_padding_rect<API: ScriptAPI + ?Sized>(
     ctx: &mut ScriptContext<'_, API>,
     name: &str,
@@ -3766,6 +3794,18 @@ pub fn set_ui_node_padding<API: ScriptAPI + ?Sized>(
     if let Some(id) = find_named(ctx, name) {
         let _ = with_base_node_mut!(ctx.run, UiNode, id, |node| {
             node.layout.padding = padding;
+        });
+    }
+}
+
+pub fn set_ui_node_h_align<API: ScriptAPI + ?Sized>(
+    ctx: &mut ScriptContext<'_, API>,
+    name: &str,
+    align: UiHorizontalAlign,
+) {
+    if let Some(id) = find_named(ctx, name) {
+        let _ = with_base_node_mut!(ctx.run, UiNode, id, |node| {
+            node.layout.h_align = align;
         });
     }
 }

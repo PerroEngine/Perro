@@ -720,6 +720,8 @@ mod tests {
                 input_only_joycons = [3]
                 input_block_players = [4]
                 input_deny_kbm = true
+                h_align = "center"
+                v_align = "end"
             [/UiTextBox]
             [/field]
             "#,
@@ -754,6 +756,8 @@ mod tests {
                 assert_eq!(text_box.inner.input_mask.allow_joycons, vec![3]);
                 assert_eq!(text_box.inner.input_mask.deny_players, vec![4]);
                 assert!(text_box.inner.input_mask.deny_kbm);
+                assert_eq!(text_box.inner.h_align, perro_ui::UiTextAlign::Center);
+                assert_eq!(text_box.inner.v_align, perro_ui::UiTextAlign::End);
             }
             other => panic!("expected UiTextBox node, got {other:?}"),
         }
@@ -985,7 +989,7 @@ mod tests {
             [UiGrid]
                 columns = 3
                 h_spacing = 8
-                v_spacing = 12
+                v_spacing = "fill"
             [/UiGrid]
             [/items]
 
@@ -1002,6 +1006,7 @@ mod tests {
             parent = menu
             [UiHLayout]
                 mode = "v"
+                spacing = "fill"
             [/UiHLayout]
             [/forced_h]
 
@@ -1131,7 +1136,7 @@ mod tests {
             SceneNodeData::UiGrid(grid) => {
                 assert_eq!(grid.columns, 3);
                 assert_eq!(grid.h_spacing, 8.0);
-                assert_eq!(grid.v_spacing, 12.0);
+                assert_eq!(grid.v_spacing_mode, perro_ui::UiLayoutSpacingMode::Fill);
             }
             other => panic!("expected UiGrid items node, got {other:?}"),
         }
@@ -1158,6 +1163,10 @@ mod tests {
         match &forced_h.node.data {
             SceneNodeData::UiHLayout(layout) => {
                 assert_eq!(layout.mode(), perro_ui::UiLayoutMode::H);
+                assert_eq!(
+                    layout.inner.spacing_mode,
+                    perro_ui::UiLayoutSpacingMode::Fill
+                );
             }
             other => panic!("expected UiHLayout forced_h node, got {other:?}"),
         }

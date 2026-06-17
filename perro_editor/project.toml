@@ -2,7 +2,7 @@
 name = "Perro Editor"
 main_scene = "res://scenes/manager/project_manager.scn"
 icon = "res://perro-logo.png"
-startup_splash = "res://perro-logo.png"
+startup_splash = "res://perro.svg"
 
 [graphics]
 aspect_ratio = "16:9"

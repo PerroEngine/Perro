@@ -16,7 +16,7 @@ use crate::{
     ui::renderer::UiRenderer,
 };
 use ahash::{AHashMap, AHashSet};
-use perro_graphics_assets::{decode_ptex, load_texture_rgba};
+use perro_graphics_assets::{decode_image_rgba, decode_ptex, load_texture_rgba};
 use perro_ids::{MaterialID, MeshID, NodeID, TextureID};
 use perro_render_bridge::{
     CameraStreamCommand, CameraStreamState, Command2D, Command3D, Light2DState, Material3D,
@@ -408,6 +408,10 @@ impl PerroGraphics {
     ) -> Option<DecodedTextureRgba> {
         let (rgba, width, height) = if source == "__default__" {
             (vec![255u8, 255, 255, 255], 1, 1)
+        } else if source == "__perro_builtin_logo_svg__" {
+            decode_image_rgba(include_bytes!(
+                "../../../api_modules/perro_api/src/assets/perro.svg"
+            ))?
         } else if let Some(lookup) = static_texture_lookup {
             let source_hash = perro_ids::parse_hashed_source_uri(source)
                 .unwrap_or_else(|| perro_ids::string_to_u64(source));

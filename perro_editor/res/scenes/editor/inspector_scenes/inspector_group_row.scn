@@ -4,8 +4,8 @@ $root = @inspector_value_row
 script = "res://scripts/ui/inspector_scenes/custom_struct_row.rs"
     [UiPanel]
         size_ratio = (0.95, 0.031)
-        padding = (0.002, 0.001)
-        h_align = "fill"
+        padding = (0.0, 0.001)
+        h_align = "center"
         visible = false
         style = {
             fill = "#1F242BCC",
@@ -72,7 +72,7 @@ parent = @inspector_value_row_inner
 parent = @inspector_value_row_stack
     [UiVLayout]
         size_ratio = (1.0, 0.0)
-        h_align = "fill"
+        h_align = "center"
         v_align = "start"
         spacing = 0.002
         padding = (0.0, 0.0)

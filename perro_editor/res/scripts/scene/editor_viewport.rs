@@ -842,6 +842,15 @@ pub fn sync_preview_field_for_key<API: ScriptAPI + ?Sized>(
                 };
                 return ctx.run.Nodes().set_local_pos_2d(id, Vector2::new(*x, *y));
             }
+            if node_type.is_a(perro_scene::NodeType::UiNode) {
+                let SceneValue::Vec2 { x, y } = value else {
+                    return false;
+                };
+                return with_base_node_mut!(ctx.run, UiNode, id, |node| {
+                    node.transform.position = UiVector2::ratio(*x, *y)
+                })
+                .is_some();
+            }
         }
         "rotation" => {
             if node_type.is_a(perro_scene::NodeType::Node3D) {
@@ -900,6 +909,17 @@ pub fn sync_preview_field_for_key<API: ScriptAPI + ?Sized>(
             if node_type.is_a(perro_scene::NodeType::UiNode) {
                 return with_base_node_mut!(ctx.run, UiNode, id, |node| {
                     node.transform.translation = Vector2::new(*x, *y)
+                })
+                .is_some();
+            }
+        }
+        "position_ratio" => {
+            let SceneValue::Vec2 { x, y } = value else {
+                return false;
+            };
+            if node_type.is_a(perro_scene::NodeType::UiNode) {
+                return with_base_node_mut!(ctx.run, UiNode, id, |node| {
+                    node.transform.position = UiVector2::ratio(*x, *y)
                 })
                 .is_some();
             }
@@ -973,6 +993,89 @@ pub fn sync_preview_field_for_key<API: ScriptAPI + ?Sized>(
                 .is_some();
             }
         }
+        "self_modulate" | "self_tint" | "self_color" => {
+            let Some(color) = scene_value_color(value) else {
+                return false;
+            };
+            if node_type.is_a(perro_scene::NodeType::Node3D) {
+                return with_base_node_mut!(ctx.run, Node3D, id, |node| {
+                    node.modulate.self_modulate = color
+                })
+                .is_some();
+            }
+            if node_type.is_a(perro_scene::NodeType::Node2D) {
+                return with_base_node_mut!(ctx.run, Node2D, id, |node| {
+                    node.modulate.self_modulate = color
+                })
+                .is_some();
+            }
+            if node_type.is_a(perro_scene::NodeType::UiNode) {
+                return with_base_node_mut!(ctx.run, UiNode, id, |node| {
+                    node.modulate.self_modulate = color
+                })
+                .is_some();
+            }
+        }
+        "children_modulate" | "child_modulate" | "children_tint" | "child_tint" => {
+            let Some(color) = scene_value_color(value) else {
+                return false;
+            };
+            if node_type.is_a(perro_scene::NodeType::Node3D) {
+                return with_base_node_mut!(ctx.run, Node3D, id, |node| {
+                    node.modulate.children_modulate = color
+                })
+                .is_some();
+            }
+            if node_type.is_a(perro_scene::NodeType::Node2D) {
+                return with_base_node_mut!(ctx.run, Node2D, id, |node| {
+                    node.modulate.children_modulate = color
+                })
+                .is_some();
+            }
+            if node_type.is_a(perro_scene::NodeType::UiNode) {
+                return with_base_node_mut!(ctx.run, UiNode, id, |node| {
+                    node.modulate.children_modulate = color
+                })
+                .is_some();
+            }
+        }
+        "z_index" => {
+            let SceneValue::I32(value) = value else {
+                return false;
+            };
+            if node_type.is_a(perro_scene::NodeType::Node2D) {
+                return with_base_node_mut!(ctx.run, Node2D, id, |node| node.z_index = *value)
+                    .is_some();
+            }
+            if node_type.is_a(perro_scene::NodeType::UiNode) {
+                return with_base_node_mut!(ctx.run, UiNode, id, |node| {
+                    node.layout.z_index = *value
+                })
+                .is_some();
+            }
+        }
+        "input_enabled" => {
+            let SceneValue::Bool(value) = value else {
+                return false;
+            };
+            if node_type.is_a(perro_scene::NodeType::UiNode) {
+                return with_base_node_mut!(ctx.run, UiNode, id, |node| {
+                    node.input_enabled = *value
+                })
+                .is_some();
+            }
+        }
+        "clip_children" => {
+            let SceneValue::Bool(value) = value else {
+                return false;
+            };
+            if node_type.is_a(perro_scene::NodeType::UiNode) {
+                return with_base_node_mut!(ctx.run, UiNode, id, |node| {
+                    node.clip_children = *value
+                })
+                .is_some();
+            }
+        }
         "color" => {
             let SceneValue::Vec4 { x, y, z, .. } = value else {
                 return false;
@@ -1001,6 +1104,13 @@ pub fn sync_preview_field_for_key<API: ScriptAPI + ?Sized>(
         _ => {}
     }
     false
+}
+
+fn scene_value_color(value: &SceneValue) -> Option<Color> {
+    let SceneValue::Vec4 { x, y, z, w } = value else {
+        return None;
+    };
+    Some(Color::new(*x, *y, *z, *w))
 }
 
 pub fn sync_preview_doc_field_for_key<API: ScriptAPI + ?Sized>(

@@ -3202,6 +3202,7 @@ dependencies = [
  "hidapi",
  "image",
  "memory-stats",
+ "perro_api",
  "perro_asset_formats",
  "perro_graphics",
  "perro_graphics_assets",

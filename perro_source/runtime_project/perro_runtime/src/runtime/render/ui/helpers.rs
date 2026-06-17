@@ -6,6 +6,8 @@ pub(super) struct UiAutoLayout {
     pub(super) columns: u32,
     pub(super) h_spacing: f32,
     pub(super) v_spacing: f32,
+    pub(super) h_spacing_mode: UiLayoutSpacingMode,
+    pub(super) v_spacing_mode: UiLayoutSpacingMode,
 }
 
 #[derive(Clone, Copy)]
@@ -16,6 +18,12 @@ pub(super) struct UiChildrenLayoutCtx {
     pub(super) viewport: Vector2,
     pub(super) snap: bool,
     pub(super) snap_scale: f32,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct UiAxisLayoutSpacing {
+    pub(super) amount: f32,
+    pub(super) mode: UiLayoutSpacingMode,
 }
 
 #[derive(Clone, Copy)]
@@ -121,6 +129,22 @@ pub(super) fn ui_auto_layout_from_data(data: &SceneNodeData) -> Option<UiAutoLay
                 columns: node.inner.columns.max(1),
                 h_spacing,
                 v_spacing,
+                h_spacing_mode: if node.inner.h_spacing_mode == UiLayoutSpacingMode::Fill
+                    || (node.inner.h_spacing == 0.0
+                        && node.inner.spacing_mode == UiLayoutSpacingMode::Fill)
+                {
+                    UiLayoutSpacingMode::Fill
+                } else {
+                    UiLayoutSpacingMode::Fixed
+                },
+                v_spacing_mode: if node.inner.v_spacing_mode == UiLayoutSpacingMode::Fill
+                    || (node.inner.v_spacing == 0.0
+                        && node.inner.spacing_mode == UiLayoutSpacingMode::Fill)
+                {
+                    UiLayoutSpacingMode::Fill
+                } else {
+                    UiLayoutSpacingMode::Fixed
+                },
             })
         }
         SceneNodeData::UiHLayout(node) => Some(UiAutoLayout {
@@ -128,18 +152,52 @@ pub(super) fn ui_auto_layout_from_data(data: &SceneNodeData) -> Option<UiAutoLay
             columns: node.inner.columns.max(1),
             h_spacing: node.inner.h_spacing.max(node.inner.spacing),
             v_spacing: node.inner.v_spacing.max(node.inner.spacing),
+            h_spacing_mode: if node.inner.h_spacing_mode == UiLayoutSpacingMode::Fill
+                || (node.inner.h_spacing == 0.0
+                    && node.inner.spacing_mode == UiLayoutSpacingMode::Fill)
+            {
+                UiLayoutSpacingMode::Fill
+            } else {
+                UiLayoutSpacingMode::Fixed
+            },
+            v_spacing_mode: if node.inner.v_spacing_mode == UiLayoutSpacingMode::Fill
+                || (node.inner.v_spacing == 0.0
+                    && node.inner.spacing_mode == UiLayoutSpacingMode::Fill)
+            {
+                UiLayoutSpacingMode::Fill
+            } else {
+                UiLayoutSpacingMode::Fixed
+            },
         }),
         SceneNodeData::UiVLayout(node) => Some(UiAutoLayout {
             mode: UiLayoutMode::V,
             columns: node.inner.columns.max(1),
             h_spacing: node.inner.h_spacing.max(node.inner.spacing),
             v_spacing: node.inner.v_spacing.max(node.inner.spacing),
+            h_spacing_mode: if node.inner.h_spacing_mode == UiLayoutSpacingMode::Fill
+                || (node.inner.h_spacing == 0.0
+                    && node.inner.spacing_mode == UiLayoutSpacingMode::Fill)
+            {
+                UiLayoutSpacingMode::Fill
+            } else {
+                UiLayoutSpacingMode::Fixed
+            },
+            v_spacing_mode: if node.inner.v_spacing_mode == UiLayoutSpacingMode::Fill
+                || (node.inner.v_spacing == 0.0
+                    && node.inner.spacing_mode == UiLayoutSpacingMode::Fill)
+            {
+                UiLayoutSpacingMode::Fill
+            } else {
+                UiLayoutSpacingMode::Fixed
+            },
         }),
         SceneNodeData::UiGrid(node) => Some(UiAutoLayout {
             mode: UiLayoutMode::Grid,
             columns: node.columns.max(1),
             h_spacing: node.h_spacing,
             v_spacing: node.v_spacing,
+            h_spacing_mode: node.h_spacing_mode,
+            v_spacing_mode: node.v_spacing_mode,
         }),
         _ => None,
     }

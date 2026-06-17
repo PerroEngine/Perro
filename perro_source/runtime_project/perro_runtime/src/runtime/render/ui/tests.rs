@@ -8,8 +8,8 @@ use perro_runtime_api::sub_apis::{NodeAPI, NodeCreationTemplate, SignalAPI};
 use perro_scripting::{ScriptBehavior, ScriptContext, ScriptFlags, ScriptLifecycle};
 use perro_structs::{Color, Quaternion, Transform3D, Vector3};
 use perro_ui::{
-    UiAnchor, UiAnimatedImage, UiAnimatedImageFrameSet, UiGrid, UiHLayout, UiPanel,
-    UiScrollContainer, UiShape, UiShapeKind, UiVLayout, UiVector2,
+    UiAnchor, UiAnimatedImage, UiAnimatedImageFrameSet, UiGrid, UiHLayout, UiLayoutSpacingMode,
+    UiPanel, UiScrollContainer, UiShape, UiShapeKind, UiVLayout, UiVector2,
 };
 use std::any::Any;
 use std::sync::{
@@ -2089,6 +2089,36 @@ fn hlayout_ignores_invisible_child_space() {
 }
 
 #[test]
+fn hlayout_fill_spacing_spreads_children_to_edges() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut layout = UiHLayout::new();
+    layout.layout.size = UiVector2::pixels(300.0, 100.0);
+    layout.inner.spacing_mode = UiLayoutSpacingMode::Fill;
+    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiHLayout(layout));
+    let first = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    let middle = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.2, 0.3, 0.4, 1.0));
+    let last = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.3, 0.4, 0.5, 1.0));
+    attach_child(&mut runtime, parent, first);
+    attach_child(&mut runtime, parent, middle);
+    attach_child(&mut runtime, parent, last);
+
+    runtime.extract_render_ui_commands();
+
+    let first_rect = runtime.render_ui.computed_rects.get(&first).expect("first");
+    let middle_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&middle)
+        .expect("middle");
+    let last_rect = runtime.render_ui.computed_rects.get(&last).expect("last");
+    assert_eq!(first_rect.center.x, -120.0);
+    assert_eq!(middle_rect.center.x, 0.0);
+    assert_eq!(last_rect.center.x, 120.0);
+}
+
+#[test]
 fn vlayout_preserves_child_order() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);
@@ -2115,6 +2145,32 @@ fn vlayout_preserves_child_order() {
         .get(&second)
         .expect("second rect exists");
     assert!(first_rect.center.y > second_rect.center.y);
+}
+
+#[test]
+fn vlayout_fill_spacing_spreads_children_to_edges() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut layout = UiVLayout::new();
+    layout.layout.size = UiVector2::pixels(200.0, 180.0);
+    layout.inner.spacing_mode = UiLayoutSpacingMode::Fill;
+    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiVLayout(layout));
+    let first = insert_panel(&mut runtime, [100.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    let second = insert_panel(&mut runtime, [100.0, 40.0], Color::new(0.2, 0.3, 0.4, 1.0));
+    attach_child(&mut runtime, parent, first);
+    attach_child(&mut runtime, parent, second);
+
+    runtime.extract_render_ui_commands();
+
+    let first_rect = runtime.render_ui.computed_rects.get(&first).expect("first");
+    let second_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&second)
+        .expect("second");
+    assert_eq!(first_rect.center.y, 70.0);
+    assert_eq!(second_rect.center.y, -70.0);
 }
 
 #[test]
@@ -2171,6 +2227,38 @@ fn grid_columns_auto_wrap_into_centered_rows() {
         .expect("fourth rect exists");
     assert_eq!(first.center, Vector2::new(-70.0, 25.0));
     assert_eq!(fourth.center, Vector2::new(-70.0, -25.0));
+}
+
+#[test]
+fn grid_fill_spacing_spreads_columns_to_edges() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut grid = UiGrid::new();
+    grid.layout.size = UiVector2::pixels(300.0, 200.0);
+    grid.columns = 3;
+    grid.h_spacing_mode = UiLayoutSpacingMode::Fill;
+    let parent = insert_ui_node(&mut runtime, SceneNodeData::UiGrid(grid));
+
+    let first = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.1, 0.2, 0.3, 1.0));
+    let middle = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.2, 0.3, 0.4, 1.0));
+    let last = insert_panel(&mut runtime, [60.0, 40.0], Color::new(0.3, 0.4, 0.5, 1.0));
+    attach_child(&mut runtime, parent, first);
+    attach_child(&mut runtime, parent, middle);
+    attach_child(&mut runtime, parent, last);
+
+    runtime.extract_render_ui_commands();
+
+    let first_rect = runtime.render_ui.computed_rects.get(&first).expect("first");
+    let middle_rect = runtime
+        .render_ui
+        .computed_rects
+        .get(&middle)
+        .expect("middle");
+    let last_rect = runtime.render_ui.computed_rects.get(&last).expect("last");
+    assert_eq!(first_rect.center.x, -120.0);
+    assert_eq!(middle_rect.center.x, 0.0);
+    assert_eq!(last_rect.center.x, 120.0);
 }
 
 #[test]
@@ -3312,13 +3400,12 @@ fn tree_list_rows_expand_down_from_top_and_hide_closed_children() {
         Some(SceneNodeData::UiShape(shape))
             if shape.base.visible && shape.base.transform.rotation.abs() < 1.0e-6
     ));
-    assert!(rows
-        .iter()
-        .copied()
-        .skip(1)
-        .all(|id| runtime.nodes.get(id).is_some_and(|node| {
-            ui_root_from_data(&node.data).is_some_and(|ui| !ui.visible)
-        })));
+    assert!(rows.iter().copied().skip(1).all(|id| {
+        runtime
+            .nodes
+            .get(id)
+            .is_some_and(|node| ui_root_from_data(&node.data).is_some_and(|ui| !ui.visible))
+    }));
 
     if let Some(scene_node) = runtime.nodes.get_mut(tree_id)
         && let SceneNodeData::UiTreeList(tree) = &mut scene_node.data
@@ -3335,13 +3422,12 @@ fn tree_list_rows_expand_down_from_top_and_hide_closed_children() {
         })
         .expect("reopened tree rows");
     assert_eq!(&reopened_rows[..3], &rows[..3]);
-    assert!(rows
-        .iter()
-        .copied()
-        .take(3)
-        .all(|id| runtime.nodes.get(id).is_some_and(|node| {
-            ui_root_from_data(&node.data).is_some_and(|ui| ui.visible)
-        })));
+    assert!(rows.iter().copied().take(3).all(|id| {
+        runtime
+            .nodes
+            .get(id)
+            .is_some_and(|node| ui_root_from_data(&node.data).is_some_and(|ui| ui.visible))
+    }));
 }
 
 #[test]

@@ -74,6 +74,8 @@ pub(in crate::runtime::render_ui) fn text_edit_command(ctx: TextEditCommandCtx<'
                 };
             resolve_font_size(base, node_scale, virtual_font_scale, edit.font_sizing)
         },
+        h_align: text_align_state(edit.h_align),
+        v_align: text_align_state(edit.v_align),
         padding: [
             edit.padding.left * scale.x.abs().max(0.0001),
             edit.padding.top * scale.y.abs().max(0.0001),

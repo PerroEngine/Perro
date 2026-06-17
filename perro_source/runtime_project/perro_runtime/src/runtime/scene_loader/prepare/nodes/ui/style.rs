@@ -401,6 +401,22 @@ pub(super) fn as_ui_layout_mode(value: &SceneValue) -> Option<perro_ui::UiLayout
     }
 }
 
+pub(super) fn as_ui_layout_spacing_mode(
+    value: &SceneValue,
+) -> Option<perro_ui::UiLayoutSpacingMode> {
+    match as_str(value)?
+        .to_ascii_lowercase()
+        .replace([' ', '-', '_'], "")
+        .as_str()
+    {
+        "fixed" | "f" => Some(perro_ui::UiLayoutSpacingMode::Fixed),
+        "fill" | "spacebetween" | "spread" | "justify" => {
+            Some(perro_ui::UiLayoutSpacingMode::Fill)
+        }
+        _ => None,
+    }
+}
+
 pub(super) fn as_ui_size_mode(value: &SceneValue) -> Option<perro_ui::UiSizeMode> {
     match as_str(value)?
         .to_ascii_lowercase()

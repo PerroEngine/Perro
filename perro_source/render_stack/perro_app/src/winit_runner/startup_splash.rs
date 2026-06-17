@@ -1,5 +1,7 @@
 #[cfg(not(target_arch = "wasm32"))]
 use super::image_helpers::load_image_sizes;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::winit_runner::image_helpers::builtin_perro_logo_sizes;
 use perro_ids::{NodeID, TextureID, string_to_u64};
 use perro_render_bridge::RenderRequestID;
 use std::time::Duration;
@@ -69,6 +71,11 @@ impl StartupSplashState {
                     .as_deref()
                     .and_then(|s| load_image_sizes(p, s, source_hash))
             });
+            if image_sizes.is_none() {
+                source = Some(perro_api::builtin_assets::PERRO_LOGO_SVG_SOURCE.to_string());
+                source_hash = None;
+            }
+            let image_sizes = image_sizes.or_else(builtin_perro_logo_sizes);
             source.map(|source| {
                 (
                     source,
