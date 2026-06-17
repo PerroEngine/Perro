@@ -830,6 +830,74 @@ fn apply_force_3d_uses_world_space_vector() {
 }
 
 #[test]
+fn sleeping_rigidbody_2d_sync_settles_once_then_skips() {
+    let mut runtime = Runtime::new();
+    let body_id = NodeAPI::create::<RigidBody2D>(&mut runtime);
+    let shape_id = NodeAPI::create::<CollisionShape2D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, body_id, shape_id));
+
+    runtime.propagate_pending_transform_dirty();
+    runtime.refresh_dirty_global_transforms();
+    let bodies = runtime.collect_body_descs_2d();
+    runtime.sync_world_2d(&bodies);
+
+    {
+        let world = runtime.physics.world_2d.as_mut().expect("2d world");
+        let state = world.body_map.get(&body_id).expect("2d body state");
+        world.bodies.get_mut(state.handle).expect("2d body").sleep();
+    }
+
+    assert!(runtime.sync_world_to_nodes_2d());
+    let pose = runtime.transforms.physics_pose_2d[body_id.index() as usize];
+    assert_eq!(pose.prev, pose.curr);
+
+    let idle_frames = runtime
+        .physics
+        .world_2d
+        .as_ref()
+        .and_then(|world| world.body_map.get(&body_id))
+        .map(|state| state.idle_sync_frames)
+        .expect("2d idle sync state");
+    assert_eq!(idle_frames, 1);
+
+    assert!(!runtime.sync_world_to_nodes_2d());
+}
+
+#[test]
+fn sleeping_rigidbody_3d_sync_settles_once_then_skips() {
+    let mut runtime = Runtime::new();
+    let body_id = NodeAPI::create::<RigidBody3D>(&mut runtime);
+    let shape_id = NodeAPI::create::<CollisionShape3D>(&mut runtime);
+    assert!(NodeAPI::reparent(&mut runtime, body_id, shape_id));
+
+    runtime.propagate_pending_transform_dirty();
+    runtime.refresh_dirty_global_transforms();
+    let bodies = runtime.collect_body_descs_3d();
+    runtime.sync_world_3d(&bodies);
+
+    {
+        let world = runtime.physics.world_3d.as_mut().expect("3d world");
+        let state = world.body_map.get(&body_id).expect("3d body state");
+        world.bodies.get_mut(state.handle).expect("3d body").sleep();
+    }
+
+    assert!(runtime.sync_world_to_nodes_3d());
+    let pose = runtime.transforms.physics_pose_3d[body_id.index() as usize];
+    assert_eq!(pose.prev, pose.curr);
+
+    let idle_frames = runtime
+        .physics
+        .world_3d
+        .as_ref()
+        .and_then(|world| world.body_map.get(&body_id))
+        .map(|state| state.idle_sync_frames)
+        .expect("3d idle sync state");
+    assert_eq!(idle_frames, 1);
+
+    assert!(!runtime.sync_world_to_nodes_3d());
+}
+
+#[test]
 fn custom_force_vectors_interpolate_by_radius() {
     let mut emitter = perro_nodes::PhysicsForceEmitter2D::new();
     emitter.profile = perro_nodes::PhysicsForceProfile::Custom;

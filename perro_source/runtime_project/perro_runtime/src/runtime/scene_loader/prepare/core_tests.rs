@@ -671,32 +671,32 @@ mod tests {
             .expect("button node");
         match &node.node.data {
             SceneNodeData::UiButton(button) => {
-                assert_eq!(button.style.corner_radius, 1.0);
+                assert_eq!(button.style.corner_radius(), 1.0);
                 assert_eq!(
-                    button.style.shadow.color,
+                    button.style.outer_shadow.color,
                     Color::from_hex("#00000066").unwrap()
                 );
-                assert_eq!(button.style.shadow.distance, 8.0);
-                assert_eq!(button.style.shadow.falloff, 12.0);
-                assert_eq!(button.style.shadow.vector, Vector2::new(1.0, -1.0));
-                assert_eq!(button.style.shadow.size, 1.5);
+                assert_eq!(button.style.outer_shadow.distance, 8.0);
+                assert_eq!(button.style.outer_shadow.falloff, 12.0);
+                assert_eq!(button.style.outer_shadow.vector, Vector2::new(1.0, -1.0));
+                assert_eq!(button.style.outer_shadow.size, 1.5);
                 assert_eq!(
-                    button.style.highlight.color,
+                    button.style.inner_highlight.color,
                     Color::from_hex("#FFFFFF55").unwrap()
                 );
-                assert_eq!(button.style.highlight.distance, 2.0);
-                assert_eq!(button.style.highlight.falloff, 4.0);
-                assert_eq!(button.style.highlight.vector, Vector2::new(-1.0, 1.0));
-                assert_eq!(button.style.highlight.size, 1.0);
+                assert_eq!(button.style.inner_highlight.distance, 2.0);
+                assert_eq!(button.style.inner_highlight.falloff, 4.0);
+                assert_eq!(button.style.inner_highlight.vector, Vector2::new(-1.0, 1.0));
+                assert_eq!(button.style.inner_highlight.size, 1.0);
                 assert_eq!(button.hover_style.fill, Color::from_hex("#202830").unwrap());
                 assert_eq!(button.hover_style.stroke, button.style.stroke);
-                assert_eq!(button.hover_style.corner_radius, 1.0);
+                assert_eq!(button.hover_style.corner_radius(), 1.0);
                 assert_eq!(
                     button.pressed_style.fill,
                     Color::from_hex("#303840").unwrap()
                 );
                 assert_eq!(button.pressed_style.stroke, button.style.stroke);
-                assert_eq!(button.pressed_style.corner_radius, 1.0);
+                assert_eq!(button.pressed_style.corner_radius(), 1.0);
             }
             other => panic!("expected UiButton node, got {other:?}"),
         }
@@ -801,33 +801,29 @@ mod tests {
             fill: Color::new(0.10, 0.20, 0.30, 1.0),
             stroke: Color::new(0.40, 0.50, 0.60, 1.0),
             stroke_width: 2.0,
-            corner_radius: 0.4,
-            shadow: perro_ui::UiDepthEffect::none(),
-            highlight: perro_ui::UiDepthEffect::none(),
+            corner_radii: perro_ui::UiCornerRadii::all(0.4),
+            ..perro_ui::UiStyle::panel()
         };
         static HOVER: perro_ui::UiStyle = perro_ui::UiStyle {
             fill: Color::new(0.20, 0.30, 0.40, 1.0),
             stroke: Color::new(0.50, 0.60, 0.70, 1.0),
             stroke_width: 3.0,
-            corner_radius: 0.5,
-            shadow: perro_ui::UiDepthEffect::none(),
-            highlight: perro_ui::UiDepthEffect::none(),
+            corner_radii: perro_ui::UiCornerRadii::all(0.5),
+            ..perro_ui::UiStyle::panel()
         };
         static PRESSED: perro_ui::UiStyle = perro_ui::UiStyle {
             fill: Color::new(0.05, 0.10, 0.15, 1.0),
             stroke: Color::new(0.30, 0.40, 0.50, 1.0),
             stroke_width: 4.0,
-            corner_radius: 0.6,
-            shadow: perro_ui::UiDepthEffect::none(),
-            highlight: perro_ui::UiDepthEffect::none(),
+            corner_radii: perro_ui::UiCornerRadii::all(0.6),
+            ..perro_ui::UiStyle::panel()
         };
         static FOCUS: perro_ui::UiStyle = perro_ui::UiStyle {
             fill: Color::new(0.70, 0.80, 0.90, 1.0),
             stroke: Color::new(0.10, 0.20, 0.30, 1.0),
             stroke_width: 5.0,
-            corner_radius: 0.7,
-            shadow: perro_ui::UiDepthEffect::none(),
-            highlight: perro_ui::UiDepthEffect::none(),
+            corner_radii: perro_ui::UiCornerRadii::all(0.7),
+            ..perro_ui::UiStyle::panel()
         };
         static EMPTY: perro_ui::UiStyle = perro_ui::UiStyle::panel();
 
@@ -895,6 +891,56 @@ mod tests {
                 assert_eq!(text_box.focused_style.fill, FOCUS.fill);
             }
             other => panic!("expected UiTextBox node, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn scene_loader_ui_style_parses_gradient_and_split_depth_fields() {
+        let scene = Parser::new(
+            r##"
+            $root = @panel
+            [panel]
+            [UiPanel]
+                style = {
+                    fill_kind = "linear"
+                    gradient = { start_color = "#445566" end_color = "#112233" vector = (0, -1) }
+                    corner_radii = (0.1, 0.2, 0.3, 0.4)
+                    outer_shadow = { color = "#00000088" distance = 6 falloff = 9 vector = (1, -1) size = 1.2 }
+                    inner_shadow = { color = "#00000044" distance = 2 falloff = 4 vector = (0, -1) size = 1.0 }
+                    outer_highlight = { color = "#FFFFFF22" distance = 1 falloff = 3 vector = (-1, 1) size = 1.0 }
+                    inner_highlight = { color = "#FFFFFF33" distance = 1 falloff = 2 vector = (-1, 1) size = 1.0 }
+                }
+            [/UiPanel]
+            [/panel]
+            "##,
+        )
+        .parse_scene();
+
+        let prepared =
+            prepare_scene_with_loader(&scene, &|path| Err(format!("unknown scene path `{path}`")))
+                .expect("prepare scene");
+        let node = prepared
+            .nodes
+            .iter()
+            .find(|pending| pending.key_name == "panel")
+            .expect("panel node");
+        match &node.node.data {
+            SceneNodeData::UiPanel(panel) => {
+                assert_eq!(panel.style.fill_kind, perro_ui::UiFillKind::Linear);
+                assert_eq!(
+                    panel.style.gradient.start_color,
+                    Color::from_hex("#445566").unwrap()
+                );
+                assert_eq!(panel.style.corner_radii.tl, 0.1);
+                assert_eq!(panel.style.corner_radii.tr, 0.2);
+                assert_eq!(panel.style.corner_radii.br, 0.3);
+                assert_eq!(panel.style.corner_radii.bl, 0.4);
+                assert_eq!(panel.style.outer_shadow.distance, 6.0);
+                assert_eq!(panel.style.inner_shadow.distance, 2.0);
+                assert_eq!(panel.style.outer_highlight.falloff, 3.0);
+                assert_eq!(panel.style.inner_highlight.falloff, 2.0);
+            }
+            other => panic!("expected UiPanel node, got {other:?}"),
         }
     }
 
@@ -1061,7 +1107,7 @@ mod tests {
                 assert!(button.clip_children);
                 assert_eq!(button.layout.anchor, perro_ui::UiAnchor::TopRight);
                 assert!(button.disabled);
-                assert_eq!(button.style.corner_radius, 0.3);
+                assert_eq!(button.style.corner_radius(), 0.3);
                 assert_eq!(button.style.fill, Color::from_hex("#101820").unwrap());
                 assert_eq!(button.style.stroke, Color::from_hex("#A0A8B0").unwrap());
                 assert_eq!(button.hover_style.fill, Color::from_hex("#405060").unwrap());
@@ -1069,7 +1115,7 @@ mod tests {
                     button.hover_style.stroke,
                     Color::from_hex("#C0D0E0").unwrap()
                 );
-                assert_eq!(button.hover_style.corner_radius, 0.4);
+                assert_eq!(button.hover_style.corner_radius(), 0.4);
                 assert_eq!(button.cursor_icon, perro_ui::CursorIcon::Grab);
                 assert_eq!(
                     button.pressed_style.fill,

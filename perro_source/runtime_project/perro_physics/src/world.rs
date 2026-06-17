@@ -13,6 +13,11 @@ pub struct BodyState2D {
     pub shape_signature: u64,
     pub opaque_handle: u64,
     pub sync_epoch: u64,
+    pub idle_sync_frames: u8,
+    pub last_translation: [f32; 2],
+    pub last_rotation: f32,
+    pub last_linear_velocity: [f32; 2],
+    pub last_angular_velocity: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -23,6 +28,11 @@ pub struct BodyState3D {
     pub shape_signature: u64,
     pub opaque_handle: u64,
     pub sync_epoch: u64,
+    pub idle_sync_frames: u8,
+    pub last_translation: [f32; 3],
+    pub last_rotation: [f32; 4],
+    pub last_linear_velocity: [f32; 3],
+    pub last_angular_velocity: [f32; 3],
 }
 
 #[derive(Clone, Debug)]

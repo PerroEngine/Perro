@@ -9,8 +9,9 @@ use perro_input_api::GamepadAxis;
 use perro_input_api::{GamepadButton, JoyConButton, KeyCode, MouseButton, PlayerBinding};
 use perro_nodes::{SceneNode, SceneNodeData};
 use perro_render_bridge::{
-    CameraStreamCommand, RenderCommand, ResourceCommand, UiCommand, UiDepthEffectState,
-    UiImageScaleState, UiRectState, UiTextAlignState,
+    CameraStreamCommand, RenderCommand, ResourceCommand, UiCommand, UiCornerRadiiState,
+    UiDepthEffectState, UiFillKindState, UiImageScaleState, UiLinearGradientState, UiRectState,
+    UiTextAlignState,
 };
 use perro_runtime_render::{UiDirtyMask, UiExtractionOptions, ui_image_texture_request};
 use perro_structs::{Color, UVector2, Vector2};
@@ -1328,9 +1329,9 @@ impl Runtime {
         button.base.layout.size = UiVector2::percent(100.0, 100.0);
         button.base.layout.z_index = 1;
         button.base.clip_children = false;
-        button.style.corner_radius = 0.15;
-        button.hover_style.corner_radius = 0.15;
-        button.pressed_style.corner_radius = 0.15;
+        button.style.set_corner_radius(0.15);
+        button.hover_style.set_corner_radius(0.15);
+        button.pressed_style.set_corner_radius(0.15);
         self.insert_color_picker_internal_node(
             picker_id,
             "__perro_color_picker_swatch",

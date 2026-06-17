@@ -39,6 +39,11 @@ impl PhysicsSystem {
                         shape_signature: 0,
                         opaque_handle: opaque,
                         sync_epoch,
+                        idle_sync_frames: 0,
+                        last_translation: [0.0, 0.0],
+                        last_rotation: 0.0,
+                        last_linear_velocity: [0.0, 0.0],
+                        last_angular_velocity: 0.0,
                     },
                 );
                 set_body_handle(body.id, Some(opaque));
@@ -201,6 +206,11 @@ impl PhysicsSystem {
                         shape_signature: 0,
                         opaque_handle: opaque,
                         sync_epoch,
+                        idle_sync_frames: 0,
+                        last_translation: [0.0, 0.0, 0.0],
+                        last_rotation: [0.0, 0.0, 0.0, 1.0],
+                        last_linear_velocity: [0.0, 0.0, 0.0],
+                        last_angular_velocity: [0.0, 0.0, 0.0],
                     },
                 );
                 set_body_handle(body.id, Some(opaque));

@@ -3,7 +3,8 @@ use super::*;
 impl Runtime {
     pub(super) fn ui_effective_z(&self, node: NodeID) -> i32 {
         let mut cur = node;
-        let mut out = 0_i32;
+        let mut z_sum = 0_i64;
+        let mut ui_depth = 0_i64;
         let mut guard = 0_u32;
         while !cur.is_nil() && guard < 4096 {
             guard += 1;
@@ -11,11 +12,15 @@ impl Runtime {
                 break;
             };
             if let Some(ui) = ui_root_from_data(&scene_node.data) {
-                out = out.saturating_add(ui.layout.z_index);
+                z_sum = z_sum.saturating_add(ui.layout.z_index as i64);
+                ui_depth = ui_depth.saturating_add(1);
             }
             cur = scene_node.parent;
         }
-        out
+        z_sum
+            .saturating_mul(4096)
+            .saturating_add(ui_depth.saturating_sub(1))
+            .clamp(i32::MIN as i64, i32::MAX as i64) as i32
     }
 
     pub(super) fn compute_ui_child_rect(

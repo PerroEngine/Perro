@@ -70,6 +70,36 @@ pub(super) fn apply_ui_style_fields(
             "fill" | "color" => {
                 if let Some(v) = as_scene_color(value) {
                     style.fill = v;
+                    style.fill_kind = perro_ui::UiFillKind::Solid;
+                }
+            }
+            "fill_kind" => {
+                if let Some(v) = as_ui_fill_kind(value) {
+                    style.fill_kind = v;
+                }
+            }
+            "gradient" => {
+                if let Some(v) = as_ui_linear_gradient(value) {
+                    style.gradient = v;
+                    style.fill_kind = perro_ui::UiFillKind::Linear;
+                }
+            }
+            "gradient_start" | "gradient_start_color" => {
+                if let Some(v) = as_scene_color(value) {
+                    style.gradient.start_color = v;
+                    style.fill_kind = perro_ui::UiFillKind::Linear;
+                }
+            }
+            "gradient_end" | "gradient_end_color" => {
+                if let Some(v) = as_scene_color(value) {
+                    style.gradient.end_color = v;
+                    style.fill_kind = perro_ui::UiFillKind::Linear;
+                }
+            }
+            "gradient_vector" | "gradient_direction" => {
+                if let Some(v) = as_vec2(value) {
+                    style.gradient.vector = v;
+                    style.fill_kind = perro_ui::UiFillKind::Linear;
                 }
             }
             "stroke" => {
@@ -84,67 +114,182 @@ pub(super) fn apply_ui_style_fields(
             }
             "corner_radius" | "radius" => {
                 if let Some(v) = as_ui_corner_radius(value) {
-                    style.corner_radius = v;
+                    style.set_corner_radius(v);
+                }
+            }
+            "corner_radii" => {
+                if let Some(v) = as_ui_corner_radii(value) {
+                    style.corner_radii = v;
+                }
+            }
+            "radius_tl" | "corner_radius_tl" => {
+                if let Some(v) = as_ui_corner_radius(value) {
+                    style.corner_radii.tl = v;
+                }
+            }
+            "radius_tr" | "corner_radius_tr" => {
+                if let Some(v) = as_ui_corner_radius(value) {
+                    style.corner_radii.tr = v;
+                }
+            }
+            "radius_br" | "corner_radius_br" => {
+                if let Some(v) = as_ui_corner_radius(value) {
+                    style.corner_radii.br = v;
+                }
+            }
+            "radius_bl" | "corner_radius_bl" => {
+                if let Some(v) = as_ui_corner_radius(value) {
+                    style.corner_radii.bl = v;
                 }
             }
             "shadow" => {
                 if let Some(v) = as_ui_depth_effect(value) {
-                    style.shadow = v;
+                    style.outer_shadow = v;
+                }
+            }
+            "outer_shadow" => {
+                if let Some(v) = as_ui_depth_effect(value) {
+                    style.outer_shadow = v;
+                }
+            }
+            "inner_shadow" => {
+                if let Some(v) = as_ui_depth_effect(value) {
+                    style.inner_shadow = v;
                 }
             }
             "highlight" | "inner_highlight" => {
                 if let Some(v) = as_ui_depth_effect(value) {
-                    style.highlight = v;
+                    style.inner_highlight = v;
+                }
+            }
+            "outer_highlight" => {
+                if let Some(v) = as_ui_depth_effect(value) {
+                    style.outer_highlight = v;
                 }
             }
             "shadow_color" => {
                 if let Some(v) = as_scene_color(value) {
-                    style.shadow.color = v;
+                    style.outer_shadow.color = v;
                 }
             }
             "shadow_distance" => {
                 if let Some(v) = as_f32(value) {
-                    style.shadow.distance = v.max(0.0);
+                    style.outer_shadow.distance = v.max(0.0);
                 }
             }
             "shadow_falloff" => {
                 if let Some(v) = as_f32(value) {
-                    style.shadow.falloff = v.max(0.0);
+                    style.outer_shadow.falloff = v.max(0.0);
                 }
             }
             "shadow_vector" => {
                 if let Some(v) = as_vec2(value) {
-                    style.shadow.vector = v;
+                    style.outer_shadow.vector = v;
                 }
             }
             "shadow_size" => {
                 if let Some(v) = as_f32(value) {
-                    style.shadow.size = v.max(0.0);
+                    style.outer_shadow.size = v.max(0.0);
+                }
+            }
+            "outer_shadow_color" => {
+                if let Some(v) = as_scene_color(value) {
+                    style.outer_shadow.color = v;
+                }
+            }
+            "outer_shadow_distance" => {
+                if let Some(v) = as_f32(value) {
+                    style.outer_shadow.distance = v.max(0.0);
+                }
+            }
+            "outer_shadow_falloff" => {
+                if let Some(v) = as_f32(value) {
+                    style.outer_shadow.falloff = v.max(0.0);
+                }
+            }
+            "outer_shadow_vector" => {
+                if let Some(v) = as_vec2(value) {
+                    style.outer_shadow.vector = v;
+                }
+            }
+            "outer_shadow_size" => {
+                if let Some(v) = as_f32(value) {
+                    style.outer_shadow.size = v.max(0.0);
+                }
+            }
+            "inner_shadow_color" => {
+                if let Some(v) = as_scene_color(value) {
+                    style.inner_shadow.color = v;
+                }
+            }
+            "inner_shadow_distance" => {
+                if let Some(v) = as_f32(value) {
+                    style.inner_shadow.distance = v.max(0.0);
+                }
+            }
+            "inner_shadow_falloff" => {
+                if let Some(v) = as_f32(value) {
+                    style.inner_shadow.falloff = v.max(0.0);
+                }
+            }
+            "inner_shadow_vector" => {
+                if let Some(v) = as_vec2(value) {
+                    style.inner_shadow.vector = v;
+                }
+            }
+            "inner_shadow_size" => {
+                if let Some(v) = as_f32(value) {
+                    style.inner_shadow.size = v.max(0.0);
                 }
             }
             "highlight_color" | "inner_highlight_color" => {
                 if let Some(v) = as_scene_color(value) {
-                    style.highlight.color = v;
+                    style.inner_highlight.color = v;
                 }
             }
             "highlight_distance" | "inner_highlight_distance" => {
                 if let Some(v) = as_f32(value) {
-                    style.highlight.distance = v.max(0.0);
+                    style.inner_highlight.distance = v.max(0.0);
                 }
             }
             "highlight_falloff" | "inner_highlight_falloff" => {
                 if let Some(v) = as_f32(value) {
-                    style.highlight.falloff = v.max(0.0);
+                    style.inner_highlight.falloff = v.max(0.0);
                 }
             }
             "highlight_vector" | "inner_highlight_vector" => {
                 if let Some(v) = as_vec2(value) {
-                    style.highlight.vector = v;
+                    style.inner_highlight.vector = v;
                 }
             }
             "highlight_size" | "inner_highlight_size" => {
                 if let Some(v) = as_f32(value) {
-                    style.highlight.size = v.max(0.0);
+                    style.inner_highlight.size = v.max(0.0);
+                }
+            }
+            "outer_highlight_color" => {
+                if let Some(v) = as_scene_color(value) {
+                    style.outer_highlight.color = v;
+                }
+            }
+            "outer_highlight_distance" => {
+                if let Some(v) = as_f32(value) {
+                    style.outer_highlight.distance = v.max(0.0);
+                }
+            }
+            "outer_highlight_falloff" => {
+                if let Some(v) = as_f32(value) {
+                    style.outer_highlight.falloff = v.max(0.0);
+                }
+            }
+            "outer_highlight_vector" => {
+                if let Some(v) = as_vec2(value) {
+                    style.outer_highlight.vector = v;
+                }
+            }
+            "outer_highlight_size" => {
+                if let Some(v) = as_f32(value) {
+                    style.outer_highlight.size = v.max(0.0);
                 }
             }
             _ => {}
@@ -295,6 +440,56 @@ pub(super) fn as_ui_depth_effect(value: &SceneValue) -> Option<perro_ui::UiDepth
         _ => {}
     });
     Some(effect)
+}
+
+pub(super) fn as_ui_fill_kind(value: &SceneValue) -> Option<perro_ui::UiFillKind> {
+    match as_str(value)?
+        .to_ascii_lowercase()
+        .replace([' ', '-', '_'], "")
+        .as_str()
+    {
+        "solid" => Some(perro_ui::UiFillKind::Solid),
+        "linear" | "gradient" | "lineargradient" => Some(perro_ui::UiFillKind::Linear),
+        _ => None,
+    }
+}
+
+pub(super) fn as_ui_linear_gradient(value: &SceneValue) -> Option<perro_ui::UiLinearGradient> {
+    let SceneValue::Object(fields) = value else {
+        return None;
+    };
+    let mut gradient = perro_ui::UiLinearGradient::none();
+    SceneFieldIterRef::new(fields.as_ref()).for_each(|name, value| match name {
+        "start" | "start_color" | "from" => {
+            if let Some(v) = as_scene_color(value) {
+                gradient.start_color = v;
+            }
+        }
+        "end" | "end_color" | "to" => {
+            if let Some(v) = as_scene_color(value) {
+                gradient.end_color = v;
+            }
+        }
+        "vector" | "direction" | "dir" => {
+            if let Some(v) = as_vec2(value) {
+                gradient.vector = v;
+            }
+        }
+        _ => {}
+    });
+    Some(gradient)
+}
+
+pub(super) fn as_ui_corner_radii(value: &SceneValue) -> Option<perro_ui::UiCornerRadii> {
+    match value {
+        SceneValue::Vec4 { x, y, z, w } => Some(perro_ui::UiCornerRadii::new(
+            x.clamp(0.0, 1.0),
+            y.clamp(0.0, 1.0),
+            z.clamp(0.0, 1.0),
+            w.clamp(0.0, 1.0),
+        )),
+        _ => as_ui_corner_radius(value).map(perro_ui::UiCornerRadii::all),
+    }
 }
 
 pub(super) fn as_signal_id(value: &SceneValue) -> Option<perro_ids::SignalID> {

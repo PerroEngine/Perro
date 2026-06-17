@@ -128,13 +128,15 @@ impl Runtime {
         let step = step_start.elapsed();
 
         let sync_nodes_start = Instant::now();
-        self.sync_world_to_nodes_2d();
-        self.sync_world_to_nodes_3d();
+        let changed_2d = self.sync_world_to_nodes_2d();
+        let changed_3d = self.sync_world_to_nodes_3d();
         let sync_nodes = sync_nodes_start.elapsed();
 
         let post_transforms_start = Instant::now();
-        self.propagate_pending_transform_dirty();
-        self.refresh_dirty_global_transforms();
+        if changed_2d || changed_3d {
+            self.propagate_pending_transform_dirty();
+            self.refresh_dirty_global_transforms();
+        }
         let post_transforms = post_transforms_start.elapsed();
 
         let signals_start = Instant::now();
@@ -1646,12 +1648,13 @@ impl Runtime {
         }
     }
 
-    fn sync_world_to_nodes_2d(&mut self) {
-        let Some(world) = self.physics.world_2d.take() else {
-            return;
+    fn sync_world_to_nodes_2d(&mut self) -> bool {
+        let Some(mut world) = self.physics.world_2d.take() else {
+            return false;
         };
+        let mut changed = false;
 
-        for (&id, state) in &world.body_map {
+        for (&id, state) in &mut world.body_map {
             self.set_body_handle_2d(id, Some(state.opaque_handle));
             if state.kind != BodyKind::Rigid {
                 continue;
@@ -1663,6 +1666,11 @@ impl Runtime {
             let rotation = body.rotation().angle();
             let lin = Vector2::new(body.linvel().x, body.linvel().y);
             let ang = body.angvel();
+            let sleeping = body.is_sleeping();
+            let same_as_last_sync = body_sync_same_2d(state, position, rotation, lin, ang);
+            if sleeping && same_as_last_sync && state.idle_sync_frames >= 1 {
+                continue;
+            }
             let parent = self
                 .nodes
                 .get(id)
@@ -1679,6 +1687,7 @@ impl Runtime {
 
             self.record_physics_pose_2d(id, parent, before, curr);
             self.set_physics_body_transform_2d(id, position, rotation);
+            changed = true;
 
             if let Some(scene_node) = self.nodes.get_mut(id)
                 && let SceneNodeData::RigidBody2D(node) = &mut scene_node.data
@@ -1686,17 +1695,28 @@ impl Runtime {
                 node.linear_velocity = lin;
                 node.angular_velocity = ang;
             }
+            update_body_sync_state_2d(
+                state,
+                position,
+                rotation,
+                lin,
+                ang,
+                sleeping,
+                same_as_last_sync,
+            );
         }
 
         self.physics.world_2d = Some(world);
+        changed
     }
 
-    fn sync_world_to_nodes_3d(&mut self) {
-        let Some(world) = self.physics.world_3d.take() else {
-            return;
+    fn sync_world_to_nodes_3d(&mut self) -> bool {
+        let Some(mut world) = self.physics.world_3d.take() else {
+            return false;
         };
+        let mut changed = false;
 
-        for (&id, state) in &world.body_map {
+        for (&id, state) in &mut world.body_map {
             self.set_body_handle_3d(id, Some(state.opaque_handle));
             if state.kind != BodyKind::Rigid {
                 continue;
@@ -1713,6 +1733,11 @@ impl Runtime {
             let rotation = Quaternion::new(rot.i, rot.j, rot.k, rot.w);
             let lin = Vector3::new(body.linvel().x, body.linvel().y, body.linvel().z);
             let ang = Vector3::new(body.angvel().x, body.angvel().y, body.angvel().z);
+            let sleeping = body.is_sleeping();
+            let same_as_last_sync = body_sync_same_3d(state, position, rotation, lin, ang);
+            if sleeping && same_as_last_sync && state.idle_sync_frames >= 1 {
+                continue;
+            }
             let parent = self
                 .nodes
                 .get(id)
@@ -1729,6 +1754,7 @@ impl Runtime {
 
             self.record_physics_pose_3d(id, parent, before, curr);
             self.set_physics_body_transform_3d(id, position, rotation);
+            changed = true;
 
             if let Some(scene_node) = self.nodes.get_mut(id)
                 && let SceneNodeData::RigidBody3D(node) = &mut scene_node.data
@@ -1736,9 +1762,19 @@ impl Runtime {
                 node.linear_velocity = lin;
                 node.angular_velocity = ang;
             }
+            update_body_sync_state_3d(
+                state,
+                position,
+                rotation,
+                lin,
+                ang,
+                sleeping,
+                same_as_last_sync,
+            );
         }
 
         self.physics.world_3d = Some(world);
+        changed
     }
 
     fn set_physics_body_transform_2d(&mut self, id: NodeID, position: Vector2, rotation: f32) {
@@ -2036,6 +2072,83 @@ impl Runtime {
         let params = [Variant::from(area), Variant::from(other)];
         let _ = SignalAPI::signal_emit(self, signal_id, &params);
     }
+}
+
+fn body_sync_same_2d(
+    state: &BodyState2D,
+    position: Vector2,
+    rotation: f32,
+    linear_velocity: Vector2,
+    angular_velocity: f32,
+) -> bool {
+    approx_eq_f32(state.last_translation[0], position.x)
+        && approx_eq_f32(state.last_translation[1], position.y)
+        && approx_eq_f32(state.last_rotation, rotation)
+        && approx_eq_f32(state.last_linear_velocity[0], linear_velocity.x)
+        && approx_eq_f32(state.last_linear_velocity[1], linear_velocity.y)
+        && approx_eq_f32(state.last_angular_velocity, angular_velocity)
+}
+
+fn update_body_sync_state_2d(
+    state: &mut BodyState2D,
+    position: Vector2,
+    rotation: f32,
+    linear_velocity: Vector2,
+    angular_velocity: f32,
+    sleeping: bool,
+    same_as_last_sync: bool,
+) {
+    state.last_translation = [position.x, position.y];
+    state.last_rotation = rotation;
+    state.last_linear_velocity = [linear_velocity.x, linear_velocity.y];
+    state.last_angular_velocity = angular_velocity;
+    state.idle_sync_frames = if sleeping && same_as_last_sync {
+        state.idle_sync_frames.saturating_add(1)
+    } else {
+        0
+    };
+}
+
+fn body_sync_same_3d(
+    state: &BodyState3D,
+    position: Vector3,
+    rotation: Quaternion,
+    linear_velocity: Vector3,
+    angular_velocity: Vector3,
+) -> bool {
+    approx_eq_f32(state.last_translation[0], position.x)
+        && approx_eq_f32(state.last_translation[1], position.y)
+        && approx_eq_f32(state.last_translation[2], position.z)
+        && approx_eq_f32(state.last_rotation[0], rotation.x)
+        && approx_eq_f32(state.last_rotation[1], rotation.y)
+        && approx_eq_f32(state.last_rotation[2], rotation.z)
+        && approx_eq_f32(state.last_rotation[3], rotation.w)
+        && approx_eq_f32(state.last_linear_velocity[0], linear_velocity.x)
+        && approx_eq_f32(state.last_linear_velocity[1], linear_velocity.y)
+        && approx_eq_f32(state.last_linear_velocity[2], linear_velocity.z)
+        && approx_eq_f32(state.last_angular_velocity[0], angular_velocity.x)
+        && approx_eq_f32(state.last_angular_velocity[1], angular_velocity.y)
+        && approx_eq_f32(state.last_angular_velocity[2], angular_velocity.z)
+}
+
+fn update_body_sync_state_3d(
+    state: &mut BodyState3D,
+    position: Vector3,
+    rotation: Quaternion,
+    linear_velocity: Vector3,
+    angular_velocity: Vector3,
+    sleeping: bool,
+    same_as_last_sync: bool,
+) {
+    state.last_translation = [position.x, position.y, position.z];
+    state.last_rotation = [rotation.x, rotation.y, rotation.z, rotation.w];
+    state.last_linear_velocity = [linear_velocity.x, linear_velocity.y, linear_velocity.z];
+    state.last_angular_velocity = [angular_velocity.x, angular_velocity.y, angular_velocity.z];
+    state.idle_sync_frames = if sleeping && same_as_last_sync {
+        state.idle_sync_frames.saturating_add(1)
+    } else {
+        0
+    };
 }
 
 fn hash_water_shape(state: u64, shape: WaterShape) -> u64 {

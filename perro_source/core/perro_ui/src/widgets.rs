@@ -368,18 +368,12 @@ impl UiDropdown {
             option_hover_style: UiStyle {
                 fill: Color::new(0.24, 0.27, 0.32, 1.0),
                 stroke: Color::new(0.42, 0.46, 0.54, 1.0),
-                stroke_width: 1.0,
-                corner_radius: 0.2,
-                shadow: UiDepthEffect::none(),
-                highlight: UiDepthEffect::none(),
+                ..UiStyle::button()
             },
             option_pressed_style: UiStyle {
                 fill: Color::new(0.12, 0.14, 0.18, 1.0),
                 stroke: Color::new(0.42, 0.46, 0.54, 1.0),
-                stroke_width: 1.0,
-                corner_radius: 0.2,
-                shadow: UiDepthEffect::none(),
-                highlight: UiDepthEffect::none(),
+                ..UiStyle::button()
             },
             option_height: 28.0,
             internal_label: NodeID::nil(),
@@ -831,10 +825,7 @@ impl UiTextEdit {
             focused_style: UiStyle {
                 fill: Color::new(0.10, 0.11, 0.13, 0.96),
                 stroke: Color::new(0.45, 0.58, 0.85, 1.0),
-                stroke_width: 1.0,
-                corner_radius: 0.2,
-                shadow: UiDepthEffect::none(),
-                highlight: UiDepthEffect::none(),
+                ..UiStyle::panel()
             },
             input_mask: UiInputMask::new(),
             hover_signals: Vec::new(),
@@ -1053,18 +1044,12 @@ impl UiButton {
             hover_style: UiStyle {
                 fill: Color::new(0.24, 0.27, 0.32, 1.0),
                 stroke: Color::new(0.42, 0.46, 0.54, 1.0),
-                stroke_width: 1.0,
-                corner_radius: 0.2,
-                shadow: UiDepthEffect::none(),
-                highlight: UiDepthEffect::none(),
+                ..UiStyle::button()
             },
             pressed_style: UiStyle {
                 fill: Color::new(0.12, 0.14, 0.18, 1.0),
                 stroke: Color::new(0.42, 0.46, 0.54, 1.0),
-                stroke_width: 1.0,
-                corner_radius: 0.2,
-                shadow: UiDepthEffect::none(),
-                highlight: UiDepthEffect::none(),
+                ..UiStyle::button()
             },
             input_mask: UiInputMask::new(),
             cursor_icon: CursorIcon::Pointer,

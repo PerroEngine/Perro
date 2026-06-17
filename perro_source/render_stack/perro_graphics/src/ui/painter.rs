@@ -15,7 +15,8 @@ use epaint::{
 };
 use perro_ids::NodeID;
 use perro_render_bridge::{
-    UiDepthEffectState, UiImageScaleState, UiRectState, UiShapeKind, UiTextAlignState,
+    UiCornerRadiiState, UiDepthEffectState, UiFillKindState, UiImageScaleState,
+    UiLinearGradientState, UiRectState, UiShapeKind, UiTextAlignState,
 };
 
 const UI_RASTER_SCALE: f32 = 2.0;
@@ -405,9 +406,9 @@ fn push_image_shape(image: &UiImageDraw, viewport: [f32; 2], out: &mut Vec<Clipp
         pos2(image.uv_max[0], image.uv_max[1]),
     );
     let mut mesh = Mesh::with_texture(TextureId::User(image.texture.as_u64()));
-    let radius = resolve_rect_corner_radius(rect, image.corner_radius);
-    if radius > 0.0 {
-        add_rounded_rect_with_uv(&mut mesh, rect, uv, radius, color32(image.tint));
+    let radii = resolve_rect_corner_radii(rect, image.corner_radii);
+    if has_any_radius(radii) {
+        add_rounded_rect_with_uv(&mut mesh, rect, uv, radii, color32(image.tint));
     } else {
         mesh.add_rect_with_uv(rect, uv, color32(image.tint));
     }
@@ -417,9 +418,14 @@ fn push_image_shape(image: &UiImageDraw, viewport: [f32; 2], out: &mut Vec<Clipp
     });
 }
 
-fn add_rounded_rect_with_uv(mesh: &mut Mesh, rect: Rect, uv: Rect, radius: f32, color: Color32) {
-    let radius = radius.min(rect.width() * 0.5).min(rect.height() * 0.5);
-    if radius <= 0.0 {
+fn add_rounded_rect_with_uv(
+    mesh: &mut Mesh,
+    rect: Rect,
+    uv: Rect,
+    radii: ResolvedCornerRadii,
+    color: Color32,
+) {
+    if !has_any_radius(radii) {
         mesh.add_rect_with_uv(rect, uv, color);
         return;
     }
@@ -432,42 +438,12 @@ fn add_rounded_rect_with_uv(mesh: &mut Mesh, rect: Rect, uv: Rect, radius: f32, 
         color,
     });
 
-    let segments = 6;
-    for (corner, start, end) in [
-        (
-            pos2(rect.right() - radius, rect.top() + radius),
-            -90.0_f32,
-            0.0_f32,
-        ),
-        (
-            pos2(rect.right() - radius, rect.bottom() - radius),
-            0.0,
-            90.0,
-        ),
-        (
-            pos2(rect.left() + radius, rect.bottom() - radius),
-            90.0,
-            180.0,
-        ),
-        (
-            pos2(rect.left() + radius, rect.top() + radius),
-            180.0,
-            270.0,
-        ),
-    ] {
-        for step in 0..=segments {
-            let t = step as f32 / segments as f32;
-            let angle = (start + (end - start) * t).to_radians();
-            let pos = pos2(
-                corner.x + angle.cos() * radius,
-                corner.y + angle.sin() * radius,
-            );
-            mesh.vertices.push(Vertex {
-                pos,
-                uv: rect_uv(rect, uv, pos),
-                color,
-            });
-        }
+    for pos in rounded_rect_points(rect, radii, 6) {
+        mesh.vertices.push(Vertex {
+            pos,
+            uv: rect_uv(rect, uv, pos),
+            color,
+        });
     }
 
     let point_count = mesh.vertices.len() as u32 - base - 1;
@@ -541,36 +517,96 @@ fn push_label_shape(
 }
 
 fn push_panel_shape(panel: &UiPanelDraw, viewport: [f32; 2], out: &mut Vec<ClippedShape>) {
-    if !valid_rect(panel.rect) || !valid_color(panel.fill) || !valid_color(panel.stroke) {
+    if !valid_rect(panel.rect) || !valid_color(panel.stroke) || !valid_gradient(panel.gradient) {
         return;
     }
 
     let (min, max) = panel.rect.screen_min_max(viewport);
     let rect = Rect::from_min_max(pos2(min[0], min[1]), pos2(max[0], max[1]));
     let clip_rect = clip_rect_from_state(panel.clip_rect, viewport);
-    let radius = CornerRadius::same(resolve_corner_radius(panel) as u8);
-    push_shadow_shapes(panel, rect, radius, clip_rect, out);
+    let radii = resolve_corner_radii(panel, rect);
+    push_outer_fill_effect(panel.outer_shadow, rect, radii, clip_rect, out);
+    push_outer_stroke_effect(panel.outer_highlight, rect, radii, clip_rect, out);
+    push_panel_fill_shape(panel, rect, radii, clip_rect, out);
+    push_panel_stroke_shape(panel, rect, radii, clip_rect, out);
+    push_inner_fill_effect(panel.inner_shadow, rect, radii, clip_rect, out);
+    push_inner_stroke_effect(panel.inner_highlight, rect, radii, clip_rect, out);
+}
+
+fn push_panel_fill_shape(
+    panel: &UiPanelDraw,
+    rect: Rect,
+    radii: ResolvedCornerRadii,
+    clip_rect: Rect,
+    out: &mut Vec<ClippedShape>,
+) {
+    match panel.fill_kind {
+        UiFillKindState::Solid => {
+            if !valid_color(panel.fill) {
+                return;
+            }
+            out.push(ClippedShape {
+                clip_rect,
+                shape: Shape::Rect(RectShape::filled(
+                    rect,
+                    radii_to_corner_radius(rect, radii),
+                    color32(panel.fill),
+                )),
+            });
+        }
+        UiFillKindState::Linear => {
+            push_gradient_panel_shape(panel, rect, radii, clip_rect, out);
+        }
+    }
+}
+
+fn push_panel_stroke_shape(
+    panel: &UiPanelDraw,
+    rect: Rect,
+    radii: ResolvedCornerRadii,
+    clip_rect: Rect,
+    out: &mut Vec<ClippedShape>,
+) {
+    if !valid_color(panel.stroke) || panel.stroke_width <= 0.0 {
+        return;
+    }
     out.push(ClippedShape {
         clip_rect,
         shape: Shape::Rect(RectShape::new(
             rect,
-            radius,
-            color32(panel.fill),
+            radii_to_corner_radius(rect, radii),
+            Color32::TRANSPARENT,
             Stroke::new(panel.stroke_width.max(0.0), color32(panel.stroke)),
             StrokeKind::Inside,
         )),
     });
-    push_highlight_shapes(panel, rect, radius, clip_rect, out);
 }
 
-fn push_shadow_shapes(
+fn push_gradient_panel_shape(
     panel: &UiPanelDraw,
     rect: Rect,
-    radius: CornerRadius,
+    radii: ResolvedCornerRadii,
     clip_rect: Rect,
     out: &mut Vec<ClippedShape>,
 ) {
-    let effect = panel.shadow;
+    let mut mesh = Mesh::default();
+    add_rounded_rect_gradient(&mut mesh, rect, radii, panel.gradient);
+    if mesh.vertices.is_empty() || mesh.indices.is_empty() {
+        return;
+    }
+    out.push(ClippedShape {
+        clip_rect,
+        shape: Shape::Mesh(mesh.into()),
+    });
+}
+
+fn push_outer_fill_effect(
+    effect: UiDepthEffectState,
+    rect: Rect,
+    radii: ResolvedCornerRadii,
+    clip_rect: Rect,
+    out: &mut Vec<ClippedShape>,
+) {
     if !valid_effect(effect) {
         return;
     }
@@ -590,22 +626,103 @@ fn push_shadow_shapes(
         }
         out.push(ClippedShape {
             clip_rect,
-            shape: Shape::Rect(RectShape::filled(rect, radius, color32(color))),
+            shape: Shape::Rect(RectShape::filled(
+                rect,
+                radii_to_corner_radius(rect, radii),
+                color32(color),
+            )),
         });
     }
 }
 
-fn push_highlight_shapes(
-    panel: &UiPanelDraw,
+fn push_outer_stroke_effect(
+    effect: UiDepthEffectState,
     rect: Rect,
-    radius: CornerRadius,
+    radii: ResolvedCornerRadii,
     clip_rect: Rect,
     out: &mut Vec<ClippedShape>,
 ) {
-    let effect = panel.highlight;
     if !valid_effect(effect) {
         return;
     }
+    let offset = effect_offset(effect);
+    let steps = effect.falloff.max(1.0).ceil().clamp(1.0, 24.0) as usize;
+    let size_expand = effect_size_expand(rect, effect);
+    let stroke_base = (rect.width().min(rect.height()).max(1.0) * 0.035).max(1.0);
+    for step in 0..steps {
+        let t = step as f32 / steps as f32;
+        let expand = effect.distance.max(0.0) + effect.falloff.max(0.0) * t;
+        let stroke_width = (stroke_base * (1.0 - t * 0.65)).max(0.5);
+        let alpha = effect.color.a() * (1.0 - t);
+        let color = with_alpha(effect.color, alpha);
+        if !valid_color(color) || alpha <= 0.0 {
+            continue;
+        }
+        let rect = rect.translate(-offset).expand(size_expand + expand);
+        if rect.width() <= 0.0 || rect.height() <= 0.0 {
+            continue;
+        }
+        out.push(ClippedShape {
+            clip_rect,
+            shape: Shape::Rect(RectShape::new(
+                rect,
+                radii_to_corner_radius(rect, radii),
+                Color32::TRANSPARENT,
+                Stroke::new(stroke_width, color32(color)),
+                StrokeKind::Inside,
+            )),
+        });
+    }
+}
+
+fn push_inner_fill_effect(
+    effect: UiDepthEffectState,
+    rect: Rect,
+    radii: ResolvedCornerRadii,
+    clip_rect: Rect,
+    out: &mut Vec<ClippedShape>,
+) {
+    if !valid_effect(effect) {
+        return;
+    }
+    let inner_clip = clip_rect.intersect(rect);
+    let offset = effect_offset(effect);
+    let steps = effect.falloff.max(1.0).ceil().clamp(1.0, 24.0) as usize;
+    for step in 0..steps {
+        let t = (step + 1) as f32 / steps as f32;
+        let expand = effect_size_expand(rect, effect) + effect.falloff.max(0.0) * (1.0 - t);
+        let shrink = effect.distance.max(0.0) * t * 0.6;
+        let alpha = effect.color.a() * (1.0 - t * 0.78);
+        let color = with_alpha(effect.color, alpha);
+        if !valid_color(color) || alpha <= 0.0 {
+            continue;
+        }
+        let rect = rect.translate(offset).expand(expand).shrink(shrink);
+        if rect.width() <= 0.0 || rect.height() <= 0.0 {
+            continue;
+        }
+        out.push(ClippedShape {
+            clip_rect: inner_clip,
+            shape: Shape::Rect(RectShape::filled(
+                rect,
+                radii_to_corner_radius(rect, radii),
+                color32(color),
+            )),
+        });
+    }
+}
+
+fn push_inner_stroke_effect(
+    effect: UiDepthEffectState,
+    rect: Rect,
+    radii: ResolvedCornerRadii,
+    clip_rect: Rect,
+    out: &mut Vec<ClippedShape>,
+) {
+    if !valid_effect(effect) {
+        return;
+    }
+    let inner_clip = clip_rect.intersect(rect);
     let offset = effect_offset(effect);
     let steps = effect.falloff.max(1.0).ceil().clamp(1.0, 24.0) as usize;
     let size_expand = effect_size_expand(rect, effect);
@@ -624,10 +741,10 @@ fn push_highlight_shapes(
             break;
         }
         out.push(ClippedShape {
-            clip_rect,
+            clip_rect: inner_clip,
             shape: Shape::Rect(RectShape::new(
                 rect,
-                radius,
+                radii_to_corner_radius(rect, radii),
                 Color32::TRANSPARENT,
                 Stroke::new(stroke_width, color32(color)),
                 StrokeKind::Inside,
@@ -847,14 +964,6 @@ fn screen_pivot(rect: UiRectState, viewport: [f32; 2]) -> epaint::Pos2 {
     )
 }
 
-fn resolve_corner_radius(panel: &UiPanelDraw) -> f32 {
-    let rect = Rect::from_center_size(
-        pos2(panel.rect.center[0], panel.rect.center[1]),
-        vec2(panel.rect.size[0], panel.rect.size[1]),
-    );
-    resolve_rect_corner_radius(rect, panel.corner_radius)
-}
-
 fn resolve_rect_corner_radius(rect: Rect, corner_radius: f32) -> f32 {
     let ratio = if corner_radius.is_finite() {
         corner_radius.clamp(0.0, 1.0)
@@ -862,6 +971,184 @@ fn resolve_rect_corner_radius(rect: Rect, corner_radius: f32) -> f32 {
         1.0
     };
     (rect.width().min(rect.height()).max(0.0) * 0.5 * ratio).min(u8::MAX as f32)
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct ResolvedCornerRadii {
+    tl: f32,
+    tr: f32,
+    br: f32,
+    bl: f32,
+}
+
+fn resolve_corner_radii(panel: &UiPanelDraw, rect: Rect) -> ResolvedCornerRadii {
+    resolve_rect_corner_radii(rect, panel.corner_radii)
+}
+
+fn resolve_rect_corner_radii(rect: Rect, corner_radii: UiCornerRadiiState) -> ResolvedCornerRadii {
+    ResolvedCornerRadii {
+        tl: resolve_rect_corner_radius(rect, corner_radii.tl),
+        tr: resolve_rect_corner_radius(rect, corner_radii.tr),
+        br: resolve_rect_corner_radius(rect, corner_radii.br),
+        bl: resolve_rect_corner_radius(rect, corner_radii.bl),
+    }
+}
+
+fn has_any_radius(radii: ResolvedCornerRadii) -> bool {
+    radii.tl > 0.0 || radii.tr > 0.0 || radii.br > 0.0 || radii.bl > 0.0
+}
+
+fn radii_to_corner_radius(rect: Rect, radii: ResolvedCornerRadii) -> CornerRadius {
+    let max_radius = rect.width().min(rect.height()).max(0.0) * 0.5;
+    let clamp = |v: f32| v.clamp(0.0, max_radius).min(u8::MAX as f32) as u8;
+    CornerRadius {
+        nw: clamp(radii.tl),
+        ne: clamp(radii.tr),
+        se: clamp(radii.br),
+        sw: clamp(radii.bl),
+    }
+}
+
+fn rounded_rect_points(
+    rect: Rect,
+    radii: ResolvedCornerRadii,
+    segments: usize,
+) -> Vec<epaint::Pos2> {
+    let mut out = Vec::new();
+    push_corner_points(
+        &mut out,
+        pos2(rect.right() - radii.tr, rect.top() + radii.tr),
+        radii.tr,
+        -90.0,
+        0.0,
+        segments,
+        pos2(rect.right(), rect.top()),
+    );
+    push_corner_points(
+        &mut out,
+        pos2(rect.right() - radii.br, rect.bottom() - radii.br),
+        radii.br,
+        0.0,
+        90.0,
+        segments,
+        pos2(rect.right(), rect.bottom()),
+    );
+    push_corner_points(
+        &mut out,
+        pos2(rect.left() + radii.bl, rect.bottom() - radii.bl),
+        radii.bl,
+        90.0,
+        180.0,
+        segments,
+        pos2(rect.left(), rect.bottom()),
+    );
+    push_corner_points(
+        &mut out,
+        pos2(rect.left() + radii.tl, rect.top() + radii.tl),
+        radii.tl,
+        180.0,
+        270.0,
+        segments,
+        pos2(rect.left(), rect.top()),
+    );
+    out
+}
+
+fn push_corner_points(
+    out: &mut Vec<epaint::Pos2>,
+    center: epaint::Pos2,
+    radius: f32,
+    start_deg: f32,
+    end_deg: f32,
+    segments: usize,
+    fallback: epaint::Pos2,
+) {
+    if radius <= 0.0 {
+        out.push(fallback);
+        return;
+    }
+    for step in 0..=segments {
+        let t = step as f32 / segments as f32;
+        let angle = (start_deg + (end_deg - start_deg) * t).to_radians();
+        out.push(pos2(
+            center.x + angle.cos() * radius,
+            center.y + angle.sin() * radius,
+        ));
+    }
+}
+
+fn add_rounded_rect_gradient(
+    mesh: &mut Mesh,
+    rect: Rect,
+    radii: ResolvedCornerRadii,
+    gradient: UiLinearGradientState,
+) {
+    let points = rounded_rect_points(rect, radii, 6);
+    if points.len() < 3 {
+        return;
+    }
+    let base = mesh.vertices.len() as u32;
+    let center = rect.center();
+    mesh.vertices.push(Vertex {
+        pos: center,
+        uv: pos2(0.0, 0.0),
+        color: gradient_color(gradient, rect, center),
+    });
+    for pos in points {
+        mesh.vertices.push(Vertex {
+            pos,
+            uv: pos2(0.0, 0.0),
+            color: gradient_color(gradient, rect, pos),
+        });
+    }
+    let point_count = mesh.vertices.len() as u32 - base - 1;
+    for idx in 0..point_count {
+        mesh.indices.extend_from_slice(&[
+            base,
+            base + idx + 1,
+            base + ((idx + 1) % point_count) + 1,
+        ]);
+    }
+}
+
+fn gradient_color(gradient: UiLinearGradientState, rect: Rect, pos: epaint::Pos2) -> Color32 {
+    let dir = vec2(gradient.vector[0], -gradient.vector[1]);
+    let len = dir.length();
+    let dir = if len <= 0.0001 || !len.is_finite() {
+        vec2(0.0, -1.0)
+    } else {
+        dir / len
+    };
+    let rel = pos - rect.center();
+    let extent = [
+        vec2(rect.left() - rect.center().x, rect.top() - rect.center().y),
+        vec2(rect.right() - rect.center().x, rect.top() - rect.center().y),
+        vec2(
+            rect.right() - rect.center().x,
+            rect.bottom() - rect.center().y,
+        ),
+        vec2(
+            rect.left() - rect.center().x,
+            rect.bottom() - rect.center().y,
+        ),
+    ]
+    .into_iter()
+    .map(|v| v.dot(dir).abs())
+    .fold(0.0_f32, f32::max)
+    .max(1.0);
+    let t = ((rel.dot(dir) / extent) * 0.5 + 0.5).clamp(0.0, 1.0);
+    color32(lerp_color(gradient.start_color, gradient.end_color, t))
+}
+
+fn lerp_color(a: perro_structs::Color, b: perro_structs::Color, t: f32) -> perro_structs::Color {
+    let [ar, ag, ab, aa] = a.to_rgba();
+    let [br, bg, bb, ba] = b.to_rgba();
+    perro_structs::Color::new(
+        ar + (br - ar) * t,
+        ag + (bg - ag) * t,
+        ab + (bb - ab) * t,
+        aa + (ba - aa) * t,
+    )
 }
 
 struct TextShapeInput<'a> {
@@ -951,6 +1238,12 @@ fn valid_rect(rect: UiRectState) -> bool {
 
 fn valid_color(color: perro_structs::Color) -> bool {
     color.to_rgba().iter().all(|v| v.is_finite())
+}
+
+fn valid_gradient(gradient: UiLinearGradientState) -> bool {
+    valid_color(gradient.start_color)
+        && valid_color(gradient.end_color)
+        && gradient.vector.iter().all(|v| v.is_finite())
 }
 
 fn valid_effect(effect: UiDepthEffectState) -> bool {
@@ -1058,14 +1351,23 @@ mod tests {
             },
             clip_rect: [0.0, 0.0, 800.0, 600.0],
             fill: perro_structs::Color::BLACK,
+            fill_kind: UiFillKindState::Solid,
+            gradient: UiLinearGradientState::none(),
             stroke: perro_structs::Color::TRANSPARENT,
             stroke_width: 0.0,
-            corner_radius: 0.5,
-            shadow: UiDepthEffectState::none(),
-            highlight: UiDepthEffectState::none(),
+            corner_radii: UiCornerRadiiState {
+                tl: 0.5,
+                tr: 0.5,
+                br: 0.5,
+                bl: 0.5,
+            },
+            outer_shadow: UiDepthEffectState::none(),
+            inner_shadow: UiDepthEffectState::none(),
+            outer_highlight: UiDepthEffectState::none(),
+            inner_highlight: UiDepthEffectState::none(),
         };
-
-        assert_eq!(resolve_corner_radius(&panel), 12.5);
+        let rect = Rect::from_center_size(pos2(0.0, 0.0), vec2(100.0, 50.0));
+        assert_eq!(resolve_corner_radii(&panel, rect).tl, 12.5);
     }
 
     #[test]
@@ -1080,14 +1382,23 @@ mod tests {
             },
             clip_rect: [0.0, 0.0, 800.0, 600.0],
             fill: perro_structs::Color::BLACK,
+            fill_kind: UiFillKindState::Solid,
+            gradient: UiLinearGradientState::none(),
             stroke: perro_structs::Color::TRANSPARENT,
             stroke_width: 0.0,
-            corner_radius: 2.0,
-            shadow: UiDepthEffectState::none(),
-            highlight: UiDepthEffectState::none(),
+            corner_radii: UiCornerRadiiState {
+                tl: 2.0,
+                tr: 2.0,
+                br: 2.0,
+                bl: 2.0,
+            },
+            outer_shadow: UiDepthEffectState::none(),
+            inner_shadow: UiDepthEffectState::none(),
+            outer_highlight: UiDepthEffectState::none(),
+            inner_highlight: UiDepthEffectState::none(),
         };
-
-        assert_eq!(resolve_corner_radius(&panel), 25.0);
+        let rect = Rect::from_center_size(pos2(0.0, 0.0), vec2(100.0, 50.0));
+        assert_eq!(resolve_corner_radii(&panel, rect).tl, 25.0);
     }
 
     #[test]
@@ -1103,6 +1414,46 @@ mod tests {
 
         effect.size = 0.5;
         assert_eq!(effect_size_expand(rect, effect), -12.5);
+    }
+
+    #[test]
+    fn gradient_panel_pushes_mesh_shape() {
+        let panel = UiPanelDraw {
+            rect: UiRectState {
+                center: [0.0, 0.0],
+                size: [140.0, 60.0],
+                pivot: [0.5, 0.5],
+                rotation_radians: 0.0,
+                z_index: 0,
+            },
+            clip_rect: [0.0, 0.0, 800.0, 600.0],
+            fill: perro_structs::Color::WHITE,
+            fill_kind: UiFillKindState::Linear,
+            gradient: UiLinearGradientState {
+                start_color: perro_structs::Color::WHITE,
+                end_color: perro_structs::Color::BLACK,
+                vector: [0.0, -1.0],
+            },
+            stroke: perro_structs::Color::TRANSPARENT,
+            stroke_width: 0.0,
+            corner_radii: UiCornerRadiiState {
+                tl: 0.3,
+                tr: 0.3,
+                br: 0.3,
+                bl: 0.3,
+            },
+            outer_shadow: UiDepthEffectState::none(),
+            inner_shadow: UiDepthEffectState::none(),
+            outer_highlight: UiDepthEffectState::none(),
+            inner_highlight: UiDepthEffectState::none(),
+        };
+        let mut shapes = Vec::new();
+        push_panel_shape(&panel, [800.0, 600.0], &mut shapes);
+        assert!(
+            shapes
+                .iter()
+                .any(|shape| matches!(shape.shape, Shape::Mesh(_)))
+        );
     }
 
     #[test]

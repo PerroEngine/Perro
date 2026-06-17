@@ -224,10 +224,14 @@ Set `clip_children = true` to clip descendants to that node rect.
 `0.0` means square corners.
 `1.0` means half of the shortest side.
 `"full"` also means `1.0`.
-`shadow` and `highlight` add depth to `UiPanel`, `UiButton`, `UiTextBox`, and `UiTextBlock`.
-Both accept `color`, `distance`, `falloff`, `vector`, and `size`.
-`shadow` draws outside the panel.
-`highlight` draws an inner bevel-like stroke.
+`corner_radii = (tl, tr, br, bl)` sets each corner separately.
+`radius_tl`, `radius_tr`, `radius_br`, and `radius_bl` override corners one by one.
+`fill_kind = "solid" | "linear"` swaps between flat fill and built-in gradient fill.
+`gradient = { start_color, end_color, vector }` defines linear gradient fill.
+`shadow` maps to `outer_shadow`.
+`highlight` maps to `inner_highlight`.
+`outer_shadow`, `inner_shadow`, `outer_highlight`, and `inner_highlight` add depth to `UiPanel`, `UiButton`, `UiTextBox`, and `UiTextBlock`.
+Each accepts `color`, `distance`, `falloff`, `vector`, and `size`.
 `vector` is the light/shadow direction in UI space.
 `falloff` approximates blur with layered alpha.
 `size` is relative to the panel/button size.

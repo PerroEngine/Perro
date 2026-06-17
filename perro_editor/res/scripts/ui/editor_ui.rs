@@ -3561,7 +3561,7 @@ fn ensure_script_reload_popup<API: ScriptAPI + ?Sized>(ctx: &mut ScriptContext<'
         node.style.fill = Color::from_hex("#23272DF2").unwrap_or(node.style.fill);
         node.style.stroke = Color::from_hex("#6BA0EA").unwrap_or(node.style.stroke);
         node.style.stroke_width = 1.0;
-        node.style.corner_radius = 0.06;
+        node.style.set_corner_radius(0.06);
         node.visible = false;
         node.input_enabled = false;
     });
@@ -3695,7 +3695,7 @@ pub fn set_panel_style<API: ScriptAPI + ?Sized>(
             node.style.fill = fill;
             node.style.stroke = stroke;
             node.style.stroke_width = 1.0;
-            node.style.corner_radius = radius;
+            node.style.set_corner_radius(radius);
         });
     }
 }
@@ -3916,15 +3916,15 @@ pub fn set_button_row_style<API: ScriptAPI + ?Sized>(
             node.style.fill = hover_color;
             node.style.stroke = hover_color;
             node.style.stroke_width = 0.0;
-            node.style.corner_radius = 0.0;
+            node.style.set_corner_radius(0.0);
             node.hover_style.fill = hover_color;
             node.hover_style.stroke = hover_color;
             node.hover_style.stroke_width = 0.0;
-            node.hover_style.corner_radius = 0.0;
+            node.hover_style.set_corner_radius(0.0);
             node.pressed_style.fill = pressed_color;
             node.pressed_style.stroke = pressed_color;
             node.pressed_style.stroke_width = 0.0;
-            node.pressed_style.corner_radius = 0.0;
+            node.pressed_style.set_corner_radius(0.0);
         });
     }
 }
@@ -4291,15 +4291,15 @@ pub fn apply_canvas_overlay_style<API: ScriptAPI + ?Sized>(
                 Color::from_hex("#6E7680AA").unwrap_or(node.style.stroke)
             };
             node.style.stroke_width = if mode == "UI" { 2.0 } else { 1.0 };
-            node.style.corner_radius = 0.0;
+            node.style.set_corner_radius(0.0);
             node.clip_children = false;
         });
     }
     if let Some(id) = find_named(ctx, "viewport_click_layer") {
         let _ = with_node_mut!(ctx.run, UiButton, id, |node| {
-            node.style.corner_radius = 0.0;
-            node.hover_style.corner_radius = 0.0;
-            node.pressed_style.corner_radius = 0.0;
+            node.style.set_corner_radius(0.0);
+            node.hover_style.set_corner_radius(0.0);
+            node.pressed_style.set_corner_radius(0.0);
         });
     }
 }
@@ -4474,12 +4474,12 @@ pub fn set_scene_tree_list<API: ScriptAPI + ?Sized>(
         tree.row_hover_style.stroke =
             Color::from_hex("#46515F").unwrap_or(tree.row_hover_style.stroke);
         tree.row_hover_style.stroke_width = 1.0;
-        tree.row_hover_style.corner_radius = 0.08;
+        tree.row_hover_style.set_corner_radius(0.08);
         tree.selected_style.fill = Color::from_hex("#27364D").unwrap_or(tree.selected_style.fill);
         tree.selected_style.stroke =
             Color::from_hex("#6BA0EA").unwrap_or(tree.selected_style.stroke);
         tree.selected_style.stroke_width = 1.0;
-        tree.selected_style.corner_radius = 0.08;
+        tree.selected_style.set_corner_radius(0.08);
         tree.selected_signals = vec![signal!("editor_scene_tree_selected")];
         tree.toggled_signals = vec![signal!("editor_scene_tree_toggled")];
     });
@@ -4573,12 +4573,12 @@ pub fn set_file_tree_list<API: ScriptAPI + ?Sized>(
         tree.row_hover_style.stroke =
             Color::from_hex("#46515F").unwrap_or(tree.row_hover_style.stroke);
         tree.row_hover_style.stroke_width = 1.0;
-        tree.row_hover_style.corner_radius = 0.08;
+        tree.row_hover_style.set_corner_radius(0.08);
         tree.selected_style.fill = Color::from_hex("#27364D").unwrap_or(tree.selected_style.fill);
         tree.selected_style.stroke =
             Color::from_hex("#6BA0EA").unwrap_or(tree.selected_style.stroke);
         tree.selected_style.stroke_width = 1.0;
-        tree.selected_style.corner_radius = 0.08;
+        tree.selected_style.set_corner_radius(0.08);
         tree.selected_signals = vec![signal!("editor_file_tree_selected")];
         tree.toggled_signals = vec![signal!("editor_file_tree_toggled")];
     });

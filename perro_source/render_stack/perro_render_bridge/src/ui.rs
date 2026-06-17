@@ -52,6 +52,44 @@ impl Default for UiDepthEffectState {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum UiFillKindState {
+    #[default]
+    Solid,
+    Linear,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct UiLinearGradientState {
+    pub start_color: Color,
+    pub end_color: Color,
+    pub vector: [f32; 2],
+}
+
+impl UiLinearGradientState {
+    pub const fn none() -> Self {
+        Self {
+            start_color: Color::TRANSPARENT,
+            end_color: Color::TRANSPARENT,
+            vector: [0.0, -1.0],
+        }
+    }
+}
+
+impl Default for UiLinearGradientState {
+    fn default() -> Self {
+        Self::none()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct UiCornerRadiiState {
+    pub tl: f32,
+    pub tr: f32,
+    pub br: f32,
+    pub bl: f32,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum UiCommand {
     UpsertPanel {
@@ -59,22 +97,30 @@ pub enum UiCommand {
         rect: UiRectState,
         clip_rect: [f32; 4],
         fill: [f32; 4],
+        fill_kind: UiFillKindState,
+        gradient: UiLinearGradientState,
         stroke: [f32; 4],
         stroke_width: f32,
-        corner_radius: f32,
-        shadow: UiDepthEffectState,
-        highlight: UiDepthEffectState,
+        corner_radii: UiCornerRadiiState,
+        outer_shadow: UiDepthEffectState,
+        inner_shadow: UiDepthEffectState,
+        outer_highlight: UiDepthEffectState,
+        inner_highlight: UiDepthEffectState,
     },
     UpsertButton {
         node: NodeID,
         rect: UiRectState,
         clip_rect: [f32; 4],
         fill: [f32; 4],
+        fill_kind: UiFillKindState,
+        gradient: UiLinearGradientState,
         stroke: [f32; 4],
         stroke_width: f32,
-        corner_radius: f32,
-        shadow: UiDepthEffectState,
-        highlight: UiDepthEffectState,
+        corner_radii: UiCornerRadiiState,
+        outer_shadow: UiDepthEffectState,
+        inner_shadow: UiDepthEffectState,
+        outer_highlight: UiDepthEffectState,
+        inner_highlight: UiDepthEffectState,
         disabled: bool,
     },
     UpsertShape {
@@ -96,11 +142,15 @@ pub enum UiCommand {
         rect: UiRectState,
         clip_rect: [f32; 4],
         fill: [f32; 4],
+        fill_kind: UiFillKindState,
+        gradient: UiLinearGradientState,
         stroke: [f32; 4],
         stroke_width: f32,
-        corner_radius: f32,
-        shadow: UiDepthEffectState,
-        highlight: UiDepthEffectState,
+        corner_radii: UiCornerRadiiState,
+        outer_shadow: UiDepthEffectState,
+        inner_shadow: UiDepthEffectState,
+        outer_highlight: UiDepthEffectState,
+        inner_highlight: UiDepthEffectState,
         checked: bool,
         dot_fill: [f32; 4],
         disabled: bool,
@@ -127,7 +177,7 @@ pub enum UiCommand {
         h_align: UiTextAlignState,
         v_align: UiTextAlignState,
         aspect_ratio: f32,
-        corner_radius: f32,
+        corner_radii: UiCornerRadiiState,
     },
     UpsertNineSlice {
         node: NodeID,
@@ -144,11 +194,15 @@ pub enum UiCommand {
         rect: UiRectState,
         clip_rect: [f32; 4],
         fill: [f32; 4],
+        fill_kind: UiFillKindState,
+        gradient: UiLinearGradientState,
         stroke: [f32; 4],
         stroke_width: f32,
-        corner_radius: f32,
-        shadow: UiDepthEffectState,
-        highlight: UiDepthEffectState,
+        corner_radii: UiCornerRadiiState,
+        outer_shadow: UiDepthEffectState,
+        inner_shadow: UiDepthEffectState,
+        outer_highlight: UiDepthEffectState,
+        inner_highlight: UiDepthEffectState,
         text: Cow<'static, str>,
         placeholder: Cow<'static, str>,
         color: Color,

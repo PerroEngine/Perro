@@ -55,6 +55,25 @@ pub(super) fn cached_slot_for(
 }
 
 impl Runtime {
+    pub(super) fn mark_created_ui_node_dirty(&mut self, id: perro_ids::NodeID) {
+        if self
+            .nodes
+            .get(id)
+            .and_then(|node| ui_base_from_data(&node.data))
+            .is_none()
+        {
+            return;
+        }
+
+        self.mark_ui_dirty(
+            id,
+            Self::UI_DIRTY_LAYOUT_SELF
+                | Self::UI_DIRTY_LAYOUT_PARENT
+                | Self::UI_DIRTY_TRANSFORM
+                | Self::UI_DIRTY_COMMANDS,
+        );
+    }
+
     pub(super) fn mark_ui_base_change(
         &mut self,
         id: perro_ids::NodeID,

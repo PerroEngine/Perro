@@ -41,9 +41,13 @@ It uses the same schema as current scene `style = { ... }` blocks.
 fill = "#222222DD"
 stroke = "#555555FF"
 stroke_width = 1
-radius = 0.2
-shadow = { color = "#00000066" distance = 10 falloff = 12 vector = (1, -1) size = 2 }
-highlight = { color = "#FFFFFF33" distance = 2 falloff = 3 vector = (-1, 1) size = 1 }
+fill_kind = "linear"
+gradient = { start_color = "#2A3140FF" end_color = "#12161DFF" vector = (0, -1) }
+corner_radii = (0.35, 0.35, 0.18, 0.18)
+outer_shadow = { color = "#00000066" distance = 10 falloff = 12 vector = (1, -1) size = 2 }
+inner_shadow = { color = "#00000040" distance = 4 falloff = 8 vector = (0, -1) size = 1 }
+outer_highlight = { color = "#FFFFFF22" distance = 2 falloff = 4 vector = (-1, 1) size = 1 }
+inner_highlight = { color = "#FFFFFF33" distance = 2 falloff = 3 vector = (-1, 1) size = 1 }
 ```
 
 Object form should also parse:
@@ -88,11 +92,18 @@ focused_style = "res://ui/input_focus.uistyle"
 Supported keys:
 
 - `fill` or `color`
+- `fill_kind`
+- `gradient`
 - `stroke`
 - `stroke_width`
 - `radius` or `corner_radius`
+- `corner_radii`
+- `radius_tl`, `radius_tr`, `radius_br`, `radius_bl`
 - `shadow`
+- `outer_shadow`
+- `inner_shadow`
 - `highlight` or `inner_highlight`
+- `outer_highlight`
 - `shadow_color`, `shadow_distance`, `shadow_falloff`, `shadow_vector`, `shadow_size`
 - `highlight_color`, `highlight_distance`, `highlight_falloff`, `highlight_vector`, `highlight_size`
 

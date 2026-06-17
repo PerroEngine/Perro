@@ -123,10 +123,16 @@ script = "res://path/to/script.rs"
 parent = @PARENTKEY
 script = "res://path/to/script.rs"
     [UiPanel]
-        fill = (0.11, 0.12, 0.14, 0.92)
-        stroke = (0.22, 0.24, 0.28, 1.0)
-        stroke_width = 1.0
-        radius = 0.2
+        style = {
+            fill_kind = "linear"
+            fill = (0.11, 0.12, 0.14, 0.92)
+            gradient = { start_color = (0.16, 0.18, 0.23, 0.98) end_color = (0.08, 0.09, 0.12, 0.98) vector = (0, -1) }
+            stroke = (0.22, 0.24, 0.28, 1.0)
+            stroke_width = 1.0
+            corner_radii = (0.28, 0.28, 0.14, 0.14)
+            outer_shadow = { color = (0, 0, 0, 0.35) distance = 8 falloff = 12 vector = (1, -1) size = 1.4 }
+            inner_highlight = { color = (1, 1, 1, 0.16) distance = 1 falloff = 3 vector = (-1, 1) size = 1 }
+        }
         [UiNode]
             visible = true
             input_enabled = true
@@ -164,16 +170,26 @@ script = "res://path/to/script.rs"
         pressed_signals = []
         released_signals = []
         clicked_signals = []
-        style = { fill = (0.18, 0.20, 0.24, 1.0) stroke = (0.32, 0.35, 0.40, 1.0) stroke_width = 1.0 radius = 0.2 shadow = { color = (0, 0, 0, 0) distance = 0 falloff = 0 vector = (0, -1) size = 1 } highlight = { color = (0, 0, 0, 0) distance = 0 falloff = 0 vector = (0, -1) size = 1 } }
+        style = {
+            fill_kind = "linear"
+            fill = (0.18, 0.20, 0.24, 1.0)
+            gradient = { start_color = (0.28, 0.31, 0.37, 1.0) end_color = (0.12, 0.14, 0.18, 1.0) vector = (0, -1) }
+            stroke = (0.32, 0.35, 0.40, 1.0)
+            stroke_width = 1.0
+            corner_radii = (0.45, 0.45, 0.45, 0.45)
+            outer_shadow = { color = (0, 0, 0, 0.28) distance = 6 falloff = 10 vector = (1, -1) size = 1.2 }
+            inner_shadow = { color = (0, 0, 0, 0.18) distance = 2 falloff = 5 vector = (0, -1) size = 1 }
+            inner_highlight = { color = (1, 1, 1, 0.18) distance = 1 falloff = 3 vector = (-1, 1) size = 1 }
+        }
         # Planned 1.0 alternative:
         # style = "res://ui/button.uistyle"
         hover = {
-            style = { fill = (0.24, 0.27, 0.32, 1.0) stroke = (0.42, 0.46, 0.54, 1.0) stroke_width = 1.0 radius = 0.2 }
+            style = { fill_kind = "linear" fill = (0.24, 0.27, 0.32, 1.0) gradient = { start_color = (0.30, 0.34, 0.40, 1.0) end_color = (0.18, 0.21, 0.27, 1.0) vector = (0, -1) } stroke = (0.42, 0.46, 0.54, 1.0) stroke_width = 1.0 radius = 0.45 }
             # Planned 1.0 alternative:
             # style = "res://ui/button_hover.uistyle"
         }
         pressed = {
-            style = { fill = (0.12, 0.14, 0.18, 1.0) stroke = (0.42, 0.46, 0.54, 1.0) stroke_width = 1.0 radius = 0.2 }
+            style = { fill_kind = "linear" fill = (0.12, 0.14, 0.18, 1.0) gradient = { start_color = (0.10, 0.12, 0.16, 1.0) end_color = (0.18, 0.20, 0.25, 1.0) vector = (0, 1) } stroke = (0.42, 0.46, 0.54, 1.0) stroke_width = 1.0 radius = 0.45 }
             # Planned 1.0 alternative:
             # style = "res://ui/button_down.uistyle"
         }

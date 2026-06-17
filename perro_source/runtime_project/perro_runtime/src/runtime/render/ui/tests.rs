@@ -124,8 +124,8 @@ fn ui_camera_stream_emits_image_corner_radius() {
 
     assert!(commands.iter().any(|command| matches!(
         command,
-        RenderCommand::Ui(UiCommand::UpsertImage { node, corner_radius, .. })
-            if *node == stream && *corner_radius == 0.25
+        RenderCommand::Ui(UiCommand::UpsertImage { node, corner_radii, .. })
+            if *node == stream && corner_radii.tl == 0.25 && corner_radii.tr == 0.25
     )));
 }
 
@@ -922,6 +922,69 @@ fn runtime_created_ui_child_under_hidden_parent_renders_when_shown() {
 }
 
 #[test]
+fn runtime_created_root_ui_extracts_after_direct_setup_before_first_frame() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let node = runtime.create::<UiPanel>();
+    if let Some(scene_node) = runtime.nodes.get_mut(node)
+        && let SceneNodeData::UiPanel(panel) = &mut scene_node.data
+    {
+        panel.layout.size = UiVector2::pixels(90.0, 45.0);
+        panel.style.fill = Color::new(0.3, 0.6, 0.9, 1.0);
+    }
+
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    assert!(commands.iter().any(|cmd| matches!(
+        cmd,
+        RenderCommand::Ui(UiCommand::UpsertPanel { node: n, rect, fill, .. })
+            if *n == node && rect.size == [90.0, 45.0] && *fill == rgba(0.3, 0.6, 0.9, 1.0)
+    )));
+}
+
+#[test]
+fn same_z_ui_child_draws_above_newer_parent_after_reparent() {
+    let mut runtime = Runtime::new();
+    runtime.set_viewport_size(800, 600);
+
+    let mut label = perro_ui::UiLabel::new();
+    label.layout.size = UiVector2::pixels(90.0, 45.0);
+    label.text = "7".into();
+    let label = insert_ui_node(&mut runtime, SceneNodeData::UiLabel(label));
+
+    let panel = insert_panel(&mut runtime, [120.0, 60.0], Color::new(0.2, 0.4, 0.7, 1.0));
+    attach_child(&mut runtime, panel, label);
+
+    runtime.extract_render_ui_commands();
+    let mut commands = Vec::new();
+    runtime.drain_render_commands(&mut commands);
+
+    let parent_z = commands
+        .iter()
+        .find_map(|cmd| match cmd {
+            RenderCommand::Ui(UiCommand::UpsertPanel { node, rect, .. }) if *node == panel => {
+                Some(rect.z_index)
+            }
+            _ => None,
+        })
+        .expect("parent panel command");
+    let child_z = commands
+        .iter()
+        .find_map(|cmd| match cmd {
+            RenderCommand::Ui(UiCommand::UpsertLabel { node, rect, .. }) if *node == label => {
+                Some(rect.z_index)
+            }
+            _ => None,
+        })
+        .expect("child label command");
+
+    assert!(child_z > parent_z);
+}
+
+#[test]
 fn button_uses_hover_and_pressed_styles_from_mouse_state() {
     let mut runtime = Runtime::new();
     runtime.set_viewport_size(800, 600);
@@ -1191,8 +1254,8 @@ fn button_hover_respects_rounded_visible_shape() {
     if let Some(scene_node) = runtime.nodes.get_mut(node)
         && let SceneNodeData::UiButton(button) = &mut scene_node.data
     {
-        button.style.corner_radius = 1.0;
-        button.hover_style.corner_radius = 1.0;
+        button.style.set_corner_radius(1.0);
+        button.hover_style.set_corner_radius(1.0);
     }
 
     runtime.extract_render_ui_commands();
@@ -2445,7 +2508,7 @@ fn parent_ui_scale_keeps_child_panel_radius_ratio() {
 
     let mut child_panel = UiPanel::new();
     child_panel.layout.size = UiVector2::pixels(200.0, 40.0);
-    child_panel.style.corner_radius = 0.4;
+    child_panel.style.set_corner_radius(0.4);
     child_panel.style.stroke_width = 2.0;
     let child = insert_ui_node(&mut runtime, SceneNodeData::UiPanel(child_panel));
     attach_child(&mut runtime, parent, child);
@@ -2459,12 +2522,12 @@ fn parent_ui_scale_keeps_child_panel_radius_ratio() {
         RenderCommand::Ui(UiCommand::UpsertPanel {
             node,
             rect,
-            corner_radius,
+            corner_radii,
             stroke_width,
             ..
         }) if *node == child
             && rect.size == [100.0, 20.0]
-            && *corner_radius == 0.4
+            && corner_radii.tl == 0.4
             && *stroke_width == 1.0
     )));
 }

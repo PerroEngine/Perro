@@ -41,6 +41,7 @@ impl NodeAPI for Runtime {
         // Ensure freshly created nodes participate in render/transform extraction
         // even before caller-side mutation paths run.
         self.mark_needs_rerender(id);
+        self.mark_created_ui_node_dirty(id);
         self.mark_transform_dirty_recursive(id);
         id
     }
@@ -74,6 +75,7 @@ impl NodeAPI for Runtime {
                     self.note_camera_3d_activated(id);
                 }
                 self.mark_needs_rerender(id);
+                self.mark_created_ui_node_dirty(id);
                 if parent_id.is_nil() {
                     self.mark_transform_dirty_recursive(id);
                 }
@@ -98,6 +100,7 @@ impl NodeAPI for Runtime {
                     self.note_camera_3d_activated(id);
                 }
                 self.mark_needs_rerender(id);
+                self.mark_created_ui_node_dirty(id);
                 if parent_id.is_nil() {
                     self.mark_transform_dirty_recursive(id);
                 }

@@ -424,11 +424,15 @@ pub(super) fn ui_command_from_node(
                 rect,
                 clip_rect,
                 fill: Runtime::color_modulate_rgba(style.fill.to_rgba(), modulate),
+                fill_kind: ui_fill_kind_state(style.fill_kind),
+                gradient: ui_linear_gradient_state(style.gradient, modulate),
                 stroke: Runtime::color_modulate_rgba(style.stroke.to_rgba(), modulate),
                 stroke_width: style.stroke_width * style_scale,
-                corner_radius: style.corner_radius,
-                shadow: ui_depth_effect_state(style.shadow, style_scale),
-                highlight: ui_depth_effect_state(style.highlight, style_scale),
+                corner_radii: ui_corner_radii_state(style.corner_radii),
+                outer_shadow: ui_depth_effect_state(style.outer_shadow, style_scale),
+                inner_shadow: ui_depth_effect_state(style.inner_shadow, style_scale),
+                outer_highlight: ui_depth_effect_state(style.outer_highlight, style_scale),
+                inner_highlight: ui_depth_effect_state(style.inner_highlight, style_scale),
                 disabled: button.disabled,
             })
         }
@@ -440,11 +444,15 @@ pub(super) fn ui_command_from_node(
                 rect,
                 clip_rect,
                 fill: Runtime::color_modulate_rgba(style.fill.to_rgba(), modulate),
+                fill_kind: ui_fill_kind_state(style.fill_kind),
+                gradient: ui_linear_gradient_state(style.gradient, modulate),
                 stroke: Runtime::color_modulate_rgba(style.stroke.to_rgba(), modulate),
                 stroke_width: style.stroke_width * style_scale,
-                corner_radius: style.corner_radius,
-                shadow: ui_depth_effect_state(style.shadow, style_scale),
-                highlight: ui_depth_effect_state(style.highlight, style_scale),
+                corner_radii: ui_corner_radii_state(style.corner_radii),
+                outer_shadow: ui_depth_effect_state(style.outer_shadow, style_scale),
+                inner_shadow: ui_depth_effect_state(style.inner_shadow, style_scale),
+                outer_highlight: ui_depth_effect_state(style.outer_highlight, style_scale),
+                inner_highlight: ui_depth_effect_state(style.inner_highlight, style_scale),
                 disabled: dropdown.disabled,
             })
         }
@@ -456,11 +464,15 @@ pub(super) fn ui_command_from_node(
                 rect,
                 clip_rect,
                 fill: Runtime::color_modulate_rgba(style.fill.to_rgba(), modulate),
+                fill_kind: ui_fill_kind_state(style.fill_kind),
+                gradient: ui_linear_gradient_state(style.gradient, modulate),
                 stroke: Runtime::color_modulate_rgba(style.stroke.to_rgba(), modulate),
                 stroke_width: style.stroke_width * style_scale,
-                corner_radius: style.corner_radius,
-                shadow: ui_depth_effect_state(style.shadow, style_scale),
-                highlight: ui_depth_effect_state(style.highlight, style_scale),
+                corner_radii: ui_corner_radii_state(style.corner_radii),
+                outer_shadow: ui_depth_effect_state(style.outer_shadow, style_scale),
+                inner_shadow: ui_depth_effect_state(style.inner_shadow, style_scale),
+                outer_highlight: ui_depth_effect_state(style.outer_highlight, style_scale),
+                inner_highlight: ui_depth_effect_state(style.inner_highlight, style_scale),
                 checked: checkbox.checked,
                 dot_fill: Runtime::color_modulate_rgba(checkbox.dot_fill.to_rgba(), modulate),
                 disabled: checkbox.disabled,
@@ -503,7 +515,7 @@ pub(super) fn ui_command_from_node(
                 h_align: text_align_state(image.h_align),
                 v_align: text_align_state(image.v_align),
                 aspect_ratio,
-                corner_radius: 0.0,
+                corner_radii: UiCornerRadiiState::default(),
             })
         }
         SceneNodeData::UiImageButton(image) => {
@@ -524,7 +536,7 @@ pub(super) fn ui_command_from_node(
                 h_align: text_align_state(image.h_align),
                 v_align: text_align_state(image.v_align),
                 aspect_ratio,
-                corner_radius: 0.0,
+                corner_radii: UiCornerRadiiState::default(),
             })
         }
         SceneNodeData::UiNineSlice(image) => {
@@ -561,7 +573,7 @@ pub(super) fn ui_command_from_node(
                 h_align: text_align_state(image.h_align),
                 v_align: text_align_state(image.v_align),
                 aspect_ratio,
-                corner_radius: 0.0,
+                corner_radii: UiCornerRadiiState::default(),
             })
         }
         SceneNodeData::UiCameraStream(stream) => {
@@ -583,7 +595,9 @@ pub(super) fn ui_command_from_node(
                     stream.stream.aspect_ratio,
                     stream.stream.resolution,
                 ),
-                corner_radius: stream.corner_radius,
+                corner_radii: ui_corner_radii_state(perro_ui::UiCornerRadii::all(
+                    stream.corner_radius,
+                )),
             })
         }
         SceneNodeData::UiTextBox(text_box) => Some(text_edit_command(TextEditCommandCtx {
@@ -1005,6 +1019,37 @@ pub(super) fn camera_stream_aspect_ratio(aspect_ratio: f32, resolution: UVector2
         aspect_ratio
     } else {
         resolution.x.max(1) as f32 / resolution.y.max(1) as f32
+    }
+}
+
+pub(in crate::runtime::render_ui) fn ui_fill_kind_state(
+    fill_kind: perro_ui::UiFillKind,
+) -> UiFillKindState {
+    match fill_kind {
+        perro_ui::UiFillKind::Solid => UiFillKindState::Solid,
+        perro_ui::UiFillKind::Linear => UiFillKindState::Linear,
+    }
+}
+
+pub(in crate::runtime::render_ui) fn ui_linear_gradient_state(
+    gradient: perro_ui::UiLinearGradient,
+    modulate: Color,
+) -> UiLinearGradientState {
+    UiLinearGradientState {
+        start_color: Runtime::color_modulate(gradient.start_color, modulate),
+        end_color: Runtime::color_modulate(gradient.end_color, modulate),
+        vector: [gradient.vector.x, gradient.vector.y],
+    }
+}
+
+pub(in crate::runtime::render_ui) fn ui_corner_radii_state(
+    radii: perro_ui::UiCornerRadii,
+) -> UiCornerRadiiState {
+    UiCornerRadiiState {
+        tl: radii.tl,
+        tr: radii.tr,
+        br: radii.br,
+        bl: radii.bl,
     }
 }
 

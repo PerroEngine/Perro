@@ -28,6 +28,19 @@ pub(in crate::runtime::render_ui) fn text_edit_command(ctx: TextEditCommandCtx<'
         } else {
             Runtime::color_modulate_rgba(style.fill.to_rgba(), modulate)
         },
+        fill_kind: ui_fill_kind_state(if focused {
+            focused_style.fill_kind
+        } else {
+            style.fill_kind
+        }),
+        gradient: ui_linear_gradient_state(
+            if focused {
+                focused_style.gradient
+            } else {
+                style.gradient
+            },
+            modulate,
+        ),
         stroke: if focused {
             Runtime::color_modulate_rgba(focused_style.stroke.to_rgba(), modulate)
         } else {
@@ -38,24 +51,40 @@ pub(in crate::runtime::render_ui) fn text_edit_command(ctx: TextEditCommandCtx<'
         } else {
             style.stroke_width
         } * style_scale,
-        corner_radius: if focused {
-            focused_style.corner_radius
+        corner_radii: ui_corner_radii_state(if focused {
+            focused_style.corner_radii
         } else {
-            style.corner_radius
-        },
-        shadow: ui_depth_effect_state(
+            style.corner_radii
+        }),
+        outer_shadow: ui_depth_effect_state(
             if focused {
-                focused_style.shadow
+                focused_style.outer_shadow
             } else {
-                style.shadow
+                style.outer_shadow
             },
             style_scale,
         ),
-        highlight: ui_depth_effect_state(
+        inner_shadow: ui_depth_effect_state(
             if focused {
-                focused_style.highlight
+                focused_style.inner_shadow
             } else {
-                style.highlight
+                style.inner_shadow
+            },
+            style_scale,
+        ),
+        outer_highlight: ui_depth_effect_state(
+            if focused {
+                focused_style.outer_highlight
+            } else {
+                style.outer_highlight
+            },
+            style_scale,
+        ),
+        inner_highlight: ui_depth_effect_state(
+            if focused {
+                focused_style.inner_highlight
+            } else {
+                style.inner_highlight
             },
             style_scale,
         ),
@@ -136,11 +165,15 @@ pub(in crate::runtime::render_ui) fn panel_command(
         rect,
         clip_rect,
         fill: Runtime::color_modulate_rgba(style.fill.to_rgba(), modulate),
+        fill_kind: ui_fill_kind_state(style.fill_kind),
+        gradient: ui_linear_gradient_state(style.gradient, modulate),
         stroke: Runtime::color_modulate_rgba(style.stroke.to_rgba(), modulate),
         stroke_width: style.stroke_width * style_scale,
-        corner_radius: style.corner_radius,
-        shadow: ui_depth_effect_state(style.shadow, style_scale),
-        highlight: ui_depth_effect_state(style.highlight, style_scale),
+        corner_radii: ui_corner_radii_state(style.corner_radii),
+        outer_shadow: ui_depth_effect_state(style.outer_shadow, style_scale),
+        inner_shadow: ui_depth_effect_state(style.inner_shadow, style_scale),
+        outer_highlight: ui_depth_effect_state(style.outer_highlight, style_scale),
+        inner_highlight: ui_depth_effect_state(style.inner_highlight, style_scale),
     }
 }
 

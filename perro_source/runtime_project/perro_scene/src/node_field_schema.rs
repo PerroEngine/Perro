@@ -32,6 +32,7 @@ const UI_ANCHOR_OPTIONS: &[&str] = &[
     "bottom_right",
 ];
 const UI_TEXT_ALIGN_OPTIONS: &[&str] = &["start", "center", "end"];
+const UI_FILL_KIND_OPTIONS: &[&str] = &["solid", "linear"];
 const PARTICLE_SIM_MODE_2D_OPTIONS: &[&str] = &["default", "cpu"];
 const PARTICLE_SIM_MODE_3D_OPTIONS: &[&str] = &["default", "cpu", "hybrid", "gpu"];
 const PARTICLE_RENDER_MODE_3D_OPTIONS: &[&str] = &["point", "billboard"];
@@ -754,10 +755,13 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
         | NodeType::UiTextBox
         | NodeType::UiTextBlock => {
             asset_field(fields, "Style", "style", SceneAssetKind::UiStyle);
+            ui_style_fields(fields, "Style", "");
             if matches!(
                 node_type,
                 NodeType::UiButton | NodeType::UiDropdown | NodeType::UiCheckbox
             ) {
+                ui_style_fields(fields, "Hover", "hover_");
+                ui_style_fields(fields, "Pressed", "pressed_");
                 fields.push(
                     SceneNodeField::new("Text", "text", NodeFieldType::String)
                         .with_default(SceneValue::Str(Cow::Borrowed("New Node"))),
@@ -775,6 +779,8 @@ fn push_node_fields(fields: &mut Vec<SceneNodeField>, node_type: NodeType) {
                 push(fields, "State", "popup_open", NodeFieldType::Bool);
             }
             if matches!(node_type, NodeType::UiTextBox | NodeType::UiTextBlock) {
+                asset_field(fields, "Style", "focused_style", SceneAssetKind::UiStyle);
+                ui_style_fields(fields, "Focus", "focused_");
                 push(fields, "Text", "text", NodeFieldType::String);
                 push(fields, "Text", "placeholder", NodeFieldType::String);
             }
@@ -920,6 +926,67 @@ fn animated_image_fields(fields: &mut Vec<SceneNodeField>, section: &'static str
     push(fields, section, "fps_scale", NodeFieldType::F32);
     push(fields, section, "playing", NodeFieldType::Bool);
     push(fields, section, "looping", NodeFieldType::Bool);
+}
+
+fn ui_style_fields(fields: &mut Vec<SceneNodeField>, section: &'static str, prefix: &'static str) {
+    push(
+        fields,
+        section,
+        Box::leak(format!("{prefix}fill_kind").into_boxed_str()),
+        NodeFieldType::enumeration(UI_FILL_KIND_OPTIONS),
+    );
+    push(
+        fields,
+        section,
+        Box::leak(format!("{prefix}gradient").into_boxed_str()),
+        NodeFieldType::object(vec![
+            NodeFieldDef::new("start_color", NodeFieldType::Color),
+            NodeFieldDef::new("end_color", NodeFieldType::Color),
+            NodeFieldDef::new("vector", NodeFieldType::Vec2),
+        ]),
+    );
+    push(
+        fields,
+        section,
+        Box::leak(format!("{prefix}corner_radii").into_boxed_str()),
+        NodeFieldType::Vec4,
+    );
+    for name in [
+        "fill",
+        "stroke",
+        "stroke_width",
+        "radius",
+        "radius_tl",
+        "radius_tr",
+        "radius_br",
+        "radius_bl",
+        "shadow",
+        "outer_shadow",
+        "inner_shadow",
+        "highlight",
+        "outer_highlight",
+        "inner_highlight",
+    ] {
+        let ty = match name {
+            "fill" | "stroke" => NodeFieldType::Color,
+            "stroke_width" | "radius" | "radius_tl" | "radius_tr" | "radius_br" | "radius_bl" => {
+                NodeFieldType::F32
+            }
+            _ => NodeFieldType::object(vec![
+                NodeFieldDef::new("color", NodeFieldType::Color),
+                NodeFieldDef::new("distance", NodeFieldType::F32),
+                NodeFieldDef::new("falloff", NodeFieldType::F32),
+                NodeFieldDef::new("vector", NodeFieldType::Vec2),
+                NodeFieldDef::new("size", NodeFieldType::F32),
+            ]),
+        };
+        push(
+            fields,
+            section,
+            Box::leak(format!("{prefix}{name}").into_boxed_str()),
+            ty,
+        );
+    }
 }
 
 fn particle_fields(fields: &mut Vec<SceneNodeField>, section: &'static str, is_3d: bool) {
@@ -1224,6 +1291,22 @@ mod tests {
                 "perspective_near",
                 "perspective_far"
             ],
+        );
+    }
+
+    #[test]
+    fn ui_button_schema_exposes_decor_fields() {
+        let fields = scene_node_fields(NodeType::UiButton);
+        assert!(fields.iter().any(|field| field.name == "fill_kind"));
+        assert!(fields.iter().any(|field| field.name == "gradient"));
+        assert!(fields.iter().any(|field| field.name == "corner_radii"));
+        assert!(fields.iter().any(|field| field.name == "outer_shadow"));
+        assert!(fields.iter().any(|field| field.name == "inner_highlight"));
+        assert!(fields.iter().any(|field| field.name == "hover_fill_kind"));
+        assert!(
+            fields
+                .iter()
+                .any(|field| field.name == "pressed_outer_shadow")
         );
     }
 }

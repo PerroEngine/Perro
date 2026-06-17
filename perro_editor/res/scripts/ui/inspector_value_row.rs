@@ -128,7 +128,7 @@ fn ensure_inspector_default_button<API: ScriptAPI + ?Sized>(
         node.style.fill = Color::from_hex("#00000000").unwrap_or(node.style.fill);
         node.style.stroke = Color::from_hex("#D9A24A").unwrap_or(node.style.stroke);
         node.style.stroke_width = 1.0;
-        node.style.corner_radius = 0.5;
+        node.style.set_corner_radius(0.5);
         node.hover_style.fill = Color::from_hex("#3A3020").unwrap_or(node.hover_style.fill);
         node.hover_style.stroke = Color::from_hex("#D9A24A").unwrap_or(node.hover_style.stroke);
         node.pressed_style.fill = Color::from_hex("#4A3A24").unwrap_or(node.pressed_style.fill);
@@ -195,13 +195,13 @@ pub fn apply_inspector_value_row_panel<API: ScriptAPI + ?Sized>(
         node.style.fill = Color::from_hex(fill).unwrap_or(node.style.fill);
         node.style.stroke = Color::from_hex(stroke).unwrap_or(node.style.stroke);
         node.style.stroke_width = stroke_width;
-        node.style.corner_radius = radius;
+        node.style.set_corner_radius(radius);
     });
     let _ = with_node_mut!(ctx.run, UiPanel, header_id, |node| {
         node.style.fill = Color::TRANSPARENT;
         node.style.stroke = Color::TRANSPARENT;
         node.style.stroke_width = 0.0;
-        node.style.corner_radius = 0.0;
+        node.style.set_corner_radius(0.0);
     });
     if source == "section" {
         let panel_name = format!("inspector_var_{idx}_section_panel");
@@ -216,7 +216,7 @@ pub fn apply_inspector_value_row_panel<API: ScriptAPI + ?Sized>(
                 node.style.fill = Color::from_hex(panel_fill).unwrap_or(node.style.fill);
                 node.style.stroke = Color::from_hex(panel_stroke).unwrap_or(node.style.stroke);
                 node.style.stroke_width = 1.0;
-                node.style.corner_radius = panel_radius;
+                node.style.set_corner_radius(panel_radius);
             });
         }
     }
@@ -371,13 +371,13 @@ pub fn ensure_inspector_matrix_grid<API: ScriptAPI + ?Sized>(
                 node.style.fill = Color::from_hex("#2A2F36").unwrap_or(node.style.fill);
                 node.style.stroke = Color::from_hex("#343A43").unwrap_or(node.style.stroke);
                 node.style.stroke_width = 1.0;
-                node.style.corner_radius = 0.12;
+                node.style.set_corner_radius(0.12);
                 node.focused_style.fill =
                     Color::from_hex("#2A2F36").unwrap_or(node.focused_style.fill);
                 node.focused_style.stroke =
                     Color::from_hex("#4D84D1").unwrap_or(node.focused_style.stroke);
                 node.focused_style.stroke_width = 1.0;
-                node.focused_style.corner_radius = 0.12;
+                node.focused_style.set_corner_radius(0.12);
             });
         }
     }

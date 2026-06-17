@@ -103,26 +103,18 @@ impl UiTreeList {
             row_hover_style: UiStyle {
                 fill: Color::new(0.24, 0.27, 0.32, 1.0),
                 stroke: Color::new(0.42, 0.46, 0.54, 1.0),
-                stroke_width: 1.0,
-                corner_radius: 0.2,
-                shadow: UiDepthEffect::none(),
-                highlight: UiDepthEffect::none(),
+                ..UiStyle::button()
             },
             row_pressed_style: UiStyle {
                 fill: Color::new(0.12, 0.14, 0.18, 1.0),
                 stroke: Color::new(0.42, 0.46, 0.54, 1.0),
-                stroke_width: 1.0,
-                corner_radius: 0.2,
-                shadow: UiDepthEffect::none(),
-                highlight: UiDepthEffect::none(),
+                ..UiStyle::button()
             },
             selected_style: UiStyle {
                 fill: Color::new(0.18, 0.28, 0.45, 1.0),
                 stroke: Color::new(0.38, 0.55, 0.82, 1.0),
-                stroke_width: 1.0,
-                corner_radius: 0.08,
-                shadow: UiDepthEffect::none(),
-                highlight: UiDepthEffect::none(),
+                corner_radii: UiCornerRadii::all(0.08),
+                ..UiStyle::button()
             },
             internal_rows: Vec::new(),
             internal_toggles: Vec::new(),
