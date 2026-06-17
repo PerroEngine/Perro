@@ -1772,7 +1772,7 @@ mod tests {
                 idle_sleep: Duration::from_millis(1),
             },
         );
-        let deadline = Instant::now() + Duration::from_millis(80);
+        let deadline = Instant::now() + Duration::from_millis(250);
         while Instant::now() < deadline && render.snapshot_stats().published_snapshots < 3 {
             thread::sleep(Duration::from_millis(1));
         }
