@@ -20,7 +20,7 @@ use std::{
     time::{Duration, Instant},
 };
 use winit::{
-    dpi::{PhysicalSize, Size},
+    dpi::{PhysicalPosition, PhysicalSize, Size},
     event::{DeviceEvent, ElementState, MouseScrollDelta, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{ModifiersState, PhysicalKey},
@@ -835,6 +835,7 @@ struct ThreadedRunnerState<B: GraphicsBackend> {
     window_requests: Vec<WindowRequest>,
     exit_result: Option<crate::winit_runner::AppExitResult>,
     last_cursor_position: Option<winit::dpi::PhysicalPosition<f64>>,
+    last_window_position: Option<PhysicalPosition<i32>>,
     modifiers: ModifiersState,
     gamepad_input: GamepadInput,
     joycon_input: JoyConInput,
@@ -877,6 +878,7 @@ impl<B: GraphicsBackend> ThreadedRunnerState<B> {
             window_requests: Vec::new(),
             exit_result: None,
             last_cursor_position: None,
+            last_window_position: None,
             modifiers: ModifiersState::empty(),
             gamepad_input: GamepadInput::new(),
             joycon_input: JoyConInput::new(),
@@ -1101,6 +1103,22 @@ impl<B: GraphicsBackend> ThreadedRunnerState<B> {
 
     fn text_input_suppressed(&self) -> bool {
         self.modifiers.control_key() || self.modifiers.alt_key() || self.modifiers.super_key()
+    }
+
+    fn sync_window_position(&mut self, position: PhysicalPosition<i32>) {
+        if let (Some(prev), Some(cursor)) = (self.last_window_position, self.last_cursor_position) {
+            let next = PhysicalPosition::new(
+                cursor.x + f64::from(prev.x - position.x),
+                cursor.y + f64::from(prev.y - position.y),
+            );
+            self.last_cursor_position = Some(next);
+            self.bridge
+                .push_input_event(perro_input_api::InputEvent::MousePosition {
+                    x: next.x as f32,
+                    y: next.y as f32,
+                });
+        }
+        self.last_window_position = Some(position);
     }
 
     #[inline]
@@ -1413,6 +1431,7 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for ThreadedRunn
                 .create_window(self.window_attributes(event_loop))
                 .expect("failed to create winit window"),
         );
+        self.last_window_position = window.outer_position().ok();
         window.set_ime_allowed(true);
         let size = window.inner_size();
         self.presenter.graphics_mut().attach_window(window.clone());
@@ -1459,6 +1478,9 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for ThreadedRunn
                         width: size.width,
                         height: size.height,
                     });
+            }
+            WindowEvent::Moved(position) => {
+                self.sync_window_position(*position);
             }
             WindowEvent::RedrawRequested => {
                 let frame_start = Instant::now();

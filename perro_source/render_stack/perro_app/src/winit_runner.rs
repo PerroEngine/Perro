@@ -782,6 +782,8 @@ struct RunnerState<B: GraphicsBackend> {
     window_requests: Vec<WindowRequest>,
     cursor_inside_window: bool,
     #[cfg(not(target_arch = "wasm32"))]
+    last_window_position: Option<PhysicalPosition<i32>>,
+    #[cfg(not(target_arch = "wasm32"))]
     preloaded_images: PreloadedProjectImages,
     startup_splash: StartupSplashState,
     exit_result: Option<AppExitResult>,
@@ -1005,6 +1007,8 @@ impl<B: GraphicsBackend> RunnerState<B> {
             window_requests: Vec::new(),
             cursor_inside_window: false,
             #[cfg(not(target_arch = "wasm32"))]
+            last_window_position: None,
+            #[cfg(not(target_arch = "wasm32"))]
             preloaded_images,
             startup_splash,
             exit_result: None,
@@ -1159,6 +1163,25 @@ impl<B: GraphicsBackend> RunnerState<B> {
             }
         }
     }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn sync_window_position(&mut self, position: PhysicalPosition<i32>) {
+        if let Some(prev) = self.last_window_position
+            && self.cursor_inside_window
+        {
+            let dx = f64::from(prev.x - position.x);
+            let dy = f64::from(prev.y - position.y);
+            self.kbm_input.translate_cursor_position(dx, dy);
+            if let Some(cursor) = self.kbm_input.last_cursor_position() {
+                self.app
+                    .set_mouse_position(cursor.x as f32, cursor.y as f32);
+            }
+        }
+        self.last_window_position = Some(position);
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn sync_window_position(&mut self, _position: PhysicalPosition<i32>) {}
 
     fn frame_cap_interval(&self) -> Option<Duration> {
         match self.frame_rate_cap {
@@ -2517,6 +2540,10 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                     .create_window(attrs)
                     .expect("failed to create winit window"),
             );
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                self.last_window_position = window.outer_position().ok();
+            }
             #[cfg(target_arch = "wasm32")]
             sync_web_window_size(window.as_ref());
             window.set_ime_allowed(true);
@@ -2685,7 +2712,8 @@ impl<B: GraphicsBackend> winit::application::ApplicationHandler for RunnerState<
                 }
                 self.app.resize_surface(size.width, size.height);
             }
-            WindowEvent::Moved(_) => {
+            WindowEvent::Moved(position) => {
+                self.sync_window_position(position);
                 // On Windows title-bar drag can suppress redraw cadence; tick on move events too.
                 self.step_frame(event_loop, Instant::now());
             }

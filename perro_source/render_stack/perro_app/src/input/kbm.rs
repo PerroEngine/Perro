@@ -94,6 +94,17 @@ impl KbmInput {
         self.last_cursor_position = None;
     }
 
+    pub fn translate_cursor_position(&mut self, dx: f64, dy: f64) {
+        if let Some(position) = &mut self.last_cursor_position {
+            position.x += dx;
+            position.y += dy;
+        }
+    }
+
+    pub fn last_cursor_position(&self) -> Option<winit::dpi::PhysicalPosition<f64>> {
+        self.last_cursor_position
+    }
+
     fn text_input_suppressed(&self) -> bool {
         self.modifiers.control_key() || self.modifiers.alt_key() || self.modifiers.super_key()
     }
