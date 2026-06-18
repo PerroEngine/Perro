@@ -14,6 +14,7 @@ fn body_2d(id: u32) -> BodyDesc2D {
         enabled: true,
         global: Transform2D::IDENTITY,
         rigid: None,
+        sync_signature: id as u64,
         shape_signature: 0,
         shapes: Vec::new(),
     }
@@ -26,6 +27,7 @@ fn body_3d(id: u32) -> BodyDesc3D {
         enabled: true,
         global: Transform3D::new(Vector3::ZERO, Quaternion::IDENTITY, Vector3::ONE),
         rigid: None,
+        sync_signature: id as u64,
         shape_signature: 0,
         shapes: Vec::new(),
     }

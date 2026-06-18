@@ -6,6 +6,9 @@ use web_time::Instant;
 
 impl Runtime {
     pub(crate) fn run_update_schedule(&mut self) {
+        if self.schedules.update_slots.is_empty() {
+            return;
+        }
         let resource_api = self.resource_api.clone();
         let res = perro_resource_api::ResourceWindow::new(resource_api.as_ref());
         let input_ptr = std::ptr::addr_of!(self.input);
@@ -21,6 +24,9 @@ impl Runtime {
     }
 
     pub(crate) fn run_fixed_schedule(&mut self) {
+        if self.schedules.fixed_slots.is_empty() {
+            return;
+        }
         let resource_api = self.resource_api.clone();
         let res = perro_resource_api::ResourceWindow::new(resource_api.as_ref());
         let input_ptr = std::ptr::addr_of!(self.input);
@@ -66,6 +72,15 @@ impl Runtime {
         let mut script_count = 0u32;
         let mut slowest_script = std::time::Duration::ZERO;
         let mut slowest_script_id = None;
+        if self.schedules.update_slots.is_empty() {
+            return UpdateScheduleTiming {
+                total: schedule_start.elapsed(),
+                scripts_total,
+                script_count,
+                slowest_script_id,
+                slowest_script,
+            };
+        }
         let resource_api = self.resource_api.clone();
         let res = perro_resource_api::ResourceWindow::new(resource_api.as_ref());
         let input_ptr = std::ptr::addr_of!(self.input);

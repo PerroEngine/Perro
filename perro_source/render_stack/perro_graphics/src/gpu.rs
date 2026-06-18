@@ -40,6 +40,7 @@ mod present;
 #[path = "water_gpu.rs"]
 mod water_gpu;
 
+pub(crate) use present::capped_render_size;
 use present::*;
 use water_gpu::{GpuWater, WaterPrepareContext};
 
@@ -401,6 +402,8 @@ pub struct Gpu {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
+    render_width: u32,
+    render_height: u32,
     render_format: wgpu::TextureFormat,
     sample_count: u32,
     max_supported_sample_count: u32,
@@ -731,6 +734,8 @@ impl Gpu {
         let size = window.inner_size();
         let width = size.width.max(1);
         let height = size.height.max(1);
+        let (render_width, render_height) =
+            capped_render_size(width, height, device.limits().max_texture_dimension_2d);
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -762,8 +767,8 @@ impl Gpu {
             render_format,
             Gpu3DConfig {
                 sample_count,
-                width,
-                height,
+                width: render_width,
+                height: render_height,
                 meshlets_enabled: cfg.meshlets_enabled,
                 dev_meshlets: cfg.dev_meshlets,
                 meshlet_debug_view: cfg.meshlet_debug_view,
@@ -782,11 +787,16 @@ impl Gpu {
             three_d.water_camera_bind_group_layout(),
             three_d.depth_prepass_view(),
         ));
-        let msaa_color =
-            create_msaa_color_target(&device, render_format, width, height, sample_count);
-        let post = PostProcessor::new(&device, &queue, render_format, width, height);
+        let msaa_color = create_msaa_color_target(
+            &device,
+            render_format,
+            render_width,
+            render_height,
+            sample_count,
+        );
+        let post = PostProcessor::new(&device, &queue, render_format, render_width, render_height);
         let accessibility =
-            VisualAccessibilityProcessor::new(&device, render_format, width, height);
+            VisualAccessibilityProcessor::new(&device, render_format, render_width, render_height);
         let present = PresentProcessor::new(&device, surface_format);
         let present_scene_bind_group = present.create_bind_group(&device, post.scene_view());
         let present_intermediate_bind_group =
@@ -799,6 +809,8 @@ impl Gpu {
             device,
             queue,
             config,
+            render_width,
+            render_height,
             render_format,
             sample_count,
             max_supported_sample_count,
@@ -828,8 +840,8 @@ impl Gpu {
             last_prepare_3d_camera: None,
             last_prepare_3d_lighting: None,
             last_prepare_3d_draws_revision: u64::MAX,
-            last_prepare_3d_width: width,
-            last_prepare_3d_height: height,
+            last_prepare_3d_width: render_width,
+            last_prepare_3d_height: render_height,
             meshlets_enabled: cfg.meshlets_enabled,
             dev_meshlets: cfg.dev_meshlets,
             meshlet_debug_view: cfg.meshlet_debug_view,
@@ -855,11 +867,21 @@ impl Gpu {
         self.config.width = width;
         self.config.height = height;
         self.surface.configure(&self.device, &self.config);
-        if let Some(three_d) = self.three_d.as_mut() {
-            three_d.resize(&self.device, width, height);
+        let (render_width, render_height) =
+            capped_render_size(width, height, self.device.limits().max_texture_dimension_2d);
+        let render_size_changed =
+            self.render_width != render_width || self.render_height != render_height;
+        self.render_width = render_width;
+        self.render_height = render_height;
+        if !render_size_changed {
+            return;
         }
-        self.post.resize(&self.device, width, height);
-        self.accessibility.resize(&self.device, width, height);
+        if let Some(three_d) = self.three_d.as_mut() {
+            three_d.resize(&self.device, render_width, render_height);
+        }
+        self.post.resize(&self.device, render_width, render_height);
+        self.accessibility
+            .resize(&self.device, render_width, render_height);
         self.present_scene_bind_group = self
             .present
             .create_bind_group(&self.device, self.post.scene_view());
@@ -869,8 +891,8 @@ impl Gpu {
         self.msaa_color = create_msaa_color_target(
             &self.device,
             self.render_format,
-            width,
-            height,
+            render_width,
+            render_height,
             self.sample_count,
         );
         // Force next 3D prepare to refresh viewport-dependent GPU state.
@@ -895,8 +917,8 @@ impl Gpu {
                 &self.device,
                 self.render_format,
                 sample_count,
-                self.config.width,
-                self.config.height,
+                self.render_width,
+                self.render_height,
             );
         }
         if let Some(point_particles_3d) = self.point_particles_3d.as_mut() {
@@ -905,8 +927,8 @@ impl Gpu {
         self.msaa_color = create_msaa_color_target(
             &self.device,
             self.render_format,
-            self.config.width,
-            self.config.height,
+            self.render_width,
+            self.render_height,
             sample_count,
         );
     }
@@ -983,8 +1005,8 @@ impl Gpu {
         let three_d_content_changed = self.last_prepare_3d_camera.as_ref() != Some(&camera_3d)
             || self.last_prepare_3d_lighting.as_ref() != Some(lighting_3d)
             || self.last_prepare_3d_draws_revision != draws_3d_revision
-            || self.last_prepare_3d_width != self.config.width
-            || self.last_prepare_3d_height != self.config.height;
+            || self.last_prepare_3d_width != self.render_width
+            || self.last_prepare_3d_height != self.render_height;
 
         let needs_3d = !draws_3d.is_empty();
         let needs_particles_3d = !point_particles_3d.is_empty();
@@ -1109,8 +1131,8 @@ impl Gpu {
                     self.render_format,
                     Gpu3DConfig {
                         sample_count: self.sample_count,
-                        width: self.config.width,
-                        height: self.config.height,
+                        width: self.render_width,
+                        height: self.render_height,
                         meshlets_enabled: self.meshlets_enabled,
                         dev_meshlets: self.dev_meshlets,
                         meshlet_debug_view: self.meshlet_debug_view,
@@ -1142,7 +1164,7 @@ impl Gpu {
                     .map(|color| [color.r as f32, color.g as f32, color.b as f32])
                     .unwrap_or([0.0, 0.0, 0.0]);
                 let water_view_proj =
-                    water_camera_view_proj(&camera_3d, self.config.width, self.config.height);
+                    water_camera_view_proj(&camera_3d, self.render_width, self.render_height);
                 water.prepare(
                     &self.device,
                     &self.queue,
@@ -1179,8 +1201,8 @@ impl Gpu {
                     self.render_format,
                     Gpu3DConfig {
                         sample_count: self.sample_count,
-                        width: self.config.width,
-                        height: self.config.height,
+                        width: self.render_width,
+                        height: self.render_height,
                         meshlets_enabled: self.meshlets_enabled,
                         dev_meshlets: self.dev_meshlets,
                         meshlet_debug_view: self.meshlet_debug_view,
@@ -1223,8 +1245,8 @@ impl Gpu {
                         lighting: lighting_3d,
                         draws: draws_3d,
                         draws_revision: draws_3d_revision,
-                        width: self.config.width,
-                        height: self.config.height,
+                        width: self.render_width,
+                        height: self.render_height,
                         static_texture_lookup,
                         static_mesh_lookup,
                         static_shader_lookup,
@@ -1235,8 +1257,8 @@ impl Gpu {
                 self.last_prepare_3d_camera = Some(camera_3d.clone());
                 self.last_prepare_3d_lighting = Some(lighting_3d.clone());
                 self.last_prepare_3d_draws_revision = draws_3d_revision;
-                self.last_prepare_3d_width = self.config.width;
-                self.last_prepare_3d_height = self.config.height;
+                self.last_prepare_3d_width = self.render_width;
+                self.last_prepare_3d_height = self.render_height;
             }
             let prepare_particles_start = Instant::now();
             let mut did_prepare_particles_3d = false;
@@ -1249,8 +1271,8 @@ impl Gpu {
                     PreparePointParticles3D {
                         camera: camera_3d.clone(),
                         emitters: point_particles_3d,
-                        width: self.config.width,
-                        height: self.config.height,
+                        width: self.render_width,
+                        height: self.render_height,
                     },
                 );
                 self.last_prepare_particles_revision = point_particles_3d_revision;
@@ -1296,11 +1318,15 @@ impl Gpu {
         let global_post_chain = post_processing_global.as_ref();
         let global_post_enabled = PostProcessor::has_effects(global_post_chain);
         let accessibility_enabled = self.accessibility.has_settings(accessibility);
-        let msaa_direct_present = self.sample_count > 1
+        let surface_sized_render =
+            self.render_width == self.config.width && self.render_height == self.config.height;
+        let msaa_direct_present = surface_sized_render
+            && self.sample_count > 1
             && !post_requested
             && !accessibility_enabled
             && self.render_format == self.config.format;
-        let direct_present = self.sample_count == 1
+        let direct_present = surface_sized_render
+            && self.sample_count == 1
             && !post_requested
             && !accessibility_enabled
             && self.render_format == self.config.format;

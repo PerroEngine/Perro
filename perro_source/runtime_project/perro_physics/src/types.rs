@@ -81,6 +81,7 @@ pub struct BodyDesc2D {
     pub enabled: bool,
     pub global: Transform2D,
     pub rigid: Option<RigidProps2D>,
+    pub sync_signature: u64,
     pub shape_signature: u64,
     pub shapes: Vec<ShapeDesc2D>,
 }
@@ -92,6 +93,7 @@ pub struct BodyDesc3D {
     pub enabled: bool,
     pub global: Transform3D,
     pub rigid: Option<RigidProps3D>,
+    pub sync_signature: u64,
     pub shape_signature: u64,
     pub shapes: Vec<ShapeDesc3D>,
 }

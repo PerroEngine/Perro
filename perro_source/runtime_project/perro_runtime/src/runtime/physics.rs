@@ -87,6 +87,20 @@ impl Runtime {
         self.refresh_dirty_global_transforms();
         let pre_transforms = pre_transforms_start.elapsed();
 
+        if self.can_skip_physics_fixed_step_pre_sync() {
+            return RuntimePhysicsStepTiming {
+                pre_transforms,
+                collect: std::time::Duration::ZERO,
+                sync_world: std::time::Duration::ZERO,
+                apply_forces_impulses: std::time::Duration::ZERO,
+                step: std::time::Duration::ZERO,
+                sync_nodes: std::time::Duration::ZERO,
+                post_transforms: std::time::Duration::ZERO,
+                signals: std::time::Duration::ZERO,
+                total: total_start.elapsed(),
+            };
+        }
+
         let collect_start = Instant::now();
         let bodies_2d = self.collect_body_descs_2d();
         let bodies_3d = self.collect_body_descs_3d();
@@ -98,6 +112,10 @@ impl Runtime {
         self.sync_world_2d(&bodies_2d);
         self.sync_world_3d(&bodies_3d);
         self.sync_joints_parallel(&joints_2d, &joints_3d);
+        self.physics_body_descs_2d = bodies_2d;
+        self.physics_body_descs_3d = bodies_3d;
+        self.physics_joint_descs_2d = joints_2d;
+        self.physics_joint_descs_3d = joints_3d;
         let sync_world = sync_world_start.elapsed();
 
         if self.physics.paused {
@@ -123,21 +141,30 @@ impl Runtime {
         self.apply_pending_forces_and_impulses_parallel();
         let apply_forces_impulses = apply_forces_impulses_start.elapsed();
 
-        let step_start = Instant::now();
-        self.step_worlds_parallel();
-        let step = step_start.elapsed();
+        let (step, sync_nodes, post_transforms) = if self.physics.can_skip_step() {
+            (
+                std::time::Duration::ZERO,
+                std::time::Duration::ZERO,
+                std::time::Duration::ZERO,
+            )
+        } else {
+            let step_start = Instant::now();
+            self.step_worlds_parallel();
+            let step = step_start.elapsed();
 
-        let sync_nodes_start = Instant::now();
-        let changed_2d = self.sync_world_to_nodes_2d();
-        let changed_3d = self.sync_world_to_nodes_3d();
-        let sync_nodes = sync_nodes_start.elapsed();
+            let sync_nodes_start = Instant::now();
+            let changed_2d = self.sync_world_to_nodes_2d();
+            let changed_3d = self.sync_world_to_nodes_3d();
+            let sync_nodes = sync_nodes_start.elapsed();
 
-        let post_transforms_start = Instant::now();
-        if changed_2d || changed_3d {
-            self.propagate_pending_transform_dirty();
-            self.refresh_dirty_global_transforms();
-        }
-        let post_transforms = post_transforms_start.elapsed();
+            let post_transforms_start = Instant::now();
+            if changed_2d || changed_3d {
+                self.propagate_pending_transform_dirty();
+                self.refresh_dirty_global_transforms();
+            }
+            let post_transforms = post_transforms_start.elapsed();
+            (step, sync_nodes, post_transforms)
+        };
 
         let signals_start = Instant::now();
         self.emit_collision_signals_2d();
@@ -161,6 +188,35 @@ impl Runtime {
 
     pub(crate) fn physics_fixed_step(&mut self) {
         let _ = self.physics_fixed_step_timed();
+    }
+
+    fn can_skip_physics_fixed_step_pre_sync(&self) -> bool {
+        self.schedules.fixed_slots_empty()
+            && !self.has_physics_joint_nodes()
+            && (self.internal_updates.physics_body_nodes_2d.is_empty()
+                || self.physics.world_2d.is_some())
+            && (self.internal_updates.physics_body_nodes_3d.is_empty()
+                || self.physics.world_3d.is_some())
+            && !self.dirty.has_transform_dirty_any()
+            && self.pending_force_emitters_2d.is_empty()
+            && self.pending_force_emitters_3d.is_empty()
+            && self.force_water_impacts_2d.is_empty()
+            && self.force_water_impacts_3d.is_empty()
+            && self.water_samples.is_empty()
+            && self.water_sample_times.is_empty()
+            && self.water_body_samples.is_empty()
+            && self.pending_water_queries_2d.is_empty()
+            && self.pending_water_queries_3d.is_empty()
+            && self.water_contacts_2d.is_empty()
+            && self.water_contacts_3d.is_empty()
+            && self.physics.active_area_overlaps_2d.is_empty()
+            && self.physics.active_area_overlaps_3d.is_empty()
+            && self.physics.can_skip_step()
+    }
+
+    fn has_physics_joint_nodes(&self) -> bool {
+        !self.internal_updates.physics_joint_nodes_2d.is_empty()
+            || !self.internal_updates.physics_joint_nodes_3d.is_empty()
     }
 
     pub(crate) fn queue_impulse_2d(&mut self, id: NodeID, impulse: Vector2) {
@@ -222,6 +278,7 @@ impl Runtime {
         self.refresh_dirty_global_transforms();
         let bodies_3d = self.collect_body_descs_3d();
         self.sync_world_3d(&bodies_3d);
+        self.physics_body_descs_3d = bodies_3d;
         self.physics
             .raycast_3d_filtered(origin, direction, max_distance, filter)
     }
@@ -237,6 +294,7 @@ impl Runtime {
         self.refresh_dirty_global_transforms();
         let bodies_2d = self.collect_body_descs_2d();
         self.sync_world_2d(&bodies_2d);
+        self.physics_body_descs_2d = bodies_2d;
         self.physics
             .raycast_2d(origin, direction, max_distance, filter)
     }
@@ -244,12 +302,14 @@ impl Runtime {
     pub(crate) fn prepare_audio_raycast_2d(&mut self) {
         let bodies_2d = self.collect_body_descs_2d();
         self.sync_world_2d(&bodies_2d);
+        self.physics_body_descs_2d = bodies_2d;
         self.physics.update_query_pipeline_2d();
     }
 
     pub(crate) fn prepare_audio_raycast_3d(&mut self) {
         let bodies_3d = self.collect_body_descs_3d();
         self.sync_world_3d(&bodies_3d);
+        self.physics_body_descs_3d = bodies_3d;
         self.physics.update_query_pipeline_3d();
     }
 
@@ -299,6 +359,7 @@ impl Runtime {
         self.refresh_dirty_global_transforms();
         let bodies_2d = self.collect_body_descs_2d();
         self.sync_world_2d(&bodies_2d);
+        self.physics_body_descs_2d = bodies_2d;
         self.physics
             .shape_cast_2d(shape, origin, direction, max_distance, filter)
     }
@@ -315,6 +376,7 @@ impl Runtime {
         self.refresh_dirty_global_transforms();
         let bodies_3d = self.collect_body_descs_3d();
         self.sync_world_3d(&bodies_3d);
+        self.physics_body_descs_3d = bodies_3d;
         self.physics
             .shape_cast_3d(shape, origin, direction, max_distance, filter)
     }
@@ -324,6 +386,7 @@ impl Runtime {
         self.refresh_dirty_global_transforms();
         let bodies_2d = self.collect_body_descs_2d();
         self.sync_world_2d(&bodies_2d);
+        self.physics_body_descs_2d = bodies_2d;
         self.physics.contacts_2d(body_id)
     }
 
@@ -332,12 +395,17 @@ impl Runtime {
         self.refresh_dirty_global_transforms();
         let bodies_3d = self.collect_body_descs_3d();
         self.sync_world_3d(&bodies_3d);
+        self.physics_body_descs_3d = bodies_3d;
         self.physics.contacts_3d(body_id)
     }
 
     fn collect_body_descs_2d(&mut self) -> Vec<BodyDesc2D> {
         let node_count = self.internal_updates.physics_body_nodes_2d.len();
-        let mut out = Vec::with_capacity(node_count);
+        let mut out = std::mem::take(&mut self.physics_body_descs_2d);
+        out.clear();
+        if out.capacity() < node_count {
+            out.reserve(node_count - out.capacity());
+        }
         for i in 0..node_count {
             let id = self.internal_updates.physics_body_nodes_2d[i];
             let (kind, enabled, rigid, material, groups) = {
@@ -497,6 +565,7 @@ impl Runtime {
                 enabled,
                 global,
                 rigid,
+                sync_signature: body_sync_signature_2d_if_useful(kind, enabled, global, rigid),
                 shape_signature,
                 shapes,
             });
@@ -506,7 +575,11 @@ impl Runtime {
 
     fn collect_body_descs_3d(&mut self) -> Vec<BodyDesc3D> {
         let node_count = self.internal_updates.physics_body_nodes_3d.len();
-        let mut out = Vec::with_capacity(node_count);
+        let mut out = std::mem::take(&mut self.physics_body_descs_3d);
+        out.clear();
+        if out.capacity() < node_count {
+            out.reserve(node_count - out.capacity());
+        }
         for i in 0..node_count {
             let id = self.internal_updates.physics_body_nodes_3d[i];
             let (kind, enabled, rigid, material, groups) = {
@@ -642,6 +715,7 @@ impl Runtime {
                 enabled,
                 global,
                 rigid,
+                sync_signature: body_sync_signature_3d_if_useful(kind, enabled, global, rigid),
                 shape_signature,
                 shapes,
             });
@@ -649,10 +723,15 @@ impl Runtime {
         out
     }
 
-    fn collect_joint_descs_2d(&self) -> Vec<JointDesc2D> {
-        let mut out = Vec::new();
-        for i in 0..self.internal_updates.internal_fixed_update_nodes.len() {
-            let id = self.internal_updates.internal_fixed_update_nodes[i];
+    fn collect_joint_descs_2d(&mut self) -> Vec<JointDesc2D> {
+        let mut out = std::mem::take(&mut self.physics_joint_descs_2d);
+        out.clear();
+        let node_count = self.internal_updates.physics_joint_nodes_2d.len();
+        if out.capacity() < node_count {
+            out.reserve(node_count - out.capacity());
+        }
+        for i in 0..self.internal_updates.physics_joint_nodes_2d.len() {
+            let id = self.internal_updates.physics_joint_nodes_2d[i];
             let Some(node) = self.nodes.get(id) else {
                 continue;
             };
@@ -714,10 +793,15 @@ impl Runtime {
         out
     }
 
-    fn collect_joint_descs_3d(&self) -> Vec<JointDesc3D> {
-        let mut out = Vec::new();
-        for i in 0..self.internal_updates.internal_fixed_update_nodes.len() {
-            let id = self.internal_updates.internal_fixed_update_nodes[i];
+    fn collect_joint_descs_3d(&mut self) -> Vec<JointDesc3D> {
+        let mut out = std::mem::take(&mut self.physics_joint_descs_3d);
+        out.clear();
+        let node_count = self.internal_updates.physics_joint_nodes_3d.len();
+        if out.capacity() < node_count {
+            out.reserve(node_count - out.capacity());
+        }
+        for i in 0..self.internal_updates.physics_joint_nodes_3d.len() {
+            let id = self.internal_updates.physics_joint_nodes_3d[i];
             let Some(node) = self.nodes.get(id) else {
                 continue;
             };
@@ -2095,14 +2179,14 @@ fn update_body_sync_state_2d(
     rotation: f32,
     linear_velocity: Vector2,
     angular_velocity: f32,
-    sleeping: bool,
+    _sleeping: bool,
     same_as_last_sync: bool,
 ) {
     state.last_translation = [position.x, position.y];
     state.last_rotation = rotation;
     state.last_linear_velocity = [linear_velocity.x, linear_velocity.y];
     state.last_angular_velocity = angular_velocity;
-    state.idle_sync_frames = if sleeping && same_as_last_sync {
+    state.idle_sync_frames = if same_as_last_sync {
         state.idle_sync_frames.saturating_add(1)
     } else {
         0
@@ -2137,18 +2221,102 @@ fn update_body_sync_state_3d(
     rotation: Quaternion,
     linear_velocity: Vector3,
     angular_velocity: Vector3,
-    sleeping: bool,
+    _sleeping: bool,
     same_as_last_sync: bool,
 ) {
     state.last_translation = [position.x, position.y, position.z];
     state.last_rotation = [rotation.x, rotation.y, rotation.z, rotation.w];
     state.last_linear_velocity = [linear_velocity.x, linear_velocity.y, linear_velocity.z];
     state.last_angular_velocity = [angular_velocity.x, angular_velocity.y, angular_velocity.z];
-    state.idle_sync_frames = if sleeping && same_as_last_sync {
+    state.idle_sync_frames = if same_as_last_sync {
         state.idle_sync_frames.saturating_add(1)
     } else {
         0
     };
+}
+
+fn body_sync_signature_2d(
+    kind: BodyKind,
+    enabled: bool,
+    global: Transform2D,
+    rigid: Option<RigidProps2D>,
+) -> u64 {
+    let mut state = body_signature_seed(kind);
+    state = hash_u32(state, enabled as u32);
+    state = hash_transform_2d(state, global);
+    if let Some(rigid) = rigid {
+        state = hash_u32(state, 1);
+        state = hash_u32(state, rigid.enabled as u32);
+        state = hash_u32(state, rigid.can_sleep as u32);
+        state = hash_u32(state, rigid.lock_rotation as u32);
+        state = hash_f32(state, rigid.mass.to_bits());
+        state = hash_f32(state, rigid.density.to_bits());
+        state = hash_u32(state, rigid.continuous_collision_detection as u32);
+        state = hash_f32(state, rigid.linear_velocity.x.to_bits());
+        state = hash_f32(state, rigid.linear_velocity.y.to_bits());
+        state = hash_f32(state, rigid.angular_velocity.to_bits());
+        state = hash_f32(state, rigid.gravity_scale.to_bits());
+        state = hash_f32(state, rigid.linear_damping.to_bits());
+        hash_f32(state, rigid.angular_damping.to_bits())
+    } else {
+        hash_u32(state, 0)
+    }
+}
+
+fn body_sync_signature_2d_if_useful(
+    kind: BodyKind,
+    enabled: bool,
+    global: Transform2D,
+    rigid: Option<RigidProps2D>,
+) -> u64 {
+    if rigid.is_some_and(|rigid| !rigid.can_sleep) {
+        0
+    } else {
+        body_sync_signature_2d(kind, enabled, global, rigid)
+    }
+}
+
+fn body_sync_signature_3d(
+    kind: BodyKind,
+    enabled: bool,
+    global: Transform3D,
+    rigid: Option<RigidProps3D>,
+) -> u64 {
+    let mut state = body_signature_seed(kind);
+    state = hash_u32(state, enabled as u32);
+    state = hash_transform_3d(state, global);
+    if let Some(rigid) = rigid {
+        state = hash_u32(state, 1);
+        state = hash_u32(state, rigid.enabled as u32);
+        state = hash_u32(state, rigid.can_sleep as u32);
+        state = hash_f32(state, rigid.mass.to_bits());
+        state = hash_f32(state, rigid.density.to_bits());
+        state = hash_u32(state, rigid.continuous_collision_detection as u32);
+        state = hash_f32(state, rigid.linear_velocity.x.to_bits());
+        state = hash_f32(state, rigid.linear_velocity.y.to_bits());
+        state = hash_f32(state, rigid.linear_velocity.z.to_bits());
+        state = hash_f32(state, rigid.angular_velocity.x.to_bits());
+        state = hash_f32(state, rigid.angular_velocity.y.to_bits());
+        state = hash_f32(state, rigid.angular_velocity.z.to_bits());
+        state = hash_f32(state, rigid.gravity_scale.to_bits());
+        state = hash_f32(state, rigid.linear_damping.to_bits());
+        hash_f32(state, rigid.angular_damping.to_bits())
+    } else {
+        hash_u32(state, 0)
+    }
+}
+
+fn body_sync_signature_3d_if_useful(
+    kind: BodyKind,
+    enabled: bool,
+    global: Transform3D,
+    rigid: Option<RigidProps3D>,
+) -> u64 {
+    if rigid.is_some_and(|rigid| !rigid.can_sleep) {
+        0
+    } else {
+        body_sync_signature_3d(kind, enabled, global, rigid)
+    }
 }
 
 fn hash_water_shape(state: u64, shape: WaterShape) -> u64 {

@@ -12,6 +12,7 @@ impl Runtime {
     pub(crate) fn rebuild_internal_node_schedules(&mut self) {
         self.internal_updates.internal_update_nodes.clear();
         self.internal_updates.internal_fixed_update_nodes.clear();
+        self.internal_updates.internal_fixed_dispatch_nodes.clear();
         self.internal_updates.internal_update_pos.clear();
         self.internal_updates.internal_fixed_update_pos.clear();
         let mut pairs = Vec::new();
@@ -25,6 +26,8 @@ impl Runtime {
 
     pub(crate) fn register_internal_node_schedules(&mut self, id: NodeID, ty: NodeType) {
         self.register_physics_body(id, ty);
+        self.register_physics_joint(id, ty);
+        self.register_internal_fixed_dispatch(id, ty);
         if matches!(ty.get_internal_update(), InternalUpdate::True) {
             let slot = id.index() as usize;
             if self.internal_updates.internal_update_pos.len() <= slot {
@@ -55,6 +58,15 @@ impl Runtime {
 
     pub(crate) fn unregister_internal_node_schedules(&mut self, id: NodeID) {
         self.unregister_physics_body(id);
+        self.internal_updates
+            .internal_fixed_dispatch_nodes
+            .retain(|&node_id| node_id != id);
+        self.internal_updates
+            .physics_joint_nodes_2d
+            .retain(|&node_id| node_id != id);
+        self.internal_updates
+            .physics_joint_nodes_3d
+            .retain(|&node_id| node_id != id);
         let slot = id.index() as usize;
 
         if let Some(&raw_pos) = self.internal_updates.internal_update_pos.get(slot)
@@ -119,12 +131,46 @@ impl Runtime {
     pub(crate) fn clear_internal_node_schedules(&mut self) {
         self.internal_updates.internal_update_nodes.clear();
         self.internal_updates.internal_fixed_update_nodes.clear();
+        self.internal_updates.internal_fixed_dispatch_nodes.clear();
         self.internal_updates.internal_update_pos.clear();
         self.internal_updates.internal_fixed_update_pos.clear();
         self.internal_updates.physics_body_nodes_2d.clear();
         self.internal_updates.physics_body_nodes_3d.clear();
+        self.internal_updates.physics_joint_nodes_2d.clear();
+        self.internal_updates.physics_joint_nodes_3d.clear();
         self.internal_updates.physics_body_pos_2d.clear();
         self.internal_updates.physics_body_pos_3d.clear();
+    }
+
+    fn register_internal_fixed_dispatch(&mut self, id: NodeID, ty: NodeType) {
+        if !matches!(
+            ty,
+            NodeType::PhysicsBoneChain2D | NodeType::PhysicsBoneChain3D
+        ) {
+            return;
+        }
+        if !self
+            .internal_updates
+            .internal_fixed_dispatch_nodes
+            .contains(&id)
+        {
+            self.internal_updates.internal_fixed_dispatch_nodes.push(id);
+        }
+    }
+
+    fn register_physics_joint(&mut self, id: NodeID, ty: NodeType) {
+        let nodes = match ty {
+            NodeType::PinJoint2D | NodeType::DistanceJoint2D | NodeType::FixedJoint2D => {
+                &mut self.internal_updates.physics_joint_nodes_2d
+            }
+            NodeType::BallJoint3D | NodeType::HingeJoint3D | NodeType::FixedJoint3D => {
+                &mut self.internal_updates.physics_joint_nodes_3d
+            }
+            _ => return,
+        };
+        if !nodes.contains(&id) {
+            nodes.push(id);
+        }
     }
 
     fn register_physics_body(&mut self, id: NodeID, ty: NodeType) {
@@ -258,15 +304,22 @@ impl Runtime {
     }
 
     pub(crate) fn run_internal_fixed_update_schedule(&mut self) {
+        if self
+            .internal_updates
+            .internal_fixed_dispatch_nodes
+            .is_empty()
+        {
+            return;
+        }
         let resource_api = self.resource_api.clone();
         let res = ResourceWindow::new(resource_api.as_ref());
         let input_ptr = std::ptr::addr_of!(self.input);
         // SAFETY: During callback dispatch, input is treated as immutable runtime state.
         // Engine invariant: only window/event ingestion mutates input, outside script callback execution.
         let ipt = unsafe { InputWindow::new(&*input_ptr) };
-        let count = self.internal_updates.internal_fixed_update_nodes.len();
+        let count = self.internal_updates.internal_fixed_dispatch_nodes.len();
         for i in 0..count {
-            let id = self.internal_updates.internal_fixed_update_nodes[i];
+            let id = self.internal_updates.internal_fixed_dispatch_nodes[i];
             if self.nodes.get(id).is_none() {
                 continue;
             }

@@ -3,10 +3,12 @@ use super::*;
 impl PhysicsSystem {
     pub fn step_world_2d(&mut self, gravity_y: f32, fixed_delta: f32) {
         step_world_2d_slot(&mut self.world_2d, gravity_y, fixed_delta);
+        self.refresh_world_2d_idle_cache();
     }
 
     pub fn step_world_3d(&mut self, gravity_y: f32, fixed_delta: f32) {
         step_world_3d_slot(&mut self.world_3d, gravity_y, fixed_delta);
+        self.refresh_world_3d_idle_cache();
     }
 
     pub fn step_worlds_parallel(&mut self, gravity_y: f32, fixed_delta: f32) {
@@ -21,6 +23,7 @@ impl PhysicsSystem {
             || step_world_2d_slot(world_2d, gravity_y, fixed_delta),
             || step_world_3d_slot(world_3d, gravity_y, fixed_delta),
         );
+        self.refresh_world_idle_cache();
     }
 
     pub fn apply_pending_impulses_2d(&mut self, coef: f32) {
@@ -333,6 +336,7 @@ mod tests {
                 linear_damping: 0.01,
                 angular_damping: 0.01,
             }),
+            sync_signature: id.as_u64(),
             shape_signature: 2,
             shapes: vec![shape_2d()],
         }
@@ -356,6 +360,7 @@ mod tests {
                 linear_damping: 0.01,
                 angular_damping: 0.01,
             }),
+            sync_signature: id.as_u64(),
             shape_signature: 2,
             shapes: vec![shape_3d()],
         }
@@ -370,6 +375,7 @@ mod tests {
                 enabled: true,
                 global: Transform2D::new(Vector2::new(0.0, -8.0), 0.0, Vector2::ONE),
                 rigid: None,
+                sync_signature: 1,
                 shape_signature: 1,
                 shapes: vec![ShapeDesc2D {
                     shape: ShapeKind2D::Primitive(Shape2D::Quad {
@@ -393,6 +399,7 @@ mod tests {
                     Vector3::ONE,
                 ),
                 rigid: None,
+                sync_signature: 10,
                 shape_signature: 1,
                 shapes: vec![ShapeDesc3D {
                     shape: ShapeKind3D::Primitive(Shape3D::Cube {

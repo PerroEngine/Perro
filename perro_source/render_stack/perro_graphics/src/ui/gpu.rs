@@ -346,7 +346,8 @@ impl GpuUi {
             static_texture_lookup,
         } = input;
         let viewport = [viewport[0].max(1), viewport[1].max(1)];
-        let render_viewport = supersampled_size(viewport);
+        let render_viewport = supersampled_size(viewport, device.limits().max_texture_dimension_2d);
+        let render_scale = viewport_scale(viewport, render_viewport);
         if self.prepared_revision == revision
             && self.prepared_viewport == viewport
             && textures_delta.set.is_empty()
@@ -389,7 +390,7 @@ impl GpuUi {
             {
                 continue;
             }
-            let clip_rect = clip_rect_scaled(primitive, render_viewport, UI_SUPERSAMPLE_SCALE);
+            let clip_rect = clip_rect_scaled(primitive, render_viewport, render_scale);
             if clip_rect[2] == 0 || clip_rect[3] == 0 {
                 continue;
             }
@@ -405,8 +406,8 @@ impl GpuUi {
             self.vertices
                 .extend(mesh.vertices.iter().map(|vertex| UiVertexGpu {
                     pos: [
-                        vertex.pos.x * UI_SUPERSAMPLE_SCALE as f32,
-                        vertex.pos.y * UI_SUPERSAMPLE_SCALE as f32,
+                        vertex.pos.x * render_scale[0],
+                        vertex.pos.y * render_scale[1],
                     ],
                     uv: [vertex.uv.x, vertex.uv.y],
                     color: vertex.color.to_array(),
@@ -436,7 +437,8 @@ impl GpuUi {
         if self.meshes.is_empty() {
             return;
         }
-        let render_viewport = supersampled_size(viewport);
+        let viewport = [viewport[0].max(1), viewport[1].max(1)];
+        let render_viewport = supersampled_size(viewport, device.limits().max_texture_dimension_2d);
         self.ensure_supersample_target(device, render_viewport);
         let (Some(vertex_buffer), Some(index_buffer)) =
             (self.vertex_buffer.as_ref(), self.index_buffer.as_ref())

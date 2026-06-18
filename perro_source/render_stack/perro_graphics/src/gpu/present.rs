@@ -104,6 +104,26 @@ pub(super) fn sample_count_supported(
     }
 }
 
+const MAX_FRAME_RENDER_PIXELS: u64 = 16_777_216;
+
+pub(crate) fn capped_render_size(width: u32, height: u32, max_dimension: u32) -> (u32, u32) {
+    let width = width.max(1);
+    let height = height.max(1);
+    let max_dimension = max_dimension.max(1);
+    let dim_scale = (max_dimension as f64 / width.max(height) as f64).min(1.0);
+    let pixels = width as u64 * height as u64;
+    let pixel_scale = if pixels > MAX_FRAME_RENDER_PIXELS {
+        (MAX_FRAME_RENDER_PIXELS as f64 / pixels as f64).sqrt()
+    } else {
+        1.0
+    };
+    let scale = dim_scale.min(pixel_scale).clamp(0.0, 1.0);
+    (
+        ((width as f64 * scale).round() as u32).max(1),
+        ((height as f64 * scale).round() as u32).max(1),
+    )
+}
+
 pub(super) fn create_msaa_color_target(
     device: &wgpu::Device,
     format: wgpu::TextureFormat,
@@ -375,5 +395,27 @@ pub(super) fn parse_present_mode_override() -> Option<wgpu::PresentMode> {
             eprintln!("[perro][gfx] unknown PERRO_PRESENT_MODE=({raw}); ignore override");
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn capped_render_size_keeps_safe_size() {
+        assert_eq!(capped_render_size(3840, 2160, 8192), (3840, 2160));
+    }
+
+    #[test]
+    fn capped_render_size_preserves_aspect_when_too_wide() {
+        assert_eq!(capped_render_size(10_000, 1_000, 8192), (8192, 819));
+    }
+
+    #[test]
+    fn capped_render_size_limits_pixel_count() {
+        let (width, height) = capped_render_size(8192, 8192, 8192);
+        assert!(width as u64 * height as u64 <= MAX_FRAME_RENDER_PIXELS + 8192);
+        assert_eq!(width, height);
     }
 }

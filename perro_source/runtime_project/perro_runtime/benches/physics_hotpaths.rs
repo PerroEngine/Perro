@@ -147,6 +147,32 @@ fn runtime_with_rigid_bodies_2d(count: u32) -> (Runtime, Vec<NodeID>) {
     (runtime, bodies)
 }
 
+fn runtime_with_resting_rigid_bodies_2d(count: u32) -> Runtime {
+    let mut runtime = Runtime::new();
+    for i in 0..count {
+        let body = NodeAPI::create::<perro_nodes::RigidBody2D>(&mut runtime);
+        let shape = NodeAPI::create::<perro_nodes::CollisionShape2D>(&mut runtime);
+        assert!(NodeAPI::reparent(&mut runtime, body, shape));
+        let _ =
+            NodeAPI::with_node_mut::<perro_nodes::RigidBody2D, _, _>(&mut runtime, body, |node| {
+                node.transform = Transform2D::new(
+                    Vector2::new((i % 64) as f32 - 32.0, 2.0 + (i / 64) as f32 * 1.25),
+                    0.0,
+                    Vector2::ONE,
+                );
+                node.can_sleep = true;
+                node.gravity_scale = 0.0;
+                node.continuous_collision_detection = false;
+                node.linear_velocity = Vector2::ZERO;
+                node.angular_velocity = 0.0;
+            });
+    }
+    for _ in 0..3 {
+        runtime.fixed_update(DT);
+    }
+    runtime
+}
+
 fn runtime_with_rigid_bodies_3d(count: u32) -> (Runtime, Vec<NodeID>) {
     let mut runtime = Runtime::new();
     let mut bodies = Vec::with_capacity(count as usize);
@@ -173,6 +199,36 @@ fn runtime_with_rigid_bodies_3d(count: u32) -> (Runtime, Vec<NodeID>) {
         bodies.push(body);
     }
     (runtime, bodies)
+}
+
+fn runtime_with_resting_rigid_bodies_3d(count: u32) -> Runtime {
+    let mut runtime = Runtime::new();
+    for i in 0..count {
+        let body = NodeAPI::create::<perro_nodes::RigidBody3D>(&mut runtime);
+        let shape = NodeAPI::create::<perro_nodes::CollisionShape3D>(&mut runtime);
+        assert!(NodeAPI::reparent(&mut runtime, body, shape));
+        let _ =
+            NodeAPI::with_node_mut::<perro_nodes::RigidBody3D, _, _>(&mut runtime, body, |node| {
+                node.transform = Transform3D::new(
+                    Vector3::new(
+                        (i % 16) as f32 - 8.0,
+                        2.0 + (i / 256) as f32 * 1.25,
+                        ((i / 16) % 16) as f32 - 8.0,
+                    ),
+                    Quaternion::IDENTITY,
+                    Vector3::ONE,
+                );
+                node.can_sleep = true;
+                node.gravity_scale = 0.0;
+                node.continuous_collision_detection = false;
+                node.linear_velocity = Vector3::ZERO;
+                node.angular_velocity = Vector3::ZERO;
+            });
+    }
+    for _ in 0..3 {
+        runtime.fixed_update(DT);
+    }
+    runtime
 }
 
 fn runtime_with_rigid_bodies_2d_3d(count_each: u32) -> (Runtime, Vec<NodeID>, Vec<NodeID>) {
@@ -382,6 +438,31 @@ fn bench_runtime_fixed_step_forces(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_runtime_fixed_step_resting(c: &mut Criterion) {
+    let mut group = c.benchmark_group("physics/runtime_fixed_step_resting");
+    group.bench_function("resting_2d_4096", |b| {
+        b.iter_batched(
+            || runtime_with_resting_rigid_bodies_2d(4096),
+            |mut runtime| {
+                runtime.fixed_update(DT);
+                black_box(runtime.nodes.len())
+            },
+            criterion::BatchSize::LargeInput,
+        )
+    });
+    group.bench_function("resting_3d_4096", |b| {
+        b.iter_batched(
+            || runtime_with_resting_rigid_bodies_3d(4096),
+            |mut runtime| {
+                runtime.fixed_update(DT);
+                black_box(runtime.nodes.len())
+            },
+            criterion::BatchSize::LargeInput,
+        )
+    });
+    group.finish();
+}
+
 fn bench_runtime_force_emitters(c: &mut Criterion) {
     let mut group = c.benchmark_group("physics/runtime_force_emitters");
     group.bench_function("custom_2d_512", |b| {
@@ -546,6 +627,7 @@ fn benches(c: &mut Criterion) {
     bench_runtime_force_impulse_queue_3d(c);
     bench_runtime_predict_body(c);
     bench_runtime_fixed_step_forces(c);
+    bench_runtime_fixed_step_resting(c);
     bench_runtime_force_emitters(c);
     bench_physics_visual_interp_render_extract(c);
 }

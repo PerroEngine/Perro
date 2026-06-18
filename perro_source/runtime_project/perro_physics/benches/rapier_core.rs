@@ -83,6 +83,7 @@ fn bodies_2d(count: u32) -> Vec<BodyDesc2D> {
         enabled: true,
         global: Transform2D::new(Vector2::new(0.0, -8.0), 0.0, Vector2::ONE),
         rigid: None,
+        sync_signature: 1,
         shape_signature: 1,
         shapes: vec![ShapeDesc2D {
             shape: ShapeKind2D::Primitive(Shape2D::Quad {
@@ -103,6 +104,7 @@ fn bodies_2d(count: u32) -> Vec<BodyDesc2D> {
                 Vector2::ONE,
             ),
             rigid: Some(rigid_props_2d(i)),
+            sync_signature: i as u64 + 2,
             shape_signature: 2,
             shapes: vec![shape_2d()],
         });
@@ -122,6 +124,7 @@ fn bodies_3d(count: u32) -> Vec<BodyDesc3D> {
             Vector3::ONE,
         ),
         rigid: None,
+        sync_signature: 1,
         shape_signature: 1,
         shapes: vec![ShapeDesc3D {
             shape: ShapeKind3D::Primitive(Shape3D::Cube {
@@ -145,6 +148,7 @@ fn bodies_3d(count: u32) -> Vec<BodyDesc3D> {
                 Vector3::ONE,
             ),
             rigid: Some(rigid_props_3d(i)),
+            sync_signature: i as u64 + 2,
             shape_signature: 2,
             shapes: vec![shape_3d()],
         });
@@ -372,9 +376,80 @@ fn bench_mixed_joint_sync(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_resting_body_resync_skip(c: &mut Criterion) {
+    let bodies_2d = bodies_2d(4096);
+    let bodies_3d = bodies_3d(4096);
+    let mut group = c.benchmark_group("rapier_core/resting_body_resync_4096");
+    group.bench_function("2d_forced_resync", |b| {
+        b.iter_batched(
+            || {
+                let mut system = PhysicsSystem::new();
+                system.sync_world_2d(&bodies_2d, |_, _| {});
+                (system, bodies_2d.clone(), 1u64)
+            },
+            |(mut system, mut bodies, mut epoch)| {
+                epoch = epoch.wrapping_add(1);
+                for body in &mut bodies {
+                    body.sync_signature = epoch;
+                }
+                system.sync_world_2d(&bodies, |_, _| {});
+                black_box(system.world_2d.as_ref().unwrap().bodies.len())
+            },
+            BatchSize::LargeInput,
+        )
+    });
+    group.bench_function("2d_stable_skip", |b| {
+        b.iter_batched(
+            || {
+                let mut system = PhysicsSystem::new();
+                system.sync_world_2d(&bodies_2d, |_, _| {});
+                (system, bodies_2d.clone())
+            },
+            |(mut system, bodies)| {
+                system.sync_world_2d(&bodies, |_, _| {});
+                black_box(system.world_2d.as_ref().unwrap().bodies.len())
+            },
+            BatchSize::LargeInput,
+        )
+    });
+    group.bench_function("3d_forced_resync", |b| {
+        b.iter_batched(
+            || {
+                let mut system = PhysicsSystem::new();
+                system.sync_world_3d(&bodies_3d, asset_context(), |_, _| {});
+                (system, bodies_3d.clone(), 1u64)
+            },
+            |(mut system, mut bodies, mut epoch)| {
+                epoch = epoch.wrapping_add(1);
+                for body in &mut bodies {
+                    body.sync_signature = epoch;
+                }
+                system.sync_world_3d(&bodies, asset_context(), |_, _| {});
+                black_box(system.world_3d.as_ref().unwrap().bodies.len())
+            },
+            BatchSize::LargeInput,
+        )
+    });
+    group.bench_function("3d_stable_skip", |b| {
+        b.iter_batched(
+            || {
+                let mut system = PhysicsSystem::new();
+                system.sync_world_3d(&bodies_3d, asset_context(), |_, _| {});
+                (system, bodies_3d.clone())
+            },
+            |(mut system, bodies)| {
+                system.sync_world_3d(&bodies, asset_context(), |_, _| {});
+                black_box(system.world_3d.as_ref().unwrap().bodies.len())
+            },
+            BatchSize::LargeInput,
+        )
+    });
+    group.finish();
+}
+
 criterion_group! {
     name = rapier_core;
     config = Criterion::default().sample_size(10);
-    targets = bench_rapier_step_2d, bench_rapier_step_3d, bench_rapier_mixed_step, bench_apply_pending_hot, bench_mixed_joint_sync
+    targets = bench_rapier_step_2d, bench_rapier_step_3d, bench_rapier_mixed_step, bench_apply_pending_hot, bench_mixed_joint_sync, bench_resting_body_resync_skip
 }
 criterion_main!(rapier_core);

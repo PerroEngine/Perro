@@ -18,26 +18,34 @@ pub(super) fn font_delta_required_size(
 pub(super) fn clip_rect_scaled(
     primitive: &ClippedPrimitive,
     viewport: [u32; 2],
-    scale: u32,
+    scale: [f32; 2],
 ) -> [u32; 4] {
-    let scale = scale.max(1) as f32;
-    let min_x = (primitive.clip_rect.min.x * scale).floor().max(0.0) as u32;
-    let min_y = (primitive.clip_rect.min.y * scale).floor().max(0.0) as u32;
-    let max_x = (primitive.clip_rect.max.x * scale)
+    let scale_x = scale[0].max(0.0001);
+    let scale_y = scale[1].max(0.0001);
+    let min_x = (primitive.clip_rect.min.x * scale_x).floor().max(0.0) as u32;
+    let min_y = (primitive.clip_rect.min.y * scale_y).floor().max(0.0) as u32;
+    let max_x = (primitive.clip_rect.max.x * scale_x)
         .ceil()
         .min(viewport[0] as f32)
         .max(min_x as f32) as u32;
-    let max_y = (primitive.clip_rect.max.y * scale)
+    let max_y = (primitive.clip_rect.max.y * scale_y)
         .ceil()
         .min(viewport[1] as f32)
         .max(min_y as f32) as u32;
     [min_x, min_y, max_x - min_x, max_y - min_y]
 }
 
-pub(super) fn supersampled_size(viewport: [u32; 2]) -> [u32; 2] {
+pub(super) fn supersampled_size(viewport: [u32; 2], max_dimension: u32) -> [u32; 2] {
+    let width = viewport[0].max(1).saturating_mul(UI_SUPERSAMPLE_SCALE);
+    let height = viewport[1].max(1).saturating_mul(UI_SUPERSAMPLE_SCALE);
+    let (width, height) = crate::gpu::capped_render_size(width, height, max_dimension);
+    [width, height]
+}
+
+pub(super) fn viewport_scale(viewport: [u32; 2], render_viewport: [u32; 2]) -> [f32; 2] {
     [
-        viewport[0].max(1).saturating_mul(UI_SUPERSAMPLE_SCALE),
-        viewport[1].max(1).saturating_mul(UI_SUPERSAMPLE_SCALE),
+        render_viewport[0].max(1) as f32 / viewport[0].max(1) as f32,
+        render_viewport[1].max(1) as f32 / viewport[1].max(1) as f32,
     ]
 }
 

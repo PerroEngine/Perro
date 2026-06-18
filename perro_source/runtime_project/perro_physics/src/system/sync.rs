@@ -12,6 +12,7 @@ impl PhysicsSystem {
                     set_body_handle(id, None);
                 }
             }
+            self.world_2d_idle_cached = true;
             return;
         }
 
@@ -36,6 +37,7 @@ impl PhysicsSystem {
                         handle: rb_handle,
                         colliders: Vec::new(),
                         kind: body.kind,
+                        sync_signature: body.sync_signature,
                         shape_signature: 0,
                         opaque_handle: opaque,
                         sync_epoch,
@@ -53,9 +55,11 @@ impl PhysicsSystem {
                 continue;
             };
 
-            state.kind = body.kind;
             state.sync_epoch = sync_epoch;
-            if let Some(rb) = world.bodies.get_mut(state.handle) {
+            let needs_body_sync =
+                body.sync_signature == 0 || state.sync_signature != body.sync_signature;
+            state.kind = body.kind;
+            if needs_body_sync && let Some(rb) = world.bodies.get_mut(state.handle) {
                 rb.set_enabled(body.enabled);
                 let target_body_type = match body.kind {
                     crate::BodyKind::Static | crate::BodyKind::Area => r2::RigidBodyType::Fixed,
@@ -110,6 +114,13 @@ impl PhysicsSystem {
                 } else if rb.is_ccd_enabled() {
                     rb.enable_ccd(false);
                 }
+                state.sync_signature = body.sync_signature;
+            } else if state.kind == crate::BodyKind::Rigid
+                && state.idle_sync_frames >= 1
+                && let Some(rb) = world.bodies.get_mut(state.handle)
+                && !rb.is_sleeping()
+            {
+                rb.sleep();
             }
 
             if state.shape_signature != body.shape_signature {
@@ -164,6 +175,7 @@ impl PhysicsSystem {
         }
         stale.clear();
         self.stale_ids_2d = stale;
+        self.world_2d_idle_cached = world_2d_idle(&world);
         self.world_2d = Some(world);
     }
 
@@ -179,6 +191,7 @@ impl PhysicsSystem {
                     set_body_handle(id, None);
                 }
             }
+            self.world_3d_idle_cached = true;
             return;
         }
 
@@ -203,6 +216,7 @@ impl PhysicsSystem {
                         handle: rb_handle,
                         colliders: Vec::new(),
                         kind: body.kind,
+                        sync_signature: body.sync_signature,
                         shape_signature: 0,
                         opaque_handle: opaque,
                         sync_epoch,
@@ -220,9 +234,11 @@ impl PhysicsSystem {
                 continue;
             };
 
-            state.kind = body.kind;
             state.sync_epoch = sync_epoch;
-            if let Some(rb) = world.bodies.get_mut(state.handle) {
+            let needs_body_sync =
+                body.sync_signature == 0 || state.sync_signature != body.sync_signature;
+            state.kind = body.kind;
+            if needs_body_sync && let Some(rb) = world.bodies.get_mut(state.handle) {
                 rb.set_enabled(body.enabled);
                 let target_body_type = match body.kind {
                     crate::BodyKind::Static | crate::BodyKind::Area => r3::RigidBodyType::Fixed,
@@ -297,6 +313,13 @@ impl PhysicsSystem {
                 } else if rb.is_ccd_enabled() {
                     rb.enable_ccd(false);
                 }
+                state.sync_signature = body.sync_signature;
+            } else if state.kind == crate::BodyKind::Rigid
+                && state.idle_sync_frames >= 1
+                && let Some(rb) = world.bodies.get_mut(state.handle)
+                && !rb.is_sleeping()
+            {
+                rb.sleep();
             }
 
             if state.shape_signature != body.shape_signature {
@@ -357,6 +380,7 @@ impl PhysicsSystem {
         }
         stale.clear();
         self.stale_ids_3d = stale;
+        self.world_3d_idle_cached = world_3d_idle(&world);
         self.world_3d = Some(world);
     }
 
@@ -541,6 +565,7 @@ mod tests {
             enabled: true,
             global: Transform2D::IDENTITY,
             rigid: None,
+            sync_signature: id as u64,
             shape_signature: 0,
             shapes: Vec::new(),
         }
@@ -553,6 +578,7 @@ mod tests {
             enabled: true,
             global: Transform3D::new(Vector3::ZERO, Quaternion::IDENTITY, Vector3::ONE),
             rigid: None,
+            sync_signature: id as u64,
             shape_signature: 0,
             shapes: Vec::new(),
         }

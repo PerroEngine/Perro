@@ -141,10 +141,13 @@ impl Default for PhysicsPose3D {
 pub(crate) struct InternalUpdateState {
     pub(crate) internal_update_nodes: Vec<NodeID>,
     pub(crate) internal_fixed_update_nodes: Vec<NodeID>,
+    pub(crate) internal_fixed_dispatch_nodes: Vec<NodeID>,
     pub(crate) internal_update_pos: Vec<u32>,
     pub(crate) internal_fixed_update_pos: Vec<u32>,
     pub(crate) physics_body_nodes_2d: Vec<NodeID>,
     pub(crate) physics_body_nodes_3d: Vec<NodeID>,
+    pub(crate) physics_joint_nodes_2d: Vec<NodeID>,
+    pub(crate) physics_joint_nodes_3d: Vec<NodeID>,
     pub(crate) physics_body_pos_2d: Vec<u32>,
     pub(crate) physics_body_pos_3d: Vec<u32>,
 }
@@ -154,10 +157,13 @@ impl InternalUpdateState {
         Self {
             internal_update_nodes: Vec::new(),
             internal_fixed_update_nodes: Vec::new(),
+            internal_fixed_dispatch_nodes: Vec::new(),
             internal_update_pos: Vec::new(),
             internal_fixed_update_pos: Vec::new(),
             physics_body_nodes_2d: Vec::new(),
             physics_body_nodes_3d: Vec::new(),
+            physics_joint_nodes_2d: Vec::new(),
+            physics_joint_nodes_3d: Vec::new(),
             physics_body_pos_2d: Vec::new(),
             physics_body_pos_3d: Vec::new(),
         }
@@ -265,6 +271,11 @@ impl ScriptSchedules {
         self.fixed_slots.clear();
         scripts.append_fixed_update_slots(&mut self.fixed_slots);
         self.fixed_epoch = epoch;
+    }
+
+    #[inline]
+    pub(crate) fn fixed_slots_empty(&self) -> bool {
+        self.fixed_slots.is_empty()
     }
 }
 
@@ -411,6 +422,14 @@ impl DirtyState {
 
     pub(crate) fn has_any_dirty(&self) -> bool {
         !self.dirty_indices.is_empty()
+    }
+
+    pub(crate) fn has_transform_dirty_any(&self) -> bool {
+        self.dirty_indices.iter().any(|&index| {
+            self.transform_flags_at(index as usize)
+                & (Self::FLAG_DIRTY_2D_TRANSFORM | Self::FLAG_DIRTY_3D_TRANSFORM)
+                != 0
+        }) || self.has_pending_transform_roots()
     }
 
     pub(crate) fn has_pending_transform_roots(&self) -> bool {

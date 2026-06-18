@@ -30,6 +30,8 @@ pub struct PhysicsSystem {
     pub paused: bool,
     pub world_2d: Option<PhysicsWorld2D>,
     pub world_3d: Option<PhysicsWorld3D>,
+    pub world_2d_idle_cached: bool,
+    pub world_3d_idle_cached: bool,
     pub active_collision_pairs_2d: AHashSet<BodyPair>,
     pub active_collision_pairs_3d: AHashSet<BodyPair>,
     pub active_area_overlaps_2d: AHashSet<AreaOverlap>,
@@ -57,6 +59,8 @@ impl PhysicsSystem {
             paused: false,
             world_2d: None,
             world_3d: None,
+            world_2d_idle_cached: true,
+            world_3d_idle_cached: true,
             active_collision_pairs_2d: AHashSet::default(),
             active_collision_pairs_3d: AHashSet::default(),
             active_area_overlaps_2d: AHashSet::default(),
@@ -82,6 +86,8 @@ impl PhysicsSystem {
     pub fn clear(&mut self) {
         self.world_2d = None;
         self.world_3d = None;
+        self.world_2d_idle_cached = true;
+        self.world_3d_idle_cached = true;
         self.active_collision_pairs_2d.clear();
         self.active_collision_pairs_3d.clear();
         self.active_area_overlaps_2d.clear();
@@ -111,20 +117,24 @@ impl PhysicsSystem {
     }
 
     pub fn queue_impulse_2d(&mut self, id: NodeID, impulse: Vector2) {
+        self.world_2d_idle_cached = false;
         self.pending_impulses_2d
             .push(PendingImpulse2D { id, impulse });
     }
 
     pub fn queue_force_2d(&mut self, id: NodeID, force: Vector2) {
+        self.world_2d_idle_cached = false;
         self.pending_forces_2d.push(PendingForce2D { id, force });
     }
 
     pub fn queue_impulse_3d(&mut self, id: NodeID, impulse: Vector3) {
+        self.world_3d_idle_cached = false;
         self.pending_impulses_3d
             .push(PendingImpulse3D { id, impulse });
     }
 
     pub fn queue_force_3d(&mut self, id: NodeID, force: Vector3) {
+        self.world_3d_idle_cached = false;
         self.pending_forces_3d.push(PendingForce3D { id, force });
     }
 
@@ -133,6 +143,42 @@ impl PhysicsSystem {
         self.next_opaque_handle = self.next_opaque_handle.saturating_add(1);
         handle
     }
+
+    pub fn can_skip_step(&self) -> bool {
+        self.pending_forces_2d.is_empty()
+            && self.pending_forces_3d.is_empty()
+            && self.pending_impulses_2d.is_empty()
+            && self.pending_impulses_3d.is_empty()
+            && self.world_2d_idle_cached
+            && self.world_3d_idle_cached
+    }
+
+    pub(crate) fn refresh_world_2d_idle_cache(&mut self) {
+        self.world_2d_idle_cached = self.world_2d.as_ref().is_none_or(world_2d_idle);
+    }
+
+    pub(crate) fn refresh_world_3d_idle_cache(&mut self) {
+        self.world_3d_idle_cached = self.world_3d.as_ref().is_none_or(world_3d_idle);
+    }
+
+    pub(crate) fn refresh_world_idle_cache(&mut self) {
+        self.refresh_world_2d_idle_cache();
+        self.refresh_world_3d_idle_cache();
+    }
+}
+
+fn world_2d_idle(world: &PhysicsWorld2D) -> bool {
+    world
+        .bodies
+        .iter()
+        .all(|(_, body)| !body.is_dynamic() || body.is_sleeping())
+}
+
+fn world_3d_idle(world: &PhysicsWorld3D) -> bool {
+    world
+        .bodies
+        .iter()
+        .all(|(_, body)| !body.is_dynamic() || body.is_sleeping())
 }
 
 mod audio;
