@@ -15,7 +15,7 @@ use perro_render_bridge::{
     CameraStreamCommand, Command2D, ParticlePath2D, RenderCommand, RenderEvent, ResourceCommand,
 };
 use perro_resource_api::sub_apis::TextureAPI;
-use perro_runtime_api::sub_apis::{NodeAPI, NodeCreationTemplate};
+use perro_runtime_api::sub_apis::{NodeAPI, NodeSpec};
 use perro_structs::{BitMask, Color, Vector2};
 use std::sync::Arc;
 
@@ -625,7 +625,7 @@ fn sprite_flip_swaps_region_uv_without_changing_size() {
 #[test]
 fn create_nodes_10k_sprites_emit_render_commands() {
     let mut runtime = Runtime::new();
-    let templates = vec![NodeCreationTemplate::new::<Sprite2D>(); 10_000];
+    let templates = vec![NodeSpec::new(Sprite2D::new()); 10_000];
     let ids = runtime.create_nodes(&templates, perro_ids::NodeID::nil());
     let texture = TextureID::from_parts(77, 0);
 

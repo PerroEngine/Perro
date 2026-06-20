@@ -68,8 +68,8 @@ See:
 - [Physics Nodes](physics_nodes.md)
 - [Audio Nodes](audio_nodes.md)
 - [Water Bodies](water.md)
-- [Scene Node Templates](scene_node_templates/index.md)
-  - Includes `root_of` scene composition (scenes inside scenes), merge rules, and examples.
+- [Node Collections](node_collections.md)
+  - In-code scene trees, flat batches, child collections, and `create_nodes!`.
 - [Script State](state.md)
 - [Script Lifecycle](lifecycle.md)
 - [Script Methods](methods.md)

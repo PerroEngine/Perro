@@ -1,30 +1,5 @@
 use super::*;
 
-pub(super) struct PreparedNode {
-    pub(super) node: SceneNode,
-    pub(super) node_type: NodeType,
-    pub(super) tag_ids: Vec<TagID>,
-}
-
-pub(super) fn prepare_created_node(
-    request: &NodeCreationTemplate,
-    parent_id: NodeID,
-) -> PreparedNode {
-    let mut node = SceneNode::new(request.scene_node_data());
-    if let Some(name) = request.name.clone() {
-        node.set_name(name);
-    }
-    node.set_tags(Some(request.tags.clone()));
-    node.parent = parent_id;
-    let tag_ids = request.tags.iter().map(|tag| tag.id()).collect();
-
-    PreparedNode {
-        node,
-        node_type: request.node_type,
-        tag_ids,
-    }
-}
-
 #[inline]
 pub(super) fn cached_slot_for(
     runtime: &mut Runtime,

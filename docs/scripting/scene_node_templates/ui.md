@@ -1,4 +1,4 @@
-# UI Scene Node Templates
+# UI `.scn` Node Fields
 
 ## Page Map
 
@@ -11,7 +11,9 @@
 
 ## Purpose
 
-Use `UI Scene Node Templates` when this feature, type group, file format, or workflow appears in game code or assets.
+Use this page when editing UI nodes in `.scn` scene files.
+
+Use [Node Collections](../node_collections.md) for runtime Rust-built node trees.
 
 ## Use Cases
 
@@ -30,7 +32,7 @@ lifecycle!({
 
 ## Reference
 
-# UI Scene Node Templates
+# UI `.scn` Node Fields
 
 [Back to index](index.md)
 

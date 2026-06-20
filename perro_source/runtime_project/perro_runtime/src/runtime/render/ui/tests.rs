@@ -4,7 +4,7 @@ use perro_ids::ScriptMemberID;
 use perro_nodes::{Node3D, SceneNode, SceneNodeData, Sky3D, UiCameraStream, camera_3d::Camera3D};
 use perro_render_bridge::{CameraStreamCommand, CameraStreamSourceState, RenderEvent};
 use perro_resource_api::sub_apis::TextureAPI;
-use perro_runtime_api::sub_apis::{NodeAPI, NodeCreationTemplate, SignalAPI};
+use perro_runtime_api::sub_apis::{NodeAPI, NodeSpec, SignalAPI};
 use perro_scripting::{ScriptBehavior, ScriptContext, ScriptFlags, ScriptLifecycle};
 use perro_structs::{Color, Quaternion, Transform3D, Vector3};
 use perro_ui::{
@@ -891,7 +891,7 @@ fn runtime_created_ui_child_under_hidden_parent_renders_when_shown() {
         panel.visible = false;
     });
 
-    let ids = runtime.create_nodes(&[NodeCreationTemplate::new::<UiPanel>()], parent);
+    let ids = runtime.create_nodes(&[NodeSpec::new(UiPanel::new())], parent);
     let child = ids[0];
     let _ = runtime.with_node_mut::<UiPanel, _, _>(child, |panel| {
         panel.layout.size = UiVector2::pixels(80.0, 40.0);

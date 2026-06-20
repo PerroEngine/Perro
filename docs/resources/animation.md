@@ -271,4 +271,4 @@ Node and input names omit `@` in Rust API, that's just for .panim and .panimtree
 
 Bad refs return `false`.
 
-Scene templates: [Scene Node Templates](../scripting/scene_node_templates/index.md).
+Runtime node trees: [Node Collections](../scripting/node_collections.md).

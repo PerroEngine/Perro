@@ -13,12 +13,7 @@ use perro_structs::{
 };
 use std::borrow::Cow;
 
-fn default_node_data<T>() -> SceneNodeData
-where
-    T: Default + Into<SceneNodeData>,
-{
-    T::default().into()
-}
+use super::scene::IntoScenePath;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum QueryScope {
@@ -164,30 +159,28 @@ pub trait IntoNodeTags {
     fn into_node_tags(self) -> Vec<NodeTag>;
 }
 
-/// Data used by [`create_nodes!`](macro@crate::create_nodes) for batch node creation.
+/// One concrete node creation request inside a recursive node collection.
 #[derive(Clone, Debug)]
-pub struct NodeCreationTemplate {
-    pub node_type: NodeType,
+pub struct NodeSpec {
+    pub data: SceneNodeData,
     pub name: Option<Cow<'static, str>>,
     pub tags: Vec<NodeTag>,
-    factory: fn() -> SceneNodeData,
+    pub parent: Option<usize>,
 }
 
-impl NodeCreationTemplate {
-    /// Creates a request for a default node of `T`.
-    pub fn new<T>() -> Self
+impl NodeSpec {
+    pub fn new<T>(data: T) -> Self
     where
-        T: Default + Into<SceneNodeData> + NodeTypeDispatch,
+        T: Into<SceneNodeData>,
     {
         Self {
-            node_type: T::NODE_TYPE,
+            data: data.into(),
             name: None,
             tags: Vec::new(),
-            factory: default_node_data::<T>,
+            parent: None,
         }
     }
 
-    /// Sets display name.
     pub fn name<S>(mut self, name: S) -> Self
     where
         S: Into<Cow<'static, str>>,
@@ -196,7 +189,6 @@ impl NodeCreationTemplate {
         self
     }
 
-    /// Sets tags.
     pub fn tags<T>(mut self, tags: T) -> Self
     where
         T: IntoNodeTags,
@@ -205,9 +197,231 @@ impl NodeCreationTemplate {
         self
     }
 
-    /// Builds node payload.
-    pub fn scene_node_data(&self) -> SceneNodeData {
-        (self.factory)()
+    pub const fn parent(mut self, parent: Option<usize>) -> Self {
+        self.parent = parent;
+        self
+    }
+}
+
+/// One scene load request inside a recursive node collection.
+#[derive(Clone, Debug)]
+pub struct NodeSceneSpec {
+    pub path: Cow<'static, str>,
+    pub name: Option<Cow<'static, str>>,
+    pub tags: Vec<NodeTag>,
+    pub parent: Option<usize>,
+}
+
+impl NodeSceneSpec {
+    pub fn new<P>(path: P) -> Self
+    where
+        P: IntoScenePath,
+    {
+        Self {
+            path: path.into_scene_path(),
+            name: None,
+            tags: Vec::new(),
+            parent: None,
+        }
+    }
+
+    pub fn name<S>(mut self, name: S) -> Self
+    where
+        S: Into<Cow<'static, str>>,
+    {
+        self.name = Some(name.into());
+        self
+    }
+
+    pub fn tags<T>(mut self, tags: T) -> Self
+    where
+        T: IntoNodeTags,
+    {
+        self.tags = tags.into_node_tags();
+        self
+    }
+
+    pub const fn parent(mut self, parent: Option<usize>) -> Self {
+        self.parent = parent;
+        self
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum NodeCollectionEntry {
+    Node(usize),
+    Scene(usize),
+}
+
+/// Flat node collection emitted by [`node_collection!`](macro@crate::node_collection).
+#[derive(Clone, Debug, Default)]
+pub struct NodeCollection {
+    pub specs: Vec<NodeSpec>,
+    pub scenes: Vec<NodeSceneSpec>,
+    pub entries: Vec<NodeCollectionEntry>,
+}
+
+impl NodeCollection {
+    pub const fn new() -> Self {
+        Self {
+            specs: Vec::new(),
+            scenes: Vec::new(),
+            entries: Vec::new(),
+        }
+    }
+
+    pub fn push(&mut self, spec: NodeSpec) -> usize {
+        let index = self.entries.len();
+        self.specs.push(spec);
+        self.entries
+            .push(NodeCollectionEntry::Node(self.specs.len() - 1));
+        index
+    }
+
+    pub fn push_scene(&mut self, scene: NodeSceneSpec) -> usize {
+        let index = self.entries.len();
+        self.scenes.push(scene);
+        self.entries
+            .push(NodeCollectionEntry::Scene(self.scenes.len() - 1));
+        index
+    }
+
+    pub fn as_specs(&self) -> &[NodeSpec] {
+        &self.specs
+    }
+
+    pub fn is_specs_only(&self) -> bool {
+        self.scenes.is_empty()
+    }
+
+    pub fn extend(&mut self, collection: impl IntoNodeCollection, parent: Option<usize>) -> usize {
+        let entry_offset = self.entries.len();
+        let spec_offset = self.specs.len();
+        let scene_offset = self.scenes.len();
+        let mut root = entry_offset;
+        let mut saw_root = false;
+        let mut collection = collection.into_node_collection();
+        for spec in &mut collection.specs {
+            spec.parent = spec.parent.map(|parent| entry_offset + parent).or(parent);
+        }
+        for scene in &mut collection.scenes {
+            scene.parent = scene.parent.map(|parent| entry_offset + parent).or(parent);
+        }
+        for entry in collection.entries {
+            let entry_parent = match entry {
+                NodeCollectionEntry::Node(index) => collection.specs[index].parent,
+                NodeCollectionEntry::Scene(index) => collection.scenes[index].parent,
+            };
+            if entry_parent == parent && !saw_root {
+                root = self.entries.len();
+                saw_root = true;
+            }
+            match entry {
+                NodeCollectionEntry::Node(index) => {
+                    self.specs.push(collection.specs[index].clone());
+                    self.entries
+                        .push(NodeCollectionEntry::Node(spec_offset + index));
+                }
+                NodeCollectionEntry::Scene(index) => {
+                    self.scenes.push(collection.scenes[index].clone());
+                    self.entries
+                        .push(NodeCollectionEntry::Scene(scene_offset + index));
+                }
+            }
+        }
+        root
+    }
+}
+
+pub trait IntoNodeCollection {
+    fn into_node_collection(self) -> NodeCollection;
+}
+
+impl IntoNodeCollection for NodeCollection {
+    fn into_node_collection(self) -> NodeCollection {
+        self
+    }
+}
+
+impl IntoNodeCollection for &NodeCollection {
+    fn into_node_collection(self) -> NodeCollection {
+        self.clone()
+    }
+}
+
+impl IntoNodeCollection for Vec<NodeSpec> {
+    fn into_node_collection(self) -> NodeCollection {
+        let entries = (0..self.len()).map(NodeCollectionEntry::Node).collect();
+        NodeCollection {
+            specs: self,
+            scenes: Vec::new(),
+            entries,
+        }
+    }
+}
+
+impl IntoNodeCollection for &[NodeSpec] {
+    fn into_node_collection(self) -> NodeCollection {
+        self.to_vec().into_node_collection()
+    }
+}
+
+impl<const N: usize> IntoNodeCollection for [NodeSpec; N] {
+    fn into_node_collection(self) -> NodeCollection {
+        self.into_iter().collect::<Vec<_>>().into_node_collection()
+    }
+}
+
+impl<const N: usize> IntoNodeCollection for &[NodeSpec; N] {
+    fn into_node_collection(self) -> NodeCollection {
+        self.to_vec().into_node_collection()
+    }
+}
+
+pub enum NodeCreateBatch<'a> {
+    Specs(&'a [NodeSpec]),
+    Collection(&'a NodeCollection),
+    OwnedSpecs(Vec<NodeSpec>),
+    OwnedCollection(NodeCollection),
+}
+
+pub trait IntoNodeCreateBatch<'a> {
+    fn into_node_create_batch(self) -> NodeCreateBatch<'a>;
+}
+
+impl<'a> IntoNodeCreateBatch<'a> for &'a [NodeSpec] {
+    fn into_node_create_batch(self) -> NodeCreateBatch<'a> {
+        NodeCreateBatch::Specs(self)
+    }
+}
+
+impl<'a> IntoNodeCreateBatch<'a> for &'a Vec<NodeSpec> {
+    fn into_node_create_batch(self) -> NodeCreateBatch<'a> {
+        NodeCreateBatch::Specs(self.as_slice())
+    }
+}
+
+impl<'a> IntoNodeCreateBatch<'a> for Vec<NodeSpec> {
+    fn into_node_create_batch(self) -> NodeCreateBatch<'a> {
+        NodeCreateBatch::OwnedSpecs(self)
+    }
+}
+
+impl<'a, const N: usize> IntoNodeCreateBatch<'a> for &'a [NodeSpec; N] {
+    fn into_node_create_batch(self) -> NodeCreateBatch<'a> {
+        NodeCreateBatch::Specs(self.as_slice())
+    }
+}
+
+impl<'a> IntoNodeCreateBatch<'a> for &'a NodeCollection {
+    fn into_node_create_batch(self) -> NodeCreateBatch<'a> {
+        NodeCreateBatch::Collection(self)
+    }
+}
+
+impl<'a> IntoNodeCreateBatch<'a> for NodeCollection {
+    fn into_node_create_batch(self) -> NodeCreateBatch<'a> {
+        NodeCreateBatch::OwnedCollection(self)
     }
 }
 
@@ -653,8 +867,9 @@ pub trait NodeAPI {
     /// Creates many nodes and optionally attaches them under one parent.
     ///
     /// Returns created IDs in request order.
-    fn create_nodes(&mut self, requests: &[NodeCreationTemplate], parent_id: NodeID)
-    -> Vec<NodeID>;
+    fn create_nodes<'a, B>(&mut self, requests: B, parent_id: NodeID) -> Vec<NodeID>
+    where
+        B: IntoNodeCreateBatch<'a>;
 
     /// Runs closure against an exact concrete node type.
     ///
@@ -994,11 +1209,10 @@ impl<'rt, R: NodeAPI + ?Sized> NodeModule<'rt, R> {
         self.rt.create::<T>()
     }
 
-    pub fn create_nodes(
-        &mut self,
-        requests: &[NodeCreationTemplate],
-        parent_id: NodeID,
-    ) -> Vec<NodeID> {
+    pub fn create_nodes<'a, B>(&mut self, requests: B, parent_id: NodeID) -> Vec<NodeID>
+    where
+        B: IntoNodeCreateBatch<'a>,
+    {
         self.rt.create_nodes(requests, parent_id)
     }
 
@@ -1764,27 +1978,7 @@ macro_rules! create_node {
     }};
 }
 
-/// Creates a batch request for [`create_nodes!`](macro@crate::create_nodes).
-/// Usage:
-/// - `node_template!(ConcreteType)`
-/// - `node_template!(ConcreteType, name)`
-/// - `node_template!(ConcreteType, name, tags)`
-#[macro_export]
-macro_rules! node_template {
-    ($node_ty:ty) => {
-        $crate::sub_apis::NodeCreationTemplate::new::<$node_ty>()
-    };
-    ($node_ty:ty, $name:expr) => {
-        $crate::sub_apis::NodeCreationTemplate::new::<$node_ty>().name($name)
-    };
-    ($node_ty:ty, $name:expr, $tags:expr) => {
-        $crate::sub_apis::NodeCreationTemplate::new::<$node_ty>()
-            .name($name)
-            .tags($tags)
-    };
-}
-
-/// Creates many nodes from [`NodeCreationTemplate`](crate::sub_apis::NodeCreationTemplate).
+/// Creates many nodes from a [`NodeCollection`](crate::sub_apis::NodeCollection).
 /// Usage:
 /// - `create_nodes!(ctx, requests) -> Vec<NodeID>`
 /// - `create_nodes!(ctx, requests, parent_id) -> Vec<NodeID>`
@@ -1797,6 +1991,234 @@ macro_rules! create_nodes {
     ($ctx:expr, $requests:expr, $parent:expr) => {
         $ctx.Nodes().create_nodes(&$requests, $parent)
     };
+}
+
+/// Builds a flat node collection from recursive node specs.
+///
+/// Fields:
+/// - `node = value` required
+/// - `name = value` optional
+/// - `tags = value` optional
+/// - `children = [ ... ]` optional
+#[macro_export]
+macro_rules! node_collection {
+    (@push $collection:ident, $parent:expr, {
+        collection = $child_collection:expr $(,)?
+    }) => {{
+        $collection.extend($child_collection, $parent)
+    }};
+
+    (@push $collection:ident, $parent:expr, {
+        name = $name:expr,
+        tags = $tags:expr,
+        scene = $scene:expr,
+        children = [ $( $child:tt ),* $(,)? ] $(,)?
+    }) => {{
+        let __idx = $collection.push_scene(
+            $crate::sub_apis::NodeSceneSpec::new($scene)
+                .name($name)
+                .tags($tags)
+                .parent($parent)
+        );
+        $(
+            $crate::node_collection!(@push $collection, Some(__idx), $child);
+        )*
+        __idx
+    }};
+    (@push $collection:ident, $parent:expr, {
+        name = $name:expr,
+        tags = $tags:expr,
+        scene = $scene:expr $(,)?
+    }) => {{
+        $collection.push_scene(
+            $crate::sub_apis::NodeSceneSpec::new($scene)
+                .name($name)
+                .tags($tags)
+                .parent($parent)
+        )
+    }};
+    (@push $collection:ident, $parent:expr, {
+        name = $name:expr,
+        scene = $scene:expr,
+        children = [ $( $child:tt ),* $(,)? ] $(,)?
+    }) => {{
+        let __idx = $collection.push_scene(
+            $crate::sub_apis::NodeSceneSpec::new($scene)
+                .name($name)
+                .parent($parent)
+        );
+        $(
+            $crate::node_collection!(@push $collection, Some(__idx), $child);
+        )*
+        __idx
+    }};
+    (@push $collection:ident, $parent:expr, {
+        name = $name:expr,
+        scene = $scene:expr $(,)?
+    }) => {{
+        $collection.push_scene(
+            $crate::sub_apis::NodeSceneSpec::new($scene)
+                .name($name)
+                .parent($parent)
+        )
+    }};
+    (@push $collection:ident, $parent:expr, {
+        tags = $tags:expr,
+        scene = $scene:expr,
+        children = [ $( $child:tt ),* $(,)? ] $(,)?
+    }) => {{
+        let __idx = $collection.push_scene(
+            $crate::sub_apis::NodeSceneSpec::new($scene)
+                .tags($tags)
+                .parent($parent)
+        );
+        $(
+            $crate::node_collection!(@push $collection, Some(__idx), $child);
+        )*
+        __idx
+    }};
+    (@push $collection:ident, $parent:expr, {
+        tags = $tags:expr,
+        scene = $scene:expr $(,)?
+    }) => {{
+        $collection.push_scene(
+            $crate::sub_apis::NodeSceneSpec::new($scene)
+                .tags($tags)
+                .parent($parent)
+        )
+    }};
+    (@push $collection:ident, $parent:expr, {
+        scene = $scene:expr,
+        children = [ $( $child:tt ),* $(,)? ] $(,)?
+    }) => {{
+        let __idx = $collection.push_scene(
+            $crate::sub_apis::NodeSceneSpec::new($scene).parent($parent)
+        );
+        $(
+            $crate::node_collection!(@push $collection, Some(__idx), $child);
+        )*
+        __idx
+    }};
+    (@push $collection:ident, $parent:expr, {
+        scene = $scene:expr $(,)?
+    }) => {{
+        $collection.push_scene($crate::sub_apis::NodeSceneSpec::new($scene).parent($parent))
+    }};
+
+    (@push $collection:ident, $parent:expr, {
+        name = $name:expr,
+        tags = $tags:expr,
+        node = $node:expr,
+        children = [ $( $child:tt ),* $(,)? ] $(,)?
+    }) => {{
+        let __idx = $collection.push(
+            $crate::sub_apis::NodeSpec::new($node)
+                .name($name)
+                .tags($tags)
+                .parent($parent)
+        );
+        $(
+            $crate::node_collection!(@push $collection, Some(__idx), $child);
+        )*
+        __idx
+    }};
+    (@push $collection:ident, $parent:expr, {
+        name = $name:expr,
+        tags = $tags:expr,
+        node = $node:expr $(,)?
+    }) => {{
+        $collection.push(
+            $crate::sub_apis::NodeSpec::new($node)
+                .name($name)
+                .tags($tags)
+                .parent($parent)
+        )
+    }};
+    (@push $collection:ident, $parent:expr, {
+        name = $name:expr,
+        node = $node:expr,
+        children = [ $( $child:tt ),* $(,)? ] $(,)?
+    }) => {{
+        let __idx = $collection.push(
+            $crate::sub_apis::NodeSpec::new($node)
+                .name($name)
+                .parent($parent)
+        );
+        $(
+            $crate::node_collection!(@push $collection, Some(__idx), $child);
+        )*
+        __idx
+    }};
+    (@push $collection:ident, $parent:expr, {
+        name = $name:expr,
+        node = $node:expr $(,)?
+    }) => {{
+        $collection.push(
+            $crate::sub_apis::NodeSpec::new($node)
+                .name($name)
+                .parent($parent)
+        )
+    }};
+    (@push $collection:ident, $parent:expr, {
+        tags = $tags:expr,
+        node = $node:expr,
+        children = [ $( $child:tt ),* $(,)? ] $(,)?
+    }) => {{
+        let __idx = $collection.push(
+            $crate::sub_apis::NodeSpec::new($node)
+                .tags($tags)
+                .parent($parent)
+        );
+        $(
+            $crate::node_collection!(@push $collection, Some(__idx), $child);
+        )*
+        __idx
+    }};
+    (@push $collection:ident, $parent:expr, {
+        tags = $tags:expr,
+        node = $node:expr $(,)?
+    }) => {{
+        $collection.push(
+            $crate::sub_apis::NodeSpec::new($node)
+                .tags($tags)
+                .parent($parent)
+        )
+    }};
+    (@push $collection:ident, $parent:expr, {
+        node = $node:expr,
+        children = [ $( $child:tt ),* $(,)? ] $(,)?
+    }) => {{
+        let __idx = $collection.push(
+            $crate::sub_apis::NodeSpec::new($node).parent($parent)
+        );
+        $(
+            $crate::node_collection!(@push $collection, Some(__idx), $child);
+        )*
+        __idx
+    }};
+    (@push $collection:ident, $parent:expr, {
+        node = $node:expr $(,)?
+    }) => {{
+        $collection.push($crate::sub_apis::NodeSpec::new($node).parent($parent))
+    }};
+
+    (@push $collection:ident, $parent:expr, $child_collection:expr) => {{
+        $collection.extend($child_collection, $parent)
+    }};
+
+    ( $( $child:tt ),+ $(,)? ) => {{
+        let mut __collection = $crate::sub_apis::NodeCollection::new();
+        $(
+            $crate::node_collection!(@push __collection, None, $child);
+        )*
+        __collection
+    }};
+
+    ({ $($body:tt)* }) => {{
+        let mut __collection = $crate::sub_apis::NodeCollection::new();
+        $crate::node_collection!(@push __collection, None, { $($body)* });
+        __collection
+    }};
 }
 
 /// SceneNode metadata macros.

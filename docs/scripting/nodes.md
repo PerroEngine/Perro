@@ -663,7 +663,7 @@ UI style resources:
 
 For copy/paste scene node authoring templates (with all exposed fields, including nil/empty-default fields), see:
 
-- [Scene Node Templates](scene_node_templates/index.md)
+- [Node Collections](node_collections.md)
 
 ## Camera Post-Processing
 

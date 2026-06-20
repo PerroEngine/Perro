@@ -3,25 +3,202 @@
 //! API methods stay here. Node creation prep, UI dirty classification, and
 //! small helper scans live in `nodes/helpers.rs`.
 
-use perro_ids::{IntoTagID, MaterialID, NodeID, TagID};
+use perro_ids::{IntoTagID, MaterialID, NodeID};
 use perro_nodes::{
     Node2D, Node3D, NodeBaseDispatch, NodeType, NodeTypeDispatch, Renderable, SceneNode,
     SceneNodeData, UiNode,
 };
 use perro_runtime_api::sub_apis::{
-    IntoNodeTag, IntoNodeTags, MeshDataSurfaceHit3D, MeshDataSurfaceRegion3D, MeshMaterialRegion3D,
-    MeshSurfaceHit3D, MeshSurfaceRay3D, NodeAPI, NodeCreationTemplate, NodeQueryView,
+    IntoNodeCreateBatch, IntoNodeTag, IntoNodeTags, MeshDataSurfaceHit3D, MeshDataSurfaceRegion3D,
+    MeshMaterialRegion3D, MeshSurfaceHit3D, MeshSurfaceRay3D, NodeAPI, NodeCollection,
+    NodeCollectionEntry, NodeCreateBatch, NodeQueryView, NodeSpec,
 };
 use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
-use rayon::prelude::*;
 use std::borrow::Cow;
 
 use crate::Runtime;
 
-const CREATE_NODES_PARALLEL_MIN: usize = 16_384;
-
 mod helpers;
 use helpers::*;
+
+impl Runtime {
+    fn create_node_specs(&mut self, specs: &[NodeSpec], parent_id: NodeID) -> Vec<NodeID> {
+        self.create_owned_node_specs(specs.to_vec(), parent_id)
+    }
+
+    fn create_owned_node_specs(&mut self, specs: Vec<NodeSpec>, parent_id: NodeID) -> Vec<NodeID> {
+        if specs.is_empty() {
+            return Vec::new();
+        }
+        if !parent_id.is_nil() && self.nodes.get(parent_id).is_none() {
+            return Vec::new();
+        }
+        if !specs
+            .iter()
+            .enumerate()
+            .all(|(index, spec)| spec.parent.is_none_or(|parent| parent < index))
+        {
+            return Vec::new();
+        }
+
+        let mut child_counts = vec![0usize; specs.len()];
+        let mut root_count = 0usize;
+        for spec in &specs {
+            if let Some(parent) = spec.parent {
+                child_counts[parent] += 1;
+            } else {
+                root_count += 1;
+            }
+        }
+
+        self.nodes.reserve(specs.len());
+
+        let mut ids = Vec::with_capacity(specs.len());
+        let mut root_ids = Vec::with_capacity(root_count);
+        for (index, spec) in specs.into_iter().enumerate() {
+            let parent = spec.parent.map(|parent| ids[parent]).unwrap_or(parent_id);
+            let mut node = SceneNode::new(spec.data);
+            if let Some(name) = spec.name {
+                node.set_name(name);
+            }
+            node.set_tags(Some(spec.tags));
+            node.parent = parent;
+            node.children.reserve(child_counts[index]);
+
+            let tag_ids = node.get_tag_ids();
+            let node_type = node.node_type();
+            let id = self.nodes.insert(node);
+            ids.push(id);
+
+            self.register_internal_node_schedules(id, node_type);
+            if self.nodes.get(id).is_some_and(
+                |node| matches!(&node.data, SceneNodeData::Camera3D(camera) if camera.active),
+            ) {
+                self.note_camera_3d_activated(id);
+            }
+            self.mark_needs_rerender(id);
+            self.mark_created_ui_node_dirty(id);
+            for tag in tag_ids {
+                self.node_index
+                    .node_tag_index
+                    .entry(tag)
+                    .or_default()
+                    .insert(id);
+            }
+
+            if let Some(parent_index) = spec.parent {
+                if let Some(parent_node) = self.nodes.get_mut(ids[parent_index]) {
+                    parent_node.children.push(id);
+                }
+            } else if parent_id.is_nil() {
+                self.mark_transform_dirty_recursive(id);
+            } else {
+                root_ids.push(id);
+            }
+        }
+
+        if !parent_id.is_nil() {
+            self.attach_created_children(parent_id, &root_ids);
+        }
+
+        ids
+    }
+
+    fn attach_created_children(&mut self, parent_id: NodeID, ids: &[NodeID]) {
+        if ids.is_empty() {
+            return;
+        }
+        if let Some(parent) = self.nodes.get_mut(parent_id) {
+            parent.children.reserve(ids.len());
+            parent.children.extend(ids.iter().copied());
+        }
+        self.mark_transform_dirty_recursive(parent_id);
+        let parent_ui_ancestor = self.closest_ui_ancestor(parent_id);
+        for &id in ids {
+            let child_is_ui = self
+                .nodes
+                .get(id)
+                .and_then(|node| ui_base_from_data(&node.data))
+                .is_some();
+            if child_is_ui || parent_ui_ancestor.is_some() {
+                self.mark_ui_reparent_dirty(id, NodeID::nil(), parent_id);
+            }
+        }
+    }
+
+    fn create_node_collection(
+        &mut self,
+        collection: NodeCollection,
+        parent_id: NodeID,
+    ) -> Vec<NodeID> {
+        if collection.is_specs_only() {
+            return self.create_owned_node_specs(collection.specs, parent_id);
+        }
+        if !parent_id.is_nil() && self.nodes.get(parent_id).is_none() {
+            return Vec::new();
+        }
+        if !collection.entries.iter().enumerate().all(|(index, entry)| {
+            let parent = match entry {
+                NodeCollectionEntry::Node(spec_index) => collection.specs[*spec_index].parent,
+                NodeCollectionEntry::Scene(scene_index) => collection.scenes[*scene_index].parent,
+            };
+            parent.is_none_or(|parent| parent < index)
+        }) {
+            return Vec::new();
+        }
+        for scene in &collection.scenes {
+            if self.preload_scene_at_runtime(scene.path.as_ref()).is_err() {
+                return Vec::new();
+            }
+        }
+
+        let mut ids = Vec::with_capacity(collection.entries.len());
+        for entry in collection.entries {
+            match entry {
+                NodeCollectionEntry::Node(spec_index) => {
+                    let mut spec = collection.specs[spec_index].clone();
+                    let parent = spec.parent.map(|parent| ids[parent]).unwrap_or(parent_id);
+                    spec.parent = None;
+                    let mut made = self.create_owned_node_specs(vec![spec], parent);
+                    if made.len() != 1 {
+                        return Vec::new();
+                    }
+                    ids.append(&mut made);
+                }
+                NodeCollectionEntry::Scene(scene_index) => {
+                    let scene = &collection.scenes[scene_index];
+                    let parent = scene.parent.map(|parent| ids[parent]).unwrap_or(parent_id);
+                    let Ok(id) = self.load_scene_at_runtime(scene.path.as_ref()) else {
+                        return Vec::new();
+                    };
+                    let scene_loader_parent = self
+                        .nodes
+                        .get(id)
+                        .map(|node| node.parent)
+                        .unwrap_or(NodeID::nil());
+                    if let Some(name) = &scene.name {
+                        let _ = <Self as NodeAPI>::set_node_name(self, id, name.clone());
+                    }
+                    if !scene.tags.is_empty() {
+                        let _ = <Self as NodeAPI>::tag_set(self, id, Some(scene.tags.clone()));
+                    }
+                    if !parent.is_nil() {
+                        let _ = <Self as NodeAPI>::reparent(self, parent, id);
+                    }
+                    if !scene_loader_parent.is_nil()
+                        && self.nodes.get(scene_loader_parent).is_some_and(|node| {
+                            node.name.as_ref() == "Game Root" && node.children.is_empty()
+                        })
+                    {
+                        let _ = <Self as NodeAPI>::remove_node(self, scene_loader_parent);
+                    }
+                    ids.push(id);
+                }
+            }
+        }
+        ids
+    }
+}
 
 impl NodeAPI for Runtime {
     fn create<T>(&mut self) -> perro_ids::NodeID
@@ -46,94 +223,24 @@ impl NodeAPI for Runtime {
         id
     }
 
-    fn create_nodes(
+    fn create_nodes<'a, B>(
         &mut self,
-        requests: &[NodeCreationTemplate],
+        requests: B,
         parent_id: perro_ids::NodeID,
-    ) -> Vec<perro_ids::NodeID> {
-        if !parent_id.is_nil() && self.nodes.get(parent_id).is_none() {
-            return Vec::new();
-        }
-
-        self.nodes.reserve(requests.len());
-
-        let mut ids = Vec::with_capacity(requests.len());
-        if requests.len() >= CREATE_NODES_PARALLEL_MIN {
-            let prepared: Vec<PreparedNode> = requests
-                .par_iter()
-                .map(|request| prepare_created_node(request, parent_id))
-                .collect();
-
-            for prepared in prepared {
-                let id = self.nodes.insert(prepared.node);
-                ids.push(id);
-
-                self.register_internal_node_schedules(id, prepared.node_type);
-                if self.nodes.get(id).is_some_and(
-                    |node| matches!(&node.data, SceneNodeData::Camera3D(camera) if camera.active),
-                ) {
-                    self.note_camera_3d_activated(id);
-                }
-                self.mark_needs_rerender(id);
-                self.mark_created_ui_node_dirty(id);
-                if parent_id.is_nil() {
-                    self.mark_transform_dirty_recursive(id);
-                }
-                for tag in prepared.tag_ids {
-                    self.node_index
-                        .node_tag_index
-                        .entry(tag)
-                        .or_default()
-                        .insert(id);
-                }
+    ) -> Vec<perro_ids::NodeID>
+    where
+        B: IntoNodeCreateBatch<'a>,
+    {
+        match requests.into_node_create_batch() {
+            NodeCreateBatch::Specs(specs) => self.create_node_specs(specs, parent_id),
+            NodeCreateBatch::Collection(collection) => {
+                self.create_node_collection(collection.clone(), parent_id)
             }
-        } else {
-            for request in requests {
-                let prepared = prepare_created_node(request, parent_id);
-                let id = self.nodes.insert(prepared.node);
-                ids.push(id);
-
-                self.register_internal_node_schedules(id, prepared.node_type);
-                if self.nodes.get(id).is_some_and(
-                    |node| matches!(&node.data, SceneNodeData::Camera3D(camera) if camera.active),
-                ) {
-                    self.note_camera_3d_activated(id);
-                }
-                self.mark_needs_rerender(id);
-                self.mark_created_ui_node_dirty(id);
-                if parent_id.is_nil() {
-                    self.mark_transform_dirty_recursive(id);
-                }
-                for tag in prepared.tag_ids {
-                    self.node_index
-                        .node_tag_index
-                        .entry(tag)
-                        .or_default()
-                        .insert(id);
-                }
+            NodeCreateBatch::OwnedSpecs(specs) => self.create_owned_node_specs(specs, parent_id),
+            NodeCreateBatch::OwnedCollection(collection) => {
+                self.create_node_collection(collection, parent_id)
             }
         }
-
-        if !parent_id.is_nil() {
-            if let Some(parent) = self.nodes.get_mut(parent_id) {
-                parent.children.reserve(ids.len());
-                parent.children.extend(ids.iter().copied());
-            }
-            self.mark_transform_dirty_recursive(parent_id);
-            let parent_ui_ancestor = self.closest_ui_ancestor(parent_id);
-            for &id in &ids {
-                let child_is_ui = self
-                    .nodes
-                    .get(id)
-                    .and_then(|node| ui_base_from_data(&node.data))
-                    .is_some();
-                if child_is_ui || parent_ui_ancestor.is_some() {
-                    self.mark_ui_reparent_dirty(id, perro_ids::NodeID::nil(), parent_id);
-                }
-            }
-        }
-
-        ids
     }
 
     fn with_node_mut<T, V, F>(&mut self, id: perro_ids::NodeID, f: F) -> Option<V>

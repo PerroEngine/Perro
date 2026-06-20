@@ -5,7 +5,7 @@ use perro_runtime::Runtime;
 use perro_runtime::api::scripts::{
     BenchScriptState, bench_insert_state_script, bench_with_active_script,
 };
-use perro_runtime_api::sub_apis::{NodeAPI, NodeCreationTemplate, ScriptAPI};
+use perro_runtime_api::sub_apis::{NodeAPI, NodeSpec, ScriptAPI};
 use perro_structs::{Transform2D, Transform3D, Vector2, Vector3};
 use perro_variant::Variant;
 
@@ -146,7 +146,7 @@ fn bench_node_api(c: &mut Criterion) {
             BenchmarkId::new("create_nodes_3d_batch", count),
             &count,
             |b, &count| {
-                let requests = vec![NodeCreationTemplate::new::<Node3D>(); count];
+                let requests = vec![NodeSpec::new(Node3D::new()); count];
                 b.iter_batched(
                     Runtime::new,
                     |mut runtime| {
@@ -165,7 +165,7 @@ fn bench_node_api(c: &mut Criterion) {
             BenchmarkId::new("create_nodes_3d_batch_parented", count),
             &count,
             |b, &count| {
-                let requests = vec![NodeCreationTemplate::new::<Node3D>(); count];
+                let requests = vec![NodeSpec::new(Node3D::new()); count];
                 b.iter_batched(
                     || {
                         let mut runtime = Runtime::new();

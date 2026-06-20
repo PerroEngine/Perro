@@ -73,12 +73,17 @@ impl NodeAPI for DummyRuntime {
         NodeID::nil()
     }
 
-    fn create_nodes(
-        &mut self,
-        requests: &[NodeCreationTemplate],
-        _parent_id: NodeID,
-    ) -> Vec<NodeID> {
-        requests.iter().map(|_| NodeID::nil()).collect()
+    fn create_nodes<'a, B>(&mut self, requests: B, _parent_id: NodeID) -> Vec<NodeID>
+    where
+        B: IntoNodeCreateBatch<'a>,
+    {
+        let count = match requests.into_node_create_batch() {
+            NodeCreateBatch::Specs(specs) => specs.len(),
+            NodeCreateBatch::Collection(collection) => collection.specs.len(),
+            NodeCreateBatch::OwnedSpecs(specs) => specs.len(),
+            NodeCreateBatch::OwnedCollection(collection) => collection.specs.len(),
+        };
+        (0..count).map(|_| NodeID::nil()).collect()
     }
 
     fn with_node_mut<T, V, F>(&mut self, _id: NodeID, _f: F) -> Option<V>
@@ -744,11 +749,18 @@ fn script_macros_typecheck_and_forward() {
     let _new_node = create_node!(&mut ctx, Node2D);
     let _root_nodes = create_nodes!(
         &mut ctx,
-        [node_template!(Node2D), node_template!(Node2D, "root")]
+        node_collection![
+            { node = Node2D::new() },
+            { name = "root", node = Node2D::new() },
+        ]
     );
     let _new_nodes = create_nodes!(
         &mut ctx,
-        [node_template!(Node2D, "child", tags!["spawned"])],
+        node_collection![{
+            name = "child",
+            tags = tags!["spawned"],
+            node = Node2D::new()
+        }],
         id
     );
     with_node_mut!(&mut ctx, Node2D, id, |_node| {});

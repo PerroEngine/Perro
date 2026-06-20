@@ -1,4 +1,4 @@
-# Extra Scene Node Examples
+# Extra `.scn` Node Examples
 
 ## Page Map
 
@@ -11,7 +11,9 @@
 
 ## Purpose
 
-Use `Extra Scene Node Examples` when this feature, type group, file format, or workflow appears in game code or assets.
+Use this page when editing `.scn` scene files.
+
+Use [Node Collections](../node_collections.md) for runtime Rust-built node trees.
 
 ## Use Cases
 
@@ -30,7 +32,7 @@ lifecycle!({
 
 ## Reference
 
-# Extra Scene Node Examples
+# Extra `.scn` Node Examples
 
 [Back to index](index.md)
 

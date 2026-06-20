@@ -6,7 +6,7 @@ use perro_nodes::{
 };
 use perro_render_bridge::{Command2D, RenderCommand};
 use perro_runtime::{NodeArena, Runtime};
-use perro_runtime_api::sub_apis::{NodeAPI, NodeCreationTemplate};
+use perro_runtime_api::sub_apis::{NodeAPI, NodeSpec};
 use std::sync::Arc;
 
 fn bench_node_arena_len_hotloop(c: &mut Criterion) {
@@ -88,8 +88,8 @@ fn bench_create_nodes_10k_batch_transform_and_render(c: &mut Criterion) {
     c.bench_function(
         "runtime_core/create_nodes_10k_batch_transform_and_render",
         |b| {
-            let templates_2d = vec![NodeCreationTemplate::new::<Node2D>(); 10_000];
-            let templates_sprite = vec![NodeCreationTemplate::new::<Sprite2D>(); 10_000];
+            let templates_2d = vec![NodeSpec::new(Node2D::new()); 10_000];
+            let templates_sprite = vec![NodeSpec::new(Sprite2D::new()); 10_000];
             b.iter_batched(
                 Runtime::new,
                 |mut runtime| {
@@ -147,7 +147,7 @@ fn bench_extract_moving_sprite2d_nodes(c: &mut Criterion) {
                 b.iter_batched(
                     || {
                         let mut runtime = Runtime::new();
-                        let templates = vec![NodeCreationTemplate::new::<Sprite2D>(); count];
+                        let templates = vec![NodeSpec::new(Sprite2D::new()); count];
                         let ids = NodeAPI::create_nodes(&mut runtime, &templates, NodeID::nil());
                         let texture = TextureID::from_parts(77, 0);
                         for (i, &id) in ids.iter().enumerate() {
@@ -192,7 +192,7 @@ fn bench_extract_moving_sprite2d_nodes(c: &mut Criterion) {
                 b.iter_batched(
                     || {
                         let mut runtime = Runtime::new();
-                        let templates = vec![NodeCreationTemplate::new::<Sprite2D>(); count];
+                        let templates = vec![NodeSpec::new(Sprite2D::new()); count];
                         let ids = NodeAPI::create_nodes(&mut runtime, &templates, NodeID::nil());
                         let texture = TextureID::from_parts(77, 0);
                         for (i, &id) in ids.iter().enumerate() {

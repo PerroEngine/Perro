@@ -1,8 +1,92 @@
-use crate::Runtime;
+use crate::{
+    Runtime,
+    runtime_project::{ProviderMode, RuntimeProject},
+};
 use perro_ids::tags;
-use perro_nodes::{Bone3D, BoneAttachment3D, Node2D, Node3D, SceneNode, SceneNodeData, Skeleton3D};
-use perro_runtime_api::sub_apis::{NodeAPI, NodeCreationTemplate};
+use perro_nodes::{
+    Bone3D, BoneAttachment3D, Camera2D, Node2D, Node3D, NodeType, SceneNode, SceneNodeData,
+    Skeleton3D, Sprite2D, UiButton, UiLabel, UiNode, UiPanel,
+};
+use perro_runtime_api::node_collection;
+use perro_runtime_api::sub_apis::{NodeAPI, NodeSpec};
+use perro_scene::{Scene, SceneKey, SceneNodeEntry};
 use perro_structs::{Quaternion, Transform2D, Transform3D, Vector2, Vector3};
+use std::borrow::Cow;
+
+const EMPTY_FIELDS: &[perro_scene::SceneObjectField] = &[];
+const EMPTY_KEYS: &[SceneKey] = &[];
+const EMPTY_TAGS: &[Cow<'static, str>] = &[];
+const SCENE_KEY_NAMES: &[Cow<'static, str>] =
+    &[Cow::Borrowed("Bob"), Cow::Borrowed("scene_builtin")];
+const SCENE_ROOT_CHILDREN: &[SceneKey] = &[SceneKey(1)];
+const SCENE_ROOT_DATA: perro_scene::SceneNodeData = perro_scene::SceneNodeData::new(
+    perro_nodes::NodeType::Node3D,
+    Cow::Borrowed(EMPTY_FIELDS),
+    None,
+);
+const SCENE_CHILD_DATA: perro_scene::SceneNodeData = perro_scene::SceneNodeData::new(
+    perro_nodes::NodeType::Node3D,
+    Cow::Borrowed(EMPTY_FIELDS),
+    None,
+);
+const STATIC_SCENE_NODES: &[SceneNodeEntry] = &[
+    SceneNodeEntry {
+        data: SCENE_ROOT_DATA,
+        has_data_override: true,
+        key: SceneKey(0),
+        name: Some(Cow::Borrowed("Bob")),
+        tags: Cow::Borrowed(EMPTY_TAGS),
+        children: Cow::Borrowed(SCENE_ROOT_CHILDREN),
+        parent: None,
+        script: None,
+        clear_script: false,
+        root_of: None,
+        script_vars: Cow::Borrowed(EMPTY_FIELDS),
+    },
+    SceneNodeEntry {
+        data: SCENE_CHILD_DATA,
+        has_data_override: true,
+        key: SceneKey(1),
+        name: Some(Cow::Borrowed("scene_builtin")),
+        tags: Cow::Borrowed(EMPTY_TAGS),
+        children: Cow::Borrowed(EMPTY_KEYS),
+        parent: Some(SceneKey(0)),
+        script: None,
+        clear_script: false,
+        root_of: None,
+        script_vars: Cow::Borrowed(EMPTY_FIELDS),
+    },
+];
+static STATIC_SCENE: Scene = Scene {
+    nodes: Cow::Borrowed(STATIC_SCENE_NODES),
+    root: Some(SceneKey(0)),
+    key_names: Cow::Borrowed(SCENE_KEY_NAMES),
+};
+
+fn static_scene_lookup(_path_hash: u64) -> &'static Scene {
+    &STATIC_SCENE
+}
+
+fn child_with_name(
+    runtime: &mut Runtime,
+    parent: perro_ids::NodeID,
+    name: &str,
+) -> perro_ids::NodeID {
+    let children = runtime.get_node_children_ids(parent).unwrap_or_default();
+    let names = children
+        .iter()
+        .map(|&child| {
+            runtime
+                .get_node_name(child)
+                .unwrap_or_default()
+                .into_owned()
+        })
+        .collect::<Vec<_>>();
+    children
+        .into_iter()
+        .find(|&child| runtime.get_node_name(child).as_deref() == Some(name))
+        .unwrap_or_else(|| panic!("missing child `{name}`; children={names:?}"))
+}
 
 fn approx(a: f32, b: f32) -> bool {
     (a - b).abs() <= 1e-4
@@ -13,10 +97,10 @@ fn create_nodes_batches_parent_names_and_tags() {
     let mut runtime = Runtime::new();
     let parent_id = runtime.create::<Node2D>();
     let requests = [
-        NodeCreationTemplate::new::<Node2D>()
+        NodeSpec::new(Node2D::new())
             .name("EnemyA")
             .tags(tags!["enemy"]),
-        NodeCreationTemplate::new::<Node2D>()
+        NodeSpec::new(Node2D::new())
             .name("EnemyB")
             .tags(tags!["enemy"]),
     ];
@@ -37,8 +121,8 @@ fn create_nodes_supports_root_requests_without_metadata() {
     let mut runtime = Runtime::new();
     let ids = runtime.create_nodes(
         &[
-            NodeCreationTemplate::new::<Node2D>(),
-            NodeCreationTemplate::new::<Node2D>().name("RootOnly"),
+            NodeSpec::new(Node2D::new()),
+            NodeSpec::new(Node2D::new()).name("RootOnly"),
         ],
         perro_ids::NodeID::nil(),
     );
@@ -54,6 +138,451 @@ fn create_nodes_supports_root_requests_without_metadata() {
 }
 
 #[test]
+fn create_nodes_accepts_recursive_node_collection() {
+    let mut runtime = Runtime::new();
+    let parent_id = runtime.create::<Node2D>();
+    let collection = node_collection! {
+        {
+            name = "root",
+            tags = tags!["root"],
+            node = Node2D::new(),
+            children = [
+                {
+                    name = "panel",
+                    node = UiPanel {
+                        base: UiNode {
+                            clip_children: true,
+                            ..UiNode::new()
+                        },
+                        ..UiPanel::new()
+                    },
+                    children = [
+                        {
+                            name = "title",
+                            tags = tags!["title"],
+                            node = UiLabel {
+                                text: "Paused".into(),
+                                font_size: 32.0,
+                                ..UiLabel::new()
+                            },
+                        },
+                    ],
+                },
+            ],
+        }
+    };
+
+    let ids = runtime.create_nodes(collection, parent_id);
+
+    assert_eq!(ids.len(), 3);
+    assert_eq!(runtime.get_node_children_ids(parent_id), Some(vec![ids[0]]));
+    assert_eq!(runtime.get_node_children_ids(ids[0]), Some(vec![ids[1]]));
+    assert_eq!(runtime.get_node_children_ids(ids[1]), Some(vec![ids[2]]));
+    assert_eq!(runtime.get_node_parent_id(ids[2]), Some(ids[1]));
+    assert_eq!(runtime.get_node_name(ids[0]).as_deref(), Some("root"));
+    assert_eq!(
+        runtime.get_node_tags(ids[0]).as_deref(),
+        Some([std::borrow::Cow::Borrowed("root")].as_slice())
+    );
+    assert_eq!(runtime.get_node_name(ids[2]).as_deref(), Some("title"));
+
+    assert!(runtime.with_node::<UiPanel, _>(ids[1], |panel| panel.base.clip_children));
+    assert_eq!(
+        runtime.with_node::<UiLabel, _>(ids[2], |label| { (label.text.clone(), label.font_size) }),
+        ("Paused".into(), 32.0)
+    );
+}
+
+#[test]
+fn create_nodes_accepts_multi_root_mixed_collection() {
+    let mut runtime = Runtime::new();
+    let parent_id = runtime.create::<Node2D>();
+    let collection = node_collection![
+        {
+            name = "hud",
+            tags = tags!["ui"],
+            node = UiPanel {
+                base: UiNode {
+                    clip_children: true,
+                    ..UiNode::new()
+                },
+                ..UiPanel::new()
+            },
+            children = [
+                {
+                    name = "score",
+                    node = UiLabel {
+                        text: "000".into(),
+                        font_size: 24.0,
+                        ..UiLabel::new()
+                    },
+                },
+                {
+                    name = "pause",
+                    tags = tags!["button", "menu"],
+                    node = UiButton::new(),
+                },
+            ],
+        },
+        {
+            name = "actor",
+            tags = tags!["player"],
+            node = Node2D {
+                transform: Transform2D {
+                    position: Vector2::new(5.0, 7.0),
+                    ..Transform2D::IDENTITY
+                },
+                ..Node2D::new()
+            },
+            children = [
+                {
+                    name = "sprite",
+                    node = Sprite2D::new(),
+                    children = [
+                        {
+                            name = "muzzle",
+                            node = Node2D::new(),
+                        },
+                    ],
+                },
+                {
+                    name = "camera",
+                    node = Camera2D::new(),
+                },
+            ],
+        },
+        {
+            name = "loose_marker",
+            node = Node2D::new(),
+        },
+    ];
+
+    let ids = runtime.create_nodes(collection, parent_id);
+
+    assert_eq!(ids.len(), 8);
+    assert_eq!(
+        runtime.get_node_children_ids(parent_id),
+        Some(vec![ids[0], ids[3], ids[7]])
+    );
+    assert_eq!(
+        runtime.get_node_children_ids(ids[0]),
+        Some(vec![ids[1], ids[2]])
+    );
+    assert_eq!(
+        runtime.get_node_children_ids(ids[3]),
+        Some(vec![ids[4], ids[6]])
+    );
+    assert_eq!(runtime.get_node_children_ids(ids[4]), Some(vec![ids[5]]));
+    assert_eq!(runtime.get_node_parent_id(ids[5]), Some(ids[4]));
+    assert_eq!(runtime.get_node_parent_id(ids[7]), Some(parent_id));
+    assert_eq!(runtime.get_node_name(ids[5]).as_deref(), Some("muzzle"));
+    assert_eq!(
+        runtime.with_node::<Node2D, _>(ids[3], |node| node.transform.position),
+        Vector2::new(5.0, 7.0)
+    );
+}
+
+#[test]
+fn create_nodes_accepts_collections_inside_collections() {
+    let mut runtime = Runtime::new();
+    let parent_id = runtime.create::<Node2D>();
+    let toolbar = node_collection![
+        {
+            name = "inventory",
+            tags = tags!["tool"],
+            node = UiButton::new(),
+        },
+        {
+            name = "map",
+            tags = tags!["tool"],
+            node = UiButton::new(),
+        },
+    ];
+    let stats = node_collection! {
+        {
+            name = "stats",
+            node = UiPanel::new(),
+            children = [
+                {
+                    name = "hp",
+                    node = UiLabel {
+                        text: "HP".into(),
+                        ..UiLabel::new()
+                    },
+                },
+                {
+                    name = "mp",
+                    node = UiLabel {
+                        text: "MP".into(),
+                        ..UiLabel::new()
+                    },
+                },
+            ],
+        }
+    };
+    let hud = node_collection! {
+        {
+            name = "hud_root",
+            node = UiPanel::new(),
+            children = [
+                { collection = toolbar.clone() },
+                { collection = stats },
+                {
+                    name = "footer",
+                    node = UiLabel {
+                        text: "Ready".into(),
+                        ..UiLabel::new()
+                    },
+                },
+            ],
+        }
+    };
+    let scene = node_collection![
+        { collection = hud },
+        {
+            name = "world_root",
+            node = Node2D::new(),
+            children = [
+                { collection = toolbar },
+                { name = "spawn", node = Node2D::new() },
+            ],
+        },
+    ];
+
+    let ids = runtime.create_nodes(scene, parent_id);
+
+    assert_eq!(ids.len(), 11);
+    assert_eq!(
+        runtime.get_node_children_ids(parent_id),
+        Some(vec![ids[0], ids[7]])
+    );
+    assert_eq!(
+        runtime.get_node_children_ids(ids[0]),
+        Some(vec![ids[1], ids[2], ids[3], ids[6]])
+    );
+    assert_eq!(
+        runtime.get_node_children_ids(ids[3]),
+        Some(vec![ids[4], ids[5]])
+    );
+    assert_eq!(
+        runtime.get_node_children_ids(ids[7]),
+        Some(vec![ids[8], ids[9], ids[10]])
+    );
+    assert_eq!(runtime.get_node_parent_id(ids[4]), Some(ids[3]));
+    assert_eq!(runtime.get_node_parent_id(ids[8]), Some(ids[7]));
+    assert_eq!(runtime.get_node_name(ids[1]).as_deref(), Some("inventory"));
+    assert_eq!(runtime.get_node_name(ids[4]).as_deref(), Some("hp"));
+    assert_eq!(runtime.get_node_name(ids[10]).as_deref(), Some("spawn"));
+}
+
+#[test]
+fn create_nodes_accepts_scene_refs_inside_collections() {
+    let mut project = RuntimeProject::new("Scene Collection Test", ".");
+    project.static_scene_lookup = Some(static_scene_lookup);
+    let mut runtime = Runtime::from_project(project, ProviderMode::Static);
+    let parent_id = runtime.create::<Node2D>();
+    let collection = node_collection![
+        {
+            name = "ship_instance",
+            tags = tags!["spawned_scene"],
+            scene = "res://scenes/ship.scn",
+            children = [
+                {
+                    name = "scene_child",
+                    node = Node2D::new(),
+                    children = [
+                        {
+                            name = "nested_scene",
+                            scene = "res://scenes/ship.scn",
+                            children = [
+                                { name = "nested_leaf", node = Node3D::new() },
+                            ],
+                        },
+                        { name = "scene_leaf", node = Node3D::new() },
+                    ],
+                },
+            ],
+        },
+        {
+            name = "code_root",
+            node = Node2D::new(),
+            children = [
+                { scene = "res://scenes/ship.scn" },
+            ],
+        },
+    ];
+
+    let ids = runtime.create_nodes(collection, parent_id);
+
+    assert_eq!(ids.len(), 7);
+    assert_eq!(
+        runtime.get_node_children_ids(parent_id),
+        Some(vec![ids[0], ids[5]])
+    );
+    assert_eq!(
+        runtime.get_node_name(ids[0]).as_deref(),
+        Some("ship_instance")
+    );
+    assert_eq!(runtime.get_node_type(ids[0]), Some(NodeType::Node3D));
+    assert!(
+        runtime
+            .get_node_tags(ids[0])
+            .is_some_and(|tags| tags.iter().any(|tag| tag.as_ref() == "spawned_scene"))
+    );
+    let ship_scene_child = child_with_name(&mut runtime, ids[0], "scene_builtin");
+    assert_eq!(
+        runtime.get_node_children_ids(ids[0]),
+        Some(vec![ship_scene_child, ids[1]])
+    );
+    assert_eq!(
+        runtime.get_node_name(ship_scene_child).as_deref(),
+        Some("scene_builtin")
+    );
+    assert_eq!(runtime.get_node_parent_id(ids[1]), Some(ids[0]));
+    assert_eq!(runtime.get_node_parent_id(ids[2]), Some(ids[1]));
+    assert_eq!(
+        runtime.get_node_name(ids[2]).as_deref(),
+        Some("nested_scene")
+    );
+    assert_eq!(runtime.get_node_type(ids[2]), Some(NodeType::Node3D));
+    assert_eq!(runtime.get_node_parent_id(ids[3]), Some(ids[2]));
+    assert_eq!(runtime.get_node_parent_id(ids[4]), Some(ids[1]));
+    let nested_scene_child = child_with_name(&mut runtime, ids[2], "scene_builtin");
+    assert_eq!(
+        runtime.get_node_children_ids(ids[2]),
+        Some(vec![nested_scene_child, ids[3]])
+    );
+    assert_eq!(
+        runtime.get_node_children_ids(ids[1]),
+        Some(vec![ids[2], ids[4]])
+    );
+    assert_eq!(runtime.get_node_parent_id(ids[6]), Some(ids[5]));
+    let code_scene_child = child_with_name(&mut runtime, ids[6], "scene_builtin");
+    assert_eq!(runtime.get_node_type(ids[6]), Some(NodeType::Node3D));
+    assert_eq!(
+        runtime.get_node_children_ids(ids[6]),
+        Some(vec![code_scene_child])
+    );
+}
+
+#[test]
+fn create_nodes_accepts_cross_domain_parenting() {
+    let mut runtime = Runtime::new();
+    let parent_id = runtime.create::<Node2D>();
+    let collection = node_collection! {
+        {
+            name = "node_2d_root",
+            node = Node2D::new(),
+            children = [
+                {
+                    name = "node_3d_child",
+                    node = Node3D::new(),
+                    children = [
+                        {
+                            name = "ui_under_3d",
+                            node = UiPanel::new(),
+                            children = [
+                                {
+                                    name = "node_2d_under_ui",
+                                    node = Node2D::new(),
+                                    children = [
+                                        {
+                                            name = "node_3d_leaf",
+                                            node = Node3D::new(),
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    name = "ui_sibling",
+                    node = UiLabel {
+                        text: "Mixed".into(),
+                        ..UiLabel::new()
+                    },
+                },
+            ],
+        }
+    };
+
+    let ids = runtime.create_nodes(collection, parent_id);
+
+    assert_eq!(ids.len(), 6);
+    assert_eq!(runtime.get_node_children_ids(parent_id), Some(vec![ids[0]]));
+    assert_eq!(
+        runtime.get_node_children_ids(ids[0]),
+        Some(vec![ids[1], ids[5]])
+    );
+    assert_eq!(runtime.get_node_children_ids(ids[1]), Some(vec![ids[2]]));
+    assert_eq!(runtime.get_node_children_ids(ids[2]), Some(vec![ids[3]]));
+    assert_eq!(runtime.get_node_children_ids(ids[3]), Some(vec![ids[4]]));
+    assert_eq!(runtime.get_node_parent_id(ids[4]), Some(ids[3]));
+    assert_eq!(
+        runtime.get_node_type(ids[0]),
+        Some(perro_nodes::NodeType::Node2D)
+    );
+    assert_eq!(
+        runtime.get_node_type(ids[1]),
+        Some(perro_nodes::NodeType::Node3D)
+    );
+    assert_eq!(
+        runtime.get_node_type(ids[2]),
+        Some(perro_nodes::NodeType::UiPanel)
+    );
+    assert_eq!(
+        runtime.get_node_type(ids[3]),
+        Some(perro_nodes::NodeType::Node2D)
+    );
+    assert_eq!(
+        runtime.get_node_type(ids[4]),
+        Some(perro_nodes::NodeType::Node3D)
+    );
+    assert_eq!(
+        runtime.get_node_type(ids[5]),
+        Some(perro_nodes::NodeType::UiLabel)
+    );
+}
+
+#[test]
+fn create_nodes_accepts_owned_flat_specs() {
+    let mut runtime = Runtime::new();
+    let parent_id = runtime.create::<Node2D>();
+    let specs = vec![
+        NodeSpec::new(Node2D::new()).name("a"),
+        NodeSpec::new(Node2D::new()).name("b"),
+        NodeSpec::new(Node2D::new()).name("c"),
+    ];
+
+    let ids = runtime.create_nodes(specs, parent_id);
+
+    assert_eq!(ids.len(), 3);
+    assert_eq!(runtime.get_node_children_ids(parent_id), Some(ids.clone()));
+    assert_eq!(runtime.get_node_name(ids[2]).as_deref(), Some("c"));
+}
+
+#[test]
+fn create_nodes_rejects_invalid_collection_parent_indices() {
+    let mut runtime = Runtime::new();
+    let parent_id = runtime.create::<Node2D>();
+    let bad_forward_parent = vec![
+        NodeSpec::new(Node2D::new()).parent(Some(1)),
+        NodeSpec::new(Node2D::new()),
+    ];
+    let bad_self_parent = vec![NodeSpec::new(Node2D::new()).parent(Some(0))];
+
+    assert!(
+        runtime
+            .create_nodes(bad_forward_parent, parent_id)
+            .is_empty()
+    );
+    assert!(runtime.create_nodes(bad_self_parent, parent_id).is_empty());
+    assert_eq!(runtime.get_node_children_ids(parent_id), Some(Vec::new()));
+    assert_eq!(runtime.nodes.len(), 1);
+}
+
+#[test]
 fn create_nodes_handles_10k_children_and_transform_propagation() {
     let mut runtime = Runtime::new();
     let parent_id = runtime.create::<Node2D>();
@@ -63,7 +592,7 @@ fn create_nodes_handles_10k_children_and_transform_propagation() {
         })
         .expect("parent exists");
 
-    let templates = vec![NodeCreationTemplate::new::<Node2D>(); 10_000];
+    let templates = vec![NodeSpec::new(Node2D::new()); 10_000];
     let ids = runtime.create_nodes(&templates, parent_id);
 
     assert_eq!(ids.len(), 10_000);

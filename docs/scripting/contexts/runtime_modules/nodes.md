@@ -90,7 +90,7 @@
 | `with_base_node` | [`with_base_node`](#with_base_node) |
 | `with_base_node_mut` | [`with_base_node_mut`](#with_base_node_mut) |
 | `create_node` | [`create_node`](#create_node) |
-| `node_template` | [`node_template`](#node_template) |
+| `node_collection` | [`node_collection`](#node_collection) |
 | `create_nodes` | [`create_nodes`](#create_nodes) |
 | `get_node_name` | [`get_node_name`](#get_node_name) |
 | `set_node_name` | [`set_node_name`](#set_node_name) |
@@ -192,8 +192,8 @@ lifecycle!({
 | Field | Detail |
 | --- | --- |
 | Access | `ctx.run.Nodes()` |
-| Signature | `pub fn create_nodes( &mut self, requests: &[NodeCreationTemplate], parent_id: NodeID, ) -> Vec<NodeID>` |
-| Params | `&mut self, requests: &[NodeCreationTemplate], parent_id: NodeID,` |
+| Signature | `pub fn create_nodes<'a, B>(&mut self, requests: B, parent_id: NodeID) -> Vec<NodeID> where B: IntoNodeCreateBatch<'a>` |
+| Params | `&mut self, requests: NodeCollection / NodeSpec slice, parent_id: NodeID` |
 | Returns | `Vec<NodeID>` |
 | Use when | Use when gameplay needs a new runtime/resource object built from typed data. |
 | Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
@@ -203,7 +203,11 @@ Example:
 ```rust
 lifecycle!({
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = ctx.run.Nodes().create_nodes(Default::default(), ctx.id);
+        let nodes = node_collection![
+            { name = "A", node = Node2D::new() },
+            { name = "B", node = Node2D::new() },
+        ];
+        let value = ctx.run.Nodes().create_nodes(&nodes, ctx.id);
         let _ = value;
     }
 });
@@ -1991,15 +1995,15 @@ lifecycle!({
 });
 ```
 
-### `node_template`
+### `node_collection`
 
 | Field | Detail |
 | --- | --- |
 | Access | `ctx.run.Nodes()` |
-| Signature | `node_template!(node_ty)` |
-| Params | `node_ty` |
-| Returns | `same as backing method` |
-| Use when | Use when this exact typed operation matches the system state the script needs to read or change. |
+| Signature | `node_collection!({ ... })` or `node_collection![{ ... }, { ... }]` |
+| Params | `name =`, `tags =`, `node =`, optional `children = [...]`, or `collection = expr` |
+| Returns | `NodeCollection` |
+| Use when | Use when gameplay needs an in-code scene graph with typed node data. |
 | Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
 
 Example:
@@ -2007,7 +2011,19 @@ Example:
 ```rust
 lifecycle!({
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = node_template!(ctx.run);
+        let other_nodes = node_collection![
+            { name = "Reusable", node = Node2D::new() },
+        ];
+        let value = node_collection! {
+            {
+                name = "Root",
+                node = Node2D::new(),
+                children = [
+                    { name = "Child", node = Node2D::new() },
+                    { collection = other_nodes.clone() },
+                ],
+            }
+        };
         let _ = value;
     }
 });
@@ -2019,7 +2035,7 @@ lifecycle!({
 | --- | --- |
 | Access | `ctx.run.Nodes()` |
 | Signature | `create_nodes!(ctx.run, requests)` |
-| Params | `ctx, requests` |
+| Params | `ctx, NodeCollection, optional parent` |
 | Returns | `resource/runtime ID or `Result` as shown by backing method` |
 | Use when | Use when gameplay needs a new runtime/resource object built from typed data. |
 | Fails when / edge behavior | `Option` returns `None` for missing data. `Result` returns source error details. `bool` returns `false` when the operation cannot apply. ID-based calls fail when the ID is stale or wrong for the requested type. |
@@ -2029,7 +2045,11 @@ Example:
 ```rust
 lifecycle!({
     fn on_update(&self, ctx: &mut ScriptContext<'_, API>) {
-        let value = create_nodes!(ctx.run, 0.1);
+        let nodes = node_collection![
+            { name = "A", node = Node2D::new() },
+            { name = "B", node = Node2D::new() },
+        ];
+        let value = create_nodes!(ctx.run, nodes, ctx.id);
         let _ = value;
     }
 });
